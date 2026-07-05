@@ -1,0 +1,60 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/trading
+    username: app
+    password: ${POSTGRES_PASSWORD}
+    hikari:
+      maximum-pool-size: 10        # 코어수x2 근처, 키우지 않는다
+      connection-timeout: 3000     # 풀 고갈 시 무한대기 금지
+  jpa:
+    hibernate:
+      ddl-auto: validate           # 스키마 진실은 Flyway
+    open-in-view: false            # 뷰 렌더링까지 커넥션 점유 금지 — 필수
+    properties:
+      hibernate.default_batch_fetch_size: 100
+  flyway:
+    locations: classpath:db/migration
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      timeout: 2s
+  kafka:
+    bootstrap-servers: localhost:9092
+    producer:
+      acks: all                    # 리더+ISR 확인 후 성공
+      properties:
+        enable.idempotence: true   # 브로커 수준 중복 발행 방지
+    consumer:
+      enable-auto-commit: false    # 처리 성공 후 수동 커밋
+      auto-offset-reset: earliest
+      max-poll-records: 200
+    listener:
+      ack-mode: MANUAL
+
+app:
+  jwt:
+    secret: ${JWT_SECRET}          # 32byte 이상, .env로만
+    ttl-hours: 12
+  decision:
+    valid-minutes: 10              # validUntil
+  freshness:
+    price-seconds: 300
+    balance-seconds: 60
+    news-hours: 24
+  async:
+    adapter: ${ASYNC_ADAPTER:db}   # db | kafka — AsyncPipelinePort 구현 선택
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: when-authorized
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+  default-produces-media-type: application/json

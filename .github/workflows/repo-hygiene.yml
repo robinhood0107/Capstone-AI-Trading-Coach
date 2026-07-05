@@ -1,0 +1,85 @@
+name: Repo Hygiene
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  repo-hygiene:
+    name: Repo hygiene
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify required paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          required_paths=(
+            "AGENTS.md"
+            "CLAUDE.md"
+            "README.md"
+            ".env.example"
+            ".gitignore"
+            "docs/최종_프로젝트_명세서.md"
+            "docs/API_명세서.md"
+            "contracts/README.md"
+            "infra/docker-compose.infra.yml"
+            "infra/init/01-extensions.sql"
+            "workspaces/decision-platform/README.md"
+            "workspaces/return-engine/README.md"
+            "workspaces/experience-dashboard/README.md"
+          )
+
+          for path in "${required_paths[@]}"; do
+            if [[ ! -e "$path" ]]; then
+              echo "Missing required path: $path" >&2
+              exit 1
+            fi
+          done
+
+      - name: Validate compose file
+        shell: bash
+        env:
+          POSTGRES_PASSWORD: dummy
+        run: docker compose -f infra/docker-compose.infra.yml config --quiet
+
+      - name: Parse Python project metadata
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import tomllib
+
+          path = Path("workspaces/decision-platform/python-services/pyproject.toml")
+          with path.open("rb") as file:
+              tomllib.load(file)
+          print(f"OK {path}")
+          PY
+
+      - name: Verify ignore rules
+        shell: bash
+        run: |
+          set -euo pipefail
+          git check-ignore -q .env
+          git check-ignore -q .env.local
+          git check-ignore -q http-client.private.env.json
+          git check-ignore -q workspaces/return-engine/example.py
+          git check-ignore -q workspaces/experience-dashboard/app/page.tsx
+          git check-ignore -q artifacts/decision-platform/run-001/result.json
+          git check-ignore -q private-reference/example.md
+          test -z "$(git ls-files private-reference)"
+
+      - name: Secret scan
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

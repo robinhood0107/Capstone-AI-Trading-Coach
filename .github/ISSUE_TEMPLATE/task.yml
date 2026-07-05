@@ -1,0 +1,53 @@
+name: Task
+description: 세션 단위 작업을 기록합니다.
+title: "[Task] "
+labels: ["task"]
+body:
+  - type: input
+    id: session
+    attributes:
+      label: Session ID
+      description: 작업 세션 ID를 적습니다. 예: S0.1
+      placeholder: S0.1
+    validations:
+      required: true
+  - type: dropdown
+    id: workspace
+    attributes:
+      label: 담당 workspace
+      options:
+        - decision-platform
+        - return-engine
+        - experience-dashboard
+        - contracts
+        - docs
+        - infra
+    validations:
+      required: true
+  - type: textarea
+    id: references
+    attributes:
+      label: 관련 기준 문서
+      description: 확인해야 하는 공개 명세서와 API 절을 적습니다.
+      placeholder: |
+        - docs/최종_프로젝트_명세서.md 6장
+        - docs/API_명세서.md 17.4
+    validations:
+      required: true
+  - type: textarea
+    id: dod
+    attributes:
+      label: Definition of Done
+      description: 완료 판정 명령과 기대 결과를 적습니다.
+      placeholder: |
+        - [ ] 명령:
+        - [ ] 기대 결과:
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: 메모
+      description: 범위 제외, 리스크, follow-up을 적습니다.
+    validations:
+      required: false

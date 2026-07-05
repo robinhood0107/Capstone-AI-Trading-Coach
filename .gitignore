@@ -1,0 +1,54 @@
+# --- Secrets ---
+.env
+.env.local
+*.env
+!.env.example
+http-client.private.env.json
+
+# --- Private reference notes (never commit) ---
+private-reference/
+
+# --- Gradle / Kotlin / Java (workspaces/decision-platform/spring-api) ---
+.gradle/
+**/build/
+out/
+*.class
+*.jar
+!gradle/wrapper/gradle-wrapper.jar
+
+# --- Python (workspaces/decision-platform/python-services) ---
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# --- Node (workspaces/experience-dashboard, 팀원 A 담당 — 이 계정에서는 내용 없음) ---
+node_modules/
+.next/
+dist/
+
+# --- 다른 팀원 워크스페이스: 이 계정에서는 코드/산출물을 만들지 않음 ---
+workspaces/return-engine/*
+!workspaces/return-engine/README.md
+workspaces/experience-dashboard/*
+!workspaces/experience-dashboard/README.md
+
+# --- artifacts: 계약된 결과물만, 로컬 실행 산출물은 커밋 금지 ---
+artifacts/return-engine/*
+!artifacts/return-engine/.gitkeep
+!artifacts/return-engine/README.md
+artifacts/decision-platform/*
+!artifacts/decision-platform/.gitkeep
+!artifacts/decision-platform/README.md
+
+# --- IDE ---
+.idea/
+*.iml
+.vscode/
+
+# --- OS ---
+.DS_Store
+Thumbs.db

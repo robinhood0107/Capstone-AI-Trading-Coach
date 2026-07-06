@@ -1,0 +1,49 @@
+schemaVersion: 1
+currency: KRW
+
+capital:
+  initialCash: 10000000
+
+universe:
+  assetScope:
+    - domestic_stock
+    - domestic_gold_etf_etn
+  targetDomesticStockCount:
+    min: 20
+    max: 30
+  manifestRequired: true
+
+dataWindow:
+  dailyBackfill:
+    minimumYears: 3
+  intradayForwardValidation:
+    maximumYears: 1
+
+executionCost:
+  officialFeeTaxSource: KIS_OFFICIAL_FEE_TAX_PAGE
+  feeTaxConfigRequired: true
+  roundTripCostEstimateBps:
+    min: 25
+    max: 35
+  marketOrderSlippageBps: 5
+
+modelComparison:
+  scenarios:
+    - Baseline
+    - Guide
+    - Strict
+  decisionThresholdTauBps: 60
+  labelHorizonTradingDays: 5
+
+metrics:
+  - cumulative_return
+  - annualized_return
+  - max_drawdown
+  - sharpe_ratio
+  - sortino_ratio
+  - win_rate
+  - trade_count
+  - turnover
+  - net_return_after_cost
+  - principle_violation_count
+  - guarded_performance_delta

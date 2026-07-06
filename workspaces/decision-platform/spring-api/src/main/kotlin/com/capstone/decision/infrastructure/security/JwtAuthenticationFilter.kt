@@ -1,0 +1,166 @@
+package com.capstone.decision.infrastructure.security
+
+import com.capstone.decision.api.common.ApiResponseWriter
+import com.capstone.decision.api.common.ErrorCode
+import com.capstone.decision.infrastructure.idempotency.IdempotencyLookup
+import com.capstone.decision.infrastructure.idempotency.IdempotencyProperties
+import com.capstone.decision.infrastructure.idempotency.IdempotencyService
+import com.capstone.decision.infrastructure.web.CachedBodyHttpServletRequest
+import io.jsonwebtoken.JwtException
+import jakarta.servlet.FilterChain
+import jakarta.servlet.http.HttpServletRequest
+import jakarta.servlet.http.HttpServletResponse
+import org.springframework.http.HttpHeaders
+import org.springframework.http.MediaType
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken
+import org.springframework.security.core.authority.SimpleGrantedAuthority
+import org.springframework.security.core.context.SecurityContextHolder
+import org.springframework.util.AntPathMatcher
+import org.springframework.web.filter.OncePerRequestFilter
+import org.springframework.web.util.ContentCachingResponseWrapper
+import java.nio.charset.StandardCharsets
+import java.security.MessageDigest
+import java.util.HexFormat
+
+class JwtAuthenticationFilter(
+    private val jwtService: JwtService,
+    private val idempotencyService: IdempotencyService,
+    private val idempotencyProperties: IdempotencyProperties,
+    private val responseWriter: ApiResponseWriter,
+) : OncePerRequestFilter() {
+    private val pathMatcher = AntPathMatcher()
+
+    override fun doFilterInternal(
+        request: HttpServletRequest,
+        response: HttpServletResponse,
+        filterChain: FilterChain,
+    ) {
+        if (!authenticate(request, response)) {
+            return
+        }
+        val authentication = SecurityContextHolder.getContext().authentication
+        if (authentication?.isAuthenticated == true && isIdempotentWritePath(request)) {
+            handleIdempotentWrite(
+                request = request,
+                response = response,
+                filterChain = filterChain,
+                principal = authentication.principal as AppPrincipal,
+            )
+            return
+        }
+        filterChain.doFilter(request, response)
+    }
+
+    private fun authenticate(
+        request: HttpServletRequest,
+        response: HttpServletResponse,
+    ): Boolean {
+        val authorization = request.getHeader(HttpHeaders.AUTHORIZATION) ?: return true
+        if (!authorization.startsWith(BEARER_PREFIX, ignoreCase = true)) {
+            responseWriter.writeError(request, response, ErrorCode.UNAUTHORIZED)
+            return false
+        }
+        val token = authorization.substring(BEARER_PREFIX.length).trim()
+        try {
+            val principal = jwtService.parse(token)
+            SecurityContextHolder.getContext().authentication =
+                UsernamePasswordAuthenticationToken(
+                    principal,
+                    token,
+                    listOf(SimpleGrantedAuthority("ROLE_${principal.role.name}")),
+                )
+        } catch (exception: JwtException) {
+            SecurityContextHolder.clearContext()
+            responseWriter.writeError(request, response, ErrorCode.UNAUTHORIZED)
+            return false
+        } catch (exception: IllegalArgumentException) {
+            SecurityContextHolder.clearContext()
+            responseWriter.writeError(request, response, ErrorCode.UNAUTHORIZED)
+            return false
+        }
+        return true
+    }
+
+    private fun handleIdempotentWrite(
+        request: HttpServletRequest,
+        response: HttpServletResponse,
+        filterChain: FilterChain,
+        principal: AppPrincipal,
+    ) {
+        val idempotencyKey = request.getHeader(IDEMPOTENCY_HEADER)?.takeIf { it.isNotBlank() }
+        if (idempotencyKey == null) {
+            responseWriter.writeError(
+                request = request,
+                response = response,
+                code = ErrorCode.VALIDATION_ERROR,
+                details = mapOf(IDEMPOTENCY_HEADER to "Required for this write path."),
+            )
+            return
+        }
+
+        val cachedRequest = CachedBodyHttpServletRequest(request)
+        val requestHash = requestHash(cachedRequest)
+        when (
+            val lookup =
+                idempotencyService.lookup(
+                    userId = principal.userId,
+                    idempotencyKey = idempotencyKey,
+                    requestHash = requestHash,
+                )
+        ) {
+            IdempotencyLookup.Conflict -> {
+                responseWriter.writeError(
+                    request = cachedRequest,
+                    response = response,
+                    code = ErrorCode.IDEMPOTENCY_CONFLICT,
+                )
+            }
+
+            is IdempotencyLookup.Replay -> {
+                response.status = lookup.status
+                response.contentType = lookup.contentType
+                response.characterEncoding = StandardCharsets.UTF_8.name()
+                response.writer.write(lookup.body)
+            }
+
+            is IdempotencyLookup.New -> {
+                val responseWrapper = ContentCachingResponseWrapper(response)
+                filterChain.doFilter(cachedRequest, responseWrapper)
+                val responseBody = responseWrapper.contentAsByteArray.toString(StandardCharsets.UTF_8)
+                if (responseBody.isNotBlank()) {
+                    idempotencyService.store(
+                        userId = principal.userId,
+                        idempotencyKey = idempotencyKey,
+                        requestHash = requestHash,
+                        status = responseWrapper.status,
+                        body = responseBody,
+                        contentType = responseWrapper.contentType ?: MediaType.APPLICATION_JSON_VALUE,
+                    )
+                }
+                responseWrapper.copyBodyToResponse()
+            }
+        }
+    }
+
+    private fun isIdempotentWritePath(request: HttpServletRequest): Boolean =
+        request.method in WRITE_METHODS &&
+            idempotencyProperties.paths.any { pathMatcher.match(it, request.requestURI) }
+
+    private fun requestHash(request: CachedBodyHttpServletRequest): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        digest.update(request.method.toByteArray(StandardCharsets.UTF_8))
+        digest.update(0)
+        digest.update(request.requestURI.toByteArray(StandardCharsets.UTF_8))
+        digest.update(0)
+        digest.update((request.queryString ?: "").toByteArray(StandardCharsets.UTF_8))
+        digest.update(0)
+        digest.update(request.cachedBody)
+        return HexFormat.of().formatHex(digest.digest())
+    }
+
+    companion object {
+        private const val BEARER_PREFIX = "Bearer "
+        private const val IDEMPOTENCY_HEADER = "X-Idempotency-Key"
+        private val WRITE_METHODS = setOf("POST", "PUT", "PATCH", "DELETE")
+    }
+}

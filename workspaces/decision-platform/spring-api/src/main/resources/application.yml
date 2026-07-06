@@ -1,4 +1,6 @@
 spring:
+  mvc:
+    throw-exception-if-no-handler-found: true
   datasource:
     url: jdbc:postgresql://localhost:5432/trading
     username: app
@@ -36,6 +38,19 @@ app:
   jwt:
     secret: ${JWT_SECRET}          # 32byte 이상, .env로만
     ttl-hours: 12
+  demo:
+    user:
+      username: demo-user
+      password: ${DEMO_USER_PASSWORD}
+    admin:
+      username: demo-admin
+      password: ${DEMO_ADMIN_PASSWORD}
+  idempotency:
+    ttl-hours: 24
+    paths:
+      - /api/v1/orders/**
+      - /api/v1/principles/**
+      - /api/v1/backtests/**
   decision:
     valid-minutes: 10              # validUntil
   freshness:                       # 유형별 매트릭스(명세서 4.2.2)의 일부만 우선 정의 — 신호/공시/risk_snapshot 항목은 S2.3에서 확장

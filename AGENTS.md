@@ -18,12 +18,12 @@
 
 ## 현재 단계
 
-**현재 단계: STAGE 0 — GitHub 초기 환경 세팅.** 단계가 바뀌면 이 절과 PR 템플릿을 함께 갱신한다(단계 전환 자체가 하나의 PR).
+**현재 단계: STAGE 1 — walking skeleton (S0.1~S0.4).** 단계가 바뀌면 이 절과 PR 템플릿을 함께 갱신한다(단계 전환 자체가 하나의 PR).
 
 | 단계 | 허용되는 변경 | 전환 조건 |
 |---|---|---|
-| STAGE 0 (현재) | repo hygiene, GitHub 템플릿, 규칙 파일, README, 설정 스캐폴드, Java 25 LTS 스택 기준 정렬 | 로컬에서 작업계획 5.0.6 Definition of Ready(JDK 25 기준) 통과 |
-| STAGE 1 — walking skeleton (S0.1~S0.4) | Gradle wrapper 9.5.0, `uv.lock`, Application/health 구현, Flyway V1, 공통 규약(envelope/JWT/idempotency) | S0.4 DoD 통과 |
+| STAGE 0 | repo hygiene, GitHub 템플릿, 규칙 파일, README, 설정 스캐폴드, Java 25 LTS 스택 기준 정렬 | 로컬에서 작업계획 5.0.6 Definition of Ready(JDK 25 기준) 통과 |
+| STAGE 1 — walking skeleton (S0.1~S0.4) (현재) | Gradle wrapper 9.5.0, `uv.lock`, Application/health 구현, Flyway V1, 공통 규약(envelope/JWT/idempotency) | S0.4 DoD 통과 |
 | STAGE 2 — 기능 구현 (S1~S8) | 세션계획 8장의 세션 단위 구현 | 세션별 DoD |
 
 - STAGE 0에서는 런타임 기능 구현을 새로 추가하지 않는다.

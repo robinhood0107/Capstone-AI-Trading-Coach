@@ -14,7 +14,7 @@ EN:
 
 ## 변경 범위
 
-- [ ] 이 PR의 범위가 `AGENTS.md`의 "현재 단계"에서 허용하는 변경과 일치한다.
+- [ ] 이 PR의 범위가 `AGENTS.md`에 명시된 단계별 허용 변경과 일치한다.
 - [ ] `workspaces/return-engine/` 또는 `workspaces/experience-dashboard/`의 placeholder 경계를 침범하지 않았다.
 - [ ] 계약 변경이 있다면 `contracts/changes/`에 이유와 영향 범위를 기록했다.
 - [ ] 관련 Issue/PR/commit을 `#<번호>` 형식으로 연결했다. 닫는 이슈가 있으면 `Closes #<번호>`를 사용했다.

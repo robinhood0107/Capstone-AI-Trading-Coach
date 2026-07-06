@@ -10,6 +10,7 @@ import java.io.InputStreamReader
 import java.nio.charset.Charset
 import java.nio.charset.StandardCharsets
 
+// 왜: idempotency hash 계산 후에도 controller가 같은 request body를 읽을 수 있어야 한다.
 class CachedBodyHttpServletRequest(
     request: HttpServletRequest,
 ) : HttpServletRequestWrapper(request) {
@@ -36,6 +37,6 @@ private class CachedBodyServletInputStream(
     override fun isReady(): Boolean = true
 
     override fun setReadListener(readListener: ReadListener?) {
-        // Synchronous MockMvc and servlet requests do not need async callbacks here.
+        // 왜: 현재 S0.3 동기 servlet/MockMvc 흐름에서는 async read callback이 필요 없다.
     }
 }

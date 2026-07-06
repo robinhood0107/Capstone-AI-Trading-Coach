@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice
 import org.springframework.web.servlet.NoHandlerFoundException
 import org.springframework.web.servlet.resource.NoResourceFoundException
 
+// 왜: controller에서 발생한 오류를 모두 API 명세의 공통 envelope로 수렴시킨다.
 @RestControllerAdvice
 class GlobalExceptionHandler {
     @ExceptionHandler(ApiException::class)
@@ -28,6 +29,7 @@ class GlobalExceptionHandler {
         exception: MethodArgumentNotValidException,
         request: HttpServletRequest,
     ): ResponseEntity<ApiResponse<Nothing>> {
+        // 왜: 필드별 사유를 details에 보존해야 프론트가 입력 오류를 위치별로 표시할 수 있다.
         val fieldErrors =
             exception.bindingResult.fieldErrors.associate { fieldError ->
                 fieldError.field to (fieldError.defaultMessage ?: "Invalid value.")
@@ -49,6 +51,7 @@ class GlobalExceptionHandler {
 
     @ExceptionHandler(NoHandlerFoundException::class, NoResourceFoundException::class)
     fun handleNotFound(request: HttpServletRequest): ResponseEntity<ApiResponse<Nothing>> =
+        // 왜: 존재하지 않는 API도 HTML/빈 응답 대신 NOT_FOUND code를 반환해야 한다.
         errorResponse(
             request = request,
             code = ErrorCode.NOT_FOUND,
@@ -61,6 +64,7 @@ class GlobalExceptionHandler {
         message: String = code.defaultMessage,
         details: Map<String, Any?> = emptyMap(),
     ): ResponseEntity<ApiResponse<Nothing>> =
+        // 왜: HTTP status와 body error.code를 동시에 맞춰 운영 로그와 클라이언트 분기를 모두 만족한다.
         ResponseEntity
             .status(code.status)
             .body(

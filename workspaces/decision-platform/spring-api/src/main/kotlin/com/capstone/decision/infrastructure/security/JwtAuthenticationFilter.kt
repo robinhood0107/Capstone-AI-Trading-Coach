@@ -22,6 +22,7 @@ import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import java.util.HexFormat
 
+// 왜: custom filter 수를 2개로 제한하면서 JWT 인증과 authenticated write idempotency gate를 함께 처리한다.
 class JwtAuthenticationFilter(
     private val jwtService: JwtService,
     private val idempotencyService: IdempotencyService,
@@ -57,6 +58,7 @@ class JwtAuthenticationFilter(
     ): Boolean {
         val authorization = request.getHeader(HttpHeaders.AUTHORIZATION) ?: return true
         if (!authorization.startsWith(BEARER_PREFIX, ignoreCase = true)) {
+            // 왜: Authorization header가 있으면 형식 오류도 인증 실패로 명확히 반환한다.
             responseWriter.writeError(request, response, ErrorCode.UNAUTHORIZED)
             return false
         }
@@ -70,6 +72,7 @@ class JwtAuthenticationFilter(
                     listOf(SimpleGrantedAuthority("ROLE_${principal.role.name}")),
                 )
         } catch (exception: JwtException) {
+            // 왜: 파싱/서명 오류는 세부 원인을 숨겨 token probing 단서를 줄인다.
             SecurityContextHolder.clearContext()
             responseWriter.writeError(request, response, ErrorCode.UNAUTHORIZED)
             return false
@@ -89,6 +92,7 @@ class JwtAuthenticationFilter(
     ) {
         val idempotencyKey = request.getHeader(IDEMPOTENCY_HEADER)?.takeIf { it.isNotBlank() }
         if (idempotencyKey == null) {
+            // 왜: 쓰기 재시도 안전성을 보장해야 하므로 대상 path에서는 key 누락을 400으로 막는다.
             responseWriter.writeError(
                 request = request,
                 response = response,
@@ -98,6 +102,7 @@ class JwtAuthenticationFilter(
             return
         }
 
+        // 왜: request body는 한 번 읽으면 사라지므로 hash 계산과 controller 전달을 모두 위해 캐시한다.
         val cachedRequest = CachedBodyHttpServletRequest(request)
         val requestHash = requestHash(cachedRequest)
         when (
@@ -109,6 +114,7 @@ class JwtAuthenticationFilter(
                 )
         ) {
             IdempotencyLookup.Conflict -> {
+                // 왜: 같은 key로 다른 payload가 오면 중복 재시도가 아니라 위험한 충돌로 본다.
                 responseWriter.writeError(
                     request = cachedRequest,
                     response = response,
@@ -117,6 +123,7 @@ class JwtAuthenticationFilter(
             }
 
             is IdempotencyLookup.Replay -> {
+                // 왜: 동일 payload 재시도는 부작용 없이 최초 status/body를 그대로 돌려야 한다.
                 response.status = lookup.status
                 response.contentType = lookup.contentType
                 response.characterEncoding = StandardCharsets.UTF_8.name()
@@ -124,6 +131,7 @@ class JwtAuthenticationFilter(
             }
 
             is IdempotencyLookup.New -> {
+                // 왜: controller 실행 결과를 저장해야 다음 동일 요청을 재실행하지 않을 수 있다.
                 val responseWrapper = ContentCachingResponseWrapper(response)
                 filterChain.doFilter(cachedRequest, responseWrapper)
                 val responseBody = responseWrapper.contentAsByteArray.toString(StandardCharsets.UTF_8)
@@ -148,6 +156,7 @@ class JwtAuthenticationFilter(
 
     private fun requestHash(request: CachedBodyHttpServletRequest): String {
         val digest = MessageDigest.getInstance("SHA-256")
+        // 왜: X-Request-Id는 재시도마다 달라질 수 있어 hash에서 제외하고 실제 요청 의미만 묶는다.
         digest.update(request.method.toByteArray(StandardCharsets.UTF_8))
         digest.update(0)
         digest.update(request.requestURI.toByteArray(StandardCharsets.UTF_8))

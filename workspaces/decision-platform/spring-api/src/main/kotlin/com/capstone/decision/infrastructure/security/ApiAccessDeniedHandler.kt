@@ -7,6 +7,7 @@ import jakarta.servlet.http.HttpServletResponse
 import org.springframework.security.access.AccessDeniedException
 import org.springframework.security.web.access.AccessDeniedHandler
 
+// 왜: 권한 실패는 MVC controller에 도달하지 않으므로 Security 전용 handler에서 envelope를 보장한다.
 class ApiAccessDeniedHandler(
     private val responseWriter: ApiResponseWriter,
 ) : AccessDeniedHandler {

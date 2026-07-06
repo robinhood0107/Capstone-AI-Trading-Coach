@@ -1,0 +1,180 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "contracts/schemas/signal.schema.json",
+  "title": "Signal",
+  "description": "Model signal payload combining rule baseline, LSTM, LightGBM, news sentiment, and HMM regime. Signals have no order authority.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "symbol",
+    "producer",
+    "sourceWorkspace",
+    "asOf",
+    "timeframe",
+    "finalSignal",
+    "confidence",
+    "predictedReturn",
+    "featureSummary",
+    "ruleBaseline",
+    "lstm",
+    "lightgbm",
+    "newsSentiment",
+    "hmmRegime"
+  ],
+  "properties": {
+    "symbol": {
+      "type": "string",
+      "pattern": "^[0-9A-Z._:-]{1,20}$"
+    },
+    "producer": {
+      "type": "string",
+      "enum": ["COMPOSITE", "RULE_BASELINE", "LSTM", "LIGHTGBM"],
+      "description": "P0 결정: COMPOSITE는 Signal API가 세 모델을 조합한 조회 payload임을 표시한다."
+    },
+    "sourceWorkspace": {
+      "type": "string",
+      "enum": ["return-engine", "decision-platform"]
+    },
+    "asOf": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "timeframe": {
+      "type": "string",
+      "enum": ["1d", "60m"]
+    },
+    "finalSignal": {
+      "type": "string",
+      "enum": ["BUY_STRONG", "BUY_WEAK", "BUY", "HOLD", "SELL", "SELL_WEAK", "SELL_STRONG"],
+      "description": "P0 결정: Signal API 예시는 HOLD이며 Decision API summary는 BUY_WEAK도 사용한다."
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "predictedReturn": {
+      "type": ["number", "null"]
+    },
+    "featureSummary": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "modelReportId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "ruleBaseline": {
+      "$ref": "#/$defs/modelComponent"
+    },
+    "lstm": {
+      "$ref": "#/$defs/modelComponent"
+    },
+    "lightgbm": {
+      "$ref": "#/$defs/modelComponent"
+    },
+    "newsSentiment": {
+      "$ref": "#/$defs/newsSentiment"
+    },
+    "hmmRegime": {
+      "$ref": "#/$defs/hmmRegime"
+    }
+  },
+  "$defs": {
+    "modelComponent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["producer", "sourceWorkspace", "asOf", "signal", "confidence", "predictedReturn", "featureSummary"],
+      "properties": {
+        "producer": {
+          "type": "string",
+          "enum": ["RULE_BASELINE", "LSTM", "LIGHTGBM"]
+        },
+        "sourceWorkspace": {
+          "type": "string",
+          "enum": ["return-engine", "decision-platform"]
+        },
+        "asOf": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "signal": {
+          "type": "string",
+          "enum": ["BUY", "SELL", "HOLD"]
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "predictedReturn": {
+          "type": ["number", "null"]
+        },
+        "featureSummary": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "rulesTriggered": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "featureImportanceTop": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "newsSentiment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["score", "articleCount", "summaryArtifactId", "conflictFlag"],
+      "properties": {
+        "score": {
+          "type": "number",
+          "minimum": -1,
+          "maximum": 1
+        },
+        "articleCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "summaryArtifactId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "conflictFlag": {
+          "type": "boolean"
+        }
+      }
+    },
+    "hmmRegime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "probability"],
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": ["NORMAL", "SIDEWAYS", "HIGH_VOLATILITY", "RISK_OFF", "RISK_ON"],
+          "description": "P0 결정: HMM은 예측 모델이 아니라 시장국면/고변동 리스크 필터다."
+        },
+        "probability": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    }
+  }
+}

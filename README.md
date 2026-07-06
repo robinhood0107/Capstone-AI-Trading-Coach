@@ -6,7 +6,7 @@
 
 ## 에이전트/CI 규칙
 
-작업 전 [AGENTS.md](AGENTS.md)를 먼저 확인한다. 현재 GitHub Actions는 repo hygiene 중심의 비파괴 검증만 수행하며, Kotlin/Python full build CI는 S0.1 walking skeleton 이후 추가한다.
+작업 전 [AGENTS.md](AGENTS.md)를 먼저 확인한다. 현재 GitHub Actions는 repo hygiene 중심의 비파괴 검증만 수행한다. **어느 세션 완료 시점에 어떤 CI job을 추가하는지는 AGENTS.md의 "CI 로드맵" 표를 따른다** (kotlin-build는 S0.3, python-ci는 S1.4, contracts-ci는 S0.2, OpenAPI diff는 S2.1 등).
 
 ## 워크스페이스 소유권
 
@@ -28,6 +28,8 @@
 docker compose -f infra/docker-compose.infra.yml up -d
 cp .env.example .env   # 값 채우기
 cd workspaces/decision-platform/spring-api && ./gradlew bootRun
+# 주의: gradle wrapper(gradlew)는 아직 커밋 전이다. S0.3(Initializr 생성물 반입) 후부터 동작한다.
+#       그 전에는 IntelliJ Gradle sync 또는 로컬 설치 gradle로 확인한다.
 ```
 
 ## 문서

@@ -38,7 +38,7 @@ app:
     ttl-hours: 12
   decision:
     valid-minutes: 10              # validUntil
-  freshness:
+  freshness:                       # 유형별 매트릭스(명세서 4.2.2)의 일부만 우선 정의 — 신호/공시/risk_snapshot 항목은 S2.3에서 확장
     price-seconds: 300
     balance-seconds: 60
     news-hours: 24

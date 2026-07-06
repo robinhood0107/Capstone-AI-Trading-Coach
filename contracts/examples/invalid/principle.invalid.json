@@ -1,0 +1,17 @@
+{
+  "presetId": "balanced",
+  "title": "Invalid principle with an unknown rule",
+  "mode": "GUIDE",
+  "version": 1,
+  "rules": [
+    {
+      "ruleId": "unknown_guard",
+      "ruleType": "LOSS_LIMIT",
+      "metric": "daily_loss_rate",
+      "operator": ">=",
+      "threshold": -0.03,
+      "severity": "BLOCK",
+      "enabled": true
+    }
+  ]
+}

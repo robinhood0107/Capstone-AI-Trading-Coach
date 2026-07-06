@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "contracts/schemas/order_intent.schema.json",
+  "title": "Order Intent",
+  "description": "Order candidate payload evaluated by Decision API before any mock or live order submission.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["symbol", "side", "orderType", "quantity", "estimatedAmount", "timeframe", "strategyId"],
+  "anyOf": [
+    {
+      "required": ["estimatedPrice"]
+    },
+    {
+      "required": ["price"]
+    }
+  ],
+  "properties": {
+    "symbol": {
+      "type": "string",
+      "pattern": "^[0-9A-Z._:-]{1,20}$"
+    },
+    "side": {
+      "type": "string",
+      "enum": ["BUY", "SELL"]
+    },
+    "orderType": {
+      "type": "string",
+      "enum": ["MARKET", "LIMIT"],
+      "description": "P0 결정: API 5.1 예시는 MARKET이며 LIMIT은 price alias 호환성을 위해 포함한다."
+    },
+    "quantity": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "estimatedPrice": {
+      "type": "number",
+      "minimum": 0,
+      "description": "P0 결정: 주문 평가 payload의 canonical 가격 필드다."
+    },
+    "price": {
+      "type": "number",
+      "minimum": 0,
+      "description": "P0 결정: API 17.2 표현과의 호환 alias다. 새 예시와 새 코드는 estimatedPrice를 사용한다."
+    },
+    "estimatedAmount": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "timeframe": {
+      "type": "string",
+      "enum": ["1d", "60m"]
+    },
+    "strategyId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    }
+  }
+}

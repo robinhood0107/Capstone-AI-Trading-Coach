@@ -1,17 +1,20 @@
 plugins {
-    kotlin("jvm") version "2.0.20"
-    kotlin("plugin.spring") version "2.0.20"   // @Service 등 all-open
-    kotlin("plugin.jpa") version "2.0.20"      // 엔티티 no-arg 생성자
-    id("org.springframework.boot") version "3.3.4"
-    id("io.spring.dependency-management") version "1.1.6"
-    id("org.jlleitschuh.gradle.ktlint") version "12.1.1"
+    kotlin("jvm") version "2.4.0"
+    kotlin("plugin.spring") version "2.4.0"   // @Service 등 all-open
+    kotlin("plugin.jpa") version "2.4.0"      // 엔티티 no-arg 생성자
+    id("org.springframework.boot") version "4.1.0"
+    id("io.spring.dependency-management") version "1.1.7"
+    id("org.jlleitschuh.gradle.ktlint") version "14.2.0" // 13.1.0+ Gradle 9, 14.0.1+ Gradle 9.1/Java 25 대응
 }
 
 group = "com.capstone"
 version = "0.0.1-SNAPSHOT"
 
 java {
-    sourceCompatibility = JavaVersion.VERSION_21
+    // toolchain: java/kotlin 컴파일 타깃을 한 곳에서 고정 (Gradle 공식 권장 — sourceCompatibility 단독은 Kotlin jvmTarget과 어긋날 수 있음)
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(25)
+    }
 }
 
 repositories {
@@ -20,39 +23,45 @@ repositories {
 
 dependencies {
     implementation(kotlin("reflect"))                                    // Spring이 Kotlin 클래스를 다루는 데 필요
-    implementation("com.fasterxml.jackson.module:jackson-module-kotlin") // data class 직렬화 — 없으면 no-arg 생성자 오류
-    implementation("org.springframework.boot:spring-boot-starter-web")
+    implementation("tools.jackson.module:jackson-module-kotlin")         // Spring Boot 4/Jackson 3 Kotlin module
+    implementation("org.springframework.boot:spring-boot-starter-webmvc")
     implementation("org.springframework.boot:spring-boot-starter-validation")
     implementation("org.springframework.boot:spring-boot-starter-data-jpa")
     implementation("org.springframework.boot:spring-boot-starter-data-redis") // Lettuce
     implementation("org.springframework.boot:spring-boot-starter-security")
     implementation("org.springframework.boot:spring-boot-starter-actuator")
-    implementation("org.springframework.kafka:spring-kafka")
+    implementation("org.springframework.boot:spring-boot-starter-aspectj")
+    implementation("org.springframework.boot:spring-boot-starter-kafka")
     implementation("org.flywaydb:flyway-core")
     implementation("org.flywaydb:flyway-database-postgresql")
     runtimeOnly("org.postgresql:postgresql")
     implementation("io.jsonwebtoken:jjwt-api:0.12.6")
     runtimeOnly("io.jsonwebtoken:jjwt-impl:0.12.6")
-    runtimeOnly("io.jsonwebtoken:jjwt-jackson:0.12.6")
-    implementation("io.github.resilience4j:resilience4j-spring-boot3:2.2.0")
-    implementation("net.javacrumbs.shedlock:shedlock-spring:5.16.0")
-    implementation("net.javacrumbs.shedlock:shedlock-provider-jdbc-template:5.16.0")
-    implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.5.0")
-    implementation("net.logstash.logback:logstash-logback-encoder:7.4")
+    runtimeOnly("io.jsonwebtoken:jjwt-gson:0.12.6")
+    implementation("io.github.resilience4j:resilience4j-spring-boot4:2.4.0")
+    implementation("net.javacrumbs.shedlock:shedlock-spring:7.7.0")                // 7.x가 Spring 7.0/Boot 4.x 테스트 대상
+    implementation("net.javacrumbs.shedlock:shedlock-provider-jdbc-template:7.7.0")
+    implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:3.0.3")
+    implementation("net.logstash.logback:logstash-logback-encoder:9.0")            // 9.0부터 Jackson 3(Boot 4 정렬)
     runtimeOnly("io.micrometer:micrometer-registry-prometheus")
     // gRPC client는 contracts codegen 모듈 의존 (추후 추가)
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("io.kotest:kotest-assertions-core:5.9.1")
-    testImplementation("io.mockk:mockk:1.13.12")
+    testImplementation("io.mockk:mockk:1.14.11")
     testImplementation("org.springframework.boot:spring-boot-testcontainers")
     testImplementation("org.testcontainers:postgresql")
     testImplementation("org.testcontainers:kafka")
-    testImplementation("com.tngtech.archunit:archunit-junit5:1.3.0")
+    testImplementation("com.tngtech.archunit:archunit-junit5:1.4.2") // 1.4.1+ Java 25 classfile(major 69) 지원
 }
 
 kotlin {
+    jvmToolchain(25)
     compilerOptions {
-        freeCompilerArgs.addAll("-Xjsr305=strict")
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_25)
+        freeCompilerArgs.addAll(
+            "-Xjsr305=strict",
+            "-Xannotation-default-target=param-property",
+        )
     }
 }
 

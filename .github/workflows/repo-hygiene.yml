@@ -32,6 +32,9 @@ jobs:
             ".gitignore"
             "docs/최종_프로젝트_명세서.md"
             "docs/API_명세서.md"
+            "docs/중간보고서_작성용_초기설계.md"
+            "docs/선물옵션_모의주문_확장_시나리오.md"
+            "docs/선물옵션_모의주문_확장_시나리오_API_명세서.md"
             "contracts/README.md"
             "infra/docker-compose.infra.yml"
             "infra/init/01-extensions.sql"
@@ -76,8 +79,17 @@ jobs:
           git check-ignore -q workspaces/return-engine/example.py
           git check-ignore -q workspaces/experience-dashboard/app/page.tsx
           git check-ignore -q artifacts/decision-platform/run-001/result.json
-          git check-ignore -q private-reference/example.md
           test -z "$(git ls-files private-reference)"
+
+          private_prefix="private-reference/"
+          private_suffix="\\.md"
+          git check-ignore -q "${private_prefix}agent/example.md"
+          git check-ignore -q "${private_prefix}study/CS개념/example.md"
+
+          if git grep -n -E "${private_prefix}[^[:space:]]+${private_suffix}" -- .; then
+            echo "Tracked files must not reference specific private markdown paths." >&2
+            exit 1
+          fi
 
       - name: Secret scan
         uses: gitleaks/gitleaks-action@v2

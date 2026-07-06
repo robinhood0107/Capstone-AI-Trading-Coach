@@ -1,14 +1,28 @@
 # PR 체크리스트
 
+## 한영 요약 / Bilingual Summary
+
+KR:
+
+EN:
+
+## 연결 항목 / Links
+
+- Issue:
+- Related PR:
+- Commit references:
+
 ## 변경 범위
 
-- [ ] 런타임 기능 구현이 아니라 repo hygiene / 문서 / 초기 설정 변경이다.
+- [ ] 이 PR의 범위가 `AGENTS.md`의 "현재 단계"에서 허용하는 변경과 일치한다.
 - [ ] `workspaces/return-engine/` 또는 `workspaces/experience-dashboard/`의 placeholder 경계를 침범하지 않았다.
 - [ ] 계약 변경이 있다면 `contracts/changes/`에 이유와 영향 범위를 기록했다.
+- [ ] 관련 Issue/PR/commit을 `#<번호>` 형식으로 연결했다. 닫는 이슈가 있으면 `Closes #<번호>`를 사용했다.
 
 ## 문서와 규칙
 
 - [ ] `AGENTS.md` 규칙을 확인했다.
+- [ ] Issue와 PR 제목/본문을 한국어와 영어로 모두 작성했다.
 - [ ] 관련 기준 문서(`최종_프로젝트_명세서`, `API_명세서`)를 확인했다.
 - [ ] README 또는 docs 링크가 깨지지 않는다.
 

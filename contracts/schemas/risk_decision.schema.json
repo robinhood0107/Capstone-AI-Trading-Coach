@@ -1,0 +1,146 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "contracts/schemas/risk_decision.schema.json",
+  "title": "Risk Decision",
+  "description": "Decision API data payload produced by RiskEngine after combining order intent, principle, model signal, and risk context.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["decision", "canSubmitOrder", "validUntil", "violations", "riskSummary", "signalSummary", "explanation"],
+  "properties": {
+    "decisionId": {
+      "type": "string",
+      "pattern": "^dec_[A-Za-z0-9_-]+$"
+    },
+    "decision": {
+      "type": "string",
+      "enum": ["ALLOW", "WARN", "BLOCK", "HOLD"]
+    },
+    "mode": {
+      "type": "string",
+      "enum": ["GUIDE", "STRICT"]
+    },
+    "canSubmitOrder": {
+      "type": "boolean"
+    },
+    "validUntil": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "violations": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/violation"
+      }
+    },
+    "riskSummary": {
+      "$ref": "#/$defs/riskSummary"
+    },
+    "signalSummary": {
+      "$ref": "#/$defs/signalSummary"
+    },
+    "explanation": {
+      "$ref": "#/$defs/explanation"
+    }
+  },
+  "$defs": {
+    "violation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ruleId", "severity", "message", "metricValue", "threshold"],
+      "properties": {
+        "ruleId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "severity": {
+          "type": "string",
+          "enum": ["WARN", "BLOCK"]
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        },
+        "metricValue": {
+          "type": ["number", "null"]
+        },
+        "threshold": {
+          "type": ["number", "null"]
+        }
+      }
+    },
+    "riskSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mdd", "var95", "cvar95", "hmmRegime", "regimeProbability"],
+      "properties": {
+        "mdd": {
+          "type": "number"
+        },
+        "var95": {
+          "type": "number"
+        },
+        "cvar95": {
+          "type": "number"
+        },
+        "hmmRegime": {
+          "type": "string",
+          "enum": ["NORMAL", "SIDEWAYS", "HIGH_VOLATILITY", "RISK_OFF", "RISK_ON"],
+          "description": "P0 결정: API 5.1, 6.1, 8.1 예시의 HMM regime 표현을 함께 수용한다."
+        },
+        "regimeProbability": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    },
+    "signalSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["finalSignal", "confidence", "lstmSignal", "lightgbmSignal", "newsSentiment"],
+      "properties": {
+        "finalSignal": {
+          "type": "string",
+          "enum": ["BUY_STRONG", "BUY_WEAK", "BUY", "HOLD", "SELL", "SELL_WEAK", "SELL_STRONG"],
+          "description": "P0 결정: API 5.1의 BUY_WEAK와 Signal API의 BUY/HOLD/SELL 계열을 함께 수용한다."
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "lstmSignal": {
+          "type": "string",
+          "enum": ["BUY", "SELL", "HOLD"]
+        },
+        "lightgbmSignal": {
+          "type": "string",
+          "enum": ["BUY", "SELL", "HOLD"]
+        },
+        "newsSentiment": {
+          "type": "number",
+          "minimum": -1,
+          "maximum": 1
+        }
+      }
+    },
+    "explanation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["shortText", "citationIds"],
+      "properties": {
+        "shortText": {
+          "type": "string",
+          "minLength": 1
+        },
+        "citationIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  }
+}

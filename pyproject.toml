@@ -1,0 +1,8 @@
+[project]
+name = "capstone-ai-trading-coach-contracts"
+version = "0.1.0"
+description = "Contract validation tools for Capstone AI Trading Coach."
+requires-python = ">=3.11"
+dependencies = [
+    "jsonschema[format]>=4.25,<5",
+]

@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "contracts/schemas/principle.schema.json",
+  "title": "Principle",
+  "description": "Structured investment principle payload shared across Decision Platform, Return Engine backtests, and Dashboard UI.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["presetId", "title", "mode", "version", "rules"],
+  "properties": {
+    "principleId": {
+      "type": "string",
+      "pattern": "^prc_[A-Za-z0-9_-]+$"
+    },
+    "presetId": {
+      "type": "string",
+      "enum": ["conservative", "balanced", "aggressive"]
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "mode": {
+      "type": "string",
+      "enum": ["GUIDE", "STRICT"]
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "expectedVersion": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "status": {
+      "type": "string",
+      "enum": ["DRAFT", "ACTIVE", "ARCHIVED", "DEPRECATED"],
+      "description": "P0 결정: API 응답 예시의 ACTIVE와 변경 절차의 DEPRECATED 상태를 함께 수용한다."
+    },
+    "rules": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/rule"
+      }
+    }
+  },
+  "$defs": {
+    "rule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ruleId", "ruleType", "metric", "operator", "threshold", "severity", "enabled"],
+      "properties": {
+        "ruleId": {
+          "type": "string",
+          "enum": [
+            "max_position_per_asset",
+            "max_gold_etf_etn_weight",
+            "max_single_order_amount",
+            "daily_loss_guard",
+            "mdd_guard",
+            "max_daily_orders",
+            "negative_news_guard",
+            "disclosure_risk_guard"
+          ]
+        },
+        "ruleType": {
+          "type": "string",
+          "enum": [
+            "POSITION_LIMIT",
+            "ORDER_SIZE",
+            "LOSS_LIMIT",
+            "DRAWDOWN_LIMIT",
+            "TRADING_FREQUENCY",
+            "NEWS_GUARD",
+            "DISCLOSURE_GUARD"
+          ],
+          "description": "P0 결정: RuleEngine 내부 분류명은 API 4장 ruleId 표를 기준으로 둔다."
+        },
+        "metric": {
+          "type": "string",
+          "enum": [
+            "asset_weight",
+            "gold_etf_etn_weight",
+            "order_amount_krw",
+            "daily_loss_rate",
+            "mdd",
+            "daily_order_count",
+            "negative_news_score",
+            "disclosure_risk_score"
+          ]
+        },
+        "operator": {
+          "type": "string",
+          "enum": ["<=", ">="]
+        },
+        "threshold": {
+          "type": "number"
+        },
+        "severity": {
+          "type": "string",
+          "enum": ["ALLOW", "WARN", "BLOCK"],
+          "description": "P0 결정: 부정 뉴스 대응의 허용/경고/차단 UI와 RiskEngine 차단 수준을 함께 표현한다."
+        },
+        "enabled": {
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}

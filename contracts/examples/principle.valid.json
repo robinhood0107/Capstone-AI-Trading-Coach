@@ -1,0 +1,28 @@
+{
+  "principleId": "prc_001",
+  "presetId": "balanced",
+  "title": "Balanced domestic stock and gold ETF principle",
+  "mode": "GUIDE",
+  "version": 1,
+  "status": "ACTIVE",
+  "rules": [
+    {
+      "ruleId": "daily_loss_guard",
+      "ruleType": "LOSS_LIMIT",
+      "metric": "daily_loss_rate",
+      "operator": ">=",
+      "threshold": -0.03,
+      "severity": "BLOCK",
+      "enabled": true
+    },
+    {
+      "ruleId": "max_single_order_amount",
+      "ruleType": "ORDER_SIZE",
+      "metric": "order_amount_krw",
+      "operator": "<=",
+      "threshold": 500000,
+      "severity": "BLOCK",
+      "enabled": true
+    }
+  ]
+}

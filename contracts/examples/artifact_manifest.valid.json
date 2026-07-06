@@ -1,0 +1,24 @@
+{
+  "runId": "2026-06-23-run-001",
+  "producerWorkspace": "return-engine",
+  "schemaVersion": "1.0.0",
+  "createdAt": "2026-06-23T10:00:00+09:00",
+  "universeId": "kr-largecap-gold-v1",
+  "period": {
+    "trainStart": "2022-01-01",
+    "trainEnd": "2025-12-31",
+    "testStart": "2026-01-01",
+    "testEnd": "2026-06-20"
+  },
+  "timeframe": ["1d", "60m"],
+  "files": [
+    {
+      "name": "lstm_signals.parquet",
+      "schema": "contracts/schemas/signal.schema.json",
+      "rowCount": 1200,
+      "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "description": "LSTM signal by symbol/date/timeframe"
+    }
+  ],
+  "status": "VALIDATED"
+}

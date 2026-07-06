@@ -1,0 +1,51 @@
+{
+  "symbol": "005930",
+  "producer": "COMPOSITE",
+  "sourceWorkspace": "decision-platform",
+  "asOf": "2026-06-23T15:30:00+09:00",
+  "timeframe": "1d",
+  "finalSignal": "HOLD",
+  "confidence": 0.62,
+  "predictedReturn": 0.003,
+  "featureSummary": ["model_disagreement", "hmm_sideways"],
+  "modelReportId": "model_report_return_engine_20260623",
+  "ruleBaseline": {
+    "producer": "RULE_BASELINE",
+    "sourceWorkspace": "return-engine",
+    "asOf": "2026-06-23T15:30:00+09:00",
+    "signal": "HOLD",
+    "confidence": 0.51,
+    "predictedReturn": 0.001,
+    "featureSummary": ["ma20_above_ma60", "rsi_neutral"],
+    "rulesTriggered": ["ma20_above_ma60", "rsi_neutral"]
+  },
+  "lstm": {
+    "producer": "LSTM",
+    "sourceWorkspace": "return-engine",
+    "asOf": "2026-06-23T15:30:00+09:00",
+    "signal": "BUY",
+    "confidence": 0.57,
+    "predictedReturn": 0.008,
+    "featureSummary": ["close_sequence_60", "volume_sequence_60"]
+  },
+  "lightgbm": {
+    "producer": "LIGHTGBM",
+    "sourceWorkspace": "decision-platform",
+    "asOf": "2026-06-23T15:30:00+09:00",
+    "signal": "HOLD",
+    "confidence": 0.66,
+    "predictedReturn": 0.003,
+    "featureSummary": ["momentum_20d", "volatility_20d", "news_sentiment_3d"],
+    "featureImportanceTop": ["momentum_20d", "volatility_20d", "news_sentiment_3d"]
+  },
+  "newsSentiment": {
+    "score": 0.14,
+    "articleCount": 18,
+    "summaryArtifactId": "news_sum_005930_20260623",
+    "conflictFlag": false
+  },
+  "hmmRegime": {
+    "state": "SIDEWAYS",
+    "probability": 0.52
+  }
+}

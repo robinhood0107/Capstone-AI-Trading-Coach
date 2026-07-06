@@ -1,0 +1,24 @@
+{
+  "decision": "APPROVE",
+  "canSubmitOrder": true,
+  "validUntil": "2026-06-23T10:10:00+09:00",
+  "violations": [],
+  "riskSummary": {
+    "mdd": -0.081,
+    "var95": -0.024,
+    "cvar95": -0.037,
+    "hmmRegime": "HIGH_VOLATILITY",
+    "regimeProbability": 0.71
+  },
+  "signalSummary": {
+    "finalSignal": "BUY_WEAK",
+    "confidence": 0.58,
+    "lstmSignal": "BUY",
+    "lightgbmSignal": "HOLD",
+    "newsSentiment": 0.12
+  },
+  "explanation": {
+    "shortText": "Invalid decision enum should fail.",
+    "citationIds": ["cit_001"]
+  }
+}

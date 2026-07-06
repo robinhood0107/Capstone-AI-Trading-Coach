@@ -1,0 +1,34 @@
+{
+  "decisionId": "dec_001",
+  "decision": "WARN",
+  "mode": "GUIDE",
+  "canSubmitOrder": true,
+  "validUntil": "2026-06-23T10:10:00+09:00",
+  "violations": [
+    {
+      "ruleId": "high_volatility_guard",
+      "severity": "WARN",
+      "message": "Recent 20-day annualized volatility is above the principle threshold.",
+      "metricValue": 0.42,
+      "threshold": 0.35
+    }
+  ],
+  "riskSummary": {
+    "mdd": -0.081,
+    "var95": -0.024,
+    "cvar95": -0.037,
+    "hmmRegime": "HIGH_VOLATILITY",
+    "regimeProbability": 0.71
+  },
+  "signalSummary": {
+    "finalSignal": "BUY_WEAK",
+    "confidence": 0.58,
+    "lstmSignal": "BUY",
+    "lightgbmSignal": "HOLD",
+    "newsSentiment": 0.12
+  },
+  "explanation": {
+    "shortText": "Order can continue in Guide mode, but volatility warning is active.",
+    "citationIds": ["cit_001", "cit_002"]
+  }
+}

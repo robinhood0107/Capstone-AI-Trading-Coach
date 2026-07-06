@@ -25,11 +25,15 @@
 현재 레포는 초기 공개 스캐폴드 단계다. 상세 개인 참고 노트는 GitHub에 올리지 않고 로컬 `private-reference/` 폴더에서만 관리한다.
 
 ```bash
-docker compose -f infra/docker-compose.infra.yml up -d
-cp .env.example .env   # 값 채우기
-cd workspaces/decision-platform/spring-api && ./gradlew bootRun
-# 주의: gradle wrapper(gradlew)는 아직 커밋 전이다. S0.3(Initializr 생성물 반입) 후부터 동작한다.
-#       그 전에는 IntelliJ Gradle sync 또는 로컬 설치 gradle로 확인한다.
+cp .env.example .env
+# .env에서 최소 POSTGRES_PASSWORD 값을 채운 뒤 실행한다. 실제 API key는 커밋하지 않는다.
+docker compose --env-file .env -f infra/docker-compose.infra.yml up -d
+docker compose --env-file .env -f infra/docker-compose.infra.yml ps
+docker compose --env-file .env -f infra/docker-compose.infra.yml exec postgres psql -U app -d trading -c "\dx"
+
+cd workspaces/decision-platform/spring-api
+./gradlew tasks
+./gradlew build
 ```
 
 ## 문서

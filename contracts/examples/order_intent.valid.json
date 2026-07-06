@@ -1,0 +1,10 @@
+{
+  "symbol": "005930",
+  "side": "BUY",
+  "orderType": "MARKET",
+  "quantity": 10,
+  "estimatedPrice": 72000,
+  "estimatedAmount": 720000,
+  "timeframe": "1d",
+  "strategyId": "strategy_lstm_lgbm_001"
+}

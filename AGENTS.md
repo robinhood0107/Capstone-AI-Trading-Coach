@@ -12,15 +12,22 @@
 2. `docs/API_명세서.md`
 3. 공개 문서에 명시된 계약과 workspace 경계
 
-개인 참고 문서는 `private-reference/`에만 둔다. 이 폴더는 `.gitignore` 대상이며 GitHub 커밋에 포함하지 않는다.
+로컬 private notes는 `private-reference/`에만 둔다. 이 폴더는 `.gitignore` 대상이며 GitHub 커밋에 포함하지 않는다.
+
+`private-reference/agent/`는 구현 세션용 로컬 보조 자료다. 에이전트는 사용자가 명시하거나 작업상 필요할 때만 이 폴더를 참고한다. `private-reference/study/CS개념/`은 사용자 학습용 자료이며 구현 입력이 아니다. 에이전트는 이 학습용 문서를 자동으로 읽지 않고, 관련 주제가 나왔을 때 사용자에게 읽어보라고 제안만 한다.
 
 ## 현재 단계
 
-현재 레포는 GitHub 초기 환경 세팅 단계다.
+**현재 단계: STAGE 0 — GitHub 초기 환경 세팅.** 단계가 바뀌면 이 절과 PR 템플릿을 함께 갱신한다(단계 전환 자체가 하나의 PR).
 
-- 런타임 기능 구현을 새로 추가하지 않는다.
-- Gradle wrapper, `uv.lock`, Spring/Python 실제 health 구현, full build CI는 S0.1 walking skeleton 이후 추가한다.
-- 지금 허용되는 변경은 repo hygiene, GitHub 템플릿, 규칙 파일, README 수준의 초기 설정이다.
+| 단계 | 허용되는 변경 | 전환 조건 |
+|---|---|---|
+| STAGE 0 (현재) | repo hygiene, GitHub 템플릿, 규칙 파일, README, 설정 스캐폴드, Java 25 LTS 스택 기준 정렬 | 로컬에서 작업계획 5.0.6 Definition of Ready(JDK 25 기준) 통과 |
+| STAGE 1 — walking skeleton (S0.1~S0.4) | Gradle wrapper 9.5.0, `uv.lock`, Application/health 구현, Flyway V1, 공통 규약(envelope/JWT/idempotency) | S0.4 DoD 통과 |
+| STAGE 2 — 기능 구현 (S1~S8) | 세션계획 8장의 세션 단위 구현 | 세션별 DoD |
+
+- STAGE 0에서는 런타임 기능 구현을 새로 추가하지 않는다.
+- 어느 단계든 다른 팀원 workspace placeholder 경계와 `contracts/` 변경 절차는 동일하게 적용된다.
 
 ## 워크스페이스 경계
 
@@ -45,7 +52,23 @@
 - 작업 브랜치 이름은 `feature/*`, `fix/*`, `docs/*`, `infra/*`, `experiment/*`를 사용한다.
 - 커밋 메시지는 `<type>(<session>): 요약` 형식을 권장한다. 예: `chore(S0): repo hygiene 설정`.
 - PR에는 문서/API/계약 변경 여부, secret 포함 여부, 다른 팀원 workspace 수정 여부를 명시한다.
-- 현재 CI는 비파괴 repo hygiene만 수행한다. Kotlin/Python 전체 빌드 CI는 S0.1 이후 추가한다.
+- 모든 Issue와 PR 제목/본문은 한국어와 영어를 함께 작성한다. 최소한 `KR:`와 `EN:` 구역을 두어 같은 의도를 양쪽 언어로 확인 가능해야 한다.
+- 서로 연관된 Issue, PR, commit은 GitHub 번호로 연결한다. PR 본문에는 `Closes #<issue>` 또는 `Refs #<issue>`를 쓰고, 해당 변경을 직접 수행한 commit 메시지에도 관련 번호(`#<issue>` 또는 `#<pr>`)를 포함한다.
+
+## CI 로드맵 — 언제 무엇을 추가하는가
+
+현재 CI는 `repo-hygiene.yml`(필수 경로/compose 검증/ignore 규칙/secret scan) 하나다. 아래 시점이 되면 **해당 세션의 DoD에 CI job 추가가 포함된 것으로 간주**하고 job을 늘린다. 각 job은 별도 workflow 파일로 추가한다(hygiene은 항상 유지).
+
+| 추가 시점(세션) | 추가할 CI job | 내용 |
+|---|---|---|
+| S0.3 완료 시 | `kotlin-build.yml` | Gradle wrapper 9.5.0 커밋 후 JDK 25에서 `./gradlew ktlintCheck build` (test 포함, Testcontainers는 ubuntu 러너 Docker 사용) |
+| S0.4 완료 시 | kotlin-build에 통합 | Flyway clean 마이그레이션 + unique 제약 Testcontainers 테스트가 test 단계에서 실행됨을 확인 |
+| S1.4 완료 시 | `python-ci.yml` | `uv sync --frozen` + `uv run ruff check` + `uv run pytest` (uv.lock 커밋 필수) |
+| S0.2 완료 시 | `contracts-ci.yml` | `contracts/examples/*` JSON Schema validation + negative test |
+| S2.1(첫 컨트롤러) 완료 시 | contracts-ci에 통합 | springdoc `generateOpenApiDocs` 출력과 `contracts/openapi/` diff — 불일치 시 실패 (API 명세서 17.4) |
+| S7.1 완료 시 | kotlin-build에 통합 | Testcontainers Kafka 통합 테스트(outbox publish/manual commit) 포함 확인 |
+| M4 직전 | `demo-smoke.yml` (수동 트리거) | compose up → demo_seed → 핵심 E2E 3콜(로그인/원칙/평가) smoke |
+| 시간 부족 시(단일 대비책) | — | 작업계획 5.10: contracts+secret scan만 CI에 남기고 kotlin/python은 로컬 pre-push 훅으로 강등 |
 
 ## gstack / Codex / Claude 사용 규칙
 
@@ -54,6 +77,13 @@
 - 사용자가 Codex native browser, web search, connector, app-specific tool을 명시하면 그 명시를 우선한다.
 - Claude 전용 설정(`.claude` hook, Claude-only MCP, Claude-only command)은 사용자가 별도로 요청하기 전까지 추가하지 않는다.
 - `CLAUDE.md`는 이 파일을 따르는 짧은 연결 문서로만 유지한다.
+- 구현 세션을 시작할 때는 로컬 `private-reference/agent/`의 AI 협업 컨텍스트 프라이머 문서(있는 경우)를 함께 확인해 현재 stage, 읽을 문서, 다음 프롬프트, 사용자가 해야 할 일을 정리한다.
+
+## Java/Kotlin/Spring 기준 스택
+
+- JVM은 **JDK 25 LTS**로 고정한다. JDK 26은 최신 feature release지만 이 프로젝트의 기준은 최신 LTS다.
+- Spring 판단 계층은 **Spring Boot 4.1.0 + Spring Framework 7.0.8+ + Kotlin 2.4.0 + Gradle 9.5.0** 조합으로 맞춘다.
+- Java preview 기능은 사용하지 않는다. `--enable-preview`를 빌드, 테스트, 실행 옵션에 추가하지 않는다.
 
 ## 작업 방식
 

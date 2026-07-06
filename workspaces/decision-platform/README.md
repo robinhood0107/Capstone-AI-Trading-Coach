@@ -17,5 +17,5 @@ python-services/        # uv 프로젝트 — LightGBM/RAG/금융공학/데이�
 
 1. `docker compose -f ../../infra/docker-compose.infra.yml up -d`
 2. `cp ../../.env.example ../../.env` 후 값 채우기
-3. `spring-api/`는 아직 [start.spring.io](https://start.spring.io) 생성물이 비어 있는 상태다. IntelliJ에서 Gradle-Kotlin / `com.capstone` / `spring-api` / Spring Boot 3.3.x / Java 21 + (Web, Validation, JPA, Redis, Security, Actuator, Flyway, Kafka, Testcontainers)로 생성한 zip을 이 폴더에 풀고, `build.gradle.kts`/`application.yml`은 이미 커밋된 버전으로 교체한다 (gradle wrapper는 네트워크가 있는 IDE에서 생성해야 하므로 여기서는 커밋하지 않음).
+3. `spring-api/`는 아직 [start.spring.io](https://start.spring.io) 생성물이 비어 있는 상태다. IntelliJ에서 Gradle-Kotlin / `com.capstone` / `spring-api` / Spring Boot 4.1.0 / Java 25 + (Web, Validation, JPA, Redis, Security, Actuator, Flyway, Kafka, Testcontainers)로 생성한 zip을 이 폴더에 풀고, `build.gradle.kts`/`application.yml`은 이미 커밋된 버전으로 교체한다 (gradle wrapper는 네트워크가 있는 IDE에서 생성해야 하므로 여기서는 커밋하지 않음).
 4. `python-services/`는 `uv sync`로 바로 실행 가능.

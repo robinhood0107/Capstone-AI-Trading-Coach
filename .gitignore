@@ -14,7 +14,7 @@ private-reference/
 out/
 *.class
 *.jar
-!gradle/wrapper/gradle-wrapper.jar
+!**/gradle/wrapper/gradle-wrapper.jar
 
 # --- Python (workspaces/decision-platform/python-services) ---
 .venv/

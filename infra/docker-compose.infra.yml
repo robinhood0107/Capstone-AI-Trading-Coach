@@ -18,6 +18,11 @@ services:
     image: redis:7.2-alpine
     command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
     ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   kafka:
     image: apache/kafka:3.7.0
@@ -35,7 +40,7 @@ services:
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"   # topic은 명시적으로만 생성
 
   kafka-ui:
-    image: provectuslabs/kafka-ui:latest
+    image: provectuslabs/kafka-ui:v0.7.2   # latest 금지 — 재현성(작업계획 4장 버전 고정 원칙)
     profiles: ["kafka"]
     ports: ["8081:8080"]
     environment:

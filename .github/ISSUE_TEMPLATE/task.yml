@@ -1,13 +1,18 @@
 name: Task
 description: 세션 단위 작업을 기록합니다.
-title: "[Task] "
+title: "[Task] KR / EN - "
 labels: ["task"]
 body:
+  - type: markdown
+    attributes:
+      value: |
+        Issue 제목과 본문은 한국어와 영어를 함께 작성합니다.
+        Write both the issue title and body in Korean and English.
   - type: input
     id: session
     attributes:
       label: Session ID
-      description: 작업 세션 ID를 적습니다. 예: S0.1
+      description: "작업 세션 ID를 적습니다. 예: S0.1"
       placeholder: S0.1
     validations:
       required: true
@@ -24,6 +29,24 @@ body:
         - infra
     validations:
       required: true
+  - type: textarea
+    id: bilingual_summary
+    attributes:
+      label: 한영 요약 / Bilingual summary
+      description: 같은 작업 의도를 한국어와 영어로 모두 적습니다.
+      placeholder: |
+        KR:
+        EN:
+    validations:
+      required: true
+  - type: input
+    id: linked_refs
+    attributes:
+      label: 연결 Issue/PR / Linked issues or PRs
+      description: "관련 항목을 #번호 형식으로 적습니다. 예: Refs #12, Blocks #13"
+      placeholder: "Refs #"
+    validations:
+      required: false
   - type: textarea
     id: references
     attributes:

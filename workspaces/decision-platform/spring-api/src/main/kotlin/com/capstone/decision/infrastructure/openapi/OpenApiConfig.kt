@@ -8,14 +8,14 @@ import org.springdoc.core.models.GroupedOpenApi
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 
-// 왜: swagger-ui 수동 smoke와 이후 OpenAPI diff CI가 같은 bearer/group 정의를 보게 한다.
+// swagger-ui 수동 smoke와 이후 OpenAPI diff CI가 같은 bearer/group 정의를 보게 한다.
 @Configuration
 class OpenApiConfig {
     @Bean
     fun openApi(): OpenAPI =
         OpenAPI()
             .components(
-                // 왜: Authorize 버튼이 JWT Bearer 토큰을 표준 방식으로 주입하도록 scheme을 명시한다.
+                // Authorize 버튼이 JWT Bearer 토큰을 표준 방식으로 주입하도록 scheme을 명시한다.
                 Components().addSecuritySchemes(
                     "bearerAuth",
                     SecurityScheme()
@@ -27,7 +27,7 @@ class OpenApiConfig {
 
     @Bean
     fun publicApi(): GroupedOpenApi =
-        // 왜: 프론트가 사용하는 일반 API 문서를 admin 운영 API와 분리해 탐색성을 높인다.
+        // 프론트가 사용하는 일반 API 문서를 admin 운영 API와 분리해 탐색성을 높인다.
         GroupedOpenApi
             .builder()
             .group("public")
@@ -37,7 +37,7 @@ class OpenApiConfig {
 
     @Bean
     fun adminApi(): GroupedOpenApi =
-        // 왜: ADMIN 전용/운영성 endpoint는 별도 그룹으로 권한 경계를 눈에 보이게 한다.
+        // ADMIN 전용/운영성 endpoint는 별도 그룹으로 권한 경계를 눈에 보이게 한다.
         GroupedOpenApi
             .builder()
             .group("admin")

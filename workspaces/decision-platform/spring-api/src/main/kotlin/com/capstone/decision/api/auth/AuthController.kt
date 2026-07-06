@@ -12,7 +12,7 @@ import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 import java.time.OffsetDateTime
 
-// 왜: S0.3에서는 실제 회원가입 대신 명세의 demo 계정만 토큰 발급 경로로 노출한다.
+// S0.3에서는 실제 회원가입 대신 명세의 demo 계정만 토큰 발급 경로로 노출한다.
 @RestController
 @RequestMapping("/api/v1/auth")
 class AuthController(
@@ -23,7 +23,7 @@ class AuthController(
     fun login(
         @Valid @RequestBody request: LoginRequest,
     ): LoginResponse {
-        // 왜: 실패한 로그인도 공통 envelope의 UNAUTHORIZED로 흘려 프론트 분기 규칙을 고정한다.
+        // 실패한 로그인도 공통 envelope의 UNAUTHORIZED로 흘려 프론트 분기 규칙을 고정한다.
         val account =
             demoAccountService.authenticate(
                 username = request.username,
@@ -44,7 +44,7 @@ class AuthController(
     }
 }
 
-// 왜: 로그인 DTO에서 빈 값은 controller 진입부에서 400 envelope로 검증한다.
+// 로그인 DTO에서 빈 값은 controller 진입부에서 400 envelope로 검증한다.
 data class LoginRequest(
     @field:NotBlank
     val username: String,
@@ -52,7 +52,7 @@ data class LoginRequest(
     val password: String,
 )
 
-// 왜: 토큰과 사용자 표시 정보를 함께 내려 swagger/manual smoke에서 바로 Authorize할 수 있게 한다.
+// 토큰과 사용자 표시 정보를 함께 내려 swagger/manual smoke에서 바로 Authorize할 수 있게 한다.
 data class LoginResponse(
     val accessToken: String,
     val tokenType: String,

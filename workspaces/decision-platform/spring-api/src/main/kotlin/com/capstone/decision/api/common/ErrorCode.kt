@@ -3,7 +3,7 @@ package com.capstone.decision.api.common
 import org.springframework.http.HttpStatus
 import org.springframework.http.HttpStatusCode
 
-// 왜: 명세의 오류 코드와 HTTP 상태 매핑을 한 곳에 모아 drift를 줄인다.
+// 명세의 오류 코드와 HTTP 상태 매핑을 한 곳에 모아 drift를 줄인다.
 enum class ErrorCode(
     val status: HttpStatusCode,
     val defaultMessage: String,

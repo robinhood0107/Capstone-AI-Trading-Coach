@@ -32,7 +32,7 @@ import tools.jackson.databind.ObjectMapper
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 
-// 왜: Redis를 실제로 띄워 idempotency TTL/replay가 mock이 아니라 저장소 기준으로 동작하는지 본다.
+// Redis를 실제로 띄워 idempotency TTL/replay가 mock이 아니라 저장소 기준으로 동작하는지 본다.
 @Testcontainers
 @SpringBootTest(
     properties = [
@@ -49,7 +49,7 @@ class IdempotencyIntegrationTest(
 
     @BeforeEach
     fun setUpMockMvc() {
-        // 왜: idempotency는 JWT 인증 뒤에만 적용되므로 Security filter chain을 테스트에 포함한다.
+        // idempotency는 JWT 인증 뒤에만 적용되므로 Security filter chain을 테스트에 포함한다.
         mockMvc =
             MockMvcBuilders
                 .webAppContextSetup(webApplicationContext)
@@ -57,7 +57,7 @@ class IdempotencyIntegrationTest(
                 .build()
     }
 
-    // 왜: 같은 요청 재시도는 controller를 다시 실행하지 않고 최초 응답을 그대로 돌려야 한다.
+    // 같은 요청 재시도는 controller를 다시 실행하지 않고 최초 응답을 그대로 돌려야 한다.
     @Test
     fun `same idempotency key and payload replays stored response`() {
         val token = login()
@@ -79,7 +79,7 @@ class IdempotencyIntegrationTest(
         assertEquals(first.bodyNode.at("/data/echo/symbol").stringValue(), "005930")
     }
 
-    // 왜: 같은 key로 다른 payload가 오면 중복 방지가 아니라 충돌로 처리해야 안전하다.
+    // 같은 key로 다른 payload가 오면 중복 방지가 아니라 충돌로 처리해야 안전하다.
     @Test
     fun `same idempotency key and different payload returns conflict envelope`() {
         val token = login()
@@ -104,7 +104,7 @@ class IdempotencyIntegrationTest(
             }
     }
 
-    // 왜: 24시간 보존 계약이 Redis TTL로 실제 설정되는지 확인한다.
+    // 24시간 보존 계약이 Redis TTL로 실제 설정되는지 확인한다.
     @Test
     fun `idempotency key is stored with a twenty four hour ttl`() {
         val token = login()
@@ -120,7 +120,7 @@ class IdempotencyIntegrationTest(
         assertTrue(ttlHours in 23..24, "expected Redis TTL close to 24h but was $ttlHours")
     }
 
-    // 왜: 인증 실패 요청은 idempotency 저장소에 흔적을 남기면 안 된다.
+    // 인증 실패 요청은 idempotency 저장소에 흔적을 남기면 안 된다.
     @Test
     fun `unauthenticated write request returns unauthorized before idempotency storage`() {
         mockMvc
@@ -142,7 +142,7 @@ class IdempotencyIntegrationTest(
         key: String,
         body: String,
     ): IdempotentHttpResponse {
-        // 왜: replay 비교를 위해 status/body/json node를 함께 보존한다.
+        // replay 비교를 위해 status/body/json node를 함께 보존한다.
         val response =
             mockMvc
                 .post("/api/v1/orders/test-idempotency") {
@@ -163,7 +163,7 @@ class IdempotencyIntegrationTest(
     }
 
     private fun login(): String {
-        // 왜: 테스트 idempotency 요청도 실제 demo JWT를 사용해 userId 기반 Redis key를 검증한다.
+        // 테스트 idempotency 요청도 실제 demo JWT를 사용해 userId 기반 Redis key를 검증한다.
         val response =
             mockMvc
                 .post("/api/v1/auth/login") {
@@ -180,7 +180,7 @@ class IdempotencyIntegrationTest(
     }
 
     companion object {
-        // 왜: CI와 로컬에서 동일한 Redis 버전으로 TTL/Hash 동작 차이를 줄인다.
+        // CI와 로컬에서 동일한 Redis 버전으로 TTL/Hash 동작 차이를 줄인다.
         @Container
         @JvmStatic
         val redis: GenericContainer<*> =
@@ -196,7 +196,7 @@ class IdempotencyIntegrationTest(
     }
 }
 
-// 왜: idempotency replay는 body byte 동등성까지 봐야 해서 응답 원문을 함께 담는다.
+// idempotency replay는 body byte 동등성까지 봐야 해서 응답 원문을 함께 담는다.
 private data class IdempotentHttpResponse(
     val status: Int,
     val body: String,
@@ -205,7 +205,7 @@ private data class IdempotentHttpResponse(
 
 @RestController
 private class TestOnlyIdempotencyController {
-    // 왜: nonce가 바뀌는 endpoint여야 replay가 실제 재실행인지 저장 응답인지 구분된다.
+    // nonce가 바뀌는 endpoint여야 replay가 실제 재실행인지 저장 응답인지 구분된다.
     @PostMapping("/api/v1/orders/test-idempotency")
     fun create(
         @RequestBody body: Map<String, Any>,

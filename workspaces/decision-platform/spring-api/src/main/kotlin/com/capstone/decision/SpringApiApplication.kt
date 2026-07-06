@@ -3,7 +3,7 @@ package com.capstone.decision
 import org.springframework.boot.autoconfigure.SpringBootApplication
 import org.springframework.boot.runApplication
 
-// 왜: Spring Boot 진입점을 루트 패키지에 두어 api/application/domain/infrastructure를 한 번에 스캔한다.
+// Spring Boot 진입점을 루트 패키지에 두어 api/application/domain/infrastructure를 한 번에 스캔한다.
 @SpringBootApplication
 class SpringApiApplication
 

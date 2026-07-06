@@ -18,7 +18,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders
 import org.springframework.web.context.WebApplicationContext
 import tools.jackson.databind.ObjectMapper
 
-// 왜: requestId 전파는 화면 기능보다 운영 추적성이 핵심이라 로그 출력까지 통합으로 검증한다.
+// requestId 전파는 화면 기능보다 운영 추적성이 핵심이라 로그 출력까지 통합으로 검증한다.
 @SpringBootTest(
     properties = [
         "spring.autoconfigure.exclude=org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration,org.springframework.boot.hibernate.autoconfigure.HibernateJpaAutoConfiguration,org.springframework.boot.data.jpa.autoconfigure.DataJpaRepositoriesAutoConfiguration,org.springframework.boot.kafka.autoconfigure.KafkaAutoConfiguration",
@@ -33,7 +33,7 @@ class RequestLoggingIntegrationTest(
 
     @BeforeEach
     fun setUpMockMvc() {
-        // 왜: MDC는 filter에서 채워지므로 MockMvc도 filter chain을 통과해야 로그를 검증할 수 있다.
+        // MDC는 filter에서 채워지므로 MockMvc도 filter chain을 통과해야 로그를 검증할 수 있다.
         mockMvc =
             MockMvcBuilders
                 .webAppContextSetup(webApplicationContext)
@@ -41,7 +41,7 @@ class RequestLoggingIntegrationTest(
                 .build()
     }
 
-    // 왜: JSON 로그에 requestId가 빠지면 장애 분석 때 envelope와 로그를 연결할 수 없다.
+    // JSON 로그에 requestId가 빠지면 장애 분석 때 envelope와 로그를 연결할 수 없다.
     @Test
     fun `json logs include request id from mdc`(output: CapturedOutput) {
         val token =

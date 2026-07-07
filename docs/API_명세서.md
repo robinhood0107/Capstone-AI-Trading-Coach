@@ -1076,7 +1076,7 @@ artifact 다운로드 URL은 공개 링크가 아니며 다른 API와 동일한 
 
 ## 10. Brokerage API
 
-KIS Mock 중심으로 구현하고, KIS Live는 고급해제/3단계 동의/재동의 조건을 충족할 때만 확장한다. S1.1의 KIS 작업은 Brokerage API가 아니라 MarketDataService 내부 구현이며, 주문·정정·취소·잔고 변경을 만들지 않는다.
+KIS Mock 중심으로 구현하고, KIS Live는 고급해제/3단계 동의/재동의 조건을 충족할 때만 확장한다. S1.1의 KIS 작업은 Brokerage API가 아니라 MarketDataService 내부 구현이며, 주문·정정·취소·잔고 변경을 만들지 않는다. KIS 전체 API 목록과 모의 지원 경계는 자동 생성 부록 `KIS_API_카탈로그.md`를 참조한다.
 
 Live 경계는 다음과 같이 분리한다.
 
@@ -1191,6 +1191,42 @@ Live 경계는 다음과 같이 분리한다.
 `GET /api/v1/consents?type=LIVE`
 
 동의 이력은 append-only로 저장하고, 원칙/주문 상한/universe/RiskEngine 기준이 변경되면 기존 동의는 무효 처리되어 재동의가 필요하다.
+
+### 10.7 체결 내역 조회 (S3 계약)
+
+`GET /api/v1/brokerage/mock/accounts/{accountId}/fills?from=YYYY-MM-DD&to=YYYY-MM-DD`
+
+KIS 주식일별주문체결조회(모의 `VTTC0081R`, 3개월 이전 `VTSC9215R`)를 매핑한다. 대시보드 계좌 뷰의 체결 목록 소스이며 S3에서 구현한다.
+
+### 10.8 매수가능 조회 (S3 계약)
+
+`GET /api/v1/brokerage/mock/accounts/{accountId}/buyable?symbol=005930&price=70000`
+
+KIS 매수가능조회(모의 `VTTC8908R`)를 매핑한다. 주문 제출 전 상한 검증과 대시보드 주문 패널의 입력 검증에 사용한다.
+
+### 10.9 계좌 지표 조회 (S3 계약)
+
+`GET /api/v1/brokerage/accounts/{accountId}/metrics`
+
+손익·자산현황 지표는 최종 명세서 12.5.1의 이중 소스 설계를 따른다. 응답은 지표 출처와 대조 상태를 항상 포함한다.
+
+```json
+{
+  "success": true,
+  "data": {
+    "source": "INTERNAL_CALC",
+    "asOf": "2026-07-07T15:30:00+09:00",
+    "totalAssets": 10000000,
+    "cashBalance": 4000000,
+    "unrealizedPnl": 120000,
+    "realizedPnl": 45000,
+    "reconciliation": { "status": "NOT_APPLICABLE" }
+  }
+}
+```
+
+- `source`: `INTERNAL_CALC`(v1 기본, INTERNAL_PAPER 원장 + KIS Mock 잔고/체결 스냅샷 계산) 또는 `KIS_LIVE_READONLY`(S3 이후 live read-only gate 통과 시)
+- `reconciliation.status`: `NOT_APPLICABLE`(단일 소스) \| `MATCHED` \| `MISMATCH`(두 소스 대조 불일치, 화면에서 구분 표시)
 
 ---
 

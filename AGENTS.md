@@ -18,15 +18,16 @@
 
 ## 현재 단계
 
-**현재 단계: STAGE 1 — walking skeleton (S0.1~S0.4).** 단계가 바뀌면 이 절과 PR 템플릿을 함께 갱신한다(단계 전환 자체가 하나의 PR).
+**현재 단계: STAGE 2 — 기능 구현 (S1~S8).** 단계가 바뀌면 이 절과 PR 템플릿을 함께 갱신한다(단계 전환 자체가 하나의 PR).
 
 | 단계 | 허용되는 변경 | 전환 조건 |
 |---|---|---|
 | STAGE 0 | repo hygiene, GitHub 템플릿, 규칙 파일, README, 설정 스캐폴드, Java 25 LTS 스택 기준 정렬 | 로컬에서 작업계획 5.0.6 Definition of Ready(JDK 25 기준) 통과 |
-| STAGE 1 — walking skeleton (S0.1~S0.4) (현재) | Gradle wrapper 9.5.0, `uv.lock`, Application/health 구현, Flyway V1, 공통 규약(envelope/JWT/idempotency) | S0.4 DoD 통과 |
-| STAGE 2 — 기능 구현 (S1~S8) | 세션계획 8장의 세션 단위 구현 | 세션별 DoD |
+| STAGE 1 — walking skeleton (S0.1~S0.4) | Gradle wrapper 9.5.0, `uv.lock`, Application/health 구현, Flyway V1, 공통 규약(envelope/JWT/idempotency) | S0.4 DoD 통과 |
+| STAGE 2 — 기능 구현 (S1~S8) (현재) | 세션계획 8장의 세션 단위 구현. S1.1은 KIS 시장데이터/OAuth/cache/backfill 전용이며 주문·계좌 변경은 제외 | 세션별 DoD |
 
 - STAGE 0에서는 런타임 기능 구현을 새로 추가하지 않는다.
+- STAGE 2에서도 세션 범위를 넘겨 구현하지 않는다. S1.1에서는 KIS OAuth 토큰, 국내주식 현재가, 국내주식 기간별시세, 선택적 휴장일 조회 같은 읽기 전용 시장데이터만 다룬다.
 - 어느 단계든 다른 팀원 workspace placeholder 경계와 `contracts/` 변경 절차는 동일하게 적용된다.
 
 ## 워크스페이스 경계
@@ -43,6 +44,8 @@
 - 커밋 가능한 환경 파일은 `.env.example`뿐이다.
 - `private-reference/` 아래 파일은 커밋하지 않는다.
 - API key, JWT secret, 계좌번호, 토큰, 주문/잔고 원본 로그는 코드, 문서, 테스트 fixture에 넣지 않는다.
+- KIS 원본 응답, 응답 헤더, access token, 계좌 식별자, raw/parquet/csv/jsonl 산출물은 커밋하지 않는다. 테스트에는 마스킹된 offline fixture만 둔다.
+- KIS Live 시장데이터 조회 계획과 KIS Live 주문 기능은 분리한다. 실계좌 주문·정정·취소는 S3 이후 별도 live-order gate가 명시되기 전까지 기본 비활성이다.
 - 로그 예시가 필요하면 값은 반드시 마스킹한다.
 - 커밋 전 gitleaks 또는 GitHub `repo-hygiene` workflow로 secret scan을 통과해야 한다.
 
@@ -96,6 +99,7 @@
 ## 작업 방식
 
 - 파일을 만들거나 수정하기 전 현재 상태를 확인한다.
+- 명세나 계획을 보강할 때는 새 문서 파일을 만들기보다 기존 문서(최종 프로젝트 명세서, API 명세서, 세션별 작업계획 등)에 절을 추가하는 방식을 우선한다.
 - 이미 있는 사용자 변경은 되돌리지 않는다.
 - 파괴적 명령(`git reset --hard`, broad delete, force push 등)은 사용자가 명확히 요청하지 않으면 실행하지 않는다.
 - 구현 작업을 시작하기 전에는 관련 명세와 workspace 경계를 확인한다.

@@ -8,6 +8,21 @@ http-client.private.env.json
 # --- Private reference notes (never commit) ---
 private-reference/
 
+# --- Generated/raw market data (never commit) ---
+/data/
+/data/kis/**
+workspaces/decision-platform/python-services/data/
+workspaces/decision-platform/python-services/app/data/kis/raw/
+workspaces/decision-platform/python-services/app/data/kis/parquet/
+workspaces/decision-platform/python-services/app/data/kis/output/
+workspaces/decision-platform/python-services/app/data/kis/.cache/
+workspaces/decision-platform/python-services/app/data/kis/**/*.parquet
+workspaces/decision-platform/python-services/app/data/kis/**/*.jsonl
+workspaces/decision-platform/python-services/app/data/kis/**/*.csv
+!workspaces/decision-platform/python-services/tests/
+!workspaces/decision-platform/python-services/tests/fixtures/
+!workspaces/decision-platform/python-services/tests/fixtures/**
+
 # --- Gradle / Kotlin / Java (workspaces/decision-platform/spring-api) ---
 .gradle/
 **/build/

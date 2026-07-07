@@ -1076,7 +1076,15 @@ artifact 다운로드 URL은 공개 링크가 아니며 다른 API와 동일한 
 
 ## 10. Brokerage API
 
-KIS Mock 중심으로 구현하고, KIS Live는 고급해제/3단계 동의/재동의 조건을 충족할 때만 확장한다.
+KIS Mock 중심으로 구현하고, KIS Live는 고급해제/3단계 동의/재동의 조건을 충족할 때만 확장한다. S1.1의 KIS 작업은 Brokerage API가 아니라 MarketDataService 내부 구현이며, 주문·정정·취소·잔고 변경을 만들지 않는다.
+
+Live 경계는 다음과 같이 분리한다.
+
+| 구분 | 의미 | 기본 상태 |
+|---|---|---|
+| Live read-only market data | 실전 Domain에서 현재가/기간별시세 같은 조회 API를 읽는 것 | S1.1에서 설정 가능하되 `KIS_OFFLINE=1` fixture smoke를 우선 |
+| Live account read-only | 실계좌 잔고/주문가능/체결조회 같은 민감 조회 | S3 catalog/Mock 검증 이후 별도 gate로 검토 |
+| Live trading | 실계좌 주문·정정·취소 | 기본 OFF. live-order gate, 3단계 동의, kill switch, audit/reconciliation 전까지 비활성 |
 
 ### 10.1 Mock 주문 제출
 
@@ -1384,6 +1392,7 @@ proto 파일은 `contracts/proto/`에 둔다.
 | `RagService.GenerateAnswer` | 15s | 재시도 없음 | 답변 실패 안내 |
 | `RagService.SearchSources` | 3s | 1회 재시도 | 검색 실패 표시 |
 | `BrokerageService.SubmitMockOrder`/`CancelOrder` | 5s | 재시도 금지(멱등 키 재요청만 허용) | `BROKERAGE_UNAVAILABLE` → 주문 보류 |
+| `MarketDataService.GetPriceSnapshot` | 2s | GET 조회 1회 재시도 | `DATA_STALE` 또는 `PYTHON_SERVICE_UNAVAILABLE` → HOLD |
 | `BacktestService.RunBacktest` | 동기 대기 금지, async job 전환 | - | async job 상태로 추적 |
 
 gRPC status 매핑: `UNAVAILABLE`/`DEADLINE_EXCEEDED` → `PYTHON_SERVICE_UNAVAILABLE`(503), `INVALID_ARGUMENT` → `VALIDATION_ERROR`(400), `NOT_FOUND` → `NOT_FOUND`(404). 주문 관련 실패는 항상 fail-closed로 수렴한다.
@@ -1450,6 +1459,19 @@ service MarketDataService {
 }
 ```
 
+S1.1의 KIS MarketDataService 구현 경계는 다음과 같다.
+
+| 항목 | 계약 |
+|---|---|
+| mode | `KIS_MODE=mock\|live`는 시장데이터 조회 Domain 선택이다. Live 주문 활성화와 무관하다 |
+| offline | `KIS_OFFLINE=1`이면 KIS 네트워크 호출 없이 sanitized fixture로 current/daily parser와 parquet upsert를 검증한다 |
+| token | `/oauth2/tokenP` token은 Redis `kis:token`에 저장하고 만료 5분 전부터 갱신한다. 유효기간은 1일이고 발급 후 6시간 이내 재요청 시 기존 토큰이 반환된다. 토큰 원문은 로그와 fixture에 남기지 않는다 |
+| current price | `/uapi/domestic-stock/v1/quotations/inquire-price`, TR `FHKST01010100`(모의 동일 TR 지원)만 S1.1 필수 |
+| daily bars | `/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice`, TR `FHKST03010100`(모의 동일 TR 지원), 1회 최대 100건 단위 반복 백필 |
+| market calendar | `/uapi/domestic-stock/v1/quotations/chk-holiday`, TR `CTCA0903R`는 모의투자 미지원(실전 Domain 전용) supporting read다. mock/offline에서는 fixture 또는 skip으로 처리하고 호출 시 1일 1회 이하로 보수 운영 |
+| storage | raw 응답과 parquet/csv/jsonl 산출물은 ignored local data 경로에만 저장한다. 커밋 가능한 테스트 데이터는 마스킹된 fixture만 허용한다 |
+| retry | GET market-data 조회는 rate limit과 timeout을 지켜 제한적으로 재시도한다. POST 주문성 호출은 S1.1에서 구현하지 않는다 |
+
 ### 13.6 FinancialEngineeringService
 
 ```proto
@@ -1504,6 +1526,7 @@ service SourceRegistryService {
 | 모델 신호 stale | `DATA_STALE`, 주문 보류 |
 | RiskEngine rule 평가 실패 | `RISK_BLOCKED`, 주문 차단 |
 | KIS Adapter 장애 | `BROKERAGE_UNAVAILABLE`, 주문 보류 |
+| Live order gate 미충족 | `RISK_BLOCKED`, 주문 차단 |
 | 원칙 버전 충돌 | `CONFLICT`, 재조회 요구 |
 | Kill Switch 활성 | `RISK_BLOCKED`, 주문 차단 |
 
@@ -1534,6 +1557,7 @@ service SourceRegistryService {
 | 필수 | Principle, Decision, Risk, Brokerage Mock |
 | 필수 | RAG ask/source/citation |
 | 필수 | Backtest run/result |
+| 필수 | MarketDataService current price/daily bars(S1.1 내부 구현) |
 | 필수 | Signal 상세 조회, Journal |
 | 필수 | FinancialEngineeringService |
 | 필수 | Black-Scholes 계산기, Greeks 계산, implied volatility 역산 |

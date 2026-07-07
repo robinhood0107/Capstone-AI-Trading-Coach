@@ -502,7 +502,7 @@ FinancialEngineeringService는 P1의 BSM/Greeks/IV 계산 RPC를 재사용한다
 
 ## 8. KIS TR ID 매핑
 
-KIS TR ID와 모의 지원 경계는 이 표를 기준으로 한다. 구현 시 로컬 XLSX의 `API 목록` sheet와 `open-trading-api` 예제를 source manifest에 남긴다.
+KIS TR ID와 모의 지원 경계는 이 표를 기준으로 한다. 구현 시 20260707 로컬 XLSX의 `API 목록` sheet와 `open-trading-api` 예제를 source manifest에 남긴다. S1.1에서는 이 표의 파생 API를 구현하지 않고, P2 feature flag가 켜질 때만 다시 확인한다.
 
 ### 8.1 사용 대상
 
@@ -577,6 +577,6 @@ P2 구현 산출물은 다음 근거를 artifact manifest에 남긴다.
 |---|---|
 | 한국투자증권 모의투자 안내 | 국내 선물옵션 모의거래 흐름 근거 |
 | 한국투자증권 수수료 안내 | 비용 config와 수수료/세금 출처 |
-| `한국투자증권_오픈API_전체문서_20260504_030007.xlsx` | endpoint, TR ID, 모의 지원 경계 |
+| `한국투자증권_오픈API_전체문서_20260707_030000.xlsx` | endpoint, TR ID, 모의 지원 경계 |
 | `open-trading-api/examples_user/domestic_futureoption/domestic_futureoption_functions.py` | 주문가능, 주문, 정정취소, 잔고현황 예제 |
 | `open-trading-api/examples_llm/domestic_futureoption` | 주문가능 필드와 검증 check 사례 |

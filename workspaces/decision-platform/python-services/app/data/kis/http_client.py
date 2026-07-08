@@ -60,7 +60,7 @@ class KISHttpClient:
         retrying = Retrying(
             stop=stop_after_attempt(self.settings.kis_retry_attempts),
             wait=self.retry_wait,
-            retry=retry_if_exception_type(KISRetryableStatus),
+            retry=retry_if_exception_type((KISRetryableStatus, httpx.TimeoutException, httpx.TransportError)),
             reraise=True,
         )
         for attempt in retrying:

@@ -30,6 +30,25 @@ def main(argv: list[str] | None = None) -> int:
     requested_end = _parse_date(args.to) if args.to else date.today()
     end = previous_xkrx_trading_day(requested_end)
     start = _parse_date(args.start) if args.start else _years_before(end, args.years)
+    report_path = Path(args.report_path) if args.report_path else settings.data_dir / "reports" / "kis_s1_1_report.md"
+    if not settings.offline and requested_end != end:
+        # 운영 모드에서는 휴장일에 KIS endpoint를 호출하지 않고 감사 가능한 skipped report만 남긴다.
+        write_markdown_report(
+            report_path,
+            settings=settings,
+            symbols=symbols,
+            results=[],
+            start=start,
+            end=end,
+            universe_source=symbol_resolution.source,
+            universe_manifest=symbol_resolution.manifest,
+            holiday_rows=[],
+            skipped_reason="Market closed / skipped",
+            requested_end=requested_end,
+            previous_trading_day=end,
+        )
+        print(f"KIS S1.1 report written to {report_path}")
+        return 0
     client = _build_client(settings)
     results: list[SymbolRunResult] = []
     for symbol in symbols:
@@ -45,7 +64,6 @@ def main(argv: list[str] | None = None) -> int:
             )
         )
     holiday_rows = client.holidays(requested_end) if args.check_holiday else []
-    report_path = Path(args.report_path) if args.report_path else settings.data_dir / "reports" / "kis_s1_1_report.md"
     write_markdown_report(
         report_path,
         settings=settings,
@@ -56,6 +74,7 @@ def main(argv: list[str] | None = None) -> int:
         universe_source=symbol_resolution.source,
         universe_manifest=symbol_resolution.manifest,
         holiday_rows=holiday_rows,
+        requested_end=requested_end,
     )
     print(f"KIS S1.1 report written to {report_path}")
     return 0

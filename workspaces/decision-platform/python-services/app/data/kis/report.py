@@ -29,6 +29,9 @@ def write_markdown_report(
     holiday_rows: list[HolidayRow],
     universe_manifest: UniverseManifest | None = None,
     generated_at: datetime | None = None,
+    skipped_reason: str | None = None,
+    requested_end: date | None = None,
+    previous_trading_day: date | None = None,
 ) -> Path:
     generated_at = generated_at or datetime.now(UTC)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -43,6 +46,9 @@ def write_markdown_report(
             universe_manifest=universe_manifest,
             holiday_rows=holiday_rows,
             generated_at=generated_at,
+            skipped_reason=skipped_reason,
+            requested_end=requested_end,
+            previous_trading_day=previous_trading_day,
         ),
         encoding="utf-8",
     )
@@ -59,6 +65,9 @@ def _render_report(
     universe_manifest: UniverseManifest | None,
     holiday_rows: list[HolidayRow],
     generated_at: datetime,
+    skipped_reason: str | None,
+    requested_end: date | None,
+    previous_trading_day: date | None,
 ) -> str:
     source_label = "offline fixture" if settings.offline else f"KIS {settings.mode} read-only API"
     total_inserted_rows = sum(result.upsert.inserted_rows for result in results)
@@ -77,12 +86,24 @@ def _render_report(
         "",
         f"This run collected read-only market data for {len(results)} symbol(s).",
         "No order, balance-changing, correction, or cancellation API is called by this S1.1 script.",
-        "",
-        "## Symbol Results",
-        "",
-        "| Symbol | Current Price | Fetched Daily Rows | Stored Rows | New Rows | Coverage |",
-        "|---|---:|---:|---:|---:|---|",
     ]
+    if skipped_reason:
+        lines.extend(
+            [
+                f"Market data collection status: {skipped_reason}.",
+                f"Requested end date: `{(requested_end or end).isoformat()}`",
+                f"Previous XKRX trading day: `{(previous_trading_day or end).isoformat()}`",
+            ]
+        )
+    lines.extend(
+        [
+            "",
+            "## Symbol Results",
+            "",
+            "| Symbol | Current Price | Fetched Daily Rows | Stored Rows | New Rows | Coverage |",
+            "|---|---:|---:|---:|---:|---|",
+        ]
+    )
     for result in results:
         coverage = "-"
         if result.upsert.min_date and result.upsert.max_date:

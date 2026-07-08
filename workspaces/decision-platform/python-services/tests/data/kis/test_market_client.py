@@ -35,8 +35,10 @@ def test_offline_mode_loads_fixtures_without_network(tmp_path: Path) -> None:
     client = KISMarketClient(settings, http_client=_NoNetwork(), token_manager=_Token())
 
     assert client.current_price("005930").price == 73500
+    assert client.current_price("000660").price == 240000
     assert client.current_price("005380").symbol == "005380"
     assert client.daily_bars("005930", date(2026, 7, 7), date(2026, 7, 8))[0].symbol == "005930"
+    assert client.daily_bars("000660", date(2026, 7, 8), date(2026, 7, 8))[0].symbol == "000660"
     assert client.daily_bars("005380", date(2026, 7, 8), date(2026, 7, 8))[0].symbol == "005380"
 
 

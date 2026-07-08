@@ -1,0 +1,16 @@
+{
+  "rt_cd": "0",
+  "msg_cd": "MCA00000",
+  "msg1": "정상처리 되었습니다.",
+  "output2": [
+    {
+      "stck_bsop_date": "20260708",
+      "stck_clpr": "280500",
+      "stck_oprc": "278000",
+      "stck_hgpr": "282000",
+      "stck_lwpr": "277500",
+      "acml_vol": "654321",
+      "acml_tr_pbmn": "183527540500"
+    }
+  ]
+}

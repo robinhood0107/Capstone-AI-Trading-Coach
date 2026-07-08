@@ -1415,6 +1415,135 @@ KIS 매수가능조회(모의 `VTTC8908R`)를 매핑한다. 주문 제출 전 �
 
 ---
 
+## 12A. Market Calendar API (계획 — 미구현)
+
+> 변경 반영(2026-07-08): Market Calendar/Event Aggregator 설계를 추가함. 이 장 전체는 `계획` 상태 계약이며(S1.2+ 수집, S1.4+ API 공개 목표) 구현된 API가 아니다.
+
+목적: 무료/공식 다중 소스를 집계해 감사 가능한(auditable) 시장 캘린더/이벤트 데이터를 제공한다. "완벽한 캘린더"는 단일 API를 항상 옳다고 가정하는 것이 아니라, (1) 소스별 원 관측치를 보존하고, (2) 충돌을 투명하게 해소하며, (3) `confidence`/`sourceRefs`/`conflictFlag`를 응답에 그대로 노출하는 것을 뜻한다. backfill 스케줄링, RiskEngine freshness/이벤트 리스크 판정, RAG source card, optional dashboard timeline이 이 API의 소비자다.
+
+경계:
+
+1. S1.1은 KIS market-data client 전용으로 유지한다. S1.1에서는 로컬 거래소 캘린더 라이브러리(`exchange_calendars` XKRX)로 비거래일 KIS 호출 회피만 수행하고, 다중 소스 수집은 하지 않는다.
+2. 다중 소스 수집/정규화/충돌 해소는 S1.2+ 데이터 세션에서 구현한다.
+3. 전부 read-only 데이터 API다. 주문, 취소/정정, 잔고 변경, live trading 활성화와 무관하다. `KIS_MODE=live`는 live read-only 시장데이터 조회만 뜻한다(12.5 경계 동일).
+
+### 12A.1 canonical 스키마 (계획)
+
+원 관측치(raw observation)와 canonical 사실을 분리한다. 아래는 canonical 응답 스키마다.
+
+`TradingSession` — 거래소×날짜 단위 세션 사실:
+
+| 필드 | 타입 | 설명 |
+|---|---|---|
+| `exchangeMic` | string | ISO 10383 MIC (`XKRX`, `XNYS`, `XNAS`, `XHKG`, `XTKS`) |
+| `date` | date | 거래소 로컬 날짜 |
+| `timezone` | string | IANA timezone (`Asia/Seoul` 등) |
+| `isOpen` | boolean | 거래일 여부 |
+| `openAt` / `closeAt` | timestamp\|null | 개장/폐장 시각(휴장일 null) |
+| `isEarlyClose` | boolean | 단축 거래 여부 |
+| `reason` | string\|null | 휴장/단축 사유 (`Lunar New Year` 등) |
+| `confidence` | number | 0~1. 12A.3 산정 규칙 |
+| `sourceRefs` | array | sanitized 소스 참조 목록 |
+| `conflictFlag` | boolean | 소스 간 미해소 충돌 존재 여부 |
+
+`CalendarEvent` — 종목/시장 이벤트 사실:
+
+| 필드 | 타입 | 설명 |
+|---|---|---|
+| `eventId` | string | canonical event id (`evt_` prefix) |
+| `eventType` | string | 아래 eventType enum |
+| `symbol` | string\|null | 종목 코드(시장 전체 이벤트는 null) |
+| `exchangeMic` / `country` | string | 시장/국가 컨텍스트 |
+| `eventDate` | date | 이벤트 날짜 |
+| `eventTime` | time\|null | 알려진 경우만 |
+| `timezone` | string | 이벤트 기준 timezone |
+| `timeStatus` | string | `EXACT` \| `BEFORE_MARKET` \| `AFTER_MARKET` \| `DATE_ONLY` \| `UNKNOWN` |
+| `status` | string | `SCHEDULED` \| `TENTATIVE` \| `CONFIRMED` \| `ACTUAL` \| `CORRECTED` \| `CANCELLED` |
+| `confidence` | number | 0~1 |
+| `sourceRefs` | array | sanitized 소스 참조 목록 |
+| `conflictFlag` | boolean | 미해소 충돌 여부 |
+| `firstSeenAt` / `lastSeenAt` | timestamp | 최초/최근 관측 시각 |
+| `revisedFrom` | string\|null | 정정 전 eventId (CORRECTED 이력 추적) |
+| `payloadHash` | string | canonical 내용 해시(멱등 upsert 키) |
+
+`eventType` enum(v1 후보): `EARNINGS_EXPECTED`, `EARNINGS_ACTUAL`, `DIVIDEND_EX`, `DIVIDEND_RECORD`, `DIVIDEND_PAY`, `SPLIT`, `RIGHTS_ISSUE`, `BONUS_ISSUE`, `IPO_SUBSCRIPTION`, `IPO_LISTING`, `SHAREHOLDER_MEETING`, `MERGER_SPLIT`, `CAPITAL_REDUCTION`, `DISCLOSURE`, `MACRO_RELEASE`. 거래일/휴장일은 이벤트가 아니라 `TradingSession`으로만 표현한다.
+
+`sourceRefs[]` 항목(sanitized):
+
+```json
+{
+  "sourceId": "src_cal_kasi_holiday",
+  "observedAt": "2026-07-08T02:10:00+09:00",
+  "observedValue": "2026-10-05 CLOSED (추석)",
+  "payloadHash": "sha256:ab12…",
+  "attribution": "한국천문연구원 특일 정보(공공데이터포털)"
+}
+```
+
+status 전이 규칙: `SCHEDULED/TENTATIVE → CONFIRMED → ACTUAL`, 임의 시점에 `CORRECTED`(이전 값은 `revisedFrom`으로 연결) 또는 `CANCELLED`. 미래 실적 발표는 DART/SEC/회사 공시로 실제 제출이 확인되기 전까지 `TENTATIVE`를 넘지 않는다(aggregator 예측치는 CONFIRMED로 승격 불가).
+
+### 12A.2 endpoint (계획)
+
+| Endpoint | 설명 |
+|---|---|
+| `GET /api/v1/market-calendar/sessions?exchange=XKRX&from=YYYY-MM-DD&to=YYYY-MM-DD` | 기간 내 TradingSession 목록 |
+| `GET /api/v1/market-calendar/events?symbols=005930,AAPL&from=YYYY-MM-DD&to=YYYY-MM-DD&types=EARNINGS_EXPECTED,DIVIDEND_EX,DISCLOSURE&includeSources=true` | 종목/유형 필터 이벤트 목록. `includeSources=true`일 때만 `sourceRefs` 포함 |
+| `GET /api/v1/market-calendar/sources` | SourceRegistry 공개 뷰(민감정보 제외) |
+| `GET /api/v1/market-calendar/conflicts` | 미해소 충돌 목록(운영/시연용) |
+| `GET /api/v1/market-calendar/health` | 소스별 수집 상태와 degraded 여부 |
+
+공통 규칙 재사용: 응답 envelope(2.2), 오류 코드(2.3 — 신규 오류 코드를 만들지 않고 `RATE_LIMITED`/`DATA_STALE`/`VALIDATION_ERROR` 재사용), pagination(2.6)을 그대로 따른다.
+
+events 응답 예시(충돌 노출):
+
+```json
+{
+  "success": true,
+  "data": {
+    "items": [
+      {
+        "eventId": "evt_krx_005930_earnings_2026q2",
+        "eventType": "EARNINGS_EXPECTED",
+        "symbol": "005930",
+        "exchangeMic": "XKRX",
+        "eventDate": "2026-07-31",
+        "eventTime": null,
+        "timeStatus": "DATE_ONLY",
+        "status": "TENTATIVE",
+        "confidence": 0.55,
+        "conflictFlag": true,
+        "sourceRefs": [
+          { "sourceId": "src_cal_kis_estimate", "observedValue": "2026-07-31" },
+          { "sourceId": "src_cal_aggregator_a", "observedValue": "2026-07-30" }
+        ]
+      }
+    ],
+    "nextCursor": null
+  }
+}
+```
+
+sources 응답 항목 예시(공개 가능 필드만): `sourceId`, `provider`, `category`, `authType`, `licenseClass`, `coverageMarkets`, `coverageEventTypes`, `reliabilityTier`, `attributionRequired`, `enabledByDefault`, `health(lastSuccessAt, failureCount, staleAfter, degraded)`.
+
+### 12A.3 충돌·신뢰도 시맨틱 (계획)
+
+1. 소스 우선순위: 공식 거래소/규제기관/정부(KRX, DART/OpenDART, SEC, KASI, FRED) > 규제 브로커·인프라(KIS, 예탁원 경유 데이터) > 검증된 라이브러리/키 발급형 aggregator > RSS/HTML 스크랩.
+2. 독립 소스 다수 일치는 confidence를 올린다(동일 상위 원천을 재배포한 소스는 독립으로 세지 않는다).
+3. 날짜/시간 충돌은 조용히 덮어쓰지 않는다. 상위 tier 값을 canonical로 채택하되 `conflictFlag=true`와 전체 `sourceRefs`를 유지하고 `/conflicts`에 노출한다.
+4. 미래 실적 이벤트는 aggregator 값만으로 `CONFIRMED`가 될 수 없고, DART/SEC 제출 확인 시 `EARNINGS_ACTUAL`(status=ACTUAL)로 별도 이벤트를 만든다.
+5. `confidence` 기본값은 reliabilityTier 기반으로 두고, 독립 일치 +가산, 미해소 충돌 −감산. 산식 자체는 구현 세션에서 고정하되 응답 필드 의미는 이 계약을 따른다.
+6. `confidence`는 캘린더/이벤트 데이터의 출처 일치도와 충돌 상태를 설명하는 감사용 값이다. 투자 권유 점수, 매수/매도 신호, 주문 허용 기준으로 직접 사용하지 않는다.
+
+### 12A.4 보안/응답 제한 (계획)
+
+1. 응답에 secret, raw token, app key, 계좌번호, provider raw payload 원문을 절대 포함하지 않는다. `envVarNames`는 환경변수 "이름"만 노출하며 값은 어디에도 싣지 않는다.
+2. `sourceRefs`는 sanitized 요약값과 hash만 담고, 원 응답 재배포가 금지된 소스(약관상 redistribution 제한)는 `observedValue`를 요약/파생값으로만 표현한다.
+3. `sources`/`health`의 quota 정보는 잔여 횟수 수준의 수치만 노출한다.
+4. attribution이 요구되는 소스는 `attribution` 문구를 함께 반환해 화면 표기가 가능하게 한다.
+5. 공식 문서로 무료 여부, 호출 한도, 라이선스, 재배포 제한을 재확인하지 못한 소스는 해당 구현 세션 시작 전 또는 종료 보고에서 사용자에게 검증·채택 여부를 묻고 결과를 기록한다. 사용자 확인 없이 기본 활성 소스로 조용히 추가하지 않는다.
+
+---
+
 ## 13. Python gRPC 계약
 
 proto 파일은 `contracts/proto/`에 둔다.
@@ -1507,6 +1636,9 @@ S1.1의 KIS MarketDataService 구현 경계는 다음과 같다.
 | market calendar | `/uapi/domestic-stock/v1/quotations/chk-holiday`, TR `CTCA0903R`는 모의투자 미지원(실전 Domain 전용) supporting read다. mock/offline에서는 fixture 또는 skip으로 처리하고 호출 시 1일 1회 이하로 보수 운영 |
 | storage | raw 응답과 parquet/csv/jsonl 산출물은 ignored local data 경로에만 저장한다. 커밋 가능한 테스트 데이터는 마스킹된 fixture만 허용한다 |
 | retry | GET market-data 조회는 rate limit과 timeout을 지켜 제한적으로 재시도한다. POST 주문성 호출은 S1.1에서 구현하지 않는다 |
+| local calendar | S1.1은 비거래일 KIS 호출 회피용으로 로컬 `exchange_calendars` XKRX 판정만 사용한다. 다중 소스 캘린더 집계는 S1.1 범위가 아니며, S1.2+ 계획은 12A와 아래 계획 RPC를 따른다 |
+
+> 변경 반영(2026-07-08): 계획(S1.2+ 설계, 미구현) — Market Calendar 집계가 구현되면 `GetTradingSessions`/`GetCalendarEvents` RPC를 MarketDataService에 추가하고 REST 12A가 이를 소비한다. proto 추가는 `contracts/changes/` 절차를 따른다.
 
 ### 13.6 FinancialEngineeringService
 
@@ -1570,6 +1702,10 @@ service SourceRegistryService {
 
 ## 15. API 테스트 기준
 
+코드로 구현되는 모든 API/adapter/parser/storage 변경은 그 동작을 검증하는 테스트 코드와 함께 들어간다. 테스트 없는 구현은 완료로 보지 않으며, 외부 API 연동처럼 자동 단위 테스트가 어려운 부분도 sanitized fixture, mock transport, contract validation, 재실행 가능한 smoke 명령 중 하나로 검증한다.
+
+API/adapter/parser/storage 변경 커밋은 기능 단위로 분리한다. 테스트 추가 커밋과 실제 구현 커밋은 원칙적으로 나누고, Markdown/AGENTS/명세서 변경은 구현 커밋과 섞지 않는다. PR 리뷰어가 커밋 순서만 보고 “어떤 테스트가 추가됐고 어떤 구현이 이를 만족했는지”를 추적할 수 있어야 한다.
+
 | 테스트 | 확인 |
 |---|---|
 | Principle CRUD | 생성/수정/버전 충돌/비활성화 |
@@ -1602,6 +1738,7 @@ service SourceRegistryService {
 | 고도화 | SourceRegistryService 고도화 |
 | 고도화 | 이벤트 push 채널(SSE), RAG 답변 스트리밍, Journal 수정/삭제 |
 | 고도화 | Live 동의 API(설계 계약, 비활성 게이트) |
+| 계획(S1.4+) | Market Calendar API — sessions/events/sources/conflicts/health (12A, 미구현 계약) |
 | 후순위 | KIS Live-ready 활성화 |
 
 ---

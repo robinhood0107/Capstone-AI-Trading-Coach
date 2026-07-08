@@ -1,0 +1,11 @@
+{
+  "rt_cd": "0",
+  "msg_cd": "MCA00000",
+  "msg1": "정상처리 되었습니다.",
+  "output": {
+    "bass_dt": "20260216",
+    "bzdy_yn": "N",
+    "tr_day_yn": "N",
+    "opnd_yn": "N"
+  }
+}

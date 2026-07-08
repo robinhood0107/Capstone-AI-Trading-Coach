@@ -14,7 +14,9 @@ class TokenBucket:
     ) -> None:
         if rate_per_second <= 0:
             raise ValueError("rate_per_second must be positive")
+        # clock/sleeper를 주입 가능하게 둬 rate limit 테스트가 실제 sleep 없이 예산 계산만 검증하게 한다.
         self.rate_per_second = float(rate_per_second)
+        # burst를 초당 한도보다 크게 열지 않는다. 개발 중 실수로 빠른 루프가 KIS 제한을 넘는 일을 막는다.
         self.capacity = float(capacity or max(1.0, rate_per_second))
         self._tokens = self.capacity
         self._clock = clock
@@ -27,6 +29,7 @@ class TokenBucket:
             if self._tokens >= 1.0:
                 self._tokens -= 1.0
                 return
+            # 부족한 token만큼만 기다려 batch 전체가 과도하게 느려지지 않게 한다.
             wait_seconds = (1.0 - self._tokens) / self.rate_per_second
             self._sleeper(wait_seconds)
 

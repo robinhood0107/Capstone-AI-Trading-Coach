@@ -10,6 +10,7 @@ from app.data.kis.universe import refresh_universe_from_krx_export, write_univer
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
     # universe refresh는 로컬 KRX export만 읽으므로 KIS secret 검증과 네트워크 설정을 요구하지 않는다.
+    # 이 CLI를 별도 경로로 둬 S1.1 market-data client에 KRX 수집/네트워크 책임이 섞이지 않게 한다.
     data_dir = Path(args.data_dir) if args.data_dir else Path("data/kis")
     as_of = date.fromisoformat(args.as_of)
     manifest_path = data_dir / "universe_manifest.json"
@@ -19,6 +20,8 @@ def main(argv: list[str] | None = None) -> int:
         limit=args.limit,
         manifest_path=manifest_path,
     )
+    # manifest는 machine-readable 입력이고 report는 사람이 검토하는 증거다.
+    # 둘 다 ignored data path에 두는 전제로 raw KRX export를 Git에 올리지 않는다.
     report_path = Path(args.report_path) if args.report_path else data_dir / "reports" / "universe_refresh.md"
     write_universe_markdown_report(report_path, manifest)
     print(f"KIS S1.1b universe manifest written to {manifest_path}")

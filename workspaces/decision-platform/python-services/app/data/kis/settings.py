@@ -10,6 +10,8 @@ KISMode = Literal["mock", "live"]
 
 
 class KISSettings(BaseSettings):
+    # 서비스 디렉터리 실행과 repo root 실행을 모두 지원한다. extra ignore는 다른 workspace env가 섞여도
+    # S1.1 설정 로딩이 깨지지 않게 하려는 완충 장치다.
     model_config = SettingsConfigDict(
         env_file=(".env", "../../../.env"),
         env_file_encoding="utf-8",
@@ -36,6 +38,8 @@ class KISSettings(BaseSettings):
     @model_validator(mode="after")
     def _validate_mode_credentials(self) -> "KISSettings":
         if not self.kis_offline and (not self.app_key or not self.app_secret):
+            # offline fixture만 credential 없이 허용한다. 온라인 read-only도 KIS 인증 실패를 늦게 보이면
+            # backfill 중간에서 더 비싸게 실패하므로 설정 단계에서 막는다.
             raise ValueError(f"KIS_{self.kis_mode.upper()}_APP_KEY/SECRET is required outside offline mode")
         return self
 
@@ -69,18 +73,21 @@ class KISSettings(BaseSettings):
 
     @property
     def account_no(self) -> str | None:
+        # S1.1 시장데이터에는 계좌번호를 쓰지 않는다. env 호환성만 남겨 두고 호출 헤더에는 넣지 않는다.
         if self.kis_mode == "live":
             return self.kis_live_account_no or self.kis_account_no
         return self.kis_mock_account_no or self.kis_account_no
 
     @property
     def base_url(self) -> str:
+        # live는 실전 domain의 읽기 전용 시장데이터 조회를 뜻한다. live trading 활성화와 연결하지 않는다.
         if self.kis_mode == "live":
             return "https://openapi.koreainvestment.com:9443"
         return "https://openapivts.koreainvestment.com:29443"
 
     @property
     def current_price_tr_id(self) -> str:
+        # 현재가/기간별시세 TR은 mock/live에서 동일한 read-only 국내주식 조회 계약으로만 사용한다.
         return "FHKST01010100"
 
     @property

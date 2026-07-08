@@ -24,6 +24,8 @@ class UniverseSymbol:
 
 
 DEFAULT_KOSPI_LARGECAP30: tuple[UniverseSymbol, ...] = (
+    # 이 seed는 KRX export가 없을 때 S1.1 DoD와 offline smoke를 계속 돌리기 위한 fallback이다.
+    # 정확한 최신 ranking의 단일 진실은 universe manifest이며, seed는 감사 가능한 운영 입력이 아니다.
     UniverseSymbol(1, "005930", "Samsung Electronics"),
     UniverseSymbol(2, "000660", "SK hynix"),
     UniverseSymbol(3, "373220", "LG Energy Solution"),
@@ -64,6 +66,7 @@ DEFAULT_UNIVERSE_SOURCE = (
 
 @dataclass(frozen=True)
 class UniverseManifestSymbol:
+    # manifest에는 ranking 근거가 되는 최소 필드만 남긴다. 원본 CSV 전체를 커밋하지 않기 위한 축약형이다.
     rank: int
     symbol: str
     name: str
@@ -95,6 +98,8 @@ class UniverseManifestSymbol:
 
 @dataclass(frozen=True)
 class UniverseManifest:
+    # schemaVersion/sourceSha256/rankingRule을 함께 고정해 같은 CSV가 같은 universe를 만들었는지 검증한다.
+    # 이후 S1.6 캘린더 집계처럼 provenance가 중요한 데이터에도 같은 패턴을 재사용할 수 있다.
     schema_version: int
     generated_at: datetime
     as_of_date: date
@@ -149,6 +154,7 @@ class UniverseManifest:
 def parse_symbols(symbols_text: str | None) -> list[str]:
     if not symbols_text:
         return [item.symbol for item in DEFAULT_KOSPI_LARGECAP30]
+    # CLI 입력은 쉼표/공백을 모두 허용해 수동 smoke 명령을 짧게 만들고, 내부 표기는 6자리로 고정한다.
     raw_parts = symbols_text.replace(",", " ").split()
     return [_normalize_symbol(part) for part in raw_parts if part.strip()]
 
@@ -159,6 +165,7 @@ def load_symbols_file(path: Path) -> list[str]:
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
             continue
+        # CSV/텍스트 첫 열만 사용해 KRX export 일부나 수동 파일을 같은 경로로 소비한다.
         symbols.append(_normalize_symbol(stripped.split(",")[0].split()[0]))
     return symbols
 
@@ -174,7 +181,8 @@ def refresh_universe_from_krx_export(
     manifest_path: Path | None = None,
     generated_at: datetime | None = None,
 ) -> UniverseManifest:
-    # KRX 원본 export는 커밋하지 않으므로 manifest에 기준일·해시·랭킹 규칙을 남겨 감사 가능성을 확보한다.
+    # KRX 원본 export는 커밋하지 않으므로 manifest에 기준일·해시·랭킹 규칙을 남긴다.
+    # 이 축약 manifest가 backfill symbol selection의 감사 가능한 입력 계약이 된다.
     rows = _read_krx_export(export_path)
     ranked = _rank_krx_rows(rows, limit=limit)
     manifest = UniverseManifest(
@@ -194,6 +202,7 @@ def refresh_universe_from_krx_export(
 
 def write_universe_manifest(path: Path, manifest: UniverseManifest) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
+    # ensure_ascii=False는 한국 종목명을 사람이 바로 읽게 하려는 선택이다. secret 값은 manifest에 넣지 않는다.
     path.write_text(
         json.dumps(manifest.to_json(), ensure_ascii=False, indent=2, sort_keys=False) + "\n",
         encoding="utf-8",
@@ -205,11 +214,14 @@ def load_universe_manifest(path: Path) -> UniverseManifest:
     payload = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
         raise UniverseExportError("universe manifest must be a JSON object")
+    # manifest schema가 깨지면 fallback seed로 조용히 내려가지 않고 명시적으로 실패시킨다.
+    # 잘못된 universe로 30종목 backfill을 돌리는 쪽이 실행 실패보다 위험하다.
     return UniverseManifest.from_json(payload)
 
 
 def write_universe_markdown_report(path: Path, manifest: UniverseManifest) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
+    # manifest와 별도 markdown을 남겨 사람이 PR/시연에서 ranking 근거를 눈으로 확인할 수 있게 한다.
     lines = [
         "# KIS S1.1b Universe Refresh Report",
         "",
@@ -248,7 +260,8 @@ def write_universe_markdown_report(path: Path, manifest: UniverseManifest) -> Pa
 
 def _read_krx_export(path: Path) -> list[dict[str, str]]:
     if path.suffix.lower() in {".xlsx", ".xls"}:
-        # XLSX 파서는 의존성과 시트 구조 변동이 커서, S1.1b는 재현 가능한 CSV/TSV export만 계약으로 고정한다.
+        # XLSX 파서는 의존성과 시트 구조 변동이 커서, S1.1b는 재현 가능한 CSV/TSV export만 계약으로
+        # 고정한다. 사용자는 KRX 화면에서 CSV로 내보낸 뒤 그 파일을 입력해야 한다.
         raise UniverseExportError("KRX universe refresh expects CSV/TSV/TXT export, not XLSX. Export CSV first.")
     text = _read_text_with_fallback(path)
     sample = text[:4096]
@@ -257,6 +270,7 @@ def _read_krx_export(path: Path) -> list[dict[str, str]]:
 
 
 def _read_text_with_fallback(path: Path) -> str:
+    # KRX export는 Windows 환경에서 CP949가 흔하다. UTF-8-SIG와 CP949만 허용해 예측 불가 인코딩을 줄인다.
     for encoding in ("utf-8-sig", "cp949"):
         try:
             return path.read_text(encoding=encoding)
@@ -283,6 +297,7 @@ def _rank_krx_rows(rows: list[dict[str, str]], limit: int) -> list[UniverseManif
         market_cap = _optional_int(_extract(row, "시가총액", "marketCap", "market_cap"))
         trading_value = _optional_int(_extract(row, "거래대금", "tradingValue", "trading_value"))
         if market_cap is None or trading_value is None:
+            # 시가총액/거래대금이 빠진 행은 ranking 근거를 설명할 수 없어 universe 후보에서 제외한다.
             continue
         candidates.append(
             UniverseManifestSymbol(
@@ -295,6 +310,7 @@ def _rank_krx_rows(rows: list[dict[str, str]], limit: int) -> list[UniverseManif
             )
         )
     # universe는 백필·모델 비교의 기준이므로 결측/비유동 후보를 제외하고 안정적인 tie-break를 둔다.
+    # symbol asc까지 고정해야 같은 CSV로 생성한 manifest가 실행 환경마다 흔들리지 않는다.
     ranked = sorted(candidates, key=lambda item: (-item.market_cap, -item.trading_value, item.symbol))
     return [
         UniverseManifestSymbol(
@@ -311,6 +327,7 @@ def _rank_krx_rows(rows: list[dict[str, str]], limit: int) -> list[UniverseManif
 
 def _extract(row: dict[str, str], *names: str) -> str | None:
     # KRX export 헤더는 화면/언어 설정에 따라 달라질 수 있어 의미가 같은 열 이름을 흡수한다.
+    # 허용 header alias는 여기 한 곳에 모아 ranking 로직이 column 이름 변형에 끌려다니지 않게 한다.
     normalized = {_normalize_header(key): value for key, value in row.items()}
     for name in names:
         value = normalized.get(_normalize_header(name))

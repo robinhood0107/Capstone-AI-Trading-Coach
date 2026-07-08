@@ -28,6 +28,8 @@ def main(argv: list[str] | None = None) -> int:
     symbol_resolution = _resolve_symbols(args, settings.data_dir)
     symbols = symbol_resolution.symbols
     requested_end = _parse_date(args.to) if args.to else date.today()
+    # S1.1은 다중 소스 캘린더 집계를 구현하지 않고, 로컬 XKRX 판정으로 KIS 호출 여부만 결정한다.
+    # 온라인 휴장일에는 client 생성 전 종료해 OAuth/holiday/current/daily endpoint 모두 호출되지 않게 한다.
     end = previous_xkrx_trading_day(requested_end)
     start = _parse_date(args.start) if args.start else _years_before(end, args.years)
     report_path = Path(args.report_path) if args.report_path else settings.data_dir / "reports" / "kis_s1_1_report.md"
@@ -52,6 +54,8 @@ def main(argv: list[str] | None = None) -> int:
     client = _build_client(settings)
     results: list[SymbolRunResult] = []
     for symbol in symbols:
+        # 현재가와 일봉을 같은 리포트에 묶어 사람이 smoke 결과와 parquet 증분을 한 번에 대조하게 한다.
+        # 주문·잔고성 API는 이 경로에 wiring하지 않아 S1.1 read-only 경계를 코드 구조로도 고정한다.
         current_price = client.current_price(symbol)
         bars = client.daily_bars(symbol, start, end)
         upsert = upsert_daily_bars(settings.data_dir, symbol, bars)
@@ -63,6 +67,7 @@ def main(argv: list[str] | None = None) -> int:
                 fetched_rows=len(bars),
             )
         )
+    # chk-holiday는 live domain supporting read라서 기본 실행에서 빼고, 명시 옵션일 때만 보수적으로 확인한다.
     holiday_rows = client.holidays(requested_end) if args.check_holiday else []
     write_markdown_report(
         report_path,
@@ -102,7 +107,8 @@ class _SymbolResolution:
 
 
 def _resolve_symbols(args: argparse.Namespace, data_dir: Path) -> _SymbolResolution:
-    # 명시 입력은 smoke/debug 의도를 보존하고, 그 외에는 감사 가능한 manifest를 fallback seed보다 우선한다.
+    # 명시 입력은 smoke/debug 의도를 보존하기 위해 항상 최우선이다.
+    # 자동 실행은 감사 가능한 universe manifest를 seed보다 먼저 써서 30종목 기준이 리포트에 남게 한다.
     if args.symbols:
         return _SymbolResolution(parse_symbols(args.symbols), "CLI --symbols")
     if args.symbols_file:
@@ -127,6 +133,8 @@ def _build_client(settings: KISSettings) -> KISMarketClient:
 
 
 class _OfflineRedis:
+    # offline smoke는 KIS token 발급을 검증 대상에서 제외한다.
+    # RedisLike 모양만 맞춰 token manager가 운영 Redis나 기존 kis:token을 건드리지 않게 한다.
     def get(self, name: str) -> None:
         return None
 
@@ -142,6 +150,7 @@ def _years_before(end: date, years: int) -> date:
     try:
         return end.replace(year=end.year - years)
     except ValueError:
+        # 2월 29일 기준 backfill도 CLI가 중단되지 않도록 같은 월의 마지막 안전한 날짜로 낮춘다.
         return end.replace(year=end.year - years, day=28)
 
 

@@ -33,6 +33,8 @@ def write_markdown_report(
     requested_end: date | None = None,
     previous_trading_day: date | None = None,
 ) -> Path:
+    # markdown report는 자동 테스트가 놓치기 쉬운 운영 증거다.
+    # secret/raw response 없이 mode, 범위, 신규 행, skip 사유만 남겨 PR/시연 검증에 재사용한다.
     generated_at = generated_at or datetime.now(UTC)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
@@ -88,6 +90,7 @@ def _render_report(
         "No order, balance-changing, correction, or cancellation API is called by this S1.1 script.",
     ]
     if skipped_reason:
+        # 휴장일 skip은 성공 종료지만 "데이터를 안 받은 이유"가 리포트에 남아야 DoD 검토가 가능하다.
         lines.extend(
             [
                 f"Market data collection status: {skipped_reason}.",
@@ -114,6 +117,8 @@ def _render_report(
             f"{result.upsert.total_rows} | {result.upsert.inserted_rows} | {coverage} |"
         )
     if universe_manifest is not None:
+        # manifest 해시와 ranking rule을 함께 싣는다. CSV 원본을 커밋하지 않아도 어떤 기준의 universe였는지
+        # 사후에 대조할 수 있게 하기 위한 감사 trail이다.
         lines.extend(
             [
                 "",
@@ -146,6 +151,7 @@ def _render_report(
             "",
             "## Safety Notes",
             "",
+            # report 자체가 사용자에게 공유될 수 있으므로 S1.1의 금지 경계를 사람이 읽는 문장으로 반복한다.
             "- Secrets, tokens, account numbers, raw response headers, CSV, JSONL, and parquet files must stay out of git.",
             "- `KIS_MODE=live` means live read-only market data in S1.1, not live trading.",
             "- This S1.1 run calls no order, balance-changing, correction, cancellation, or live trading APIs.",

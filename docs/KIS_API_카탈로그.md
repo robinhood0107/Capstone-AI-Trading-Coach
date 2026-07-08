@@ -460,3 +460,30 @@
 | 336 | 일반채권 실시간체결가 | 실시간-052 | WS | `/tryitout/H0BJCNT0` | H0BJCNT0 | 모의투자 미지원 | 미지원 |
 | 337 | 일반채권 실시간호가 | 실시간-053 | WS | `/tryitout/H0BJASP0` | H0BJCNT0 | 모의투자 미지원 | 미지원 |
 | 338 | 채권지수 실시간체결가 | 실시간-060 | WS | `/tryitout/H0BICNT0` | H0BICNT0 | 모의투자 미지원 | 미지원 |
+
+## 부록 A. Market Calendar/Event Aggregator 후보 태그 (스크립트 관리)
+
+> 변경 반영(2026-07-08): Market Calendar/Event 후보 태그 부록을 추가함(본문 카탈로그 수치는 변경 없음).
+
+API 명세서 12A(계획)의 수집 후보를 URL 기준으로 태그한다. 본문 수치/분류에는 영향이 없으며, 선정 기준은 `scripts/generate_kis_api_catalog.py`의 `CALENDAR_EVENT_CANDIDATES` 상수로만 관리한다. 아래 항목은 전부 모의투자 미지원이므로 최종_프로젝트_명세서 12.5의 live read-only 경계에서만 호출할 수 있다.
+
+| 순번 | API 명 | URL | 이벤트 매핑 | 비고 |
+|---|---|---|---|---|
+| 76 | 국내휴장일조회 | `/uapi/domestic-stock/v1/quotations/chk-holiday` | TradingSession(XKRX) | 1일 1회 이하 보수 호출(공식 예제 주의사항) |
+| 79 | 국내선물 영업일조회 | `/uapi/domestic-stock/v1/quotations/market-time` | TradingSession 보조(영업일) | 선물 영업일 관점 교차 검증용 |
+| 84 | 종합 시황/공시(제목) | `/uapi/domestic-stock/v1/quotations/news-title` | DISCLOSURE(제목) | 제목/메타만 저장, 본문 저장 금지 |
+| 95 | 예탁원정보(배당일정) | `/uapi/domestic-stock/v1/ksdinfo/dividend` | DIVIDEND_RECORD/DIVIDEND_PAY | record_date/divi_pay_dt 제공 |
+| 104 | 예탁원정보(유상증자일정) | `/uapi/domestic-stock/v1/ksdinfo/paidin-capin` | RIGHTS_ISSUE | 유상증자 일정 |
+| 90 | 예탁원정보(무상증자일정) | `/uapi/domestic-stock/v1/ksdinfo/bonus-issue` | BONUS_ISSUE | 무상증자 일정 |
+| 108 | 예탁원정보(합병/분할일정) | `/uapi/domestic-stock/v1/ksdinfo/merger-split` | MERGER_SPLIT | 합병/분할 일정 |
+| 94 | 예탁원정보(액면교체일정) | `/uapi/domestic-stock/v1/ksdinfo/rev-split` | SPLIT | 액면교체 일정 |
+| 89 | 예탁원정보(자본감소일정) | `/uapi/domestic-stock/v1/ksdinfo/cap-dcrs` | CAPITAL_REDUCTION | 자본감소 일정 |
+| 86 | 예탁원정보(상장정보일정) | `/uapi/domestic-stock/v1/ksdinfo/list-info` | IPO_LISTING | 상장정보 일정 |
+| 87 | 예탁원정보(공모주청약일정) | `/uapi/domestic-stock/v1/ksdinfo/pub-offer` | IPO_SUBSCRIPTION | 공모주 청약 일정 |
+| 105 | 예탁원정보(주주총회일정) | `/uapi/domestic-stock/v1/ksdinfo/sharehld-meet` | SHAREHOLDER_MEETING | 주주총회 일정 |
+| 93 | 예탁원정보(주식매수청구일정) | `/uapi/domestic-stock/v1/ksdinfo/purreq` | MERGER_SPLIT 보조 | 주식매수청구 일정 |
+| 99 | 예탁원정보(실권주일정) | `/uapi/domestic-stock/v1/ksdinfo/forfeit` | RIGHTS_ISSUE 보조 | 실권주 일정 |
+| 100 | 예탁원정보(의무예치일정) | `/uapi/domestic-stock/v1/ksdinfo/mand-deposit` | 참고 | 의무예치 일정 |
+| 109 | 국내주식 종목추정실적 | `/uapi/domestic-stock/v1/quotations/estimate-perform` | EARNINGS_EXPECTED 보조 | 추정실적 — 확정 아님, TENTATIVE 유지 |
+| 255 | 해외결제일자조회 | `/uapi/overseas-stock/v1/quotations/countries-holiday` | 해외 결제일/휴장 참고 | TradingSession 보조 교차 검증 |
+| 275 | 해외뉴스종합(제목) | `/uapi/overseas-price/v1/quotations/news-title` | 해외 DISCLOSURE(제목) | 제목/메타만 저장 |

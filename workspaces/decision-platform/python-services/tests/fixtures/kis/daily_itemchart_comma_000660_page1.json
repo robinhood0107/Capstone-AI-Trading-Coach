@@ -1,0 +1,21 @@
+{
+  "rt_cd": "0",
+  "msg_cd": "MCA00000",
+  "msg1": "정상처리 되었습니다.",
+  "output1": {
+    "prdy_vrss": "3,500",
+    "prdy_ctrt": "1.48",
+    "stck_prdy_clpr": "236,500"
+  },
+  "output2": [
+    {
+      "stck_bsop_date": "20260708",
+      "stck_clpr": "240,000",
+      "stck_oprc": "236,000",
+      "stck_hgpr": "242,000",
+      "stck_lwpr": "235,500",
+      "acml_vol": "1,234,567",
+      "acml_tr_pbmn": "296,296,080,000"
+    }
+  ]
+}

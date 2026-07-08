@@ -35,7 +35,9 @@ def test_offline_mode_loads_fixtures_without_network(tmp_path: Path) -> None:
     client = KISMarketClient(settings, http_client=_NoNetwork(), token_manager=_Token())
 
     assert client.current_price("005930").price == 73500
+    assert client.current_price("005380").symbol == "005380"
     assert client.daily_bars("005930", date(2026, 7, 7), date(2026, 7, 8))[0].symbol == "005930"
+    assert client.daily_bars("005380", date(2026, 7, 8), date(2026, 7, 8))[0].symbol == "005380"
 
 
 def test_daily_backfill_moves_end_date_to_oldest_seen_minus_one(tmp_path: Path) -> None:

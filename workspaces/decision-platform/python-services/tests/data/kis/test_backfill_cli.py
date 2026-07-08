@@ -66,6 +66,46 @@ def test_backfill_cli_moves_non_trading_end_date_to_previous_session(tmp_path: P
     assert captured["end"] == date(2026, 7, 10)
 
 
+def test_online_backfill_skips_non_trading_day_before_building_client(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("KIS_MODE", "mock")
+    monkeypatch.setenv("KIS_OFFLINE", "0")
+    monkeypatch.setenv("KIS_MOCK_APP_KEY", "mock-key")
+    monkeypatch.setenv("KIS_MOCK_APP_SECRET", "mock-secret")
+    monkeypatch.setenv("KIS_DATA_DIR", str(tmp_path))
+    report_path = tmp_path / "reports" / "kis_s1_1_report.md"
+    build_calls = 0
+
+    def fail_if_called(settings) -> object:
+        nonlocal build_calls
+        build_calls += 1
+        raise AssertionError("online non-trading day must skip before building KIS client")
+
+    monkeypatch.setattr("app.data.kis.backfill_cli._build_client", fail_if_called)
+
+    exit_code = main(
+        [
+            "--symbols",
+            "005930",
+            "--from",
+            "2026-07-01",
+            "--to",
+            "2026-07-11",
+            "--data-dir",
+            str(tmp_path),
+            "--report-path",
+            str(report_path),
+        ]
+    )
+
+    assert exit_code == 0
+    assert build_calls == 0
+    assert not (tmp_path / "daily" / "005930.parquet").exists()
+    report = report_path.read_text(encoding="utf-8")
+    assert "Market closed / skipped" in report
+    assert "Requested end date: `2026-07-11`" in report
+    assert "Previous XKRX trading day: `2026-07-10`" in report
+
+
 def test_backfill_cli_uses_default_manifest_before_fallback_seed(
     tmp_path: Path,
     monkeypatch,

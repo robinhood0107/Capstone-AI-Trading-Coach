@@ -1,16 +1,16 @@
 import json
 from datetime import date
-from pathlib import Path
+from importlib.resources import files
 
 import pytest
 
 from app.data.kis.parsers import KISResponseError, parse_current_price, parse_daily_bars, parse_holidays
 
-FIXTURE_DIR = Path(__file__).resolve().parents[2] / "fixtures" / "kis"
+FIXTURE_PACKAGE = "app.data.kis.fixtures"
 
 
 def _load(name: str) -> dict:
-    return json.loads((FIXTURE_DIR / name).read_text(encoding="utf-8"))
+    return json.loads(files(FIXTURE_PACKAGE).joinpath(name).read_text(encoding="utf-8"))
 
 
 def test_parse_current_price_normalizes_numeric_fields() -> None:
@@ -99,4 +99,5 @@ def test_parse_current_price_raises_on_kis_error_response() -> None:
 
 
 def test_committed_kis_fixture_count_reaches_s1_1b_target() -> None:
-    assert len(list(FIXTURE_DIR.glob("*.json"))) >= 16
+    # offline mode is a runtime fallback, so count the package the CLI actually loads.
+    assert len([item for item in files(FIXTURE_PACKAGE).iterdir() if item.name.endswith(".json")]) >= 20

@@ -52,3 +52,44 @@ def test_post_is_not_retried_even_when_server_fails(tmp_path: Path) -> None:
     with pytest.raises(KISHttpError):
         client.request("POST", "/oauth2/tokenP", headers={}, json_body={"grant_type": "client_credentials"})
     assert attempts == 1
+
+
+def test_get_market_data_retries_timeout_once_then_succeeds(tmp_path: Path) -> None:
+    attempts = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise httpx.ConnectTimeout("network stalled")
+        return httpx.Response(200, json={"rt_cd": "0", "output": {"ok": "yes"}})
+
+    client = KISHttpClient(
+        _settings(tmp_path),
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+        rate_limiter=TokenBucket(rate_per_second=1000),
+        retry_wait=wait_none(),
+    )
+
+    assert client.request("GET", "/uapi/test", headers={}, params={})["output"] == {"ok": "yes"}
+    assert attempts == 2
+
+
+def test_post_timeout_is_not_retried(tmp_path: Path) -> None:
+    attempts = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        raise httpx.ConnectTimeout("token endpoint stalled")
+
+    client = KISHttpClient(
+        _settings(tmp_path),
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+        rate_limiter=TokenBucket(rate_per_second=1000),
+        retry_wait=wait_none(),
+    )
+
+    with pytest.raises(httpx.ConnectTimeout):
+        client.request("POST", "/oauth2/tokenP", headers={}, json_body={"grant_type": "client_credentials"})
+    assert attempts == 1

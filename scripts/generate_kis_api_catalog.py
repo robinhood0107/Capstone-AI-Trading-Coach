@@ -21,6 +21,30 @@ import openpyxl
 # 수치도 같은 PR에서 함께 갱신해야 한다.
 SHEET_NAME = "API 목록"
 
+# Market Calendar/Event Aggregator(API 명세서 12A) 후보 태그. 카탈로그 본문
+# 수치를 바꾸지 않고 부록으로만 표기하기 위해, 배포본이 갱신돼도 순번이
+# 아니라 URL로 대조한다. 선정 기준 변경은 이 상수만 고치고 재생성한다.
+CALENDAR_EVENT_CANDIDATES = [
+    ("/uapi/domestic-stock/v1/quotations/chk-holiday", "TradingSession(XKRX)", "1일 1회 이하 보수 호출(공식 예제 주의사항)"),
+    ("/uapi/domestic-stock/v1/quotations/market-time", "TradingSession 보조(영업일)", "선물 영업일 관점 교차 검증용"),
+    ("/uapi/domestic-stock/v1/quotations/news-title", "DISCLOSURE(제목)", "제목/메타만 저장, 본문 저장 금지"),
+    ("/uapi/domestic-stock/v1/ksdinfo/dividend", "DIVIDEND_RECORD/DIVIDEND_PAY", "record_date/divi_pay_dt 제공"),
+    ("/uapi/domestic-stock/v1/ksdinfo/paidin-capin", "RIGHTS_ISSUE", "유상증자 일정"),
+    ("/uapi/domestic-stock/v1/ksdinfo/bonus-issue", "BONUS_ISSUE", "무상증자 일정"),
+    ("/uapi/domestic-stock/v1/ksdinfo/merger-split", "MERGER_SPLIT", "합병/분할 일정"),
+    ("/uapi/domestic-stock/v1/ksdinfo/rev-split", "SPLIT", "액면교체 일정"),
+    ("/uapi/domestic-stock/v1/ksdinfo/cap-dcrs", "CAPITAL_REDUCTION", "자본감소 일정"),
+    ("/uapi/domestic-stock/v1/ksdinfo/list-info", "IPO_LISTING", "상장정보 일정"),
+    ("/uapi/domestic-stock/v1/ksdinfo/pub-offer", "IPO_SUBSCRIPTION", "공모주 청약 일정"),
+    ("/uapi/domestic-stock/v1/ksdinfo/sharehld-meet", "SHAREHOLDER_MEETING", "주주총회 일정"),
+    ("/uapi/domestic-stock/v1/ksdinfo/purreq", "MERGER_SPLIT 보조", "주식매수청구 일정"),
+    ("/uapi/domestic-stock/v1/ksdinfo/forfeit", "RIGHTS_ISSUE 보조", "실권주 일정"),
+    ("/uapi/domestic-stock/v1/ksdinfo/mand-deposit", "참고", "의무예치 일정"),
+    ("/uapi/domestic-stock/v1/quotations/estimate-perform", "EARNINGS_EXPECTED 보조", "추정실적 — 확정 아님, TENTATIVE 유지"),
+    ("/uapi/overseas-stock/v1/quotations/countries-holiday", "해외 결제일/휴장 참고", "TradingSession 보조 교차 검증"),
+    ("/uapi/overseas-price/v1/quotations/news-title", "해외 DISCLOSURE(제목)", "제목/메타만 저장"),
+]
+
 
 def cell(v):
     # 표 구분자와 충돌하지 않도록 셀 안의 pipe를 이스케이프한다.
@@ -99,6 +123,30 @@ def main():
                 f"| `{cell(r[8])}` | {cell(r[5]) or '-'} | {cell(r[6]) or '-'} | {lab} |"
             )
         out.append("")
+
+    # 부록은 본문 수치를 건드리지 않는 태그 전용 절이다. 배포본 갱신으로
+    # 순번이 바뀌어도 URL 대조로 따라가고, 사라진 API는 재확인 대상으로
+    # 표기해 조용히 누락되지 않게 한다.
+    out.append("## 부록 A. Market Calendar/Event Aggregator 후보 태그 (스크립트 관리)")
+    out.append("")
+    out.append("> 변경 반영(2026-07-08): Market Calendar/Event 후보 태그 부록을 추가함(본문 카탈로그 수치는 변경 없음).")
+    out.append("")
+    out.append(
+        "API 명세서 12A(계획)의 수집 후보를 URL 기준으로 태그한다. 본문 수치/분류에는 영향이 없으며, "
+        "선정 기준은 `scripts/generate_kis_api_catalog.py`의 `CALENDAR_EVENT_CANDIDATES` 상수로만 관리한다. "
+        "아래 항목은 전부 모의투자 미지원이므로 최종_프로젝트_명세서 12.5의 live read-only 경계에서만 호출할 수 있다."
+    )
+    out.append("")
+    out.append("| 순번 | API 명 | URL | 이벤트 매핑 | 비고 |")
+    out.append("|---|---|---|---|---|")
+    by_url = {cell(r[8]): r for r, _ in labeled}
+    for url, tag, note in CALENDAR_EVENT_CANDIDATES:
+        r = by_url.get(url)
+        if r is not None:
+            out.append(f"| {cell(r[0])} | {cell(r[3])} | `{url}` | {tag} | {note} |")
+        else:
+            out.append(f"| - | (배포본 미수록 — 재확인 필요) | `{url}` | {tag} | {note} |")
+    out.append("")
 
     with open(args.output, "w", encoding="utf-8", newline="\n") as f:
         f.write("\n".join(out))

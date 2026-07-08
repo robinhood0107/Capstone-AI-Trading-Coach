@@ -1,0 +1,16 @@
+{
+  "rt_cd": "0",
+  "msg_cd": "MCA00000",
+  "msg1": "정상처리 되었습니다.",
+  "output": {
+    "stck_shrn_iscd": "105560",
+    "stck_prpr": "96500",
+    "prdy_vrss": "-300",
+    "prdy_ctrt": "-0.31",
+    "stck_oprc": "96800",
+    "stck_hgpr": "97200",
+    "stck_lwpr": "96100",
+    "acml_vol": "345678",
+    "acml_tr_pbmn": "33357927000"
+  }
+}

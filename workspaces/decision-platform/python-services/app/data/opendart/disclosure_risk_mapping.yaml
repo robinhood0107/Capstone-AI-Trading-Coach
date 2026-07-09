@@ -1,0 +1,167 @@
+version: s1.2-v1
+entries:
+  - code: OPENDART:piicDecsn
+    label: 유상증자 결정
+    status: active
+    score: 0.6
+    official_endpoint: piicDecsn
+    effective_window_days: 30
+    evidence_level: A_OFFICIAL_STRUCTURED_AND_KOREA_MARKET_EVIDENCE
+    calibration_status: policy_v1_unvalidated
+    source_note: OpenDART 주요사항보고서 주요정보조회 전용 endpoint
+  - code: OPENDART:cvbdIsDecsn
+    label: 전환사채권 발행결정
+    status: active
+    score: 0.6
+    official_endpoint: cvbdIsDecsn
+    effective_window_days: 30
+    evidence_level: B_CONFLICTING_KOREA_MARKET_EVIDENCE
+    calibration_status: policy_v1_unvalidated
+    source_note: OpenDART 주요사항보고서 주요정보조회 전용 endpoint. 한국 단기 공시효과 연구는 양의 반응도 보고하므로 수익예측 근거가 아니라 희석·리픽싱·복잡상품 위험 검토 트리거로만 사용한다.
+  - code: OPENDART:lwstLg
+    label: 소송 등의 제기
+    status: active
+    score: 0.4
+    official_endpoint: lwstLg
+    effective_window_days: 30
+    evidence_level: B_OFFICIAL_STRUCTURED_AND_HETEROGENEOUS_MARKET_EVIDENCE
+    calibration_status: policy_v1_unvalidated
+    source_note: OpenDART 주요사항보고서 주요정보조회 전용 endpoint
+  - code: OPENDART:accnutAdtorNmNdAdtOpinion
+    label: 감사의견 비적정/한정/의견거절
+    status: active
+    score: 1.0
+    official_endpoint: accnutAdtorNmNdAdtOpinion
+    effective_window_days: 365
+    evidence_level: A_OFFICIAL_STRUCTURED_AND_REGULATORY_SEVERITY
+    calibration_status: policy_v1_unvalidated
+    condition_field: adt_opinion
+    condition_values:
+      - 한정
+      - 부적정
+      - 비적정
+      - 의견거절
+    source_note: OpenDART 정기보고서 주요정보 회계감사인의 명칭 및 감사의견 endpoint
+  - code: OPENDART:dfOcr
+    label: 부도발생
+    status: active
+    score: 1.0
+    official_endpoint: dfOcr
+    effective_window_days: 365
+    evidence_level: A_OFFICIAL_STRUCTURED_AND_REGULATORY_SEVERITY
+    calibration_status: policy_v1_unvalidated
+    source_note: OpenDART 주요사항보고서(부도발생) 전용 endpoint, apiId 2020019. going-concern을 직접 위협하는 최상위 위험 검토 트리거.
+  - code: OPENDART:ctrcvsBgrq
+    label: 회생절차 개시신청
+    status: active
+    score: 1.0
+    official_endpoint: ctrcvsBgrq
+    effective_window_days: 365
+    evidence_level: A_OFFICIAL_STRUCTURED_AND_REGULATORY_SEVERITY
+    calibration_status: policy_v1_unvalidated
+    source_note: OpenDART 주요사항보고서(회생절차 개시신청) 전용 endpoint, apiId 2020021. 도산 절차 진입 신호.
+  - code: OPENDART:dsRsOcr
+    label: 해산사유 발생
+    status: active
+    score: 1.0
+    official_endpoint: dsRsOcr
+    effective_window_days: 365
+    evidence_level: A_OFFICIAL_STRUCTURED_AND_REGULATORY_SEVERITY
+    calibration_status: policy_v1_unvalidated
+    source_note: OpenDART 주요사항보고서(해산사유 발생) 전용 endpoint, apiId 2020022. 법인 해산 신호로 going-concern 위협.
+  - code: OPENDART:bnkMngtPcbg
+    label: 채권은행 등의 관리절차 개시
+    status: active
+    score: 1.0
+    official_endpoint: bnkMngtPcbg
+    effective_window_days: 365
+    evidence_level: A_OFFICIAL_STRUCTURED_AND_REGULATORY_SEVERITY
+    calibration_status: policy_v1_unvalidated
+    source_note: OpenDART 주요사항보고서(채권은행 등의 관리절차 개시) 전용 endpoint, apiId 2020027. 채권단 관리 진입은 재무 distress 신호.
+  - code: OPENDART:bsnSp
+    label: 영업정지
+    status: active
+    score: 0.8
+    official_endpoint: bsnSp
+    effective_window_days: 365
+    evidence_level: A_OFFICIAL_STRUCTURED_AND_REGULATORY_SEVERITY
+    calibration_status: policy_v1_unvalidated
+    source_note: OpenDART 주요사항보고서(영업정지) 전용 endpoint, apiId 2020020. 사업 일부/전부 정지로 심각하나 범위·기간 편차가 있어 distress 최상위(1.0)보다 한 단계 낮게 둔다.
+  - code: OPENDART:crDecsn
+    label: 감자 결정
+    status: active
+    score: 0.8
+    official_endpoint: crDecsn
+    effective_window_days: 365
+    evidence_level: A_OFFICIAL_STRUCTURED_AND_KOREA_MARKET_EVIDENCE
+    calibration_status: policy_v1_unvalidated
+    source_note: OpenDART 주요사항보고서(감자 결정) 전용 endpoint, apiId 2020026. 결손보전형 무상감자는 자본잠식 신호지만 구조조정 목적도 있어 사건별 이질성을 반영해 0.8로 둔다.
+  - code: OPENDART:bdwtIsDecsn
+    label: 신주인수권부사채권 발행결정
+    status: active
+    score: 0.6
+    official_endpoint: bdwtIsDecsn
+    effective_window_days: 30
+    evidence_level: B_CONFLICTING_KOREA_MARKET_EVIDENCE
+    calibration_status: policy_v1_unvalidated
+    source_note: OpenDART 주요사항보고서(신주인수권부사채권 발행결정) 전용 endpoint, apiId 2020034. CB와 같은 mezzanine 희석·리픽싱 위험이나 한국 공시효과 연구가 엇갈려 수익예측이 아니라 검토 트리거로만 쓴다.
+  - code: OPENDART:exbdIsDecsn
+    label: 교환사채권 발행결정
+    status: active
+    score: 0.6
+    official_endpoint: exbdIsDecsn
+    effective_window_days: 30
+    evidence_level: B_CONFLICTING_KOREA_MARKET_EVIDENCE
+    calibration_status: policy_v1_unvalidated
+    source_note: OpenDART 주요사항보고서(교환사채권 발행결정) 전용 endpoint, apiId 2020035. 교환대상 주식 수급·복잡상품 위험 검토 트리거. 정책 등급이며 시장 보정값 아님.
+  - code: OPENDART:cmpMgDecsn
+    label: 회사합병 결정
+    status: active
+    score: 0.6
+    official_endpoint: cmpMgDecsn
+    effective_window_days: 90
+    evidence_level: B_OFFICIAL_STRUCTURED_AND_HETEROGENEOUS_MARKET_EVIDENCE
+    calibration_status: policy_v1_unvalidated
+    source_note: OpenDART 주요사항보고서(회사합병 결정) 전용 endpoint, apiId 2020050. reorg는 주주가치 반응이 이질적이라 검토 트리거로만 쓰고, 절차가 수주~수개월 이어져 90일 window로 둔다.
+  - code: OPENDART:cmpDvDecsn
+    label: 회사분할 결정
+    status: active
+    score: 0.6
+    official_endpoint: cmpDvDecsn
+    effective_window_days: 90
+    evidence_level: B_OFFICIAL_STRUCTURED_AND_HETEROGENEOUS_MARKET_EVIDENCE
+    calibration_status: policy_v1_unvalidated
+    source_note: OpenDART 주요사항보고서(회사분할 결정) 전용 endpoint, apiId 2020051. 물적/인적 분할은 주주가치 영향이 갈려 검토 트리거로 쓰고 90일 window로 둔다.
+  - code: OPENDART:cmpDvmgDecsn
+    label: 회사분할합병 결정
+    status: active
+    score: 0.6
+    official_endpoint: cmpDvmgDecsn
+    effective_window_days: 90
+    evidence_level: B_OFFICIAL_STRUCTURED_AND_HETEROGENEOUS_MARKET_EVIDENCE
+    calibration_status: policy_v1_unvalidated
+    source_note: OpenDART 주요사항보고서(회사분할합병 결정) 전용 endpoint, apiId 2020052. 분할과 합병이 겹치는 복합 reorg. 검토 트리거, 90일 window.
+  - code: OPENDART:bsnTrfDecsn
+    label: 영업양도 결정
+    status: active
+    score: 0.6
+    official_endpoint: bsnTrfDecsn
+    effective_window_days: 90
+    evidence_level: B_OFFICIAL_STRUCTURED_AND_HETEROGENEOUS_MARKET_EVIDENCE
+    calibration_status: policy_v1_unvalidated
+    source_note: OpenDART 주요사항보고서(영업양도 결정) 전용 endpoint, apiId 2020043. 핵심 사업부 양도는 사업구조 변화 신호. 검토 트리거, 90일 window.
+  - code: OPENDART:KRX_MANAGEMENT_OR_DELISTING
+    label: 관리종목 지정/상장폐지 관련
+    status: blocked
+    blocked_reason: OpenDART 공시검색 I003 시장조치/안내만으로 세부 이벤트를 안정 분류할 수 없음
+    source_gap: KRX/FSS 구조화 이벤트 코드 채택 필요
+  - code: OPENDART:KRX_UNFAITHFUL_DISCLOSURE
+    label: 불성실공시법인 지정
+    status: blocked
+    blocked_reason: 공시검색 제목 문자열 매칭 없이는 공식 구조화 코드가 부족함
+    source_gap: KRX/FSS 불성실공시법인 구조화 source 필요
+  - code: OPENDART:CONTROLLING_SHAREHOLDER_CHANGE
+    label: 최대주주 변경
+    status: blocked
+    blocked_reason: 정기보고서 변동현황은 최근 30일 이벤트 분류와 성격이 다름
+    source_gap: 최근 이벤트용 공식 구조화 source 필요

@@ -55,7 +55,7 @@ S1.2의 두 번째 핵심은 점수를 계산만 하지 않고, 판단 결과 �
 | `docs/최종_프로젝트_명세서.md` 11.1.2 | raw observation과 canonical event를 분리 | S1.2는 raw만 저장하고 정규화·집계는 후속(S1.2+) event aggregator로 미룬다 |
 | `docs/API_명세서.md` 4장 | `disclosure_risk_guard`는 `disclosure_risk_score`를 소비 | Python 서비스가 점수를 계산하고 Spring RiskEngine은 snapshot을 소비 |
 | `docs/API_명세서.md` 5장 Decision API | 판단 결과는 `violations`/`riskItems`로 위험 근거를 표현 | `disclosure_risk_score`를 `risk_decision.riskItems[]`로 결과 계약에 노출 |
-| `contracts/schemas/risk_decision.schema.json` | disclosure 근거를 담을 범용 `riskItems` 구조 | 최근 30일·복수 이벤트 max score·mapping 버전을 결과 계약에 재현 가능하게 남긴다 |
+| `contracts/schemas/risk_decision.schema.json` | disclosure 근거를 담을 범용 `riskItems` 구조 | 유형별 유효기간 내 복수 이벤트 max score·mapping 버전을 결과 계약에 재현 가능하게 남긴다 |
 
 ## 데이터 수집 범위
 
@@ -67,7 +67,7 @@ S1.2는 “재무제표와 모든 공시를 전부 긁는 단계”가 아니다
 | 기업개황 | 기업 기본정보 조회와 parser 제공 | 기업 설명 RAG 카드 생성 |
 | 재무 주요계정 | 단일회사 주요계정 endpoint parser 제공 | XBRL 원문, 주석, 전체 재무제표 대량 다운로드 |
 | 재무지표 | 단일회사 주요 재무지표(`fnlttSinglIndx`) parser 제공 | 다중회사 재무지표 batch(후속), 재무비율 임계값 원칙 연결(후속) |
-| 공시목록 | 최근 30일 공시목록 조회와 raw observation 저장 | 공시 제목 문자열 기반 이벤트 확정 |
+| 공시목록 | 대상 기간(호출부 지정) 공시목록 조회와 raw observation 저장 | 공시 제목 문자열 기반 이벤트 확정 |
 | 주요사항 | 자본조달·법적 위험(유상증자·전환사채·소송)과 going-concern distress(부도·회생·해산·관리절차·영업정지·감자) 전용 endpoint identity를 risk event로 사용 | 주요사항보고서 36종 전체 점수화, 자기주식/양수도/해외상장 등 저위험·중립 이벤트 |
 | 감사의견 | `adt_opinion` 구조화 필드로 비적정/한정/의견거절만 점수화 | 감사보고서 본문 NLP 판단 |
 

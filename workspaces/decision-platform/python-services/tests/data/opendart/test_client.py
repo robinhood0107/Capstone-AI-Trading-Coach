@@ -351,6 +351,101 @@ def test_client_disclosure_list_with_observation_marks_no_data_as_empty(tmp_path
     assert result.raw_observation.normalized_status == "EMPTY"
 
 
+def test_client_s1_2c_financial_indicators_batch_joins_corp_codes() -> None:
+    # 다중회사 주요 재무지표는 corp_code를 comma-join한 복수조회 파라미터로 보내야 한다.
+    fake_http = FakeHttp(
+        {
+            "status": "000",
+            "list": [
+                {"corp_code": "00126380", "idx_cl_code": "M220000", "idx_nm": "부채비율", "idx_val": "45.67"},
+                {"corp_code": "00164779", "idx_cl_code": "M220000", "idx_nm": "부채비율", "idx_val": "88.10"},
+            ],
+        }
+    )
+    client = OpenDARTClient(_settings(), fake_http)
+
+    rows = client.financial_indicators_batch(
+        corp_codes=["00126380", "00164779"],
+        business_year="2025",
+        report_code="11011",
+        index_class_code="M220000",
+    )
+
+    assert fake_http.calls == [
+        (
+            "/api/fnlttCmpnyIndx.json",
+            {
+                "crtfc_key": "TEST_OPEN_DART_KEY",
+                "corp_code": "00126380,00164779",
+                "bsns_year": "2025",
+                "reprt_code": "11011",
+                "idx_cl_code": "M220000",
+            },
+        )
+    ]
+    # batch parser는 파라미터가 아니라 row별 corp_code를 보존해야 한다.
+    assert [row.corp_code for row in rows] == ["00126380", "00164779"]
+
+
+def test_client_s1_2c_financial_indicators_batch_rejects_empty_corp_codes() -> None:
+    client = OpenDARTClient(_settings(), FakeHttp({"status": "000", "list": []}))
+    with pytest.raises(ValueError):
+        client.financial_indicators_batch(
+            corp_codes=[],
+            business_year="2025",
+            report_code="11011",
+            index_class_code="M220000",
+        )
+
+
+def test_client_s1_2c_ownership_disclosure_endpoints_add_key_and_corp_code() -> None:
+    major_http = FakeHttp(
+        {
+            "status": "000",
+            "list": [
+                {
+                    "rcept_no": "20260701000001",
+                    "rcept_dt": "20260701",
+                    "corp_code": "00126380",
+                    "corp_name": "삼성전자",
+                    "report_tp": "대량보유",
+                    "repror": "국민연금공단",
+                    "stkqy": "1,000,000",
+                    "stkrt": "5.01",
+                    "stkrt_irds": "0.30",
+                }
+            ],
+        }
+    )
+    ele_http = FakeHttp(
+        {
+            "status": "000",
+            "list": [
+                {
+                    "rcept_no": "20260702000002",
+                    "rcept_dt": "2026-07-02",
+                    "corp_code": "00126380",
+                    "corp_name": "삼성전자",
+                    "repror": "대표이사",
+                    "isu_main_shrholdr": "해당",
+                    "sp_stock_lmp_cnt": "12,345",
+                    "sp_stock_lmp_rate": "0.12",
+                }
+            ],
+        }
+    )
+
+    major = OpenDARTClient(_settings(), major_http).major_stock_reports(corp_code="00126380")
+    ele = OpenDARTClient(_settings(), ele_http).executive_major_shareholder_reports(corp_code="00126380")
+
+    assert major_http.calls == [("/api/majorstock.json", {"crtfc_key": "TEST_OPEN_DART_KEY", "corp_code": "00126380"})]
+    assert ele_http.calls == [("/api/elestock.json", {"crtfc_key": "TEST_OPEN_DART_KEY", "corp_code": "00126380"})]
+    assert major[0].holding_ratio == 5.01
+    assert major[0].receipt_date == date(2026, 7, 1)
+    assert ele[0].specific_stock_count == 12345
+    assert ele[0].receipt_date == date(2026, 7, 2)
+
+
 class FakeHttp:
     def __init__(self, response: dict[str, Any]) -> None:
         self.response = response

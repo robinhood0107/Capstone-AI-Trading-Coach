@@ -133,6 +133,70 @@ def test_announcement_effect_event_expires_after_its_short_window() -> None:
     assert distress_same_age.score == 0.8
 
 
+def test_s1_2b_events_score_deterministically() -> None:
+    mapping = load_default_risk_mapping()
+    codes = [
+        "OPENDART:bdwtIsDecsn",
+        "OPENDART:exbdIsDecsn",
+        "OPENDART:cmpMgDecsn",
+        "OPENDART:cmpDvDecsn",
+        "OPENDART:cmpDvmgDecsn",
+        "OPENDART:bsnTrfDecsn",
+    ]
+    for code in codes:
+        events = [_event("900000", "00999999", code, AS_OF - timedelta(days=2))]
+        first = score_disclosure_risk("900000", events, as_of=AS_OF, mapping=mapping)
+        second = score_disclosure_risk("900000", events, as_of=AS_OF, mapping=mapping)
+
+        assert first.score == 0.6
+        assert first.events[0].event_code == code
+        assert first == second
+
+
+def test_s1_2b_bw_eb_expire_after_thirty_days() -> None:
+    # BW/EB는 공시효과형이라 30일 window. 29일은 살아있고 31일은 0.
+    mapping = load_default_risk_mapping()
+    for code in ("OPENDART:bdwtIsDecsn", "OPENDART:exbdIsDecsn"):
+        fresh = score_disclosure_risk(
+            "900000", [_event("900000", "00999999", code, AS_OF - timedelta(days=29))], as_of=AS_OF, mapping=mapping
+        )
+        stale = score_disclosure_risk(
+            "900000", [_event("900000", "00999999", code, AS_OF - timedelta(days=31))], as_of=AS_OF, mapping=mapping
+        )
+        assert fresh.score == 0.6
+        assert stale.score == 0.0
+
+
+def test_s1_2b_reorg_events_persist_within_ninety_days() -> None:
+    # 합병·분할·분할합병·영업양도는 reorg라 90일 window. 90일은 살아있고 91일은 0.
+    mapping = load_default_risk_mapping()
+    for code in ("OPENDART:cmpMgDecsn", "OPENDART:cmpDvDecsn", "OPENDART:cmpDvmgDecsn", "OPENDART:bsnTrfDecsn"):
+        within = score_disclosure_risk(
+            "900000", [_event("900000", "00999999", code, AS_OF - timedelta(days=90))], as_of=AS_OF, mapping=mapping
+        )
+        beyond = score_disclosure_risk(
+            "900000", [_event("900000", "00999999", code, AS_OF - timedelta(days=91))], as_of=AS_OF, mapping=mapping
+        )
+        assert within.score == 0.6
+        assert beyond.score == 0.0
+
+
+def test_s1_2b_event_does_not_override_higher_distress_max_score() -> None:
+    # 복수 이벤트 max score 규칙 유지: 합병(0.6)과 부도(1.0)가 함께면 1.0.
+    result = score_disclosure_risk(
+        "900000",
+        [
+            _event("900000", "00999999", "OPENDART:cmpMgDecsn", AS_OF - timedelta(days=3)),
+            _event("900000", "00999999", "OPENDART:dfOcr", AS_OF - timedelta(days=5)),
+        ],
+        as_of=AS_OF,
+        mapping=load_default_risk_mapping(),
+    )
+
+    assert result.score == 1.0
+    assert result.events[0].event_code == "OPENDART:dfOcr"
+
+
 def test_unknown_code_is_zero_score_with_structured_warning_even_if_title_looks_risky() -> None:
     result = score_disclosure_risk(
         "005930",

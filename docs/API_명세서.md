@@ -1709,8 +1709,9 @@ message DisclosureRiskWarning {
 |---|---|
 | 원천 | OpenDART 공식 read-only endpoint만 사용. `report_nm` 문자열은 event code 근거로 쓰지 않는다 |
 | event_code | 주요사항보고서 전용 endpoint identity(`OPENDART:{endpoint}`) 또는 감사의견 `adt_opinion` 구조화 필드 기반 |
-| score | `disclosure_risk_mapping.yaml`의 active mapping과 30일 window max score. 같은 입력·같은 `mapping_version`이면 결정적이다 |
+| score | `disclosure_risk_mapping.yaml`의 active mapping 기반 max score. 같은 입력·같은 `mapping_version`이면 결정적이다. 이벤트 유형별 유효기간(공시효과형 30일 / 상태 지속형 365일, mapping `effective_window_days`) 안의 이벤트만 반영한다 |
 | warnings | mapping이 없거나 blocked인 event는 점수 0으로 두고 warning으로 관측성만 남긴다 |
+| 감시 모델 | v1은 백그라운드 상시 감시가 아니라 **판단 시점 조회(on-demand lookback)**다. 유효기간은 "판단 시점에 위험 상태가 유효한가"의 근사이며, 이벤트로 상태를 open/close하는 지속 상태 추적은 후속 event aggregator 과제다. 상세는 `docs/decision-platform/S1_2_OpenDART_공시위험점수_근거.md`의 "공시위험 감시 모델" 절 |
 | 소비 | Decision/Risk 판단은 이 응답을 `risk_decision.riskItems[]`(`metric=disclosure_risk_score`)로 노출한다 |
 | 보안 | crtfc_key·원본 응답·접수 상세는 로그/fixture에 남기지 않는다. raw는 masked observation 경로에만 저장 |
 

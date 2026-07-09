@@ -13,6 +13,17 @@
       "threshold": 0.35
     }
   ],
+  "riskItems": [
+    {
+      "metric": "disclosure_risk_score",
+      "value": 0.6,
+      "severity": "WARN",
+      "source": "OPENDART",
+      "eventCodes": ["OPENDART:piicDecsn"],
+      "mappingVersion": "s1.2-v1",
+      "sourceRefs": ["obs_opendart_20260623_005930"]
+    }
+  ],
   "riskSummary": {
     "mdd": -0.081,
     "var95": -0.024,

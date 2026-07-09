@@ -107,6 +107,51 @@ def test_client_high_severity_major_matter_endpoints_map_to_official_paths_and_i
         assert events[0].occurred_on == date(2026, 7, 1)
 
 
+def test_client_s1_2b_major_matter_endpoints_map_to_official_paths_and_identity() -> None:
+    # S1.2b 확장(희석·복잡상품·reorg) endpoint가 공식 path와 endpoint 기반 event_code로 고정되는지 검증한다.
+    expected = {
+        "bdwtIsDecsn": "/api/bdwtIsDecsn.json",
+        "exbdIsDecsn": "/api/exbdIsDecsn.json",
+        "cmpMgDecsn": "/api/cmpMgDecsn.json",
+        "cmpDvDecsn": "/api/cmpDvDecsn.json",
+        "cmpDvmgDecsn": "/api/cmpDvmgDecsn.json",
+        "bsnTrfDecsn": "/api/bsnTrfDecsn.json",
+    }
+    for endpoint_id, path in expected.items():
+        fake_http = FakeHttp(
+            {
+                "status": "000",
+                "list": [
+                    {
+                        "rcept_no": "20260701000001",
+                        "corp_code": "00126380",
+                        # report_nm을 일부러 넣어도 event_code/identity 근거로 쓰이지 않아야 한다.
+                        "report_nm": "주요사항보고서(문자열은 점수화 근거가 아니다)",
+                    }
+                ],
+            }
+        )
+        client = OpenDARTClient(_settings(), fake_http)
+
+        events = client.major_matter_events(
+            endpoint_id=endpoint_id,
+            symbol="005930",
+            corp_code="00126380",
+            start=date(2026, 6, 9),
+            end=date(2026, 7, 9),
+        )
+
+        assert fake_http.calls[0][0] == path
+        assert fake_http.calls[0][1] == {
+            "crtfc_key": "TEST_OPEN_DART_KEY",
+            "corp_code": "00126380",
+            "bgn_de": "20260609",
+            "end_de": "20260709",
+        }
+        assert events[0].event_code == f"OPENDART:{endpoint_id}"
+        assert events[0].occurred_on == date(2026, 7, 1)
+
+
 def test_client_rejects_unknown_major_matter_endpoint() -> None:
     client = OpenDARTClient(_settings(), FakeHttp({"status": "000", "list": []}))
     with pytest.raises(ValueError):

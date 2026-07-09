@@ -71,6 +71,26 @@ def test_active_mapping_requires_effective_window_days() -> None:
         )
 
 
+def test_s1_2b_extension_events_are_active_with_official_endpoint_and_window() -> None:
+    mapping = load_default_risk_mapping()
+
+    # S1.2b: BW/EB는 30일(공시효과형), 합병·분할·분할합병·영업양도는 90일(reorg) 정책.
+    expected_windows = {
+        "OPENDART:bdwtIsDecsn": 30,
+        "OPENDART:exbdIsDecsn": 30,
+        "OPENDART:cmpMgDecsn": 90,
+        "OPENDART:cmpDvDecsn": 90,
+        "OPENDART:cmpDvmgDecsn": 90,
+        "OPENDART:bsnTrfDecsn": 90,
+    }
+    for code, window in expected_windows.items():
+        entry = mapping.active_by_code[code]
+        assert entry.score == 0.6
+        assert entry.official_endpoint == code.split(":", 1)[1]
+        assert entry.calibration_status == "policy_v1_unvalidated"
+        assert entry.effective_window_days == window
+
+
 def test_active_mapping_requires_official_code_or_endpoint_evidence() -> None:
     with pytest.raises(RiskMappingValidationError):
         load_risk_mapping_from_dict(

@@ -87,6 +87,48 @@ class FinancialIndicatorRow:
 
 
 @dataclass(frozen=True)
+class MajorStockReportRow:
+    receipt_no: str
+    receipt_date: date
+    corp_code: str
+    corp_name: str
+    report_type: str
+    reporter: str
+    stock_count: int | None
+    stock_count_change: int | None
+    holding_ratio: float | None
+    holding_ratio_change: float | None
+    report_reason: str
+
+
+@dataclass(frozen=True)
+class ExecutiveMajorShareholderReportRow:
+    receipt_no: str
+    receipt_date: date
+    corp_code: str
+    corp_name: str
+    reporter: str
+    is_registered_executive: str
+    officer_position: str
+    is_main_shareholder: str
+    specific_stock_count: int | None
+    specific_stock_count_change: int | None
+    specific_stock_ratio: float | None
+    specific_stock_ratio_change: float | None
+
+
+@dataclass(frozen=True)
+class OwnershipDisclosureEvent:
+    # DS004 지분공시를 canonical ownership 이벤트로 표현하는 후속용 모델. S1.2c에서는 주문 차단 점수에 연결하지 않는다.
+    symbol: str
+    corp_code: str
+    receipt_no: str
+    occurred_on: date
+    event_code: str = "OPENDART:OWNERSHIP_CHANGE"
+    attributes: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class DisclosureRiskEvent:
     symbol: str
     corp_code: str

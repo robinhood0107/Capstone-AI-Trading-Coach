@@ -26,11 +26,10 @@ S1.2는 OpenDART 공식 API에서 읽은 구조화 이벤트만 점수화한다.
 |---|---|---|---|
 | 지원 | DS001 | 공시검색, 기업개황, 고유번호 | 회사 식별과 공시 metadata·raw observation의 기반 |
 | 지원 | DS002 | 회계감사인의 명칭 및 감사의견(`adt_opinion`) | 비적정/한정/의견거절은 강한 위험 검토 트리거 |
-| 지원 | DS003 | 단일회사 주요계정(`fnlttSinglAcnt`), 단일회사 주요 재무지표(`fnlttSinglIndx`) | 재무위험 기준·RAG 카드·백테스트 feature 후보 |
+| 지원 | DS003 | 단일회사 주요계정(`fnlttSinglAcnt`), 단일회사 주요 재무지표(`fnlttSinglIndx`), (S1.2c) 다중회사 주요 재무지표(`fnlttCmpnyIndx`) | 재무위험 기준·RAG 카드·백테스트 feature 후보. 다중회사는 universe batch |
+| 지원 | DS004 (S1.2c) | 대량보유 상황보고(`majorstock`), 임원ㆍ주요주주 소유보고(`elestock`) | 지분변동/주요주주 ownership 축. **수집·파싱만** — 즉시 주문 차단 1순위가 아니라 종목 설명·후속 feature 용도(주문 차단 점수 미연결) |
 | 지원 | DS005 | 유상증자·전환사채·소송 + 부도·회생·해산·관리절차·영업정지·감자 + (S1.2b) 신주인수권부사채·교환사채·합병·분할·분할합병·영업양도 | 자본조달·법적·distress에 더해 희석·복잡상품·reorg 위험을 endpoint identity로 점수화 |
-| 후속 필수 (**S1.2c**) | DS003 | 다중회사 주요 재무지표(`fnlttCmpnyIndx`) | universe batch feature. 아래 "후속 세션 로드맵" 참조 |
-| 후속 필수 (**S1.2c**) | DS004 | 대량보유 상황보고, 임원ㆍ주요주주 소유보고 | 지분변동/주요주주 ownership risk 축(`OWNERSHIP_CHANGE` enum 후보) |
-| 후속 필수 (**S1.6**) | — | 공시위험 지속 상태 추적(open/close, collector) | 유형별 유효기간 근사를 정확 모델로 대체 |
+| 후속 필수 (**S1.6**) | — | 공시위험 지속 상태 추적(open/close, collector), DS004 ownership을 canonical 이벤트로 승격 | 유형별 유효기간 근사를 정확 모델로 대체 |
 | 후속 검토 | DS002/DS006 | 배당·자기주식·자금사용·증권신고서 요약 등 | RAG/feature/timeline에 유용하나 즉시 RiskEngine 핵심은 아님 |
 | 의도적 제외 | DS001/DS003/DS002 | 공시서류원본파일, 재무제표 원본파일(XBRL), 단일회사 전체 재무제표, 개인별 보수류 | 저장·파싱·재배포·개인정보 정책이 정해지기 전에는 위험이 더 큼. 저장/보안 정책 문서화 후 별도 세션 |
 
@@ -43,10 +42,10 @@ S1.2는 OpenDART 공식 API에서 읽은 구조화 이벤트만 점수화한다.
 | 세션 | 범위 | 상태 / DoD | 근거 |
 |---|---|---|---|
 | **S1.2b** | DS005 확장: 신주인수권부사채(`bdwtIsDecsn` 2020034)·교환사채(`exbdIsDecsn` 2020035)·회사합병(`cmpMgDecsn` 2020050)·회사분할(`cmpDvDecsn` 2020051)·회사분할합병(`cmpDvmgDecsn` 2020052)·영업양도(`bsnTrfDecsn` 2020043) | **완료(지원으로 이동)**. BW/EB=0.6·window 30, 합병/분할/분할합병/영업양도=0.6·window 90, `policy_v1_unvalidated`. endpoint path/params + event_code + mapping validation + scorer 테스트 통과 | 기존 `MAIN_MATTER_ENDPOINTS` 패턴 재사용 |
-| **S1.2c** | DS003 다중회사 주요 재무지표(`fnlttCmpnyIndx`, apiId 2022002) + DS004 대량보유 상황보고(2019021)·임원ㆍ주요주주 소유보고(2019022) | 예정. universe batch 재무 feature, ownership 이벤트(`OWNERSHIP_CHANGE` enum 후보). DoD: parser/client 테스트 | 재무 feature·지분변동 축 |
-| **S1.6** | Market Calendar/Event Aggregator + **공시위험 지속 상태 추적 확정 포함** | 예정. 구조화 이벤트로 위험 상태 open, 해제 공시(회생 종결·관리절차 중단 `bnkMngtPcsp`)로 close하는 collector + 상태머신. scorer가 임의 window 없이 “현재 위험 상태”만 읽게 됨 | 유형별 유효기간(30/365) 근사를 정확 모델로 대체 |
+| **S1.2c** | DS003 다중회사 주요 재무지표(`fnlttCmpnyIndx`, apiId 2022002) + DS004 대량보유 상황보고(`majorstock`, 2019021)·임원ㆍ주요주주 소유보고(`elestock`, 2019022) | **완료(지원으로 이동)**. 다중회사 corp_code comma-join 복수조회, ownership row 파싱, `OwnershipDisclosureEvent`(event_code `OPENDART:OWNERSHIP_CHANGE`) 내부 모델. client/parser 테스트 통과. 주문 차단 점수 미연결 | 재무 feature·지분변동 축 |
+| **S1.6** | Market Calendar/Event Aggregator + **공시위험 지속 상태 추적 확정 포함** + DS004 ownership canonical 승격 | 예정. 구조화 이벤트로 위험 상태 open, 해제 공시(회생 종결·관리절차 중단 `bnkMngtPcsp`)로 close하는 collector + 상태머신. scorer가 임의 window 없이 “현재 위험 상태”만 읽게 됨 | 유형별 유효기간(30/365) 근사를 정확 모델로 대체 |
 
-- S1.2c의 endpoint 경로명은 구현 시 OpenDART 상세페이지로 확정한다. 위 표는 개발가이드 apiId(단일 진실)를 근거로 고정했고, 경로명 미확정 상태에서 지어내지 않는다. (S1.2b endpoint 경로명은 구현 시 상세페이지로 확인 완료.)
+- S1.2b·S1.2c endpoint 경로명은 구현 시 OpenDART 상세페이지로 확인 완료(apiId ↔ path 일치). 경로명을 미확정 상태로 지어내지 않는다.
 - 실제 주문 판단 소비(riskItems 방출)는 S2.2 `DisclosureRiskPort` + S2.3 Decision API에서 이뤄진다(위 로드맵과 독립적으로 진행).
 
 ## RiskEngine/Decision API 계약 연결
@@ -79,7 +78,8 @@ S1.2는 “재무제표와 모든 공시를 전부 긁는 단계”가 아니다
 | 고유번호 | `corpCode.xml` ZIP/XML을 파싱해 `stock_code -> corp_code` 매핑 확보 | 전체 종목 universe 운영 정책 확정 |
 | 기업개황 | 기업 기본정보 조회와 parser 제공 | 기업 설명 RAG 카드 생성 |
 | 재무 주요계정 | 단일회사 주요계정 endpoint parser 제공 | XBRL 원문, 주석, 전체 재무제표 대량 다운로드 |
-| 재무지표 | 단일회사 주요 재무지표(`fnlttSinglIndx`) parser 제공 | 다중회사 재무지표 batch(후속), 재무비율 임계값 원칙 연결(후속) |
+| 재무지표 | 단일회사(`fnlttSinglIndx`)와 (S1.2c) 다중회사 batch(`fnlttCmpnyIndx`) parser 제공 | 재무비율 임계값 원칙 연결(후속), 재무제표 원문 |
+| 지분공시 | (S1.2c) 대량보유(`majorstock`)·임원ㆍ주요주주 소유(`elestock`) 수집·파싱, `OwnershipDisclosureEvent` 내부 모델 | 주문 차단 점수 연결(후속), ownership canonical 승격(S1.6) |
 | 공시목록 | 대상 기간(호출부 지정) 공시목록 조회와 raw observation 저장 | 공시 제목 문자열 기반 이벤트 확정 |
 | 주요사항 | 자본조달·법적 위험(유상증자·전환사채·소송)과 going-concern distress(부도·회생·해산·관리절차·영업정지·감자) 전용 endpoint identity를 risk event로 사용 | 주요사항보고서 36종 전체 점수화, 자기주식/양수도/해외상장 등 저위험·중립 이벤트 |
 | 감사의견 | `adt_opinion` 구조화 필드로 비적정/한정/의견거절만 점수화 | 감사보고서 본문 NLP 판단 |

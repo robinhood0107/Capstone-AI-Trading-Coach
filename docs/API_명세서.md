@@ -510,6 +510,17 @@ Principle API의 입력 원칙은 다음과 같다.
         "threshold": 0.35
       }
     ],
+    "riskItems": [
+      {
+        "metric": "disclosure_risk_score",
+        "value": 0.6,
+        "severity": "WARN",
+        "source": "OPENDART",
+        "eventCodes": ["OPENDART:piicDecsn"],
+        "mappingVersion": "s1.2-v1",
+        "sourceRefs": ["obs_opendart_20260623_005930"]
+      }
+    ],
     "riskSummary": {
       "mdd": -0.081,
       "var95": -0.024,
@@ -540,6 +551,20 @@ Principle API의 입력 원칙은 다음과 같다.
 | `WARN` | Guide 경고. 사용자가 확인하면 주문 가능 |
 | `BLOCK` | Strict 차단. 주문 불가 |
 | `HOLD` | 데이터 지연 또는 내부 서비스 장애로 보류 |
+
+`riskItems`는 RiskEngine이 소비한 부가 위험 지표의 근거를 결과 계약에 드러내는 범용 배열이다. `violations`가 원칙 위반 여부라면, `riskItems`는 그 판단에 들어간 외부 원천 지표의 출처와 재현 정보를 남긴다. OpenDART 공시 위험은 다음과 같이 표현한다.
+
+| 필드 | 의미 |
+|---|---|
+| `metric` | 지표 식별자. 공시 위험은 `disclosure_risk_score`이며 Principle metric enum과 정렬한다 |
+| `value` | 지표 값(최근 30일 window의 이벤트 max score). 계산 불가 시 `null` |
+| `severity` | 이 지표가 판단에 준 수준(`ALLOW`/`WARN`/`BLOCK`) |
+| `source` | 원천 시스템. 공시 위험은 `OPENDART` |
+| `eventCodes` | 기여한 구조화 이벤트 코드. 예: `OPENDART:dfOcr`(부도발생). `report_nm` 문자열이 아니라 endpoint identity 기반이다 |
+| `mappingVersion` | 점수 mapping 버전. 같은 입력·같은 버전이면 같은 점수라는 재현성을 남긴다 |
+| `sourceRefs` | raw observation/citation 참조 id. `explanation.citationIds`와 교차 추적 가능하다 |
+
+`disclosure_risk_score` 산출 원천과 점수 등급, 의도적 제외 범위는 `docs/decision-platform/S1_2_OpenDART_공시위험점수_근거.md`를 따른다. 필드 계약은 `contracts/schemas/risk_decision.schema.json`이 단일 진실 소스다.
 
 decision 유효시간 규칙:
 
@@ -1640,6 +1665,56 @@ S1.1의 KIS MarketDataService 구현 경계는 다음과 같다.
 
 > 변경 반영(2026-07-08): 계획(S1.2+ 설계, 미구현) — Market Calendar 집계가 구현되면 `GetTradingSessions`/`GetCalendarEvents` RPC를 MarketDataService에 추가하고 REST 12A가 이를 소비한다. proto 추가는 `contracts/changes/` 절차를 따른다.
 
+#### 13.5.1 GetDisclosureEvents 계약 (S1.2)
+
+`GetDisclosureEvents`는 대상 종목·window의 OpenDART 구조화 공시 위험 이벤트와 `disclosure_risk_score`를 반환한다. 실제 gRPC proto 파일은 아직 없으며, 아래는 S1.2 문서 계약이다. Python OpenDART client(`app/data/opendart`)가 산출하는 값과 정렬한다.
+
+```proto
+message GetDisclosureEventsRequest {
+  string symbol = 1;        // 종목코드(6자리)
+  string corp_code = 2;     // OpenDART 고유번호(8자리)
+  string as_of = 3;         // 기준일 (YYYY-MM-DD)
+  string window_from = 4;   // 조회 시작일 (YYYY-MM-DD)
+  string window_to = 5;     // 조회 종료일 (YYYY-MM-DD)
+}
+
+message GetDisclosureEventsResponse {
+  string symbol = 1;
+  string corp_code = 2;
+  string as_of = 3;
+  string window_from = 4;
+  string window_to = 5;
+  double score = 6;             // 최근 window 이벤트 max score
+  string mapping_version = 7;   // 예: s1.2-v1
+  repeated DisclosureRiskEvent events = 8;
+  repeated DisclosureRiskWarning warnings = 9;
+  repeated string source_refs = 10;  // raw observation 참조 id
+}
+
+message DisclosureRiskEvent {
+  string event_code = 1;   // endpoint identity 기반. 예: OPENDART:dfOcr
+  string receipt_no = 2;   // OpenDART 접수번호
+  string occurred_on = 3;  // 이벤트 발생/접수일 (YYYY-MM-DD)
+}
+
+message DisclosureRiskWarning {
+  string code = 1;         // 예: UNMAPPED_DISCLOSURE_RISK_CODE, BLOCKED_DISCLOSURE_RISK_CODE
+  string event_code = 2;
+  string receipt_no = 3;
+  string message = 4;
+}
+```
+
+| 항목 | 계약 |
+|---|---|
+| 원천 | OpenDART 공식 read-only endpoint만 사용. `report_nm` 문자열은 event code 근거로 쓰지 않는다 |
+| event_code | 주요사항보고서 전용 endpoint identity(`OPENDART:{endpoint}`) 또는 감사의견 `adt_opinion` 구조화 필드 기반 |
+| score | `disclosure_risk_mapping.yaml`의 active mapping 기반 max score. 같은 입력·같은 `mapping_version`이면 결정적이다. 이벤트 유형별 유효기간(공시효과형 30일 / 상태 지속형 365일, mapping `effective_window_days`) 안의 이벤트만 반영한다 |
+| warnings | mapping이 없거나 blocked인 event는 점수 0으로 두고 warning으로 관측성만 남긴다 |
+| 감시 모델 | v1은 백그라운드 상시 감시가 아니라 **판단 시점 조회(on-demand lookback)**다. 유효기간은 "판단 시점에 위험 상태가 유효한가"의 근사이며, 이벤트로 상태를 open/close하는 지속 상태 추적은 후속 event aggregator 과제다. 상세는 `docs/decision-platform/S1_2_OpenDART_공시위험점수_근거.md`의 "공시위험 감시 모델" 절 |
+| 소비 | Decision/Risk 판단은 이 응답을 `risk_decision.riskItems[]`(`metric=disclosure_risk_score`)로 노출한다 |
+| 보안 | crtfc_key·원본 응답·접수 상세는 로그/fixture에 남기지 않는다. raw는 masked observation 경로에만 저장 |
+
 ### 13.6 FinancialEngineeringService
 
 ```proto
@@ -1766,7 +1841,7 @@ API/adapter/parser/storage 변경 커밋은 기능 단위로 분리한다. 테�
 |---|---|
 | `contracts/schemas/principle.schema.json` | ruleId, metric, operator, threshold, severity, enabled |
 | `contracts/schemas/order_intent.schema.json` | symbol, side, orderType, quantity, price, strategyId |
-| `contracts/schemas/risk_decision.schema.json` | decision, violations, riskSummary, signalSummary, explanation |
+| `contracts/schemas/risk_decision.schema.json` | decision, violations, riskItems, riskSummary, signalSummary, explanation |
 | `contracts/schemas/signal.schema.json` | producer, sourceWorkspace, asOf, timeframe, confidence, predictedReturn, featureSummary, lstm, ruleBaseline, lightgbm, newsSentiment, hmmRegime |
 | `contracts/schemas/backtest_result.schema.json` | scenario, cagr, mdd, sharpe, sortino, var95, cvar95, turnover, violations |
 | `contracts/schemas/artifact_manifest.schema.json` | runId, producerWorkspace, schemaVersion, createdAt, universeId, period, timeframe, files, status |

@@ -32,6 +32,13 @@
         "$ref": "#/$defs/violation"
       }
     },
+    "riskItems": {
+      "type": "array",
+      "description": "RiskEngine이 소비한 부가 위험 지표의 근거 목록. disclosure_risk_score 같은 외부 원천 기반 지표가 어떤 event/source/mapping 버전으로 산출됐는지 결과 계약에 드러낸다. 범용 구조라 OpenDART 외 원천도 같은 형태로 표현한다.",
+      "items": {
+        "$ref": "#/$defs/riskItem"
+      }
+    },
     "riskSummary": {
       "$ref": "#/$defs/riskSummary"
     },
@@ -43,6 +50,51 @@
     }
   },
   "$defs": {
+    "riskItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["metric", "value", "severity", "source"],
+      "properties": {
+        "metric": {
+          "type": "string",
+          "minLength": 1,
+          "description": "위험 지표 식별자. 예: disclosure_risk_score. Principle metric enum과 정렬한다."
+        },
+        "value": {
+          "type": ["number", "null"]
+        },
+        "severity": {
+          "type": "string",
+          "enum": ["ALLOW", "WARN", "BLOCK"]
+        },
+        "source": {
+          "type": "string",
+          "enum": ["OPENDART", "KIS", "NEWS", "MACRO", "INTERNAL"],
+          "description": "지표 원천 시스템. disclosure_risk_score는 OPENDART."
+        },
+        "eventCodes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": "지표 산출에 기여한 구조화 이벤트 코드. 예: OPENDART:dfOcr. report_nm 문자열이 아니라 endpoint identity 기반이다."
+        },
+        "mappingVersion": {
+          "type": "string",
+          "minLength": 1,
+          "description": "점수 mapping 버전. 같은 입력·같은 버전이면 같은 점수라는 재현성을 계약에 남긴다."
+        },
+        "sourceRefs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": "raw observation 또는 citation 참조 id. explanation.citationIds와 교차 추적 가능하다."
+        }
+      }
+    },
     "violation": {
       "type": "object",
       "additionalProperties": false,

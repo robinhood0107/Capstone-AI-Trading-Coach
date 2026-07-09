@@ -27,10 +27,9 @@ S1.2는 OpenDART 공식 API에서 읽은 구조화 이벤트만 점수화한다.
 | 지원 | DS001 | 공시검색, 기업개황, 고유번호 | 회사 식별과 공시 metadata·raw observation의 기반 |
 | 지원 | DS002 | 회계감사인의 명칭 및 감사의견(`adt_opinion`) | 비적정/한정/의견거절은 강한 위험 검토 트리거 |
 | 지원 | DS003 | 단일회사 주요계정(`fnlttSinglAcnt`), 단일회사 주요 재무지표(`fnlttSinglIndx`) | 재무위험 기준·RAG 카드·백테스트 feature 후보 |
-| 지원 | DS005 | 유상증자·전환사채·소송 + 부도·회생·해산·관리절차·영업정지·감자 | 자본조달·법적 위험과 going-concern distress를 endpoint identity로 점수화 |
+| 지원 | DS005 | 유상증자·전환사채·소송 + 부도·회생·해산·관리절차·영업정지·감자 + (S1.2b) 신주인수권부사채·교환사채·합병·분할·분할합병·영업양도 | 자본조달·법적·distress에 더해 희석·복잡상품·reorg 위험을 endpoint identity로 점수화 |
 | 후속 필수 (**S1.2c**) | DS003 | 다중회사 주요 재무지표(`fnlttCmpnyIndx`) | universe batch feature. 아래 "후속 세션 로드맵" 참조 |
 | 후속 필수 (**S1.2c**) | DS004 | 대량보유 상황보고, 임원ㆍ주요주주 소유보고 | 지분변동/주요주주 ownership risk 축(`OWNERSHIP_CHANGE` enum 후보) |
-| 후속 필수 (**S1.2b**) | DS005 | 신주인수권부사채(BW)·교환사채(EB)·합병/분할/분할합병·영업양도 | 희석·복잡상품·reorg 위험. distress 다음 우선순위 batch |
 | 후속 필수 (**S1.6**) | — | 공시위험 지속 상태 추적(open/close, collector) | 유형별 유효기간 근사를 정확 모델로 대체 |
 | 후속 검토 | DS002/DS006 | 배당·자기주식·자금사용·증권신고서 요약 등 | RAG/feature/timeline에 유용하나 즉시 RiskEngine 핵심은 아님 |
 | 의도적 제외 | DS001/DS003/DS002 | 공시서류원본파일, 재무제표 원본파일(XBRL), 단일회사 전체 재무제표, 개인별 보수류 | 저장·파싱·재배포·개인정보 정책이 정해지기 전에는 위험이 더 큼. 저장/보안 정책 문서화 후 별도 세션 |
@@ -41,13 +40,13 @@ S1.2는 OpenDART 공식 API에서 읽은 구조화 이벤트만 점수화한다.
 
 “후속 필수 축”은 아래 세션에 **확정 배정**한다. 백로그로 두지 않는다(중간보고서 M1 범위와 별개로 로드맵을 고정한다).
 
-| 세션 | 범위 | 의도 등급/DoD | 근거 |
+| 세션 | 범위 | 상태 / DoD | 근거 |
 |---|---|---|---|
-| **S1.2b** | DS005 확장: 신주인수권부사채(apiId 2020034)·교환사채(2020035)·회사합병(2020050)·회사분할(2020051)·회사분할합병(2020052)·영업양도(2020043) | 희석·복잡상품·reorg 등급(예: 0.6, 구현 시 확정), `effective_window_days` 부여, endpoint identity·`policy_v1_unvalidated`. DoD: endpoint path/params + event_code + mapping validation + scorer 테스트 | 기존 `MAIN_MATTER_ENDPOINTS` 패턴 재사용, 비용 최저 |
-| **S1.2c** | DS003 다중회사 주요 재무지표(`fnlttCmpnyIndx`, apiId 2022002) + DS004 대량보유 상황보고(2019021)·임원ㆍ주요주주 소유보고(2019022) | universe batch 재무 feature, ownership 이벤트(`OWNERSHIP_CHANGE` enum 후보). DoD: parser/client 테스트 | 재무 feature·지분변동 축 |
-| **S1.6** | Market Calendar/Event Aggregator + **공시위험 지속 상태 추적 확정 포함** | 구조화 이벤트로 위험 상태 open, 해제 공시(회생 종결·관리절차 중단 `bnkMngtPcsp`)로 close하는 collector + 상태머신. scorer가 임의 window 없이 “현재 위험 상태”만 읽게 됨 | 유형별 유효기간(30/365) 근사를 정확 모델로 대체 |
+| **S1.2b** | DS005 확장: 신주인수권부사채(`bdwtIsDecsn` 2020034)·교환사채(`exbdIsDecsn` 2020035)·회사합병(`cmpMgDecsn` 2020050)·회사분할(`cmpDvDecsn` 2020051)·회사분할합병(`cmpDvmgDecsn` 2020052)·영업양도(`bsnTrfDecsn` 2020043) | **완료(지원으로 이동)**. BW/EB=0.6·window 30, 합병/분할/분할합병/영업양도=0.6·window 90, `policy_v1_unvalidated`. endpoint path/params + event_code + mapping validation + scorer 테스트 통과 | 기존 `MAIN_MATTER_ENDPOINTS` 패턴 재사용 |
+| **S1.2c** | DS003 다중회사 주요 재무지표(`fnlttCmpnyIndx`, apiId 2022002) + DS004 대량보유 상황보고(2019021)·임원ㆍ주요주주 소유보고(2019022) | 예정. universe batch 재무 feature, ownership 이벤트(`OWNERSHIP_CHANGE` enum 후보). DoD: parser/client 테스트 | 재무 feature·지분변동 축 |
+| **S1.6** | Market Calendar/Event Aggregator + **공시위험 지속 상태 추적 확정 포함** | 예정. 구조화 이벤트로 위험 상태 open, 해제 공시(회생 종결·관리절차 중단 `bnkMngtPcsp`)로 close하는 collector + 상태머신. scorer가 임의 window 없이 “현재 위험 상태”만 읽게 됨 | 유형별 유효기간(30/365) 근사를 정확 모델로 대체 |
 
-- S1.2b·S1.2c의 endpoint 경로명은 구현 시 OpenDART 상세페이지로 확정한다. 위 표는 개발가이드 apiId(단일 진실)를 근거로 고정했고, 경로명 미확정 상태에서 지어내지 않는다.
+- S1.2c의 endpoint 경로명은 구현 시 OpenDART 상세페이지로 확정한다. 위 표는 개발가이드 apiId(단일 진실)를 근거로 고정했고, 경로명 미확정 상태에서 지어내지 않는다. (S1.2b endpoint 경로명은 구현 시 상세페이지로 확인 완료.)
 - 실제 주문 판단 소비(riskItems 방출)는 S2.2 `DisclosureRiskPort` + S2.3 Decision API에서 이뤄진다(위 로드맵과 독립적으로 진행).
 
 ## RiskEngine/Decision API 계약 연결
@@ -101,6 +100,12 @@ S1.2는 “재무제표와 모든 공시를 전부 긁는 단계”가 아니다
 | 소송 등의 제기 | 0.4 | OpenDART `lwstLg` 전용 endpoint가 있다. 기업 소송은 직접 비용, 평판 비용, 주주가치 반응의 이질성이 크다. | 소송 금액, 원고/피고 지위, 승소 가능성에 따라 위험도가 갈린다. 그래서 낮은 점수로 시작한다. |
 | 유상증자 결정 | 0.6 | OpenDART `piicDecsn` 전용 endpoint가 있다. Seasoned equity offering 연구는 공모/증자 발표의 평균 음의 주가 반응을 보고한다. | 증자 목적이 성장투자이면 위험 의미가 약해질 수 있다. 현재 v1은 목적별 세분화를 하지 않는다. |
 | 전환사채권 발행결정 | 0.6 | OpenDART `cvbdIsDecsn` 전용 endpoint가 있다. 해외 연구에는 음의 issuer return 근거가 있고, 국내 규제는 사모 전환사채 등 일반주주 보호 이슈를 명시한다. | 한국 연구에는 단기 양의 공시반응도 있다. 따라서 이 점수는 수익예측 근거가 아니라 희석·리픽싱·복잡상품 검토 트리거다. |
+| 신주인수권부사채권 발행결정 (`bdwtIsDecsn`, S1.2b) | 0.6 | OpenDART 전용 endpoint(apiId 2020034). CB와 같은 mezzanine 희석·리픽싱 위험. | 한국 공시효과 연구가 엇갈려 수익예측이 아니라 검토 트리거로만 쓴다. |
+| 교환사채권 발행결정 (`exbdIsDecsn`, S1.2b) | 0.6 | OpenDART 전용 endpoint(apiId 2020035). 교환대상 주식 수급·복잡상품 위험. | 교환 조건별 편차가 커 정책 등급으로만 둔다. |
+| 회사합병 결정 (`cmpMgDecsn`, S1.2b) | 0.6 | OpenDART 전용 endpoint(apiId 2020050). 지배구조·주주가치 변동이 큰 reorg. | 합병 시너지/조건에 따라 반응이 이질적이라 검토 트리거로만 쓴다. |
+| 회사분할 결정 (`cmpDvDecsn`, S1.2b) | 0.6 | OpenDART 전용 endpoint(apiId 2020051). 물적/인적 분할은 사업·자본 구조를 바꾼다. | 분할 방식별 주주가치 영향이 갈려 정책 등급으로 둔다. |
+| 회사분할합병 결정 (`cmpDvmgDecsn`, S1.2b) | 0.6 | OpenDART 전용 endpoint(apiId 2020052). 분할과 합병이 겹치는 복합 reorg. | 구조가 복잡해 사건별 검토가 필요하다. |
+| 영업양도 결정 (`bsnTrfDecsn`, S1.2b) | 0.6 | OpenDART 전용 endpoint(apiId 2020043). 핵심 사업부 양도는 사업구조 변화 신호. | 양도 대상·규모별 편차가 커 검토 트리거로만 쓴다. |
 | 관리종목/상장폐지, 불성실공시법인, 최대주주 변경 | blocked | OpenDART 공시검색 제목이나 넓은 거래소공시 유형만으로 안정 분류하기 어렵다. | KRX/FSS 구조화 source가 정해지면 별도 세션에서 승격한다. |
 
 점수 간격은 엄밀한 확률 보정값이 아니다. v1에서는 “going-concern을 직접 위협하는 강한 위험 검토 = 1.0”, “심각하지만 범위·목적 편차가 큰 distress/자본 이벤트 = 0.8”, “자본구조/희석 위험 = 0.6”, “사건별 편차가 큰 법적 위험 = 0.4”라는 정책 등급이다. 따라서 이 값은 백테스트와 실제 수집 데이터가 쌓이면 version을 올려 조정해야 한다.
@@ -113,7 +118,8 @@ going-concern distress 이벤트는 endpoint identity만으로 이벤트가 성�
 
 | 유형 | 유효기간 | 이유 |
 |---|---:|---|
-| 공시효과형 (유상증자·전환사채·소송) | 30일 | 발표 시점 충격이 시간이 지나며 감쇠하는 사건 |
+| 공시효과형 (유상증자·전환사채·소송·신주인수권부사채·교환사채) | 30일 | 발표 시점 충격이 시간이 지나며 감쇠하는 사건 |
+| reorg·사업구조 (회사합병·분할·분할합병·영업양도, S1.2b) | 90일 | 결정 공시 후 절차·이사회/주총·완료까지 수주~수개월 이어져 위험 검토가 더 오래 유효 |
 | 상태 지속형 (부도·회생·해산·관리절차·영업정지·감자·비적정 감사의견) | 365일 | 사건이 끝난 게 아니라 위험 상태가 지속됨. 30일 뒤 조용히 사라지면 안 됨 |
 
 - 유효기간 값도 점수와 마찬가지로 `policy_v1_unvalidated`다. 365일은 "상태가 지속된다"는 성질의 v1 근사이지 검증된 상수가 아니다.
@@ -218,6 +224,12 @@ cd ../spring-api
 - OpenDART 해산사유 발생 endpoint: `GET /api/dsRsOcr.json`. https://opendart.fss.or.kr/guide/detail.do?apiGrpCd=DS005&apiId=2020022
 - OpenDART 감자 결정 endpoint: `GET /api/crDecsn.json`. https://opendart.fss.or.kr/guide/detail.do?apiGrpCd=DS005&apiId=2020026
 - OpenDART 채권은행 등의 관리절차 개시 endpoint: `GET /api/bnkMngtPcbg.json`. https://opendart.fss.or.kr/guide/detail.do?apiGrpCd=DS005&apiId=2020027
+- OpenDART 신주인수권부사채권 발행결정 endpoint(S1.2b): `GET /api/bdwtIsDecsn.json`. https://opendart.fss.or.kr/guide/detail.do?apiGrpCd=DS005&apiId=2020034
+- OpenDART 교환사채권 발행결정 endpoint(S1.2b): `GET /api/exbdIsDecsn.json`. https://opendart.fss.or.kr/guide/detail.do?apiGrpCd=DS005&apiId=2020035
+- OpenDART 회사합병 결정 endpoint(S1.2b): `GET /api/cmpMgDecsn.json`. https://opendart.fss.or.kr/guide/detail.do?apiGrpCd=DS005&apiId=2020050
+- OpenDART 회사분할 결정 endpoint(S1.2b): `GET /api/cmpDvDecsn.json`. https://opendart.fss.or.kr/guide/detail.do?apiGrpCd=DS005&apiId=2020051
+- OpenDART 회사분할합병 결정 endpoint(S1.2b): `GET /api/cmpDvmgDecsn.json`. https://opendart.fss.or.kr/guide/detail.do?apiGrpCd=DS005&apiId=2020052
+- OpenDART 영업양도 결정 endpoint(S1.2b): `GET /api/bsnTrfDecsn.json`. https://opendart.fss.or.kr/guide/detail.do?apiGrpCd=DS005&apiId=2020043
 - OpenDART 주요사항보고서 주요정보조회: 주요사항보고서 36종 범위. https://opendart.fss.or.kr/disclosureinfo/mainMatter/main.do
 - Asquith and Mullins, 1986, "Equity issues and offering dilution", Journal of Financial Economics. 증자 발표가 평균적으로 음의 주가 반응과 연결됨. https://www.sciencedirect.com/science/article/pii/0304405X86900504
 - Masulis and Korwar, 1986, "Seasoned equity offerings: An empirical investigation", Journal of Financial Economics. underwritten common stock offering 발표의 평균 음의 조정 보고. https://www.sciencedirect.com/science/article/pii/0304405X86900516

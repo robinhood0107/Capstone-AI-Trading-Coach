@@ -23,6 +23,7 @@ class RiskMappingEntry:
     official_filter_code: str | None = None
     evidence_level: str | None = None
     calibration_status: str | None = None
+    effective_window_days: int | None = None
     condition_field: str | None = None
     condition_values: tuple[str, ...] = ()
     blocked_reason: str | None = None
@@ -80,6 +81,9 @@ def _parse_entry(raw: dict[str, Any]) -> RiskMappingEntry:
     condition_values = raw.get("condition_values") or []
     if not isinstance(condition_values, list):
         raise RiskMappingValidationError("condition_values must be a list")
+    window_days = raw.get("effective_window_days")
+    if window_days is not None and (not isinstance(window_days, int) or window_days <= 0):
+        raise RiskMappingValidationError("effective_window_days must be a positive integer")
     return RiskMappingEntry(
         code=_required_str(raw, "code"),
         label=_required_str(raw, "label"),
@@ -89,6 +93,7 @@ def _parse_entry(raw: dict[str, Any]) -> RiskMappingEntry:
         official_filter_code=_optional_str(raw.get("official_filter_code")),
         evidence_level=_optional_str(raw.get("evidence_level")),
         calibration_status=_optional_str(raw.get("calibration_status")),
+        effective_window_days=window_days,
         condition_field=_optional_str(raw.get("condition_field")),
         condition_values=tuple(_optional_str(value) or "" for value in condition_values),
         blocked_reason=_optional_str(raw.get("blocked_reason")),
@@ -108,6 +113,9 @@ def _validate_active(entry: RiskMappingEntry) -> None:
         raise RiskMappingValidationError(f"Conditional mapping {entry.code} must define condition_values")
     if not entry.evidence_level or not entry.calibration_status:
         raise RiskMappingValidationError(f"Active mapping {entry.code} must define evidence_level and calibration_status")
+    if entry.effective_window_days is None:
+        # 상태 지속형(부도/감사의견 등)이 30일 기본값에 묶여 조용히 사라지는 회귀를 막으려고 명시 유효기간을 강제한다.
+        raise RiskMappingValidationError(f"Active mapping {entry.code} must define effective_window_days")
     if entry.calibration_status not in {"policy_v1_unvalidated", "korea_market_calibrated"}:
         raise RiskMappingValidationError(f"Unsupported calibration_status for active mapping {entry.code}")
 

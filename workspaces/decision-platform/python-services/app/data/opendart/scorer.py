@@ -21,20 +21,33 @@ def score_disclosure_risk(
     mapping: DisclosureRiskMapping | None = None,
     window_days: int = 30,
 ) -> DisclosureRiskScoreResult:
-    """최근 window 안의 구조화 공시 이벤트를 YAML mapping으로 재현 가능하게 점수화한다."""
+    """구조화 공시 이벤트를 YAML mapping으로 재현 가능하게 점수화한다.
+
+    window은 이벤트 유형별로 다르다. 부도·회생·비적정 감사의견 같은 상태 지속형은 `effective_window_days`가 길고
+    (30일 뒤 조용히 0이 되지 않게), 증자·CB·소송 같은 공시효과형은 짧다. mapping에 없는 유형은 관측성용 warning만 남긴다.
+    """
     risk_mapping = mapping or load_default_risk_mapping()
-    window_from = as_of - timedelta(days=window_days)
+    # 미매핑/blocked 관측성 warning은 유형별 유효기간을 알 수 없으므로 기본 window로 판정한다.
+    default_window_from = as_of - timedelta(days=window_days)
+    # 결과 envelope의 window_from은 실제로 고려될 수 있는 가장 오래된 날짜(=최대 유효기간)로 두어 소비자가 오해하지 않게 한다.
+    max_effective_days = max(
+        [entry.effective_window_days or window_days for entry in risk_mapping.active_by_code.values()] + [window_days]
+    )
     contributing: list[tuple[float, DisclosureRiskEvent]] = []
     warnings: list[DisclosureRiskWarning] = []
 
     for event in events:
-        if event.symbol != symbol or not window_from <= event.occurred_on <= as_of:
+        if event.symbol != symbol or event.occurred_on > as_of:
             continue
         entry = risk_mapping.active_by_code.get(event.event_code)
         if entry is None:
-            warning = _unknown_warning(event, blocked=event.event_code in risk_mapping.blocked_by_code)
-            warnings.append(warning)
-            _log_warning(warning, event)
+            if event.occurred_on >= default_window_from:
+                warning = _unknown_warning(event, blocked=event.event_code in risk_mapping.blocked_by_code)
+                warnings.append(warning)
+                _log_warning(warning, event)
+            continue
+        effective_from = as_of - timedelta(days=entry.effective_window_days or window_days)
+        if event.occurred_on < effective_from:
             continue
         score = _event_score(entry, event)
         if score > 0:
@@ -44,7 +57,7 @@ def score_disclosure_risk(
     return DisclosureRiskScoreResult(
         symbol=symbol,
         as_of=as_of,
-        window_from=window_from,
+        window_from=as_of - timedelta(days=max_effective_days),
         window_to=as_of,
         score=max((score for score, _ in contributing), default=0.0),
         events=[event for _, event in contributing],

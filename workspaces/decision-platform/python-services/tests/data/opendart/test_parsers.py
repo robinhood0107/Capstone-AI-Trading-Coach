@@ -13,9 +13,12 @@ from app.data.opendart.parsers import (
     parse_company_profile,
     parse_corp_code_zip,
     parse_disclosure_list,
+    parse_executive_major_shareholder_report_rows,
+    parse_financial_indicator_batch_rows,
     parse_financial_indicator_rows,
     parse_financial_statement_rows,
     parse_major_matter_events,
+    parse_major_stock_report_rows,
 )
 
 
@@ -249,6 +252,117 @@ def test_parse_audit_opinion_events_keeps_structured_opinion_field() -> None:
     assert events[0].event_code == "OPENDART:accnutAdtorNmNdAdtOpinion"
     assert events[0].occurred_on == date(2026, 3, 31)
     assert events[0].attributes["adt_opinion"] == "의견거절"
+
+
+def test_parse_financial_indicator_batch_preserves_per_row_corp_code() -> None:
+    # 다중회사 응답은 회사별 row가 섞이므로 파라미터가 아니라 row의 corp_code를 보존해야 한다.
+    rows = parse_financial_indicator_batch_rows(
+        {
+            "status": "000",
+            "list": [
+                {
+                    "reprt_code": "11011",
+                    "bsns_year": "2025",
+                    "corp_code": "00126380",
+                    "stock_code": "005930",
+                    "stlm_dt": "2025-12-31",
+                    "idx_cl_code": "M220000",
+                    "idx_cl_nm": "안정성지표",
+                    "idx_code": "M221000",
+                    "idx_nm": "부채비율",
+                    "idx_val": "45.67",
+                },
+                {
+                    "reprt_code": "11011",
+                    "bsns_year": "2025",
+                    "corp_code": "00164779",
+                    "stock_code": "005380",
+                    "stlm_dt": "2025-12-31",
+                    "idx_cl_code": "M220000",
+                    "idx_cl_nm": "안정성지표",
+                    "idx_code": "M221000",
+                    "idx_nm": "부채비율",
+                    "idx_val": "-",
+                },
+            ],
+        }
+    )
+
+    assert [row.corp_code for row in rows] == ["00126380", "00164779"]
+    assert rows[0].index_value == 45.67
+    assert rows[1].index_value is None
+
+
+def test_parse_financial_indicator_batch_no_data_returns_empty() -> None:
+    assert parse_financial_indicator_batch_rows({"status": "013", "message": "조회된 데이타가 없습니다."}) == []
+
+
+def test_parse_major_stock_report_rows_normalizes_counts_and_dates() -> None:
+    rows = parse_major_stock_report_rows(
+        {
+            "status": "000",
+            "list": [
+                {
+                    "rcept_no": "20260701000001",
+                    "rcept_dt": "20260701",
+                    "corp_code": "00126380",
+                    "corp_name": "삼성전자",
+                    "report_tp": "대량보유",
+                    "repror": "국민연금공단",
+                    "stkqy": "1,000,000",
+                    "stkqy_irds": "-50,000",
+                    "stkrt": "5.01",
+                    "stkrt_irds": "-0.25",
+                    "report_resn": "단순투자",
+                }
+            ],
+        }
+    )
+
+    assert rows[0].corp_code == "00126380"
+    assert rows[0].receipt_date == date(2026, 7, 1)  # YYYYMMDD
+    assert rows[0].stock_count == 1_000_000
+    assert rows[0].stock_count_change == -50_000
+    assert rows[0].holding_ratio == 5.01
+    assert rows[0].holding_ratio_change == -0.25
+    assert rows[0].reporter == "국민연금공단"
+
+
+def test_parse_executive_major_shareholder_report_rows_handles_dashed_date() -> None:
+    rows = parse_executive_major_shareholder_report_rows(
+        {
+            "status": "000",
+            "list": [
+                {
+                    "rcept_no": "20260702000002",
+                    "rcept_dt": "2026-07-02",
+                    "corp_code": "00126380",
+                    "corp_name": "삼성전자",
+                    "repror": "대표이사",
+                    "isu_exctv_rgist_at": "등기임원",
+                    "isu_exctv_ofcps": "대표이사",
+                    "isu_main_shrholdr": "해당",
+                    "sp_stock_lmp_cnt": "12,345",
+                    "sp_stock_lmp_irds_cnt": "1,000",
+                    "sp_stock_lmp_rate": "0.12",
+                    "sp_stock_lmp_irds_rate": "0.01",
+                }
+            ],
+        }
+    )
+
+    assert rows[0].receipt_date == date(2026, 7, 2)  # YYYY-MM-DD
+    assert rows[0].specific_stock_count == 12_345
+    assert rows[0].specific_stock_count_change == 1_000
+    assert rows[0].specific_stock_ratio == 0.12
+    assert rows[0].is_main_shareholder == "해당"
+    assert rows[0].officer_position == "대표이사"
+
+
+def test_ownership_parsers_return_empty_on_no_data() -> None:
+    no_data = {"status": "013", "message": "조회된 데이타가 없습니다."}
+    assert parse_major_stock_report_rows(no_data) == []
+    assert parse_executive_major_shareholder_report_rows(no_data) == []
 
 
 def test_no_data_status_returns_empty_list() -> None:

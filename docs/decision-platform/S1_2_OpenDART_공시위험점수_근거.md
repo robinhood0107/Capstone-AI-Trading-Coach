@@ -28,13 +28,27 @@ S1.2는 OpenDART 공식 API에서 읽은 구조화 이벤트만 점수화한다.
 | 지원 | DS002 | 회계감사인의 명칭 및 감사의견(`adt_opinion`) | 비적정/한정/의견거절은 강한 위험 검토 트리거 |
 | 지원 | DS003 | 단일회사 주요계정(`fnlttSinglAcnt`), 단일회사 주요 재무지표(`fnlttSinglIndx`) | 재무위험 기준·RAG 카드·백테스트 feature 후보 |
 | 지원 | DS005 | 유상증자·전환사채·소송 + 부도·회생·해산·관리절차·영업정지·감자 | 자본조달·법적 위험과 going-concern distress를 endpoint identity로 점수화 |
-| 후속 필수 | DS003 | 다중회사 주요 재무지표(`fnlttCmpnyIndx`) | universe batch feature로 확장 시 추가 |
-| 후속 필수 | DS004 | 대량보유 상황보고, 임원ㆍ주요주주 소유보고 | 지분변동/주요주주 ownership risk 축. event aggregator에서 `OWNERSHIP_CHANGE` enum과 함께 추가 |
-| 후속 필수 | DS005 | 신주인수권부사채(BW)·교환사채(EB)·합병/분할/분할합병·영업양도 | 희석·복잡상품·reorg 위험. distress 다음 우선순위 batch로 추가 |
+| 후속 필수 (**S1.2c**) | DS003 | 다중회사 주요 재무지표(`fnlttCmpnyIndx`) | universe batch feature. 아래 "후속 세션 로드맵" 참조 |
+| 후속 필수 (**S1.2c**) | DS004 | 대량보유 상황보고, 임원ㆍ주요주주 소유보고 | 지분변동/주요주주 ownership risk 축(`OWNERSHIP_CHANGE` enum 후보) |
+| 후속 필수 (**S1.2b**) | DS005 | 신주인수권부사채(BW)·교환사채(EB)·합병/분할/분할합병·영업양도 | 희석·복잡상품·reorg 위험. distress 다음 우선순위 batch |
+| 후속 필수 (**S1.6**) | — | 공시위험 지속 상태 추적(open/close, collector) | 유형별 유효기간 근사를 정확 모델로 대체 |
 | 후속 검토 | DS002/DS006 | 배당·자기주식·자금사용·증권신고서 요약 등 | RAG/feature/timeline에 유용하나 즉시 RiskEngine 핵심은 아님 |
 | 의도적 제외 | DS001/DS003/DS002 | 공시서류원본파일, 재무제표 원본파일(XBRL), 단일회사 전체 재무제표, 개인별 보수류 | 저장·파싱·재배포·개인정보 정책이 정해지기 전에는 위험이 더 큼. 저장/보안 정책 문서화 후 별도 세션 |
 
 의도적 제외 근거를 다시 정리하면, 원본파일/XBRL/전체 재무제표/개인별 보수는 (1) 대용량 저장 비용과 retention 정책, (2) 원문 재배포·저작권 제한, (3) 개인정보성 노출, (4) parser timeout·fixture 정책이 함께 필요하다. 이 정책 없이 무작정 수집하면 신뢰성이 아니라 리스크가 커진다. 신뢰성은 “많이 긁기”가 아니라 “공식 원천·수집 시각·hash·재현 가능한 parser·교차검증”에서 나온다.
+
+## 후속 세션 로드맵 (확정)
+
+“후속 필수 축”은 아래 세션에 **확정 배정**한다. 백로그로 두지 않는다(중간보고서 M1 범위와 별개로 로드맵을 고정한다).
+
+| 세션 | 범위 | 의도 등급/DoD | 근거 |
+|---|---|---|---|
+| **S1.2b** | DS005 확장: 신주인수권부사채(apiId 2020034)·교환사채(2020035)·회사합병(2020050)·회사분할(2020051)·회사분할합병(2020052)·영업양도(2020043) | 희석·복잡상품·reorg 등급(예: 0.6, 구현 시 확정), `effective_window_days` 부여, endpoint identity·`policy_v1_unvalidated`. DoD: endpoint path/params + event_code + mapping validation + scorer 테스트 | 기존 `MAIN_MATTER_ENDPOINTS` 패턴 재사용, 비용 최저 |
+| **S1.2c** | DS003 다중회사 주요 재무지표(`fnlttCmpnyIndx`, apiId 2022002) + DS004 대량보유 상황보고(2019021)·임원ㆍ주요주주 소유보고(2019022) | universe batch 재무 feature, ownership 이벤트(`OWNERSHIP_CHANGE` enum 후보). DoD: parser/client 테스트 | 재무 feature·지분변동 축 |
+| **S1.6** | Market Calendar/Event Aggregator + **공시위험 지속 상태 추적 확정 포함** | 구조화 이벤트로 위험 상태 open, 해제 공시(회생 종결·관리절차 중단 `bnkMngtPcsp`)로 close하는 collector + 상태머신. scorer가 임의 window 없이 “현재 위험 상태”만 읽게 됨 | 유형별 유효기간(30/365) 근사를 정확 모델로 대체 |
+
+- S1.2b·S1.2c의 endpoint 경로명은 구현 시 OpenDART 상세페이지로 확정한다. 위 표는 개발가이드 apiId(단일 진실)를 근거로 고정했고, 경로명 미확정 상태에서 지어내지 않는다.
+- 실제 주문 판단 소비(riskItems 방출)는 S2.2 `DisclosureRiskPort` + S2.3 Decision API에서 이뤄진다(위 로드맵과 독립적으로 진행).
 
 ## RiskEngine/Decision API 계약 연결
 

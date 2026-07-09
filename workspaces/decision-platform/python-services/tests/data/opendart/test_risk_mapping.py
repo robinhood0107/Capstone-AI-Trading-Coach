@@ -37,6 +37,38 @@ def test_high_severity_distress_events_are_active_with_official_endpoint_evidenc
         # endpoint identity 근거와 미검증 보정 상태를 모든 신규 고위험 mapping에 강제한다.
         assert entry.official_endpoint == code.split(":", 1)[1]
         assert entry.calibration_status == "policy_v1_unvalidated"
+        # 상태 지속형 고위험 이벤트는 30일 뒤 조용히 사라지면 안 되므로 장기 유효기간을 갖는다.
+        assert entry.effective_window_days == 365
+
+
+def test_announcement_effect_events_use_short_window_and_persisting_use_long() -> None:
+    mapping = load_default_risk_mapping()
+
+    # 공시효과형(증자/CB/소송)은 30일, 상태 지속형(감사의견)은 365일.
+    assert mapping.active_by_code["OPENDART:piicDecsn"].effective_window_days == 30
+    assert mapping.active_by_code["OPENDART:cvbdIsDecsn"].effective_window_days == 30
+    assert mapping.active_by_code["OPENDART:lwstLg"].effective_window_days == 30
+    assert mapping.active_by_code["OPENDART:accnutAdtorNmNdAdtOpinion"].effective_window_days == 365
+
+
+def test_active_mapping_requires_effective_window_days() -> None:
+    with pytest.raises(RiskMappingValidationError):
+        load_risk_mapping_from_dict(
+            {
+                "version": "bad",
+                "entries": [
+                    {
+                        "code": "OPENDART:piicDecsn",
+                        "label": "유상증자 결정",
+                        "status": "active",
+                        "score": 0.6,
+                        "official_endpoint": "piicDecsn",
+                        "evidence_level": "A_OFFICIAL_STRUCTURED_AND_KOREA_MARKET_EVIDENCE",
+                        "calibration_status": "policy_v1_unvalidated",
+                    }
+                ],
+            }
+        )
 
 
 def test_active_mapping_requires_official_code_or_endpoint_evidence() -> None:

@@ -11,8 +11,10 @@ from app.data.opendart.models import (
     CorpCode,
     DisclosureListItem,
     DisclosureRiskEvent,
+    ExecutiveMajorShareholderReportRow,
     FinancialIndicatorRow,
     FinancialStatementRow,
+    MajorStockReportRow,
 )
 
 SUCCESS_STATUSES = {None, "000", "0", 0}
@@ -124,6 +126,80 @@ def parse_financial_indicator_rows(response: dict[str, Any], corp_code: str) -> 
             index_code=_text(row.get("idx_code")),
             index_name=_text(row.get("idx_nm")),
             index_value=_optional_float(row.get("idx_val")),
+        )
+        for row in rows
+    ]
+
+
+def parse_financial_indicator_batch_rows(response: dict[str, Any]) -> list[FinancialIndicatorRow]:
+    """다중회사 주요 재무지표 응답을 회사별 row로 정규화한다.
+
+    단일회사 parser와 달리 corp_code를 파라미터로 받지 않고 각 row의 `corp_code`를 그대로 보존해, 여러 회사 결과가 섞여도 회사 귀속이 유지되게 한다.
+    """
+    rows = _list_rows(response)
+    return [
+        FinancialIndicatorRow(
+            corp_code=_text(row.get("corp_code")),
+            business_year=_text(row.get("bsns_year")),
+            report_code=_text(row.get("reprt_code")),
+            stock_code=_text(row.get("stock_code")),
+            settlement_date=_optional_date(row.get("stlm_dt")),
+            index_class_code=_text(row.get("idx_cl_code")),
+            index_class_name=_text(row.get("idx_cl_nm")),
+            index_code=_text(row.get("idx_code")),
+            index_name=_text(row.get("idx_nm")),
+            index_value=_optional_float(row.get("idx_val")),
+        )
+        for row in rows
+    ]
+
+
+def parse_major_stock_report_rows(response: dict[str, Any]) -> list[MajorStockReportRow]:
+    """대량보유 상황보고(majorstock) 응답을 지분변동 row로 정규화한다.
+
+    지분율/주식수는 콤마·부호가 섞이므로 계산용 숫자로만 변환한다. 이 데이터는 ownership risk·종목 설명 feature 후보이며 S1.2c에서 주문 차단 점수에 연결하지 않는다.
+    """
+    rows = _list_rows(response)
+    return [
+        MajorStockReportRow(
+            receipt_no=_text(row.get("rcept_no")),
+            receipt_date=_required_date(row.get("rcept_dt")),
+            corp_code=_text(row.get("corp_code")),
+            corp_name=_text(row.get("corp_name")),
+            report_type=_text(row.get("report_tp")),
+            reporter=_text(row.get("repror")),
+            stock_count=_optional_int(row.get("stkqy")),
+            stock_count_change=_optional_int(row.get("stkqy_irds")),
+            holding_ratio=_optional_float(row.get("stkrt")),
+            holding_ratio_change=_optional_float(row.get("stkrt_irds")),
+            report_reason=_text(row.get("report_resn")),
+        )
+        for row in rows
+    ]
+
+
+def parse_executive_major_shareholder_report_rows(
+    response: dict[str, Any],
+) -> list[ExecutiveMajorShareholderReportRow]:
+    """임원ㆍ주요주주 소유보고(elestock) 응답을 소유 row로 정규화한다.
+
+    elestock rcept_dt는 `YYYY-MM-DD` 형식이 올 수 있어 다중 포맷 파서를 재사용한다. insider ownership 설명·feature 후보이며 S1.2c에서 주문 차단 점수에 연결하지 않는다.
+    """
+    rows = _list_rows(response)
+    return [
+        ExecutiveMajorShareholderReportRow(
+            receipt_no=_text(row.get("rcept_no")),
+            receipt_date=_required_date(row.get("rcept_dt")),
+            corp_code=_text(row.get("corp_code")),
+            corp_name=_text(row.get("corp_name")),
+            reporter=_text(row.get("repror")),
+            is_registered_executive=_text(row.get("isu_exctv_rgist_at")),
+            officer_position=_text(row.get("isu_exctv_ofcps")),
+            is_main_shareholder=_text(row.get("isu_main_shrholdr")),
+            specific_stock_count=_optional_int(row.get("sp_stock_lmp_cnt")),
+            specific_stock_count_change=_optional_int(row.get("sp_stock_lmp_irds_cnt")),
+            specific_stock_ratio=_optional_float(row.get("sp_stock_lmp_rate")),
+            specific_stock_ratio_change=_optional_float(row.get("sp_stock_lmp_irds_rate")),
         )
         for row in rows
     ]

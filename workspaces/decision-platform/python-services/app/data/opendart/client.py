@@ -9,8 +9,10 @@ from app.data.opendart.models import (
     CorpCode,
     DisclosureListItem,
     DisclosureRiskEvent,
+    ExecutiveMajorShareholderReportRow,
     FinancialIndicatorRow,
     FinancialStatementRow,
+    MajorStockReportRow,
     NormalizedStatus,
     ObservedDisclosureList,
 )
@@ -19,9 +21,12 @@ from app.data.opendart.parsers import (
     parse_company_profile,
     parse_corp_code_zip,
     parse_disclosure_list,
+    parse_executive_major_shareholder_report_rows,
+    parse_financial_indicator_batch_rows,
     parse_financial_indicator_rows,
     parse_financial_statement_rows,
     parse_major_matter_events,
+    parse_major_stock_report_rows,
 )
 from app.data.opendart.raw_observation import write_raw_observation
 from app.data.opendart.settings import OpenDARTSettings
@@ -31,6 +36,9 @@ CORP_CODE_PATH = "/api/corpCode.xml"
 COMPANY_PROFILE_PATH = "/api/company.json"
 FINANCIAL_STATEMENT_PATH = "/api/fnlttSinglAcnt.json"
 FINANCIAL_INDICATOR_PATH = "/api/fnlttSinglIndx.json"
+FINANCIAL_INDICATOR_BATCH_PATH = "/api/fnlttCmpnyIndx.json"
+MAJOR_STOCK_PATH = "/api/majorstock.json"
+EXECUTIVE_MAJOR_SHAREHOLDER_PATH = "/api/elestock.json"
 AUDIT_OPINION_PATH = "/api/accnutAdtorNmNdAdtOpinion.json"
 # 주요사항보고서(DS005) 전용 endpoint identity만 위험 이벤트로 승격한다.
 # 각 endpoint 이름과 apiId는 OpenDART 개발가이드(DS005)와 대조해 확정했고, report_nm 문자열 매칭은 쓰지 않는다.
@@ -178,6 +186,50 @@ class OpenDARTClient:
             ),
         )
         return parse_financial_indicator_rows(response, corp_code=corp_code)
+
+    def financial_indicators_batch(
+        self,
+        *,
+        corp_codes: list[str],
+        business_year: str,
+        report_code: str,
+        index_class_code: str,
+    ) -> list[FinancialIndicatorRow]:
+        """다중회사 주요 재무지표(`fnlttCmpnyIndx`)를 universe batch feature 후보로 정규화한다.
+
+        OpenDART는 복수 회사를 `corp_code`에 comma-joined 문자열로 받으므로 여기서 join한다. 빈 리스트는 전체 조회로 오인될 위험이 있어 호출 단계에서 막는다.
+        응답에는 회사별 row가 섞이므로 parser가 파라미터가 아니라 row의 `corp_code`로 회사 귀속을 유지한다.
+        """
+        if not corp_codes:
+            raise ValueError("financial_indicators_batch requires at least one corp_code")
+        response = self.http_client.get_json(
+            FINANCIAL_INDICATOR_BATCH_PATH,
+            self._with_key(
+                {
+                    "corp_code": ",".join(corp_codes),
+                    "bsns_year": business_year,
+                    "reprt_code": report_code,
+                    "idx_cl_code": index_class_code,
+                }
+            ),
+        )
+        return parse_financial_indicator_batch_rows(response)
+
+    def major_stock_reports(self, *, corp_code: str) -> list[MajorStockReportRow]:
+        """대량보유 상황보고(`majorstock`)를 지분변동 risk·종목 설명 feature 후보로 정규화한다.
+
+        지분율 변동 데이터이며 S1.2c에서는 주문 차단 점수에 연결하지 않는다(후속 aggregator/feature용).
+        """
+        response = self.http_client.get_json(MAJOR_STOCK_PATH, self._with_key({"corp_code": corp_code}))
+        return parse_major_stock_report_rows(response)
+
+    def executive_major_shareholder_reports(self, *, corp_code: str) -> list[ExecutiveMajorShareholderReportRow]:
+        """임원ㆍ주요주주 소유보고(`elestock`)를 insider ownership 설명·feature 후보로 정규화한다.
+
+        개인정보성 항목은 저장/노출을 최소화하고, S1.2c에서는 주문 차단 점수에 연결하지 않는다.
+        """
+        response = self.http_client.get_json(EXECUTIVE_MAJOR_SHAREHOLDER_PATH, self._with_key({"corp_code": corp_code}))
+        return parse_executive_major_shareholder_report_rows(response)
 
     def major_matter_events(
         self,

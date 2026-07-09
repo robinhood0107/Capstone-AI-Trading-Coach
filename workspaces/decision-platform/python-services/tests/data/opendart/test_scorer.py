@@ -82,6 +82,57 @@ def test_distress_event_dominates_lower_severity_events_via_max_score() -> None:
     assert result.events[0].event_code == "OPENDART:dfOcr"
 
 
+def test_persisting_distress_still_scores_beyond_thirty_days() -> None:
+    # 상태 지속형: 부도/회생/비적정 감사의견은 31일이 지나도 여전히 위험 상태이므로 점수가 유지되어야 한다.
+    mapping = load_default_risk_mapping()
+    old = AS_OF - timedelta(days=200)
+
+    bankruptcy = score_disclosure_risk(
+        "900000",
+        [_event("900000", "00999999", "OPENDART:dfOcr", old)],
+        as_of=AS_OF,
+        mapping=mapping,
+    )
+    audit = score_disclosure_risk(
+        "105560",
+        [_event("105560", "00999999", "OPENDART:accnutAdtorNmNdAdtOpinion", old, attributes={"adt_opinion": "의견거절"})],
+        as_of=AS_OF,
+        mapping=mapping,
+    )
+
+    assert bankruptcy.score == 1.0
+    assert audit.score == 1.0
+
+
+def test_announcement_effect_event_expires_after_its_short_window() -> None:
+    # 공시효과형: 유상증자는 30일 유효기간이라 31일 전 이벤트는 window 밖으로 점수 0.
+    mapping = load_default_risk_mapping()
+
+    fresh = score_disclosure_risk(
+        "005930",
+        [_event("005930", "00126380", "OPENDART:piicDecsn", AS_OF - timedelta(days=29))],
+        as_of=AS_OF,
+        mapping=mapping,
+    )
+    stale = score_disclosure_risk(
+        "005930",
+        [_event("005930", "00126380", "OPENDART:piicDecsn", AS_OF - timedelta(days=31))],
+        as_of=AS_OF,
+        mapping=mapping,
+    )
+
+    assert fresh.score == 0.6
+    assert stale.score == 0.0
+    # 같은 31일 전이라도 상태 지속형은 살아있어 유형별 window가 실제로 다르게 동작함을 대비로 확인한다.
+    distress_same_age = score_disclosure_risk(
+        "005930",
+        [_event("005930", "00126380", "OPENDART:bsnSp", AS_OF - timedelta(days=31))],
+        as_of=AS_OF,
+        mapping=mapping,
+    )
+    assert distress_same_age.score == 0.8
+
+
 def test_unknown_code_is_zero_score_with_structured_warning_even_if_title_looks_risky() -> None:
     result = score_disclosure_risk(
         "005930",

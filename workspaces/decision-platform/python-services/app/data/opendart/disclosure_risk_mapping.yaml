@@ -96,6 +96,60 @@ entries:
     evidence_level: A_OFFICIAL_STRUCTURED_AND_KOREA_MARKET_EVIDENCE
     calibration_status: policy_v1_unvalidated
     source_note: OpenDART 주요사항보고서(감자 결정) 전용 endpoint, apiId 2020026. 결손보전형 무상감자는 자본잠식 신호지만 구조조정 목적도 있어 사건별 이질성을 반영해 0.8로 둔다.
+  - code: OPENDART:bdwtIsDecsn
+    label: 신주인수권부사채권 발행결정
+    status: active
+    score: 0.6
+    official_endpoint: bdwtIsDecsn
+    effective_window_days: 30
+    evidence_level: B_CONFLICTING_KOREA_MARKET_EVIDENCE
+    calibration_status: policy_v1_unvalidated
+    source_note: OpenDART 주요사항보고서(신주인수권부사채권 발행결정) 전용 endpoint, apiId 2020034. CB와 같은 mezzanine 희석·리픽싱 위험이나 한국 공시효과 연구가 엇갈려 수익예측이 아니라 검토 트리거로만 쓴다.
+  - code: OPENDART:exbdIsDecsn
+    label: 교환사채권 발행결정
+    status: active
+    score: 0.6
+    official_endpoint: exbdIsDecsn
+    effective_window_days: 30
+    evidence_level: B_CONFLICTING_KOREA_MARKET_EVIDENCE
+    calibration_status: policy_v1_unvalidated
+    source_note: OpenDART 주요사항보고서(교환사채권 발행결정) 전용 endpoint, apiId 2020035. 교환대상 주식 수급·복잡상품 위험 검토 트리거. 정책 등급이며 시장 보정값 아님.
+  - code: OPENDART:cmpMgDecsn
+    label: 회사합병 결정
+    status: active
+    score: 0.6
+    official_endpoint: cmpMgDecsn
+    effective_window_days: 90
+    evidence_level: B_OFFICIAL_STRUCTURED_AND_HETEROGENEOUS_MARKET_EVIDENCE
+    calibration_status: policy_v1_unvalidated
+    source_note: OpenDART 주요사항보고서(회사합병 결정) 전용 endpoint, apiId 2020050. reorg는 주주가치 반응이 이질적이라 검토 트리거로만 쓰고, 절차가 수주~수개월 이어져 90일 window로 둔다.
+  - code: OPENDART:cmpDvDecsn
+    label: 회사분할 결정
+    status: active
+    score: 0.6
+    official_endpoint: cmpDvDecsn
+    effective_window_days: 90
+    evidence_level: B_OFFICIAL_STRUCTURED_AND_HETEROGENEOUS_MARKET_EVIDENCE
+    calibration_status: policy_v1_unvalidated
+    source_note: OpenDART 주요사항보고서(회사분할 결정) 전용 endpoint, apiId 2020051. 물적/인적 분할은 주주가치 영향이 갈려 검토 트리거로 쓰고 90일 window로 둔다.
+  - code: OPENDART:cmpDvmgDecsn
+    label: 회사분할합병 결정
+    status: active
+    score: 0.6
+    official_endpoint: cmpDvmgDecsn
+    effective_window_days: 90
+    evidence_level: B_OFFICIAL_STRUCTURED_AND_HETEROGENEOUS_MARKET_EVIDENCE
+    calibration_status: policy_v1_unvalidated
+    source_note: OpenDART 주요사항보고서(회사분할합병 결정) 전용 endpoint, apiId 2020052. 분할과 합병이 겹치는 복합 reorg. 검토 트리거, 90일 window.
+  - code: OPENDART:bsnTrfDecsn
+    label: 영업양도 결정
+    status: active
+    score: 0.6
+    official_endpoint: bsnTrfDecsn
+    effective_window_days: 90
+    evidence_level: B_OFFICIAL_STRUCTURED_AND_HETEROGENEOUS_MARKET_EVIDENCE
+    calibration_status: policy_v1_unvalidated
+    source_note: OpenDART 주요사항보고서(영업양도 결정) 전용 endpoint, apiId 2020043. 핵심 사업부 양도는 사업구조 변화 신호. 검토 트리거, 90일 window.
   - code: OPENDART:KRX_MANAGEMENT_OR_DELISTING
     label: 관리종목 지정/상장폐지 관련
     status: blocked

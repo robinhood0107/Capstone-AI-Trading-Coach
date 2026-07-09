@@ -46,6 +46,13 @@ MAIN_MATTER_ENDPOINTS = {
     "bnkMngtPcbg": "/api/bnkMngtPcbg.json",  # 채권은행 등의 관리절차 개시 (apiId 2020027)
     "bsnSp": "/api/bsnSp.json",  # 영업정지 (apiId 2020020)
     "crDecsn": "/api/crDecsn.json",  # 감자 결정 (apiId 2020026)
+    # 희석·복잡상품·reorg 위험 (S1.2b 확장)
+    "bdwtIsDecsn": "/api/bdwtIsDecsn.json",  # 신주인수권부사채권 발행결정 (apiId 2020034)
+    "exbdIsDecsn": "/api/exbdIsDecsn.json",  # 교환사채권 발행결정 (apiId 2020035)
+    "cmpMgDecsn": "/api/cmpMgDecsn.json",  # 회사합병 결정 (apiId 2020050)
+    "cmpDvDecsn": "/api/cmpDvDecsn.json",  # 회사분할 결정 (apiId 2020051)
+    "cmpDvmgDecsn": "/api/cmpDvmgDecsn.json",  # 회사분할합병 결정 (apiId 2020052)
+    "bsnTrfDecsn": "/api/bsnTrfDecsn.json",  # 영업양도 결정 (apiId 2020043)
 }
 
 

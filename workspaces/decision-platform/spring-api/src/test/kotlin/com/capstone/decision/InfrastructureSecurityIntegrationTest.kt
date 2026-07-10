@@ -20,7 +20,7 @@ import java.util.Properties
 @Testcontainers
 class InfrastructureSecurityIntegrationTest {
     @Test
-    fun `postgres runtime role has dml access without ddl or cluster privileges`() {
+    fun `postgres runtime role is read only without migration or cluster privileges`() {
         val repositoryRoot = findRepositoryRoot()
         postgres.copyFileToContainer(
             MountableFile.forHostPath(repositoryRoot.resolve("infra/init/01-extensions.sql")),
@@ -76,6 +76,17 @@ class InfrastructureSecurityIntegrationTest {
                         ).use { it.next() && it.getBoolean(1) },
                     "runtime role must not read or mutate Flyway migration history",
                 )
+                listOf("audit_logs", "principle_versions", "order_events", "paper_order_events").forEach { table ->
+                    assertFalse(
+                        statement
+                            .executeQuery(
+                                "select " +
+                                    "has_table_privilege(current_user, 'public.$table', 'UPDATE') or " +
+                                    "has_table_privilege(current_user, 'public.$table', 'DELETE')",
+                            ).use { it.next() && it.getBoolean(1) },
+                        "runtime role must not rewrite append-only table $table",
+                    )
+                }
                 val ddlFailure =
                     assertThrows<SQLException> {
                         statement.execute("create table runtime_must_not_create(id int)")

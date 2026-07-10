@@ -1,3 +1,10 @@
+buildscript {
+    configurations.classpath {
+        // Spring Boot buildpack 전이 의존성에서 긴 입력 재귀 DoS 수정 버전을 강제한다.
+        resolutionStrategy.force("org.apache.commons:commons-lang3:3.20.0")
+    }
+}
+
 plugins {
     kotlin("jvm") version "2.4.0"
     kotlin("plugin.spring") version "2.4.0" // @Service 등 all-open
@@ -19,6 +26,15 @@ java {
 
 repositories {
     mavenCentral()
+}
+
+dependencyManagement {
+    dependencies {
+        // Boot BOM의 다음 patch 반영 전에도 공개 취약점 수정 버전을 우선한다.
+        dependency("com.fasterxml.jackson.core:jackson-databind:2.21.5")
+        dependency("ch.qos.logback:logback-core:1.5.35")
+        dependency("ch.qos.logback:logback-classic:1.5.35")
+    }
 }
 
 dependencies {
@@ -69,4 +85,37 @@ kotlin {
 
 tasks.withType<Test> {
     useJUnitPlatform()
+}
+
+val verifySecurityDependencyVersions by tasks.registering {
+    group = "verification"
+    description = "OSV에서 확인한 최소 보안 버전이 runtime/build classpath에 선택됐는지 검증한다."
+
+    doLast {
+        fun selectedVersion(
+            configuration: Configuration,
+            group: String,
+            module: String,
+        ): String =
+            configuration.resolvedConfiguration.resolvedArtifacts
+                .single { it.moduleVersion.id.group == group && it.name == module }
+                .moduleVersion.id.version
+
+        val runtime = configurations.runtimeClasspath.get()
+        check(selectedVersion(runtime, "ch.qos.logback", "logback-core") == "1.5.35") {
+            "logback-core must include the GHSA-jhq6-gfmj-v8fx fix"
+        }
+        check(selectedVersion(runtime, "com.fasterxml.jackson.core", "jackson-databind") == "2.21.5") {
+            "jackson-databind must include the GHSA-5jmj-h7xm-6q6v fix"
+        }
+
+        val buildClasspath = buildscript.configurations.getByName("classpath")
+        check(selectedVersion(buildClasspath, "org.apache.commons", "commons-lang3") == "3.20.0") {
+            "commons-lang3 must include the GHSA-j288-q9x7-2f5v fix"
+        }
+    }
+}
+
+tasks.named("check") {
+    dependsOn(verifySecurityDependencyVersions)
 }

@@ -8,6 +8,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 KISMode = Literal["mock", "live"]
 
+KIS_REST_HARD_LIMIT_PER_SECOND: dict[KISMode, float] = {"mock": 1.0, "live": 18.0}
+KIS_DEFAULT_REQUEST_INTERVAL_MILLISECONDS: dict[KISMode, int] = {"mock": 1_000, "live": 120}
+KIS_MIN_REQUEST_INTERVAL_MILLISECONDS: dict[KISMode, int] = {"mock": 1_000, "live": 100}
+
 
 class KISSettings(BaseSettings):
     # 서비스 디렉터리 실행과 repo root 실행을 모두 지원한다. extra ignore는 다른 workspace env가 섞여도
@@ -20,27 +24,28 @@ class KISSettings(BaseSettings):
 
     kis_mode: KISMode = "mock"
     kis_offline: bool = False
-    kis_mock_app_key: str | None = None
-    kis_mock_app_secret: str | None = None
-    kis_mock_account_no: str | None = None
-    kis_live_app_key: str | None = None
-    kis_live_app_secret: str | None = None
-    kis_live_account_no: str | None = None
-    kis_app_key: str | None = None
-    kis_app_secret: str | None = None
-    kis_account_no: str | None = None
-    kis_rate_limit_per_second: PositiveFloat = 1.0
+    kis_rate_limit_per_second: PositiveFloat | None = None
+    kis_request_interval_milliseconds: int | None = Field(default=None, ge=1)
+    kis_rate_limit_max_wait_seconds: float = Field(default=10.0, gt=8.0, le=10.0)
     kis_data_dir: Path = Path("data/kis")
-    redis_url: str = "redis://localhost:6379/0"
-    kis_timeout_seconds: PositiveFloat = 10.0
+    kis_timeout_seconds: float = Field(default=10.0, gt=0, le=10.0)
     kis_retry_attempts: int = Field(default=3, ge=1, le=5)
 
     @model_validator(mode="after")
-    def _validate_mode_credentials(self) -> "KISSettings":
-        if not self.kis_offline and (not self.app_key or not self.app_secret):
-            # offline fixture만 credential 없이 허용한다. 온라인 read-only도 KIS 인증 실패를 늦게 보이면
-            # backfill 중간에서 더 비싸게 실패하므로 설정 단계에서 막는다.
-            raise ValueError(f"KIS_{self.kis_mode.upper()}_APP_KEY/SECRET is required outside offline mode")
+    def _validate_provider_rate_contract(self) -> "KISSettings":
+        hard_limit = KIS_REST_HARD_LIMIT_PER_SECOND[self.kis_mode]
+        configured_rate = float(self.kis_rate_limit_per_second or hard_limit)
+        if configured_rate > hard_limit:
+            raise ValueError(
+                f"KIS {self.kis_mode} rate exceeds the official REST limit of {hard_limit:g}/s"
+            )
+
+        minimum_interval = KIS_MIN_REQUEST_INTERVAL_MILLISECONDS[self.kis_mode]
+        configured_interval = self.kis_request_interval_milliseconds
+        if configured_interval is not None and configured_interval < minimum_interval:
+            raise ValueError(
+                f"KIS {self.kis_mode} minimum request interval is {minimum_interval}ms"
+            )
         return self
 
     @property
@@ -57,26 +62,18 @@ class KISSettings(BaseSettings):
 
     @property
     def rate_limit_per_second(self) -> float:
-        return float(self.kis_rate_limit_per_second)
+        return float(
+            self.kis_rate_limit_per_second or KIS_REST_HARD_LIMIT_PER_SECOND[self.kis_mode]
+        )
 
     @property
-    def app_key(self) -> str | None:
-        if self.kis_mode == "live":
-            return self.kis_live_app_key or self.kis_app_key
-        return self.kis_mock_app_key or self.kis_app_key
-
-    @property
-    def app_secret(self) -> str | None:
-        if self.kis_mode == "live":
-            return self.kis_live_app_secret or self.kis_app_secret
-        return self.kis_mock_app_secret or self.kis_app_secret
-
-    @property
-    def account_no(self) -> str | None:
-        # S1.1 시장데이터에는 계좌번호를 쓰지 않는다. env 호환성만 남겨 두고 호출 헤더에는 넣지 않는다.
-        if self.kis_mode == "live":
-            return self.kis_live_account_no or self.kis_account_no
-        return self.kis_mock_account_no or self.kis_account_no
+    def request_interval_seconds(self) -> float:
+        """운영자가 낮춘 초당 목표와 KIS의 mode별 최소 호출 간격 중 더 보수적인 값을 쓴다."""
+        interval_ms = (
+            self.kis_request_interval_milliseconds
+            or KIS_DEFAULT_REQUEST_INTERVAL_MILLISECONDS[self.kis_mode]
+        )
+        return max(interval_ms / 1_000, 1 / self.rate_limit_per_second)
 
     @property
     def base_url(self) -> str:

@@ -1,9 +1,9 @@
 from app.data.kis.masking import mask_secret, mask_text
 
 
-def test_mask_secret_preserves_only_small_edges() -> None:
-    assert mask_secret("abcdefghijklmnopqrstuvwxyz") == "abcd...wxyz"
-    assert mask_secret("short") == "***"
+def test_mask_secret_never_preserves_secret_fragments() -> None:
+    assert mask_secret("abcdefghijklmnopqrstuvwxyz") == "[redacted]"
+    assert mask_secret("short") == "[redacted]"
 
 
 def test_mask_text_removes_known_sensitive_values() -> None:

@@ -23,9 +23,9 @@ class FlywayMigrationIntegrationTest(
     @Autowired private val jdbcTemplate: JdbcTemplate,
 ) : SpringApiIntegrationTestBase() {
     @Test
-    fun `clean database applies V1 through V4 migrations and creates required objects`() {
+    fun `clean database applies V1 through V5 migrations and creates required objects`() {
         val versions = queryStrings("select version from flyway_schema_history where success order by installed_rank")
-        assertEquals(listOf("1", "2", "3", "4"), versions)
+        assertEquals(listOf("1", "2", "3", "4", "5"), versions)
 
         val requiredTables =
             listOf(
@@ -227,10 +227,16 @@ class FlywayMigrationIntegrationTest(
     }
 
     companion object {
+        private val postgresImage =
+            DockerImageName
+                .parse(
+                    "pgvector/pgvector:pg16@sha256:1d533553fefe4f12e5d80c7b80622ba0c382abb5758856f52983d8789179f0fb",
+                ).asCompatibleSubstituteFor("postgres")
+
         @Container
         @JvmStatic
         val postgres: PostgreSQLContainer =
-            PostgreSQLContainer(DockerImageName.parse("pgvector/pgvector:pg16"))
+            PostgreSQLContainer(postgresImage)
                 .withDatabaseName("decision")
                 .withUsername("decision")
                 .withPassword("decision")
@@ -241,6 +247,8 @@ class FlywayMigrationIntegrationTest(
             registry.add("spring.datasource.url", postgres::getJdbcUrl)
             registry.add("spring.datasource.username", postgres::getUsername)
             registry.add("spring.datasource.password", postgres::getPassword)
+            registry.add("spring.flyway.user", postgres::getUsername)
+            registry.add("spring.flyway.password", postgres::getPassword)
         }
     }
 }

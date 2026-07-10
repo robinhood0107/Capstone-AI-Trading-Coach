@@ -1,6 +1,10 @@
 package com.capstone.decision
 
+import com.capstone.decision.infrastructure.security.LoginAttemptLimiter
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotEquals
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -8,6 +12,7 @@ import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.context.annotation.Import
 import org.springframework.http.MediaType
 import org.springframework.security.access.prepost.PreAuthorize
+import org.springframework.security.core.Authentication
 import org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
@@ -19,17 +24,22 @@ import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.RestController
 import org.springframework.web.context.WebApplicationContext
 import tools.jackson.databind.ObjectMapper
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 // DB/Kafka 없이도 S0.3 REST 공통 계약과 security filter 동작을 빠르게 검증한다.
 @SpringBootTest(
     properties = [
         "spring.autoconfigure.exclude=org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration,org.springframework.boot.hibernate.autoconfigure.HibernateJpaAutoConfiguration,org.springframework.boot.data.jpa.autoconfigure.DataJpaRepositoriesAutoConfiguration,org.springframework.boot.kafka.autoconfigure.KafkaAutoConfiguration",
+        "app.http.max-request-body-bytes=2048",
     ],
 )
 @Import(TestOnlyAdminController::class)
 class CommonApiContractIntegrationTest(
     @Autowired private val webApplicationContext: WebApplicationContext,
     @Autowired private val objectMapper: ObjectMapper,
+    @Autowired private val loginAttemptLimiter: LoginAttemptLimiter,
 ) : SpringApiIntegrationTestBase() {
     private lateinit var mockMvc: MockMvc
 
@@ -154,6 +164,112 @@ class CommonApiContractIntegrationTest(
             }
     }
 
+    @Test
+    fun `invalid client request id is replaced by a bounded server id`() {
+        val token = login("demo-user", userPassword())
+        val supplied = "invalid request id with spaces"
+        val response =
+            mockMvc
+                .get("/api/v1/system/health") {
+                    bearer(token)
+                    header("X-Request-Id", supplied)
+                }.andReturn()
+                .response
+
+        val actual = response.getHeader("X-Request-Id")
+        assertNotEquals(supplied, actual)
+        assertTrue(actual?.matches(Regex("req_[0-9]{8}_[0-9a-f-]{36}")) == true)
+    }
+
+    @Test
+    fun `authenticated security context erases raw bearer credentials`() {
+        val token = login("demo-user", userPassword())
+
+        mockMvc
+            .get("/api/v1/test/authentication") {
+                bearer(token)
+                header("X-Request-Id", "req-auth-context")
+            }.andExpect {
+                status { isOk() }
+                jsonPath("$.data.credentialsPresent") { value(false) }
+            }
+    }
+
+    @Test
+    fun `demo login throttles repeated failures without blocking unrelated credentials`() {
+        repeat(5) {
+            mockMvc
+                .post("/api/v1/auth/login") {
+                    contentType = MediaType.APPLICATION_JSON
+                    content = """{"username":"rate-limit-probe","password":"wrong"}"""
+                    header("X-Request-Id", "req-rate-limit-$it")
+                }.andExpect { status { isUnauthorized() } }
+        }
+
+        mockMvc
+            .post("/api/v1/auth/login") {
+                contentType = MediaType.APPLICATION_JSON
+                content = """{"username":"rate-limit-probe","password":"wrong"}"""
+                header("X-Request-Id", "req-rate-limited")
+            }.andExpect {
+                status { isTooManyRequests() }
+                jsonPath("$.error.code") { value("RATE_LIMITED") }
+            }
+
+        assertFalse(login("demo-user", userPassword()).isBlank())
+    }
+
+    @Test
+    fun `parallel login reservations cannot exceed the per-user limit`() {
+        val start = CountDownLatch(1)
+        val executor = Executors.newFixedThreadPool(20)
+        try {
+            val reservations =
+                (1..20).map {
+                    executor.submit<Boolean> {
+                        start.await()
+                        loginAttemptLimiter.tryAcquire("198.51.100.200", "parallel-rate-limit-probe")
+                    }
+                }
+            start.countDown()
+
+            assertEquals(5, reservations.count { it.get(5, TimeUnit.SECONDS) })
+        } finally {
+            executor.shutdownNow()
+        }
+    }
+
+    @Test
+    fun `oversized login body is rejected before JSON binding`() {
+        mockMvc
+            .post("/api/v1/auth/login") {
+                contentType = MediaType.APPLICATION_JSON
+                content = """{"username":"oversized-probe","password":"${"x".repeat(2049)}"}"""
+                header("X-Request-Id", "req-login-body-limit")
+            }.andExpect {
+                status { isPayloadTooLarge() }
+                jsonPath("$.error.code") { value("PAYLOAD_TOO_LARGE") }
+            }
+    }
+
+    @Test
+    fun `actuator telemetry requires admin role`() {
+        val userToken = login("demo-user", userPassword())
+        val adminToken = login("demo-admin", adminPassword())
+
+        mockMvc
+            .get("/actuator/metrics") {
+                bearer(userToken)
+                header("X-Request-Id", "req-actuator-user")
+            }.andExpect { status { isForbidden() } }
+
+        mockMvc
+            .get("/actuator/metrics") {
+                bearer(adminToken)
+                header("X-Request-Id", "req-actuator-admin")
+            }.andExpect { status { isOk() } }
+    }
+
     private fun login(
         username: String,
         password: String,
@@ -184,4 +300,8 @@ private class TestOnlyAdminController {
     @PreAuthorize("hasRole('ADMIN')")
     @GetMapping("/api/v1/test/admin")
     fun adminOnly(): Map<String, String> = mapOf("status" to "ADMIN")
+
+    @GetMapping("/api/v1/test/authentication")
+    fun authentication(authentication: Authentication): Map<String, Boolean> =
+        mapOf("credentialsPresent" to (authentication.credentials != null))
 }

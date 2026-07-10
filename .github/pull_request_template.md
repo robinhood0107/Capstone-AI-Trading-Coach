@@ -17,6 +17,8 @@ EN:
 - [ ] 이 PR의 범위가 `AGENTS.md`에 명시된 단계별 허용 변경과 일치한다.
 - [ ] Stage 2 PR이라면 현재 세션(S1~S8)의 DoD와 구현 범위를 PR 설명에 명시했다.
 - [ ] S1.1 KIS 작업이라면 OAuth/cache/current price/daily itemchartprice/backfill 같은 시장데이터 읽기 범위만 포함하고 주문·계좌 변경 API를 구현하지 않았다.
+- [ ] KIS 호출이 있다면 2026-04-20 공식 유량(실전 18/s, 모의 1/s, tokenP deployment-global 1/s 보수 적용, live 기본 120ms/mock 1000ms 간격)을 검증하고, 모든 물리 재시도가 account/appkey scope의 공유 limiter를 우회하지 않는다.
+- [ ] KIS WebSocket 계획/구현이라면 계좌(앱키)당 1세션, 전 상품·실시간 유형 합산 41등록, 접속키 1/s를 검증하고 42번째 등록을 사전 거부한다.
 - [ ] `workspaces/return-engine/` 또는 `workspaces/experience-dashboard/`의 placeholder 경계를 침범하지 않았다.
 - [ ] 계약 변경이 있다면 `contracts/changes/`에 이유와 영향 범위를 기록했다.
 - [ ] 관련 Issue/PR/commit을 `#<번호>` 형식으로 연결했다. 닫는 이슈가 있으면 `Closes #<번호>`를 사용했다.
@@ -42,4 +44,4 @@ EN:
 - [ ] `git status --short --branch`
 - [ ] `git check-ignore -v .env .env.local http-client.private.env.json`
 - [ ] `python3`로 `pyproject.toml` 파싱 확인
-- [ ] Docker 사용 가능 환경에서 `POSTGRES_PASSWORD=dummy docker compose -f infra/docker-compose.infra.yml config --quiet`
+- [ ] Docker 사용 가능 환경에서 합성 `POSTGRES_ADMIN_PASSWORD`/`POSTGRES_APP_PASSWORD`/`POSTGRES_MIGRATION_PASSWORD`/`REDIS_PASSWORD`로 `docker compose -f infra/docker-compose.infra.yml config --quiet`

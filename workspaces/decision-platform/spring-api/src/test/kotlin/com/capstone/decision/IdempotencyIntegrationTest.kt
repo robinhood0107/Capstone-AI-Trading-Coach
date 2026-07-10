@@ -246,6 +246,22 @@ class IdempotencyIntegrationTest(
         assertTrue(redisTemplate.keys("*idem-body-limit*").isEmpty())
     }
 
+    @Test
+    fun `redis requires authentication and disables eviction`() {
+        val unauthenticated = redis.execInContainer("redis-cli", "ping")
+        val authenticated =
+            redis.execInContainer(
+                "sh",
+                "-ec",
+                "REDISCLI_AUTH=\"\$REDIS_PASSWORD\" redis-cli ping && " +
+                    "REDISCLI_AUTH=\"\$REDIS_PASSWORD\" redis-cli CONFIG GET maxmemory-policy",
+            )
+
+        assertTrue(unauthenticated.stdout.contains("NOAUTH"))
+        assertTrue(authenticated.stdout.contains("PONG"))
+        assertTrue(authenticated.stdout.contains("noeviction"))
+    }
+
     private fun postIdempotent(
         token: String,
         key: String,
@@ -289,18 +305,30 @@ class IdempotencyIntegrationTest(
     }
 
     companion object {
+        private val redisPasswordValue: String = "r" + "p".repeat(24)
+
         // CI와 로컬에서 동일한 Redis 버전으로 TTL/Hash 동작 차이를 줄인다.
         @Container
         @JvmStatic
         val redis: GenericContainer<*> =
             GenericContainer(DockerImageName.parse("redis:7.2-alpine"))
-                .withExposedPorts(6379)
+                .withEnv("REDIS_PASSWORD", redisPasswordValue)
+                .withCommand(
+                    "redis-server",
+                    "--appendonly",
+                    "yes",
+                    "--maxmemory-policy",
+                    "noeviction",
+                    "--requirepass",
+                    redisPasswordValue,
+                ).withExposedPorts(6379)
 
         @DynamicPropertySource
         @JvmStatic
         fun redisProperties(registry: DynamicPropertyRegistry) {
             registry.add("spring.data.redis.host", redis::getHost)
             registry.add("spring.data.redis.port") { redis.getMappedPort(6379) }
+            registry.add("spring.data.redis.password") { redisPasswordValue }
         }
     }
 }

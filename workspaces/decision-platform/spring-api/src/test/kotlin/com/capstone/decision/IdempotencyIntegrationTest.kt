@@ -1,5 +1,9 @@
 package com.capstone.decision
 
+import com.capstone.decision.infrastructure.idempotency.IdempotencyClaimLostException
+import com.capstone.decision.infrastructure.idempotency.IdempotencyLookup
+import com.capstone.decision.infrastructure.idempotency.IdempotencyProperties
+import com.capstone.decision.infrastructure.idempotency.IdempotencyService
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -37,6 +41,9 @@ import java.util.concurrent.TimeUnit
 @SpringBootTest(
     properties = [
         "spring.autoconfigure.exclude=org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration,org.springframework.boot.hibernate.autoconfigure.HibernateJpaAutoConfiguration,org.springframework.boot.data.jpa.autoconfigure.DataJpaRepositoriesAutoConfiguration,org.springframework.boot.kafka.autoconfigure.KafkaAutoConfiguration",
+        "app.idempotency.max-request-body-bytes=256",
+        "app.idempotency.max-response-body-bytes=256",
+        "app.idempotency.max-key-length=64",
     ],
 )
 @Import(TestOnlyIdempotencyController::class)
@@ -44,6 +51,7 @@ class IdempotencyIntegrationTest(
     @Autowired private val webApplicationContext: WebApplicationContext,
     @Autowired private val objectMapper: ObjectMapper,
     @Autowired private val redisTemplate: StringRedisTemplate,
+    @Autowired private val idempotencyService: IdempotencyService,
 ) : SpringApiIntegrationTestBase() {
     private lateinit var mockMvc: MockMvc
 
@@ -137,6 +145,189 @@ class IdempotencyIntegrationTest(
         assertTrue(redisTemplate.keys("*idem-unauth*").isEmpty())
     }
 
+    @Test
+    fun `unknown wildcard write path does not allocate idempotency state`() {
+        val token = login()
+
+        mockMvc
+            .post("/api/v1/orders/not-a-handler") {
+                bearer(token)
+                header("X-Idempotency-Key", "idem-missing-handler")
+                header("X-Request-Id", "req-idem-missing-handler")
+                contentType = MediaType.APPLICATION_JSON
+                content = "{}"
+            }.andExpect {
+                status { isNotFound() }
+                jsonPath("$.error.code") { value("NOT_FOUND") }
+            }
+
+        assertTrue(redisTemplate.keys("*idem-missing-handler*").isEmpty())
+    }
+
+    @Test
+    fun `atomic claim allows only the first request to execute`() {
+        val first =
+            idempotencyService.acquire(
+                userId = "demo-user",
+                idempotencyKey = "idem-atomic-claim",
+                requestHash = "hash-one",
+            )
+        val second =
+            idempotencyService.acquire(
+                userId = "demo-user",
+                idempotencyKey = "idem-atomic-claim",
+                requestHash = "hash-one",
+            )
+
+        assertTrue(first is IdempotencyLookup.New)
+        assertTrue(second is IdempotencyLookup.InProgress)
+    }
+
+    @Test
+    fun `per-user admission cap rejects excess new idempotency keys`() {
+        val boundedService =
+            IdempotencyService(
+                redisTemplate,
+                IdempotencyProperties(maxNewKeysPerUserPerTtl = 2),
+            )
+        val userId = "quota-${UUID.randomUUID()}"
+
+        repeat(2) { index ->
+            assertTrue(
+                boundedService.acquire(userId, "key-$index", "hash-$index") is IdempotencyLookup.New,
+            )
+        }
+
+        assertTrue(
+            boundedService.acquire(userId, "key-overflow", "hash-overflow") is
+                IdempotencyLookup.CapacityExceeded,
+        )
+    }
+
+    @Test
+    fun `expired claim owner cannot overwrite a replacement claim`() {
+        val first =
+            idempotencyService.acquire(
+                userId = "demo-user",
+                idempotencyKey = "idem-claim-owner",
+                requestHash = "hash-owner",
+            ) as IdempotencyLookup.New
+        redisTemplate.delete("idempotency-claim:demo-user:idem-claim-owner")
+        val replacement =
+            idempotencyService.acquire(
+                userId = "demo-user",
+                idempotencyKey = "idem-claim-owner",
+                requestHash = "hash-owner",
+            ) as IdempotencyLookup.New
+
+        org.junit.jupiter.api.assertThrows<IdempotencyClaimLostException> {
+            idempotencyService.store(
+                userId = "demo-user",
+                idempotencyKey = "idem-claim-owner",
+                requestHash = "hash-owner",
+                claimToken = first.claimToken,
+                status = 200,
+                body = """{"owner":"stale"}""",
+                contentType = MediaType.APPLICATION_JSON_VALUE,
+            )
+        }
+        idempotencyService.store(
+            userId = "demo-user",
+            idempotencyKey = "idem-claim-owner",
+            requestHash = "hash-owner",
+            claimToken = replacement.claimToken,
+            status = 200,
+            body = """{"owner":"replacement"}""",
+            contentType = MediaType.APPLICATION_JSON_VALUE,
+        )
+
+        val replay =
+            idempotencyService.acquire(
+                userId = "demo-user",
+                idempotencyKey = "idem-claim-owner",
+                requestHash = "hash-owner",
+            ) as IdempotencyLookup.Replay
+        assertEquals("""{"owner":"replacement"}""", replay.body)
+        assertTrue(redisTemplate.getExpire(idempotencyService.redisKey("demo-user", "idem-claim-owner")) > 0)
+        assertFalse(redisTemplate.hasKey("idempotency-claim:demo-user:idem-claim-owner"))
+    }
+
+    @Test
+    fun `idempotency key rejects unsafe or oversized values before controller`() {
+        val token = login()
+
+        mockMvc
+            .post("/api/v1/orders/test-idempotency") {
+                bearer(token)
+                header("X-Idempotency-Key", "unsafe key with spaces")
+                header("X-Request-Id", "req-idem-key-invalid")
+                contentType = MediaType.APPLICATION_JSON
+                content = """{"symbol":"005930","quantity":1}"""
+            }.andExpect {
+                status { isBadRequest() }
+                jsonPath("$.error.code") { value("VALIDATION_ERROR") }
+            }
+    }
+
+    @Test
+    fun `idempotency request body is bounded before controller execution`() {
+        val token = login()
+
+        mockMvc
+            .post("/api/v1/orders/test-idempotency") {
+                bearer(token)
+                header("X-Idempotency-Key", "idem-body-limit")
+                header("X-Request-Id", "req-idem-body-limit")
+                contentType = MediaType.APPLICATION_JSON
+                content = "x".repeat(257)
+            }.andExpect {
+                status { isPayloadTooLarge() }
+                jsonPath("$.error.code") { value("PAYLOAD_TOO_LARGE") }
+            }
+
+        assertTrue(redisTemplate.keys("*idem-body-limit*").isEmpty())
+    }
+
+    @Test
+    fun `oversized controller response is replaced by bounded replay-safe error`() {
+        val token = login()
+
+        mockMvc
+            .post("/api/v1/orders/test-large-response") {
+                bearer(token)
+                header("X-Idempotency-Key", "idem-response-limit")
+                header("X-Request-Id", "req-idem-response-limit")
+                contentType = MediaType.APPLICATION_JSON
+                content = "{}"
+            }.andExpect {
+                status { isConflict() }
+                jsonPath("$.error.code") { value("CONFLICT") }
+            }
+
+        val storedBody =
+            redisTemplate.opsForHash<String, String>().get(
+                "idempotency:demo-user:idem-response-limit",
+                "body",
+            )
+        assertTrue(!storedBody.isNullOrBlank() && storedBody.toByteArray().size <= 256)
+    }
+
+    @Test
+    fun `redis requires authentication and disables eviction`() {
+        val unauthenticated = redis.execInContainer("redis-cli", "ping")
+        val authenticated =
+            redis.execInContainer(
+                "sh",
+                "-ec",
+                "REDISCLI_AUTH=\"\$REDIS_PASSWORD\" redis-cli ping && " +
+                    "REDISCLI_AUTH=\"\$REDIS_PASSWORD\" redis-cli CONFIG GET maxmemory-policy",
+            )
+
+        assertTrue(unauthenticated.stdout.contains("NOAUTH"))
+        assertTrue(authenticated.stdout.contains("PONG"))
+        assertTrue(authenticated.stdout.contains("noeviction"))
+    }
+
     private fun postIdempotent(
         token: String,
         key: String,
@@ -180,18 +371,33 @@ class IdempotencyIntegrationTest(
     }
 
     companion object {
+        private val redisPasswordValue: String = "r" + "p".repeat(24)
+
         // CI와 로컬에서 동일한 Redis 버전으로 TTL/Hash 동작 차이를 줄인다.
         @Container
         @JvmStatic
         val redis: GenericContainer<*> =
-            GenericContainer(DockerImageName.parse("redis:7.2-alpine"))
-                .withExposedPorts(6379)
+            GenericContainer(
+                DockerImageName.parse(
+                    "redis:7.2-alpine@sha256:dfa18828cbc07b3ae6a95ec7343f6c214fdee2d836197b4be8e9904420762cd8",
+                ),
+            ).withEnv("REDIS_PASSWORD", redisPasswordValue)
+                .withCommand(
+                    "redis-server",
+                    "--appendonly",
+                    "yes",
+                    "--maxmemory-policy",
+                    "noeviction",
+                    "--requirepass",
+                    redisPasswordValue,
+                ).withExposedPorts(6379)
 
         @DynamicPropertySource
         @JvmStatic
         fun redisProperties(registry: DynamicPropertyRegistry) {
             registry.add("spring.data.redis.host", redis::getHost)
             registry.add("spring.data.redis.port") { redis.getMappedPort(6379) }
+            registry.add("spring.data.redis.password") { redisPasswordValue }
         }
     }
 }
@@ -218,4 +424,11 @@ private class TestOnlyIdempotencyController {
                     "nonce" to UUID.randomUUID().toString(),
                 ),
             )
+
+    @PostMapping("/api/v1/orders/test-large-response")
+    fun createLargeResponse(): ResponseEntity<Map<String, String>> =
+        ResponseEntity
+            .status(HttpStatus.CREATED)
+            .contentType(MediaType.APPLICATION_JSON)
+            .body(mapOf("payload" to "x".repeat(1_048_576)))
 }

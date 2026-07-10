@@ -8,6 +8,8 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
+from app.data.kis.symbols import normalize_symbol
+
 KRX_EXPORT_RANKING_RULE = "market cap desc, trading value desc, symbol asc"
 UNIVERSE_MANIFEST_SCHEMA_VERSION = 1
 
@@ -171,7 +173,7 @@ def load_symbols_file(path: Path) -> list[str]:
 
 
 def _normalize_symbol(value: str) -> str:
-    return value.strip().zfill(6)
+    return normalize_symbol(value)
 
 
 def refresh_universe_from_krx_export(

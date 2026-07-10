@@ -2,10 +2,8 @@ from __future__ import annotations
 
 
 def mask_secret(value: str | None) -> str:
-    if not value or len(value) < 12:
-        # 짧은 값은 앞뒤 일부만 보여도 전체 추측이 쉬워서 전부 가린다.
-        return "***"
-    return f"{value[:4]}...{value[-4:]}"
+    # 길이·앞뒤 조각도 credential 식별 단서이므로 값 유무와 무관하게 같은 문자열만 반환한다.
+    return "[redacted]"
 
 
 def mask_text(text: str, secrets: list[str | None]) -> str:

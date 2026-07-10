@@ -445,6 +445,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "confluent-kafka" },
+    { name = "defusedxml" },
     { name = "exchange-calendars" },
     { name = "fastapi" },
     { name = "flagembedding" },
@@ -479,6 +480,7 @@ dev = [
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "ruff" },
+    { name = "types-defusedxml" },
     { name = "types-grpcio" },
     { name = "types-grpcio-health-checking" },
     { name = "types-grpcio-reflection" },
@@ -488,6 +490,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "confluent-kafka", specifier = ">=2.4" },
+    { name = "defusedxml", specifier = ">=0.7.1,<0.8" },
     { name = "exchange-calendars", specifier = "==4.13.2" },
     { name = "fastapi", specifier = ">=0.111" },
     { name = "flagembedding", specifier = ">=1.2" },
@@ -522,10 +525,20 @@ dev = [
     { name = "pytest", specifier = ">=8" },
     { name = "pytest-asyncio" },
     { name = "ruff", specifier = ">=0.5" },
+    { name = "types-defusedxml", specifier = ">=0.7" },
     { name = "types-grpcio", specifier = ">=1.0.0.20260614" },
     { name = "types-grpcio-health-checking", specifier = ">=1.0.0.20260518" },
     { name = "types-grpcio-reflection", specifier = ">=1.0.0.20260508" },
     { name = "types-pyyaml", specifier = ">=6.0" },
+]
+
+[[package]]
+name = "defusedxml"
+version = "0.7.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/0f/d5/c66da9b79e5bdb124974bfe172b4daf3c984ebd9c2a06e2b8a4dc7331c72/defusedxml-0.7.1.tar.gz", hash = "sha256:1bb3032db185915b62d7c6209c5a8792be6a32ab2fedacc84e01b52c51aa3e69", size = 75520, upload-time = "2021-03-08T10:59:26.269Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/07/6c/aa3f2f849e01cb6a001cd8554a88d4c77c5c1a31c95bdf1cf9301e6d9ef4/defusedxml-0.7.1-py2.py3-none-any.whl", hash = "sha256:a352e7e428770286cc899e2542b6cdaedb2b4953ff269a210103ec58f6198a61", size = 25604, upload-time = "2021-03-08T10:59:24.45Z" },
 ]
 
 [[package]]
@@ -2852,6 +2865,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/7c/f7/68adc395201b20b872d68e975386832e8005ffeacedd43a1d837a32815be/typer-0.26.8.tar.gz", hash = "sha256:c244a6bd558886fe3f8780efb6bdd28bb9aff005a94eedebaa5cb32926fe2f7e", size = 202097, upload-time = "2026-06-26T09:22:45.705Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/80/87/b9fd69c92c6102a066e1b86a35243f53e70bd4c709f2a26d9f4fee4f4dc0/typer-0.26.8-py3-none-any.whl", hash = "sha256:3512ca79ac5c11113414b36e80281b872884477722440691c89d1112e321a49c", size = 122564, upload-time = "2026-06-26T09:22:44.72Z" },
+]
+
+[[package]]
+name = "types-defusedxml"
+version = "0.7.0.20260504"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/da/d2/4553c8fa9cdebfe1e84b950cf790a4d2376a97fa016e43f7c65323fa6c7d/types_defusedxml-0.7.0.20260504.tar.gz", hash = "sha256:2ab2828a3f97111ba1c16cee273ad4124a831fc9198c41bf8368ff6ea48ad300", size = 10729, upload-time = "2026-05-04T05:22:50.192Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/bf/2d/8a4b5ba1d732b8bc691f0efbb1c6f77cb5f6f473b2afe181d83d910773c5/types_defusedxml-0.7.0.20260504-py3-none-any.whl", hash = "sha256:a959e3a0a43b93e464bd625d91ec9193a2703ddc10443bdd627792485fae0b10", size = 13467, upload-time = "2026-05-04T05:22:49.319Z" },
 ]
 
 [[package]]

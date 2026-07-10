@@ -48,6 +48,12 @@ S1.2는 OpenDART 공식 API에서 읽은 구조화 이벤트만 점수화한다.
 - S1.2b·S1.2c endpoint 경로명은 구현 시 OpenDART 상세페이지로 확인 완료(apiId ↔ path 일치). 경로명을 미확정 상태로 지어내지 않는다.
 - 실제 주문 판단 소비(riskItems 방출)는 S2.2 `DisclosureRiskPort` + S2.3 Decision API에서 이뤄진다(위 로드맵과 독립적으로 진행).
 
+### S1.2c 누적 보안 재검증 (2026-07-10)
+
+S0 최초 구현부터 S1.2c까지 누적 코드를 다시 검사했다. OpenDART는 응답 byte/JSON depth/list/ZIP member·ratio/XML field 상한을 두고 DTD/entity를 parser 단계에서 금지한다. raw observation은 source id를 제한하고 directory fd+`O_NOFOLLOW`+exclusive create로 symlink 경계 이탈을 차단한다. mapping window와 scorer 입력/date 범위도 bounded 처리한다. 이 검사는 offline fixture와 mock transport로 수행했으며 기존 승인 smoke 이후 새로운 OpenDART 호출을 만들지 않았다.
+
+같은 누적 검사에서 KIS credential의 private fixed-origin transport 격리, Spring 인증 전 body limit·로그인 원자 rate limit·멱등성 owner fencing, loopback gRPC, Redis/PostgreSQL 최소권한도 함께 보강했다. contracts/proto와 S1.6 quota migration/collector는 변경하지 않았다.
+
 ## RiskEngine/Decision API 계약 연결
 
 S1.2의 두 번째 핵심은 점수를 계산만 하지 않고, 판단 결과 계약에 근거를 드러내는 것이다.

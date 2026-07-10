@@ -1,5 +1,6 @@
 package com.capstone.decision
 
+import com.capstone.decision.infrastructure.security.LoginAttemptLimiter
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotEquals
@@ -23,17 +24,22 @@ import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.RestController
 import org.springframework.web.context.WebApplicationContext
 import tools.jackson.databind.ObjectMapper
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 // DB/Kafka 없이도 S0.3 REST 공통 계약과 security filter 동작을 빠르게 검증한다.
 @SpringBootTest(
     properties = [
         "spring.autoconfigure.exclude=org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration,org.springframework.boot.hibernate.autoconfigure.HibernateJpaAutoConfiguration,org.springframework.boot.data.jpa.autoconfigure.DataJpaRepositoriesAutoConfiguration,org.springframework.boot.kafka.autoconfigure.KafkaAutoConfiguration",
+        "app.http.max-request-body-bytes=2048",
     ],
 )
 @Import(TestOnlyAdminController::class)
 class CommonApiContractIntegrationTest(
     @Autowired private val webApplicationContext: WebApplicationContext,
     @Autowired private val objectMapper: ObjectMapper,
+    @Autowired private val loginAttemptLimiter: LoginAttemptLimiter,
 ) : SpringApiIntegrationTestBase() {
     private lateinit var mockMvc: MockMvc
 
@@ -211,6 +217,39 @@ class CommonApiContractIntegrationTest(
             }
 
         assertFalse(login("demo-user", userPassword()).isBlank())
+    }
+
+    @Test
+    fun `parallel login reservations cannot exceed the per-user limit`() {
+        val start = CountDownLatch(1)
+        val executor = Executors.newFixedThreadPool(20)
+        try {
+            val reservations =
+                (1..20).map {
+                    executor.submit<Boolean> {
+                        start.await()
+                        loginAttemptLimiter.tryAcquire("198.51.100.200", "parallel-rate-limit-probe")
+                    }
+                }
+            start.countDown()
+
+            assertEquals(5, reservations.count { it.get(5, TimeUnit.SECONDS) })
+        } finally {
+            executor.shutdownNow()
+        }
+    }
+
+    @Test
+    fun `oversized login body is rejected before JSON binding`() {
+        mockMvc
+            .post("/api/v1/auth/login") {
+                contentType = MediaType.APPLICATION_JSON
+                content = """{"username":"oversized-probe","password":"${"x".repeat(2049)}"}"""
+                header("X-Request-Id", "req-login-body-limit")
+            }.andExpect {
+                status { isPayloadTooLarge() }
+                jsonPath("$.error.code") { value("PAYLOAD_TOO_LARGE") }
+            }
     }
 
     @Test

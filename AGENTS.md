@@ -49,6 +49,13 @@
 - 로그 예시가 필요하면 값은 반드시 마스킹한다.
 - 커밋 전 gitleaks 또는 GitHub `repo-hygiene` workflow로 secret scan을 통과해야 한다.
 
+### KIS 호출 유량 불변식
+
+- KIS Developers의 [API 호출 유량 안내(2026-04-20 기준)](https://apiportal.koreainvestment.com/community/10000000-0000-0011-0000-000000000001/post/d0d1a83f-6f8d-4437-9700-6d26702fd989)를 운영 유량의 공식 기준으로 둔다. REST는 실전 계좌당 18건/초, 모의 1건/초이고 `/oauth2/tokenP`와 WebSocket 접속키 발급은 각각 1건/초다.
+- S1.1의 현재가·백필·휴장일 조회와 모든 물리 재시도는 같은 credential/appkey+mode의 opaque scope로 Redis 원자 limiter를 공유한다. 실전은 기본 120ms, 모의는 최소 1,000ms no-burst 간격을 적용하며 설정은 공식 상한보다 낮출 수만 있다. limiter/Redis 장애 시 온라인 호출은 fail-closed한다.
+- `/oauth2/tokenP`는 제한 단위가 공지에 없으므로 일반 REST budget과 분리한 deployment-global 1건/초 limiter를 보수 적용하고, token cache/singleflight는 mode별 scope로 분리해 cache를 재확인한다. 안전한 GET의 KIS 분산/라우팅 실패만 다음 허용 슬롯에서 제한 재호출하고, 유량 초과와 주문·정정·취소는 자동 재시도하지 않는다.
+- WebSocket은 S3/P2 이후 구현한다. 그 전에도 계약은 계좌(앱키)당 1세션, 국내·해외·주식·파생 및 체결가·호가·예상체결·체결통보 합산 41개 등록으로 고정한다. 42번째 등록과 두 번째 세션은 provider 호출 전에 거부한다.
+
 ## Git과 GitHub 규칙
 
 - 기본 브랜치는 `main`이다.

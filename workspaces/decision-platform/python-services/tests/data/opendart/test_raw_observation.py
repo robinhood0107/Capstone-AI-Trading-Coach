@@ -25,6 +25,18 @@ def test_request_fingerprint_keeps_only_path_and_query_keys() -> None:
     assert "00126380" not in fingerprint
 
 
+def test_request_fingerprint_drops_query_and_fragment_embedded_in_path() -> None:
+    fingerprint = request_fingerprint(
+        "GET",
+        "/api/list.json?crtfc_key=fixture-auth-value#debug",
+        {"corp_code": "00126380"},
+    )
+
+    assert fingerprint == "GET /api/list.json?keys=corp_code"
+    assert "fixture-auth-value" not in fingerprint
+    assert "crtfc_key" not in fingerprint
+
+
 def test_write_raw_observation_masks_payload_and_writes_only_under_data_dir(tmp_path: Path) -> None:
     observation = write_raw_observation(
         data_dir=tmp_path,

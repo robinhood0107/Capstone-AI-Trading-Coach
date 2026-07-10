@@ -71,6 +71,27 @@ def test_active_mapping_requires_effective_window_days() -> None:
         )
 
 
+def test_active_mapping_rejects_unbounded_effective_window() -> None:
+    with pytest.raises(RiskMappingValidationError, match="effective_window_days"):
+        load_risk_mapping_from_dict(
+            {
+                "version": "bad-window",
+                "entries": [
+                    {
+                        "code": "OPENDART:piicDecsn",
+                        "label": "유상증자 결정",
+                        "status": "active",
+                        "score": 0.6,
+                        "official_endpoint": "piicDecsn",
+                        "evidence_level": "A_OFFICIAL_STRUCTURED_AND_KOREA_MARKET_EVIDENCE",
+                        "calibration_status": "policy_v1_unvalidated",
+                        "effective_window_days": 3651,
+                    }
+                ],
+            }
+        )
+
+
 def test_s1_2b_extension_events_are_active_with_official_endpoint_and_window() -> None:
     mapping = load_default_risk_mapping()
 

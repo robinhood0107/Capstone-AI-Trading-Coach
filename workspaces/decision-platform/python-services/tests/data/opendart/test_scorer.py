@@ -329,6 +329,11 @@ def test_scorer_rejects_invalid_default_window() -> None:
         score_disclosure_risk("005930", [], as_of=AS_OF, window_days=0)
 
 
+def test_scorer_rejects_date_underflow_before_scoring() -> None:
+    with pytest.raises(ValueError, match="as_of"):
+        score_disclosure_risk("005930", [], as_of=date.min, mapping=load_default_risk_mapping())
+
+
 def _event(
     symbol: str,
     corp_code: str,

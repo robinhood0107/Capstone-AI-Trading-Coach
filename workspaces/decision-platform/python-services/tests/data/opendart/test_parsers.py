@@ -397,6 +397,17 @@ def test_corp_code_zip_rejects_dtd_before_xml_parsing() -> None:
         parse_corp_code_zip(payload)
 
 
+def test_corp_code_zip_rejects_dtd_after_large_prefix() -> None:
+    payload = _corp_code_zip(
+        (" " * 5000)
+        + "<!DOCTYPE result [<!ENTITY x 'EXPANDED'>]>"
+        + "<result><list><corp_name>&x;</corp_name></list></result>"
+    )
+
+    with pytest.raises(OpenDARTResponseError, match="DTD"):
+        parse_corp_code_zip(payload)
+
+
 def test_json_list_parser_rejects_oversized_row_count() -> None:
     response = {"status": "000", "list": [{} for _ in range(MAX_LIST_ROWS + 1)]}
 

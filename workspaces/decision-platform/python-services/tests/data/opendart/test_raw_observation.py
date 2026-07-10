@@ -110,6 +110,30 @@ def test_raw_observation_rejects_source_path_traversal(tmp_path: Path) -> None:
     assert not (tmp_path / "escaped").exists()
 
 
+def test_raw_observation_rejects_preexisting_raw_symlink(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    escaped = tmp_path / "escaped"
+    data_dir.mkdir()
+    escaped.mkdir()
+    (data_dir / "raw").symlink_to(escaped, target_is_directory=True)
+
+    with pytest.raises(ValueError, match="storage path"):
+        write_raw_observation(
+            data_dir=data_dir,
+            source_id="opendart_disclosure_list",
+            method="GET",
+            path="/api/list.json",
+            request_params={},
+            payload={"status": "000"},
+            retrieved_at=datetime(2026, 7, 9, 12, 0, tzinfo=UTC),
+            window_from=None,
+            window_to=None,
+            normalized_status="OK",
+        )
+
+    assert list(escaped.iterdir()) == []
+
+
 def test_raw_observation_rejects_payload_over_storage_limit(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="storage limit"):
         write_raw_observation(

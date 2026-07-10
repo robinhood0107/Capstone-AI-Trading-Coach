@@ -7,6 +7,7 @@ from pydantic import SecretStr
 from tenacity import wait_none
 
 from app.data.opendart import _credential_transport
+from app.data.opendart._credential_transport import OpenDARTResponseTooLargeError
 from app.data.opendart.http_client import (
     OpenDARTCredentialError,
     OpenDARTHttpClient,
@@ -319,3 +320,30 @@ def test_get_json_rejects_non_object_response(tmp_path: Path) -> None:
 
     with pytest.raises(OpenDARTHttpError):
         client.get_json("/api/list.json", params={})
+
+
+def test_transport_rejects_response_body_over_configured_limit() -> None:
+    transport = _credential_transport._CredentialTransport(
+        httpx.MockTransport(lambda _: httpx.Response(200, content=b"x" * 65)),
+        enabled=False,
+        max_response_bytes=64,
+    )
+
+    with pytest.raises(OpenDARTResponseTooLargeError, match="safety limit"):
+        transport.handle_request(httpx.Request("GET", "https://opendart.fss.or.kr/api/list.json"))
+
+
+def test_transport_rejects_excessively_deep_json_without_recursion_leak() -> None:
+    payload: object = {"status": "000"}
+    for _ in range(8):
+        payload = {"nested": payload}
+    transport = _credential_transport._CredentialTransport(
+        httpx.MockTransport(lambda _: httpx.Response(200, json=payload)),
+        enabled=False,
+        max_json_depth=4,
+    )
+
+    with pytest.raises(OpenDARTResponseTooLargeError, match="structure") as exc_info:
+        transport.handle_request(httpx.Request("GET", "https://opendart.fss.or.kr/api/list.json"))
+
+    assert exc_info.value.__cause__ is None

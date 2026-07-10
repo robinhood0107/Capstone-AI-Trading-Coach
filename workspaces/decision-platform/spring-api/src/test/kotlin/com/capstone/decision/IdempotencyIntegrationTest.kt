@@ -1,5 +1,7 @@
 package com.capstone.decision
 
+import com.capstone.decision.infrastructure.idempotency.IdempotencyLookup
+import com.capstone.decision.infrastructure.idempotency.IdempotencyService
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -37,6 +39,8 @@ import java.util.concurrent.TimeUnit
 @SpringBootTest(
     properties = [
         "spring.autoconfigure.exclude=org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration,org.springframework.boot.hibernate.autoconfigure.HibernateJpaAutoConfiguration,org.springframework.boot.data.jpa.autoconfigure.DataJpaRepositoriesAutoConfiguration,org.springframework.boot.kafka.autoconfigure.KafkaAutoConfiguration",
+        "app.idempotency.max-request-body-bytes=256",
+        "app.idempotency.max-key-length=64",
     ],
 )
 @Import(TestOnlyIdempotencyController::class)
@@ -44,6 +48,7 @@ class IdempotencyIntegrationTest(
     @Autowired private val webApplicationContext: WebApplicationContext,
     @Autowired private val objectMapper: ObjectMapper,
     @Autowired private val redisTemplate: StringRedisTemplate,
+    @Autowired private val idempotencyService: IdempotencyService,
 ) : SpringApiIntegrationTestBase() {
     private lateinit var mockMvc: MockMvc
 
@@ -135,6 +140,61 @@ class IdempotencyIntegrationTest(
             }
 
         assertTrue(redisTemplate.keys("*idem-unauth*").isEmpty())
+    }
+
+    @Test
+    fun `atomic claim allows only the first request to execute`() {
+        val first =
+            idempotencyService.acquire(
+                userId = "demo-user",
+                idempotencyKey = "idem-atomic-claim",
+                requestHash = "hash-one",
+            )
+        val second =
+            idempotencyService.acquire(
+                userId = "demo-user",
+                idempotencyKey = "idem-atomic-claim",
+                requestHash = "hash-one",
+            )
+
+        assertTrue(first is IdempotencyLookup.New)
+        assertTrue(second is IdempotencyLookup.InProgress)
+    }
+
+    @Test
+    fun `idempotency key rejects unsafe or oversized values before controller`() {
+        val token = login()
+
+        mockMvc
+            .post("/api/v1/orders/test-idempotency") {
+                bearer(token)
+                header("X-Idempotency-Key", "unsafe key with spaces")
+                header("X-Request-Id", "req-idem-key-invalid")
+                contentType = MediaType.APPLICATION_JSON
+                content = """{"symbol":"005930","quantity":1}"""
+            }.andExpect {
+                status { isBadRequest() }
+                jsonPath("$.error.code") { value("VALIDATION_ERROR") }
+            }
+    }
+
+    @Test
+    fun `idempotency request body is bounded before controller execution`() {
+        val token = login()
+
+        mockMvc
+            .post("/api/v1/orders/test-idempotency") {
+                bearer(token)
+                header("X-Idempotency-Key", "idem-body-limit")
+                header("X-Request-Id", "req-idem-body-limit")
+                contentType = MediaType.APPLICATION_JSON
+                content = "x".repeat(257)
+            }.andExpect {
+                status { isPayloadTooLarge() }
+                jsonPath("$.error.code") { value("PAYLOAD_TOO_LARGE") }
+            }
+
+        assertTrue(redisTemplate.keys("*idem-body-limit*").isEmpty())
     }
 
     private fun postIdempotent(

@@ -7,6 +7,8 @@ import org.springframework.test.context.DynamicPropertySource
 abstract class SpringApiIntegrationTestBase {
     protected fun userPassword(): String = userPasswordValue
 
+    protected fun adminPassword(): String = adminPasswordValue
+
     companion object {
         // HS256 최소 길이와 demo 로그인 계약을 만족하는 더미 값을 테스트 런타임에만 만든다.
         private val jwtSecretValue: String = "x".repeat(32)

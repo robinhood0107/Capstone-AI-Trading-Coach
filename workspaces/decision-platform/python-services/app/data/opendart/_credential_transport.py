@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from urllib.parse import quote, quote_plus
 
@@ -91,8 +92,14 @@ def _scrub_response(response: httpx.Response, credential: str) -> httpx.Response
         if candidate:
             content = content.replace(candidate.encode(), b"[redacted]")
 
+    content_type = response.headers.get("content-type", "").lower()
+    if "json" in content_type:
+        content = _drop_authentication_fields(content)
+
     headers: list[tuple[str, str]] = []
     for name, value in response.headers.multi_items():
+        if name.lower() in {"content-encoding", "content-length", "transfer-encoding"}:
+            continue
         sanitized = value
         for candidate in candidates:
             if candidate:
@@ -122,3 +129,52 @@ def _scrub_response(response: httpx.Response, credential: str) -> httpx.Response
     )
     response.close()
     return sanitized_response
+
+
+def _drop_authentication_fields(content: bytes) -> bytes:
+    try:
+        payload = json.loads(content)
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return content
+    sanitized = _sanitize_json_value(payload)
+    return json.dumps(sanitized, ensure_ascii=False, separators=(",", ":")).encode()
+
+
+def _sanitize_json_value(value: object) -> object:
+    if isinstance(value, dict):
+        return {
+            str(key): _sanitize_json_value(child)
+            for key, child in value.items()
+            if not _is_authentication_field(str(key))
+        }
+    if isinstance(value, list):
+        return [_sanitize_json_value(child) for child in value]
+    if isinstance(value, str) and _contains_authentication_marker(value):
+        return "[redacted]"
+    return value
+
+
+def _is_authentication_field(name: str) -> bool:
+    normalized = "".join(character for character in name.lower() if character.isalnum())
+    return normalized in {"crtfckey", "apikey"} or any(
+        marker in normalized
+        for marker in ("secret", "token", "authorization", "authentication", "credential")
+    )
+
+
+def _contains_authentication_marker(value: str) -> bool:
+    lowered = value.lower()
+    return any(
+        marker in lowered
+        for marker in (
+            "crtfc_key",
+            "api_key",
+            "apikey",
+            "secret",
+            "token",
+            "authorization",
+            "authentication",
+            "credential",
+            "인증키",
+        )
+    )

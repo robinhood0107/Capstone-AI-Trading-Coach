@@ -65,6 +65,17 @@ class InfrastructureSecurityIntegrationTest {
                         .executeQuery("select count(*) >= 1 from market_calendar")
                         .use { it.next() && it.getBoolean(1) },
                 )
+                assertFalse(
+                    statement
+                        .executeQuery(
+                            "select " +
+                                "has_table_privilege(current_user, 'public.flyway_schema_history', 'SELECT') or " +
+                                "has_table_privilege(current_user, 'public.flyway_schema_history', 'INSERT') or " +
+                                "has_table_privilege(current_user, 'public.flyway_schema_history', 'UPDATE') or " +
+                                "has_table_privilege(current_user, 'public.flyway_schema_history', 'DELETE')",
+                        ).use { it.next() && it.getBoolean(1) },
+                    "runtime role must not read or mutate Flyway migration history",
+                )
                 val ddlFailure =
                     assertThrows<SQLException> {
                         statement.execute("create table runtime_must_not_create(id int)")

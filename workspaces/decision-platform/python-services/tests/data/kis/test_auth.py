@@ -65,6 +65,57 @@ def test_token_issuer_drops_provider_error_body_and_credentials(
     assert marker not in f"{exc_info.value!r} {exc_info.value}"
 
 
+def test_token_issuer_allowlists_fields_and_drops_embedded_or_deep_credential_echo(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    marker = 'validation-dummy-"secret"'
+    monkeypatch.setattr(
+        _credential_transport,
+        "_read_credentials",
+        lambda _: _Credentials(app_key=SecretStr("validation-dummy-key"), app_secret=SecretStr(marker)),
+    )
+    nested: object = f"echo::{marker}::end"
+    for _ in range(80):
+        nested = {"child": nested}
+    issuer = _TokenIssuer(
+        KISSettings(kis_mode="mock", kis_offline=False, _env_file=None),
+        transport=httpx.MockTransport(
+            lambda _: httpx.Response(
+                200,
+                json={
+                    "access_token": "validation-dummy-token",
+                    "expires_in": 86400,
+                    "message": f"echo::{marker}::end",
+                    "debug": nested,
+                },
+            )
+        ),
+    )
+
+    result = issuer.issue()
+
+    assert result == {"access_token": "validation-dummy-token", "expires_in": 86400}
+    assert marker not in repr(result)
+
+
+def test_token_issuer_rejects_credential_echo_in_access_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    marker = "validation-dummy-secret"
+    monkeypatch.setattr(
+        _credential_transport,
+        "_read_credentials",
+        lambda _: _Credentials(app_key=SecretStr("validation-dummy-key"), app_secret=SecretStr(marker)),
+    )
+    issuer = _TokenIssuer(
+        KISSettings(kis_mode="mock", kis_offline=False, _env_file=None),
+        transport=httpx.MockTransport(
+            lambda _: httpx.Response(200, json={"access_token": f"prefix-{marker}-suffix", "expires_in": 86400})
+        ),
+    )
+
+    with pytest.raises(KISCredentialError, match="invalid"):
+        issuer.issue()
+
+
 def test_token_cache_miss_issues_and_stores_with_refresh_skew() -> None:
     redis_client = fakeredis.FakeStrictRedis()
     now = datetime(2026, 7, 8, 9, 0, tzinfo=UTC)
@@ -137,3 +188,16 @@ def test_token_refreshes_when_cached_mode_differs() -> None:
     manager = KISTokenManager(mode="live", offline=False, redis_client=redis_client, issuer=issuer, now=lambda: now)
 
     assert manager.get_access_token() == "live-token"
+
+
+def test_invalid_utf8_token_cache_is_treated_as_cache_miss() -> None:
+    redis_client = fakeredis.FakeStrictRedis()
+    redis_client.set("kis:token", b"\xff", ex=3600)
+    manager = KISTokenManager(
+        mode="mock",
+        offline=False,
+        redis_client=redis_client,
+        issuer=lambda: {"access_token": "replacement-token", "expires_in": 86400},
+    )
+
+    assert manager.get_access_token() == "replacement-token"

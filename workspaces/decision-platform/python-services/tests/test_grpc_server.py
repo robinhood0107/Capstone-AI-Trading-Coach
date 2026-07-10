@@ -28,3 +28,8 @@ def test_grpc_reflection_requires_explicit_opt_in(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setenv("PYTHON_GRPC_ENABLE_REFLECTION", "true")
 
     assert GrpcServerSettings.from_env().enable_reflection is True
+
+
+def test_grpc_rejects_programmatic_non_loopback_bind() -> None:
+    with pytest.raises(ValueError, match="loopback"):
+        GrpcServerSettings(bind_address="[::]:50051")

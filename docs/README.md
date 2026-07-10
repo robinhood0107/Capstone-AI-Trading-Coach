@@ -12,4 +12,4 @@
 | [선물옵션_모의주문_확장_시나리오.md](선물옵션_모의주문_확장_시나리오.md) | P2 국내선물옵션 확장 설계 (v1 범위 아님, 기본 OFF) |
 | [선물옵션_모의주문_확장_시나리오_API_명세서.md](선물옵션_모의주문_확장_시나리오_API_명세서.md) | P2 확장 API 계약 + KIS TR_ID 매핑 |
 | `adr/` | 공개 가능한 아키텍처 결정 요약을 이관하는 자리 (현재 비어 있음 — 상세 ADR은 개인 노트에서 관리) |
-| `decision-platform/` | decision-platform 공개 기술 문서 자리 (현재 비어 있음) |
+| `decision-platform/` | Decision Platform 공개 기술 문서 — 현재 S1.2 OpenDART 공시위험점수 근거 문서를 포함 |

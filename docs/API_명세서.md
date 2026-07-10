@@ -17,8 +17,21 @@
 2. Python FastAPI/gRPC 서비스는 내부 서비스로 두고 프론트에 직접 노출하지 않는다.
 3. 주문 승인/경고/차단의 최종 권한은 Spring RiskEngine에 둔다.
 4. Python 서비스는 RAG, 모델 신호, 백테스트, 금융공학 계산, KIS Adapter를 담당한다.
-5. Python/RAG/Signal/MarketData 장애가 발생하면 주문은 기본적으로 보류한다.
+5. 가격·계좌·활성 원칙·Kill Switch·필수 risk snapshot처럼 주문 안전성에 필요한 입력 장애는 `HOLD`/`BLOCK`으로 fail-closed 한다. 활성 rule이 요구하지 않는 뉴스·공시·RAG 설명은 skip+WARN으로 degrade할 수 있지만 이전 값을 최신으로 가장하지 않는다.
 6. 모든 주문 관련 API는 audit log와 decision trace를 남긴다.
+
+### 0.1 구현 상태 표기 규칙
+
+이 문서는 구현 계약과 후속 계획을 함께 담으므로 endpoint가 문서에 존재한다는 사실만으로 구현 완료를 뜻하지 않는다.
+
+| 표기 | 의미 |
+|---|---|
+| `구현 완료` | 코드·계약·자동 테스트 또는 승인된 재현 검증이 함께 완료된 상태 |
+| `계획 계약` | 향후 구현을 위한 문서 계약. 호출 가능한 endpoint/RPC가 아님 |
+| `비활성 설계 계약` | 코드 경로가 생겨도 운영 gate가 기본 OFF이며 명시적 승인 전에는 사용할 수 없음 |
+| `고도화` / `후순위` | v1 필수 구현 완료와 별개인 선택 범위 |
+
+각 절에 `구현 완료`와 검증 근거가 명시되지 않았다면 기본적으로 `계획 계약`으로 해석한다. 세션 번호는 작업 배정을 뜻할 뿐 API 가용성을 뜻하지 않으며, schema/proto/OpenAPI 변경이 필요한 기능은 별도의 contract-change 절차가 완료되어야 한다. 구현 상태의 상위 기준은 `최종_프로젝트_명세서.md`의 세션·보안 gate 표를 따른다.
 
 ---
 
@@ -35,7 +48,7 @@ flowchart LR
   GRPC --> RETURN["Return Engine: LSTM/Rule Baseline/Backtest"]
   GRPC --> DECISION_MODEL["Decision Model: LightGBM/HMM/FE Calculators"]
   GRPC --> KIS["KIS Adapter"]
-  GRPC --> DATA["KIS/OpenDART/ECOS/Naver/GDELT"]
+  GRPC --> DATA["KIS/OpenDART/ECOS/Naver + optional GDELT"]
   KIS --> MOCK["KIS Mock"]
   KIS -. 후순위 .-> LIVE["KIS Live"]
 ```
@@ -58,8 +71,8 @@ flowchart LR
 | 헤더 | 필수 | 설명 |
 |---|---:|---|
 | `Authorization: Bearer <token>` | 예 | 사용자 인증 토큰 |
-| `X-Request-Id` | 예 | 요청 추적 ID |
-| `X-Idempotency-Key` | 주문/변경 요청 필수 | 중복 주문/중복 변경 방지 |
+| `X-Request-Id` | 예 | 요청 추적 ID. bounded 형식으로 검증하고 로그 제어문자를 거부 |
+| `X-Idempotency-Key` | 금융 부작용/안전 gate 변경 필수 | 중복 주문·취소·정정·gate 변경 방지. 적용 matrix는 2.5 |
 | `X-Client-Timezone` | 아니오 | 기본 `Asia/Seoul` |
 
 ### 2.2 공통 응답 envelope
@@ -109,7 +122,7 @@ flowchart LR
 | `DECISION_EXPIRED` | 409 | decision 유효시간(`validUntil`) 초과 | 주문 재평가 유도 |
 | `RISK_BLOCKED` | 422 | 원칙/안전장치 위반으로 주문 차단 | 주문 불가 |
 | `DATA_STALE` | 409 | 가격/신호/뉴스 데이터 지연 | 주문 보류 |
-| `RATE_LIMITED` | 429 | 호출 한도 초과(KIS rate limit, LLM 비용 가드) | `Retry-After` 헤더 기준 재시도 |
+| `RATE_LIMITED` | 429 | 호출 한도 초과(KIS rate limit, LLM 비용 가드) | KIS `EGW00201`/HTTP 429는 adapter가 자동 재시도하지 않고 공유 limiter scope·외부 caller 유무를 점검한다. 일반 API의 안전한 멱등 조회만 명시적 `Retry-After`에 따라 제한 재시도하며 write와 provider quota 소진은 자동 재시도 금지 |
 | `PYTHON_SERVICE_UNAVAILABLE` | 503 | 내부 gRPC 서비스 장애 | fail-closed |
 | `BROKERAGE_UNAVAILABLE` | 503 | KIS 어댑터 장애 | 주문 보류 |
 
@@ -121,7 +134,9 @@ flowchart LR
 
 ### 2.4 인증/권한
 
-`POST /api/v1/auth/login`으로 데모 계정을 인증하고 access token을 발급받는다. 토큰은 짧은 만료(기본 12시간)를 사용하고, payload에는 userId와 role만 담는다(민감정보 금지). 로그인 attempt는 client address+username 기준 15분 5회, address 기준 15분 50회로 원자 예약하며, JSON binding 전 전역 request body 상한을 적용한다.
+`POST /api/v1/auth/login`으로 데모 계정을 인증하고 access token을 발급받는다. 로그인만 `Authorization` 헤더의 예외이며, 그 밖의 API는 명시된 역할과 Bearer 인증을 요구한다. 토큰은 데모 기준 만료 12시간을 사용하고 payload에는 opaque `sub`, `role`, `securityVersion`처럼 검증에 필요한 최소 claim만 담는다(민감정보 금지). JWT는 허용 algorithm을 고정하고 issuer/audience/subject/issued-at/expiry/securityVersion을 검증한다. Kill Switch 해제, ADMIN replay, Live 관련 고위험 행위는 token의 role만 믿지 않고 현재 DB의 account 활성 상태·role·securityVersion을 다시 확인하며, 권한 회수 뒤 발급된 이전 token은 거부한다.
+
+로그인 attempt는 client address+username 기준 15분 5회, address 기준 15분 50회로 원자 예약하며, JSON binding 전 전역 request body 상한을 적용한다. limiter key는 private factory가 정규화한 address/username scope를 purpose/version HMAC으로 만든 digest만 사용하고 raw address·username을 저장·로그·metric label에 넣지 않는다. 주소는 socket remote address를 기준으로 하고, 배포 시 명시적으로 allowlist한 reverse proxy에서 온 경우에만 표준 forwarded header를 해석한다. 임의 `X-Forwarded-For`를 신뢰하지 않는다. demo account verifier는 평문 password가 아니라 adaptive salted password hash로 secret store에 주입하고 검증 라이브러리로 비교한다. 존재하지 않는 사용자와 잘못된 비밀번호는 동일한 stable 오류·dummy hash를 포함한 유사한 검증 비용으로 처리한다. 현재 단일 JVM limiter는 replica 1에서만 보안 경계가 성립하며, 다중 replica 배포 전에는 공유 원자 저장소로 이전해야 한다.
 
 | 역할 | 접근 범위 |
 |---|---|
@@ -129,6 +144,10 @@ flowchart LR
 | `ADMIN` | USER 전체 + Kill Switch 해제, Async Job/Stream Metric/Artifact Ingest 상태, replay 관련 운영 기능 |
 
 Kill Switch는 비대칭 권한을 적용한다. 활성화(정지)는 USER도 가능하지만 해제(재가동)는 ADMIN만 가능하다 — 안전한 방향은 넓게, 위험한 방향은 좁게 연다.
+
+모든 사용자 리소스는 JWT `sub`에 해당하는 내부 userId를 소유권 기준으로 사용한다. `principleId`, `decisionId`, `answerId`, `backtestId`, `artifactId`, `journalId`, `orderId`, `accountId`, consent/async job id는 요청 경로나 body에 들어 있어도 신뢰하지 않고 DB 조회 단계에서 `owner_user_id = subject` 조건으로 제한한다. 다른 사용자의 식별자를 넣은 요청은 존재 여부를 노출하지 않도록 기본 `NOT_FOUND`로 거부한다. `accountId`는 provider 계좌번호가 아닌 opaque 내부 ID만 허용한다.
+
+ADMIN의 운영 조회·재시도·replay는 업무상 필요한 최소 범위에서만 owner scope를 넘을 수 있고, 대상 owner, 행위자, 사유, 시각을 append-only audit에 남긴다. audit의 `actorUserId`와 `occurredAt`은 요청 body의 `requestedBy`, `acceptedAt`, `acknowledgedAt` 같은 값을 신뢰하지 않고 인증 principal과 서버 clock으로 생성한다. 클라이언트가 이러한 권한성/감사성 필드를 보내면 무시하지 말고 validation 오류로 거부한다.
 
 ### 2.5 Idempotency 시맨틱
 
@@ -138,11 +157,26 @@ Kill Switch는 비대칭 권한을 적용한다. 활성화(정지)는 USER도 �
 | 동일 key + 다른 payload | `IDEMPOTENCY_CONFLICT`(409) |
 | 동일 key 처리 중 | `IDEMPOTENCY_IN_PROGRESS`(409), controller 재실행 금지 |
 | key 보존 기간 | 24시간(Redis TTL) |
-| 적용 대상 | 주문 제출/취소, 원칙 생성/수정, 백테스트 실행 |
+| 저장 namespace | `(subject, HTTP method, route template, idempotency key)` |
+| payload fingerprint | bounded request body를 canonical form으로 만든 뒤 method/route/subject와 함께 hash |
+| key 형식 | 16~128자, `[A-Za-z0-9._:-]`만 허용. 원문은 로그·metric label에 남기지 않음 |
 
 Redis claim은 고유 owner token으로 선점하고, owner 확인·응답 저장·TTL 설정·claim 삭제를 단일 Lua script로 처리한다. Redis는 인증+AOF+`noeviction`으로 운영하지만 금융 부작용의 최종 방어는 DB unique/state transition이다.
 
-멱등 선점은 설정 wildcard에 단순 일치하는 URL이 아니라 실제 MVC write handler가 매핑된 요청에만 적용한다. 사용자별 TTL 구간의 신규 key는 기본 1,000개로 제한하고 초과 시 `RATE_LIMITED`(429)를 반환한다. 인가·라우팅·검증성 4xx는 owner claim을 원자 반납해 장기 replay state로 남기지 않고, controller 응답 버퍼는 설정 byte 상한 이상을 메모리에 보관하지 않는다.
+Idempotency HMAC key rotation 중에는 active와 previous version의 scope digest를 모두 조회해 기존 replay/DB unique를 확인하고 새 기록만 active version으로 쓴다. previous version은 24시간 replay TTL과 미완료 reconciliation이 모두 끝나기 전에 폐기하지 않는다. 이 dual-read가 불가능하면 rotation 중 금융 write를 fail-closed로 막는다.
+
+멱등 선점은 설정 wildcard에 단순 일치하는 URL이 아니라 실제 MVC write handler가 매핑된 요청에만 적용한다. 인가와 owner 검증이 끝난 뒤 claim하며, 사용자별 TTL 구간의 신규 key는 기본 1,000개로 제한하고 초과 시 `RATE_LIMITED`(429)를 반환한다. 인가·라우팅·검증성 4xx는 owner claim을 원자 반납해 장기 replay state로 남기지 않고, controller 응답 버퍼는 설정 byte 상한 이상을 메모리에 보관하지 않는다. 동일 key replay도 원래 subject에게만 반환한다.
+
+금융 부작용 또는 안전 gate를 변경하는 다음 write에 위 시맨틱을 의무 적용한다.
+
+| Endpoint 계열 | 멱등성 적용 |
+|---|---|
+| Mock/파생 주문 제출 | 필수 |
+| 주문 취소·정정 | 필수 |
+| Kill Switch 상태 변경 | 필수 |
+| Live consent·live safety gate 상태 변경 | 필수 |
+
+원칙 CRUD, Journal, feedback, 백테스트 실행 같은 비금융 write는 optimistic version, job deduplication 등 각 도메인 계약을 사용하며 위 금융 replay 계약을 자동 상속하지 않는다. 적용 범위를 넓히려면 endpoint별 부작용과 replay 응답 상한을 검토한 contract change가 필요하다.
 
 ### 2.6 목록 API 공통 pagination
 
@@ -151,6 +185,7 @@ Redis claim은 고유 owner token으로 선점하고, owner 확인·응답 저�
 - 요청: `?cursor=<opaque>&size=50` (기본 50, 최대 200)
 - 응답: `data.items[]`와 `data.nextCursor` (마지막 페이지면 `null`)
 - 적용 대상: journals, decisions, rag/sources, async-jobs, order events
+- cursor는 서버 HMAC으로 인증하고 subject, route, allowlisted filter/sort, 마지막 key, page size, schema version, 짧은 expiry에 묶는다. cursor payload에는 opaque ID와 비민감 pagination state만 두며 PII·계좌·provider 식별자·credential/configuration을 넣지 않는다. 민감 state가 필요하면 authenticated-encryption 또는 server-side random cursor를 사용한다. 다른 사용자/endpoint/query의 cursor 재사용과 변조는 `VALIDATION_ERROR`로 거부하며, cursor 내용을 SQL identifier/fragment로 직접 사용하지 않는다.
 
 ### 2.7 시스템 상태 조회
 
@@ -176,11 +211,13 @@ Redis claim은 고유 owner token으로 선점하고, owner 확인·응답 저�
 
 Risk API의 `dataFreshness`는 리스크 수치 관점, 이 API는 가용성 관점으로 역할을 분리한다. 프론트 상단 상태 배지와 fail-closed 시연의 근거 API다.
 
+USER health 응답은 `UP`/`DEGRADED`, stale 여부, 기능별 사용 가능 여부처럼 행동에 필요한 coarse 상태만 제공한다. provider별 인증 방식, 환경변수 이름, credential configured 여부, 계정·quota 수치, 내부 host/port, exception은 반환하지 않는다. 상세 운영 상태는 ADMIN 권한과 내부 관측 채널로 제한하더라도 secret 존재 여부나 값을 노출하지 않는다.
+
 ---
 
 ## 2A. Async Status API
 
-Decision Platform의 비동기 처리는 외부 공개 API가 아니다. 공용 API 명세에는 작업 상태, stream metric, artifact ingest 상태 조회 계약만 둔다. 내부 이벤트 포맷, 처리 방식, 재시도, 장애 격리 세부 구현은 팀원 1 상세 구현명세서에서 관리한다.
+Decision Platform의 비동기 처리는 외부 공개 API가 아니다. 공용 API 명세에는 작업 상태, stream metric, artifact ingest 상태 조회 계약만 둔다. 내부 이벤트 포맷, 처리 방식, 재시도, 장애 격리 세부 구현은 공개 API 계약 밖의 Decision Platform 내부 구현 기록에서 관리한다.
 
 ### 2A.1 Async Job 상태 조회
 
@@ -258,8 +295,8 @@ Decision Platform의 비동기 처리는 외부 공개 API가 아니다. 공용 
         "fileName": "lstm_signals.parquet",
         "producer": "return-engine",
         "runId": "run_20260623_001",
-        "fileHash": "sha256:...",
-        "schemaVersion": 1,
+        "fileHash": "sha256:2f4b6c8d0e1a3b5c7d9e0f1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e",
+        "schemaVersion": "1.0.0",
         "status": "INGESTED",
         "lastIngestedAt": "2026-06-23T10:00:00+09:00",
         "duplicate": false
@@ -279,9 +316,9 @@ Decision Platform의 비동기 처리는 외부 공개 API가 아니다. 공용 
 |---|---|
 | `order.updated` | orderId, status, filledQuantity |
 | `async-job.updated` | jobId, status |
-| `kill-switch.changed` | active, changedBy |
+| `kill-switch.changed` | active, changedAt |
 
-WebSocket 대비 구현 부담이 작고 시연 반응성을 높인다. v1 필수는 아니며 폴링 계약이 기본이다.
+WebSocket 대비 구현 부담이 작고 시연 반응성을 높인다. v1 필수는 아니며 폴링 계약이 기본이다. 채택 시 각 event는 JWT subject owner scope로 필터링하고, token 만료 즉시 연결을 닫으며 사용자별 연결 수·event byte·queue·heartbeat/idle timeout을 제한한다. 응답은 `no-store`로 전송하고 USER stream에는 actor userId, provider/account 식별자, raw payload를 싣지 않는다.
 
 ---
 
@@ -639,14 +676,13 @@ RiskEngine은 Spring에 있으며, 금융공학 계산값은 Python에서 받아
 ```json
 {
   "active": true,
-  "reason": "중간 시연 중 수동 중지",
-  "requestedBy": "team1"
+  "reason": "중간 시연 중 수동 중지"
 }
 ```
 
-Kill Switch 활성화 상태에서는 모든 신규 주문을 `RISK_BLOCKED`로 처리한다.
+Kill Switch 활성화 상태에서는 모든 신규 주문을 `RISK_BLOCKED`로 처리한다. 변경 행위자와 시각은 요청 body가 아니라 인증 principal과 서버 clock에서 생성한다.
 
-`GET /api/v1/risk/kill-switch`로 현재 상태(활성 여부, 마지막 변경 행위자/사유/시각)를 조회한다. 활성화는 USER 권한으로 가능하지만 해제는 ADMIN 전용이며(2.4 권한 표), 모든 변경은 행위자와 사유를 감사로그에 남긴다.
+`GET /api/v1/risk/kill-switch`의 USER 응답은 활성 여부, sanitized 사유, 변경 시각만 반환한다. 마지막 변경 행위자 식별자는 ADMIN append-only audit에서만 조회한다. 활성화는 USER 권한으로 가능하지만 해제는 ADMIN 전용이며(2.4 권한 표), 모든 변경은 행위자와 사유를 감사로그에 남긴다.
 
 ---
 
@@ -1083,7 +1119,7 @@ Experience Dashboard는 Spring API와 계약된 artifact를 기반으로 모델 
       "lightgbmSignalJson": "/api/v1/backtests/bt_001/artifacts/lightgbm_signal.json",
       "backtestResultJson": "/api/v1/backtests/bt_001/artifacts/backtest_result.json",
       "equityCurveCsv": "/api/v1/backtests/bt_001/artifacts/equity_curve.csv",
-      "tradeLogCsv": "/api/v1/backtests/bt_001/artifacts/trades.csv",
+      "tradeLogParquet": "/api/v1/backtests/bt_001/artifacts/trade_log.parquet",
       "modelReportMarkdown": "/api/v1/backtests/bt_001/artifacts/model_report.md",
       "reportMarkdown": "/api/v1/backtests/bt_001/artifacts/report.md"
     }
@@ -1118,6 +1154,10 @@ Live 경계는 다음과 같이 분리한다.
 | Live account read-only | 실계좌 잔고/주문가능/체결조회 같은 민감 조회 | S3 catalog/Mock 검증 이후 별도 gate로 검토 |
 | Live trading | 실계좌 주문·정정·취소 | 기본 OFF. live-order gate, 3단계 동의, kill switch, audit/reconciliation 전까지 비활성 |
 
+provider app key/secret과 계좌 allowlist는 서버 배포 운영자만 주입·관리하며 앱 사용자는 입력·조회·교체하지 않는다. Live trading은 배포 시 immutable OFF gate, 운영자 account allowlist, 사용자 동의, Kill Switch/reconciliation 검증이 모두 충족되어야 한다. 사용자 동의는 필요조건일 뿐 활성화 권한이 아니며, 공개 REST/gRPC API로 배포 gate나 운영자 allowlist를 변경할 수 없다. Live read-only gate와 Live trading gate는 별개이며 read-only 활성화가 mutation 권한으로 승격되지 않는다.
+
+모든 S3 KIS read/write 호출은 최종 명세서 12.4.1의 중앙 account/appkey+mode limiter를 재사용한다. 모의투자 1/s에서는 주문 제출·주문 상태 대사·취소 확인이 backfill보다 우선하며, queue 대기와 provider 왕복을 구분해 측정한다. 주문·정정·취소 timeout은 transport 자동 재시도하지 않고 `PENDING_RECONCILIATION` 또는 보류 상태로 수렴한다.
+
 ### 10.1 Mock 주문 제출
 
 `POST /api/v1/brokerage/mock/orders`
@@ -1135,11 +1175,12 @@ Live 경계는 다음과 같이 분리한다.
     "estimatedPrice": 72000
   },
   "userAcknowledgement": {
-    "warningsAccepted": true,
-    "acceptedAt": "2026-06-23T10:10:00+09:00"
+    "warningsAccepted": true
   }
 }
 ```
+
+경고 확인 시각과 행위자는 서버가 인증 principal과 서버 clock으로 기록한다. 클라이언트가 제출한 시각이나 사용자 식별자는 감사 근거로 사용하지 않는다.
 
 응답:
 
@@ -1205,9 +1246,11 @@ Live 경계는 다음과 같이 분리한다.
 }
 ```
 
+`liveEnabled`는 서버가 배포 gate·운영자 account allowlist·사용자 동의·Kill Switch·reconciliation 상태를 결합해 계산하는 read-only 결과다. 이 API와 consent API는 provider credential, 계좌번호, gate 변경 기능을 노출하지 않으며 v1에는 Live trading 활성화 endpoint를 두지 않는다.
+
 ### 10.6 Live 동의 이력 (설계 계약)
 
-최종 명세서 8.5의 3단계 동의 흐름에 대응하는 계약이다. v1에서는 비활성 게이트와 함께 계약만 두고, 실제 Live 활성화에는 사용하지 않는다.
+최종 명세서 8.5의 3단계 동의 흐름에 대응하는 계약이다. v1에서는 비활성 게이트와 함께 계약만 두고 실제 Live 활성화에는 사용하지 않는다. 동의는 배포 운영자의 immutable OFF gate나 account allowlist를 변경할 수 없다.
 
 `POST /api/v1/consents`
 
@@ -1215,14 +1258,13 @@ Live 경계는 다음과 같이 분리한다.
 {
   "consentType": "LIVE_STEP1_STRATEGY_SUMMARY",
   "principleId": "prc_001",
-  "principleVersion": 3,
-  "acknowledgedAt": "2026-06-23T10:00:00+09:00"
+  "principleVersion": 3
 }
 ```
 
 `GET /api/v1/consents?type=LIVE`
 
-동의 이력은 append-only로 저장하고, 원칙/주문 상한/universe/RiskEngine 기준이 변경되면 기존 동의는 무효 처리되어 재동의가 필요하다.
+동의 이력의 행위자와 시각은 인증 principal과 서버 clock으로 생성해 append-only로 저장한다. 원칙/주문 상한/universe/RiskEngine 기준이 변경되면 기존 동의는 무효 처리되어 재동의가 필요하다.
 
 ### 10.7 체결 내역 조회 (S3 계약)
 
@@ -1449,14 +1491,14 @@ KIS 매수가능조회(모의 `VTTC8908R`)를 매핑한다. 주문 제출 전 �
 
 ## 12A. Market Calendar API (계획 — 미구현)
 
-> 변경 반영(2026-07-10): 이 장 전체는 `계획` 상태 계약이다. `S1.2+`는 수집 계획을 묶는 상위 umbrella 표현이며, 다중 소스 aggregator의 확정 구현 세션은 S1.6이다. API 공개는 S1.4+ 목표이고 현재 구현된 API가 아니다.
+> 변경 반영(2026-07-10): 이 장 전체는 현재 문서화된 `계획 계약`이다. `S1.2+`는 수집 계획을 묶는 상위 umbrella 표현이며, 다중 소스 aggregator의 확정 구현 세션은 S1.6이다. REST/gRPC 구현과 Dashboard 가용성은 S1.6 완료만으로 자동 성립하지 않으며, S1.6 이후 별도의 명시적 contract-change 세션에서 schema/proto/OpenAPI와 소비 화면을 함께 승인한 뒤에만 제공한다.
 
 목적: 무료/공식 다중 소스를 집계해 감사 가능한(auditable) 시장 캘린더/이벤트 데이터를 제공한다. "완벽한 캘린더"는 단일 API를 항상 옳다고 가정하는 것이 아니라, (1) 소스별 원 관측치를 보존하고, (2) 충돌을 투명하게 해소하며, (3) `confidence`/`sourceRefs`/`conflictFlag`를 응답에 그대로 노출하는 것을 뜻한다. backfill 스케줄링, RiskEngine freshness/이벤트 리스크 판정, RAG source card, optional dashboard timeline이 이 API의 소비자다.
 
 경계:
 
 1. S1.1은 KIS market-data client 전용으로 유지한다. S1.1에서는 로컬 거래소 캘린더 라이브러리(`exchange_calendars` XKRX)로 비거래일 KIS 호출 회피만 수행하고, 다중 소스 수집은 하지 않는다.
-2. 다중 소스 수집/정규화/충돌 해소는 S1.2+ umbrella 아래 확정된 S1.6에서 구현한다.
+2. 다중 소스 수집/정규화/충돌 해소는 S1.2+ umbrella 아래 확정된 S1.6에서 구현한다. 이 장의 REST endpoint와 계획 RPC는 S1.6 이후 명시적 contract-change 세션이 완료되기 전까지 호출 가능한 API로 간주하지 않는다.
 3. 전부 read-only 데이터 API다. 주문, 취소/정정, 잔고 변경, live trading 활성화와 무관하다. `KIS_MODE=live`는 live read-only 시장데이터 조회만 뜻한다(12.5 경계 동일).
 
 ### 12A.1 canonical 스키마 (계획)
@@ -1507,7 +1549,7 @@ KIS 매수가능조회(모의 `VTTC8908R`)를 매핑한다. 주문 제출 전 �
   "sourceId": "src_cal_kasi_holiday",
   "observedAt": "2026-07-08T02:10:00+09:00",
   "observedValue": "2026-10-05 CLOSED (추석)",
-  "payloadHash": "sha256:ab12…",
+  "payloadHash": "sha256:7a8b9c0d1e2f30415263748596a7b8c9d0e1f23456789abcdef0123456789abc",
   "attribution": "한국천문연구원 특일 정보(공공데이터포털)"
 }
 ```
@@ -1520,9 +1562,9 @@ status 전이 규칙: `SCHEDULED/TENTATIVE → CONFIRMED → ACTUAL`, 임의 시
 |---|---|
 | `GET /api/v1/market-calendar/sessions?exchange=XKRX&from=YYYY-MM-DD&to=YYYY-MM-DD` | 기간 내 TradingSession 목록 |
 | `GET /api/v1/market-calendar/events?symbols=005930,AAPL&from=YYYY-MM-DD&to=YYYY-MM-DD&types=EARNINGS_EXPECTED,DIVIDEND_EX,DISCLOSURE&includeSources=true` | 종목/유형 필터 이벤트 목록. `includeSources=true`일 때만 `sourceRefs` 포함 |
-| `GET /api/v1/market-calendar/sources` | SourceRegistry 공개 뷰(민감정보 제외) |
-| `GET /api/v1/market-calendar/conflicts` | 미해소 충돌 목록(운영/시연용) |
-| `GET /api/v1/market-calendar/health` | 소스별 수집 상태와 degraded 여부 |
+| `GET /api/v1/market-calendar/sources` | USER용 SourceRegistry sanitized 뷰. 출처·라이선스·coverage만 제공하고 인증/configuration 정보는 제외 |
+| `GET /api/v1/market-calendar/conflicts` | ADMIN 전용 미해소 충돌 목록 |
+| `GET /api/v1/market-calendar/health` | USER에는 전체 stale/degraded와 `asOf`만 제공. provider별 상세는 공개 API에서 제외 |
 
 공통 규칙 재사용: 응답 envelope(2.2), 오류 코드(2.3 — 신규 오류 코드를 만들지 않고 `RATE_LIMITED`/`DATA_STALE`/`VALIDATION_ERROR` 재사용), pagination(2.6)을 그대로 따른다.
 
@@ -1555,7 +1597,7 @@ events 응답 예시(충돌 노출):
 }
 ```
 
-sources 응답 항목 예시(공개 가능 필드만): `sourceId`, `provider`, `category`, `authType`, `licenseClass`, `coverageMarkets`, `coverageEventTypes`, `reliabilityTier`, `attributionRequired`, `enabledByDefault`, `health(lastSuccessAt, failureCount, staleAfter, degraded)`.
+sources 응답 항목 예시(공개 가능 필드만): `sourceId`, `provider`, `category`, `licenseClass`, `coverageMarkets`, `coverageEventTypes`, `reliabilityTier`, `attributionRequired`. `licenseClass`의 공식 무료 분류는 key 유무를 구분하지 않는 `OFFICIAL_NO_FEE`로만 반환한다. 인증 방식, credential/configuration 존재 여부, 환경변수 이름, provider 계정·quota, 내부 health 상세는 포함하지 않는다.
 
 ### 12A.3 충돌·신뢰도 시맨틱 (계획)
 
@@ -1568,9 +1610,9 @@ sources 응답 항목 예시(공개 가능 필드만): `sourceId`, `provider`, `
 
 ### 12A.4 보안/응답 제한 (계획)
 
-1. 응답에 secret, raw token, app key, 계좌번호, provider raw payload 원문을 절대 포함하지 않는다. `envVarNames`는 환경변수 "이름"만 노출하며 값은 어디에도 싣지 않는다.
-2. `sourceRefs`는 sanitized 요약값과 hash만 담고, 원 응답 재배포가 금지된 소스(약관상 redistribution 제한)는 `observedValue`를 요약/파생값으로만 표현한다.
-3. `sources`/`health`의 quota 정보는 잔여 횟수 수준의 수치만 노출한다.
+1. 응답에 secret, raw token, app key, 계좌번호, provider raw payload 원문을 절대 포함하지 않는다. 환경변수 이름, 인증 방식, credential configured 여부처럼 key의 존재나 주입 구조를 추론할 수 있는 metadata도 runtime source/health API에 노출하지 않는다.
+2. `sourceRefs`는 sanitized 요약값과 그 canonical content hash만 담는다. provider raw body/header/query 또는 민감 필드를 포함한 상태로 hash하지 않는다. 원 응답 재배포가 금지된 소스(약관상 redistribution 제한)는 `observedValue`를 요약/파생값으로만 표현한다.
+3. USER용 `sources`/`health`에는 provider 계정별 limit·잔여 횟수·reset 시각을 노출하지 않고, 데이터의 `stale`/`degraded`와 `asOf`만 제공한다. quota accounting은 운영자 내부 관측 채널에서 non-secret scope로 관리한다.
 4. attribution이 요구되는 소스는 `attribution` 문구를 함께 반환해 화면 표기가 가능하게 한다.
 5. 공식 문서로 무료 여부, 호출 한도, 라이선스, 재배포 제한을 재확인하지 못한 소스는 해당 구현 세션 시작 전 또는 종료 보고에서 사용자에게 검증·채택 여부를 묻고 결과를 기록한다. 사용자 확인 없이 기본 활성 소스로 조용히 추가하지 않는다.
 
@@ -1589,10 +1631,12 @@ proto 파일은 `contracts/proto/`에 둔다.
 | `RagService.GenerateAnswer` | 15s | 재시도 없음 | 답변 실패 안내 |
 | `RagService.SearchSources` | 3s | 1회 재시도 | 검색 실패 표시 |
 | `BrokerageService.SubmitMockOrder`/`CancelOrder` | 5s | 재시도 금지(멱등 키 재요청만 허용) | `BROKERAGE_UNAVAILABLE` → 주문 보류 |
-| `MarketDataService.GetPriceSnapshot` | 2s | GET 조회 1회 재시도 | `DATA_STALE` 또는 `PYTHON_SERVICE_UNAVAILABLE` → HOLD |
+| `MarketDataService.GetPriceSnapshot` | 2s | gRPC 계층 재시도 없음. Python KIS adapter가 physical attempt 상한과 공유 quota 안에서만 GET 재시도를 소유 | `DATA_STALE` 또는 `PYTHON_SERVICE_UNAVAILABLE` → HOLD |
 | `BacktestService.RunBacktest` | 동기 대기 금지, async job 전환 | - | async job 상태로 추적 |
 
 gRPC status 매핑: `UNAVAILABLE`/`DEADLINE_EXCEEDED` → `PYTHON_SERVICE_UNAVAILABLE`(503), `INVALID_ARGUMENT` → `VALIDATION_ERROR`(400), `NOT_FOUND` → `NOT_FOUND`(404). 주문 관련 실패는 항상 fail-closed로 수렴한다.
+
+gRPC는 기본적으로 loopback에만 bind하고 reflection은 명시적으로 `false`다. request/response message size, stream item 수, deadline을 service별로 제한한다. loopback 밖으로 확장해야 하면 plaintext bind를 허용하지 않고 mTLS client identity와 RPC별 authorization을 먼저 구현·검증한 contract-change가 필요하다.
 
 ### 13.1 RagService
 
@@ -1645,6 +1689,8 @@ service BrokerageService {
 
 Python KIS Adapter는 주문 실행 어댑터일 뿐이다. 최종 주문 승인권은 Spring Decision Platform에 있다.
 
+S3 adapter는 S1.1의 중앙 KIS quota coordinator를 주입받는다. 조회/주문/취소/체결·잔고 reconciliation마다 별도 client-local bucket을 만들지 않으며, 모의 1/s queue에서 주문·대사를 우선하고 backfill은 low priority다. 주문성 RPC timeout은 같은 요청을 자동 재전송하지 않는다.
+
 ### 13.5 MarketDataService
 
 ```proto
@@ -1662,17 +1708,24 @@ S1.1의 KIS MarketDataService 구현 경계는 다음과 같다.
 |---|---|
 | mode | `KIS_MODE=mock\|live`는 시장데이터 조회 Domain 선택이다. Live 주문 활성화와 무관하다 |
 | offline | `KIS_OFFLINE=1`이면 KIS 네트워크 호출 없이 sanitized fixture로 current/daily parser와 parquet upsert를 검증한다 |
-| token | `/oauth2/tokenP` token은 Redis `kis:token`에 저장하고 만료 5분 전부터 갱신한다. 유효기간은 1일이고 발급 후 6시간 이내 재요청 시 기존 토큰이 반환된다. 토큰 원문은 로그와 fixture에 남기지 않는다 |
-| credential | app key/secret은 공개 settings·market/business client가 보관하지 않는다. private fixed-origin transport/token issuer가 send 순간에 env에서만 읽고, response echo·예외·로그로 전파하지 않는다 |
-| Redis | `REDIS_HOST`/`REDIS_PORT`/`REDIS_DB`와 env-only `REDIS_PASSWORD`를 사용한다. URL에 password를 넣지 않으며 local Compose는 loopback+인증+AOF+`noeviction`이다 |
+| REST quota | [KIS 공식 유량 공지(2026-04-20)](https://apiportal.koreainvestment.com/community/10000000-0000-0011-0000-000000000001/post/d0d1a83f-6f8d-4437-9700-6d26702fd989) 기준 실전 계좌당 hard 18/s·기본 120ms, 모의 appkey scope 1/s·최소 1,000ms다. 모든 replica/client/current/backfill/calendar/retry가 opaque credential/appkey+mode Redis 원자 슬롯을 공유하고 설정은 더 낮출 수만 있다. 전체 max wait 10초 중 마지막 `SET`/`PTTL` 각각의 connect+socket I/O 합계 8초를 선예약해 queue wait는 최대 2초, 각 Redis connect/socket timeout은 2초이며 예약 실패·장애·timeout은 outbound 0건으로 실패한다 |
+| token | `/oauth2/tokenP` 제한 단위가 공지에 명시되지 않았으므로 physical send는 일반 REST budget과 분리한 deployment-global 1/s limiter를 먼저 통과한다. token cache와 owner-fenced distributed singleflight는 opaque credential/appkey+mode HMAC scope로 분리하고 lock 뒤 cache를 재확인해 cross-mode replay를 막는다. 만료 5분 전 갱신하며 token/cache-key를 노출하지 않는다 |
+| credential | app key/secret은 공개 settings·market/business client가 보관하지 않는다. private scope resolver가 client 초기화 시 원문 비보관 HMAC을 파생하는 경우 외에는 fixed-origin transport/token issuer가 quota 슬롯 확보 뒤 env에서 읽고 즉시 send한다. online caller의 transport/limiter 주입을 거부하고 TLS 검증을 강제하며 redirect, ambient proxy/`.netrc`(`trust_env`), caller proxy/CA override와 response echo·예외·로그 전파를 금지한다 |
+| Redis | non-secret host/port/db와 env-only password를 분리한다. password는 infrastructure-private connection factory만 읽고 public settings·URL·로그에 넣지 않는다. local Compose는 loopback+인증+AOF+`noeviction`이다 |
 | current price | `/uapi/domestic-stock/v1/quotations/inquire-price`, TR `FHKST01010100`(모의 동일 TR 지원)만 S1.1 필수 |
-| daily bars | `/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice`, TR `FHKST03010100`(모의 동일 TR 지원), 1회 최대 100건 단위 반복 백필 |
+| daily bars | `/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice`, TR `FHKST03010100`(모의 동일 TR 지원), 1회 최대 100건 단위 반복 백필. 기존 parquet min/max checkpoint를 읽고 이미 보유한 기간은 재호출하지 않으며 양 끝의 누락 구간만 가져온다 |
 | market calendar | `/uapi/domestic-stock/v1/quotations/chk-holiday`, TR `CTCA0903R`는 모의투자 미지원(실전 Domain 전용) supporting read다. mock/offline에서는 fixture 또는 skip으로 처리하고 호출 시 1일 1회 이하로 보수 운영 |
-| storage | raw 응답과 parquet/csv/jsonl 산출물은 ignored local data 경로에만 저장한다. 커밋 가능한 테스트 데이터는 마스킹된 fixture만 허용한다 |
-| retry | GET market-data 조회는 rate limit과 timeout을 지켜 제한적으로 재시도한다. POST 주문성 호출은 S1.1에서 구현하지 않는다 |
+| storage | provider raw body/header/request URL은 저장하지 않는다. allowlist parser를 통과한 canonical parquet만 ignored local data 경로에 dirfd+`O_NOFOLLOW`, mode `0600`, fsync+atomic replace로 저장한다. 자동 retention/delete owner는 S1.1 미구현이므로 운영 영구보존을 승인하지 않고 S1.5에서 확정한다. 커밋 가능한 테스트 데이터는 credential/account/PII가 제거된 offline fixture만 허용한다 |
+| retry | 모든 physical retry는 같은 REST 슬롯을 다시 예약한다. 공식 오류코드 `EGW00001/00002/00202/00203/00300`의 안전한 GET만 backoff 없이 다음 허용 슬롯에서 최대 1회 재호출한다. timeout/408/5xx는 bounded backoff+jitter, `EGW00201`/HTTP 429는 fail-fast다. POST 주문성 호출은 S1.1에서 구현하지 않고 S3에서도 자동 retry하지 않는다 |
 | local calendar | S1.1은 비거래일 KIS 호출 회피용으로 로컬 `exchange_calendars` XKRX 판정만 사용한다. 다중 소스 캘린더 집계는 S1.1 범위가 아니며, S1.2+ umbrella 아래 S1.6 계획은 12A와 아래 계획 RPC를 따른다 |
 
-> 변경 반영(2026-07-10): 계획(S1.2+ umbrella, S1.6 구현 확정, 미구현) — Market Calendar 집계가 구현되면 `GetTradingSessions`/`GetCalendarEvents` RPC를 MarketDataService에 추가하고 REST 12A가 이를 소비한다. proto 추가는 `contracts/changes/` 절차를 따른다.
+> 변경 반영(2026-07-10): 계획(S1.2+ umbrella, S1.6 aggregator 구현 확정, 현재 미구현) — S1.6 완료 후 별도의 명시적 contract-change 세션에서 `GetTradingSessions`/`GetCalendarEvents` RPC와 REST 12A를 함께 승인한다. proto/OpenAPI 추가는 `contracts/changes/` 절차를 따르며 그 전에는 Dashboard가 이 계약을 소비하지 않는다.
+
+#### 13.5.0 KIS WebSocket provider 계약 (S3/P2 계획, 현재 미구현)
+
+계좌(앱키) scope마다 physical WebSocket session은 1개다. P1 주식과 P2 파생 connection을 분리하지 않고 한 connection manager가 국내/해외/주식/파생의 체결가·호가·예상체결·체결통보를 합산한 41개 subscription ledger를 소유한다. `(TR_ID, tr_key)` 중복 등록은 dedupe하고 42번째 등록·두 번째 session은 provider 호출 전에 `RATE_LIMITED`/`CONFLICT`로 거부한다. `/oauth2/Approval`은 별도 1/s singleflight를 적용한다.
+
+체결통보는 HTS ID 단위 한 등록으로 연결된 모든 계좌 통보를 수신하므로 계좌별 중복 구독하지 않는다. 한 PC의 다계좌는 appkey scope별 각 1세션만 허용한다. reconnect는 generation fencing과 기존 session 종료 확인 뒤 한 worker만 수행하고 ledger를 복원한다. 현재 v1은 폴링이며 이 절은 구현 완료를 뜻하지 않는다.
 
 #### 13.5.1 GetDisclosureEvents 계약 (S1.2)
 
@@ -1722,7 +1775,7 @@ message DisclosureRiskWarning {
 | warnings | mapping이 없거나 blocked인 event는 점수 0으로 두고 warning으로 관측성만 남긴다 |
 | 감시 모델 | v1은 백그라운드 상시 감시가 아니라 **판단 시점 조회(on-demand lookback)**다. RiskEngine은 PostgreSQL에 저장된 관측치 또는 snapshot을 읽고 주문 판단 경로에서 OpenDART HTTP 요청을 직접 fan-out하지 않는다. 이벤트로 상태를 open/close하는 지속 상태 추적은 S1.6 과제다. 상세는 `docs/decision-platform/S1_2_OpenDART_공시위험점수_근거.md`의 "공시위험 감시 모델" 절 |
 | 소비 | Decision/Risk 판단은 이 응답을 `risk_decision.riskItems[]`(`metric=disclosure_risk_score`)로 노출한다 |
-| 보안 | 인증정보는 서버 운영자가 루트 `.env`/배포 secret store에만 주입한다. `OpenDARTSettings`·business client·HTTP client는 값이나 필드를 보관하지 않는다. private transport가 고정 OpenDART HTTPS origin의 실제 send 구간에서만 값을 일시 로드·첨부하고 즉시 request URL을 원복한다. 상위 caller의 인증성 파라미터·절대 URL은 outbound 전 거부하며 response echo·로그·예외·metric·raw/fingerprint에서는 값과 민감 필드 자체를 제거한다 |
+| 보안 | 인증정보는 서버 운영자가 루트 `.env`/배포 secret store에만 주입한다. `OpenDARTSettings`·business client·HTTP client는 값이나 필드를 보관하지 않는다. private transport가 TLS 검증을 강제한 고정 OpenDART HTTPS origin의 실제 send 구간에서만 값을 일시 로드·첨부하고 즉시 request URL을 원복한다. redirect, ambient proxy/`.netrc`(`trust_env`), caller proxy/CA override와 상위 caller의 인증성 파라미터·절대 URL은 outbound 전 거부한다. response echo·로그·예외·metric·raw/fingerprint에서는 값과 민감 필드 자체를 제거한다 |
 | quota | 개인 계정 hard limit은 OpenDART FAQ의 `20,000/day`를 적용한다. S1.6 배포 예시는 `limit=20,000`, `budget=17,500`, `per-run actual attempt cap=8,000`이며 코드 기본값으로 고정하지 않는다. `status=020` 또는 budget 도달 시 당일 전면 중단한다 |
 
 ### 13.6 FinancialEngineeringService
@@ -1779,9 +1832,38 @@ service SourceRegistryService {
 | 모델 신호 stale | `DATA_STALE`, 주문 보류 |
 | RiskEngine rule 평가 실패 | `RISK_BLOCKED`, 주문 차단 |
 | KIS Adapter 장애 | `BROKERAGE_UNAVAILABLE`, 주문 보류 |
+| KIS shared limiter/Redis 장애 또는 bounded wait 초과 | online outbound 0건, 시장데이터는 `DATA_STALE`/`PYTHON_SERVICE_UNAVAILABLE`, 주문은 `BROKERAGE_UNAVAILABLE`로 보류 |
+| KIS `EGW00201`/HTTP 429 | 자동 재시도 중단, `RATE_LIMITED`; INTERNAL_PAPER 자동 전환 금지 |
 | Live order gate 미충족 | `RISK_BLOCKED`, 주문 차단 |
 | 원칙 버전 충돌 | `CONFLICT`, 재조회 요구 |
 | Kill Switch 활성 | `RISK_BLOCKED`, 주문 차단 |
+
+필수/선택 입력 분류:
+
+| 입력 상태 | 처리 |
+|---|---|
+| 가격, 계좌/포지션, 활성 principle, Kill Switch, 활성 rule이 요구하는 risk snapshot이 missing/stale | `HOLD` 또는 `BLOCK`. 과거 값을 최신으로 가장하지 않음 |
+| 활성 rule이 요구하지 않는 뉴스감성·공시·RAG 설명이 missing/stale | stale 값을 최신으로 사용하지 않고 해당 enrichment를 skip한 뒤 warning, 누락 사유와 마지막 `asOf` 기록 |
+| 뉴스/공시가 활성 principle rule에 의해 필수로 승격됨 | missing/stale이면 `HOLD` |
+| RAG 답변 생성만 실패하고 deterministic decision 입력은 정상 | decision 값을 LLM으로 재작성하지 않고 explanation degraded 경고. 정책상 설명 확인이 제출 조건이면 `HOLD` |
+
+### 14.1 S1.3~S8 API 보안 Gate
+
+아래 항목은 `최종_프로젝트_명세서.md` 14.8의 상위 gate를 API 경계에서 구체화한다. API가 새 DB write를 필요로 하면 해당 세션 migration이 runtime role에 정확한 table·operation만 grant해야 하며, schema-wide 권한이나 Flyway/audit history 재작성 권한을 요구하는 설계는 승인하지 않는다.
+
+| 세션/트랙 | API/RPC 보안 계약 |
+|---|---|
+| S1.3 | ECOS/Naver는 내부 fixed-origin collector만 호출한다. static credential은 private transport가 send 순간에 env에서 읽고 공개 settings/business client/API에 두지 않는다. TLS 검증을 강제하고 redirect·ambient proxy/`.netrc`·caller proxy/CA override를 금지한다. bytes/JSON/list/text/date/query/symbol/call cap을 검증하고 Naver HTML/control 문자를 제거한다. 기사 link는 표시 metadata일 뿐 backend fetch 대상이 아니다. 출력은 ignored root의 versioned sanitized snapshot artifact와 manifest/hash/asOf로 한정하고 S1.3에는 DB write를 추가하지 않는다. source별 양의 `retentionDays`와 삭제 owner가 승인되지 않으면 persistent snapshot/online write를 열지 않는다. Decision/팀원 B 경로는 이 snapshot만 읽는다. GDELT는 팀원 B optional enrichment이며 blocker가 아니다 |
+| S1.4 | 계산 request의 배열·기간·숫자 finite/상하한, deadline, 동시 실행과 output 크기를 제한한다. 계산 오류·NaN·timeout은 주문 허용값이 아니다 |
+| S1.5 | Data Quality Report API/산출물은 finite/missing/duplicate aggregate와 sanitized sample만 제공한다. provider raw/query/credential/token/account/PII를 report·로그·metric에 넣지 않고 상세 ignored artifact에는 retention을 적용한다 |
+| S1.6 | OpenDART outbound 전 PostgreSQL physical-attempt reservation이 성공해야 하며 DB 오류/budget/cap/020은 non-retry fail-closed다. DS004 ownership canonical은 corpCode·role/category·날짜·주식 수/비율만 허용하고 자연인 성명·주소·등록 식별자를 raw/canonical/log/metric/artifact/event에서 제거한다. Market Calendar RPC/REST는 aggregator 이후 별도 contract change 전까지 미가용이고 sourceRefs는 opaque sanitized ID/hash만 반환한다 |
+| S2 | 2.4 BOLA와 2.5 idempotency를 모든 Decision/Risk owner resource와 금융 부작용 write에 적용한다. actor/time은 principal/server clock에서 생성하고 ADMIN 고위험 행위는 현재 DB role/security version을 재검증해 override/replay를 audit한다. SQL 값은 bind parameter만 사용하고 table/column/sort identifier는 enum allowlist로 매핑하며 raw 문자열 연결을 금지한다. write DTO는 unknown/권한성 필드를 거부한다 |
+| S3 | accountId는 opaque+owner-scoped다. order body의 price/quantity/position/risk-reduction 주장은 server snapshot으로 재검증한다. Live는 deploy immutable OFF, operator account allowlist, user consent, Kill Switch/reconciliation을 모두 요구하며 공개 API로 gate를 변경할 수 없다 |
+| S4 | RAG source/prompt는 untrusted data이며 내부 지시·URL·tool 호출을 실행하지 않는다. source ingest/register/reindex는 ADMIN 전용이며 scheme/origin/MIME/size/redirect/SSRF gate를 적용한다. answer/cache/feedback는 owner scope·TTL·output encoding을 적용한다. RAG 실행 주체는 provider token cache나 brokerage secret에 접근하지 못한다. model은 exact revision/weight hash/license를 기록하고 remote code/untrusted pickle을 금지한다 |
+| S5 | artifact endpoint는 trusted producer, owner, manifest hash/schema, 고정 root, file count/size/row cap을 먼저 검증한다. arbitrary path/symlink/archive와 untrusted pickle/joblib/code-loading model은 거부한다. 다운로드는 owner-scoped Bearer 인증과 고정 allowlisted 파일명·MIME만 허용하고 `Content-Disposition: attachment`, `nosniff`, `no-store`를 적용한다. Markdown/CSV/JSON을 임의 inline HTML로 실행하지 않는다 |
+| S6 | 금융공학·시뮬레이션 API는 user별 symbol/period/path/iteration/concurrency/deadline/output cap을 둔다. 입력 snapshot provenance와 owner를 검증하고 계산·모델 출력이 deterministic RiskEngine 검증을 우회하지 못하게 한다 |
+| S7 | 로컬 plaintext Kafka는 loopback-only다. 배포 시 TLS+client 인증+topic ACL+schema/message/retention cap을 요구한다. event에 secret/token/account/PII/raw payload를 금지하고 ADMIN replay/DLQ를 audit하며 consumer idempotency/outbox를 검증한다 |
+| S8 | 외부 REST는 TLS, 제한 CORS와 HSTS/CSP/`nosniff`/frame/referrer security header를 적용한다. Dashboard는 access token을 URL·localStorage·IndexedDB·로그에 저장하지 않고 메모리에서만 보유하며, RAG/뉴스/Markdown을 raw HTML로 렌더링하지 않는다. 외부 link는 검증된 scheme과 `noopener noreferrer`를 적용한다. 내부 DB/Redis/Kafka/gRPC를 public bind하지 않고 non-loopback gRPC는 mTLS 전환 후에만 허용한다. 서비스별 outbound는 default-deny egress에서 승인된 provider HTTPS/DNS 목적지만 허용하고 metadata/private/link-local network를 방화벽에서도 차단한다. production container는 non-root, read-only root filesystem, explicit writable volume, `cap_drop=ALL`, `no-new-privileges`, 기본 seccomp와 CPU/memory/PID 제한을 적용한다. production debug/heap/core dump와 Actuator env/config dump를 비활성화하고 진단 절차가 process env를 출력하지 않게 한다. secret rotation, 민감정보별 retention/delete, encrypted backup+restore test, dependency/container/model SCA와 body/query/header redaction을 release gate로 둔다 |
 
 ---
 
@@ -1800,6 +1882,11 @@ API/adapter/parser/storage 변경 커밋은 기능 단위로 분리한다. 테�
 | Signal | 규칙 baseline/LSTM/LightGBM/HMM 결합 신호와 producer/sourceWorkspace 조회 |
 | Backtest | Baseline/Guide/Strict 결과 비교 |
 | Brokerage Mock | 주문/취소/잔고/체결 이벤트 |
+| KIS REST quota | mock >1/s·live >18/s 설정 거부, live 120ms/mock 1,000ms no-burst, 두 client의 같은 opaque scope 공유, Redis 장애 outbound 0건, physical retry마다 슬롯 재예약 |
+| KIS OAuth quota | mock/live 동시 cache miss에서도 `/tokenP` physical send는 deployment-global 1/s 슬롯을 공유하고, token cache/singleflight는 mode별 scope로 분리해 lock 후 재확인 |
+| KIS retry | routing 오류 GET 1회 다음 슬롯 재호출, `EGW00201`/429 재시도 0회, 주문성 호출 자동 재시도 0회 |
+| KIS backfill | 같은 parquet 기간 두 번째 실행의 daily outbound 0건, 양 끝 누락 범위만 조회 |
+| KIS WebSocket 계획 수용 | 두 번째 session·42번째 합산 등록 사전 거부, 중복 dedupe, Approval 동시 miss 1회, reconnect ledger 복원(S3/P2 구현 시 활성) |
 | Journal | decision/backtest/RAG 근거 연결 |
 | Option Analytics | BSM 가격, Greeks, implied volatility 수치 검증 |
 | Async Status | async job 상태, stream metric, artifact ingest 상태 |
@@ -1823,7 +1910,7 @@ API/adapter/parser/storage 변경 커밋은 기능 단위로 분리한다. 테�
 | 고도화 | SourceRegistryService 고도화 |
 | 고도화 | 이벤트 push 채널(SSE), RAG 답변 스트리밍, Journal 수정/삭제 |
 | 고도화 | Live 동의 API(설계 계약, 비활성 게이트) |
-| 계획(S1.4+) | Market Calendar API — sessions/events/sources/conflicts/health (12A, 미구현 계약) |
+| 계획(S1.6 이후 contract-change) | Market Calendar API — sessions/events/sources/conflicts/health (12A, 현재 문서화된 미구현 계약) |
 | 후순위 | KIS Live-ready 활성화 |
 
 ---
@@ -1850,7 +1937,7 @@ API/adapter/parser/storage 변경 커밋은 기능 단위로 분리한다. 테�
 | 계약 | 필요 필드 |
 |---|---|
 | `contracts/schemas/principle.schema.json` | ruleId, metric, operator, threshold, severity, enabled |
-| `contracts/schemas/order_intent.schema.json` | symbol, side, orderType, quantity, price, strategyId |
+| `contracts/schemas/order_intent.schema.json` | symbol, side, orderType, quantity, `estimatedPrice`, strategyId. `price`는 지원하지 않으며 새 payload·schema·adapter에서 사용 금지 |
 | `contracts/schemas/risk_decision.schema.json` | decision, violations, riskItems, riskSummary, signalSummary, explanation |
 | `contracts/schemas/signal.schema.json` | producer, sourceWorkspace, asOf, timeframe, confidence, predictedReturn, featureSummary, lstm, ruleBaseline, lightgbm, newsSentiment, hmmRegime |
 | `contracts/schemas/backtest_result.schema.json` | scenario, cagr, mdd, sharpe, sortino, var95, cvar95, turnover, violations |
@@ -1864,6 +1951,8 @@ API/adapter/parser/storage 변경 커밋은 기능 단위로 분리한다. 테�
 | `contracts/schemas/rag_answer.schema.json` | answer, citations, citationCoverage, retrievalFailure, guardrailFlags |
 
 ### 17.2.1 Artifact Manifest 예시
+
+Artifact/ingest의 `schemaVersion`은 SemVer 문자열(예: `"1.0.0"`)로 고정한다. Kafka event envelope의 `schemaVersion`은 별도 계약이며 양의 정수 major version을 사용한다. 두 버전 체계를 같은 필드 타입으로 혼용하지 않는다.
 
 ```json
 {
@@ -1884,7 +1973,7 @@ API/adapter/parser/storage 변경 커밋은 기능 단위로 분리한다. 테�
       "name": "lstm_signals.parquet",
       "schema": "contracts/schemas/signal.schema.json",
       "rowCount": 1200,
-      "sha256": "CHANGE_ME",
+      "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
       "description": "LSTM signal by symbol/date/timeframe"
     }
   ],
@@ -1921,6 +2010,9 @@ Dashboard는 원천 계산을 다시 정의하는 계층이 아니라, API와 ar
 | audit log test | decisionId, orderId, sourceId 추적 가능성 확인 |
 | decision 만료 test | `validUntil` 초과 주문이 `DECISION_EXPIRED`로 거부되는지 확인 |
 | 권한 test | ADMIN 전용 API가 USER 토큰으로 403이 되는지 확인 |
+| KIS mode quota test | mock 1/s·live hard 18/s와 120ms/1,000ms 간격을 config/가짜 clock/공유 Redis fixture로 검증 |
+| KIS token singleflight test | 같은 mode별 opaque cache scope의 동시 miss가 issuer 1회로 합쳐지고, 서로 다른 mock/live scope도 deployment-global tokenP 1/s 슬롯을 공유하는지 확인 |
+| KIS retry accounting test | routing 재호출을 포함한 모든 physical attempt가 중앙 quota 슬롯을 다시 예약하고 429/write가 자동 재시도되지 않는지 확인 |
 
 ### 17.4 문서-구현 동기화 규칙
 

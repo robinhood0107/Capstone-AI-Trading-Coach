@@ -1,3 +1,10 @@
+buildscript {
+    configurations.classpath {
+        // Spring Boot buildpack 전이 의존성에서 긴 입력 재귀 DoS 수정 버전을 강제한다.
+        resolutionStrategy.force("org.apache.commons:commons-lang3:3.20.0")
+    }
+}
+
 plugins {
     kotlin("jvm") version "2.4.0"
     kotlin("plugin.spring") version "2.4.0" // @Service 등 all-open
@@ -19,6 +26,15 @@ java {
 
 repositories {
     mavenCentral()
+}
+
+dependencyManagement {
+    dependencies {
+        // Boot BOM의 다음 patch 반영 전에도 공개 취약점 수정 버전을 우선한다.
+        dependency("com.fasterxml.jackson.core:jackson-databind:2.21.5")
+        dependency("ch.qos.logback:logback-core:1.5.35")
+        dependency("ch.qos.logback:logback-classic:1.5.35")
+    }
 }
 
 dependencies {

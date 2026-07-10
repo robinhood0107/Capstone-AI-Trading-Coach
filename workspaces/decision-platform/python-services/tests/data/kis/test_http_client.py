@@ -57,6 +57,15 @@ def _private_transport_get(client: httpx.Client) -> httpx.Response:
     )
 
 
+def _assert_traceback_locals_do_not_contain(error: BaseException, marker: str) -> None:
+    traceback = error.__traceback__
+    while traceback is not None:
+        if "/app/data/kis/" in traceback.tb_frame.f_code.co_filename:
+            for value in traceback.tb_frame.f_locals.values():
+                assert marker not in repr(value)
+        traceback = traceback.tb_next
+
+
 def test_private_credential_settings_hide_values_from_repr_and_serialization(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -303,6 +312,7 @@ def test_transport_error_drops_request_and_credentials(
 
     assert marker not in f"{exc_info.value!r} {exc_info.value}"
     assert all(name not in exc_info.value.request.headers for name in ("appkey", "appsecret", "authorization"))
+    _assert_traceback_locals_do_not_contain(exc_info.value, marker)
 
 
 def test_transport_boundary_does_not_log_credentials(
@@ -442,3 +452,29 @@ def test_http_429_fails_without_retry_storm(tmp_path: Path) -> None:
         client.request("GET", CURRENT_PRICE_PATH, tr_id="FHKST01010100", params={})
 
     assert attempts == 1
+
+
+def test_close_releases_token_and_redis_even_if_market_close_fails(tmp_path: Path) -> None:
+    events: list[str] = []
+
+    class FailingMarket:
+        def close(self) -> None:
+            events.append("market")
+            raise RuntimeError("market close failed")
+
+    class ClosingResource:
+        def __init__(self, name: str) -> None:
+            self.name = name
+
+        def close(self) -> None:
+            events.append(self.name)
+
+    client = KISHttpClient(_settings(tmp_path))
+    client._http = FailingMarket()  # type: ignore[assignment]
+    client._token_issuer = ClosingResource("issuer")  # type: ignore[assignment]
+    client._redis_client = ClosingResource("redis")
+
+    with pytest.raises(RuntimeError, match="market close failed"):
+        client.close()
+
+    assert events == ["market", "issuer", "redis"]

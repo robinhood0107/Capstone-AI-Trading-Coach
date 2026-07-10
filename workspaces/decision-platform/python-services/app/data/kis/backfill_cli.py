@@ -4,8 +4,7 @@ import argparse
 from datetime import date, timedelta
 from pathlib import Path
 
-import redis
-
+from app.data.kis._credential_transport import _TokenIssuer, _build_redis_client
 from app.data.kis.auth import KISTokenManager, RedisLike
 from app.data.kis.calendar import previous_xkrx_trading_day
 from app.data.kis.http_client import KISHttpClient
@@ -125,11 +124,18 @@ def _build_client(settings: KISSettings) -> KISMarketClient:
     if settings.offline:
         # offline fixture 검증은 실제 Redis kis:token을 건드리지 않아 live/mock 토큰 캐시를 보존한다.
         redis_client = _OfflineRedis()
+        issuer = _offline_token_response
     else:
-        redis_client = redis.Redis.from_url(settings.redis_url)
-    token_manager = KISTokenManager(settings, redis_client)
-    http_client = KISHttpClient(settings)
-    return KISMarketClient(settings, http_client=http_client, token_manager=token_manager)
+        redis_client = _build_redis_client()
+        issuer = _TokenIssuer(settings).issue
+    token_manager = KISTokenManager(
+        mode=settings.mode,
+        offline=settings.offline,
+        redis_client=redis_client,
+        issuer=issuer,
+    )
+    http_client = KISHttpClient(settings, token_provider=token_manager.get_access_token)
+    return KISMarketClient(settings, http_client=http_client)
 
 
 class _OfflineRedis:
@@ -140,6 +146,10 @@ class _OfflineRedis:
 
     def set(self, name: str, value: str, ex: int | timedelta | None = None) -> bool | None:
         return None
+
+
+def _offline_token_response() -> dict[str, object]:
+    return {"access_token": "offline-token", "expires_in": 86400}
 
 
 def _parse_date(value: str) -> date:

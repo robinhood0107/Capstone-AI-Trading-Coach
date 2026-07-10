@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, PositiveFloat, model_validator
+from pydantic import Field, PositiveFloat
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 KISMode = Literal["mock", "live"]
@@ -20,28 +20,10 @@ class KISSettings(BaseSettings):
 
     kis_mode: KISMode = "mock"
     kis_offline: bool = False
-    kis_mock_app_key: str | None = None
-    kis_mock_app_secret: str | None = None
-    kis_mock_account_no: str | None = None
-    kis_live_app_key: str | None = None
-    kis_live_app_secret: str | None = None
-    kis_live_account_no: str | None = None
-    kis_app_key: str | None = None
-    kis_app_secret: str | None = None
-    kis_account_no: str | None = None
     kis_rate_limit_per_second: PositiveFloat = 1.0
     kis_data_dir: Path = Path("data/kis")
-    redis_url: str = "redis://localhost:6379/0"
     kis_timeout_seconds: PositiveFloat = 10.0
     kis_retry_attempts: int = Field(default=3, ge=1, le=5)
-
-    @model_validator(mode="after")
-    def _validate_mode_credentials(self) -> "KISSettings":
-        if not self.kis_offline and (not self.app_key or not self.app_secret):
-            # offline fixture만 credential 없이 허용한다. 온라인 read-only도 KIS 인증 실패를 늦게 보이면
-            # backfill 중간에서 더 비싸게 실패하므로 설정 단계에서 막는다.
-            raise ValueError(f"KIS_{self.kis_mode.upper()}_APP_KEY/SECRET is required outside offline mode")
-        return self
 
     @property
     def mode(self) -> KISMode:
@@ -58,25 +40,6 @@ class KISSettings(BaseSettings):
     @property
     def rate_limit_per_second(self) -> float:
         return float(self.kis_rate_limit_per_second)
-
-    @property
-    def app_key(self) -> str | None:
-        if self.kis_mode == "live":
-            return self.kis_live_app_key or self.kis_app_key
-        return self.kis_mock_app_key or self.kis_app_key
-
-    @property
-    def app_secret(self) -> str | None:
-        if self.kis_mode == "live":
-            return self.kis_live_app_secret or self.kis_app_secret
-        return self.kis_mock_app_secret or self.kis_app_secret
-
-    @property
-    def account_no(self) -> str | None:
-        # S1.1 시장데이터에는 계좌번호를 쓰지 않는다. env 호환성만 남겨 두고 호출 헤더에는 넣지 않는다.
-        if self.kis_mode == "live":
-            return self.kis_live_account_no or self.kis_account_no
-        return self.kis_mock_account_no or self.kis_account_no
 
     @property
     def base_url(self) -> str:

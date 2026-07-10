@@ -1713,7 +1713,8 @@ message DisclosureRiskWarning {
 | warnings | mapping이 없거나 blocked인 event는 점수 0으로 두고 warning으로 관측성만 남긴다 |
 | 감시 모델 | v1은 백그라운드 상시 감시가 아니라 **판단 시점 조회(on-demand lookback)**다. RiskEngine은 PostgreSQL에 저장된 관측치 또는 snapshot을 읽고 주문 판단 경로에서 OpenDART HTTP 요청을 직접 fan-out하지 않는다. 이벤트로 상태를 open/close하는 지속 상태 추적은 S1.6 과제다. 상세는 `docs/decision-platform/S1_2_OpenDART_공시위험점수_근거.md`의 "공시위험 감시 모델" 절 |
 | 소비 | Decision/Risk 판단은 이 응답을 `risk_decision.riskItems[]`(`metric=disclosure_risk_score`)로 노출한다 |
-| 보안 | `OpenDARTSettings`가 서버 운영자 key를 읽고 `OpenDARTHttpClient`만 `crtfc_key`를 transport 요청에 첨부한다. 상위 caller가 key를 넘기면 outbound 전 거부한다. key·원본 응답·접수 상세는 로그/fixture에 남기지 않고 raw는 masked observation 경로에만 저장한다 |
+| 보안 | 인증정보는 서버 운영자가 루트 `.env`/배포 secret store에만 주입한다. `OpenDARTSettings`·business client·HTTP client는 값이나 필드를 보관하지 않는다. private transport가 고정 OpenDART HTTPS origin의 실제 send 구간에서만 값을 일시 로드·첨부하고 즉시 request URL을 원복한다. 상위 caller의 인증성 파라미터·절대 URL은 outbound 전 거부하며 response echo·로그·예외·metric·raw/fingerprint에서는 값과 민감 필드 자체를 제거한다 |
+| quota | 개인 계정 hard limit은 OpenDART FAQ의 `20,000/day`를 적용한다. S1.6 배포 예시는 `limit=20,000`, `budget=17,500`, `per-run actual attempt cap=8,000`이며 코드 기본값으로 고정하지 않는다. `status=020` 또는 budget 도달 시 당일 전면 중단한다 |
 
 ### 13.6 FinancialEngineeringService
 

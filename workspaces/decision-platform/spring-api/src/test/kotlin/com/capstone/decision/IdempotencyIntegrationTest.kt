@@ -426,9 +426,9 @@ private class TestOnlyIdempotencyController {
             )
 
     @PostMapping("/api/v1/orders/test-large-response")
-    fun createLargeResponse(): ResponseEntity<String> =
+    fun createLargeResponse(): ResponseEntity<Map<String, String>> =
         ResponseEntity
             .status(HttpStatus.CREATED)
-            .contentType(MediaType.TEXT_PLAIN)
-            .body("x".repeat(1_048_576))
+            .contentType(MediaType.APPLICATION_JSON)
+            .body(mapOf("payload" to "x".repeat(1_048_576)))
 }

@@ -90,8 +90,10 @@ S1.2는 “재무제표와 모든 공시를 전부 긁는 단계”가 아니다
 
 - OpenDART API key는 Decision Platform 서버 운영자가 배포 환경에 주입하는 secret이다. 앱 사용자는 회원가입·Dashboard·설정·REST/gRPC 요청에서 key를 입력하거나 사용자별 quota를 관리하지 않는다.
 - key는 환경변수/배포 secret store에서만 읽고 DB·Redis·YAML·Git에 저장하지 않으며, 로그·예외·metric label·응답·raw observation에 노출하지 않는다. key 누락·오류 시 collector는 fail-closed로 중단하고 Decision 경로는 기존 snapshot으로 공시 rule을 skip+WARN 처리한다.
-- S1.2에서 `OpenDARTSettings`가 key를 읽고 `OpenDARTHttpClient`만 transport 요청에 `crtfc_key`를 첨부하도록 경계를 고정했다. 상위 caller의 key 전달은 outbound 요청 전에 거부한다.
-- S1.2는 HTTP 200 body의 `status=020`을 전용 비재시도 quota 신호로 구분하는 데까지만 구현한다. 계정별 일일 limit/budget과 실행별 실제 attempt cap은 코드 기본값이 아니라 운영 설정으로 명시한다.
+- S1.2에서 공개 settings와 `OpenDARTClient`/`OpenDARTHttpClient`가 인증 필드나 값을 보관하지 않도록 분리했다. private transport만 고정 OpenDART HTTPS origin의 실제 send 구간에서 루트 `.env`/process env 값을 일시 로드·첨부하고, inner transport 반환·예외 직후 request URL을 원복한다. 상위 caller의 인증성 파라미터와 절대 URL은 outbound 전에 거부한다.
+- response body/header/extensions echo, transport exception chain, log, raw payload/fingerprint에는 인증정보 값과 민감 필드명을 남기지 않는다. 실제 API 사용에는 OpenDART 서버로의 TLS 전송이 필수지만 앱 계층의 객체·저장소·관측 채널에는 전파하지 않는다.
+- OpenDART FAQ(2020-01-18)의 개인 계정 일일한도 `20,000건`을 hard limit으로 적용한다. S1.6 배포 예시는 12.5% reserve를 둔 `budget=17,500`, `per-run actual attempt cap=8,000`이며 코드 기본값으로 고정하지 않는다. 개발가이드는 `020`이 일반적으로 20,000건 이상에서 발생하되 계정 설정에 따라 달라질 수 있다고 명시하므로 live 활성화 전 계정 상태도 재확인한다. [OpenDART FAQ](https://opendart.fss.or.kr/cop/bbs/selectArticleList.do?bbsId=B0000000000000000002), [OpenDART 개발가이드](https://opendart.fss.or.kr/guide/detail.do?apiGrpCd=DS001&apiId=2019002)
+- S1.2는 HTTP 200 body의 `status=020`을 전용 비재시도 quota 신호로 구분하는 데까지만 구현한다. 일일 limit/budget과 실행별 실제 attempt cap의 durable enforcement는 운영 설정을 필수로 받는 S1.6 collector에서 구현한다.
 - PostgreSQL atomic quota ledger와 단일 collector의 durable enforcement는 S1.6에서 구현한다. Redis와 Kafka는 OpenDART quota accounting에 사용하지 않는다.
 
 ## 점수표의 근거와 한계
@@ -172,7 +174,7 @@ YAML에는 `calibration_status: policy_v1_unvalidated`를 명시한다. 이 값�
 |---|---|---|
 | L1 fixture 결정성 | 같은 입력이면 같은 점수 | offline fixture와 unit test 통과 |
 | L2 공식 endpoint 정합성 | 문자열이 아니라 endpoint/구조화 필드 기반 | OpenDART 공식 guide와 endpoint URL 대조 |
-| L3 raw 감사 가능성 | 나중에 같은 응답을 재검증 가능 | `RawObservation` hash, 수집시각, masked raw 저장 |
+| L3 raw 감사 가능성 | 나중에 같은 응답을 재검증 가능 | `RawObservation` hash, 수집시각, 민감 필드 제거 후 raw 저장 |
 | L4 online smoke | 실제 키와 live endpoint가 동작 | **완료(2026-07-10)**. 대표 5종목 소량 조회, raw 파일 ignored 경로 저장 확인 |
 | L5 교차검증 | DART 외 원천과 충돌 확인 | S1.6 event aggregator에서 KRX/FSS/KIND 등 official source와 canonical merge |
 | L6 보정 검증 | 점수 threshold가 실제 위험 통제에 맞음 | 과거 이벤트 study와 백테스트로 WARN/BLOCK 임계값 조정 |
@@ -181,9 +183,9 @@ YAML에는 `calibration_status: policy_v1_unvalidated`를 명시한다. 이 값�
 
 ### 2026-07-10 live smoke 결과
 
-- 사용자 승인 후 실제 OpenDART API를 총 15 physical attempts 호출했다. `corpCode.xml` 2회, `company.json` 8회, `list.json` 5회이며 모든 호출은 retry를 1 attempt로 제한했다.
+- 사용자 승인 후 실제 OpenDART API를 총 16 physical attempts 호출했다. `corpCode.xml` 2회, `company.json` 9회, `list.json` 5회이며 모든 호출은 retry를 1 attempt로 제한했다. 마지막 `company.json` 1회는 env-only private transport 전환 후 고정 HTTPS origin·parser 동작을 검증한 hardened smoke다.
 - corp code 매핑과 대표 5종목 기업개황 계약을 검증했고, 대표 5종목 공시목록 observation 5개를 ignored `data/opendart` 경로에 저장했다. 저장 파일에서 API key가 없음을 다시 확인했다.
-- 응답은 rate/limit/quota/reset 관련 header를 제공하지 않았다. 따라서 이 smoke는 인증·endpoint·parser·masked raw 저장을 검증하지만 계정별 daily limit이나 reset timezone을 증명하지는 않는다. 해당 두 값은 S1.6 collector 활성화 전 운영자가 계정 화면에서 확인하는 gate로 유지한다.
+- 응답은 rate/limit/quota/reset 관련 header를 제공하지 않았다. 따라서 이 smoke는 인증·endpoint·parser·민감 필드 제거 후 raw 저장을 검증하지만 해당 계정의 실효 threshold나 reset timezone을 실측하지는 않는다. 공식 개인 한도 20,000 적용과 별개로 두 값은 S1.6 collector 활성화 전 운영자가 계정 화면에서 확인하는 gate로 유지한다.
 
 ## 금융사 리포트는 어떻게 쓸 것인가
 

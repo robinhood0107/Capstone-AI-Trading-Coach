@@ -109,7 +109,12 @@ def test_get_json_scrubs_credential_echo_and_does_not_mutate_caller_params(
         return httpx.Response(
             200,
             headers={"x-upstream-debug": marker},
-            json={"status": "000", "echo": marker},
+            json={
+                "status": "000",
+                "echo": marker,
+                "crtfc_key": marker,
+                "list": [{"account_nm": "자본총계"}],
+            },
         )
 
     client = OpenDARTHttpClient(
@@ -121,6 +126,7 @@ def test_get_json_scrubs_credential_echo_and_does_not_mutate_caller_params(
     assert client.get_json("/api/company.json", params=params) == {
         "status": "000",
         "echo": "[redacted]",
+        "list": [{"account_nm": "자본총계"}],
     }
     assert params == {"corp_code": "00126380"}
 

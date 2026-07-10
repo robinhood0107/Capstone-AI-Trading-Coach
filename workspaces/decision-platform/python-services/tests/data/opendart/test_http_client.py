@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 
 import httpx
@@ -109,6 +110,26 @@ def test_get_json_scrubs_credential_echo_and_does_not_mutate_caller_params(
         "echo": "[redacted]",
     }
     assert params == {"corp_code": "00126380"}
+
+
+def test_transport_boundary_does_not_emit_credential_to_logs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    marker = "fixture-auth-value"
+    _stub_credential(monkeypatch, marker)
+    caplog.set_level(logging.DEBUG)
+
+    client = OpenDARTHttpClient(
+        _settings(tmp_path, offline=False),
+        transport=httpx.MockTransport(lambda _: httpx.Response(200, json={"status": "000"})),
+        rate_limiter=TokenBucket(rate_per_second=1000),
+    )
+
+    assert client.get_json("/api/company.json", params={}) == {"status": "000"}
+    assert marker not in caplog.text
+    assert "crtfc_key" not in caplog.text
 
 
 def test_offline_mode_never_loads_or_attaches_credential(

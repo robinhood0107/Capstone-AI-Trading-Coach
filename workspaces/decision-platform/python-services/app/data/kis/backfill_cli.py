@@ -1,17 +1,15 @@
 from __future__ import annotations
 
 import argparse
-from datetime import date, timedelta
+from datetime import date
 from pathlib import Path
 
-from app.data.kis._credential_transport import _TokenIssuer, _build_redis_client
-from app.data.kis.auth import KISTokenManager, RedisLike
 from app.data.kis.calendar import previous_xkrx_trading_day
 from app.data.kis.http_client import KISHttpClient
 from app.data.kis.market_client import KISMarketClient
 from app.data.kis.report import SymbolRunResult, write_markdown_report
 from app.data.kis.settings import KISSettings
-from app.data.kis.storage import upsert_daily_bars
+from app.data.kis.storage import missing_daily_ranges, upsert_daily_bars
 from app.data.kis.universe import (
     DEFAULT_UNIVERSE_SOURCE,
     UniverseManifest,
@@ -51,35 +49,44 @@ def main(argv: list[str] | None = None) -> int:
         print(f"KIS S1.1 report written to {report_path}")
         return 0
     client = _build_client(settings)
-    results: list[SymbolRunResult] = []
-    for symbol in symbols:
-        # 현재가와 일봉을 같은 리포트에 묶어 사람이 smoke 결과와 parquet 증분을 한 번에 대조하게 한다.
-        # 주문·잔고성 API는 이 경로에 wiring하지 않아 S1.1 read-only 경계를 코드 구조로도 고정한다.
-        current_price = client.current_price(symbol)
-        bars = client.daily_bars(symbol, start, end)
-        upsert = upsert_daily_bars(settings.data_dir, symbol, bars)
-        results.append(
-            SymbolRunResult(
-                symbol=symbol,
-                current_price=current_price,
-                upsert=upsert,
-                fetched_rows=len(bars),
+    try:
+        results: list[SymbolRunResult] = []
+        for symbol in symbols:
+            # 현재가와 일봉을 같은 리포트에 묶어 사람이 smoke 결과와 parquet 증분을 한 번에 대조하게 한다.
+            # 주문·잔고성 API는 이 경로에 wiring하지 않아 S1.1 read-only 경계를 코드 구조로도 고정한다.
+            current_price = client.current_price(symbol)
+            bars = [
+                bar
+                for range_start, range_end in missing_daily_ranges(settings.data_dir, symbol, start, end)
+                for bar in client.daily_bars(symbol, range_start, range_end)
+            ]
+            upsert = upsert_daily_bars(settings.data_dir, symbol, bars)
+            results.append(
+                SymbolRunResult(
+                    symbol=symbol,
+                    current_price=current_price,
+                    upsert=upsert,
+                    fetched_rows=len(bars),
+                )
             )
+        # chk-holiday는 live domain supporting read라서 기본 실행에서 빼고, 명시 옵션일 때만 보수적으로 확인한다.
+        holiday_rows = client.holidays(requested_end) if args.check_holiday else []
+        write_markdown_report(
+            report_path,
+            settings=settings,
+            symbols=symbols,
+            results=results,
+            start=start,
+            end=end,
+            universe_source=symbol_resolution.source,
+            universe_manifest=symbol_resolution.manifest,
+            holiday_rows=holiday_rows,
+            requested_end=requested_end,
         )
-    # chk-holiday는 live domain supporting read라서 기본 실행에서 빼고, 명시 옵션일 때만 보수적으로 확인한다.
-    holiday_rows = client.holidays(requested_end) if args.check_holiday else []
-    write_markdown_report(
-        report_path,
-        settings=settings,
-        symbols=symbols,
-        results=results,
-        start=start,
-        end=end,
-        universe_source=symbol_resolution.source,
-        universe_manifest=symbol_resolution.manifest,
-        holiday_rows=holiday_rows,
-        requested_end=requested_end,
-    )
+    finally:
+        close = getattr(client, "close", None)
+        if callable(close):
+            close()
     print(f"KIS S1.1 report written to {report_path}")
     return 0
 
@@ -120,36 +127,8 @@ def _resolve_symbols(args: argparse.Namespace, data_dir: Path) -> _SymbolResolut
 
 
 def _build_client(settings: KISSettings) -> KISMarketClient:
-    redis_client: RedisLike
-    if settings.offline:
-        # offline fixture 검증은 실제 Redis kis:token을 건드리지 않아 live/mock 토큰 캐시를 보존한다.
-        redis_client = _OfflineRedis()
-        issuer = _offline_token_response
-    else:
-        redis_client = _build_redis_client()
-        issuer = _TokenIssuer(settings).issue
-    token_manager = KISTokenManager(
-        mode=settings.mode,
-        offline=settings.offline,
-        redis_client=redis_client,
-        issuer=issuer,
-    )
-    http_client = KISHttpClient(settings, token_provider=token_manager.get_access_token)
-    return KISMarketClient(settings, http_client=http_client)
-
-
-class _OfflineRedis:
-    # offline smoke는 KIS token 발급을 검증 대상에서 제외한다.
-    # RedisLike 모양만 맞춰 token manager가 운영 Redis나 기존 kis:token을 건드리지 않게 한다.
-    def get(self, name: str) -> None:
-        return None
-
-    def set(self, name: str, value: str, ex: int | timedelta | None = None) -> bool | None:
-        return None
-
-
-def _offline_token_response() -> dict[str, object]:
-    return {"access_token": "offline-token", "expires_in": 86400}
+    # online transport/Redis/token limiter wiring은 KISHttpClient private runtime 경계만 소유한다.
+    return KISMarketClient(settings, http_client=KISHttpClient(settings))
 
 
 def _parse_date(value: str) -> date:

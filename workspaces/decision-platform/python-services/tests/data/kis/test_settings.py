@@ -101,11 +101,15 @@ def test_lower_operator_rate_override_only_slows_requests(tmp_path: Path) -> Non
     assert settings.request_interval_seconds == 0.5
 
 
-def test_rate_limit_wait_cannot_exceed_ten_seconds(tmp_path: Path) -> None:
+@pytest.mark.parametrize("wait_seconds", [8.0, 10.001])
+def test_rate_limit_wait_must_preserve_io_budget_and_ten_second_ceiling(
+    tmp_path: Path,
+    wait_seconds: float,
+) -> None:
     with pytest.raises(ValidationError):
         KISSettings(
             kis_offline=True,
-            kis_rate_limit_max_wait_seconds=10.001,
+            kis_rate_limit_max_wait_seconds=wait_seconds,
             kis_data_dir=tmp_path,
             _env_file=None,
         )

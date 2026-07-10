@@ -23,9 +23,9 @@ class FlywayMigrationIntegrationTest(
     @Autowired private val jdbcTemplate: JdbcTemplate,
 ) : SpringApiIntegrationTestBase() {
     @Test
-    fun `clean database applies V1 through V4 migrations and creates required objects`() {
+    fun `clean database applies V1 through V5 migrations and creates required objects`() {
         val versions = queryStrings("select version from flyway_schema_history where success order by installed_rank")
-        assertEquals(listOf("1", "2", "3", "4"), versions)
+        assertEquals(listOf("1", "2", "3", "4", "5"), versions)
 
         val requiredTables =
             listOf(

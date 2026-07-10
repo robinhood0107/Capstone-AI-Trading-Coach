@@ -22,7 +22,7 @@ import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import java.util.HexFormat
 
-// custom filter 수를 2개로 제한하면서 JWT 인증과 authenticated write idempotency gate를 함께 처리한다.
+// JWT 인증 뒤 authenticated write idempotency gate를 같은 보안 경계에서 처리한다.
 class JwtAuthenticationFilter(
     private val jwtService: JwtService,
     private val idempotencyService: IdempotencyService,
@@ -68,7 +68,7 @@ class JwtAuthenticationFilter(
             SecurityContextHolder.getContext().authentication =
                 UsernamePasswordAuthenticationToken(
                     principal,
-                    token,
+                    null,
                     listOf(SimpleGrantedAuthority("ROLE_${principal.role.name}")),
                 )
         } catch (exception: JwtException) {
@@ -101,13 +101,31 @@ class JwtAuthenticationFilter(
             )
             return
         }
+        if (!isValidIdempotencyKey(idempotencyKey)) {
+            responseWriter.writeError(
+                request = request,
+                response = response,
+                code = ErrorCode.VALIDATION_ERROR,
+                details = mapOf(IDEMPOTENCY_HEADER to "Must be a bounded ASCII identifier."),
+            )
+            return
+        }
 
         // request body는 한 번 읽으면 사라지므로 hash 계산과 controller 전달을 모두 위해 캐시한다.
-        val cachedRequest = CachedBodyHttpServletRequest(request)
+        val cachedRequest =
+            request as? CachedBodyHttpServletRequest
+                ?: CachedBodyHttpServletRequest(
+                    request,
+                    idempotencyProperties.maxRequestBodyBytes,
+                )
+        if (cachedRequest.cachedBody.size > idempotencyProperties.maxRequestBodyBytes) {
+            responseWriter.writeError(request, response, ErrorCode.PAYLOAD_TOO_LARGE)
+            return
+        }
         val requestHash = requestHash(cachedRequest)
         when (
             val lookup =
-                idempotencyService.lookup(
+                idempotencyService.acquire(
                     userId = principal.userId,
                     idempotencyKey = idempotencyKey,
                     requestHash = requestHash,
@@ -130,21 +148,40 @@ class JwtAuthenticationFilter(
                 response.writer.write(lookup.body)
             }
 
+            IdempotencyLookup.InProgress -> {
+                responseWriter.writeError(
+                    request = cachedRequest,
+                    response = response,
+                    code = ErrorCode.IDEMPOTENCY_IN_PROGRESS,
+                )
+            }
+
             is IdempotencyLookup.New -> {
                 // controller 실행 결과를 저장해야 다음 동일 요청을 재실행하지 않을 수 있다.
                 val responseWrapper = ContentCachingResponseWrapper(response)
                 filterChain.doFilter(cachedRequest, responseWrapper)
-                val responseBody = responseWrapper.contentAsByteArray.toString(StandardCharsets.UTF_8)
-                if (responseBody.isNotBlank()) {
-                    idempotencyService.store(
-                        userId = principal.userId,
-                        idempotencyKey = idempotencyKey,
-                        requestHash = requestHash,
-                        status = responseWrapper.status,
-                        body = responseBody,
-                        contentType = responseWrapper.contentType ?: MediaType.APPLICATION_JSON_VALUE,
+                var responseBodyBytes = responseWrapper.contentAsByteArray
+                if (responseBodyBytes.size > idempotencyProperties.maxResponseBodyBytes) {
+                    // side effect 이후 replay 기록을 버리면 재시도가 중복 실행되므로 안전한 오류를 대신 저장한다.
+                    responseWrapper.resetBuffer()
+                    responseWriter.writeError(
+                        request = cachedRequest,
+                        response = responseWrapper,
+                        code = ErrorCode.CONFLICT,
+                        details = mapOf("idempotency" to "Response exceeded replay safety limit."),
                     )
+                    responseBodyBytes = responseWrapper.contentAsByteArray
                 }
+                val responseBody = responseBodyBytes.toString(StandardCharsets.UTF_8)
+                idempotencyService.store(
+                    userId = principal.userId,
+                    idempotencyKey = idempotencyKey,
+                    requestHash = requestHash,
+                    claimToken = lookup.claimToken,
+                    status = responseWrapper.status,
+                    body = responseBody,
+                    contentType = responseWrapper.contentType ?: MediaType.APPLICATION_JSON_VALUE,
+                )
                 responseWrapper.copyBodyToResponse()
             }
         }
@@ -153,6 +190,9 @@ class JwtAuthenticationFilter(
     private fun isIdempotentWritePath(request: HttpServletRequest): Boolean =
         request.method in WRITE_METHODS &&
             idempotencyProperties.paths.any { pathMatcher.match(it, request.requestURI) }
+
+    private fun isValidIdempotencyKey(value: String): Boolean =
+        value.length <= idempotencyProperties.maxKeyLength && IDEMPOTENCY_KEY_PATTERN.matches(value)
 
     private fun requestHash(request: CachedBodyHttpServletRequest): String {
         val digest = MessageDigest.getInstance("SHA-256")
@@ -171,5 +211,6 @@ class JwtAuthenticationFilter(
         private const val BEARER_PREFIX = "Bearer "
         private const val IDEMPOTENCY_HEADER = "X-Idempotency-Key"
         private val WRITE_METHODS = setOf("POST", "PUT", "PATCH", "DELETE")
+        private val IDEMPOTENCY_KEY_PATTERN = Regex("[A-Za-z0-9][A-Za-z0-9._-]*")
     }
 }

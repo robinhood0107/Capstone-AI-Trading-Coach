@@ -7,6 +7,7 @@ from pathlib import Path
 import pandas as pd
 
 from app.data.kis.parsers import DailyBar
+from app.data.kis.symbols import normalize_symbol
 
 
 @dataclass(frozen=True)
@@ -21,9 +22,12 @@ class UpsertResult:
 def upsert_daily_bars(data_dir: Path, symbol: str, bars: list[DailyBar]) -> UpsertResult:
     # parquet은 S1.1의 로컬 산출물이므로 ignored data 경로 아래에만 쓴다.
     # 같은 symbol+date를 key처럼 다뤄 재실행 시 새 행만 늘어나는 DoD를 만족시킨다.
-    daily_dir = data_dir / "daily"
+    symbol = normalize_symbol(symbol)
+    daily_dir = data_dir.resolve() / "daily"
     daily_dir.mkdir(parents=True, exist_ok=True)
     path = daily_dir / f"{symbol}.parquet"
+    if not path.resolve().is_relative_to(daily_dir):
+        raise ValueError("KIS storage path escaped the daily data directory")
     existing = _read_existing(path)
     existing_count = len(existing)
     incoming = pd.DataFrame([asdict(bar) for bar in bars])

@@ -43,10 +43,15 @@ KIS endpoint와 TR ID 매핑, 모의 지원/미지원 경계는 이 문서에서
 6. Live-ready 경로는 기본 OFF다.
 7. 주문 후보 생성은 주문 실행이 아니다.
 8. 주문 전 `marginSnapshot`과 `riskDecision`이 없으면 fail-closed 한다.
-9. 모든 쓰기 API는 P1 공통 규칙과 동일하게 `X-Idempotency-Key` header를 요구한다.
-10. 모든 이벤트는 `decisionId`, `marginSnapshotId`, `orderIntentId`, `kisTrId`, `requestId`를 audit log에 남긴다.
-11. P2 내부 async event는 기본 OFF이며, 실제 내부 구현 상세는 팀원 1 상세 구현명세서에서 관리한다.
+9. 주문 제출·정정취소·Live safety gate처럼 금융 부작용을 만드는 쓰기 API는 P1의 `(subject, method, route-template, key)` idempotency 계약을 요구한다. 단순 조회·후보 생성에는 이를 자동 적용하지 않는다.
+10. 모든 이벤트는 `decisionId`, `marginSnapshotId`, `orderIntentId`, `kisTrId`, `requestId`, sanitized provider receipt/hash를 audit log에 남긴다. provider raw 응답, provider 계좌번호, token/key, idempotency key 원문은 남기지 않는다.
+11. P2 내부 async event는 기본 OFF이며, 실제 세부 형식은 공개 API 계약 밖의 Decision Platform 내부 구현 기록에서 관리한다.
 12. P1의 Decision 유효시간 규칙(`validUntil`, 만료 시 `DECISION_EXPIRED`)을 파생 decision에도 그대로 상속한다. margin snapshot은 자체 `expiresAt`을 추가로 가지며, 둘 중 하나라도 만료되면 주문 제출을 거부한다.
+13. 모든 `accountId`는 provider 계좌번호가 아닌 opaque 내부 ID이며 JWT subject 소유권을 조회 조건에 포함한다. 다른 사용자의 account/order/decision/snapshot/receipt ID는 존재 여부를 숨기고 `NOT_FOUND`로 거부하며 provider 호출을 만들지 않는다.
+14. 옵션 매도 2단계 확인은 boolean이 아니라 서버 발급 receipt 두 개로 증명한다. 각 receipt는 subject, opaque accountId, orderIntentId, decisionId, marginSnapshotId, action summary hash, 단계, 짧은 TTL에 묶고 순서대로 한 번만 소비한다.
+15. provider credential과 허용 계좌는 배포 운영자만 관리한다. Live gate는 immutable OFF가 기본이며 공개 API로 credential, account allowlist, 배포 gate를 변경할 수 없다.
+16. P2 KIS Adapter는 최종 명세서 12.4.1의 P1 중앙 account/appkey+mode quota coordinator를 재사용한다. 모의 REST 1/s는 시세·호가·주문가능·주문·정정취소·체결/잔고 대사와 모든 물리 재시도의 합산이며 주문/대사가 backfill보다 우선한다.
+17. P2 WebSocket은 P1과 같은 appkey별 physical session 하나와 합산 subscription ledger를 공유한다. 별도 session이나 별도 41개 budget을 만들지 않는다.
 
 ---
 
@@ -158,6 +163,8 @@ KIS endpoint와 TR ID 매핑, 모의 지원/미지원 경계는 이 문서에서
 | `dte` | 예 | Days To Expiry |
 | `greeks`, `impliedVolatility` | 옵션이면 예 | stale guard 입력 |
 
+`accountId`는 provider 계좌번호가 아닌 opaque 내부 ID다. `positionEffect`, `riskReductionOnly`, 계약수, 가격, DTE, Greeks/IV처럼 client가 보낸 위험 관련 값은 주문 권한의 근거가 아니며, Spring이 owner-scoped position·quote·margin snapshot에서 다시 계산해 일치 여부를 검증한다. 불일치하면 fail-closed 한다.
+
 ### 5.2 derivative_margin_snapshot
 
 ```json
@@ -177,11 +184,12 @@ KIS endpoint와 TR ID 매핑, 모의 지원/미지원 경계는 이 문서에서
   "marginBufferRate": 0.2,
   "marginBufferAmount": 820000,
   "marginBufferOk": true,
-  "rawFields": {
-    "ord_psbl_cash": "7200000",
-    "ord_psbl_qty": "3",
-    "tot_psbl_qty": "3",
-    "lqd_psbl_qty1": "1"
+  "providerEvidence": {
+    "orderableCash": 7200000,
+    "orderableContracts": 3,
+    "totalOrderableContracts": 3,
+    "liquidatableContracts": 1,
+    "payloadHash": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
   },
   "asOf": "2026-06-23T10:15:22+09:00",
   "expiresAt": "2026-06-23T10:16:22+09:00"
@@ -250,14 +258,20 @@ KIS endpoint와 TR ID 매핑, 모의 지원/미지원 경계는 이 문서에서
   "avgFillPrice": null,
   "fills": [],
   "positionsAfter": [],
-  "rawResponseRef": "artifacts/decision-platform/kis-raw/20260623/order_001.json",
+  "providerReceipt": {
+    "receiptId": "kis_mock_receipt_20260623_001",
+    "payloadHash": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    "rawStored": false
+  },
   "occurredAt": "2026-06-23T10:15:25+09:00"
 }
 ```
 
 ### 5.5 P2 내부 async event 원칙
 
-P2 derivative event는 공용 API 계약이 아니다. P2 기능 flag가 OFF이면 내부 async event도 발행하지 않는다. 이벤트 형식, 재처리, 중복 처리, payload 제한은 팀원 1 상세 구현명세서의 내부 비동기 처리 섹션에서 관리한다.
+P2 derivative event는 공용 API 계약이 아니다. P2 기능 flag가 OFF이면 내부 async event도 발행하지 않는다. 이벤트 형식, 재처리, 중복 처리, payload 제한은 공개 API 계약 밖의 Decision Platform 내부 구현 기록에서 관리한다.
+
+`providerEvidence`와 `providerReceipt`는 allowlist로 정규화한 수치·opaque receipt id·sanitized payload hash만 가진다. provider raw body/header/request URL, provider 계좌번호, token/key는 저장하거나 참조하지 않는다.
 
 ---
 
@@ -387,6 +401,39 @@ P1 endpoint를 그대로 사용하되, 요청 body에 `orderIntentType=DERIVATIV
 
 응답은 `derivative_risk_decision`을 `data.derivativeRiskDecision`에 포함한다.
 
+### 6.4.1 옵션 매도 2단계 확인 receipt 발급 (P2 계획 계약)
+
+이 절은 P2 feature가 기본 OFF인 현재 호출 가능한 API가 아니라, 옵션 매도 기능을 구현할 때 함께 승인해야 하는 계획 계약이다. 두 endpoint 모두 Bearer 인증과 금융 safety write용 `X-Idempotency-Key`를 요구한다.
+
+1차 확인:
+
+`POST /api/v1/derivatives/confirmations/option-short/step1`
+
+```json
+{
+  "orderIntentId": "doi_short_20260623_001",
+  "decisionId": "dec_deriv_short_20260623_001",
+  "marginSnapshotId": "dms_short_20260623_001"
+}
+```
+
+서버는 JWT subject와 owner-scoped order intent에서 opaque accountId를 구하고, 주문 방향·상품·계약수·가격·최대손실 설명의 canonical action summary hash를 계산한다. 응답은 opaque `receiptId`, `step=1`, `issuedAt`, `expiresAt`만 반환한다.
+
+2차 확인:
+
+`POST /api/v1/derivatives/confirmations/option-short/step2`
+
+```json
+{
+  "step1ReceiptId": "dcr_step1_20260623_001",
+  "orderIntentId": "doi_short_20260623_001",
+  "decisionId": "dec_deriv_short_20260623_001",
+  "marginSnapshotId": "dms_short_20260623_001"
+}
+```
+
+서버는 유효한 1차 receipt와 동일한 subject/account/orderIntent/decision/marginSnapshot/action summary hash인지 검증한 뒤 별도 nonce의 `step=2` receipt를 발급한다. 기본 TTL은 각 단계 2분이며 decision `validUntil`과 margin snapshot `expiresAt`보다 길 수 없다. 한 1차 receipt는 2차 receipt 하나에만 bind되고, 주문 제출은 두 receipt를 같은 트랜잭션에서 원자적으로 `CONSUMED` 처리한다. 만료·재사용·역순·다른 subject/account/order/action에 대한 receipt는 `RISK_BLOCKED`로 거부하고 provider 호출을 만들지 않는다. actor와 issued/consumed 시각은 principal과 서버 clock에서 생성한다.
+
 ### 6.5 Mock 주문 제출
 
 `POST /api/v1/derivatives/mock/orders`
@@ -399,22 +446,23 @@ P1 endpoint를 그대로 사용하되, 요청 body에 `orderIntentType=DERIVATIV
 
 `decisionId`와 `marginSnapshotId`는 header가 아니라 요청 body로만 전달한다. 같은 값을 header와 body에 중복시키면 불일치 시 처리 규칙이 따로 필요해지므로 body로 일원화한다.
 
-요청:
+옵션 매도 요청 예시:
 
 ```json
 {
-  "orderIntentId": "doi_20260623_001",
-  "decisionId": "dec_deriv_20260623_001",
-  "marginSnapshotId": "dms_20260623_001",
-  "confirmations": {
-    "riskReviewAccepted": true,
-    "optionShortFirstConfirm": false,
-    "optionShortSecondConfirm": false
-  }
+  "orderIntentId": "doi_short_20260623_001",
+  "decisionId": "dec_deriv_short_20260623_001",
+  "marginSnapshotId": "dms_short_20260623_001",
+  "confirmationReceiptIds": [
+    "dcr_step1_20260623_001",
+    "dcr_step2_20260623_001"
+  ]
 }
 ```
 
 응답은 `derivative_order_event` schema를 따른다.
+
+옵션 매도는 두 receipt가 모두 필요하다. 서버는 1차 receipt가 검증된 뒤에만 별도 nonce의 2차 receipt를 발급하며, 주문 제출 시 subject/account/orderIntent/decision/marginSnapshot/action hash/TTL/단계 순서를 다시 검증하고 원자적으로 소비한다. 다른 주문의 receipt, 만료 receipt, 재사용 receipt, boolean 확인값은 인정하지 않는다. 옵션 매도가 아닌 주문의 확인 receipt 요구 수는 RiskEngine 정책이 정하되 동일한 binding·one-time 규칙을 따른다.
 
 ### 6.6 정정취소
 
@@ -425,20 +473,23 @@ P1 endpoint를 그대로 사용하되, 요청 body에 `orderIntentType=DERIVATIV
   "action": "MODIFY",
   "newLimitPrice": 2.35,
   "newContracts": 1,
-  "reason": "지정가 개선",
-  "requestId": "req_20260623_001"
+  "reason": "지정가 개선"
 }
 ```
 
-체결된 수량은 정정/취소 대상에서 제외한다. KIS 응답이 불명확하면 주문 상태를 `PENDING_RECONCILIATION`으로 두고 체결조회로 재확인한다.
+requestId, actor, occurredAt은 요청 body가 아니라 공통 header, 인증 principal, 서버 clock에서 생성한다. 체결된 수량은 정정/취소 대상에서 제외한다. KIS 응답이 불명확하면 주문 상태를 `PENDING_RECONCILIATION`으로 두고 체결조회로 재확인한다.
 
 ### 6.7 체결조회
 
 `GET /api/v1/derivatives/mock/accounts/{accountId}/fills?from=2026-06-23&to=2026-06-23`
 
+`accountId`는 opaque 내부 ID이며 JWT subject 소유권을 조회 조건에 포함한다. provider 계좌번호는 요청·응답·로그에 노출하지 않는다.
+
 ### 6.8 잔고현황
 
 `GET /api/v1/derivatives/mock/accounts/{accountId}/positions`
+
+체결조회와 같은 owner-scope 규칙을 적용한다.
 
 ### 6.9 Live-readiness
 
@@ -467,6 +518,8 @@ P1 endpoint를 그대로 사용하되, 요청 body에 `orderIntentType=DERIVATIV
   }
 }
 ```
+
+`enabled`는 배포 immutable OFF gate, 운영자 account allowlist, 사용자 동의, margin policy, Kill Switch/reconciliation을 모두 결합한 read-only 결과다. 사용자 동의는 필요조건일 뿐 배포 gate·credential·allowlist를 변경하지 않으며, 공개 API로 이를 활성화할 수 없다.
 
 ---
 
@@ -518,6 +571,19 @@ KIS TR ID와 모의 지원 경계는 이 표를 기준으로 한다. 구현 시 
 | 선물옵션 잔고현황 | `/uapi/domestic-futureoption/v1/trading/inquire-balance` | `CTFO6118R` | `VTFO6118R` | positions reconciliation |
 | 선물옵션 실시간체결통보 | WebSocket | `H0IFCNI0` | `H0IFCNI9` | order event stream |
 
+### 8.1.1 P1/P2 공유 호출·WebSocket budget
+
+| 채널 | P2 계약 |
+|---|---|
+| REST Mock | appkey/account scope 합산 1 physical attempt/s, 최소 1,000ms no-burst. 현재가·호가·margin snapshot·주문·대사가 모두 같은 Redis 원자 queue를 사용 |
+| REST Live-ready | 실전 계좌당 hard 18/s이지만 기본 120ms 간격을 유지한다. P2 실거래는 계속 OFF이며 read-only도 별도 gate가 필요 |
+| `/oauth2/tokenP` | 일반 REST와 분리한 appkey credential scope 1/s + distributed singleflight/cache 재확인 |
+| WebSocket session | 계좌(앱키)당 physical session 1개. 한 PC 다계좌는 appkey scope별 각 1개 가능 |
+| WebSocket 등록 | P1/P2, 국내/해외, 주식/파생, 체결가/호가/예상체결/체결통보 합산 41개. `(TR_ID, tr_key)` 중복 dedupe, 42번째 사전 거부 |
+| `/oauth2/Approval` | appkey scope 1/s + reconnect singleflight. 기존 session 종료와 generation fencing 후 ledger 복원 |
+
+체결통보는 HTS ID 하나를 등록하면 연결된 모든 계좌 통보를 받으므로 계좌별로 중복 등록하지 않는다. “즉시 재호출”은 안전한 GET 라우팅 실패만 다음 quota slot에서 최대 1회 허용한다. 주문·정정·취소와 rate-limit 응답은 자동 재시도하지 않고 reconciliation으로 수렴한다.
+
 ### 8.2 모의 미지원 또는 P2 제외
 
 | 항목 | 판단 |
@@ -547,6 +613,9 @@ KIS TR ID와 모의 지원 경계는 이 표를 기준으로 한다. 구현 시 
 | 시장가가 청산/위험감소 주문에 해당하지 않음 | 평가 단계에서 차단 | `RISK_BLOCKED` |
 | 시세/호가/Greeks/IV stale | 평가 단계에서 보류 | `DATA_STALE` |
 | KIS Adapter 장애 | 주문 보류, reconciliation 대기 | `BROKERAGE_UNAVAILABLE` |
+| shared quota queue 포화/Redis limiter 장애 | provider 호출 0건, 주문 보류 | `BROKERAGE_UNAVAILABLE` |
+| `EGW00201`/HTTP 429 | 자동 재시도 중단, queue/scope 점검 | `RATE_LIMITED` |
+| WebSocket 두 번째 session/42번째 합산 등록 | provider 호출 전 거부, 기존 ledger 유지 | `RATE_LIMITED` 또는 `CONFLICT` |
 
 ---
 
@@ -560,12 +629,18 @@ KIS TR ID와 모의 지원 경계는 이 표를 기준으로 한다. 구현 시 
 | margin snapshot failure test | KIS 주문가능조회 실패 시 주문 평가가 진행되지 않는지 확인 |
 | margin buffer test | buffer 부족 시 `MARGIN_GUARD_FAILED`가 반환되는지 확인 |
 | option short confirmation test | 옵션 매도 2단계 확인 누락 시 주문 제출이 차단되는지 확인 |
+| confirmation receipt replay test | 다른 subject/order의 receipt, 만료·재사용·역순 receipt가 차단되고 provider 호출이 0건인지 확인 |
+| owner scope test | 다른 사용자의 account/order/decision/snapshot ID가 `NOT_FOUND`이고 provider 호출이 0건인지 확인 |
 | market order guard test | 신규 진입 시장가 차단, 위험감소 시장가 조건부 허용 확인 |
 | stale data test | 시세/호가/Greeks/IV stale이면 HOLD 되는지 확인 |
 | reconciliation test | 주문 제출 후 체결조회와 잔고현황이 audit trace에 연결되는지 확인 |
 | live-readiness test | 기본 OFF와 필수 조건 미충족 시 실거래 활성화 불가 확인 |
 | derivative async event default-off test | P2 feature flag OFF이면 내부 async event가 발행되지 않는지 확인 |
 | derivative async event status test | 외부에는 Spring 상태 조회 API만 노출되는지 확인 |
+| provider evidence security test | raw KIS body/header/account/token/key 없이 allowlisted normalized field와 sanitized receipt/hash만 남는지 확인 |
+| shared REST quota test | P1/P2 병행과 retry를 포함해 mock physical send 간격이 1,000ms 이상이며 주문/대사가 backfill보다 우선하는지 확인 |
+| WebSocket aggregate budget test | P1/P2 합산 41개까지 허용, 42번째와 두 번째 session은 outbound 0건, 중복 `(TR_ID, tr_key)`는 한 건으로 계산하는지 확인 |
+| Approval singleflight test | 동시 접속키 miss가 1 physical issue로 합쳐지고 재연결 중 기존 session을 중복 생성하지 않는지 확인 |
 
 ---
 
@@ -577,6 +652,7 @@ P2 구현 산출물은 다음 근거를 artifact manifest에 남긴다.
 |---|---|
 | 한국투자증권 모의투자 안내 | 국내 선물옵션 모의거래 흐름 근거 |
 | 한국투자증권 수수료 안내 | 비용 config와 수수료/세금 출처 |
+| KIS Developers API 호출 유량 안내(2026-04-20 기준) | 실전 18/s, 모의 1/s, tokenP/Approval 1/s, WebSocket 1세션·합산 41등록 근거 |
 | `한국투자증권_오픈API_전체문서_20260707_030000.xlsx` | endpoint, TR ID, 모의 지원 경계 |
 | `open-trading-api/examples_user/domestic_futureoption/domestic_futureoption_functions.py` | 주문가능, 주문, 정정취소, 잔고현황 예제 |
 | `open-trading-api/examples_llm/domestic_futureoption` | 주문가능 필드와 검증 check 사례 |

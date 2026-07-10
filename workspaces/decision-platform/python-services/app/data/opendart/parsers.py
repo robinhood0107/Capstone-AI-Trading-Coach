@@ -25,6 +25,15 @@ class OpenDARTResponseError(RuntimeError):
     pass
 
 
+class OpenDARTQuotaExceededError(OpenDARTResponseError):
+    """HTTP 200 body의 status=020을 transport retry와 분리하는 비재시도 quota 예외다."""
+
+    def __init__(self, status: str, message: str) -> None:
+        self.status = status
+        self.message = message
+        super().__init__(f"OpenDART response failed: {status} {message}")
+
+
 def parse_corp_code_zip(payload: bytes) -> list[CorpCode]:
     """OpenDART가 배포하는 corpCode.xml ZIP을 공식 corp_code lookup으로 변환한다."""
     with ZipFile(BytesIO(payload)) as archive:
@@ -258,7 +267,10 @@ def _ensure_success(response: dict[str, Any]) -> None:
     status = response.get("status")
     if status not in SUCCESS_STATUSES:
         # OpenDART 오류는 status/message만 노출한다. 요청 key나 raw body는 예외 문자열에 싣지 않는다.
-        raise OpenDARTResponseError(f"OpenDART response failed: {status} {_text(response.get('message'))}")
+        message = _text(response.get("message"))
+        if str(status) == "020":
+            raise OpenDARTQuotaExceededError(status="020", message=message)
+        raise OpenDARTResponseError(f"OpenDART response failed: {status} {message}")
 
 
 def _event_date(row: dict[str, Any], fallback_event_date: date | None) -> date:

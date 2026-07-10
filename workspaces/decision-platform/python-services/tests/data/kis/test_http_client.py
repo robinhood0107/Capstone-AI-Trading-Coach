@@ -4,11 +4,19 @@ from pathlib import Path
 import httpx
 import pytest
 from pydantic import SecretStr
-from tenacity import wait_none
 
 from app.data.kis import _credential_transport
-from app.data.kis._credential_transport import KISCredentialError, _CredentialSettings, _Credentials
-from app.data.kis.http_client import KISHttpClient, KISHttpError, KISTransportError
+from app.data.kis._credential_transport import (
+    KISCredentialError,
+    _CredentialSettings,
+    _CredentialTransport,
+    _Credentials,
+)
+from app.data.kis.http_client import (
+    KISHttpClient,
+    KISHttpError,
+    KISProviderRateLimitError,
+)
 from app.data.kis.market_client import CURRENT_PRICE_PATH
 from app.data.kis.rate_limiter import TokenBucket
 from app.data.kis.settings import KISSettings
@@ -23,6 +31,29 @@ def _stub_credentials(monkeypatch: pytest.MonkeyPatch, app_key: str, app_secret:
         _credential_transport,
         "_read_credentials",
         lambda _: _Credentials(app_key=SecretStr(app_key), app_secret=SecretStr(app_secret)),
+    )
+
+
+def _private_transport_client(
+    tmp_path: Path,
+    *,
+    handler: httpx.MockTransport,
+    token_provider: object,
+    rate_limiter: object,
+) -> httpx.Client:
+    transport = _CredentialTransport(
+        handler,
+        settings=_settings(tmp_path, offline=False),
+        token_provider=token_provider,  # type: ignore[arg-type]
+        rate_limiter=rate_limiter,  # type: ignore[arg-type]
+    )
+    return httpx.Client(transport=transport, follow_redirects=False, trust_env=False)
+
+
+def _private_transport_get(client: httpx.Client) -> httpx.Response:
+    return client.get(
+        "https://openapivts.koreainvestment.com:29443/uapi/domestic-stock/v1/quotations/inquire-price",
+        headers={_credential_transport._INTERNAL_TR_ID_HEADER: "FHKST01010100"},
     )
 
 
@@ -42,6 +73,12 @@ def test_private_credential_settings_hide_values_from_repr_and_serialization(
 
 def test_get_market_data_retries_retryable_status(tmp_path: Path) -> None:
     attempts = 0
+    quota_reservations = 0
+
+    class RecordingLimiter:
+        def acquire(self) -> None:
+            nonlocal quota_reservations
+            quota_reservations += 1
 
     def handler(_: httpx.Request) -> httpx.Response:
         nonlocal attempts
@@ -53,16 +90,23 @@ def test_get_market_data_retries_retryable_status(tmp_path: Path) -> None:
     client = KISHttpClient(
         _settings(tmp_path),
         transport=httpx.MockTransport(handler),
-        rate_limiter=TokenBucket(rate_per_second=1000),
-        retry_wait=wait_none(),
+        rate_limiter=RecordingLimiter(),
+        retry_delay=lambda _: 0.0,
     )
 
     assert client.request("GET", CURRENT_PRICE_PATH, tr_id="FHKST01010100", params={})["output"] == {"ok": "yes"}
     assert attempts == 2
+    assert quota_reservations == 2
 
 
 def test_get_market_data_retries_timeout_once_then_succeeds(tmp_path: Path) -> None:
     attempts = 0
+    quota_reservations = 0
+
+    class RecordingLimiter:
+        def acquire(self) -> None:
+            nonlocal quota_reservations
+            quota_reservations += 1
 
     def handler(_: httpx.Request) -> httpx.Response:
         nonlocal attempts
@@ -74,12 +118,31 @@ def test_get_market_data_retries_timeout_once_then_succeeds(tmp_path: Path) -> N
     client = KISHttpClient(
         _settings(tmp_path),
         transport=httpx.MockTransport(handler),
-        rate_limiter=TokenBucket(rate_per_second=1000),
-        retry_wait=wait_none(),
+        rate_limiter=RecordingLimiter(),
+        retry_delay=lambda _: 0.0,
     )
 
     assert client.request("GET", CURRENT_PRICE_PATH, tr_id="FHKST01010100", params={})["output"] == {"ok": "yes"}
     assert attempts == 2
+    assert quota_reservations == 2
+
+
+def test_online_http_client_rejects_caller_transport_and_limiter_overrides(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="private dependencies"):
+        KISHttpClient(
+            _settings(tmp_path, offline=False),
+            token_provider=lambda: "validation-dummy-token",
+            transport=httpx.MockTransport(lambda _: httpx.Response(200)),
+            rate_limiter=TokenBucket(rate_per_second=1000),
+        )
+
+
+def test_online_http_client_rejects_caller_token_provider_override(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="private dependencies"):
+        KISHttpClient(
+            _settings(tmp_path, offline=False),
+            token_provider=lambda: "validation-dummy-token",
+        )
 
 
 def test_credentials_and_token_exist_only_at_fixed_origin_transport_boundary(
@@ -90,9 +153,24 @@ def test_credentials_and_token_exist_only_at_fixed_origin_transport_boundary(
     app_secret = "validation-dummy-secret"
     token = "validation-dummy-token"
     captured: list[httpx.Request] = []
-    _stub_credentials(monkeypatch, app_key, app_secret)
+    events: list[str] = []
+
+    def read_credentials(_: str) -> _Credentials:
+        events.append("credentials")
+        return _Credentials(app_key=SecretStr(app_key), app_secret=SecretStr(app_secret))
+
+    monkeypatch.setattr(_credential_transport, "_read_credentials", read_credentials)
+
+    class RecordingLimiter:
+        def acquire(self) -> None:
+            events.append("quota")
+
+    def token_provider() -> str:
+        events.append("token")
+        return token
 
     def handler(request: httpx.Request) -> httpx.Response:
+        events.append("send")
         assert request.url.scheme == "https"
         assert request.url.host == "openapivts.koreainvestment.com"
         assert request.headers["appkey"] == app_key
@@ -105,19 +183,52 @@ def test_credentials_and_token_exist_only_at_fixed_origin_transport_boundary(
             json={"rt_cd": "0", "echo": token, "appsecret": app_secret},
         )
 
-    client = KISHttpClient(
-        _settings(tmp_path, offline=False),
-        token_provider=lambda: token,
-        transport=httpx.MockTransport(handler),
-        rate_limiter=TokenBucket(rate_per_second=1000),
+    client = _private_transport_client(
+        tmp_path,
+        token_provider=token_provider,
+        handler=httpx.MockTransport(handler),
+        rate_limiter=RecordingLimiter(),
     )
 
-    assert client.request("GET", CURRENT_PRICE_PATH, tr_id="FHKST01010100", params={}) == {
+    assert _private_transport_get(client).json() == {
         "rt_cd": "0",
         "echo": "[redacted]",
     }
     assert all(secret not in repr(vars(client)) for secret in (app_key, app_secret, token))
     assert all(name not in captured[0].headers for name in ("appkey", "appsecret", "authorization"))
+    assert events == ["token", "quota", "credentials", "send"]
+
+
+def test_market_quota_failure_does_not_read_static_credentials(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[str] = []
+
+    def read_credentials(_: str) -> _Credentials:
+        events.append("credentials")
+        return _Credentials(
+            app_key=SecretStr("validation-dummy-key"),
+            app_secret=SecretStr("validation-dummy-secret"),
+        )
+
+    class RejectingLimiter:
+        def acquire(self) -> None:
+            events.append("quota")
+            raise RuntimeError("quota unavailable")
+
+    monkeypatch.setattr(_credential_transport, "_read_credentials", read_credentials)
+    client = _private_transport_client(
+        tmp_path,
+        handler=httpx.MockTransport(lambda _: httpx.Response(200)),
+        token_provider=lambda: events.append("token") or "validation-dummy-token",
+        rate_limiter=RejectingLimiter(),
+    )
+
+    with pytest.raises(RuntimeError, match="quota unavailable"):
+        _private_transport_get(client)
+
+    assert events == ["token", "quota"]
 
 
 @pytest.mark.parametrize(
@@ -156,14 +267,15 @@ def test_missing_credentials_fail_closed_before_outbound(
         attempts += 1
         return httpx.Response(200, json={"rt_cd": "0"})
 
-    client = KISHttpClient(
-        _settings(tmp_path, offline=False),
+    client = _private_transport_client(
+        tmp_path,
         token_provider=lambda: "dummy-token",
-        transport=httpx.MockTransport(handler),
+        handler=httpx.MockTransport(handler),
+        rate_limiter=TokenBucket(rate_per_second=1000),
     )
 
     with pytest.raises(KISCredentialError) as exc_info:
-        client.request("GET", CURRENT_PRICE_PATH, tr_id="FHKST01010100", params={})
+        _private_transport_get(client)
 
     assert "KIS_MOCK_APP_KEY" not in str(exc_info.value)
     assert attempts == 0
@@ -179,19 +291,18 @@ def test_transport_error_drops_request_and_credentials(
     def handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError(f"failed {request.url}", request=request)
 
-    client = KISHttpClient(
-        _settings(tmp_path, offline=False),
+    client = _private_transport_client(
+        tmp_path,
         token_provider=lambda: "validation-dummy-token",
-        transport=httpx.MockTransport(handler),
-        retry_wait=wait_none(),
+        handler=httpx.MockTransport(handler),
+        rate_limiter=TokenBucket(rate_per_second=1000),
     )
 
-    with pytest.raises(KISTransportError) as exc_info:
-        client.request("GET", CURRENT_PRICE_PATH, tr_id="FHKST01010100", params={"FID_INPUT_ISCD": "005930"})
+    with pytest.raises(httpx.ConnectError) as exc_info:
+        _private_transport_get(client)
 
     assert marker not in f"{exc_info.value!r} {exc_info.value}"
-    assert "005930" not in f"{exc_info.value!r} {exc_info.value}"
-    assert exc_info.value.__cause__ is None
+    assert all(name not in exc_info.value.request.headers for name in ("appkey", "appsecret", "authorization"))
 
 
 def test_transport_boundary_does_not_log_credentials(
@@ -202,13 +313,14 @@ def test_transport_boundary_does_not_log_credentials(
     marker = "validation-dummy-secret"
     _stub_credentials(monkeypatch, "validation-dummy-key", marker)
     caplog.set_level(logging.DEBUG)
-    client = KISHttpClient(
-        _settings(tmp_path, offline=False),
+    client = _private_transport_client(
+        tmp_path,
         token_provider=lambda: "validation-dummy-token",
-        transport=httpx.MockTransport(lambda _: httpx.Response(200, json={"rt_cd": "0"})),
+        handler=httpx.MockTransport(lambda _: httpx.Response(200, json={"rt_cd": "0"})),
+        rate_limiter=TokenBucket(rate_per_second=1000),
     )
 
-    assert client.request("GET", CURRENT_PRICE_PATH, tr_id="FHKST01010100", params={}) == {"rt_cd": "0"}
+    assert _private_transport_get(client).json() == {"rt_cd": "0"}
     assert marker not in caplog.text
     assert "appsecret" not in caplog.text.lower()
 
@@ -218,3 +330,115 @@ def test_http_client_rejects_non_get_method(tmp_path: Path) -> None:
 
     with pytest.raises(KISHttpError, match="read-only GET"):
         client.request("POST", CURRENT_PRICE_PATH, tr_id="FHKST01010100", params={})
+
+
+@pytest.mark.parametrize(
+    "routing_code",
+    ["EGW00001", "EGW00002", "EGW00202", "EGW00203", "EGW00300"],
+)
+def test_distribution_routing_failure_is_recalled_once_in_next_quota_slot(
+    tmp_path: Path,
+    routing_code: str,
+) -> None:
+    attempts = 0
+    quota_reservations = 0
+    backoff_calls: list[int] = []
+
+    class RecordingLimiter:
+        def acquire(self) -> None:
+            nonlocal quota_reservations
+            quota_reservations += 1
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            return httpx.Response(200, json={"rt_cd": "1", "msg_cd": routing_code, "msg1": "routing"})
+        return httpx.Response(200, json={"rt_cd": "0", "output": {"ok": "yes"}})
+
+    client = KISHttpClient(
+        _settings(tmp_path),
+        transport=httpx.MockTransport(handler),
+        rate_limiter=RecordingLimiter(),
+        retry_delay=lambda attempt: backoff_calls.append(attempt) or 0.0,
+    )
+
+    result = client.request("GET", CURRENT_PRICE_PATH, tr_id="FHKST01010100", params={})
+
+    assert result["output"] == {"ok": "yes"}
+    assert attempts == 2
+    assert quota_reservations == 2
+    assert backoff_calls == []
+
+
+def test_second_distribution_failure_stops_after_one_immediate_retry(tmp_path: Path) -> None:
+    attempts = 0
+    quota_reservations = 0
+
+    class RecordingLimiter:
+        def acquire(self) -> None:
+            nonlocal quota_reservations
+            quota_reservations += 1
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        return httpx.Response(200, json={"rt_cd": "1", "msg_cd": "EGW00202"})
+
+    client = KISHttpClient(
+        _settings(tmp_path),
+        transport=httpx.MockTransport(handler),
+        rate_limiter=RecordingLimiter(),
+        retry_delay=lambda _: 0.0,
+    )
+
+    with pytest.raises(KISHttpError):
+        client.request("GET", CURRENT_PRICE_PATH, tr_id="FHKST01010100", params={})
+
+    assert attempts == 2
+    assert quota_reservations == 2
+
+
+def test_provider_rate_limit_response_fails_without_retry_storm(tmp_path: Path) -> None:
+    attempts = 0
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        return httpx.Response(
+            200,
+            json={"rt_cd": "1", "msg_cd": "EGW00201", "msg1": "rate exceeded"},
+        )
+
+    client = KISHttpClient(
+        _settings(tmp_path),
+        transport=httpx.MockTransport(handler),
+        rate_limiter=TokenBucket(rate_per_second=1000),
+        retry_delay=lambda _: 0.0,
+    )
+
+    with pytest.raises(KISProviderRateLimitError):
+        client.request("GET", CURRENT_PRICE_PATH, tr_id="FHKST01010100", params={})
+
+    assert attempts == 1
+
+
+def test_http_429_fails_without_retry_storm(tmp_path: Path) -> None:
+    attempts = 0
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        return httpx.Response(429, json={"message": "rate exceeded"})
+
+    client = KISHttpClient(
+        _settings(tmp_path),
+        transport=httpx.MockTransport(handler),
+        rate_limiter=TokenBucket(rate_per_second=1000),
+        retry_delay=lambda _: 0.0,
+    )
+
+    with pytest.raises(KISProviderRateLimitError):
+        client.request("GET", CURRENT_PRICE_PATH, tr_id="FHKST01010100", params={})
+
+    assert attempts == 1

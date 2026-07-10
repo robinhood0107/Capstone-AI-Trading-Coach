@@ -38,3 +38,74 @@ def test_rate_limit_must_be_positive(tmp_path: Path) -> None:
             kis_data_dir=tmp_path,
             _env_file=None,
         )
+
+
+@pytest.mark.parametrize(
+    ("mode", "rate"),
+    [("mock", 1.0001), ("live", 18.0001)],
+)
+def test_provider_hard_rate_limit_cannot_be_raised(
+    tmp_path: Path,
+    mode: str,
+    rate: float,
+) -> None:
+    with pytest.raises(ValidationError, match="official REST limit"):
+        KISSettings(
+            kis_mode=mode,
+            kis_offline=True,
+            kis_rate_limit_per_second=rate,
+            kis_data_dir=tmp_path,
+            _env_file=None,
+        )
+
+
+def test_mode_defaults_enforce_mock_and_live_pacing(tmp_path: Path) -> None:
+    mock = KISSettings(kis_mode="mock", kis_offline=True, kis_data_dir=tmp_path, _env_file=None)
+    live = KISSettings(kis_mode="live", kis_offline=True, kis_data_dir=tmp_path, _env_file=None)
+
+    assert mock.rate_limit_per_second == 1.0
+    assert mock.request_interval_seconds == 1.0
+    assert live.rate_limit_per_second == 18.0
+    assert live.request_interval_seconds == 0.12
+
+
+@pytest.mark.parametrize(
+    ("mode", "interval_ms"),
+    [("mock", 999), ("live", 99)],
+)
+def test_provider_minimum_request_interval_cannot_be_shortened(
+    tmp_path: Path,
+    mode: str,
+    interval_ms: int,
+) -> None:
+    with pytest.raises(ValidationError, match="minimum request interval"):
+        KISSettings(
+            kis_mode=mode,
+            kis_offline=True,
+            kis_request_interval_milliseconds=interval_ms,
+            kis_data_dir=tmp_path,
+            _env_file=None,
+        )
+
+
+def test_lower_operator_rate_override_only_slows_requests(tmp_path: Path) -> None:
+    settings = KISSettings(
+        kis_mode="live",
+        kis_offline=True,
+        kis_rate_limit_per_second=2,
+        kis_request_interval_milliseconds=120,
+        kis_data_dir=tmp_path,
+        _env_file=None,
+    )
+
+    assert settings.request_interval_seconds == 0.5
+
+
+def test_rate_limit_wait_cannot_exceed_ten_seconds(tmp_path: Path) -> None:
+    with pytest.raises(ValidationError):
+        KISSettings(
+            kis_offline=True,
+            kis_rate_limit_max_wait_seconds=10.001,
+            kis_data_dir=tmp_path,
+            _env_file=None,
+        )

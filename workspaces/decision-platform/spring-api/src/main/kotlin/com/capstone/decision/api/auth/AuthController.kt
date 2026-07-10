@@ -4,8 +4,11 @@ import com.capstone.decision.api.common.ApiException
 import com.capstone.decision.api.common.ErrorCode
 import com.capstone.decision.infrastructure.security.DemoAccountService
 import com.capstone.decision.infrastructure.security.JwtService
+import com.capstone.decision.infrastructure.security.LoginAttemptLimiter
+import jakarta.servlet.http.HttpServletRequest
 import jakarta.validation.Valid
 import jakarta.validation.constraints.NotBlank
+import jakarta.validation.constraints.Size
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
@@ -18,17 +21,23 @@ import java.time.OffsetDateTime
 class AuthController(
     private val demoAccountService: DemoAccountService,
     private val jwtService: JwtService,
+    private val loginAttemptLimiter: LoginAttemptLimiter,
 ) {
     @PostMapping("/login")
     fun login(
         @Valid @RequestBody request: LoginRequest,
+        servletRequest: HttpServletRequest,
     ): LoginResponse {
+        if (!loginAttemptLimiter.tryAcquire(servletRequest.remoteAddr, request.username)) {
+            throw ApiException(ErrorCode.RATE_LIMITED)
+        }
         // 실패한 로그인도 공통 envelope의 UNAUTHORIZED로 흘려 프론트 분기 규칙을 고정한다.
         val account =
             demoAccountService.authenticate(
                 username = request.username,
                 password = request.password,
             ) ?: throw ApiException(ErrorCode.UNAUTHORIZED, "Invalid username or password.")
+        loginAttemptLimiter.recordSuccess(servletRequest.remoteAddr, request.username)
         val issuedToken = jwtService.issue(account)
         return LoginResponse(
             accessToken = issuedToken.token,
@@ -47,8 +56,10 @@ class AuthController(
 // 로그인 DTO에서 빈 값은 controller 진입부에서 400 envelope로 검증한다.
 data class LoginRequest(
     @field:NotBlank
+    @field:Size(max = 128)
     val username: String,
     @field:NotBlank
+    @field:Size(max = 1024)
     val password: String,
 )
 

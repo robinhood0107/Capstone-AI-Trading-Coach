@@ -80,12 +80,12 @@ class OpenDARTClient:
 
     def corp_codes(self) -> list[CorpCode]:
         """OpenDART 고유번호 ZIP/XML을 읽어 주식코드와 DART corp_code를 연결한다."""
-        payload = self.http_client.get_bytes(CORP_CODE_PATH, self._with_key({}))
+        payload = self.http_client.get_bytes(CORP_CODE_PATH, {})
         return parse_corp_code_zip(payload)
 
     def company_profile(self, corp_code: str) -> CompanyProfile:
         """기업개황은 RAG 설명과 종목 metadata의 공식 기본정보로만 사용한다."""
-        response = self.http_client.get_json(COMPANY_PROFILE_PATH, self._with_key({"corp_code": corp_code}))
+        response = self.http_client.get_json(COMPANY_PROFILE_PATH, {"corp_code": corp_code})
         return parse_company_profile(response, corp_code=corp_code)
 
     def disclosure_list(
@@ -157,7 +157,7 @@ class OpenDARTClient:
         """단일회사 주요계정 조회를 감싸며 전체 XBRL 원문 수집은 S1.2 범위에 넣지 않는다."""
         response = self.http_client.get_json(
             FINANCIAL_STATEMENT_PATH,
-            self._with_key({"corp_code": corp_code, "bsns_year": business_year, "reprt_code": report_code}),
+            {"corp_code": corp_code, "bsns_year": business_year, "reprt_code": report_code},
         )
         return parse_financial_statement_rows(response, corp_code=corp_code)
 
@@ -176,14 +176,12 @@ class OpenDARTClient:
         """
         response = self.http_client.get_json(
             FINANCIAL_INDICATOR_PATH,
-            self._with_key(
-                {
-                    "corp_code": corp_code,
-                    "bsns_year": business_year,
-                    "reprt_code": report_code,
-                    "idx_cl_code": index_class_code,
-                }
-            ),
+            {
+                "corp_code": corp_code,
+                "bsns_year": business_year,
+                "reprt_code": report_code,
+                "idx_cl_code": index_class_code,
+            },
         )
         return parse_financial_indicator_rows(response, corp_code=corp_code)
 
@@ -204,14 +202,12 @@ class OpenDARTClient:
             raise ValueError("financial_indicators_batch requires at least one corp_code")
         response = self.http_client.get_json(
             FINANCIAL_INDICATOR_BATCH_PATH,
-            self._with_key(
-                {
-                    "corp_code": ",".join(corp_codes),
-                    "bsns_year": business_year,
-                    "reprt_code": report_code,
-                    "idx_cl_code": index_class_code,
-                }
-            ),
+            {
+                "corp_code": ",".join(corp_codes),
+                "bsns_year": business_year,
+                "reprt_code": report_code,
+                "idx_cl_code": index_class_code,
+            },
         )
         return parse_financial_indicator_batch_rows(response)
 
@@ -220,7 +216,7 @@ class OpenDARTClient:
 
         지분율 변동 데이터이며 S1.2c에서는 주문 차단 점수에 연결하지 않는다(후속 aggregator/feature용).
         """
-        response = self.http_client.get_json(MAJOR_STOCK_PATH, self._with_key({"corp_code": corp_code}))
+        response = self.http_client.get_json(MAJOR_STOCK_PATH, {"corp_code": corp_code})
         return parse_major_stock_report_rows(response)
 
     def executive_major_shareholder_reports(self, *, corp_code: str) -> list[ExecutiveMajorShareholderReportRow]:
@@ -228,7 +224,7 @@ class OpenDARTClient:
 
         개인정보성 항목은 저장/노출을 최소화하고, S1.2c에서는 주문 차단 점수에 연결하지 않는다.
         """
-        response = self.http_client.get_json(EXECUTIVE_MAJOR_SHAREHOLDER_PATH, self._with_key({"corp_code": corp_code}))
+        response = self.http_client.get_json(EXECUTIVE_MAJOR_SHAREHOLDER_PATH, {"corp_code": corp_code})
         return parse_executive_major_shareholder_report_rows(response)
 
     def major_matter_events(
@@ -246,7 +242,7 @@ class OpenDARTClient:
             raise ValueError(f"Unsupported OpenDART major matter endpoint: {endpoint_id}")
         response = self.http_client.get_json(
             path,
-            self._with_key({"corp_code": corp_code, "bgn_de": _format_date(start), "end_de": _format_date(end)}),
+            {"corp_code": corp_code, "bgn_de": _format_date(start), "end_de": _format_date(end)},
         )
         # 주요사항보고서 전용 endpoint identity를 event_code로 삼아 report_nm 문자열 흔들림을 피한다.
         return parse_major_matter_events(
@@ -268,13 +264,9 @@ class OpenDARTClient:
         """감사의견은 보고서 제목이 아니라 OpenDART의 구조화 `adt_opinion` 필드만 점수화한다."""
         response = self.http_client.get_json(
             AUDIT_OPINION_PATH,
-            self._with_key({"corp_code": corp_code, "bsns_year": business_year, "reprt_code": report_code}),
+            {"corp_code": corp_code, "bsns_year": business_year, "reprt_code": report_code},
         )
         return parse_audit_opinion_events(response, symbol=symbol, fallback_event_date=fallback_event_date)
-
-    def _with_key(self, params: dict[str, str]) -> dict[str, str]:
-        # crtfc_key는 요청 파라미터에만 넣고 fingerprint/log에는 값이 남지 않게 raw_observation에서 별도 마스킹한다.
-        return {"crtfc_key": self.settings.api_key or "", **params}
 
     def _disclosure_list_params(
         self,
@@ -287,18 +279,16 @@ class OpenDARTClient:
         page_no: int,
         page_count: int,
     ) -> dict[str, str]:
-        params = self._with_key(
-            {
-                "corp_code": corp_code,
-                "bgn_de": _format_date(start),
-                "end_de": _format_date(end),
-                "last_reprt_at": "N",
-                "sort": "date",
-                "sort_mth": "desc",
-                "page_no": str(page_no),
-                "page_count": str(page_count),
-            }
-        )
+        params = {
+            "corp_code": corp_code,
+            "bgn_de": _format_date(start),
+            "end_de": _format_date(end),
+            "last_reprt_at": "N",
+            "sort": "date",
+            "sort_mth": "desc",
+            "page_no": str(page_no),
+            "page_count": str(page_count),
+        }
         if disclosure_type:
             params["pblntf_ty"] = disclosure_type
         if disclosure_detail_type:

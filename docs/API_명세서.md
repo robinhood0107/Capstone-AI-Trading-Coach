@@ -104,6 +104,8 @@ flowchart LR
 | `NOT_FOUND` | 404 | 리소스 없음 | 빈 상태 표시 |
 | `CONFLICT` | 409 | 버전 충돌 | 재조회 후 재시도 |
 | `IDEMPOTENCY_CONFLICT` | 409 | 동일 idempotency key에 다른 payload | 요청 내용 확인 |
+| `IDEMPOTENCY_IN_PROGRESS` | 409 | 동일 idempotency key 요청이 처리 중 | 현재 요청 완료 후 동일 payload로 재조회 |
+| `PAYLOAD_TOO_LARGE` | 413 | 전역 또는 idempotency request body 상한 초과 | 요청 크기 축소 |
 | `DECISION_EXPIRED` | 409 | decision 유효시간(`validUntil`) 초과 | 주문 재평가 유도 |
 | `RISK_BLOCKED` | 422 | 원칙/안전장치 위반으로 주문 차단 | 주문 불가 |
 | `DATA_STALE` | 409 | 가격/신호/뉴스 데이터 지연 | 주문 보류 |
@@ -119,7 +121,7 @@ flowchart LR
 
 ### 2.4 인증/권한
 
-`POST /api/v1/auth/login`으로 데모 계정을 인증하고 access token을 발급받는다. 토큰은 짧은 만료(기본 12시간)를 사용하고, payload에는 userId와 role만 담는다(민감정보 금지).
+`POST /api/v1/auth/login`으로 데모 계정을 인증하고 access token을 발급받는다. 토큰은 짧은 만료(기본 12시간)를 사용하고, payload에는 userId와 role만 담는다(민감정보 금지). 로그인 attempt는 client address+username 기준 15분 5회, address 기준 15분 50회로 원자 예약하며, JSON binding 전 전역 request body 상한을 적용한다.
 
 | 역할 | 접근 범위 |
 |---|---|
@@ -134,8 +136,13 @@ Kill Switch는 비대칭 권한을 적용한다. 활성화(정지)는 USER도 �
 |---|---|
 | 동일 key + 동일 payload 재요청 | 저장된 원 응답을 그대로 반환하고 부작용을 만들지 않는다 |
 | 동일 key + 다른 payload | `IDEMPOTENCY_CONFLICT`(409) |
+| 동일 key 처리 중 | `IDEMPOTENCY_IN_PROGRESS`(409), controller 재실행 금지 |
 | key 보존 기간 | 24시간(Redis TTL) |
 | 적용 대상 | 주문 제출/취소, 원칙 생성/수정, 백테스트 실행 |
+
+Redis claim은 고유 owner token으로 선점하고, owner 확인·응답 저장·TTL 설정·claim 삭제를 단일 Lua script로 처리한다. Redis는 인증+AOF+`noeviction`으로 운영하지만 금융 부작용의 최종 방어는 DB unique/state transition이다.
+
+멱등 선점은 설정 wildcard에 단순 일치하는 URL이 아니라 실제 MVC write handler가 매핑된 요청에만 적용한다. 사용자별 TTL 구간의 신규 key는 기본 1,000개로 제한하고 초과 시 `RATE_LIMITED`(429)를 반환한다. 인가·라우팅·검증성 4xx는 owner claim을 원자 반납해 장기 replay state로 남기지 않고, controller 응답 버퍼는 설정 byte 상한 이상을 메모리에 보관하지 않는다.
 
 ### 2.6 목록 API 공통 pagination
 
@@ -1656,6 +1663,8 @@ S1.1의 KIS MarketDataService 구현 경계는 다음과 같다.
 | mode | `KIS_MODE=mock\|live`는 시장데이터 조회 Domain 선택이다. Live 주문 활성화와 무관하다 |
 | offline | `KIS_OFFLINE=1`이면 KIS 네트워크 호출 없이 sanitized fixture로 current/daily parser와 parquet upsert를 검증한다 |
 | token | `/oauth2/tokenP` token은 Redis `kis:token`에 저장하고 만료 5분 전부터 갱신한다. 유효기간은 1일이고 발급 후 6시간 이내 재요청 시 기존 토큰이 반환된다. 토큰 원문은 로그와 fixture에 남기지 않는다 |
+| credential | app key/secret은 공개 settings·market/business client가 보관하지 않는다. private fixed-origin transport/token issuer가 send 순간에 env에서만 읽고, response echo·예외·로그로 전파하지 않는다 |
+| Redis | `REDIS_HOST`/`REDIS_PORT`/`REDIS_DB`와 env-only `REDIS_PASSWORD`를 사용한다. URL에 password를 넣지 않으며 local Compose는 loopback+인증+AOF+`noeviction`이다 |
 | current price | `/uapi/domestic-stock/v1/quotations/inquire-price`, TR `FHKST01010100`(모의 동일 TR 지원)만 S1.1 필수 |
 | daily bars | `/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice`, TR `FHKST03010100`(모의 동일 TR 지원), 1회 최대 100건 단위 반복 백필 |
 | market calendar | `/uapi/domestic-stock/v1/quotations/chk-holiday`, TR `CTCA0903R`는 모의투자 미지원(실전 Domain 전용) supporting read다. mock/offline에서는 fixture 또는 skip으로 처리하고 호출 시 1일 1회 이하로 보수 운영 |
@@ -1684,7 +1693,7 @@ message GetDisclosureEventsResponse {
   string as_of = 3;
   string window_from = 4;
   string window_to = 5;
-  double score = 6;             // 최근 window 이벤트 max score
+  double score = 6;             // 이벤트 유형별 effective window 안의 max score
   string mapping_version = 7;   // 예: s1.2-v1
   repeated DisclosureRiskEvent events = 8;
   repeated DisclosureRiskWarning warnings = 9;

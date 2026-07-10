@@ -4,9 +4,13 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pytest
+from tenacity import wait_none
 
 from app.data.opendart.client import OpenDARTClient
+from app.data.opendart.http_client import OpenDARTHttpClient, TokenBucket
+from app.data.opendart.parsers import OpenDARTQuotaExceededError, OpenDARTResponseError
 from app.data.opendart.settings import OpenDARTSettings
 
 
@@ -349,6 +353,41 @@ def test_client_disclosure_list_with_observation_marks_no_data_as_empty(tmp_path
 
     assert result.items == []
     assert result.raw_observation.normalized_status == "EMPTY"
+
+
+def test_client_status_020_raises_non_retryable_quota_error_once(tmp_path: Path) -> None:
+    attempts = 0
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        return httpx.Response(
+            200,
+            json={"status": "020", "message": "요청 제한을 초과하였습니다."},
+        )
+
+    settings = _settings(tmp_path)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as transport_client:
+        http_client = OpenDARTHttpClient(
+            settings,
+            http_client=transport_client,
+            rate_limiter=TokenBucket(rate_per_second=1000),
+            retry_wait=wait_none(),
+        )
+        client = OpenDARTClient(settings, http_client)
+
+        with pytest.raises(OpenDARTQuotaExceededError) as exc_info:
+            client.disclosure_list(
+                corp_code="00126380",
+                start=date(2026, 7, 1),
+                end=date(2026, 7, 10),
+            )
+
+    error = exc_info.value
+    assert isinstance(error, OpenDARTResponseError)
+    assert error.status == "020"
+    assert error.message == "요청 제한을 초과하였습니다."
+    assert attempts == 1
 
 
 def test_client_s1_2c_financial_indicators_batch_joins_corp_codes() -> None:

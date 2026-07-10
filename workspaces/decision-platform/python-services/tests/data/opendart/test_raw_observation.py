@@ -4,7 +4,9 @@ import hashlib
 from datetime import UTC, date, datetime
 from pathlib import Path
 
-from app.data.opendart.raw_observation import request_fingerprint, write_raw_observation
+import pytest
+
+from app.data.opendart.raw_observation import MAX_RAW_OBSERVATION_BYTES, request_fingerprint, write_raw_observation
 
 
 def test_request_fingerprint_keeps_only_path_and_query_keys() -> None:
@@ -88,3 +90,37 @@ def test_failed_observation_masks_error_message(tmp_path: Path) -> None:
     assert observation.error_message == "[redacted]"
     assert "fixture-auth-value" not in str(observation)
     assert "authentication" not in str(observation).lower()
+
+
+def test_raw_observation_rejects_source_path_traversal(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="source_id"):
+        write_raw_observation(
+            data_dir=tmp_path / "data",
+            source_id="../../escaped",
+            method="GET",
+            path="/api/list.json",
+            request_params={},
+            payload={"status": "000"},
+            retrieved_at=datetime(2026, 7, 9, 12, 0, tzinfo=UTC),
+            window_from=None,
+            window_to=None,
+            normalized_status="OK",
+        )
+
+    assert not (tmp_path / "escaped").exists()
+
+
+def test_raw_observation_rejects_payload_over_storage_limit(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="storage limit"):
+        write_raw_observation(
+            data_dir=tmp_path,
+            source_id="opendart_disclosure_list",
+            method="GET",
+            path="/api/list.json",
+            request_params={},
+            payload={"value": "x" * (MAX_RAW_OBSERVATION_BYTES + 1)},
+            retrieved_at=datetime(2026, 7, 9, 12, 0, tzinfo=UTC),
+            window_from=None,
+            window_to=None,
+            normalized_status="OK",
+        )

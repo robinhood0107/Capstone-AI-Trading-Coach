@@ -13,26 +13,22 @@ class _NoNetwork:
         raise AssertionError("offline mode must not perform network calls")
 
 
-class _Token:
-    def get_access_token(self) -> str:
-        return "test-token"
-
-
 class _FakeHttp:
     def __init__(self, responses: list[dict[str, Any]]) -> None:
         self.responses = responses
         self.params_seen: list[dict[str, str]] = []
 
-    def request(self, method: str, path: str, headers: dict[str, str], params: dict[str, str]) -> dict[str, Any]:
+    def request(self, method: str, path: str, tr_id: str, params: dict[str, str]) -> dict[str, Any]:
         assert method == "GET"
         assert path.endswith("/inquire-daily-itemchartprice")
+        assert tr_id == "FHKST03010100"
         self.params_seen.append(params)
         return self.responses.pop(0)
 
 
 def test_offline_mode_loads_fixtures_without_network(tmp_path: Path) -> None:
     settings = KISSettings(kis_offline=True, kis_data_dir=tmp_path)
-    client = KISMarketClient(settings, http_client=_NoNetwork(), token_manager=_Token())
+    client = KISMarketClient(settings, http_client=_NoNetwork())
 
     assert client.current_price("005930").price == 73500
     assert client.current_price("000660").price == 240000
@@ -43,12 +39,7 @@ def test_offline_mode_loads_fixtures_without_network(tmp_path: Path) -> None:
 
 
 def test_daily_backfill_moves_end_date_to_oldest_seen_minus_one(tmp_path: Path) -> None:
-    settings = KISSettings(
-        kis_mode="mock",
-        kis_mock_app_key="mock-key",
-        kis_mock_app_secret="mock-secret",
-        kis_data_dir=tmp_path,
-    )
+    settings = KISSettings(kis_mode="mock", kis_data_dir=tmp_path, _env_file=None)
     page1 = {
         "rt_cd": "0",
         "output2": [
@@ -63,7 +54,7 @@ def test_daily_backfill_moves_end_date_to_oldest_seen_minus_one(tmp_path: Path) 
         ],
     }
     fake_http = _FakeHttp([page1, page2])
-    client = KISMarketClient(settings, http_client=fake_http, token_manager=_Token(), page_size=2)
+    client = KISMarketClient(settings, http_client=fake_http, page_size=2)
 
     bars = client.daily_bars("005930", date(2026, 7, 6), date(2026, 7, 8))
 

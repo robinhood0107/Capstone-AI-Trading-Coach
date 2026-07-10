@@ -10,10 +10,17 @@ from app.data.kis.universe import (
     KRX_EXPORT_RANKING_RULE,
     UniverseExportError,
     load_universe_manifest,
+    parse_symbols,
     refresh_universe_from_krx_export,
     write_universe_markdown_report,
 )
 from app.data.kis.universe_refresh_cli import main
+
+
+@pytest.mark.parametrize("value", ["../../escaped", "005930/..", "ABCDEF", "1234567", "１２３４５６"])
+def test_parse_symbols_rejects_non_ascii_six_digit_codes(value: str) -> None:
+    with pytest.raises(ValueError, match="six digits"):
+        parse_symbols(value)
 
 
 def test_refresh_universe_from_krx_export_ranks_by_market_cap_then_trading_value(

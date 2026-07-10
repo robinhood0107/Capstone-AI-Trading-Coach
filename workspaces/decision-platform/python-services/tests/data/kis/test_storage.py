@@ -1,6 +1,8 @@
 from datetime import date
 from pathlib import Path
 
+import pytest
+
 from app.data.kis.parsers import DailyBar
 from app.data.kis.storage import upsert_daily_bars
 
@@ -22,3 +24,10 @@ def test_parquet_upsert_is_idempotent_by_symbol_and_date(tmp_path: Path) -> None
     assert second.total_rows == 3
     assert second.inserted_rows == 1
     assert (tmp_path / "daily" / "005930.parquet").exists()
+
+
+def test_parquet_storage_rejects_symbol_path_traversal(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="six digits"):
+        upsert_daily_bars(tmp_path / "data", "../../escaped", [])
+
+    assert not (tmp_path / "escaped.parquet").exists()

@@ -8,6 +8,8 @@ import pytest
 
 from app.data.opendart.models import DisclosureRiskEvent
 from app.data.opendart.parsers import (
+    MAX_LIST_ROWS,
+    MAX_XML_FIELD_CHARS,
     OpenDARTResponseError,
     parse_audit_opinion_events,
     parse_company_profile,
@@ -375,6 +377,45 @@ def test_error_status_raises_masked_open_dart_error() -> None:
 
     assert "010" in str(exc_info.value)
     assert "등록되지 않은 키" in str(exc_info.value)
+
+
+def test_corp_code_zip_rejects_oversized_xml_field() -> None:
+    payload = _corp_code_zip(
+        "<result><list><corp_code>1</corp_code><corp_name>"
+        + ("A" * (MAX_XML_FIELD_CHARS + 1))
+        + "</corp_name></list></result>"
+    )
+
+    with pytest.raises(OpenDARTResponseError, match="safety limit"):
+        parse_corp_code_zip(payload)
+
+
+def test_corp_code_zip_rejects_dtd_before_xml_parsing() -> None:
+    payload = _corp_code_zip("<!DOCTYPE result [<!ENTITY x 'unsafe'>]><result><list><corp_name>&x;</corp_name></list></result>")
+
+    with pytest.raises(OpenDARTResponseError, match="DTD"):
+        parse_corp_code_zip(payload)
+
+
+def test_json_list_parser_rejects_oversized_row_count() -> None:
+    response = {"status": "000", "list": [{} for _ in range(MAX_LIST_ROWS + 1)]}
+
+    with pytest.raises(OpenDARTResponseError, match="row limit"):
+        parse_disclosure_list(response)
+
+
+def test_numeric_parser_rejects_non_finite_and_oversized_values_as_missing() -> None:
+    indicators = parse_financial_indicator_rows(
+        {"status": "000", "list": [{"idx_val": "NaN"}, {"idx_val": "Infinity"}]},
+        corp_code="00126380",
+    )
+    statements = parse_financial_statement_rows(
+        {"status": "000", "list": [{"thstrm_amount": "9" * 5000}]},
+        corp_code="00126380",
+    )
+
+    assert [row.index_value for row in indicators] == [None, None]
+    assert statements[0].current_amount is None
 
 
 def _corp_code_zip(xml_text: str) -> bytes:

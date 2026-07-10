@@ -1713,7 +1713,7 @@ message DisclosureRiskWarning {
 | warnings | mapping이 없거나 blocked인 event는 점수 0으로 두고 warning으로 관측성만 남긴다 |
 | 감시 모델 | v1은 백그라운드 상시 감시가 아니라 **판단 시점 조회(on-demand lookback)**다. RiskEngine은 PostgreSQL에 저장된 관측치 또는 snapshot을 읽고 주문 판단 경로에서 OpenDART HTTP 요청을 직접 fan-out하지 않는다. 이벤트로 상태를 open/close하는 지속 상태 추적은 S1.6 과제다. 상세는 `docs/decision-platform/S1_2_OpenDART_공시위험점수_근거.md`의 "공시위험 감시 모델" 절 |
 | 소비 | Decision/Risk 판단은 이 응답을 `risk_decision.riskItems[]`(`metric=disclosure_risk_score`)로 노출한다 |
-| 보안 | crtfc_key·원본 응답·접수 상세는 로그/fixture에 남기지 않는다. raw는 masked observation 경로에만 저장 |
+| 보안 | `OpenDARTSettings`가 서버 운영자 key를 읽고 `OpenDARTHttpClient`만 `crtfc_key`를 transport 요청에 첨부한다. 상위 caller가 key를 넘기면 outbound 전 거부한다. key·원본 응답·접수 상세는 로그/fixture에 남기지 않고 raw는 masked observation 경로에만 저장한다 |
 
 ### 13.6 FinancialEngineeringService
 

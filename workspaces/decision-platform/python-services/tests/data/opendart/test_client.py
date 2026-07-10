@@ -14,7 +14,7 @@ from app.data.opendart.parsers import OpenDARTQuotaExceededError, OpenDARTRespon
 from app.data.opendart.settings import OpenDARTSettings
 
 
-def test_client_disclosure_list_adds_key_and_official_filter_params() -> None:
+def test_client_disclosure_list_passes_official_filter_params_without_secret() -> None:
     fake_http = FakeHttp({"status": "000", "list": []})
     client = OpenDARTClient(_settings(), fake_http)
 
@@ -30,7 +30,6 @@ def test_client_disclosure_list_adds_key_and_official_filter_params() -> None:
         (
             "/api/list.json",
             {
-                "crtfc_key": "TEST_OPEN_DART_KEY",
                 "corp_code": "00126380",
                 "bgn_de": "20260609",
                 "end_de": "20260709",
@@ -147,7 +146,6 @@ def test_client_s1_2b_major_matter_endpoints_map_to_official_paths_and_identity(
 
         assert fake_http.calls[0][0] == path
         assert fake_http.calls[0][1] == {
-            "crtfc_key": "TEST_OPEN_DART_KEY",
             "corp_code": "00126380",
             "bgn_de": "20260609",
             "end_de": "20260709",
@@ -201,7 +199,6 @@ def test_client_financial_indicators_adds_index_class_and_parses_values() -> Non
         (
             "/api/fnlttSinglIndx.json",
             {
-                "crtfc_key": "TEST_OPEN_DART_KEY",
                 "corp_code": "00126380",
                 "bsns_year": "2025",
                 "reprt_code": "11011",
@@ -241,7 +238,6 @@ def test_client_audit_opinion_events_calls_official_endpoint_with_report_params(
         (
             "/api/accnutAdtorNmNdAdtOpinion.json",
             {
-                "crtfc_key": "TEST_OPEN_DART_KEY",
                 "corp_code": "00999999",
                 "bsns_year": "2025",
                 "reprt_code": "11011",
@@ -286,14 +282,11 @@ def test_client_company_profile_and_financial_statement_add_required_params() ->
         == 1000
     )
 
-    assert profile_http.calls == [
-        ("/api/company.json", {"crtfc_key": "TEST_OPEN_DART_KEY", "corp_code": "00126380"})
-    ]
+    assert profile_http.calls == [("/api/company.json", {"corp_code": "00126380"})]
     assert financial_http.calls == [
         (
             "/api/fnlttSinglAcnt.json",
             {
-                "crtfc_key": "TEST_OPEN_DART_KEY",
                 "corp_code": "00126380",
                 "bsns_year": "2025",
                 "reprt_code": "11011",
@@ -414,7 +407,6 @@ def test_client_s1_2c_financial_indicators_batch_joins_corp_codes() -> None:
         (
             "/api/fnlttCmpnyIndx.json",
             {
-                "crtfc_key": "TEST_OPEN_DART_KEY",
                 "corp_code": "00126380,00164779",
                 "bsns_year": "2025",
                 "reprt_code": "11011",
@@ -437,7 +429,7 @@ def test_client_s1_2c_financial_indicators_batch_rejects_empty_corp_codes() -> N
         )
 
 
-def test_client_s1_2c_ownership_disclosure_endpoints_add_key_and_corp_code() -> None:
+def test_client_s1_2c_ownership_disclosure_endpoints_pass_corp_code_without_secret() -> None:
     major_http = FakeHttp(
         {
             "status": "000",
@@ -477,8 +469,8 @@ def test_client_s1_2c_ownership_disclosure_endpoints_add_key_and_corp_code() -> 
     major = OpenDARTClient(_settings(), major_http).major_stock_reports(corp_code="00126380")
     ele = OpenDARTClient(_settings(), ele_http).executive_major_shareholder_reports(corp_code="00126380")
 
-    assert major_http.calls == [("/api/majorstock.json", {"crtfc_key": "TEST_OPEN_DART_KEY", "corp_code": "00126380"})]
-    assert ele_http.calls == [("/api/elestock.json", {"crtfc_key": "TEST_OPEN_DART_KEY", "corp_code": "00126380"})]
+    assert major_http.calls == [("/api/majorstock.json", {"corp_code": "00126380"})]
+    assert ele_http.calls == [("/api/elestock.json", {"corp_code": "00126380"})]
     assert major[0].holding_ratio == 5.01
     assert major[0].receipt_date == date(2026, 7, 1)
     assert ele[0].specific_stock_count == 12345

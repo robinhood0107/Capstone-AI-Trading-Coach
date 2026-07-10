@@ -557,7 +557,7 @@ Principle API의 입력 원칙은 다음과 같다.
 | 필드 | 의미 |
 |---|---|
 | `metric` | 지표 식별자. 공시 위험은 `disclosure_risk_score`이며 Principle metric enum과 정렬한다 |
-| `value` | 지표 값(최근 30일 window의 이벤트 max score). 계산 불가 시 `null` |
+| `value` | 지표 값(이벤트 유형별 `effective_window_days`(30/90/365) 내 기여 이벤트의 max score). 계산 불가 시 `null` |
 | `severity` | 이 지표가 판단에 준 수준(`ALLOW`/`WARN`/`BLOCK`) |
 | `source` | 원천 시스템. 공시 위험은 `OPENDART` |
 | `eventCodes` | 기여한 구조화 이벤트 코드. 예: `OPENDART:dfOcr`(부도발생). `report_nm` 문자열이 아니라 endpoint identity 기반이다 |
@@ -1442,14 +1442,14 @@ KIS 매수가능조회(모의 `VTTC8908R`)를 매핑한다. 주문 제출 전 �
 
 ## 12A. Market Calendar API (계획 — 미구현)
 
-> 변경 반영(2026-07-08): Market Calendar/Event Aggregator 설계를 추가함. 이 장 전체는 `계획` 상태 계약이며(S1.2+ 수집, S1.4+ API 공개 목표) 구현된 API가 아니다.
+> 변경 반영(2026-07-10): 이 장 전체는 `계획` 상태 계약이다. `S1.2+`는 수집 계획을 묶는 상위 umbrella 표현이며, 다중 소스 aggregator의 확정 구현 세션은 S1.6이다. API 공개는 S1.4+ 목표이고 현재 구현된 API가 아니다.
 
 목적: 무료/공식 다중 소스를 집계해 감사 가능한(auditable) 시장 캘린더/이벤트 데이터를 제공한다. "완벽한 캘린더"는 단일 API를 항상 옳다고 가정하는 것이 아니라, (1) 소스별 원 관측치를 보존하고, (2) 충돌을 투명하게 해소하며, (3) `confidence`/`sourceRefs`/`conflictFlag`를 응답에 그대로 노출하는 것을 뜻한다. backfill 스케줄링, RiskEngine freshness/이벤트 리스크 판정, RAG source card, optional dashboard timeline이 이 API의 소비자다.
 
 경계:
 
 1. S1.1은 KIS market-data client 전용으로 유지한다. S1.1에서는 로컬 거래소 캘린더 라이브러리(`exchange_calendars` XKRX)로 비거래일 KIS 호출 회피만 수행하고, 다중 소스 수집은 하지 않는다.
-2. 다중 소스 수집/정규화/충돌 해소는 S1.2+ 데이터 세션에서 구현한다.
+2. 다중 소스 수집/정규화/충돌 해소는 S1.2+ umbrella 아래 확정된 S1.6에서 구현한다.
 3. 전부 read-only 데이터 API다. 주문, 취소/정정, 잔고 변경, live trading 활성화와 무관하다. `KIS_MODE=live`는 live read-only 시장데이터 조회만 뜻한다(12.5 경계 동일).
 
 ### 12A.1 canonical 스키마 (계획)
@@ -1661,9 +1661,9 @@ S1.1의 KIS MarketDataService 구현 경계는 다음과 같다.
 | market calendar | `/uapi/domestic-stock/v1/quotations/chk-holiday`, TR `CTCA0903R`는 모의투자 미지원(실전 Domain 전용) supporting read다. mock/offline에서는 fixture 또는 skip으로 처리하고 호출 시 1일 1회 이하로 보수 운영 |
 | storage | raw 응답과 parquet/csv/jsonl 산출물은 ignored local data 경로에만 저장한다. 커밋 가능한 테스트 데이터는 마스킹된 fixture만 허용한다 |
 | retry | GET market-data 조회는 rate limit과 timeout을 지켜 제한적으로 재시도한다. POST 주문성 호출은 S1.1에서 구현하지 않는다 |
-| local calendar | S1.1은 비거래일 KIS 호출 회피용으로 로컬 `exchange_calendars` XKRX 판정만 사용한다. 다중 소스 캘린더 집계는 S1.1 범위가 아니며, S1.2+ 계획은 12A와 아래 계획 RPC를 따른다 |
+| local calendar | S1.1은 비거래일 KIS 호출 회피용으로 로컬 `exchange_calendars` XKRX 판정만 사용한다. 다중 소스 캘린더 집계는 S1.1 범위가 아니며, S1.2+ umbrella 아래 S1.6 계획은 12A와 아래 계획 RPC를 따른다 |
 
-> 변경 반영(2026-07-08): 계획(S1.2+ 설계, 미구현) — Market Calendar 집계가 구현되면 `GetTradingSessions`/`GetCalendarEvents` RPC를 MarketDataService에 추가하고 REST 12A가 이를 소비한다. proto 추가는 `contracts/changes/` 절차를 따른다.
+> 변경 반영(2026-07-10): 계획(S1.2+ umbrella, S1.6 구현 확정, 미구현) — Market Calendar 집계가 구현되면 `GetTradingSessions`/`GetCalendarEvents` RPC를 MarketDataService에 추가하고 REST 12A가 이를 소비한다. proto 추가는 `contracts/changes/` 절차를 따른다.
 
 #### 13.5.1 GetDisclosureEvents 계약 (S1.2)
 
@@ -1709,9 +1709,9 @@ message DisclosureRiskWarning {
 |---|---|
 | 원천 | OpenDART 공식 read-only endpoint만 사용. `report_nm` 문자열은 event code 근거로 쓰지 않는다 |
 | event_code | 주요사항보고서 전용 endpoint identity(`OPENDART:{endpoint}`) 또는 감사의견 `adt_opinion` 구조화 필드 기반 |
-| score | `disclosure_risk_mapping.yaml`의 active mapping 기반 max score. 같은 입력·같은 `mapping_version`이면 결정적이다. 이벤트 유형별 유효기간(공시효과형 30일 / 상태 지속형 365일, mapping `effective_window_days`) 안의 이벤트만 반영한다 |
+| score | `disclosure_risk_mapping.yaml`의 active mapping 기반 max score. 같은 입력·같은 `mapping_version`이면 결정적이다. 이벤트 유형별 유효기간(공시효과형 30일 / reorg·사업구조 90일 / 상태 지속형 365일, mapping `effective_window_days`) 안의 이벤트만 반영한다 |
 | warnings | mapping이 없거나 blocked인 event는 점수 0으로 두고 warning으로 관측성만 남긴다 |
-| 감시 모델 | v1은 백그라운드 상시 감시가 아니라 **판단 시점 조회(on-demand lookback)**다. 유효기간은 "판단 시점에 위험 상태가 유효한가"의 근사이며, 이벤트로 상태를 open/close하는 지속 상태 추적은 후속 event aggregator 과제다. 상세는 `docs/decision-platform/S1_2_OpenDART_공시위험점수_근거.md`의 "공시위험 감시 모델" 절 |
+| 감시 모델 | v1은 백그라운드 상시 감시가 아니라 **판단 시점 조회(on-demand lookback)**다. RiskEngine은 PostgreSQL에 저장된 관측치 또는 snapshot을 읽고 주문 판단 경로에서 OpenDART HTTP 요청을 직접 fan-out하지 않는다. 이벤트로 상태를 open/close하는 지속 상태 추적은 S1.6 과제다. 상세는 `docs/decision-platform/S1_2_OpenDART_공시위험점수_근거.md`의 "공시위험 감시 모델" 절 |
 | 소비 | Decision/Risk 판단은 이 응답을 `risk_decision.riskItems[]`(`metric=disclosure_risk_score`)로 노출한다 |
 | 보안 | crtfc_key·원본 응답·접수 상세는 로그/fixture에 남기지 않는다. raw는 masked observation 경로에만 저장 |
 

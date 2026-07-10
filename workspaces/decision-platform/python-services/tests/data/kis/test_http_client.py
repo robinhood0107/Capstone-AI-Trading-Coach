@@ -8,6 +8,7 @@ from pydantic import SecretStr
 from app.data.kis import _credential_transport
 from app.data.kis._credential_transport import (
     KISCredentialError,
+    KISResponseTooLargeError,
     _CredentialSettings,
     _CredentialTransport,
     _Credentials,
@@ -40,12 +41,14 @@ def _private_transport_client(
     handler: httpx.MockTransport,
     token_provider: object,
     rate_limiter: object,
+    max_json_depth: int = 64,
 ) -> httpx.Client:
     transport = _CredentialTransport(
         handler,
         settings=_settings(tmp_path, offline=False),
         token_provider=token_provider,  # type: ignore[arg-type]
         rate_limiter=rate_limiter,  # type: ignore[arg-type]
+        max_json_depth=max_json_depth,
     )
     return httpx.Client(transport=transport, follow_redirects=False, trust_env=False)
 
@@ -333,6 +336,28 @@ def test_transport_boundary_does_not_log_credentials(
     assert _private_transport_get(client).json() == {"rt_cd": "0"}
     assert marker not in caplog.text
     assert "appsecret" not in caplog.text.lower()
+
+
+def test_deep_response_failure_drops_credential_traceback_locals(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    marker = "validation-dummy-secret"
+    _stub_credentials(monkeypatch, "validation-dummy-key", marker)
+    client = _private_transport_client(
+        tmp_path,
+        token_provider=lambda: "validation-dummy-token",
+        handler=httpx.MockTransport(
+            lambda _: httpx.Response(200, json={"outer": {"inner": {"echo": marker}}})
+        ),
+        rate_limiter=TokenBucket(rate_per_second=1000),
+        max_json_depth=1,
+    )
+
+    with pytest.raises(KISResponseTooLargeError) as exc_info:
+        _private_transport_get(client)
+
+    _assert_traceback_locals_do_not_contain(exc_info.value, marker)
 
 
 def test_http_client_rejects_non_get_method(tmp_path: Path) -> None:

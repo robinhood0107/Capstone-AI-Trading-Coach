@@ -109,3 +109,13 @@ def test_rate_limit_wait_cannot_exceed_ten_seconds(tmp_path: Path) -> None:
             kis_data_dir=tmp_path,
             _env_file=None,
         )
+
+
+def test_provider_http_timeout_cannot_outlive_token_singleflight_lease(tmp_path: Path) -> None:
+    with pytest.raises(ValidationError):
+        KISSettings(
+            kis_offline=True,
+            kis_timeout_seconds=10.001,
+            kis_data_dir=tmp_path,
+            _env_file=None,
+        )

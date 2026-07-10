@@ -325,9 +325,11 @@ def test_online_client_wires_shared_rest_and_tokenp_quota_scopes(
             key: str,
             interval_seconds: float,
             max_wait_seconds: float,
+            io_budget_seconds: float = 0.0,
         ) -> None:
             assert client is redis_client
             assert max_wait_seconds == 10.0
+            assert io_budget_seconds == 4.0
             reservations.append((key, interval_seconds))
 
         def acquire(self) -> None:

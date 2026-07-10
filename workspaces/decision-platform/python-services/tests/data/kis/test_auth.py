@@ -25,6 +25,15 @@ from app.data.kis.rate_limiter import TokenBucket
 from app.data.kis.settings import KISSettings
 
 
+def _assert_traceback_locals_do_not_contain(error: BaseException, marker: str) -> None:
+    traceback = error.__traceback__
+    while traceback is not None:
+        if "/app/data/kis/" in traceback.tb_frame.f_code.co_filename:
+            for value in traceback.tb_frame.f_locals.values():
+                assert marker not in repr(value)
+        traceback = traceback.tb_next
+
+
 def test_token_issuer_injects_credentials_only_inside_private_fixed_origin_transport(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -165,6 +174,32 @@ def test_token_issuer_drops_provider_error_body_and_credentials(
         issuer.issue()
 
     assert marker not in f"{exc_info.value!r} {exc_info.value}"
+
+
+def test_token_transport_failure_scrubs_credential_traceback_locals(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    marker = "validation-dummy-secret"
+    monkeypatch.setattr(
+        _credential_transport,
+        "_read_credentials",
+        lambda _: _Credentials(app_key=SecretStr("validation-dummy-key"), app_secret=SecretStr(marker)),
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectTimeout("synthetic timeout", request=request)
+
+    issuer = _TokenIssuer(
+        KISSettings(kis_mode="mock", kis_offline=False, _env_file=None),
+        transport=httpx.MockTransport(handler),
+        rate_limiter=TokenBucket(rate_per_second=1000),
+    )
+
+    with pytest.raises(KISCredentialError) as exc_info:
+        issuer.issue()
+
+    assert exc_info.value.__context__ is None
+    _assert_traceback_locals_do_not_contain(exc_info.value, marker)
 
 
 def test_token_issuer_allowlists_fields_and_drops_embedded_or_deep_credential_echo(

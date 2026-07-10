@@ -90,6 +90,7 @@ S1.2는 “재무제표와 모든 공시를 전부 긁는 단계”가 아니다
 
 - OpenDART API key는 Decision Platform 서버 운영자가 배포 환경에 주입하는 secret이다. 앱 사용자는 회원가입·Dashboard·설정·REST/gRPC 요청에서 key를 입력하거나 사용자별 quota를 관리하지 않는다.
 - key는 환경변수/배포 secret store에서만 읽고 DB·Redis·YAML·Git에 저장하지 않으며, 로그·예외·metric label·응답·raw observation에 노출하지 않는다. key 누락·오류 시 collector는 fail-closed로 중단하고 Decision 경로는 기존 snapshot으로 공시 rule을 skip+WARN 처리한다.
+- S1.2에서 `OpenDARTSettings`가 key를 읽고 `OpenDARTHttpClient`만 transport 요청에 `crtfc_key`를 첨부하도록 경계를 고정했다. 상위 caller의 key 전달은 outbound 요청 전에 거부한다.
 - S1.2는 HTTP 200 body의 `status=020`을 전용 비재시도 quota 신호로 구분하는 데까지만 구현한다. 계정별 일일 limit/budget과 실행별 실제 attempt cap은 코드 기본값이 아니라 운영 설정으로 명시한다.
 - PostgreSQL atomic quota ledger와 단일 collector의 durable enforcement는 S1.6에서 구현한다. Redis와 Kafka는 OpenDART quota accounting에 사용하지 않는다.
 
@@ -172,11 +173,17 @@ YAML에는 `calibration_status: policy_v1_unvalidated`를 명시한다. 이 값�
 | L1 fixture 결정성 | 같은 입력이면 같은 점수 | offline fixture와 unit test 통과 |
 | L2 공식 endpoint 정합성 | 문자열이 아니라 endpoint/구조화 필드 기반 | OpenDART 공식 guide와 endpoint URL 대조 |
 | L3 raw 감사 가능성 | 나중에 같은 응답을 재검증 가능 | `RawObservation` hash, 수집시각, masked raw 저장 |
-| L4 online smoke | 실제 키와 live endpoint가 동작 | 대표 5종목 소량 조회, raw 파일 ignored 경로 저장 확인 |
+| L4 online smoke | 실제 키와 live endpoint가 동작 | **완료(2026-07-10)**. 대표 5종목 소량 조회, raw 파일 ignored 경로 저장 확인 |
 | L5 교차검증 | DART 외 원천과 충돌 확인 | S1.6 event aggregator에서 KRX/FSS/KIND 등 official source와 canonical merge |
 | L6 보정 검증 | 점수 threshold가 실제 위험 통제에 맞음 | 과거 이벤트 study와 백테스트로 WARN/BLOCK 임계값 조정 |
 
-현재 S1.2는 L1~L3까지 구현되어 있다. 실제 운영 신뢰성을 주장하려면 최소 L4가 필요하고, “점수 기준이 한국시장에 맞다”고 말하려면 L6까지 가야 한다.
+현재 S1.2는 L1~L4까지 충족했다. “점수 기준이 한국시장에 맞다”고 말하려면 L6까지 가야 한다.
+
+### 2026-07-10 live smoke 결과
+
+- 사용자 승인 후 실제 OpenDART API를 총 15 physical attempts 호출했다. `corpCode.xml` 2회, `company.json` 8회, `list.json` 5회이며 모든 호출은 retry를 1 attempt로 제한했다.
+- corp code 매핑과 대표 5종목 기업개황 계약을 검증했고, 대표 5종목 공시목록 observation 5개를 ignored `data/opendart` 경로에 저장했다. 저장 파일에서 API key가 없음을 다시 확인했다.
+- 응답은 rate/limit/quota/reset 관련 header를 제공하지 않았다. 따라서 이 smoke는 인증·endpoint·parser·masked raw 저장을 검증하지만 계정별 daily limit이나 reset timezone을 증명하지는 않는다. 해당 두 값은 S1.6 collector 활성화 전 운영자가 계정 화면에서 확인하는 gate로 유지한다.
 
 ## 금융사 리포트는 어떻게 쓸 것인가
 
@@ -221,6 +228,8 @@ cd ../spring-api
 ## 외부 근거
 
 - OpenDART 공시검색 guide: `pblntf_ty`, `pblntf_detail_ty`는 요청 필터이고 응답은 `report_nm`, `rcept_no`, `rcept_dt` 중심이다. https://opendart.fss.or.kr/guide/detail.do?apiGrpCd=DS001&apiId=2019001
+- OpenDART 기업개황 endpoint: `GET /api/company.json`. https://opendart.fss.or.kr/guide/detail.do?apiGrpCd=DS001&apiId=2019002
+- OpenDART 고유번호 endpoint: `GET /api/corpCode.xml`. https://opendart.fss.or.kr/guide/detail.do?apiGrpCd=DS001&apiId=2019018
 - OpenDART 유상증자 결정 endpoint: `GET /api/piicDecsn.json`. https://opendart.fss.or.kr/guide/detail.do?apiGrpCd=DS005&apiId=2020023
 - OpenDART 전환사채권 발행결정 endpoint: `GET /api/cvbdIsDecsn.json`. https://opendart.fss.or.kr/guide/detail.do?apiGrpCd=DS005&apiId=2020033
 - OpenDART 감사의견 endpoint: `GET /api/accnutAdtorNmNdAdtOpinion.json`, `adt_opinion` 필드 제공. https://opendart.fss.or.kr/guide/detail.do?apiGrpCd=DS002&apiId=2020009

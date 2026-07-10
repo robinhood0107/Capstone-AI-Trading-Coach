@@ -17,9 +17,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Verify required paths
         shell: bash
@@ -39,6 +40,8 @@ jobs:
             "contracts/README.md"
             "infra/docker-compose.infra.yml"
             "infra/init/01-extensions.sql"
+            "infra/init/02-application-roles.sh"
+            "infra/redis-secure-entrypoint.sh"
             "workspaces/decision-platform/README.md"
             "workspaces/return-engine/README.md"
             "workspaces/experience-dashboard/README.md"
@@ -54,7 +57,10 @@ jobs:
       - name: Validate compose file
         shell: bash
         env:
-          POSTGRES_PASSWORD: dummy
+          POSTGRES_ADMIN_PASSWORD: validation-dummy-admin
+          POSTGRES_APP_PASSWORD: validation-dummy-app
+          POSTGRES_MIGRATION_PASSWORD: validation-dummy-migration
+          REDIS_PASSWORD: validation-dummy-redis-password-0001
         run: docker compose -f infra/docker-compose.infra.yml config --quiet
 
       - name: Parse Python project metadata
@@ -76,7 +82,15 @@ jobs:
           set -euo pipefail
           git check-ignore -q .env
           git check-ignore -q .env.local
+          git check-ignore -q .env.production
+          git check-ignore -q workspaces/decision-platform/.env.test
           git check-ignore -q http-client.private.env.json
+          git check-ignore -q workspaces/decision-platform/python-services/tests/fixtures/.env.production
+          git check-ignore -q workspaces/decision-platform/python-services/tests/fixtures/http-client.private.env.json
+          git check-ignore -q workspaces/decision-platform/python-services/tests/fixtures/validation-dummy.pem
+          git check-ignore -q .direnv/env
+          git check-ignore -q local.p12
+          ! git check-ignore -q .env.example
           git check-ignore -q workspaces/return-engine/example.py
           git check-ignore -q workspaces/experience-dashboard/app/page.tsx
           git check-ignore -q artifacts/decision-platform/run-001/result.json
@@ -93,6 +107,6 @@ jobs:
           fi
 
       - name: Secret scan
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

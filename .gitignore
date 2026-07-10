@@ -1,9 +1,17 @@
 # --- Secrets ---
 .env
 .env.local
+.env.*
 *.env
-!.env.example
+!/.env.example
 http-client.private.env.json
+.direnv/
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
 
 # --- Private reference notes (never commit) ---
 private-reference/
@@ -27,6 +35,19 @@ workspaces/decision-platform/python-services/app/data/opendart/**/*.csv
 !workspaces/decision-platform/python-services/tests/
 !workspaces/decision-platform/python-services/tests/fixtures/
 !workspaces/decision-platform/python-services/tests/fixtures/**
+
+# fixture 허용 규칙 뒤에서도 credential 파일은 다시 추적 대상이 될 수 없다.
+.env
+.env.*
+*.env
+http-client.private.env.json
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+!/.env.example
 
 # --- Gradle / Kotlin / Java (workspaces/decision-platform/spring-api) ---
 .gradle/

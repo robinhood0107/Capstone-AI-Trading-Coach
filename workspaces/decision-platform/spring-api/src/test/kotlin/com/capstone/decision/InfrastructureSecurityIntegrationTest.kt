@@ -94,16 +94,21 @@ class InfrastructureSecurityIntegrationTest {
     }
 
     companion object {
-        private const val RUNTIME_USER = "app"
+        private const val RUNTIME_USER = "decision_app"
         private const val MIGRATION_USER = "flyway"
         private val adminPassword: String = "a" + "p".repeat(24)
         private val runtimePassword: String = "r" + "p".repeat(24)
         private val migrationPassword: String = "m" + "p".repeat(24)
+        private val postgresImage =
+            DockerImageName
+                .parse(
+                    "pgvector/pgvector:pg16@sha256:1d533553fefe4f12e5d80c7b80622ba0c382abb5758856f52983d8789179f0fb",
+                ).asCompatibleSubstituteFor("postgres")
 
         @Container
         @JvmStatic
         val postgres: PostgreSQLContainer =
-            PostgreSQLContainer(DockerImageName.parse("pgvector/pgvector:pg16"))
+            PostgreSQLContainer(postgresImage)
                 .withDatabaseName("trading")
                 .withUsername("postgres")
                 .withPassword(adminPassword)

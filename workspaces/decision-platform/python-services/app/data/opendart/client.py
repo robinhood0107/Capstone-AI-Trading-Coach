@@ -74,8 +74,8 @@ class OpenDARTClient:
     """OpenDART 공식 read-only API를 Python 서비스의 정규화 타입으로 감싸는 client다."""
 
     def __init__(self, settings: OpenDARTSettings, http_client: OpenDARTHttpLike | None = None) -> None:
-        """테스트에서는 fake client를 주입하고 운영에서는 설정 기반 HTTP client를 생성한다."""
-        self.settings = settings
+        """인증정보가 없는 설정에서 필요한 경로만 복사하고 설정 객체 자체는 보관하지 않는다."""
+        self._data_dir = settings.data_dir
         self.http_client = http_client or OpenDARTHttpClient(settings)
 
     def corp_codes(self) -> list[CorpCode]:
@@ -136,7 +136,7 @@ class OpenDARTClient:
         )
         response = self.http_client.get_json(DISCLOSURE_LIST_PATH, params)
         observation = write_raw_observation(
-            data_dir=self.settings.data_dir,
+            data_dir=self._data_dir,
             source_id="opendart_disclosure_list",
             method="GET",
             path=DISCLOSURE_LIST_PATH,
@@ -148,7 +148,6 @@ class OpenDARTClient:
             normalized_status=_normalized_status(response),
             error_code=_error_code(response),
             error_message=_error_message(response),
-            known_secrets=[self.settings.api_key],
         )
         # raw 관측치는 parse 전에도 남긴다. 후속(S1.2+) aggregator가 원 응답 상태를 재현해야 하기 때문이다.
         return ObservedDisclosureList(items=parse_disclosure_list(response), raw_observation=observation)

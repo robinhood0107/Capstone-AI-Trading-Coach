@@ -1,15 +1,22 @@
 from __future__ import annotations
 
+import random
 import re
+import time
 from collections.abc import Callable
 from typing import Any, cast
 
 import httpx
-from tenacity import Retrying, retry_if_exception_type, stop_after_attempt, wait_exponential_jitter
-from tenacity.wait import wait_base
 
-from app.data.kis._credential_transport import KISCredentialError, _CredentialTransport
-from app.data.kis.rate_limiter import TokenBucket
+from app.data.kis._credential_transport import (
+    KISCredentialError,
+    _CredentialTransport,
+    _TokenIssuer,
+    _build_redis_client,
+    _provider_scope,
+)
+from app.data.kis.auth import KISTokenManager
+from app.data.kis.rate_limiter import RateLimiter, RedisIntervalLimiter, TokenBucket
 from app.data.kis.settings import KISSettings
 
 CURRENT_PRICE_PATH = "/uapi/domestic-stock/v1/quotations/inquire-price"
@@ -34,6 +41,14 @@ class KISRetryableStatus(KISHttpError):
     pass
 
 
+class KISDistributionRetryableStatus(KISHttpError):
+    """KIS gateway 분산/라우팅 실패는 안전한 GET을 다음 quota slot에서 한 번만 재호출한다."""
+
+
+class KISProviderRateLimitError(KISHttpError):
+    """provider가 유량 초과를 반환하면 자동 retry storm 없이 현재 호출을 중단한다."""
+
+
 class KISTransportError(RuntimeError):
     """credential-bearing request와 원본 httpx exception을 외부 예외에 보존하지 않는다."""
 
@@ -46,23 +61,89 @@ class KISHttpClient:
         settings: KISSettings,
         token_provider: Callable[[], str] | None = None,
         transport: httpx.BaseTransport | None = None,
-        rate_limiter: TokenBucket | None = None,
-        retry_wait: wait_base | None = None,
+        rate_limiter: RateLimiter | None = None,
+        retry_delay: Callable[[int], float] | None = None,
+        retry_sleeper: Callable[[float], None] = time.sleep,
     ) -> None:
-        inner_transport = transport or httpx.HTTPTransport()
-        self._http = httpx.Client(
-            transport=_CredentialTransport(
-                inner_transport,
-                settings=settings,
-                token_provider=token_provider,
-            ),
-            timeout=settings.kis_timeout_seconds,
-            follow_redirects=False,
-        )
+        if not settings.offline and any(
+            dependency is not None for dependency in (token_provider, transport, rate_limiter)
+        ):
+            # online dependency는 이 모듈의 private runtime wiring만 만들며 caller transport/no-op limiter를 거부한다.
+            raise ValueError("KIS online private dependencies cannot be overridden")
+
+        self._token_issuer: _TokenIssuer | None = None
+        self._redis_client: Any | None = None
+        self._closed = False
+        if settings.offline:
+            request_limiter = rate_limiter or TokenBucket(
+                rate_per_second=1 / settings.request_interval_seconds
+            )
+            inner_transport = transport or httpx.HTTPTransport(verify=True, retries=0)
+        else:
+            redis_client = _build_redis_client()
+            token_issuer: _TokenIssuer | None = None
+            try:
+                scope = _provider_scope(settings.mode)
+                request_limiter = RedisIntervalLimiter(
+                    redis_client,
+                    key=f"kis:rest:v3:{scope}",
+                    interval_seconds=settings.request_interval_seconds,
+                    max_wait_seconds=float(settings.kis_rate_limit_max_wait_seconds),
+                    io_budget_seconds=8.0,
+                )
+                # 발급 제한 단위가 공개 공지에 없으므로 mock/live를 합친 deployment-global 1/s로 보수 적용한다.
+                token_limiter = RedisIntervalLimiter(
+                    redis_client,
+                    key="kis:tokenp:v3:deployment",
+                    interval_seconds=1.0,
+                    max_wait_seconds=float(settings.kis_rate_limit_max_wait_seconds),
+                    io_budget_seconds=8.0,
+                )
+                token_issuer = _TokenIssuer(settings, rate_limiter=token_limiter)
+                token_manager = KISTokenManager(
+                    mode=settings.mode,
+                    offline=False,
+                    redis_client=redis_client,
+                    issuer=token_issuer.issue,
+                    scope=scope,
+                )
+                token_provider = token_manager.get_access_token
+                inner_transport = httpx.HTTPTransport(verify=True, retries=0)
+            except Exception:
+                if token_issuer is not None:
+                    try:
+                        token_issuer.close()
+                    finally:
+                        redis_client.close()
+                else:
+                    redis_client.close()
+                raise
+            self._token_issuer = token_issuer
+            self._redis_client = redis_client
+
+        try:
+            self._http = httpx.Client(
+                transport=_CredentialTransport(
+                    inner_transport,
+                    settings=settings,
+                    token_provider=token_provider,
+                    rate_limiter=request_limiter,
+                ),
+                timeout=settings.kis_timeout_seconds,
+                follow_redirects=False,
+                trust_env=False,
+            )
+        except Exception:
+            inner_transport.close()
+            if self._token_issuer is not None:
+                self._token_issuer.close()
+            if self._redis_client is not None:
+                self._redis_client.close()
+            raise
         self._origin = settings.base_url
         self._retry_attempts = settings.kis_retry_attempts
-        self._rate_limiter = rate_limiter or TokenBucket(settings.rate_limit_per_second)
-        self._retry_wait = retry_wait or wait_exponential_jitter(initial=0.2, max=2.0)
+        self._retry_delay = retry_delay or _default_retry_delay
+        self._retry_sleeper = retry_sleeper
 
     def request(
         self,
@@ -77,22 +158,37 @@ class KISHttpClient:
         if (path, tr_id) not in _APPROVED_ENDPOINTS:
             raise ValueError("approved KIS endpoint and transaction id are required")
         safe_params = self._validated_params(params or {})
-        retrying = Retrying(
-            stop=stop_after_attempt(self._retry_attempts),
-            wait=self._retry_wait,
-            retry=retry_if_exception_type((KISRetryableStatus, KISTransportError)),
-            reraise=True,
-        )
-        for attempt in retrying:
-            with attempt:
+        attempt_number = 1
+        distribution_retry_used = False
+        while True:
+            try:
                 return self._send_once(path, tr_id, safe_params)
-        raise RuntimeError("unreachable retry state")
+            except KISDistributionRetryableStatus:
+                if distribution_retry_used or attempt_number >= self._retry_attempts:
+                    raise
+                # 공지의 "즉시 재호출"은 backoff만 생략한다. 실제 send는 같은 limiter를 다시 통과한다.
+                distribution_retry_used = True
+            except (KISRetryableStatus, KISTransportError):
+                if attempt_number >= self._retry_attempts:
+                    raise
+                self._retry_sleeper(max(0.0, self._retry_delay(attempt_number)))
+            attempt_number += 1
 
     def close(self) -> None:
-        self._http.close()
+        if self._closed:
+            return
+        self._closed = True
+        try:
+            self._http.close()
+        finally:
+            try:
+                if self._token_issuer is not None:
+                    self._token_issuer.close()
+            finally:
+                if self._redis_client is not None:
+                    self._redis_client.close()
 
     def _send_once(self, path: str, tr_id: str, params: dict[str, str]) -> dict[str, Any]:
-        self._rate_limiter.acquire()
         try:
             response = self._http.request(
                 "GET",
@@ -106,7 +202,9 @@ class KISHttpClient:
             raise KISTransportError("KIS transport is unavailable") from None
         if response.status_code >= 400:
             message = "upstream request failed"
-            if response.status_code in {408, 429, 500, 502, 503, 504}:
+            if response.status_code == 429:
+                raise KISProviderRateLimitError(response.status_code, message)
+            if response.status_code in {408, 500, 502, 503, 504}:
                 raise KISRetryableStatus(response.status_code, message)
             raise KISHttpError(response.status_code, message)
         try:
@@ -115,7 +213,14 @@ class KISHttpClient:
             raise KISHttpError(response.status_code, "KIS response was not valid JSON") from None
         if not isinstance(data, dict):
             raise KISHttpError(response.status_code, "KIS response was not a JSON object")
-        return cast(dict[str, Any], data)
+        payload = cast(dict[str, Any], data)
+        if payload.get("rt_cd") not in (None, "0", 0):
+            message_code = str(payload.get("msg_cd") or "")
+            if message_code == "EGW00201":
+                raise KISProviderRateLimitError(429, "upstream request exceeded its rate limit")
+            if message_code in {"EGW00001", "EGW00002", "EGW00202", "EGW00203", "EGW00300"}:
+                raise KISDistributionRetryableStatus(503, "upstream routing failed")
+        return payload
 
     @staticmethod
     def _validated_params(params: dict[str, str]) -> dict[str, str]:
@@ -127,3 +232,9 @@ class KISHttpClient:
 def _is_reserved_parameter(name: str) -> bool:
     normalized = re.sub(r"[^a-z0-9]", "", name.lower())
     return any(marker in normalized for marker in ("key", "secret", "token", "auth", "credential", "account"))
+
+
+def _default_retry_delay(attempt_number: int) -> float:
+    # full jitter로 동일 장애 시 여러 worker의 재시도 시점을 흩뜨린다. 분산정책 즉시 재호출에는 적용하지 않는다.
+    ceiling = min(2.0, 0.2 * (2 ** max(0, attempt_number - 1)))
+    return random.uniform(0.0, ceiling)

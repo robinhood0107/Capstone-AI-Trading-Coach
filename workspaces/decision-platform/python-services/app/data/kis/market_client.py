@@ -27,6 +27,8 @@ class HttpClientLike(Protocol):
         params: dict[str, str] | None = None,
     ) -> dict[str, Any]: ...
 
+    def close(self) -> None: ...
+
 
 class KISMarketClient:
     def __init__(
@@ -38,6 +40,16 @@ class KISMarketClient:
         self.settings = settings
         self.http_client = http_client
         self.page_size = page_size
+
+    def close(self) -> None:
+        """market, token, Redis runtime 자원을 성공·실패 경로 모두에서 닫는다."""
+        self.http_client.close()
+
+    def __enter__(self) -> "KISMarketClient":
+        return self
+
+    def __exit__(self, exc_type: object, exc_value: object, traceback: object) -> None:
+        self.close()
 
     def current_price(self, symbol: str) -> CurrentPrice:
         symbol = normalize_symbol(symbol)

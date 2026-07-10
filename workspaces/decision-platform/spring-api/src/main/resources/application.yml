@@ -2,9 +2,9 @@ spring:
   mvc:
     throw-exception-if-no-handler-found: true
   datasource:
-    url: jdbc:postgresql://localhost:5432/trading
-    username: app
-    password: ${POSTGRES_PASSWORD}
+    url: jdbc:postgresql://${POSTGRES_HOST:127.0.0.1}:${POSTGRES_PORT:5432}/${POSTGRES_DB:trading}
+    username: decision_app
+    password: ${POSTGRES_APP_PASSWORD}
     hikari:
       maximum-pool-size: 10        # 코어수x2 근처, 키우지 않는다
       connection-timeout: 3000     # 풀 고갈 시 무한대기 금지
@@ -16,10 +16,14 @@ spring:
       hibernate.default_batch_fetch_size: 100
   flyway:
     locations: classpath:db/migration
+    user: flyway
+    password: ${POSTGRES_MIGRATION_PASSWORD}
   data:
     redis:
-      host: localhost
-      port: 6379
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:6379}
+      database: ${REDIS_DB:0}
+      password: ${REDIS_PASSWORD}
       timeout: 2s
   kafka:
     bootstrap-servers: localhost:9092
@@ -35,6 +39,8 @@ spring:
       ack-mode: MANUAL
 
 app:
+  http:
+    max-request-body-bytes: 1048576
   jwt:
     secret: ${JWT_SECRET}          # 32byte 이상, .env로만
     ttl-hours: 12
@@ -47,6 +53,10 @@ app:
       password: ${DEMO_ADMIN_PASSWORD}
   idempotency:
     ttl-hours: 24
+    claim-ttl-seconds: 900
+    max-key-length: 128
+    max-request-body-bytes: 1048576
+    max-response-body-bytes: 4194304
     paths:
       - /api/v1/orders/**
       - /api/v1/principles/**

@@ -227,10 +227,16 @@ class FlywayMigrationIntegrationTest(
     }
 
     companion object {
+        private val postgresImage =
+            DockerImageName
+                .parse(
+                    "pgvector/pgvector:pg16@sha256:1d533553fefe4f12e5d80c7b80622ba0c382abb5758856f52983d8789179f0fb",
+                ).asCompatibleSubstituteFor("postgres")
+
         @Container
         @JvmStatic
         val postgres: PostgreSQLContainer =
-            PostgreSQLContainer(DockerImageName.parse("pgvector/pgvector:pg16"))
+            PostgreSQLContainer(postgresImage)
                 .withDatabaseName("decision")
                 .withUsername("decision")
                 .withPassword("decision")
@@ -241,6 +247,8 @@ class FlywayMigrationIntegrationTest(
             registry.add("spring.datasource.url", postgres::getJdbcUrl)
             registry.add("spring.datasource.username", postgres::getUsername)
             registry.add("spring.datasource.password", postgres::getPassword)
+            registry.add("spring.flyway.user", postgres::getUsername)
+            registry.add("spring.flyway.password", postgres::getPassword)
         }
     }
 }

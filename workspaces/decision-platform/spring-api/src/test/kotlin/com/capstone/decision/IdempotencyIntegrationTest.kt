@@ -311,8 +311,11 @@ class IdempotencyIntegrationTest(
         @Container
         @JvmStatic
         val redis: GenericContainer<*> =
-            GenericContainer(DockerImageName.parse("redis:7.2-alpine"))
-                .withEnv("REDIS_PASSWORD", redisPasswordValue)
+            GenericContainer(
+                DockerImageName.parse(
+                    "redis:7.2-alpine@sha256:dfa18828cbc07b3ae6a95ec7343f6c214fdee2d836197b4be8e9904420762cd8",
+                ),
+            ).withEnv("REDIS_PASSWORD", redisPasswordValue)
                 .withCommand(
                     "redis-server",
                     "--appendonly",

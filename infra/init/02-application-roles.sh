@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+: "${POSTGRES_DB:?POSTGRES_DB is required}"
+: "${POSTGRES_USER:?POSTGRES_USER is required}"
+: "${POSTGRES_APP_PASSWORD:?POSTGRES_APP_PASSWORD is required}"
+: "${POSTGRES_MIGRATION_PASSWORD:?POSTGRES_MIGRATION_PASSWORD is required}"
+
+# psql argv나 shell-expanded SQL에 password를 넣지 않고 process environment에서 안전하게 인용한다.
+export PGPASSWORD="${POSTGRES_PASSWORD:-}"
+psql -v ON_ERROR_STOP=1 --no-password --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<'SQL'
+\getenv database_name POSTGRES_DB
+\getenv app_password POSTGRES_APP_PASSWORD
+\getenv migration_password POSTGRES_MIGRATION_PASSWORD
+
+SELECT format(
+    'CREATE ROLE decision_app LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD %L',
+    :'app_password'
+)
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'decision_app')
+\gexec
+
+SELECT format(
+    'ALTER ROLE decision_app WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD %L',
+    :'app_password'
+)
+\gexec
+
+SELECT format(
+    'CREATE ROLE flyway LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD %L',
+    :'migration_password'
+)
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'flyway')
+\gexec
+
+SELECT format(
+    'ALTER ROLE flyway WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD %L',
+    :'migration_password'
+)
+\gexec
+
+REVOKE ALL ON DATABASE :"database_name" FROM PUBLIC;
+GRANT CONNECT ON DATABASE :"database_name" TO decision_app, flyway;
+REVOKE CREATE ON SCHEMA public FROM PUBLIC;
+GRANT USAGE ON SCHEMA public TO decision_app, flyway;
+GRANT CREATE ON SCHEMA public TO flyway;
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO decision_app;
+GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO decision_app;
+ALTER DEFAULT PRIVILEGES FOR ROLE flyway IN SCHEMA public
+    GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO decision_app;
+ALTER DEFAULT PRIVILEGES FOR ROLE flyway IN SCHEMA public
+    GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO decision_app;
+SQL

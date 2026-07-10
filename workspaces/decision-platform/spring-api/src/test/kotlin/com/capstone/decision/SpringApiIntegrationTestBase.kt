@@ -14,6 +14,7 @@ abstract class SpringApiIntegrationTestBase {
         private val jwtSecretValue: String = "x".repeat(32)
         private val userPasswordValue: String = "u" + "p".repeat(12)
         private val adminPasswordValue: String = "a" + "p".repeat(12)
+        private val redisPasswordValue: String = "r" + "p".repeat(24)
 
         // 모든 SpringBootTest가 같은 demo 인증 설정을 공유해야 토큰 기반 helper가 안정적이다.
         @DynamicPropertySource
@@ -22,6 +23,7 @@ abstract class SpringApiIntegrationTestBase {
             registry.add("app.jwt.secret") { jwtSecretValue }
             registry.add("app.demo.user.password") { userPasswordValue }
             registry.add("app.demo.admin.password") { adminPasswordValue }
+            registry.add("spring.data.redis.password") { redisPasswordValue }
         }
     }
 }

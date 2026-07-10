@@ -20,7 +20,7 @@ from app.data.kis._credential_transport import (
     _provider_scope,
     _TokenIssuer,
 )
-from app.data.kis.auth import KISTokenManager, _token_cache_key
+from app.data.kis.auth import KISTokenCacheError, KISTokenManager, _token_cache_key
 from app.data.kis.rate_limiter import TokenBucket
 from app.data.kis.settings import KISSettings
 
@@ -253,6 +253,58 @@ def test_token_issuer_rejects_credential_echo_in_access_token(monkeypatch: pytes
 
     with pytest.raises(KISCredentialError, match="invalid"):
         issuer.issue()
+
+
+def test_token_issuer_rejects_calendar_invalid_expiry_without_token_traceback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    token = "validation-dummy-access-token"
+    monkeypatch.setattr(
+        _credential_transport,
+        "_read_credentials",
+        lambda _: _Credentials(
+            app_key=SecretStr("validation-dummy-key"),
+            app_secret=SecretStr("validation-dummy-secret"),
+        ),
+    )
+    issuer = _TokenIssuer(
+        KISSettings(kis_mode="mock", kis_offline=False, _env_file=None),
+        transport=httpx.MockTransport(
+            lambda _: httpx.Response(
+                200,
+                json={
+                    "access_token": token,
+                    "access_token_token_expired": "2026-99-99 99:99:99",
+                },
+            )
+        ),
+        rate_limiter=TokenBucket(rate_per_second=1000),
+    )
+
+    with pytest.raises(KISCredentialError, match="invalid") as exc_info:
+        issuer.issue()
+
+    _assert_traceback_locals_do_not_contain(exc_info.value, token)
+
+
+def test_token_manager_maps_invalid_expiry_to_stable_tokenless_error() -> None:
+    token = "validation-dummy-access-token"
+    manager = KISTokenManager(
+        mode="mock",
+        offline=False,
+        redis_client=fakeredis.FakeStrictRedis(),
+        issuer=lambda: {
+            "access_token": token,
+            "access_token_token_expired": "2026-99-99 99:99:99",
+        },
+        scope="test-scope",
+    )
+
+    with pytest.raises(KISTokenCacheError, match="invalid") as exc_info:
+        manager.get_access_token()
+
+    assert exc_info.value.__context__ is None
+    _assert_traceback_locals_do_not_contain(exc_info.value, token)
 
 
 def test_token_cache_miss_issues_and_stores_with_refresh_skew() -> None:

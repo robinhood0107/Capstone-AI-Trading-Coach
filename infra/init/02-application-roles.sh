@@ -45,10 +45,24 @@ REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 GRANT USAGE ON SCHEMA public TO decision_app, flyway;
 GRANT CREATE ON SCHEMA public TO flyway;
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO decision_app;
-GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO decision_app;
+-- S1.2c의 Spring runtime은 DB write controller가 없다. 쓰기 권한은 해당 기능 migration이
+-- 필요한 application table에만 명시적으로 추가하고, bootstrap에서 미리 전체 DML을 주지 않는다.
+REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_app;
+REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_app;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO decision_app;
 ALTER DEFAULT PRIVILEGES FOR ROLE flyway IN SCHEMA public
-    GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO decision_app;
+    REVOKE ALL PRIVILEGES ON TABLES FROM decision_app;
 ALTER DEFAULT PRIVILEGES FOR ROLE flyway IN SCHEMA public
-    GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO decision_app;
+    GRANT SELECT ON TABLES TO decision_app;
+ALTER DEFAULT PRIVILEGES FOR ROLE flyway IN SCHEMA public
+    REVOKE ALL PRIVILEGES ON SEQUENCES FROM decision_app;
+
+DO $block$
+BEGIN
+    IF to_regclass('public.flyway_schema_history') IS NOT NULL THEN
+        -- 기존 volume에 role bootstrap을 재적용해도 runtime이 migration 이력을 변조하지 못한다.
+        REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_app;
+    END IF;
+END
+$block$;
 SQL

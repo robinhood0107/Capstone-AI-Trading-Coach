@@ -55,6 +55,7 @@ app:
     ttl-hours: 24
     claim-ttl-seconds: 900
     max-key-length: 128
+    max-new-keys-per-user-per-ttl: 1000
     max-request-body-bytes: 1048576
     max-response-body-bytes: 4194304
     paths:

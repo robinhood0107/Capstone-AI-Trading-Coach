@@ -6,6 +6,8 @@ import com.capstone.decision.infrastructure.idempotency.IdempotencyService
 import com.capstone.decision.infrastructure.web.HttpRequestProperties
 import com.capstone.decision.infrastructure.web.RequestBodyLimitFilter
 import com.capstone.decision.infrastructure.web.RequestIdFilter
+import org.springframework.beans.factory.ObjectProvider
+import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
@@ -19,6 +21,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 import org.springframework.web.cors.CorsConfiguration
 import org.springframework.web.cors.CorsConfigurationSource
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource
+import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping
 
 // S0.3 공통 규약에서 허용 경로, JWT 인증, CORS를 한 보안 체인으로 고정한다.
 @Configuration
@@ -39,6 +42,8 @@ class SecurityConfig {
         idempotencyProperties: IdempotencyProperties,
         httpRequestProperties: HttpRequestProperties,
         responseWriter: ApiResponseWriter,
+        @Qualifier("requestMappingHandlerMapping")
+        handlerMappingProvider: ObjectProvider<RequestMappingHandlerMapping>,
     ): SecurityFilterChain {
         val requestIdFilter = RequestIdFilter()
         val requestBodyLimitFilter = RequestBodyLimitFilter(httpRequestProperties, responseWriter)
@@ -49,6 +54,7 @@ class SecurityConfig {
                 idempotencyService = idempotencyService,
                 idempotencyProperties = idempotencyProperties,
                 responseWriter = responseWriter,
+                handlerMappingProvider = handlerMappingProvider,
             )
         return http
             // Bearer API에서는 브라우저 세션/폼 인증 상태를 만들지 않는다.

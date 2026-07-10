@@ -18,6 +18,9 @@ data class IdempotencyProperties(
     @field:Min(16)
     @field:Max(256)
     var maxKeyLength: Int = 128,
+    @field:Min(1)
+    @field:Max(100_000)
+    var maxNewKeysPerUserPerTtl: Long = 1_000,
     @field:Min(256)
     @field:Max(10_485_760)
     var maxRequestBodyBytes: Int = 1_048_576,

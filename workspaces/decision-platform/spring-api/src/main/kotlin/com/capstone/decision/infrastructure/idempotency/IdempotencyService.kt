@@ -22,21 +22,28 @@ class IdempotencyService(
         completedLookup(redisKey, requestHash)?.let { return it }
 
         val claimKey = claimKey(userId, idempotencyKey)
+        val admissionKey = admissionKey(userId)
         val claimToken = UUID.randomUUID().toString()
         val claimValue = claimValue(claimToken, requestHash)
         val claimed =
-            redisTemplate.opsForValue().setIfAbsent(
-                claimKey,
+            redisTemplate.execute(
+                ACQUIRE_CLAIM_SCRIPT,
+                listOf(claimKey, admissionKey),
                 claimValue,
-                Duration.ofSeconds(properties.claimTtlSeconds),
-            ) == true
-        if (claimed) {
+                properties.claimTtlSeconds.toString(),
+                properties.maxNewKeysPerUserPerTtl.toString(),
+                Duration.ofHours(properties.ttlHours).seconds.toString(),
+            ) ?: 0L
+        if (claimed == 1L) {
             // result 저장과 claim 삭제 사이 경합에서 새 claim을 잡았더라도 completed result를 다시 확인한다.
             completedLookup(redisKey, requestHash)?.let { completed ->
-                releaseClaim(claimKey, claimValue)
+                discardClaim(userId, claimKey, claimValue)
                 return completed
             }
             return IdempotencyLookup.New(claimToken)
+        }
+        if (claimed == -1L) {
+            return IdempotencyLookup.CapacityExceeded
         }
 
         val claimedHash = redisTemplate.opsForValue().get(claimKey)?.substringAfter(':', missingDelimiterValue = "")
@@ -80,21 +87,41 @@ class IdempotencyService(
         idempotencyKey: String,
     ): String = "idempotency:$userId:$idempotencyKey"
 
+    fun discard(
+        userId: String,
+        idempotencyKey: String,
+        requestHash: String,
+        claimToken: String,
+    ) {
+        discardClaim(
+            userId = userId,
+            claimKey = claimKey(userId, idempotencyKey),
+            claimValue = claimValue(claimToken, requestHash),
+        )
+    }
+
     private fun claimKey(
         userId: String,
         idempotencyKey: String,
     ): String = "idempotency-claim:$userId:$idempotencyKey"
+
+    private fun admissionKey(userId: String): String = "idempotency-admission:$userId"
 
     private fun claimValue(
         claimToken: String,
         requestHash: String,
     ): String = "$claimToken:$requestHash"
 
-    private fun releaseClaim(
+    private fun discardClaim(
+        userId: String,
         claimKey: String,
         claimValue: String,
     ) {
-        redisTemplate.execute(RELEASE_CLAIM_SCRIPT, listOf(claimKey), claimValue)
+        redisTemplate.execute(
+            DISCARD_CLAIM_SCRIPT,
+            listOf(claimKey, admissionKey(userId)),
+            claimValue,
+        )
     }
 
     private fun completedLookup(
@@ -127,13 +154,42 @@ class IdempotencyService(
         private const val FIELD_STATUS = "status"
         private const val FIELD_BODY = "body"
         private const val FIELD_CONTENT_TYPE = "contentType"
-        private val RELEASE_CLAIM_SCRIPT =
+        private val ACQUIRE_CLAIM_SCRIPT =
             DefaultRedisScript(
                 """
-                if redis.call('GET', KEYS[1]) == ARGV[1] then
-                    return redis.call('DEL', KEYS[1])
+                if redis.call('EXISTS', KEYS[1]) == 1 then
+                    return 0
                 end
-                return 0
+                local current = tonumber(redis.call('GET', KEYS[2]) or '0')
+                if current >= tonumber(ARGV[3]) then
+                    return -1
+                end
+                local claimed = redis.call('SET', KEYS[1], ARGV[1], 'EX', ARGV[2], 'NX')
+                if not claimed then
+                    return 0
+                end
+                local count = redis.call('INCR', KEYS[2])
+                if count == 1 then
+                    redis.call('EXPIRE', KEYS[2], ARGV[4])
+                end
+                return 1
+                """.trimIndent(),
+                Long::class.java,
+            )
+        private val DISCARD_CLAIM_SCRIPT =
+            DefaultRedisScript(
+                """
+                if redis.call('GET', KEYS[1]) ~= ARGV[1] then
+                    return 0
+                end
+                redis.call('DEL', KEYS[1])
+                local count = tonumber(redis.call('GET', KEYS[2]) or '0')
+                if count <= 1 then
+                    redis.call('DEL', KEYS[2])
+                else
+                    redis.call('DECR', KEYS[2])
+                end
+                return 1
                 """.trimIndent(),
                 Long::class.java,
             )
@@ -173,4 +229,6 @@ sealed interface IdempotencyLookup {
     data object Conflict : IdempotencyLookup
 
     data object InProgress : IdempotencyLookup
+
+    data object CapacityExceeded : IdempotencyLookup
 }

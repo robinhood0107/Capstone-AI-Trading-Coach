@@ -2,6 +2,7 @@ package com.capstone.decision
 
 import com.capstone.decision.infrastructure.idempotency.IdempotencyClaimLostException
 import com.capstone.decision.infrastructure.idempotency.IdempotencyLookup
+import com.capstone.decision.infrastructure.idempotency.IdempotencyProperties
 import com.capstone.decision.infrastructure.idempotency.IdempotencyService
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -144,6 +145,25 @@ class IdempotencyIntegrationTest(
     }
 
     @Test
+    fun `unknown wildcard write path does not allocate idempotency state`() {
+        val token = login()
+
+        mockMvc
+            .post("/api/v1/orders/not-a-handler") {
+                bearer(token)
+                header("X-Idempotency-Key", "idem-missing-handler")
+                header("X-Request-Id", "req-idem-missing-handler")
+                contentType = MediaType.APPLICATION_JSON
+                content = "{}"
+            }.andExpect {
+                status { isNotFound() }
+                jsonPath("$.error.code") { value("NOT_FOUND") }
+            }
+
+        assertTrue(redisTemplate.keys("*idem-missing-handler*").isEmpty())
+    }
+
+    @Test
     fun `atomic claim allows only the first request to execute`() {
         val first =
             idempotencyService.acquire(
@@ -160,6 +180,27 @@ class IdempotencyIntegrationTest(
 
         assertTrue(first is IdempotencyLookup.New)
         assertTrue(second is IdempotencyLookup.InProgress)
+    }
+
+    @Test
+    fun `per-user admission cap rejects excess new idempotency keys`() {
+        val boundedService =
+            IdempotencyService(
+                redisTemplate,
+                IdempotencyProperties(maxNewKeysPerUserPerTtl = 2),
+            )
+        val userId = "quota-${UUID.randomUUID()}"
+
+        repeat(2) { index ->
+            assertTrue(
+                boundedService.acquire(userId, "key-$index", "hash-$index") is IdempotencyLookup.New,
+            )
+        }
+
+        assertTrue(
+            boundedService.acquire(userId, "key-overflow", "hash-overflow") is
+                IdempotencyLookup.CapacityExceeded,
+        )
     }
 
     @Test

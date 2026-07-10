@@ -1,5 +1,6 @@
 package com.capstone.decision
 
+import com.capstone.decision.infrastructure.idempotency.IdempotencyClaimLostException
 import com.capstone.decision.infrastructure.idempotency.IdempotencyLookup
 import com.capstone.decision.infrastructure.idempotency.IdempotencyService
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -159,6 +160,54 @@ class IdempotencyIntegrationTest(
 
         assertTrue(first is IdempotencyLookup.New)
         assertTrue(second is IdempotencyLookup.InProgress)
+    }
+
+    @Test
+    fun `expired claim owner cannot overwrite a replacement claim`() {
+        val first =
+            idempotencyService.acquire(
+                userId = "demo-user",
+                idempotencyKey = "idem-claim-owner",
+                requestHash = "hash-owner",
+            ) as IdempotencyLookup.New
+        redisTemplate.delete("idempotency-claim:demo-user:idem-claim-owner")
+        val replacement =
+            idempotencyService.acquire(
+                userId = "demo-user",
+                idempotencyKey = "idem-claim-owner",
+                requestHash = "hash-owner",
+            ) as IdempotencyLookup.New
+
+        org.junit.jupiter.api.assertThrows<IdempotencyClaimLostException> {
+            idempotencyService.store(
+                userId = "demo-user",
+                idempotencyKey = "idem-claim-owner",
+                requestHash = "hash-owner",
+                claimToken = first.claimToken,
+                status = 200,
+                body = """{"owner":"stale"}""",
+                contentType = MediaType.APPLICATION_JSON_VALUE,
+            )
+        }
+        idempotencyService.store(
+            userId = "demo-user",
+            idempotencyKey = "idem-claim-owner",
+            requestHash = "hash-owner",
+            claimToken = replacement.claimToken,
+            status = 200,
+            body = """{"owner":"replacement"}""",
+            contentType = MediaType.APPLICATION_JSON_VALUE,
+        )
+
+        val replay =
+            idempotencyService.acquire(
+                userId = "demo-user",
+                idempotencyKey = "idem-claim-owner",
+                requestHash = "hash-owner",
+            ) as IdempotencyLookup.Replay
+        assertEquals("""{"owner":"replacement"}""", replay.body)
+        assertTrue(redisTemplate.getExpire(idempotencyService.redisKey("demo-user", "idem-claim-owner")) > 0)
+        assertFalse(redisTemplate.hasKey("idempotency-claim:demo-user:idem-claim-owner"))
     }
 
     @Test

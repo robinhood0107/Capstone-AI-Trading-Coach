@@ -8,10 +8,12 @@
 
 ```
 src/
-  data/            # KIS price/news/ECOS loaders
+  data/            # Decision Platform이 제공한 계약 price/news/macro snapshot·artifact consumer
   features/        # technical/news/macro feature builder
   lstm/            # dataset, model, train, predict
   rule_baseline/   # MA/RSI/MACD/momentum/mean-reversion strategy
   backtest_core/   # execution simulator, cost/slippage, metrics
   artifact_export/ # contract-compliant artifact writer
 ```
+
+KIS outbound 호출과 계좌/appkey 단위 유량 조정은 Decision Platform의 단일 owner다. Return Engine은 독립 KIS client/loader를 만들지 않고 계약된 snapshot·artifact/API만 소비해 팀 workspace별 호출 합산 초과를 막는다.

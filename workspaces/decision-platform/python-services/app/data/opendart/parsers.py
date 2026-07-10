@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import math
 from datetime import date, datetime
 from io import BytesIO
 from typing import Any
-from xml.etree import ElementTree
-from zipfile import ZipFile
+from xml.etree.ElementTree import Element
+from zipfile import BadZipFile, ZipFile
+
+from defusedxml import ElementTree
+from defusedxml.common import DefusedXmlException
 
 from app.data.opendart.models import (
     CompanyProfile,
@@ -19,18 +23,65 @@ from app.data.opendart.models import (
 
 SUCCESS_STATUSES = {None, "000", "0", 0}
 NO_DATA_STATUS = "013"
+MAX_LIST_ROWS = 10_000
+MAX_XML_FIELD_CHARS = 4_096
+MAX_CORP_CODE_ROWS = 200_000
+MAX_ZIP_BYTES = 10 * 1024 * 1024
+MAX_ZIP_ENTRIES = 4
+MAX_ZIP_MEMBER_BYTES = 128 * 1024 * 1024
+MAX_ZIP_COMPRESSION_RATIO = 2_000
+MAX_TEXT_CHARS = 65_536
+MAX_NUMERIC_CHARS = 128
 
 
 class OpenDARTResponseError(RuntimeError):
     pass
 
 
+class OpenDARTQuotaExceededError(OpenDARTResponseError):
+    """HTTP 200 body의 status=020을 transport retry와 분리하는 비재시도 quota 예외다."""
+
+    def __init__(self, status: str, message: str) -> None:
+        self.status = status
+        self.message = message
+        super().__init__(f"OpenDART response failed: {status} {message}")
+
+
 def parse_corp_code_zip(payload: bytes) -> list[CorpCode]:
     """OpenDART가 배포하는 corpCode.xml ZIP을 공식 corp_code lookup으로 변환한다."""
-    with ZipFile(BytesIO(payload)) as archive:
-        xml_name = next(name for name in archive.namelist() if name.lower().endswith(".xml"))
-        xml_payload = archive.read(xml_name)
-    root = ElementTree.fromstring(xml_payload)
+    if len(payload) > MAX_ZIP_BYTES:
+        raise OpenDARTResponseError("OpenDART corp code ZIP exceeded the safety limit")
+    try:
+        with ZipFile(BytesIO(payload)) as archive:
+            entries = archive.infolist()
+            if len(entries) > MAX_ZIP_ENTRIES:
+                raise OpenDARTResponseError("OpenDART corp code ZIP exceeded the entry limit")
+            xml_entries = [entry for entry in entries if entry.filename.lower().endswith(".xml")]
+            if len(xml_entries) != 1:
+                raise OpenDARTResponseError("OpenDART corp code ZIP must contain one XML member")
+            xml_entry = xml_entries[0]
+            if xml_entry.file_size > MAX_ZIP_MEMBER_BYTES:
+                raise OpenDARTResponseError("OpenDART corp code XML exceeded the safety limit")
+            ratio = xml_entry.file_size / max(1, xml_entry.compress_size)
+            if ratio > MAX_ZIP_COMPRESSION_RATIO:
+                raise OpenDARTResponseError("OpenDART corp code ZIP exceeded the compression ratio limit")
+            xml_payload = archive.read(xml_entry)
+    except (BadZipFile, OSError):
+        raise OpenDARTResponseError("OpenDART corp code ZIP was invalid") from None
+    try:
+        root = ElementTree.fromstring(
+            xml_payload,
+            forbid_dtd=True,
+            forbid_entities=True,
+            forbid_external=True,
+        )
+    except DefusedXmlException:
+        raise OpenDARTResponseError("OpenDART corp code XML DTD is not allowed") from None
+    except ElementTree.ParseError:
+        raise OpenDARTResponseError("OpenDART corp code XML was invalid") from None
+    source_rows = root.findall(".//list")
+    if len(source_rows) > MAX_CORP_CODE_ROWS:
+        raise OpenDARTResponseError("OpenDART corp code XML exceeded the row limit")
     return [
         CorpCode(
             corp_code=_xml_text(row, "corp_code"),
@@ -39,7 +90,7 @@ def parse_corp_code_zip(payload: bytes) -> list[CorpCode]:
             stock_code=_xml_text(row, "stock_code"),
             modify_date=_optional_date(_xml_text(row, "modify_date")),
         )
-        for row in root.findall(".//list")
+        for row in source_rows
     ]
 
 
@@ -251,6 +302,8 @@ def _list_rows(response: dict[str, Any]) -> list[dict[str, Any]]:
         rows = [rows]
     if not isinstance(rows, list):
         raise OpenDARTResponseError("OpenDART list response must contain a list")
+    if len(rows) > MAX_LIST_ROWS:
+        raise OpenDARTResponseError("OpenDART list response exceeded the row limit")
     return [row for row in rows if isinstance(row, dict)]
 
 
@@ -258,7 +311,10 @@ def _ensure_success(response: dict[str, Any]) -> None:
     status = response.get("status")
     if status not in SUCCESS_STATUSES:
         # OpenDART 오류는 status/message만 노출한다. 요청 key나 raw body는 예외 문자열에 싣지 않는다.
-        raise OpenDARTResponseError(f"OpenDART response failed: {status} {_text(response.get('message'))}")
+        message = _text(response.get("message"))
+        if str(status) == "020":
+            raise OpenDARTQuotaExceededError(status="020", message=message)
+        raise OpenDARTResponseError(f"OpenDART response failed: {status} {message}")
 
 
 def _event_date(row: dict[str, Any], fallback_event_date: date | None) -> date:
@@ -291,20 +347,31 @@ def _event_attributes(row: dict[str, Any]) -> dict[str, str]:
     return {key: _text(value) for key, value in row.items() if key not in excluded and value not in (None, "")}
 
 
-def _xml_text(row: ElementTree.Element, tag: str) -> str:
+def _xml_text(row: Element, tag: str) -> str:
     child = row.find(tag)
-    return "" if child is None or child.text is None else child.text.strip()
+    text = "" if child is None or child.text is None else child.text.strip()
+    if len(text) > MAX_XML_FIELD_CHARS:
+        raise OpenDARTResponseError("OpenDART corp code XML field exceeded the safety limit")
+    return text
 
 
 def _text(value: Any) -> str:
-    return "" if value is None else str(value).strip()
+    text = "" if value is None else str(value).strip()
+    if len(text) > MAX_TEXT_CHARS:
+        raise OpenDARTResponseError("OpenDART text field exceeded the safety limit")
+    return text
 
 
 def _optional_int(value: Any) -> int | None:
     text = _text(value).replace(",", "")
     if text in {"", "-"}:
         return None
-    return int(text)
+    if len(text) > MAX_NUMERIC_CHARS:
+        return None
+    try:
+        return int(text)
+    except ValueError:
+        return None
 
 
 def _optional_float(value: Any) -> float | None:
@@ -312,10 +379,13 @@ def _optional_float(value: Any) -> float | None:
     text = _text(value).replace(",", "").replace("%", "")
     if text in {"", "-"}:
         return None
+    if len(text) > MAX_NUMERIC_CHARS:
+        return None
     try:
-        return float(text)
+        parsed = float(text)
     except ValueError:
         return None
+    return parsed if math.isfinite(parsed) else None
 
 
 def _optional_date(value: Any) -> date | None:

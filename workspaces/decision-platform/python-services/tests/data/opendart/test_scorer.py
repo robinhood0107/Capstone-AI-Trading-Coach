@@ -1,9 +1,11 @@
 import logging
 from datetime import date, timedelta
 
+import pytest
+
 from app.data.opendart.models import DisclosureRiskEvent
 from app.data.opendart.risk_mapping import load_default_risk_mapping
-from app.data.opendart.scorer import score_disclosure_risk
+from app.data.opendart.scorer import MAX_EVENTS_PER_SCORE, score_disclosure_risk
 
 
 AS_OF = date(2026, 7, 9)
@@ -295,6 +297,41 @@ def test_audit_opinion_score_requires_structured_non_clean_opinion() -> None:
 
     assert adverse.score == 1.0
     assert clean.score == 0.0
+
+
+def test_missing_required_condition_emits_fail_closed_warning() -> None:
+    result = score_disclosure_risk(
+        "105560",
+        [_event("105560", "00999999", "OPENDART:accnutAdtorNmNdAdtOpinion", AS_OF)],
+        as_of=AS_OF,
+        mapping=load_default_risk_mapping(),
+    )
+
+    assert result.score == 0.0
+    assert result.events == []
+    assert [warning.code for warning in result.warnings] == ["INVALID_DISCLOSURE_RISK_CONDITION"]
+
+
+def test_scorer_rejects_event_collection_over_safety_limit() -> None:
+    event = _event("005930", "00126380", "OPENDART:piicDecsn", AS_OF)
+
+    with pytest.raises(ValueError, match="event limit"):
+        score_disclosure_risk(
+            "005930",
+            [event] * (MAX_EVENTS_PER_SCORE + 1),
+            as_of=AS_OF,
+            mapping=load_default_risk_mapping(),
+        )
+
+
+def test_scorer_rejects_invalid_default_window() -> None:
+    with pytest.raises(ValueError, match="window_days"):
+        score_disclosure_risk("005930", [], as_of=AS_OF, window_days=0)
+
+
+def test_scorer_rejects_date_underflow_before_scoring() -> None:
+    with pytest.raises(ValueError, match="as_of"):
+        score_disclosure_risk("005930", [], as_of=date.min, mapping=load_default_risk_mapping())
 
 
 def _event(

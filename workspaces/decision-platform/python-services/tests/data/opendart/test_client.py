@@ -4,15 +4,21 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pytest
+from tenacity import wait_none
 
 from app.data.opendart.client import OpenDARTClient
+from app.data.opendart.http_client import OpenDARTHttpClient, TokenBucket
+from app.data.opendart.parsers import OpenDARTQuotaExceededError, OpenDARTResponseError
 from app.data.opendart.settings import OpenDARTSettings
 
 
-def test_client_disclosure_list_adds_key_and_official_filter_params() -> None:
+def test_client_disclosure_list_passes_official_filter_params_without_secret() -> None:
     fake_http = FakeHttp({"status": "000", "list": []})
     client = OpenDARTClient(_settings(), fake_http)
+
+    assert "settings" not in vars(client)
 
     assert client.disclosure_list(
         corp_code="00126380",
@@ -26,7 +32,6 @@ def test_client_disclosure_list_adds_key_and_official_filter_params() -> None:
         (
             "/api/list.json",
             {
-                "crtfc_key": "TEST_OPEN_DART_KEY",
                 "corp_code": "00126380",
                 "bgn_de": "20260609",
                 "end_de": "20260709",
@@ -143,7 +148,6 @@ def test_client_s1_2b_major_matter_endpoints_map_to_official_paths_and_identity(
 
         assert fake_http.calls[0][0] == path
         assert fake_http.calls[0][1] == {
-            "crtfc_key": "TEST_OPEN_DART_KEY",
             "corp_code": "00126380",
             "bgn_de": "20260609",
             "end_de": "20260709",
@@ -197,7 +201,6 @@ def test_client_financial_indicators_adds_index_class_and_parses_values() -> Non
         (
             "/api/fnlttSinglIndx.json",
             {
-                "crtfc_key": "TEST_OPEN_DART_KEY",
                 "corp_code": "00126380",
                 "bsns_year": "2025",
                 "reprt_code": "11011",
@@ -237,7 +240,6 @@ def test_client_audit_opinion_events_calls_official_endpoint_with_report_params(
         (
             "/api/accnutAdtorNmNdAdtOpinion.json",
             {
-                "crtfc_key": "TEST_OPEN_DART_KEY",
                 "corp_code": "00999999",
                 "bsns_year": "2025",
                 "reprt_code": "11011",
@@ -282,14 +284,11 @@ def test_client_company_profile_and_financial_statement_add_required_params() ->
         == 1000
     )
 
-    assert profile_http.calls == [
-        ("/api/company.json", {"crtfc_key": "TEST_OPEN_DART_KEY", "corp_code": "00126380"})
-    ]
+    assert profile_http.calls == [("/api/company.json", {"corp_code": "00126380"})]
     assert financial_http.calls == [
         (
             "/api/fnlttSinglAcnt.json",
             {
-                "crtfc_key": "TEST_OPEN_DART_KEY",
                 "corp_code": "00126380",
                 "bsns_year": "2025",
                 "reprt_code": "11011",
@@ -331,7 +330,8 @@ def test_client_disclosure_list_with_observation_writes_raw_metadata(tmp_path: P
     assert result.raw_observation.source_id == "opendart_disclosure_list"
     assert result.raw_observation.normalized_status == "OK"
     assert result.raw_observation.window_from == date(2026, 6, 9)
-    assert "TEST_OPEN_DART_KEY" not in Path(result.raw_observation.raw_storage_uri).read_text(encoding="utf-8")
+    stored = Path(result.raw_observation.raw_storage_uri).read_text(encoding="utf-8")
+    assert "crtfc_key" not in stored
 
 
 def test_client_disclosure_list_with_observation_marks_no_data_as_empty(tmp_path: Path) -> None:
@@ -349,6 +349,40 @@ def test_client_disclosure_list_with_observation_marks_no_data_as_empty(tmp_path
 
     assert result.items == []
     assert result.raw_observation.normalized_status == "EMPTY"
+
+
+def test_client_status_020_raises_non_retryable_quota_error_once(tmp_path: Path) -> None:
+    attempts = 0
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        return httpx.Response(
+            200,
+            json={"status": "020", "message": "요청 제한을 초과하였습니다."},
+        )
+
+    settings = _settings(tmp_path)
+    with OpenDARTHttpClient(
+        settings,
+        transport=httpx.MockTransport(handler),
+        rate_limiter=TokenBucket(rate_per_second=1000),
+        retry_wait=wait_none(),
+    ) as http_client:
+        client = OpenDARTClient(settings, http_client)
+
+        with pytest.raises(OpenDARTQuotaExceededError) as exc_info:
+            client.disclosure_list(
+                corp_code="00126380",
+                start=date(2026, 7, 1),
+                end=date(2026, 7, 10),
+            )
+
+    error = exc_info.value
+    assert isinstance(error, OpenDARTResponseError)
+    assert error.status == "020"
+    assert error.message == "요청 제한을 초과하였습니다."
+    assert attempts == 1
 
 
 def test_client_s1_2c_financial_indicators_batch_joins_corp_codes() -> None:
@@ -375,7 +409,6 @@ def test_client_s1_2c_financial_indicators_batch_joins_corp_codes() -> None:
         (
             "/api/fnlttCmpnyIndx.json",
             {
-                "crtfc_key": "TEST_OPEN_DART_KEY",
                 "corp_code": "00126380,00164779",
                 "bsns_year": "2025",
                 "reprt_code": "11011",
@@ -398,7 +431,7 @@ def test_client_s1_2c_financial_indicators_batch_rejects_empty_corp_codes() -> N
         )
 
 
-def test_client_s1_2c_ownership_disclosure_endpoints_add_key_and_corp_code() -> None:
+def test_client_s1_2c_ownership_disclosure_endpoints_pass_corp_code_without_secret() -> None:
     major_http = FakeHttp(
         {
             "status": "000",
@@ -438,8 +471,8 @@ def test_client_s1_2c_ownership_disclosure_endpoints_add_key_and_corp_code() -> 
     major = OpenDARTClient(_settings(), major_http).major_stock_reports(corp_code="00126380")
     ele = OpenDARTClient(_settings(), ele_http).executive_major_shareholder_reports(corp_code="00126380")
 
-    assert major_http.calls == [("/api/majorstock.json", {"crtfc_key": "TEST_OPEN_DART_KEY", "corp_code": "00126380"})]
-    assert ele_http.calls == [("/api/elestock.json", {"crtfc_key": "TEST_OPEN_DART_KEY", "corp_code": "00126380"})]
+    assert major_http.calls == [("/api/majorstock.json", {"corp_code": "00126380"})]
+    assert ele_http.calls == [("/api/elestock.json", {"corp_code": "00126380"})]
     assert major[0].holding_ratio == 5.01
     assert major[0].receipt_date == date(2026, 7, 1)
     assert ele[0].specific_stock_count == 12345
@@ -461,7 +494,7 @@ class FakeHttp:
 
 
 def _settings(data_dir: Path | None = None) -> OpenDARTSettings:
-    kwargs = {"opendart_api_key": "TEST_OPEN_DART_KEY", "_env_file": None}
+    kwargs = {"opendart_offline": True, "_env_file": None}
     if data_dir is not None:
         kwargs["opendart_data_dir"] = data_dir
     return OpenDARTSettings(**kwargs)

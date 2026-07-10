@@ -27,7 +27,8 @@ def load_json(path: Path) -> object:
 def schema_name_from_example(path: Path, suffix: str) -> str:
     if not path.name.endswith(suffix):
         raise ValueError(f"Unexpected example file name: {relative(path)}")
-    return path.name[: -len(suffix)]
+    # 같은 schema에 여러 negative case를 둘 수 있게 `schema.case.invalid.json`을 지원한다.
+    return path.name[: -len(suffix)].split(".", maxsplit=1)[0]
 
 
 def first_error(errors: Iterable[ValidationError]) -> ValidationError | None:

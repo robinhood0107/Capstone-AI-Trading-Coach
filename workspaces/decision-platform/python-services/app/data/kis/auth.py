@@ -1,111 +1,250 @@
 from __future__ import annotations
 
 import json
+import re
+import secrets
+import time
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol
 from zoneinfo import ZoneInfo
 
-import httpx
+from redis.exceptions import WatchError
 
-from app.data.kis.masking import mask_text
-from app.data.kis.settings import KISSettings
+from app.data.kis.settings import KISMode
 
-TOKEN_KEY = "kis:token"
 REFRESH_SKEW_SECONDS = 300
+TOKEN_ISSUE_LOCK_SECONDS = 30
+TOKEN_ISSUE_WAIT_SECONDS = 10.0
+TOKEN_ISSUE_POLL_SECONDS = 0.01
+MAX_TOKEN_TTL_SECONDS = 7 * 24 * 60 * 60
+_OPAQUE_SCOPE_PATTERN = re.compile(r"[A-Za-z0-9_-]{8,128}")
+
+
+class PipelineLike(Protocol):
+    def __enter__(self) -> "PipelineLike": ...
+
+    def __exit__(self, exc_type: object, exc_value: object, traceback: object) -> None: ...
+
+    def watch(self, *names: str) -> object: ...
+
+    def get(self, name: str) -> bytes | str | None: ...
+
+    def unwatch(self) -> object: ...
+
+    def multi(self) -> object: ...
+
+    def delete(self, *names: str) -> object: ...
+
+    def execute(self) -> object: ...
 
 
 class RedisLike(Protocol):
     def get(self, name: str) -> bytes | str | None: ...
 
-    def set(self, name: str, value: str, ex: int | timedelta | None = None) -> object: ...
+    def set(
+        self,
+        name: str,
+        value: str,
+        ex: int | timedelta | None = None,
+        *,
+        nx: bool = False,
+    ) -> object: ...
+
+    def pipeline(self) -> PipelineLike: ...
+
+
+class KISTokenCacheError(RuntimeError):
+    """토큰 cache/singleflight 상태를 안전하게 확인할 수 없으면 발급을 중단한다."""
 
 
 class KISTokenManager:
+    """Bearer token은 private transport용 provider에만 반환하고 평문 API credential은 전혀 받지 않는다."""
+
     def __init__(
         self,
-        settings: KISSettings,
+        *,
+        mode: KISMode,
+        offline: bool,
         redis_client: RedisLike,
-        issuer: Callable[[], dict[str, Any]] | None = None,
+        issuer: Callable[[], dict[str, Any]],
+        scope: str,
         now: Callable[[], datetime] | None = None,
+        monotonic: Callable[[], float] = time.monotonic,
+        sleeper: Callable[[float], None] = time.sleep,
     ) -> None:
-        self.settings = settings
-        self.redis_client = redis_client
-        self.issuer = issuer or self._issue_token
-        self.now = now or (lambda: datetime.now(UTC))
+        if not _OPAQUE_SCOPE_PATTERN.fullmatch(scope):
+            raise ValueError("opaque KIS token scope is required")
+        self._mode = mode
+        self._offline = offline
+        self._redis = redis_client
+        self._issuer = issuer
+        self._cache_key = _token_cache_key(scope)
+        self._lock_key = _token_lock_key(scope)
+        self._now = now or (lambda: datetime.now(UTC))
+        self._monotonic = monotonic
+        self._sleeper = sleeper
 
     def get_access_token(self) -> str:
-        if self.settings.offline:
-            # fixture 모드는 네트워크와 Redis를 모두 우회해야 하므로 실제 토큰 생명주기를 만들지 않는다.
-            # 이렇게 해야 smoke 테스트가 운영 token cache를 오염시키지 않고 반복 실행된다.
+        if self._offline:
+            # fixture 모드는 network/Redis credential을 읽지 않고 private transport도 실제 send를 만들지 않는다.
             return "offline-token"
         cached = self._load_cached()
         if cached is not None:
             return cached
-        token_response = self.issuer()
-        token, expires_in = self._parse_token_response(token_response)
-        expires_at = self.now() + timedelta(seconds=expires_in)
-        payload = {
-            "mode": self.settings.mode,
-            "access_token": token,
-            "expires_at": expires_at.isoformat(),
-        }
-        # mock/live가 같은 Redis key를 쓰더라도 payload에 mode를 넣어 서로의 토큰을 재사용하지 않는다.
-        # KIS 토큰은 만료 직전 실패가 잦을 수 있어 Redis TTL도 5분 일찍 끝낸다.
-        ttl = max(1, expires_in - REFRESH_SKEW_SECONDS)
-        self.redis_client.set(TOKEN_KEY, json.dumps(payload), ex=ttl)
-        return token
+        owner = secrets.token_hex(16)
+        self._acquire_issue_lock(owner)
+        token_response: dict[str, Any] = {}
+        token = ""
+        payload: dict[str, object] = {}
+        try:
+            # lock 대기 사이 다른 process가 발급했을 수 있으므로 provider 호출 직전에 다시 확인한다.
+            cached = self._load_cached()
+            if cached is not None:
+                return cached
+            token_response = self._issuer()
+            token, expires_in = self._parse_token_response(token_response)
+            expires_at = self._now() + timedelta(seconds=expires_in)
+            payload.update(
+                {
+                "mode": self._mode,
+                "access_token": token,
+                "expires_at": expires_at.isoformat(),
+                }
+            )
+            ttl = max(1, expires_in - REFRESH_SKEW_SECONDS)
+            try:
+                stored = self._redis.set(self._cache_key, json.dumps(payload), ex=ttl)
+            except Exception:
+                raise KISTokenCacheError("KIS token cache is unavailable") from None
+            if not stored:
+                raise KISTokenCacheError("KIS token cache is unavailable")
+            return token
+        finally:
+            token_response.clear()
+            payload.clear()
+            token = ""
+            self._release_issue_lock(owner)
 
     def _load_cached(self) -> str | None:
-        cached = self.redis_client.get(TOKEN_KEY)
+        try:
+            cached = self._redis.get(self._cache_key)
+        except Exception:
+            raise KISTokenCacheError("KIS token cache is unavailable") from None
         if cached is None:
             return None
-        if isinstance(cached, bytes):
-            cached = cached.decode("utf-8")
-        payload = json.loads(cached)
-        if payload.get("mode") != self.settings.mode:
-            # 실전 read-only와 모의 token을 분리해 잘못된 domain/TR 조합으로 호출되는 일을 막는다.
+        try:
+            if isinstance(cached, bytes):
+                cached = cached.decode("utf-8")
+            payload = json.loads(cached)
+        except (UnicodeDecodeError, json.JSONDecodeError):
             return None
-        expires_at = datetime.fromisoformat(payload["expires_at"])
+        if not isinstance(payload, dict) or payload.get("mode") != self._mode:
+            return None
+        try:
+            expires_at = datetime.fromisoformat(str(payload["expires_at"]))
+        except (KeyError, ValueError):
+            return None
         if expires_at.tzinfo is None:
             expires_at = expires_at.replace(tzinfo=UTC)
-        if expires_at - self.now() <= timedelta(seconds=REFRESH_SKEW_SECONDS):
-            # 만료 5분 이내 토큰은 아직 유효해도 버린다. 장중 backfill 중간에 만료되는 쪽이 더 위험하다.
+        if expires_at - self._now() <= timedelta(seconds=REFRESH_SKEW_SECONDS):
             return None
-        return str(payload["access_token"])
+        token = payload.get("access_token")
+        return token if isinstance(token, str) and token else None
 
-    def _issue_token(self) -> dict[str, Any]:
-        body = {
-            "grant_type": "client_credentials",
-            "appkey": self.settings.app_key,
-            "appsecret": self.settings.app_secret,
-        }
-        with httpx.Client(timeout=self.settings.kis_timeout_seconds) as client:
-            response = client.post(f"{self.settings.base_url}/oauth2/tokenP", json=body)
-            if response.status_code >= 400:
-                # token 발급 오류는 디버깅에 필요하지만 app key/secret 원문은 로그·예외에 남기지 않는다.
-                message = mask_text(response.text[:300], [self.settings.app_key, self.settings.app_secret])
-                raise RuntimeError(f"KIS token issue failed: {message}")
-            data = response.json()
-        if not isinstance(data, dict):
-            raise RuntimeError("KIS token response was not a JSON object")
-        return data
+    def _acquire_issue_lock(self, owner: str) -> None:
+        deadline = self._monotonic() + TOKEN_ISSUE_WAIT_SECONDS
+        while True:
+            cached = self._load_cached()
+            if cached is not None:
+                return
+            try:
+                acquired = self._redis.set(
+                    self._lock_key,
+                    owner,
+                    ex=TOKEN_ISSUE_LOCK_SECONDS,
+                    nx=True,
+                )
+            except Exception:
+                raise KISTokenCacheError("KIS token singleflight is unavailable") from None
+            if acquired:
+                return
+            remaining = deadline - self._monotonic()
+            if remaining <= 0:
+                raise KISTokenCacheError("KIS token issue wait exceeded")
+            self._sleeper(min(TOKEN_ISSUE_POLL_SECONDS, remaining))
+
+    def _release_issue_lock(self, owner: str) -> None:
+        # TTL 만료 뒤 새 owner가 lock을 잡은 경우 기존 owner가 지우지 못하게 WATCH로 fencing한다.
+        while True:
+            try:
+                with self._redis.pipeline() as pipeline:
+                    pipeline.watch(self._lock_key)
+                    current = pipeline.get(self._lock_key)
+                    current_text = current.decode() if isinstance(current, bytes) else current
+                    if current_text != owner:
+                        pipeline.unwatch()
+                        return
+                    pipeline.multi()
+                    pipeline.delete(self._lock_key)
+                    pipeline.execute()
+                    return
+            except WatchError:
+                continue
+            except Exception:
+                # lock은 짧은 TTL로 반드시 만료되므로 성공한 token 발급 결과까지 폐기하지 않는다.
+                return
 
     def _parse_token_response(self, response: dict[str, Any]) -> tuple[str, int]:
-        token = response.get("access_token")
-        if not isinstance(token, str) or not token:
-            raise RuntimeError("KIS token response did not include access_token")
-        expires_in = response.get("expires_in")
-        if isinstance(expires_in, str) and expires_in.isdigit():
-            return token, int(expires_in)
-        if isinstance(expires_in, int | float):
-            return token, int(expires_in)
-        expires_at_text = response.get("access_token_token_expired")
-        if isinstance(expires_at_text, str) and expires_at_text:
-            # 일부 KIS 응답은 seconds 대신 한국시간 만료시각을 주므로 UTC 기준 TTL로 정규화한다.
-            expires_at = datetime.strptime(expires_at_text, "%Y-%m-%d %H:%M:%S").replace(
-                tzinfo=ZoneInfo("Asia/Seoul")
-            )
-            return token, max(1, int((expires_at.astimezone(UTC) - self.now()).total_seconds()))
-        # fixture와 과거 응답 변형을 견디기 위한 보수 기본값이다. 실제 캐시 TTL은 skew로 더 짧아진다.
-        return token, 86400
+        token = ""
+        raw_token: object = None
+        expires_at_text = ""
+        result: tuple[str, int] | None = None
+        invalid = False
+        try:
+            raw_token = response.get("access_token")
+            if not isinstance(raw_token, str) or not raw_token:
+                invalid = True
+            else:
+                token = raw_token
+                expires_in = response.get("expires_in")
+                if isinstance(expires_in, str) and expires_in.isdigit():
+                    ttl = int(expires_in)
+                elif isinstance(expires_in, int) and not isinstance(expires_in, bool):
+                    ttl = expires_in
+                else:
+                    raw_expires_at = response.get("access_token_token_expired")
+                    if isinstance(raw_expires_at, str) and raw_expires_at:
+                        expires_at_text = raw_expires_at
+                        try:
+                            expires_at = datetime.strptime(
+                                expires_at_text,
+                                "%Y-%m-%d %H:%M:%S",
+                            ).replace(tzinfo=ZoneInfo("Asia/Seoul"))
+                            ttl = int((expires_at.astimezone(UTC) - self._now()).total_seconds())
+                        except ValueError:
+                            invalid = True
+                            ttl = 0
+                    else:
+                        ttl = 86400
+                if not invalid and 1 <= ttl <= MAX_TOKEN_TTL_SECONDS:
+                    result = (token, ttl)
+                else:
+                    invalid = True
+        finally:
+            response.clear()
+            token = ""
+            raw_token = None
+            expires_at_text = ""
+
+        if invalid or result is None:
+            raise KISTokenCacheError("KIS token response is invalid") from None
+        return result
+
+
+def _token_cache_key(scope: str) -> str:
+    return f"kis:token:v2:{scope}"
+
+
+def _token_lock_key(scope: str) -> str:
+    return f"kis:token-issue:v2:{scope}"

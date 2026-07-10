@@ -7,6 +7,7 @@ from typing import Any, Literal, cast
 import yaml
 
 MappingStatus = Literal["active", "blocked"]
+MAX_EFFECTIVE_WINDOW_DAYS = 3_650
 
 
 class RiskMappingValidationError(ValueError):
@@ -82,8 +83,10 @@ def _parse_entry(raw: dict[str, Any]) -> RiskMappingEntry:
     if not isinstance(condition_values, list):
         raise RiskMappingValidationError("condition_values must be a list")
     window_days = raw.get("effective_window_days")
-    if window_days is not None and (not isinstance(window_days, int) or window_days <= 0):
-        raise RiskMappingValidationError("effective_window_days must be a positive integer")
+    if window_days is not None and (
+        not isinstance(window_days, int) or not 1 <= window_days <= MAX_EFFECTIVE_WINDOW_DAYS
+    ):
+        raise RiskMappingValidationError("effective_window_days must be between 1 and 3650")
     return RiskMappingEntry(
         code=_required_str(raw, "code"),
         label=_required_str(raw, "label"),

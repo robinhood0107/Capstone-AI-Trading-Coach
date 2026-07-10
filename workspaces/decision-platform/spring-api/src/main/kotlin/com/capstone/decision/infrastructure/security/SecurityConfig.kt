@@ -3,7 +3,11 @@ package com.capstone.decision.infrastructure.security
 import com.capstone.decision.api.common.ApiResponseWriter
 import com.capstone.decision.infrastructure.idempotency.IdempotencyProperties
 import com.capstone.decision.infrastructure.idempotency.IdempotencyService
+import com.capstone.decision.infrastructure.web.HttpRequestProperties
+import com.capstone.decision.infrastructure.web.RequestBodyLimitFilter
 import com.capstone.decision.infrastructure.web.RequestIdFilter
+import org.springframework.beans.factory.ObjectProvider
+import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
@@ -17,6 +21,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 import org.springframework.web.cors.CorsConfiguration
 import org.springframework.web.cors.CorsConfigurationSource
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource
+import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping
 
 // S0.3 공통 규약에서 허용 경로, JWT 인증, CORS를 한 보안 체인으로 고정한다.
 @Configuration
@@ -26,6 +31,7 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource
     JwtProperties::class,
     DemoAccountProperties::class,
     IdempotencyProperties::class,
+    HttpRequestProperties::class,
 )
 class SecurityConfig {
     @Bean
@@ -34,9 +40,13 @@ class SecurityConfig {
         jwtService: JwtService,
         idempotencyService: IdempotencyService,
         idempotencyProperties: IdempotencyProperties,
+        httpRequestProperties: HttpRequestProperties,
         responseWriter: ApiResponseWriter,
+        @Qualifier("requestMappingHandlerMapping")
+        handlerMappingProvider: ObjectProvider<RequestMappingHandlerMapping>,
     ): SecurityFilterChain {
         val requestIdFilter = RequestIdFilter()
+        val requestBodyLimitFilter = RequestBodyLimitFilter(httpRequestProperties, responseWriter)
         val jwtAuthenticationFilter =
             // Redis idempotency를 별도 filter로 늘리지 않고 JWT 인증 뒤 write gate로 연결한다.
             JwtAuthenticationFilter(
@@ -44,6 +54,7 @@ class SecurityConfig {
                 idempotencyService = idempotencyService,
                 idempotencyProperties = idempotencyProperties,
                 responseWriter = responseWriter,
+                handlerMappingProvider = handlerMappingProvider,
             )
         return http
             // Bearer API에서는 브라우저 세션/폼 인증 상태를 만들지 않는다.
@@ -62,9 +73,15 @@ class SecurityConfig {
                     .requestMatchers(HttpMethod.OPTIONS, "/**")
                     .permitAll()
                 authorize
-                    // 로그인, 헬스체크, 문서 endpoint는 토큰 발급 전에도 접근되어야 한다.
+                    // liveness만 공개하고 metrics/info/prometheus는 운영정보이므로 ADMIN으로 제한한다.
+                    .requestMatchers("/actuator/health")
+                    .permitAll()
+                authorize
+                    .requestMatchers("/actuator/**")
+                    .hasRole("ADMIN")
+                authorize
+                    // 로그인과 개발 문서 endpoint는 토큰 발급 전에도 접근되어야 한다.
                     .requestMatchers(
-                        "/actuator/health",
                         "/swagger-ui/**",
                         "/swagger-ui.html",
                         "/v3/api-docs/**",
@@ -74,7 +91,8 @@ class SecurityConfig {
                     .anyRequest()
                     .authenticated()
             }.addFilterBefore(requestIdFilter, UsernamePasswordAuthenticationFilter::class.java)
-            .addFilterAfter(jwtAuthenticationFilter, RequestIdFilter::class.java)
+            .addFilterAfter(requestBodyLimitFilter, RequestIdFilter::class.java)
+            .addFilterAfter(jwtAuthenticationFilter, RequestBodyLimitFilter::class.java)
             .build()
     }
 

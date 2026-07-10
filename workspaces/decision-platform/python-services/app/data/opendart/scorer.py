@@ -11,6 +11,8 @@ from app.data.opendart.models import (
 from app.data.opendart.risk_mapping import DisclosureRiskMapping, RiskMappingEntry, load_default_risk_mapping
 
 logger = logging.getLogger(__name__)
+MAX_EVENTS_PER_SCORE = 10_000
+MAX_DEFAULT_WINDOW_DAYS = 3_650
 
 
 def score_disclosure_risk(
@@ -26,17 +28,45 @@ def score_disclosure_risk(
     window은 이벤트 유형별로 다르다. 부도·회생·비적정 감사의견 같은 상태 지속형은 `effective_window_days`가 길고
     (30일 뒤 조용히 0이 되지 않게), 증자·CB·소송 같은 공시효과형은 짧다. mapping에 없는 유형은 관측성용 warning만 남긴다.
     """
+    if not 1 <= window_days <= MAX_DEFAULT_WINDOW_DAYS:
+        raise ValueError("window_days must be between 1 and 3650")
+    if len(events) > MAX_EVENTS_PER_SCORE:
+        raise ValueError("OpenDART disclosure event limit exceeded")
     risk_mapping = mapping or load_default_risk_mapping()
+    mapping_windows = [
+        entry.effective_window_days
+        for entry in risk_mapping.active_by_code.values()
+        if entry.effective_window_days is not None
+    ]
+    if any(not 1 <= value <= MAX_DEFAULT_WINDOW_DAYS for value in mapping_windows):
+        raise ValueError("effective_window_days must be between 1 and 3650")
+    max_window_days = max([window_days, *mapping_windows])
+    try:
+        earliest_window_from = as_of - timedelta(days=max_window_days)
+    except OverflowError:
+        raise ValueError("as_of is too early for the configured disclosure windows") from None
     # 미매핑/blocked 관측성 warning은 유형별 유효기간을 알 수 없으므로 기본 window로 판정한다.
-    default_window_from = as_of - timedelta(days=window_days)
+    default_window_from = earliest_window_from + timedelta(days=max_window_days - window_days)
     # 결과 envelope의 window_from은 실제로 고려될 수 있는 가장 오래된 날짜(=최대 유효기간)로 두어 소비자가 오해하지 않게 한다.
     max_effective_days = max(
         [entry.effective_window_days or window_days for entry in risk_mapping.active_by_code.values()] + [window_days]
     )
     contributing: list[tuple[float, DisclosureRiskEvent]] = []
     warnings: list[DisclosureRiskWarning] = []
+    seen_events: set[tuple[object, ...]] = set()
 
     for event in events:
+        identity = (
+            event.symbol,
+            event.corp_code,
+            event.event_code,
+            event.receipt_no,
+            event.occurred_on,
+            tuple(sorted(event.attributes.items())),
+        )
+        if identity in seen_events:
+            continue
+        seen_events.add(identity)
         if event.symbol != symbol or event.occurred_on > as_of:
             continue
         entry = risk_mapping.active_by_code.get(event.event_code)
@@ -48,6 +78,11 @@ def score_disclosure_risk(
             continue
         effective_from = as_of - timedelta(days=entry.effective_window_days or window_days)
         if event.occurred_on < effective_from:
+            continue
+        if entry.condition_field and not _normalize(event.attributes.get(entry.condition_field, "")):
+            warning = _missing_condition_warning(event)
+            warnings.append(warning)
+            _log_warning(warning, event)
             continue
         score = _event_score(entry, event)
         if score > 0:
@@ -91,6 +126,15 @@ def _unknown_warning(event: DisclosureRiskEvent, *, blocked: bool) -> Disclosure
         event_code=event.event_code,
         receipt_no=event.receipt_no,
         message="Disclosure risk event code is not mapped to an active score.",
+    )
+
+
+def _missing_condition_warning(event: DisclosureRiskEvent) -> DisclosureRiskWarning:
+    return DisclosureRiskWarning(
+        code="INVALID_DISCLOSURE_RISK_CONDITION",
+        event_code=event.event_code,
+        receipt_no=event.receipt_no,
+        message="Disclosure risk condition data is missing; zero score must not be treated as clearance.",
     )
 
 

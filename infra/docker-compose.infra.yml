@@ -1,33 +1,41 @@
 services:
   postgres:
-    image: pgvector/pgvector:pg16
+    image: pgvector/pgvector:pg16@sha256:1d533553fefe4f12e5d80c7b80622ba0c382abb5758856f52983d8789179f0fb
     environment:
       POSTGRES_DB: trading
-      POSTGRES_USER: app
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-    ports: ["5432:5432"]
+      POSTGRES_USER: ${POSTGRES_ADMIN_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:?POSTGRES_ADMIN_PASSWORD is required}
+      POSTGRES_APP_PASSWORD: ${POSTGRES_APP_PASSWORD:?POSTGRES_APP_PASSWORD is required}
+      POSTGRES_MIGRATION_PASSWORD: ${POSTGRES_MIGRATION_PASSWORD:?POSTGRES_MIGRATION_PASSWORD is required}
+    ports: ["127.0.0.1:5432:5432"]
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./init/01-extensions.sql:/docker-entrypoint-initdb.d/01-extensions.sql
+      - ./init/01-extensions.sql:/docker-entrypoint-initdb.d/01-extensions.sql:ro
+      - ./init/02-application-roles.sh:/docker-entrypoint-initdb.d/02-application-roles.sh:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U app -d trading"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       retries: 10
 
   redis:
-    image: redis:7.2-alpine
-    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
-    ports: ["6379:6379"]
+    image: redis:7.2-alpine@sha256:dfa18828cbc07b3ae6a95ec7343f6c214fdee2d836197b4be8e9904420762cd8
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+    command: ["sh", "/usr/local/bin/redis-secure-entrypoint.sh"]
+    ports: ["127.0.0.1:6379:6379"]
+    volumes:
+      - redisdata:/data
+      - ./redis-secure-entrypoint.sh:/usr/local/bin/redis-secure-entrypoint.sh:ro
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$${REDIS_PASSWORD}\" redis-cli ping | grep -qx PONG"]
       interval: 5s
       timeout: 3s
       retries: 10
 
   kafka:
-    image: apache/kafka:3.7.0
+    image: apache/kafka:3.7.0@sha256:41c20d65b0a2180b9deca056d47540771752e69fe9225d5748dd65a25a9675d7
     profiles: ["kafka"]        # P1(S7.1)부터만 기동
-    ports: ["9092:9092"]
+    ports: ["127.0.0.1:9092:9092"]
     environment:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
@@ -40,11 +48,12 @@ services:
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"   # topic은 명시적으로만 생성
 
   kafka-ui:
-    image: provectuslabs/kafka-ui:v0.7.2   # latest 금지 — 재현성(작업계획 4장 버전 고정 원칙)
+    image: provectuslabs/kafka-ui:v0.7.2@sha256:8f2ff02d64b0a7a2b71b6b3b3148b85f66d00ec20ad40c30bdcd415d46d31818
     profiles: ["kafka"]
-    ports: ["8081:8080"]
+    ports: ["127.0.0.1:8081:8080"]
     environment:
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
 
 volumes:
   pgdata: {}
+  redisdata: {}

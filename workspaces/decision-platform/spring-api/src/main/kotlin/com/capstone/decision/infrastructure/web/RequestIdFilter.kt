@@ -17,7 +17,7 @@ class RequestIdFilter : OncePerRequestFilter() {
         response: HttpServletResponse,
         filterChain: FilterChain,
     ) {
-        val requestId = request.getHeader(RequestIds.HEADER)?.takeIf { it.isNotBlank() } ?: RequestIds.generate()
+        val requestId = RequestIds.fromClientHeader(request.getHeader(RequestIds.HEADER)) ?: RequestIds.generate()
         MDC.put(RequestIds.MDC_KEY, requestId)
         response.setHeader(RequestIds.HEADER, requestId)
         try {

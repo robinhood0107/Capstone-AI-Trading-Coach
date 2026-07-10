@@ -11,12 +11,16 @@ object RequestIds {
     const val HEADER = "X-Request-Id"
     const val MDC_KEY = "requestId"
     private val zoneId: ZoneId = ZoneId.of("Asia/Seoul")
+    private val allowedClientId = Regex("[A-Za-z0-9][A-Za-z0-9._:-]{0,63}")
 
     // filter 밖에서 만들어진 오류도 기존 requestId를 최대한 재사용해야 추적이 이어진다.
     fun currentOrCreate(request: HttpServletRequest): String =
         MDC.get(MDC_KEY)
-            ?: request.getHeader(HEADER)?.takeIf { it.isNotBlank() }
+            ?: fromClientHeader(request.getHeader(HEADER))
             ?: generate()
+
+    // 로그·응답 header에 재사용할 값은 짧은 ASCII 식별자만 받아 제어문자와 증폭을 원천 차단한다.
+    fun fromClientHeader(value: String?): String? = value?.takeIf(allowedClientId::matches)
 
     // 로컬 데모 로그에서 날짜를 보고 요청 시점을 빠르게 가늠할 수 있게 한다.
     fun generate(): String = "req_${LocalDate.now(zoneId).toString().replace("-", "")}_${UUID.randomUUID()}"

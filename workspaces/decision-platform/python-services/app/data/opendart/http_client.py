@@ -104,7 +104,7 @@ class OpenDARTHttpClient:
 
     def _send_once(self, path: str, params: dict[str, str], *, expect_json: bool) -> dict[str, Any] | bytes:
         self.rate_limiter.acquire()
-        response = self.http_client.request("GET", self._url(path), params=params)
+        response = self.http_client.request("GET", self._url(path), params=self._authenticated_params(params))
         if response.status_code >= 400:
             message = _mask_text(response.text[:300], [self.settings.api_key])
             if response.status_code in {408, 429, 500, 502, 503, 504}:
@@ -119,6 +119,12 @@ class OpenDARTHttpClient:
         if not isinstance(data, dict):
             raise OpenDARTHttpError(response.status_code, "OpenDART response was not a JSON object")
         return cast(dict[str, Any], data)
+
+    def _authenticated_params(self, params: dict[str, str]) -> dict[str, str]:
+        # 인증키는 transport 경계에서만 붙여 사용자별 key 주입과 상위 계층의 secret 전파를 막는다.
+        if "crtfc_key" in params:
+            raise ValueError("crtfc_key is managed by OpenDARTHttpClient")
+        return {**params, "crtfc_key": self.settings.api_key or ""}
 
     def _url(self, path: str) -> str:
         if path.startswith("http://") or path.startswith("https://"):

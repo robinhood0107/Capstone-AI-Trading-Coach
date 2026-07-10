@@ -22,18 +22,26 @@
 
 ## 시작하기 (decision-platform)
 
-현재 레포는 초기 공개 스캐폴드 단계다. 상세 개인 참고 노트는 GitHub에 올리지 않고 로컬 `private-reference/` 폴더에서만 관리한다.
+현재 레포는 STAGE 2이며 Decision Platform의 S0 walking skeleton부터 S1.2c OpenDART 분석 데이터까지 구현되어 있다. 상세 개인 참고 노트는 GitHub에 올리지 않고 로컬 `private-reference/` 폴더에서만 관리한다.
 
 ```bash
 cp .env.example .env
-# .env에서 최소 POSTGRES_PASSWORD 값을 채운 뒤 실행한다. 실제 API key는 커밋하지 않는다.
+# PostgreSQL 관리자/runtime/Flyway password, Redis password, JWT/demo password를 채운다.
+# API key는 필요한 provider를 실제 호출할 때 운영자만 주입하며 커밋하지 않는다.
 docker compose --env-file .env -f infra/docker-compose.infra.yml up -d
 docker compose --env-file .env -f infra/docker-compose.infra.yml ps
-docker compose --env-file .env -f infra/docker-compose.infra.yml exec postgres psql -U app -d trading -c "\dx"
+docker compose --env-file .env -f infra/docker-compose.infra.yml exec postgres sh -lc 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "\dx"'
 
 cd workspaces/decision-platform/spring-api
 ./gradlew tasks
 ./gradlew build
+```
+
+PostgreSQL runtime은 `decision_app`, migration은 `flyway`, bootstrap 관리는 `POSTGRES_ADMIN_USER`로 분리된다. 기존 `pgdata` volume에는 init script가 자동 재실행되지 않으므로, 기존 관리자 이름/비밀번호를 `POSTGRES_ADMIN_USER`/`POSTGRES_ADMIN_PASSWORD`로 보존해 컨테이너를 올린 뒤 다음 명령을 한 번 실행한다. volume 삭제는 이 절차에 포함하지 않는다.
+
+```bash
+docker compose --env-file .env -f infra/docker-compose.infra.yml exec -T postgres \
+  bash /docker-entrypoint-initdb.d/02-application-roles.sh
 ```
 
 ## 문서

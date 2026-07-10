@@ -35,6 +35,19 @@ def _stub_credential(monkeypatch: pytest.MonkeyPatch, value: str) -> None:
     monkeypatch.setattr(_credential_transport, "_read_credential", lambda: SecretStr(value))
 
 
+def test_private_credential_settings_hide_value_from_repr_and_serialization(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    marker = "fixture-auth-value"
+    monkeypatch.setenv("OPENDART_API_KEY", marker)
+
+    settings = _credential_transport._CredentialSettings(_env_file=None)  # type: ignore[call-arg]
+
+    assert marker not in repr(settings)
+    assert marker not in settings.model_dump_json()
+    assert settings.model_dump() == {}
+
+
 def test_get_json_retries_retryable_status(tmp_path: Path) -> None:
     attempts = 0
 
@@ -110,6 +123,26 @@ def test_get_json_scrubs_credential_echo_and_does_not_mutate_caller_params(
         "echo": "[redacted]",
     }
     assert params == {"corp_code": "00126380"}
+
+
+def test_transport_scrubs_response_extensions_before_returning(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    marker = "fixture-auth-value"
+    _stub_credential(monkeypatch, marker)
+
+    inner = httpx.MockTransport(
+        lambda _: httpx.Response(
+            200,
+            json={"status": "000"},
+            extensions={"http_version": b"HTTP/1.1", "debug": marker.encode()},
+        )
+    )
+    transport = _credential_transport._CredentialTransport(inner, enabled=True)
+    response = transport.handle_request(httpx.Request("GET", "https://opendart.fss.or.kr/api/company.json"))
+
+    assert response.extensions == {"http_version": b"HTTP/1.1"}
+    assert marker not in repr(response.extensions)
 
 
 def test_transport_boundary_does_not_emit_credential_to_logs(

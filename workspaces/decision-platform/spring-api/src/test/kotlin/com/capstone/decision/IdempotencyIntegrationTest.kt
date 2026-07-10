@@ -42,6 +42,7 @@ import java.util.concurrent.TimeUnit
     properties = [
         "spring.autoconfigure.exclude=org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration,org.springframework.boot.hibernate.autoconfigure.HibernateJpaAutoConfiguration,org.springframework.boot.data.jpa.autoconfigure.DataJpaRepositoriesAutoConfiguration,org.springframework.boot.kafka.autoconfigure.KafkaAutoConfiguration",
         "app.idempotency.max-request-body-bytes=256",
+        "app.idempotency.max-response-body-bytes=256",
         "app.idempotency.max-key-length=64",
     ],
 )
@@ -288,6 +289,30 @@ class IdempotencyIntegrationTest(
     }
 
     @Test
+    fun `oversized controller response is replaced by bounded replay-safe error`() {
+        val token = login()
+
+        mockMvc
+            .post("/api/v1/orders/test-large-response") {
+                bearer(token)
+                header("X-Idempotency-Key", "idem-response-limit")
+                header("X-Request-Id", "req-idem-response-limit")
+                contentType = MediaType.APPLICATION_JSON
+                content = "{}"
+            }.andExpect {
+                status { isConflict() }
+                jsonPath("$.error.code") { value("CONFLICT") }
+            }
+
+        val storedBody =
+            redisTemplate.opsForHash<String, String>().get(
+                "idempotency:demo-user:idem-response-limit",
+                "body",
+            )
+        assertTrue(!storedBody.isNullOrBlank() && storedBody.toByteArray().size <= 256)
+    }
+
+    @Test
     fun `redis requires authentication and disables eviction`() {
         val unauthenticated = redis.execInContainer("redis-cli", "ping")
         val authenticated =
@@ -399,4 +424,11 @@ private class TestOnlyIdempotencyController {
                     "nonce" to UUID.randomUUID().toString(),
                 ),
             )
+
+    @PostMapping("/api/v1/orders/test-large-response")
+    fun createLargeResponse(): ResponseEntity<String> =
+        ResponseEntity
+            .status(HttpStatus.CREATED)
+            .contentType(MediaType.TEXT_PLAIN)
+            .body("x".repeat(1_048_576))
 }

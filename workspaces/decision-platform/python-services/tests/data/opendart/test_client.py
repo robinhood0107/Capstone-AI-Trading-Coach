@@ -18,6 +18,8 @@ def test_client_disclosure_list_passes_official_filter_params_without_secret() -
     fake_http = FakeHttp({"status": "000", "list": []})
     client = OpenDARTClient(_settings(), fake_http)
 
+    assert "settings" not in vars(client)
+
     assert client.disclosure_list(
         corp_code="00126380",
         start=date(2026, 6, 9),
@@ -328,7 +330,8 @@ def test_client_disclosure_list_with_observation_writes_raw_metadata(tmp_path: P
     assert result.raw_observation.source_id == "opendart_disclosure_list"
     assert result.raw_observation.normalized_status == "OK"
     assert result.raw_observation.window_from == date(2026, 6, 9)
-    assert "TEST_OPEN_DART_KEY" not in Path(result.raw_observation.raw_storage_uri).read_text(encoding="utf-8")
+    stored = Path(result.raw_observation.raw_storage_uri).read_text(encoding="utf-8")
+    assert "crtfc_key" not in stored
 
 
 def test_client_disclosure_list_with_observation_marks_no_data_as_empty(tmp_path: Path) -> None:
@@ -360,13 +363,12 @@ def test_client_status_020_raises_non_retryable_quota_error_once(tmp_path: Path)
         )
 
     settings = _settings(tmp_path)
-    with httpx.Client(transport=httpx.MockTransport(handler)) as transport_client:
-        http_client = OpenDARTHttpClient(
-            settings,
-            http_client=transport_client,
-            rate_limiter=TokenBucket(rate_per_second=1000),
-            retry_wait=wait_none(),
-        )
+    with OpenDARTHttpClient(
+        settings,
+        transport=httpx.MockTransport(handler),
+        rate_limiter=TokenBucket(rate_per_second=1000),
+        retry_wait=wait_none(),
+    ) as http_client:
         client = OpenDARTClient(settings, http_client)
 
         with pytest.raises(OpenDARTQuotaExceededError) as exc_info:
@@ -492,7 +494,7 @@ class FakeHttp:
 
 
 def _settings(data_dir: Path | None = None) -> OpenDARTSettings:
-    kwargs = {"opendart_api_key": "TEST_OPEN_DART_KEY", "_env_file": None}
+    kwargs = {"opendart_offline": True, "_env_file": None}
     if data_dir is not None:
         kwargs["opendart_data_dir"] = data_dir
     return OpenDARTSettings(**kwargs)

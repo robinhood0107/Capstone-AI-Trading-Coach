@@ -269,7 +269,7 @@ class ECOSHttpClient:
 
     @property
     def physical_attempt_count(self) -> int:
-        """manifest audit에 사용할 quota-reserved physical attempt 수를 반환한다."""
+        """manifest audit에 사용할 provider transport handoff attempt 수를 반환한다."""
         return self._transport.physical_attempt_count
 
     def close(self) -> None:

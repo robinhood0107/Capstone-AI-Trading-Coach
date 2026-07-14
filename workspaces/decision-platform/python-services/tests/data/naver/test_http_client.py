@@ -396,6 +396,37 @@ def test_429_is_not_retried_and_activates_60_second_cooldown(
     client.close()
 
 
+def test_429_with_invalid_body_still_activates_cooldown_and_stays_non_retryable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempts = 0
+    quota = _RecordingQuota()
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        return httpx.Response(429, content=b"not-json", headers={"content-type": "text/plain"})
+
+    client, _ = _test_client(
+        monkeypatch,
+        profile=LEGACY_PROFILE,
+        handler=httpx.MockTransport(handler),
+        quota=quota,
+    )
+
+    with pytest.raises(NaverResponseError) as exc_info:
+        client.search_news(
+            "합성회사",
+            retrieved_at=_RETRIEVED_AT,
+            requested_display=10,
+        )
+
+    assert exc_info.value.code == "rate_limited"
+    assert attempts == 1
+    assert quota.cooldowns == [60]
+    client.close()
+
+
 def test_redirect_is_rejected_without_following_location(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

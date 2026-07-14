@@ -60,6 +60,21 @@ def test_snapshot_rejects_raw_or_credential_fields(unsafe_key: str) -> None:
         serialize_naver_snapshot(payload)
 
 
+@pytest.mark.parametrize(
+    "unsafe_url",
+    [
+        "http://localhost/article/1",
+        "https://news.example.test/article/1?client_secret=synthetic",
+    ],
+)
+def test_snapshot_rejects_urls_that_bypass_metadata_sanitization(unsafe_url: str) -> None:
+    payload = _valid_snapshot()
+    payload["queries"][0]["items"][0]["originalUrl"] = unsafe_url
+
+    with pytest.raises(NaverSnapshotStorageError, match="snapshot"):
+        serialize_naver_snapshot(payload)
+
+
 def test_snapshot_enforces_four_mib_after_canonical_encoding(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -8,6 +8,7 @@ NaverErrorCode = Literal[
     "authentication_failed",
     "rate_limited",
     "provider_unavailable",
+    "redirect_rejected",
     "invalid_response",
 ]
 

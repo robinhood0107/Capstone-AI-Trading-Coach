@@ -8,6 +8,7 @@ import pytest
 from pydantic import SecretStr
 
 from app.data.ecos import registry_preflight, registry_preflight_cli
+from app.data.ecos.errors import ECOSParseError
 from app.data.ecos.http_client import ECOSHttpClient
 from app.data.ecos.models import StatisticItemMetadata, StatisticTableMetadata
 from app.data.ecos.series_registry import ECOSSeries
@@ -17,14 +18,14 @@ _OBSERVED_AT = datetime(2026, 7, 14, 1, 2, 3, tzinfo=UTC)
 
 
 class _Client:
-    def __init__(self, *, fail: bool = False) -> None:
-        self.fail = fail
+    def __init__(self, *, fail_stage: str | None = None) -> None:
+        self.fail_stage = fail_stage
         self.calls: list[tuple[str, str]] = []
         self.closed = False
 
     def statistic_table_list(self, *, series: ECOSSeries) -> StatisticTableMetadata:
         self.calls.append(("table", series.series_id))
-        if self.fail:
+        if self.fail_stage == "table":
             raise RuntimeError(
                 "synthetic-ecos-key https://ecos.bok.or.kr/api/private raw provider response"
             )
@@ -37,6 +38,8 @@ class _Client:
 
     def statistic_item_list(self, *, series: ECOSSeries) -> StatisticItemMetadata:
         self.calls.append(("item", series.series_id))
+        if self.fail_stage == "item":
+            raise ECOSParseError("invalid ECOS response")
         return StatisticItemMetadata(
             stat_code=series.stat_code,
             item_code=series.item_code1,
@@ -103,7 +106,7 @@ def test_online_failure_is_not_retried_and_drops_provider_details(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    client = _Client(fail=True)
+    client = _Client(fail_stage="table")
     monkeypatch.setattr(registry_preflight_cli, "_build_client", lambda: client)
 
     assert registry_preflight_cli.main(["--online"]) == 1
@@ -111,10 +114,30 @@ def test_online_failure_is_not_retried_and_drops_provider_details(
     assert client.calls == [("table", "policy-rate")]
     assert client.closed is True
     rendered = capsys.readouterr().out
-    assert rendered == "source=ecos operation=registry_preflight code=preflight_failed\n"
+    assert rendered == (
+        "source=ecos operation=registry_preflight code=preflight_failed "
+        "physicalAttemptCount=1\n"
+    )
     assert "synthetic-ecos-key" not in rendered
     assert "https://" not in rendered
     assert "provider" not in rendered
+
+
+def test_online_item_parse_failure_reports_only_safe_code_and_actual_attempt_count(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    client = _Client(fail_stage="item")
+    monkeypatch.setattr(registry_preflight_cli, "_build_client", lambda: client)
+
+    assert registry_preflight_cli.main(["--online"]) == 1
+
+    assert client.calls == [("table", "policy-rate"), ("item", "policy-rate")]
+    assert client.closed is True
+    assert capsys.readouterr().out == (
+        "source=ecos operation=registry_preflight code=invalid_response "
+        "physicalAttemptCount=2\n"
+    )
 
 
 def test_invalid_argv_cannot_echo_a_mistaken_secret_or_url(
@@ -169,5 +192,8 @@ def test_unicode_escaped_credential_echo_cannot_reach_preflight_cli(
 
     rendered = capsys.readouterr().out
     assert attempts == 1
-    assert rendered == "source=ecos operation=registry_preflight code=preflight_failed\n"
+    assert rendered == (
+        "source=ecos operation=registry_preflight code=preflight_failed "
+        "physicalAttemptCount=1\n"
+    )
     assert marker not in rendered

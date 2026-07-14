@@ -80,6 +80,22 @@ def test_item_preflight_selects_the_exact_candidate_from_a_bounded_item_list() -
     assert item.item_code == "0101000"
 
 
+def test_item_preflight_accepts_a_valid_partial_metadata_page() -> None:
+    payload = _fixture("statistic_item_list_metadata.json")
+    envelope = payload["StatisticItemList"]
+    assert isinstance(envelope, dict)
+    # list_total_count는 현재 page 길이가 아니라 전체 검색 결과 건수다.
+    envelope["list_total_count"] = 2
+
+    item = parse_statistic_item_list(
+        payload,
+        expected_stat_code="722Y001",
+        expected_item_code="0101000",
+    )
+
+    assert item.item_code == "0101000"
+
+
 class _PreflightClient:
     def __init__(
         self,

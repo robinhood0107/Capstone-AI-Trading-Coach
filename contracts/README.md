@@ -31,7 +31,9 @@ artifact는 ignored root의
 `{source}/YYYY/MM/DD/{uuid-v4}/snapshot.json`과 `manifest.json` 두 파일로 구성한다.
 consumer는 `manifest.json`만 완성 marker로 열거하고 schema, 상대경로, SHA-256을 확인한 뒤
 snapshot을 읽는다. manifest가 없는 snapshot orphan은 무시한다. provider raw body/header/message,
-request URL, credential·credential hash, 기사 본문과 로컬 절대경로는 두 파일 모두에 금지한다.
+credential/query가 포함된 provider request URL, auth/header, credential·credential hash, 기사 본문과
+로컬 절대경로는 두 파일 모두에 금지한다. schema가 검증하는 정규화된 기사 metadata URL과 고정
+provenance URL은 허용한다.
 삭제 owner는 `decision-platform:source-snapshot-retention` 하나이며 command는 기본 dry-run,
 명시적 `--apply`에서만 manifest를 먼저 지운다.
 

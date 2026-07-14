@@ -25,7 +25,9 @@ S1.3 계약은 아직 배포되지 않은 Draft 상태이므로 이 lower-only �
 
 ## 보안·운영 영향
 
-- credential, request URL, auth/header, provider raw body/header/message, 로컬 절대경로는 금지한다.
+- credential, credential/query가 포함된 provider request URL, auth/header, provider raw
+  body/header/message, 로컬 절대경로는 금지한다. 정규화된 기사 metadata URL과 고정 provenance URL은
+  canonical 계약에 따라 허용한다.
 - manifest가 존재할 때만 snapshot을 완성된 산출물로 취급한다.
 - ECOS 보존은 365일, Naver 보존은 30일이며 삭제 owner는
   `decision-platform:source-snapshot-retention`이다.
@@ -52,8 +54,9 @@ and Naver News metadata snapshots without retaining provider raw responses.
   `schemaVersion: 1`. Code, JSON Schema, and offline regression verification are complete; online
   verification remains approval-gated and has not run. The Redis runtime gate passed, and no live
   ECOS/Naver provider calls have run.
-- Credentials, request URLs, authentication material, provider raw payloads, and local absolute paths
-  are forbidden. The manifest is the commit marker.
+- Credentials, provider request URLs containing credentials or queries, authentication material,
+  provider raw payloads, and local absolute paths are forbidden. Normalized article metadata URLs and
+  fixed provenance URLs remain allowed by the canonical contract. The manifest is the commit marker.
 - ECOS retention is 365 days, Naver retention is 30 days, and the delete owner is
   `decision-platform:source-snapshot-retention`.
 - S1.3 implements only the Decision Platform producer/storage boundary. Return Engine handoff and

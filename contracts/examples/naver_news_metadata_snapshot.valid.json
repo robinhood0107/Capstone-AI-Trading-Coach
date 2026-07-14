@@ -1,0 +1,80 @@
+{
+  "schemaVersion": 1,
+  "source": "naver",
+  "providerProfile": "naver-legacy",
+  "asOf": "2026-07-14",
+  "retrievedAt": "2026-07-14T01:10:00Z",
+  "universeManifestSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "universeAsOfDate": "2026-07-14",
+  "batchCursor": 0,
+  "nextBatchCursor": 4,
+  "queries": [
+    {
+      "rank": 1,
+      "symbol": "005930",
+      "query": "Synthetic Company One",
+      "status": "complete",
+      "providerTotal": 1,
+      "requestedDisplay": 10,
+      "providerDisplay": 1,
+      "receivedCount": 1,
+      "acceptedCount": 1,
+      "filteredCount": 0,
+      "redactedUrlCount": 0,
+      "items": [
+        {
+          "title": "Synthetic market update",
+          "description": "Synthetic metadata fixture for contract validation.",
+          "originalUrl": "https://example.com/news/1",
+          "naverUrl": "https://example.com/naver/1",
+          "providerPubDate": "2026-07-14T00:55:00Z"
+        }
+      ]
+    },
+    {
+      "rank": 2,
+      "symbol": "000660",
+      "query": "Synthetic Company Two",
+      "status": "empty",
+      "providerTotal": 0,
+      "requestedDisplay": 10,
+      "providerDisplay": 0,
+      "receivedCount": 0,
+      "acceptedCount": 0,
+      "filteredCount": 0,
+      "redactedUrlCount": 0,
+      "items": []
+    },
+    {
+      "rank": 3,
+      "symbol": "035420",
+      "query": "Synthetic Company Three",
+      "status": "empty",
+      "providerTotal": 0,
+      "requestedDisplay": 10,
+      "providerDisplay": 0,
+      "receivedCount": 0,
+      "acceptedCount": 0,
+      "filteredCount": 0,
+      "redactedUrlCount": 0,
+      "items": []
+    },
+    {
+      "rank": 4,
+      "symbol": "005380",
+      "query": "Synthetic Company Four",
+      "status": "empty",
+      "providerTotal": 0,
+      "requestedDisplay": 10,
+      "providerDisplay": 0,
+      "receivedCount": 0,
+      "acceptedCount": 0,
+      "filteredCount": 0,
+      "redactedUrlCount": 0,
+      "items": []
+    }
+  ],
+  "partial": false,
+  "coverage": "complete",
+  "deferredQueries": []
+}

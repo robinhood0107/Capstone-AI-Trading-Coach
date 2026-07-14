@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "source": "ecos",
+  "providerProfile": "ecos",
+  "operation": "ecos-macro-collect",
+  "generatedAt": "2026-07-14T01:05:01Z",
+  "asOf": "2026-07-14",
+  "snapshotPath": "../secrets/snapshot.json",
+  "snapshotSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "recordCount": 2,
+  "countBreakdown": {
+    "seriesCount": 2,
+    "observationCount": 2,
+    "duplicateCount": 0
+  },
+  "partial": false,
+  "coverage": "complete",
+  "deferredQueries": 0,
+  "physicalAttemptCount": 4,
+  "quotaPolicyVersion": "s1.3-ecos-quota-v1",
+  "provenance": {
+    "documentationUrl": "https://ecos.bok.or.kr/api/#/DevGuide/DevSpeciflcation",
+    "policyUrl": "https://ecos.bok.or.kr/api/#/DevGuide/DevSpeciflcation"
+  },
+  "sanitizationVersion": "s1.3-sanitization-v1",
+  "retentionDays": 365,
+  "deleteOwner": "decision-platform:source-snapshot-retention"
+}

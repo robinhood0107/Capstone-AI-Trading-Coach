@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "contracts/schemas/ecos_macro_snapshot.schema.json",
+  "title": "ECOS Macro Snapshot",
+  "description": "Sanitized daily ECOS macro observations produced by the Decision Platform.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "source", "asOf", "retrievedAt", "registryVersion", "registryVerifiedAt", "series", "partial", "coverage"],
+  "properties": {
+    "schemaVersion": { "type": "integer", "const": 1 },
+    "source": { "type": "string", "const": "ecos" },
+    "asOf": { "type": "string", "format": "date" },
+    "retrievedAt": { "type": "string", "format": "date-time", "pattern": "Z$" },
+    "registryVersion": { "type": "string", "minLength": 1, "maxLength": 120, "pattern": "^[A-Za-z0-9._:-]+$" },
+    "registryVerifiedAt": { "type": "string", "format": "date-time", "pattern": "Z$" },
+    "series": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "uniqueItems": true,
+      "contains": { "type": "object", "properties": { "status": { "enum": ["complete", "empty"] } }, "required": ["status"] },
+      "items": { "$ref": "#/$defs/series" }
+    },
+    "partial": { "type": "boolean" },
+    "coverage": { "type": "string", "enum": ["complete", "partial", "empty"] }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "partial": { "const": true } }, "required": ["partial"] },
+      "then": {
+        "properties": {
+          "coverage": { "const": "partial" },
+          "series": { "contains": { "type": "object", "properties": { "status": { "const": "failed" } }, "required": ["status"] } }
+        }
+      },
+      "else": {
+        "properties": {
+          "coverage": { "enum": ["complete", "empty"] },
+          "series": { "not": { "contains": { "type": "object", "properties": { "status": { "const": "failed" } }, "required": ["status"] } } }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "coverage": { "const": "empty" } }, "required": ["coverage"] },
+      "then": { "properties": { "series": { "items": { "properties": { "status": { "const": "empty" } } } } } }
+    }
+  ],
+  "$defs": {
+    "series": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["seriesId", "statCode", "itemCode1", "cycle", "name", "unit", "requestedFrom", "requestedTo", "status", "observations"],
+      "properties": {
+        "seriesId": { "type": "string", "minLength": 1, "maxLength": 120, "pattern": "^[A-Za-z0-9._:-]+$" },
+        "statCode": { "type": "string", "minLength": 1, "maxLength": 20, "pattern": "^[A-Za-z0-9]+$" },
+        "itemCode1": { "type": "string", "minLength": 1, "maxLength": 20, "pattern": "^[A-Za-z0-9]+$" },
+        "cycle": { "type": "string", "const": "D" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "unit": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "requestedFrom": { "type": "string", "pattern": "^[0-9]{8}$" },
+        "requestedTo": { "type": "string", "pattern": "^[0-9]{8}$" },
+        "status": { "type": "string", "enum": ["complete", "empty", "failed"] },
+        "observations": {
+          "type": "array",
+          "maxItems": 400,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/observation" }
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "status": { "const": "complete" } }, "required": ["status"] },
+          "then": { "properties": { "observations": { "minItems": 1 } } },
+          "else": { "properties": { "observations": { "maxItems": 0 } } }
+        }
+      ]
+    },
+    "observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["time", "value"],
+      "properties": {
+        "time": { "type": "string", "pattern": "^[0-9]{8}$" },
+        "value": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^(?:0|-?(?:[1-9][0-9]*(?:\\.[0-9]*[1-9])?|0\\.[0-9]*[1-9]))$"
+        }
+      }
+    }
+  }
+}

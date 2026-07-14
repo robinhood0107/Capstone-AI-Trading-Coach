@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "contracts/schemas/naver_news_metadata_snapshot.schema.json",
+  "title": "Naver News Metadata Snapshot",
+  "description": "Sanitized Naver News search metadata without article-body fetching.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "source", "providerProfile", "asOf", "retrievedAt", "universeManifestSha256", "universeAsOfDate", "batchCursor", "nextBatchCursor", "queries", "partial", "coverage", "deferredQueries"],
+  "properties": {
+    "schemaVersion": { "type": "integer", "const": 1 },
+    "source": { "type": "string", "const": "naver" },
+    "providerProfile": { "type": "string", "enum": ["naver-legacy", "naver-api-hub"] },
+    "asOf": { "type": "string", "format": "date" },
+    "retrievedAt": { "type": "string", "format": "date-time", "pattern": "Z$" },
+    "universeManifestSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "universeAsOfDate": { "type": "string", "format": "date" },
+    "batchCursor": { "type": "integer", "minimum": 0 },
+    "nextBatchCursor": { "type": "integer", "minimum": 0 },
+    "queries": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/query" }
+    },
+    "partial": { "type": "boolean" },
+    "coverage": { "type": "string", "enum": ["complete", "partial", "empty"] },
+    "deferredQueries": {
+      "type": "array",
+      "maxItems": 4,
+      "uniqueItems": true,
+      "items": { "type": "integer", "minimum": 1 }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "partial": { "const": true } }, "required": ["partial"] },
+      "then": { "properties": { "coverage": { "const": "partial" } } },
+      "else": {
+        "properties": {
+          "coverage": { "enum": ["complete", "empty"] },
+          "deferredQueries": { "maxItems": 0 }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "query": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rank", "symbol", "query", "status", "providerTotal", "requestedDisplay", "providerDisplay", "receivedCount", "acceptedCount", "filteredCount", "redactedUrlCount", "items"],
+      "properties": {
+        "rank": { "type": "integer", "minimum": 1 },
+        "symbol": { "type": "string", "pattern": "^[0-9A-Z._:-]{1,20}$" },
+        "query": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "status": { "type": "string", "enum": ["complete", "empty", "failed", "deferred"] },
+        "providerTotal": { "type": "integer", "minimum": 0, "maximum": 2147483647 },
+        "requestedDisplay": { "type": "integer", "minimum": 1, "maximum": 20 },
+        "providerDisplay": { "type": "integer", "minimum": 0, "maximum": 20 },
+        "receivedCount": { "type": "integer", "minimum": 0, "maximum": 20 },
+        "acceptedCount": { "type": "integer", "minimum": 0, "maximum": 20 },
+        "filteredCount": { "type": "integer", "minimum": 0, "maximum": 20 },
+        "redactedUrlCount": { "type": "integer", "minimum": 0, "maximum": 40 },
+        "items": { "type": "array", "maxItems": 20, "uniqueItems": true, "items": { "$ref": "#/$defs/item" } }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "status": { "enum": ["empty", "failed", "deferred"] } }, "required": ["status"] },
+          "then": { "properties": { "items": { "maxItems": 0 }, "acceptedCount": { "const": 0 } } }
+        }
+      ]
+    },
+    "item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["title", "description", "originalUrl", "naverUrl", "providerPubDate"],
+      "properties": {
+        "title": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "description": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "originalUrl": { "$ref": "#/$defs/safeUrl" },
+        "naverUrl": { "$ref": "#/$defs/safeUrl" },
+        "providerPubDate": { "type": "string", "format": "date-time", "pattern": "Z$" }
+      }
+    },
+    "safeUrl": {
+      "type": ["string", "null"],
+      "format": "uri",
+      "maxLength": 2048,
+      "pattern": "^https?://[^\\s/?#@]+(?:[/?#][^\\s]*)?$"
+    }
+  }
+}

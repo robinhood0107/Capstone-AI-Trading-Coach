@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.data.ecos.policy import ECOS_ORIGIN
@@ -46,6 +46,12 @@ class ECOSSettings(BaseSettings):
         le=8,
         validation_alias="ECOS_MAX_CALLS_PER_RUN",
     )
+    max_attempts_per_request: int = Field(
+        default=2,
+        ge=1,
+        le=2,
+        validation_alias="ECOS_MAX_ATTEMPTS_PER_REQUEST",
+    )
     connect_timeout_seconds: float = Field(
         default=2.0,
         gt=0,
@@ -80,6 +86,13 @@ class ECOSSettings(BaseSettings):
         default=_PYTHON_SERVICE_ROOT / "data" / "source_snapshots",
         validation_alias="SOURCE_SNAPSHOT_ROOT",
     )
+
+    @field_validator("max_attempts_per_request", mode="before")
+    @classmethod
+    def _reject_boolean_attempt_limit(cls, value: object) -> object:
+        if isinstance(value, bool):
+            raise ValueError("ECOS attempt limit must be an integer")
+        return value
 
     @property
     def origin(self) -> str:

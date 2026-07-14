@@ -59,8 +59,11 @@ class ECOSCollector:
         end: date,
         retrieved_at: datetime,
         persist: bool,
+        require_complete: bool = False,
     ) -> ECOSCollectionResult:
         """provisional registry를 outbound 전에 차단하고 두 series의 sanitized 결과만 반환한다."""
+        if not isinstance(require_complete, bool):
+            raise ECOSCollectionError("require_complete_must_be_boolean")
         approved = verified_series(series)
         if _series_identities(approved) != _series_identities(CANDIDATE_SERIES):
             raise ECOSCollectionError("series_registry_mismatch")
@@ -77,16 +80,10 @@ class ECOSCollector:
                 logical_attempts += attempts
                 if logical_attempts > _MAX_PHYSICAL_ATTEMPTS:
                     raise ECOSCollectionError("run_attempt_limit_exceeded")
-                series_result = _series_snapshot(
-                    entry,
-                    start=start,
-                    end=end,
-                    status="complete" if page.observations else "empty",
-                    observations=tuple(page.observations),
-                )
-                duplicate_count += page.duplicate_count
             except Exception:
                 # parser/provider exception의 message·cause는 series snapshot 경계 밖으로 내보내지 않는다.
+                if require_complete:
+                    raise ECOSCollectionError("incomplete_collection") from None
                 series_result = _series_snapshot(
                     entry,
                     start=start,
@@ -94,6 +91,18 @@ class ECOSCollector:
                     status="failed",
                     observations=(),
                 )
+            else:
+                status: ECOSSeriesStatus = "complete" if page.observations else "empty"
+                if require_complete and status == "empty":
+                    raise ECOSCollectionError("incomplete_collection")
+                series_result = _series_snapshot(
+                    entry,
+                    start=start,
+                    end=end,
+                    status=status,
+                    observations=tuple(page.observations),
+                )
+                duplicate_count += page.duplicate_count
             series_results.append(series_result)
 
         if all(result.status == "failed" for result in series_results):

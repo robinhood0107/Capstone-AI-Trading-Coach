@@ -158,7 +158,8 @@ def _validate_manifest_contract(
         or manifest.record_count > 80
         or manifest.deferred_queries > 4
         or manifest.physical_attempt_count > 8
-        or counts.query_count != 4
+        or manifest.physical_attempt_count > 2 * counts.query_count
+        or not 1 <= counts.query_count <= 4
         or counts.accepted_item_count > 80
         or counts.filtered_item_count > 80
         or counts.redacted_url_count > 160
@@ -258,11 +259,12 @@ def _validate_snapshot_contract(snapshot: object) -> None:
     _require_integer(payload["nextBatchCursor"], minimum=0)
 
     queries = payload["queries"]
-    if not isinstance(queries, list) or len(queries) != 4:
+    if not isinstance(queries, list) or not 1 <= len(queries) <= 4:
         raise NaverSnapshotStorageError("Naver snapshot contract was invalid")
     query_fingerprints: set[str] = set()
     query_ranks: list[int] = []
     query_symbols: list[str] = []
+    query_names: list[str] = []
     query_statuses: list[str] = []
     for query in cast(list[object], queries):
         _validate_query(query)
@@ -270,10 +272,22 @@ def _validate_snapshot_contract(snapshot: object) -> None:
         query_row = cast(dict[str, object], query)
         query_ranks.append(cast(int, query_row["rank"]))
         query_symbols.append(cast(str, query_row["symbol"]))
+        query_names.append(cast(str, query_row["query"]))
         query_statuses.append(cast(str, query_row["status"]))
     if len(query_fingerprints) != len(queries):
         raise NaverSnapshotStorageError("Naver snapshot contract was invalid")
-    if len(set(query_ranks)) != len(queries) or len(set(query_symbols)) != len(queries):
+    if (
+        len(set(query_ranks)) != len(queries)
+        or len(set(query_symbols)) != len(queries)
+        or len(set(query_names)) != len(queries)
+    ):
+        raise NaverSnapshotStorageError("Naver snapshot contract was invalid")
+    batch_cursor = cast(int, payload["batchCursor"])
+    next_batch_cursor = cast(int, payload["nextBatchCursor"])
+    if query_ranks[0] != batch_cursor + 1 or any(
+        current != previous + 1 and current != 1
+        for previous, current in zip(query_ranks, query_ranks[1:])
+    ):
         raise NaverSnapshotStorageError("Naver snapshot contract was invalid")
 
     partial = payload["partial"]
@@ -293,6 +307,16 @@ def _validate_snapshot_contract(snapshot: object) -> None:
         for rank, status in zip(query_ranks, query_statuses, strict=True)
         if status == "deferred"
     ]
+    if expected_deferred:
+        first_deferred = query_statuses.index("deferred")
+        if any(status != "deferred" for status in query_statuses[first_deferred:]):
+            raise NaverSnapshotStorageError("Naver snapshot contract was invalid")
+        expected_next_cursors = {expected_deferred[0] - 1}
+    elif any(current == 1 for current in query_ranks[1:]):
+        expected_next_cursors = {query_ranks[-1]}
+    else:
+        # universe 전체 크기는 snapshot에 복제하지 않으므로 끝에 닿은 경우의 0과 단순 증가를 허용한다.
+        expected_next_cursors = {0, batch_cursor + len(queries)}
     expected_partial = any(status in {"failed", "deferred"} for status in query_statuses)
     if expected_partial:
         expected_coverage = "partial"
@@ -302,6 +326,7 @@ def _validate_snapshot_contract(snapshot: object) -> None:
         expected_coverage = "complete"
     if (
         deferred_values != expected_deferred
+        or next_batch_cursor not in expected_next_cursors
         or partial != expected_partial
         or coverage != expected_coverage
     ):

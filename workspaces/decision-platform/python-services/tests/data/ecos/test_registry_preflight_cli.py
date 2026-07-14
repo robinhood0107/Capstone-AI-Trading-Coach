@@ -7,9 +7,10 @@ import httpx
 import pytest
 from pydantic import SecretStr
 
+from app.data._shared.redis_quota import QuotaUnavailableError
 from app.data.ecos import registry_preflight, registry_preflight_cli
-from app.data.ecos.errors import ECOSParseError
-from app.data.ecos.http_client import ECOSHttpClient
+from app.data.ecos.errors import ECOSApplicationError, ECOSParseError
+from app.data.ecos.http_client import ECOSHttpClient, ECOSHttpError
 from app.data.ecos.models import StatisticItemMetadata, StatisticTableMetadata
 from app.data.ecos.series_registry import ECOSSeries
 from app.data.ecos.settings import ECOSSettings
@@ -136,6 +137,42 @@ def test_online_item_parse_failure_reports_only_safe_code_and_actual_attempt_cou
     assert capsys.readouterr().out == (
         "source=ecos operation=registry_preflight code=invalid_response physicalAttemptCount=2\n"
     )
+
+
+@pytest.mark.parametrize(
+    ("failure", "expected_code"),
+    [
+        (ECOSHttpError("response_invalid", status_code=200), "invalid_response"),
+        (ECOSHttpError("http_429", status_code=429), "http_429"),
+        (
+            ECOSApplicationError("ERROR-602", retryable=False, cooldown_seconds=1_800),
+            "ERROR-602",
+        ),
+        (QuotaUnavailableError("synthetic-secret-must-not-escape"), "quota_unavailable"),
+    ],
+)
+def test_online_failure_classifies_only_allowlisted_operator_codes(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    failure: Exception,
+    expected_code: str,
+) -> None:
+    client = _Client()
+    monkeypatch.setattr(registry_preflight_cli, "_build_client", lambda: client)
+
+    def fail_inspection(**_: object) -> None:
+        raise failure
+
+    monkeypatch.setattr(registry_preflight_cli, "inspect_registry_metadata", fail_inspection)
+
+    assert registry_preflight_cli.main(["--online"]) == 1
+
+    rendered = capsys.readouterr().out
+    assert rendered == (
+        f"source=ecos operation=registry_preflight code={expected_code} physicalAttemptCount=0\n"
+    )
+    assert "synthetic-secret" not in rendered
+    assert client.closed is True
 
 
 def test_invalid_argv_cannot_echo_a_mistaken_secret_or_url(

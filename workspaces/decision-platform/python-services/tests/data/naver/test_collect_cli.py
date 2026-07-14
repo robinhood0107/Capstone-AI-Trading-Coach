@@ -112,20 +112,30 @@ def test_command_preserves_exact_manifest_names_and_rank_order(tmp_path: Path) -
     assert command.universe_manifest_sha256 == hashlib.sha256(manifest.read_bytes()).hexdigest()
 
 
-def test_cli_uses_absolute_default_snapshot_root_and_preserves_override(tmp_path: Path) -> None:
+def test_cli_transfers_profile_display_batch_retry_for_default_and_override_roots(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     manifest = _write_manifest(tmp_path / "universe_manifest.json")
     base_args = ["--profile", "legacy", "--universe-manifest", str(manifest)]
+    monkeypatch.setenv("NAVER_BATCH_SIZE", "1")
+    monkeypatch.setenv("NAVER_MAX_ATTEMPTS_PER_QUERY", "1")
 
-    default_command = build_collect_command(base_args, now=_NOW)
+    default_command = build_collect_command([*base_args, "--display", "7"], now=_NOW)
     override = tmp_path / "operator-source-snapshots"
     override_command = build_collect_command(
-        [*base_args, "--data-root", str(override)],
+        [*base_args, "--display", "7", "--data-root", str(override)],
         now=_NOW,
     )
 
     assert default_command.data_root == _PYTHON_SERVICE_ROOT / "data" / "source_snapshots"
     assert default_command.data_root.is_absolute()
     assert override_command.data_root == override
+    for command in (default_command, override_command):
+        assert command.profile.name == "legacy"
+        assert command.requested_display == 7
+        assert command.batch_size == 1
+        assert command.max_attempts_per_query == 1
 
 
 def test_command_resolves_batch_retry_and_strict_mode_once(

@@ -108,6 +108,20 @@ def test_item_preflight_accepts_a_valid_partial_metadata_page() -> None:
     assert item.item_code == "0101000"
 
 
+def test_item_preflight_rejects_a_truncated_first_metadata_page() -> None:
+    payload = _fixture("statistic_item_list_metadata.json")
+    envelope = payload["StatisticItemList"]
+    assert isinstance(envelope, dict)
+    envelope["list_total_count"] = 201
+
+    with pytest.raises(ECOSParseError, match="invalid ECOS response"):
+        parse_statistic_item_list(
+            payload,
+            expected_stat_code="722Y001",
+            expected_item_code="0101000",
+        )
+
+
 class _PreflightClient:
     def __init__(
         self,

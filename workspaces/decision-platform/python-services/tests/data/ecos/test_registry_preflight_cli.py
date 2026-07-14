@@ -115,8 +115,7 @@ def test_online_failure_is_not_retried_and_drops_provider_details(
     assert client.closed is True
     rendered = capsys.readouterr().out
     assert rendered == (
-        "source=ecos operation=registry_preflight code=preflight_failed "
-        "physicalAttemptCount=1\n"
+        "source=ecos operation=registry_preflight code=preflight_failed physicalAttemptCount=1\n"
     )
     assert "synthetic-ecos-key" not in rendered
     assert "https://" not in rendered
@@ -135,8 +134,7 @@ def test_online_item_parse_failure_reports_only_safe_code_and_actual_attempt_cou
     assert client.calls == [("table", "policy-rate"), ("item", "policy-rate")]
     assert client.closed is True
     assert capsys.readouterr().out == (
-        "source=ecos operation=registry_preflight code=invalid_response "
-        "physicalAttemptCount=2\n"
+        "source=ecos operation=registry_preflight code=invalid_response physicalAttemptCount=2\n"
     )
 
 
@@ -193,7 +191,6 @@ def test_unicode_escaped_credential_echo_cannot_reach_preflight_cli(
     rendered = capsys.readouterr().out
     assert attempts == 1
     assert rendered == (
-        "source=ecos operation=registry_preflight code=preflight_failed "
-        "physicalAttemptCount=1\n"
+        "source=ecos operation=registry_preflight code=preflight_failed physicalAttemptCount=1\n"
     )
     assert marker not in rendered

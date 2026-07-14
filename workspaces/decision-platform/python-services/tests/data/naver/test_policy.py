@@ -27,6 +27,12 @@ def test_request_policy_is_news_only_and_profile_fixed() -> None:
     assert legacy.auth_headers == ("X-Naver-Client-Id", "X-Naver-Client-Secret")
     assert hub.auth_headers == ("X-NCP-APIGW-API-KEY-ID", "X-NCP-APIGW-API-KEY")
     assert set(legacy.auth_headers).isdisjoint(hub.auth_headers)
+    assert legacy.documentation_url == (
+        "https://developers.naver.com/docs/serviceapi/search/news/news.md"
+    )
+    assert legacy.policy_url == "https://developers.naver.com/products/terms/"
+    assert hub.documentation_url == "https://api.ncloud-docs.com/docs/naver-api-hub-search-news"
+    assert hub.policy_url == "https://www.ncloud.com/policy/terms/svc"
 
 
 def test_policy_rejects_unknown_profile_instead_of_accepting_caller_origin() -> None:

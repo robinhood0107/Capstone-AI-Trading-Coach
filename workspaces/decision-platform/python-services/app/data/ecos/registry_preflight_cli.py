@@ -126,12 +126,12 @@ def _failure_code(error: Exception) -> str:
 
 
 def _physical_attempt_count(client: object | None) -> int:
-    """실패 경로에서도 secret-bearing 객체를 출력하지 않고 bounded count만 읽는다."""
+    """실패 경로에서도 secret-bearing 객체를 출력하지 않고 내부 handoff count만 읽는다."""
     try:
         value = getattr(client, "physical_attempt_count", 0)
     except Exception:
         return 0
-    if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 4:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
         return 0
     return value
 

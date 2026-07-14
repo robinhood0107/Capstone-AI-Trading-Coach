@@ -12,6 +12,7 @@ from app.data.ecos import _credential_transport
 from app.data.ecos._credential_transport import ECOSCredentialError, _CredentialTransport
 from app.data.ecos.http_client import ECOSHttpClient, ECOSHttpError, _build_tls_context
 from app.data.ecos.policy import build_keyless_service_path
+from app.data.ecos.series_registry import CANDIDATE_SERIES
 from app.data.ecos.settings import ECOSSettings
 
 
@@ -203,3 +204,26 @@ def test_test_factory_disables_ambient_env_and_rejects_redirects(tmp_path: Path)
             client.get_json(_path())
     finally:
         client.close()
+
+
+def test_registry_metadata_requests_never_retry() -> None:
+    attempts = 0
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        return httpx.Response(500, json={"RESULT": {"CODE": "ERROR-500"}})
+
+    client = ECOSHttpClient._for_tests(
+        ECOSSettings(_env_file=None),
+        transport=httpx.MockTransport(handler),
+        quota=_RecordingQuota([]),
+        credential=SecretStr("synthetic-key"),
+    )
+    try:
+        with pytest.raises(ECOSHttpError, match="http_500"):
+            client.statistic_table_list(series=CANDIDATE_SERIES[0])
+    finally:
+        client.close()
+
+    assert attempts == 1

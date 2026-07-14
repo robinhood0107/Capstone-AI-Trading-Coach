@@ -162,13 +162,17 @@ def build_collect_command(
     ):
         raise CollectCliError("universe batch arguments are invalid")
     try:
-        setting_values: dict[str, object] = {
-            "naver_search_profile": profile.name,
-            "naver_display": args.display,
-        }
-        if args.data_root is not None:
-            setting_values["snapshot_root"] = args.data_root
-        settings = NaverSettings(**setting_values)
+        if args.data_root is None:
+            settings = NaverSettings(
+                naver_search_profile=profile.name,
+                naver_display=args.display,
+            )
+        else:
+            settings = NaverSettings(
+                naver_search_profile=profile.name,
+                naver_display=args.display,
+                snapshot_root=args.data_root,
+            )
     except (OSError, ValidationError, ValueError):
         raise CollectCliError("collector settings are invalid") from None
     try:

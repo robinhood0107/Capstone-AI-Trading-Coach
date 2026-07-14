@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from threading import Lock
-from typing import Protocol, cast
+from typing import Literal, Protocol, cast
 from uuid import UUID
 
 
@@ -35,7 +35,7 @@ local latest = redis.call('ZREVRANGE', key, 0, 0, 'WITHSCORES')
 if min_interval_ms > 0 and #latest == 2 then
     local elapsed = now_ms - tonumber(latest[2])
     if elapsed < min_interval_ms then
-        return {0, min_interval_ms - elapsed, redis.call('ZCARD', key)}
+        return {2, min_interval_ms - elapsed, redis.call('ZCARD', key)}
     end
 end
 
@@ -56,6 +56,23 @@ redis.call('PEXPIRE', key, longest_window_ms + cooldown_ms)
 return {1, 0, redis.call('ZCARD', key)}
 """
 
+REDIS_COOLDOWN_LUA = r"""
+local key = KEYS[1]
+local cooldown_key = key .. ':cooldown'
+local duration_ms = tonumber(ARGV[1])
+local now_parts = redis.call('TIME')
+local now_ms = (tonumber(now_parts[1]) * 1000) + math.floor(tonumber(now_parts[2]) / 1000)
+local requested_until = now_ms + duration_ms
+local current_until = tonumber(redis.call('GET', cooldown_key) or '0')
+
+if current_until >= requested_until then
+    return current_until - now_ms
+end
+
+redis.call('SET', cooldown_key, requested_until, 'PX', duration_ms)
+return duration_ms
+"""
+
 _OPAQUE_KEY = re.compile(r"s1\.3:quota:[a-z0-9][a-z0-9-]{0,31}:[a-z0-9][a-z0-9-]{0,31}:primary")
 
 
@@ -68,6 +85,15 @@ class QuotaDeniedError(RuntimeError):
 
     def __init__(self, *, retry_after_ms: int, observed_count: int) -> None:
         super().__init__("source quota reservation was denied")
+        self.retry_after_ms = retry_after_ms
+        self.observed_count = observed_count
+
+
+class QuotaWaitError(RuntimeError):
+    """최소 호출 간격이 남은 상태를 외부 scheduler가 처리하도록 전달한다."""
+
+    def __init__(self, *, retry_after_ms: int, observed_count: int) -> None:
+        super().__init__("source quota reservation must wait")
         self.retry_after_ms = retry_after_ms
         self.observed_count = observed_count
 
@@ -136,17 +162,47 @@ class RedisQuotaReservation:
                 arguments.extend((window.limit, window.seconds * 1000))
             try:
                 raw_result = self._redis.eval(REDIS_QUOTA_LUA, 1, *arguments)
-                granted, retry_after_ms, observed_count = _parse_result(raw_result)
+                decision, retry_after_ms, observed_count = _parse_result(raw_result)
             except QuotaUnavailableError:
                 raise
             except Exception:
                 raise QuotaUnavailableError("source quota reservation is unavailable") from None
-            if not granted:
+            if decision == "wait":
+                raise QuotaWaitError(
+                    retry_after_ms=retry_after_ms,
+                    observed_count=observed_count,
+                )
+            if decision == "deny":
                 raise QuotaDeniedError(
                     retry_after_ms=retry_after_ms,
                     observed_count=observed_count,
                 )
             self._granted_in_run += 1
+
+    def activate_cooldown(self, *, seconds: int) -> None:
+        """provider rate-limit 응답 뒤 Redis TIME 기준 deployment cooldown을 원자 활성화한다."""
+        if seconds <= 0 or seconds > self._policy.cooldown_seconds:
+            raise ValueError("quota cooldown seconds are out of policy bounds")
+        try:
+            result = self._redis.eval(
+                REDIS_COOLDOWN_LUA,
+                1,
+                self._key,
+                seconds * 1000,
+            )
+            remaining_ms = int(cast(int | str | bytes, result))
+        except (TypeError, ValueError):
+            raise QuotaUnavailableError("source quota cooldown response was invalid") from None
+        except Exception:
+            raise QuotaUnavailableError("source quota cooldown is unavailable") from None
+        if remaining_ms < 0:
+            raise QuotaUnavailableError("source quota cooldown response was invalid")
+
+    @property
+    def granted_in_run(self) -> int:
+        """현재 process run에서 예약에 성공한 physical attempt 수를 반환한다."""
+        with self._run_lock:
+            return self._granted_in_run
 
 
 def _validate_attempt_id(value: str) -> None:
@@ -158,16 +214,33 @@ def _validate_attempt_id(value: str) -> None:
         raise ValueError("lowercase UUID v4 quota attempt id is required")
 
 
-def _parse_result(value: object) -> tuple[bool, int, int]:
+QuotaDecision = Literal["deny", "allow", "wait"]
+
+
+def _parse_result(value: object) -> tuple[QuotaDecision, int, int]:
     if not isinstance(value, (list, tuple)) or len(value) != 3:
         raise QuotaUnavailableError("source quota reservation response was invalid")
     parts = cast(list[object] | tuple[object, ...], value)
     try:
-        granted = int(cast(int | str | bytes, parts[0])) == 1
-        retry_after_ms = int(cast(int | str | bytes, parts[1]))
-        observed_count = int(cast(int | str | bytes, parts[2]))
+        status = _parse_redis_integer(parts[0])
+        retry_after_ms = _parse_redis_integer(parts[1])
+        observed_count = _parse_redis_integer(parts[2])
     except (TypeError, ValueError):
         raise QuotaUnavailableError("source quota reservation response was invalid") from None
-    if retry_after_ms < 0 or observed_count < 0:
+    if status not in (0, 1, 2) or retry_after_ms < 0 or observed_count < 0:
         raise QuotaUnavailableError("source quota reservation response was invalid")
-    return granted, retry_after_ms, observed_count
+    if status == 1:
+        if retry_after_ms != 0:
+            raise QuotaUnavailableError("source quota reservation response was invalid")
+        return "allow", retry_after_ms, observed_count
+    if status == 2:
+        if retry_after_ms == 0:
+            raise QuotaUnavailableError("source quota reservation response was invalid")
+        return "wait", retry_after_ms, observed_count
+    return "deny", retry_after_ms, observed_count
+
+
+def _parse_redis_integer(value: object) -> int:
+    if isinstance(value, bool) or not isinstance(value, (int, str, bytes)):
+        raise TypeError("Redis quota value is not an integer")
+    return int(value)

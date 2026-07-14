@@ -112,7 +112,6 @@ class _CredentialTransport(httpx.BaseTransport):
         self._quota.reserve(attempt_id=str(uuid4()))
         # Redis 왕복 중 deadline이 끝났다면 credential·physical send 단계로 넘기지 않는다.
         _ensure_before_deadline(deadline, monotonic=self._monotonic)
-        self._physical_attempt_count += 1
 
         reader = self._credential_reader or _read_credential
         credential: SecretStr | None = None
@@ -136,6 +135,7 @@ class _CredentialTransport(httpx.BaseTransport):
             request.url = _credential_url(original_url, value)
             # credential store·URL 준비 중 만료된 요청은 실제 provider socket으로 넘기지 않는다.
             _ensure_before_deadline(deadline, monotonic=self._monotonic)
+            self._physical_attempt_count += 1
             try:
                 provider_response = self._inner.handle_request(request)
             except Exception:
@@ -181,7 +181,7 @@ class _CredentialTransport(httpx.BaseTransport):
 
     @property
     def physical_attempt_count(self) -> int:
-        """quota 예약에 성공해 credential 단계까지 진입한 physical attempt 수를 반환한다."""
+        """credential 준비를 마치고 provider transport에 전달한 physical attempt 수를 반환한다."""
         return self._physical_attempt_count
 
     def close(self) -> None:

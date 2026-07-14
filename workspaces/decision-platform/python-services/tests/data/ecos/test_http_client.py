@@ -7,6 +7,7 @@ import httpx
 import pytest
 from pydantic import SecretStr
 
+from app.data._shared.redis_quota import QuotaUnavailableError
 from app.data.ecos import _credential_transport
 from app.data.ecos._credential_transport import ECOSCredentialError, _CredentialTransport
 from app.data.ecos.http_client import ECOSHttpClient, ECOSHttpError, _build_tls_context
@@ -104,6 +105,66 @@ def test_wrong_origin_is_rejected_before_quota_or_credential_read(
         transport.handle_request(httpx.Request("GET", f"https://attacker.invalid{_path()}"))
 
     assert events == []
+
+
+def test_missing_credential_fails_after_reservation_but_before_outbound(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[str] = []
+    outbound = 0
+
+    def unavailable() -> SecretStr:
+        raise ECOSCredentialError("authentication_unavailable")
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal outbound
+        outbound += 1
+        return httpx.Response(200)
+
+    monkeypatch.setattr(_credential_transport, "_read_credential", unavailable)
+    transport = _CredentialTransport(
+        httpx.MockTransport(handler),
+        quota=_RecordingQuota(events),
+    )
+
+    with pytest.raises(ECOSCredentialError, match="authentication_unavailable"):
+        transport.handle_request(httpx.Request("GET", f"https://ecos.bok.or.kr{_path()}"))
+
+    assert events == ["quota"]
+    assert outbound == 0
+
+
+def test_quota_failure_does_not_read_credential_or_attempt_outbound(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    credential_reads = 0
+    outbound = 0
+
+    def read_credential() -> SecretStr:
+        nonlocal credential_reads
+        credential_reads += 1
+        return SecretStr("synthetic-key")
+
+    class RejectingQuota:
+        def reserve(self, *, attempt_id: str) -> None:
+            raise QuotaUnavailableError("quota unavailable")
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal outbound
+        outbound += 1
+        return httpx.Response(200)
+
+    monkeypatch.setattr(_credential_transport, "_read_credential", read_credential)
+    transport = _CredentialTransport(
+        httpx.MockTransport(handler),
+        quota=RejectingQuota(),
+    )
+
+    with pytest.raises(QuotaUnavailableError):
+        transport.handle_request(httpx.Request("GET", f"https://ecos.bok.or.kr{_path()}"))
+
+    assert credential_reads == 0
+    assert outbound == 0
 
 
 def test_tls_context_requires_tls12_hostname_and_cert_validation() -> None:

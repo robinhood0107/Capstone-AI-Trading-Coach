@@ -83,9 +83,7 @@ def test_valid_json_object_is_returned_after_bounded_stream_read() -> None:
 
 
 def test_bounded_json_bytes_reuses_structure_and_byte_limits() -> None:
-    assert parse_bounded_json_bytes(b'{"items":[1,2]}', limits=_limits()) == {
-        "items": [1, 2]
-    }
+    assert parse_bounded_json_bytes(b'{"items":[1,2]}', limits=_limits()) == {"items": [1, 2]}
 
     with pytest.raises(BoundedJsonError, match="byte limit"):
         parse_bounded_json_bytes(

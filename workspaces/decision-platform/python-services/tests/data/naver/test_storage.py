@@ -23,10 +23,7 @@ _FOUR_QUERY_EXAMPLE_PATH = (
     _REPO_ROOT / "contracts" / "examples" / "naver_news_metadata_snapshot.valid.json"
 )
 _ONE_QUERY_EXAMPLE_PATH = (
-    _REPO_ROOT
-    / "contracts"
-    / "examples"
-    / "naver_news_metadata_snapshot.one_query.valid.json"
+    _REPO_ROOT / "contracts" / "examples" / "naver_news_metadata_snapshot.one_query.valid.json"
 )
 _SNAPSHOT_PATH = "naver/2026/07/14/00000000-0000-4000-8000-000000000001/snapshot.json"
 

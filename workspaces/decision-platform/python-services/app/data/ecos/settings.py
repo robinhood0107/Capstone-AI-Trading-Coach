@@ -5,8 +5,10 @@ from pathlib import Path
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-ECOS_ORIGIN = "https://ecos.bok.or.kr"
+from app.data.ecos.policy import ECOS_ORIGIN
+
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[6]
+_PYTHON_SERVICE_ROOT = Path(__file__).resolve().parents[3]
 
 
 class ECOSSettings(BaseSettings):
@@ -73,6 +75,10 @@ class ECOSSettings(BaseSettings):
         gt=0,
         le=20.0,
         validation_alias="ECOS_LOGICAL_DEADLINE_SECONDS",
+    )
+    snapshot_root: Path = Field(
+        default=_PYTHON_SERVICE_ROOT / "data" / "source_snapshots",
+        validation_alias="SOURCE_SNAPSHOT_ROOT",
     )
 
     @property

@@ -52,7 +52,7 @@ def parse_statistic_search(
     rows_value = envelope.get("row")
     if not isinstance(rows_value, list):
         raise ECOSParseError(_INVALID_RESPONSE)
-    if total_count > max_rows or len(rows_value) > max_rows:
+    if total_count > max_rows or len(rows_value) > _MAX_METADATA_ROWS:
         raise ECOSParseError("ECOS response exceeded row limit")
     if total_count < len(rows_value):
         raise ECOSParseError(_INVALID_RESPONSE)
@@ -92,7 +92,11 @@ def parse_statistic_table_list(
     expected_stat_code: str,
 ) -> StatisticTableMetadata:
     """StatisticTableList에서 승인 대상 코드·명칭·주기·검색 가능 여부만 추출한다."""
-    row = _single_metadata_row(payload, "StatisticTableList")
+    rows = _metadata_rows(payload, "StatisticTableList")
+    candidates = [row for row in rows if _bounded_code(row.get("STAT_CODE")) == expected_stat_code]
+    if len(candidates) != 1:
+        raise ECOSParseError(_INVALID_RESPONSE)
+    row = candidates[0]
     stat_code = _bounded_code(row.get("STAT_CODE"))
     cycle = _bounded_code(row.get("CYCLE"))
     searchable_value = row.get("SRCH_YN")
@@ -113,7 +117,16 @@ def parse_statistic_item_list(
     expected_item_code: str,
 ) -> StatisticItemMetadata:
     """StatisticItemList에서 승인 대상 series item의 allowlist metadata만 추출한다."""
-    row = _single_metadata_row(payload, "StatisticItemList")
+    rows = _metadata_rows(payload, "StatisticItemList")
+    candidates = [
+        row
+        for row in rows
+        if _bounded_code(row.get("STAT_CODE")) == expected_stat_code
+        and _bounded_code(row.get("ITEM_CODE")) == expected_item_code
+    ]
+    if len(candidates) != 1:
+        raise ECOSParseError(_INVALID_RESPONSE)
+    row = candidates[0]
     stat_code = _bounded_code(row.get("STAT_CODE"))
     item_code = _bounded_code(row.get("ITEM_CODE"))
     cycle = _bounded_code(row.get("CYCLE"))
@@ -148,21 +161,38 @@ def _parse_result(value: object) -> StatisticSearchPage:
     )
 
 
-def _single_metadata_row(
+def raise_for_ecos_application_error(payload: Mapping[str, object]) -> None:
+    """모든 ECOS service의 top-level RESULT 오류를 동일한 stable taxonomy로 변환한다."""
+    if "RESULT" not in payload:
+        return
+    result = _mapping(payload["RESULT"])
+    code = _bounded_code(result.get("CODE"))
+    if _APPLICATION_CODE.fullmatch(code) is None:
+        raise ECOSParseError(_INVALID_RESPONSE)
+    if code == "INFO-200":
+        return
+    raise ECOSApplicationError(
+        code,
+        retryable=code in _RETRYABLE_CODES,
+        cooldown_seconds=_COOLDOWN_SECONDS.get(code, 0),
+    )
+
+
+def _metadata_rows(
     payload: Mapping[str, object],
     envelope_name: str,
-) -> Mapping[str, object]:
+) -> tuple[Mapping[str, object], ...]:
     envelope = _mapping(payload.get(envelope_name))
     total_count = _non_negative_int(envelope.get("list_total_count"))
     rows_value = envelope.get("row")
     if (
         not isinstance(rows_value, list)
-        or total_count != 1
-        or len(rows_value) != 1
+        or total_count < 1
+        or total_count != len(rows_value)
         or len(rows_value) > _MAX_METADATA_ROWS
     ):
         raise ECOSParseError(_INVALID_RESPONSE)
-    return _mapping(rows_value[0])
+    return tuple(_mapping(row) for row in rows_value)
 
 
 def _mapping(value: object) -> Mapping[str, object]:

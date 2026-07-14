@@ -1706,6 +1706,9 @@ service MarketDataService {
 > sketch이며 현재 proto/controller가 없어 **호출 불가**다. S1.3은 아래 내부 file artifact만
 > 생산한다. `GetNewsSummary`는 Naver provider 응답이 아니라 Return Engine이 생성할 감성 요약
 > 계약을 뜻하며, 두 RPC를 공개하려면 별도의 `contracts/changes/`와 인증·인가 구현이 필요하다.
+> 아래 lower-only batch/retry, strict CLI와 JSON Schema의 코드·offline 회귀 검증은 완료했다.
+> online 검증은 별도 승인 전까지 미실행이며 실제 ECOS/Naver provider 호출은 0회다. Redis runtime
+> gate는 loopback·`NOAUTH`/인증 `PONG`·AOF·256 MiB·`noeviction`을 이번 실행에서 통과했다.
 
 S1.3 내부 source snapshot 계약은 다음과 같다.
 
@@ -1717,7 +1720,12 @@ S1.3 내부 source snapshot 계약은 다음과 같다.
 | consume | consumer는 manifest만 열거하고 schema·상대경로·date partition·SHA-256을 검증한다. workspace 간 전달은 `contracts/`·`artifacts/` 합의 경계를 사용하며 다른 workspace 구현이나 임의 로컬 경로를 직접 참조하지 않는다 |
 | retention | ECOS 365일, Naver metadata 최대 30일. 삭제 owner는 `decision-platform:source-snapshot-retention`이며 command는 dry-run 기본, `--apply`에서 manifest-first로 최대 1,000개만 지운다 |
 | 금지 데이터 | provider raw body/header/message, request URL, credential·hash, 기사 본문, 로컬 절대경로를 snapshot·manifest·로그에 저장하지 않는다 |
-| Naver lifecycle | 운영자가 `legacy` 또는 `api-hub` profile을 명시하며 날짜 기반 자동 전환은 없다. 2026 Q3에 NCP 계정·Application·API key ID/key와 secret entry를 준비하고, 2026 Q4에 pinned fixture parity와 별도 승인된 최소 1-query online 검증을 거친다. 목표 cutover는 `2027-03-31`, legacy rollback 제거는 `2027-05-31`, legacy hard stop은 `2027-06-30T00:00:00+09:00`이며 API Hub는 그 전까지 disabled-ready다 |
+| Naver query | canonical snapshot은 별도 smoke 포맷 없이 `queries=1..4`를 허용한다. `NAVER_BATCH_SIZE`는 기본 4이고 `1..4`에서만 하향하며 immediate legacy smoke는 1이다. consumer/storage는 snapshot 배열 길이와 manifest `queryCount`가 같은지 교차 검증하고 0·5 또는 count mismatch를 거부한다 |
+| retry | `ECOS_MAX_ATTEMPTS_PER_REQUEST`와 `NAVER_MAX_ATTEMPTS_PER_QUERY`는 각각 `1..2`, 기본 2, smoke 1인 non-secret lower-only 설정이다. ECOS metadata preflight는 설정과 무관하게 hard 1 attempt다. Naver manifest `physicalAttemptCount`는 `2 * queryCount`를 초과할 수 없다 |
+| CLI | `--require-complete`는 online-only다. 첫 failed·empty·deferred에서 다음 provider 호출과 incomplete artifact publish를 중단한다. 일반 모드는 수집된 count와 deferred cursor를 보존한 partial을 허용한다. exit은 성공 `0`, hard failure `1`, argument/gate 오류 `2`, 재개 가능한 partial `3`이다 |
+| Naver 실패 로그 | `source=naver operation=news_metadata_collect code=<allowlisted_code>`만 출력한다. code allowlist는 `invalid_arguments`, `authentication_unavailable`, `authentication_failed`, `logical_deadline_exceeded`, `transport_unavailable`, `rate_limited`, `quota_unavailable`, `invalid_response`, `partial_collection`, `persistence_failed`, `collection_failed`다. provider message·URL·query·header·credential·traceback은 금지한다 |
+| online gate | Redis loopback/`NOAUTH`/인증 `PONG`/AOF/256 MiB/`noeviction` 검증 뒤, 별도 승인된 ECOS preflight 4회를 retry 0으로 수행하고 registry activation을 분리한다. 다시 별도 승인받아 ECOS data 2회와 legacy Naver 1-query 1회를 retry 0·`--require-complete`로 실행해 전체 physical attempt를 정확히 7회로 제한한다. quota/attempt 불일치, registry mismatch, Redis·provider·artifact gate 실패 시 즉시 중단하며 새 승인 없이 재호출하지 않는다. live negative injection은 금지한다 |
+| Naver lifecycle | 이번 S1.3 immediate legacy 1-query smoke는 현재 collector 계약 검증이다. 이와 별개로 운영자가 `legacy` 또는 `api-hub` profile을 명시하며 날짜 기반 자동 전환은 없다. 2026 Q3에 NCP 계정·Application·API key ID/key와 secret entry를 준비하고, 2026 Q4에 pinned fixture parity와 별도 승인된 최소 1-query API Hub lifecycle 검증을 다시 거친다. 목표 cutover는 `2027-03-31`, legacy rollback 제거는 `2027-05-31`, legacy hard stop은 `2027-06-30T00:00:00+09:00`이며 API Hub는 그 전까지 disabled-ready다 |
 
 S1.1의 KIS MarketDataService 구현 경계는 다음과 같다.
 
@@ -1870,7 +1878,7 @@ service SourceRegistryService {
 
 | 세션/트랙 | API/RPC 보안 계약 |
 |---|---|
-| S1.3 | ECOS/Naver는 내부 fixed-origin collector만 호출한다. static credential은 private transport가 send 순간에 env에서 읽고 공개 settings/business client/API에 두지 않는다. TLS 검증을 강제하고 redirect·ambient proxy/`.netrc`·caller proxy/CA override를 금지한다. bytes/JSON/list/text/date/query/symbol/call cap을 검증하고 Naver HTML/control 문자를 제거한다. 기사 link는 표시 metadata일 뿐 backend fetch 대상이 아니다. 출력은 ignored root의 versioned sanitized snapshot artifact와 manifest/hash/asOf로 한정하고 S1.3에는 DB write를 추가하지 않는다. source별 양의 `retentionDays`와 삭제 owner가 승인되지 않으면 persistent snapshot/online write를 열지 않는다. Decision/팀원 B 경로는 이 snapshot만 읽는다. GDELT는 팀원 B optional enrichment이며 blocker가 아니다 |
+| S1.3 | ECOS/Naver는 내부 fixed-origin collector만 호출한다. static credential은 private transport가 send 순간에 env에서 읽고 공개 settings/business client/API에 두지 않는다. TLS 검증을 강제하고 redirect·ambient proxy/`.netrc`·caller proxy/CA/절대 URL·인증성 parameter override를 금지한다. bytes/JSON depth/list/text/date/query/symbol/call cap을 검증한다. Naver title/description은 active HTML/control을 제거한 plain text로 저장하고 consumer가 output escape한다. 기사 link는 표시 metadata일 뿐 backend fetch 대상이 아니며 userinfo/control/private·link-local host를 거부하고 query credential을 제거한다. canonical `queries` 길이와 manifest `queryCount`의 `1..4` 일치를 검증한다. stable 로그에는 `source`·`operation`·allowlisted `code`만 남기고 ECOS path key는 URL/log/exception/fingerprint/artifact에서 제거한다. 출력은 ignored root의 versioned sanitized snapshot artifact와 manifest/hash/asOf로 한정하고 dirfd+`O_NOFOLLOW`+exclusive create, mode `0600`을 적용한다. S1.3에는 DB write를 추가하지 않는다. source별 양의 `retentionDays`와 삭제 owner가 승인되지 않으면 persistent snapshot/online write를 열지 않는다. Decision/팀원 B 경로는 이 snapshot만 읽는다. GDELT는 팀원 B optional enrichment이며 blocker가 아니다 |
 | S1.4 | 계산 request의 배열·기간·숫자 finite/상하한, deadline, 동시 실행과 output 크기를 제한한다. 계산 오류·NaN·timeout은 주문 허용값이 아니다 |
 | S1.5 | Data Quality Report API/산출물은 finite/missing/duplicate aggregate와 sanitized sample만 제공한다. provider raw/query/credential/token/account/PII를 report·로그·metric에 넣지 않고 상세 ignored artifact에는 retention을 적용한다 |
 | S1.6 | OpenDART outbound 전 PostgreSQL physical-attempt reservation이 성공해야 하며 DB 오류/budget/cap/020은 non-retry fail-closed다. DS004 ownership canonical은 corpCode·role/category·날짜·주식 수/비율만 허용하고 자연인 성명·주소·등록 식별자를 raw/canonical/log/metric/artifact/event에서 제거한다. Market Calendar RPC/REST는 aggregator 이후 별도 contract change 전까지 미가용이고 sourceRefs는 opaque sanitized ID/hash만 반환한다 |
@@ -1904,6 +1912,11 @@ API/adapter/parser/storage 변경 커밋은 기능 단위로 분리한다. 테�
 | KIS retry | routing 오류 GET 1회 다음 슬롯 재호출, `EGW00201`/429 재시도 0회, 주문성 호출 자동 재시도 0회 |
 | KIS backfill | 같은 parquet 기간 두 번째 실행의 daily outbound 0건, 양 끝 누락 범위만 조회 |
 | KIS WebSocket 계획 수용 | 두 번째 session·42번째 합산 등록 사전 거부, 중복 dedupe, Approval 동시 miss 1회, reconnect ledger 복원(S3/P2 구현 시 활성) |
+| S1.3 Naver batch/snapshot | 기본 4, 1·4 성공, 0·5 거부, selection/cursor/deferred 결정성과 snapshot `queries`/manifest `queryCount` 일치 검증 |
+| S1.3 retry/strict CLI | attempts 기본 2·smoke 1·preflight hard 1, setting 1에서 두 번째 send 0회, 첫 failed/empty/deferred 뒤 후속 호출·incomplete publish 0회, exit `0/1/2/3` 검증 |
+| S1.3 sanitized failure | Naver 11개 allowlist exact line과 ECOS path-key 비노출을 검증하고 credential·URL·provider message·traceback이 log/exception/fingerprint/artifact에 없는지 확인 |
+| S1.3 transport/URL/storage | credential echo, ambient proxy/`.netrc`, redirect, TLS false, caller proxy/CA/transport override, origin/endpoint bypass, oversize/depth/list/text, URL userinfo/control/private-host/query credential, 기사 DNS/GET/HEAD, symlink/overwrite를 offline fixture/mock으로 회귀 검증 |
+| S1.3 online smoke | Redis gate 뒤 별도 승인 preflight 4 + ECOS data 2 + legacy Naver 1 = 정확히 7 attempts와 canonical artifact schema/hash/mode/retention 검증. timeout/invalid key 같은 live negative injection은 수행하지 않음 |
 | Journal | decision/backtest/RAG 근거 연결 |
 | Option Analytics | BSM 가격, Greeks, implied volatility 수치 검증 |
 | Async Status | async job 상태, stream metric, artifact ingest 상태 |

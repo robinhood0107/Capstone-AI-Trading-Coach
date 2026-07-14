@@ -16,6 +16,11 @@ S1.3은 public REST/gRPC를 추가하지 않는다. Decision Platform이 아래 
 Return Engine은 이후 합의된 `contracts/`·`artifacts/` handoff 경계에서 manifest를 검증해 소비한다.
 다른 workspace의 구현 파일이나 Decision Platform의 임의 로컬 경로를 직접 읽는 방식은 계약이 아니다.
 
+> 구현 상태(2026-07-14): Naver lower-only batch·strict smoke의 코드, JSON Schema와 offline
+> 회귀 검증은 완료했다. online 검증은 별도 승인 전까지 미실행이며 실제 ECOS/Naver provider 호출은
+> 0회다. Redis runtime gate는 loopback·`NOAUTH`/인증 `PONG`·AOF·256 MiB·`noeviction`을
+> 이번 실행에서 통과했지만 provider 호출 권한을 뜻하지 않는다.
+
 | 계약 | Producer | Consumer | 보존 |
 |---|---|---|---:|
 | `schemas/ecos_macro_snapshot.schema.json` | Decision Platform `ecos-macro-collect` | Return Engine macro feature pipeline | 365일 |
@@ -29,3 +34,10 @@ snapshot을 읽는다. manifest가 없는 snapshot orphan은 무시한다. provi
 request URL, credential·credential hash, 기사 본문과 로컬 절대경로는 두 파일 모두에 금지한다.
 삭제 owner는 `decision-platform:source-snapshot-retention` 하나이며 command는 기본 dry-run,
 명시적 `--apply`에서만 manifest를 먼저 지운다.
+
+Naver canonical snapshot은 운영용과 smoke용 포맷을 나누지 않고 동일한 `schemaVersion: 1`에서
+`queries` 길이 `1..4`를 허용한다. producer 설정 `NAVER_BATCH_SIZE`는 기본 4이고 `1..4` 범위에서만
+하향하며 canonical smoke는 1이다. consumer는 정확히 네 query를 가정하지 않고 snapshot의
+`queries` 배열 길이와 manifest `queryCount`를 교차 검증한다. 두 값이 다르거나 0 또는 5 이상이면
+artifact를 거부한다. manifest `physicalAttemptCount`도 query당 최대 2회, 즉
+`physicalAttemptCount <= 2 * queryCount`여야 한다.

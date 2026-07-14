@@ -13,6 +13,7 @@ from app.data.naver.collector import NaverCollectionResult, NaverQueryResult
 
 
 _NOW = datetime(2026, 7, 14, 1, 0, tzinfo=UTC)
+_PYTHON_SERVICE_ROOT = Path(__file__).resolve().parents[3]
 
 
 def _write_manifest(path: Path) -> Path:
@@ -99,6 +100,22 @@ def test_command_preserves_exact_manifest_names_and_rank_order(tmp_path: Path) -
         (4, "4번 합성회사"),
     ]
     assert command.universe_manifest_sha256 == hashlib.sha256(manifest.read_bytes()).hexdigest()
+
+
+def test_cli_uses_absolute_default_snapshot_root_and_preserves_override(tmp_path: Path) -> None:
+    manifest = _write_manifest(tmp_path / "universe_manifest.json")
+    base_args = ["--profile", "legacy", "--universe-manifest", str(manifest)]
+
+    default_command = build_collect_command(base_args, now=_NOW)
+    override = tmp_path / "operator-source-snapshots"
+    override_command = build_collect_command(
+        [*base_args, "--data-root", str(override)],
+        now=_NOW,
+    )
+
+    assert default_command.data_root == _PYTHON_SERVICE_ROOT / "data" / "source_snapshots"
+    assert default_command.data_root.is_absolute()
+    assert override_command.data_root == override
 
 
 def test_persist_writes_contract_valid_manifest_operation_and_commit_marker(

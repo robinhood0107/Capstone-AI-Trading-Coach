@@ -77,3 +77,15 @@ def test_provider_errors_map_to_stable_sanitized_taxonomy() -> None:
         assert error.retryable is case["retryable"]
         assert "synthetic" not in f"{error!r} {error}"
         assert error.__cause__ is None
+
+
+def test_api_hub_gateway_errors_map_to_stable_sanitized_taxonomy() -> None:
+    for case in _fixture("api_hub_gateway_error_cases.json")["cases"]:
+        with pytest.raises(NaverResponseError) as exc_info:
+            raise_for_naver_error(case["status"], case["payload"], profile="naver-api-hub")
+
+        error = exc_info.value
+        assert error.code == case["code"]
+        assert error.retryable is case["retryable"]
+        assert "synthetic" not in f"{error!r} {error}"
+        assert error.__cause__ is None

@@ -9,9 +9,21 @@ from app.data.ecos.errors import ECOSApplicationError, RegistryNotVerifiedError
 from app.data.ecos.models import ECOSObservation, StatisticSearchPage
 from app.data.ecos.series_registry import CANDIDATE_SERIES, ECOSSeries
 
+_REGISTRY_VERIFIED_AT = datetime(2026, 7, 13, 12, 0, tzinfo=UTC)
+
 
 def _verified_series() -> tuple[ECOSSeries, ...]:
-    return tuple(entry.model_copy(update={"verified": True}) for entry in CANDIDATE_SERIES)
+    return tuple(
+        entry.model_copy(
+            update={
+                "verified": True,
+                "registry_verified_at": _REGISTRY_VERIFIED_AT,
+                "name": f"synthetic-{entry.series_id}",
+                "unit": "synthetic-unit",
+            }
+        )
+        for entry in CANDIDATE_SERIES
+    )
 
 
 class _FakeClient:
@@ -54,6 +66,28 @@ def _page(value: str = "2.5") -> StatisticSearchPage:
         status="complete",
         total_count=1,
         observations=[ECOSObservation(time="20260714", value=value)],
+    )
+
+
+def _page_with_raw_rows(
+    *,
+    total_count: int,
+    raw_row_count: int,
+    time: str = "20260714",
+    value: str = "2.5",
+) -> StatisticSearchPage:
+    """parser가 exact duplicate를 접은 뒤에도 원래 page row 수를 재현한다."""
+    if raw_row_count == 0:
+        return StatisticSearchPage(
+            status="empty",
+            total_count=total_count,
+            observations=[],
+        )
+    return StatisticSearchPage(
+        status="complete",
+        total_count=total_count,
+        observations=[ECOSObservation(time=time, value=value)],
+        duplicate_count=raw_row_count - 1,
     )
 
 
@@ -102,6 +136,8 @@ def test_one_series_failure_publishes_a_partial_snapshot() -> None:
         (series[1].series_id, 1, 200),
     ]
     assert len(publisher.snapshots) == 1
+    assert result.snapshot.registry_verified_at == _REGISTRY_VERIFIED_AT
+    assert result.snapshot.registry_verified_at != result.snapshot.retrieved_at
 
 
 def test_both_series_failure_never_publishes() -> None:
@@ -132,6 +168,7 @@ def test_collection_pages_at_two_hundred_rows_and_bounds_lookback_to_366_days() 
                 status="complete",
                 total_count=201,
                 observations=[ECOSObservation(time="20260713", value="2.5")],
+                duplicate_count=199,
             ),
             (series[0].series_id, 201): StatisticSearchPage(
                 status="complete",
@@ -169,6 +206,137 @@ def test_collection_pages_at_two_hundred_rows_and_bounds_lookback_to_366_days() 
         collector.collect(
             series=series,
             start=date(2025, 7, 13),
+            end=date(2026, 7, 14),
+            retrieved_at=datetime(2026, 7, 14, tzinfo=UTC),
+            persist=False,
+        )
+
+
+@pytest.mark.parametrize(
+    ("first_page_rows", "second_page_rows"),
+    [
+        (200, 99),
+        (0, 100),
+    ],
+    ids=["final-row-shortage", "early-empty-page"],
+)
+def test_provider_total_count_mismatch_fails_the_series_closed(
+    first_page_rows: int,
+    second_page_rows: int,
+) -> None:
+    series = _verified_series()
+    client = _FakeClient(
+        {
+            (series[0].series_id, 1): _page_with_raw_rows(
+                total_count=300,
+                raw_row_count=first_page_rows,
+                time="20260713",
+            ),
+            (series[0].series_id, 201): _page_with_raw_rows(
+                total_count=300,
+                raw_row_count=second_page_rows,
+            ),
+            series[1].series_id: _page_with_raw_rows(total_count=0, raw_row_count=0),
+        }
+    )
+    collector = ECOSCollector(client=client, publisher=_Publisher())
+
+    result = collector.collect(
+        series=series,
+        start=date(2026, 7, 1),
+        end=date(2026, 7, 14),
+        retrieved_at=datetime(2026, 7, 14, tzinfo=UTC),
+        persist=False,
+    )
+
+    assert [entry.status for entry in result.series_results] == ["failed", "empty"]
+    assert result.partial is True
+    assert result.coverage == "partial"
+    if first_page_rows == 0:
+        assert (series[0].series_id, 201, 400) not in client.calls
+
+
+@pytest.mark.parametrize(
+    ("total_count", "raw_row_count"),
+    [(3, 2), (1, 2)],
+    ids=["single-page-shortage", "single-page-overflow"],
+)
+def test_single_page_row_count_mismatch_fails_the_series_closed(
+    total_count: int,
+    raw_row_count: int,
+) -> None:
+    series = _verified_series()
+    client = _FakeClient(
+        {
+            series[0].series_id: _page_with_raw_rows(
+                total_count=total_count,
+                raw_row_count=raw_row_count,
+            ),
+            series[1].series_id: _page_with_raw_rows(total_count=0, raw_row_count=0),
+        }
+    )
+    collector = ECOSCollector(client=client, publisher=_Publisher())
+
+    result = collector.collect(
+        series=series,
+        start=date(2026, 7, 1),
+        end=date(2026, 7, 14),
+        retrieved_at=datetime(2026, 7, 14, tzinfo=UTC),
+        persist=False,
+    )
+
+    assert [entry.status for entry in result.series_results] == ["failed", "empty"]
+    assert result.coverage == "partial"
+
+
+def test_exact_duplicate_rows_count_toward_total_but_final_observations_are_deduped() -> None:
+    series = _verified_series()
+    client = _FakeClient(
+        {
+            (series[0].series_id, 1): _page_with_raw_rows(
+                total_count=300,
+                raw_row_count=200,
+            ),
+            (series[0].series_id, 201): _page_with_raw_rows(
+                total_count=300,
+                raw_row_count=100,
+            ),
+            series[1].series_id: _page_with_raw_rows(total_count=0, raw_row_count=0),
+        }
+    )
+    collector = ECOSCollector(client=client, publisher=_Publisher())
+
+    result = collector.collect(
+        series=series,
+        start=date(2026, 7, 1),
+        end=date(2026, 7, 14),
+        retrieved_at=datetime(2026, 7, 14, tzinfo=UTC),
+        persist=False,
+    )
+
+    assert [entry.status for entry in result.series_results] == ["complete", "empty"]
+    assert result.series_results[0].observations == (ECOSObservation(time="20260714", value="2.5"),)
+    assert result.duplicate_count == 299
+
+
+def test_total_count_mismatch_across_all_series_raises_all_series_failed() -> None:
+    series = _verified_series()
+    responses: dict[str | tuple[str, int], StatisticSearchPage | Exception] = {}
+    for entry in series:
+        responses[(entry.series_id, 1)] = _page_with_raw_rows(
+            total_count=300,
+            raw_row_count=200,
+        )
+        responses[(entry.series_id, 201)] = _page_with_raw_rows(
+            total_count=300,
+            raw_row_count=99,
+        )
+    collector = ECOSCollector(client=_FakeClient(responses), publisher=_Publisher())
+
+    with pytest.raises(ECOSCollectionError, match="all_series_failed"):
+        collector.collect(
+            series=series,
+            start=date(2026, 7, 1),
             end=date(2026, 7, 14),
             retrieved_at=datetime(2026, 7, 14, tzinfo=UTC),
             persist=False,

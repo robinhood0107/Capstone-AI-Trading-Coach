@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+import json
 import socket
+from pathlib import Path
 
 import httpx
 import pytest
 
 from app.data.naver.url_metadata import normalize_metadata_url
+
+
+_FIXTURE_DIR = Path(__file__).resolve().parents[2] / "fixtures" / "naver"
 
 
 @pytest.mark.parametrize(
@@ -35,6 +40,7 @@ def test_http_and_https_metadata_are_normalized_without_fetch(raw: str, expected
         "https:///missing-host",
         "https://fixture-user:fixture-password@news.example.test/article",
         "http://localhost/internal",
+        "http://service.localhost/internal",
         "http://service.local/internal",
         "http://127.0.0.1/internal",
         "http://10.0.0.1/internal",
@@ -42,12 +48,22 @@ def test_http_and_https_metadata_are_normalized_without_fetch(raw: str, expected
         "http://[::1]/internal",
         "http://[fd00::1]/internal",
         "http://2130706433/internal",
+        "http://127.1/internal",
+        "http://0177.0.0.1/internal",
+        "http://0x7f.0.0.1/internal",
+        "http://ｌｏｃａｌｈｏｓｔ/internal",
         "https://news.example.test/a%0d%0aInjected:yes",
         "https://news.example.test/\u202earticle",
     ],
 )
 def test_unsafe_scheme_authority_control_and_non_global_hosts_are_redacted(unsafe: str) -> None:
     assert normalize_metadata_url(unsafe) is None
+
+
+def test_unsafe_metadata_fixture_urls_are_redacted_without_network() -> None:
+    payload = json.loads((_FIXTURE_DIR / "unsafe_metadata_cases.json").read_text(encoding="utf-8"))
+
+    assert all(normalize_metadata_url(value) is None for value in payload["unsafeUrls"])
 
 
 def test_fragment_and_credential_query_parameters_are_removed_case_insensitively() -> None:
@@ -61,6 +77,14 @@ def test_fragment_and_credential_query_parameters_are_removed_case_insensitively
     assert normalized == "https://news.example.test/article?id=7&lang=ko"
     assert "fixture" not in normalized
     assert "#" not in normalized
+
+
+@pytest.mark.parametrize(
+    "query",
+    ["id=7;access_token=fixture", "id=7%3Baccess_token%3Dfixture"],
+)
+def test_semicolon_query_syntax_is_rejected_instead_of_retained(query: str) -> None:
+    assert normalize_metadata_url(f"https://news.example.test/article?{query}") is None
 
 
 def test_normalization_never_performs_dns_head_or_get(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -79,3 +103,7 @@ def test_normalization_never_performs_dns_head_or_get(monkeypatch: pytest.Monkey
 def test_url_length_bounds_apply_to_code_points_and_utf8_bytes() -> None:
     assert normalize_metadata_url("https://news.example.test/" + "x" * 2_100) is None
     assert normalize_metadata_url("https://news.example.test/" + "한" * 2_000) is None
+
+
+def test_lone_surrogate_is_redacted_without_leaking_unicode_error() -> None:
+    assert normalize_metadata_url("https://news.example.test/\ud800") is None

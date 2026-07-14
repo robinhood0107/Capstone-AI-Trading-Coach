@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
 
 from app.data.naver.settings import NaverSettings
+
+
+_PYTHON_SERVICE_ROOT = Path(__file__).resolve().parents[3]
 
 
 def test_legacy_defaults_are_bounded_and_secret_free() -> None:
@@ -19,8 +24,19 @@ def test_legacy_defaults_are_bounded_and_secret_free() -> None:
     assert settings.write_timeout_seconds == 2.0
     assert settings.pool_timeout_seconds == 1.0
     assert settings.logical_deadline_seconds == 12.0
+    assert settings.snapshot_root == _PYTHON_SERVICE_ROOT / "data" / "source_snapshots"
+    assert settings.snapshot_root.is_absolute()
     assert "secret" not in repr(settings).lower()
     assert "client_id" not in settings.model_dump()
+
+
+def test_source_snapshot_root_uses_the_shared_secret_free_setting(tmp_path: Path) -> None:
+    override = tmp_path / "operator-source-snapshots"
+
+    settings = NaverSettings(_env_file=None, SOURCE_SNAPSHOT_ROOT=override)
+
+    assert settings.snapshot_root == override
+    assert "credential" not in repr(settings).lower()
 
 
 @pytest.mark.parametrize(

@@ -59,7 +59,7 @@ def build_collect_command(
     parser.add_argument("--persist", action="store_true")
     parser.add_argument("--batch-cursor", type=int, default=0)
     parser.add_argument("--display", type=int, default=10)
-    parser.add_argument("--data-root", type=Path, default=Path("data/source-snapshots"))
+    parser.add_argument("--data-root", type=Path)
     args = parser.parse_args(list(argv))
 
     if not isinstance(args.profile, str) or not args.profile:
@@ -92,6 +92,13 @@ def build_collect_command(
         or not 1 <= args.display <= 20
     ):
         raise CollectCliError("universe batch arguments are invalid")
+    if args.data_root is None:
+        try:
+            data_root = NaverSettings().snapshot_root
+        except (OSError, ValueError):
+            raise CollectCliError("collector settings are invalid") from None
+    else:
+        data_root = args.data_root
 
     return NaverCollectCommand(
         profile=profile,
@@ -101,7 +108,7 @@ def build_collect_command(
         persist=bool(args.persist),
         batch_cursor=args.batch_cursor,
         requested_display=args.display,
-        data_root=args.data_root,
+        data_root=data_root,
         now=checked_at.astimezone(UTC),
     )
 
@@ -128,6 +135,7 @@ def _execute_online(command: NaverCollectCommand) -> NaverCollectionResult:
     settings = NaverSettings(
         naver_search_profile=command.profile.name,
         naver_display=command.requested_display,
+        snapshot_root=command.data_root,
     )
     client = NaverHttpClient(settings=settings, profile=command.profile)
     try:

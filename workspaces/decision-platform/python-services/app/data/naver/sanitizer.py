@@ -67,10 +67,15 @@ def sanitize_news_text(
         parser.close()
         # parser가 entity token을 보존한 뒤 여기서 한 번만 decode해 double decode를 차단한다.
         decoded_once = html.unescape("".join(parser.parts))
+        decoded_parser = _PlainTextParser()
+        decoded_parser.feed(decoded_once)
+        decoded_parser.close()
+        # 한 번 decode하면서 새로 나타난 tag만 제거하고 남은 entity는 다시 decode하지 않는다.
+        plain_text = "".join(decoded_parser.parts).replace("<", " ").replace(">", " ")
     except (AssertionError, RecursionError, ValueError):
         raise NaverSanitizationError("invalid_naver_text") from None
 
-    without_controls = "".join(_safe_character(character) for character in decoded_once)
+    without_controls = "".join(_safe_character(character) for character in plain_text)
     normalized = unicodedata.normalize("NFC", without_controls)
     sanitized = _WHITESPACE.sub(" ", normalized).strip()
     if not sanitized or not _within_bounds(sanitized, max_code_points, max_utf8_bytes):
@@ -79,7 +84,10 @@ def sanitize_news_text(
 
 
 def _within_bounds(value: str, max_code_points: int, max_utf8_bytes: int) -> bool:
-    return len(value) <= max_code_points and len(value.encode("utf-8")) <= max_utf8_bytes
+    try:
+        return len(value) <= max_code_points and len(value.encode("utf-8")) <= max_utf8_bytes
+    except UnicodeEncodeError:
+        return False
 
 
 def _safe_character(character: str) -> str:

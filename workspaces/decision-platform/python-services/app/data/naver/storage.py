@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import unicodedata
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Final, cast
@@ -79,6 +80,7 @@ _UTC_TIMESTAMP_PATTERN: Final = re.compile(
 )
 _STATUSES: Final = frozenset({"complete", "empty", "failed", "deferred"})
 _COVERAGES: Final = frozenset({"complete", "partial", "empty"})
+_CANONICAL_WHITESPACE: Final = re.compile(r"\s+")
 
 
 class NaverSnapshotStorageError(ValueError):
@@ -112,7 +114,7 @@ def publish_naver_snapshot(
     _validate_manifest_contract(
         manifest_bytes,
         snapshot_path=snapshot_path,
-        snapshot_sha256=hashlib.sha256(snapshot_bytes).hexdigest(),
+        snapshot_bytes=snapshot_bytes,
     )
     try:
         return publish_source_snapshot(
@@ -129,12 +131,16 @@ def _validate_manifest_contract(
     manifest_bytes: bytes,
     *,
     snapshot_path: str,
-    snapshot_sha256: str,
+    snapshot_bytes: bytes,
 ) -> None:
     try:
         manifest = SourceSnapshotManifest.model_validate_json(manifest_bytes)
         if not isinstance(manifest.count_breakdown, NaverCountBreakdown):
             raise ValueError
+        snapshot_value = json.loads(snapshot_bytes)
+        if not isinstance(snapshot_value, dict):
+            raise ValueError
+        snapshot_payload = cast(dict[str, object], snapshot_value)
         policy = request_policy_for(manifest.provider_profile)
         quota = quota_policy_for(manifest.provider_profile)
         canonical = canonical_json_bytes(manifest.model_dump(by_alias=True, mode="json"))
@@ -147,7 +153,7 @@ def _validate_manifest_contract(
         or manifest.source != "naver"
         or manifest.operation != "naver-news-metadata-collect"
         or manifest.snapshot_path != snapshot_path
-        or manifest.snapshot_sha256 != snapshot_sha256
+        or manifest.snapshot_sha256 != hashlib.sha256(snapshot_bytes).hexdigest()
         or manifest.retention_days != 30
         or manifest.record_count > 80
         or manifest.deferred_queries > 4
@@ -160,8 +166,54 @@ def _validate_manifest_contract(
         or manifest.sanitization_version != policy.sanitization_version
         or str(manifest.provenance.documentation_url) != policy.documentation_url
         or str(manifest.provenance.policy_url) != policy.policy_url
+        or not _manifest_matches_snapshot(manifest, snapshot_payload)
     ):
         raise NaverSnapshotStorageError("Naver snapshot manifest was invalid")
+
+
+def _manifest_matches_snapshot(
+    manifest: SourceSnapshotManifest,
+    snapshot: dict[str, object],
+) -> bool:
+    counts = manifest.count_breakdown
+    if not isinstance(counts, NaverCountBreakdown):
+        return False
+    queries = snapshot.get("queries")
+    deferred = snapshot.get("deferredQueries")
+    if not isinstance(queries, list) or not isinstance(deferred, list):
+        return False
+
+    accepted_count = 0
+    filtered_count = 0
+    redacted_url_count = 0
+    for value in queries:
+        if not isinstance(value, dict):
+            return False
+        query = cast(dict[str, object], value)
+        accepted = query.get("acceptedCount")
+        filtered = query.get("filteredCount")
+        redacted = query.get("redactedUrlCount")
+        if any(
+            not isinstance(count, int) or isinstance(count, bool)
+            for count in (accepted, filtered, redacted)
+        ):
+            return False
+        accepted_count += cast(int, accepted)
+        filtered_count += cast(int, filtered)
+        redacted_url_count += cast(int, redacted)
+
+    return (
+        manifest.provider_profile == snapshot.get("providerProfile")
+        and manifest.as_of.isoformat() == snapshot.get("asOf")
+        and manifest.record_count == accepted_count
+        and counts.query_count == len(queries)
+        and counts.accepted_item_count == accepted_count
+        and counts.filtered_item_count == filtered_count
+        and counts.redacted_url_count == redacted_url_count
+        and manifest.partial == snapshot.get("partial")
+        and manifest.coverage == snapshot.get("coverage")
+        and manifest.deferred_queries == len(deferred)
+    )
 
 
 def _reject_forbidden_fields(value: object) -> None:
@@ -209,10 +261,19 @@ def _validate_snapshot_contract(snapshot: object) -> None:
     if not isinstance(queries, list) or len(queries) != 4:
         raise NaverSnapshotStorageError("Naver snapshot contract was invalid")
     query_fingerprints: set[str] = set()
+    query_ranks: list[int] = []
+    query_symbols: list[str] = []
+    query_statuses: list[str] = []
     for query in cast(list[object], queries):
         _validate_query(query)
         query_fingerprints.add(_contract_fingerprint(query))
+        query_row = cast(dict[str, object], query)
+        query_ranks.append(cast(int, query_row["rank"]))
+        query_symbols.append(cast(str, query_row["symbol"]))
+        query_statuses.append(cast(str, query_row["status"]))
     if len(query_fingerprints) != len(queries):
+        raise NaverSnapshotStorageError("Naver snapshot contract was invalid")
+    if len(set(query_ranks)) != len(queries) or len(set(query_symbols)) != len(queries):
         raise NaverSnapshotStorageError("Naver snapshot contract was invalid")
 
     partial = payload["partial"]
@@ -227,7 +288,23 @@ def _validate_snapshot_contract(snapshot: object) -> None:
         _require_integer(rank, minimum=1)
     if len(set(cast(list[int], deferred_values))) != len(deferred_values):
         raise NaverSnapshotStorageError("Naver snapshot contract was invalid")
-    if partial != (coverage == "partial") or (not partial and deferred_values):
+    expected_deferred = [
+        rank
+        for rank, status in zip(query_ranks, query_statuses, strict=True)
+        if status == "deferred"
+    ]
+    expected_partial = any(status in {"failed", "deferred"} for status in query_statuses)
+    if expected_partial:
+        expected_coverage = "partial"
+    elif all(status == "empty" for status in query_statuses):
+        expected_coverage = "empty"
+    else:
+        expected_coverage = "complete"
+    if (
+        deferred_values != expected_deferred
+        or partial != expected_partial
+        or coverage != expected_coverage
+    ):
         raise NaverSnapshotStorageError("Naver snapshot contract was invalid")
 
 
@@ -281,8 +358,8 @@ def _validate_item(value: object) -> None:
         raise NaverSnapshotStorageError("Naver snapshot contract was invalid")
     item = cast(dict[str, object], value)
     _require_exact_keys(item, _ITEM_KEYS)
-    _require_text(item["title"], max_codepoints=512, max_bytes=2_048)
-    _require_text(item["description"], max_codepoints=2_048, max_bytes=8_192)
+    _require_sanitized_text(item["title"], max_codepoints=512, max_bytes=2_048)
+    _require_sanitized_text(item["description"], max_codepoints=2_048, max_bytes=8_192)
     original_url = _require_safe_url(item["originalUrl"])
     naver_url = _require_safe_url(item["naverUrl"])
     if original_url is None and naver_url is None:
@@ -330,6 +407,19 @@ def _require_text(value: object, *, max_codepoints: int, max_bytes: int) -> str:
     if len(value) > max_codepoints or len(encoded) > max_bytes:
         raise NaverSnapshotStorageError("Naver snapshot contract was invalid")
     return value
+
+
+def _require_sanitized_text(value: object, *, max_codepoints: int, max_bytes: int) -> str:
+    text = _require_text(value, max_codepoints=max_codepoints, max_bytes=max_bytes)
+    if (
+        "<" in text
+        or ">" in text
+        or any(unicodedata.category(character) in {"Cc", "Cf"} for character in text)
+        or not unicodedata.is_normalized("NFC", text)
+        or _CANONICAL_WHITESPACE.sub(" ", text).strip() != text
+    ):
+        raise NaverSnapshotStorageError("Naver snapshot contract was invalid")
+    return text
 
 
 def _require_date(value: object) -> date:

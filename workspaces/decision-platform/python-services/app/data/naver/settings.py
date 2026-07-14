@@ -49,6 +49,36 @@ class NaverSettings(BaseSettings):
         le=8,
         validation_alias="NAVER_JSON_MAX_DEPTH",
     )
+    naver_connect_timeout_seconds: float = Field(
+        default=2.0,
+        gt=0,
+        le=3.0,
+        validation_alias="NAVER_CONNECT_TIMEOUT_SECONDS",
+    )
+    naver_read_timeout_seconds: float = Field(
+        default=5.0,
+        gt=0,
+        le=8.0,
+        validation_alias="NAVER_READ_TIMEOUT_SECONDS",
+    )
+    naver_write_timeout_seconds: float = Field(
+        default=2.0,
+        gt=0,
+        le=3.0,
+        validation_alias="NAVER_WRITE_TIMEOUT_SECONDS",
+    )
+    naver_pool_timeout_seconds: float = Field(
+        default=1.0,
+        gt=0,
+        le=2.0,
+        validation_alias="NAVER_POOL_TIMEOUT_SECONDS",
+    )
+    naver_logical_deadline_seconds: float = Field(
+        default=12.0,
+        gt=0,
+        le=20.0,
+        validation_alias="NAVER_LOGICAL_DEADLINE_SECONDS",
+    )
 
     @property
     def search_profile(self) -> NaverSearchProfile:
@@ -79,3 +109,28 @@ class NaverSettings(BaseSettings):
     def json_max_depth(self) -> int:
         """provider JSON 구조의 최대 중첩 깊이를 반환한다."""
         return self.naver_json_max_depth
+
+    @property
+    def connect_timeout_seconds(self) -> float:
+        """fixed-origin connection의 lower-only timeout을 반환한다."""
+        return self.naver_connect_timeout_seconds
+
+    @property
+    def read_timeout_seconds(self) -> float:
+        """bounded response stream read timeout을 반환한다."""
+        return self.naver_read_timeout_seconds
+
+    @property
+    def write_timeout_seconds(self) -> float:
+        """News GET request write timeout을 반환한다."""
+        return self.naver_write_timeout_seconds
+
+    @property
+    def pool_timeout_seconds(self) -> float:
+        """HTTP connection pool 대기 timeout을 반환한다."""
+        return self.naver_pool_timeout_seconds
+
+    @property
+    def logical_deadline_seconds(self) -> float:
+        """retry/backoff를 포함한 query 전체 실행 deadline을 반환한다."""
+        return self.naver_logical_deadline_seconds

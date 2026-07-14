@@ -85,12 +85,15 @@ def inspect_registry_metadata(
     observations: list[RegistryMetadataEntry] = []
     for entry in entries:
         table = client.statistic_table_list(series=entry)
+        if table.stat_code != entry.stat_code or table.cycle != entry.cycle:
+            raise ValueError("ECOS registry metadata identity is invalid")
+        if not table.searchable:
+            # 검색 불가 series는 ItemList 추가 호출 전에 차단해 실패한 승인 budget을 보존한다.
+            raise ValueError("ECOS registry metadata is not searchable")
         item = client.statistic_item_list(series=entry)
         if (
-            table.stat_code != entry.stat_code
-            or item.stat_code != entry.stat_code
+            item.stat_code != entry.stat_code
             or item.item_code != entry.item_code1
-            or table.cycle != entry.cycle
             or item.cycle != entry.cycle
         ):
             raise ValueError("ECOS registry metadata identity is invalid")

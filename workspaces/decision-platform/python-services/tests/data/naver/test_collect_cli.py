@@ -320,9 +320,7 @@ def test_partial_result_uses_resume_exit_three_and_exact_allowlisted_line(
     )
     monkeypatch.setattr(collect_cli, "_execute_online", lambda command: result)
 
-    exit_code = main(
-        ["--profile", "legacy", "--universe-manifest", str(manifest), "--online"]
-    )
+    exit_code = main(["--profile", "legacy", "--universe-manifest", str(manifest), "--online"])
 
     captured = capsys.readouterr()
     assert exit_code == 3
@@ -350,9 +348,7 @@ def test_failure_code_allowlist_renders_only_the_stable_single_line() -> None:
     )
 
     assert collect_cli.NAVER_ERROR_CODES == expected
-    assert {
-        collect_cli._failure_line(code) for code in expected
-    } == {
+    assert {collect_cli._failure_line(code) for code in expected} == {
         f"source=naver operation=news_metadata_collect code={code}" for code in expected
     }
     assert collect_cli._failure_line("unexpected-provider-secret") == (
@@ -414,16 +410,12 @@ def test_failure_mapping_never_echoes_exception_details(
         lambda command: (_ for _ in ()).throw(error),
     )
 
-    exit_code = main(
-        ["--profile", "legacy", "--universe-manifest", str(manifest), "--online"]
-    )
+    exit_code = main(["--profile", "legacy", "--universe-manifest", str(manifest), "--online"])
 
     captured = capsys.readouterr()
     assert exit_code == expected_exit
     assert captured.out == ""
-    assert captured.err == (
-        f"source=naver operation=news_metadata_collect code={expected_code}\n"
-    )
+    assert captured.err == (f"source=naver operation=news_metadata_collect code={expected_code}\n")
     assert "secret" not in captured.err
     assert "URL" not in captured.err
     assert "traceback" not in captured.err

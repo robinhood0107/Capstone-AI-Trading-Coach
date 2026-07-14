@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 import pytest
 
 from app.data._shared.redis_quota import (
+    REDIS_COOLDOWN_LUA,
     REDIS_QUOTA_LUA,
     QuotaDeniedError,
     QuotaUnavailableError,
@@ -32,6 +33,8 @@ def test_lua_uses_redis_time_and_atomic_window_primitives() -> None:
     assert "ZADD" in REDIS_QUOTA_LUA
     assert "PEXPIRE" in REDIS_QUOTA_LUA
     assert "cooldown" in REDIS_QUOTA_LUA
+    assert "redis.call('TIME')" in REDIS_COOLDOWN_LUA
+    assert "redis.call('SET', cooldown_key" in REDIS_COOLDOWN_LUA
 
 
 def test_reservation_uses_only_an_opaque_deployment_slot() -> None:
@@ -82,3 +85,29 @@ def test_denial_and_redis_failure_are_fail_closed() -> None:
     )
     with pytest.raises(QuotaUnavailableError):
         unavailable.reserve(attempt_id="00000000-0000-4000-8000-000000000001")
+
+
+def test_provider_cooldown_is_atomic_and_bounded_by_policy() -> None:
+    redis = FakeRedis(result=60_000)
+    policy = RedisQuotaPolicy(
+        version="naver-v1",
+        windows=(QuotaWindow(limit=2_000, seconds=86_400),),
+        min_interval_ms=250,
+        cooldown_seconds=60,
+        max_calls_per_run=8,
+    )
+    quota = RedisQuotaReservation(
+        redis,
+        key="s1.3:quota:naver:naver-legacy:primary",
+        policy=policy,
+    )
+
+    quota.activate_cooldown(seconds=60)
+
+    assert redis.calls is not None
+    script, key_count, args = redis.calls[0]
+    assert script == REDIS_COOLDOWN_LUA
+    assert key_count == 1
+    assert args == ("s1.3:quota:naver:naver-legacy:primary", 60_000)
+    with pytest.raises(ValueError, match="bounds"):
+        quota.activate_cooldown(seconds=61)

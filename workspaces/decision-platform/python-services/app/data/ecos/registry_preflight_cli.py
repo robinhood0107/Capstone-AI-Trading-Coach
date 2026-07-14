@@ -5,14 +5,16 @@ import json
 from collections.abc import Sequence
 from typing import NoReturn
 
-from app.data.ecos.errors import ECOSParseError
-from app.data.ecos.http_client import ECOSHttpClient
+from app.data._shared.redis_quota import QuotaUnavailableError
+from app.data.ecos.errors import ECOSApplicationError, ECOSParseError
+from app.data.ecos.http_client import ECOSHttpClient, ECOSHttpError
 from app.data.ecos.registry_preflight import RegistryInspectionResult, inspect_registry_metadata
 from app.data.ecos.series_registry import CANDIDATE_SERIES
 from app.data.ecos.settings import ECOSSettings
 
 _EXPECTED_PHYSICAL_ATTEMPTS = 4
 _DEFAULT_FAILURE_CODE = "preflight_failed"
+_SAFE_APPLICATION_FAILURE_CODES = frozenset({"ERROR-500", "ERROR-600", "ERROR-601", "ERROR-602"})
 _INVALID_ARGUMENTS_LINE = "source=ecos operation=registry_preflight code=invalid_arguments"
 
 
@@ -110,6 +112,16 @@ def _failure_code(error: Exception) -> str:
     """provider 원문을 보존하지 않고 승인 판단에 필요한 allowlist 원인만 분류한다."""
     if isinstance(error, ECOSParseError):
         return "invalid_response"
+    if isinstance(error, ECOSHttpError):
+        if error.code == "response_invalid":
+            return "invalid_response"
+        if error.status_code == 429:
+            return "http_429"
+        return _DEFAULT_FAILURE_CODE
+    if isinstance(error, ECOSApplicationError) and error.code in _SAFE_APPLICATION_FAILURE_CODES:
+        return error.code
+    if isinstance(error, QuotaUnavailableError):
+        return "quota_unavailable"
     return _DEFAULT_FAILURE_CODE
 
 

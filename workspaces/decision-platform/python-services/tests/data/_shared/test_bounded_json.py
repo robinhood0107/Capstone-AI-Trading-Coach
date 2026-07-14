@@ -9,6 +9,7 @@ import pytest
 from app.data._shared.bounded_json import (
     BoundedJsonError,
     BoundedJsonLimits,
+    parse_bounded_json_bytes,
     parse_bounded_json_response,
 )
 
@@ -79,6 +80,23 @@ def test_valid_json_object_is_returned_after_bounded_stream_read() -> None:
         "items": [1, 2],
         "name": "synthetic",
     }
+
+
+def test_bounded_json_bytes_reuses_structure_and_byte_limits() -> None:
+    assert parse_bounded_json_bytes(b'{"items":[1,2]}', limits=_limits()) == {
+        "items": [1, 2]
+    }
+
+    with pytest.raises(BoundedJsonError, match="byte limit"):
+        parse_bounded_json_bytes(
+            b'{"value":"' + (b"x" * 80) + b'"}',
+            limits=_limits(max_bytes=32),
+        )
+    with pytest.raises(BoundedJsonError, match="depth"):
+        parse_bounded_json_bytes(
+            b'{"a":{"b":{"c":1}}}',
+            limits=_limits(max_depth=2),
+        )
 
 
 @pytest.mark.parametrize(

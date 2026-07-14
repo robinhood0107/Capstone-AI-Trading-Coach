@@ -1,9 +1,15 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
 
 from app.data._shared.source_snapshot_models import SourceSnapshotManifest
+
+
+_REPO_ROOT = Path(__file__).resolve().parents[6]
 
 
 def _ecos_manifest() -> dict[str, object]:
@@ -53,6 +59,20 @@ def test_partial_and_coverage_cannot_disagree() -> None:
     payload = _ecos_manifest()
     payload["partial"] = True
     payload["coverage"] = "complete"
+
+    with pytest.raises(ValidationError):
+        SourceSnapshotManifest.model_validate(payload)
+
+
+def test_naver_manifest_attempt_count_cannot_exceed_two_per_query() -> None:
+    example_path = (
+        _REPO_ROOT
+        / "contracts"
+        / "examples"
+        / "source_snapshot_manifest.naver_one_query.valid.json"
+    )
+    payload = json.loads(example_path.read_text(encoding="utf-8"))
+    payload["physicalAttemptCount"] = 3
 
     with pytest.raises(ValidationError):
         SourceSnapshotManifest.model_validate(payload)

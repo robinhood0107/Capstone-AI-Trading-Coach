@@ -144,6 +144,7 @@ def test_send_time_path_credential_is_restored_on_request_and_response(
         response = client.get(f"https://ecos.bok.or.kr{_path()}")
 
     assert events == ["quota", "credential", "send"]
+    assert transport.physical_attempt_count == 1
     assert marker not in captured[0].url.path
     assert marker not in response.request.url.path
     assert response.request.url.path == _path()
@@ -682,7 +683,7 @@ def test_credential_latency_expiring_deadline_stops_immediately_before_outbound(
 
     assert credential_reads == 1
     assert events == ["quota"]
-    assert transport.physical_attempt_count == 1
+    assert transport.physical_attempt_count == 0
     assert outbound == 0
     assert request.url.path == _path()
     assert exc_info.value.__cause__ is None

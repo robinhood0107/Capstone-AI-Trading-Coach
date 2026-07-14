@@ -26,13 +26,40 @@ def _valid_snapshot() -> dict[str, Any]:
     return json.loads(_EXAMPLE_PATH.read_text(encoding="utf-8"))
 
 
-def _manifest_bytes(snapshot_bytes: bytes) -> bytes:
+def _manifest_bytes(
+    snapshot_bytes: bytes,
+    *,
+    operation: str = "naver-news-metadata-collect",
+) -> bytes:
     return canonical_json_bytes(
         {
             "schemaVersion": 1,
             "source": "naver",
+            "providerProfile": "naver-legacy",
+            "operation": operation,
+            "generatedAt": "2026-07-14T01:10:00Z",
+            "asOf": "2026-07-14",
             "snapshotPath": _SNAPSHOT_PATH,
             "snapshotSha256": hashlib.sha256(snapshot_bytes).hexdigest(),
+            "recordCount": 1,
+            "countBreakdown": {
+                "queryCount": 4,
+                "acceptedItemCount": 1,
+                "filteredItemCount": 0,
+                "redactedUrlCount": 0,
+            },
+            "partial": False,
+            "coverage": "complete",
+            "deferredQueries": 0,
+            "physicalAttemptCount": 4,
+            "quotaPolicyVersion": "s1.3-naver-legacy-quota-v1",
+            "provenance": {
+                "documentationUrl": "https://developers.naver.com/docs/serviceapi/search/news/news.md",
+                "policyUrl": "https://developers.naver.com/products/terms/",
+            },
+            "sanitizationVersion": "s1.3-sanitization-v1",
+            "retentionDays": 30,
+            "deleteOwner": "decision-platform:source-snapshot-retention",
         }
     )
 
@@ -103,3 +130,16 @@ def test_publish_connects_canonical_bytes_to_secure_shared_store(tmp_path: Path)
     assert published.snapshot_path.read_bytes() == snapshot_bytes
     assert published.snapshot_sha256 == hashlib.sha256(snapshot_bytes).hexdigest()
     assert published.manifest_path.exists()
+
+
+def test_publish_rejects_a_manifest_outside_the_naver_source_contract(tmp_path: Path) -> None:
+    payload = _valid_snapshot()
+    snapshot_bytes = serialize_naver_snapshot(payload)
+
+    with pytest.raises(NaverSnapshotStorageError, match="manifest"):
+        publish_naver_snapshot(
+            root=tmp_path / "snapshots",
+            snapshot_path=_SNAPSHOT_PATH,
+            snapshot=payload,
+            manifest_bytes=_manifest_bytes(snapshot_bytes, operation="wrong-operation"),
+        )

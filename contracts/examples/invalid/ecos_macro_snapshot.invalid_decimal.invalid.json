@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "source": "ecos",
+  "asOf": "2026-07-14",
+  "retrievedAt": "2026-07-14T01:05:00Z",
+  "registryVersion": "s1.3-synthetic-v1",
+  "registryVerifiedAt": "2026-07-14T00:30:00Z",
+  "series": [
+    {
+      "seriesId": "synthetic-policy-rate",
+      "statCode": "SYNTH001",
+      "itemCode1": "RATE01",
+      "cycle": "D",
+      "name": "Synthetic policy rate",
+      "unit": "percent",
+      "requestedFrom": "20260714",
+      "requestedTo": "20260714",
+      "status": "complete",
+      "observations": [
+        { "time": "20260714", "value": "1e3" }
+      ]
+    },
+    {
+      "seriesId": "synthetic-fx-rate",
+      "statCode": "SYNTH002",
+      "itemCode1": "FX01",
+      "cycle": "D",
+      "name": "Synthetic KRW exchange rate",
+      "unit": "KRW",
+      "requestedFrom": "20260714",
+      "requestedTo": "20260714",
+      "status": "empty",
+      "observations": []
+    }
+  ],
+  "partial": false,
+  "coverage": "complete"
+}

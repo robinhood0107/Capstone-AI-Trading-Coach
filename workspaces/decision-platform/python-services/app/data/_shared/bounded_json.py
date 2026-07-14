@@ -47,12 +47,7 @@ def parse_bounded_json_response(
     provider raw body는 오류에 포함하지 않으며, Content-Length는 stream을 읽기 전 빠른 거부에만
     사용한다. 실제 보안 상한은 `iter_bytes()`가 내놓는 decompressed bytes를 다시 누적해 적용한다.
     """
-    try:
-        _ensure_json_content_type(response)
-        _ensure_declared_length(response, limits.max_bytes)
-        content = _read_decompressed_bytes(response, limits.max_bytes)
-    finally:
-        response.close()
+    content = _read_bounded_response(response, limits=limits)
 
     try:
         text = content.decode("utf-8")
@@ -61,14 +56,47 @@ def parse_bounded_json_response(
             parse_int=lambda value: _parse_int(value, limits.max_number_characters),
             parse_float=lambda value: _parse_float(value, limits.max_number_characters),
             parse_constant=_reject_non_finite_constant,
+            object_pairs_hook=lambda pairs: _parse_object_pairs(
+                pairs,
+                max_keys=limits.max_object_keys,
+            ),
         )
+        _validate_value(payload, limits=limits, depth=0)
     except BoundedJsonError:
         raise
-    except (UnicodeDecodeError, json.JSONDecodeError, RecursionError, ValueError, OverflowError):
+    except (UnicodeError, json.JSONDecodeError, RecursionError, ValueError, OverflowError):
         raise BoundedJsonError("bounded JSON payload was invalid") from None
-
-    _validate_value(payload, limits=limits, depth=0)
     return payload
+
+
+def _read_bounded_response(
+    response: httpx.Response,
+    *,
+    limits: BoundedJsonLimits,
+) -> bytes:
+    """bounded read 오류를 보존하면서 close 실패도 raw detail 없는 stable 오류로 변환한다."""
+    content: bytes | None = None
+    failure: BoundedJsonError | None = None
+    try:
+        _ensure_json_content_type(response)
+        _ensure_declared_length(response, limits.max_bytes)
+        content = _read_decompressed_bytes(response, limits.max_bytes)
+    except BoundedJsonError as error:
+        failure = error
+    except Exception:
+        failure = BoundedJsonError("bounded JSON response stream was unavailable")
+
+    try:
+        response.close()
+    except Exception:
+        if failure is None:
+            failure = BoundedJsonError("bounded JSON response cleanup was unavailable")
+
+    if failure is not None:
+        raise failure from None
+    if content is None:
+        raise BoundedJsonError("bounded JSON response stream was unavailable")
+    return content
 
 
 def _ensure_json_content_type(response: httpx.Response) -> None:
@@ -129,6 +157,22 @@ def _reject_non_finite_constant(_: str) -> object:
     raise BoundedJsonError("bounded JSON number must be finite")
 
 
+def _parse_object_pairs(
+    pairs: list[tuple[str, object]],
+    *,
+    max_keys: int,
+) -> dict[str, object]:
+    """JSON decoder가 key를 덮어쓰기 전에 duplicate와 object key 상한을 적용한다."""
+    result: dict[str, object] = {}
+    for key, value in pairs:
+        if key in result:
+            raise BoundedJsonError("bounded JSON object contained a duplicate key")
+        if len(result) >= max_keys:
+            raise BoundedJsonError("bounded JSON object exceeded the object key limit")
+        result[key] = value
+    return result
+
+
 def _validate_value(value: object, *, limits: BoundedJsonLimits, depth: int) -> None:
     if depth > limits.max_depth:
         raise BoundedJsonError("bounded JSON value exceeded the depth limit")
@@ -154,8 +198,9 @@ def _validate_value(value: object, *, limits: BoundedJsonLimits, depth: int) -> 
 
 
 def _validate_text(value: str, limits: BoundedJsonLimits) -> None:
-    if (
-        len(value) > limits.max_text_codepoints
-        or len(value.encode("utf-8")) > limits.max_text_bytes
-    ):
+    try:
+        encoded_length = len(value.encode("utf-8"))
+    except UnicodeEncodeError:
+        raise BoundedJsonError("bounded JSON text contained invalid Unicode") from None
+    if len(value) > limits.max_text_codepoints or encoded_length > limits.max_text_bytes:
         raise BoundedJsonError("bounded JSON text exceeded the text limit")

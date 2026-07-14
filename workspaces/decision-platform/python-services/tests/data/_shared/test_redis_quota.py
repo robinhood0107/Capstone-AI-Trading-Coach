@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import pytest
 
@@ -16,7 +16,7 @@ from app.data._shared.redis_quota import (
 
 @dataclass
 class FakeRedis:
-    result: object = [1, 0, 1]
+    result: object = field(default_factory=lambda: [1, 0, 1])
     calls: list[tuple[str, int, tuple[object, ...]]] | None = None
 
     def eval(self, script: str, key_count: int, *args: object) -> object:

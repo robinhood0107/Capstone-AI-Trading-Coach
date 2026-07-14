@@ -37,6 +37,11 @@ class _RecordingStream(httpx.SyncByteStream):
         yield from self.chunks
 
 
+class _CloseFailingStream(_RecordingStream):
+    def close(self) -> None:
+        raise RuntimeError("synthetic-secret raw close detail https://provider.invalid")
+
+
 def test_content_length_over_limit_is_rejected_before_stream_read() -> None:
     stream = _RecordingStream([b'{"ok":true}'])
     response = httpx.Response(
@@ -116,3 +121,80 @@ def test_non_json_or_non_finite_payload_is_rejected(content_type: str, payload: 
 
     with pytest.raises(BoundedJsonError):
         parse_bounded_json_response(response, limits=_limits())
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        b'{"errorCode":"first","errorCode":"second"}',
+        b'{"outer":{"errorCode":"first","errorCode":"second"}}',
+        b'{"errorCode":"first","\\u0065rrorCode":"second"}',
+    ],
+)
+def test_duplicate_object_keys_are_rejected_before_overwrite_or_key_cap_bypass(
+    payload: bytes,
+) -> None:
+    response = httpx.Response(
+        200,
+        headers={"content-type": "application/json"},
+        content=payload,
+    )
+
+    with pytest.raises(BoundedJsonError, match="duplicate") as exc_info:
+        parse_bounded_json_response(response, limits=_limits(max_object_keys=1))
+
+    assert exc_info.value.__cause__ is None
+    assert "first" not in str(exc_info.value)
+    assert "second" not in str(exc_info.value)
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        b'{"value":"\\ud800"}',
+        b'{"\\udfff":"value"}',
+    ],
+)
+def test_lone_surrogate_in_key_or_value_maps_to_stable_unicode_error(payload: bytes) -> None:
+    response = httpx.Response(
+        200,
+        headers={"content-type": "application/json"},
+        content=payload,
+    )
+
+    with pytest.raises(BoundedJsonError, match="invalid Unicode") as exc_info:
+        parse_bounded_json_response(response, limits=_limits())
+
+    assert exc_info.value.__cause__ is None
+
+
+def test_close_failure_cannot_override_an_existing_stable_error() -> None:
+    response = httpx.Response(
+        200,
+        headers={"content-type": "text/html"},
+        stream=_CloseFailingStream([b'{"ok":true}']),
+    )
+
+    with pytest.raises(BoundedJsonError, match="content type") as exc_info:
+        parse_bounded_json_response(response, limits=_limits())
+
+    rendered = f"{exc_info.value!r} {exc_info.value}"
+    assert "synthetic-secret" not in rendered
+    assert "provider.invalid" not in rendered
+    assert exc_info.value.__cause__ is None
+
+
+def test_close_failure_after_valid_read_becomes_a_stable_cleanup_error() -> None:
+    response = httpx.Response(
+        200,
+        headers={"content-type": "application/json"},
+        stream=_CloseFailingStream([b'{"ok":true}']),
+    )
+
+    with pytest.raises(BoundedJsonError, match="stream|cleanup") as exc_info:
+        parse_bounded_json_response(response, limits=_limits())
+
+    rendered = f"{exc_info.value!r} {exc_info.value}"
+    assert "synthetic-secret" not in rendered
+    assert "provider.invalid" not in rendered
+    assert exc_info.value.__cause__ is None

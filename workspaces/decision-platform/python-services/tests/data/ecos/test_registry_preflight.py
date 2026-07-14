@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +14,7 @@ from app.data.ecos.series_registry import CANDIDATE_SERIES, ECOSSeries
 
 
 _FIXTURE_DIR = Path(__file__).resolve().parents[2] / "fixtures" / "ecos"
+_VERIFIED_AT = datetime(2026, 7, 14, 1, 2, 3, tzinfo=UTC)
 
 
 def _fixture(name: str) -> dict[str, Any]:
@@ -79,8 +81,14 @@ def test_item_preflight_selects_the_exact_candidate_from_a_bounded_item_list() -
 
 
 class _PreflightClient:
-    def __init__(self, *, mismatched_unit: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        mismatched_unit: bool = False,
+        mismatched_identity: bool = False,
+    ) -> None:
         self.mismatched_unit = mismatched_unit
+        self.mismatched_identity = mismatched_identity
         self.calls: list[tuple[str, str]] = []
 
     def statistic_table_list(self, *, series: ECOSSeries) -> StatisticTableMetadata:
@@ -97,7 +105,7 @@ class _PreflightClient:
         unit = "mismatch" if self.mismatched_unit and series == CANDIDATE_SERIES[1] else "%"
         return StatisticItemMetadata(
             stat_code=series.stat_code,
-            item_code=series.item_code1,
+            item_code="9999999" if self.mismatched_identity else series.item_code1,
             name=f"synthetic-{series.series_id}-item",
             cycle="D",
             unit=unit,
@@ -118,20 +126,37 @@ def _expectations():
     )
 
 
-def test_preflight_makes_exactly_four_calls_without_retry_and_returns_sanitized_result() -> None:
-    from app.data.ecos.registry_preflight import run_registry_preflight
+def test_preflight_makes_exactly_four_calls_and_records_real_completion_evidence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.data.ecos import registry_preflight
 
     client = _PreflightClient()
-
-    result = run_registry_preflight(client=client, expectations=_expectations())
-
-    assert client.calls == [
+    expected_calls = [
         ("table", "policy-rate"),
         ("item", "policy-rate"),
         ("table", "krw-usd-rate"),
         ("item", "krw-usd-rate"),
     ]
+
+    def completed_at() -> datetime:
+        assert client.calls == expected_calls
+        return _VERIFIED_AT
+
+    monkeypatch.setattr(registry_preflight, "_utc_now", completed_at)
+
+    result = registry_preflight.run_registry_preflight(
+        client=client,
+        expectations=_expectations(),
+    )
+
+    assert client.calls == expected_calls
     assert result.can_activate is True
+    assert result.registry_verified_at == _VERIFIED_AT
+    assert {entry.registry_verified_at for entry in result.verified_series} == {_VERIFIED_AT}
+    assert [entry.name for entry in result.verified_series] == [
+        f"synthetic-{series.series_id}-item" for series in CANDIDATE_SERIES
+    ]
     rendered = repr(result).lower()
     assert "raw" not in rendered
     assert "credential" not in rendered
@@ -148,3 +173,44 @@ def test_preflight_mismatch_keeps_registry_disabled() -> None:
     assert len(client.calls) == 4
     assert result.can_activate is False
     assert result.verified_series == ()
+    assert result.registry_verified_at is None
+
+
+def test_metadata_inspection_returns_only_allowlisted_fields_without_activation() -> None:
+    from app.data.ecos.registry_preflight import inspect_registry_metadata
+
+    client = _PreflightClient()
+
+    result = inspect_registry_metadata(
+        client=client,
+        series=CANDIDATE_SERIES,
+        observed_at=_VERIFIED_AT,
+    )
+
+    assert client.calls == [
+        ("table", "policy-rate"),
+        ("item", "policy-rate"),
+        ("table", "krw-usd-rate"),
+        ("item", "krw-usd-rate"),
+    ]
+    assert result.observed_at == _VERIFIED_AT
+    assert [entry.series_id for entry in result.entries] == [
+        "policy-rate",
+        "krw-usd-rate",
+    ]
+    assert result.can_activate is False
+    assert result.verified_series == ()
+    assert "raw" not in repr(result).lower()
+
+
+def test_metadata_inspection_rejects_mismatched_identity_without_activation() -> None:
+    from app.data.ecos.registry_preflight import inspect_registry_metadata
+
+    client = _PreflightClient(mismatched_identity=True)
+
+    with pytest.raises(ValueError, match="identity"):
+        inspect_registry_metadata(
+            client=client,
+            series=CANDIDATE_SERIES,
+            observed_at=_VERIFIED_AT,
+        )

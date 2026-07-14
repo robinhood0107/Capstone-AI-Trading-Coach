@@ -8,12 +8,20 @@ sanitized internal snapshot으로 생산할 수 있도록 별도 JSON 계약을 
 ## 변경 범위
 
 - `ecos_macro_snapshot.schema.json`: 검증된 registry의 일별 관측치 두 series
-- `naver_news_metadata_snapshot.schema.json`: 감사된 universe 기반 네 개 News query metadata
+- `naver_news_metadata_snapshot.schema.json`: 감사된 universe 기반 News query metadata. 운영 기본은
+  네 개이고 lower-only `1..4`를 허용하며 canonical smoke는 한 개를 사용한다
 - `source_snapshot_manifest.schema.json`: canonical snapshot hash와 provenance를 담는 commit marker
 
 source snapshot의 `schemaVersion`은 양의 정수 `1`이다. 기존 실험/모델
 `artifact_manifest.schema.json`의 SemVer 문자열 및 `artifacts/{workspace}/{runId}` 교환 계약과
 서로 다른 내부 producer 계약이며 암묵 변환하거나 혼용하지 않는다.
+
+Naver 운영 snapshot과 1-query smoke는 별도 포맷이 아니다. 동일한 canonical 계약에서 `queries`
+길이와 manifest `queryCount`가 같은 `1..4` 값이어야 하며 0개, 5개 이상, count mismatch는 거부한다.
+manifest `physicalAttemptCount`는 query당 최대 2회여야 한다.
+S1.3 계약은 아직 배포되지 않은 Draft 상태이므로 이 lower-only 정렬에서 `schemaVersion`을 올리지
+않는다. 코드·JSON Schema와 offline 회귀 검증은 반영 완료했으며 online 검증은 별도 승인 전까지
+미실행이다. Redis runtime gate는 통과했고 실제 ECOS/Naver provider 호출은 0회다.
 
 ## 보안·운영 영향
 
@@ -34,8 +42,16 @@ and Naver News metadata snapshots without retaining provider raw responses.
 ## Scope and impact
 
 - Separate ECOS, Naver, and source-manifest schemas with positive and negative examples.
+- Naver uses one canonical snapshot format for both normal collection and smoke. The operational
+  default is four queries, lower-only values `1..4` are accepted, and canonical smoke uses one query.
+  The `queries` length and manifest `queryCount` must match; zero, five or more, and count mismatches
+  are rejected. `physicalAttemptCount` must not exceed two attempts per query.
 - The source snapshot uses integer `schemaVersion: 1`; it is distinct from the SemVer experiment/model
   artifact bundle and must not be implicitly converted or mixed with it.
+- This S1.3 contract is still an undeployed Draft, so the lower-only alignment keeps
+  `schemaVersion: 1`. Code, JSON Schema, and offline regression verification are complete; online
+  verification remains approval-gated and has not run. The Redis runtime gate passed, and no live
+  ECOS/Naver provider calls have run.
 - Credentials, request URLs, authentication material, provider raw payloads, and local absolute paths
   are forbidden. The manifest is the commit marker.
 - ECOS retention is 365 days, Naver retention is 30 days, and the delete owner is

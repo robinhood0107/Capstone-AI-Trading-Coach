@@ -18,7 +18,7 @@
     "nextBatchCursor": { "type": "integer", "minimum": 0 },
     "queries": {
       "type": "array",
-      "minItems": 4,
+      "minItems": 1,
       "maxItems": 4,
       "uniqueItems": true,
       "items": { "$ref": "#/$defs/query" }

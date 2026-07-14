@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
@@ -18,12 +19,24 @@ from app.data.naver.storage import (
 
 
 _REPO_ROOT = Path(__file__).resolve().parents[6]
-_EXAMPLE_PATH = _REPO_ROOT / "contracts" / "examples" / "naver_news_metadata_snapshot.valid.json"
+_FOUR_QUERY_EXAMPLE_PATH = (
+    _REPO_ROOT / "contracts" / "examples" / "naver_news_metadata_snapshot.valid.json"
+)
+_ONE_QUERY_EXAMPLE_PATH = (
+    _REPO_ROOT
+    / "contracts"
+    / "examples"
+    / "naver_news_metadata_snapshot.one_query.valid.json"
+)
 _SNAPSHOT_PATH = "naver/2026/07/14/00000000-0000-4000-8000-000000000001/snapshot.json"
 
 
 def _valid_snapshot() -> dict[str, Any]:
-    return json.loads(_EXAMPLE_PATH.read_text(encoding="utf-8"))
+    return json.loads(_FOUR_QUERY_EXAMPLE_PATH.read_text(encoding="utf-8"))
+
+
+def _one_query_snapshot() -> dict[str, Any]:
+    return json.loads(_ONE_QUERY_EXAMPLE_PATH.read_text(encoding="utf-8"))
 
 
 def _manifest_bytes(
@@ -31,6 +44,7 @@ def _manifest_bytes(
     *,
     operation: str = "naver-news-metadata-collect",
     snapshot_path: str = _SNAPSHOT_PATH,
+    query_count: int = 4,
     overrides: dict[str, object] | None = None,
 ) -> bytes:
     payload: dict[str, object] = {
@@ -44,7 +58,7 @@ def _manifest_bytes(
         "snapshotSha256": hashlib.sha256(snapshot_bytes).hexdigest(),
         "recordCount": 1,
         "countBreakdown": {
-            "queryCount": 4,
+            "queryCount": query_count,
             "acceptedItemCount": 1,
             "filteredItemCount": 0,
             "redactedUrlCount": 0,
@@ -52,7 +66,7 @@ def _manifest_bytes(
         "partial": False,
         "coverage": "complete",
         "deferredQueries": 0,
-        "physicalAttemptCount": 4,
+        "physicalAttemptCount": query_count,
         "quotaPolicyVersion": "s1.3-naver-legacy-quota-v1",
         "provenance": {
             "documentationUrl": "https://developers.naver.com/docs/serviceapi/search/news/news.md",
@@ -79,6 +93,40 @@ def test_snapshot_serialization_is_deterministic_sanitized_contract_only() -> No
     assert b"rawPayload" not in first_bytes
     assert b"providerHeaders" not in first_bytes
     assert b"clientSecret" not in first_bytes
+
+
+@pytest.mark.parametrize(
+    ("example_path", "expected_query_count"),
+    [
+        (_ONE_QUERY_EXAMPLE_PATH, 1),
+        (_FOUR_QUERY_EXAMPLE_PATH, 4),
+    ],
+)
+def test_snapshot_accepts_canonical_one_and_four_query_batches(
+    example_path: Path,
+    expected_query_count: int,
+) -> None:
+    payload = json.loads(example_path.read_text(encoding="utf-8"))
+
+    encoded = serialize_naver_snapshot(payload)
+
+    assert len(json.loads(encoded)["queries"]) == expected_query_count
+
+
+@pytest.mark.parametrize("query_count", [0, 5])
+def test_snapshot_rejects_query_count_outside_one_to_four(query_count: int) -> None:
+    payload = _valid_snapshot()
+    if query_count == 0:
+        payload["queries"] = []
+        payload["coverage"] = "empty"
+    else:
+        fifth = deepcopy(payload["queries"][-1])
+        fifth.update({"rank": 5, "symbol": "000005", "query": "Synthetic Company Five"})
+        payload["queries"].append(fifth)
+    payload["nextBatchCursor"] = query_count
+
+    with pytest.raises(NaverSnapshotStorageError, match="snapshot"):
+        serialize_naver_snapshot(payload)
 
 
 @pytest.mark.parametrize("unsafe_key", ["rawPayload", "providerHeaders", "clientSecret"])
@@ -119,10 +167,27 @@ def test_snapshot_preserves_safe_literal_entity_from_one_decode_semantics() -> N
     assert b"&lt;img src=x&gt;synthetic" in encoded
 
 
-@pytest.mark.parametrize("field", ["rank", "symbol"])
+@pytest.mark.parametrize("field", ["rank", "symbol", "query"])
 def test_snapshot_rejects_duplicate_query_identity(field: str) -> None:
     payload = _valid_snapshot()
     payload["queries"][1][field] = payload["queries"][0][field]
+
+    with pytest.raises(NaverSnapshotStorageError, match="snapshot"):
+        serialize_naver_snapshot(payload)
+
+
+@pytest.mark.parametrize("defect", ["batch_cursor", "next_cursor", "rank_order"])
+def test_snapshot_rejects_cursor_or_query_order_inconsistency(defect: str) -> None:
+    payload = _valid_snapshot()
+    if defect == "batch_cursor":
+        payload["batchCursor"] = 1
+    elif defect == "next_cursor":
+        payload["nextBatchCursor"] = 3
+    else:
+        payload["queries"][1], payload["queries"][2] = (
+            payload["queries"][2],
+            payload["queries"][1],
+        )
 
     with pytest.raises(NaverSnapshotStorageError, match="snapshot"):
         serialize_naver_snapshot(payload)
@@ -159,6 +224,10 @@ def test_snapshot_requires_exact_deferred_ranks_and_partial_semantics() -> None:
         serialize_naver_snapshot(payload)
 
     payload["deferredQueries"] = [deferred_query["rank"]]
+    with pytest.raises(NaverSnapshotStorageError, match="snapshot"):
+        serialize_naver_snapshot(payload)
+
+    payload["nextBatchCursor"] = 3
     assert serialize_naver_snapshot(payload).endswith(b"\n")
 
 
@@ -205,6 +274,38 @@ def test_publish_connects_canonical_bytes_to_secure_shared_store(tmp_path: Path)
     assert published.snapshot_path.read_bytes() == snapshot_bytes
     assert published.snapshot_sha256 == hashlib.sha256(snapshot_bytes).hexdigest()
     assert published.manifest_path.exists()
+
+
+def test_one_query_snapshot_and_manifest_publish_with_canonical_contract(tmp_path: Path) -> None:
+    payload = _one_query_snapshot()
+    snapshot_bytes = serialize_naver_snapshot(payload)
+
+    published = publish_naver_snapshot(
+        root=tmp_path / "snapshots",
+        snapshot_path=_SNAPSHOT_PATH,
+        snapshot=payload,
+        manifest_bytes=_manifest_bytes(snapshot_bytes, query_count=1),
+    )
+
+    assert published.snapshot_path.read_bytes() == snapshot_bytes
+    assert published.manifest_path.exists()
+
+
+def test_one_query_manifest_rejects_more_than_two_physical_attempts(tmp_path: Path) -> None:
+    payload = _one_query_snapshot()
+    snapshot_bytes = serialize_naver_snapshot(payload)
+
+    with pytest.raises(NaverSnapshotStorageError, match="manifest"):
+        publish_naver_snapshot(
+            root=tmp_path / "snapshots",
+            snapshot_path=_SNAPSHOT_PATH,
+            snapshot=payload,
+            manifest_bytes=_manifest_bytes(
+                snapshot_bytes,
+                query_count=1,
+                overrides={"physicalAttemptCount": 3},
+            ),
+        )
 
 
 def test_publish_rejects_a_manifest_outside_the_naver_source_contract(tmp_path: Path) -> None:
@@ -257,6 +358,34 @@ def test_publish_rejects_manifest_counts_and_coverage_that_disagree_with_snapsho
             snapshot_path=_SNAPSHOT_PATH,
             snapshot=payload,
             manifest_bytes=_manifest_bytes(snapshot_bytes, overrides=overrides),
+        )
+
+
+def test_publish_rejects_manifest_query_count_that_disagrees_with_snapshot(
+    tmp_path: Path,
+) -> None:
+    payload = _valid_snapshot()
+    snapshot_bytes = serialize_naver_snapshot(payload)
+
+    with pytest.raises(NaverSnapshotStorageError, match="manifest"):
+        publish_naver_snapshot(
+            root=tmp_path / "snapshots",
+            snapshot_path=_SNAPSHOT_PATH,
+            snapshot=payload,
+            manifest_bytes=_manifest_bytes(snapshot_bytes, query_count=1),
+        )
+
+
+def test_publish_rejects_boolean_manifest_query_count(tmp_path: Path) -> None:
+    payload = _one_query_snapshot()
+    snapshot_bytes = serialize_naver_snapshot(payload)
+
+    with pytest.raises(NaverSnapshotStorageError, match="manifest"):
+        publish_naver_snapshot(
+            root=tmp_path / "snapshots",
+            snapshot_path=_SNAPSHOT_PATH,
+            snapshot=payload,
+            manifest_bytes=_manifest_bytes(snapshot_bytes, query_count=True),
         )
 
 

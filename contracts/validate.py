@@ -13,6 +13,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_DIR = REPO_ROOT / "contracts" / "schemas"
 EXAMPLES_DIR = REPO_ROOT / "contracts" / "examples"
 INVALID_EXAMPLES_DIR = EXAMPLES_DIR / "invalid"
+PAIR_EXAMPLES_DIR = EXAMPLES_DIR / "pairs"
 
 
 def relative(path: Path) -> str:
@@ -110,10 +111,97 @@ def validate_invalid_examples(validators: dict[str, tuple[Path, Draft202012Valid
     return failures
 
 
+def _load_naver_pair(path: Path) -> tuple[object, object]:
+    pair = load_json(path)
+    if not isinstance(pair, dict) or set(pair) != {"snapshotExample", "manifestExample"}:
+        raise ValueError("Naver pair fixture must contain two example references")
+    snapshot_name = pair["snapshotExample"]
+    manifest_name = pair["manifestExample"]
+    if any(
+        not isinstance(name, str)
+        or not name.endswith(".valid.json")
+        or "/" in name
+        or "\\" in name
+        for name in (snapshot_name, manifest_name)
+    ):
+        raise ValueError("Naver pair fixture reference is invalid")
+    snapshot_path = EXAMPLES_DIR / snapshot_name
+    manifest_path = EXAMPLES_DIR / manifest_name
+    if not snapshot_path.is_file() or not manifest_path.is_file():
+        raise ValueError("Naver pair fixture reference is unavailable")
+    return load_json(snapshot_path), load_json(manifest_path)
+
+
+def _naver_pair_query_counts_match(snapshot: object, manifest: object) -> bool:
+    if not isinstance(snapshot, dict) or not isinstance(manifest, dict):
+        return False
+    queries = snapshot.get("queries")
+    count_breakdown = manifest.get("countBreakdown")
+    if not isinstance(queries, list) or not isinstance(count_breakdown, dict):
+        return False
+    query_count = count_breakdown.get("queryCount")
+    return (
+        isinstance(query_count, int)
+        and not isinstance(query_count, bool)
+        and query_count == len(queries)
+    )
+
+
+def validate_naver_pair_examples(
+    validators: dict[str, tuple[Path, Draft202012Validator]],
+) -> int:
+    """JSON Schema 밖의 snapshot/manifest query-count 교차 계약을 fixture pair로 검증한다."""
+    failures = 0
+    pair_examples = [(path, True) for path in sorted(PAIR_EXAMPLES_DIR.glob("*.valid.json"))]
+    pair_examples.extend(
+        (path, False) for path in sorted(PAIR_EXAMPLES_DIR.glob("*.invalid.json"))
+    )
+    if not pair_examples:
+        print("FAIL no Naver pair examples found in contracts/examples/pairs", file=sys.stderr)
+        return 1
+
+    snapshot_validator = validators["naver_news_metadata_snapshot"][1]
+    manifest_validator = validators["source_snapshot_manifest"][1]
+    for example_path, expected_valid in pair_examples:
+        try:
+            snapshot, manifest = _load_naver_pair(example_path)
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError):
+            failures += 1
+            print(f"FAIL invalid Naver pair fixture {relative(example_path)}", file=sys.stderr)
+            continue
+
+        snapshot_error = first_error(snapshot_validator.iter_errors(snapshot))
+        manifest_error = first_error(manifest_validator.iter_errors(manifest))
+        if snapshot_error is not None or manifest_error is not None:
+            failures += 1
+            print(
+                f"FAIL Naver pair fixture references schema-invalid examples: "
+                f"{relative(example_path)}",
+                file=sys.stderr,
+            )
+            continue
+
+        matches = _naver_pair_query_counts_match(snapshot, manifest)
+        if matches == expected_valid:
+            expectation = "valid" if expected_valid else "invalid"
+            print(f"PASS expected {expectation} Naver pair {relative(example_path)}")
+            continue
+
+        failures += 1
+        expectation = "match" if expected_valid else "mismatch"
+        print(
+            f"FAIL expected Naver pair query-count {expectation}: {relative(example_path)}",
+            file=sys.stderr,
+        )
+
+    return failures
+
+
 def main() -> int:
     validators = build_validators()
     failures = validate_valid_examples(validators)
     failures += validate_invalid_examples(validators)
+    failures += validate_naver_pair_examples(validators)
     if failures:
         print(f"contracts validation failed: {failures} failure(s)", file=sys.stderr)
         return 1

@@ -160,6 +160,41 @@ def test_both_series_failure_never_publishes() -> None:
     assert publisher.snapshots == []
 
 
+@pytest.mark.parametrize(
+    "first_outcome",
+    [
+        StatisticSearchPage(status="empty", total_count=0, observations=[]),
+        ECOSApplicationError("ERROR-500", retryable=True),
+    ],
+    ids=["empty", "failed"],
+)
+def test_strict_mode_stops_after_first_incomplete_series_without_publishing(
+    first_outcome: StatisticSearchPage | Exception,
+) -> None:
+    series = _verified_series()
+    client = _FakeClient(
+        {
+            series[0].series_id: first_outcome,
+            series[1].series_id: _page(),
+        }
+    )
+    publisher = _Publisher()
+    collector = ECOSCollector(client=client, publisher=publisher)
+
+    with pytest.raises(ECOSCollectionError, match="complete|incomplete"):
+        collector.collect(
+            series=series,
+            start=date(2026, 7, 1),
+            end=date(2026, 7, 14),
+            retrieved_at=datetime(2026, 7, 14, tzinfo=UTC),
+            persist=True,
+            require_complete=True,
+        )
+
+    assert client.calls == [(series[0].series_id, 1, 200)]
+    assert publisher.snapshots == []
+
+
 def test_collection_pages_at_two_hundred_rows_and_bounds_lookback_to_366_days() -> None:
     series = _verified_series()
     client = _FakeClient(

@@ -1414,6 +1414,43 @@ def test_each_retry_reserves_a_physical_attempt_without_refund(
     client.close()
 
 
+def test_attempt_setting_one_prevents_retry_send_and_backoff(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempts = 0
+    backoff_calls: list[int] = []
+    quota = _RecordingQuota()
+    _stub_credentials(monkeypatch)
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        return httpx.Response(500, json={"errorCode": "SE99"})
+
+    client = NaverHttpClient._for_test(
+        settings=NaverSettings(_env_file=None, NAVER_MAX_ATTEMPTS_PER_QUERY=1),
+        profile=LEGACY_PROFILE,
+        transport=httpx.MockTransport(handler),
+        quota=quota,
+        retry_delay=lambda attempt: backoff_calls.append(attempt) or 0.0,
+    )
+    try:
+        with pytest.raises(NaverResponseError) as exc_info:
+            client.search_news(
+                "합성회사",
+                retrieved_at=_RETRIEVED_AT,
+                requested_display=10,
+            )
+    finally:
+        client.close()
+
+    assert exc_info.value.code == "provider_unavailable"
+    assert attempts == 1
+    assert quota.reservations != []
+    assert len(quota.reservations) == 1
+    assert backoff_calls == []
+
+
 def test_429_is_not_retried_and_activates_60_second_cooldown(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

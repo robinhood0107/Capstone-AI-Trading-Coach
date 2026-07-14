@@ -66,7 +66,7 @@
           "additionalProperties": false,
           "required": ["queryCount", "acceptedItemCount", "filteredItemCount", "redactedUrlCount"],
           "properties": {
-            "queryCount": { "type": "integer", "const": 4 },
+            "queryCount": { "type": "integer", "minimum": 1, "maximum": 4 },
             "acceptedItemCount": { "type": "integer", "minimum": 0, "maximum": 80 },
             "filteredItemCount": { "type": "integer", "minimum": 0, "maximum": 80 },
             "redactedUrlCount": { "type": "integer", "minimum": 0, "maximum": 160 }
@@ -89,7 +89,25 @@
         "sanitizationVersion": { "type": "string", "minLength": 1, "maxLength": 120 },
         "retentionDays": { "type": "integer", "const": 30 },
         "deleteOwner": { "type": "string", "const": "decision-platform:source-snapshot-retention" }
-      }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "countBreakdown": { "properties": { "queryCount": { "const": 1 } }, "required": ["queryCount"] } }, "required": ["countBreakdown"] },
+          "then": { "properties": { "physicalAttemptCount": { "maximum": 2 } } }
+        },
+        {
+          "if": { "properties": { "countBreakdown": { "properties": { "queryCount": { "const": 2 } }, "required": ["queryCount"] } }, "required": ["countBreakdown"] },
+          "then": { "properties": { "physicalAttemptCount": { "maximum": 4 } } }
+        },
+        {
+          "if": { "properties": { "countBreakdown": { "properties": { "queryCount": { "const": 3 } }, "required": ["queryCount"] } }, "required": ["countBreakdown"] },
+          "then": { "properties": { "physicalAttemptCount": { "maximum": 6 } } }
+        },
+        {
+          "if": { "properties": { "countBreakdown": { "properties": { "queryCount": { "const": 4 } }, "required": ["queryCount"] } }, "required": ["countBreakdown"] },
+          "then": { "properties": { "physicalAttemptCount": { "maximum": 8 } } }
+        }
+      ]
     }
   ]
 }

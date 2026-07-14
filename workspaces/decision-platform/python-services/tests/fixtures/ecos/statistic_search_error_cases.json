@@ -1,0 +1,16 @@
+{
+  "cases": [
+    {"code": "INFO-100", "retryable": false},
+    {"code": "ERROR-100", "retryable": false},
+    {"code": "ERROR-101", "retryable": false},
+    {"code": "ERROR-200", "retryable": false},
+    {"code": "ERROR-300", "retryable": false},
+    {"code": "ERROR-301", "retryable": false},
+    {"code": "ERROR-400", "retryable": false},
+    {"code": "ERROR-500", "retryable": true},
+    {"code": "ERROR-600", "retryable": true},
+    {"code": "ERROR-601", "retryable": true},
+    {"code": "ERROR-602", "retryable": false, "cooldownSeconds": 1800},
+    {"code": "ERROR-999", "retryable": false}
+  ]
+}

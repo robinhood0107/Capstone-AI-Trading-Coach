@@ -1,0 +1,55 @@
+{
+  "StatisticSearch": {
+    "list_total_count": 3,
+    "row": [
+      {
+        "STAT_CODE": "722Y001",
+        "STAT_NAME": "합성 기준금리 시계열",
+        "ITEM_CODE1": "0101000",
+        "ITEM_NAME1": "합성 기준금리",
+        "ITEM_CODE2": "",
+        "ITEM_NAME2": "",
+        "ITEM_CODE3": "",
+        "ITEM_NAME3": "",
+        "ITEM_CODE4": "",
+        "ITEM_NAME4": "",
+        "UNIT_NAME": "%",
+        "WGT": "",
+        "TIME": "20260711",
+        "DATA_VALUE": "2.50"
+      },
+      {
+        "STAT_CODE": "722Y001",
+        "STAT_NAME": "합성 기준금리 시계열",
+        "ITEM_CODE1": "0101000",
+        "ITEM_NAME1": "합성 기준금리",
+        "ITEM_CODE2": "",
+        "ITEM_NAME2": "",
+        "ITEM_CODE3": "",
+        "ITEM_NAME3": "",
+        "ITEM_CODE4": "",
+        "ITEM_NAME4": "",
+        "UNIT_NAME": "%",
+        "WGT": "",
+        "TIME": "20260712",
+        "DATA_VALUE": "-0"
+      },
+      {
+        "STAT_CODE": "722Y001",
+        "STAT_NAME": "합성 기준금리 시계열",
+        "ITEM_CODE1": "0101000",
+        "ITEM_NAME1": "합성 기준금리",
+        "ITEM_CODE2": "",
+        "ITEM_NAME2": "",
+        "ITEM_CODE3": "",
+        "ITEM_NAME3": "",
+        "ITEM_CODE4": "",
+        "ITEM_NAME4": "",
+        "UNIT_NAME": "%",
+        "WGT": "",
+        "TIME": "20260713",
+        "DATA_VALUE": "2.5000"
+      }
+    ]
+  }
+}

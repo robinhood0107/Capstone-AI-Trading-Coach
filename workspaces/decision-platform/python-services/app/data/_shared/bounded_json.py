@@ -48,6 +48,17 @@ def parse_bounded_json_response(
     사용한다. 실제 보안 상한은 `iter_bytes()`가 내놓는 decompressed bytes를 다시 누적해 적용한다.
     """
     content = _read_bounded_response(response, limits=limits)
+    return parse_bounded_json_bytes(content, limits=limits)
+
+
+def parse_bounded_json_bytes(
+    content: bytes,
+    *,
+    limits: BoundedJsonLimits,
+) -> object:
+    """로컬·HTTP 경계에서 얻은 JSON bytes를 동일한 byte·구조·scalar 상한으로 파싱한다."""
+    if not isinstance(content, bytes) or len(content) > limits.max_bytes:
+        raise BoundedJsonError("bounded JSON payload exceeded the byte limit")
 
     try:
         text = content.decode("utf-8")

@@ -29,6 +29,13 @@ class NaverCountBreakdown(_SnapshotModel):
     filtered_item_count: int = Field(alias="filteredItemCount", ge=0)
     redacted_url_count: int = Field(alias="redactedUrlCount", ge=0)
 
+    @field_validator("query_count", mode="before")
+    @classmethod
+    def _reject_boolean_query_count(cls, value: object) -> object:
+        if isinstance(value, bool):
+            raise ValueError("queryCount must be an integer")
+        return value
+
 
 class SourceProvenance(_SnapshotModel):
     documentation_url: HttpUrl = Field(alias="documentationUrl")
@@ -102,4 +109,10 @@ class SourceSnapshotManifest(_SnapshotModel):
                 raise ValueError("Naver requires a Naver count breakdown")
             if self.record_count != self.count_breakdown.accepted_item_count:
                 raise ValueError("Naver recordCount must equal acceptedItemCount")
+            if not 1 <= self.count_breakdown.query_count <= 4:
+                raise ValueError("Naver queryCount must be between one and four")
+            if self.deferred_queries > self.count_breakdown.query_count:
+                raise ValueError("Naver deferredQueries cannot exceed queryCount")
+            if self.physical_attempt_count > 2 * self.count_breakdown.query_count:
+                raise ValueError("Naver attempts cannot exceed two per query")
         return self

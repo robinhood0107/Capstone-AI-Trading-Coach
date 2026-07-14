@@ -222,6 +222,10 @@ class NaverHttpClient:
         self._settings = settings
         self._profile = profile
         self._policy = request_policy_for(profile.provider_profile)
+        self._max_attempts_per_query = min(
+            settings.max_attempts_per_query,
+            self._policy.max_attempts,
+        )
         self._quota = quota
         self._transport = credential_transport
         self._retry_delay = retry_delay or _default_retry_delay
@@ -262,10 +266,10 @@ class NaverHttpClient:
                     deadline=deadline,
                 )
             except NaverResponseError as error:
-                if not error.retryable or attempt >= self._policy.max_attempts:
+                if not error.retryable or attempt >= self._max_attempts_per_query:
                     raise
             except NaverCredentialError as error:
-                if not error.retryable or attempt >= self._policy.max_attempts:
+                if not error.retryable or attempt >= self._max_attempts_per_query:
                     raise
             delay = min(0.5, max(0.0, self._retry_delay(attempt)))
             if time.monotonic() + delay >= deadline:

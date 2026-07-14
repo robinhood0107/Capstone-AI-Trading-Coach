@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -37,6 +37,12 @@ class NaverSettings(BaseSettings):
         ge=1,
         le=8,
         validation_alias="NAVER_MAX_CALLS_PER_RUN",
+    )
+    naver_max_attempts_per_query: int = Field(
+        default=2,
+        ge=1,
+        le=2,
+        validation_alias="NAVER_MAX_ATTEMPTS_PER_QUERY",
     )
     naver_response_max_bytes: int = Field(
         default=512 * 1024,
@@ -85,6 +91,13 @@ class NaverSettings(BaseSettings):
         validation_alias="SOURCE_SNAPSHOT_ROOT",
     )
 
+    @field_validator("naver_batch_size", "naver_max_attempts_per_query", mode="before")
+    @classmethod
+    def _reject_boolean_collection_limits(cls, value: object) -> object:
+        if isinstance(value, bool):
+            raise ValueError("Naver collection limits must be integers")
+        return value
+
     @property
     def search_profile(self) -> NaverSearchProfile:
         """운영자가 명시한 profile을 반환하며 날짜 기반 자동 전환은 하지 않는다."""
@@ -104,6 +117,11 @@ class NaverSettings(BaseSettings):
     def max_calls_per_run(self) -> int:
         """재시도를 포함한 한 실행의 physical attempt 상한을 반환한다."""
         return self.naver_max_calls_per_run
+
+    @property
+    def max_attempts_per_query(self) -> int:
+        """News query별 최초 send를 포함한 lower-only attempt 상한을 반환한다."""
+        return self.naver_max_attempts_per_query
 
     @property
     def response_max_bytes(self) -> int:

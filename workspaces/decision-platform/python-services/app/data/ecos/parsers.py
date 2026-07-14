@@ -188,9 +188,9 @@ def _metadata_rows(
     if (
         not isinstance(rows_value, list)
         or total_count < 1
-        # 전체 결과 건수는 현재 bounded page의 row 수보다 클 수 있다.
-        or total_count < len(rows_value)
         or len(rows_value) > _MAX_METADATA_ROWS
+        # metadata 요청은 1..200 첫 page로 고정되므로 truncated page도 거부한다.
+        or len(rows_value) != min(total_count, _MAX_METADATA_ROWS)
     ):
         raise ECOSParseError(_INVALID_RESPONSE)
     return tuple(_mapping(row) for row in rows_value)

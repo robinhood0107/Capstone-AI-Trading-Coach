@@ -130,6 +130,15 @@ def collect_news_batch(
             next_cursor = (batch_cursor + offset) % len(ranked)
             break
         except NaverCredentialError as error:
+            if error.code == "logical_deadline_exceeded":
+                remainder = selected[offset:]
+                results.extend(
+                    _empty_query_result(item, requested_display, status="deferred")
+                    for item in remainder
+                )
+                deferred_ranks.extend(item.rank for item in remainder)
+                next_cursor = (batch_cursor + offset) % len(ranked)
+                break
             if error.code != "transport_unavailable":
                 # credential/profile/config 오류는 다음 query로 진행해도 회복할 수 없어 전체 fail-closed한다.
                 raise

@@ -33,3 +33,17 @@ def test_quota_keys_are_opaque_profile_scopes_only() -> None:
 
     with pytest.raises(ValueError, match="profile"):
         quota_key_for("credential-or-url")
+
+
+def test_runtime_run_cap_can_only_lower_without_changing_version_or_windows() -> None:
+    base = quota_policy_for("naver-legacy")
+    lowered = quota_policy_for("naver-legacy", max_calls_per_run=3)
+
+    assert lowered.max_calls_per_run == 3
+    assert lowered.version == base.version
+    assert lowered.windows == base.windows
+    assert lowered.min_interval_ms == base.min_interval_ms
+    assert lowered.cooldown_seconds == base.cooldown_seconds
+
+    with pytest.raises(ValueError, match="run cap"):
+        quota_policy_for("naver-legacy", max_calls_per_run=9)

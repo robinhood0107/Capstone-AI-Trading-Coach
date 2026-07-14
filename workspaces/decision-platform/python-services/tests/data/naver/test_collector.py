@@ -9,6 +9,7 @@ import pytest
 
 from app.data._shared.redis_quota import QuotaDeniedError
 from app.data.kis.universe import UniverseManifest, UniverseManifestSymbol
+from app.data.naver._credential_transport import NaverCredentialError
 from app.data.naver.collector import NaverCollectionError, collect_news_batch
 from app.data.naver.models import NaverNewsPage
 
@@ -68,6 +69,7 @@ def _empty_page(requested_display: int) -> NaverNewsPage:
 @dataclass
 class _RecordingClient:
     fail_with_quota_on_call: int | None = None
+    fail_with_deadline_on_call: int | None = None
     calls: list[tuple[str, datetime, int]] = field(default_factory=list)
 
     def search_news(
@@ -80,6 +82,8 @@ class _RecordingClient:
         self.calls.append((query, retrieved_at, requested_display))
         if self.fail_with_quota_on_call == len(self.calls):
             raise QuotaDeniedError(retry_after_ms=60_000, observed_count=2_000)
+        if self.fail_with_deadline_on_call == len(self.calls):
+            raise NaverCredentialError("logical_deadline_exceeded")
         return _empty_page(requested_display)
 
 
@@ -157,6 +161,27 @@ def test_quota_denial_defers_current_and_remaining_queries_at_first_deferred_cur
     assert result.next_batch_cursor == 2
     assert result.partial is True
     assert result.coverage == "partial"
+
+
+def test_logical_deadline_defers_current_and_remaining_queries() -> None:
+    client = _RecordingClient(fail_with_deadline_on_call=2)
+
+    result = collect_news_batch(
+        universe=_manifest(),
+        client=client,
+        batch_cursor=0,
+        retrieved_at=_RETRIEVED_AT,
+        requested_display=10,
+    )
+
+    assert [query.status for query in result.queries] == [
+        "empty",
+        "deferred",
+        "deferred",
+        "deferred",
+    ]
+    assert result.deferred_queries == [2, 3, 4]
+    assert result.next_batch_cursor == 1
 
 
 def test_empty_or_unaudited_universe_never_falls_back_to_seed_names() -> None:

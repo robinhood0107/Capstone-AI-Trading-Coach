@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
@@ -10,7 +11,18 @@ from app.data.ecos.series_registry import CANDIDATE_SERIES
 
 
 def _verified_series():
-    return tuple(entry.model_copy(update={"verified": True}) for entry in CANDIDATE_SERIES)
+    verified_at = datetime(2026, 7, 13, tzinfo=UTC)
+    return tuple(
+        entry.model_copy(
+            update={
+                "verified": True,
+                "registry_verified_at": verified_at,
+                "name": f"synthetic-{entry.series_id}",
+                "unit": "synthetic-unit",
+            }
+        )
+        for entry in CANDIDATE_SERIES
+    )
 
 
 def test_provisional_registry_stops_before_online_client_construction(
@@ -65,3 +77,45 @@ def test_online_and_persist_flags_are_forwarded_explicitly(
     assert main(arguments) == 0
     assert len(calls) == 1
     assert calls[0]["persist"] is persist
+
+
+def test_invalid_argv_cannot_echo_a_mistaken_secret_or_url(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    secret_argument = "--synthetic-key=https://ecos.bok.or.kr/private?key=synthetic-secret"
+
+    assert main([secret_argument]) == 2
+
+    captured = capsys.readouterr()
+    assert captured.out == "source=ecos operation=macro_collect code=invalid_arguments\n"
+    assert captured.err == ""
+    assert "synthetic-secret" not in f"{captured.out}{captured.err}"
+    assert "https://" not in f"{captured.out}{captured.err}"
+
+
+def test_close_failure_cannot_override_the_stable_collection_result(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    class CloseFailingCollector:
+        def collect(self, **kwargs: Any) -> object:
+            del kwargs
+            return type("Result", (), {"coverage": "complete", "partial": False})()
+
+        def close(self) -> None:
+            raise RuntimeError(
+                "synthetic-ecos-key https://ecos.bok.or.kr/private raw provider response"
+            )
+
+    monkeypatch.setattr(collect_cli, "_load_series_registry", _verified_series)
+    monkeypatch.setattr(
+        collect_cli, "_build_collector", lambda *args, **kwargs: CloseFailingCollector()
+    )
+
+    assert main(["--online", "--from", "2026-07-01", "--to", "2026-07-14"]) == 1
+
+    rendered = capsys.readouterr().out
+    assert rendered == "source=ecos operation=macro_collect code=collection_failed\n"
+    assert "synthetic-ecos-key" not in rendered
+    assert "https://" not in rendered
+    assert "provider" not in rendered

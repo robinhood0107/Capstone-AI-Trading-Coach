@@ -30,38 +30,41 @@ def _manifest_bytes(
     snapshot_bytes: bytes,
     *,
     operation: str = "naver-news-metadata-collect",
+    snapshot_path: str = _SNAPSHOT_PATH,
+    overrides: dict[str, object] | None = None,
 ) -> bytes:
-    return canonical_json_bytes(
-        {
-            "schemaVersion": 1,
-            "source": "naver",
-            "providerProfile": "naver-legacy",
-            "operation": operation,
-            "generatedAt": "2026-07-14T01:10:00Z",
-            "asOf": "2026-07-14",
-            "snapshotPath": _SNAPSHOT_PATH,
-            "snapshotSha256": hashlib.sha256(snapshot_bytes).hexdigest(),
-            "recordCount": 1,
-            "countBreakdown": {
-                "queryCount": 4,
-                "acceptedItemCount": 1,
-                "filteredItemCount": 0,
-                "redactedUrlCount": 0,
-            },
-            "partial": False,
-            "coverage": "complete",
-            "deferredQueries": 0,
-            "physicalAttemptCount": 4,
-            "quotaPolicyVersion": "s1.3-naver-legacy-quota-v1",
-            "provenance": {
-                "documentationUrl": "https://developers.naver.com/docs/serviceapi/search/news/news.md",
-                "policyUrl": "https://developers.naver.com/products/terms/",
-            },
-            "sanitizationVersion": "s1.3-sanitization-v1",
-            "retentionDays": 30,
-            "deleteOwner": "decision-platform:source-snapshot-retention",
-        }
-    )
+    payload: dict[str, object] = {
+        "schemaVersion": 1,
+        "source": "naver",
+        "providerProfile": "naver-legacy",
+        "operation": operation,
+        "generatedAt": "2026-07-14T01:10:00Z",
+        "asOf": "2026-07-14",
+        "snapshotPath": snapshot_path,
+        "snapshotSha256": hashlib.sha256(snapshot_bytes).hexdigest(),
+        "recordCount": 1,
+        "countBreakdown": {
+            "queryCount": 4,
+            "acceptedItemCount": 1,
+            "filteredItemCount": 0,
+            "redactedUrlCount": 0,
+        },
+        "partial": False,
+        "coverage": "complete",
+        "deferredQueries": 0,
+        "physicalAttemptCount": 4,
+        "quotaPolicyVersion": "s1.3-naver-legacy-quota-v1",
+        "provenance": {
+            "documentationUrl": "https://developers.naver.com/docs/serviceapi/search/news/news.md",
+            "policyUrl": "https://developers.naver.com/products/terms/",
+        },
+        "sanitizationVersion": "s1.3-sanitization-v1",
+        "retentionDays": 30,
+        "deleteOwner": "decision-platform:source-snapshot-retention",
+    }
+    if overrides is not None:
+        payload.update(overrides)
+    return canonical_json_bytes(payload)
 
 
 def test_snapshot_serialization_is_deterministic_sanitized_contract_only() -> None:
@@ -85,6 +88,78 @@ def test_snapshot_rejects_raw_or_credential_fields(unsafe_key: str) -> None:
 
     with pytest.raises(NaverSnapshotStorageError, match="snapshot"):
         serialize_naver_snapshot(payload)
+
+
+@pytest.mark.parametrize(
+    "unsafe_text",
+    [
+        "<img src=x onerror=alert(1)>synthetic",
+        "synthetic\ntext",
+        "synthetic\u202etext",
+        "A\u030a",
+        "synthetic  text",
+    ],
+)
+def test_snapshot_rejects_text_that_bypasses_sanitizer_output_contract(
+    unsafe_text: str,
+) -> None:
+    payload = _valid_snapshot()
+    payload["queries"][0]["items"][0]["title"] = unsafe_text
+
+    with pytest.raises(NaverSnapshotStorageError, match="snapshot"):
+        serialize_naver_snapshot(payload)
+
+
+def test_snapshot_preserves_safe_literal_entity_from_one_decode_semantics() -> None:
+    payload = _valid_snapshot()
+    payload["queries"][0]["items"][0]["title"] = "&lt;img src=x&gt;synthetic"
+
+    encoded = serialize_naver_snapshot(payload)
+
+    assert b"&lt;img src=x&gt;synthetic" in encoded
+
+
+@pytest.mark.parametrize("field", ["rank", "symbol"])
+def test_snapshot_rejects_duplicate_query_identity(field: str) -> None:
+    payload = _valid_snapshot()
+    payload["queries"][1][field] = payload["queries"][0][field]
+
+    with pytest.raises(NaverSnapshotStorageError, match="snapshot"):
+        serialize_naver_snapshot(payload)
+
+
+def test_snapshot_derives_empty_coverage_from_all_four_query_statuses() -> None:
+    payload = _valid_snapshot()
+    first = payload["queries"][0]
+    first.update(
+        {
+            "status": "empty",
+            "providerTotal": 0,
+            "providerDisplay": 0,
+            "receivedCount": 0,
+            "acceptedCount": 0,
+            "filteredCount": 0,
+            "redactedUrlCount": 0,
+            "items": [],
+        }
+    )
+
+    with pytest.raises(NaverSnapshotStorageError, match="snapshot"):
+        serialize_naver_snapshot(payload)
+
+
+def test_snapshot_requires_exact_deferred_ranks_and_partial_semantics() -> None:
+    payload = _valid_snapshot()
+    deferred_query = payload["queries"][3]
+    deferred_query["status"] = "deferred"
+    payload["partial"] = True
+    payload["coverage"] = "partial"
+
+    with pytest.raises(NaverSnapshotStorageError, match="snapshot"):
+        serialize_naver_snapshot(payload)
+
+    payload["deferredQueries"] = [deferred_query["rank"]]
+    assert serialize_naver_snapshot(payload).endswith(b"\n")
 
 
 @pytest.mark.parametrize(
@@ -142,4 +217,86 @@ def test_publish_rejects_a_manifest_outside_the_naver_source_contract(tmp_path: 
             snapshot_path=_SNAPSHOT_PATH,
             snapshot=payload,
             manifest_bytes=_manifest_bytes(snapshot_bytes, operation="wrong-operation"),
+        )
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {
+            "recordCount": 0,
+            "countBreakdown": {
+                "queryCount": 4,
+                "acceptedItemCount": 0,
+                "filteredItemCount": 0,
+                "redactedUrlCount": 0,
+            },
+        },
+        {
+            "countBreakdown": {
+                "queryCount": 4,
+                "acceptedItemCount": 1,
+                "filteredItemCount": 1,
+                "redactedUrlCount": 0,
+            },
+        },
+        {"partial": True, "coverage": "partial"},
+        {"deferredQueries": 1},
+    ],
+)
+def test_publish_rejects_manifest_counts_and_coverage_that_disagree_with_snapshot(
+    tmp_path: Path,
+    overrides: dict[str, object],
+) -> None:
+    payload = _valid_snapshot()
+    snapshot_bytes = serialize_naver_snapshot(payload)
+
+    with pytest.raises(NaverSnapshotStorageError, match="manifest"):
+        publish_naver_snapshot(
+            root=tmp_path / "snapshots",
+            snapshot_path=_SNAPSHOT_PATH,
+            snapshot=payload,
+            manifest_bytes=_manifest_bytes(snapshot_bytes, overrides=overrides),
+        )
+
+
+def test_publish_rejects_manifest_profile_that_disagrees_with_snapshot(tmp_path: Path) -> None:
+    payload = _valid_snapshot()
+    snapshot_bytes = serialize_naver_snapshot(payload)
+    hub_manifest = _manifest_bytes(
+        snapshot_bytes,
+        overrides={
+            "providerProfile": "naver-api-hub",
+            "quotaPolicyVersion": "s1.3-naver-api-hub-quota-v1",
+            "provenance": {
+                "documentationUrl": "https://api.ncloud-docs.com/docs/naver-api-hub-search-news",
+                "policyUrl": "https://www.ncloud.com/policy/terms/svc",
+            },
+        },
+    )
+
+    with pytest.raises(NaverSnapshotStorageError, match="manifest"):
+        publish_naver_snapshot(
+            root=tmp_path / "snapshots",
+            snapshot_path=_SNAPSHOT_PATH,
+            snapshot=payload,
+            manifest_bytes=hub_manifest,
+        )
+
+
+def test_publish_rejects_manifest_as_of_that_disagrees_with_snapshot(tmp_path: Path) -> None:
+    payload = _valid_snapshot()
+    snapshot_bytes = serialize_naver_snapshot(payload)
+    alternate_path = "naver/2026/07/15/00000000-0000-4000-8000-000000000001/snapshot.json"
+
+    with pytest.raises(NaverSnapshotStorageError, match="manifest"):
+        publish_naver_snapshot(
+            root=tmp_path / "snapshots",
+            snapshot_path=alternate_path,
+            snapshot=payload,
+            manifest_bytes=_manifest_bytes(
+                snapshot_bytes,
+                snapshot_path=alternate_path,
+                overrides={"asOf": "2026-07-15"},
+            ),
         )

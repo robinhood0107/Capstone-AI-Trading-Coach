@@ -1,0 +1,34 @@
+{
+  "cases": [
+    {
+      "status": 401,
+      "payload": {"error": {"status": 401, "code": "Unauthorized", "message": "synthetic"}},
+      "code": "authentication_failed",
+      "retryable": false
+    },
+    {
+      "status": 403,
+      "payload": {"response": {"statusCode": 403, "code": "Forbidden", "message": "synthetic"}},
+      "code": "authentication_failed",
+      "retryable": false
+    },
+    {
+      "status": 429,
+      "payload": {"error": {"httpStatus": 429, "code": "TooManyRequests", "message": "synthetic"}},
+      "code": "rate_limited",
+      "retryable": false
+    },
+    {
+      "status": 502,
+      "payload": {"response": {"status": 502, "code": "BadGateway", "message": "synthetic"}},
+      "code": "provider_unavailable",
+      "retryable": true
+    },
+    {
+      "status": 200,
+      "payload": {"error": {"statusCode": 503, "code": "ServiceUnavailable", "message": "synthetic"}},
+      "code": "provider_unavailable",
+      "retryable": true
+    }
+  ]
+}

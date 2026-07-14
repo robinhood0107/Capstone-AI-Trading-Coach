@@ -274,11 +274,25 @@ def test_invalid_and_incomplete_artifacts_are_skipped_without_partial_deletion(
         sequence=24,
         invalid_snapshot_contract=True,
     )
+    invalid_naver_snapshot_contract = _write_artifact(
+        root,
+        source="naver",
+        as_of=date(2026, 6, 13),
+        sequence=26,
+        invalid_snapshot_contract=True,
+    )
     noncanonical_snapshot = _write_artifact(
         root,
         source="naver",
         as_of=date(2026, 6, 13),
         sequence=25,
+        noncanonical_snapshot=True,
+    )
+    noncanonical_ecos_snapshot = _write_artifact(
+        root,
+        source="ecos",
+        as_of=date(2025, 7, 13),
+        sequence=27,
         noncanonical_snapshot=True,
     )
     orphan_snapshot = _write_artifact(root, source="ecos", as_of=date(2025, 7, 13), sequence=22)
@@ -293,8 +307,12 @@ def test_invalid_and_incomplete_artifacts_are_skipped_without_partial_deletion(
     assert (invalid_retention / "snapshot.json").exists()
     assert (invalid_snapshot_contract / "manifest.json").exists()
     assert (invalid_snapshot_contract / "snapshot.json").exists()
+    assert (invalid_naver_snapshot_contract / "manifest.json").exists()
+    assert (invalid_naver_snapshot_contract / "snapshot.json").exists()
     assert (noncanonical_snapshot / "manifest.json").exists()
     assert (noncanonical_snapshot / "snapshot.json").exists()
+    assert (noncanonical_ecos_snapshot / "manifest.json").exists()
+    assert (noncanonical_ecos_snapshot / "snapshot.json").exists()
     assert not (orphan_snapshot / "manifest.json").exists()
     assert (orphan_snapshot / "snapshot.json").exists()
     assert (manifest_only / "manifest.json").exists()

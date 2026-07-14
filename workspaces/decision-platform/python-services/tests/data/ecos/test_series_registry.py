@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 import pytest
 
 from app.data.ecos.series_registry import (
@@ -20,3 +22,24 @@ def test_candidate_registry_is_provisional_and_bounded() -> None:
 def test_provisional_registry_blocks_network_collection() -> None:
     with pytest.raises(RegistryNotVerifiedError, match="registry_not_verified"):
         verified_series(CANDIDATE_SERIES)
+
+
+def test_verified_flag_without_timestamp_evidence_still_blocks_collection() -> None:
+    flag_only = tuple(entry.model_copy(update={"verified": True}) for entry in CANDIDATE_SERIES)
+
+    with pytest.raises(RegistryNotVerifiedError, match="registry_not_verified"):
+        verified_series(flag_only)
+
+    verified_at = datetime(2026, 7, 14, tzinfo=UTC)
+    evidenced = tuple(
+        entry.model_copy(
+            update={
+                "verified": True,
+                "registry_verified_at": verified_at,
+                "name": f"synthetic-{entry.series_id}",
+                "unit": "synthetic-unit",
+            }
+        )
+        for entry in CANDIDATE_SERIES
+    )
+    assert verified_series(evidenced) == evidenced

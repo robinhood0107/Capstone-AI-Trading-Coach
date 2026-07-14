@@ -7,7 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from app.data.naver.collect_cli import CollectCliError, build_collect_command
+from app.data._shared.source_snapshot_models import SourceSnapshotManifest
+from app.data.naver.collect_cli import CollectCliError, _persist, build_collect_command
+from app.data.naver.collector import NaverCollectionResult, NaverQueryResult
 
 
 _NOW = datetime(2026, 7, 14, 1, 0, tzinfo=UTC)
@@ -97,3 +99,57 @@ def test_command_preserves_exact_manifest_names_and_rank_order(tmp_path: Path) -
         (4, "4번 합성회사"),
     ]
     assert command.universe_manifest_sha256 == hashlib.sha256(manifest.read_bytes()).hexdigest()
+
+
+def test_persist_writes_contract_valid_manifest_operation_and_commit_marker(
+    tmp_path: Path,
+) -> None:
+    universe_manifest = _write_manifest(tmp_path / "universe_manifest.json")
+    data_root = tmp_path / "source_snapshots"
+    command = build_collect_command(
+        [
+            "--profile",
+            "legacy",
+            "--universe-manifest",
+            str(universe_manifest),
+            "--online",
+            "--persist",
+            "--data-root",
+            str(data_root),
+        ],
+        now=_NOW,
+    )
+    queries = tuple(
+        NaverQueryResult(
+            rank=rank,
+            symbol=f"{rank:06d}",
+            query=f"{rank}번 합성회사",
+            status="empty",
+            provider_total=0,
+            requested_display=10,
+            provider_display=0,
+            received_count=0,
+            accepted_count=0,
+            filtered_count=0,
+            redacted_url_count=0,
+            items=(),
+        )
+        for rank in range(1, 5)
+    )
+    result = NaverCollectionResult(
+        queries=queries,
+        next_batch_cursor=0,
+        deferred_queries=[],
+        partial=False,
+        coverage="empty",
+    )
+
+    _persist(command, result, physical_attempt_count=4)
+
+    manifest_paths = list(data_root.rglob("manifest.json"))
+    snapshot_paths = list(data_root.rglob("snapshot.json"))
+    assert len(manifest_paths) == len(snapshot_paths) == 1
+    manifest_payload = json.loads(manifest_paths[0].read_text(encoding="utf-8"))
+    validated = SourceSnapshotManifest.model_validate(manifest_payload)
+    assert validated.operation == "naver-news-metadata-collect"
+    assert validated.snapshot_sha256 == hashlib.sha256(snapshot_paths[0].read_bytes()).hexdigest()

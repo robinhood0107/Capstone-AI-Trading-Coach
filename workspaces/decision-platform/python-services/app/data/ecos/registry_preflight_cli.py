@@ -5,13 +5,14 @@ import json
 from collections.abc import Sequence
 from typing import NoReturn
 
+from app.data.ecos.errors import ECOSParseError
 from app.data.ecos.http_client import ECOSHttpClient
 from app.data.ecos.registry_preflight import RegistryInspectionResult, inspect_registry_metadata
 from app.data.ecos.series_registry import CANDIDATE_SERIES
 from app.data.ecos.settings import ECOSSettings
 
 _EXPECTED_PHYSICAL_ATTEMPTS = 4
-_FAILURE_LINE = "source=ecos operation=registry_preflight code=preflight_failed"
+_DEFAULT_FAILURE_CODE = "preflight_failed"
 _INVALID_ARGUMENTS_LINE = "source=ecos operation=registry_preflight code=invalid_arguments"
 
 
@@ -45,6 +46,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     client: object | None = None
     result: RegistryInspectionResult | None = None
     attempt_count = 0
+    failure_code = _DEFAULT_FAILURE_CODE
     failed = False
     try:
         client = _build_client()
@@ -52,10 +54,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             client=client,
             series=CANDIDATE_SERIES,
         )
-        attempt_count = getattr(client, "physical_attempt_count", 0)
+        attempt_count = _physical_attempt_count(client)
         if attempt_count != _EXPECTED_PHYSICAL_ATTEMPTS:
             failed = True
-    except Exception:
+    except Exception as error:
+        attempt_count = _physical_attempt_count(client)
+        failure_code = _failure_code(error)
         failed = True
     finally:
         try:
@@ -66,7 +70,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             failed = True
 
     if failed or result is None:
-        print(_FAILURE_LINE)
+        print(_render_failure(failure_code, physical_attempt_count=attempt_count))
         return 1
     print(_render_result(result, physical_attempt_count=attempt_count))
     return 0
@@ -100,6 +104,31 @@ def _render_result(
         "source": "ecos",
     }
     return json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+
+
+def _failure_code(error: Exception) -> str:
+    """provider 원문을 보존하지 않고 승인 판단에 필요한 allowlist 원인만 분류한다."""
+    if isinstance(error, ECOSParseError):
+        return "invalid_response"
+    return _DEFAULT_FAILURE_CODE
+
+
+def _physical_attempt_count(client: object | None) -> int:
+    """실패 경로에서도 secret-bearing 객체를 출력하지 않고 bounded count만 읽는다."""
+    try:
+        value = getattr(client, "physical_attempt_count", 0)
+    except Exception:
+        return 0
+    if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 4:
+        return 0
+    return value
+
+
+def _render_failure(code: str, *, physical_attempt_count: int) -> str:
+    return (
+        f"source=ecos operation=registry_preflight code={code} "
+        f"physicalAttemptCount={physical_attempt_count}"
+    )
 
 
 def _argument_parser() -> argparse.ArgumentParser:

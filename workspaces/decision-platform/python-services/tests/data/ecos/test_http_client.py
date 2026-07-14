@@ -785,7 +785,7 @@ def test_registry_metadata_requests_never_retry() -> None:
         return httpx.Response(500, json={"RESULT": {"CODE": "ERROR-500"}})
 
     client = ECOSHttpClient._for_tests(
-        ECOSSettings(_env_file=None),
+        ECOSSettings(_env_file=None, ECOS_MAX_ATTEMPTS_PER_REQUEST=2),
         transport=httpx.MockTransport(handler),
         quota=_RecordingQuota([]),
         credential=SecretStr("synthetic-key"),
@@ -797,6 +797,32 @@ def test_registry_metadata_requests_never_retry() -> None:
         client.close()
 
     assert attempts == 1
+
+
+def test_attempt_setting_one_prevents_retry_send_and_backoff() -> None:
+    attempts = 0
+    backoffs: list[float] = []
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        return httpx.Response(500, json={"RESULT": {"CODE": "ERROR-500"}})
+
+    client = ECOSHttpClient._for_tests(
+        ECOSSettings(_env_file=None, ECOS_MAX_ATTEMPTS_PER_REQUEST=1),
+        transport=httpx.MockTransport(handler),
+        quota=_RecordingQuota([]),
+        credential=SecretStr("synthetic-key"),
+        retry_sleeper=backoffs.append,
+    )
+    try:
+        with pytest.raises(ECOSHttpError, match="http_500"):
+            client.get_json(_path())
+    finally:
+        client.close()
+
+    assert attempts == 1
+    assert backoffs == []
 
 
 @pytest.mark.parametrize(

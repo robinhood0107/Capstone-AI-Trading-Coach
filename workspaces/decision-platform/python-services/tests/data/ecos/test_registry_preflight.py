@@ -84,8 +84,20 @@ def test_item_preflight_accepts_a_valid_partial_metadata_page() -> None:
     payload = _fixture("statistic_item_list_metadata.json")
     envelope = payload["StatisticItemList"]
     assert isinstance(envelope, dict)
-    # list_total_count는 현재 page 길이가 아니라 전체 검색 결과 건수다.
-    envelope["list_total_count"] = 2
+    rows = envelope["row"]
+    assert isinstance(rows, list)
+    target = rows[0]
+    assert isinstance(target, dict)
+    page = []
+    for index in range(199):
+        unrelated = dict(target)
+        unrelated["ITEM_CODE"] = f"9{index:06d}"
+        unrelated["ITEM_NAME"] = f"합성 비대상 항목 {index}"
+        page.append(unrelated)
+    page.append(target)
+    # 실제 1..200 요청에서도 list_total_count는 전체 결과 건수이므로 page 길이보다 클 수 있다.
+    envelope["list_total_count"] = 201
+    envelope["row"] = page
 
     item = parse_statistic_item_list(
         payload,

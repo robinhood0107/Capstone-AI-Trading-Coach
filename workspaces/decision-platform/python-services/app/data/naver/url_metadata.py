@@ -7,6 +7,7 @@ from urllib.parse import parse_qsl, quote, unquote, urlencode, urlsplit, urlunsp
 
 
 _HOST_LABEL = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?")
+_LEGACY_NUMERIC_LABEL = re.compile(r"(?:[0-9]+|0x[0-9a-f]+)", re.IGNORECASE)
 _PERCENT_ESCAPE = re.compile(r"%(?:[0-9A-Fa-f]{2})")
 _SENSITIVE_QUERY_MARKERS = (
     "apikey",
@@ -59,6 +60,8 @@ def normalize_metadata_url(
     netloc = _format_netloc(normalized_host, port)
     path = quote(parsed.path or "/", safe="/%:@!$&'()*+,;=-._~")
     query = _sanitize_query(parsed.query)
+    if query is None:
+        return None
     normalized = urlunsplit((parsed.scheme, netloc, path, query, ""))
     if not _within_bounds(normalized, max_code_points, max_utf8_bytes):
         return None
@@ -69,18 +72,27 @@ def _normalize_host(host: str | None) -> str | None:
     if not host:
         return None
     candidate = host.rstrip(".").lower()
-    if candidate == "localhost" or candidate.endswith(".local") or candidate.isdigit():
+    try:
+        ascii_host = candidate.encode("idna").decode("ascii").lower()
+    except UnicodeError:
+        return None
+    # IDNA가 compatibility 문자를 ASCII local name으로 접을 수 있으므로 변환 뒤 재검사한다.
+    if (
+        ascii_host == "localhost"
+        or ascii_host.endswith(".localhost")
+        or ascii_host.endswith(".local")
+        or ascii_host.isdigit()
+    ):
         return None
     try:
-        address = ipaddress.ip_address(candidate)
+        address = ipaddress.ip_address(ascii_host)
     except ValueError:
-        try:
-            ascii_host = candidate.encode("idna").decode("ascii")
-        except UnicodeError:
+        labels = ascii_host.split(".")
+        # inet_aton이 허용하는 축약·8진·16진 literal을 hostname으로 오인하지 않는다.
+        if labels and all(_LEGACY_NUMERIC_LABEL.fullmatch(label) for label in labels):
             return None
         if len(ascii_host) > 253:
             return None
-        labels = ascii_host.split(".")
         if len(labels) < 2 or any(not _HOST_LABEL.fullmatch(label) for label in labels):
             return None
         return ascii_host
@@ -92,9 +104,11 @@ def _format_netloc(host: str, port: int | None) -> str:
     return formatted_host if port is None else f"{formatted_host}:{port}"
 
 
-def _sanitize_query(query: str) -> str:
+def _sanitize_query(query: str) -> str | None:
     if not query:
         return ""
+    if ";" in unquote(query, errors="replace"):
+        return None
     try:
         pairs = parse_qsl(query, keep_blank_values=True, max_num_fields=64)
     except ValueError:
@@ -118,4 +132,7 @@ def _has_invalid_percent_escape(value: str) -> bool:
 
 
 def _within_bounds(value: str, max_code_points: int, max_utf8_bytes: int) -> bool:
-    return len(value) <= max_code_points and len(value.encode("utf-8")) <= max_utf8_bytes
+    try:
+        return len(value) <= max_code_points and len(value.encode("utf-8")) <= max_utf8_bytes
+    except UnicodeEncodeError:
+        return False

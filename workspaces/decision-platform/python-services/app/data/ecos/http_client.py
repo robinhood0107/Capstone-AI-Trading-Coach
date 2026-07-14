@@ -184,6 +184,7 @@ class ECOSHttpClient:
             max_number_characters=64,
         )
         self._retry_sleeper = retry_sleeper
+        self._max_attempts_per_request = min(settings.max_attempts_per_request, 2)
         self._logical_deadline_seconds = settings.logical_deadline_seconds
         self._phase_timeout_seconds = (
             settings.connect_timeout_seconds,
@@ -196,7 +197,7 @@ class ECOSHttpClient:
         self._closed = False
 
     def get_json(self, path: str) -> dict[str, object]:
-        """검증된 keyless 상대경로를 최대 두 physical attempts로 bounded JSON object화한다."""
+        """검증된 keyless 상대경로를 lower-only attempt 상한으로 bounded JSON object화한다."""
         validate_keyless_service_path(path)
         return self._execute(path, _identity_payload)
 
@@ -241,13 +242,12 @@ class ECOSHttpClient:
             end_index=200,
             arguments=(series.stat_code,),
         )
-        return self._execute(
+        return self._execute_preflight(
             path,
             lambda payload: parse_statistic_table_list(
                 payload,
                 expected_stat_code=series.stat_code,
             ),
-            max_attempts=1,
         )
 
     def statistic_item_list(self, *, series: ECOSSeries) -> StatisticItemMetadata:
@@ -258,14 +258,13 @@ class ECOSHttpClient:
             end_index=200,
             arguments=(series.stat_code,),
         )
-        return self._execute(
+        return self._execute_preflight(
             path,
             lambda payload: parse_statistic_item_list(
                 payload,
                 expected_stat_code=series.stat_code,
                 expected_item_code=series.item_code1,
             ),
-            max_attempts=1,
         )
 
     @property
@@ -296,8 +295,27 @@ class ECOSHttpClient:
         self,
         path: str,
         parser: Callable[[Mapping[str, object]], _ResultT],
+    ) -> _ResultT:
+        return self._execute_with_attempt_limit(
+            path,
+            parser,
+            max_attempts=self._max_attempts_per_request,
+        )
+
+    def _execute_preflight(
+        self,
+        path: str,
+        parser: Callable[[Mapping[str, object]], _ResultT],
+    ) -> _ResultT:
+        """registry metadata는 data retry 설정과 무관하게 정확히 한 번만 시도한다."""
+        return self._execute_with_attempt_limit(path, parser, max_attempts=1)
+
+    def _execute_with_attempt_limit(
+        self,
+        path: str,
+        parser: Callable[[Mapping[str, object]], _ResultT],
         *,
-        max_attempts: int = 2,
+        max_attempts: int,
     ) -> _ResultT:
         if max_attempts not in {1, 2}:
             raise ValueError("ECOS retry attempt count is out of bounds")

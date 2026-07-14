@@ -13,7 +13,7 @@ from app.data.naver.models import NaverNewsItem, NaverNewsPage
 from app.data.naver.policy import validate_news_query
 
 
-_BATCH_SIZE = 4
+_MAX_BATCH_SIZE = 4
 _SYMBOL = re.compile(r"[0-9A-Z._:-]{1,20}")
 NaverQueryStatus = Literal["complete", "empty", "failed", "deferred"]
 NaverCoverage = Literal["complete", "partial", "empty"]
@@ -21,6 +21,14 @@ NaverCoverage = Literal["complete", "partial", "empty"]
 
 class NaverCollectionError(RuntimeError):
     """감사 universe 또는 batch 불변식 위반을 provider 값 없이 보고한다."""
+
+
+class NaverCollectionIncompleteError(NaverCollectionError):
+    """strict 수집의 첫 incomplete 원인을 allowlisted code로만 전달한다."""
+
+    def __init__(self, code: str) -> None:
+        self.code = code
+        super().__init__("incomplete_collection")
 
 
 class NewsSearchClient(Protocol):
@@ -70,13 +78,14 @@ class NaverQueryResult:
 
 @dataclass(frozen=True)
 class NaverCollectionResult:
-    """고정 4-query batch의 cursor·deferred·coverage 결과다."""
+    """lower-only batch의 cursor·deferred·coverage와 내부 실패 분류 결과다."""
 
     queries: tuple[NaverQueryResult, ...]
     next_batch_cursor: int
     deferred_queries: list[int]
     partial: bool
     coverage: NaverCoverage
+    failure_codes: tuple[str, ...] = ()
 
 
 def collect_news_batch(
@@ -86,19 +95,21 @@ def collect_news_batch(
     batch_cursor: int,
     retrieved_at: datetime,
     requested_display: int,
+    batch_size: int = 4,
+    require_complete: bool = False,
 ) -> NaverCollectionResult:
-    """감사된 rank/name만 사용해 정확히 4개 News query를 순차 수행한다.
+    """감사된 rank/name만 사용해 설정에서 확정한 1~4개 News query를 순차 수행한다.
 
     quota가 현재 query를 outbound 전에 거부하면 현재와 남은 query를 deferred로 기록하고
     next cursor를 첫 deferred universe index에 고정한다. 기사 URL은 fetch하지 않는다.
     """
-    ranked = _validated_universe(universe)
-    if (
-        isinstance(batch_cursor, bool)
-        or not isinstance(batch_cursor, int)
-        or not 0 <= batch_cursor < len(ranked)
-    ):
-        raise NaverCollectionError("audited universe batch cursor is invalid")
+    if not isinstance(require_complete, bool):
+        raise NaverCollectionError("audited universe batch arguments are invalid")
+    selected, next_cursor = select_audited_news_batch(
+        universe,
+        batch_size=batch_size,
+        batch_cursor=batch_cursor,
+    )
     if (
         retrieved_at.tzinfo is None
         or retrieved_at.utcoffset() is None
@@ -108,10 +119,10 @@ def collect_news_batch(
     ):
         raise NaverCollectionError("audited universe collection arguments are invalid")
 
-    selected = tuple(ranked[(batch_cursor + offset) % len(ranked)] for offset in range(_BATCH_SIZE))
     results: list[NaverQueryResult] = []
     deferred_ranks: list[int] = []
-    next_cursor = (batch_cursor + _BATCH_SIZE) % len(ranked)
+    failure_codes: list[str] = []
+    universe_size = len(universe.symbols)
 
     for offset, symbol in enumerate(selected):
         try:
@@ -121,15 +132,21 @@ def collect_news_batch(
                 requested_display=requested_display,
             )
         except QuotaDeniedError:
+            if require_complete:
+                raise NaverCollectionIncompleteError("rate_limited") from None
             remainder = selected[offset:]
             results.extend(
                 _empty_query_result(item, requested_display, status="deferred")
                 for item in remainder
             )
             deferred_ranks.extend(item.rank for item in remainder)
-            next_cursor = (batch_cursor + offset) % len(ranked)
+            failure_codes.append("rate_limited")
+            next_cursor = (batch_cursor + offset) % universe_size
             break
         except NaverCredentialError as error:
+            failure_code = _collection_failure_code(error)
+            if require_complete:
+                raise NaverCollectionIncompleteError(failure_code) from None
             if error.code == "logical_deadline_exceeded":
                 remainder = selected[offset:]
                 results.extend(
@@ -137,20 +154,35 @@ def collect_news_batch(
                     for item in remainder
                 )
                 deferred_ranks.extend(item.rank for item in remainder)
-                next_cursor = (batch_cursor + offset) % len(ranked)
+                failure_codes.append(failure_code)
+                next_cursor = (batch_cursor + offset) % universe_size
                 break
             if error.code != "transport_unavailable":
                 # credential/profile/config 오류는 다음 query로 진행해도 회복할 수 없어 전체 fail-closed한다.
                 raise
             results.append(_empty_query_result(symbol, requested_display, status="failed"))
+            failure_codes.append(failure_code)
         except NaverResponseError as error:
+            failure_code = _collection_failure_code(error)
+            if require_complete:
+                raise NaverCollectionIncompleteError(failure_code) from None
             if error.code == "authentication_failed":
                 raise
             results.append(_empty_query_result(symbol, requested_display, status="failed"))
-        except NaverError:
+            failure_codes.append(failure_code)
+        except NaverError as error:
+            failure_code = _collection_failure_code(error)
+            if require_complete:
+                raise NaverCollectionIncompleteError(failure_code) from None
             results.append(_empty_query_result(symbol, requested_display, status="failed"))
+            failure_codes.append(failure_code)
         else:
-            results.append(_query_result(symbol, page))
+            query_result = _query_result(symbol, page)
+            if require_complete and (
+                query_result.status == "empty" or query_result.accepted_count == 0
+            ):
+                raise NaverCollectionIncompleteError("partial_collection")
+            results.append(query_result)
 
     partial = any(result.status in {"failed", "deferred"} for result in results)
     if partial:
@@ -165,14 +197,48 @@ def collect_news_batch(
         deferred_queries=deferred_ranks,
         partial=partial,
         coverage=coverage,
+        failure_codes=tuple(failure_codes),
     )
 
 
-def _validated_universe(universe: UniverseManifest) -> tuple[UniverseManifestSymbol, ...]:
+def select_audited_news_batch(
+    universe: UniverseManifest,
+    *,
+    batch_size: int,
+    batch_cursor: int,
+) -> tuple[tuple[UniverseManifestSymbol, ...], int]:
+    """감사 universe와 lower-only batch/cursor를 검증해 선택 종목과 다음 cursor를 반환한다.
+
+    provider client를 만들기 전 호출할 수 있는 순수 경계이며, 잘못된 rank·symbol·query는 외부 호출 없이 거부한다.
+    """
+    if (
+        isinstance(batch_size, bool)
+        or not isinstance(batch_size, int)
+        or not 1 <= batch_size <= _MAX_BATCH_SIZE
+    ):
+        raise NaverCollectionError("audited universe batch arguments are invalid")
+    ranked = _validated_universe(universe, batch_size=batch_size)
+    if (
+        isinstance(batch_cursor, bool)
+        or not isinstance(batch_cursor, int)
+        or not 0 <= batch_cursor < len(ranked)
+    ):
+        raise NaverCollectionError("audited universe batch cursor is invalid")
+    selected = tuple(
+        ranked[(batch_cursor + offset) % len(ranked)] for offset in range(batch_size)
+    )
+    return selected, (batch_cursor + batch_size) % len(ranked)
+
+
+def _validated_universe(
+    universe: UniverseManifest,
+    *,
+    batch_size: int,
+) -> tuple[UniverseManifestSymbol, ...]:
     symbols = tuple(universe.symbols)
     if (
         universe.schema_version != 1
-        or len(symbols) < _BATCH_SIZE
+        or len(symbols) < batch_size
         or universe.limit != len(symbols)
         or not re.fullmatch(r"[0-9a-f]{64}", universe.source_sha256)
     ):
@@ -180,7 +246,12 @@ def _validated_universe(universe: UniverseManifest) -> tuple[UniverseManifestSym
     ranked = tuple(sorted(symbols, key=lambda item: item.rank))
     ranks = [item.rank for item in ranked]
     symbol_codes = [item.symbol for item in ranked]
-    if ranks != list(range(1, len(ranked) + 1)) or len(symbol_codes) != len(set(symbol_codes)):
+    query_names = [item.name for item in ranked]
+    if (
+        ranks != list(range(1, len(ranked) + 1))
+        or len(symbol_codes) != len(set(symbol_codes))
+        or len(query_names) != len(set(query_names))
+    ):
         raise NaverCollectionError("audited universe identity is invalid")
     for item in ranked:
         if (
@@ -194,6 +265,26 @@ def _validated_universe(universe: UniverseManifest) -> tuple[UniverseManifestSym
         except ValueError:
             raise NaverCollectionError("audited universe identity is invalid") from None
     return ranked
+
+
+def _collection_failure_code(error: Exception) -> str:
+    code = getattr(error, "code", "collection_failed")
+    if code in {
+        "authentication_unavailable",
+        "authentication_failed",
+        "logical_deadline_exceeded",
+        "transport_unavailable",
+        "rate_limited",
+        "invalid_response",
+    }:
+        return str(code)
+    if code == "provider_unavailable":
+        return "transport_unavailable"
+    if code in {"response_too_large", "response_unavailable"}:
+        return "invalid_response"
+    if code in {"invalid_query", "redirect_rejected", "profile_invalid"}:
+        return "invalid_response"
+    return "collection_failed"
 
 
 def _query_result(symbol: UniverseManifestSymbol, page: NaverNewsPage) -> NaverQueryResult:

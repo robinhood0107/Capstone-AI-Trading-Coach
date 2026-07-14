@@ -156,10 +156,7 @@ def build_collect_command(
         ValueError,
     ):
         raise CollectCliError("universe manifest is invalid") from None
-    if (
-        isinstance(args.display, bool)
-        or not 1 <= args.display <= 20
-    ):
+    if isinstance(args.display, bool) or not 1 <= args.display <= 20:
         raise CollectCliError("universe batch arguments are invalid")
     try:
         if args.data_root is None:
@@ -341,42 +338,28 @@ def _validate_result_against_command(
             "Naver publish command/result contract is invalid"
         ) from None
     if len(result.queries) != command.batch_size:
-        raise NaverSnapshotStorageError(
-            "Naver publish command/result contract is invalid"
-        )
-    expected_identities = tuple(
-        (item.rank, item.symbol, item.name) for item in selected
-    )
-    actual_identities = tuple(
-        (query.rank, query.symbol, query.query) for query in result.queries
-    )
+        raise NaverSnapshotStorageError("Naver publish command/result contract is invalid")
+    expected_identities = tuple((item.rank, item.symbol, item.name) for item in selected)
+    actual_identities = tuple((query.rank, query.symbol, query.query) for query in result.queries)
     if actual_identities != expected_identities:
-        raise NaverSnapshotStorageError(
-            "Naver publish command/result contract is invalid"
-        )
+        raise NaverSnapshotStorageError("Naver publish command/result contract is invalid")
 
     deferred_offsets = tuple(
-        offset
-        for offset, query in enumerate(result.queries)
-        if query.status == "deferred"
+        offset for offset, query in enumerate(result.queries) if query.status == "deferred"
     )
     if deferred_offsets:
         first_deferred = deferred_offsets[0]
         if deferred_offsets != tuple(range(first_deferred, command.batch_size)):
-            raise NaverSnapshotStorageError(
-                "Naver publish command/result contract is invalid"
-            )
-        expected_next_cursor = (
-            command.batch_cursor + first_deferred
-        ) % len(command.universe.symbols)
+            raise NaverSnapshotStorageError("Naver publish command/result contract is invalid")
+        expected_next_cursor = (command.batch_cursor + first_deferred) % len(
+            command.universe.symbols
+        )
     expected_deferred_queries = [selected[offset].rank for offset in deferred_offsets]
     if (
         result.deferred_queries != expected_deferred_queries
         or result.next_batch_cursor != expected_next_cursor
     ):
-        raise NaverSnapshotStorageError(
-            "Naver publish command/result contract is invalid"
-        )
+        raise NaverSnapshotStorageError("Naver publish command/result contract is invalid")
 
 
 def _read_universe_manifest(path: Path) -> bytes:
@@ -384,10 +367,7 @@ def _read_universe_manifest(path: Path) -> bytes:
     file_fd = os.open(path, _UNIVERSE_MANIFEST_FLAGS)
     try:
         metadata = os.fstat(file_fd)
-        if (
-            not stat.S_ISREG(metadata.st_mode)
-            or metadata.st_size > _UNIVERSE_MANIFEST_MAX_BYTES
-        ):
+        if not stat.S_ISREG(metadata.st_mode) or metadata.st_size > _UNIVERSE_MANIFEST_MAX_BYTES:
             raise ValueError("universe manifest is invalid")
         chunks: list[bytes] = []
         remaining = _UNIVERSE_MANIFEST_MAX_BYTES + 1

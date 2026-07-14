@@ -224,9 +224,7 @@ def select_audited_news_batch(
         or not 0 <= batch_cursor < len(ranked)
     ):
         raise NaverCollectionError("audited universe batch cursor is invalid")
-    selected = tuple(
-        ranked[(batch_cursor + offset) % len(ranked)] for offset in range(batch_size)
-    )
+    selected = tuple(ranked[(batch_cursor + offset) % len(ranked)] for offset in range(batch_size))
     return selected, (batch_cursor + batch_size) % len(ranked)
 
 

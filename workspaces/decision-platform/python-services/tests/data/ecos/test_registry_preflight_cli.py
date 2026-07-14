@@ -228,6 +228,6 @@ def test_unicode_escaped_credential_echo_cannot_reach_preflight_cli(
     rendered = capsys.readouterr().out
     assert attempts == 1
     assert rendered == (
-        "source=ecos operation=registry_preflight code=preflight_failed physicalAttemptCount=1\n"
+        "source=ecos operation=registry_preflight code=invalid_response physicalAttemptCount=1\n"
     )
     assert marker not in rendered

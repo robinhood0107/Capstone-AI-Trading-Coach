@@ -19,8 +19,9 @@ _OBSERVED_AT = datetime(2026, 7, 14, 1, 2, 3, tzinfo=UTC)
 
 
 class _Client:
-    def __init__(self, *, fail_stage: str | None = None) -> None:
+    def __init__(self, *, fail_stage: str | None = None, searchable: bool = True) -> None:
         self.fail_stage = fail_stage
+        self.searchable = searchable
         self.calls: list[tuple[str, str]] = []
         self.closed = False
 
@@ -34,7 +35,7 @@ class _Client:
             stat_code=series.stat_code,
             name=f"합성-{series.series_id}-table",
             cycle="D",
-            searchable=True,
+            searchable=self.searchable,
         )
 
     def statistic_item_list(self, *, series: ECOSSeries) -> StatisticItemMetadata:
@@ -136,6 +137,42 @@ def test_online_item_parse_failure_reports_only_safe_code_and_actual_attempt_cou
     assert client.closed is True
     assert capsys.readouterr().out == (
         "source=ecos operation=registry_preflight code=invalid_response physicalAttemptCount=2\n"
+    )
+
+
+def test_online_non_searchable_table_fails_before_item_call(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    client = _Client(searchable=False)
+    monkeypatch.setattr(registry_preflight_cli, "_build_client", lambda: client)
+
+    assert registry_preflight_cli.main(["--online"]) == 1
+
+    assert client.calls == [("table", "policy-rate")]
+    assert client.closed is True
+    assert capsys.readouterr().out == (
+        "source=ecos operation=registry_preflight code=preflight_failed physicalAttemptCount=1\n"
+    )
+
+
+def test_online_extra_attempt_counter_preserves_the_observed_count(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    class ExtraAttemptClient(_Client):
+        @property
+        def physical_attempt_count(self) -> int:
+            return 5
+
+    client = ExtraAttemptClient()
+    monkeypatch.setattr(registry_preflight_cli, "_build_client", lambda: client)
+
+    assert registry_preflight_cli.main(["--online"]) == 1
+
+    assert client.closed is True
+    assert capsys.readouterr().out == (
+        "source=ecos operation=registry_preflight code=preflight_failed physicalAttemptCount=5\n"
     )
 
 

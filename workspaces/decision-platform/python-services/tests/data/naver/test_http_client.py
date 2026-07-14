@@ -8,7 +8,7 @@ import httpx
 import pytest
 from pydantic import SecretStr
 
-from app.data._shared.redis_quota import QuotaUnavailableError
+from app.data._shared.redis_quota import QuotaDeniedError, QuotaUnavailableError
 from app.data.naver import _credential_transport
 from app.data.naver._credential_transport import (
     NaverCredentialError,
@@ -328,6 +328,68 @@ def test_transport_exception_restores_request_headers_and_hides_secret(
         for request in captured
         for header in LEGACY_PROFILE.auth_headers
     )
+    client.close()
+
+
+def test_provider_echo_cannot_reach_normalized_page_or_response_headers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    identifier, secret = _stub_credentials(monkeypatch)
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json=_success_payload(title=f"{identifier} {secret}"),
+            headers={"x-provider-echo": secret},
+        )
+
+    client = NaverHttpClient._for_test(
+        settings=NaverSettings(_env_file=None),
+        profile=LEGACY_PROFILE,
+        transport=httpx.MockTransport(handler),
+        quota=_RecordingQuota(),
+        retry_delay=lambda _: 0.0,
+    )
+    page = client.search_news(
+        "합성회사",
+        retrieved_at=_RETRIEVED_AT,
+        requested_display=10,
+    )
+
+    rendered = repr(page)
+    assert identifier not in rendered
+    assert secret not in rendered
+    client.close()
+
+
+def test_denied_quota_is_not_counted_as_a_physical_attempt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stub_credentials(monkeypatch)
+
+    class DeniedQuota:
+        def reserve(self, *, attempt_id: str) -> None:
+            raise QuotaDeniedError(retry_after_ms=250, observed_count=2_000)
+
+        def activate_cooldown(self, *, seconds: int) -> None:
+            raise AssertionError("denied quota cannot activate cooldown")
+
+    client = NaverHttpClient._for_test(
+        settings=NaverSettings(_env_file=None),
+        profile=LEGACY_PROFILE,
+        transport=httpx.MockTransport(lambda _: pytest.fail("quota denial reached outbound")),
+        quota=DeniedQuota(),
+        retry_delay=lambda _: 0.0,
+    )
+
+    with pytest.raises(QuotaDeniedError):
+        client.search_news(
+            "합성회사",
+            retrieved_at=_RETRIEVED_AT,
+            requested_display=10,
+        )
+
+    assert client.physical_attempt_count == 0
     client.close()
 
 

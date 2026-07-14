@@ -188,7 +188,8 @@ def _metadata_rows(
     if (
         not isinstance(rows_value, list)
         or total_count < 1
-        or total_count != len(rows_value)
+        # 전체 결과 건수는 현재 bounded page의 row 수보다 클 수 있다.
+        or total_count < len(rows_value)
         or len(rows_value) > _MAX_METADATA_ROWS
     ):
         raise ECOSParseError(_INVALID_RESPONSE)

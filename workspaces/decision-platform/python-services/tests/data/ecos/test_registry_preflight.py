@@ -128,9 +128,11 @@ class _PreflightClient:
         *,
         mismatched_unit: bool = False,
         mismatched_identity: bool = False,
+        searchable: bool = True,
     ) -> None:
         self.mismatched_unit = mismatched_unit
         self.mismatched_identity = mismatched_identity
+        self.searchable = searchable
         self.calls: list[tuple[str, str]] = []
 
     def statistic_table_list(self, *, series: ECOSSeries) -> StatisticTableMetadata:
@@ -139,7 +141,7 @@ class _PreflightClient:
             stat_code=series.stat_code,
             name=f"synthetic-{series.series_id}",
             cycle="D",
-            searchable=True,
+            searchable=self.searchable,
         )
 
     def statistic_item_list(self, *, series: ECOSSeries) -> StatisticItemMetadata:
@@ -256,3 +258,18 @@ def test_metadata_inspection_rejects_mismatched_identity_without_activation() ->
             series=CANDIDATE_SERIES,
             observed_at=_VERIFIED_AT,
         )
+
+
+def test_metadata_inspection_rejects_non_searchable_table_before_item_call() -> None:
+    from app.data.ecos.registry_preflight import inspect_registry_metadata
+
+    client = _PreflightClient(searchable=False)
+
+    with pytest.raises(ValueError, match="searchable"):
+        inspect_registry_metadata(
+            client=client,
+            series=CANDIDATE_SERIES,
+            observed_at=_VERIFIED_AT,
+        )
+
+    assert client.calls == [("table", "policy-rate")]

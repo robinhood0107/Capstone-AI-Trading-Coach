@@ -80,7 +80,8 @@ def test_numeric_bounds_reject_noncanonical_or_excessive_values(invalid_value: s
     with pytest.raises(ECOSParseError, match="invalid ECOS response") as exc_info:
         _parse(payload)
 
-    assert invalid_value not in str(exc_info.value)
+    if invalid_value:
+        assert invalid_value not in str(exc_info.value)
     assert exc_info.value.__cause__ is None
 
 

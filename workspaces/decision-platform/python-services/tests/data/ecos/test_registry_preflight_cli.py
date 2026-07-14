@@ -196,10 +196,27 @@ def test_unicode_escaped_credential_echo_cannot_reach_preflight_cli(
     marker = "synthetic-ecos-key"
     escaped = "".join(f"\\u{ord(character):04x}" for character in marker)
     body = (
-        '{"StatisticTableList":{"list_total_count":1,"row":[{'
-        '"STAT_CODE":"722Y001","STAT_NAME":"'
-        f'{escaped}","CYCLE":"D","SRCH_YN":"Y"}}]}}'
-    ).encode()
+        json.dumps(
+            {
+                "StatisticTableList": {
+                    "list_total_count": 1,
+                    "row": [
+                        {
+                            "STAT_CODE": "722Y001",
+                            "STAT_NAME": marker,
+                            "CYCLE": "D",
+                            "SRCH_YN": "Y",
+                        }
+                    ],
+                }
+            },
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        .replace(marker, escaped)
+        .encode()
+    )
+    assert json.loads(body)["StatisticTableList"]["row"][0]["STAT_NAME"] == marker
     attempts = 0
 
     class Quota:
@@ -228,6 +245,6 @@ def test_unicode_escaped_credential_echo_cannot_reach_preflight_cli(
     rendered = capsys.readouterr().out
     assert attempts == 1
     assert rendered == (
-        "source=ecos operation=registry_preflight code=invalid_response physicalAttemptCount=1\n"
+        "source=ecos operation=registry_preflight code=preflight_failed physicalAttemptCount=1\n"
     )
     assert marker not in rendered

@@ -1702,7 +1702,7 @@ service MarketDataService {
 }
 ```
 
-> S1.3 가용성(2026-07-14): 위 `GetNewsSummary`와 `GetMacroSnapshot`은 미래 interface
+> S1.3 가용성(2026-07-15): 위 `GetNewsSummary`와 `GetMacroSnapshot`은 미래 interface
 > sketch이며 현재 proto/controller가 없어 **호출 불가**다. S1.3은 아래 내부 file artifact만
 > 생산한다. `GetNewsSummary`는 Naver provider 응답이 아니라 Return Engine이 생성할 감성 요약
 > 계약을 뜻하며, 두 RPC를 공개하려면 별도의 `contracts/changes/`와 인증·인가 구현이 필요하다.

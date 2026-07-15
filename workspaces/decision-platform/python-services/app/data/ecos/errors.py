@@ -97,13 +97,15 @@ class ECOSDiagnostic:
     diagnostic_version: int = 1
 
     def __post_init__(self) -> None:
-        if self.diagnostic_version != 1:
+        if type(self.diagnostic_version) is not int or self.diagnostic_version != 1:
             raise ValueError("unsupported ECOS diagnostic version")
         if self.failure_stage not in _FAILURE_STAGES:
             raise ValueError("ECOS diagnostic failure stage is not allowed")
         if self.failure_reason not in _FAILURE_REASONS:
             raise ValueError("ECOS diagnostic failure reason is not allowed")
-        if self.request_ordinal is not None and self.request_ordinal not in {1, 2, 3, 4}:
+        if self.request_ordinal is not None and (
+            type(self.request_ordinal) is not int or self.request_ordinal not in {1, 2, 3, 4}
+        ):
             raise ValueError("ECOS diagnostic request ordinal is out of bounds")
         if self.service is not None and self.service not in _SERVICES:
             raise ValueError("ECOS diagnostic service is not allowed")

@@ -304,6 +304,56 @@ def test_fetch_rejects_non_session_date_before_any_outbound(
     assert client.physical_attempt_count == 0
 
 
+def test_fetch_rejects_date_before_official_service_start_before_any_outbound(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    outbound = 0
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal outbound
+        outbound += 1
+        return httpx.Response(200, json={"OutBlock_1": []})
+
+    client, quota = _client(monkeypatch, httpx.MockTransport(handler))
+    try:
+        with pytest.raises(ValueError, match="supported|range"):
+            client.fetch_universe_rows(date(2009, 12, 30))
+    finally:
+        client.close()
+
+    assert outbound == 0
+    assert quota.reservations == []
+    assert client.physical_attempt_count == 0
+
+
+def test_fetch_sanitizes_calendar_failure_before_any_outbound(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    marker = "synthetic-calendar-secret-/private/provider"
+    outbound = 0
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal outbound
+        outbound += 1
+        return httpx.Response(200, json={"OutBlock_1": []})
+
+    monkeypatch.setattr(
+        "app.data.krx.client.is_xkrx_trading_day",
+        lambda _: (_ for _ in ()).throw(RuntimeError(marker)),
+    )
+    client, quota = _client(monkeypatch, httpx.MockTransport(handler))
+    try:
+        with pytest.raises(ValueError, match="calendar_unavailable") as exc_info:
+            client.fetch_universe_rows(_AS_OF)
+    finally:
+        client.close()
+
+    assert marker not in str(exc_info.value)
+    assert outbound == 0
+    assert quota.reservations == []
+    assert client.physical_attempt_count == 0
+
+
 def test_close_is_idempotent(monkeypatch: pytest.MonkeyPatch) -> None:
     client, _ = _client(
         monkeypatch,

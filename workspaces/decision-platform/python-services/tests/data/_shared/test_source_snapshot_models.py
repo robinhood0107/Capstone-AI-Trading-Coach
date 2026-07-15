@@ -39,11 +39,84 @@ def _ecos_manifest() -> dict[str, object]:
     }
 
 
+def _manifest_for_source(source: str) -> dict[str, object]:
+    if source == "ecos":
+        payload = _ecos_manifest()
+        payload["recordCount"] = 0
+        payload["coverage"] = "empty"
+        breakdown = payload["countBreakdown"]
+        assert isinstance(breakdown, dict)
+        breakdown["observationCount"] = 0
+        return payload
+    example_path = (
+        _REPO_ROOT
+        / "contracts"
+        / "examples"
+        / "source_snapshot_manifest.naver_one_query.valid.json"
+    )
+    loaded = json.loads(example_path.read_text(encoding="utf-8"))
+    assert isinstance(loaded, dict)
+    return loaded
+
+
+def _set_nested(payload: dict[str, object], path: tuple[str, ...], value: object) -> None:
+    target = payload
+    for segment in path[:-1]:
+        nested = target[segment]
+        assert isinstance(nested, dict)
+        target = nested
+    target[path[-1]] = value
+
+
 def test_ecos_manifest_counts_and_retention_are_consistent() -> None:
     manifest = SourceSnapshotManifest.model_validate(_ecos_manifest())
 
     assert manifest.source == "ecos"
     assert manifest.record_count == manifest.count_breakdown.observation_count
+
+
+@pytest.mark.parametrize(
+    ("source", "path", "coercive_value"),
+    [
+        ("ecos", ("schemaVersion",), True),
+        ("ecos", ("recordCount",), False),
+        ("ecos", ("countBreakdown", "seriesCount"), False),
+        ("ecos", ("countBreakdown", "observationCount"), False),
+        ("ecos", ("countBreakdown", "duplicateCount"), False),
+        ("ecos", ("deferredQueries",), False),
+        ("ecos", ("physicalAttemptCount",), False),
+        ("ecos", ("physicalAttemptCount",), "0"),
+        ("ecos", ("retentionDays",), True),
+        ("naver", ("schemaVersion",), True),
+        ("naver", ("recordCount",), True),
+        ("naver", ("countBreakdown", "queryCount"), True),
+        ("naver", ("countBreakdown", "acceptedItemCount"), True),
+        ("naver", ("countBreakdown", "filteredItemCount"), False),
+        ("naver", ("countBreakdown", "redactedUrlCount"), False),
+        ("naver", ("deferredQueries",), False),
+        ("naver", ("physicalAttemptCount",), True),
+        ("naver", ("physicalAttemptCount",), "1"),
+        ("naver", ("retentionDays",), True),
+    ],
+)
+def test_manifest_audit_integer_fields_reject_json_coercion(
+    source: str,
+    path: tuple[str, ...],
+    coercive_value: object,
+) -> None:
+    payload = _manifest_for_source(source)
+    _set_nested(payload, path, coercive_value)
+
+    with pytest.raises(ValidationError):
+        SourceSnapshotManifest.model_validate_json(json.dumps(payload))
+
+
+def test_manifest_partial_requires_a_json_boolean() -> None:
+    payload = _manifest_for_source("naver")
+    payload["partial"] = 0
+
+    with pytest.raises(ValidationError):
+        SourceSnapshotManifest.model_validate_json(json.dumps(payload))
 
 
 @pytest.mark.parametrize("forbidden", ["credential", "requestUrl", "authorization", "rawBody"])

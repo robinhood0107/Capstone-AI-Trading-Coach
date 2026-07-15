@@ -1706,9 +1706,11 @@ service MarketDataService {
 > sketch이며 현재 proto/controller가 없어 **호출 불가**다. S1.3은 아래 내부 file artifact만
 > 생산한다. `GetNewsSummary`는 Naver provider 응답이 아니라 Return Engine이 생성할 감성 요약
 > 계약을 뜻하며, 두 RPC를 공개하려면 별도의 `contracts/changes/`와 인증·인가 구현이 필요하다.
-> 아래 lower-only batch/retry, strict CLI와 JSON Schema의 코드·offline 회귀 검증은 완료했다.
-> online 검증은 별도 승인 전까지 미실행이며 실제 ECOS/Naver provider 호출은 0회다. Redis runtime
-> gate는 loopback·`NOAUTH`/인증 `PONG`·AOF·256 MiB·`noeviction`을 이번 실행에서 통과했다.
+> 아래 lower-only batch/retry, strict CLI, JSON Schema와 A3 전 `RECOVERY0` offline 회귀
+> 검증을 완료했다. 기존 online Approval A1/A2는 둘 다 실패했다. A1은 Redis
+> `+2`와 legacy counter `2`만 확정하며 exact physical send는 알 수 없고, A2는 physical
+> handoff `2`·Redis `+2` 후 `722Y001 StatisticItemList` 응답 처리에서 실패했다.
+> `RECOVERY0` provider 호출은 `0`회이며 다음 online gate는 신규 packet-bound Approval A3다.
 
 S1.3 내부 source snapshot 계약은 다음과 같다.
 
@@ -1724,7 +1726,10 @@ S1.3 내부 source snapshot 계약은 다음과 같다.
 | retry | `ECOS_MAX_ATTEMPTS_PER_REQUEST`와 `NAVER_MAX_ATTEMPTS_PER_QUERY`는 각각 `1..2`, 기본 2, smoke 1인 non-secret lower-only 설정이다. ECOS metadata preflight는 설정과 무관하게 hard 1 attempt다. Naver manifest `physicalAttemptCount`는 `2 * queryCount`를 초과할 수 없다 |
 | CLI | `--require-complete`는 online-only다. 첫 failed·empty·deferred에서 다음 provider 호출과 incomplete artifact publish를 중단한다. 일반 모드는 수집된 count와 deferred cursor를 보존한 partial을 허용한다. exit은 성공 `0`, hard failure `1`, argument/gate 오류 `2`, 재개 가능한 partial `3`이다 |
 | Naver 실패 로그 | `source=naver operation=news_metadata_collect code=<allowlisted_code>`만 출력한다. code allowlist는 `invalid_arguments`, `authentication_unavailable`, `authentication_failed`, `logical_deadline_exceeded`, `transport_unavailable`, `rate_limited`, `quota_unavailable`, `invalid_response`, `partial_collection`, `persistence_failed`, `collection_failed`다. provider message·URL·query·header·credential·traceback은 금지한다 |
-| online gate | Redis loopback/`NOAUTH`/인증 `PONG`/AOF/256 MiB/`noeviction` 검증 뒤, 별도 승인된 ECOS preflight 4회를 retry 0으로 수행한다. `seriesId/statCode/itemCode/cycle`과 `searchable=true`만 후보 registry와 기계 비교하고, 기존 기대값이 없는 `tableName/itemName/unit`은 사용자가 의미 적합성을 별도 승인한다. 관찰 전용 CLI의 `canActivate=false`는 정상이며 activation은 분리한다. Approval A는 public contract가 아닌 ignored operator evidence v1으로 남기고 PR에는 hash·요약만 기록한다. 다시 별도 승인받아 ECOS key `+2`, Naver legacy key `+1`을 retry 0·`--require-complete`로 실행한다. A+B는 현재 Redis count가 아니라 evidence를 합산해 ECOS `6` + Naver `1` = 정확히 7 attempts로 판정한다. quota/attempt 불일치, registry mismatch, Redis·provider·artifact gate 실패 시 즉시 중단하며 새 승인 없이 재호출하지 않는다. live negative injection은 금지한다 |
+| ECOS preflight 진단 | operator-evidence v1 최상위는 유지하고 `sanitizedPreflight.diagnostic`에만 immutable allowlist 진단을 둔다. request ordinal/service/series, stable stage/reason, 제한된 수치·분류만 허용하며 raw header/body/message/URL/query, credential, 실제 field 값·hash, traceback은 금지한다. CLI JSON은 sorted compact 한 줄이고 evidence SHA는 terminal newline을 제외한 canonical bytes를 기준으로 한다 |
+| ECOS Search URL | `StatisticSearch/{lang}/{format}/{start}/{end}/{statCode}/{cycle}/{fromDate}/{toDate}/{itemCode1}/`로 고정하고 마지막 `/`를 포함한다. `ITEM_CODE2~4`, query string, 빈 placeholder segment를 전송하지 않는다 |
+| Naver physical attempt | Redis reservation은 non-refundable이지만 `physicalAttemptCount`는 credential·header 구성과 final deadline 검사 후 inner provider transport handoff 직전에만 증가한다. credential/deadline 실패는 Redis `+1`·physical `0`, handoff 후 transport 실패는 physical `1`로 기록하여 두 회계를 분리한다 |
+| online gate | Redis loopback/`NOAUTH`/인증 `PONG`/AOF/256 MiB/`noeviction` 검증 뒤, 현재 HEAD·명령·series·TTL에 묶인 새 packet을 정확히 승인받아 ECOS preflight 4회를 retry 0으로 수행한다. A1(SHA `042aba528f55321fe5d4635588895aaf5c40192ce120dd477c88bfa95ca1ed80`)과 A2(SHA `8b7bb4a9492d14e79234db27e86a22725f74c8415ae27347fe8c344d2d19fe27`)는 실패 evidence이며 다음은 A3다. `seriesId/statCode/itemCode/cycle`과 `searchable=true`만 기계 비교하고 `tableName/itemName/unit`은 사용자가 의미 적합성을 별도 승인한다. activation·KRX universe audit·Naver 내부 사용/최대 30일 보존 승인 후 새 B packet으로 ECOS `D-29..D` key `+2`를 먼저 완전히 성공한 뒤 Naver rank-1 `display=10` key `+1`을 retry 0·`--require-complete`로 실행한다. B는 원자적이며 Naver 실패 시 그 B의 ECOS 성공분도 채택하지 않는다. accepted set은 A3에서 시작해 성공한 A 하나+B 하나의 ECOS `6`+Naver `1`=`7` attempts만 합산하며 A1/A2/실패 B를 포함한 lifetime 호출 주장으로 표현하지 않는다. gate 실패 시 즉시 중단하고 새 승인 없이 재호출하지 않으며 live negative injection은 금지한다 |
 | Naver lifecycle | 이번 S1.3 immediate legacy 1-query smoke는 현재 collector 계약 검증이다. 이와 별개로 운영자가 `legacy` 또는 `api-hub` profile을 명시하며 날짜 기반 자동 전환은 없다. 2026 Q3에 NCP 계정·Application·API key ID/key와 secret entry를 준비하고, 2026 Q4에 pinned fixture parity와 별도 승인된 최소 1-query API Hub lifecycle 검증을 다시 거친다. 목표 cutover는 `2027-03-31`, legacy rollback 제거는 `2027-05-31`, legacy hard stop은 `2027-06-30T00:00:00+09:00`이며 API Hub는 그 전까지 disabled-ready다 |
 
 S1.1의 KIS MarketDataService 구현 경계는 다음과 같다.
@@ -1914,9 +1919,9 @@ API/adapter/parser/storage 변경 커밋은 기능 단위로 분리한다. 테�
 | KIS WebSocket 계획 수용 | 두 번째 session·42번째 합산 등록 사전 거부, 중복 dedupe, Approval 동시 miss 1회, reconnect ledger 복원(S3/P2 구현 시 활성) |
 | S1.3 Naver batch/snapshot | 기본 4, 1·4 성공, 0·5 거부, selection/cursor/deferred 결정성과 snapshot `queries`/manifest `queryCount` 일치 검증 |
 | S1.3 retry/strict CLI | attempts 기본 2·smoke 1·preflight hard 1, setting 1에서 두 번째 send 0회, 첫 failed/empty/deferred 뒤 후속 호출·incomplete publish 0회, exit `0/1/2/3` 검증 |
-| S1.3 sanitized failure | Naver 11개 allowlist exact line과 ECOS path-key 비노출을 검증한다. credential·provider message·traceback은 log/exception/fingerprint/artifact에 없어야 하고, credential/query가 포함된 provider request URL과 auth/header는 모든 관측 경계에서 금지한다. 정규화된 기사 metadata URL과 고정 provenance URL은 canonical artifact에서만 허용한다 |
-| S1.3 transport/URL/storage | credential echo, ambient proxy/`.netrc`, redirect, TLS false, caller proxy/CA/transport override, origin/endpoint bypass, oversize/depth/list/text, URL userinfo/control/private-host/query credential, 기사 DNS/GET/HEAD, symlink/overwrite를 offline fixture/mock으로 회귀 검증 |
-| S1.3 online smoke | Redis gate 뒤 별도 승인 A preflight에서 identity/searchable을 기계 비교하고 name/unit 의미를 사용자 승인한다. 별도 승인 B는 ECOS key `+2`, Naver legacy key `+1`, 파생 합계 `3`이며 A+B evidence 합산으로 ECOS `6` + Naver `1` = 정확히 7 attempts와 canonical artifact schema/hash/mode/retention을 검증한다. timeout/invalid key 같은 live negative injection은 수행하지 않음 |
+| S1.3 sanitized failure | Naver 11개 allowlist exact line, ECOS `sanitizedPreflight.diagnostic` allowlist/stage/reason/context, unknown exception의 diagnostic 생략, canonical one-line JSON·deterministic SHA와 path-key 비노출을 검증한다. credential·provider message·raw field·traceback은 log/exception/fingerprint/artifact에 없어야 하고, credential/query가 포함된 provider request URL과 auth/header는 모든 관측 경계에서 금지한다. 정규화된 기사 metadata URL과 고정 provenance URL은 canonical artifact에서만 허용한다 |
+| S1.3 transport/URL/storage | credential echo, ambient proxy/`.netrc`, redirect, TLS false, caller proxy/CA/transport override, origin/endpoint bypass, bounded JSON stage, exact `StatisticSearch` raw path/trailing slash/query 생략, Naver quota reservation/physical handoff 분리, oversize/depth/list/text, URL userinfo/control/private-host/query credential, 기사 DNS/GET/HEAD, symlink/overwrite를 offline fixture/mock으로 회귀 검증 |
+| S1.3 online smoke | A1/A2는 실패 evidence로 분리하고 다음 packet-bound A3 preflight에서 identity/searchable을 기계 비교한 뒤 name/unit 의미를 사용자가 별도 승인한다. 새 B packet은 ECOS `D-29..D` key `+2`를 먼저 완전히 성공한 뒤 Naver rank-1 `display=10` key `+1`을 실행하는 원자적 gate다. accepted set은 성공한 A+B evidence의 ECOS `6`+Naver `1`=`7` attempts만 포함하고 실패 run과 lifetime 호출을 합산하지 않으며, timeout/invalid key live negative injection은 수행하지 않음 |
 | Journal | decision/backtest/RAG 근거 연결 |
 | Option Analytics | BSM 가격, Greeks, implied volatility 수치 검증 |
 | Async Status | async job 상태, stream metric, artifact ingest 상태 |

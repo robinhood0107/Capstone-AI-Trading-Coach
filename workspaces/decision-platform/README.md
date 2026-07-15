@@ -39,5 +39,7 @@ uv run krx-openapi-universe-refresh --online --as-of YYYY-MM-DD --data-dir data/
 
 `--online`은 로컬 안전 gate일 뿐 사용자 실행 승인을 대체하지 않는다. API 실패를 CSV나 이전
 manifest 성공으로 바꾸지 않으며, 수동 CSV는 기존 `kis-universe-refresh`를 별도 명령으로 실행할
-때만 사용한다. 성공·실패 출력에는 로컬 경로 대신 안정 code와 physical attempt 수만 남고,
-client cleanup이 성공한 뒤에만 report와 manifest가 게시된다. 이 PR은 주기 scheduler를 추가하지 않는다.
+때만 사용한다. ASCII `YYYY-MM-DD`와 approved ignored `data/` root 내부 output만 허용한다.
+성공·실패 출력에는 caller argv·로컬 경로 대신 안정 code와 physical attempt 수만 남고,
+client cleanup이 성공한 뒤에만 서로 다른 report와 manifest target이 게시된다. 이 PR은 주기
+scheduler를 추가하지 않는다.

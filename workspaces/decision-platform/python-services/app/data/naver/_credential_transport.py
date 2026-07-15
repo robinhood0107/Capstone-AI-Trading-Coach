@@ -154,7 +154,6 @@ class _CredentialTransport(httpx.BaseTransport):
         response_cleanup_failed = False
         try:
             self._reserve_quota(deadline=deadline)
-            self._physical_attempt_count += 1
             try:
                 credentials = _read_credentials(self._profile)
                 identifier = _credential_header_value(credentials.identifier)
@@ -168,6 +167,8 @@ class _CredentialTransport(httpx.BaseTransport):
             try:
                 # credential store·header 준비 중 만료된 요청은 실제 provider socket으로 넘기지 않는다.
                 _require_deadline_remaining(deadline)
+                # quota 예약은 refund하지 않지만 physical attempt는 provider transport handoff 직전에만 기록한다.
+                self._physical_attempt_count += 1
                 response = self._inner.handle_request(request)
             except (httpx.TimeoutException, httpx.TransportError, OSError):
                 transport_failed = True
@@ -216,7 +217,7 @@ class _CredentialTransport(httpx.BaseTransport):
 
     @property
     def physical_attempt_count(self) -> int:
-        """quota 예약에 성공해 credential 단계까지 진입한 attempt 누계를 반환한다."""
+        """provider transport에 실제로 handoff한 physical attempt 누계를 반환한다."""
         return self._physical_attempt_count
 
     def close(self) -> None:

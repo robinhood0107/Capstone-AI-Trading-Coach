@@ -11,7 +11,7 @@ import pytest
 from pydantic import SecretStr
 
 from app.data.ecos import registry_preflight_cli
-from app.data.ecos.errors import ECOSApplicationError, ECOSError, ECOSParseError
+from app.data.ecos.errors import ECOSApplicationError, ECOSDiagnostic, ECOSError, ECOSParseError
 from app.data.ecos.http_client import ECOSHttpClient, ECOSHttpError
 from app.data.ecos.models import StatisticItemMetadata, StatisticTableMetadata
 from app.data.ecos.parsers import parse_statistic_item_list, parse_statistic_table_list
@@ -80,6 +80,22 @@ def _diagnostic(error: BaseException) -> dict[str, object]:
     payload = diagnostic.to_payload()
     assert isinstance(payload, dict)
     return cast(dict[str, object], payload)
+
+
+def test_diagnostic_integer_contract_rejects_boolean_values() -> None:
+    with pytest.raises(ValueError, match="version"):
+        ECOSDiagnostic(
+            failure_stage="response_body",
+            failure_reason="body_empty",
+            diagnostic_version=True,
+        )
+
+    with pytest.raises(ValueError, match="ordinal"):
+        ECOSDiagnostic(
+            failure_stage="response_body",
+            failure_reason="body_empty",
+            request_ordinal=True,
+        )
 
 
 @pytest.mark.parametrize(

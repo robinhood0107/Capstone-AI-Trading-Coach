@@ -1112,6 +1112,44 @@ def test_provider_echo_cannot_reach_normalized_page_or_response_headers(
     client.close()
 
 
+def test_overlapping_credential_echo_redacts_the_longest_value_first(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    identifier = "validation-prefix"
+    secret_suffix = "-sensitive-secret-suffix"
+    secret = f"{identifier}{secret_suffix}"
+    monkeypatch.setattr(
+        _credential_transport,
+        "_read_credentials",
+        lambda _: _Credentials(
+            identifier=SecretStr(identifier),
+            secret=SecretStr(secret),
+        ),
+    )
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_success_payload(title=secret))
+
+    client = NaverHttpClient._for_test(
+        settings=NaverSettings(_env_file=None),
+        profile=LEGACY_PROFILE,
+        transport=httpx.MockTransport(handler),
+        quota=_RecordingQuota(),
+        retry_delay=lambda _: 0.0,
+    )
+    page = client.search_news(
+        "합성회사",
+        retrieved_at=_RETRIEVED_AT,
+        requested_display=10,
+    )
+
+    rendered = repr(page)
+    assert identifier not in rendered
+    assert secret not in rendered
+    assert secret_suffix not in rendered
+    client.close()
+
+
 def test_unicode_escaped_credential_echo_fails_before_normalization(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -14,7 +14,7 @@ from app.data.ecos.models import (
     ECOSSeriesStatus,
     StatisticSearchPage,
 )
-from app.data.ecos.series_registry import CANDIDATE_SERIES, ECOSSeries, verified_series
+from app.data.ecos.series_registry import ECOSSeries, verified_series
 
 _PAGE_SIZE = 200
 _MAX_ROWS_PER_SERIES = 400
@@ -65,8 +65,6 @@ class ECOSCollector:
         if not isinstance(require_complete, bool):
             raise ECOSCollectionError("require_complete_must_be_boolean")
         approved = verified_series(series)
-        if _series_identities(approved) != _series_identities(CANDIDATE_SERIES):
-            raise ECOSCollectionError("series_registry_mismatch")
         _validate_collection_window(start=start, end=end, retrieved_at=retrieved_at)
         if persist and self._publisher is None:
             raise ECOSCollectionError("publisher_unavailable")
@@ -238,7 +236,6 @@ def _series_snapshot(
         statCode=series.stat_code,
         itemCode1=series.item_code1,
         cycle="D",
-        # activation commit 전 synthetic verified copy는 안전한 식별자로만 offline 검증한다.
         name=series.name or series.series_id,
         unit=series.unit or "unknown",
         requestedFrom=start.strftime("%Y%m%d"),
@@ -267,9 +264,3 @@ def _registry_verified_at(
     if len(evidence) != len(series):
         raise ECOSCollectionError("registry_evidence_missing")
     return max(evidence)
-
-
-def _series_identities(series: Sequence[ECOSSeries]) -> tuple[tuple[str, str, str, str], ...]:
-    return tuple(
-        (entry.series_id, entry.stat_code, entry.item_code1, entry.cycle) for entry in series
-    )

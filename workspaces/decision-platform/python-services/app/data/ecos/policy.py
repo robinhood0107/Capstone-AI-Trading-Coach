@@ -15,7 +15,7 @@ _SERVICE_ARGUMENT_COUNTS: Final = {
 _SAFE_SEGMENT = re.compile(r"[A-Za-z0-9_-]+")
 _KEYLESS_PATH = re.compile(
     rf"/api/(?P<service>[A-Za-z]+?)/{re.escape(ECOS_KEY_SENTINEL)}/json/kr/"
-    r"(?P<start>[0-9]+)/(?P<end>[0-9]+)(?P<arguments>(?:/[A-Za-z0-9_-]+)+)"
+    r"(?P<start>[0-9]+)/(?P<end>[0-9]+)(?P<arguments>(?:/[A-Za-z0-9_-]+)+)(?P<trailing>/?)"
 )
 _RETRYABLE_FAILURES: Final = frozenset(
     {
@@ -50,7 +50,10 @@ def build_keyless_service_path(
     for segment in values:
         _validate_segment(segment)
     suffix = "/".join(values)
-    return f"/api/{service}/{ECOS_KEY_SENTINEL}/json/kr/{start_index}/{end_index}/{suffix}"
+    trailing = "/" if service == "StatisticSearch" else ""
+    return (
+        f"/api/{service}/{ECOS_KEY_SENTINEL}/json/kr/{start_index}/{end_index}/{suffix}{trailing}"
+    )
 
 
 def validate_keyless_service_path(path: str) -> str:

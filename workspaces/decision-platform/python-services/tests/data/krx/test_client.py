@@ -4,6 +4,7 @@ import json
 import logging
 from dataclasses import dataclass, field
 from datetime import date
+from threading import Event, Thread
 
 import httpcore
 import httpx
@@ -162,7 +163,15 @@ def test_production_dependency_logs_cannot_bypass_transport_scrubbing(
     )
     monkeypatch.setattr(client_module, "_build_redis_client", _ClosableRedis)
     monkeypatch.setattr(client_module, "RedisQuotaReservation", lambda *_args, **_kwargs: quota)
-    monkeypatch.setattr(client_module.httpx, "HTTPTransport", lambda **_kwargs: inner)
+
+    def build_http_transport(**kwargs: object) -> httpx.HTTPTransport:
+        assert kwargs["proxy"] is None
+        assert kwargs["http1"] is True
+        assert kwargs["http2"] is False
+        assert kwargs["retries"] == 0
+        return inner
+
+    monkeypatch.setattr(client_module.httpx, "HTTPTransport", build_http_transport)
     logger_names = ("httpx", "httpcore.connection", "httpcore.http11")
     loggers = tuple(logging.getLogger(name) for name in logger_names)
     records: list[logging.LogRecord] = []
@@ -210,6 +219,48 @@ def test_production_dependency_logs_cannot_bypass_transport_scrubbing(
         provider_header_value,
     ):
         assert forbidden not in rendered
+
+
+def test_dependency_log_guard_does_not_hide_unrelated_thread_logs(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    logger = logging.getLogger("httpx")
+    records: list[logging.LogRecord] = []
+    worker_start = Event()
+    worker_done = Event()
+
+    class _RecordingHandler(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            records.append(record)
+
+    def log_from_unrelated_context() -> None:
+        worker_start.wait()
+        logger.info("safe-unrelated-http-log")
+        worker_done.set()
+
+    handler = _RecordingHandler()
+    caplog.set_level(logging.INFO, logger=logger.name)
+    monkeypatch.setattr(logger, "propagate", False)
+    logger.addHandler(handler)
+    worker = Thread(target=log_from_unrelated_context, daemon=True)
+    try:
+        worker.start()
+        with _credential_transport._suppress_dependency_http_logs():
+            logger.info("synthetic-guarded-provider-secret")
+            worker_start.set()
+            assert worker_done.wait(timeout=1)
+        logger.info("safe-after-krx-context")
+    finally:
+        worker_start.set()
+        worker.join(timeout=1)
+        logger.removeHandler(handler)
+
+    assert not worker.is_alive()
+    rendered = "\n".join(record.getMessage() for record in records)
+    assert "synthetic-guarded-provider-secret" not in rendered
+    assert "safe-unrelated-http-log" in rendered
+    assert "safe-after-krx-context" in rendered
 
 
 def test_constructor_cleanup_failure_is_sanitized_and_still_closes_redis(

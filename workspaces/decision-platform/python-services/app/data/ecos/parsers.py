@@ -24,6 +24,7 @@ _MAX_SIGNIFICANT_DIGITS: Final = 28
 _MAX_EXPONENT_MAGNITUDE: Final = 18
 _MAX_METADATA_ROWS: Final = 200
 _MAX_METADATA_TEXT_CHARS: Final = 256
+_ITEM_CODE1_GROUP_CODE: Final = "Group1"
 _MISSING: Final = object()
 
 
@@ -133,9 +134,18 @@ def parse_statistic_item_list(
     *,
     expected_stat_code: str,
     expected_item_code: str,
+    expected_cycle: str,
 ) -> StatisticItemMetadata:
-    """StatisticItemList에서 승인 대상 series item의 allowlist metadata만 추출한다."""
+    """StatisticItemList에서 ITEM_CODE1·주기까지 일치하는 metadata 한 건만 추출한다.
+
+    StatisticSearch가 첫 번째 항목 차원만 전송하므로 Group1 이외의 같은 ITEM_CODE와
+    다른 주기 행은 후보에서 제외하고, 완전 identity 중복은 임의 선택하지 않는다.
+    """
+    if expected_cycle != "D":
+        raise ECOSParseError(_INVALID_RESPONSE)
+
     rows = _metadata_rows(payload, "StatisticItemList")
+    primary_item_candidates: list[tuple[Mapping[str, object], str]] = []
     candidates: list[Mapping[str, object]] = []
     for row in rows:
         stat_code = _metadata_code(
@@ -152,19 +162,44 @@ def parse_statistic_item_list(
             failure_stage="candidate_scan",
             failure_reason="candidate_invalid",
         )
-        if stat_code == expected_stat_code and item_code == expected_item_code:
-            candidates.append(row)
+        group_code = _metadata_code(
+            row,
+            "GRP_CODE",
+            field="item_code",
+            failure_stage="candidate_scan",
+            failure_reason="candidate_invalid",
+        )
+        cycle = _metadata_code(
+            row,
+            "CYCLE",
+            field="cycle",
+            failure_stage="candidate_scan",
+            failure_reason="candidate_invalid",
+        )
+        if (
+            stat_code == expected_stat_code
+            and group_code == _ITEM_CODE1_GROUP_CODE
+            and item_code == expected_item_code
+        ):
+            primary_item_candidates.append((row, cycle))
+            if cycle == expected_cycle:
+                candidates.append(row)
     if len(candidates) != 1:
+        if len(primary_item_candidates) == 1 and not candidates:
+            raise _field_error(field="cycle", field_kind="mismatch")
         raise _candidate_match_error(count=len(candidates), field="item_code")
     row = candidates[0]
     stat_code = _metadata_code(row, "STAT_CODE", field="stat_code")
+    group_code = _metadata_code(row, "GRP_CODE", field="item_code")
     item_code = _metadata_code(row, "ITEM_CODE", field="item_code")
     cycle = _metadata_code(row, "CYCLE", field="cycle")
     if stat_code != expected_stat_code:
         raise _field_error(field="stat_code", field_kind="mismatch")
     if item_code != expected_item_code:
         raise _field_error(field="item_code", field_kind="mismatch")
-    if cycle != "D":
+    if group_code != _ITEM_CODE1_GROUP_CODE:
+        raise _field_error(field="item_code", field_kind="mismatch")
+    if cycle != expected_cycle:
         raise _field_error(field="cycle", field_kind="mismatch")
     return StatisticItemMetadata(
         stat_code=stat_code,

@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Protocol
 
+from app.data.ecos.errors import ECOSDiagnostic, ECOSError, ECOSParseError
 from app.data.ecos.models import StatisticItemMetadata, StatisticTableMetadata
 from app.data.ecos.series_registry import CANDIDATE_SERIES, ECOSSeries
 
@@ -83,20 +84,69 @@ def inspect_registry_metadata(
     _require_candidate_identities(entries)
     timestamp = _require_utc_evidence(observed_at) if observed_at is not None else None
     observations: list[RegistryMetadataEntry] = []
-    for entry in entries:
-        table = client.statistic_table_list(series=entry)
+    for index, entry in enumerate(entries):
+        table_ordinal = index * 2 + 1
+        item_ordinal = table_ordinal + 1
+        try:
+            table = client.statistic_table_list(series=entry)
+        except ECOSError as error:
+            error.enrich_diagnostic(
+                request_ordinal=table_ordinal,
+                service="StatisticTableList",
+                series_id=entry.series_id,
+            )
+            raise
         if table.stat_code != entry.stat_code or table.cycle != entry.cycle:
-            raise ValueError("ECOS registry metadata identity is invalid")
+            field = "stat_code" if table.stat_code != entry.stat_code else "cycle"
+            raise _registry_boundary_error(
+                failure_stage="registry_identity",
+                failure_reason="identity_mismatch",
+                request_ordinal=table_ordinal,
+                service="StatisticTableList",
+                series_id=entry.series_id,
+                field=field,
+                field_kind="mismatch",
+            )
         if not table.searchable:
             # 검색 불가 series는 ItemList 추가 호출 전에 차단해 실패한 승인 budget을 보존한다.
-            raise ValueError("ECOS registry metadata is not searchable")
-        item = client.statistic_item_list(series=entry)
+            raise _registry_boundary_error(
+                failure_stage="searchability",
+                failure_reason="not_searchable",
+                request_ordinal=table_ordinal,
+                service="StatisticTableList",
+                series_id=entry.series_id,
+                field="searchable",
+                field_kind="mismatch",
+            )
+        try:
+            item = client.statistic_item_list(series=entry)
+        except ECOSError as error:
+            error.enrich_diagnostic(
+                request_ordinal=item_ordinal,
+                service="StatisticItemList",
+                series_id=entry.series_id,
+            )
+            raise
         if (
             item.stat_code != entry.stat_code
             or item.item_code != entry.item_code1
             or item.cycle != entry.cycle
         ):
-            raise ValueError("ECOS registry metadata identity is invalid")
+            if item.stat_code != entry.stat_code:
+                field = "stat_code"
+            elif item.item_code != entry.item_code1:
+                field = "item_code"
+            else:
+                field = "cycle"
+            raise _registry_boundary_error(
+                failure_stage="registry_identity",
+                failure_reason="identity_mismatch",
+                request_ordinal=item_ordinal,
+                service="StatisticItemList",
+                series_id=entry.series_id,
+                field=field,
+                field_kind="mismatch",
+            )
         observations.append(
             RegistryMetadataEntry(
                 series_id=entry.series_id,
@@ -183,6 +233,31 @@ def _require_candidate_identities(entries: Sequence[ECOSSeries]) -> None:
     )
     if actual != expected:
         raise ValueError("ECOS registry preflight requires exactly two unique series")
+
+
+def _registry_boundary_error(
+    *,
+    failure_stage: str,
+    failure_reason: str,
+    request_ordinal: int,
+    service: str,
+    series_id: str,
+    field: str,
+    field_kind: str,
+) -> ECOSParseError:
+    """client 모델이 source identity와 어긋나면 값 원문 없이 기존 ECOS parse 오류로 수렴한다."""
+    return ECOSParseError(
+        "invalid ECOS response",
+        diagnostic=ECOSDiagnostic(
+            failure_stage=failure_stage,
+            failure_reason=failure_reason,
+            request_ordinal=request_ordinal,
+            service=service,
+            series_id=series_id,
+            field=field,
+            field_kind=field_kind,
+        ),
+    )
 
 
 def _require_utc_evidence(value: datetime) -> datetime:

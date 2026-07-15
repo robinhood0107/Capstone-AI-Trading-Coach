@@ -11,6 +11,10 @@ import httpx
 class BoundedJsonError(ValueError):
     """응답 JSON이 합의된 byte·구조 상한을 벗어나면 raw 내용을 노출하지 않고 실패한다."""
 
+    def __init__(self, message: str, *, code: str) -> None:
+        self.code = code
+        super().__init__(message)
+
 
 @dataclass(frozen=True)
 class BoundedJsonLimits:
@@ -57,8 +61,18 @@ def parse_bounded_json_bytes(
     limits: BoundedJsonLimits,
 ) -> object:
     """로컬·HTTP 경계에서 얻은 JSON bytes를 동일한 byte·구조·scalar 상한으로 파싱한다."""
-    if not isinstance(content, bytes) or len(content) > limits.max_bytes:
-        raise BoundedJsonError("bounded JSON payload exceeded the byte limit")
+    if not isinstance(content, bytes):
+        raise BoundedJsonError(
+            "bounded JSON payload exceeded the byte limit",
+            code="json_limits_exceeded",
+        )
+    if len(content) > limits.max_bytes:
+        raise BoundedJsonError(
+            "bounded JSON payload exceeded the byte limit",
+            code="body_too_large",
+        )
+    if not content:
+        raise BoundedJsonError("bounded JSON payload was empty", code="body_empty")
 
     try:
         text = content.decode("utf-8")
@@ -75,8 +89,16 @@ def parse_bounded_json_bytes(
         _validate_value(payload, limits=limits, depth=0)
     except BoundedJsonError:
         raise
-    except (UnicodeError, json.JSONDecodeError, RecursionError, ValueError, OverflowError):
-        raise BoundedJsonError("bounded JSON payload was invalid") from None
+    except (UnicodeError, json.JSONDecodeError, ValueError, OverflowError):
+        raise BoundedJsonError(
+            "bounded JSON payload was invalid",
+            code="json_decode_failed",
+        ) from None
+    except RecursionError:
+        raise BoundedJsonError(
+            "bounded JSON payload exceeded structural limits",
+            code="json_limits_exceeded",
+        ) from None
     return payload
 
 
@@ -95,25 +117,48 @@ def _read_bounded_response(
     except BoundedJsonError as error:
         failure = error
     except Exception:
-        failure = BoundedJsonError("bounded JSON response stream was unavailable")
+        failure = BoundedJsonError(
+            "bounded JSON response stream was unavailable",
+            code="response_body_unavailable",
+        )
 
     try:
         response.close()
     except Exception:
         if failure is None:
-            failure = BoundedJsonError("bounded JSON response cleanup was unavailable")
+            failure = BoundedJsonError(
+                "bounded JSON response cleanup was unavailable",
+                code="response_body_unavailable",
+            )
 
     if failure is not None:
         raise failure from None
     if content is None:
-        raise BoundedJsonError("bounded JSON response stream was unavailable")
+        raise BoundedJsonError(
+            "bounded JSON response stream was unavailable",
+            code="response_body_unavailable",
+        )
     return content
 
 
 def _ensure_json_content_type(response: httpx.Response) -> None:
-    media_type = response.headers.get("content-type", "").split(";", maxsplit=1)[0].strip().lower()
+    values = response.headers.get_list("content-type")
+    if not values:
+        raise BoundedJsonError(
+            "bounded JSON response content type was not JSON",
+            code="content_type_missing",
+        )
+    if len(values) != 1:
+        raise BoundedJsonError(
+            "bounded JSON response content type was not JSON",
+            code="content_type_multiple",
+        )
+    media_type = values[0].split(";", maxsplit=1)[0].strip().lower()
     if media_type != "application/json" and not media_type.endswith("+json"):
-        raise BoundedJsonError("bounded JSON response content type was not JSON")
+        raise BoundedJsonError(
+            "bounded JSON response content type was not JSON",
+            code="content_type_unsupported",
+        )
 
 
 def _ensure_declared_length(response: httpx.Response, max_bytes: int) -> None:
@@ -123,11 +168,20 @@ def _ensure_declared_length(response: httpx.Response, max_bytes: int) -> None:
     try:
         declared_bytes = int(declared)
     except ValueError:
-        raise BoundedJsonError("bounded JSON Content-Length was invalid") from None
+        raise BoundedJsonError(
+            "bounded JSON Content-Length was invalid",
+            code="response_headers_invalid",
+        ) from None
     if declared_bytes < 0:
-        raise BoundedJsonError("bounded JSON Content-Length was invalid")
+        raise BoundedJsonError(
+            "bounded JSON Content-Length was invalid",
+            code="response_headers_invalid",
+        )
     if declared_bytes > max_bytes:
-        raise BoundedJsonError("bounded JSON response exceeded the byte limit")
+        raise BoundedJsonError(
+            "bounded JSON response exceeded the byte limit",
+            code="body_too_large",
+        )
 
 
 def _read_decompressed_bytes(response: httpx.Response, max_bytes: int) -> bytes:
@@ -137,12 +191,18 @@ def _read_decompressed_bytes(response: httpx.Response, max_bytes: int) -> bytes:
         for chunk in response.iter_bytes():
             size += len(chunk)
             if size > max_bytes:
-                raise BoundedJsonError("bounded JSON response exceeded the byte limit")
+                raise BoundedJsonError(
+                    "bounded JSON response exceeded the byte limit",
+                    code="body_too_large",
+                )
             chunks.append(chunk)
     except BoundedJsonError:
         raise
     except (httpx.HTTPError, OSError):
-        raise BoundedJsonError("bounded JSON response stream was unavailable") from None
+        raise BoundedJsonError(
+            "bounded JSON response stream was unavailable",
+            code="response_body_unavailable",
+        ) from None
     return b"".join(chunks)
 
 
@@ -155,17 +215,26 @@ def _parse_float(value: str, max_characters: int) -> float:
     _ensure_number_length(value, max_characters)
     parsed = float(value)
     if not math.isfinite(parsed):
-        raise BoundedJsonError("bounded JSON number must be finite")
+        raise BoundedJsonError(
+            "bounded JSON number must be finite",
+            code="json_limits_exceeded",
+        )
     return parsed
 
 
 def _ensure_number_length(value: str, max_characters: int) -> None:
     if len(value) > max_characters:
-        raise BoundedJsonError("bounded JSON number exceeded the number limit")
+        raise BoundedJsonError(
+            "bounded JSON number exceeded the number limit",
+            code="json_limits_exceeded",
+        )
 
 
 def _reject_non_finite_constant(_: str) -> object:
-    raise BoundedJsonError("bounded JSON number must be finite")
+    raise BoundedJsonError(
+        "bounded JSON number must be finite",
+        code="json_limits_exceeded",
+    )
 
 
 def _parse_object_pairs(
@@ -177,30 +246,48 @@ def _parse_object_pairs(
     result: dict[str, object] = {}
     for key, value in pairs:
         if key in result:
-            raise BoundedJsonError("bounded JSON object contained a duplicate key")
+            raise BoundedJsonError(
+                "bounded JSON object contained a duplicate key",
+                code="json_limits_exceeded",
+            )
         if len(result) >= max_keys:
-            raise BoundedJsonError("bounded JSON object exceeded the object key limit")
+            raise BoundedJsonError(
+                "bounded JSON object exceeded the object key limit",
+                code="json_limits_exceeded",
+            )
         result[key] = value
     return result
 
 
 def _validate_value(value: object, *, limits: BoundedJsonLimits, depth: int) -> None:
     if depth > limits.max_depth:
-        raise BoundedJsonError("bounded JSON value exceeded the depth limit")
+        raise BoundedJsonError(
+            "bounded JSON value exceeded the depth limit",
+            code="json_limits_exceeded",
+        )
     if isinstance(value, dict):
         mapping = cast(dict[object, object], value)
         if len(mapping) > limits.max_object_keys:
-            raise BoundedJsonError("bounded JSON object exceeded the object key limit")
+            raise BoundedJsonError(
+                "bounded JSON object exceeded the object key limit",
+                code="json_limits_exceeded",
+            )
         for key, child in mapping.items():
             if not isinstance(key, str):
-                raise BoundedJsonError("bounded JSON object key was invalid")
+                raise BoundedJsonError(
+                    "bounded JSON object key was invalid",
+                    code="json_limits_exceeded",
+                )
             _validate_text(key, limits)
             _validate_value(child, limits=limits, depth=depth + 1)
         return
     if isinstance(value, list):
         items = cast(list[object], value)
         if len(items) > limits.max_list_items:
-            raise BoundedJsonError("bounded JSON list exceeded the list item limit")
+            raise BoundedJsonError(
+                "bounded JSON list exceeded the list item limit",
+                code="json_limits_exceeded",
+            )
         for child in items:
             _validate_value(child, limits=limits, depth=depth + 1)
         return
@@ -212,6 +299,12 @@ def _validate_text(value: str, limits: BoundedJsonLimits) -> None:
     try:
         encoded_length = len(value.encode("utf-8"))
     except UnicodeEncodeError:
-        raise BoundedJsonError("bounded JSON text contained invalid Unicode") from None
+        raise BoundedJsonError(
+            "bounded JSON text contained invalid Unicode",
+            code="json_limits_exceeded",
+        ) from None
     if len(value) > limits.max_text_codepoints or encoded_length > limits.max_text_bytes:
-        raise BoundedJsonError("bounded JSON text exceeded the text limit")
+        raise BoundedJsonError(
+            "bounded JSON text exceeded the text limit",
+            code="json_limits_exceeded",
+        )

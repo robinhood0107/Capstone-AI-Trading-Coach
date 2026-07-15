@@ -24,6 +24,7 @@ _ROOT_ENV_FILE = _REPOSITORY_ROOT / ".env"
 _DEFAULT_MAX_RESPONSE_BYTES = 1024 * 1024
 _MAX_DECODED_JSON_NODES = 100_000
 _ECOS_DEADLINE_EXTENSION = "ecos_deadline_monotonic"
+_ECOS_SAFE_RESPONSE_EXTENSION = "s1.3.ecos.safe_response"
 _CANONICAL_CLIENT_HEADER_ITEMS = (
     ("Accept", "application/json"),
     ("Accept-Encoding", "identity"),
@@ -305,6 +306,8 @@ def _scrub_response(
         deadline=deadline,
         monotonic=monotonic,
     )
+    response_bytes = len(content)
+    content_type_class = _content_type_class(response.headers)
     candidates = tuple(
         sorted(
             {
@@ -325,19 +328,15 @@ def _scrub_response(
         raise ECOSCredentialError("response_unavailable")
     _ensure_before_deadline(deadline, monotonic=monotonic)
 
-    headers = _canonical_json_response_headers(response.headers)
-
-    extensions: dict[str, object] = {}
-    for name in ("http_version", "reason_phrase"):
-        extension = response.extensions.get(name)
-        if isinstance(extension, bytes):
-            for candidate in candidates:
-                extension = extension.replace(candidate.encode(), b"[redacted]")
-            extensions[name] = extension
-        elif isinstance(extension, str):
-            for candidate in candidates:
-                extension = extension.replace(candidate, "[redacted]")
-            extensions[name] = extension
+    headers = _canonical_json_response_headers(content_type_class)
+    # downstream에는 원 header가 아니라 allowlist scalar 세 개만 synthetic extension으로 전달한다.
+    extensions: dict[str, object] = {
+        _ECOS_SAFE_RESPONSE_EXTENSION: {
+            "httpStatus": response.status_code,
+            "contentTypeClass": content_type_class,
+            "responseBytes": response_bytes,
+        }
+    }
 
     sanitized_response = httpx.Response(
         response.status_code,
@@ -349,11 +348,26 @@ def _scrub_response(
     return sanitized_response
 
 
-def _canonical_json_response_headers(headers: httpx.Headers) -> list[tuple[str, str]]:
+def _content_type_class(headers: httpx.Headers) -> str:
     values = headers.get_list("content-type")
-    if len(values) != 1 or values[0].split(";", 1)[0].strip().lower() != "application/json":
-        return []
-    return [("content-type", "application/json")]
+    if not values:
+        return "missing"
+    if len(values) != 1:
+        return "multiple"
+    media_type = values[0].split(";", 1)[0].strip().lower()
+    if media_type == "application/json":
+        return "application_json"
+    if media_type.endswith("+json"):
+        return "structured_json"
+    return "other"
+
+
+def _canonical_json_response_headers(content_type_class: str) -> list[tuple[str, str]]:
+    if content_type_class == "application_json":
+        return [("content-type", "application/json")]
+    if content_type_class == "structured_json":
+        return [("content-type", "application/problem+json")]
+    return []
 
 
 def _decoded_json_contains_candidate(content: bytes, *, candidates: tuple[str, ...]) -> bool:

@@ -287,6 +287,38 @@ def test_calendar_failure_is_sanitized_before_client_creation(
     assert marker not in rendered
 
 
+def test_latest_available_date_resolution_failure_is_sanitized_before_client_creation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    marker = "synthetic-calendar-secret-/private/provider"
+    state = _ClientState()
+    _install_client(monkeypatch, state)
+    monkeypatch.setattr(
+        universe_refresh_cli,
+        "resolve_latest_available_date",
+        lambda _: (_ for _ in ()).throw(RuntimeError(marker)),
+    )
+
+    exit_code = main(_args(tmp_path / "data" / "kis"))
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert state.created == 0
+    assert captured.out == ""
+    assert "calendar_unavailable" in captured.err
+    assert marker not in captured.err
+    assert str(tmp_path) not in captured.err
+
+
+def test_first_official_service_date_is_inclusive() -> None:
+    assert universe_refresh_cli._validated_as_of(  # noqa: SLF001
+        "2010-01-04",
+        latest=_AS_OF,
+    ) == date(2010, 1, 4)
+
+
 def test_client_close_failure_is_sanitized_and_prevents_publication(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

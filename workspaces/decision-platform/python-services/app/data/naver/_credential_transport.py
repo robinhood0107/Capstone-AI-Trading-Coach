@@ -164,13 +164,16 @@ class _CredentialTransport(httpx.BaseTransport):
                 raise
             except Exception:
                 raise NaverCredentialError("authentication_unavailable") from None
+            # credential store·header 준비 중 만료된 요청은 실제 provider socket으로 넘기지 않는다.
+            _require_deadline_remaining(deadline)
+            # quota 예약은 refund하지 않지만 physical attempt는 provider transport handoff 직전에만 기록한다.
+            self._physical_attempt_count += 1
             try:
-                # credential store·header 준비 중 만료된 요청은 실제 provider socket으로 넘기지 않는다.
-                _require_deadline_remaining(deadline)
-                # quota 예약은 refund하지 않지만 physical attempt는 provider transport handoff 직전에만 기록한다.
-                self._physical_attempt_count += 1
                 response = self._inner.handle_request(request)
             except (httpx.TimeoutException, httpx.TransportError, OSError):
+                transport_failed = True
+            except Exception:
+                # provider handoff 이후의 예상 밖 예외도 credential을 담은 cause/message로 전파하지 않는다.
                 transport_failed = True
             if response is not None:
                 if response.status_code == 429:

@@ -145,9 +145,9 @@ def test_security_name_must_be_bounded_plain_text(invalid_name: str) -> None:
 @pytest.mark.parametrize("field", ["ACC_TRDVAL", "MKTCAP"])
 @pytest.mark.parametrize(
     "invalid_number",
-    ["", "-", "0", "-1", "+1", "1,000", " 1", "1 ", "1.0", "1e3", "9223372036854775808"],
+    ["", "-1", "+1", "1,000", " 1", "1 ", "1.0", "1e3", "9223372036854775808"],
 )
-def test_ranking_numbers_require_bounded_positive_ascii_integers(
+def test_ranking_numbers_require_bounded_nonnegative_ascii_integers(
     field: str,
     invalid_number: str,
 ) -> None:
@@ -160,6 +160,24 @@ def test_ranking_numbers_require_bounded_positive_ascii_integers(
     if invalid_number:
         assert invalid_number not in str(exc_info.value)
     assert exc_info.value.__cause__ is None
+
+
+@pytest.mark.parametrize(
+    ("field", "attribute"),
+    [("ACC_TRDVAL", "trading_value"), ("MKTCAP", "market_cap")],
+)
+@pytest.mark.parametrize("unavailable", ["0", "-"])
+def test_zero_or_official_unavailable_ranking_value_is_kept_for_candidate_filtering(
+    field: str,
+    attribute: str,
+    unavailable: str,
+) -> None:
+    payload = _fixture("kospi_daily_success.json")
+    payload["OutBlock_1"][0][field] = unavailable
+
+    rows = _parse(payload)
+
+    assert getattr(rows[0], attribute) == 0
 
 
 def test_duplicate_symbol_fails_closed_even_when_the_rows_are_identical() -> None:

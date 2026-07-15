@@ -19,6 +19,7 @@ dependencies = [
 [project.scripts]
 kis-backfill = "app.data.kis.backfill_cli:main"
 kis-universe-refresh = "app.data.kis.universe_refresh_cli:main"
+krx-openapi-universe-refresh = "app.data.krx.universe_refresh_cli:main"
 ecos-macro-collect = "app.data.ecos.collect_cli:main"
 ecos-registry-preflight = "app.data.ecos.registry_preflight_cli:main"
 naver-news-metadata-collect = "app.data.naver.collect_cli:main"

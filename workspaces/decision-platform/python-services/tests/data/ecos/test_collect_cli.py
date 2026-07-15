@@ -25,6 +25,20 @@ def _verified_series():
     )
 
 
+def _provisional_series():
+    return tuple(
+        entry.model_copy(
+            update={
+                "verified": False,
+                "registry_verified_at": None,
+                "name": None,
+                "unit": None,
+            }
+        )
+        for entry in CANDIDATE_SERIES
+    )
+
+
 def test_provisional_registry_stops_before_online_client_construction(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -35,6 +49,7 @@ def test_provisional_registry_stops_before_online_client_construction(
         builds += 1
         raise AssertionError("provisional registry must stop before client construction")
 
+    monkeypatch.setattr(collect_cli, "_load_series_registry", _provisional_series)
     monkeypatch.setattr(collect_cli, "_build_collector", fail_build)
 
     exit_code = main(["--online", "--from", "2026-07-01", "--to", "2026-07-14"])

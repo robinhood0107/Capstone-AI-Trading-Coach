@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 
@@ -9,21 +9,11 @@ from app.data.ecos.errors import ECOSApplicationError, RegistryNotVerifiedError
 from app.data.ecos.models import ECOSObservation, StatisticSearchPage
 from app.data.ecos.series_registry import CANDIDATE_SERIES, ECOSSeries
 
-_REGISTRY_VERIFIED_AT = datetime(2026, 7, 13, 12, 0, tzinfo=UTC)
+_REGISTRY_VERIFIED_AT = datetime(2026, 7, 15, 6, 2, 19, 299552, tzinfo=UTC)
 
 
 def _verified_series() -> tuple[ECOSSeries, ...]:
-    return tuple(
-        entry.model_copy(
-            update={
-                "verified": True,
-                "registry_verified_at": _REGISTRY_VERIFIED_AT,
-                "name": f"synthetic-{entry.series_id}",
-                "unit": "synthetic-unit",
-            }
-        )
-        for entry in CANDIDATE_SERIES
-    )
+    return CANDIDATE_SERIES
 
 
 def _provisional_series() -> tuple[ECOSSeries, ...]:
@@ -113,6 +103,39 @@ def test_provisional_registry_is_rejected_before_client_or_publisher() -> None:
     with pytest.raises(RegistryNotVerifiedError):
         collector.collect(
             series=_provisional_series(),
+            start=date(2026, 7, 1),
+            end=date(2026, 7, 14),
+            retrieved_at=datetime(2026, 7, 14, tzinfo=UTC),
+            persist=True,
+        )
+
+    assert client.calls == []
+    assert publisher.snapshots == []
+
+
+@pytest.mark.parametrize(
+    "updates",
+    [
+        {"name": "변경된 기준금리"},
+        {"unit": "%"},
+        {"registry_verified_at": _REGISTRY_VERIFIED_AT + timedelta(microseconds=1)},
+    ],
+    ids=["name", "unit", "verified-at"],
+)
+def test_approval_metadata_mismatch_stops_before_client_or_publisher(
+    updates: dict[str, object],
+) -> None:
+    client = _FakeClient({})
+    publisher = _Publisher()
+    collector = ECOSCollector(client=client, publisher=publisher)
+    mismatched = (
+        CANDIDATE_SERIES[0].model_copy(update=updates),
+        CANDIDATE_SERIES[1],
+    )
+
+    with pytest.raises(RegistryNotVerifiedError, match="registry_not_verified"):
+        collector.collect(
+            series=mismatched,
             start=date(2026, 7, 1),
             end=date(2026, 7, 14),
             retrieved_at=datetime(2026, 7, 14, tzinfo=UTC),

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from typing import Any
 
 import pytest
@@ -11,18 +10,7 @@ from app.data.ecos.series_registry import CANDIDATE_SERIES
 
 
 def _verified_series():
-    verified_at = datetime(2026, 7, 13, tzinfo=UTC)
-    return tuple(
-        entry.model_copy(
-            update={
-                "verified": True,
-                "registry_verified_at": verified_at,
-                "name": f"synthetic-{entry.series_id}",
-                "unit": "synthetic-unit",
-            }
-        )
-        for entry in CANDIDATE_SERIES
-    )
+    return CANDIDATE_SERIES
 
 
 def _provisional_series():
@@ -56,6 +44,46 @@ def test_provisional_registry_stops_before_online_client_construction(
 
     assert exit_code == 2
     assert builds == 0
+
+
+def test_approval_metadata_mismatch_stops_before_online_client_construction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    builds = 0
+    mismatched = (
+        CANDIDATE_SERIES[0].model_copy(update={"unit": "%"}),
+        CANDIDATE_SERIES[1],
+    )
+
+    def forbidden_build(*args: object, **kwargs: object) -> object:
+        nonlocal builds
+        builds += 1
+        raise AssertionError("metadata mismatch must stop before client construction")
+
+    monkeypatch.setattr(collect_cli, "_load_series_registry", lambda: mismatched)
+    monkeypatch.setattr(collect_cli, "_build_collector", forbidden_build)
+
+    exit_code = main(["--online", "--from", "2026-07-01", "--to", "2026-07-14"])
+
+    assert exit_code == 2
+    assert builds == 0
+
+
+def test_real_source_controlled_registry_reaches_online_collector(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[dict[str, Any]] = []
+
+    class FakeCollector:
+        def collect(self, **kwargs: Any) -> object:
+            calls.append(kwargs)
+            return type("Result", (), {"coverage": "complete", "partial": False})()
+
+    monkeypatch.setattr(collect_cli, "_build_collector", lambda *args, **kwargs: FakeCollector())
+
+    assert main(["--online", "--from", "2026-07-01", "--to", "2026-07-14"]) == 0
+    assert len(calls) == 1
+    assert calls[0]["series"] == CANDIDATE_SERIES
 
 
 def test_persist_without_online_is_rejected_before_client_construction(

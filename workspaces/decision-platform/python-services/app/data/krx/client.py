@@ -26,6 +26,7 @@ from app.data.krx._credential_transport import (
     _CredentialTransport,
     _QuotaReservation,
     _canonical_client_headers,
+    _suppress_dependency_http_logs,
 )
 from app.data.krx.catalog import (
     ENABLED_UNIVERSE_ENDPOINTS,
@@ -143,7 +144,13 @@ class KrxOpenApiClient:
                     policy=quota_policy(max_calls_per_run=settings.max_calls_per_run),
                 ),
             )
-            inner = httpx.HTTPTransport(verify=tls_context, retries=0)
+            inner = httpx.HTTPTransport(
+                verify=tls_context,
+                proxy=None,
+                http1=True,
+                http2=False,
+                retries=0,
+            )
             self._initialize(
                 settings=settings,
                 transport=inner,
@@ -244,18 +251,19 @@ class KrxOpenApiClient:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             raise KrxCredentialError("logical_deadline_exceeded")
-        response = self._http.request(
-            "GET",
-            f"{self._settings.origin}{endpoint.path}",
-            params={endpoint.request_parameter: as_of.strftime("%Y%m%d")},
-            timeout=httpx.Timeout(
-                connect=min(self._settings.connect_timeout_seconds, remaining),
-                read=min(self._settings.read_timeout_seconds, remaining),
-                write=min(self._settings.write_timeout_seconds, remaining),
-                pool=min(self._settings.pool_timeout_seconds, remaining),
-            ),
-            extensions={_LOGICAL_DEADLINE_EXTENSION: deadline},
-        )
+        with _suppress_dependency_http_logs():
+            response = self._http.request(
+                "GET",
+                f"{self._settings.origin}{endpoint.path}",
+                params={endpoint.request_parameter: as_of.strftime("%Y%m%d")},
+                timeout=httpx.Timeout(
+                    connect=min(self._settings.connect_timeout_seconds, remaining),
+                    read=min(self._settings.read_timeout_seconds, remaining),
+                    write=min(self._settings.write_timeout_seconds, remaining),
+                    pool=min(self._settings.pool_timeout_seconds, remaining),
+                ),
+                extensions={_LOGICAL_DEADLINE_EXTENSION: deadline},
+            )
         status = response.status_code
         if 300 <= status < 400:
             response.close()

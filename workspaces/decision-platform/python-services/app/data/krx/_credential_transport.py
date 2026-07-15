@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import json
+import logging
 import math
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
+from threading import Lock
 from typing import Protocol
 from urllib.parse import quote, quote_plus
 from uuid import uuid4
@@ -31,10 +35,40 @@ _CANONICAL_CLIENT_HEADER_ITEMS = (
     ("User-Agent", "capstone-ai-trading-coach-s1.3"),
 )
 _ALLOWED_PATHS = frozenset(endpoint.path for endpoint in ENABLED_UNIVERSE_ENDPOINTS)
+_DEPENDENCY_HTTP_LOGGER_NAMES = (
+    "httpx",
+    "httpcore.connection",
+    "httpcore.http11",
+)
+_DEPENDENCY_HTTP_LOG_GUARD = ContextVar("krx_dependency_http_log_guard", default=False)
+_DEPENDENCY_HTTP_LOG_FILTER_LOCK = Lock()
 
 
 class _QuotaReservation(Protocol):
     def reserve(self, *, attempt_id: str) -> None: ...
+
+
+class _DependencyHttpLogFilter(logging.Filter):
+    """KRX 요청 context에서 dependency raw HTTP record가 handler로 전달되지 않게 한다."""
+
+    def filter(self, _record: logging.LogRecord) -> bool:
+        return not _DEPENDENCY_HTTP_LOG_GUARD.get()
+
+
+_DEPENDENCY_HTTP_LOG_FILTER = _DependencyHttpLogFilter()
+
+
+@contextmanager
+def _suppress_dependency_http_logs() -> Iterator[None]:
+    """현재 KRX request 동안에만 HTTPX/HTTPCore 원문 로그를 source logger에서 차단한다."""
+    with _DEPENDENCY_HTTP_LOG_FILTER_LOCK:
+        for name in _DEPENDENCY_HTTP_LOGGER_NAMES:
+            logging.getLogger(name).addFilter(_DEPENDENCY_HTTP_LOG_FILTER)
+    token = _DEPENDENCY_HTTP_LOG_GUARD.set(True)
+    try:
+        yield
+    finally:
+        _DEPENDENCY_HTTP_LOG_GUARD.reset(token)
 
 
 class KrxCredentialError(RuntimeError):

@@ -29,6 +29,7 @@ def test_registry_metadata_parsers_return_only_sanitized_allowlisted_fields() ->
         _fixture("statistic_item_list_metadata.json"),
         expected_stat_code="722Y001",
         expected_item_code="0101000",
+        expected_cycle="D",
     )
 
     assert table.model_dump() == {
@@ -56,6 +57,7 @@ def test_registry_metadata_identity_mismatch_fails_closed() -> None:
             _fixture("statistic_item_list_metadata.json"),
             expected_stat_code="722Y001",
             expected_item_code="0000001",
+            expected_cycle="D",
         )
 
 
@@ -75,9 +77,126 @@ def test_item_preflight_selects_the_exact_candidate_from_a_bounded_item_list() -
         payload,
         expected_stat_code="722Y001",
         expected_item_code="0101000",
+        expected_cycle="D",
     )
 
     assert item.item_code == "0101000"
+
+
+@pytest.mark.parametrize("target_index", range(4))
+def test_item_preflight_selects_requested_cycle_from_a3_four_cycle_shape(
+    target_index: int,
+) -> None:
+    payload = _fixture("statistic_item_list_metadata.json")
+    envelope = payload["StatisticItemList"]
+    assert isinstance(envelope, dict)
+    rows = envelope["row"]
+    assert isinstance(rows, list)
+    target = rows[0]
+    assert isinstance(target, dict)
+
+    distractors = []
+    for cycle, label in (
+        ("A", "annual"),
+        ("M", "monthly"),
+        ("Q", "quarterly"),
+    ):
+        row = dict(target)
+        row["GRP_CODE"] = "Group1"
+        row["CYCLE"] = cycle
+        row["ITEM_NAME"] = f"합성 비대상 {label}"
+        row["UNIT_NAME"] = f"합성단위-{label}"
+        distractors.append(row)
+
+    exact = dict(target)
+    exact["ITEM_NAME"] = "합성 기준금리 일별 항목"
+    exact["UNIT_NAME"] = "%"
+    candidates = distractors
+    candidates.insert(target_index, exact)
+    envelope["row"] = candidates
+    envelope["list_total_count"] = 4
+
+    item = parse_statistic_item_list(
+        payload,
+        expected_stat_code="722Y001",
+        expected_item_code="0101000",
+        expected_cycle="D",
+    )
+
+    assert item.model_dump() == {
+        "stat_code": "722Y001",
+        "item_code": "0101000",
+        "name": "합성 기준금리 일별 항목",
+        "cycle": "D",
+        "unit": "%",
+    }
+
+
+@pytest.mark.parametrize("target_index", range(4))
+def test_item_preflight_qualifies_item_code1_with_primary_group(
+    target_index: int,
+) -> None:
+    payload = _fixture("statistic_item_list_metadata.json")
+    envelope = payload["StatisticItemList"]
+    assert isinstance(envelope, dict)
+    rows = envelope["row"]
+    assert isinstance(rows, list)
+    target = rows[0]
+    assert isinstance(target, dict)
+
+    distractors = []
+    for group_code in ("Group2", "Group3", "Group4"):
+        row = dict(target)
+        row["GRP_CODE"] = group_code
+        row["ITEM_NAME"] = f"합성 비대상 {group_code}"
+        row["UNIT_NAME"] = f"합성단위-{group_code}"
+        distractors.append(row)
+
+    exact = dict(target)
+    exact["ITEM_NAME"] = "합성 Group1 기준금리 항목"
+    candidates = distractors
+    candidates.insert(target_index, exact)
+    envelope["row"] = candidates
+    envelope["list_total_count"] = 4
+
+    item = parse_statistic_item_list(
+        payload,
+        expected_stat_code="722Y001",
+        expected_item_code="0101000",
+        expected_cycle="D",
+    )
+
+    assert item.name == "합성 Group1 기준금리 항목"
+    assert item.cycle == "D"
+
+
+def test_item_preflight_rejects_nonrequested_cycles_without_fallback() -> None:
+    payload = _fixture("statistic_item_list_metadata.json")
+    envelope = payload["StatisticItemList"]
+    assert isinstance(envelope, dict)
+    rows = envelope["row"]
+    assert isinstance(rows, list)
+    target = rows[0]
+    assert isinstance(target, dict)
+    envelope["row"] = [dict(target, CYCLE=cycle) for cycle in ("A", "M", "Q")]
+    envelope["list_total_count"] = 3
+
+    with pytest.raises(ECOSParseError) as exc_info:
+        parse_statistic_item_list(
+            payload,
+            expected_stat_code="722Y001",
+            expected_item_code="0101000",
+            expected_cycle="D",
+        )
+
+    assert exc_info.value.diagnostic.to_payload() == {
+        "candidateMatchCount": 0,
+        "diagnosticVersion": 1,
+        "failureReason": "candidate_not_found",
+        "failureStage": "candidate_match",
+        "field": "item_code",
+        "fieldKind": "not_found",
+    }
 
 
 def test_item_preflight_accepts_a_valid_partial_metadata_page() -> None:
@@ -103,6 +222,7 @@ def test_item_preflight_accepts_a_valid_partial_metadata_page() -> None:
         payload,
         expected_stat_code="722Y001",
         expected_item_code="0101000",
+        expected_cycle="D",
     )
 
     assert item.item_code == "0101000"
@@ -119,6 +239,7 @@ def test_item_preflight_rejects_a_truncated_first_metadata_page() -> None:
             payload,
             expected_stat_code="722Y001",
             expected_item_code="0101000",
+            expected_cycle="D",
         )
 
 

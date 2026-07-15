@@ -201,9 +201,7 @@ def test_online_refresh_rejects_29_candidates_instead_of_publishing_short_univer
         ),
         (0, lambda rows: replace(rows[0], name=""), "name"),
         (0, lambda rows: replace(rows[0], market="KONEX"), "market"),
-        (0, lambda rows: replace(rows[0], market_cap=0), "market.*cap|positive"),
         (0, lambda rows: replace(rows[0], market_cap=-1), "market.*cap|positive"),
-        (0, lambda rows: replace(rows[0], trading_value=0), "trading.*value|positive"),
         (0, lambda rows: replace(rows[0], trading_value=-1), "trading.*value|positive"),
     ],
 )
@@ -226,6 +224,36 @@ def test_online_refresh_rejects_ambiguous_or_invalid_candidate_set(
         )
 
     assert not manifest_path.exists()
+
+
+def test_zero_value_rows_are_excluded_without_blocking_thirty_liquid_candidates() -> None:
+    rows = list(_valid_rows(32))
+    rows[0] = replace(rows[0], trading_value=0)
+    rows[1] = replace(rows[1], market_cap=0)
+
+    manifest = refresh_universe_from_krx_openapi(
+        _as_client(_FakeClient(rows=tuple(rows))),
+        as_of=_AS_OF,
+        generated_at=_GENERATED_AT,
+    )
+
+    assert len(manifest.symbols) == 30
+    assert all(item.market_cap > 0 for item in manifest.symbols)
+    assert all(item.trading_value > 0 for item in manifest.symbols)
+    assert {item.symbol for item in manifest.symbols}.isdisjoint({"000001", "000002"})
+
+
+def test_zero_value_rows_still_fail_when_only_twenty_nine_liquid_candidates_remain() -> None:
+    rows = list(_valid_rows(31))
+    rows[0] = replace(rows[0], trading_value=0)
+    rows[1] = replace(rows[1], market_cap=0)
+
+    with pytest.raises(ValueError, match="30|candidate"):
+        refresh_universe_from_krx_openapi(
+            _as_client(_FakeClient(rows=tuple(rows))),
+            as_of=_AS_OF,
+            generated_at=_GENERATED_AT,
+        )
 
 
 def test_online_refresh_rejects_non_top30_limit() -> None:

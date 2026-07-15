@@ -201,6 +201,8 @@ def test_provider_name_cannot_inject_markdown_table_or_remote_image(
         ("2009-12-30", "range"),
         ("1900-01-02", "range"),
         ("9999-01-01", "available"),
+        ("20260714", "date"),
+        ("2026-W29-2", "date"),
         ("not-a-date", "date"),
     ],
 )

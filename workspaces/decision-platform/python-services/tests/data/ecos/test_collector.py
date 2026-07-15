@@ -26,6 +26,20 @@ def _verified_series() -> tuple[ECOSSeries, ...]:
     )
 
 
+def _provisional_series() -> tuple[ECOSSeries, ...]:
+    return tuple(
+        entry.model_copy(
+            update={
+                "verified": False,
+                "registry_verified_at": None,
+                "name": None,
+                "unit": None,
+            }
+        )
+        for entry in CANDIDATE_SERIES
+    )
+
+
 class _FakeClient:
     def __init__(
         self,
@@ -98,7 +112,7 @@ def test_provisional_registry_is_rejected_before_client_or_publisher() -> None:
 
     with pytest.raises(RegistryNotVerifiedError):
         collector.collect(
-            series=CANDIDATE_SERIES,
+            series=_provisional_series(),
             start=date(2026, 7, 1),
             end=date(2026, 7, 14),
             retrieved_at=datetime(2026, 7, 14, tzinfo=UTC),

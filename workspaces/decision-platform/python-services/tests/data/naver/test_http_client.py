@@ -704,6 +704,7 @@ def test_missing_credentials_fail_after_reservation_but_before_outbound(
 
     # quota reservation 뒤에는 실패하더라도 refund하지 않는다.
     assert len(quota.reservations) == 1
+    assert client.physical_attempt_count == 0
     assert outbound == 0
     client.close()
 
@@ -750,6 +751,7 @@ def test_credential_header_material_is_bounded_printable_ascii(
     assert unsafe_material not in f"{exc_info.value!r} {exc_info.value}"
     assert exc_info.value.__cause__ is None
     assert len(quota.reservations) == 1
+    assert client.physical_attempt_count == 0
     assert outbound == 0
     client.close()
 
@@ -791,6 +793,7 @@ def test_header_setup_exception_is_mapped_without_secret_or_cause(
     assert identifier not in rendered
     assert secret not in rendered
     assert exc_info.value.__cause__ is None
+    assert client.physical_attempt_count == 0
     assert outbound == 0
     client.close()
 
@@ -880,6 +883,40 @@ def test_transport_exception_restores_request_headers_and_hides_secret(
         for header in LEGACY_PROFILE.auth_headers
     )
     client.close()
+
+
+def test_inner_transport_exception_counts_exactly_one_provider_handoff(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stub_credentials(monkeypatch)
+    outbound = 0
+    quota = _RecordingQuota()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal outbound
+        outbound += 1
+        raise httpx.ConnectError("synthetic connection failure", request=request)
+
+    transport = _CredentialTransport(
+        httpx.MockTransport(handler),
+        profile=LEGACY_PROFILE,
+        quota=quota,
+    )
+    request = httpx.Request(
+        "GET",
+        f"{LEGACY_PROFILE.origin}{LEGACY_PROFILE.path}",
+        params={"query": "합성회사", "display": "10", "start": "1", "sort": "date"},
+        headers=_canonical_request_headers(LEGACY_PROFILE.origin),
+    )
+
+    with pytest.raises(NaverCredentialError, match="transport_unavailable") as exc_info:
+        transport.handle_request(request)
+
+    assert len(quota.reservations) == 1
+    assert transport.physical_attempt_count == 1
+    assert outbound == 1
+    assert all(header not in request.headers for header in LEGACY_PROFILE.auth_headers)
+    assert exc_info.value.__cause__ is None
 
 
 def test_response_stream_timeout_is_retryable_transport_unavailable(
@@ -1375,7 +1412,60 @@ def test_credential_latency_expiring_deadline_stops_immediately_before_outbound(
 
     assert credential_reads == 1
     assert len(quota.reservations) == 1
-    assert transport.physical_attempt_count == 1
+    assert transport.physical_attempt_count == 0
+    assert outbound == 0
+    assert all(header not in request.headers for header in LEGACY_PROFILE.auth_headers)
+    assert exc_info.value.__cause__ is None
+
+
+def test_header_construction_expiring_deadline_is_not_a_provider_handoff(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now = 0.0
+    outbound = 0
+    auth_header_writes = 0
+    quota = _RecordingQuota()
+    _stub_credentials(monkeypatch)
+
+    def monotonic() -> float:
+        return now
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal outbound
+        outbound += 1
+        return httpx.Response(200, json=_success_payload())
+
+    transport = _CredentialTransport(
+        httpx.MockTransport(handler),
+        profile=LEGACY_PROFILE,
+        quota=quota,
+    )
+    request = httpx.Request(
+        "GET",
+        f"{LEGACY_PROFILE.origin}{LEGACY_PROFILE.path}",
+        params={"query": "합성회사", "display": "10", "start": "1", "sort": "date"},
+        headers=_canonical_request_headers(LEGACY_PROFILE.origin),
+        extensions={"s1.3.naver.logical_deadline": 1.0},
+    )
+    real_setitem = httpx.Headers.__setitem__
+
+    def delayed_auth_header(self: httpx.Headers, key: str, value: str) -> None:
+        nonlocal auth_header_writes, now
+        real_setitem(self, key, value)
+        if key.lower() in {header.lower() for header in LEGACY_PROFILE.auth_headers}:
+            auth_header_writes += 1
+            if auth_header_writes == len(LEGACY_PROFILE.auth_headers):
+                now = 1.0
+
+    monkeypatch.setattr(_credential_transport.time, "monotonic", monotonic)
+    monkeypatch.setattr(httpx.Headers, "__setitem__", delayed_auth_header)
+
+    with pytest.raises(NaverCredentialError, match="logical_deadline_exceeded") as exc_info:
+        transport.handle_request(request)
+
+    assert auth_header_writes == 2
+    assert len(quota.reservations) == 1
+    assert transport.physical_attempt_count == 0
     assert outbound == 0
     assert all(header not in request.headers for header in LEGACY_PROFILE.auth_headers)
     assert exc_info.value.__cause__ is None

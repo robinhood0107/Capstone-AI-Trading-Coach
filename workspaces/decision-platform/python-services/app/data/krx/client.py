@@ -27,7 +27,11 @@ from app.data.krx._credential_transport import (
     _QuotaReservation,
     _canonical_client_headers,
 )
-from app.data.krx.catalog import ENABLED_UNIVERSE_ENDPOINTS, KrxEndpoint
+from app.data.krx.catalog import (
+    ENABLED_UNIVERSE_ENDPOINTS,
+    KRX_OPEN_API_FIRST_AVAILABLE_DATE,
+    KrxEndpoint,
+)
 from app.data.krx.errors import KrxError
 from app.data.krx.parsers import KrxDailyRow, parse_daily_response
 from app.data.krx.quota import quota_key, quota_policy
@@ -103,6 +107,16 @@ def _build_redis_client() -> Any:
         password = ""
 
 
+def _close_without_raising(resource: Any | None) -> None:
+    """constructor 실패 시 한 cleanup 예외가 다른 resource 정리를 막지 않게 한다."""
+    if resource is None:
+        return
+    try:
+        resource.close()
+    except Exception:
+        pass
+
+
 class KrxOpenApiClient:
     """두 국내주식 일별 endpoint만 고정 origin·bounded JSON 경계로 조회한다."""
 
@@ -137,10 +151,9 @@ class KrxOpenApiClient:
                 quota_wait_sleep=time.sleep,
             )
         except Exception:
-            if inner is not None:
-                inner.close()
-            redis_client.close()
-            raise
+            _close_without_raising(inner)
+            _close_without_raising(redis_client)
+            raise KrxCredentialError("initialization_unavailable") from None
         self._redis_client: Any | None = redis_client
 
     @classmethod
@@ -206,7 +219,13 @@ class KrxOpenApiClient:
 
     def fetch_universe_rows(self, as_of: date) -> tuple[KrxDailyRow, ...]:
         """직전 완료 XKRX session의 KOSPI 뒤 KOSDAQ 행을 모두 성공한 경우에만 반환한다."""
-        if type(as_of) is not date or not is_xkrx_trading_day(as_of):
+        if type(as_of) is not date or as_of < KRX_OPEN_API_FIRST_AVAILABLE_DATE:
+            raise ValueError("KRX as-of date is outside the supported range")
+        try:
+            is_session = is_xkrx_trading_day(as_of)
+        except Exception:
+            raise ValueError("calendar_unavailable") from None
+        if not is_session:
             raise ValueError("KRX as-of date must be an XKRX trading session")
         deadline = time.monotonic() + self._settings.logical_deadline_seconds
         rows: list[KrxDailyRow] = []
@@ -268,12 +287,20 @@ class KrxOpenApiClient:
         """HTTP pool과 production Redis connection을 idempotent하게 닫는다."""
         if self._closed:
             return
-        self._closed = True
+        cleanup_failed = False
         try:
             self._http.close()
-        finally:
-            if self._redis_client is not None:
+        except Exception:
+            cleanup_failed = True
+        if self._redis_client is not None:
+            try:
                 self._redis_client.close()
+            except Exception:
+                cleanup_failed = True
+        if cleanup_failed:
+            raise KrxCredentialError("cleanup_unavailable") from None
+        self._redis_client = None
+        self._closed = True
 
     def __enter__(self) -> Self:
         return self

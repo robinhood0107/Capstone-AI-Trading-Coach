@@ -94,6 +94,7 @@ def test_online_path_makes_exactly_four_calls_and_prints_sanitized_inspection(
     assert payload["canActivate"] is False
     assert payload["physicalAttemptCount"] == 4
     assert payload["observedAt"] == "2026-07-14T01:02:03Z"
+    assert payload["status"] == "succeeded"
     assert [entry["seriesId"] for entry in payload["series"]] == [
         "policy-rate",
         "krw-usd-rate",
@@ -116,9 +117,13 @@ def test_online_failure_is_not_retried_and_drops_provider_details(
     assert client.calls == [("table", "policy-rate")]
     assert client.closed is True
     rendered = capsys.readouterr().out
-    assert rendered == (
-        "source=ecos operation=registry_preflight code=preflight_failed physicalAttemptCount=1\n"
-    )
+    assert json.loads(rendered) == {
+        "code": "preflight_failed",
+        "operation": "registry_preflight",
+        "physicalAttemptCount": 1,
+        "source": "ecos",
+        "status": "failed",
+    }
     assert "synthetic-ecos-key" not in rendered
     assert "https://" not in rendered
     assert "provider" not in rendered
@@ -135,9 +140,13 @@ def test_online_item_parse_failure_reports_only_safe_code_and_actual_attempt_cou
 
     assert client.calls == [("table", "policy-rate"), ("item", "policy-rate")]
     assert client.closed is True
-    assert capsys.readouterr().out == (
-        "source=ecos operation=registry_preflight code=invalid_response physicalAttemptCount=2\n"
-    )
+    assert json.loads(capsys.readouterr().out) == {
+        "code": "invalid_response",
+        "operation": "registry_preflight",
+        "physicalAttemptCount": 2,
+        "source": "ecos",
+        "status": "failed",
+    }
 
 
 def test_online_non_searchable_table_fails_before_item_call(
@@ -151,9 +160,20 @@ def test_online_non_searchable_table_fails_before_item_call(
 
     assert client.calls == [("table", "policy-rate")]
     assert client.closed is True
-    assert capsys.readouterr().out == (
-        "source=ecos operation=registry_preflight code=preflight_failed physicalAttemptCount=1\n"
-    )
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["code"] == "invalid_response"
+    assert payload["physicalAttemptCount"] == 1
+    assert payload["status"] == "failed"
+    assert payload["diagnostic"] == {
+        "diagnosticVersion": 1,
+        "failureReason": "not_searchable",
+        "failureStage": "searchability",
+        "field": "searchable",
+        "fieldKind": "mismatch",
+        "requestOrdinal": 1,
+        "seriesId": "policy-rate",
+        "service": "StatisticTableList",
+    }
 
 
 def test_online_extra_attempt_counter_preserves_the_observed_count(
@@ -171,9 +191,13 @@ def test_online_extra_attempt_counter_preserves_the_observed_count(
     assert registry_preflight_cli.main(["--online"]) == 1
 
     assert client.closed is True
-    assert capsys.readouterr().out == (
-        "source=ecos operation=registry_preflight code=preflight_failed physicalAttemptCount=5\n"
-    )
+    assert json.loads(capsys.readouterr().out) == {
+        "code": "preflight_failed",
+        "operation": "registry_preflight",
+        "physicalAttemptCount": 5,
+        "source": "ecos",
+        "status": "failed",
+    }
 
 
 @pytest.mark.parametrize(
@@ -205,9 +229,13 @@ def test_online_failure_classifies_only_allowlisted_operator_codes(
     assert registry_preflight_cli.main(["--online"]) == 1
 
     rendered = capsys.readouterr().out
-    assert rendered == (
-        f"source=ecos operation=registry_preflight code={expected_code} physicalAttemptCount=0\n"
-    )
+    assert json.loads(rendered) == {
+        "code": expected_code,
+        "operation": "registry_preflight",
+        "physicalAttemptCount": 0,
+        "source": "ecos",
+        "status": "failed",
+    }
     assert "synthetic-secret" not in rendered
     assert client.closed is True
 
@@ -220,7 +248,10 @@ def test_invalid_argv_cannot_echo_a_mistaken_secret_or_url(
     assert registry_preflight_cli.main(["--online", secret_argument]) == 2
 
     captured = capsys.readouterr()
-    assert captured.out == "source=ecos operation=registry_preflight code=invalid_arguments\n"
+    assert captured.out == (
+        '{"code":"invalid_arguments","operation":"registry_preflight",'
+        '"source":"ecos","status":"failed"}\n'
+    )
     assert captured.err == ""
     assert "synthetic-secret" not in f"{captured.out}{captured.err}"
     assert "https://" not in f"{captured.out}{captured.err}"
@@ -281,7 +312,11 @@ def test_unicode_escaped_credential_echo_cannot_reach_preflight_cli(
 
     rendered = capsys.readouterr().out
     assert attempts == 1
-    assert rendered == (
-        "source=ecos operation=registry_preflight code=preflight_failed physicalAttemptCount=1\n"
-    )
+    assert json.loads(rendered) == {
+        "code": "preflight_failed",
+        "operation": "registry_preflight",
+        "physicalAttemptCount": 1,
+        "source": "ecos",
+        "status": "failed",
+    }
     assert marker not in rendered

@@ -252,12 +252,23 @@ def test_metadata_inspection_rejects_mismatched_identity_without_activation() ->
 
     client = _PreflightClient(mismatched_identity=True)
 
-    with pytest.raises(ValueError, match="identity"):
+    with pytest.raises(ECOSParseError) as exc_info:
         inspect_registry_metadata(
             client=client,
             series=CANDIDATE_SERIES,
             observed_at=_VERIFIED_AT,
         )
+
+    assert exc_info.value.diagnostic.to_payload() == {
+        "diagnosticVersion": 1,
+        "failureReason": "identity_mismatch",
+        "failureStage": "registry_identity",
+        "field": "item_code",
+        "fieldKind": "mismatch",
+        "requestOrdinal": 2,
+        "seriesId": "policy-rate",
+        "service": "StatisticItemList",
+    }
 
 
 def test_metadata_inspection_rejects_non_searchable_table_before_item_call() -> None:
@@ -265,7 +276,7 @@ def test_metadata_inspection_rejects_non_searchable_table_before_item_call() -> 
 
     client = _PreflightClient(searchable=False)
 
-    with pytest.raises(ValueError, match="searchable"):
+    with pytest.raises(ECOSParseError) as exc_info:
         inspect_registry_metadata(
             client=client,
             series=CANDIDATE_SERIES,
@@ -273,3 +284,13 @@ def test_metadata_inspection_rejects_non_searchable_table_before_item_call() -> 
         )
 
     assert client.calls == [("table", "policy-rate")]
+    assert exc_info.value.diagnostic.to_payload() == {
+        "diagnosticVersion": 1,
+        "failureReason": "not_searchable",
+        "failureStage": "searchability",
+        "field": "searchable",
+        "fieldKind": "mismatch",
+        "requestOrdinal": 1,
+        "seriesId": "policy-rate",
+        "service": "StatisticTableList",
+    }

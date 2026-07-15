@@ -7,6 +7,7 @@ from app.data.ecos.policy import (
     ECOS_ORIGIN,
     build_keyless_service_path,
     should_retry_ecos_failure,
+    validate_keyless_service_path,
 )
 
 
@@ -21,9 +22,47 @@ def test_keyless_path_allows_only_the_three_s1_3_services() -> None:
     assert ECOS_ORIGIN == "https://ecos.bok.or.kr"
     assert path == (
         f"/api/StatisticSearch/{ECOS_KEY_SENTINEL}/json/kr/1/200/"
-        "722Y001/D/20250714/20260714/0101000"
+        "722Y001/D/20250714/20260714/0101000/"
     )
     assert "ECOS_API_KEY" not in path
+    assert path.endswith("/0101000/")
+    assert "?" not in path
+    assert "%3F" not in path
+
+
+@pytest.mark.parametrize(
+    "suffix",
+    [
+        "?",
+        "%3F",
+        "?ITEM_CODE2=",
+        "//",
+        "/?",
+        "/placeholder",
+    ],
+)
+def test_statistic_search_rejects_query_placeholder_and_extra_item_segments(suffix: str) -> None:
+    canonical = build_keyless_service_path(
+        service="StatisticSearch",
+        start_index=1,
+        end_index=200,
+        arguments=("722Y001", "D", "20250714", "20260714", "0101000"),
+    )
+
+    with pytest.raises(ValueError, match="path"):
+        validate_keyless_service_path(f"{canonical}{suffix}")
+
+
+def test_metadata_service_paths_keep_their_existing_no_trailing_slash_shape() -> None:
+    path = build_keyless_service_path(
+        service="StatisticItemList",
+        start_index=1,
+        end_index=200,
+        arguments=("722Y001",),
+    )
+
+    assert path.endswith("/722Y001")
+    assert not path.endswith("/")
 
 
 @pytest.mark.parametrize(

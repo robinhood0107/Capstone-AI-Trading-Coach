@@ -23,3 +23,21 @@ python-services/        # uv 프로젝트 — LightGBM/RAG/금융공학/데이�
 기존 PostgreSQL volume을 유지하는 경우 루트 README의 one-time application role bootstrap 절차를 먼저 따른다. Redis는 password+AOF+`noeviction`이며 OpenDART quota 원장으로는 사용하지 않는다.
 
 KIS outbound는 이 workspace가 단일 owner다. S1.1 client는 실전 18/s hard cap·기본 120ms 간격, 모의 1/s·1,000ms 간격을 같은 opaque credential/appkey scope의 Redis 원자 limiter로 공유한다. `/oauth2/tokenP` physical send는 mock/live 합산 deployment-global 1/s를 보수 적용하고 token cache/singleflight만 mode별로 분리한다. Return Engine과 후속 S1.6/S3 adapter는 별도 limiter를 만들지 않고 이 경계를 재사용한다.
+
+## KRX universe 자동화
+
+S1.3K는 KRX OPEN API의 `유가증권 일별매매정보`와 `코스닥 일별매매정보`만 사용해
+내부 top-30 universe를 만든다. collector와 CLI는 offline fixture/mock 검증을 마쳤지만 live
+호출은 아직 실행하지 않았다. KRX 인증키와 두 서비스 활용 승인을 받은 뒤 `.env`의
+`KRX_OPENAPI_AUTH_KEY`를 채우고, HEAD·기준일·2회 호출·TTL에 결속한 새 KRX 실행 승인을
+받은 경우에만 다음 명령을 1회 실행한다. 기존 S1.3 A4/B1 승인은 재사용하지 않는다.
+
+```bash
+cd python-services
+uv run krx-openapi-universe-refresh --online --as-of YYYY-MM-DD --data-dir data/kis
+```
+
+`--online`은 로컬 안전 gate일 뿐 사용자 실행 승인을 대체하지 않는다. API 실패를 CSV나 이전
+manifest 성공으로 바꾸지 않으며, 수동 CSV는 기존 `kis-universe-refresh`를 별도 명령으로 실행할
+때만 사용한다. 성공·실패 출력에는 로컬 경로 대신 안정 code와 physical attempt 수만 남고,
+client cleanup이 성공한 뒤에만 report와 manifest가 게시된다. 이 PR은 주기 scheduler를 추가하지 않는다.

@@ -58,14 +58,18 @@ CANDIDATE_SERIES: tuple[ECOSSeries, ...] = (
 
 
 def verified_series(entries: Sequence[ECOSSeries]) -> tuple[ECOSSeries, ...]:
-    """timestamp·표시 metadata까지 승인된 series만 network 경계로 전달한다."""
+    """A4 의미 승인과 exact 일치하는 source-controlled registry만 전달한다."""
     result = tuple(entries)
-    if not result or any(
-        not entry.verified
-        or entry.registry_verified_at is None
-        or entry.name is None
-        or entry.unit is None
-        for entry in result
+    if (
+        not result
+        or any(
+            not entry.verified
+            or entry.registry_verified_at is None
+            or entry.name is None
+            or entry.unit is None
+            for entry in result
+        )
+        or result != CANDIDATE_SERIES
     ):
         raise RegistryNotVerifiedError("registry_not_verified")
     return result

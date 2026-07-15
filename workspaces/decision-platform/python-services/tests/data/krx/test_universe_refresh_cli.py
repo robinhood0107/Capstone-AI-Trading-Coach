@@ -609,6 +609,100 @@ def test_existing_manifest_and_report_hardlink_alias_is_rejected(
     assert "physical_attempts=0" in rendered
 
 
+def test_symlinked_data_dir_ancestor_is_rejected_without_touching_outside(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    state = _ClientState()
+    _install_client(monkeypatch, state)
+    monkeypatch.setattr(
+        universe_refresh_cli,
+        "resolve_latest_available_date",
+        lambda _: _AS_OF,
+    )
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    linked_root = tmp_path / "linked-data"
+    linked_root.symlink_to(outside, target_is_directory=True)
+    data_dir = linked_root / "kis"
+
+    exit_code = main(_args(data_dir, "--as-of", _AS_OF.isoformat()))
+
+    rendered = capsys.readouterr().err
+    assert exit_code == 1
+    assert state.created == 0
+    assert list(outside.iterdir()) == []
+    assert "output_path_invalid" in rendered
+    assert "physical_attempts=0" in rendered
+
+
+def test_success_publishes_report_before_manifest_after_client_cleanup(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = _ClientState()
+    _install_client(monkeypatch, state)
+    monkeypatch.setattr(
+        universe_refresh_cli,
+        "resolve_latest_available_date",
+        lambda _: _AS_OF,
+    )
+    data_dir = tmp_path / "data" / "kis"
+    calls: list[tuple[str, Path, int]] = []
+
+    def write_report(path: Path, _: object) -> Path:
+        calls.append(("report", path, state.closed))
+        return path
+
+    def write_manifest(path: Path, _: object) -> Path:
+        calls.append(("manifest", path, state.closed))
+        return path
+
+    monkeypatch.setattr(universe_refresh_cli, "write_universe_markdown_report", write_report)
+    monkeypatch.setattr(universe_refresh_cli, "write_universe_manifest", write_manifest)
+
+    exit_code = main(_args(data_dir, "--as-of", _AS_OF.isoformat()))
+
+    assert exit_code == 0
+    assert calls == [
+        ("report", data_dir / "reports" / "universe_refresh.md", 1),
+        ("manifest", data_dir / "universe_manifest.json", 1),
+    ]
+
+
+def test_manifest_publish_failure_leaves_no_commit_marker(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    state = _ClientState()
+    _install_client(monkeypatch, state)
+    monkeypatch.setattr(
+        universe_refresh_cli,
+        "resolve_latest_available_date",
+        lambda _: _AS_OF,
+    )
+    data_dir = tmp_path / "data" / "kis"
+    monkeypatch.setattr(
+        universe_refresh_cli,
+        "write_universe_manifest",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            universe_refresh_cli.UniverseExportError("synthetic manifest failure")
+        ),
+    )
+
+    exit_code = main(_args(data_dir, "--as-of", _AS_OF.isoformat()))
+
+    rendered = capsys.readouterr().err
+    assert exit_code == 1
+    assert state.closed == 1
+    assert (data_dir / "reports" / "universe_refresh.md").exists()
+    assert not (data_dir / "universe_manifest.json").exists()
+    assert "output_path_invalid" in rendered
+    assert "physical_attempts=2" in rendered
+
+
 def test_atomic_report_failure_removes_temporary_file_and_publishes_nothing(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

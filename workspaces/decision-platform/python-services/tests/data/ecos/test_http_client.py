@@ -297,6 +297,31 @@ def test_literal_credential_echo_keeps_normal_body_redaction() -> None:
     assert marker not in repr(metadata)
 
 
+def test_redaction_marker_collision_fails_closed_before_metadata_parse() -> None:
+    marker = "redacted"
+
+    client = ECOSHttpClient._for_tests(
+        ECOSSettings(_env_file=None),
+        transport=httpx.MockTransport(
+            lambda _: httpx.Response(
+                200,
+                headers={"content-type": "application/json"},
+                content=_table_list_payload(marker, unicode_escape=False),
+            )
+        ),
+        quota=_RecordingQuota([]),
+        credential=SecretStr(marker),
+    )
+    try:
+        with pytest.raises(ECOSCredentialError, match="response_unavailable") as exc_info:
+            client.statistic_table_list(series=CANDIDATE_SERIES[0])
+    finally:
+        client.close()
+
+    assert marker not in f"{exc_info.value!r} {exc_info.value}"
+    assert exc_info.value.__cause__ is None
+
+
 def test_set_cookie_and_provider_headers_are_dropped_without_next_request_replay() -> None:
     attempts = 0
     events: list[str] = []

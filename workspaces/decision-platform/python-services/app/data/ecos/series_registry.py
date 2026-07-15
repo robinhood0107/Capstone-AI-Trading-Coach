@@ -32,20 +32,27 @@ class ECOSSeries(BaseModel):
         return value
 
 
+# preflight identity 상수 이름은 유지하고, 승인 timestamp와 verified flag로 활성 상태를 구분한다.
 CANDIDATE_SERIES: tuple[ECOSSeries, ...] = (
     ECOSSeries(
         series_id="policy-rate",
         stat_code="722Y001",
         item_code1="0101000",
         cycle="D",
-        verified=False,
+        name="한국은행 기준금리",
+        unit="연%",
+        registry_verified_at=datetime(2026, 7, 15, 6, 2, 19, 299552, tzinfo=UTC),
+        verified=True,
     ),
     ECOSSeries(
         series_id="krw-usd-rate",
         stat_code="731Y001",
         item_code1="0000001",
         cycle="D",
-        verified=False,
+        name="원/미국달러(매매기준율)",
+        unit="원",
+        registry_verified_at=datetime(2026, 7, 15, 6, 2, 19, 299552, tzinfo=UTC),
+        verified=True,
     ),
 )
 

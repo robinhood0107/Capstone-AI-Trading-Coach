@@ -61,7 +61,7 @@ class ECOSCollector:
         persist: bool,
         require_complete: bool = False,
     ) -> ECOSCollectionResult:
-        """provisional registry를 outbound 전에 차단하고 두 series의 sanitized 결과만 반환한다."""
+        """승인 evidence가 없는 registry를 차단하고 두 series의 sanitized 결과만 반환한다."""
         if not isinstance(require_complete, bool):
             raise ECOSCollectionError("require_complete_must_be_boolean")
         approved = verified_series(series)

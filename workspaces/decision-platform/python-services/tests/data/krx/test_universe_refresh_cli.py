@@ -11,6 +11,9 @@ from typing import Self
 import pytest
 
 from app.data.krx import universe_refresh_cli
+from app.data.krx._credential_transport import KrxCredentialError
+from app.data.krx.client import KrxHttpError
+from app.data.krx.errors import KrxParseError
 from app.data.krx.parsers import KrxDailyRow
 from app.data.krx.universe_refresh_cli import main
 
@@ -49,6 +52,7 @@ class _ClientState:
     )
     error: Exception | None = None
     close_error: Exception | None = None
+    physical_attempt_count: int = 2
     created: int = 0
     closed: int = 0
     requested_dates: list[date] = field(default_factory=list)
@@ -57,7 +61,7 @@ class _ClientState:
 class _FakeClient:
     def __init__(self, state: _ClientState) -> None:
         self._state = state
-        self.physical_attempt_count = 2
+        self.physical_attempt_count = state.physical_attempt_count
 
     def fetch_universe_rows(self, as_of: date) -> tuple[KrxDailyRow, ...]:
         self._state.requested_dates.append(as_of)
@@ -277,6 +281,57 @@ def test_provider_failure_has_no_csv_fallback_or_partial_publish(
     assert "AUTH_KEY" not in rendered
     assert "data-dbg.krx.co.kr" not in rendered
     assert "physical_attempts=2" in rendered
+
+
+@pytest.mark.parametrize(
+    ("error", "physical_attempt_count", "expected_code"),
+    [
+        (KrxCredentialError("authentication_unavailable"), 0, "authentication_unavailable"),
+        (KrxCredentialError("transport_unavailable"), 1, "transport_unavailable"),
+        (KrxCredentialError("response_unavailable"), 1, "response_unavailable"),
+        (KrxCredentialError("response_too_large"), 1, "response_too_large"),
+        (KrxCredentialError("logical_deadline_exceeded"), 1, "logical_deadline_exceeded"),
+        (KrxHttpError("http_status", status_code=401), 1, "authentication_failed"),
+        (KrxHttpError("http_status", status_code=403), 1, "authentication_failed"),
+        (KrxHttpError("http_status", status_code=429), 1, "rate_limited"),
+        (KrxHttpError("http_status", status_code=500), 1, "http_status"),
+        (KrxHttpError("redirect_rejected", status_code=302), 1, "redirect_rejected"),
+        (KrxHttpError("parse_invalid_response"), 1, "invalid_response"),
+        (KrxParseError(), 1, "invalid_response"),
+        (RuntimeError("synthetic-secret https://provider.invalid/private"), 1, "collection_failed"),
+    ],
+)
+def test_collection_failure_exposes_only_allowlisted_diagnostic_code(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    error: Exception,
+    physical_attempt_count: int,
+    expected_code: str,
+) -> None:
+    state = _ClientState(error=error, physical_attempt_count=physical_attempt_count)
+    _install_client(monkeypatch, state)
+    monkeypatch.setattr(
+        universe_refresh_cli,
+        "resolve_latest_available_date",
+        lambda _: _AS_OF,
+    )
+    data_dir = tmp_path / "data" / "kis"
+
+    exit_code = main(_args(data_dir, "--as-of", _AS_OF.isoformat()))
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert captured.out == ""
+    assert captured.err == (
+        "source=krx operation=universe_refresh "
+        f"code={expected_code} physical_attempts={physical_attempt_count}\n"
+    )
+    assert "synthetic-secret" not in captured.err
+    assert "provider.invalid" not in captured.err
+    assert str(tmp_path) not in captured.err
+    assert not (data_dir / "universe_manifest.json").exists()
+    assert not (data_dir / "reports" / "universe_refresh.md").exists()
 
 
 def test_calendar_failure_is_sanitized_before_client_creation(

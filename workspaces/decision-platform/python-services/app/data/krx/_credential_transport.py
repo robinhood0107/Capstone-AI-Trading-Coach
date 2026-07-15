@@ -21,7 +21,8 @@ _REPOSITORY_ROOT = Path(__file__).resolve().parents[6]
 _AUTH_HEADER = "AUTH_KEY"
 _MAX_RESPONSE_BYTES = 4 * 1024 * 1024
 _MAX_CREDENTIAL_HEADER_BYTES = 512
-_MAX_DECODED_JSON_NODES = 100_000
+# 공식 최대 5,000행 × (row dict 1 + 15 key/value pair 30) + envelope 3개를 모두 검사한다.
+_MAX_DECODED_JSON_NODES = 5_000 * (1 + 2 * 15) + 3
 _LOGICAL_DEADLINE_EXTENSION = "s1.3.krx.logical_deadline"
 _CANONICAL_CLIENT_HEADER_ITEMS = (
     ("Accept", "application/json"),

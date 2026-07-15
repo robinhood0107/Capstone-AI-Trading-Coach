@@ -17,6 +17,19 @@ from app.data.krx.universe_refresh_cli import main
 _AS_OF = date(2026, 7, 14)
 
 
+@pytest.fixture(autouse=True)
+def _confine_cli_outputs_to_each_test_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        universe_refresh_cli,
+        "_ALLOWED_OUTPUT_ROOTS",
+        (tmp_path,),
+        raising=False,
+    )
+
+
 def _row(index: int) -> KrxDailyRow:
     return KrxDailyRow(
         as_of_date=_AS_OF,
@@ -462,6 +475,73 @@ def test_parent_traversal_is_rejected_before_client_creation(
     assert not (tmp_path / "escape" / "universe_manifest.json").exists()
     assert "output_path_invalid" in rendered
     assert "physical_attempts=0" in rendered
+
+
+def test_data_dir_outside_approved_local_root_is_rejected_before_client_creation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    state = _ClientState()
+    _install_client(monkeypatch, state)
+    monkeypatch.setattr(
+        universe_refresh_cli,
+        "resolve_latest_available_date",
+        lambda _: _AS_OF,
+    )
+    approved_root = tmp_path / "approved"
+    monkeypatch.setattr(
+        universe_refresh_cli,
+        "_ALLOWED_OUTPUT_ROOTS",
+        (approved_root,),
+        raising=False,
+    )
+    outside = tmp_path / "tracked-like" / "data"
+
+    exit_code = main(_args(outside, "--as-of", _AS_OF.isoformat()))
+
+    rendered = capsys.readouterr().err
+    assert exit_code == 1
+    assert state.created == 0
+    assert not (outside / "universe_manifest.json").exists()
+    assert "output_path_invalid" in rendered
+    assert "physical_attempts=0" in rendered
+    assert str(outside) not in rendered
+
+
+def test_report_path_must_remain_inside_data_dir(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    state = _ClientState()
+    _install_client(monkeypatch, state)
+    monkeypatch.setattr(
+        universe_refresh_cli,
+        "resolve_latest_available_date",
+        lambda _: _AS_OF,
+    )
+    data_dir = tmp_path / "data" / "kis"
+    outside_report = tmp_path / "other" / "report.md"
+
+    exit_code = main(
+        _args(
+            data_dir,
+            "--as-of",
+            _AS_OF.isoformat(),
+            "--report-path",
+            str(outside_report),
+        )
+    )
+
+    rendered = capsys.readouterr().err
+    assert exit_code == 1
+    assert state.created == 0
+    assert not (data_dir / "universe_manifest.json").exists()
+    assert not outside_report.exists()
+    assert "output_path_invalid" in rendered
+    assert "physical_attempts=0" in rendered
+    assert str(outside_report) not in rendered
 
 
 def test_atomic_report_failure_removes_temporary_file_and_publishes_nothing(

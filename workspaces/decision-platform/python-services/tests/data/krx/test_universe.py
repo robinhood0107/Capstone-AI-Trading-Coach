@@ -131,10 +131,10 @@ def test_online_refresh_builds_manifest_v1_and_exact_top30_with_canonical_rows_h
 
 def test_online_ranking_uses_market_cap_then_trading_value_then_symbol() -> None:
     rows = (
-        _row(3, market_cap=1_000, trading_value=90),
-        _row(2, market_cap=1_000, trading_value=100),
-        _row(1, market_cap=2_000, trading_value=1),
-        _row(4, market_cap=1_000, trading_value=100),
+        _row(3, market_cap=1_000_000, trading_value=90),
+        _row(2, market_cap=1_000_000, trading_value=100),
+        _row(1, market_cap=2_000_000, trading_value=1),
+        _row(4, market_cap=1_000_000, trading_value=100),
         *_valid_rows(30)[4:],
     )
 

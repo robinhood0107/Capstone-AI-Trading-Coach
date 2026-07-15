@@ -324,7 +324,10 @@ def _scrub_response(
         content = content.replace(encoded, b"[redacted]")
         # literal echo는 기존처럼 redaction하고, 별도 copy에서 제거해 escaped echo만 검출한다.
         scan_content = scan_content.replace(encoded, b"")
-    if _decoded_json_contains_candidate(scan_content, candidates=candidates):
+    if _decoded_json_contains_candidate(
+        content,
+        candidates=candidates,
+    ) or _decoded_json_contains_candidate(scan_content, candidates=candidates):
         raise ECOSCredentialError("response_unavailable")
     _ensure_before_deadline(deadline, monotonic=monotonic)
 

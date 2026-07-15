@@ -919,6 +919,51 @@ def test_inner_transport_exception_counts_exactly_one_provider_handoff(
     assert exc_info.value.__cause__ is None
 
 
+def test_unexpected_inner_exception_is_mapped_without_credential_or_cause(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    identifier, secret = _stub_credentials(monkeypatch)
+    outbound = 0
+    captured: list[httpx.Request] = []
+    quota = _RecordingQuota()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal outbound
+        outbound += 1
+        captured.append(request)
+        raise RuntimeError(f"synthetic inner failure {identifier} {secret}")
+
+    client = NaverHttpClient._for_test(
+        settings=NaverSettings(_env_file=None, NAVER_MAX_ATTEMPTS_PER_QUERY=1),
+        profile=LEGACY_PROFILE,
+        transport=httpx.MockTransport(handler),
+        quota=quota,
+        retry_delay=lambda _: 0.0,
+    )
+
+    with pytest.raises(NaverCredentialError, match="transport_unavailable") as exc_info:
+        client.search_news(
+            "합성회사",
+            retrieved_at=_RETRIEVED_AT,
+            requested_display=10,
+        )
+
+    rendered = f"{exc_info.value!r} {exc_info.value}"
+    assert identifier not in rendered
+    assert secret not in rendered
+    assert exc_info.value.retryable is True
+    assert exc_info.value.__cause__ is None
+    assert len(quota.reservations) == 1
+    assert client.physical_attempt_count == 1
+    assert outbound == 1
+    assert all(
+        header not in request.headers
+        for request in captured
+        for header in LEGACY_PROFILE.auth_headers
+    )
+    client.close()
+
+
 def test_response_stream_timeout_is_retryable_transport_unavailable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

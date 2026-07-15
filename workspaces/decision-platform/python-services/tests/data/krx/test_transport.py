@@ -59,6 +59,17 @@ class _DripStream(httpx.SyncByteStream):
         yield from self._chunks
 
 
+class _CloseFailStream(httpx.SyncByteStream):
+    def __init__(self, *, marker: str) -> None:
+        self._marker = marker
+
+    def __iter__(self) -> Iterator[bytes]:
+        yield b'{"OutBlock_1":[]}'
+
+    def close(self) -> None:
+        raise RuntimeError(self._marker)
+
+
 def _origin() -> str:
     return KrxOpenApiSettings(_env_file=None).origin
 
@@ -398,6 +409,48 @@ def test_quota_wait_beyond_deadline_does_not_sleep_read_credential_or_send(
     assert exc_info.value.__cause__ is None
 
 
+def test_quota_wait_reuses_attempt_id_then_reserves_and_sends_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    marker = "synthetic-krx-auth-key"
+    attempt_ids: list[str] = []
+    sleeps: list[float] = []
+    outbound = 0
+
+    class WaitOnceQuota:
+        def reserve(self, *, attempt_id: str) -> None:
+            attempt_ids.append(attempt_id)
+            if len(attempt_ids) == 1:
+                raise QuotaWaitError(retry_after_ms=1, observed_count=1)
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal outbound
+        outbound += 1
+        return httpx.Response(200, json={"OutBlock_1": []})
+
+    monkeypatch.setattr(
+        _credential_transport,
+        "_read_credential",
+        lambda: SecretStr(marker),
+    )
+    transport = _CredentialTransport(
+        httpx.MockTransport(handler),
+        quota=WaitOnceQuota(),
+        quota_wait_sleep=sleeps.append,
+    )
+    request = _request()
+    request.extensions["s1.3.krx.logical_deadline"] = time.monotonic() + 1
+
+    response = transport.handle_request(request)
+
+    assert response.status_code == 200
+    assert len(attempt_ids) == 2
+    assert attempt_ids[0] == attempt_ids[1]
+    assert sleeps == [0.001]
+    assert outbound == 1
+    assert transport.physical_attempt_count == 1
+
+
 def test_oversized_stream_is_rejected_without_returning_partial_body(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -507,6 +560,35 @@ def test_official_shape_five_thousand_rows_pass_credential_scan(
     assert response.status_code == 200
     assert len(response.content) == len(body)
     assert transport.physical_attempt_count == 1
+
+
+def test_provider_response_close_failure_is_sanitized(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    marker = "synthetic-response-close-secret-/private/provider"
+    monkeypatch.setattr(
+        _credential_transport,
+        "_read_credential",
+        lambda: SecretStr("synthetic-krx-auth-key"),
+    )
+    transport = _CredentialTransport(
+        httpx.MockTransport(
+            lambda _: httpx.Response(
+                200,
+                headers={"content-type": "application/json"},
+                stream=_CloseFailStream(marker=marker),
+            )
+        ),
+        quota=_RecordingQuota(),
+    )
+
+    with pytest.raises(KrxCredentialError, match="response_unavailable") as exc_info:
+        transport.handle_request(_request())
+
+    rendered = f"{exc_info.value!r} {exc_info.value}"
+    assert marker not in rendered
+    assert transport.physical_attempt_count == 1
+    assert exc_info.value.__cause__ is None
 
 
 def test_tls_context_rejects_ambient_ca_and_keylog_overrides(

@@ -340,11 +340,17 @@ def _scrub_response(
         deadline=deadline,
     )
     encoded_candidates = tuple(
-        candidate
-        for value in candidates
-        for candidate in {value, quote(value, safe=""), quote_plus(value)}
-        if candidate
+        sorted(
+            {
+                candidate
+                for value in candidates
+                for candidate in (value, quote(value, safe=""), quote_plus(value))
+                if candidate
+            },
+            key=lambda candidate: (-len(candidate), candidate),
+        )
     )
+    # 짧은 credential이 긴 credential의 일부일 때 suffix가 남지 않도록 긴 값부터 제거한다.
     for candidate in encoded_candidates:
         content = content.replace(candidate.encode(), b"[redacted]")
     if _decoded_json_contains_candidate(content, candidates=candidates):

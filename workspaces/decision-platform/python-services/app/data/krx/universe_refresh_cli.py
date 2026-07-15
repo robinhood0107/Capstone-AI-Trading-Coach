@@ -20,6 +20,9 @@ from app.data.krx.universe import (
 )
 
 
+_EARLIEST_AVAILABLE_DATE = date(2010, 1, 4)
+
+
 def main(argv: list[str] | None = None) -> int:
     """명시적 online gate 아래 최신 KRX top-30 universe manifest를 생성한다.
 
@@ -41,6 +44,7 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     client: KrxOpenApiClient | None = None
+    physical_attempts: int | str = 0
     try:
         # 두 target을 provider 호출 전에 검사해 symlink가 있으면 outbound와 부분 파일을 모두 막는다.
         validate_universe_output_path(manifest_path)
@@ -48,27 +52,42 @@ def main(argv: list[str] | None = None) -> int:
         settings = KrxOpenApiSettings()
         client = KrxOpenApiClient(settings)
         manifest = refresh_universe_from_krx_openapi(client, as_of=as_of)
+        physical_attempts = _safe_physical_attempt_count(client)
+        # 성공 산출물은 transport cleanup까지 끝난 뒤에만 게시해 성공/실패 상태를 단일하게 유지한다.
+        client.close()
+        client = None
         # report가 보조 파일이고 manifest가 consumer commit marker이므로 manifest를 마지막에 게시한다.
         write_universe_markdown_report(report_path, manifest)
         write_universe_manifest(manifest_path, manifest)
     except UniverseExportError:
+        if client is not None:
+            physical_attempts = _safe_physical_attempt_count(client)
         print(
-            "source=krx operation=universe_refresh code=output_path_invalid",
+            "source=krx operation=universe_refresh "
+            f"code=output_path_invalid physical_attempts={physical_attempts}",
             file=sys.stderr,
         )
         return 1
     except Exception:
+        if client is not None:
+            physical_attempts = _safe_physical_attempt_count(client)
         print(
-            "source=krx operation=universe_refresh code=collection_failed",
+            "source=krx operation=universe_refresh "
+            f"code=collection_failed physical_attempts={physical_attempts}",
             file=sys.stderr,
         )
         return 1
     finally:
         if client is not None:
-            client.close()
+            try:
+                client.close()
+            except Exception:
+                # primary 실패와 provider 원문을 cleanup 예외로 덮어쓰지 않는다.
+                pass
 
-    print(f"KRX Open API universe manifest written to {manifest_path}")
-    print(f"KRX Open API universe report written to {report_path}")
+    print(
+        f"source=krx operation=universe_refresh code=complete physical_attempts={physical_attempts}"
+    )
     return 0
 
 
@@ -79,11 +98,29 @@ def _validated_as_of(value: str | None, *, latest: date) -> date:
         parsed = date.fromisoformat(value)
     except ValueError:
         raise ValueError("invalid_date") from None
-    if not is_xkrx_trading_day(parsed):
-        raise ValueError("not_a_trading_session")
+    # provider 지원 범위와 안전 최신일을 달력 호출보다 먼저 검사해 out-of-bounds 원문을 차단한다.
+    if parsed < _EARLIEST_AVAILABLE_DATE:
+        raise ValueError("date_out_of_supported_range")
     if parsed > latest:
         raise ValueError("date_not_yet_available")
+    try:
+        is_session = is_xkrx_trading_day(parsed)
+    except Exception:
+        raise ValueError("calendar_unavailable") from None
+    if not is_session:
+        raise ValueError("not_a_trading_session")
     return parsed
+
+
+def _safe_physical_attempt_count(client: KrxOpenApiClient) -> int | str:
+    """실패 evidence에 provider handoff 수만 남기고 잘못된 runtime 값은 원문 없이 unknown 처리한다."""
+    try:
+        value = client.physical_attempt_count
+    except Exception:
+        return "unknown"
+    if type(value) is not int or value < 0:
+        return "unknown"
+    return value
 
 
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:

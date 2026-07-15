@@ -87,6 +87,10 @@ def _canonical_source_rows(rows: tuple[KrxDailyRow, ...]) -> list[dict[str, obje
         (datetime(2026, 7, 14, 23, 10, 0, tzinfo=UTC), date(2026, 7, 14)),
         (datetime(2026, 7, 17, 23, 9, 59, tzinfo=UTC), date(2026, 7, 16)),
         (datetime(2026, 7, 17, 23, 10, 0, tzinfo=UTC), date(2026, 7, 17)),
+        (datetime(2026, 7, 18, 23, 9, 59, tzinfo=UTC), date(2026, 7, 16)),
+        (datetime(2026, 7, 18, 23, 10, 0, tzinfo=UTC), date(2026, 7, 17)),
+        (datetime(2026, 7, 19, 23, 9, 59, tzinfo=UTC), date(2026, 7, 16)),
+        (datetime(2026, 7, 19, 23, 10, 0, tzinfo=UTC), date(2026, 7, 17)),
     ],
 )
 def test_latest_available_date_uses_0810_kst_cutoff_and_previous_xkrx_session(

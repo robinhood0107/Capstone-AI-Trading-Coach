@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import stat
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date
 from pathlib import Path
 from typing import Self
@@ -149,6 +149,33 @@ def test_explicit_available_date_writes_private_manifest_and_report(
     assert stat.S_IMODE(report_path.stat().st_mode) == 0o600
     assert "AUTH_KEY" not in manifest_path.read_text(encoding="utf-8")
     assert "AUTH_KEY" not in report_path.read_text(encoding="utf-8")
+
+
+def test_provider_name_cannot_inject_markdown_table_or_remote_image(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = _ClientState()
+    rows = list(state.rows)
+    rows[0] = replace(
+        rows[0],
+        name="합성 | ![probe](https://attacker.invalid/x)",
+    )
+    state.rows = tuple(rows)
+    _install_client(monkeypatch, state)
+    monkeypatch.setattr(
+        universe_refresh_cli,
+        "resolve_latest_available_date",
+        lambda _: _AS_OF,
+    )
+    data_dir = tmp_path / "data" / "kis"
+
+    exit_code = main(_args(data_dir, "--as-of", _AS_OF.isoformat()))
+
+    report = (data_dir / "reports" / "universe_refresh.md").read_text(encoding="utf-8")
+    assert exit_code == 0
+    assert " | ![probe](https://attacker.invalid/x)" not in report
+    assert r"합성 \| \!\[probe\]\(https\:\/\/attacker\.invalid\/x\)" in report
 
 
 @pytest.mark.parametrize(

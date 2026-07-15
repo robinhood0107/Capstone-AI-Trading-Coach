@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import ssl
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from datetime import date
 from pathlib import Path
 
@@ -20,6 +20,7 @@ from app.data.ecos._credential_transport import (
 )
 from app.data.ecos.errors import ECOSApplicationError
 from app.data.ecos.http_client import ECOSHttpClient, ECOSHttpError, _build_tls_context
+from app.data.ecos.models import StatisticItemMetadata
 from app.data.ecos.policy import build_keyless_service_path
 from app.data.ecos.series_registry import CANDIDATE_SERIES
 from app.data.ecos.settings import ECOSSettings
@@ -150,6 +151,58 @@ def test_statistic_search_uses_exact_item_code1_trailing_slash_raw_path() -> Non
     assert b"?" not in raw_path
     assert b"%3F" not in raw_path.upper()
     assert b"//" not in raw_path
+
+
+def test_statistic_item_list_forwards_registry_cycle_to_candidate_parser(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, str] = {}
+
+    def fake_parser(
+        payload: Mapping[str, object],
+        *,
+        expected_stat_code: str,
+        expected_item_code: str,
+        expected_cycle: str,
+    ) -> StatisticItemMetadata:
+        assert payload == {}
+        captured.update(
+            stat_code=expected_stat_code,
+            item_code=expected_item_code,
+            cycle=expected_cycle,
+        )
+        return StatisticItemMetadata(
+            stat_code=expected_stat_code,
+            item_code=expected_item_code,
+            name="합성 기준금리 항목",
+            cycle=expected_cycle,
+            unit="%",
+        )
+
+    monkeypatch.setattr(ecos_http_client, "parse_statistic_item_list", fake_parser)
+    client = ECOSHttpClient._for_tests(
+        ECOSSettings(_env_file=None, ECOS_MAX_ATTEMPTS_PER_REQUEST=1),
+        transport=httpx.MockTransport(
+            lambda _: httpx.Response(
+                200,
+                headers={"content-type": "application/json"},
+                json={},
+            )
+        ),
+        quota=_RecordingQuota([]),
+        credential=SecretStr("synthetic-key"),
+    )
+    try:
+        metadata = client.statistic_item_list(series=CANDIDATE_SERIES[0])
+    finally:
+        client.close()
+
+    assert captured == {
+        "stat_code": "722Y001",
+        "item_code": "0101000",
+        "cycle": "D",
+    }
+    assert metadata.cycle == "D"
 
 
 def test_send_time_path_credential_is_restored_on_request_and_response(

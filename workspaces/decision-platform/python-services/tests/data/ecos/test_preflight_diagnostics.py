@@ -51,6 +51,7 @@ def _item_payload() -> dict[str, object]:
             "row": [
                 {
                     "STAT_CODE": "722Y001",
+                    "GRP_CODE": "Group1",
                     "ITEM_CODE": "0101000",
                     "ITEM_NAME": "합성 기준금리 항목",
                     "CYCLE": "D",
@@ -269,6 +270,18 @@ def _duplicate_target_row(payload: dict[str, object]) -> dict[str, object]:
             ("candidate_match", "candidate_not_found", "item_code", "not_found"),
         ),
         (
+            lambda payload: _set_row(payload, "GRP_CODE", "Group2"),
+            ("candidate_match", "candidate_not_found", "item_code", "not_found"),
+        ),
+        (
+            lambda payload: _set_row(payload, "GRP_CODE", None),
+            ("candidate_scan", "candidate_invalid", "item_code", "null"),
+        ),
+        (
+            lambda payload: _set_row(payload, "GRP_CODE", " Group1"),
+            ("candidate_scan", "candidate_invalid", "item_code", "untrimmed"),
+        ),
+        (
             _duplicate_target_row,
             ("candidate_match", "candidate_duplicate", "item_code", "duplicate"),
         ),
@@ -284,6 +297,10 @@ def _duplicate_target_row(payload: dict[str, object]) -> dict[str, object]:
             lambda payload: _set_row(payload, "CYCLE", "M"),
             ("field_validation", "field_invalid", "cycle", "mismatch"),
         ),
+        (
+            lambda payload: _set_row(payload, "CYCLE", " D"),
+            ("candidate_scan", "candidate_invalid", "cycle", "untrimmed"),
+        ),
     ],
 )
 def test_item_metadata_leaf_failures_are_diagnostic_and_value_free(
@@ -297,6 +314,7 @@ def test_item_metadata_leaf_failures_are_diagnostic_and_value_free(
             payload,
             expected_stat_code="722Y001",
             expected_item_code="0101000",
+            expected_cycle="D",
         )
 
     diagnostic = _diagnostic(exc_info.value)
@@ -314,6 +332,29 @@ def test_item_metadata_leaf_failures_are_diagnostic_and_value_free(
     assert "9999999" not in repr(diagnostic)
 
 
+def test_full_identity_duplicate_fails_closed_without_leaking_metadata_values() -> None:
+    payload = _duplicate_target_row(_item_payload())
+    envelope = cast(dict[str, object], payload["StatisticItemList"])
+    rows = cast(list[dict[str, object]], envelope["row"])
+    rows[0]["ITEM_NAME"] = "synthetic-secret-first"
+    rows[1]["UNIT_NAME"] = "synthetic-secret-second"
+
+    with pytest.raises(ECOSParseError) as exc_info:
+        parse_statistic_item_list(
+            payload,
+            expected_stat_code="722Y001",
+            expected_item_code="0101000",
+            expected_cycle="D",
+        )
+
+    diagnostic = _diagnostic(exc_info.value)
+    assert diagnostic["failureReason"] == "candidate_duplicate"
+    assert diagnostic["candidateMatchCount"] == 2
+    rendered = f"{exc_info.value!r} {diagnostic!r}"
+    assert "synthetic-secret-first" not in rendered
+    assert "synthetic-secret-second" not in rendered
+
+
 class _BoundaryClient:
     def __init__(self, *, fail_ordinal: int | None = None, identity_mismatch: bool = False) -> None:
         self.fail_ordinal = fail_ordinal
@@ -329,6 +370,7 @@ class _BoundaryClient:
                 {},
                 expected_stat_code="722Y001",
                 expected_item_code="0101000",
+                expected_cycle="D",
             )
         raise exc_info.value
 

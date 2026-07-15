@@ -28,7 +28,7 @@ class _SanitizedArgumentParser(argparse.ArgumentParser):
 
 
 def _load_series_registry() -> tuple[ECOSSeries, ...]:
-    """source-controlled ECOS registry를 반환하며 candidate는 activation 전까지 provisional이다."""
+    """A4 metadata 의미 승인을 반영한 source-controlled ECOS registry를 반환한다."""
     return CANDIDATE_SERIES
 
 

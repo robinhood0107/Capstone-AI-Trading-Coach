@@ -1,0 +1,38 @@
+{
+  "OutBlock_1": [
+    {
+      "BAS_DD": "20260715",
+      "ISU_CD": "800001",
+      "ISU_NM": "합성코스닥일호",
+      "MKT_NM": "KOSDAQ",
+      "SECT_TP_NM": "합성보통주",
+      "TDD_CLSPRC": "9345",
+      "CMPPREVDD_PRC": "95",
+      "FLUC_RT": "1.03",
+      "TDD_OPNPRC": "9200",
+      "TDD_HGPRC": "9400",
+      "TDD_LWPRC": "9100",
+      "ACC_TRDVOL": "60001",
+      "ACC_TRDVAL": "765432109",
+      "MKTCAP": "6543210000",
+      "LIST_SHRS": "510000"
+    },
+    {
+      "BAS_DD": "20260715",
+      "ISU_CD": "800002",
+      "ISU_NM": "합성코스닥이호",
+      "MKT_NM": "KOSDAQ",
+      "SECT_TP_NM": "합성보통주",
+      "TDD_CLSPRC": "8345",
+      "CMPPREVDD_PRC": "85",
+      "FLUC_RT": "1.04",
+      "TDD_OPNPRC": "8200",
+      "TDD_HGPRC": "8400",
+      "TDD_LWPRC": "8100",
+      "ACC_TRDVOL": "50001",
+      "ACC_TRDVAL": "654321098",
+      "MKTCAP": "5432100000",
+      "LIST_SHRS": "410000"
+    }
+  ]
+}

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import stat
 from dataclasses import dataclass, field, replace
 from datetime import date
@@ -542,6 +543,70 @@ def test_report_path_must_remain_inside_data_dir(
     assert "output_path_invalid" in rendered
     assert "physical_attempts=0" in rendered
     assert str(outside_report) not in rendered
+
+
+def test_report_path_cannot_equal_manifest_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    state = _ClientState()
+    _install_client(monkeypatch, state)
+    monkeypatch.setattr(
+        universe_refresh_cli,
+        "resolve_latest_available_date",
+        lambda _: _AS_OF,
+    )
+    data_dir = tmp_path / "data" / "kis"
+    manifest_path = data_dir / "universe_manifest.json"
+
+    exit_code = main(
+        _args(
+            data_dir,
+            "--as-of",
+            _AS_OF.isoformat(),
+            "--report-path",
+            str(manifest_path),
+        )
+    )
+
+    rendered = capsys.readouterr().err
+    assert exit_code == 1
+    assert state.created == 0
+    assert not manifest_path.exists()
+    assert "output_path_invalid" in rendered
+    assert "physical_attempts=0" in rendered
+    assert str(manifest_path) not in rendered
+
+
+def test_existing_manifest_and_report_hardlink_alias_is_rejected(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    state = _ClientState()
+    _install_client(monkeypatch, state)
+    monkeypatch.setattr(
+        universe_refresh_cli,
+        "resolve_latest_available_date",
+        lambda _: _AS_OF,
+    )
+    data_dir = tmp_path / "data" / "kis"
+    report_path = data_dir / "reports" / "universe_refresh.md"
+    report_path.parent.mkdir(parents=True)
+    manifest_path = data_dir / "universe_manifest.json"
+    manifest_path.write_text("sentinel\n", encoding="utf-8")
+    os.link(manifest_path, report_path)
+
+    exit_code = main(_args(data_dir, "--as-of", _AS_OF.isoformat()))
+
+    rendered = capsys.readouterr().err
+    assert exit_code == 1
+    assert state.created == 0
+    assert manifest_path.read_text(encoding="utf-8") == "sentinel\n"
+    assert report_path.read_text(encoding="utf-8") == "sentinel\n"
+    assert "output_path_invalid" in rendered
+    assert "physical_attempts=0" in rendered
 
 
 def test_atomic_report_failure_removes_temporary_file_and_publishes_nothing(

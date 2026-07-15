@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime
+from inspect import signature
 from pathlib import Path
 from typing import cast
 
@@ -105,18 +106,14 @@ def test_latest_available_date_rejects_naive_now() -> None:
         resolve_latest_available_date(datetime(2026, 7, 15, 8, 10))
 
 
-def test_online_refresh_builds_manifest_v1_and_exact_top30_with_canonical_rows_hash(
-    tmp_path: Path,
-) -> None:
+def test_online_refresh_builds_manifest_v1_and_exact_top30_with_canonical_rows_hash() -> None:
     rows = _valid_rows(31)
     fake = _FakeClient(rows=tuple(reversed(rows)))
-    manifest_path = tmp_path / "data" / "kis" / "universe_manifest.json"
 
     manifest = refresh_universe_from_krx_openapi(
         _as_client(fake),
         as_of=_AS_OF,
         limit=30,
-        manifest_path=manifest_path,
         generated_at=_GENERATED_AT,
     )
 
@@ -130,7 +127,10 @@ def test_online_refresh_builds_manifest_v1_and_exact_top30_with_canonical_rows_h
     assert len(manifest.symbols) == 30
     assert [item.rank for item in manifest.symbols] == list(range(1, 31))
     assert [item.symbol for item in manifest.symbols] == [f"{index:06d}" for index in range(1, 31)]
-    assert manifest_path.exists()
+
+
+def test_online_refresh_api_exposes_no_direct_publish_parameter() -> None:
+    assert "manifest_path" not in signature(refresh_universe_from_krx_openapi).parameters
 
 
 def test_online_ranking_uses_market_cap_then_trading_value_then_symbol() -> None:
@@ -174,20 +174,13 @@ def test_provider_row_order_does_not_change_manifest_or_source_hash() -> None:
     assert first.source_sha256 == second.source_sha256
 
 
-def test_online_refresh_rejects_29_candidates_instead_of_publishing_short_universe(
-    tmp_path: Path,
-) -> None:
-    manifest_path = tmp_path / "universe_manifest.json"
-
+def test_online_refresh_rejects_29_candidates_instead_of_publishing_short_universe() -> None:
     with pytest.raises(ValueError, match="30|candidate"):
         refresh_universe_from_krx_openapi(
             _as_client(_FakeClient(rows=_valid_rows(29))),
             as_of=_AS_OF,
-            manifest_path=manifest_path,
             generated_at=_GENERATED_AT,
         )
-
-    assert not manifest_path.exists()
 
 
 @pytest.mark.parametrize(
@@ -210,24 +203,19 @@ def test_online_refresh_rejects_29_candidates_instead_of_publishing_short_univer
     ],
 )
 def test_online_refresh_rejects_ambiguous_or_invalid_candidate_set(
-    tmp_path: Path,
     target_index: int,
     mutate: Callable[[list[KrxDailyRow]], KrxDailyRow],
     expected: str,
 ) -> None:
     rows = list(_valid_rows(31))
     rows[target_index] = mutate(rows)
-    manifest_path = tmp_path / "universe_manifest.json"
 
     with pytest.raises(ValueError, match=expected):
         refresh_universe_from_krx_openapi(
             _as_client(_FakeClient(rows=tuple(rows))),
             as_of=_AS_OF,
-            manifest_path=manifest_path,
             generated_at=_GENERATED_AT,
         )
-
-    assert not manifest_path.exists()
 
 
 def test_zero_value_rows_are_excluded_without_blocking_thirty_liquid_candidates() -> None:
@@ -286,7 +274,6 @@ def test_failure_on_either_endpoint_preserves_existing_manifest_bytes(
         refresh_universe_from_krx_openapi(
             _as_client(fake),
             as_of=_AS_OF,
-            manifest_path=manifest_path,
             generated_at=_GENERATED_AT,
         )
 

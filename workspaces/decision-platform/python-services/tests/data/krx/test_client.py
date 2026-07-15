@@ -7,7 +7,8 @@ import httpx
 import pytest
 from pydantic import SecretStr
 
-from app.data.krx import _credential_transport
+from app.data.krx import _credential_transport, client as client_module
+from app.data.krx._credential_transport import KrxCredentialError
 from app.data.krx.catalog import KOSDAQ_DAILY, KOSPI_DAILY
 from app.data.krx.client import KrxOpenApiClient
 from app.data.krx.settings import KrxOpenApiSettings
@@ -100,6 +101,47 @@ def test_production_constructor_rejects_private_dependency_overrides() -> None:
         KrxOpenApiClient(settings, transport=transport)
     with pytest.raises(ValueError, match="private|override"):
         KrxOpenApiClient(settings, quota=quota)
+
+
+def test_constructor_cleanup_failure_is_sanitized_and_still_closes_redis(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    primary_marker = "synthetic-initialize-secret-/private/provider"
+    close_marker = "synthetic-transport-close-secret-/private/provider"
+
+    class FailingTransport:
+        closed = 0
+
+        def close(self) -> None:
+            self.closed += 1
+            raise RuntimeError(close_marker)
+
+    class RecordingRedis:
+        closed = 0
+
+        def close(self) -> None:
+            self.closed += 1
+
+    transport = FailingTransport()
+    redis_client = RecordingRedis()
+    monkeypatch.setattr(client_module, "_build_tls_context", lambda: object())
+    monkeypatch.setattr(client_module, "_build_redis_client", lambda: redis_client)
+    monkeypatch.setattr(client_module.httpx, "HTTPTransport", lambda **_: transport)
+    monkeypatch.setattr(
+        KrxOpenApiClient,
+        "_initialize",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError(primary_marker)),
+    )
+
+    with pytest.raises(KrxCredentialError, match="initialization_unavailable") as exc_info:
+        KrxOpenApiClient(KrxOpenApiSettings(_env_file=None))
+
+    rendered = f"{exc_info.value!r} {exc_info.value}"
+    assert primary_marker not in rendered
+    assert close_marker not in rendered
+    assert transport.closed == 1
+    assert redis_client.closed == 1
+    assert exc_info.value.__cause__ is None
 
 
 def test_fetch_universe_rows_calls_kospi_then_kosdaq_once_each(
@@ -362,3 +404,39 @@ def test_close_is_idempotent(monkeypatch: pytest.MonkeyPatch) -> None:
 
     client.close()
     client.close()
+
+
+def test_close_failure_is_stable_and_attempts_all_resource_cleanup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    marker = "synthetic-client-close-secret-/private/provider"
+
+    class FailingHttp:
+        closed = 0
+
+        def close(self) -> None:
+            self.closed += 1
+            raise RuntimeError(marker)
+
+    class RecordingRedis:
+        closed = 0
+
+        def close(self) -> None:
+            self.closed += 1
+
+    client, _ = _client(
+        monkeypatch,
+        httpx.MockTransport(lambda _: httpx.Response(200, json={"OutBlock_1": []})),
+    )
+    http_client = FailingHttp()
+    redis_client = RecordingRedis()
+    client._http = http_client  # type: ignore[assignment]  # noqa: SLF001
+    client._redis_client = redis_client  # noqa: SLF001
+
+    with pytest.raises(KrxCredentialError, match="cleanup_unavailable") as exc_info:
+        client.close()
+
+    assert marker not in str(exc_info.value)
+    assert http_client.closed == 1
+    assert redis_client.closed == 1
+    assert exc_info.value.__cause__ is None

@@ -34,6 +34,7 @@ class _ClientState:
         default_factory=lambda: tuple(_row(index) for index in range(1, 32))
     )
     error: Exception | None = None
+    close_error: Exception | None = None
     created: int = 0
     closed: int = 0
     requested_dates: list[date] = field(default_factory=list)
@@ -52,6 +53,8 @@ class _FakeClient:
 
     def close(self) -> None:
         self._state.closed += 1
+        if self._state.close_error is not None:
+            raise self._state.close_error
 
     def __enter__(self) -> Self:
         return self
@@ -119,6 +122,7 @@ def test_optional_as_of_uses_latest_available_open_api_date(
 def test_explicit_available_date_writes_private_manifest_and_report(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     state = _ClientState()
     _install_client(monkeypatch, state)
@@ -147,8 +151,15 @@ def test_explicit_available_date_writes_private_manifest_and_report(
     assert report_path.exists()
     assert stat.S_IMODE(manifest_path.stat().st_mode) == 0o600
     assert stat.S_IMODE(report_path.stat().st_mode) == 0o600
+    assert stat.S_IMODE(data_dir.stat().st_mode) == 0o700
+    assert stat.S_IMODE(report_path.parent.stat().st_mode) == 0o700
     assert "AUTH_KEY" not in manifest_path.read_text(encoding="utf-8")
     assert "AUTH_KEY" not in report_path.read_text(encoding="utf-8")
+    output = capsys.readouterr().out
+    assert output.strip() == (
+        "source=krx operation=universe_refresh code=complete physical_attempts=2"
+    )
+    assert str(tmp_path) not in output
 
 
 def test_provider_name_cannot_inject_markdown_table_or_remote_image(
@@ -183,6 +194,9 @@ def test_provider_name_cannot_inject_markdown_table_or_remote_image(
     [
         ("2026-07-15", "available"),
         ("2026-07-12", "session"),
+        ("2009-12-30", "range"),
+        ("1900-01-02", "range"),
+        ("9999-01-01", "available"),
         ("not-a-date", "date"),
     ],
 )
@@ -242,6 +256,64 @@ def test_provider_failure_has_no_csv_fallback_or_partial_publish(
     assert marker not in rendered
     assert "AUTH_KEY" not in rendered
     assert "data-dbg.krx.co.kr" not in rendered
+    assert "physical_attempts=2" in rendered
+
+
+def test_calendar_failure_is_sanitized_before_client_creation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    marker = "synthetic-calendar-path-/private/provider"
+    state = _ClientState()
+    _install_client(monkeypatch, state)
+    monkeypatch.setattr(
+        universe_refresh_cli,
+        "resolve_latest_available_date",
+        lambda _: _AS_OF,
+    )
+    monkeypatch.setattr(
+        universe_refresh_cli,
+        "is_xkrx_trading_day",
+        lambda _: (_ for _ in ()).throw(RuntimeError(marker)),
+    )
+
+    exit_code = main(_args(tmp_path / "data" / "kis", "--as-of", "2026-07-13"))
+
+    rendered = capsys.readouterr().err
+    assert exit_code == 2
+    assert state.created == 0
+    assert "calendar_unavailable" in rendered
+    assert marker not in rendered
+
+
+def test_client_close_failure_is_sanitized_and_prevents_publication(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    marker = "synthetic-close-secret https://data-dbg.krx.co.kr/private"
+    state = _ClientState(close_error=RuntimeError(marker))
+    _install_client(monkeypatch, state)
+    monkeypatch.setattr(
+        universe_refresh_cli,
+        "resolve_latest_available_date",
+        lambda _: _AS_OF,
+    )
+    data_dir = tmp_path / "data" / "kis"
+
+    exit_code = main(_args(data_dir, "--as-of", _AS_OF.isoformat()))
+
+    captured = capsys.readouterr()
+    rendered = f"{captured.out}\n{captured.err}"
+    assert exit_code == 1
+    assert state.closed >= 1
+    assert not (data_dir / "universe_manifest.json").exists()
+    assert not (data_dir / "reports" / "universe_refresh.md").exists()
+    assert "collection_failed" in rendered
+    assert "physical_attempts=2" in rendered
+    assert marker not in rendered
+    assert str(tmp_path) not in rendered
 
 
 def test_unknown_csv_fallback_argument_is_rejected_by_online_cli(
@@ -290,3 +362,89 @@ def test_symlink_manifest_target_is_rejected_without_overwrite(
     assert not (data_dir / "reports" / "universe_refresh.md").exists()
     error_text = capsys.readouterr().err.lower()
     assert any(fragment in error_text for fragment in ("symlink", "output", "path"))
+    assert "physical_attempts=0" in error_text
+
+
+def test_symlink_report_target_is_rejected_before_client_creation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    state = _ClientState()
+    _install_client(monkeypatch, state)
+    monkeypatch.setattr(
+        universe_refresh_cli,
+        "resolve_latest_available_date",
+        lambda _: _AS_OF,
+    )
+    data_dir = tmp_path / "data" / "kis"
+    reports = data_dir / "reports"
+    reports.mkdir(parents=True)
+    outside = tmp_path / "must-not-change.md"
+    outside.write_text("sentinel\n", encoding="utf-8")
+    report_path = reports / "universe_refresh.md"
+    report_path.symlink_to(outside)
+
+    exit_code = main(_args(data_dir, "--as-of", _AS_OF.isoformat()))
+
+    rendered = capsys.readouterr().err
+    assert exit_code == 1
+    assert state.created == 0
+    assert outside.read_text(encoding="utf-8") == "sentinel\n"
+    assert report_path.is_symlink()
+    assert not (data_dir / "universe_manifest.json").exists()
+    assert "physical_attempts=0" in rendered
+
+
+def test_parent_traversal_is_rejected_before_client_creation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    state = _ClientState()
+    _install_client(monkeypatch, state)
+    monkeypatch.setattr(
+        universe_refresh_cli,
+        "resolve_latest_available_date",
+        lambda _: _AS_OF,
+    )
+    unsafe_dir = Path(f"{tmp_path}/safe/../escape")
+
+    exit_code = main(_args(unsafe_dir, "--as-of", _AS_OF.isoformat()))
+
+    rendered = capsys.readouterr().err
+    assert exit_code == 1
+    assert state.created == 0
+    assert not (tmp_path / "escape" / "universe_manifest.json").exists()
+    assert "output_path_invalid" in rendered
+    assert "physical_attempts=0" in rendered
+
+
+def test_atomic_report_failure_removes_temporary_file_and_publishes_nothing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    state = _ClientState()
+    _install_client(monkeypatch, state)
+    monkeypatch.setattr(
+        universe_refresh_cli,
+        "resolve_latest_available_date",
+        lambda _: _AS_OF,
+    )
+    monkeypatch.setattr(
+        "app.data.kis.universe.os.replace",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("synthetic write failure")),
+    )
+    data_dir = tmp_path / "data" / "kis"
+
+    exit_code = main(_args(data_dir, "--as-of", _AS_OF.isoformat()))
+
+    rendered = capsys.readouterr().err
+    assert exit_code == 1
+    assert state.closed == 1
+    assert not (data_dir / "universe_manifest.json").exists()
+    assert not (data_dir / "reports" / "universe_refresh.md").exists()
+    assert list(data_dir.rglob("*.tmp")) == []
+    assert "output_path_invalid" in rendered
+    assert "physical_attempts=2" in rendered

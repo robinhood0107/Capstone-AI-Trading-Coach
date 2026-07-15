@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from typing import NoReturn
 
 from app.data._shared.redis_quota import QuotaUnavailableError
-from app.data.ecos.errors import ECOSApplicationError, ECOSParseError
+from app.data.ecos.errors import ECOSApplicationError, ECOSDiagnostic, ECOSError, ECOSParseError
 from app.data.ecos.http_client import ECOSHttpClient, ECOSHttpError
 from app.data.ecos.registry_preflight import RegistryInspectionResult, inspect_registry_metadata
 from app.data.ecos.series_registry import CANDIDATE_SERIES
@@ -15,7 +15,6 @@ from app.data.ecos.settings import ECOSSettings
 _EXPECTED_PHYSICAL_ATTEMPTS = 4
 _DEFAULT_FAILURE_CODE = "preflight_failed"
 _SAFE_APPLICATION_FAILURE_CODES = frozenset({"ERROR-500", "ERROR-600", "ERROR-601", "ERROR-602"})
-_INVALID_ARGUMENTS_LINE = "source=ecos operation=registry_preflight code=invalid_arguments"
 
 
 class _CliArgumentError(ValueError):
@@ -38,7 +37,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         arguments = _argument_parser().parse_args(argv)
     except _CliArgumentError:
-        print(_INVALID_ARGUMENTS_LINE)
+        print(_render_argument_failure())
         return 2
     except SystemExit as error:
         return int(error.code or 0)
@@ -49,6 +48,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     result: RegistryInspectionResult | None = None
     attempt_count = 0
     failure_code = _DEFAULT_FAILURE_CODE
+    failure_error: Exception | None = None
     failed = False
     try:
         client = _build_client()
@@ -62,6 +62,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     except Exception as error:
         attempt_count = _physical_attempt_count(client)
         failure_code = _failure_code(error)
+        failure_error = error
         failed = True
     finally:
         try:
@@ -69,10 +70,18 @@ def main(argv: Sequence[str] | None = None) -> int:
             if callable(close):
                 close()
         except Exception:
+            if failure_error is None:
+                failure_error = RuntimeError("preflight cleanup failed")
             failed = True
 
     if failed or result is None:
-        print(_render_failure(failure_code, physical_attempt_count=attempt_count))
+        print(
+            _render_failure(
+                failure_code,
+                physical_attempt_count=attempt_count,
+                diagnostic=_diagnostic_payload(failure_error),
+            )
+        )
         return 1
     print(_render_result(result, physical_attempt_count=attempt_count))
     return 0
@@ -104,8 +113,9 @@ def _render_result(
             for entry in result.entries
         ],
         "source": "ecos",
+        "status": "succeeded",
     }
-    return json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+    return _canonical_payload_bytes(payload).decode("utf-8")
 
 
 def _failure_code(error: Exception) -> str:
@@ -136,11 +146,54 @@ def _physical_attempt_count(client: object | None) -> int:
     return value
 
 
-def _render_failure(code: str, *, physical_attempt_count: int) -> str:
-    return (
-        f"source=ecos operation=registry_preflight code={code} "
-        f"physicalAttemptCount={physical_attempt_count}"
-    )
+def _render_failure(
+    code: str,
+    *,
+    physical_attempt_count: int,
+    diagnostic: dict[str, object] | None = None,
+) -> str:
+    payload: dict[str, object] = {
+        "code": code,
+        "operation": "registry_preflight",
+        "physicalAttemptCount": physical_attempt_count,
+        "source": "ecos",
+        "status": "failed",
+    }
+    if diagnostic is not None:
+        payload["diagnostic"] = diagnostic
+    return _canonical_payload_bytes(payload).decode("utf-8")
+
+
+def _render_argument_failure() -> str:
+    return _canonical_payload_bytes(
+        {
+            "code": "invalid_arguments",
+            "operation": "registry_preflight",
+            "source": "ecos",
+            "status": "failed",
+        }
+    ).decode("utf-8")
+
+
+def _diagnostic_payload(error: Exception | None) -> dict[str, object] | None:
+    """기존 ECOS 오류에 붙은 allowlist diagnostic만 CLI JSON으로 전달한다."""
+    if not isinstance(error, ECOSError):
+        return None
+    diagnostic = error.diagnostic
+    if not isinstance(diagnostic, ECOSDiagnostic):
+        return None
+    return diagnostic.to_payload()
+
+
+def _canonical_payload_bytes(payload: object) -> bytes:
+    """operator preflight/evidence용 JSON을 terminal newline 없는 canonical UTF-8 bytes로 만든다."""
+    return json.dumps(
+        payload,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+        allow_nan=False,
+    ).encode("utf-8")
 
 
 def _argument_parser() -> argparse.ArgumentParser:

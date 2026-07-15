@@ -18,11 +18,12 @@ from app.data._shared.bounded_json import (
 )
 from app.data.ecos._credential_transport import (
     _ECOS_DEADLINE_EXTENSION,
+    _ECOS_SAFE_RESPONSE_EXTENSION,
     ECOSCredentialError,
     _CredentialTransport,
     _canonical_client_headers,
 )
-from app.data.ecos.errors import ECOSApplicationError, ECOSError
+from app.data.ecos.errors import ECOSApplicationError, ECOSDiagnostic, ECOSError
 from app.data.ecos.models import (
     StatisticItemMetadata,
     StatisticSearchPage,
@@ -60,10 +61,16 @@ class _Quota(Protocol):
 class ECOSHttpError(ECOSError):
     """provider URL·message·raw response를 제외한 stable HTTP 경계 오류다."""
 
-    def __init__(self, code: str, *, status_code: int | None = None) -> None:
+    def __init__(
+        self,
+        code: str,
+        *,
+        status_code: int | None = None,
+        diagnostic: ECOSDiagnostic | None = None,
+    ) -> None:
         self.code = code
         self.status_code = status_code
-        super().__init__(code)
+        super().__init__(code, diagnostic=diagnostic)
 
 
 def _build_tls_context() -> ssl.SSLContext:
@@ -325,10 +332,18 @@ class ECOSHttpClient:
         while True:
             failure: Exception | None = None
             try:
-                payload = self._send_once(path, deadline=deadline)
-                # metadata와 generic JSON 경로도 provider application 오류를 parser 전에 통일한다.
-                raise_for_ecos_application_error(payload)
-                result = parser(payload)
+                payload, safe_response = self._send_once(path, deadline=deadline)
+                try:
+                    # metadata와 generic JSON 경로도 provider application 오류를 parser 전에 통일한다.
+                    raise_for_ecos_application_error(payload)
+                    result = parser(payload)
+                except ECOSError as error:
+                    error.enrich_safe_response(
+                        http_status=safe_response[0],
+                        content_type_class=safe_response[1],
+                        response_bytes=safe_response[2],
+                    )
+                    raise
                 if self._monotonic() >= deadline:
                     raise ECOSHttpError("logical_deadline_exceeded")
                 return result
@@ -352,6 +367,15 @@ class ECOSHttpClient:
                 if error.code == "logical_deadline_exceeded":
                     failure = ECOSHttpError("logical_deadline_exceeded")
                     retryable = False
+                elif error.code == "response_too_large":
+                    failure = ECOSHttpError(
+                        "response_invalid",
+                        diagnostic=ECOSDiagnostic(
+                            failure_stage="response_body",
+                            failure_reason="body_too_large",
+                        ),
+                    )
+                    retryable = False
                 else:
                     failure = error
                     retryable = error.retryable
@@ -371,7 +395,12 @@ class ECOSHttpClient:
                 raise ECOSHttpError("logical_deadline_exceeded") from None
             attempt += 1
 
-    def _send_once(self, path: str, *, deadline: float) -> Mapping[str, object]:
+    def _send_once(
+        self,
+        path: str,
+        *,
+        deadline: float,
+    ) -> tuple[Mapping[str, object], tuple[int | None, str | None, int | None]]:
         remaining = deadline - self._monotonic()
         if remaining <= 0:
             raise ECOSHttpError("logical_deadline_exceeded")
@@ -400,15 +429,85 @@ class ECOSHttpClient:
             raise ECOSHttpError(f"http_{status}", status_code=status) from None
         try:
             payload = parse_bounded_json_response(response, limits=self._limits)
-        except BoundedJsonError:
-            raise ECOSHttpError("response_invalid", status_code=status) from None
+        except BoundedJsonError as error:
+            raise ECOSHttpError(
+                "response_invalid",
+                status_code=status,
+                diagnostic=_bounded_json_diagnostic(error, response=response),
+            ) from None
+        safe_response = _safe_response_fields(response)
         if not isinstance(payload, dict):
-            raise ECOSHttpError("response_invalid", status_code=status)
-        return cast(dict[str, object], payload)
+            raise ECOSHttpError(
+                "response_invalid",
+                status_code=status,
+                diagnostic=ECOSDiagnostic(
+                    failure_stage="metadata_envelope",
+                    failure_reason="metadata_envelope_invalid",
+                    http_status=safe_response[0],
+                    content_type_class=safe_response[1],
+                    response_bytes=safe_response[2],
+                ),
+            )
+        return cast(dict[str, object], payload), safe_response
 
 
 def _identity_payload(payload: Mapping[str, object]) -> dict[str, object]:
     return dict(payload)
+
+
+def _bounded_json_diagnostic(
+    error: BoundedJsonError,
+    *,
+    response: httpx.Response,
+) -> ECOSDiagnostic:
+    """bounded JSON stable code와 transport의 allowlist scalar만 ECOS 진단으로 변환한다."""
+    http_status, content_type_class, response_bytes = _safe_response_fields(response)
+    reason = error.code
+    if reason.startswith("content_type_") and content_type_class is not None:
+        reason = {
+            "missing": "content_type_missing",
+            "multiple": "content_type_multiple",
+            "other": "content_type_unsupported",
+        }.get(content_type_class, reason)
+    stage = {
+        "content_type_missing": "response_headers",
+        "content_type_multiple": "response_headers",
+        "content_type_unsupported": "response_headers",
+        "response_headers_invalid": "response_headers",
+        "body_empty": "response_body",
+        "body_too_large": "response_body",
+        "response_body_unavailable": "response_body",
+        "json_decode_failed": "json_decode",
+        "json_limits_exceeded": "json_limits",
+    }.get(reason, "response_body")
+    return ECOSDiagnostic(
+        failure_stage=stage,
+        failure_reason=reason,
+        http_status=http_status,
+        content_type_class=content_type_class,
+        response_bytes=response_bytes,
+    )
+
+
+def _safe_response_fields(
+    response: httpx.Response,
+) -> tuple[int | None, str | None, int | None]:
+    """private transport가 만든 allowlist extension을 타입 검증된 scalar tuple로 제한한다."""
+    safe = response.extensions.get(_ECOS_SAFE_RESPONSE_EXTENSION)
+    http_status: int | None = response.status_code
+    content_type_class: str | None = None
+    response_bytes: int | None = None
+    if isinstance(safe, Mapping):
+        safe_status = safe.get("httpStatus")
+        safe_content_type = safe.get("contentTypeClass")
+        safe_bytes = safe.get("responseBytes")
+        if isinstance(safe_status, int) and not isinstance(safe_status, bool):
+            http_status = safe_status
+        if isinstance(safe_content_type, str):
+            content_type_class = safe_content_type
+        if isinstance(safe_bytes, int) and not isinstance(safe_bytes, bool):
+            response_bytes = safe_bytes
+    return http_status, content_type_class, response_bytes
 
 
 def _close_response_without_details(response: httpx.Response) -> None:

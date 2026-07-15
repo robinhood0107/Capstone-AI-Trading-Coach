@@ -1,13 +1,15 @@
 from __future__ import annotations
 
+import json
 import ssl
+import time
 from collections.abc import Iterator
 
 import httpx
 import pytest
 from pydantic import SecretStr
 
-from app.data._shared.redis_quota import QuotaUnavailableError
+from app.data._shared.redis_quota import QuotaUnavailableError, QuotaWaitError
 from app.data.krx import _credential_transport
 from app.data.krx._credential_transport import (
     KrxCredentialError,
@@ -36,6 +38,17 @@ class _UnavailableQuota:
     def reserve(self, *, attempt_id: str) -> None:
         assert attempt_id
         raise QuotaUnavailableError("synthetic Redis failure")
+
+
+class _WaitingQuota:
+    def __init__(self, *, retry_after_ms: int) -> None:
+        self.retry_after_ms = retry_after_ms
+        self.reservations = 0
+
+    def reserve(self, *, attempt_id: str) -> None:
+        assert attempt_id
+        self.reservations += 1
+        raise QuotaWaitError(retry_after_ms=self.retry_after_ms, observed_count=1)
 
 
 class _DripStream(httpx.SyncByteStream):
@@ -320,6 +333,71 @@ def test_redis_failure_is_fail_closed_before_credential_or_outbound(
     assert transport.physical_attempt_count == 0
 
 
+def test_missing_credential_keeps_reserved_quota_without_physical_send(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    quota = _RecordingQuota()
+    outbound = 0
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal outbound
+        outbound += 1
+        return httpx.Response(200, json={"OutBlock_1": []})
+
+    monkeypatch.setattr(
+        _credential_transport,
+        "_read_credential",
+        lambda: (_ for _ in ()).throw(KrxCredentialError("authentication_unavailable")),
+    )
+    transport = _CredentialTransport(httpx.MockTransport(handler), quota=quota)
+
+    with pytest.raises(KrxCredentialError, match="authentication_unavailable") as exc_info:
+        transport.handle_request(_request())
+
+    assert len(quota.reservations) == 1
+    assert outbound == 0
+    assert transport.physical_attempt_count == 0
+    assert exc_info.value.__cause__ is None
+
+
+def test_quota_wait_beyond_deadline_does_not_sleep_read_credential_or_send(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    credential_reads = 0
+    outbound = 0
+    sleeps: list[float] = []
+
+    def read_credential() -> SecretStr:
+        nonlocal credential_reads
+        credential_reads += 1
+        return SecretStr("synthetic-krx-auth-key")
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal outbound
+        outbound += 1
+        return httpx.Response(200, json={"OutBlock_1": []})
+
+    monkeypatch.setattr(_credential_transport, "_read_credential", read_credential)
+    quota = _WaitingQuota(retry_after_ms=250)
+    transport = _CredentialTransport(
+        httpx.MockTransport(handler),
+        quota=quota,
+        quota_wait_sleep=sleeps.append,
+    )
+    request = _request()
+    request.extensions["s1.3.krx.logical_deadline"] = time.monotonic() + 0.01
+
+    with pytest.raises(KrxCredentialError, match="logical_deadline_exceeded") as exc_info:
+        transport.handle_request(request)
+
+    assert quota.reservations == 1
+    assert sleeps == []
+    assert credential_reads == 0
+    assert outbound == 0
+    assert transport.physical_attempt_count == 0
+    assert exc_info.value.__cause__ is None
+
+
 def test_oversized_stream_is_rejected_without_returning_partial_body(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -379,6 +457,56 @@ def test_literal_and_unicode_escaped_credential_echo_are_rejected(
     rendered = f"{exc_info.value!r} {exc_info.value}"
     assert marker not in rendered
     assert exc_info.value.__cause__ is None
+
+
+def test_official_shape_five_thousand_rows_pass_credential_scan(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    marker = "synthetic-krx-auth-key"
+    row = {
+        "BAS_DD": "20260715",
+        "ISU_CD": "005930",
+        "ISU_NM": "합성종목",
+        "MKT_NM": "KOSPI",
+        "SECT_TP_NM": "보통주",
+        "TDD_CLSPRC": "100",
+        "CMPPREVDD_PRC": "1",
+        "FLUC_RT": "1.00",
+        "TDD_OPNPRC": "99",
+        "TDD_HGPRC": "101",
+        "TDD_LWPRC": "98",
+        "ACC_TRDVOL": "1000",
+        "ACC_TRDVAL": "100000",
+        "MKTCAP": "1000000",
+        "LIST_SHRS": "10000",
+    }
+    body = json.dumps(
+        {"OutBlock_1": [row for _ in range(5_000)]},
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode()
+    assert len(body) < 4 * 1024 * 1024
+    monkeypatch.setattr(
+        _credential_transport,
+        "_read_credential",
+        lambda: SecretStr(marker),
+    )
+    transport = _CredentialTransport(
+        httpx.MockTransport(
+            lambda _: httpx.Response(
+                200,
+                headers={"content-type": "application/json"},
+                content=body,
+            )
+        ),
+        quota=_RecordingQuota(),
+    )
+
+    response = transport.handle_request(_request())
+
+    assert response.status_code == 200
+    assert len(response.content) == len(body)
+    assert transport.physical_attempt_count == 1
 
 
 def test_tls_context_rejects_ambient_ca_and_keylog_overrides(

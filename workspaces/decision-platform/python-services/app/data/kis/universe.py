@@ -7,6 +7,7 @@ import json
 import os
 import secrets
 import stat
+import string
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -249,9 +250,10 @@ def write_universe_markdown_report(path: Path, manifest: UniverseManifest) -> Pa
         "|---:|---|---|---|---:|---:|",
     ]
     for item in manifest.symbols:
+        safe_name = _escape_markdown_table_cell(item.name)
         lines.append(
             "| "
-            f"{item.rank} | {item.symbol} | {item.name} | {item.market} | "
+            f"{item.rank} | {item.symbol} | {safe_name} | {item.market} | "
             f"{item.market_cap} | {item.trading_value} |"
         )
     lines.extend(
@@ -271,6 +273,13 @@ def write_universe_markdown_report(path: Path, manifest: UniverseManifest) -> Pa
     )
     _secure_atomic_write(path, "\n".join(lines).encode("utf-8"))
     return path
+
+
+def _escape_markdown_table_cell(value: str) -> str:
+    """외부 종목명이 표 구조·링크·이미지 문법으로 해석되지 않도록 ASCII 구두점을 escape한다."""
+    return "".join(
+        f"\\{character}" if character in string.punctuation else character for character in value
+    )
 
 
 def validate_universe_output_path(path: Path) -> None:

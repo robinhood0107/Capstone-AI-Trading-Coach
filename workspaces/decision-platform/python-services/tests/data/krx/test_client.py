@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import json
+import logging
 from dataclasses import dataclass, field
 from datetime import date
 
+import httpcore
 import httpx
 import pytest
 from pydantic import SecretStr
@@ -101,6 +104,112 @@ def test_production_constructor_rejects_private_dependency_overrides() -> None:
         KrxOpenApiClient(settings, transport=transport)
     with pytest.raises(ValueError, match="private|override"):
         KrxOpenApiClient(settings, quota=quota)
+
+
+def test_production_dependency_logs_cannot_bypass_transport_scrubbing(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    marker = "synthetic-krx-auth-key"
+    provider_reason = "Synthetic-Provider-Reason"
+    provider_header_name = "X-Provider-Debug"
+    provider_header_value = "synthetic-provider-header-value"
+    first_body = json.dumps(
+        _payload(
+            _daily_row(
+                symbol="005930",
+                name="삼성전자",
+                market="KOSPI",
+                market_cap=500_000,
+                trading_value=900_000,
+            )
+        ),
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode()
+    responses = [
+        (
+            f"HTTP/1.1 200 {provider_reason}\r\n"
+            "Content-Type: application/json\r\n"
+            f"{provider_header_name}: {provider_header_value}\r\n"
+            f"Content-Length: {len(first_body)}\r\n"
+            "\r\n"
+        ).encode("ascii")
+        + first_body,
+        (
+            "HTTP/1.1 200 OK\r\n"
+            "Content-Type: application/json\r\n"
+            f"AUTH_KEY: {marker}\r\n"
+            "Content-Length: 2\r\n"
+            "\r\n"
+            "{}"
+        ).encode("ascii"),
+    ]
+    inner = httpx.HTTPTransport(retries=0)
+    inner._pool = httpcore.ConnectionPool(  # type: ignore[attr-defined]
+        network_backend=httpcore.MockBackend(responses),
+    )
+
+    class _ClosableRedis:
+        def close(self) -> None:
+            pass
+
+    quota = _RecordingQuota()
+    monkeypatch.setattr(
+        _credential_transport,
+        "_read_credential",
+        lambda: SecretStr(marker),
+    )
+    monkeypatch.setattr(client_module, "_build_redis_client", _ClosableRedis)
+    monkeypatch.setattr(client_module, "RedisQuotaReservation", lambda *_args, **_kwargs: quota)
+    monkeypatch.setattr(client_module.httpx, "HTTPTransport", lambda **_kwargs: inner)
+    logger_names = ("httpx", "httpcore.connection", "httpcore.http11")
+    loggers = tuple(logging.getLogger(name) for name in logger_names)
+    records: list[logging.LogRecord] = []
+
+    class _RecordingHandler(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            records.append(record)
+
+    handler = _RecordingHandler()
+    for logger in loggers:
+        caplog.set_level(logging.DEBUG, logger=logger.name)
+        monkeypatch.setattr(logger, "propagate", False)
+        logger.addHandler(handler)
+    try:
+        logging.getLogger("httpx").info("safe-httpx-before")
+        logging.getLogger("httpcore.http11").debug("safe-httpcore-before")
+        assert "safe-httpx-before" in (record.getMessage() for record in records)
+        assert "safe-httpcore-before" in (record.getMessage() for record in records)
+        records.clear()
+
+        client = KrxOpenApiClient(KrxOpenApiSettings(_env_file=None))
+        try:
+            with pytest.raises(KrxCredentialError, match="response_unavailable"):
+                client.fetch_universe_rows(_AS_OF)
+        finally:
+            client.close()
+
+        assert client.physical_attempt_count == 2
+        logging.getLogger("httpx").info("safe-httpx-after")
+        logging.getLogger("httpcore.http11").debug("safe-httpcore-after")
+        assert "safe-httpx-after" in (record.getMessage() for record in records)
+        assert "safe-httpcore-after" in (record.getMessage() for record in records)
+    finally:
+        for logger in loggers:
+            logger.removeHandler(handler)
+
+    rendered = "\n".join(record.getMessage() for record in records)
+    for forbidden in (
+        marker,
+        "AUTH_KEY",
+        "basDd",
+        _AS_OF.strftime("%Y%m%d"),
+        provider_reason,
+        provider_header_name,
+        provider_header_value,
+    ):
+        assert forbidden not in rendered
 
 
 def test_constructor_cleanup_failure_is_sanitized_and_still_closes_redis(

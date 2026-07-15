@@ -21,7 +21,9 @@ Naver 운영 snapshot과 1-query smoke는 별도 포맷이 아니다. 동일한 
 manifest `physicalAttemptCount`는 query당 최대 2회여야 한다.
 S1.3 계약은 아직 배포되지 않은 Draft 상태이므로 이 lower-only 정렬에서 `schemaVersion`을 올리지
 않는다. 코드·JSON Schema와 offline 회귀 검증은 반영 완료했으며 online 검증은 별도 승인 전까지
-미실행이다. Redis runtime gate는 통과했고 실제 ECOS/Naver provider 호출은 0회다.
+게이트한다. 이후 Approval A1/A2는 실패 evidence로 남았고 다음은 A3다. A3 전
+`RECOVERY0`는 provider를 호출하지 않고 안전 진단·URL·attempt 회계만 보강하며,
+기존 schemaVersion·public API·DB/Flyway·dependency·다른 workspace 계약을 바꾸지 않는다.
 
 ## 보안·운영 영향
 
@@ -52,8 +54,10 @@ and Naver News metadata snapshots without retaining provider raw responses.
   artifact bundle and must not be implicitly converted or mixed with it.
 - This S1.3 contract is still an undeployed Draft, so the lower-only alignment keeps
   `schemaVersion: 1`. Code, JSON Schema, and offline regression verification are complete; online
-  verification remains approval-gated and has not run. The Redis runtime gate passed, and no live
-  ECOS/Naver provider calls have run.
+  verification remains approval-gated. Later Approval A1 and A2 runs both failed and remain separate
+  evidence; the next run is A3. Pre-A3 `RECOVERY0` performs no provider calls and only hardens safe
+  diagnostics, canonical URLs, and attempt accounting. It does not change the existing schema
+  version, public API, DB/Flyway, dependencies, or another workspace contract.
 - Credentials, provider request URLs containing credentials or queries, authentication material,
   provider raw payloads, and local absolute paths are forbidden. Normalized article metadata URLs and
   fixed provenance URLs remain allowed by the canonical contract. The manifest is the commit marker.

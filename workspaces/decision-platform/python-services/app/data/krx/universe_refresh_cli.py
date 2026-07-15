@@ -15,8 +15,10 @@ from app.data.kis.universe import (
     write_universe_manifest,
     write_universe_markdown_report,
 )
-from app.data.krx.client import KrxOpenApiClient
+from app.data.krx._credential_transport import KrxCredentialError
+from app.data.krx.client import KrxHttpError, KrxOpenApiClient
 from app.data.krx.catalog import KRX_OPEN_API_FIRST_AVAILABLE_DATE
+from app.data.krx.errors import KrxParseError
 from app.data.krx.settings import KrxOpenApiSettings
 from app.data.krx.universe import (
     refresh_universe_from_krx_openapi,
@@ -90,12 +92,13 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 1
-    except Exception:
+    except Exception as error:
         if client is not None:
             physical_attempts = _safe_physical_attempt_count(client)
+        diagnostic_code = _safe_collection_failure_code(error)
         print(
             "source=krx operation=universe_refresh "
-            f"code=collection_failed physical_attempts={physical_attempts}",
+            f"code={diagnostic_code} physical_attempts={physical_attempts}",
             file=sys.stderr,
         )
         return 1
@@ -145,6 +148,33 @@ def _safe_physical_attempt_count(client: KrxOpenApiClient) -> int | str:
     if type(value) is not int or value < 0:
         return "unknown"
     return value
+
+
+def _safe_collection_failure_code(error: Exception) -> str:
+    """이미 정규화된 오류만 allowlist로 공개하고 provider 원문과 cause는 버린다."""
+    if isinstance(error, KrxHttpError):
+        if error.code == "http_status":
+            if error.status_code in {401, 403}:
+                return "authentication_failed"
+            if error.status_code == 429:
+                return "rate_limited"
+            return "http_status"
+        if error.code == "redirect_rejected":
+            return "redirect_rejected"
+        if error.code == "parse_invalid_response":
+            return "invalid_response"
+        return "collection_failed"
+    if isinstance(error, KrxParseError):
+        return "invalid_response"
+    if isinstance(error, KrxCredentialError) and error.code in {
+        "authentication_unavailable",
+        "logical_deadline_exceeded",
+        "response_too_large",
+        "response_unavailable",
+        "transport_unavailable",
+    }:
+        return error.code
+    return "collection_failed"
 
 
 def _validate_output_scope(

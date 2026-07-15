@@ -10,36 +10,75 @@ from app.data.ecos.series_registry import (
     verified_series,
 )
 
+_APPROVED_AT = datetime(2026, 7, 15, 6, 2, 19, 299552, tzinfo=UTC)
 
-def test_candidate_registry_is_provisional_and_bounded() -> None:
-    assert [(entry.stat_code, entry.item_code1, entry.cycle) for entry in CANDIDATE_SERIES] == [
-        ("722Y001", "0101000", "D"),
-        ("731Y001", "0000001", "D"),
+
+def test_source_controlled_registry_matches_semantically_approved_metadata() -> None:
+    assert [
+        (
+            entry.series_id,
+            entry.stat_code,
+            entry.item_code1,
+            entry.cycle,
+            entry.name,
+            entry.unit,
+            entry.registry_verified_at,
+            entry.verified,
+        )
+        for entry in CANDIDATE_SERIES
+    ] == [
+        (
+            "policy-rate",
+            "722Y001",
+            "0101000",
+            "D",
+            "한국은행 기준금리",
+            "연%",
+            _APPROVED_AT,
+            True,
+        ),
+        (
+            "krw-usd-rate",
+            "731Y001",
+            "0000001",
+            "D",
+            "원/미국달러(매매기준율)",
+            "원",
+            _APPROVED_AT,
+            True,
+        ),
     ]
-    assert all(entry.verified is False for entry in CANDIDATE_SERIES)
 
 
-def test_provisional_registry_blocks_network_collection() -> None:
-    with pytest.raises(RegistryNotVerifiedError, match="registry_not_verified"):
-        verified_series(CANDIDATE_SERIES)
+def test_semantically_approved_registry_unlocks_network_collection() -> None:
+    assert verified_series(CANDIDATE_SERIES) == CANDIDATE_SERIES
 
 
 def test_verified_flag_without_timestamp_evidence_still_blocks_collection() -> None:
-    flag_only = tuple(entry.model_copy(update={"verified": True}) for entry in CANDIDATE_SERIES)
-
-    with pytest.raises(RegistryNotVerifiedError, match="registry_not_verified"):
-        verified_series(flag_only)
-
-    verified_at = datetime(2026, 7, 14, tzinfo=UTC)
-    evidenced = tuple(
+    flag_only = tuple(
         entry.model_copy(
             update={
                 "verified": True,
-                "registry_verified_at": verified_at,
-                "name": f"synthetic-{entry.series_id}",
-                "unit": "synthetic-unit",
+                "registry_verified_at": None,
+                "name": None,
+                "unit": None,
             }
         )
         for entry in CANDIDATE_SERIES
     )
-    assert verified_series(evidenced) == evidenced
+
+    with pytest.raises(RegistryNotVerifiedError, match="registry_not_verified"):
+        verified_series(flag_only)
+
+    incomplete_name = tuple(
+        entry.model_copy(
+            update={
+                "verified": True,
+                "registry_verified_at": _APPROVED_AT,
+                "name": None,
+            }
+        )
+        for entry in CANDIDATE_SERIES
+    )
+    with pytest.raises(RegistryNotVerifiedError, match="registry_not_verified"):
+        verified_series(incomplete_name)

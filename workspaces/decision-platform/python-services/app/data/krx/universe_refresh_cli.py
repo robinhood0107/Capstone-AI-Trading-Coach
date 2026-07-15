@@ -30,7 +30,14 @@ def main(argv: list[str] | None = None) -> int:
     request URL을 포함하지 않는다. 실제 호출 전에는 별도 운영 승인도 함께 충족해야 한다.
     """
     args = _parse_args(argv)
-    latest = resolve_latest_available_date(datetime.now(UTC))
+    try:
+        latest = resolve_latest_available_date(datetime.now(UTC))
+    except Exception:
+        print(
+            "source=krx operation=universe_refresh code=calendar_unavailable",
+            file=sys.stderr,
+        )
+        return 2
     try:
         as_of = _validated_as_of(args.as_of, latest=latest)
     except ValueError as error:

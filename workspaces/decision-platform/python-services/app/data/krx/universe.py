@@ -33,9 +33,11 @@ def resolve_latest_available_date(now: datetime) -> date:
     if now.tzinfo is None or now.utcoffset() is None:
         raise ValueError("timezone-aware current time is required")
     local = now.astimezone(_KST)
-    days_back = 1 if local.time().replace(tzinfo=None) >= _SAFE_AVAILABILITY_CUTOFF else 2
-    candidate = local.date() - timedelta(days=days_back)
-    return previous_xkrx_trading_day(candidate)
+    latest_session = previous_xkrx_trading_day(local.date() - timedelta(days=1))
+    if local.time().replace(tzinfo=None) >= _SAFE_AVAILABILITY_CUTOFF:
+        return latest_session
+    # KRX 개발명세의 08시 이전 조건은 주말·휴일에도 최신 session을 한 단계 더 제외한다.
+    return previous_xkrx_trading_day(latest_session - timedelta(days=1))
 
 
 def refresh_universe_from_krx_openapi(

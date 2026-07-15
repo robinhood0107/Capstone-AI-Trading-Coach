@@ -89,9 +89,13 @@ def test_online_flag_is_mandatory_and_missing_flag_creates_no_client(
     with pytest.raises(SystemExit) as exc_info:
         main(["--data-dir", str(tmp_path / "data" / "kis")])
 
+    captured = capsys.readouterr()
     assert exc_info.value.code == 2
     assert state.created == 0
-    assert "AUTH_KEY" not in capsys.readouterr().err
+    assert captured.out == ""
+    assert captured.err.strip() == ("source=krx operation=universe_refresh code=invalid_arguments")
+    assert str(tmp_path) not in captured.err
+    assert "AUTH_KEY" not in captured.err
 
 
 def test_optional_as_of_uses_latest_available_open_api_date(
@@ -351,6 +355,7 @@ def test_client_close_failure_is_sanitized_and_prevents_publication(
 def test_unknown_csv_fallback_argument_is_rejected_by_online_cli(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     state = _ClientState()
     _install_client(monkeypatch, state)
@@ -364,8 +369,13 @@ def test_unknown_csv_fallback_argument_is_rejected_by_online_cli(
             )
         )
 
+    captured = capsys.readouterr()
     assert exc_info.value.code == 2
     assert state.created == 0
+    assert captured.out == ""
+    assert captured.err.strip() == ("source=krx operation=universe_refresh code=invalid_arguments")
+    assert "--krx-export" not in captured.err
+    assert str(tmp_path) not in captured.err
 
 
 def test_symlink_manifest_target_is_rejected_without_overwrite(

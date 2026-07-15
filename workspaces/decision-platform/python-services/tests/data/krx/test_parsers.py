@@ -81,6 +81,11 @@ def test_only_the_exact_outblock_1_list_envelope_is_accepted(payload: dict[str, 
         _parse(payload)
 
 
+def test_empty_daily_response_fails_closed_before_the_second_market_is_requested() -> None:
+    with pytest.raises(KrxParseError):
+        _parse({"OutBlock_1": []})
+
+
 def test_each_row_requires_exactly_the_official_fifteen_string_fields() -> None:
     base = _fixture("kospi_daily_success.json")
 
@@ -128,8 +133,8 @@ def test_symbol_requires_exactly_six_ascii_digits(invalid_symbol: str) -> None:
         _parse(payload)
 
 
-@pytest.mark.parametrize("invalid_name", ["", " ", "\t"])
-def test_security_name_must_be_nonblank(invalid_name: str) -> None:
+@pytest.mark.parametrize("invalid_name", ["", " ", "\t", "합성\n종목", "합성\x00종목", "가" * 257])
+def test_security_name_must_be_bounded_plain_text(invalid_name: str) -> None:
     payload = _fixture("kospi_daily_success.json")
     payload["OutBlock_1"][0]["ISU_NM"] = invalid_name
 

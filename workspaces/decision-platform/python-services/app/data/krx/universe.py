@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import UTC, date, datetime, time, timedelta
-from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from app.data._shared.canonical_json import canonical_json_sha256
@@ -11,7 +10,6 @@ from app.data.kis.universe import (
     UNIVERSE_MANIFEST_SCHEMA_VERSION,
     UniverseManifest,
     UniverseManifestSymbol,
-    write_universe_manifest,
 )
 from app.data.krx.client import KrxOpenApiClient
 from app.data.krx.parsers import KrxDailyRow
@@ -45,13 +43,12 @@ def refresh_universe_from_krx_openapi(
     *,
     as_of: date,
     limit: int = _UNIVERSE_SIZE,
-    manifest_path: Path | None = None,
     generated_at: datetime | None = None,
 ) -> UniverseManifest:
-    """승인된 KOSPI·KOSDAQ 두 응답을 검증해 기존 universe manifest v1을 만든다.
+    """승인된 KOSPI·KOSDAQ 두 응답을 검증해 순수 universe manifest v1을 반환한다.
 
-    두 endpoint가 모두 성공하고 정확히 30개를 고를 수 있을 때만 파일을 게시한다. provider
-    raw 응답은 저장하지 않고 검증된 canonical row hash만 provenance로 남긴다.
+    두 endpoint가 모두 성공하고 정확히 30개를 고를 수 있을 때만 반환한다. provider raw 응답은
+    저장하지 않고, CLI가 client cleanup을 마친 뒤 게시할 canonical row hash만 남긴다.
     """
     if limit != _UNIVERSE_SIZE:
         raise ValueError("KRX Open API universe limit must be exactly 30")
@@ -82,8 +79,6 @@ def refresh_universe_from_krx_openapi(
             for index, row in enumerate(candidates[:limit], start=1)
         ),
     )
-    if manifest_path is not None:
-        write_universe_manifest(manifest_path, manifest)
     return manifest
 
 

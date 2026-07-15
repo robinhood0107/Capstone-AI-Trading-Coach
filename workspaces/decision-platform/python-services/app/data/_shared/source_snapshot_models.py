@@ -4,7 +4,16 @@ import re
 from datetime import UTC, date, datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    HttpUrl,
+    StrictBool,
+    StrictInt,
+    field_validator,
+    model_validator,
+)
 
 _SNAPSHOT_PATH_PATTERN = re.compile(
     r"(?P<source>ecos|naver)/(?P<year>[0-9]{4})/(?P<month>[0-9]{2})/"
@@ -18,16 +27,16 @@ class _SnapshotModel(BaseModel):
 
 
 class EcosCountBreakdown(_SnapshotModel):
-    series_count: int = Field(alias="seriesCount", ge=0)
-    observation_count: int = Field(alias="observationCount", ge=0)
-    duplicate_count: int = Field(alias="duplicateCount", ge=0)
+    series_count: StrictInt = Field(alias="seriesCount", ge=0)
+    observation_count: StrictInt = Field(alias="observationCount", ge=0)
+    duplicate_count: StrictInt = Field(alias="duplicateCount", ge=0)
 
 
 class NaverCountBreakdown(_SnapshotModel):
-    query_count: int = Field(alias="queryCount", ge=0)
-    accepted_item_count: int = Field(alias="acceptedItemCount", ge=0)
-    filtered_item_count: int = Field(alias="filteredItemCount", ge=0)
-    redacted_url_count: int = Field(alias="redactedUrlCount", ge=0)
+    query_count: StrictInt = Field(alias="queryCount", ge=0)
+    accepted_item_count: StrictInt = Field(alias="acceptedItemCount", ge=0)
+    filtered_item_count: StrictInt = Field(alias="filteredItemCount", ge=0)
+    redacted_url_count: StrictInt = Field(alias="redactedUrlCount", ge=0)
 
     @field_validator("query_count", mode="before")
     @classmethod
@@ -45,7 +54,7 @@ class SourceProvenance(_SnapshotModel):
 class SourceSnapshotManifest(_SnapshotModel):
     """source snapshot의 provenance·hash·보존·부분수집 상태를 strict DTO로 고정한다."""
 
-    schema_version: Literal[1] = Field(alias="schemaVersion")
+    schema_version: StrictInt = Field(alias="schemaVersion", ge=1, le=1)
     source: Literal["ecos", "naver"]
     provider_profile: str = Field(alias="providerProfile", min_length=1, max_length=64)
     operation: str = Field(min_length=1, max_length=64)
@@ -53,16 +62,16 @@ class SourceSnapshotManifest(_SnapshotModel):
     as_of: date = Field(alias="asOf")
     snapshot_path: str = Field(alias="snapshotPath")
     snapshot_sha256: str = Field(alias="snapshotSha256", pattern=r"^[0-9a-f]{64}$")
-    record_count: int = Field(alias="recordCount", ge=0)
+    record_count: StrictInt = Field(alias="recordCount", ge=0)
     count_breakdown: EcosCountBreakdown | NaverCountBreakdown = Field(alias="countBreakdown")
-    partial: bool
+    partial: StrictBool
     coverage: Literal["complete", "partial", "empty"]
-    deferred_queries: int = Field(alias="deferredQueries", ge=0)
-    physical_attempt_count: int = Field(alias="physicalAttemptCount", ge=0)
+    deferred_queries: StrictInt = Field(alias="deferredQueries", ge=0)
+    physical_attempt_count: StrictInt = Field(alias="physicalAttemptCount", ge=0)
     quota_policy_version: str = Field(alias="quotaPolicyVersion", min_length=1, max_length=64)
     provenance: SourceProvenance
     sanitization_version: str = Field(alias="sanitizationVersion", min_length=1, max_length=64)
-    retention_days: int = Field(alias="retentionDays", gt=0)
+    retention_days: StrictInt = Field(alias="retentionDays", gt=0)
     delete_owner: Literal["decision-platform:source-snapshot-retention"] = Field(
         alias="deleteOwner"
     )

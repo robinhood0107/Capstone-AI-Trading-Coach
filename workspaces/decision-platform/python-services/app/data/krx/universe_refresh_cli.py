@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import argparse
+import re
+import stat
 import sys
 from datetime import UTC, date, datetime
 from pathlib import Path
+from typing import NoReturn
 
 from app.data.kis.calendar import is_xkrx_trading_day
 from app.data.kis.universe import (
@@ -13,6 +16,7 @@ from app.data.kis.universe import (
     write_universe_markdown_report,
 )
 from app.data.krx.client import KrxOpenApiClient
+from app.data.krx.catalog import KRX_OPEN_API_FIRST_AVAILABLE_DATE
 from app.data.krx.settings import KrxOpenApiSettings
 from app.data.krx.universe import (
     refresh_universe_from_krx_openapi,
@@ -20,7 +24,13 @@ from app.data.krx.universe import (
 )
 
 
-_EARLIEST_AVAILABLE_DATE = date(2010, 1, 4)
+_EXACT_DATE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
+_REPOSITORY_ROOT = Path(__file__).resolve().parents[6]
+_PYTHON_SERVICES_ROOT = Path(__file__).resolve().parents[3]
+_ALLOWED_OUTPUT_ROOTS = (
+    _REPOSITORY_ROOT / "data",
+    _PYTHON_SERVICES_ROOT / "data",
+)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -53,6 +63,11 @@ def main(argv: list[str] | None = None) -> int:
     client: KrxOpenApiClient | None = None
     physical_attempts: int | str = 0
     try:
+        _validate_output_scope(
+            data_dir=data_dir,
+            manifest_path=manifest_path,
+            report_path=report_path,
+        )
         # 두 target을 provider 호출 전에 검사해 symlink가 있으면 outbound와 부분 파일을 모두 막는다.
         validate_universe_output_path(manifest_path)
         validate_universe_output_path(report_path)
@@ -101,12 +116,14 @@ def main(argv: list[str] | None = None) -> int:
 def _validated_as_of(value: str | None, *, latest: date) -> date:
     if value is None:
         return latest
+    if _EXACT_DATE.fullmatch(value) is None:
+        raise ValueError("invalid_date")
     try:
         parsed = date.fromisoformat(value)
     except ValueError:
         raise ValueError("invalid_date") from None
     # provider 지원 범위와 안전 최신일을 달력 호출보다 먼저 검사해 out-of-bounds 원문을 차단한다.
-    if parsed < _EARLIEST_AVAILABLE_DATE:
+    if parsed < KRX_OPEN_API_FIRST_AVAILABLE_DATE:
         raise ValueError("date_out_of_supported_range")
     if parsed > latest:
         raise ValueError("date_not_yet_available")
@@ -130,8 +147,64 @@ def _safe_physical_attempt_count(client: KrxOpenApiClient) -> int | str:
     return value
 
 
+def _validate_output_scope(
+    *,
+    data_dir: Path,
+    manifest_path: Path,
+    report_path: Path,
+) -> None:
+    """산출물을 승인된 ignored data root와 단일 data directory 아래로 한정한다."""
+    data_absolute = _lexical_absolute_path(data_dir)
+    manifest_absolute = _lexical_absolute_path(manifest_path)
+    report_absolute = _lexical_absolute_path(report_path)
+    allowed_roots = tuple(_lexical_absolute_path(root) for root in _ALLOWED_OUTPUT_ROOTS)
+    if not any(
+        data_absolute == root or data_absolute.is_relative_to(root) for root in allowed_roots
+    ):
+        raise UniverseExportError("universe output path is not safe")
+    if (
+        manifest_absolute.parent != data_absolute
+        or report_absolute == manifest_absolute
+        or not report_absolute.is_relative_to(data_absolute)
+    ):
+        raise UniverseExportError("universe output path is not safe")
+    if _existing_paths_share_identity(manifest_absolute, report_absolute):
+        raise UniverseExportError("universe output path is not safe")
+
+
+def _lexical_absolute_path(path: Path) -> Path:
+    expanded = path.expanduser()
+    if ".." in expanded.parts or expanded.name in {"", ".", ".."}:
+        raise UniverseExportError("universe output path is not safe")
+    absolute = expanded if expanded.is_absolute() else Path.cwd() / expanded
+    if absolute.anchor != "/":
+        raise UniverseExportError("universe output path is not safe")
+    return absolute
+
+
+def _existing_paths_share_identity(first: Path, second: Path) -> bool:
+    try:
+        first_stat = first.stat(follow_symlinks=False)
+    except FileNotFoundError:
+        return False
+    except OSError:
+        raise UniverseExportError("universe output path is not safe") from None
+    try:
+        second_stat = second.stat(follow_symlinks=False)
+    except FileNotFoundError:
+        return False
+    except OSError:
+        raise UniverseExportError("universe output path is not safe") from None
+    if not stat.S_ISREG(first_stat.st_mode) or not stat.S_ISREG(second_stat.st_mode):
+        return False
+    return (first_stat.st_dev, first_stat.st_ino) == (
+        second_stat.st_dev,
+        second_stat.st_ino,
+    )
+
+
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
+    parser = _StableArgumentParser(
         description="Refresh the internal top-30 universe from the approved KRX OPEN API services"
     )
     parser.add_argument(
@@ -147,6 +220,17 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--data-dir")
     parser.add_argument("--report-path")
     return parser.parse_args(argv)
+
+
+class _StableArgumentParser(argparse.ArgumentParser):
+    """잘못된 caller argv를 되풀이하지 않고 고정된 CLI 오류만 출력한다."""
+
+    def error(self, message: str) -> NoReturn:
+        del message
+        self.exit(
+            2,
+            "source=krx operation=universe_refresh code=invalid_arguments\n",
+        )
 
 
 if __name__ == "__main__":

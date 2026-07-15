@@ -360,7 +360,7 @@ class NaverHttpClient:
 
     @property
     def physical_attempt_count(self) -> int:
-        """quota 예약에 성공한 query physical attempt 누계를 반환한다."""
+        """provider transport에 실제로 handoff한 query physical attempt 누계를 반환한다."""
         return self._transport.physical_attempt_count
 
 

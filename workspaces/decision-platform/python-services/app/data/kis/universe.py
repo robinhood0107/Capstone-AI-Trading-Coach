@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import csv
+import errno
 import hashlib
 import json
+import os
+import secrets
+import stat
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -203,11 +207,12 @@ def refresh_universe_from_krx_export(
 
 
 def write_universe_manifest(path: Path, manifest: UniverseManifest) -> Path:
-    path.parent.mkdir(parents=True, exist_ok=True)
     # ensure_ascii=False는 한국 종목명을 사람이 바로 읽게 하려는 선택이다. secret 값은 manifest에 넣지 않는다.
-    path.write_text(
-        json.dumps(manifest.to_json(), ensure_ascii=False, indent=2, sort_keys=False) + "\n",
-        encoding="utf-8",
+    _secure_atomic_write(
+        path,
+        (
+            json.dumps(manifest.to_json(), ensure_ascii=False, indent=2, sort_keys=False) + "\n"
+        ).encode("utf-8"),
     )
     return path
 
@@ -222,10 +227,14 @@ def load_universe_manifest(path: Path) -> UniverseManifest:
 
 
 def write_universe_markdown_report(path: Path, manifest: UniverseManifest) -> Path:
-    path.parent.mkdir(parents=True, exist_ok=True)
     # manifest와 별도 markdown을 남겨 사람이 PR/시연에서 ranking 근거를 눈으로 확인할 수 있게 한다.
+    is_openapi = manifest.source.startswith("krx-open-api:")
     lines = [
-        "# KIS S1.1b Universe Refresh Report",
+        (
+            "# KRX OPEN API Universe Refresh Report"
+            if is_openapi
+            else "# KIS S1.1b Universe Refresh Report"
+        ),
         "",
         f"- Generated at: `{manifest.generated_at.isoformat()}`",
         f"- As-of date: `{manifest.as_of_date.isoformat()}`",
@@ -250,21 +259,127 @@ def write_universe_markdown_report(path: Path, manifest: UniverseManifest) -> Pa
             "",
             "## Safety Notes",
             "",
-            "- This refresh reads an exported KRX ranking file only.",
+            (
+                "- This refresh reads only the two approved KRX OPEN API daily stock services."
+                if is_openapi
+                else "- This refresh reads an exported KRX ranking file only."
+            ),
             "- Generated manifest and reports stay in ignored local data paths.",
             "- S1.1b does not call order, balance, correction, cancellation, or live trading APIs.",
             "",
         ]
     )
-    path.write_text("\n".join(lines), encoding="utf-8")
+    _secure_atomic_write(path, "\n".join(lines).encode("utf-8"))
     return path
+
+
+def validate_universe_output_path(path: Path) -> None:
+    """universe 산출물 경로가 symlink·traversal 없이 안전하게 게시 가능한지 확인한다."""
+    absolute = _absolute_output_path(path)
+    directory_fd = _open_or_create_absolute_tree(absolute.parent)
+    try:
+        _reject_unsafe_existing_target(directory_fd, absolute.name)
+    finally:
+        os.close(directory_fd)
+
+
+def _secure_atomic_write(path: Path, content: bytes) -> None:
+    """검증된 dirfd 안에서 mode 0600 임시 파일을 durable write한 뒤 원자 교체한다."""
+    absolute = _absolute_output_path(path)
+    directory_fd = _open_or_create_absolute_tree(absolute.parent)
+    temporary = f".{absolute.name}.{secrets.token_hex(16)}.tmp"
+    file_fd = -1
+    try:
+        _reject_unsafe_existing_target(directory_fd, absolute.name)
+        file_fd = os.open(
+            temporary,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC,
+            0o600,
+            dir_fd=directory_fd,
+        )
+        os.fchmod(file_fd, 0o600)
+        with os.fdopen(file_fd, "wb") as output:
+            file_fd = -1
+            output.write(content)
+            output.flush()
+            os.fsync(output.fileno())
+        os.replace(
+            temporary,
+            absolute.name,
+            src_dir_fd=directory_fd,
+            dst_dir_fd=directory_fd,
+        )
+        os.fsync(directory_fd)
+    except UniverseExportError:
+        raise
+    except OSError:
+        raise UniverseExportError("universe output path is not safe") from None
+    finally:
+        if file_fd >= 0:
+            os.close(file_fd)
+        try:
+            os.unlink(temporary, dir_fd=directory_fd)
+        except FileNotFoundError:
+            pass
+        except OSError:
+            pass
+        os.close(directory_fd)
+
+
+def _absolute_output_path(path: Path) -> Path:
+    expanded = path.expanduser()
+    if ".." in expanded.parts or expanded.name in {"", ".", ".."}:
+        raise UniverseExportError("universe output path is not safe")
+    absolute = expanded if expanded.is_absolute() else Path.cwd() / expanded
+    if absolute.anchor != "/":
+        raise UniverseExportError("universe output path is not safe")
+    return absolute
+
+
+def _open_or_create_absolute_tree(path: Path) -> int:
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
+    current_fd = os.open("/", flags)
+    try:
+        for component in path.parts[1:]:
+            try:
+                os.mkdir(component, mode=0o700, dir_fd=current_fd)
+                os.fsync(current_fd)
+            except FileExistsError:
+                pass
+            except OSError:
+                raise UniverseExportError("universe output path is not safe") from None
+            try:
+                next_fd = os.open(component, flags, dir_fd=current_fd)
+            except OSError as error:
+                if error.errno in {errno.ELOOP, errno.ENOTDIR, errno.ENOENT}:
+                    raise UniverseExportError("universe output path is not safe") from None
+                raise UniverseExportError("universe output path is not safe") from None
+            os.close(current_fd)
+            current_fd = next_fd
+        return current_fd
+    except Exception:
+        os.close(current_fd)
+        raise
+
+
+def _reject_unsafe_existing_target(directory_fd: int, filename: str) -> None:
+    try:
+        metadata = os.stat(filename, dir_fd=directory_fd, follow_symlinks=False)
+    except FileNotFoundError:
+        return
+    except OSError:
+        raise UniverseExportError("universe output path is not safe") from None
+    if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
+        raise UniverseExportError("universe output symlink path is not safe")
 
 
 def _read_krx_export(path: Path) -> list[dict[str, str]]:
     if path.suffix.lower() in {".xlsx", ".xls"}:
         # XLSX 파서는 의존성과 시트 구조 변동이 커서, S1.1b는 재현 가능한 CSV/TSV export만 계약으로
         # 고정한다. 사용자는 KRX 화면에서 CSV로 내보낸 뒤 그 파일을 입력해야 한다.
-        raise UniverseExportError("KRX universe refresh expects CSV/TSV/TXT export, not XLSX. Export CSV first.")
+        raise UniverseExportError(
+            "KRX universe refresh expects CSV/TSV/TXT export, not XLSX. Export CSV first."
+        )
     text = _read_text_with_fallback(path)
     sample = text[:4096]
     delimiter = "\t" if path.suffix.lower() == ".tsv" else _sniff_delimiter(sample)
@@ -313,7 +428,9 @@ def _rank_krx_rows(rows: list[dict[str, str]], limit: int) -> list[UniverseManif
         )
     # universe는 백필·모델 비교의 기준이므로 결측/비유동 후보를 제외하고 안정적인 tie-break를 둔다.
     # symbol asc까지 고정해야 같은 CSV로 생성한 manifest가 실행 환경마다 흔들리지 않는다.
-    ranked = sorted(candidates, key=lambda item: (-item.market_cap, -item.trading_value, item.symbol))
+    ranked = sorted(
+        candidates, key=lambda item: (-item.market_cap, -item.trading_value, item.symbol)
+    )
     return [
         UniverseManifestSymbol(
             rank=index,

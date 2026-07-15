@@ -271,6 +271,7 @@ class ECOSHttpClient:
                 payload,
                 expected_stat_code=series.stat_code,
                 expected_item_code=series.item_code1,
+                expected_cycle=series.cycle,
             ),
         )
 

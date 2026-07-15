@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import ssl
 from collections.abc import Iterator
+from datetime import date
 from pathlib import Path
 
 import httpx
@@ -111,6 +112,44 @@ def _table_list_payload(name: str, *, unicode_escape: bool) -> bytes:
         escaped = "".join(f"\\u{ord(character):04x}" for character in name)
         rendered = rendered.replace(name, escaped)
     return rendered.encode()
+
+
+def test_statistic_search_uses_exact_item_code1_trailing_slash_raw_path() -> None:
+    observed_raw_paths: list[bytes] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        observed_raw_paths.append(request.url.raw_path)
+        assert request.url.query == b""
+        return httpx.Response(
+            200,
+            headers={"content-type": "application/json"},
+            json={"RESULT": {"CODE": "INFO-200", "MESSAGE": "synthetic empty"}},
+        )
+
+    client = ECOSHttpClient._for_tests(
+        ECOSSettings(_env_file=None, ECOS_MAX_ATTEMPTS_PER_REQUEST=1),
+        transport=httpx.MockTransport(handler),
+        quota=_RecordingQuota([]),
+        credential=SecretStr("synthetic-key"),
+    )
+    try:
+        page = client.statistic_search(
+            series=CANDIDATE_SERIES[0],
+            start=date(2026, 7, 1),
+            end=date(2026, 7, 14),
+            page_start=1,
+            page_end=200,
+        )
+    finally:
+        client.close()
+
+    assert page.status == "empty"
+    assert len(observed_raw_paths) == 1
+    raw_path = observed_raw_paths[0]
+    assert raw_path.endswith(b"/722Y001/D/20260701/20260714/0101000/")
+    assert b"?" not in raw_path
+    assert b"%3F" not in raw_path.upper()
+    assert b"//" not in raw_path
 
 
 def test_send_time_path_credential_is_restored_on_request_and_response(

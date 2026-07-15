@@ -16,11 +16,13 @@ S1.3은 public REST/gRPC를 추가하지 않는다. Decision Platform이 아래 
 Return Engine은 이후 합의된 `contracts/`·`artifacts/` handoff 경계에서 manifest를 검증해 소비한다.
 다른 workspace의 구현 파일이나 Decision Platform의 임의 로컬 경로를 직접 읽는 방식은 계약이 아니다.
 
-> 구현 상태(2026-07-15): Naver lower-only batch·strict smoke, JSON Schema와 A3 전
-> `RECOVERY0` offline 회귀 검증을 완료했다. 기존 online Approval A1/A2는 둘 다
-> 실패 evidence다. A1은 Redis `+2`·legacy counter `2`, exact physical send 미확정이고,
-> A2는 physical `2`·Redis `+2` 후 `722Y001 StatisticItemList` 응답 처리 실패다.
-> `RECOVERY0` provider 호출은 `0`회이며 다음 online gate는 신규 packet-bound Approval A3다.
+> 구현 상태(2026-07-15): Naver lower-only batch·strict smoke, JSON Schema, offline 회귀와
+> 승인된 online smoke를 완료했다. Approval A1/A2/A3는 실패 evidence로 분리한다. A4
+> `approval-a4-692635240394-20260715T055519Z`는 physical `4`·Redis `+4`로 성공했고,
+> `semantic-3bb3810728cf` 승인 뒤 registry를 활성화했다. B1
+> `approval-b1-23618d21265d-20260715T072151Z`는 ECOS physical `2`·Redis `+2`와 Naver
+> physical `1`·Redis `+1`로 성공했다. B1 evidence SHA-256은
+> `ecb62e114352439994fa799096a916757ba7fba081f08f1d1b78ec35397d85fb`다.
 
 | 계약 | Producer | Consumer | 보존 |
 |---|---|---|---:|
@@ -46,10 +48,9 @@ artifact를 거부한다. manifest `physicalAttemptCount`도 query당 최대 2�
 `physicalAttemptCount <= 2 * queryCount`여야 한다.
 
 Approval A preflight의 안전 진단은 contract schema를 늘리지 않고 ignored operator-evidence
-v1의 `sanitizedPreflight.diagnostic`에만 저장한다. 현재 다음 실행은 A3이며 A1/A2는
-실패 evidence로 분리한다. 성공 채택 집합은 A3에서 시작해 성공한 A 하나와 원자적
-B 하나만으로 구성한다. B는 ECOS `D-29..D` 2회 완전 성공 후 Naver rank-1
-`display=10` 1회를 실행하며, Naver 실패 시 그 B의 ECOS 결과도 채택하지 않는다.
-A1/A2/실패 B를 성공 evidence에 합산하거나 accepted-set `7`회를 프로젝트 lifetime
-호출 수로 표현하지 않는다. 이 `RECOVERY0`는 기존 3개 source snapshot schema,
-public API, DB/Flyway, dependency, 다른 workspace를 변경하지 않는다.
+v1의 `sanitizedPreflight.diagnostic`에만 저장한다. A1/A2/A3는 실패 evidence로 분리하고,
+성공 채택 집합은 A4와 원자적으로 성공한 B1만으로 구성한다. B1은 ECOS `D-29..D` 2회를
+완전히 성공한 뒤 Naver rank-1 `display=10` 1회를 성공했다. accepted set은 A4+B1의
+ECOS `6`+Naver `1`=`7`이며 실패 run을 합산하거나 프로젝트 lifetime 호출 수로 표현하지 않는다.
+A3/A4 복구와 B1 검증은 기존 3개 source snapshot schema, public API, DB/Flyway, dependency,
+다른 workspace를 변경하지 않았다.

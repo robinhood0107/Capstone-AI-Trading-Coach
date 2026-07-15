@@ -20,10 +20,12 @@ Naver 운영 snapshot과 1-query smoke는 별도 포맷이 아니다. 동일한 
 길이와 manifest `queryCount`가 같은 `1..4` 값이어야 하며 0개, 5개 이상, count mismatch는 거부한다.
 manifest `physicalAttemptCount`는 query당 최대 2회여야 한다.
 S1.3 계약은 아직 배포되지 않은 Draft 상태이므로 이 lower-only 정렬에서 `schemaVersion`을 올리지
-않는다. 코드·JSON Schema와 offline 회귀 검증은 반영 완료했으며 online 검증은 별도 승인 전까지
-게이트한다. 이후 Approval A1/A2는 실패 evidence로 남았고 다음은 A3다. A3 전
-`RECOVERY0`는 provider를 호출하지 않고 안전 진단·URL·attempt 회계만 보강하며,
-기존 schemaVersion·public API·DB/Flyway·dependency·다른 workspace 계약을 바꾸지 않는다.
+않는다. 코드·JSON Schema와 offline 회귀 검증을 반영했고, 별도 승인 gate를 거친 online 검증도
+완료했다. Approval A1/A2/A3는 실패 evidence로 분리하고 A4
+`approval-a4-692635240394-20260715T055519Z`와 B1
+`approval-b1-23618d21265d-20260715T072151Z`만 성공 채택한다. accepted set은 A4+B1의
+ECOS `6`+Naver `1`=`7`이며 lifetime 호출 수가 아니다. A3/A4 복구와 B1 검증은
+기존 schemaVersion·public API·DB/Flyway·dependency·다른 workspace 계약을 바꾸지 않았다.
 
 ## 보안·운영 영향
 
@@ -53,11 +55,12 @@ and Naver News metadata snapshots without retaining provider raw responses.
 - The source snapshot uses integer `schemaVersion: 1`; it is distinct from the SemVer experiment/model
   artifact bundle and must not be implicitly converted or mixed with it.
 - This S1.3 contract is still an undeployed Draft, so the lower-only alignment keeps
-  `schemaVersion: 1`. Code, JSON Schema, and offline regression verification are complete; online
-  verification remains approval-gated. Later Approval A1 and A2 runs both failed and remain separate
-  evidence; the next run is A3. Pre-A3 `RECOVERY0` performs no provider calls and only hardens safe
-  diagnostics, canonical URLs, and attempt accounting. It does not change the existing schema
-  version, public API, DB/Flyway, dependencies, or another workspace contract.
+  `schemaVersion: 1`. Code, JSON Schema, offline regression verification, and the separately approved
+  online smoke are complete. Approval A1, A2, and A3 remain separate failed evidence; only A4
+  `approval-a4-692635240394-20260715T055519Z` and B1
+  `approval-b1-23618d21265d-20260715T072151Z` are accepted. The accepted set is ECOS `6` plus
+  Naver `1` = `7`, not a lifetime-call claim. The A3/A4 recovery and B1 verification did not change
+  the existing schema version, public API, DB/Flyway, dependencies, or another workspace contract.
 - Credentials, provider request URLs containing credentials or queries, authentication material,
   provider raw payloads, and local absolute paths are forbidden. Normalized article metadata URLs and
   fixed provenance URLs remain allowed by the canonical contract. The manifest is the commit marker.

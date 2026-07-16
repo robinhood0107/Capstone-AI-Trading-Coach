@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from types import MappingProxyType
 from dataclasses import dataclass
 from datetime import date
-from typing import Final, Literal
+from typing import Final, Literal, Mapping
 
 
 KrxMarket = Literal["KOSPI", "KOSDAQ"]
@@ -86,3 +87,9 @@ KOSDAQ_DAILY: Final = KrxEndpoint(
 
 # S1.3 universe 자동화는 국내 주식 두 시장만 사용하고 나머지 29개 서비스는 활성화하지 않는다.
 ENABLED_UNIVERSE_ENDPOINTS: Final = (KOSPI_DAILY, KOSDAQ_DAILY)
+ENABLED_UNIVERSE_ENDPOINTS_BY_SERVICE: Final[Mapping[str, KrxEndpoint]] = MappingProxyType(
+    {
+        "stk_bydd_trd": KOSPI_DAILY,
+        "ksq_bydd_trd": KOSDAQ_DAILY,
+    }
+)

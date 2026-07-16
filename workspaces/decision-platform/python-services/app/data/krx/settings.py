@@ -60,9 +60,9 @@ class KrxOpenApiSettings(BaseSettings):
     )
     read_timeout_seconds: float = Field(
         # 전 종목 15필드 응답은 provider가 완성한 chunk를 보내기 전 무응답 구간이 길 수 있다.
-        default=30.0,
+        default=120.0,
         gt=0,
-        le=30.0,
+        le=120.0,
         validation_alias="KRX_OPENAPI_READ_TIMEOUT_SECONDS",
     )
     write_timeout_seconds: float = Field(
@@ -79,9 +79,9 @@ class KrxOpenApiSettings(BaseSettings):
     )
     logical_deadline_seconds: float = Field(
         # 두 시장이 각각 full read budget을 사용할 수 있게 하되 무한 대기는 계속 금지한다.
-        default=70.0,
+        default=260.0,
         gt=0,
-        le=70.0,
+        le=260.0,
         validation_alias="KRX_OPENAPI_LOGICAL_DEADLINE_SECONDS",
     )
 

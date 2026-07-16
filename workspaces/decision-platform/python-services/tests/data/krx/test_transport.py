@@ -114,8 +114,51 @@ def test_auth_key_exists_only_during_physical_send_and_is_removed_after_success(
     assert marker not in repr(response.request)
 
 
+@pytest.mark.parametrize(
+    ("failure_factory", "expected_code"),
+    [
+        (
+            lambda marker, request: httpx.ConnectTimeout(marker, request=request),
+            "connect_timeout",
+        ),
+        (
+            lambda marker, request: httpx.ReadTimeout(marker, request=request),
+            "read_timeout",
+        ),
+        (
+            lambda marker, request: httpx.WriteTimeout(marker, request=request),
+            "write_timeout",
+        ),
+        (
+            lambda marker, request: httpx.PoolTimeout(marker, request=request),
+            "pool_timeout",
+        ),
+        (
+            lambda marker, request: httpx.ConnectError(marker, request=request),
+            "connect_unavailable",
+        ),
+        (
+            lambda marker, request: httpx.ReadError(marker, request=request),
+            "read_unavailable",
+        ),
+        (
+            lambda marker, request: httpx.WriteError(marker, request=request),
+            "write_unavailable",
+        ),
+        (
+            lambda marker, request: httpx.RemoteProtocolError(marker, request=request),
+            "protocol_unavailable",
+        ),
+        (
+            lambda marker, request: RuntimeError(marker),
+            "transport_unavailable",
+        ),
+    ],
+)
 def test_auth_key_is_removed_and_secret_cause_is_dropped_after_transport_failure(
     monkeypatch: pytest.MonkeyPatch,
+    failure_factory: object,
+    expected_code: str,
 ) -> None:
     marker = "synthetic-krx-auth-key"
     captured: list[httpx.Request] = []
@@ -128,7 +171,8 @@ def test_auth_key_is_removed_and_secret_cause_is_dropped_after_transport_failure
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.headers["AUTH_KEY"] == marker
         captured.append(request)
-        raise httpx.ConnectError(f"synthetic failure {marker}", request=request)
+        assert callable(failure_factory)
+        raise failure_factory(f"synthetic failure {marker}", request)
 
     transport = _CredentialTransport(
         httpx.MockTransport(handler),
@@ -136,7 +180,7 @@ def test_auth_key_is_removed_and_secret_cause_is_dropped_after_transport_failure
     )
     request = _request()
 
-    with pytest.raises(KrxCredentialError, match="transport_unavailable") as exc_info:
+    with pytest.raises(KrxCredentialError, match=expected_code) as exc_info:
         transport.handle_request(request)
 
     rendered = f"{exc_info.value!r} {exc_info.value}"

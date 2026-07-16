@@ -22,6 +22,7 @@ from app.data._shared.redis_quota import QuotaUnavailableError, RedisQuotaReserv
 from app.data.kis.calendar import is_xkrx_trading_day
 from app.data.krx._credential_transport import (
     _LOGICAL_DEADLINE_EXTENSION,
+    _SAFE_RESPONSE_METADATA_EXTENSION,
     KrxCredentialError,
     _CredentialTransport,
     _QuotaReservation,
@@ -33,7 +34,12 @@ from app.data.krx.catalog import (
     KRX_OPEN_API_FIRST_AVAILABLE_DATE,
     KrxEndpoint,
 )
-from app.data.krx.errors import KrxError
+from app.data.krx.errors import (
+    KrxError,
+    KrxParseError,
+    KrxSafeResponseMetadata,
+    KrxValidationDiagnostic,
+)
 from app.data.krx.parsers import KrxDailyRow, parse_daily_response
 from app.data.krx.quota import quota_key, quota_policy
 from app.data.krx.settings import KrxOpenApiSettings
@@ -47,9 +53,16 @@ _TLS_ENVIRONMENT_OVERRIDES = ("SSL_CERT_FILE", "SSL_CERT_DIR", "SSLKEYLOGFILE")
 class KrxHttpError(KrxError):
     """provider URL·header·body·message를 제외한 KRX HTTP 경계 오류다."""
 
-    def __init__(self, code: str, *, status_code: int | None = None) -> None:
+    def __init__(
+        self,
+        code: str,
+        *,
+        status_code: int | None = None,
+        validation_diagnostic: KrxValidationDiagnostic | None = None,
+    ) -> None:
         self.code = code
         self.status_code = status_code
+        self.validation_diagnostic = validation_diagnostic
         super().__init__(f"krx_http_error:{code}")
 
 
@@ -237,8 +250,15 @@ class KrxOpenApiClient:
         deadline = time.monotonic() + self._settings.logical_deadline_seconds
         rows: list[KrxDailyRow] = []
         # endpoint 순서는 evidence의 request ordinal과 physical call accounting 계약이다.
-        for endpoint in ENABLED_UNIVERSE_ENDPOINTS:
-            rows.extend(self._fetch_endpoint(endpoint, as_of=as_of, deadline=deadline))
+        for request_ordinal, endpoint in enumerate(ENABLED_UNIVERSE_ENDPOINTS, start=1):
+            rows.extend(
+                self._fetch_endpoint(
+                    endpoint,
+                    as_of=as_of,
+                    deadline=deadline,
+                    request_ordinal=request_ordinal,
+                )
+            )
         return tuple(rows)
 
     def _fetch_endpoint(
@@ -247,6 +267,7 @@ class KrxOpenApiClient:
         *,
         as_of: date,
         deadline: float,
+        request_ordinal: int,
     ) -> tuple[KrxDailyRow, ...]:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
@@ -271,17 +292,59 @@ class KrxOpenApiClient:
         if status != 200:
             response.close()
             raise KrxHttpError("http_status", status_code=status)
+        response_metadata = _safe_response_metadata(response)
         try:
             payload = parse_bounded_json_response(response, limits=self._limits)
-        except BoundedJsonError:
-            raise KrxHttpError("parse_invalid_response") from None
+        except BoundedJsonError as error:
+            diagnostic = _bounded_json_diagnostic(
+                error,
+                response_metadata=response_metadata,
+            ).with_context(
+                request_ordinal=request_ordinal,
+                service=_service_id(endpoint),
+                http_status=status,
+                response_metadata=response_metadata,
+            )
+            raise KrxHttpError(
+                "parse_invalid_response",
+                status_code=status,
+                validation_diagnostic=diagnostic,
+            ) from None
         if not isinstance(payload, Mapping):
-            raise KrxHttpError("parse_invalid_response")
-        rows = parse_daily_response(
-            cast(Mapping[str, object], payload),
-            endpoint=endpoint,
-            requested_date=as_of,
-        )
+            diagnostic = KrxValidationDiagnostic.for_leaf(
+                "payload_not_object",
+                top_level_type=_top_level_type(payload),
+            ).with_context(
+                request_ordinal=request_ordinal,
+                service=_service_id(endpoint),
+                http_status=status,
+                response_metadata=response_metadata,
+            )
+            raise KrxHttpError(
+                "parse_invalid_response",
+                status_code=status,
+                validation_diagnostic=diagnostic,
+            )
+        try:
+            rows = parse_daily_response(
+                cast(Mapping[str, object], payload),
+                endpoint=endpoint,
+                requested_date=as_of,
+            )
+        except KrxParseError as error:
+            parse_diagnostic = error.diagnostic
+            if parse_diagnostic is not None:
+                parse_diagnostic = parse_diagnostic.with_context(
+                    request_ordinal=request_ordinal,
+                    service=_service_id(endpoint),
+                    http_status=status,
+                    response_metadata=response_metadata,
+                )
+            raise KrxHttpError(
+                "parse_invalid_response",
+                status_code=status,
+                validation_diagnostic=parse_diagnostic,
+            ) from None
         if time.monotonic() >= deadline:
             raise KrxCredentialError("logical_deadline_exceeded")
         return rows
@@ -315,3 +378,40 @@ class KrxOpenApiClient:
 
     def __exit__(self, *_: object) -> None:
         self.close()
+
+
+def _safe_response_metadata(response: httpx.Response) -> KrxSafeResponseMetadata | None:
+    value = response.extensions.get(_SAFE_RESPONSE_METADATA_EXTENSION)
+    if isinstance(value, KrxSafeResponseMetadata):
+        return value
+    return None
+
+
+def _bounded_json_diagnostic(
+    error: BoundedJsonError,
+    *,
+    response_metadata: KrxSafeResponseMetadata | None,
+) -> KrxValidationDiagnostic:
+    leaf = error.code
+    if leaf == "content_type_missing" and response_metadata is not None:
+        if response_metadata.content_type_class == "multiple":
+            leaf = "content_type_multiple"
+        elif response_metadata.content_type_class == "other":
+            leaf = "content_type_unsupported"
+    return KrxValidationDiagnostic.for_leaf(leaf)
+
+
+def _service_id(endpoint: KrxEndpoint) -> str:
+    return endpoint.path.rsplit("/", 1)[-1].removesuffix(".json")
+
+
+def _top_level_type(value: object) -> str:
+    if value is None:
+        return "null"
+    if isinstance(value, list):
+        return "array"
+    if type(value) is bool:
+        return "boolean"
+    if isinstance(value, str):
+        return "string"
+    return "number"

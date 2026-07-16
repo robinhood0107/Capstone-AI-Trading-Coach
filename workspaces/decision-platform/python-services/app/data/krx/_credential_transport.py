@@ -19,6 +19,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.data._shared.redis_quota import QuotaWaitError
 from app.data.krx.catalog import ENABLED_UNIVERSE_ENDPOINTS, KRX_OPEN_API_ORIGIN
+from app.data.krx.errors import KrxSafeResponseMetadata
 
 
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[6]
@@ -28,6 +29,7 @@ _MAX_CREDENTIAL_HEADER_BYTES = 512
 # 공식 최대 5,000행 × (row dict 1 + 15 key/value pair 30) + envelope 3개를 모두 검사한다.
 _MAX_DECODED_JSON_NODES = 5_000 * (1 + 2 * 15) + 3
 _LOGICAL_DEADLINE_EXTENSION = "s1.3.krx.logical_deadline"
+_SAFE_RESPONSE_METADATA_EXTENSION = "s1.3.krx.safe_response_metadata"
 _CANONICAL_CLIENT_HEADER_ITEMS = (
     ("Accept", "application/json"),
     ("Accept-Encoding", "identity"),
@@ -335,6 +337,12 @@ def _scrub_response(
         response.status_code,
         headers=_canonical_json_response_headers(response.headers),
         content=content,
+        extensions={
+            _SAFE_RESPONSE_METADATA_EXTENSION: _safe_response_metadata(
+                content,
+                headers=response.headers,
+            )
+        },
         request=request,
     )
 
@@ -373,13 +381,71 @@ def _read_limited(
 
 
 def _canonical_json_response_headers(headers: httpx.Headers) -> list[tuple[str, str]]:
-    values = headers.get_list("content-type")
-    if len(values) != 1:
-        return []
-    media_type = values[0].split(";", 1)[0].strip().lower()
-    if media_type != "application/json" and not media_type.endswith("+json"):
+    content_type_class = _content_type_class(headers)
+    if content_type_class not in {"application_json", "structured_json"}:
         return []
     return [("content-type", "application/json")]
+
+
+def _safe_response_metadata(
+    content: bytes,
+    *,
+    headers: httpx.Headers,
+) -> KrxSafeResponseMetadata:
+    """provider 원문을 보존하지 않고 media/body/encoding 파생 분류만 생성한다."""
+    utf8_valid = True
+    try:
+        content.decode("utf-8")
+    except UnicodeDecodeError:
+        utf8_valid = False
+    return KrxSafeResponseMetadata(
+        content_type_class=_content_type_class(headers),
+        body_class=_body_class(content, utf8_valid=utf8_valid),
+        body_size_bucket=_body_size_bucket(len(content)),
+        utf8_valid=utf8_valid,
+        utf8_bom_present=content.startswith(b"\xef\xbb\xbf"),
+    )
+
+
+def _content_type_class(headers: httpx.Headers) -> str:
+    values = headers.get_list("content-type")
+    if not values:
+        return "missing"
+    if len(values) != 1:
+        return "multiple"
+    media_type = values[0].split(";", 1)[0].strip().lower()
+    if media_type == "application/json":
+        return "application_json"
+    if media_type.endswith("+json"):
+        return "structured_json"
+    return "other"
+
+
+def _body_class(content: bytes, *, utf8_valid: bool) -> str:
+    if not content:
+        return "empty"
+    probe = content[3:] if content.startswith(b"\xef\xbb\xbf") else content
+    probe = probe.lstrip(b" \t\r\n")
+    lowered = probe[:64].lower()
+    if probe.startswith((b"{", b"[")):
+        return "json_candidate"
+    if lowered.startswith((b"<!doctype html", b"<html", b"<head", b"<body")):
+        return "html_like"
+    if utf8_valid:
+        return "text_like"
+    return "opaque"
+
+
+def _body_size_bucket(size: int) -> str:
+    if size == 0:
+        return "empty"
+    if size <= 4 * 1024:
+        return "1_4k"
+    if size <= 64 * 1024:
+        return "4k_64k"
+    if size <= 1024 * 1024:
+        return "64k_1m"
+    return "1m_4m"
 
 
 def _response_contains_credential(

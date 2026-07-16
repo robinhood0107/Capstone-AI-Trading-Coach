@@ -5,10 +5,10 @@ import unicodedata
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date
-from typing import Final, cast
+from typing import Final, NoReturn, cast
 
 from app.data.krx.catalog import ENABLED_UNIVERSE_ENDPOINTS, KrxEndpoint, KrxMarket
-from app.data.krx.errors import KrxParseError
+from app.data.krx.errors import KrxParseError, KrxValidationDiagnostic
 
 
 _OFFICIAL_DAILY_FIELDS: Final = frozenset(
@@ -62,35 +62,95 @@ def parse_daily_response(
     if endpoint not in ENABLED_UNIVERSE_ENDPOINTS or type(requested_date) is not date:
         raise KrxParseError() from None
     if set(payload) != {endpoint.response_block}:
-        raise KrxParseError() from None
+        _fail(
+            "envelope_key_mismatch",
+            top_level_type="object",
+            top_level_key_count=min(len(payload), 16),
+            expected_block_present=endpoint.response_block in payload,
+        )
 
     raw_rows = payload.get(endpoint.response_block)
-    if not isinstance(raw_rows, list) or not raw_rows or len(raw_rows) > _MAX_ROWS:
-        raise KrxParseError() from None
+    if not isinstance(raw_rows, list):
+        _fail(
+            "rows_not_list",
+            top_level_type="object",
+            top_level_key_count=1,
+            expected_block_present=True,
+            row_container_type=_container_type(raw_rows),
+        )
+    if not raw_rows:
+        _fail(
+            "rows_empty",
+            top_level_type="object",
+            top_level_key_count=1,
+            expected_block_present=True,
+            row_container_type="list",
+            row_count=0,
+        )
+    if len(raw_rows) > _MAX_ROWS:
+        _fail(
+            "rows_too_many",
+            top_level_type="object",
+            top_level_key_count=1,
+            expected_block_present=True,
+            row_container_type="list",
+            row_count=min(len(raw_rows), _MAX_ROWS + 1),
+        )
 
     expected_date = requested_date.strftime("%Y%m%d")
     seen_symbols: set[str] = set()
     parsed_rows: list[KrxDailyRow] = []
-    for raw_row in raw_rows:
-        row = _strict_string_row(raw_row)
-        if row["BAS_DD"] != expected_date or row["MKT_NM"] != endpoint.market:
-            raise KrxParseError() from None
+    for row_ordinal, raw_row in enumerate(raw_rows, start=1):
+        row = _strict_string_row(raw_row, row_ordinal=row_ordinal)
+        if row["BAS_DD"] != expected_date:
+            _fail(
+                "row_date_mismatch",
+                row_ordinal=row_ordinal,
+                official_field="BAS_DD",
+            )
+        if row["MKT_NM"] != endpoint.market:
+            _fail(
+                "row_market_mismatch",
+                row_ordinal=row_ordinal,
+                official_field="MKT_NM",
+            )
 
         symbol = row["ISU_CD"]
         name = row["ISU_NM"]
+        if _ASCII_SYMBOL.fullmatch(symbol) is None:
+            _fail(
+                "row_symbol_invalid",
+                row_ordinal=row_ordinal,
+                official_field="ISU_CD",
+            )
         if (
-            _ASCII_SYMBOL.fullmatch(symbol) is None
-            or not name
+            not name
             or name != name.strip()
             or len(name) > 256
             or any(unicodedata.category(character).startswith("C") for character in name)
         ):
-            raise KrxParseError() from None
+            _fail(
+                "row_name_invalid",
+                row_ordinal=row_ordinal,
+                official_field="ISU_NM",
+            )
         if symbol in seen_symbols:
-            raise KrxParseError() from None
+            _fail(
+                "row_symbol_duplicate",
+                row_ordinal=row_ordinal,
+                official_field="ISU_CD",
+            )
 
-        trading_value = _nonnegative_int64(row["ACC_TRDVAL"])
-        market_cap = _nonnegative_int64(row["MKTCAP"])
+        trading_value = _nonnegative_int64(
+            row["ACC_TRDVAL"],
+            row_ordinal=row_ordinal,
+            official_field="ACC_TRDVAL",
+        )
+        market_cap = _nonnegative_int64(
+            row["MKTCAP"],
+            row_ordinal=row_ordinal,
+            official_field="MKTCAP",
+        )
         seen_symbols.add(symbol)
         parsed_rows.append(
             KrxDailyRow(
@@ -105,24 +165,70 @@ def parse_daily_response(
     return tuple(parsed_rows)
 
 
-def _strict_string_row(value: object) -> Mapping[str, str]:
-    if not isinstance(value, Mapping) or set(value) != _OFFICIAL_DAILY_FIELDS:
-        raise KrxParseError() from None
-    if any(not isinstance(child, str) for child in value.values()):
-        raise KrxParseError() from None
+def _strict_string_row(value: object, *, row_ordinal: int) -> Mapping[str, str]:
+    if not isinstance(value, Mapping):
+        _fail("row_not_object", row_ordinal=row_ordinal)
+    keys = set(value)
+    missing = _OFFICIAL_DAILY_FIELDS - keys
+    unexpected = keys - _OFFICIAL_DAILY_FIELDS
+    if missing or unexpected:
+        official_field = next(iter(missing)) if len(missing) == 1 else None
+        _fail(
+            "row_field_set_mismatch",
+            row_ordinal=row_ordinal,
+            official_field=official_field,
+            missing_official_field_count=len(missing),
+            unexpected_row_key_count=min(len(unexpected), 16),
+        )
+    for field in sorted(_OFFICIAL_DAILY_FIELDS):
+        if not isinstance(value[field], str):
+            _fail(
+                "row_non_string",
+                row_ordinal=row_ordinal,
+                official_field=field,
+            )
     return cast(Mapping[str, str], value)
 
 
-def _nonnegative_int64(value: str) -> int:
+def _nonnegative_int64(
+    value: str,
+    *,
+    row_ordinal: int,
+    official_field: str,
+) -> int:
     # 공식 명세의 unavailable 표기 '-'와 실제 무거래 0은 후보 필터가 처리할 수 있게 0으로 정규화한다.
     if value == "-":
         return 0
     if _NONNEGATIVE_INTEGER.fullmatch(value) is None:
-        raise KrxParseError() from None
+        _fail(
+            "row_numeric_invalid",
+            row_ordinal=row_ordinal,
+            official_field=official_field,
+        )
     try:
         parsed = int(value)
     except (TypeError, ValueError, OverflowError):
-        raise KrxParseError() from None
+        _fail(
+            "row_numeric_invalid",
+            row_ordinal=row_ordinal,
+            official_field=official_field,
+        )
     if not 0 <= parsed <= _MAX_INT64:
-        raise KrxParseError() from None
+        _fail(
+            "row_numeric_invalid",
+            row_ordinal=row_ordinal,
+            official_field=official_field,
+        )
     return parsed
+
+
+def _container_type(value: object) -> str:
+    if value is None:
+        return "null"
+    if isinstance(value, Mapping):
+        return "object"
+    return "scalar"
+
+
+def _fail(leaf: str, **values: object) -> NoReturn:
+    raise KrxParseError(KrxValidationDiagnostic.for_leaf(leaf, **values)) from None

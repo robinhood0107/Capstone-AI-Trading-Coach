@@ -70,6 +70,15 @@ class _CloseFailStream(httpx.SyncByteStream):
         raise RuntimeError(self._marker)
 
 
+class _FailingStream(httpx.SyncByteStream):
+    def __init__(self, error: Exception) -> None:
+        self._error = error
+
+    def __iter__(self) -> Iterator[bytes]:
+        raise self._error
+        yield b""
+
+
 def _origin() -> str:
     return KrxOpenApiSettings(_env_file=None).origin
 
@@ -517,6 +526,43 @@ def test_oversized_stream_is_rejected_without_returning_partial_body(
     with pytest.raises(KrxCredentialError, match="response_too_large") as exc_info:
         transport.handle_request(_request())
 
+    assert exc_info.value.__cause__ is None
+
+
+@pytest.mark.parametrize(
+    ("error_factory", "expected_code"),
+    [
+        (lambda marker: httpx.ReadTimeout(marker), "read_timeout"),
+        (lambda marker: httpx.ReadError(marker), "read_unavailable"),
+        (lambda marker: httpx.RemoteProtocolError(marker), "protocol_unavailable"),
+        (lambda marker: RuntimeError(marker), "response_unavailable"),
+    ],
+)
+def test_response_stream_transport_failure_keeps_only_safe_type_code(
+    monkeypatch: pytest.MonkeyPatch,
+    error_factory: object,
+    expected_code: str,
+) -> None:
+    marker = "synthetic-stream-secret-/private/provider"
+    assert callable(error_factory)
+    monkeypatch.setattr(
+        _credential_transport,
+        "_read_credential",
+        lambda: SecretStr("synthetic-krx-auth-key"),
+    )
+    transport = _CredentialTransport(
+        httpx.MockTransport(
+            lambda _: httpx.Response(200, stream=_FailingStream(error_factory(marker)))
+        ),
+        quota=_RecordingQuota(),
+    )
+
+    with pytest.raises(KrxCredentialError, match=expected_code) as exc_info:
+        transport.handle_request(_request())
+
+    rendered = f"{exc_info.value!r} {exc_info.value}"
+    assert marker not in rendered
+    assert transport.physical_attempt_count == 1
     assert exc_info.value.__cause__ is None
 
 

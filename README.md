@@ -6,7 +6,17 @@
 
 ## 에이전트/CI 규칙
 
-작업 전 [AGENTS.md](AGENTS.md)를 먼저 확인한다. 현재 GitHub Actions는 repo hygiene 중심의 비파괴 검증만 수행한다. **어느 세션 완료 시점에 어떤 CI job을 추가하는지는 AGENTS.md의 "CI 로드맵" 표를 따른다** (kotlin-build는 S0.3, python-ci는 S1.4, contracts-ci는 S0.2, OpenAPI diff는 S2.1 등).
+작업 전 [AGENTS.md](AGENTS.md)를 먼저 확인한다. 현재 GitHub Actions는 Repo Hygiene, Contracts CI, Kotlin Build를 수행하며 Python CI는 S1.4 완료 시 추가한다. **어느 세션 완료 시점에 어떤 CI job을 추가하는지는 AGENTS.md의 "CI 로드맵" 표를 따른다**.
+
+## 현재 구현 상태
+
+STAGE 2에서 S1.3 ECOS/Naver 내부 source snapshot과 S1.3K KRX OPEN API universe 자동화까지 `main`에 병합됐다.
+
+- PR #16 merge commit: `6f439155d9f5ec626fc185f29f2e0bd64ca54780`
+- PR #17 merge commit 및 S1.3/S1.3K 기능 완료 기준점: `814aab377251d76672566d39c3edb379d132248e`
+- 최종 검증: KRX focused `313 passed`, S1.3 data matrix `892 passed`, 전체 Python `1086 passed`, Ruff, mypy, contracts, JDK 25 Gradle build, Compose, repo hygiene, gitleaks, 독립 리뷰 통과
+
+완료된 A4/B1/KRX11 approval packet은 재사용하지 않는다. 이후 실제 provider 호출은 새 HEAD·명령·기준일·호출 예산·TTL에 결속한 별도 승인 뒤에만 실행한다.
 
 ## 워크스페이스 소유권
 
@@ -22,7 +32,7 @@
 
 ## 시작하기 (decision-platform)
 
-현재 레포는 STAGE 2이며 Decision Platform의 S0 walking skeleton부터 S1.2c OpenDART 분석 데이터까지 구현되어 있다. 상세 개인 참고 노트는 GitHub에 올리지 않고 로컬 `private-reference/` 폴더에서만 관리한다.
+현재 레포는 STAGE 2이며 Decision Platform의 S0 walking skeleton, S1.1 KIS 시장데이터, S1.2c OpenDART 분석 데이터, S1.3 ECOS/Naver snapshot, S1.3K KRX universe 자동화까지 구현되어 있다. 상세 개인 참고 노트는 GitHub에 올리지 않고 로컬 `private-reference/` 폴더에서만 관리한다.
 
 ```bash
 cp .env.example .env

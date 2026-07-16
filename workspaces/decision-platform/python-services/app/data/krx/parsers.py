@@ -30,7 +30,8 @@ _OFFICIAL_DAILY_FIELDS: Final = frozenset(
         "LIST_SHRS",
     }
 )
-_ASCII_SYMBOL = re.compile(r"[0-9]{6}")
+_KRX_ISSUE_CODE = re.compile(r"[0-9A-Z]{6}", flags=re.ASCII)
+_KIS_COMPATIBLE_SYMBOL = re.compile(r"[0-9]{6}", flags=re.ASCII)
 _NONNEGATIVE_INTEGER = re.compile(r"[0-9]+")
 _MAX_ROWS: Final = 5_000
 _MAX_INT64: Final = 9_223_372_036_854_775_807
@@ -46,6 +47,16 @@ class KrxDailyRow:
     market: KrxMarket
     trading_value: int
     market_cap: int
+
+
+def is_krx_issue_code(value: object) -> bool:
+    """KRX `ISU_CD`의 canonical 6자리 ASCII 대문자·숫자 형식인지 확인한다."""
+    return type(value) is str and _KRX_ISSUE_CODE.fullmatch(value) is not None
+
+
+def is_kis_compatible_symbol(value: object) -> bool:
+    """KRX issue code 중 기존 KIS/Naver universe가 소비 가능한 숫자 6자리만 식별한다."""
+    return type(value) is str and _KIS_COMPATIBLE_SYMBOL.fullmatch(value) is not None
 
 
 def parse_daily_response(
@@ -117,7 +128,7 @@ def parse_daily_response(
 
         symbol = row["ISU_CD"]
         name = row["ISU_NM"]
-        if _ASCII_SYMBOL.fullmatch(symbol) is None:
+        if not is_krx_issue_code(symbol):
             _fail(
                 "row_symbol_invalid",
                 row_ordinal=row_ordinal,

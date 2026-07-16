@@ -56,12 +56,27 @@ KRX1~5/KRX8/KRX10 실패, KRX6/7/9 만료 packet, 기존 S1.3 A4/B1 승인은 �
 영문 포함 행도 row count·중복검사·canonical hash에 포함한다. 기존 KIS/Naver manifest와
 positive candidate/top-30은 exact 숫자 6자리 `[0-9]{6}`만 허용한다.
 
-다음 KRX11은 single staged approval 아래 `KOSPI probe 1 → KOSDAQ probe 1 → full refresh 2`를
-순서대로 실행한다. probe timeout은 `2/120/2/1초 + logical 130초`, full refresh는
-`2/120/2/1초 + shared logical 260초`, retry는 모두 `0`이다. 각 프로세스 cap은 `1/1/2`이고
-합계 `4`는 approval packet과 executor stop rule이 강제한다. 하나라도 실패하면 남은 명령은 실행하지
-않는다. final HEAD·기준일·명령 순서·발급 직전 Redis rolling baseline·TTL `60분`에 결속한 exact
-승인을 받은 경우에만 다음 세 명령을 순차 실행한다.
+KRX11 `approval-krx11-81aed4c1fad6-20260716T122917Z`는 HEAD `81aed4c1fad6`, 기준일
+`2026-07-15`에서 `KOSPI probe 1 → KOSDAQ probe 1 → full refresh 2`를 순서대로 성공했다.
+KOSPI는 row `944`·양수 후보 `887`·SHA
+`4f8e4849ac655598d0bb1ce736d7c0ff4436168eeb232c7bfa2364ee830cfda6`·`11,943ms`,
+KOSDAQ은 row `1,821`·후보 `1,690`·SHA
+`cc2ae17c110196c2daeaa73c1592930d76a2821addab5068c2bd963d5b0350c7`·`14,019ms`를
+기록했다. final refresh는 physical `2`로 두 시장을 다시 검증해 source SHA
+`f23bbd75c55121c65351fa10f47a86871a8e0082a03cab3df8e816527e18c9d1`, manifest/report
+SHA `ed979913de7415146cbb56df97bdf4eddeec3c21bc4792f4c03d802c7596674e`/
+`625caa61ab8cb5382b5da7acc84741f38c1cab5dc2edb1ff2901108c27dc8671`, 30종목, rank 1
+`005930/삼성전자`를 게시했다. Redis는 `4→8`, retry·추가 호출·cooldown은 `0`이다. success
+evidence와 소비 완료 packet SHA는
+`57d66380e2a86c928bf21a69d9e626fa697d487cf878378558aa26959e3f64c9`/
+`58dc47bf96f644b634d76cec6bd08caedd06cc1c8e829419e6d9bf6f49492619`다.
+완료 뒤 KRX `313`, S1.3 matrix `892`, 전체 Python `1086` 테스트와 Ruff, mypy `78` source
+files, lock, contracts, JDK 25 Gradle build, Compose, repo hygiene, gitleaks를 모두 통과했다.
+
+이후 online 실행도 probe timeout `2/120/2/1초 + logical 130초`, full refresh
+`2/120/2/1초 + shared logical 260초`, retry `0` 계약을 유지한다. 각 프로세스 cap은 `1/1/2`이고
+합계 `4`는 approval packet과 executor stop rule이 강제한다. final HEAD·기준일·명령 순서·발급
+직전 Redis rolling baseline·TTL에 결속한 새 exact 승인을 받은 경우에만 다음 세 명령을 순차 실행한다.
 
 ```bash
 cd python-services

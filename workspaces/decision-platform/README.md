@@ -44,19 +44,27 @@ strict parser가 그대로 수용하므로 계약을 느슨하게 하지 않고 
 diagnostic만 보강했다. KRX6/7은 TTL 만료로 provider `0`이다. KRX8은 HEAD `4783432ad7de`,
 첫 endpoint `read_timeout`, physical `1`, Redis `5→6`이며 KOSDAQ·retry·online artifact는 `0`이다.
 failure/RCA SHA-256은 `a2547290e39fe63c1ceda9171beb4dd701c9db8938182e6e93d08e5aacf23dca`와
-`53bc9d4e001b839fe2692be61271f5954fc9e9703b6f94501ac782b128029d62`이다. KRX1~5/KRX8 실패와
-KRX6/7 만료 packet, 기존 S1.3 A4/B1 승인은 재사용하지 않는다. 다음 실행은
-connect/read/write/pool `2/30/2/1초`, 두 endpoint shared logical budget `70초`, retry `0`을 유지한다.
-`.env`의 인증키, 현재 HEAD, 기준일, 2회 호출, timeout profile, Redis 기준값 `6`, TTL에 결속한 새 KRX9
-실행 승인을 받은 경우에만 다음 명령을
-정확히 1회 실행한다.
+`53bc9d4e001b839fe2692be61271f5954fc9e9703b6f94501ac782b128029d62`이다. KRX9는 TTL 만료로
+provider `0`이며 packet SHA-256은 `7aae38e0cc3b721557d93ca16fdd4576f890b2d257b743bab953c01a33304364`다.
+KRX1~5/KRX8 실패, KRX6/7/9 만료 packet, 기존 S1.3 A4/B1 승인은 재사용하지 않는다.
+
+다음 KRX10은 single staged approval 아래 `KOSPI probe 1 → KOSDAQ probe 1 → full refresh 2`를
+순서대로 실행한다. probe timeout은 `2/120/2/1초 + logical 130초`, full refresh는
+`2/120/2/1초 + shared logical 260초`, retry는 모두 `0`이다. 각 프로세스 cap은 `1/1/2`이고
+합계 `4`는 approval packet과 executor stop rule이 강제한다. 하나라도 실패하면 남은 명령은 실행하지
+않는다. final HEAD·기준일·명령 순서·발급 직전 Redis rolling baseline·TTL `60분`에 결속한 exact
+승인을 받은 경우에만 다음 세 명령을 순차 실행한다.
 
 ```bash
 cd python-services
+uv run krx-openapi-service-probe --online --as-of YYYY-MM-DD --service stk_bydd_trd
+uv run krx-openapi-service-probe --online --as-of YYYY-MM-DD --service ksq_bydd_trd
 uv run krx-openapi-universe-refresh --online --as-of YYYY-MM-DD --data-dir data/kis
 ```
 
-`--online`은 로컬 안전 gate일 뿐 사용자 실행 승인을 대체하지 않는다. API 실패를 CSV나 이전
+probe는 service·기준일·row/양수 후보 수·canonical SHA-256·elapsed ms·physical `1`만 출력하고
+manifest/report를 쓰지 않는다. `--online`은 로컬 안전 gate일 뿐 사용자 실행 승인을 대체하지 않는다.
+API 실패를 CSV나 이전
 manifest 성공으로 바꾸지 않으며, 수동 CSV는 기존 `kis-universe-refresh`를 별도 명령으로 실행할
 때만 사용한다. ASCII `YYYY-MM-DD`와 approved ignored `data/` root 내부 output만 허용한다.
 성공·실패 출력에는 caller argv·로컬 경로 대신 안정 code, physical attempt 수와 검증된 allowlist

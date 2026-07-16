@@ -13,7 +13,7 @@ import pytest
 from app.data.krx import universe_refresh_cli
 from app.data.krx._credential_transport import KrxCredentialError
 from app.data.krx.client import KrxHttpError
-from app.data.krx.errors import KrxParseError
+from app.data.krx.errors import KrxParseError, KrxValidationDiagnostic
 from app.data.krx.parsers import KrxDailyRow
 from app.data.krx.universe_refresh_cli import main
 
@@ -340,6 +340,101 @@ def test_collection_failure_exposes_only_allowlisted_diagnostic_code(
     assert str(tmp_path) not in captured.err
     assert not (data_dir / "universe_manifest.json").exists()
     assert not (data_dir / "reports" / "universe_refresh.md").exists()
+
+
+def test_invalid_response_cli_appends_only_typed_allowlisted_diagnostic(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    diagnostic = KrxValidationDiagnostic(
+        stage="envelope_shape",
+        leaf="envelope_key_mismatch",
+        request_ordinal=1,
+        service="stk_bydd_trd",
+        http_status=200,
+        content_type_class="application_json",
+        body_class="json_candidate",
+        body_size_bucket="1_4k",
+        utf8_valid=True,
+        utf8_bom_present=False,
+        top_level_type="object",
+        top_level_key_count=2,
+        expected_block_present=False,
+    )
+    state = _ClientState(
+        error=KrxHttpError(
+            "parse_invalid_response",
+            status_code=200,
+            validation_diagnostic=diagnostic,
+        ),
+        physical_attempt_count=1,
+    )
+    _install_client(monkeypatch, state)
+    monkeypatch.setattr(
+        universe_refresh_cli,
+        "resolve_latest_available_date",
+        lambda _: _AS_OF,
+    )
+
+    exit_code = main(_args(tmp_path / "data" / "kis", "--as-of", _AS_OF.isoformat()))
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert captured.out == ""
+    assert captured.err == (
+        "source=krx operation=universe_refresh code=invalid_response physical_attempts=1 "
+        "validation_stage=envelope_shape validation_leaf=envelope_key_mismatch "
+        "request_ordinal=1 service=stk_bydd_trd http_status=200 "
+        "content_type_class=application_json body_class=json_candidate "
+        "body_size_bucket=1_4k utf8_valid=true utf8_bom_present=false "
+        "top_level_type=object top_level_key_count=2 expected_block_present=false\n"
+    )
+    assert "AUTH_KEY" not in captured.err
+    assert "provider" not in captured.err
+    assert str(tmp_path) not in captured.err
+
+
+def test_invalid_response_cli_ignores_untrusted_diagnostic_objects(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    marker = "synthetic-provider-secret"
+
+    class _UntrustedDiagnostic(KrxValidationDiagnostic):
+        def to_cli_fields(self) -> tuple[tuple[str, str], ...]:
+            return (("unsafe", marker),)
+
+    diagnostic = _UntrustedDiagnostic(
+        stage="json_decode",
+        leaf="json_decode_failed",
+    )
+
+    state = _ClientState(
+        error=KrxHttpError(
+            "parse_invalid_response",
+            status_code=200,
+            validation_diagnostic=diagnostic,
+        ),
+        physical_attempt_count=1,
+    )
+    _install_client(monkeypatch, state)
+    monkeypatch.setattr(
+        universe_refresh_cli,
+        "resolve_latest_available_date",
+        lambda _: _AS_OF,
+    )
+
+    exit_code = main(_args(tmp_path / "data" / "kis", "--as-of", _AS_OF.isoformat()))
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert captured.out == ""
+    assert captured.err == (
+        "source=krx operation=universe_refresh code=invalid_response physical_attempts=1\n"
+    )
+    assert marker not in captured.err
 
 
 def test_calendar_failure_is_sanitized_before_client_creation(

@@ -59,7 +59,7 @@ class KrxOpenApiSettings(BaseSettings):
         validation_alias="KRX_OPENAPI_CONNECT_TIMEOUT_SECONDS",
     )
     read_timeout_seconds: float = Field(
-        default=5.0,
+        default=8.0,
         gt=0,
         le=8.0,
         validation_alias="KRX_OPENAPI_READ_TIMEOUT_SECONDS",
@@ -77,7 +77,7 @@ class KrxOpenApiSettings(BaseSettings):
         validation_alias="KRX_OPENAPI_POOL_TIMEOUT_SECONDS",
     )
     logical_deadline_seconds: float = Field(
-        default=12.0,
+        default=20.0,
         gt=0,
         le=20.0,
         validation_alias="KRX_OPENAPI_LOGICAL_DEADLINE_SECONDS",

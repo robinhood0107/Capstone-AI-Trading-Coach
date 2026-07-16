@@ -130,7 +130,7 @@ class _CredentialTransport(httpx.BaseTransport):
         material = ""
         provider_response: httpx.Response | None = None
         sanitized_response: httpx.Response | None = None
-        transport_failed = False
+        transport_failure_code = ""
         sanitization_code = ""
         cleanup_failed = False
         try:
@@ -148,9 +148,9 @@ class _CredentialTransport(httpx.BaseTransport):
             self._physical_attempt_count += 1
             try:
                 provider_response = self._inner.handle_request(request)
-            except Exception:
-                # inner cause에는 인증 header가 든 request가 붙을 수 있어 원인 사슬 전체를 폐기한다.
-                transport_failed = True
+            except Exception as error:
+                # 문자열·request·cause는 폐기하고 HTTPX의 공개 예외 타입만 안정 코드로 축약한다.
+                transport_failure_code = _safe_transport_failure_code(error)
             if provider_response is not None:
                 try:
                     sanitized_response = _scrub_response(
@@ -178,8 +178,8 @@ class _CredentialTransport(httpx.BaseTransport):
                 material = ""
                 credential = None
 
-        if transport_failed:
-            raise KrxCredentialError("transport_unavailable") from None
+        if transport_failure_code:
+            raise KrxCredentialError(transport_failure_code) from None
         if sanitization_code:
             raise KrxCredentialError(sanitization_code) from None
         if cleanup_failed or sanitized_response is None:
@@ -244,6 +244,27 @@ class _CredentialTransport(httpx.BaseTransport):
             or not _is_canonical_date(pairs[0][1])
         ):
             raise KrxCredentialError("query_not_allowed")
+
+
+def _safe_transport_failure_code(error: Exception) -> str:
+    """credential-bearing 예외의 문자열·원인 사슬을 읽지 않고 공개 HTTPX 타입만 분류한다."""
+    if isinstance(error, httpx.ConnectTimeout):
+        return "connect_timeout"
+    if isinstance(error, httpx.ReadTimeout):
+        return "read_timeout"
+    if isinstance(error, httpx.WriteTimeout):
+        return "write_timeout"
+    if isinstance(error, httpx.PoolTimeout):
+        return "pool_timeout"
+    if isinstance(error, httpx.ConnectError):
+        return "connect_unavailable"
+    if isinstance(error, httpx.ReadError):
+        return "read_unavailable"
+    if isinstance(error, httpx.WriteError):
+        return "write_unavailable"
+    if isinstance(error, httpx.ProtocolError):
+        return "protocol_unavailable"
+    return "transport_unavailable"
 
 
 def _has_sensitive_caller_header(headers: httpx.Headers) -> bool:

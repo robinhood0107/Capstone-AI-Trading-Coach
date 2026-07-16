@@ -28,9 +28,10 @@ KIS outbound는 이 workspace가 단일 owner다. S1.1 client는 실전 18/s har
 
 S1.3K는 KRX OPEN API의 `유가증권 일별매매정보`와 `코스닥 일별매매정보`만 사용해
 내부 top-30 universe를 만든다. 운영 계정은 31개 서비스 entitlement를 모두 승인받았지만
-runtime allowlist는 NOW 두 개로 고정한다. KRX1은 physical `0`·Redis `0→1`, KRX2와 KRX3는
-첫 NOW endpoint에서 각각 physical `1`·Redis `1→2`/`2→3` 인증 실패로 끝났고 성공 산출물은
-없다. 세 실패 packet과 기존 S1.3 A4/B1 승인은 재사용하지 않는다. `.env`의 인증키, 현재 HEAD,
+runtime allowlist는 NOW 두 개로 고정한다. KRX1은 physical `0`·Redis `0→1`, KRX2는 첫 NOW
+endpoint handoff 뒤 원인 미분류 `collection_failed`로 physical `1`·Redis `1→2`, KRX3는 같은
+첫 handoff의 `authentication_failed(401_or_403)`로 physical `1`·Redis `2→3`을 기록했고 성공
+산출물은 없다. 세 실패 packet과 기존 S1.3 A4/B1 승인은 재사용하지 않는다. `.env`의 인증키, 현재 HEAD,
 기준일, 2회 호출, Redis 기준값, TTL에 결속한 새 KRX 실행 승인을 받은 경우에만 다음 명령을
 정확히 1회 실행한다.
 

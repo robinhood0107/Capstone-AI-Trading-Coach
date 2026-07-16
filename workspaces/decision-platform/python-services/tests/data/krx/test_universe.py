@@ -174,6 +174,32 @@ def test_provider_row_order_does_not_change_manifest_or_source_hash() -> None:
     assert first.source_sha256 == second.source_sha256
 
 
+def test_alphanumeric_krx_issue_code_is_hashed_but_not_selected_for_kis_universe() -> None:
+    alphanumeric = replace(
+        _row(32),
+        symbol="00279K",
+        name="합성우선주",
+        market="KOSPI",
+        market_cap=9_000_000,
+        trading_value=9_000_000,
+    )
+    rows = (*_valid_rows(31), alphanumeric)
+
+    manifest = refresh_universe_from_krx_openapi(
+        _as_client(_FakeClient(rows=tuple(reversed(rows)))),
+        as_of=_AS_OF,
+        generated_at=_GENERATED_AT,
+    )
+
+    assert manifest.source_sha256 == canonical_json_sha256(_canonical_source_rows(rows))
+    assert "00279K" not in manifest.symbol_codes
+    assert len(manifest.symbols) == 30
+    assert all(
+        len(item.symbol) == 6 and item.symbol.isascii() and item.symbol.isdecimal()
+        for item in manifest.symbols
+    )
+
+
 def test_online_refresh_rejects_29_candidates_instead_of_publishing_short_universe() -> None:
     with pytest.raises(ValueError, match="30|candidate"):
         refresh_universe_from_krx_openapi(

@@ -9,6 +9,7 @@ import pytest
 from app.data.kis.universe import (
     KRX_EXPORT_RANKING_RULE,
     UniverseExportError,
+    UniverseManifestSymbol,
     load_universe_manifest,
     parse_symbols,
     refresh_universe_from_krx_export,
@@ -21,6 +22,19 @@ from app.data.kis.universe_refresh_cli import main
 def test_parse_symbols_rejects_non_ascii_six_digit_codes(value: str) -> None:
     with pytest.raises(ValueError, match="six digits"):
         parse_symbols(value)
+
+
+@pytest.mark.parametrize("symbol", ["00279K", "ABCDEF", "１２３４５６", "005930 "])
+def test_manifest_symbol_constructor_rejects_noncanonical_kis_codes(symbol: str) -> None:
+    with pytest.raises(ValueError, match="six digits"):
+        UniverseManifestSymbol(
+            rank=1,
+            symbol=symbol,
+            name="합성종목",
+            market="KOSPI",
+            market_cap=1,
+            trading_value=1,
+        )
 
 
 def test_refresh_universe_from_krx_export_ranks_by_market_cap_then_trading_value(

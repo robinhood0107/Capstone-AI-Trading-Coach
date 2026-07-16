@@ -176,11 +176,23 @@ def test_row_market_must_match_the_catalog_endpoint(invalid_market: str) -> None
     assert exc_info.value.diagnostic.official_field == "MKT_NM"
 
 
+@pytest.mark.parametrize("valid_symbol", ["900001", "00279K", "ABC123"])
+def test_symbol_accepts_exactly_six_ascii_uppercase_alphanumeric_characters(
+    valid_symbol: str,
+) -> None:
+    payload = _fixture("kospi_daily_success.json")
+    payload["OutBlock_1"][0]["ISU_CD"] = valid_symbol
+
+    rows = _parse(payload)
+
+    assert rows[0].symbol == valid_symbol
+
+
 @pytest.mark.parametrize(
     "invalid_symbol",
-    ["90001", "9000001", "ABC123", "９００００１", "90000 ", ""],
+    ["90001", "9000001", "90000k", "90000-", "９００００１", "90000 ", ""],
 )
-def test_symbol_requires_exactly_six_ascii_digits(invalid_symbol: str) -> None:
+def test_symbol_rejects_noncanonical_krx_issue_codes(invalid_symbol: str) -> None:
     payload = _fixture("kospi_daily_success.json")
     payload["OutBlock_1"][0]["ISU_CD"] = invalid_symbol
 
@@ -190,6 +202,9 @@ def test_symbol_requires_exactly_six_ascii_digits(invalid_symbol: str) -> None:
     assert exc_info.value.diagnostic is not None
     assert exc_info.value.diagnostic.leaf == "row_symbol_invalid"
     assert exc_info.value.diagnostic.official_field == "ISU_CD"
+    if invalid_symbol:
+        assert invalid_symbol not in str(exc_info.value)
+        assert invalid_symbol not in repr(exc_info.value.diagnostic)
 
 
 @pytest.mark.parametrize("invalid_name", ["", " ", "\t", "합성\n종목", "합성\x00종목", "가" * 257])

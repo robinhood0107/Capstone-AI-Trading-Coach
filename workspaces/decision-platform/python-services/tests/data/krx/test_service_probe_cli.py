@@ -217,6 +217,12 @@ def test_probe_success_calls_one_service_and_never_writes_artifacts(
             market_cap=0,
             trading_value=800_000,
         ),
+        _row(
+            symbol="00279K",
+            market=market,
+            market_cap=700_000,
+            trading_value=950_000,
+        ),
     )
     state = _ProbeState(rows=tuple(reversed(rows)))
     _install_client(monkeypatch, state)
@@ -269,7 +275,7 @@ def test_probe_success_calls_one_service_and_never_writes_artifacts(
         "code": "complete",
         "service": service,
         "as_of": _AS_OF.isoformat(),
-        "row_count": "2",
+        "row_count": "3",
         "positive_candidate_count": "1",
         "source_sha256": fields["source_sha256"],
         "elapsed_ms": "125",

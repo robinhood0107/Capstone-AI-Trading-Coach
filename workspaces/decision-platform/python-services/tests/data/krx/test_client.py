@@ -96,6 +96,68 @@ def test_test_factory_accepts_only_mock_transport() -> None:
         )
 
 
+def test_two_endpoints_share_one_logical_deadline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now = [100.0]
+    observed_timeouts: list[dict[str, float | None]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        observed_timeouts.append(dict(request.extensions["timeout"]))
+        if request.url.path == KOSPI_DAILY.path:
+            now[0] = 104.0
+            return httpx.Response(
+                200,
+                json=_payload(
+                    _daily_row(
+                        symbol="005930",
+                        name="삼성전자",
+                        market="KOSPI",
+                        market_cap=500_000,
+                        trading_value=900_000,
+                    )
+                ),
+            )
+        return httpx.Response(
+            200,
+            json=_payload(
+                _daily_row(
+                    symbol="035720",
+                    name="카카오",
+                    market="KOSDAQ",
+                    market_cap=300_000,
+                    trading_value=700_000,
+                )
+            ),
+        )
+
+    monkeypatch.setattr(client_module.time, "monotonic", lambda: now[0])
+    client, _ = _client(
+        monkeypatch,
+        httpx.MockTransport(handler),
+        settings=KrxOpenApiSettings(
+            _env_file=None,
+            KRX_OPENAPI_LOGICAL_DEADLINE_SECONDS=5.0,
+        ),
+    )
+
+    rows = client.fetch_universe_rows(_AS_OF)
+
+    assert len(rows) == 2
+    assert observed_timeouts[0] == {
+        "connect": 2.0,
+        "read": 5.0,
+        "write": 2.0,
+        "pool": 1.0,
+    }
+    assert observed_timeouts[1] == {
+        "connect": 1.0,
+        "read": 1.0,
+        "write": 1.0,
+        "pool": 1.0,
+    }
+
+
 def test_production_constructor_rejects_private_dependency_overrides() -> None:
     settings = KrxOpenApiSettings(_env_file=None)
     transport = httpx.MockTransport(lambda _: httpx.Response(200))

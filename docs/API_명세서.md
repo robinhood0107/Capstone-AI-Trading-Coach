@@ -1553,7 +1553,7 @@ KIS 매수가능조회(모의 `VTTC8908R`)를 매핑한다. 주문 제출 전 �
 {
   "sourceId": "src_cal_kasi_holiday",
   "observedAt": "2026-07-08T02:10:00+09:00",
-  "observedValue": "2026-10-05 CLOSED (추석)",
+  "observedValue": "2026-10-05 PUBLIC_HOLIDAY (개천절 대체공휴일)",
   "payloadHash": "sha256:7a8b9c0d1e2f30415263748596a7b8c9d0e1f23456789abcdef0123456789abc",
   "attribution": "한국천문연구원 특일 정보(공공데이터포털)"
 }
@@ -1602,11 +1602,11 @@ events 응답 예시(충돌 노출):
 }
 ```
 
-sources 응답 항목 예시(공개 가능 필드만): `sourceId`, `provider`, `category`, `licenseClass`, `coverageMarkets`, `coverageEventTypes`, `reliabilityTier`, `attributionRequired`. `licenseClass`의 공식 무료 분류는 key 유무를 구분하지 않는 `OFFICIAL_NO_FEE`로만 반환한다. 인증 방식, credential/configuration 존재 여부, 환경변수 이름, provider 계정·quota, 내부 health 상세는 포함하지 않는다.
+sources 응답 항목 예시(공개 가능 필드만): `sourceId`, `provider`, `category`, `licenseClass`, `coverageMarkets`, `coverageEventTypes`, `reliabilityTier`, `attributionRequired`. `licenseClass`의 공식 무료 분류는 인증 key 유무가 아니라 이용조건을 기준으로 하며, 일반 공식 무료는 `OFFICIAL_NO_FEE`, 비상업·개인용·변경금지 등 이용 제한이 있는 공식 무료는 `OFFICIAL_NONCOMMERCIAL_RESTRICTED`로 반환한다. 인증 방식, credential/configuration 존재 여부, 환경변수 이름, provider 계정·quota, 내부 health 상세는 포함하지 않는다.
 
 ### 12A.3 충돌·신뢰도 시맨틱 (계획)
 
-1. 소스 우선순위: 공식 거래소/규제기관/정부(KRX, DART/OpenDART, SEC, KASI, FRED) > 규제 브로커·인프라(KIS, 예탁원 경유 데이터) > 검증된 라이브러리/키 발급형 aggregator > RSS/HTML 스크랩.
+1. 일반 출처 우선순위는 공식 거래소/규제기관/정부 > 규제 브로커·인프라 > 검증된 라이브러리/키 발급형 aggregator > RSS/HTML 스크랩이다. 다만 capability별 규칙이 우선하며 XKRX `TradingSession.isOpen`은 KIS `CTCA0903R`의 `opnd_yn`이 운영 1차, `exchange_calendars` XKRX가 base/fallback, KASI는 `PUBLIC_HOLIDAY`와 사유 보강만 담당한다. FRED는 현행 약관상 서면 허가 또는 대체 licensed source 전 사용하지 않는다.
 2. 독립 소스 다수 일치는 confidence를 올린다(동일 상위 원천을 재배포한 소스는 독립으로 세지 않는다).
 3. 날짜/시간 충돌은 조용히 덮어쓰지 않는다. 상위 tier 값을 canonical로 채택하되 `conflictFlag=true`와 전체 `sourceRefs`를 유지하고 `/conflicts`에 노출한다.
 4. 미래 실적 이벤트는 aggregator 값만으로 `CONFIRMED`가 될 수 없고, DART/SEC 제출 확인 시 `EARNINGS_ACTUAL`(status=ACTUAL)로 별도 이벤트를 만든다.
@@ -1744,7 +1744,7 @@ S1.3 내부 source snapshot 계약은 다음과 같다.
 | Naver physical attempt | Redis reservation은 non-refundable이지만 `physicalAttemptCount`는 credential·header 구성과 final deadline 검사 후 inner provider transport handoff 직전에만 증가한다. credential/deadline 실패는 Redis `+1`·physical `0`, handoff 후 transport 실패는 physical `1`로 기록하여 두 회계를 분리한다 |
 | online gate | Redis loopback/`NOAUTH`/인증 `PONG`/AOF/256 MiB/`noeviction` 검증 뒤, 현재 HEAD·명령·series·TTL에 묶인 새 packet을 정확히 승인받아 ECOS preflight 4회를 retry 0으로 수행한다. A1(SHA `042aba528f55321fe5d4635588895aaf5c40192ce120dd477c88bfa95ca1ed80`), A2(SHA `8b7bb4a9492d14e79234db27e86a22725f74c8415ae27347fe8c344d2d19fe27`), A3 failure diagnostic(SHA `1b0337ddca53be9b52d9f2d6929b2d173ab8c3cabc233e6fac47dc55c3de192e`)는 실패 evidence다. A3는 physical `2`·Redis `+2`, ordinal `2`, candidate count `4`에서 중단했고 보충 호출은 `0`회다. A4는 SHA `3bb3810728cfb2c3b7ba8006b071295606e24bfc51e0f2b94e15d3840baaa625`, physical `4`·Redis `+4`로 성공했으며 `semantic-3bb3810728cf` 의미 승인 뒤 registry를 활성화했다. approved registry는 `policy-rate`=`한국은행 기준금리`/`연%`, `krw-usd-rate`=`원/미국달러(매매기준율)`/`원`, timestamp `2026-07-15T06:02:19.299552Z`다. 전체 gate·원격 green, KRX universe audit, Naver 내부 사용/최대 30일 보존 승인 후 새 B packet으로 ECOS `D-29..D` key `+2`를 먼저 완전히 성공한 뒤 Naver rank-1 `display=10` key `+1`을 retry 0·`--require-complete`로 실행한다. B ref는 CLI argument가 아닌 HEAD·명령·TTL 결속 운영 evidence이므로 executor가 exact 승인 전 invocation을 금지하고, CLI는 `--online`·exact registry를 기계적으로 검사한다. B는 원자적이며 Naver 실패 시 그 B의 ECOS 성공분도 채택하지 않는다. accepted set은 성공한 A 하나+B 하나의 ECOS `6`+Naver `1`=`7` attempts만 합산하며 A1/A2/A3/실패 B를 포함한 lifetime 호출 주장으로 표현하지 않는다. gate 실패 시 즉시 중단하고 새 승인 없이 재호출하지 않으며 live negative injection은 금지한다 |
 | accepted evidence | B1 `approval-b1-23618d21265d-20260715T072151Z`는 HEAD `23618d21265d`에서 성공했다. KRX source/manifest SHA는 `781852a247f15b86226669a778d3b698756abd2d2515c79efc2af6f229d1d6e6`/`bde825cfe5c25a25960b3f354ef91adb7b0b5110f23c9687e90bd448a938b73f`, as-of는 `2026-07-15`, rank 1은 `005930/삼성전자`다. ECOS snapshot/manifest SHA는 `3f20789967add58531c79ae522b89b94227a7692ab3d4fbace8b8ff5adbb962f`/`be7c4d9637b19045316fb6324bb47f9f23cff5002189510d4656be184679f7d3`, 2 series·50 observations·physical `2`·retention `365`다. Naver snapshot/manifest SHA는 `209ef0bf01ad617e1b6fb65b0d57dd3f66e4e62d46487a2585a8f454b615c688`/`1cc159ffa500b207f422b4fd2618689c216a22778bf2064bc065b815ecad185a`, query `삼성전자` 1건·metadata 10건·physical `1`·retention `30`이다. 두 artifact set은 complete이고 schema/runtime/canonical/hash/mode/sanitization 검증을 통과했으며 retention dry-run은 `scanned=2 eligible=0 deleted=0 skipped=0`이다. B evidence SHA는 `ecb62e114352439994fa799096a916757ba7fba081f08f1d1b78ec35397d85fb`; accepted set은 A4+B1의 ECOS `6`+Naver `1`=`7`이다 |
-| Naver lifecycle | 이번 S1.3 immediate legacy 1-query smoke는 현재 collector 계약 검증이다. 이와 별개로 운영자가 `legacy` 또는 `api-hub` profile을 명시하며 날짜 기반 자동 전환은 없다. 2026 Q3에 NCP 계정·Application·API key ID/key와 secret entry를 준비하고, 2026 Q4에 pinned fixture parity와 별도 승인된 최소 1-query API Hub lifecycle 검증을 다시 거친다. 목표 cutover는 `2027-03-31`, legacy rollback 제거는 `2027-05-31`, legacy hard stop은 `2027-06-30T00:00:00+09:00`이며 API Hub는 그 전까지 disabled-ready다 |
+| Naver lifecycle | Naver Developer Center `legacy` profile만 현재 활성 상태로 사용하며, 이번 S1.3 immediate legacy 1-query smoke는 해당 collector 계약 검증이다. 날짜 기반 자동 전환은 없다. API Hub는 구현 일정·credential 준비·검증·cutover 계획이 없는 `disabled future option`으로만 기록하며, 검토·준비·검증·전환은 사용자가 별도로 명시적으로 승인한 세션 전에는 수행하지 않는다 |
 
 #### 13.5.A S1.3K KRX universe internal collector (구현·live 검증·병합 완료)
 
@@ -1868,7 +1868,7 @@ message DisclosureRiskWarning {
 | 감시 모델 | v1은 백그라운드 상시 감시가 아니라 **판단 시점 조회(on-demand lookback)**다. RiskEngine은 PostgreSQL에 저장된 관측치 또는 snapshot을 읽고 주문 판단 경로에서 OpenDART HTTP 요청을 직접 fan-out하지 않는다. 이벤트로 상태를 open/close하는 지속 상태 추적은 S1.6 과제다. 상세는 `docs/decision-platform/S1_2_OpenDART_공시위험점수_근거.md`의 "공시위험 감시 모델" 절 |
 | 소비 | Decision/Risk 판단은 이 응답을 `risk_decision.riskItems[]`(`metric=disclosure_risk_score`)로 노출한다 |
 | 보안 | 인증정보는 서버 운영자가 루트 `.env`/배포 secret store에만 주입한다. `OpenDARTSettings`·business client·HTTP client는 값이나 필드를 보관하지 않는다. private transport가 TLS 검증을 강제한 고정 OpenDART HTTPS origin의 실제 send 구간에서만 값을 일시 로드·첨부하고 즉시 request URL을 원복한다. redirect, ambient proxy/`.netrc`(`trust_env`), caller proxy/CA override와 상위 caller의 인증성 파라미터·절대 URL은 outbound 전 거부한다. response echo·로그·예외·metric·raw/fingerprint에서는 값과 민감 필드 자체를 제거한다 |
-| quota | 개인 계정 hard limit은 OpenDART FAQ의 `20,000/day`를 적용한다. S1.6 배포 예시는 `limit=20,000`, `budget=17,500`, `per-run actual attempt cap=8,000`이며 코드 기본값으로 고정하지 않는다. `status=020` 또는 budget 도달 시 당일 전면 중단한다 |
+| quota | OpenDART FAQ의 개인 계정 `20,000/day`는 현재 배포 ceiling을 정하기 위한 검증 기준값이며 계정 공통 불변 hard cap으로 간주하지 않는다. S1.6은 실제 계정 한도를 `effective limit`으로 재확인하고 `daily limit<=effective limit`, `daily budget<=min(17,500, floor(effective limit*0.875))`, `per-run actual attempt cap<=min(8,000, daily budget)`으로 함께 낮추며 코드 기본값으로 고정하지 않는다. 계정 화면에서도 20,000건을 확인한 경우에만 17,500/8,000 예시를 그대로 사용한다. `status=020` 또는 budget 도달 시 당일 전면 중단한다 |
 
 ### 13.6 FinancialEngineeringService
 

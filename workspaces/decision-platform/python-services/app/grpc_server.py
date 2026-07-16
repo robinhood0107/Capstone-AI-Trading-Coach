@@ -13,14 +13,16 @@ HEALTH_SERVICE_NAME = "grpc.health.v1.Health"
 
 @dataclass(frozen=True)
 class GrpcServerSettings:
-    """S1.3 RPC 도입 전 plaintext health는 loopback에만 bind하고 reflection은 명시 opt-in한다."""
+    """인증 RPC 도입 전 plaintext health는 loopback에만 bind하고 reflection은 명시 opt-in한다."""
 
     bind_address: str = "127.0.0.1:50051"
     enable_reflection: bool = False
 
     def __post_init__(self) -> None:
         if not _is_loopback_address(self.bind_address):
-            raise ValueError("Python gRPC must bind to loopback until authenticated transport is implemented")
+            raise ValueError(
+                "Python gRPC must bind to loopback until authenticated transport is implemented"
+            )
 
     @classmethod
     def from_env(cls) -> "GrpcServerSettings":

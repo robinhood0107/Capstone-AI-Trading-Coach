@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "source": "naver",
+  "providerProfile": "naver-legacy",
+  "asOf": "2026-07-14",
+  "retrievedAt": "2026-07-14T01:10:00Z",
+  "universeManifestSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "universeAsOfDate": "2026-07-14",
+  "batchCursor": 0,
+  "nextBatchCursor": 1,
+  "queries": [
+    {
+      "rank": 1,
+      "symbol": "005930",
+      "query": "Synthetic Company One",
+      "status": "complete",
+      "providerTotal": 1,
+      "requestedDisplay": 1,
+      "providerDisplay": 1,
+      "receivedCount": 1,
+      "acceptedCount": 1,
+      "filteredCount": 0,
+      "redactedUrlCount": 0,
+      "items": [
+        {
+          "title": "Synthetic market update",
+          "description": "Synthetic one-query metadata fixture for contract validation.",
+          "originalUrl": "https://example.com/news/1",
+          "naverUrl": "https://example.com/naver/1",
+          "providerPubDate": "2026-07-14T00:55:00Z"
+        }
+      ]
+    }
+  ],
+  "partial": false,
+  "coverage": "complete",
+  "deferredQueries": []
+}

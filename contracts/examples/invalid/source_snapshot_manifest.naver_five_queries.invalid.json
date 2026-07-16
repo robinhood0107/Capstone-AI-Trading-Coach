@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "source": "naver",
+  "providerProfile": "naver-legacy",
+  "operation": "naver-news-metadata-collect",
+  "generatedAt": "2026-07-14T01:10:01Z",
+  "asOf": "2026-07-14",
+  "snapshotPath": "naver/2026/07/14/123e4567-e89b-42d3-a456-426614174004/snapshot.json",
+  "snapshotSha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+  "recordCount": 0,
+  "countBreakdown": {
+    "queryCount": 5,
+    "acceptedItemCount": 0,
+    "filteredItemCount": 0,
+    "redactedUrlCount": 0
+  },
+  "partial": false,
+  "coverage": "empty",
+  "deferredQueries": 0,
+  "physicalAttemptCount": 5,
+  "quotaPolicyVersion": "s1.3-naver-legacy-quota-v1",
+  "provenance": {
+    "documentationUrl": "https://developers.naver.com/docs/serviceapi/search/news/news.md",
+    "policyUrl": "https://developers.naver.com/products/terms/"
+  },
+  "sanitizationVersion": "s1.3-sanitization-v1",
+  "retentionDays": 30,
+  "deleteOwner": "decision-platform:source-snapshot-retention"
+}

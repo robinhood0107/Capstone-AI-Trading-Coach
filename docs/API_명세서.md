@@ -1702,6 +1702,44 @@ service MarketDataService {
 }
 ```
 
+> S1.3 가용성(2026-07-15): 위 `GetNewsSummary`와 `GetMacroSnapshot`은 미래 interface
+> sketch이며 현재 proto/controller가 없어 **호출 불가**다. S1.3은 아래 내부 file artifact만
+> 생산한다. `GetNewsSummary`는 Naver provider 응답이 아니라 Return Engine이 생성할 감성 요약
+> 계약을 뜻하며, 두 RPC를 공개하려면 별도의 `contracts/changes/`와 인증·인가 구현이 필요하다.
+> 아래 lower-only batch/retry, strict CLI와 JSON Schema를 구현했다. Approval A1·A2·A3는
+> 실패 evidence로 분리한다. A4 `approval-a4-692635240394-20260715T055519Z`는 실행 HEAD
+> `692635240394`에서 physical handoff `4`·Redis `+4`로 성공했고 canonical evidence SHA는
+> `3bb3810728cfb2c3b7ba8006b071295606e24bfc51e0f2b94e15d3840baaa625`다. 사용자는
+> `semantic-3bb3810728cf`로 exact name·unit의 의미를 승인했으며 관측 timestamp와 함께
+> registry를 활성화했다. activation 중 provider 호출은 `0`회다. 실제 KRX audit과 Naver 정책
+> `naver-policy-23618d21265d-20260715T064502Z` 승인 뒤 B1
+> `approval-b1-23618d21265d-20260715T072151Z`를 실행 HEAD `23618d21265d`에서 ECOS
+> physical `2`·Redis `+2`, Naver physical `1`·Redis `+1`로 성공했다. B1 evidence SHA는
+> `ecb62e114352439994fa799096a916757ba7fba081f08f1d1b78ec35397d85fb`다.
+
+S1.3 내부 source snapshot 계약은 다음과 같다.
+
+| 항목 | 계약 |
+|---|---|
+| producer | Decision Platform의 `ecos-macro-collect`, `naver-news-metadata-collect`만 provider outbound를 소유한다 |
+| artifact | `ecos_macro_snapshot`, `naver_news_metadata_snapshot`, source-discriminated `source_snapshot_manifest` JSON Schema를 사용한다 |
+| publish | ignored `data/source_snapshots/` 아래 snapshot을 먼저 쓰고 SHA-256이 일치하는 `manifest.json`을 마지막 commit marker로 게시한다. file mode는 `0600`, overwrite·symlink·절대/상위경로는 거부한다 |
+| consume | consumer는 manifest만 열거하고 schema·상대경로·date partition·SHA-256을 검증한다. workspace 간 전달은 `contracts/`·`artifacts/` 합의 경계를 사용하며 다른 workspace 구현이나 임의 로컬 경로를 직접 참조하지 않는다 |
+| retention | ECOS 365일, Naver metadata 최대 30일. 삭제 owner는 `decision-platform:source-snapshot-retention`이며 command는 dry-run 기본, `--apply`에서 manifest-first로 최대 1,000개만 지운다 |
+| 금지 데이터 | provider raw body/header/message, credential/query가 포함된 provider request URL, auth/header, credential·hash, 기사 본문, 로컬 절대경로를 snapshot·manifest·로그에 저장하지 않는다. 정규화된 기사 metadata URL과 고정 provenance URL은 canonical artifact에 허용한다 |
+| Naver query | canonical snapshot은 별도 smoke 포맷 없이 `queries=1..4`를 허용한다. `NAVER_BATCH_SIZE`는 기본 4이고 `1..4`에서만 하향하며 immediate legacy smoke는 1이다. consumer/storage는 snapshot 배열 길이와 manifest `queryCount`가 같은지 교차 검증하고 0·5 또는 count mismatch를 거부한다 |
+| retry | `ECOS_MAX_ATTEMPTS_PER_REQUEST`와 `NAVER_MAX_ATTEMPTS_PER_QUERY`는 각각 `1..2`, 기본 2, smoke 1인 non-secret lower-only 설정이다. ECOS metadata preflight는 설정과 무관하게 hard 1 attempt다. Naver manifest `physicalAttemptCount`는 `2 * queryCount`를 초과할 수 없다 |
+| CLI | `--require-complete`는 online-only다. 첫 failed·empty·deferred에서 다음 provider 호출과 incomplete artifact publish를 중단한다. 일반 모드는 수집된 count와 deferred cursor를 보존한 partial을 허용한다. exit은 성공 `0`, hard failure `1`, argument/gate 오류 `2`, 재개 가능한 partial `3`이다 |
+| Naver 실패 로그 | `source=naver operation=news_metadata_collect code=<allowlisted_code>`만 출력한다. code allowlist는 `invalid_arguments`, `authentication_unavailable`, `authentication_failed`, `logical_deadline_exceeded`, `transport_unavailable`, `rate_limited`, `quota_unavailable`, `invalid_response`, `partial_collection`, `persistence_failed`, `collection_failed`다. provider message·URL·query·header·credential·traceback은 금지한다 |
+| ECOS preflight 진단 | operator-evidence v1 최상위는 유지하고 `sanitizedPreflight.diagnostic`에만 immutable allowlist 진단을 둔다. request ordinal/service/series, stable stage/reason, 제한된 수치·분류만 허용하며 raw header/body/message/URL/query, credential, 실제 field 값·hash, traceback은 금지한다. CLI JSON은 sorted compact 한 줄이고 evidence SHA는 terminal newline을 제외한 canonical bytes를 기준으로 한다 |
+| ECOS ItemList identity | `StatisticSearch`가 `ITEM_CODE1`만 전송하는 현재 계약에 맞춰 `StatisticItemList`의 `(STAT_CODE, GRP_CODE=Group1, ITEM_CODE, 요청 CYCLE)`가 정확히 1행일 때만 승인 후보로 선택한다. 이름·단위·parent·기간·행 순서를 tie-breaker로 쓰지 않고 0행 또는 완전 identity 중복은 fail-closed한다 |
+| ECOS approved registry | A4 의미 승인 identity·name·unit·`registry_verified_at`·`verified`·series 순서 전체가 source-controlled tuple과 exact 일치해야 한다. 단일 필드 mismatch도 online client 생성과 provider handoff 전에 `registry_not_verified`로 차단한다 |
+| ECOS Search URL | `StatisticSearch/{lang}/{format}/{start}/{end}/{statCode}/{cycle}/{fromDate}/{toDate}/{itemCode1}/`로 고정하고 마지막 `/`를 포함한다. `ITEM_CODE2~4`, query string, 빈 placeholder segment를 전송하지 않는다 |
+| Naver physical attempt | Redis reservation은 non-refundable이지만 `physicalAttemptCount`는 credential·header 구성과 final deadline 검사 후 inner provider transport handoff 직전에만 증가한다. credential/deadline 실패는 Redis `+1`·physical `0`, handoff 후 transport 실패는 physical `1`로 기록하여 두 회계를 분리한다 |
+| online gate | Redis loopback/`NOAUTH`/인증 `PONG`/AOF/256 MiB/`noeviction` 검증 뒤, 현재 HEAD·명령·series·TTL에 묶인 새 packet을 정확히 승인받아 ECOS preflight 4회를 retry 0으로 수행한다. A1(SHA `042aba528f55321fe5d4635588895aaf5c40192ce120dd477c88bfa95ca1ed80`), A2(SHA `8b7bb4a9492d14e79234db27e86a22725f74c8415ae27347fe8c344d2d19fe27`), A3 failure diagnostic(SHA `1b0337ddca53be9b52d9f2d6929b2d173ab8c3cabc233e6fac47dc55c3de192e`)는 실패 evidence다. A3는 physical `2`·Redis `+2`, ordinal `2`, candidate count `4`에서 중단했고 보충 호출은 `0`회다. A4는 SHA `3bb3810728cfb2c3b7ba8006b071295606e24bfc51e0f2b94e15d3840baaa625`, physical `4`·Redis `+4`로 성공했으며 `semantic-3bb3810728cf` 의미 승인 뒤 registry를 활성화했다. approved registry는 `policy-rate`=`한국은행 기준금리`/`연%`, `krw-usd-rate`=`원/미국달러(매매기준율)`/`원`, timestamp `2026-07-15T06:02:19.299552Z`다. 전체 gate·원격 green, KRX universe audit, Naver 내부 사용/최대 30일 보존 승인 후 새 B packet으로 ECOS `D-29..D` key `+2`를 먼저 완전히 성공한 뒤 Naver rank-1 `display=10` key `+1`을 retry 0·`--require-complete`로 실행한다. B ref는 CLI argument가 아닌 HEAD·명령·TTL 결속 운영 evidence이므로 executor가 exact 승인 전 invocation을 금지하고, CLI는 `--online`·exact registry를 기계적으로 검사한다. B는 원자적이며 Naver 실패 시 그 B의 ECOS 성공분도 채택하지 않는다. accepted set은 성공한 A 하나+B 하나의 ECOS `6`+Naver `1`=`7` attempts만 합산하며 A1/A2/A3/실패 B를 포함한 lifetime 호출 주장으로 표현하지 않는다. gate 실패 시 즉시 중단하고 새 승인 없이 재호출하지 않으며 live negative injection은 금지한다 |
+| accepted evidence | B1 `approval-b1-23618d21265d-20260715T072151Z`는 HEAD `23618d21265d`에서 성공했다. KRX source/manifest SHA는 `781852a247f15b86226669a778d3b698756abd2d2515c79efc2af6f229d1d6e6`/`bde825cfe5c25a25960b3f354ef91adb7b0b5110f23c9687e90bd448a938b73f`, as-of는 `2026-07-15`, rank 1은 `005930/삼성전자`다. ECOS snapshot/manifest SHA는 `3f20789967add58531c79ae522b89b94227a7692ab3d4fbace8b8ff5adbb962f`/`be7c4d9637b19045316fb6324bb47f9f23cff5002189510d4656be184679f7d3`, 2 series·50 observations·physical `2`·retention `365`다. Naver snapshot/manifest SHA는 `209ef0bf01ad617e1b6fb65b0d57dd3f66e4e62d46487a2585a8f454b615c688`/`1cc159ffa500b207f422b4fd2618689c216a22778bf2064bc065b815ecad185a`, query `삼성전자` 1건·metadata 10건·physical `1`·retention `30`이다. 두 artifact set은 complete이고 schema/runtime/canonical/hash/mode/sanitization 검증을 통과했으며 retention dry-run은 `scanned=2 eligible=0 deleted=0 skipped=0`이다. B evidence SHA는 `ecb62e114352439994fa799096a916757ba7fba081f08f1d1b78ec35397d85fb`; accepted set은 A4+B1의 ECOS `6`+Naver `1`=`7`이다 |
+| Naver lifecycle | 이번 S1.3 immediate legacy 1-query smoke는 현재 collector 계약 검증이다. 이와 별개로 운영자가 `legacy` 또는 `api-hub` profile을 명시하며 날짜 기반 자동 전환은 없다. 2026 Q3에 NCP 계정·Application·API key ID/key와 secret entry를 준비하고, 2026 Q4에 pinned fixture parity와 별도 승인된 최소 1-query API Hub lifecycle 검증을 다시 거친다. 목표 cutover는 `2027-03-31`, legacy rollback 제거는 `2027-05-31`, legacy hard stop은 `2027-06-30T00:00:00+09:00`이며 API Hub는 그 전까지 disabled-ready다 |
+
 S1.1의 KIS MarketDataService 구현 경계는 다음과 같다.
 
 | 항목 | 계약 |
@@ -1853,7 +1891,7 @@ service SourceRegistryService {
 
 | 세션/트랙 | API/RPC 보안 계약 |
 |---|---|
-| S1.3 | ECOS/Naver는 내부 fixed-origin collector만 호출한다. static credential은 private transport가 send 순간에 env에서 읽고 공개 settings/business client/API에 두지 않는다. TLS 검증을 강제하고 redirect·ambient proxy/`.netrc`·caller proxy/CA override를 금지한다. bytes/JSON/list/text/date/query/symbol/call cap을 검증하고 Naver HTML/control 문자를 제거한다. 기사 link는 표시 metadata일 뿐 backend fetch 대상이 아니다. 출력은 ignored root의 versioned sanitized snapshot artifact와 manifest/hash/asOf로 한정하고 S1.3에는 DB write를 추가하지 않는다. source별 양의 `retentionDays`와 삭제 owner가 승인되지 않으면 persistent snapshot/online write를 열지 않는다. Decision/팀원 B 경로는 이 snapshot만 읽는다. GDELT는 팀원 B optional enrichment이며 blocker가 아니다 |
+| S1.3 | ECOS/Naver는 내부 fixed-origin collector만 호출한다. static credential은 private transport가 send 순간에 env에서 읽고 공개 settings/business client/API에 두지 않는다. TLS 검증을 강제하고 redirect·ambient proxy/`.netrc`·caller proxy/CA/절대 URL·인증성 parameter override를 금지한다. bytes/JSON depth/list/text/date/query/symbol/call cap을 검증한다. Naver title/description은 active HTML/control을 제거한 plain text로 저장하고 consumer가 output escape한다. 기사 link는 표시 metadata일 뿐 backend fetch 대상이 아니며 userinfo/control/private·link-local host를 거부하고 query credential을 제거한다. canonical `queries` 길이와 manifest `queryCount`의 `1..4` 일치를 검증한다. stable 로그에는 `source`·`operation`·allowlisted `code`만 남기고 ECOS path key는 URL/log/exception/fingerprint/artifact에서 제거한다. 출력은 ignored root의 versioned sanitized snapshot artifact와 manifest/hash/asOf로 한정하고 dirfd+`O_NOFOLLOW`+exclusive create, mode `0600`을 적용한다. S1.3에는 DB write를 추가하지 않는다. source별 양의 `retentionDays`와 삭제 owner가 승인되지 않으면 persistent snapshot/online write를 열지 않는다. Decision/팀원 B 경로는 이 snapshot만 읽는다. GDELT는 팀원 B optional enrichment이며 blocker가 아니다 |
 | S1.4 | 계산 request의 배열·기간·숫자 finite/상하한, deadline, 동시 실행과 output 크기를 제한한다. 계산 오류·NaN·timeout은 주문 허용값이 아니다 |
 | S1.5 | Data Quality Report API/산출물은 finite/missing/duplicate aggregate와 sanitized sample만 제공한다. provider raw/query/credential/token/account/PII를 report·로그·metric에 넣지 않고 상세 ignored artifact에는 retention을 적용한다 |
 | S1.6 | OpenDART outbound 전 PostgreSQL physical-attempt reservation이 성공해야 하며 DB 오류/budget/cap/020은 non-retry fail-closed다. DS004 ownership canonical은 corpCode·role/category·날짜·주식 수/비율만 허용하고 자연인 성명·주소·등록 식별자를 raw/canonical/log/metric/artifact/event에서 제거한다. Market Calendar RPC/REST는 aggregator 이후 별도 contract change 전까지 미가용이고 sourceRefs는 opaque sanitized ID/hash만 반환한다 |
@@ -1887,6 +1925,12 @@ API/adapter/parser/storage 변경 커밋은 기능 단위로 분리한다. 테�
 | KIS retry | routing 오류 GET 1회 다음 슬롯 재호출, `EGW00201`/429 재시도 0회, 주문성 호출 자동 재시도 0회 |
 | KIS backfill | 같은 parquet 기간 두 번째 실행의 daily outbound 0건, 양 끝 누락 범위만 조회 |
 | KIS WebSocket 계획 수용 | 두 번째 session·42번째 합산 등록 사전 거부, 중복 dedupe, Approval 동시 miss 1회, reconnect ledger 복원(S3/P2 구현 시 활성) |
+| S1.3 Naver batch/snapshot | 기본 4, 1·4 성공, 0·5 거부, selection/cursor/deferred 결정성과 snapshot `queries`/manifest `queryCount` 일치 검증 |
+| S1.3 retry/strict CLI | attempts 기본 2·smoke 1·preflight hard 1, setting 1에서 두 번째 send 0회, 첫 failed/empty/deferred 뒤 후속 호출·incomplete publish 0회, exit `0/1/2/3` 검증 |
+| S1.3 ECOS ItemList identity | 동일 stat/item의 `A/D/M/Q` 중 요청 `D`만 선택, 동일 cycle의 `Group1..4` 중 `Group1`만 선택, 행 순서 불변, 요청 주기 0건·완전 identity 2건·malformed group/cycle fail-closed와 진단값 비노출을 검증 |
+| S1.3 sanitized failure | Naver 11개 allowlist exact line, ECOS `sanitizedPreflight.diagnostic` allowlist/stage/reason/context, unknown exception의 diagnostic 생략, canonical one-line JSON·deterministic SHA와 path-key 비노출을 검증한다. credential·provider message·raw field·traceback은 log/exception/fingerprint/artifact에 없어야 하고, credential/query가 포함된 provider request URL과 auth/header는 모든 관측 경계에서 금지한다. 정규화된 기사 metadata URL과 고정 provenance URL은 canonical artifact에서만 허용한다 |
+| S1.3 transport/URL/storage | credential echo, ambient proxy/`.netrc`, redirect, TLS false, caller proxy/CA/transport override, origin/endpoint bypass, bounded JSON stage, exact `StatisticSearch` raw path/trailing slash/query 생략, Naver quota reservation/physical handoff 분리, oversize/depth/list/text, URL userinfo/control/private-host/query credential, 기사 DNS/GET/HEAD, symlink/overwrite를 offline fixture/mock으로 회귀 검증 |
+| S1.3 online smoke | A1/A2/A3는 실패 evidence로 분리한다. A4는 physical `4`·Redis `+4`로 성공했고 `semantic-3bb3810728cf` 의미 승인 뒤 exact full-tuple registry를 활성화했다. 단일 필드 mismatch는 client/provider 0건으로 차단한다. 실제 KRX audit·`naver-policy-23618d21265d-20260715T064502Z`·원격 green 뒤 B1 `approval-b1-23618d21265d-20260715T072151Z`를 exact 승인받아 ECOS `D-29..D` physical `2`·Redis `+2`와 Naver rank-1 `display=10` physical `1`·Redis `+1`을 원자적으로 성공했다. accepted set은 A4+B1 evidence의 ECOS `6`+Naver `1`=`7` attempts만 포함하고 실패 run과 lifetime 호출을 합산하지 않으며, timeout/invalid key live negative injection은 수행하지 않음 |
 | Journal | decision/backtest/RAG 근거 연결 |
 | Option Analytics | BSM 가격, Greeks, implied volatility 수치 검증 |
 | Async Status | async job 상태, stream metric, artifact ingest 상태 |

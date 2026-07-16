@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "source": "ecos",
+  "asOf": "2026-07-14",
+  "retrievedAt": "2026-07-14T01:05:00Z",
+  "registryVersion": "s1.3-synthetic-v1",
+  "registryVerifiedAt": "2026-07-14T00:30:00Z",
+  "series": [
+    {"seriesId":"synthetic-1","statCode":"SYNTH001","itemCode1":"RATE01","cycle":"D","name":"Synthetic one","unit":"percent","requestedFrom":"20260714","requestedTo":"20260714","status":"empty","observations":[]},
+    {"seriesId":"synthetic-2","statCode":"SYNTH002","itemCode1":"RATE02","cycle":"D","name":"Synthetic two","unit":"percent","requestedFrom":"20260714","requestedTo":"20260714","status":"empty","observations":[]},
+    {"seriesId":"synthetic-3","statCode":"SYNTH003","itemCode1":"RATE03","cycle":"D","name":"Synthetic overflow row","unit":"percent","requestedFrom":"20260714","requestedTo":"20260714","status":"empty","observations":[]}
+  ],
+  "partial": false,
+  "coverage": "empty"
+}

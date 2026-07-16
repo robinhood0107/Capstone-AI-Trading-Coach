@@ -46,9 +46,17 @@ diagnostic만 보강했다. KRX6/7은 TTL 만료로 provider `0`이다. KRX8은 
 failure/RCA SHA-256은 `a2547290e39fe63c1ceda9171beb4dd701c9db8938182e6e93d08e5aacf23dca`와
 `53bc9d4e001b839fe2692be61271f5954fc9e9703b6f94501ac782b128029d62`이다. KRX9는 TTL 만료로
 provider `0`이며 packet SHA-256은 `7aae38e0cc3b721557d93ca16fdd4576f890b2d257b743bab953c01a33304364`다.
-KRX1~5/KRX8 실패, KRX6/7/9 만료 packet, 기존 S1.3 A4/B1 승인은 재사용하지 않는다.
+KRX10은 HEAD `cd212c8e22ac`에서 KOSPI probe를 1회 실행해 HTTP `200`, physical `1`, Redis rolling
+`3→4`까지 도달했지만 row `10`의 `ISU_CD`를 숫자 6자리로만 제한한 `row_symbol_invalid`에서
+중단했다. KOSDAQ·final refresh·retry·파일 생성은 `0`이고 failure evidence SHA-256은
+`3acefd3b5f772050b58ece93397db1123f4412355fe5bf3982385e8e639bd320`이다.
+KRX1~5/KRX8/KRX10 실패, KRX6/7/9 만료 packet, 기존 S1.3 A4/B1 승인은 재사용하지 않는다.
 
-다음 KRX10은 single staged approval 아래 `KOSPI probe 1 → KOSDAQ probe 1 → full refresh 2`를
+공식 KRX source `ISU_CD`는 exact ASCII uppercase alphanumeric 6자 `[0-9A-Z]{6}`로 검증하고
+영문 포함 행도 row count·중복검사·canonical hash에 포함한다. 기존 KIS/Naver manifest와
+positive candidate/top-30은 exact 숫자 6자리 `[0-9]{6}`만 허용한다.
+
+다음 KRX11은 single staged approval 아래 `KOSPI probe 1 → KOSDAQ probe 1 → full refresh 2`를
 순서대로 실행한다. probe timeout은 `2/120/2/1초 + logical 130초`, full refresh는
 `2/120/2/1초 + shared logical 260초`, retry는 모두 `0`이다. 각 프로세스 cap은 `1/1/2`이고
 합계 `4`는 approval packet과 executor stop rule이 강제한다. 하나라도 실패하면 남은 명령은 실행하지

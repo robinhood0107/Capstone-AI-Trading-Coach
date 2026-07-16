@@ -68,22 +68,32 @@ def test_kosdaq_success_uses_the_same_normalized_model() -> None:
 
 
 @pytest.mark.parametrize(
-    "payload",
+    ("payload", "expected_leaf"),
     [
-        {},
-        {"OutBlock_1": {}},
-        {"outBlock1": []},
-        {"OutBlock_1": [], "unexpected": []},
+        ({}, "envelope_key_mismatch"),
+        ({"OutBlock_1": {}}, "rows_not_list"),
+        ({"outBlock1": []}, "envelope_key_mismatch"),
+        ({"OutBlock_1": [], "unexpected": []}, "envelope_key_mismatch"),
     ],
 )
-def test_only_the_exact_outblock_1_list_envelope_is_accepted(payload: dict[str, Any]) -> None:
-    with pytest.raises(KrxParseError):
+def test_only_the_exact_outblock_1_list_envelope_is_accepted(
+    payload: dict[str, Any],
+    expected_leaf: str,
+) -> None:
+    with pytest.raises(KrxParseError) as exc_info:
         _parse(payload)
+
+    assert exc_info.value.diagnostic is not None
+    assert exc_info.value.diagnostic.leaf == expected_leaf
 
 
 def test_empty_daily_response_fails_closed_before_the_second_market_is_requested() -> None:
-    with pytest.raises(KrxParseError):
+    with pytest.raises(KrxParseError) as exc_info:
         _parse({"OutBlock_1": []})
+
+    assert exc_info.value.diagnostic is not None
+    assert exc_info.value.diagnostic.leaf == "rows_empty"
+    assert exc_info.value.diagnostic.row_count == 0
 
 
 def test_each_row_requires_exactly_the_official_fifteen_string_fields() -> None:
@@ -102,14 +112,56 @@ def test_each_row_requires_exactly_the_official_fifteen_string_fields() -> None:
         assert "synthetic" not in str(exc_info.value)
         assert exc_info.value.__cause__ is None
 
+    assert missing is not None
+    with pytest.raises(KrxParseError) as missing_error:
+        _parse(missing)
+    assert missing_error.value.diagnostic is not None
+    assert missing_error.value.diagnostic.leaf == "row_field_set_mismatch"
+    assert missing_error.value.diagnostic.row_ordinal == 1
+    assert missing_error.value.diagnostic.official_field == "TDD_CLSPRC"
+    assert missing_error.value.diagnostic.missing_official_field_count == 1
+    assert missing_error.value.diagnostic.unexpected_row_key_count == 0
+
+    with pytest.raises(KrxParseError) as extra_error:
+        _parse(extra)
+    assert extra_error.value.diagnostic is not None
+    assert extra_error.value.diagnostic.leaf == "row_field_set_mismatch"
+    assert extra_error.value.diagnostic.official_field is None
+    assert extra_error.value.diagnostic.missing_official_field_count == 0
+    assert extra_error.value.diagnostic.unexpected_row_key_count == 1
+    assert "UNEXPECTED" not in repr(extra_error.value.diagnostic)
+
+    with pytest.raises(KrxParseError) as non_string_error:
+        _parse(non_string)
+    assert non_string_error.value.diagnostic is not None
+    assert non_string_error.value.diagnostic.leaf == "row_non_string"
+    assert non_string_error.value.diagnostic.official_field == "ACC_TRDVOL"
+
+
+def test_row_container_item_must_be_an_object_without_retaining_the_value() -> None:
+    marker = "synthetic-provider-secret"
+
+    with pytest.raises(KrxParseError) as exc_info:
+        _parse({"OutBlock_1": [marker]})
+
+    diagnostic = exc_info.value.diagnostic
+    assert diagnostic is not None
+    assert diagnostic.leaf == "row_not_object"
+    assert diagnostic.row_ordinal == 1
+    assert marker not in str(exc_info.value)
+    assert marker not in repr(diagnostic)
+
 
 @pytest.mark.parametrize("invalid_date", ["20260714", "2026-07-15", "20260229", "２０２６０７１５"])
 def test_row_date_must_match_the_requested_calendar_date(invalid_date: str) -> None:
     payload = _fixture("kospi_daily_success.json")
     payload["OutBlock_1"][0]["BAS_DD"] = invalid_date
 
-    with pytest.raises(KrxParseError):
+    with pytest.raises(KrxParseError) as exc_info:
         _parse(payload)
+    assert exc_info.value.diagnostic is not None
+    assert exc_info.value.diagnostic.leaf == "row_date_mismatch"
+    assert exc_info.value.diagnostic.official_field == "BAS_DD"
 
 
 @pytest.mark.parametrize("invalid_market", ["KOSDAQ", "KOSPI ", "", "전체"])
@@ -117,8 +169,11 @@ def test_row_market_must_match_the_catalog_endpoint(invalid_market: str) -> None
     payload = _fixture("kospi_daily_success.json")
     payload["OutBlock_1"][0]["MKT_NM"] = invalid_market
 
-    with pytest.raises(KrxParseError):
+    with pytest.raises(KrxParseError) as exc_info:
         _parse(payload)
+    assert exc_info.value.diagnostic is not None
+    assert exc_info.value.diagnostic.leaf == "row_market_mismatch"
+    assert exc_info.value.diagnostic.official_field == "MKT_NM"
 
 
 @pytest.mark.parametrize(
@@ -129,8 +184,12 @@ def test_symbol_requires_exactly_six_ascii_digits(invalid_symbol: str) -> None:
     payload = _fixture("kospi_daily_success.json")
     payload["OutBlock_1"][0]["ISU_CD"] = invalid_symbol
 
-    with pytest.raises(KrxParseError):
+    with pytest.raises(KrxParseError) as exc_info:
         _parse(payload)
+
+    assert exc_info.value.diagnostic is not None
+    assert exc_info.value.diagnostic.leaf == "row_symbol_invalid"
+    assert exc_info.value.diagnostic.official_field == "ISU_CD"
 
 
 @pytest.mark.parametrize("invalid_name", ["", " ", "\t", "합성\n종목", "합성\x00종목", "가" * 257])
@@ -138,8 +197,12 @@ def test_security_name_must_be_bounded_plain_text(invalid_name: str) -> None:
     payload = _fixture("kospi_daily_success.json")
     payload["OutBlock_1"][0]["ISU_NM"] = invalid_name
 
-    with pytest.raises(KrxParseError):
+    with pytest.raises(KrxParseError) as exc_info:
         _parse(payload)
+
+    assert exc_info.value.diagnostic is not None
+    assert exc_info.value.diagnostic.leaf == "row_name_invalid"
+    assert exc_info.value.diagnostic.official_field == "ISU_NM"
 
 
 @pytest.mark.parametrize("field", ["ACC_TRDVAL", "MKTCAP"])
@@ -160,6 +223,9 @@ def test_ranking_numbers_require_bounded_nonnegative_ascii_integers(
     if invalid_number:
         assert invalid_number not in str(exc_info.value)
     assert exc_info.value.__cause__ is None
+    assert exc_info.value.diagnostic is not None
+    assert exc_info.value.diagnostic.leaf == "row_numeric_invalid"
+    assert exc_info.value.diagnostic.official_field == field
 
 
 @pytest.mark.parametrize(
@@ -185,8 +251,12 @@ def test_duplicate_symbol_fails_closed_even_when_the_rows_are_identical() -> Non
     duplicate = deepcopy(payload["OutBlock_1"][0])
     payload["OutBlock_1"].append(duplicate)
 
-    with pytest.raises(KrxParseError):
+    with pytest.raises(KrxParseError) as exc_info:
         _parse(payload)
+
+    assert exc_info.value.diagnostic is not None
+    assert exc_info.value.diagnostic.leaf == "row_symbol_duplicate"
+    assert exc_info.value.diagnostic.row_ordinal == 3
 
     duplicate["MKTCAP"] = "123456789"
     with pytest.raises(KrxParseError):
@@ -203,3 +273,6 @@ def test_response_row_count_above_the_hard_cap_fails_before_row_processing() -> 
 
     assert "900001" not in str(exc_info.value)
     assert exc_info.value.__cause__ is None
+    assert exc_info.value.diagnostic is not None
+    assert exc_info.value.diagnostic.leaf == "rows_too_many"
+    assert exc_info.value.diagnostic.row_count == 5_001

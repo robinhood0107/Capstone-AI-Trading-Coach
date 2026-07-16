@@ -14,7 +14,7 @@ from pydantic import SecretStr
 from app.data.krx import _credential_transport, client as client_module
 from app.data.krx._credential_transport import KrxCredentialError
 from app.data.krx.catalog import KOSDAQ_DAILY, KOSPI_DAILY
-from app.data.krx.client import KrxOpenApiClient
+from app.data.krx.client import KrxHttpError, KrxOpenApiClient
 from app.data.krx.settings import KrxOpenApiSettings
 
 
@@ -520,6 +520,53 @@ def test_second_endpoint_failure_makes_whole_fetch_fail_without_partial_return(
     assert client.physical_attempt_count == 2
 
 
+def test_second_endpoint_validation_failure_keeps_exact_request_accounting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    marker = "synthetic-provider-secret"
+    paths: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        paths.append(request.url.path)
+        if request.url.path == KOSPI_DAILY.path:
+            return httpx.Response(
+                200,
+                headers={"content-type": "application/json"},
+                json=_payload(
+                    _daily_row(
+                        symbol="005930",
+                        name="삼성전자",
+                        market="KOSPI",
+                        market_cap=500_000,
+                        trading_value=900_000,
+                    )
+                ),
+            )
+        return httpx.Response(
+            200,
+            headers={"content-type": "application/json"},
+            json={"unknown": marker},
+        )
+
+    client, quota = _client(monkeypatch, httpx.MockTransport(handler))
+    try:
+        with pytest.raises(KrxHttpError) as exc_info:
+            client.fetch_universe_rows(_AS_OF)
+    finally:
+        client.close()
+
+    diagnostic = exc_info.value.validation_diagnostic
+    assert diagnostic is not None
+    assert diagnostic.leaf == "envelope_key_mismatch"
+    assert diagnostic.request_ordinal == 2
+    assert diagnostic.service == "ksq_bydd_trd"
+    assert paths == [KOSPI_DAILY.path, KOSDAQ_DAILY.path]
+    assert len(quota.reservations) == 2
+    assert client.physical_attempt_count == 2
+    assert marker not in str(exc_info.value)
+    assert marker not in repr(diagnostic)
+
+
 def test_parse_failure_is_not_retried_and_does_not_call_second_endpoint(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -544,6 +591,232 @@ def test_parse_failure_is_not_retried_and_does_not_call_second_endpoint(
     assert outbound == 1
     assert len(quota.reservations) == 1
     assert client.physical_attempt_count == 1
+
+
+@pytest.mark.parametrize(
+    (
+        "headers",
+        "content",
+        "expected_stage",
+        "expected_leaf",
+        "expected_content_type_class",
+        "expected_body_class",
+        "expected_utf8_valid",
+        "expected_bom",
+    ),
+    [
+        (
+            {},
+            b'{"OutBlock_1":[]}',
+            "media_type",
+            "content_type_missing",
+            "missing",
+            "json_candidate",
+            True,
+            False,
+        ),
+        (
+            [
+                ("content-type", "application/json"),
+                ("content-type", "text/html"),
+            ],
+            b'{"OutBlock_1":[]}',
+            "media_type",
+            "content_type_multiple",
+            "multiple",
+            "json_candidate",
+            True,
+            False,
+        ),
+        (
+            {"content-type": "text/html; charset=utf-8"},
+            b"<html><body>synthetic-provider-marker</body></html>",
+            "media_type",
+            "content_type_unsupported",
+            "other",
+            "html_like",
+            True,
+            False,
+        ),
+        (
+            {"content-type": "application/json"},
+            b"<html><body>synthetic-provider-marker</body></html>",
+            "json_decode",
+            "json_decode_failed",
+            "application_json",
+            "html_like",
+            True,
+            False,
+        ),
+        (
+            {"content-type": "application/json"},
+            b'{"OutBlock_1":',
+            "json_decode",
+            "json_decode_failed",
+            "application_json",
+            "json_candidate",
+            True,
+            False,
+        ),
+        (
+            {"content-type": "application/json"},
+            b'\xef\xbb\xbf{"OutBlock_1":[]}',
+            "json_decode",
+            "json_decode_failed",
+            "application_json",
+            "json_candidate",
+            True,
+            True,
+        ),
+        (
+            {"content-type": "application/json"},
+            b"\xff\xfe",
+            "json_decode",
+            "json_decode_failed",
+            "application_json",
+            "opaque",
+            False,
+            False,
+        ),
+        (
+            {"content-type": "application/json"},
+            b'{"OutBlock_1":[],"OutBlock_1":[]}',
+            "json_limits",
+            "json_limits_exceeded",
+            "application_json",
+            "json_candidate",
+            True,
+            False,
+        ),
+    ],
+)
+def test_http_200_validation_failure_preserves_only_allowlisted_response_leaf(
+    monkeypatch: pytest.MonkeyPatch,
+    headers: dict[str, str] | list[tuple[str, str]],
+    content: bytes,
+    expected_stage: str,
+    expected_leaf: str,
+    expected_content_type_class: str,
+    expected_body_class: str,
+    expected_utf8_valid: bool,
+    expected_bom: bool,
+) -> None:
+    outbound = 0
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal outbound
+        outbound += 1
+        return httpx.Response(200, headers=headers, content=content)
+
+    client, quota = _client(monkeypatch, httpx.MockTransport(handler))
+    try:
+        with pytest.raises(KrxHttpError) as exc_info:
+            client.fetch_universe_rows(_AS_OF)
+    finally:
+        client.close()
+
+    diagnostic = exc_info.value.validation_diagnostic
+    assert diagnostic is not None
+    assert diagnostic.stage == expected_stage
+    assert diagnostic.leaf == expected_leaf
+    assert diagnostic.request_ordinal == 1
+    assert diagnostic.service == "stk_bydd_trd"
+    assert diagnostic.http_status == 200
+    assert diagnostic.content_type_class == expected_content_type_class
+    assert diagnostic.body_class == expected_body_class
+    assert diagnostic.utf8_valid is expected_utf8_valid
+    assert diagnostic.utf8_bom_present is expected_bom
+    assert outbound == 1
+    assert len(quota.reservations) == 1
+    assert client.physical_attempt_count == 1
+    assert "synthetic-provider-marker" not in str(exc_info.value)
+    assert "synthetic-provider-marker" not in repr(diagnostic)
+
+
+def test_http_200_unknown_object_records_shape_counts_without_provider_keys_or_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    marker = "synthetic-provider-secret"
+    outbound = 0
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal outbound
+        outbound += 1
+        return httpx.Response(
+            200,
+            headers={"content-type": "application/json"},
+            json={"unknownCode": "synthetic", "unknownMessage": marker},
+        )
+
+    client, quota = _client(monkeypatch, httpx.MockTransport(handler))
+    try:
+        with pytest.raises(KrxHttpError) as exc_info:
+            client.fetch_universe_rows(_AS_OF)
+    finally:
+        client.close()
+
+    diagnostic = exc_info.value.validation_diagnostic
+    assert diagnostic is not None
+    assert diagnostic.stage == "envelope_shape"
+    assert diagnostic.leaf == "envelope_key_mismatch"
+    assert diagnostic.request_ordinal == 1
+    assert diagnostic.service == "stk_bydd_trd"
+    assert diagnostic.top_level_type == "object"
+    assert diagnostic.top_level_key_count == 2
+    assert diagnostic.expected_block_present is False
+    assert outbound == 1
+    assert len(quota.reservations) == 1
+    assert marker not in str(exc_info.value)
+    assert marker not in repr(diagnostic)
+    assert "unknownCode" not in repr(diagnostic)
+    assert "unknownMessage" not in repr(diagnostic)
+
+
+@pytest.mark.parametrize(
+    ("content", "expected_top_level_type"),
+    [
+        (b"[]", "array"),
+        (b'"synthetic-provider-secret"', "string"),
+        (b"1", "number"),
+        (b"true", "boolean"),
+        (b"null", "null"),
+    ],
+)
+def test_http_200_non_object_root_records_only_the_top_level_type(
+    monkeypatch: pytest.MonkeyPatch,
+    content: bytes,
+    expected_top_level_type: str,
+) -> None:
+    outbound = 0
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal outbound
+        outbound += 1
+        return httpx.Response(
+            200,
+            headers={"content-type": "application/json"},
+            content=content,
+        )
+
+    client, quota = _client(monkeypatch, httpx.MockTransport(handler))
+    try:
+        with pytest.raises(KrxHttpError) as exc_info:
+            client.fetch_universe_rows(_AS_OF)
+    finally:
+        client.close()
+
+    diagnostic = exc_info.value.validation_diagnostic
+    assert diagnostic is not None
+    assert diagnostic.stage == "root_shape"
+    assert diagnostic.leaf == "payload_not_object"
+    assert diagnostic.top_level_type == expected_top_level_type
+    assert diagnostic.request_ordinal == 1
+    assert diagnostic.service == "stk_bydd_trd"
+    assert outbound == 1
+    assert len(quota.reservations) == 1
+    assert client.physical_attempt_count == 1
+    assert "synthetic-provider-secret" not in str(exc_info.value)
+    assert "synthetic-provider-secret" not in repr(diagnostic)
 
 
 def test_fetch_rejects_non_session_date_before_any_outbound(

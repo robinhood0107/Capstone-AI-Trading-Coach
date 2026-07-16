@@ -19,10 +19,10 @@ def test_defaults_are_two_call_bounded_and_secret_free() -> None:
     assert settings.json_max_depth == 4
     assert settings.json_max_rows == 5_000
     assert settings.connect_timeout_seconds == 2.0
-    assert settings.read_timeout_seconds == 5.0
+    assert settings.read_timeout_seconds == 8.0
     assert settings.write_timeout_seconds == 2.0
     assert settings.pool_timeout_seconds == 1.0
-    assert settings.logical_deadline_seconds == 12.0
+    assert settings.logical_deadline_seconds == 20.0
 
     dumped_keys = {key.lower() for key in settings.model_dump()}
     rendered = repr(settings).lower()

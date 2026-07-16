@@ -24,11 +24,23 @@ python-services/        # uv 프로젝트 — LightGBM/RAG/금융공학/데이�
 
 KIS outbound는 이 workspace가 단일 owner다. S1.1 client는 실전 18/s hard cap·기본 120ms 간격, 모의 1/s·1,000ms 간격을 같은 opaque credential/appkey scope의 Redis 원자 limiter로 공유한다. `/oauth2/tokenP` physical send는 mock/live 합산 deployment-global 1/s를 보수 적용하고 token cache/singleflight만 mode별로 분리한다. Return Engine과 후속 S1.6/S3 adapter는 별도 limiter를 만들지 않고 이 경계를 재사용한다.
 
+## S1.3 ECOS/Naver snapshot
+
+S1.3 ECOS 거시지표와 Naver 뉴스 metadata collector는 PR #16 merge commit
+`6f439155d9f5ec626fc185f29f2e0bd64ca54780`으로 `main`에 병합됐다. A4 metadata preflight와
+의미 승인, B1 atomic ECOS+Naver smoke가 완료됐으며 accepted set은 성공한 A4+B1의
+ECOS `6`+Naver `1`=`7` physical attempts다. A1/A2/A3 실패 evidence나 프로젝트 lifetime
+호출량과 합산하지 않는다. 기사 본문 fetch, public REST/gRPC, DB/Flyway 변경은 포함하지 않는다.
+
 ## KRX universe 자동화
 
-S1.3K는 KRX OPEN API의 `유가증권 일별매매정보`와 `코스닥 일별매매정보`만 사용해
+S1.3K는 PR #17 merge commit `814aab377251d76672566d39c3edb379d132248e`으로 `main`에
+병합됐고 해당 merge 시점의 Contracts CI, Kotlin Build, Repo Hygiene가 모두 성공했다. KRX OPEN
+API의 `유가증권 일별매매정보`와 `코스닥 일별매매정보`만 사용해
 내부 top-30 universe를 만든다. 운영 계정은 31개 서비스 entitlement를 모두 승인받았지만
-runtime allowlist는 NOW 두 개로 고정한다. KRX1은 physical `0`·Redis `0→1`, KRX2는 첫 NOW
+runtime allowlist는 NOW 두 개로 고정한다.
+
+아래 KRX1~10 기록은 완료 상태가 아니라 recovery history다. KRX1은 physical `0`·Redis `0→1`, KRX2는 첫 NOW
 endpoint handoff 뒤 원인 미분류 `collection_failed`로 physical `1`·Redis `1→2`, KRX3는 같은
 첫 handoff의 `authentication_failed(401_or_403)`로 physical `1`·Redis `2→3`을 기록했고 online 성공
 산출물은 없다. KRX4는 HEAD `971ea39418ba`, 기준일 `2026-07-15`의 첫 handoff에서
@@ -56,7 +68,7 @@ KRX1~5/KRX8/KRX10 실패, KRX6/7/9 만료 packet, 기존 S1.3 A4/B1 승인은 �
 영문 포함 행도 row count·중복검사·canonical hash에 포함한다. 기존 KIS/Naver manifest와
 positive candidate/top-30은 exact 숫자 6자리 `[0-9]{6}`만 허용한다.
 
-KRX11 `approval-krx11-81aed4c1fad6-20260716T122917Z`는 HEAD `81aed4c1fad6`, 기준일
+KRX11 `approval-krx11-81aed4c1fad6-20260716T122917Z`는 실행 HEAD `81aed4c1fad6`, 기준일
 `2026-07-15`에서 `KOSPI probe 1 → KOSDAQ probe 1 → full refresh 2`를 순서대로 성공했다.
 KOSPI는 row `944`·양수 후보 `887`·SHA
 `4f8e4849ac655598d0bb1ce736d7c0ff4436168eeb232c7bfa2364ee830cfda6`·`11,943ms`,
@@ -92,5 +104,19 @@ manifest 성공으로 바꾸지 않으며, 수동 CSV는 기존 `kis-universe-re
 때만 사용한다. ASCII `YYYY-MM-DD`와 approved ignored `data/` root 내부 output만 허용한다.
 성공·실패 출력에는 caller argv·로컬 경로 대신 안정 code, physical attempt 수와 검증된 allowlist
 typed diagnostic scalar만 남고,
-client cleanup이 성공한 뒤에만 서로 다른 report와 manifest target이 게시된다. 이 PR은 주기
-scheduler를 추가하지 않는다.
+client cleanup이 성공한 뒤에만 서로 다른 report와 manifest target이 게시된다. 병합된 S1.3K
+구현 범위에는 주기 scheduler가 포함되지 않는다.
+
+## 외부 provider 반복 실패 복구
+
+같은 단계가 반복 실패하거나 stable code만으로 원인을 좁힐 수 없으면 전체 명령을 다시 실행하지
+않는다. 실패 packet/evidence를 소비 완료로 동결한 뒤 `focused regression → allowlisted typed
+leaf → 최소 수정 → 관련 matrix → 전체 gate → fresh approval` 순서로 진행한다. production
+transport/parser/quota를 그대로 재사용할 수 있을 때만 endpoint별 no-publish probe를 retry `0`,
+physical cap `1`, artifact `0`으로 순차 실행하고 첫 실패 뒤 남은 호출을 만들지 않는다.
+fresh packet은 현재 사용자의 exact 승인을 받은 뒤에만 소비하며 승인 전 provider 호출은 `0`이다.
+
+probe 성공은 최종 artifact가 아니다. 최종 production 명령이 현재 응답 전체를 독립적으로 다시
+검증하고 성공한 뒤에만 원자 게시한다. probe와 final hash 일치는 요구하지 않으며, 실패 evidence와
+성공 acceptance set은 분리한다. direct `curl`, 브라우저 sample, 임시 credential script로
+fixed-origin transport·quota·승인 gate를 우회하지 않는다.

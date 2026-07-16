@@ -19,9 +19,11 @@ source snapshot의 `schemaVersion`은 양의 정수 `1`이다. 기존 실험/모
 Naver 운영 snapshot과 1-query smoke는 별도 포맷이 아니다. 동일한 canonical 계약에서 `queries`
 길이와 manifest `queryCount`가 같은 `1..4` 값이어야 하며 0개, 5개 이상, count mismatch는 거부한다.
 manifest `physicalAttemptCount`는 query당 최대 2회여야 한다.
-S1.3 계약은 아직 배포되지 않은 Draft 상태이므로 이 lower-only 정렬에서 `schemaVersion`을 올리지
-않는다. 코드·JSON Schema와 offline 회귀 검증을 반영했고, 별도 승인 gate를 거친 online 검증도
-완료했다. Approval A1/A2/A3는 실패 evidence로 분리하고 A4
+S1.3 producer 코드·JSON Schema·offline 회귀·승인된 online 검증은 완료됐고 PR #16 merge commit
+`6f439155d9f5ec626fc185f29f2e0bd64ca54780`으로 `main`에 병합됐다. 이 계약을 Draft라고 부르는
+범위는 Return Engine과의 cross-workspace 배포/handoff가 아직 활성화되지 않았다는 뜻이며,
+S1.3 구현이나 테스트가 미완료라는 뜻이 아니다. 따라서 lower-only 정렬에서 `schemaVersion`을
+올리지 않는다. Approval A1/A2/A3는 실패 evidence로 분리하고 A4
 `approval-a4-692635240394-20260715T055519Z`와 B1
 `approval-b1-23618d21265d-20260715T072151Z`만 성공 채택한다. accepted set은 A4+B1의
 ECOS `6`+Naver `1`=`7`이며 lifetime 호출 수가 아니다. A3/A4 복구와 B1 검증은
@@ -54,9 +56,12 @@ and Naver News metadata snapshots without retaining provider raw responses.
   are rejected. `physicalAttemptCount` must not exceed two attempts per query.
 - The source snapshot uses integer `schemaVersion: 1`; it is distinct from the SemVer experiment/model
   artifact bundle and must not be implicitly converted or mixed with it.
-- This S1.3 contract is still an undeployed Draft, so the lower-only alignment keeps
-  `schemaVersion: 1`. Code, JSON Schema, offline regression verification, and the separately approved
-  online smoke are complete. Approval A1, A2, and A3 remain separate failed evidence; only A4
+- The S1.3 producer code, JSON Schema, offline regression verification, and separately approved
+  online smoke are complete and were merged to `main` by PR #16 merge commit
+  `6f439155d9f5ec626fc185f29f2e0bd64ca54780`. Draft refers only to the cross-workspace
+  deployment/handoff to the Return Engine not being active; it does not mean the S1.3
+  implementation or verification is incomplete. The lower-only alignment therefore keeps
+  `schemaVersion: 1`. Approval A1, A2, and A3 remain separate failed evidence; only A4
   `approval-a4-692635240394-20260715T055519Z` and B1
   `approval-b1-23618d21265d-20260715T072151Z` are accepted. The accepted set is ECOS `6` plus
   Naver `1` = `7`, not a lifetime-call claim. The A3/A4 recovery and B1 verification did not change

@@ -30,15 +30,20 @@ S1.3K는 KRX OPEN API의 `유가증권 일별매매정보`와 `코스닥 일별�
 내부 top-30 universe를 만든다. 운영 계정은 31개 서비스 entitlement를 모두 승인받았지만
 runtime allowlist는 NOW 두 개로 고정한다. KRX1은 physical `0`·Redis `0→1`, KRX2는 첫 NOW
 endpoint handoff 뒤 원인 미분류 `collection_failed`로 physical `1`·Redis `1→2`, KRX3는 같은
-첫 handoff의 `authentication_failed(401_or_403)`로 physical `1`·Redis `2→3`을 기록했고 성공
+첫 handoff의 `authentication_failed(401_or_403)`로 physical `1`·Redis `2→3`을 기록했고 online 성공
 산출물은 없다. KRX4는 HEAD `971ea39418ba`, 기준일 `2026-07-15`의 첫 handoff에서
-`transport_unavailable`, physical `1`, Redis `3→4`로 중단했고 KOSDAQ·retry·artifact는 `0`이다.
+`transport_unavailable`, physical `1`, Redis `3→4`로 중단했고 KOSDAQ·retry·online artifact는 `0`이다.
 예약 뒤 `5.279초`라 당시 5초 read timeout 가능성이 가장 높지만 예외 타입이 소실되어 확정하지
 않는다. 별도 sanitized RCA evidence SHA-256은
-`30326a713ab1c638a2897412ccb50dc3fce44408e73ef47a1ad4db3d9b468033`이다. 네 실패 packet과
-기존 S1.3 A4/B1 승인은 재사용하지 않는다. 다음 실행은
+`30326a713ab1c638a2897412ccb50dc3fce44408e73ef47a1ad4db3d9b468033`이다. KRX5는 HEAD
+`9d2dcdea937d`, 같은 기준일의 첫 endpoint에서 HTTP `200` 뒤 기존 validation 관측성 축약의
+`invalid_response`, physical `1`, Redis `4→5`로 중단했고 KOSDAQ·retry·online artifact는 `0`이다.
+failure/RCA SHA-256은 각각 `969711e95c12fdd4e51bc1a3fdbaa7983f36c5c46d622cbe406b3b7775d217b4`와
+`d65f5b248c6dfa397be1340b3b884e68c653ad2bcad058fc1640840893844b3b`이다. 공식 성공 shape는
+strict parser가 그대로 수용하므로 계약을 느슨하게 하지 않고 media/body/JSON/envelope/row typed
+diagnostic만 보강했다. 다섯 실패 packet과 기존 S1.3 A4/B1 승인은 재사용하지 않는다. 다음 실행은
 connect/read/write/pool `2/8/2/1초`, 두 endpoint logical budget `20초`, retry `0`을 유지한다.
-`.env`의 인증키, 현재 HEAD, 기준일, 2회 호출, timeout profile, Redis 기준값, TTL에 결속한 새 KRX5
+`.env`의 인증키, 현재 HEAD, 기준일, 2회 호출, timeout profile, Redis 기준값 `5`, TTL에 결속한 새 KRX6
 실행 승인을 받은 경우에만 다음 명령을
 정확히 1회 실행한다.
 
@@ -50,6 +55,7 @@ uv run krx-openapi-universe-refresh --online --as-of YYYY-MM-DD --data-dir data/
 `--online`은 로컬 안전 gate일 뿐 사용자 실행 승인을 대체하지 않는다. API 실패를 CSV나 이전
 manifest 성공으로 바꾸지 않으며, 수동 CSV는 기존 `kis-universe-refresh`를 별도 명령으로 실행할
 때만 사용한다. ASCII `YYYY-MM-DD`와 approved ignored `data/` root 내부 output만 허용한다.
-성공·실패 출력에는 caller argv·로컬 경로 대신 안정 code와 physical attempt 수만 남고,
+성공·실패 출력에는 caller argv·로컬 경로 대신 안정 code, physical attempt 수와 검증된 allowlist
+typed diagnostic scalar만 남고,
 client cleanup이 성공한 뒤에만 서로 다른 report와 manifest target이 게시된다. 이 PR은 주기
 scheduler를 추가하지 않는다.

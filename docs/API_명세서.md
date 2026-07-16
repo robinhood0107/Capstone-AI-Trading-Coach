@@ -1740,20 +1740,20 @@ S1.3 내부 source snapshot 계약은 다음과 같다.
 | accepted evidence | B1 `approval-b1-23618d21265d-20260715T072151Z`는 HEAD `23618d21265d`에서 성공했다. KRX source/manifest SHA는 `781852a247f15b86226669a778d3b698756abd2d2515c79efc2af6f229d1d6e6`/`bde825cfe5c25a25960b3f354ef91adb7b0b5110f23c9687e90bd448a938b73f`, as-of는 `2026-07-15`, rank 1은 `005930/삼성전자`다. ECOS snapshot/manifest SHA는 `3f20789967add58531c79ae522b89b94227a7692ab3d4fbace8b8ff5adbb962f`/`be7c4d9637b19045316fb6324bb47f9f23cff5002189510d4656be184679f7d3`, 2 series·50 observations·physical `2`·retention `365`다. Naver snapshot/manifest SHA는 `209ef0bf01ad617e1b6fb65b0d57dd3f66e4e62d46487a2585a8f454b615c688`/`1cc159ffa500b207f422b4fd2618689c216a22778bf2064bc065b815ecad185a`, query `삼성전자` 1건·metadata 10건·physical `1`·retention `30`이다. 두 artifact set은 complete이고 schema/runtime/canonical/hash/mode/sanitization 검증을 통과했으며 retention dry-run은 `scanned=2 eligible=0 deleted=0 skipped=0`이다. B evidence SHA는 `ecb62e114352439994fa799096a916757ba7fba081f08f1d1b78ec35397d85fb`; accepted set은 A4+B1의 ECOS `6`+Naver `1`=`7`이다 |
 | Naver lifecycle | 이번 S1.3 immediate legacy 1-query smoke는 현재 collector 계약 검증이다. 이와 별개로 운영자가 `legacy` 또는 `api-hub` profile을 명시하며 날짜 기반 자동 전환은 없다. 2026 Q3에 NCP 계정·Application·API key ID/key와 secret entry를 준비하고, 2026 Q4에 pinned fixture parity와 별도 승인된 최소 1-query API Hub lifecycle 검증을 다시 거친다. 목표 cutover는 `2027-03-31`, legacy rollback 제거는 `2027-05-31`, legacy hard stop은 `2027-06-30T00:00:00+09:00`이며 API Hub는 그 전까지 disabled-ready다 |
 
-#### 13.5.A S1.3K KRX universe internal collector (offline 구현 완료·live 미실행)
+#### 13.5.A S1.3K KRX universe internal collector (offline 구현 완료·live 성공 대기)
 
 S1.3K는 public API가 아니라 Decision Platform 내부 batch/CLI다. 고정 KRX OPEN API collector와
 `krx-openapi-universe-refresh` CLI는 별도 브랜치에서 구현하고 fixture/mock offline matrix를
-통과했다. live provider 호출은 KRX 인증키·NOW 두 서비스 활용 승인·신규 KRX packet-bound
-승인을 모두 확인한 뒤 별도로 실행해야 한다. 기존 실제 CSV의 `kis-universe-refresh`는 명시적
+통과했다. 운영 계정의 31개 서비스 entitlement는 승인됐지만 runtime allowlist는 NOW 두 개로
+고정하며, 신규 KRX packet-bound 승인을 확인한 뒤에만 별도로 실행한다. 기존 실제 CSV의 `kis-universe-refresh`는 명시적
 수동 fallback으로 유지한다. 공식 [서비스 목록](https://openapi.krx.co.kr/contents/OPP/INFO/service/OPPINFO004.cmd)의
 7분류·31개 API ID 전체 NOW/NEXT/LATER/EXCLUDE 경계는 `최종_프로젝트_명세서.md` 11.1.4가
 단일 진실이다.
 
 | 항목 | 내부 collector 계약 |
 |---|---|
-| availability | 내부 collector/CLI는 offline 구현 완료, live 미실행. public REST/gRPC/proto/OpenAPI는 추가하지 않음 |
-| NOW endpoint allowlist | `stk_bydd_trd`, `ksq_bydd_trd` 두 개만. 운영 절차상 인증키·각 서비스 활용 승인·만료일·신규 실행 승인을 확인하기 전에는 `--online`을 실행하지 않음 |
+| availability | 내부 collector/CLI는 offline 구현 완료. KRX1은 physical `0`·Redis `0→1`, KRX2/KRX3는 첫 NOW endpoint에서 각각 physical `1`·Redis `1→2`/`2→3` 인증 실패로 끝났고 성공 artifact는 `0`이다. 세 실패 packet은 재사용하거나 성공 회계에 합산하지 않음 |
+| NOW endpoint allowlist | 계정 entitlement는 31개 모두 승인됐지만 runtime은 `stk_bydd_trd`, `ksq_bydd_trd` 두 개만 허용한다. 인증키·이용기간·신규 실행 승인을 확인하기 전에는 `--online`을 실행하지 않음 |
 | request | 공식 제공 시작일 `2010-01-04` 이상 완료 거래일 `D`를 CLI ASCII `YYYY-MM-DD`·provider exact `basDd=YYYYMMDD`로만 받는 GET/JSON. 응답 내 `BAS_DD` 전체가 `D`와 같고 KOSPI/KOSDAQ 두 set가 모두 완전할 때만 채택 |
 | schedule/date | 외부 scheduler가 `D+1 08:10 KST` 이후 단 1회 호출하는 프로젝트 계약이며 이 PR은 scheduler를 추가하지 않음. `--as-of` 생략 시 로컬 XKRX calendar와 안전 경계로 최신 가용일을 정하되 경계 전에는 주말·휴일에도 최근 session을 한 단계 더 제외함. 지원 범위·미래일은 calendar 호출 전에 차단하고 calendar 계산 실패는 client 0건의 `calendar_unavailable`로 종료함. provider 실패에 따른 이전일 재호출·자동 재시도는 금지 |
 | selection/output | KOSPI+KOSDAQ canonical row를 `marketCap desc -> tradingValue desc -> symbol asc`로 정렬함. 공식 `-`/`0` 값은 0으로 정규화한 뒤 후보에서 제외하고 양수 종목 30개를 기존 `UniverseManifest` v1로 ignored 내부 경로에 게시 |
@@ -1914,7 +1914,7 @@ service SourceRegistryService {
 | 세션/트랙 | API/RPC 보안 계약 |
 |---|---|
 | S1.3 | ECOS/Naver는 내부 fixed-origin collector만 호출한다. static credential은 private transport가 send 순간에 env에서 읽고 공개 settings/business client/API에 두지 않는다. TLS 검증을 강제하고 redirect·ambient proxy/`.netrc`·caller proxy/CA/절대 URL·인증성 parameter override를 금지한다. bytes/JSON depth/list/text/date/query/symbol/call cap을 검증한다. Naver title/description은 active HTML/control을 제거한 plain text로 저장하고 consumer가 output escape한다. 기사 link는 표시 metadata일 뿐 backend fetch 대상이 아니며 userinfo/control/private·link-local host를 거부하고 query credential을 제거한다. canonical `queries` 길이와 manifest `queryCount`의 `1..4` 일치를 검증한다. stable 로그에는 `source`·`operation`·allowlisted `code`만 남기고 ECOS path key는 URL/log/exception/fingerprint/artifact에서 제거한다. 출력은 ignored root의 versioned sanitized snapshot artifact와 manifest/hash/asOf로 한정하고 dirfd+`O_NOFOLLOW`+exclusive create, mode `0600`을 적용한다. S1.3에는 DB write를 추가하지 않는다. source별 양의 `retentionDays`와 삭제 owner가 승인되지 않으면 persistent snapshot/online write를 열지 않는다. Decision/팀원 B 경로는 이 snapshot만 읽는다. GDELT는 팀원 B optional enrichment이며 blocker가 아니다 |
-| S1.3K (offline 구현 완료·live 미실행) | KRX private transport는 개발명세서로 확인한 exact HTTPS origin과 `stk_bydd_trd`/`ksq_bydd_trd` GET만 허용하고 `AUTH_KEY`를 send 직전에만 부착한다. `trust_env=false`, redirect=false, TLS verification=true를 고정하고 caller origin/path/auth/proxy/CA/transport override, ambient proxy/`.netrc`, response echo를 거부한다. byte/depth/list/text/row/numeric/date 상한과 exact `BAS_DD`, 6자리 종목코드, nonnegative int64, duplicate 금지를 검증한다. `-`/`0`은 0으로 정규화해 source hash에 포함하고 후보에서 제외하며, 최종 30종목의 시가총액·거래대금은 양수여야 한다. 공식 hard cap은 키당 10,000/day(0시~24시)이고 프로젝트는 Redis 원자 rolling-24h 9,000·실행당 2를 lower-only로 예약하며 refund하지 않는다. Redis/한쪽 시장/일자 검증 실패는 outbound 또는 publish 0건으로 fail-closed한다. raw provider 정보는 저장하지 않고 ignored internal manifest/report만 생성하며 public API·DB·S1.6 calendar를 변경하지 않는다 |
+| S1.3K (offline 구현 완료·live 성공 대기) | KRX private transport는 개발명세서로 확인한 exact HTTPS origin과 `stk_bydd_trd`/`ksq_bydd_trd` GET만 허용하고 `AUTH_KEY`를 send 직전에만 부착한다. `trust_env=false`, redirect=false, TLS verification=true를 고정하고 caller origin/path/auth/proxy/CA/transport override, ambient proxy/`.netrc`, response echo를 거부한다. byte/depth/list/text/row/numeric/date 상한과 exact `BAS_DD`, 6자리 종목코드, nonnegative int64, duplicate 금지를 검증한다. `-`/`0`은 0으로 정규화해 source hash에 포함하고 후보에서 제외하며, 최종 30종목의 시가총액·거래대금은 양수여야 한다. 공식 hard cap은 키당 10,000/day(0시~24시)이고 프로젝트는 Redis 원자 rolling-24h 9,000·실행당 2를 lower-only로 예약하며 refund하지 않는다. Redis/한쪽 시장/일자 검증 실패는 outbound 또는 publish 0건으로 fail-closed한다. KRX1/2/3 실패 evidence는 성공 회계와 분리하고 raw provider 정보는 저장하지 않으며 ignored internal manifest/report만 생성한다. public API·DB·S1.6 calendar는 변경하지 않는다 |
 | S1.4 | 계산 request의 배열·기간·숫자 finite/상하한, deadline, 동시 실행과 output 크기를 제한한다. 계산 오류·NaN·timeout은 주문 허용값이 아니다 |
 | S1.5 | Data Quality Report API/산출물은 finite/missing/duplicate aggregate와 sanitized sample만 제공한다. provider raw/query/credential/token/account/PII를 report·로그·metric에 넣지 않고 상세 ignored artifact에는 retention을 적용한다 |
 | S1.6 | OpenDART outbound 전 PostgreSQL physical-attempt reservation이 성공해야 하며 DB 오류/budget/cap/020은 non-retry fail-closed다. DS004 ownership canonical은 corpCode·role/category·날짜·주식 수/비율만 허용하고 자연인 성명·주소·등록 식별자를 raw/canonical/log/metric/artifact/event에서 제거한다. Market Calendar RPC/REST는 aggregator 이후 별도 contract change 전까지 미가용이고 sourceRefs는 opaque sanitized ID/hash만 반환한다 |
@@ -1981,7 +1981,7 @@ API/adapter/parser/storage 변경 커밋은 기능 단위로 분리한다. 테�
 | 고도화 | 이벤트 push 채널(SSE), RAG 답변 스트리밍, Journal 수정/삭제 |
 | 고도화 | Live 동의 API(설계 계약, 비활성 게이트) |
 | 계획(S1.6 이후 contract-change) | Market Calendar API — sessions/events/sources/conflicts/health (12A, 현재 문서화된 미구현 계약) |
-| offline 구현 완료·live 승인 대기(내부 S1.3K, public API 아님) | KRX `stk_bydd_trd`+`ksq_bydd_trd` universe refresh CLI/batch |
+| offline 구현 완료·live 성공 대기(내부 S1.3K, public API 아님) | KRX `stk_bydd_trd`+`ksq_bydd_trd` universe refresh CLI/batch. 31개 entitlement와 NOW 2개 runtime 활성화는 분리 |
 | 후순위 | KIS Live-ready 활성화 |
 
 ---

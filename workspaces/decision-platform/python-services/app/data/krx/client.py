@@ -31,6 +31,7 @@ from app.data.krx._credential_transport import (
 )
 from app.data.krx.catalog import (
     ENABLED_UNIVERSE_ENDPOINTS,
+    ENABLED_UNIVERSE_ENDPOINTS_BY_SERVICE,
     KRX_OPEN_API_FIRST_AVAILABLE_DATE,
     KrxEndpoint,
 )
@@ -239,14 +240,7 @@ class KrxOpenApiClient:
 
     def fetch_universe_rows(self, as_of: date) -> tuple[KrxDailyRow, ...]:
         """직전 완료 XKRX session의 KOSPI 뒤 KOSDAQ 행을 모두 성공한 경우에만 반환한다."""
-        if type(as_of) is not date or as_of < KRX_OPEN_API_FIRST_AVAILABLE_DATE:
-            raise ValueError("KRX as-of date is outside the supported range")
-        try:
-            is_session = is_xkrx_trading_day(as_of)
-        except Exception:
-            raise ValueError("calendar_unavailable") from None
-        if not is_session:
-            raise ValueError("KRX as-of date must be an XKRX trading session")
+        _validate_as_of(as_of)
         deadline = time.monotonic() + self._settings.logical_deadline_seconds
         rows: list[KrxDailyRow] = []
         # endpoint 순서는 evidence의 request ordinal과 physical call accounting 계약이다.
@@ -260,6 +254,31 @@ class KrxOpenApiClient:
                 )
             )
         return tuple(rows)
+
+    def fetch_service_rows(
+        self,
+        as_of: date,
+        *,
+        service: str,
+    ) -> tuple[KrxDailyRow, ...]:
+        """승인된 두 KRX 서비스 중 하나만 strict parse하며 publish side effect는 만들지 않는다.
+
+        서비스 ID는 source-controlled map에서만 endpoint로 변환하고 단일 probe는 request ordinal
+        `1`로 고정해 Redis reservation과 provider handoff를 정확히 한 번만 허용한다.
+        """
+        if type(service) is not str:
+            raise ValueError("KRX service is not allowed")
+        endpoint = ENABLED_UNIVERSE_ENDPOINTS_BY_SERVICE.get(service)
+        if endpoint is None:
+            raise ValueError("KRX service is not allowed")
+        _validate_as_of(as_of)
+        deadline = time.monotonic() + self._settings.logical_deadline_seconds
+        return self._fetch_endpoint(
+            endpoint,
+            as_of=as_of,
+            deadline=deadline,
+            request_ordinal=1,
+        )
 
     def _fetch_endpoint(
         self,
@@ -351,7 +370,7 @@ class KrxOpenApiClient:
 
     @property
     def physical_attempt_count(self) -> int:
-        """두 endpoint의 provider transport handoff physical attempt 누계를 반환한다."""
+        """현재 client의 provider transport handoff physical attempt 누계를 반환한다."""
         return self._transport.physical_attempt_count
 
     def close(self) -> None:
@@ -385,6 +404,18 @@ def _safe_response_metadata(response: httpx.Response) -> KrxSafeResponseMetadata
     if isinstance(value, KrxSafeResponseMetadata):
         return value
     return None
+
+
+def _validate_as_of(as_of: date) -> None:
+    """지원 범위와 XKRX session을 provider·Redis 접근 전에 검증한다."""
+    if type(as_of) is not date or as_of < KRX_OPEN_API_FIRST_AVAILABLE_DATE:
+        raise ValueError("KRX as-of date is outside the supported range")
+    try:
+        is_session = is_xkrx_trading_day(as_of)
+    except Exception:
+        raise ValueError("calendar_unavailable") from None
+    if not is_session:
+        raise ValueError("KRX as-of date must be an XKRX trading session")
 
 
 def _bounded_json_diagnostic(

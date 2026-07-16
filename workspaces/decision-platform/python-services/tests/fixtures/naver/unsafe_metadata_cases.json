@@ -1,0 +1,10 @@
+{
+  "unsafeUrls": [
+    "http://localhost/synthetic",
+    "http://169.254.169.254/synthetic",
+    "https://fixture-user:fixture-password@news.example.test/synthetic",
+    "https://news.example.test/%0d%0aSynthetic:fixture",
+    "https://news.example.test/\u202esynthetic"
+  ],
+  "unsafeText": "  <b>합성&nbsp;뉴스</b>\u0000\u202e  fixture  "
+}

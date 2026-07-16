@@ -1,0 +1,4 @@
+{
+  "snapshotExample": "naver_news_metadata_snapshot.one_query.valid.json",
+  "manifestExample": "source_snapshot_manifest.naver_one_query.valid.json"
+}

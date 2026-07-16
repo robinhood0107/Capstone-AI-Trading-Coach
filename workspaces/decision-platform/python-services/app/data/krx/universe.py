@@ -12,7 +12,11 @@ from app.data.kis.universe import (
     UniverseManifestSymbol,
 )
 from app.data.krx.client import KrxOpenApiClient
-from app.data.krx.parsers import KrxDailyRow
+from app.data.krx.parsers import (
+    KrxDailyRow,
+    is_kis_compatible_symbol,
+    is_krx_issue_code,
+)
 
 
 KRX_OPENAPI_UNIVERSE_SOURCE = "krx-open-api:stk_bydd_trd+ksq_bydd_trd"
@@ -54,7 +58,13 @@ def refresh_universe_from_krx_openapi(
         raise ValueError("KRX Open API universe limit must be exactly 30")
     rows = client.fetch_universe_rows(as_of)
     all_ranked = _validated_ranked_rows(rows, as_of=as_of)
-    candidates = [row for row in all_ranked if row.market_cap > 0 and row.trading_value > 0]
+    candidates = [
+        row
+        for row in all_ranked
+        if is_kis_compatible_symbol(row.symbol)
+        and row.market_cap > 0
+        and row.trading_value > 0
+    ]
     if len(candidates) < limit:
         raise ValueError("KRX Open API universe requires at least 30 candidates")
 
@@ -92,7 +102,7 @@ def _validated_ranked_rows(
     for row in rows:
         if row.as_of_date != as_of:
             raise ValueError("KRX Open API candidate date did not match")
-        if len(row.symbol) != 6 or not row.symbol.isascii() or not row.symbol.isdecimal():
+        if not is_krx_issue_code(row.symbol):
             raise ValueError("KRX Open API candidate symbol is invalid")
         if not row.name.strip():
             raise ValueError("KRX Open API candidate name is invalid")

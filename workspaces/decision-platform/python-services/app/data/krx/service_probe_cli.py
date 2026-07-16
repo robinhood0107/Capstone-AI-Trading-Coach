@@ -10,7 +10,11 @@ from typing import NoReturn
 from app.data._shared.canonical_json import canonical_json_sha256
 from app.data.krx.catalog import ENABLED_UNIVERSE_ENDPOINTS_BY_SERVICE, KrxMarket
 from app.data.krx.client import KrxOpenApiClient
-from app.data.krx.parsers import KrxDailyRow
+from app.data.krx.parsers import (
+    KrxDailyRow,
+    is_kis_compatible_symbol,
+    is_krx_issue_code,
+)
 from app.data.krx.settings import KrxOpenApiSettings
 from app.data.krx.universe import resolve_latest_available_date
 from app.data.krx.universe_refresh_cli import (
@@ -131,9 +135,7 @@ def _summarize_rows(
             type(row) is not KrxDailyRow
             or row.as_of_date != as_of
             or row.market != expected_market
-            or len(row.symbol) != 6
-            or not row.symbol.isascii()
-            or not row.symbol.isdecimal()
+            or not is_krx_issue_code(row.symbol)
             or not row.name.strip()
             or row.market_cap < 0
             or row.trading_value < 0
@@ -161,7 +163,10 @@ def _summarize_rows(
     return _ProbeSummary(
         row_count=len(ordered),
         positive_candidate_count=sum(
-            row.market_cap > 0 and row.trading_value > 0 for row in ordered
+            is_kis_compatible_symbol(row.symbol)
+            and row.market_cap > 0
+            and row.trading_value > 0
+            for row in ordered
         ),
         source_sha256=canonical_json_sha256(canonical_rows),
     )

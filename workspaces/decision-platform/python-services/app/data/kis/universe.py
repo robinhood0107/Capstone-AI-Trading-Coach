@@ -81,6 +81,14 @@ class UniverseManifestSymbol:
     market_cap: int
     trading_value: int
 
+    def __post_init__(self) -> None:
+        """KIS/Naver consumer manifest에는 canonical 숫자 6자리 종목코드만 허용한다."""
+        if type(self.symbol) is not str:
+            raise ValueError("KIS symbol must contain exactly six digits")
+        normalized = normalize_symbol(self.symbol)
+        if normalized != self.symbol:
+            raise ValueError("KIS symbol must contain exactly six digits")
+
     def to_json(self) -> dict[str, Any]:
         return {
             "rank": self.rank,

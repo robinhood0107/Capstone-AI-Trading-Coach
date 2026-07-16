@@ -89,12 +89,17 @@ class KrxOpenApiSettings(BaseSettings):
         "response_max_bytes",
         "json_max_depth",
         "json_max_rows",
+        "connect_timeout_seconds",
+        "read_timeout_seconds",
+        "write_timeout_seconds",
+        "pool_timeout_seconds",
+        "logical_deadline_seconds",
         mode="before",
     )
     @classmethod
     def _reject_boolean_limits(cls, value: object) -> object:
         if isinstance(value, bool):
-            raise ValueError("KRX collection limits must be integers")
+            raise ValueError("KRX collection limits cannot be booleans")
         return value
 
     @property

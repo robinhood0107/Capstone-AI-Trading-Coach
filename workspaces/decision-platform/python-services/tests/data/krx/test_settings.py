@@ -19,10 +19,10 @@ def test_defaults_are_two_call_bounded_and_secret_free() -> None:
     assert settings.json_max_depth == 4
     assert settings.json_max_rows == 5_000
     assert settings.connect_timeout_seconds == 2.0
-    assert settings.read_timeout_seconds == 30.0
+    assert settings.read_timeout_seconds == 120.0
     assert settings.write_timeout_seconds == 2.0
     assert settings.pool_timeout_seconds == 1.0
-    assert settings.logical_deadline_seconds == 70.0
+    assert settings.logical_deadline_seconds == 260.0
 
     dumped_keys = {key.lower() for key in settings.model_dump()}
     rendered = repr(settings).lower()
@@ -50,13 +50,15 @@ def test_official_origin_is_source_controlled_and_cannot_be_overridden() -> None
         ("KRX_OPENAPI_JSON_MAX_DEPTH", 5),
         ("KRX_OPENAPI_JSON_MAX_ROWS", 5_001),
         ("KRX_OPENAPI_CONNECT_TIMEOUT_SECONDS", 2.1),
-        ("KRX_OPENAPI_READ_TIMEOUT_SECONDS", 30.1),
+        ("KRX_OPENAPI_READ_TIMEOUT_SECONDS", 120.1),
+        ("KRX_OPENAPI_READ_TIMEOUT_SECONDS", "120.1"),
         ("KRX_OPENAPI_WRITE_TIMEOUT_SECONDS", 2.1),
         ("KRX_OPENAPI_POOL_TIMEOUT_SECONDS", 1.1),
-        ("KRX_OPENAPI_LOGICAL_DEADLINE_SECONDS", 70.1),
+        ("KRX_OPENAPI_LOGICAL_DEADLINE_SECONDS", 260.1),
+        ("KRX_OPENAPI_LOGICAL_DEADLINE_SECONDS", "260.1"),
     ],
 )
-def test_hard_safety_caps_cannot_be_raised(name: str, value: int | float) -> None:
+def test_hard_safety_caps_cannot_be_raised(name: str, value: object) -> None:
     with pytest.raises(ValidationError):
         KrxOpenApiSettings(_env_file=None, **{name: value})
 
@@ -129,9 +131,9 @@ def test_response_shape_and_timeout_limits_can_only_be_lowered() -> None:
 
 @pytest.mark.parametrize(
     ("read_timeout", "logical_deadline"),
-    [(30.0, 70.0), (20.0, 50.0)],
+    [(120.0, 260.0), (90.0, 200.0), (30.0, 70.0)],
 )
-def test_krx8_recovery_timeout_overrides_accept_new_cap_and_lower_values(
+def test_staged_probe_timeout_overrides_accept_new_cap_and_lower_values(
     read_timeout: float,
     logical_deadline: float,
 ) -> None:

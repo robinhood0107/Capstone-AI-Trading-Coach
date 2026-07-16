@@ -364,7 +364,10 @@ def _read_limited(
             chunks.append(chunk)
     except KrxCredentialError:
         raise
-    except Exception:
+    except Exception as error:
+        code = _safe_transport_failure_code(error)
+        if code in {"read_timeout", "read_unavailable", "protocol_unavailable"}:
+            raise KrxCredentialError(code) from None
         raise KrxCredentialError("response_unavailable") from None
     return b"".join(chunks)
 

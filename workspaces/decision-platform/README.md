@@ -31,8 +31,15 @@ S1.3K는 KRX OPEN API의 `유가증권 일별매매정보`와 `코스닥 일별�
 runtime allowlist는 NOW 두 개로 고정한다. KRX1은 physical `0`·Redis `0→1`, KRX2는 첫 NOW
 endpoint handoff 뒤 원인 미분류 `collection_failed`로 physical `1`·Redis `1→2`, KRX3는 같은
 첫 handoff의 `authentication_failed(401_or_403)`로 physical `1`·Redis `2→3`을 기록했고 성공
-산출물은 없다. 세 실패 packet과 기존 S1.3 A4/B1 승인은 재사용하지 않는다. `.env`의 인증키, 현재 HEAD,
-기준일, 2회 호출, Redis 기준값, TTL에 결속한 새 KRX 실행 승인을 받은 경우에만 다음 명령을
+산출물은 없다. KRX4는 HEAD `971ea39418ba`, 기준일 `2026-07-15`의 첫 handoff에서
+`transport_unavailable`, physical `1`, Redis `3→4`로 중단했고 KOSDAQ·retry·artifact는 `0`이다.
+예약 뒤 `5.279초`라 당시 5초 read timeout 가능성이 가장 높지만 예외 타입이 소실되어 확정하지
+않는다. 별도 sanitized RCA evidence SHA-256은
+`30326a713ab1c638a2897412ccb50dc3fce44408e73ef47a1ad4db3d9b468033`이다. 네 실패 packet과
+기존 S1.3 A4/B1 승인은 재사용하지 않는다. 다음 실행은
+connect/read/write/pool `2/8/2/1초`, 두 endpoint logical budget `20초`, retry `0`을 유지한다.
+`.env`의 인증키, 현재 HEAD, 기준일, 2회 호출, timeout profile, Redis 기준값, TTL에 결속한 새 KRX5
+실행 승인을 받은 경우에만 다음 명령을
 정확히 1회 실행한다.
 
 ```bash

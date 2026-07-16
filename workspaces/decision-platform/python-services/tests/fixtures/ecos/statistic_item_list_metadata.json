@@ -1,0 +1,23 @@
+{
+  "StatisticItemList": {
+    "list_total_count": 1,
+    "row": [
+      {
+        "STAT_CODE": "722Y001",
+        "STAT_NAME": "합성 기준금리",
+        "GRP_CODE": "Group1",
+        "GRP_NAME": "합성 그룹",
+        "ITEM_CODE": "0101000",
+        "ITEM_NAME": "합성 기준금리 항목",
+        "P_ITEM_CODE": "",
+        "P_ITEM_NAME": "",
+        "CYCLE": "D",
+        "START_TIME": "20000101",
+        "END_TIME": "20260714",
+        "DATA_CNT": 100,
+        "UNIT_NAME": "%",
+        "WEIGHT": ""
+      }
+    ]
+  }
+}

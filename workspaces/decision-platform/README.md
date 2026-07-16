@@ -41,9 +41,13 @@ endpoint handoff 뒤 원인 미분류 `collection_failed`로 physical `1`·Redis
 failure/RCA SHA-256은 각각 `969711e95c12fdd4e51bc1a3fdbaa7983f36c5c46d622cbe406b3b7775d217b4`와
 `d08eac2d2c443f39b1ff940ccea7fefe130775ce76c7d789375b45e64c16ca56`이다. 공식 성공 shape는
 strict parser가 그대로 수용하므로 계약을 느슨하게 하지 않고 media/body/JSON/envelope/row typed
-diagnostic만 보강했다. 다섯 실패 packet과 기존 S1.3 A4/B1 승인은 재사용하지 않는다. 다음 실행은
-connect/read/write/pool `2/8/2/1초`, 두 endpoint logical budget `20초`, retry `0`을 유지한다.
-`.env`의 인증키, 현재 HEAD, 기준일, 2회 호출, timeout profile, Redis 기준값 `5`, TTL에 결속한 새 KRX6
+diagnostic만 보강했다. KRX6/7은 TTL 만료로 provider `0`이다. KRX8은 HEAD `4783432ad7de`,
+첫 endpoint `read_timeout`, physical `1`, Redis `5→6`이며 KOSDAQ·retry·online artifact는 `0`이다.
+failure/RCA SHA-256은 `a2547290e39fe63c1ceda9171beb4dd701c9db8938182e6e93d08e5aacf23dca`와
+`53bc9d4e001b839fe2692be61271f5954fc9e9703b6f94501ac782b128029d62`이다. KRX1~5/KRX8 실패와
+KRX6/7 만료 packet, 기존 S1.3 A4/B1 승인은 재사용하지 않는다. 다음 실행은
+connect/read/write/pool `2/30/2/1초`, 두 endpoint shared logical budget `70초`, retry `0`을 유지한다.
+`.env`의 인증키, 현재 HEAD, 기준일, 2회 호출, timeout profile, Redis 기준값 `6`, TTL에 결속한 새 KRX9
 실행 승인을 받은 경우에만 다음 명령을
 정확히 1회 실행한다.
 

@@ -168,6 +168,14 @@ def _safe_collection_failure_code(error: Exception) -> str:
         return "invalid_response"
     if isinstance(error, KrxCredentialError) and error.code in {
         "authentication_unavailable",
+        "connect_timeout",
+        "read_timeout",
+        "write_timeout",
+        "pool_timeout",
+        "connect_unavailable",
+        "read_unavailable",
+        "write_unavailable",
+        "protocol_unavailable",
         "logical_deadline_exceeded",
         "response_too_large",
         "response_unavailable",

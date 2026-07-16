@@ -1752,7 +1752,7 @@ S1.3K는 public API가 아니라 Decision Platform 내부 batch/CLI다. 고정 K
 
 | 항목 | 내부 collector 계약 |
 |---|---|
-| availability | 내부 collector/CLI는 offline 구현 완료. KRX1은 physical `0`·Redis `0→1`, KRX2/KRX3는 첫 NOW endpoint에서 각각 physical `1`·Redis `1→2`/`2→3` 인증 실패로 끝났고 성공 artifact는 `0`이다. 세 실패 packet은 재사용하거나 성공 회계에 합산하지 않음 |
+| availability | 내부 collector/CLI는 offline 구현 완료. KRX1은 physical `0`·Redis `0→1`, KRX2는 첫 NOW endpoint handoff 뒤 원인 미분류 `collection_failed`로 physical `1`·Redis `1→2`, KRX3는 같은 첫 handoff의 `authentication_failed(401_or_403)`로 physical `1`·Redis `2→3`을 기록했고 성공 artifact는 `0`이다. 세 실패 packet은 재사용하거나 성공 회계에 합산하지 않음 |
 | NOW endpoint allowlist | 계정 entitlement는 31개 모두 승인됐지만 runtime은 `stk_bydd_trd`, `ksq_bydd_trd` 두 개만 허용한다. 인증키·이용기간·신규 실행 승인을 확인하기 전에는 `--online`을 실행하지 않음 |
 | request | 공식 제공 시작일 `2010-01-04` 이상 완료 거래일 `D`를 CLI ASCII `YYYY-MM-DD`·provider exact `basDd=YYYYMMDD`로만 받는 GET/JSON. 응답 내 `BAS_DD` 전체가 `D`와 같고 KOSPI/KOSDAQ 두 set가 모두 완전할 때만 채택 |
 | schedule/date | 외부 scheduler가 `D+1 08:10 KST` 이후 단 1회 호출하는 프로젝트 계약이며 이 PR은 scheduler를 추가하지 않음. `--as-of` 생략 시 로컬 XKRX calendar와 안전 경계로 최신 가용일을 정하되 경계 전에는 주말·휴일에도 최근 session을 한 단계 더 제외함. 지원 범위·미래일은 calendar 호출 전에 차단하고 calendar 계산 실패는 client 0건의 `calendar_unavailable`로 종료함. provider 실패에 따른 이전일 재호출·자동 재시도는 금지 |

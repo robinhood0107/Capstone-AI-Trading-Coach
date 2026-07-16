@@ -49,10 +49,10 @@ def test_official_origin_is_source_controlled_and_cannot_be_overridden() -> None
         ("KRX_OPENAPI_RESPONSE_MAX_BYTES", 4 * 1024 * 1024 + 1),
         ("KRX_OPENAPI_JSON_MAX_DEPTH", 5),
         ("KRX_OPENAPI_JSON_MAX_ROWS", 5_001),
-        ("KRX_OPENAPI_CONNECT_TIMEOUT_SECONDS", 3.1),
+        ("KRX_OPENAPI_CONNECT_TIMEOUT_SECONDS", 2.1),
         ("KRX_OPENAPI_READ_TIMEOUT_SECONDS", 8.1),
-        ("KRX_OPENAPI_WRITE_TIMEOUT_SECONDS", 3.1),
-        ("KRX_OPENAPI_POOL_TIMEOUT_SECONDS", 2.1),
+        ("KRX_OPENAPI_WRITE_TIMEOUT_SECONDS", 2.1),
+        ("KRX_OPENAPI_POOL_TIMEOUT_SECONDS", 1.1),
         ("KRX_OPENAPI_LOGICAL_DEADLINE_SECONDS", 20.1),
     ],
 )

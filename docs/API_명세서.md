@@ -33,6 +33,11 @@
 
 각 절에 `구현 완료`와 검증 근거가 명시되지 않았다면 기본적으로 `계획 계약`으로 해석한다. 세션 번호는 작업 배정을 뜻할 뿐 API 가용성을 뜻하지 않으며, schema/proto/OpenAPI 변경이 필요한 기능은 별도의 contract-change 절차가 완료되어야 한다. 구현 상태의 상위 기준은 `최종_프로젝트_명세서.md`의 세션·보안 gate 표를 따른다.
 
+> 완료 기준점(2026-07-16): S1.3 내부 ECOS/Naver producer는 PR #16 merge commit
+> `6f439155d9f5ec626fc185f29f2e0bd64ca54780`, S1.3K KRX 내부 collector는 PR #17 merge
+> commit `814aab377251d76672566d39c3edb379d132248e`으로 `main`에 병합됐다. 두 트랙은 public
+> REST/gRPC가 아니라 아래에 명시한 내부 artifact/CLI 경계만 구현 완료 상태다.
+
 ---
 
 ## 1. 전체 API 경계
@@ -1702,11 +1707,12 @@ service MarketDataService {
 }
 ```
 
-> S1.3 가용성(2026-07-15): 위 `GetNewsSummary`와 `GetMacroSnapshot`은 미래 interface
+> S1.3 가용성(2026-07-16): 위 `GetNewsSummary`와 `GetMacroSnapshot`은 미래 interface
 > sketch이며 현재 proto/controller가 없어 **호출 불가**다. S1.3은 아래 내부 file artifact만
 > 생산한다. `GetNewsSummary`는 Naver provider 응답이 아니라 Return Engine이 생성할 감성 요약
 > 계약을 뜻하며, 두 RPC를 공개하려면 별도의 `contracts/changes/`와 인증·인가 구현이 필요하다.
-> 아래 lower-only batch/retry, strict CLI와 JSON Schema를 구현했다. Approval A1·A2·A3는
+> 아래 lower-only batch/retry, strict CLI와 JSON Schema를 구현하고 PR #16 merge commit
+> `6f439155d9f5ec626fc185f29f2e0bd64ca54780`으로 `main`에 병합했다. Approval A1·A2·A3는
 > 실패 evidence로 분리한다. A4 `approval-a4-692635240394-20260715T055519Z`는 실행 HEAD
 > `692635240394`에서 physical handoff `4`·Redis `+4`로 성공했고 canonical evidence SHA는
 > `3bb3810728cfb2c3b7ba8006b071295606e24bfc51e0f2b94e15d3840baaa625`다. 사용자는
@@ -1740,11 +1746,13 @@ S1.3 내부 source snapshot 계약은 다음과 같다.
 | accepted evidence | B1 `approval-b1-23618d21265d-20260715T072151Z`는 HEAD `23618d21265d`에서 성공했다. KRX source/manifest SHA는 `781852a247f15b86226669a778d3b698756abd2d2515c79efc2af6f229d1d6e6`/`bde825cfe5c25a25960b3f354ef91adb7b0b5110f23c9687e90bd448a938b73f`, as-of는 `2026-07-15`, rank 1은 `005930/삼성전자`다. ECOS snapshot/manifest SHA는 `3f20789967add58531c79ae522b89b94227a7692ab3d4fbace8b8ff5adbb962f`/`be7c4d9637b19045316fb6324bb47f9f23cff5002189510d4656be184679f7d3`, 2 series·50 observations·physical `2`·retention `365`다. Naver snapshot/manifest SHA는 `209ef0bf01ad617e1b6fb65b0d57dd3f66e4e62d46487a2585a8f454b615c688`/`1cc159ffa500b207f422b4fd2618689c216a22778bf2064bc065b815ecad185a`, query `삼성전자` 1건·metadata 10건·physical `1`·retention `30`이다. 두 artifact set은 complete이고 schema/runtime/canonical/hash/mode/sanitization 검증을 통과했으며 retention dry-run은 `scanned=2 eligible=0 deleted=0 skipped=0`이다. B evidence SHA는 `ecb62e114352439994fa799096a916757ba7fba081f08f1d1b78ec35397d85fb`; accepted set은 A4+B1의 ECOS `6`+Naver `1`=`7`이다 |
 | Naver lifecycle | 이번 S1.3 immediate legacy 1-query smoke는 현재 collector 계약 검증이다. 이와 별개로 운영자가 `legacy` 또는 `api-hub` profile을 명시하며 날짜 기반 자동 전환은 없다. 2026 Q3에 NCP 계정·Application·API key ID/key와 secret entry를 준비하고, 2026 Q4에 pinned fixture parity와 별도 승인된 최소 1-query API Hub lifecycle 검증을 다시 거친다. 목표 cutover는 `2027-03-31`, legacy rollback 제거는 `2027-05-31`, legacy hard stop은 `2027-06-30T00:00:00+09:00`이며 API Hub는 그 전까지 disabled-ready다 |
 
-#### 13.5.A S1.3K KRX universe internal collector (offline·live 검증 완료)
+#### 13.5.A S1.3K KRX universe internal collector (구현·live 검증·병합 완료)
 
 S1.3K는 public API가 아니라 Decision Platform 내부 batch/CLI다. 고정 KRX OPEN API collector와
-`krx-openapi-universe-refresh` CLI는 별도 브랜치에서 구현하고 fixture/mock offline matrix와
-KRX11 단계형 live 검증을 통과했다. 운영 계정의 31개 서비스 entitlement는 승인됐지만 runtime
+`krx-openapi-universe-refresh` CLI는 fixture/mock offline matrix와 KRX11 단계형 live 검증을
+통과했고 PR #17 merge commit `814aab377251d76672566d39c3edb379d132248e`으로 `main`에
+병합됐다. KRX11 실행 HEAD `81aed4c1fad68966c0f2275d83883a64ea407a0b`와 최종 merge commit은
+각각 live evidence 결속 상태와 통합 상태를 뜻한다. 운영 계정의 31개 서비스 entitlement는 승인됐지만 runtime
 allowlist는 NOW 두 개로 고정하며, 이후 실행도 신규 KRX packet-bound 승인을 확인한 뒤에만
 수행한다. 기존 실제 CSV의 `kis-universe-refresh`는 명시적
 수동 fallback으로 유지한다. 공식 [서비스 목록](https://openapi.krx.co.kr/contents/OPP/INFO/service/OPPINFO004.cmd)의
@@ -1753,19 +1761,38 @@ allowlist는 NOW 두 개로 고정하며, 이후 실행도 신규 KRX packet-bou
 
 | 항목 | 내부 collector 계약 |
 |---|---|
-| availability | 내부 collector/CLI와 단일 endpoint no-publish probe는 offline·live 검증 완료. KRX1~5/KRX8/KRX10은 실패 evidence, KRX6/7/9는 TTL 만료·provider `0` evidence로 분리한다. KRX11은 HEAD `81aed4c1fad6`, 기준일 `2026-07-15`에서 KOSPI probe `1`→KOSDAQ probe `1`→full refresh `2`를 성공해 Redis rolling `4→8`, retry·추가 호출 `0`과 top-30 원자 게시를 기록했다. 모든 실패·만료 packet은 재사용하거나 성공 회계에 합산하지 않음 |
+| availability | 내부 collector/CLI와 단일 endpoint no-publish probe는 offline·live 검증 완료. KRX1~5/KRX8/KRX10은 실패 evidence, KRX6/7/9는 TTL 만료·provider `0` evidence로 분리한다. KRX11은 실행 HEAD `81aed4c1fad6`, 기준일 `2026-07-15`에서 KOSPI probe `1`→KOSDAQ probe `1`→full refresh `2`를 성공해 Redis rolling `4→8`, retry·추가 호출 `0`과 top-30 원자 게시를 기록했다. 모든 실패·만료 packet은 재사용하거나 성공 회계에 합산하지 않음 |
 | NOW endpoint allowlist | 계정 entitlement는 31개 모두 승인됐지만 runtime은 `stk_bydd_trd`, `ksq_bydd_trd` 두 개만 허용한다. 인증키·이용기간·신규 실행 승인을 확인하기 전에는 `--online`을 실행하지 않음 |
 | request | 공식 제공 시작일 `2010-01-04` 이상 완료 거래일 `D`를 CLI ASCII `YYYY-MM-DD`·provider exact `basDd=YYYYMMDD`로만 받는 GET/JSON. 응답 내 `BAS_DD` 전체가 `D`와 같고 KOSPI/KOSDAQ 두 set가 모두 완전할 때만 채택 |
 | timeout/diagnostic | connect/read/write/pool은 `2/120/2/1초`다. 단일 probe logical deadline은 `130초`, 두 endpoint full refresh shared logical budget은 `260초`, retry는 `0`이다. HTTPX read timeout은 다음 response data chunk까지의 inactivity 상한이며 logical budget은 blocking DNS를 강제 취소하는 wall-clock watchdog이 아니다. credential-bearing transport 예외의 문자열·request·cause는 버리고 allowlisted stable code만 출력한다. HTTP 200 validation 실패의 외부 code는 `invalid_response`로 유지하고 typed stage·leaf, request ordinal, NOW service, HTTP status, 고정 분류/count/공식 15필드명만 suffix로 허용한다. raw body/header/URL/provider message/미확인 key·value는 금지함 |
 | staged probe | `krx-openapi-service-probe`는 required `--online --as-of --service`만 받고 service는 NOW 두 ID 중 하나여야 한다. 임의 path/URL/output path를 받지 않고 exact service map과 기존 private transport를 재사용한다. 성공은 row count·양수 후보 count·deterministic canonical SHA-256·elapsed ms·physical `1`만 출력하며 파일 write는 `0` |
 | issue-code boundary | KRX source `ISU_CD`는 exact `[0-9A-Z]{6}`이며 영문 포함 행도 row count·중복검사·canonical source hash에 포함한다. probe의 positive candidate와 최종 top-30은 exact `[0-9]{6}`이면서 시가총액·거래대금이 양수인 행만 사용한다. `UniverseManifestSymbol`도 숫자 6자리를 constructor에서 재검증함 |
 | KRX11 execution | `approval-krx11-81aed4c1fad6-20260716T122917Z` 아래 KOSPI `944/887`·SHA `4f8e4849ac655598d0bb1ce736d7c0ff4436168eeb232c7bfa2364ee830cfda6`·`11,943ms`·physical `1`, KOSDAQ `1,821/1,690`·SHA `cc2ae17c110196c2daeaa73c1592930d76a2821addab5068c2bd963d5b0350c7`·`14,019ms`·physical `1`, full refresh physical `2`를 순서대로 성공했다. Redis `4→8`, retry·추가 호출·cooldown `0`; manifest/report SHA는 `ed979913de7415146cbb56df97bdf4eddeec3c21bc4792f4c03d802c7596674e`/`625caa61ab8cb5382b5da7acc84741f38c1cab5dc2edb1ff2901108c27dc8671`, source SHA는 `f23bbd75c55121c65351fa10f47a86871a8e0082a03cab3df8e816527e18c9d1`, rank 1은 `005930/삼성전자`다. success evidence/소비 완료 packet SHA는 `57d66380e2a86c928bf21a69d9e626fa697d487cf878378558aa26959e3f64c9`/`58dc47bf96f644b634d76cec6bd08caedd06cc1c8e829419e6d9bf6f49492619`다. 각 프로세스 cap `1/1/2`와 합계 `4`는 executor가 packet 순서와 stop rule로 강제하며 app/Redis의 approval별 hard cap은 아님 |
-| schedule/date | 외부 scheduler가 `D+1 08:10 KST` 이후 단 1회 호출하는 프로젝트 계약이며 이 PR은 scheduler를 추가하지 않음. `--as-of` 생략 시 로컬 XKRX calendar와 안전 경계로 최신 가용일을 정하되 경계 전에는 주말·휴일에도 최근 session을 한 단계 더 제외함. 지원 범위·미래일은 calendar 호출 전에 차단하고 calendar 계산 실패는 client 0건의 `calendar_unavailable`로 종료함. provider 실패에 따른 이전일 재호출·자동 재시도는 금지 |
+| schedule/date | 외부 scheduler가 `D+1 08:10 KST` 이후 단 1회 호출하는 프로젝트 계약이며 병합된 S1.3K 범위에는 scheduler가 포함되지 않음. `--as-of` 생략 시 로컬 XKRX calendar와 안전 경계로 최신 가용일을 정하되 경계 전에는 주말·휴일에도 최근 session을 한 단계 더 제외함. 지원 범위·미래일은 calendar 호출 전에 차단하고 calendar 계산 실패는 client 0건의 `calendar_unavailable`로 종료함. provider 실패에 따른 이전일 재호출·자동 재시도는 금지 |
 | selection/output | KOSPI+KOSDAQ canonical row를 `marketCap desc -> tradingValue desc -> symbol asc`로 정렬함. 공식 `-`/`0` 값은 0으로 정규화한 뒤 후보에서 제외하고 양수 종목 30개를 기존 `UniverseManifest` v1로 ignored 내부 경로에 게시 |
 | primary/fallback | 일봉·백필·판단 가격 primary는 계속 KIS. KRX API 실패 시 incomplete manifest를 게시하지 않고 nonzero로 종료한 뒤, 운영자가 별도 명령으로만 기존 KRX CSV importer를 실행함. 같은 run의 자동 fallback·stale manifest 재사용 금지 |
 | evidence/output | 별도 provenance 파일을 만들지 않음. collector는 파일 side effect 없이 manifest만 반환하고 CLI는 approved ignored data root 내부의 서로 다른 report/manifest target에 고정 source label, 기준일, 검증된 전체 canonical row SHA-256, 선정 30개만 기록함. report target은 data directory 밖·manifest 동일 경로·기존 hardlink alias를 허용하지 않고 provider 종목명은 Markdown 표·링크·이미지 문법으로 해석되지 않게 escape함. client cleanup 성공 뒤에만 report→manifest를 게시하며 CLI는 caller argv·로컬 경로 없이 안정 code·`physical_attempts`와 exact `KrxValidationDiagnostic`의 allowlisted scalar suffix만 출력함. provider raw body/header/message/request URL, auth header, credential/configured 흔적, 로컬 절대경로는 금지 |
 | license | [KRX 이용약관](https://openapi.krx.co.kr/contents/OPP/INFO/OPPINFO002.jsp)의 비상업 이용, 제3자 정보 제공 금지, 화면의 “한국거래소 통계정보” 사용 표시, 키당 매일 0시~24시 10,000회 이하, 인증키 1년, 계약 종료 후 정보 사용 금지를 준수. 별도 약관 판단 전 `artifacts/`·다른 workspace로 전달하지 않음 |
 | unchanged | DB/Flyway, `contracts/`, source snapshot schema, Return Engine/Dashboard, S1.6 Market Calendar API·source registry·schedule는 변경하지 않음 |
+
+#### 13.5.B 외부 provider 반복 실패 복구 경계
+
+다단계 external provider 명령이 같은 지점에서 반복 실패하거나 stable code만으로 exact leaf를
+식별할 수 없으면 전체 명령을 반복하지 않는다. 실패 packet/evidence를 소비 완료로 동결하고
+allowlisted typed diagnostic과 focused regression test를 먼저 추가한다. 성공 response 계약을
+느슨하게 만들지 않는 최소 수정 뒤 focused suite, 관련 matrix, 전체 gate를 모두 통과해야 새
+online packet을 발급할 수 있다. packet은 현재 사용자의 exact 승인 수신 전에는 소비할 수 없고
+그 전 provider 호출은 `0`이다.
+
+작업을 독립 endpoint로 나눌 수 있고 production transport/parser/quota를 그대로 재사용하는 경우에만
+단일 endpoint·no-publish probe를 둔다. probe는 retry `0`, physical cap `1`, artifact `0`이며 첫
+실패 뒤 후속 provider 호출은 `0`이다. probe 성공은 accepted artifact가 아니며 최종 atomic 명령은
+probe 결과를 신뢰하지 않고 현재 응답 전체를 독립적으로 다시 검증한 뒤에만 publish한다. probe와
+final hash 일치는 요구하지 않고 실패 evidence와 성공 acceptance set을 합치지 않는다.
+
+raw body/header/request URL/credential/provider message는 진단·evidence·출력에 넣지 않는다.
+direct `curl`, 브라우저 sample, 임시 credential injection script로 fixed-origin transport·quota·
+approval gate를 우회하지 않으며 외부 성공을 보장한다고 표현하지 않는다.
 
 S1.1의 KIS MarketDataService 구현 경계는 다음과 같다.
 
@@ -1963,6 +1990,7 @@ API/adapter/parser/storage 변경 커밋은 기능 단위로 분리한다. 테�
 | S1.3K transport/quota/storage (offline 통과) | final send에서만 AUTH_KEY 부착·종료 후 제거, fixed-origin/GET/JSON/TLS 1.2+, redirect·ambient/caller override 거부, credential/provider echo 비노출과 공식 5,000행 credential scan 경계를 검증한다. Redis 장애 outbound 0, credential 실패 시 reservation `+1`/physical `0`, quota wait 재예약·deadline 차단, full refresh 2 reservation/2 handoff, no-refund와 retry 0을 확인한다. timeout `2/120/2/1초`, probe logical `130초`, full shared logical `260초`, lower-only override와 상한 초과/boolean 거부, 첫 endpoint가 130초를 소비해도 둘째 read 120초를 확보함을 검증한다. probe는 exact service 하나·reservation/handoff `1`·ordinal `1`·파일 write `0`, cleanup-before-complete·deterministic safe-row SHA·untrusted diagnostic 비노출을 검증한다. 기존 첫 endpoint 실패 시 둘째 send `0`, 둘째 endpoint 실패 시 ordinal `2`/physical `2`, 두 시장 성공 뒤 report→manifest 0600 fsync+atomic replace 계약을 유지함 |
 | S1.3K date/fallback/compatibility (offline 통과) | 공식 시작일 `2010-01-04`, 지원 범위 밖·극단 미래일·calendar 계산 실패의 client 0건 안정 종료, `08:10 KST` 전후의 평일·주말 안전 최신일과 XKRX 거래일·exact `basDd`, 첫 endpoint 실패 시 둘째 send 0, 둘째 endpoint 실패 시 manifest/report 0, API 실패 시 자동 CSV fallback 0을 검증한다. 기존 KIS/Naver consumer가 API 생성 `UniverseManifest` v1을 변경 없이 읽고 golden fixture와 동일 top-30을 생성함 |
 | S1.3K online staged smoke (통과) | KRX11에서 KOSPI/KOSDAQ probe가 각각 HTTP `200` strict parse·physical `1`·파일 `0`을 기록하고, final refresh가 두 시장을 physical `2`로 다시 검증해 top-30 manifest/report를 mode `0600`으로 게시했다. 총 Redis delta `+4`, retry·보충 호출 `0`, source/manifest/report hash와 rank 1 `005930/삼성전자`를 ignored success evidence에 고정함 |
+| 외부 provider 단계형 recovery | 반복 실패 leaf의 focused regression, 계약을 느슨하게 하지 않는 최소 수정, 관련 matrix·전체 gate, fresh packet-bound 승인, 단일 endpoint no-publish probe의 다른 endpoint·파일 생성 `0`, 첫 실패 뒤 후속 호출 `0`, 최종 명령의 독립 재검증·원자 publish, 실패 evidence/성공 acceptance set 분리와 secret/provider 원문 비노출을 검증함 |
 | Journal | decision/backtest/RAG 근거 연결 |
 | Option Analytics | BSM 가격, Greeks, implied volatility 수치 검증 |
 | Async Status | async job 상태, stream metric, artifact ingest 상태 |

@@ -2,6 +2,10 @@
 
 팀 배포 기준 문서. 원본 관리처는 로컬(개인 정리 폴더)이며, 갱신 시 이 폴더에 같은 파일명으로 동기화한다.
 
+## 현재 완료 상태
+
+S1.3 ECOS/Naver 내부 source snapshot은 PR #16, S1.3K KRX OPEN API universe 자동화는 PR #17로 2026-07-16 `main`에 병합됐다. 완료 상태와 단계형 provider 복구 규칙은 [최종_프로젝트_명세서.md](최종_프로젝트_명세서.md) 11.1.3~11.1.5, 내부 API/CLI 경계는 [API_명세서.md](API_명세서.md) 13.5, 실제 운영 명령과 검증 결과는 [Decision Platform README](../workspaces/decision-platform/README.md)를 따른다.
+
 | 문서 | 내용 |
 |---|---|
 | [최종_프로젝트_명세서.md](최종_프로젝트_명세서.md) | 프로젝트 전체 명세 — 방향, 시스템 구조, 모노레포 설계, 역할분담, 팀별 축소 계획(18.A) |

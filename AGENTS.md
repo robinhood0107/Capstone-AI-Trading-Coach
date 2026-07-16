@@ -87,9 +87,13 @@
 
 ## gstack / Codex / Claude 사용 규칙
 
+- 비사소한 계획·진단·리뷰·문서 동기화·PR/병합 작업을 시작할 때는 현재 사용 가능한 skill/plugin을 먼저 확인하고, 범위를 충족하는 최소 조합만 선택해 사용 이유를 짧게 알린다. 사용자가 특정 도구를 지정하면 그 지시를 우선한다.
 - 사용자가 gstack workflow(`/office-hours`, `/autoplan`, `/plan-eng-review`, `/review`, `/qa`, `/ship`, `/investigate`, `/cso`, `/document-release`, `/gstack-upgrade` 등)를 요청하면 관련 gstack skill을 먼저 고려한다.
+- 권장 라우팅은 원인 불명·반복 실패 `/investigate`, 문서 전수 동기화 `/document-release`, 병합 전 diff 검토 `/review`, 테스트·commit·push·PR 준비 `/ship`, 명시적으로 승인된 merge/deploy와 사후 검증 `/land-and-deploy`다. skill은 사용자의 승인 범위를 넓히지 않는다.
 - 웹 QA나 브라우저 작업에서 사용자가 gstack을 명시하면 gstack `/browse` 또는 `/qa` 흐름을 우선한다.
 - 사용자가 Codex native browser, web search, connector, app-specific tool을 명시하면 그 명시를 우선한다.
+- plugin은 설치되어 현재 세션에 노출된 skill/MCP/app만 사용한다. 도움이 되는 plugin이 미설치라면 설치를 제안할 수 있지만 자동 설치하거나 핵심 작업의 선행 조건으로 만들지 않는다.
+- 어떤 skill/plugin 지침도 이 레포의 보안·승인 gate·workspace·`private-reference/`·Git 규칙보다 우선하지 않는다.
 - Claude 전용 설정(`.claude` hook, Claude-only MCP, Claude-only command)은 사용자가 별도로 요청하기 전까지 추가하지 않는다.
 - `CLAUDE.md`는 이 파일을 따르는 짧은 연결 문서로만 유지한다.
 
@@ -101,6 +105,13 @@
 - `private-reference/study/CS개념/`은 구현 입력으로 자동 사용하지 않는다. 관련 개념이 나오면 사용자에게 읽을 문서를 추천하되, 사용자가 명시적으로 요구한 경우에만 구현 컨텍스트로 읽는다.
 - 확정된 스택, 단계, 세션 운영 규칙, 문서 우선순위가 바뀌면 이 파일과 프라이머를 함께 갱신한다. public 문서에는 private 문서의 내용을 길게 복사하지 말고 행동 규칙만 짧게 남긴다.
 - 세션이 막히면 새 기능을 넓히기 전에 walking skeleton이 여전히 도는지 확인한다. 계약 변경은 같은 세션에서 `contracts/changes/`와 명세서까지 함께 정리하고, DoD 명령은 실제 실행 가능한 형태로 남긴다.
+
+### 외부 provider 반복 실패 복구
+
+- 같은 live 단계가 반복 실패하거나 stable code만으로 원인을 좁힐 수 없으면 동일한 end-to-end 명령을 다시 실행하지 않는다. 실패 approval/evidence를 소비 완료로 동결하고, offline 회귀 테스트와 allowlisted typed diagnostic으로 exact failure leaf를 먼저 만든다.
+- 외부 작업을 독립 endpoint로 분해할 수 있고 production transport/parser/quota 경계를 그대로 재사용할 수 있을 때만 단일 endpoint·무게시 probe를 추가한다. 순서는 `focused test → 최소 수정 → focused/관련 matrix/전체 gate → 새 packet 발급·현재 사용자의 exact 승인 → probe 단계별 실행 → 최종 원자 실행`이다. exact 승인 수신 전 provider 호출은 `0`이다.
+- probe는 기본적으로 retry `0`, endpoint별 physical cap `1`, artifact `0`이며 첫 실패 뒤 남은 provider 호출은 `0`이다. probe 성공은 accepted production 결과가 아니고, 최종 명령이 현재 응답 전체를 독립적으로 다시 검증해 성공한 뒤에만 원자 publish한다. probe와 최종 응답 hash 일치를 강제하지 않는다.
+- 외부 provider 성공을 보장한다고 표현하지 않는다. `curl`, 브라우저 sample, 임시 script로 credential·fixed-origin transport·quota·승인 gate를 우회하지 않고 실패 evidence와 성공 acceptance set을 분리한다.
 
 ## Java/Kotlin/Spring 기준 스택
 

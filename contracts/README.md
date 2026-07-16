@@ -16,8 +16,10 @@ S1.3은 public REST/gRPC를 추가하지 않는다. Decision Platform이 아래 
 Return Engine은 이후 합의된 `contracts/`·`artifacts/` handoff 경계에서 manifest를 검증해 소비한다.
 다른 workspace의 구현 파일이나 Decision Platform의 임의 로컬 경로를 직접 읽는 방식은 계약이 아니다.
 
-> 구현 상태(2026-07-15): Naver lower-only batch·strict smoke, JSON Schema, offline 회귀와
-> 승인된 online smoke를 완료했다. Approval A1/A2/A3는 실패 evidence로 분리한다. A4
+> 구현 상태(2026-07-16): Naver lower-only batch·strict smoke, JSON Schema, offline 회귀와
+> 승인된 online smoke를 완료하고 PR #16 merge commit
+> `6f439155d9f5ec626fc185f29f2e0bd64ca54780`으로 `main`에 병합했다. Approval A1/A2/A3는
+> 실패 evidence로 분리한다. A4
 > `approval-a4-692635240394-20260715T055519Z`는 physical `4`·Redis `+4`로 성공했고,
 > `semantic-3bb3810728cf` 승인 뒤 registry를 활성화했다. B1
 > `approval-b1-23618d21265d-20260715T072151Z`는 ECOS physical `2`·Redis `+2`와 Naver
@@ -54,3 +56,8 @@ v1의 `sanitizedPreflight.diagnostic`에만 저장한다. A1/A2/A3는 실패 evi
 ECOS `6`+Naver `1`=`7`이며 실패 run을 합산하거나 프로젝트 lifetime 호출 수로 표현하지 않는다.
 A3/A4 복구와 B1 검증은 기존 3개 source snapshot schema, public API, DB/Flyway, dependency,
 다른 workspace를 변경하지 않았다.
+
+여기서 구현·병합 완료는 Decision Platform producer/storage 경계를 뜻한다. Return Engine이
+이 snapshot을 실제 교환 artifact로 소비하는 cross-workspace handoff는 별도 계약 합의 전까지
+활성 상태로 간주하지 않는다. S1.3K KRX universe 자동화는 이 계약 파일을 변경하지 않은 별도
+내부 트랙이다.

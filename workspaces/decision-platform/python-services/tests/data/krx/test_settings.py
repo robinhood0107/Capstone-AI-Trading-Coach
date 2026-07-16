@@ -61,6 +61,21 @@ def test_hard_safety_caps_cannot_be_raised(name: str, value: int | float) -> Non
         KrxOpenApiSettings(_env_file=None, **{name: value})
 
 
+@pytest.mark.parametrize(
+    "name",
+    [
+        "KRX_OPENAPI_CONNECT_TIMEOUT_SECONDS",
+        "KRX_OPENAPI_READ_TIMEOUT_SECONDS",
+        "KRX_OPENAPI_WRITE_TIMEOUT_SECONDS",
+        "KRX_OPENAPI_POOL_TIMEOUT_SECONDS",
+        "KRX_OPENAPI_LOGICAL_DEADLINE_SECONDS",
+    ],
+)
+def test_timeout_limits_reject_boolean_values(name: str) -> None:
+    with pytest.raises(ValidationError):
+        KrxOpenApiSettings(_env_file=None, **{name: True})
+
+
 @pytest.mark.parametrize("run_cap", [1, 2])
 def test_run_cap_accepts_only_the_approved_lower_only_range(run_cap: int) -> None:
     settings = KrxOpenApiSettings(

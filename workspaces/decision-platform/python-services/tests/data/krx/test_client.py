@@ -158,6 +158,63 @@ def test_two_endpoints_share_one_logical_deadline(
     }
 
 
+def test_default_timeout_profile_preserves_full_market_read_budget_for_both_endpoints(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now = [100.0]
+    observed_timeouts: list[dict[str, float | None]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        observed_timeouts.append(dict(request.extensions["timeout"]))
+        if request.url.path == KOSPI_DAILY.path:
+            now[0] = 125.0
+            return httpx.Response(
+                200,
+                json=_payload(
+                    _daily_row(
+                        symbol="005930",
+                        name="삼성전자",
+                        market="KOSPI",
+                        market_cap=500_000,
+                        trading_value=900_000,
+                    )
+                ),
+            )
+        return httpx.Response(
+            200,
+            json=_payload(
+                _daily_row(
+                    symbol="035720",
+                    name="카카오",
+                    market="KOSDAQ",
+                    market_cap=300_000,
+                    trading_value=700_000,
+                )
+            ),
+        )
+
+    monkeypatch.setattr(client_module.time, "monotonic", lambda: now[0])
+    client, _ = _client(monkeypatch, httpx.MockTransport(handler))
+
+    rows = client.fetch_universe_rows(_AS_OF)
+
+    assert len(rows) == 2
+    assert observed_timeouts == [
+        {
+            "connect": 2.0,
+            "read": 30.0,
+            "write": 2.0,
+            "pool": 1.0,
+        },
+        {
+            "connect": 2.0,
+            "read": 30.0,
+            "write": 2.0,
+            "pool": 1.0,
+        },
+    ]
+
+
 def test_production_constructor_rejects_private_dependency_overrides() -> None:
     settings = KrxOpenApiSettings(_env_file=None)
     transport = httpx.MockTransport(lambda _: httpx.Response(200))
@@ -479,6 +536,30 @@ def test_retryable_status_still_has_zero_automatic_retries(
     assert outbound == 1
     assert len(quota.reservations) == 1
     assert client.physical_attempt_count == 1
+
+
+def test_first_endpoint_read_timeout_is_not_retried_and_keeps_exact_accounting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    marker = "synthetic-provider-secret"
+    paths: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        paths.append(request.url.path)
+        raise httpx.ReadTimeout(marker, request=request)
+
+    client, quota = _client(monkeypatch, httpx.MockTransport(handler))
+    try:
+        with pytest.raises(KrxCredentialError, match="read_timeout") as exc_info:
+            client.fetch_universe_rows(_AS_OF)
+    finally:
+        client.close()
+
+    assert paths == [KOSPI_DAILY.path]
+    assert len(quota.reservations) == 1
+    assert client.physical_attempt_count == 1
+    assert exc_info.value.__cause__ is None
+    assert marker not in f"{exc_info.value!r} {exc_info.value}"
 
 
 def test_second_endpoint_failure_makes_whole_fetch_fail_without_partial_return(

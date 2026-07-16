@@ -18,7 +18,7 @@ from app.data.kis.universe import (
 from app.data.krx._credential_transport import KrxCredentialError
 from app.data.krx.client import KrxHttpError, KrxOpenApiClient
 from app.data.krx.catalog import KRX_OPEN_API_FIRST_AVAILABLE_DATE
-from app.data.krx.errors import KrxParseError
+from app.data.krx.errors import KrxParseError, KrxValidationDiagnostic
 from app.data.krx.settings import KrxOpenApiSettings
 from app.data.krx.universe import (
     refresh_universe_from_krx_openapi,
@@ -96,9 +96,11 @@ def main(argv: list[str] | None = None) -> int:
         if client is not None:
             physical_attempts = _safe_physical_attempt_count(client)
         diagnostic_code = _safe_collection_failure_code(error)
+        validation_suffix = _safe_validation_diagnostic_suffix(error)
         print(
             "source=krx operation=universe_refresh "
-            f"code={diagnostic_code} physical_attempts={physical_attempts}",
+            f"code={diagnostic_code} physical_attempts={physical_attempts}"
+            f"{validation_suffix}",
             file=sys.stderr,
         )
         return 1
@@ -183,6 +185,18 @@ def _safe_collection_failure_code(error: Exception) -> str:
     }:
         return error.code
     return "collection_failed"
+
+
+def _safe_validation_diagnostic_suffix(error: Exception) -> str:
+    """typed allowlist만 CLI에 추가하고 임의 exception 속성이나 문자열은 읽지 않는다."""
+    diagnostic = None
+    if isinstance(error, KrxHttpError):
+        diagnostic = error.validation_diagnostic
+    elif isinstance(error, KrxParseError):
+        diagnostic = error.diagnostic
+    if type(diagnostic) is not KrxValidationDiagnostic:
+        return ""
+    return " " + " ".join(f"{name}={value}" for name, value in diagnostic.to_cli_fields())
 
 
 def _validate_output_scope(

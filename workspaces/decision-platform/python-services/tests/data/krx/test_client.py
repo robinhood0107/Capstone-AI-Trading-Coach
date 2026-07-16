@@ -13,7 +13,7 @@ from pydantic import SecretStr
 
 from app.data.krx import _credential_transport, client as client_module
 from app.data.krx._credential_transport import KrxCredentialError
-from app.data.krx.catalog import KOSDAQ_DAILY, KOSPI_DAILY
+from app.data.krx.catalog import KOSDAQ_DAILY, KOSPI_DAILY, KrxEndpoint
 from app.data.krx.client import KrxHttpError, KrxOpenApiClient
 from app.data.krx.settings import KrxOpenApiSettings
 
@@ -167,7 +167,8 @@ def test_default_timeout_profile_preserves_full_market_read_budget_for_both_endp
     def handler(request: httpx.Request) -> httpx.Response:
         observed_timeouts.append(dict(request.extensions["timeout"]))
         if request.url.path == KOSPI_DAILY.path:
-            now[0] = 125.0
+            # 첫 시장이 chunk 단위로 130초를 소비해도 둘째 시장의 120초 read budget을 보존한다.
+            now[0] = 230.0
             return httpx.Response(
                 200,
                 json=_payload(
@@ -202,17 +203,210 @@ def test_default_timeout_profile_preserves_full_market_read_budget_for_both_endp
     assert observed_timeouts == [
         {
             "connect": 2.0,
-            "read": 30.0,
+            "read": 120.0,
             "write": 2.0,
             "pool": 1.0,
         },
         {
             "connect": 2.0,
-            "read": 30.0,
+            "read": 120.0,
             "write": 2.0,
             "pool": 1.0,
         },
     ]
+
+
+@pytest.mark.parametrize(
+    ("service", "endpoint", "market"),
+    [
+        ("stk_bydd_trd", KOSPI_DAILY, "KOSPI"),
+        ("ksq_bydd_trd", KOSDAQ_DAILY, "KOSDAQ"),
+    ],
+)
+def test_fetch_service_rows_calls_exactly_one_allowlisted_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+    service: str,
+    endpoint: KrxEndpoint,
+    market: str,
+) -> None:
+    paths: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        paths.append(request.url.path)
+        assert request.url.path == endpoint.path
+        return httpx.Response(
+            200,
+            headers={"content-type": "application/json"},
+            json=_payload(
+                _daily_row(
+                    symbol="005930",
+                    name="합성종목",
+                    market=market,
+                    market_cap=500_000,
+                    trading_value=900_000,
+                )
+            ),
+        )
+
+    client, quota = _client(
+        monkeypatch,
+        httpx.MockTransport(handler),
+        settings=KrxOpenApiSettings(
+            _env_file=None,
+            KRX_OPENAPI_MAX_CALLS_PER_RUN=1,
+            KRX_OPENAPI_LOGICAL_DEADLINE_SECONDS=130.0,
+        ),
+    )
+    try:
+        rows = client.fetch_service_rows(_AS_OF, service=service)
+    finally:
+        client.close()
+
+    assert len(rows) == 1
+    assert rows[0].market == market
+    assert paths == [endpoint.path]
+    assert len(quota.reservations) == 1
+    assert client.physical_attempt_count == 1
+
+
+@pytest.mark.parametrize(
+    "service",
+    ["knx_bydd_trd", "https://attacker.invalid/private", True, object()],
+)
+def test_fetch_service_rows_rejects_non_allowlisted_service_before_outbound(
+    monkeypatch: pytest.MonkeyPatch,
+    service: object,
+) -> None:
+    outbound = 0
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal outbound
+        outbound += 1
+        return httpx.Response(200, json={"OutBlock_1": []})
+
+    client, quota = _client(monkeypatch, httpx.MockTransport(handler))
+    try:
+        with pytest.raises(ValueError, match="service"):
+            client.fetch_service_rows(_AS_OF, service=service)  # type: ignore[arg-type]
+    finally:
+        client.close()
+
+    assert outbound == 0
+    assert quota.reservations == []
+    assert client.physical_attempt_count == 0
+
+
+def test_service_probe_profile_uses_120_second_read_and_130_second_deadline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed_timeouts: list[dict[str, float | None]] = []
+    observed_deadlines: list[float] = []
+    monkeypatch.setattr(client_module.time, "monotonic", lambda: 100.0)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        observed_timeouts.append(dict(request.extensions["timeout"]))
+        observed_deadlines.append(request.extensions["s1.3.krx.logical_deadline"])
+        return httpx.Response(
+            200,
+            headers={"content-type": "application/json"},
+            json=_payload(
+                _daily_row(
+                    symbol="005930",
+                    name="삼성전자",
+                    market="KOSPI",
+                    market_cap=500_000,
+                    trading_value=900_000,
+                )
+            ),
+        )
+
+    client, _ = _client(
+        monkeypatch,
+        httpx.MockTransport(handler),
+        settings=KrxOpenApiSettings(
+            _env_file=None,
+            KRX_OPENAPI_MAX_CALLS_PER_RUN=1,
+            KRX_OPENAPI_LOGICAL_DEADLINE_SECONDS=130.0,
+        ),
+    )
+    try:
+        client.fetch_service_rows(_AS_OF, service="stk_bydd_trd")
+    finally:
+        client.close()
+
+    assert observed_timeouts == [
+        {
+            "connect": 2.0,
+            "read": 120.0,
+            "write": 2.0,
+            "pool": 1.0,
+        }
+    ]
+    assert observed_deadlines == [230.0]
+
+
+def test_selected_kosdaq_probe_read_timeout_has_one_attempt_and_no_kospi_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    marker = "synthetic-provider-secret"
+    paths: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        paths.append(request.url.path)
+        raise httpx.ReadTimeout(marker, request=request)
+
+    client, quota = _client(
+        monkeypatch,
+        httpx.MockTransport(handler),
+        settings=KrxOpenApiSettings(
+            _env_file=None,
+            KRX_OPENAPI_MAX_CALLS_PER_RUN=1,
+            KRX_OPENAPI_LOGICAL_DEADLINE_SECONDS=130.0,
+        ),
+    )
+    try:
+        with pytest.raises(KrxCredentialError, match="read_timeout") as exc_info:
+            client.fetch_service_rows(_AS_OF, service="ksq_bydd_trd")
+    finally:
+        client.close()
+
+    assert paths == [KOSDAQ_DAILY.path]
+    assert len(quota.reservations) == 1
+    assert client.physical_attempt_count == 1
+    assert exc_info.value.__cause__ is None
+    assert marker not in f"{exc_info.value!r} {exc_info.value}"
+
+
+def test_selected_service_invalid_response_uses_probe_ordinal_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, quota = _client(
+        monkeypatch,
+        httpx.MockTransport(
+            lambda request: httpx.Response(
+                200,
+                headers={"content-type": "application/json"},
+                json={"unknown": request.url.path},
+            )
+        ),
+        settings=KrxOpenApiSettings(
+            _env_file=None,
+            KRX_OPENAPI_MAX_CALLS_PER_RUN=1,
+            KRX_OPENAPI_LOGICAL_DEADLINE_SECONDS=130.0,
+        ),
+    )
+    try:
+        with pytest.raises(KrxHttpError) as exc_info:
+            client.fetch_service_rows(_AS_OF, service="ksq_bydd_trd")
+    finally:
+        client.close()
+
+    diagnostic = exc_info.value.validation_diagnostic
+    assert diagnostic is not None
+    assert diagnostic.request_ordinal == 1
+    assert diagnostic.service == "ksq_bydd_trd"
+    assert len(quota.reservations) == 1
+    assert client.physical_attempt_count == 1
 
 
 def test_production_constructor_rejects_private_dependency_overrides() -> None:

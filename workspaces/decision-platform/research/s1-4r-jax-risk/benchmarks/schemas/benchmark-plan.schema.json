@@ -1,0 +1,432 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://capstone-ai-trading-coach.local/s1-4r/benchmark-plan.schema.json",
+  "title": "S1.4R bounded benchmark plan",
+  "description": "Deterministic, non-Cartesian benchmark plan for the isolated S1.4R NumPy/JAX study.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "planId",
+    "allocationCapBytes",
+    "rng",
+    "fixedParameters",
+    "fixtureSerialization",
+    "dsrTrialProvenance",
+    "protocol",
+    "timedImplementations",
+    "cases"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "s1.4r-benchmark-plan-v1"
+    },
+    "planId": {
+      "const": "s1.4r-bounded-cpu-x64-v1"
+    },
+    "allocationCapBytes": {
+      "const": 536870912
+    },
+    "rng": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "algorithm",
+        "seed"
+      ],
+      "properties": {
+        "algorithm": {
+          "const": "PCG64"
+        },
+        "seed": {
+          "const": 20260717
+        }
+      }
+    },
+    "fixedParameters": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "dtype",
+        "aggregationPeriods",
+        "riskFreeRate",
+        "confidence",
+        "significance",
+        "horizon"
+      ],
+      "properties": {
+        "dtype": {
+          "const": "float64"
+        },
+        "aggregationPeriods": {
+          "const": 5
+        },
+        "riskFreeRate": {
+          "const": 0
+        },
+        "confidence": {
+          "const": 0.95
+        },
+        "significance": {
+          "const": 0.05
+        },
+        "horizon": {
+          "const": 252
+        }
+      }
+    },
+    "fixtureSerialization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "dtype",
+        "byteOrder",
+        "arrayOrder",
+        "hashAlgorithm"
+      ],
+      "properties": {
+        "dtype": {
+          "const": "float64"
+        },
+        "byteOrder": {
+          "const": "little"
+        },
+        "arrayOrder": {
+          "const": "C"
+        },
+        "hashAlgorithm": {
+          "const": "SHA-256"
+        }
+      }
+    },
+    "dsrTrialProvenance": {
+      "$ref": "#/$defs/dsrTrialProvenance"
+    },
+    "protocol": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "coldFreshProcesses",
+        "untimedWarmups",
+        "timedWarmSamples",
+        "quantileMethod",
+        "timer",
+        "compilationCacheEnabled"
+      ],
+      "properties": {
+        "coldFreshProcesses": {
+          "const": 20
+        },
+        "untimedWarmups": {
+          "const": 5
+        },
+        "timedWarmSamples": {
+          "const": 50
+        },
+        "quantileMethod": {
+          "const": "linear"
+        },
+        "timer": {
+          "const": "perf_counter_ns"
+        },
+        "compilationCacheEnabled": {
+          "const": false
+        }
+      }
+    },
+    "timedImplementations": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "const": "numpy"
+        },
+        {
+          "const": "jax_jit"
+        }
+      ],
+      "items": false,
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "cases": {
+      "type": "array",
+      "minItems": 62,
+      "maxItems": 62,
+      "uniqueItems": true,
+      "items": {
+        "oneOf": [
+          {
+            "$ref": "#/$defs/oneDimensionalCase"
+          },
+          {
+            "$ref": "#/$defs/pathObservationCase"
+          },
+          {
+            "$ref": "#/$defs/scalarEvaluationCase"
+          }
+        ]
+      }
+    }
+  },
+  "$defs": {
+    "dsrTrialProvenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "method",
+        "rawTrialCount",
+        "effectiveTrialCount",
+        "samplingFrequency",
+        "trialRegistrySha256",
+        "varianceDdof",
+        "sharpeEstimateVariance",
+        "registrySerialization"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "s1.4r-effective-trials-v1"
+        },
+        "method": {
+          "const": "pre_registered_independent"
+        },
+        "rawTrialCount": {
+          "const": 2
+        },
+        "effectiveTrialCount": {
+          "const": 2
+        },
+        "samplingFrequency": {
+          "const": "daily"
+        },
+        "trialRegistrySha256": {
+          "const": "a40fd68290a4dfadabc80e16e9adba4226e8a470e336774afff548829825e706"
+        },
+        "varianceDdof": {
+          "const": 1
+        },
+        "sharpeEstimateVariance": {
+          "const": 0.04
+        },
+        "registrySerialization": {
+          "const": "strict-json-sort-keys-utf8-v1"
+        }
+      }
+    },
+    "caseId": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{2,127}$"
+    },
+    "staticArgs": {
+      "type": "object",
+      "additionalProperties": false,
+      "maxProperties": 1,
+      "properties": {
+        "aggregationPeriods": {
+          "const": 5
+        }
+      }
+    },
+    "oneDimensionalCase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "caseId",
+        "kernel",
+        "axis",
+        "size",
+        "paths",
+        "horizon",
+        "timedInputKind",
+        "throughputUnits",
+        "staticArgs"
+      ],
+      "properties": {
+        "caseId": {
+          "$ref": "#/$defs/caseId"
+        },
+        "kernel": {
+          "enum": [
+            "historical_expected_shortfall",
+            "realized_variance",
+            "realized_volatility_intraday",
+            "lo_adjusted_sharpe_ratio",
+            "kupiec_unconditional_coverage_test",
+            "christoffersen_independence_test",
+            "christoffersen_conditional_coverage_test"
+          ]
+        },
+        "axis": {
+          "const": "one_dimensional"
+        },
+        "size": {
+          "enum": [
+            32,
+            252,
+            1000,
+            10000,
+            100000
+          ]
+        },
+        "paths": {
+          "const": null
+        },
+        "horizon": {
+          "const": null
+        },
+        "timedInputKind": {
+          "const": "observation_vector"
+        },
+        "throughputUnits": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "const": "calls_per_second"
+            },
+            {
+              "const": "observations_per_second"
+            }
+          ],
+          "items": false,
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "staticArgs": {
+          "$ref": "#/$defs/staticArgs"
+        }
+      }
+    },
+    "pathObservationCase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "caseId",
+        "kernel",
+        "axis",
+        "size",
+        "paths",
+        "horizon",
+        "timedInputKind",
+        "throughputUnits",
+        "staticArgs"
+      ],
+      "properties": {
+        "caseId": {
+          "$ref": "#/$defs/caseId"
+        },
+        "kernel": {
+          "enum": [
+            "historical_expected_shortfall",
+            "realized_variance",
+            "realized_volatility_intraday",
+            "lo_adjusted_sharpe_ratio",
+            "kupiec_unconditional_coverage_test",
+            "christoffersen_independence_test",
+            "christoffersen_conditional_coverage_test"
+          ]
+        },
+        "axis": {
+          "const": "path_batch"
+        },
+        "size": {
+          "const": null
+        },
+        "paths": {
+          "enum": [
+            100,
+            1000,
+            10000
+          ]
+        },
+        "horizon": {
+          "const": 252
+        },
+        "timedInputKind": {
+          "const": "path_observation_matrix"
+        },
+        "throughputUnits": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "const": "calls_per_second"
+            },
+            {
+              "const": "paths_per_second"
+            },
+            {
+              "const": "path_observations_per_second"
+            }
+          ],
+          "items": false,
+          "minItems": 3,
+          "maxItems": 3
+        },
+        "staticArgs": {
+          "$ref": "#/$defs/staticArgs"
+        }
+      }
+    },
+    "scalarEvaluationCase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "caseId",
+        "kernel",
+        "axis",
+        "size",
+        "paths",
+        "horizon",
+        "timedInputKind",
+        "throughputUnits",
+        "staticArgs"
+      ],
+      "properties": {
+        "caseId": {
+          "$ref": "#/$defs/caseId"
+        },
+        "kernel": {
+          "enum": [
+            "probabilistic_sharpe_ratio",
+            "deflated_sharpe_ratio"
+          ]
+        },
+        "axis": {
+          "const": "path_batch"
+        },
+        "size": {
+          "const": null
+        },
+        "paths": {
+          "enum": [
+            100,
+            1000,
+            10000
+          ]
+        },
+        "horizon": {
+          "const": 252
+        },
+        "timedInputKind": {
+          "const": "scalar_parameters"
+        },
+        "throughputUnits": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "const": "calls_per_second"
+            },
+            {
+              "const": "evaluations_per_second"
+            }
+          ],
+          "items": false,
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "staticArgs": {
+          "$ref": "#/$defs/staticArgs"
+        }
+      }
+    }
+  }
+}

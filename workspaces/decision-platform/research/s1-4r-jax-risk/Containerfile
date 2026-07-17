@@ -1,0 +1,29 @@
+FROM ghcr.io/astral-sh/uv@sha256:663211e7509e89ff2172cc3ca098afb4ac63028dd065d2b047e4251127a7d47a AS uv
+FROM python@sha256:72d3d75f2639ab82b34b29390ad3d6e0827c775befee94edda8e9976818f488d
+
+ENV JAX_PLATFORMS=cpu \
+    JAX_ENABLE_X64=1 \
+    JAX_ENABLE_COMPILATION_CACHE=0 \
+    S1_4R_EXECUTION_BOUNDARY=oci \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH="/app:/app/src" \
+    PATH="/app/.venv/bin:${PATH}"
+
+COPY --from=uv /uv /uvx /usr/local/bin/
+
+RUN groupadd --system research \
+    && useradd --system --gid research --create-home --home-dir /home/research research
+
+WORKDIR /app
+
+COPY pyproject.toml uv.lock README.md ./
+COPY src ./src
+COPY tests ./tests
+COPY benchmarks ./benchmarks
+
+RUN uv sync --frozen --all-groups --no-editable \
+    && chown -R research:research /app /home/research
+
+USER research
+
+CMD ["pytest", "-q"]

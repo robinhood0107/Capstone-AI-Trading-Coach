@@ -130,6 +130,10 @@
       "type": "integer",
       "minimum": 0
     },
+    "positiveInteger": {
+      "type": "integer",
+      "minimum": 1
+    },
     "positiveNumber": {
       "type": "number",
       "exclusiveMinimum": 0
@@ -461,12 +465,26 @@
         },
         "threadEnvironment": {
           "type": "object",
-          "minProperties": 1,
-          "additionalProperties": {
-            "type": "string"
-          },
-          "propertyNames": {
-            "pattern": "^[A-Z][A-Z0-9_]*$"
+          "additionalProperties": false,
+          "required": [
+            "MKL_NUM_THREADS",
+            "NUMEXPR_NUM_THREADS",
+            "OMP_NUM_THREADS",
+            "OPENBLAS_NUM_THREADS"
+          ],
+          "properties": {
+            "MKL_NUM_THREADS": {
+              "const": "1"
+            },
+            "NUMEXPR_NUM_THREADS": {
+              "const": "1"
+            },
+            "OMP_NUM_THREADS": {
+              "const": "1"
+            },
+            "OPENBLAS_NUM_THREADS": {
+              "const": "1"
+            }
           }
         },
         "containerRuntime": {
@@ -506,6 +524,32 @@
                 "properties": {
                   "status": {
                     "const": "measured"
+                  }
+                },
+                "required": [
+                  "status"
+                ]
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "containerRuntime": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "const": "not_applicable"
+                  }
+                },
+                "required": [
+                  "status"
+                ]
+              },
+              "containerImageId": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "const": "not_applicable"
                   }
                 },
                 "required": [
@@ -752,7 +796,8 @@
         "throughput",
         "allocation",
         "maxAbsoluteError",
-        "maxRelativeError"
+        "maxRelativeError",
+        "maxToleranceRatio"
       ],
       "properties": {
         "resultId": {
@@ -847,6 +892,11 @@
         "maxRelativeError": {
           "type": "number",
           "minimum": 0
+        },
+        "maxToleranceRatio": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
         }
       },
       "allOf": [
@@ -865,6 +915,141 @@
             "properties": {
               "timingBoundary": {
                 "const": "validated_public_reference"
+              },
+              "compileSignature": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "const": "not_applicable"
+                  }
+                },
+                "required": [
+                  "status"
+                ]
+              },
+              "latencies": {
+                "type": "object",
+                "properties": {
+                  "firstCall": {
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "const": "measured"
+                      }
+                    },
+                    "required": [
+                      "status"
+                    ]
+                  },
+                  "traceLower": {
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "const": "not_applicable"
+                      }
+                    },
+                    "required": [
+                      "status"
+                    ]
+                  },
+                  "compile": {
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "const": "not_applicable"
+                      }
+                    },
+                    "required": [
+                      "status"
+                    ]
+                  },
+                  "hostToDevice": {
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "const": "not_applicable"
+                      }
+                    },
+                    "required": [
+                      "status"
+                    ]
+                  },
+                  "firstExecute": {
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "const": "not_applicable"
+                      }
+                    },
+                    "required": [
+                      "status"
+                    ]
+                  },
+                  "deviceToHost": {
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "const": "not_applicable"
+                      }
+                    },
+                    "required": [
+                      "status"
+                    ]
+                  },
+                  "coldTotal": {
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "const": "measured"
+                      }
+                    },
+                    "required": [
+                      "status"
+                    ]
+                  },
+                  "warm": {
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "const": "measured"
+                      }
+                    },
+                    "required": [
+                      "status"
+                    ]
+                  }
+                }
+              },
+              "allocation": {
+                "type": "object",
+                "properties": {
+                  "jaxArgumentBytes": {
+                    "const": 0
+                  },
+                  "jaxTemporaryBytes": {
+                    "const": 0
+                  },
+                  "jaxOutputBytes": {
+                    "const": 0
+                  },
+                  "jaxAliasBytes": {
+                    "const": 0
+                  },
+                  "numpyTracemallocPeakBytes": {
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "const": "measured"
+                      }
+                    },
+                    "required": [
+                      "status"
+                    ]
+                  },
+                  "allocationEstimator": {
+                    "const": "numpy_source_bound_plus_tracemalloc_preflight_v2"
+                  }
+                }
               }
             }
           },
@@ -872,6 +1057,132 @@
             "properties": {
               "timingBoundary": {
                 "const": "compiled_device_numeric_core"
+              },
+              "compileSignature": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "const": "measured"
+                  }
+                },
+                "required": [
+                  "status"
+                ]
+              },
+              "latencies": {
+                "type": "object",
+                "properties": {
+                  "firstCall": {
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "const": "not_applicable"
+                      }
+                    },
+                    "required": [
+                      "status"
+                    ]
+                  },
+                  "traceLower": {
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "const": "measured"
+                      }
+                    },
+                    "required": [
+                      "status"
+                    ]
+                  },
+                  "compile": {
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "const": "measured"
+                      }
+                    },
+                    "required": [
+                      "status"
+                    ]
+                  },
+                  "hostToDevice": {
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "const": "measured"
+                      }
+                    },
+                    "required": [
+                      "status"
+                    ]
+                  },
+                  "firstExecute": {
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "const": "measured"
+                      }
+                    },
+                    "required": [
+                      "status"
+                    ]
+                  },
+                  "deviceToHost": {
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "const": "measured"
+                      }
+                    },
+                    "required": [
+                      "status"
+                    ]
+                  },
+                  "coldTotal": {
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "const": "measured"
+                      }
+                    },
+                    "required": [
+                      "status"
+                    ]
+                  },
+                  "warm": {
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "const": "measured"
+                      }
+                    },
+                    "required": [
+                      "status"
+                    ]
+                  }
+                }
+              },
+              "allocation": {
+                "type": "object",
+                "properties": {
+                  "numpyTemporaryBytes": {
+                    "const": 0
+                  },
+                  "numpyTracemallocPeakBytes": {
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "const": "not_applicable"
+                      }
+                    },
+                    "required": [
+                      "status"
+                    ]
+                  },
+                  "allocationEstimator": {
+                    "const": "jax_compiled_memory_analysis_plus_host_v1"
+                  }
+                }
               }
             }
           }
@@ -1051,7 +1362,7 @@
       ],
       "properties": {
         "bytes": {
-          "$ref": "#/$defs/nonNegativeInteger"
+          "$ref": "#/$defs/positiveInteger"
         },
         "sha256": {
           "$ref": "#/$defs/sha256"
@@ -1081,7 +1392,7 @@
           ],
           "properties": {
             "bytes": {
-              "$ref": "#/$defs/nonNegativeInteger"
+              "$ref": "#/$defs/positiveInteger"
             },
             "measurementMethod": {
               "enum": [
@@ -1110,7 +1421,7 @@
               "pattern": "^sha256:[0-9a-f]{64}$"
             },
             "engineReportedSizeBytes": {
-              "$ref": "#/$defs/nonNegativeInteger"
+              "$ref": "#/$defs/positiveInteger"
             },
             "measurementMethod": {
               "type": "string",
@@ -1133,10 +1444,10 @@
               "const": "oci-layout"
             },
             "uncompressedBytes": {
-              "$ref": "#/$defs/nonNegativeInteger"
+              "$ref": "#/$defs/positiveInteger"
             },
             "compressedBytes": {
-              "$ref": "#/$defs/nonNegativeInteger"
+              "$ref": "#/$defs/positiveInteger"
             },
             "compressedSha256": {
               "$ref": "#/$defs/sha256"

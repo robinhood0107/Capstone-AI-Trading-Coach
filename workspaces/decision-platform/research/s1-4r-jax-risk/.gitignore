@@ -1,0 +1,12 @@
+.venv/
+.hypothesis/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+__pycache__/
+*.py[cod]
+*.tar
+*.tar.gz
+benchmarks/output*/
+reports/raw-*.json
+reports/oci-*.json

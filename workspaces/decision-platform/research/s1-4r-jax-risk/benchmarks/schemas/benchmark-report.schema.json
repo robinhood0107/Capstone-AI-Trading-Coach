@@ -1,0 +1,1477 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://capstone-ai-trading-coach.local/s1-4r/benchmark-report.schema.json",
+  "title": "S1.4R tracked benchmark manifest",
+  "description": "Schema for reports/benchmark-manifest.json. The historical filename is benchmark-report.schema.json, but the validated tracked artifact is the benchmark manifest.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "matrix",
+    "caseCount",
+    "planSha256",
+    "rawSamplesSha256",
+    "dsrTrialProvenance",
+    "gitCommit",
+    "runId",
+    "createdAtUtc",
+    "execution",
+    "protocol",
+    "results",
+    "comparisons",
+    "artifacts"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "s1.4r-benchmark-manifest-v1"
+    },
+    "matrix": {
+      "enum": [
+        "smallest",
+        "full"
+      ]
+    },
+    "caseCount": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 62
+    },
+    "planSha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "rawSamplesSha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "dsrTrialProvenance": {
+      "$ref": "#/$defs/dsrTrialProvenance"
+    },
+    "gitCommit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "runId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{7,127}$"
+    },
+    "createdAtUtc": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "Z$"
+    },
+    "execution": {
+      "$ref": "#/$defs/execution"
+    },
+    "protocol": {
+      "$ref": "#/$defs/protocol"
+    },
+    "results": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "$ref": "#/$defs/result"
+      }
+    },
+    "comparisons": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/comparison"
+      }
+    },
+    "artifacts": {
+      "$ref": "#/$defs/artifacts"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "matrix": {
+            "const": "smallest"
+          }
+        },
+        "required": [
+          "matrix"
+        ]
+      },
+      "then": {
+        "properties": {
+          "caseCount": {
+            "const": 1
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "matrix": {
+            "const": "full"
+          }
+        },
+        "required": [
+          "matrix"
+        ]
+      },
+      "then": {
+        "properties": {
+          "caseCount": {
+            "const": 62
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "nonNegativeInteger": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "positiveInteger": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "positiveNumber": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
+    "dsrTrialProvenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "method",
+        "rawTrialCount",
+        "effectiveTrialCount",
+        "samplingFrequency",
+        "trialRegistrySha256",
+        "varianceDdof",
+        "sharpeEstimateVariance",
+        "registrySerialization"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "s1.4r-effective-trials-v1"
+        },
+        "method": {
+          "const": "pre_registered_independent"
+        },
+        "rawTrialCount": {
+          "const": 2
+        },
+        "effectiveTrialCount": {
+          "const": 2
+        },
+        "samplingFrequency": {
+          "const": "daily"
+        },
+        "trialRegistrySha256": {
+          "const": "a40fd68290a4dfadabc80e16e9adba4226e8a470e336774afff548829825e706"
+        },
+        "varianceDdof": {
+          "const": 1
+        },
+        "sharpeEstimateVariance": {
+          "const": 0.04
+        },
+        "registrySerialization": {
+          "const": "strict-json-sort-keys-utf8-v1"
+        }
+      }
+    },
+    "notApplicable": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "reason"
+      ],
+      "properties": {
+        "status": {
+          "const": "not_applicable"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        }
+      }
+    },
+    "availabilityString": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "value"
+          ],
+          "properties": {
+            "status": {
+              "const": "measured"
+            },
+            "value": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            }
+          }
+        },
+        {
+          "$ref": "#/$defs/notApplicable"
+        }
+      ]
+    },
+    "availabilityInteger": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "value"
+          ],
+          "properties": {
+            "status": {
+              "const": "measured"
+            },
+            "value": {
+              "$ref": "#/$defs/nonNegativeInteger"
+            }
+          }
+        },
+        {
+          "$ref": "#/$defs/notApplicable"
+        }
+      ]
+    },
+    "latencySummary": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "p50Nanoseconds",
+            "p95Nanoseconds"
+          ],
+          "properties": {
+            "status": {
+              "const": "measured"
+            },
+            "p50Nanoseconds": {
+              "type": "number",
+              "minimum": 0
+            },
+            "p95Nanoseconds": {
+              "type": "number",
+              "minimum": 0
+            }
+          }
+        },
+        {
+          "$ref": "#/$defs/notApplicable"
+        }
+      ]
+    },
+    "throughputMeasurement": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "valuePerSecond"
+          ],
+          "properties": {
+            "status": {
+              "const": "measured"
+            },
+            "valuePerSecond": {
+              "$ref": "#/$defs/positiveNumber"
+            }
+          }
+        },
+        {
+          "$ref": "#/$defs/notApplicable"
+        }
+      ]
+    },
+    "protocol": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "coldFreshProcesses",
+        "untimedWarmups",
+        "timedWarmSamples",
+        "quantileMethod",
+        "timer",
+        "allocationCapBytes"
+      ],
+      "properties": {
+        "coldFreshProcesses": {
+          "const": 20
+        },
+        "untimedWarmups": {
+          "const": 5
+        },
+        "timedWarmSamples": {
+          "const": 50
+        },
+        "quantileMethod": {
+          "const": "linear"
+        },
+        "timer": {
+          "const": "perf_counter_ns"
+        },
+        "allocationCapBytes": {
+          "const": 536870912
+        }
+      }
+    },
+    "execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "executionBoundary",
+        "outerHostBoundary",
+        "hostFingerprint",
+        "os",
+        "kernel",
+        "architecture",
+        "wslVersion",
+        "cpuModel",
+        "physicalCores",
+        "logicalCores",
+        "cpuAffinity",
+        "cpuGovernor",
+        "memoryBytes",
+        "pythonVersion",
+        "numpyVersion",
+        "jaxVersion",
+        "jaxlibVersion",
+        "backend",
+        "devices",
+        "x64Enabled",
+        "threadEnvironment",
+        "containerRuntime",
+        "containerImageId"
+      ],
+      "properties": {
+        "executionBoundary": {
+          "enum": [
+            "wsl2",
+            "native-linux",
+            "oci"
+          ]
+        },
+        "outerHostBoundary": {
+          "enum": [
+            "wsl2",
+            "native-linux"
+          ]
+        },
+        "hostFingerprint": {
+          "$ref": "#/$defs/sha256"
+        },
+        "os": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kernel": {
+          "type": "string",
+          "minLength": 1
+        },
+        "architecture": {
+          "type": "string",
+          "minLength": 1
+        },
+        "wslVersion": {
+          "$ref": "#/$defs/availabilityString"
+        },
+        "cpuModel": {
+          "type": "string",
+          "minLength": 1
+        },
+        "physicalCores": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "logicalCores": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "cpuAffinity": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/nonNegativeInteger"
+          }
+        },
+        "cpuGovernor": {
+          "$ref": "#/$defs/availabilityString"
+        },
+        "memoryBytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "pythonVersion": {
+          "type": "string",
+          "minLength": 1
+        },
+        "numpyVersion": {
+          "const": "2.5.1"
+        },
+        "jaxVersion": {
+          "const": "0.11.0"
+        },
+        "jaxlibVersion": {
+          "const": "0.11.0"
+        },
+        "backend": {
+          "const": "cpu"
+        },
+        "devices": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "platform",
+              "deviceKind"
+            ],
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/nonNegativeInteger"
+              },
+              "platform": {
+                "const": "cpu"
+              },
+              "deviceKind": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        },
+        "x64Enabled": {
+          "const": true
+        },
+        "threadEnvironment": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "MKL_NUM_THREADS",
+            "NUMEXPR_NUM_THREADS",
+            "OMP_NUM_THREADS",
+            "OPENBLAS_NUM_THREADS"
+          ],
+          "properties": {
+            "MKL_NUM_THREADS": {
+              "const": "1"
+            },
+            "NUMEXPR_NUM_THREADS": {
+              "const": "1"
+            },
+            "OMP_NUM_THREADS": {
+              "const": "1"
+            },
+            "OPENBLAS_NUM_THREADS": {
+              "const": "1"
+            }
+          }
+        },
+        "containerRuntime": {
+          "$ref": "#/$defs/availabilityString"
+        },
+        "containerImageId": {
+          "$ref": "#/$defs/availabilityString"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "executionBoundary": {
+                "const": "oci"
+              }
+            },
+            "required": [
+              "executionBoundary"
+            ]
+          },
+          "then": {
+            "properties": {
+              "containerRuntime": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "const": "measured"
+                  }
+                },
+                "required": [
+                  "status"
+                ]
+              },
+              "containerImageId": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "const": "measured"
+                  }
+                },
+                "required": [
+                  "status"
+                ]
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "containerRuntime": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "const": "not_applicable"
+                  }
+                },
+                "required": [
+                  "status"
+                ]
+              },
+              "containerImageId": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "const": "not_applicable"
+                  }
+                },
+                "required": [
+                  "status"
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    "compileSignature": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "shape",
+            "dtype",
+            "staticArgs"
+          ],
+          "properties": {
+            "status": {
+              "const": "measured"
+            },
+            "shape": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "integer",
+                "minimum": 1
+              }
+            },
+            "dtype": {
+              "const": "float64"
+            },
+            "staticArgs": {
+              "type": "object",
+              "additionalProperties": false,
+              "maxProperties": 1,
+              "properties": {
+                "aggregationPeriods": {
+                  "const": 5
+                }
+              }
+            }
+          }
+        },
+        {
+          "$ref": "#/$defs/notApplicable"
+        }
+      ]
+    },
+    "allocation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "allocationCapBytes",
+        "hostInputBytes",
+        "hostOutputBytes",
+        "numpyTemporaryBytes",
+        "jaxArgumentBytes",
+        "jaxTemporaryBytes",
+        "jaxOutputBytes",
+        "jaxAliasBytes",
+        "estimatedPeakAllocationBytes",
+        "numpyTracemallocPeakBytes",
+        "rssBaselineBytes",
+        "rssPeakBytes",
+        "rssDeltaBytes",
+        "chunkSize",
+        "chunkCount",
+        "lastChunkValidPaths",
+        "paddingPaths",
+        "paddingStrategy",
+        "allocationEstimator",
+        "allocationEstimatorMonotone",
+        "ledgerEquation",
+        "allocationCapPassed"
+      ],
+      "properties": {
+        "allocationCapBytes": {
+          "const": 536870912
+        },
+        "hostInputBytes": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "hostOutputBytes": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "numpyTemporaryBytes": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "jaxArgumentBytes": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "jaxTemporaryBytes": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "jaxOutputBytes": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "jaxAliasBytes": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "estimatedPeakAllocationBytes": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "numpyTracemallocPeakBytes": {
+          "$ref": "#/$defs/availabilityInteger"
+        },
+        "rssBaselineBytes": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "rssPeakBytes": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "rssDeltaBytes": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "chunkSize": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "chunkCount": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "lastChunkValidPaths": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "paddingPaths": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "paddingStrategy": {
+          "const": "repeat_last_valid"
+        },
+        "allocationEstimator": {
+          "enum": [
+            "numpy_source_bound_plus_tracemalloc_preflight_v2",
+            "jax_compiled_memory_analysis_plus_host_v1"
+          ]
+        },
+        "allocationEstimatorMonotone": {
+          "const": true
+        },
+        "ledgerEquation": {
+          "const": "hostInputBytes+hostOutputBytes+numpyTemporaryBytes+jaxArgumentBytes+jaxTemporaryBytes+jaxOutputBytes-jaxAliasBytes"
+        },
+        "allocationCapPassed": {
+          "const": true
+        }
+      }
+    },
+    "latencies": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "firstCall",
+        "traceLower",
+        "compile",
+        "hostToDevice",
+        "firstExecute",
+        "deviceToHost",
+        "coldTotal",
+        "warm"
+      ],
+      "properties": {
+        "firstCall": {
+          "$ref": "#/$defs/latencySummary"
+        },
+        "traceLower": {
+          "$ref": "#/$defs/latencySummary"
+        },
+        "compile": {
+          "$ref": "#/$defs/latencySummary"
+        },
+        "hostToDevice": {
+          "$ref": "#/$defs/latencySummary"
+        },
+        "firstExecute": {
+          "$ref": "#/$defs/latencySummary"
+        },
+        "deviceToHost": {
+          "$ref": "#/$defs/latencySummary"
+        },
+        "coldTotal": {
+          "$ref": "#/$defs/latencySummary"
+        },
+        "warm": {
+          "$ref": "#/$defs/latencySummary"
+        }
+      }
+    },
+    "throughput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "callsPerSecond",
+        "observationsPerSecond",
+        "pathsPerSecond",
+        "pathObservationsPerSecond",
+        "evaluationsPerSecond"
+      ],
+      "properties": {
+        "callsPerSecond": {
+          "$ref": "#/$defs/throughputMeasurement"
+        },
+        "observationsPerSecond": {
+          "$ref": "#/$defs/throughputMeasurement"
+        },
+        "pathsPerSecond": {
+          "$ref": "#/$defs/throughputMeasurement"
+        },
+        "pathObservationsPerSecond": {
+          "$ref": "#/$defs/throughputMeasurement"
+        },
+        "evaluationsPerSecond": {
+          "$ref": "#/$defs/throughputMeasurement"
+        }
+      }
+    },
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "resultId",
+        "caseId",
+        "kernel",
+        "axis",
+        "size",
+        "paths",
+        "horizon",
+        "timedInputKind",
+        "implementation",
+        "timingBoundary",
+        "fixtureSha256",
+        "rawSamplesSha256",
+        "correctnessPassed",
+        "compileSignature",
+        "latencies",
+        "throughput",
+        "allocation",
+        "maxAbsoluteError",
+        "maxRelativeError",
+        "maxToleranceRatio"
+      ],
+      "properties": {
+        "resultId": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]{2,159}$"
+        },
+        "caseId": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]{2,127}$"
+        },
+        "kernel": {
+          "enum": [
+            "historical_expected_shortfall",
+            "realized_variance",
+            "realized_volatility_intraday",
+            "lo_adjusted_sharpe_ratio",
+            "probabilistic_sharpe_ratio",
+            "deflated_sharpe_ratio",
+            "kupiec_unconditional_coverage_test",
+            "christoffersen_independence_test",
+            "christoffersen_conditional_coverage_test"
+          ]
+        },
+        "axis": {
+          "enum": [
+            "one_dimensional",
+            "path_batch"
+          ]
+        },
+        "size": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "paths": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "horizon": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "timedInputKind": {
+          "enum": [
+            "observation_vector",
+            "path_observation_matrix",
+            "scalar_parameters"
+          ]
+        },
+        "implementation": {
+          "enum": [
+            "numpy",
+            "jax_jit"
+          ]
+        },
+        "timingBoundary": {
+          "enum": [
+            "validated_public_reference",
+            "compiled_device_numeric_core"
+          ]
+        },
+        "fixtureSha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "rawSamplesSha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "correctnessPassed": {
+          "const": true
+        },
+        "compileSignature": {
+          "$ref": "#/$defs/compileSignature"
+        },
+        "latencies": {
+          "$ref": "#/$defs/latencies"
+        },
+        "throughput": {
+          "$ref": "#/$defs/throughput"
+        },
+        "allocation": {
+          "$ref": "#/$defs/allocation"
+        },
+        "maxAbsoluteError": {
+          "type": "number",
+          "minimum": 0
+        },
+        "maxRelativeError": {
+          "type": "number",
+          "minimum": 0
+        },
+        "maxToleranceRatio": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "implementation": {
+                "const": "numpy"
+              }
+            },
+            "required": [
+              "implementation"
+            ]
+          },
+          "then": {
+            "properties": {
+              "timingBoundary": {
+                "const": "validated_public_reference"
+              },
+              "compileSignature": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "const": "not_applicable"
+                  }
+                },
+                "required": [
+                  "status"
+                ]
+              },
+              "latencies": {
+                "type": "object",
+                "properties": {
+                  "firstCall": {
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "const": "measured"
+                      }
+                    },
+                    "required": [
+                      "status"
+                    ]
+                  },
+                  "traceLower": {
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "const": "not_applicable"
+                      }
+                    },
+                    "required": [
+                      "status"
+                    ]
+                  },
+                  "compile": {
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "const": "not_applicable"
+                      }
+                    },
+                    "required": [
+                      "status"
+                    ]
+                  },
+                  "hostToDevice": {
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "const": "not_applicable"
+                      }
+                    },
+                    "required": [
+                      "status"
+                    ]
+                  },
+                  "firstExecute": {
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "const": "not_applicable"
+                      }
+                    },
+                    "required": [
+                      "status"
+                    ]
+                  },
+                  "deviceToHost": {
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "const": "not_applicable"
+                      }
+                    },
+                    "required": [
+                      "status"
+                    ]
+                  },
+                  "coldTotal": {
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "const": "measured"
+                      }
+                    },
+                    "required": [
+                      "status"
+                    ]
+                  },
+                  "warm": {
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "const": "measured"
+                      }
+                    },
+                    "required": [
+                      "status"
+                    ]
+                  }
+                }
+              },
+              "allocation": {
+                "type": "object",
+                "properties": {
+                  "jaxArgumentBytes": {
+                    "const": 0
+                  },
+                  "jaxTemporaryBytes": {
+                    "const": 0
+                  },
+                  "jaxOutputBytes": {
+                    "const": 0
+                  },
+                  "jaxAliasBytes": {
+                    "const": 0
+                  },
+                  "numpyTracemallocPeakBytes": {
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "const": "measured"
+                      }
+                    },
+                    "required": [
+                      "status"
+                    ]
+                  },
+                  "allocationEstimator": {
+                    "const": "numpy_source_bound_plus_tracemalloc_preflight_v2"
+                  }
+                }
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "timingBoundary": {
+                "const": "compiled_device_numeric_core"
+              },
+              "compileSignature": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "const": "measured"
+                  }
+                },
+                "required": [
+                  "status"
+                ]
+              },
+              "latencies": {
+                "type": "object",
+                "properties": {
+                  "firstCall": {
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "const": "not_applicable"
+                      }
+                    },
+                    "required": [
+                      "status"
+                    ]
+                  },
+                  "traceLower": {
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "const": "measured"
+                      }
+                    },
+                    "required": [
+                      "status"
+                    ]
+                  },
+                  "compile": {
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "const": "measured"
+                      }
+                    },
+                    "required": [
+                      "status"
+                    ]
+                  },
+                  "hostToDevice": {
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "const": "measured"
+                      }
+                    },
+                    "required": [
+                      "status"
+                    ]
+                  },
+                  "firstExecute": {
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "const": "measured"
+                      }
+                    },
+                    "required": [
+                      "status"
+                    ]
+                  },
+                  "deviceToHost": {
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "const": "measured"
+                      }
+                    },
+                    "required": [
+                      "status"
+                    ]
+                  },
+                  "coldTotal": {
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "const": "measured"
+                      }
+                    },
+                    "required": [
+                      "status"
+                    ]
+                  },
+                  "warm": {
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "const": "measured"
+                      }
+                    },
+                    "required": [
+                      "status"
+                    ]
+                  }
+                }
+              },
+              "allocation": {
+                "type": "object",
+                "properties": {
+                  "numpyTemporaryBytes": {
+                    "const": 0
+                  },
+                  "numpyTracemallocPeakBytes": {
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "const": "not_applicable"
+                      }
+                    },
+                    "required": [
+                      "status"
+                    ]
+                  },
+                  "allocationEstimator": {
+                    "const": "jax_compiled_memory_analysis_plus_host_v1"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "eligibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sameHost",
+        "sameRun",
+        "sameFixture",
+        "sameAffinity",
+        "sameThreads",
+        "sameExecutionBoundary",
+        "sameTimedBoundary"
+      ],
+      "properties": {
+        "sameHost": {
+          "type": "boolean"
+        },
+        "sameRun": {
+          "type": "boolean"
+        },
+        "sameFixture": {
+          "type": "boolean"
+        },
+        "sameAffinity": {
+          "type": "boolean"
+        },
+        "sameThreads": {
+          "type": "boolean"
+        },
+        "sameExecutionBoundary": {
+          "type": "boolean"
+        },
+        "sameTimedBoundary": {
+          "type": "boolean"
+        }
+      }
+    },
+    "comparison": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "numpyResultId",
+        "jaxResultId",
+        "phase",
+        "eligibility",
+        "speedup"
+      ],
+      "properties": {
+        "numpyResultId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "jaxResultId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "phase": {
+          "enum": [
+            "cold_total",
+            "warm"
+          ]
+        },
+        "eligibility": {
+          "$ref": "#/$defs/eligibility"
+        },
+        "speedup": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "status",
+                "ratio"
+              ],
+              "properties": {
+                "status": {
+                  "const": "measured"
+                },
+                "ratio": {
+                  "$ref": "#/$defs/positiveNumber"
+                }
+              }
+            },
+            {
+              "$ref": "#/$defs/notApplicable"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "eligibility": {
+                "properties": {
+                  "sameHost": {
+                    "const": true
+                  },
+                  "sameRun": {
+                    "const": true
+                  },
+                  "sameFixture": {
+                    "const": true
+                  },
+                  "sameAffinity": {
+                    "const": true
+                  },
+                  "sameThreads": {
+                    "const": true
+                  },
+                  "sameExecutionBoundary": {
+                    "const": true
+                  },
+                  "sameTimedBoundary": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "sameHost",
+                  "sameRun",
+                  "sameFixture",
+                  "sameAffinity",
+                  "sameThreads",
+                  "sameExecutionBoundary",
+                  "sameTimedBoundary"
+                ]
+              }
+            },
+            "required": [
+              "eligibility"
+            ]
+          },
+          "then": {
+            "properties": {
+              "speedup": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "const": "measured"
+                  }
+                },
+                "required": [
+                  "status"
+                ]
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "speedup": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "const": "not_applicable"
+                  }
+                },
+                "required": [
+                  "status"
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    "sizedShaArtifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bytes",
+        "sha256"
+      ],
+      "properties": {
+        "bytes": {
+          "$ref": "#/$defs/positiveInteger"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "artifacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "researchWheel",
+        "installedResearchEnvironment",
+        "ociImage",
+        "ociArchive",
+        "nativeExecutable"
+      ],
+      "properties": {
+        "researchWheel": {
+          "$ref": "#/$defs/sizedShaArtifact"
+        },
+        "installedResearchEnvironment": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "bytes",
+            "measurementMethod"
+          ],
+          "properties": {
+            "bytes": {
+              "$ref": "#/$defs/positiveInteger"
+            },
+            "measurementMethod": {
+              "enum": [
+                "apparent_bytes",
+                "allocated_disk_bytes"
+              ]
+            }
+          }
+        },
+        "ociImage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "imageId",
+            "manifestDigest",
+            "engineReportedSizeBytes",
+            "measurementMethod"
+          ],
+          "properties": {
+            "imageId": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "manifestDigest": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "engineReportedSizeBytes": {
+              "$ref": "#/$defs/positiveInteger"
+            },
+            "measurementMethod": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "ociArchive": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "format",
+            "uncompressedBytes",
+            "compressedBytes",
+            "compressedSha256",
+            "compression"
+          ],
+          "properties": {
+            "format": {
+              "const": "oci-layout"
+            },
+            "uncompressedBytes": {
+              "$ref": "#/$defs/positiveInteger"
+            },
+            "compressedBytes": {
+              "$ref": "#/$defs/positiveInteger"
+            },
+            "compressedSha256": {
+              "$ref": "#/$defs/sha256"
+            },
+            "compression": {
+              "const": "gzip-n"
+            }
+          }
+        },
+        "nativeExecutable": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/notApplicable"
+            },
+            {
+              "properties": {
+                "reason": {
+                  "const": "separate native executable is outside S1.4R scope"
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}

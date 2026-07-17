@@ -72,13 +72,17 @@
 
 ## CI 로드맵 — 언제 무엇을 추가하는가
 
-현재 CI는 `repo-hygiene.yml`(필수 경로/compose 검증/ignore 규칙/secret scan) 하나다. 아래 시점이 되면 **해당 세션의 DoD에 CI job 추가가 포함된 것으로 간주**하고 job을 늘린다. 각 job은 별도 workflow 파일로 추가한다(hygiene은 항상 유지).
+현재 CI는 `repo-hygiene.yml`(필수 경로/compose 검증/ignore 규칙/secret scan),
+`contracts-ci.yml`(계약 schema와 positive/negative fixture), `kotlin-build.yml`(JDK 25
+Gradle build), `python-ci.yml`(Python 3.12 품질 게이트)이다. 아래 시점이 되면 **해당
+세션의 DoD에 CI job 추가가 포함된 것으로 간주**하고 job을 늘린다. 각 job은 별도 workflow
+파일로 추가한다(hygiene은 항상 유지).
 
 | 추가 시점(세션) | 추가할 CI job | 내용 |
 |---|---|---|
 | S0.3 완료 시 | `kotlin-build.yml` | Gradle wrapper 9.5.0 커밋 후 JDK 25에서 `./gradlew ktlintCheck build` (test 포함, Testcontainers는 ubuntu 러너 Docker 사용) |
 | S0.4 완료 시 | kotlin-build에 통합 | Flyway clean 마이그레이션 + unique 제약 Testcontainers 테스트가 test 단계에서 실행됨을 확인 |
-| S1.4 완료 시 | `python-ci.yml` | `uv sync --frozen` + `uv run ruff check` + `uv run pytest` (uv.lock 커밋 필수) |
+| S1.4 완료 시 | `python-ci.yml` | Python 3.12 + uv 0.11.26에서 `uv lock --check` → `uv sync --frozen` → `uv run --frozen ruff check .` → `uv run --frozen mypy app` → `uv run --frozen pytest -q` (`uv.lock` 커밋 필수) |
 | S0.2 완료 시 | `contracts-ci.yml` | `contracts/examples/*` JSON Schema validation + negative test |
 | S2.1(첫 컨트롤러) 완료 시 | contracts-ci에 통합 | springdoc `generateOpenApiDocs` 출력과 `contracts/openapi/` diff — 불일치 시 실패 (API 명세서 17.4) |
 | S7.1 완료 시 | kotlin-build에 통합 | Testcontainers Kafka 통합 테스트(outbox publish/manual commit) 포함 확인 |

@@ -278,6 +278,21 @@ Benchmark와 OCI 명령은 correctness gate가 통과한 뒤 `benchmarks/run.py 
 workflow에 고정한다. Raw samples와 OCI archive는 tracked report가 아니라 ignored local
 output 또는 CI artifact다.
 
+## KR/EN: Tracked evidence / 추적 증거
+
+최종 WSL full matrix와 OCI evidence는 보고서 커밋 직전의 exact source
+`60ed803fb0a327ee1dbc546920464ce5693c90a9`에서 생성했다.
+
+- [Correctness report / 정확성 보고서](reports/correctness-report.md)
+- [Benchmark report / 벤치마크 보고서](reports/benchmark-report.md) —
+  file SHA-256 `3328c180304ed4a5c0807136fdbd73258a64ad228cca49ee72adf792869d2d0c`
+- [Benchmark manifest / 벤치마크 manifest](reports/benchmark-manifest.json) —
+  file SHA-256 `f61f314d38fe5b4a88406d0247e09d62f6e92c322d3da47b66831d6b00f8fbe0`
+
+The tracked manifest covers 62 cases and 124 NumPy/JAX results. Its sibling raw samples,
+canonical plan, fixtures, wheel, and OCI archives remain ignored run artifacts; their digests
+are bound into the manifest and correctness report.
+
 ## KR/EN: Canonical evidence and limitations
 
 `tests/fixtures/canonical/advanced_risk_v1.json`은 논문 공식, 부호, moment convention,

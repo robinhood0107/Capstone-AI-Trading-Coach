@@ -1,0 +1,204 @@
+{
+  "schemaVersion": "s1.4r-advanced-risk-v1",
+  "verifiedAsOf": "2026-07-17",
+  "numericConvention": {
+    "dtype": "float64",
+    "lossSpace": true,
+    "exceptionRule": "realized_loss > forecast_var",
+    "momentDenominator": "population_1_over_n",
+    "kurtosis": "Pearson",
+    "likelihoodBoundary": "0*log(0)=0",
+    "rejectRule": "p_value < significance",
+    "christoffersenConditionalUC": "first-observation-conditioned-I2:T"
+  },
+  "sources": [
+    {
+      "id": "acerbi-tasche-2002",
+      "url": "https://doi.org/10.1016/S0378-4266%2802%2900283-2"
+    },
+    {
+      "id": "andersen-bollerslev-diebold-labys-2003",
+      "url": "https://doi.org/10.1111/1468-0262.00418"
+    },
+    {
+      "id": "lo-2002",
+      "url": "https://rpc.cfainstitute.org/research/financial-analysts-journal/2002/the-statistics-of-sharpe-ratios"
+    },
+    {
+      "id": "bailey-lopez-de-prado-2012",
+      "url": "https://doi.org/10.21314/JOR.2012.255"
+    },
+    {
+      "id": "bailey-lopez-de-prado-2014",
+      "url": "https://doi.org/10.3905/jpm.2014.40.5.094"
+    },
+    {
+      "id": "kupiec-1995",
+      "url": "https://doi.org/10.3905/jod.1995.407942"
+    },
+    {
+      "id": "christoffersen-1998",
+      "url": "https://doi.org/10.2307/2527341"
+    }
+  ],
+  "historicalExpectedShortfall": [
+    {
+      "id": "fractional-tail-1.5",
+      "losses": [1.0, 2.0, 3.0, 4.0],
+      "confidence": 0.625,
+      "tailMass": 1.5,
+      "expected": 3.6666666666666665
+    },
+    {
+      "id": "integer-tail-2",
+      "losses": [1.0, 2.0, 3.0, 4.0],
+      "confidence": 0.5,
+      "tailMass": 2.0,
+      "expected": 3.5
+    },
+    {
+      "id": "sub-observation-tail",
+      "losses": [1.0, 2.0, 3.0, 4.0],
+      "confidence": 0.9,
+      "tailMass": 0.4,
+      "expected": 4.0
+    },
+    {
+      "id": "fractional-boundary-tie",
+      "losses": [4.0, 4.0, 1.0, 0.0],
+      "confidence": 0.625,
+      "tailMass": 1.5,
+      "expected": 4.0
+    }
+  ],
+  "realized": [
+    {
+      "id": "integer",
+      "intradayLogReturns": [1.0, -2.0, 2.0],
+      "variance": 9.0,
+      "volatility": 3.0
+    },
+    {
+      "id": "decimal",
+      "intradayLogReturns": [0.01, -0.02, 0.03],
+      "variance": 0.0014,
+      "volatility": 0.0374165738677394
+    },
+    {
+      "id": "zero",
+      "intradayLogReturns": [0.0, 0.0, 0.0],
+      "variance": 0.0,
+      "volatility": 0.0
+    }
+  ],
+  "loAdjustedSharpe": {
+    "returns": [-1.0, 0.0, 1.0, 2.0],
+    "aggregationPeriods": 2,
+    "riskFreeRate": 0.0,
+    "mean": 0.5,
+    "gamma0": 1.25,
+    "rho1": 0.25,
+    "baseSharpe": 0.4472135954999579,
+    "expected": 0.565685424949238
+  },
+  "probabilisticSharpe": {
+    "returnsForMoments": [-0.7320508075688772, 1.0, 1.0, 1.0, 1.0, 2.732050807568877],
+    "sampleSize": 6,
+    "mean": 1.0,
+    "populationStandardDeviation": 1.0,
+    "skewness": 0.0,
+    "pearsonKurtosis": 3.0,
+    "observedSharpe": 1.0,
+    "benchmarkSharpe": 0.0,
+    "z": 1.8257418583505538,
+    "expected": 0.9660554225690855,
+    "equalSharpeExpected": 0.5
+  },
+  "deflatedSharpe": {
+    "sampleSize": 6,
+    "skewness": 0.0,
+    "pearsonKurtosis": 3.0,
+    "trialCount": 2,
+    "sharpeEstimateVariance": 1.0,
+    "selectedSharpe": 1.0,
+    "expectedBenchmarkSharpe": 0.5197553442805939,
+    "expected": 0.8097031129023626,
+    "equalBenchmarkExpected": 0.5,
+    "trialProvenance": {
+      "schema_version": "s1.4r-effective-trials-v1",
+      "method": "pre_registered_independent",
+      "raw_trial_count": 2,
+      "effective_trial_count": 2,
+      "sampling_frequency": "daily",
+      "trial_registry_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "variance_ddof": 1
+    }
+  },
+  "kupiec": [
+    {
+      "id": "zero-exceptions",
+      "realizedLosses": [0.0, 0.0, 0.0, 0.0],
+      "forecastVars": [1.0, 1.0, 1.0, 1.0],
+      "confidence": 0.75,
+      "observations": 4,
+      "exceptions": 0,
+      "statistic": 2.301456579614247,
+      "pValue": 0.12925273959404257
+    },
+    {
+      "id": "null-rate-match",
+      "realizedLosses": [2.0, 0.0, 2.0, 0.0, 0.0],
+      "forecastVars": [1.0, 1.0, 1.0, 1.0, 1.0],
+      "confidence": 0.6,
+      "observations": 5,
+      "exceptions": 2,
+      "statistic": 0.0,
+      "pValue": 1.0
+    },
+    {
+      "id": "all-exceptions",
+      "realizedLosses": [2.0, 2.0, 2.0, 2.0],
+      "forecastVars": [1.0, 1.0, 1.0, 1.0],
+      "confidence": 0.75,
+      "observations": 4,
+      "exceptions": 4,
+      "statistic": 11.090354888959125,
+      "pValue": 0.0008677787586975905
+    }
+  ],
+  "christoffersen": {
+    "exceptionSequence": [0, 1, 0, 1, 0],
+    "realizedLosses": [0.0, 2.0, 0.0, 2.0, 0.0],
+    "forecastVars": [1.0, 1.0, 1.0, 1.0, 1.0],
+    "confidence": 0.6,
+    "transitions": {
+      "n00": 0,
+      "n01": 2,
+      "n10": 2,
+      "n11": 0
+    },
+    "independenceStatistic": 5.545177444479562,
+    "independencePValue": 0.018531677751199068,
+    "fullSampleKupiecStatistic": 0.0,
+    "conditionedObservations": 4,
+    "conditionedExceptions": 2,
+    "conditionedUnconditionalStatistic": 0.16328797808102014,
+    "conditionalCoverageStatistic": 5.708465422560582,
+    "conditionalCoveragePValue": 0.05760000000000002
+  },
+  "stableErrorCodes": [
+    "research_input_invalid",
+    "research_input_too_short",
+    "aggregation_periods_invalid",
+    "moment_invalid",
+    "trial_count_invalid",
+    "trial_variance_invalid",
+    "trial_provenance_invalid",
+    "significance_invalid",
+    "forecast_shape_invalid",
+    "forecast_var_negative",
+    "insufficient_sample",
+    "likelihood_invalid",
+    "research_result_non_finite"
+  ]
+}

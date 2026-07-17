@@ -28,7 +28,7 @@ packages = ["src/s1_4r_risk_research"]
 
 [tool.pytest.ini_options]
 addopts = ["--strict-config", "--strict-markers"]
-pythonpath = ["src"]
+pythonpath = ["src", "."]
 testpaths = ["tests"]
 
 [tool.ruff]

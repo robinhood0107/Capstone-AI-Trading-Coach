@@ -28,6 +28,9 @@ candidate report를 추적하지 않는다. 이 Gate에서는 benchmark timing�
 - canonical success는 finite Float64만 허용하고 `-0.0`을 `0.0`으로 정규화한다.
 - small/paper case는 `rtol=1e-12`, `atol=1e-12`, large/property case는
   `rtol=1e-10`, `atol=1e-12`를 사용한다.
+- tracked expected JSON bytes는 sidecar와 contract manifest로 exact hash-lock한다.
+  `capture_reference_results.py --check`의 live 재생성은 libc `libm`의 ULP 차이를 숨기지
+  않고 같은 typed tolerance로 판정하며, ID·순서·필드·정수·불리언·stable error는 exact다.
 - generated `*.f64le`, local doctor evidence, tool output과 benchmark artifact는
   path-scoped ignore 대상이며 계약 입력이 아니다.
 

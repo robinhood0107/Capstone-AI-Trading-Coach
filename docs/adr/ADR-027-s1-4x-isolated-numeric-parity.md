@@ -1,6 +1,6 @@
 # ADR-027: S1.4X 격리 Scala/Haskell 수치 parity 연구
 
-- 상태: `proposed`
+- 상태: `accepted`
 - 제안일: 2026-07-18
 - 범위: `workspaces/decision-platform/research/s1-4x-numeric-parity/`
 - 추적: GitHub Issue `#26`

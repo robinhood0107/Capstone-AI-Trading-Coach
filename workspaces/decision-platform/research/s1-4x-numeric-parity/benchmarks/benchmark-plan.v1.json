@@ -1,0 +1,2485 @@
+{
+  "schemaVersion": "s1.4x-benchmark-plan-v1",
+  "planId": "s1.4x-full-same-host-v1",
+  "fixtureFreezeIdentity": {
+    "referenceLockSha256": "b55b81b933ad4749c77e3baa313f900dab18d808bc34285232f7b603993a6cb7",
+    "canonicalInputsSha256": "367ca5b8589f9c5b16e8c2e5dd2cfe7cc560a7de19559551c487beeefcf62e63",
+    "canonicalResultsSha256": "59619337c415757a612bc923b32e2a174018b15dc67b2357b10ccb602fca1b6a"
+  },
+  "functionFamilyMap": {
+    "simple_returns": "path-transform",
+    "log_returns": "path-transform",
+    "cumulative_return": "path-transform",
+    "cagr": "classical-path-risk",
+    "realized_volatility": "classical-path-risk",
+    "annualized_volatility": "classical-path-risk",
+    "max_drawdown": "classical-path-risk",
+    "sharpe_ratio": "classical-path-risk",
+    "sortino_ratio": "classical-path-risk",
+    "historical_var": "classical-path-risk",
+    "historical_cvar": "classical-path-risk",
+    "historical_expected_shortfall": "classical-path-risk",
+    "realized_variance": "intraday-realized",
+    "realized_volatility_intraday": "intraday-realized",
+    "lo_adjusted_sharpe_ratio": "serial-sharpe",
+    "probabilistic_sharpe_ratio": "probabilistic-scalar",
+    "deflated_sharpe_ratio": "probabilistic-scalar",
+    "kupiec_unconditional_coverage_test": "coverage-batch",
+    "christoffersen_independence_test": "coverage-batch",
+    "christoffersen_conditional_coverage_test": "coverage-batch"
+  },
+  "executionBoundaries": [
+    {
+      "boundaryId": "python-numpy-s1-4",
+      "schedulingGroup": "PythonBaselines",
+      "functionIds": [
+        "annualized_volatility",
+        "cagr",
+        "cumulative_return",
+        "historical_cvar",
+        "historical_var",
+        "log_returns",
+        "max_drawdown",
+        "realized_volatility",
+        "sharpe_ratio",
+        "simple_returns",
+        "sortino_ratio"
+      ],
+      "expectedCaseIds": [
+        "path-transform/simple_returns/n32/b1",
+        "path-transform/simple_returns/n252/b1",
+        "path-transform/simple_returns/n1000/b1",
+        "path-transform/simple_returns/n10000/b1",
+        "path-transform/simple_returns/n100000/b1",
+        "path-transform/log_returns/n32/b1",
+        "path-transform/log_returns/n252/b1",
+        "path-transform/log_returns/n1000/b1",
+        "path-transform/log_returns/n10000/b1",
+        "path-transform/log_returns/n100000/b1",
+        "path-transform/cumulative_return/n32/b1",
+        "path-transform/cumulative_return/n252/b1",
+        "path-transform/cumulative_return/n1000/b1",
+        "path-transform/cumulative_return/n10000/b1",
+        "path-transform/cumulative_return/n100000/b1",
+        "classical-path-risk/cagr/n32/b1",
+        "classical-path-risk/cagr/n252/b1",
+        "classical-path-risk/cagr/n1000/b1",
+        "classical-path-risk/cagr/n10000/b1",
+        "classical-path-risk/cagr/n100000/b1",
+        "classical-path-risk/realized_volatility/n32/b1",
+        "classical-path-risk/realized_volatility/n252/b1",
+        "classical-path-risk/realized_volatility/n1000/b1",
+        "classical-path-risk/realized_volatility/n10000/b1",
+        "classical-path-risk/realized_volatility/n100000/b1",
+        "classical-path-risk/annualized_volatility/n32/b1",
+        "classical-path-risk/annualized_volatility/n252/b1",
+        "classical-path-risk/annualized_volatility/n1000/b1",
+        "classical-path-risk/annualized_volatility/n10000/b1",
+        "classical-path-risk/annualized_volatility/n100000/b1",
+        "classical-path-risk/max_drawdown/n32/b1",
+        "classical-path-risk/max_drawdown/n252/b1",
+        "classical-path-risk/max_drawdown/n1000/b1",
+        "classical-path-risk/max_drawdown/n10000/b1",
+        "classical-path-risk/max_drawdown/n100000/b1",
+        "classical-path-risk/sharpe_ratio/n32/b1",
+        "classical-path-risk/sharpe_ratio/n252/b1",
+        "classical-path-risk/sharpe_ratio/n1000/b1",
+        "classical-path-risk/sharpe_ratio/n10000/b1",
+        "classical-path-risk/sharpe_ratio/n100000/b1",
+        "classical-path-risk/sortino_ratio/n32/b1",
+        "classical-path-risk/sortino_ratio/n252/b1",
+        "classical-path-risk/sortino_ratio/n1000/b1",
+        "classical-path-risk/sortino_ratio/n10000/b1",
+        "classical-path-risk/sortino_ratio/n100000/b1",
+        "classical-path-risk/historical_var/n32/b1",
+        "classical-path-risk/historical_var/n252/b1",
+        "classical-path-risk/historical_var/n1000/b1",
+        "classical-path-risk/historical_var/n10000/b1",
+        "classical-path-risk/historical_var/n100000/b1",
+        "classical-path-risk/historical_cvar/n32/b1",
+        "classical-path-risk/historical_cvar/n252/b1",
+        "classical-path-risk/historical_cvar/n1000/b1",
+        "classical-path-risk/historical_cvar/n10000/b1",
+        "classical-path-risk/historical_cvar/n100000/b1"
+      ]
+    },
+    {
+      "boundaryId": "python-numpy-s1-4r",
+      "schedulingGroup": "PythonBaselines",
+      "functionIds": [
+        "christoffersen_conditional_coverage_test",
+        "christoffersen_independence_test",
+        "deflated_sharpe_ratio",
+        "historical_expected_shortfall",
+        "kupiec_unconditional_coverage_test",
+        "lo_adjusted_sharpe_ratio",
+        "probabilistic_sharpe_ratio",
+        "realized_variance",
+        "realized_volatility_intraday"
+      ],
+      "expectedCaseIds": [
+        "classical-path-risk/historical_expected_shortfall/n32/b1",
+        "classical-path-risk/historical_expected_shortfall/n252/b1",
+        "classical-path-risk/historical_expected_shortfall/n1000/b1",
+        "classical-path-risk/historical_expected_shortfall/n10000/b1",
+        "classical-path-risk/historical_expected_shortfall/n100000/b1",
+        "intraday-realized/realized_variance/n32/b1",
+        "intraday-realized/realized_variance/n252/b1",
+        "intraday-realized/realized_variance/n1000/b1",
+        "intraday-realized/realized_variance/n10000/b1",
+        "intraday-realized/realized_variance/n100000/b1",
+        "intraday-realized/realized_volatility_intraday/n32/b1",
+        "intraday-realized/realized_volatility_intraday/n252/b1",
+        "intraday-realized/realized_volatility_intraday/n1000/b1",
+        "intraday-realized/realized_volatility_intraday/n10000/b1",
+        "intraday-realized/realized_volatility_intraday/n100000/b1",
+        "serial-sharpe/lo_adjusted_sharpe_ratio/n32/q5/b1",
+        "serial-sharpe/lo_adjusted_sharpe_ratio/n252/q5/b1",
+        "serial-sharpe/lo_adjusted_sharpe_ratio/n1000/q5/b1",
+        "serial-sharpe/lo_adjusted_sharpe_ratio/n10000/q5/b1",
+        "serial-sharpe/lo_adjusted_sharpe_ratio/n100000/q5/b1",
+        "probabilistic-scalar/probabilistic_sharpe_ratio/b16384",
+        "probabilistic-scalar/deflated_sharpe_ratio/b16384",
+        "coverage-batch/kupiec_pof/n252/b32",
+        "coverage-batch/kupiec_pof/n1000/b32",
+        "coverage-batch/kupiec_pof/n10000/b32",
+        "coverage-batch/kupiec_pof/n100000/b32",
+        "coverage-batch/christoffersen_independence/n252/b32",
+        "coverage-batch/christoffersen_independence/n1000/b32",
+        "coverage-batch/christoffersen_independence/n10000/b32",
+        "coverage-batch/christoffersen_independence/n100000/b32",
+        "coverage-batch/christoffersen_conditional_coverage/n252/b32",
+        "coverage-batch/christoffersen_conditional_coverage/n1000/b32",
+        "coverage-batch/christoffersen_conditional_coverage/n10000/b32",
+        "coverage-batch/christoffersen_conditional_coverage/n100000/b32"
+      ]
+    },
+    {
+      "boundaryId": "python-jax-eager-s1-4r",
+      "schedulingGroup": "PythonBaselines",
+      "functionIds": [
+        "christoffersen_conditional_coverage_test",
+        "christoffersen_independence_test",
+        "deflated_sharpe_ratio",
+        "historical_expected_shortfall",
+        "kupiec_unconditional_coverage_test",
+        "lo_adjusted_sharpe_ratio",
+        "probabilistic_sharpe_ratio",
+        "realized_variance",
+        "realized_volatility_intraday"
+      ],
+      "expectedCaseIds": [
+        "classical-path-risk/historical_expected_shortfall/n32/b1",
+        "classical-path-risk/historical_expected_shortfall/n252/b1",
+        "classical-path-risk/historical_expected_shortfall/n1000/b1",
+        "classical-path-risk/historical_expected_shortfall/n10000/b1",
+        "classical-path-risk/historical_expected_shortfall/n100000/b1",
+        "intraday-realized/realized_variance/n32/b1",
+        "intraday-realized/realized_variance/n252/b1",
+        "intraday-realized/realized_variance/n1000/b1",
+        "intraday-realized/realized_variance/n10000/b1",
+        "intraday-realized/realized_variance/n100000/b1",
+        "intraday-realized/realized_volatility_intraday/n32/b1",
+        "intraday-realized/realized_volatility_intraday/n252/b1",
+        "intraday-realized/realized_volatility_intraday/n1000/b1",
+        "intraday-realized/realized_volatility_intraday/n10000/b1",
+        "intraday-realized/realized_volatility_intraday/n100000/b1",
+        "serial-sharpe/lo_adjusted_sharpe_ratio/n32/q5/b1",
+        "serial-sharpe/lo_adjusted_sharpe_ratio/n252/q5/b1",
+        "serial-sharpe/lo_adjusted_sharpe_ratio/n1000/q5/b1",
+        "serial-sharpe/lo_adjusted_sharpe_ratio/n10000/q5/b1",
+        "serial-sharpe/lo_adjusted_sharpe_ratio/n100000/q5/b1",
+        "probabilistic-scalar/probabilistic_sharpe_ratio/b16384",
+        "probabilistic-scalar/deflated_sharpe_ratio/b16384",
+        "coverage-batch/kupiec_pof/n252/b32",
+        "coverage-batch/kupiec_pof/n1000/b32",
+        "coverage-batch/kupiec_pof/n10000/b32",
+        "coverage-batch/kupiec_pof/n100000/b32",
+        "coverage-batch/christoffersen_independence/n252/b32",
+        "coverage-batch/christoffersen_independence/n1000/b32",
+        "coverage-batch/christoffersen_independence/n10000/b32",
+        "coverage-batch/christoffersen_independence/n100000/b32",
+        "coverage-batch/christoffersen_conditional_coverage/n252/b32",
+        "coverage-batch/christoffersen_conditional_coverage/n1000/b32",
+        "coverage-batch/christoffersen_conditional_coverage/n10000/b32",
+        "coverage-batch/christoffersen_conditional_coverage/n100000/b32"
+      ]
+    },
+    {
+      "boundaryId": "python-jax-jit-s1-4r",
+      "schedulingGroup": "PythonBaselines",
+      "functionIds": [
+        "christoffersen_conditional_coverage_test",
+        "christoffersen_independence_test",
+        "deflated_sharpe_ratio",
+        "historical_expected_shortfall",
+        "kupiec_unconditional_coverage_test",
+        "lo_adjusted_sharpe_ratio",
+        "probabilistic_sharpe_ratio",
+        "realized_variance",
+        "realized_volatility_intraday"
+      ],
+      "expectedCaseIds": [
+        "classical-path-risk/historical_expected_shortfall/n32/b1",
+        "classical-path-risk/historical_expected_shortfall/n252/b1",
+        "classical-path-risk/historical_expected_shortfall/n1000/b1",
+        "classical-path-risk/historical_expected_shortfall/n10000/b1",
+        "classical-path-risk/historical_expected_shortfall/n100000/b1",
+        "intraday-realized/realized_variance/n32/b1",
+        "intraday-realized/realized_variance/n252/b1",
+        "intraday-realized/realized_variance/n1000/b1",
+        "intraday-realized/realized_variance/n10000/b1",
+        "intraday-realized/realized_variance/n100000/b1",
+        "intraday-realized/realized_volatility_intraday/n32/b1",
+        "intraday-realized/realized_volatility_intraday/n252/b1",
+        "intraday-realized/realized_volatility_intraday/n1000/b1",
+        "intraday-realized/realized_volatility_intraday/n10000/b1",
+        "intraday-realized/realized_volatility_intraday/n100000/b1",
+        "serial-sharpe/lo_adjusted_sharpe_ratio/n32/q5/b1",
+        "serial-sharpe/lo_adjusted_sharpe_ratio/n252/q5/b1",
+        "serial-sharpe/lo_adjusted_sharpe_ratio/n1000/q5/b1",
+        "serial-sharpe/lo_adjusted_sharpe_ratio/n10000/q5/b1",
+        "serial-sharpe/lo_adjusted_sharpe_ratio/n100000/q5/b1",
+        "probabilistic-scalar/probabilistic_sharpe_ratio/b16384",
+        "probabilistic-scalar/deflated_sharpe_ratio/b16384",
+        "coverage-batch/kupiec_pof/n252/b32",
+        "coverage-batch/kupiec_pof/n1000/b32",
+        "coverage-batch/kupiec_pof/n10000/b32",
+        "coverage-batch/kupiec_pof/n100000/b32",
+        "coverage-batch/christoffersen_independence/n252/b32",
+        "coverage-batch/christoffersen_independence/n1000/b32",
+        "coverage-batch/christoffersen_independence/n10000/b32",
+        "coverage-batch/christoffersen_independence/n100000/b32",
+        "coverage-batch/christoffersen_conditional_coverage/n252/b32",
+        "coverage-batch/christoffersen_conditional_coverage/n1000/b32",
+        "coverage-batch/christoffersen_conditional_coverage/n10000/b32",
+        "coverage-batch/christoffersen_conditional_coverage/n100000/b32"
+      ]
+    },
+    {
+      "boundaryId": "scala",
+      "schedulingGroup": "Scala",
+      "functionIds": [
+        "annualized_volatility",
+        "cagr",
+        "christoffersen_conditional_coverage_test",
+        "christoffersen_independence_test",
+        "cumulative_return",
+        "deflated_sharpe_ratio",
+        "historical_cvar",
+        "historical_expected_shortfall",
+        "historical_var",
+        "kupiec_unconditional_coverage_test",
+        "lo_adjusted_sharpe_ratio",
+        "log_returns",
+        "max_drawdown",
+        "probabilistic_sharpe_ratio",
+        "realized_variance",
+        "realized_volatility",
+        "realized_volatility_intraday",
+        "sharpe_ratio",
+        "simple_returns",
+        "sortino_ratio"
+      ],
+      "expectedCaseIds": [
+        "path-transform/simple_returns/n32/b1",
+        "path-transform/simple_returns/n252/b1",
+        "path-transform/simple_returns/n1000/b1",
+        "path-transform/simple_returns/n10000/b1",
+        "path-transform/simple_returns/n100000/b1",
+        "path-transform/log_returns/n32/b1",
+        "path-transform/log_returns/n252/b1",
+        "path-transform/log_returns/n1000/b1",
+        "path-transform/log_returns/n10000/b1",
+        "path-transform/log_returns/n100000/b1",
+        "path-transform/cumulative_return/n32/b1",
+        "path-transform/cumulative_return/n252/b1",
+        "path-transform/cumulative_return/n1000/b1",
+        "path-transform/cumulative_return/n10000/b1",
+        "path-transform/cumulative_return/n100000/b1",
+        "classical-path-risk/cagr/n32/b1",
+        "classical-path-risk/cagr/n252/b1",
+        "classical-path-risk/cagr/n1000/b1",
+        "classical-path-risk/cagr/n10000/b1",
+        "classical-path-risk/cagr/n100000/b1",
+        "classical-path-risk/realized_volatility/n32/b1",
+        "classical-path-risk/realized_volatility/n252/b1",
+        "classical-path-risk/realized_volatility/n1000/b1",
+        "classical-path-risk/realized_volatility/n10000/b1",
+        "classical-path-risk/realized_volatility/n100000/b1",
+        "classical-path-risk/annualized_volatility/n32/b1",
+        "classical-path-risk/annualized_volatility/n252/b1",
+        "classical-path-risk/annualized_volatility/n1000/b1",
+        "classical-path-risk/annualized_volatility/n10000/b1",
+        "classical-path-risk/annualized_volatility/n100000/b1",
+        "classical-path-risk/max_drawdown/n32/b1",
+        "classical-path-risk/max_drawdown/n252/b1",
+        "classical-path-risk/max_drawdown/n1000/b1",
+        "classical-path-risk/max_drawdown/n10000/b1",
+        "classical-path-risk/max_drawdown/n100000/b1",
+        "classical-path-risk/sharpe_ratio/n32/b1",
+        "classical-path-risk/sharpe_ratio/n252/b1",
+        "classical-path-risk/sharpe_ratio/n1000/b1",
+        "classical-path-risk/sharpe_ratio/n10000/b1",
+        "classical-path-risk/sharpe_ratio/n100000/b1",
+        "classical-path-risk/sortino_ratio/n32/b1",
+        "classical-path-risk/sortino_ratio/n252/b1",
+        "classical-path-risk/sortino_ratio/n1000/b1",
+        "classical-path-risk/sortino_ratio/n10000/b1",
+        "classical-path-risk/sortino_ratio/n100000/b1",
+        "classical-path-risk/historical_var/n32/b1",
+        "classical-path-risk/historical_var/n252/b1",
+        "classical-path-risk/historical_var/n1000/b1",
+        "classical-path-risk/historical_var/n10000/b1",
+        "classical-path-risk/historical_var/n100000/b1",
+        "classical-path-risk/historical_cvar/n32/b1",
+        "classical-path-risk/historical_cvar/n252/b1",
+        "classical-path-risk/historical_cvar/n1000/b1",
+        "classical-path-risk/historical_cvar/n10000/b1",
+        "classical-path-risk/historical_cvar/n100000/b1",
+        "classical-path-risk/historical_expected_shortfall/n32/b1",
+        "classical-path-risk/historical_expected_shortfall/n252/b1",
+        "classical-path-risk/historical_expected_shortfall/n1000/b1",
+        "classical-path-risk/historical_expected_shortfall/n10000/b1",
+        "classical-path-risk/historical_expected_shortfall/n100000/b1",
+        "intraday-realized/realized_variance/n32/b1",
+        "intraday-realized/realized_variance/n252/b1",
+        "intraday-realized/realized_variance/n1000/b1",
+        "intraday-realized/realized_variance/n10000/b1",
+        "intraday-realized/realized_variance/n100000/b1",
+        "intraday-realized/realized_volatility_intraday/n32/b1",
+        "intraday-realized/realized_volatility_intraday/n252/b1",
+        "intraday-realized/realized_volatility_intraday/n1000/b1",
+        "intraday-realized/realized_volatility_intraday/n10000/b1",
+        "intraday-realized/realized_volatility_intraday/n100000/b1",
+        "serial-sharpe/lo_adjusted_sharpe_ratio/n32/q5/b1",
+        "serial-sharpe/lo_adjusted_sharpe_ratio/n252/q5/b1",
+        "serial-sharpe/lo_adjusted_sharpe_ratio/n1000/q5/b1",
+        "serial-sharpe/lo_adjusted_sharpe_ratio/n10000/q5/b1",
+        "serial-sharpe/lo_adjusted_sharpe_ratio/n100000/q5/b1",
+        "probabilistic-scalar/probabilistic_sharpe_ratio/b16384",
+        "probabilistic-scalar/deflated_sharpe_ratio/b16384",
+        "coverage-batch/kupiec_pof/n252/b32",
+        "coverage-batch/kupiec_pof/n1000/b32",
+        "coverage-batch/kupiec_pof/n10000/b32",
+        "coverage-batch/kupiec_pof/n100000/b32",
+        "coverage-batch/christoffersen_independence/n252/b32",
+        "coverage-batch/christoffersen_independence/n1000/b32",
+        "coverage-batch/christoffersen_independence/n10000/b32",
+        "coverage-batch/christoffersen_independence/n100000/b32",
+        "coverage-batch/christoffersen_conditional_coverage/n252/b32",
+        "coverage-batch/christoffersen_conditional_coverage/n1000/b32",
+        "coverage-batch/christoffersen_conditional_coverage/n10000/b32",
+        "coverage-batch/christoffersen_conditional_coverage/n100000/b32"
+      ]
+    },
+    {
+      "boundaryId": "haskell",
+      "schedulingGroup": "Haskell",
+      "functionIds": [
+        "annualized_volatility",
+        "cagr",
+        "christoffersen_conditional_coverage_test",
+        "christoffersen_independence_test",
+        "cumulative_return",
+        "deflated_sharpe_ratio",
+        "historical_cvar",
+        "historical_expected_shortfall",
+        "historical_var",
+        "kupiec_unconditional_coverage_test",
+        "lo_adjusted_sharpe_ratio",
+        "log_returns",
+        "max_drawdown",
+        "probabilistic_sharpe_ratio",
+        "realized_variance",
+        "realized_volatility",
+        "realized_volatility_intraday",
+        "sharpe_ratio",
+        "simple_returns",
+        "sortino_ratio"
+      ],
+      "expectedCaseIds": [
+        "path-transform/simple_returns/n32/b1",
+        "path-transform/simple_returns/n252/b1",
+        "path-transform/simple_returns/n1000/b1",
+        "path-transform/simple_returns/n10000/b1",
+        "path-transform/simple_returns/n100000/b1",
+        "path-transform/log_returns/n32/b1",
+        "path-transform/log_returns/n252/b1",
+        "path-transform/log_returns/n1000/b1",
+        "path-transform/log_returns/n10000/b1",
+        "path-transform/log_returns/n100000/b1",
+        "path-transform/cumulative_return/n32/b1",
+        "path-transform/cumulative_return/n252/b1",
+        "path-transform/cumulative_return/n1000/b1",
+        "path-transform/cumulative_return/n10000/b1",
+        "path-transform/cumulative_return/n100000/b1",
+        "classical-path-risk/cagr/n32/b1",
+        "classical-path-risk/cagr/n252/b1",
+        "classical-path-risk/cagr/n1000/b1",
+        "classical-path-risk/cagr/n10000/b1",
+        "classical-path-risk/cagr/n100000/b1",
+        "classical-path-risk/realized_volatility/n32/b1",
+        "classical-path-risk/realized_volatility/n252/b1",
+        "classical-path-risk/realized_volatility/n1000/b1",
+        "classical-path-risk/realized_volatility/n10000/b1",
+        "classical-path-risk/realized_volatility/n100000/b1",
+        "classical-path-risk/annualized_volatility/n32/b1",
+        "classical-path-risk/annualized_volatility/n252/b1",
+        "classical-path-risk/annualized_volatility/n1000/b1",
+        "classical-path-risk/annualized_volatility/n10000/b1",
+        "classical-path-risk/annualized_volatility/n100000/b1",
+        "classical-path-risk/max_drawdown/n32/b1",
+        "classical-path-risk/max_drawdown/n252/b1",
+        "classical-path-risk/max_drawdown/n1000/b1",
+        "classical-path-risk/max_drawdown/n10000/b1",
+        "classical-path-risk/max_drawdown/n100000/b1",
+        "classical-path-risk/sharpe_ratio/n32/b1",
+        "classical-path-risk/sharpe_ratio/n252/b1",
+        "classical-path-risk/sharpe_ratio/n1000/b1",
+        "classical-path-risk/sharpe_ratio/n10000/b1",
+        "classical-path-risk/sharpe_ratio/n100000/b1",
+        "classical-path-risk/sortino_ratio/n32/b1",
+        "classical-path-risk/sortino_ratio/n252/b1",
+        "classical-path-risk/sortino_ratio/n1000/b1",
+        "classical-path-risk/sortino_ratio/n10000/b1",
+        "classical-path-risk/sortino_ratio/n100000/b1",
+        "classical-path-risk/historical_var/n32/b1",
+        "classical-path-risk/historical_var/n252/b1",
+        "classical-path-risk/historical_var/n1000/b1",
+        "classical-path-risk/historical_var/n10000/b1",
+        "classical-path-risk/historical_var/n100000/b1",
+        "classical-path-risk/historical_cvar/n32/b1",
+        "classical-path-risk/historical_cvar/n252/b1",
+        "classical-path-risk/historical_cvar/n1000/b1",
+        "classical-path-risk/historical_cvar/n10000/b1",
+        "classical-path-risk/historical_cvar/n100000/b1",
+        "classical-path-risk/historical_expected_shortfall/n32/b1",
+        "classical-path-risk/historical_expected_shortfall/n252/b1",
+        "classical-path-risk/historical_expected_shortfall/n1000/b1",
+        "classical-path-risk/historical_expected_shortfall/n10000/b1",
+        "classical-path-risk/historical_expected_shortfall/n100000/b1",
+        "intraday-realized/realized_variance/n32/b1",
+        "intraday-realized/realized_variance/n252/b1",
+        "intraday-realized/realized_variance/n1000/b1",
+        "intraday-realized/realized_variance/n10000/b1",
+        "intraday-realized/realized_variance/n100000/b1",
+        "intraday-realized/realized_volatility_intraday/n32/b1",
+        "intraday-realized/realized_volatility_intraday/n252/b1",
+        "intraday-realized/realized_volatility_intraday/n1000/b1",
+        "intraday-realized/realized_volatility_intraday/n10000/b1",
+        "intraday-realized/realized_volatility_intraday/n100000/b1",
+        "serial-sharpe/lo_adjusted_sharpe_ratio/n32/q5/b1",
+        "serial-sharpe/lo_adjusted_sharpe_ratio/n252/q5/b1",
+        "serial-sharpe/lo_adjusted_sharpe_ratio/n1000/q5/b1",
+        "serial-sharpe/lo_adjusted_sharpe_ratio/n10000/q5/b1",
+        "serial-sharpe/lo_adjusted_sharpe_ratio/n100000/q5/b1",
+        "probabilistic-scalar/probabilistic_sharpe_ratio/b16384",
+        "probabilistic-scalar/deflated_sharpe_ratio/b16384",
+        "coverage-batch/kupiec_pof/n252/b32",
+        "coverage-batch/kupiec_pof/n1000/b32",
+        "coverage-batch/kupiec_pof/n10000/b32",
+        "coverage-batch/kupiec_pof/n100000/b32",
+        "coverage-batch/christoffersen_independence/n252/b32",
+        "coverage-batch/christoffersen_independence/n1000/b32",
+        "coverage-batch/christoffersen_independence/n10000/b32",
+        "coverage-batch/christoffersen_independence/n100000/b32",
+        "coverage-batch/christoffersen_conditional_coverage/n252/b32",
+        "coverage-batch/christoffersen_conditional_coverage/n1000/b32",
+        "coverage-batch/christoffersen_conditional_coverage/n10000/b32",
+        "coverage-batch/christoffersen_conditional_coverage/n100000/b32"
+      ]
+    }
+  ],
+  "familySelectors": [
+    {
+      "boundaryId": "scala",
+      "familyId": "path-transform",
+      "selectorId": "scala/path-transform",
+      "expectedCaseIds": [
+        "path-transform/simple_returns/n32/b1",
+        "path-transform/simple_returns/n252/b1",
+        "path-transform/simple_returns/n1000/b1",
+        "path-transform/simple_returns/n10000/b1",
+        "path-transform/simple_returns/n100000/b1",
+        "path-transform/log_returns/n32/b1",
+        "path-transform/log_returns/n252/b1",
+        "path-transform/log_returns/n1000/b1",
+        "path-transform/log_returns/n10000/b1",
+        "path-transform/log_returns/n100000/b1",
+        "path-transform/cumulative_return/n32/b1",
+        "path-transform/cumulative_return/n252/b1",
+        "path-transform/cumulative_return/n1000/b1",
+        "path-transform/cumulative_return/n10000/b1",
+        "path-transform/cumulative_return/n100000/b1"
+      ],
+      "jmhIncludeRegex": "^s1_4x\\.benchmarks\\.path_transform\\..*$",
+      "criterionMatchMode": "none",
+      "criterionPrefix": null,
+      "pythonFamilyId": null
+    },
+    {
+      "boundaryId": "scala",
+      "familyId": "classical-path-risk",
+      "selectorId": "scala/classical-path-risk",
+      "expectedCaseIds": [
+        "classical-path-risk/cagr/n32/b1",
+        "classical-path-risk/cagr/n252/b1",
+        "classical-path-risk/cagr/n1000/b1",
+        "classical-path-risk/cagr/n10000/b1",
+        "classical-path-risk/cagr/n100000/b1",
+        "classical-path-risk/realized_volatility/n32/b1",
+        "classical-path-risk/realized_volatility/n252/b1",
+        "classical-path-risk/realized_volatility/n1000/b1",
+        "classical-path-risk/realized_volatility/n10000/b1",
+        "classical-path-risk/realized_volatility/n100000/b1",
+        "classical-path-risk/annualized_volatility/n32/b1",
+        "classical-path-risk/annualized_volatility/n252/b1",
+        "classical-path-risk/annualized_volatility/n1000/b1",
+        "classical-path-risk/annualized_volatility/n10000/b1",
+        "classical-path-risk/annualized_volatility/n100000/b1",
+        "classical-path-risk/max_drawdown/n32/b1",
+        "classical-path-risk/max_drawdown/n252/b1",
+        "classical-path-risk/max_drawdown/n1000/b1",
+        "classical-path-risk/max_drawdown/n10000/b1",
+        "classical-path-risk/max_drawdown/n100000/b1",
+        "classical-path-risk/sharpe_ratio/n32/b1",
+        "classical-path-risk/sharpe_ratio/n252/b1",
+        "classical-path-risk/sharpe_ratio/n1000/b1",
+        "classical-path-risk/sharpe_ratio/n10000/b1",
+        "classical-path-risk/sharpe_ratio/n100000/b1",
+        "classical-path-risk/sortino_ratio/n32/b1",
+        "classical-path-risk/sortino_ratio/n252/b1",
+        "classical-path-risk/sortino_ratio/n1000/b1",
+        "classical-path-risk/sortino_ratio/n10000/b1",
+        "classical-path-risk/sortino_ratio/n100000/b1",
+        "classical-path-risk/historical_var/n32/b1",
+        "classical-path-risk/historical_var/n252/b1",
+        "classical-path-risk/historical_var/n1000/b1",
+        "classical-path-risk/historical_var/n10000/b1",
+        "classical-path-risk/historical_var/n100000/b1",
+        "classical-path-risk/historical_cvar/n32/b1",
+        "classical-path-risk/historical_cvar/n252/b1",
+        "classical-path-risk/historical_cvar/n1000/b1",
+        "classical-path-risk/historical_cvar/n10000/b1",
+        "classical-path-risk/historical_cvar/n100000/b1",
+        "classical-path-risk/historical_expected_shortfall/n32/b1",
+        "classical-path-risk/historical_expected_shortfall/n252/b1",
+        "classical-path-risk/historical_expected_shortfall/n1000/b1",
+        "classical-path-risk/historical_expected_shortfall/n10000/b1",
+        "classical-path-risk/historical_expected_shortfall/n100000/b1"
+      ],
+      "jmhIncludeRegex": "^s1_4x\\.benchmarks\\.classical_path_risk\\..*$",
+      "criterionMatchMode": "none",
+      "criterionPrefix": null,
+      "pythonFamilyId": null
+    },
+    {
+      "boundaryId": "scala",
+      "familyId": "intraday-realized",
+      "selectorId": "scala/intraday-realized",
+      "expectedCaseIds": [
+        "intraday-realized/realized_variance/n32/b1",
+        "intraday-realized/realized_variance/n252/b1",
+        "intraday-realized/realized_variance/n1000/b1",
+        "intraday-realized/realized_variance/n10000/b1",
+        "intraday-realized/realized_variance/n100000/b1",
+        "intraday-realized/realized_volatility_intraday/n32/b1",
+        "intraday-realized/realized_volatility_intraday/n252/b1",
+        "intraday-realized/realized_volatility_intraday/n1000/b1",
+        "intraday-realized/realized_volatility_intraday/n10000/b1",
+        "intraday-realized/realized_volatility_intraday/n100000/b1"
+      ],
+      "jmhIncludeRegex": "^s1_4x\\.benchmarks\\.intraday_realized\\..*$",
+      "criterionMatchMode": "none",
+      "criterionPrefix": null,
+      "pythonFamilyId": null
+    },
+    {
+      "boundaryId": "scala",
+      "familyId": "serial-sharpe",
+      "selectorId": "scala/serial-sharpe",
+      "expectedCaseIds": [
+        "serial-sharpe/lo_adjusted_sharpe_ratio/n32/q5/b1",
+        "serial-sharpe/lo_adjusted_sharpe_ratio/n252/q5/b1",
+        "serial-sharpe/lo_adjusted_sharpe_ratio/n1000/q5/b1",
+        "serial-sharpe/lo_adjusted_sharpe_ratio/n10000/q5/b1",
+        "serial-sharpe/lo_adjusted_sharpe_ratio/n100000/q5/b1"
+      ],
+      "jmhIncludeRegex": "^s1_4x\\.benchmarks\\.serial_sharpe\\..*$",
+      "criterionMatchMode": "none",
+      "criterionPrefix": null,
+      "pythonFamilyId": null
+    },
+    {
+      "boundaryId": "scala",
+      "familyId": "probabilistic-scalar",
+      "selectorId": "scala/probabilistic-scalar",
+      "expectedCaseIds": [
+        "probabilistic-scalar/probabilistic_sharpe_ratio/b16384",
+        "probabilistic-scalar/deflated_sharpe_ratio/b16384"
+      ],
+      "jmhIncludeRegex": "^s1_4x\\.benchmarks\\.probabilistic_scalar\\..*$",
+      "criterionMatchMode": "none",
+      "criterionPrefix": null,
+      "pythonFamilyId": null
+    },
+    {
+      "boundaryId": "scala",
+      "familyId": "coverage-batch",
+      "selectorId": "scala/coverage-batch",
+      "expectedCaseIds": [
+        "coverage-batch/kupiec_pof/n252/b32",
+        "coverage-batch/kupiec_pof/n1000/b32",
+        "coverage-batch/kupiec_pof/n10000/b32",
+        "coverage-batch/kupiec_pof/n100000/b32",
+        "coverage-batch/christoffersen_independence/n252/b32",
+        "coverage-batch/christoffersen_independence/n1000/b32",
+        "coverage-batch/christoffersen_independence/n10000/b32",
+        "coverage-batch/christoffersen_independence/n100000/b32",
+        "coverage-batch/christoffersen_conditional_coverage/n252/b32",
+        "coverage-batch/christoffersen_conditional_coverage/n1000/b32",
+        "coverage-batch/christoffersen_conditional_coverage/n10000/b32",
+        "coverage-batch/christoffersen_conditional_coverage/n100000/b32"
+      ],
+      "jmhIncludeRegex": "^s1_4x\\.benchmarks\\.coverage_batch\\..*$",
+      "criterionMatchMode": "none",
+      "criterionPrefix": null,
+      "pythonFamilyId": null
+    },
+    {
+      "boundaryId": "haskell",
+      "familyId": "path-transform",
+      "selectorId": "haskell/path-transform",
+      "expectedCaseIds": [
+        "path-transform/simple_returns/n32/b1",
+        "path-transform/simple_returns/n252/b1",
+        "path-transform/simple_returns/n1000/b1",
+        "path-transform/simple_returns/n10000/b1",
+        "path-transform/simple_returns/n100000/b1",
+        "path-transform/log_returns/n32/b1",
+        "path-transform/log_returns/n252/b1",
+        "path-transform/log_returns/n1000/b1",
+        "path-transform/log_returns/n10000/b1",
+        "path-transform/log_returns/n100000/b1",
+        "path-transform/cumulative_return/n32/b1",
+        "path-transform/cumulative_return/n252/b1",
+        "path-transform/cumulative_return/n1000/b1",
+        "path-transform/cumulative_return/n10000/b1",
+        "path-transform/cumulative_return/n100000/b1"
+      ],
+      "jmhIncludeRegex": null,
+      "criterionMatchMode": "prefix",
+      "criterionPrefix": "path-transform/",
+      "pythonFamilyId": null
+    },
+    {
+      "boundaryId": "haskell",
+      "familyId": "classical-path-risk",
+      "selectorId": "haskell/classical-path-risk",
+      "expectedCaseIds": [
+        "classical-path-risk/cagr/n32/b1",
+        "classical-path-risk/cagr/n252/b1",
+        "classical-path-risk/cagr/n1000/b1",
+        "classical-path-risk/cagr/n10000/b1",
+        "classical-path-risk/cagr/n100000/b1",
+        "classical-path-risk/realized_volatility/n32/b1",
+        "classical-path-risk/realized_volatility/n252/b1",
+        "classical-path-risk/realized_volatility/n1000/b1",
+        "classical-path-risk/realized_volatility/n10000/b1",
+        "classical-path-risk/realized_volatility/n100000/b1",
+        "classical-path-risk/annualized_volatility/n32/b1",
+        "classical-path-risk/annualized_volatility/n252/b1",
+        "classical-path-risk/annualized_volatility/n1000/b1",
+        "classical-path-risk/annualized_volatility/n10000/b1",
+        "classical-path-risk/annualized_volatility/n100000/b1",
+        "classical-path-risk/max_drawdown/n32/b1",
+        "classical-path-risk/max_drawdown/n252/b1",
+        "classical-path-risk/max_drawdown/n1000/b1",
+        "classical-path-risk/max_drawdown/n10000/b1",
+        "classical-path-risk/max_drawdown/n100000/b1",
+        "classical-path-risk/sharpe_ratio/n32/b1",
+        "classical-path-risk/sharpe_ratio/n252/b1",
+        "classical-path-risk/sharpe_ratio/n1000/b1",
+        "classical-path-risk/sharpe_ratio/n10000/b1",
+        "classical-path-risk/sharpe_ratio/n100000/b1",
+        "classical-path-risk/sortino_ratio/n32/b1",
+        "classical-path-risk/sortino_ratio/n252/b1",
+        "classical-path-risk/sortino_ratio/n1000/b1",
+        "classical-path-risk/sortino_ratio/n10000/b1",
+        "classical-path-risk/sortino_ratio/n100000/b1",
+        "classical-path-risk/historical_var/n32/b1",
+        "classical-path-risk/historical_var/n252/b1",
+        "classical-path-risk/historical_var/n1000/b1",
+        "classical-path-risk/historical_var/n10000/b1",
+        "classical-path-risk/historical_var/n100000/b1",
+        "classical-path-risk/historical_cvar/n32/b1",
+        "classical-path-risk/historical_cvar/n252/b1",
+        "classical-path-risk/historical_cvar/n1000/b1",
+        "classical-path-risk/historical_cvar/n10000/b1",
+        "classical-path-risk/historical_cvar/n100000/b1",
+        "classical-path-risk/historical_expected_shortfall/n32/b1",
+        "classical-path-risk/historical_expected_shortfall/n252/b1",
+        "classical-path-risk/historical_expected_shortfall/n1000/b1",
+        "classical-path-risk/historical_expected_shortfall/n10000/b1",
+        "classical-path-risk/historical_expected_shortfall/n100000/b1"
+      ],
+      "jmhIncludeRegex": null,
+      "criterionMatchMode": "prefix",
+      "criterionPrefix": "classical-path-risk/",
+      "pythonFamilyId": null
+    },
+    {
+      "boundaryId": "haskell",
+      "familyId": "intraday-realized",
+      "selectorId": "haskell/intraday-realized",
+      "expectedCaseIds": [
+        "intraday-realized/realized_variance/n32/b1",
+        "intraday-realized/realized_variance/n252/b1",
+        "intraday-realized/realized_variance/n1000/b1",
+        "intraday-realized/realized_variance/n10000/b1",
+        "intraday-realized/realized_variance/n100000/b1",
+        "intraday-realized/realized_volatility_intraday/n32/b1",
+        "intraday-realized/realized_volatility_intraday/n252/b1",
+        "intraday-realized/realized_volatility_intraday/n1000/b1",
+        "intraday-realized/realized_volatility_intraday/n10000/b1",
+        "intraday-realized/realized_volatility_intraday/n100000/b1"
+      ],
+      "jmhIncludeRegex": null,
+      "criterionMatchMode": "prefix",
+      "criterionPrefix": "intraday-realized/",
+      "pythonFamilyId": null
+    },
+    {
+      "boundaryId": "haskell",
+      "familyId": "serial-sharpe",
+      "selectorId": "haskell/serial-sharpe",
+      "expectedCaseIds": [
+        "serial-sharpe/lo_adjusted_sharpe_ratio/n32/q5/b1",
+        "serial-sharpe/lo_adjusted_sharpe_ratio/n252/q5/b1",
+        "serial-sharpe/lo_adjusted_sharpe_ratio/n1000/q5/b1",
+        "serial-sharpe/lo_adjusted_sharpe_ratio/n10000/q5/b1",
+        "serial-sharpe/lo_adjusted_sharpe_ratio/n100000/q5/b1"
+      ],
+      "jmhIncludeRegex": null,
+      "criterionMatchMode": "prefix",
+      "criterionPrefix": "serial-sharpe/",
+      "pythonFamilyId": null
+    },
+    {
+      "boundaryId": "haskell",
+      "familyId": "probabilistic-scalar",
+      "selectorId": "haskell/probabilistic-scalar",
+      "expectedCaseIds": [
+        "probabilistic-scalar/probabilistic_sharpe_ratio/b16384",
+        "probabilistic-scalar/deflated_sharpe_ratio/b16384"
+      ],
+      "jmhIncludeRegex": null,
+      "criterionMatchMode": "prefix",
+      "criterionPrefix": "probabilistic-scalar/",
+      "pythonFamilyId": null
+    },
+    {
+      "boundaryId": "haskell",
+      "familyId": "coverage-batch",
+      "selectorId": "haskell/coverage-batch",
+      "expectedCaseIds": [
+        "coverage-batch/kupiec_pof/n252/b32",
+        "coverage-batch/kupiec_pof/n1000/b32",
+        "coverage-batch/kupiec_pof/n10000/b32",
+        "coverage-batch/kupiec_pof/n100000/b32",
+        "coverage-batch/christoffersen_independence/n252/b32",
+        "coverage-batch/christoffersen_independence/n1000/b32",
+        "coverage-batch/christoffersen_independence/n10000/b32",
+        "coverage-batch/christoffersen_independence/n100000/b32",
+        "coverage-batch/christoffersen_conditional_coverage/n252/b32",
+        "coverage-batch/christoffersen_conditional_coverage/n1000/b32",
+        "coverage-batch/christoffersen_conditional_coverage/n10000/b32",
+        "coverage-batch/christoffersen_conditional_coverage/n100000/b32"
+      ],
+      "jmhIncludeRegex": null,
+      "criterionMatchMode": "prefix",
+      "criterionPrefix": "coverage-batch/",
+      "pythonFamilyId": null
+    },
+    {
+      "boundaryId": "python-numpy-s1-4",
+      "familyId": "path-transform",
+      "selectorId": "python-numpy-s1-4/path-transform",
+      "expectedCaseIds": [
+        "path-transform/simple_returns/n32/b1",
+        "path-transform/simple_returns/n252/b1",
+        "path-transform/simple_returns/n1000/b1",
+        "path-transform/simple_returns/n10000/b1",
+        "path-transform/simple_returns/n100000/b1",
+        "path-transform/log_returns/n32/b1",
+        "path-transform/log_returns/n252/b1",
+        "path-transform/log_returns/n1000/b1",
+        "path-transform/log_returns/n10000/b1",
+        "path-transform/log_returns/n100000/b1",
+        "path-transform/cumulative_return/n32/b1",
+        "path-transform/cumulative_return/n252/b1",
+        "path-transform/cumulative_return/n1000/b1",
+        "path-transform/cumulative_return/n10000/b1",
+        "path-transform/cumulative_return/n100000/b1"
+      ],
+      "jmhIncludeRegex": null,
+      "criterionMatchMode": "none",
+      "criterionPrefix": null,
+      "pythonFamilyId": "path-transform"
+    },
+    {
+      "boundaryId": "python-numpy-s1-4",
+      "familyId": "classical-path-risk",
+      "selectorId": "python-numpy-s1-4/classical-path-risk-s1-4",
+      "expectedCaseIds": [
+        "classical-path-risk/cagr/n32/b1",
+        "classical-path-risk/cagr/n252/b1",
+        "classical-path-risk/cagr/n1000/b1",
+        "classical-path-risk/cagr/n10000/b1",
+        "classical-path-risk/cagr/n100000/b1",
+        "classical-path-risk/realized_volatility/n32/b1",
+        "classical-path-risk/realized_volatility/n252/b1",
+        "classical-path-risk/realized_volatility/n1000/b1",
+        "classical-path-risk/realized_volatility/n10000/b1",
+        "classical-path-risk/realized_volatility/n100000/b1",
+        "classical-path-risk/annualized_volatility/n32/b1",
+        "classical-path-risk/annualized_volatility/n252/b1",
+        "classical-path-risk/annualized_volatility/n1000/b1",
+        "classical-path-risk/annualized_volatility/n10000/b1",
+        "classical-path-risk/annualized_volatility/n100000/b1",
+        "classical-path-risk/max_drawdown/n32/b1",
+        "classical-path-risk/max_drawdown/n252/b1",
+        "classical-path-risk/max_drawdown/n1000/b1",
+        "classical-path-risk/max_drawdown/n10000/b1",
+        "classical-path-risk/max_drawdown/n100000/b1",
+        "classical-path-risk/sharpe_ratio/n32/b1",
+        "classical-path-risk/sharpe_ratio/n252/b1",
+        "classical-path-risk/sharpe_ratio/n1000/b1",
+        "classical-path-risk/sharpe_ratio/n10000/b1",
+        "classical-path-risk/sharpe_ratio/n100000/b1",
+        "classical-path-risk/sortino_ratio/n32/b1",
+        "classical-path-risk/sortino_ratio/n252/b1",
+        "classical-path-risk/sortino_ratio/n1000/b1",
+        "classical-path-risk/sortino_ratio/n10000/b1",
+        "classical-path-risk/sortino_ratio/n100000/b1",
+        "classical-path-risk/historical_var/n32/b1",
+        "classical-path-risk/historical_var/n252/b1",
+        "classical-path-risk/historical_var/n1000/b1",
+        "classical-path-risk/historical_var/n10000/b1",
+        "classical-path-risk/historical_var/n100000/b1",
+        "classical-path-risk/historical_cvar/n32/b1",
+        "classical-path-risk/historical_cvar/n252/b1",
+        "classical-path-risk/historical_cvar/n1000/b1",
+        "classical-path-risk/historical_cvar/n10000/b1",
+        "classical-path-risk/historical_cvar/n100000/b1"
+      ],
+      "jmhIncludeRegex": null,
+      "criterionMatchMode": "none",
+      "criterionPrefix": null,
+      "pythonFamilyId": "classical-path-risk"
+    },
+    {
+      "boundaryId": "python-numpy-s1-4r",
+      "familyId": "classical-path-risk",
+      "selectorId": "python-numpy-s1-4r/classical-path-risk-expected-shortfall",
+      "expectedCaseIds": [
+        "classical-path-risk/historical_expected_shortfall/n32/b1",
+        "classical-path-risk/historical_expected_shortfall/n252/b1",
+        "classical-path-risk/historical_expected_shortfall/n1000/b1",
+        "classical-path-risk/historical_expected_shortfall/n10000/b1",
+        "classical-path-risk/historical_expected_shortfall/n100000/b1"
+      ],
+      "jmhIncludeRegex": null,
+      "criterionMatchMode": "none",
+      "criterionPrefix": null,
+      "pythonFamilyId": "classical-path-risk"
+    },
+    {
+      "boundaryId": "python-numpy-s1-4r",
+      "familyId": "intraday-realized",
+      "selectorId": "python-numpy-s1-4r/intraday-realized",
+      "expectedCaseIds": [
+        "intraday-realized/realized_variance/n32/b1",
+        "intraday-realized/realized_variance/n252/b1",
+        "intraday-realized/realized_variance/n1000/b1",
+        "intraday-realized/realized_variance/n10000/b1",
+        "intraday-realized/realized_variance/n100000/b1",
+        "intraday-realized/realized_volatility_intraday/n32/b1",
+        "intraday-realized/realized_volatility_intraday/n252/b1",
+        "intraday-realized/realized_volatility_intraday/n1000/b1",
+        "intraday-realized/realized_volatility_intraday/n10000/b1",
+        "intraday-realized/realized_volatility_intraday/n100000/b1"
+      ],
+      "jmhIncludeRegex": null,
+      "criterionMatchMode": "none",
+      "criterionPrefix": null,
+      "pythonFamilyId": "intraday-realized"
+    },
+    {
+      "boundaryId": "python-numpy-s1-4r",
+      "familyId": "serial-sharpe",
+      "selectorId": "python-numpy-s1-4r/serial-sharpe",
+      "expectedCaseIds": [
+        "serial-sharpe/lo_adjusted_sharpe_ratio/n32/q5/b1",
+        "serial-sharpe/lo_adjusted_sharpe_ratio/n252/q5/b1",
+        "serial-sharpe/lo_adjusted_sharpe_ratio/n1000/q5/b1",
+        "serial-sharpe/lo_adjusted_sharpe_ratio/n10000/q5/b1",
+        "serial-sharpe/lo_adjusted_sharpe_ratio/n100000/q5/b1"
+      ],
+      "jmhIncludeRegex": null,
+      "criterionMatchMode": "none",
+      "criterionPrefix": null,
+      "pythonFamilyId": "serial-sharpe"
+    },
+    {
+      "boundaryId": "python-numpy-s1-4r",
+      "familyId": "probabilistic-scalar",
+      "selectorId": "python-numpy-s1-4r/probabilistic-scalar",
+      "expectedCaseIds": [
+        "probabilistic-scalar/probabilistic_sharpe_ratio/b16384",
+        "probabilistic-scalar/deflated_sharpe_ratio/b16384"
+      ],
+      "jmhIncludeRegex": null,
+      "criterionMatchMode": "none",
+      "criterionPrefix": null,
+      "pythonFamilyId": "probabilistic-scalar"
+    },
+    {
+      "boundaryId": "python-numpy-s1-4r",
+      "familyId": "coverage-batch",
+      "selectorId": "python-numpy-s1-4r/coverage-batch",
+      "expectedCaseIds": [
+        "coverage-batch/kupiec_pof/n252/b32",
+        "coverage-batch/kupiec_pof/n1000/b32",
+        "coverage-batch/kupiec_pof/n10000/b32",
+        "coverage-batch/kupiec_pof/n100000/b32",
+        "coverage-batch/christoffersen_independence/n252/b32",
+        "coverage-batch/christoffersen_independence/n1000/b32",
+        "coverage-batch/christoffersen_independence/n10000/b32",
+        "coverage-batch/christoffersen_independence/n100000/b32",
+        "coverage-batch/christoffersen_conditional_coverage/n252/b32",
+        "coverage-batch/christoffersen_conditional_coverage/n1000/b32",
+        "coverage-batch/christoffersen_conditional_coverage/n10000/b32",
+        "coverage-batch/christoffersen_conditional_coverage/n100000/b32"
+      ],
+      "jmhIncludeRegex": null,
+      "criterionMatchMode": "none",
+      "criterionPrefix": null,
+      "pythonFamilyId": "coverage-batch"
+    },
+    {
+      "boundaryId": "python-jax-eager-s1-4r",
+      "familyId": "classical-path-risk",
+      "selectorId": "python-jax-eager-s1-4r/classical-path-risk-expected-shortfall",
+      "expectedCaseIds": [
+        "classical-path-risk/historical_expected_shortfall/n32/b1",
+        "classical-path-risk/historical_expected_shortfall/n252/b1",
+        "classical-path-risk/historical_expected_shortfall/n1000/b1",
+        "classical-path-risk/historical_expected_shortfall/n10000/b1",
+        "classical-path-risk/historical_expected_shortfall/n100000/b1"
+      ],
+      "jmhIncludeRegex": null,
+      "criterionMatchMode": "none",
+      "criterionPrefix": null,
+      "pythonFamilyId": "classical-path-risk"
+    },
+    {
+      "boundaryId": "python-jax-eager-s1-4r",
+      "familyId": "intraday-realized",
+      "selectorId": "python-jax-eager-s1-4r/intraday-realized",
+      "expectedCaseIds": [
+        "intraday-realized/realized_variance/n32/b1",
+        "intraday-realized/realized_variance/n252/b1",
+        "intraday-realized/realized_variance/n1000/b1",
+        "intraday-realized/realized_variance/n10000/b1",
+        "intraday-realized/realized_variance/n100000/b1",
+        "intraday-realized/realized_volatility_intraday/n32/b1",
+        "intraday-realized/realized_volatility_intraday/n252/b1",
+        "intraday-realized/realized_volatility_intraday/n1000/b1",
+        "intraday-realized/realized_volatility_intraday/n10000/b1",
+        "intraday-realized/realized_volatility_intraday/n100000/b1"
+      ],
+      "jmhIncludeRegex": null,
+      "criterionMatchMode": "none",
+      "criterionPrefix": null,
+      "pythonFamilyId": "intraday-realized"
+    },
+    {
+      "boundaryId": "python-jax-eager-s1-4r",
+      "familyId": "serial-sharpe",
+      "selectorId": "python-jax-eager-s1-4r/serial-sharpe",
+      "expectedCaseIds": [
+        "serial-sharpe/lo_adjusted_sharpe_ratio/n32/q5/b1",
+        "serial-sharpe/lo_adjusted_sharpe_ratio/n252/q5/b1",
+        "serial-sharpe/lo_adjusted_sharpe_ratio/n1000/q5/b1",
+        "serial-sharpe/lo_adjusted_sharpe_ratio/n10000/q5/b1",
+        "serial-sharpe/lo_adjusted_sharpe_ratio/n100000/q5/b1"
+      ],
+      "jmhIncludeRegex": null,
+      "criterionMatchMode": "none",
+      "criterionPrefix": null,
+      "pythonFamilyId": "serial-sharpe"
+    },
+    {
+      "boundaryId": "python-jax-eager-s1-4r",
+      "familyId": "probabilistic-scalar",
+      "selectorId": "python-jax-eager-s1-4r/probabilistic-scalar",
+      "expectedCaseIds": [
+        "probabilistic-scalar/probabilistic_sharpe_ratio/b16384",
+        "probabilistic-scalar/deflated_sharpe_ratio/b16384"
+      ],
+      "jmhIncludeRegex": null,
+      "criterionMatchMode": "none",
+      "criterionPrefix": null,
+      "pythonFamilyId": "probabilistic-scalar"
+    },
+    {
+      "boundaryId": "python-jax-eager-s1-4r",
+      "familyId": "coverage-batch",
+      "selectorId": "python-jax-eager-s1-4r/coverage-batch",
+      "expectedCaseIds": [
+        "coverage-batch/kupiec_pof/n252/b32",
+        "coverage-batch/kupiec_pof/n1000/b32",
+        "coverage-batch/kupiec_pof/n10000/b32",
+        "coverage-batch/kupiec_pof/n100000/b32",
+        "coverage-batch/christoffersen_independence/n252/b32",
+        "coverage-batch/christoffersen_independence/n1000/b32",
+        "coverage-batch/christoffersen_independence/n10000/b32",
+        "coverage-batch/christoffersen_independence/n100000/b32",
+        "coverage-batch/christoffersen_conditional_coverage/n252/b32",
+        "coverage-batch/christoffersen_conditional_coverage/n1000/b32",
+        "coverage-batch/christoffersen_conditional_coverage/n10000/b32",
+        "coverage-batch/christoffersen_conditional_coverage/n100000/b32"
+      ],
+      "jmhIncludeRegex": null,
+      "criterionMatchMode": "none",
+      "criterionPrefix": null,
+      "pythonFamilyId": "coverage-batch"
+    },
+    {
+      "boundaryId": "python-jax-jit-s1-4r",
+      "familyId": "classical-path-risk",
+      "selectorId": "python-jax-jit-s1-4r/classical-path-risk-expected-shortfall",
+      "expectedCaseIds": [
+        "classical-path-risk/historical_expected_shortfall/n32/b1",
+        "classical-path-risk/historical_expected_shortfall/n252/b1",
+        "classical-path-risk/historical_expected_shortfall/n1000/b1",
+        "classical-path-risk/historical_expected_shortfall/n10000/b1",
+        "classical-path-risk/historical_expected_shortfall/n100000/b1"
+      ],
+      "jmhIncludeRegex": null,
+      "criterionMatchMode": "none",
+      "criterionPrefix": null,
+      "pythonFamilyId": "classical-path-risk"
+    },
+    {
+      "boundaryId": "python-jax-jit-s1-4r",
+      "familyId": "intraday-realized",
+      "selectorId": "python-jax-jit-s1-4r/intraday-realized",
+      "expectedCaseIds": [
+        "intraday-realized/realized_variance/n32/b1",
+        "intraday-realized/realized_variance/n252/b1",
+        "intraday-realized/realized_variance/n1000/b1",
+        "intraday-realized/realized_variance/n10000/b1",
+        "intraday-realized/realized_variance/n100000/b1",
+        "intraday-realized/realized_volatility_intraday/n32/b1",
+        "intraday-realized/realized_volatility_intraday/n252/b1",
+        "intraday-realized/realized_volatility_intraday/n1000/b1",
+        "intraday-realized/realized_volatility_intraday/n10000/b1",
+        "intraday-realized/realized_volatility_intraday/n100000/b1"
+      ],
+      "jmhIncludeRegex": null,
+      "criterionMatchMode": "none",
+      "criterionPrefix": null,
+      "pythonFamilyId": "intraday-realized"
+    },
+    {
+      "boundaryId": "python-jax-jit-s1-4r",
+      "familyId": "serial-sharpe",
+      "selectorId": "python-jax-jit-s1-4r/serial-sharpe",
+      "expectedCaseIds": [
+        "serial-sharpe/lo_adjusted_sharpe_ratio/n32/q5/b1",
+        "serial-sharpe/lo_adjusted_sharpe_ratio/n252/q5/b1",
+        "serial-sharpe/lo_adjusted_sharpe_ratio/n1000/q5/b1",
+        "serial-sharpe/lo_adjusted_sharpe_ratio/n10000/q5/b1",
+        "serial-sharpe/lo_adjusted_sharpe_ratio/n100000/q5/b1"
+      ],
+      "jmhIncludeRegex": null,
+      "criterionMatchMode": "none",
+      "criterionPrefix": null,
+      "pythonFamilyId": "serial-sharpe"
+    },
+    {
+      "boundaryId": "python-jax-jit-s1-4r",
+      "familyId": "probabilistic-scalar",
+      "selectorId": "python-jax-jit-s1-4r/probabilistic-scalar",
+      "expectedCaseIds": [
+        "probabilistic-scalar/probabilistic_sharpe_ratio/b16384",
+        "probabilistic-scalar/deflated_sharpe_ratio/b16384"
+      ],
+      "jmhIncludeRegex": null,
+      "criterionMatchMode": "none",
+      "criterionPrefix": null,
+      "pythonFamilyId": "probabilistic-scalar"
+    },
+    {
+      "boundaryId": "python-jax-jit-s1-4r",
+      "familyId": "coverage-batch",
+      "selectorId": "python-jax-jit-s1-4r/coverage-batch",
+      "expectedCaseIds": [
+        "coverage-batch/kupiec_pof/n252/b32",
+        "coverage-batch/kupiec_pof/n1000/b32",
+        "coverage-batch/kupiec_pof/n10000/b32",
+        "coverage-batch/kupiec_pof/n100000/b32",
+        "coverage-batch/christoffersen_independence/n252/b32",
+        "coverage-batch/christoffersen_independence/n1000/b32",
+        "coverage-batch/christoffersen_independence/n10000/b32",
+        "coverage-batch/christoffersen_independence/n100000/b32",
+        "coverage-batch/christoffersen_conditional_coverage/n252/b32",
+        "coverage-batch/christoffersen_conditional_coverage/n1000/b32",
+        "coverage-batch/christoffersen_conditional_coverage/n10000/b32",
+        "coverage-batch/christoffersen_conditional_coverage/n100000/b32"
+      ],
+      "jmhIncludeRegex": null,
+      "criterionMatchMode": "none",
+      "criterionPrefix": null,
+      "pythonFamilyId": "coverage-batch"
+    }
+  ],
+  "cases": [
+    {
+      "caseId": "path-transform/simple_returns/n32/b1",
+      "familyId": "path-transform",
+      "functionId": "simple_returns",
+      "fixtureId": "large-prices-n100000-prefix-n32",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 32,
+      "batchSize": 1,
+      "functionArguments": {}
+    },
+    {
+      "caseId": "path-transform/simple_returns/n252/b1",
+      "familyId": "path-transform",
+      "functionId": "simple_returns",
+      "fixtureId": "large-prices-n100000-prefix-n252",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 252,
+      "batchSize": 1,
+      "functionArguments": {}
+    },
+    {
+      "caseId": "path-transform/simple_returns/n1000/b1",
+      "familyId": "path-transform",
+      "functionId": "simple_returns",
+      "fixtureId": "large-prices-n100000-prefix-n1000",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 1000,
+      "batchSize": 1,
+      "functionArguments": {}
+    },
+    {
+      "caseId": "path-transform/simple_returns/n10000/b1",
+      "familyId": "path-transform",
+      "functionId": "simple_returns",
+      "fixtureId": "large-prices-n100000-prefix-n10000",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 10000,
+      "batchSize": 1,
+      "functionArguments": {}
+    },
+    {
+      "caseId": "path-transform/simple_returns/n100000/b1",
+      "familyId": "path-transform",
+      "functionId": "simple_returns",
+      "fixtureId": "large-prices-n100000-prefix-n100000",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 100000,
+      "batchSize": 1,
+      "functionArguments": {}
+    },
+    {
+      "caseId": "path-transform/log_returns/n32/b1",
+      "familyId": "path-transform",
+      "functionId": "log_returns",
+      "fixtureId": "large-prices-n100000-prefix-n32",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 32,
+      "batchSize": 1,
+      "functionArguments": {}
+    },
+    {
+      "caseId": "path-transform/log_returns/n252/b1",
+      "familyId": "path-transform",
+      "functionId": "log_returns",
+      "fixtureId": "large-prices-n100000-prefix-n252",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 252,
+      "batchSize": 1,
+      "functionArguments": {}
+    },
+    {
+      "caseId": "path-transform/log_returns/n1000/b1",
+      "familyId": "path-transform",
+      "functionId": "log_returns",
+      "fixtureId": "large-prices-n100000-prefix-n1000",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 1000,
+      "batchSize": 1,
+      "functionArguments": {}
+    },
+    {
+      "caseId": "path-transform/log_returns/n10000/b1",
+      "familyId": "path-transform",
+      "functionId": "log_returns",
+      "fixtureId": "large-prices-n100000-prefix-n10000",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 10000,
+      "batchSize": 1,
+      "functionArguments": {}
+    },
+    {
+      "caseId": "path-transform/log_returns/n100000/b1",
+      "familyId": "path-transform",
+      "functionId": "log_returns",
+      "fixtureId": "large-prices-n100000-prefix-n100000",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 100000,
+      "batchSize": 1,
+      "functionArguments": {}
+    },
+    {
+      "caseId": "path-transform/cumulative_return/n32/b1",
+      "familyId": "path-transform",
+      "functionId": "cumulative_return",
+      "fixtureId": "large-returns-n100000-prefix-n32",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 32,
+      "batchSize": 1,
+      "functionArguments": {}
+    },
+    {
+      "caseId": "path-transform/cumulative_return/n252/b1",
+      "familyId": "path-transform",
+      "functionId": "cumulative_return",
+      "fixtureId": "large-returns-n100000-prefix-n252",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 252,
+      "batchSize": 1,
+      "functionArguments": {}
+    },
+    {
+      "caseId": "path-transform/cumulative_return/n1000/b1",
+      "familyId": "path-transform",
+      "functionId": "cumulative_return",
+      "fixtureId": "large-returns-n100000-prefix-n1000",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 1000,
+      "batchSize": 1,
+      "functionArguments": {}
+    },
+    {
+      "caseId": "path-transform/cumulative_return/n10000/b1",
+      "familyId": "path-transform",
+      "functionId": "cumulative_return",
+      "fixtureId": "large-returns-n100000-prefix-n10000",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 10000,
+      "batchSize": 1,
+      "functionArguments": {}
+    },
+    {
+      "caseId": "path-transform/cumulative_return/n100000/b1",
+      "familyId": "path-transform",
+      "functionId": "cumulative_return",
+      "fixtureId": "large-returns-n100000-prefix-n100000",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 100000,
+      "batchSize": 1,
+      "functionArguments": {}
+    },
+    {
+      "caseId": "classical-path-risk/cagr/n32/b1",
+      "familyId": "classical-path-risk",
+      "functionId": "cagr",
+      "fixtureId": "large-prices-n100000-prefix-n32",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 32,
+      "batchSize": 1,
+      "functionArguments": {
+        "periods_per_year": 252
+      }
+    },
+    {
+      "caseId": "classical-path-risk/cagr/n252/b1",
+      "familyId": "classical-path-risk",
+      "functionId": "cagr",
+      "fixtureId": "large-prices-n100000-prefix-n252",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 252,
+      "batchSize": 1,
+      "functionArguments": {
+        "periods_per_year": 252
+      }
+    },
+    {
+      "caseId": "classical-path-risk/cagr/n1000/b1",
+      "familyId": "classical-path-risk",
+      "functionId": "cagr",
+      "fixtureId": "large-prices-n100000-prefix-n1000",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 1000,
+      "batchSize": 1,
+      "functionArguments": {
+        "periods_per_year": 252
+      }
+    },
+    {
+      "caseId": "classical-path-risk/cagr/n10000/b1",
+      "familyId": "classical-path-risk",
+      "functionId": "cagr",
+      "fixtureId": "large-prices-n100000-prefix-n10000",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 10000,
+      "batchSize": 1,
+      "functionArguments": {
+        "periods_per_year": 252
+      }
+    },
+    {
+      "caseId": "classical-path-risk/cagr/n100000/b1",
+      "familyId": "classical-path-risk",
+      "functionId": "cagr",
+      "fixtureId": "large-prices-n100000-prefix-n100000",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 100000,
+      "batchSize": 1,
+      "functionArguments": {
+        "periods_per_year": 252
+      }
+    },
+    {
+      "caseId": "classical-path-risk/realized_volatility/n32/b1",
+      "familyId": "classical-path-risk",
+      "functionId": "realized_volatility",
+      "fixtureId": "large-returns-n100000-prefix-n32",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 32,
+      "batchSize": 1,
+      "functionArguments": {}
+    },
+    {
+      "caseId": "classical-path-risk/realized_volatility/n252/b1",
+      "familyId": "classical-path-risk",
+      "functionId": "realized_volatility",
+      "fixtureId": "large-returns-n100000-prefix-n252",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 252,
+      "batchSize": 1,
+      "functionArguments": {}
+    },
+    {
+      "caseId": "classical-path-risk/realized_volatility/n1000/b1",
+      "familyId": "classical-path-risk",
+      "functionId": "realized_volatility",
+      "fixtureId": "large-returns-n100000-prefix-n1000",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 1000,
+      "batchSize": 1,
+      "functionArguments": {}
+    },
+    {
+      "caseId": "classical-path-risk/realized_volatility/n10000/b1",
+      "familyId": "classical-path-risk",
+      "functionId": "realized_volatility",
+      "fixtureId": "large-returns-n100000-prefix-n10000",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 10000,
+      "batchSize": 1,
+      "functionArguments": {}
+    },
+    {
+      "caseId": "classical-path-risk/realized_volatility/n100000/b1",
+      "familyId": "classical-path-risk",
+      "functionId": "realized_volatility",
+      "fixtureId": "large-returns-n100000-prefix-n100000",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 100000,
+      "batchSize": 1,
+      "functionArguments": {}
+    },
+    {
+      "caseId": "classical-path-risk/annualized_volatility/n32/b1",
+      "familyId": "classical-path-risk",
+      "functionId": "annualized_volatility",
+      "fixtureId": "large-returns-n100000-prefix-n32",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 32,
+      "batchSize": 1,
+      "functionArguments": {
+        "periods_per_year": 252
+      }
+    },
+    {
+      "caseId": "classical-path-risk/annualized_volatility/n252/b1",
+      "familyId": "classical-path-risk",
+      "functionId": "annualized_volatility",
+      "fixtureId": "large-returns-n100000-prefix-n252",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 252,
+      "batchSize": 1,
+      "functionArguments": {
+        "periods_per_year": 252
+      }
+    },
+    {
+      "caseId": "classical-path-risk/annualized_volatility/n1000/b1",
+      "familyId": "classical-path-risk",
+      "functionId": "annualized_volatility",
+      "fixtureId": "large-returns-n100000-prefix-n1000",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 1000,
+      "batchSize": 1,
+      "functionArguments": {
+        "periods_per_year": 252
+      }
+    },
+    {
+      "caseId": "classical-path-risk/annualized_volatility/n10000/b1",
+      "familyId": "classical-path-risk",
+      "functionId": "annualized_volatility",
+      "fixtureId": "large-returns-n100000-prefix-n10000",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 10000,
+      "batchSize": 1,
+      "functionArguments": {
+        "periods_per_year": 252
+      }
+    },
+    {
+      "caseId": "classical-path-risk/annualized_volatility/n100000/b1",
+      "familyId": "classical-path-risk",
+      "functionId": "annualized_volatility",
+      "fixtureId": "large-returns-n100000-prefix-n100000",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 100000,
+      "batchSize": 1,
+      "functionArguments": {
+        "periods_per_year": 252
+      }
+    },
+    {
+      "caseId": "classical-path-risk/max_drawdown/n32/b1",
+      "familyId": "classical-path-risk",
+      "functionId": "max_drawdown",
+      "fixtureId": "large-prices-n100000-prefix-n32",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 32,
+      "batchSize": 1,
+      "functionArguments": {}
+    },
+    {
+      "caseId": "classical-path-risk/max_drawdown/n252/b1",
+      "familyId": "classical-path-risk",
+      "functionId": "max_drawdown",
+      "fixtureId": "large-prices-n100000-prefix-n252",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 252,
+      "batchSize": 1,
+      "functionArguments": {}
+    },
+    {
+      "caseId": "classical-path-risk/max_drawdown/n1000/b1",
+      "familyId": "classical-path-risk",
+      "functionId": "max_drawdown",
+      "fixtureId": "large-prices-n100000-prefix-n1000",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 1000,
+      "batchSize": 1,
+      "functionArguments": {}
+    },
+    {
+      "caseId": "classical-path-risk/max_drawdown/n10000/b1",
+      "familyId": "classical-path-risk",
+      "functionId": "max_drawdown",
+      "fixtureId": "large-prices-n100000-prefix-n10000",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 10000,
+      "batchSize": 1,
+      "functionArguments": {}
+    },
+    {
+      "caseId": "classical-path-risk/max_drawdown/n100000/b1",
+      "familyId": "classical-path-risk",
+      "functionId": "max_drawdown",
+      "fixtureId": "large-prices-n100000-prefix-n100000",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 100000,
+      "batchSize": 1,
+      "functionArguments": {}
+    },
+    {
+      "caseId": "classical-path-risk/sharpe_ratio/n32/b1",
+      "familyId": "classical-path-risk",
+      "functionId": "sharpe_ratio",
+      "fixtureId": "large-returns-n100000-prefix-n32",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 32,
+      "batchSize": 1,
+      "functionArguments": {
+        "periods_per_year": 252,
+        "risk_free_rate": 0.0
+      }
+    },
+    {
+      "caseId": "classical-path-risk/sharpe_ratio/n252/b1",
+      "familyId": "classical-path-risk",
+      "functionId": "sharpe_ratio",
+      "fixtureId": "large-returns-n100000-prefix-n252",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 252,
+      "batchSize": 1,
+      "functionArguments": {
+        "periods_per_year": 252,
+        "risk_free_rate": 0.0
+      }
+    },
+    {
+      "caseId": "classical-path-risk/sharpe_ratio/n1000/b1",
+      "familyId": "classical-path-risk",
+      "functionId": "sharpe_ratio",
+      "fixtureId": "large-returns-n100000-prefix-n1000",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 1000,
+      "batchSize": 1,
+      "functionArguments": {
+        "periods_per_year": 252,
+        "risk_free_rate": 0.0
+      }
+    },
+    {
+      "caseId": "classical-path-risk/sharpe_ratio/n10000/b1",
+      "familyId": "classical-path-risk",
+      "functionId": "sharpe_ratio",
+      "fixtureId": "large-returns-n100000-prefix-n10000",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 10000,
+      "batchSize": 1,
+      "functionArguments": {
+        "periods_per_year": 252,
+        "risk_free_rate": 0.0
+      }
+    },
+    {
+      "caseId": "classical-path-risk/sharpe_ratio/n100000/b1",
+      "familyId": "classical-path-risk",
+      "functionId": "sharpe_ratio",
+      "fixtureId": "large-returns-n100000-prefix-n100000",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 100000,
+      "batchSize": 1,
+      "functionArguments": {
+        "periods_per_year": 252,
+        "risk_free_rate": 0.0
+      }
+    },
+    {
+      "caseId": "classical-path-risk/sortino_ratio/n32/b1",
+      "familyId": "classical-path-risk",
+      "functionId": "sortino_ratio",
+      "fixtureId": "large-returns-n100000-prefix-n32",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 32,
+      "batchSize": 1,
+      "functionArguments": {
+        "periods_per_year": 252,
+        "target_return": 0.0
+      }
+    },
+    {
+      "caseId": "classical-path-risk/sortino_ratio/n252/b1",
+      "familyId": "classical-path-risk",
+      "functionId": "sortino_ratio",
+      "fixtureId": "large-returns-n100000-prefix-n252",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 252,
+      "batchSize": 1,
+      "functionArguments": {
+        "periods_per_year": 252,
+        "target_return": 0.0
+      }
+    },
+    {
+      "caseId": "classical-path-risk/sortino_ratio/n1000/b1",
+      "familyId": "classical-path-risk",
+      "functionId": "sortino_ratio",
+      "fixtureId": "large-returns-n100000-prefix-n1000",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 1000,
+      "batchSize": 1,
+      "functionArguments": {
+        "periods_per_year": 252,
+        "target_return": 0.0
+      }
+    },
+    {
+      "caseId": "classical-path-risk/sortino_ratio/n10000/b1",
+      "familyId": "classical-path-risk",
+      "functionId": "sortino_ratio",
+      "fixtureId": "large-returns-n100000-prefix-n10000",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 10000,
+      "batchSize": 1,
+      "functionArguments": {
+        "periods_per_year": 252,
+        "target_return": 0.0
+      }
+    },
+    {
+      "caseId": "classical-path-risk/sortino_ratio/n100000/b1",
+      "familyId": "classical-path-risk",
+      "functionId": "sortino_ratio",
+      "fixtureId": "large-returns-n100000-prefix-n100000",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 100000,
+      "batchSize": 1,
+      "functionArguments": {
+        "periods_per_year": 252,
+        "target_return": 0.0
+      }
+    },
+    {
+      "caseId": "classical-path-risk/historical_var/n32/b1",
+      "familyId": "classical-path-risk",
+      "functionId": "historical_var",
+      "fixtureId": "large-returns-n100000-prefix-n32",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 32,
+      "batchSize": 1,
+      "functionArguments": {
+        "confidence": 0.95
+      }
+    },
+    {
+      "caseId": "classical-path-risk/historical_var/n252/b1",
+      "familyId": "classical-path-risk",
+      "functionId": "historical_var",
+      "fixtureId": "large-returns-n100000-prefix-n252",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 252,
+      "batchSize": 1,
+      "functionArguments": {
+        "confidence": 0.95
+      }
+    },
+    {
+      "caseId": "classical-path-risk/historical_var/n1000/b1",
+      "familyId": "classical-path-risk",
+      "functionId": "historical_var",
+      "fixtureId": "large-returns-n100000-prefix-n1000",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 1000,
+      "batchSize": 1,
+      "functionArguments": {
+        "confidence": 0.95
+      }
+    },
+    {
+      "caseId": "classical-path-risk/historical_var/n10000/b1",
+      "familyId": "classical-path-risk",
+      "functionId": "historical_var",
+      "fixtureId": "large-returns-n100000-prefix-n10000",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 10000,
+      "batchSize": 1,
+      "functionArguments": {
+        "confidence": 0.95
+      }
+    },
+    {
+      "caseId": "classical-path-risk/historical_var/n100000/b1",
+      "familyId": "classical-path-risk",
+      "functionId": "historical_var",
+      "fixtureId": "large-returns-n100000-prefix-n100000",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 100000,
+      "batchSize": 1,
+      "functionArguments": {
+        "confidence": 0.95
+      }
+    },
+    {
+      "caseId": "classical-path-risk/historical_cvar/n32/b1",
+      "familyId": "classical-path-risk",
+      "functionId": "historical_cvar",
+      "fixtureId": "large-returns-n100000-prefix-n32",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 32,
+      "batchSize": 1,
+      "functionArguments": {
+        "confidence": 0.95
+      }
+    },
+    {
+      "caseId": "classical-path-risk/historical_cvar/n252/b1",
+      "familyId": "classical-path-risk",
+      "functionId": "historical_cvar",
+      "fixtureId": "large-returns-n100000-prefix-n252",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 252,
+      "batchSize": 1,
+      "functionArguments": {
+        "confidence": 0.95
+      }
+    },
+    {
+      "caseId": "classical-path-risk/historical_cvar/n1000/b1",
+      "familyId": "classical-path-risk",
+      "functionId": "historical_cvar",
+      "fixtureId": "large-returns-n100000-prefix-n1000",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 1000,
+      "batchSize": 1,
+      "functionArguments": {
+        "confidence": 0.95
+      }
+    },
+    {
+      "caseId": "classical-path-risk/historical_cvar/n10000/b1",
+      "familyId": "classical-path-risk",
+      "functionId": "historical_cvar",
+      "fixtureId": "large-returns-n100000-prefix-n10000",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 10000,
+      "batchSize": 1,
+      "functionArguments": {
+        "confidence": 0.95
+      }
+    },
+    {
+      "caseId": "classical-path-risk/historical_cvar/n100000/b1",
+      "familyId": "classical-path-risk",
+      "functionId": "historical_cvar",
+      "fixtureId": "large-returns-n100000-prefix-n100000",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 100000,
+      "batchSize": 1,
+      "functionArguments": {
+        "confidence": 0.95
+      }
+    },
+    {
+      "caseId": "classical-path-risk/historical_expected_shortfall/n32/b1",
+      "familyId": "classical-path-risk",
+      "functionId": "historical_expected_shortfall",
+      "fixtureId": "large-returns-n100000-prefix-n32",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 32,
+      "batchSize": 1,
+      "functionArguments": {
+        "confidence": 0.95
+      }
+    },
+    {
+      "caseId": "classical-path-risk/historical_expected_shortfall/n252/b1",
+      "familyId": "classical-path-risk",
+      "functionId": "historical_expected_shortfall",
+      "fixtureId": "large-returns-n100000-prefix-n252",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 252,
+      "batchSize": 1,
+      "functionArguments": {
+        "confidence": 0.95
+      }
+    },
+    {
+      "caseId": "classical-path-risk/historical_expected_shortfall/n1000/b1",
+      "familyId": "classical-path-risk",
+      "functionId": "historical_expected_shortfall",
+      "fixtureId": "large-returns-n100000-prefix-n1000",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 1000,
+      "batchSize": 1,
+      "functionArguments": {
+        "confidence": 0.95
+      }
+    },
+    {
+      "caseId": "classical-path-risk/historical_expected_shortfall/n10000/b1",
+      "familyId": "classical-path-risk",
+      "functionId": "historical_expected_shortfall",
+      "fixtureId": "large-returns-n100000-prefix-n10000",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 10000,
+      "batchSize": 1,
+      "functionArguments": {
+        "confidence": 0.95
+      }
+    },
+    {
+      "caseId": "classical-path-risk/historical_expected_shortfall/n100000/b1",
+      "familyId": "classical-path-risk",
+      "functionId": "historical_expected_shortfall",
+      "fixtureId": "large-returns-n100000-prefix-n100000",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 100000,
+      "batchSize": 1,
+      "functionArguments": {
+        "confidence": 0.95
+      }
+    },
+    {
+      "caseId": "intraday-realized/realized_variance/n32/b1",
+      "familyId": "intraday-realized",
+      "functionId": "realized_variance",
+      "fixtureId": "large-returns-n100000-prefix-n32",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 32,
+      "batchSize": 1,
+      "functionArguments": {}
+    },
+    {
+      "caseId": "intraday-realized/realized_variance/n252/b1",
+      "familyId": "intraday-realized",
+      "functionId": "realized_variance",
+      "fixtureId": "large-returns-n100000-prefix-n252",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 252,
+      "batchSize": 1,
+      "functionArguments": {}
+    },
+    {
+      "caseId": "intraday-realized/realized_variance/n1000/b1",
+      "familyId": "intraday-realized",
+      "functionId": "realized_variance",
+      "fixtureId": "large-returns-n100000-prefix-n1000",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 1000,
+      "batchSize": 1,
+      "functionArguments": {}
+    },
+    {
+      "caseId": "intraday-realized/realized_variance/n10000/b1",
+      "familyId": "intraday-realized",
+      "functionId": "realized_variance",
+      "fixtureId": "large-returns-n100000-prefix-n10000",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 10000,
+      "batchSize": 1,
+      "functionArguments": {}
+    },
+    {
+      "caseId": "intraday-realized/realized_variance/n100000/b1",
+      "familyId": "intraday-realized",
+      "functionId": "realized_variance",
+      "fixtureId": "large-returns-n100000-prefix-n100000",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 100000,
+      "batchSize": 1,
+      "functionArguments": {}
+    },
+    {
+      "caseId": "intraday-realized/realized_volatility_intraday/n32/b1",
+      "familyId": "intraday-realized",
+      "functionId": "realized_volatility_intraday",
+      "fixtureId": "large-returns-n100000-prefix-n32",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 32,
+      "batchSize": 1,
+      "functionArguments": {}
+    },
+    {
+      "caseId": "intraday-realized/realized_volatility_intraday/n252/b1",
+      "familyId": "intraday-realized",
+      "functionId": "realized_volatility_intraday",
+      "fixtureId": "large-returns-n100000-prefix-n252",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 252,
+      "batchSize": 1,
+      "functionArguments": {}
+    },
+    {
+      "caseId": "intraday-realized/realized_volatility_intraday/n1000/b1",
+      "familyId": "intraday-realized",
+      "functionId": "realized_volatility_intraday",
+      "fixtureId": "large-returns-n100000-prefix-n1000",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 1000,
+      "batchSize": 1,
+      "functionArguments": {}
+    },
+    {
+      "caseId": "intraday-realized/realized_volatility_intraday/n10000/b1",
+      "familyId": "intraday-realized",
+      "functionId": "realized_volatility_intraday",
+      "fixtureId": "large-returns-n100000-prefix-n10000",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 10000,
+      "batchSize": 1,
+      "functionArguments": {}
+    },
+    {
+      "caseId": "intraday-realized/realized_volatility_intraday/n100000/b1",
+      "familyId": "intraday-realized",
+      "functionId": "realized_volatility_intraday",
+      "fixtureId": "large-returns-n100000-prefix-n100000",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 100000,
+      "batchSize": 1,
+      "functionArguments": {}
+    },
+    {
+      "caseId": "serial-sharpe/lo_adjusted_sharpe_ratio/n32/q5/b1",
+      "familyId": "serial-sharpe",
+      "functionId": "lo_adjusted_sharpe_ratio",
+      "fixtureId": "large-returns-n100000-prefix-n32",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 32,
+      "batchSize": 1,
+      "functionArguments": {
+        "aggregation_periods": 5,
+        "risk_free_rate": 0.0
+      }
+    },
+    {
+      "caseId": "serial-sharpe/lo_adjusted_sharpe_ratio/n252/q5/b1",
+      "familyId": "serial-sharpe",
+      "functionId": "lo_adjusted_sharpe_ratio",
+      "fixtureId": "large-returns-n100000-prefix-n252",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 252,
+      "batchSize": 1,
+      "functionArguments": {
+        "aggregation_periods": 5,
+        "risk_free_rate": 0.0
+      }
+    },
+    {
+      "caseId": "serial-sharpe/lo_adjusted_sharpe_ratio/n1000/q5/b1",
+      "familyId": "serial-sharpe",
+      "functionId": "lo_adjusted_sharpe_ratio",
+      "fixtureId": "large-returns-n100000-prefix-n1000",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 1000,
+      "batchSize": 1,
+      "functionArguments": {
+        "aggregation_periods": 5,
+        "risk_free_rate": 0.0
+      }
+    },
+    {
+      "caseId": "serial-sharpe/lo_adjusted_sharpe_ratio/n10000/q5/b1",
+      "familyId": "serial-sharpe",
+      "functionId": "lo_adjusted_sharpe_ratio",
+      "fixtureId": "large-returns-n100000-prefix-n10000",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 10000,
+      "batchSize": 1,
+      "functionArguments": {
+        "aggregation_periods": 5,
+        "risk_free_rate": 0.0
+      }
+    },
+    {
+      "caseId": "serial-sharpe/lo_adjusted_sharpe_ratio/n100000/q5/b1",
+      "familyId": "serial-sharpe",
+      "functionId": "lo_adjusted_sharpe_ratio",
+      "fixtureId": "large-returns-n100000-prefix-n100000",
+      "logicalOperationsPerInvocation": 1,
+      "vectorLength": 100000,
+      "batchSize": 1,
+      "functionArguments": {
+        "aggregation_periods": 5,
+        "risk_free_rate": 0.0
+      }
+    },
+    {
+      "caseId": "probabilistic-scalar/probabilistic_sharpe_ratio/b16384",
+      "familyId": "probabilistic-scalar",
+      "functionId": "probabilistic_sharpe_ratio",
+      "fixtureId": "precomputed-probabilistic_sharpe_ratio-b16384",
+      "logicalOperationsPerInvocation": 16384,
+      "vectorLength": 16384,
+      "batchSize": 16384,
+      "functionArguments": {
+        "benchmark_sharpe": 0.0,
+        "kurtosis": 3.0,
+        "sample_size": 252,
+        "skewness": 0.0
+      }
+    },
+    {
+      "caseId": "probabilistic-scalar/deflated_sharpe_ratio/b16384",
+      "familyId": "probabilistic-scalar",
+      "functionId": "deflated_sharpe_ratio",
+      "fixtureId": "precomputed-deflated_sharpe_ratio-b16384",
+      "logicalOperationsPerInvocation": 16384,
+      "vectorLength": 16384,
+      "batchSize": 16384,
+      "functionArguments": {
+        "kurtosis": 3.0,
+        "sample_size": 252,
+        "sharpe_estimate_variance": 1.0,
+        "skewness": 0.0,
+        "trial_count_mix": [
+          {
+            "evaluation_count": 5462,
+            "trial_count": 2
+          },
+          {
+            "evaluation_count": 5461,
+            "trial_count": 100000000000000000000
+          },
+          {
+            "evaluation_count": 5461,
+            "trial_count": 100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+          }
+        ],
+        "trial_count_provenance": "externally_estimated_effective_count"
+      }
+    },
+    {
+      "caseId": "coverage-batch/kupiec_pof/n252/b32",
+      "familyId": "coverage-batch",
+      "functionId": "kupiec_unconditional_coverage_test",
+      "fixtureId": "large-coverage-pair-n3200000/prefix-n252-sequences-b32",
+      "logicalOperationsPerInvocation": 32,
+      "vectorLength": 252,
+      "batchSize": 32,
+      "functionArguments": {
+        "confidence": 0.95,
+        "significance": 0.05
+      }
+    },
+    {
+      "caseId": "coverage-batch/kupiec_pof/n1000/b32",
+      "familyId": "coverage-batch",
+      "functionId": "kupiec_unconditional_coverage_test",
+      "fixtureId": "large-coverage-pair-n3200000/prefix-n1000-sequences-b32",
+      "logicalOperationsPerInvocation": 32,
+      "vectorLength": 1000,
+      "batchSize": 32,
+      "functionArguments": {
+        "confidence": 0.95,
+        "significance": 0.05
+      }
+    },
+    {
+      "caseId": "coverage-batch/kupiec_pof/n10000/b32",
+      "familyId": "coverage-batch",
+      "functionId": "kupiec_unconditional_coverage_test",
+      "fixtureId": "large-coverage-pair-n3200000/prefix-n10000-sequences-b32",
+      "logicalOperationsPerInvocation": 32,
+      "vectorLength": 10000,
+      "batchSize": 32,
+      "functionArguments": {
+        "confidence": 0.95,
+        "significance": 0.05
+      }
+    },
+    {
+      "caseId": "coverage-batch/kupiec_pof/n100000/b32",
+      "familyId": "coverage-batch",
+      "functionId": "kupiec_unconditional_coverage_test",
+      "fixtureId": "large-coverage-pair-n3200000/prefix-n100000-sequences-b32",
+      "logicalOperationsPerInvocation": 32,
+      "vectorLength": 100000,
+      "batchSize": 32,
+      "functionArguments": {
+        "confidence": 0.95,
+        "significance": 0.05
+      }
+    },
+    {
+      "caseId": "coverage-batch/christoffersen_independence/n252/b32",
+      "familyId": "coverage-batch",
+      "functionId": "christoffersen_independence_test",
+      "fixtureId": "large-coverage-pair-n3200000/prefix-n252-sequences-b32",
+      "logicalOperationsPerInvocation": 32,
+      "vectorLength": 252,
+      "batchSize": 32,
+      "functionArguments": {
+        "significance": 0.05
+      }
+    },
+    {
+      "caseId": "coverage-batch/christoffersen_independence/n1000/b32",
+      "familyId": "coverage-batch",
+      "functionId": "christoffersen_independence_test",
+      "fixtureId": "large-coverage-pair-n3200000/prefix-n1000-sequences-b32",
+      "logicalOperationsPerInvocation": 32,
+      "vectorLength": 1000,
+      "batchSize": 32,
+      "functionArguments": {
+        "significance": 0.05
+      }
+    },
+    {
+      "caseId": "coverage-batch/christoffersen_independence/n10000/b32",
+      "familyId": "coverage-batch",
+      "functionId": "christoffersen_independence_test",
+      "fixtureId": "large-coverage-pair-n3200000/prefix-n10000-sequences-b32",
+      "logicalOperationsPerInvocation": 32,
+      "vectorLength": 10000,
+      "batchSize": 32,
+      "functionArguments": {
+        "significance": 0.05
+      }
+    },
+    {
+      "caseId": "coverage-batch/christoffersen_independence/n100000/b32",
+      "familyId": "coverage-batch",
+      "functionId": "christoffersen_independence_test",
+      "fixtureId": "large-coverage-pair-n3200000/prefix-n100000-sequences-b32",
+      "logicalOperationsPerInvocation": 32,
+      "vectorLength": 100000,
+      "batchSize": 32,
+      "functionArguments": {
+        "significance": 0.05
+      }
+    },
+    {
+      "caseId": "coverage-batch/christoffersen_conditional_coverage/n252/b32",
+      "familyId": "coverage-batch",
+      "functionId": "christoffersen_conditional_coverage_test",
+      "fixtureId": "large-coverage-pair-n3200000/prefix-n252-sequences-b32",
+      "logicalOperationsPerInvocation": 32,
+      "vectorLength": 252,
+      "batchSize": 32,
+      "functionArguments": {
+        "confidence": 0.95,
+        "significance": 0.05
+      }
+    },
+    {
+      "caseId": "coverage-batch/christoffersen_conditional_coverage/n1000/b32",
+      "familyId": "coverage-batch",
+      "functionId": "christoffersen_conditional_coverage_test",
+      "fixtureId": "large-coverage-pair-n3200000/prefix-n1000-sequences-b32",
+      "logicalOperationsPerInvocation": 32,
+      "vectorLength": 1000,
+      "batchSize": 32,
+      "functionArguments": {
+        "confidence": 0.95,
+        "significance": 0.05
+      }
+    },
+    {
+      "caseId": "coverage-batch/christoffersen_conditional_coverage/n10000/b32",
+      "familyId": "coverage-batch",
+      "functionId": "christoffersen_conditional_coverage_test",
+      "fixtureId": "large-coverage-pair-n3200000/prefix-n10000-sequences-b32",
+      "logicalOperationsPerInvocation": 32,
+      "vectorLength": 10000,
+      "batchSize": 32,
+      "functionArguments": {
+        "confidence": 0.95,
+        "significance": 0.05
+      }
+    },
+    {
+      "caseId": "coverage-batch/christoffersen_conditional_coverage/n100000/b32",
+      "familyId": "coverage-batch",
+      "functionId": "christoffersen_conditional_coverage_test",
+      "fixtureId": "large-coverage-pair-n3200000/prefix-n100000-sequences-b32",
+      "logicalOperationsPerInvocation": 32,
+      "vectorLength": 100000,
+      "batchSize": 32,
+      "functionArguments": {
+        "confidence": 0.95,
+        "significance": 0.05
+      }
+    }
+  ],
+  "execution": {
+    "candidateOrderBlocks": [
+      {
+        "schedulingGroups": [
+          "PythonBaselines",
+          "Scala",
+          "Haskell"
+        ],
+        "pythonBoundaries": [
+          "python-numpy-s1-4",
+          "python-numpy-s1-4r",
+          "python-jax-eager-s1-4r",
+          "python-jax-jit-s1-4r"
+        ]
+      },
+      {
+        "schedulingGroups": [
+          "Scala",
+          "Haskell",
+          "PythonBaselines"
+        ],
+        "pythonBoundaries": [
+          "python-numpy-s1-4r",
+          "python-jax-eager-s1-4r",
+          "python-jax-jit-s1-4r",
+          "python-numpy-s1-4"
+        ]
+      },
+      {
+        "schedulingGroups": [
+          "Haskell",
+          "PythonBaselines",
+          "Scala"
+        ],
+        "pythonBoundaries": [
+          "python-jax-eager-s1-4r",
+          "python-jax-jit-s1-4r",
+          "python-numpy-s1-4",
+          "python-numpy-s1-4r"
+        ]
+      }
+    ],
+    "outerRepetitions": 3,
+    "cpuSet": [
+      0
+    ],
+    "threadCount": 1,
+    "nativeBenchmarkMode": {
+      "python-numpy-s1-4": "precomputed-batch",
+      "python-numpy-s1-4r": "precomputed-batch",
+      "python-jax-eager-s1-4r": "precomputed-batch",
+      "python-jax-jit-s1-4r": "precomputed-batch",
+      "scala": "AverageTime",
+      "haskell": "Criterion"
+    },
+    "nativeTimeUnit": {
+      "python-numpy-s1-4": "ns",
+      "python-numpy-s1-4r": "ns",
+      "python-jax-eager-s1-4r": "ns",
+      "python-jax-jit-s1-4r": "ns",
+      "scala": "ns",
+      "haskell": "s"
+    },
+    "normalizationFormula": "nativeValueInNanoseconds/logicalOperationsPerInvocation",
+    "warmupIterations": {
+      "scala": 5
+    },
+    "warmupTimeSeconds": {
+      "scala": 1
+    },
+    "measurementIterations": {
+      "scala": 10
+    },
+    "measurementTimeSeconds": {
+      "scala": 1
+    },
+    "forks": {
+      "scala": 3
+    },
+    "criterionTimeLimitSeconds": 5,
+    "familyBlockTimeoutSeconds": {
+      "scala/path-transform": 900,
+      "scala/classical-path-risk": 2700,
+      "scala/intraday-realized": 720,
+      "scala/serial-sharpe": 420,
+      "scala/probabilistic-scalar": 240,
+      "scala/coverage-batch": 780,
+      "haskell/path-transform": 300,
+      "haskell/classical-path-risk": 600,
+      "haskell/intraday-realized": 300,
+      "haskell/serial-sharpe": 240,
+      "haskell/probabilistic-scalar": 180,
+      "haskell/coverage-batch": 300,
+      "python-numpy-s1-4/path-transform": 180,
+      "python-numpy-s1-4/classical-path-risk-s1-4": 300,
+      "python-numpy-s1-4r/classical-path-risk-expected-shortfall": 120,
+      "python-numpy-s1-4r/intraday-realized": 180,
+      "python-numpy-s1-4r/serial-sharpe": 120,
+      "python-numpy-s1-4r/probabilistic-scalar": 120,
+      "python-numpy-s1-4r/coverage-batch": 180,
+      "python-jax-eager-s1-4r/classical-path-risk-expected-shortfall": 120,
+      "python-jax-eager-s1-4r/intraday-realized": 180,
+      "python-jax-eager-s1-4r/serial-sharpe": 120,
+      "python-jax-eager-s1-4r/probabilistic-scalar": 120,
+      "python-jax-eager-s1-4r/coverage-batch": 180,
+      "python-jax-jit-s1-4r/classical-path-risk-expected-shortfall": 120,
+      "python-jax-jit-s1-4r/intraday-realized": 180,
+      "python-jax-jit-s1-4r/serial-sharpe": 120,
+      "python-jax-jit-s1-4r/probabilistic-scalar": 120,
+      "python-jax-jit-s1-4r/coverage-batch": 180
+    },
+    "totalRunTimeoutSeconds": 32400,
+    "blockOutputPathTemplate": "<run>/<repetition>/<execution-boundary>/<family>/native.json",
+    "timerBoundary": "fixture decode, validation, allocation, JAX lowering/compile, and result serialization are outside the timed region",
+    "setupBoundary": "each selector loads frozen inputs once; JIT compilation and one forced evaluation complete before measurement",
+    "forceEvaluationRule": "every timed invocation consumes scalar outputs or fully materializes arrays before the timer stops"
+  },
+  "scalaProfileQualification": {
+    "qualificationCaseIds": [
+      "path-transform/log_returns/n100000/b1",
+      "classical-path-risk/historical_expected_shortfall/n100000/b1",
+      "intraday-realized/realized_variance/n100000/b1",
+      "serial-sharpe/lo_adjusted_sharpe_ratio/n100000/q5/b1",
+      "probabilistic-scalar/probabilistic_sharpe_ratio/b16384",
+      "coverage-batch/kupiec_pof/n100000/b32",
+      "coverage-batch/christoffersen_conditional_coverage/n100000/b32"
+    ],
+    "qualificationCaseOrder": [
+      "path-transform/log_returns/n100000/b1",
+      "classical-path-risk/historical_expected_shortfall/n100000/b1",
+      "intraday-realized/realized_variance/n100000/b1",
+      "serial-sharpe/lo_adjusted_sharpe_ratio/n100000/q5/b1",
+      "probabilistic-scalar/probabilistic_sharpe_ratio/b16384",
+      "coverage-batch/kupiec_pof/n100000/b32",
+      "coverage-batch/christoffersen_conditional_coverage/n100000/b32"
+    ],
+    "profileOrderBlocks": [
+      [
+        "A",
+        "B",
+        "C"
+      ],
+      [
+        "B",
+        "C",
+        "A"
+      ],
+      [
+        "C",
+        "A",
+        "B"
+      ]
+    ],
+    "hostValidityBeforeEachProfileBlock": true,
+    "mode": "AverageTime",
+    "timeUnit": "ns",
+    "threadCount": 1,
+    "forks": 3,
+    "warmupIterations": 5,
+    "warmupTime": "500ms",
+    "measurementIterations": 8,
+    "measurementTime": "500ms",
+    "outerQualificationRepetitions": 3,
+    "perCaseMaxRegressionRatio": 1.05,
+    "aggregateMaxRatio": 0.97,
+    "minimumImprovingOuterRepetitions": 2,
+    "cOverBMinimumImprovement": 0.01,
+    "tieBreakOrder": [
+      "B",
+      "C",
+      "A"
+    ],
+    "fallbackProfile": "A"
+  },
+  "haskellProfileQualification": {
+    "qualificationCaseIds": [
+      "path-transform/log_returns/n100000/b1",
+      "classical-path-risk/historical_expected_shortfall/n100000/b1",
+      "intraday-realized/realized_variance/n100000/b1",
+      "serial-sharpe/lo_adjusted_sharpe_ratio/n100000/q5/b1",
+      "probabilistic-scalar/probabilistic_sharpe_ratio/b16384",
+      "coverage-batch/kupiec_pof/n100000/b32",
+      "coverage-batch/christoffersen_conditional_coverage/n100000/b32"
+    ],
+    "qualificationCaseOrder": [
+      "path-transform/log_returns/n100000/b1",
+      "classical-path-risk/historical_expected_shortfall/n100000/b1",
+      "intraday-realized/realized_variance/n100000/b1",
+      "serial-sharpe/lo_adjusted_sharpe_ratio/n100000/q5/b1",
+      "probabilistic-scalar/probabilistic_sharpe_ratio/b16384",
+      "coverage-batch/kupiec_pof/n100000/b32",
+      "coverage-batch/christoffersen_conditional_coverage/n100000/b32"
+    ],
+    "profileOrderBlocks": [
+      [
+        "baseline-o0-fasm",
+        "optimized-o2-fasm"
+      ],
+      [
+        "optimized-o2-fasm",
+        "baseline-o0-fasm"
+      ],
+      [
+        "optimized-o2-fasm",
+        "baseline-o0-fasm"
+      ],
+      [
+        "baseline-o0-fasm",
+        "optimized-o2-fasm"
+      ]
+    ],
+    "hostValidityBeforeEachProfileBlock": true,
+    "criterionTimeLimitSeconds": 3,
+    "outerQualificationRepetitions": 4,
+    "ratioPairing": "same-order-block-and-case",
+    "perCaseCollapse": "max-of-four-paired-ratios",
+    "aggregateFormula": "geometric-mean-of-all-28-paired-ratios",
+    "improvingBlockFormula": "geometric-mean-of-seven-case-ratios",
+    "perCaseMaxRegressionRatio": 1.05,
+    "aggregateMaxRatio": 0.97,
+    "minimumImprovingOuterRepetitions": 3,
+    "optimizedProfile": "optimized-o2-fasm",
+    "fallbackProfile": "baseline-o0-fasm"
+  },
+  "scalaJmhPolicy": {
+    "sourceAnnotationPolicySha256": "d56a4af1e364df0d5037837aeef16afb742d768a2cffde57cf00170aedd9b470",
+    "allowedAnnotationsAndValues": {
+      "org.openjdk.jmh.annotations.Benchmark": [
+        "present-with-no-arguments"
+      ],
+      "org.openjdk.jmh.annotations.State": [
+        "Scope.Benchmark"
+      ],
+      "org.openjdk.jmh.annotations.Setup": [
+        "Level.Trial"
+      ],
+      "org.openjdk.jmh.annotations.OperationsPerInvocation": "exact case logicalOperationsPerInvocation",
+      "org.openjdk.jmh.annotations.Param": "exact frozen case IDs only"
+    },
+    "forbiddenPlanOverrideAnnotations": [
+      "org.openjdk.jmh.annotations.Fork",
+      "org.openjdk.jmh.annotations.Threads",
+      "org.openjdk.jmh.annotations.Warmup",
+      "org.openjdk.jmh.annotations.Measurement",
+      "org.openjdk.jmh.annotations.BenchmarkMode",
+      "org.openjdk.jmh.annotations.OutputTimeUnit",
+      "org.openjdk.jmh.annotations.CompilerControl",
+      "org.openjdk.jmh.annotations.Timeout"
+    ],
+    "allowedCliJvmArgs": [],
+    "effectiveJvmArgsRequired": true,
+    "effectiveJvmArgsPolicyId": "capability-smoke-effective-jvm-args-v1",
+    "capabilitySmokeEffectiveJvmArgsSha256Required": true
+  },
+  "allocationPolicy": {
+    "capBytes": 536870912,
+    "formulaVersion": "s1.4x-allocation-formula-v1",
+    "maximalCommonChunkSearch": "deterministic_integer_binary_search",
+    "fixedShapeLastChunk": true,
+    "lastChunkMaskRequired": true,
+    "forbidCartesianMaterialization": true
+  },
+  "environmentValidity": {
+    "maxNormalizedLoad1": 0.1,
+    "loadSampleCount": 3,
+    "loadSampleIntervalSeconds": 30,
+    "maxQuietWaitSeconds": 600,
+    "minAvailableMemoryGiB": 8,
+    "runningContainerCount": 0,
+    "externalProcessCpuPercentThreshold": 5,
+    "temperatureMetadata": {
+      "recordWhenAvailable": true,
+      "wslUnavailableAllowedButRecorded": true
+    },
+    "governor": {
+      "recordWhenAvailable": true,
+      "wslUnavailableAllowedButRecorded": true
+    },
+    "noOtherBenchmarkProcess": true
+  },
+  "failurePolicy": {
+    "anyMissingDuplicateOrUnexpectedCase": "FAIL",
+    "wrongNativeModeOrUnit": "FAIL",
+    "nonfiniteOrNonpositivePassTiming": "FAIL",
+    "blockTimeout": "PERFORMANCE_DEADLINE_EXCEEDED",
+    "timedOutCandidateScore": 0,
+    "continueOtherCandidateAfterTimeout": true,
+    "partialBlockPublication": "FORBIDDEN",
+    "declaredBlockCeilingsSeconds": 30960,
+    "reserveSeconds": 1440
+  }
+}

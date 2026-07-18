@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://capstone-ai-trading-coach.invalid/s1-4x/schemas/property-plan.schema.json",
+  "title": "S1.4X cross-language property plan",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "seedCorpusFile",
+    "seedCount",
+    "minimumSuccessfulPerProperty",
+    "maximumDiscardedPerProperty",
+    "maximumDiscardRatio",
+    "shrinkArtifactRequired",
+    "edgeCorpus",
+    "properties",
+    "failureArtifactFields"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "s1.4x-property-plan-v1"
+    },
+    "seedCorpusFile": {
+      "const": "contract/fixtures/property/property-seeds.v1.json"
+    },
+    "seedCount": {
+      "type": "integer",
+      "minimum": 16
+    },
+    "minimumSuccessfulPerProperty": {
+      "const": 1000
+    },
+    "maximumDiscardedPerProperty": {
+      "const": 100
+    },
+    "maximumDiscardRatio": {
+      "const": 0.1
+    },
+    "shrinkArtifactRequired": {
+      "const": true
+    },
+    "edgeCorpus": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 256
+      }
+    },
+    "properties": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "propertyId",
+          "functionIds",
+          "invariant",
+          "generatorPolicy"
+        ],
+        "properties": {
+          "propertyId": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"
+          },
+          "functionIds": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]{0,63}$"
+            }
+          },
+          "invariant": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          },
+          "generatorPolicy": {
+            "enum": [
+              "valid-by-construction",
+              "fixed-invalid-corpus"
+            ]
+          }
+        }
+      },
+      "x-s1-4x-unique-by": "propertyId"
+    },
+    "failureArtifactFields": {
+      "const": [
+        "propertyId",
+        "toolchainProfile",
+        "originalSeed",
+        "replayToken",
+        "successful",
+        "discarded",
+        "attempted",
+        "shrinks",
+        "originalCounterexample",
+        "fullyShrunkCounterexample",
+        "rerunCommand"
+      ]
+    }
+  }
+}

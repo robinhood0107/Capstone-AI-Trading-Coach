@@ -1,0 +1,521 @@
+{
+  "schemaVersion": "s1.4x-error-registry-v1",
+  "errorCodeCount": 32,
+  "trackCounts": {
+    "s1.4": 19,
+    "s1.4r": 13
+  },
+  "verificationModes": {
+    "processDynamic": "A strict-JSON request can reach this stable error through the frozen process protocol.",
+    "registryStatic": "The code is part of the stable public registry, but no ordinary process fixture is required to trigger the defensive branch.",
+    "referenceObjectModel": "The merged Python object model can trigger the code, but strict JSON cannot represent the original object category without changing precedence."
+  },
+  "productionPrecedence": [
+    "top-level-bool",
+    "allowed-top-level-family",
+    "array-shape-bool-complex-other-dtype",
+    "list-or-tuple-nested-shape-bool-complex-other-element-type",
+    "empty-too-long-too-short",
+    "isolated-float64-copy",
+    "non-finite",
+    "signature-order-keywords",
+    "function-domain",
+    "kernel",
+    "finite-result"
+  ],
+  "researchPrecedence": {
+    "sequence": [
+      "container-dtype-dimension",
+      "finite",
+      "minimum-length",
+      "keyword-type-and-finite",
+      "keyword-domain",
+      "moment-or-identifiability",
+      "kernel",
+      "finite-result"
+    ],
+    "lo_adjusted_sharpe_ratio": [
+      "sequence-minimum-2",
+      "aggregation-integer-type",
+      "risk-free-rate",
+      "aggregation-positive",
+      "sample-size-greater-than-aggregation",
+      "moments"
+    ],
+    "probabilistic_sharpe_ratio": [
+      "observed-sharpe",
+      "benchmark-sharpe",
+      "sample-size",
+      "skewness",
+      "kurtosis",
+      "moment-inequality",
+      "radicand"
+    ],
+    "deflated_sharpe_ratio": [
+      "probabilistic-sharpe-base-inputs-and-moments",
+      "trial-count",
+      "positive-trial-variance",
+      "trial-provenance"
+    ],
+    "backtest": [
+      "realized-losses",
+      "forecast-vars",
+      "shape-equality",
+      "minimum-length",
+      "forecast-vars-nonnegative",
+      "confidence-when-present",
+      "significance",
+      "transition-identifiability"
+    ]
+  },
+  "entries": [
+    {
+      "code": "input_type_invalid",
+      "track": "s1.4",
+      "meaning": "The top-level input is not an allowed one-dimensional numeric sequence family.",
+      "verificationMode": "processDynamic",
+      "processTriggerable": true,
+      "applicableFunctionIds": [
+        "simple_returns",
+        "log_returns",
+        "cumulative_return",
+        "cagr",
+        "realized_volatility",
+        "annualized_volatility",
+        "max_drawdown",
+        "sharpe_ratio",
+        "sortino_ratio",
+        "historical_var",
+        "historical_cvar"
+      ]
+    },
+    {
+      "code": "input_shape_invalid",
+      "track": "s1.4",
+      "meaning": "The input sequence is nested or otherwise not rank one.",
+      "verificationMode": "processDynamic",
+      "processTriggerable": true,
+      "applicableFunctionIds": [
+        "simple_returns",
+        "log_returns",
+        "cumulative_return",
+        "cagr",
+        "realized_volatility",
+        "annualized_volatility",
+        "max_drawdown",
+        "sharpe_ratio",
+        "sortino_ratio",
+        "historical_var",
+        "historical_cvar"
+      ]
+    },
+    {
+      "code": "input_empty",
+      "track": "s1.4",
+      "meaning": "The production sequence contains no observations.",
+      "verificationMode": "processDynamic",
+      "processTriggerable": true,
+      "applicableFunctionIds": [
+        "simple_returns",
+        "log_returns",
+        "cumulative_return",
+        "cagr",
+        "realized_volatility",
+        "annualized_volatility",
+        "max_drawdown",
+        "sharpe_ratio",
+        "sortino_ratio",
+        "historical_var",
+        "historical_cvar"
+      ]
+    },
+    {
+      "code": "input_too_short",
+      "track": "s1.4",
+      "meaning": "The sequence is non-empty but shorter than the function minimum.",
+      "verificationMode": "processDynamic",
+      "processTriggerable": true,
+      "applicableFunctionIds": [
+        "simple_returns",
+        "log_returns",
+        "cagr",
+        "realized_volatility",
+        "annualized_volatility",
+        "sharpe_ratio",
+        "sortino_ratio",
+        "historical_var",
+        "historical_cvar"
+      ]
+    },
+    {
+      "code": "input_too_long",
+      "track": "s1.4",
+      "meaning": "The sequence contains at least 100001 observations.",
+      "verificationMode": "processDynamic",
+      "processTriggerable": true,
+      "applicableFunctionIds": [
+        "simple_returns",
+        "log_returns",
+        "cumulative_return",
+        "cagr",
+        "realized_volatility",
+        "annualized_volatility",
+        "max_drawdown",
+        "sharpe_ratio",
+        "sortino_ratio",
+        "historical_var",
+        "historical_cvar"
+      ]
+    },
+    {
+      "code": "input_bool_invalid",
+      "track": "s1.4",
+      "meaning": "A boolean occurs where a numeric sequence value is required.",
+      "verificationMode": "processDynamic",
+      "processTriggerable": true,
+      "applicableFunctionIds": [
+        "simple_returns",
+        "log_returns",
+        "cumulative_return",
+        "cagr",
+        "realized_volatility",
+        "annualized_volatility",
+        "max_drawdown",
+        "sharpe_ratio",
+        "sortino_ratio",
+        "historical_var",
+        "historical_cvar"
+      ]
+    },
+    {
+      "code": "input_complex_invalid",
+      "track": "s1.4",
+      "meaning": "The merged Python object model received a complex-valued sequence.",
+      "verificationMode": "referenceObjectModel",
+      "processTriggerable": false,
+      "applicableFunctionIds": [
+        "simple_returns",
+        "log_returns",
+        "cumulative_return",
+        "cagr",
+        "realized_volatility",
+        "annualized_volatility",
+        "max_drawdown",
+        "sharpe_ratio",
+        "sortino_ratio",
+        "historical_var",
+        "historical_cvar"
+      ]
+    },
+    {
+      "code": "input_non_finite",
+      "track": "s1.4",
+      "meaning": "A decoded production input contains NaN or infinity.",
+      "verificationMode": "processDynamic",
+      "processTriggerable": true,
+      "applicableFunctionIds": [
+        "simple_returns",
+        "log_returns",
+        "cumulative_return",
+        "cagr",
+        "realized_volatility",
+        "annualized_volatility",
+        "max_drawdown",
+        "sharpe_ratio",
+        "sortino_ratio",
+        "historical_var",
+        "historical_cvar"
+      ]
+    },
+    {
+      "code": "prices_non_positive",
+      "track": "s1.4",
+      "meaning": "A price is less than or equal to zero.",
+      "verificationMode": "processDynamic",
+      "processTriggerable": true,
+      "applicableFunctionIds": [
+        "simple_returns",
+        "log_returns",
+        "cagr"
+      ]
+    },
+    {
+      "code": "equity_initial_non_positive",
+      "track": "s1.4",
+      "meaning": "The first equity observation is less than or equal to zero.",
+      "verificationMode": "processDynamic",
+      "processTriggerable": true,
+      "applicableFunctionIds": [
+        "max_drawdown"
+      ]
+    },
+    {
+      "code": "equity_negative",
+      "track": "s1.4",
+      "meaning": "A non-initial equity observation is negative.",
+      "verificationMode": "processDynamic",
+      "processTriggerable": true,
+      "applicableFunctionIds": [
+        "max_drawdown"
+      ]
+    },
+    {
+      "code": "simple_return_below_minus_one",
+      "track": "s1.4",
+      "meaning": "A simple return is strictly below -1; equality is valid.",
+      "verificationMode": "processDynamic",
+      "processTriggerable": true,
+      "applicableFunctionIds": [
+        "cumulative_return"
+      ]
+    },
+    {
+      "code": "periods_per_year_invalid",
+      "track": "s1.4",
+      "meaning": "periods_per_year is not an exact positive integer token.",
+      "verificationMode": "processDynamic",
+      "processTriggerable": true,
+      "applicableFunctionIds": [
+        "cagr",
+        "annualized_volatility",
+        "sharpe_ratio",
+        "sortino_ratio"
+      ]
+    },
+    {
+      "code": "risk_free_rate_invalid",
+      "track": "s1.4",
+      "meaning": "risk_free_rate is not a finite real scalar.",
+      "verificationMode": "processDynamic",
+      "processTriggerable": true,
+      "applicableFunctionIds": [
+        "sharpe_ratio"
+      ]
+    },
+    {
+      "code": "target_return_invalid",
+      "track": "s1.4",
+      "meaning": "target_return is not a finite real scalar.",
+      "verificationMode": "processDynamic",
+      "processTriggerable": true,
+      "applicableFunctionIds": [
+        "sortino_ratio"
+      ]
+    },
+    {
+      "code": "confidence_invalid",
+      "track": "s1.4",
+      "meaning": "confidence is not a finite value strictly between zero and one.",
+      "verificationMode": "processDynamic",
+      "processTriggerable": true,
+      "applicableFunctionIds": [
+        "historical_var",
+        "historical_cvar"
+      ]
+    },
+    {
+      "code": "denominator_zero",
+      "track": "s1.4",
+      "meaning": "A required volatility or downside denominator is zero.",
+      "verificationMode": "processDynamic",
+      "processTriggerable": true,
+      "applicableFunctionIds": [
+        "sharpe_ratio",
+        "sortino_ratio"
+      ]
+    },
+    {
+      "code": "tail_empty",
+      "track": "s1.4",
+      "meaning": "The defensive threshold-tail branch found no observations.",
+      "verificationMode": "registryStatic",
+      "processTriggerable": false,
+      "applicableFunctionIds": [
+        "historical_cvar"
+      ]
+    },
+    {
+      "code": "result_non_finite",
+      "track": "s1.4",
+      "meaning": "A production kernel or required intermediate produced a non-finite result.",
+      "verificationMode": "processDynamic",
+      "processTriggerable": true,
+      "applicableFunctionIds": [
+        "simple_returns",
+        "log_returns",
+        "cumulative_return",
+        "cagr",
+        "realized_volatility",
+        "annualized_volatility",
+        "max_drawdown",
+        "sharpe_ratio",
+        "sortino_ratio",
+        "historical_var",
+        "historical_cvar"
+      ]
+    },
+    {
+      "code": "research_input_invalid",
+      "track": "s1.4r",
+      "meaning": "A research scalar or sequence violates its type, shape, finite, or exact-integer input contract.",
+      "verificationMode": "processDynamic",
+      "processTriggerable": true,
+      "applicableFunctionIds": [
+        "historical_expected_shortfall",
+        "realized_variance",
+        "realized_volatility_intraday",
+        "lo_adjusted_sharpe_ratio",
+        "probabilistic_sharpe_ratio",
+        "deflated_sharpe_ratio",
+        "kupiec_unconditional_coverage_test",
+        "christoffersen_independence_test",
+        "christoffersen_conditional_coverage_test"
+      ]
+    },
+    {
+      "code": "research_input_too_short",
+      "track": "s1.4r",
+      "meaning": "A research sequence is shorter than its function minimum.",
+      "verificationMode": "processDynamic",
+      "processTriggerable": true,
+      "applicableFunctionIds": [
+        "historical_expected_shortfall",
+        "realized_variance",
+        "realized_volatility_intraday",
+        "lo_adjusted_sharpe_ratio",
+        "kupiec_unconditional_coverage_test",
+        "christoffersen_independence_test",
+        "christoffersen_conditional_coverage_test"
+      ]
+    },
+    {
+      "code": "aggregation_periods_invalid",
+      "track": "s1.4r",
+      "meaning": "aggregation_periods is not an exact positive integer or is not below the sample size.",
+      "verificationMode": "processDynamic",
+      "processTriggerable": true,
+      "applicableFunctionIds": [
+        "lo_adjusted_sharpe_ratio"
+      ]
+    },
+    {
+      "code": "moment_invalid",
+      "track": "s1.4r",
+      "meaning": "A required moment identity, variance, autocorrelation denominator, or PSR radicand is invalid.",
+      "verificationMode": "processDynamic",
+      "processTriggerable": true,
+      "applicableFunctionIds": [
+        "lo_adjusted_sharpe_ratio",
+        "probabilistic_sharpe_ratio",
+        "deflated_sharpe_ratio"
+      ]
+    },
+    {
+      "code": "trial_count_invalid",
+      "track": "s1.4r",
+      "meaning": "trial_count is not an exact integer in the frozen range [2, int(maxFloat64)].",
+      "verificationMode": "processDynamic",
+      "processTriggerable": true,
+      "applicableFunctionIds": [
+        "deflated_sharpe_ratio"
+      ]
+    },
+    {
+      "code": "trial_variance_invalid",
+      "track": "s1.4r",
+      "meaning": "sharpe_estimate_variance is not finite and strictly positive.",
+      "verificationMode": "processDynamic",
+      "processTriggerable": true,
+      "applicableFunctionIds": [
+        "deflated_sharpe_ratio"
+      ]
+    },
+    {
+      "code": "trial_provenance_invalid",
+      "track": "s1.4r",
+      "meaning": "The effective-trials provenance object violates its exact schema or consistency invariants.",
+      "verificationMode": "processDynamic",
+      "processTriggerable": true,
+      "applicableFunctionIds": [
+        "deflated_sharpe_ratio"
+      ]
+    },
+    {
+      "code": "significance_invalid",
+      "track": "s1.4r",
+      "meaning": "significance is not a finite value strictly between zero and one.",
+      "verificationMode": "processDynamic",
+      "processTriggerable": true,
+      "applicableFunctionIds": [
+        "kupiec_unconditional_coverage_test",
+        "christoffersen_independence_test",
+        "christoffersen_conditional_coverage_test"
+      ]
+    },
+    {
+      "code": "forecast_shape_invalid",
+      "track": "s1.4r",
+      "meaning": "realized_losses and forecast_vars do not have the same one-dimensional length.",
+      "verificationMode": "processDynamic",
+      "processTriggerable": true,
+      "applicableFunctionIds": [
+        "kupiec_unconditional_coverage_test",
+        "christoffersen_independence_test",
+        "christoffersen_conditional_coverage_test"
+      ]
+    },
+    {
+      "code": "forecast_var_negative",
+      "track": "s1.4r",
+      "meaning": "A forecast VaR value is negative; realized losses may be negative.",
+      "verificationMode": "processDynamic",
+      "processTriggerable": true,
+      "applicableFunctionIds": [
+        "kupiec_unconditional_coverage_test",
+        "christoffersen_independence_test",
+        "christoffersen_conditional_coverage_test"
+      ]
+    },
+    {
+      "code": "insufficient_sample",
+      "track": "s1.4r",
+      "meaning": "The sample or transition table cannot identify the requested likelihood model.",
+      "verificationMode": "processDynamic",
+      "processTriggerable": true,
+      "applicableFunctionIds": [
+        "christoffersen_independence_test",
+        "christoffersen_conditional_coverage_test"
+      ]
+    },
+    {
+      "code": "likelihood_invalid",
+      "track": "s1.4r",
+      "meaning": "Independent likelihood calculations violate their frozen consistency tolerance.",
+      "verificationMode": "registryStatic",
+      "processTriggerable": false,
+      "applicableFunctionIds": [
+        "kupiec_unconditional_coverage_test",
+        "christoffersen_independence_test",
+        "christoffersen_conditional_coverage_test"
+      ]
+    },
+    {
+      "code": "research_result_non_finite",
+      "track": "s1.4r",
+      "meaning": "A research kernel or required intermediate produced a non-finite result.",
+      "verificationMode": "processDynamic",
+      "processTriggerable": true,
+      "applicableFunctionIds": [
+        "historical_expected_shortfall",
+        "realized_variance",
+        "realized_volatility_intraday",
+        "lo_adjusted_sharpe_ratio",
+        "probabilistic_sharpe_ratio",
+        "deflated_sharpe_ratio",
+        "kupiec_unconditional_coverage_test",
+        "christoffersen_independence_test",
+        "christoffersen_conditional_coverage_test"
+      ]
+    }
+  ]
+}

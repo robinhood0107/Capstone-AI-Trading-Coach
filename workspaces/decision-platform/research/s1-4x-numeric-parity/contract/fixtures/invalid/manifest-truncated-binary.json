@@ -1,0 +1,21 @@
+{
+  "schemaVersion": "s1.4x-binary-array-v1",
+  "fixtureId": "invalid-manifest-truncated-binary",
+  "argumentName": "returns",
+  "fileName": "truncated.f64le",
+  "encoding": "ieee754-binary64",
+  "dtype": "float64",
+  "byteOrder": "little",
+  "arrayOrder": "C",
+  "shape": [
+    2
+  ],
+  "count": 2,
+  "byteLength": 16,
+  "sha256": "dc91ce9a50ddc828740aa26743716897fdb2bb64f1db662fe263a59be56145ae",
+  "generator": {
+    "algorithm": "literal-ieee754-bits",
+    "generatorVersion": "s1.4x-literal-ieee754-bits-v1",
+    "payloadHex": "000000000000f03f"
+  }
+}

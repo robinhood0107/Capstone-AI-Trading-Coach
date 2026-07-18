@@ -1,0 +1,27 @@
+{
+  "schemaVersion": "s1.4x-binary-array-v1",
+  "fixtureId": "large-coverage-forecast-var-n3200000",
+  "argumentName": "forecast_vars",
+  "fileName": "large-coverage-forecast-var-n3200000.f64le",
+  "encoding": "ieee754-binary64",
+  "dtype": "float64",
+  "byteOrder": "little",
+  "arrayOrder": "C",
+  "shape": [
+    3200000
+  ],
+  "count": 3200000,
+  "byteLength": 25600000,
+  "sha256": "e5e635b28e4025bc1fa71f7c6b92fbf3807861814d3b6010a751ea0e81168d14",
+  "generator": {
+    "algorithm": "numpy-pcg64",
+    "seed": 14004,
+    "generatorVersion": "numpy-2.5.1",
+    "distribution": "uniform",
+    "parameters": {
+      "low": 0.5,
+      "high": 2.0
+    },
+    "chunkLength": 3200000
+  }
+}

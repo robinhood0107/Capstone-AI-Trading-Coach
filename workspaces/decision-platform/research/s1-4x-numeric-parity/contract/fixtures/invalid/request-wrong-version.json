@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "s1.4x-request-v0",
+  "requestId": "invalid-wrong-version",
+  "cases": [
+    {
+      "fixtureId": "invalid-wrong-version-case",
+      "functionId": "simple_returns",
+      "arguments": {
+        "prices": [
+          100.0,
+          101.0
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,148 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://capstone-ai-trading-coach.invalid/s1-4x/schemas/source-input-manifest.schema.json",
+  "title": "S1.4X language source-input coverage manifest",
+  "$comment": "All consumers point to the single files object, so tracked/manifest/format/compile/lint/profileRun cannot carry divergent path sets.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "language",
+    "files",
+    "inputSets",
+    "canonicalManifestSha256"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "s1.4x-source-input-manifest-v1"
+    },
+    "language": {
+      "enum": [
+        "scala",
+        "haskell"
+      ]
+    },
+    "files": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "$ref": "#/$defs/path"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/fileMetadata"
+      }
+    },
+    "inputSets": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tracked",
+        "manifest",
+        "format",
+        "compile",
+        "lint",
+        "profileRun"
+      ],
+      "properties": {
+        "tracked": {
+          "const": "files"
+        },
+        "manifest": {
+          "const": "files"
+        },
+        "format": {
+          "const": "files"
+        },
+        "compile": {
+          "const": "files"
+        },
+        "lint": {
+          "const": "files"
+        },
+        "profileRun": {
+          "const": "files"
+        }
+      }
+    },
+    "canonicalManifestSha256": {
+      "$ref": "#/$defs/sha256"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "language": {
+            "const": "haskell"
+          }
+        },
+        "required": [
+          "language"
+        ]
+      },
+      "then": {
+        "properties": {
+          "files": {
+            "required": [
+              "selected-profile.v1.json",
+              "package.yaml"
+            ],
+            "propertyNames": {
+              "not": {
+                "pattern": "(?:\\.lhs|\\.hsc|\\.hs-boot)$"
+              }
+            },
+            "patternProperties": {
+              "\\.hs$": {
+                "$ref": "#/$defs/fileMetadata"
+              },
+              "^(?:selected-profile\\.v1\\.json|package\\.yaml)$": {
+                "type": "object",
+                "properties": {
+                  "role": {
+                    "const": "configuration"
+                  }
+                }
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))[A-Za-z0-9._/-]+$"
+    },
+    "fileMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "role",
+        "sha256"
+      ],
+      "properties": {
+        "role": {
+          "enum": [
+            "configuration",
+            "main",
+            "test",
+            "benchmark",
+            "tool"
+          ]
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    }
+  }
+}

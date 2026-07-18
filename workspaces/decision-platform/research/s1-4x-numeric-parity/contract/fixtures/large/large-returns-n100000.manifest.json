@@ -1,0 +1,27 @@
+{
+  "schemaVersion": "s1.4x-binary-array-v1",
+  "fixtureId": "large-returns-n100000",
+  "argumentName": "returns",
+  "fileName": "large-returns-n100000.f64le",
+  "encoding": "ieee754-binary64",
+  "dtype": "float64",
+  "byteOrder": "little",
+  "arrayOrder": "C",
+  "shape": [
+    100000
+  ],
+  "count": 100000,
+  "byteLength": 800000,
+  "sha256": "f81251d60ae5c411ef8eb5df83524375c53af411566060e497c2d6cf86988554",
+  "generator": {
+    "algorithm": "numpy-pcg64",
+    "seed": 14002,
+    "generatorVersion": "numpy-2.5.1",
+    "distribution": "normal",
+    "parameters": {
+      "loc": 0.0002,
+      "scale": 0.02
+    },
+    "chunkLength": 100000
+  }
+}

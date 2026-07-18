@@ -1,0 +1,22 @@
+{
+  "schemaVersion": "s1.4x-binary-array-v1",
+  "fixtureId": "invalid-manifest-non-finite-semantic",
+  "argumentName": "returns",
+  "fileName": "non-finite-semantic.f64le",
+  "encoding": "ieee754-binary64",
+  "dtype": "float64",
+  "byteOrder": "little",
+  "arrayOrder": "C",
+  "shape": [
+    1
+  ],
+  "count": 1,
+  "byteLength": 8,
+  "sha256": "74999fd28ab18ccca2bee199f260d19764603a3c78353d773d16d215eebe8e19",
+  "generator": {
+    "algorithm": "literal-ieee754-bits",
+    "generatorVersion": "s1.4x-literal-ieee754-bits-v1",
+    "payloadHex": "000000000000f87f"
+  },
+  "expectedSemanticError": "input_non_finite"
+}

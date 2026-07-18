@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://capstone-ai-trading-coach.invalid/s1-4x/schemas/transport-error.schema.json",
+  "title": "S1.4X sanitized transport error",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "code"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "s1.4x-transport-error-v1"
+    },
+    "code": {
+      "enum": [
+        "request_invalid",
+        "manifest_invalid",
+        "binary_invalid",
+        "internal_error"
+      ]
+    },
+    "requestId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[a-z0-9](?:[a-z0-9._:-]{0,126}[a-z0-9])?$"
+    },
+    "fixtureId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[a-z0-9](?:[a-z0-9._:-]{0,126}[a-z0-9])?$"
+    },
+    "field": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-zA-Z][a-zA-Z0-9_.-]{0,63}$"
+    }
+  },
+  "x-s1-4x-stdout-must-be-empty": true,
+  "x-s1-4x-stderr-single-json-object": true,
+  "x-s1-4x-forbid-stack-trace-absolute-path-secret-raw-payload": true
+}

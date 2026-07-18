@@ -162,7 +162,9 @@ def test_capture_uses_two_separate_pinned_subprocesses_and_restores_order(
     )
 
 
-def test_capture_fails_closed_on_uv_version_or_expected_byte_drift(tmp_path: Path) -> None:
+def test_capture_fails_closed_on_uv_version_or_typed_regeneration_drift(
+    tmp_path: Path,
+) -> None:
     request_path = tmp_path / "request.json"
     uv_bin = tmp_path / "uv"
     uv_bin.write_text("fake", encoding="utf-8")
@@ -183,8 +185,20 @@ def test_capture_fails_closed_on_uv_version_or_expected_byte_drift(tmp_path: Pat
     with pytest.raises(OracleContractError, match="uv version mismatch"):
         capture(check=False, runner=FakeRunner(uv_version=b"uv 0.11.260\n"), **common)
 
-    (tmp_path / "result.json").write_bytes(b"{}\n")
+    capture(check=False, runner=FakeRunner(), **common)
+    expected = strict_json_load(tmp_path / "result.json")
+    expected["results"][0]["values"] = 1.0 + 5.0e-13
+    atomic_write_json(tmp_path / "result.json", expected)
+    capture(check=True, runner=FakeRunner(), **common)
+
+    expected["results"][0]["values"] = 1.0 + 2.0e-12
+    atomic_write_json(tmp_path / "result.json", expected)
     with pytest.raises(OracleContractError, match="regeneration drift"):
+        capture(check=True, runner=FakeRunner(), **common)
+
+    canonical_payload = (tmp_path / "result.json").read_bytes()
+    (tmp_path / "result.json").write_bytes(b" " + canonical_payload)
+    with pytest.raises(OracleContractError, match="canonical JSON"):
         capture(check=True, runner=FakeRunner(), **common)
 
 

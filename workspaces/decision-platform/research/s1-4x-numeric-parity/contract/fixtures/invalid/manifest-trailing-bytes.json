@@ -1,0 +1,21 @@
+{
+  "schemaVersion": "s1.4x-binary-array-v1",
+  "fixtureId": "invalid-manifest-trailing-bytes",
+  "argumentName": "returns",
+  "fileName": "trailing-bytes.f64le",
+  "encoding": "ieee754-binary64",
+  "dtype": "float64",
+  "byteOrder": "little",
+  "arrayOrder": "C",
+  "shape": [
+    1
+  ],
+  "count": 1,
+  "byteLength": 8,
+  "sha256": "6c3c396ed6b5c36dcae172271f462051b1266b851e92df3deea8ac65478fd712",
+  "generator": {
+    "algorithm": "literal-ieee754-bits",
+    "generatorVersion": "s1.4x-literal-ieee754-bits-v1",
+    "payloadHex": "000000000000f03f0000000000000040"
+  }
+}

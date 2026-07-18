@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "s1.4x-request-v1",
+  "requestId": "invalid-unknown-function",
+  "cases": [
+    {
+      "fixtureId": "invalid-unknown-function-case",
+      "functionId": "not_a_frozen_function",
+      "arguments": {
+        "prices": [
+          100.0,
+          101.0
+        ]
+      }
+    }
+  ]
+}

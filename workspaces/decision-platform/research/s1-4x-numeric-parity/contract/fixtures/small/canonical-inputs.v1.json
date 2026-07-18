@@ -1,0 +1,658 @@
+{
+  "schemaVersion": "s1.4x-request-v1",
+  "requestId": "s1.4x-canonical-small-v1",
+  "cases": [
+    {
+      "fixtureId": "s1.4-simple-returns-basic",
+      "functionId": "simple_returns",
+      "arguments": {
+        "prices": [
+          100.0,
+          200.0,
+          100.0
+        ]
+      },
+      "toleranceClass": "handPaper"
+    },
+    {
+      "fixtureId": "s1.4-log-returns-flat",
+      "functionId": "log_returns",
+      "arguments": {
+        "prices": [
+          100.0,
+          100.0,
+          100.0
+        ]
+      },
+      "toleranceClass": "handPaper"
+    },
+    {
+      "fixtureId": "s1.4-cumulative-product",
+      "functionId": "cumulative_return",
+      "arguments": {
+        "returns": [
+          0.1,
+          -0.1
+        ]
+      },
+      "toleranceClass": "handPaper"
+    },
+    {
+      "fixtureId": "s1.4-cumulative-bankruptcy-short-circuit",
+      "functionId": "cumulative_return",
+      "arguments": {
+        "returns": [
+          -1.0,
+          1e+308
+        ]
+      },
+      "toleranceClass": "handPaper"
+    },
+    {
+      "fixtureId": "s1.4-cagr-two-intervals",
+      "functionId": "cagr",
+      "arguments": {
+        "prices": [
+          100.0,
+          110.0,
+          121.0
+        ],
+        "periods_per_year": 2
+      },
+      "toleranceClass": "handPaper"
+    },
+    {
+      "fixtureId": "s1.4-realized-volatility-sample",
+      "functionId": "realized_volatility",
+      "arguments": {
+        "log_returns": [
+          0.0,
+          0.1,
+          -0.1
+        ]
+      },
+      "toleranceClass": "handPaper"
+    },
+    {
+      "fixtureId": "s1.4-annualized-volatility-four",
+      "functionId": "annualized_volatility",
+      "arguments": {
+        "log_returns": [
+          0.0,
+          0.1,
+          -0.1
+        ],
+        "periods_per_year": 4
+      },
+      "toleranceClass": "handPaper"
+    },
+    {
+      "fixtureId": "s1.4-max-drawdown-running-peak",
+      "functionId": "max_drawdown",
+      "arguments": {
+        "equity_curve": [
+          100.0,
+          120.0,
+          90.0,
+          108.0,
+          60.0
+        ]
+      },
+      "toleranceClass": "handPaper"
+    },
+    {
+      "fixtureId": "s1.4-max-drawdown-total-loss",
+      "functionId": "max_drawdown",
+      "arguments": {
+        "equity_curve": [
+          100.0,
+          0.0
+        ]
+      },
+      "toleranceClass": "handPaper"
+    },
+    {
+      "fixtureId": "s1.4-sharpe-sample-period-one",
+      "functionId": "sharpe_ratio",
+      "arguments": {
+        "returns": [
+          -0.01,
+          0.02,
+          0.02
+        ],
+        "risk_free_rate": 0.0,
+        "periods_per_year": 1
+      },
+      "toleranceClass": "handPaper"
+    },
+    {
+      "fixtureId": "s1.4-sortino-full-n-denominator",
+      "functionId": "sortino_ratio",
+      "arguments": {
+        "returns": [
+          -0.01,
+          0.02,
+          0.02
+        ],
+        "target_return": 0.0,
+        "periods_per_year": 1
+      },
+      "toleranceClass": "handPaper"
+    },
+    {
+      "fixtureId": "s1.4-var-hf7",
+      "functionId": "historical_var",
+      "arguments": {
+        "returns": [
+          -0.1,
+          -0.05,
+          0.0,
+          0.05,
+          0.1
+        ],
+        "confidence": 0.8
+      },
+      "toleranceClass": "handPaper"
+    },
+    {
+      "fixtureId": "s1.4-var-hf7-overflow",
+      "functionId": "historical_var",
+      "arguments": {
+        "returns": [
+          -1.7976931348623157e+308,
+          1.7976931348623157e+308
+        ],
+        "confidence": 0.5
+      },
+      "expectedSemanticError": "result_non_finite",
+      "toleranceClass": "handPaper"
+    },
+    {
+      "fixtureId": "s1.4-cvar-threshold-tie",
+      "functionId": "historical_cvar",
+      "arguments": {
+        "returns": [
+          -0.1,
+          -0.05,
+          -0.05,
+          -0.05,
+          0.1
+        ],
+        "confidence": 0.6
+      },
+      "toleranceClass": "handPaper"
+    },
+    {
+      "fixtureId": "s1.4r-es-fractional-tail-1.5",
+      "functionId": "historical_expected_shortfall",
+      "arguments": {
+        "losses": [
+          1.0,
+          2.0,
+          3.0,
+          4.0
+        ],
+        "confidence": 0.625
+      },
+      "toleranceClass": "handPaper"
+    },
+    {
+      "fixtureId": "s1.4r-es-integer-tail",
+      "functionId": "historical_expected_shortfall",
+      "arguments": {
+        "losses": [
+          1.0,
+          2.0,
+          3.0,
+          4.0
+        ],
+        "confidence": 0.5
+      },
+      "toleranceClass": "handPaper"
+    },
+    {
+      "fixtureId": "s1.4r-es-sub-observation-tail",
+      "functionId": "historical_expected_shortfall",
+      "arguments": {
+        "losses": [
+          1.0,
+          2.0,
+          3.0,
+          4.0
+        ],
+        "confidence": 0.9
+      },
+      "toleranceClass": "handPaper"
+    },
+    {
+      "fixtureId": "s1.4r-es-tied-worst",
+      "functionId": "historical_expected_shortfall",
+      "arguments": {
+        "losses": [
+          4.0,
+          4.0,
+          1.0,
+          0.0
+        ],
+        "confidence": 0.625
+      },
+      "toleranceClass": "handPaper"
+    },
+    {
+      "fixtureId": "s1.4r-es-extreme-finite",
+      "functionId": "historical_expected_shortfall",
+      "arguments": {
+        "losses": [
+          1e+308,
+          1e+308,
+          0.0,
+          0.0
+        ],
+        "confidence": 0.5
+      },
+      "toleranceClass": "handPaper"
+    },
+    {
+      "fixtureId": "s1.4r-realized-variance-integers",
+      "functionId": "realized_variance",
+      "arguments": {
+        "intraday_log_returns": [
+          1.0,
+          -2.0,
+          2.0
+        ]
+      },
+      "toleranceClass": "handPaper"
+    },
+    {
+      "fixtureId": "s1.4r-realized-volatility-integers",
+      "functionId": "realized_volatility_intraday",
+      "arguments": {
+        "intraday_log_returns": [
+          1.0,
+          -2.0,
+          2.0
+        ]
+      },
+      "toleranceClass": "handPaper"
+    },
+    {
+      "fixtureId": "s1.4r-realized-variance-decimals",
+      "functionId": "realized_variance",
+      "arguments": {
+        "intraday_log_returns": [
+          0.01,
+          -0.02,
+          0.03
+        ]
+      },
+      "toleranceClass": "handPaper"
+    },
+    {
+      "fixtureId": "s1.4r-realized-volatility-decimals",
+      "functionId": "realized_volatility_intraday",
+      "arguments": {
+        "intraday_log_returns": [
+          0.01,
+          -0.02,
+          0.03
+        ]
+      },
+      "toleranceClass": "handPaper"
+    },
+    {
+      "fixtureId": "s1.4r-lo-q2-ordered",
+      "functionId": "lo_adjusted_sharpe_ratio",
+      "arguments": {
+        "returns": [
+          -1.0,
+          0.0,
+          1.0,
+          2.0
+        ],
+        "aggregation_periods": 2,
+        "risk_free_rate": 0.0
+      },
+      "toleranceClass": "handPaper"
+    },
+    {
+      "fixtureId": "s1.4r-lo-q1-base",
+      "functionId": "lo_adjusted_sharpe_ratio",
+      "arguments": {
+        "returns": [
+          -1.0,
+          0.0,
+          1.0,
+          2.0
+        ],
+        "aggregation_periods": 1,
+        "risk_free_rate": 0.0
+      },
+      "toleranceClass": "handPaper"
+    },
+    {
+      "fixtureId": "s1.4r-lo-q2-permuted",
+      "functionId": "lo_adjusted_sharpe_ratio",
+      "arguments": {
+        "returns": [
+          -1.0,
+          2.0,
+          0.0,
+          1.0
+        ],
+        "aggregation_periods": 2,
+        "risk_free_rate": 0.0
+      },
+      "toleranceClass": "handPaper"
+    },
+    {
+      "fixtureId": "s1.4r-psr-six-return-moments",
+      "functionId": "probabilistic_sharpe_ratio",
+      "arguments": {
+        "observed_sharpe": 1.0,
+        "benchmark_sharpe": 0.0,
+        "sample_size": 6,
+        "skewness": 0.0,
+        "kurtosis": 3.0
+      },
+      "toleranceClass": "handPaper"
+    },
+    {
+      "fixtureId": "s1.4r-psr-equal-benchmark",
+      "functionId": "probabilistic_sharpe_ratio",
+      "arguments": {
+        "observed_sharpe": 1.0,
+        "benchmark_sharpe": 1.0,
+        "sample_size": 6,
+        "skewness": 0.0,
+        "kurtosis": 3.0
+      },
+      "toleranceClass": "handPaper"
+    },
+    {
+      "fixtureId": "s1.4r-dsr-two-independent-trials",
+      "functionId": "deflated_sharpe_ratio",
+      "arguments": {
+        "observed_sharpe": 1.0,
+        "sample_size": 6,
+        "skewness": 0.0,
+        "kurtosis": 3.0,
+        "trial_count": 2,
+        "sharpe_estimate_variance": 1.0,
+        "trial_provenance": {
+          "schema_version": "s1.4r-effective-trials-v1",
+          "method": "pre_registered_independent",
+          "raw_trial_count": 2,
+          "effective_trial_count": 2,
+          "sampling_frequency": "daily",
+          "trial_registry_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "variance_ddof": 1
+        }
+      },
+      "toleranceClass": "handPaper"
+    },
+    {
+      "fixtureId": "s1.4r-dsr-equal-expected-benchmark",
+      "functionId": "deflated_sharpe_ratio",
+      "arguments": {
+        "observed_sharpe": 0.5197553442805939,
+        "sample_size": 6,
+        "skewness": 0.0,
+        "kurtosis": 3.0,
+        "trial_count": 2,
+        "sharpe_estimate_variance": 1.0,
+        "trial_provenance": {
+          "schema_version": "s1.4r-effective-trials-v1",
+          "method": "pre_registered_independent",
+          "raw_trial_count": 2,
+          "effective_trial_count": 2,
+          "sampling_frequency": "daily",
+          "trial_registry_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "variance_ddof": 1
+        }
+      },
+      "toleranceClass": "handPaper"
+    },
+    {
+      "fixtureId": "s1.4r-dsr-lower-tail-1e20",
+      "functionId": "deflated_sharpe_ratio",
+      "arguments": {
+        "observed_sharpe": 10.0,
+        "sample_size": 100,
+        "skewness": 0.0,
+        "kurtosis": 3.0,
+        "trial_count": 100000000000000000000,
+        "sharpe_estimate_variance": 1.0,
+        "trial_provenance": {
+          "schema_version": "s1.4r-effective-trials-v1",
+          "method": "externally_estimated_effective_count",
+          "raw_trial_count": 100000000000000000000,
+          "effective_trial_count": 100000000000000000000,
+          "sampling_frequency": "daily",
+          "trial_registry_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "variance_ddof": 1
+        }
+      },
+      "toleranceClass": "handPaper"
+    },
+    {
+      "fixtureId": "s1.4r-dsr-near-float64-limit-1e308",
+      "functionId": "deflated_sharpe_ratio",
+      "arguments": {
+        "observed_sharpe": 100.0,
+        "sample_size": 2,
+        "skewness": 0.0,
+        "kurtosis": 3.0,
+        "trial_count": 100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000,
+        "sharpe_estimate_variance": 1.0,
+        "trial_provenance": {
+          "schema_version": "s1.4r-effective-trials-v1",
+          "method": "externally_estimated_effective_count",
+          "raw_trial_count": 100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000,
+          "effective_trial_count": 100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000,
+          "sampling_frequency": "daily",
+          "trial_registry_sha256": "9999999999999999999999999999999999999999999999999999999999999999",
+          "variance_ddof": 1
+        }
+      },
+      "toleranceClass": "handPaper"
+    },
+    {
+      "fixtureId": "s1.4r-kupiec-zero-exceptions",
+      "functionId": "kupiec_unconditional_coverage_test",
+      "arguments": {
+        "realized_losses": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "forecast_vars": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "confidence": 0.75,
+        "significance": 0.05
+      },
+      "toleranceClass": "handPaper"
+    },
+    {
+      "fixtureId": "s1.4r-kupiec-confidence-1e-20",
+      "functionId": "kupiec_unconditional_coverage_test",
+      "arguments": {
+        "realized_losses": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "forecast_vars": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "confidence": 1e-20,
+        "significance": 0.05
+      },
+      "toleranceClass": "handPaper"
+    },
+    {
+      "fixtureId": "s1.4r-kupiec-null-rate-match",
+      "functionId": "kupiec_unconditional_coverage_test",
+      "arguments": {
+        "realized_losses": [
+          2.0,
+          0.0,
+          2.0,
+          0.0,
+          0.0
+        ],
+        "forecast_vars": [
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "confidence": 0.6,
+        "significance": 0.05
+      },
+      "toleranceClass": "handPaper"
+    },
+    {
+      "fixtureId": "s1.4r-kupiec-all-exceptions",
+      "functionId": "kupiec_unconditional_coverage_test",
+      "arguments": {
+        "realized_losses": [
+          2.0,
+          2.0,
+          2.0,
+          2.0
+        ],
+        "forecast_vars": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "confidence": 0.75,
+        "significance": 0.05
+      },
+      "toleranceClass": "handPaper"
+    },
+    {
+      "fixtureId": "s1.4r-kupiec-equality-and-negative-loss",
+      "functionId": "kupiec_unconditional_coverage_test",
+      "arguments": {
+        "realized_losses": [
+          1.0,
+          -1.0,
+          2.0,
+          0.0
+        ],
+        "forecast_vars": [
+          1.0,
+          0.0,
+          1.0,
+          0.0
+        ],
+        "confidence": 0.75,
+        "significance": 0.05
+      },
+      "toleranceClass": "handPaper"
+    },
+    {
+      "fixtureId": "s1.4r-independence-alternating",
+      "functionId": "christoffersen_independence_test",
+      "arguments": {
+        "realized_losses": [
+          0.0,
+          2.0,
+          0.0,
+          2.0,
+          0.0
+        ],
+        "forecast_vars": [
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "significance": 0.05
+      },
+      "toleranceClass": "handPaper"
+    },
+    {
+      "fixtureId": "s1.4r-independence-permuted",
+      "functionId": "christoffersen_independence_test",
+      "arguments": {
+        "realized_losses": [
+          0.0,
+          0.0,
+          2.0,
+          2.0,
+          0.0
+        ],
+        "forecast_vars": [
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "significance": 0.05
+      },
+      "toleranceClass": "handPaper"
+    },
+    {
+      "fixtureId": "s1.4r-conditional-alternating",
+      "functionId": "christoffersen_conditional_coverage_test",
+      "arguments": {
+        "realized_losses": [
+          0.0,
+          2.0,
+          0.0,
+          2.0,
+          0.0
+        ],
+        "forecast_vars": [
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "confidence": 0.6,
+        "significance": 0.05
+      },
+      "toleranceClass": "handPaper"
+    },
+    {
+      "fixtureId": "s1.4r-conditional-permuted",
+      "functionId": "christoffersen_conditional_coverage_test",
+      "arguments": {
+        "realized_losses": [
+          0.0,
+          0.0,
+          2.0,
+          2.0,
+          0.0
+        ],
+        "forecast_vars": [
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "confidence": 0.6,
+        "significance": 0.05
+      },
+      "toleranceClass": "handPaper"
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "schemaVersion": "s1.4x-binary-array-v1",
+  "fixtureId": "invalid-manifest-wrong-endian",
+  "argumentName": "returns",
+  "fileName": "wrong-endian.f64le",
+  "encoding": "ieee754-binary64",
+  "dtype": "float64",
+  "byteOrder": "big",
+  "arrayOrder": "C",
+  "shape": [
+    1
+  ],
+  "count": 1,
+  "byteLength": 8,
+  "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "generator": {
+    "algorithm": "numpy-pcg64",
+    "seed": 0,
+    "generatorVersion": "numpy-2.5.1",
+    "distribution": "standard_normal",
+    "parameters": {},
+    "chunkLength": 1
+  }
+}

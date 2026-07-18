@@ -1,0 +1,1285 @@
+{
+  "schemaVersion": "s1.4x-function-registry-v1",
+  "functionCount": 20,
+  "integerLexicalContract": {
+    "acceptedPattern": "0|-?[1-9][0-9]*",
+    "rejectedExamples": [
+      "-0",
+      "1000.0",
+      "1e3",
+      "true"
+    ],
+    "parserRequirement": "preserve raw JSON token kind before mathematical-number coercion"
+  },
+  "resultNormalization": {
+    "finiteOnly": true,
+    "negativeZero": "recursive-canonicalize-to-positive-zero",
+    "caseOrder": "request-order-exact",
+    "recordFields": "function-specific-exact-set"
+  },
+  "entries": [
+    {
+      "functionId": "simple_returns",
+      "track": "s1.4",
+      "parameters": [
+        {
+          "name": "prices",
+          "kind": "positional",
+          "required": true,
+          "default": null,
+          "wireValueKind": "array",
+          "semanticValueKind": "finiteFloat64Vector",
+          "acceptedLexicalForms": [
+            "inline-json-number-array",
+            "binaryFloat64-reference"
+          ],
+          "finite": true,
+          "domain": "length 2..100000; every value > 0",
+          "lowerBound": "exclusive:0",
+          "upperBound": null,
+          "upperBoundSource": null,
+          "invalidCode": "input_type_invalid",
+          "validationOrder": 1
+        }
+      ],
+      "logicalResultKind": "vector",
+      "toleranceClass": "handPaper",
+      "applicableErrorCodes": [
+        "input_type_invalid",
+        "input_shape_invalid",
+        "input_empty",
+        "input_too_short",
+        "input_too_long",
+        "input_bool_invalid",
+        "input_complex_invalid",
+        "input_non_finite",
+        "prices_non_positive",
+        "result_non_finite"
+      ]
+    },
+    {
+      "functionId": "log_returns",
+      "track": "s1.4",
+      "parameters": [
+        {
+          "name": "prices",
+          "kind": "positional",
+          "required": true,
+          "default": null,
+          "wireValueKind": "array",
+          "semanticValueKind": "finiteFloat64Vector",
+          "acceptedLexicalForms": [
+            "inline-json-number-array",
+            "binaryFloat64-reference"
+          ],
+          "finite": true,
+          "domain": "length 2..100000; every value > 0",
+          "lowerBound": "exclusive:0",
+          "upperBound": null,
+          "upperBoundSource": null,
+          "invalidCode": "input_type_invalid",
+          "validationOrder": 1
+        }
+      ],
+      "logicalResultKind": "vector",
+      "toleranceClass": "handPaper",
+      "applicableErrorCodes": [
+        "input_type_invalid",
+        "input_shape_invalid",
+        "input_empty",
+        "input_too_short",
+        "input_too_long",
+        "input_bool_invalid",
+        "input_complex_invalid",
+        "input_non_finite",
+        "prices_non_positive",
+        "result_non_finite"
+      ]
+    },
+    {
+      "functionId": "cumulative_return",
+      "track": "s1.4",
+      "parameters": [
+        {
+          "name": "returns",
+          "kind": "positional",
+          "required": true,
+          "default": null,
+          "wireValueKind": "array",
+          "semanticValueKind": "finiteFloat64Vector",
+          "acceptedLexicalForms": [
+            "inline-json-number-array",
+            "binaryFloat64-reference"
+          ],
+          "finite": true,
+          "domain": "length 1..100000; every value >= -1",
+          "lowerBound": "inclusive:-1",
+          "upperBound": null,
+          "upperBoundSource": null,
+          "invalidCode": "input_type_invalid",
+          "validationOrder": 1
+        }
+      ],
+      "logicalResultKind": "scalar",
+      "toleranceClass": "handPaper",
+      "applicableErrorCodes": [
+        "input_type_invalid",
+        "input_shape_invalid",
+        "input_empty",
+        "input_too_long",
+        "input_bool_invalid",
+        "input_complex_invalid",
+        "input_non_finite",
+        "simple_return_below_minus_one",
+        "result_non_finite"
+      ]
+    },
+    {
+      "functionId": "cagr",
+      "track": "s1.4",
+      "parameters": [
+        {
+          "name": "prices",
+          "kind": "positional",
+          "required": true,
+          "default": null,
+          "wireValueKind": "array",
+          "semanticValueKind": "finiteFloat64Vector",
+          "acceptedLexicalForms": [
+            "inline-json-number-array",
+            "binaryFloat64-reference"
+          ],
+          "finite": true,
+          "domain": "length 2..100000; every value > 0",
+          "lowerBound": "exclusive:0",
+          "upperBound": null,
+          "upperBoundSource": null,
+          "invalidCode": "input_type_invalid",
+          "validationOrder": 1
+        },
+        {
+          "name": "periods_per_year",
+          "kind": "keywordOnly",
+          "required": false,
+          "default": 252,
+          "wireValueKind": "integerToken",
+          "semanticValueKind": "exactPositiveInteger",
+          "acceptedLexicalForms": [
+            "bare-json-integer-token"
+          ],
+          "finite": false,
+          "domain": "> 0; arbitrary precision; float64 conversion belongs to kernel",
+          "lowerBound": "exclusive:0",
+          "upperBound": null,
+          "upperBoundSource": null,
+          "invalidCode": "periods_per_year_invalid",
+          "validationOrder": 2
+        }
+      ],
+      "logicalResultKind": "scalar",
+      "toleranceClass": "handPaper",
+      "applicableErrorCodes": [
+        "input_type_invalid",
+        "input_shape_invalid",
+        "input_empty",
+        "input_too_short",
+        "input_too_long",
+        "input_bool_invalid",
+        "input_complex_invalid",
+        "input_non_finite",
+        "periods_per_year_invalid",
+        "prices_non_positive",
+        "result_non_finite"
+      ]
+    },
+    {
+      "functionId": "realized_volatility",
+      "track": "s1.4",
+      "parameters": [
+        {
+          "name": "log_returns",
+          "kind": "positional",
+          "required": true,
+          "default": null,
+          "wireValueKind": "array",
+          "semanticValueKind": "finiteFloat64Vector",
+          "acceptedLexicalForms": [
+            "inline-json-number-array",
+            "binaryFloat64-reference"
+          ],
+          "finite": true,
+          "domain": "length 2..100000",
+          "lowerBound": null,
+          "upperBound": null,
+          "upperBoundSource": null,
+          "invalidCode": "input_type_invalid",
+          "validationOrder": 1
+        }
+      ],
+      "logicalResultKind": "scalar",
+      "toleranceClass": "handPaper",
+      "applicableErrorCodes": [
+        "input_type_invalid",
+        "input_shape_invalid",
+        "input_empty",
+        "input_too_short",
+        "input_too_long",
+        "input_bool_invalid",
+        "input_complex_invalid",
+        "input_non_finite",
+        "result_non_finite"
+      ]
+    },
+    {
+      "functionId": "annualized_volatility",
+      "track": "s1.4",
+      "parameters": [
+        {
+          "name": "log_returns",
+          "kind": "positional",
+          "required": true,
+          "default": null,
+          "wireValueKind": "array",
+          "semanticValueKind": "finiteFloat64Vector",
+          "acceptedLexicalForms": [
+            "inline-json-number-array",
+            "binaryFloat64-reference"
+          ],
+          "finite": true,
+          "domain": "length 2..100000",
+          "lowerBound": null,
+          "upperBound": null,
+          "upperBoundSource": null,
+          "invalidCode": "input_type_invalid",
+          "validationOrder": 1
+        },
+        {
+          "name": "periods_per_year",
+          "kind": "keywordOnly",
+          "required": false,
+          "default": 252,
+          "wireValueKind": "integerToken",
+          "semanticValueKind": "exactPositiveInteger",
+          "acceptedLexicalForms": [
+            "bare-json-integer-token"
+          ],
+          "finite": false,
+          "domain": "> 0; arbitrary precision; float64 conversion belongs to kernel",
+          "lowerBound": "exclusive:0",
+          "upperBound": null,
+          "upperBoundSource": null,
+          "invalidCode": "periods_per_year_invalid",
+          "validationOrder": 2
+        }
+      ],
+      "logicalResultKind": "scalar",
+      "toleranceClass": "handPaper",
+      "applicableErrorCodes": [
+        "input_type_invalid",
+        "input_shape_invalid",
+        "input_empty",
+        "input_too_short",
+        "input_too_long",
+        "input_bool_invalid",
+        "input_complex_invalid",
+        "input_non_finite",
+        "periods_per_year_invalid",
+        "result_non_finite"
+      ]
+    },
+    {
+      "functionId": "max_drawdown",
+      "track": "s1.4",
+      "parameters": [
+        {
+          "name": "equity_curve",
+          "kind": "positional",
+          "required": true,
+          "default": null,
+          "wireValueKind": "array",
+          "semanticValueKind": "finiteFloat64Vector",
+          "acceptedLexicalForms": [
+            "inline-json-number-array",
+            "binaryFloat64-reference"
+          ],
+          "finite": true,
+          "domain": "length 1..100000; first > 0; remaining >= 0",
+          "lowerBound": "mixed:first-exclusive-0-remaining-inclusive-0",
+          "upperBound": null,
+          "upperBoundSource": null,
+          "invalidCode": "input_type_invalid",
+          "validationOrder": 1
+        }
+      ],
+      "logicalResultKind": "scalar",
+      "toleranceClass": "handPaper",
+      "applicableErrorCodes": [
+        "input_type_invalid",
+        "input_shape_invalid",
+        "input_empty",
+        "input_too_long",
+        "input_bool_invalid",
+        "input_complex_invalid",
+        "input_non_finite",
+        "equity_initial_non_positive",
+        "equity_negative",
+        "result_non_finite"
+      ]
+    },
+    {
+      "functionId": "sharpe_ratio",
+      "track": "s1.4",
+      "parameters": [
+        {
+          "name": "returns",
+          "kind": "positional",
+          "required": true,
+          "default": null,
+          "wireValueKind": "array",
+          "semanticValueKind": "finiteFloat64Vector",
+          "acceptedLexicalForms": [
+            "inline-json-number-array",
+            "binaryFloat64-reference"
+          ],
+          "finite": true,
+          "domain": "length 2..100000",
+          "lowerBound": null,
+          "upperBound": null,
+          "upperBoundSource": null,
+          "invalidCode": "input_type_invalid",
+          "validationOrder": 1
+        },
+        {
+          "name": "risk_free_rate",
+          "kind": "keywordOnly",
+          "required": false,
+          "default": 0.0,
+          "wireValueKind": "realNumber",
+          "semanticValueKind": "finiteFloat64",
+          "acceptedLexicalForms": [
+            "json-number-token"
+          ],
+          "finite": true,
+          "domain": "finite",
+          "lowerBound": null,
+          "upperBound": null,
+          "upperBoundSource": null,
+          "invalidCode": "risk_free_rate_invalid",
+          "validationOrder": 2
+        },
+        {
+          "name": "periods_per_year",
+          "kind": "keywordOnly",
+          "required": false,
+          "default": 252,
+          "wireValueKind": "integerToken",
+          "semanticValueKind": "exactPositiveInteger",
+          "acceptedLexicalForms": [
+            "bare-json-integer-token"
+          ],
+          "finite": false,
+          "domain": "> 0; arbitrary precision",
+          "lowerBound": "exclusive:0",
+          "upperBound": null,
+          "upperBoundSource": null,
+          "invalidCode": "periods_per_year_invalid",
+          "validationOrder": 3
+        }
+      ],
+      "logicalResultKind": "scalar",
+      "toleranceClass": "handPaper",
+      "applicableErrorCodes": [
+        "input_type_invalid",
+        "input_shape_invalid",
+        "input_empty",
+        "input_too_short",
+        "input_too_long",
+        "input_bool_invalid",
+        "input_complex_invalid",
+        "input_non_finite",
+        "risk_free_rate_invalid",
+        "periods_per_year_invalid",
+        "denominator_zero",
+        "result_non_finite"
+      ]
+    },
+    {
+      "functionId": "sortino_ratio",
+      "track": "s1.4",
+      "parameters": [
+        {
+          "name": "returns",
+          "kind": "positional",
+          "required": true,
+          "default": null,
+          "wireValueKind": "array",
+          "semanticValueKind": "finiteFloat64Vector",
+          "acceptedLexicalForms": [
+            "inline-json-number-array",
+            "binaryFloat64-reference"
+          ],
+          "finite": true,
+          "domain": "length 2..100000",
+          "lowerBound": null,
+          "upperBound": null,
+          "upperBoundSource": null,
+          "invalidCode": "input_type_invalid",
+          "validationOrder": 1
+        },
+        {
+          "name": "target_return",
+          "kind": "keywordOnly",
+          "required": false,
+          "default": 0.0,
+          "wireValueKind": "realNumber",
+          "semanticValueKind": "finiteFloat64",
+          "acceptedLexicalForms": [
+            "json-number-token"
+          ],
+          "finite": true,
+          "domain": "finite",
+          "lowerBound": null,
+          "upperBound": null,
+          "upperBoundSource": null,
+          "invalidCode": "target_return_invalid",
+          "validationOrder": 2
+        },
+        {
+          "name": "periods_per_year",
+          "kind": "keywordOnly",
+          "required": false,
+          "default": 252,
+          "wireValueKind": "integerToken",
+          "semanticValueKind": "exactPositiveInteger",
+          "acceptedLexicalForms": [
+            "bare-json-integer-token"
+          ],
+          "finite": false,
+          "domain": "> 0; arbitrary precision",
+          "lowerBound": "exclusive:0",
+          "upperBound": null,
+          "upperBoundSource": null,
+          "invalidCode": "periods_per_year_invalid",
+          "validationOrder": 3
+        }
+      ],
+      "logicalResultKind": "scalar",
+      "toleranceClass": "handPaper",
+      "applicableErrorCodes": [
+        "input_type_invalid",
+        "input_shape_invalid",
+        "input_empty",
+        "input_too_short",
+        "input_too_long",
+        "input_bool_invalid",
+        "input_complex_invalid",
+        "input_non_finite",
+        "target_return_invalid",
+        "periods_per_year_invalid",
+        "denominator_zero",
+        "result_non_finite"
+      ]
+    },
+    {
+      "functionId": "historical_var",
+      "track": "s1.4",
+      "parameters": [
+        {
+          "name": "returns",
+          "kind": "positional",
+          "required": true,
+          "default": null,
+          "wireValueKind": "array",
+          "semanticValueKind": "finiteFloat64Vector",
+          "acceptedLexicalForms": [
+            "inline-json-number-array",
+            "binaryFloat64-reference"
+          ],
+          "finite": true,
+          "domain": "length 2..100000",
+          "lowerBound": null,
+          "upperBound": null,
+          "upperBoundSource": null,
+          "invalidCode": "input_type_invalid",
+          "validationOrder": 1
+        },
+        {
+          "name": "confidence",
+          "kind": "keywordOnly",
+          "required": false,
+          "default": 0.95,
+          "wireValueKind": "realNumber",
+          "semanticValueKind": "finiteFloat64",
+          "acceptedLexicalForms": [
+            "json-number-token"
+          ],
+          "finite": true,
+          "domain": "0 < confidence < 1",
+          "lowerBound": "exclusive:0",
+          "upperBound": "exclusive:1",
+          "upperBoundSource": "shared-docs/metrics_definitions.md",
+          "invalidCode": "confidence_invalid",
+          "validationOrder": 2
+        }
+      ],
+      "logicalResultKind": "scalar",
+      "toleranceClass": "handPaper",
+      "applicableErrorCodes": [
+        "input_type_invalid",
+        "input_shape_invalid",
+        "input_empty",
+        "input_too_short",
+        "input_too_long",
+        "input_bool_invalid",
+        "input_complex_invalid",
+        "input_non_finite",
+        "confidence_invalid",
+        "result_non_finite"
+      ]
+    },
+    {
+      "functionId": "historical_cvar",
+      "track": "s1.4",
+      "parameters": [
+        {
+          "name": "returns",
+          "kind": "positional",
+          "required": true,
+          "default": null,
+          "wireValueKind": "array",
+          "semanticValueKind": "finiteFloat64Vector",
+          "acceptedLexicalForms": [
+            "inline-json-number-array",
+            "binaryFloat64-reference"
+          ],
+          "finite": true,
+          "domain": "length 2..100000",
+          "lowerBound": null,
+          "upperBound": null,
+          "upperBoundSource": null,
+          "invalidCode": "input_type_invalid",
+          "validationOrder": 1
+        },
+        {
+          "name": "confidence",
+          "kind": "keywordOnly",
+          "required": false,
+          "default": 0.95,
+          "wireValueKind": "realNumber",
+          "semanticValueKind": "finiteFloat64",
+          "acceptedLexicalForms": [
+            "json-number-token"
+          ],
+          "finite": true,
+          "domain": "0 < confidence < 1",
+          "lowerBound": "exclusive:0",
+          "upperBound": "exclusive:1",
+          "upperBoundSource": "shared-docs/metrics_definitions.md",
+          "invalidCode": "confidence_invalid",
+          "validationOrder": 2
+        }
+      ],
+      "logicalResultKind": "scalar",
+      "toleranceClass": "handPaper",
+      "applicableErrorCodes": [
+        "input_type_invalid",
+        "input_shape_invalid",
+        "input_empty",
+        "input_too_short",
+        "input_too_long",
+        "input_bool_invalid",
+        "input_complex_invalid",
+        "input_non_finite",
+        "confidence_invalid",
+        "tail_empty",
+        "result_non_finite"
+      ]
+    },
+    {
+      "functionId": "historical_expected_shortfall",
+      "track": "s1.4r",
+      "parameters": [
+        {
+          "name": "losses",
+          "kind": "positional",
+          "required": true,
+          "default": null,
+          "wireValueKind": "array",
+          "semanticValueKind": "finiteFloat64Vector",
+          "acceptedLexicalForms": [
+            "inline-json-number-array",
+            "binaryFloat64-reference"
+          ],
+          "finite": true,
+          "domain": "length >= 1; loss-space signed values",
+          "lowerBound": null,
+          "upperBound": null,
+          "upperBoundSource": null,
+          "invalidCode": "research_input_invalid",
+          "validationOrder": 1
+        },
+        {
+          "name": "confidence",
+          "kind": "keywordOnly",
+          "required": false,
+          "default": 0.95,
+          "wireValueKind": "realNumber",
+          "semanticValueKind": "finiteFloat64",
+          "acceptedLexicalForms": [
+            "json-number-token"
+          ],
+          "finite": true,
+          "domain": "0 < confidence < 1",
+          "lowerBound": "exclusive:0",
+          "upperBound": "exclusive:1",
+          "upperBoundSource": "S1.4R validation",
+          "invalidCode": "research_input_invalid",
+          "validationOrder": 2
+        }
+      ],
+      "logicalResultKind": "scalar",
+      "toleranceClass": "handPaper",
+      "applicableErrorCodes": [
+        "research_input_invalid",
+        "research_input_too_short",
+        "research_result_non_finite"
+      ]
+    },
+    {
+      "functionId": "realized_variance",
+      "track": "s1.4r",
+      "parameters": [
+        {
+          "name": "intraday_log_returns",
+          "kind": "positional",
+          "required": true,
+          "default": null,
+          "wireValueKind": "array",
+          "semanticValueKind": "finiteFloat64Vector",
+          "acceptedLexicalForms": [
+            "inline-json-number-array",
+            "binaryFloat64-reference"
+          ],
+          "finite": true,
+          "domain": "length >= 1",
+          "lowerBound": null,
+          "upperBound": null,
+          "upperBoundSource": null,
+          "invalidCode": "research_input_invalid",
+          "validationOrder": 1
+        }
+      ],
+      "logicalResultKind": "scalar",
+      "toleranceClass": "handPaper",
+      "applicableErrorCodes": [
+        "research_input_invalid",
+        "research_input_too_short",
+        "research_result_non_finite"
+      ]
+    },
+    {
+      "functionId": "realized_volatility_intraday",
+      "track": "s1.4r",
+      "parameters": [
+        {
+          "name": "intraday_log_returns",
+          "kind": "positional",
+          "required": true,
+          "default": null,
+          "wireValueKind": "array",
+          "semanticValueKind": "finiteFloat64Vector",
+          "acceptedLexicalForms": [
+            "inline-json-number-array",
+            "binaryFloat64-reference"
+          ],
+          "finite": true,
+          "domain": "length >= 1",
+          "lowerBound": null,
+          "upperBound": null,
+          "upperBoundSource": null,
+          "invalidCode": "research_input_invalid",
+          "validationOrder": 1
+        }
+      ],
+      "logicalResultKind": "scalar",
+      "toleranceClass": "handPaper",
+      "applicableErrorCodes": [
+        "research_input_invalid",
+        "research_input_too_short",
+        "research_result_non_finite"
+      ]
+    },
+    {
+      "functionId": "lo_adjusted_sharpe_ratio",
+      "track": "s1.4r",
+      "parameters": [
+        {
+          "name": "returns",
+          "kind": "positional",
+          "required": true,
+          "default": null,
+          "wireValueKind": "array",
+          "semanticValueKind": "finiteFloat64Vector",
+          "acceptedLexicalForms": [
+            "inline-json-number-array",
+            "binaryFloat64-reference"
+          ],
+          "finite": true,
+          "domain": "length >= 2",
+          "lowerBound": null,
+          "upperBound": null,
+          "upperBoundSource": null,
+          "invalidCode": "research_input_invalid",
+          "validationOrder": 1
+        },
+        {
+          "name": "aggregation_periods",
+          "kind": "keywordOnly",
+          "required": true,
+          "default": null,
+          "wireValueKind": "integerToken",
+          "semanticValueKind": "exactPositiveInteger",
+          "acceptedLexicalForms": [
+            "bare-json-integer-token"
+          ],
+          "finite": false,
+          "domain": "1 <= q < input length",
+          "lowerBound": "inclusive:1",
+          "upperBound": "dynamic:n-1",
+          "upperBoundSource": "S1.4R Lo validator",
+          "invalidCode": "aggregation_periods_invalid",
+          "validationOrder": 2
+        },
+        {
+          "name": "risk_free_rate",
+          "kind": "keywordOnly",
+          "required": false,
+          "default": 0.0,
+          "wireValueKind": "realNumber",
+          "semanticValueKind": "finiteFloat64",
+          "acceptedLexicalForms": [
+            "json-number-token"
+          ],
+          "finite": true,
+          "domain": "finite",
+          "lowerBound": null,
+          "upperBound": null,
+          "upperBoundSource": null,
+          "invalidCode": "research_input_invalid",
+          "validationOrder": 3
+        }
+      ],
+      "logicalResultKind": "scalar",
+      "toleranceClass": "handPaper",
+      "applicableErrorCodes": [
+        "research_input_invalid",
+        "research_input_too_short",
+        "aggregation_periods_invalid",
+        "moment_invalid",
+        "research_result_non_finite"
+      ]
+    },
+    {
+      "functionId": "probabilistic_sharpe_ratio",
+      "track": "s1.4r",
+      "parameters": [
+        {
+          "name": "observed_sharpe",
+          "kind": "positional",
+          "required": true,
+          "default": null,
+          "wireValueKind": "realNumber",
+          "semanticValueKind": "finiteFloat64",
+          "acceptedLexicalForms": [
+            "json-number-token"
+          ],
+          "finite": true,
+          "domain": "finite",
+          "lowerBound": null,
+          "upperBound": null,
+          "upperBoundSource": null,
+          "invalidCode": "research_input_invalid",
+          "validationOrder": 1
+        },
+        {
+          "name": "benchmark_sharpe",
+          "kind": "keywordOnly",
+          "required": true,
+          "default": null,
+          "wireValueKind": "realNumber",
+          "semanticValueKind": "finiteFloat64",
+          "acceptedLexicalForms": [
+            "json-number-token"
+          ],
+          "finite": true,
+          "domain": "finite",
+          "lowerBound": null,
+          "upperBound": null,
+          "upperBoundSource": null,
+          "invalidCode": "research_input_invalid",
+          "validationOrder": 2
+        },
+        {
+          "name": "sample_size",
+          "kind": "keywordOnly",
+          "required": true,
+          "default": null,
+          "wireValueKind": "integerToken",
+          "semanticValueKind": "exactInteger",
+          "acceptedLexicalForms": [
+            "bare-json-integer-token"
+          ],
+          "finite": false,
+          "domain": "2 <= n <= int(maxFloat64)",
+          "lowerBound": "inclusive:2",
+          "upperBound": "inclusive:int(maxFloat64)",
+          "upperBoundSource": "numpy-2.5.1-float64",
+          "invalidCode": "research_input_invalid",
+          "validationOrder": 3
+        },
+        {
+          "name": "skewness",
+          "kind": "keywordOnly",
+          "required": true,
+          "default": null,
+          "wireValueKind": "realNumber",
+          "semanticValueKind": "finiteFloat64",
+          "acceptedLexicalForms": [
+            "json-number-token"
+          ],
+          "finite": true,
+          "domain": "finite and paired moment inequality",
+          "lowerBound": null,
+          "upperBound": null,
+          "upperBoundSource": null,
+          "invalidCode": "moment_invalid",
+          "validationOrder": 4
+        },
+        {
+          "name": "kurtosis",
+          "kind": "keywordOnly",
+          "required": true,
+          "default": null,
+          "wireValueKind": "realNumber",
+          "semanticValueKind": "finitePearsonKurtosis",
+          "acceptedLexicalForms": [
+            "json-number-token"
+          ],
+          "finite": true,
+          "domain": "kurtosis >= skewness^2 + 1 within frozen tolerance",
+          "lowerBound": "dynamic:skewness^2+1",
+          "upperBound": null,
+          "upperBoundSource": null,
+          "invalidCode": "moment_invalid",
+          "validationOrder": 5
+        }
+      ],
+      "logicalResultKind": "scalar",
+      "toleranceClass": "handPaper",
+      "applicableErrorCodes": [
+        "research_input_invalid",
+        "moment_invalid",
+        "research_result_non_finite"
+      ]
+    },
+    {
+      "functionId": "deflated_sharpe_ratio",
+      "track": "s1.4r",
+      "parameters": [
+        {
+          "name": "observed_sharpe",
+          "kind": "positional",
+          "required": true,
+          "default": null,
+          "wireValueKind": "realNumber",
+          "semanticValueKind": "finiteFloat64",
+          "acceptedLexicalForms": [
+            "json-number-token"
+          ],
+          "finite": true,
+          "domain": "finite",
+          "lowerBound": null,
+          "upperBound": null,
+          "upperBoundSource": null,
+          "invalidCode": "research_input_invalid",
+          "validationOrder": 1
+        },
+        {
+          "name": "sample_size",
+          "kind": "keywordOnly",
+          "required": true,
+          "default": null,
+          "wireValueKind": "integerToken",
+          "semanticValueKind": "exactInteger",
+          "acceptedLexicalForms": [
+            "bare-json-integer-token"
+          ],
+          "finite": false,
+          "domain": "2 <= n <= int(maxFloat64)",
+          "lowerBound": "inclusive:2",
+          "upperBound": "inclusive:int(maxFloat64)",
+          "upperBoundSource": "numpy-2.5.1-float64",
+          "invalidCode": "research_input_invalid",
+          "validationOrder": 2
+        },
+        {
+          "name": "skewness",
+          "kind": "keywordOnly",
+          "required": true,
+          "default": null,
+          "wireValueKind": "realNumber",
+          "semanticValueKind": "finiteFloat64",
+          "acceptedLexicalForms": [
+            "json-number-token"
+          ],
+          "finite": true,
+          "domain": "finite and paired moment inequality",
+          "lowerBound": null,
+          "upperBound": null,
+          "upperBoundSource": null,
+          "invalidCode": "moment_invalid",
+          "validationOrder": 3
+        },
+        {
+          "name": "kurtosis",
+          "kind": "keywordOnly",
+          "required": true,
+          "default": null,
+          "wireValueKind": "realNumber",
+          "semanticValueKind": "finitePearsonKurtosis",
+          "acceptedLexicalForms": [
+            "json-number-token"
+          ],
+          "finite": true,
+          "domain": "kurtosis >= skewness^2 + 1 within frozen tolerance",
+          "lowerBound": "dynamic:skewness^2+1",
+          "upperBound": null,
+          "upperBoundSource": null,
+          "invalidCode": "moment_invalid",
+          "validationOrder": 4
+        },
+        {
+          "name": "trial_count",
+          "kind": "keywordOnly",
+          "required": true,
+          "default": null,
+          "wireValueKind": "integerToken",
+          "semanticValueKind": "exactInteger",
+          "acceptedLexicalForms": [
+            "bare-json-integer-token"
+          ],
+          "finite": false,
+          "domain": "2 <= N <= int(maxFloat64)",
+          "lowerBound": "inclusive:2",
+          "upperBound": "inclusive:int(maxFloat64)",
+          "upperBoundSource": "numpy-2.5.1-float64",
+          "invalidCode": "trial_count_invalid",
+          "validationOrder": 5
+        },
+        {
+          "name": "sharpe_estimate_variance",
+          "kind": "keywordOnly",
+          "required": true,
+          "default": null,
+          "wireValueKind": "realNumber",
+          "semanticValueKind": "finitePositiveFloat64",
+          "acceptedLexicalForms": [
+            "json-number-token"
+          ],
+          "finite": true,
+          "domain": "> 0; ddof=1 trial-Sharpe sample variance",
+          "lowerBound": "exclusive:0",
+          "upperBound": null,
+          "upperBoundSource": null,
+          "invalidCode": "trial_variance_invalid",
+          "validationOrder": 6
+        },
+        {
+          "name": "trial_provenance",
+          "kind": "keywordOnly",
+          "required": true,
+          "default": null,
+          "wireValueKind": "provenanceObject",
+          "semanticValueKind": "effectiveTrialProvenanceV1",
+          "acceptedLexicalForms": [
+            "strict-json-object"
+          ],
+          "finite": false,
+          "domain": "frozen provenance fields; effective count equals trial_count",
+          "lowerBound": null,
+          "upperBound": null,
+          "upperBoundSource": null,
+          "invalidCode": "trial_provenance_invalid",
+          "validationOrder": 7
+        }
+      ],
+      "logicalResultKind": "scalar",
+      "toleranceClass": "handPaper",
+      "applicableErrorCodes": [
+        "research_input_invalid",
+        "moment_invalid",
+        "trial_count_invalid",
+        "trial_variance_invalid",
+        "trial_provenance_invalid",
+        "research_result_non_finite"
+      ]
+    },
+    {
+      "functionId": "kupiec_unconditional_coverage_test",
+      "track": "s1.4r",
+      "parameters": [
+        {
+          "name": "realized_losses",
+          "kind": "positional",
+          "required": true,
+          "default": null,
+          "wireValueKind": "array",
+          "semanticValueKind": "finiteFloat64Vector",
+          "acceptedLexicalForms": [
+            "inline-json-number-array",
+            "binaryFloat64-reference"
+          ],
+          "finite": true,
+          "domain": "length >= 1; signed loss-space",
+          "lowerBound": null,
+          "upperBound": null,
+          "upperBoundSource": null,
+          "invalidCode": "research_input_invalid",
+          "validationOrder": 1
+        },
+        {
+          "name": "forecast_vars",
+          "kind": "positional",
+          "required": true,
+          "default": null,
+          "wireValueKind": "array",
+          "semanticValueKind": "finiteNonNegativeFloat64Vector",
+          "acceptedLexicalForms": [
+            "inline-json-number-array",
+            "binaryFloat64-reference"
+          ],
+          "finite": true,
+          "domain": "same length as realized_losses; every value >= 0",
+          "lowerBound": "inclusive:0",
+          "upperBound": null,
+          "upperBoundSource": null,
+          "invalidCode": "forecast_var_negative",
+          "validationOrder": 2
+        },
+        {
+          "name": "confidence",
+          "kind": "keywordOnly",
+          "required": true,
+          "default": null,
+          "wireValueKind": "realNumber",
+          "semanticValueKind": "finiteFloat64",
+          "acceptedLexicalForms": [
+            "json-number-token"
+          ],
+          "finite": true,
+          "domain": "0 < confidence < 1",
+          "lowerBound": "exclusive:0",
+          "upperBound": "exclusive:1",
+          "upperBoundSource": "S1.4R validation",
+          "invalidCode": "research_input_invalid",
+          "validationOrder": 3
+        },
+        {
+          "name": "significance",
+          "kind": "keywordOnly",
+          "required": false,
+          "default": 0.05,
+          "wireValueKind": "realNumber",
+          "semanticValueKind": "finiteFloat64",
+          "acceptedLexicalForms": [
+            "json-number-token"
+          ],
+          "finite": true,
+          "domain": "0 < significance < 1",
+          "lowerBound": "exclusive:0",
+          "upperBound": "exclusive:1",
+          "upperBoundSource": "S1.4R validation",
+          "invalidCode": "significance_invalid",
+          "validationOrder": 4
+        }
+      ],
+      "logicalResultKind": "likelihoodRecord",
+      "toleranceClass": "handPaper",
+      "applicableErrorCodes": [
+        "research_input_invalid",
+        "research_input_too_short",
+        "forecast_shape_invalid",
+        "forecast_var_negative",
+        "significance_invalid",
+        "likelihood_invalid",
+        "research_result_non_finite"
+      ]
+    },
+    {
+      "functionId": "christoffersen_independence_test",
+      "track": "s1.4r",
+      "parameters": [
+        {
+          "name": "realized_losses",
+          "kind": "positional",
+          "required": true,
+          "default": null,
+          "wireValueKind": "array",
+          "semanticValueKind": "finiteFloat64Vector",
+          "acceptedLexicalForms": [
+            "inline-json-number-array",
+            "binaryFloat64-reference"
+          ],
+          "finite": true,
+          "domain": "length >= 2; signed loss-space",
+          "lowerBound": null,
+          "upperBound": null,
+          "upperBoundSource": null,
+          "invalidCode": "research_input_invalid",
+          "validationOrder": 1
+        },
+        {
+          "name": "forecast_vars",
+          "kind": "positional",
+          "required": true,
+          "default": null,
+          "wireValueKind": "array",
+          "semanticValueKind": "finiteNonNegativeFloat64Vector",
+          "acceptedLexicalForms": [
+            "inline-json-number-array",
+            "binaryFloat64-reference"
+          ],
+          "finite": true,
+          "domain": "same length as realized_losses; every value >= 0",
+          "lowerBound": "inclusive:0",
+          "upperBound": null,
+          "upperBoundSource": null,
+          "invalidCode": "forecast_var_negative",
+          "validationOrder": 2
+        },
+        {
+          "name": "significance",
+          "kind": "keywordOnly",
+          "required": false,
+          "default": 0.05,
+          "wireValueKind": "realNumber",
+          "semanticValueKind": "finiteFloat64",
+          "acceptedLexicalForms": [
+            "json-number-token"
+          ],
+          "finite": true,
+          "domain": "0 < significance < 1",
+          "lowerBound": "exclusive:0",
+          "upperBound": "exclusive:1",
+          "upperBoundSource": "S1.4R validation",
+          "invalidCode": "significance_invalid",
+          "validationOrder": 3
+        }
+      ],
+      "logicalResultKind": "independenceRecord",
+      "toleranceClass": "handPaper",
+      "applicableErrorCodes": [
+        "research_input_invalid",
+        "research_input_too_short",
+        "forecast_shape_invalid",
+        "forecast_var_negative",
+        "significance_invalid",
+        "insufficient_sample",
+        "likelihood_invalid",
+        "research_result_non_finite"
+      ]
+    },
+    {
+      "functionId": "christoffersen_conditional_coverage_test",
+      "track": "s1.4r",
+      "parameters": [
+        {
+          "name": "realized_losses",
+          "kind": "positional",
+          "required": true,
+          "default": null,
+          "wireValueKind": "array",
+          "semanticValueKind": "finiteFloat64Vector",
+          "acceptedLexicalForms": [
+            "inline-json-number-array",
+            "binaryFloat64-reference"
+          ],
+          "finite": true,
+          "domain": "length >= 2; signed loss-space",
+          "lowerBound": null,
+          "upperBound": null,
+          "upperBoundSource": null,
+          "invalidCode": "research_input_invalid",
+          "validationOrder": 1
+        },
+        {
+          "name": "forecast_vars",
+          "kind": "positional",
+          "required": true,
+          "default": null,
+          "wireValueKind": "array",
+          "semanticValueKind": "finiteNonNegativeFloat64Vector",
+          "acceptedLexicalForms": [
+            "inline-json-number-array",
+            "binaryFloat64-reference"
+          ],
+          "finite": true,
+          "domain": "same length as realized_losses; every value >= 0",
+          "lowerBound": "inclusive:0",
+          "upperBound": null,
+          "upperBoundSource": null,
+          "invalidCode": "forecast_var_negative",
+          "validationOrder": 2
+        },
+        {
+          "name": "confidence",
+          "kind": "keywordOnly",
+          "required": true,
+          "default": null,
+          "wireValueKind": "realNumber",
+          "semanticValueKind": "finiteFloat64",
+          "acceptedLexicalForms": [
+            "json-number-token"
+          ],
+          "finite": true,
+          "domain": "0 < confidence < 1",
+          "lowerBound": "exclusive:0",
+          "upperBound": "exclusive:1",
+          "upperBoundSource": "S1.4R validation",
+          "invalidCode": "research_input_invalid",
+          "validationOrder": 3
+        },
+        {
+          "name": "significance",
+          "kind": "keywordOnly",
+          "required": false,
+          "default": 0.05,
+          "wireValueKind": "realNumber",
+          "semanticValueKind": "finiteFloat64",
+          "acceptedLexicalForms": [
+            "json-number-token"
+          ],
+          "finite": true,
+          "domain": "0 < significance < 1",
+          "lowerBound": "exclusive:0",
+          "upperBound": "exclusive:1",
+          "upperBoundSource": "S1.4R validation",
+          "invalidCode": "significance_invalid",
+          "validationOrder": 4
+        }
+      ],
+      "logicalResultKind": "conditionalCoverageRecord",
+      "toleranceClass": "handPaper",
+      "applicableErrorCodes": [
+        "research_input_invalid",
+        "research_input_too_short",
+        "forecast_shape_invalid",
+        "forecast_var_negative",
+        "significance_invalid",
+        "insufficient_sample",
+        "likelihood_invalid",
+        "research_result_non_finite"
+      ]
+    }
+  ]
+}

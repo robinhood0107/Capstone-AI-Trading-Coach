@@ -1,0 +1,278 @@
+{
+  "schemaVersion": "s1.4x-property-plan-v1",
+  "seedCorpusFile": "contract/fixtures/property/property-seeds.v1.json",
+  "seedCount": 24,
+  "minimumSuccessfulPerProperty": 1000,
+  "maximumDiscardedPerProperty": 100,
+  "maximumDiscardRatio": 0.1,
+  "shrinkArtifactRequired": true,
+  "edgeCorpus": [
+    "negative zero input and recursive positive-zero output normalization",
+    "smallest positive and negative float64 subnormal",
+    "Double.MIN_NORMAL and its negative",
+    "maximum finite float64 and its negative",
+    "max-finite combinations that overflow required intermediates",
+    "cancellation-sensitive Hyndman-Fan type 7 interpolation",
+    "finite neighbors of the confidence and significance lower and upper bounds",
+    "exact integers 1, 2, n-1, maximum permitted, 10^20, and 10^308",
+    "constant and alternating sequences",
+    "zero-exception and all-exception sequences",
+    "transition-row identifiable and unidentifiable sequences"
+  ],
+  "properties": [
+    {
+      "propertyId": "production.output-finite-or-stable-error",
+      "functionIds": [
+        "simple_returns",
+        "log_returns",
+        "cumulative_return",
+        "cagr",
+        "realized_volatility",
+        "annualized_volatility",
+        "max_drawdown",
+        "sharpe_ratio",
+        "sortino_ratio",
+        "historical_var",
+        "historical_cvar"
+      ],
+      "invariant": "Every domain-valid request returns a finite normalized value or a registry-approved stable error at a frozen checked intermediate.",
+      "generatorPolicy": "valid-by-construction"
+    },
+    {
+      "propertyId": "simple-returns.scale-invariant",
+      "functionIds": [
+        "simple_returns"
+      ],
+      "invariant": "Multiplying every positive price by the same positive finite scale preserves simple returns when both paths stay finite.",
+      "generatorPolicy": "valid-by-construction"
+    },
+    {
+      "propertyId": "log-returns.scale-invariant",
+      "functionIds": [
+        "log_returns"
+      ],
+      "invariant": "Multiplying every positive price by the same positive finite scale preserves log differences within the large/property tolerance.",
+      "generatorPolicy": "valid-by-construction"
+    },
+    {
+      "propertyId": "cumulative-return.bankruptcy-absorbing",
+      "functionIds": [
+        "cumulative_return"
+      ],
+      "invariant": "Any valid sequence containing -1 has exact cumulative return -1 even when later terms would otherwise overflow.",
+      "generatorPolicy": "valid-by-construction"
+    },
+    {
+      "propertyId": "cumulative-return.manual-product-identity",
+      "functionIds": [
+        "cumulative_return"
+      ],
+      "invariant": "For finite valid returns with no -1 and no overflow, the result equals the independently evaluated float64 product of every (1 + return) minus 1 in request order.",
+      "generatorPolicy": "valid-by-construction"
+    },
+    {
+      "propertyId": "volatility.translation-and-scale",
+      "functionIds": [
+        "realized_volatility",
+        "annualized_volatility"
+      ],
+      "invariant": "Adding a common finite constant preserves sample volatility, while multiplying by a finite factor scales it by the absolute factor; annualized volatility retains the frozen sqrt(periods_per_year) multiplier.",
+      "generatorPolicy": "valid-by-construction"
+    },
+    {
+      "propertyId": "max-drawdown.bounds",
+      "functionIds": [
+        "max_drawdown"
+      ],
+      "invariant": "For a valid equity curve the result is finite and lies in [-1,0], and positive common scaling preserves it.",
+      "generatorPolicy": "valid-by-construction"
+    },
+    {
+      "propertyId": "var-hf7-observation-range",
+      "functionIds": [
+        "historical_var"
+      ],
+      "invariant": "A successful type-7 quantile lies between the finite minimum and maximum observations without replacing the frozen overflow path.",
+      "generatorPolicy": "valid-by-construction"
+    },
+    {
+      "propertyId": "var-cvar.shift-and-positive-scale",
+      "functionIds": [
+        "historical_var",
+        "historical_cvar"
+      ],
+      "invariant": "Adding a finite constant shifts VaR and threshold CVaR by that constant; multiplying all observations by a positive finite scale multiplies both results by that scale when every required intermediate stays finite.",
+      "generatorPolicy": "valid-by-construction"
+    },
+    {
+      "propertyId": "cvar-threshold-tail",
+      "functionIds": [
+        "historical_cvar"
+      ],
+      "invariant": "The result equals the mean of every actual observation less than or equal to the type-7 VaR threshold, including all ties.",
+      "generatorPolicy": "valid-by-construction"
+    },
+    {
+      "propertyId": "expected-shortfall.permutation-invariant",
+      "functionIds": [
+        "historical_expected_shortfall"
+      ],
+      "invariant": "Permuting finite losses preserves fractional historical expected shortfall, and multiplying every loss by a positive finite scale multiplies ES by that scale when the result stays finite.",
+      "generatorPolicy": "valid-by-construction"
+    },
+    {
+      "propertyId": "realized.permutation-invariant",
+      "functionIds": [
+        "realized_variance",
+        "realized_volatility_intraday"
+      ],
+      "invariant": "Permuting intraday log returns preserves realized variance and volatility; volatility squared equals variance within tolerance.",
+      "generatorPolicy": "valid-by-construction"
+    },
+    {
+      "propertyId": "realized.scale-laws",
+      "functionIds": [
+        "realized_variance",
+        "realized_volatility_intraday"
+      ],
+      "invariant": "Scaling every intraday return by finite k scales realized variance by k squared and realized volatility by abs(k), subject to frozen finite-result behavior.",
+      "generatorPolicy": "valid-by-construction"
+    },
+    {
+      "propertyId": "lo.order-sensitive",
+      "functionIds": [
+        "lo_adjusted_sharpe_ratio"
+      ],
+      "invariant": "The frozen ordered and permuted hand fixtures have distinct expected results; q=1 equals original-frequency population Sharpe exactly within tolerance.",
+      "generatorPolicy": "valid-by-construction"
+    },
+    {
+      "propertyId": "psr.benchmark-equality",
+      "functionIds": [
+        "probabilistic_sharpe_ratio"
+      ],
+      "invariant": "When observed Sharpe equals benchmark Sharpe and the moment radicand is valid, PSR is exactly 0.5 within hand/paper tolerance.",
+      "generatorPolicy": "valid-by-construction"
+    },
+    {
+      "propertyId": "dsr.benchmark-equality",
+      "functionIds": [
+        "deflated_sharpe_ratio"
+      ],
+      "invariant": "When observed Sharpe equals the frozen expected maximum benchmark Sharpe, DSR is 0.5 and arbitrary-size trial integers preserve their lexical and semantic type.",
+      "generatorPolicy": "valid-by-construction"
+    },
+    {
+      "propertyId": "dsr.provenance-count-consistency",
+      "functionIds": [
+        "deflated_sharpe_ratio"
+      ],
+      "invariant": "Valid provenance has raw_trial_count >= effective_trial_count >= 2, effective_trial_count exactly equals trial_count, variance_ddof equals 1, a nonblank sampling frequency, and a lowercase 64-hex registry digest; changing any relation yields trial_provenance_invalid.",
+      "generatorPolicy": "fixed-invalid-corpus"
+    },
+    {
+      "propertyId": "kupiec.paired-permutation-invariant",
+      "functionIds": [
+        "kupiec_unconditional_coverage_test"
+      ],
+      "invariant": "Applying the same permutation to realized-loss and forecast-VaR pairs preserves the strict exception sequence count and Kupiec result.",
+      "generatorPolicy": "valid-by-construction"
+    },
+    {
+      "propertyId": "backtest.strict-loss-greater-than-var",
+      "functionIds": [
+        "kupiec_unconditional_coverage_test",
+        "christoffersen_independence_test",
+        "christoffersen_conditional_coverage_test"
+      ],
+      "invariant": "An exception is exactly realized_loss > forecast_var; equality and every lower realized loss are non-exceptions, including negative realized losses.",
+      "generatorPolicy": "valid-by-construction"
+    },
+    {
+      "propertyId": "christoffersen.order-sensitive",
+      "functionIds": [
+        "christoffersen_independence_test",
+        "christoffersen_conditional_coverage_test"
+      ],
+      "invariant": "The frozen ordered and permuted exception sequences have equal exception counts but the exact distinct transition statistics in the canonical expected fixture.",
+      "generatorPolicy": "valid-by-construction"
+    },
+    {
+      "propertyId": "backtest.positive-common-scaling",
+      "functionIds": [
+        "kupiec_unconditional_coverage_test",
+        "christoffersen_independence_test",
+        "christoffersen_conditional_coverage_test"
+      ],
+      "invariant": "Positive common scaling of each realized-loss and forecast-VaR pair preserves every strict exception and all three test results.",
+      "generatorPolicy": "valid-by-construction"
+    },
+    {
+      "propertyId": "likelihood.record-invariants",
+      "functionIds": [
+        "kupiec_unconditional_coverage_test",
+        "christoffersen_independence_test",
+        "christoffersen_conditional_coverage_test"
+      ],
+      "invariant": "Every successful statistic is nonnegative, every p_value is in [0,1], reject is exactly p_value < significance, and transition counts sum to conditioned observations when present.",
+      "generatorPolicy": "valid-by-construction"
+    },
+    {
+      "propertyId": "conditional-coverage.component-identity",
+      "functionIds": [
+        "christoffersen_conditional_coverage_test"
+      ],
+      "invariant": "The direct LRcc equals conditioned unconditional_component_statistic plus independence_component_statistic within the frozen 128*eps likelihood consistency tolerance.",
+      "generatorPolicy": "valid-by-construction"
+    },
+    {
+      "propertyId": "christoffersen.unidentifiable-transition-rejected",
+      "functionIds": [
+        "christoffersen_independence_test",
+        "christoffersen_conditional_coverage_test"
+      ],
+      "invariant": "If either previous-state transition-row total is zero after input and keyword validation, the exact stable result is insufficient_sample.",
+      "generatorPolicy": "fixed-invalid-corpus"
+    },
+    {
+      "propertyId": "recursive-negative-zero-normalization",
+      "functionIds": [
+        "simple_returns",
+        "log_returns",
+        "cumulative_return",
+        "cagr",
+        "realized_volatility",
+        "annualized_volatility",
+        "max_drawdown",
+        "sharpe_ratio",
+        "sortino_ratio",
+        "historical_var",
+        "historical_cvar",
+        "historical_expected_shortfall",
+        "realized_variance",
+        "realized_volatility_intraday",
+        "lo_adjusted_sharpe_ratio",
+        "probabilistic_sharpe_ratio",
+        "deflated_sharpe_ratio",
+        "kupiec_unconditional_coverage_test",
+        "christoffersen_independence_test",
+        "christoffersen_conditional_coverage_test"
+      ],
+      "invariant": "No successful scalar, vector, or nested record field serializes IEEE-754 negative zero.",
+      "generatorPolicy": "valid-by-construction"
+    }
+  ],
+  "failureArtifactFields": [
+    "propertyId",
+    "toolchainProfile",
+    "originalSeed",
+    "replayToken",
+    "successful",
+    "discarded",
+    "attempted",
+    "shrinks",
+    "originalCounterexample",
+    "fullyShrunkCounterexample",
+    "rerunCommand"
+  ]
+}

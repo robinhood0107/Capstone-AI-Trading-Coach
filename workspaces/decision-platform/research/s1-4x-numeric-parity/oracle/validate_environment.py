@@ -1,0 +1,653 @@
+"""S1.4X benchmark host의 disk/memory/load/container/process/affinity를 검증한다."""
+
+from __future__ import annotations
+
+import argparse
+import dataclasses
+import os
+import platform
+import shutil
+import subprocess
+import time
+from collections.abc import Mapping, Sequence
+from pathlib import Path
+from typing import Any, Protocol
+
+from oracle_common import OracleContractError, atomic_write_json, sha256_bytes
+
+
+@dataclasses.dataclass(frozen=True)
+class ProcessSample:
+    """PID reuse와 CPU delta 판정에 필요한 `/proc/<pid>/stat` 최소 필드다."""
+
+    pid: int
+    ppid: int
+    start_time_ticks: int
+    cpu_ticks: int
+    command: str
+
+
+@dataclasses.dataclass(frozen=True)
+class ProcessSnapshot:
+    """한 시점의 monotonic time과 process identity/CPU tick 집합이다."""
+
+    monotonic_seconds: float
+    processes: Mapping[int, ProcessSample]
+
+
+@dataclasses.dataclass(frozen=True)
+class EnvironmentPolicy:
+    """Gate 1에서 동결하는 exact benchmark host 임계값이다."""
+
+    cpu_set: frozenset[int]
+    min_home_free_bytes: int = 32_212_254_720
+    min_available_memory_bytes: int = 8_589_934_592
+    max_normalized_load1: float = 0.10
+    load_samples: int = 3
+    sample_interval_seconds: float = 30.0
+    max_quiet_wait_seconds: float = 600.0
+    max_running_containers: int = 0
+    external_process_sample_seconds: float = 30.0
+    max_external_process_cpu_percent: float = 5.0
+    allowed_process_root_pid: int = 0
+
+
+class EnvironmentAdapter(Protocol):
+    """실제 host와 deterministic fake가 공유하는 side-effect boundary다."""
+
+    def home_free_bytes(self, home: Path) -> int: ...
+
+    def available_memory_bytes(self) -> int: ...
+
+    def logical_cpu_count(self) -> int: ...
+
+    def normalized_affinity(self) -> frozenset[int]: ...
+
+    def set_affinity(self, cpu_set: frozenset[int]) -> None: ...
+
+    def load1(self) -> float: ...
+
+    def running_containers(self) -> list[str]: ...
+
+    def process_snapshot(self) -> ProcessSnapshot: ...
+
+    def clock_ticks_per_second(self) -> int: ...
+
+    def monotonic(self) -> float: ...
+
+    def sleep(self, seconds: float) -> None: ...
+
+    def metadata(self) -> dict[str, Any]: ...
+
+
+class LocalEnvironmentAdapter:
+    """Linux/WSL host를 stdlib와 bounded Docker subprocess만으로 읽는다."""
+
+    def home_free_bytes(self, home: Path) -> int:
+        return shutil.disk_usage(home).free
+
+    def available_memory_bytes(self) -> int:
+        for line in Path("/proc/meminfo").read_text(encoding="ascii").splitlines():
+            if line.startswith("MemAvailable:"):
+                fields = line.split()
+                if len(fields) == 3 and fields[2] == "kB":
+                    return int(fields[1]) * 1024
+        raise OracleContractError("/proc/meminfo has no MemAvailable")
+
+    def logical_cpu_count(self) -> int:
+        return len(os.sched_getaffinity(0))
+
+    def normalized_affinity(self) -> frozenset[int]:
+        return frozenset(os.sched_getaffinity(0))
+
+    def set_affinity(self, cpu_set: frozenset[int]) -> None:
+        os.sched_setaffinity(0, cpu_set)
+
+    def load1(self) -> float:
+        return os.getloadavg()[0]
+
+    def running_containers(self) -> list[str]:
+        completed = subprocess.run(
+            ["docker", "ps", "-q"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if completed.returncode != 0:
+            raise OracleContractError(
+                f"docker ps failed with exit {completed.returncode}"
+            )
+        return [line for line in completed.stdout.splitlines() if line]
+
+    def process_snapshot(self) -> ProcessSnapshot:
+        processes: dict[int, ProcessSample] = {}
+        for directory in Path("/proc").iterdir():
+            if not directory.name.isdecimal():
+                continue
+            try:
+                raw = (directory / "stat").read_text(encoding="utf-8")
+                sample = _parse_proc_stat(raw)
+            except (FileNotFoundError, PermissionError, ProcessLookupError, ValueError):
+                continue
+            processes[sample.pid] = sample
+        return ProcessSnapshot(self.monotonic(), processes)
+
+    def clock_ticks_per_second(self) -> int:
+        return int(os.sysconf("SC_CLK_TCK"))
+
+    def monotonic(self) -> float:
+        return time.monotonic()
+
+    def sleep(self, seconds: float) -> None:
+        time.sleep(seconds)
+
+    def metadata(self) -> dict[str, Any]:
+        kernel = platform.release()
+        is_wsl = "microsoft" in kernel.lower()
+        fields: dict[str, Any] = {
+            "kernelRelease": kernel,
+            "platform": platform.system(),
+            "machine": platform.machine(),
+            "wsl": is_wsl,
+        }
+        visibility = {
+            "cpuGovernor": Path(
+                "/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor"
+            ),
+            "cpuFrequency": Path(
+                "/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq"
+            ),
+            "temperature": Path("/sys/class/thermal/thermal_zone0/temp"),
+        }
+        for field, path in visibility.items():
+            try:
+                fields[field] = path.read_text(encoding="ascii").strip()
+            except OSError:
+                fields[field] = "UNAVAILABLE_WSL" if is_wsl else "UNAVAILABLE"
+        return fields
+
+
+def _parse_proc_stat(raw: str) -> ProcessSample:
+    left_parenthesis = raw.find("(")
+    right_parenthesis = raw.rfind(")")
+    if left_parenthesis <= 0 or right_parenthesis <= left_parenthesis:
+        raise ValueError("malformed /proc stat")
+    pid = int(raw[:left_parenthesis].strip())
+    command = raw[left_parenthesis + 1 : right_parenthesis]
+    remainder = raw[right_parenthesis + 1 :].strip().split()
+    if len(remainder) < 20:
+        raise ValueError("short /proc stat")
+    # remainder[0]은 field 3(state)다.
+    ppid = int(remainder[1])
+    user_ticks = int(remainder[11])
+    system_ticks = int(remainder[12])
+    start_time_ticks = int(remainder[19])
+    return ProcessSample(
+        pid=pid,
+        ppid=ppid,
+        start_time_ticks=start_time_ticks,
+        cpu_ticks=user_ticks + system_ticks,
+        command=command,
+    )
+
+
+def _record(
+    checks: list[dict[str, Any]],
+    *,
+    check_id: str,
+    expected: Any,
+    actual: Any,
+    passed: bool,
+    evidence: Any | None = None,
+) -> None:
+    checks.append(
+        {
+            "id": check_id,
+            "expected": expected,
+            "actual": actual,
+            "status": "PASS" if passed else "FAIL",
+            "evidence": evidence,
+        }
+    )
+
+
+def _allowed_processes(
+    snapshot: ProcessSnapshot,
+    *,
+    root_pid: int,
+) -> tuple[set[int], tuple[int, int] | None]:
+    root = snapshot.processes.get(root_pid)
+    if root is None:
+        return set(), None
+    allowed = {root_pid}
+    changed = True
+    while changed:
+        changed = False
+        for process in snapshot.processes.values():
+            if process.ppid in allowed and process.pid not in allowed:
+                allowed.add(process.pid)
+                changed = True
+    ancestor_pid = root.ppid
+    visited: set[int] = set()
+    while ancestor_pid > 0 and ancestor_pid not in visited:
+        visited.add(ancestor_pid)
+        ancestor = snapshot.processes.get(ancestor_pid)
+        if ancestor is None:
+            break
+        # ancestor 자체만 허용하며 그 ancestor의 다른 descendant/sibling은 허용하지 않는다.
+        allowed.add(ancestor.pid)
+        ancestor_pid = ancestor.ppid
+    return allowed, (root.pid, root.start_time_ticks)
+
+
+def _process_cpu_result(
+    first: ProcessSnapshot,
+    second: ProcessSnapshot,
+    *,
+    root_pid: int,
+    clock_ticks_per_second: int,
+    threshold_percent: float,
+) -> dict[str, Any]:
+    first_allowed, first_root_identity = _allowed_processes(first, root_pid=root_pid)
+    second_allowed, second_root_identity = _allowed_processes(second, root_pid=root_pid)
+    elapsed = second.monotonic_seconds - first.monotonic_seconds
+    if elapsed <= 0.0 or clock_ticks_per_second <= 0:
+        return {
+            "passed": False,
+            "elapsedSeconds": elapsed,
+            "pidReuse": [],
+            "external": [],
+            "reason": "invalid process sample interval or clock tick rate",
+        }
+    pid_reuse: list[dict[str, int]] = []
+    external: list[dict[str, Any]] = []
+    for pid, current in second.processes.items():
+        previous = first.processes.get(pid)
+        if previous is not None and previous.start_time_ticks != current.start_time_ticks:
+            pid_reuse.append(
+                {
+                    "pid": pid,
+                    "firstStartTimeTicks": previous.start_time_ticks,
+                    "secondStartTimeTicks": current.start_time_ticks,
+                }
+            )
+            continue
+        if pid in second_allowed or pid in first_allowed:
+            continue
+        delta_ticks = (
+            current.cpu_ticks
+            if previous is None
+            else max(0, current.cpu_ticks - previous.cpu_ticks)
+        )
+        cpu_percent = delta_ticks / clock_ticks_per_second / elapsed * 100.0
+        if cpu_percent >= threshold_percent:
+            external.append(
+                {
+                    "pid": pid,
+                    "startTimeTicks": current.start_time_ticks,
+                    "command": current.command,
+                    "cpuPercent": cpu_percent,
+                }
+            )
+    root_stable = first_root_identity is not None and first_root_identity == second_root_identity
+    return {
+        "passed": root_stable and not pid_reuse and not external,
+        "elapsedSeconds": elapsed,
+        "rootIdentityStable": root_stable,
+        "pidReuse": pid_reuse,
+        "external": external,
+    }
+
+
+def _sample_quiet_load(
+    adapter: EnvironmentAdapter,
+    *,
+    policy: EnvironmentPolicy,
+    logical_cpu_count: int,
+) -> dict[str, Any]:
+    if logical_cpu_count <= 0:
+        return {
+            "passed": False,
+            "windows": [],
+            "reason": "logical CPU count is not positive",
+        }
+    started = adapter.monotonic()
+    deadline = started + policy.max_quiet_wait_seconds
+    windows: list[list[float]] = []
+    while True:
+        samples: list[float] = []
+        complete = True
+        for index in range(policy.load_samples):
+            if index:
+                if adapter.monotonic() + policy.sample_interval_seconds > deadline:
+                    complete = False
+                    break
+                adapter.sleep(policy.sample_interval_seconds)
+            try:
+                normalized = adapter.load1() / logical_cpu_count
+            except (OSError, OracleContractError):
+                normalized = float("inf")
+            samples.append(normalized)
+        windows.append(samples)
+        if (
+            complete
+            and len(samples) == policy.load_samples
+            and all(sample <= policy.max_normalized_load1 for sample in samples)
+        ):
+            return {
+                "passed": True,
+                "windows": windows,
+                "elapsedSeconds": adapter.monotonic() - started,
+            }
+        if not complete or adapter.monotonic() >= deadline:
+            return {
+                "passed": False,
+                "windows": windows,
+                "elapsedSeconds": adapter.monotonic() - started,
+            }
+
+
+def validate_environment(
+    home: Path,
+    *,
+    policy: EnvironmentPolicy,
+    adapter: EnvironmentAdapter | None = None,
+) -> dict[str, Any]:
+    """모든 host check를 끝까지 수집해 typed aggregate result를 반환한다."""
+
+    source = adapter or LocalEnvironmentAdapter()
+    checks: list[dict[str, Any]] = []
+    try:
+        home_free = source.home_free_bytes(home)
+        _record(
+            checks,
+            check_id="disk.home-free-bytes",
+            expected=f">={policy.min_home_free_bytes}",
+            actual=home_free,
+            passed=home_free >= policy.min_home_free_bytes,
+        )
+    except (OSError, OracleContractError) as exc:
+        _record(
+            checks,
+            check_id="disk.home-free-bytes",
+            expected=f">={policy.min_home_free_bytes}",
+            actual=f"UNAVAILABLE:{type(exc).__name__}",
+            passed=False,
+        )
+    try:
+        available_memory = source.available_memory_bytes()
+        _record(
+            checks,
+            check_id="memory.available-bytes",
+            expected=f">={policy.min_available_memory_bytes}",
+            actual=available_memory,
+            passed=available_memory >= policy.min_available_memory_bytes,
+        )
+    except (OSError, OracleContractError) as exc:
+        _record(
+            checks,
+            check_id="memory.available-bytes",
+            expected=f">={policy.min_available_memory_bytes}",
+            actual=f"UNAVAILABLE:{type(exc).__name__}",
+            passed=False,
+        )
+
+    # affinity pin이 process-visible CPU 수를 줄이기 전에 effective host 분모를 동결한다.
+    try:
+        logical_cpu_count = source.logical_cpu_count()
+        _record(
+            checks,
+            check_id="cpu.logical-count",
+            expected=">=1",
+            actual=logical_cpu_count,
+            passed=logical_cpu_count >= 1,
+            evidence={"samplePhase": "PRE_AFFINITY_PIN"},
+        )
+    except (OSError, OracleContractError, ValueError):
+        logical_cpu_count = 0
+        _record(
+            checks,
+            check_id="cpu.logical-count",
+            expected=">=1",
+            actual="UNAVAILABLE",
+            passed=False,
+        )
+
+    try:
+        source.set_affinity(policy.cpu_set)
+        affinity = source.normalized_affinity()
+        _record(
+            checks,
+            check_id="cpu.affinity-round-trip",
+            expected=sorted(policy.cpu_set),
+            actual=sorted(affinity),
+            passed=affinity == policy.cpu_set,
+        )
+    except (OSError, OracleContractError, ValueError) as exc:
+        _record(
+            checks,
+            check_id="cpu.affinity-round-trip",
+            expected=sorted(policy.cpu_set),
+            actual=f"UNAVAILABLE:{type(exc).__name__}",
+            passed=False,
+        )
+
+    try:
+        containers = source.running_containers()
+        _record(
+            checks,
+            check_id="docker.running-containers",
+            expected=f"<={policy.max_running_containers}",
+            actual=len(containers),
+            passed=len(containers) <= policy.max_running_containers,
+            evidence={"containerIds": containers},
+        )
+    except (OSError, OracleContractError) as exc:
+        _record(
+            checks,
+            check_id="docker.running-containers",
+            expected=f"<={policy.max_running_containers}",
+            actual=f"UNAVAILABLE:{type(exc).__name__}",
+            passed=False,
+        )
+
+    load_result = _sample_quiet_load(
+        source,
+        policy=policy,
+        logical_cpu_count=logical_cpu_count,
+    )
+    _record(
+        checks,
+        check_id="load.normalized-load1-window",
+        expected={
+            "max": policy.max_normalized_load1,
+            "samples": policy.load_samples,
+            "intervalSeconds": policy.sample_interval_seconds,
+            "maxQuietWaitSeconds": policy.max_quiet_wait_seconds,
+            "logicalCpuCountSource": "PRE_AFFINITY_PIN",
+        },
+        actual=load_result.get("windows"),
+        passed=bool(load_result["passed"]),
+        evidence={
+            "elapsedSeconds": load_result.get("elapsedSeconds"),
+            "normalizationLogicalCpuCount": logical_cpu_count,
+        },
+    )
+
+    try:
+        first_process_snapshot = source.process_snapshot()
+        source.sleep(policy.external_process_sample_seconds)
+        second_process_snapshot = source.process_snapshot()
+        process_result = _process_cpu_result(
+            first_process_snapshot,
+            second_process_snapshot,
+            root_pid=policy.allowed_process_root_pid,
+            clock_ticks_per_second=source.clock_ticks_per_second(),
+            threshold_percent=policy.max_external_process_cpu_percent,
+        )
+        _record(
+            checks,
+            check_id="process.external-cpu",
+            expected={
+                "rootPid": policy.allowed_process_root_pid,
+                "sampleSeconds": policy.external_process_sample_seconds,
+                "externalCpuPercent": (
+                    f"<{policy.max_external_process_cpu_percent}"
+                ),
+                "pidReuse": 0,
+            },
+            actual={
+                "externalCount": len(process_result.get("external", [])),
+                "pidReuseCount": len(process_result.get("pidReuse", [])),
+                "rootIdentityStable": process_result.get("rootIdentityStable"),
+            },
+            passed=bool(process_result["passed"]),
+            evidence=process_result,
+        )
+    except (OSError, OracleContractError, ValueError) as exc:
+        _record(
+            checks,
+            check_id="process.external-cpu",
+            expected="valid two-snapshot process audit",
+            actual=f"UNAVAILABLE:{type(exc).__name__}",
+            passed=False,
+        )
+
+    try:
+        metadata = source.metadata()
+    except (OSError, OracleContractError):
+        metadata = {"status": "UNAVAILABLE"}
+    policy_json = {
+        **dataclasses.asdict(policy),
+        "cpu_set": sorted(policy.cpu_set),
+    }
+    host_id_payload = (
+        f"{metadata.get('kernelRelease')}|{metadata.get('machine')}|{logical_cpu_count}"
+    ).encode()
+    failures = [check for check in checks if check["status"] != "PASS"]
+    return {
+        "schemaVersion": "s1.4x-host-validity-v1",
+        "policy": policy_json,
+        "portableHostIdSha256": sha256_bytes(host_id_payload),
+        "metadata": metadata,
+        "checks": checks,
+        "failureCount": len(failures),
+        "status": "PASS" if not failures else "FAIL",
+    }
+
+
+def _parse_cpu_set(value: str) -> frozenset[int]:
+    cpus: set[int] = set()
+    for component in value.split(","):
+        component = component.strip()
+        if not component:
+            raise argparse.ArgumentTypeError("CPU set contains an empty component")
+        if "-" in component:
+            start_text, end_text = component.split("-", maxsplit=1)
+            start, end = int(start_text), int(end_text)
+            if start < 0 or end < start:
+                raise argparse.ArgumentTypeError("CPU range is invalid")
+            cpus.update(range(start, end + 1))
+        else:
+            cpu = int(component)
+            if cpu < 0:
+                raise argparse.ArgumentTypeError("CPU index is negative")
+            cpus.add(cpu)
+    if not cpus:
+        raise argparse.ArgumentTypeError("CPU set is empty")
+    return frozenset(cpus)
+
+
+def _parse_arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Collect all S1.4X host validity checks into typed JSON. "
+            "The validator never stops user processes or containers."
+        )
+    )
+    parser.add_argument("--home", required=True, type=Path)
+    parser.add_argument("--cpu-set", required=True, type=_parse_cpu_set)
+    parser.add_argument("--min-home-free-bytes", type=int, default=32_212_254_720)
+    parser.add_argument("--min-available-memory-bytes", type=int, default=8_589_934_592)
+    parser.add_argument("--max-normalized-load1", type=float, default=0.10)
+    parser.add_argument("--load-samples", type=int, default=3)
+    parser.add_argument("--sample-interval-seconds", type=float, default=30.0)
+    parser.add_argument("--max-quiet-wait-seconds", type=float, default=600.0)
+    parser.add_argument("--max-running-containers", type=int, default=0)
+    parser.add_argument("--external-process-sample-seconds", type=float, default=30.0)
+    parser.add_argument("--max-external-process-cpu-percent", type=float, default=5.0)
+    parser.add_argument("--allowed-process-root-pid", type=int, required=True)
+    parser.add_argument("--output", required=True, type=Path)
+    return parser.parse_args(argv)
+
+
+def _policy_from_arguments(arguments: argparse.Namespace) -> EnvironmentPolicy:
+    integer_nonnegative = (
+        "min_home_free_bytes",
+        "min_available_memory_bytes",
+        "max_running_containers",
+    )
+    for field in integer_nonnegative:
+        if getattr(arguments, field) < 0:
+            raise OracleContractError(f"{field} must be non-negative")
+    if arguments.load_samples < 1:
+        raise OracleContractError("load_samples must be positive")
+    for field in (
+        "sample_interval_seconds",
+        "max_quiet_wait_seconds",
+        "external_process_sample_seconds",
+        "max_external_process_cpu_percent",
+    ):
+        if getattr(arguments, field) <= 0:
+            raise OracleContractError(f"{field} must be positive")
+    if arguments.max_normalized_load1 < 0.0:
+        raise OracleContractError("max_normalized_load1 must be non-negative")
+    if arguments.allowed_process_root_pid <= 0:
+        raise OracleContractError("allowed_process_root_pid must be positive")
+    return EnvironmentPolicy(
+        cpu_set=arguments.cpu_set,
+        min_home_free_bytes=arguments.min_home_free_bytes,
+        min_available_memory_bytes=arguments.min_available_memory_bytes,
+        max_normalized_load1=arguments.max_normalized_load1,
+        load_samples=arguments.load_samples,
+        sample_interval_seconds=arguments.sample_interval_seconds,
+        max_quiet_wait_seconds=arguments.max_quiet_wait_seconds,
+        max_running_containers=arguments.max_running_containers,
+        external_process_sample_seconds=arguments.external_process_sample_seconds,
+        max_external_process_cpu_percent=arguments.max_external_process_cpu_percent,
+        allowed_process_root_pid=arguments.allowed_process_root_pid,
+    )
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """CLI entrypoint이며 앞 check 실패 뒤 마지막 성공도 aggregate 실패로 보존한다."""
+
+    arguments = _parse_arguments(argv)
+    try:
+        policy = _policy_from_arguments(arguments)
+        report = validate_environment(arguments.home.resolve(), policy=policy)
+    except OracleContractError as exc:
+        report = {
+            "schemaVersion": "s1.4x-host-validity-v1",
+            "policy": None,
+            "portableHostIdSha256": None,
+            "metadata": {},
+            "checks": [
+                {
+                    "id": "arguments",
+                    "expected": "valid frozen environment policy",
+                    "actual": str(exc),
+                    "status": "FAIL",
+                    "evidence": None,
+                }
+            ],
+            "failureCount": 1,
+            "status": "FAIL",
+        }
+    atomic_write_json(arguments.output, report)
+    return 0 if report["status"] == "PASS" else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

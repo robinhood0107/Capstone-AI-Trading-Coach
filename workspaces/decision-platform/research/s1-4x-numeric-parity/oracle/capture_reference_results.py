@@ -12,6 +12,7 @@ from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+from compare_results import compare_reference_regeneration
 from oracle_common import (
     OracleContractError,
     atomic_write_json,
@@ -264,9 +265,23 @@ def capture(
             expected_payload = output_path.read_bytes()
         except OSError as exc:
             raise OracleContractError("frozen expected output is missing") from exc
-        if expected_payload != payload:
+        expected = strict_json_load(output_path)
+        if canonical_json_bytes(expected) != expected_payload:
+            raise OracleContractError(
+                "frozen expected output must use canonical JSON UTF-8 bytes"
+            )
+        mismatches = compare_reference_regeneration(
+            expected,
+            combined,
+            request=request,
+        )
+        if mismatches:
+            first = mismatches[0]
             raise OracleContractError(
                 "reference output regeneration drift: "
+                f"mismatchCount={len(mismatches)}, "
+                f"firstFixtureId={first['fixtureId']}, "
+                f"firstPath={first['path']}, "
                 f"expectedSha256={sha256_bytes(expected_payload)}, "
                 f"actualSha256={sha256_bytes(payload)}"
             )
@@ -313,7 +328,8 @@ def _parse_arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
             "Capture S1.4 and S1.4R NumPy results in two separate uv --frozen "
-            "subprocesses. --check compares deterministic bytes without overwriting."
+            "subprocesses. --check preserves frozen canonical bytes and applies the "
+            "frozen typed numeric tolerance to live regeneration without overwriting."
         )
     )
     parser.add_argument("--request", type=Path, default=defaults["request"])

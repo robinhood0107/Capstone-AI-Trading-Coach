@@ -436,6 +436,38 @@ def compare_batches(
     return mismatches
 
 
+def compare_reference_regeneration(
+    expected: Any,
+    actual: Any,
+    *,
+    request: Any,
+) -> list[dict[str, Any]]:
+    """live reference 재생성을 frozen fixture와 동일한 typed 규칙으로 비교한다.
+
+    expected JSON bytes는 sidecar/contract manifest가 별도로 exact hash-lock한다. 이
+    비교는 libc `libm`의 허용 범위 내 ULP 차이만 numeric tolerance로 흡수하고,
+    ID·순서·필드·정수·불리언·stable error는 exact하게 유지한다.
+    """
+
+    expected_batch = _validate_batch(expected, label="frozen expected")
+    actual_batch = _validate_batch(actual, label="live reference regeneration")
+    tolerance_classes = _case_tolerance_map(request)
+    expected_ids = {
+        result["fixtureId"]
+        for result in expected_batch["results"]
+    }
+    if set(tolerance_classes) != expected_ids:
+        raise OracleContractError(
+            "reference regeneration tolerance map must cover the exact fixture set"
+        )
+    return compare_batches(
+        expected_batch,
+        actual_batch,
+        tolerance_classes=tolerance_classes,
+        comparison="frozen-oracle->live-reference-regeneration",
+    )
+
+
 def _parse_arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(

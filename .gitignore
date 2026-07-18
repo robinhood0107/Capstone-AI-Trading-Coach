@@ -66,6 +66,15 @@ __pycache__/
 .ruff_cache/
 *.egg-info/
 
+# --- S1.4X isolated numeric parity research (generated/local only) ---
+workspaces/decision-platform/research/s1-4x-numeric-parity/contract/fixtures/large/generated/
+workspaces/decision-platform/research/s1-4x-numeric-parity/**/.scala-build/
+workspaces/decision-platform/research/s1-4x-numeric-parity/**/.bsp/
+workspaces/decision-platform/research/s1-4x-numeric-parity/**/.stack-work/
+workspaces/decision-platform/research/s1-4x-numeric-parity/haskell/.stack-root/
+workspaces/decision-platform/research/s1-4x-numeric-parity/**/.tool-bin/
+workspaces/decision-platform/research/s1-4x-numeric-parity/**/artifacts/
+
 # --- Node (workspaces/experience-dashboard, 팀원 A 담당 — 이 계정에서는 내용 없음) ---
 node_modules/
 .next/

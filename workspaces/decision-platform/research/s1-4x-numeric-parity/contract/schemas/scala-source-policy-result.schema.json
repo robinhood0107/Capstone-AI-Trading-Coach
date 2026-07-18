@@ -1,0 +1,128 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://capstone-ai-trading-coach.invalid/s1-4x/schemas/scala-source-policy-result.schema.json",
+  "title": "S1.4X Scala source-policy audit result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "policySha256",
+    "sourceInputManifestSha256",
+    "checkerMode",
+    "semanticSmokeStatus",
+    "checkedFiles",
+    "violations",
+    "usedAllowlistEntries",
+    "staleAllowlistEntries",
+    "sourceSetExact",
+    "aggregateStatus"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "s1.4x-scala-source-policy-result-v1"
+    },
+    "policySha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "sourceInputManifestSha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "checkerMode": {
+      "enum": [
+        "semanticdb",
+        "typed-tree",
+        "alias-aware-ast-fallback"
+      ]
+    },
+    "semanticSmokeStatus": {
+      "enum": [
+        "PASS",
+        "FALLBACK"
+      ]
+    },
+    "checkedFiles": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/relativePath"
+      }
+    },
+    "violations": {
+      "const": []
+    },
+    "usedAllowlistEntries": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 256
+      }
+    },
+    "staleAllowlistEntries": {
+      "const": []
+    },
+    "sourceSetExact": {
+      "const": true
+    },
+    "aggregateStatus": {
+      "const": "PASS"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "semanticSmokeStatus": {
+            "const": "PASS"
+          }
+        },
+        "required": [
+          "semanticSmokeStatus"
+        ]
+      },
+      "then": {
+        "properties": {
+          "checkerMode": {
+            "const": "semanticdb"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "semanticSmokeStatus": {
+            "const": "FALLBACK"
+          }
+        },
+        "required": [
+          "semanticSmokeStatus"
+        ]
+      },
+      "then": {
+        "properties": {
+          "checkerMode": {
+            "enum": [
+              "typed-tree",
+              "alias-aware-ast-fallback"
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "relativePath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))[A-Za-z0-9._/-]+$"
+    }
+  }
+}

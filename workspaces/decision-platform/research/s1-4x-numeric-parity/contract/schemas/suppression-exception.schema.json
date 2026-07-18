@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://capstone-ai-trading-coach.invalid/s1-4x/schemas/suppression-exception.schema.json",
+  "title": "S1.4X reviewed suppression and partial-API exceptions",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "entries"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "s1.4x-suppression-exceptions-v1"
+    },
+    "entries": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/entry"
+      },
+      "x-s1-4x-unique-by-composite": [
+        "language",
+        "file",
+        "rule",
+        "symbol"
+      ],
+      "x-s1-4x-stale-or-unused-entry-is-error": true
+    }
+  },
+  "$defs": {
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "language",
+        "file",
+        "rule",
+        "symbol",
+        "reason",
+        "focusedTest",
+        "owner",
+        "expiresWhen"
+      ],
+      "properties": {
+        "language": {
+          "enum": [
+            "scala",
+            "haskell"
+          ]
+        },
+        "file": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))[A-Za-z0-9._/-]+$"
+        },
+        "rule": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "symbol": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "focusedTest": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "owner": {
+          "const": "S1.4X"
+        },
+        "expiresWhen": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        }
+      }
+    }
+  }
+}

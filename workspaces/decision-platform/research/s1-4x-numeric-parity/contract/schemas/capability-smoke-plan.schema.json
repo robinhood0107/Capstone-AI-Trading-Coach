@@ -1,0 +1,139 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://capstone-ai-trading-coach.invalid/s1-4x/schemas/capability-smoke-plan.schema.json",
+  "title": "S1.4X capability qualification smoke plan",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "planId",
+    "gate",
+    "runBeforeKernelImplementation",
+    "languages"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "s1.4x-capability-smoke-plan-v1"
+    },
+    "planId": {
+      "const": "s1.4x-capability-smoke-20260718"
+    },
+    "gate": {
+      "const": "Gate2-first-pinned-scaffold"
+    },
+    "runBeforeKernelImplementation": {
+      "const": true
+    },
+    "languages": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scala",
+        "haskell"
+      ],
+      "properties": {
+        "scala": {
+          "$ref": "#/$defs/language"
+        },
+        "haskell": {
+          "$ref": "#/$defs/language"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "language": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "authoritativeToolchain",
+        "smokes"
+      ],
+      "properties": {
+        "authoritativeToolchain": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "smokes": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/smoke"
+          },
+          "x-s1-4x-unique-by": "smokeId"
+        }
+      }
+    },
+    "smoke": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "smokeId",
+        "phase",
+        "required",
+        "positiveAssertions",
+        "negativeAssertions",
+        "artifacts",
+        "provenFallback",
+        "blocker"
+      ],
+      "properties": {
+        "smokeId": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"
+        },
+        "phase": {
+          "enum": [
+            "toolchain",
+            "compiler",
+            "format",
+            "lint",
+            "sourcePolicy",
+            "semanticRule",
+            "nativeBenchmark",
+            "optimizer",
+            "compatibility"
+          ]
+        },
+        "required": {
+          "const": true
+        },
+        "positiveAssertions": {
+          "$ref": "#/$defs/nonEmptyStringList"
+        },
+        "negativeAssertions": {
+          "$ref": "#/$defs/nonEmptyStringList"
+        },
+        "artifacts": {
+          "$ref": "#/$defs/nonEmptyStringList"
+        },
+        "provenFallback": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "blocker": {
+          "enum": [
+            "BLOCKED_TOOLCHAIN",
+            "BLOCKED_CONTRACT"
+          ]
+        }
+      }
+    },
+    "nonEmptyStringList": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 512
+      }
+    }
+  }
+}

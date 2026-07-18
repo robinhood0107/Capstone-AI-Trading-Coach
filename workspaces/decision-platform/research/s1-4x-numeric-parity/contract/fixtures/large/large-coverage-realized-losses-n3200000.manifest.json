@@ -1,0 +1,27 @@
+{
+  "schemaVersion": "s1.4x-binary-array-v1",
+  "fixtureId": "large-coverage-realized-losses-n3200000",
+  "argumentName": "realized_losses",
+  "fileName": "large-coverage-realized-losses-n3200000.f64le",
+  "encoding": "ieee754-binary64",
+  "dtype": "float64",
+  "byteOrder": "little",
+  "arrayOrder": "C",
+  "shape": [
+    3200000
+  ],
+  "count": 3200000,
+  "byteLength": 25600000,
+  "sha256": "a9bf46f0f836e4fe386723ac517f6caba2ddf31289113ef38a6b6da3fed29139",
+  "generator": {
+    "algorithm": "numpy-pcg64",
+    "seed": 14003,
+    "generatorVersion": "numpy-2.5.1",
+    "distribution": "normal",
+    "parameters": {
+      "loc": 0.0,
+      "scale": 1.0
+    },
+    "chunkLength": 3200000
+  }
+}

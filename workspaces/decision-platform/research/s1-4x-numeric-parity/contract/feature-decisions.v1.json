@@ -1,0 +1,306 @@
+{
+  "schemaVersion": "s1.4x-feature-decisions-v1",
+  "decisionRule": "stable-and-smoke-and-lint-and-tests-and-full-parity-and-auditability-or-performance",
+  "entries": [
+    {
+      "featureId": "scala.closed-enum-adt",
+      "officialSource": "https://docs.scala-lang.org/scala3/reference/enums/enums.html",
+      "sourceDate": "2026-07-18",
+      "claim": "Scala 3 enum and sealed ADT forms provide closed stable identifiers with exhaustive matching.",
+      "evidenceClass": "officialReference",
+      "status": "planned",
+      "compilerStatus": "stable",
+      "problemRelevance": "Represents stable error codes, function identifiers, and result variants without open strings inside the core.",
+      "correctnessRisk": "JSON spelling and exhaustive mapping can drift from the neutral registry.",
+      "toolingCompatibility": "Supported by Scala 3.8.4 and the frozen stable compiler profile.",
+      "decision": "ADOPT",
+      "requiredLint": [
+        "Exhaustive match and no unused enum case under the frozen hard-warning profile."
+      ],
+      "requiredTests": [
+        "Registry-to-enum exact-set equality and every variant round-trip."
+      ],
+      "requiredBenchmark": [
+        "No independent performance claim; include in full native correctness subject."
+      ],
+      "provenFallback": "A sealed trait with final case objects and an exact registry mapping.",
+      "decisionDate": "2026-07-18",
+      "verifiedAt": "2026-07-18T05:52:12Z",
+      "licenseAccessNote": "Public Scala language reference; no source code copied into the candidate.",
+      "adoptedSession": "S1.4X",
+      "assumptions": [
+        "The neutral JSON registry remains the public source of exact spellings."
+      ]
+    },
+    {
+      "featureId": "scala.opaque-validation-boundaries",
+      "officialSource": "https://docs.scala-lang.org/scala3/book/types-opaque-types.html",
+      "sourceDate": "2026-07-18",
+      "claim": "Opaque types can make validated probability and bounded-count boundaries distinct without wrapping every numeric intermediate.",
+      "evidenceClass": "officialReference",
+      "status": "planned",
+      "compilerStatus": "stable",
+      "problemRelevance": "Prevents accidental interchange of confidence, significance, and exact count domains.",
+      "correctnessRisk": "Over-wrapping kernel intermediates could obscure IEEE-754 parity or add conversion paths.",
+      "toolingCompatibility": "Stable in Scala 3.8.4 and compatible with MUnit and Scalafix.",
+      "decision": "ADOPT",
+      "requiredLint": [
+        "Smart constructors are the only public creation path and no unchecked cast unwraps a value."
+      ],
+      "requiredTests": [
+        "Boundary, lexical integer, and strict-equality compile-negative tests."
+      ],
+      "requiredBenchmark": [
+        "Allocation audit confirms validation wrappers do not enter hot vector loops."
+      ],
+      "provenFallback": "Final validation functions returning an explicit Either stable-error ADT.",
+      "decisionDate": "2026-07-18",
+      "verifiedAt": "2026-07-18T05:52:12Z",
+      "licenseAccessNote": "Public Scala documentation.",
+      "adoptedSession": "S1.4X",
+      "assumptions": [
+        "Opaque types remain limited to validation boundaries."
+      ]
+    },
+    {
+      "featureId": "scala.optimizer-profile-b-c",
+      "officialSource": "https://www.scala-lang.org/blog/2026/03/23/porting-the-optimizer.html",
+      "sourceDate": "2026-03-23",
+      "claim": "The Scala 3 optimizer can be evaluated through frozen Profile B and own-source-only Profile C after independent correctness qualification.",
+      "evidenceClass": "officialStableRelease",
+      "status": "conditional",
+      "compilerStatus": "stable",
+      "problemRelevance": "May reduce pure numeric kernel overhead while preserving the same neutral contract.",
+      "correctnessRisk": "Inlining scope or optimizer behavior can alter floating evaluation or introduce unresolved dependency warnings.",
+      "toolingCompatibility": "Exact Scala 3.8.4 flags are qualification-smoked; dependency-wide inlining is forbidden.",
+      "decision": "CONDITIONAL",
+      "requiredLint": [
+        "Exact options, own-source inline scope, warning-free compilation, and no forbidden optimization."
+      ],
+      "requiredTests": [
+        "A, B, and C each rerun unit, property, stable-error, oracle, and cross-language matrices with mismatch zero."
+      ],
+      "requiredBenchmark": [
+        "Frozen seven-case three-rotation JMH profile selector only."
+      ],
+      "provenFallback": "Profile A with no optimizer options.",
+      "decisionDate": "2026-07-18",
+      "verifiedAt": "2026-07-18T05:52:12Z",
+      "licenseAccessNote": "Public Scala project article and compiler documentation.",
+      "adoptedSession": "S1.4X",
+      "assumptions": [
+        "No profile is selected from the full scored benchmark."
+      ]
+    },
+    {
+      "featureId": "scala.local-mutation-hot-kernel",
+      "officialSource": "https://docs.scala-lang.org/scala3/book/fp-pure-functions.html",
+      "sourceDate": "2026-07-18",
+      "claim": "Local implementation mutation may be hidden behind an observationally pure function only when a frozen ledger and evidence justify it.",
+      "evidenceClass": "officialReference",
+      "status": "conditional",
+      "compilerStatus": "stable",
+      "problemRelevance": "Primitive arrays and loops may reduce allocation in selected large numeric kernels.",
+      "correctnessRisk": "Mutation can escape, alter inputs, change traversal order, or hide stale allowlist entries.",
+      "toolingCompatibility": "The source-policy checker supports exact file, method, symbol, reason, test, owner, and expiry entries.",
+      "decision": "CONDITIONAL",
+      "requiredLint": [
+        "Mutation is rejected outside the precommitted exact ledger and stale entries fail."
+      ],
+      "requiredTests": [
+        "Input digest immutability, bounds, property, and full parity tests."
+      ],
+      "requiredBenchmark": [
+        "Allocation evidence and focused JMH improvement under the frozen selector."
+      ],
+      "provenFallback": "Immutable collection operations and ordinary pure folds.",
+      "decisionDate": "2026-07-18",
+      "verifiedAt": "2026-07-18T05:52:12Z",
+      "licenseAccessNote": "Public Scala functional-programming documentation.",
+      "adoptedSession": "S1.4X",
+      "assumptions": [
+        "The Gate 1 mutation allowlist starts empty."
+      ]
+    },
+    {
+      "featureId": "scala.safe-init-warning",
+      "officialSource": "https://docs.scala-lang.org/scala3/reference/other-new-features/safe-initialization.html",
+      "sourceDate": "2026-07-18",
+      "claim": "Safe initialization remains an experimental advisory compiler diagnostic in this scored lane.",
+      "evidenceClass": "officialCompilerDocumentation",
+      "status": "probeOnly",
+      "compilerStatus": "experimental",
+      "problemRelevance": "Can reveal initialization hazards without changing the stable hard compiler profile.",
+      "correctnessRisk": "Treating an experimental checker as a stable gate could make the benchmark subject depend on unstable diagnostics.",
+      "toolingCompatibility": "Run separately from the frozen stable warning set.",
+      "decision": "PROBE_ONLY",
+      "requiredLint": [
+        "Record every warning and disposition without suppression."
+      ],
+      "requiredTests": [
+        "Advisory compile result is typed and excluded from correctness semantics."
+      ],
+      "requiredBenchmark": [
+        "No timing input."
+      ],
+      "provenFallback": "The frozen stable hard-warning profile without -Wsafe-init.",
+      "decisionDate": "2026-07-18",
+      "verifiedAt": "2026-07-18T05:52:12Z",
+      "licenseAccessNote": "Public Scala experimental-feature reference.",
+      "adoptedSession": "S1.4X",
+      "assumptions": [
+        "Advisory diagnostics do not alter candidate source after timing starts."
+      ]
+    },
+    {
+      "featureId": "scala.experimental-and-native-features",
+      "officialSource": "https://docs.scala-lang.org/scala3/reference/experimental/index.html",
+      "sourceDate": "2026-07-18",
+      "claim": "Preview, nightly, capture checking, explicit nulls, runtimeChecked, macros, native loading, fast math, FMA, and architecture-native SIMD are outside the scored contract.",
+      "evidenceClass": "officialReference",
+      "status": "rejected",
+      "compilerStatus": "experimental",
+      "problemRelevance": "These features could change portability, auditability, or IEEE-754 parity.",
+      "correctnessRisk": "High and difficult to isolate across Scala, Haskell, and the frozen Python oracle.",
+      "toolingCompatibility": "Rejected by source and options policy before compilation or timing.",
+      "decision": "REJECT",
+      "requiredLint": [
+        "Exact forbidden symbol, import, dependency, and compiler-option scan."
+      ],
+      "requiredTests": [
+        "Qualified, aliased, annotation, dependency, and option negative fixtures."
+      ],
+      "requiredBenchmark": [
+        "No benchmark is permitted."
+      ],
+      "provenFallback": "Stable Scala 3.8.4 language, scalar Double operations, and portable JVM bytecode.",
+      "decisionDate": "2026-07-18",
+      "verifiedAt": "2026-07-18T05:52:12Z",
+      "licenseAccessNote": "Public Scala feature reference.",
+      "adoptedSession": "S1.4X",
+      "assumptions": [
+        "Auditability and cross-language parity outrank feature novelty."
+      ]
+    },
+    {
+      "featureId": "haskell.safe-scalar-modules",
+      "officialSource": "https://downloads.haskell.org/ghc/9.10.3/docs/users_guide/exts/safe_haskell.html",
+      "sourceDate": "2026-07-18",
+      "claim": "Vector-free scalar validation and ADT modules compile with mandatory Safe while retaining separate purity and behavior audits.",
+      "evidenceClass": "officialCompilerDocumentation",
+      "status": "planned",
+      "compilerStatus": "stable",
+      "problemRelevance": "Narrows trusted dependencies at stable error and scalar validation boundaries.",
+      "correctnessRisk": "Safe Haskell alone does not prove totality, numerical correctness, or I/O separation.",
+      "toolingCompatibility": "Qualified under authoritative GHC 9.10.3 with exact negative compile fixtures.",
+      "decision": "ADOPT",
+      "requiredLint": [
+        "Mandatory Safe, explicit import/export, hard warnings, and no unsafe, foreign, exception, or partial symbol."
+      ],
+      "requiredTests": [
+        "Category manifest, compiler negative fixtures, totality properties, and process behavior."
+      ],
+      "requiredBenchmark": [
+        "No independent speed claim; included in selected authoritative subject."
+      ],
+      "provenFallback": "No weaker Trustworthy mode; incompatible trusted dependencies are a blocker.",
+      "decisionDate": "2026-07-18",
+      "verifiedAt": "2026-07-18T05:52:12Z",
+      "licenseAccessNote": "Public GHC users guide.",
+      "adoptedSession": "S1.4X",
+      "assumptions": [
+        "Safe modules never import Data.Vector.Unboxed."
+      ]
+    },
+    {
+      "featureId": "haskell.unboxed-vector-audited-pure",
+      "officialSource": "https://hackage.haskell.org/package/vector-0.13.2.0/docs/Data-Vector-Unboxed.html",
+      "sourceDate": "2026-07-18",
+      "claim": "Pure numeric arrays use vector 0.13.2.0 Data.Vector.Unboxed and are classified audited-pure-vector because the upstream module has Safe Haskell status None.",
+      "evidenceClass": "officialReference",
+      "status": "planned",
+      "compilerStatus": "stable",
+      "problemRelevance": "Provides contiguous unboxed Double storage for pure numeric kernels.",
+      "correctnessRisk": "A Trustworthy wrapper would falsely imply upstream Safe Haskell guarantees and could hide transitive unsafe edges.",
+      "toolingCompatibility": "LTS 24.50 pins vector 0.13.2.0; module and dependency audits are precommitted.",
+      "decision": "ADOPT",
+      "requiredLint": [
+        "Reject candidate Trustworthy or Unsafe declarations, direct unsafe and foreign imports, IO use, and core-to-shell edges."
+      ],
+      "requiredTests": [
+        "Exact module category, source-hash provenance, totality, property, process, and upstream edge drift tests."
+      ],
+      "requiredBenchmark": [
+        "Included in baseline and optimized Criterion qualification and selected subject."
+      ],
+      "provenFallback": "Ordinary immutable U.Vector and U.foldl' without mutable vector or unsafe wrappers.",
+      "decisionDate": "2026-07-18",
+      "verifiedAt": "2026-07-18T05:52:12Z",
+      "licenseAccessNote": "Public Hackage API documentation; package license is audited through the pinned dependency plan.",
+      "adoptedSession": "S1.4X",
+      "assumptions": [
+        "Gate 2 records the exact source archive hash before acceptance."
+      ]
+    },
+    {
+      "featureId": "haskell.runst-mutable-vector",
+      "officialSource": "https://downloads.haskell.org/ghc/9.10.3/docs/users_guide/exts/control.html",
+      "sourceDate": "2026-07-18",
+      "claim": "runST and mutable unboxed vectors may be adopted only when mutation cannot escape and frozen correctness, allocation, Core, and Criterion evidence all pass.",
+      "evidenceClass": "officialCompilerDocumentation",
+      "status": "conditional",
+      "compilerStatus": "stable",
+      "problemRelevance": "May reduce allocation in a proven numeric hot kernel while retaining a pure public result.",
+      "correctnessRisk": "Escape, traversal-order drift, bounds errors, or a timing-driven implementation switch would invalidate parity.",
+      "toolingCompatibility": "The audited-pure-vector category and exact policy ledger can inspect the implementation.",
+      "decision": "CONDITIONAL",
+      "requiredLint": [
+        "Exact module and symbol ledger, no escape, no unsafe import, and no stale entry."
+      ],
+      "requiredTests": [
+        "Bounds, input immutability, full unit/property/error/oracle/cross matrix with mismatch zero."
+      ],
+      "requiredBenchmark": [
+        "Allocation and Core evidence plus focused frozen Criterion qualification."
+      ],
+      "provenFallback": "Immutable U.Vector and U.foldl'.",
+      "decisionDate": "2026-07-18",
+      "verifiedAt": "2026-07-18T05:52:12Z",
+      "licenseAccessNote": "Public GHC compiler documentation.",
+      "adoptedSession": "S1.4X",
+      "assumptions": [
+        "Conditional optimization is selected before the full score benchmark."
+      ]
+    },
+    {
+      "featureId": "haskell.ghc-9.14.1-compatibility",
+      "officialSource": "https://www.haskell.org/ghc/blog/20251219-ghc-9.14.1-released.html",
+      "sourceDate": "2025-12-19",
+      "claim": "GHC 9.14.1 is a required latest-stable non-scoring compatibility lane while LTS 24.50 and GHC 9.10.3 remain authoritative.",
+      "evidenceClass": "officialStableRelease",
+      "status": "probeOnly",
+      "compilerStatus": "stable",
+      "problemRelevance": "Separates current compiler compatibility from the tested-together authoritative Stackage package set.",
+      "correctnessRisk": "Changing non-boot dependencies to make the latest compiler pass would confound compiler and package effects.",
+      "toolingCompatibility": "The compatibility policy freezes non-boot equality, expected boot-set difference, result enum, phase closure, and non-scoring status.",
+      "decision": "PROBE_ONLY",
+      "requiredLint": [
+        "Forbidden override keys absent and authoritative-versus-compat non-boot plans byte-equivalent."
+      ],
+      "requiredTests": [
+        "Dependency build is mandatory; successful solve requires full correctness and process replay; failures require typed classification."
+      ],
+      "requiredBenchmark": [
+        "performanceInput is false and timing cannot enter scorecard numerator, denominator, or rank."
+      ],
+      "provenFallback": "Retain authoritative LTS 24.50 and GHC 9.10.3; only narrowly proven frozen-dependency failure is non-blocking.",
+      "decisionDate": "2026-07-18",
+      "verifiedAt": "2026-07-18T05:52:12Z",
+      "licenseAccessNote": "Public official GHC release announcement.",
+      "adoptedSession": "S1.4X",
+      "assumptions": [
+        "The compatibility lane uses identical candidate source and approved non-boot flags."
+      ]
+    }
+  ]
+}

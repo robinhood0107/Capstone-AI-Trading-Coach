@@ -1,0 +1,419 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://capstone-ai-trading-coach.invalid/s1-4x/schemas/canonical-result.schema.json",
+  "title": "S1.4X canonical result batch",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "requestId",
+    "implementation",
+    "results"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "s1.4x-result-batch-v1"
+    },
+    "requestId": {
+      "$ref": "#/$defs/identifier"
+    },
+    "implementation": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[a-z0-9][a-z0-9._:+-]{0,127}$"
+    },
+    "results": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 4096,
+      "items": {
+        "$ref": "#/$defs/caseResult"
+      },
+      "x-s1-4x-must-match-request-order": true
+    }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[a-z0-9](?:[a-z0-9._:-]{0,126}[a-z0-9])?$"
+    },
+    "functionId": {
+      "enum": [
+        "simple_returns",
+        "log_returns",
+        "cumulative_return",
+        "cagr",
+        "realized_volatility",
+        "annualized_volatility",
+        "max_drawdown",
+        "sharpe_ratio",
+        "sortino_ratio",
+        "historical_var",
+        "historical_cvar",
+        "historical_expected_shortfall",
+        "realized_variance",
+        "realized_volatility_intraday",
+        "lo_adjusted_sharpe_ratio",
+        "probabilistic_sharpe_ratio",
+        "deflated_sharpe_ratio",
+        "kupiec_unconditional_coverage_test",
+        "christoffersen_independence_test",
+        "christoffersen_conditional_coverage_test"
+      ]
+    },
+    "errorCode": {
+      "enum": [
+        "input_type_invalid",
+        "input_shape_invalid",
+        "input_empty",
+        "input_too_short",
+        "input_too_long",
+        "input_bool_invalid",
+        "input_complex_invalid",
+        "input_non_finite",
+        "prices_non_positive",
+        "equity_initial_non_positive",
+        "equity_negative",
+        "simple_return_below_minus_one",
+        "periods_per_year_invalid",
+        "risk_free_rate_invalid",
+        "target_return_invalid",
+        "confidence_invalid",
+        "denominator_zero",
+        "tail_empty",
+        "result_non_finite",
+        "research_input_invalid",
+        "research_input_too_short",
+        "aggregation_periods_invalid",
+        "moment_invalid",
+        "trial_count_invalid",
+        "trial_variance_invalid",
+        "trial_provenance_invalid",
+        "significance_invalid",
+        "forecast_shape_invalid",
+        "forecast_var_negative",
+        "insufficient_sample",
+        "likelihood_invalid",
+        "research_result_non_finite"
+      ]
+    },
+    "transitions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "n00",
+        "n01",
+        "n10",
+        "n11"
+      ],
+      "properties": {
+        "n00": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "n01": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "n10": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "n11": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "likelihoodBaseProperties": {
+      "type": "object",
+      "properties": {
+        "statistic": {
+          "type": "number",
+          "minimum": 0
+        },
+        "p_value": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "reject": {
+          "type": "boolean"
+        },
+        "observations": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "exceptions": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "degrees_of_freedom": {
+          "type": "integer",
+          "enum": [
+            1,
+            2
+          ]
+        },
+        "significance": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "exclusiveMaximum": 1
+        }
+      }
+    },
+    "likelihoodRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "statistic",
+        "p_value",
+        "reject",
+        "observations",
+        "exceptions",
+        "degrees_of_freedom",
+        "significance"
+      ],
+      "properties": {
+        "statistic": {
+          "type": "number",
+          "minimum": 0
+        },
+        "p_value": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "reject": {
+          "type": "boolean"
+        },
+        "observations": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "exceptions": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "degrees_of_freedom": {
+          "const": 1
+        },
+        "significance": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "exclusiveMaximum": 1
+        }
+      }
+    },
+    "independenceRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "statistic",
+        "p_value",
+        "reject",
+        "observations",
+        "exceptions",
+        "degrees_of_freedom",
+        "significance",
+        "transitions"
+      ],
+      "properties": {
+        "statistic": {
+          "type": "number",
+          "minimum": 0
+        },
+        "p_value": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "reject": {
+          "type": "boolean"
+        },
+        "observations": {
+          "type": "integer",
+          "minimum": 2
+        },
+        "exceptions": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "degrees_of_freedom": {
+          "const": 1
+        },
+        "significance": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "exclusiveMaximum": 1
+        },
+        "transitions": {
+          "$ref": "#/$defs/transitions"
+        }
+      }
+    },
+    "conditionalRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "statistic",
+        "p_value",
+        "reject",
+        "observations",
+        "exceptions",
+        "degrees_of_freedom",
+        "significance",
+        "transitions",
+        "conditioned_observations",
+        "conditioned_exceptions",
+        "unconditional_component_statistic",
+        "independence_component_statistic"
+      ],
+      "properties": {
+        "statistic": {
+          "type": "number",
+          "minimum": 0
+        },
+        "p_value": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "reject": {
+          "type": "boolean"
+        },
+        "observations": {
+          "type": "integer",
+          "minimum": 2
+        },
+        "exceptions": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "degrees_of_freedom": {
+          "const": 2
+        },
+        "significance": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "exclusiveMaximum": 1
+        },
+        "transitions": {
+          "$ref": "#/$defs/transitions"
+        },
+        "conditioned_observations": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "conditioned_exceptions": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unconditional_component_statistic": {
+          "type": "number",
+          "minimum": 0
+        },
+        "independence_component_statistic": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "value": {
+      "oneOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "number"
+          }
+        },
+        {
+          "$ref": "#/$defs/likelihoodRecord"
+        },
+        {
+          "$ref": "#/$defs/independenceRecord"
+        },
+        {
+          "$ref": "#/$defs/conditionalRecord"
+        }
+      ]
+    },
+    "okResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "functionId",
+        "fixtureId",
+        "status",
+        "values"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "s1.4x-result-v1"
+        },
+        "functionId": {
+          "$ref": "#/$defs/functionId"
+        },
+        "fixtureId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "status": {
+          "const": "ok"
+        },
+        "values": {
+          "$ref": "#/$defs/value"
+        }
+      }
+    },
+    "errorResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "functionId",
+        "fixtureId",
+        "status",
+        "errorCode"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "s1.4x-result-v1"
+        },
+        "functionId": {
+          "$ref": "#/$defs/functionId"
+        },
+        "fixtureId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "status": {
+          "const": "error"
+        },
+        "errorCode": {
+          "$ref": "#/$defs/errorCode"
+        }
+      }
+    },
+    "caseResult": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/okResult"
+        },
+        {
+          "$ref": "#/$defs/errorResult"
+        }
+      ]
+    }
+  },
+  "x-s1-4x-require-strict-utf8": true,
+  "x-s1-4x-reject-duplicate-decoded-keys": true,
+  "x-s1-4x-reject-non-finite": true,
+  "x-s1-4x-normalize-negative-zero-recursively": true,
+  "x-s1-4x-reject-rule": "reject == (p_value < significance)"
+}

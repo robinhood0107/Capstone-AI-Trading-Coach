@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://capstone-ai-trading-coach.invalid/s1-4x/schemas/haskell-selected-profile.schema.json",
+  "title": "S1.4X selected authoritative Haskell profile",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "profileId",
+    "ghcOptions",
+    "compilerVersion",
+    "compilerSha256",
+    "sourceTreeSha256",
+    "optionsSha256",
+    "fullCorrectnessSha256",
+    "qualificationPlanSha256",
+    "qualificationArtifactSha256",
+    "selectorConfigSha256",
+    "fallbackProfile",
+    "selectedBy"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "s1.4x-haskell-selected-profile-v1"
+    },
+    "profileId": {
+      "enum": [
+        "baseline-o0-fasm",
+        "optimized-o2-fasm"
+      ]
+    },
+    "ghcOptions": {
+      "oneOf": [
+        {
+          "const": [
+            "-O0",
+            "-fasm"
+          ]
+        },
+        {
+          "const": [
+            "-O2",
+            "-fasm"
+          ]
+        }
+      ]
+    },
+    "compilerVersion": {
+      "const": "9.10.3"
+    },
+    "compilerSha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "sourceTreeSha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "optionsSha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "fullCorrectnessSha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "qualificationPlanSha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "qualificationArtifactSha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "selectorConfigSha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "fallbackProfile": {
+      "const": "baseline-o0-fasm"
+    },
+    "selectedBy": {
+      "enum": [
+        "frozen-criterion-selector",
+        "proven-fallback"
+      ]
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

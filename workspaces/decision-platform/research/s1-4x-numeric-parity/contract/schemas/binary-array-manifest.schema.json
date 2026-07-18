@@ -1,0 +1,186 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://capstone-ai-trading-coach.invalid/s1-4x/schemas/binary-array-manifest.schema.json",
+  "title": "S1.4X Float64 little-endian array manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "fixtureId",
+    "argumentName",
+    "fileName",
+    "encoding",
+    "dtype",
+    "byteOrder",
+    "arrayOrder",
+    "shape",
+    "count",
+    "byteLength",
+    "sha256",
+    "generator"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "s1.4x-binary-array-v1"
+    },
+    "fixtureId": {
+      "$ref": "#/$defs/identifier"
+    },
+    "argumentName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9_]{0,63}$"
+    },
+    "fileName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+    },
+    "encoding": {
+      "const": "ieee754-binary64"
+    },
+    "dtype": {
+      "const": "float64"
+    },
+    "byteOrder": {
+      "const": "little"
+    },
+    "arrayOrder": {
+      "const": "C"
+    },
+    "shape": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1,
+      "prefixItems": [
+        {
+          "type": "integer",
+          "minimum": 1
+        }
+      ],
+      "items": false
+    },
+    "count": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "byteLength": {
+      "type": "integer",
+      "minimum": 8,
+      "multipleOf": 8
+    },
+    "sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "generator": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/pcg64Generator"
+        },
+        {
+          "$ref": "#/$defs/literalBitsGenerator"
+        }
+      ]
+    },
+    "expectedSemanticError": {
+      "enum": [
+        "input_non_finite",
+        "research_input_invalid"
+      ]
+    }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[a-z0-9](?:[a-z0-9._:-]{0,126}[a-z0-9])?$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "pcg64Generator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "algorithm",
+        "seed",
+        "generatorVersion",
+        "distribution",
+        "parameters",
+        "chunkLength"
+      ],
+      "properties": {
+        "algorithm": {
+          "const": "numpy-pcg64"
+        },
+        "seed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "generatorVersion": {
+          "const": "numpy-2.5.1"
+        },
+        "distribution": {
+          "enum": [
+            "normal",
+            "uniform",
+            "lognormal",
+            "standard_normal"
+          ]
+        },
+        "parameters": {
+          "type": "object",
+          "maxProperties": 8,
+          "propertyNames": {
+            "pattern": "^[a-z][a-z0-9_]{0,63}$"
+          },
+          "additionalProperties": {
+            "type": "number"
+          }
+        },
+        "chunkLength": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 67108864
+        }
+      }
+    },
+    "literalBitsGenerator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "algorithm",
+        "generatorVersion",
+        "payloadHex"
+      ],
+      "properties": {
+        "algorithm": {
+          "const": "literal-ieee754-bits"
+        },
+        "generatorVersion": {
+          "const": "s1.4x-literal-ieee754-bits-v1"
+        },
+        "payloadHex": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 1024,
+          "pattern": "^(?:[0-9a-f]{2})+$"
+        }
+      }
+    }
+  },
+  "x-s1-4x-semantic-invariants": [
+    "count == product(shape)",
+    "byteLength == count * 8",
+    "actualFileSize == byteLength",
+    "actualSha256 == sha256",
+    "decodedRank == 1",
+    "decodedValuesFinite unless expectedSemanticError is present",
+    "resolvedPath remains below fixture root and is not a symlink"
+  ],
+  "x-s1-4x-allocation-cap-bytes": 536870912
+}

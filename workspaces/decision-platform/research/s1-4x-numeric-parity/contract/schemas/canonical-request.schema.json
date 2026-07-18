@@ -1,0 +1,215 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://capstone-ai-trading-coach.invalid/s1-4x/schemas/canonical-request.schema.json",
+  "title": "S1.4X canonical request batch",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "requestId",
+    "cases"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "s1.4x-request-v1"
+    },
+    "requestId": {
+      "$ref": "#/$defs/identifier"
+    },
+    "cases": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 4096,
+      "items": {
+        "$ref": "#/$defs/case"
+      },
+      "x-s1-4x-unique-by": "fixtureId"
+    }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[a-z0-9](?:[a-z0-9._:-]{0,126}[a-z0-9])?$"
+    },
+    "functionId": {
+      "enum": [
+        "simple_returns",
+        "log_returns",
+        "cumulative_return",
+        "cagr",
+        "realized_volatility",
+        "annualized_volatility",
+        "max_drawdown",
+        "sharpe_ratio",
+        "sortino_ratio",
+        "historical_var",
+        "historical_cvar",
+        "historical_expected_shortfall",
+        "realized_variance",
+        "realized_volatility_intraday",
+        "lo_adjusted_sharpe_ratio",
+        "probabilistic_sharpe_ratio",
+        "deflated_sharpe_ratio",
+        "kupiec_unconditional_coverage_test",
+        "christoffersen_independence_test",
+        "christoffersen_conditional_coverage_test"
+      ]
+    },
+    "binaryReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "manifestFile"
+      ],
+      "properties": {
+        "kind": {
+          "const": "binaryFloat64"
+        },
+        "manifestFile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+        }
+      }
+    },
+    "trialProvenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "method",
+        "raw_trial_count",
+        "effective_trial_count",
+        "sampling_frequency",
+        "trial_registry_sha256",
+        "variance_ddof"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "s1.4r-effective-trials-v1"
+        },
+        "method": {
+          "enum": [
+            "pre_registered_independent",
+            "externally_estimated_effective_count"
+          ]
+        },
+        "raw_trial_count": {
+          "type": "integer",
+          "minimum": 2,
+          "x-s1-4x-require-bare-integer-token": true
+        },
+        "effective_trial_count": {
+          "type": "integer",
+          "minimum": 2,
+          "x-s1-4x-require-bare-integer-token": true
+        },
+        "sampling_frequency": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": ".*\\S.*"
+        },
+        "trial_registry_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "variance_ddof": {
+          "const": 1,
+          "x-s1-4x-require-bare-integer-token": true
+        }
+      }
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "jsonScalar": {
+      "type": [
+        "number",
+        "string",
+        "boolean",
+        "null"
+      ]
+    },
+    "jsonArray": {
+      "type": "array",
+      "maxItems": 100001,
+      "items": {
+        "oneOf": [
+          {
+            "$ref": "#/$defs/jsonScalar"
+          },
+          {
+            "type": "array",
+            "maxItems": 100001,
+            "items": {
+              "$ref": "#/$defs/jsonScalar"
+            }
+          }
+        ]
+      }
+    },
+    "argumentValue": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/jsonScalar"
+        },
+        {
+          "$ref": "#/$defs/jsonArray"
+        },
+        {
+          "$ref": "#/$defs/binaryReference"
+        },
+        {
+          "$ref": "#/$defs/trialProvenance"
+        }
+      ]
+    },
+    "case": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fixtureId",
+        "functionId",
+        "arguments"
+      ],
+      "properties": {
+        "fixtureId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "functionId": {
+          "$ref": "#/$defs/functionId"
+        },
+        "arguments": {
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 8,
+          "propertyNames": {
+            "pattern": "^[a-z][a-z0-9_]{0,63}$"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/argumentValue"
+          },
+          "x-s1-4x-function-registry-aware": true
+        },
+        "expectedSemanticError": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,63}$"
+        },
+        "toleranceClass": {
+          "enum": [
+            "handPaper",
+            "largeProperty"
+          ]
+        }
+      }
+    }
+  },
+  "x-s1-4x-require-strict-utf8": true,
+  "x-s1-4x-reject-duplicate-decoded-keys": true,
+  "x-s1-4x-preserve-case-order": true
+}

@@ -1,0 +1,199 @@
+{
+  "schemaVersion": "s1.4x-request-v1",
+  "requestId": "s1.4x-semantic-errors-v1",
+  "cases": [
+    {
+      "fixtureId": "invalid-production-top-level-bool",
+      "functionId": "simple_returns",
+      "arguments": {
+        "prices": true
+      },
+      "expectedSemanticError": "input_bool_invalid"
+    },
+    {
+      "fixtureId": "invalid-production-nested-shape-before-bool",
+      "functionId": "simple_returns",
+      "arguments": {
+        "prices": [
+          [
+            100.0
+          ],
+          true
+        ]
+      },
+      "expectedSemanticError": "input_shape_invalid"
+    },
+    {
+      "fixtureId": "invalid-production-empty",
+      "functionId": "cumulative_return",
+      "arguments": {
+        "returns": []
+      },
+      "expectedSemanticError": "input_empty"
+    },
+    {
+      "fixtureId": "invalid-production-too-short",
+      "functionId": "realized_volatility",
+      "arguments": {
+        "log_returns": [
+          0.0
+        ]
+      },
+      "expectedSemanticError": "input_too_short"
+    },
+    {
+      "fixtureId": "invalid-production-price-domain",
+      "functionId": "log_returns",
+      "arguments": {
+        "prices": [
+          100.0,
+          0.0
+        ]
+      },
+      "expectedSemanticError": "prices_non_positive"
+    },
+    {
+      "fixtureId": "invalid-production-return-below-minus-one",
+      "functionId": "cumulative_return",
+      "arguments": {
+        "returns": [
+          -1.0000000000000002
+        ]
+      },
+      "expectedSemanticError": "simple_return_below_minus_one"
+    },
+    {
+      "fixtureId": "invalid-production-integer-decimal-token",
+      "functionId": "cagr",
+      "arguments": {
+        "prices": [
+          100.0,
+          101.0
+        ],
+        "periods_per_year": 1000.0
+      },
+      "expectedSemanticError": "periods_per_year_invalid"
+    },
+    {
+      "fixtureId": "invalid-production-zero-denominator",
+      "functionId": "sharpe_ratio",
+      "arguments": {
+        "returns": [
+          0.01,
+          0.01
+        ],
+        "risk_free_rate": 0.0,
+        "periods_per_year": 252
+      },
+      "expectedSemanticError": "denominator_zero"
+    },
+    {
+      "fixtureId": "invalid-research-empty",
+      "functionId": "historical_expected_shortfall",
+      "arguments": {
+        "losses": []
+      },
+      "expectedSemanticError": "research_input_too_short"
+    },
+    {
+      "fixtureId": "invalid-research-lo-n-not-greater-than-q",
+      "functionId": "lo_adjusted_sharpe_ratio",
+      "arguments": {
+        "returns": [
+          0.0,
+          1.0
+        ],
+        "aggregation_periods": 2,
+        "risk_free_rate": 0.0
+      },
+      "expectedSemanticError": "research_input_too_short"
+    },
+    {
+      "fixtureId": "invalid-research-psr-moment-inequality",
+      "functionId": "probabilistic_sharpe_ratio",
+      "arguments": {
+        "observed_sharpe": 1.0,
+        "benchmark_sharpe": 0.0,
+        "sample_size": 6,
+        "skewness": 2.0,
+        "kurtosis": 1.0
+      },
+      "expectedSemanticError": "moment_invalid"
+    },
+    {
+      "fixtureId": "invalid-research-dsr-provenance-count",
+      "functionId": "deflated_sharpe_ratio",
+      "arguments": {
+        "observed_sharpe": 1.0,
+        "sample_size": 6,
+        "skewness": 0.0,
+        "kurtosis": 3.0,
+        "trial_count": 2,
+        "sharpe_estimate_variance": 1.0,
+        "trial_provenance": {
+          "schema_version": "s1.4r-effective-trials-v1",
+          "method": "pre_registered_independent",
+          "raw_trial_count": 3,
+          "effective_trial_count": 3,
+          "sampling_frequency": "daily",
+          "trial_registry_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "variance_ddof": 1
+        }
+      },
+      "expectedSemanticError": "trial_provenance_invalid"
+    },
+    {
+      "fixtureId": "invalid-research-forecast-shape",
+      "functionId": "kupiec_unconditional_coverage_test",
+      "arguments": {
+        "realized_losses": [
+          0.0,
+          2.0
+        ],
+        "forecast_vars": [
+          1.0
+        ],
+        "confidence": 0.75,
+        "significance": 0.05
+      },
+      "expectedSemanticError": "forecast_shape_invalid"
+    },
+    {
+      "fixtureId": "invalid-research-forecast-negative",
+      "functionId": "kupiec_unconditional_coverage_test",
+      "arguments": {
+        "realized_losses": [
+          0.0,
+          2.0
+        ],
+        "forecast_vars": [
+          -1.0,
+          1.0
+        ],
+        "confidence": 0.75,
+        "significance": 0.05
+      },
+      "expectedSemanticError": "forecast_var_negative"
+    },
+    {
+      "fixtureId": "invalid-research-unidentifiable-transitions",
+      "functionId": "christoffersen_independence_test",
+      "arguments": {
+        "realized_losses": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "forecast_vars": [
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "significance": 0.05
+      },
+      "expectedSemanticError": "insufficient_sample"
+    }
+  ]
+}

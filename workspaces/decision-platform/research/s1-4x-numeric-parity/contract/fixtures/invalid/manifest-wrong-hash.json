@@ -1,0 +1,21 @@
+{
+  "schemaVersion": "s1.4x-binary-array-v1",
+  "fixtureId": "invalid-manifest-wrong-hash",
+  "argumentName": "returns",
+  "fileName": "wrong-hash.f64le",
+  "encoding": "ieee754-binary64",
+  "dtype": "float64",
+  "byteOrder": "little",
+  "arrayOrder": "C",
+  "shape": [
+    1
+  ],
+  "count": 1,
+  "byteLength": 8,
+  "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+  "generator": {
+    "algorithm": "literal-ieee754-bits",
+    "generatorVersion": "s1.4x-literal-ieee754-bits-v1",
+    "payloadHex": "0000000000000000"
+  }
+}

@@ -1,0 +1,507 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://capstone.local/s1-4x/schemas/benchmark-block-result.schema.json",
+  "title": "S1.4X native benchmark block result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "planId",
+    "runId",
+    "benchmarkSubjectCommit",
+    "subject",
+    "rotation",
+    "block",
+    "environment",
+    "cases"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "s1.4x-benchmark-block-result-v1"
+    },
+    "planId": {
+      "const": "s1.4x-full-same-host-v1"
+    },
+    "runId": {
+      "$ref": "#/$defs/identifier"
+    },
+    "benchmarkSubjectCommit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "subject": {
+      "$ref": "#/$defs/subject"
+    },
+    "rotation": {
+      "$ref": "#/$defs/rotation"
+    },
+    "block": {
+      "$ref": "#/$defs/block"
+    },
+    "environment": {
+      "$ref": "#/$defs/environment"
+    },
+    "cases": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/caseResult"
+      },
+      "x-s1-4x-unique-by": "caseId"
+    },
+    "failure": {
+      "$ref": "#/$defs/failure"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "block": {
+            "properties": {
+              "status": {
+                "const": "PASS"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          }
+        },
+        "required": [
+          "block"
+        ]
+      },
+      "then": {
+        "not": {
+          "required": [
+            "failure"
+          ]
+        },
+        "properties": {
+          "cases": {
+            "items": {
+              "properties": {
+                "status": {
+                  "const": "PASS"
+                },
+                "nativeValue": {
+                  "exclusiveMinimum": 0
+                },
+                "normalizedNsPerLogicalOperation": {
+                  "exclusiveMinimum": 0
+                }
+              },
+              "required": [
+                "status",
+                "nativeValue",
+                "normalizedNsPerLogicalOperation"
+              ]
+            }
+          }
+        }
+      },
+      "else": {
+        "required": [
+          "failure"
+        ]
+      }
+    }
+  ],
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._/-]{0,191}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "status": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "TIMEOUT"
+      ]
+    },
+    "subject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "candidate",
+        "language",
+        "profile",
+        "artifactSha256",
+        "sourceTreeSha256",
+        "toolchainLockSha256"
+      ],
+      "properties": {
+        "candidate": {
+          "enum": [
+            "python-numpy-s1-4",
+            "python-numpy-s1-4r",
+            "python-jax-eager-s1-4r",
+            "python-jax-jit-s1-4r",
+            "scala",
+            "haskell"
+          ]
+        },
+        "language": {
+          "enum": [
+            "python",
+            "scala",
+            "haskell"
+          ]
+        },
+        "profile": {
+          "$ref": "#/$defs/identifier"
+        },
+        "artifactSha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "sourceTreeSha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "toolchainLockSha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "rotation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rotationId",
+        "outerRepetition",
+        "candidateOrder",
+        "schedulingGroup",
+        "pythonBoundaryOrder"
+      ],
+      "properties": {
+        "rotationId": {
+          "enum": [
+            "R1",
+            "R2",
+            "R3"
+          ]
+        },
+        "outerRepetition": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3
+        },
+        "candidateOrder": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "PythonBaselines",
+              "Scala",
+              "Haskell"
+            ]
+          }
+        },
+        "schedulingGroup": {
+          "enum": [
+            "PythonBaselines",
+            "Scala",
+            "Haskell"
+          ]
+        },
+        "pythonBoundaryOrder": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "python-numpy-s1-4",
+              "python-numpy-s1-4r",
+              "python-jax-eager-s1-4r",
+              "python-jax-jit-s1-4r"
+            ]
+          }
+        }
+      }
+    },
+    "block": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "boundaryId",
+        "familyId",
+        "selectorId",
+        "affinityCpuSet",
+        "actualAffinityCpuSet",
+        "threadCount",
+        "nativeBenchmarkMode",
+        "startedAt",
+        "finishedAt",
+        "status",
+        "nativeReportPath",
+        "nativeReportSha256"
+      ],
+      "properties": {
+        "boundaryId": {
+          "enum": [
+            "python-numpy-s1-4",
+            "python-numpy-s1-4r",
+            "python-jax-eager-s1-4r",
+            "python-jax-jit-s1-4r",
+            "scala",
+            "haskell"
+          ]
+        },
+        "familyId": {
+          "enum": [
+            "path-transform",
+            "classical-path-risk",
+            "intraday-realized",
+            "serial-sharpe",
+            "probabilistic-scalar",
+            "coverage-batch"
+          ]
+        },
+        "selectorId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "affinityCpuSet": {
+          "$ref": "#/$defs/cpuSet"
+        },
+        "actualAffinityCpuSet": {
+          "$ref": "#/$defs/cpuSet"
+        },
+        "threadCount": {
+          "const": 1
+        },
+        "nativeBenchmarkMode": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "startedAt": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "finishedAt": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "status": {
+          "$ref": "#/$defs/status"
+        },
+        "nativeReportPath": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._/-]{0,511}$"
+        },
+        "nativeReportSha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "cpuSet": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "fixtureFreezeIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "referenceLockSha256",
+        "canonicalInputsSha256",
+        "canonicalResultsSha256"
+      ],
+      "properties": {
+        "referenceLockSha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "canonicalInputsSha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "canonicalResultsSha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "hostFingerprintSha256",
+        "hostValidityArtifactSha256",
+        "toolchainProvenanceSha256",
+        "fixtureFreezeIdentity",
+        "effectiveRuntimeArgumentsSha256"
+      ],
+      "properties": {
+        "hostFingerprintSha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "hostValidityArtifactSha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "toolchainProvenanceSha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "fixtureFreezeIdentity": {
+          "$ref": "#/$defs/fixtureFreezeIdentity"
+        },
+        "effectiveRuntimeArgumentsSha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "caseResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "caseId",
+        "functionId",
+        "fixtureId",
+        "nativeValue",
+        "nativeUnit",
+        "logicalOperationsPerInvocation",
+        "normalizedNsPerLogicalOperation",
+        "samples",
+        "warmupIterations",
+        "measurementIterations",
+        "status"
+      ],
+      "properties": {
+        "caseId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "functionId": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,63}$"
+        },
+        "fixtureId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "nativeValue": {
+          "type": "number",
+          "minimum": 0
+        },
+        "nativeUnit": {
+          "enum": [
+            "ns",
+            "us",
+            "ms",
+            "s"
+          ]
+        },
+        "logicalOperationsPerInvocation": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "normalizedNsPerLogicalOperation": {
+          "type": "number",
+          "minimum": 0
+        },
+        "samples": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "warmupIterations": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "measurementIterations": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "status": {
+          "$ref": "#/$defs/status"
+        },
+        "failureCode": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]{0,63}$"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "PASS"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "not": {
+              "required": [
+                "failureCode"
+              ]
+            }
+          },
+          "else": {
+            "required": [
+              "failureCode"
+            ]
+          }
+        }
+      ]
+    },
+    "failure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "phase",
+        "message",
+        "stdoutSha256",
+        "stderrSha256"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]{0,63}$"
+        },
+        "phase": {
+          "enum": [
+            "preflight",
+            "setup",
+            "warmup",
+            "measurement",
+            "native-report",
+            "validation",
+            "timeout"
+          ]
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "stdoutSha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "stderrSha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    }
+  },
+  "x-s1-4x-semantic-invariants": [
+    "actualAffinityCpuSet equals affinityCpuSet",
+    "case IDs and order equal the frozen selector expectedCaseIds",
+    "nativeValue is the framework-reported batch-equivalent value",
+    "nativeBenchmarkMode equals execution.nativeBenchmarkMode[boundaryId] from the frozen plan",
+    "normalizedNsPerLogicalOperation equals nativeValue times the exact nativeUnit nanosecond scale divided by logicalOperationsPerInvocation",
+    "all numeric values are finite; PASS native and normalized values are strictly positive",
+    "a non-PASS block requires failure and cannot contribute to score aggregation",
+    "the native report path matches the frozen blockOutputPathTemplate and is never overwritten"
+  ]
+}

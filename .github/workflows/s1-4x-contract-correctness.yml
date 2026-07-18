@@ -1,0 +1,254 @@
+name: S1.4X Gate 1 Contract Correctness
+
+on:
+  pull_request:
+    paths:
+      - "workspaces/decision-platform/research/s1-4x-numeric-parity/**"
+      - "workspaces/decision-platform/python-services/pyproject.toml"
+      - "workspaces/decision-platform/python-services/uv.lock"
+      - "workspaces/decision-platform/python-services/app/financial_engineering/**"
+      - "workspaces/decision-platform/python-services/tests/financial_engineering/**"
+      - "workspaces/decision-platform/research/s1-4r-jax-risk/README.md"
+      - "workspaces/decision-platform/research/s1-4r-jax-risk/pyproject.toml"
+      - "workspaces/decision-platform/research/s1-4r-jax-risk/uv.lock"
+      - "workspaces/decision-platform/research/s1-4r-jax-risk/src/**"
+      - "workspaces/decision-platform/research/s1-4r-jax-risk/tests/**"
+      - "shared-docs/metrics_definitions.md"
+      - "docs/adr/ADR-027-s1-4x-isolated-numeric-parity.md"
+      - ".gitignore"
+      - ".github/workflows/s1-4x-contract-correctness.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "workspaces/decision-platform/research/s1-4x-numeric-parity/**"
+      - "workspaces/decision-platform/python-services/pyproject.toml"
+      - "workspaces/decision-platform/python-services/uv.lock"
+      - "workspaces/decision-platform/python-services/app/financial_engineering/**"
+      - "workspaces/decision-platform/python-services/tests/financial_engineering/**"
+      - "workspaces/decision-platform/research/s1-4r-jax-risk/README.md"
+      - "workspaces/decision-platform/research/s1-4r-jax-risk/pyproject.toml"
+      - "workspaces/decision-platform/research/s1-4r-jax-risk/uv.lock"
+      - "workspaces/decision-platform/research/s1-4r-jax-risk/src/**"
+      - "workspaces/decision-platform/research/s1-4r-jax-risk/tests/**"
+      - "shared-docs/metrics_definitions.md"
+      - "docs/adr/ADR-027-s1-4x-isolated-numeric-parity.md"
+      - ".gitignore"
+      - ".github/workflows/s1-4x-contract-correctness.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: s1-4x-contract-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  UV_PYTHON: "3.12.13"
+  JAX_PLATFORMS: cpu
+  JAX_ENABLE_X64: "1"
+  OMP_NUM_THREADS: "1"
+  OPENBLAS_NUM_THREADS: "1"
+  MKL_NUM_THREADS: "1"
+  NUMEXPR_NUM_THREADS: "1"
+  VECLIB_MAXIMUM_THREADS: "1"
+
+jobs:
+  neutral-contract-correctness:
+    name: Neutral contract, oracle, and frozen regressions
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout full history
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Establish runner-local reproducibility roots
+        run: |
+          S1_4X_RUNTIME="${RUNNER_TEMP}/s1-4x"
+          mkdir -p "$S1_4X_RUNTIME/tmp" "$S1_4X_RUNTIME/uv"
+          {
+            echo "TMPDIR=$S1_4X_RUNTIME/tmp"
+            echo "TEMP=$S1_4X_RUNTIME/tmp"
+            echo "TMP=$S1_4X_RUNTIME/tmp"
+            echo "UV_CACHE_DIR=$S1_4X_RUNTIME/uv"
+          } >> "$GITHUB_ENV"
+
+      - name: Install frozen uv and Python
+        uses: astral-sh/setup-uv@d31148d669074a8d0a63714ba94f3201e7020bc3 # v8.3.0
+        with:
+          version: "0.11.26"
+          python-version: "3.12.13"
+
+      - name: Assert neutral Linux CPU x64 runner
+        run: |
+          test "$(uname -s)" = "Linux"
+          test "$(uname -m)" = "x86_64"
+          test "$(getconf _NPROCESSORS_ONLN)" -ge 1
+
+      - name: Check and sync frozen oracle environment
+        run: |
+          S1_4X=workspaces/decision-platform/research/s1-4x-numeric-parity
+          uv lock --project "$S1_4X/oracle" --check
+          uv sync --frozen --all-groups --project "$S1_4X/oracle"
+
+      - name: Reproduce frozen fixtures, oracle, plan, and contract
+        run: |
+          S1_4X=workspaces/decision-platform/research/s1-4x-numeric-parity
+          ORACLE="$S1_4X/oracle"
+          uv run --frozen --project "$ORACLE" \
+            python "$ORACLE/generate_large_fixtures.py" --check
+          uv run --frozen --project "$ORACLE" \
+            python "$ORACLE/capture_reference_results.py" --check
+          uv run --frozen --project "$ORACLE" \
+            python "$ORACLE/capture_reference_results.py" \
+              --request "$S1_4X/contract/fixtures/invalid/semantic-errors.v1.json" \
+              --output "$S1_4X/contract/fixtures/invalid/semantic-errors.expected.v1.json" \
+              --check
+          uv run --frozen --project "$ORACLE" \
+            python "$S1_4X/benchmarks/render_benchmark_plan.py" --check
+          uv run --frozen --project "$ORACLE" \
+            python "$S1_4X/benchmarks/run_rotated_blocks.py" validate-plan
+          uv run --frozen --project "$ORACLE" \
+            python "$ORACLE/validate_contract.py" --check-all
+
+      - name: Run oracle and benchmark contract quality gates
+        run: |
+          S1_4X=workspaces/decision-platform/research/s1-4x-numeric-parity
+          ORACLE="$S1_4X/oracle"
+          (
+            cd "$ORACLE"
+            uv run --frozen ruff check . ../benchmarks
+            uv run --frozen mypy . ../benchmarks
+            uv run --frozen pytest -q tests ../benchmarks/tests
+          )
+
+      - name: Assert local artifact ignore boundary
+        run: |
+          S1_4X=workspaces/decision-platform/research/s1-4x-numeric-parity
+          git check-ignore --no-index -q \
+            "$S1_4X/contract/fixtures/large/generated/example.bin"
+          git check-ignore --no-index -q "$S1_4X/scala/.scala-build/example"
+          git check-ignore --no-index -q "$S1_4X/scala/.bsp/example"
+          git check-ignore --no-index -q "$S1_4X/haskell/.stack-work/example"
+          git check-ignore --no-index -q "$S1_4X/haskell/.stack-root/example"
+          git check-ignore --no-index -q "$S1_4X/scala/.tool-bin/example"
+          git check-ignore --no-index -q "$S1_4X/benchmarks/artifacts/example.json"
+          for tracked in \
+            "$S1_4X/contract/reference-lock.v1.json" \
+            "$S1_4X/oracle/validate_contract.py" \
+            "$S1_4X/benchmarks/benchmark-plan.v1.json"; do
+            if git check-ignore --no-index -q "$tracked"; then
+              echo "Tracked Gate 1 evidence is incorrectly ignored: $tracked" >&2
+              exit 1
+            fi
+          done
+
+      - name: Run current frozen production regression
+        run: |
+          PRODUCTION=workspaces/decision-platform/python-services
+          (
+            cd "$PRODUCTION"
+            uv lock --check
+            uv sync --frozen
+            uv run --frozen ruff check .
+            uv run --frozen mypy app
+            uv run --frozen pytest -q
+          )
+
+      - name: Materialize referenceBaseCommit as an isolated repository
+        id: reference-snapshot
+        run: |
+          S1_4X=workspaces/decision-platform/research/s1-4x-numeric-parity
+          ORACLE="$S1_4X/oracle"
+          BASE="$(
+            uv run --frozen --project "$ORACLE" python - <<'PY'
+          import json
+          from pathlib import Path
+
+          lock = json.loads(
+              Path(
+                  "workspaces/decision-platform/research/s1-4x-numeric-parity/"
+                  "contract/reference-lock.v1.json"
+              ).read_text(encoding="utf-8")
+          )
+          print(lock["referenceBaseCommit"])
+          PY
+          )"
+          git cat-file -e "${BASE}^{commit}"
+          SNAPSHOT="${RUNNER_TEMP}/s1-4x-reference-base"
+          test ! -e "$SNAPSHOT"
+          git clone --no-local --no-hardlinks "$GITHUB_WORKSPACE" "$SNAPSHOT"
+          git -C "$SNAPSHOT" checkout --detach "$BASE"
+          git -C "$SNAPSHOT" update-ref refs/remotes/origin/main "$BASE"
+          test "$(git -C "$SNAPSHOT" rev-parse HEAD)" = "$BASE"
+          test "$(git -C "$SNAPSHOT" rev-parse origin/main)" = "$BASE"
+          test -z "$(git -C "$SNAPSHOT" status --short --untracked-files=all)"
+          SNAPSHOT="$SNAPSHOT" PYTHONPATH="$ORACLE" \
+            uv run --frozen --project "$ORACLE" python - <<'PY'
+          import os
+          from pathlib import Path
+
+          from validate_contract import validate_reference_lock
+
+          repo = Path(os.environ["SNAPSHOT"]).resolve(strict=True)
+          contract = (
+              Path.cwd()
+              / "workspaces/decision-platform/research/s1-4x-numeric-parity/contract"
+          )
+          evidence = validate_reference_lock(repo, contract)
+          assert evidence["sourceCount"] > 0
+          assert evidence["sourceTreeCount"] == 4
+          PY
+          echo "snapshot=$SNAPSHOT" >> "$GITHUB_OUTPUT"
+          echo "reference_base_commit=$BASE" >> "$GITHUB_OUTPUT"
+
+      - name: Sync and lint frozen S1.4R reference snapshot
+        env:
+          SNAPSHOT: ${{ steps.reference-snapshot.outputs.snapshot }}
+        run: |
+          PRODUCTION="$SNAPSHOT/workspaces/decision-platform/python-services"
+          RESEARCH="$SNAPSHOT/workspaces/decision-platform/research/s1-4r-jax-risk"
+          (
+            cd "$PRODUCTION"
+            uv lock --check
+            uv sync --frozen
+          )
+          (
+            cd "$RESEARCH"
+            uv lock --check
+            uv sync --frozen --all-groups
+            uv run --frozen ruff check .
+            uv run --frozen mypy src benchmarks
+          )
+
+      - name: Run and account for all 263 frozen S1.4R tests
+        env:
+          SNAPSHOT: ${{ steps.reference-snapshot.outputs.snapshot }}
+        run: |
+          RESEARCH="$SNAPSHOT/workspaces/decision-platform/research/s1-4r-jax-risk"
+          JUNIT="${RUNNER_TEMP}/s1-4r-reference-263.xml"
+          (
+            cd "$RESEARCH"
+            uv run --frozen pytest -q --junitxml="$JUNIT"
+          )
+          JUNIT="$JUNIT" python3 - <<'PY'
+          import os
+          import xml.etree.ElementTree as ET
+
+          root = ET.parse(os.environ["JUNIT"]).getroot()
+          suites = [root] if root.tag == "testsuite" else list(root.findall("testsuite"))
+          assert suites, f"JUnit report has no testsuite elements: root={root.tag}"
+          tests = sum(int(suite.attrib["tests"]) for suite in suites)
+          failures = sum(int(suite.attrib.get("failures", "0")) for suite in suites)
+          errors = sum(int(suite.attrib.get("errors", "0")) for suite in suites)
+          skipped = sum(int(suite.attrib.get("skipped", "0")) for suite in suites)
+          assert tests == 263, f"expected 263 frozen S1.4R tests, got {tests}"
+          assert failures == 0 and errors == 0 and skipped == 0
+          print("S1.4R_REFERENCE_REGRESSION_PASS tests=263 failures=0 errors=0 skipped=0")
+          PY
+          echo "S1.4R reference snapshot: 263/263 tests passed." \
+            >> "$GITHUB_STEP_SUMMARY"

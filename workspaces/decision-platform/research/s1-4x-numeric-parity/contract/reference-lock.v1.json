@@ -1,0 +1,351 @@
+{
+  "schemaVersion": "s1.4x-reference-lock-v1",
+  "referenceBaseCommit": "f2784ffb66272cf73ed1085d1719713fc7165113",
+  "pythonRuntime": {
+    "implementation": "CPython",
+    "version": "3.12.13",
+    "uvVersion": "0.11.26",
+    "productionNumpyVersion": "2.5.1",
+    "researchNumpyVersion": "2.5.1",
+    "jaxVersion": "0.11.0",
+    "jaxlibVersion": "0.11.0"
+  },
+  "functionCount": 20,
+  "stableErrorCodeCount": 32,
+  "s1_4r_canonical_fixture_sha256": "298bb93d8915d2702d32d298b6acab7fd0c2dc881f0707cb6e585fb78d420891",
+  "sources": [
+    {
+      "role": "metrics-ssot",
+      "path": "shared-docs/metrics_definitions.md",
+      "sha256": "38d6a3fc244575a16498eb6b12d69bea473006b8c131b70f486030b79444d359"
+    },
+    {
+      "role": "production-package-export",
+      "path": "workspaces/decision-platform/python-services/app/financial_engineering/__init__.py",
+      "sha256": "cf01244085ec46ca67b4b2c5d1d2dc3977c260051f7a815915f54b45ba6cdb31"
+    },
+    {
+      "role": "production-validation",
+      "path": "workspaces/decision-platform/python-services/app/financial_engineering/_validation.py",
+      "sha256": "e7acf030e86b17fe5de46f560d37cce2ea3b2c0345f7eeed27e15eea3198c02b"
+    },
+    {
+      "role": "production-returns",
+      "path": "workspaces/decision-platform/python-services/app/financial_engineering/returns.py",
+      "sha256": "66f6446eedee40a3ef1a406d32aa880e847fef0f6e0fe9a334d039ddd1998539"
+    },
+    {
+      "role": "production-risk-metrics",
+      "path": "workspaces/decision-platform/python-services/app/financial_engineering/risk_metrics.py",
+      "sha256": "a721943077c81b98f75be4253943d4bfbea82dfbdf334cbb2fb3ca13a45ab3f5"
+    },
+    {
+      "role": "production-return-tests",
+      "path": "workspaces/decision-platform/python-services/tests/financial_engineering/test_returns.py",
+      "sha256": "8553d03cd6693a1d7805377758b86475251c94fdd2270d78b2b87d9be8dce6aa"
+    },
+    {
+      "role": "production-risk-tests",
+      "path": "workspaces/decision-platform/python-services/tests/financial_engineering/test_risk_metrics.py",
+      "sha256": "1697526ec70e9692f97a23998cea6a785fd759f66e50e418f063246391a5668c"
+    },
+    {
+      "role": "production-project-lock-input",
+      "path": "workspaces/decision-platform/python-services/pyproject.toml",
+      "sha256": "a2c13d5b957342fd72dd9caaaf8b82d3c2f3011a057eb33c513f7e8c93e39df4"
+    },
+    {
+      "role": "production-environment-lock",
+      "path": "workspaces/decision-platform/python-services/uv.lock",
+      "sha256": "73527bd3a310955c0d935b3198711b1a2997835e68cfaa78ffa4a98fc60145ba"
+    },
+    {
+      "role": "research-contract-readme",
+      "path": "workspaces/decision-platform/research/s1-4r-jax-risk/README.md",
+      "sha256": "9dd12cc65c1a2ab8f7479b031882f64a7a6a2e36ab75c2c47cbfb75b8f81e140"
+    },
+    {
+      "role": "research-project-lock-input",
+      "path": "workspaces/decision-platform/research/s1-4r-jax-risk/pyproject.toml",
+      "sha256": "4176ccb94f0da5002ae9e19a300f4141e8a3727e3848e6950d6125db3110030d"
+    },
+    {
+      "role": "research-environment-lock",
+      "path": "workspaces/decision-platform/research/s1-4r-jax-risk/uv.lock",
+      "sha256": "aafc6fd448a6c04df8c84b1f81b5bbce2a56be5c4bc54ebaa8bf15842ed3b27f"
+    },
+    {
+      "role": "research-package-export",
+      "path": "workspaces/decision-platform/research/s1-4r-jax-risk/src/s1_4r_risk_research/__init__.py",
+      "sha256": "3e231eb3d581e1d06a46ec20dd7eb44f3a706c17b44d84d30679773e20dbf09b"
+    },
+    {
+      "role": "research-jax-kernels",
+      "path": "workspaces/decision-platform/research/s1-4r-jax-risk/src/s1_4r_risk_research/_jax_kernels.py",
+      "sha256": "5a83eb0310dce28abe0717505f29d432f0df07db8c4778cc529a4c385663afc7"
+    },
+    {
+      "role": "research-numeric-common",
+      "path": "workspaces/decision-platform/research/s1-4r-jax-risk/src/s1_4r_risk_research/_numeric_common.py",
+      "sha256": "f3f4445e7ea97b4a12a291a73c70c9d31c4525a0e7fffb041269f3aae91bc17a"
+    },
+    {
+      "role": "research-validation",
+      "path": "workspaces/decision-platform/research/s1-4r-jax-risk/src/s1_4r_risk_research/_validation.py",
+      "sha256": "c7ac176100a8c11d72afdc971522b41f9ca98be35413ff32c55bafdc484a4caa"
+    },
+    {
+      "role": "research-errors",
+      "path": "workspaces/decision-platform/research/s1-4r-jax-risk/src/s1_4r_risk_research/errors.py",
+      "sha256": "c5c80a3071d62f09d09a3a99d12a10a2bd9b35d43ba84bb1d62e3915dbf43871"
+    },
+    {
+      "role": "research-jax-reference",
+      "path": "workspaces/decision-platform/research/s1-4r-jax-risk/src/s1_4r_risk_research/jax_reference.py",
+      "sha256": "69f94addf27bbbe6070733a8658838205d47c43c52705ab2345adc41d59fb92f"
+    },
+    {
+      "role": "research-models",
+      "path": "workspaces/decision-platform/research/s1-4r-jax-risk/src/s1_4r_risk_research/models.py",
+      "sha256": "0e3f1df35cf58284748665c123c6b26ddd18d28e15f44a8816255f481a378004"
+    },
+    {
+      "role": "research-numpy-reference",
+      "path": "workspaces/decision-platform/research/s1-4r-jax-risk/src/s1_4r_risk_research/numpy_reference.py",
+      "sha256": "85f05cbeff6fed0211c10b6a187d3a2b473a41e6b0481ff8c37192ed1300f3b8"
+    },
+    {
+      "role": "research-test-configuration",
+      "path": "workspaces/decision-platform/research/s1-4r-jax-risk/tests/conftest.py",
+      "sha256": "263ddc6ca304aba1e25163845f6b7a14edfd779eb8bc61a7ca2cf84bd8d8e608"
+    },
+    {
+      "role": "research-canonical-fixture",
+      "path": "workspaces/decision-platform/research/s1-4r-jax-risk/tests/fixtures/canonical/advanced_risk_v1.json",
+      "sha256": "298bb93d8915d2702d32d298b6acab7fd0c2dc881f0707cb6e585fb78d420891"
+    },
+    {
+      "role": "research-canonical-fixture-digest",
+      "path": "workspaces/decision-platform/research/s1-4r-jax-risk/tests/fixtures/canonical/advanced_risk_v1.sha256",
+      "sha256": "b7695f2b09675027f10bec7f2308b1eae5c40165294f9ae38ddadfa80c4c3ffd"
+    },
+    {
+      "role": "research-backtest-tests",
+      "path": "workspaces/decision-platform/research/s1-4r-jax-risk/tests/test_backtests.py",
+      "sha256": "071e944a31c8358f406a6f5a779b5fdb73ce2d680b246b2ba797e598189b7603"
+    },
+    {
+      "role": "research-benchmark-plan-tests",
+      "path": "workspaces/decision-platform/research/s1-4r-jax-risk/tests/test_benchmark_plan.py",
+      "sha256": "445eebe0e6afc3d21effd916e3bbf8e54fb60fdd0be439d93de444de15445e64"
+    },
+    {
+      "role": "research-contract-tests",
+      "path": "workspaces/decision-platform/research/s1-4r-jax-risk/tests/test_contract.py",
+      "sha256": "a4af2cd4a5e53ed39392cadc04f56eb54216111e38a94109556d7fb50ffdcdbd"
+    },
+    {
+      "role": "research-jax-parity-tests",
+      "path": "workspaces/decision-platform/research/s1-4r-jax-risk/tests/test_jax_parity.py",
+      "sha256": "2afa0a2f06750153e22da07c453b4f2e2ab3f59cf86213b7696b68279883ef4e"
+    },
+    {
+      "role": "research-jax-runtime-tests",
+      "path": "workspaces/decision-platform/research/s1-4r-jax-risk/tests/test_jax_runtime.py",
+      "sha256": "3e977f2761e5c40f50319a746c5feda0970e290a2edb2ecee5e0f16a8ba30c49"
+    },
+    {
+      "role": "research-numpy-reference-tests",
+      "path": "workspaces/decision-platform/research/s1-4r-jax-risk/tests/test_numpy_reference.py",
+      "sha256": "03ae6d7910db3df03747361aaee11d5bf77061cddfc15cae8a9a1943bcc56466"
+    },
+    {
+      "role": "research-production-isolation-tests",
+      "path": "workspaces/decision-platform/research/s1-4r-jax-risk/tests/test_production_isolation.py",
+      "sha256": "daca84be569df6358ac84e171825b91f9610dfdabe99fb5f0ecab4f02b47c3cc"
+    },
+    {
+      "role": "research-property-tests",
+      "path": "workspaces/decision-platform/research/s1-4r-jax-risk/tests/test_properties.py",
+      "sha256": "24ee869af617cb7ab0b24f7ce312850b0c24cb533b24b487360ca970a562d361"
+    }
+  ],
+  "sourceTrees": [
+    {
+      "role": "metrics-ssot-tree",
+      "root": "shared-docs",
+      "includeGlobs": [
+        "metrics_definitions.md"
+      ],
+      "fileCount": 1,
+      "canonicalManifestSha256": "a5a0b7f98723bac91cbf1a1be7efc9b2f25922871e185fcf85b777d618adfd9f",
+      "files": [
+        {
+          "path": "metrics_definitions.md",
+          "sha256": "38d6a3fc244575a16498eb6b12d69bea473006b8c131b70f486030b79444d359"
+        }
+      ]
+    },
+    {
+      "role": "production-reference-tree",
+      "root": "workspaces/decision-platform/python-services",
+      "includeGlobs": [
+        "app/financial_engineering/**/*.py",
+        "tests/financial_engineering/**/*.py",
+        "pyproject.toml",
+        "uv.lock"
+      ],
+      "fileCount": 8,
+      "canonicalManifestSha256": "a448342500733d1ed26828f1e9f2f863a4a7a239a32b3f416c490d24927dc5aa",
+      "files": [
+        {
+          "path": "app/financial_engineering/__init__.py",
+          "sha256": "cf01244085ec46ca67b4b2c5d1d2dc3977c260051f7a815915f54b45ba6cdb31"
+        },
+        {
+          "path": "app/financial_engineering/_validation.py",
+          "sha256": "e7acf030e86b17fe5de46f560d37cce2ea3b2c0345f7eeed27e15eea3198c02b"
+        },
+        {
+          "path": "app/financial_engineering/returns.py",
+          "sha256": "66f6446eedee40a3ef1a406d32aa880e847fef0f6e0fe9a334d039ddd1998539"
+        },
+        {
+          "path": "app/financial_engineering/risk_metrics.py",
+          "sha256": "a721943077c81b98f75be4253943d4bfbea82dfbdf334cbb2fb3ca13a45ab3f5"
+        },
+        {
+          "path": "pyproject.toml",
+          "sha256": "a2c13d5b957342fd72dd9caaaf8b82d3c2f3011a057eb33c513f7e8c93e39df4"
+        },
+        {
+          "path": "tests/financial_engineering/test_returns.py",
+          "sha256": "8553d03cd6693a1d7805377758b86475251c94fdd2270d78b2b87d9be8dce6aa"
+        },
+        {
+          "path": "tests/financial_engineering/test_risk_metrics.py",
+          "sha256": "1697526ec70e9692f97a23998cea6a785fd759f66e50e418f063246391a5668c"
+        },
+        {
+          "path": "uv.lock",
+          "sha256": "73527bd3a310955c0d935b3198711b1a2997835e68cfaa78ffa4a98fc60145ba"
+        }
+      ]
+    },
+    {
+      "role": "research-reference-tree",
+      "root": "workspaces/decision-platform/research/s1-4r-jax-risk",
+      "includeGlobs": [
+        "README.md",
+        "pyproject.toml",
+        "src/s1_4r_risk_research/**/*.py",
+        "uv.lock"
+      ],
+      "fileCount": 11,
+      "canonicalManifestSha256": "65e373521ffdadaebaa6c5e974bfe459361cbbefa77d07d4267773e261df6cac",
+      "files": [
+        {
+          "path": "README.md",
+          "sha256": "9dd12cc65c1a2ab8f7479b031882f64a7a6a2e36ab75c2c47cbfb75b8f81e140"
+        },
+        {
+          "path": "pyproject.toml",
+          "sha256": "4176ccb94f0da5002ae9e19a300f4141e8a3727e3848e6950d6125db3110030d"
+        },
+        {
+          "path": "src/s1_4r_risk_research/__init__.py",
+          "sha256": "3e231eb3d581e1d06a46ec20dd7eb44f3a706c17b44d84d30679773e20dbf09b"
+        },
+        {
+          "path": "src/s1_4r_risk_research/_jax_kernels.py",
+          "sha256": "5a83eb0310dce28abe0717505f29d432f0df07db8c4778cc529a4c385663afc7"
+        },
+        {
+          "path": "src/s1_4r_risk_research/_numeric_common.py",
+          "sha256": "f3f4445e7ea97b4a12a291a73c70c9d31c4525a0e7fffb041269f3aae91bc17a"
+        },
+        {
+          "path": "src/s1_4r_risk_research/_validation.py",
+          "sha256": "c7ac176100a8c11d72afdc971522b41f9ca98be35413ff32c55bafdc484a4caa"
+        },
+        {
+          "path": "src/s1_4r_risk_research/errors.py",
+          "sha256": "c5c80a3071d62f09d09a3a99d12a10a2bd9b35d43ba84bb1d62e3915dbf43871"
+        },
+        {
+          "path": "src/s1_4r_risk_research/jax_reference.py",
+          "sha256": "69f94addf27bbbe6070733a8658838205d47c43c52705ab2345adc41d59fb92f"
+        },
+        {
+          "path": "src/s1_4r_risk_research/models.py",
+          "sha256": "0e3f1df35cf58284748665c123c6b26ddd18d28e15f44a8816255f481a378004"
+        },
+        {
+          "path": "src/s1_4r_risk_research/numpy_reference.py",
+          "sha256": "85f05cbeff6fed0211c10b6a187d3a2b473a41e6b0481ff8c37192ed1300f3b8"
+        },
+        {
+          "path": "uv.lock",
+          "sha256": "aafc6fd448a6c04df8c84b1f81b5bbce2a56be5c4bc54ebaa8bf15842ed3b27f"
+        }
+      ]
+    },
+    {
+      "role": "research-authoritative-test-tree",
+      "root": "workspaces/decision-platform/research/s1-4r-jax-risk",
+      "includeGlobs": [
+        "tests/**/*.py",
+        "tests/fixtures/canonical/*.json",
+        "tests/fixtures/canonical/*.sha256"
+      ],
+      "fileCount": 11,
+      "canonicalManifestSha256": "1cd11b463d3a9fbaaebcf49fcb9dd95e763e7c269807551aeb4f49ee8f9b0325",
+      "files": [
+        {
+          "path": "tests/conftest.py",
+          "sha256": "263ddc6ca304aba1e25163845f6b7a14edfd779eb8bc61a7ca2cf84bd8d8e608"
+        },
+        {
+          "path": "tests/fixtures/canonical/advanced_risk_v1.json",
+          "sha256": "298bb93d8915d2702d32d298b6acab7fd0c2dc881f0707cb6e585fb78d420891"
+        },
+        {
+          "path": "tests/fixtures/canonical/advanced_risk_v1.sha256",
+          "sha256": "b7695f2b09675027f10bec7f2308b1eae5c40165294f9ae38ddadfa80c4c3ffd"
+        },
+        {
+          "path": "tests/test_backtests.py",
+          "sha256": "071e944a31c8358f406a6f5a779b5fdb73ce2d680b246b2ba797e598189b7603"
+        },
+        {
+          "path": "tests/test_benchmark_plan.py",
+          "sha256": "445eebe0e6afc3d21effd916e3bbf8e54fb60fdd0be439d93de444de15445e64"
+        },
+        {
+          "path": "tests/test_contract.py",
+          "sha256": "a4af2cd4a5e53ed39392cadc04f56eb54216111e38a94109556d7fb50ffdcdbd"
+        },
+        {
+          "path": "tests/test_jax_parity.py",
+          "sha256": "2afa0a2f06750153e22da07c453b4f2e2ab3f59cf86213b7696b68279883ef4e"
+        },
+        {
+          "path": "tests/test_jax_runtime.py",
+          "sha256": "3e977f2761e5c40f50319a746c5feda0970e290a2edb2ecee5e0f16a8ba30c49"
+        },
+        {
+          "path": "tests/test_numpy_reference.py",
+          "sha256": "03ae6d7910db3df03747361aaee11d5bf77061cddfc15cae8a9a1943bcc56466"
+        },
+        {
+          "path": "tests/test_production_isolation.py",
+          "sha256": "daca84be569df6358ac84e171825b91f9610dfdabe99fb5f0ecab4f02b47c3cc"
+        },
+        {
+          "path": "tests/test_properties.py",
+          "sha256": "24ee869af617cb7ab0b24f7ce312850b0c24cb533b24b487360ca970a562d361"
+        }
+      ]
+    }
+  ]
+}

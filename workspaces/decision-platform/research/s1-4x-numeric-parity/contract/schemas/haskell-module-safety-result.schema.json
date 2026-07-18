@@ -1,0 +1,514 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://capstone-ai-trading-coach.invalid/s1-4x/schemas/haskell-module-safety-result.schema.json",
+  "title": "S1.4X Haskell module-safety audit result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "policySha256",
+    "sourceInputManifestSha256",
+    "modules",
+    "candidateDirectImports",
+    "candidateHomeModuleEdges",
+    "upstreamTransitiveEdges",
+    "unclassifiedModuleCount",
+    "candidateTrustworthyUnsafeDeclarationCount",
+    "candidateDirectUnsafeIoForeignImportCount",
+    "coreToShellEdgeCount",
+    "unknownTransitiveEdgeCount",
+    "staleAllowlistCount",
+    "aggregateStatus"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "s1.4x-haskell-module-safety-result-v1"
+    },
+    "policySha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "sourceInputManifestSha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "modules": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/module"
+      },
+      "x-s1-4x-unique-by": "moduleName"
+    },
+    "candidateDirectImports": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/importEdge"
+      }
+    },
+    "candidateHomeModuleEdges": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/homeEdge"
+      }
+    },
+    "upstreamTransitiveEdges": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/upstreamEdge"
+      }
+    },
+    "unclassifiedModuleCount": {
+      "const": 0
+    },
+    "candidateTrustworthyUnsafeDeclarationCount": {
+      "const": 0
+    },
+    "candidateDirectUnsafeIoForeignImportCount": {
+      "const": 0
+    },
+    "coreToShellEdgeCount": {
+      "const": 0
+    },
+    "unknownTransitiveEdgeCount": {
+      "const": 0
+    },
+    "staleAllowlistCount": {
+      "const": 0
+    },
+    "aggregateStatus": {
+      "const": "PASS"
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "module": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "moduleName",
+        "path",
+        "category",
+        "compileMode",
+        "extensions",
+        "sourceSha256"
+      ],
+      "properties": {
+        "moduleName": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Za-z0-9]*(?:\\.[A-Z][A-Za-z0-9]*)*$"
+        },
+        "path": {
+          "type": "string",
+          "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))[A-Za-z0-9._/-]+\\.hs$"
+        },
+        "category": {
+          "$ref": "#/$defs/category"
+        },
+        "compileMode": {
+          "enum": [
+            "Safe",
+            "SafeHaskell-None-with-audited-purity-gate",
+            "ordinary"
+          ]
+        },
+        "extensions": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "not": {
+            "contains": {
+              "enum": [
+                "Trustworthy",
+                "Unsafe"
+              ]
+            }
+          }
+        },
+        "sourceSha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "category": {
+                "const": "safe-scalar"
+              }
+            },
+            "required": [
+              "category"
+            ]
+          },
+          "then": {
+            "properties": {
+              "compileMode": {
+                "const": "Safe"
+              },
+              "extensions": {
+                "allOf": [
+                  {
+                    "$ref": "#/$defs/mandatoryCoreExtensions"
+                  },
+                  {
+                    "$ref": "#/$defs/forbiddenCorePositiveExtensions"
+                  },
+                  {
+                    "contains": {
+                      "const": "Safe"
+                    },
+                    "minContains": 1,
+                    "maxContains": 1
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "category": {
+                "const": "audited-pure-vector"
+              }
+            },
+            "required": [
+              "category"
+            ]
+          },
+          "then": {
+            "properties": {
+              "compileMode": {
+                "const": "SafeHaskell-None-with-audited-purity-gate"
+              },
+              "extensions": {
+                "allOf": [
+                  {
+                    "$ref": "#/$defs/mandatoryCoreExtensions"
+                  },
+                  {
+                    "$ref": "#/$defs/forbiddenCorePositiveExtensions"
+                  },
+                  {
+                    "not": {
+                      "contains": {
+                        "const": "Safe"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "category": {
+                "enum": [
+                  "io-shell",
+                  "test",
+                  "benchmark"
+                ]
+              }
+            },
+            "required": [
+              "category"
+            ]
+          },
+          "then": {
+            "properties": {
+              "compileMode": {
+                "const": "ordinary"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "importEdge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fromModule",
+        "fromCategory",
+        "importedModule",
+        "classification"
+      ],
+      "properties": {
+        "fromModule": {
+          "type": "string"
+        },
+        "fromCategory": {
+          "$ref": "#/$defs/category"
+        },
+        "importedModule": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Za-z0-9_']*(?:\\.[A-Z][A-Za-z0-9_']*)*$",
+          "not": {
+            "pattern": "^(?:Foreign|Unsafe)(?:\\.|$)|^(?:System\\.IO\\.Unsafe|GHC\\.IO\\.Unsafe)(?:\\.|$)"
+          }
+        },
+        "classification": {
+          "enum": [
+            "allowed-pure",
+            "allowed-shell"
+          ]
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "fromCategory": {
+              "const": "safe-scalar"
+            },
+            "importedModule": {
+              "not": {
+                "pattern": "^(?:Data\\.Vector\\.Unboxed|System\\.IO|Control\\.Monad\\.IO\\.Class|Debug\\.Trace)(?:\\.|$)"
+              }
+            },
+            "classification": {
+              "const": "allowed-pure"
+            }
+          }
+        },
+        {
+          "properties": {
+            "fromCategory": {
+              "const": "audited-pure-vector"
+            },
+            "importedModule": {
+              "not": {
+                "pattern": "^(?:System\\.IO|Control\\.Monad\\.IO\\.Class|Debug\\.Trace)(?:\\.|$)"
+              }
+            },
+            "classification": {
+              "const": "allowed-pure"
+            }
+          }
+        },
+        {
+          "properties": {
+            "fromCategory": {
+              "$ref": "#/$defs/shellCategory"
+            }
+          }
+        }
+      ]
+    },
+    "homeEdge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fromModule",
+        "fromCategory",
+        "toModule",
+        "toCategory",
+        "classification"
+      ],
+      "properties": {
+        "fromModule": {
+          "type": "string"
+        },
+        "fromCategory": {
+          "$ref": "#/$defs/category"
+        },
+        "toModule": {
+          "type": "string"
+        },
+        "toCategory": {
+          "$ref": "#/$defs/category"
+        },
+        "classification": {
+          "enum": [
+            "core-to-core",
+            "shell-to-core",
+            "shell-to-shell"
+          ]
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "fromCategory": {
+              "$ref": "#/$defs/coreCategory"
+            },
+            "toCategory": {
+              "$ref": "#/$defs/coreCategory"
+            },
+            "classification": {
+              "const": "core-to-core"
+            }
+          }
+        },
+        {
+          "properties": {
+            "fromCategory": {
+              "$ref": "#/$defs/shellCategory"
+            },
+            "toCategory": {
+              "$ref": "#/$defs/coreCategory"
+            },
+            "classification": {
+              "const": "shell-to-core"
+            }
+          }
+        },
+        {
+          "properties": {
+            "fromCategory": {
+              "$ref": "#/$defs/shellCategory"
+            },
+            "toCategory": {
+              "$ref": "#/$defs/shellCategory"
+            },
+            "classification": {
+              "const": "shell-to-shell"
+            }
+          }
+        }
+      ]
+    },
+    "upstreamEdge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "package",
+        "version",
+        "sourceSha256",
+        "importPath",
+        "provenance",
+        "edgeKind",
+        "allowlisted"
+      ],
+      "properties": {
+        "package": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "sourceSha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "importPath": {
+          "type": "string"
+        },
+        "provenance": {
+          "type": "string"
+        },
+        "edgeKind": {
+          "enum": [
+            "unsafe-import",
+            "compiler-primop"
+          ]
+        },
+        "allowlisted": {
+          "const": true
+        }
+      }
+    },
+    "category": {
+      "enum": [
+        "safe-scalar",
+        "audited-pure-vector",
+        "io-shell",
+        "test",
+        "benchmark"
+      ]
+    },
+    "coreCategory": {
+      "enum": [
+        "safe-scalar",
+        "audited-pure-vector"
+      ]
+    },
+    "shellCategory": {
+      "enum": [
+        "io-shell",
+        "test",
+        "benchmark"
+      ]
+    },
+    "mandatoryCoreExtensions": {
+      "allOf": [
+        {
+          "contains": {
+            "const": "NoForeignFunctionInterface"
+          }
+        },
+        {
+          "contains": {
+            "const": "NoTemplateHaskell"
+          }
+        },
+        {
+          "contains": {
+            "const": "NoCPP"
+          }
+        },
+        {
+          "contains": {
+            "const": "NoRebindableSyntax"
+          }
+        },
+        {
+          "contains": {
+            "const": "NoLinearTypes"
+          }
+        },
+        {
+          "contains": {
+            "const": "NoMagicHash"
+          }
+        },
+        {
+          "contains": {
+            "const": "NoStrict"
+          }
+        },
+        {
+          "contains": {
+            "const": "NoGeneralizedNewtypeDeriving"
+          }
+        },
+        {
+          "contains": {
+            "const": "NoDerivingVia"
+          }
+        },
+        {
+          "contains": {
+            "const": "NoDeriveAnyClass"
+          }
+        }
+      ]
+    },
+    "forbiddenCorePositiveExtensions": {
+      "not": {
+        "contains": {
+          "enum": [
+            "ForeignFunctionInterface",
+            "TemplateHaskell",
+            "CPP",
+            "RebindableSyntax",
+            "LinearTypes",
+            "MagicHash",
+            "Strict",
+            "GeneralizedNewtypeDeriving",
+            "DerivingVia",
+            "DeriveAnyClass"
+          ]
+        }
+      }
+    }
+  }
+}

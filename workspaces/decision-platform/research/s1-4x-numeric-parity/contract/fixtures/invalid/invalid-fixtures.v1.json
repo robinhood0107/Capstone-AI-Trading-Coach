@@ -1,0 +1,103 @@
+{
+  "schemaVersion": "s1.4x-invalid-fixture-catalog-v1",
+  "entries": [
+    {
+      "fixtureId": "request-unknown-key",
+      "file": "request-unknown-key.json",
+      "validationLayer": "request-schema",
+      "expectedDisposition": "exit-64-request_invalid"
+    },
+    {
+      "fixtureId": "request-wrong-version",
+      "file": "request-wrong-version.json",
+      "validationLayer": "request-schema",
+      "expectedDisposition": "exit-64-request_invalid"
+    },
+    {
+      "fixtureId": "request-unknown-function",
+      "file": "request-unknown-function.json",
+      "validationLayer": "request-schema",
+      "expectedDisposition": "exit-64-request_invalid"
+    },
+    {
+      "fixtureId": "request-duplicate-decoded-key",
+      "file": "request-duplicate-key.json",
+      "validationLayer": "strict-json-pre-parser",
+      "expectedDisposition": "exit-64-request_invalid"
+    },
+    {
+      "fixtureId": "manifest-path-traversal",
+      "file": "manifest-path-traversal.json",
+      "validationLayer": "manifest-schema-and-path",
+      "expectedDisposition": "exit-65-manifest_invalid"
+    },
+    {
+      "fixtureId": "manifest-absolute-path",
+      "file": "manifest-absolute-path.json",
+      "validationLayer": "manifest-schema-and-path",
+      "expectedDisposition": "exit-65-manifest_invalid"
+    },
+    {
+      "fixtureId": "manifest-symlink-escape",
+      "file": "manifest-symlink-escape.json",
+      "validationLayer": "manifest-schema-and-path",
+      "expectedDisposition": "exit-65-manifest_invalid",
+      "binaryPlacement": "symlink-escape"
+    },
+    {
+      "fixtureId": "manifest-wrong-endian",
+      "file": "manifest-wrong-endian.json",
+      "validationLayer": "manifest-schema",
+      "expectedDisposition": "exit-65-manifest_invalid"
+    },
+    {
+      "fixtureId": "manifest-count-mismatch",
+      "file": "manifest-count-mismatch.json",
+      "validationLayer": "manifest-semantic",
+      "expectedDisposition": "exit-65-manifest_invalid"
+    },
+    {
+      "fixtureId": "manifest-shape-mismatch",
+      "file": "manifest-shape-mismatch.json",
+      "validationLayer": "manifest-semantic",
+      "expectedDisposition": "exit-65-manifest_invalid"
+    },
+    {
+      "fixtureId": "manifest-byte-length-mismatch",
+      "file": "manifest-byte-length-mismatch.json",
+      "validationLayer": "manifest-semantic",
+      "expectedDisposition": "exit-65-manifest_invalid"
+    },
+    {
+      "fixtureId": "manifest-arbitrary-integer-overflow",
+      "file": "manifest-arithmetic-overflow.json",
+      "validationLayer": "manifest-semantic",
+      "expectedDisposition": "exit-65-manifest_invalid"
+    },
+    {
+      "fixtureId": "manifest-wrong-hash",
+      "file": "manifest-wrong-hash.json",
+      "validationLayer": "binary-integrity",
+      "expectedDisposition": "exit-65-binary_invalid"
+    },
+    {
+      "fixtureId": "binary-truncated",
+      "file": "manifest-truncated-binary.json",
+      "validationLayer": "binary-integrity",
+      "expectedDisposition": "exit-65-binary_invalid"
+    },
+    {
+      "fixtureId": "binary-trailing-bytes",
+      "file": "manifest-trailing-bytes.json",
+      "validationLayer": "binary-integrity",
+      "expectedDisposition": "exit-65-binary_invalid"
+    },
+    {
+      "fixtureId": "binary-non-finite-semantic",
+      "file": "manifest-non-finite-semantic.json",
+      "validationLayer": "decoded-semantic",
+      "expectedDisposition": "exit-0-input_non_finite",
+      "note": "The raw bytes have a correct declared hash and size; only decoded numeric semantics fail."
+    }
+  ]
+}

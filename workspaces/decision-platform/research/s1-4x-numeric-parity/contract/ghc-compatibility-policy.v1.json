@@ -1,0 +1,155 @@
+{
+  "schemaVersion": "s1.4x-ghc-compatibility-policy-v1",
+  "laneId": "ghc-9.14.1-non-scoring",
+  "authoritative": {
+    "snapshot": "lts-24.50",
+    "compilerVersion": "9.10.3",
+    "role": "correctness-and-performance",
+    "performanceInput": true
+  },
+  "compatibility": {
+    "compilerVersion": "9.14.1",
+    "compilerPathId": "GHCUP_GHC_9_14_1",
+    "role": "required-latest-stable-compatibility",
+    "nonScoring": true,
+    "performanceInput": false
+  },
+  "expectedCompilerAndBootSetPolicy": {
+    "compilerAndBootSetMayDiffer": true,
+    "bootSetIdentityFields": [
+      "package",
+      "version",
+      "unitId",
+      "sourceSha256"
+    ],
+    "expectedBootSetDifferenceOnly": true,
+    "nonBootPlanEquivalent": true,
+    "nonBootEqualityFields": [
+      "package",
+      "version",
+      "sourceUri",
+      "sourceSha256",
+      "effectiveFlags"
+    ]
+  },
+  "approvedExplicitNonBootFlags": {
+    "math-functions": {
+      "system-erf": false,
+      "system-expm1": false
+    }
+  },
+  "forbiddenOverrideKeys": [
+    "extra-deps",
+    "drop-packages",
+    "allow-newer",
+    "allow-newer-deps"
+  ],
+  "phaseOrder": [
+    "toolchain",
+    "configuration",
+    "dependency",
+    "candidateCompile",
+    "fullCorrectness",
+    "stableErrorReplay",
+    "processReplay",
+    "oracleReplay",
+    "crossReplay"
+  ],
+  "typedPhaseEvidence": {
+    "qualificationFields": [
+      "toolchainQualification",
+      "configurationQualification",
+      "dependencyQualification",
+      "candidateCompile"
+    ],
+    "replayFields": [
+      "fullCorrectness",
+      "stableErrorReplay",
+      "processReplay",
+      "oracleReplay",
+      "crossReplay"
+    ],
+    "failurePhaseRequiredForFailure": true,
+    "allPhasesAfterFailureMustBeNotRun": true,
+    "downstreamNotRunMustEqualOrderedPhaseSuffix": true
+  },
+  "resultPolicy": {
+    "PASS": {
+      "hardBlock": false,
+      "failurePhase": null,
+      "dependencyQualification": "PASS",
+      "requiredDownstreamStatus": "PASS",
+      "downstreamNotRun": [],
+      "minimalReproducerRequired": false
+    },
+    "FAIL_FROZEN_DEPENDENCY": {
+      "hardBlock": false,
+      "failurePhase": "dependency",
+      "dependencyQualification": "FAIL",
+      "candidateCompileMustNotStart": true,
+      "downstreamNotRun": [
+        "candidateCompile",
+        "fullCorrectness",
+        "stableErrorReplay",
+        "processReplay",
+        "oracleReplay",
+        "crossReplay"
+      ],
+      "minimalReproducerRequired": true,
+      "proofRequirements": [
+        "dependency phase exits nonzero",
+        "both YAML and lock digests are exact",
+        "policy digest is exact",
+        "non-boot sources, versions, and flags are byte-equivalent",
+        "compiler boot package set identities and digests are present",
+        "forbidden override key set is empty",
+        "failure is isolated to frozen LTS dependency compatibility"
+      ]
+    },
+    "FAIL_CANDIDATE_SOURCE": {
+      "hardBlock": true,
+      "dependencyQualification": "PASS",
+      "allowedFailurePhases": [
+        "candidateCompile",
+        "fullCorrectness",
+        "stableErrorReplay",
+        "processReplay",
+        "oracleReplay",
+        "crossReplay"
+      ],
+      "candidateSourceFailureRequired": true,
+      "minimalReproducerRequired": true
+    },
+    "FAIL_ENVIRONMENT": {
+      "hardBlock": true,
+      "allowedFailurePhases": [
+        "toolchain",
+        "configuration"
+      ],
+      "environmentFailureRequired": true,
+      "minimalReproducerRequired": false
+    },
+    "FAIL_UNCLASSIFIED": {
+      "hardBlock": true,
+      "allowedFailurePhases": [
+        "toolchain",
+        "configuration",
+        "dependency",
+        "candidateCompile",
+        "fullCorrectness",
+        "stableErrorReplay",
+        "processReplay",
+        "oracleReplay",
+        "crossReplay"
+      ],
+      "minimalReproducerRequired": true
+    }
+  },
+  "dependencyFailureEvidenceFallback": {
+    "whenFullCompatibilityPlanUnavailableBeforeSolve": "Prove direct non-boot parent-manifest equality and configuration-AST equality, and hash the failed partial plan separately.",
+    "mayChangeNonBootDependencyToPass": false
+  },
+  "portableEvidenceOnly": true,
+  "absolutePathsAllowedInTrackedResult": false,
+  "promotionRule": "Promoting GHC 9.14.1 to the authoritative lane requires a separately approved pre-freeze custom snapshot and complete dependency lock, followed by Gate 0 and Gate 1 qualification from the beginning."
+}

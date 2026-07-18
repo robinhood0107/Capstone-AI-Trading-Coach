@@ -1,0 +1,310 @@
+{
+  "schemaVersion": "s1.4x-haskell-module-safety-policy-v1",
+  "language": "GHC2024",
+  "categories": {
+    "safe-scalar": {
+      "mandatoryCompileMode": "Safe",
+      "allowedRoles": [
+        "error ADT",
+        "scalar types",
+        "scalar validation",
+        "vector-free scalar kernel"
+      ],
+      "forbiddenImports": [
+        "Data.Vector.Unboxed",
+        "System.IO",
+        "Control.Monad.IO.Class",
+        "Foreign.*",
+        "Unsafe.*",
+        "System.IO.Unsafe",
+        "GHC.IO.Unsafe",
+        "Debug.Trace"
+      ]
+    },
+    "audited-pure-vector": {
+      "mandatoryCompileMode": "SafeHaskell-None-with-audited-purity-gate",
+      "allowedRoles": [
+        "pure numeric kernel using Data.Vector.Unboxed"
+      ],
+      "allowedDirectExternalImports": [
+        "Data.Vector.Unboxed"
+      ],
+      "forbiddenDirectImports": [
+        "System.IO",
+        "Control.Monad.IO.Class",
+        "Foreign.*",
+        "Unsafe.*",
+        "System.IO.Unsafe",
+        "GHC.IO.Unsafe",
+        "Debug.Trace"
+      ]
+    },
+    "io-shell": {
+      "mandatoryCompileMode": "ordinary",
+      "allowedRoles": [
+        "strict JSON pre-parser",
+        "binary manifest reader",
+        "atomic process shell",
+        "sanitized transport error mapper",
+        "shell-only pure SHA-256"
+      ],
+      "coreMayDependOnCategory": false
+    },
+    "test": {
+      "mandatoryCompileMode": "ordinary",
+      "allowedRoles": [
+        "unit, property, process, negative, and contract tests"
+      ]
+    },
+    "benchmark": {
+      "mandatoryCompileMode": "ordinary",
+      "allowedRoles": [
+        "Criterion harness and fixture setup outside the kernel timer"
+      ]
+    }
+  },
+  "everyModuleExactlyOneCategory": true,
+  "mandatoryCoreExtensions": [
+    "NoForeignFunctionInterface",
+    "NoTemplateHaskell",
+    "NoCPP",
+    "NoRebindableSyntax",
+    "NoLinearTypes",
+    "NoMagicHash",
+    "NoStrict",
+    "NoGeneralizedNewtypeDeriving",
+    "NoDerivingVia",
+    "NoDeriveAnyClass"
+  ],
+  "forbiddenCorePositiveExtensions": [
+    "ForeignFunctionInterface",
+    "TemplateHaskell",
+    "CPP",
+    "RebindableSyntax",
+    "LinearTypes",
+    "MagicHash",
+    "Strict",
+    "GeneralizedNewtypeDeriving",
+    "DerivingVia",
+    "DeriveAnyClass"
+  ],
+  "candidateSourceSuffixPolicy": {
+    "allowedSourceSuffixes": [
+      ".hs"
+    ],
+    "forbiddenCompilableSuffixes": [
+      ".lhs",
+      ".hsc",
+      ".hs-boot"
+    ],
+    "allowedNonHsConfigurationPaths": [
+      "selected-profile.v1.json",
+      "package.yaml"
+    ],
+    "nonHsEntriesMustHaveRole": "configuration"
+  },
+  "candidateDerivingPolicy": "deriving stock only",
+  "forbiddenCandidateModuleDeclarations": [
+    "Trustworthy",
+    "Unsafe"
+  ],
+  "forbiddenCoreTypesAndUses": [
+    "IO",
+    "MonadIO",
+    "environment access",
+    "clock",
+    "random",
+    "network",
+    "Control.Exception.throw",
+    "Control.Exception.throwIO",
+    "foreign import",
+    "foreign export"
+  ],
+  "forbiddenPartialAndUnsafeSymbols": [
+    "Prelude.head",
+    "Prelude.tail",
+    "Prelude.init",
+    "Prelude.last",
+    "Prelude.!!",
+    "Text.Read.read",
+    "Data.Maybe.fromJust",
+    "Data.Either.fromLeft",
+    "Data.Either.fromRight",
+    "Data.List.foldl1",
+    "Data.List.maximum",
+    "Data.List.minimum",
+    "Debug.Trace",
+    "System.IO.Unsafe",
+    "GHC.IO.Unsafe",
+    "Foreign.*"
+  ],
+  "forbiddenSourceLocalControls": [
+    "OPTIONS_GHC",
+    "HLint ignore",
+    "global Strict",
+    "LinearTypes",
+    "TemplateHaskell",
+    "CPP",
+    "MagicHash"
+  ],
+  "vectorProvenance": {
+    "package": "vector",
+    "version": "0.13.2.0",
+    "module": "Data.Vector.Unboxed",
+    "safeHaskell": "None",
+    "sourceSha256Semantics": "official Hackage source archive byte SHA-256",
+    "officialArchiveUri": "https://hackage.haskell.org/package/vector-0.13.2.0/vector-0.13.2.0.tar.gz",
+    "officialArchiveSha256": "28f203c786cbf8ac6dc3fea3378ec36f34173d505fb4a1dd60fc8418ad91c423",
+    "stackageSnapshotUri": "https://raw.githubusercontent.com/commercialhaskell/stackage-snapshots/master/lts/24/50.yaml",
+    "stackageCabalRevisionSha256": "3ec12de580ee31ceac89b314fd00b5057ed40198c0b3d9e9dafa54c1941e6942",
+    "stackageCabalRevisionSize": 8804,
+    "pantryTreeSha256": "12839cef1252eaa894d6a9adafaa2e1cdb449f03c343f765294e033c813261fc",
+    "sourceSha256RequiredAtGate2": true,
+    "upstreamTransitiveAllowlistRequiredFields": [
+      "package",
+      "version",
+      "sourceSha256",
+      "importPath",
+      "provenance",
+      "edgeKind"
+    ],
+    "upstreamTransitiveAllowedEdgeKinds": [
+      "unsafe-import",
+      "compiler-primop"
+    ],
+    "upstreamTransitiveAllowlistMode": "exact-set-equality",
+    "upstreamTransitiveAllowlist": [
+      {
+        "package": "vector",
+        "version": "0.13.2.0",
+        "sourceSha256": "28f203c786cbf8ac6dc3fea3378ec36f34173d505fb4a1dd60fc8418ad91c423",
+        "importPath": "Data.Vector.Unboxed -> Data.Vector.Unboxed.Base -> Data.Vector.Primitive -> Unsafe.Coerce",
+        "provenance": "official Hackage vector-0.13.2.0 archive bytes; Stackage LTS 24.50 Pantry tree sha256:12839cef1252eaa894d6a9adafaa2e1cdb449f03c343f765294e033c813261fc",
+        "edgeKind": "unsafe-import"
+      },
+      {
+        "package": "vector",
+        "version": "0.13.2.0",
+        "sourceSha256": "28f203c786cbf8ac6dc3fea3378ec36f34173d505fb4a1dd60fc8418ad91c423",
+        "importPath": "Data.Vector.Unboxed -> Data.Vector.Unboxed.Base -> Data.Vector.Primitive -> Data.Vector.Primitive.Mutable -> Unsafe.Coerce",
+        "provenance": "official Hackage vector-0.13.2.0 archive bytes; Stackage LTS 24.50 Pantry tree sha256:12839cef1252eaa894d6a9adafaa2e1cdb449f03c343f765294e033c813261fc",
+        "edgeKind": "unsafe-import"
+      },
+      {
+        "package": "vector",
+        "version": "0.13.2.0",
+        "sourceSha256": "28f203c786cbf8ac6dc3fea3378ec36f34173d505fb4a1dd60fc8418ad91c423",
+        "importPath": "Data.Vector.Unboxed -> Data.Vector.Generic -> Data.Vector.Internal.Check -> GHC.Exts(Int#)",
+        "provenance": "official Hackage vector-0.13.2.0 archive bytes; Stackage LTS 24.50 Pantry tree sha256:12839cef1252eaa894d6a9adafaa2e1cdb449f03c343f765294e033c813261fc",
+        "edgeKind": "compiler-primop"
+      }
+    ],
+    "upstreamTransitiveEdgesMayExist": true,
+    "candidateDirectUnsafeOrPrimopUseCount": 0
+  },
+  "candidateGraphInvariants": {
+    "candidateDirectForeignImportCount": 0,
+    "candidateDirectUnsafeImportCount": 0,
+    "candidateHomeCoreToShellEdgeCount": 0,
+    "candidateTrustworthyDeclarationCount": 0,
+    "candidateUnsafeDeclarationCount": 0,
+    "unclassifiedModuleCount": 0,
+    "newUnknownUpstreamTransitiveEdgeCount": 0
+  },
+  "resultEdgePartitions": [
+    "candidateDirectImports",
+    "candidateHomeModuleEdges",
+    "upstreamTransitiveEdges"
+  ],
+  "resultEdgeCategoryContract": {
+    "candidateDirectImportsRequiredCategoryFields": [
+      "fromCategory"
+    ],
+    "candidateHomeModuleEdgesRequiredCategoryFields": [
+      "fromCategory",
+      "toCategory"
+    ],
+    "embeddedCategoriesMustMatchModuleInventory": true,
+    "coreCategories": [
+      "safe-scalar",
+      "audited-pure-vector"
+    ],
+    "shellCategories": [
+      "io-shell",
+      "test",
+      "benchmark"
+    ],
+    "allowedHomeClassifications": {
+      "core-to-core": "core-to-core",
+      "shell-to-core": "shell-to-core",
+      "shell-to-shell": "shell-to-shell"
+    },
+    "coreToShellAllowed": false,
+    "allCandidateForbiddenDirectImportPatterns": [
+      "Foreign.*",
+      "Unsafe.*",
+      "System.IO.Unsafe",
+      "GHC.IO.Unsafe"
+    ],
+    "allCoreAdditionalForbiddenDirectImports": [
+      "System.IO",
+      "Control.Monad.IO.Class",
+      "Debug.Trace"
+    ],
+    "safeScalarAdditionalForbiddenDirectImports": [
+      "Data.Vector.Unboxed"
+    ]
+  },
+  "conditionalOptimizations": {
+    "runSTAndMutableUnboxedVector": {
+      "allowedOnlyWhen": [
+        "mutable reference cannot escape a pure return type",
+        "full parity mismatch count is zero",
+        "allocation and Core evidence exists",
+        "focused Criterion improvement passes the frozen selector"
+      ],
+      "fallback": "ordinary U.Vector and U.foldl'"
+    },
+    "strictDataUnpackInlineSpecialise": {
+      "oneAtATime": true,
+      "fullCorrectnessRequired": true,
+      "fallback": "ordinary newtype, U.Vector, and U.foldl'"
+    }
+  },
+  "authoritativeProfiles": {
+    "baseline": [
+      "-O0",
+      "-fasm"
+    ],
+    "optimized": [
+      "-O2",
+      "-fasm"
+    ],
+    "runtime": [
+      "+RTS",
+      "-N1",
+      "-RTS"
+    ],
+    "fallbackProfile": "baseline-o0-fasm"
+  },
+  "forbiddenOptimizationFlags": [
+    "-fllvm",
+    "-ffast-math",
+    "-mfma",
+    "-mavx*",
+    "-march=native",
+    "-fpolymorphic-specialisation",
+    "-fspecialise-aggressively",
+    "-funbox-strict-fields",
+    "RULES"
+  ],
+  "hardFailureConditions": [
+    "unclassified module",
+    "category and import graph disagree",
+    "wrapper claims Data.Vector.Unboxed is Safe",
+    "candidate Trustworthy or Unsafe declaration",
+    "candidate core depends on shell",
+    "candidate direct Foreign or Unsafe import or use",
+    "unknown, new, or source-hash-drifted upstream transitive edge"
+  ]
+}

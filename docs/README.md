@@ -15,5 +15,7 @@ S1.3 ECOS/Naver 내부 source snapshot은 PR #16, S1.3K KRX OPEN API universe �
 | [중간보고서_작성용_초기설계.md](중간보고서_작성용_초기설계.md) | 중간보고서 작성 가이드 — 문장/표/그림 초안, RISE 심사기준 대응 |
 | [선물옵션_모의주문_확장_시나리오.md](선물옵션_모의주문_확장_시나리오.md) | P2 국내선물옵션 확장 설계 (v1 범위 아님, 기본 OFF) |
 | [선물옵션_모의주문_확장_시나리오_API_명세서.md](선물옵션_모의주문_확장_시나리오_API_명세서.md) | P2 확장 API 계약 + KIS TR_ID 매핑 |
-| `adr/` | 공개 가능한 아키텍처 결정 요약을 이관하는 자리 (현재 비어 있음 — 상세 ADR은 개인 노트에서 관리) |
+| [ADR-027] | S1.4X 격리 Scala/Haskell 수치 parity Gate 0 결정 |
 | `decision-platform/` | Decision Platform 공개 기술 문서 — 현재 S1.2 OpenDART 공시위험점수 근거 문서를 포함 |
+
+[ADR-027]: adr/ADR-027-s1-4x-isolated-numeric-parity.md

@@ -110,6 +110,21 @@ Gradle build), `python-ci.yml`(Python 3.12 품질 게이트)이다. 아래 시�
 - 확정된 스택, 단계, 세션 운영 규칙, 문서 우선순위가 바뀌면 이 파일과 프라이머를 함께 갱신한다. public 문서에는 private 문서의 내용을 길게 복사하지 말고 행동 규칙만 짧게 남긴다.
 - 세션이 막히면 새 기능을 넓히기 전에 walking skeleton이 여전히 도는지 확인한다. 계약 변경은 같은 세션에서 `contracts/changes/`와 명세서까지 함께 정리하고, DoD 명령은 실제 실행 가능한 형태로 남긴다.
 
+### S1.4X 격리 연구 gate
+
+- S1.4X는 `workspaces/decision-platform/research/s1-4x-numeric-parity/` 내부의
+  비생산 연구다. Gate 0 ADR이 `accepted` 상태로 병합되고 별도 Gate 1 neutral
+  contract·oracle·fixture·benchmark plan이 병합되기 전에는 Scala/Haskell source,
+  Gate 1 fixture 또는 S1.4X workflow를 만들지 않는다.
+- production Python import/runtime/dependency, root `contracts/`, OpenAPI/JSON
+  Schema, RiskEngine API와 다른 팀원 workspace는 변경하지 않는다. 이 경계가
+  필요해지면 S1.4X를 넓히지 말고 별도 cross-workspace contract 결정으로 분리한다.
+- candidate PR의 correctness CI는 필수이며 mismatch가 하나라도 있으면 성능 평가를
+  중단한다. full benchmark는 전체 correctness 통과 뒤 같은 host·fixture·CPU
+  affinity·thread 조건의 local quiet-host 단계에서만 실행한다.
+- 반복 benchmark workflow는 `workflow_dispatch` 전용이고 required check가 아니다.
+  scorecard와 benchmark 결과는 production migration 또는 언어 선택 승인이 아니다.
+
 ### 외부 provider 반복 실패 복구
 
 - 같은 live 단계가 반복 실패하거나 stable code만으로 원인을 좁힐 수 없으면 동일한 end-to-end 명령을 다시 실행하지 않는다. 실패 approval/evidence를 소비 완료로 동결하고, offline 회귀 테스트와 allowlisted typed diagnostic으로 exact failure leaf를 먼저 만든다.

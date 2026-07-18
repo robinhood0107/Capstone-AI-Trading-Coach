@@ -1,0 +1,894 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://capstone.local/s1-4x/schemas/benchmark-plan.schema.json",
+  "title": "S1.4X frozen benchmark plan",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "planId",
+    "fixtureFreezeIdentity",
+    "functionFamilyMap",
+    "executionBoundaries",
+    "familySelectors",
+    "cases",
+    "execution",
+    "scalaProfileQualification",
+    "haskellProfileQualification",
+    "scalaJmhPolicy",
+    "allocationPolicy",
+    "environmentValidity",
+    "failurePolicy"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "s1.4x-benchmark-plan-v1"
+    },
+    "planId": {
+      "const": "s1.4x-full-same-host-v1"
+    },
+    "fixtureFreezeIdentity": {
+      "$ref": "#/$defs/fixtureFreezeIdentity"
+    },
+    "functionFamilyMap": {
+      "$ref": "#/$defs/functionFamilyMap"
+    },
+    "executionBoundaries": {
+      "type": "array",
+      "minItems": 6,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/executionBoundary"
+      },
+      "x-s1-4x-unique-by": "boundaryId"
+    },
+    "familySelectors": {
+      "type": "array",
+      "minItems": 6,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/familySelector"
+      },
+      "x-s1-4x-unique-by": "selectorId"
+    },
+    "cases": {
+      "type": "array",
+      "minItems": 89,
+      "maxItems": 89,
+      "items": {
+        "$ref": "#/$defs/case"
+      },
+      "x-s1-4x-unique-by": "caseId"
+    },
+    "execution": {
+      "$ref": "#/$defs/execution"
+    },
+    "scalaProfileQualification": {
+      "$ref": "#/$defs/scalaQualification"
+    },
+    "haskellProfileQualification": {
+      "$ref": "#/$defs/haskellQualification"
+    },
+    "scalaJmhPolicy": {
+      "$ref": "#/$defs/scalaJmhPolicy"
+    },
+    "allocationPolicy": {
+      "$ref": "#/$defs/allocationPolicy"
+    },
+    "environmentValidity": {
+      "$ref": "#/$defs/environmentValidity"
+    },
+    "failurePolicy": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "$ref": "#/$defs/jsonValue"
+      }
+    }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._/-]{0,191}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "nonEmptyStringArray": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/identifier"
+      }
+    },
+    "jsonValue": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/jsonValue"
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/jsonValue"
+          }
+        }
+      ]
+    },
+    "fixtureFreezeIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "referenceLockSha256",
+        "canonicalInputsSha256",
+        "canonicalResultsSha256"
+      ],
+      "properties": {
+        "referenceLockSha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "canonicalInputsSha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "canonicalResultsSha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "functionFamilyMap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "simple_returns",
+        "log_returns",
+        "cumulative_return",
+        "cagr",
+        "realized_volatility",
+        "annualized_volatility",
+        "max_drawdown",
+        "sharpe_ratio",
+        "sortino_ratio",
+        "historical_var",
+        "historical_cvar",
+        "historical_expected_shortfall",
+        "realized_variance",
+        "realized_volatility_intraday",
+        "lo_adjusted_sharpe_ratio",
+        "probabilistic_sharpe_ratio",
+        "deflated_sharpe_ratio",
+        "kupiec_unconditional_coverage_test",
+        "christoffersen_independence_test",
+        "christoffersen_conditional_coverage_test"
+      ],
+      "properties": {
+        "simple_returns": {
+          "const": "path-transform"
+        },
+        "log_returns": {
+          "const": "path-transform"
+        },
+        "cumulative_return": {
+          "const": "path-transform"
+        },
+        "cagr": {
+          "const": "classical-path-risk"
+        },
+        "realized_volatility": {
+          "const": "classical-path-risk"
+        },
+        "annualized_volatility": {
+          "const": "classical-path-risk"
+        },
+        "max_drawdown": {
+          "const": "classical-path-risk"
+        },
+        "sharpe_ratio": {
+          "const": "classical-path-risk"
+        },
+        "sortino_ratio": {
+          "const": "classical-path-risk"
+        },
+        "historical_var": {
+          "const": "classical-path-risk"
+        },
+        "historical_cvar": {
+          "const": "classical-path-risk"
+        },
+        "historical_expected_shortfall": {
+          "const": "classical-path-risk"
+        },
+        "realized_variance": {
+          "const": "intraday-realized"
+        },
+        "realized_volatility_intraday": {
+          "const": "intraday-realized"
+        },
+        "lo_adjusted_sharpe_ratio": {
+          "const": "serial-sharpe"
+        },
+        "probabilistic_sharpe_ratio": {
+          "const": "probabilistic-scalar"
+        },
+        "deflated_sharpe_ratio": {
+          "const": "probabilistic-scalar"
+        },
+        "kupiec_unconditional_coverage_test": {
+          "const": "coverage-batch"
+        },
+        "christoffersen_independence_test": {
+          "const": "coverage-batch"
+        },
+        "christoffersen_conditional_coverage_test": {
+          "const": "coverage-batch"
+        }
+      }
+    },
+    "executionBoundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "boundaryId",
+        "schedulingGroup",
+        "functionIds",
+        "expectedCaseIds"
+      ],
+      "properties": {
+        "boundaryId": {
+          "enum": [
+            "python-numpy-s1-4",
+            "python-numpy-s1-4r",
+            "python-jax-eager-s1-4r",
+            "python-jax-jit-s1-4r",
+            "scala",
+            "haskell"
+          ]
+        },
+        "schedulingGroup": {
+          "enum": [
+            "PythonBaselines",
+            "Scala",
+            "Haskell"
+          ]
+        },
+        "functionIds": {
+          "$ref": "#/$defs/nonEmptyStringArray"
+        },
+        "expectedCaseIds": {
+          "$ref": "#/$defs/nonEmptyStringArray"
+        }
+      }
+    },
+    "familySelector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "boundaryId",
+        "familyId",
+        "selectorId",
+        "expectedCaseIds",
+        "jmhIncludeRegex",
+        "criterionMatchMode",
+        "criterionPrefix",
+        "pythonFamilyId"
+      ],
+      "properties": {
+        "boundaryId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "familyId": {
+          "enum": [
+            "path-transform",
+            "classical-path-risk",
+            "intraday-realized",
+            "serial-sharpe",
+            "probabilistic-scalar",
+            "coverage-batch"
+          ]
+        },
+        "selectorId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "expectedCaseIds": {
+          "$ref": "#/$defs/nonEmptyStringArray"
+        },
+        "jmhIncludeRegex": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 1024
+        },
+        "criterionMatchMode": {
+          "enum": [
+            "prefix",
+            "none"
+          ]
+        },
+        "criterionPrefix": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 512
+        },
+        "pythonFamilyId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 192
+        }
+      }
+    },
+    "case": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "caseId",
+        "familyId",
+        "functionId",
+        "fixtureId",
+        "logicalOperationsPerInvocation",
+        "vectorLength",
+        "batchSize",
+        "functionArguments"
+      ],
+      "properties": {
+        "caseId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "familyId": {
+          "enum": [
+            "path-transform",
+            "classical-path-risk",
+            "intraday-realized",
+            "serial-sharpe",
+            "probabilistic-scalar",
+            "coverage-batch"
+          ]
+        },
+        "functionId": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,63}$"
+        },
+        "fixtureId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "logicalOperationsPerInvocation": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "vectorLength": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "batchSize": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "functionArguments": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/jsonValue"
+          }
+        }
+      }
+    },
+    "rotation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schedulingGroups",
+        "pythonBoundaries"
+      ],
+      "properties": {
+        "schedulingGroups": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "PythonBaselines",
+              "Scala",
+              "Haskell"
+            ]
+          }
+        },
+        "pythonBoundaries": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "python-numpy-s1-4",
+              "python-numpy-s1-4r",
+              "python-jax-eager-s1-4r",
+              "python-jax-jit-s1-4r"
+            ]
+          }
+        }
+      }
+    },
+    "boundaryStringMap": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128
+      }
+    },
+    "boundaryPositiveIntegerMap": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 1
+      }
+    },
+    "execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "candidateOrderBlocks",
+        "outerRepetitions",
+        "cpuSet",
+        "threadCount",
+        "nativeBenchmarkMode",
+        "nativeTimeUnit",
+        "normalizationFormula",
+        "warmupIterations",
+        "warmupTimeSeconds",
+        "measurementIterations",
+        "measurementTimeSeconds",
+        "forks",
+        "criterionTimeLimitSeconds",
+        "familyBlockTimeoutSeconds",
+        "totalRunTimeoutSeconds",
+        "blockOutputPathTemplate",
+        "timerBoundary",
+        "setupBoundary",
+        "forceEvaluationRule"
+      ],
+      "properties": {
+        "candidateOrderBlocks": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": {
+            "$ref": "#/$defs/rotation"
+          }
+        },
+        "outerRepetitions": {
+          "const": 3
+        },
+        "cpuSet": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "threadCount": {
+          "const": 1
+        },
+        "nativeBenchmarkMode": {
+          "$ref": "#/$defs/boundaryStringMap"
+        },
+        "nativeTimeUnit": {
+          "$ref": "#/$defs/boundaryStringMap"
+        },
+        "normalizationFormula": {
+          "const": "nativeValueInNanoseconds/logicalOperationsPerInvocation"
+        },
+        "warmupIterations": {
+          "const": {
+            "scala": 5
+          }
+        },
+        "warmupTimeSeconds": {
+          "const": {
+            "scala": 1
+          }
+        },
+        "measurementIterations": {
+          "const": {
+            "scala": 10
+          }
+        },
+        "measurementTimeSeconds": {
+          "const": {
+            "scala": 1
+          }
+        },
+        "forks": {
+          "const": {
+            "scala": 3
+          }
+        },
+        "criterionTimeLimitSeconds": {
+          "const": 5
+        },
+        "familyBlockTimeoutSeconds": {
+          "$ref": "#/$defs/boundaryPositiveIntegerMap"
+        },
+        "totalRunTimeoutSeconds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "blockOutputPathTemplate": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "timerBoundary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "setupBoundary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "forceEvaluationRule": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        }
+      }
+    },
+    "qualificationCaseIds": {
+      "type": "array",
+      "minItems": 7,
+      "maxItems": 7,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/identifier"
+      }
+    },
+    "scalaQualification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "qualificationCaseIds",
+        "qualificationCaseOrder",
+        "profileOrderBlocks",
+        "hostValidityBeforeEachProfileBlock",
+        "mode",
+        "timeUnit",
+        "threadCount",
+        "forks",
+        "warmupIterations",
+        "warmupTime",
+        "measurementIterations",
+        "measurementTime",
+        "outerQualificationRepetitions",
+        "perCaseMaxRegressionRatio",
+        "aggregateMaxRatio",
+        "minimumImprovingOuterRepetitions",
+        "cOverBMinimumImprovement",
+        "tieBreakOrder",
+        "fallbackProfile"
+      ],
+      "properties": {
+        "qualificationCaseIds": {
+          "$ref": "#/$defs/qualificationCaseIds"
+        },
+        "qualificationCaseOrder": {
+          "$ref": "#/$defs/qualificationCaseIds"
+        },
+        "profileOrderBlocks": {
+          "const": [
+            [
+              "A",
+              "B",
+              "C"
+            ],
+            [
+              "B",
+              "C",
+              "A"
+            ],
+            [
+              "C",
+              "A",
+              "B"
+            ]
+          ]
+        },
+        "hostValidityBeforeEachProfileBlock": {
+          "const": true
+        },
+        "mode": {
+          "const": "AverageTime"
+        },
+        "timeUnit": {
+          "const": "ns"
+        },
+        "threadCount": {
+          "const": 1
+        },
+        "forks": {
+          "const": 3
+        },
+        "warmupIterations": {
+          "const": 5
+        },
+        "warmupTime": {
+          "const": "500ms"
+        },
+        "measurementIterations": {
+          "const": 8
+        },
+        "measurementTime": {
+          "const": "500ms"
+        },
+        "outerQualificationRepetitions": {
+          "const": 3
+        },
+        "perCaseMaxRegressionRatio": {
+          "const": 1.05
+        },
+        "aggregateMaxRatio": {
+          "const": 0.97
+        },
+        "minimumImprovingOuterRepetitions": {
+          "const": 2
+        },
+        "cOverBMinimumImprovement": {
+          "const": 0.01
+        },
+        "tieBreakOrder": {
+          "const": [
+            "B",
+            "C",
+            "A"
+          ]
+        },
+        "fallbackProfile": {
+          "const": "A"
+        }
+      }
+    },
+    "haskellQualification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "qualificationCaseIds",
+        "qualificationCaseOrder",
+        "profileOrderBlocks",
+        "hostValidityBeforeEachProfileBlock",
+        "criterionTimeLimitSeconds",
+        "outerQualificationRepetitions",
+        "ratioPairing",
+        "perCaseCollapse",
+        "aggregateFormula",
+        "improvingBlockFormula",
+        "perCaseMaxRegressionRatio",
+        "aggregateMaxRatio",
+        "minimumImprovingOuterRepetitions",
+        "optimizedProfile",
+        "fallbackProfile"
+      ],
+      "properties": {
+        "qualificationCaseIds": {
+          "$ref": "#/$defs/qualificationCaseIds"
+        },
+        "qualificationCaseOrder": {
+          "$ref": "#/$defs/qualificationCaseIds"
+        },
+        "profileOrderBlocks": {
+          "const": [
+            [
+              "baseline-o0-fasm",
+              "optimized-o2-fasm"
+            ],
+            [
+              "optimized-o2-fasm",
+              "baseline-o0-fasm"
+            ],
+            [
+              "optimized-o2-fasm",
+              "baseline-o0-fasm"
+            ],
+            [
+              "baseline-o0-fasm",
+              "optimized-o2-fasm"
+            ]
+          ]
+        },
+        "hostValidityBeforeEachProfileBlock": {
+          "const": true
+        },
+        "criterionTimeLimitSeconds": {
+          "const": 3
+        },
+        "outerQualificationRepetitions": {
+          "const": 4
+        },
+        "ratioPairing": {
+          "const": "same-order-block-and-case"
+        },
+        "perCaseCollapse": {
+          "const": "max-of-four-paired-ratios"
+        },
+        "aggregateFormula": {
+          "const": "geometric-mean-of-all-28-paired-ratios"
+        },
+        "improvingBlockFormula": {
+          "const": "geometric-mean-of-seven-case-ratios"
+        },
+        "perCaseMaxRegressionRatio": {
+          "const": 1.05
+        },
+        "aggregateMaxRatio": {
+          "const": 0.97
+        },
+        "minimumImprovingOuterRepetitions": {
+          "const": 3
+        },
+        "optimizedProfile": {
+          "const": "optimized-o2-fasm"
+        },
+        "fallbackProfile": {
+          "const": "baseline-o0-fasm"
+        }
+      }
+    },
+    "scalaJmhPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sourceAnnotationPolicySha256",
+        "allowedAnnotationsAndValues",
+        "forbiddenPlanOverrideAnnotations",
+        "allowedCliJvmArgs",
+        "effectiveJvmArgsRequired",
+        "effectiveJvmArgsPolicyId",
+        "capabilitySmokeEffectiveJvmArgsSha256Required"
+      ],
+      "properties": {
+        "sourceAnnotationPolicySha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "allowedAnnotationsAndValues": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/jsonValue"
+          }
+        },
+        "forbiddenPlanOverrideAnnotations": {
+          "$ref": "#/$defs/nonEmptyStringArray"
+        },
+        "allowedCliJvmArgs": {
+          "const": []
+        },
+        "effectiveJvmArgsRequired": {
+          "const": true
+        },
+        "effectiveJvmArgsPolicyId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "capabilitySmokeEffectiveJvmArgsSha256Required": {
+          "const": true
+        }
+      }
+    },
+    "allocationPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "capBytes",
+        "formulaVersion",
+        "maximalCommonChunkSearch",
+        "fixedShapeLastChunk",
+        "lastChunkMaskRequired",
+        "forbidCartesianMaterialization"
+      ],
+      "properties": {
+        "capBytes": {
+          "const": 536870912
+        },
+        "formulaVersion": {
+          "$ref": "#/$defs/identifier"
+        },
+        "maximalCommonChunkSearch": {
+          "const": "deterministic_integer_binary_search"
+        },
+        "fixedShapeLastChunk": {
+          "const": true
+        },
+        "lastChunkMaskRequired": {
+          "const": true
+        },
+        "forbidCartesianMaterialization": {
+          "const": true
+        }
+      }
+    },
+    "environmentValidity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "maxNormalizedLoad1",
+        "loadSampleCount",
+        "loadSampleIntervalSeconds",
+        "maxQuietWaitSeconds",
+        "minAvailableMemoryGiB",
+        "runningContainerCount",
+        "externalProcessCpuPercentThreshold",
+        "temperatureMetadata",
+        "governor",
+        "noOtherBenchmarkProcess"
+      ],
+      "properties": {
+        "maxNormalizedLoad1": {
+          "const": 0.1
+        },
+        "loadSampleCount": {
+          "const": 3
+        },
+        "loadSampleIntervalSeconds": {
+          "const": 30
+        },
+        "maxQuietWaitSeconds": {
+          "const": 600
+        },
+        "minAvailableMemoryGiB": {
+          "const": 8
+        },
+        "runningContainerCount": {
+          "const": 0
+        },
+        "externalProcessCpuPercentThreshold": {
+          "const": 5
+        },
+        "temperatureMetadata": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {
+            "$ref": "#/$defs/jsonValue"
+          }
+        },
+        "governor": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {
+            "$ref": "#/$defs/jsonValue"
+          }
+        },
+        "noOtherBenchmarkProcess": {
+          "const": true
+        }
+      }
+    }
+  },
+  "x-s1-4x-semantic-invariants": [
+    "all expectedCaseIds are exact, ordered subsets of the 89 cases",
+    "qualificationCaseOrder equals qualificationCaseIds byte-for-byte",
+    "candidateOrderBlocks are the frozen R1/R2/R3 Latin rotations",
+    "boundary maps contain exactly the execution boundaries to which the setting applies",
+    "all numeric timing values are finite and positive"
+  ]
+}

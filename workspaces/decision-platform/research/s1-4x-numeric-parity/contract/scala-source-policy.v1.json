@@ -1,0 +1,201 @@
+{
+  "schemaVersion": "s1.4x-scala-source-policy-v1",
+  "language": "scala-3.8.4",
+  "productionRoots": [
+    "scala/project.scala",
+    "scala/selected-profile.scala",
+    "scala/src/main/scala",
+    "scala/src/test/scala",
+    "scala/benchmarks"
+  ],
+  "semanticInspection": {
+    "preferred": "SemanticDB exact symbol",
+    "fallback": "Scala 3.8.4 typed compiler tree or conservative import-receiver alias-aware AST",
+    "unresolvedDisposition": "FAIL",
+    "qualifiedRenamedWildcardAndTypeAliasesInspected": true
+  },
+  "forbiddenSyntacticForms": [
+    "null",
+    "return",
+    "asInstanceOf",
+    "isInstanceOf",
+    "throw",
+    "???",
+    "scala.sys.error",
+    "scala.language.implicitConversions",
+    "given Conversion",
+    "runtimeChecked",
+    "experimental feature import",
+    "macro",
+    "quotes",
+    "Float",
+    "toFloat",
+    "Math.fma",
+    "@unchecked",
+    "@nowarn",
+    "scalafix:off",
+    "scalafix:ok"
+  ],
+  "forbiddenFullyQualifiedSymbols": [
+    "scala.Predef.require",
+    "scala.Predef.assert",
+    "scala.Predef.assume",
+    "scala.sys.error",
+    "scala.Option.get",
+    "scala.util.Try.get",
+    "scala.util.Either.LeftProjection.get",
+    "scala.util.Either.RightProjection.get",
+    "scala.collection.IterableOps.head",
+    "scala.collection.IterableOps.tail",
+    "scala.collection.IterableOps.init",
+    "scala.collection.IterableOps.last",
+    "scala.collection.IterableOnceOps.reduce",
+    "scala.collection.IterableOnceOps.reduceLeft",
+    "scala.collection.IterableOnceOps.reduceRight",
+    "scala.collection.IterableOnceOps.max",
+    "scala.collection.IterableOnceOps.min",
+    "scala.collection.IterableOnceOps.maxBy",
+    "scala.collection.IterableOnceOps.minBy",
+    "scala.collection.MapOps.apply",
+    "scala.collection.SeqOps.apply",
+    "scala.Array.apply",
+    "scala.Array.update",
+    "scala.collection.Iterator.next",
+    "java.lang.Integer.parseInt",
+    "java.lang.Long.parseLong",
+    "java.lang.Double.parseDouble",
+    "scala.StringOps.toInt",
+    "scala.StringOps.toLong",
+    "scala.StringOps.toDouble"
+  ],
+  "coreExceptionPolicy": {
+    "allowed": false,
+    "shellBoundary": "Only a reviewed scala.util.control.NonFatal boundary may translate external parser or I/O exceptions into a stable semantic error or transport exit.",
+    "escapeNegativeProcessTestRequired": true
+  },
+  "partialApiAllowlist": [],
+  "partialApiAllowlistEntryRequiredFields": [
+    "file",
+    "method",
+    "symbol",
+    "precedingRangeInvariant",
+    "focusedOutOfRangeTest",
+    "propertyTest",
+    "owner",
+    "expiryCondition"
+  ],
+  "mutationPolicy": {
+    "default": "FORBID",
+    "forms": [
+      "var",
+      "while",
+      "primitive Array[Double] write",
+      "mutable collection"
+    ],
+    "allowlist": [],
+    "allowlistEntryRequiredFields": [
+      "file",
+      "method",
+      "symbol",
+      "reason",
+      "inputDigestInvariantTest",
+      "allocationEvidenceSha256",
+      "jmhEvidenceSha256",
+      "owner",
+      "expiryCondition"
+    ],
+    "staleOrUnusedEntryFails": true
+  },
+  "suppressionPolicy": {
+    "default": "FORBID",
+    "allowlist": [],
+    "requiredFields": [
+      "file",
+      "rule",
+      "reason",
+      "test",
+      "owner"
+    ],
+    "staleOrUnusedEntryFails": true
+  },
+  "jmhAnnotationPolicy": {
+    "allowedAnnotationsAndValues": {
+      "org.openjdk.jmh.annotations.State": [
+        "Scope.Benchmark"
+      ],
+      "org.openjdk.jmh.annotations.Setup": [
+        "Level.Trial"
+      ],
+      "org.openjdk.jmh.annotations.Benchmark": [
+        "present-with-no-arguments"
+      ]
+    },
+    "forbiddenPlanOverrideAnnotations": [
+      "org.openjdk.jmh.annotations.Fork",
+      "org.openjdk.jmh.annotations.Threads",
+      "org.openjdk.jmh.annotations.Warmup",
+      "org.openjdk.jmh.annotations.Measurement",
+      "org.openjdk.jmh.annotations.BenchmarkMode",
+      "org.openjdk.jmh.annotations.OutputTimeUnit",
+      "org.openjdk.jmh.annotations.CompilerControl",
+      "org.openjdk.jmh.annotations.Timeout",
+      "org.openjdk.jmh.annotations.Param"
+    ],
+    "allowedCliJvmArgs": [],
+    "ambientJvmOptionVariablesMustBeEmpty": [
+      "JAVA_TOOL_OPTIONS",
+      "_JAVA_OPTIONS",
+      "JDK_JAVA_OPTIONS"
+    ],
+    "runtimeEffectiveJvmArgsMustMatchCapabilitySmoke": true
+  },
+  "forbiddenNativeAndRuntimeDependencies": [
+    "JNI",
+    "System.load",
+    "System.loadLibrary",
+    "native extension",
+    "gRPC",
+    "Scala Native",
+    "LLVM",
+    "Graal native image"
+  ],
+  "forbiddenNumericOptimizations": [
+    "fast-math",
+    "FMA",
+    "architecture-native SIMD",
+    "parallel collection",
+    "concurrent reduction",
+    "incubating Vector API"
+  ],
+  "profilePolicy": {
+    "A": {
+      "role": "proven non-optimized baseline",
+      "additionalOptions": []
+    },
+    "B": {
+      "role": "conditional optimized profile",
+      "additionalOptions": [
+        "-opt"
+      ]
+    },
+    "C": {
+      "role": "conditional own-source inline profile",
+      "additionalOptions": [
+        "-opt",
+        "-opt-inline:<exact.project.package>.**"
+      ]
+    },
+    "dependencyWideInliningForbidden": true,
+    "fullMatrixPerProfileRequired": true,
+    "fallbackProfile": "A"
+  },
+  "inputSetEqualityRequiredAcross": [
+    "tracked",
+    "manifest",
+    "format",
+    "compile",
+    "lint",
+    "profile-run"
+  ],
+  "sourceLocalExclusionsAllowed": false
+}

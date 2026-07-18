@@ -1,0 +1,27 @@
+{
+  "schemaVersion": "s1.4x-binary-array-v1",
+  "fixtureId": "large-prices-n100000",
+  "argumentName": "prices",
+  "fileName": "large-prices-n100000.f64le",
+  "encoding": "ieee754-binary64",
+  "dtype": "float64",
+  "byteOrder": "little",
+  "arrayOrder": "C",
+  "shape": [
+    100000
+  ],
+  "count": 100000,
+  "byteLength": 800000,
+  "sha256": "a37153a538130dc2118e4f2c8029a5e4becabd3272d964308bc3200232049c12",
+  "generator": {
+    "algorithm": "numpy-pcg64",
+    "seed": 14001,
+    "generatorVersion": "numpy-2.5.1",
+    "distribution": "lognormal",
+    "parameters": {
+      "mean": 4.5,
+      "sigma": 0.2
+    },
+    "chunkLength": 100000
+  }
+}

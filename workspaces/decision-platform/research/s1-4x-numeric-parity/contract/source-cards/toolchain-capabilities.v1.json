@@ -1,0 +1,323 @@
+{
+  "schemaVersion": "s1.4x-source-cards-v1",
+  "evidencePriority": "official-stable>accepted-proposal>official-event>third-party",
+  "entries": [
+    {
+      "featureId": "scala.compiler-3.8.4",
+      "officialSource": "https://www.scala-lang.org/news/3.8.4/",
+      "sourceDate": "2026-07-18",
+      "claim": "Scala 3.8.4 is the exact stable feature release used by the Scala lane and is not described as LTS.",
+      "evidenceClass": "officialStableRelease",
+      "status": "verified",
+      "compilerStatus": "stable",
+      "problemRelevance": "Defines language semantics, warnings, optimizer flags, and SemanticDB compatibility.",
+      "correctnessRisk": "A compiler drift would invalidate feature, lint, and floating-point qualification.",
+      "toolingCompatibility": "Pinned explicitly by Scala CLI directives and asserted before every build.",
+      "decision": "ADOPT",
+      "requiredLint": [
+        "Exact stable hard-warning profile and per-flag capability smoke."
+      ],
+      "requiredTests": [
+        "Compiler identity plus A/B/C full correctness."
+      ],
+      "requiredBenchmark": [
+        "Only the prequalified selected profile may enter scored timing."
+      ],
+      "provenFallback": "No compiler fallback inside this contract; report BLOCKED_TOOLCHAIN.",
+      "decisionDate": "2026-07-18",
+      "verifiedAt": "2026-07-18T05:52:12Z",
+      "licenseAccessNote": "Official public Scala release notes.",
+      "adoptedSession": "S1.4X",
+      "assumptions": [
+        "Scala CLI runs with the already verified system JDK."
+      ]
+    },
+    {
+      "featureId": "scala.scala-cli-1.15.0",
+      "officialSource": "https://github.com/VirtusLab/scala-cli/releases/tag/v1.15.0",
+      "sourceDate": "2026-07-18",
+      "claim": "Scala CLI 1.15.0 is the exact project-scoped build and JMH integration launcher.",
+      "evidenceClass": "officialStableRelease",
+      "status": "verified",
+      "compilerStatus": "stable",
+      "problemRelevance": "Pins dependency resolution, compiler invocation, test execution, and experimental JMH integration.",
+      "correctnessRisk": "Using a PATH fallback or floating version can change dependency or command semantics.",
+      "toolingCompatibility": "Compressed and executable SHA-256 values are frozen in the approved setup record.",
+      "decision": "ADOPT",
+      "requiredLint": [
+        "Assert CLI version, binary SHA, and directive pins before execution."
+      ],
+      "requiredTests": [
+        "Minimal compile, test, and native JMH JSON smoke."
+      ],
+      "requiredBenchmark": [
+        "Invoke exact binary with --server=false, --jvm system, and frozen JMH arguments."
+      ],
+      "provenFallback": "No alternate launcher is permitted without a new contract.",
+      "decisionDate": "2026-07-18",
+      "verifiedAt": "2026-07-18T05:52:12Z",
+      "licenseAccessNote": "Official GitHub release page and public binary checksum audit.",
+      "adoptedSession": "S1.4X",
+      "assumptions": [
+        "The user provides the exact executable path in readiness evidence."
+      ]
+    },
+    {
+      "featureId": "scala.temurin-25.0.3-build9",
+      "officialSource": "https://github.com/adoptium/temurin25-binaries/releases/tag/jdk-25.0.3%2B9",
+      "sourceDate": "2026-07-18",
+      "claim": "Eclipse Temurin JDK 25.0.3+9 is the exact JVM and Java release target for the Scala lane.",
+      "evidenceClass": "officialStableRelease",
+      "status": "verified",
+      "compilerStatus": "stable",
+      "problemRelevance": "JVM identity affects compilation, runtime behavior, and JMH results.",
+      "correctnessRisk": "Vendor or patch drift invalidates same-subject and same-host evidence.",
+      "toolingCompatibility": "Scala 3 JDK compatibility documentation and --release:25 are frozen.",
+      "decision": "ADOPT",
+      "requiredLint": [
+        "Assert JAVA_HOME release metadata and invoked java.home identity."
+      ],
+      "requiredTests": [
+        "Compile and runtime vendor, version, VM, and java.home assertions."
+      ],
+      "requiredBenchmark": [
+        "Capture effective JVM arguments and relevant system properties."
+      ],
+      "provenFallback": "No JVM fallback; report BLOCKED_TOOLCHAIN.",
+      "decisionDate": "2026-07-18",
+      "verifiedAt": "2026-07-18T05:52:12Z",
+      "licenseAccessNote": "Official Eclipse Adoptium release artifact.",
+      "adoptedSession": "S1.4X",
+      "assumptions": [
+        "Preview features remain disabled."
+      ]
+    },
+    {
+      "featureId": "scala.scalafmt-3.11.4",
+      "officialSource": "https://github.com/scalameta/scalafmt/releases/tag/v3.11.4",
+      "sourceDate": "2026-07-18",
+      "claim": "Scalafmt 3.11.4 is the exact non-mutating formatter and byte-idempotence gate.",
+      "evidenceClass": "officialStableRelease",
+      "status": "verified",
+      "compilerStatus": "stable",
+      "problemRelevance": "Keeps source formatting deterministic across main, test, benchmark, and profile inputs.",
+      "correctnessRisk": "Silent formatter downgrade or config discovery drift changes the tracked source subject.",
+      "toolingCompatibility": "Exact nested config, Scala 3 dialect, LF, and explicit version are required.",
+      "decision": "ADOPT",
+      "requiredLint": [
+        "Parse, format, second-pass byte idempotence, and non-mutating --check."
+      ],
+      "requiredTests": [
+        "Misformatted and unintended-config negative fixtures."
+      ],
+      "requiredBenchmark": [
+        "Formatted source-tree hash must equal the benchmark subject input hash."
+      ],
+      "provenFallback": "No downgrade; a reproducible formatter defect is BLOCKED_TOOLCHAIN.",
+      "decisionDate": "2026-07-18",
+      "verifiedAt": "2026-07-18T05:52:12Z",
+      "licenseAccessNote": "Official public Scalafmt release.",
+      "adoptedSession": "S1.4X",
+      "assumptions": [
+        "Formatting is never applied automatically in CI."
+      ]
+    },
+    {
+      "featureId": "scala.scalafix-0.14.7",
+      "officialSource": "https://scalacenter.github.io/scalafix/docs/users/installation.html",
+      "sourceDate": "2026-07-18",
+      "claim": "Standalone Scalafix 0.14.7 is the mandatory syntactic lint runner; Scala CLI fix integration is not the hard path.",
+      "evidenceClass": "officialReference",
+      "status": "verified",
+      "compilerStatus": "stable",
+      "problemRelevance": "Enforces DisableSyntax and conditionally qualifies ExplicitResultTypes.",
+      "correctnessRisk": "Silent semantic-rule skip or auto rewrite could hide unsupported source.",
+      "toolingCompatibility": "Exact external executable path, version, and SHA are readiness inputs.",
+      "decision": "ADOPT",
+      "requiredLint": [
+        "DisableSyntax hard gate and typed ExplicitResultTypes disposition."
+      ],
+      "requiredTests": [
+        "Clean and forbidden-syntax negative fixtures plus exact SemanticDB smoke."
+      ],
+      "requiredBenchmark": [
+        "No timing input; lint result and source hashes qualify the benchmark subject."
+      ],
+      "provenFallback": "If semantic qualification fails, use explicit source annotations and public-boundary audit while keeping syntactic gates.",
+      "decisionDate": "2026-07-18",
+      "verifiedAt": "2026-07-18T05:52:12Z",
+      "licenseAccessNote": "Official Scalafix documentation.",
+      "adoptedSession": "S1.4X",
+      "assumptions": [
+        "The standalone runner is user-provided and not bootstrapped by the agent."
+      ]
+    },
+    {
+      "featureId": "scala.jmh-1.37",
+      "officialSource": "https://openjdk.org/projects/code-tools/jmh/",
+      "sourceDate": "2026-07-18",
+      "claim": "JMH 1.37 supplies the Scala native kernel timer after exact capability and effective-JVM-argument qualification.",
+      "evidenceClass": "officialReference",
+      "status": "verified",
+      "compilerStatus": "stable",
+      "problemRelevance": "Reports native average time excluding setup, decode, process start, and result writing.",
+      "correctnessRisk": "Annotations or runtime JVM arguments can override the frozen benchmark plan.",
+      "toolingCompatibility": "Scala CLI integration is experimental and therefore must pass the exact minimal native JSON smoke.",
+      "decision": "CONDITIONAL",
+      "requiredLint": [
+        "Exact annotation/value policy and no plan-overriding annotation or CLI JVM argument."
+      ],
+      "requiredTests": [
+        "Compile, list, exact one case, execute, and native JSON validation."
+      ],
+      "requiredBenchmark": [
+        "AverageTime, ns, one thread, frozen forks/warmup/measurement, exact selectors."
+      ],
+      "provenFallback": "Repair the pinned integration before timing; do not substitute another harness.",
+      "decisionDate": "2026-07-18",
+      "verifiedAt": "2026-07-18T05:52:12Z",
+      "licenseAccessNote": "Official OpenJDK benchmark harness project documentation.",
+      "adoptedSession": "S1.4X",
+      "assumptions": [
+        "Capability smoke is complete before full kernel implementation."
+      ]
+    },
+    {
+      "featureId": "haskell.ghc-9.10.3-lts-24.50",
+      "officialSource": "https://www.stackage.org/lts-24.50",
+      "sourceDate": "2026-07-18",
+      "claim": "Stackage LTS 24.50 with GHC 9.10.3 is the authoritative tested-together Haskell correctness and performance basis.",
+      "evidenceClass": "officialStableRelease",
+      "status": "verified",
+      "compilerStatus": "stable",
+      "problemRelevance": "Pins compiler, packages, build plan, and the scored Haskell subject.",
+      "correctnessRisk": "Mixing latest Hackage versions or a different compiler confounds dependency and compiler effects.",
+      "toolingCompatibility": "Stack yaml, lock, compiler-check match-exact, system-ghc, and no-install-ghc are frozen.",
+      "decision": "ADOPT",
+      "requiredLint": [
+        "Exact hard warning, extension, module-safety, and dependency-native-edge policies."
+      ],
+      "requiredTests": [
+        "Baseline and optimized complete correctness plus toolchain and plan equality."
+      ],
+      "requiredBenchmark": [
+        "Only the frozen selector's chosen -O0 -fasm or -O2 -fasm profile is scored."
+      ],
+      "provenFallback": "baseline-o0-fasm on the same authoritative compiler and snapshot.",
+      "decisionDate": "2026-07-18",
+      "verifiedAt": "2026-07-18T05:52:12Z",
+      "licenseAccessNote": "Public Stackage snapshot and official GHC release documentation.",
+      "adoptedSession": "S1.4X",
+      "assumptions": [
+        "All non-boot sources, versions, and approved flags are lock-verified."
+      ]
+    },
+    {
+      "featureId": "haskell.ghc-9.14.1",
+      "officialSource": "https://www.haskell.org/ghc/blog/20251219-ghc-9.14.1-released.html",
+      "sourceDate": "2025-12-19",
+      "claim": "GHC 9.14.1 is the latest official stable and first GHC LTS compiler, used only in the required non-scoring compatibility lane.",
+      "evidenceClass": "officialStableRelease",
+      "status": "verified",
+      "compilerStatus": "stable",
+      "problemRelevance": "Exposes future compiler compatibility while preserving the authoritative tested package set.",
+      "correctnessRisk": "Boot-set replacement and frozen dependency bounds can be mistaken for candidate source failure.",
+      "toolingCompatibility": "Typed result classification and exact phase closure distinguish dependency, candidate, environment, and unclassified failures.",
+      "decision": "PROBE_ONLY",
+      "requiredLint": [
+        "No forbidden override and exact non-boot equality across lanes."
+      ],
+      "requiredTests": [
+        "Mandatory dependency attempt and full replay after successful solve."
+      ],
+      "requiredBenchmark": [
+        "nonScoring true and performanceInput false."
+      ],
+      "provenFallback": "Authoritative GHC 9.10.3 remains unchanged; only a proven frozen-dependency incompatibility is non-blocking.",
+      "decisionDate": "2026-07-18",
+      "verifiedAt": "2026-07-18T05:52:12Z",
+      "licenseAccessNote": "Official GHC release announcement.",
+      "adoptedSession": "S1.4X",
+      "assumptions": [
+        "The compatibility compiler and boot set may differ; non-boot inputs may not."
+      ]
+    },
+    {
+      "featureId": "haskell.stack-3.11.1",
+      "officialSource": "https://github.com/commercialhaskell/stack/releases/tag/v3.11.1",
+      "sourceDate": "2026-07-18",
+      "claim": "Stack 3.11.1 is installed through the exact GHCup-managed channel and its installed binary is distinct from the upstream comparison-only standalone asset.",
+      "evidenceClass": "officialStableRelease",
+      "status": "verified",
+      "compilerStatus": "stable",
+      "problemRelevance": "Resolves and builds the authoritative and compatibility package plans reproducibly.",
+      "correctnessRisk": "Conflating archive, installed-binary, and upstream standalone hashes invalidates provenance.",
+      "toolingCompatibility": "Exact metadata commit, archive URI/SHA, portable path ID, installed SHA, and numeric version are frozen.",
+      "decision": "ADOPT",
+      "requiredLint": [
+        "Structured provenance lock equality and forbidden Stack override-key audit."
+      ],
+      "requiredTests": [
+        "whereis path mapping, binary SHA/version, metadata evidence digest, yaml/lock and plan tests."
+      ],
+      "requiredBenchmark": [
+        "Every native block reasserts exact Stack and merged provenance identity."
+      ],
+      "provenFallback": "No direct standalone Stack asset may replace the approved installed provenance.",
+      "decisionDate": "2026-07-18",
+      "verifiedAt": "2026-07-18T05:52:12Z",
+      "licenseAccessNote": "Official Stack release plus GHCup metadata and managed bindist records.",
+      "adoptedSession": "S1.4X",
+      "assumptions": [
+        "The user provides the absolute path mapping for GHCUP_STACK_3_11_1."
+      ],
+      "distributionProvenance": {
+        "stackDistributionChannel": "ghcup-managed",
+        "installer": "ghcup",
+        "stackPolicy": "GHCup-managed exact-version installation",
+        "ghcupVersion": "0.2.6.2",
+        "stackInstallCommand": "ghcup install stack 3.11.1",
+        "ghcupMetadataCommit": "0341867f2d419567cf42ea6931e031b00ab3a922",
+        "ghcupMetadataUri": "https://github.com/haskell/ghcup-metadata/commit/0341867f2d419567cf42ea6931e031b00ab3a922",
+        "stackArchiveUri": "https://downloads.haskell.org/~ghcup/unofficial-bindists/stack/3.11.1/stack-3.11.1-linux-x86_64.tar.gz",
+        "stackArchiveSha256": "ca3cc5e89d87d1b85594a866de4062671d19ec039cd2401df70d4ccff03ffed9",
+        "stackBinPathId": "GHCUP_STACK_3_11_1",
+        "stackBinSha256": "923dbd137756652c67b376e2447c655b87fcc373f4d104b5073bca913471ecbe",
+        "stackNumericVersion": "3.11.1",
+        "upstreamStandaloneAssetSha256": "67c66e918801c41ae4d286b1c91f9124f691c1c7d56071b53889cf4a5c667550",
+        "upstreamStandaloneAssetRole": "comparison-only-not-installed-provenance",
+        "verifiedAt": "2026-07-18T05:52:12Z"
+      }
+    },
+    {
+      "featureId": "haskell.hlint-3.10-stylish-0.15.1.0",
+      "officialSource": "https://www.stackage.org/lts-24.50/package/stylish-haskell-0.15.1.0",
+      "sourceDate": "2026-07-18",
+      "claim": "Exact user-provided HLint 3.10 and stylish-haskell 0.15.1.0 binaries form non-mutating full-source lint and format gates.",
+      "evidenceClass": "officialReference",
+      "status": "verified",
+      "compilerStatus": "stable",
+      "problemRelevance": "Rejects partial and unsafe source and preserves deterministic formatting across all components.",
+      "correctnessRisk": "Source-local ignores, auto rewrite, or floating tools can hide unsupported source or alter the benchmark subject.",
+      "toolingCompatibility": "Exact executable versions and SHA values are readiness inputs; formatter config uses GHC2024 and LF.",
+      "decision": "ADOPT",
+      "requiredLint": [
+        "All hints are gated; exceptions are central, typed, narrow, tested, owned, and non-stale."
+      ],
+      "requiredTests": [
+        "Qualified and aliased partial-function negatives plus misformatting and input-set equality."
+      ],
+      "requiredBenchmark": [
+        "No timing input; source hashes qualify the exact benchmark subject."
+      ],
+      "provenFallback": "No floating or auto-installed linter and formatter replacements.",
+      "decisionDate": "2026-07-18",
+      "verifiedAt": "2026-07-18T05:52:12Z",
+      "licenseAccessNote": "Public Stackage and Hackage package documentation.",
+      "adoptedSession": "S1.4X",
+      "assumptions": [
+        "The user provides exact tool paths and executable hashes."
+      ]
+    }
+  ]
+}

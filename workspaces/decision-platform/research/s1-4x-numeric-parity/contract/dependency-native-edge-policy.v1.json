@@ -1,0 +1,116 @@
+{
+  "schemaVersion": "s1.4x-dependency-native-edge-policy-v1",
+  "scope": {
+    "prohibited": [
+      "candidate-authored source interop",
+      "candidate-authored build interop",
+      "candidate exchange interop",
+      "candidate-added native dependencies",
+      "candidate core direct native-binding import or call",
+      "explicit candidate native-interop call in a timed kernel"
+    ],
+    "notClaimed": [
+      "zero compiler-generated primops",
+      "zero GHC RTS native reachability",
+      "zero boot-package native reachability",
+      "zero frozen transitive dependency native reachability"
+    ]
+  },
+  "expectedCategories": [
+    "ghc-rts",
+    "compiler-boot-package",
+    "lts-24.50-transitive",
+    "candidate-authored"
+  ],
+  "frozenCompilerBases": [
+    {
+      "compilerVersion": "9.10.3",
+      "lane": "authoritative",
+      "bootSetManifestRequiredAtGate2": true
+    },
+    {
+      "compilerVersion": "9.14.1",
+      "lane": "latest-compatibility",
+      "bootSetManifestRequiredAtGate2": true
+    }
+  ],
+  "frozenTransitiveAllowlistBasis": {
+    "snapshot": "lts-24.50",
+    "source": "Gate 2 authoritative Stack plan, package source archive, Cabal AST, and link metadata",
+    "requiredIdentityFields": [
+      "category",
+      "package",
+      "version",
+      "sourceSha256",
+      "effectiveFlags",
+      "edgeKind",
+      "linkedLibrary",
+      "provenance"
+    ],
+    "gate1Entries": [],
+    "gate1EmptyReason": "No candidate build plan exists before Gate 2; this policy freezes the accepted categories, identity fields, flags, and zero-new-edge comparator rather than inventing source hashes.",
+    "unknownOrStaleEntryFails": true
+  },
+  "requiredPureFlags": {
+    "math-functions": {
+      "system-erf": false,
+      "system-expm1": false
+    }
+  },
+  "forbiddenCabalKeys": [
+    "foreign-library",
+    "c-sources",
+    "cxx-sources",
+    "js-sources",
+    "extra-libraries",
+    "extra-lib-dirs",
+    "includes",
+    "install-includes",
+    "frameworks"
+  ],
+  "forbiddenCandidateSourceForms": [
+    "foreign import",
+    "foreign export"
+  ],
+  "forbiddenDependencies": [
+    "inline-c",
+    "hmatrix",
+    "libffi",
+    "jni",
+    "native-extension",
+    "grpc"
+  ],
+  "authoritativeComparator": {
+    "newNonBootEdgeCount": 0,
+    "candidateAuthoredEdgeCount": 0,
+    "candidateCoreDirectNativeBindingImportCount": 0,
+    "candidateCoreDirectNativeBindingCallCount": 0,
+    "timedKernelExplicitCandidateNativeInteropCallCount": 0,
+    "unknownEdgeCount": 0,
+    "staleAllowlistEntryCount": 0
+  },
+  "gate2ResultRequiredFields": [
+    "package",
+    "version",
+    "sourceSha256",
+    "effectiveFlags",
+    "edgeKind",
+    "linkedLibrary",
+    "provenance",
+    "candidateAuthored",
+    "coreReachable",
+    "shellOnly",
+    "timedRegion",
+    "reviewDisposition"
+  ],
+  "nonBootEqualityAcrossLanes": true,
+  "hardFailureConditions": [
+    "unknown edge",
+    "candidate-authored edge",
+    "candidate core directly imports or calls a native-binding module",
+    "candidate adds a native dependency",
+    "timed kernel explicitly calls candidate native interop",
+    "stale allowlist entry",
+    "non-boot source, version, or effective flag differs across compiler lanes"
+  ]
+}

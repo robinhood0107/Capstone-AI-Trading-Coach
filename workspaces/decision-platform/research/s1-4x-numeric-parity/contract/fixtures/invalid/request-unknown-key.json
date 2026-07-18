@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "s1.4x-request-v1",
+  "requestId": "invalid-unknown-key",
+  "cases": [
+    {
+      "fixtureId": "invalid-unknown-key-case",
+      "functionId": "simple_returns",
+      "arguments": {
+        "prices": [
+          100.0,
+          101.0
+        ]
+      },
+      "unexpected": true
+    }
+  ]
+}

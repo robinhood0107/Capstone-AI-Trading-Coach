@@ -1,0 +1,1626 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://capstone-ai-trading-coach.invalid/s1-4x/schemas/ghc-compatibility-result.schema.json",
+  "title": "S1.4X GHC 9.14.1 non-scoring compatibility result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "laneId",
+    "nonScoring",
+    "result",
+    "compilerVersion",
+    "compilerPathId",
+    "compilerSha256",
+    "ghcupToolId",
+    "ghcupVersion",
+    "ghcupSha256",
+    "ghcupMetadataCommit",
+    "ghcupMetadataUri",
+    "stackPolicy",
+    "stackInstallCommand",
+    "stackBinPathId",
+    "stackNumericVersion",
+    "stackDistributionChannel",
+    "stackArchiveUri",
+    "stackArchiveSha256",
+    "stackBinSha256",
+    "toolchainProvenanceSha256",
+    "upstreamStandaloneAssetSha256",
+    "upstreamStandaloneAssetRole",
+    "authoritativeStackYamlSha256",
+    "authoritativeStackLockSha256",
+    "compatibilityStackYamlSha256",
+    "compatibilityStackLockSha256",
+    "compatibilityPolicySha256",
+    "authoritativePackageSetSha256",
+    "authoritativeNonBootPlanSha256",
+    "compatibilityNonBootPlanSha256",
+    "authoritativeBootSetSha256",
+    "compatibilityBootSetSha256",
+    "nonBootPlanEquivalent",
+    "expectedBootSetDifferenceOnly",
+    "forbiddenOverrideKeysPresent",
+    "commands",
+    "toolchainQualification",
+    "configurationQualification",
+    "dependencyQualification",
+    "candidateCompile",
+    "fullCorrectness",
+    "stableErrorReplay",
+    "processReplay",
+    "oracleReplay",
+    "crossReplay",
+    "failurePhase",
+    "downstreamNotRun",
+    "minimalReproducerSha256",
+    "candidateSourceTreeSha256",
+    "performanceInput"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "s1.4x-ghc-compatibility-result-v1"
+    },
+    "laneId": {
+      "const": "ghc-9.14.1-non-scoring"
+    },
+    "nonScoring": {
+      "const": true
+    },
+    "result": {
+      "enum": [
+        "PASS",
+        "FAIL_FROZEN_DEPENDENCY",
+        "FAIL_CANDIDATE_SOURCE",
+        "FAIL_ENVIRONMENT",
+        "FAIL_UNCLASSIFIED"
+      ]
+    },
+    "compilerVersion": {
+      "const": "9.14.1"
+    },
+    "compilerPathId": {
+      "const": "GHCUP_GHC_9_14_1"
+    },
+    "compilerSha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "ghcupToolId": {
+      "const": "GHCUP_0_2_6_2_LINUX_X86_64"
+    },
+    "ghcupVersion": {
+      "const": "0.2.6.2"
+    },
+    "ghcupSha256": {
+      "const": "9ed5da5449b48043a0d17e767c05d2ef585e25a639bb934329496c6d2fad9cf8"
+    },
+    "ghcupMetadataCommit": {
+      "const": "0341867f2d419567cf42ea6931e031b00ab3a922"
+    },
+    "ghcupMetadataUri": {
+      "const": "https://github.com/haskell/ghcup-metadata/commit/0341867f2d419567cf42ea6931e031b00ab3a922"
+    },
+    "stackPolicy": {
+      "const": "GHCup-managed exact-version installation"
+    },
+    "stackInstallCommand": {
+      "const": "ghcup install stack 3.11.1"
+    },
+    "stackBinPathId": {
+      "const": "GHCUP_STACK_3_11_1"
+    },
+    "stackNumericVersion": {
+      "const": "3.11.1"
+    },
+    "stackDistributionChannel": {
+      "const": "ghcup-managed"
+    },
+    "stackArchiveUri": {
+      "const": "https://downloads.haskell.org/~ghcup/unofficial-bindists/stack/3.11.1/stack-3.11.1-linux-x86_64.tar.gz"
+    },
+    "stackArchiveSha256": {
+      "const": "ca3cc5e89d87d1b85594a866de4062671d19ec039cd2401df70d4ccff03ffed9"
+    },
+    "stackBinSha256": {
+      "const": "923dbd137756652c67b376e2447c655b87fcc373f4d104b5073bca913471ecbe"
+    },
+    "toolchainProvenanceSha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "upstreamStandaloneAssetSha256": {
+      "const": "67c66e918801c41ae4d286b1c91f9124f691c1c7d56071b53889cf4a5c667550"
+    },
+    "upstreamStandaloneAssetRole": {
+      "const": "comparison-only-not-installed-provenance"
+    },
+    "authoritativeStackYamlSha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "authoritativeStackLockSha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "compatibilityStackYamlSha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "compatibilityStackLockSha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "compatibilityPolicySha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "authoritativePackageSetSha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "authoritativeNonBootPlanSha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "compatibilityNonBootPlanSha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "authoritativeBootSetSha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "compatibilityBootSetSha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "nonBootPlanEquivalent": {
+      "type": "boolean"
+    },
+    "expectedBootSetDifferenceOnly": {
+      "type": "boolean"
+    },
+    "forbiddenOverrideKeysPresent": {
+      "const": []
+    },
+    "commands": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/command"
+      }
+    },
+    "toolchainQualification": {
+      "$ref": "#/$defs/phaseResult"
+    },
+    "configurationQualification": {
+      "$ref": "#/$defs/phaseResult"
+    },
+    "dependencyQualification": {
+      "$ref": "#/$defs/phaseResult"
+    },
+    "candidateCompile": {
+      "$ref": "#/$defs/phaseResult"
+    },
+    "fullCorrectness": {
+      "$ref": "#/$defs/replayResult"
+    },
+    "stableErrorReplay": {
+      "$ref": "#/$defs/replayResult"
+    },
+    "processReplay": {
+      "$ref": "#/$defs/replayResult"
+    },
+    "oracleReplay": {
+      "$ref": "#/$defs/replayResult"
+    },
+    "crossReplay": {
+      "$ref": "#/$defs/replayResult"
+    },
+    "failurePhase": {
+      "oneOf": [
+        {
+          "enum": [
+            "toolchain",
+            "configuration",
+            "dependency",
+            "candidateCompile",
+            "fullCorrectness",
+            "stableErrorReplay",
+            "processReplay",
+            "oracleReplay",
+            "crossReplay"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "downstreamNotRun": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "configuration",
+          "dependency",
+          "candidateCompile",
+          "fullCorrectness",
+          "stableErrorReplay",
+          "processReplay",
+          "oracleReplay",
+          "crossReplay"
+        ]
+      }
+    },
+    "minimalReproducerSha256": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/sha256"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "candidateSourceTreeSha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "performanceInput": {
+      "const": false
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "result": {
+            "const": "PASS"
+          }
+        },
+        "required": [
+          "result"
+        ]
+      },
+      "then": {
+        "$ref": "#/$defs/passClosure"
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "result": {
+            "const": "FAIL_FROZEN_DEPENDENCY"
+          }
+        },
+        "required": [
+          "result"
+        ]
+      },
+      "then": {
+        "$ref": "#/$defs/frozenDependencyClosure"
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "result": {
+            "const": "FAIL_CANDIDATE_SOURCE"
+          }
+        },
+        "required": [
+          "result"
+        ]
+      },
+      "then": {
+        "allOf": [
+          {
+            "properties": {
+              "minimalReproducerSha256": {
+                "$ref": "#/$defs/sha256"
+              }
+            }
+          },
+          {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/candidateCompileFailureClosure"
+              },
+              {
+                "$ref": "#/$defs/fullCorrectnessFailureClosure"
+              },
+              {
+                "$ref": "#/$defs/stableErrorFailureClosure"
+              },
+              {
+                "$ref": "#/$defs/processFailureClosure"
+              },
+              {
+                "$ref": "#/$defs/oracleFailureClosure"
+              },
+              {
+                "$ref": "#/$defs/crossFailureClosure"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "result": {
+            "const": "FAIL_ENVIRONMENT"
+          }
+        },
+        "required": [
+          "result"
+        ]
+      },
+      "then": {
+        "allOf": [
+          {
+            "properties": {
+              "minimalReproducerSha256": {
+                "type": "null"
+              }
+            }
+          },
+          {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/toolchainFailureClosure"
+              },
+              {
+                "$ref": "#/$defs/configurationFailureClosure"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "result": {
+            "const": "FAIL_UNCLASSIFIED"
+          }
+        },
+        "required": [
+          "result"
+        ]
+      },
+      "then": {
+        "allOf": [
+          {
+            "properties": {
+              "minimalReproducerSha256": {
+                "$ref": "#/$defs/sha256"
+              }
+            }
+          },
+          {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/toolchainFailureClosure"
+              },
+              {
+                "$ref": "#/$defs/configurationFailureClosure"
+              },
+              {
+                "$ref": "#/$defs/dependencyFailureClosure"
+              },
+              {
+                "$ref": "#/$defs/candidateCompileFailureClosure"
+              },
+              {
+                "$ref": "#/$defs/fullCorrectnessFailureClosure"
+              },
+              {
+                "$ref": "#/$defs/stableErrorFailureClosure"
+              },
+              {
+                "$ref": "#/$defs/processFailureClosure"
+              },
+              {
+                "$ref": "#/$defs/oracleFailureClosure"
+              },
+              {
+                "$ref": "#/$defs/crossFailureClosure"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "command": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "phase",
+        "argv",
+        "cwdId",
+        "startedAt",
+        "endedAt",
+        "exitCode",
+        "stdoutSha256",
+        "stderrSha256"
+      ],
+      "properties": {
+        "phase": {
+          "enum": [
+            "toolchain",
+            "configuration",
+            "dependency",
+            "candidateCompile",
+            "fullCorrectness",
+            "stableErrorReplay",
+            "processReplay",
+            "oracleReplay",
+            "crossReplay"
+          ]
+        },
+        "argv": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          }
+        },
+        "cwdId": {
+          "type": "string",
+          "pattern": "^[A-Z0-9_]{1,128}$"
+        },
+        "startedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "endedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "exitCode": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 255
+        },
+        "stdoutSha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "stderrSha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "phaseResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "evidenceSha256"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "PASS",
+            "FAIL",
+            "NOT_RUN"
+          ]
+        },
+        "evidenceSha256": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "enum": [
+                  "PASS",
+                  "FAIL"
+                ]
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "evidenceSha256": {
+                "$ref": "#/$defs/sha256"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "NOT_RUN"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "evidenceSha256": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "replayResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "mismatchCount",
+        "evidenceSha256"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "PASS",
+            "FAIL",
+            "NOT_RUN"
+          ]
+        },
+        "mismatchCount": {
+          "oneOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "evidenceSha256": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "PASS"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "mismatchCount": {
+                "const": 0
+              },
+              "evidenceSha256": {
+                "$ref": "#/$defs/sha256"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "FAIL"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "mismatchCount": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "evidenceSha256": {
+                "$ref": "#/$defs/sha256"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "NOT_RUN"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "mismatchCount": {
+                "type": "null"
+              },
+              "evidenceSha256": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "passingPhase": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "const": "PASS"
+        },
+        "evidenceSha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "failingPhase": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "const": "FAIL"
+        },
+        "evidenceSha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "notRunPhase": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "const": "NOT_RUN"
+        },
+        "evidenceSha256": {
+          "type": "null"
+        }
+      }
+    },
+    "passingReplay": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "const": "PASS"
+        },
+        "mismatchCount": {
+          "const": 0
+        },
+        "evidenceSha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "notRunReplay": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "const": "NOT_RUN"
+        },
+        "mismatchCount": {
+          "type": "null"
+        },
+        "evidenceSha256": {
+          "type": "null"
+        }
+      }
+    },
+    "failingReplay": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "const": "FAIL"
+        },
+        "mismatchCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "evidenceSha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "toolchainFailureCommands": {
+      "$ref": "#/$defs/commandFailureBase",
+      "allOf": [
+        {
+          "$ref": "#/$defs/toolchainFailureCommand"
+        },
+        {
+          "not": {
+            "contains": {
+              "properties": {
+                "phase": {
+                  "enum": [
+                    "configuration",
+                    "dependency",
+                    "candidateCompile",
+                    "fullCorrectness",
+                    "stableErrorReplay",
+                    "processReplay",
+                    "oracleReplay",
+                    "crossReplay"
+                  ]
+                }
+              },
+              "required": [
+                "phase"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "configurationFailureCommands": {
+      "$ref": "#/$defs/commandFailureBase",
+      "allOf": [
+        {
+          "$ref": "#/$defs/configurationFailureCommand"
+        },
+        {
+          "not": {
+            "contains": {
+              "properties": {
+                "phase": {
+                  "enum": [
+                    "dependency",
+                    "candidateCompile",
+                    "fullCorrectness",
+                    "stableErrorReplay",
+                    "processReplay",
+                    "oracleReplay",
+                    "crossReplay"
+                  ]
+                }
+              },
+              "required": [
+                "phase"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "dependencyFailureCommands": {
+      "$ref": "#/$defs/commandFailureBase",
+      "allOf": [
+        {
+          "$ref": "#/$defs/dependencyFailureCommand"
+        },
+        {
+          "not": {
+            "contains": {
+              "properties": {
+                "phase": {
+                  "enum": [
+                    "candidateCompile",
+                    "fullCorrectness",
+                    "stableErrorReplay",
+                    "processReplay",
+                    "oracleReplay",
+                    "crossReplay"
+                  ]
+                }
+              },
+              "required": [
+                "phase"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "candidateCompileFailureCommands": {
+      "$ref": "#/$defs/commandFailureBase",
+      "allOf": [
+        {
+          "$ref": "#/$defs/candidateCompileFailureCommand"
+        },
+        {
+          "not": {
+            "contains": {
+              "properties": {
+                "phase": {
+                  "enum": [
+                    "fullCorrectness",
+                    "stableErrorReplay",
+                    "processReplay",
+                    "oracleReplay",
+                    "crossReplay"
+                  ]
+                }
+              },
+              "required": [
+                "phase"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "fullCorrectnessFailureCommands": {
+      "$ref": "#/$defs/commandFailureBase",
+      "allOf": [
+        {
+          "$ref": "#/$defs/fullCorrectnessFailureCommand"
+        },
+        {
+          "not": {
+            "contains": {
+              "properties": {
+                "phase": {
+                  "enum": [
+                    "stableErrorReplay",
+                    "processReplay",
+                    "oracleReplay",
+                    "crossReplay"
+                  ]
+                }
+              },
+              "required": [
+                "phase"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "stableErrorFailureCommands": {
+      "$ref": "#/$defs/commandFailureBase",
+      "allOf": [
+        {
+          "$ref": "#/$defs/stableErrorReplayFailureCommand"
+        },
+        {
+          "not": {
+            "contains": {
+              "properties": {
+                "phase": {
+                  "enum": [
+                    "processReplay",
+                    "oracleReplay",
+                    "crossReplay"
+                  ]
+                }
+              },
+              "required": [
+                "phase"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "processFailureCommands": {
+      "$ref": "#/$defs/commandFailureBase",
+      "allOf": [
+        {
+          "$ref": "#/$defs/processReplayFailureCommand"
+        },
+        {
+          "not": {
+            "contains": {
+              "properties": {
+                "phase": {
+                  "enum": [
+                    "oracleReplay",
+                    "crossReplay"
+                  ]
+                }
+              },
+              "required": [
+                "phase"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "oracleFailureCommands": {
+      "$ref": "#/$defs/commandFailureBase",
+      "allOf": [
+        {
+          "$ref": "#/$defs/oracleReplayFailureCommand"
+        },
+        {
+          "not": {
+            "contains": {
+              "properties": {
+                "phase": {
+                  "const": "crossReplay"
+                }
+              },
+              "required": [
+                "phase"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "crossFailureCommands": {
+      "$ref": "#/$defs/commandFailureBase",
+      "allOf": [
+        {
+          "$ref": "#/$defs/crossReplayFailureCommand"
+        }
+      ]
+    },
+    "commandFailureBase": {
+      "type": "array",
+      "minItems": 1
+    },
+    "toolchainFailureCommand": {
+      "$ref": "#/$defs/failureCommandArray",
+      "contains": {
+        "$ref": "#/$defs/toolchainFailureCommandItem"
+      }
+    },
+    "configurationFailureCommand": {
+      "$ref": "#/$defs/failureCommandArray",
+      "contains": {
+        "$ref": "#/$defs/configurationFailureCommandItem"
+      }
+    },
+    "dependencyFailureCommand": {
+      "$ref": "#/$defs/failureCommandArray",
+      "contains": {
+        "$ref": "#/$defs/dependencyFailureCommandItem"
+      }
+    },
+    "candidateCompileFailureCommand": {
+      "$ref": "#/$defs/failureCommandArray",
+      "contains": {
+        "$ref": "#/$defs/candidateCompileFailureCommandItem"
+      }
+    },
+    "fullCorrectnessFailureCommand": {
+      "$ref": "#/$defs/failureCommandArray",
+      "contains": {
+        "$ref": "#/$defs/fullCorrectnessFailureCommandItem"
+      }
+    },
+    "stableErrorReplayFailureCommand": {
+      "$ref": "#/$defs/failureCommandArray",
+      "contains": {
+        "$ref": "#/$defs/stableErrorReplayFailureCommandItem"
+      }
+    },
+    "processReplayFailureCommand": {
+      "$ref": "#/$defs/failureCommandArray",
+      "contains": {
+        "$ref": "#/$defs/processReplayFailureCommandItem"
+      }
+    },
+    "oracleReplayFailureCommand": {
+      "$ref": "#/$defs/failureCommandArray",
+      "contains": {
+        "$ref": "#/$defs/oracleReplayFailureCommandItem"
+      }
+    },
+    "crossReplayFailureCommand": {
+      "$ref": "#/$defs/failureCommandArray",
+      "contains": {
+        "$ref": "#/$defs/crossReplayFailureCommandItem"
+      }
+    },
+    "failureCommandArray": {
+      "type": "array",
+      "minContains": 1
+    },
+    "toolchainFailureCommandItem": {
+      "$ref": "#/$defs/failureCommandItem",
+      "properties": {
+        "phase": {
+          "const": "toolchain"
+        }
+      }
+    },
+    "configurationFailureCommandItem": {
+      "$ref": "#/$defs/failureCommandItem",
+      "properties": {
+        "phase": {
+          "const": "configuration"
+        }
+      }
+    },
+    "dependencyFailureCommandItem": {
+      "$ref": "#/$defs/failureCommandItem",
+      "properties": {
+        "phase": {
+          "const": "dependency"
+        }
+      }
+    },
+    "candidateCompileFailureCommandItem": {
+      "$ref": "#/$defs/failureCommandItem",
+      "properties": {
+        "phase": {
+          "const": "candidateCompile"
+        }
+      }
+    },
+    "fullCorrectnessFailureCommandItem": {
+      "$ref": "#/$defs/failureCommandItem",
+      "properties": {
+        "phase": {
+          "const": "fullCorrectness"
+        }
+      }
+    },
+    "stableErrorReplayFailureCommandItem": {
+      "$ref": "#/$defs/failureCommandItem",
+      "properties": {
+        "phase": {
+          "const": "stableErrorReplay"
+        }
+      }
+    },
+    "processReplayFailureCommandItem": {
+      "$ref": "#/$defs/failureCommandItem",
+      "properties": {
+        "phase": {
+          "const": "processReplay"
+        }
+      }
+    },
+    "oracleReplayFailureCommandItem": {
+      "$ref": "#/$defs/failureCommandItem",
+      "properties": {
+        "phase": {
+          "const": "oracleReplay"
+        }
+      }
+    },
+    "crossReplayFailureCommandItem": {
+      "$ref": "#/$defs/failureCommandItem",
+      "properties": {
+        "phase": {
+          "const": "crossReplay"
+        }
+      }
+    },
+    "failureCommandItem": {
+      "type": "object",
+      "required": [
+        "phase",
+        "exitCode"
+      ],
+      "properties": {
+        "exitCode": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 255
+        }
+      }
+    },
+    "initialPassThroughDependency": {
+      "type": "object",
+      "properties": {
+        "nonBootPlanEquivalent": {
+          "const": true
+        },
+        "expectedBootSetDifferenceOnly": {
+          "const": true
+        },
+        "toolchainQualification": {
+          "$ref": "#/$defs/passingPhase"
+        },
+        "configurationQualification": {
+          "$ref": "#/$defs/passingPhase"
+        },
+        "dependencyQualification": {
+          "$ref": "#/$defs/passingPhase"
+        }
+      }
+    },
+    "passClosure": {
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/$defs/initialPassThroughDependency"
+        }
+      ],
+      "properties": {
+        "candidateCompile": {
+          "$ref": "#/$defs/passingPhase"
+        },
+        "fullCorrectness": {
+          "$ref": "#/$defs/passingReplay"
+        },
+        "stableErrorReplay": {
+          "$ref": "#/$defs/passingReplay"
+        },
+        "processReplay": {
+          "$ref": "#/$defs/passingReplay"
+        },
+        "oracleReplay": {
+          "$ref": "#/$defs/passingReplay"
+        },
+        "crossReplay": {
+          "$ref": "#/$defs/passingReplay"
+        },
+        "failurePhase": {
+          "type": "null"
+        },
+        "downstreamNotRun": {
+          "const": []
+        },
+        "minimalReproducerSha256": {
+          "type": "null"
+        }
+      }
+    },
+    "frozenDependencyClosure": {
+      "type": "object",
+      "properties": {
+        "commands": {
+          "$ref": "#/$defs/dependencyFailureCommands"
+        },
+        "nonBootPlanEquivalent": {
+          "const": true
+        },
+        "expectedBootSetDifferenceOnly": {
+          "const": true
+        },
+        "toolchainQualification": {
+          "$ref": "#/$defs/passingPhase"
+        },
+        "configurationQualification": {
+          "$ref": "#/$defs/passingPhase"
+        },
+        "dependencyQualification": {
+          "$ref": "#/$defs/failingPhase"
+        },
+        "candidateCompile": {
+          "$ref": "#/$defs/notRunPhase"
+        },
+        "fullCorrectness": {
+          "$ref": "#/$defs/notRunReplay"
+        },
+        "stableErrorReplay": {
+          "$ref": "#/$defs/notRunReplay"
+        },
+        "processReplay": {
+          "$ref": "#/$defs/notRunReplay"
+        },
+        "oracleReplay": {
+          "$ref": "#/$defs/notRunReplay"
+        },
+        "crossReplay": {
+          "$ref": "#/$defs/notRunReplay"
+        },
+        "failurePhase": {
+          "const": "dependency"
+        },
+        "downstreamNotRun": {
+          "const": [
+            "candidateCompile",
+            "fullCorrectness",
+            "stableErrorReplay",
+            "processReplay",
+            "oracleReplay",
+            "crossReplay"
+          ]
+        },
+        "minimalReproducerSha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "toolchainFailureClosure": {
+      "type": "object",
+      "properties": {
+        "commands": {
+          "$ref": "#/$defs/toolchainFailureCommands"
+        },
+        "toolchainQualification": {
+          "$ref": "#/$defs/failingPhase"
+        },
+        "configurationQualification": {
+          "$ref": "#/$defs/notRunPhase"
+        },
+        "dependencyQualification": {
+          "$ref": "#/$defs/notRunPhase"
+        },
+        "candidateCompile": {
+          "$ref": "#/$defs/notRunPhase"
+        },
+        "fullCorrectness": {
+          "$ref": "#/$defs/notRunReplay"
+        },
+        "stableErrorReplay": {
+          "$ref": "#/$defs/notRunReplay"
+        },
+        "processReplay": {
+          "$ref": "#/$defs/notRunReplay"
+        },
+        "oracleReplay": {
+          "$ref": "#/$defs/notRunReplay"
+        },
+        "crossReplay": {
+          "$ref": "#/$defs/notRunReplay"
+        },
+        "failurePhase": {
+          "const": "toolchain"
+        },
+        "downstreamNotRun": {
+          "const": [
+            "configuration",
+            "dependency",
+            "candidateCompile",
+            "fullCorrectness",
+            "stableErrorReplay",
+            "processReplay",
+            "oracleReplay",
+            "crossReplay"
+          ]
+        }
+      }
+    },
+    "configurationFailureClosure": {
+      "type": "object",
+      "properties": {
+        "commands": {
+          "$ref": "#/$defs/configurationFailureCommands"
+        },
+        "toolchainQualification": {
+          "$ref": "#/$defs/passingPhase"
+        },
+        "configurationQualification": {
+          "$ref": "#/$defs/failingPhase"
+        },
+        "dependencyQualification": {
+          "$ref": "#/$defs/notRunPhase"
+        },
+        "candidateCompile": {
+          "$ref": "#/$defs/notRunPhase"
+        },
+        "fullCorrectness": {
+          "$ref": "#/$defs/notRunReplay"
+        },
+        "stableErrorReplay": {
+          "$ref": "#/$defs/notRunReplay"
+        },
+        "processReplay": {
+          "$ref": "#/$defs/notRunReplay"
+        },
+        "oracleReplay": {
+          "$ref": "#/$defs/notRunReplay"
+        },
+        "crossReplay": {
+          "$ref": "#/$defs/notRunReplay"
+        },
+        "failurePhase": {
+          "const": "configuration"
+        },
+        "downstreamNotRun": {
+          "const": [
+            "dependency",
+            "candidateCompile",
+            "fullCorrectness",
+            "stableErrorReplay",
+            "processReplay",
+            "oracleReplay",
+            "crossReplay"
+          ]
+        }
+      }
+    },
+    "dependencyFailureClosure": {
+      "type": "object",
+      "properties": {
+        "commands": {
+          "$ref": "#/$defs/dependencyFailureCommands"
+        },
+        "toolchainQualification": {
+          "$ref": "#/$defs/passingPhase"
+        },
+        "configurationQualification": {
+          "$ref": "#/$defs/passingPhase"
+        },
+        "dependencyQualification": {
+          "$ref": "#/$defs/failingPhase"
+        },
+        "candidateCompile": {
+          "$ref": "#/$defs/notRunPhase"
+        },
+        "fullCorrectness": {
+          "$ref": "#/$defs/notRunReplay"
+        },
+        "stableErrorReplay": {
+          "$ref": "#/$defs/notRunReplay"
+        },
+        "processReplay": {
+          "$ref": "#/$defs/notRunReplay"
+        },
+        "oracleReplay": {
+          "$ref": "#/$defs/notRunReplay"
+        },
+        "crossReplay": {
+          "$ref": "#/$defs/notRunReplay"
+        },
+        "failurePhase": {
+          "const": "dependency"
+        },
+        "downstreamNotRun": {
+          "const": [
+            "candidateCompile",
+            "fullCorrectness",
+            "stableErrorReplay",
+            "processReplay",
+            "oracleReplay",
+            "crossReplay"
+          ]
+        }
+      }
+    },
+    "candidateCompileFailureClosure": {
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/$defs/initialPassThroughDependency"
+        }
+      ],
+      "properties": {
+        "commands": {
+          "$ref": "#/$defs/candidateCompileFailureCommands"
+        },
+        "candidateCompile": {
+          "$ref": "#/$defs/failingPhase"
+        },
+        "fullCorrectness": {
+          "$ref": "#/$defs/notRunReplay"
+        },
+        "stableErrorReplay": {
+          "$ref": "#/$defs/notRunReplay"
+        },
+        "processReplay": {
+          "$ref": "#/$defs/notRunReplay"
+        },
+        "oracleReplay": {
+          "$ref": "#/$defs/notRunReplay"
+        },
+        "crossReplay": {
+          "$ref": "#/$defs/notRunReplay"
+        },
+        "failurePhase": {
+          "const": "candidateCompile"
+        },
+        "downstreamNotRun": {
+          "const": [
+            "fullCorrectness",
+            "stableErrorReplay",
+            "processReplay",
+            "oracleReplay",
+            "crossReplay"
+          ]
+        }
+      }
+    },
+    "fullCorrectnessFailureClosure": {
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/$defs/initialPassThroughDependency"
+        }
+      ],
+      "properties": {
+        "commands": {
+          "$ref": "#/$defs/fullCorrectnessFailureCommands"
+        },
+        "candidateCompile": {
+          "$ref": "#/$defs/passingPhase"
+        },
+        "fullCorrectness": {
+          "$ref": "#/$defs/failingReplay"
+        },
+        "stableErrorReplay": {
+          "$ref": "#/$defs/notRunReplay"
+        },
+        "processReplay": {
+          "$ref": "#/$defs/notRunReplay"
+        },
+        "oracleReplay": {
+          "$ref": "#/$defs/notRunReplay"
+        },
+        "crossReplay": {
+          "$ref": "#/$defs/notRunReplay"
+        },
+        "failurePhase": {
+          "const": "fullCorrectness"
+        },
+        "downstreamNotRun": {
+          "const": [
+            "stableErrorReplay",
+            "processReplay",
+            "oracleReplay",
+            "crossReplay"
+          ]
+        }
+      }
+    },
+    "stableErrorFailureClosure": {
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/$defs/initialPassThroughDependency"
+        }
+      ],
+      "properties": {
+        "commands": {
+          "$ref": "#/$defs/stableErrorFailureCommands"
+        },
+        "candidateCompile": {
+          "$ref": "#/$defs/passingPhase"
+        },
+        "fullCorrectness": {
+          "$ref": "#/$defs/passingReplay"
+        },
+        "stableErrorReplay": {
+          "$ref": "#/$defs/failingReplay"
+        },
+        "processReplay": {
+          "$ref": "#/$defs/notRunReplay"
+        },
+        "oracleReplay": {
+          "$ref": "#/$defs/notRunReplay"
+        },
+        "crossReplay": {
+          "$ref": "#/$defs/notRunReplay"
+        },
+        "failurePhase": {
+          "const": "stableErrorReplay"
+        },
+        "downstreamNotRun": {
+          "const": [
+            "processReplay",
+            "oracleReplay",
+            "crossReplay"
+          ]
+        }
+      }
+    },
+    "processFailureClosure": {
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/$defs/initialPassThroughDependency"
+        }
+      ],
+      "properties": {
+        "commands": {
+          "$ref": "#/$defs/processFailureCommands"
+        },
+        "candidateCompile": {
+          "$ref": "#/$defs/passingPhase"
+        },
+        "fullCorrectness": {
+          "$ref": "#/$defs/passingReplay"
+        },
+        "stableErrorReplay": {
+          "$ref": "#/$defs/passingReplay"
+        },
+        "processReplay": {
+          "$ref": "#/$defs/failingReplay"
+        },
+        "oracleReplay": {
+          "$ref": "#/$defs/notRunReplay"
+        },
+        "crossReplay": {
+          "$ref": "#/$defs/notRunReplay"
+        },
+        "failurePhase": {
+          "const": "processReplay"
+        },
+        "downstreamNotRun": {
+          "const": [
+            "oracleReplay",
+            "crossReplay"
+          ]
+        }
+      }
+    },
+    "oracleFailureClosure": {
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/$defs/initialPassThroughDependency"
+        }
+      ],
+      "properties": {
+        "commands": {
+          "$ref": "#/$defs/oracleFailureCommands"
+        },
+        "candidateCompile": {
+          "$ref": "#/$defs/passingPhase"
+        },
+        "fullCorrectness": {
+          "$ref": "#/$defs/passingReplay"
+        },
+        "stableErrorReplay": {
+          "$ref": "#/$defs/passingReplay"
+        },
+        "processReplay": {
+          "$ref": "#/$defs/passingReplay"
+        },
+        "oracleReplay": {
+          "$ref": "#/$defs/failingReplay"
+        },
+        "crossReplay": {
+          "$ref": "#/$defs/notRunReplay"
+        },
+        "failurePhase": {
+          "const": "oracleReplay"
+        },
+        "downstreamNotRun": {
+          "const": [
+            "crossReplay"
+          ]
+        }
+      }
+    },
+    "crossFailureClosure": {
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/$defs/initialPassThroughDependency"
+        }
+      ],
+      "properties": {
+        "commands": {
+          "$ref": "#/$defs/crossFailureCommands"
+        },
+        "candidateCompile": {
+          "$ref": "#/$defs/passingPhase"
+        },
+        "fullCorrectness": {
+          "$ref": "#/$defs/passingReplay"
+        },
+        "stableErrorReplay": {
+          "$ref": "#/$defs/passingReplay"
+        },
+        "processReplay": {
+          "$ref": "#/$defs/passingReplay"
+        },
+        "oracleReplay": {
+          "$ref": "#/$defs/passingReplay"
+        },
+        "crossReplay": {
+          "$ref": "#/$defs/failingReplay"
+        },
+        "failurePhase": {
+          "const": "crossReplay"
+        },
+        "downstreamNotRun": {
+          "const": []
+        }
+      }
+    }
+  },
+  "x-s1-4x-failure-phase-must-close-all-downstream-phases": true,
+  "x-s1-4x-no-absolute-paths": true
+}

@@ -1,0 +1,276 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://capstone-ai-trading-coach.invalid/s1-4x/schemas/feature-decision-result.schema.json",
+  "title": "S1.4X effective feature decision results",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "plannedDecisionSha256",
+    "capabilitySmokeResultSha256",
+    "entries"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "s1.4x-feature-decision-results-v1"
+    },
+    "plannedDecisionSha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "capabilitySmokeResultSha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "entries": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/entry"
+      },
+      "x-s1-4x-unique-by": "featureId"
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "featureId",
+        "plannedDecision",
+        "effectiveDecision",
+        "smokeStatus",
+        "lintStatus",
+        "testStatus",
+        "parityMismatchCount",
+        "evidenceStatus",
+        "fallbackExecuted",
+        "fallbackStatus",
+        "evidenceSha256"
+      ],
+      "properties": {
+        "featureId": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"
+        },
+        "plannedDecision": {
+          "enum": [
+            "ADOPT",
+            "CONDITIONAL",
+            "PROBE_ONLY",
+            "REJECT"
+          ]
+        },
+        "effectiveDecision": {
+          "enum": [
+            "ADOPT",
+            "FALLBACK",
+            "PROBE_ONLY",
+            "REJECT"
+          ]
+        },
+        "smokeStatus": {
+          "enum": [
+            "PASS",
+            "FAIL",
+            "NOT_APPLICABLE"
+          ]
+        },
+        "lintStatus": {
+          "enum": [
+            "PASS",
+            "FAIL",
+            "NOT_APPLICABLE"
+          ]
+        },
+        "testStatus": {
+          "enum": [
+            "PASS",
+            "FAIL",
+            "NOT_APPLICABLE"
+          ]
+        },
+        "parityMismatchCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "evidenceStatus": {
+          "enum": [
+            "PASS",
+            "FAIL",
+            "NOT_APPLICABLE"
+          ]
+        },
+        "fallbackExecuted": {
+          "type": "boolean"
+        },
+        "fallbackStatus": {
+          "enum": [
+            "PASS",
+            "FAIL",
+            "NOT_RUN"
+          ]
+        },
+        "evidenceSha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "effectiveDecision": {
+                "const": "ADOPT"
+              }
+            },
+            "required": [
+              "effectiveDecision"
+            ]
+          },
+          "then": {
+            "properties": {
+              "plannedDecision": {
+                "enum": [
+                  "ADOPT",
+                  "CONDITIONAL"
+                ]
+              },
+              "smokeStatus": {
+                "const": "PASS"
+              },
+              "lintStatus": {
+                "const": "PASS"
+              },
+              "testStatus": {
+                "const": "PASS"
+              },
+              "parityMismatchCount": {
+                "const": 0
+              },
+              "evidenceStatus": {
+                "const": "PASS"
+              },
+              "fallbackExecuted": {
+                "const": false
+              },
+              "fallbackStatus": {
+                "const": "NOT_RUN"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "effectiveDecision": {
+                "const": "FALLBACK"
+              }
+            },
+            "required": [
+              "effectiveDecision"
+            ]
+          },
+          "then": {
+            "properties": {
+              "plannedDecision": {
+                "enum": [
+                  "ADOPT",
+                  "CONDITIONAL"
+                ]
+              },
+              "fallbackExecuted": {
+                "const": true
+              },
+              "fallbackStatus": {
+                "const": "PASS"
+              }
+            },
+            "anyOf": [
+              {
+                "properties": {
+                  "smokeStatus": {
+                    "const": "FAIL"
+                  }
+                },
+                "required": [
+                  "smokeStatus"
+                ]
+              },
+              {
+                "properties": {
+                  "lintStatus": {
+                    "const": "FAIL"
+                  }
+                },
+                "required": [
+                  "lintStatus"
+                ]
+              },
+              {
+                "properties": {
+                  "testStatus": {
+                    "const": "FAIL"
+                  }
+                },
+                "required": [
+                  "testStatus"
+                ]
+              },
+              {
+                "properties": {
+                  "parityMismatchCount": {
+                    "minimum": 1
+                  }
+                },
+                "required": [
+                  "parityMismatchCount"
+                ]
+              },
+              {
+                "properties": {
+                  "evidenceStatus": {
+                    "const": "FAIL"
+                  }
+                },
+                "required": [
+                  "evidenceStatus"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "fallbackExecuted": {
+                "const": true
+              }
+            },
+            "required": [
+              "fallbackExecuted"
+            ]
+          },
+          "then": {
+            "properties": {
+              "fallbackStatus": {
+                "enum": [
+                  "PASS",
+                  "FAIL"
+                ]
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "fallbackStatus": {
+                "const": "NOT_RUN"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

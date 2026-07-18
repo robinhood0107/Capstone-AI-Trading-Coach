@@ -1,0 +1,167 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://capstone-ai-trading-coach.invalid/s1-4x/schemas/feature-decision.schema.json",
+  "title": "S1.4X planned feature decisions",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "decisionRule",
+    "entries"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "s1.4x-feature-decisions-v1"
+    },
+    "decisionRule": {
+      "const": "stable-and-smoke-and-lint-and-tests-and-full-parity-and-auditability-or-performance"
+    },
+    "entries": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/entry"
+      },
+      "x-s1-4x-unique-by": "featureId"
+    }
+  },
+  "$defs": {
+    "stringList": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 512
+      }
+    },
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "featureId",
+        "officialSource",
+        "sourceDate",
+        "claim",
+        "evidenceClass",
+        "status",
+        "compilerStatus",
+        "problemRelevance",
+        "correctnessRisk",
+        "toolingCompatibility",
+        "decision",
+        "requiredLint",
+        "requiredTests",
+        "requiredBenchmark",
+        "provenFallback",
+        "decisionDate",
+        "verifiedAt",
+        "licenseAccessNote",
+        "adoptedSession",
+        "assumptions"
+      ],
+      "properties": {
+        "featureId": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"
+        },
+        "officialSource": {
+          "type": "string",
+          "format": "uri"
+        },
+        "sourceDate": {
+          "type": "string",
+          "format": "date"
+        },
+        "claim": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "evidenceClass": {
+          "enum": [
+            "officialStableRelease",
+            "officialReference",
+            "officialCompilerDocumentation",
+            "acceptedProposal",
+            "officialEventDiscovery",
+            "thirdParty"
+          ]
+        },
+        "status": {
+          "enum": [
+            "planned",
+            "conditional",
+            "probeOnly",
+            "rejected"
+          ]
+        },
+        "compilerStatus": {
+          "enum": [
+            "stable",
+            "preview",
+            "experimental",
+            "nightly"
+          ]
+        },
+        "problemRelevance": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "correctnessRisk": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "toolingCompatibility": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "decision": {
+          "enum": [
+            "ADOPT",
+            "CONDITIONAL",
+            "PROBE_ONLY",
+            "REJECT"
+          ]
+        },
+        "requiredLint": {
+          "$ref": "#/$defs/stringList"
+        },
+        "requiredTests": {
+          "$ref": "#/$defs/stringList"
+        },
+        "requiredBenchmark": {
+          "$ref": "#/$defs/stringList"
+        },
+        "provenFallback": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "decisionDate": {
+          "type": "string",
+          "format": "date"
+        },
+        "verifiedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "licenseAccessNote": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "adoptedSession": {
+          "const": "S1.4X"
+        },
+        "assumptions": {
+          "$ref": "#/$defs/stringList"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "schemaVersion": "s1.4x-binary-array-v1",
+  "fixtureId": "invalid-manifest-symlink-escape",
+  "argumentName": "returns",
+  "fileName": "symlink-escape.f64le",
+  "encoding": "ieee754-binary64",
+  "dtype": "float64",
+  "byteOrder": "little",
+  "arrayOrder": "C",
+  "shape": [
+    1
+  ],
+  "count": 1,
+  "byteLength": 8,
+  "sha256": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+  "generator": {
+    "algorithm": "literal-ieee754-bits",
+    "generatorVersion": "s1.4x-literal-ieee754-bits-v1",
+    "payloadHex": "0000000000000000"
+  }
+}

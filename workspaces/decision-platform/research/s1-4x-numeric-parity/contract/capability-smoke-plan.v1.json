@@ -1,0 +1,277 @@
+{
+  "schemaVersion": "s1.4x-capability-smoke-plan-v1",
+  "planId": "s1.4x-capability-smoke-20260718",
+  "gate": "Gate2-first-pinned-scaffold",
+  "runBeforeKernelImplementation": true,
+  "languages": {
+    "scala": {
+      "authoritativeToolchain": {
+        "jdk": "Eclipse Temurin 25.0.3+9",
+        "scalaCli": "1.15.0",
+        "scala": "3.8.4",
+        "scalafmt": "3.11.4",
+        "scalafix": "0.14.7",
+        "jmh": "1.37"
+      },
+      "smokes": [
+        {
+          "smokeId": "scala-toolchain-identity",
+          "phase": "toolchain",
+          "required": true,
+          "positiveAssertions": [
+            "Assert exact version, portable path ID, resolved path, executable SHA-256, and merged toolchain lock identity for JDK, Scala CLI, Scala, Scalafmt, and Scalafix."
+          ],
+          "negativeAssertions": [
+            "Any version, path, SHA, vendor, runtime, or lock mismatch exits nonzero before compilation."
+          ],
+          "artifacts": [
+            "typed toolchain identity result",
+            "sanitized command evidence"
+          ],
+          "provenFallback": "No toolchain substitution is allowed; report the exact missing or mismatched prerequisite.",
+          "blocker": "BLOCKED_TOOLCHAIN"
+        },
+        {
+          "smokeId": "scala-stable-compiler-profile",
+          "phase": "compiler",
+          "required": true,
+          "positiveAssertions": [
+            "Compile a clean source independently with every frozen stable compiler flag on Scala 3.8.4 and JDK 25."
+          ],
+          "negativeAssertions": [
+            "Each predeclared warning fixture must fail under -Werror and the intended warning flag."
+          ],
+          "artifacts": [
+            "per-flag command results",
+            "compiler output digests"
+          ],
+          "provenFallback": "Remove no stable hard flag; a frozen-profile incompatibility is BLOCKED_TOOLCHAIN.",
+          "blocker": "BLOCKED_TOOLCHAIN"
+        },
+        {
+          "smokeId": "scala-scalafmt-idempotence",
+          "phase": "format",
+          "required": true,
+          "positiveAssertions": [
+            "Use the exact nested .scalafmt.conf and Scalafmt 3.11.4 for real-source parse, format, second-pass byte idempotence, and non-mutating check."
+          ],
+          "negativeAssertions": [
+            "Misformatted source fails check and any unintended or generated formatter config fails source-input equality."
+          ],
+          "artifacts": [
+            "first and second pass source-tree SHA-256",
+            "format input manifest"
+          ],
+          "provenFallback": "No silent downgrade or formatter replacement is allowed.",
+          "blocker": "BLOCKED_TOOLCHAIN"
+        },
+        {
+          "smokeId": "scala-scalafix-disable-syntax",
+          "phase": "lint",
+          "required": true,
+          "positiveAssertions": [
+            "Standalone Scalafix 0.14.7 DisableSyntax accepts clean production source."
+          ],
+          "negativeAssertions": [
+            "Each forbidden syntax fixture fails, including null, return, casts, type tests, and throw."
+          ],
+          "artifacts": [
+            "Scalafix rule and binary identity",
+            "positive and negative lint results"
+          ],
+          "provenFallback": "No Scala CLI experimental fix integration is substituted for the standalone runner.",
+          "blocker": "BLOCKED_TOOLCHAIN"
+        },
+        {
+          "smokeId": "scala-source-policy",
+          "phase": "sourcePolicy",
+          "required": true,
+          "positiveAssertions": [
+            "Parser and semantic or typed-AST policy gates accept a clean fixture with exact empty mutation, partial, suppression, and JMH override ledgers."
+          ],
+          "negativeAssertions": [
+            "Reject implicit conversions, runtimeChecked, experimental imports, partial APIs, exception APIs, unauthorized mutation, qualified aliases, renamed or wildcard imports, receiver-type evasion, plan-overriding JMH annotations, and stale allowlists."
+          ],
+          "artifacts": [
+            "source-policy typed result",
+            "source-input manifest",
+            "negative fixture matrix"
+          ],
+          "provenFallback": "Use conservative alias-aware typed-tree or AST fallback and fail closed when a symbol cannot be resolved.",
+          "blocker": "BLOCKED_CONTRACT"
+        },
+        {
+          "smokeId": "scala-explicit-result-types",
+          "phase": "semanticRule",
+          "required": true,
+          "positiveAssertions": [
+            "Exact Scala 3.8.4 SemanticDB and classpath run ExplicitResultTypes over public boundaries."
+          ],
+          "negativeAssertions": [
+            "A public boundary lacking an explicit result type is rejected when semantic mode is qualified."
+          ],
+          "artifacts": [
+            "semantic qualification result",
+            "SemanticDB and classpath digests"
+          ],
+          "provenFallback": "Require explicit source annotations plus compiler and public-boundary audit while retaining every syntactic hard gate.",
+          "blocker": "BLOCKED_CONTRACT"
+        },
+        {
+          "smokeId": "scala-jmh-native-json",
+          "phase": "nativeBenchmark",
+          "required": true,
+          "positiveAssertions": [
+            "Compile and list a minimal JMH benchmark, select exactly one case, run it, and validate native JSON mode, unit, value, effective JVM arguments, and case identity."
+          ],
+          "negativeAssertions": [
+            "Unexpected case selection, plan-overriding annotation or CLI JVM argument, missing effective argument evidence, non-finite value, or wrong mode and unit fails."
+          ],
+          "artifacts": [
+            "raw JMH JSON",
+            "effective JVM argument allowlist artifact",
+            "validated minimal block result"
+          ],
+          "provenFallback": "Repair only the pinned Scala CLI JMH harness; an alternate benchmark framework requires a new contract.",
+          "blocker": "BLOCKED_CONTRACT"
+        },
+        {
+          "smokeId": "scala-profile-abc-correctness",
+          "phase": "optimizer",
+          "required": true,
+          "positiveAssertions": [
+            "Profiles A, B, and C each pass the mini fixture full correctness matrix with exact artifact and options hashes."
+          ],
+          "negativeAssertions": [
+            "Any mismatch, optimizer warning, source drift, dependency-wide inline scope, or artifact/options mismatch rejects that optimized profile."
+          ],
+          "artifacts": [
+            "per-profile correctness result",
+            "per-profile artifact and options SHA-256"
+          ],
+          "provenFallback": "Use Profile A when no optimized profile qualifies.",
+          "blocker": "BLOCKED_CONTRACT"
+        }
+      ]
+    },
+    "haskell": {
+      "authoritativeToolchain": {
+        "ghcup": "0.2.6.2",
+        "stack": "3.11.1",
+        "snapshot": "lts-24.50",
+        "ghc": "9.10.3",
+        "hlint": "3.10",
+        "stylishHaskell": "0.15.1.0",
+        "criterion": "1.6.4.0",
+        "compatibilityGhc": "9.14.1"
+      },
+      "smokes": [
+        {
+          "smokeId": "haskell-toolchain-identity",
+          "phase": "toolchain",
+          "required": true,
+          "positiveAssertions": [
+            "Assert exact authoritative GHC, Stack, LTS, HLint, stylish-haskell, GHCup whereis path, installed binary SHA, numeric versions, and structured Stack provenance."
+          ],
+          "negativeAssertions": [
+            "Any path, SHA, version, metadata, archive, installed-binary role, or provenance-lock mismatch exits nonzero."
+          ],
+          "artifacts": [
+            "typed authoritative toolchain result",
+            "structured Stack provenance comparison"
+          ],
+          "provenFallback": "No toolchain substitution or automatic installation is allowed.",
+          "blocker": "BLOCKED_TOOLCHAIN"
+        },
+        {
+          "smokeId": "haskell-language-safety-profile",
+          "phase": "compiler",
+          "required": true,
+          "positiveAssertions": [
+            "Generated Cabal uses GHC2024, hard warnings, mandatory Safe for safe-scalar, NoFFI/NoTH/NoCPP/NoGND/NoDerivingVia/NoDeriveAnyClass for every core, and deriving stock."
+          ],
+          "negativeAssertions": [
+            "Data.Vector.Unboxed under -XSafe is rejected; audited-pure-vector rejects IO, unsafe or foreign direct imports, core-to-shell edges, and candidate Trustworthy or Unsafe declarations."
+          ],
+          "artifacts": [
+            "generated Cabal AST",
+            "positive and negative compiler matrix",
+            "module category manifest"
+          ],
+          "provenFallback": "Keep vector kernels audited-pure-vector and scalar-only trusted modules safe-scalar; never claim a Trustworthy wrapper.",
+          "blocker": "BLOCKED_CONTRACT"
+        },
+        {
+          "smokeId": "haskell-format-and-lint",
+          "phase": "lint",
+          "required": true,
+          "positiveAssertions": [
+            "Exact stylish-haskell performs a non-mutating full-source check and exact HLint accepts clean source."
+          ],
+          "negativeAssertions": [
+            "Misformatting and qualified or aliased partial and unsafe functions fail without source-local ignore or auto-rewrite."
+          ],
+          "artifacts": [
+            "format input and result digests",
+            "HLint positive and negative results"
+          ],
+          "provenFallback": "Only a typed central exception with focused totality test may handle an approved false positive.",
+          "blocker": "BLOCKED_CONTRACT"
+        },
+        {
+          "smokeId": "haskell-native-harnesses",
+          "phase": "nativeBenchmark",
+          "required": true,
+          "positiveAssertions": [
+            "Run a minimal Tasty suite and Criterion build, list, exact-one-case execution, native JSON schema validation, and finite positive timing validation."
+          ],
+          "negativeAssertions": [
+            "Unexpected selection, wrong mode, missing case, invalid unit, lazy unevaluated output, or invalid native JSON fails."
+          ],
+          "artifacts": [
+            "Tasty result",
+            "raw Criterion JSON",
+            "validated minimal block result"
+          ],
+          "provenFallback": "Repair only the pinned Tasty and Criterion harness.",
+          "blocker": "BLOCKED_CONTRACT"
+        },
+        {
+          "smokeId": "haskell-profile-correctness",
+          "phase": "optimizer",
+          "required": true,
+          "positiveAssertions": [
+            "Authoritative baseline -O0 -fasm and optimized -O2 -fasm each pass mini full correctness with exact artifact and options hashes."
+          ],
+          "negativeAssertions": [
+            "Any mismatch, forbidden flag, source drift, or artifact/options mismatch rejects the optimized profile."
+          ],
+          "artifacts": [
+            "baseline and optimized correctness results",
+            "profile artifact and options SHA-256"
+          ],
+          "provenFallback": "Use baseline-o0-fasm when optimized-o2-fasm does not qualify.",
+          "blocker": "BLOCKED_CONTRACT"
+        },
+        {
+          "smokeId": "haskell-ghc-9.14.1-compatibility",
+          "phase": "compatibility",
+          "required": true,
+          "positiveAssertions": [
+            "Attempt the GHC 9.14.1 non-scoring dependency build with identical non-boot sources, versions, and flags; if solve succeeds, run minimal correctness and process replay."
+          ],
+          "negativeAssertions": [
+            "Classify frozen dependency failure separately from candidate source, environment, and unclassified failure with a minimal reproducer and exact downstream closure."
+          ],
+          "artifacts": [
+            "typed GHC 9.14.1 compatibility result",
+            "plan and boot-set equality evidence",
+            "minimal reproducer when required"
+          ],
+          "provenFallback": "A narrowly proven FAIL_FROZEN_DEPENDENCY is non-scoring; every other failure remains a blocker according to the frozen policy.",
+          "blocker": "BLOCKED_CONTRACT"
+        }
+      ]
+    }
+  }
+}

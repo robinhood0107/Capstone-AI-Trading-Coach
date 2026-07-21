@@ -354,7 +354,13 @@ def test_online_client_wires_shared_rest_and_tokenp_quota_scopes(
             return None
 
     class FakeIssuer:
-        def __init__(self, settings: object, *, rate_limiter: object) -> None:
+        def __init__(
+            self,
+            settings: object,
+            *,
+            rate_limiter: object,
+            accounting: object = None,
+        ) -> None:
             self.rate_limiter = rate_limiter
 
         def issue(self) -> dict[str, object]:

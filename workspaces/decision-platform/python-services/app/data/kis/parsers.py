@@ -7,7 +7,11 @@ from typing import Any
 
 
 class KISResponseError(RuntimeError):
-    pass
+    """allowlisted parser code만 노출하고 provider message와 원시 field 값은 버린다."""
+
+    def __init__(self, code: str) -> None:
+        super().__init__(f"KIS response failed: {code}")
+        self.code = code
 
 
 @dataclass(frozen=True)
@@ -47,7 +51,7 @@ def parse_current_price(response: dict[str, Any], symbol: str) -> CurrentPrice:
     _ensure_success(response)
     output = response.get("output")
     if not isinstance(output, dict):
-        raise KISResponseError("KIS current price response missing output")
+        raise KISResponseError("RESPONSE_SHAPE_INVALID")
     # KIS 숫자 필드는 문자열/콤마 문자열로 흔들리므로 여기서 int/Decimal로 고정한다.
     return CurrentPrice(
         symbol=str(output.get("stck_shrn_iscd") or symbol),
@@ -66,22 +70,25 @@ def parse_daily_bars(response: dict[str, Any], symbol: str) -> list[DailyBar]:
     _ensure_success(response)
     rows = response.get("output2") or []
     if not isinstance(rows, list):
-        raise KISResponseError("KIS daily response output2 must be a list")
+        raise KISResponseError("RESPONSE_SHAPE_INVALID")
     # output1의 메타와 output2의 시계열을 분리해, parquet 저장에는 검증된 일봉 row만 흘려보낸다.
-    return [
-        DailyBar(
-            symbol=symbol,
-            date=_to_date(row.get("stck_bsop_date")),
-            open=_to_int(row.get("stck_oprc")),
-            high=_to_int(row.get("stck_hgpr")),
-            low=_to_int(row.get("stck_lwpr")),
-            close=_to_int(row.get("stck_clpr")),
-            volume=_to_int(row.get("acml_vol")),
-            turnover=_to_int(row.get("acml_tr_pbmn")),
+    parsed: list[DailyBar] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            raise KISResponseError("RESPONSE_SHAPE_INVALID")
+        parsed.append(
+            DailyBar(
+                symbol=symbol,
+                date=_to_required_date(row.get("stck_bsop_date")),
+                open=_to_required_int(row.get("stck_oprc")),
+                high=_to_required_int(row.get("stck_hgpr")),
+                low=_to_required_int(row.get("stck_lwpr")),
+                close=_to_required_int(row.get("stck_clpr")),
+                volume=_to_required_int(row.get("acml_vol")),
+                turnover=_to_int(row.get("acml_tr_pbmn")),
+            )
         )
-        for row in rows
-        if isinstance(row, dict)
-    ]
+    return parsed
 
 
 def parse_holidays(response: dict[str, Any]) -> list[HolidayRow]:
@@ -91,7 +98,7 @@ def parse_holidays(response: dict[str, Any]) -> list[HolidayRow]:
     if isinstance(rows, dict):
         rows = [rows]
     if not isinstance(rows, list):
-        raise KISResponseError("KIS holiday response output must be a list")
+        raise KISResponseError("RESPONSE_SHAPE_INVALID")
     parsed: list[HolidayRow] = []
     for row in rows:
         if not isinstance(row, dict):
@@ -99,22 +106,44 @@ def parse_holidays(response: dict[str, Any]) -> list[HolidayRow]:
         day_value = row.get("bass_dt") or row.get("tr_day") or row.get("stck_bsop_date")
         # opnd_yn은 실제 개장 여부에 가까워 결제/대체영업일 플래그보다 먼저 본다.
         trading_flag = row.get("opnd_yn") or row.get("bzdy_yn") or row.get("tr_day_yn")
-        parsed.append(HolidayRow(date=_to_date(day_value), is_trading_day=str(trading_flag).upper() == "Y"))
+        parsed.append(
+            HolidayRow(
+                date=_to_required_date(day_value),
+                is_trading_day=str(trading_flag).upper() == "Y",
+            )
+        )
     return parsed
 
 
 def _ensure_success(response: dict[str, Any]) -> None:
     rt_cd = response.get("rt_cd")
     # 일부 sanitized fixture에는 rt_cd가 없을 수 있어 None은 성공처럼 처리한다.
-    # 실제 KIS 오류 코드는 msg_cd/msg1만 노출하고 token/header 원문은 parser 밖에서도 남기지 않는다.
+    # provider msg_cd/msg1은 외부로 전달하지 않고 낮은 cardinality의 stable code만 남긴다.
     if rt_cd not in (None, "0", 0):
-        raise KISResponseError(f"KIS response failed: {response.get('msg_cd')} {response.get('msg1')}")
+        message_code = response.get("msg_cd")
+        if message_code == "EGW00201":
+            raise KISResponseError("PROVIDER_RATE_LIMIT")
+        if message_code in {"EGW00001", "EGW00002", "EGW00202", "EGW00203", "EGW00300"}:
+            raise KISResponseError("PROVIDER_ROUTING")
+        raise KISResponseError("PROVIDER_ERROR")
 
 
 def _to_int(value: Any) -> int:
     if value in (None, ""):
         return 0
-    return int(str(value).replace(",", "").strip())
+    try:
+        return int(str(value).replace(",", "").strip())
+    except (TypeError, ValueError):
+        raise KISResponseError("OPTIONAL_FIELD_INVALID") from None
+
+
+def _to_required_int(value: Any) -> int:
+    if value in (None, "") or isinstance(value, bool):
+        raise KISResponseError("REQUIRED_FIELD_INVALID")
+    try:
+        return int(str(value).replace(",", "").strip())
+    except (TypeError, ValueError):
+        raise KISResponseError("REQUIRED_FIELD_INVALID") from None
 
 
 def _to_decimal(value: Any) -> Decimal:
@@ -123,6 +152,10 @@ def _to_decimal(value: Any) -> Decimal:
     return Decimal(str(value).replace(",", "").strip())
 
 
-def _to_date(value: Any) -> date:
-    text = str(value)
-    return datetime.strptime(text, "%Y%m%d").date()
+def _to_required_date(value: Any) -> date:
+    if value in (None, "") or isinstance(value, bool):
+        raise KISResponseError("REQUIRED_FIELD_INVALID")
+    try:
+        return datetime.strptime(str(value), "%Y%m%d").date()
+    except (TypeError, ValueError):
+        raise KISResponseError("REQUIRED_FIELD_INVALID") from None

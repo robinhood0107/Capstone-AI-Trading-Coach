@@ -1,15 +1,33 @@
 from __future__ import annotations
 
 import argparse
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
+from uuid import uuid4
 
+from app.data.kis.accounting import (
+    CollectionRunRecorder,
+    CollectionRunStatus,
+    SkipCode,
+)
 from app.data.kis.calendar import previous_xkrx_trading_day
 from app.data.kis.http_client import KISHttpClient
 from app.data.kis.market_client import KISMarketClient
 from app.data.kis.report import SymbolRunResult, write_markdown_report
+from app.data.kis.run_artifacts import (
+    build_dataset_manifest,
+    inventory_daily_dataset,
+    publish_collection_summary,
+    publish_successful_dataset_manifest,
+    reference_input_artifact,
+)
 from app.data.kis.settings import KISSettings
-from app.data.kis.storage import missing_daily_ranges, upsert_daily_bars
+from app.data.kis.storage import (
+    KISConflictingDuplicateError,
+    dataset_lock,
+    missing_daily_ranges,
+    upsert_daily_bars,
+)
 from app.data.kis.universe import (
     DEFAULT_UNIVERSE_SOURCE,
     UniverseManifest,
@@ -22,6 +40,8 @@ from app.data.kis.universe import (
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
     settings = KISSettings(kis_data_dir=Path(args.data_dir)) if args.data_dir else KISSettings()
+    run_id = uuid4()
+    recorder = CollectionRunRecorder(run_id=run_id, started_at=datetime.now(UTC))
     symbol_resolution = _resolve_symbols(args, settings.data_dir)
     symbols = symbol_resolution.symbols
     requested_end = _parse_date(args.to) if args.to else date.today()
@@ -32,6 +52,7 @@ def main(argv: list[str] | None = None) -> int:
     report_path = Path(args.report_path) if args.report_path else settings.data_dir / "reports" / "kis_s1_1_report.md"
     if not settings.offline and requested_end != end:
         # 운영 모드에서는 휴장일에 KIS endpoint를 호출하지 않고 감사 가능한 skipped report만 남긴다.
+        recorder.record_skip(SkipCode.NON_TRADING_DAY)
         write_markdown_report(
             report_path,
             settings=settings,
@@ -46,43 +67,104 @@ def main(argv: list[str] | None = None) -> int:
             requested_end=requested_end,
             previous_trading_day=end,
         )
+        publish_collection_summary(
+            settings.data_dir,
+            recorder.snapshot(
+                completed_at=datetime.now(UTC),
+                status=CollectionRunStatus.SKIPPED,
+            ),
+        )
         print(f"KIS S1.1 report written to {report_path}")
         return 0
-    client = _build_client(settings)
+    client = _build_client(settings, recorder)
+    summary_published = False
     try:
-        results: list[SymbolRunResult] = []
-        for symbol in symbols:
-            # 현재가와 일봉을 같은 리포트에 묶어 사람이 smoke 결과와 parquet 증분을 한 번에 대조하게 한다.
-            # 주문·잔고성 API는 이 경로에 wiring하지 않아 S1.1 read-only 경계를 코드 구조로도 고정한다.
-            current_price = client.current_price(symbol)
-            bars = [
-                bar
-                for range_start, range_end in missing_daily_ranges(settings.data_dir, symbol, start, end)
-                for bar in client.daily_bars(symbol, range_start, range_end)
-            ]
-            upsert = upsert_daily_bars(settings.data_dir, symbol, bars)
-            results.append(
-                SymbolRunResult(
-                    symbol=symbol,
-                    current_price=current_price,
-                    upsert=upsert,
-                    fetched_rows=len(bars),
+        with dataset_lock(settings.data_dir, exclusive=True):
+            results: list[SymbolRunResult] = []
+            for symbol in symbols:
+                # current/daily 수집부터 manifest-last까지 같은 exclusive lock 안에 두어 S1.5 reader가
+                # mutable per-symbol parquet의 mixed snapshot을 관측하지 못하게 한다.
+                current_price = client.current_price(symbol)
+                ranges = missing_daily_ranges(settings.data_dir, symbol, start, end)
+                if not ranges:
+                    recorder.record_skip(SkipCode.DATASET_RANGE_PRESENT)
+                bars = [
+                    bar
+                    for range_start, range_end in ranges
+                    for bar in client.daily_bars(symbol, range_start, range_end)
+                ]
+                try:
+                    upsert = upsert_daily_bars(settings.data_dir, symbol, bars)
+                except KISConflictingDuplicateError as error:
+                    recorder.record_ingest_duplicates(
+                        exact_rows=error.exact_duplicate_rows,
+                        conflicting_groups=error.conflicting_groups,
+                    )
+                    raise
+                recorder.record_ingest_duplicates(
+                    exact_rows=upsert.exact_duplicate_rows,
+                    conflicting_groups=upsert.conflicting_duplicate_groups,
                 )
+                results.append(
+                    SymbolRunResult(
+                        symbol=symbol,
+                        current_price=current_price,
+                        upsert=upsert,
+                        fetched_rows=len(bars),
+                    )
+                )
+            # chk-holiday는 live domain supporting read라서 기본 실행에서 빼고, 명시 옵션일 때만 보수적으로 확인한다.
+            holiday_rows = client.holidays(requested_end) if args.check_holiday else []
+            write_markdown_report(
+                report_path,
+                settings=settings,
+                symbols=symbols,
+                results=results,
+                start=start,
+                end=end,
+                universe_source=symbol_resolution.source,
+                universe_manifest=symbol_resolution.manifest,
+                holiday_rows=holiday_rows,
+                requested_end=requested_end,
             )
-        # chk-holiday는 live domain supporting read라서 기본 실행에서 빼고, 명시 옵션일 때만 보수적으로 확인한다.
-        holiday_rows = client.holidays(requested_end) if args.check_holiday else []
-        write_markdown_report(
-            report_path,
-            settings=settings,
-            symbols=symbols,
-            results=results,
-            start=start,
-            end=end,
-            universe_source=symbol_resolution.source,
-            universe_manifest=symbol_resolution.manifest,
-            holiday_rows=holiday_rows,
-            requested_end=requested_end,
-        )
+            completed_at = datetime.now(UTC)
+            collection = publish_collection_summary(
+                settings.data_dir,
+                recorder.snapshot(
+                    completed_at=completed_at,
+                    status=CollectionRunStatus.SUCCESS,
+                ),
+            )
+            summary_published = True
+            if symbol_resolution.manifest_path is not None:
+                universe_identifier = _relative_input_identifier(
+                    settings.data_dir,
+                    symbol_resolution.manifest_path,
+                )
+                universe_reference = reference_input_artifact(
+                    settings.data_dir,
+                    universe_identifier,
+                )
+                files = inventory_daily_dataset(settings.data_dir, tuple(symbols))
+                dataset_manifest = build_dataset_manifest(
+                    dataset_manifest_id=run_id,
+                    created_at=completed_at,
+                    adjustment_mode="ADJUSTED",
+                    universe_manifest=universe_reference,
+                    collection_run=collection.reference,
+                    files=files,
+                )
+                publish_successful_dataset_manifest(settings.data_dir, dataset_manifest)
+    except Exception:
+        if not summary_published:
+            publish_collection_summary(
+                settings.data_dir,
+                recorder.snapshot(
+                    completed_at=datetime.now(UTC),
+                    status=CollectionRunStatus.FAILED,
+                ),
+            )
+        raise
     finally:
         close = getattr(client, "close", None)
         if callable(close):
@@ -106,10 +188,17 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
 
 
 class _SymbolResolution:
-    def __init__(self, symbols: list[str], source: str, manifest: UniverseManifest | None = None) -> None:
+    def __init__(
+        self,
+        symbols: list[str],
+        source: str,
+        manifest: UniverseManifest | None = None,
+        manifest_path: Path | None = None,
+    ) -> None:
         self.symbols = symbols
         self.source = source
         self.manifest = manifest
+        self.manifest_path = manifest_path
 
 
 def _resolve_symbols(args: argparse.Namespace, data_dir: Path) -> _SymbolResolution:
@@ -122,13 +211,25 @@ def _resolve_symbols(args: argparse.Namespace, data_dir: Path) -> _SymbolResolut
     manifest_path = Path(args.universe_manifest) if args.universe_manifest else data_dir / "universe_manifest.json"
     if manifest_path.exists():
         manifest = load_universe_manifest(manifest_path)
-        return _SymbolResolution(manifest.symbol_codes, manifest.source_label, manifest)
+        return _SymbolResolution(
+            manifest.symbol_codes,
+            manifest.source_label,
+            manifest,
+            manifest_path,
+        )
     return _SymbolResolution(parse_symbols(None), DEFAULT_UNIVERSE_SOURCE)
 
 
-def _build_client(settings: KISSettings) -> KISMarketClient:
+def _build_client(
+    settings: KISSettings,
+    accounting: CollectionRunRecorder | None = None,
+) -> KISMarketClient:
     # online transport/Redis/token limiter wiring은 KISHttpClient private runtime 경계만 소유한다.
-    return KISMarketClient(settings, http_client=KISHttpClient(settings))
+    return KISMarketClient(
+        settings,
+        http_client=KISHttpClient(settings, accounting=accounting),
+        accounting=accounting,
+    )
 
 
 def _parse_date(value: str) -> date:
@@ -141,6 +242,23 @@ def _years_before(end: date, years: int) -> date:
     except ValueError:
         # 2월 29일 기준 backfill도 CLI가 중단되지 않도록 같은 월의 마지막 안전한 날짜로 낮춘다.
         return end.replace(year=end.year - years, day=28)
+
+
+def _relative_input_identifier(data_dir: Path, path: Path) -> str:
+    root = data_dir.expanduser()
+    root = root if root.is_absolute() else Path.cwd() / root
+    candidate = path.expanduser()
+    candidate = candidate if candidate.is_absolute() else Path.cwd() / candidate
+    if ".." in root.parts or ".." in candidate.parts:
+        raise ValueError("KIS manifest path must be inside the data root")
+    try:
+        relative = candidate.relative_to(root)
+    except ValueError:
+        raise ValueError("KIS manifest path must be inside the data root") from None
+    identifier = relative.as_posix()
+    if not identifier or identifier.startswith("/") or ".." in relative.parts:
+        raise ValueError("KIS manifest path must be inside the data root")
+    return identifier
 
 
 if __name__ == "__main__":

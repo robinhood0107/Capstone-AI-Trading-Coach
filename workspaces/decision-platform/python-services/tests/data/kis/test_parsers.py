@@ -94,8 +94,50 @@ def test_parse_holidays_prefers_market_open_flag_over_transfer_day_flag() -> Non
 
 
 def test_parse_current_price_raises_on_kis_error_response() -> None:
-    with pytest.raises(KISResponseError, match="EGW00123"):
+    with pytest.raises(KISResponseError, match="PROVIDER_ERROR") as exc_info:
         parse_current_price(_load("current_price_error.json"), symbol="005930")
+
+    assert "EGW00123" not in str(exc_info.value)
+    assert "msg1" not in str(exc_info.value)
+
+
+@pytest.mark.parametrize("missing_value", [None, "", True])
+def test_daily_required_numeric_missing_or_boolean_is_not_coerced_to_zero(
+    missing_value: object,
+) -> None:
+    response = {
+        "rt_cd": "0",
+        "output2": [
+            {
+                "stck_bsop_date": "20260708",
+                "stck_oprc": "1",
+                "stck_hgpr": "1",
+                "stck_lwpr": "1",
+                "stck_clpr": missing_value,
+                "acml_vol": "1",
+            }
+        ],
+    }
+
+    with pytest.raises(KISResponseError, match="REQUIRED_FIELD_INVALID") as exc_info:
+        parse_daily_bars(response, symbol="005930")
+
+    assert exc_info.value.code == "REQUIRED_FIELD_INVALID"
+
+
+def test_provider_message_is_never_preserved_in_parser_exception() -> None:
+    marker = "provider-secret-canary"
+    response = {
+        "rt_cd": "1",
+        "msg_cd": "UNKNOWN-987",
+        "msg1": marker,
+    }
+
+    with pytest.raises(KISResponseError) as exc_info:
+        parse_daily_bars(response, symbol="005930")
+
+    assert marker not in str(exc_info.value)
+    assert "UNKNOWN-987" not in str(exc_info.value)
 
 
 def test_committed_kis_fixture_count_reaches_s1_1b_target() -> None:

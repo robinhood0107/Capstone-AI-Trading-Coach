@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from threading import Barrier, Lock, Thread
 from uuid import UUID
 
 import pytest
@@ -135,3 +136,49 @@ def test_conflicting_ingest_duplicate_forces_failed_summary() -> None:
     )
     assert summary.ingest_duplicates.exact_rows == 2
     assert summary.ingest_duplicates.conflicting_groups == 1
+
+
+def test_overlapping_logical_operations_do_not_double_count_recovery() -> None:
+    recorder = CollectionRunRecorder(run_id=RUN_ID, started_at=STARTED_AT)
+    started = Barrier(2)
+    finish = Barrier(2)
+    errors: list[BaseException] = []
+    guard = Lock()
+
+    def recovered_operation() -> None:
+        try:
+            token = recorder.start_logical(LogicalOperation.CURRENT_PRICE)
+            started.wait(timeout=2)
+            recorder.record_physical_attempt(PhysicalChannel.MARKET_DATA)
+            recorder.record_physical_failure(
+                PhysicalChannel.MARKET_DATA,
+                FailureCode.HTTP_RETRYABLE,
+            )
+            recorder.record_physical_attempt(PhysicalChannel.MARKET_DATA)
+            recorder.record_physical_success(PhysicalChannel.MARKET_DATA)
+            finish.wait(timeout=2)
+            recorder.succeed_logical(token)
+        except BaseException as error:
+            with guard:
+                errors.append(error)
+
+    def operation_without_attempts() -> None:
+        try:
+            token = recorder.start_logical(LogicalOperation.DAILY_BARS)
+            started.wait(timeout=2)
+            finish.wait(timeout=2)
+            recorder.succeed_logical(token)
+        except BaseException as error:
+            with guard:
+                errors.append(error)
+
+    threads = [Thread(target=recovered_operation), Thread(target=operation_without_attempts)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=3)
+
+    assert not errors
+    summary = recorder.snapshot(completed_at=COMPLETED_AT, status=CollectionRunStatus.SUCCESS)
+    market = _physical(summary, PhysicalChannel.MARKET_DATA)
+    assert (market.failures, market.recovered_failures) == (1, 1)

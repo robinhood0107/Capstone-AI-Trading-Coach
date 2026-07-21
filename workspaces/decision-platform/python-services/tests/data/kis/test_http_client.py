@@ -19,6 +19,7 @@ from app.data.kis._credential_transport import (
     _CredentialSettings,
     _CredentialTransport,
     _Credentials,
+    _TokenIssuer,
 )
 from app.data.kis.http_client import (
     KISHttpClient,
@@ -157,6 +158,44 @@ def test_http_accounting_counts_retry_failure_without_raw_provider_message(
     )
     assert (market.attempts, market.successes, market.failures) == (2, 1, 1)
     assert "provider-secret-canary" not in summary.model_dump_json(by_alias=True)
+
+
+def test_token_issuer_unexpected_transport_failure_closes_physical_attempt(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    marker = "provider-secret-canary"
+    _stub_credentials(monkeypatch, "validation-dummy-key", "validation-dummy-secret")
+    recorder = CollectionRunRecorder(
+        run_id=UUID("123e4567-e89b-42d3-a456-426614174000"),
+        started_at=datetime(2026, 7, 21, 1, 0, tzinfo=UTC),
+    )
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        raise RuntimeError(marker)
+
+    issuer = _TokenIssuer(
+        _settings(tmp_path, offline=False),
+        transport=httpx.MockTransport(handler),
+        rate_limiter=TokenBucket(rate_per_second=1000),
+        accounting=recorder,
+    )
+    try:
+        with pytest.raises(KISCredentialError) as exc_info:
+            issuer.issue()
+    finally:
+        issuer.close()
+
+    assert marker not in str(exc_info.value)
+    summary = recorder.snapshot(
+        completed_at=datetime(2026, 7, 21, 1, 1, tzinfo=UTC),
+        status=CollectionRunStatus.FAILED,
+    )
+    token = next(
+        item for item in summary.physical_attempts if item.channel == PhysicalChannel.TOKEN_P
+    )
+    assert (token.attempts, token.successes, token.failures) == (1, 0, 1)
+    assert marker not in summary.model_dump_json(by_alias=True)
 
 
 def test_get_market_data_retries_timeout_once_then_succeeds(tmp_path: Path) -> None:

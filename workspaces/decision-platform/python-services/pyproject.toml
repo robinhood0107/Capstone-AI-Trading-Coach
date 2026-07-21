@@ -19,6 +19,7 @@ dependencies = [
 
 [project.scripts]
 kis-backfill = "app.data.kis.backfill_cli:main"
+kis-data-quality-report = "app.data.quality.cli:main"
 kis-universe-refresh = "app.data.kis.universe_refresh_cli:main"
 krx-openapi-universe-refresh = "app.data.krx.universe_refresh_cli:main"
 krx-openapi-service-probe = "app.data.krx.service_probe_cli:main"

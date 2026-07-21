@@ -49,7 +49,10 @@ def test_backfill_cli_moves_non_trading_end_date_to_previous_session(tmp_path: P
         def holidays(self, base_date: date) -> list:
             return []
 
-    monkeypatch.setattr("app.data.kis.backfill_cli._build_client", lambda settings: FakeClient())
+    monkeypatch.setattr(
+        "app.data.kis.backfill_cli._build_client",
+        lambda settings, accounting: FakeClient(),
+    )
 
     exit_code = main(
         [
@@ -77,7 +80,7 @@ def test_online_backfill_skips_non_trading_day_before_building_client(tmp_path: 
     report_path = tmp_path / "reports" / "kis_s1_1_report.md"
     build_calls = 0
 
-    def fail_if_called(settings) -> object:
+    def fail_if_called(settings, accounting) -> object:
         nonlocal build_calls
         build_calls += 1
         raise AssertionError("online non-trading day must skip before building KIS client")
@@ -152,12 +155,21 @@ def test_backfill_cli_uses_default_manifest_before_fallback_seed(
         def holidays(self, base_date: date) -> list:
             return []
 
-    monkeypatch.setattr("app.data.kis.backfill_cli._build_client", lambda settings: FakeClient())
+    monkeypatch.setattr(
+        "app.data.kis.backfill_cli._build_client",
+        lambda settings, accounting: FakeClient(),
+    )
 
     exit_code = main(["--from", "2026-07-08", "--to", "2026-07-08", "--data-dir", str(tmp_path)])
 
     assert exit_code == 0
     assert captured == ["000660"]
+    summaries = list(tmp_path.glob("collection-runs/*/*/*/*/summary.json"))
+    assert len(summaries) == 1
+    latest = json.loads(
+        (tmp_path / "datasets" / "latest-success-manifest.json").read_text(encoding="utf-8")
+    )
+    assert latest["datasetManifest"]["identifier"].endswith("/manifest.json")
 
 
 def test_backfill_cli_symbol_sources_override_manifest_in_precedence_order(
@@ -206,7 +218,10 @@ def test_backfill_cli_symbol_sources_override_manifest_in_precedence_order(
         def holidays(self, base_date: date) -> list:
             return []
 
-    monkeypatch.setattr("app.data.kis.backfill_cli._build_client", lambda settings: FakeClient())
+    monkeypatch.setattr(
+        "app.data.kis.backfill_cli._build_client",
+        lambda settings, accounting: FakeClient(),
+    )
 
     assert (
         main(
@@ -284,7 +299,10 @@ def test_backfill_cli_does_not_refetch_daily_range_already_in_parquet(
         def holidays(self, base_date: date) -> list:
             return []
 
-    monkeypatch.setattr("app.data.kis.backfill_cli._build_client", lambda settings: FakeClient())
+    monkeypatch.setattr(
+        "app.data.kis.backfill_cli._build_client",
+        lambda settings, accounting: FakeClient(),
+    )
     args = [
         "--symbols",
         "005930",
@@ -388,7 +406,10 @@ def test_backfill_cli_closes_runtime_client_on_success(tmp_path: Path, monkeypat
         def close(self) -> None:
             closed.append("closed")
 
-    monkeypatch.setattr("app.data.kis.backfill_cli._build_client", lambda settings: FakeClient())
+    monkeypatch.setattr(
+        "app.data.kis.backfill_cli._build_client",
+        lambda settings, accounting: FakeClient(),
+    )
 
     assert (
         main(
@@ -419,7 +440,10 @@ def test_backfill_cli_closes_runtime_client_on_failure(tmp_path: Path, monkeypat
         def close(self) -> None:
             closed.append("closed")
 
-    monkeypatch.setattr("app.data.kis.backfill_cli._build_client", lambda settings: FailingClient())
+    monkeypatch.setattr(
+        "app.data.kis.backfill_cli._build_client",
+        lambda settings, accounting: FailingClient(),
+    )
 
     with pytest.raises(RuntimeError, match="synthetic failure"):
         main(
@@ -436,3 +460,7 @@ def test_backfill_cli_closes_runtime_client_on_failure(tmp_path: Path, monkeypat
         )
 
     assert closed == ["closed"]
+    summaries = list(tmp_path.glob("collection-runs/*/*/*/*/summary.json"))
+    assert len(summaries) == 1
+    assert json.loads(summaries[0].read_text(encoding="utf-8"))["status"] == "FAILED"
+    assert not (tmp_path / "datasets" / "latest-success-manifest.json").exists()

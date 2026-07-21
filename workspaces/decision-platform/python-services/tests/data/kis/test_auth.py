@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 from threading import Lock
 import time
 from typing import Any
+from uuid import UUID
 
 import fakeredis
 import httpx
@@ -13,6 +14,11 @@ import pytest
 from pydantic import SecretStr
 
 from app.data.kis import _credential_transport
+from app.data.kis.accounting import (
+    CollectionRunRecorder,
+    CollectionRunStatus,
+    PhysicalChannel,
+)
 from app.data.kis._credential_transport import (
     KISCredentialError,
     _Credentials,
@@ -71,6 +77,44 @@ def test_token_issuer_injects_credentials_only_inside_private_fixed_origin_trans
     assert events == ["quota", "credentials", "send"]
     assert app_key not in repr(vars(issuer))
     assert app_secret not in repr(vars(issuer))
+
+
+def test_token_issuer_accounting_is_separate_from_market_data(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        _credential_transport,
+        "_read_credentials",
+        lambda _: _Credentials(
+            app_key=SecretStr("validation-dummy-key"),
+            app_secret=SecretStr("validation-dummy-secret"),
+        ),
+    )
+    recorder = CollectionRunRecorder(
+        run_id=UUID("123e4567-e89b-42d3-a456-426614174000"),
+        started_at=datetime(2026, 7, 21, 1, 0, tzinfo=UTC),
+    )
+    issuer = _TokenIssuer(
+        KISSettings(kis_mode="mock", kis_offline=False, _env_file=None),
+        transport=httpx.MockTransport(
+            lambda _: httpx.Response(
+                200,
+                json={"access_token": "validation-dummy-token", "expires_in": 86400},
+            )
+        ),
+        rate_limiter=TokenBucket(rate_per_second=1000),
+        accounting=recorder,
+    )
+
+    issuer.issue()
+    summary = recorder.snapshot(
+        completed_at=datetime(2026, 7, 21, 1, 1, tzinfo=UTC),
+        status=CollectionRunStatus.SUCCESS,
+    )
+    attempts = {item.channel: item for item in summary.physical_attempts}
+    assert attempts[PhysicalChannel.TOKEN_P].attempts == 1
+    assert attempts[PhysicalChannel.TOKEN_P].successes == 1
+    assert attempts[PhysicalChannel.MARKET_DATA].attempts == 0
 
 
 def test_online_token_issuer_rejects_missing_shared_rate_limiter() -> None:

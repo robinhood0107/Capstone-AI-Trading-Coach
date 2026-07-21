@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 import errno
 import hashlib
 from io import BytesIO
@@ -165,8 +165,7 @@ def load_quality_snapshot(
                 if collection_reference != _manifest_reference(dataset_manifest.collection_run):
                     raise KISQualityInputError("input artifact provenance did not match")
                 collection_summary = _parse_collection_summary(collection_bytes)
-                if str(collection_summary.collection_run_id) not in collection_identifier.split("/"):
-                    raise KISQualityInputError("collection run identity did not match")
+                _verify_collection_identifier(collection_identifier, collection_summary)
 
             calendar = completed_xkrx_sessions(
                 window_start=window_start,
@@ -354,6 +353,19 @@ def _verify_dataset_identifier(
         raise KISQualityInputError("dataset manifest identity did not match")
 
 
+def _verify_collection_identifier(
+    identifier: str,
+    summary: CollectionRunSummary,
+) -> None:
+    completed_at = summary.completed_at.astimezone(UTC)
+    expected = (
+        f"collection-runs/{completed_at:%Y/%m/%d}/"
+        f"{summary.collection_run_id}/summary.json"
+    )
+    if identifier != expected:
+        raise KISQualityInputError("collection run identity did not match")
+
+
 def _daily_parquet_names(root: Path) -> set[str]:
     root_fd = _open_absolute_tree(root)
     try:
@@ -433,8 +445,11 @@ def _validated_components(identifier: str) -> tuple[str, ...]:
         or "\\" in identifier
     ):
         raise KISQualityInputError("input artifact identifier was invalid")
+    raw_components = tuple(identifier.split("/"))
+    if any(item in {"", ".", ".."} for item in raw_components):
+        raise KISQualityInputError("input artifact identifier was invalid")
     components = tuple(PurePosixPath(identifier).parts)
-    if not components or any(item in {"", ".", ".."} for item in components):
+    if not components or components != raw_components:
         raise KISQualityInputError("input artifact identifier was invalid")
     return components
 

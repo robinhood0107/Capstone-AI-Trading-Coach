@@ -73,7 +73,7 @@ class ManifestReference(_FrozenModel):
             _RELATIVE_IDENTIFIER.fullmatch(value) is None
             or value.startswith("/")
             or "//" in value
-            or ".." in value.split("/")
+            or any(item in {".", ".."} for item in value.split("/"))
         ):
             raise ValueError("manifest identifier must be a canonical relative path")
         return value

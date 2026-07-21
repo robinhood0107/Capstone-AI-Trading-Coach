@@ -448,4 +448,12 @@ def test_sample_candidates_are_bounded_while_missing_matrix_is_scanned(
     report = analyze_quality(_context(sessions=sessions, symbols=symbols), ())
 
     assert observed_retained
-    assert len(report.bounded_samples) == MAX_SAMPLES_PER_RULE
+    assert sum(
+        sample.rule_code == "CURRENT_UNIVERSE_MISSING"
+        for sample in report.bounded_samples
+    ) == MAX_SAMPLES_PER_RULE
+    assert all(
+        sum(item.rule_code == sample.rule_code for item in report.bounded_samples)
+        <= MAX_SAMPLES_PER_RULE
+        for sample in report.bounded_samples
+    )

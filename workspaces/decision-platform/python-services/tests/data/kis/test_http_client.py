@@ -11,6 +11,7 @@ from app.data.kis import _credential_transport
 from app.data.kis.accounting import (
     CollectionRunRecorder,
     CollectionRunStatus,
+    KISCallBudgetExceeded,
     PhysicalChannel,
 )
 from app.data.kis._credential_transport import (
@@ -50,12 +51,14 @@ def _private_transport_client(
     token_provider: object,
     rate_limiter: object,
     max_json_depth: int = 64,
+    accounting: CollectionRunRecorder | None = None,
 ) -> httpx.Client:
     transport = _CredentialTransport(
         handler,
         settings=_settings(tmp_path, offline=False),
         token_provider=token_provider,  # type: ignore[arg-type]
         rate_limiter=rate_limiter,  # type: ignore[arg-type]
+        accounting=accounting,
         max_json_depth=max_json_depth,
     )
     return httpx.Client(transport=transport, follow_redirects=False, trust_env=False)
@@ -196,6 +199,88 @@ def test_token_issuer_unexpected_transport_failure_closes_physical_attempt(
     )
     assert (token.attempts, token.successes, token.failures) == (1, 0, 1)
     assert marker not in summary.model_dump_json(by_alias=True)
+
+
+def test_market_call_cap_blocks_before_inner_transport_send(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sends = 0
+    _stub_credentials(monkeypatch, "validation-dummy-key", "validation-dummy-secret")
+    recorder = CollectionRunRecorder(
+        run_id=UUID("123e4567-e89b-42d3-a456-426614174000"),
+        started_at=datetime(2026, 7, 21, 1, 0, tzinfo=UTC),
+        physical_caps={PhysicalChannel.MARKET_DATA: 0},
+    )
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal sends
+        sends += 1
+        return httpx.Response(200, json={"rt_cd": "0"})
+
+    client = _private_transport_client(
+        tmp_path,
+        handler=httpx.MockTransport(handler),
+        token_provider=lambda: "validation-dummy-token",
+        rate_limiter=TokenBucket(rate_per_second=1000),
+        accounting=recorder,
+    )
+
+    with pytest.raises(KISCallBudgetExceeded, match="marketData"):
+        _private_transport_get(client)
+
+    assert sends == 0
+    summary = recorder.snapshot(
+        completed_at=datetime(2026, 7, 21, 1, 1, tzinfo=UTC),
+        status=CollectionRunStatus.FAILED,
+    )
+    market = next(
+        item for item in summary.physical_attempts if item.channel == PhysicalChannel.MARKET_DATA
+    )
+    assert market.attempts == 0
+
+
+def test_token_call_cap_blocks_before_inner_transport_send(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sends = 0
+    _stub_credentials(monkeypatch, "validation-dummy-key", "validation-dummy-secret")
+    recorder = CollectionRunRecorder(
+        run_id=UUID("123e4567-e89b-42d3-a456-426614174000"),
+        started_at=datetime(2026, 7, 21, 1, 0, tzinfo=UTC),
+        physical_caps={PhysicalChannel.TOKEN_P: 0},
+    )
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal sends
+        sends += 1
+        return httpx.Response(
+            200,
+            json={"access_token": "validation-dummy-token", "expires_in": 86400},
+        )
+
+    issuer = _TokenIssuer(
+        _settings(tmp_path, offline=False),
+        transport=httpx.MockTransport(handler),
+        rate_limiter=TokenBucket(rate_per_second=1000),
+        accounting=recorder,
+    )
+    try:
+        with pytest.raises(KISCallBudgetExceeded, match="tokenP"):
+            issuer.issue()
+    finally:
+        issuer.close()
+
+    assert sends == 0
+    summary = recorder.snapshot(
+        completed_at=datetime(2026, 7, 21, 1, 1, tzinfo=UTC),
+        status=CollectionRunStatus.FAILED,
+    )
+    token = next(
+        item for item in summary.physical_attempts if item.channel == PhysicalChannel.TOKEN_P
+    )
+    assert token.attempts == 0
 
 
 def test_get_market_data_retries_timeout_once_then_succeeds(tmp_path: Path) -> None:

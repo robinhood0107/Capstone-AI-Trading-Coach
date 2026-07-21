@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "metricPolicyVersion": "s1-5-quality-report-v1",
+  "reportId": "123e4567-e89b-52d3-a456-426614174000",
+  "analysisFingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "evaluatedAt": "2026-07-21T14:30:00Z",
+  "softwareRevision": "7131f695293472ea16ee05322ed9b05f7b69d129",
+  "calendar": {
+    "name": "XKRX",
+    "timezone": "Asia/Seoul",
+    "windowStart": "2026-07-21",
+    "windowEnd": "2026-07-21",
+    "expectedLastCompletedXkrxSession": "2026-07-21"
+  },
+  "inputProvenance": {
+    "universeManifest": {
+      "identifier": "universe/universe_manifest.json",
+      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    "datasetManifest": {
+      "identifier": "datasets/2026/07/21/123e4567-e89b-42d3-a456-426614174001/manifest.json",
+      "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    },
+    "collectionRun": null
+  },
+  "counts": {
+    "symbols": 0,
+    "sessions": 0,
+    "files": 0,
+    "rows": 0,
+    "samples": 0
+  },
+  "status": {
+    "executionStatus": "SUCCESS",
+    "evidenceCompleteness": "PARTIAL",
+    "qualityStatus": "NOT_EVALUATED"
+  },
+  "metrics": [
+    {
+      "metricId": "requiredSchemaIntegrity",
+      "status": "PASS",
+      "numerator": 0,
+      "denominator": 0,
+      "ratePpm": 0,
+      "sampleCount": 0
+    }
+  ],
+  "boundedSamples": [],
+  "dataClassification": {
+    "classification": "INTERNAL_SANITIZED_AGGREGATE",
+    "rawOhlcvIncluded": false,
+    "providerPayloadIncluded": false,
+    "sensitiveDataIncluded": false
+  },
+  "retention": {
+    "owner": "decision-platform:python-data-quality",
+    "policyId": "s1-5-quality-report-v1",
+    "ordinaryRetentionDaysAfterEvaluationEvent": 28,
+    "pinned": false,
+    "holdReason": "HOLD_UNTIL_EVENT_DATE_CONFIGURED"
+  }
+}

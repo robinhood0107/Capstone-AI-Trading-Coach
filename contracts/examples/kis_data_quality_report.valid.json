@@ -1,0 +1,178 @@
+{
+  "schemaVersion": 1,
+  "metricPolicyVersion": "s1-5-quality-report-v1",
+  "reportId": "123e4567-e89b-52d3-a456-426614174000",
+  "analysisFingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "evaluatedAt": "2026-07-21T14:30:00Z",
+  "softwareRevision": "7131f695293472ea16ee05322ed9b05f7b69d129",
+  "calendar": {
+    "name": "XKRX",
+    "timezone": "Asia/Seoul",
+    "windowStart": "2026-06-10",
+    "windowEnd": "2026-07-21",
+    "expectedLastCompletedXkrxSession": "2026-07-21"
+  },
+  "inputProvenance": {
+    "universeManifest": {
+      "identifier": "universe/universe_manifest.json",
+      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    "datasetManifest": {
+      "identifier": "datasets/2026/07/21/123e4567-e89b-42d3-a456-426614174001/manifest.json",
+      "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    },
+    "collectionRun": {
+      "identifier": "collection-runs/2026/07/21/123e4567-e89b-42d3-a456-426614174002/summary.json",
+      "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    }
+  },
+  "counts": {
+    "symbols": 5,
+    "sessions": 30,
+    "files": 5,
+    "rows": 150,
+    "samples": 3
+  },
+  "status": {
+    "executionStatus": "SUCCESS",
+    "evidenceCompleteness": "COMPLETE",
+    "qualityStatus": "WARN"
+  },
+  "metrics": [
+    {
+      "metricId": "requiredSchemaIntegrity",
+      "status": "PASS",
+      "numerator": 0,
+      "denominator": 150,
+      "ratePpm": 0,
+      "sampleCount": 0
+    },
+    {
+      "metricId": "canonicalDuplicate",
+      "status": "PASS",
+      "numerator": 0,
+      "denominator": 150,
+      "ratePpm": 0,
+      "sampleCount": 0
+    },
+    {
+      "metricId": "ingestDuplicate",
+      "status": "WARN",
+      "numerator": 1,
+      "denominator": 151,
+      "ratePpm": 6623,
+      "sampleCount": 1
+    },
+    {
+      "metricId": "currentUniverseHistoricalCoverage",
+      "status": "WARN",
+      "numerator": 2,
+      "denominator": 150,
+      "ratePpm": 13333,
+      "sampleCount": 1
+    },
+    {
+      "metricId": "listingAdjustedCompleteness",
+      "status": "NOT_AVAILABLE",
+      "numerator": null,
+      "denominator": null,
+      "ratePpm": null,
+      "sampleCount": 0
+    },
+    {
+      "metricId": "datasetFreshness",
+      "status": "PASS",
+      "numerator": 0,
+      "denominator": 1,
+      "ratePpm": 0,
+      "sampleCount": 0
+    },
+    {
+      "metricId": "perSymbolStale",
+      "status": "WARN",
+      "numerator": 1,
+      "denominator": 5,
+      "ratePpm": 200000,
+      "sampleCount": 1
+    },
+    {
+      "metricId": "returnOutlier",
+      "status": "WARN",
+      "numerator": 1,
+      "denominator": 100,
+      "ratePpm": 10000,
+      "sampleCount": 0
+    },
+    {
+      "metricId": "abruptPrice",
+      "status": "PASS",
+      "numerator": 0,
+      "denominator": 100,
+      "ratePpm": 0,
+      "sampleCount": 0
+    },
+    {
+      "metricId": "shareVolumeSpike",
+      "status": "PASS",
+      "numerator": 0,
+      "denominator": 100,
+      "ratePpm": 0,
+      "sampleCount": 0
+    },
+    {
+      "metricId": "logicalApiFailure",
+      "status": "PASS",
+      "numerator": 0,
+      "denominator": 6,
+      "ratePpm": 0,
+      "sampleCount": 0
+    },
+    {
+      "metricId": "physicalAttemptFailure",
+      "status": "WARN",
+      "numerator": 1,
+      "denominator": 7,
+      "ratePpm": 142857,
+      "sampleCount": 0
+    }
+  ],
+  "boundedSamples": [
+    {
+      "ruleCode": "INGEST_EXACT_DUPLICATE",
+      "symbol": "005930",
+      "sessionDate": "2026-07-01",
+      "derived": {
+        "occurrenceCount": 2
+      }
+    },
+    {
+      "ruleCode": "CURRENT_UNIVERSE_MISSING",
+      "symbol": "000660",
+      "sessionDate": "2026-06-10",
+      "derived": {
+        "lagSessions": 1
+      }
+    },
+    {
+      "ruleCode": "PER_SYMBOL_STALE",
+      "symbol": "035420",
+      "sessionDate": "2026-07-18",
+      "derived": {
+        "lagSessions": 1
+      }
+    }
+  ],
+  "dataClassification": {
+    "classification": "INTERNAL_SANITIZED_AGGREGATE",
+    "rawOhlcvIncluded": false,
+    "providerPayloadIncluded": false,
+    "sensitiveDataIncluded": false
+  },
+  "retention": {
+    "owner": "decision-platform:python-data-quality",
+    "policyId": "s1-5-quality-report-v1",
+    "ordinaryRetentionDaysAfterEvaluationEvent": 28,
+    "pinned": false,
+    "holdReason": "HOLD_UNTIL_EVENT_DATE_CONFIGURED"
+  }
+}

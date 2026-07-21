@@ -8,6 +8,8 @@ from uuid import uuid4
 from app.data.kis.accounting import (
     CollectionRunRecorder,
     CollectionRunStatus,
+    LogicalOperation,
+    PhysicalChannel,
     SkipCode,
 )
 from app.data.kis.calendar import previous_xkrx_trading_day
@@ -41,7 +43,13 @@ def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
     settings = KISSettings(kis_data_dir=Path(args.data_dir)) if args.data_dir else KISSettings()
     run_id = uuid4()
-    recorder = CollectionRunRecorder(run_id=run_id, started_at=datetime.now(UTC))
+    logical_caps, physical_caps = _call_caps(args)
+    recorder = CollectionRunRecorder(
+        run_id=run_id,
+        started_at=datetime.now(UTC),
+        logical_caps=logical_caps,
+        physical_caps=physical_caps,
+    )
     symbol_resolution = _resolve_symbols(args, settings.data_dir)
     symbols = symbol_resolution.symbols
     requested_end = _parse_date(args.to) if args.to else date.today()
@@ -76,6 +84,9 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(f"KIS S1.1 report written to {report_path}")
         return 0
+    if not settings.offline and (logical_caps is None or physical_caps is None):
+        # provider 호출이 가능한 실행은 승인 packet의 다섯 cap을 전부 명시해야 한다.
+        raise ValueError("online KIS backfill requires explicit logical and physical call caps")
     client = _build_client(settings, recorder)
     summary_published = False
     try:
@@ -184,7 +195,59 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--data-dir")
     parser.add_argument("--report-path")
     parser.add_argument("--check-holiday", action="store_true")
+    parser.add_argument("--current-price-logical-cap", type=_non_negative_int)
+    parser.add_argument("--daily-bars-logical-cap", type=_non_negative_int)
+    parser.add_argument("--holiday-logical-cap", type=_non_negative_int)
+    parser.add_argument("--market-data-physical-cap", type=_non_negative_int)
+    parser.add_argument("--token-p-physical-cap", type=_non_negative_int)
     return parser.parse_args(argv)
+
+
+def _call_caps(
+    args: argparse.Namespace,
+) -> tuple[
+    dict[LogicalOperation, int] | None,
+    dict[PhysicalChannel, int] | None,
+]:
+    """승인 packet의 다섯 cap을 all-or-none으로 고정해 부분 보호 실행을 거부한다."""
+    values = (
+        args.current_price_logical_cap,
+        args.daily_bars_logical_cap,
+        args.holiday_logical_cap,
+        args.market_data_physical_cap,
+        args.token_p_physical_cap,
+    )
+    if all(value is None for value in values):
+        return None, None
+    if any(value is None for value in values):
+        raise ValueError("all KIS call caps must be provided together")
+    current_price, daily_bars, holiday, market_data, token_p = values
+    assert current_price is not None
+    assert daily_bars is not None
+    assert holiday is not None
+    assert market_data is not None
+    assert token_p is not None
+    return (
+        {
+            LogicalOperation.CURRENT_PRICE: current_price,
+            LogicalOperation.DAILY_BARS: daily_bars,
+            LogicalOperation.HOLIDAY: holiday,
+        },
+        {
+            PhysicalChannel.MARKET_DATA: market_data,
+            PhysicalChannel.TOKEN_P: token_p,
+        },
+    )
+
+
+def _non_negative_int(value: str) -> int:
+    try:
+        parsed = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError("call cap must be a non-negative integer") from None
+    if parsed < 0:
+        raise argparse.ArgumentTypeError("call cap must be a non-negative integer")
+    return parsed
 
 
 class _SymbolResolution:

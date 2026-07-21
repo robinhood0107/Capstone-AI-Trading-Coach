@@ -1,0 +1,137 @@
+from datetime import UTC, datetime
+from uuid import UUID
+
+import pytest
+from pydantic import ValidationError
+
+from app.data.kis.accounting import (
+    CollectionRunRecorder,
+    CollectionRunStatus,
+    FailureCode,
+    LogicalOperation,
+    PhysicalChannel,
+    SkipCode,
+)
+
+
+RUN_ID = UUID("123e4567-e89b-42d3-a456-426614174000")
+STARTED_AT = datetime(2026, 7, 21, 1, 0, tzinfo=UTC)
+COMPLETED_AT = datetime(2026, 7, 21, 1, 1, tzinfo=UTC)
+
+
+def _logical(summary, operation: LogicalOperation):
+    return next(item for item in summary.logical_operations if item.operation == operation)
+
+
+def _physical(summary, channel: PhysicalChannel):
+    return next(item for item in summary.physical_attempts if item.channel == channel)
+
+
+def test_recorder_separates_logical_market_and_token_attempts_with_retry_recovery() -> None:
+    recorder = CollectionRunRecorder(run_id=RUN_ID, started_at=STARTED_AT)
+    operation = recorder.start_logical(LogicalOperation.DAILY_BARS)
+    recorder.record_physical_attempt(PhysicalChannel.TOKEN_P)
+    recorder.record_physical_success(PhysicalChannel.TOKEN_P)
+    recorder.record_physical_attempt(PhysicalChannel.MARKET_DATA)
+    recorder.record_physical_failure(
+        PhysicalChannel.MARKET_DATA,
+        FailureCode.HTTP_RETRYABLE,
+    )
+    recorder.record_physical_attempt(PhysicalChannel.MARKET_DATA)
+    recorder.record_physical_success(PhysicalChannel.MARKET_DATA)
+    recorder.succeed_logical(operation)
+
+    summary = recorder.snapshot(
+        completed_at=COMPLETED_AT,
+        status=CollectionRunStatus.SUCCESS,
+    )
+
+    logical = _logical(summary, LogicalOperation.DAILY_BARS)
+    market = _physical(summary, PhysicalChannel.MARKET_DATA)
+    token = _physical(summary, PhysicalChannel.TOKEN_P)
+    assert (logical.started, logical.succeeded, logical.terminal_failures) == (1, 1, 0)
+    assert (market.attempts, market.successes, market.failures, market.recovered_failures) == (
+        2,
+        1,
+        1,
+        1,
+    )
+    assert (token.attempts, token.successes, token.failures) == (1, 1, 0)
+
+
+def test_parser_failure_is_logical_terminal_failure_after_physical_success() -> None:
+    recorder = CollectionRunRecorder(run_id=RUN_ID, started_at=STARTED_AT)
+    operation = recorder.start_logical(LogicalOperation.CURRENT_PRICE)
+    recorder.record_physical_attempt(PhysicalChannel.MARKET_DATA)
+    recorder.record_physical_success(PhysicalChannel.MARKET_DATA)
+    recorder.fail_logical(operation, FailureCode.PARSER_CONTRACT)
+
+    summary = recorder.snapshot(
+        completed_at=COMPLETED_AT,
+        status=CollectionRunStatus.FAILED,
+    )
+
+    logical = _logical(summary, LogicalOperation.CURRENT_PRICE)
+    market = _physical(summary, PhysicalChannel.MARKET_DATA)
+    assert logical.terminal_failures == 1
+    assert logical.failure_codes[0].code == FailureCode.PARSER_CONTRACT
+    assert market.attempts == 1
+    assert market.failures == 0
+
+
+def test_presend_block_and_skip_leave_physical_denominator_zero() -> None:
+    recorder = CollectionRunRecorder(run_id=RUN_ID, started_at=STARTED_AT)
+    operation = recorder.start_logical(LogicalOperation.CURRENT_PRICE)
+    recorder.fail_logical(operation, FailureCode.CREDENTIAL_BLOCKED)
+    recorder.record_skip(SkipCode.OFFLINE_FIXTURE)
+    recorder.record_skip(SkipCode.DATASET_RANGE_PRESENT)
+
+    summary = recorder.snapshot(
+        completed_at=COMPLETED_AT,
+        status=CollectionRunStatus.FAILED,
+    )
+
+    market = _physical(summary, PhysicalChannel.MARKET_DATA)
+    token = _physical(summary, PhysicalChannel.TOKEN_P)
+    assert market.attempts == market.successes == market.failures == 0
+    assert token.attempts == token.successes == token.failures == 0
+    assert [(item.code, item.count) for item in summary.skips] == [
+        (SkipCode.OFFLINE_FIXTURE, 1),
+        (SkipCode.DATASET_RANGE_PRESENT, 1),
+    ]
+
+
+def test_summary_is_frozen_and_rejects_arbitrary_failure_messages() -> None:
+    recorder = CollectionRunRecorder(run_id=RUN_ID, started_at=STARTED_AT)
+    operation = recorder.start_logical(LogicalOperation.HOLIDAY)
+    with pytest.raises(ValueError, match="allowlisted"):
+        recorder.fail_logical(operation, "provider says secret-canary")  # type: ignore[arg-type]
+    recorder.fail_logical(operation, FailureCode.PROVIDER_ERROR)
+    summary = recorder.snapshot(
+        completed_at=COMPLETED_AT,
+        status=CollectionRunStatus.FAILED,
+    )
+
+    with pytest.raises(ValidationError):
+        summary.status = CollectionRunStatus.SUCCESS  # type: ignore[misc]
+    serialized = summary.model_dump_json(by_alias=True)
+    assert "secret-canary" not in serialized
+    assert "msg1" not in serialized
+
+
+def test_conflicting_ingest_duplicate_forces_failed_summary() -> None:
+    recorder = CollectionRunRecorder(run_id=RUN_ID, started_at=STARTED_AT)
+    recorder.record_ingest_duplicates(exact_rows=2, conflicting_groups=1)
+
+    with pytest.raises(ValueError, match="conflicting"):
+        recorder.snapshot(
+            completed_at=COMPLETED_AT,
+            status=CollectionRunStatus.SUCCESS,
+        )
+
+    summary = recorder.snapshot(
+        completed_at=COMPLETED_AT,
+        status=CollectionRunStatus.FAILED,
+    )
+    assert summary.ingest_duplicates.exact_rows == 2
+    assert summary.ingest_duplicates.conflicting_groups == 1

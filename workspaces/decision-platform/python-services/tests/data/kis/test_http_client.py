@@ -1,11 +1,18 @@
+from datetime import UTC, datetime
 import logging
 from pathlib import Path
+from uuid import UUID
 
 import httpx
 import pytest
 from pydantic import SecretStr
 
 from app.data.kis import _credential_transport
+from app.data.kis.accounting import (
+    CollectionRunRecorder,
+    CollectionRunStatus,
+    PhysicalChannel,
+)
 from app.data.kis._credential_transport import (
     KISCredentialError,
     KISResponseTooLargeError,
@@ -109,6 +116,47 @@ def test_get_market_data_retries_retryable_status(tmp_path: Path) -> None:
     assert client.request("GET", CURRENT_PRICE_PATH, tr_id="FHKST01010100", params={})["output"] == {"ok": "yes"}
     assert attempts == 2
     assert quota_reservations == 2
+
+
+def test_http_accounting_counts_retry_failure_without_raw_provider_message(
+    tmp_path: Path,
+) -> None:
+    attempts = 0
+    recorder = CollectionRunRecorder(
+        run_id=UUID("123e4567-e89b-42d3-a456-426614174000"),
+        started_at=datetime(2026, 7, 21, 1, 0, tzinfo=UTC),
+    )
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            return httpx.Response(500, text="provider-secret-canary")
+        return httpx.Response(200, json={"rt_cd": "0", "output": {"ok": "yes"}})
+
+    client = KISHttpClient(
+        _settings(tmp_path),
+        transport=httpx.MockTransport(handler),
+        rate_limiter=TokenBucket(rate_per_second=1000),
+        retry_delay=lambda _: 0.0,
+        accounting=recorder,
+    )
+
+    assert client.request(
+        "GET",
+        CURRENT_PRICE_PATH,
+        tr_id="FHKST01010100",
+        params={},
+    )["output"] == {"ok": "yes"}
+    summary = recorder.snapshot(
+        completed_at=datetime(2026, 7, 21, 1, 1, tzinfo=UTC),
+        status=CollectionRunStatus.SUCCESS,
+    )
+    market = next(
+        item for item in summary.physical_attempts if item.channel == PhysicalChannel.MARKET_DATA
+    )
+    assert (market.attempts, market.successes, market.failures) == (2, 1, 1)
+    assert "provider-secret-canary" not in summary.model_dump_json(by_alias=True)
 
 
 def test_get_market_data_retries_timeout_once_then_succeeds(tmp_path: Path) -> None:

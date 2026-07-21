@@ -1,0 +1,607 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "contracts/schemas/kis_data_quality_report.schema.json",
+  "title": "KIS Data Quality Report",
+  "description": "Sanitized aggregate S1.5 report for a manifest-pinned canonical KIS daily dataset.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "metricPolicyVersion",
+    "reportId",
+    "analysisFingerprint",
+    "evaluatedAt",
+    "softwareRevision",
+    "calendar",
+    "inputProvenance",
+    "counts",
+    "status",
+    "metrics",
+    "boundedSamples",
+    "dataClassification",
+    "retention"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "metricPolicyVersion": {
+      "type": "string",
+      "const": "s1-5-quality-report-v1"
+    },
+    "reportId": {
+      "$ref": "#/$defs/uuidV5"
+    },
+    "analysisFingerprint": {
+      "$ref": "#/$defs/sha256"
+    },
+    "evaluatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "softwareRevision": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{7,64}$"
+    },
+    "calendar": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "timezone",
+        "windowStart",
+        "windowEnd",
+        "expectedLastCompletedXkrxSession"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "const": "XKRX"
+        },
+        "timezone": {
+          "type": "string",
+          "const": "Asia/Seoul"
+        },
+        "windowStart": {
+          "type": "string",
+          "format": "date"
+        },
+        "windowEnd": {
+          "type": "string",
+          "format": "date"
+        },
+        "expectedLastCompletedXkrxSession": {
+          "type": "string",
+          "format": "date"
+        }
+      }
+    },
+    "inputProvenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["universeManifest", "datasetManifest", "collectionRun"],
+      "properties": {
+        "universeManifest": {
+          "$ref": "#/$defs/manifestReference"
+        },
+        "datasetManifest": {
+          "$ref": "#/$defs/manifestReference"
+        },
+        "collectionRun": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/manifestReference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["symbols", "sessions", "files", "rows", "samples"],
+      "properties": {
+        "symbols": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 500
+        },
+        "sessions": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3000
+        },
+        "files": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 500
+        },
+        "rows": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2000000
+        },
+        "samples": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        }
+      }
+    },
+    "status": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["executionStatus", "evidenceCompleteness", "qualityStatus"],
+      "properties": {
+        "executionStatus": {
+          "type": "string",
+          "const": "SUCCESS"
+        },
+        "evidenceCompleteness": {
+          "type": "string",
+          "enum": ["COMPLETE", "PARTIAL", "NOT_AVAILABLE"]
+        },
+        "qualityStatus": {
+          "type": "string",
+          "enum": ["PASS", "WARN", "FAIL", "NOT_EVALUATED"]
+        }
+      }
+    },
+    "metrics": {
+      "type": "array",
+      "minItems": 12,
+      "maxItems": 12,
+      "prefixItems": [
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/rateMetric"
+            },
+            {
+              "properties": {
+                "metricId": {
+                  "const": "requiredSchemaIntegrity"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/rateMetric"
+            },
+            {
+              "properties": {
+                "metricId": {
+                  "const": "canonicalDuplicate"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/rateMetric"
+            },
+            {
+              "properties": {
+                "metricId": {
+                  "const": "ingestDuplicate"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/rateMetric"
+            },
+            {
+              "properties": {
+                "metricId": {
+                  "const": "currentUniverseHistoricalCoverage"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/rateMetric"
+            },
+            {
+              "properties": {
+                "metricId": {
+                  "const": "listingAdjustedCompleteness"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/rateMetric"
+            },
+            {
+              "properties": {
+                "metricId": {
+                  "const": "datasetFreshness"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/rateMetric"
+            },
+            {
+              "properties": {
+                "metricId": {
+                  "const": "perSymbolStale"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/rateMetric"
+            },
+            {
+              "properties": {
+                "metricId": {
+                  "const": "returnOutlier"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/rateMetric"
+            },
+            {
+              "properties": {
+                "metricId": {
+                  "const": "abruptPrice"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/rateMetric"
+            },
+            {
+              "properties": {
+                "metricId": {
+                  "const": "shareVolumeSpike"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/rateMetric"
+            },
+            {
+              "properties": {
+                "metricId": {
+                  "const": "logicalApiFailure"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/rateMetric"
+            },
+            {
+              "properties": {
+                "metricId": {
+                  "const": "physicalAttemptFailure"
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "items": false
+    },
+    "boundedSamples": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "$ref": "#/$defs/sample"
+      }
+    },
+    "dataClassification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "classification",
+        "rawOhlcvIncluded",
+        "providerPayloadIncluded",
+        "sensitiveDataIncluded"
+      ],
+      "properties": {
+        "classification": {
+          "type": "string",
+          "const": "INTERNAL_SANITIZED_AGGREGATE"
+        },
+        "rawOhlcvIncluded": {
+          "type": "boolean",
+          "const": false
+        },
+        "providerPayloadIncluded": {
+          "type": "boolean",
+          "const": false
+        },
+        "sensitiveDataIncluded": {
+          "type": "boolean",
+          "const": false
+        }
+      }
+    },
+    "retention": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "owner",
+        "policyId",
+        "ordinaryRetentionDaysAfterEvaluationEvent",
+        "pinned",
+        "holdReason"
+      ],
+      "properties": {
+        "owner": {
+          "type": "string",
+          "const": "decision-platform:python-data-quality"
+        },
+        "policyId": {
+          "type": "string",
+          "const": "s1-5-quality-report-v1"
+        },
+        "ordinaryRetentionDaysAfterEvaluationEvent": {
+          "type": "integer",
+          "const": 28
+        },
+        "pinned": {
+          "type": "boolean"
+        },
+        "holdReason": {
+          "type": ["string", "null"],
+          "enum": [
+            "HOLD_UNTIL_EVENT_DATE_CONFIGURED",
+            "PINNED_UNTIL_FINAL_SUBMISSION_COMPLETE",
+            null
+          ]
+        }
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "uuidV5": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "relativeIdentifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 240,
+      "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9._/-]{0,238}[A-Za-z0-9])?$",
+      "allOf": [
+        {
+          "not": {
+            "pattern": "(^|/)\\.\\.($|/)"
+          }
+        },
+        {
+          "not": {
+            "pattern": "//"
+          }
+        }
+      ]
+    },
+    "manifestReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["identifier", "sha256"],
+      "properties": {
+        "identifier": {
+          "$ref": "#/$defs/relativeIdentifier"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "rateMetric": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "metricId",
+        "status",
+        "numerator",
+        "denominator",
+        "ratePpm",
+        "sampleCount"
+      ],
+      "properties": {
+        "metricId": {
+          "type": "string",
+          "enum": [
+            "requiredSchemaIntegrity",
+            "canonicalDuplicate",
+            "ingestDuplicate",
+            "currentUniverseHistoricalCoverage",
+            "listingAdjustedCompleteness",
+            "datasetFreshness",
+            "perSymbolStale",
+            "returnOutlier",
+            "abruptPrice",
+            "shareVolumeSpike",
+            "logicalApiFailure",
+            "physicalAttemptFailure"
+          ]
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "PASS",
+            "WARN",
+            "FAIL",
+            "NOT_EVALUATED",
+            "NOT_AVAILABLE",
+            "NOT_APPLICABLE"
+          ]
+        },
+        "numerator": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "maximum": 2000000
+        },
+        "denominator": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "maximum": 2000000
+        },
+        "ratePpm": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "sampleCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 20
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "status": {
+              "enum": ["NOT_AVAILABLE", "NOT_APPLICABLE"]
+            },
+            "numerator": {
+              "type": "null"
+            },
+            "denominator": {
+              "type": "null"
+            },
+            "ratePpm": {
+              "type": "null"
+            }
+          }
+        },
+        {
+          "properties": {
+            "status": {
+              "const": "NOT_EVALUATED"
+            },
+            "numerator": {
+              "type": "integer",
+              "const": 0
+            },
+            "denominator": {
+              "type": "integer",
+              "const": 0
+            },
+            "ratePpm": {
+              "type": "null"
+            }
+          }
+        },
+        {
+          "properties": {
+            "status": {
+              "enum": ["PASS", "WARN", "FAIL"]
+            },
+            "numerator": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "denominator": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "ratePpm": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000
+            }
+          }
+        }
+      ]
+    },
+    "sample": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ruleCode", "symbol", "sessionDate", "derived"],
+      "properties": {
+        "ruleCode": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]{2,63}$"
+        },
+        "symbol": {
+          "type": "string",
+          "pattern": "^[0-9]{6}$"
+        },
+        "sessionDate": {
+          "type": "string",
+          "format": "date"
+        },
+        "derived": {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "properties": {
+            "lagSessions": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 3000
+            },
+            "modifiedZMilli": {
+              "type": "integer",
+              "minimum": -1000000,
+              "maximum": 1000000
+            },
+            "returnPpm": {
+              "type": "integer",
+              "minimum": -1000000,
+              "maximum": 1000000
+            },
+            "occurrenceCount": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2000000
+            }
+          }
+        }
+      }
+    }
+  }
+}

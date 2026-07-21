@@ -1,10 +1,13 @@
 from datetime import UTC, date, datetime
+import hashlib
+import json
 import os
 from pathlib import Path
 from threading import Event, Thread
 
 import pytest
 
+from app.data._shared.canonical_json import canonical_json_bytes
 from app.data.kis.parsers import DailyBar
 from app.data.kis.storage import dataset_lock, upsert_daily_bars
 from app.data.quality.kis_daily import (
@@ -167,3 +170,36 @@ def test_reader_holds_shared_lock_until_snapshot_bytes_are_consumed(
     writer_thread.join(timeout=2)
     assert completed.is_set() and writer_acquired.is_set()
 
+
+def test_reader_rejects_collection_summary_outside_canonical_run_path(
+    posix_tmp_path: Path,
+) -> None:
+    identifiers = prepare_snapshot(posix_tmp_path)
+    collection_bytes = (posix_tmp_path / identifiers.collection).read_bytes()
+    run_id = identifiers.collection.split("/")[-2]
+    alias_identifier = f"collection-alias/{run_id}/summary.json"
+    alias_path = posix_tmp_path / alias_identifier
+    alias_path.parent.mkdir(parents=True)
+    alias_path.write_bytes(collection_bytes)
+    os.chmod(alias_path, 0o600)
+
+    dataset_path = posix_tmp_path / identifiers.dataset
+    dataset_payload = json.loads(dataset_path.read_bytes())
+    dataset_payload["collectionRun"] = {
+        "identifier": alias_identifier,
+        "sha256": hashlib.sha256(collection_bytes).hexdigest(),
+    }
+    dataset_path.write_bytes(canonical_json_bytes(dataset_payload))
+    os.chmod(dataset_path, 0o600)
+
+    with pytest.raises(KISQualityInputError, match="collection run identity"):
+        load_quality_snapshot(
+            root=posix_tmp_path,
+            universe_identifier=identifiers.universe,
+            dataset_identifier=identifiers.dataset,
+            collection_identifier=alias_identifier,
+            window_start=date(2026, 7, 21),
+            window_end=date(2026, 7, 21),
+            evaluated_at=EVALUATED_AT,
+            software_revision="7131f695293472ea16ee05322ed9b05f7b69d129",
+        )

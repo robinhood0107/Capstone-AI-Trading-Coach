@@ -89,7 +89,11 @@ def test_markdown_escape_removes_structure_and_control_injection() -> None:
 
 
 def test_manifest_reference_rejects_absolute_traversal_and_control_injection() -> None:
-    for identifier in ("/tmp/report.json", "../report.json", "x|`y\n.json"):
+    for identifier in (
+        "/tmp/report.json",
+        "../report.json",
+        "x/./report.json",
+        "x|`y\n.json",
+    ):
         with pytest.raises(ValidationError):
             ManifestReference(identifier=identifier, sha256="a" * 64)
-

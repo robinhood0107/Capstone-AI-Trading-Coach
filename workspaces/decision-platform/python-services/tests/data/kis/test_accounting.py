@@ -7,6 +7,7 @@ from pydantic import ValidationError
 
 from app.data.kis.accounting import (
     CollectionRunRecorder,
+    CollectionRunSummary,
     CollectionRunStatus,
     FailureCode,
     LogicalOperation,
@@ -182,3 +183,26 @@ def test_overlapping_logical_operations_do_not_double_count_recovery() -> None:
     summary = recorder.snapshot(completed_at=COMPLETED_AT, status=CollectionRunStatus.SUCCESS)
     market = _physical(summary, PhysicalChannel.MARKET_DATA)
     assert (market.failures, market.recovered_failures) == (1, 1)
+
+
+def test_summary_rejects_unknown_version_and_noncanonical_enum_inventory() -> None:
+    summary = CollectionRunRecorder(run_id=RUN_ID, started_at=STARTED_AT).snapshot(
+        completed_at=COMPLETED_AT,
+        status=CollectionRunStatus.SUCCESS,
+    )
+    payload = summary.model_dump(mode="json", by_alias=True)
+
+    unknown_version = dict(payload)
+    unknown_version["sanitizationVersion"] = "unknown-accounting-version"
+    with pytest.raises(ValidationError):
+        CollectionRunSummary.model_validate(unknown_version)
+
+    missing_logical = dict(payload)
+    missing_logical["logicalOperations"] = payload["logicalOperations"][:-1]
+    with pytest.raises(ValidationError, match="logical operation inventory"):
+        CollectionRunSummary.model_validate(missing_logical)
+
+    reversed_physical = dict(payload)
+    reversed_physical["physicalAttempts"] = list(reversed(payload["physicalAttempts"]))
+    with pytest.raises(ValidationError, match="physical attempt inventory"):
+        CollectionRunSummary.model_validate(reversed_physical)

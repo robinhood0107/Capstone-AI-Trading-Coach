@@ -43,6 +43,94 @@
       "denominator": 0,
       "ratePpm": 0,
       "sampleCount": 0
+    },
+    {
+      "metricId": "canonicalDuplicate",
+      "status": "PASS",
+      "numerator": 0,
+      "denominator": 1,
+      "ratePpm": 0,
+      "sampleCount": 0
+    },
+    {
+      "metricId": "ingestDuplicate",
+      "status": "PASS",
+      "numerator": 0,
+      "denominator": 1,
+      "ratePpm": 0,
+      "sampleCount": 0
+    },
+    {
+      "metricId": "currentUniverseHistoricalCoverage",
+      "status": "PASS",
+      "numerator": 0,
+      "denominator": 1,
+      "ratePpm": 0,
+      "sampleCount": 0
+    },
+    {
+      "metricId": "listingAdjustedCompleteness",
+      "status": "NOT_AVAILABLE",
+      "numerator": null,
+      "denominator": null,
+      "ratePpm": null,
+      "sampleCount": 0
+    },
+    {
+      "metricId": "datasetFreshness",
+      "status": "PASS",
+      "numerator": 0,
+      "denominator": 1,
+      "ratePpm": 0,
+      "sampleCount": 0
+    },
+    {
+      "metricId": "perSymbolStale",
+      "status": "PASS",
+      "numerator": 0,
+      "denominator": 1,
+      "ratePpm": 0,
+      "sampleCount": 0
+    },
+    {
+      "metricId": "returnOutlier",
+      "status": "NOT_EVALUATED",
+      "numerator": 0,
+      "denominator": 0,
+      "ratePpm": null,
+      "sampleCount": 0
+    },
+    {
+      "metricId": "abruptPrice",
+      "status": "NOT_EVALUATED",
+      "numerator": 0,
+      "denominator": 0,
+      "ratePpm": null,
+      "sampleCount": 0
+    },
+    {
+      "metricId": "shareVolumeSpike",
+      "status": "NOT_EVALUATED",
+      "numerator": 0,
+      "denominator": 0,
+      "ratePpm": null,
+      "sampleCount": 0
+    },
+    {
+      "metricId": "logicalApiFailure",
+      "status": "NOT_AVAILABLE",
+      "numerator": null,
+      "denominator": null,
+      "ratePpm": null,
+      "sampleCount": 0
+    },
+    {
+      "metricId": "physicalAttemptFailure",
+      "status": "NOT_AVAILABLE",
+      "numerator": null,
+      "denominator": null,
+      "ratePpm": null,
+      "sampleCount": 0
     }
   ],
   "boundedSamples": [],

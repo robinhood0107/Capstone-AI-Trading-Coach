@@ -104,4 +104,3 @@ def prepare_snapshot(
         dataset=dataset.identifier,
         collection=summary.identifier,
     )
-

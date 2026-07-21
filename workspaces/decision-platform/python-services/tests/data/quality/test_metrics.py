@@ -20,7 +20,11 @@ from app.data.quality.models import (
     QualityStatus,
     SymbolDataset,
 )
-from app.data.quality.policy import CANONICAL_DAILY_COLUMNS, rate_ppm
+from app.data.quality.policy import (
+    CANONICAL_DAILY_COLUMNS,
+    MAX_SAMPLES_PER_RULE,
+    rate_ppm,
+)
 
 
 def _sessions(count: int, *, start: date = date(2026, 6, 1)) -> tuple[date, ...]:
@@ -242,6 +246,30 @@ def test_collection_accounting_projects_logical_physical_and_ingest_duplicates()
     assert report.status.evidence_completeness == "COMPLETE"
 
 
+def test_unrecovered_physical_failure_is_fail_not_warn() -> None:
+    recorder = CollectionRunRecorder(
+        run_id=UUID("123e4567-e89b-42d3-a456-426614174000"),
+        started_at=datetime(2026, 7, 21, 1, 0, tzinfo=UTC),
+    )
+    operation = recorder.start_logical(LogicalOperation.DAILY_BARS)
+    recorder.record_physical_attempt(PhysicalChannel.MARKET_DATA)
+    recorder.record_physical_failure(PhysicalChannel.MARKET_DATA, FailureCode.HTTP_RETRYABLE)
+    recorder.fail_logical(operation, FailureCode.HTTP_RETRYABLE)
+    accounting = recorder.snapshot(
+        completed_at=datetime(2026, 7, 21, 1, 1, tzinfo=UTC),
+        status=CollectionRunStatus.FAILED,
+    )
+    sessions = _sessions(1)
+
+    report = analyze_quality(
+        _context(sessions=sessions, symbols=("005930",), accounting=accounting),
+        [_dataset("005930", [_row("005930", sessions[0])])],
+    )
+
+    assert _metric(report, "logicalApiFailure").status == MetricStatus.FAIL
+    assert _metric(report, "physicalAttemptFailure").status == MetricStatus.FAIL
+
+
 def test_no_collection_accounting_is_not_available_instead_of_zero_percent() -> None:
     sessions = _sessions(1)
     report = analyze_quality(
@@ -397,3 +425,27 @@ def test_samples_are_stably_sorted_with_rule_and_total_caps() -> None:
         report.bounded_samples,
         key=lambda item: (item.rule_code, item.symbol, item.session_date),
     )
+
+
+def test_sample_candidates_are_bounded_while_missing_matrix_is_scanned(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.data.quality import metrics
+
+    symbols = tuple(f"{index:06d}" for index in range(1, 201))
+    sessions = _sessions(2)
+    observed_retained: list[int] = []
+    original = metrics._bound_samples
+
+    def assert_bounded(candidates):
+        observed_retained.append(len(candidates))
+        # v1에는 sample을 만드는 rule이 7개이고 각 rule은 scan 중에도 20개만 보존한다.
+        assert len(candidates) <= 7 * MAX_SAMPLES_PER_RULE
+        return original(candidates)
+
+    monkeypatch.setattr(metrics, "_bound_samples", assert_bounded)
+
+    report = analyze_quality(_context(sessions=sessions, symbols=symbols), ())
+
+    assert observed_retained
+    assert len(report.bounded_samples) == MAX_SAMPLES_PER_RULE

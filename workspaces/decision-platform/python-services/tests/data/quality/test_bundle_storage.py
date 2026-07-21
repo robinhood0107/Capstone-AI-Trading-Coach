@@ -178,3 +178,27 @@ def test_serialized_bytes_given_to_publisher_match_report_renderers(
     assert (published.bundle_path / "report.json").read_bytes() == report_json_bytes(report)
     assert (published.bundle_path / "report.md").read_bytes() == render_markdown(report)
 
+
+def test_deadline_after_complete_rename_preserves_previous_latest(
+    posix_tmp_path: Path,
+) -> None:
+    output = posix_tmp_path / "output"
+    first = _report(posix_tmp_path / "first")
+    second = _report(
+        posix_tmp_path / "second",
+        revision="8131f695293472ea16ee05322ed9b05f7b69d129",
+    )
+    publish_quality_bundle(output, first)
+    latest = output / "quality" / "latest-manifest.json"
+    last_good = latest.read_bytes()
+    second_final = output / "quality" / "2026" / "07" / "21" / str(second.report_id)
+
+    def expire_after_final_rename() -> None:
+        if second_final.exists():
+            raise ValueError("quality report deadline exceeded")
+
+    with pytest.raises(QualityBundleStorageError, match="publish failed"):
+        publish_quality_bundle(output, second, deadline_check=expire_after_final_rename)
+
+    assert second_final.exists()
+    assert latest.read_bytes() == last_good

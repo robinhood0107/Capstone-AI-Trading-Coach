@@ -136,3 +136,39 @@ def test_cli_usage_error_does_not_echo_raw_argument(
     assert "code=USAGE_ERROR" in captured.err
     assert canary not in captured.out + captured.err
 
+
+def test_cli_passes_one_wall_deadline_guard_through_all_phases(
+    posix_tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.data.quality import cli
+
+    identifiers = prepare_snapshot(posix_tmp_path)
+    monkeypatch.setenv("KIS_DATA_DIR", str(posix_tmp_path))
+    observed_guards: list[object] = []
+    original_load = cli.load_quality_snapshot
+    original_analyze = cli.analyze_quality
+    original_publish = cli.publish_quality_bundle
+
+    def guarded_load(*, deadline_check, **kwargs):
+        deadline_check()
+        observed_guards.append(deadline_check)
+        return original_load(deadline_check=deadline_check, **kwargs)
+
+    def guarded_analyze(context, datasets, *, deadline_check):
+        deadline_check()
+        observed_guards.append(deadline_check)
+        return original_analyze(context, datasets, deadline_check=deadline_check)
+
+    def guarded_publish(root, report, *, deadline_check):
+        deadline_check()
+        observed_guards.append(deadline_check)
+        return original_publish(root, report, deadline_check=deadline_check)
+
+    monkeypatch.setattr(cli, "load_quality_snapshot", guarded_load)
+    monkeypatch.setattr(cli, "analyze_quality", guarded_analyze)
+    monkeypatch.setattr(cli, "publish_quality_bundle", guarded_publish)
+
+    assert main(_args(identifiers)) == 0
+    assert len(observed_guards) == 3
+    assert len({id(guard) for guard in observed_guards}) == 1

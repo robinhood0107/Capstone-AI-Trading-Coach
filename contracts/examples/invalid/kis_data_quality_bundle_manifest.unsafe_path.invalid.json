@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "reportId": "123e4567-e89b-52d3-a456-426614174000",
+  "analysisFingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "createdAt": "2026-07-21T14:30:00Z",
+  "bundlePath": "../quality/2026/07/21/123e4567-e89b-52d3-a456-426614174000",
+  "files": [
+    {
+      "name": "report.json",
+      "byteSize": 8192,
+      "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+    },
+    {
+      "name": "report.md",
+      "byteSize": 4096,
+      "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+    }
+  ],
+  "status": "COMPLETE"
+}

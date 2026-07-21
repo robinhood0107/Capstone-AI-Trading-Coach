@@ -15,6 +15,7 @@ from oracle_common import (
     OracleContractError,
     atomic_write_json,
     canonical_file_manifest,
+    canonical_json_bytes,
     sha256_bytes,
     sha256_file,
     strict_json_load,
@@ -699,6 +700,137 @@ def test_reference_tree_closure_and_workflow_trigger_coverage(tmp_path: Path) ->
 
     source_root.joinpath("new.txt").write_text("drift", encoding="utf-8")
     with pytest.raises(OracleContractError, match=r"fileCount mismatch|closure drift"):
+        validate_reference_lock(repo, contract)
+
+
+def test_reference_project_runtime_projection_ignores_scripts_and_locks_runtime(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path
+    contract = repo / "contract"
+    project_root = repo / "workspaces" / "decision-platform" / "python-services"
+    project_file = project_root / "pyproject.toml"
+    canonical = (
+        repo
+        / "workspaces"
+        / "decision-platform"
+        / "research"
+        / "s1-4r-jax-risk"
+        / "tests"
+        / "fixtures"
+        / "canonical"
+        / "advanced_risk_v1.json"
+    )
+    contract.mkdir()
+    project_root.mkdir(parents=True)
+    canonical.parent.mkdir(parents=True)
+    canonical.write_text("fixture", encoding="utf-8")
+
+    def write_project(
+        *,
+        dependencies: tuple[str, ...],
+        script: str,
+        uv_package: bool = False,
+        ruff_line_length: int = 100,
+    ) -> None:
+        dependency_lines = "\n".join(f'  "{dependency}",' for dependency in dependencies)
+        project_file.write_text(
+            "[project]\n"
+            'name = "decision-platform-services"\n'
+            'version = "0.1.0"\n'
+            'requires-python = ">=3.12"\n'
+            "dependencies = [\n"
+            f"{dependency_lines}\n"
+            "]\n\n"
+            "[project.scripts]\n"
+            f'report = "{script}"\n\n'
+            "[build-system]\n"
+            'requires = ["hatchling"]\n'
+            'build-backend = "hatchling.build"\n\n'
+            "[dependency-groups]\n"
+            'dev = ["pytest>=8", "ruff>=0.5"]\n\n'
+            "[tool.uv]\n"
+            f"package = {str(uv_package).lower()}\n\n"
+            "[tool.hatch.build.targets.wheel]\n"
+            'packages = ["app"]\n\n'
+            "[tool.ruff]\n"
+            f"line-length = {ruff_line_length}\n",
+            encoding="utf-8",
+        )
+
+    dependencies = ("numpy==2.5.1", "pandas>=2.2")
+    write_project(dependencies=dependencies, script="app.old:main")
+    projection = {
+        "schemaVersion": "s1.4x-python-project-runtime-projection-v1",
+        "build-system": {
+            "build-backend": "hatchling.build",
+            "requires": ["hatchling"],
+        },
+        "dependency-groups": {"dev": ["pytest>=8", "ruff>=0.5"]},
+        "project": {
+            "dependencies": ["numpy==2.5.1", "pandas>=2.2"],
+            "requires-python": ">=3.12",
+        },
+        "tool": {
+            "hatch": {"build": {"targets": {"wheel": {"packages": ["app"]}}}},
+            "uv": {"package": False},
+        },
+    }
+    projection_sha256 = sha256_bytes(canonical_json_bytes(projection))
+    manifest_payload = f"{projection_sha256}  pyproject.toml\n".encode()
+    lock: dict[str, Any] = {
+        "schemaVersion": "s1.4x-reference-lock-v1",
+        "referenceBaseCommit": "a" * 40,
+        "pythonRuntime": {
+            "implementation": "CPython",
+            "version": "3.12.13",
+            "uvVersion": "0.11.26",
+            "productionNumpyVersion": "2.5.1",
+            "researchNumpyVersion": "2.5.1",
+            "jaxVersion": "0.11.0",
+            "jaxlibVersion": "0.11.0",
+        },
+        "functionCount": 20,
+        "stableErrorCodeCount": 32,
+        "s1_4r_canonical_fixture_sha256": sha256_file(canonical),
+        "sources": [
+            {
+                "role": "production-project-runtime-projection",
+                "path": (
+                    "workspaces/decision-platform/python-services/pyproject.toml"
+                ),
+                "sha256": projection_sha256,
+            }
+        ],
+        "sourceTrees": [
+            {
+                "role": "production-reference-tree",
+                "root": "workspaces/decision-platform/python-services",
+                "includeGlobs": ["pyproject.toml"],
+                "fileCount": 1,
+                "canonicalManifestSha256": sha256_bytes(manifest_payload),
+                "files": [{"path": "pyproject.toml", "sha256": projection_sha256}],
+            }
+        ],
+    }
+    atomic_write_json(contract / "reference-lock.v1.json", lock)
+
+    assert validate_reference_lock(repo, contract)["sourceCount"] == 1
+
+    # CLI entrypoint와 lint 설정은 수치 oracle의 dependency/runtime identity가 아니다.
+    write_project(
+        dependencies=tuple(reversed(dependencies)),
+        script="app.new:main",
+        ruff_line_length=120,
+    )
+    assert validate_reference_lock(repo, contract)["sourceCount"] == 1
+
+    write_project(dependencies=("numpy==2.6.0", "pandas>=2.2"), script="app.new:main")
+    with pytest.raises(OracleContractError, match="reference source SHA-256 mismatch"):
+        validate_reference_lock(repo, contract)
+
+    write_project(dependencies=dependencies, script="app.new:main", uv_package=True)
+    with pytest.raises(OracleContractError, match="reference source SHA-256 mismatch"):
         validate_reference_lock(repo, contract)
 
 

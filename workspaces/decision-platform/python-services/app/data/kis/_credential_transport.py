@@ -17,6 +17,12 @@ from pydantic import Field, SecretStr, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.data.kis.rate_limiter import RateLimiter
+from app.data.kis.accounting import (
+    CollectionRunRecorder,
+    FailureCode,
+    KISCallBudgetExceeded,
+    PhysicalChannel,
+)
 from app.data.kis.settings import KISMode, KISSettings
 
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[6]
@@ -140,6 +146,7 @@ class _CredentialTransport(httpx.BaseTransport):
         settings: KISSettings,
         token_provider: Callable[[], str] | None,
         rate_limiter: RateLimiter,
+        accounting: CollectionRunRecorder | None = None,
         max_response_bytes: int = _MAX_RESPONSE_BYTES,
         max_json_depth: int = _MAX_JSON_DEPTH,
     ) -> None:
@@ -149,6 +156,7 @@ class _CredentialTransport(httpx.BaseTransport):
         self._enabled = not settings.offline
         self._token_provider = token_provider
         self._rate_limiter = rate_limiter
+        self._accounting = accounting
         self._max_response_bytes = max_response_bytes
         self._max_json_depth = max_json_depth
 
@@ -167,6 +175,8 @@ class _CredentialTransport(httpx.BaseTransport):
         provider_response: httpx.Response | None = None
         sanitized_response: httpx.Response | None = None
         response_too_large = False
+        attempt_recorded = False
+        outcome_recorded = False
         try:
             request.headers.pop(_INTERNAL_TR_ID_HEADER, None)
             request.headers["tr_id"] = tr_id
@@ -186,7 +196,19 @@ class _CredentialTransport(httpx.BaseTransport):
                 request.headers["appsecret"] = app_secret
             else:
                 self._rate_limiter.acquire()
-            provider_response = self._inner.handle_request(request)
+            if self._accounting is not None:
+                self._accounting.record_physical_attempt(PhysicalChannel.MARKET_DATA)
+                attempt_recorded = True
+            try:
+                provider_response = self._inner.handle_request(request)
+            except Exception:
+                if self._accounting is not None and attempt_recorded:
+                    self._accounting.record_physical_failure(
+                        PhysicalChannel.MARKET_DATA,
+                        FailureCode.TRANSPORT_UNAVAILABLE,
+                    )
+                    outcome_recorded = True
+                raise
             try:
                 sanitized_response = _scrub_response(
                     provider_response,
@@ -197,6 +219,12 @@ class _CredentialTransport(httpx.BaseTransport):
             except KISResponseTooLargeError:
                 # recursive sanitizer frame의 credential candidates를 새 외부 예외 traceback에 연결하지 않는다.
                 response_too_large = True
+                if self._accounting is not None and attempt_recorded:
+                    self._accounting.record_physical_failure(
+                        PhysicalChannel.MARKET_DATA,
+                        FailureCode.RESPONSE_TOO_LARGE,
+                    )
+                    outcome_recorded = True
         finally:
             if provider_response is not None:
                 provider_response.close()
@@ -208,6 +236,16 @@ class _CredentialTransport(httpx.BaseTransport):
             token = ""
             app_key = ""
             app_secret = ""
+            if (
+                self._accounting is not None
+                and attempt_recorded
+                and not outcome_recorded
+                and sanitized_response is None
+            ):
+                self._accounting.record_physical_failure(
+                    PhysicalChannel.MARKET_DATA,
+                    FailureCode.UNKNOWN_INTERNAL,
+                )
 
         if response_too_large:
             raise KISResponseTooLargeError("KIS response exceeded the safety limit") from None
@@ -227,6 +265,7 @@ class _TokenIssuer:
         settings: KISSettings,
         transport: httpx.BaseTransport | None = None,
         rate_limiter: RateLimiter | None = None,
+        accounting: CollectionRunRecorder | None = None,
     ) -> None:
         if rate_limiter is None:
             # tokenP도 app process마다 local bucket을 만들면 동시 cache miss에서 공식 1/s를 우회한다.
@@ -240,6 +279,7 @@ class _TokenIssuer:
             trust_env=False,
         )
         self._rate_limiter = rate_limiter
+        self._accounting = accounting
 
     def issue(self) -> dict[str, Any]:
         credentials: _Credentials | None = None
@@ -253,6 +293,7 @@ class _TokenIssuer:
         transport_failed = False
         issue_failed = False
         invalid_response = False
+        attempt_recorded = False
         try:
             # tokenP global 1/s 슬롯을 확보하기 전에는 static credential을 읽거나 body를 만들지 않는다.
             self._rate_limiter.acquire()
@@ -267,9 +308,18 @@ class _TokenIssuer:
                 }
             )
             try:
+                if self._accounting is not None:
+                    self._accounting.record_physical_attempt(PhysicalChannel.TOKEN_P)
+                    attempt_recorded = True
                 response = self._http.post(self._url, json=body)
+            except KISCallBudgetExceeded:
+                # 승인 cap은 provider send 전 차단 신호이므로 일반 transport 실패로 축약하지 않는다.
+                raise
             except (httpx.TimeoutException, httpx.TransportError):
                 # caught exception의 credential-bearing request/context를 새 stable error에 연결하지 않는다.
+                transport_failed = True
+            except Exception:
+                # inner transport handoff 뒤의 임의 예외도 unresolved attempt나 원문 traceback을 남기지 않는다.
                 transport_failed = True
             if response is not None:
                 if response.status_code >= 400:
@@ -307,11 +357,28 @@ class _TokenIssuer:
             payload = None
 
         if transport_failed:
+            if self._accounting is not None and attempt_recorded:
+                self._accounting.record_physical_failure(
+                    PhysicalChannel.TOKEN_P,
+                    FailureCode.TRANSPORT_UNAVAILABLE,
+                )
             raise KISCredentialError("KIS token transport is unavailable") from None
         if issue_failed:
+            if self._accounting is not None and attempt_recorded:
+                self._accounting.record_physical_failure(
+                    PhysicalChannel.TOKEN_P,
+                    FailureCode.HTTP_ERROR,
+                )
             raise KISCredentialError("KIS token issue failed") from None
         if invalid_response or result is None:
+            if self._accounting is not None and attempt_recorded:
+                self._accounting.record_physical_failure(
+                    PhysicalChannel.TOKEN_P,
+                    FailureCode.PROVIDER_ERROR,
+                )
             raise KISCredentialError("KIS token response was invalid") from None
+        if self._accounting is not None and attempt_recorded:
+            self._accounting.record_physical_success(PhysicalChannel.TOKEN_P)
         return result
 
     def close(self) -> None:

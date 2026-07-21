@@ -24,18 +24,18 @@
   "verifiedAt": "2026-07-18T05:52:12Z",
   "gate0MetadataEntryEvidence": {
     "sourcePath": "docs/adr/ADR-027-s1-4x-isolated-numeric-parity.md",
-    "sourceSha256": "c9a9b83b25539d1039c4947f8e328ea407f61b116a573afb50e01a28fc2728fe",
+    "sourceSha256": "d9598208e4b50d830c68cec95d645714094b81fccd29d74bc1c08f41a4581268",
     "serialization": "canonical-json-utf8",
     "payload": {
       "metadataCommit": "0341867f2d419567cf42ea6931e031b00ab3a922",
       "metadataRawSha256": "49c8a036ce399587205a11ac24e73465cadc5f3232e9418a9d87f4b7f746c4ec",
       "metadataRawUri": "https://raw.githubusercontent.com/haskell/ghcup-metadata/0341867f2d419567cf42ea6931e031b00ab3a922/ghcup-0.1.0.yaml",
       "sourcePath": "docs/adr/ADR-027-s1-4x-isolated-numeric-parity.md",
-      "sourceSha256": "c9a9b83b25539d1039c4947f8e328ea407f61b116a573afb50e01a28fc2728fe",
+      "sourceSha256": "d9598208e4b50d830c68cec95d645714094b81fccd29d74bc1c08f41a4581268",
       "stackArchiveSha256": "ca3cc5e89d87d1b85594a866de4062671d19ec039cd2401df70d4ccff03ffed9",
       "stackArchiveUri": "https://downloads.haskell.org/~ghcup/unofficial-bindists/stack/3.11.1/stack-3.11.1-linux-x86_64.tar.gz",
       "verifiedAt": "2026-07-18T05:52:12Z"
     },
-    "digestSha256": "950bda6c0c3cbd43fb7f33eb94d3efd3b8f6546377f3a44cf455b3dc98fab746"
+    "digestSha256": "a03221c19a51cf3379d329b7c7011083c6e7416f5a0ece29034166bff5299515"
   }
 }

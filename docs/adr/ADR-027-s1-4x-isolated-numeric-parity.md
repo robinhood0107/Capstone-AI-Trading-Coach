@@ -73,6 +73,23 @@ oracle, canonical fixture, property plan, benchmark plan과 provenance validator
   RiskEngine API, production dependency graph와 다른 팀원 workspace는 변경하지 않는다.
   S1.4X exchange는 Decision Platform 내부 연구 protocol이며 workspace 간 계약이 아니다.
 
+#### 2.1 upstream project runtime lock amendment
+
+`pyproject.toml` 경로는 production/research reference source와 workflow trigger에 계속 포함하되,
+파일 전체 bytes를 수치 oracle identity로 사용하지 않는다. reference source와 source-tree manifest의
+해당 entry는 다음 필드만 canonical JSON으로 투영한 SHA-256을 사용한다.
+
+- `project.requires-python`, `project.dependencies`, `project.optional-dependencies`,
+  dependency와 무관한 항목만 허용하는 `project.dynamic`
+- `build-system`, `dependency-groups`, `tool.uv`, `tool.hatch.build`
+- dependency 배열은 순서가 의미를 바꾸지 않으므로 canonical byte 순서로 정규화
+
+`project.scripts`·`project.gui-scripts`·`project.entry-points`와 description/version 같은 package
+metadata, Ruff/Pytest/mypy 설정은 수치 runtime projection에서 제외한다. 따라서 CLI entrypoint나
+정적 분석 설정만 추가해도 frozen numeric reference가 바뀐 것으로 판정하지 않는다. 반면 dependency,
+Python 범위, build backend, uv/hatch runtime 설정 변경은 fail-closed한다. resolved production/research
+`uv.lock`과 실제 Python/NumPy/JAX source·fixture는 계속 byte-exact SHA-256으로 잠근다.
+
 ### 3. correctness와 stable error
 
 비교 대상은 S1.4 11개와 S1.4R 9개, 총 20개 함수다. acceptance는 다음과 같다.

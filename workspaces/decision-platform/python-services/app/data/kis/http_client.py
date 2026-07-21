@@ -8,6 +8,11 @@ from typing import Any, cast
 
 import httpx
 
+from app.data.kis.accounting import (
+    CollectionRunRecorder,
+    FailureCode,
+    PhysicalChannel,
+)
 from app.data.kis._credential_transport import (
     KISCredentialError,
     _CredentialTransport,
@@ -64,6 +69,7 @@ class KISHttpClient:
         rate_limiter: RateLimiter | None = None,
         retry_delay: Callable[[int], float] | None = None,
         retry_sleeper: Callable[[float], None] = time.sleep,
+        accounting: CollectionRunRecorder | None = None,
     ) -> None:
         if not settings.offline and any(
             dependency is not None for dependency in (token_provider, transport, rate_limiter)
@@ -99,13 +105,18 @@ class KISHttpClient:
                     max_wait_seconds=float(settings.kis_rate_limit_max_wait_seconds),
                     io_budget_seconds=8.0,
                 )
-                token_issuer = _TokenIssuer(settings, rate_limiter=token_limiter)
+                token_issuer = _TokenIssuer(
+                    settings,
+                    rate_limiter=token_limiter,
+                    accounting=accounting,
+                )
                 token_manager = KISTokenManager(
                     mode=settings.mode,
                     offline=False,
                     redis_client=redis_client,
                     issuer=token_issuer.issue,
                     scope=scope,
+                    accounting=accounting,
                 )
                 token_provider = token_manager.get_access_token
                 inner_transport = httpx.HTTPTransport(verify=True, retries=0)
@@ -128,6 +139,7 @@ class KISHttpClient:
                     settings=settings,
                     token_provider=token_provider,
                     rate_limiter=request_limiter,
+                    accounting=accounting,
                 ),
                 timeout=settings.kis_timeout_seconds,
                 follow_redirects=False,
@@ -144,6 +156,7 @@ class KISHttpClient:
         self._retry_attempts = settings.kis_retry_attempts
         self._retry_delay = retry_delay or _default_retry_delay
         self._retry_sleeper = retry_sleeper
+        self._accounting = accounting
 
     def request(
         self,
@@ -203,23 +216,33 @@ class KISHttpClient:
         if response.status_code >= 400:
             message = "upstream request failed"
             if response.status_code == 429:
+                self._record_physical_failure(FailureCode.PROVIDER_RATE_LIMIT)
                 raise KISProviderRateLimitError(response.status_code, message)
             if response.status_code in {408, 500, 502, 503, 504}:
+                self._record_physical_failure(FailureCode.HTTP_RETRYABLE)
                 raise KISRetryableStatus(response.status_code, message)
+            self._record_physical_failure(FailureCode.HTTP_ERROR)
             raise KISHttpError(response.status_code, message)
         try:
             data: object = response.json()
         except ValueError:
+            self._record_physical_failure(FailureCode.PROVIDER_ERROR)
             raise KISHttpError(response.status_code, "KIS response was not valid JSON") from None
         if not isinstance(data, dict):
+            self._record_physical_failure(FailureCode.PROVIDER_ERROR)
             raise KISHttpError(response.status_code, "KIS response was not a JSON object")
         payload = cast(dict[str, Any], data)
         if payload.get("rt_cd") not in (None, "0", 0):
             message_code = str(payload.get("msg_cd") or "")
             if message_code == "EGW00201":
+                self._record_physical_failure(FailureCode.PROVIDER_RATE_LIMIT)
                 raise KISProviderRateLimitError(429, "upstream request exceeded its rate limit")
             if message_code in {"EGW00001", "EGW00002", "EGW00202", "EGW00203", "EGW00300"}:
+                self._record_physical_failure(FailureCode.PROVIDER_ROUTING)
                 raise KISDistributionRetryableStatus(503, "upstream routing failed")
+            self._record_physical_failure(FailureCode.PROVIDER_ERROR)
+            return payload
+        self._record_physical_success()
         return payload
 
     @staticmethod
@@ -227,6 +250,14 @@ class KISHttpClient:
         if any(_is_reserved_parameter(name) for name in params):
             raise ValueError("reserved KIS request parameter is not allowed")
         return dict(params)
+
+    def _record_physical_success(self) -> None:
+        if self._accounting is not None:
+            self._accounting.record_physical_success(PhysicalChannel.MARKET_DATA)
+
+    def _record_physical_failure(self, code: FailureCode) -> None:
+        if self._accounting is not None:
+            self._accounting.record_physical_failure(PhysicalChannel.MARKET_DATA, code)
 
 
 def _is_reserved_parameter(name: str) -> bool:

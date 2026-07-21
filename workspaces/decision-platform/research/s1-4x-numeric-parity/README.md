@@ -10,7 +10,7 @@ production `RiskEngine`, 공개 API, root `contracts/` 또는 다른 팀 workspa
 이 tree는 **Gate 1 neutral fixture freeze**만 담는다.
 
 - 언어 중립 JSON/binary exchange schema와 20개 함수·32개 stable error registry
-- upstream Python/NumPy/JAX reference hash lock
+- upstream Python/NumPy/JAX source·fixture byte lock, project runtime projection과 `uv.lock` lock
 - canonical small/invalid/property fixture와 deterministic large-fixture generator
 - Python oracle, contract/provenance/environment validator
 - capability/property/safety/compatibility 정책
@@ -28,6 +28,9 @@ candidate report를 추적하지 않는다. 이 Gate에서는 benchmark timing�
 - canonical success는 finite Float64만 허용하고 `-0.0`을 `0.0`으로 정규화한다.
 - small/paper case는 `rtol=1e-12`, `atol=1e-12`, large/property case는
   `rtol=1e-10`, `atol=1e-12`를 사용한다.
+- production/research `pyproject.toml`은 dependency, Python 범위, build-system,
+  dependency-groups, `tool.uv`, `tool.hatch.build`만 canonical projection으로 hash한다.
+  `[project.scripts]`와 lint/test/type-check 설정은 제외하고 `uv.lock`은 byte-exact로 유지한다.
 - tracked expected JSON bytes는 sidecar와 contract manifest로 exact hash-lock한다.
   `capture_reference_results.py --check`의 live 재생성은 libc `libm`의 ULP 차이를 숨기지
   않고 같은 typed tolerance로 판정하며, ID·순서·필드·정수·불리언·stable error는 exact다.

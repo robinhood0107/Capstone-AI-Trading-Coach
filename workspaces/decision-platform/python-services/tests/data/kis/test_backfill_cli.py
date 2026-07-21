@@ -4,8 +4,82 @@ from pathlib import Path
 
 import pytest
 
-from app.data.kis.backfill_cli import _build_client, main
+from app.data.kis.accounting import LogicalOperation, PhysicalChannel
+from app.data.kis.backfill_cli import _build_client, _call_caps, _parse_args, main
 from app.data.kis.parsers import CurrentPrice, DailyBar
+
+
+def test_backfill_cli_builds_exact_logical_and_physical_call_caps() -> None:
+    args = _parse_args(
+        [
+            "--current-price-logical-cap",
+            "30",
+            "--daily-bars-logical-cap",
+            "30",
+            "--holiday-logical-cap",
+            "0",
+            "--market-data-physical-cap",
+            "270",
+            "--token-p-physical-cap",
+            "1",
+        ]
+    )
+
+    logical_caps, physical_caps = _call_caps(args)
+
+    assert logical_caps == {
+        LogicalOperation.CURRENT_PRICE: 30,
+        LogicalOperation.DAILY_BARS: 30,
+        LogicalOperation.HOLIDAY: 0,
+    }
+    assert physical_caps == {
+        PhysicalChannel.MARKET_DATA: 270,
+        PhysicalChannel.TOKEN_P: 1,
+    }
+
+
+def test_backfill_cli_rejects_partial_or_negative_call_caps() -> None:
+    assert _call_caps(_parse_args([])) == (None, None)
+
+    partial = _parse_args(["--current-price-logical-cap", "30"])
+    with pytest.raises(ValueError, match="provided together"):
+        _call_caps(partial)
+
+    with pytest.raises(SystemExit):
+        _parse_args(["--market-data-physical-cap", "-1"])
+
+
+def test_online_backfill_requires_hard_caps_before_building_client(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("KIS_MODE", "mock")
+    monkeypatch.setenv("KIS_OFFLINE", "0")
+    monkeypatch.setenv("KIS_DATA_DIR", str(tmp_path))
+    build_calls = 0
+
+    def fail_if_called(settings, accounting) -> object:
+        nonlocal build_calls
+        build_calls += 1
+        raise AssertionError("online client must not be built without approved call caps")
+
+    monkeypatch.setattr("app.data.kis.backfill_cli._build_client", fail_if_called)
+
+    with pytest.raises(ValueError, match="requires explicit"):
+        main(
+            [
+                "--symbols",
+                "005930",
+                "--from",
+                "2026-07-01",
+                "--to",
+                "2026-07-10",
+                "--data-dir",
+                str(tmp_path),
+            ]
+        )
+
+    assert build_calls == 0
 
 
 def test_offline_backfill_cli_writes_parquet_and_markdown_report(tmp_path: Path, monkeypatch) -> None:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Mapping
 from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -51,6 +52,10 @@ class CollectionRunStatus(StrEnum):
     SUCCESS = "SUCCESS"
     FAILED = "FAILED"
     SKIPPED = "SKIPPED"
+
+
+class KISCallBudgetExceeded(RuntimeError):
+    """승인된 logical/physical 호출 상한을 넘기기 전에 provider send를 차단한다."""
 
 
 class _FrozenModel(BaseModel):
@@ -191,11 +196,30 @@ class CollectionRunRecorder:
     credential, account 값이 summary model로 들어올 통로를 제거한다.
     """
 
-    def __init__(self, *, run_id: UUID, started_at: datetime) -> None:
+    def __init__(
+        self,
+        *,
+        run_id: UUID,
+        started_at: datetime,
+        logical_caps: Mapping[LogicalOperation, int] | None = None,
+        physical_caps: Mapping[PhysicalChannel, int] | None = None,
+    ) -> None:
         if started_at.tzinfo is None:
             raise ValueError("collection run start must be timezone-aware")
         self._run_id = run_id
         self._started_at = started_at.astimezone(UTC)
+        self._logical_caps = dict(logical_caps or {})
+        self._physical_caps = dict(physical_caps or {})
+        for operation, cap in self._logical_caps.items():
+            if not isinstance(operation, LogicalOperation):
+                raise ValueError("logical call cap key must be allowlisted")
+            if isinstance(cap, bool) or not isinstance(cap, int) or cap < 0:
+                raise ValueError("logical call cap must be a non-negative integer")
+        for channel, cap in self._physical_caps.items():
+            if not isinstance(channel, PhysicalChannel):
+                raise ValueError("physical call cap key must be allowlisted")
+            if isinstance(cap, bool) or not isinstance(cap, int) or cap < 0:
+                raise ValueError("physical call cap must be a non-negative integer")
         self._logical = {operation: _LogicalState() for operation in LogicalOperation}
         self._physical = {channel: _PhysicalState() for channel in PhysicalChannel}
         self._skips: Counter[SkipCode] = Counter()
@@ -214,6 +238,12 @@ class CollectionRunRecorder:
         if not isinstance(operation, LogicalOperation):
             raise ValueError("logical operation must be allowlisted")
         with self._lock:
+            state = self._logical[operation]
+            cap = self._logical_caps.get(operation)
+            if cap is not None and state.started >= cap:
+                raise KISCallBudgetExceeded(
+                    f"KIS {operation.value} logical call cap exhausted ({cap})"
+                )
             token = LogicalOperationToken(
                 token_id=self._next_token,
                 operation=operation,
@@ -222,7 +252,7 @@ class CollectionRunRecorder:
             self._active[token.token_id] = token
             self._active_physical_failures[token.token_id] = Counter()
             self._logical_context.set((*self._logical_context.get(), token.token_id))
-            self._logical[operation].started += 1
+            state.started += 1
             return token
 
     def succeed_logical(self, token: LogicalOperationToken) -> None:
@@ -251,6 +281,11 @@ class CollectionRunRecorder:
             raise ValueError("physical channel must be allowlisted")
         with self._lock:
             state = self._physical[channel]
+            cap = self._physical_caps.get(channel)
+            if cap is not None and state.attempts >= cap:
+                raise KISCallBudgetExceeded(
+                    f"KIS {channel.value} physical call cap exhausted ({cap})"
+                )
             state.attempts += 1
             state.unresolved += 1
 
@@ -376,7 +411,11 @@ def stable_failure_code(error: BaseException) -> FailureCode:
     name = type(error).__name__
     if name in {"KISCredentialError", "KISTokenCacheError"}:
         return FailureCode.CREDENTIAL_BLOCKED
-    if name in {"KISRateLimitUnavailable", "KISRateLimitWaitExceeded"}:
+    if name in {
+        "KISCallBudgetExceeded",
+        "KISRateLimitUnavailable",
+        "KISRateLimitWaitExceeded",
+    }:
         return FailureCode.LIMITER_BLOCKED
     if name == "KISResponseTooLargeError":
         return FailureCode.RESPONSE_TOO_LARGE

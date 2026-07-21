@@ -20,6 +20,7 @@ from app.data.kis.rate_limiter import RateLimiter
 from app.data.kis.accounting import (
     CollectionRunRecorder,
     FailureCode,
+    KISCallBudgetExceeded,
     PhysicalChannel,
 )
 from app.data.kis.settings import KISMode, KISSettings
@@ -311,6 +312,9 @@ class _TokenIssuer:
                     self._accounting.record_physical_attempt(PhysicalChannel.TOKEN_P)
                     attempt_recorded = True
                 response = self._http.post(self._url, json=body)
+            except KISCallBudgetExceeded:
+                # 승인 cap은 provider send 전 차단 신호이므로 일반 transport 실패로 축약하지 않는다.
+                raise
             except (httpx.TimeoutException, httpx.TransportError):
                 # caught exception의 credential-bearing request/context를 새 stable error에 연결하지 않는다.
                 transport_failed = True

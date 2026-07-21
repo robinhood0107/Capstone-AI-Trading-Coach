@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import date, datetime
 import errno
@@ -107,6 +107,7 @@ def load_quality_snapshot(
     evaluated_at: datetime,
     software_revision: str,
     limits: QualityReadLimits | None = None,
+    deadline_check: Callable[[], None] | None = None,
 ) -> LoadedQualitySnapshot:
     """shared lock 안에서 successful manifest와 exact Parquet bytes를 모두 재검증해 읽는다.
 
@@ -114,13 +115,16 @@ def load_quality_snapshot(
     lock을 해제하므로 metric core가 mutable Parquet을 다시 열지 않는다.
     """
     active_limits = limits or QualityReadLimits()
+    check_deadline = deadline_check or _no_deadline
     root_path = _absolute_root(root)
     try:
+        check_deadline()
         with dataset_lock(root_path, exclusive=False):
             dataset_bytes, _ = _read_regular_relative(
                 root_path,
                 dataset_identifier,
                 max_bytes=MAX_INPUT_MANIFEST_BYTES,
+                deadline_check=check_deadline,
             )
             dataset_manifest = _parse_dataset_manifest(dataset_bytes)
             _verify_dataset_identifier(dataset_identifier, dataset_manifest)
@@ -133,6 +137,7 @@ def load_quality_snapshot(
                 root_path,
                 universe_identifier,
                 max_bytes=MAX_INPUT_MANIFEST_BYTES,
+                deadline_check=check_deadline,
             )
             universe_reference = ManifestReference(
                 identifier=universe_identifier,
@@ -151,6 +156,7 @@ def load_quality_snapshot(
                     root_path,
                     collection_identifier,
                     max_bytes=MAX_INPUT_MANIFEST_BYTES,
+                    deadline_check=check_deadline,
                 )
                 collection_reference = ManifestReference(
                     identifier=collection_identifier,
@@ -167,6 +173,7 @@ def load_quality_snapshot(
                 window_end=window_end,
                 evaluated_at=evaluated_at,
             )
+            check_deadline()
             if len(calendar.sessions) > active_limits.max_sessions:
                 raise KISQualityInputError("XKRX session limit exceeded")
             expected_names = {f"{item.symbol}.parquet" for item in dataset_manifest.files}
@@ -178,12 +185,14 @@ def load_quality_snapshot(
             datasets: list[SymbolDataset] = []
             total_rows = 0
             for inventory in dataset_manifest.files:
+                check_deadline()
                 if inventory.byte_size > active_limits.max_file_bytes:
                     raise KISQualityInputError("dataset file byte limit exceeded")
                 content, metadata = _read_regular_relative(
                     root_path,
                     inventory.path,
                     max_bytes=active_limits.max_file_bytes,
+                    deadline_check=check_deadline,
                 )
                 if (
                     metadata.st_size != inventory.byte_size
@@ -194,6 +203,7 @@ def load_quality_snapshot(
                     content,
                     inventory,
                     batch_rows=active_limits.batch_rows,
+                    deadline_check=check_deadline,
                 )
                 total_rows += len(dataset.rows)
                 if total_rows > active_limits.max_rows:
@@ -288,6 +298,7 @@ def _read_parquet_dataset(
     inventory: DatasetFileInventory,
     *,
     batch_rows: int,
+    deadline_check: Callable[[], None],
 ) -> SymbolDataset:
     try:
         parquet = pq.ParquetFile(BytesIO(content))  # type: ignore[no-untyped-call]
@@ -301,6 +312,7 @@ def _read_parquet_dataset(
             batch_size=batch_rows,
             columns=list(CANONICAL_DAILY_COLUMNS),
         ):
+            deadline_check()
             columns = batch.to_pydict()
             for index in range(batch.num_rows):
                 row = {name: columns[name][index] for name in CANONICAL_DAILY_COLUMNS}
@@ -362,6 +374,7 @@ def _read_regular_relative(
     identifier: str,
     *,
     max_bytes: int,
+    deadline_check: Callable[[], None],
 ) -> tuple[bytes, os.stat_result]:
     components = _validated_components(identifier)
     root_fd = _open_absolute_tree(root)
@@ -393,6 +406,7 @@ def _read_regular_relative(
         chunks: list[bytes] = []
         remaining = max_bytes + 1
         while remaining > 0:
+            deadline_check()
             chunk = os.read(file_fd, min(64 * 1024, remaining))
             if not chunk:
                 break
@@ -465,3 +479,7 @@ def _open_existing_children(parent_fd: int, components: tuple[str, ...]) -> int:
     except Exception:
         os.close(current_fd)
         raise
+
+
+def _no_deadline() -> None:
+    return None

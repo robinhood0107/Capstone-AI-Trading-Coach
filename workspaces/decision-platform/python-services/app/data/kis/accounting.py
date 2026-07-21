@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -140,7 +141,6 @@ class CollectionRunSummary(_FrozenModel):
 class LogicalOperationToken:
     token_id: int
     operation: LogicalOperation
-    physical_failure_baseline: tuple[tuple[PhysicalChannel, int], ...]
 
 
 @dataclass
@@ -187,6 +187,11 @@ class CollectionRunRecorder:
         self._exact_duplicate_rows = 0
         self._conflicting_duplicate_groups = 0
         self._active: dict[int, LogicalOperationToken] = {}
+        self._active_physical_failures: dict[int, Counter[PhysicalChannel]] = {}
+        self._logical_context: ContextVar[tuple[int, ...]] = ContextVar(
+            f"kis_collection_run_{run_id}",
+            default=(),
+        )
         self._next_token = 1
         self._lock = Lock()
 
@@ -197,23 +202,20 @@ class CollectionRunRecorder:
             token = LogicalOperationToken(
                 token_id=self._next_token,
                 operation=operation,
-                physical_failure_baseline=tuple(
-                    (channel, self._physical[channel].failures) for channel in PhysicalChannel
-                ),
             )
             self._next_token += 1
             self._active[token.token_id] = token
+            self._active_physical_failures[token.token_id] = Counter()
+            self._logical_context.set((*self._logical_context.get(), token.token_id))
             self._logical[operation].started += 1
             return token
 
     def succeed_logical(self, token: LogicalOperationToken) -> None:
         with self._lock:
-            active = self._pop_active(token)
+            active, recovered_failures = self._pop_active(token)
             self._logical[active.operation].succeeded += 1
-            for channel, baseline in active.physical_failure_baseline:
-                recovered = self._physical[channel].failures - baseline
-                if recovered > 0:
-                    self._physical[channel].recovered_failures += recovered
+            for channel, recovered in recovered_failures.items():
+                self._physical[channel].recovered_failures += recovered
 
     def fail_logical(
         self,
@@ -223,7 +225,7 @@ class CollectionRunRecorder:
         if not isinstance(code, FailureCode):
             raise ValueError("logical failure code must be allowlisted")
         with self._lock:
-            active = self._pop_active(token)
+            active, _ = self._pop_active(token)
             state = self._logical[active.operation]
             state.terminal_failures += 1
             assert state.failure_codes is not None
@@ -258,6 +260,9 @@ class CollectionRunRecorder:
             state.failures += 1
             assert state.failure_codes is not None
             state.failure_codes[code] += 1
+            logical_stack = self._logical_context.get()
+            if logical_stack and logical_stack[-1] in self._active_physical_failures:
+                self._active_physical_failures[logical_stack[-1]][channel] += 1
 
     def record_skip(self, code: SkipCode) -> None:
         if not isinstance(code, SkipCode):
@@ -307,12 +312,20 @@ class CollectionRunRecorder:
                 ),
             )
 
-    def _pop_active(self, token: LogicalOperationToken) -> LogicalOperationToken:
+    def _pop_active(
+        self,
+        token: LogicalOperationToken,
+    ) -> tuple[LogicalOperationToken, Counter[PhysicalChannel]]:
         active = self._active.get(token.token_id)
         if active != token:
             raise ValueError("logical operation token is not active")
+        logical_stack = self._logical_context.get()
+        if not logical_stack or logical_stack[-1] != token.token_id:
+            raise ValueError("logical operation token is not current in this execution context")
+        self._logical_context.set(logical_stack[:-1])
         del self._active[token.token_id]
-        return active
+        failures = self._active_physical_failures.pop(token.token_id)
+        return active, failures
 
     @staticmethod
     def _require_unresolved(state: _PhysicalState) -> None:

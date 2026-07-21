@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import sys
 import time
+from collections.abc import Callable
 from typing import NoReturn
 
 from app.data.quality.kis_daily import QualityReadLimits, load_quality_snapshot
@@ -33,8 +34,9 @@ def main(argv: list[str] | None = None) -> int:
         _print_error("USAGE_ERROR")
         return 2
 
-    started = time.monotonic()
+    deadline_check = _wall_deadline_check(time.monotonic())
     try:
+        deadline_check()
         root = Path(os.environ.get("KIS_DATA_DIR", "data/kis"))
         window_start = date.fromisoformat(args.window_start)
         window_end = date.fromisoformat(args.window_end)
@@ -49,11 +51,19 @@ def main(argv: list[str] | None = None) -> int:
             evaluated_at=evaluated_at,
             software_revision=args.software_revision,
             limits=QualityReadLimits(),
+            deadline_check=deadline_check,
         )
-        report = analyze_quality(snapshot.context, snapshot.datasets)
-        if time.monotonic() - started > WALL_DEADLINE_SECONDS:
-            raise ValueError("quality report deadline exceeded")
-        published = publish_quality_bundle(root, report)
+        report = analyze_quality(
+            snapshot.context,
+            snapshot.datasets,
+            deadline_check=deadline_check,
+        )
+        published = publish_quality_bundle(
+            root,
+            report,
+            deadline_check=deadline_check,
+        )
+        deadline_check()
     except KeyboardInterrupt:
         _print_error("INPUT_OR_PUBLISH_ERROR")
         return 2
@@ -115,6 +125,16 @@ def _parse_evaluated_at(value: str) -> datetime:
 
 def _print_error(code: str) -> None:
     print(f"KIS_DATA_QUALITY_ERROR code={code}", file=sys.stderr)
+
+
+def _wall_deadline_check(started: float) -> Callable[[], None]:
+    deadline = started + WALL_DEADLINE_SECONDS
+
+    def check() -> None:
+        if time.monotonic() > deadline:
+            raise ValueError("quality report deadline exceeded")
+
+    return check
 
 
 if __name__ == "__main__":

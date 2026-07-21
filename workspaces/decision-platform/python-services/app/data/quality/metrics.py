@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from collections import Counter, defaultdict
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
+from bisect import insort_right
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
@@ -46,7 +47,7 @@ _REPORT_NAMESPACE = UUID("c24453a2-6a19-55d6-8aa1-6cb3e48f6c16")
 _SYMBOL_DIGITS = frozenset("0123456789")
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class _ValidRow:
     symbol: str
     session_date: date
@@ -62,7 +63,7 @@ class _ValidRow:
         return (self.open, self.high, self.low, self.close, self.volume, self.turnover)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, order=True, slots=True)
 class _SampleCandidate:
     rule_code: str
     symbol: str
@@ -75,6 +76,32 @@ class _MetricCounts:
     numerator: int | None
     denominator: int | None
     status: MetricStatus
+
+
+class _SampleCollector:
+    """scan 중에도 rule별 최솟값 20개만 보존해 sample 후보 메모리를 고정한다."""
+
+    def __init__(self) -> None:
+        self._by_rule: dict[str, list[_SampleCandidate]] = defaultdict(list)
+        self._retained = 0
+
+    def add(self, candidate: _SampleCandidate) -> None:
+        bucket = self._by_rule[candidate.rule_code]
+        insort_right(bucket, candidate)
+        self._retained += 1
+        if len(bucket) > MAX_SAMPLES_PER_RULE:
+            bucket.pop()
+            self._retained -= 1
+
+    def __len__(self) -> int:
+        return self._retained
+
+    def sorted_items(self) -> tuple[_SampleCandidate, ...]:
+        return tuple(
+            candidate
+            for rule_code in sorted(self._by_rule)
+            for candidate in self._by_rule[rule_code]
+        )
 
 
 def modified_z_score(value: float, history: Sequence[float]) -> float | None:
@@ -94,12 +121,16 @@ def modified_z_score(value: float, history: Sequence[float]) -> float | None:
 def analyze_quality(
     context: AnalysisContext,
     datasets: Iterable[SymbolDataset],
+    *,
+    deadline_check: Callable[[], None] | None = None,
 ) -> KISDataQualityReport:
     """manifest-pinned 일봉을 수정 없이 aggregate metric과 bounded derived sample로 투영한다.
 
     clock, Git, filesystem, environment, network를 읽지 않으며 orchestration이 검증해 주입한 context와
     symbol별 bounded rows만 소비한다.
     """
+    check_deadline = deadline_check or _no_deadline
+    check_deadline()
     dataset_items = tuple(datasets)
     if len(dataset_items) > MAX_FILES:
         raise ValueError("dataset file cap exceeded")
@@ -107,23 +138,26 @@ def analyze_quality(
     if total_raw_rows > MAX_ROWS:
         raise ValueError("dataset row cap exceeded")
 
-    candidates: list[_SampleCandidate] = []
+    candidates = _SampleCollector()
     integrity_numerator, integrity_denominator, valid_rows = _validate_rows(
         context,
         dataset_items,
         candidates,
+        check_deadline,
     )
     canonical_numerator, canonical_denominator, unique_rows = _resolve_duplicates(
         valid_rows,
         candidates,
+        check_deadline,
     )
 
-    coverage = _coverage_metric(context, unique_rows, candidates)
-    freshness, stale = _freshness_metrics(context, unique_rows, candidates)
+    coverage = _coverage_metric(context, unique_rows, candidates, check_deadline)
+    freshness, stale = _freshness_metrics(context, unique_rows, candidates, check_deadline)
     return_outlier, abrupt_price, volume_spike = _market_shape_metrics(
         context,
         unique_rows,
         candidates,
+        check_deadline,
     )
     ingest, logical, physical = _accounting_metrics(context, total_raw_rows)
 
@@ -208,7 +242,8 @@ def analyze_quality(
 def _validate_rows(
     context: AnalysisContext,
     datasets: tuple[SymbolDataset, ...],
-    candidates: list[_SampleCandidate],
+    candidates: _SampleCollector,
+    deadline_check: Callable[[], None],
 ) -> tuple[int, int, tuple[_ValidRow, ...]]:
     session_set = frozenset(context.sessions)
     valid: list[_ValidRow] = []
@@ -217,13 +252,18 @@ def _validate_rows(
 
     # 입력 순서가 report identity나 sample 순서를 바꾸지 않도록 file symbol 기준으로만 순회한다.
     for dataset in sorted(datasets, key=lambda item: item.symbol):
+        deadline_check()
         file_symbol_valid = _is_symbol(dataset.symbol)
         if dataset.columns != CANONICAL_DAILY_COLUMNS or not file_symbol_valid:
             invalid_units += 1
-            for row in dataset.rows:
+            for index, row in enumerate(dataset.rows):
+                if index % 8_192 == 0:
+                    deadline_check()
                 _append_integrity_sample(candidates, dataset.symbol, row)
             continue
-        for row in dataset.rows:
+        for index, row in enumerate(dataset.rows):
+            if index % 8_192 == 0:
+                deadline_check()
             parsed = _parse_row(
                 row,
                 file_symbol=dataset.symbol,
@@ -293,14 +333,14 @@ def _parse_row(
 
 
 def _append_integrity_sample(
-    candidates: list[_SampleCandidate],
+    candidates: _SampleCollector,
     file_symbol: str,
     row: Mapping[str, object],
 ) -> None:
     raw_date = row.get("date")
     if not _is_symbol(file_symbol) or type(raw_date) is not date:
         return
-    candidates.append(
+    candidates.add(
         _SampleCandidate(
             rule_code="SCHEMA_INTEGRITY",
             symbol=file_symbol,
@@ -312,20 +352,25 @@ def _append_integrity_sample(
 
 def _resolve_duplicates(
     rows: tuple[_ValidRow, ...],
-    candidates: list[_SampleCandidate],
+    candidates: _SampleCollector,
+    deadline_check: Callable[[], None],
 ) -> tuple[int, int, tuple[_ValidRow, ...]]:
     groups: dict[tuple[str, date], list[_ValidRow]] = defaultdict(list)
-    for row in rows:
+    for index, row in enumerate(rows):
+        if index % 8_192 == 0:
+            deadline_check()
         groups[(row.symbol, row.session_date)].append(row)
 
     excess_rows = 0
     selected: list[_ValidRow] = []
-    for (symbol, session_date), group in sorted(groups.items()):
+    for index, ((symbol, session_date), group) in enumerate(sorted(groups.items())):
+        if index % 8_192 == 0:
+            deadline_check()
         if len(group) == 1:
             selected.append(group[0])
             continue
         excess_rows += len(group) - 1
-        candidates.append(
+        candidates.add(
             _SampleCandidate(
                 rule_code="CANONICAL_DUPLICATE",
                 symbol=symbol,
@@ -343,20 +388,26 @@ def _resolve_duplicates(
 def _coverage_metric(
     context: AnalysisContext,
     rows: tuple[_ValidRow, ...],
-    candidates: list[_SampleCandidate],
+    candidates: _SampleCollector,
+    deadline_check: Callable[[], None],
 ) -> _MetricCounts:
     symbols = tuple(sorted(context.universe_symbols))
     expected = len(symbols) * len(context.sessions)
     if expected == 0:
         return _MetricCounts(0, 0, MetricStatus.NOT_EVALUATED)
-    present = {(row.symbol, row.session_date) for row in rows}
+    present: set[tuple[str, date]] = set()
+    for index, row in enumerate(rows):
+        if index % 8_192 == 0:
+            deadline_check()
+        present.add((row.symbol, row.session_date))
     missing = 0
     for symbol in symbols:
+        deadline_check()
         for session_date in context.sessions:
             if (symbol, session_date) in present:
                 continue
             missing += 1
-            candidates.append(
+            candidates.add(
                 _SampleCandidate(
                     rule_code="CURRENT_UNIVERSE_MISSING",
                     symbol=symbol,
@@ -370,12 +421,17 @@ def _coverage_metric(
 def _freshness_metrics(
     context: AnalysisContext,
     rows: tuple[_ValidRow, ...],
-    candidates: list[_SampleCandidate],
+    candidates: _SampleCollector,
+    deadline_check: Callable[[], None],
 ) -> tuple[_MetricCounts, _MetricCounts]:
     if not context.sessions:
         not_evaluated = _MetricCounts(0, 0, MetricStatus.NOT_EVALUATED)
         return not_evaluated, not_evaluated
-    dates = tuple(row.session_date for row in rows)
+    dates: list[date] = []
+    for index, row in enumerate(rows):
+        if index % 8_192 == 0:
+            deadline_check()
+        dates.append(row.session_date)
     is_stale = not dates or max(dates) < context.expected_last_completed_xkrx_session
     freshness = _evaluated_counts(
         int(is_stale),
@@ -390,10 +446,13 @@ def _freshness_metrics(
     if expected_index is None:
         raise ValueError("expected last session must belong to sessions")
     by_symbol: dict[str, list[date]] = defaultdict(list)
-    for row in rows:
+    for index, row in enumerate(rows):
+        if index % 8_192 == 0:
+            deadline_check()
         by_symbol[row.symbol].append(row.session_date)
     stale_symbols = 0
     for symbol in sorted(context.universe_symbols):
+        deadline_check()
         symbol_dates = by_symbol.get(symbol, [])
         if symbol_dates:
             last_index = session_index[max(symbol_dates)]
@@ -403,7 +462,7 @@ def _freshness_metrics(
         if lag == 0:
             continue
         stale_symbols += 1
-        candidates.append(
+        candidates.add(
             _SampleCandidate(
                 rule_code="PER_SYMBOL_STALE",
                 symbol=symbol,
@@ -422,12 +481,16 @@ def _freshness_metrics(
 def _market_shape_metrics(
     context: AnalysisContext,
     rows: tuple[_ValidRow, ...],
-    candidates: list[_SampleCandidate],
+    candidates: _SampleCollector,
+    deadline_check: Callable[[], None],
 ) -> tuple[_MetricCounts, _MetricCounts, _MetricCounts]:
     session_index = {day: index for index, day in enumerate(context.sessions)}
+    universe_set = frozenset(context.universe_symbols)
     by_symbol: dict[str, list[_ValidRow]] = defaultdict(list)
-    for row in rows:
-        if row.symbol in context.universe_symbols:
+    for index, row in enumerate(rows):
+        if index % 8_192 == 0:
+            deadline_check()
+        if row.symbol in universe_set:
             by_symbol[row.symbol].append(row)
 
     outlier_numerator = 0
@@ -437,6 +500,7 @@ def _market_shape_metrics(
     volume_numerator = 0
     volume_denominator = 0
     for symbol in sorted(context.universe_symbols):
+        deadline_check()
         ordered = sorted(by_symbol.get(symbol, ()), key=lambda item: item.session_date)
         for segment in _continuous_segments(ordered, session_index):
             returns: list[tuple[date, float, float]] = []
@@ -447,7 +511,7 @@ def _market_shape_metrics(
                 abrupt_denominator += 1
                 if abs(simple_return) >= ABRUPT_RETURN_THRESHOLD:
                     abrupt_numerator += 1
-                    candidates.append(
+                    candidates.add(
                         _SampleCandidate(
                             rule_code="ABRUPT_PRICE",
                             symbol=symbol,
@@ -463,7 +527,7 @@ def _market_shape_metrics(
                 outlier_denominator += 1
                 if abs(score) > MODIFIED_Z_THRESHOLD:
                     outlier_numerator += 1
-                    candidates.append(
+                    candidates.add(
                         _SampleCandidate(
                             rule_code="RETURN_OUTLIER",
                             symbol=symbol,
@@ -485,7 +549,7 @@ def _market_shape_metrics(
                 volume_denominator += 1
                 if abs(score) > MODIFIED_Z_THRESHOLD:
                     volume_numerator += 1
-                    candidates.append(
+                    candidates.add(
                         _SampleCandidate(
                             rule_code="SHARE_VOLUME_SPIKE",
                             symbol=symbol,
@@ -576,11 +640,20 @@ def _accounting_metrics(
         ),
         None,
     )
-    physical = _evaluated_counts(
-        market_data.failures if market_data is not None else 0,
-        market_data.attempts if market_data is not None else 0,
-        failure=MetricStatus.WARN,
-    )
+    if market_data is None or market_data.attempts == 0:
+        physical = _MetricCounts(0, 0, MetricStatus.NOT_EVALUATED)
+    elif market_data.failures == 0:
+        physical = _MetricCounts(0, market_data.attempts, MetricStatus.PASS)
+    else:
+        physical = _MetricCounts(
+            market_data.failures,
+            market_data.attempts,
+            (
+                MetricStatus.WARN
+                if market_data.recovered_failures == market_data.failures
+                else MetricStatus.FAIL
+            ),
+        )
     return ingest, logical, physical
 
 
@@ -619,18 +692,10 @@ def _rate_metric(
     )
 
 
-def _bound_samples(candidates: list[_SampleCandidate]) -> tuple[BoundedSample, ...]:
+def _bound_samples(candidates: _SampleCollector) -> tuple[BoundedSample, ...]:
     per_rule: Counter[str] = Counter()
     bounded: list[BoundedSample] = []
-    for item in sorted(
-        candidates,
-        key=lambda value: (
-            value.rule_code,
-            value.symbol,
-            value.session_date,
-            value.derived,
-        ),
-    ):
+    for item in candidates.sorted_items():
         if len(bounded) >= MAX_SAMPLES:
             break
         if per_rule[item.rule_code] >= MAX_SAMPLES_PER_RULE:
@@ -715,3 +780,7 @@ def _bounded_scaled(value: float, scale: int) -> int:
 
 def _is_symbol(value: str) -> bool:
     return len(value) == 6 and set(value) <= _SYMBOL_DIGITS
+
+
+def _no_deadline() -> None:
+    return None

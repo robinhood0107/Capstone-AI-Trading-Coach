@@ -127,9 +127,10 @@ class SuccessfulDatasetManifest(_FrozenModel):
             raise ValueError("dataset fileCount must match files")
         if self.row_count != sum(item.row_count for item in self.files):
             raise ValueError("dataset rowCount must match files")
-        if tuple(item.symbol for item in self.files) != tuple(
-            sorted(item.symbol for item in self.files)
-        ):
+        symbols = tuple(item.symbol for item in self.files)
+        if len(set(symbols)) != len(symbols):
+            raise ValueError("dataset files must use unique symbols")
+        if symbols != tuple(sorted(symbols)):
             raise ValueError("dataset files must use stable symbol ordering")
         return self
 
@@ -457,8 +458,11 @@ def _validated_components(identifier: str) -> tuple[str, ...]:
         or "\\" in identifier
     ):
         raise KISRunArtifactError("run artifact identifier is invalid")
+    raw_components = tuple(identifier.split("/"))
+    if any(item in {"", ".", ".."} for item in raw_components):
+        raise KISRunArtifactError("run artifact identifier is invalid")
     components = tuple(PurePosixPath(identifier).parts)
-    if not components or any(item in {"", ".", ".."} for item in components):
+    if not components or components != raw_components:
         raise KISRunArtifactError("run artifact identifier is invalid")
     return components
 

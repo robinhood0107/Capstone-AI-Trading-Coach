@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
 from threading import Lock
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, model_validator
@@ -74,6 +75,7 @@ class LogicalOperationSummary(_FrozenModel):
             raise ValueError("logical operation counts must balance")
         if self.terminal_failures != sum(item.count for item in self.failure_codes):
             raise ValueError("logical failure codes must balance")
+        _require_canonical_failure_inventory(self.failure_codes, label="logical")
         return self
 
 
@@ -93,6 +95,7 @@ class PhysicalAttemptSummary(_FrozenModel):
             raise ValueError("physical failure codes must balance")
         if self.recovered_failures > self.failures:
             raise ValueError("recovered failures cannot exceed failures")
+        _require_canonical_failure_inventory(self.failure_codes, label="physical")
         return self
 
 
@@ -110,7 +113,7 @@ class CollectionRunSummary(_FrozenModel):
     """KIS 수집 실행의 logical/physical 집계만 보존하며 provider 원문 ledger는 만들지 않는다."""
 
     schema_version: StrictInt = Field(default=1, alias="schemaVersion", ge=1, le=1)
-    sanitization_version: str = Field(
+    sanitization_version: Literal["s1-5-kis-collection-accounting-v1"] = Field(
         default="s1-5-kis-collection-accounting-v1",
         alias="sanitizationVersion",
     )
@@ -129,6 +132,18 @@ class CollectionRunSummary(_FrozenModel):
             raise ValueError("collection run timestamps must be timezone-aware")
         if self.completed_at < self.started_at:
             raise ValueError("collection run completion cannot precede start")
+        if tuple(item.operation for item in self.logical_operations) != tuple(
+            LogicalOperation
+        ):
+            raise ValueError("logical operation inventory must be canonical")
+        if tuple(item.channel for item in self.physical_attempts) != tuple(
+            PhysicalChannel
+        ):
+            raise ValueError("physical attempt inventory must be canonical")
+        skip_codes = tuple(item.code for item in self.skips)
+        canonical_skip_codes = tuple(code for code in SkipCode if code in skip_codes)
+        if len(set(skip_codes)) != len(skip_codes) or skip_codes != canonical_skip_codes:
+            raise ValueError("skip inventory must be unique and canonical")
         if (
             self.status == CollectionRunStatus.SUCCESS
             and self.ingest_duplicates.conflicting_groups
@@ -390,3 +405,14 @@ def _failure_counts(counts: Counter[FailureCode]) -> tuple[FailureCount, ...]:
         for code in FailureCode
         if counts[code]
     )
+
+
+def _require_canonical_failure_inventory(
+    counts: tuple[FailureCount, ...],
+    *,
+    label: str,
+) -> None:
+    observed = tuple(item.code for item in counts)
+    canonical = tuple(code for code in FailureCode if code in observed)
+    if len(set(observed)) != len(observed) or observed != canonical:
+        raise ValueError(f"{label} failure code inventory must be unique and canonical")

@@ -1858,6 +1858,20 @@ report의 세 상태 축은 `executionStatus=SUCCESS`, `evidenceCompleteness=COM
 `PASS`, 전부 미평가면 `NOT_EVALUATED` 순이다. listing/suspension point-in-time evidence는 optional이므로
 그 부재만으로 `evidenceCompleteness`를 낮추지 않는다.
 
+운영자는 provider 수집과 reporter를 한 명령으로 묶지 않는다. 먼저 승인된 S1.1 successful dataset
+manifest, 그 manifest가 고정한 universe/collection SHA-256, report window와 injected
+`evaluatedAt`/software revision을 확인한 뒤 위 `generate` 명령만 실행한다. 같은 입력을 재실행하면
+동일 reportId의 verified no-op이어야 한다. stdout/stderr의 stable status와 relative bundle ID 외에 로컬
+경로나 원문을 evidence로 복사하지 않는다. `--fail-on-quality --require-complete-evidence`를 함께 쓴
+strict 실행의 exit `0`만 보고서 acceptance로 사용하고, exit `1`/`3`의 truthful bundle은 원인 분석용으로
+보존하되 완료로 분류하지 않는다. exit `2`에서는 이전 latest를 유지한다.
+
+일반 offline 구현·fixture 검증은 실제 중간보고서 artifact가 아니다. 실제 KIS read-only gap 보충이
+필요하면 현재 HEAD/PR/manifest/window/mode/endpoint/call cap에 결속된 별도 exact approval packet을
+먼저 발급한다. reporter 자체의 provider call은 그 이후에도 `0`이다. event date가 정해지기 전에는
+`HOLD_UNTIL_EVENT_DATE_CONFIGURED`, 보고서에 인용한 reportId는 최종 제출 완료까지 pin하며, S1.5는
+canonical Parquet 또는 report bundle의 자동 prune/delete를 수행하지 않는다.
+
 모든 rate는 `numerator`, `denominator`, integer-or-null `ratePpm`, `status`를 갖는다. denominator가
 양수이면 Decimal `ROUND_HALF_UP(numerator * 1_000_000 / denominator)`, 0이면 `ratePpm=null`과
 `NOT_EVALUATED`다. NaN/Infinity는 금지한다.

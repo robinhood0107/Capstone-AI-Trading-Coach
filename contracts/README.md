@@ -10,6 +10,31 @@
 | `examples/` | schema를 통과해야 하는 예시 payload |
 | `changes/` | 계약 변경 이유·영향 범위 기록 |
 
+## S1.5 KIS 데이터 품질 리포트
+
+S1.5는 public API가 아니라 Decision Platform 내부 CLI `kis-data-quality-report`가 생산하는
+sanitized aggregate artifact다. reporter는 selected universe/dataset/collection manifest와 canonical
+KIS 일봉만 읽고 provider/network outbound를 만들지 않는다. 실제 KIS 데이터 수집·백필은 이 CLI와
+결합하지 않으며 별도의 현재 사용자 exact approval 없이는 실행하지 않는다.
+
+| 계약 | Producer | Consumer | 보존 |
+|---|---|---|---|
+| `schemas/kis_data_quality_report.schema.json` | `decision-platform:python-data-quality` | 중간·최종보고서 evidence와 S6.5 strict nightly | 시연/평가 종료 후 28일까지 |
+| `schemas/kis_data_quality_bundle_manifest.schema.json` | S1.5 secure bundle publisher | latest pointer verifier와 report consumer | report bundle과 동일 |
+
+bundle은 ignored KIS data root의
+`quality/YYYY/MM/DD/<reportId>/{report.json,report.md,manifest.json}`에 있고,
+`quality/latest-manifest.json`은 완성 bundle 뒤에만 교체한다. report JSON에는 자기 hash나 Markdown
+hash를 넣지 않으며 bundle manifest가 두 파일의 exact name/size/SHA-256을 소유한다. 동일
+fingerprint 재실행은 existing mode/hash/content를 검증한 no-op이고 손상된 같은 reportId를 덮어쓰지
+않는다.
+
+`schemaVersion=1`, `metricPolicyVersion=s1-5-quality-report-v1`이다. 일반 실행은 collection accounting을
+생략할 수 있지만 API metric은 `NOT_AVAILABLE`, evidence는 `PARTIAL`이 된다. 보고서 acceptance에는
+`--fail-on-quality --require-complete-evidence`를 함께 쓰며 exit precedence는 `2 > 3 > 1 > 0`이다.
+event date가 미확정이면 `HOLD_UNTIL_EVENT_DATE_CONFIGURED`, 인용한 reportId는 최종 제출 완료까지
+pin한다. S1.5는 canonical Parquet이나 bundle을 자동 삭제하지 않는다.
+
 ## S1.3 ECOS/Naver 내부 source snapshot
 
 S1.3은 public REST/gRPC를 추가하지 않는다. Decision Platform이 아래 sanitized JSON을 생성하고,

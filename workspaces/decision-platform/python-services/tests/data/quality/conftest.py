@@ -14,4 +14,3 @@ def posix_tmp_path() -> Iterator[Path]:
         yield path
     finally:
         shutil.rmtree(path)
-

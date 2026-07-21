@@ -5,11 +5,13 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
+from pydantic import ValidationError
 
 from app.data._shared.canonical_json import canonical_json_bytes
 from app.data.kis.accounting import CollectionRunRecorder, CollectionRunStatus
 from app.data.kis.parsers import DailyBar
 from app.data.kis.run_artifacts import (
+    ArtifactReference,
     KISRunArtifactError,
     build_dataset_manifest,
     inventory_daily_dataset,
@@ -145,3 +147,25 @@ def test_inventory_rejects_hardlinked_parquet(tmp_path: Path) -> None:
 
     with pytest.raises(KISRunArtifactError, match="link"):
         inventory_daily_dataset(tmp_path, ("005930",))
+
+
+def test_artifact_reference_rejects_dot_segment_alias() -> None:
+    with pytest.raises(ValidationError):
+        ArtifactReference(identifier="collection-runs/./summary.json", sha256="a" * 64)
+
+
+def test_dataset_manifest_rejects_duplicate_symbol_inventory(tmp_path: Path) -> None:
+    _prepare_inputs(tmp_path)
+    summary = publish_collection_summary(tmp_path, _summary())
+    universe = reference_input_artifact(tmp_path, "universe_manifest.json")
+    files = inventory_daily_dataset(tmp_path, ("005930",))
+
+    with pytest.raises(ValidationError, match="unique"):
+        build_dataset_manifest(
+            dataset_manifest_id=RUN_ID,
+            created_at=COMPLETED_AT,
+            adjustment_mode="ADJUSTED",
+            universe_manifest=universe,
+            collection_run=summary.reference,
+            files=(files[0], files[0]),
+        )

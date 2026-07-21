@@ -11,9 +11,11 @@ from app.data.kis.accounting import (
     CollectionRunSummary,
     CollectionRunStatus,
     FailureCode,
+    KISCallBudgetExceeded,
     LogicalOperation,
     PhysicalChannel,
     SkipCode,
+    stable_failure_code,
 )
 
 
@@ -60,6 +62,54 @@ def test_recorder_separates_logical_market_and_token_attempts_with_retry_recover
         1,
     )
     assert (token.attempts, token.successes, token.failures) == (1, 1, 0)
+
+
+def test_recorder_call_caps_fail_closed_without_incrementing_denominators() -> None:
+    recorder = CollectionRunRecorder(
+        run_id=RUN_ID,
+        started_at=STARTED_AT,
+        logical_caps={LogicalOperation.CURRENT_PRICE: 1},
+        physical_caps={PhysicalChannel.MARKET_DATA: 1},
+    )
+    operation = recorder.start_logical(LogicalOperation.CURRENT_PRICE)
+    recorder.record_physical_attempt(PhysicalChannel.MARKET_DATA)
+    recorder.record_physical_success(PhysicalChannel.MARKET_DATA)
+    recorder.succeed_logical(operation)
+
+    with pytest.raises(KISCallBudgetExceeded, match="currentPrice") as logical_error:
+        recorder.start_logical(LogicalOperation.CURRENT_PRICE)
+    with pytest.raises(KISCallBudgetExceeded, match="marketData") as physical_error:
+        recorder.record_physical_attempt(PhysicalChannel.MARKET_DATA)
+
+    summary = recorder.snapshot(
+        completed_at=COMPLETED_AT,
+        status=CollectionRunStatus.SUCCESS,
+    )
+    assert _logical(summary, LogicalOperation.CURRENT_PRICE).started == 1
+    assert _physical(summary, PhysicalChannel.MARKET_DATA).attempts == 1
+    assert stable_failure_code(logical_error.value) == FailureCode.LIMITER_BLOCKED
+    assert stable_failure_code(physical_error.value) == FailureCode.LIMITER_BLOCKED
+
+
+def test_recorder_rejects_negative_boolean_and_unknown_call_caps() -> None:
+    with pytest.raises(ValueError, match="non-negative integer"):
+        CollectionRunRecorder(
+            run_id=RUN_ID,
+            started_at=STARTED_AT,
+            logical_caps={LogicalOperation.CURRENT_PRICE: -1},
+        )
+    with pytest.raises(ValueError, match="non-negative integer"):
+        CollectionRunRecorder(
+            run_id=RUN_ID,
+            started_at=STARTED_AT,
+            physical_caps={PhysicalChannel.TOKEN_P: True},  # type: ignore[dict-item]
+        )
+    with pytest.raises(ValueError, match="allowlisted"):
+        CollectionRunRecorder(
+            run_id=RUN_ID,
+            started_at=STARTED_AT,
+            logical_caps={"currentPrice": 1},  # type: ignore[dict-item]
+        )
 
 
 def test_parser_failure_is_logical_terminal_failure_after_physical_success() -> None:

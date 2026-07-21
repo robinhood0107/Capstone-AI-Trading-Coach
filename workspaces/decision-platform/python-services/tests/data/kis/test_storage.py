@@ -1,11 +1,17 @@
 from datetime import date
 import os
 from pathlib import Path
+from threading import Event, Thread
 
 import pytest
 
 from app.data.kis.parsers import DailyBar
-from app.data.kis.storage import missing_daily_ranges, upsert_daily_bars
+from app.data.kis.storage import (
+    KISConflictingDuplicateError,
+    dataset_lock,
+    missing_daily_ranges,
+    upsert_daily_bars,
+)
 
 
 def test_parquet_upsert_is_idempotent_by_symbol_and_date(tmp_path: Path) -> None:
@@ -29,6 +35,8 @@ def test_parquet_upsert_is_idempotent_by_symbol_and_date(tmp_path: Path) -> None
     assert first.total_rows == 2
     assert second.total_rows == 3
     assert second.inserted_rows == 1
+    assert second.exact_duplicate_rows == 1
+    assert second.conflicting_duplicate_groups == 0
     assert (tmp_path / "daily" / "005930.parquet").exists()
     if supports_posix_modes:
         assert (tmp_path / "daily" / "005930.parquet").stat().st_mode & 0o777 == 0o600
@@ -101,3 +109,50 @@ def test_parquet_storage_rejects_symlink_in_ancestor_path(tmp_path: Path) -> Non
         upsert_daily_bars(nested_data, "005930", [])
 
     assert not (outside / "nested-data" / "daily" / "005930.parquet").exists()
+
+
+def test_conflicting_duplicate_fails_without_overwriting_existing_parquet(tmp_path: Path) -> None:
+    first = DailyBar("005930", date(2026, 7, 8), 10, 12, 9, 11, 100)
+    upsert_daily_bars(tmp_path, "005930", [first])
+    path = tmp_path / "daily" / "005930.parquet"
+    before = path.read_bytes()
+
+    with pytest.raises(KISConflictingDuplicateError, match="conflicting"):
+        upsert_daily_bars(
+            tmp_path,
+            "005930",
+            [DailyBar("005930", date(2026, 7, 8), 10, 12, 9, 12, 100)],
+        )
+
+    assert path.read_bytes() == before
+
+
+def test_incoming_symbol_mismatch_is_rejected_before_write(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="symbol"):
+        upsert_daily_bars(
+            tmp_path,
+            "005930",
+            [DailyBar("000660", date(2026, 7, 8), 10, 12, 9, 11, 100)],
+        )
+
+    assert not (tmp_path / "daily" / "005930.parquet").exists()
+
+
+def test_exclusive_writer_blocks_shared_reader_until_release(tmp_path: Path) -> None:
+    attempted = Event()
+    acquired = Event()
+
+    def reader() -> None:
+        attempted.set()
+        with dataset_lock(tmp_path, exclusive=False):
+            acquired.set()
+
+    with dataset_lock(tmp_path, exclusive=True):
+        thread = Thread(target=reader)
+        thread.start()
+        assert attempted.wait(timeout=1)
+        assert not acquired.wait(timeout=0.05)
+
+    thread.join(timeout=1)
+    assert acquired.is_set()
+    assert (tmp_path / ".dataset.lock").stat().st_mode & 0o777 == 0o600

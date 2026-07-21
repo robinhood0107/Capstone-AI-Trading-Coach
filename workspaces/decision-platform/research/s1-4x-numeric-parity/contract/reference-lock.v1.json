@@ -50,9 +50,9 @@
       "sha256": "1697526ec70e9692f97a23998cea6a785fd759f66e50e418f063246391a5668c"
     },
     {
-      "role": "production-project-lock-input",
+      "role": "production-project-runtime-projection",
       "path": "workspaces/decision-platform/python-services/pyproject.toml",
-      "sha256": "a2c13d5b957342fd72dd9caaaf8b82d3c2f3011a057eb33c513f7e8c93e39df4"
+      "sha256": "dfc06411be69156ddb7488f7bdd3790a7293d8b424d3bb6f6266287825b4ac21"
     },
     {
       "role": "production-environment-lock",
@@ -65,9 +65,9 @@
       "sha256": "9dd12cc65c1a2ab8f7479b031882f64a7a6a2e36ab75c2c47cbfb75b8f81e140"
     },
     {
-      "role": "research-project-lock-input",
+      "role": "research-project-runtime-projection",
       "path": "workspaces/decision-platform/research/s1-4r-jax-risk/pyproject.toml",
-      "sha256": "4176ccb94f0da5002ae9e19a300f4141e8a3727e3848e6950d6125db3110030d"
+      "sha256": "205b94ad38eb1cda6dd2c626e55af6d02b418817cdbbac239abe0f8d1547c41c"
     },
     {
       "role": "research-environment-lock",
@@ -196,7 +196,7 @@
         "uv.lock"
       ],
       "fileCount": 8,
-      "canonicalManifestSha256": "a448342500733d1ed26828f1e9f2f863a4a7a239a32b3f416c490d24927dc5aa",
+      "canonicalManifestSha256": "cdf60a23091f2c051d599207c41b8a2bf62cc5b95d6dd6a6af4fc9d2e0b7d056",
       "files": [
         {
           "path": "app/financial_engineering/__init__.py",
@@ -216,7 +216,7 @@
         },
         {
           "path": "pyproject.toml",
-          "sha256": "a2c13d5b957342fd72dd9caaaf8b82d3c2f3011a057eb33c513f7e8c93e39df4"
+          "sha256": "dfc06411be69156ddb7488f7bdd3790a7293d8b424d3bb6f6266287825b4ac21"
         },
         {
           "path": "tests/financial_engineering/test_returns.py",
@@ -242,7 +242,7 @@
         "uv.lock"
       ],
       "fileCount": 11,
-      "canonicalManifestSha256": "65e373521ffdadaebaa6c5e974bfe459361cbbefa77d07d4267773e261df6cac",
+      "canonicalManifestSha256": "b4437b97b69dfe521d02abaf2cbbff1df14edfc72bbeda01e608da97ab4a1cca",
       "files": [
         {
           "path": "README.md",
@@ -250,7 +250,7 @@
         },
         {
           "path": "pyproject.toml",
-          "sha256": "4176ccb94f0da5002ae9e19a300f4141e8a3727e3848e6950d6125db3110030d"
+          "sha256": "205b94ad38eb1cda6dd2c626e55af6d02b418817cdbbac239abe0f8d1547c41c"
         },
         {
           "path": "src/s1_4r_risk_research/__init__.py",

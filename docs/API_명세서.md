@@ -1809,9 +1809,108 @@ S1.1의 KIS MarketDataService 구현 경계는 다음과 같다.
 | market calendar | `/uapi/domestic-stock/v1/quotations/chk-holiday`, TR `CTCA0903R`는 모의투자 미지원(실전 Domain 전용) supporting read다. mock/offline에서는 fixture 또는 skip으로 처리하고 호출 시 1일 1회 이하로 보수 운영 |
 | storage | provider raw body/header/request URL은 저장하지 않는다. allowlist parser를 통과한 canonical parquet만 ignored local data 경로에 dirfd+`O_NOFOLLOW`, mode `0600`, fsync+atomic replace로 저장한다. 자동 retention/delete owner는 S1.1 미구현이므로 운영 영구보존을 승인하지 않고 S1.5에서 확정한다. 커밋 가능한 테스트 데이터는 credential/account/PII가 제거된 offline fixture만 허용한다 |
 | retry | 모든 physical retry는 같은 REST 슬롯을 다시 예약한다. 공식 오류코드 `EGW00001/00002/00202/00203/00300`의 안전한 GET만 backoff 없이 다음 허용 슬롯에서 최대 1회 재호출한다. timeout/408/5xx는 bounded backoff+jitter, `EGW00201`/HTTP 429는 fail-fast다. POST 주문성 호출은 S1.1에서 구현하지 않고 S3에서도 자동 retry하지 않는다 |
+| per-run call caps | online `kis-backfill`은 `--current-price-logical-cap`, `--daily-bars-logical-cap`, `--holiday-logical-cap`, `--market-data-physical-cap`, `--token-p-physical-cap`을 exact approval packet 값으로 모두 명시한다. 생략·부분 지정·음수는 client 생성 전에 거부하고, logical 시작과 market/token physical send 직전의 원자 recorder가 cap 도달 시 `KISCallBudgetExceeded`로 중단한다. retry도 별도 physical attempt로 같은 cap을 소비한다 |
 | local calendar | S1.1은 비거래일 KIS 호출 회피용으로 로컬 `exchange_calendars` XKRX 판정만 사용한다. 다중 소스 캘린더 집계는 S1.1 범위가 아니며, S1.2+ umbrella 아래 S1.6 계획은 12A와 아래 계획 RPC를 따른다 |
 
 > 변경 반영(2026-07-10): 계획(S1.2+ umbrella, S1.6 aggregator 구현 확정, 현재 미구현) — S1.6 완료 후 별도의 명시적 contract-change 세션에서 `GetTradingSessions`/`GetCalendarEvents` RPC와 REST 12A를 함께 승인한다. proto/OpenAPI 추가는 `contracts/changes/` 절차를 따르며 그 전에는 Dashboard가 이 계약을 소비하지 않는다.
+
+> 변경 반영(2026-07-22): actual S1.5 gap-fill 승인의 logical/physical hard cap을 `kis-backfill` provider send 전 실행 계약으로 강제함.
+
+#### 13.5.C S1.5 KIS Data Quality Report 내부 CLI 계약
+
+`kis-data-quality-report`는 `decision-platform:python-data-quality`가 소유하는 내부 CLI다. public
+REST/gRPC/OpenAPI route를 만들지 않고 승인된 canonical KIS daily dataset만 읽으며 reporter의
+provider/network outbound는 `0`이다. 실제 KIS read-only 수집·백필은 별도 exact approval 없이 이
+CLI 실행에 결합하지 않는다.
+
+```text
+kis-data-quality-report generate
+  --window-start YYYY-MM-DD
+  --window-end YYYY-MM-DD
+  --evaluated-at RFC3339
+  --universe-manifest <KIS_DATA_DIR 내부 canonical relative identifier>
+  --dataset-manifest <KIS_DATA_DIR 내부 canonical relative identifier>
+  --collection-run <KIS_DATA_DIR 내부 canonical relative identifier>
+  --software-revision <검증된 revision>
+  [--fail-on-quality]
+  [--require-complete-evidence]
+```
+
+임의 absolute output path는 받지 않는다. `--collection-run`은 일반 실행에서 생략할 수 있지만 그 경우
+API accounting metric은 `NOT_AVAILABLE`이고 evidence는 완전하지 않다. strict evidence 실행에서는
+필수다. stdout/stderr에는 stable exit/status/reportId/relative identifier만 출력하며 provider/path
+message, raw argv/env, credential configured 여부를 echo하지 않는다.
+
+입력과 출력 계약은 다음과 같다.
+
+| 항목 | 계약 |
+|---|---|
+| calendar/time | `XKRX`, `Asia/Seoul`, 양 끝을 포함한 completed-session window. `evaluatedAt` 시점에 close까지 끝난 마지막 session을 `expectedLastCompletedXkrxSession`으로 사용 |
+| provenance | immutable universe manifest, successful dataset manifest, selected sanitized collection-run summary의 ID와 SHA-256, `evaluatedAt`, software revision, policy version을 고정 |
+| snapshot | S1.1 writer exclusive/S1.5 reader shared lock. reader는 lock을 유지한 채 dataset manifest의 exact regular-file inventory, link count, size, SHA-256, schema, row/symbol/date를 검증하고 symbol별 필요한 column만 bounded PyArrow batch로 읽음 |
+| determinism | `metricPolicyVersion=s1-5-quality-report-v1`; pure metric core는 filesystem/env/clock/random/logging/Git/global mutable cache를 사용하지 않음. `analysisFingerprint`는 input hashes/policy/time/revision을 고정하고 `reportId`는 fingerprint 기반 UUIDv5 |
+| output | `quality/YYYY/MM/DD/<reportId>/{report.json,report.md,manifest.json}`과 `quality/latest-manifest.json`. report JSON에는 self/Markdown hash가 없고 manifest가 report file의 exact relative name/size/SHA-256을 소유 |
+| publish | data root 아래 dirfd+`O_NOFOLLOW`, directory `0700`, file `0600`, symlink/hardlink/traversal/non-regular 거부, same-filesystem atomic rename과 fsync. bundle 완성 뒤 latest를 replace하고 이전 last-good를 실패 시 보존 |
+| idempotency | 같은 fingerprint는 기존 bundle의 mode/size/hash/content identity 검증 뒤 no-op. 같은 reportId의 손상 bundle은 overwrite하지 않고 exit `2` |
+| retention | owner `decision-platform:python-data-quality`, policy `s1-5-quality-report-v1`. ordinary bundle은 시연/평가 종료 후 28일까지, 인용 reportId는 최종 제출까지 pin. event date 미확정은 `HOLD_UNTIL_EVENT_DATE_CONFIGURED`. S1.5는 canonical Parquet을 삭제하지 않고 prune CLI도 추가하지 않음 |
+
+report의 세 상태 축은 `executionStatus=SUCCESS`, `evidenceCompleteness=COMPLETE|PARTIAL|NOT_AVAILABLE`,
+`qualityStatus=PASS|WARN|FAIL|NOT_EVALUATED`다. 개별 metric status는
+`PASS|WARN|FAIL|NOT_EVALUATED|NOT_AVAILABLE|NOT_APPLICABLE`다. published report는 입력 검증·분석·게시가 모두 성공한 경우뿐이고,
+오류 실행을 success report로 바꾸지 않는다. quality precedence는 `FAIL`, `WARN`, 평가된 metric이 있으면
+`PASS`, 전부 미평가면 `NOT_EVALUATED` 순이다. listing/suspension point-in-time evidence는 optional이므로
+그 부재만으로 `evidenceCompleteness`를 낮추지 않는다.
+
+운영자는 provider 수집과 reporter를 한 명령으로 묶지 않는다. 먼저 승인된 S1.1 successful dataset
+manifest, 그 manifest가 고정한 universe/collection SHA-256, report window와 injected
+`evaluatedAt`/software revision을 확인한 뒤 위 `generate` 명령만 실행한다. 같은 입력을 재실행하면
+동일 reportId의 verified no-op이어야 한다. stdout/stderr의 stable status와 relative bundle ID 외에 로컬
+경로나 원문을 evidence로 복사하지 않는다. `--fail-on-quality --require-complete-evidence`를 함께 쓴
+strict 실행의 exit `0`만 보고서 acceptance로 사용하고, exit `1`/`3`의 truthful bundle은 원인 분석용으로
+보존하되 완료로 분류하지 않는다. exit `2`에서는 이전 latest를 유지한다.
+
+일반 offline 구현·fixture 검증은 실제 중간보고서 artifact가 아니다. 실제 KIS read-only gap 보충이
+필요하면 현재 HEAD/PR/manifest/window/mode/endpoint/call cap에 결속된 별도 exact approval packet을
+먼저 발급한다. 승인 packet과 실행 명령은 위 다섯 `kis-backfill` cap을 모두 고정하고 최초 cap
+불일치나 도달을 provider send 전에 fail-closed한다. reporter 자체의 provider call은 그 이후에도
+`0`이다. event date가 정해지기 전에는
+`HOLD_UNTIL_EVENT_DATE_CONFIGURED`, 보고서에 인용한 reportId는 최종 제출 완료까지 pin하며, S1.5는
+canonical Parquet 또는 report bundle의 자동 prune/delete를 수행하지 않는다.
+
+모든 rate는 `numerator`, `denominator`, integer-or-null `ratePpm`, `status`를 갖는다. denominator가
+양수이면 Decimal `ROUND_HALF_UP(numerator * 1_000_000 / denominator)`, 0이면 `ratePpm=null`과
+`NOT_EVALUATED`다. NaN/Infinity는 금지한다.
+
+| metric | 산식·판정 |
+|---|---|
+| required/schema integrity | null, bool-as-int, wrong/missing/extra column/type, non-finite, 0 이하 가격, 음수 volume, OHLC invariant, symbol mismatch, off-calendar/future/out-of-window가 있으면 `FAIL` |
+| canonical/ingest duplicate | canonical `(symbol,date)` duplicate/conflict는 `FAIL`. ingest exact duplicate의 결정적 해소는 `WARN`, conflicting duplicate는 `FAIL`과 no-success-manifest |
+| historical coverage | current immutable universe × window XKRX session을 분모로 missing/rate를 제공하는 `CURRENT_UNIVERSE_HISTORICAL_COVERAGE`; missing은 `WARN`까지만 허용 |
+| listing-adjusted completeness | point-in-time listing/delisting/suspension/eligibility가 없으면 `NOT_AVAILABLE`; missing을 provider failure로 단정하지 않음 |
+| freshness/stale | dataset 최대 completed session이 expected last보다 뒤처지면 `FAIL`. eligibility가 없는 per-symbol lag는 `WARN` 또는 `NOT_EVALUATED` |
+| return outlier | 연속 session log return, 현재 관측 제외 직전 최대 60·최소 20, `0.6745*(x-median)/MAD`, `abs(z)>3.5`; `WARN` flag-only |
+| abrupt price | 연속 session simple return `abs(r)>=0.30`; `MARKET_EVENT_OR_DATA_ERROR_UNKNOWN`, `WARN` flag-only |
+| share-volume spike | `log1p(volume)`에 같은 trailing/min-history/modified-z를 적용. `turnoverSpike` 명칭 금지 |
+| insufficient history | MAD 0, 짧은 이력, session gap이면 modified-z `NOT_EVALUATED`; fallback estimator 금지. abrupt-price는 별도 평가 가능 |
+| logical API failure | selected `collectionRunId`의 terminal failure / logical operation. terminal failure가 있으면 `FAIL` |
+| physical attempt failure | physical send failure / physical send. retry recovery failure만 있으면 `WARN` |
+| no accounting | API metrics `NOT_AVAILABLE`; `0%`로 표시하지 않음 |
+
+outlier/abrupt flag는 일봉만으로 시장 event와 data error를 구분하지 못하므로 자동 수정·삭제·보정
+근거가 아니다. source row를 impute/winsorize하지 않고 composite quality score를 만들지 않는다.
+
+| resource/security | hard contract |
+|---|---|
+| input | symbol 500, XKRX session 3,000, Parquet file 500, row 2,000,000, file 16 MiB, total 512 MiB. CLI/config는 cap을 낮출 수만 있음 |
+| output | JSON 2 MiB, Markdown 2 MiB, manifest 256 KiB, sample rule당 20·전체 100, wall deadline 120초, RSS 목표 512 MiB |
+| forbidden | provider body/header/query/full URL, credential/token/app key/secret/digest, account fragment/PII, arbitrary provider/exception message, raw OHLCV, local absolute path, raw argv/env/configured state |
+| allowed sample | bounded symbol, sessionDate, stable ruleCode, derived lag/score만 허용 |
+
+CLI exit은 `2 > 3 > 1 > 0` precedence다. `0`은 정상 게시와 요청된 strict gate 통과, `1`은
+truthful bundle을 게시했지만 `--fail-on-quality`에서 quality `FAIL`, `2`는 usage/input/schema/security/
+resource/publish 오류와 previous latest 보존, `3`은 bundle을 게시했지만 `--require-complete-evidence`에서
+required evidence 불완전이다. quality `FAIL`과 incomplete evidence가 함께면 `3`이다. S6.5 nightly는
+같은 strict CLI를 재사용하지만 scheduler와 automatic prune/delete는 이 계약의 구현 범위가 아니다.
 
 #### 13.5.0 KIS WebSocket provider 계약 (S3/P2 계획, 현재 미구현)
 

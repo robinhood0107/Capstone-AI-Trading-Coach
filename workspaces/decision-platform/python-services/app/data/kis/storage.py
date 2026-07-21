@@ -5,9 +5,12 @@ from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from datetime import date, timedelta
 import errno
+import fcntl
 import os
 from pathlib import Path
 import secrets
+import stat
+from typing import Any, cast
 
 import pandas as pd
 
@@ -25,6 +28,17 @@ class UpsertResult:
     total_rows: int
     min_date: date | None
     max_date: date | None
+    exact_duplicate_rows: int
+    conflicting_duplicate_groups: int
+
+
+class KISConflictingDuplicateError(ValueError):
+    """같은 symbol/date의 값이 다르면 임의 keep-last 대신 dataset 게시를 중단한다."""
+
+    def __init__(self, *, exact_duplicate_rows: int, conflicting_groups: int) -> None:
+        super().__init__("KIS ingest contains conflicting duplicate rows")
+        self.exact_duplicate_rows = exact_duplicate_rows
+        self.conflicting_groups = conflicting_groups
 
 
 def upsert_daily_bars(data_dir: Path, symbol: str, bars: list[DailyBar]) -> UpsertResult:
@@ -34,29 +48,41 @@ def upsert_daily_bars(data_dir: Path, symbol: str, bars: list[DailyBar]) -> Upse
     filename = f"{symbol}.parquet"
     with _open_daily_directory(data_dir) as (daily_dir, directory_fd):
         existing = _read_existing(directory_fd, filename)
-        existing_count = len(existing)
+        _validate_existing_frame(existing, symbol)
+        existing_keys = _frame_keys(existing)
+        for bar in bars:
+            if normalize_symbol(bar.symbol) != symbol:
+                raise ValueError("KIS daily row symbol must match the target symbol")
         incoming = pd.DataFrame([asdict(bar) for bar in bars])
         if incoming.empty:
             combined = existing
+            exact_duplicate_rows = 0
         else:
             incoming["date"] = pd.to_datetime(incoming["date"])
             combined = pd.concat([existing, incoming], ignore_index=True)
         if not combined.empty:
-            # KIS 백필 cursor가 겹치거나 fixture page가 중복돼도 최신 파싱 결과 하나만 보존한다.
-            combined = (
-                combined.drop_duplicates(subset=["symbol", "date"], keep="last")
-                .sort_values(["symbol", "date"])
-                .reset_index(drop=True)
+            combined, exact_duplicate_rows, conflicting_groups = _resolve_exact_duplicates(
+                combined
             )
+            if conflicting_groups:
+                raise KISConflictingDuplicateError(
+                    exact_duplicate_rows=exact_duplicate_rows,
+                    conflicting_groups=conflicting_groups,
+                )
+        else:
+            exact_duplicate_rows = 0
         _write_parquet_atomic(directory_fd, filename, combined)
         path = daily_dir / filename
         dates = pd.to_datetime(combined["date"]) if not combined.empty else pd.Series(dtype="datetime64[ns]")
+        combined_keys = _frame_keys(combined)
     return UpsertResult(
         path=path,
-        inserted_rows=max(0, len(combined) - existing_count),
+        inserted_rows=len(combined_keys - existing_keys),
         total_rows=len(combined),
         min_date=dates.min().date() if not dates.empty else None,
         max_date=dates.max().date() if not dates.empty else None,
+        exact_duplicate_rows=exact_duplicate_rows,
+        conflicting_duplicate_groups=0,
     )
 
 
@@ -96,11 +122,51 @@ def _read_existing(directory_fd: int, filename: str) -> pd.DataFrame:
         if exc.errno in {errno.ELOOP, errno.ENOTDIR}:
             raise ValueError("KIS parquet symlink is not allowed") from None
         raise
+    metadata = os.fstat(file_fd)
+    if not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1:
+        os.close(file_fd)
+        raise ValueError("KIS parquet regular single-link file is required")
     with os.fdopen(file_fd, "rb") as file:
         existing = pd.read_parquet(file)
     if not existing.empty:
         existing["date"] = pd.to_datetime(existing["date"])
     return existing
+
+
+@contextmanager
+def dataset_lock(data_dir: Path, *, exclusive: bool) -> Iterator[None]:
+    """S1.1 writer와 S1.5 reader가 같은 private file lock으로 dataset snapshot을 직렬화한다."""
+    expanded = data_dir.expanduser()
+    if ".." in expanded.parts:
+        raise ValueError("KIS storage dot segment is not allowed")
+    root = expanded if expanded.is_absolute() else Path.cwd() / expanded
+    root_fd = _open_or_create_directory_tree(root)
+    lock_fd = -1
+    try:
+        try:
+            lock_fd = os.open(
+                ".dataset.lock",
+                os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_CLOEXEC,
+                0o600,
+                dir_fd=root_fd,
+            )
+        except OSError as exc:
+            if exc.errno in {errno.ELOOP, errno.ENOTDIR}:
+                raise ValueError("KIS dataset lock symlink is not allowed") from None
+            raise
+        metadata = os.fstat(lock_fd)
+        if not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1:
+            raise ValueError("KIS dataset lock must be a regular single-link file")
+        os.fchmod(lock_fd, 0o600)
+        fcntl.flock(lock_fd, fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock_fd, fcntl.LOCK_UN)
+    finally:
+        if lock_fd >= 0:
+            os.close(lock_fd)
+        os.close(root_fd)
 
 
 @contextmanager
@@ -187,3 +253,48 @@ def _write_parquet_atomic(directory_fd: int, filename: str, frame: pd.DataFrame)
             os.unlink(temporary, dir_fd=directory_fd)
         except FileNotFoundError:
             pass
+
+
+def _validate_existing_frame(frame: pd.DataFrame, symbol: str) -> None:
+    if list(frame.columns) != _PARQUET_COLUMNS:
+        raise ValueError("KIS parquet schema is invalid")
+    if frame.empty:
+        return
+    if any(str(value) != symbol for value in frame["symbol"]):
+        raise ValueError("KIS parquet row symbol must match the file symbol")
+    if frame.duplicated(subset=["symbol", "date"], keep=False).any():
+        raise KISConflictingDuplicateError(exact_duplicate_rows=0, conflicting_groups=1)
+
+
+def _frame_keys(frame: pd.DataFrame) -> set[tuple[str, date]]:
+    if frame.empty:
+        return set()
+    return {
+        (str(row.symbol), pd.Timestamp(cast(Any, row.date)).date())
+        for row in frame.itertuples(index=False)
+    }
+
+
+def _resolve_exact_duplicates(frame: pd.DataFrame) -> tuple[pd.DataFrame, int, int]:
+    exact_duplicate_rows = 0
+    conflicting_groups = 0
+    selected_indices: list[int] = []
+    value_columns = ["open", "high", "low", "close", "volume", "turnover"]
+    for _, group in frame.groupby(["symbol", "date"], sort=False, dropna=False):
+        normalized_values = {
+            tuple(int(row[column]) for column in value_columns)
+            for _, row in group.iterrows()
+        }
+        if len(normalized_values) > 1:
+            conflicting_groups += 1
+            continue
+        exact_duplicate_rows += len(group) - 1
+        selected_indices.append(int(group.index[0]))
+    if conflicting_groups:
+        return frame, exact_duplicate_rows, conflicting_groups
+    resolved = (
+        frame.loc[selected_indices, _PARQUET_COLUMNS]
+        .sort_values(["symbol", "date"])
+        .reset_index(drop=True)
+    )
+    return resolved, exact_duplicate_rows, 0

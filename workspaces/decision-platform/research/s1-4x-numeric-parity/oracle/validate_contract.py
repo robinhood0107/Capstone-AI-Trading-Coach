@@ -9,6 +9,7 @@ import math
 import re
 import struct
 import sys
+import tomllib
 from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -31,6 +32,7 @@ from oracle_common import (
 )
 
 REFERENCE_LOCK_VERSION = "s1.4x-reference-lock-v1"
+PROJECT_RUNTIME_PROJECTION_VERSION = "s1.4x-python-project-runtime-projection-v1"
 CONTRACT_MANIFEST_VERSION = "s1.4x-contract-manifest-v1"
 BINARY_MANIFEST_VERSION = "s1.4x-binary-array-v1"
 REQUEST_VERSION = "s1.4x-request-v1"
@@ -78,6 +80,15 @@ EXPECTED_REFERENCE_RUNTIME = {
     "jaxVersion": "0.11.0",
     "jaxlibVersion": "0.11.0",
 }
+PROJECT_RUNTIME_SOURCE_ROLE_BY_PATH = {
+    "workspaces/decision-platform/python-services/pyproject.toml": (
+        "production-project-runtime-projection"
+    ),
+    "workspaces/decision-platform/research/s1-4r-jax-risk/pyproject.toml": (
+        "research-project-runtime-projection"
+    ),
+}
+PROJECT_RUNTIME_SOURCE_ROLES = frozenset(PROJECT_RUNTIME_SOURCE_ROLE_BY_PATH.values())
 
 S1_4_FUNCTIONS = frozenset(
     {
@@ -1941,8 +1952,151 @@ def validate_sha256_sidecars(contract_root: Path) -> int:
     return len(sidecars)
 
 
+def _normalize_runtime_array(value: Any, *, field: str) -> list[Any]:
+    """순서가 의미 없는 dependency 배열을 canonical JSON byte 순서로 정규화한다."""
+
+    values = _require_array(value, field=field)
+    normalized = [copy.deepcopy(item) for item in values]
+    try:
+        normalized.sort(key=lambda item: canonical_json_bytes(item, trailing_newline=False))
+    except OracleContractError as exc:
+        raise OracleContractError(f"{field} contains a non-canonical runtime value") from exc
+    return normalized
+
+
+def _project_runtime_projection(path: Path) -> dict[str, Any]:
+    """pyproject에서 dependency resolution과 package runtime에 영향 주는 필드만 추출한다."""
+
+    try:
+        with path.open("rb") as stream:
+            document = tomllib.load(stream)
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        raise OracleContractError(f"invalid project runtime TOML: {path.name}") from exc
+
+    project = _require_object(document.get("project"), field="pyproject.project")
+    projected_project: dict[str, Any] = {}
+    requires_python = project.get("requires-python")
+    if requires_python is not None:
+        if not isinstance(requires_python, str) or not requires_python:
+            raise OracleContractError("pyproject.project.requires-python must be a string")
+        projected_project["requires-python"] = requires_python
+    if "dependencies" in project:
+        projected_project["dependencies"] = _normalize_runtime_array(
+            project["dependencies"],
+            field="pyproject.project.dependencies",
+        )
+    if "optional-dependencies" in project:
+        optional = _require_object(
+            project["optional-dependencies"],
+            field="pyproject.project.optional-dependencies",
+        )
+        projected_project["optional-dependencies"] = {
+            group: _normalize_runtime_array(
+                dependencies,
+                field=f"pyproject.project.optional-dependencies.{group}",
+            )
+            for group, dependencies in optional.items()
+        }
+    if "dynamic" in project:
+        dynamic = _require_unique_strings(
+            _require_array(project["dynamic"], field="pyproject.project.dynamic"),
+            field="pyproject.project.dynamic",
+        )
+        if {"dependencies", "optional-dependencies"}.intersection(dynamic):
+            raise OracleContractError(
+                "dynamic dependency metadata cannot be runtime-projection locked"
+            )
+        projected_project["dynamic"] = sorted(dynamic, key=str.encode)
+
+    projection: dict[str, Any] = {
+        "schemaVersion": PROJECT_RUNTIME_PROJECTION_VERSION,
+        "project": projected_project,
+    }
+    if "build-system" in document:
+        build_system = copy.deepcopy(
+            _require_object(document["build-system"], field="pyproject.build-system")
+        )
+        if "requires" in build_system:
+            build_system["requires"] = _normalize_runtime_array(
+                build_system["requires"],
+                field="pyproject.build-system.requires",
+            )
+        projection["build-system"] = build_system
+    if "dependency-groups" in document:
+        groups = _require_object(
+            document["dependency-groups"],
+            field="pyproject.dependency-groups",
+        )
+        projection["dependency-groups"] = {
+            group: _normalize_runtime_array(
+                dependencies,
+                field=f"pyproject.dependency-groups.{group}",
+            )
+            for group, dependencies in groups.items()
+        }
+
+    tool = document.get("tool")
+    if tool is not None:
+        tool_object = _require_object(tool, field="pyproject.tool")
+        projected_tool: dict[str, Any] = {}
+        if "uv" in tool_object:
+            projected_tool["uv"] = copy.deepcopy(
+                _require_object(tool_object["uv"], field="pyproject.tool.uv")
+            )
+        hatch = tool_object.get("hatch")
+        if hatch is not None:
+            hatch_object = _require_object(hatch, field="pyproject.tool.hatch")
+            if "build" in hatch_object:
+                projected_tool["hatch"] = {
+                    "build": copy.deepcopy(
+                        _require_object(
+                            hatch_object["build"],
+                            field="pyproject.tool.hatch.build",
+                        )
+                    )
+                }
+        if projected_tool:
+            projection["tool"] = projected_tool
+
+    # 선택된 TOML 값에 datetime 등 JSON으로 고정할 수 없는 타입이 섞이면 fail-closed한다.
+    canonical_json_bytes(projection)
+    return projection
+
+
+def _reference_source_sha256(path: Path, *, role: str) -> str:
+    """일반 source는 원문, project source는 dependency/runtime projection을 hash한다."""
+
+    if role not in PROJECT_RUNTIME_SOURCE_ROLES:
+        return sha256_file(path)
+    if path.name != "pyproject.toml":
+        raise OracleContractError("project runtime projection role must target pyproject.toml")
+    return sha256_bytes(canonical_json_bytes(_project_runtime_projection(path)))
+
+
+def _reference_tree_manifest(
+    root: Path,
+    files: Iterable[Path],
+    *,
+    root_relative: str,
+    source_roles_by_path: Mapping[str, str],
+) -> tuple[bytes, list[dict[str, str]]]:
+    """source tree에서 project runtime entry만 의미 기반 hash로 치환한다."""
+
+    _payload, entries = canonical_file_manifest(root, files)
+    for entry in entries:
+        repo_relative = (Path(root_relative) / entry["path"]).as_posix()
+        role = source_roles_by_path.get(repo_relative)
+        if role in PROJECT_RUNTIME_SOURCE_ROLES:
+            resolved = resolve_within(root, entry["path"], must_exist=True)
+            entry["sha256"] = _reference_source_sha256(resolved, role=role)
+    payload = "".join(
+        f"{entry['sha256']}  {entry['path']}\n" for entry in entries
+    ).encode("utf-8")
+    return payload, entries
+
+
 def validate_reference_lock(repo_root: Path, contract_root: Path) -> dict[str, Any]:
-    """reference source file/tree closure와 canonical fixture digest를 byte-exact 검증한다."""
+    """reference byte source와 project runtime projection closure를 검증한다."""
 
     path = contract_root / "reference-lock.v1.json"
     lock = _require_object(strict_json_load(path), field=path.name)
@@ -1971,6 +2125,7 @@ def validate_reference_lock(repo_root: Path, contract_root: Path) -> dict[str, A
     sources = _require_array(lock.get("sources"), field="reference-lock.sources")
     source_paths: set[str] = set()
     source_roles: set[str] = set()
+    source_roles_by_path: dict[str, str] = {}
     for index, raw_source in enumerate(sources):
         source = _require_object(raw_source, field=f"reference-lock.sources[{index}]")
         if set(source) != {"role", "path", "sha256"}:
@@ -1981,13 +2136,23 @@ def validate_reference_lock(repo_root: Path, contract_root: Path) -> dict[str, A
             raise OracleContractError("reference-lock source role is invalid or duplicate")
         if not isinstance(relative, str) or relative in source_paths:
             raise OracleContractError("reference-lock source path is invalid or duplicate")
+        expected_project_role = PROJECT_RUNTIME_SOURCE_ROLE_BY_PATH.get(relative)
+        if expected_project_role is not None and role != expected_project_role:
+            raise OracleContractError(
+                f"reference project source has wrong runtime projection role: {relative}"
+            )
+        if role in PROJECT_RUNTIME_SOURCE_ROLES and expected_project_role != role:
+            raise OracleContractError(
+                "project runtime projection role targets an unsupported source path"
+            )
         source_roles.add(role)
         source_paths.add(relative)
+        source_roles_by_path[relative] = role
         resolved = resolve_within(repo_root, relative, must_exist=True)
         if not resolved.is_file() or resolved.is_symlink():
             raise OracleContractError(f"reference source is not a regular file: {relative}")
         expected_sha = require_lower_sha256(source.get("sha256"), field=f"{relative}.sha256")
-        if sha256_file(resolved) != expected_sha:
+        if _reference_source_sha256(resolved, role=role) != expected_sha:
             raise OracleContractError(f"reference source SHA-256 mismatch: {relative}")
 
     trees = _require_array(lock.get("sourceTrees"), field="reference-lock.sourceTrees")
@@ -2021,7 +2186,12 @@ def validate_reference_lock(repo_root: Path, contract_root: Path) -> dict[str, A
             field=f"{role}.includeGlobs",
         )
         files = sorted_relative_files(root, include_globs)
-        manifest_payload, entries = canonical_file_manifest(root, files)
+        manifest_payload, entries = _reference_tree_manifest(
+            root,
+            files,
+            root_relative=root_relative,
+            source_roles_by_path=source_roles_by_path,
+        )
         if tree.get("fileCount") != len(entries):
             raise OracleContractError(f"reference sourceTree fileCount mismatch: {role}")
         if tree.get("files") != entries:

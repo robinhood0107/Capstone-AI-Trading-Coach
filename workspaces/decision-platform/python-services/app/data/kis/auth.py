@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 
 from redis.exceptions import WatchError
 
+from app.data.kis.accounting import CollectionRunRecorder, SkipCode
 from app.data.kis.settings import KISMode
 
 REFRESH_SKEW_SECONDS = 300
@@ -72,6 +73,7 @@ class KISTokenManager:
         now: Callable[[], datetime] | None = None,
         monotonic: Callable[[], float] = time.monotonic,
         sleeper: Callable[[float], None] = time.sleep,
+        accounting: CollectionRunRecorder | None = None,
     ) -> None:
         if not _OPAQUE_SCOPE_PATTERN.fullmatch(scope):
             raise ValueError("opaque KIS token scope is required")
@@ -84,13 +86,16 @@ class KISTokenManager:
         self._now = now or (lambda: datetime.now(UTC))
         self._monotonic = monotonic
         self._sleeper = sleeper
+        self._accounting = accounting
 
     def get_access_token(self) -> str:
         if self._offline:
             # fixture 모드는 network/Redis credential을 읽지 않고 private transport도 실제 send를 만들지 않는다.
+            self._record_cache_skip()
             return "offline-token"
         cached = self._load_cached()
         if cached is not None:
+            self._record_cache_skip()
             return cached
         owner = secrets.token_hex(16)
         self._acquire_issue_lock(owner)
@@ -101,6 +106,7 @@ class KISTokenManager:
             # lock 대기 사이 다른 process가 발급했을 수 있으므로 provider 호출 직전에 다시 확인한다.
             cached = self._load_cached()
             if cached is not None:
+                self._record_cache_skip()
                 return cached
             token_response = self._issuer()
             token, expires_in = self._parse_token_response(token_response)
@@ -125,6 +131,10 @@ class KISTokenManager:
             payload.clear()
             token = ""
             self._release_issue_lock(owner)
+
+    def _record_cache_skip(self) -> None:
+        if self._accounting is not None:
+            self._accounting.record_skip(SkipCode.TOKEN_CACHE_HIT)
 
     def _load_cached(self) -> str | None:
         try:

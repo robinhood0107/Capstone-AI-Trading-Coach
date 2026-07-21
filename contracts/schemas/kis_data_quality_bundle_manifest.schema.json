@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "contracts/schemas/kis_data_quality_bundle_manifest.schema.json",
+  "title": "KIS Data Quality Bundle Manifest",
+  "description": "Immutable completion manifest for the JSON and Markdown files in an S1.5 report bundle.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "reportId",
+    "analysisFingerprint",
+    "createdAt",
+    "bundlePath",
+    "files",
+    "status"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "reportId": {
+      "$ref": "#/$defs/uuidV5"
+    },
+    "analysisFingerprint": {
+      "$ref": "#/$defs/sha256"
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "bundlePath": {
+      "type": "string",
+      "pattern": "^quality/[0-9]{4}/[0-9]{2}/[0-9]{2}/[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "files": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "prefixItems": [
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/reportFile"
+            },
+            {
+              "properties": {
+                "name": {
+                  "const": "report.json"
+                },
+                "byteSize": {
+                  "maximum": 2097152
+                }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/reportFile"
+            },
+            {
+              "properties": {
+                "name": {
+                  "const": "report.md"
+                },
+                "byteSize": {
+                  "maximum": 2097152
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "items": false
+    },
+    "status": {
+      "type": "string",
+      "const": "COMPLETE"
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "uuidV5": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "reportFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "byteSize", "sha256"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "enum": ["report.json", "report.md"]
+        },
+        "byteSize": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2097152
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    }
+  }
+}

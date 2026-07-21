@@ -1809,9 +1809,12 @@ S1.1의 KIS MarketDataService 구현 경계는 다음과 같다.
 | market calendar | `/uapi/domestic-stock/v1/quotations/chk-holiday`, TR `CTCA0903R`는 모의투자 미지원(실전 Domain 전용) supporting read다. mock/offline에서는 fixture 또는 skip으로 처리하고 호출 시 1일 1회 이하로 보수 운영 |
 | storage | provider raw body/header/request URL은 저장하지 않는다. allowlist parser를 통과한 canonical parquet만 ignored local data 경로에 dirfd+`O_NOFOLLOW`, mode `0600`, fsync+atomic replace로 저장한다. 자동 retention/delete owner는 S1.1 미구현이므로 운영 영구보존을 승인하지 않고 S1.5에서 확정한다. 커밋 가능한 테스트 데이터는 credential/account/PII가 제거된 offline fixture만 허용한다 |
 | retry | 모든 physical retry는 같은 REST 슬롯을 다시 예약한다. 공식 오류코드 `EGW00001/00002/00202/00203/00300`의 안전한 GET만 backoff 없이 다음 허용 슬롯에서 최대 1회 재호출한다. timeout/408/5xx는 bounded backoff+jitter, `EGW00201`/HTTP 429는 fail-fast다. POST 주문성 호출은 S1.1에서 구현하지 않고 S3에서도 자동 retry하지 않는다 |
+| per-run call caps | online `kis-backfill`은 `--current-price-logical-cap`, `--daily-bars-logical-cap`, `--holiday-logical-cap`, `--market-data-physical-cap`, `--token-p-physical-cap`을 exact approval packet 값으로 모두 명시한다. 생략·부분 지정·음수는 client 생성 전에 거부하고, logical 시작과 market/token physical send 직전의 원자 recorder가 cap 도달 시 `KISCallBudgetExceeded`로 중단한다. retry도 별도 physical attempt로 같은 cap을 소비한다 |
 | local calendar | S1.1은 비거래일 KIS 호출 회피용으로 로컬 `exchange_calendars` XKRX 판정만 사용한다. 다중 소스 캘린더 집계는 S1.1 범위가 아니며, S1.2+ umbrella 아래 S1.6 계획은 12A와 아래 계획 RPC를 따른다 |
 
 > 변경 반영(2026-07-10): 계획(S1.2+ umbrella, S1.6 aggregator 구현 확정, 현재 미구현) — S1.6 완료 후 별도의 명시적 contract-change 세션에서 `GetTradingSessions`/`GetCalendarEvents` RPC와 REST 12A를 함께 승인한다. proto/OpenAPI 추가는 `contracts/changes/` 절차를 따르며 그 전에는 Dashboard가 이 계약을 소비하지 않는다.
+
+> 변경 반영(2026-07-22): actual S1.5 gap-fill 승인의 logical/physical hard cap을 `kis-backfill` provider send 전 실행 계약으로 강제함.
 
 #### 13.5.C S1.5 KIS Data Quality Report 내부 CLI 계약
 
@@ -1868,7 +1871,9 @@ strict 실행의 exit `0`만 보고서 acceptance로 사용하고, exit `1`/`3`�
 
 일반 offline 구현·fixture 검증은 실제 중간보고서 artifact가 아니다. 실제 KIS read-only gap 보충이
 필요하면 현재 HEAD/PR/manifest/window/mode/endpoint/call cap에 결속된 별도 exact approval packet을
-먼저 발급한다. reporter 자체의 provider call은 그 이후에도 `0`이다. event date가 정해지기 전에는
+먼저 발급한다. 승인 packet과 실행 명령은 위 다섯 `kis-backfill` cap을 모두 고정하고 최초 cap
+불일치나 도달을 provider send 전에 fail-closed한다. reporter 자체의 provider call은 그 이후에도
+`0`이다. event date가 정해지기 전에는
 `HOLD_UNTIL_EVENT_DATE_CONFIGURED`, 보고서에 인용한 reportId는 최종 제출 완료까지 pin하며, S1.5는
 canonical Parquet 또는 report bundle의 자동 prune/delete를 수행하지 않는다.
 

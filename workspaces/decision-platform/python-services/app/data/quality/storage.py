@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import secrets
 import stat
+from collections.abc import Callable
 from typing import Literal
 from uuid import UUID
 
@@ -100,14 +101,19 @@ class PublishedQualityBundle:
 def publish_quality_bundle(
     root: Path,
     report: KISDataQualityReport,
+    *,
+    deadline_check: Callable[[], None] | None = None,
 ) -> PublishedQualityBundle:
     """complete temp directory를 durable write한 뒤 final rename하고 latest를 마지막에 교체한다.
 
     같은 content identity는 existing bytes/mode/link를 전부 재검증한 no-op만 허용하며, 손상된 같은
     reportId는 덮어쓰지 않는다.
     """
+    check_deadline = deadline_check or _no_deadline
+    _run_deadline_check(check_deadline)
     json_content = report_json_bytes(report)
     markdown_content = render_markdown(report)
+    _run_deadline_check(check_deadline)
     day = report.evaluated_at.astimezone(UTC).date()
     bundle_identifier = f"quality/{day:%Y/%m/%d}/{report.report_id}"
     manifest = QualityBundleManifest(
@@ -143,6 +149,7 @@ def publish_quality_bundle(
     temporary: str | None = None
     created = False
     try:
+        _run_deadline_check(check_deadline)
         quality_fd = _open_or_create_output_child(root_fd, "quality")
         day_fd = _open_or_create_output_path(
             quality_fd,
@@ -150,7 +157,8 @@ def publish_quality_bundle(
         )
         final_name = str(report.report_id)
         if _existing_bundle_state(day_fd, final_name, expected):
-            _publish_latest(quality_fd, manifest_content)
+            _run_deadline_check(check_deadline)
+            _publish_latest(quality_fd, manifest_content, check_deadline)
             return _published_result(
                 root_path,
                 bundle_identifier,
@@ -163,11 +171,13 @@ def publish_quality_bundle(
         temporary_fd = os.open(temporary, _DIRECTORY_FLAGS, dir_fd=day_fd)
         try:
             for filename in _BUNDLE_FILES:
+                _run_deadline_check(check_deadline)
                 _write_file(temporary_fd, filename, expected[filename])
             os.fsync(temporary_fd)
         finally:
             os.close(temporary_fd)
         try:
+            _run_deadline_check(check_deadline)
             _rename_no_replace(
                 day_fd,
                 temporary,
@@ -177,6 +187,7 @@ def publish_quality_bundle(
             temporary = None
             created = True
             os.fsync(day_fd)
+            _run_deadline_check(check_deadline)
         except OSError as error:
             if error.errno not in {errno.EEXIST, errno.ENOTEMPTY}:
                 raise
@@ -185,7 +196,8 @@ def publish_quality_bundle(
             temporary = None
             if not _existing_bundle_state(day_fd, final_name, expected):
                 raise QualityBundleStorageError("existing bundle was invalid") from None
-        _publish_latest(quality_fd, manifest_content)
+        _run_deadline_check(check_deadline)
+        _publish_latest(quality_fd, manifest_content, check_deadline)
         return _published_result(
             root_path,
             bundle_identifier,
@@ -289,7 +301,11 @@ def _read_existing_file(directory_fd: int, filename: str, expected_size: int) ->
             os.close(file_fd)
 
 
-def _publish_latest(quality_fd: int, content: bytes) -> None:
+def _publish_latest(
+    quality_fd: int,
+    content: bytes,
+    deadline_check: Callable[[], None],
+) -> None:
     filename = "latest-manifest.json"
     try:
         metadata = os.stat(filename, dir_fd=quality_fd, follow_symlinks=False)
@@ -305,7 +321,9 @@ def _publish_latest(quality_fd: int, content: bytes) -> None:
         raise QualityBundleStorageError("latest manifest target was invalid")
     temporary = f".latest-{secrets.token_hex(16)}.tmp"
     try:
+        _run_deadline_check(deadline_check)
         _write_file(quality_fd, temporary, content)
+        _run_deadline_check(deadline_check)
         os.replace(
             temporary,
             filename,
@@ -480,3 +498,14 @@ def _rename_no_replace(
     if result != 0:
         error_number = ctypes.get_errno()
         raise OSError(error_number, "renameat2 failed")
+
+
+def _run_deadline_check(deadline_check: Callable[[], None]) -> None:
+    try:
+        deadline_check()
+    except ValueError:
+        raise QualityBundleStorageError("quality bundle publish failed") from None
+
+
+def _no_deadline() -> None:
+    return None

@@ -1,3 +1,4 @@
+from copy import deepcopy
 from datetime import UTC, datetime
 from threading import Barrier, Lock, Thread
 from uuid import UUID
@@ -206,3 +207,26 @@ def test_summary_rejects_unknown_version_and_noncanonical_enum_inventory() -> No
     reversed_physical["physicalAttempts"] = list(reversed(payload["physicalAttempts"]))
     with pytest.raises(ValidationError, match="physical attempt inventory"):
         CollectionRunSummary.model_validate(reversed_physical)
+
+    duplicate_failures = deepcopy(payload)
+    duplicate_failures["logicalOperations"][0].update(
+        {
+            "started": 2,
+            "succeeded": 0,
+            "terminalFailures": 2,
+            "failureCodes": [
+                {"code": "HTTP_ERROR", "count": 1},
+                {"code": "HTTP_ERROR", "count": 1},
+            ],
+        }
+    )
+    with pytest.raises(ValidationError, match="failure code inventory"):
+        CollectionRunSummary.model_validate(duplicate_failures)
+
+    duplicate_skips = deepcopy(payload)
+    duplicate_skips["skips"] = [
+        {"code": "OFFLINE_FIXTURE", "count": 1},
+        {"code": "OFFLINE_FIXTURE", "count": 1},
+    ]
+    with pytest.raises(ValidationError, match="skip inventory"):
+        CollectionRunSummary.model_validate(duplicate_skips)

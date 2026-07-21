@@ -314,6 +314,9 @@ class _TokenIssuer:
             except (httpx.TimeoutException, httpx.TransportError):
                 # caught exception의 credential-bearing request/context를 새 stable error에 연결하지 않는다.
                 transport_failed = True
+            except Exception:
+                # inner transport handoff 뒤의 임의 예외도 unresolved attempt나 원문 traceback을 남기지 않는다.
+                transport_failed = True
             if response is not None:
                 if response.status_code >= 400:
                     issue_failed = True

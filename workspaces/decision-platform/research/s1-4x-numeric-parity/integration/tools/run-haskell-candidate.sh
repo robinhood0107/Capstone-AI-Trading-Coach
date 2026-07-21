@@ -2,7 +2,7 @@
 set -euo pipefail
 
 usage() {
-  echo "usage: run-candidate.sh --request ABSOLUTE_FILE --fixture-root ABSOLUTE_DIRECTORY --output ABSOLUTE_NEW_FILE" >&2
+  echo "usage: run-haskell-candidate.sh --request ABSOLUTE_FILE --fixture-root ABSOLUTE_DIRECTORY --output ABSOLUTE_NEW_FILE" >&2
   exit 64
 }
 
@@ -26,7 +26,7 @@ if [[ -n "${STACK_YAML+x}" \
   exit 64
 fi
 
-# Interpreter, linker, Git, Cabal, Hpack hook이 sealed candidate child로 유입되지 않게 한다.
+# Qualification source tree는 바꾸지 않고 integration 전용 Stack 3.11 argv만 격리한다.
 while IFS= read -r environment_name; do
   case "$environment_name" in
     BASH_ENV | ENV | PYTHONPATH | PYTHONHOME | PYTHON* | VIRTUAL_ENV | \
@@ -42,8 +42,9 @@ export LC_ALL="C.UTF-8"
 export TZ="UTC"
 
 SCRIPT_PATH="$(/usr/bin/readlink -f -- "${BASH_SOURCE[0]}")"
-HASKELL_ROOT="$(/usr/bin/realpath -- "${SCRIPT_PATH%/*}/..")"
-NUMERIC_ROOT="$(/usr/bin/realpath -- "$HASKELL_ROOT/..")"
+INTEGRATION_ROOT="$(/usr/bin/realpath -- "${SCRIPT_PATH%/*}/..")"
+NUMERIC_ROOT="$(/usr/bin/realpath -- "$INTEGRATION_ROOT/..")"
+HASKELL_ROOT="$NUMERIC_ROOT/haskell"
 PROFILE_PATH="$HASKELL_ROOT/selected-profile.v1.json"
 SOURCE_MANIFEST="$HASKELL_ROOT/source-inputs.v1.json"
 QUALIFICATION_PLAN="$NUMERIC_ROOT/benchmarks/benchmark-plan.v1.json"
@@ -117,29 +118,35 @@ fi
 STACK_WORK_DIR=".stack-work-s1-4x-${STACK_ROOT_PATH##*/}"
 STACK_STDOUT="$STACK_ROOT_PATH/candidate.stdout"
 STACK_STDERR="$STACK_ROOT_PATH/candidate.stderr"
+STACK_COMMAND=(
+  "$GHCUP_BIN"
+  --offline run --quick
+  --ghc 9.10.3
+  --stack 3.11.1
+  --
+  "$STACK_BIN"
+  --stack-root "$STACK_ROOT_PATH"
+  --work-dir "$STACK_WORK_DIR"
+  --stack-yaml "$STACK_YAML_PATH"
+  --no-terminal
+  --color never
+  --system-ghc
+  --no-install-ghc
+  --hpack-force
+  --silent
+)
 
 set +e
-"$GHCUP_BIN" \
-  --offline run --quick \
-  --ghc 9.10.3 \
-  --stack 3.11.1 \
-  -- \
-  "$STACK_BIN" \
-  --stack-root "$STACK_ROOT_PATH" \
-  --work-dir "$STACK_WORK_DIR" \
-  --stack-yaml "$STACK_YAML_PATH" \
-  --no-terminal \
-  --color never \
-  --system-ghc \
-  --no-install-ghc \
-  --hpack-force \
-  --silent \
-  run \
-  --ghc-options "$PROFILE_GHC_OPTIONS" \
-  -- \
-  --request "$REQUEST_PATH" \
-  --fixture-root "$FIXTURE_ROOT" \
-  --output "$OUTPUT_PATH" \
+(
+  set -e
+  "${STACK_COMMAND[@]}" build \
+    s1-4x-haskell:exe:s1-4x-haskell \
+    --ghc-options "$PROFILE_GHC_OPTIONS"
+  "${STACK_COMMAND[@]}" exec s1-4x-haskell -- \
+    --request "$REQUEST_PATH" \
+    --fixture-root "$FIXTURE_ROOT" \
+    --output "$OUTPUT_PATH"
+) \
   >"$STACK_STDOUT" \
   2>"$STACK_STDERR"
 candidate_status="$?"

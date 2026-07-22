@@ -12,6 +12,7 @@ import org.testcontainers.utility.DockerImageName
 import org.testcontainers.utility.MountableFile
 import java.nio.file.Files
 import java.nio.file.Path
+import java.sql.Connection
 import java.sql.DriverManager
 import java.sql.SQLException
 import java.util.Properties
@@ -47,6 +48,19 @@ class InfrastructureSecurityIntegrationTest {
             .locations("classpath:db/migration")
             .load()
             .migrate()
+
+        // 기존 volume에서 bootstrap을 재적용해도 migration의 calendar 최소권한을 되돌리면 안 된다.
+        assertTrue(postgres.execInContainer("bash", "-ec", "bash /tmp/02-application-roles.sh").exitCode == 0)
+
+        DriverManager.getConnection(postgres.jdbcUrl, postgres.username, adminPassword).use { connection ->
+            assertTrue(hasTablePrivilege(connection, "decision_collector", "opendart_quota_usage", "UPDATE"))
+            assertTrue(hasTablePrivilege(connection, "decision_collector", "calendar_observations", "INSERT"))
+            assertFalse(hasTablePrivilege(connection, "decision_collector", "calendar_observations", "UPDATE"))
+            assertFalse(hasTablePrivilege(connection, "decision_collector", "flyway_schema_history", "SELECT"))
+            assertTrue(hasTablePrivilege(connection, "decision_app", "trading_sessions", "SELECT"))
+            assertFalse(hasTablePrivilege(connection, "decision_app", "calendar_observations", "SELECT"))
+            assertFalse(hasTablePrivilege(connection, "decision_app", "opendart_quota_usage", "SELECT"))
+        }
 
         DriverManager.getConnection(postgres.jdbcUrl, runtimeProperties()).use { connection ->
             connection.createStatement().use { statement ->
@@ -107,6 +121,21 @@ class InfrastructureSecurityIntegrationTest {
             setProperty("password", runtimePassword)
         }
 
+    private fun hasTablePrivilege(
+        connection: Connection,
+        role: String,
+        table: String,
+        privilege: String,
+    ): Boolean =
+        connection
+            .prepareStatement("select has_table_privilege(?, 'public.' || ?, ?)")
+            .use { statement ->
+                statement.setString(1, role)
+                statement.setString(2, table)
+                statement.setString(3, privilege)
+                statement.executeQuery().use { result -> result.next() && result.getBoolean(1) }
+            }
+
     private fun findRepositoryRoot(): Path {
         var current = Path.of(System.getProperty("user.dir")).toAbsolutePath()
         while (!Files.exists(current.resolve("AGENTS.md"))) {
@@ -121,6 +150,7 @@ class InfrastructureSecurityIntegrationTest {
         private val adminPassword: String = "a" + "p".repeat(24)
         private val runtimePassword: String = "r" + "p".repeat(24)
         private val migrationPassword: String = "m" + "p".repeat(24)
+        private val collectorPassword: String = "c" + "p".repeat(24)
         private val postgresImage =
             DockerImageName
                 .parse(
@@ -136,5 +166,6 @@ class InfrastructureSecurityIntegrationTest {
                 .withPassword(adminPassword)
                 .withEnv("POSTGRES_APP_PASSWORD", runtimePassword)
                 .withEnv("POSTGRES_MIGRATION_PASSWORD", migrationPassword)
+                .withEnv("POSTGRES_COLLECTOR_PASSWORD", collectorPassword)
     }
 }

@@ -8,11 +8,10 @@ import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.nio.charset.StandardCharsets
-import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.FileAlreadyExistsException
 import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.Path
-import java.nio.file.StandardCopyOption
 import java.nio.file.attribute.PosixFilePermissions
 import java.security.MessageDigest
 import java.time.Clock
@@ -92,11 +91,20 @@ object AuthCutoverSmoke {
         }
         val userToken = login(baseUrl, "demo-user", userPassword, "usr_demo_user", "USER")
         val adminToken = login(baseUrl, "demo-admin", adminPassword, "usr_demo_admin", "ADMIN")
+        if (userToken == adminToken) {
+            throw AuthCutoverException("post_token_distinct")
+        }
         if (healthStatus(baseUrl, userToken) != 200) {
             throw AuthCutoverException("post_user_health_status")
         }
         if (healthStatus(baseUrl, adminToken) != 200) {
             throw AuthCutoverException("post_admin_health_status")
+        }
+        if (authorizedGetStatus(baseUrl, ADMIN_BOUNDARY_PATH, userToken) != 403) {
+            throw AuthCutoverException("post_user_admin_boundary")
+        }
+        if (authorizedGetStatus(baseUrl, ADMIN_BOUNDARY_PATH, adminToken) != 200) {
+            throw AuthCutoverException("post_admin_boundary")
         }
         try {
             Files.delete(evidencePath)
@@ -172,16 +180,23 @@ object AuthCutoverSmoke {
         if (userId != expectedUserId || role != expectedRole || accessToken == null) {
             throw AuthCutoverException(if (expectedRole == "ADMIN") "post_admin_login_contract" else "post_user_login_contract")
         }
+        validateTokenIdentity(accessToken, expectedUserId, expectedRole)
         return accessToken
     }
 
     private fun healthStatus(
         baseUrl: String,
         token: String,
+    ): Int = authorizedGetStatus(baseUrl, "/api/v1/system/health", token)
+
+    private fun authorizedGetStatus(
+        baseUrl: String,
+        path: String,
+        token: String,
     ): Int =
         send(
             HttpRequest
-                .newBuilder(URI.create("$baseUrl/api/v1/system/health"))
+                .newBuilder(URI.create("$baseUrl$path"))
                 .timeout(HTTP_TIMEOUT)
                 .header("Authorization", "Bearer $token")
                 .GET()
@@ -226,6 +241,38 @@ object AuthCutoverSmoke {
         }
 
     private fun parseJwtExpiration(token: String): Instant {
+        val root = parseJwtPayload(token)
+        val expiration = root.path("exp")
+        if (!expiration.isIntegralNumber || !expiration.canConvertToLong()) {
+            throw AuthCutoverException("token_expiration")
+        }
+        return try {
+            Instant.ofEpochSecond(expiration.longValue())
+        } catch (exception: Exception) {
+            throw AuthCutoverException("token_expiration", exception)
+        }
+    }
+
+    private fun validateTokenIdentity(
+        token: String,
+        expectedUserId: String,
+        expectedRole: String,
+    ) {
+        val root = parseJwtPayload(token)
+        val securityVersion = root.path("securityVersion")
+        if (
+            root.path("sub").stringValue() != expectedUserId ||
+            root.path("role").stringValue() != expectedRole ||
+            !securityVersion.isIntegralNumber ||
+            !securityVersion.canConvertToLong() ||
+            securityVersion.longValue() <= 0
+        ) {
+            throw AuthCutoverException(if (expectedRole == "ADMIN") "post_admin_login_contract" else "post_user_login_contract")
+        }
+        parseJwtExpiration(token)
+    }
+
+    private fun parseJwtPayload(token: String): JsonNode {
         if (token.length !in 16..MAX_TOKEN_LENGTH) {
             throw AuthCutoverException("token_format")
         }
@@ -242,16 +289,7 @@ object AuthCutoverSmoke {
         if (payload.size > MAX_TOKEN_PAYLOAD_BYTES) {
             throw AuthCutoverException("token_payload_limit")
         }
-        val root = parseBoundedJson(payload)
-        val expiration = root.path("exp")
-        if (!expiration.isIntegralNumber || !expiration.canConvertToLong()) {
-            throw AuthCutoverException("token_expiration")
-        }
-        return try {
-            Instant.ofEpochSecond(expiration.longValue())
-        } catch (exception: Exception) {
-            throw AuthCutoverException("token_expiration", exception)
-        }
+        return parseBoundedJson(payload)
     }
 
     private fun readEvidence(path: Path): JsonNode {
@@ -286,14 +324,11 @@ object AuthCutoverSmoke {
             }
             Files.write(temporary, bytes)
             try {
-                Files.move(
-                    temporary,
-                    absolutePath,
-                    StandardCopyOption.ATOMIC_MOVE,
-                    StandardCopyOption.REPLACE_EXISTING,
-                )
-            } catch (exception: AtomicMoveNotSupportedException) {
-                throw AuthCutoverException("evidence_atomic_move", exception)
+                // 같은 directory의 완성된 inode를 hard-link해 create-if-absent와 완전한 content visibility를 함께 보장한다.
+                Files.createLink(absolutePath, temporary)
+                runCatching { Files.deleteIfExists(temporary) }
+            } catch (exception: FileAlreadyExistsException) {
+                throw AuthCutoverException("evidence_exists", exception)
             }
         } catch (exception: Exception) {
             runCatching { Files.deleteIfExists(temporary) }
@@ -358,6 +393,7 @@ object AuthCutoverSmoke {
     private const val OLD_TOKEN_ENV = "AUTH_SMOKE_PRE_CUTOVER_TOKEN"
     private const val USER_PASSWORD_ENV = "AUTH_SMOKE_USER_PASSWORD"
     private const val ADMIN_PASSWORD_ENV = "AUTH_SMOKE_ADMIN_PASSWORD"
+    private const val ADMIN_BOUNDARY_PATH = "/actuator/metrics"
     private val HTTP_TIMEOUT: Duration = Duration.ofSeconds(10)
     private val SHA256_PATTERN = Regex("^[0-9a-f]{64}$")
 }

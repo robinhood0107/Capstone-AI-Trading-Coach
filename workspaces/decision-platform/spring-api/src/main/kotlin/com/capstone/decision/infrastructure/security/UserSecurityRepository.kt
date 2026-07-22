@@ -8,7 +8,7 @@ import org.springframework.stereotype.Repository
 interface UserSecurityRepository {
     fun findByUsername(username: String): UserSecurityRecord?
 
-    fun findByUserId(userId: String): UserSecurityRecord?
+    fun findByUserId(userId: String): UserSecurityActorRecord?
 }
 
 // DataSource를 제외한 web slice도 시작할 수 있게 provider를 지연 해석하되 production 조회는 DB 부재 시 fail-closed한다.
@@ -26,15 +26,17 @@ class JdbcUserSecurityRepository(
             username,
         )
 
-    override fun findByUserId(userId: String): UserSecurityRecord? =
-        queryOne(
-            """
-            select user_id, username, password_hash, role, status, security_version
-            from users
-            where user_id = ?
-            """.trimIndent(),
-            userId,
-        )
+    override fun findByUserId(userId: String): UserSecurityActorRecord? =
+        jdbcTemplate()
+            .query(
+                """
+                select user_id, username, role, status, security_version
+                from users
+                where user_id = ?
+                """.trimIndent(),
+                USER_SECURITY_ACTOR_ROW_MAPPER,
+                userId,
+            ).singleOrNull()
 
     private fun queryOne(
         sql: String,
@@ -60,6 +62,16 @@ class JdbcUserSecurityRepository(
                     securityVersion = result.getLong("security_version"),
                 )
             }
+        private val USER_SECURITY_ACTOR_ROW_MAPPER =
+            org.springframework.jdbc.core.RowMapper { result, _ ->
+                UserSecurityActorRecord(
+                    userId = result.getString("user_id"),
+                    username = result.getString("username"),
+                    role = DemoRole.valueOf(result.getString("role")),
+                    status = result.getString("status"),
+                    securityVersion = result.getLong("security_version"),
+                )
+            }
     }
 }
 
@@ -68,6 +80,15 @@ data class UserSecurityRecord(
     val userId: String,
     val username: String,
     val passwordHash: String,
+    val role: DemoRole,
+    val status: String,
+    val securityVersion: Long,
+)
+
+// 매 요청 JWT 재검증은 password hash를 읽지 않는 최소 actor projection만 사용한다.
+data class UserSecurityActorRecord(
+    val userId: String,
+    val username: String,
     val role: DemoRole,
     val status: String,
     val securityVersion: Long,

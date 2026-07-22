@@ -1,5 +1,7 @@
 package com.capstone.decision.infrastructure.security
 
+import org.springframework.boot.context.properties.ConfigurationProperties
+
 // migration과 login이 같은 두 demo identity를 사용하도록 공개 식별자만 한 곳에 고정한다.
 object DemoAccounts {
     val identities: List<DemoAccountIdentity> =
@@ -17,6 +19,13 @@ data class DemoAccountIdentity(
     val userId: String,
     val username: String,
     val role: DemoRole,
+)
+
+// V7 Java migration에만 전달할 bootstrap hash이며 Flyway SQL placeholder에는 노출하지 않는다.
+@ConfigurationProperties("app.demo-credentials")
+data class DemoCredentialBootstrapProperties(
+    var userPasswordHash: String = "",
+    var adminPasswordHash: String = "",
 )
 
 // BCrypt cost가 낮거나 형식이 다른 hash는 migration, login, rotation 어디서도 신뢰하지 않는다.

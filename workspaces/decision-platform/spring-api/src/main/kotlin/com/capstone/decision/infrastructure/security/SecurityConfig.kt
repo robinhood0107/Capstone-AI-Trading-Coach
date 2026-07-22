@@ -6,10 +6,10 @@ import com.capstone.decision.infrastructure.idempotency.IdempotencyService
 import com.capstone.decision.infrastructure.web.HttpRequestProperties
 import com.capstone.decision.infrastructure.web.RequestBodyLimitFilter
 import com.capstone.decision.infrastructure.web.RequestIdFilter
+import org.flywaydb.core.api.migration.JavaMigration
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.boot.context.properties.EnableConfigurationProperties
-import org.springframework.boot.flyway.autoconfigure.FlywayConfigurationCustomizer
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.http.HttpMethod
@@ -27,7 +27,6 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource
 import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
-import java.util.Base64
 
 // S0.3 공통 규약에서 허용 경로, JWT 인증, CORS를 한 보안 체인으로 고정한다.
 @Configuration
@@ -36,6 +35,7 @@ import java.util.Base64
 @EnableConfigurationProperties(
     JwtProperties::class,
     LoginAttemptLimiterProperties::class,
+    DemoCredentialBootstrapProperties::class,
     IdempotencyProperties::class,
     HttpRequestProperties::class,
 )
@@ -60,24 +60,15 @@ class SecurityConfig {
     }
 
     @Bean
-    fun demoCredentialFlywayCustomizer(): FlywayConfigurationCustomizer =
-        FlywayConfigurationCustomizer { configuration ->
-            val userHash = configuration.placeholders["demoUserPasswordHash"].orEmpty()
-            val adminHash = configuration.placeholders["demoAdminPasswordHash"].orEmpty()
-            DemoCredentialHashPolicy.requireValid(userHash)
-            DemoCredentialHashPolicy.requireValid(adminHash)
-            require(userHash != adminHash) { "Demo user and admin credential hashes must be different." }
-            // SQL에는 quote가 없는 base64 파생 placeholder만 넣어 raw hash의 SQL 문법 간섭을 차단한다.
-            configuration.placeholders(
-                configuration.placeholders +
-                    mapOf(
-                        "demoUserPasswordHashBase64" to encodeBase64(userHash),
-                        "demoAdminPasswordHashBase64" to encodeBase64(adminHash),
-                    ),
-            )
-        }
-
-    private fun encodeBase64(value: String): String = Base64.getEncoder().encodeToString(value.toByteArray(StandardCharsets.UTF_8))
+    fun s21ActorTrustMigration(properties: DemoCredentialBootstrapProperties): JavaMigration {
+        val userHash = DemoCredentialHashPolicy.requireValid(properties.userPasswordHash)
+        val adminHash = DemoCredentialHashPolicy.requireValid(properties.adminPasswordHash)
+        require(userHash != adminHash) { "Demo user and admin credential hashes must be different." }
+        return V7__s2_1_actor_trust(
+            userPasswordHash = userHash,
+            adminPasswordHash = adminHash,
+        )
+    }
 
     @Bean
     fun securityFilterChain(

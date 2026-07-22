@@ -5,6 +5,7 @@ import java.security.MessageDigest
 import java.sql.Connection
 import java.sql.DriverManager
 import java.util.HexFormat
+import java.util.Locale
 import java.util.UUID
 import kotlin.system.exitProcess
 
@@ -42,7 +43,10 @@ object DemoCredentialRotation {
     ) {
         connection.autoCommit = false
         try {
-            val newSecurityVersion = updateCredential(connection, config)
+            configureTransactionTimeouts(connection)
+            val lockedCredentials = lockDemoCredentials(connection)
+            val target = requireTargetAndPeerInvariant(lockedCredentials, config)
+            val newSecurityVersion = updateCredential(connection, config, target)
             insertAudit(connection, config, newSecurityVersion)
             connection.commit()
         } catch (exception: Exception) {
@@ -53,22 +57,89 @@ object DemoCredentialRotation {
         }
     }
 
+    private fun configureTransactionTimeouts(connection: Connection) {
+        connection.createStatement().use { statement ->
+            statement.queryTimeout = STATEMENT_TIMEOUT_SECONDS
+            statement.execute("set local lock_timeout = '3s'")
+            statement.execute("set local statement_timeout = '10s'")
+        }
+    }
+
+    private fun lockDemoCredentials(connection: Connection): List<LockedCredential> =
+        connection
+            .prepareStatement(
+                """
+                select user_id, username, password_hash, role, status, security_version
+                from users
+                where user_id in (?, ?)
+                order by user_id
+                for update nowait
+                """.trimIndent(),
+            ).use { statement ->
+                statement.queryTimeout = STATEMENT_TIMEOUT_SECONDS
+                statement.setString(1, DemoAccounts.identities[0].userId)
+                statement.setString(2, DemoAccounts.identities[1].userId)
+                statement.executeQuery().use { result ->
+                    buildList {
+                        while (result.next()) {
+                            add(
+                                LockedCredential(
+                                    userId = result.getString("user_id"),
+                                    username = result.getString("username"),
+                                    passwordHash = result.getString("password_hash"),
+                                    role = result.getString("role"),
+                                    status = result.getString("status"),
+                                    securityVersion = result.getLong("security_version"),
+                                ),
+                            )
+                        }
+                    }
+                }
+            }
+
+    private fun requireTargetAndPeerInvariant(
+        credentials: List<LockedCredential>,
+        config: RotationConfig,
+    ): LockedCredential {
+        check(credentials.size == DemoAccounts.identities.size) { "Approved demo credential rows are incomplete." }
+        DemoAccounts.identities.forEach { identity ->
+            val credential = credentials.singleOrNull { it.userId == identity.userId }
+            check(
+                credential != null &&
+                    credential.username == identity.username &&
+                    credential.role == identity.role.name &&
+                    credential.status == ACTIVE_STATUS &&
+                    credential.securityVersion > 0 &&
+                    DemoCredentialHashPolicy.isValid(credential.passwordHash),
+            ) { "Approved demo credential row is invalid." }
+        }
+        val target = requireNotNull(credentials.singleOrNull { it.userId == config.identity.userId })
+        check(credentials.none { it.passwordHash == config.passwordHash }) {
+            "Credential rotation must use a new hash distinct from both demo accounts."
+        }
+        return target
+    }
+
     private fun updateCredential(
         connection: Connection,
         config: RotationConfig,
+        current: LockedCredential,
     ): Long =
         connection
             .prepareStatement(
                 """
                 update users
                 set password_hash = ?, security_version = security_version + 1, updated_at = now()
-                where user_id = ? and username = ?
+                where user_id = ? and username = ? and security_version = ? and password_hash = ?
                 returning security_version
                 """.trimIndent(),
             ).use { statement ->
+                statement.queryTimeout = STATEMENT_TIMEOUT_SECONDS
                 statement.setString(1, config.passwordHash)
                 statement.setString(2, config.identity.userId)
                 statement.setString(3, config.identity.username)
+                statement.setLong(4, current.securityVersion)
+                statement.setString(5, current.passwordHash)
                 statement.executeQuery().use { result ->
                     check(result.next()) { "Approved demo credential row was not found." }
                     val version = result.getLong("security_version")
@@ -93,6 +164,7 @@ object DemoCredentialRotation {
                         jsonb_build_object('rotationActorDigest', ?, 'securityVersion', ?))
                 """.trimIndent(),
             ).use { statement ->
+                statement.queryTimeout = STATEMENT_TIMEOUT_SECONDS
                 statement.setString(1, config.auditId)
                 statement.setString(2, config.identity.userId)
                 statement.setString(3, config.identity.userId)
@@ -121,7 +193,9 @@ object DemoCredentialRotation {
                 auditId: String,
             ): RotationConfig {
                 val host = environment["POSTGRES_HOST"]?.takeIf { it.isNotBlank() } ?: DEFAULT_POSTGRES_HOST
-                require(HOST_PATTERN.matches(host)) { "POSTGRES_HOST has an invalid format." }
+                require(host.lowercase(Locale.ROOT) in LOOPBACK_HOSTS) {
+                    "POSTGRES_HOST must be loopback for credential rotation."
+                }
                 val port = (environment["POSTGRES_PORT"]?.takeIf { it.isNotBlank() } ?: DEFAULT_POSTGRES_PORT).toIntOrNull()
                 require(port != null && port in 1..65_535) { "POSTGRES_PORT has an invalid format." }
                 val database = required(environment, "POSTGRES_DB")
@@ -140,7 +214,9 @@ object DemoCredentialRotation {
                 }
                 require(AUDIT_ID_PATTERN.matches(auditId)) { "audit id has an invalid format." }
                 return RotationConfig(
-                    jdbcUrl = "jdbc:postgresql://$host:$port/$database",
+                    jdbcUrl =
+                        "jdbc:postgresql://$host:$port/$database" +
+                            "?connectTimeout=$CONNECT_TIMEOUT_SECONDS&socketTimeout=$SOCKET_TIMEOUT_SECONDS&tcpKeepAlive=true",
                     migrationPassword = required(environment, "POSTGRES_MIGRATION_PASSWORD"),
                     identity = identity,
                     passwordHash = passwordHash,
@@ -156,14 +232,27 @@ object DemoCredentialRotation {
                 environment[name]?.takeIf { it.isNotBlank() }
                     ?: throw IllegalArgumentException("$name is required.")
 
-            private val HOST_PATTERN = Regex("^[A-Za-z0-9.-]{1,253}$")
             private val DATABASE_PATTERN = Regex("^[A-Za-z_][A-Za-z0-9_]{0,62}$")
             private val ROTATION_ACTOR_PATTERN = Regex("^[A-Za-z0-9._:/#-]{1,128}$")
             private val AUDIT_ID_PATTERN = Regex("^[A-Za-z0-9._:-]{1,160}$")
         }
     }
 
+    private data class LockedCredential(
+        val userId: String,
+        val username: String,
+        val passwordHash: String,
+        val role: String,
+        val status: String,
+        val securityVersion: Long,
+    )
+
     private const val MIGRATION_USER = "flyway"
     private const val DEFAULT_POSTGRES_HOST = "127.0.0.1"
     private const val DEFAULT_POSTGRES_PORT = "5432"
+    private const val ACTIVE_STATUS = "ACTIVE"
+    private const val CONNECT_TIMEOUT_SECONDS = 5
+    private const val SOCKET_TIMEOUT_SECONDS = 15
+    private const val STATEMENT_TIMEOUT_SECONDS = 10
+    private val LOOPBACK_HOSTS = setOf("127.0.0.1", "localhost")
 }

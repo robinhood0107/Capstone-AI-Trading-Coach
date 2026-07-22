@@ -18,9 +18,6 @@ spring:
     locations: classpath:db/migration
     user: flyway
     password: ${POSTGRES_MIGRATION_PASSWORD}
-    placeholders:
-      demoUserPasswordHash: ${DEMO_USER_PASSWORD_HASH}
-      demoAdminPasswordHash: ${DEMO_ADMIN_PASSWORD_HASH}
   data:
     redis:
       host: ${REDIS_HOST:127.0.0.1}
@@ -42,6 +39,9 @@ spring:
       ack-mode: MANUAL
 
 app:
+  demo-credentials:
+    user-password-hash: ${DEMO_USER_PASSWORD_HASH}
+    admin-password-hash: ${DEMO_ADMIN_PASSWORD_HASH}
   http:
     max-request-body-bytes: 1048576
   jwt:

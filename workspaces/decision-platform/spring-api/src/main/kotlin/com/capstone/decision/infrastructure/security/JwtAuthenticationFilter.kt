@@ -36,6 +36,8 @@ class JwtAuthenticationFilter(
 ) : OncePerRequestFilter() {
     private val pathMatcher = AntPathMatcher()
 
+    override fun shouldNotFilter(request: HttpServletRequest): Boolean = request.method == "POST" && request.requestURI == LOGIN_PATH
+
     override fun doFilterInternal(
         request: HttpServletRequest,
         response: HttpServletResponse,
@@ -243,6 +245,7 @@ class JwtAuthenticationFilter(
 
     companion object {
         private const val BEARER_PREFIX = "Bearer "
+        private const val LOGIN_PATH = "/api/v1/auth/login"
         private const val IDEMPOTENCY_HEADER = "X-Idempotency-Key"
         private val WRITE_METHODS = setOf("POST", "PUT", "PATCH", "DELETE")
         private val NON_REPLAYABLE_CLIENT_ERRORS = setOf(400, 401, 403, 404, 405, 413, 422, 429)

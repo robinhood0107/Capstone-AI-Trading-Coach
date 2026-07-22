@@ -26,6 +26,8 @@ import org.testcontainers.junit.jupiter.Testcontainers
 import org.testcontainers.postgresql.PostgreSQLContainer
 import org.testcontainers.utility.DockerImageName
 import java.sql.DriverManager
+import java.util.Base64
+import java.util.HexFormat
 
 // credential rotation은 runtime app 권한과 분리된 migration role transaction으로만 실행한다.
 @Testcontainers
@@ -34,6 +36,7 @@ class DemoCredentialRotationIntegrationTest {
 
     @BeforeEach
     fun restoreUser() {
+        setFlywayLoggingPolicy(logStatement = "none", parameterMaxLength = 0, errorParameterMaxLength = 0)
         adminConnection().use { connection ->
             connection
                 .prepareStatement(
@@ -58,6 +61,7 @@ class DemoCredentialRotationIntegrationTest {
 
     @AfterEach
     fun cleanAudit() {
+        setFlywayLoggingPolicy(logStatement = "none", parameterMaxLength = 0, errorParameterMaxLength = 0)
         adminConnection().use { connection ->
             connection.createStatement().use { statement ->
                 statement.executeUpdate("delete from audit_logs where action = 'DEMO_CREDENTIAL_ROTATED'")
@@ -266,6 +270,38 @@ class DemoCredentialRotationIntegrationTest {
         }
     }
 
+    @Test
+    fun `rotation permits statement logging when credential bind values are suppressed`() {
+        val newPassword = "logging-safe-" + "p".repeat(16)
+        val newBundle = SpringApiIntegrationTestBase.prepareTestBundle("usr_demo_user", newPassword)
+        setFlywayLoggingPolicy(logStatement = "all", parameterMaxLength = 0, errorParameterMaxLength = 0)
+        val logOffset = postgres.logs.length
+
+        DemoCredentialRotation.rotate(environment(newBundle), auditId = "aud-rotation-logging-safe")
+
+        val rotationLogs = postgres.logs.drop(logOffset)
+        assertTrue(rotationLogs.contains("update users"), "statement logging control did not observe the rotation SQL")
+        assertCredentialEvidenceAbsent(rotationLogs, newPassword, newBundle)
+        assertEquals(2L, queryUser("usr_demo_user").securityVersion)
+        assertEquals(1, queryRotationAuditCount())
+    }
+
+    @Test
+    fun `rotation fails closed before credential binds when parameter logging is unsafe`() {
+        val newPassword = "logging-unsafe-" + "p".repeat(16)
+        val newBundle = SpringApiIntegrationTestBase.prepareTestBundle("usr_demo_user", newPassword)
+        setFlywayLoggingPolicy(logStatement = "all", parameterMaxLength = -1, errorParameterMaxLength = -1)
+        val logOffset = postgres.logs.length
+
+        assertThrows<IllegalStateException> {
+            DemoCredentialRotation.rotate(environment(newBundle), auditId = "aud-rotation-logging-rejected")
+        }
+
+        assertCredentialEvidenceAbsent(postgres.logs.drop(logOffset), newPassword, newBundle)
+        assertEquals(1L, queryUser("usr_demo_user").securityVersion)
+        assertEquals(0, queryRotationAuditCount())
+    }
+
     private fun environment(newBundle: String): Map<String, String> =
         mapOf(
             "POSTGRES_HOST" to postgres.host,
@@ -312,6 +348,63 @@ class DemoCredentialRotationIntegrationTest {
                     }
                 }
         }
+
+    private fun queryRotationAuditCount(): Int =
+        adminConnection().use { connection ->
+            connection.prepareStatement("select count(*) from audit_logs where action = 'DEMO_CREDENTIAL_ROTATED'").use { statement ->
+                statement.executeQuery().use { result ->
+                    check(result.next())
+                    result.getInt(1)
+                }
+            }
+        }
+
+    private fun setFlywayLoggingPolicy(
+        logStatement: String,
+        parameterMaxLength: Int,
+        errorParameterMaxLength: Int,
+    ) {
+        require(logStatement in setOf("none", "all"))
+        require(parameterMaxLength in setOf(-1, 0))
+        require(errorParameterMaxLength in setOf(-1, 0))
+        adminConnection().use { connection ->
+            connection.createStatement().use { statement ->
+                // 테스트 allowlist로만 역할 기본값을 바꿔 실제 rotation 세션의 effective GUC를 검증한다.
+                statement.execute("alter role flyway set log_statement = '$logStatement'")
+                statement.execute("alter role flyway set log_parameter_max_length = $parameterMaxLength")
+                statement.execute("alter role flyway set log_parameter_max_length_on_error = $errorParameterMaxLength")
+            }
+        }
+    }
+
+    private fun assertCredentialEvidenceAbsent(
+        logs: String,
+        plaintext: String,
+        bundle: String,
+    ) {
+        val segments = bundle.split(':')
+        check(segments.size == 5)
+        val tag = Base64.getUrlDecoder().decode(segments[2])
+        val mac = Base64.getUrlDecoder().decode(segments[4])
+        try {
+            val forbiddenEvidence =
+                listOf(
+                    plaintext,
+                    bundle,
+                    segments[2],
+                    segments[3],
+                    segments[4],
+                    HexFormat.of().formatHex(tag),
+                    HexFormat.of().formatHex(mac),
+                )
+            forbiddenEvidence.forEachIndexed { index, evidence ->
+                assertFalse(logs.contains(evidence), "credential evidence index $index appeared in PostgreSQL logs")
+            }
+        } finally {
+            tag.fill(0)
+            mac.fill(0)
+        }
+    }
 
     private fun queryUserBy(
         column: String,

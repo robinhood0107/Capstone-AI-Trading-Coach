@@ -7,7 +7,7 @@ from datetime import UTC, date, datetime, timedelta
 import psycopg
 import pytest
 
-from app.data.calendar.errors import QuotaReservationDenied
+from app.data.calendar.errors import PrivacyProjectionError, QuotaReservationDenied
 from app.data.calendar.disclosure_state import DisclosureStateTransition
 from app.data.calendar.models import (
     CalendarConflictRecord,
@@ -277,6 +277,28 @@ def test_page_commit_is_atomic_idempotent_and_keeps_every_audit_relation(
 
     with psycopg.connect(postgres_cluster["collector_dsn"]) as connection:
         repository = CalendarRepository(connection)
+        with pytest.raises(PrivacyProjectionError):
+            repository.publish_page(
+                replace(
+                    commit,
+                    trading_session=replace(
+                        session,
+                        reason="request_url=https://example.invalid/?crtfc_key=forbidden",
+                    ),
+                )
+            )
+        with pytest.raises(PrivacyProjectionError):
+            repository.publish_page(
+                replace(
+                    commit,
+                    conflicts=(
+                        replace(
+                            commit.conflicts[0],
+                            resolution_reason="authorization: Bearer forbidden",
+                        ),
+                    ),
+                )
+            )
         with pytest.raises(ValueError, match="retention"):
             repository.publish_page(
                 replace(

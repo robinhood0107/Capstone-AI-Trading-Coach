@@ -78,6 +78,72 @@ ALTER DEFAULT PRIVILEGES FOR ROLE flyway IN SCHEMA public
 ALTER DEFAULT PRIVILEGES FOR ROLE flyway IN SCHEMA public
     REVOKE ALL PRIVILEGES ON SEQUENCES FROM decision_collector;
 
+DO $calendar_privileges$
+BEGIN
+    IF to_regclass('public.opendart_quota_usage') IS NOT NULL THEN
+        -- 기존 volume에서 bootstrap을 재실행해도 V6의 exact collector grant와 app deny를 복원한다.
+        REVOKE ALL PRIVILEGES ON TABLE
+            opendart_quota_usage,
+            calendar_source_health,
+            calendar_observations,
+            trading_sessions,
+            trading_session_revisions,
+            calendar_events,
+            calendar_event_sources,
+            calendar_conflicts,
+            calendar_collection_cursors,
+            disclosure_risk_state_transitions,
+            current_calendar_events,
+            active_disclosure_risk_states,
+            market_calendar
+        FROM decision_collector;
+        GRANT SELECT, INSERT, UPDATE ON TABLE
+            opendart_quota_usage,
+            calendar_source_health,
+            trading_sessions,
+            calendar_collection_cursors
+        TO decision_collector;
+        GRANT SELECT, INSERT ON TABLE
+            calendar_observations,
+            trading_session_revisions,
+            calendar_events,
+            calendar_event_sources,
+            calendar_conflicts,
+            disclosure_risk_state_transitions
+        TO decision_collector;
+        GRANT SELECT ON TABLE
+            current_calendar_events,
+            active_disclosure_risk_states,
+            market_calendar
+        TO decision_collector;
+
+        REVOKE ALL PRIVILEGES ON TABLE
+            opendart_quota_usage,
+            calendar_source_health,
+            calendar_observations,
+            trading_session_revisions,
+            calendar_events,
+            calendar_event_sources,
+            calendar_conflicts,
+            calendar_collection_cursors,
+            disclosure_risk_state_transitions
+        FROM decision_app;
+        REVOKE ALL PRIVILEGES ON TABLE
+            trading_sessions,
+            current_calendar_events,
+            active_disclosure_risk_states,
+            market_calendar
+        FROM decision_app;
+        GRANT SELECT ON TABLE
+            trading_sessions,
+            current_calendar_events,
+            active_disclosure_risk_states,
+            market_calendar
+        TO decision_app;
+    END IF;
+END
+$calendar_privileges$;
+
 DO $block$
 BEGIN
     IF to_regclass('public.flyway_schema_history') IS NOT NULL THEN

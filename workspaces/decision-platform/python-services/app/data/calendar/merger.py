@@ -163,6 +163,7 @@ def _usable_prior(
         prior is not None
         and prior.session.exchange_mic == "XKRX"
         and prior.session.session_date == xkrx.session_date
+        and prior.healthy
         and not prior.session.has_conflict
         and now <= prior.expires_at
     )

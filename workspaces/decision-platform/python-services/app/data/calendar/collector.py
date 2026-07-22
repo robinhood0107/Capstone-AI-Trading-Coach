@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -9,13 +10,14 @@ from typing import Any, Protocol
 
 from app.data.calendar.errors import (
     CollectorAlreadyRunning,
-    NonRetryableProviderError,
+    PriorityDeferred,
     ProviderQuotaExhausted,
-    RetryableProviderError,
     RunLimitExceeded,
 )
 from app.data.calendar.job import kst_usage_date
+from app.data.calendar.models import QuotaUsage
 from app.data.calendar.settings import OpenDARTQuotaConfig
+from app.data.opendart.parsers import OpenDARTQuotaExceededError
 
 
 class OperationPriority(IntEnum):
@@ -53,14 +55,12 @@ _OPERATION_PRIORITIES = {
 }
 
 
-class AttemptBucket(Protocol):
-    def acquire(self) -> None: ...
-
-
 class QuotaReservationRepository(Protocol):
     def reserve(self, usage_date: date, config: OpenDARTQuotaConfig, grant_token: str) -> object: ...
 
     def mark_exhausted(self, usage_date: date, reason: str) -> None: ...
+
+    def get_usage(self, usage_date: date) -> QuotaUsage: ...
 
 
 class CollectorLock(Protocol):
@@ -86,15 +86,15 @@ class CollectionTask:
     subject: str
     page: int
     send: Callable[[], object]
+    publish: Callable[[object], object] | None = None
 
 
 class OpenDARTAttemptExecutor:
-    """각 physical attempt를 limiter, PostgreSQL reservation, HTTP handoff 순으로 실행한다."""
+    """HTTP client의 attempt hook에서 PostgreSQL reservation과 transport handoff를 계상한다."""
 
     def __init__(
         self,
         *,
-        bucket: AttemptBucket,
         quota_repository: QuotaReservationRepository,
         config: OpenDARTQuotaConfig,
         ledger: CollectorRunLedger,
@@ -102,45 +102,62 @@ class OpenDARTAttemptExecutor:
     ) -> None:
         if ledger.max_calls > config.max_calls_per_run:
             raise ValueError("ledger max calls cannot exceed configured per-run cap")
-        self._bucket = bucket
         self._quota_repository = quota_repository
         self._config = config
         self.ledger = ledger
         self._now = now
+        self._last_usage_date: date | None = None
 
     def execute(self, operation: str, send: Callable[[], object]) -> object:
-        """safe GET만 최대 3 attempts로 실행하며 429/status020/schema 계열은 즉시 중단한다."""
+        """retry는 HTTP client가 소유하며 collector는 logical task와 status=020 중단만 조정한다."""
         priority_for_operation(operation)
-        for attempt_index in range(3):
-            if self.ledger.charged_reservations >= self.ledger.max_calls:
-                raise RunLimitExceeded("per-run physical attempt cap reached")
-            now = self._now()
-            usage_date = kst_usage_date(now)
-            self._bucket.acquire()
-            token = f"s16-{usage_date.isoformat()}-{uuid.uuid4().hex}"
-            try:
-                self._quota_repository.reserve(usage_date, self._config, token)
-            except Exception:
-                # DB 오류와 ambiguous commit 결과는 retry하거나 HTTP로 진행하지 않는다.
-                raise RunLimitExceeded("quota reservation failed closed") from None
-            self.ledger.charged_reservations += 1
-            self.ledger.actual_http_sends += 1
-            try:
-                result = send()
-            except ProviderQuotaExhausted:
-                self._quota_repository.mark_exhausted(usage_date, "PROVIDER_STATUS_020")
-                raise
-            except NonRetryableProviderError:
-                raise
-            except RetryableProviderError:
-                if attempt_index == 2:
-                    raise
-                continue
-            if isinstance(result, dict) and result.get("status") == "020":
-                self._quota_repository.mark_exhausted(usage_date, "PROVIDER_STATUS_020")
-                raise ProviderQuotaExhausted()
-            return result
-        raise RuntimeError("unreachable OpenDART retry state")
+        try:
+            result = send()
+        except OpenDARTQuotaExceededError:
+            self.mark_provider_exhausted()
+            raise ProviderQuotaExhausted() from None
+        if isinstance(result, dict) and result.get("status") == "020":
+            self.mark_provider_exhausted()
+            raise ProviderQuotaExhausted()
+        return result
+
+    def before_send(self, path: str) -> None:
+        """TokenBucket 뒤 매 attempt마다 priority/cap을 확인하고 non-refundable slot을 예약한다."""
+        operation = _operation_from_path(path)
+        priority = priority_for_operation(operation)
+        usage_date = kst_usage_date(self._now())
+        try:
+            usage = self._quota_repository.get_usage(usage_date)
+        except KeyError:
+            used = 0
+            effective_budget = self._config.daily_call_budget
+        else:
+            used = usage.physical_attempts
+            effective_budget = min(usage.daily_budget, self._config.daily_call_budget)
+        if not degradation_allows(priority, physical_attempts=used, daily_budget=effective_budget):
+            raise PriorityDeferred("OpenDART operation deferred by daily budget policy")
+        if self.ledger.charged_reservations >= self.ledger.max_calls:
+            raise RunLimitExceeded("per-run physical attempt cap reached")
+        token = f"s16-{usage_date.isoformat()}-{uuid.uuid4().hex}"
+        try:
+            self._quota_repository.reserve(usage_date, self._config, token)
+        except Exception:
+            # DB 오류와 ambiguous commit 결과는 retry하거나 HTTP로 진행하지 않는다.
+            raise RunLimitExceeded("quota reservation failed closed") from None
+        self.ledger.charged_reservations += 1
+        self._last_usage_date = usage_date
+
+    def record_http_handoff(self) -> None:
+        """credential 부착 뒤 inner transport로 넘긴 attempt만 actual HTTP send로 센다."""
+        if self.ledger.actual_http_sends >= self.ledger.charged_reservations:
+            raise RuntimeError("HTTP handoff did not have a charged reservation")
+        self.ledger.actual_http_sends += 1
+
+    def mark_provider_exhausted(self) -> None:
+        """status=020이 발생한 마지막 charged KST date를 durable exhausted로 전환한다."""
+        if self._last_usage_date is None:
+            raise RunLimitExceeded("provider quota status had no charged reservation")
+        self._quota_repository.mark_exhausted(self._last_usage_date, "PROVIDER_STATUS_020")
 
 
 class CalendarCollector:
@@ -167,7 +184,14 @@ class CalendarCollector:
                 tasks,
                 max_symbols=self._config.max_symbols_per_run,
             ):
-                results.append(self._executor.execute(task.operation, task.send))
+                try:
+                    result = self._executor.execute(task.operation, task.send)
+                except PriorityDeferred:
+                    # 성공 publish가 없으므로 caller의 durable cursor는 전진하지 않는다.
+                    continue
+                if task.publish is not None:
+                    task.publish(result)
+                results.append(result)
             return results
         finally:
             self._lock.release_collector_lock()
@@ -213,3 +237,10 @@ def deterministic_round_robin(
         (task for task in tasks if task.subject in allowed),
         key=lambda task: (task.page, task.subject, task.operation),
     )
+
+
+def _operation_from_path(path: str) -> str:
+    match = re.fullmatch(r"/api/([A-Za-z][A-Za-z0-9]*)\.(?:json|xml)", path)
+    if match is None:
+        raise ValueError("relative OpenDART API path is required")
+    return match.group(1)

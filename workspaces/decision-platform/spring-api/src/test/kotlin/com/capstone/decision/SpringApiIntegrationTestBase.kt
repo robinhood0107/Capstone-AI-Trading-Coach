@@ -1,6 +1,7 @@
 package com.capstone.decision
 
 import com.capstone.decision.infrastructure.security.DemoRole
+import com.capstone.decision.infrastructure.security.UserSecurityActorRecord
 import com.capstone.decision.infrastructure.security.UserSecurityRecord
 import com.capstone.decision.infrastructure.security.UserSecurityRepository
 import com.capstone.decision.infrastructure.security.V7__s2_1_actor_trust
@@ -85,7 +86,16 @@ class TestAuthRepositoryConfiguration {
         return object : UserSecurityRepository {
             override fun findByUsername(username: String): UserSecurityRecord? = users.firstOrNull { it.username == username }
 
-            override fun findByUserId(userId: String): UserSecurityRecord? = users.firstOrNull { it.userId == userId }
+            override fun findByUserId(userId: String): UserSecurityActorRecord? = users.firstOrNull { it.userId == userId }?.toActorRecord()
         }
     }
+
+    private fun UserSecurityRecord.toActorRecord(): UserSecurityActorRecord =
+        UserSecurityActorRecord(
+            userId = userId,
+            username = username,
+            role = role,
+            status = status,
+            securityVersion = securityVersion,
+        )
 }

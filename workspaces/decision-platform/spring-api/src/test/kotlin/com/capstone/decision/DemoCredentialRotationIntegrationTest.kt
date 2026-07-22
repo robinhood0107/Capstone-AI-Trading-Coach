@@ -5,6 +5,7 @@ import com.capstone.decision.infrastructure.security.DemoCredentialRotation
 import com.capstone.decision.infrastructure.security.DemoRole
 import com.capstone.decision.infrastructure.security.JwtProperties
 import com.capstone.decision.infrastructure.security.JwtService
+import com.capstone.decision.infrastructure.security.UserSecurityActorRecord
 import com.capstone.decision.infrastructure.security.UserSecurityRecord
 import com.capstone.decision.infrastructure.security.UserSecurityRepository
 import io.jsonwebtoken.JwtException
@@ -169,6 +170,31 @@ class DemoCredentialRotationIntegrationTest {
     }
 
     @Test
+    fun `rotation fails promptly when another operator transaction holds the demo credential lock`() {
+        val newHash = requireNotNull(passwordEncoder.encode("concurrent-rotation-password"))
+        adminConnection().use { blocker ->
+            blocker.autoCommit = false
+            blocker.createStatement().use { statement ->
+                statement.executeQuery("select user_id from users where user_id = 'usr_demo_user' for update").use { result ->
+                    assertTrue(result.next())
+                }
+            }
+            val startedAt = System.nanoTime()
+            try {
+                assertThrows<Exception> {
+                    DemoCredentialRotation.rotate(environment(newHash), auditId = "aud-concurrent-rejected")
+                }
+                val elapsedMillis = (System.nanoTime() - startedAt) / 1_000_000
+                assertTrue(elapsedMillis < 5_000, "rotation lock failure took ${elapsedMillis}ms")
+            } finally {
+                blocker.rollback()
+            }
+        }
+
+        assertEquals(1L, queryUser("usr_demo_user").securityVersion)
+    }
+
+    @Test
     fun `audit failure rolls back password and version while invalid target is rejected before SQL`() {
         val newHash = requireNotNull(passwordEncoder.encode("another-runtime-password"))
         adminConnection().use { connection ->
@@ -224,7 +250,16 @@ class DemoCredentialRotationIntegrationTest {
         object : UserSecurityRepository {
             override fun findByUsername(username: String): UserSecurityRecord? = queryUserBy("username", username)
 
-            override fun findByUserId(userId: String): UserSecurityRecord? = queryUserBy("user_id", userId)
+            override fun findByUserId(userId: String): UserSecurityActorRecord? =
+                queryUserBy("user_id", userId)?.let { user ->
+                    UserSecurityActorRecord(
+                        userId = user.userId,
+                        username = user.username,
+                        role = user.role,
+                        status = user.status,
+                        securityVersion = user.securityVersion,
+                    )
+                }
         }
 
     private fun queryUser(userId: String): UserSecurityRecord = requireNotNull(queryUserBy("user_id", userId))

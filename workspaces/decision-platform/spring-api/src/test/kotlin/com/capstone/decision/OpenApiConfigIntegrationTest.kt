@@ -64,15 +64,12 @@ class OpenApiConfigIntegrationTest(
                 jsonPath("$.components.schemas.LoginResponse.properties.user") { exists() }
                 jsonPath("$.components.schemas.LoginUserResponse.properties.userId") { exists() }
                 jsonPath("$.components.schemas.LoginUserResponse.properties.role") { exists() }
-                jsonPath("$.components.schemas.LoginUserResponse.properties.role['\$ref']") {
-                    value("#/components/schemas/DemoRole")
-                }
-                jsonPath("$.components.schemas.DemoRole.enum[0]") { value("USER") }
-                jsonPath("$.components.schemas.DemoRole.enum[1]") { value("ADMIN") }
+                jsonPath("$.components.schemas.LoginUserResponse.properties.role.enum[0]") { value("USER") }
+                jsonPath("$.components.schemas.LoginUserResponse.properties.role.enum[1]") { value("ADMIN") }
                 jsonPath("$.paths['/api/v1/auth/login'].post.responses['200'].content['application/json'].schema['\$ref']") {
                     value("#/components/schemas/ApiResponseLoginResponse")
                 }
-                jsonPath("$.components.schemas.ApiResponseLoginResponse.properties.data['\$ref']") {
+                jsonPath("$.components.schemas.ApiResponseLoginResponse.properties.data.oneOf[0]['\$ref']") {
                     value("#/components/schemas/LoginResponse")
                 }
                 jsonPath("$.paths['/api/v1/auth/login'].post.responses['400']") { exists() }

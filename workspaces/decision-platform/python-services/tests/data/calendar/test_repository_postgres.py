@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 
 import psycopg
@@ -16,6 +17,7 @@ from app.data.calendar.models import (
     CalendarPageCommit,
     CanonicalTradingSession,
     CollectionCursor,
+    RetentionRule,
     SourceHealthSnapshot,
 )
 from app.data.calendar.normalizer import EventCandidate, build_event_revision, canonical_hash
@@ -219,6 +221,8 @@ def test_page_commit_is_atomic_idempotent_and_keeps_every_audit_relation(
             status_code="HEALTHY",
             error_code=None,
         ),
+        persistence_mode="OFFLINE_EPHEMERAL",
+        retention=None,
         trading_session=session,
         event_writes=(CalendarEventWrite(event, confidence_bps=9000, status="ACTUAL"),),
         source_links=(
@@ -255,6 +259,20 @@ def test_page_commit_is_atomic_idempotent_and_keeps_every_audit_relation(
 
     with psycopg.connect(postgres_cluster["collector_dsn"]) as connection:
         repository = CalendarRepository(connection)
+        with pytest.raises(ValueError, match="retention"):
+            repository.publish_page(
+                replace(
+                    commit,
+                    persistence_mode="ONLINE_PERSISTENT",
+                    retention=None,
+                )
+            )
+
+        persistent_commit = replace(
+            commit,
+            persistence_mode="ONLINE_PERSISTENT",
+            retention=RetentionRule(days=30, owner="market-data-operator"),
+        )
         before = connection.execute(
             """
             SELECT
@@ -270,11 +288,11 @@ def test_page_commit_is_atomic_idempotent_and_keeps_every_audit_relation(
         ).fetchone()
         assert before is not None
         with pytest.raises(RuntimeError, match="injected crash"):
-            repository.publish_page(commit, fail_before_commit=True)
+            repository.publish_page(persistent_commit, fail_before_commit=True)
         assert repository.load_cursor(cursor.key) is None
 
-        repository.publish_page(commit)
-        repository.publish_page(commit)
+        repository.publish_page(persistent_commit)
+        repository.publish_page(persistent_commit)
         assert repository.load_cursor(cursor.key) == cursor
 
         after = connection.execute(

@@ -8,11 +8,12 @@ from app.data.calendar.errors import RegistryValidationError
 from app.data.calendar.registry import load_default_registry, load_registry
 
 
-def test_default_registry_has_only_v1_sources_and_explicit_provenance() -> None:
+def test_default_registry_matches_the_frozen_exact_v1_schema() -> None:
     registry = load_default_registry()
 
-    assert registry.version == "s1.6-v1"
-    assert registry.verified_at == "2026-07-22"
+    assert registry.schema_version == "1"
+    assert registry.registry_version == "s1.6-v1"
+    assert registry.generated_at.isoformat() == "2026-07-22T00:00:00+00:00"
     assert set(registry.sources) == {
         "xkrx-4.13.2",
         "kis-holiday-ctca0903r",
@@ -20,15 +21,25 @@ def test_default_registry_has_only_v1_sources_and_explicit_provenance() -> None:
         "opendart-structured-events",
         "kis-ksd-dividend-hhkdb669102c0",
     }
-    assert registry.sources["xkrx-4.13.2"].enabled_by_default is True
-    assert registry.sources["kasi-rest-de-info"].network_ready is False
-    assert all(source.tier in {1, 2, 3, 4} for source in registry.sources.values())
+    xkrx = registry.sources["xkrx-4.13.2"]
+    assert xkrx.provider == "EXCHANGE_CALENDARS"
+    assert xkrx.category == "SESSION"
+    assert xkrx.license_class == "OFFICIAL_NO_FEE"
+    assert xkrx.reliability_tier == 2
+    assert xkrx.origin.kind == "OFFLINE"
+    assert xkrx.retention.mode == "EPHEMERAL_ONLY"
+    assert xkrx.enabled_by_default is True
+
+    opendart = registry.sources["opendart-structured-events"]
+    assert opendart.origin.base_url == "https://opendart.fss.or.kr"
+    assert opendart.retention.mode == "OPERATOR_REQUIRED"
+    assert opendart.retention.days is None
+    assert opendart.retention.owner is None
+    assert opendart.enabled_by_default is False
 
     seed_text = registry.seed_path.read_text(encoding="utf-8").lower()
-    assert "api_key" not in seed_text
-    assert "secret" not in seed_text
-    assert "account" not in seed_text
-    assert "credential" not in seed_text
+    for forbidden in ("api_key", "secret", "account", "credential", "configured"):
+        assert forbidden not in seed_text
 
 
 @pytest.mark.parametrize(
@@ -38,9 +49,12 @@ def test_default_registry_has_only_v1_sources_and_explicit_provenance() -> None:
         ("unknown_field", "unknown"),
         ("duplicate_id", "duplicate"),
         ("unsafe_url", "https"),
+        ("invalid_license", "license"),
         ("invalid_tier", "tier"),
         ("invalid_capability", "capability"),
         ("unsafe_enabled", "enabled"),
+        ("incomplete_retention", "retention"),
+        ("invalid_provenance", "provenance"),
     ],
 )
 def test_registry_rejects_invalid_or_unsafe_seed(
@@ -50,19 +64,25 @@ def test_registry_rejects_invalid_or_unsafe_seed(
 ) -> None:
     source = _valid_seed()
     if mutation == "remove_required":
-        source = source.replace("    termsUrl: https://example.invalid/terms\n", "")
+        source = source.replace("    mappingVersion: '1'\n", "")
     elif mutation == "unknown_field":
         source += "    unexpected: value\n"
     elif mutation == "duplicate_id":
         source += _source_block()
     elif mutation == "unsafe_url":
-        source = source.replace("https://example.invalid/docs", "http://example.invalid/docs")
+        source = source.replace("https://example.invalid", "http://example.invalid")
+    elif mutation == "invalid_license":
+        source = source.replace("    licenseClass: OFFICIAL_NO_FEE", "    licenseClass: UNKNOWN")
     elif mutation == "invalid_tier":
-        source = source.replace("    tier: 1", "    tier: 5")
+        source = source.replace("    reliabilityTier: 1", "    reliabilityTier: 5")
     elif mutation == "invalid_capability":
         source = source.replace("MARKET_SESSION", "UNKNOWN_CAPABILITY")
     elif mutation == "unsafe_enabled":
-        source = source.replace("    adoptionStatus: ACTIVE_PRIMARY", "    adoptionStatus: BLOCKED_LICENSE")
+        source = source.replace("    licenseClass: OFFICIAL_NO_FEE", "    licenseClass: UNSAFE_OR_EXCLUDE")
+    elif mutation == "incomplete_retention":
+        source = source.replace("      days: 30\n      owner: fixture-owner\n", "")
+    elif mutation == "invalid_provenance":
+        source = source.replace("      verifiedAt: '2026-07-22'", "      verifiedAt: yesterday")
 
     seed = tmp_path / "registry.yaml"
     seed.write_text(source, encoding="utf-8")
@@ -72,30 +92,37 @@ def test_registry_rejects_invalid_or_unsafe_seed(
 
 
 def _valid_seed() -> str:
-    return "version: s1.6-test\nverifiedAt: '2026-07-22'\nsources:\n" + _source_block()
+    return (
+        "schemaVersion: '1'\n"
+        "registryVersion: s1.6-test\n"
+        "generatedAt: '2026-07-22T00:00:00Z'\n"
+        "sources:\n"
+        + _source_block()
+    )
 
 
 def _source_block() -> str:
     return """  - sourceId: source-one
-    sourceKind: OFFICIAL_API
-    officialDocs:
-      - https://example.invalid/docs
-    termsUrl: https://example.invalid/terms
-    verifiedAt: '2026-07-22'
-    cost: FREE
-    usageRestriction: INTERNAL_ONLY
-    freshness: DAILY
-    quotaScope: PROVIDER_ACCOUNT
-    adoptionStatus: ACTIVE_PRIMARY
-    activationGate: OFFLINE_FIXTURE
-    projectUsage: TEST
-    webSocketRole: NONE
-    tier: 1
-    originGroup: origin-one
+    provider: FIXTURE
+    category: SESSION
+    licenseClass: OFFICIAL_NO_FEE
+    reliabilityTier: 1
     capabilities:
       - MARKET_SESSION
+    originGroup: origin-one
+    origin:
+      kind: HTTPS
+      baseUrl: https://example.invalid
+    mappingVersion: '1'
     networkReady: true
     enabledByDefault: true
-    adapterVersion: '1'
-    mappingVersion: '1'
+    retention:
+      mode: PERSISTENT
+      days: 30
+      owner: fixture-owner
+    provenance:
+      verifiedAt: '2026-07-22'
+      sourceVersion: fixture-v1
+      evidenceUrl: https://example.invalid/docs
+      attribution: fixture
 """

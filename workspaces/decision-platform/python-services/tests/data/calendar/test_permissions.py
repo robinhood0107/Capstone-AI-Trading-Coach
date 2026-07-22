@@ -69,6 +69,9 @@ def test_collector_can_only_perform_allowlisted_calendar_operations(
         lambda connection: connection.execute("DELETE FROM calendar_observations"),
         lambda connection: connection.execute("TRUNCATE calendar_events"),
         lambda connection: connection.execute("UPDATE calendar_events SET status = 'CANCELLED'"),
+        lambda connection: connection.execute(
+            "UPDATE trading_session_revisions SET reason = 'rewritten'"
+        ),
         lambda connection: connection.execute("CREATE ROLE collector_escape_role"),
         lambda connection: connection.execute("ALTER ROLE decision_collector SUPERUSER"),
     ],
@@ -95,6 +98,7 @@ def test_application_can_read_current_canonical_but_not_internal_or_write_tables
         "SELECT * FROM calendar_observations",
         "SELECT * FROM opendart_quota_usage",
         "SELECT * FROM calendar_conflicts",
+        "SELECT * FROM trading_session_revisions",
         "SELECT * FROM flyway_schema_history",
         "INSERT INTO trading_sessions (exchange_mic, session_date, is_open, timezone, "
         "degraded, as_of, confidence_bps, has_conflict, canonical_hash, canonical_rule_version) "

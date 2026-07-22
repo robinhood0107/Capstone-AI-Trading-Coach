@@ -7,6 +7,7 @@ import psycopg
 from psycopg.types.json import Jsonb
 
 from app.data.calendar.errors import QuotaReservationDenied
+from app.data.calendar.disclosure_state import DisclosureStateTransition
 from app.data.calendar.models import (
     CalendarObservation,
     CanonicalTradingSession,
@@ -16,6 +17,7 @@ from app.data.calendar.models import (
 )
 from app.data.calendar.normalizer import EventRevision
 from app.data.calendar.settings import OpenDARTQuotaConfig
+from app.data.calendar.privacy import assert_sanitized_payload
 
 _COLLECTOR_ADVISORY_LOCK_ID = 7_316_202_607_220_001
 
@@ -259,6 +261,54 @@ class CalendarRepository:
             ).fetchone()
             return row is not None
 
+    def append_disclosure_transition(self, transition: DisclosureStateTransition) -> None:
+        """공시 상태 correction/open/close를 기존 row UPDATE 없이 append한다."""
+        with self._connection.transaction():
+            self._connection.execute(
+                """
+                INSERT INTO disclosure_risk_state_transitions (
+                  transition_id, corp_code, state_type, state_key, transition_type,
+                  revision_no, revised_from_transition_id, source_id, source_event_key,
+                  source_revision, effective_at, observed_at, canonical_event_id, mapping_version
+                ) VALUES (
+                  %s, %s, %s, %s, %s,
+                  %s, %s, %s, %s,
+                  %s, %s, %s, %s, %s
+                )
+                """,
+                (
+                    transition.transition_id,
+                    transition.corp_code,
+                    transition.state_type,
+                    transition.state_key,
+                    transition.transition,
+                    transition.revision_no,
+                    transition.revised_from_transition_id,
+                    transition.source_id,
+                    transition.source_event_key,
+                    transition.source_revision,
+                    transition.effective_on,
+                    transition.observed_at,
+                    transition.canonical_event_id,
+                    transition.mapping_version,
+                ),
+            )
+
+    def load_active_states(self, corp_code: str) -> list[object]:
+        """scorer가 provider HTTP 없이 읽을 수 있는 sanitized active-state view만 조회한다."""
+        return list(
+            self._connection.execute(
+                """
+                SELECT transition_id, state_type, state_key, revision_no,
+                       effective_at, observed_at, canonical_event_id, mapping_version
+                FROM active_disclosure_risk_states
+                WHERE corp_code = %s
+                ORDER BY state_key
+                """,
+                (corp_code,),
+            ).fetchall()
+        )
+
     def observation_exists(self, observation_id: str) -> bool:
         row = self._connection.execute(
             "SELECT EXISTS (SELECT 1 FROM calendar_observations WHERE observation_id = %s)",
@@ -292,6 +342,7 @@ class CalendarRepository:
         )
 
     def _insert_observation(self, observation: CalendarObservation) -> None:
+        assert_sanitized_payload(observation.sanitized_payload)
         self._connection.execute(
             """
             INSERT INTO calendar_observations (

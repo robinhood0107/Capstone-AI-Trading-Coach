@@ -52,6 +52,7 @@ MAIN_MATTER_ENDPOINTS = {
     "ctrcvsBgrq": "/api/ctrcvsBgrq.json",  # 회생절차 개시신청 (apiId 2020021)
     "dsRsOcr": "/api/dsRsOcr.json",  # 해산사유 발생 (apiId 2020022)
     "bnkMngtPcbg": "/api/bnkMngtPcbg.json",  # 채권은행 등의 관리절차 개시 (apiId 2020027)
+    "bnkMngtPcsp": "/api/bnkMngtPcsp.json",  # 채권은행 등의 관리절차 중단 (S1.6 close)
     "bsnSp": "/api/bsnSp.json",  # 영업정지 (apiId 2020020)
     "crDecsn": "/api/crDecsn.json",  # 감자 결정 (apiId 2020026)
     # 희석·복잡상품·reorg 위험 (S1.2b 확장)

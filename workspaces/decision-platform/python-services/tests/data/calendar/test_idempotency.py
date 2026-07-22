@@ -1,0 +1,97 @@
+from __future__ import annotations
+
+from dataclasses import replace
+from datetime import UTC, date, datetime
+
+import pytest
+
+from app.data.calendar.dedupe import dedupe_observations
+from app.data.calendar.models import CalendarObservation
+from app.data.calendar.normalizer import EventCandidate, build_event_revision, event_series_key
+
+
+def test_event_series_key_excludes_correctable_event_date() -> None:
+    first = event_series_key("kis-ksd-dividend", "005930:CASH:COMMON:DIVIDEND_PAY")
+    second = event_series_key("kis-ksd-dividend", "005930:CASH:COMMON:DIVIDEND_PAY")
+    assert first == second
+
+
+def test_same_sanitized_payload_is_idempotent_and_correction_appends_revision() -> None:
+    initial = build_event_revision(
+        EventCandidate(
+            source_id="kis-ksd-dividend-hhkdb669102c0",
+            source_event_key="005930:CASH:COMMON:PAY",
+            stable_identity="005930:CASH:COMMON:DIVIDEND_PAY",
+            source_revision=None,
+            event_type="DIVIDEND_PAY",
+            symbol="005930",
+            exchange_mic="XKRX",
+            event_date=date(2026, 4, 20),
+            detail={"kind": "CASH"},
+        )
+    )
+    duplicate = build_event_revision(initial.candidate, previous=initial)
+    corrected = build_event_revision(
+        EventCandidate(
+            **{
+                **initial.candidate.as_dict(),
+                "event_date": date(2026, 4, 21),
+                "source_revision": "2",
+            }
+        ),
+        previous=initial,
+    )
+
+    assert duplicate is initial
+    assert corrected.event_series_key == initial.event_series_key
+    assert corrected.revision_no == 2
+    assert corrected.revised_from_event_id == initial.event_id
+    assert corrected.canonical_hash != initial.canonical_hash
+
+
+def test_event_revision_rejects_types_outside_the_frozen_v1_enum() -> None:
+    candidate = EventCandidate(
+        source_id="opendart",
+        source_event_key="receipt-1",
+        stable_identity="receipt-1",
+        source_revision=None,
+        event_type="DISCLOSURE_RISK_STATE",
+        symbol="005930",
+        exchange_mic="XKRX",
+        event_date=date(2026, 7, 22),
+        detail={},
+    )
+
+    with pytest.raises(ValueError, match="event type"):
+        build_event_revision(candidate)
+
+
+def test_observation_dedupe_preserves_effective_windows_and_is_order_independent() -> None:
+    first = CalendarObservation(
+        observation_id="obs-b",
+        source_id="opendart",
+        origin_group="opendart",
+        capability="DISCLOSURE_EVENT",
+        effective_from=date(2026, 7, 1),
+        effective_to=date(2026, 7, 2),
+        observed_at=datetime(2026, 7, 22, tzinfo=UTC),
+        ingested_at=datetime(2026, 7, 22, tzinfo=UTC),
+        sanitized_payload={"status": "OPEN"},
+        sanitized_payload_hash="a" * 64,
+        adapter_version="1",
+        mapping_version="1",
+        registry_version="1",
+    )
+    same_window = replace(first, observation_id="obs-a")
+    later_window = replace(
+        first,
+        observation_id="obs-c",
+        effective_from=date(2026, 7, 3),
+        effective_to=date(2026, 7, 4),
+    )
+
+    forward = dedupe_observations([first, same_window, later_window])
+    reverse = dedupe_observations([later_window, same_window, first])
+
+    assert [item.observation_id for item in forward] == ["obs-a", "obs-c"]
+    assert reverse == forward

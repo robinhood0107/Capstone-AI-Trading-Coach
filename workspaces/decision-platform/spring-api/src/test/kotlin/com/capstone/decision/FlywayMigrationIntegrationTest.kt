@@ -24,6 +24,7 @@ import org.testcontainers.utility.DockerImageName
 import java.sql.DriverManager
 import java.sql.SQLException
 import java.util.Base64
+import java.util.HexFormat
 import java.util.stream.Stream
 
 // pgvector/pg_trgm/Flyway 제약은 H2로 대체 검증할 수 없어 실제 PostgreSQL 컨테이너로 잠근다.
@@ -128,6 +129,41 @@ class FlywayMigrationIntegrationTest(
         }
         assertThrows<IllegalArgumentException> {
             s21ActorTrustMigration(userBundle = "not-a-credential-bundle")
+        }
+    }
+
+    @Test
+    fun `V7 permits statement logging when credential bind values are suppressed`() {
+        val migrationUrl = createDatabase("migration_logging_safe")
+        flyway(migrationUrl, target = "6").migrate()
+        setMigrationLoggingPolicy(logStatement = "all", parameterMaxLength = 0, errorParameterMaxLength = 0)
+        try {
+            val logOffset = postgres.logs.length
+
+            flyway(migrationUrl).migrate()
+
+            val migrationLogs = postgres.logs.drop(logOffset)
+            assertTrue(migrationLogs.contains("insert into users"), "statement logging did not observe V7 seed SQL")
+            assertCredentialEvidenceAbsent(migrationLogs)
+        } finally {
+            setMigrationLoggingPolicy(logStatement = "none", parameterMaxLength = 0, errorParameterMaxLength = 0)
+        }
+    }
+
+    @Test
+    fun `V7 fails closed before credential binds when parameter logging is unsafe`() {
+        val migrationUrl = createDatabase("migration_logging_unsafe")
+        flyway(migrationUrl, target = "6").migrate()
+        setMigrationLoggingPolicy(logStatement = "all", parameterMaxLength = -1, errorParameterMaxLength = -1)
+        try {
+            val logOffset = postgres.logs.length
+
+            assertThrows<FlywayException> { flyway(migrationUrl).migrate() }
+
+            assertCredentialEvidenceAbsent(postgres.logs.drop(logOffset))
+            assertV7RolledBack(migrationUrl)
+        } finally {
+            setMigrationLoggingPolicy(logStatement = "none", parameterMaxLength = 0, errorParameterMaxLength = 0)
         }
     }
 
@@ -361,6 +397,57 @@ class FlywayMigrationIntegrationTest(
             connection.createStatement().use { statement -> statement.execute("create database $name") }
         }
         return postgres.jdbcUrl.substringBeforeLast('/') + "/$name"
+    }
+
+    private fun setMigrationLoggingPolicy(
+        logStatement: String,
+        parameterMaxLength: Int,
+        errorParameterMaxLength: Int,
+    ) {
+        require(postgres.username == "decision")
+        require(logStatement in setOf("none", "all"))
+        require(parameterMaxLength in setOf(-1, 0))
+        require(errorParameterMaxLength in setOf(-1, 0))
+        DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { connection ->
+            connection.createStatement().use { statement ->
+                // 다음 Flyway connection의 실제 role-level logging policy를 synthetic allowlist로 전환한다.
+                statement.execute("alter role decision set log_statement = '$logStatement'")
+                statement.execute("alter role decision set log_parameter_max_length = $parameterMaxLength")
+                statement.execute("alter role decision set log_parameter_max_length_on_error = $errorParameterMaxLength")
+            }
+        }
+    }
+
+    private fun assertCredentialEvidenceAbsent(logs: String) {
+        val bundles = listOf(TEST_USER_CREDENTIAL_BUNDLE, TEST_ADMIN_CREDENTIAL_BUNDLE)
+        val decodedEvidence =
+            bundles.flatMap { bundle ->
+                val segments = bundle.split(':')
+                check(segments.size == 5)
+                listOf(
+                    Base64.getUrlDecoder().decode(segments[2]),
+                    Base64.getUrlDecoder().decode(segments[4]),
+                )
+            }
+        try {
+            val forbiddenEvidence =
+                listOf(
+                    TEST_USER_PASSWORD,
+                    TEST_ADMIN_PASSWORD,
+                    TEST_CREDENTIAL_SEPARATION_KEY,
+                    TEST_USER_CREDENTIAL_BUNDLE,
+                    TEST_ADMIN_CREDENTIAL_BUNDLE,
+                    TEST_USER_PASSWORD_HASH,
+                    TEST_ADMIN_PASSWORD_HASH,
+                ) +
+                    bundles.flatMap { bundle -> bundle.split(':').drop(2) } +
+                    decodedEvidence.map(HexFormat.of()::formatHex)
+            forbiddenEvidence.forEachIndexed { index, evidence ->
+                assertFalse(logs.contains(evidence), "credential evidence index $index appeared in PostgreSQL logs")
+            }
+        } finally {
+            decodedEvidence.forEach { it.fill(0) }
+        }
     }
 
     private fun assertV7RolledBack(url: String) {

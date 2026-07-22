@@ -141,7 +141,7 @@ def test_priority_degradation_is_enforced_before_reservation_and_send() -> None:
     executor.record_http_handoff()
     assert events == ["reserve-1"]
 
-    quota.used = 90
+    quota.used = 72
     with pytest.raises(PriorityDeferred):
         executor.before_send("/api/majorstock.json")
     executor.before_send("/api/list.json")
@@ -184,6 +184,45 @@ def test_round_robin_is_subject_sorted_one_page_at_a_time_and_caps_symbols() -> 
         ("000660", 2),
         ("005930", 2),
     ]
+
+
+def test_collector_defers_low_priority_task_and_continues_remaining_queue() -> None:
+    calls: list[str] = []
+    executor = _FakeExecutor(calls, defer_operation="company")
+    collector = CalendarCollector(
+        lock=_Lock(acquired=True),
+        executor=executor,
+        config=_config(calls=5),
+    )
+    tasks = [
+        CollectionTask(operation="company", subject="000660", page=1, send=lambda: "deferred"),
+        CollectionTask(operation="list", subject="005930", page=1, send=lambda: "p1-result"),
+    ]
+
+    assert collector.run(tasks) == ["p1-result"]
+    assert calls == ["p1-result"]
+
+
+def test_successful_page_is_published_once_after_provider_result() -> None:
+    calls: list[str] = []
+    published: list[object] = []
+    collector = CalendarCollector(
+        lock=_Lock(acquired=True),
+        executor=_FakeExecutor(calls),
+        config=_config(calls=5),
+    )
+    task = CollectionTask(
+        operation="list",
+        subject="005930",
+        page=1,
+        send=lambda: {"status": "000", "page_no": 1},
+        publish=published.append,
+    )
+
+    result = collector.run([task])
+
+    assert result == [{"status": "000", "page_no": 1}]
+    assert published == result
 
 
 class _Quota:
@@ -236,11 +275,14 @@ class _Lock:
 
 
 class _FakeExecutor:
-    def __init__(self, calls: list[str]) -> None:
+    def __init__(self, calls: list[str], *, defer_operation: str | None = None) -> None:
         self.calls = calls
         self.exhausted = False
+        self.defer_operation = defer_operation
 
-    def execute(self, _: str, send: object) -> object:
+    def execute(self, operation: str, send: object) -> object:
+        if operation == self.defer_operation:
+            raise PriorityDeferred("fixture deferred")
         assert callable(send)
         result = send()
         label = result if isinstance(result, str) else self._next_label()

@@ -42,10 +42,12 @@ def test_collector_can_only_perform_allowlisted_calendar_operations(
         connection.execute(
             """
             INSERT INTO trading_sessions (
-                exchange_mic, session_date, is_open, timezone, degraded,
+                exchange_mic, session_date, is_open, open_at, close_at, timezone, degraded,
                 as_of, confidence_bps, has_conflict, canonical_hash, canonical_rule_version
             ) VALUES (
-                'XKRX', DATE '2026-07-22', true, 'Asia/Seoul', false,
+                'XKRX', DATE '2026-07-22', true,
+                TIMESTAMPTZ '2026-07-22 09:00:00+09', TIMESTAMPTZ '2026-07-22 15:30:00+09',
+                'Asia/Seoul', false,
                 now(), 9000, false, repeat('e', 64), 's1.6-v1'
             )
             """

@@ -58,6 +58,10 @@ def test_v6_creates_all_s1_6_objects_and_replaces_v4_table_with_read_only_view(
         assert connection.execute(
             "SELECT count(*) FROM trading_sessions WHERE canonical_rule_version = 'V4_COMPAT_MIGRATION'"
         ).fetchone() == (2,)
+        assert connection.execute(
+            "SELECT count(*) FROM trading_session_revisions "
+            "WHERE canonical_rule_version = 'V4_COMPAT_MIGRATION'"
+        ).fetchone() == (2,)
         assert connection.execute("SELECT count(*) FROM market_calendar").fetchone() == (2,)
 
 
@@ -165,13 +169,13 @@ def test_nullable_source_revision_uses_nulls_not_distinct_uniqueness(
     with psycopg.connect(postgres_cluster["admin_dsn"]) as connection:
         connection.execute(
             """
-            INSERT INTO calendar_events (
-                event_id, event_series_key, revision_no, source_id, source_event_key,
-                source_revision, event_type, symbol, event_date, detail,
-                status, confidence_bps, has_conflict, canonical_hash
-            ) VALUES (
-                'evt-null-1', 'series-null', 1, 'opendart', 'source-null', NULL,
-                'DISCLOSURE', '005930', DATE '2026-07-22', '{}'::jsonb,
+                INSERT INTO calendar_events (
+                    event_id, event_series_key, revision_no, source_id, source_event_key,
+                    source_revision, event_type, symbol, exchange_mic, event_date, detail,
+                    status, confidence_bps, has_conflict, canonical_hash
+                ) VALUES (
+                    'evt-null-1', 'series-null', 1, 'opendart', 'source-null', NULL,
+                    'DISCLOSURE', '005930', 'XKRX', DATE '2026-07-22', '{}'::jsonb,
                 'ACTUAL', 9000, false, repeat('b', 64)
             )
             """
@@ -179,13 +183,13 @@ def test_nullable_source_revision_uses_nulls_not_distinct_uniqueness(
         with pytest.raises(psycopg.errors.UniqueViolation):
             connection.execute(
                 """
-                INSERT INTO calendar_events (
-                    event_id, event_series_key, revision_no, source_id, source_event_key,
-                    source_revision, event_type, symbol, event_date, detail,
-                    status, confidence_bps, has_conflict, canonical_hash
-                ) VALUES (
-                    'evt-null-2', 'series-null-2', 1, 'opendart', 'source-null', NULL,
-                    'DISCLOSURE', '005930', DATE '2026-07-23', '{}'::jsonb,
+                    INSERT INTO calendar_events (
+                        event_id, event_series_key, revision_no, source_id, source_event_key,
+                        source_revision, event_type, symbol, exchange_mic, event_date, detail,
+                        status, confidence_bps, has_conflict, canonical_hash
+                    ) VALUES (
+                        'evt-null-2', 'series-null-2', 1, 'opendart', 'source-null', NULL,
+                        'DISCLOSURE', '005930', 'XKRX', DATE '2026-07-23', '{}'::jsonb,
                     'ACTUAL', 9000, false, repeat('c', 64)
                 )
                 """

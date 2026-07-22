@@ -5,9 +5,12 @@ from datetime import date
 import pytest
 
 from app.data.calendar.adapters.kasi_holiday import (
+    MAX_KASI_COMPRESSED_BYTES,
     MAX_KASI_DEPTH,
+    MAX_KASI_ITEMS,
     MAX_KASI_NODES,
     MAX_KASI_RESPONSE_BYTES,
+    MAX_KASI_TEXT_BYTES,
     MAX_KASI_TEXT_CHARS,
     KASIHolidayAdapter,
     parse_kasi_holidays,
@@ -33,6 +36,16 @@ def test_kasi_xml_empty_response_is_valid() -> None:
     assert parse_kasi_holidays(_xml("")) == []
 
 
+def test_kasi_xml_safety_caps_match_the_frozen_s1_6_contract() -> None:
+    assert MAX_KASI_COMPRESSED_BYTES == 256 * 1024
+    assert MAX_KASI_RESPONSE_BYTES == 512 * 1024
+    assert MAX_KASI_DEPTH == 8
+    assert MAX_KASI_NODES == 4_096
+    assert MAX_KASI_ITEMS == 128
+    assert MAX_KASI_TEXT_CHARS == 2_048
+    assert MAX_KASI_TEXT_BYTES == 8_192
+
+
 @pytest.mark.parametrize(
     "payload",
     [
@@ -48,12 +61,21 @@ def test_kasi_xml_rejects_malformed_dtd_entity_and_external_resource(payload: by
 
 
 def test_kasi_xml_enforces_size_depth_node_and_text_caps() -> None:
+    with pytest.raises(AdapterValidationError, match="compressed"):
+        parse_kasi_holidays(_xml(""), compressed_size=MAX_KASI_COMPRESSED_BYTES + 1)
     with pytest.raises(AdapterValidationError, match="size"):
         parse_kasi_holidays(b"x" * (MAX_KASI_RESPONSE_BYTES + 1))
     with pytest.raises(AdapterValidationError, match="depth"):
         parse_kasi_holidays(("<a>" * (MAX_KASI_DEPTH + 2) + "</a>" * (MAX_KASI_DEPTH + 2)).encode())
     with pytest.raises(AdapterValidationError, match="node"):
         parse_kasi_holidays(("<response>" + "<a/>" * (MAX_KASI_NODES + 1) + "</response>").encode())
+    with pytest.raises(AdapterValidationError, match="item"):
+        parse_kasi_holidays(
+            _xml(
+                "<item><locdate>20260505</locdate><dateName>fixture</dateName></item>"
+                * (MAX_KASI_ITEMS + 1)
+            )
+        )
     with pytest.raises(AdapterValidationError, match="text"):
         parse_kasi_holidays(_xml(f"<item><locdate>20260505</locdate><dateName>{'가' * (MAX_KASI_TEXT_CHARS + 1)}</dateName></item>"))
 

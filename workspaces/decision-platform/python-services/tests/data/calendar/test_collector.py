@@ -23,6 +23,7 @@ from app.data.calendar.errors import (
 )
 from app.data.calendar.models import QuotaUsage
 from app.data.calendar.settings import OpenDARTQuotaConfig
+from app.data.opendart.parsers import OpenDARTQuotaExceededError
 
 
 def test_operation_priority_mapping_is_closed_and_exact() -> None:
@@ -105,6 +106,55 @@ def test_status_020_marks_the_last_reserved_kst_day_exhausted() -> None:
     executor.mark_provider_exhausted()
 
     assert quota.exhausted is True
+
+
+def test_attempt_executor_returns_success_and_translates_both_020_shapes() -> None:
+    events: list[str] = []
+    quota = _Quota(events)
+    executor = OpenDARTAttemptExecutor(
+        quota_repository=quota,
+        config=_config(calls=3),
+        ledger=CollectorRunLedger(max_calls=3),
+        now=lambda: datetime(2026, 7, 22, 0, 0, tzinfo=UTC),
+    )
+
+    executor.before_send("/api/list.json")
+    assert executor.execute("list", lambda: {"status": "000"}) == {"status": "000"}
+
+    executor.before_send("/api/list.json")
+    with pytest.raises(ProviderQuotaExhausted):
+        executor.execute("list", lambda: {"status": "020"})
+    assert quota.exhausted is True
+
+    executor.before_send("/api/list.json")
+
+    def raise_quota() -> object:
+        raise OpenDARTQuotaExceededError("020", "fixture quota exhausted")
+
+    with pytest.raises(ProviderQuotaExhausted):
+        executor.execute("list", raise_quota)
+
+
+def test_attempt_executor_caps_reservations_and_rejects_unmatched_handoff() -> None:
+    events: list[str] = []
+    quota = _Quota(events)
+    executor = OpenDARTAttemptExecutor(
+        quota_repository=quota,
+        config=_config(calls=1),
+        ledger=CollectorRunLedger(max_calls=1),
+        now=lambda: datetime(2026, 7, 22, 0, 0, tzinfo=UTC),
+    )
+
+    with pytest.raises(RuntimeError, match="charged reservation"):
+        executor.record_http_handoff()
+    with pytest.raises(RunLimitExceeded, match="no charged reservation"):
+        executor.mark_provider_exhausted()
+
+    executor.before_send("/api/list.json")
+    with pytest.raises(RunLimitExceeded, match="per-run"):
+        executor.before_send("/api/list.json")
+    assert quota.reservations == 1
+    assert executor.ledger.actual_http_sends == 0
 
 
 def test_db_reservation_failure_causes_zero_http_send() -> None:

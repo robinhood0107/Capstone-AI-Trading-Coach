@@ -235,10 +235,18 @@ class FlywayMigrationIntegrationTest(
         tableName: String,
         predicate: String,
     ): Int {
-        require(tableName == "trading_sessions")
         require(predicate == "canonical_rule_version = 'V4_COMPAT_MIGRATION'")
+        // 식별자를 SQL에 직접 보간하지 않고 이 테스트가 승인한 두 이관 대상만 조회한다.
+        val sql =
+            when (tableName) {
+                "trading_sessions" ->
+                    "select count(*) from trading_sessions where canonical_rule_version = 'V4_COMPAT_MIGRATION'"
+                "trading_session_revisions" ->
+                    "select count(*) from trading_session_revisions where canonical_rule_version = 'V4_COMPAT_MIGRATION'"
+                else -> error("unsupported migration table: $tableName")
+            }
         return jdbcTemplate.queryForObject(
-            "select count(*) from trading_sessions where canonical_rule_version = 'V4_COMPAT_MIGRATION'",
+            sql,
             Int::class.java,
         ) ?: 0
     }

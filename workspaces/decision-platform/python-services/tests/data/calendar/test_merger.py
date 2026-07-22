@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
 
+import pytest
+
+from app.data.calendar.errors import PrivacyProjectionError
 from app.data.calendar.merger import merge_trading_session
 from app.data.calendar.models import KASIReason, KISHolidayObservation, PriorCanonicalSession, XKRXSession
 
@@ -116,6 +119,22 @@ def test_merge_is_order_independent_and_hash_deterministic() -> None:
     )
     assert first == second
     assert len(first.canonical_hash) == 64
+
+
+def test_session_merger_rejects_secret_marker_before_canonical_hashing() -> None:
+    with pytest.raises(PrivacyProjectionError):
+        merge_trading_session(
+            _xkrx(),
+            kis=_kis(),
+            kasi_reasons=[
+                KASIReason(
+                    date(2026, 7, 22),
+                    "request_url=https://example.invalid/?crtfc_key=forbidden",
+                )
+            ],
+            prior=None,
+            now=NOW,
+        )
 
 
 def _xkrx(*, is_open: bool = True) -> XKRXSession:

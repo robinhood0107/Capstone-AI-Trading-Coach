@@ -34,6 +34,7 @@ def test_fresh_prior_closed_session_never_keeps_open_market_timestamps() -> None
     prior = PriorCanonicalSession(
         session=_canonical_prior(is_open=False),
         expires_at=NOW + timedelta(hours=1),
+        healthy=True,
     )
 
     canonical = merge_trading_session(
@@ -69,6 +70,7 @@ def test_kis_failure_prefers_fresh_nonconflicted_prior_then_xkrx() -> None:
     prior = PriorCanonicalSession(
         session=_canonical_prior(is_open=False),
         expires_at=NOW + timedelta(hours=1),
+        healthy=True,
     )
     from_prior = merge_trading_session(
         _xkrx(is_open=True),
@@ -82,7 +84,11 @@ def test_kis_failure_prefers_fresh_nonconflicted_prior_then_xkrx() -> None:
     assert from_prior.degraded is True
     assert from_prior.fallback_reason == "KIS_TRANSPORT_UNAVAILABLE_PRIOR_CANONICAL"
 
-    expired = PriorCanonicalSession(session=prior.session, expires_at=NOW - timedelta(seconds=1))
+    expired = PriorCanonicalSession(
+        session=prior.session,
+        expires_at=NOW - timedelta(seconds=1),
+        healthy=True,
+    )
     from_xkrx = merge_trading_session(
         _xkrx(is_open=True),
         kis=None,
@@ -94,6 +100,28 @@ def test_kis_failure_prefers_fresh_nonconflicted_prior_then_xkrx() -> None:
     assert from_xkrx.is_open is True
     assert from_xkrx.degraded is True
     assert from_xkrx.fallback_reason == "KIS_TRANSPORT_UNAVAILABLE_XKRX_BASE"
+
+
+def test_kis_failure_rejects_unhealthy_prior_even_before_expiry() -> None:
+    unhealthy = PriorCanonicalSession(
+        session=_canonical_prior(is_open=False),
+        expires_at=NOW + timedelta(hours=1),
+        healthy=False,
+    )
+
+    canonical = merge_trading_session(
+        _xkrx(is_open=True),
+        kis=None,
+        kasi_reasons=[],
+        prior=unhealthy,
+        now=NOW,
+        kis_failure_code="SOURCE_UNHEALTHY",
+    )
+
+    assert canonical.is_open is True
+    assert canonical.chosen_source_id == _xkrx().source_id
+    assert canonical.degraded is True
+    assert canonical.fallback_reason == "KIS_SOURCE_UNHEALTHY_XKRX_BASE"
 
 
 def test_merge_is_order_independent_and_hash_deterministic() -> None:

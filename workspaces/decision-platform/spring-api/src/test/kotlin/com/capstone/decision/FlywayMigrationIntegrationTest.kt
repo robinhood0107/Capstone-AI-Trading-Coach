@@ -4,6 +4,7 @@ import org.flywaydb.core.Flyway
 import org.flywaydb.core.api.FlywayException
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
@@ -73,7 +74,7 @@ class FlywayMigrationIntegrationTest(
     }
 
     @Test
-    fun `V7 seeds exact demo identities and rejects malformed bcrypt placeholders`() {
+    fun `V7 seeds exact demo identities with attested separated credential bundles`() {
         val users =
             jdbcTemplate.query(
                 """
@@ -96,19 +97,37 @@ class FlywayMigrationIntegrationTest(
         assertEquals(listOf("usr_demo_user", "demo-user", "USER", "ACTIVE", "1"), users[1].take(5))
         assertTrue(users.all { Regex("^\\$2[aby]\\$12\\$[./A-Za-z0-9]{53}$").matches(it.last()) })
 
-        DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { connection ->
-            // 고정된 격리 DB 이름만 사용해 테스트 helper도 request 기반 identifier 보간을 만들지 않는다.
-            connection.createStatement().use { statement -> statement.execute("create database invalid_auth_hash") }
+        val evidence =
+            jdbcTemplate.query(
+                """
+                select user_id,
+                       octet_length(credential_reuse_tag),
+                       octet_length(credential_bundle_mac),
+                       credential_policy_version,
+                       encode(credential_reuse_tag, 'hex')
+                from users
+                where user_id in ('usr_demo_user', 'usr_demo_admin')
+                order by user_id
+                """.trimIndent(),
+            ) { result, _ ->
+                listOf(
+                    result.getString("user_id"),
+                    result.getInt(2).toString(),
+                    result.getInt(3).toString(),
+                    result.getInt(4).toString(),
+                    result.getString(5),
+                )
+            }
+        assertTrue(evidence.all { it.subList(1, 4) == listOf("32", "32", "1") })
+        assertNotEquals(evidence[0].last(), evidence[1].last())
+
+        val sharedPlaintextAdminBundle =
+            SpringApiIntegrationTestBase.prepareTestBundle("usr_demo_admin", TEST_USER_PASSWORD)
+        assertThrows<IllegalArgumentException> {
+            s21ActorTrustMigration(adminBundle = sharedPlaintextAdminBundle)
         }
-        val invalidUrl = postgres.jdbcUrl.substringBeforeLast('/') + "/invalid_auth_hash"
-        assertThrows<FlywayException> {
-            Flyway
-                .configure()
-                .dataSource(invalidUrl, postgres.username, postgres.password)
-                .locations("classpath:db/migration")
-                .javaMigrations(s21ActorTrustMigration(userHash = "not-bcrypt"))
-                .load()
-                .migrate()
+        assertThrows<IllegalArgumentException> {
+            s21ActorTrustMigration(userBundle = "not-a-credential-bundle")
         }
     }
 
@@ -160,7 +179,9 @@ class FlywayMigrationIntegrationTest(
                 statement
                     .executeQuery(
                         "select count(*) from information_schema.columns " +
-                            "where table_schema = 'public' and table_name = 'users' and column_name = 'security_version'",
+                            "where table_schema = 'public' and table_name = 'users' " +
+                            "and column_name in ('security_version', 'credential_reuse_tag', " +
+                            "'credential_bundle_mac', 'credential_policy_version')",
                     ).use { result ->
                         assertTrue(result.next())
                         assertEquals(0, result.getInt(1))
@@ -348,7 +369,9 @@ class FlywayMigrationIntegrationTest(
                 statement
                     .executeQuery(
                         "select count(*) from information_schema.columns " +
-                            "where table_schema = 'public' and table_name = 'users' and column_name = 'security_version'",
+                            "where table_schema = 'public' and table_name = 'users' " +
+                            "and column_name in ('security_version', 'credential_reuse_tag', " +
+                            "'credential_bundle_mac', 'credential_policy_version')",
                     ).use { result ->
                         assertTrue(result.next())
                         assertEquals(0, result.getInt(1))

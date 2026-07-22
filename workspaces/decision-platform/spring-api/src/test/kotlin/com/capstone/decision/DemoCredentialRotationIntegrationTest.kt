@@ -39,11 +39,15 @@ class DemoCredentialRotationIntegrationTest {
                 .prepareStatement(
                     """
                     update users
-                    set password_hash = ?, security_version = 1, status = 'ACTIVE', role = 'USER', updated_at = now()
+                    set password_hash = ?, credential_reuse_tag = ?, credential_bundle_mac = ?,
+                        credential_policy_version = 1, security_version = 1,
+                        status = 'ACTIVE', role = 'USER', updated_at = now()
                     where user_id = 'usr_demo_user'
                     """.trimIndent(),
                 ).use { statement ->
                     statement.setString(1, SpringApiIntegrationTestBase.TEST_USER_PASSWORD_HASH)
+                    statement.setBytes(2, SpringApiIntegrationTestBase.TEST_USER_VERIFIED_BUNDLE.reuseTag)
+                    statement.setBytes(3, SpringApiIntegrationTestBase.TEST_USER_VERIFIED_BUNDLE.bundleMac)
                     assertEquals(1, statement.executeUpdate())
                 }
             connection.createStatement().use { statement ->
@@ -64,20 +68,27 @@ class DemoCredentialRotationIntegrationTest {
     @Test
     fun `rotation changes one allowlisted hash increments security version and writes sanitized audit`() {
         val newPassword = "n" + "p".repeat(16)
-        val newHash = requireNotNull(passwordEncoder.encode(newPassword))
+        val newBundle = SpringApiIntegrationTestBase.prepareTestBundle("usr_demo_user", newPassword)
 
-        DemoCredentialRotation.rotate(environment(newHash), auditId = "aud-rotation-success")
+        DemoCredentialRotation.rotate(environment(newBundle), auditId = "aud-rotation-success")
 
         adminConnection().use { connection ->
             connection
                 .prepareStatement(
-                    "select password_hash, security_version from users where user_id = 'usr_demo_user'",
+                    """
+                    select password_hash, credential_reuse_tag, credential_bundle_mac,
+                           credential_policy_version, security_version
+                    from users where user_id = 'usr_demo_user'
+                    """.trimIndent(),
                 ).use { statement ->
                     statement.executeQuery().use { result ->
                         assertTrue(result.next())
                         val storedHash = requireNotNull(result.getString("password_hash"))
                         assertFalse(passwordEncoder.matches(SpringApiIntegrationTestBase.TEST_USER_PASSWORD, storedHash))
                         assertTrue(passwordEncoder.matches(newPassword, storedHash))
+                        assertEquals(32, result.getBytes("credential_reuse_tag").size)
+                        assertEquals(32, result.getBytes("credential_bundle_mac").size)
+                        assertEquals(1, result.getInt("credential_policy_version"))
                         assertEquals(2L, result.getLong("security_version"))
                         assertFalse(result.next())
                     }
@@ -94,7 +105,8 @@ class DemoCredentialRotationIntegrationTest {
                         assertEquals("USER", result.getString("target_type"))
                         assertEquals("usr_demo_user", result.getString("target_id"))
                         val payload = requireNotNull(result.getString("payload_json"))
-                        assertFalse(payload.contains(newHash))
+                        assertFalse(payload.contains(newBundle))
+                        assertFalse(payload.contains(storedCredentialTagHex("usr_demo_user")))
                         assertFalse(payload.contains(newPassword))
                         assertFalse(payload.contains("change-ticket-36"))
                     }
@@ -118,9 +130,9 @@ class DemoCredentialRotationIntegrationTest {
         val oldAccount = requireNotNull(accountService.authenticate("demo-user", SpringApiIntegrationTestBase.TEST_USER_PASSWORD))
         val oldToken = jwtService.issue(oldAccount).token
         val newPassword = "rotated-" + "p".repeat(24)
-        val newHash = requireNotNull(passwordEncoder.encode(newPassword))
+        val newBundle = SpringApiIntegrationTestBase.prepareTestBundle("usr_demo_user", newPassword)
 
-        DemoCredentialRotation.rotate(environment(newHash), auditId = "aud-rotation-auth-cutover")
+        DemoCredentialRotation.rotate(environment(newBundle), auditId = "aud-rotation-auth-cutover")
 
         assertNull(accountService.authenticate("demo-user", SpringApiIntegrationTestBase.TEST_USER_PASSWORD))
         val newAccount = accountService.authenticate("demo-user", newPassword)
@@ -132,18 +144,22 @@ class DemoCredentialRotationIntegrationTest {
     }
 
     @Test
-    fun `rotation rejects peer hash and exact replay without changing version or audit`() {
-        val adminHash = queryUser("usr_demo_admin").passwordHash
+    fun `rotation rejects peer plaintext under a fresh salt and exact replay without mutation`() {
+        val peerPlaintextBundle =
+            SpringApiIntegrationTestBase.prepareTestBundle(
+                "usr_demo_user",
+                SpringApiIntegrationTestBase.TEST_ADMIN_PASSWORD,
+            )
 
         assertThrows<IllegalStateException> {
-            DemoCredentialRotation.rotate(environment(adminHash), auditId = "aud-peer-hash-rejected")
+            DemoCredentialRotation.rotate(environment(peerPlaintextBundle), auditId = "aud-peer-password-rejected")
         }
         assertEquals(1L, queryUser("usr_demo_user").securityVersion)
 
-        val newHash = requireNotNull(passwordEncoder.encode("one-shot-password"))
-        DemoCredentialRotation.rotate(environment(newHash), auditId = "aud-one-shot-success")
+        val newBundle = SpringApiIntegrationTestBase.prepareTestBundle("usr_demo_user", "one-shot-password")
+        DemoCredentialRotation.rotate(environment(newBundle), auditId = "aud-one-shot-success")
         assertThrows<IllegalStateException> {
-            DemoCredentialRotation.rotate(environment(newHash), auditId = "aud-one-shot-replay")
+            DemoCredentialRotation.rotate(environment(newBundle), auditId = "aud-one-shot-replay")
         }
 
         assertEquals(2L, queryUser("usr_demo_user").securityVersion)
@@ -159,11 +175,11 @@ class DemoCredentialRotationIntegrationTest {
 
     @Test
     fun `rotation refuses non-loopback database targets before opening a connection`() {
-        val newHash = requireNotNull(passwordEncoder.encode("remote-target-password"))
+        val newBundle = SpringApiIntegrationTestBase.prepareTestBundle("usr_demo_user", "remote-target-password")
 
         assertThrows<IllegalArgumentException> {
             DemoCredentialRotation.rotate(
-                environment(newHash) + ("POSTGRES_HOST" to "db.example.invalid"),
+                environment(newBundle) + ("POSTGRES_HOST" to "db.example.invalid"),
                 auditId = "aud-remote-rejected",
             )
         }
@@ -171,7 +187,7 @@ class DemoCredentialRotationIntegrationTest {
 
     @Test
     fun `rotation fails promptly when another operator transaction holds the demo credential lock`() {
-        val newHash = requireNotNull(passwordEncoder.encode("concurrent-rotation-password"))
+        val newBundle = SpringApiIntegrationTestBase.prepareTestBundle("usr_demo_user", "concurrent-rotation-password")
         adminConnection().use { blocker ->
             blocker.autoCommit = false
             blocker.createStatement().use { statement ->
@@ -182,7 +198,7 @@ class DemoCredentialRotationIntegrationTest {
             val startedAt = System.nanoTime()
             try {
                 assertThrows<Exception> {
-                    DemoCredentialRotation.rotate(environment(newHash), auditId = "aud-concurrent-rejected")
+                    DemoCredentialRotation.rotate(environment(newBundle), auditId = "aud-concurrent-rejected")
                 }
                 val elapsedMillis = (System.nanoTime() - startedAt) / 1_000_000
                 assertTrue(elapsedMillis < 5_000, "rotation lock failure took ${elapsedMillis}ms")
@@ -195,8 +211,8 @@ class DemoCredentialRotationIntegrationTest {
     }
 
     @Test
-    fun `audit failure rolls back password and version while invalid target is rejected before SQL`() {
-        val newHash = requireNotNull(passwordEncoder.encode("another-runtime-password"))
+    fun `audit failure rolls back the whole credential bundle while invalid target is rejected before SQL`() {
+        val newBundle = SpringApiIntegrationTestBase.prepareTestBundle("usr_demo_user", "another-runtime-password")
         adminConnection().use { connection ->
             connection
                 .prepareStatement(
@@ -208,13 +224,17 @@ class DemoCredentialRotationIntegrationTest {
         }
 
         assertThrows<Exception> {
-            DemoCredentialRotation.rotate(environment(newHash), auditId = "aud-rotation-conflict")
+            DemoCredentialRotation.rotate(environment(newBundle), auditId = "aud-rotation-conflict")
         }
 
         adminConnection().use { connection ->
             connection
                 .prepareStatement(
-                    "select password_hash, security_version from users where user_id = 'usr_demo_user'",
+                    """
+                    select password_hash, credential_reuse_tag, credential_bundle_mac,
+                           credential_policy_version, security_version
+                    from users where user_id = 'usr_demo_user'
+                    """.trimIndent(),
                 ).use { statement ->
                     statement.executeQuery().use { result ->
                         assertTrue(result.next())
@@ -222,6 +242,17 @@ class DemoCredentialRotationIntegrationTest {
                             SpringApiIntegrationTestBase.TEST_USER_PASSWORD_HASH,
                             result.getString("password_hash"),
                         )
+                        assertTrue(
+                            result
+                                .getBytes("credential_reuse_tag")
+                                .contentEquals(SpringApiIntegrationTestBase.TEST_USER_VERIFIED_BUNDLE.reuseTag),
+                        )
+                        assertTrue(
+                            result
+                                .getBytes("credential_bundle_mac")
+                                .contentEquals(SpringApiIntegrationTestBase.TEST_USER_VERIFIED_BUNDLE.bundleMac),
+                        )
+                        assertEquals(1, result.getInt("credential_policy_version"))
                         assertEquals(1L, result.getLong("security_version"))
                     }
                 }
@@ -229,26 +260,31 @@ class DemoCredentialRotationIntegrationTest {
 
         assertThrows<IllegalArgumentException> {
             DemoCredentialRotation.rotate(
-                environment(newHash) + ("DEMO_CREDENTIAL_USER_ID" to "usr_unapproved"),
+                environment(newBundle) + ("DEMO_CREDENTIAL_USER_ID" to "usr_unapproved"),
                 auditId = "aud-never-written",
             )
         }
     }
 
-    private fun environment(newHash: String): Map<String, String> =
+    private fun environment(newBundle: String): Map<String, String> =
         mapOf(
             "POSTGRES_HOST" to postgres.host,
             "POSTGRES_PORT" to postgres.getMappedPort(5432).toString(),
             "POSTGRES_DB" to postgres.databaseName,
             "POSTGRES_MIGRATION_PASSWORD" to MIGRATION_PASSWORD,
             "DEMO_CREDENTIAL_USER_ID" to "usr_demo_user",
-            "DEMO_CREDENTIAL_PASSWORD_HASH" to newHash,
+            "DEMO_CREDENTIAL_BUNDLE" to newBundle,
+            "DEMO_CREDENTIAL_SEPARATION_KEY" to SpringApiIntegrationTestBase.TEST_CREDENTIAL_SEPARATION_KEY,
             "DEMO_CREDENTIAL_ROTATION_ACTOR" to "change-ticket-36",
         )
 
     private fun testRepository(): UserSecurityRepository =
         object : UserSecurityRepository {
-            override fun findByUsername(username: String): UserSecurityRecord? = queryUserBy("username", username)
+            override fun findDemoCredentials(): List<UserSecurityRecord> =
+                listOfNotNull(
+                    queryUserBy("user_id", "usr_demo_user"),
+                    queryUserBy("user_id", "usr_demo_admin"),
+                )
 
             override fun findByUserId(userId: String): UserSecurityActorRecord? =
                 queryUserBy("user_id", userId)?.let { user ->
@@ -263,6 +299,19 @@ class DemoCredentialRotationIntegrationTest {
         }
 
     private fun queryUser(userId: String): UserSecurityRecord = requireNotNull(queryUserBy("user_id", userId))
+
+    private fun storedCredentialTagHex(userId: String): String =
+        adminConnection().use { connection ->
+            connection
+                .prepareStatement("select encode(credential_reuse_tag, 'hex') from users where user_id = ?")
+                .use { statement ->
+                    statement.setString(1, userId)
+                    statement.executeQuery().use { result ->
+                        check(result.next())
+                        result.getString(1)
+                    }
+                }
+        }
 
     private fun queryUserBy(
         column: String,

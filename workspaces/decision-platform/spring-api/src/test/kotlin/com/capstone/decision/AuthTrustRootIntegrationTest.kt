@@ -17,6 +17,7 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.http.MediaType
 import org.springframework.jdbc.core.JdbcTemplate
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder
 import org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity
 import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
@@ -97,6 +98,24 @@ class AuthTrustRootIntegrationTest(
         assertTrue(users.all { BCRYPT_12_PATTERN.matches(it.last()) })
         assertNotEquals(userPassword(), users[1].last())
         assertNotEquals(adminPassword(), users[0].last())
+        val evidenceLengths =
+            jdbcTemplate.queryForList(
+                """
+                select octet_length(credential_reuse_tag) as tag_length,
+                       octet_length(credential_bundle_mac) as mac_length,
+                       credential_policy_version
+                from users
+                where user_id in ('usr_demo_user', 'usr_demo_admin')
+                """.trimIndent(),
+            )
+        assertEquals(2, evidenceLengths.size)
+        assertTrue(
+            evidenceLengths.all {
+                (it["tag_length"] as Number).toInt() == 32 &&
+                    (it["mac_length"] as Number).toInt() == 32 &&
+                    (it["credential_policy_version"] as Number).toInt() == 1
+            },
+        )
     }
 
     @Test
@@ -193,6 +212,19 @@ class AuthTrustRootIntegrationTest(
                 jsonPath("$.data.user.userId") { value("usr_demo_user") }
                 jsonPath("$.data.user.role") { value("USER") }
             }
+    }
+
+    @Test
+    fun `public login rejects both roles when separately salted rows accept one plaintext`() {
+        val sharedAdminHash = requireNotNull(BCryptPasswordEncoder(12).encode(userPassword()))
+        assertNotEquals(TEST_USER_PASSWORD_HASH, sharedAdminHash)
+        jdbcTemplate.update(
+            "update users set password_hash = ? where user_id = 'usr_demo_admin'",
+            sharedAdminHash,
+        )
+
+        postInvalidLogin("demo-admin", userPassword(), "req-shared-password-admin")
+        postInvalidLogin("demo-user", userPassword(), "req-shared-password-user")
     }
 
     private fun login(
@@ -297,13 +329,21 @@ class AuthTrustRootIntegrationTest(
         jdbcTemplate.update("delete from users where user_id in ('usr_demo_user', 'usr_demo_admin')")
         jdbcTemplate.update(
             """
-            insert into users (user_id, username, role, password_hash, status, security_version)
-            values (?, 'demo-user', 'USER', ?, 'ACTIVE', 1), (?, 'demo-admin', 'ADMIN', ?, 'ACTIVE', 1)
+            insert into users (
+                user_id, username, role, password_hash, status, security_version,
+                credential_reuse_tag, credential_bundle_mac, credential_policy_version
+            )
+            values (?, 'demo-user', 'USER', ?, 'ACTIVE', 1, ?, ?, 1),
+                   (?, 'demo-admin', 'ADMIN', ?, 'ACTIVE', 1, ?, ?, 1)
             """.trimIndent(),
             "usr_demo_user",
             TEST_USER_PASSWORD_HASH,
+            TEST_USER_VERIFIED_BUNDLE.reuseTag,
+            TEST_USER_VERIFIED_BUNDLE.bundleMac,
             "usr_demo_admin",
             TEST_ADMIN_PASSWORD_HASH,
+            TEST_ADMIN_VERIFIED_BUNDLE.reuseTag,
+            TEST_ADMIN_VERIFIED_BUNDLE.bundleMac,
         )
     }
 

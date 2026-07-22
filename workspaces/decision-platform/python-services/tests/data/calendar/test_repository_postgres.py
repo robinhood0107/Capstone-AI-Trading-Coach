@@ -7,7 +7,12 @@ from datetime import UTC, date, datetime, timedelta
 import psycopg
 import pytest
 
-from app.data.calendar.errors import PrivacyProjectionError, QuotaReservationDenied
+from app.data.calendar.collector import CalendarCollector, CollectionTask
+from app.data.calendar.errors import (
+    CollectorAlreadyRunning,
+    PrivacyProjectionError,
+    QuotaReservationDenied,
+)
 from app.data.calendar.disclosure_state import DisclosureStateTransition
 from app.data.calendar.models import (
     CalendarConflictRecord,
@@ -24,6 +29,45 @@ from app.data.calendar.normalizer import EventCandidate, build_event_revision, c
 from app.data.calendar.repository import CalendarRepository, OpenDARTQuotaRepository
 from app.data.calendar.settings import OpenDARTQuotaConfig
 from tests.data.calendar.conftest import PostgresTestCluster
+
+
+def test_second_postgres_session_loses_collector_lock_before_provider_send(
+    postgres_cluster: PostgresTestCluster,
+) -> None:
+    provider_calls = 0
+
+    def send() -> object:
+        nonlocal provider_calls
+        provider_calls += 1
+        return {"status": "000"}
+
+    class PassthroughExecutor:
+        def execute(self, _operation: str, provider_send: object) -> object:
+            assert callable(provider_send)
+            return provider_send()
+
+    with (
+        psycopg.connect(postgres_cluster["collector_dsn"]) as first_connection,
+        psycopg.connect(postgres_cluster["collector_dsn"]) as second_connection,
+    ):
+        first = CalendarRepository(first_connection)
+        second = CalendarRepository(second_connection)
+        assert first.acquire_collector_lock() is True
+
+        second_collector = CalendarCollector(
+            lock=second,
+            executor=PassthroughExecutor(),
+            config=_quota(8, 7),
+        )
+        with pytest.raises(CollectorAlreadyRunning):
+            second_collector.run(
+                [CollectionTask(operation="list", subject="005930", page=1, send=send)]
+            )
+        assert provider_calls == 0
+
+        first.release_collector_lock()
+        assert second.acquire_collector_lock() is True
+        second.release_collector_lock()
 
 
 def test_two_connections_competing_for_last_quota_slot_grant_exactly_one(

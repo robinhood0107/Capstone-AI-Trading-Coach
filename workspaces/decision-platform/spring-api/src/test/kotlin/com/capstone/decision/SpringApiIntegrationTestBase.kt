@@ -1,29 +1,160 @@
 package com.capstone.decision
 
+import com.capstone.decision.infrastructure.security.DemoAccounts
+import com.capstone.decision.infrastructure.security.DemoCredentialBundlePolicy
+import com.capstone.decision.infrastructure.security.DemoRole
+import com.capstone.decision.infrastructure.security.UserSecurityActorRecord
+import com.capstone.decision.infrastructure.security.UserSecurityRecord
+import com.capstone.decision.infrastructure.security.UserSecurityRepository
+import com.capstone.decision.infrastructure.security.V7__s2_1_actor_trust
+import org.springframework.boot.test.context.TestConfiguration
+import org.springframework.context.annotation.Bean
+import org.springframework.context.annotation.Primary
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder
 import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
+import java.util.Base64
 
-// 테스트 secret/password를 코드 리터럴로 박지 않고 동적 property로 주입해 secret scan 잡음을 줄인다.
+// 테스트 credential과 hash는 런타임에 생성해 실제 secret이나 고정 BCrypt material을 fixture에 남기지 않는다.
 abstract class SpringApiIntegrationTestBase {
-    protected fun userPassword(): String = userPasswordValue
+    protected fun userPassword(): String = TEST_USER_PASSWORD
 
-    protected fun adminPassword(): String = adminPasswordValue
+    protected fun adminPassword(): String = TEST_ADMIN_PASSWORD
+
+    protected fun jwtSecret(): String = TEST_JWT_SECRET
+
+    protected fun jwtIssuer(): String = TEST_JWT_ISSUER
+
+    protected fun jwtAudience(): String = TEST_JWT_AUDIENCE
 
     companion object {
-        // HS256 최소 길이와 demo 로그인 계약을 만족하는 더미 값을 테스트 런타임에만 만든다.
-        private val jwtSecretValue: String = "x".repeat(32)
-        private val userPasswordValue: String = "u" + "p".repeat(12)
-        private val adminPasswordValue: String = "a" + "p".repeat(12)
+        // HS256/limiter key 분리와 demo 로그인을 검증할 수 있는 비운영 값을 테스트 프로세스에서만 만든다.
+        internal val TEST_JWT_SECRET: String = "j" + "s".repeat(63)
+        internal const val TEST_JWT_ISSUER: String = "capstone-test-issuer"
+        internal const val TEST_JWT_AUDIENCE: String = "capstone-test-audience"
+        internal val TEST_LOGIN_SCOPE_HMAC_KEY: String = "l" + "h".repeat(63)
+        internal val TEST_CREDENTIAL_SEPARATION_KEY_BYTES: ByteArray = ByteArray(32) { index -> (index + 17).toByte() }
+        internal val TEST_CREDENTIAL_SEPARATION_KEY: String =
+            Base64.getUrlEncoder().withoutPadding().encodeToString(TEST_CREDENTIAL_SEPARATION_KEY_BYTES)
+        internal val TEST_USER_PASSWORD: String = "u" + "p".repeat(12)
+        internal val TEST_ADMIN_PASSWORD: String = "a" + "p".repeat(12)
+        internal val TEST_USER_CREDENTIAL_BUNDLE: String =
+            prepareTestBundle("usr_demo_user", TEST_USER_PASSWORD)
+        internal val TEST_ADMIN_CREDENTIAL_BUNDLE: String =
+            prepareTestBundle("usr_demo_admin", TEST_ADMIN_PASSWORD)
+        internal val TEST_USER_VERIFIED_BUNDLE =
+            DemoCredentialBundlePolicy.verify(
+                TEST_USER_CREDENTIAL_BUNDLE,
+                requireNotNull(DemoAccounts.byUserId("usr_demo_user")),
+                TEST_CREDENTIAL_SEPARATION_KEY_BYTES,
+            )
+        internal val TEST_ADMIN_VERIFIED_BUNDLE =
+            DemoCredentialBundlePolicy.verify(
+                TEST_ADMIN_CREDENTIAL_BUNDLE,
+                requireNotNull(DemoAccounts.byUserId("usr_demo_admin")),
+                TEST_CREDENTIAL_SEPARATION_KEY_BYTES,
+            )
+        internal val TEST_USER_PASSWORD_HASH: String = TEST_USER_VERIFIED_BUNDLE.passwordHash
+        internal val TEST_ADMIN_PASSWORD_HASH: String = TEST_ADMIN_VERIFIED_BUNDLE.passwordHash
         private val redisPasswordValue: String = "r" + "p".repeat(24)
 
-        // 모든 SpringBootTest가 같은 demo 인증 설정을 공유해야 토큰 기반 helper가 안정적이다.
+        // 모든 SpringBootTest가 같은 trust-root 설정을 공유해야 token과 migration 검증이 안정적이다.
         @DynamicPropertySource
         @JvmStatic
         fun registerApplicationProperties(registry: DynamicPropertyRegistry) {
-            registry.add("app.jwt.secret") { jwtSecretValue }
-            registry.add("app.demo.user.password") { userPasswordValue }
-            registry.add("app.demo.admin.password") { adminPasswordValue }
+            registry.add("app.jwt.secret") { TEST_JWT_SECRET }
+            registry.add("app.jwt.issuer") { TEST_JWT_ISSUER }
+            registry.add("app.jwt.audience") { TEST_JWT_AUDIENCE }
+            registry.add("app.login.scope-hmac-key") { TEST_LOGIN_SCOPE_HMAC_KEY }
+            registry.add("app.demo-credentials.user-credential-bundle") { TEST_USER_CREDENTIAL_BUNDLE }
+            registry.add("app.demo-credentials.admin-credential-bundle") { TEST_ADMIN_CREDENTIAL_BUNDLE }
+            registry.add("app.demo-credentials.separation-key") { TEST_CREDENTIAL_SEPARATION_KEY }
             registry.add("spring.data.redis.password") { redisPasswordValue }
         }
+
+        internal fun prepareTestBundle(
+            userId: String,
+            password: String,
+        ): String {
+            val chars = password.toCharArray()
+            return try {
+                DemoCredentialBundlePolicy.prepare(
+                    requireNotNull(DemoAccounts.byUserId(userId)),
+                    chars,
+                    TEST_CREDENTIAL_SEPARATION_KEY_BYTES,
+                    BCryptPasswordEncoder(12),
+                )
+            } finally {
+                chars.fill('\u0000')
+            }
+        }
     }
+}
+
+internal fun s21ActorTrustMigration(
+    userBundle: String = SpringApiIntegrationTestBase.TEST_USER_CREDENTIAL_BUNDLE,
+    adminBundle: String = SpringApiIntegrationTestBase.TEST_ADMIN_CREDENTIAL_BUNDLE,
+    separationKey: String = SpringApiIntegrationTestBase.TEST_CREDENTIAL_SEPARATION_KEY,
+): V7__s2_1_actor_trust {
+    val key = DemoCredentialBundlePolicy.decodeSeparationKey(separationKey)
+    return try {
+        val user =
+            DemoCredentialBundlePolicy.verify(
+                userBundle,
+                requireNotNull(DemoAccounts.byUserId("usr_demo_user")),
+                key,
+            )
+        val admin =
+            DemoCredentialBundlePolicy.verify(
+                adminBundle,
+                requireNotNull(DemoAccounts.byUserId("usr_demo_admin")),
+                key,
+            )
+        DemoCredentialBundlePolicy.requireSeparated(user, admin)
+        V7__s2_1_actor_trust(user, admin)
+    } finally {
+        key.fill(0)
+    }
+}
+
+// DataSource를 의도적으로 제외한 web 계약 테스트도 production과 동일한 repository port를 거친다.
+@TestConfiguration(proxyBeanMethods = false)
+class TestAuthRepositoryConfiguration {
+    @Bean
+    @Primary
+    fun testUserSecurityRepository(): UserSecurityRepository {
+        val users =
+            listOf(
+                UserSecurityRecord(
+                    userId = "usr_demo_user",
+                    username = "demo-user",
+                    passwordHash = SpringApiIntegrationTestBase.TEST_USER_PASSWORD_HASH,
+                    role = DemoRole.USER,
+                    status = "ACTIVE",
+                    securityVersion = 1,
+                ),
+                UserSecurityRecord(
+                    userId = "usr_demo_admin",
+                    username = "demo-admin",
+                    passwordHash = SpringApiIntegrationTestBase.TEST_ADMIN_PASSWORD_HASH,
+                    role = DemoRole.ADMIN,
+                    status = "ACTIVE",
+                    securityVersion = 1,
+                ),
+            )
+        return object : UserSecurityRepository {
+            override fun findDemoCredentials(): List<UserSecurityRecord> = users
+
+            override fun findByUserId(userId: String): UserSecurityActorRecord? = users.firstOrNull { it.userId == userId }?.toActorRecord()
+        }
+    }
+
+    private fun UserSecurityRecord.toActorRecord(): UserSecurityActorRecord =
+        UserSecurityActorRecord(
+            userId = userId,
+            username = username,
+            role = role,
+            status = status,
+            securityVersion = securityVersion,
+        )
 }

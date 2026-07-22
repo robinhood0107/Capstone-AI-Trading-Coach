@@ -5,4 +5,5 @@ data class AppPrincipal(
     val userId: String,
     val username: String,
     val role: DemoRole,
+    val securityVersion: Long,
 )

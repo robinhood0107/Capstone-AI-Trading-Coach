@@ -21,7 +21,8 @@ class OpenApiConfig {
                     SecurityScheme()
                         .type(SecurityScheme.Type.HTTP)
                         .scheme("bearer")
-                        .bearerFormat("JWT"),
+                        .bearerFormat("JWT")
+                        .description("HS256 JWT. 서버는 configured issuer/audience와 DB actor 상태/version을 검증한다."),
                 ),
             ).addSecurityItem(SecurityRequirement().addList("bearerAuth"))
 

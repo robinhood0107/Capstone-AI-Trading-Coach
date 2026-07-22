@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any, cast
 
 import httpx
 import pytest
@@ -197,6 +198,89 @@ def test_online_constructor_rejects_injected_transport_and_rate_limiter(tmp_path
             online,
             transport=httpx.MockTransport(lambda _: httpx.Response(200)),
             rate_limiter=TokenBucket(1000),
+        )
+
+
+def test_online_factory_ignores_ambient_network_configuration(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    netrc = tmp_path / ".netrc"
+    netrc.write_text("machine proxy.invalid login fixture password fixture\n", encoding="utf-8")
+    for name, value in {
+        "HTTP_PROXY": "http://proxy.invalid:8080",
+        "HTTPS_PROXY": "http://proxy.invalid:8080",
+        "ALL_PROXY": "socks5://proxy.invalid:1080",
+        "SSL_CERT_FILE": str(tmp_path / "untrusted.pem"),
+        "NETRC": str(netrc),
+    }.items():
+        monkeypatch.setenv(name, value)
+
+    captured: dict[str, object] = {}
+    inner_transport = object()
+
+    def transport_factory(**kwargs: object) -> object:
+        captured["transport_kwargs"] = kwargs
+        return inner_transport
+
+    class ClientProbe:
+        def __init__(self, **kwargs: object) -> None:
+            captured["client_kwargs"] = kwargs
+
+        def close(self) -> None:
+            pass
+
+    monkeypatch.setattr(httpx, "HTTPTransport", transport_factory)
+    monkeypatch.setattr(httpx, "Client", ClientProbe)
+    settings = OpenDARTSettings(
+        opendart_offline=False,
+        opendart_data_dir=tmp_path,
+        opendart_timeout_seconds=1.0,
+        opendart_retry_attempts=1,
+        opendart_rate_limit_per_second=1,
+    )
+
+    OpenDARTHttpClient.for_online_collector(
+        settings,
+        before_send=lambda _: None,
+        on_handoff=lambda: None,
+    )
+
+    assert captured["transport_kwargs"] == {"verify": True, "retries": 0}
+    client_kwargs = cast(dict[str, object], captured["client_kwargs"])
+    assert client_kwargs["follow_redirects"] is False
+    assert client_kwargs["trust_env"] is False
+    wrapped = cast(_credential_transport._CredentialTransport, client_kwargs["transport"])
+    assert wrapped._inner is inner_transport
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        {"proxy": "http://proxy.invalid:8080"},
+        {"verify": False},
+        {"ca_bundle": "/tmp/untrusted.pem"},
+    ],
+)
+def test_online_constructor_rejects_caller_network_overrides(
+    tmp_path: Path,
+    override: dict[str, object],
+) -> None:
+    online = OpenDARTSettings(
+        opendart_offline=False,
+        opendart_data_dir=tmp_path,
+        opendart_timeout_seconds=1.0,
+        opendart_retry_attempts=1,
+        opendart_rate_limit_per_second=1,
+    )
+    constructor = cast(Any, OpenDARTHttpClient)
+
+    with pytest.raises(TypeError):
+        constructor(
+            online,
+            before_send=lambda _: None,
+            on_handoff=lambda: None,
+            **override,
         )
 
 

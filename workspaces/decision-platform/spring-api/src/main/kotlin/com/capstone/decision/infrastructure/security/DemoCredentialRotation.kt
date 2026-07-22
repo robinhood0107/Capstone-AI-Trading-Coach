@@ -66,20 +66,8 @@ object DemoCredentialRotation {
             statement.queryTimeout = STATEMENT_TIMEOUT_SECONDS
             statement.execute("set local lock_timeout = '3s'")
             statement.execute("set local statement_timeout = '10s'")
-            statement
-                .executeQuery(
-                    """
-                    select current_setting('log_parameter_max_length')::integer,
-                           current_setting('log_parameter_max_length_on_error')::integer
-                    """.trimIndent(),
-                ).use { result ->
-                    check(result.next()) { "PostgreSQL credential logging policy is unavailable." }
-                    check(result.getInt(1) == 0 && result.getInt(2) == 0) {
-                        "PostgreSQL credential parameter logging must be disabled."
-                    }
-                    check(!result.next()) { "PostgreSQL credential logging policy is ambiguous." }
-                }
         }
+        PostgreSqlCredentialLoggingPolicy.requireSafe(connection)
     }
 
     private fun lockDemoCredentials(connection: Connection): List<LockedCredential> =

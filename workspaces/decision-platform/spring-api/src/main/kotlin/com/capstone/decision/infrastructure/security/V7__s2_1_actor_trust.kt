@@ -17,9 +17,8 @@ class V7__s2_1_actor_trust(
         DemoCredentialBundlePolicy.requireSeparated(userBundle, adminBundle)
 
         val connection = context.connection
+        PostgreSqlCredentialLoggingPolicy.requireSafe(connection)
         connection.createStatement().use { statement ->
-            // 오류 시에도 JDBC bind parameter가 PostgreSQL server log에 남지 않도록 이 transaction에서 명시적으로 닫는다.
-            statement.execute("set local log_parameter_max_length_on_error = 0")
             statement.execute(
                 """
                 alter table users
@@ -244,7 +243,7 @@ class V7__s2_1_actor_trust(
 
     companion object {
         // Java migration은 기본 checksum이 없으므로 source 변경 시 함께 갱신하는 고정 검증값을 둔다.
-        private const val MIGRATION_CHECKSUM = 0x52100008
+        private const val MIGRATION_CHECKSUM = 0x52100009
         private const val ACTIVE_STATUS = "ACTIVE"
     }
 }

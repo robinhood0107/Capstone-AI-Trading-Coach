@@ -141,18 +141,18 @@ flowchart LR
 
 `POST /api/v1/auth/login`으로 데모 계정을 인증하고 access token을 발급받는다. 로그인만 `Authorization` 헤더의 예외이며, client interceptor가 cutover 전 stale Bearer를 첨부해도 해당 header는 무시하고 새 credential을 검증한다. 그 밖의 API는 명시된 역할과 Bearer 인증을 요구한다. 토큰은 데모 기준 만료 12시간을 사용하고 payload에는 opaque `sub`, `role`, `securityVersion`처럼 검증에 필요한 최소 claim만 담는다(민감정보 금지). JWT는 허용 algorithm을 고정하고 issuer/audience/subject/issued-at/expiry/securityVersion을 검증한다. Kill Switch 해제, ADMIN replay, Live 관련 고위험 행위는 token의 role만 믿지 않고 현재 DB의 account 활성 상태·role·securityVersion을 다시 확인하며, 권한 회수 뒤 발급된 이전 token은 거부한다.
 
-로그인 attempt는 client address+username 기준 15분 5회, address 기준 15분 50회로 원자 예약하며, JSON binding 전 전역 request body 상한을 적용한다. limiter key는 private factory가 정규화한 address/username scope를 purpose/version HMAC으로 만든 digest만 사용하고 raw address·username을 저장·로그·metric label에 넣지 않는다. 주소는 socket remote address를 기준으로 하고, 배포 시 명시적으로 allowlist한 reverse proxy에서 온 경우에만 표준 forwarded header를 해석한다. 임의 `X-Forwarded-For`를 신뢰하지 않는다. demo account verifier는 평문 password가 아니라 adaptive salted password hash로 secret store에 주입하고 검증 라이브러리로 비교한다. 존재하지 않는 사용자와 잘못된 비밀번호는 동일한 stable 오류·dummy hash를 포함한 유사한 검증 비용으로 처리한다. 현재 단일 JVM limiter는 replica 1에서만 보안 경계가 성립하며, 다중 replica 배포 전에는 공유 원자 저장소로 이전해야 한다.
+로그인 attempt는 client address+username 기준 15분 5회, address 기준 15분 50회로 원자 예약하며, JSON binding 전 전역 request body 상한을 적용한다. limiter key는 private factory가 정규화한 address/username scope를 purpose/version HMAC으로 만든 digest만 사용하고 raw address·username을 저장·로그·metric label에 넣지 않는다. 주소는 socket remote address를 기준으로 하고, 배포 시 명시적으로 allowlist한 reverse proxy에서 온 경우에만 표준 forwarded header를 해석한다. 임의 `X-Forwarded-For`를 신뢰하지 않는다. demo account verifier는 평문 password가 아니라 attested bundle에서 검증된 adaptive salted password hash를 DB에 저장하고 검증 라이브러리로 비교한다. 모든 login은 선택 row와 peer row에 BCrypt strength-12 검증을 각각 한 번 수행하며, 하나의 평문이 두 row에 모두 일치하면 두 역할을 모두 fail-closed한다. 존재하지 않는 사용자와 잘못된 비밀번호도 정확히 두 번의 dummy/peer BCrypt 경로와 동일한 stable 오류를 사용한다. 현재 단일 JVM limiter는 replica 1에서만 보안 경계가 성립하며, 다중 replica 배포 전에는 공유 원자 저장소로 이전해야 한다.
 
 #### 2.4.1 S2.1 actor trust-root 선행 계약
 
-DB `users`가 demo identity의 단일 진실 소스다. checksum이 있는 V7 Java migration은 `security_version bigint NOT NULL DEFAULT 1 CHECK (security_version > 0)`을 추가하고 migration role로 아래 두 row만 seed한다. BCrypt hash는 추적 파일이나 Flyway SQL text에 넣지 않고 배포 secret에서 migration bean으로 주입해 prepared statement bind parameter로만 전달한다. 기존 `user_id`/username/role/status/version/hash가 exact shape과 다르면 overwrite하지 않고 migration transaction 전체를 중단한다.
+DB `users`가 demo identity의 단일 진실 소스다. checksum이 있는 V7 Java migration은 `security_version bigint NOT NULL DEFAULT 1 CHECK (security_version > 0)`과 credential evidence 열(`credential_reuse_tag`, `credential_bundle_mac`, `credential_policy_version`)을 추가하고 migration role로 아래 두 row만 seed한다. 두 고정 demo row는 32-byte tag/MAC와 policy version 1을 모두 가져야 하고, 다른 user row는 evidence가 없어도 호환된다. BCrypt hash·tag·MAC는 추적 파일이나 Flyway SQL text에 넣지 않고 검증된 배포 bundle에서 prepared statement bind parameter로만 전달한다. 기존 `user_id`/username/role/status/version/hash/evidence가 exact shape과 다르면 overwrite하지 않고 migration transaction 전체를 중단한다.
 
-| user_id | username | role | status | securityVersion | password hash source |
+| user_id | username | role | status | securityVersion | credential source |
 |---|---|---|---|---:|---|
-| `usr_demo_user` | `demo-user` | `USER` | `ACTIVE` | 1 | `DEMO_USER_PASSWORD_HASH` |
-| `usr_demo_admin` | `demo-admin` | `ADMIN` | `ACTIVE` | 1 | `DEMO_ADMIN_PASSWORD_HASH` |
+| `usr_demo_user` | `demo-user` | `USER` | `ACTIVE` | 1 | `DEMO_USER_CREDENTIAL_BUNDLE` |
+| `usr_demo_admin` | `demo-admin` | `ADMIN` | `ACTIVE` | 1 | `DEMO_ADMIN_CREDENTIAL_BUNDLE` |
 
-JWT header/claim은 `alg=HS256`, exact configured `iss`, exact single `aud`, nonblank internal `user_id` `sub`, `iat`, `exp`, `role`, `securityVersion`을 필수로 한다. future `iat` 허용 오차는 최대 60초다. 매 authenticated request마다 `sub`로 DB row를 재조회하고 `ACTIVE`, role, `securityVersion`이 token과 같을 때만 DB 값으로 principal을 만든다. row missing, `LOCKED`, `DISABLED`, role/version mismatch는 모두 동일한 401이다. `JWT_SECRET`, `LOGIN_SCOPE_HMAC_KEY`, 후속 cursor HMAC key는 서로 다른 32-byte 이상 secret을 사용한다.
+JWT header/claim은 `alg=HS256`, exact configured `iss`, exact single `aud`, nonblank internal `user_id` `sub`, `iat`, `exp`, `role`, `securityVersion`을 필수로 한다. future `iat` 허용 오차는 최대 60초다. 매 authenticated request마다 `sub`로 DB row를 재조회하고 `ACTIVE`, role, `securityVersion`이 token과 같을 때만 DB 값으로 principal을 만든다. row missing, `LOCKED`, `DISABLED`, role/version mismatch는 모두 동일한 401이다. `JWT_SECRET`, `LOGIN_SCOPE_HMAC_KEY`, `DEMO_CREDENTIAL_SEPARATION_KEY`, 후속 cursor HMAC key는 목적별로 서로 다른 secret을 사용한다.
 
 로그인 성공 시 `data.user.userId`는 상위 표의 internal ID이며 JWT `sub`와 같다. Dashboard/consumer는 username이나 request body의 user ID를 owner key로 사용하지 않는다.
 
@@ -166,19 +166,22 @@ JWT header/claim은 `alg=HS256`, exact configured `iss`, exact single `aud`, non
 
 #### 2.4.2 credential rotation·cutover 운영 계약
 
-배포 전 secret store에 `DEMO_USER_PASSWORD_HASH`, `DEMO_ADMIN_PASSWORD_HASH`, `JWT_SECRET`, `JWT_ISSUER`, `JWT_AUDIENCE`, `LOGIN_SCOPE_HMAC_KEY`를 준비한다. demo hash는 BCrypt strength 12이고 서로 달라야 하며, dotenv를 쓸 때는 `$` 보존을 위해 single quote 안에 둔다. JWT/login-scope secret도 재사용하지 않는다. actual `.env`는 자동 변경하지 않는다.
+배포 전 secret store에 `DEMO_USER_CREDENTIAL_BUNDLE`, `DEMO_ADMIN_CREDENTIAL_BUNDLE`, `DEMO_CREDENTIAL_SEPARATION_KEY`, `JWT_SECRET`, `JWT_ISSUER`, `JWT_AUDIENCE`, `LOGIN_SCOPE_HMAC_KEY`를 준비한다. separation key는 정확히 32 random bytes를 unpadded Base64url로 인코딩하고 JWT/login-scope/cursor key와 재사용하지 않는다. 두 role bundle은 한 approved preparation workflow가 서로 다른 12..72 UTF-8-byte 평문에서 생성해 원자 게시한다. application·DB·argv·로그·audit·추적 파일에는 평문을 전달하지 않으며 actual `.env`는 자동 변경하지 않는다.
 
-V7은 초기 bootstrap이지 rotation 경로가 아니다. 회전은 `flyway` DB role을 사용하는 `rotateDemoCredential` one-shot task로만 수행한다. task는 loopback PostgreSQL만 허용하고 두 demo row를 `FOR UPDATE NOWAIT`로 잠근다. 현재/peer hash 재사용을 거부한 뒤 현재 hash와 `security_version`을 CAS predicate로 삼아 대상 하나의 hash 교체, `security_version + 1`, sanitized audit INSERT를 bounded transaction으로 commit한다. hash/credential은 argv·stdout·log·audit에 남기지 않는다. 아래 변수는 secret manager가 주입한 one-shot process에서만 사용한다. `POSTGRES_HOST`/`POSTGRES_PORT`를 생략하면 loopback `127.0.0.1:5432`를 사용하며 non-loopback host는 거부한다.
+bundle wire format은 `s21-v1:<user_id>:<reuse_tag_b64url>:<bcrypt12_hash>:<bundle_mac_b64url>`이다. `reuse_tag`는 같은 전용 key와 `capstone:s21:demo-credential-reuse:v1` domain으로 평문 UTF-8 bytes를 HMAC-SHA-256한 32-byte 값이다. `bundle_mac`은 `capstone:s21:demo-credential-bundle:v1` domain으로 version, exact user ID, username, role, raw reuse tag, BCrypt hash를 HMAC-SHA-256해 독립 필드 편집을 막는다. HMAC input은 domain부터 각 field를 `4-byte big-endian length || bytes`로 framing한다. tag/MAC/key의 wire encoding은 padding 없는 canonical Base64url이다. 저장된 hash만 비교해서는 salt 때문에 평문 재사용을 판별할 수 없으므로 hash 문자열 불일치는 보조 방어일 뿐 분리 증거가 아니다.
 
-운영자는 새 hash를 해당 `DEMO_USER_PASSWORD_HASH` 또는 `DEMO_ADMIN_PASSWORD_HASH`의 pending secret version과 one-shot `DEMO_CREDENTIAL_PASSWORD_HASH`에 동일 bytes로 준비한다. DB rotation과 old password/token 거부·new password login 검증이 모두 성공한 뒤에만 pending version을 persistent bootstrap secret으로 승격한다. 승격 실패 시 clean rebuild를 진행하지 않고 불일치 상태를 운영 장애로 처리한다. 이전 app binary rollback window 동안에는 이전 plaintext demo secret도 secret store에만 보존하며 Git/`.env`에는 두지 않는다.
+V7은 초기 bootstrap이지 rotation 경로가 아니다. 회전은 `flyway` DB role을 사용하는 `rotateDemoCredential` one-shot task로만 수행한다. task는 loopback PostgreSQL만 허용하고 두 demo row를 `FOR UPDATE NOWAIT`로 잠근다. 두 저장 bundle의 MAC을 다시 검증하고 새 reuse tag가 현재/peer tag와 모두 다른지 constant-time으로 확인한 뒤, 현재 hash/tag/MAC/policy version/`security_version` 전체를 CAS predicate로 삼아 대상 하나의 bundle 교체, `security_version + 1`, sanitized audit INSERT를 bounded transaction으로 commit한다. hash/tag/MAC/key/credential은 argv·stdout·log·audit에 남기지 않는다. 아래 변수는 secret manager가 주입한 one-shot process에서만 사용한다. `POSTGRES_HOST`/`POSTGRES_PORT`를 생략하면 loopback `127.0.0.1:5432`를 사용하며 non-loopback host는 거부한다.
+
+운영자는 새 role-bound bundle을 해당 `DEMO_USER_CREDENTIAL_BUNDLE` 또는 `DEMO_ADMIN_CREDENTIAL_BUNDLE`의 pending secret version과 one-shot `DEMO_CREDENTIAL_BUNDLE`에 동일 bytes로 준비하고, bootstrap과 one-shot에는 같은 `DEMO_CREDENTIAL_SEPARATION_KEY` version을 주입한다. DB rotation과 old password/token 거부·new password login 검증이 모두 성공한 뒤에만 pending bundle을 persistent bootstrap secret으로 승격한다. 승격 실패 시 clean rebuild를 진행하지 않고 불일치 상태를 운영 장애로 처리한다. 이전 app binary rollback window 동안에는 이전 plaintext와 검증된 이전 bundle도 secret store에만 보존하며 Git/`.env`에는 두지 않는다. rollback은 검증된 이전 bundle과 호환 app version을 함께 복원하며 bare hash acceptance로 후퇴하지 않는다.
 
 ```bash
 (
   set -euo pipefail
-  trap 'S21_ROTATE_EXIT=$?; unset DEMO_CREDENTIAL_USER_ID DEMO_CREDENTIAL_PASSWORD_HASH DEMO_CREDENTIAL_ROTATION_ACTOR POSTGRES_MIGRATION_PASSWORD; exit "$S21_ROTATE_EXIT"' EXIT
+  trap 'S21_ROTATE_EXIT=$?; unset DEMO_CREDENTIAL_USER_ID DEMO_CREDENTIAL_BUNDLE DEMO_CREDENTIAL_SEPARATION_KEY DEMO_CREDENTIAL_ROTATION_ACTOR POSTGRES_MIGRATION_PASSWORD; exit "$S21_ROTATE_EXIT"' EXIT
   test -n "${POSTGRES_MIGRATION_PASSWORD:-}"
   test -n "${DEMO_CREDENTIAL_USER_ID:-}"
-  test -n "${DEMO_CREDENTIAL_PASSWORD_HASH:-}"
+  test -n "${DEMO_CREDENTIAL_BUNDLE:-}"
+  test -n "${DEMO_CREDENTIAL_SEPARATION_KEY:-}"
   test -n "${DEMO_CREDENTIAL_ROTATION_ACTOR:-}"
   test -n "${POSTGRES_DB:-}"
   workspaces/decision-platform/spring-api/gradlew \

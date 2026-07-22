@@ -136,22 +136,22 @@ def test_page_commit_is_atomic_idempotent_and_keeps_every_audit_relation(
     observed_at = datetime(2026, 7, 22, 0, 0, tzinfo=UTC)
     observation = CalendarObservation(
         observation_id="obs-page-atomic",
-        source_id="kis-holiday-ctca0903r",
-        origin_group="kis",
-        capability="MARKET_SESSION",
+        source_id="opendart-structured-events",
+        origin_group="opendart",
+        capability="DISCLOSURE_EVENT",
         effective_from=date(2026, 7, 22),
         effective_to=date(2026, 7, 22),
         observed_at=observed_at,
         ingested_at=observed_at + timedelta(seconds=1),
-        sanitized_payload={"opnd_yn": "N"},
-        sanitized_payload_hash=canonical_hash({"opnd_yn": "N"}),
-        adapter_version="s1.6-kis-holiday-v1",
-        mapping_version="s1.6-session-v1",
+        sanitized_payload={"corp_code": "00126380", "transition": "OPEN"},
+        sanitized_payload_hash=canonical_hash({"corp_code": "00126380", "transition": "OPEN"}),
+        adapter_version="s1.6-opendart-v1",
+        mapping_version="s1.6-disclosure-state-v1",
         registry_version="s1.6-registry-v1",
     )
     session = CanonicalTradingSession(
         exchange_mic="XKRX",
-        session_date=date(2026, 7, 22),
+        session_date=date(2026, 8, 3),
         is_open=False,
         open_at=None,
         close_at=None,
@@ -210,7 +210,7 @@ def test_page_commit_is_atomic_idempotent_and_keeps_every_audit_relation(
         observation=observation,
         cursor=cursor,
         source_health=SourceHealthSnapshot(
-            source_id="kis-holiday-ctca0903r",
+            source_id="opendart-structured-events",
             last_success_at=observed_at,
             last_failure_at=None,
             failure_count=0,
@@ -222,16 +222,6 @@ def test_page_commit_is_atomic_idempotent_and_keeps_every_audit_relation(
         trading_session=session,
         event_writes=(CalendarEventWrite(event, confidence_bps=9000, status="ACTUAL"),),
         source_links=(
-            CalendarEventSource(
-                event_source_id="link-session",
-                event_id=None,
-                exchange_mic="XKRX",
-                session_date=date(2026, 7, 22),
-                observation_id=observation.observation_id,
-                source_choice="CHOSEN",
-                resolution_reason="KIS_OPND_YN_PRIMARY",
-                opaque_source_ref="d" * 64,
-            ),
             CalendarEventSource(
                 event_source_id="link-event",
                 event_id=event.event_id,
@@ -246,7 +236,7 @@ def test_page_commit_is_atomic_idempotent_and_keeps_every_audit_relation(
         conflicts=(
             CalendarConflictRecord(
                 conflict_id="conflict-session",
-                canonical_key="XKRX:2026-07-22",
+                canonical_key="XKRX:2026-08-03",
                 field_name="is_open",
                 competing_values=(
                     {"source_id": "kis-holiday-ctca0903r", "tier": 1, "origin_group": "kis", "value": False},
@@ -265,15 +255,7 @@ def test_page_commit_is_atomic_idempotent_and_keeps_every_audit_relation(
 
     with psycopg.connect(postgres_cluster["collector_dsn"]) as connection:
         repository = CalendarRepository(connection)
-        with pytest.raises(RuntimeError, match="injected crash"):
-            repository.publish_page(commit, fail_before_commit=True)
-        assert repository.load_cursor(cursor.key) is None
-
-        repository.publish_page(commit)
-        repository.publish_page(commit)
-        assert repository.load_cursor(cursor.key) == cursor
-
-        counts = connection.execute(
+        before = connection.execute(
             """
             SELECT
               (SELECT count(*) FROM calendar_observations),
@@ -286,7 +268,39 @@ def test_page_commit_is_atomic_idempotent_and_keeps_every_audit_relation(
               (SELECT count(*) FROM calendar_source_health)
             """
         ).fetchone()
-        assert counts == (1, 3, 1, 1, 2, 1, 1, 1)
+        assert before is not None
+        with pytest.raises(RuntimeError, match="injected crash"):
+            repository.publish_page(commit, fail_before_commit=True)
+        assert repository.load_cursor(cursor.key) is None
+
+        repository.publish_page(commit)
+        repository.publish_page(commit)
+        assert repository.load_cursor(cursor.key) == cursor
+
+        after = connection.execute(
+            """
+            SELECT
+              (SELECT count(*) FROM calendar_observations),
+              (SELECT count(*) FROM trading_sessions),
+              (SELECT count(*) FROM trading_session_revisions),
+              (SELECT count(*) FROM calendar_events),
+              (SELECT count(*) FROM calendar_event_sources),
+              (SELECT count(*) FROM calendar_conflicts),
+              (SELECT count(*) FROM disclosure_risk_state_transitions),
+              (SELECT count(*) FROM calendar_source_health)
+            """
+        ).fetchone()
+        assert after is not None
+        assert tuple(current - prior for current, prior in zip(after, before, strict=True)) == (
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+        )
         assert connection.execute(
             "SELECT count(*) FROM active_disclosure_risk_states WHERE corp_code = '00126380'"
         ).fetchone() == (1,)

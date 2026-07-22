@@ -37,6 +37,8 @@ def test_ksd_dividend_paginates_then_publishes_once_atomically() -> None:
     assert calls == [("", ""), ("next-fk", "next-nk")]
     assert len(events) == 4
     assert published == [events]
+    first_record, _, second_record, _ = events
+    assert first_record.stable_identity != second_record.stable_identity
 
 
 @pytest.mark.parametrize(

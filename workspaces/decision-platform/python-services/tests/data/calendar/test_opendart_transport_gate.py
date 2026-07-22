@@ -21,8 +21,11 @@ def test_reservation_hook_runs_after_limiter_and_immediately_before_transport(tm
         def acquire(self) -> None:
             events.append("limiter")
 
-    def reserve() -> None:
-        events.append("reservation")
+    def reserve(path: str) -> None:
+        events.append(f"reservation:{path}")
+
+    def handoff() -> None:
+        events.append("handoff")
 
     def handler(_: httpx.Request) -> httpx.Response:
         events.append("transport")
@@ -33,16 +36,17 @@ def test_reservation_hook_runs_after_limiter_and_immediately_before_transport(tm
         transport=httpx.MockTransport(handler),
         rate_limiter=Limiter(),  # type: ignore[arg-type]
         before_send=reserve,
+        on_handoff=handoff,
     )
 
     assert client.get_json("/api/list.json", {}) == {"status": "000"}
-    assert events == ["limiter", "reservation", "transport"]
+    assert events == ["limiter", "reservation:/api/list.json", "handoff", "transport"]
 
 
 def test_reservation_failure_is_fail_closed_with_zero_transport_attempts(tmp_path: Path) -> None:
     attempts = 0
 
-    def reserve() -> None:
+    def reserve(_: str) -> None:
         raise RuntimeError("ambiguous database result")
 
     def handler(_: httpx.Request) -> httpx.Response:
@@ -55,6 +59,7 @@ def test_reservation_failure_is_fail_closed_with_zero_transport_attempts(tmp_pat
         transport=httpx.MockTransport(handler),
         rate_limiter=TokenBucket(1000),
         before_send=reserve,
+        on_handoff=lambda: None,
     )
     with pytest.raises(RuntimeError, match="ambiguous"):
         client.get_json("/api/list.json", {})
@@ -78,6 +83,26 @@ def test_http_429_is_non_retryable(tmp_path: Path) -> None:
     with pytest.raises(OpenDARTHttpError) as exc_info:
         client.get_json("/api/list.json", {})
     assert exc_info.value.status_code == 429
+    assert attempts == 1
+
+
+def test_http_408_is_non_retryable(tmp_path: Path) -> None:
+    attempts = 0
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        return httpx.Response(408)
+
+    client = OpenDARTHttpClient(
+        _settings(tmp_path, retry_attempts=3),
+        transport=httpx.MockTransport(handler),
+        rate_limiter=TokenBucket(1000),
+        retry_wait=wait_none(),
+    )
+    with pytest.raises(OpenDARTHttpError) as exc_info:
+        client.get_json("/api/list.json", {})
+    assert exc_info.value.status_code == 408
     assert attempts == 1
 
 

@@ -27,7 +27,8 @@ def test_bank_management_uses_structured_endpoint_identity(
         symbol="005930",
     )
 
-    assert event.event_type == "DISCLOSURE_RISK_STATE"
+    assert event.event_type == "DISCLOSURE"
+    assert event.exchange_mic == "XKRX"
     assert event.event_date == date(2026, 7, 22)
     assert event.detail == {
         "corp_code": "00126380",

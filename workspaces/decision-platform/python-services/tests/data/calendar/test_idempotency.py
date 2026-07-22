@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import date
 
+import pytest
+
 from app.data.calendar.normalizer import EventCandidate, build_event_revision, event_series_key
 
 
@@ -20,6 +22,7 @@ def test_same_sanitized_payload_is_idempotent_and_correction_appends_revision() 
             source_revision=None,
             event_type="DIVIDEND_PAY",
             symbol="005930",
+            exchange_mic="XKRX",
             event_date=date(2026, 4, 20),
             detail={"kind": "CASH"},
         )
@@ -41,3 +44,20 @@ def test_same_sanitized_payload_is_idempotent_and_correction_appends_revision() 
     assert corrected.revision_no == 2
     assert corrected.revised_from_event_id == initial.event_id
     assert corrected.canonical_hash != initial.canonical_hash
+
+
+def test_event_revision_rejects_types_outside_the_frozen_v1_enum() -> None:
+    candidate = EventCandidate(
+        source_id="opendart",
+        source_event_key="receipt-1",
+        stable_identity="receipt-1",
+        source_revision=None,
+        event_type="DISCLOSURE_RISK_STATE",
+        symbol="005930",
+        exchange_mic="XKRX",
+        event_date=date(2026, 7, 22),
+        detail={},
+    )
+
+    with pytest.raises(ValueError, match="event type"):
+        build_event_revision(candidate)

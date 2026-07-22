@@ -23,6 +23,28 @@ def test_kis_opnd_yn_wins_and_lower_authority_disagreement_becomes_conflict() ->
     assert canonical.has_conflict is True
     assert canonical.confidence_bps == 7000
     assert canonical.degraded is False
+    assert canonical.open_at is None
+    assert canonical.close_at is None
+
+
+def test_fresh_prior_closed_session_never_keeps_open_market_timestamps() -> None:
+    prior = PriorCanonicalSession(
+        session=_canonical_prior(is_open=False),
+        expires_at=NOW + timedelta(hours=1),
+    )
+
+    canonical = merge_trading_session(
+        _xkrx(is_open=True),
+        kis=None,
+        kasi_reasons=[],
+        prior=prior,
+        now=NOW,
+        kis_failure_code="TRANSPORT_UNAVAILABLE",
+    )
+
+    assert canonical.is_open is False
+    assert canonical.open_at is None
+    assert canonical.close_at is None
 
 
 def test_kasi_changes_reason_only_and_never_market_status() -> None:

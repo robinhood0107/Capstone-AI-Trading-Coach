@@ -4,6 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.data.calendar.settings import OpenDARTQuotaConfig, OpenDARTQuotaSettings
+from app.data.opendart.settings import OpenDARTSettings
 
 
 REQUIRED_ENV = {
@@ -76,3 +77,8 @@ def test_valid_online_settings_convert_to_immutable_quota_config(
         max_calls_per_run=8_000,
         max_symbols_per_run=100,
     )
+
+
+def test_opendart_transport_retry_attempts_never_exceed_three() -> None:
+    with pytest.raises(ValidationError):
+        OpenDARTSettings(opendart_retry_attempts=4, _env_file=None)

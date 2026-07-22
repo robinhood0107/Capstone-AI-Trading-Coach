@@ -12,6 +12,7 @@ import jakarta.servlet.FilterChain
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
 import org.springframework.beans.factory.ObjectProvider
+import org.springframework.dao.DataAccessException
 import org.springframework.http.HttpHeaders
 import org.springframework.http.MediaType
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken
@@ -81,6 +82,11 @@ class JwtAuthenticationFilter(
             responseWriter.writeError(request, response, ErrorCode.UNAUTHORIZED)
             return false
         } catch (exception: IllegalArgumentException) {
+            SecurityContextHolder.clearContext()
+            responseWriter.writeError(request, response, ErrorCode.UNAUTHORIZED)
+            return false
+        } catch (exception: DataAccessException) {
+            // actor source DB를 확인할 수 없을 때 token claim만 신뢰하지 않고 인증을 닫는다.
             SecurityContextHolder.clearContext()
             responseWriter.writeError(request, response, ErrorCode.UNAUTHORIZED)
             return false

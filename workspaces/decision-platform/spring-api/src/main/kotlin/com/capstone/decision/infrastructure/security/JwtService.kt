@@ -1,8 +1,10 @@
 package com.capstone.decision.infrastructure.security
 
+import io.jsonwebtoken.JwtException
 import io.jsonwebtoken.Jwts
 import io.jsonwebtoken.security.Keys
 import org.springframework.stereotype.Service
+import java.nio.charset.StandardCharsets
 import java.time.Clock
 import java.time.OffsetDateTime
 import java.util.Date
@@ -12,9 +14,14 @@ import javax.crypto.SecretKey
 @Service
 class JwtService(
     private val properties: JwtProperties,
+    private val userSecurityRepository: UserSecurityRepository,
 ) {
     // 테스트에서 토큰 만료 계산이 한 지점으로 모이도록 Clock을 명시한다.
     private val clock: Clock = Clock.systemUTC()
+
+    init {
+        properties.validate()
+    }
 
     fun issue(account: DemoAccount): IssuedToken {
         val now = OffsetDateTime.now(clock)
@@ -23,39 +30,96 @@ class JwtService(
             // JWT에는 userId와 role만 담아 민감정보가 토큰 payload에 들어가지 않게 한다.
             Jwts
                 .builder()
-                .subject(account.username)
-                .claim("userId", account.userId)
+                .issuer(properties.issuer)
+                .audience()
+                .add(properties.audience)
+                .and()
+                .subject(account.userId)
                 .claim("role", account.role.name)
+                .claim("securityVersion", account.securityVersion)
                 .issuedAt(Date.from(now.toInstant()))
                 .expiration(Date.from(expiresAt.toInstant()))
-                .signWith(signingKey())
+                .signWith(signingKey(), Jwts.SIG.HS256)
                 .compact()
         return IssuedToken(token = token, expiresAt = expiresAt)
     }
 
     fun parse(token: String): AppPrincipal {
-        val claims =
-            // 같은 signing key로 검증한 토큰만 SecurityContext에 올려 forged token을 차단한다.
-            Jwts
-                .parser()
-                .verifyWith(signingKey())
+        // 허용 algorithm을 HS256 하나로 제한하고 issuer/audience/signature/exp를 parser에서 먼저 검증한다.
+        val parser =
+            Jwts.parser().keyLocator { header ->
+                if (header.algorithm != Jwts.SIG.HS256.id) {
+                    throw JwtException("Unsupported JWT algorithm.")
+                }
+                signingKey()
+            }
+        val signedClaims =
+            parser
+                .requireIssuer(properties.issuer)
+                .requireAudience(properties.audience)
                 .build()
                 .parseSignedClaims(token)
-                .payload
-        val role = DemoRole.valueOf(claims["role"] as String)
+        if (signedClaims.header.algorithm != Jwts.SIG.HS256.id) {
+            throw JwtException("Unsupported JWT algorithm.")
+        }
+        val claims = signedClaims.payload
+        if (claims.audience != setOf(properties.audience)) {
+            throw JwtException("JWT audience is invalid.")
+        }
+        val subject =
+            claims.subject?.takeIf { it.isNotBlank() && it.length <= 128 }
+                ?: throw JwtException("JWT subject is invalid.")
+        val issuedAt = claims.issuedAt?.toInstant() ?: throw JwtException("JWT issued-at is required.")
+        val expiresAt = claims.expiration?.toInstant() ?: throw JwtException("JWT expiration is required.")
+        val now = clock.instant()
+        if (issuedAt.isAfter(now.plusSeconds(MAX_FUTURE_ISSUED_AT_SECONDS)) || !expiresAt.isAfter(issuedAt)) {
+            throw JwtException("JWT temporal claims are invalid.")
+        }
+        val claimedRole = parseRole(claims["role"])
+        val claimedSecurityVersion = parseSecurityVersion(claims["securityVersion"])
+        val storedUser =
+            userSecurityRepository.findByUserId(subject)
+                ?: throw JwtException("JWT actor is invalid.")
+        if (
+            storedUser.status != ACTIVE_STATUS ||
+            storedUser.role != claimedRole ||
+            storedUser.securityVersion != claimedSecurityVersion ||
+            storedUser.securityVersion <= 0
+        ) {
+            throw JwtException("JWT actor is invalid.")
+        }
         return AppPrincipal(
-            userId = claims["userId"] as String,
-            username = claims.subject,
-            role = role,
+            userId = storedUser.userId,
+            username = storedUser.username,
+            role = storedUser.role,
+            securityVersion = storedUser.securityVersion,
         )
+    }
+
+    private fun parseRole(value: Any?): DemoRole =
+        try {
+            DemoRole.valueOf(value as? String ?: throw JwtException("JWT role is invalid."))
+        } catch (exception: IllegalArgumentException) {
+            throw JwtException("JWT role is invalid.", exception)
+        }
+
+    private fun parseSecurityVersion(value: Any?): Long {
+        val number = value as? Number ?: throw JwtException("JWT security version is invalid.")
+        val parsed = number.toLong()
+        if (parsed <= 0 || number.toDouble() != parsed.toDouble()) {
+            throw JwtException("JWT security version is invalid.")
+        }
+        return parsed
     }
 
     private fun signingKey(): SecretKey {
         // HS256은 짧은 secret을 허용하면 brute force 위험이 커서 시작 시 바로 실패시킨다.
-        require(properties.secret.toByteArray().size >= 32) {
-            "app.jwt.secret must be at least 32 bytes for HS256."
-        }
-        return Keys.hmacShaKeyFor(properties.secret.toByteArray())
+        return Keys.hmacShaKeyFor(properties.secret.toByteArray(StandardCharsets.UTF_8))
+    }
+
+    companion object {
+        private const val ACTIVE_STATUS = "ACTIVE"
+        private const val MAX_FUTURE_ISSUED_AT_SECONDS = 60L
     }
 }
 

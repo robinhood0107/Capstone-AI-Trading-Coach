@@ -9,6 +9,7 @@ import com.capstone.decision.infrastructure.web.RequestIdFilter
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.boot.context.properties.EnableConfigurationProperties
+import org.springframework.boot.flyway.autoconfigure.FlywayConfigurationCustomizer
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.http.HttpMethod
@@ -16,12 +17,17 @@ import org.springframework.security.config.annotation.method.configuration.Enabl
 import org.springframework.security.config.annotation.web.builders.HttpSecurity
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity
 import org.springframework.security.config.http.SessionCreationPolicy
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder
+import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.security.web.SecurityFilterChain
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter
 import org.springframework.web.cors.CorsConfiguration
 import org.springframework.web.cors.CorsConfigurationSource
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource
 import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping
+import java.nio.charset.StandardCharsets
+import java.security.MessageDigest
+import java.util.Base64
 
 // S0.3 공통 규약에서 허용 경로, JWT 인증, CORS를 한 보안 체인으로 고정한다.
 @Configuration
@@ -29,11 +35,50 @@ import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandl
 @EnableMethodSecurity
 @EnableConfigurationProperties(
     JwtProperties::class,
-    DemoAccountProperties::class,
+    LoginAttemptLimiterProperties::class,
     IdempotencyProperties::class,
     HttpRequestProperties::class,
 )
 class SecurityConfig {
+    @Bean
+    fun passwordEncoder(): PasswordEncoder = BCryptPasswordEncoder(12)
+
+    @Bean
+    fun authSecretSeparation(
+        jwtProperties: JwtProperties,
+        loginProperties: LoginAttemptLimiterProperties,
+    ): AuthSecretSeparation {
+        jwtProperties.validate()
+        loginProperties.validate()
+        require(
+            !MessageDigest.isEqual(
+                jwtProperties.secret.toByteArray(StandardCharsets.UTF_8),
+                loginProperties.scopeHmacKey.toByteArray(StandardCharsets.UTF_8),
+            ),
+        ) { "JWT and login scope HMAC secrets must be different." }
+        return AuthSecretSeparation
+    }
+
+    @Bean
+    fun demoCredentialFlywayCustomizer(): FlywayConfigurationCustomizer =
+        FlywayConfigurationCustomizer { configuration ->
+            val userHash = configuration.placeholders["demoUserPasswordHash"].orEmpty()
+            val adminHash = configuration.placeholders["demoAdminPasswordHash"].orEmpty()
+            DemoCredentialHashPolicy.requireValid(userHash)
+            DemoCredentialHashPolicy.requireValid(adminHash)
+            require(userHash != adminHash) { "Demo user and admin credential hashes must be different." }
+            // SQL에는 quote가 없는 base64 파생 placeholder만 넣어 raw hash의 SQL 문법 간섭을 차단한다.
+            configuration.placeholders(
+                configuration.placeholders +
+                    mapOf(
+                        "demoUserPasswordHashBase64" to encodeBase64(userHash),
+                        "demoAdminPasswordHashBase64" to encodeBase64(adminHash),
+                    ),
+            )
+        }
+
+    private fun encodeBase64(value: String): String = Base64.getEncoder().encodeToString(value.toByteArray(StandardCharsets.UTF_8))
+
     @Bean
     fun securityFilterChain(
         http: HttpSecurity,
@@ -112,3 +157,6 @@ class SecurityConfig {
         }
     }
 }
+
+// 이 marker bean은 두 signing 목적의 key 분리 검증이 startup에 완료됐음을 나타낸다.
+object AuthSecretSeparation

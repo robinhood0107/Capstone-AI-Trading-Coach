@@ -81,6 +81,22 @@ def test_http_429_is_non_retryable(tmp_path: Path) -> None:
     assert attempts == 1
 
 
+def test_online_constructor_rejects_injected_transport_and_rate_limiter(tmp_path: Path) -> None:
+    online = OpenDARTSettings(
+        opendart_offline=False,
+        opendart_data_dir=tmp_path,
+        opendart_timeout_seconds=1.0,
+        opendart_retry_attempts=1,
+        opendart_rate_limit_per_second=1,
+    )
+    with pytest.raises(ValueError, match="online.*injection"):
+        OpenDARTHttpClient(
+            online,
+            transport=httpx.MockTransport(lambda _: httpx.Response(200)),
+            rate_limiter=TokenBucket(1000),
+        )
+
+
 def _settings(tmp_path: Path, *, retry_attempts: int = 3) -> OpenDARTSettings:
     return OpenDARTSettings(
         opendart_offline=True,

@@ -1,0 +1,115 @@
+version: s1.6-v1
+verifiedAt: '2026-07-22'
+sources:
+  - sourceId: xkrx-4.13.2
+    sourceKind: OPEN_SOURCE_LIBRARY
+    officialDocs:
+      - https://github.com/gerrymanoim/exchange_calendars
+    termsUrl: https://github.com/gerrymanoim/exchange_calendars/blob/master/LICENSE
+    verifiedAt: '2026-07-22'
+    cost: FREE_APACHE_2_0
+    usageRestriction: ATTRIBUTION
+    freshness: PINNED_LIBRARY_SCHEDULE
+    quotaScope: LOCAL_PROCESS
+    adoptionStatus: ACTIVE_SUPPORTING
+    activationGate: PINNED_VERSION_AND_FIXTURES
+    projectUsage: XKRX_BASE_AND_KIS_FALLBACK
+    webSocketRole: NONE
+    tier: 2
+    originGroup: exchange-calendars
+    capabilities:
+      - MARKET_SESSION
+    networkReady: true
+    enabledByDefault: true
+    adapterVersion: '1'
+    mappingVersion: s1.6-xkrx-v1
+  - sourceId: kis-holiday-ctca0903r
+    sourceKind: OFFICIAL_API
+    officialDocs:
+      - https://github.com/koreainvestment/open-trading-api/tree/main/examples_llm/domestic_stock/chk_holiday
+    termsUrl: https://apiportal.koreainvestment.com/about-open-api
+    verifiedAt: '2026-07-22'
+    cost: FREE_REGISTERED_USE
+    usageRestriction: INTERNAL_ASSET_MANAGEMENT
+    freshness: DAILY_OR_LOWER
+    quotaScope: APPKEY_MODE_SHARED_REST
+    adoptionStatus: ACTIVE_PRIMARY
+    activationGate: SEPARATE_LIVE_READ_APPROVAL
+    projectUsage: XKRX_IS_OPEN_PRIMARY
+    webSocketRole: NONE
+    tier: 1
+    originGroup: kis
+    capabilities:
+      - MARKET_SESSION
+    networkReady: true
+    enabledByDefault: false
+    adapterVersion: '1'
+    mappingVersion: s1.6-kis-holiday-v1
+  - sourceId: kasi-rest-de-info
+    sourceKind: OFFICIAL_API
+    officialDocs:
+      - https://www.data.go.kr/data/15012690/openapi.do
+    termsUrl: https://www.data.go.kr/ugs/selectPortalPolicyView.do
+    verifiedAt: '2026-07-22'
+    cost: FREE
+    usageRestriction: ATTRIBUTION
+    freshness: ANNUAL_PUBLIC_HOLIDAY_DATA
+    quotaScope: SERVICE_KEY
+    adoptionStatus: ACTIVE_SUPPORTING
+    activationGate: EXACT_HTTPS_ORIGIN_VERIFICATION
+    projectUsage: HOLIDAY_REASON_ONLY
+    webSocketRole: NONE
+    tier: 2
+    originGroup: kasi
+    capabilities:
+      - HOLIDAY_REASON
+    networkReady: false
+    enabledByDefault: false
+    adapterVersion: '1'
+    mappingVersion: s1.6-kasi-v1
+  - sourceId: opendart-structured-events
+    sourceKind: OFFICIAL_API
+    officialDocs:
+      - https://opendart.fss.or.kr/guide/main.do
+    termsUrl: https://opendart.fss.or.kr/intro/termsApiUse.do
+    verifiedAt: '2026-07-22'
+    cost: FREE_REGISTERED_USE
+    usageRestriction: INTERNAL_SANITIZED_PROJECTION
+    freshness: PROVIDER_PUBLICATION_TIME
+    quotaScope: PROVIDER_KEY_KST_DATE
+    adoptionStatus: ACTIVE_PRIMARY
+    activationGate: SEPARATE_LIVE_READ_APPROVAL_AND_QUOTA_EVIDENCE
+    projectUsage: STRUCTURED_EVENTS_STATES_AND_OWNERSHIP
+    webSocketRole: NONE
+    tier: 1
+    originGroup: opendart
+    capabilities:
+      - DISCLOSURE_EVENT
+      - DISCLOSURE_STATE
+      - OWNERSHIP_PROJECTION
+    networkReady: true
+    enabledByDefault: false
+    adapterVersion: '1'
+    mappingVersion: s1.6-opendart-v1
+  - sourceId: kis-ksd-dividend-hhkdb669102c0
+    sourceKind: OFFICIAL_API
+    officialDocs:
+      - https://github.com/koreainvestment/open-trading-api
+    termsUrl: https://apiportal.koreainvestment.com/about-open-api
+    verifiedAt: '2026-07-22'
+    cost: FREE_REGISTERED_USE
+    usageRestriction: INTERNAL_ASSET_MANAGEMENT
+    freshness: UNVERIFIED
+    quotaScope: APPKEY_MODE_SHARED_REST
+    adoptionStatus: ACTIVE_PRIMARY
+    activationGate: OFFICIAL_FIXTURE_AND_SEPARATE_LIVE_READ_APPROVAL
+    projectUsage: DIVIDEND_RECORD_AND_PAY_ONLY
+    webSocketRole: NONE
+    tier: 1
+    originGroup: ksd
+    capabilities:
+      - DIVIDEND_EVENT
+    networkReady: true
+    enabledByDefault: false
+    adapterVersion: '1'
+    mappingVersion: s1.6-kis-ksd-dividend-v1

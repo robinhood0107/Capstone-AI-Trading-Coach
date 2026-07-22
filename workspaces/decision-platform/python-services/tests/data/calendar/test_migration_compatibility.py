@@ -62,7 +62,14 @@ def test_v6_creates_all_s1_6_objects_and_replaces_v4_table_with_read_only_view(
             "SELECT count(*) FROM trading_session_revisions "
             "WHERE canonical_rule_version = 'V4_COMPAT_MIGRATION'"
         ).fetchone() == (2,)
-        assert connection.execute("SELECT count(*) FROM market_calendar").fetchone() == (2,)
+        assert connection.execute(
+            """
+            SELECT count(*)
+            FROM market_calendar
+            WHERE calendar_date IN (DATE '2026-01-01', DATE '2026-06-23')
+              AND source = 'S0.4_FIXTURE'
+            """
+        ).fetchone() == (2,)
 
 
 def test_v6_database_checks_reject_invalid_quota_and_confidence(

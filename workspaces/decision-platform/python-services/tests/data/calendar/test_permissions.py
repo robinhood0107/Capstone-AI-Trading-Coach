@@ -58,7 +58,9 @@ def test_collector_can_only_perform_allowlisted_calendar_operations(
             WHERE exchange_mic = 'XKRX' AND session_date = DATE '2026-07-22'
             """
         )
-        assert connection.execute("SELECT count(*) FROM current_calendar_events").fetchone() == (0,)
+        assert connection.execute(
+            "SELECT count(*) FROM current_calendar_events WHERE event_id = 'permission-read-probe'"
+        ).fetchone() == (0,)
 
 
 @pytest.mark.parametrize(

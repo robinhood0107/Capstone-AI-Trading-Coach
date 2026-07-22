@@ -95,6 +95,20 @@ class AuthCutoverSmokeTest {
         assertTrue(Files.exists(evidencePath))
     }
 
+    @Test
+    fun `capture refuses to overwrite existing evidence`() {
+        val evidencePath = tempDirectory.resolve("pre-cutover.json")
+        Files.writeString(evidencePath, "operator-sentinel")
+
+        val failure =
+            assertThrows<AuthCutoverException> {
+                AuthCutoverSmoke.capture(captureEnvironment(oldToken), evidencePath, clock)
+            }
+
+        assertTrue(failure.checkCode == "evidence_exists")
+        assertTrue(Files.readString(evidencePath) == "operator-sentinel")
+    }
+
     private fun captureEnvironment(token: String): Map<String, String> =
         mapOf(
             "AUTH_SMOKE_BASE_URL" to baseUrl(),

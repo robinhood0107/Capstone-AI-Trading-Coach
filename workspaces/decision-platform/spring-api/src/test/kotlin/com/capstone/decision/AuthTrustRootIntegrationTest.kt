@@ -127,8 +127,9 @@ class AuthTrustRootIntegrationTest(
             listOf(
                 token(issuer = "wrong-issuer"),
                 token(audience = "wrong-audience"),
+                token(additionalAudience = "unexpected-audience"),
                 token(subject = "demo-user"),
-                token(issuedAt = now.plusSeconds(61), expiresAt = now.plusSeconds(3_600)),
+                token(issuedAt = now.plusSeconds(120), expiresAt = now.plusSeconds(3_600)),
                 token(role = "ADMIN"),
                 token(securityVersion = 2),
                 token(includeIssuedAt = false),
@@ -235,6 +236,7 @@ class AuthTrustRootIntegrationTest(
     private fun token(
         issuer: String = jwtIssuer(),
         audience: String = jwtAudience(),
+        additionalAudience: String? = null,
         subject: String = "usr_demo_user",
         issuedAt: Instant = Instant.now(),
         expiresAt: Instant = issuedAt.plusSeconds(3_600),
@@ -243,12 +245,15 @@ class AuthTrustRootIntegrationTest(
         includeIssuedAt: Boolean = true,
         algorithm: String = "HS256",
     ): String {
-        val builder =
+        val audienceBuilder =
             Jwts
                 .builder()
                 .issuer(issuer)
                 .audience()
                 .add(audience)
+        additionalAudience?.let(audienceBuilder::add)
+        val builder =
+            audienceBuilder
                 .and()
                 .subject(subject)
                 .claim("role", role)

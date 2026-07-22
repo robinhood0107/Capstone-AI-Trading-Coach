@@ -101,12 +101,8 @@ class FlywayMigrationIntegrationTest(
                 .configure()
                 .dataSource(invalidUrl, postgres.username, postgres.password)
                 .locations("classpath:db/migration")
-                .placeholders(
-                    mapOf(
-                        "demoUserPasswordHash" to "not-bcrypt",
-                        "demoAdminPasswordHash" to TEST_ADMIN_PASSWORD_HASH,
-                    ),
-                ).load()
+                .placeholders(demoFlywayPlaceholders(userHash = "not-bcrypt"))
+                .load()
                 .migrate()
         }
     }

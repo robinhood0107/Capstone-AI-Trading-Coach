@@ -122,7 +122,7 @@ class IdempotencyIntegrationTest(
             body = """{"symbol":"005930","quantity":1}""",
         )
 
-        val keys = redisTemplate.keys("idempotency:demo-user:idem-ttl")
+        val keys = redisTemplate.keys("idempotency:usr_demo_user:idem-ttl")
         assertEquals(1, keys.size)
         val ttlHours = redisTemplate.getExpire(keys.single(), TimeUnit.HOURS)
         assertTrue(ttlHours in 23..24, "expected Redis TTL close to 24h but was $ttlHours")
@@ -306,7 +306,7 @@ class IdempotencyIntegrationTest(
 
         val storedBody =
             redisTemplate.opsForHash<String, String>().get(
-                "idempotency:demo-user:idem-response-limit",
+                "idempotency:usr_demo_user:idem-response-limit",
                 "body",
             )
         assertTrue(!storedBody.isNullOrBlank() && storedBody.toByteArray().size <= 256)

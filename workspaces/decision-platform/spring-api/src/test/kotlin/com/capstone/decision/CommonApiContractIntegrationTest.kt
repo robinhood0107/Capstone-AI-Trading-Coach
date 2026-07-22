@@ -1,5 +1,6 @@
 package com.capstone.decision
 
+import com.capstone.decision.infrastructure.security.JwtService
 import com.capstone.decision.infrastructure.security.LoginAttemptLimiter
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -40,6 +41,7 @@ class CommonApiContractIntegrationTest(
     @Autowired private val webApplicationContext: WebApplicationContext,
     @Autowired private val objectMapper: ObjectMapper,
     @Autowired private val loginAttemptLimiter: LoginAttemptLimiter,
+    @Autowired private val jwtService: JwtService,
 ) : SpringApiIntegrationTestBase() {
     private lateinit var mockMvc: MockMvc
 
@@ -307,6 +309,7 @@ class CommonApiContractIntegrationTest(
 
         val token = objectMapper.readTree(response).at("/data/accessToken").stringValue()
         assertEquals("Bearer", objectMapper.readTree(response).at("/data/tokenType").stringValue())
+        assertEquals(if (username == "demo-admin") "usr_demo_admin" else "usr_demo_user", jwtService.parse(token).userId)
         return token
     }
 }

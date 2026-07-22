@@ -9,6 +9,8 @@ import org.springframework.context.annotation.Primary
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder
 import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
+import java.nio.charset.StandardCharsets
+import java.util.Base64
 
 // 테스트 credential과 hash는 런타임에 생성해 실제 secret이나 고정 BCrypt material을 fixture에 남기지 않는다.
 abstract class SpringApiIntegrationTestBase {
@@ -50,6 +52,19 @@ abstract class SpringApiIntegrationTestBase {
         }
     }
 }
+
+internal fun demoFlywayPlaceholders(
+    userHash: String = SpringApiIntegrationTestBase.TEST_USER_PASSWORD_HASH,
+    adminHash: String = SpringApiIntegrationTestBase.TEST_ADMIN_PASSWORD_HASH,
+): Map<String, String> =
+    mapOf(
+        "demoUserPasswordHash" to userHash,
+        "demoAdminPasswordHash" to adminHash,
+        "demoUserPasswordHashBase64" to
+            Base64.getEncoder().encodeToString(userHash.toByteArray(StandardCharsets.UTF_8)),
+        "demoAdminPasswordHashBase64" to
+            Base64.getEncoder().encodeToString(adminHash.toByteArray(StandardCharsets.UTF_8)),
+    )
 
 // DataSource를 의도적으로 제외한 web 계약 테스트도 production과 동일한 repository port를 거친다.
 @TestConfiguration(proxyBeanMethods = false)

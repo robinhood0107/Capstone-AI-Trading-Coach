@@ -168,6 +168,9 @@ class DemoCredentialRotationIntegrationTest {
         fun migrateAsOperatorRole() {
             DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { connection ->
                 connection.createStatement().use { statement ->
+                    // extension bootstrap은 superuser 책임이고 Flyway role은 schema migration만 수행한다.
+                    statement.execute("create extension if not exists vector")
+                    statement.execute("create extension if not exists pg_trgm")
                     statement.execute("alter role flyway login password '$MIGRATION_PASSWORD'")
                     statement.execute("grant create on schema public to flyway")
                 }
@@ -176,12 +179,8 @@ class DemoCredentialRotationIntegrationTest {
                 .configure()
                 .dataSource(postgres.jdbcUrl, "flyway", MIGRATION_PASSWORD)
                 .locations("classpath:db/migration")
-                .placeholders(
-                    mapOf(
-                        "demoUserPasswordHash" to SpringApiIntegrationTestBase.TEST_USER_PASSWORD_HASH,
-                        "demoAdminPasswordHash" to SpringApiIntegrationTestBase.TEST_ADMIN_PASSWORD_HASH,
-                    ),
-                ).load()
+                .placeholders(demoFlywayPlaceholders())
+                .load()
                 .migrate()
         }
     }

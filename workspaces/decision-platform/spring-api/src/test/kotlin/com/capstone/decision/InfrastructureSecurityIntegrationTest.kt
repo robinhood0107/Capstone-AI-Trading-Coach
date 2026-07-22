@@ -46,12 +46,8 @@ class InfrastructureSecurityIntegrationTest {
             .configure()
             .dataSource(postgres.jdbcUrl, MIGRATION_USER, migrationPassword)
             .locations("classpath:db/migration")
-            .placeholders(
-                mapOf(
-                    "demoUserPasswordHash" to SpringApiIntegrationTestBase.TEST_USER_PASSWORD_HASH,
-                    "demoAdminPasswordHash" to SpringApiIntegrationTestBase.TEST_ADMIN_PASSWORD_HASH,
-                ),
-            ).load()
+            .placeholders(demoFlywayPlaceholders())
+            .load()
             .migrate()
 
         // 기존 volume에서 bootstrap을 재적용해도 migration의 calendar 최소권한을 되돌리면 안 된다.

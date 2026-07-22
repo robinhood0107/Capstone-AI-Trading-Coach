@@ -46,7 +46,12 @@ class InfrastructureSecurityIntegrationTest {
             .configure()
             .dataSource(postgres.jdbcUrl, MIGRATION_USER, migrationPassword)
             .locations("classpath:db/migration")
-            .load()
+            .placeholders(
+                mapOf(
+                    "demoUserPasswordHash" to SpringApiIntegrationTestBase.TEST_USER_PASSWORD_HASH,
+                    "demoAdminPasswordHash" to SpringApiIntegrationTestBase.TEST_ADMIN_PASSWORD_HASH,
+                ),
+            ).load()
             .migrate()
 
         // 기존 volume에서 bootstrap을 재적용해도 migration의 calendar 최소권한을 되돌리면 안 된다.
@@ -58,6 +63,8 @@ class InfrastructureSecurityIntegrationTest {
             assertFalse(hasTablePrivilege(connection, "decision_collector", "calendar_observations", "UPDATE"))
             assertFalse(hasTablePrivilege(connection, "decision_collector", "flyway_schema_history", "SELECT"))
             assertTrue(hasTablePrivilege(connection, "decision_app", "trading_sessions", "SELECT"))
+            assertTrue(hasTablePrivilege(connection, "decision_app", "users", "SELECT"))
+            assertFalse(hasTablePrivilege(connection, "decision_app", "users", "UPDATE"))
             assertFalse(hasTablePrivilege(connection, "decision_app", "calendar_observations", "SELECT"))
             assertFalse(hasTablePrivilege(connection, "decision_app", "opendart_quota_usage", "SELECT"))
         }

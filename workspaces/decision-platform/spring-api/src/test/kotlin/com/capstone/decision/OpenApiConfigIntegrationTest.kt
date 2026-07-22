@@ -4,6 +4,7 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
+import org.springframework.context.annotation.Import
 import org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
@@ -17,6 +18,7 @@ import org.springframework.web.context.WebApplicationContext
         "spring.autoconfigure.exclude=org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration,org.springframework.boot.hibernate.autoconfigure.HibernateJpaAutoConfiguration,org.springframework.boot.data.jpa.autoconfigure.DataJpaRepositoriesAutoConfiguration,org.springframework.boot.kafka.autoconfigure.KafkaAutoConfiguration",
     ],
 )
+@Import(TestAuthRepositoryConfiguration::class)
 class OpenApiConfigIntegrationTest(
     @Autowired private val webApplicationContext: WebApplicationContext,
 ) : SpringApiIntegrationTestBase() {
@@ -49,5 +51,19 @@ class OpenApiConfigIntegrationTest(
     fun `springdoc exposes public and admin groups`() {
         mockMvc.get("/v3/api-docs/public").andExpect { status { isOk() } }
         mockMvc.get("/v3/api-docs/admin").andExpect { status { isOk() } }
+    }
+
+    @Test
+    fun `openapi documents login as public and exposes trust root response fields`() {
+        mockMvc
+            .get("/v3/api-docs")
+            .andExpect {
+                status { isOk() }
+                jsonPath("$.paths['/api/v1/auth/login'].post.security.length()") { value(0) }
+                jsonPath("$.components.schemas.LoginRequest.required") { isArray() }
+                jsonPath("$.components.schemas.LoginResponse.properties.user") { exists() }
+                jsonPath("$.components.schemas.LoginUserResponse.properties.userId") { exists() }
+                jsonPath("$.components.schemas.LoginUserResponse.properties.role") { exists() }
+            }
     }
 }

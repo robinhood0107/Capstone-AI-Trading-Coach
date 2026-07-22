@@ -46,7 +46,7 @@ import java.util.concurrent.TimeUnit
         "app.idempotency.max-key-length=64",
     ],
 )
-@Import(TestOnlyIdempotencyController::class)
+@Import(TestOnlyIdempotencyController::class, TestAuthRepositoryConfiguration::class)
 class IdempotencyIntegrationTest(
     @Autowired private val webApplicationContext: WebApplicationContext,
     @Autowired private val objectMapper: ObjectMapper,

@@ -35,7 +35,7 @@ import java.util.concurrent.TimeUnit
         "app.http.max-request-body-bytes=2048",
     ],
 )
-@Import(TestOnlyAdminController::class)
+@Import(TestOnlyAdminController::class, TestAuthRepositoryConfiguration::class)
 class CommonApiContractIntegrationTest(
     @Autowired private val webApplicationContext: WebApplicationContext,
     @Autowired private val objectMapper: ObjectMapper,
@@ -240,6 +240,20 @@ class CommonApiContractIntegrationTest(
     }
 
     @Test
+    fun `login limiter stores only purpose separated opaque scopes`() {
+        loginAttemptLimiter.tryAcquire("198.51.100.201", "raw-probe-user")
+
+        val attemptsField = LoginAttemptLimiter::class.java.getDeclaredField("attempts")
+        attemptsField.isAccessible = true
+        @Suppress("UNCHECKED_CAST")
+        val storedKeys = (attemptsField.get(loginAttemptLimiter) as Map<String, *>).keys
+
+        assertTrue(storedKeys.any { it.startsWith("login:v1:user:") })
+        assertTrue(storedKeys.any { it.startsWith("login:v1:ip:") })
+        assertTrue(storedKeys.none { it.contains("raw-probe-user") || it.contains("198.51.100.201") })
+    }
+
+    @Test
     fun `oversized login body is rejected before JSON binding`() {
         mockMvc
             .post("/api/v1/auth/login") {
@@ -284,6 +298,9 @@ class CommonApiContractIntegrationTest(
                 }.andExpect {
                     status { isOk() }
                     jsonPath("$.success") { value(true) }
+                    jsonPath("$.data.user.userId") {
+                        value(if (username == "demo-admin") "usr_demo_admin" else "usr_demo_user")
+                    }
                 }.andReturn()
                 .response
                 .contentAsString

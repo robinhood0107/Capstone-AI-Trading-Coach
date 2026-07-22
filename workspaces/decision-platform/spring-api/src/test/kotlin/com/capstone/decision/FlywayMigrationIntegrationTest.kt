@@ -1,9 +1,12 @@
 package com.capstone.decision
 
+import org.flywaydb.core.Flyway
+import org.flywaydb.core.api.FlywayException
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.dao.DataIntegrityViolationException
@@ -14,6 +17,7 @@ import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
 import org.testcontainers.postgresql.PostgreSQLContainer
 import org.testcontainers.utility.DockerImageName
+import java.sql.DriverManager
 import java.sql.SQLException
 
 // pgvector/pg_trgm/Flyway 제약은 H2로 대체 검증할 수 없어 실제 PostgreSQL 컨테이너로 잠근다.
@@ -23,9 +27,9 @@ class FlywayMigrationIntegrationTest(
     @Autowired private val jdbcTemplate: JdbcTemplate,
 ) : SpringApiIntegrationTestBase() {
     @Test
-    fun `clean database applies V1 through V6 migrations and creates required objects`() {
+    fun `clean database applies V1 through V7 migrations and creates required objects`() {
         val versions = queryStrings("select version from flyway_schema_history where success order by installed_rank")
-        assertEquals(listOf("1", "2", "3", "4", "5", "6"), versions)
+        assertEquals(listOf("1", "2", "3", "4", "5", "6", "7"), versions)
 
         val requiredTables =
             listOf(
@@ -61,6 +65,50 @@ class FlywayMigrationIntegrationTest(
         assertEquals(2, countRows("trading_session_revisions", "canonical_rule_version = 'V4_COMPAT_MIGRATION'"))
         assertTrue(indexExists("idx_chunks_trgm"), "expected pg_trgm index for Korean keyword search")
         assertFalse(indexDefinitionLike("rag_chunks", "%ivfflat%"), "ivfflat must wait until real embeddings are loaded")
+    }
+
+    @Test
+    fun `V7 seeds exact demo identities and rejects malformed bcrypt placeholders`() {
+        val users =
+            jdbcTemplate.query(
+                """
+                select user_id, username, role, status, security_version, password_hash
+                from users
+                where user_id in ('usr_demo_user', 'usr_demo_admin')
+                order by user_id
+                """.trimIndent(),
+            ) { result, _ ->
+                listOf(
+                    result.getString("user_id"),
+                    result.getString("username"),
+                    result.getString("role"),
+                    result.getString("status"),
+                    result.getLong("security_version").toString(),
+                    result.getString("password_hash"),
+                )
+            }
+        assertEquals(listOf("usr_demo_admin", "demo-admin", "ADMIN", "ACTIVE", "1"), users[0].take(5))
+        assertEquals(listOf("usr_demo_user", "demo-user", "USER", "ACTIVE", "1"), users[1].take(5))
+        assertTrue(users.all { Regex("^\\$2[aby]\\$12\\$[./A-Za-z0-9]{53}$").matches(it.last()) })
+
+        DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { connection ->
+            // 고정된 격리 DB 이름만 사용해 테스트 helper도 request 기반 identifier 보간을 만들지 않는다.
+            connection.createStatement().use { statement -> statement.execute("create database invalid_auth_hash") }
+        }
+        val invalidUrl = postgres.jdbcUrl.substringBeforeLast('/') + "/invalid_auth_hash"
+        assertThrows<FlywayException> {
+            Flyway
+                .configure()
+                .dataSource(invalidUrl, postgres.username, postgres.password)
+                .locations("classpath:db/migration")
+                .placeholders(
+                    mapOf(
+                        "demoUserPasswordHash" to "not-bcrypt",
+                        "demoAdminPasswordHash" to TEST_ADMIN_PASSWORD_HASH,
+                    ),
+                ).load()
+                .migrate()
+        }
     }
 
     @Test

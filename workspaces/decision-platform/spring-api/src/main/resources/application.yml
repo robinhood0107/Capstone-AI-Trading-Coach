@@ -39,18 +39,19 @@ spring:
       ack-mode: MANUAL
 
 app:
+  demo-credentials:
+    user-credential-bundle: ${DEMO_USER_CREDENTIAL_BUNDLE}
+    admin-credential-bundle: ${DEMO_ADMIN_CREDENTIAL_BUNDLE}
+    separation-key: ${DEMO_CREDENTIAL_SEPARATION_KEY}
   http:
     max-request-body-bytes: 1048576
   jwt:
     secret: ${JWT_SECRET}          # 32byte 이상, .env로만
+    issuer: ${JWT_ISSUER}
+    audience: ${JWT_AUDIENCE}
     ttl-hours: 12
-  demo:
-    user:
-      username: demo-user
-      password: ${DEMO_USER_PASSWORD}
-    admin:
-      username: demo-admin
-      password: ${DEMO_ADMIN_PASSWORD}
+  login:
+    scope-hmac-key: ${LOGIN_SCOPE_HMAC_KEY}
   idempotency:
     ttl-hours: 24
     claim-ttl-seconds: 900

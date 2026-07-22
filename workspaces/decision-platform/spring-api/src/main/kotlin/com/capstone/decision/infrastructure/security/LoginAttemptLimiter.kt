@@ -1,17 +1,39 @@
 package com.capstone.decision.infrastructure.security
 
+import org.springframework.boot.context.properties.ConfigurationProperties
 import org.springframework.stereotype.Service
+import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets
-import java.security.MessageDigest
 import java.time.Duration
 import java.time.Instant
 import java.util.HexFormat
+import java.util.Locale
+import javax.crypto.Mac
+import javax.crypto.spec.SecretKeySpec
+
+// login scope HMAC key는 JWT/cursor key와 분리된 32-byte 이상 secret으로만 주입한다.
+@ConfigurationProperties("app.login")
+data class LoginAttemptLimiterProperties(
+    var scopeHmacKey: String = "",
+) {
+    fun validate() {
+        require(scopeHmacKey.toByteArray(StandardCharsets.UTF_8).size >= 32) {
+            "app.login.scope-hmac-key must be at least 32 bytes."
+        }
+    }
+}
 
 // demo 인증도 공개 login endpoint인 만큼 단일 인스턴스에서 무제한 대입을 허용하지 않는다.
 @Service
-class LoginAttemptLimiter {
+class LoginAttemptLimiter(
+    private val properties: LoginAttemptLimiterProperties,
+) {
     private val attempts = LinkedHashMap<String, Attempt>(16, 0.75f, true)
     private val lock = Any()
+
+    init {
+        properties.validate()
+    }
 
     fun tryAcquire(
         remoteAddress: String,
@@ -88,12 +110,24 @@ class LoginAttemptLimiter {
     private fun userKey(
         remoteAddress: String,
         username: String,
-    ): String = "user:${digest("$remoteAddress\u0000${username.lowercase()}")}"
+    ): String = scopeKey(USER_PURPOSE, remoteAddress, username.lowercase(Locale.ROOT))
 
-    private fun ipKey(remoteAddress: String): String = "ip:${digest(remoteAddress)}"
+    private fun ipKey(remoteAddress: String): String = scopeKey(IP_PURPOSE, remoteAddress)
 
-    private fun digest(value: String): String =
-        HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value.toByteArray(StandardCharsets.UTF_8)))
+    private fun scopeKey(
+        purpose: String,
+        vararg values: String,
+    ): String {
+        val mac = Mac.getInstance("HmacSHA256")
+        mac.init(SecretKeySpec(properties.scopeHmacKey.toByteArray(StandardCharsets.UTF_8), "HmacSHA256"))
+        mac.update("capstone-login-scope\u0000$KEY_VERSION\u0000$purpose".toByteArray(StandardCharsets.UTF_8))
+        values.forEach { value ->
+            val bytes = value.toByteArray(StandardCharsets.UTF_8)
+            mac.update(ByteBuffer.allocate(Int.SIZE_BYTES).putInt(bytes.size).array())
+            mac.update(bytes)
+        }
+        return "login:$KEY_VERSION:$purpose:${HexFormat.of().formatHex(mac.doFinal())}"
+    }
 
     private data class Attempt(
         val failures: Int,
@@ -104,6 +138,9 @@ class LoginAttemptLimiter {
         private const val USER_FAILURE_LIMIT = 5
         private const val IP_FAILURE_LIMIT = 50
         private const val MAX_TRACKED_KEYS = 20_000
+        private const val KEY_VERSION = "v1"
+        private const val USER_PURPOSE = "user"
+        private const val IP_PURPOSE = "ip"
         private val WINDOW: Duration = Duration.ofMinutes(15)
     }
 }

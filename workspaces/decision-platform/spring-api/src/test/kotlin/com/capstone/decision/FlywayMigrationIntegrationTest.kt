@@ -7,6 +7,9 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.Arguments
+import org.junit.jupiter.params.provider.MethodSource
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.dao.DataIntegrityViolationException
@@ -20,6 +23,7 @@ import org.testcontainers.utility.DockerImageName
 import java.sql.DriverManager
 import java.sql.SQLException
 import java.util.Base64
+import java.util.stream.Stream
 
 // pgvector/pg_trgm/Flyway 제약은 H2로 대체 검증할 수 없어 실제 PostgreSQL 컨테이너로 잠근다.
 @Testcontainers
@@ -169,6 +173,40 @@ class FlywayMigrationIntegrationTest(
         }
     }
 
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("remainingTrustRootConflicts")
+    fun `V7 rejects every remaining demo identity conflict shape`(
+        caseName: String,
+        databaseName: String,
+        userId: String,
+        username: String,
+        role: String,
+        status: String,
+        passwordHash: String,
+    ) {
+        val conflictUrl = createDatabase(databaseName)
+        flyway(conflictUrl, target = "6").migrate()
+        DriverManager.getConnection(conflictUrl, postgres.username, postgres.password).use { connection ->
+            connection
+                .prepareStatement(
+                    """
+                    insert into users (user_id, username, role, password_hash, status)
+                    values (?, ?, ?, ?, ?)
+                    """.trimIndent(),
+                ).use { statement ->
+                    statement.setString(1, userId)
+                    statement.setString(2, username)
+                    statement.setString(3, role)
+                    statement.setString(4, passwordHash)
+                    statement.setString(5, status)
+                    assertEquals(1, statement.executeUpdate(), caseName)
+                }
+        }
+
+        assertThrows<FlywayException> { flyway(conflictUrl).migrate() }
+        assertV7RolledBack(conflictUrl)
+    }
+
     @Test
     fun `calendar runtime roles receive exact allowlisted privileges`() {
         assertTrue(hasTablePrivilege("decision_collector", "opendart_quota_usage", "SELECT"))
@@ -302,6 +340,25 @@ class FlywayMigrationIntegrationTest(
             connection.createStatement().use { statement -> statement.execute("create database $name") }
         }
         return postgres.jdbcUrl.substringBeforeLast('/') + "/$name"
+    }
+
+    private fun assertV7RolledBack(url: String) {
+        DriverManager.getConnection(url, postgres.username, postgres.password).use { connection ->
+            connection.createStatement().use { statement ->
+                statement
+                    .executeQuery(
+                        "select count(*) from information_schema.columns " +
+                            "where table_schema = 'public' and table_name = 'users' and column_name = 'security_version'",
+                    ).use { result ->
+                        assertTrue(result.next())
+                        assertEquals(0, result.getInt(1))
+                    }
+                statement.executeQuery("select count(*) from flyway_schema_history where version = '7'").use { result ->
+                    assertTrue(result.next())
+                    assertEquals(0, result.getInt(1))
+                }
+            }
+        }
     }
 
     private fun flyway(
@@ -467,5 +524,46 @@ class FlywayMigrationIntegrationTest(
             registry.add("spring.flyway.user", postgres::getUsername)
             registry.add("spring.flyway.password", postgres::getPassword)
         }
+
+        @JvmStatic
+        fun remainingTrustRootConflicts(): Stream<Arguments> =
+            Stream.of(
+                Arguments.of(
+                    "username collision with another user id",
+                    "auth_username_collision",
+                    "usr-unrelated",
+                    "demo-user",
+                    "USER",
+                    "ACTIVE",
+                    TEST_USER_PASSWORD_HASH,
+                ),
+                Arguments.of(
+                    "approved id and username with wrong role",
+                    "auth_wrong_role",
+                    "usr_demo_user",
+                    "demo-user",
+                    "ADMIN",
+                    "ACTIVE",
+                    TEST_USER_PASSWORD_HASH,
+                ),
+                Arguments.of(
+                    "approved id and username with wrong status",
+                    "auth_wrong_status",
+                    "usr_demo_user",
+                    "demo-user",
+                    "USER",
+                    "LOCKED",
+                    TEST_USER_PASSWORD_HASH,
+                ),
+                Arguments.of(
+                    "approved id and username with wrong hash",
+                    "auth_wrong_hash",
+                    "usr_demo_user",
+                    "demo-user",
+                    "USER",
+                    "ACTIVE",
+                    TEST_ADMIN_PASSWORD_HASH,
+                ),
+            )
     }
 }

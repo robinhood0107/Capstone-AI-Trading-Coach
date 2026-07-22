@@ -217,6 +217,7 @@ class _FakeExecutor:
     def execute(self, _: str, send: object) -> object:
         assert callable(send)
         result = send()
+        self.calls.append(str(result))
         if result == self.quota_on:
             raise ProviderQuotaExhausted()
         return result

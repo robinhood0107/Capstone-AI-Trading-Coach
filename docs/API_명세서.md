@@ -139,13 +139,13 @@ flowchart LR
 
 ### 2.4 인증/권한
 
-`POST /api/v1/auth/login`으로 데모 계정을 인증하고 access token을 발급받는다. 로그인만 `Authorization` 헤더의 예외이며, 그 밖의 API는 명시된 역할과 Bearer 인증을 요구한다. 토큰은 데모 기준 만료 12시간을 사용하고 payload에는 opaque `sub`, `role`, `securityVersion`처럼 검증에 필요한 최소 claim만 담는다(민감정보 금지). JWT는 허용 algorithm을 고정하고 issuer/audience/subject/issued-at/expiry/securityVersion을 검증한다. Kill Switch 해제, ADMIN replay, Live 관련 고위험 행위는 token의 role만 믿지 않고 현재 DB의 account 활성 상태·role·securityVersion을 다시 확인하며, 권한 회수 뒤 발급된 이전 token은 거부한다.
+`POST /api/v1/auth/login`으로 데모 계정을 인증하고 access token을 발급받는다. 로그인만 `Authorization` 헤더의 예외이며, client interceptor가 cutover 전 stale Bearer를 첨부해도 해당 header는 무시하고 새 credential을 검증한다. 그 밖의 API는 명시된 역할과 Bearer 인증을 요구한다. 토큰은 데모 기준 만료 12시간을 사용하고 payload에는 opaque `sub`, `role`, `securityVersion`처럼 검증에 필요한 최소 claim만 담는다(민감정보 금지). JWT는 허용 algorithm을 고정하고 issuer/audience/subject/issued-at/expiry/securityVersion을 검증한다. Kill Switch 해제, ADMIN replay, Live 관련 고위험 행위는 token의 role만 믿지 않고 현재 DB의 account 활성 상태·role·securityVersion을 다시 확인하며, 권한 회수 뒤 발급된 이전 token은 거부한다.
 
 로그인 attempt는 client address+username 기준 15분 5회, address 기준 15분 50회로 원자 예약하며, JSON binding 전 전역 request body 상한을 적용한다. limiter key는 private factory가 정규화한 address/username scope를 purpose/version HMAC으로 만든 digest만 사용하고 raw address·username을 저장·로그·metric label에 넣지 않는다. 주소는 socket remote address를 기준으로 하고, 배포 시 명시적으로 allowlist한 reverse proxy에서 온 경우에만 표준 forwarded header를 해석한다. 임의 `X-Forwarded-For`를 신뢰하지 않는다. demo account verifier는 평문 password가 아니라 adaptive salted password hash로 secret store에 주입하고 검증 라이브러리로 비교한다. 존재하지 않는 사용자와 잘못된 비밀번호는 동일한 stable 오류·dummy hash를 포함한 유사한 검증 비용으로 처리한다. 현재 단일 JVM limiter는 replica 1에서만 보안 경계가 성립하며, 다중 replica 배포 전에는 공유 원자 저장소로 이전해야 한다.
 
 #### 2.4.1 S2.1 actor trust-root 선행 계약
 
-DB `users`가 demo identity의 단일 진실 소스다. V7은 `security_version bigint NOT NULL DEFAULT 1 CHECK (security_version > 0)`을 추가하고 migration role로 아래 두 row만 seed한다. BCrypt hash는 추적 파일에 넣지 않고 배포 secret에서 Flyway placeholder로 주입한다. 기존 `user_id`/username/role/status/version/hash가 exact shape과 다르면 overwrite하지 않고 migration을 중단한다.
+DB `users`가 demo identity의 단일 진실 소스다. checksum이 있는 V7 Java migration은 `security_version bigint NOT NULL DEFAULT 1 CHECK (security_version > 0)`을 추가하고 migration role로 아래 두 row만 seed한다. BCrypt hash는 추적 파일이나 Flyway SQL text에 넣지 않고 배포 secret에서 migration bean으로 주입해 prepared statement bind parameter로만 전달한다. 기존 `user_id`/username/role/status/version/hash가 exact shape과 다르면 overwrite하지 않고 migration transaction 전체를 중단한다.
 
 | user_id | username | role | status | securityVersion | password hash source |
 |---|---|---|---|---:|---|
@@ -166,9 +166,11 @@ JWT header/claim은 `alg=HS256`, exact configured `iss`, exact single `aud`, non
 
 #### 2.4.2 credential rotation·cutover 운영 계약
 
-배포 전 secret store에 `DEMO_USER_PASSWORD_HASH`, `DEMO_ADMIN_PASSWORD_HASH`, `JWT_SECRET`, `JWT_ISSUER`, `JWT_AUDIENCE`, `LOGIN_SCOPE_HMAC_KEY`를 준비한다. demo hash는 BCrypt strength 12이고 서로 달라야 하며, JWT/login-scope secret도 재사용하지 않는다. actual `.env`는 자동 변경하지 않는다.
+배포 전 secret store에 `DEMO_USER_PASSWORD_HASH`, `DEMO_ADMIN_PASSWORD_HASH`, `JWT_SECRET`, `JWT_ISSUER`, `JWT_AUDIENCE`, `LOGIN_SCOPE_HMAC_KEY`를 준비한다. demo hash는 BCrypt strength 12이고 서로 달라야 하며, dotenv를 쓸 때는 `$` 보존을 위해 single quote 안에 둔다. JWT/login-scope secret도 재사용하지 않는다. actual `.env`는 자동 변경하지 않는다.
 
-V7은 초기 bootstrap이지 rotation 경로가 아니다. 회전은 `flyway` DB role을 사용하는 `rotateDemoCredential` one-shot task로만 수행한다. task는 `usr_demo_user|usr_demo_admin` 하나의 hash 교체, `security_version + 1`, sanitized audit INSERT를 한 transaction으로 commit하며 hash/credential을 argv·stdout·log·audit에 남기지 않는다. 아래 변수는 secret manager가 주입한 one-shot process에서만 사용한다. `POSTGRES_HOST`/`POSTGRES_PORT`를 생략하면 loopback `127.0.0.1:5432`를 사용한다.
+V7은 초기 bootstrap이지 rotation 경로가 아니다. 회전은 `flyway` DB role을 사용하는 `rotateDemoCredential` one-shot task로만 수행한다. task는 loopback PostgreSQL만 허용하고 두 demo row를 `FOR UPDATE NOWAIT`로 잠근다. 현재/peer hash 재사용을 거부한 뒤 현재 hash와 `security_version`을 CAS predicate로 삼아 대상 하나의 hash 교체, `security_version + 1`, sanitized audit INSERT를 bounded transaction으로 commit한다. hash/credential은 argv·stdout·log·audit에 남기지 않는다. 아래 변수는 secret manager가 주입한 one-shot process에서만 사용한다. `POSTGRES_HOST`/`POSTGRES_PORT`를 생략하면 loopback `127.0.0.1:5432`를 사용하며 non-loopback host는 거부한다.
+
+운영자는 새 hash를 해당 `DEMO_USER_PASSWORD_HASH` 또는 `DEMO_ADMIN_PASSWORD_HASH`의 pending secret version과 one-shot `DEMO_CREDENTIAL_PASSWORD_HASH`에 동일 bytes로 준비한다. DB rotation과 old password/token 거부·new password login 검증이 모두 성공한 뒤에만 pending version을 persistent bootstrap secret으로 승격한다. 승격 실패 시 clean rebuild를 진행하지 않고 불일치 상태를 운영 장애로 처리한다. 이전 app binary rollback window 동안에는 이전 plaintext demo secret도 secret store에만 보존하며 Git/`.env`에는 두지 않는다.
 
 ```bash
 (
@@ -184,20 +186,35 @@ V7은 초기 bootstrap이지 rotation 경로가 아니다. 회전은 `flyway` DB
 )
 ```
 
-배포 직전에는 아래 task가 기존 token의 authenticated health 200을 확인하고 raw token 대신 digest/exp/시간/base URL만 ignored build evidence에 원자 저장한다. 배포 후에는 **같은 기존 token** 401, 새 USER/ADMIN login의 exact internal ID/role, 두 새 token의 health 200을 확인하고 성공할 때만 evidence를 삭제한다. preflight 남은 token 수명은 7,200초 이상, postflight는 capture 후 1,800초 이내이면서 남은 token 수명 3,600초 이상이어야 한다.
+배포 직전에는 아래 task가 기존 token의 authenticated health 200을 확인하고 raw token 대신 digest/exp/시간/base URL만 ignored build evidence에 atomic create-if-absent로 저장한다. 배포 후에는 **같은 기존 token** 401, 새 USER/ADMIN login의 exact internal ID/role과 JWT `sub`/role/securityVersion 결속, 서로 다른 두 token, 두 token의 health 200, USER의 ADMIN metrics 403과 ADMIN의 200을 확인하고 성공할 때만 evidence를 삭제한다. preflight 남은 token 수명은 7,200초 이상, postflight는 capture 후 1,800초 이내이면서 남은 token 수명 3,600초 이상이어야 한다.
 
 ```bash
-# pre-deploy: secret manager one-shot process
-workspaces/decision-platform/spring-api/gradlew \
-  -p workspaces/decision-platform/spring-api --no-daemon \
-  cleanAuthCutoverEvidence authPreCutoverCapture
+(
+  set -euo pipefail
+  trap 'S21_AUTH_PRE_EXIT=$?; unset AUTH_SMOKE_BASE_URL AUTH_SMOKE_PRE_CUTOVER_TOKEN; exit "$S21_AUTH_PRE_EXIT"' EXIT
+  test -n "${AUTH_SMOKE_BASE_URL:-}"
+  test -n "${AUTH_SMOKE_PRE_CUTOVER_TOKEN:-}"
+  workspaces/decision-platform/spring-api/gradlew \
+    -p workspaces/decision-platform/spring-api --no-daemon \
+    cleanAuthCutoverEvidence authPreCutoverCapture
+  test -s workspaces/decision-platform/spring-api/build/auth-cutover/pre-cutover.json
+)
 
-# post-deploy: same old token + current USER/ADMIN plaintext passwords are process-scoped env only
-workspaces/decision-platform/spring-api/gradlew \
-  -p workspaces/decision-platform/spring-api --no-daemon authCutoverSmoke
+(
+  set -euo pipefail
+  trap 'S21_AUTH_POST_EXIT=$?; unset AUTH_SMOKE_BASE_URL AUTH_SMOKE_USER_PASSWORD AUTH_SMOKE_ADMIN_PASSWORD AUTH_SMOKE_PRE_CUTOVER_TOKEN; exit "$S21_AUTH_POST_EXIT"' EXIT
+  test -n "${AUTH_SMOKE_BASE_URL:-}"
+  test -n "${AUTH_SMOKE_USER_PASSWORD:-}"
+  test -n "${AUTH_SMOKE_ADMIN_PASSWORD:-}"
+  test -n "${AUTH_SMOKE_PRE_CUTOVER_TOKEN:-}"
+  test -s workspaces/decision-platform/spring-api/build/auth-cutover/pre-cutover.json
+  workspaces/decision-platform/spring-api/gradlew \
+    -p workspaces/decision-platform/spring-api --no-daemon authCutoverSmoke
+  test ! -e workspaces/decision-platform/spring-api/build/auth-cutover/pre-cutover.json
+)
 ```
 
-배포 rollback은 V7 column/row를 남긴 채 이전 app binary/config로 되돌린다. down migration·demo row 삭제·dual-token acceptance는 하지 않고, rollback 후에도 사용자가 다시 로그인하게 한다. 이 선행 계약은 Principle endpoint, Principle idempotency 경계, S2.2/S2.3 runtime을 추가하지 않는다.
+배포 rollback은 V7 column/row를 남긴 채 rollback window에 보존한 이전 app binary/config와 이전 plaintext demo secret으로 되돌린다. down migration·demo row 삭제·dual-token acceptance는 하지 않고, rollback 후에도 사용자가 다시 로그인하게 한다. 이 선행 계약은 Principle endpoint, Principle idempotency 경계, S2.2/S2.3 runtime을 추가하지 않는다.
 
 | 역할 | 접근 범위 |
 |---|---|

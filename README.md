@@ -47,7 +47,8 @@ S1.4 금융공학, S1.5 품질 보고와 S1.6 내부 offline calendar/event aggr
 
 ```bash
 cp .env.example .env
-# PostgreSQL 관리자/runtime/Flyway/collector password, Redis password, JWT/demo password를 채운다.
+# DB/Redis password, JWT issuer/audience와 분리된 signing/HMAC key, strength-12 demo BCrypt hash를 채운다.
+# BCrypt의 $ 문자를 보존하도록 .env hash 값은 single quote 안에 두며 plaintext demo password는 저장하지 않는다.
 # API key는 필요한 provider를 실제 호출할 때 운영자만 주입하며 커밋하지 않는다.
 docker compose --env-file .env -f infra/docker-compose.infra.yml up -d
 docker compose --env-file .env -f infra/docker-compose.infra.yml ps

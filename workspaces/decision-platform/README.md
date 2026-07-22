@@ -15,7 +15,7 @@ python-services/        # uv 프로젝트 — LightGBM/RAG/금융공학/데이�
 
 공개 레포에는 최종 명세/API 계약과 구현 코드를 두고, 상세 개인 참고 노트는 루트의 ignored `private-reference/` 폴더에서만 관리한다. 요약:
 
-1. `cp ../../.env.example ../../.env` 후 PostgreSQL/collector/Redis/JWT/demo password와 필요한 provider secret을 채운다.
+1. `cp ../../.env.example ../../.env` 후 PostgreSQL/collector/Redis password, JWT issuer/audience, 분리된 JWT/login HMAC key, single-quoted strength-12 demo BCrypt hash와 필요한 provider secret을 채운다. plaintext demo password는 `.env`에 저장하지 않는다.
 2. `docker compose --env-file ../../.env -f ../../infra/docker-compose.infra.yml up -d`로 loopback-only PostgreSQL/Redis를 기동한다.
 3. `spring-api/`는 커밋된 Gradle wrapper로 `./gradlew ktlintCheck build`를 실행한다.
 4. `python-services/`는 `uv sync --frozen` 후 `uv run pytest`, `uv run ruff check .`, `uv run mypy app`으로 검증한다.

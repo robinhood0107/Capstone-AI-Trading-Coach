@@ -7,16 +7,16 @@ S2.1 Principle owner 검증은 JWT actor ID를 DB foreign key와 같은 namespac
 ## 변경 범위
 
 - DB `users`를 identity/hash/role/status/`security_version`의 단일 진실 소스로 사용한다.
-- V7이 exact `usr_demo_user`/`usr_demo_admin` row와 BCrypt strength-12 hash placeholder를 fail-closed로 seed한다.
+- V7 parameterized Java migration이 exact `usr_demo_user`/`usr_demo_admin` row를 fail-closed로 seed하며 BCrypt hash를 SQL text에 넣지 않는다.
 - JWT를 HS256으로 고정하고 exact issuer/single audience, internal-user-ID subject, `iat`/`exp`/role/`securityVersion`을 검증한다.
 - 매 authenticated request에서 DB status/role/version을 재검증해 즉시 회수를 보장한다.
 - login password는 DB BCrypt verifier와 동일 cost dummy path로 검증하고, limiter scope는 JWT와 다른 key의 purpose/version HMAC으로 만든다.
-- operator-only credential rotation과 pre/post deployment cutover smoke task를 추가한다. raw password/token/hash는 추적 파일, argv, 로그, audit, evidence에 넣지 않는다.
+- operator-only credential rotation과 pre/post deployment cutover smoke task를 추가한다. rotation은 loopback DB에서 두 demo row를 잠그고 같은/peer hash를 거부하며 CAS·bounded timeout을 적용한다. raw password/token/hash는 추적 파일, argv, 로그, audit, evidence에 넣지 않는다.
 - login OpenAPI를 public operation으로 표시하고 response `userId`가 JWT `sub`와 같은 internal owner ID임을 문서화한다.
 
 ## 호환성·운영 영향
 
-이 변경은 인증 의미의 intentional breaking cutover다. 기존 token은 새 `sub`/issuer/audience/version 계약을 만족하지 않아 배포 후 401이며, 사용자는 다시 로그인해야 한다. 배포 전 secret store에 두 BCrypt hash, JWT secret/issuer/audience, 별도 login-scope HMAC key를 준비한다. V7은 additive/forward-only이며 rollback 시 column/row를 삭제하지 않는다. credential rotation은 V7 재실행이 아니라 별도 privileged transaction과 sanitized audit를 사용한다.
+이 변경은 인증 의미의 intentional breaking cutover다. 기존 token은 새 `sub`/issuer/audience/version 계약을 만족하지 않아 배포 후 401이며, 사용자는 다시 로그인해야 한다. public login은 client가 stale Bearer를 자동 첨부해도 credential 재인증을 허용한다. 배포 전 secret store에 두 BCrypt hash, JWT secret/issuer/audience, 별도 login-scope HMAC key를 준비한다. V7은 additive/forward-only이며 rollback 시 column/row를 삭제하지 않는다. credential rotation은 V7 재실행이 아니라 별도 privileged transaction과 sanitized audit를 사용하고, 성공한 hash를 해당 persistent bootstrap secret에도 승격해야 clean recovery가 같은 credential을 재현한다.
 
 Dashboard는 `data.user.userId`/JWT `sub`를 owner ID로 사용하고 username을 owner key로 쓰지 않는다. Return Engine payload/schema와 다른 workspace 구현에는 변경이 없다. Principle API/schema/idempotency, S2.2/S2.3, provider 호출, 주문은 범위 밖이다.
 
@@ -29,15 +29,15 @@ S2.1 Principle ownership must trust a JWT actor ID in the same namespace as the 
 ## Scope
 
 - Database `users` is the sole source of truth for identity, password hash, role, status, and `security_version`.
-- V7 fail-closes while seeding the exact `usr_demo_user` and `usr_demo_admin` rows from untracked BCrypt strength-12 placeholders.
+- A parameterized V7 Java migration fail-closes while seeding the exact `usr_demo_user` and `usr_demo_admin` rows without placing BCrypt hashes in SQL text.
 - JWT validation pins HS256 and requires the exact issuer, exact single audience, internal-user-ID subject, `iat`, `exp`, role, and `securityVersion`.
 - Every authenticated request revalidates current database status, role, and version for immediate revocation.
 - Login uses the database BCrypt verifier and an equal-cost dummy path. Login limiter scopes use a purpose/version HMAC key distinct from the JWT key.
-- Operator-only credential rotation and pre/post deployment cutover smoke tasks keep raw passwords, tokens, and hashes out of tracked files, argv, logs, audit payloads, and evidence.
+- Operator-only credential rotation and pre/post deployment cutover smoke tasks keep raw passwords, tokens, and hashes out of tracked files, argv, logs, audit payloads, and evidence. Rotation locks both loopback-hosted demo rows, rejects current/peer hash reuse, and uses CAS with bounded timeouts.
 - OpenAPI marks login as public and identifies response `userId` as the same internal owner ID used by JWT `sub`.
 
 ## Compatibility and operations
 
-This is an intentional breaking authentication cutover. Previously issued tokens do not satisfy the new subject/issuer/audience/version contract and return 401 after deployment, so users must log in again. Operators must prepare both BCrypt hashes, the JWT secret/issuer/audience, and a separate login-scope HMAC key in the secret store before deployment. V7 is additive and forward-only; rollback leaves its column and rows intact. Credential rotation uses the dedicated privileged transaction and sanitized audit rather than rerunning V7.
+This is an intentional breaking authentication cutover. Previously issued tokens do not satisfy the new subject/issuer/audience/version contract and return 401 after deployment, so users must log in again. Public login still accepts credentials when a client automatically attaches that stale Bearer token. Operators must prepare both BCrypt hashes, the JWT secret/issuer/audience, and a separate login-scope HMAC key in the secret store before deployment. V7 is additive and forward-only; rollback leaves its column and rows intact. Credential rotation uses the dedicated privileged transaction and sanitized audit rather than rerunning V7, and the successfully rotated hash must be promoted to the matching persistent bootstrap secret for reproducible clean recovery.
 
 The Dashboard must use `data.user.userId` and JWT `sub` as the owner ID, never the username. Return Engine payloads/schemas and other workspace implementations are unchanged. Principle APIs, schemas, and idempotency changes; S2.2/S2.3; provider calls; and orders are explicitly out of scope.

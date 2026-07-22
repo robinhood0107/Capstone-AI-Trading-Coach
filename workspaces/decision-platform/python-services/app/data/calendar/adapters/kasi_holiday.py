@@ -10,12 +10,13 @@ from defusedxml.common import DefusedXmlException
 
 from app.data.calendar.errors import AdapterValidationError, NetworkActivationError
 
-MAX_KASI_RESPONSE_BYTES = 1 * 1024 * 1024
 MAX_KASI_COMPRESSED_BYTES = 256 * 1024
-MAX_KASI_DEPTH = 32
-MAX_KASI_NODES = 10_000
-MAX_KASI_ITEMS = 1_000
-MAX_KASI_TEXT_CHARS = 1_024
+MAX_KASI_RESPONSE_BYTES = 512 * 1024
+MAX_KASI_DEPTH = 8
+MAX_KASI_NODES = 4_096
+MAX_KASI_ITEMS = 128
+MAX_KASI_TEXT_CHARS = 2_048
+MAX_KASI_TEXT_BYTES = 8_192
 _XML_CONTENT_TYPES = frozenset({"application/xml", "text/xml"})
 
 
@@ -85,8 +86,8 @@ def _validate_tree_bounds(root: Any) -> None:
             raise AdapterValidationError("KASI node count exceeded the safety limit")
         if depth > MAX_KASI_DEPTH:
             raise AdapterValidationError("KASI XML depth exceeded the safety limit")
-        if node.text is not None and len(node.text) > MAX_KASI_TEXT_CHARS:
-            raise AdapterValidationError("KASI text exceeded the safety limit")
+        _validate_text_node(node.text)
+        _validate_text_node(node.tail)
         children = list(node)
         stack.extend((child, depth + 1) for child in children)
 
@@ -94,8 +95,14 @@ def _validate_tree_bounds(root: Any) -> None:
 def _text(element: Any, name: str, *, required: bool) -> str:
     child = element.find(name)
     value = "" if child is None or child.text is None else child.text.strip()
-    if len(value) > MAX_KASI_TEXT_CHARS:
-        raise AdapterValidationError("KASI text exceeded the safety limit")
+    _validate_text_node(value)
     if required and not value:
         raise AdapterValidationError("KASI required XML field is missing")
     return value
+
+
+def _validate_text_node(value: str | None) -> None:
+    if value is None:
+        return
+    if len(value) > MAX_KASI_TEXT_CHARS or len(value.encode("utf-8")) > MAX_KASI_TEXT_BYTES:
+        raise AdapterValidationError("KASI text exceeded the safety limit")

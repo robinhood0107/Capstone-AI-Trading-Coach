@@ -48,7 +48,7 @@ def normalize_opendart_structured_event(
     event_date = _event_date(row, receipt_no)
     if endpoint_id in _STATE_TRANSITIONS:
         state_type, transition = _STATE_TRANSITIONS[endpoint_id]
-        event_type = "DISCLOSURE_RISK_STATE"
+        event_type = "DISCLOSURE"
         detail = {
             "corp_code": corp_code,
             "state_type": state_type,
@@ -68,6 +68,7 @@ def normalize_opendart_structured_event(
         source_revision=None,
         event_type=event_type,
         symbol=symbol,
+        exchange_mic="XKRX",
         event_date=event_date,
         detail=detail,
         operation=f"/api/{endpoint_id}.json",

@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime
-from typing import Any, Literal
+from datetime import date, datetime, timedelta
+from typing import TYPE_CHECKING, Any, Literal
+
+if TYPE_CHECKING:
+    from app.data.calendar.disclosure_state import DisclosureStateTransition
+    from app.data.calendar.normalizer import EventRevision
 
 
 @dataclass(frozen=True)
@@ -131,6 +135,7 @@ class NormalizedCalendarEvent:
     source_revision: str | None
     event_type: str
     symbol: str | None
+    exchange_mic: str
     event_date: date
     detail: dict[str, Any]
     operation: str
@@ -149,6 +154,7 @@ class NormalizedCalendarEvent:
                 "stable_identity": self.stable_identity,
                 "event_type": self.event_type,
                 "symbol": self.symbol,
+                "exchange_mic": self.exchange_mic,
                 "event_date": self.event_date,
                 "detail": self.detail,
                 "operation": self.operation,
@@ -215,6 +221,92 @@ class QuotaUsage:
     exhausted_at: datetime | None
     exhausted_reason: str | None
     last_grant_token: str | None
+
+
+@dataclass(frozen=True)
+class SourceHealthSnapshot:
+    """raw 오류를 제외한 source current health와 stale 경계를 저장한다."""
+
+    source_id: str
+    last_success_at: datetime | None
+    last_failure_at: datetime | None
+    failure_count: int
+    stale_after: timedelta
+    network_ready: bool
+    status_code: str
+    error_code: str | None
+
+
+@dataclass(frozen=True)
+class CalendarEventWrite:
+    """immutable event revision에 lifecycle status와 confidence를 결합한 DB write 계약이다."""
+
+    revision: EventRevision
+    confidence_bps: int
+    status: str
+
+
+@dataclass(frozen=True)
+class CalendarEventSource:
+    """event 또는 session 하나와 sanitized observation을 opaque reference로 연결한다."""
+
+    event_source_id: str
+    event_id: str | None
+    exchange_mic: str | None
+    session_date: date | None
+    observation_id: str
+    source_choice: str
+    resolution_reason: str
+    opaque_source_ref: str
+
+
+@dataclass(frozen=True)
+class CalendarConflictRecord:
+    """source/tier/origin을 포함한 immutable canonical conflict 감사 row다."""
+
+    conflict_id: str
+    canonical_key: str
+    field_name: str
+    competing_values: tuple[dict[str, object], ...]
+    chosen_value: object
+    chosen_source_id: str
+    resolution_rule: str
+    resolution_reason: str
+    unresolved: bool
+    conflict_hash: str
+
+
+@dataclass(frozen=True)
+class RetentionRule:
+    """online sanitized observation의 양수 보존일과 책임 owner를 operator가 명시한다."""
+
+    days: int
+    owner: str
+
+    def __post_init__(self) -> None:
+        if type(self.days) is not int or self.days <= 0:
+            raise ValueError("retention days must be a positive integer")
+        if not isinstance(self.owner, str) or not self.owner.strip():
+            raise ValueError("retention owner must be non-empty")
+
+
+PersistenceMode = Literal["OFFLINE_EPHEMERAL", "ONLINE_PERSISTENT"]
+
+
+@dataclass(frozen=True)
+class CalendarPageCommit:
+    """한 provider page의 observation, canonical, audit, cursor를 한 transaction에 묶는다."""
+
+    observation: CalendarObservation
+    cursor: CollectionCursor
+    source_health: SourceHealthSnapshot
+    persistence_mode: PersistenceMode
+    retention: RetentionRule | None
+    trading_session: CanonicalTradingSession | None = None
+    event_writes: tuple[CalendarEventWrite, ...] = ()
+    source_links: tuple[CalendarEventSource, ...] = ()
+    conflicts: tuple[CalendarConflictRecord, ...] = ()
+    disclosure_transitions: tuple[DisclosureStateTransition, ...] = ()
 
 
 TransitionType = Literal["OPEN", "CLOSE"]

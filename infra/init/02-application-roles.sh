@@ -41,6 +41,10 @@ SELECT format(
 )
 \gexec
 
+-- migration/rotation이 statement logging을 허용해도 credential bind 값은 서버 로그에 남기지 않는다.
+ALTER ROLE flyway SET log_parameter_max_length = 0;
+ALTER ROLE flyway SET log_parameter_max_length_on_error = 0;
+
 SELECT format(
     'CREATE ROLE decision_collector LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD %L',
     :'collector_password'

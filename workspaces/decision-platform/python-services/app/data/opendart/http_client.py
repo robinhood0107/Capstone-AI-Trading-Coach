@@ -72,17 +72,76 @@ class OpenDARTHttpClient:
         transport: httpx.BaseTransport | None = None,
         rate_limiter: TokenBucket | None = None,
         retry_wait: wait_base | None = None,
+        before_send: Callable[[], None] | None = None,
     ) -> None:
-        """비밀값 없는 운영 설정과 테스트용 transport/rate limiter만 주입받는다."""
-        inner_transport = transport or httpx.HTTPTransport()
+        """offline fixture만 test injection을 허용하고 online은 durable reservation을 요구한다."""
+        if not settings.offline:
+            if transport is not None or rate_limiter is not None or retry_wait is not None:
+                raise ValueError("online OpenDART transport/rate injection is forbidden")
+            if before_send is None:
+                raise ValueError("online OpenDART requires a charged reservation hook")
+        self._configure(
+            settings,
+            transport=transport,
+            rate_limiter=rate_limiter,
+            retry_wait=retry_wait,
+            before_send=before_send,
+        )
+
+    @classmethod
+    def for_online_collector(
+        cls,
+        settings: OpenDARTSettings,
+        *,
+        before_send: Callable[[], None],
+    ) -> OpenDARTHttpClient:
+        """운영 online client를 고정 TLS transport와 charged reservation hook으로만 만든다."""
+        if settings.offline:
+            raise ValueError("online collector requires OPENDART_OFFLINE=false")
+        return cls(settings, before_send=before_send)
+
+    @classmethod
+    def _for_online_test(
+        cls,
+        settings: OpenDARTSettings,
+        *,
+        transport: httpx.BaseTransport,
+        rate_limiter: TokenBucket,
+        retry_wait: wait_base | None = None,
+    ) -> OpenDARTHttpClient:
+        """credential scrub 회귀에서만 실제 network 대신 MockTransport를 쓰는 비운영 factory다."""
+        if settings.offline:
+            raise ValueError("online credential test requires offline=false")
+        instance = cls.__new__(cls)
+        instance._configure(
+            settings,
+            transport=transport,
+            rate_limiter=rate_limiter,
+            retry_wait=retry_wait,
+            before_send=None,
+        )
+        return instance
+
+    def _configure(
+        self,
+        settings: OpenDARTSettings,
+        *,
+        transport: httpx.BaseTransport | None,
+        rate_limiter: TokenBucket | None,
+        retry_wait: wait_base | None,
+        before_send: Callable[[], None] | None,
+    ) -> None:
+        inner_transport = transport or httpx.HTTPTransport(verify=True, retries=0)
         self._http = httpx.Client(
             transport=_CredentialTransport(inner_transport, enabled=not settings.offline),
             timeout=settings.opendart_timeout_seconds,
             follow_redirects=False,
+            trust_env=False,
         )
         self._retry_attempts = settings.opendart_retry_attempts
         self._rate_limiter = rate_limiter or TokenBucket(settings.rate_limit_per_second)
         self._retry_wait = retry_wait or wait_exponential_jitter(initial=0.2, max=2.0)
+        self._before_send = before_send
 
     def get_json(self, path: str, params: dict[str, str]) -> dict[str, Any]:
         """JSON endpoint 응답이 객체가 아니면 parser 전에 실패시켜 raw shape 오류를 드러낸다."""
@@ -124,6 +183,9 @@ class OpenDARTHttpClient:
         url = self._url(path)
         safe_params = self._validated_params(params)
         self._rate_limiter.acquire()
+        if self._before_send is not None:
+            # S1.6 PostgreSQL charged reservation은 limiter 뒤, 실제 transport handoff 직전에만 실행한다.
+            self._before_send()
         try:
             response = self._http.request("GET", url, params=safe_params)
         except OpenDARTCredentialError:
@@ -133,15 +195,15 @@ class OpenDARTHttpClient:
             raise OpenDARTTransportError("OpenDART transport is unavailable") from None
         if response.status_code >= 400:
             message = "upstream request failed"
-            if response.status_code in {408, 429, 500, 502, 503, 504}:
+            if response.status_code in {408, 500, 502, 503, 504}:
                 raise OpenDARTRetryableStatus(response.status_code, message)
             raise OpenDARTHttpError(response.status_code, message)
         if not expect_json:
             return response.content
         try:
             data: object = response.json()
-        except ValueError as exc:
-            raise OpenDARTHttpError(response.status_code, "OpenDART response was not valid JSON") from exc
+        except ValueError:
+            raise OpenDARTHttpError(response.status_code, "OpenDART response was not valid JSON") from None
         if not isinstance(data, dict):
             raise OpenDARTHttpError(response.status_code, "OpenDART response was not a JSON object")
         return cast(dict[str, Any], data)

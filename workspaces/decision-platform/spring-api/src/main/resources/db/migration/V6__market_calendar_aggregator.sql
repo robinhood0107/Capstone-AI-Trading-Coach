@@ -57,7 +57,10 @@ CREATE TABLE calendar_observations (
   CHECK (ingested_at >= observed_at),
   CHECK (char_length(sanitized_payload_hash) = 64),
   CHECK (jsonb_typeof(sanitized_payload) = 'object'),
-  UNIQUE (source_id, sanitized_payload_hash, mapping_version)
+  UNIQUE NULLS NOT DISTINCT (
+    source_id, capability, effective_from, effective_to,
+    sanitized_payload_hash, mapping_version
+  )
 );
 
 CREATE TABLE trading_sessions (
@@ -82,9 +85,45 @@ CREATE TABLE trading_sessions (
   PRIMARY KEY (exchange_mic, session_date),
   CHECK (exchange_mic ~ '^[A-Z0-9]{4}$'),
   CHECK (timezone = 'Asia/Seoul'),
-  CHECK (open_at IS NULL OR close_at IS NULL OR close_at > open_at),
+  CHECK (
+    (is_open AND open_at IS NOT NULL AND close_at IS NOT NULL AND close_at > open_at)
+    OR (NOT is_open AND open_at IS NULL AND close_at IS NULL)
+  ),
   CHECK (confidence_bps BETWEEN 0 AND 9900),
   CHECK (char_length(canonical_hash) = 64)
+);
+
+CREATE TABLE trading_session_revisions (
+  revision_id text PRIMARY KEY,
+  exchange_mic text NOT NULL,
+  session_date date NOT NULL,
+  revision_no integer NOT NULL,
+  is_open boolean NOT NULL,
+  open_at timestamptz,
+  close_at timestamptz,
+  timezone text NOT NULL,
+  reason text,
+  chosen_source_id text,
+  degraded boolean NOT NULL,
+  fallback_reason text,
+  as_of timestamptz NOT NULL,
+  confidence_bps integer NOT NULL,
+  has_conflict boolean NOT NULL,
+  canonical_hash text NOT NULL,
+  canonical_rule_version text NOT NULL,
+  confidence_rule_version text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  FOREIGN KEY (exchange_mic, session_date)
+    REFERENCES trading_sessions(exchange_mic, session_date),
+  CHECK (revision_no > 0),
+  CHECK (
+    (is_open AND open_at IS NOT NULL AND close_at IS NOT NULL AND close_at > open_at)
+    OR (NOT is_open AND open_at IS NULL AND close_at IS NULL)
+  ),
+  CHECK (confidence_bps BETWEEN 0 AND 9900),
+  CHECK (char_length(canonical_hash) = 64),
+  UNIQUE (exchange_mic, session_date, revision_no),
+  UNIQUE (exchange_mic, session_date, canonical_hash)
 );
 
 CREATE TABLE calendar_events (
@@ -97,7 +136,7 @@ CREATE TABLE calendar_events (
   source_revision text,
   event_type text NOT NULL,
   symbol text,
-  exchange_mic text,
+  exchange_mic text NOT NULL,
   event_date date NOT NULL,
   detail jsonb NOT NULL,
   status text NOT NULL,
@@ -108,7 +147,13 @@ CREATE TABLE calendar_events (
   created_at timestamptz NOT NULL DEFAULT now(),
   CHECK (revision_no > 0),
   CHECK (jsonb_typeof(detail) = 'object'),
-  CHECK (status IN ('ACTIVE', 'CLOSED', 'SCHEDULED', 'CANCELLED', 'CORRECTED')),
+  CHECK (event_type IN (
+    'EARNINGS_EXPECTED', 'EARNINGS_ACTUAL', 'DIVIDEND_EX', 'DIVIDEND_RECORD',
+    'DIVIDEND_PAY', 'SPLIT', 'RIGHTS_ISSUE', 'BONUS_ISSUE', 'IPO_SUBSCRIPTION',
+    'IPO_LISTING', 'SHAREHOLDER_MEETING', 'MERGER_SPLIT', 'CAPITAL_REDUCTION',
+    'DISCLOSURE', 'MACRO_RELEASE'
+  )),
+  CHECK (status IN ('SCHEDULED', 'TENTATIVE', 'CONFIRMED', 'ACTUAL', 'CANCELLED')),
   CHECK (confidence_bps BETWEEN 0 AND 9900),
   CHECK (char_length(canonical_hash) = 64),
   UNIQUE (event_series_key, revision_no),
@@ -196,6 +241,8 @@ CREATE TABLE disclosure_risk_state_transitions (
 CREATE INDEX calendar_observations_source_effective_idx
   ON calendar_observations (source_id, effective_from, effective_to);
 CREATE INDEX trading_sessions_as_of_idx ON trading_sessions (as_of);
+CREATE INDEX trading_session_revisions_date_idx
+  ON trading_session_revisions (exchange_mic, session_date, revision_no DESC);
 CREATE INDEX calendar_events_symbol_date_idx ON calendar_events (symbol, event_date);
 CREATE INDEX calendar_conflicts_canonical_key_idx ON calendar_conflicts (canonical_key, created_at);
 CREATE INDEX disclosure_state_key_effective_idx
@@ -292,6 +339,49 @@ SELECT
   created_at
 FROM market_calendar;
 
+INSERT INTO trading_session_revisions (
+  revision_id,
+  exchange_mic,
+  session_date,
+  revision_no,
+  is_open,
+  open_at,
+  close_at,
+  timezone,
+  reason,
+  chosen_source_id,
+  degraded,
+  fallback_reason,
+  as_of,
+  confidence_bps,
+  has_conflict,
+  canonical_hash,
+  canonical_rule_version,
+  confidence_rule_version,
+  created_at
+)
+SELECT
+  canonical_hash,
+  exchange_mic,
+  session_date,
+  1,
+  is_open,
+  open_at,
+  close_at,
+  timezone,
+  reason,
+  chosen_source_id,
+  degraded,
+  fallback_reason,
+  as_of,
+  confidence_bps,
+  has_conflict,
+  canonical_hash,
+  canonical_rule_version,
+  confidence_rule_version,
+  created_at
+FROM trading_sessions;
+
 DROP TABLE market_calendar;
 
 CREATE VIEW market_calendar AS
@@ -310,6 +400,7 @@ REVOKE ALL PRIVILEGES ON TABLE
   calendar_source_health,
   calendar_observations,
   trading_sessions,
+  trading_session_revisions,
   calendar_events,
   calendar_event_sources,
   calendar_conflicts,
@@ -336,6 +427,7 @@ BEGIN
     TO decision_collector;
     GRANT SELECT, INSERT ON TABLE
       calendar_observations,
+      trading_session_revisions,
       calendar_events,
       calendar_event_sources,
       calendar_conflicts,
@@ -354,6 +446,7 @@ BEGIN
       opendart_quota_usage,
       calendar_source_health,
       calendar_observations,
+      trading_session_revisions,
       calendar_events,
       calendar_event_sources,
       calendar_conflicts,

@@ -6,18 +6,25 @@ from typing import Any
 import psycopg
 from psycopg.types.json import Jsonb
 
-from app.data.calendar.errors import QuotaReservationDenied
 from app.data.calendar.disclosure_state import DisclosureStateTransition
+from app.data.calendar.errors import QuotaReservationDenied
 from app.data.calendar.models import (
+    CalendarConflictRecord,
+    CalendarEventSource,
+    CalendarEventWrite,
     CalendarObservation,
+    CalendarPageCommit,
     CanonicalTradingSession,
     CollectionCursor,
     CursorKey,
+    PersistenceMode,
     QuotaUsage,
+    RetentionRule,
+    SourceHealthSnapshot,
 )
 from app.data.calendar.normalizer import EventRevision
-from app.data.calendar.settings import OpenDARTQuotaConfig
 from app.data.calendar.privacy import assert_sanitized_payload
+from app.data.calendar.settings import OpenDARTQuotaConfig
 
 _COLLECTOR_ADVISORY_LOCK_ID = 7_316_202_607_220_001
 
@@ -163,136 +170,63 @@ class CalendarRepository:
         observation: CalendarObservation,
         cursor: CollectionCursor,
         *,
+        persistence_mode: PersistenceMode,
+        retention: RetentionRule | None,
         fail_before_commit: bool = False,
     ) -> None:
         """observation과 deterministic cursor를 같은 transaction에 묶어 crash 시 둘 다 rollback한다."""
+        _validate_persistence(persistence_mode, retention)
         with self._connection.transaction():
             self._insert_observation(observation)
             self._upsert_cursor(cursor)
             if fail_before_commit:
                 raise RuntimeError("injected crash before canonical transaction commit")
 
+    def publish_page(
+        self,
+        commit: CalendarPageCommit,
+        *,
+        fail_before_commit: bool = False,
+    ) -> None:
+        """한 page의 sanitized observation, canonical, audit relation, cursor를 원자 게시한다."""
+        _validate_page_commit(commit)
+        with self._connection.transaction():
+            self._insert_observation(commit.observation)
+            self._upsert_source_health(commit.source_health)
+            if commit.trading_session is not None:
+                self._upsert_trading_session_and_revision(commit.trading_session)
+            for event_write in commit.event_writes:
+                self._insert_event(event_write)
+            for transition in commit.disclosure_transitions:
+                self._insert_disclosure_transition(transition)
+            for source_link in commit.source_links:
+                self._insert_source_link(source_link)
+            for conflict in commit.conflicts:
+                self._insert_conflict(conflict)
+            self._upsert_cursor(commit.cursor)
+            if fail_before_commit:
+                raise RuntimeError("injected crash before canonical transaction commit")
+
     def upsert_trading_session(self, session: CanonicalTradingSession) -> None:
         """canonical session current row만 갱신하며 observation/conflict 과거 행은 재작성하지 않는다."""
         with self._connection.transaction():
-            self._connection.execute(
-                """
-                INSERT INTO trading_sessions (
-                  exchange_mic, session_date, is_open, open_at, close_at, timezone,
-                  reason, chosen_source_id, degraded, fallback_reason, as_of,
-                  confidence_bps, has_conflict, canonical_hash,
-                  canonical_rule_version, confidence_rule_version
-                ) VALUES (
-                  %s, %s, %s, %s, %s, %s,
-                  %s, %s, %s, %s, %s,
-                  %s, %s, %s, %s, %s
-                )
-                ON CONFLICT (exchange_mic, session_date) DO UPDATE SET
-                  is_open = EXCLUDED.is_open,
-                  open_at = EXCLUDED.open_at,
-                  close_at = EXCLUDED.close_at,
-                  timezone = EXCLUDED.timezone,
-                  reason = EXCLUDED.reason,
-                  chosen_source_id = EXCLUDED.chosen_source_id,
-                  degraded = EXCLUDED.degraded,
-                  fallback_reason = EXCLUDED.fallback_reason,
-                  as_of = EXCLUDED.as_of,
-                  confidence_bps = EXCLUDED.confidence_bps,
-                  has_conflict = EXCLUDED.has_conflict,
-                  canonical_hash = EXCLUDED.canonical_hash,
-                  canonical_rule_version = EXCLUDED.canonical_rule_version,
-                  confidence_rule_version = EXCLUDED.confidence_rule_version,
-                  updated_at = now()
-                """,
-                (
-                    session.exchange_mic,
-                    session.session_date,
-                    session.is_open,
-                    session.open_at,
-                    session.close_at,
-                    session.timezone,
-                    session.reason,
-                    session.chosen_source_id,
-                    session.degraded,
-                    session.fallback_reason,
-                    session.as_of,
-                    session.confidence_bps,
-                    session.has_conflict,
-                    session.canonical_hash,
-                    session.canonical_rule_version,
-                    session.confidence_rule_version,
-                ),
-            )
+            self._upsert_trading_session_and_revision(session)
 
     def append_event(self, revision: EventRevision, *, confidence_bps: int, status: str) -> bool:
         """event correction을 UPDATE하지 않고 새 revision으로 append하며 동일 hash rerun은 no-op 처리한다."""
-        candidate = revision.candidate
         with self._connection.transaction():
-            row = self._connection.execute(
-                """
-                INSERT INTO calendar_events (
-                  event_id, event_series_key, revision_no, revised_from_event_id,
-                  source_id, source_event_key, source_revision, event_type, symbol,
-                  event_date, detail, status, confidence_bps, has_conflict, canonical_hash
-                ) VALUES (
-                  %s, %s, %s, %s,
-                  %s, %s, %s, %s, %s,
-                  %s, %s, %s, %s, false, %s
+            return self._insert_event(
+                CalendarEventWrite(
+                    revision=revision,
+                    confidence_bps=confidence_bps,
+                    status=status,
                 )
-                ON CONFLICT (event_series_key, canonical_hash) DO NOTHING
-                RETURNING event_id
-                """,
-                (
-                    revision.event_id,
-                    revision.event_series_key,
-                    revision.revision_no,
-                    revision.revised_from_event_id,
-                    candidate.source_id,
-                    candidate.source_event_key,
-                    candidate.source_revision,
-                    candidate.event_type,
-                    candidate.symbol,
-                    candidate.event_date,
-                    Jsonb(candidate.detail),
-                    status,
-                    confidence_bps,
-                    revision.canonical_hash,
-                ),
-            ).fetchone()
-            return row is not None
+            )
 
     def append_disclosure_transition(self, transition: DisclosureStateTransition) -> None:
         """공시 상태 correction/open/close를 기존 row UPDATE 없이 append한다."""
         with self._connection.transaction():
-            self._connection.execute(
-                """
-                INSERT INTO disclosure_risk_state_transitions (
-                  transition_id, corp_code, state_type, state_key, transition_type,
-                  revision_no, revised_from_transition_id, source_id, source_event_key,
-                  source_revision, effective_at, observed_at, canonical_event_id, mapping_version
-                ) VALUES (
-                  %s, %s, %s, %s, %s,
-                  %s, %s, %s, %s,
-                  %s, %s, %s, %s, %s
-                )
-                """,
-                (
-                    transition.transition_id,
-                    transition.corp_code,
-                    transition.state_type,
-                    transition.state_key,
-                    transition.transition,
-                    transition.revision_no,
-                    transition.revised_from_transition_id,
-                    transition.source_id,
-                    transition.source_event_key,
-                    transition.source_revision,
-                    transition.effective_on,
-                    transition.observed_at,
-                    transition.canonical_event_id,
-                    transition.mapping_version,
-                ),
-            )
+            self._insert_disclosure_transition(transition)
 
     def load_active_states(self, corp_code: str) -> list[object]:
         """scorer가 provider HTTP 없이 읽을 수 있는 sanitized active-state view만 조회한다."""
@@ -356,6 +290,10 @@ class CalendarRepository:
               %s, %s, %s,
               %s, %s
             )
+            ON CONFLICT (
+              source_id, capability, effective_from, effective_to,
+              sanitized_payload_hash, mapping_version
+            ) DO NOTHING
             """,
             (
                 observation.observation_id,
@@ -371,6 +309,253 @@ class CalendarRepository:
                 observation.adapter_version,
                 observation.mapping_version,
                 observation.registry_version,
+            ),
+        )
+
+    def _upsert_source_health(self, health: SourceHealthSnapshot) -> None:
+        self._connection.execute(
+            """
+            INSERT INTO calendar_source_health (
+              source_id, last_success_at, last_failure_at, failure_count,
+              stale_after, network_ready, status_code, error_code, updated_at
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, now())
+            ON CONFLICT (source_id) DO UPDATE SET
+              last_success_at = EXCLUDED.last_success_at,
+              last_failure_at = EXCLUDED.last_failure_at,
+              failure_count = EXCLUDED.failure_count,
+              stale_after = EXCLUDED.stale_after,
+              network_ready = EXCLUDED.network_ready,
+              status_code = EXCLUDED.status_code,
+              error_code = EXCLUDED.error_code,
+              updated_at = now()
+            """,
+            (
+                health.source_id,
+                health.last_success_at,
+                health.last_failure_at,
+                health.failure_count,
+                health.stale_after,
+                health.network_ready,
+                health.status_code,
+                health.error_code,
+            ),
+        )
+
+    def _upsert_trading_session_and_revision(self, session: CanonicalTradingSession) -> None:
+        _validate_session(session)
+        values = _session_values(session)
+        self._connection.execute(
+            """
+            INSERT INTO trading_sessions (
+              exchange_mic, session_date, is_open, open_at, close_at, timezone,
+              reason, chosen_source_id, degraded, fallback_reason, as_of,
+              confidence_bps, has_conflict, canonical_hash,
+              canonical_rule_version, confidence_rule_version
+            ) VALUES (
+              %s, %s, %s, %s, %s, %s,
+              %s, %s, %s, %s, %s,
+              %s, %s, %s, %s, %s
+            )
+            ON CONFLICT (exchange_mic, session_date) DO UPDATE SET
+              is_open = EXCLUDED.is_open,
+              open_at = EXCLUDED.open_at,
+              close_at = EXCLUDED.close_at,
+              timezone = EXCLUDED.timezone,
+              reason = EXCLUDED.reason,
+              chosen_source_id = EXCLUDED.chosen_source_id,
+              degraded = EXCLUDED.degraded,
+              fallback_reason = EXCLUDED.fallback_reason,
+              as_of = EXCLUDED.as_of,
+              confidence_bps = EXCLUDED.confidence_bps,
+              has_conflict = EXCLUDED.has_conflict,
+              canonical_hash = EXCLUDED.canonical_hash,
+              canonical_rule_version = EXCLUDED.canonical_rule_version,
+              confidence_rule_version = EXCLUDED.confidence_rule_version,
+              updated_at = now()
+            """,
+            values,
+        )
+        self._connection.execute(
+            """
+            INSERT INTO trading_session_revisions (
+              revision_id, exchange_mic, session_date, revision_no,
+              is_open, open_at, close_at, timezone, reason, chosen_source_id,
+              degraded, fallback_reason, as_of, confidence_bps, has_conflict,
+              canonical_hash, canonical_rule_version, confidence_rule_version
+            )
+            SELECT
+              %s, %s, %s,
+              COALESCE((
+                SELECT max(revision_no) + 1
+                FROM trading_session_revisions
+                WHERE exchange_mic = %s AND session_date = %s
+              ), 1),
+              %s, %s, %s, %s, %s, %s,
+              %s, %s, %s, %s, %s,
+              %s, %s, %s
+            WHERE NOT EXISTS (
+              SELECT 1
+              FROM trading_session_revisions
+              WHERE exchange_mic = %s AND session_date = %s AND canonical_hash = %s
+            )
+            ON CONFLICT DO NOTHING
+            """,
+            (
+                session.canonical_hash,
+                session.exchange_mic,
+                session.session_date,
+                session.exchange_mic,
+                session.session_date,
+                *values[2:],
+                session.exchange_mic,
+                session.session_date,
+                session.canonical_hash,
+            ),
+        )
+
+    def _insert_event(self, event_write: CalendarEventWrite) -> bool:
+        if event_write.status not in {"SCHEDULED", "TENTATIVE", "CONFIRMED", "ACTUAL", "CANCELLED"}:
+            raise ValueError("calendar event status is outside the frozen lifecycle enum")
+        if not 0 <= event_write.confidence_bps <= 9_900:
+            raise ValueError("calendar event confidence is invalid")
+        revision = event_write.revision
+        candidate = revision.candidate
+        assert_sanitized_payload(candidate.detail)
+        row = self._connection.execute(
+            """
+            INSERT INTO calendar_events (
+              event_id, event_series_key, revision_no, revised_from_event_id,
+              source_id, source_event_key, source_revision, event_type, symbol,
+              exchange_mic, event_date, detail, status, confidence_bps,
+              has_conflict, canonical_hash
+            ) VALUES (
+              %s, %s, %s, %s,
+              %s, %s, %s, %s, %s,
+              %s, %s, %s, %s, %s,
+              false, %s
+            )
+            ON CONFLICT (event_series_key, canonical_hash) DO NOTHING
+            RETURNING event_id
+            """,
+            (
+                revision.event_id,
+                revision.event_series_key,
+                revision.revision_no,
+                revision.revised_from_event_id,
+                candidate.source_id,
+                candidate.source_event_key,
+                candidate.source_revision,
+                candidate.event_type,
+                candidate.symbol,
+                candidate.exchange_mic,
+                candidate.event_date,
+                Jsonb(candidate.detail),
+                event_write.status,
+                event_write.confidence_bps,
+                revision.canonical_hash,
+            ),
+        ).fetchone()
+        return row is not None
+
+    def _insert_disclosure_transition(self, transition: DisclosureStateTransition) -> None:
+        self._connection.execute(
+            """
+            INSERT INTO disclosure_risk_state_transitions (
+              transition_id, corp_code, state_type, state_key, transition_type,
+              revision_no, revised_from_transition_id, source_id, source_event_key,
+              source_revision, effective_at, observed_at, canonical_event_id, mapping_version
+            ) VALUES (
+              %s, %s, %s, %s, %s,
+              %s, %s, %s, %s,
+              %s, %s, %s, %s, %s
+            )
+            ON CONFLICT (source_id, source_event_key, source_revision) DO NOTHING
+            """,
+            (
+                transition.transition_id,
+                transition.corp_code,
+                transition.state_type,
+                transition.state_key,
+                transition.transition,
+                transition.revision_no,
+                transition.revised_from_transition_id,
+                transition.source_id,
+                transition.source_event_key,
+                transition.source_revision,
+                transition.effective_on,
+                transition.observed_at,
+                transition.canonical_event_id,
+                transition.mapping_version,
+            ),
+        )
+
+    def _insert_source_link(self, source_link: CalendarEventSource) -> None:
+        if len(source_link.opaque_source_ref) != 64:
+            raise ValueError("calendar source link must use an opaque SHA-256 reference")
+        assert_sanitized_payload(
+            {
+                "event_id": source_link.event_id,
+                "exchange_mic": source_link.exchange_mic,
+                "source_choice": source_link.source_choice,
+                "resolution_reason": source_link.resolution_reason,
+                "opaque_source_ref": source_link.opaque_source_ref,
+            }
+        )
+        self._connection.execute(
+            """
+            INSERT INTO calendar_event_sources (
+              event_source_id, event_id, exchange_mic, session_date,
+              observation_id, source_choice, resolution_reason, opaque_source_ref
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (event_id, exchange_mic, session_date, observation_id) DO NOTHING
+            """,
+            (
+                source_link.event_source_id,
+                source_link.event_id,
+                source_link.exchange_mic,
+                source_link.session_date,
+                source_link.observation_id,
+                source_link.source_choice,
+                source_link.resolution_reason,
+                source_link.opaque_source_ref,
+            ),
+        )
+
+    def _insert_conflict(self, conflict: CalendarConflictRecord) -> None:
+        competing = list(conflict.competing_values)
+        assert_sanitized_payload(competing)
+        assert_sanitized_payload(conflict.chosen_value)
+        assert_sanitized_payload(
+            {
+                "canonical_key": conflict.canonical_key,
+                "field_name": conflict.field_name,
+                "chosen_source_id": conflict.chosen_source_id,
+                "resolution_rule": conflict.resolution_rule,
+                "resolution_reason": conflict.resolution_reason,
+            }
+        )
+        for item in competing:
+            if set(item) != {"source_id", "tier", "origin_group", "value"}:
+                raise ValueError("calendar conflict source projection is incomplete")
+        self._connection.execute(
+            """
+            INSERT INTO calendar_conflicts (
+              conflict_id, canonical_key, field_name, competing_values, chosen_value,
+              chosen_source_id, resolution_rule, resolution_reason, unresolved, conflict_hash
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (conflict_hash) DO NOTHING
+            """,
+            (
+                conflict.conflict_id,
+                conflict.canonical_key,
+                conflict.field_name,
+                Jsonb(competing),
+                Jsonb(conflict.chosen_value),
+                conflict.chosen_source_id,
+                conflict.resolution_rule,
+                conflict.resolution_reason,
+                conflict.unresolved,
+                conflict.conflict_hash,
             ),
         )
 
@@ -411,4 +596,72 @@ def _quota_usage(row: tuple[Any, ...]) -> QuotaUsage:
         exhausted_at=row[4],
         exhausted_reason=None if row[5] is None else str(row[5]),
         last_grant_token=None if row[6] is None else str(row[6]),
+    )
+
+
+def _validate_page_commit(commit: CalendarPageCommit) -> None:
+    _validate_persistence(commit.persistence_mode, commit.retention)
+    if commit.cursor.source_id != commit.observation.source_id:
+        raise ValueError("calendar cursor source must match its observation")
+    if commit.source_health.source_id != commit.observation.source_id:
+        raise ValueError("calendar source health must match its observation")
+    if any(link.observation_id != commit.observation.observation_id for link in commit.source_links):
+        raise ValueError("calendar source links must reference the page observation")
+    if commit.source_health.failure_count < 0 or commit.source_health.stale_after.total_seconds() <= 0:
+        raise ValueError("calendar source health bounds are invalid")
+
+
+def _validate_persistence(mode: PersistenceMode, retention: RetentionRule | None) -> None:
+    if mode == "ONLINE_PERSISTENT":
+        if retention is None:
+            raise ValueError("online persistent calendar write requires retention days and owner")
+        if retention.days <= 0 or not retention.owner.strip():
+            raise ValueError("online persistent calendar retention is invalid")
+    elif mode == "OFFLINE_EPHEMERAL":
+        if retention is not None:
+            raise ValueError("offline ephemeral calendar write cannot declare persistent retention")
+    else:
+        raise ValueError("calendar persistence mode is invalid")
+
+
+def _validate_session(session: CanonicalTradingSession) -> None:
+    assert_sanitized_payload(
+        {
+            "exchange_mic": session.exchange_mic,
+            "timezone": session.timezone,
+            "reason": session.reason,
+            "chosen_source_id": session.chosen_source_id,
+            "fallback_reason": session.fallback_reason,
+            "source_refs": session.source_refs,
+            "canonical_rule_version": session.canonical_rule_version,
+            "confidence_rule_version": session.confidence_rule_version,
+        }
+    )
+    if session.is_open:
+        if session.open_at is None or session.close_at is None or session.close_at <= session.open_at:
+            raise ValueError("open trading session requires ordered open and close timestamps")
+    elif session.open_at is not None or session.close_at is not None:
+        raise ValueError("closed trading session cannot retain open or close timestamps")
+    if len(session.canonical_hash) != 64:
+        raise ValueError("trading session canonical hash is invalid")
+
+
+def _session_values(session: CanonicalTradingSession) -> tuple[object, ...]:
+    return (
+        session.exchange_mic,
+        session.session_date,
+        session.is_open,
+        session.open_at,
+        session.close_at,
+        session.timezone,
+        session.reason,
+        session.chosen_source_id,
+        session.degraded,
+        session.fallback_reason,
+        session.as_of,
+        session.confidence_bps,
+        session.has_conflict,
+        session.canonical_hash,
+        session.canonical_rule_version,
+        session.confidence_rule_version,
     )

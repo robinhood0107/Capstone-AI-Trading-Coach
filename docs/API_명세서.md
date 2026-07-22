@@ -611,9 +611,15 @@ Principle API의 입력 원칙은 다음과 같다.
 | `source` | 원천 시스템. 공시 위험은 `OPENDART` |
 | `eventCodes` | 기여한 구조화 이벤트 코드. 예: `OPENDART:dfOcr`(부도발생). `report_nm` 문자열이 아니라 endpoint identity 기반이다 |
 | `mappingVersion` | 점수 mapping 버전. 같은 입력·같은 버전이면 같은 점수라는 재현성을 남긴다 |
-| `sourceRefs` | raw observation/citation 참조 id. `explanation.citationIds`와 교차 추적 가능하다 |
+| `sourceRefs` | sanitized observation/citation의 opaque 참조 id. `explanation.citationIds`와 교차 추적 가능하다 |
 
 `disclosure_risk_score` 산출 원천과 점수 등급, 의도적 제외 범위는 `docs/decision-platform/S1_2_OpenDART_공시위험점수_근거.md`를 따른다. 필드 계약은 `contracts/schemas/risk_decision.schema.json`이 단일 진실 소스다.
+
+> PR A 계약 드리프 기록: 현재 schema의 `sourceRefs`는 기존 string array shape를
+> 그대로 유지하지만 description의 `raw observation` 표현은 낡은 문구다. 이 문구는
+> raw payload 저장·조회 권한을 만들지 않으며, runtime에서는 sanitized opaque ID로만
+> 해석한다. schema description 수정은 `contracts/changes/`를 포함한 별도
+> contract-change 승인 세션으로 이월하며 이 PR의 `contracts/` diff는 0으로 유지한다.
 
 decision 유효시간 규칙:
 
@@ -1497,8 +1503,12 @@ KIS 매수가능조회(모의 `VTTC8908R`)를 매핑한다. 주문 제출 전 �
 ## 12A. Market Calendar API (계획 — 미구현)
 
 > 변경 반영(2026-07-10): 이 장 전체는 현재 문서화된 `계획 계약`이다. `S1.2+`는 수집 계획을 묶는 상위 umbrella 표현이며, 다중 소스 aggregator의 확정 구현 세션은 S1.6이다. REST/gRPC 구현과 Dashboard 가용성은 S1.6 완료만으로 자동 성립하지 않으며, S1.6 이후 별도의 명시적 contract-change 세션에서 schema/proto/OpenAPI와 소비 화면을 함께 승인한 뒤에만 제공한다.
+>
+> 선행 계약 동결(2026-07-22): 12A.5 이후는 S1.6 production 구현 전에 고정한 내부
+> storage/collector 계약이다. 이 변경은 endpoint, proto, OpenAPI, JSON Schema 또는
+> `contracts/`를 활성화·변경하지 않는다.
 
-목적: 무료/공식 다중 소스를 집계해 감사 가능한(auditable) 시장 캘린더/이벤트 데이터를 제공한다. "완벽한 캘린더"는 단일 API를 항상 옳다고 가정하는 것이 아니라, (1) 소스별 원 관측치를 보존하고, (2) 충돌을 투명하게 해소하며, (3) `confidence`/`sourceRefs`/`conflictFlag`를 응답에 그대로 노출하는 것을 뜻한다. backfill 스케줄링, RiskEngine freshness/이벤트 리스크 판정, RAG source card, optional dashboard timeline이 이 API의 소비자다.
+목적: 무료/공식 다중 소스를 집계해 감사 가능한(auditable) 시장 캘린더/이벤트 데이터를 제공한다. "완벽한 캘린더"는 단일 API를 항상 옳다고 가정하는 것이 아니라, (1) allowlisted sanitized observation과 canonical 결정을 분리하고, (2) 충돌을 투명하게 해소하며, (3) `confidence`/`sourceRefs`/`conflictFlag`를 응답에 그대로 노출하는 것을 뜻한다. provider raw body/header/request URL/raw hash는 저장하지 않는다. backfill 스케줄링, RiskEngine freshness/이벤트 리스크 판정, RAG source card, optional dashboard timeline이 이 API의 소비자다.
 
 경계:
 
@@ -1508,7 +1518,8 @@ KIS 매수가능조회(모의 `VTTC8908R`)를 매핑한다. 주문 제출 전 �
 
 ### 12A.1 canonical 스키마 (계획)
 
-원 관측치(raw observation)와 canonical 사실을 분리한다. 아래는 canonical 응답 스키마다.
+source-level sanitized observation과 canonical 사실을 분리한다. 아래는 향후 별도
+contract-change가 승인될 때 사용할 canonical 응답 계획 스키마다.
 
 `TradingSession` — 거래소×날짜 단위 세션 사실:
 
@@ -1521,7 +1532,7 @@ KIS 매수가능조회(모의 `VTTC8908R`)를 매핑한다. 주문 제출 전 �
 | `openAt` / `closeAt` | timestamp\|null | 개장/폐장 시각(휴장일 null) |
 | `isEarlyClose` | boolean | 단축 거래 여부 |
 | `reason` | string\|null | 휴장/단축 사유 (`Lunar New Year` 등) |
-| `confidence` | number | 0~1. 12A.3 산정 규칙 |
+| `confidence` | number | 0~0.99. 내부 integer `confidence_bps / 10000`의 미래 serialization이며 현재 API는 미구현 |
 | `sourceRefs` | array | sanitized 소스 참조 목록 |
 | `conflictFlag` | boolean | 소스 간 미해소 충돌 존재 여부 |
 
@@ -1537,29 +1548,29 @@ KIS 매수가능조회(모의 `VTTC8908R`)를 매핑한다. 주문 제출 전 �
 | `eventTime` | time\|null | 알려진 경우만 |
 | `timezone` | string | 이벤트 기준 timezone |
 | `timeStatus` | string | `EXACT` \| `BEFORE_MARKET` \| `AFTER_MARKET` \| `DATE_ONLY` \| `UNKNOWN` |
-| `status` | string | `SCHEDULED` \| `TENTATIVE` \| `CONFIRMED` \| `ACTUAL` \| `CORRECTED` \| `CANCELLED` |
-| `confidence` | number | 0~1 |
+| `status` | string | `SCHEDULED` \| `TENTATIVE` \| `CONFIRMED` \| `ACTUAL` \| `CANCELLED`. correction은 status가 아니라 새 immutable revision으로 표현 |
+| `confidence` | number | 0~0.99. 내부 integer `confidence_bps / 10000`의 미래 serialization |
 | `sourceRefs` | array | sanitized 소스 참조 목록 |
 | `conflictFlag` | boolean | 미해소 충돌 여부 |
-| `firstSeenAt` / `lastSeenAt` | timestamp | 최초/최근 관측 시각 |
-| `revisedFrom` | string\|null | 정정 전 eventId (CORRECTED 이력 추적) |
-| `payloadHash` | string | canonical 내용 해시(멱등 upsert 키) |
+| `firstSeenAt` / `lastSeenAt` | timestamp | immutable event row를 수정하지 않고 observation link에서 계산한 최초/최근 관측 시각 |
+| `revisedFrom` | string\|null | 같은 series의 직전 revision eventId |
+| `payloadHash` | string | allowlisted sanitized canonical projection hash |
 
-`eventType` enum(v1 후보): `EARNINGS_EXPECTED`, `EARNINGS_ACTUAL`, `DIVIDEND_EX`, `DIVIDEND_RECORD`, `DIVIDEND_PAY`, `SPLIT`, `RIGHTS_ISSUE`, `BONUS_ISSUE`, `IPO_SUBSCRIPTION`, `IPO_LISTING`, `SHAREHOLDER_MEETING`, `MERGER_SPLIT`, `CAPITAL_REDUCTION`, `DISCLOSURE`, `MACRO_RELEASE`. 거래일/휴장일은 이벤트가 아니라 `TradingSession`으로만 표현한다.
+S1.6 내부 v1 canonical `eventType` enum은 `EARNINGS_EXPECTED`, `EARNINGS_ACTUAL`, `DIVIDEND_EX`, `DIVIDEND_RECORD`, `DIVIDEND_PAY`, `SPLIT`, `RIGHTS_ISSUE`, `BONUS_ISSUE`, `IPO_SUBSCRIPTION`, `IPO_LISTING`, `SHAREHOLDER_MEETING`, `MERGER_SPLIT`, `CAPITAL_REDUCTION`, `DISCLOSURE`, `MACRO_RELEASE`로 고정한다. 거래일/휴장일은 이벤트가 아니라 `TradingSession`으로만 표현한다. 미래 REST 노출은 별도 contract-change 승인 후에만 활성화한다.
 
 `sourceRefs[]` 항목(sanitized):
 
 ```json
 {
-  "sourceId": "src_cal_kasi_holiday",
+  "sourceId": "src_cal_xkrx_local",
+  "observationId": "obs_01JZ6W7G8H9J0K1M2N3P4Q5R6S",
   "observedAt": "2026-07-08T02:10:00+09:00",
-  "observedValue": "2026-10-05 PUBLIC_HOLIDAY (개천절 대체공휴일)",
-  "payloadHash": "sha256:7a8b9c0d1e2f30415263748596a7b8c9d0e1f23456789abcdef0123456789abc",
-  "attribution": "한국천문연구원 특일 정보(공공데이터포털)"
+  "projectionHash": "sha256:7a8b9c0d1e2f30415263748596a7b8c9d0e1f23456789abcdef0123456789abc",
+  "attribution": "exchange_calendars XKRX (Apache-2.0)"
 }
 ```
 
-status 전이 규칙: `SCHEDULED/TENTATIVE → CONFIRMED → ACTUAL`, 임의 시점에 `CORRECTED`(이전 값은 `revisedFrom`으로 연결) 또는 `CANCELLED`. 미래 실적 발표는 DART/SEC/회사 공시로 실제 제출이 확인되기 전까지 `TENTATIVE`를 넘지 않는다(aggregator 예측치는 CONFIRMED로 승격 불가).
+status 전이 규칙은 `SCHEDULED/TENTATIVE → CONFIRMED → ACTUAL`이고 `CANCELLED`는 종결 상태다. correction은 기존 row의 status를 `CORRECTED`로 덮어쓰지 않고 해당 생애주기 status를 유지한 새 immutable revision을 만들어 직전 revision을 `revisedFrom`으로 연결한다. 미래 실적 발표는 DART/SEC/회사 공시로 실제 제출이 확인되기 전까지 `TENTATIVE`를 넘지 않는다(aggregator 예측치는 CONFIRMED로 승격 불가).
 
 ### 12A.2 endpoint (계획)
 
@@ -1573,7 +1584,7 @@ status 전이 규칙: `SCHEDULED/TENTATIVE → CONFIRMED → ACTUAL`, 임의 시
 
 공통 규칙 재사용: 응답 envelope(2.2), 오류 코드(2.3 — 신규 오류 코드를 만들지 않고 `RATE_LIMITED`/`DATA_STALE`/`VALIDATION_ERROR` 재사용), pagination(2.6)을 그대로 따른다.
 
-events 응답 예시(충돌 노출):
+events 응답 예시(단일 승인 source):
 
 ```json
 {
@@ -1581,19 +1592,23 @@ events 응답 예시(충돌 노출):
   "data": {
     "items": [
       {
-        "eventId": "evt_krx_005930_earnings_2026q2",
-        "eventType": "EARNINGS_EXPECTED",
+        "eventId": "evt_krx_005930_dividend_2026q2_r1",
+        "eventType": "DIVIDEND_RECORD",
         "symbol": "005930",
         "exchangeMic": "XKRX",
-        "eventDate": "2026-07-31",
+        "eventDate": "2026-06-30",
         "eventTime": null,
         "timeStatus": "DATE_ONLY",
-        "status": "TENTATIVE",
-        "confidence": 0.55,
-        "conflictFlag": true,
+        "status": "CONFIRMED",
+        "confidence": 0.70,
+        "conflictFlag": false,
         "sourceRefs": [
-          { "sourceId": "src_cal_kis_estimate", "observedValue": "2026-07-31" },
-          { "sourceId": "src_cal_aggregator_a", "observedValue": "2026-07-30" }
+          {
+            "sourceId": "src_cal_kis_ksdinfo_dividend",
+            "observationId": "obs_01JZ6W7G8H9J0K1M2N3P4Q5R6S",
+            "observedAt": "2026-06-20T10:00:00+09:00",
+            "projectionHash": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+          }
         ]
       }
     ],
@@ -1606,20 +1621,152 @@ sources 응답 항목 예시(공개 가능 필드만): `sourceId`, `provider`, `
 
 ### 12A.3 충돌·신뢰도 시맨틱 (계획)
 
-1. 일반 출처 우선순위는 공식 거래소/규제기관/정부 > 규제 브로커·인프라 > 검증된 라이브러리/키 발급형 aggregator > RSS/HTML 스크랩이다. 다만 capability별 규칙이 우선하며 XKRX `TradingSession.isOpen`은 KIS `CTCA0903R`의 `opnd_yn`이 운영 1차, `exchange_calendars` XKRX가 base/fallback, KASI는 `PUBLIC_HOLIDAY`와 사유 보강만 담당한다. FRED는 현행 약관상 서면 허가 또는 대체 licensed source 전 사용하지 않는다.
-2. 독립 소스 다수 일치는 confidence를 올린다(동일 상위 원천을 재배포한 소스는 독립으로 세지 않는다).
-3. 날짜/시간 충돌은 조용히 덮어쓰지 않는다. 상위 tier 값을 canonical로 채택하되 `conflictFlag=true`와 전체 `sourceRefs`를 유지하고 `/conflicts`에 노출한다.
+1. 일반 출처 우선순위보다 field/capability authority가 우선한다. XKRX `isOpen`은 유효한 KIS
+   `CTCA0903R.opnd_yn`이 1차다. 실패 시 같은 날짜의 non-expired `stale_after`, healthy,
+   unresolved conflict 없음 조건을 모두 만족하는 prior canonical을 사용하고, 없으면 pinned
+   `exchange_calendars==4.13.2` XKRX base를 사용한다. 두 fallback 모드 모두 canonical에
+   `degraded=true`, stable fallback reason, sanitized `sourceRefs`를 기록하고, 별도
+   health/freshness 증거 없이 RiskEngine required input으로 승격하지 않는다.
+   open/close/timezone은 XKRX가 1차이며
+   closed session은 open/close timestamp가 `null`이다. KASI는 holiday reason/name만 보강하고
+   `isOpen`이나 그 confidence를 변경하지 않는다. dividend record/pay는 KIS KSD structured
+   field, 승인된 OpenDART structured event 순서이고 ex-date를 추론하지 않는다. FRED는 현행
+   약관상 서면 허가 또는 대체 licensed source 전 사용하지 않는다.
+2. source 선택은 field/capability authority와 tier로 먼저 끝낸다. 독립 upstream-origin group의
+   추가 일치는 같은 field/value에 대해서만 confidence를 올리고, 동일 원천 재배포·반복 관측은
+   독립으로 세지 않는다.
+3. 날짜/시간 충돌은 조용히 덮어쓰지 않는다. 상위 authority 값을 canonical로 채택하되
+   `conflictFlag=true`와 opaque `sourceRefs`를 유지하고 향후 `/conflicts`에 노출한다.
 4. 미래 실적 이벤트는 aggregator 값만으로 `CONFIRMED`가 될 수 없고, DART/SEC 제출 확인 시 `EARNINGS_ACTUAL`(status=ACTUAL)로 별도 이벤트를 만든다.
-5. `confidence` 기본값은 reliabilityTier 기반으로 두고, 독립 일치 +가산, 미해소 충돌 −감산. 산식 자체는 구현 세션에서 고정하되 응답 필드 의미는 이 계약을 따른다.
-6. `confidence`는 캘린더/이벤트 데이터의 출처 일치도와 충돌 상태를 설명하는 감사용 값이다. 투자 권유 점수, 매수/매도 신호, 주문 허용 기준으로 직접 사용하지 않는다.
+5. 내부 `confidence_bps`는 Tier 1/2/3/4 base `9000/7000/5000/3000`, 추가 independent
+   origin group당 field/capability별 `+500`, unresolved conflict가 하나 이상이면 canonical row
+   전체에 한 번 `-2000`, 최종 `0..9900` clamp로 고정한다. float 계산은 금지하고 rule version을
+   저장한다.
+6. `confidence`는 캘린더/이벤트 데이터의 출처 일치도와 충돌 상태를 설명하는 감사용 값이다.
+   source 선택, `isOpen`, disclosure open/close, 투자 권유 점수, 매수/매도 신호, 주문 허용
+   기준을 직접 변경하지 않는다.
 
 ### 12A.4 보안/응답 제한 (계획)
 
 1. 응답에 secret, raw token, app key, 계좌번호, provider raw payload 원문을 절대 포함하지 않는다. 환경변수 이름, 인증 방식, credential configured 여부처럼 key의 존재나 주입 구조를 추론할 수 있는 metadata도 runtime source/health API에 노출하지 않는다.
-2. `sourceRefs`는 sanitized 요약값과 그 canonical content hash만 담는다. provider raw body/header/query 또는 민감 필드를 포함한 상태로 hash하지 않는다. 원 응답 재배포가 금지된 소스(약관상 redistribution 제한)는 `observedValue`를 요약/파생값으로만 표현한다.
+2. `sourceRefs`는 opaque source/observation ID, observedAt, allowlisted projection hash와 필요한
+   attribution만 담는다. `observedValue`, provider raw body/header/query/request URL/raw hash나
+   민감 필드를 포함하지 않는다.
 3. USER용 `sources`/`health`에는 provider 계정별 limit·잔여 횟수·reset 시각을 노출하지 않고, 데이터의 `stale`/`degraded`와 `asOf`만 제공한다. quota accounting은 운영자 내부 관측 채널에서 non-secret scope로 관리한다.
 4. attribution이 요구되는 소스는 `attribution` 문구를 함께 반환해 화면 표기가 가능하게 한다.
 5. 공식 문서로 무료 여부, 호출 한도, 라이선스, 재배포 제한을 재확인하지 못한 소스는 해당 구현 세션 시작 전 또는 종료 보고에서 사용자에게 검증·채택 여부를 묻고 결과를 기록한다. 사용자 확인 없이 기본 활성 소스로 조용히 추가하지 않는다.
+
+### 12A.5 내부 correction·idempotency·저장 계약 (S1.6 v1 동결)
+
+이 절은 public response가 아니라 후속 S1.6 production 구현의 내부 계약이다.
+
+1. 모든 event observation은 provider별 `source_event_key`가 있어야 한다. date를 제외한
+   `event_series_key`에는 source identity와 provider가 증명한 stable cycle/receipt identity가
+   들어간다. fixture가 stable identity를 증명하지 못하면 symbol/type/date 조합으로 합성하지
+   않고 stable `EVENT_SERIES_IDENTITY_UNAVAILABLE`로 quarantine한다.
+2. 예를 들어 fixture가 normalized stable identity
+   `corporateActionId=DIV-005930-2026-Q2`를 제공하면 `DIVIDEND_RECORD`의 series key는
+   source ID, event type, 이 identity로 만들고 record date를 넣지 않는다. 같은 identity의
+   날짜 정정은 revision 2가 revision 1을 가리킨다. 다음 분기 identity는 별도 series다.
+3. duplicate key는 `(source_id, source_event_key, sanitized_payload_hash)`다. 같은 hash 재실행은
+   revision을 만들지 않고, source revision 중복은 DB unique로 거부한다. correction은 같은
+   series의 바로 이전 revision만 `revised_from_event_id`로 참조한다.
+4. event row는 immutable이다. `firstSeenAt`/`lastSeenAt`은 observation relation에서 계산한다.
+   nullable public natural key는 DB dedupe key로 직접 사용하지 않고 필요한 nullable unique는
+   PostgreSQL 16 `NULLS NOT DISTINCT`로 선언한다.
+
+후속 migration의 최소 내부 객체는 다음과 같다.
+
+| 객체 | 변경/불변 계약 |
+|---|---|
+| `opendart_quota_usage` | KST usage date별 effective limit/budget, charged `physical_attempts`, exhausted 상태, grant token. 감소된 budget보다 attempts가 클 수 있어 `attempts <= budget` CHECK는 두지 않음 |
+| `calendar_source_health` | stable status/error와 `stale_after`, `network_ready`; raw error/response 없음 |
+| `calendar_observations` | allowlisted sanitized projection만 immutable INSERT |
+| `trading_sessions` | `(exchange_mic, session_date)` current consumer row |
+| `trading_session_revisions` | session 선택·conflict resolution을 append-only로 보존하는 decision journal |
+| `calendar_events` | `(event_series_key, revision_no)` immutable revision과 current view |
+| `calendar_event_sources` / `calendar_conflicts` | opaque observation relation과 deterministic immutable conflict |
+| `calendar_collection_cursors` | source/operation/subject/window/mapping version별 atomic continuation |
+| `disclosure_risk_state_transitions` | append-only OPEN/CLOSE와 active-state view |
+
+기존 V4 `market_calendar`는 data-loss 없는 명시적 이관과 compatibility 종료를 거쳐야 하며,
+두 canonical SSOT를 동시에 활성화하지 않는다. correction transaction은 observation, canonical
+revision/source link/conflict, cursor를 함께 commit한다.
+
+### 12A.6 strict registry·transport·retry 계약 (S1.6 v1 동결)
+
+`calendar_source_seed.yaml` top-level은 exact `schemaVersion`, `registryVersion`, `generatedAt`,
+`sources`만 허용한다. 각 source는 exact `sourceId`, `provider`, `category`, `licenseClass`,
+`reliabilityTier`, `capabilities`, `originGroup`, typed `origin`, `mappingVersion`, `networkReady`,
+`enabledByDefault`, `retention`, `provenance`를 가진다. `origin`은 offline source 또는 exact HTTPS
+fixed origin 중 하나이고, `retention`은 online persistent source에 대해 positive `days`와
+nonempty `owner`가 모두 있어야 한다. unknown field, duplicate ID, invalid URL/license/tier/
+capability, unsafe/inactive source enablement, credential/private adoption fact seed 저장은 거부한다.
+
+retry는 다음 exact matrix를 따른다.
+
+| 결과 | retry | 추가 조건 |
+|---|---:|---|
+| HTTP 429, OpenDART body `020`, auth/permission, invalid argument | 0 | `020`은 같은 KST date의 queue 전체 중단 |
+| schema/PII/pagination/continuation drift | 0 | canonical publish 0 |
+| timeout, transport failure, HTTP 500/502/503/504 | 최대 2회 재시도(총 3 attempts) | allowlisted safe GET만 |
+
+모든 attempt는 shared TokenBucket 뒤 send 직전 PostgreSQL reservation을 새로 얻는다. DB
+deny/error/ambiguous commit이면 HTTP 0이고 reservation refund는 없다. 호환 column
+`physical_attempts`는 actual send가 아니라 charged reservation 수이므로 운영 보고는 logical
+operations, charged reservations, actual HTTP sends를 분리한다.
+
+KASI v1은 XML reason enrichment only다. `application/xml`/`text/xml`만 허용하고 DTD, entity,
+external resource를 거부한다. declared/compressed bytes 256 KiB, decoded/uncompressed bytes
+512 KiB, depth 8, total nodes 4096, `<item>` 128, text node 2048 code points/8192 UTF-8 bytes가
+hard cap이다. 공식 exact HTTPS origin 검증 전에는 `networkReady=false`,
+`enabledByDefault=false`, service-key outbound 0이고 HTTP 또는 `_type=json` fallback이 없다.
+
+### 12A.7 quota·priority·상태·권한·retention 계약 (S1.6 v1 동결)
+
+OpenDART online은 아래 네 설정을 코드 기본값 없이 모두 요구한다.
+
+- `OPENDART_DAILY_CALL_LIMIT`
+- `OPENDART_DAILY_CALL_BUDGET`
+- `OPENDART_MAX_CALLS_PER_RUN`
+- `OPENDART_MAX_SYMBOLS_PER_RUN`
+
+budget은 `min(17,500, floor(limit * 0.875))`, per-run cap은 `min(8,000, budget)` 이하다.
+same-day incoming 설정은 기존 row와 `LEAST`로만 낮출 수 있고 증가분은 다음 KST date row부터
+적용한다. PostgreSQL session advisory lock은 collector single-instance를 강제하고 last-slot
+two-connection race에서는 정확히 하나만 성공해야 한다. DS001은 `page_count=100`, deterministic
+corp/symbol sort와 subject별 one-page round-robin을 사용하며 cursor/canonical을 원자 commit한다.
+
+| budget usage | 허용 priority |
+|---:|---|
+| `<70%` | P1~P4 |
+| `>=70% and <90%` | P1~P3(P4 중단) |
+| `>=90%` | P1만 |
+| `status=020` | 전체 중단 |
+
+70%/90% 임계치와 priority degradation은 provider 계약이 아니라 이 프로젝트의 보수적 운영 정책이다.
+
+P1은 DS001, 필수 corp-code refresh, `bnkMngtPcbg`/`bnkMngtPcsp` 같은 active safety state,
+P2는 v1 canonical enum에 직접 mapping되는 structured DS005, P3는 DS004 PII-free ownership
+projection, P4는 company/financial enrichment다. unmapped operation은 online 거부한다.
+
+disclosure state v1은 `bnkMngtPcbg`가 `BANK_MANAGEMENT`를 open하고 `bnkMngtPcsp`가 같은
+state key를 close하는 pair만 지원한다. duplicate open/close는 idempotent, close-before-open은
+stable `DISCLOSURE_STATE_CLOSE_WITHOUT_OPEN`, correction은 새 revision/transition이다. scorer는
+active-state view만 읽고 provider HTTP를 만들지 않으며 close 뒤 contribution은 0이다.
+
+operator/bootstrap은 Flyway 전에 `decision_collector`를 non-superuser, NOCREATEDB,
+NOCREATEROLE로 생성한다. role은 schema USAGE와 quota/health/cursor current row에 필요한 exact
+SELECT/INSERT/UPDATE, append-only object의 SELECT/INSERT, 필요한 sequence USAGE/SELECT만 가진다.
+schema CREATE, Flyway history, raw/observation unauthorized read, unrelated table, role creation,
+DELETE/TRUNCATE는 금지한다. `decision_app`은 승인된 canonical/current view SELECT만 가진다.
+
+provider raw body/header/request URL, raw hash와 DS004 raw materialization은 0이다. DS004는
+corp code, role/category enum, relevant dates, share count/ratio만 observation 생성 전에
+projection한다. online persistent sanitized observation은 positive per-source retention과 owner가
+operator config에 모두 있을 때만 허용하고 offline/Testcontainers ephemeral write만 예외다.
+canonical/conflict/transition audit retention은 별도 owner가 맡으며 승인 없는 broad auto-delete는
+실행하지 않는다.
 
 ---
 
@@ -1941,7 +2088,7 @@ message GetDisclosureEventsResponse {
   string mapping_version = 7;   // 예: s1.2-v1
   repeated DisclosureRiskEvent events = 8;
   repeated DisclosureRiskWarning warnings = 9;
-  repeated string source_refs = 10;  // raw observation 참조 id
+  repeated string source_refs = 10;  // sanitized observation의 opaque 참조 id
 }
 
 message DisclosureRiskEvent {
@@ -1967,7 +2114,7 @@ message DisclosureRiskWarning {
 | 감시 모델 | v1은 백그라운드 상시 감시가 아니라 **판단 시점 조회(on-demand lookback)**다. RiskEngine은 PostgreSQL에 저장된 관측치 또는 snapshot을 읽고 주문 판단 경로에서 OpenDART HTTP 요청을 직접 fan-out하지 않는다. 이벤트로 상태를 open/close하는 지속 상태 추적은 S1.6 과제다. 상세는 `docs/decision-platform/S1_2_OpenDART_공시위험점수_근거.md`의 "공시위험 감시 모델" 절 |
 | 소비 | Decision/Risk 판단은 이 응답을 `risk_decision.riskItems[]`(`metric=disclosure_risk_score`)로 노출한다 |
 | 보안 | 인증정보는 서버 운영자가 루트 `.env`/배포 secret store에만 주입한다. `OpenDARTSettings`·business client·HTTP client는 값이나 필드를 보관하지 않는다. private transport가 TLS 검증을 강제한 고정 OpenDART HTTPS origin의 실제 send 구간에서만 값을 일시 로드·첨부하고 즉시 request URL을 원복한다. redirect, ambient proxy/`.netrc`(`trust_env`), caller proxy/CA override와 상위 caller의 인증성 파라미터·절대 URL은 outbound 전 거부한다. response echo·로그·예외·metric·raw/fingerprint에서는 값과 민감 필드 자체를 제거한다 |
-| quota | OpenDART FAQ의 개인 계정 `20,000/day`는 현재 배포 ceiling을 정하기 위한 검증 기준값이며 계정 공통 불변 hard cap으로 간주하지 않는다. S1.6은 실제 계정 한도를 `effective limit`으로 재확인하고 `daily limit<=effective limit`, `daily budget<=min(17,500, floor(effective limit*0.875))`, `per-run actual attempt cap<=min(8,000, daily budget)`으로 함께 낮추며 코드 기본값으로 고정하지 않는다. 계정 화면에서도 20,000건을 확인한 경우에만 17,500/8,000 예시를 그대로 사용한다. `status=020` 또는 budget 도달 시 당일 전면 중단한다 |
+| quota | OpenDART FAQ의 개인 계정 `20,000/day`는 현재 배포 ceiling을 정하기 위한 검증 기준값이며 계정 공통 불변 hard cap으로 간주하지 않는다. S1.6은 실제 계정 한도를 `effective limit`으로 재확인하고 `daily limit<=effective limit`, `daily budget<=min(17,500, floor(effective limit*0.875))`, `per-run charged reservation/physical_attempts cap<=min(8,000, daily budget)`으로 함께 낮추며 코드 기본값으로 고정하지 않는다. actual HTTP sends는 charged reservations와 별도 보고하고 항상 그 이하여야 한다. 계정 화면에서도 20,000건을 확인한 경우에만 17,500/8,000 예시를 그대로 사용한다. `status=020` 또는 budget 도달 시 당일 전면 중단한다 |
 
 ### 13.6 FinancialEngineeringService
 
@@ -2048,7 +2195,7 @@ service SourceRegistryService {
 | S1.3K (offline·live 검증 완료) | KRX private transport는 exact HTTPS origin과 `stk_bydd_trd`/`ksq_bydd_trd` GET만 허용하고 `AUTH_KEY`를 send 직전에만 부착한다. caller origin/path/auth/proxy/CA/transport override, ambient proxy/`.netrc`, redirect, response echo를 거부한다. byte/depth/list/text/row/numeric/date 상한과 exact `BAS_DD`, KRX source `[0-9A-Z]{6}`, KIS/Naver manifest `[0-9]{6}`, nonnegative int64, duplicate 금지를 검증한다. 영문 issue code는 source hash에 남기되 manifest 후보에서는 제외한다. 단일 probe도 같은 private transport·strict parser를 사용하고 파일을 쓰지 않는다. 공식 hard cap보다 낮은 Redis rolling-24h 9,000을 유지하며 probe/full 각 프로세스 cap은 `1/1/2`, retry `0`이다. KRX1~5/KRX8/KRX10 실패와 KRX6/7/9 만료 evidence는 성공 회계와 분리한다. timeout은 probe `120/130초`, full `120/260초`다. KRX11은 physical `4`, Redis `4→8`, retry·추가 호출 `0`으로 두 시장 strict parse와 ignored manifest/report 원자 게시를 실제 통과했다. raw provider 정보는 저장하지 않으며 public API·DB·S1.6 calendar는 변경하지 않는다 |
 | S1.4 | 계산 request의 배열·기간·숫자 finite/상하한, deadline, 동시 실행과 output 크기를 제한한다. 계산 오류·NaN·timeout은 주문 허용값이 아니다 |
 | S1.5 | Data Quality Report API/산출물은 finite/missing/duplicate aggregate와 sanitized sample만 제공한다. provider raw/query/credential/token/account/PII를 report·로그·metric에 넣지 않고 상세 ignored artifact에는 retention을 적용한다 |
-| S1.6 | OpenDART outbound 전 PostgreSQL physical-attempt reservation이 성공해야 하며 DB 오류/budget/cap/020은 non-retry fail-closed다. DS004 ownership canonical은 corpCode·role/category·날짜·주식 수/비율만 허용하고 자연인 성명·주소·등록 식별자를 raw/canonical/log/metric/artifact/event에서 제거한다. Market Calendar RPC/REST는 aggregator 이후 별도 contract change 전까지 미가용이고 sourceRefs는 opaque sanitized ID/hash만 반환한다 |
+| S1.6 | OpenDART outbound 전 PostgreSQL charged reservation이 성공해야 하며 DB 오류/budget/cap/020은 non-retry fail-closed다. charged reservation과 actual HTTP send를 분리 집계한다. DS004 ownership canonical은 corpCode·role/category·날짜·주식 수/비율만 허용하고 자연인 성명·주소·등록 식별자를 observation/canonical/log/metric/artifact/event에서 제거한다. Market Calendar RPC/REST는 aggregator 이후 별도 contract change 전까지 미가용이고 sourceRefs는 opaque sanitized ID/hash만 반환한다 |
 | S2 | 2.4 BOLA와 2.5 idempotency를 모든 Decision/Risk owner resource와 금융 부작용 write에 적용한다. actor/time은 principal/server clock에서 생성하고 ADMIN 고위험 행위는 현재 DB role/security version을 재검증해 override/replay를 audit한다. SQL 값은 bind parameter만 사용하고 table/column/sort identifier는 enum allowlist로 매핑하며 raw 문자열 연결을 금지한다. write DTO는 unknown/권한성 필드를 거부한다 |
 | S3 | accountId는 opaque+owner-scoped다. order body의 price/quantity/position/risk-reduction 주장은 server snapshot으로 재검증한다. Live는 deploy immutable OFF, operator account allowlist, user consent, Kill Switch/reconciliation을 모두 요구하며 공개 API로 gate를 변경할 수 없다 |
 | S4 | RAG source/prompt는 untrusted data이며 내부 지시·URL·tool 호출을 실행하지 않는다. source ingest/register/reindex는 ADMIN 전용이며 scheme/origin/MIME/size/redirect/SSRF gate를 적용한다. answer/cache/feedback는 owner scope·TTL·output encoding을 적용한다. RAG 실행 주체는 provider token cache나 brokerage secret에 접근하지 못한다. model은 exact revision/weight hash/license를 기록하고 remote code/untrusted pickle을 금지한다 |

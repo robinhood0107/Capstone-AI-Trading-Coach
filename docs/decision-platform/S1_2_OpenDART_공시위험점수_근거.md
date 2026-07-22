@@ -24,7 +24,7 @@ S1.2는 OpenDART 공식 API에서 읽은 구조화 이벤트만 점수화한다.
 
 | 구분 | 그룹 | 항목 | 판단 이유 |
 |---|---|---|---|
-| 지원 | DS001 | 공시검색, 기업개황, 고유번호 | 회사 식별과 공시 metadata·raw observation의 기반 |
+| 지원 | DS001 | 공시검색, 기업개황, 고유번호 | 회사 식별과 allowlisted 공시 metadata·sanitized observation의 기반 |
 | 지원 | DS002 | 회계감사인의 명칭 및 감사의견(`adt_opinion`) | 비적정/한정/의견거절은 강한 위험 검토 트리거 |
 | 지원 | DS003 | 단일회사 주요계정(`fnlttSinglAcnt`), 단일회사 주요 재무지표(`fnlttSinglIndx`), (S1.2c) 다중회사 주요 재무지표(`fnlttCmpnyIndx`) | 재무위험 기준·RAG 카드·백테스트 feature 후보. 다중회사는 universe batch |
 | 지원 | DS004 (S1.2c) | 대량보유 상황보고(`majorstock`), 임원ㆍ주요주주 소유보고(`elestock`) | 지분변동/주요주주 ownership 축. **수집·파싱만** — 즉시 주문 차단 1순위가 아니라 종목 설명·후속 feature 용도(주문 차단 점수 미연결) |
@@ -43,14 +43,14 @@ S1.2는 OpenDART 공식 API에서 읽은 구조화 이벤트만 점수화한다.
 |---|---|---|---|
 | **S1.2b** | DS005 확장: 신주인수권부사채(`bdwtIsDecsn` 2020034)·교환사채(`exbdIsDecsn` 2020035)·회사합병(`cmpMgDecsn` 2020050)·회사분할(`cmpDvDecsn` 2020051)·회사분할합병(`cmpDvmgDecsn` 2020052)·영업양도(`bsnTrfDecsn` 2020043) | **완료(지원으로 이동)**. BW/EB=0.6·window 30, 합병/분할/분할합병/영업양도=0.6·window 90, `policy_v1_unvalidated`. endpoint path/params + event_code + mapping validation + scorer 테스트 통과 | 기존 `MAIN_MATTER_ENDPOINTS` 패턴 재사용 |
 | **S1.2c** | DS003 다중회사 주요 재무지표(`fnlttCmpnyIndx`, apiId 2022002) + DS004 대량보유 상황보고(`majorstock`, 2019021)·임원ㆍ주요주주 소유보고(`elestock`, 2019022) | **완료(지원으로 이동)**. 다중회사 corp_code comma-join 복수조회, ownership row 파싱, `OwnershipDisclosureEvent`(event_code `OPENDART:OWNERSHIP_CHANGE`) 내부 모델. client/parser 테스트 통과. 주문 차단 점수 미연결 | 재무 feature·지분변동 축 |
-| **S1.6** | Market Calendar/Event Aggregator + **공시위험 지속 상태 추적 확정 포함** + DS004 ownership canonical 승격 | 예정. 구조화 이벤트로 위험 상태 open, 해제 공시(회생 종결·관리절차 중단 `bnkMngtPcsp`)로 close하는 collector + 상태머신. scorer가 임의 window 없이 “현재 위험 상태”만 읽게 됨. REST/gRPC/Dashboard는 S1.6 이후 별도의 명시적 contract-change 세션에서만 가용화 | 유형별 유효기간(30/90/365) 근사를 정확 모델로 대체 |
+| **S1.6** | Market Calendar/Event Aggregator + 공시위험 지속 상태 추적 + DS004 ownership canonical 승격 | prerequisite 계약 동결. v1 structured state pair는 `bnkMngtPcbg` open / `bnkMngtPcsp` close만 승인한다. `report_nm` 기반 회생 종결과 승인되지 않은 close는 지원하지 않는다. production collector/상태머신은 후속 PR이며 REST/gRPC/Dashboard는 다시 별도 contract-change가 필요하다 | 관리절차 상태는 current active view로 전환하고 나머지 유형은 승인된 pair가 생길 때까지 기존 lookback 유지 |
 
 - S1.2b·S1.2c endpoint 경로명은 구현 시 OpenDART 상세페이지로 확인 완료(apiId ↔ path 일치). 경로명을 미확정 상태로 지어내지 않는다.
 - 실제 주문 판단 소비(riskItems 방출)는 S2.2 `DisclosureRiskPort` + S2.3 Decision API에서 이뤄진다(위 로드맵과 독립적으로 진행).
 
 ### S1.2c 누적 보안 재검증 (2026-07-10)
 
-S0 최초 구현부터 S1.2c까지 누적 코드를 다시 검사했다. OpenDART는 응답 byte/JSON depth/list/ZIP member·ratio/XML field 상한을 두고 DTD/entity를 parser 단계에서 금지한다. raw observation은 source id를 제한하고 directory fd+`O_NOFOLLOW`+exclusive create로 symlink 경계 이탈을 차단한다. mapping window와 scorer 입력/date 범위도 bounded 처리한다. 이 검사는 offline fixture와 mock transport로 수행했으며 기존 승인 smoke 이후 새로운 OpenDART 호출을 만들지 않았다.
+S0 최초 구현부터 S1.2c까지 누적 코드를 다시 검사했다. OpenDART는 응답 byte/JSON depth/list/ZIP member·ratio/XML field 상한을 두고 DTD/entity를 parser 단계에서 금지한다. 당시 ignored observation projection은 source id를 제한하고 directory fd+`O_NOFOLLOW`+exclusive create로 symlink 경계 이탈을 차단했다. S1.6은 이 historical file을 import하지 않고 provider raw persistence를 0으로 고정하며 allowlisted sanitized observation만 DB에 허용한다. mapping window와 scorer 입력/date 범위도 bounded 처리한다. 이 검사는 offline fixture와 mock transport로 수행했으며 기존 승인 smoke 이후 새로운 OpenDART 호출을 만들지 않았다.
 
 같은 누적 검사에서 KIS credential의 private fixed-origin transport 격리, Spring 인증 전 body limit·로그인 원자 rate limit·멱등성 owner fencing, loopback gRPC, Redis/PostgreSQL 최소권한도 함께 보강했다. contracts/proto와 S1.6 quota migration/collector는 변경하지 않았다.
 
@@ -60,7 +60,7 @@ S1.2의 두 번째 핵심은 점수를 계산만 하지 않고, 판단 결과 �
 
 - Principle 계약(`contracts/schemas/principle.schema.json`)에는 이미 `disclosure_risk_guard`/`disclosure_risk_score`가 있다(입력 축).
 - 판단 결과 계약(`contracts/schemas/risk_decision.schema.json`)에는 disclosure 근거가 없었다. 이를 범용 `riskItems[]`로 추가했다. OpenDART 전용 거대 객체 대신, 다른 원천(뉴스/거시 등)도 같은 형태로 표현할 수 있는 구조다.
-- `riskItems[]` 항목: `metric`(예 `disclosure_risk_score`), `value`, `severity`, `source`(예 `OPENDART`), `eventCodes`(예 `OPENDART:dfOcr`), `mappingVersion`, `sourceRefs`(raw observation/citation 참조).
+- `riskItems[]` 항목: `metric`(예 `disclosure_risk_score`), `value`, `severity`, `source`(예 `OPENDART`), `eventCodes`(예 `OPENDART:dfOcr`), `mappingVersion`, `sourceRefs`(sanitized observation/citation의 opaque 참조).
 - 서비스 경계는 `docs/API_명세서.md` 13.5 `MarketDataService.GetDisclosureEvents`의 request/response 계약으로 문서화했다. 실제 gRPC proto 파일은 아직 없고, 구현은 컨트롤러 도입 세션에서 계약을 따라 붙인다.
 
 이 연결로 “점수는 계산되지만 어디에도 안 쓰인다”는 감사 지적(P1)을 계약 수준에서 먼저 해소한다. 실제 Spring RiskEngine 소비 구현은 Decision/Risk 컨트롤러 세션의 과제로 남는다.
@@ -70,7 +70,7 @@ S1.2의 두 번째 핵심은 점수를 계산만 하지 않고, 판단 결과 �
 | 근거 문서 | 확인한 내용 | S1.2 판단 |
 |---|---|---|
 | `docs/최종_프로젝트_명세서.md` 11.1, 11.5 | OpenDART는 재무제표, 공시, 기업 기본정보의 필수 원천 | OpenDART read-only client를 둔다 |
-| `docs/최종_프로젝트_명세서.md` 11.1.2 | raw observation과 canonical event를 분리 | S1.2는 raw만 저장하고 정규화·집계는 S1.2+ umbrella 아래 확정된 S1.6 event aggregator로 미룬다 |
+| `docs/최종_프로젝트_명세서.md` 11.1.2 | sanitized observation과 canonical event를 분리하고 provider raw persistence를 금지 | S1.2 historical ignored projection은 S1.6 input으로 승격하지 않는다. S1.6은 allowlisted projection, 정규화·집계만 저장한다 |
 | `docs/API_명세서.md` 4장 | `disclosure_risk_guard`는 `disclosure_risk_score`를 소비 | Python 서비스가 점수를 계산하고 Spring RiskEngine은 snapshot을 소비 |
 | `docs/API_명세서.md` 5장 Decision API | 판단 결과는 `violations`/`riskItems`로 위험 근거를 표현 | `disclosure_risk_score`를 `risk_decision.riskItems[]`로 결과 계약에 노출 |
 | `contracts/schemas/risk_decision.schema.json` | disclosure 근거를 담을 범용 `riskItems` 구조 | 유형별 유효기간 내 복수 이벤트 max score·mapping 버전을 결과 계약에 재현 가능하게 남긴다 |
@@ -86,7 +86,7 @@ S1.2는 “재무제표와 모든 공시를 전부 긁는 단계”가 아니다
 | 재무 주요계정 | 단일회사 주요계정 endpoint parser 제공 | XBRL 원문, 주석, 전체 재무제표 대량 다운로드 |
 | 재무지표 | 단일회사(`fnlttSinglIndx`)와 (S1.2c) 다중회사 batch(`fnlttCmpnyIndx`) parser 제공 | 재무비율 임계값 원칙 연결(후속), 재무제표 원문 |
 | 지분공시 | (S1.2c) 대량보유(`majorstock`)·임원ㆍ주요주주 소유(`elestock`) 수집·파싱, `OwnershipDisclosureEvent` 내부 모델 | 주문 차단 점수 연결(후속), ownership canonical 승격(S1.6) |
-| 공시목록 | 대상 기간(호출부 지정) 공시목록 조회와 raw observation 저장 | 공시 제목 문자열 기반 이벤트 확정 |
+| 공시목록 | 대상 기간(호출부 지정) 공시목록 조회와 allowlisted sanitized observation projection | provider raw 저장, 공시 제목 문자열 기반 이벤트 확정 |
 | 주요사항 | 자본조달·법적 위험(유상증자·전환사채·소송)과 going-concern distress(부도·회생·해산·관리절차·영업정지·감자) 전용 endpoint identity를 risk event로 사용 | 주요사항보고서 36종 전체 점수화, 자기주식/양수도/해외상장 등 저위험·중립 이벤트 |
 | 감사의견 | `adt_opinion` 구조화 필드로 비적정/한정/의견거절만 점수화 | 감사보고서 본문 NLP 판단 |
 
@@ -95,13 +95,42 @@ S1.2는 “재무제표와 모든 공시를 전부 긁는 단계”가 아니다
 ## API key와 quota 운영 경계
 
 - OpenDART API key는 Decision Platform 서버 운영자가 배포 환경에 주입하는 secret이다. 앱 사용자는 회원가입·Dashboard·설정·REST/gRPC 요청에서 key를 입력하거나 사용자별 quota를 관리하지 않는다.
-- key는 환경변수/배포 secret store에서만 읽고 DB·Redis·YAML·Git에 저장하지 않으며, 로그·예외·metric label·응답·raw observation에 노출하지 않는다. key 누락·오류 시 collector는 fail-closed로 중단한다. 공시 rule이 해당 주문의 활성 principle에서 optional이면 Decision 경로는 snapshot이 없거나 stale이어도 그 값을 최신으로 사용하지 않고 마지막 `asOf`와 누락 사유를 표시한 뒤 skip+WARN할 수 있다. rule이 required이면 missing/stale에서 `HOLD`한다.
+- key는 환경변수/배포 secret store에서만 읽고 DB·Redis·YAML·Git에 저장하지 않으며, 로그·예외·metric label·응답·sanitized observation에 노출하지 않는다. key 누락·오류 시 collector는 fail-closed로 중단한다. 공시 rule이 해당 주문의 활성 principle에서 optional이면 Decision 경로는 snapshot이 없거나 stale이어도 그 값을 최신으로 사용하지 않고 마지막 `asOf`와 누락 사유를 표시한 뒤 skip+WARN할 수 있다. rule이 required이면 missing/stale에서 `HOLD`한다.
 - S1.2에서 공개 settings와 `OpenDARTClient`/`OpenDARTHttpClient`가 인증 필드나 값을 보관하지 않도록 분리했다. private transport만 TLS 검증을 강제한 고정 OpenDART HTTPS origin의 실제 send 구간에서 루트 `.env`/process env 값을 일시 로드·첨부하고, inner transport 반환·예외 직후 request URL을 원복한다. redirect, ambient proxy/`.netrc`(`trust_env`), caller proxy/CA override와 상위 caller의 인증성 파라미터·절대 URL은 outbound 전에 거부한다.
 - response body/header/extensions echo, transport exception chain, log, raw payload/fingerprint에는 인증정보 값과 민감 필드명을 남기지 않는다. 실제 API 사용에는 OpenDART 서버로의 TLS 전송이 필수지만 앱 계층의 객체·저장소·관측 채널에는 전파하지 않는다.
-- DS004 ownership canonical을 만드는 S1.6에서는 자연인 성명·주소·등록 식별자 등 개인 식별 필드를 저장하지 않는다. corpCode, role/category, 공시·변동일, 주식 수·비율과 sanitized source reference처럼 위험 feature에 필요한 최소 필드만 허용하고, 개인 식별 필드는 raw/canonical/log/metric/artifact/Kafka에서 제거한다.
-- OpenDART FAQ(2020-01-18)의 개인 계정 일일한도 `20,000건`은 현재 배포 ceiling의 검증 기준값이며 모든 계정의 불변 hard cap으로 단정하지 않는다. S1.6은 실제 계정 한도를 `effective limit`으로 다시 확인하고 `daily limit<=effective limit`, 12.5% reserve의 `daily budget<=min(17,500, floor(effective limit*0.875))`, `per-run actual attempt cap<=min(8,000, daily budget)`으로 세 값을 함께 낮추며 코드 기본값으로 고정하지 않는다. 계정 화면에서도 20,000건을 확인한 경우에만 17,500/8,000 예시를 그대로 사용한다. 개발가이드는 `020`이 일반적으로 20,000건 이상에서 발생하되 계정 설정에 따라 달라질 수 있다고 명시하므로 `status=020`과 실제 계정 상태가 최종 권위다. [OpenDART FAQ](https://opendart.fss.or.kr/cop/bbs/selectArticleList.do?bbsId=B0000000000000000002), [OpenDART 개발가이드](https://opendart.fss.or.kr/guide/detail.do?apiGrpCd=DS001&apiId=2019002)
-- S1.2는 HTTP 200 body의 `status=020`을 전용 비재시도 quota 신호로 구분하는 데까지만 구현한다. 일일 limit/budget과 실행별 실제 attempt cap의 durable enforcement는 운영 설정을 필수로 받는 S1.6 collector에서 구현한다.
+- DS004 ownership canonical을 만드는 S1.6에서는 자연인 성명·주소·등록 식별자 등 개인 식별 필드를 저장하지 않는다. corpCode, role/category, 공시·변동일, 주식 수·비율과 sanitized source reference처럼 위험 feature에 필요한 최소 필드만 observation 생성 전에 projection하고, 개인 식별 필드는 observation/canonical/log/metric/artifact/Kafka에서 제거한다. provider raw object를 먼저 저장한 뒤 삭제하는 방식도 금지한다.
+- OpenDART FAQ(2020-01-18)의 개인 계정 일일한도 `20,000건`은 현재 배포 ceiling의 검증 기준값이며 모든 계정의 불변 hard cap으로 단정하지 않는다. S1.6은 실제 계정 한도를 `effective limit`으로 다시 확인하고 `daily limit<=effective limit`, 12.5% reserve의 `daily budget<=min(17,500, floor(effective limit*0.875))`, `per-run charged reservation/physical_attempts cap<=min(8,000, daily budget)`으로 세 값을 함께 낮추며 코드 기본값으로 고정하지 않는다. actual HTTP sends는 charged reservations와 별도 보고하고 항상 그 이하여야 한다. 계정 화면에서도 20,000건을 확인한 경우에만 17,500/8,000 예시를 그대로 사용한다. 개발가이드는 `020`이 일반적으로 20,000건 이상에서 발생하되 계정 설정에 따라 달라질 수 있다고 명시하므로 `status=020`과 실제 계정 상태가 최종 권위다. [OpenDART FAQ](https://opendart.fss.or.kr/cop/bbs/selectArticleList.do?bbsId=B0000000000000000002), [OpenDART 개발가이드](https://opendart.fss.or.kr/guide/detail.do?apiGrpCd=DS001&apiId=2019002)
+- S1.2는 HTTP 200 body의 `status=020`을 전용 비재시도 quota 신호로 구분하는 데까지만 구현한다. 일일 limit/budget과 실행별 charged reservation/`physical_attempts` cap의 durable enforcement는 운영 설정을 필수로 받는 S1.6 collector에서 구현하고 actual HTTP sends는 별도 집계한다.
 - PostgreSQL atomic quota ledger와 단일 collector의 durable enforcement는 S1.6에서 구현한다. Redis와 Kafka는 OpenDART quota accounting에 사용하지 않는다.
+
+### S1.6 OpenDART collector 동결 계약
+
+S1.6 prerequisite는 production collector를 구현하지 않고 다음 계약을 먼저 고정한다.
+
+- online에는 `OPENDART_DAILY_CALL_LIMIT`, `OPENDART_DAILY_CALL_BUDGET`,
+  `OPENDART_MAX_CALLS_PER_RUN`, `OPENDART_MAX_SYMBOLS_PER_RUN` 네 positive operator 설정이
+  모두 필요하다. budget은 `min(17,500, floor(limit*0.875))`, run cap은
+  `min(8,000, budget)` 이하여야 하며 코드 기본값은 없다.
+- 모든 safe GET attempt는 TokenBucket 뒤 send 직전 PostgreSQL conditional UPSERT
+  reservation을 새로 얻는다. DB deny/error/ambiguous commit은 HTTP 0이고 refund는 없다.
+  호환 column `physical_attempts`는 charged reservation이므로 actual HTTP sends와 별도
+  집계한다.
+- retry 0은 HTTP 429, body `status=020`, auth/permission, invalid argument, schema drift,
+  PII projection failure, pagination/continuation mismatch다. timeout/transport와
+  500/502/503/504만 safe GET에서 총 3 attempts까지 허용한다. 첫 020은 durable exhausted를
+  기록하고 같은 KST date의 남은 queue와 reservation을 0으로 만든다.
+- daily usage 70%부터 P4 company/financial enrichment만 중단하고 90%부터 P1 DS001,
+  필수 corp-code refresh와 active safety state만 허용한다. P2는 v1 canonical enum에 직접
+  mapping되는 structured DS005, P3는 DS004 PII-free projection이며 unmapped operation은
+  online 거부한다. 70%/90% 임계치와 priority degradation은 provider 계약이
+  아니라 프로젝트의 보수적 운영 정책이다.
+- v1 state pair는 `bnkMngtPcbg` open과 `bnkMngtPcsp` close뿐이다. duplicate는 idempotent,
+  close-before-open은 stable `DISCLOSURE_STATE_CLOSE_WITHOUT_OPEN`, correction은 새 transition/
+  revision이다. scorer는 active-state view만 읽고 provider HTTP를 만들지 않으며 close 뒤 해당
+  contribution은 0이다.
+- provider raw body/header/request URL/raw hash 저장은 0이다. online persistent sanitized
+  observation은 source별 positive retention과 nonempty owner가 operator config에 모두 있을
+  때만 허용하며 offline/Testcontainers ephemeral write만 예외다.
 
 ## 점수표의 근거와 한계
 
@@ -111,7 +140,7 @@ S1.2는 “재무제표와 모든 공시를 전부 긁는 단계”가 아니다
 | 부도발생 (`dfOcr`) | 1.0 | OpenDART 주요사항보고서(부도발생) 전용 endpoint(apiId 2020019). 부도는 going-concern을 직접 위협하는 사건이다. | 정정·후속 공시가 이어질 수 있어 단발 점수는 상태 변화를 반영하지 못한다. |
 | 회생절차 개시신청 (`ctrcvsBgrq`) | 1.0 | OpenDART 주요사항보고서(회생절차 개시신청) 전용 endpoint(apiId 2020021). 도산 절차 진입 신호다. | 개시신청과 실제 개시·기각은 다르다. 상태 추적은 S1.6 aggregator 과제다. |
 | 해산사유 발생 (`dsRsOcr`) | 1.0 | OpenDART 주요사항보고서(해산사유 발생) 전용 endpoint(apiId 2020022). 법인 해산 신호다. | 합병형 해산 등 맥락에 따라 위험 성격이 달라질 수 있다. |
-| 채권은행 등의 관리절차 개시 (`bnkMngtPcbg`) | 1.0 | OpenDART 주요사항보고서(채권은행 등의 관리절차 개시) 전용 endpoint(apiId 2020027). 채권단 관리 진입은 재무 distress 신호다. | 관리절차 개시/중단(`bnkMngtPcsp`)의 상태 전이는 아직 결합하지 않는다. |
+| 채권은행 등의 관리절차 개시 (`bnkMngtPcbg`) | 1.0 | OpenDART 주요사항보고서(채권은행 등의 관리절차 개시) 전용 endpoint(apiId 2020027). 채권단 관리 진입은 재무 distress 신호다. | 현재 S1.2 scorer는 lookback 근사다. S1.6은 `bnkMngtPcsp` close와의 state pair 계약을 동결했지만 production state transition은 후속 구현 전까지 미가용이다. |
 | 영업정지 (`bsnSp`) | 0.8 | OpenDART 주요사항보고서(영업정지) 전용 endpoint(apiId 2020020). 사업 정지는 현금흐름·존속성에 직접 영향을 준다. | 정지 범위(일부/전부)와 기간 편차가 커서 distress 최상위보다 한 단계 낮게 둔다. |
 | 감자 결정 (`crDecsn`) | 0.8 | OpenDART 주요사항보고서(감자 결정) 전용 endpoint(apiId 2020026). 결손보전형 무상감자는 자본잠식 신호다. | 액면병합·구조조정 목적 감자도 있어 목적별 세분화 전에는 과대해석을 피한다. |
 | 소송 등의 제기 | 0.4 | OpenDART `lwstLg` 전용 endpoint가 있다. 기업 소송은 직접 비용, 평판 비용, 주주가치 반응의 이질성이 크다. | 소송 금액, 원고/피고 지위, 승소 가능성에 따라 위험도가 갈린다. 그래서 낮은 점수로 시작한다. |
@@ -140,7 +169,10 @@ going-concern distress 이벤트는 endpoint identity만으로 이벤트가 성�
 | 상태 지속형 (부도·회생·해산·관리절차·영업정지·감자·비적정 감사의견) | 365일 | 사건이 끝난 게 아니라 위험 상태가 지속됨. 30일 뒤 조용히 사라지면 안 됨 |
 
 - 유효기간 값도 점수와 마찬가지로 `policy_v1_unvalidated`다. 365일은 "상태가 지속된다"는 성질의 v1 근사이지 검증된 상수가 아니다.
-- 더 정확한 모델은 고정 일수가 아니라 **상태 해제 공시로 푸는 것**이다(예: 회생절차 개시신청 → 개시/종결, 채권은행 관리절차 개시 → 중단 `bnkMngtPcsp`). 이 상태 전이 추적은 S1.6 event aggregator 과제로 남긴다.
+- 더 정확한 모델은 고정 일수가 아니라 구조화된 상태 해제 공시로 푸는 것이다. S1.6 v1은
+  채권은행 관리절차 `bnkMngtPcbg` open → `bnkMngtPcsp` close만 승인한다. 회생절차 종결은
+  승인된 structured endpoint/field가 없으므로 `report_nm`으로 추론하지 않고 기존 lookback을
+  유지한다.
 - active mapping은 `effective_window_days`를 필수로 요구한다. 신규 고위험 이벤트가 실수로 30일 기본값에 묶이는 회귀를 validation으로 막는다.
 
 `effective_window_days`는 scorer의 "점수 반영 여부" 판정에만 쓰이며, endpoint에서 실제로 데이터를 긁는 수집 기간과는 별개다. 수집은 호출부가 지정하는 임의 기간으로 이뤄지고 30일에 묶이지 않는다.
@@ -152,13 +184,16 @@ going-concern distress 이벤트는 endpoint identity만으로 이벤트가 성�
 | 모델 | 설명 | 상태 |
 |---|---|---|
 | 판단 시점 조회 (on-demand lookback) | RiskEngine은 PostgreSQL에 저장된 관측치 또는 snapshot을 lookback해 `disclosure_risk_score`를 계산한다. 주문 판단 경로에서 OpenDART HTTP 요청을 직접 fan-out하지 않는다. 유효기간은 "판단 시점에 이 위험 상태가 아직 유효한가"를 근사하는 lookback 창이다. | v1 (S1.2~S1.2c 현재) |
-| 지속 상태 추적 (continuous/stateful) | 구조화 이벤트가 발생하면 종목의 위험 상태를 open하고, 해제 공시(회생절차 종결, 채권은행 관리절차 중단 `bnkMngtPcsp` 등)가 오면 close한다. 판단 시점에는 "현재 위험 상태인가"만 읽어 임의 window가 필요 없다. | 목표 (S1.6 aggregator) |
+| 지속 상태 추적 (continuous/stateful) | 승인된 구조화 pair로 상태를 open/close하고 판단 시점에는 current active view만 읽는다. v1 pair는 `bnkMngtPcbg`/`bnkMngtPcsp`뿐이다. | 계약 동결, production 미구현 |
 | 백그라운드 상시 감시/알림 | 새 공시를 계속 폴링해 능동적으로 경보/차단한다. | 현재 범위 아님 |
 
 핵심은 다음과 같다.
 
 - 이벤트 유형별 유효기간(공시효과형 30일 / reorg·사업구조 90일 / 상태 지속형 365일)은 **지속 상태 추적의 v1 근사**다. 30일 일괄로 되돌리면 상태 지속형이 31일 뒤 0점이 되는 회귀가 되살아나고, 되돌려도 감시 방식(판단 시점 조회)은 그대로이므로 손해만 있다.
-- 정확한 모델은 고정 일수 lookback이 아니라 open/close 상태 머신이다. 이를 위해 (1) 공시를 발생/주기 단위로 수집·저장하는 collector, (2) 이벤트→상태 전이 규칙(개시 vs 종결, 개시 vs 중단)이 필요하다. 둘 다 S1.2+ umbrella 아래 확정된 S1.6 event aggregator 과제이며, 이를 노출하는 REST/gRPC/Dashboard는 S1.6 이후 명시적 contract-change 세션에서 별도로 승인한다.
+- 정확한 모델은 고정 일수 lookback이 아니라 승인된 structured open/close 상태 머신이다.
+  v1은 관리절차 pair만 구현하고, 다른 close를 문자열로 추론하지 않는다. collector와 transition은
+  S1.6 production PR에서 구현하며 이를 노출하는 REST/gRPC/Dashboard는 S1.6 이후 명시적
+  contract-change 세션에서 별도로 승인한다.
 - 실제 배선(주문 판단이 이 점수를 소비)은 S2.2 `DisclosureRiskPort` + S2.3 Decision API에서 이뤄진다. S1.2는 결정적 점수 산출과 계약까지가 범위다.
 
 YAML에는 `calibration_status: policy_v1_unvalidated`를 명시한다. 이 값이 `korea_market_calibrated`로 바뀌려면 한국시장 대상 event study나 백테스트 결과 문서가 같이 있어야 한다. 특히 전환사채는 국내 연구가 엇갈리므로, 향후 보정 전에는 “0.6이 손실 기대값을 의미한다”고 말하면 안 된다.
@@ -171,7 +206,7 @@ YAML에는 `calibration_status: policy_v1_unvalidated`를 명시한다. 이 값�
 2. 구현 증명: YAML mapping과 scorer test를 제시해 같은 입력이 같은 출력을 낸다는 점을 보인다.
 3. 문헌 증명: 이벤트가 시장위험/정보위험과 연결된다는 선행연구를 제시한다.
 4. 한계 고지: 숫자는 아직 한국시장 통계 보정값이 아니라 정책 등급이라고 명시한다.
-5. 향후 증명 계획: S1.6 event aggregator 이후 raw observation과 가격 데이터를 결합해 event study를 수행한다.
+5. 향후 증명 계획: S1.6 event aggregator 이후 allowlisted sanitized observation과 가격 데이터를 결합해 event study를 수행한다.
 
 이 체크리스트의 1~3은 S1.2에서 충족한다. 4는 문서상 고지한다. 5는 아직 미완료다.
 
@@ -181,8 +216,8 @@ YAML에는 `calibration_status: policy_v1_unvalidated`를 명시한다. 이 값�
 |---|---|---|
 | L1 fixture 결정성 | 같은 입력이면 같은 점수 | offline fixture와 unit test 통과 |
 | L2 공식 endpoint 정합성 | 문자열이 아니라 endpoint/구조화 필드 기반 | OpenDART 공식 guide와 endpoint URL 대조 |
-| L3 raw 감사 가능성 | 나중에 같은 응답을 재검증 가능 | `RawObservation` hash, 수집시각, 민감 필드 제거 후 raw 저장 |
-| L4 online smoke | 실제 키와 live endpoint가 동작 | **완료(2026-07-10)**. 대표 5종목 소량 조회, raw 파일 ignored 경로 저장 확인 |
+| L3 sanitized 감사 가능성 | 같은 canonical projection의 결정 경로를 재검증 가능 | observation ID, allowlisted projection hash, 수집시각, mapping version과 offline fixture. provider raw persistence 0 |
+| L4 online smoke | 실제 키와 live endpoint가 동작 | **완료(2026-07-10)**. 대표 5종목 소량 조회와 당시 ignored observation projection 확인. S1.6 persistent input으로 raw를 승격하지 않음 |
 | L5 교차검증 | DART 외 원천과 충돌 확인 | S1.6 event aggregator에서 KRX/FSS/KIND 등 official source와 canonical merge |
 | L6 보정 검증 | 점수 threshold가 실제 위험 통제에 맞음 | 과거 이벤트 study와 백테스트로 WARN/BLOCK 임계값 조정 |
 
@@ -191,8 +226,8 @@ YAML에는 `calibration_status: policy_v1_unvalidated`를 명시한다. 이 값�
 ### 2026-07-10 live smoke 결과
 
 - 사용자 승인 후 실제 OpenDART API를 총 16 physical attempts 호출했다. `corpCode.xml` 2회, `company.json` 9회, `list.json` 5회이며 모든 호출은 retry를 1 attempt로 제한했다. 마지막 `company.json` 1회는 env-only private transport 전환 후 고정 HTTPS origin·parser 동작을 검증한 hardened smoke다.
-- corp code 매핑과 대표 5종목 기업개황 계약을 검증했고, 대표 5종목 공시목록 observation 5개를 ignored `data/opendart` 경로에 저장했다. 저장 파일에서 API key가 없음을 다시 확인했다.
-- 응답은 rate/limit/quota/reset 관련 header를 제공하지 않았다. 따라서 이 smoke는 인증·endpoint·parser·민감 필드 제거 후 raw 저장을 검증하지만 해당 계정의 실효 threshold나 reset timezone을 실측하지는 않는다. 공식 개인 한도 20,000 적용과 별개로 두 값은 S1.6 collector 활성화 전 운영자가 계정 화면에서 확인하는 gate로 유지한다.
+- corp code 매핑과 대표 5종목 기업개황 계약을 검증했고, 대표 5종목 공시목록 observation projection 5개를 ignored `data/opendart` 경로에 저장했다. 저장 파일에서 API key가 없음을 다시 확인했다. 이 historical artifact는 S1.6 DB input이 아니며 S1.6은 provider raw persistence를 0으로 고정한다.
+- 응답은 rate/limit/quota/reset 관련 header를 제공하지 않았다. 따라서 이 smoke는 인증·endpoint·parser와 민감 필드 제거를 검증하지만 해당 계정의 실효 threshold나 reset timezone을 실측하지는 않는다. 공식 개인 한도 20,000 적용과 별개로 두 값은 S1.6 collector 활성화 전 운영자가 계정 화면에서 확인하는 gate로 유지한다.
 
 ## 금융사 리포트는 어떻게 쓸 것인가
 

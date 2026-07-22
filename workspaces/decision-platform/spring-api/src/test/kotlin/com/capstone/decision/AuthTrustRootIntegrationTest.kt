@@ -180,6 +180,21 @@ class AuthTrustRootIntegrationTest(
         }
     }
 
+    @Test
+    fun `public login ignores a stale bearer token and authenticates the supplied credential`() {
+        mockMvc
+            .post("/api/v1/auth/login") {
+                contentType = MediaType.APPLICATION_JSON
+                content = objectMapper.writeValueAsString(mapOf("username" to "demo-user", "password" to userPassword()))
+                header("Authorization", "Bearer stale-pre-cutover-token")
+                header("X-Request-Id", "req-login-with-stale-bearer")
+            }.andExpect {
+                status { isOk() }
+                jsonPath("$.data.user.userId") { value("usr_demo_user") }
+                jsonPath("$.data.user.role") { value("USER") }
+            }
+    }
+
     private fun login(
         username: String,
         password: String,

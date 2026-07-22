@@ -1,10 +1,19 @@
 package com.capstone.decision
 
+import com.capstone.decision.infrastructure.security.DemoAccountService
 import com.capstone.decision.infrastructure.security.DemoCredentialRotation
+import com.capstone.decision.infrastructure.security.DemoRole
+import com.capstone.decision.infrastructure.security.JwtProperties
+import com.capstone.decision.infrastructure.security.JwtService
+import com.capstone.decision.infrastructure.security.UserSecurityRecord
+import com.capstone.decision.infrastructure.security.UserSecurityRepository
+import io.jsonwebtoken.JwtException
 import org.flywaydb.core.Flyway
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.BeforeEach
@@ -93,6 +102,73 @@ class DemoCredentialRotationIntegrationTest {
     }
 
     @Test
+    fun `rotation immediately rejects old password and token while accepting the new password`() {
+        val repository = testRepository()
+        val accountService = DemoAccountService(repository, passwordEncoder)
+        val jwtService =
+            JwtService(
+                JwtProperties(
+                    secret = "j" + "s".repeat(63),
+                    issuer = "rotation-test-issuer",
+                    audience = "rotation-test-audience",
+                ),
+                repository,
+            )
+        val oldAccount = requireNotNull(accountService.authenticate("demo-user", SpringApiIntegrationTestBase.TEST_USER_PASSWORD))
+        val oldToken = jwtService.issue(oldAccount).token
+        val newPassword = "rotated-" + "p".repeat(24)
+        val newHash = requireNotNull(passwordEncoder.encode(newPassword))
+
+        DemoCredentialRotation.rotate(environment(newHash), auditId = "aud-rotation-auth-cutover")
+
+        assertNull(accountService.authenticate("demo-user", SpringApiIntegrationTestBase.TEST_USER_PASSWORD))
+        val newAccount = accountService.authenticate("demo-user", newPassword)
+        assertNotNull(newAccount)
+        assertThrows<JwtException> { jwtService.parse(oldToken) }
+        val newPrincipal = jwtService.parse(jwtService.issue(requireNotNull(newAccount)).token)
+        assertEquals("usr_demo_user", newPrincipal.userId)
+        assertEquals(2L, newPrincipal.securityVersion)
+    }
+
+    @Test
+    fun `rotation rejects peer hash and exact replay without changing version or audit`() {
+        val adminHash = queryUser("usr_demo_admin").passwordHash
+
+        assertThrows<IllegalStateException> {
+            DemoCredentialRotation.rotate(environment(adminHash), auditId = "aud-peer-hash-rejected")
+        }
+        assertEquals(1L, queryUser("usr_demo_user").securityVersion)
+
+        val newHash = requireNotNull(passwordEncoder.encode("one-shot-password"))
+        DemoCredentialRotation.rotate(environment(newHash), auditId = "aud-one-shot-success")
+        assertThrows<IllegalStateException> {
+            DemoCredentialRotation.rotate(environment(newHash), auditId = "aud-one-shot-replay")
+        }
+
+        assertEquals(2L, queryUser("usr_demo_user").securityVersion)
+        adminConnection().use { connection ->
+            connection.prepareStatement("select count(*) from audit_logs where action = 'DEMO_CREDENTIAL_ROTATED'").use { statement ->
+                statement.executeQuery().use { result ->
+                    assertTrue(result.next())
+                    assertEquals(1, result.getInt(1))
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `rotation refuses non-loopback database targets before opening a connection`() {
+        val newHash = requireNotNull(passwordEncoder.encode("remote-target-password"))
+
+        assertThrows<IllegalArgumentException> {
+            DemoCredentialRotation.rotate(
+                environment(newHash) + ("POSTGRES_HOST" to "db.example.invalid"),
+                auditId = "aud-remote-rejected",
+            )
+        }
+    }
+
+    @Test
     fun `audit failure rolls back password and version while invalid target is rejected before SQL`() {
         val newHash = requireNotNull(passwordEncoder.encode("another-runtime-password"))
         adminConnection().use { connection ->
@@ -144,6 +220,44 @@ class DemoCredentialRotationIntegrationTest {
             "DEMO_CREDENTIAL_ROTATION_ACTOR" to "change-ticket-36",
         )
 
+    private fun testRepository(): UserSecurityRepository =
+        object : UserSecurityRepository {
+            override fun findByUsername(username: String): UserSecurityRecord? = queryUserBy("username", username)
+
+            override fun findByUserId(userId: String): UserSecurityRecord? = queryUserBy("user_id", userId)
+        }
+
+    private fun queryUser(userId: String): UserSecurityRecord = requireNotNull(queryUserBy("user_id", userId))
+
+    private fun queryUserBy(
+        column: String,
+        value: String,
+    ): UserSecurityRecord? {
+        require(column in setOf("user_id", "username"))
+        adminConnection().use { connection ->
+            connection
+                .prepareStatement(
+                    "select user_id, username, password_hash, role, status, security_version from users where $column = ?",
+                ).use { statement ->
+                    statement.setString(1, value)
+                    statement.executeQuery().use { result ->
+                        if (!result.next()) return null
+                        val user =
+                            UserSecurityRecord(
+                                userId = result.getString("user_id"),
+                                username = result.getString("username"),
+                                passwordHash = result.getString("password_hash"),
+                                role = DemoRole.valueOf(result.getString("role")),
+                                status = result.getString("status"),
+                                securityVersion = result.getLong("security_version"),
+                            )
+                        check(!result.next())
+                        return user
+                    }
+                }
+        }
+    }
+
     private fun adminConnection() = DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password)
 
     companion object {
@@ -179,7 +293,7 @@ class DemoCredentialRotationIntegrationTest {
                 .configure()
                 .dataSource(postgres.jdbcUrl, "flyway", MIGRATION_PASSWORD)
                 .locations("classpath:db/migration")
-                .placeholders(demoFlywayPlaceholders())
+                .javaMigrations(s21ActorTrustMigration())
                 .load()
                 .migrate()
         }

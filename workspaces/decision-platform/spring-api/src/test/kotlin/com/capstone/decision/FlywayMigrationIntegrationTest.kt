@@ -19,6 +19,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer
 import org.testcontainers.utility.DockerImageName
 import java.sql.DriverManager
 import java.sql.SQLException
+import java.util.Base64
 
 // pgvector/pg_trgm/Flyway 제약은 H2로 대체 검증할 수 없어 실제 PostgreSQL 컨테이너로 잠근다.
 @Testcontainers
@@ -101,9 +102,70 @@ class FlywayMigrationIntegrationTest(
                 .configure()
                 .dataSource(invalidUrl, postgres.username, postgres.password)
                 .locations("classpath:db/migration")
-                .placeholders(demoFlywayPlaceholders(userHash = "not-bcrypt"))
+                .javaMigrations(s21ActorTrustMigration(userHash = "not-bcrypt"))
                 .load()
                 .migrate()
+        }
+    }
+
+    @Test
+    fun `V7 upgrade preserves unrelated users and rolls back identity conflicts without exposing hashes`() {
+        val preservedUrl = createDatabase("existing_auth_user")
+        flyway(preservedUrl, target = "6").migrate()
+        DriverManager.getConnection(preservedUrl, postgres.username, postgres.password).use { connection ->
+            connection
+                .prepareStatement(
+                    "insert into users (user_id, username, role, password_hash) values ('usr-existing', 'existing-user', 'USER', ?)",
+                ).use { statement ->
+                    statement.setString(1, TEST_USER_PASSWORD_HASH)
+                    assertEquals(1, statement.executeUpdate())
+                }
+        }
+        flyway(preservedUrl).migrate()
+        DriverManager.getConnection(preservedUrl, postgres.username, postgres.password).use { connection ->
+            connection.createStatement().use { statement ->
+                statement.executeQuery("select count(*) from users where user_id = 'usr-existing'").use { result ->
+                    assertTrue(result.next())
+                    assertEquals(1, result.getInt(1))
+                }
+            }
+        }
+
+        val conflictUrl = createDatabase("conflicting_auth_identity")
+        flyway(conflictUrl, target = "6").migrate()
+        DriverManager.getConnection(conflictUrl, postgres.username, postgres.password).use { connection ->
+            connection
+                .prepareStatement(
+                    "insert into users (user_id, username, role, password_hash) values ('usr_demo_user', 'conflicting-user', 'USER', ?)",
+                ).use { statement ->
+                    statement.setString(1, TEST_USER_PASSWORD_HASH)
+                    assertEquals(1, statement.executeUpdate())
+                }
+        }
+
+        val failure = assertThrows<FlywayException> { flyway(conflictUrl).migrate() }
+        val failureText = failure.stackTraceToString()
+        assertFalse(failureText.contains(TEST_USER_PASSWORD_HASH))
+        assertFalse(
+            failureText.contains(
+                Base64.getEncoder().encodeToString(TEST_USER_PASSWORD_HASH.toByteArray()),
+            ),
+        )
+        DriverManager.getConnection(conflictUrl, postgres.username, postgres.password).use { connection ->
+            connection.createStatement().use { statement ->
+                statement
+                    .executeQuery(
+                        "select count(*) from information_schema.columns " +
+                            "where table_schema = 'public' and table_name = 'users' and column_name = 'security_version'",
+                    ).use { result ->
+                        assertTrue(result.next())
+                        assertEquals(0, result.getInt(1))
+                    }
+                statement.executeQuery("select count(*) from flyway_schema_history where version = '7'").use { result ->
+                    assertTrue(result.next())
+                    assertEquals(0, result.getInt(1))
+                }
+            }
         }
     }
 
@@ -233,6 +295,27 @@ class FlywayMigrationIntegrationTest(
             )
             """.trimIndent(),
         )
+    }
+
+    private fun createDatabase(name: String): String {
+        DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { connection ->
+            connection.createStatement().use { statement -> statement.execute("create database $name") }
+        }
+        return postgres.jdbcUrl.substringBeforeLast('/') + "/$name"
+    }
+
+    private fun flyway(
+        url: String,
+        target: String? = null,
+    ): Flyway {
+        val configuration =
+            Flyway
+                .configure()
+                .dataSource(url, postgres.username, postgres.password)
+                .locations("classpath:db/migration")
+                .javaMigrations(s21ActorTrustMigration())
+        target?.let(configuration::target)
+        return configuration.load()
     }
 
     private fun tableExists(tableName: String): Boolean =

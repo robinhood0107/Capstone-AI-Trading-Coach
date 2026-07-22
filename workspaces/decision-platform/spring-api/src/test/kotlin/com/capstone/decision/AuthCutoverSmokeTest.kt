@@ -20,6 +20,9 @@ import java.time.Duration
 import java.time.Instant
 import java.time.ZoneOffset
 import java.util.Base64
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 // cutover evidence는 raw token 없이 동일 token의 pre-200/post-401 사실만 연결해야 한다.
@@ -28,21 +31,39 @@ class AuthCutoverSmokeTest {
     lateinit var tempDirectory: Path
 
     private lateinit var server: HttpServer
+    private val serverExecutor = Executors.newCachedThreadPool()
     private val cutoverComplete = AtomicBoolean(false)
+    private val misbindLoginTokens = AtomicBoolean(false)
     private val now: Instant = Instant.parse("2026-07-22T10:00:00Z")
     private val clock: Clock = Clock.fixed(now, ZoneOffset.UTC)
     private val oldToken: String = jwtShapedToken(now.plus(Duration.ofHours(4)))
+    private val newUserToken: String =
+        jwtShapedToken(
+            expiresAt = now.plus(Duration.ofHours(12)),
+            subject = "usr_demo_user",
+            role = "USER",
+            securityVersion = 2,
+        )
+    private val newAdminToken: String =
+        jwtShapedToken(
+            expiresAt = now.plus(Duration.ofHours(12)),
+            subject = "usr_demo_admin",
+            role = "ADMIN",
+            securityVersion = 2,
+        )
 
     @BeforeEach
     fun startServer() {
         server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
         server.createContext("/") { exchange -> handle(exchange) }
+        server.executor = serverExecutor
         server.start()
     }
 
     @AfterEach
     fun stopServer() {
         server.stop(0)
+        serverExecutor.shutdownNow()
     }
 
     @Test
@@ -109,6 +130,52 @@ class AuthCutoverSmokeTest {
         assertTrue(Files.readString(evidencePath) == "operator-sentinel")
     }
 
+    @Test
+    fun `concurrent captures create exactly one immutable evidence file`() {
+        val evidencePath = tempDirectory.resolve("pre-cutover.json")
+        val start = CountDownLatch(1)
+        val executor = Executors.newFixedThreadPool(16)
+        try {
+            val attempts =
+                (1..32).map {
+                    executor.submit<Boolean> {
+                        start.await()
+                        runCatching {
+                            AuthCutoverSmoke.capture(captureEnvironment(oldToken), evidencePath, clock)
+                        }.isSuccess
+                    }
+                }
+            start.countDown()
+
+            val successes = attempts.count { it.get(15, TimeUnit.SECONDS) }
+
+            assertTrue(successes == 1)
+            assertTrue(Files.readString(evidencePath).contains("\"preflightStatus\":200"))
+        } finally {
+            executor.shutdownNow()
+        }
+    }
+
+    @Test
+    fun `post smoke rejects response metadata and JWT actor misbinding`() {
+        val evidencePath = tempDirectory.resolve("pre-cutover.json")
+        AuthCutoverSmoke.capture(captureEnvironment(oldToken), evidencePath, clock)
+        cutoverComplete.set(true)
+        misbindLoginTokens.set(true)
+
+        val failure =
+            assertThrows<AuthCutoverException> {
+                AuthCutoverSmoke.verifyAfterCutover(
+                    environment = postEnvironment(oldToken),
+                    evidencePath = evidencePath,
+                    clock = Clock.offset(clock, Duration.ofMinutes(5)),
+                )
+            }
+
+        assertTrue(failure.checkCode == "post_user_login_contract")
+        assertTrue(Files.exists(evidencePath))
+    }
+
     private fun captureEnvironment(token: String): Map<String, String> =
         mapOf(
             "AUTH_SMOKE_BASE_URL" to baseUrl(),
@@ -134,15 +201,26 @@ class AuthCutoverSmokeTest {
                 respond(exchange, if (cutoverComplete.get()) 401 else 200, "{}")
             }
 
-            path == "/api/v1/system/health" && authorization in setOf("Bearer new-user-token", "Bearer new-admin-token") -> {
+            path == "/api/v1/system/health" && authorization in setOf("Bearer $newUserToken", "Bearer $newAdminToken") -> {
                 respond(exchange, 200, "{}")
             }
+
+            path == "/actuator/metrics" && authorization == "Bearer $newUserToken" -> respond(exchange, 403, "{}")
+
+            path == "/actuator/metrics" && authorization == "Bearer $newAdminToken" -> respond(exchange, 200, "{}")
 
             path == "/api/v1/auth/login" -> {
                 val isAdmin = requestBody.contains("demo-admin")
                 val userId = if (isAdmin) "usr_demo_admin" else "usr_demo_user"
                 val role = if (isAdmin) "ADMIN" else "USER"
-                val token = if (isAdmin) "new-admin-token" else "new-user-token"
+                val token =
+                    if (misbindLoginTokens.get()) {
+                        newAdminToken
+                    } else if (isAdmin) {
+                        newAdminToken
+                    } else {
+                        newUserToken
+                    }
                 respond(
                     exchange,
                     200,
@@ -165,10 +243,23 @@ class AuthCutoverSmokeTest {
         exchange.responseBody.use { it.write(bytes) }
     }
 
-    private fun jwtShapedToken(expiresAt: Instant): String {
+    private fun jwtShapedToken(
+        expiresAt: Instant,
+        subject: String? = null,
+        role: String? = null,
+        securityVersion: Long? = null,
+    ): String {
         val encoder = Base64.getUrlEncoder().withoutPadding()
         val header = encoder.encodeToString("""{"alg":"HS256"}""".toByteArray(StandardCharsets.UTF_8))
-        val payload = encoder.encodeToString("""{"exp":${expiresAt.epochSecond}}""".toByteArray(StandardCharsets.UTF_8))
+        val payloadJson =
+            buildString {
+                append("{\"exp\":${expiresAt.epochSecond}")
+                subject?.let { append(",\"sub\":\"$it\"") }
+                role?.let { append(",\"role\":\"$it\"") }
+                securityVersion?.let { append(",\"securityVersion\":$it") }
+                append('}')
+            }
+        val payload = encoder.encodeToString(payloadJson.toByteArray(StandardCharsets.UTF_8))
         return "$header.$payload.test-signature"
     }
 }

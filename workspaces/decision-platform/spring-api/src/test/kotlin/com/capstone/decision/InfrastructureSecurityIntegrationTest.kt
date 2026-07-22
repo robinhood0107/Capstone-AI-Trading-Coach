@@ -46,7 +46,7 @@ class InfrastructureSecurityIntegrationTest {
             .configure()
             .dataSource(postgres.jdbcUrl, MIGRATION_USER, migrationPassword)
             .locations("classpath:db/migration")
-            .placeholders(demoFlywayPlaceholders())
+            .javaMigrations(s21ActorTrustMigration())
             .load()
             .migrate()
 
@@ -60,7 +60,9 @@ class InfrastructureSecurityIntegrationTest {
             assertFalse(hasTablePrivilege(connection, "decision_collector", "flyway_schema_history", "SELECT"))
             assertTrue(hasTablePrivilege(connection, "decision_app", "trading_sessions", "SELECT"))
             assertTrue(hasTablePrivilege(connection, "decision_app", "users", "SELECT"))
-            assertFalse(hasTablePrivilege(connection, "decision_app", "users", "UPDATE"))
+            listOf("INSERT", "UPDATE", "DELETE", "TRUNCATE").forEach { privilege ->
+                assertFalse(hasTablePrivilege(connection, "decision_app", "users", privilege))
+            }
             assertFalse(hasTablePrivilege(connection, "decision_app", "calendar_observations", "SELECT"))
             assertFalse(hasTablePrivilege(connection, "decision_app", "opendart_quota_usage", "SELECT"))
         }
@@ -93,6 +95,16 @@ class InfrastructureSecurityIntegrationTest {
                         ).use { it.next() && it.getBoolean(1) },
                     "runtime role must not read or mutate Flyway migration history",
                 )
+                listOf(
+                    "insert into users (user_id, username, role, password_hash) " +
+                        "values ('usr-runtime-denied', 'runtime-denied', 'USER', 'denied')",
+                    "update users set status = 'LOCKED' where user_id = 'usr_demo_user'",
+                    "delete from users where user_id = 'usr_demo_user'",
+                    "truncate table users",
+                ).forEach { sql ->
+                    val mutationFailure = assertThrows<SQLException> { statement.execute(sql) }
+                    assertTrue(mutationFailure.sqlState == "42501")
+                }
                 listOf("audit_logs", "principle_versions", "order_events", "paper_order_events").forEach { table ->
                     assertFalse(
                         statement

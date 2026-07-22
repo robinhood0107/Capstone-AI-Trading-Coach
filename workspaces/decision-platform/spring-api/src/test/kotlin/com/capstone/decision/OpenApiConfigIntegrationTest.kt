@@ -64,6 +64,20 @@ class OpenApiConfigIntegrationTest(
                 jsonPath("$.components.schemas.LoginResponse.properties.user") { exists() }
                 jsonPath("$.components.schemas.LoginUserResponse.properties.userId") { exists() }
                 jsonPath("$.components.schemas.LoginUserResponse.properties.role") { exists() }
+                jsonPath("$.components.schemas.LoginUserResponse.properties.role['\$ref']") {
+                    value("#/components/schemas/DemoRole")
+                }
+                jsonPath("$.components.schemas.DemoRole.enum[0]") { value("USER") }
+                jsonPath("$.components.schemas.DemoRole.enum[1]") { value("ADMIN") }
+                jsonPath("$.paths['/api/v1/auth/login'].post.responses['200'].content['application/json'].schema['\$ref']") {
+                    value("#/components/schemas/ApiResponseLoginResponse")
+                }
+                jsonPath("$.components.schemas.ApiResponseLoginResponse.properties.data['\$ref']") {
+                    value("#/components/schemas/LoginResponse")
+                }
+                jsonPath("$.paths['/api/v1/auth/login'].post.responses['400']") { exists() }
+                jsonPath("$.paths['/api/v1/auth/login'].post.responses['401']") { exists() }
+                jsonPath("$.paths['/api/v1/auth/login'].post.responses['429']") { exists() }
             }
     }
 }

@@ -3,14 +3,13 @@ package com.capstone.decision
 import com.capstone.decision.infrastructure.security.DemoRole
 import com.capstone.decision.infrastructure.security.UserSecurityRecord
 import com.capstone.decision.infrastructure.security.UserSecurityRepository
+import com.capstone.decision.infrastructure.security.V7__s2_1_actor_trust
 import org.springframework.boot.test.context.TestConfiguration
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Primary
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder
 import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
-import java.nio.charset.StandardCharsets
-import java.util.Base64
 
 // 테스트 credential과 hash는 런타임에 생성해 실제 secret이나 고정 BCrypt material을 fixture에 남기지 않는다.
 abstract class SpringApiIntegrationTestBase {
@@ -46,25 +45,17 @@ abstract class SpringApiIntegrationTestBase {
             registry.add("app.jwt.issuer") { TEST_JWT_ISSUER }
             registry.add("app.jwt.audience") { TEST_JWT_AUDIENCE }
             registry.add("app.login.scope-hmac-key") { TEST_LOGIN_SCOPE_HMAC_KEY }
-            registry.add("spring.flyway.placeholders.demoUserPasswordHash") { TEST_USER_PASSWORD_HASH }
-            registry.add("spring.flyway.placeholders.demoAdminPasswordHash") { TEST_ADMIN_PASSWORD_HASH }
+            registry.add("app.demo-credentials.user-password-hash") { TEST_USER_PASSWORD_HASH }
+            registry.add("app.demo-credentials.admin-password-hash") { TEST_ADMIN_PASSWORD_HASH }
             registry.add("spring.data.redis.password") { redisPasswordValue }
         }
     }
 }
 
-internal fun demoFlywayPlaceholders(
+internal fun s21ActorTrustMigration(
     userHash: String = SpringApiIntegrationTestBase.TEST_USER_PASSWORD_HASH,
     adminHash: String = SpringApiIntegrationTestBase.TEST_ADMIN_PASSWORD_HASH,
-): Map<String, String> =
-    mapOf(
-        "demoUserPasswordHash" to userHash,
-        "demoAdminPasswordHash" to adminHash,
-        "demoUserPasswordHashBase64" to
-            Base64.getEncoder().encodeToString(userHash.toByteArray(StandardCharsets.UTF_8)),
-        "demoAdminPasswordHashBase64" to
-            Base64.getEncoder().encodeToString(adminHash.toByteArray(StandardCharsets.UTF_8)),
-    )
+): V7__s2_1_actor_trust = V7__s2_1_actor_trust(userHash, adminHash)
 
 // DataSource를 의도적으로 제외한 web 계약 테스트도 production과 동일한 repository port를 거친다.
 @TestConfiguration(proxyBeanMethods = false)

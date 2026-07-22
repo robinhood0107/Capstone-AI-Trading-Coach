@@ -36,6 +36,22 @@ def _stub_credential(monkeypatch: pytest.MonkeyPatch, value: str) -> None:
     monkeypatch.setattr(_credential_transport, "_read_credential", lambda: SecretStr(value))
 
 
+def _online_test_client(
+    settings: OpenDARTSettings,
+    *,
+    transport: httpx.BaseTransport,
+    rate_limiter: TokenBucket,
+    retry_wait: object | None = None,
+) -> OpenDARTHttpClient:
+    """production constructor의 injection 거부를 우회하지 않고 credential boundary만 격리 검증한다."""
+    return OpenDARTHttpClient._for_online_test(
+        settings,
+        transport=transport,
+        rate_limiter=rate_limiter,
+        retry_wait=retry_wait,
+    )
+
+
 def test_private_credential_settings_hide_value_from_repr_and_serialization(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -85,7 +101,7 @@ def test_get_bytes_uses_env_credential_only_at_transport_boundary(
         captured_requests.append(request)
         return httpx.Response(200, content=b"zip-bytes")
 
-    client = OpenDARTHttpClient(
+    client = _online_test_client(
         _settings(tmp_path, offline=False),
         transport=httpx.MockTransport(handler),
         rate_limiter=TokenBucket(rate_per_second=1000),
@@ -118,7 +134,7 @@ def test_get_json_scrubs_credential_echo_and_does_not_mutate_caller_params(
             },
         )
 
-    client = OpenDARTHttpClient(
+    client = _online_test_client(
         _settings(tmp_path, offline=False),
         transport=httpx.MockTransport(handler),
         rate_limiter=TokenBucket(rate_per_second=1000),
@@ -161,7 +177,7 @@ def test_transport_boundary_does_not_emit_credential_to_logs(
     _stub_credential(monkeypatch, marker)
     caplog.set_level(logging.DEBUG)
 
-    client = OpenDARTHttpClient(
+    client = _online_test_client(
         _settings(tmp_path, offline=False),
         transport=httpx.MockTransport(lambda _: httpx.Response(200, json={"status": "000"})),
         rate_limiter=TokenBucket(rate_per_second=1000),
@@ -263,7 +279,7 @@ def test_transport_error_drops_request_and_credential_from_exception(
         captured_requests.append(request)
         raise httpx.ConnectError(f"failed request: {request.url}", request=request)
 
-    client = OpenDARTHttpClient(
+    client = _online_test_client(
         _settings(tmp_path, offline=False),
         transport=httpx.MockTransport(handler),
         rate_limiter=TokenBucket(rate_per_second=1000),
@@ -298,7 +314,7 @@ def test_missing_credential_fails_closed_before_outbound(
         attempts += 1
         return httpx.Response(200, json={"status": "000"})
 
-    client = OpenDARTHttpClient(
+    client = _online_test_client(
         _settings(tmp_path, offline=False),
         transport=httpx.MockTransport(handler),
         rate_limiter=TokenBucket(rate_per_second=1000),

@@ -2,6 +2,7 @@ package com.capstone.decision.infrastructure.security
 
 import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.stereotype.Service
+import java.nio.charset.StandardCharsets
 import java.security.SecureRandom
 import java.util.Base64
 
@@ -12,9 +13,10 @@ class DemoAccountService(
     private val passwordEncoder: PasswordEncoder,
 ) {
     // unknown username도 동일 cost의 BCrypt 경로를 지나 username enumeration timing 차이를 줄인다.
+    private val dummyPassword: String = randomDummyPassword()
     private val dummyPasswordHash: String =
         DemoCredentialHashPolicy.requireValid(
-            requireNotNull(passwordEncoder.encode(randomDummyPassword())),
+            requireNotNull(passwordEncoder.encode(dummyPassword)),
         )
 
     fun authenticate(
@@ -35,14 +37,25 @@ class DemoAccountService(
                 ?.let { selected -> DemoAccounts.identities.single { it.userId != selected.userId } }
                 ?.let(verifiedRows::get)
 
-        // 알려진 계정과 unknown 계정 모두 정확히 두 번의 BCrypt cost를 지불하며 peer plaintext 일치도 fail-closed한다.
-        val selectedMatches = passwordEncoder.matches(password, storedUser?.passwordHash ?: dummyPasswordHash)
-        val peerMatches = passwordEncoder.matches(password, peer?.passwordHash ?: dummyPasswordHash)
+        // BCrypt 검증은 72-byte 초과 입력도 접두사와 일치시킬 수 있으므로 DTO의 문자 수 제한과 별도로 byte 경계를 잠근다.
+        val passwordBytes = password.toByteArray(StandardCharsets.UTF_8)
+        val passwordWithinBcryptBoundary =
+            try {
+                passwordBytes.size in 1..MAX_BCRYPT_PASSWORD_BYTES
+            } finally {
+                passwordBytes.fill(0)
+            }
+        val verificationPassword = if (passwordWithinBcryptBoundary) password else dummyPassword
+
+        // 알려진 계정, unknown 계정, overlong 입력 모두 정확히 두 번의 BCrypt cost를 지불하며 peer 일치도 fail-closed한다.
+        val selectedMatches = passwordEncoder.matches(verificationPassword, storedUser?.passwordHash ?: dummyPasswordHash)
+        val peerMatches = passwordEncoder.matches(verificationPassword, peer?.passwordHash ?: dummyPasswordHash)
         val trustRootComplete = storedUsers.size == DemoAccounts.identities.size && verifiedRows.values.all { it != null }
         if (
             expectedIdentity == null ||
             storedUser == null ||
             !trustRootComplete ||
+            !passwordWithinBcryptBoundary ||
             !selectedMatches ||
             peerMatches
         ) {
@@ -64,6 +77,7 @@ class DemoAccountService(
 
     companion object {
         private const val ACTIVE_STATUS = "ACTIVE"
+        private const val MAX_BCRYPT_PASSWORD_BYTES = 72
     }
 
     private fun UserSecurityRecord.matches(identity: DemoAccountIdentity): Boolean =

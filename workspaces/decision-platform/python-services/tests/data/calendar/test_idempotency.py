@@ -1,9 +1,12 @@
 from __future__ import annotations
 
-from datetime import date
+from dataclasses import replace
+from datetime import UTC, date, datetime
 
 import pytest
 
+from app.data.calendar.dedupe import dedupe_observations
+from app.data.calendar.models import CalendarObservation
 from app.data.calendar.normalizer import EventCandidate, build_event_revision, event_series_key
 
 
@@ -61,3 +64,34 @@ def test_event_revision_rejects_types_outside_the_frozen_v1_enum() -> None:
 
     with pytest.raises(ValueError, match="event type"):
         build_event_revision(candidate)
+
+
+def test_observation_dedupe_preserves_effective_windows_and_is_order_independent() -> None:
+    first = CalendarObservation(
+        observation_id="obs-b",
+        source_id="opendart",
+        origin_group="opendart",
+        capability="DISCLOSURE_EVENT",
+        effective_from=date(2026, 7, 1),
+        effective_to=date(2026, 7, 2),
+        observed_at=datetime(2026, 7, 22, tzinfo=UTC),
+        ingested_at=datetime(2026, 7, 22, tzinfo=UTC),
+        sanitized_payload={"status": "OPEN"},
+        sanitized_payload_hash="a" * 64,
+        adapter_version="1",
+        mapping_version="1",
+        registry_version="1",
+    )
+    same_window = replace(first, observation_id="obs-a")
+    later_window = replace(
+        first,
+        observation_id="obs-c",
+        effective_from=date(2026, 7, 3),
+        effective_to=date(2026, 7, 4),
+    )
+
+    forward = dedupe_observations([first, same_window, later_window])
+    reverse = dedupe_observations([later_window, same_window, first])
+
+    assert [item.observation_id for item in forward] == ["obs-a", "obs-c"]
+    assert reverse == forward

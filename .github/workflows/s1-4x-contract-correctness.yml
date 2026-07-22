@@ -8,6 +8,7 @@ on:
       - "workspaces/decision-platform/python-services/uv.lock"
       - "workspaces/decision-platform/python-services/app/financial_engineering/**"
       - "workspaces/decision-platform/python-services/tests/financial_engineering/**"
+      - "workspaces/decision-platform/python-services/tests/test_s1_6_amendment_contract.py"
       - "workspaces/decision-platform/research/s1-4r-jax-risk/README.md"
       - "workspaces/decision-platform/research/s1-4r-jax-risk/pyproject.toml"
       - "workspaces/decision-platform/research/s1-4r-jax-risk/uv.lock"
@@ -26,6 +27,7 @@ on:
       - "workspaces/decision-platform/python-services/uv.lock"
       - "workspaces/decision-platform/python-services/app/financial_engineering/**"
       - "workspaces/decision-platform/python-services/tests/financial_engineering/**"
+      - "workspaces/decision-platform/python-services/tests/test_s1_6_amendment_contract.py"
       - "workspaces/decision-platform/research/s1-4r-jax-risk/README.md"
       - "workspaces/decision-platform/research/s1-4r-jax-risk/pyproject.toml"
       - "workspaces/decision-platform/research/s1-4r-jax-risk/uv.lock"
@@ -88,6 +90,46 @@ jobs:
           test "$(uname -s)" = "Linux"
           test "$(uname -m)" = "x86_64"
           test "$(getconf _NPROCESSORS_ONLN)" -ge 1
+
+      - name: Assert approved reference amendment provenance
+        run: |
+          S1_4X=workspaces/decision-platform/research/s1-4x-numeric-parity
+          REFERENCE_BASE="$(
+            python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          lock = json.loads(Path(
+              "workspaces/decision-platform/research/s1-4x-numeric-parity/"
+              "contract/reference-lock.v1.json"
+          ).read_text(encoding="utf-8"))
+          print(lock["referenceBaseCommit"])
+          PY
+          )"
+          git cat-file -e "${REFERENCE_BASE}^{commit}"
+          git merge-base --is-ancestor "$REFERENCE_BASE" HEAD
+
+          mapfile -t ACTUAL_PATHS < <(
+            git diff-tree --no-commit-id --name-only -r "$REFERENCE_BASE" | LC_ALL=C sort
+          )
+          EXPECTED_PATHS=(
+            "workspaces/decision-platform/python-services/pyproject.toml"
+            "workspaces/decision-platform/python-services/uv.lock"
+          )
+          if ! diff -u \
+            <(printf '%s\n' "${EXPECTED_PATHS[@]}") \
+            <(printf '%s\n' "${ACTUAL_PATHS[@]}"); then
+            echo "referenceBaseCommit must change exactly the approved dependency files" >&2
+            exit 1
+          fi
+
+          # 의존성 amendment가 수치 구현·테스트·fixture를 함께 바꾸는 것을 독립적으로 막는다.
+          git diff --exit-code origin/main -- \
+            shared-docs/metrics_definitions.md \
+            workspaces/decision-platform/python-services/app/financial_engineering \
+            workspaces/decision-platform/python-services/tests/financial_engineering \
+            workspaces/decision-platform/research/s1-4r-jax-risk/src \
+            workspaces/decision-platform/research/s1-4r-jax-risk/tests
 
       - name: Check and sync frozen oracle environment
         run: |

@@ -88,6 +88,15 @@ class DisclosureStateMachine:
         )
         current = active_state(self._transitions, state_key=event.state_key)
         latest = _latest_transition(self._transitions, state_key=event.state_key)
+        if (
+            corrected is not None
+            and action == "OPEN"
+            and current is None
+            and latest is not None
+            and latest.transition == "CLOSE"
+        ):
+            # 과거 OPEN correction을 최신 CLOSE 뒤에 append하면 active view가 잘못 재개방되므로 거부한다.
+            raise StateTransitionError("OPEN_CORRECTION_AFTER_CLOSE")
         if corrected is None:
             if action == "OPEN" and current is not None:
                 return current

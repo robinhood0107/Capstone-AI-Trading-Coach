@@ -4,9 +4,12 @@ from pathlib import Path
 
 import httpx
 import pytest
+from pydantic import SecretStr
 from tenacity import wait_none
 
+from app.data.opendart import _credential_transport
 from app.data.opendart.http_client import (
+    OpenDARTCredentialError,
     OpenDARTHttpClient,
     OpenDARTHttpError,
     TokenBucket,
@@ -63,6 +66,81 @@ def test_reservation_failure_is_fail_closed_with_zero_transport_attempts(tmp_pat
     )
     with pytest.raises(RuntimeError, match="ambiguous"):
         client.get_json("/api/list.json", {})
+    assert attempts == 0
+
+
+def test_each_http_retry_reenters_reservation_and_handoff_hooks(tmp_path: Path) -> None:
+    events: list[str] = []
+    attempts = 0
+
+    class Limiter:
+        def acquire(self) -> None:
+            events.append("limiter")
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        events.append("transport")
+        if attempts == 1:
+            return httpx.Response(503)
+        return httpx.Response(200, json={"status": "000"})
+
+    client = OpenDARTHttpClient(
+        _settings(tmp_path, retry_attempts=2),
+        transport=httpx.MockTransport(handler),
+        rate_limiter=Limiter(),  # type: ignore[arg-type]
+        retry_wait=wait_none(),
+        before_send=lambda path: events.append(f"reservation:{path}"),
+        on_handoff=lambda: events.append("handoff"),
+    )
+
+    assert client.get_json("/api/list.json", {}) == {"status": "000"}
+    assert events == [
+        "limiter",
+        "reservation:/api/list.json",
+        "handoff",
+        "transport",
+        "limiter",
+        "reservation:/api/list.json",
+        "handoff",
+        "transport",
+    ]
+
+
+def test_missing_online_credential_keeps_charged_reservation_but_records_no_handoff(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[str] = []
+    attempts = 0
+
+    def unavailable() -> SecretStr:
+        raise OpenDARTCredentialError("authentication unavailable")
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        return httpx.Response(200, json={"status": "000"})
+
+    monkeypatch.setattr(_credential_transport, "_read_credential", unavailable)
+    client = OpenDARTHttpClient._for_online_test(
+        OpenDARTSettings(
+            opendart_offline=False,
+            opendart_data_dir=tmp_path,
+            opendart_timeout_seconds=1.0,
+            opendart_retry_attempts=1,
+            opendart_rate_limit_per_second=1,
+        ),
+        transport=httpx.MockTransport(handler),
+        rate_limiter=TokenBucket(1000),
+        before_send=lambda path: events.append(f"reservation:{path}"),
+        on_handoff=lambda: events.append("handoff"),
+    )
+
+    with pytest.raises(OpenDARTCredentialError):
+        client.get_json("/api/list.json", {})
+
+    assert events == ["reservation:/api/list.json"]
     assert attempts == 0
 
 

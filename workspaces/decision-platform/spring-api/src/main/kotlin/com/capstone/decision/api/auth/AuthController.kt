@@ -100,7 +100,12 @@ data class LoginRequest(
     val username: String,
     @field:NotBlank
     @field:Size(max = 1024)
-    @field:Schema(description = "저장하거나 기록하지 않는 demo password", format = "password", writeOnly = true, maxLength = 1024)
+    @field:Schema(
+        description = "저장하거나 기록하지 않는 demo password; 인증 허용 범위는 1..72 UTF-8 bytes",
+        format = "password",
+        writeOnly = true,
+        maxLength = 1024,
+    )
     val password: String,
 )
 

@@ -52,9 +52,11 @@ def postgres_cluster() -> Iterator[PostgresTestCluster]:
                     NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD 'app-test';
                 CREATE ROLE decision_collector LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
                     NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD 'collector-test';
-                GRANT CONNECT ON DATABASE decision TO decision_app, decision_collector;
+                CREATE ROLE flyway NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
+                    NOINHERIT NOREPLICATION NOBYPASSRLS;
+                GRANT CONNECT ON DATABASE decision TO decision_app, decision_collector, flyway;
                 REVOKE CREATE ON SCHEMA public FROM PUBLIC;
-                GRANT USAGE ON SCHEMA public TO decision_app, decision_collector;
+                GRANT USAGE ON SCHEMA public TO decision_app, decision_collector, flyway;
                 """
             )
             for migration in sorted(MIGRATION_DIR.glob("V*__*.sql"), key=_migration_version):

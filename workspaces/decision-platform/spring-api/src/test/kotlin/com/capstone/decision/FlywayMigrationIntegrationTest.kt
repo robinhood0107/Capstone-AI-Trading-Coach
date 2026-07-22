@@ -23,9 +23,9 @@ class FlywayMigrationIntegrationTest(
     @Autowired private val jdbcTemplate: JdbcTemplate,
 ) : SpringApiIntegrationTestBase() {
     @Test
-    fun `clean database applies V1 through V5 migrations and creates required objects`() {
+    fun `clean database applies V1 through V6 migrations and creates required objects`() {
         val versions = queryStrings("select version from flyway_schema_history where success order by installed_rank")
-        assertEquals(listOf("1", "2", "3", "4", "5"), versions)
+        assertEquals(listOf("1", "2", "3", "4", "5", "6"), versions)
 
         val requiredTables =
             listOf(
@@ -39,6 +39,15 @@ class FlywayMigrationIntegrationTest(
                 "rag_sources",
                 "rag_chunks",
                 "market_calendar",
+                "opendart_quota_usage",
+                "calendar_source_health",
+                "calendar_observations",
+                "trading_sessions",
+                "calendar_events",
+                "calendar_event_sources",
+                "calendar_conflicts",
+                "calendar_collection_cursors",
+                "disclosure_risk_state_transitions",
             )
         requiredTables.forEach { tableName ->
             assertTrue(tableExists(tableName), "expected table $tableName to exist")
@@ -46,8 +55,32 @@ class FlywayMigrationIntegrationTest(
 
         assertEquals(1, countMarketCalendarRows("KRX", "2026-06-23", true))
         assertEquals(1, countMarketCalendarRows("KRX", "2026-01-01", false))
+        assertEquals("VIEW", tableType("market_calendar"))
+        assertEquals(2, countRows("trading_sessions", "canonical_rule_version = 'V4_COMPAT_MIGRATION'"))
         assertTrue(indexExists("idx_chunks_trgm"), "expected pg_trgm index for Korean keyword search")
         assertFalse(indexDefinitionLike("rag_chunks", "%ivfflat%"), "ivfflat must wait until real embeddings are loaded")
+    }
+
+    @Test
+    fun `calendar runtime roles receive exact allowlisted privileges`() {
+        assertTrue(hasTablePrivilege("decision_collector", "opendart_quota_usage", "SELECT"))
+        assertTrue(hasTablePrivilege("decision_collector", "opendart_quota_usage", "INSERT"))
+        assertTrue(hasTablePrivilege("decision_collector", "opendart_quota_usage", "UPDATE"))
+        assertTrue(hasTablePrivilege("decision_collector", "calendar_observations", "INSERT"))
+        assertFalse(hasTablePrivilege("decision_collector", "calendar_observations", "UPDATE"))
+        assertFalse(hasTablePrivilege("decision_collector", "calendar_observations", "DELETE"))
+        assertFalse(hasTablePrivilege("decision_collector", "users", "SELECT"))
+        assertFalse(hasTablePrivilege("decision_collector", "flyway_schema_history", "SELECT"))
+        assertFalse(hasSchemaPrivilege("decision_collector", "CREATE"))
+
+        assertTrue(hasTablePrivilege("decision_app", "trading_sessions", "SELECT"))
+        assertTrue(hasTablePrivilege("decision_app", "current_calendar_events", "SELECT"))
+        assertTrue(hasTablePrivilege("decision_app", "active_disclosure_risk_states", "SELECT"))
+        assertFalse(hasTablePrivilege("decision_app", "calendar_observations", "SELECT"))
+        assertFalse(hasTablePrivilege("decision_app", "opendart_quota_usage", "SELECT"))
+        assertFalse(hasTablePrivilege("decision_app", "trading_sessions", "INSERT"))
+        assertFalse(hasTablePrivilege("decision_app", "flyway_schema_history", "SELECT"))
+        assertFalse(hasSchemaPrivilege("decision_app", "CREATE"))
     }
 
     @Test
@@ -186,6 +219,49 @@ class FlywayMigrationIntegrationTest(
 
     private fun queryStrings(sql: String): List<String> = jdbcTemplate.query(sql) { rs, _ -> rs.getString(1) }
 
+    private fun tableType(tableName: String): String =
+        jdbcTemplate.queryForObject(
+            "select table_type from information_schema.tables where table_schema = 'public' and table_name = ?",
+            String::class.java,
+            tableName,
+        ) ?: ""
+
+    private fun countRows(
+        tableName: String,
+        predicate: String,
+    ): Int {
+        require(tableName == "trading_sessions")
+        require(predicate == "canonical_rule_version = 'V4_COMPAT_MIGRATION'")
+        return jdbcTemplate.queryForObject(
+            "select count(*) from trading_sessions where canonical_rule_version = 'V4_COMPAT_MIGRATION'",
+            Int::class.java,
+        ) ?: 0
+    }
+
+    private fun hasTablePrivilege(
+        role: String,
+        table: String,
+        privilege: String,
+    ): Boolean =
+        jdbcTemplate.queryForObject(
+            "select has_table_privilege(?, 'public.' || ?, ?)",
+            Boolean::class.java,
+            role,
+            table,
+            privilege,
+        ) ?: false
+
+    private fun hasSchemaPrivilege(
+        role: String,
+        privilege: String,
+    ): Boolean =
+        jdbcTemplate.queryForObject(
+            "select has_schema_privilege(?, 'public', ?)",
+            Boolean::class.java,
+            role,
+            privilege,
+        ) ?: false
+
     private fun countMarketCalendarRows(
         market: String,
         calendarDate: String,
@@ -240,6 +316,7 @@ class FlywayMigrationIntegrationTest(
                 .withDatabaseName("decision")
                 .withUsername("decision")
                 .withPassword("decision")
+                .withInitScript("db/test-init-calendar-roles.sql")
 
         @DynamicPropertySource
         @JvmStatic

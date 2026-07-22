@@ -24,6 +24,15 @@ python-services/        # uv 프로젝트 — LightGBM/RAG/금융공학/데이�
 
 KIS outbound는 이 workspace가 단일 owner다. S1.1 client는 실전 18/s hard cap·기본 120ms 간격, 모의 1/s·1,000ms 간격을 같은 opaque credential/appkey scope의 Redis 원자 limiter로 공유한다. `/oauth2/tokenP` physical send는 mock/live 합산 deployment-global 1/s를 보수 적용하고 token cache/singleflight만 mode별로 분리한다. Return Engine과 후속 S1.6/S3 adapter는 별도 limiter를 만들지 않고 이 경계를 재사용한다.
 
+## S1.6 prerequisite 경계
+
+S1.6은 선행 amendment와 production 구현을 분리한다. 선행 amendment는
+`testcontainers[postgres]==4.14.2`, S1.4X intentional reference refresh, Market
+Calendar/Event Aggregator v1의 내부 DB·authority·confidence·retry·privacy·correction 계약만
+고정한다. 실제 calendar package, Flyway migration, collector와 online 활성화는 후속 PR 범위다.
+계약의 공개 단일 진실 소스는 최종 명세 11.1.2와 API 명세 12A이며, public
+REST/gRPC/Dashboard는 별도 contract-change 전까지 제공하지 않는다.
+
 ## S1.3 ECOS/Naver snapshot
 
 S1.3 ECOS 거시지표와 Naver 뉴스 metadata collector는 PR #16 merge commit

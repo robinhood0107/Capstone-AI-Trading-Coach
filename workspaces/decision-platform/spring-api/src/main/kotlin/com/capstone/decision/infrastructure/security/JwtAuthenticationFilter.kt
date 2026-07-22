@@ -12,6 +12,7 @@ import jakarta.servlet.FilterChain
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
 import org.springframework.beans.factory.ObjectProvider
+import org.springframework.dao.DataAccessException
 import org.springframework.http.HttpHeaders
 import org.springframework.http.MediaType
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken
@@ -34,6 +35,8 @@ class JwtAuthenticationFilter(
     private val handlerMappingProvider: ObjectProvider<RequestMappingHandlerMapping>,
 ) : OncePerRequestFilter() {
     private val pathMatcher = AntPathMatcher()
+
+    override fun shouldNotFilter(request: HttpServletRequest): Boolean = request.method == "POST" && request.requestURI == LOGIN_PATH
 
     override fun doFilterInternal(
         request: HttpServletRequest,
@@ -81,6 +84,11 @@ class JwtAuthenticationFilter(
             responseWriter.writeError(request, response, ErrorCode.UNAUTHORIZED)
             return false
         } catch (exception: IllegalArgumentException) {
+            SecurityContextHolder.clearContext()
+            responseWriter.writeError(request, response, ErrorCode.UNAUTHORIZED)
+            return false
+        } catch (exception: DataAccessException) {
+            // actor source DB를 확인할 수 없을 때 token claim만 신뢰하지 않고 인증을 닫는다.
             SecurityContextHolder.clearContext()
             responseWriter.writeError(request, response, ErrorCode.UNAUTHORIZED)
             return false
@@ -237,6 +245,7 @@ class JwtAuthenticationFilter(
 
     companion object {
         private const val BEARER_PREFIX = "Bearer "
+        private const val LOGIN_PATH = "/api/v1/auth/login"
         private const val IDEMPOTENCY_HEADER = "X-Idempotency-Key"
         private val WRITE_METHODS = setOf("POST", "PUT", "PATCH", "DELETE")
         private val NON_REPLAYABLE_CLIENT_ERRORS = setOf(400, 401, 403, 404, 405, 413, 422, 429)

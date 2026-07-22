@@ -17,6 +17,11 @@ plugins {
 group = "com.capstone"
 version = "0.0.1-SNAPSHOT"
 
+springBoot {
+    // operator-only JavaExec main이 늘어나도 실행 가능한 서버 artifact의 진입점은 하나로 고정한다.
+    mainClass.set("com.capstone.decision.SpringApiApplicationKt")
+}
+
 java {
     // toolchain: java/kotlin 컴파일 타깃을 한 곳에서 고정 (Gradle 공식 권장 — sourceCompatibility 단독은 Kotlin jvmTarget과 어긋날 수 있음)
     toolchain {
@@ -85,6 +90,42 @@ kotlin {
 
 tasks.withType<Test> {
     useJUnitPlatform()
+}
+
+val cleanAuthCutoverEvidence by tasks.registering(Delete::class) {
+    group = "operations"
+    description = "로컬 auth cutover 사전 증거 파일만 삭제한다."
+    delete(layout.buildDirectory.file("auth-cutover/pre-cutover.json"))
+}
+
+tasks.register<JavaExec>("rotateDemoCredential") {
+    group = "operations"
+    description = "환경변수로 받은 attested demo credential bundle을 migration role transaction에서 회전한다."
+    dependsOn(tasks.named("classes"))
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass.set("com.capstone.decision.infrastructure.security.DemoCredentialRotation")
+    outputs.upToDateWhen { false }
+}
+
+tasks.register<JavaExec>("authPreCutoverCapture") {
+    group = "operations"
+    description = "배포 전 기존 JWT의 authenticated health 200을 digest evidence로 기록한다."
+    dependsOn(tasks.named("classes"))
+    mustRunAfter(cleanAuthCutoverEvidence)
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass.set("com.capstone.decision.infrastructure.security.AuthCutoverSmoke")
+    args("capture")
+    outputs.upToDateWhen { false }
+}
+
+tasks.register<JavaExec>("authCutoverSmoke") {
+    group = "operations"
+    description = "배포 후 같은 기존 JWT 401과 새 USER/ADMIN JWT health 200을 검증한다."
+    dependsOn(tasks.named("classes"))
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass.set("com.capstone.decision.infrastructure.security.AuthCutoverSmoke")
+    args("verify")
+    outputs.upToDateWhen { false }
 }
 
 val verifySecurityDependencyVersions by tasks.registering {

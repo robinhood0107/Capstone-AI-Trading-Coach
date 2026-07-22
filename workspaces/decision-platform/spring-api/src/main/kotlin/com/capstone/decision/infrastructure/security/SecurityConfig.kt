@@ -6,6 +6,7 @@ import com.capstone.decision.infrastructure.idempotency.IdempotencyService
 import com.capstone.decision.infrastructure.web.HttpRequestProperties
 import com.capstone.decision.infrastructure.web.RequestBodyLimitFilter
 import com.capstone.decision.infrastructure.web.RequestIdFilter
+import org.flywaydb.core.api.migration.JavaMigration
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.boot.context.properties.EnableConfigurationProperties
@@ -16,12 +17,16 @@ import org.springframework.security.config.annotation.method.configuration.Enabl
 import org.springframework.security.config.annotation.web.builders.HttpSecurity
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity
 import org.springframework.security.config.http.SessionCreationPolicy
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder
+import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.security.web.SecurityFilterChain
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter
 import org.springframework.web.cors.CorsConfiguration
 import org.springframework.web.cors.CorsConfigurationSource
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource
 import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping
+import java.nio.charset.StandardCharsets
+import java.security.MessageDigest
 
 // S0.3 공통 규약에서 허용 경로, JWT 인증, CORS를 한 보안 체인으로 고정한다.
 @Configuration
@@ -29,11 +34,75 @@ import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandl
 @EnableMethodSecurity
 @EnableConfigurationProperties(
     JwtProperties::class,
-    DemoAccountProperties::class,
+    LoginAttemptLimiterProperties::class,
+    DemoCredentialBootstrapProperties::class,
     IdempotencyProperties::class,
     HttpRequestProperties::class,
 )
 class SecurityConfig {
+    @Bean
+    fun passwordEncoder(): PasswordEncoder = BCryptPasswordEncoder(12)
+
+    @Bean
+    fun authSecretSeparation(
+        jwtProperties: JwtProperties,
+        loginProperties: LoginAttemptLimiterProperties,
+        demoCredentialProperties: DemoCredentialBootstrapProperties,
+    ): AuthSecretSeparation {
+        jwtProperties.validate()
+        loginProperties.validate()
+        val jwtSecret = jwtProperties.secret.toByteArray(StandardCharsets.UTF_8)
+        val loginScopeKey = loginProperties.scopeHmacKey.toByteArray(StandardCharsets.UTF_8)
+        val credentialSeparationKey =
+            DemoCredentialBundlePolicy.decodeSeparationKey(demoCredentialProperties.separationKey)
+        return try {
+            require(!MessageDigest.isEqual(jwtSecret, loginScopeKey)) {
+                "JWT and login scope HMAC secrets must be different."
+            }
+            require(
+                !MessageDigest.isEqual(credentialSeparationKey, jwtSecret) &&
+                    !MessageDigest.isEqual(credentialSeparationKey, loginScopeKey),
+            ) { "Demo credential separation key must be distinct from other authentication secrets." }
+            verifyBootstrapBundles(demoCredentialProperties, credentialSeparationKey)
+            AuthSecretSeparation
+        } finally {
+            jwtSecret.fill(0)
+            loginScopeKey.fill(0)
+            credentialSeparationKey.fill(0)
+        }
+    }
+
+    @Bean
+    fun s21ActorTrustMigration(properties: DemoCredentialBootstrapProperties): JavaMigration {
+        val separationKey = DemoCredentialBundlePolicy.decodeSeparationKey(properties.separationKey)
+        return try {
+            val (userBundle, adminBundle) = verifyBootstrapBundles(properties, separationKey)
+            V7__s2_1_actor_trust(userBundle, adminBundle)
+        } finally {
+            separationKey.fill(0)
+        }
+    }
+
+    private fun verifyBootstrapBundles(
+        properties: DemoCredentialBootstrapProperties,
+        separationKey: ByteArray,
+    ): Pair<VerifiedDemoCredentialBundle, VerifiedDemoCredentialBundle> {
+        val userBundle =
+            DemoCredentialBundlePolicy.verify(
+                properties.userCredentialBundle,
+                requireNotNull(DemoAccounts.byUserId("usr_demo_user")),
+                separationKey,
+            )
+        val adminBundle =
+            DemoCredentialBundlePolicy.verify(
+                properties.adminCredentialBundle,
+                requireNotNull(DemoAccounts.byUserId("usr_demo_admin")),
+                separationKey,
+            )
+        DemoCredentialBundlePolicy.requireSeparated(userBundle, adminBundle)
+        return userBundle to adminBundle
+    }
+
     @Bean
     fun securityFilterChain(
         http: HttpSecurity,
@@ -112,3 +181,6 @@ class SecurityConfig {
         }
     }
 }
+
+// 이 marker bean은 JWT, login limiter, credential evidence key 분리 검증이 startup에 완료됐음을 나타낸다.
+object AuthSecretSeparation

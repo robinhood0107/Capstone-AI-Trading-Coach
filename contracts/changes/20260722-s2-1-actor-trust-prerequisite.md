@@ -13,6 +13,7 @@ S2.1 Principle owner 검증은 JWT actor ID를 DB foreign key와 같은 namespac
 - login password는 선택 row와 peer row에서 각각 BCrypt 검증해 하나의 평문이 두 역할에 모두 일치하면 fail-closed하고, unknown username도 두 번의 dummy 검증을 거친다. limiter scope는 JWT와 다른 key의 purpose/version HMAC으로 만든다.
 - purpose-separated HMAC reuse tag와 role/version/hash를 결속한 bundle MAC을 공통 bootstrap/rotation verifier로 검증한다. BCrypt 문자열 불일치는 평문 분리 증거로 취급하지 않는다.
 - operator-only credential rotation과 pre/post deployment cutover smoke task를 추가한다. rotation은 loopback DB에서 두 demo row를 잠그고 저장 bundle을 검증하며 현재/peer reuse tag를 거부한 뒤 전체 credential evidence에 CAS·bounded timeout을 적용한다. raw password/token/hash/tag/MAC/key는 추적 파일, argv, 로그, audit, evidence에 넣지 않는다.
+- `flyway` role은 PostgreSQL 일반/오류 parameter logging 길이를 모두 `0`으로 고정한다. rotation은 credential bind 전에 두 effective setting을 검증하고 안전하지 않으면 mutation과 audit 없이 fail-closed한다. SQL 문장 로깅 자체는 허용한다.
 - login OpenAPI를 public operation으로 표시하고 response `userId`가 JWT `sub`와 같은 internal owner ID임을 문서화한다.
 
 ## 호환성·운영 영향
@@ -36,6 +37,7 @@ S2.1 Principle ownership must trust a JWT actor ID in the same namespace as the 
 - Login performs one BCrypt verification for the selected row and one for its peer, failing closed when one plaintext matches both roles. Unknown usernames still traverse two dummy verifications. Login limiter scopes use a purpose/version HMAC key distinct from the JWT key.
 - A shared bootstrap/rotation verifier checks a purpose-separated HMAC reuse tag and a bundle MAC binding role, version, hash, and identity. Serialized BCrypt inequality is not treated as plaintext-separation evidence.
 - Operator-only credential rotation and pre/post deployment cutover smoke tasks keep raw passwords, tokens, hashes, tags, MACs, and keys out of tracked files, argv, logs, audit payloads, and evidence. Rotation locks both loopback-hosted demo rows, verifies stored bundles, rejects current/peer reuse tags, and applies CAS with bounded timeouts to all credential evidence.
+- The `flyway` role pins both normal and error PostgreSQL parameter-log lengths to `0`. Rotation verifies both effective settings before any credential bind and fails closed without mutation or audit when either is unsafe; SQL statement logging itself remains permitted.
 - OpenAPI marks login as public and identifies response `userId` as the same internal owner ID used by JWT `sub`.
 
 ## Compatibility and operations

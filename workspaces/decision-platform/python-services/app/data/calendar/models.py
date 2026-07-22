@@ -117,10 +117,11 @@ class CanonicalTradingSession:
 
 @dataclass(frozen=True)
 class PriorCanonicalSession:
-    """KIS 실패 때만 사용할 same-date, non-expired prior canonical과 만료시각을 묶는다."""
+    """KIS 실패 때만 사용할 same-date prior와 health/freshness 증거를 묶는다."""
 
     session: CanonicalTradingSession
     expires_at: datetime
+    healthy: bool
 
 
 @dataclass(frozen=True)

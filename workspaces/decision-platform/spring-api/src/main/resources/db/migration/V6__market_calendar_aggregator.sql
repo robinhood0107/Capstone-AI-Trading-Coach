@@ -199,7 +199,7 @@ CREATE INDEX trading_sessions_as_of_idx ON trading_sessions (as_of);
 CREATE INDEX calendar_events_symbol_date_idx ON calendar_events (symbol, event_date);
 CREATE INDEX calendar_conflicts_canonical_key_idx ON calendar_conflicts (canonical_key, created_at);
 CREATE INDEX disclosure_state_key_effective_idx
-  ON disclosure_risk_state_transitions (state_key, effective_at DESC, observed_at DESC, revision_no DESC);
+  ON disclosure_risk_state_transitions (state_key, revision_no DESC, observed_at DESC);
 
 CREATE VIEW current_calendar_events AS
 SELECT DISTINCT ON (event_series_key)
@@ -245,7 +245,7 @@ FROM (
     canonical_event_id,
     mapping_version
   FROM disclosure_risk_state_transitions
-  ORDER BY state_key, effective_at DESC, observed_at DESC, revision_no DESC, transition_id DESC
+  ORDER BY state_key, revision_no DESC, observed_at DESC, transition_id DESC
 ) latest
 WHERE transition_type = 'OPEN';
 

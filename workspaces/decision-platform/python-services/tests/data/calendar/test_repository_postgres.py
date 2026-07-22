@@ -121,13 +121,31 @@ def test_observation_and_cursor_publish_commit_or_rollback_together(
 
     with psycopg.connect(postgres_cluster["collector_dsn"]) as connection:
         repository = CalendarRepository(connection)
+        with pytest.raises(ValueError, match="retention"):
+            repository.publish_observation_and_cursor(
+                observation,
+                cursor,
+                persistence_mode="ONLINE_PERSISTENT",
+                retention=None,
+            )
         with pytest.raises(RuntimeError, match="injected crash"):
-            repository.publish_observation_and_cursor(observation, cursor, fail_before_commit=True)
+            repository.publish_observation_and_cursor(
+                observation,
+                cursor,
+                persistence_mode="OFFLINE_EPHEMERAL",
+                retention=None,
+                fail_before_commit=True,
+            )
 
         assert repository.observation_exists(observation.observation_id) is False
         assert repository.load_cursor(cursor.key) is None
 
-        repository.publish_observation_and_cursor(observation, cursor)
+        repository.publish_observation_and_cursor(
+            observation,
+            cursor,
+            persistence_mode="OFFLINE_EPHEMERAL",
+            retention=None,
+        )
         assert repository.observation_exists(observation.observation_id) is True
         assert repository.load_cursor(cursor.key) == cursor
 

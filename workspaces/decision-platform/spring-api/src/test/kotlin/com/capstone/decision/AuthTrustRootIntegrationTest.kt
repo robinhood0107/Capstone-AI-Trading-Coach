@@ -227,6 +227,23 @@ class AuthTrustRootIntegrationTest(
         postInvalidLogin("demo-user", userPassword(), "req-shared-password-user")
     }
 
+    @Test
+    fun `public login rejects input beyond the bcrypt byte boundary even when its prefix matches`() {
+        val boundaryPassword = "가".repeat(24)
+        val overlongPassword = boundaryPassword + "x"
+        assertEquals(72, boundaryPassword.toByteArray(StandardCharsets.UTF_8).size)
+        assertEquals(73, overlongPassword.toByteArray(StandardCharsets.UTF_8).size)
+        val boundaryHash = requireNotNull(BCryptPasswordEncoder(12).encode(boundaryPassword))
+        assertTrue(BCryptPasswordEncoder(12).matches(overlongPassword, boundaryHash))
+        jdbcTemplate.update(
+            "update users set password_hash = ? where user_id = 'usr_demo_user'",
+            boundaryHash,
+        )
+
+        login("demo-user", boundaryPassword, "usr_demo_user", "USER")
+        postInvalidLogin("demo-user", overlongPassword, "req-overlong-bcrypt-password")
+    }
+
     private fun login(
         username: String,
         password: String,

@@ -710,6 +710,7 @@ def test_reference_project_runtime_projection_ignores_scripts_and_locks_runtime(
     contract = repo / "contract"
     project_root = repo / "workspaces" / "decision-platform" / "python-services"
     project_file = project_root / "pyproject.toml"
+    uv_lock = project_root / "uv.lock"
     canonical = (
         repo
         / "workspaces"
@@ -725,15 +726,20 @@ def test_reference_project_runtime_projection_ignores_scripts_and_locks_runtime(
     project_root.mkdir(parents=True)
     canonical.parent.mkdir(parents=True)
     canonical.write_text("fixture", encoding="utf-8")
+    uv_lock.write_text("version = 1\n", encoding="utf-8")
 
     def write_project(
         *,
         dependencies: tuple[str, ...],
+        dev_dependencies: tuple[str, ...] = ("pytest>=8", "ruff>=0.5"),
         script: str,
         uv_package: bool = False,
         ruff_line_length: int = 100,
     ) -> None:
         dependency_lines = "\n".join(f'  "{dependency}",' for dependency in dependencies)
+        dev_dependency_lines = "\n".join(
+            f'  "{dependency}",' for dependency in dev_dependencies
+        )
         project_file.write_text(
             "[project]\n"
             'name = "decision-platform-services"\n'
@@ -748,7 +754,9 @@ def test_reference_project_runtime_projection_ignores_scripts_and_locks_runtime(
             'requires = ["hatchling"]\n'
             'build-backend = "hatchling.build"\n\n'
             "[dependency-groups]\n"
-            'dev = ["pytest>=8", "ruff>=0.5"]\n\n'
+            "dev = [\n"
+            f"{dev_dependency_lines}\n"
+            "]\n\n"
             "[tool.uv]\n"
             f"package = {str(uv_package).lower()}\n\n"
             "[tool.hatch.build.targets.wheel]\n"
@@ -777,7 +785,11 @@ def test_reference_project_runtime_projection_ignores_scripts_and_locks_runtime(
         },
     }
     projection_sha256 = sha256_bytes(canonical_json_bytes(projection))
-    manifest_payload = f"{projection_sha256}  pyproject.toml\n".encode()
+    uv_lock_sha256 = sha256_file(uv_lock)
+    manifest_payload = (
+        f"{projection_sha256}  pyproject.toml\n"
+        f"{uv_lock_sha256}  uv.lock\n"
+    ).encode()
     lock: dict[str, Any] = {
         "schemaVersion": "s1.4x-reference-lock-v1",
         "referenceBaseCommit": "a" * 40,
@@ -800,36 +812,58 @@ def test_reference_project_runtime_projection_ignores_scripts_and_locks_runtime(
                     "workspaces/decision-platform/python-services/pyproject.toml"
                 ),
                 "sha256": projection_sha256,
-            }
+            },
+            {
+                "role": "production-environment-lock",
+                "path": "workspaces/decision-platform/python-services/uv.lock",
+                "sha256": uv_lock_sha256,
+            },
         ],
         "sourceTrees": [
             {
                 "role": "production-reference-tree",
                 "root": "workspaces/decision-platform/python-services",
-                "includeGlobs": ["pyproject.toml"],
-                "fileCount": 1,
+                "includeGlobs": ["pyproject.toml", "uv.lock"],
+                "fileCount": 2,
                 "canonicalManifestSha256": sha256_bytes(manifest_payload),
-                "files": [{"path": "pyproject.toml", "sha256": projection_sha256}],
+                "files": [
+                    {"path": "pyproject.toml", "sha256": projection_sha256},
+                    {"path": "uv.lock", "sha256": uv_lock_sha256},
+                ],
             }
         ],
     }
     atomic_write_json(contract / "reference-lock.v1.json", lock)
 
-    assert validate_reference_lock(repo, contract)["sourceCount"] == 1
+    assert validate_reference_lock(repo, contract)["sourceCount"] == 2
 
     # CLI entrypoint와 lint 설정은 수치 oracle의 dependency/runtime identity가 아니다.
     write_project(
         dependencies=tuple(reversed(dependencies)),
+        dev_dependencies=("ruff>=0.5", "pytest>=8"),
         script="app.new:main",
         ruff_line_length=120,
     )
-    assert validate_reference_lock(repo, contract)["sourceCount"] == 1
+    assert validate_reference_lock(repo, contract)["sourceCount"] == 2
 
     write_project(dependencies=("numpy==2.6.0", "pandas>=2.2"), script="app.new:main")
     with pytest.raises(OracleContractError, match="reference source SHA-256 mismatch"):
         validate_reference_lock(repo, contract)
 
+    write_project(
+        dependencies=dependencies,
+        dev_dependencies=("pytest>=8", "ruff>=0.6"),
+        script="app.new:main",
+    )
+    with pytest.raises(OracleContractError, match="reference source SHA-256 mismatch"):
+        validate_reference_lock(repo, contract)
+
     write_project(dependencies=dependencies, script="app.new:main", uv_package=True)
+    with pytest.raises(OracleContractError, match="reference source SHA-256 mismatch"):
+        validate_reference_lock(repo, contract)
+
+    write_project(dependencies=dependencies, script="app.new:main")
+    uv_lock.write_text("version = 1\n# byte drift\n", encoding="utf-8")
     with pytest.raises(OracleContractError, match="reference source SHA-256 mismatch"):
         validate_reference_lock(repo, contract)
 

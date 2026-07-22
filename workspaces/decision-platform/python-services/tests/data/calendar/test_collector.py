@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any
 
 import pytest
 
@@ -18,11 +17,11 @@ from app.data.calendar.collector import (
 )
 from app.data.calendar.errors import (
     CollectorAlreadyRunning,
-    NonRetryableProviderError,
+    PriorityDeferred,
     ProviderQuotaExhausted,
-    RetryableProviderError,
     RunLimitExceeded,
 )
+from app.data.calendar.models import QuotaUsage
 from app.data.calendar.settings import OpenDARTQuotaConfig
 
 
@@ -61,35 +60,29 @@ def test_budget_degradation_uses_exact_70_and_90_percent_boundaries(
     assert actual == allowed
 
 
-def test_each_retry_acquires_bucket_and_charged_reservation_before_send() -> None:
+def test_each_transport_retry_gets_a_fresh_charged_reservation_and_handoff() -> None:
     events: list[str] = []
-    attempts = 0
-
-    def send() -> dict[str, str]:
-        nonlocal attempts
-        attempts += 1
-        events.append(f"send-{attempts}")
-        if attempts < 3:
-            raise RetryableProviderError(503)
-        return {"status": "000"}
-
     executor = OpenDARTAttemptExecutor(
-        bucket=_Bucket(events),
         quota_repository=_Quota(events),
         config=_config(calls=3),
         ledger=CollectorRunLedger(max_calls=3),
         now=lambda: datetime(2026, 7, 22, 0, 0, tzinfo=UTC),
     )
 
-    assert executor.execute("list", send) == {"status": "000"}
+    for attempt in range(1, 4):
+        events.append("limiter")
+        executor.before_send("/api/list.json")
+        executor.record_http_handoff()
+        events.append(f"send-{attempt}")
+
     assert events == [
-        "bucket",
+        "limiter",
         "reserve-1",
         "send-1",
-        "bucket",
+        "limiter",
         "reserve-2",
         "send-2",
-        "bucket",
+        "limiter",
         "reserve-3",
         "send-3",
     ]
@@ -97,34 +90,27 @@ def test_each_retry_acquires_bucket_and_charged_reservation_before_send() -> Non
     assert executor.ledger.actual_http_sends == 3
 
 
-@pytest.mark.parametrize("error", [NonRetryableProviderError(429), ProviderQuotaExhausted()])
-def test_429_and_status_020_never_retry(error: Exception) -> None:
+def test_status_020_marks_the_last_reserved_kst_day_exhausted() -> None:
     events: list[str] = []
     quota = _Quota(events)
-
-    def send() -> dict[str, Any]:
-        events.append("send")
-        raise error
-
     executor = OpenDARTAttemptExecutor(
-        bucket=_Bucket(events),
         quota_repository=quota,
         config=_config(calls=3),
         ledger=CollectorRunLedger(max_calls=3),
         now=lambda: datetime(2026, 7, 22, 0, 0, tzinfo=UTC),
     )
 
-    with pytest.raises(type(error)):
-        executor.execute("list", send)
-    assert events.count("send") == 1
-    assert quota.exhausted == isinstance(error, ProviderQuotaExhausted)
+    executor.before_send("/api/list.json")
+    executor.record_http_handoff()
+    executor.mark_provider_exhausted()
+
+    assert quota.exhausted is True
 
 
 def test_db_reservation_failure_causes_zero_http_send() -> None:
     events: list[str] = []
     quota = _Quota(events, deny=True)
     executor = OpenDARTAttemptExecutor(
-        bucket=_Bucket(events),
         quota_repository=quota,
         config=_config(calls=1),
         ledger=CollectorRunLedger(max_calls=1),
@@ -132,9 +118,35 @@ def test_db_reservation_failure_causes_zero_http_send() -> None:
     )
 
     with pytest.raises(RunLimitExceeded, match="reservation"):
-        executor.execute("list", lambda: events.append("send"))
+        executor.before_send("/api/list.json")
     assert "send" not in events
     assert executor.ledger.actual_http_sends == 0
+
+
+def test_priority_degradation_is_enforced_before_reservation_and_send() -> None:
+    events: list[str] = []
+    quota = _Quota(events, used=70, budget=100)
+    executor = OpenDARTAttemptExecutor(
+        quota_repository=quota,
+        config=_config(calls=3),
+        ledger=CollectorRunLedger(max_calls=3),
+        now=lambda: datetime(2026, 7, 22, 0, 0, tzinfo=UTC),
+    )
+
+    with pytest.raises(PriorityDeferred):
+        executor.before_send("/api/company.json")
+    assert events == []
+
+    executor.before_send("/api/majorstock.json")
+    executor.record_http_handoff()
+    assert events == ["reserve-1"]
+
+    quota.used = 90
+    with pytest.raises(PriorityDeferred):
+        executor.before_send("/api/majorstock.json")
+    executor.before_send("/api/list.json")
+    executor.record_http_handoff()
+    assert events == ["reserve-1", "reserve-2"]
 
 
 def test_collector_requires_single_advisory_lock_and_status_020_stops_queue() -> None:
@@ -149,11 +161,12 @@ def test_collector_requires_single_advisory_lock_and_status_020_stops_queue() ->
 
     lock.acquired = True
     calls.clear()
-    executor = _FakeExecutor(calls, quota_on="005930:1")
+    executor = _FakeExecutor(calls)
     collector = CalendarCollector(lock=lock, executor=executor, config=_config(calls=5))
     with pytest.raises(ProviderQuotaExhausted):
-        collector.run(tasks)
+        collector.run([_task("000660", 1), _task("005930", 1, result={"status": "020"})])
     assert calls == ["000660:1", "005930:1"]
+    assert executor.exhausted is True
 
 
 def test_round_robin_is_subject_sorted_one_page_at_a_time_and_caps_symbols() -> None:
@@ -173,26 +186,39 @@ def test_round_robin_is_subject_sorted_one_page_at_a_time_and_caps_symbols() -> 
     ]
 
 
-@dataclass
-class _Bucket:
-    events: list[str]
-
-    def acquire(self) -> None:
-        self.events.append("bucket")
-
-
 class _Quota:
-    def __init__(self, events: list[str], *, deny: bool = False) -> None:
+    def __init__(
+        self,
+        events: list[str],
+        *,
+        deny: bool = False,
+        used: int = 0,
+        budget: int = 80,
+    ) -> None:
         self.events = events
         self.deny = deny
         self.reservations = 0
         self.exhausted = False
+        self.used = used
+        self.budget = budget
 
     def reserve(self, *_: object) -> None:
         self.reservations += 1
         self.events.append(f"reserve-{self.reservations}")
         if self.deny:
             raise RuntimeError("ambiguous reservation")
+        self.used += 1
+
+    def get_usage(self, _: object) -> QuotaUsage:
+        return QuotaUsage(
+            usage_date=datetime(2026, 7, 22, tzinfo=UTC).date(),
+            effective_limit=100,
+            daily_budget=self.budget,
+            physical_attempts=self.used,
+            exhausted_at=None,
+            exhausted_reason=None,
+            last_grant_token=None,
+        )
 
     def mark_exhausted(self, *_: object) -> None:
         self.exhausted = True
@@ -210,26 +236,35 @@ class _Lock:
 
 
 class _FakeExecutor:
-    def __init__(self, calls: list[str], *, quota_on: str | None = None) -> None:
+    def __init__(self, calls: list[str]) -> None:
         self.calls = calls
-        self.quota_on = quota_on
+        self.exhausted = False
 
     def execute(self, _: str, send: object) -> object:
         assert callable(send)
         result = send()
-        self.calls.append(str(result))
-        if result == self.quota_on:
+        label = result if isinstance(result, str) else self._next_label()
+        self.calls.append(str(label))
+        if isinstance(result, dict) and result.get("status") == "020":
+            self.mark_provider_exhausted()
             raise ProviderQuotaExhausted()
         return result
 
+    def mark_provider_exhausted(self) -> None:
+        self.exhausted = True
 
-def _task(subject: str, page: int) -> CollectionTask:
+    def _next_label(self) -> str:
+        return "000660:1" if not self.calls else "005930:1"
+
+
+def _task(subject: str, page: int, *, result: object | None = None) -> CollectionTask:
     identity = f"{subject}:{page}"
+    value = identity if result is None else result
     return CollectionTask(
         operation="list",
         subject=subject,
         page=page,
-        send=lambda: identity,
+        send=lambda: value,
     )
 
 

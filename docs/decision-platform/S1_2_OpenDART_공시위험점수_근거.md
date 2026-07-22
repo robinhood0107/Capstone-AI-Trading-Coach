@@ -43,7 +43,7 @@ S1.2는 OpenDART 공식 API에서 읽은 구조화 이벤트만 점수화한다.
 |---|---|---|---|
 | **S1.2b** | DS005 확장: 신주인수권부사채(`bdwtIsDecsn` 2020034)·교환사채(`exbdIsDecsn` 2020035)·회사합병(`cmpMgDecsn` 2020050)·회사분할(`cmpDvDecsn` 2020051)·회사분할합병(`cmpDvmgDecsn` 2020052)·영업양도(`bsnTrfDecsn` 2020043) | **완료(지원으로 이동)**. BW/EB=0.6·window 30, 합병/분할/분할합병/영업양도=0.6·window 90, `policy_v1_unvalidated`. endpoint path/params + event_code + mapping validation + scorer 테스트 통과 | 기존 `MAIN_MATTER_ENDPOINTS` 패턴 재사용 |
 | **S1.2c** | DS003 다중회사 주요 재무지표(`fnlttCmpnyIndx`, apiId 2022002) + DS004 대량보유 상황보고(`majorstock`, 2019021)·임원ㆍ주요주주 소유보고(`elestock`, 2019022) | **완료(지원으로 이동)**. 다중회사 corp_code comma-join 복수조회, ownership row 파싱, `OwnershipDisclosureEvent`(event_code `OPENDART:OWNERSHIP_CHANGE`) 내부 모델. client/parser 테스트 통과. 주문 차단 점수 미연결 | 재무 feature·지분변동 축 |
-| **S1.6** | Market Calendar/Event Aggregator + 공시위험 지속 상태 추적 + DS004 ownership canonical 승격 | prerequisite 계약 동결. v1 structured state pair는 `bnkMngtPcbg` open / `bnkMngtPcsp` close만 승인한다. `report_nm` 기반 회생 종결과 승인되지 않은 close는 지원하지 않는다. production collector/상태머신은 후속 PR이며 REST/gRPC/Dashboard는 다시 별도 contract-change가 필요하다 | 관리절차 상태는 current active view로 전환하고 나머지 유형은 승인된 pair가 생길 때까지 기존 lookback 유지 |
+| **S1.6** | Market Calendar/Event Aggregator + 공시위험 지속 상태 추적 + DS004 ownership canonical 승격 | **내부 offline 구현**. v1 structured state pair는 `bnkMngtPcbg` open / `bnkMngtPcsp` close만 승인하고 DS004는 PII-free projection만 저장한다. provider online/scheduler와 REST/gRPC/Dashboard는 비활성이며 별도 승인이 필요하다 | 관리절차는 append-only transition/current active view로 구현했지만 기존 S1.2 RiskEngine 소비 전환과 나머지 유형은 후속 승인 범위다 |
 
 - S1.2b·S1.2c endpoint 경로명은 구현 시 OpenDART 상세페이지로 확인 완료(apiId ↔ path 일치). 경로명을 미확정 상태로 지어내지 않는다.
 - 실제 주문 판단 소비(riskItems 방출)는 S2.2 `DisclosureRiskPort` + S2.3 Decision API에서 이뤄진다(위 로드맵과 독립적으로 진행).
@@ -103,9 +103,10 @@ S1.2는 “재무제표와 모든 공시를 전부 긁는 단계”가 아니다
 - S1.2는 HTTP 200 body의 `status=020`을 전용 비재시도 quota 신호로 구분하는 데까지만 구현한다. 일일 limit/budget과 실행별 charged reservation/`physical_attempts` cap의 durable enforcement는 운영 설정을 필수로 받는 S1.6 collector에서 구현하고 actual HTTP sends는 별도 집계한다.
 - PostgreSQL atomic quota ledger와 단일 collector의 durable enforcement는 S1.6에서 구현한다. Redis와 Kafka는 OpenDART quota accounting에 사용하지 않는다.
 
-### S1.6 OpenDART collector 동결 계약
+### S1.6 OpenDART collector offline 구현과 online gate
 
-S1.6 prerequisite는 production collector를 구현하지 않고 다음 계약을 먼저 고정한다.
+S1.6 후속 변경은 아래 quota/priority/retry/state/privacy 경계를 offline fixture와 PostgreSQL 16
+통합 테스트로 구현한다. 실제 provider 호출, 주기 scheduler와 운영 활성화는 별도 승인 전까지 0이다.
 
 - online에는 `OPENDART_DAILY_CALL_LIMIT`, `OPENDART_DAILY_CALL_BUDGET`,
   `OPENDART_MAX_CALLS_PER_RUN`, `OPENDART_MAX_SYMBOLS_PER_RUN` 네 positive operator 설정이
@@ -184,7 +185,7 @@ going-concern distress 이벤트는 endpoint identity만으로 이벤트가 성�
 | 모델 | 설명 | 상태 |
 |---|---|---|
 | 판단 시점 조회 (on-demand lookback) | RiskEngine은 PostgreSQL에 저장된 관측치 또는 snapshot을 lookback해 `disclosure_risk_score`를 계산한다. 주문 판단 경로에서 OpenDART HTTP 요청을 직접 fan-out하지 않는다. 유효기간은 "판단 시점에 이 위험 상태가 아직 유효한가"를 근사하는 lookback 창이다. | v1 (S1.2~S1.2c 현재) |
-| 지속 상태 추적 (continuous/stateful) | 승인된 구조화 pair로 상태를 open/close하고 판단 시점에는 current active view만 읽는다. v1 pair는 `bnkMngtPcbg`/`bnkMngtPcsp`뿐이다. | 계약 동결, production 미구현 |
+| 지속 상태 추적 (continuous/stateful) | 승인된 구조화 pair로 상태를 open/close하고 판단 시점에는 current active view만 읽는다. v1 pair는 `bnkMngtPcbg`/`bnkMngtPcsp`뿐이다. | 내부 state machine·append-only transition/current view 구현, online 수집과 RiskEngine 소비 전환은 미활성 |
 | 백그라운드 상시 감시/알림 | 새 공시를 계속 폴링해 능동적으로 경보/차단한다. | 현재 범위 아님 |
 
 핵심은 다음과 같다.

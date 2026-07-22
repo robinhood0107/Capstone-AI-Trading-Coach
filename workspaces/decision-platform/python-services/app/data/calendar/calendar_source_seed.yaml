@@ -1,0 +1,111 @@
+schemaVersion: '1'
+registryVersion: s1.6-v1
+generatedAt: '2026-07-22T00:00:00Z'
+sources:
+  - sourceId: xkrx-4.13.2
+    provider: EXCHANGE_CALENDARS
+    category: SESSION
+    licenseClass: OFFICIAL_NO_FEE
+    reliabilityTier: 2
+    capabilities:
+      - MARKET_SESSION
+    originGroup: exchange-calendars
+    origin:
+      kind: OFFLINE
+      identifier: python-package:exchange-calendars/XKRX
+    mappingVersion: s1.6-xkrx-v1
+    networkReady: true
+    enabledByDefault: true
+    retention:
+      mode: EPHEMERAL_ONLY
+    provenance:
+      verifiedAt: '2026-07-22'
+      sourceVersion: 4.13.2
+      evidenceUrl: https://github.com/gerrymanoim/exchange_calendars
+      attribution: exchange_calendars XKRX (Apache-2.0)
+  - sourceId: kis-holiday-ctca0903r
+    provider: KIS
+    category: SESSION
+    licenseClass: OFFICIAL_NONCOMMERCIAL_RESTRICTED
+    reliabilityTier: 1
+    capabilities:
+      - MARKET_SESSION
+    originGroup: kis
+    origin:
+      kind: HTTPS
+      baseUrl: https://openapi.koreainvestment.com:9443
+    mappingVersion: s1.6-kis-holiday-v1
+    networkReady: true
+    enabledByDefault: false
+    retention:
+      mode: OPERATOR_REQUIRED
+    provenance:
+      verifiedAt: '2026-07-22'
+      sourceVersion: CTCA0903R
+      evidenceUrl: https://github.com/koreainvestment/open-trading-api/tree/main/examples_llm/domestic_stock/chk_holiday
+      attribution: 한국투자증권 Open API
+  - sourceId: kasi-rest-de-info
+    provider: KASI
+    category: SESSION
+    licenseClass: OFFICIAL_NO_FEE
+    reliabilityTier: 2
+    capabilities:
+      - HOLIDAY_REASON
+    originGroup: kasi
+    origin:
+      kind: HTTPS
+      baseUrl: https://apis.data.go.kr
+    mappingVersion: s1.6-kasi-v1
+    networkReady: false
+    enabledByDefault: false
+    retention:
+      mode: OPERATOR_REQUIRED
+    provenance:
+      verifiedAt: '2026-07-22'
+      sourceVersion: getRestDeInfo
+      evidenceUrl: https://www.data.go.kr/data/15012690/openapi.do
+      attribution: 한국천문연구원 특일 정보
+  - sourceId: opendart-structured-events
+    provider: OPENDART
+    category: DISCLOSURE
+    licenseClass: OFFICIAL_NO_FEE
+    reliabilityTier: 1
+    capabilities:
+      - DISCLOSURE_EVENT
+      - DISCLOSURE_STATE
+      - OWNERSHIP_PROJECTION
+    originGroup: opendart
+    origin:
+      kind: HTTPS
+      baseUrl: https://opendart.fss.or.kr
+    mappingVersion: s1.6-opendart-v1
+    networkReady: true
+    enabledByDefault: false
+    retention:
+      mode: OPERATOR_REQUIRED
+    provenance:
+      verifiedAt: '2026-07-22'
+      sourceVersion: structured-api-v1
+      evidenceUrl: https://opendart.fss.or.kr/guide/main.do
+      attribution: 금융감독원 전자공시시스템 OpenDART
+  - sourceId: kis-ksd-dividend-hhkdb669102c0
+    provider: KIS
+    category: CORPORATE_ACTION
+    licenseClass: OFFICIAL_NONCOMMERCIAL_RESTRICTED
+    reliabilityTier: 1
+    capabilities:
+      - DIVIDEND_EVENT
+    originGroup: ksd
+    origin:
+      kind: HTTPS
+      baseUrl: https://openapi.koreainvestment.com:9443
+    mappingVersion: s1.6-kis-ksd-dividend-v1
+    networkReady: true
+    enabledByDefault: false
+    retention:
+      mode: OPERATOR_REQUIRED
+    provenance:
+      verifiedAt: '2026-07-22'
+      sourceVersion: HHKDB669102C0
+      evidenceUrl: https://github.com/koreainvestment/open-trading-api
+      attribution: 한국투자증권 Open API (한국예탁결제원 배당 정보)

@@ -22,7 +22,7 @@ class OpenDARTSettings(BaseSettings):
     opendart_offline: bool = False
     opendart_rate_limit_per_second: PositiveFloat = 1.0
     opendart_timeout_seconds: PositiveFloat = 10.0
-    opendart_retry_attempts: int = Field(default=3, ge=1, le=5)
+    opendart_retry_attempts: int = Field(default=3, ge=1, le=3)
     opendart_data_dir: Path = Path("data/opendart")
 
     @property

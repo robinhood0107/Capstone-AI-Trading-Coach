@@ -1507,13 +1507,18 @@ KIS 매수가능조회(모의 `VTTC8908R`)를 매핑한다. 주문 제출 전 �
 > 선행 계약 동결(2026-07-22): 12A.5 이후는 S1.6 production 구현 전에 고정한 내부
 > storage/collector 계약이다. 이 변경은 endpoint, proto, OpenAPI, JSON Schema 또는
 > `contracts/`를 활성화·변경하지 않는다.
+>
+> 내부 구현 상태(2026-07-22): S1.6 후속 변경은 strict registry, offline adapter/merger,
+> Flyway V6 canonical·audit 저장, quota/retry/privacy/state와 최소권한 collector를 구현한다.
+> provider call과 online schedule은 0이며 이 장의 REST endpoint, 계획 RPC, OpenAPI/proto와
+> Dashboard는 여전히 미구현이다. 외부 소비자는 별도 contract-change 전까지 연동하지 않는다.
 
 목적: 무료/공식 다중 소스를 집계해 감사 가능한(auditable) 시장 캘린더/이벤트 데이터를 제공한다. "완벽한 캘린더"는 단일 API를 항상 옳다고 가정하는 것이 아니라, (1) allowlisted sanitized observation과 canonical 결정을 분리하고, (2) 충돌을 투명하게 해소하며, (3) `confidence`/`sourceRefs`/`conflictFlag`를 응답에 그대로 노출하는 것을 뜻한다. provider raw body/header/request URL/raw hash는 저장하지 않는다. backfill 스케줄링, RiskEngine freshness/이벤트 리스크 판정, RAG source card, optional dashboard timeline이 이 API의 소비자다.
 
 경계:
 
 1. S1.1은 KIS market-data client 전용으로 유지한다. S1.1에서는 로컬 거래소 캘린더 라이브러리(`exchange_calendars` XKRX)로 비거래일 KIS 호출 회피만 수행하고, 다중 소스 수집은 하지 않는다.
-2. 다중 소스 수집/정규화/충돌 해소는 S1.2+ umbrella 아래 확정된 S1.6에서 구현한다. 이 장의 REST endpoint와 계획 RPC는 S1.6 이후 명시적 contract-change 세션이 완료되기 전까지 호출 가능한 API로 간주하지 않는다.
+2. 다중 소스 수집/정규화/충돌 해소의 내부 offline 경계는 S1.2+ umbrella 아래 S1.6에서 구현한다. 이 장의 REST endpoint와 계획 RPC는 이후 명시적 contract-change 세션이 완료되기 전까지 호출 가능한 API로 간주하지 않는다.
 3. 전부 read-only 데이터 API다. 주문, 취소/정정, 잔고 변경, live trading 활성화와 무관하다. `KIS_MODE=live`는 live read-only 시장데이터 조회만 뜻한다(12.5 경계 동일).
 
 ### 12A.1 canonical 스키마 (계획)
@@ -1957,9 +1962,11 @@ S1.1의 KIS MarketDataService 구현 경계는 다음과 같다.
 | storage | provider raw body/header/request URL은 저장하지 않는다. allowlist parser를 통과한 canonical parquet만 ignored local data 경로에 dirfd+`O_NOFOLLOW`, mode `0600`, fsync+atomic replace로 저장한다. 자동 retention/delete owner는 S1.1 미구현이므로 운영 영구보존을 승인하지 않고 S1.5에서 확정한다. 커밋 가능한 테스트 데이터는 credential/account/PII가 제거된 offline fixture만 허용한다 |
 | retry | 모든 physical retry는 같은 REST 슬롯을 다시 예약한다. 공식 오류코드 `EGW00001/00002/00202/00203/00300`의 안전한 GET만 backoff 없이 다음 허용 슬롯에서 최대 1회 재호출한다. timeout/408/5xx는 bounded backoff+jitter, `EGW00201`/HTTP 429는 fail-fast다. POST 주문성 호출은 S1.1에서 구현하지 않고 S3에서도 자동 retry하지 않는다 |
 | per-run call caps | online `kis-backfill`은 `--current-price-logical-cap`, `--daily-bars-logical-cap`, `--holiday-logical-cap`, `--market-data-physical-cap`, `--token-p-physical-cap`을 exact approval packet 값으로 모두 명시한다. 생략·부분 지정·음수는 client 생성 전에 거부하고, logical 시작과 market/token physical send 직전의 원자 recorder가 cap 도달 시 `KISCallBudgetExceeded`로 중단한다. retry도 별도 physical attempt로 같은 cap을 소비한다 |
-| local calendar | S1.1은 비거래일 KIS 호출 회피용으로 로컬 `exchange_calendars` XKRX 판정만 사용한다. 다중 소스 캘린더 집계는 S1.1 범위가 아니며, S1.2+ umbrella 아래 S1.6 계획은 12A와 아래 계획 RPC를 따른다 |
+| local calendar | S1.1은 비거래일 KIS 호출 회피용으로 로컬 `exchange_calendars` XKRX 판정만 사용한다. 다중 소스 캘린더의 내부 offline 집계는 S1.6/12A.5~12A.7 범위이고, 아래 RPC와 REST 12A.2는 별도 계획 계약이다 |
 
-> 변경 반영(2026-07-10): 계획(S1.2+ umbrella, S1.6 aggregator 구현 확정, 현재 미구현) — S1.6 완료 후 별도의 명시적 contract-change 세션에서 `GetTradingSessions`/`GetCalendarEvents` RPC와 REST 12A를 함께 승인한다. proto/OpenAPI 추가는 `contracts/changes/` 절차를 따르며 그 전에는 Dashboard가 이 계약을 소비하지 않는다.
+> 상태 반영(2026-07-22): S1.6 내부 offline aggregator는 구현됐지만 `GetTradingSessions`/
+> `GetCalendarEvents` RPC와 REST 12A.2는 미구현 계획이다. 별도의 명시적 contract-change
+> 세션에서 proto/OpenAPI와 소비자를 함께 승인하며 그 전에는 Dashboard가 이 계약을 소비하지 않는다.
 
 > 변경 반영(2026-07-22): actual S1.5 gap-fill 승인의 logical/physical hard cap을 `kis-backfill` provider send 전 실행 계약으로 강제함.
 

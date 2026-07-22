@@ -58,6 +58,26 @@ def test_correction_appends_revision_without_mutating_previous_transition() -> N
     assert active_state(machine.transitions) == corrected
 
 
+def test_correction_of_an_open_transition_after_close_cannot_reopen_state() -> None:
+    machine = DisclosureStateMachine()
+    machine.apply(_event("bnkMngtPcbg", "OPEN", "receipt-open", source_revision="1"))
+    machine.apply(_event("bnkMngtPcsp", "CLOSE", "receipt-close", source_revision="1"))
+
+    with pytest.raises(StateTransitionError) as exc_info:
+        machine.apply(
+            _event(
+                "bnkMngtPcbg",
+                "OPEN",
+                "receipt-open",
+                source_revision="2",
+                effective_on=date(2026, 7, 21),
+            )
+        )
+
+    assert exc_info.value.code == "OPEN_CORRECTION_AFTER_CLOSE"
+    assert active_state(machine.transitions) is None
+
+
 def test_scorer_reads_active_state_repository_without_provider_http() -> None:
     provider_calls = 0
 

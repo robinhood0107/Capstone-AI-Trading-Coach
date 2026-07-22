@@ -33,6 +33,10 @@ class RunLimitExceeded(CalendarError):
     """실행별 physical attempt 또는 DB reservation gate가 fail-closed했다."""
 
 
+class PriorityDeferred(CalendarError):
+    """70%/90% project policy가 낮은 priority operation을 HTTP 전에 이월했다."""
+
+
 class RetryableProviderError(CalendarError):
     """안전한 GET에서만 bounded retry할 수 있는 transient provider 오류다."""
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from pathlib import Path
 from urllib.parse import quote, quote_plus
 
@@ -62,17 +63,21 @@ class _CredentialTransport(httpx.BaseTransport):
         inner: httpx.BaseTransport,
         *,
         enabled: bool,
+        on_handoff: Callable[[], None] | None = None,
         max_response_bytes: int = _MAX_RESPONSE_BYTES,
         max_json_depth: int = _MAX_JSON_DEPTH,
     ) -> None:
         self._inner = inner
         self._enabled = enabled
+        self._on_handoff = on_handoff
         self._max_response_bytes = max_response_bytes
         self._max_json_depth = max_json_depth
 
     def handle_request(self, request: httpx.Request) -> httpx.Response:
         _ensure_official_origin(request.url)
         if not self._enabled:
+            if self._on_handoff is not None:
+                self._on_handoff()
             return _scrub_response(
                 self._inner.handle_request(request),
                 "",
@@ -85,6 +90,9 @@ class _CredentialTransport(httpx.BaseTransport):
         original_url = request.url
         try:
             request.url = original_url.copy_set_param(_AUTHENTICATION_PARAMETER, value)
+            if self._on_handoff is not None:
+                # credential 부착이 끝난 뒤 inner transport에 넘기는 순간만 actual send로 센다.
+                self._on_handoff()
             response = self._inner.handle_request(request)
             return _scrub_response(
                 response,

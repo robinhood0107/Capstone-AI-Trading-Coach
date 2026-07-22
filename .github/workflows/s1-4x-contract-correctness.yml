@@ -8,6 +8,7 @@ on:
       - "workspaces/decision-platform/python-services/uv.lock"
       - "workspaces/decision-platform/python-services/app/financial_engineering/**"
       - "workspaces/decision-platform/python-services/tests/financial_engineering/**"
+      - "workspaces/decision-platform/python-services/tests/test_s1_6_amendment_contract.py"
       - "workspaces/decision-platform/research/s1-4r-jax-risk/README.md"
       - "workspaces/decision-platform/research/s1-4r-jax-risk/pyproject.toml"
       - "workspaces/decision-platform/research/s1-4r-jax-risk/uv.lock"
@@ -26,6 +27,7 @@ on:
       - "workspaces/decision-platform/python-services/uv.lock"
       - "workspaces/decision-platform/python-services/app/financial_engineering/**"
       - "workspaces/decision-platform/python-services/tests/financial_engineering/**"
+      - "workspaces/decision-platform/python-services/tests/test_s1_6_amendment_contract.py"
       - "workspaces/decision-platform/research/s1-4r-jax-risk/README.md"
       - "workspaces/decision-platform/research/s1-4r-jax-risk/pyproject.toml"
       - "workspaces/decision-platform/research/s1-4r-jax-risk/uv.lock"
@@ -88,6 +90,75 @@ jobs:
           test "$(uname -s)" = "Linux"
           test "$(uname -m)" = "x86_64"
           test "$(getconf _NPROCESSORS_ONLN)" -ge 1
+
+      - name: Assert approved reference amendment provenance
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          S1_4X=workspaces/decision-platform/research/s1-4x-numeric-parity
+          case "$GITHUB_EVENT_NAME" in
+            pull_request)
+              DIFF_BASE="$PR_BASE_SHA"
+              ;;
+            push)
+              DIFF_BASE="$PUSH_BEFORE_SHA"
+              ;;
+            *)
+              echo "unsupported provenance event: $GITHUB_EVENT_NAME" >&2
+              exit 1
+              ;;
+          esac
+          if [[ -z "$DIFF_BASE" || "$DIFF_BASE" =~ ^0{40}$ ]]; then
+            echo "provenance diff base is unavailable" >&2
+            exit 1
+          fi
+          git cat-file -e "${DIFF_BASE}^{commit}"
+
+          REFERENCE_BASE="$(
+            python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          lock = json.loads(Path(
+              "workspaces/decision-platform/research/s1-4x-numeric-parity/"
+              "contract/reference-lock.v1.json"
+          ).read_text(encoding="utf-8"))
+          print(lock["referenceBaseCommit"])
+          PY
+          )"
+          git cat-file -e "${REFERENCE_BASE}^{commit}"
+          git merge-base --is-ancestor "$REFERENCE_BASE" HEAD
+
+          mapfile -t ACTUAL_PATHS < <(
+            git diff-tree --no-commit-id --name-only -r "$REFERENCE_BASE" | LC_ALL=C sort
+          )
+          EXPECTED_PATHS=(
+            "workspaces/decision-platform/python-services/pyproject.toml"
+            "workspaces/decision-platform/python-services/uv.lock"
+          )
+          if ! diff -u \
+            <(printf '%s\n' "${EXPECTED_PATHS[@]}") \
+            <(printf '%s\n' "${ACTUAL_PATHS[@]}"); then
+            echo "referenceBaseCommit must change exactly the approved dependency files" >&2
+            exit 1
+          fi
+
+          # 의존성 amendment가 수치 구현·테스트·fixture를 함께 바꾸는 것을 독립적으로 막는다.
+          git diff --exit-code "$DIFF_BASE" HEAD -- \
+            shared-docs/metrics_definitions.md \
+            workspaces/decision-platform/python-services/app/financial_engineering \
+            workspaces/decision-platform/python-services/tests/financial_engineering \
+            workspaces/decision-platform/research/s1-4r-jax-risk/src \
+            workspaces/decision-platform/research/s1-4r-jax-risk/tests \
+            "$S1_4X/contract" \
+            ":(exclude)$S1_4X/contract/contract-manifest.v1.json" \
+            ":(exclude)$S1_4X/contract/reference-lock.v1.json" \
+            "$S1_4X/oracle" \
+            ":(exclude)$S1_4X/oracle/tests/test_validate_contract.py" \
+            "$S1_4X/benchmarks" \
+            ":(exclude)$S1_4X/benchmarks/benchmark-plan.v1.json" \
+            ":(exclude)$S1_4X/benchmarks/benchmark-plan.v1.sha256"
 
       - name: Check and sync frozen oracle environment
         run: |

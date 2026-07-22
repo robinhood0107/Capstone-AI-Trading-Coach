@@ -5,6 +5,9 @@ import com.capstone.decision.api.common.ErrorCode
 import com.capstone.decision.infrastructure.security.DemoAccountService
 import com.capstone.decision.infrastructure.security.JwtService
 import com.capstone.decision.infrastructure.security.LoginAttemptLimiter
+import io.swagger.v3.oas.annotations.Operation
+import io.swagger.v3.oas.annotations.media.Schema
+import io.swagger.v3.oas.annotations.security.SecurityRequirements
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.validation.Valid
 import jakarta.validation.constraints.NotBlank
@@ -23,6 +26,11 @@ class AuthController(
     private val jwtService: JwtService,
     private val loginAttemptLimiter: LoginAttemptLimiter,
 ) {
+    @Operation(
+        summary = "데모 사용자 로그인 / Demo user login",
+        description = "DB-backed demo credential을 검증하고 internal userId를 subject로 쓰는 Bearer JWT를 발급한다.",
+    )
+    @SecurityRequirements
     @PostMapping("/login")
     fun login(
         @Valid @RequestBody request: LoginRequest,
@@ -57,14 +65,17 @@ class AuthController(
 data class LoginRequest(
     @field:NotBlank
     @field:Size(max = 128)
+    @field:Schema(description = "고정 demo login name", maxLength = 128)
     val username: String,
     @field:NotBlank
     @field:Size(max = 1024)
+    @field:Schema(description = "저장하거나 기록하지 않는 demo password", format = "password", writeOnly = true, maxLength = 1024)
     val password: String,
 )
 
 // 토큰과 사용자 표시 정보를 함께 내려 swagger/manual smoke에서 바로 Authorize할 수 있게 한다.
 data class LoginResponse(
+    @field:Schema(description = "HS256 Bearer JWT; sub는 검증된 internal userId")
     val accessToken: String,
     val tokenType: String,
     val expiresAt: OffsetDateTime,
@@ -72,6 +83,7 @@ data class LoginResponse(
 )
 
 data class LoginUserResponse(
+    @field:Schema(description = "DB users.user_id와 동일한 opaque owner ID")
     val userId: String,
     val username: String,
     val role: String,

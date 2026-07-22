@@ -18,6 +18,9 @@ spring:
     locations: classpath:db/migration
     user: flyway
     password: ${POSTGRES_MIGRATION_PASSWORD}
+    placeholders:
+      demoUserPasswordHash: ${DEMO_USER_PASSWORD_HASH}
+      demoAdminPasswordHash: ${DEMO_ADMIN_PASSWORD_HASH}
   data:
     redis:
       host: ${REDIS_HOST:127.0.0.1}
@@ -43,14 +46,11 @@ app:
     max-request-body-bytes: 1048576
   jwt:
     secret: ${JWT_SECRET}          # 32byte 이상, .env로만
+    issuer: ${JWT_ISSUER}
+    audience: ${JWT_AUDIENCE}
     ttl-hours: 12
-  demo:
-    user:
-      username: demo-user
-      password: ${DEMO_USER_PASSWORD}
-    admin:
-      username: demo-admin
-      password: ${DEMO_ADMIN_PASSWORD}
+  login:
+    scope-hmac-key: ${LOGIN_SCOPE_HMAC_KEY}
   idempotency:
     ttl-hours: 24
     claim-ttl-seconds: 900

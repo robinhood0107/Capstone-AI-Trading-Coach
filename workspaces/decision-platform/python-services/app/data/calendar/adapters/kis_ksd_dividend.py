@@ -103,6 +103,7 @@ def _parse_row(row: dict[object, object], *, requested_symbol: str) -> list[Norm
             symbol=symbol,
             event_type="DIVIDEND_RECORD",
             event_date=record_date,
+            cycle_record_date=record_date,
             dividend_kind=dividend_kind,
             stock_kind=stock_kind,
             detail=detail,
@@ -114,6 +115,7 @@ def _parse_row(row: dict[object, object], *, requested_symbol: str) -> list[Norm
                 symbol=symbol,
                 event_type="DIVIDEND_PAY",
                 event_date=pay_date,
+                cycle_record_date=record_date,
                 dividend_kind=dividend_kind,
                 stock_kind=stock_kind,
                 detail=detail,
@@ -127,11 +129,15 @@ def _event(
     symbol: str,
     event_type: str,
     event_date: date,
+    cycle_record_date: date,
     dividend_kind: str,
     stock_kind: str,
     detail: dict[str, str],
 ) -> NormalizedCalendarEvent:
-    stable_identity = f"{symbol}:{dividend_kind}:{stock_kind}:{event_type}"
+    # provider가 별도 cycle ID를 주지 않으므로 record date를 cycle anchor로 분리해 반복 배당을 합치지 않는다.
+    stable_identity = (
+        f"{symbol}:{cycle_record_date.isoformat()}:{dividend_kind}:{stock_kind}:{event_type}"
+    )
     source_event_key = canonical_hash(
         {
             "stable_identity": stable_identity,
@@ -148,6 +154,7 @@ def _event(
         source_revision=None,
         event_type=event_type,
         symbol=symbol,
+        exchange_mic="XKRX",
         event_date=event_date,
         detail=detail,
         operation=KSD_DIVIDEND_PATH,

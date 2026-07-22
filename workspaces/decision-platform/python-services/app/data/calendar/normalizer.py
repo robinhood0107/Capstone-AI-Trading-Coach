@@ -7,6 +7,30 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
+from app.data.calendar.models import NormalizedCalendarEvent
+from app.data.calendar.privacy import assert_sanitized_payload
+
+
+CALENDAR_EVENT_TYPES = frozenset(
+    {
+        "EARNINGS_EXPECTED",
+        "EARNINGS_ACTUAL",
+        "DIVIDEND_EX",
+        "DIVIDEND_RECORD",
+        "DIVIDEND_PAY",
+        "SPLIT",
+        "RIGHTS_ISSUE",
+        "BONUS_ISSUE",
+        "IPO_SUBSCRIPTION",
+        "IPO_LISTING",
+        "SHAREHOLDER_MEETING",
+        "MERGER_SPLIT",
+        "CAPITAL_REDUCTION",
+        "DISCLOSURE",
+        "MACRO_RELEASE",
+    }
+)
+
 
 def canonical_json(value: object) -> str:
     """collection 순서와 locale에 무관한 UTF-8 canonical JSON을 만든다."""
@@ -41,6 +65,7 @@ class EventCandidate:
     source_revision: str | None
     event_type: str
     symbol: str | None
+    exchange_mic: str
     event_date: date
     detail: dict[str, Any]
 
@@ -53,6 +78,7 @@ class EventCandidate:
             "source_revision": self.source_revision,
             "event_type": self.event_type,
             "symbol": self.symbol,
+            "exchange_mic": self.exchange_mic,
             "event_date": self.event_date,
             "detail": dict(self.detail),
         }
@@ -70,12 +96,38 @@ class EventRevision:
     candidate: EventCandidate
 
 
+def event_candidate_from_normalized(event: NormalizedCalendarEvent) -> EventCandidate:
+    """adapter output을 privacy scan한 뒤 immutable repository candidate로 변환한다."""
+    assert_sanitized_payload(event.detail)
+    return EventCandidate(
+        source_id=event.source_id,
+        source_event_key=event.source_event_key,
+        stable_identity=event.stable_identity,
+        source_revision=event.source_revision,
+        event_type=event.event_type,
+        symbol=event.symbol,
+        exchange_mic=event.exchange_mic,
+        event_date=event.event_date,
+        detail=dict(event.detail),
+    )
+
+
 def build_event_revision(
     candidate: EventCandidate,
     *,
     previous: EventRevision | None = None,
 ) -> EventRevision:
     """동일 sanitized payload는 기존 revision을 재사용하고 correction만 새 row로 만든다."""
+    assert_sanitized_payload(candidate.detail)
+    if candidate.event_type not in CALENDAR_EVENT_TYPES:
+        raise ValueError("calendar event type is outside the frozen v1 enum")
+    if (
+        len(candidate.exchange_mic) != 4
+        or not candidate.exchange_mic.isascii()
+        or not candidate.exchange_mic.isalnum()
+        or candidate.exchange_mic != candidate.exchange_mic.upper()
+    ):
+        raise ValueError("calendar event exchange MIC is invalid")
     series_key = event_series_key(candidate.source_id, candidate.stable_identity)
     payload_hash = canonical_hash(
         {
@@ -83,6 +135,7 @@ def build_event_revision(
             "source_event_key": candidate.source_event_key,
             "event_type": candidate.event_type,
             "symbol": candidate.symbol,
+            "exchange_mic": candidate.exchange_mic,
             "event_date": candidate.event_date,
             "detail": candidate.detail,
         }

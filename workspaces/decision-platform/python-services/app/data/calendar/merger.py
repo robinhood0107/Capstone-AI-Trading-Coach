@@ -13,6 +13,7 @@ from app.data.calendar.models import (
     XKRXSession,
 )
 from app.data.calendar.normalizer import canonical_hash
+from app.data.calendar.privacy import assert_sanitized_payload
 
 
 def merge_trading_session(
@@ -76,6 +77,11 @@ def merge_trading_session(
         if degraded:
             fallback_reason = f"KIS_{_failure_code(kis_failure_code)}_XKRX_BASE"
 
+    if not is_open:
+        # KIS 또는 fresh prior가 휴장을 확정하면 XKRX regular-session 시각을 canonical에 남기지 않는다.
+        open_at = None
+        close_at = None
+
     reasons = sorted({item.reason.strip() for item in kasi_reasons if item.reason.strip()})
     if reasons:
         reason = " / ".join(reasons)
@@ -125,6 +131,8 @@ def merge_trading_session(
         "canonical_rule_version": "s1.6-session-v1",
         "confidence_rule_version": "s1.6-confidence-v1",
     }
+    # 외부 reason과 source metadata는 raw/secret marker가 hash에 들어가기 전에 차단한다.
+    assert_sanitized_payload(projection)
     return CanonicalTradingSession(
         exchange_mic="XKRX",
         session_date=xkrx.session_date,

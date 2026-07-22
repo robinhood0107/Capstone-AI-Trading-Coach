@@ -73,7 +73,7 @@ def test_collector_can_only_perform_allowlisted_calendar_operations(
         )
         connection.execute(
             """
-            UPDATE trading_sessions SET reason = 'regular' 
+            UPDATE trading_sessions SET reason = 'regular'
             WHERE exchange_mic = 'XKRX' AND session_date = DATE '2026-07-22'
             """
         )

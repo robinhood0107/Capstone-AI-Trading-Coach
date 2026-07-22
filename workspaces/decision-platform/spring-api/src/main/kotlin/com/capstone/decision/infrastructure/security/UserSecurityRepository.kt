@@ -6,7 +6,7 @@ import org.springframework.stereotype.Repository
 
 // 인증 경계가 신뢰하는 user identity/status/version 조회 계약이며 request 값은 항상 bind parameter로 전달한다.
 interface UserSecurityRepository {
-    fun findByUsername(username: String): UserSecurityRecord?
+    fun findDemoCredentials(): List<UserSecurityRecord>
 
     fun findByUserId(userId: String): UserSecurityActorRecord?
 }
@@ -16,14 +16,18 @@ interface UserSecurityRepository {
 class JdbcUserSecurityRepository(
     private val jdbcTemplateProvider: ObjectProvider<JdbcTemplate>,
 ) : UserSecurityRepository {
-    override fun findByUsername(username: String): UserSecurityRecord? =
-        queryOne(
+    override fun findDemoCredentials(): List<UserSecurityRecord> =
+        // 요청 username을 SQL에 전달하지 않고 고정된 두 row를 함께 읽어 peer BCrypt 검증을 강제한다.
+        jdbcTemplate().query(
             """
             select user_id, username, password_hash, role, status, security_version
             from users
-            where username = ?
+            where user_id in (?, ?)
+            order by user_id
             """.trimIndent(),
-            username,
+            USER_SECURITY_ROW_MAPPER,
+            DemoAccounts.identities[0].userId,
+            DemoAccounts.identities[1].userId,
         )
 
     override fun findByUserId(userId: String): UserSecurityActorRecord? =
@@ -37,14 +41,6 @@ class JdbcUserSecurityRepository(
                 USER_SECURITY_ACTOR_ROW_MAPPER,
                 userId,
             ).singleOrNull()
-
-    private fun queryOne(
-        sql: String,
-        value: String,
-    ): UserSecurityRecord? =
-        jdbcTemplate()
-            .query(sql, USER_SECURITY_ROW_MAPPER, value)
-            .singleOrNull()
 
     private fun jdbcTemplate(): JdbcTemplate =
         jdbcTemplateProvider.ifAvailable

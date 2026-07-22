@@ -40,8 +40,9 @@ spring:
 
 app:
   demo-credentials:
-    user-password-hash: ${DEMO_USER_PASSWORD_HASH}
-    admin-password-hash: ${DEMO_ADMIN_PASSWORD_HASH}
+    user-credential-bundle: ${DEMO_USER_CREDENTIAL_BUNDLE}
+    admin-credential-bundle: ${DEMO_ADMIN_CREDENTIAL_BUNDLE}
+    separation-key: ${DEMO_CREDENTIAL_SEPARATION_KEY}
   http:
     max-request-body-bytes: 1048576
   jwt:

@@ -9,7 +9,7 @@ import java.util.Locale
 import java.util.UUID
 import kotlin.system.exitProcess
 
-// 운영자가 승인된 demo row 하나만 회전하도록 DB credential과 새 hash를 env로 받는 one-shot entrypoint다.
+// 운영자가 승인된 demo row 하나만 회전하도록 DB credential과 attested bundle을 env로 받는 one-shot entrypoint다.
 object DemoCredentialRotation {
     @JvmStatic
     fun main(args: Array<String>) {
@@ -21,7 +21,7 @@ object DemoCredentialRotation {
             rotate(System.getenv())
             println("demo credential rotation completed")
         } catch (exception: Exception) {
-            // secret/hash/DB exception text는 출력하지 않고 운영자가 분기할 수 있는 단계만 남긴다.
+            // secret/hash/evidence/DB exception text는 출력하지 않고 운영자가 분기할 수 있는 단계만 남긴다.
             System.err.println("demo credential rotation failed: rotation_transaction")
             exitProcess(1)
         }
@@ -32,8 +32,12 @@ object DemoCredentialRotation {
         auditId: String = "aud_demo_rotation_${UUID.randomUUID()}",
     ) {
         val config = RotationConfig.from(environment, auditId)
-        DriverManager.getConnection(config.jdbcUrl, MIGRATION_USER, config.migrationPassword).use { connection ->
-            rotateInTransaction(connection, config)
+        try {
+            DriverManager.getConnection(config.jdbcUrl, MIGRATION_USER, config.migrationPassword).use { connection ->
+                rotateInTransaction(connection, config)
+            }
+        } finally {
+            config.clearSensitiveEvidence()
         }
     }
 
@@ -69,7 +73,8 @@ object DemoCredentialRotation {
         connection
             .prepareStatement(
                 """
-                select user_id, username, password_hash, role, status, security_version
+                select user_id, username, password_hash, role, status, security_version,
+                       credential_reuse_tag, credential_bundle_mac, credential_policy_version
                 from users
                 where user_id in (?, ?)
                 order by user_id
@@ -90,6 +95,12 @@ object DemoCredentialRotation {
                                     role = result.getString("role"),
                                     status = result.getString("status"),
                                     securityVersion = result.getLong("security_version"),
+                                    reuseTag = result.getBytes("credential_reuse_tag"),
+                                    bundleMac = result.getBytes("credential_bundle_mac"),
+                                    policyVersion =
+                                        result
+                                            .getObject("credential_policy_version")
+                                            ?.let { (it as Number).toInt() },
                                 ),
                             )
                         }
@@ -102,52 +113,92 @@ object DemoCredentialRotation {
         config: RotationConfig,
     ): LockedCredential {
         check(credentials.size == DemoAccounts.identities.size) { "Approved demo credential rows are incomplete." }
-        DemoAccounts.identities.forEach { identity ->
-            val credential = credentials.singleOrNull { it.userId == identity.userId }
-            check(
-                credential != null &&
-                    credential.username == identity.username &&
-                    credential.role == identity.role.name &&
-                    credential.status == ACTIVE_STATUS &&
-                    credential.securityVersion > 0 &&
-                    DemoCredentialHashPolicy.isValid(credential.passwordHash),
-            ) { "Approved demo credential row is invalid." }
+        val verifiedStored =
+            DemoAccounts.identities.map { identity ->
+                val credential = credentials.singleOrNull { it.userId == identity.userId }
+                check(
+                    credential != null &&
+                        credential.username == identity.username &&
+                        credential.role == identity.role.name &&
+                        credential.status == ACTIVE_STATUS &&
+                        credential.securityVersion > 0,
+                ) { "Approved demo credential row is invalid." }
+                DemoCredentialBundlePolicy.verifyStored(
+                    identity = identity,
+                    passwordHash = credential.passwordHash,
+                    reuseTag = requireNotNull(credential.reuseTag),
+                    bundleMac = requireNotNull(credential.bundleMac),
+                    policyVersion = requireNotNull(credential.policyVersion),
+                    separationKey = config.separationKey,
+                )
+            }
+        val newTag = config.credentialBundle.reuseTag
+        try {
+            check(verifiedStored.none { MessageDigest.isEqual(it.reuseTagInternal(), newTag) }) {
+                "Credential rotation must use plaintext distinct from both demo accounts."
+            }
+        } finally {
+            newTag.fill(0)
         }
-        val target = requireNotNull(credentials.singleOrNull { it.userId == config.identity.userId })
-        check(credentials.none { it.passwordHash == config.passwordHash }) {
+        check(credentials.none { it.passwordHash == config.credentialBundle.passwordHash }) {
             "Credential rotation must use a new hash distinct from both demo accounts."
         }
-        return target
+        return requireNotNull(credentials.singleOrNull { it.userId == config.identity.userId })
     }
 
     private fun updateCredential(
         connection: Connection,
         config: RotationConfig,
         current: LockedCredential,
-    ): Long =
-        connection
-            .prepareStatement(
-                """
-                update users
-                set password_hash = ?, security_version = security_version + 1, updated_at = now()
-                where user_id = ? and username = ? and security_version = ? and password_hash = ?
-                returning security_version
-                """.trimIndent(),
-            ).use { statement ->
-                statement.queryTimeout = STATEMENT_TIMEOUT_SECONDS
-                statement.setString(1, config.passwordHash)
-                statement.setString(2, config.identity.userId)
-                statement.setString(3, config.identity.username)
-                statement.setLong(4, current.securityVersion)
-                statement.setString(5, current.passwordHash)
-                statement.executeQuery().use { result ->
-                    check(result.next()) { "Approved demo credential row was not found." }
-                    val version = result.getLong("security_version")
-                    check(!result.next()) { "Credential rotation affected more than one row." }
-                    check(version > 1) { "Credential rotation did not advance security version." }
-                    version
+    ): Long {
+        val newTag = config.credentialBundle.reuseTag
+        val newMac = config.credentialBundle.bundleMac
+        val currentTag = requireNotNull(current.reuseTag)
+        val currentMac = requireNotNull(current.bundleMac)
+        val currentPolicyVersion = requireNotNull(current.policyVersion)
+        return try {
+            connection
+                .prepareStatement(
+                    """
+                    update users
+                    set password_hash = ?, credential_reuse_tag = ?, credential_bundle_mac = ?,
+                        credential_policy_version = ?, security_version = security_version + 1, updated_at = now()
+                    where user_id = ? and username = ? and role = ? and status = ?
+                      and security_version = ? and password_hash = ?
+                      and credential_reuse_tag = ? and credential_bundle_mac = ?
+                      and credential_policy_version = ?
+                    returning security_version
+                    """.trimIndent(),
+                ).use { statement ->
+                    statement.queryTimeout = STATEMENT_TIMEOUT_SECONDS
+                    statement.setString(1, config.credentialBundle.passwordHash)
+                    statement.setBytes(2, newTag)
+                    statement.setBytes(3, newMac)
+                    statement.setInt(4, config.credentialBundle.policyVersion)
+                    statement.setString(5, config.identity.userId)
+                    statement.setString(6, config.identity.username)
+                    statement.setString(7, config.identity.role.name)
+                    statement.setString(8, ACTIVE_STATUS)
+                    statement.setLong(9, current.securityVersion)
+                    statement.setString(10, current.passwordHash)
+                    statement.setBytes(11, currentTag)
+                    statement.setBytes(12, currentMac)
+                    statement.setInt(13, currentPolicyVersion)
+                    statement.executeQuery().use { result ->
+                        check(result.next()) { "Approved demo credential row was not found." }
+                        val version = result.getLong("security_version")
+                        check(!result.next()) { "Credential rotation affected more than one row." }
+                        check(version == Math.addExact(current.securityVersion, 1L)) {
+                            "Credential rotation did not advance security version exactly once."
+                        }
+                        version
+                    }
                 }
-            }
+        } finally {
+            newTag.fill(0)
+            newMac.fill(0)
+        }
+    }
 
     private fun insertAudit(
         connection: Connection,
@@ -183,10 +234,16 @@ object DemoCredentialRotation {
         val jdbcUrl: String,
         val migrationPassword: String,
         val identity: DemoAccountIdentity,
-        val passwordHash: String,
+        val credentialBundle: VerifiedDemoCredentialBundle,
+        val separationKey: ByteArray,
         val rotationActor: String,
         val auditId: String,
     ) {
+        fun clearSensitiveEvidence() {
+            separationKey.fill(0)
+            credentialBundle.clearEvidence()
+        }
+
         companion object {
             fun from(
                 environment: Map<String, String>,
@@ -196,7 +253,8 @@ object DemoCredentialRotation {
                 require(host.lowercase(Locale.ROOT) in LOOPBACK_HOSTS) {
                     "POSTGRES_HOST must be loopback for credential rotation."
                 }
-                val port = (environment["POSTGRES_PORT"]?.takeIf { it.isNotBlank() } ?: DEFAULT_POSTGRES_PORT).toIntOrNull()
+                val port =
+                    (environment["POSTGRES_PORT"]?.takeIf { it.isNotBlank() } ?: DEFAULT_POSTGRES_PORT).toIntOrNull()
                 require(port != null && port in 1..65_535) { "POSTGRES_PORT has an invalid format." }
                 val database = required(environment, "POSTGRES_DB")
                 require(DATABASE_PATTERN.matches(database)) { "POSTGRES_DB has an invalid format." }
@@ -204,25 +262,35 @@ object DemoCredentialRotation {
                 val identity =
                     DemoAccounts.byUserId(targetUserId)
                         ?: throw IllegalArgumentException("DEMO_CREDENTIAL_USER_ID is not allowlisted.")
-                val passwordHash =
-                    DemoCredentialHashPolicy.requireValid(
-                        required(environment, "DEMO_CREDENTIAL_PASSWORD_HASH"),
-                    )
                 val rotationActor = required(environment, "DEMO_CREDENTIAL_ROTATION_ACTOR")
                 require(ROTATION_ACTOR_PATTERN.matches(rotationActor)) {
                     "DEMO_CREDENTIAL_ROTATION_ACTOR has an invalid format."
                 }
                 require(AUDIT_ID_PATTERN.matches(auditId)) { "audit id has an invalid format." }
-                return RotationConfig(
-                    jdbcUrl =
-                        "jdbc:postgresql://$host:$port/$database" +
-                            "?connectTimeout=$CONNECT_TIMEOUT_SECONDS&socketTimeout=$SOCKET_TIMEOUT_SECONDS&tcpKeepAlive=true",
-                    migrationPassword = required(environment, "POSTGRES_MIGRATION_PASSWORD"),
-                    identity = identity,
-                    passwordHash = passwordHash,
-                    rotationActor = rotationActor,
-                    auditId = auditId,
-                )
+                val migrationPassword = required(environment, "POSTGRES_MIGRATION_PASSWORD")
+                val serializedBundle = required(environment, "DEMO_CREDENTIAL_BUNDLE")
+                val separationKey =
+                    DemoCredentialBundlePolicy.decodeSeparationKey(
+                        required(environment, "DEMO_CREDENTIAL_SEPARATION_KEY"),
+                    )
+                return try {
+                    val credentialBundle =
+                        DemoCredentialBundlePolicy.verify(serializedBundle, identity, separationKey)
+                    RotationConfig(
+                        jdbcUrl =
+                            "jdbc:postgresql://$host:$port/$database" +
+                                "?connectTimeout=$CONNECT_TIMEOUT_SECONDS&socketTimeout=$SOCKET_TIMEOUT_SECONDS&tcpKeepAlive=true",
+                        migrationPassword = migrationPassword,
+                        identity = identity,
+                        credentialBundle = credentialBundle,
+                        separationKey = separationKey,
+                        rotationActor = rotationActor,
+                        auditId = auditId,
+                    )
+                } catch (exception: Exception) {
+                    separationKey.fill(0)
+                    throw exception
+                }
             }
 
             private fun required(
@@ -245,6 +313,9 @@ object DemoCredentialRotation {
         val role: String,
         val status: String,
         val securityVersion: Long,
+        val reuseTag: ByteArray?,
+        val bundleMac: ByteArray?,
+        val policyVersion: Int?,
     )
 
     private const val MIGRATION_USER = "flyway"

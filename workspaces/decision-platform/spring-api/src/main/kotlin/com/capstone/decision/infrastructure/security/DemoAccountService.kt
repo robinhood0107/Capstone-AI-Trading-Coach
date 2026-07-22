@@ -22,21 +22,29 @@ class DemoAccountService(
         password: String,
     ): DemoAccount? {
         val expectedIdentity = DemoAccounts.byUsername(username)
-        // unknown username도 동일한 DB lookup과 BCrypt 검증을 거쳐 존재 여부 timing 단서를 줄인다.
-        val storedUser = userSecurityRepository.findByUsername(username)
-        val storedHashValid = storedUser?.passwordHash?.let(DemoCredentialHashPolicy::isValid) == true
-        val hash = storedUser?.passwordHash?.takeIf { storedHashValid } ?: dummyPasswordHash
-        val passwordMatches = passwordEncoder.matches(password, hash)
+        val storedUsers = userSecurityRepository.findDemoCredentials()
+        val verifiedRows =
+            DemoAccounts.identities.associateWith { identity ->
+                storedUsers
+                    .singleOrNull { it.userId == identity.userId }
+                    ?.takeIf { it.matches(identity) }
+            }
+        val storedUser = expectedIdentity?.let(verifiedRows::get)
+        val peer =
+            expectedIdentity
+                ?.let { selected -> DemoAccounts.identities.single { it.userId != selected.userId } }
+                ?.let(verifiedRows::get)
+
+        // 알려진 계정과 unknown 계정 모두 정확히 두 번의 BCrypt cost를 지불하며 peer plaintext 일치도 fail-closed한다.
+        val selectedMatches = passwordEncoder.matches(password, storedUser?.passwordHash ?: dummyPasswordHash)
+        val peerMatches = passwordEncoder.matches(password, peer?.passwordHash ?: dummyPasswordHash)
+        val trustRootComplete = storedUsers.size == DemoAccounts.identities.size && verifiedRows.values.all { it != null }
         if (
             expectedIdentity == null ||
             storedUser == null ||
-            !storedHashValid ||
-            !passwordMatches ||
-            storedUser.status != ACTIVE_STATUS ||
-            storedUser.securityVersion <= 0 ||
-            storedUser.userId != expectedIdentity.userId ||
-            storedUser.username != expectedIdentity.username ||
-            storedUser.role != expectedIdentity.role
+            !trustRootComplete ||
+            !selectedMatches ||
+            peerMatches
         ) {
             return null
         }
@@ -57,6 +65,14 @@ class DemoAccountService(
     companion object {
         private const val ACTIVE_STATUS = "ACTIVE"
     }
+
+    private fun UserSecurityRecord.matches(identity: DemoAccountIdentity): Boolean =
+        userId == identity.userId &&
+            username == identity.username &&
+            role == identity.role &&
+            status == ACTIVE_STATUS &&
+            securityVersion > 0 &&
+            DemoCredentialHashPolicy.isValid(passwordHash)
 }
 
 // demo 인증 결과와 JWT claim 생성에 필요한 값만 담아 민감정보 범위를 좁힌다.

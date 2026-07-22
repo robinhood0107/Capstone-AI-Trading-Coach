@@ -100,7 +100,7 @@ val cleanAuthCutoverEvidence by tasks.registering(Delete::class) {
 
 tasks.register<JavaExec>("rotateDemoCredential") {
     group = "operations"
-    description = "환경변수로 받은 demo BCrypt hash를 migration role transaction에서 회전한다."
+    description = "환경변수로 받은 attested demo credential bundle을 migration role transaction에서 회전한다."
     dependsOn(tasks.named("classes"))
     classpath = sourceSets["main"].runtimeClasspath
     mainClass.set("com.capstone.decision.infrastructure.security.DemoCredentialRotation")

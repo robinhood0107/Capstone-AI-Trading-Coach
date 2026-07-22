@@ -21,11 +21,12 @@ data class DemoAccountIdentity(
     val role: DemoRole,
 )
 
-// V7 Java migration에만 전달할 bootstrap hash이며 Flyway SQL placeholder에는 노출하지 않는다.
+// V7 Java migration에만 전달할 attested bundle이며 Flyway SQL placeholder에는 노출하지 않는다.
 @ConfigurationProperties("app.demo-credentials")
 data class DemoCredentialBootstrapProperties(
-    var userPasswordHash: String = "",
-    var adminPasswordHash: String = "",
+    var userCredentialBundle: String = "",
+    var adminCredentialBundle: String = "",
+    var separationKey: String = "",
 )
 
 // BCrypt cost가 낮거나 형식이 다른 hash는 migration, login, rotation 어디서도 신뢰하지 않는다.

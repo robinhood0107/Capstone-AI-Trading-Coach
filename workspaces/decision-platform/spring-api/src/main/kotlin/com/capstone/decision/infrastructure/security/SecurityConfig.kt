@@ -47,27 +47,60 @@ class SecurityConfig {
     fun authSecretSeparation(
         jwtProperties: JwtProperties,
         loginProperties: LoginAttemptLimiterProperties,
+        demoCredentialProperties: DemoCredentialBootstrapProperties,
     ): AuthSecretSeparation {
         jwtProperties.validate()
         loginProperties.validate()
-        require(
-            !MessageDigest.isEqual(
-                jwtProperties.secret.toByteArray(StandardCharsets.UTF_8),
-                loginProperties.scopeHmacKey.toByteArray(StandardCharsets.UTF_8),
-            ),
-        ) { "JWT and login scope HMAC secrets must be different." }
-        return AuthSecretSeparation
+        val jwtSecret = jwtProperties.secret.toByteArray(StandardCharsets.UTF_8)
+        val loginScopeKey = loginProperties.scopeHmacKey.toByteArray(StandardCharsets.UTF_8)
+        val credentialSeparationKey =
+            DemoCredentialBundlePolicy.decodeSeparationKey(demoCredentialProperties.separationKey)
+        return try {
+            require(!MessageDigest.isEqual(jwtSecret, loginScopeKey)) {
+                "JWT and login scope HMAC secrets must be different."
+            }
+            require(
+                !MessageDigest.isEqual(credentialSeparationKey, jwtSecret) &&
+                    !MessageDigest.isEqual(credentialSeparationKey, loginScopeKey),
+            ) { "Demo credential separation key must be distinct from other authentication secrets." }
+            verifyBootstrapBundles(demoCredentialProperties, credentialSeparationKey)
+            AuthSecretSeparation
+        } finally {
+            jwtSecret.fill(0)
+            loginScopeKey.fill(0)
+            credentialSeparationKey.fill(0)
+        }
     }
 
     @Bean
     fun s21ActorTrustMigration(properties: DemoCredentialBootstrapProperties): JavaMigration {
-        val userHash = DemoCredentialHashPolicy.requireValid(properties.userPasswordHash)
-        val adminHash = DemoCredentialHashPolicy.requireValid(properties.adminPasswordHash)
-        require(userHash != adminHash) { "Demo user and admin credential hashes must be different." }
-        return V7__s2_1_actor_trust(
-            userPasswordHash = userHash,
-            adminPasswordHash = adminHash,
-        )
+        val separationKey = DemoCredentialBundlePolicy.decodeSeparationKey(properties.separationKey)
+        return try {
+            val (userBundle, adminBundle) = verifyBootstrapBundles(properties, separationKey)
+            V7__s2_1_actor_trust(userBundle, adminBundle)
+        } finally {
+            separationKey.fill(0)
+        }
+    }
+
+    private fun verifyBootstrapBundles(
+        properties: DemoCredentialBootstrapProperties,
+        separationKey: ByteArray,
+    ): Pair<VerifiedDemoCredentialBundle, VerifiedDemoCredentialBundle> {
+        val userBundle =
+            DemoCredentialBundlePolicy.verify(
+                properties.userCredentialBundle,
+                requireNotNull(DemoAccounts.byUserId("usr_demo_user")),
+                separationKey,
+            )
+        val adminBundle =
+            DemoCredentialBundlePolicy.verify(
+                properties.adminCredentialBundle,
+                requireNotNull(DemoAccounts.byUserId("usr_demo_admin")),
+                separationKey,
+            )
+        DemoCredentialBundlePolicy.requireSeparated(userBundle, adminBundle)
+        return userBundle to adminBundle
     }
 
     @Bean
@@ -149,5 +182,5 @@ class SecurityConfig {
     }
 }
 
-// 이 marker bean은 두 signing 목적의 key 분리 검증이 startup에 완료됐음을 나타낸다.
+// 이 marker bean은 JWT, login limiter, credential evidence key 분리 검증이 startup에 완료됐음을 나타낸다.
 object AuthSecretSeparation

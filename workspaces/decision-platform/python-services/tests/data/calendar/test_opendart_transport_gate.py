@@ -201,6 +201,30 @@ def test_online_constructor_rejects_injected_transport_and_rate_limiter(tmp_path
         )
 
 
+def test_online_constructor_requires_both_reservation_hooks(tmp_path: Path) -> None:
+    online = OpenDARTSettings(
+        opendart_offline=False,
+        opendart_data_dir=tmp_path,
+        opendart_timeout_seconds=1.0,
+        opendart_retry_attempts=1,
+        opendart_rate_limit_per_second=1,
+    )
+
+    with pytest.raises(ValueError, match="reservation and handoff hooks"):
+        OpenDARTHttpClient(online, on_handoff=lambda: None)
+    with pytest.raises(ValueError, match="reservation and handoff hooks"):
+        OpenDARTHttpClient(online, before_send=lambda _: None)
+
+
+def test_online_factory_rejects_offline_settings(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="OPENDART_OFFLINE=false"):
+        OpenDARTHttpClient.for_online_collector(
+            _settings(tmp_path),
+            before_send=lambda _: None,
+            on_handoff=lambda: None,
+        )
+
+
 def test_online_factory_ignores_ambient_network_configuration(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

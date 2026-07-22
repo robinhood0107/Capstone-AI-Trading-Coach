@@ -15,7 +15,7 @@ python-services/        # uv 프로젝트 — LightGBM/RAG/금융공학/데이�
 
 공개 레포에는 최종 명세/API 계약과 구현 코드를 두고, 상세 개인 참고 노트는 루트의 ignored `private-reference/` 폴더에서만 관리한다. 요약:
 
-1. `cp ../../.env.example ../../.env` 후 PostgreSQL/Redis/JWT/demo password와 필요한 provider secret을 채운다.
+1. `cp ../../.env.example ../../.env` 후 PostgreSQL/collector/Redis/JWT/demo password와 필요한 provider secret을 채운다.
 2. `docker compose --env-file ../../.env -f ../../infra/docker-compose.infra.yml up -d`로 loopback-only PostgreSQL/Redis를 기동한다.
 3. `spring-api/`는 커밋된 Gradle wrapper로 `./gradlew ktlintCheck build`를 실행한다.
 4. `python-services/`는 `uv sync --frozen` 후 `uv run pytest`, `uv run ruff check .`, `uv run mypy app`으로 검증한다.
@@ -24,14 +24,26 @@ python-services/        # uv 프로젝트 — LightGBM/RAG/금융공학/데이�
 
 KIS outbound는 이 workspace가 단일 owner다. S1.1 client는 실전 18/s hard cap·기본 120ms 간격, 모의 1/s·1,000ms 간격을 같은 opaque credential/appkey scope의 Redis 원자 limiter로 공유한다. `/oauth2/tokenP` physical send는 mock/live 합산 deployment-global 1/s를 보수 적용하고 token cache/singleflight만 mode별로 분리한다. Return Engine과 후속 S1.6/S3 adapter는 별도 limiter를 만들지 않고 이 경계를 재사용한다.
 
-## S1.6 prerequisite 경계
+## S1.6 offline 구현 경계
 
-S1.6은 선행 amendment와 production 구현을 분리한다. 선행 amendment는
-`testcontainers[postgres]==4.14.2`, S1.4X intentional reference refresh, Market
-Calendar/Event Aggregator v1의 내부 DB·authority·confidence·retry·privacy·correction 계약만
-고정한다. 실제 calendar package, Flyway migration, collector와 online 활성화는 후속 PR 범위다.
-계약의 공개 단일 진실 소스는 최종 명세 11.1.2와 API 명세 12A이며, public
-REST/gRPC/Dashboard는 별도 contract-change 전까지 제공하지 않는다.
+PR #34는 `testcontainers[postgres]==4.14.2`, S1.4X intentional reference refresh와 Market
+Calendar/Event Aggregator v1 내부 계약을 먼저 동결했다. 후속 offline 구현은 strict source
+registry, XKRX/KIS holiday/KASI XML/KIS KSD/OpenDART adapter, canonical merger와 immutable
+revision/audit 저장, PostgreSQL quota reservation, DS001 pagination, DS004 privacy projection,
+disclosure state와 `decision_collector` 최소권한을 추가한다. 기존 V4 `market_calendar` seed는
+V6에서 `trading_sessions`로 이관하고 같은 이름의 read-only compatibility view로 제공한다.
+
+운영 bootstrap에는 `POSTGRES_COLLECTOR_PASSWORD`가 필요하다. OpenDART online에는 코드
+기본값이 없는 `OPENDART_DAILY_CALL_LIMIT`, `OPENDART_DAILY_CALL_BUDGET`,
+`OPENDART_MAX_CALLS_PER_RUN`, `OPENDART_MAX_SYMBOLS_PER_RUN`이 모두 필요하지만, 값 주입은
+online 활성화나 provider 호출 승인이 아니다. KASI는 `networkReady=false`, provider 호출은 0이며
+public REST/gRPC/Dashboard도 별도 contract-change 전까지 제공하지 않는다. 계약의 공개 단일 진실
+소스는 최종 명세 11.1.2와 API 명세 12A다.
+
+```bash
+cd python-services
+uv run --frozen pytest -q tests/data/calendar tests/data/opendart
+```
 
 ## S1.3 ECOS/Naver snapshot
 

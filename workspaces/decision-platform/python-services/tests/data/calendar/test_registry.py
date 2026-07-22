@@ -46,6 +46,7 @@ def test_default_registry_matches_the_frozen_exact_v1_schema() -> None:
     "mutation, expected",
     [
         ("remove_required", "missing"),
+        ("unsupported_schema", "schema"),
         ("unknown_field", "unknown"),
         ("duplicate_id", "duplicate"),
         ("unsafe_url", "https"),
@@ -54,6 +55,7 @@ def test_default_registry_matches_the_frozen_exact_v1_schema() -> None:
         ("invalid_capability", "capability"),
         ("unsafe_enabled", "enabled"),
         ("incomplete_retention", "retention"),
+        ("enabled_without_retention", "retention"),
         ("invalid_provenance", "provenance"),
     ],
 )
@@ -65,6 +67,8 @@ def test_registry_rejects_invalid_or_unsafe_seed(
     source = _valid_seed()
     if mutation == "remove_required":
         source = source.replace("    mappingVersion: '1'\n", "")
+    elif mutation == "unsupported_schema":
+        source = source.replace("schemaVersion: '1'", "schemaVersion: '2'")
     elif mutation == "unknown_field":
         source += "    unexpected: value\n"
     elif mutation == "duplicate_id":
@@ -81,6 +85,11 @@ def test_registry_rejects_invalid_or_unsafe_seed(
         source = source.replace("    licenseClass: OFFICIAL_NO_FEE", "    licenseClass: UNSAFE_OR_EXCLUDE")
     elif mutation == "incomplete_retention":
         source = source.replace("      days: 30\n      owner: fixture-owner\n", "")
+    elif mutation == "enabled_without_retention":
+        source = source.replace(
+            "      mode: PERSISTENT\n      days: 30\n      owner: fixture-owner",
+            "      mode: OPERATOR_REQUIRED",
+        )
     elif mutation == "invalid_provenance":
         source = source.replace("      verifiedAt: '2026-07-22'", "      verifiedAt: yesterday")
 

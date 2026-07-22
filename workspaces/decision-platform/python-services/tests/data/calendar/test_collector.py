@@ -157,6 +157,52 @@ def test_attempt_executor_caps_reservations_and_rejects_unmatched_handoff() -> N
     assert executor.ledger.actual_http_sends == 0
 
 
+def test_real_attempt_executor_020_stops_remaining_collector_queue() -> None:
+    quota_events: list[str] = []
+    provider_sends: list[str] = []
+    quota = _Quota(quota_events)
+    executor = OpenDARTAttemptExecutor(
+        quota_repository=quota,
+        config=_config(calls=3),
+        ledger=CollectorRunLedger(max_calls=3),
+        now=lambda: datetime(2026, 7, 22, 0, 0, tzinfo=UTC),
+    )
+
+    def send(subject: str, status: str) -> object:
+        executor.before_send("/api/list.json")
+        executor.record_http_handoff()
+        provider_sends.append(subject)
+        return {"status": status}
+
+    collector = CalendarCollector(
+        lock=_Lock(acquired=True),
+        executor=executor,
+        config=_config(calls=3),
+    )
+    tasks = [
+        CollectionTask(
+            operation="list",
+            subject="000660",
+            page=1,
+            send=lambda: send("000660", "020"),
+        ),
+        CollectionTask(
+            operation="list",
+            subject="005930",
+            page=1,
+            send=lambda: send("005930", "000"),
+        ),
+    ]
+
+    with pytest.raises(ProviderQuotaExhausted):
+        collector.run(tasks)
+
+    assert provider_sends == ["000660"]
+    assert executor.ledger.charged_reservations == 1
+    assert executor.ledger.actual_http_sends == 1
+    assert quota.exhausted is True
+
+
 def test_db_reservation_failure_causes_zero_http_send() -> None:
     events: list[str] = []
     quota = _Quota(events, deny=True)

@@ -43,6 +43,7 @@ class FlywayMigrationIntegrationTest(
                 "calendar_source_health",
                 "calendar_observations",
                 "trading_sessions",
+                "trading_session_revisions",
                 "calendar_events",
                 "calendar_event_sources",
                 "calendar_conflicts",
@@ -57,6 +58,7 @@ class FlywayMigrationIntegrationTest(
         assertEquals(1, countMarketCalendarRows("KRX", "2026-01-01", false))
         assertEquals("VIEW", tableType("market_calendar"))
         assertEquals(2, countRows("trading_sessions", "canonical_rule_version = 'V4_COMPAT_MIGRATION'"))
+        assertEquals(2, countRows("trading_session_revisions", "canonical_rule_version = 'V4_COMPAT_MIGRATION'"))
         assertTrue(indexExists("idx_chunks_trgm"), "expected pg_trgm index for Korean keyword search")
         assertFalse(indexDefinitionLike("rag_chunks", "%ivfflat%"), "ivfflat must wait until real embeddings are loaded")
     }
@@ -69,6 +71,8 @@ class FlywayMigrationIntegrationTest(
         assertTrue(hasTablePrivilege("decision_collector", "calendar_observations", "INSERT"))
         assertFalse(hasTablePrivilege("decision_collector", "calendar_observations", "UPDATE"))
         assertFalse(hasTablePrivilege("decision_collector", "calendar_observations", "DELETE"))
+        assertTrue(hasTablePrivilege("decision_collector", "trading_session_revisions", "INSERT"))
+        assertFalse(hasTablePrivilege("decision_collector", "trading_session_revisions", "UPDATE"))
         assertFalse(hasTablePrivilege("decision_collector", "users", "SELECT"))
         assertFalse(hasTablePrivilege("decision_collector", "flyway_schema_history", "SELECT"))
         assertFalse(hasSchemaPrivilege("decision_collector", "CREATE"))
@@ -77,6 +81,7 @@ class FlywayMigrationIntegrationTest(
         assertTrue(hasTablePrivilege("decision_app", "current_calendar_events", "SELECT"))
         assertTrue(hasTablePrivilege("decision_app", "active_disclosure_risk_states", "SELECT"))
         assertFalse(hasTablePrivilege("decision_app", "calendar_observations", "SELECT"))
+        assertFalse(hasTablePrivilege("decision_app", "trading_session_revisions", "SELECT"))
         assertFalse(hasTablePrivilege("decision_app", "opendart_quota_usage", "SELECT"))
         assertFalse(hasTablePrivilege("decision_app", "trading_sessions", "INSERT"))
         assertFalse(hasTablePrivilege("decision_app", "flyway_schema_history", "SELECT"))

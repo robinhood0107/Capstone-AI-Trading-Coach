@@ -1,11 +1,30 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from pathlib import Path
 
 import psycopg
 import pytest
 
 from tests.data.calendar.conftest import PostgresTestCluster
+
+
+REPO_ROOT = Path(__file__).resolve().parents[6]
+
+
+def test_repo_hygiene_supplies_required_collector_password() -> None:
+    """Compose 검증도 collector 필수 비밀번호를 주입해 실제 CI 경계를 재현한다."""
+
+    compose = (REPO_ROOT / "infra/docker-compose.infra.yml").read_text(encoding="utf-8")
+    workflow = (REPO_ROOT / ".github/workflows/repo-hygiene.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert (
+        "${POSTGRES_COLLECTOR_PASSWORD:?POSTGRES_COLLECTOR_PASSWORD is required}"
+        in compose
+    )
+    assert "POSTGRES_COLLECTOR_PASSWORD: validation-dummy-collector" in workflow
 
 
 def test_collector_can_only_perform_allowlisted_calendar_operations(

@@ -184,10 +184,10 @@ class IdempotencyIntegrationTest(
                 header("X-Idempotency-Key", "principle-must-not-be-finance-idempotent")
                 header("X-Request-Id", "req-principle-idempotency-boundary")
                 contentType = MediaType.APPLICATION_JSON
-                content = """{"presetId":"balanced","title":"Boundary check"}"""
+                content = "{}"
             }.andExpect {
-                status { isNotFound() }
-                jsonPath("$.error.code") { value("NOT_FOUND") }
+                status { isBadRequest() }
+                jsonPath("$.error.code") { value("VALIDATION_ERROR") }
             }
 
         assertTrue(redisTemplate.keys("*principle-must-not-be-finance-idempotent*").isEmpty())

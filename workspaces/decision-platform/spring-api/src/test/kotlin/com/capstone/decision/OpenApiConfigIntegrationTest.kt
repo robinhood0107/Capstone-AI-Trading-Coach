@@ -1,7 +1,6 @@
 package com.capstone.decision
 
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -88,7 +87,7 @@ class OpenApiConfigIntegrationTest(
     }
 
     @Test
-    fun `openapi exposes the locked dialect and catalog digest without premature Principle paths`() {
+    fun `openapi exposes the locked dialect catalog digest and real Principle paths`() {
         val body =
             mockMvc
                 .get("/v3/api-docs")
@@ -123,9 +122,25 @@ class OpenApiConfigIntegrationTest(
                 .propertyNames()
                 .asSequence()
                 .toList()
-        assertFalse(
-            paths.any { it == "/api/v1/principle-presets" || it.startsWith("/api/v1/principles") },
-            "amendment OpenAPI must not advertise S2.1 endpoints before their controllers exist",
+        assertTrue(
+            paths.containsAll(
+                setOf(
+                    "/api/v1/principle-presets",
+                    "/api/v1/principles",
+                    "/api/v1/principles/{principleId}",
+                    "/api/v1/principles/{principleId}/versions",
+                ),
+            ),
+            "implementation OpenAPI must advertise only paths backed by the real S2.1 controllers",
+        )
+        assertEquals("listPrinciplePresets", document.at("/paths/~1api~1v1~1principle-presets/get/operationId").stringValue())
+        assertEquals("createPrinciple", document.at("/paths/~1api~1v1~1principles/post/operationId").stringValue())
+        assertEquals("listPrinciples", document.at("/paths/~1api~1v1~1principles/get/operationId").stringValue())
+        assertEquals("getPrinciple", document.at("/paths/~1api~1v1~1principles~1{principleId}/get/operationId").stringValue())
+        assertEquals("updatePrinciple", document.at("/paths/~1api~1v1~1principles~1{principleId}/put/operationId").stringValue())
+        assertEquals(
+            "listPrincipleVersions",
+            document.at("/paths/~1api~1v1~1principles~1{principleId}~1versions/get/operationId").stringValue(),
         )
     }
 

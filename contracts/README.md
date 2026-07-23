@@ -64,6 +64,59 @@ uv run --frozen python contracts/run_openapi_gate.py \
   --env-file workspaces/decision-platform/spring-api/build/openapi-fixture/openapi.env
 ```
 
+## S2.2 Rule evaluation offline contract v1
+
+`catalogs/s2-2-system-rule-catalog.v1.json`은 offline RuleEvaluator와
+MetricSnapshot assembler가 공유하는 14-rule 단일 진실이다. 앞의 public 8개는 S2.1 catalog의
+rule ID·metric·operator·range·scale·순서를 읽기 전용으로 투영하고, 뒤의 system-managed 6개는
+S2.2가 소유한다. 실행 분류는 threshold 12개, readiness 1개, v1 not-applicable 1개다.
+`violations`에는 threshold rule만 들어갈 수 있으며 readiness 실패는 `issues`, v1 N/A는
+`abstentions`로 표현한다.
+
+새 S2.1 version snapshot과 public read 표현은 `PrincipleRule.evidenceRequirement`를 항상
+명시한다. 기존 immutable 저장 row는 rewrite하지 않고 catalog의 versioned
+`legacyEvidenceInference`에 따라 field가 없을 때 활성 rule은 `REQUIRED`, 비활성 rule은 해당
+rule default로 보충하며 unknown tuple은 거부한다. hard 6개 public rule은 `REQUIRED`만 허용하고
+news/disclosure는 `OPTIONAL|REQUIRED`를 허용한다. 동일한 disclosure source 오류라도
+optional이면 같은 `(ruleId, code)`의 `WARN` + warning/abstention이고 required이면 `HOLD` +
+issue다. optional evidence 하나만으로 HOLD/BLOCK을 만들 수 없다.
+
+`schemas/risk_decision.schema.json`은 business result를 `violations`, `issues`, `warnings`,
+`abstentions`로 분리하고 precedence를 `BLOCK > HOLD > WARN > ALLOW`로 고정한다. HOLD/BLOCK도
+향후 runtime에서 HTTP 200 business result이며 transport/auth/validation error와 섞지 않는다.
+`riskItems`는 실제 사용한 evidence만 담으므로 `value`는 non-null number다. `riskSummary`와
+`signalSummary`는 선택 필드라서 unavailable component를 빈 성공처럼 강제하지 않는다.
+
+portfolio selector는 `KIS_MOCK|INTERNAL_PAPER`만 허용한다. 선택 권한은 server-side
+owner-scoped context에 있고 `INTERNAL_PAPER`만 저장 source `PAPER`에 매핑한다. 자동 fallback은
+없다. selector 자체가 잘못되면 HTTP 400 `VALIDATION_ERROR`, 선택한 context가 없거나 사용할 수
+없으면 HTTP 200 `HOLD`다. result는 immutable `principleVersionId + principleVersion`을 pin한다.
+
+hash contract `HASH-CANONICALIZATION-S22-V1`은 semantic input hash와 snapshot artifact hash를
+분리한다. object key는 사전식, 배열은 명시된 stable key, 숫자는 exponent 없는 plain decimal,
+`-0`은 `0`, trailing zero는 제거한다. exact input/canonical bytes/SHA-256 vector는
+`examples/s2-2-hash-vector.valid.json`에 있다. semantic input은 full order intent, 모든
+MetricKey state/value/freshness/source identity, requested/observed optional evidence, disclosure
+completeness/mapping/source refs와 provenance를 포함한다. artifact hash는 evaluation/retrieval
+identity까지 포함한 versioned full snapshot의 exact UTF-8 bytes를 그대로 사용하며 별도 축약
+hash map을 만들지 않는다.
+
+S2.2 generated artifact는 `generate_s2_2_contracts.py`의 explicit `OUTPUTS`만 소유하고 S2.1
+generator output과 겹치지 않는다. canonical catalog SHA-256은
+`57101a64421805911ddfc7d652c44e8cc2bc08d200ec2c06cc439fd82ce392a2`다. Spring classpath에는
+catalog bytes를 변환 없이 복사하고 Gradle `check`가 byte equality를 검증한다. S2.2에서는
+Decision controller, persistence, OpenAPI path를 추가하지 않으며 normalizer는 implementation
+mode에서도 `/api/v1/decisions/**`를 거절한다. 외부 market/model/balance source adapter는
+추가하지 않고, S2.2 내부 owner-scoped ACTIVE Principle JDBC read adapter만 명시적 production
+source 예외다.
+
+```bash
+uv run --frozen python contracts/generate_principle_contracts.py --check
+uv run --frozen python contracts/generate_s2_2_contracts.py --check
+uv run --frozen python -m unittest discover -s contracts/tests -v
+uv run --frozen python contracts/validate.py
+```
+
 ## S1.5 KIS 데이터 품질 리포트
 
 S1.5는 public API가 아니라 Decision Platform 내부 CLI `kis-data-quality-report`가 생산하는

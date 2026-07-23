@@ -24,7 +24,11 @@ from contracts.normalize_openapi import (
     normalize_generated_openapi,
 )
 from contracts.openapi_env import OpenApiEnvironmentError, parse_openapi_environment
-from contracts.run_openapi_gate import _explicit_process_environment
+from contracts.run_openapi_gate import (
+    OpenApiGateError,
+    _explicit_process_environment,
+    run_gate,
+)
 
 
 class StrictContractJsonTest(unittest.TestCase):
@@ -264,6 +268,38 @@ class OpenApiEnvironmentParserTest(unittest.TestCase):
         def __exit__(self, *_: object) -> None:
             assert self.directory is not None
             self.directory.cleanup()
+
+
+class OpenApiGateCleanupTest(unittest.TestCase):
+    def test_partial_compose_start_is_cleaned_up(self) -> None:
+        commands: list[list[str]] = []
+
+        def fail_start_then_allow_cleanup(
+            command: list[str],
+            **_: object,
+        ) -> None:
+            commands.append(command)
+            if len(commands) == 1:
+                raise OpenApiGateError("simulated compose health failure")
+
+        with (
+            patch("contracts.run_openapi_gate.parse_openapi_environment", return_value={}),
+            patch("contracts.run_openapi_gate._require_fixture_port_available"),
+            patch(
+                "contracts.run_openapi_gate._run",
+                side_effect=fail_start_then_allow_cleanup,
+            ),
+        ):
+            with self.assertRaisesRegex(
+                OpenApiGateError,
+                "simulated compose health failure",
+            ):
+                run_gate(Path("/unused/openapi.env"), write=False)
+
+        self.assertEqual(2, len(commands))
+        self.assertIn("up", commands[0])
+        self.assertIn("down", commands[1])
+        self.assertIn("--volumes", commands[1])
 
 
 class OpenApiNormalizerTest(unittest.TestCase):

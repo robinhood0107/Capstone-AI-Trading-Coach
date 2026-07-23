@@ -127,8 +127,15 @@ data class PrincipleViolation(
 class PrincipleValidationException(
     violations: List<PrincipleViolation>,
 ) : RuntimeException("Principle request validation failed.") {
+    // 오류 envelope가 canonical schema의 maxItems를 넘지 않게 정렬 후 고정 상한을 적용한다.
     val violations: List<PrincipleViolation> =
-        violations.sortedWith(compareBy(PrincipleViolation::field, PrincipleViolation::reason))
+        violations
+            .sortedWith(compareBy(PrincipleViolation::field, PrincipleViolation::reason))
+            .take(MAX_VIOLATIONS)
+
+    private companion object {
+        const val MAX_VIOLATIONS = 64
+    }
 }
 
 class PrincipleNotFoundException : RuntimeException("Principle was not found.")

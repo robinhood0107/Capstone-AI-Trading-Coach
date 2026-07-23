@@ -454,6 +454,22 @@ def _risk_decision_schema(catalog: Mapping[str, Any]) -> dict[str, Any]:
         ],
         "maxLength": bounds["idMaxChars"],
     }
+    system_threshold_severity_rules = [
+        {
+            "if": {
+                "properties": {"ruleId": {"const": rule["ruleId"]}},
+                "required": ["ruleId"],
+            },
+            "then": {
+                "properties": {
+                    "severity": {"const": rule["defaultSeverity"]},
+                },
+            },
+        }
+        for rule in catalog["rules"]
+        if rule["ownership"] == "SYSTEM_MANAGED"
+        and rule["executionKind"] == "THRESHOLD"
+    ]
     violation = {
         "type": "object",
         "additionalProperties": False,
@@ -471,6 +487,7 @@ def _risk_decision_schema(catalog: Mapping[str, Any]) -> dict[str, Any]:
             "metricValue": {"type": "number"},
             "threshold": {"type": "number"},
         },
+        "allOf": system_threshold_severity_rules,
     }
     issue = {
         "type": "object",
@@ -729,6 +746,10 @@ def _risk_decision_schema(catalog: Mapping[str, Any]) -> dict[str, Any]:
                     "properties": {
                         "canSubmitOrder": {"const": True},
                         "issues": {"maxItems": 0},
+                    },
+                    "not": {
+                        "properties": {"violations": block_contains},
+                        "required": ["violations"],
                     },
                     "anyOf": [
                         {"properties": {"violations": {"minItems": 1}}},

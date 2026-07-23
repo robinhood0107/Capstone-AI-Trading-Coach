@@ -1,5 +1,6 @@
 package com.capstone.decision
 
+import com.capstone.decision.infrastructure.principle.PrincipleProperties
 import com.capstone.decision.infrastructure.security.DemoAccounts
 import com.capstone.decision.infrastructure.security.DemoCredentialBootstrapProperties
 import com.capstone.decision.infrastructure.security.DemoCredentialBundlePolicy
@@ -105,8 +106,9 @@ class DemoCredentialBundlePolicyTest {
             )
         val jwt = JwtProperties(secret = "j".repeat(32), issuer = "issuer", audience = "audience")
         val login = LoginAttemptLimiterProperties(scopeHmacKey = "l".repeat(32))
+        val principle = PrincipleProperties(cursorHmacKey = "p".repeat(32))
 
-        assertDoesNotThrow { SecurityConfig().authSecretSeparation(jwt, login, properties) }
+        assertDoesNotThrow { SecurityConfig().authSecretSeparation(jwt, login, properties, principle) }
         assertThrows<IllegalArgumentException> {
             DemoCredentialBundlePolicy.decodeSeparationKey(
                 Base64.getUrlEncoder().withoutPadding().encodeToString(ByteArray(31)),
@@ -115,11 +117,21 @@ class DemoCredentialBundlePolicyTest {
 
         properties.separationKey =
             Base64.getUrlEncoder().withoutPadding().encodeToString(jwt.secret.toByteArray())
-        assertThrows<IllegalArgumentException> { SecurityConfig().authSecretSeparation(jwt, login, properties) }
+        assertThrows<IllegalArgumentException> {
+            SecurityConfig().authSecretSeparation(jwt, login, properties, principle)
+        }
 
         properties.separationKey =
             Base64.getUrlEncoder().withoutPadding().encodeToString(login.scopeHmacKey.toByteArray())
-        assertThrows<IllegalArgumentException> { SecurityConfig().authSecretSeparation(jwt, login, properties) }
+        assertThrows<IllegalArgumentException> {
+            SecurityConfig().authSecretSeparation(jwt, login, properties, principle)
+        }
+
+        properties.separationKey = encodedKey
+        principle.cursorHmacKey = jwt.secret
+        assertThrows<IllegalArgumentException> {
+            SecurityConfig().authSecretSeparation(jwt, login, properties, principle)
+        }
     }
 
     @Test

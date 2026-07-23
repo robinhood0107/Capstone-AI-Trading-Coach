@@ -83,6 +83,154 @@
         },
         "type": "object"
       },
+      "ApiResponsePrincipleCurrent": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PrincipleCurrent"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ApiError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ApiWarning"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "ApiResponsePrincipleHistoryData": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PrincipleHistoryData"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ApiError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ApiWarning"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "ApiResponsePrincipleOwnerListData": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PrincipleOwnerListData"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ApiError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ApiWarning"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "ApiResponsePrinciplePresetListData": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PrinciplePresetListData"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ApiError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ApiWarning"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
       "ApiWarning": {
         "properties": {
           "code": {
@@ -171,6 +319,1597 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "PrincipleConflictErrorResponse": {
+        "additionalProperties": false,
+        "example": {
+          "error": {
+            "code": "CONFLICT",
+            "details": {
+              "currentVersion": 2,
+              "expectedVersion": 1
+            },
+            "message": "Resource conflict."
+          },
+          "requestId": "req_20260723_example",
+          "success": false,
+          "warnings": []
+        },
+        "properties": {
+          "data": {
+            "type": "null"
+          },
+          "error": {
+            "additionalProperties": false,
+            "properties": {
+              "code": {
+                "const": "CONFLICT",
+                "type": "string"
+              },
+              "details": {
+                "additionalProperties": false,
+                "properties": {
+                  "currentVersion": {
+                    "format": "int32",
+                    "maximum": 2147483647,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "expectedVersion": {
+                    "format": "int32",
+                    "maximum": 2147483647,
+                    "minimum": 1,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "currentVersion",
+                  "expectedVersion"
+                ],
+                "type": "object"
+              },
+              "message": {
+                "const": "Resource conflict.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "details",
+              "message"
+            ],
+            "type": "object"
+          },
+          "requestId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "success": {
+            "const": false,
+            "type": "boolean"
+          },
+          "warnings": {
+            "const": [],
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "error",
+          "requestId",
+          "success",
+          "warnings"
+        ],
+        "type": "object"
+      },
+      "PrincipleCreateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "enum": [
+              "GUIDE",
+              "STRICT"
+            ],
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "presetId": {
+            "enum": [
+              "conservative",
+              "balanced",
+              "aggressive"
+            ],
+            "type": "string"
+          },
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/PrincipleRule"
+            },
+            "maxItems": 8,
+            "minItems": 1,
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "title": {
+            "maxLength": 120,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "presetId",
+          "title"
+        ],
+        "type": "object"
+      },
+      "PrincipleCurrent": {
+        "additionalProperties": false,
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?\\+09:00$",
+            "type": "string"
+          },
+          "mode": {
+            "enum": [
+              "GUIDE",
+              "STRICT"
+            ],
+            "type": "string"
+          },
+          "presetId": {
+            "enum": [
+              "conservative",
+              "balanced",
+              "aggressive"
+            ],
+            "type": "string"
+          },
+          "principleId": {
+            "pattern": "^prc_[0-9a-f]{32}$",
+            "type": "string"
+          },
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/PrincipleRule"
+            },
+            "maxItems": 8,
+            "minItems": 1,
+            "type": "array"
+          },
+          "status": {
+            "enum": [
+              "ACTIVE",
+              "ARCHIVED"
+            ],
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 120,
+            "minLength": 1,
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?\\+09:00$",
+            "type": "string"
+          },
+          "version": {
+            "format": "int32",
+            "maximum": 2147483647,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "createdAt",
+          "mode",
+          "presetId",
+          "principleId",
+          "rules",
+          "status",
+          "title",
+          "updatedAt",
+          "version"
+        ],
+        "type": "object"
+      },
+      "PrincipleDisclaimer": {
+        "additionalProperties": false,
+        "properties": {
+          "en": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "ko": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "en",
+          "ko"
+        ],
+        "type": "object"
+      },
+      "PrincipleForbiddenErrorResponse": {
+        "additionalProperties": false,
+        "example": {
+          "error": {
+            "code": "FORBIDDEN",
+            "details": {},
+            "message": "Access is denied."
+          },
+          "requestId": "req_20260723_example",
+          "success": false,
+          "warnings": []
+        },
+        "properties": {
+          "data": {
+            "type": "null"
+          },
+          "error": {
+            "additionalProperties": false,
+            "properties": {
+              "code": {
+                "const": "FORBIDDEN",
+                "type": "string"
+              },
+              "details": {
+                "additionalProperties": false,
+                "const": {},
+                "properties": {},
+                "type": "object"
+              },
+              "message": {
+                "const": "Access is denied.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "details",
+              "message"
+            ],
+            "type": "object"
+          },
+          "requestId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "success": {
+            "const": false,
+            "type": "boolean"
+          },
+          "warnings": {
+            "const": [],
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "error",
+          "requestId",
+          "success",
+          "warnings"
+        ],
+        "type": "object"
+      },
+      "PrincipleHistoryData": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PrincipleVersion"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "maxLength": 2048,
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "type": "object"
+      },
+      "PrincipleNotFoundErrorResponse": {
+        "additionalProperties": false,
+        "example": {
+          "error": {
+            "code": "NOT_FOUND",
+            "details": {},
+            "message": "Resource was not found."
+          },
+          "requestId": "req_20260723_example",
+          "success": false,
+          "warnings": []
+        },
+        "properties": {
+          "data": {
+            "type": "null"
+          },
+          "error": {
+            "additionalProperties": false,
+            "properties": {
+              "code": {
+                "const": "NOT_FOUND",
+                "type": "string"
+              },
+              "details": {
+                "additionalProperties": false,
+                "const": {},
+                "properties": {},
+                "type": "object"
+              },
+              "message": {
+                "const": "Resource was not found.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "details",
+              "message"
+            ],
+            "type": "object"
+          },
+          "requestId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "success": {
+            "const": false,
+            "type": "boolean"
+          },
+          "warnings": {
+            "const": [],
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "error",
+          "requestId",
+          "success",
+          "warnings"
+        ],
+        "type": "object"
+      },
+      "PrincipleOwnerListData": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PrincipleSummary"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "maxLength": 2048,
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "type": "object"
+      },
+      "PrinciplePayloadTooLargeErrorResponse": {
+        "additionalProperties": false,
+        "example": {
+          "error": {
+            "code": "PAYLOAD_TOO_LARGE",
+            "details": {
+              "maxBytes": 1048576
+            },
+            "message": "Request payload exceeded the configured safety limit."
+          },
+          "requestId": "req_20260723_example",
+          "success": false,
+          "warnings": []
+        },
+        "properties": {
+          "data": {
+            "type": "null"
+          },
+          "error": {
+            "additionalProperties": false,
+            "properties": {
+              "code": {
+                "const": "PAYLOAD_TOO_LARGE",
+                "type": "string"
+              },
+              "details": {
+                "additionalProperties": false,
+                "properties": {
+                  "maxBytes": {
+                    "const": 1048576,
+                    "format": "int32",
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "maxBytes"
+                ],
+                "type": "object"
+              },
+              "message": {
+                "const": "Request payload exceeded the configured safety limit.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "details",
+              "message"
+            ],
+            "type": "object"
+          },
+          "requestId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "success": {
+            "const": false,
+            "type": "boolean"
+          },
+          "warnings": {
+            "const": [],
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "error",
+          "requestId",
+          "success",
+          "warnings"
+        ],
+        "type": "object"
+      },
+      "PrinciplePreset": {
+        "additionalProperties": false,
+        "properties": {
+          "defaultRules": {
+            "items": {
+              "$ref": "#/components/schemas/PrincipleRule"
+            },
+            "maxItems": 8,
+            "minItems": 8,
+            "type": "array"
+          },
+          "descriptionEn": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "descriptionKo": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "mode": {
+            "enum": [
+              "GUIDE",
+              "STRICT"
+            ],
+            "type": "string"
+          },
+          "nameEn": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "nameKo": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "order": {
+            "format": "int32",
+            "maximum": 3,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "presetId": {
+            "enum": [
+              "conservative",
+              "balanced",
+              "aggressive"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "defaultRules",
+          "descriptionEn",
+          "descriptionKo",
+          "mode",
+          "nameEn",
+          "nameKo",
+          "order",
+          "presetId"
+        ],
+        "type": "object"
+      },
+      "PrinciplePresetListData": {
+        "additionalProperties": false,
+        "properties": {
+          "disclaimer": {
+            "$ref": "#/components/schemas/PrincipleDisclaimer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PrinciplePreset"
+            },
+            "maxItems": 3,
+            "minItems": 3,
+            "type": "array"
+          }
+        },
+        "required": [
+          "disclaimer",
+          "items"
+        ],
+        "type": "object"
+      },
+      "PrincipleRule": {
+        "additionalProperties": false,
+        "oneOf": [
+          {
+            "allOf": [
+              {
+                "else": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "severity": {
+                      "enum": [
+                        "BLOCK"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                },
+                "if": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "enabled": {
+                      "const": false,
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "enabled"
+                  ],
+                  "type": "object"
+                },
+                "then": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "severity": {
+                      "const": "ALLOW",
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            ],
+            "properties": {
+              "metric": {
+                "const": "asset_weight",
+                "type": "string"
+              },
+              "operator": {
+                "const": "<=",
+                "type": "string"
+              },
+              "ruleId": {
+                "const": "max_position_per_asset",
+                "type": "string"
+              },
+              "ruleType": {
+                "const": "POSITION_LIMIT",
+                "type": "string"
+              },
+              "threshold": {
+                "maximum": 1,
+                "minimum": 0,
+                "multipleOf": 0.0001,
+                "type": "number"
+              }
+            },
+            "type": "object"
+          },
+          {
+            "allOf": [
+              {
+                "else": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "severity": {
+                      "enum": [
+                        "BLOCK"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                },
+                "if": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "enabled": {
+                      "const": false,
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "enabled"
+                  ],
+                  "type": "object"
+                },
+                "then": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "severity": {
+                      "const": "ALLOW",
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            ],
+            "properties": {
+              "metric": {
+                "const": "gold_etf_etn_weight",
+                "type": "string"
+              },
+              "operator": {
+                "const": "<=",
+                "type": "string"
+              },
+              "ruleId": {
+                "const": "max_gold_etf_etn_weight",
+                "type": "string"
+              },
+              "ruleType": {
+                "const": "POSITION_LIMIT",
+                "type": "string"
+              },
+              "threshold": {
+                "maximum": 1,
+                "minimum": 0,
+                "multipleOf": 0.0001,
+                "type": "number"
+              }
+            },
+            "type": "object"
+          },
+          {
+            "allOf": [
+              {
+                "else": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "severity": {
+                      "enum": [
+                        "BLOCK"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                },
+                "if": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "enabled": {
+                      "const": false,
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "enabled"
+                  ],
+                  "type": "object"
+                },
+                "then": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "severity": {
+                      "const": "ALLOW",
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            ],
+            "properties": {
+              "metric": {
+                "const": "order_amount_krw",
+                "type": "string"
+              },
+              "operator": {
+                "const": "<=",
+                "type": "string"
+              },
+              "ruleId": {
+                "const": "max_single_order_amount",
+                "type": "string"
+              },
+              "ruleType": {
+                "const": "ORDER_SIZE",
+                "type": "string"
+              },
+              "threshold": {
+                "format": "int32",
+                "maximum": 10000000000,
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "type": "object"
+          },
+          {
+            "allOf": [
+              {
+                "else": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "severity": {
+                      "enum": [
+                        "BLOCK"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                },
+                "if": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "enabled": {
+                      "const": false,
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "enabled"
+                  ],
+                  "type": "object"
+                },
+                "then": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "severity": {
+                      "const": "ALLOW",
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            ],
+            "properties": {
+              "metric": {
+                "const": "daily_loss_rate",
+                "type": "string"
+              },
+              "operator": {
+                "const": ">=",
+                "type": "string"
+              },
+              "ruleId": {
+                "const": "daily_loss_guard",
+                "type": "string"
+              },
+              "ruleType": {
+                "const": "LOSS_LIMIT",
+                "type": "string"
+              },
+              "threshold": {
+                "maximum": 0,
+                "minimum": -1,
+                "multipleOf": 0.0001,
+                "type": "number"
+              }
+            },
+            "type": "object"
+          },
+          {
+            "allOf": [
+              {
+                "else": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "severity": {
+                      "enum": [
+                        "BLOCK"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                },
+                "if": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "enabled": {
+                      "const": false,
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "enabled"
+                  ],
+                  "type": "object"
+                },
+                "then": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "severity": {
+                      "const": "ALLOW",
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            ],
+            "properties": {
+              "metric": {
+                "const": "mdd",
+                "type": "string"
+              },
+              "operator": {
+                "const": ">=",
+                "type": "string"
+              },
+              "ruleId": {
+                "const": "mdd_guard",
+                "type": "string"
+              },
+              "ruleType": {
+                "const": "DRAWDOWN_LIMIT",
+                "type": "string"
+              },
+              "threshold": {
+                "maximum": 0,
+                "minimum": -1,
+                "multipleOf": 0.0001,
+                "type": "number"
+              }
+            },
+            "type": "object"
+          },
+          {
+            "allOf": [
+              {
+                "else": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "severity": {
+                      "enum": [
+                        "WARN",
+                        "BLOCK"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                },
+                "if": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "enabled": {
+                      "const": false,
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "enabled"
+                  ],
+                  "type": "object"
+                },
+                "then": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "severity": {
+                      "const": "ALLOW",
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            ],
+            "properties": {
+              "metric": {
+                "const": "daily_order_count",
+                "type": "string"
+              },
+              "operator": {
+                "const": "<=",
+                "type": "string"
+              },
+              "ruleId": {
+                "const": "max_daily_orders",
+                "type": "string"
+              },
+              "ruleType": {
+                "const": "TRADING_FREQUENCY",
+                "type": "string"
+              },
+              "threshold": {
+                "format": "int32",
+                "maximum": 1000,
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "type": "object"
+          },
+          {
+            "allOf": [
+              {
+                "else": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "severity": {
+                      "enum": [
+                        "WARN",
+                        "BLOCK"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                },
+                "if": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "enabled": {
+                      "const": false,
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "enabled"
+                  ],
+                  "type": "object"
+                },
+                "then": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "severity": {
+                      "const": "ALLOW",
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            ],
+            "properties": {
+              "metric": {
+                "const": "negative_news_score",
+                "type": "string"
+              },
+              "operator": {
+                "const": "<=",
+                "type": "string"
+              },
+              "ruleId": {
+                "const": "negative_news_guard",
+                "type": "string"
+              },
+              "ruleType": {
+                "const": "NEWS_GUARD",
+                "type": "string"
+              },
+              "threshold": {
+                "maximum": 1,
+                "minimum": 0,
+                "multipleOf": 0.0001,
+                "type": "number"
+              }
+            },
+            "type": "object"
+          },
+          {
+            "allOf": [
+              {
+                "else": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "severity": {
+                      "enum": [
+                        "WARN",
+                        "BLOCK"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                },
+                "if": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "enabled": {
+                      "const": false,
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "enabled"
+                  ],
+                  "type": "object"
+                },
+                "then": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "severity": {
+                      "const": "ALLOW",
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            ],
+            "properties": {
+              "metric": {
+                "const": "disclosure_risk_score",
+                "type": "string"
+              },
+              "operator": {
+                "const": "<=",
+                "type": "string"
+              },
+              "ruleId": {
+                "const": "disclosure_risk_guard",
+                "type": "string"
+              },
+              "ruleType": {
+                "const": "DISCLOSURE_GUARD",
+                "type": "string"
+              },
+              "threshold": {
+                "maximum": 1,
+                "minimum": 0,
+                "multipleOf": 0.0001,
+                "type": "number"
+              }
+            },
+            "type": "object"
+          }
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "metric": {
+            "enum": [
+              "asset_weight",
+              "gold_etf_etn_weight",
+              "order_amount_krw",
+              "daily_loss_rate",
+              "mdd",
+              "daily_order_count",
+              "negative_news_score",
+              "disclosure_risk_score"
+            ],
+            "type": "string"
+          },
+          "operator": {
+            "enum": [
+              "<=",
+              ">="
+            ],
+            "type": "string"
+          },
+          "ruleId": {
+            "enum": [
+              "max_position_per_asset",
+              "max_gold_etf_etn_weight",
+              "max_single_order_amount",
+              "daily_loss_guard",
+              "mdd_guard",
+              "max_daily_orders",
+              "negative_news_guard",
+              "disclosure_risk_guard"
+            ],
+            "type": "string"
+          },
+          "ruleType": {
+            "enum": [
+              "POSITION_LIMIT",
+              "ORDER_SIZE",
+              "LOSS_LIMIT",
+              "DRAWDOWN_LIMIT",
+              "TRADING_FREQUENCY",
+              "NEWS_GUARD",
+              "DISCLOSURE_GUARD"
+            ],
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "ALLOW",
+              "WARN",
+              "BLOCK"
+            ],
+            "type": "string"
+          },
+          "threshold": {
+            "type": [
+              "number",
+              "integer"
+            ]
+          }
+        },
+        "required": [
+          "enabled",
+          "metric",
+          "operator",
+          "ruleId",
+          "ruleType",
+          "severity",
+          "threshold"
+        ],
+        "type": "object"
+      },
+      "PrincipleSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?\\+09:00$",
+            "type": "string"
+          },
+          "mode": {
+            "enum": [
+              "GUIDE",
+              "STRICT"
+            ],
+            "type": "string"
+          },
+          "presetId": {
+            "enum": [
+              "conservative",
+              "balanced",
+              "aggressive"
+            ],
+            "type": "string"
+          },
+          "principleId": {
+            "pattern": "^prc_[0-9a-f]{32}$",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ACTIVE",
+              "ARCHIVED"
+            ],
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 120,
+            "minLength": 1,
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?\\+09:00$",
+            "type": "string"
+          },
+          "version": {
+            "format": "int32",
+            "maximum": 2147483647,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "createdAt",
+          "mode",
+          "presetId",
+          "principleId",
+          "status",
+          "title",
+          "updatedAt",
+          "version"
+        ],
+        "type": "object"
+      },
+      "PrincipleUnauthorizedErrorResponse": {
+        "additionalProperties": false,
+        "example": {
+          "error": {
+            "code": "UNAUTHORIZED",
+            "details": {},
+            "message": "Authentication is required."
+          },
+          "requestId": "req_20260723_example",
+          "success": false,
+          "warnings": []
+        },
+        "properties": {
+          "data": {
+            "type": "null"
+          },
+          "error": {
+            "additionalProperties": false,
+            "properties": {
+              "code": {
+                "const": "UNAUTHORIZED",
+                "type": "string"
+              },
+              "details": {
+                "additionalProperties": false,
+                "const": {},
+                "properties": {},
+                "type": "object"
+              },
+              "message": {
+                "const": "Authentication is required.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "details",
+              "message"
+            ],
+            "type": "object"
+          },
+          "requestId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "success": {
+            "const": false,
+            "type": "boolean"
+          },
+          "warnings": {
+            "const": [],
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "error",
+          "requestId",
+          "success",
+          "warnings"
+        ],
+        "type": "object"
+      },
+      "PrincipleUpdateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expectedVersion": {
+            "format": "int32",
+            "maximum": 2147483647,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "mode": {
+            "enum": [
+              "GUIDE",
+              "STRICT"
+            ],
+            "type": "string"
+          },
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/PrincipleRule"
+            },
+            "maxItems": 8,
+            "minItems": 1,
+            "type": "array"
+          },
+          "status": {
+            "enum": [
+              "ACTIVE",
+              "ARCHIVED"
+            ],
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 120,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "expectedVersion",
+          "mode",
+          "rules",
+          "status",
+          "title"
+        ],
+        "type": "object"
+      },
+      "PrincipleValidationErrorResponse": {
+        "additionalProperties": false,
+        "example": {
+          "error": {
+            "code": "VALIDATION_ERROR",
+            "details": {
+              "violations": [
+                {
+                  "field": "/query/cursor",
+                  "reason": "INVALID_CURSOR"
+                }
+              ]
+            },
+            "message": "Request validation failed."
+          },
+          "requestId": "req_20260723_example",
+          "success": false,
+          "warnings": []
+        },
+        "properties": {
+          "data": {
+            "type": "null"
+          },
+          "error": {
+            "additionalProperties": false,
+            "properties": {
+              "code": {
+                "const": "VALIDATION_ERROR",
+                "type": "string"
+              },
+              "details": {
+                "additionalProperties": false,
+                "properties": {
+                  "violations": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "field": {
+                          "maxLength": 512,
+                          "minLength": 1,
+                          "pattern": "^/(?:[^~/]|~0|~1)*(?:/(?:[^~/]|~0|~1)*)*$",
+                          "type": "string"
+                        },
+                        "reason": {
+                          "enum": [
+                            "REQUIRED",
+                            "UNKNOWN_FIELD",
+                            "INVALID_FORMAT",
+                            "INVALID_ENUM",
+                            "UNAVAILABLE",
+                            "OUT_OF_RANGE",
+                            "INVALID_SCALE",
+                            "TOO_FEW_ITEMS",
+                            "TOO_MANY_ITEMS",
+                            "DUPLICATE",
+                            "INVALID_COMBINATION",
+                            "INVALID_CURSOR"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "field",
+                        "reason"
+                      ],
+                      "type": "object"
+                    },
+                    "maxItems": 64,
+                    "minItems": 1,
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "violations"
+                ],
+                "type": "object"
+              },
+              "message": {
+                "const": "Request validation failed.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "details",
+              "message"
+            ],
+            "type": "object"
+          },
+          "requestId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "success": {
+            "const": false,
+            "type": "boolean"
+          },
+          "warnings": {
+            "const": [],
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "error",
+          "requestId",
+          "success",
+          "warnings"
+        ],
+        "type": "object"
+      },
+      "PrincipleVersion": {
+        "additionalProperties": false,
+        "properties": {
+          "changedFields": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 5,
+            "minItems": 1,
+            "type": "array"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?\\+09:00$",
+            "type": "string"
+          },
+          "mode": {
+            "enum": [
+              "GUIDE",
+              "STRICT"
+            ],
+            "type": "string"
+          },
+          "presetId": {
+            "enum": [
+              "conservative",
+              "balanced",
+              "aggressive"
+            ],
+            "type": "string"
+          },
+          "principleId": {
+            "pattern": "^prc_[0-9a-f]{32}$",
+            "type": "string"
+          },
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/PrincipleRule"
+            },
+            "maxItems": 8,
+            "minItems": 1,
+            "type": "array"
+          },
+          "status": {
+            "enum": [
+              "ACTIVE",
+              "ARCHIVED"
+            ],
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 120,
+            "minLength": 1,
+            "type": "string"
+          },
+          "version": {
+            "format": "int32",
+            "maximum": 2147483647,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "changedFields",
+          "createdAt",
+          "mode",
+          "presetId",
+          "principleId",
+          "rules",
+          "status",
+          "title",
+          "version"
+        ],
+        "type": "object"
+      },
+      "PrincipleVersionExhaustedErrorResponse": {
+        "additionalProperties": false,
+        "example": {
+          "error": {
+            "code": "VERSION_EXHAUSTED",
+            "details": {
+              "currentVersion": 2147483647
+            },
+            "message": "Principle version limit was reached."
+          },
+          "requestId": "req_20260723_example",
+          "success": false,
+          "warnings": []
+        },
+        "properties": {
+          "data": {
+            "type": "null"
+          },
+          "error": {
+            "additionalProperties": false,
+            "properties": {
+              "code": {
+                "const": "VERSION_EXHAUSTED",
+                "type": "string"
+              },
+              "details": {
+                "additionalProperties": false,
+                "properties": {
+                  "currentVersion": {
+                    "const": 2147483647,
+                    "format": "int32",
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "currentVersion"
+                ],
+                "type": "object"
+              },
+              "message": {
+                "const": "Principle version limit was reached.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "details",
+              "message"
+            ],
+            "type": "object"
+          },
+          "requestId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "success": {
+            "const": false,
+            "type": "boolean"
+          },
+          "warnings": {
+            "const": [],
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "error",
+          "requestId",
+          "success",
+          "warnings"
+        ],
         "type": "object"
       },
       "SystemHealthResponse": {
@@ -277,6 +2016,495 @@
         "summary": "데모 사용자 로그인 / Demo user login",
         "tags": [
           "auth-controller"
+        ]
+      }
+    },
+    "/api/v1/principle-presets": {
+      "get": {
+        "operationId": "listPrinciplePresets",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponsePrinciplePresetListData"
+                }
+              }
+            },
+            "description": "Preset catalog"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrincipleValidationErrorResponse"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrincipleUnauthorizedErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrincipleForbiddenErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          }
+        },
+        "summary": "원칙 프리셋 조회 / List Principle presets",
+        "tags": [
+          "principle-controller"
+        ]
+      }
+    },
+    "/api/v1/principles": {
+      "get": {
+        "operationId": "listPrinciples",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "maxLength": 2048,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "size",
+            "schema": {
+              "format": "int32",
+              "maximum": 200,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "schema": {
+              "enum": [
+                "UPDATED_AT_DESC",
+                "UPDATED_AT_ASC"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponsePrincipleOwnerListData"
+                }
+              }
+            },
+            "description": "Owned Principle page"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrincipleValidationErrorResponse"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrincipleUnauthorizedErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrincipleForbiddenErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          }
+        },
+        "summary": "사용자 원칙 목록 / List owned Principles",
+        "tags": [
+          "principle-controller"
+        ]
+      },
+      "post": {
+        "operationId": "createPrinciple",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PrincipleCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponsePrincipleCurrent"
+                }
+              }
+            },
+            "description": "Created",
+            "headers": {
+              "Location": {
+                "description": "생성된 Principle의 canonical URI / Canonical URI of the created Principle",
+                "schema": {
+                  "pattern": "^/api/v1/principles/prc_[0-9a-f]{32}$",
+                  "type": "string"
+                },
+                "style": "simple"
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrincipleValidationErrorResponse"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrincipleUnauthorizedErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrincipleForbiddenErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrinciplePayloadTooLargeErrorResponse"
+                }
+              }
+            },
+            "description": "Payload too large"
+          }
+        },
+        "summary": "사용자 원칙 생성 / Create an owned Principle",
+        "tags": [
+          "principle-controller"
+        ]
+      }
+    },
+    "/api/v1/principles/{principleId}": {
+      "get": {
+        "operationId": "getPrinciple",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "principleId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponsePrincipleCurrent"
+                }
+              }
+            },
+            "description": "Current Principle"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrincipleValidationErrorResponse"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrincipleUnauthorizedErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrincipleForbiddenErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrincipleNotFoundErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or cross-owner"
+          }
+        },
+        "summary": "사용자 원칙 상세 / Get an owned Principle",
+        "tags": [
+          "principle-controller"
+        ]
+      },
+      "put": {
+        "operationId": "updatePrinciple",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "principleId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PrincipleUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponsePrincipleCurrent"
+                }
+              }
+            },
+            "description": "Current Principle"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrincipleValidationErrorResponse"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrincipleUnauthorizedErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrincipleForbiddenErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrincipleNotFoundErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or cross-owner"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/PrincipleConflictErrorResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/PrincipleVersionExhaustedErrorResponse"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "Version conflict or exhausted"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrinciplePayloadTooLargeErrorResponse"
+                }
+              }
+            },
+            "description": "Payload too large"
+          }
+        },
+        "summary": "사용자 원칙 전체 교체 / Replace an owned Principle",
+        "tags": [
+          "principle-controller"
+        ]
+      }
+    },
+    "/api/v1/principles/{principleId}/versions": {
+      "get": {
+        "operationId": "listPrincipleVersions",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "maxLength": 2048,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "size",
+            "schema": {
+              "format": "int32",
+              "maximum": 200,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "schema": {
+              "enum": [
+                "VERSION_DESC",
+                "VERSION_ASC"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "principleId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponsePrincipleHistoryData"
+                }
+              }
+            },
+            "description": "Immutable version page"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrincipleValidationErrorResponse"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrincipleUnauthorizedErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrincipleForbiddenErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrincipleNotFoundErrorResponse"
+                }
+              }
+            },
+            "description": "Missing or cross-owner"
+          }
+        },
+        "summary": "원칙 버전 이력 / List immutable Principle versions",
+        "tags": [
+          "principle-controller"
         ]
       }
     },

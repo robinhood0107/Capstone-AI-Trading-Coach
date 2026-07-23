@@ -1,10 +1,12 @@
 package com.capstone.decision.api.principle
 
+import com.capstone.decision.application.principle.CatalogRuleDefinition
 import com.capstone.decision.application.principle.CreatePrincipleCommand
 import com.capstone.decision.application.principle.HistoryPageQuery
 import com.capstone.decision.application.principle.HistorySort
 import com.capstone.decision.application.principle.OwnerPageQuery
 import com.capstone.decision.application.principle.OwnerSort
+import com.capstone.decision.application.principle.PrincipleContract
 import com.capstone.decision.application.principle.UpdatePrincipleCommand
 import com.capstone.decision.domain.principle.PrincipleId
 import com.capstone.decision.domain.principle.PrincipleMode
@@ -13,13 +15,12 @@ import com.capstone.decision.domain.principle.PrincipleRule
 import com.capstone.decision.domain.principle.PrincipleStatus
 import com.capstone.decision.domain.principle.PrincipleValidationException
 import com.capstone.decision.domain.principle.PrincipleViolation
-import com.capstone.decision.infrastructure.principle.CatalogRuleDefinition
-import com.capstone.decision.infrastructure.principle.PrincipleCatalog
 import jakarta.servlet.http.HttpServletRequest
 import org.springframework.stereotype.Component
 import tools.jackson.core.JacksonException
 import tools.jackson.core.StreamReadFeature
 import tools.jackson.core.json.JsonFactory
+import tools.jackson.databind.DeserializationFeature
 import tools.jackson.databind.JsonNode
 import tools.jackson.databind.json.JsonMapper
 import java.math.BigDecimal
@@ -28,7 +29,7 @@ import java.text.Normalizer
 // wire parser는 duplicate/unknown/type 오류를 DTO coercion 전에 닫고 rejected raw value를 오류에 반사하지 않는다.
 @Component
 class PrincipleRequestParser(
-    private val catalog: PrincipleCatalog,
+    private val catalog: PrincipleContract,
 ) {
     private val strictMapper =
         JsonMapper
@@ -37,7 +38,8 @@ class PrincipleRequestParser(
                     .builder()
                     .enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION)
                     .build(),
-            ).build()
+            ).enable(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS)
+            .build()
 
     fun parseCreate(body: String): CreatePrincipleCommand {
         val root = parseObject(body)
@@ -388,7 +390,7 @@ class PrincipleRequestParser(
             violations.add(PrincipleViolation(path, "OUT_OF_RANGE"))
         }
         val normalizedScale = value.stripTrailingZeros().scale().coerceAtLeast(0)
-        if (node.toString().contains('e', ignoreCase = true) || normalizedScale > definition.maxNormalizedScale) {
+        if (normalizedScale > definition.maxNormalizedScale) {
             violations.add(PrincipleViolation(path, "INVALID_SCALE"))
         }
         val normalized = value.stripTrailingZeros()

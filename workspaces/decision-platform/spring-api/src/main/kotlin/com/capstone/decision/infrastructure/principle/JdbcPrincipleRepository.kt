@@ -1,6 +1,8 @@
 package com.capstone.decision.infrastructure.principle
 
+import com.capstone.decision.application.principle.HistoryCursor
 import com.capstone.decision.application.principle.HistorySort
+import com.capstone.decision.application.principle.OwnerCursor
 import com.capstone.decision.application.principle.OwnerSort
 import com.capstone.decision.application.principle.PrincipleActor
 import com.capstone.decision.application.principle.PrincipleRepository

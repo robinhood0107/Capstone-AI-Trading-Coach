@@ -4,12 +4,13 @@ import com.capstone.decision.api.common.ApiResponse
 import com.capstone.decision.api.common.ApiResponseFactory
 import com.capstone.decision.api.common.RequestIds
 import com.capstone.decision.application.principle.PrincipleActor
+import com.capstone.decision.application.principle.PrincipleContract
 import com.capstone.decision.application.principle.PrincipleService
-import com.capstone.decision.infrastructure.principle.PrincipleCatalog
-import com.capstone.decision.infrastructure.security.AppPrincipal
+import com.capstone.decision.application.security.AppPrincipal
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.enums.ParameterIn
+import io.swagger.v3.oas.annotations.headers.Header
 import io.swagger.v3.oas.annotations.media.Content
 import io.swagger.v3.oas.annotations.media.Schema
 import io.swagger.v3.oas.annotations.responses.ApiResponses
@@ -35,7 +36,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse as OpenApiResponse
 class PrincipleController(
     private val service: PrincipleService,
     private val parser: PrincipleRequestParser,
-    private val catalog: PrincipleCatalog,
+    private val catalog: PrincipleContract,
 ) {
     @Operation(
         operationId = "listPrinciplePresets",
@@ -44,8 +45,36 @@ class PrincipleController(
     @ApiResponses(
         value = [
             OpenApiResponse(responseCode = "200", description = "Preset catalog"),
-            OpenApiResponse(responseCode = "401", description = "Unauthorized"),
-            OpenApiResponse(responseCode = "403", description = "Forbidden"),
+            OpenApiResponse(
+                responseCode = "400",
+                description = "Validation error",
+                content = [
+                    Content(
+                        mediaType = MediaType.APPLICATION_JSON_VALUE,
+                        schema = Schema(implementation = PrincipleValidationErrorResponseSchema::class),
+                    ),
+                ],
+            ),
+            OpenApiResponse(
+                responseCode = "401",
+                description = "Unauthorized",
+                content = [
+                    Content(
+                        mediaType = MediaType.APPLICATION_JSON_VALUE,
+                        schema = Schema(implementation = PrincipleUnauthorizedErrorResponseSchema::class),
+                    ),
+                ],
+            ),
+            OpenApiResponse(
+                responseCode = "403",
+                description = "Forbidden",
+                content = [
+                    Content(
+                        mediaType = MediaType.APPLICATION_JSON_VALUE,
+                        schema = Schema(implementation = PrincipleForbiddenErrorResponseSchema::class),
+                    ),
+                ],
+            ),
         ],
     )
     @GetMapping("/principle-presets")
@@ -75,11 +104,57 @@ class PrincipleController(
     )
     @ApiResponses(
         value = [
-            OpenApiResponse(responseCode = "201", description = "Created"),
-            OpenApiResponse(responseCode = "400", description = "Validation error"),
-            OpenApiResponse(responseCode = "401", description = "Unauthorized"),
-            OpenApiResponse(responseCode = "403", description = "Forbidden"),
-            OpenApiResponse(responseCode = "413", description = "Payload too large"),
+            OpenApiResponse(
+                responseCode = "201",
+                description = "Created",
+                headers = [
+                    Header(
+                        name = "Location",
+                        description = "생성된 Principle의 canonical URI / Canonical URI of the created Principle",
+                        schema = Schema(type = "string", pattern = "^/api/v1/principles/prc_[0-9a-f]{32}$"),
+                    ),
+                ],
+            ),
+            OpenApiResponse(
+                responseCode = "400",
+                description = "Validation error",
+                content = [
+                    Content(
+                        mediaType = MediaType.APPLICATION_JSON_VALUE,
+                        schema = Schema(implementation = PrincipleValidationErrorResponseSchema::class),
+                    ),
+                ],
+            ),
+            OpenApiResponse(
+                responseCode = "401",
+                description = "Unauthorized",
+                content = [
+                    Content(
+                        mediaType = MediaType.APPLICATION_JSON_VALUE,
+                        schema = Schema(implementation = PrincipleUnauthorizedErrorResponseSchema::class),
+                    ),
+                ],
+            ),
+            OpenApiResponse(
+                responseCode = "403",
+                description = "Forbidden",
+                content = [
+                    Content(
+                        mediaType = MediaType.APPLICATION_JSON_VALUE,
+                        schema = Schema(implementation = PrincipleForbiddenErrorResponseSchema::class),
+                    ),
+                ],
+            ),
+            OpenApiResponse(
+                responseCode = "413",
+                description = "Payload too large",
+                content = [
+                    Content(
+                        mediaType = MediaType.APPLICATION_JSON_VALUE,
+                        schema = Schema(implementation = PrinciplePayloadTooLargeErrorResponseSchema::class),
+                    ),
+                ],
+            ),
         ],
     )
     @PostMapping("/principles", consumes = [MediaType.APPLICATION_JSON_VALUE])
@@ -125,9 +200,36 @@ class PrincipleController(
     @ApiResponses(
         value = [
             OpenApiResponse(responseCode = "200", description = "Owned Principle page"),
-            OpenApiResponse(responseCode = "400", description = "Validation error"),
-            OpenApiResponse(responseCode = "401", description = "Unauthorized"),
-            OpenApiResponse(responseCode = "403", description = "Forbidden"),
+            OpenApiResponse(
+                responseCode = "400",
+                description = "Validation error",
+                content = [
+                    Content(
+                        mediaType = MediaType.APPLICATION_JSON_VALUE,
+                        schema = Schema(implementation = PrincipleValidationErrorResponseSchema::class),
+                    ),
+                ],
+            ),
+            OpenApiResponse(
+                responseCode = "401",
+                description = "Unauthorized",
+                content = [
+                    Content(
+                        mediaType = MediaType.APPLICATION_JSON_VALUE,
+                        schema = Schema(implementation = PrincipleUnauthorizedErrorResponseSchema::class),
+                    ),
+                ],
+            ),
+            OpenApiResponse(
+                responseCode = "403",
+                description = "Forbidden",
+                content = [
+                    Content(
+                        mediaType = MediaType.APPLICATION_JSON_VALUE,
+                        schema = Schema(implementation = PrincipleForbiddenErrorResponseSchema::class),
+                    ),
+                ],
+            ),
         ],
     )
     @GetMapping("/principles")
@@ -153,10 +255,46 @@ class PrincipleController(
     @ApiResponses(
         value = [
             OpenApiResponse(responseCode = "200", description = "Current Principle"),
-            OpenApiResponse(responseCode = "400", description = "Validation error"),
-            OpenApiResponse(responseCode = "401", description = "Unauthorized"),
-            OpenApiResponse(responseCode = "403", description = "Forbidden"),
-            OpenApiResponse(responseCode = "404", description = "Missing or cross-owner"),
+            OpenApiResponse(
+                responseCode = "400",
+                description = "Validation error",
+                content = [
+                    Content(
+                        mediaType = MediaType.APPLICATION_JSON_VALUE,
+                        schema = Schema(implementation = PrincipleValidationErrorResponseSchema::class),
+                    ),
+                ],
+            ),
+            OpenApiResponse(
+                responseCode = "401",
+                description = "Unauthorized",
+                content = [
+                    Content(
+                        mediaType = MediaType.APPLICATION_JSON_VALUE,
+                        schema = Schema(implementation = PrincipleUnauthorizedErrorResponseSchema::class),
+                    ),
+                ],
+            ),
+            OpenApiResponse(
+                responseCode = "403",
+                description = "Forbidden",
+                content = [
+                    Content(
+                        mediaType = MediaType.APPLICATION_JSON_VALUE,
+                        schema = Schema(implementation = PrincipleForbiddenErrorResponseSchema::class),
+                    ),
+                ],
+            ),
+            OpenApiResponse(
+                responseCode = "404",
+                description = "Missing or cross-owner",
+                content = [
+                    Content(
+                        mediaType = MediaType.APPLICATION_JSON_VALUE,
+                        schema = Schema(implementation = PrincipleNotFoundErrorResponseSchema::class),
+                    ),
+                ],
+            ),
         ],
     )
     @GetMapping("/principles/{principleId}")
@@ -184,12 +322,72 @@ class PrincipleController(
     @ApiResponses(
         value = [
             OpenApiResponse(responseCode = "200", description = "Current Principle"),
-            OpenApiResponse(responseCode = "400", description = "Validation error"),
-            OpenApiResponse(responseCode = "401", description = "Unauthorized"),
-            OpenApiResponse(responseCode = "403", description = "Forbidden"),
-            OpenApiResponse(responseCode = "404", description = "Missing or cross-owner"),
-            OpenApiResponse(responseCode = "409", description = "Version conflict or exhausted"),
-            OpenApiResponse(responseCode = "413", description = "Payload too large"),
+            OpenApiResponse(
+                responseCode = "400",
+                description = "Validation error",
+                content = [
+                    Content(
+                        mediaType = MediaType.APPLICATION_JSON_VALUE,
+                        schema = Schema(implementation = PrincipleValidationErrorResponseSchema::class),
+                    ),
+                ],
+            ),
+            OpenApiResponse(
+                responseCode = "401",
+                description = "Unauthorized",
+                content = [
+                    Content(
+                        mediaType = MediaType.APPLICATION_JSON_VALUE,
+                        schema = Schema(implementation = PrincipleUnauthorizedErrorResponseSchema::class),
+                    ),
+                ],
+            ),
+            OpenApiResponse(
+                responseCode = "403",
+                description = "Forbidden",
+                content = [
+                    Content(
+                        mediaType = MediaType.APPLICATION_JSON_VALUE,
+                        schema = Schema(implementation = PrincipleForbiddenErrorResponseSchema::class),
+                    ),
+                ],
+            ),
+            OpenApiResponse(
+                responseCode = "404",
+                description = "Missing or cross-owner",
+                content = [
+                    Content(
+                        mediaType = MediaType.APPLICATION_JSON_VALUE,
+                        schema = Schema(implementation = PrincipleNotFoundErrorResponseSchema::class),
+                    ),
+                ],
+            ),
+            OpenApiResponse(
+                responseCode = "409",
+                description = "Version conflict or exhausted",
+                content = [
+                    Content(
+                        mediaType = MediaType.APPLICATION_JSON_VALUE,
+                        schema =
+                            Schema(
+                                oneOf = [
+                                    PrincipleConflictErrorResponseSchema::class,
+                                    PrincipleVersionExhaustedErrorResponseSchema::class,
+                                ],
+                            ),
+                    ),
+                ],
+            ),
+            OpenApiResponse(
+                responseCode = "413",
+                description = "Payload too large",
+                content = [
+                    Content(
+                        mediaType = MediaType.APPLICATION_JSON_VALUE,
+                        schema = Schema(implementation = PrinciplePayloadTooLargeErrorResponseSchema::class),
+                    ),
+                ],
+            ),
         ],
     )
     @PutMapping("/principles/{principleId}", consumes = [MediaType.APPLICATION_JSON_VALUE])
@@ -232,10 +430,46 @@ class PrincipleController(
     @ApiResponses(
         value = [
             OpenApiResponse(responseCode = "200", description = "Immutable version page"),
-            OpenApiResponse(responseCode = "400", description = "Validation error"),
-            OpenApiResponse(responseCode = "401", description = "Unauthorized"),
-            OpenApiResponse(responseCode = "403", description = "Forbidden"),
-            OpenApiResponse(responseCode = "404", description = "Missing or cross-owner"),
+            OpenApiResponse(
+                responseCode = "400",
+                description = "Validation error",
+                content = [
+                    Content(
+                        mediaType = MediaType.APPLICATION_JSON_VALUE,
+                        schema = Schema(implementation = PrincipleValidationErrorResponseSchema::class),
+                    ),
+                ],
+            ),
+            OpenApiResponse(
+                responseCode = "401",
+                description = "Unauthorized",
+                content = [
+                    Content(
+                        mediaType = MediaType.APPLICATION_JSON_VALUE,
+                        schema = Schema(implementation = PrincipleUnauthorizedErrorResponseSchema::class),
+                    ),
+                ],
+            ),
+            OpenApiResponse(
+                responseCode = "403",
+                description = "Forbidden",
+                content = [
+                    Content(
+                        mediaType = MediaType.APPLICATION_JSON_VALUE,
+                        schema = Schema(implementation = PrincipleForbiddenErrorResponseSchema::class),
+                    ),
+                ],
+            ),
+            OpenApiResponse(
+                responseCode = "404",
+                description = "Missing or cross-owner",
+                content = [
+                    Content(
+                        mediaType = MediaType.APPLICATION_JSON_VALUE,
+                        schema = Schema(implementation = PrincipleNotFoundErrorResponseSchema::class),
+                    ),
+                ],
+            ),
         ],
     )
     @GetMapping("/principles/{principleId}/versions")
@@ -263,7 +497,7 @@ class PrincipleController(
     private fun AppPrincipal.toActor(request: HttpServletRequest): PrincipleActor =
         PrincipleActor(
             userId = userId,
-            role = role.name,
+            role = role,
             requestId = RequestIds.currentOrCreate(request),
         )
 }

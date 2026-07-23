@@ -488,76 +488,92 @@
       "type": "object"
     }
   },
-  "$id": "contracts/schemas/principle.schema.json",
+  "$id": "contracts/schemas/principle-preset-list.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "properties": {
-    "createdAt": {
-      "format": "date-time",
-      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?\\+09:00$",
-      "type": "string"
-    },
-    "mode": {
-      "enum": [
-        "GUIDE",
-        "STRICT"
-      ],
-      "type": "string"
-    },
-    "presetId": {
-      "enum": [
-        "conservative",
-        "balanced",
-        "aggressive"
-      ],
-      "type": "string"
-    },
-    "principleId": {
-      "pattern": "^prc_[0-9a-f]{32}$",
-      "type": "string"
-    },
-    "rules": {
-      "items": {
-        "$ref": "#/$defs/PrincipleRule"
+    "disclaimer": {
+      "additionalProperties": false,
+      "properties": {
+        "en": {
+          "const": "These presets are educational demo defaults. They are not investment advice, an assessment of personal suitability, or a guarantee against loss."
+        },
+        "ko": {
+          "const": "이 프리셋은 교육·시연용 기본값이며 투자 권유, 개인별 적합성 판단 또는 손실 방지를 보장하지 않습니다."
+        }
       },
-      "maxItems": 8,
-      "minItems": 1,
-      "type": "array"
-    },
-    "status": {
-      "enum": [
-        "ACTIVE",
-        "ARCHIVED"
+      "required": [
+        "ko",
+        "en"
       ],
-      "type": "string"
+      "type": "object"
     },
-    "title": {
-      "maxLength": 120,
-      "minLength": 1,
-      "type": "string"
-    },
-    "updatedAt": {
-      "format": "date-time",
-      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?\\+09:00$",
-      "type": "string"
-    },
-    "version": {
-      "maximum": 2147483647,
-      "minimum": 1,
-      "type": "integer"
+    "items": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "defaultRules": {
+            "items": {
+              "$ref": "#/$defs/PrincipleRule"
+            },
+            "maxItems": 8,
+            "minItems": 8,
+            "type": "array"
+          },
+          "descriptionEn": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "descriptionKo": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "mode": {
+            "const": "GUIDE"
+          },
+          "nameEn": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "nameKo": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "order": {
+            "maximum": 3,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "presetId": {
+            "enum": [
+              "conservative",
+              "balanced",
+              "aggressive"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "order",
+          "presetId",
+          "nameKo",
+          "nameEn",
+          "descriptionKo",
+          "descriptionEn",
+          "mode",
+          "defaultRules"
+        ],
+        "type": "object"
+      },
+      "maxItems": 3,
+      "minItems": 3,
+      "type": "array"
     }
   },
   "required": [
-    "principleId",
-    "presetId",
-    "title",
-    "mode",
-    "status",
-    "version",
-    "rules",
-    "createdAt",
-    "updatedAt"
+    "disclaimer",
+    "items"
   ],
-  "title": "Principle current representation",
+  "title": "Principle preset list data",
   "type": "object"
 }

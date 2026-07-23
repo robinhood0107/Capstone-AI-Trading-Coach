@@ -12,6 +12,15 @@
       "ruleType": "POSITION_LIMIT",
       "severity": "BLOCK",
       "threshold": 0.2
+    },
+    {
+      "enabled": true,
+      "metric": "asset_weight",
+      "operator": "<=",
+      "ruleId": "max_position_per_asset",
+      "ruleType": "POSITION_LIMIT",
+      "severity": "BLOCK",
+      "threshold": 0.19
     }
   ],
   "status": "ACTIVE",

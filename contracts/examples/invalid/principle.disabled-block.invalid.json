@@ -5,7 +5,7 @@
   "principleId": "prc_0123456789abcdef0123456789abcdef",
   "rules": [
     {
-      "enabled": true,
+      "enabled": false,
       "metric": "asset_weight",
       "operator": "<=",
       "ruleId": "max_position_per_asset",

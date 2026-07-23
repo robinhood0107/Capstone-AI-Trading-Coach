@@ -1,0 +1,18 @@
+{
+  "data": null,
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "details": {
+      "violations": [
+        {
+          "field": "/query/cursor",
+          "reason": "INVALID_CURSOR"
+        }
+      ]
+    },
+    "message": "Request validation failed."
+  },
+  "requestId": "req_20260722_000004",
+  "success": false,
+  "warnings": []
+}

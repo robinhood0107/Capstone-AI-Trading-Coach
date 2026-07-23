@@ -17,7 +17,7 @@
 2. Python FastAPI/gRPC 서비스는 내부 서비스로 두고 프론트에 직접 노출하지 않는다.
 3. 주문 승인/경고/차단의 최종 권한은 Spring RiskEngine에 둔다.
 4. Python 서비스는 RAG, 모델 신호, 백테스트, 금융공학 계산, KIS Adapter를 담당한다.
-5. 가격·계좌·활성 원칙·Kill Switch·필수 risk snapshot처럼 주문 안전성에 필요한 입력 장애는 `HOLD`/`BLOCK`으로 fail-closed 한다. 활성 rule이 요구하지 않는 뉴스·공시·RAG 설명은 skip+WARN으로 degrade할 수 있지만 이전 값을 최신으로 가장하지 않는다.
+5. ready threshold의 `BLOCK` 위반은 `BLOCK`, hard 또는 `REQUIRED` evidence 장애는 `HOLD`로 fail-closed 한다. `OPTIONAL` 뉴스·공시·모델 evidence는 warning+abstention으로 degrade할 수 있지만 이전 값을 최신으로 가장하지 않는다.
 6. 모든 주문 관련 API는 audit log와 decision trace를 남긴다.
 
 ### 0.1 구현 상태 표기 규칙
@@ -469,9 +469,11 @@ S2.1은 공용 preset, 사용자별 원칙 생성·복구·수정·보관, immut
 `s2-1-principle-contract/v1`이다. standalone schema와 fixture는 catalog에서 기계 생성하며
 사람이 독립적으로 수정하지 않는다.
 
-> Implementation 상태(2026-07-23): 아래 6개 runtime endpoint와 실제 springdoc path,
-> owner-scoped SQL CAS, immutable snapshot/audit, HMAC cursor를 구현했다. `STRICT` 저장은
-> S2.1 범위이며 RiskEngine enforcement는 후속 세션 범위다.
+> Implementation 상태(2026-07-24): 아래 6개 runtime endpoint와 실제 springdoc path,
+> owner-scoped SQL CAS, immutable snapshot/audit, HMAC cursor를 구현했다. S2.2 계약
+> amendment로 `PrincipleRule.evidenceRequirement`를 명시하고 legacy immutable snapshot의
+> 결정적 read-time inference도 추가했다. `STRICT` 저장과 rule 필드 노출은 구현 완료지만
+> RiskEngine의 runtime enforcement와 Decision endpoint 가용성을 뜻하지 않는다.
 
 모든 endpoint는 Bearer 인증을 요구한다. actor/owner는 PR #37이 고정한 DB 검증 후
 `AppPrincipal.userId`(JWT `sub`)에서만 가져오며 request의 user ID를 신뢰하지 않는다.
@@ -495,23 +497,34 @@ offset(`+09:00`)을 사용한다.
 
 자연어 원칙을 직접 저장하지 않고 구조화된 rule만 받는다. 배열은 1~8개이고 `ruleId`는 중복될
 수 없으며 catalog의 canonical 순서로 저장·응답한다. object는
-`ruleId,ruleType,metric,operator,threshold,severity,enabled` 일곱 field만 허용한다.
+`ruleId,ruleType,metric,operator,threshold,severity,enabled,evidenceRequirement` 여덟 field만
+허용한다.
 
-| 순서 | ruleId | 고정 tuple `ruleType / metric / operator` | threshold | enabled severity |
-|---:|---|---|---|---|
-| 1 | `max_position_per_asset` | `POSITION_LIMIT / asset_weight / <=` | number, `0..1`, scale≤4 | `BLOCK` |
-| 2 | `max_gold_etf_etn_weight` | `POSITION_LIMIT / gold_etf_etn_weight / <=` | number, `0..1`, scale≤4 | `BLOCK` |
-| 3 | `max_single_order_amount` | `ORDER_SIZE / order_amount_krw / <=` | integer, `0..10000000000` | `BLOCK` |
-| 4 | `daily_loss_guard` | `LOSS_LIMIT / daily_loss_rate / >=` | number, `-1..0`, scale≤4 | `BLOCK` |
-| 5 | `mdd_guard` | `DRAWDOWN_LIMIT / mdd / >=` | number, `-1..0`, scale≤4 | `BLOCK` |
-| 6 | `max_daily_orders` | `TRADING_FREQUENCY / daily_order_count / <=` | integer, `0..1000` | `WARN` 또는 `BLOCK` |
-| 7 | `negative_news_guard` | `NEWS_GUARD / negative_news_score / <=` | number, `0..1`, scale≤4 | `WARN` 또는 `BLOCK` |
-| 8 | `disclosure_risk_guard` | `DISCLOSURE_GUARD / disclosure_risk_score / <=` | number, `0..1`, scale≤4 | `WARN` 또는 `BLOCK` |
+| 순서 | ruleId | 고정 tuple `ruleType / metric / operator` | threshold | enabled severity | `evidenceRequirement` |
+|---:|---|---|---|---|---|
+| 1 | `max_position_per_asset` | `POSITION_LIMIT / asset_weight / <=` | number, `0..1`, scale≤4 | `BLOCK` | `REQUIRED` |
+| 2 | `max_gold_etf_etn_weight` | `POSITION_LIMIT / gold_etf_etn_weight / <=` | number, `0..1`, scale≤4 | `BLOCK` | `REQUIRED` |
+| 3 | `max_single_order_amount` | `ORDER_SIZE / order_amount_krw / <=` | integer, `0..10000000000` | `BLOCK` | `REQUIRED` |
+| 4 | `daily_loss_guard` | `LOSS_LIMIT / daily_loss_rate / >=` | number, `-1..0`, scale≤4 | `BLOCK` | `REQUIRED` |
+| 5 | `mdd_guard` | `DRAWDOWN_LIMIT / mdd / >=` | number, `-1..0`, scale≤4 | `BLOCK` | `REQUIRED` |
+| 6 | `max_daily_orders` | `TRADING_FREQUENCY / daily_order_count / <=` | integer, `0..1000` | `WARN` 또는 `BLOCK` | `REQUIRED` |
+| 7 | `negative_news_guard` | `NEWS_GUARD / negative_news_score / <=` | number, `0..1`, scale≤4 | `WARN` 또는 `BLOCK` | `OPTIONAL` 또는 `REQUIRED` |
+| 8 | `disclosure_risk_guard` | `DISCLOSURE_GUARD / disclosure_risk_score / <=` | number, `0..1`, scale≤4 | `WARN` 또는 `BLOCK` | `OPTIONAL` 또는 `REQUIRED` |
 
 범위 양끝은 포함한다. `enabled=false`이면 severity는 반드시 `ALLOW`, `enabled=true`이면
 해당 행의 non-ALLOW 값이어야 한다. JSON string/null, NaN/Infinity, exponent로 scale 제한을
 우회하는 값, unknown field, tuple 조합 변경을 거부한다. ratio는 fraction, loss/MDD는 signed
 ratio, 금액·횟수는 JSON integer다.
+
+`evidenceRequirement`는 threshold 위반의 강도를 바꾸는 필드가 아니라 metric evidence가
+missing/stale/error/incomplete일 때의 처리 계약이다. hard rule 1~6은 항상 `REQUIRED`이고,
+뉴스·공시 rule 7~8만 `OPTIONAL|REQUIRED`를 선택할 수 있다. 새 create/update, preset, current와
+history 응답은 이 필드를 항상 명시한다.
+
+필드가 존재하지 않는 기존 immutable version row는 수정하지 않는다. read 경계에서만 exact
+catalog tuple을 확인한 뒤, 활성 rule은 `REQUIRED`, 비활성 rule은 catalog 기본값(hard rule은
+`REQUIRED`, 뉴스·공시는 `OPTIONAL`)으로 결정적으로 보충한다. 명시됐지만 잘못된 값이나 unknown
+tuple은 추론하지 않고 거부하며, 현재 mutable preset/default를 과거 version에 소급 적용하지 않는다.
 
 ### 4.2 원칙 preset 조회
 
@@ -525,6 +538,9 @@ query parameter는 받지 않는다. `data.disclaimer`와 `data.items`를 반환
 | 1 `conservative` | 보수형 / Conservative | `0.15, 0.20, 300000, -0.02, -0.10, 2, 0.50, 0.50` | 1~6 `BLOCK/true`, 7~8 `ALLOW/false` |
 | 2 `balanced` | 균형형 / Balanced | `0.20, 0.30, 500000, -0.03, -0.15, 3, 0.70, 0.70` | 1~5 `BLOCK/true`, 6 `WARN/true`, 7~8 `ALLOW/false` |
 | 3 `aggressive` | 공격형 / Aggressive | `0.30, 0.40, 1000000, -0.05, -0.25, 5, 0.85, 0.85` | 1~5 `BLOCK/true`, 6 `WARN/true`, 7~8 `ALLOW/false` |
+
+세 preset 모두 rule 1~6의 `evidenceRequirement`는 `REQUIRED`, 비활성 rule 7~8은
+`OPTIONAL`이다.
 
 Dashboard는 preset 선택 전에 locale에 맞는 disclaimer를 그대로 표시한다.
 응답 `data`의 완전한 3×8 예시는 `contracts/examples/principle-presets.valid.json`이며 공통
@@ -557,7 +573,8 @@ CR/LF/NUL과 Unicode control/format category를 거부한다. ID는 서버가
       "operator": "<=",
       "threshold": 0.2,
       "severity": "BLOCK",
-      "enabled": true
+      "enabled": true,
+      "evidenceRequirement": "REQUIRED"
     }
   ]
 }
@@ -584,7 +601,8 @@ CR/LF/NUL과 Unicode control/format category를 거부한다. ID는 서버가
         "operator": "<=",
         "threshold": 0.2,
         "severity": "BLOCK",
-        "enabled": true
+        "enabled": true,
+        "evidenceRequirement": "REQUIRED"
       }
     ],
     "createdAt": "2026-07-23T14:00:00+09:00",
@@ -638,7 +656,8 @@ rules 누락은 preset refill이 아니라 400이고 빈 배열도 400이다. `p
       "operator": "<=",
       "threshold": 0.15,
       "severity": "BLOCK",
-      "enabled": true
+      "enabled": true,
+      "evidenceRequirement": "REQUIRED"
     }
   ]
 }
@@ -721,136 +740,142 @@ deterministic formatting만 normalizer가 바꿀 수 있으며 paths/components/
 
 ---
 
-## 5. Decision API
+## 5. Decision API (S2.3 계획 — 현재 route 없음)
 
-주문 의도와 투자 원칙, 모델 신호, 리스크 지표를 결합해 허용/경고/차단을 판단한다.
+주문 의도와 immutable Principle version, portfolio context, 모델·리스크 evidence를 결합하는
+최종 HTTP API다. 다만 현재 호출 가능한 endpoint가 아니다.
 
-### 5.1 주문 의도 평가
+> 상태 경계(2026-07-24): S2.2는
+> `contracts/catalogs/s2-2-system-rule-catalog.v1.json`,
+> `contracts/schemas/risk_decision.schema.json`과 순수 evaluator/snapshot policy를 offline
+> fixture와 fake port로 검증하는 범위다. provider 호출, Decision controller, HTTP route,
+> decision persistence는 없다. owner + ACTIVE + current immutable version을 한 SQL로 읽는
+> 내부 `JdbcPrincipleSnapshotAdapter`만 S2.2의 유일한 production adapter 예외다. S2.3이
+> 이 read port와 나머지 source port의 owner-scoped runtime orchestration, persistence와
+> 이 장의 endpoint/OpenAPI를 연결하고, S3가 KIS Mock/INTERNAL_PAPER source adapter를 연결한다.
+> tracked `contracts/openapi/openapi.json`에는 현재 `/api/v1/decisions/**` path가 하나도 없다.
 
-`POST /api/v1/decisions/evaluate-order`
+### 5.1 S2.2 offline rule evaluation 계약
 
-요청:
+S2.2 v1은 S2.1의 public Principle rule 8개와 user가 수정할 수 없는 system-managed rule 6개를
+정확히 한 catalog에서 평가한다.
 
-```json
-{
-  "principleId": "prc_001",
-  "mode": "GUIDE",
-  "orderIntent": {
-    "symbol": "005930",
-    "side": "BUY",
-    "orderType": "MARKET",
-    "quantity": 10,
-    "estimatedPrice": 72000,
-    "estimatedAmount": 720000,
-    "timeframe": "1d",
-    "strategyId": "strategy_lstm_lgbm_001"
-  },
-  "contextOptions": {
-    "includeRagExplanation": true,
-    "includeBacktestSummary": true,
-    "includeFinancialEngineeringMetrics": true
-  }
-}
-```
+| 구분 | 수 | rule |
+|---|---:|---|
+| public threshold | 8 | Principle 4.1의 rule 1~8 |
+| system threshold | 4 | `high_volatility_guard`, `hmm_risk_off_guard`, `mean_reversion_warning`, `etf_etn_risk_check` |
+| system readiness | 1 | `data_freshness_guard` |
+| system v1 N/A | 1 | `ad_leading_room_guard` |
+| 합계 | 14 | threshold 12 + readiness 1 + not-applicable 1 |
 
-응답:
+readiness와 N/A rule은 threshold 비교값이 아니므로 `violations`에 들어갈 수 없다. N/A는
+`abstentions[].disposition=NOT_APPLICABLE`로만 남고 단독으로 WARN/HOLD/BLOCK을 만들지 않는다.
+threshold rule은 metric이 ready일 때만 비교한다.
 
-```json
-{
-  "success": true,
-  "data": {
-    "decisionId": "dec_001",
-    "decision": "WARN",
-    "mode": "GUIDE",
-    "canSubmitOrder": true,
-    "validUntil": "2026-06-23T10:10:00+09:00",
-    "violations": [
-      {
-        "ruleId": "high_volatility_guard",
-        "severity": "WARN",
-        "message": "최근 20일 연환산 변동성이 원칙 기준보다 높습니다.",
-        "metricValue": 0.42,
-        "threshold": 0.35
-      }
-    ],
-    "riskItems": [
-      {
-        "metric": "disclosure_risk_score",
-        "value": 0.6,
-        "severity": "WARN",
-        "source": "OPENDART",
-        "eventCodes": ["OPENDART:piicDecsn"],
-        "mappingVersion": "s1.2-v1",
-        "sourceRefs": ["obs_opendart_20260623_005930"]
-      }
-    ],
-    "riskSummary": {
-      "mdd": -0.081,
-      "var95": -0.024,
-      "cvar95": -0.037,
-      "hmmRegime": "HIGH_VOLATILITY",
-      "regimeProbability": 0.71
-    },
-    "signalSummary": {
-      "finalSignal": "BUY_WEAK",
-      "confidence": 0.58,
-      "lstmSignal": "BUY",
-      "lightgbmSignal": "HOLD",
-      "newsSentiment": 0.12
-    },
-    "explanation": {
-      "shortText": "매수는 가능하지만 변동성 기준이 높아 Guide 경고가 발생했습니다.",
-      "citationIds": ["cit_001", "cit_002"]
-    }
-  }
-}
-```
-
-`decision` 값:
-
-| 값 | 의미 |
+| 결과 필드 | 의미 |
 |---|---|
-| `ALLOW` | 주문 가능 |
-| `WARN` | Guide 경고. 사용자가 확인하면 주문 가능 |
-| `BLOCK` | Strict 차단. 주문 불가 |
-| `HOLD` | 데이터 지연 또는 내부 서비스 장애로 보류 |
+| `violations[]` | ready threshold rule이 실제 기준을 넘은 결과만 저장한다. `ruleId`, `severity`, `metricValue`, `threshold`는 모두 non-null이다 |
+| `issues[]` | hard 또는 `REQUIRED` evidence가 missing/stale/error/incomplete인 fail-closed 사유다. 하나 이상이면 BLOCK 우선조건이 없는 한 `HOLD`다 |
+| `warnings[]` | optional evidence를 사용하지 못했거나 모델이 abstain한 degraded 안내다 |
+| `abstentions[]` | 어떤 optional component/rule 비교를 수행하지 않았는지와 `ABSTAIN|NOT_APPLICABLE` disposition을 기계 판독 가능하게 남긴다 |
+| `riskItems[]` | 실제 사용한 부가 위험 지표의 값, mapping version, sanitized source reference를 남기는 근거 배열이며 위 네 disposition을 대신하지 않는다 |
 
-`riskItems`는 RiskEngine이 소비한 부가 위험 지표의 근거를 결과 계약에 드러내는 범용 배열이다. `violations`가 원칙 위반 여부라면, `riskItems`는 그 판단에 들어간 외부 원천 지표의 출처와 재현 정보를 남긴다. OpenDART 공시 위험은 다음과 같이 표현한다.
+hard/public safety rule의 evidence는 `REQUIRED`다. 뉴스·공시처럼
+`evidenceRequirement=OPTIONAL`인 rule의 evidence가 unavailable이면 같은 원인의
+`warnings`와 `abstentions(ABSTAIN)`을 함께 남겨 `WARN`으로 수렴하며, 그 누락만으로
+HOLD/BLOCK을 만들 수 없다. 같은 rule이 `REQUIRED`로 저장된 경우에는 `issues`와 `HOLD`로
+수렴한다. 결과 우선순위는 `BLOCK > HOLD > WARN > ALLOW`이고, BLOCK은 최소 한
+`severity=BLOCK` violation, HOLD는 최소 한 issue를 요구한다. `ALLOW|WARN`만
+`canSubmitOrder=true`다.
 
-| 필드 | 의미 |
+`riskItems`의 OpenDART 공시 위험은 `metric=disclosure_risk_score`, structured
+`eventCodes`, `mappingVersion`, opaque `sourceRefs`로 표현한다. `report_nm` 문자열을 event
+identity로 사용하지 않는다. unavailable evidence를 `riskItems.value=null`만으로 표현해
+`issues|warnings|abstentions`를 우회해서는 안 된다.
+
+### 5.2 S2.3 주문 의도 평가 경계 (계획)
+
+계획 endpoint는 `POST /api/v1/decisions/evaluate-order`다. S2.3 request는 최소
+`principleId`, explicit `portfolioSource`, `orderIntent`를 받는다. `mode`, user/owner ID,
+provider 계좌번호는 받지 않는다. mode는 한 번의 owner-scoped ACTIVE Principle 조회에서 고정한
+immutable version의 값이 권위이며 request가 덮어쓸 수 없다.
+
+같은 조회는 `principleVersionId`, `version`, mode, canonical rules를 한 snapshot으로 pin한다.
+형식이 유효한 principle이 missing, cross-owner 또는 inactive이면 존재 여부를 숨기고 모두 같은
+`404 NOT_FOUND`를 반환한다. 성공한 평가 결과는 `principleVersionId`와 `principleVersion`을
+반드시 함께 반환한다.
+
+S2.2의 내부 `JdbcPrincipleSnapshotAdapter`는 이 owner + ACTIVE + current immutable version
+조회를 한 SQL로 구현하지만 controller/bean/runtime route를 열지 않는다. Brokerage, risk,
+disclosure, signal production adapter는 S2.2에 없으며, S2.3/S3의 별도 승인 전에는 test fake
+외의 source로 대체하거나 자동 fallback하지 않는다.
+
+`portfolioSource`는 `KIS_MOCK|INTERNAL_PAPER` 중 정확히 하나를 명시한다. 서버가 JWT actor의
+owner scope 안에서 해당 context를 해석하며 raw account ID를 신뢰하지 않는다. 선택한 source만
+조회하고 source 혼합이나 KIS 실패 후 INTERNAL_PAPER 자동 fallback은 금지한다.
+
+| 상황 | 계획 HTTP/result |
 |---|---|
-| `metric` | 지표 식별자. 공시 위험은 `disclosure_risk_score`이며 Principle metric enum과 정렬한다 |
-| `value` | 지표 값(이벤트 유형별 `effective_window_days`(30/90/365) 내 기여 이벤트의 max score). 계산 불가 시 `null` |
-| `severity` | 이 지표가 판단에 준 수준(`ALLOW`/`WARN`/`BLOCK`) |
-| `source` | 원천 시스템. 공시 위험은 `OPENDART` |
-| `eventCodes` | 기여한 구조화 이벤트 코드. 예: `OPENDART:dfOcr`(부도발생). `report_nm` 문자열이 아니라 endpoint identity 기반이다 |
-| `mappingVersion` | 점수 mapping 버전. 같은 입력·같은 버전이면 같은 점수라는 재현성을 남긴다 |
-| `sourceRefs` | sanitized observation/citation의 opaque 참조 id. `explanation.citationIds`와 교차 추적 가능하다 |
+| selector enum/요청 형식 오류 | `400 VALIDATION_ERROR`, decision result 없음 |
+| missing/cross-owner/inactive Principle | 동일한 `404 NOT_FOUND`, 존재 정보 없음 |
+| 선택한 owner-scoped portfolio context가 missing/stale/partial/unavailable | 평가가 완료된 business result이므로 `200`, `success=true`, `decision=HOLD`, `issues[]` |
+| threshold 위반 또는 optional abstention을 포함해 평가가 정상 완료 | `200`, `success=true`, `ALLOW|WARN|HOLD|BLOCK` |
+| evaluator invariant, serialization 또는 runtime orchestration 자체 실패 | `503`, 실패 envelope. HOLD로 위장하지 않음 |
 
-`disclosure_risk_score` 산출 원천과 점수 등급, 의도적 제외 범위는 `docs/decision-platform/S1_2_OpenDART_공시위험점수_근거.md`를 따른다. 필드 계약은 `contracts/schemas/risk_decision.schema.json`이 단일 진실 소스다.
+따라서 HOLD는 HTTP 오류가 아니라 주문 제출을 잠시 막는 성공적인 business 판단이다.
 
-> PR A 계약 드리프 기록: 현재 schema의 `sourceRefs`는 기존 string array shape를
-> 그대로 유지하지만 description의 `raw observation` 표현은 낡은 문구다. 이 문구는
-> raw payload 저장·조회 권한을 만들지 않으며, runtime에서는 sanitized opaque ID로만
-> 해석한다. schema description 수정은 `contracts/changes/`를 포함한 별도
-> contract-change 승인 세션으로 이월하며 이 PR의 `contracts/` diff는 0으로 유지한다.
+### 5.3 public code와 internal cause 경계
 
-decision 유효시간 규칙:
+wire의 `issues|warnings|abstentions`에는 schema가 허용한 bounded public `code`, safe
+`message`, `source`와 필요한 `ruleId`만 둔다. exception class, stack trace, provider
+body/header/message/URL, credential, account identifier, 내부 storage key를 public code나
+message에 복사하지 않는다. internal cause는 allowlisted structured log에서 request/evaluation
+correlation과 함께 별도로 관측하며, public code와 같은 문자열로 취급하지 않는다. source adapter가
+정상적으로 unavailable evidence로 변환한 결과는 HOLD/WARN이 될 수 있지만 evaluator invariant나
+직렬화 실패는 5xx다.
 
-1. 모든 decision은 `validUntil`(기본 발급 후 10분)을 갖는다.
-2. 만료된 `decisionId`로 주문을 제출하면 `DECISION_EXPIRED`(409)를 반환하고 재평가를 요구한다.
-3. Kill Switch 활성화, 해당 사용자의 principle 새 버전 저장, data freshness BLOCK 진입 시 미사용 decision은 즉시 무효화된다.
-4. decision 1건은 주문 1건에만 사용할 수 있다.
+### 5.4 S2.2 V1 자원 상한과 hash
 
-이 규칙은 "과거 가격/신호로 받은 승인으로 현재 주문을 내는" 시간차 race를 차단한다.
+`BOUNDS-CONTRACT-S22-V1`은 다음 상한을 고정한다. S2.3 runtime 설정은 낮출 수 있지만 같은
+contract version에서 높일 수 없다.
 
-### 5.2 결정 상세 조회
+| 항목 | exact bound |
+|---|---:|
+| request / response | 262,144 bytes / 1,048,576 bytes |
+| portfolio positions | 1,000 |
+| `violations` / `issues` | 각 14 |
+| `warnings` / `abstentions` | 각 50 |
+| disclosure events / source references | 각 100 |
+| ID 또는 public code / safe message | 128 / 1,024 characters |
+| source reference | exact lowercase SHA-256, `^[0-9a-f]{64}$` |
+| logical call | port별 최대 1회 |
+| 동시 source 작업 | 최대 8 |
+| source별 / 전체 evaluation deadline | 500 ms / 900 ms |
 
-`GET /api/v1/decisions/{decisionId}`
+`HASH-CANONICALIZATION-S22-V1`은 UTF-8, whitespace 없는 JSON, object key 사전순,
+명시적 stable array sort, exponent 없는 plain decimal, negative zero의 `0` 정규화,
+trailing-zero 제거를 사용한다. 두 hash는 lowercase 64-hex SHA-256이며 목적이 다르다.
 
-### 5.3 결정 감사로그 조회
+| hash | 포함/제외 경계 |
+|---|---|
+| `semanticInputHash` | snapshot schema/actor/evaluation 시각, pinned Principle ID·version·mode·rules hash, system catalog/readiness version, full order intent(`orderType`, `limitPrice` 포함), portfolio source/revision/owner scope/position count, 모든 MetricKey의 typed state/value/unit/declared scale·`observedAt`·`freshUntil`·source/version/ref, requested/observed optional evidence, disclosure completeness/mapping version/source refs, provenance refs를 포함한다 |
+| semantic 제외 | `requestId`, `evaluationId`, canonical contract의 `retrievedAt`, `traceId`, stable-sort 대상의 원래 입력 순서다. readiness는 `evaluationAsOf`, `observedAt`, `freshUntil`만 사용하며 `freshUntil` 변화로 action이 바뀌면 semantic hash도 바뀐다 |
+| `snapshotArtifactHash` | 위 semantic 필드에 `evaluationId`, snapshot/metric retrieval identity를 더한 versioned full `MetricSnapshotArtifactV1` exact UTF-8 bytes를 그대로 SHA-256한다. 별도 축약 hash map이나 저장용 second representation을 만들지 않는다 |
 
-`GET /api/v1/decisions/{decisionId}/audit`
+### 5.5 S2.3 decision 수명주기와 조회 (계획)
+
+S2.3에서 persistence와 함께 아래 route를 별도 contract-change로 OpenAPI에 추가한다.
+
+| 계획 route | 의미 |
+|---|---|
+| `POST /api/v1/decisions/evaluate-order` | 평가와 decision 생성 |
+| `GET /api/v1/decisions/{decisionId}` | owner-scoped 결정 상세 |
+| `GET /api/v1/decisions/{decisionId}/audit` | 권한이 허용된 sanitized 감사 이력 |
+
+persisted decision은 기본 10분 `validUntil`, one-decision/one-order를 적용한다. 만료, Kill Switch,
+새 Principle version 또는 freshness invalidation 뒤에는 재평가가 필요하다. 이는 S2.3/S3의 미래
+runtime 계약이며 S2.2 offline evaluator 완료만으로 route, persistence 또는 주문 제출이
+가능해졌다는 뜻이 아니다.
 
 ---
 
@@ -1204,7 +1229,8 @@ Return Engine과 Decision Platform이 생성한 모델 신호를 Spring에서 �
 
 ### 8.3 Signal API 해석 규칙
 
-Signal API는 모델 결과를 노출하지만 주문 권한을 갖지 않는다. 프론트는 `finalSignal`을 참고 정보로 보여주고, 실제 주문 가능 여부는 Decision API와 RiskEngine 응답을 따라야 한다.
+Signal API는 모델 결과를 노출하지만 주문 권한을 갖지 않는다. 프론트는 `finalSignal`을 참고 정보로
+보여주고, 실제 주문 가능 여부는 향후 S2.3 Decision API와 RiskEngine 결과를 따라야 한다.
 
 | 규칙 | 설명 |
 |---|---|
@@ -1213,7 +1239,7 @@ Signal API는 모델 결과를 노출하지만 주문 권한을 갖지 않는다
 | `sourceWorkspace` | 규칙 baseline/LSTM은 `return-engine`, LightGBM은 `decision-platform`으로 기록한다 |
 | HMM 처리 | HMM은 가격 예측 모델이 아니라 시장국면/고변동 리스크 필터로 해석한다 |
 | 뉴스감성 제한 | 뉴스감성은 보조 feature이며 뉴스만으로 매수/매도를 결정하지 않는다 |
-| stale signal | `asOf`가 허용 지연시간을 넘으면 Decision API는 HOLD 또는 BLOCK을 반환한다 |
+| stale signal | optional model evidence이면 `warnings+abstentions`와 WARN, 명시적으로 required인 input이면 `issues`와 HOLD다. missing/stale 자체를 threshold BLOCK으로 표현하지 않는다 |
 | 상충 신호 | LSTM이 BUY여도 LightGBM이 HOLD이고 HMM이 고변동이면 Decision API는 WARN/HOLD를 반환할 수 있다 |
 | 모델 리포트 | `modelReportId`를 통해 데이터 기간, feature, 학습/검증 분리, 한계가 기록된 `model_report.md`를 참조한다 |
 
@@ -2389,8 +2415,11 @@ service SourceRegistryService {
 | Python gRPC 응답 없음 | `HOLD`, 주문 보류 |
 | 가격 데이터 stale | `DATA_STALE`, 주문 보류 |
 | 모델 신호 stale | `DATA_STALE`, 주문 보류 |
-| RiskEngine rule 평가 실패 | `RISK_BLOCKED`, 주문 차단 |
-| KIS Adapter 장애 | `BROKERAGE_UNAVAILABLE`, 주문 보류 |
+| ready threshold rule 위반 | rule severity가 `BLOCK`이면 `BLOCK`, `WARN`이면 `WARN` |
+| hard/`REQUIRED` evidence unavailable | `issues[]`에 public cause를 남기고 HTTP 200 business `HOLD` |
+| `OPTIONAL` evidence unavailable | `warnings[]` + `abstentions(ABSTAIN)[]`; 다른 사유가 없으면 HTTP 200 `WARN` |
+| evaluator invariant/직렬화/runtime orchestration 실패 | HOLD로 바꾸지 않고 실패 envelope와 5xx |
+| 선택한 KIS Mock context/adapter unavailable | `BROKERAGE_UNAVAILABLE` 또는 bounded public issue로 `HOLD`; INTERNAL_PAPER 자동 fallback 금지 |
 | KIS shared limiter/Redis 장애 또는 bounded wait 초과 | online outbound 0건, 시장데이터는 `DATA_STALE`/`PYTHON_SERVICE_UNAVAILABLE`, 주문은 `BROKERAGE_UNAVAILABLE`로 보류 |
 | KIS `EGW00201`/HTTP 429 | 자동 재시도 중단, `RATE_LIMITED`; INTERNAL_PAPER 자동 전환 금지 |
 | Live order gate 미충족 | `RISK_BLOCKED`, 주문 차단 |
@@ -2401,9 +2430,9 @@ service SourceRegistryService {
 
 | 입력 상태 | 처리 |
 |---|---|
-| 가격, 계좌/포지션, 활성 principle, Kill Switch, 활성 rule이 요구하는 risk snapshot이 missing/stale | `HOLD` 또는 `BLOCK`. 과거 값을 최신으로 가장하지 않음 |
-| 활성 rule이 요구하지 않는 뉴스감성·공시·RAG 설명이 missing/stale | stale 값을 최신으로 사용하지 않고 해당 enrichment를 skip한 뒤 warning, 누락 사유와 마지막 `asOf` 기록 |
-| 뉴스/공시가 활성 principle rule에 의해 필수로 승격됨 | missing/stale이면 `HOLD` |
+| 가격, 선택한 owner-scoped 계좌/포지션, ACTIVE Principle, Kill Switch, hard/`REQUIRED` risk input이 missing/stale/error/incomplete | `issues[]` + `HOLD`. 과거 값을 최신으로 가장하지 않음 |
+| `evidenceRequirement=OPTIONAL`인 뉴스감성·공시·모델 evidence가 missing/stale/error/incomplete | stale 값을 사용하지 않고 `warnings[]` + `abstentions(ABSTAIN)[]` |
+| 뉴스/공시 rule이 `REQUIRED`로 저장됨 | 같은 unavailable 상태를 `issues[]` + `HOLD`로 승격 |
 | RAG 답변 생성만 실패하고 deterministic decision 입력은 정상 | decision 값을 LLM으로 재작성하지 않고 explanation degraded 경고. 정책상 설명 확인이 제출 조건이면 `HOLD` |
 
 ### 14.1 S1.3~S8 API 보안 Gate
@@ -2417,7 +2446,9 @@ service SourceRegistryService {
 | S1.4 | 계산 request의 배열·기간·숫자 finite/상하한, deadline, 동시 실행과 output 크기를 제한한다. 계산 오류·NaN·timeout은 주문 허용값이 아니다 |
 | S1.5 | Data Quality Report API/산출물은 finite/missing/duplicate aggregate와 sanitized sample만 제공한다. provider raw/query/credential/token/account/PII를 report·로그·metric에 넣지 않고 상세 ignored artifact에는 retention을 적용한다 |
 | S1.6 | OpenDART outbound 전 PostgreSQL charged reservation이 성공해야 하며 DB 오류/budget/cap/020은 non-retry fail-closed다. charged reservation과 actual HTTP send를 분리 집계한다. DS004 ownership canonical은 corpCode·role/category·날짜·주식 수/비율만 허용하고 자연인 성명·주소·등록 식별자를 observation/canonical/log/metric/artifact/event에서 제거한다. Market Calendar RPC/REST는 aggregator 이후 별도 contract change 전까지 미가용이고 sourceRefs는 opaque sanitized ID/hash만 반환한다 |
-| S2 | 2.4 BOLA와 2.5 idempotency를 모든 Decision/Risk owner resource와 금융 부작용 write에 적용한다. actor/time은 principal/server clock에서 생성하고 ADMIN 고위험 행위는 현재 DB role/security version을 재검증해 override/replay를 audit한다. SQL 값은 bind parameter만 사용하고 table/column/sort identifier는 enum allowlist로 매핑하며 raw 문자열 연결을 금지한다. write DTO는 unknown/권한성 필드를 거부한다 |
+| S2.1 | Principle은 DB 재검증된 JWT `sub` owner scope, SQL CAS, immutable version/audit와 strict DTO를 사용한다. `evidenceRequirement`를 새 snapshot에 명시하고 legacy row는 exact catalog tuple 기반 read-time inference만 하며 과거 row를 rewrite하지 않는다 |
+| S2.2 offline | public 8 + system 6, threshold 12/readiness 1/N/A 1과 `BLOCK>HOLD>WARN>ALLOW`를 pure evaluator/fixture로 검증한다. production Decision route/persistence와 provider/source adapter는 열지 않으며 provider 호출은 0이다. public code와 internal cause를 분리하고 V1 bounds/hash를 fail-fast한다 |
+| S2.3 계획 | S2.2 내부 read adapter의 `principle_id + user_id + ACTIVE + current immutable version` 한 조회를 runtime에 연결해 ACTIVE Principle을 pin하고 missing/cross-owner/inactive를 동일 404로 숨긴다. Decision resource/persistence는 owner scope와 append-only audit를 적용하고 HOLD를 HTTP 200 business result로 반환한다. OpenAPI path 추가 전에는 호출 불가다 |
 | S3 | accountId는 opaque+owner-scoped다. order body의 price/quantity/position/risk-reduction 주장은 server snapshot으로 재검증한다. Live는 deploy immutable OFF, operator account allowlist, user consent, Kill Switch/reconciliation을 모두 요구하며 공개 API로 gate를 변경할 수 없다 |
 | S4 | RAG source/prompt는 untrusted data이며 내부 지시·URL·tool 호출을 실행하지 않는다. source ingest/register/reindex는 ADMIN 전용이며 scheme/origin/MIME/size/redirect/SSRF gate를 적용한다. answer/cache/feedback는 owner scope·TTL·output encoding을 적용한다. RAG 실행 주체는 provider token cache나 brokerage secret에 접근하지 못한다. model은 exact revision/weight hash/license를 기록하고 remote code/untrusted pickle을 금지한다 |
 | S5 | artifact endpoint는 trusted producer, owner, manifest hash/schema, 고정 root, file count/size/row cap을 먼저 검증한다. arbitrary path/symlink/archive와 untrusted pickle/joblib/code-loading model은 거부한다. 다운로드는 owner-scoped Bearer 인증과 고정 allowlisted 파일명·MIME만 허용하고 `Content-Disposition: attachment`, `nosniff`, `no-store`를 적용한다. Markdown/CSV/JSON을 임의 inline HTML로 실행하지 않는다 |
@@ -2436,7 +2467,8 @@ API/adapter/parser/storage 변경 커밋은 기능 단위로 분리한다. 테�
 | 테스트 | 확인 |
 |---|---|
 | Principle CRUD | 생성/수정/버전 충돌/비활성화 |
-| Decision Evaluate | ALLOW/WARN/BLOCK/HOLD 각각 재현 |
+| S2.2 offline evaluator | public 8+system 6 disposition, ALLOW/WARN/HOLD/BLOCK 우선순위, hard HOLD/optional ABSTAIN, deterministic hash를 fixture로 재현 |
+| S2.3 Decision API (구현 시 활성) | 400 selector 오류와 200 HOLD 분리, owner+ACTIVE version pin, missing/cross-owner/inactive 동일 404, route/OpenAPI/persistence 통합 |
 | RiskEngine | 손실한도, 포지션한도, 가격지연, Kill Switch |
 | RAG | 출처 있는 답변, 출처 부족 답변 제한, 피드백 저장 |
 | Signal | 규칙 baseline/LSTM/LightGBM/HMM 결합 신호와 producer/sourceWorkspace 조회 |
@@ -2508,9 +2540,9 @@ API/adapter/parser/storage 변경 커밋은 기능 단위로 분리한다. 테�
 
 | 계약 | 필요 필드 |
 |---|---|
-| `contracts/schemas/principle.schema.json` | ruleId, metric, operator, threshold, severity, enabled |
+| `contracts/schemas/principle.schema.json` | ruleId, metric, operator, threshold, severity, enabled, evidenceRequirement |
 | `contracts/schemas/order_intent.schema.json` | symbol, side, orderType, quantity, `estimatedPrice`, strategyId. `price`는 지원하지 않으며 새 payload·schema·adapter에서 사용 금지 |
-| `contracts/schemas/risk_decision.schema.json` | decision, violations, riskItems, riskSummary, signalSummary, explanation |
+| `contracts/schemas/risk_decision.schema.json` | decision, principleVersionId/version, portfolioSource, semantic/snapshot hash, violations, issues, warnings, abstentions, riskItems |
 | `contracts/schemas/signal.schema.json` | producer, sourceWorkspace, asOf, timeframe, confidence, predictedReturn, featureSummary, lstm, ruleBaseline, lightgbm, newsSentiment, hmmRegime |
 | `contracts/schemas/backtest_result.schema.json` | scenario, cagr, mdd, sharpe, sortino, var95, cvar95, turnover, violations |
 | `contracts/schemas/artifact_manifest.schema.json` | runId, producerWorkspace, schemaVersion, createdAt, universeId, period, timeframe, files, status |

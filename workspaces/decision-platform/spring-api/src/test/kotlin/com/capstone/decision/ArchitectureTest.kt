@@ -37,10 +37,32 @@ class ArchitectureTest {
         val applicationDoesNotDependOnInfrastructure: ArchRule =
             noClasses()
                 .that()
-                .resideInAPackage("..application.principle..")
+                .resideInAPackage("..application..")
                 .should()
                 .dependOnClassesThat()
                 .resideInAPackage("..infrastructure..")
+                .allowEmptyShould(true)
+
+        @ArchTest
+        @JvmField
+        val riskDomainDoesNotDependOnSpring: ArchRule =
+            noClasses()
+                .that()
+                .resideInAPackage("..domain.risk..")
+                .should()
+                .dependOnClassesThat()
+                .resideInAnyPackage("org.springframework..")
+                .allowEmptyShould(true)
+
+        @ArchTest
+        @JvmField
+        val riskApplicationDoesNotDependOnSpring: ArchRule =
+            noClasses()
+                .that()
+                .resideInAPackage("..application.risk..")
+                .should()
+                .dependOnClassesThat()
+                .resideInAnyPackage("org.springframework..")
                 .allowEmptyShould(true)
     }
 }

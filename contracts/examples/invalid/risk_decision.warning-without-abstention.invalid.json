@@ -1,0 +1,26 @@
+{
+  "abstentions": [],
+  "canSubmitOrder": true,
+  "catalogVersion": 1,
+  "decision": "WARN",
+  "evaluationId": "evl_0123456789abcdef",
+  "issues": [],
+  "mode": "GUIDE",
+  "portfolioSource": "INTERNAL_PAPER",
+  "principleVersion": 3,
+  "principleVersionId": "pvr_0123456789abcdef0123456789abcdef",
+  "readinessPolicyVersion": "s2-2-readiness-v1",
+  "riskItems": [],
+  "schemaVersion": "s2-2-risk-decision/v1",
+  "semanticInputHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "snapshotArtifactHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "violations": [],
+  "warnings": [
+    {
+      "code": "OPTIONAL_EVIDENCE_MISSING",
+      "message": "Optional evidence was not used for this evaluation.",
+      "ruleId": "disclosure_risk_guard",
+      "source": "DISCLOSURE"
+    }
+  ]
+}

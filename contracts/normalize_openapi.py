@@ -84,6 +84,21 @@ def _assert_no_premature_principle_paths(document: dict[str, Any], *, source: st
         )
 
 
+def _assert_no_deferred_decision_paths(
+    document: dict[str, Any], *, source: str
+) -> None:
+    paths = document["paths"]
+    deferred = [
+        path
+        for path in paths
+        if path == "/api/v1/decisions" or path.startswith("/api/v1/decisions/")
+    ]
+    if deferred:
+        raise OpenApiNormalizationError(
+            f"{source}: S2.2 must not advertise deferred Decision runtime paths."
+        )
+
+
 def _validate_openapi_schema(document: dict[str, Any], *, source: str) -> None:
     try:
         validate(document)
@@ -106,6 +121,7 @@ def normalize_generated_openapi(
     _assert_contract_roots(generated, digest, source="generated OpenAPI")
     if amendment:
         _assert_no_premature_principle_paths(generated, source="generated OpenAPI")
+    _assert_no_deferred_decision_paths(generated, source="generated OpenAPI")
     _validate_openapi_schema(generated, source="generated OpenAPI")
 
     normalized = copy.deepcopy(generated)
@@ -131,6 +147,7 @@ def check_normalized_openapi(
     _assert_contract_roots(expected, digest, source="tracked OpenAPI")
     if amendment:
         _assert_no_premature_principle_paths(expected, source="tracked OpenAPI")
+    _assert_no_deferred_decision_paths(expected, source="tracked OpenAPI")
     _validate_openapi_schema(expected, source="tracked OpenAPI")
     if expected_bytes != canonical_json_bytes(expected):
         raise OpenApiNormalizationError("Tracked OpenAPI bytes are not canonical JSON.")

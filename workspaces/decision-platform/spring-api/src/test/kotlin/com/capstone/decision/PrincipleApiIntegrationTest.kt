@@ -1,5 +1,6 @@
 package com.capstone.decision
 
+import com.capstone.decision.infrastructure.principle.PrincipleRuleJsonCodec
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertThrows
@@ -42,6 +43,7 @@ class PrincipleApiIntegrationTest(
     @Autowired private val webApplicationContext: WebApplicationContext,
     @Autowired private val objectMapper: ObjectMapper,
     @Autowired private val jdbcTemplate: JdbcTemplate,
+    @Autowired private val principleRuleJsonCodec: PrincipleRuleJsonCodec,
 ) : SpringApiIntegrationTestBase() {
     private lateinit var mockMvc: MockMvc
 
@@ -100,9 +102,14 @@ class PrincipleApiIntegrationTest(
                 String::class.java,
             )
         assertEquals(
-            databaseRules.map(objectMapper::readTree),
+            databaseRules.map { raw ->
+                objectMapper.readTree(
+                    principleRuleJsonCodec.encode(principleRuleJsonCodec.decode(requireNotNull(raw))),
+                )
+            },
             responseItems.values().map { it.path("defaultRules") },
         )
+        assertTrue(responseItems.values().all { preset -> preset.path("defaultRules").values().all { it.has("evidenceRequirement") } })
 
         assertValidation(
             mockMvc
@@ -535,18 +542,20 @@ class PrincipleApiIntegrationTest(
                   "ruleType":"POSITION_LIMIT",
                   "metric":"order_amount_krw",
                   "operator":"<=",
-                  "threshold":0.12345,
-                  "severity":"ALLOW",
-                  "enabled":true
+                      "threshold":0.12345,
+                      "severity":"ALLOW",
+                      "enabled":true,
+                      "evidenceRequirement":"REQUIRED"
                 },
                 {
                   "ruleId":"max_position_per_asset",
                   "ruleType":"POSITION_LIMIT",
                   "metric":"asset_weight",
                   "operator":"<=",
-                  "threshold":0.2,
-                  "severity":"BLOCK",
-                  "enabled":true
+                      "threshold":0.2,
+                      "severity":"BLOCK",
+                      "enabled":true,
+                      "evidenceRequirement":"REQUIRED"
                 }
               ]
             }
@@ -652,9 +661,10 @@ class PrincipleApiIntegrationTest(
                             "ruleType":"POSITION_LIMIT",
                             "metric":"asset_weight",
                             "operator":"<=",
-                            "threshold":1.5e-1,
-                            "severity":"BLOCK",
-                            "enabled":true
+                                "threshold":1.5e-1,
+                                "severity":"BLOCK",
+                                "enabled":true,
+                                "evidenceRequirement":"REQUIRED"
                           }]
                         }
                         """.trimIndent()
@@ -688,9 +698,10 @@ class PrincipleApiIntegrationTest(
                 "ruleType":"POSITION_LIMIT",
                 "metric":"asset_weight",
                 "operator":"<=",
-                "threshold":1.0000000000000000000000000000000000000001,
-                "severity":"BLOCK",
-                "enabled":true
+                    "threshold":1.0000000000000000000000000000000000000001,
+                    "severity":"BLOCK",
+                    "enabled":true,
+                    "evidenceRequirement":"REQUIRED"
               }]
             }
             """.trimIndent()
@@ -724,9 +735,10 @@ class PrincipleApiIntegrationTest(
                 "ruleType":"POSITION_LIMIT",
                 "metric":"asset_weight",
                 "operator":"<=",
-                "threshold":0.1234000000000000000000000000000000000001,
-                "severity":"BLOCK",
-                "enabled":true
+                    "threshold":0.1234000000000000000000000000000000000001,
+                    "severity":"BLOCK",
+                    "enabled":true,
+                    "evidenceRequirement":"REQUIRED"
               }]
             }
             """.trimIndent()
@@ -911,6 +923,7 @@ class PrincipleApiIntegrationTest(
         threshold: String,
         severity: String,
         enabled: Boolean,
+        evidenceRequirement: String = "REQUIRED",
     ): Map<String, Any> =
         mapOf(
             "ruleId" to ruleId,
@@ -920,6 +933,7 @@ class PrincipleApiIntegrationTest(
             "threshold" to threshold.toBigDecimal(),
             "severity" to severity,
             "enabled" to enabled,
+            "evidenceRequirement" to evidenceRequirement,
         )
 
     companion object {

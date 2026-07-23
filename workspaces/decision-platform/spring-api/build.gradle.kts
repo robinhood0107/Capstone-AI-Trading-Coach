@@ -100,6 +100,38 @@ tasks.named<ProcessResources>("processResources") {
     from(layout.projectDirectory.file("../../../contracts/catalogs/s2-1-principle-contract.v1.json")) {
         into("contracts")
     }
+    // S2.2 runtime은 별도 복제본 없이 승인된 14-rule catalog bytes를 classpath에서 읽는다.
+    from(layout.projectDirectory.file("../../../contracts/catalogs/s2-2-system-rule-catalog.v1.json")) {
+        into("contracts")
+    }
+}
+
+tasks.named<ProcessResources>("processTestResources") {
+    // JVM canonicalizer가 Python generator의 exact hash vector를 직접 소비해 양쪽 byte parity를 검증한다.
+    from(layout.projectDirectory.file("../../../contracts/examples/s2-2-hash-vector.valid.json")) {
+        into("contracts")
+    }
+}
+
+val verifyS22CatalogResource by tasks.registering {
+    group = "verification"
+    description = "S2.2 canonical catalog와 classpath resource의 byte equality를 검증한다."
+    dependsOn(tasks.named("processResources"))
+
+    doLast {
+        val source =
+            layout.projectDirectory
+                .file("../../../contracts/catalogs/s2-2-system-rule-catalog.v1.json")
+                .asFile
+        val copied =
+            layout.buildDirectory
+                .file("resources/main/contracts/s2-2-system-rule-catalog.v1.json")
+                .get()
+                .asFile
+        check(copied.isFile && source.readBytes().contentEquals(copied.readBytes())) {
+            "S2.2 catalog classpath resource must be an exact canonical byte copy."
+        }
+    }
 }
 
 openApi {
@@ -210,4 +242,5 @@ val verifySecurityDependencyVersions by tasks.registering {
 
 tasks.named("check") {
     dependsOn(verifySecurityDependencyVersions)
+    dependsOn(verifyS22CatalogResource)
 }

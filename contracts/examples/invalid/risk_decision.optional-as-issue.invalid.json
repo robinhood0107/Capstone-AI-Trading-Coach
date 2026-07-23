@@ -1,0 +1,25 @@
+{
+  "abstentions": [],
+  "canSubmitOrder": false,
+  "catalogVersion": 1,
+  "decision": "HOLD",
+  "evaluationId": "evl_0123456789abcdef",
+  "issues": [
+    {
+      "code": "MODEL_ABSTAINED",
+      "message": "A required evaluation input is unavailable.",
+      "source": "PORTFOLIO"
+    }
+  ],
+  "mode": "GUIDE",
+  "portfolioSource": "INTERNAL_PAPER",
+  "principleVersion": 3,
+  "principleVersionId": "pvr_0123456789abcdef0123456789abcdef",
+  "readinessPolicyVersion": "s2-2-readiness-v1",
+  "riskItems": [],
+  "schemaVersion": "s2-2-risk-decision/v1",
+  "semanticInputHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "snapshotArtifactHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "violations": [],
+  "warnings": []
+}

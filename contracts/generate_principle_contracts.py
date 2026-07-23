@@ -34,6 +34,56 @@ SCHEMA_FILE_NAMES: Final[dict[str, str]] = {
     "PrincipleHistoryData": "principle-history-response.schema.json",
     "ErrorEnvelope": "principle-error.schema.json",
 }
+OUTPUTS: Final[frozenset[str]] = frozenset(
+    {
+        "contracts/schemas/s2-1-principle-catalog.schema.json",
+        "contracts/schemas/principle-rule.schema.json",
+        "contracts/schemas/principle.schema.json",
+        "contracts/schemas/principle-preset-list.schema.json",
+        "contracts/schemas/principle-create-request.schema.json",
+        "contracts/schemas/principle-update-request.schema.json",
+        "contracts/schemas/principle-list-response.schema.json",
+        "contracts/schemas/principle-history-response.schema.json",
+        "contracts/schemas/principle-error.schema.json",
+        "contracts/examples/principle.valid.json",
+        "contracts/examples/principle-presets.valid.json",
+        "contracts/examples/principle-create.valid.json",
+        "contracts/examples/principle-create-custom-rules.valid.json",
+        "contracts/examples/principle-update.valid.json",
+        "contracts/examples/principle-update-no-op.valid.json",
+        "contracts/examples/principle-list.valid.json",
+        "contracts/examples/principle-list-next-page.valid.json",
+        "contracts/examples/principle-list-empty.valid.json",
+        "contracts/examples/principle-history.valid.json",
+        "contracts/examples/principle-history-next-page.valid.json",
+        "contracts/examples/principle-history-empty.valid.json",
+        "contracts/examples/principle-error-validation.valid.json",
+        "contracts/examples/principle-error-cursor.valid.json",
+        "contracts/examples/principle-error-unauthorized.valid.json",
+        "contracts/examples/principle-error-forbidden.valid.json",
+        "contracts/examples/principle-error-not-found.valid.json",
+        "contracts/examples/principle-error-conflict.valid.json",
+        "contracts/examples/principle-error-version-exhausted.valid.json",
+        "contracts/examples/principle-error-payload-too-large.valid.json",
+        "contracts/examples/invalid/principle.invalid.json",
+        "contracts/examples/invalid/principle.duplicate-rule.invalid.json",
+        "contracts/examples/invalid/principle.invalid-tuple.invalid.json",
+        "contracts/examples/invalid/principle.threshold-range.invalid.json",
+        "contracts/examples/invalid/principle.threshold-scale.invalid.json",
+        "contracts/examples/invalid/principle.threshold-null.invalid.json",
+        "contracts/examples/invalid/principle.threshold-string.invalid.json",
+        "contracts/examples/invalid/principle.unknown-property.invalid.json",
+        "contracts/examples/invalid/principle.enabled-allow.invalid.json",
+        "contracts/examples/invalid/principle.disabled-block.invalid.json",
+        "contracts/examples/invalid/principle.too-many-rules.invalid.json",
+        "contracts/examples/invalid/principle.evidence-missing.invalid.json",
+        "contracts/examples/invalid/principle.evidence-optional-hard.invalid.json",
+        "contracts/examples/invalid/principle-update.empty-rules.invalid.json",
+        "contracts/examples/invalid/principle-update.invalid-status.invalid.json",
+        "contracts/examples/invalid/principle-update.missing-field.invalid.json",
+        "contracts/examples/invalid/principle-create.missing-title.invalid.json",
+    }
+)
 
 EXPECTED_TOP_LEVEL_KEYS: Final[set[str]] = {
     "$schema",
@@ -42,6 +92,7 @@ EXPECTED_TOP_LEVEL_KEYS: Final[set[str]] = {
     "disclaimer",
     "limits",
     "enums",
+    "legacyEvidenceInference",
     "ruleDefinitions",
     "presets",
     "schemas",
@@ -68,6 +119,7 @@ EXPECTED_LIMITS: Final[dict[str, int]] = {
     "maxVersion": 2_147_483_647,
 }
 EXPECTED_ENUMS: Final[dict[str, list[str]]] = {
+    "evidenceRequirements": ["OPTIONAL", "REQUIRED"],
     "modes": ["GUIDE", "STRICT"],
     "statuses": ["ACTIVE", "ARCHIVED"],
     "ownerSorts": ["UPDATED_AT_DESC", "UPDATED_AT_ASC"],
@@ -87,6 +139,13 @@ EXPECTED_ENUMS: Final[dict[str, list[str]]] = {
         "INVALID_CURSOR",
     ],
 }
+EXPECTED_LEGACY_EVIDENCE_INFERENCE: Final[dict[str, Any]] = {
+    "disabledMissingField": "RULE_DEFAULT",
+    "enabledMissingField": "REQUIRED",
+    "policyVersion": "s2-1-legacy-evidence-inference/v1",
+    "rewriteHistoricalRows": False,
+    "unknownTuple": "REJECT",
+}
 
 EXPECTED_RULE_DEFINITIONS: Final[list[dict[str, Any]]] = [
     {
@@ -105,6 +164,8 @@ EXPECTED_RULE_DEFINITIONS: Final[list[dict[str, Any]]] = [
         },
         "enabledSeverities": ["BLOCK"],
         "disabledSeverity": "ALLOW",
+        "evidenceRequirements": ["REQUIRED"],
+        "defaultEvidenceRequirement": "REQUIRED",
     },
     {
         "order": 2,
@@ -122,6 +183,8 @@ EXPECTED_RULE_DEFINITIONS: Final[list[dict[str, Any]]] = [
         },
         "enabledSeverities": ["BLOCK"],
         "disabledSeverity": "ALLOW",
+        "evidenceRequirements": ["REQUIRED"],
+        "defaultEvidenceRequirement": "REQUIRED",
     },
     {
         "order": 3,
@@ -139,6 +202,8 @@ EXPECTED_RULE_DEFINITIONS: Final[list[dict[str, Any]]] = [
         },
         "enabledSeverities": ["BLOCK"],
         "disabledSeverity": "ALLOW",
+        "evidenceRequirements": ["REQUIRED"],
+        "defaultEvidenceRequirement": "REQUIRED",
     },
     {
         "order": 4,
@@ -156,6 +221,8 @@ EXPECTED_RULE_DEFINITIONS: Final[list[dict[str, Any]]] = [
         },
         "enabledSeverities": ["BLOCK"],
         "disabledSeverity": "ALLOW",
+        "evidenceRequirements": ["REQUIRED"],
+        "defaultEvidenceRequirement": "REQUIRED",
     },
     {
         "order": 5,
@@ -173,6 +240,8 @@ EXPECTED_RULE_DEFINITIONS: Final[list[dict[str, Any]]] = [
         },
         "enabledSeverities": ["BLOCK"],
         "disabledSeverity": "ALLOW",
+        "evidenceRequirements": ["REQUIRED"],
+        "defaultEvidenceRequirement": "REQUIRED",
     },
     {
         "order": 6,
@@ -190,6 +259,8 @@ EXPECTED_RULE_DEFINITIONS: Final[list[dict[str, Any]]] = [
         },
         "enabledSeverities": ["WARN", "BLOCK"],
         "disabledSeverity": "ALLOW",
+        "evidenceRequirements": ["REQUIRED"],
+        "defaultEvidenceRequirement": "REQUIRED",
     },
     {
         "order": 7,
@@ -207,6 +278,8 @@ EXPECTED_RULE_DEFINITIONS: Final[list[dict[str, Any]]] = [
         },
         "enabledSeverities": ["WARN", "BLOCK"],
         "disabledSeverity": "ALLOW",
+        "evidenceRequirements": ["OPTIONAL", "REQUIRED"],
+        "defaultEvidenceRequirement": "OPTIONAL",
     },
     {
         "order": 8,
@@ -224,6 +297,8 @@ EXPECTED_RULE_DEFINITIONS: Final[list[dict[str, Any]]] = [
         },
         "enabledSeverities": ["WARN", "BLOCK"],
         "disabledSeverity": "ALLOW",
+        "evidenceRequirements": ["OPTIONAL", "REQUIRED"],
+        "defaultEvidenceRequirement": "OPTIONAL",
     },
 ]
 
@@ -248,6 +323,16 @@ EXPECTED_PRESET_METADATA: Final[list[dict[str, Any]]] = [
         ],
         "severities": ["BLOCK", "BLOCK", "BLOCK", "BLOCK", "BLOCK", "BLOCK", "ALLOW", "ALLOW"],
         "enabled": [True, True, True, True, True, True, False, False],
+        "evidenceRequirements": [
+            "REQUIRED",
+            "REQUIRED",
+            "REQUIRED",
+            "REQUIRED",
+            "REQUIRED",
+            "REQUIRED",
+            "OPTIONAL",
+            "OPTIONAL",
+        ],
     },
     {
         "order": 2,
@@ -269,6 +354,16 @@ EXPECTED_PRESET_METADATA: Final[list[dict[str, Any]]] = [
         ],
         "severities": ["BLOCK", "BLOCK", "BLOCK", "BLOCK", "BLOCK", "WARN", "ALLOW", "ALLOW"],
         "enabled": [True, True, True, True, True, True, False, False],
+        "evidenceRequirements": [
+            "REQUIRED",
+            "REQUIRED",
+            "REQUIRED",
+            "REQUIRED",
+            "REQUIRED",
+            "REQUIRED",
+            "OPTIONAL",
+            "OPTIONAL",
+        ],
     },
     {
         "order": 3,
@@ -290,6 +385,16 @@ EXPECTED_PRESET_METADATA: Final[list[dict[str, Any]]] = [
         ],
         "severities": ["BLOCK", "BLOCK", "BLOCK", "BLOCK", "BLOCK", "WARN", "ALLOW", "ALLOW"],
         "enabled": [True, True, True, True, True, True, False, False],
+        "evidenceRequirements": [
+            "REQUIRED",
+            "REQUIRED",
+            "REQUIRED",
+            "REQUIRED",
+            "REQUIRED",
+            "REQUIRED",
+            "OPTIONAL",
+            "OPTIONAL",
+        ],
     },
 ]
 
@@ -508,6 +613,8 @@ def _catalog_meta_schema() -> dict[str, Any]:
             "thresholdSchema",
             "enabledSeverities",
             "disabledSeverity",
+            "evidenceRequirements",
+            "defaultEvidenceRequirement",
         ],
         "properties": {
             "order": {"type": "integer", "minimum": 1, "maximum": 8},
@@ -524,17 +631,36 @@ def _catalog_meta_schema() -> dict[str, Any]:
                 "uniqueItems": True,
             },
             "disabledSeverity": {"const": "ALLOW"},
+            "evidenceRequirements": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 2,
+                "items": {"enum": EXPECTED_ENUMS["evidenceRequirements"]},
+                "uniqueItems": True,
+            },
+            "defaultEvidenceRequirement": {
+                "enum": EXPECTED_ENUMS["evidenceRequirements"],
+            },
         },
     }
     default_rule = {
         "type": "object",
         "additionalProperties": False,
-        "required": ["ruleId", "threshold", "severity", "enabled"],
+        "required": [
+            "ruleId",
+            "threshold",
+            "severity",
+            "enabled",
+            "evidenceRequirement",
+        ],
         "properties": {
             "ruleId": {"type": "string", "minLength": 1},
             "threshold": {"type": ["number", "integer"]},
             "severity": {"enum": ["ALLOW", "WARN", "BLOCK"]},
             "enabled": {"type": "boolean"},
+            "evidenceRequirement": {
+                "enum": EXPECTED_ENUMS["evidenceRequirements"],
+            },
         },
     }
     preset = {
@@ -647,6 +773,15 @@ def _catalog_meta_schema() -> dict[str, Any]:
                     key: {"const": value} for key, value in EXPECTED_ENUMS.items()
                 },
             },
+            "legacyEvidenceInference": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": sorted(EXPECTED_LEGACY_EVIDENCE_INFERENCE),
+                "properties": {
+                    key: {"const": value}
+                    for key, value in EXPECTED_LEGACY_EVIDENCE_INFERENCE.items()
+                },
+            },
             "ruleDefinitions": {
                 "type": "array",
                 "minItems": 8,
@@ -736,6 +871,7 @@ def _validate_default_rules(
             "threshold",
             "severity",
             "enabled",
+            "evidenceRequirement",
         }:
             raise ContractValidationError(f"{location}/{index}: invalid default rule shape.")
         if rule["ruleId"] != definition["ruleId"]:
@@ -753,6 +889,10 @@ def _validate_default_rules(
                 )
         else:
             raise ContractValidationError(f"{location}/{index}: enabled must be boolean.")
+        if rule["evidenceRequirement"] not in definition["evidenceRequirements"]:
+            raise ContractValidationError(
+                f"{location}/{index}: evidence requirement is invalid."
+            )
 
 
 def validate_catalog_semantics(catalog: Any) -> None:
@@ -762,6 +902,11 @@ def validate_catalog_semantics(catalog: Any) -> None:
     meta_error = _first_validation_error(Draft202012Validator(_catalog_meta_schema()), catalog)
     if meta_error is not None:
         raise ContractValidationError(f"Catalog meta-schema violation: {meta_error}")
+
+    if catalog["legacyEvidenceInference"] != EXPECTED_LEGACY_EVIDENCE_INFERENCE:
+        raise ContractValidationError(
+            "Legacy evidence inference does not match the approved v1 policy."
+        )
 
     definitions = catalog["ruleDefinitions"]
     if definitions != EXPECTED_RULE_DEFINITIONS:
@@ -795,6 +940,12 @@ def validate_catalog_semantics(catalog: Any) -> None:
             raise ContractValidationError(f"Preset {index} severities do not match v1.")
         if [rule["enabled"] for rule in preset["defaultRules"]] != expected["enabled"]:
             raise ContractValidationError(f"Preset {index} enabled flags do not match v1.")
+        if [
+            rule["evidenceRequirement"] for rule in preset["defaultRules"]
+        ] != expected["evidenceRequirements"]:
+            raise ContractValidationError(
+                f"Preset {index} evidence requirements do not match v1."
+            )
 
     if catalog["operations"] != EXPECTED_OPERATIONS:
         raise ContractValidationError("Operation routing data does not match v1.")
@@ -890,6 +1041,7 @@ def _full_rule(
         "threshold": default_rule["threshold"],
         "severity": default_rule["severity"],
         "enabled": default_rule["enabled"],
+        "evidenceRequirement": default_rule["evidenceRequirement"],
     }
 
 
@@ -983,6 +1135,10 @@ def _fixtures(catalog: Mapping[str, Any]) -> dict[str, Any]:
     disabled_block["rules"][0]["enabled"] = False
     too_many = copy.deepcopy(current)
     too_many["rules"] = [copy.deepcopy(one_rule) for _ in range(9)]
+    missing_evidence = copy.deepcopy(current)
+    missing_evidence["rules"][0].pop("evidenceRequirement")
+    optional_hard_evidence = copy.deepcopy(current)
+    optional_hard_evidence["rules"][0]["evidenceRequirement"] = "OPTIONAL"
 
     update_request = {
         "expectedVersion": 1,
@@ -1101,6 +1257,10 @@ def _fixtures(catalog: Mapping[str, Any]) -> dict[str, Any]:
         "contracts/examples/invalid/principle.enabled-allow.invalid.json": enabled_allow,
         "contracts/examples/invalid/principle.disabled-block.invalid.json": disabled_block,
         "contracts/examples/invalid/principle.too-many-rules.invalid.json": too_many,
+        "contracts/examples/invalid/principle.evidence-missing.invalid.json": missing_evidence,
+        "contracts/examples/invalid/principle.evidence-optional-hard.invalid.json": (
+            optional_hard_evidence
+        ),
         "contracts/examples/invalid/principle-update.empty-rules.invalid.json": {
             **copy.deepcopy(update_request),
             "rules": [],
@@ -1135,6 +1295,12 @@ def generate_outputs(catalog: Mapping[str, Any]) -> dict[str, bytes]:
             for path, value in _fixtures(catalog).items()
         }
     )
+    if frozenset(outputs) != OUTPUTS:
+        missing = sorted(OUTPUTS - frozenset(outputs))
+        unexpected = sorted(frozenset(outputs) - OUTPUTS)
+        raise ContractValidationError(
+            f"S2.1 OUTPUTS manifest mismatch: missing={missing}, unexpected={unexpected}"
+        )
     return dict(sorted(outputs.items()))
 
 
@@ -1174,6 +1340,10 @@ def validate_principle_payload_semantics(
             _validate_threshold(
                 rule.get("threshold"), definition, location=f"{location}/{index}/threshold"
             )
+            if rule.get("evidenceRequirement") not in definition["evidenceRequirements"]:
+                raise ContractValidationError(
+                    f"{location}/{index}/evidenceRequirement: invalid evidence requirement."
+                )
             if rule.get("enabled") is True:
                 if rule.get("severity") not in definition["enabledSeverities"]:
                     raise ContractValidationError(

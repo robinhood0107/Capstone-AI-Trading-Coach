@@ -1,5 +1,6 @@
 package com.capstone.decision
 
+import com.capstone.decision.infrastructure.principle.PrincipleRuleJsonCodec
 import org.flywaydb.core.Flyway
 import org.flywaydb.core.api.FlywayException
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -28,6 +29,7 @@ import java.sql.SQLException
 class PrincipleContractMigrationIntegrationTest(
     @Autowired private val jdbcTemplate: JdbcTemplate,
     @Autowired private val objectMapper: ObjectMapper,
+    @Autowired private val principleRuleJsonCodec: PrincipleRuleJsonCodec,
 ) : SpringApiIntegrationTestBase() {
     @Test
     fun `clean V1 through V8 migration installs the exact Principle schema and seed`() {
@@ -98,27 +100,32 @@ class PrincipleContractMigrationIntegrationTest(
                 Files.readAllBytes(repositoryRoot.resolve("contracts/examples/principle-presets.valid.json")),
             )
         val databasePresets =
-            objectMapper.readTree(
-                jdbcTemplate.queryForObject(
+            jdbcTemplate
+                .query(
                     """
-                    select jsonb_agg(
-                      jsonb_build_object(
-                        'order', display_order,
-                        'presetId', preset_id,
-                        'nameKo', name_ko,
-                        'nameEn', name_en,
-                        'descriptionKo', description_ko,
-                        'descriptionEn', description_en,
-                        'mode', mode,
-                        'defaultRules', rules_json
-                      )
-                      order by display_order
-                    )::text
+                    select display_order, preset_id, name_ko, name_en, description_ko, description_en,
+                           mode, rules_json::text
                     from principle_presets
+                    order by display_order
                     """.trimIndent(),
-                    String::class.java,
-                ),
-            )
+                ) { result, _ ->
+                    linkedMapOf(
+                        "order" to result.getInt("display_order"),
+                        "presetId" to result.getString("preset_id"),
+                        "nameKo" to result.getString("name_ko"),
+                        "nameEn" to result.getString("name_en"),
+                        "descriptionKo" to result.getString("description_ko"),
+                        "descriptionEn" to result.getString("description_en"),
+                        "mode" to result.getString("mode"),
+                        "defaultRules" to
+                            objectMapper.readTree(
+                                principleRuleJsonCodec.encode(
+                                    principleRuleJsonCodec.decode(result.getString("rules_json")),
+                                ),
+                            ),
+                    )
+                }.let(objectMapper::writeValueAsBytes)
+                .let(objectMapper::readTree)
 
         val presetItems = fixture.path("items")
         assertEquals(presetItems, databasePresets)
@@ -127,6 +134,16 @@ class PrincipleContractMigrationIntegrationTest(
             presetItems.values().map { it.path("presetId").stringValue() },
         )
         assertTrue(presetItems.values().all { it.path("defaultRules").size() == 8 })
+        assertEquals(
+            3,
+            jdbcTemplate.queryForObject(
+                """
+                select count(*) from principle_presets
+                where not jsonb_path_exists(rules_json, '${'$'}[*].evidenceRequirement')
+                """.trimIndent(),
+                Int::class.java,
+            ),
+        )
     }
 
     @Test

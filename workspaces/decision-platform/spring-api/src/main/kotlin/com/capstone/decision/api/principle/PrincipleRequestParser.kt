@@ -8,6 +8,7 @@ import com.capstone.decision.application.principle.OwnerPageQuery
 import com.capstone.decision.application.principle.OwnerSort
 import com.capstone.decision.application.principle.PrincipleContract
 import com.capstone.decision.application.principle.UpdatePrincipleCommand
+import com.capstone.decision.domain.principle.EvidenceRequirement
 import com.capstone.decision.domain.principle.PrincipleId
 import com.capstone.decision.domain.principle.PrincipleMode
 import com.capstone.decision.domain.principle.PrinciplePresetId
@@ -299,6 +300,12 @@ class PrincipleRequestParser(
         val thresholdNode = requiredNode(node, "threshold", "$base/threshold", violations)
         val severity = requiredString(node, "severity", "$base/severity", violations)
         val enabled = requiredBoolean(node, "enabled", "$base/enabled", violations)
+        val evidenceRequirement =
+            parseEvidenceRequirement(
+                requiredNode(node, "evidenceRequirement", "$base/evidenceRequirement", violations),
+                "$base/evidenceRequirement",
+                violations,
+            )
 
         if (ruleId != null && !seenRuleIds.add(ruleId)) {
             violations.add(PrincipleViolation("$base/ruleId", "DUPLICATE"))
@@ -329,6 +336,13 @@ class PrincipleRequestParser(
                 violations.add(PrincipleViolation("$base/severity", "INVALID_COMBINATION"))
             }
         }
+        if (
+            definition != null &&
+            evidenceRequirement != null &&
+            evidenceRequirement !in definition.evidenceRequirements
+        ) {
+            violations.add(PrincipleViolation("$base/evidenceRequirement", "INVALID_COMBINATION"))
+        }
 
         if (
             definition == null ||
@@ -337,7 +351,8 @@ class PrincipleRequestParser(
             operator == null ||
             threshold == null ||
             severity == null ||
-            enabled == null
+            enabled == null ||
+            evidenceRequirement == null
         ) {
             return null
         }
@@ -349,7 +364,27 @@ class PrincipleRequestParser(
             threshold = threshold,
             severity = severity,
             enabled = enabled,
+            evidenceRequirement = evidenceRequirement,
         )
+    }
+
+    private fun parseEvidenceRequirement(
+        node: JsonNode?,
+        path: String,
+        violations: MutableList<PrincipleViolation>,
+    ): EvidenceRequirement? {
+        if (node == null) {
+            return null
+        }
+        if (!node.isString) {
+            violations.add(PrincipleViolation(path, "INVALID_FORMAT"))
+            return null
+        }
+        return EvidenceRequirement.entries.firstOrNull { it.name == node.stringValue() }
+            ?: run {
+                violations.add(PrincipleViolation(path, "INVALID_ENUM"))
+                null
+            }
     }
 
     private fun validateTuple(
@@ -571,7 +606,16 @@ class PrincipleRequestParser(
         private val CREATE_FIELDS = setOf("presetId", "title", "mode", "rules")
         private val UPDATE_FIELDS = setOf("expectedVersion", "title", "mode", "status", "rules")
         private val RULE_FIELDS =
-            setOf("ruleId", "ruleType", "metric", "operator", "threshold", "severity", "enabled")
+            setOf(
+                "ruleId",
+                "ruleType",
+                "metric",
+                "operator",
+                "threshold",
+                "severity",
+                "enabled",
+                "evidenceRequirement",
+            )
         private val OWNER_QUERY_FIELDS = setOf("cursor", "size", "sort")
         private val HISTORY_QUERY_FIELDS = setOf("cursor", "size", "sort")
         private const val MAX_JSON_NESTING_DEPTH = 16

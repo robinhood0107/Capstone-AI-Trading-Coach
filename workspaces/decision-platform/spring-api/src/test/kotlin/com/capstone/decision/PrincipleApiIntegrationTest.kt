@@ -557,6 +557,67 @@ class PrincipleApiIntegrationTest(
     }
 
     @Test
+    fun `threshold validation preserves exact decimal range and normalized scale`() {
+        val token = login("demo-user", userPassword())
+        val overRange =
+            """
+            {
+              "presetId":"balanced",
+              "title":"정밀 범위 초과",
+              "rules":[{
+                "ruleId":"max_position_per_asset",
+                "ruleType":"POSITION_LIMIT",
+                "metric":"asset_weight",
+                "operator":"<=",
+                "threshold":1.0000000000000000000000000000000000000001,
+                "severity":"BLOCK",
+                "enabled":true
+              }]
+            }
+            """.trimIndent()
+        assertValidation(
+            mockMvc
+                .post("/api/v1/principles") {
+                    bearer(token)
+                    contentType = MediaType.APPLICATION_JSON
+                    header("X-Request-Id", "req-principle-exact-range")
+                    content = overRange
+                }.andReturn(),
+            "/rules/0/threshold",
+            "OUT_OF_RANGE",
+        )
+
+        val overScale =
+            """
+            {
+              "presetId":"balanced",
+              "title":"정밀 scale 초과",
+              "rules":[{
+                "ruleId":"max_position_per_asset",
+                "ruleType":"POSITION_LIMIT",
+                "metric":"asset_weight",
+                "operator":"<=",
+                "threshold":0.1234000000000000000000000000000000000001,
+                "severity":"BLOCK",
+                "enabled":true
+              }]
+            }
+            """.trimIndent()
+        assertValidation(
+            mockMvc
+                .post("/api/v1/principles") {
+                    bearer(token)
+                    contentType = MediaType.APPLICATION_JSON
+                    header("X-Request-Id", "req-principle-exact-scale")
+                    content = overScale
+                }.andReturn(),
+            "/rules/0/threshold",
+            "INVALID_SCALE",
+        )
+        assertEquals(0, count("select count(*) from principles"))
+    }
+
+    @Test
     fun `terminal version and oversized request return exact bounded errors`() {
         val token = login("demo-user", userPassword())
         val created = create(token, "req-terminal-create", createBody("balanced", "terminal base"))

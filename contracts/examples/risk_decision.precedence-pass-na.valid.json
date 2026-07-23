@@ -1,0 +1,27 @@
+{
+  "abstentions": [
+    {
+      "code": "NOT_APPLICABLE_V1",
+      "component": "AD_LEADING_ROOM",
+      "disposition": "NOT_APPLICABLE",
+      "message": "The component did not produce threshold evidence.",
+      "ruleId": "ad_leading_room_guard"
+    }
+  ],
+  "canSubmitOrder": true,
+  "catalogVersion": 1,
+  "decision": "ALLOW",
+  "evaluationId": "evl_0123456789abcdef",
+  "issues": [],
+  "mode": "GUIDE",
+  "portfolioSource": "INTERNAL_PAPER",
+  "principleVersion": 3,
+  "principleVersionId": "pvr_0123456789abcdef0123456789abcdef",
+  "readinessPolicyVersion": "s2-2-readiness-v1",
+  "riskItems": [],
+  "schemaVersion": "s2-2-risk-decision/v1",
+  "semanticInputHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "snapshotArtifactHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "violations": [],
+  "warnings": []
+}

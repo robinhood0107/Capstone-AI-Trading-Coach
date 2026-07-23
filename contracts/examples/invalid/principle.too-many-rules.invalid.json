@@ -6,6 +6,7 @@
   "rules": [
     {
       "enabled": true,
+      "evidenceRequirement": "REQUIRED",
       "metric": "asset_weight",
       "operator": "<=",
       "ruleId": "max_position_per_asset",
@@ -15,6 +16,7 @@
     },
     {
       "enabled": true,
+      "evidenceRequirement": "REQUIRED",
       "metric": "asset_weight",
       "operator": "<=",
       "ruleId": "max_position_per_asset",
@@ -24,6 +26,7 @@
     },
     {
       "enabled": true,
+      "evidenceRequirement": "REQUIRED",
       "metric": "asset_weight",
       "operator": "<=",
       "ruleId": "max_position_per_asset",
@@ -33,6 +36,7 @@
     },
     {
       "enabled": true,
+      "evidenceRequirement": "REQUIRED",
       "metric": "asset_weight",
       "operator": "<=",
       "ruleId": "max_position_per_asset",
@@ -42,6 +46,7 @@
     },
     {
       "enabled": true,
+      "evidenceRequirement": "REQUIRED",
       "metric": "asset_weight",
       "operator": "<=",
       "ruleId": "max_position_per_asset",
@@ -51,6 +56,7 @@
     },
     {
       "enabled": true,
+      "evidenceRequirement": "REQUIRED",
       "metric": "asset_weight",
       "operator": "<=",
       "ruleId": "max_position_per_asset",
@@ -60,6 +66,7 @@
     },
     {
       "enabled": true,
+      "evidenceRequirement": "REQUIRED",
       "metric": "asset_weight",
       "operator": "<=",
       "ruleId": "max_position_per_asset",
@@ -69,6 +76,7 @@
     },
     {
       "enabled": true,
+      "evidenceRequirement": "REQUIRED",
       "metric": "asset_weight",
       "operator": "<=",
       "ruleId": "max_position_per_asset",
@@ -78,6 +86,7 @@
     },
     {
       "enabled": true,
+      "evidenceRequirement": "REQUIRED",
       "metric": "asset_weight",
       "operator": "<=",
       "ruleId": "max_position_per_asset",

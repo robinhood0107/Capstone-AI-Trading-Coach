@@ -2,6 +2,7 @@ package com.capstone.decision.infrastructure.principle
 
 import com.capstone.decision.application.principle.CatalogRuleDefinition
 import com.capstone.decision.application.principle.PrincipleContract
+import com.capstone.decision.domain.principle.EvidenceRequirement
 import org.springframework.core.io.ClassPathResource
 import org.springframework.stereotype.Component
 import tools.jackson.databind.ObjectMapper
@@ -26,6 +27,7 @@ class PrincipleCatalog(
     final override val cursorMaxChars: Int
     final override val cursorTtlSeconds: Long
     final override val maxVersion: Int
+    final override val evidenceRequirements: Set<EvidenceRequirement>
     final override val ruleDefinitions: Map<String, CatalogRuleDefinition>
 
     init {
@@ -53,6 +55,13 @@ class PrincipleCatalog(
                 .path("statuses")
                 .values()
                 .map { it.stringValue() }
+                .toSet()
+        evidenceRequirements =
+            root
+                .path("enums")
+                .path("evidenceRequirements")
+                .values()
+                .map { EvidenceRequirement.valueOf(it.stringValue()) }
                 .toSet()
         disclaimerKo = root.path("disclaimer").path("ko").stringValue()
         disclaimerEn = root.path("disclaimer").path("en").stringValue()
@@ -92,9 +101,26 @@ class PrincipleCatalog(
                                 .map { it.stringValue() }
                                 .toSet(),
                         disabledSeverity = definition.path("disabledSeverity").stringValue(),
+                        evidenceRequirements =
+                            definition
+                                .path("evidenceRequirements")
+                                .values()
+                                .map { EvidenceRequirement.valueOf(it.stringValue()) }
+                                .toSet(),
+                        defaultEvidenceRequirement =
+                            EvidenceRequirement.valueOf(
+                                definition.path("defaultEvidenceRequirement").stringValue(),
+                            ),
                     )
                 }.associateBy(CatalogRuleDefinition::ruleId)
         check(ruleDefinitions.size == rulesMaxItems)
+        check(evidenceRequirements == EvidenceRequirement.entries.toSet())
+        check(
+            ruleDefinitions.values.all { definition ->
+                definition.evidenceRequirements.isNotEmpty() &&
+                    definition.defaultEvidenceRequirement in definition.evidenceRequirements
+            },
+        )
     }
 
     companion object {

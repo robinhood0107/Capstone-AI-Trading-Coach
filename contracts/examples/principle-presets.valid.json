@@ -8,6 +8,7 @@
       "defaultRules": [
         {
           "enabled": true,
+          "evidenceRequirement": "REQUIRED",
           "metric": "asset_weight",
           "operator": "<=",
           "ruleId": "max_position_per_asset",
@@ -17,6 +18,7 @@
         },
         {
           "enabled": true,
+          "evidenceRequirement": "REQUIRED",
           "metric": "gold_etf_etn_weight",
           "operator": "<=",
           "ruleId": "max_gold_etf_etn_weight",
@@ -26,6 +28,7 @@
         },
         {
           "enabled": true,
+          "evidenceRequirement": "REQUIRED",
           "metric": "order_amount_krw",
           "operator": "<=",
           "ruleId": "max_single_order_amount",
@@ -35,6 +38,7 @@
         },
         {
           "enabled": true,
+          "evidenceRequirement": "REQUIRED",
           "metric": "daily_loss_rate",
           "operator": ">=",
           "ruleId": "daily_loss_guard",
@@ -44,6 +48,7 @@
         },
         {
           "enabled": true,
+          "evidenceRequirement": "REQUIRED",
           "metric": "mdd",
           "operator": ">=",
           "ruleId": "mdd_guard",
@@ -53,6 +58,7 @@
         },
         {
           "enabled": true,
+          "evidenceRequirement": "REQUIRED",
           "metric": "daily_order_count",
           "operator": "<=",
           "ruleId": "max_daily_orders",
@@ -62,6 +68,7 @@
         },
         {
           "enabled": false,
+          "evidenceRequirement": "OPTIONAL",
           "metric": "negative_news_score",
           "operator": "<=",
           "ruleId": "negative_news_guard",
@@ -71,6 +78,7 @@
         },
         {
           "enabled": false,
+          "evidenceRequirement": "OPTIONAL",
           "metric": "disclosure_risk_score",
           "operator": "<=",
           "ruleId": "disclosure_risk_guard",
@@ -91,6 +99,7 @@
       "defaultRules": [
         {
           "enabled": true,
+          "evidenceRequirement": "REQUIRED",
           "metric": "asset_weight",
           "operator": "<=",
           "ruleId": "max_position_per_asset",
@@ -100,6 +109,7 @@
         },
         {
           "enabled": true,
+          "evidenceRequirement": "REQUIRED",
           "metric": "gold_etf_etn_weight",
           "operator": "<=",
           "ruleId": "max_gold_etf_etn_weight",
@@ -109,6 +119,7 @@
         },
         {
           "enabled": true,
+          "evidenceRequirement": "REQUIRED",
           "metric": "order_amount_krw",
           "operator": "<=",
           "ruleId": "max_single_order_amount",
@@ -118,6 +129,7 @@
         },
         {
           "enabled": true,
+          "evidenceRequirement": "REQUIRED",
           "metric": "daily_loss_rate",
           "operator": ">=",
           "ruleId": "daily_loss_guard",
@@ -127,6 +139,7 @@
         },
         {
           "enabled": true,
+          "evidenceRequirement": "REQUIRED",
           "metric": "mdd",
           "operator": ">=",
           "ruleId": "mdd_guard",
@@ -136,6 +149,7 @@
         },
         {
           "enabled": true,
+          "evidenceRequirement": "REQUIRED",
           "metric": "daily_order_count",
           "operator": "<=",
           "ruleId": "max_daily_orders",
@@ -145,6 +159,7 @@
         },
         {
           "enabled": false,
+          "evidenceRequirement": "OPTIONAL",
           "metric": "negative_news_score",
           "operator": "<=",
           "ruleId": "negative_news_guard",
@@ -154,6 +169,7 @@
         },
         {
           "enabled": false,
+          "evidenceRequirement": "OPTIONAL",
           "metric": "disclosure_risk_score",
           "operator": "<=",
           "ruleId": "disclosure_risk_guard",
@@ -174,6 +190,7 @@
       "defaultRules": [
         {
           "enabled": true,
+          "evidenceRequirement": "REQUIRED",
           "metric": "asset_weight",
           "operator": "<=",
           "ruleId": "max_position_per_asset",
@@ -183,6 +200,7 @@
         },
         {
           "enabled": true,
+          "evidenceRequirement": "REQUIRED",
           "metric": "gold_etf_etn_weight",
           "operator": "<=",
           "ruleId": "max_gold_etf_etn_weight",
@@ -192,6 +210,7 @@
         },
         {
           "enabled": true,
+          "evidenceRequirement": "REQUIRED",
           "metric": "order_amount_krw",
           "operator": "<=",
           "ruleId": "max_single_order_amount",
@@ -201,6 +220,7 @@
         },
         {
           "enabled": true,
+          "evidenceRequirement": "REQUIRED",
           "metric": "daily_loss_rate",
           "operator": ">=",
           "ruleId": "daily_loss_guard",
@@ -210,6 +230,7 @@
         },
         {
           "enabled": true,
+          "evidenceRequirement": "REQUIRED",
           "metric": "mdd",
           "operator": ">=",
           "ruleId": "mdd_guard",
@@ -219,6 +240,7 @@
         },
         {
           "enabled": true,
+          "evidenceRequirement": "REQUIRED",
           "metric": "daily_order_count",
           "operator": "<=",
           "ruleId": "max_daily_orders",
@@ -228,6 +250,7 @@
         },
         {
           "enabled": false,
+          "evidenceRequirement": "OPTIONAL",
           "metric": "negative_news_score",
           "operator": "<=",
           "ruleId": "negative_news_guard",
@@ -237,6 +260,7 @@
         },
         {
           "enabled": false,
+          "evidenceRequirement": "OPTIONAL",
           "metric": "disclosure_risk_score",
           "operator": "<=",
           "ruleId": "disclosure_risk_guard",

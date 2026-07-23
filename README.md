@@ -12,17 +12,19 @@ Contracts CI, Kotlin Build, Python CI, S1.4X contract correctness를 수행한�
 
 ## 현재 구현 상태
 
-STAGE 2에서 S1.5 KIS Data Quality Report CLI까지 `main`에 병합됐고, S1.6 선행 amendment
-PR #34도 병합됐다. 후속 변경은 Market Calendar/Event Aggregator의 strict registry,
-offline adapters, Flyway V6 저장소, 최소권한 collector role, quota/retry/privacy/state 계약을
-fixture-first로 구현한다. provider online 활성화와 공개 REST/gRPC/Dashboard는 포함하지 않는다.
+STAGE 2에서 S1.6 Market Calendar/Event Aggregator offline 구현과 S2.1 Principle CRUD까지
+`main`에 병합됐다. 현재 S2.2 구현은 14개 rule의 deterministic offline evaluator,
+portfolio source 선택 정책, bounded snapshot/hash 계약, owner-scoped ACTIVE Principle read
+adapter를 포함한다. Decision controller·route·persistence와 외부 market/model/balance adapter,
+provider online 활성화는 포함하지 않으며 S2.3 이후 별도 gate로 이연한다.
 
 - PR #16 merge commit: `6f439155d9f5ec626fc185f29f2e0bd64ca54780`
 - PR #17 merge commit 및 S1.3/S1.3K 기능 완료 기준점: `814aab377251d76672566d39c3edb379d132248e`
 - PR #28 S1.4X Gate 1, PR #30 모델 위험 계약, PR #32 S1.5 Data Quality Report까지 병합
 - PR #34 S1.6 prerequisite merge commit: `5f537857a1b57c5b8321f70d8df292a851514b2d`
-- S1.6 후속 변경의 검증 범위: Python calendar/OpenDART 회귀, PostgreSQL 16 Testcontainers,
-  JDK 25 Flyway/권한, contracts, S1.4X correctness, repo hygiene와 secret/PII scan
+- PR #35 S1.6 offline 구현, PR #39 S2.1 계약 amendment, PR #41 S2.1 Principle CRUD까지 병합
+- S2.2 검증 범위: Kotlin evaluator/portfolio/hash/readiness 회귀, PostgreSQL 16 Testcontainers,
+  generated contract와 OpenAPI drift gate, repo hygiene와 secret scan
 
 완료된 A4/B1/KRX11 approval packet은 재사용하지 않는다. 이후 실제 provider 호출은 새 HEAD·명령·기준일·호출 예산·TTL에 결속한 별도 승인 뒤에만 실행한다.
 
@@ -42,8 +44,10 @@ fixture-first로 구현한다. provider online 활성화와 공개 REST/gRPC/Das
 
 현재 레포는 STAGE 2이며 Decision Platform의 S0 walking skeleton, S1.1 KIS 시장데이터,
 S1.2c OpenDART 분석 데이터, S1.3 ECOS/Naver snapshot, S1.3K KRX universe 자동화,
-S1.4 금융공학, S1.5 품질 보고와 S1.6 내부 offline calendar/event aggregator까지 구현되어
-있다. 상세 개인 참고 노트는 GitHub에 올리지 않고 로컬 `private-reference/` 폴더에서만 관리한다.
+S1.4 금융공학, S1.5 품질 보고, S1.6 내부 offline calendar/event aggregator, S2.1 Principle
+CRUD와 S2.2 offline rule evaluator까지 구현되어 있다. S2.2의 Decision API runtime과 provider
+adapter는 아직 제공하지 않는다. 상세 개인 참고 노트는 GitHub에 올리지 않고 로컬
+`private-reference/` 폴더에서만 관리한다.
 
 ```bash
 cp .env.example .env
@@ -80,4 +84,6 @@ S1.6 OpenDART online collector는 `.env.example`의 네 quota 값을 운영 evid
 - [최종 프로젝트 명세서](docs/최종_프로젝트_명세서.md)
 - [API 명세서](docs/API_명세서.md)
 - S1.6 내부 계약: 최종 명세 11.1.2와 API 명세 12A
+- [S2.2 offline 계약과 재현 명령](contracts/README.md#s22-rule-evaluation-offline-contract-v1)
+- [S2.2 계약 변경 기록](contracts/changes/20260724-s2-2-rule-evaluation-offline-contract.md)
 - S1.4X dependency amendment 재현: `workspaces/decision-platform/research/s1-4x-numeric-parity/README.md`

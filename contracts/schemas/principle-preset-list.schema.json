@@ -33,6 +33,9 @@
             }
           ],
           "properties": {
+            "evidenceRequirement": {
+              "const": "REQUIRED"
+            },
             "metric": {
               "const": "asset_weight"
             },
@@ -83,6 +86,9 @@
             }
           ],
           "properties": {
+            "evidenceRequirement": {
+              "const": "REQUIRED"
+            },
             "metric": {
               "const": "gold_etf_etn_weight"
             },
@@ -133,6 +139,9 @@
             }
           ],
           "properties": {
+            "evidenceRequirement": {
+              "const": "REQUIRED"
+            },
             "metric": {
               "const": "order_amount_krw"
             },
@@ -182,6 +191,9 @@
             }
           ],
           "properties": {
+            "evidenceRequirement": {
+              "const": "REQUIRED"
+            },
             "metric": {
               "const": "daily_loss_rate"
             },
@@ -232,6 +244,9 @@
             }
           ],
           "properties": {
+            "evidenceRequirement": {
+              "const": "REQUIRED"
+            },
             "metric": {
               "const": "mdd"
             },
@@ -285,6 +300,9 @@
             }
           ],
           "properties": {
+            "evidenceRequirement": {
+              "const": "REQUIRED"
+            },
             "metric": {
               "const": "daily_order_count"
             },
@@ -337,6 +355,12 @@
             }
           ],
           "properties": {
+            "evidenceRequirement": {
+              "enum": [
+                "OPTIONAL",
+                "REQUIRED"
+              ]
+            },
             "metric": {
               "const": "negative_news_score"
             },
@@ -390,6 +414,12 @@
             }
           ],
           "properties": {
+            "evidenceRequirement": {
+              "enum": [
+                "OPTIONAL",
+                "REQUIRED"
+              ]
+            },
             "metric": {
               "const": "disclosure_risk_score"
             },
@@ -414,6 +444,13 @@
       "properties": {
         "enabled": {
           "type": "boolean"
+        },
+        "evidenceRequirement": {
+          "enum": [
+            "OPTIONAL",
+            "REQUIRED"
+          ],
+          "type": "string"
         },
         "metric": {
           "enum": [
@@ -482,7 +519,8 @@
         "operator",
         "threshold",
         "severity",
-        "enabled"
+        "enabled",
+        "evidenceRequirement"
       ],
       "title": "Principle rule",
       "type": "object"

@@ -2,6 +2,7 @@ package com.capstone.decision.infrastructure.security
 
 import com.capstone.decision.api.common.ApiResponseWriter
 import com.capstone.decision.api.common.ErrorCode
+import com.capstone.decision.application.security.AppPrincipal
 import com.capstone.decision.infrastructure.idempotency.IdempotencyLookup
 import com.capstone.decision.infrastructure.idempotency.IdempotencyProperties
 import com.capstone.decision.infrastructure.idempotency.IdempotencyService
@@ -76,7 +77,7 @@ class JwtAuthenticationFilter(
                 UsernamePasswordAuthenticationToken(
                     principal,
                     null,
-                    listOf(SimpleGrantedAuthority("ROLE_${principal.role.name}")),
+                    listOf(SimpleGrantedAuthority("ROLE_${principal.role}")),
                 )
         } catch (exception: JwtException) {
             // 파싱/서명 오류는 세부 원인을 숨겨 token probing 단서를 줄인다.

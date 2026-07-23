@@ -20,5 +20,27 @@ class ArchitectureTest {
                 .dependOnClassesThat()
                 .resideInAPackage("..infrastructure..")
                 .allowEmptyShould(true)
+
+        @ArchTest
+        @JvmField
+        val apiDoesNotDependOnInfrastructure: ArchRule =
+            noClasses()
+                .that()
+                .resideInAPackage("..api.principle..")
+                .should()
+                .dependOnClassesThat()
+                .resideInAPackage("..infrastructure..")
+                .allowEmptyShould(true)
+
+        @ArchTest
+        @JvmField
+        val applicationDoesNotDependOnInfrastructure: ArchRule =
+            noClasses()
+                .that()
+                .resideInAPackage("..application.principle..")
+                .should()
+                .dependOnClassesThat()
+                .resideInAPackage("..infrastructure..")
+                .allowEmptyShould(true)
     }
 }

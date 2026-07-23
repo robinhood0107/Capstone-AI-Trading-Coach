@@ -20,6 +20,7 @@ import tools.jackson.databind.ObjectMapper
 import java.nio.file.Files
 import java.nio.file.Path
 import java.sql.DriverManager
+import java.sql.SQLException
 
 // V8은 기존 sparse Principle을 추정 변환하지 않으므로 clean/upgrade/fail-fast를 실제 PostgreSQL로 검증한다.
 @Testcontainers
@@ -256,6 +257,42 @@ class PrincipleContractMigrationIntegrationTest(
         }
     }
 
+    @Test
+    fun `decision app has exact Principle privileges and denied mutations fail at PostgreSQL`() {
+        assertTrue(tablePrivilege("principle_presets", "SELECT"))
+        assertFalse(tablePrivilege("principle_presets", "INSERT"))
+        assertFalse(tablePrivilege("principle_presets", "UPDATE"))
+        assertFalse(tablePrivilege("principle_presets", "DELETE"))
+
+        assertTrue(tablePrivilege("principles", "SELECT"))
+        assertTrue(tablePrivilege("principles", "INSERT"))
+        assertFalse(tablePrivilege("principles", "UPDATE"))
+        assertTrue(columnPrivilege("principles", "title", "UPDATE"))
+        assertTrue(columnPrivilege("principles", "current_version", "UPDATE"))
+        assertFalse(columnPrivilege("principles", "user_id", "UPDATE"))
+        assertFalse(tablePrivilege("principles", "DELETE"))
+
+        assertTrue(tablePrivilege("principle_versions", "SELECT"))
+        assertTrue(tablePrivilege("principle_versions", "INSERT"))
+        assertFalse(tablePrivilege("principle_versions", "UPDATE"))
+        assertFalse(tablePrivilege("principle_versions", "DELETE"))
+        assertTrue(tablePrivilege("audit_logs", "INSERT"))
+        assertFalse(tablePrivilege("audit_logs", "SELECT"))
+        assertFalse(tablePrivilege("audit_logs", "UPDATE"))
+        assertFalse(tablePrivilege("audit_logs", "DELETE"))
+        assertFalse(tablePrivilege("flyway_schema_history", "SELECT"))
+        assertFalse(schemaPrivilege("public", "CREATE"))
+
+        assertDecisionAppAllowed("select count(*) from principle_presets")
+        assertDecisionAppDenied("update principle_presets set is_active = false")
+        assertDecisionAppDenied("update principle_versions set title = 'forbidden'")
+        assertDecisionAppDenied("delete from principle_versions")
+        assertDecisionAppDenied("update audit_logs set action = 'forbidden'")
+        assertDecisionAppDenied("delete from audit_logs")
+        assertDecisionAppDenied("select count(*) from flyway_schema_history")
+        assertDecisionAppDenied("create table forbidden_principle_table(id integer)")
+    }
+
     private fun actorFingerprint(url: String): List<List<String>> =
         queryRows(
             url,
@@ -308,6 +345,63 @@ class PrincipleContractMigrationIntegrationTest(
             Boolean::class.java,
             indexName,
         ) ?: false
+
+    private fun tablePrivilege(
+        table: String,
+        privilege: String,
+    ): Boolean =
+        jdbcTemplate.queryForObject(
+            "select has_table_privilege('decision_app', ?, ?)",
+            Boolean::class.java,
+            table,
+            privilege,
+        ) ?: false
+
+    private fun columnPrivilege(
+        table: String,
+        column: String,
+        privilege: String,
+    ): Boolean =
+        jdbcTemplate.queryForObject(
+            "select has_column_privilege('decision_app', ?, ?, ?)",
+            Boolean::class.java,
+            table,
+            column,
+            privilege,
+        ) ?: false
+
+    private fun schemaPrivilege(
+        schema: String,
+        privilege: String,
+    ): Boolean =
+        jdbcTemplate.queryForObject(
+            "select has_schema_privilege('decision_app', ?, ?)",
+            Boolean::class.java,
+            schema,
+            privilege,
+        ) ?: false
+
+    private fun assertDecisionAppAllowed(sql: String) {
+        DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { connection ->
+            connection.createStatement().use { statement ->
+                statement.execute("set role decision_app")
+                statement.execute(sql)
+            }
+        }
+    }
+
+    private fun assertDecisionAppDenied(sql: String) {
+        val exception =
+            assertThrows<SQLException> {
+                DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { connection ->
+                    connection.createStatement().use { statement ->
+                        statement.execute("set role decision_app")
+                        statement.execute(sql)
+                    }
+                }
+            }
+        assertEquals("42501", exception.sqlState)
+    }
 
     private fun columnNames(
         url: String,

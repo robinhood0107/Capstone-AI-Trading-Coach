@@ -469,9 +469,9 @@ S2.1은 공용 preset, 사용자별 원칙 생성·복구·수정·보관, immut
 `s2-1-principle-contract/v1`이다. standalone schema와 fixture는 catalog에서 기계 생성하며
 사람이 독립적으로 수정하지 않는다.
 
-> Amendment 상태(2026-07-23): wire/schema/DB 계약과 생성·drift gate를 확정한 단계다.
-> runtime Principle controller/path는 후속 implementation PR에서 추가한다. 따라서 amendment
-> canonical OpenAPI에는 존재하지 않는 Principle path를 수동으로 넣지 않는다.
+> Implementation 상태(2026-07-23): 아래 6개 runtime endpoint와 실제 springdoc path,
+> owner-scoped SQL CAS, immutable snapshot/audit, HMAC cursor를 구현했다. `STRICT` 저장은
+> S2.1 범위이며 RiskEngine enforcement는 후속 세션 범위다.
 
 모든 endpoint는 Bearer 인증을 요구한다. actor/owner는 PR #37이 고정한 DB 검증 후
 `AppPrincipal.userId`(JWT `sub`)에서만 가져오며 request의 user ID를 신뢰하지 않는다.

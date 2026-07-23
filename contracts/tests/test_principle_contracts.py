@@ -301,6 +301,29 @@ class OpenApiGateCleanupTest(unittest.TestCase):
         self.assertIn("down", commands[1])
         self.assertIn("--volumes", commands[1])
 
+    def test_runtime_gate_selects_implementation_normalization(self) -> None:
+        commands: list[list[str]] = []
+        with tempfile.TemporaryDirectory(dir="/tmp") as directory:
+            generated = Path(directory) / "openapi.json"
+            generated.write_text("{}\n", encoding="utf-8")
+            with (
+                patch("contracts.run_openapi_gate.parse_openapi_environment", return_value={}),
+                patch("contracts.run_openapi_gate._require_fixture_port_available"),
+                patch("contracts.run_openapi_gate.GENERATED_OPENAPI", generated),
+                patch(
+                    "contracts.run_openapi_gate._run",
+                    side_effect=lambda command, **_: commands.append(list(command)),
+                ),
+            ):
+                run_gate(Path("/unused/openapi.env"), write=False)
+
+        normalizer = next(
+            command
+            for command in commands
+            if "contracts/normalize_openapi.py" in command
+        )
+        self.assertIn("--implementation", normalizer)
+
 
 class ContractsCiWorkflowTest(unittest.TestCase):
     def test_openapi_fixture_task_uses_checked_in_gradle_wrapper(self) -> None:
@@ -359,6 +382,20 @@ class OpenApiNormalizerTest(unittest.TestCase):
                 self.catalog_bytes,
                 amendment=True,
             )
+
+    def test_implementation_mode_accepts_real_principle_paths(self) -> None:
+        implementation = copy.deepcopy(self.generated)
+        implementation["paths"]["/api/v1/principles"] = {
+            "get": {"responses": {"200": {"description": "Owned Principle page"}}}
+        }
+
+        normalized = normalize_generated_openapi(
+            canonical_json_bytes(implementation),
+            self.catalog_bytes,
+            amendment=False,
+        )
+
+        self.assertIn(b"/api/v1/principles", normalized)
 
     def test_dialect_paths_components_and_digest_mutations_fail_closed(self) -> None:
         mutations = []

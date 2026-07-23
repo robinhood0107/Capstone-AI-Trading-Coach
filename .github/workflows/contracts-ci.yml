@@ -65,7 +65,7 @@ jobs:
           python-version: "3.12"
 
       - name: Create isolated OpenAPI fixture environment
-        run: ./gradlew -p workspaces/decision-platform/spring-api prepareOpenApiFixtureEnv
+        run: workspaces/decision-platform/spring-api/gradlew -p workspaces/decision-platform/spring-api prepareOpenApiFixtureEnv
 
       - name: Generate and compare Spring OpenAPI
         run: >-

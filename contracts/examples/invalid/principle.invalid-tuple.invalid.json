@@ -6,7 +6,7 @@
   "rules": [
     {
       "enabled": true,
-      "metric": "asset_weight",
+      "metric": "order_amount_krw",
       "operator": "<=",
       "ruleId": "max_position_per_asset",
       "ruleType": "POSITION_LIMIT",

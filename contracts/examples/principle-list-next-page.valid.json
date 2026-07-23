@@ -1,0 +1,15 @@
+{
+  "items": [
+    {
+      "createdAt": "2026-07-22T18:00:00+09:00",
+      "mode": "GUIDE",
+      "presetId": "balanced",
+      "principleId": "prc_0123456789abcdef0123456789abcdef",
+      "status": "ACTIVE",
+      "title": "단일 규칙 원칙",
+      "updatedAt": "2026-07-22T18:00:00+09:00",
+      "version": 1
+    }
+  ],
+  "nextCursor": "ZXhhbXBsZS1vcGFxdWUtY3Vyc29y.c2lnbmF0dXJl"
+}

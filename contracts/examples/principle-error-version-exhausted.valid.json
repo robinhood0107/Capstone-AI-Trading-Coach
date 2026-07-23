@@ -1,0 +1,13 @@
+{
+  "data": null,
+  "error": {
+    "code": "VERSION_EXHAUSTED",
+    "details": {
+      "currentVersion": 2147483647
+    },
+    "message": "Principle version limit was reached."
+  },
+  "requestId": "req_20260722_000009",
+  "success": false,
+  "warnings": []
+}

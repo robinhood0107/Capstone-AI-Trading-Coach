@@ -10,7 +10,7 @@
       "operator": "<=",
       "ruleId": "max_position_per_asset",
       "ruleType": "POSITION_LIMIT",
-      "severity": "BLOCK",
+      "severity": "ALLOW",
       "threshold": 0.2
     }
   ],

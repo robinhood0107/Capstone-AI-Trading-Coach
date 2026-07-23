@@ -488,32 +488,20 @@
       "type": "object"
     }
   },
-  "$id": "contracts/schemas/principle.schema.json",
+  "$id": "contracts/schemas/principle-update-request.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "properties": {
-    "createdAt": {
-      "format": "date-time",
-      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?\\+09:00$",
-      "type": "string"
+    "expectedVersion": {
+      "maximum": 2147483647,
+      "minimum": 1,
+      "type": "integer"
     },
     "mode": {
       "enum": [
         "GUIDE",
         "STRICT"
       ],
-      "type": "string"
-    },
-    "presetId": {
-      "enum": [
-        "conservative",
-        "balanced",
-        "aggressive"
-      ],
-      "type": "string"
-    },
-    "principleId": {
-      "pattern": "^prc_[0-9a-f]{32}$",
       "type": "string"
     },
     "rules": {
@@ -535,29 +523,15 @@
       "maxLength": 120,
       "minLength": 1,
       "type": "string"
-    },
-    "updatedAt": {
-      "format": "date-time",
-      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?\\+09:00$",
-      "type": "string"
-    },
-    "version": {
-      "maximum": 2147483647,
-      "minimum": 1,
-      "type": "integer"
     }
   },
   "required": [
-    "principleId",
-    "presetId",
+    "expectedVersion",
     "title",
     "mode",
     "status",
-    "version",
-    "rules",
-    "createdAt",
-    "updatedAt"
+    "rules"
   ],
-  "title": "Principle current representation",
+  "title": "Principle full replacement request",
   "type": "object"
 }

@@ -1,0 +1,92 @@
+{
+  "$id": "contracts/schemas/principle-list-response.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "items": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?\\+09:00$",
+            "type": "string"
+          },
+          "mode": {
+            "enum": [
+              "GUIDE",
+              "STRICT"
+            ],
+            "type": "string"
+          },
+          "presetId": {
+            "enum": [
+              "conservative",
+              "balanced",
+              "aggressive"
+            ],
+            "type": "string"
+          },
+          "principleId": {
+            "pattern": "^prc_[0-9a-f]{32}$",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ACTIVE",
+              "ARCHIVED"
+            ],
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 120,
+            "minLength": 1,
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?\\+09:00$",
+            "type": "string"
+          },
+          "version": {
+            "maximum": 2147483647,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "principleId",
+          "presetId",
+          "title",
+          "mode",
+          "status",
+          "version",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "maxItems": 200,
+      "type": "array"
+    },
+    "nextCursor": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "maxLength": 2048,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "required": [
+    "items",
+    "nextCursor"
+  ],
+  "title": "Owner-scoped Principle page data",
+  "type": "object"
+}

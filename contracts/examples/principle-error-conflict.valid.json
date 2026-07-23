@@ -1,0 +1,14 @@
+{
+  "data": null,
+  "error": {
+    "code": "CONFLICT",
+    "details": {
+      "currentVersion": 2,
+      "expectedVersion": 1
+    },
+    "message": "Resource conflict."
+  },
+  "requestId": "req_20260722_000008",
+  "success": false,
+  "warnings": []
+}

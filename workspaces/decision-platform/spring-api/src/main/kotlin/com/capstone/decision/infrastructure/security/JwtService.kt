@@ -1,5 +1,6 @@
 package com.capstone.decision.infrastructure.security
 
+import com.capstone.decision.application.security.AppPrincipal
 import io.jsonwebtoken.JwtException
 import io.jsonwebtoken.Jwts
 import io.jsonwebtoken.security.Keys
@@ -91,7 +92,7 @@ class JwtService(
         return AppPrincipal(
             userId = storedUser.userId,
             username = storedUser.username,
-            role = storedUser.role,
+            role = storedUser.role.name,
             securityVersion = storedUser.securityVersion,
         )
     }

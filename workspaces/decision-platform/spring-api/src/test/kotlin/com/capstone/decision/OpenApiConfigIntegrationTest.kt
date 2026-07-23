@@ -1,7 +1,6 @@
 package com.capstone.decision
 
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -88,7 +87,7 @@ class OpenApiConfigIntegrationTest(
     }
 
     @Test
-    fun `openapi exposes the locked dialect and catalog digest without premature Principle paths`() {
+    fun `openapi exposes the locked dialect catalog digest and real Principle paths`() {
         val body =
             mockMvc
                 .get("/v3/api-docs")
@@ -123,9 +122,113 @@ class OpenApiConfigIntegrationTest(
                 .propertyNames()
                 .asSequence()
                 .toList()
-        assertFalse(
-            paths.any { it == "/api/v1/principle-presets" || it.startsWith("/api/v1/principles") },
-            "amendment OpenAPI must not advertise S2.1 endpoints before their controllers exist",
+        assertTrue(
+            paths.containsAll(
+                setOf(
+                    "/api/v1/principle-presets",
+                    "/api/v1/principles",
+                    "/api/v1/principles/{principleId}",
+                    "/api/v1/principles/{principleId}/versions",
+                ),
+            ),
+            "implementation OpenAPI must advertise only paths backed by the real S2.1 controllers",
+        )
+        assertEquals("listPrinciplePresets", document.at("/paths/~1api~1v1~1principle-presets/get/operationId").stringValue())
+        assertEquals("createPrinciple", document.at("/paths/~1api~1v1~1principles/post/operationId").stringValue())
+        assertEquals("listPrinciples", document.at("/paths/~1api~1v1~1principles/get/operationId").stringValue())
+        assertEquals("getPrinciple", document.at("/paths/~1api~1v1~1principles~1{principleId}/get/operationId").stringValue())
+        assertEquals("updatePrinciple", document.at("/paths/~1api~1v1~1principles~1{principleId}/put/operationId").stringValue())
+        assertEquals(
+            "listPrincipleVersions",
+            document.at("/paths/~1api~1v1~1principles~1{principleId}~1versions/get/operationId").stringValue(),
+        )
+    }
+
+    @Test
+    fun `openapi documents Principle success headers typed errors and locked component constraints`() {
+        val document =
+            objectMapper.readTree(
+                mockMvc
+                    .get("/v3/api-docs")
+                    .andExpect {
+                        status { isOk() }
+                    }.andReturn()
+                    .response
+                    .contentAsByteArray,
+            )
+
+        val create = document.at("/paths/~1api~1v1~1principles/post/responses")
+        assertEquals(
+            "#/components/schemas/ApiResponsePrincipleCurrent",
+            create.at("/201/content/application~1json/schema/\$ref").stringValue(),
+        )
+        assertEquals(
+            "string",
+            create.at("/201/headers/Location/schema/type").stringValue(),
+        )
+        assertEquals(
+            "#/components/schemas/PrincipleValidationErrorResponse",
+            create.at("/400/content/application~1json/schema/\$ref").stringValue(),
+        )
+        assertEquals(
+            "#/components/schemas/PrincipleUnauthorizedErrorResponse",
+            create.at("/401/content/application~1json/schema/\$ref").stringValue(),
+        )
+        assertEquals(
+            "#/components/schemas/PrincipleForbiddenErrorResponse",
+            create.at("/403/content/application~1json/schema/\$ref").stringValue(),
+        )
+        assertEquals(
+            "#/components/schemas/PrinciplePayloadTooLargeErrorResponse",
+            create.at("/413/content/application~1json/schema/\$ref").stringValue(),
+        )
+
+        val updateConflict =
+            document.at(
+                "/paths/~1api~1v1~1principles~1{principleId}/put/responses/409/content/application~1json/schema/oneOf",
+            )
+        assertEquals(2, updateConflict.size())
+        assertEquals(
+            setOf(
+                "#/components/schemas/PrincipleConflictErrorResponse",
+                "#/components/schemas/PrincipleVersionExhaustedErrorResponse",
+            ),
+            updateConflict.values().map { it.path("\$ref").stringValue() }.toSet(),
+        )
+
+        val current = document.at("/components/schemas/PrincipleCurrent")
+        assertTrue(
+            current
+                .path("required")
+                .values()
+                .map { it.stringValue() }
+                .toSet()
+                .containsAll(
+                    setOf(
+                        "principleId",
+                        "presetId",
+                        "title",
+                        "mode",
+                        "status",
+                        "version",
+                        "rules",
+                        "createdAt",
+                        "updatedAt",
+                    ),
+                ),
+        )
+        assertEquals("^prc_[0-9a-f]{32}$", current.at("/properties/principleId/pattern").stringValue())
+        assertEquals(8, current.at("/properties/rules/maxItems").intValue())
+
+        val rule = document.at("/components/schemas/PrincipleRule")
+        assertEquals(8, rule.path("oneOf").size())
+        assertTrue(
+            rule
+                .path("required")
+                .values()
+                .map { it.stringValue() }
+                .toSet()
+                .containsAll(setOf("ruleId", "ruleType", "metric", "operator", "threshold", "severity", "enabled")),
         )
     }
 

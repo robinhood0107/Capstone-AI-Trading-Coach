@@ -16,11 +16,6 @@ import com.capstone.decision.domain.principle.PrincipleVersion
 import com.capstone.decision.domain.principle.PrincipleVersionExhaustedException
 import com.capstone.decision.domain.principle.PrincipleVersionId
 import com.capstone.decision.domain.principle.PrincipleViolation
-import com.capstone.decision.infrastructure.principle.HistoryCursor
-import com.capstone.decision.infrastructure.principle.InvalidPrincipleCursorException
-import com.capstone.decision.infrastructure.principle.OwnerCursor
-import com.capstone.decision.infrastructure.principle.PrincipleCatalog
-import com.capstone.decision.infrastructure.principle.PrincipleCursorCodec
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
@@ -129,8 +124,8 @@ interface PrincipleRepository {
 @Service
 class PrincipleService(
     private val repository: PrincipleRepository,
-    private val catalog: PrincipleCatalog,
-    private val cursorCodec: PrincipleCursorCodec,
+    private val catalog: PrincipleContract,
+    private val cursorCodec: PrincipleCursorPort,
     private val principleClock: Clock,
 ) {
     @Transactional(readOnly = true)

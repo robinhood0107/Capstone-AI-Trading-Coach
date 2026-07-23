@@ -130,14 +130,15 @@ def run_gate(env_file: Path, *, write: bool) -> None:
     _require_fixture_port_available()
     project_name = f"s21-openapi-{os.getpid()}"
     primary_error: BaseException | None = None
-    started = False
+    cleanup_required = False
 
     try:
+        # compose가 일부 리소스를 만든 뒤 health wait에서 실패해도 같은 고유 project를 정리한다.
+        cleanup_required = True
         _run(
             _compose_command(project_name, "up", "-d", "--wait", "postgres"),
             environment=environment,
         )
-        started = True
         _run(
             [
                 str(GRADLEW),
@@ -168,7 +169,7 @@ def run_gate(env_file: Path, *, write: bool) -> None:
         primary_error = error
         raise
     finally:
-        if started:
+        if cleanup_required:
             try:
                 _run(
                     _compose_command(

@@ -228,7 +228,18 @@ class OpenApiConfigIntegrationTest(
                 .values()
                 .map { it.stringValue() }
                 .toSet()
-                .containsAll(setOf("ruleId", "ruleType", "metric", "operator", "threshold", "severity", "enabled")),
+                .containsAll(
+                    setOf(
+                        "ruleId",
+                        "ruleType",
+                        "metric",
+                        "operator",
+                        "threshold",
+                        "severity",
+                        "enabled",
+                        "evidenceRequirement",
+                    ),
+                ),
         )
     }
 

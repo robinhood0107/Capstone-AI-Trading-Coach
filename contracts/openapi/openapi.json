@@ -83,6 +83,154 @@
         },
         "type": "object"
       },
+      "ApiResponsePrincipleCurrent": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PrincipleCurrent"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ApiError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ApiWarning"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "ApiResponsePrincipleHistoryData": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PrincipleHistoryData"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ApiError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ApiWarning"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "ApiResponsePrincipleOwnerListData": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PrincipleOwnerListData"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ApiError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ApiWarning"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "ApiResponsePrinciplePresetListData": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PrinciplePresetListData"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ApiError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ApiWarning"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
       "ApiWarning": {
         "properties": {
           "code": {
@@ -169,6 +317,325 @@
           },
           "username": {
             "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "PrincipleCreateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "enum": [
+              "GUIDE",
+              "STRICT"
+            ],
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "presetId": {
+            "enum": [
+              "conservative",
+              "balanced",
+              "aggressive"
+            ],
+            "type": "string"
+          },
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/PrincipleRule"
+            },
+            "maxItems": 8,
+            "minItems": 1,
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "title": {
+            "maxLength": 120,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "presetId",
+          "title"
+        ],
+        "type": "object"
+      },
+      "PrincipleCurrent": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "presetId": {
+            "type": "string"
+          },
+          "principleId": {
+            "type": "string"
+          },
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/PrincipleRule"
+            },
+            "type": "array"
+          },
+          "status": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "version": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "PrincipleDisclaimerResponse": {
+        "properties": {
+          "en": {
+            "type": "string"
+          },
+          "ko": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "PrincipleHistoryData": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PrincipleVersion"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "PrincipleOwnerListData": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PrincipleSummary"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "PrinciplePreset": {
+        "properties": {
+          "defaultRules": {
+            "items": {
+              "$ref": "#/components/schemas/PrincipleRule"
+            },
+            "type": "array"
+          },
+          "descriptionEn": {
+            "type": "string"
+          },
+          "descriptionKo": {
+            "type": "string"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "nameEn": {
+            "type": "string"
+          },
+          "nameKo": {
+            "type": "string"
+          },
+          "order": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "presetId": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "PrinciplePresetListData": {
+        "properties": {
+          "disclaimer": {
+            "$ref": "#/components/schemas/PrincipleDisclaimerResponse"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PrinciplePreset"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "PrincipleRule": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "metric": {
+            "type": "string"
+          },
+          "operator": {
+            "type": "string"
+          },
+          "ruleId": {
+            "type": "string"
+          },
+          "ruleType": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string"
+          },
+          "threshold": {
+            "type": "number"
+          }
+        },
+        "type": "object"
+      },
+      "PrincipleSummary": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "presetId": {
+            "type": "string"
+          },
+          "principleId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "version": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "PrincipleUpdateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expectedVersion": {
+            "format": "int32",
+            "maximum": 2147483647,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "mode": {
+            "enum": [
+              "GUIDE",
+              "STRICT"
+            ],
+            "type": "string"
+          },
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/PrincipleRule"
+            },
+            "maxItems": 8,
+            "minItems": 1,
+            "type": "array"
+          },
+          "status": {
+            "enum": [
+              "ACTIVE",
+              "ARCHIVED"
+            ],
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 120,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "expectedVersion",
+          "mode",
+          "rules",
+          "status",
+          "title"
+        ],
+        "type": "object"
+      },
+      "PrincipleVersion": {
+        "properties": {
+          "changedFields": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "presetId": {
+            "type": "string"
+          },
+          "principleId": {
+            "type": "string"
+          },
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/PrincipleRule"
+            },
+            "type": "array"
+          },
+          "status": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "version": {
+            "format": "int32",
+            "type": "integer"
           }
         },
         "type": "object"
@@ -277,6 +744,468 @@
         "summary": "데모 사용자 로그인 / Demo user login",
         "tags": [
           "auth-controller"
+        ]
+      }
+    },
+    "/api/v1/principle-presets": {
+      "get": {
+        "operationId": "listPrinciplePresets",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponsePrinciplePresetListData"
+                }
+              }
+            },
+            "description": "Preset catalog"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponsePrinciplePresetListData"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponsePrinciplePresetListData"
+                }
+              }
+            },
+            "description": "Forbidden"
+          }
+        },
+        "summary": "원칙 프리셋 조회 / List Principle presets",
+        "tags": [
+          "principle-controller"
+        ]
+      }
+    },
+    "/api/v1/principles": {
+      "get": {
+        "operationId": "listPrinciples",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "maxLength": 2048,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "size",
+            "schema": {
+              "format": "int32",
+              "maximum": 200,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "schema": {
+              "enum": [
+                "UPDATED_AT_DESC",
+                "UPDATED_AT_ASC"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponsePrincipleOwnerListData"
+                }
+              }
+            },
+            "description": "Owned Principle page"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponsePrincipleOwnerListData"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponsePrincipleOwnerListData"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponsePrincipleOwnerListData"
+                }
+              }
+            },
+            "description": "Forbidden"
+          }
+        },
+        "summary": "사용자 원칙 목록 / List owned Principles",
+        "tags": [
+          "principle-controller"
+        ]
+      },
+      "post": {
+        "operationId": "createPrinciple",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PrincipleCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponsePrincipleCurrent"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponsePrincipleCurrent"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponsePrincipleCurrent"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponsePrincipleCurrent"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponsePrincipleCurrent"
+                }
+              }
+            },
+            "description": "Payload too large"
+          }
+        },
+        "summary": "사용자 원칙 생성 / Create an owned Principle",
+        "tags": [
+          "principle-controller"
+        ]
+      }
+    },
+    "/api/v1/principles/{principleId}": {
+      "get": {
+        "operationId": "getPrinciple",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "principleId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponsePrincipleCurrent"
+                }
+              }
+            },
+            "description": "Current Principle"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponsePrincipleCurrent"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponsePrincipleCurrent"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponsePrincipleCurrent"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponsePrincipleCurrent"
+                }
+              }
+            },
+            "description": "Missing or cross-owner"
+          }
+        },
+        "summary": "사용자 원칙 상세 / Get an owned Principle",
+        "tags": [
+          "principle-controller"
+        ]
+      },
+      "put": {
+        "operationId": "updatePrinciple",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "principleId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PrincipleUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponsePrincipleCurrent"
+                }
+              }
+            },
+            "description": "Current Principle"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponsePrincipleCurrent"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponsePrincipleCurrent"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponsePrincipleCurrent"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponsePrincipleCurrent"
+                }
+              }
+            },
+            "description": "Missing or cross-owner"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponsePrincipleCurrent"
+                }
+              }
+            },
+            "description": "Version conflict or exhausted"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponsePrincipleCurrent"
+                }
+              }
+            },
+            "description": "Payload too large"
+          }
+        },
+        "summary": "사용자 원칙 전체 교체 / Replace an owned Principle",
+        "tags": [
+          "principle-controller"
+        ]
+      }
+    },
+    "/api/v1/principles/{principleId}/versions": {
+      "get": {
+        "operationId": "listPrincipleVersions",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "maxLength": 2048,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "size",
+            "schema": {
+              "format": "int32",
+              "maximum": 200,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "schema": {
+              "enum": [
+                "VERSION_DESC",
+                "VERSION_ASC"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "principleId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponsePrincipleHistoryData"
+                }
+              }
+            },
+            "description": "Immutable version page"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponsePrincipleHistoryData"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponsePrincipleHistoryData"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponsePrincipleHistoryData"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponsePrincipleHistoryData"
+                }
+              }
+            },
+            "description": "Missing or cross-owner"
+          }
+        },
+        "summary": "원칙 버전 이력 / List immutable Principle versions",
+        "tags": [
+          "principle-controller"
         ]
       }
     },

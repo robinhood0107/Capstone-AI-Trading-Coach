@@ -158,6 +158,7 @@ def run_gate(env_file: Path, *, write: bool) -> None:
                 sys.executable,
                 "contracts/normalize_openapi.py",
                 normalizer_action,
+                "--implementation",
                 "--input",
                 str(GENERATED_OPENAPI),
                 "--expected",

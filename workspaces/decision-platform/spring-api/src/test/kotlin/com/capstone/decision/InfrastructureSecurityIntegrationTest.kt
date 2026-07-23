@@ -21,7 +21,7 @@ import java.util.Properties
 @Testcontainers
 class InfrastructureSecurityIntegrationTest {
     @Test
-    fun `postgres runtime role is read only without migration or cluster privileges`() {
+    fun `postgres runtime role keeps exact Principle privileges without migration or cluster privileges`() {
         val repositoryRoot = findRepositoryRoot()
         postgres.copyFileToContainer(
             MountableFile.forHostPath(repositoryRoot.resolve("infra/init/01-extensions.sql")),
@@ -50,7 +50,7 @@ class InfrastructureSecurityIntegrationTest {
             .load()
             .migrate()
 
-        // 기존 volume에서 bootstrap을 재적용해도 migration의 calendar 최소권한을 되돌리면 안 된다.
+        // 기존 volume에서 bootstrap을 재적용해도 migration의 calendar·Principle 최소권한을 되돌리면 안 된다.
         assertTrue(postgres.execInContainer("bash", "-ec", "bash /tmp/02-application-roles.sh").exitCode == 0)
 
         DriverManager.getConnection(postgres.jdbcUrl, postgres.username, adminPassword).use { connection ->
@@ -65,6 +65,37 @@ class InfrastructureSecurityIntegrationTest {
             }
             assertFalse(hasTablePrivilege(connection, "decision_app", "calendar_observations", "SELECT"))
             assertFalse(hasTablePrivilege(connection, "decision_app", "opendart_quota_usage", "SELECT"))
+
+            assertTrue(hasTablePrivilege(connection, "decision_app", "principle_presets", "SELECT"))
+            assertTrue(hasTablePrivilege(connection, "decision_app", "principles", "SELECT"))
+            assertTrue(hasTablePrivilege(connection, "decision_app", "principles", "INSERT"))
+            assertFalse(hasTablePrivilege(connection, "decision_app", "principles", "UPDATE"))
+            listOf("title", "mode", "status", "current_version", "updated_at").forEach { column ->
+                assertTrue(hasColumnPrivilege(connection, "decision_app", "principles", column, "UPDATE"))
+            }
+            listOf("principle_id", "user_id", "preset_id", "created_at").forEach { column ->
+                assertFalse(hasColumnPrivilege(connection, "decision_app", "principles", column, "UPDATE"))
+            }
+            assertTrue(hasTablePrivilege(connection, "decision_app", "principle_versions", "SELECT"))
+            assertTrue(hasTablePrivilege(connection, "decision_app", "principle_versions", "INSERT"))
+            assertFalse(hasTablePrivilege(connection, "decision_app", "principle_versions", "UPDATE"))
+            assertFalse(hasTablePrivilege(connection, "decision_app", "principle_versions", "DELETE"))
+            assertTrue(hasTablePrivilege(connection, "decision_app", "audit_logs", "INSERT"))
+            assertFalse(hasTablePrivilege(connection, "decision_app", "audit_logs", "SELECT"))
+            assertFalse(hasTablePrivilege(connection, "decision_app", "audit_logs", "UPDATE"))
+            assertFalse(hasTablePrivilege(connection, "decision_app", "audit_logs", "DELETE"))
+            listOf("INSERT", "UPDATE", "DELETE", "TRUNCATE").forEach { privilege ->
+                assertFalse(hasTablePrivilege(connection, "decision_app", "principle_presets", privilege))
+            }
+            assertFalse(hasTablePrivilege(connection, "decision_app", "principles", "DELETE"))
+            assertFalse(hasTablePrivilege(connection, "decision_app", "principles", "TRUNCATE"))
+            assertFalse(hasTablePrivilege(connection, "decision_app", "principle_versions", "TRUNCATE"))
+            assertFalse(hasTablePrivilege(connection, "decision_app", "audit_logs", "TRUNCATE"))
+            listOf("orders", "decisions", "user_sessions").forEach { table ->
+                listOf("INSERT", "UPDATE", "DELETE").forEach { privilege ->
+                    assertFalse(hasTablePrivilege(connection, "decision_app", table, privilege))
+                }
+            }
         }
 
         DriverManager.getConnection(postgres.jdbcUrl, runtimeProperties()).use { connection ->
@@ -101,6 +132,27 @@ class InfrastructureSecurityIntegrationTest {
                     "update users set status = 'LOCKED' where user_id = 'usr_demo_user'",
                     "delete from users where user_id = 'usr_demo_user'",
                     "truncate table users",
+                    "insert into principle_presets (preset_id, name_ko, name_en, description_ko, description_en, " +
+                        "mode, rules_json, display_order) values " +
+                        "('runtime-denied', '거부', 'Denied', '거부', 'Denied', 'GUIDE', '[]'::jsonb, 99)",
+                    "update principle_presets set is_active = false where preset_id = 'balanced'",
+                    "delete from principle_presets where preset_id = 'balanced'",
+                    "update principles set user_id = 'usr_demo_admin' where principle_id = 'missing'",
+                    "update principles set preset_id = 'aggressive' where principle_id = 'missing'",
+                    "delete from principles where principle_id = 'missing'",
+                    "update principle_versions set title = 'denied' where principle_id = 'missing'",
+                    "delete from principle_versions where principle_id = 'missing'",
+                    "select count(*) from audit_logs",
+                    "update audit_logs set action = 'denied' where audit_log_id = 'missing'",
+                    "delete from audit_logs where audit_log_id = 'missing'",
+                    "truncate table principles",
+                    "truncate table principle_versions",
+                    "truncate table audit_logs",
+                    "insert into orders (" +
+                        "order_id,user_id,account_id,decision_id,idempotency_key,symbol,side,order_type,quantity,status" +
+                        ") values (" +
+                        "'denied','usr_demo_user','denied','denied','denied','005930','BUY','LIMIT',1,'REQUESTED'" +
+                        ")",
                 ).forEach { sql ->
                     val mutationFailure = assertThrows<SQLException> { statement.execute(sql) }
                     assertTrue(mutationFailure.sqlState == "42501")
@@ -148,6 +200,23 @@ class InfrastructureSecurityIntegrationTest {
                 statement.setString(1, role)
                 statement.setString(2, table)
                 statement.setString(3, privilege)
+                statement.executeQuery().use { result -> result.next() && result.getBoolean(1) }
+            }
+
+    private fun hasColumnPrivilege(
+        connection: Connection,
+        role: String,
+        table: String,
+        column: String,
+        privilege: String,
+    ): Boolean =
+        connection
+            .prepareStatement("select has_column_privilege(?, 'public.' || ?, ?, ?)")
+            .use { statement ->
+                statement.setString(1, role)
+                statement.setString(2, table)
+                statement.setString(3, column)
+                statement.setString(4, privilege)
                 statement.executeQuery().use { result -> result.next() && result.getBoolean(1) }
             }
 

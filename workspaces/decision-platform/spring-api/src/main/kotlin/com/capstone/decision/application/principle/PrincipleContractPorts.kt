@@ -1,5 +1,6 @@
 package com.capstone.decision.application.principle
 
+import com.capstone.decision.domain.principle.EvidenceRequirement
 import java.math.BigDecimal
 import java.time.OffsetDateTime
 
@@ -20,6 +21,7 @@ interface PrincipleContract {
     val cursorMaxChars: Int
     val cursorTtlSeconds: Long
     val maxVersion: Int
+    val evidenceRequirements: Set<EvidenceRequirement>
     val ruleDefinitions: Map<String, CatalogRuleDefinition>
 }
 
@@ -35,6 +37,8 @@ data class CatalogRuleDefinition(
     val maxNormalizedScale: Int,
     val enabledSeverities: Set<String>,
     val disabledSeverity: String,
+    val evidenceRequirements: Set<EvidenceRequirement>,
+    val defaultEvidenceRequirement: EvidenceRequirement,
 )
 
 // 커서 port는 route/subject/resource binding을 구현 세부사항과 분리하고 raw userId 노출을 금지한다.

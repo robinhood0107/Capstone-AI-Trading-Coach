@@ -1,5 +1,6 @@
 package com.capstone.decision.api.principle
 
+import com.capstone.decision.domain.principle.EvidenceRequirement
 import com.capstone.decision.domain.principle.PrincipleCurrent
 import com.capstone.decision.domain.principle.PrinciplePreset
 import com.capstone.decision.domain.principle.PrincipleRule
@@ -56,6 +57,8 @@ data class PrincipleRuleResponse(
     val severity: String,
     @field:Schema(requiredMode = Schema.RequiredMode.REQUIRED)
     val enabled: Boolean,
+    @field:Schema(requiredMode = Schema.RequiredMode.REQUIRED, allowableValues = ["OPTIONAL", "REQUIRED"])
+    val evidenceRequirement: EvidenceRequirement,
 )
 
 @Schema(name = "PrinciplePreset", additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
@@ -251,6 +254,7 @@ fun PrincipleRule.toResponse(): PrincipleRuleResponse =
         threshold = threshold,
         severity = severity,
         enabled = enabled,
+        evidenceRequirement = evidenceRequirement,
     )
 
 fun PrinciplePreset.toResponse(): PrinciplePresetResponse =

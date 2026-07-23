@@ -47,6 +47,11 @@ enum class PrincipleStatus {
     ARCHIVED,
 }
 
+enum class EvidenceRequirement {
+    OPTIONAL,
+    REQUIRED,
+}
+
 // rule tuple은 canonical catalog가 검증한 값만 생성되며 BigDecimal로 금융 threshold의 scale을 보존한다.
 data class PrincipleRule(
     val ruleId: String,
@@ -56,6 +61,7 @@ data class PrincipleRule(
     val threshold: BigDecimal,
     val severity: String,
     val enabled: Boolean,
+    val evidenceRequirement: EvidenceRequirement,
 ) {
     fun semanticallyEquals(other: PrincipleRule): Boolean =
         ruleId == other.ruleId &&
@@ -64,7 +70,8 @@ data class PrincipleRule(
             operator == other.operator &&
             threshold.compareTo(other.threshold) == 0 &&
             severity == other.severity &&
-            enabled == other.enabled
+            enabled == other.enabled &&
+            evidenceRequirement == other.evidenceRequirement
 }
 
 data class PrinciplePreset(

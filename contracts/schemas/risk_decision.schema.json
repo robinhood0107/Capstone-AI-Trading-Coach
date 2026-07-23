@@ -222,6 +222,84 @@
     },
     "violation": {
       "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "ruleId": {
+                "const": "high_volatility_guard"
+              }
+            },
+            "required": [
+              "ruleId"
+            ]
+          },
+          "then": {
+            "properties": {
+              "severity": {
+                "const": "BLOCK"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "ruleId": {
+                "const": "hmm_risk_off_guard"
+              }
+            },
+            "required": [
+              "ruleId"
+            ]
+          },
+          "then": {
+            "properties": {
+              "severity": {
+                "const": "WARN"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "ruleId": {
+                "const": "mean_reversion_warning"
+              }
+            },
+            "required": [
+              "ruleId"
+            ]
+          },
+          "then": {
+            "properties": {
+              "severity": {
+                "const": "WARN"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "ruleId": {
+                "const": "etf_etn_risk_check"
+              }
+            },
+            "required": [
+              "ruleId"
+            ]
+          },
+          "then": {
+            "properties": {
+              "severity": {
+                "const": "WARN"
+              }
+            }
+          }
+        }
+      ],
       "properties": {
         "message": {
           "maxLength": 1024,
@@ -418,6 +496,27 @@
             }
           }
         ],
+        "not": {
+          "properties": {
+            "violations": {
+              "contains": {
+                "properties": {
+                  "severity": {
+                    "const": "BLOCK"
+                  }
+                },
+                "required": [
+                  "severity"
+                ],
+                "type": "object"
+              },
+              "minContains": 1
+            }
+          },
+          "required": [
+            "violations"
+          ]
+        },
         "properties": {
           "canSubmitOrder": {
             "const": true

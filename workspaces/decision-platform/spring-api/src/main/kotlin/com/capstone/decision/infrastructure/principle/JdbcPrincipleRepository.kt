@@ -11,7 +11,6 @@ import com.capstone.decision.domain.principle.PrincipleId
 import com.capstone.decision.domain.principle.PrincipleMode
 import com.capstone.decision.domain.principle.PrinciplePreset
 import com.capstone.decision.domain.principle.PrinciplePresetId
-import com.capstone.decision.domain.principle.PrincipleRule
 import com.capstone.decision.domain.principle.PrincipleStatus
 import com.capstone.decision.domain.principle.PrincipleSummary
 import com.capstone.decision.domain.principle.PrincipleVersion
@@ -21,7 +20,6 @@ import org.springframework.jdbc.core.RowMapper
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.stereotype.Repository
-import tools.jackson.databind.JsonNode
 import tools.jackson.databind.ObjectMapper
 import java.sql.ResultSet
 import java.time.OffsetDateTime
@@ -33,6 +31,7 @@ import java.util.UUID
 class JdbcPrincipleRepository(
     private val jdbcProvider: ObjectProvider<NamedParameterJdbcTemplate>,
     private val objectMapper: ObjectMapper,
+    private val ruleJsonCodec: PrincipleRuleJsonCodec,
 ) : PrincipleRepository {
     override fun listActivePresets(): List<PrinciplePreset> =
         jdbc().query(
@@ -110,7 +109,7 @@ class JdbcPrincipleRepository(
                 "title" to version.title,
                 "mode" to version.mode.name,
                 "status" to version.status.name,
-                "rulesJson" to rulesJson(version.rules),
+                "rulesJson" to ruleJsonCodec.encode(version.rules),
                 "changedFieldsJson" to objectMapper.writeValueAsString(version.changedFields),
                 "createdBy" to createdBy,
                 "createdAt" to version.createdAt,
@@ -302,38 +301,6 @@ class JdbcPrincipleRepository(
         jdbcProvider.getIfAvailable()
             ?: error("Principle JDBC access is unavailable without a configured DataSource.")
 
-    private fun rulesJson(rules: List<PrincipleRule>): String =
-        objectMapper.writeValueAsString(
-            rules.map { rule ->
-                linkedMapOf(
-                    "ruleId" to rule.ruleId,
-                    "ruleType" to rule.ruleType,
-                    "metric" to rule.metric,
-                    "operator" to rule.operator,
-                    "threshold" to rule.threshold,
-                    "severity" to rule.severity,
-                    "enabled" to rule.enabled,
-                )
-            },
-        )
-
-    private fun parseRules(raw: String): List<PrincipleRule> =
-        objectMapper
-            .readTree(raw)
-            .values()
-            .map { node -> node.toRule() }
-
-    private fun JsonNode.toRule(): PrincipleRule =
-        PrincipleRule(
-            ruleId = path("ruleId").stringValue(),
-            ruleType = path("ruleType").stringValue(),
-            metric = path("metric").stringValue(),
-            operator = path("operator").stringValue(),
-            threshold = path("threshold").decimalValue(),
-            severity = path("severity").stringValue(),
-            enabled = path("enabled").booleanValue(),
-        )
-
     private fun ResultSet.kst(column: String): OffsetDateTime = getObject(column, OffsetDateTime::class.java).withOffsetSameInstant(KST)
 
     private val presetRowMapper =
@@ -346,7 +313,7 @@ class JdbcPrincipleRepository(
                 descriptionKo = resultSet.getString("description_ko"),
                 descriptionEn = resultSet.getString("description_en"),
                 mode = PrincipleMode.valueOf(resultSet.getString("mode")),
-                defaultRules = parseRules(resultSet.getString("rules_json")),
+                defaultRules = ruleJsonCodec.decode(resultSet.getString("rules_json")),
             )
         }
 
@@ -360,7 +327,7 @@ class JdbcPrincipleRepository(
                 mode = PrincipleMode.valueOf(resultSet.getString("mode")),
                 status = PrincipleStatus.valueOf(resultSet.getString("status")),
                 version = resultSet.getInt("current_version"),
-                rules = parseRules(resultSet.getString("rules_json")),
+                rules = ruleJsonCodec.decode(resultSet.getString("rules_json")),
                 createdAt = resultSet.kst("created_at"),
                 updatedAt = resultSet.kst("updated_at"),
             )
@@ -392,7 +359,7 @@ class JdbcPrincipleRepository(
                 title = resultSet.getString("title"),
                 mode = PrincipleMode.valueOf(resultSet.getString("mode")),
                 status = PrincipleStatus.valueOf(resultSet.getString("status")),
-                rules = parseRules(resultSet.getString("rules_json")),
+                rules = ruleJsonCodec.decode(resultSet.getString("rules_json")),
                 changedFields = changedFields,
                 createdAt = resultSet.kst("created_at"),
             )

@@ -2,6 +2,7 @@ package com.capstone.decision
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -46,6 +47,7 @@ class PrincipleApiIntegrationTest(
 
     @BeforeEach
     fun setUp() {
+        removeAuditFailureTrigger()
         jdbcTemplate.update("delete from audit_logs where target_type = 'PRINCIPLE'")
         jdbcTemplate.update("delete from principle_versions")
         jdbcTemplate.update("delete from principles")
@@ -174,7 +176,9 @@ class PrincipleApiIntegrationTest(
         val adminToken = login("demo-admin", adminPassword())
         val first = createdId(create(userToken, "req-owner-first", createBody("balanced", "첫 원칙")))
         val second = createdId(create(userToken, "req-owner-second", createBody("aggressive", "둘째 원칙")))
-        val adminOwned = createdId(create(adminToken, "req-owner-admin", createBody("conservative", "관리자 원칙")))
+        val adminCreated = create(adminToken, "req-owner-admin", createBody("conservative", "관리자 원칙"))
+        val adminBody = json(adminCreated).at("/data")
+        val adminOwned = adminBody.path("principleId").stringValue()
 
         val firstPage =
             mockMvc
@@ -279,6 +283,121 @@ class PrincipleApiIntegrationTest(
                 .response
                 .contentAsString
         assertEquals(userMissing, userCrossOwner)
+
+        val missingId = "prc_ffffffffffffffffffffffffffffffff"
+        val crossOwnerUpdate =
+            update(
+                token = userToken,
+                principleId = adminOwned,
+                requestId = "req-owner-write-cross",
+                body =
+                    mapOf(
+                        "expectedVersion" to 1,
+                        "title" to "cross-owner mutation",
+                        "mode" to adminBody.path("mode").stringValue(),
+                        "status" to adminBody.path("status").stringValue(),
+                        "rules" to adminBody.path("rules"),
+                    ),
+            )
+        val missingUpdate =
+            update(
+                token = userToken,
+                principleId = missingId,
+                requestId = "req-owner-write-cross",
+                body =
+                    mapOf(
+                        "expectedVersion" to 1,
+                        "title" to "cross-owner mutation",
+                        "mode" to adminBody.path("mode").stringValue(),
+                        "status" to adminBody.path("status").stringValue(),
+                        "rules" to adminBody.path("rules"),
+                    ),
+            )
+        assertEquals(404, crossOwnerUpdate.response.status)
+        assertEquals(missingUpdate.response.contentAsString, crossOwnerUpdate.response.contentAsString)
+
+        val crossOwnerHistory =
+            mockMvc
+                .get("/api/v1/principles/$adminOwned/versions") {
+                    bearer(userToken)
+                    header("X-Request-Id", "req-owner-history-cross")
+                }.andExpect {
+                    status { isNotFound() }
+                }.andReturn()
+        val missingHistory =
+            mockMvc
+                .get("/api/v1/principles/$missingId/versions") {
+                    bearer(userToken)
+                    header("X-Request-Id", "req-owner-history-cross")
+                }.andExpect {
+                    status { isNotFound() }
+                }.andReturn()
+        assertEquals(missingHistory.response.contentAsString, crossOwnerHistory.response.contentAsString)
+        assertEquals(
+            "관리자 원칙",
+            jdbcTemplate.queryForObject(
+                "select title from principles where principle_id = ?",
+                String::class.java,
+                adminOwned,
+            ),
+        )
+        assertEquals(1, count("select count(*) from principle_versions where principle_id = ?", adminOwned))
+        assertEquals(
+            1,
+            count("select count(*) from audit_logs where target_type = 'PRINCIPLE' and target_id = ?", adminOwned),
+        )
+    }
+
+    @Test
+    fun `create and update roll back current snapshot and audit when the final write fails`() {
+        val token = login("demo-user", userPassword())
+        installAuditFailureTrigger()
+        try {
+            assertThrows(Exception::class.java) {
+                create(token, "req-rollback-create", createBody("balanced", "rollback create"))
+            }
+        } finally {
+            removeAuditFailureTrigger()
+        }
+        assertEquals(0, count("select count(*) from principles"))
+        assertEquals(0, count("select count(*) from principle_versions"))
+        assertEquals(0, count("select count(*) from audit_logs where target_type = 'PRINCIPLE'"))
+
+        val created = create(token, "req-rollback-baseline", createBody("balanced", "rollback baseline"))
+        val current = json(created).at("/data")
+        val principleId = current.path("principleId").stringValue()
+        installAuditFailureTrigger()
+        try {
+            assertThrows(Exception::class.java) {
+                update(
+                    token = token,
+                    principleId = principleId,
+                    requestId = "req-rollback-update",
+                    body =
+                        mapOf(
+                            "expectedVersion" to 1,
+                            "title" to "must roll back",
+                            "mode" to "STRICT",
+                            "status" to "ARCHIVED",
+                            "rules" to current.path("rules"),
+                        ),
+                )
+            }
+        } finally {
+            removeAuditFailureTrigger()
+        }
+        assertEquals(
+            mapOf("title" to "rollback baseline", "current_version" to 1, "status" to "ACTIVE"),
+            jdbcTemplate.queryForMap(
+                "select title, current_version, status from principles where principle_id = ?",
+                principleId,
+            ),
+        )
+        assertEquals(1, count("select count(*) from principle_versions where principle_id = ?", principleId))
+        assertEquals(
+            1,
+            count("select count(*) from audit_logs where target_type = 'PRINCIPLE' and target_id = ?", principleId),
+        )
     }
 
     @Test
@@ -575,16 +694,24 @@ class PrincipleApiIntegrationTest(
               }]
             }
             """.trimIndent()
-        assertValidation(
+        val overRangeResponse =
             mockMvc
                 .post("/api/v1/principles") {
                     bearer(token)
                     contentType = MediaType.APPLICATION_JSON
                     header("X-Request-Id", "req-principle-exact-range")
                     content = overRange
-                }.andReturn(),
-            "/rules/0/threshold",
-            "OUT_OF_RANGE",
+                }.andExpect {
+                    status { isBadRequest() }
+                }.andReturn()
+        assertTrue(
+            json(overRangeResponse)
+                .at("/error/details/violations")
+                .values()
+                .any {
+                    it.path("field").stringValue() == "/rules/0/threshold" &&
+                        it.path("reason").stringValue() == "OUT_OF_RANGE"
+                },
         )
 
         val overScale =
@@ -747,6 +874,34 @@ class PrincipleApiIntegrationTest(
         sql: String,
         vararg arguments: Any,
     ): Int = requireNotNull(jdbcTemplate.queryForObject(sql, Int::class.java, *arguments))
+
+    private fun installAuditFailureTrigger() {
+        jdbcTemplate.execute(
+            """
+            create or replace function s21_test_fail_principle_audit()
+            returns trigger language plpgsql as ${'$'}${'$'}
+            begin
+              if new.target_type = 'PRINCIPLE' then
+                raise exception 'forced S2.1 audit failure';
+              end if;
+              return new;
+            end
+            ${'$'}${'$'}
+            """.trimIndent(),
+        )
+        jdbcTemplate.execute(
+            """
+            create trigger s21_test_fail_principle_audit
+            before insert on audit_logs
+            for each row execute function s21_test_fail_principle_audit()
+            """.trimIndent(),
+        )
+    }
+
+    private fun removeAuditFailureTrigger() {
+        jdbcTemplate.execute("drop trigger if exists s21_test_fail_principle_audit on audit_logs")
+        jdbcTemplate.execute("drop function if exists s21_test_fail_principle_audit()")
+    }
 
     private fun rule(
         ruleId: String,

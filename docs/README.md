@@ -4,12 +4,14 @@
 
 ## 현재 완료 상태
 
-S1.3 ECOS/Naver 내부 source snapshot은 PR #16, S1.3K KRX OPEN API universe 자동화는 PR #17로
-2026-07-16 `main`에 병합됐고 S1.6 prerequisite는 PR #34로 병합됐다. S1.6 후속 변경은 내부
-offline calendar/event aggregator와 Flyway V6/collector 최소권한을 구현하지만 public API와
-provider online 활성화는 포함하지 않는다. 전체 상태는 [최종_프로젝트_명세서.md](최종_프로젝트_명세서.md)
-11.1.2~11.1.5, 내부·계획 API 경계는 [API_명세서.md](API_명세서.md) 12A/13.5, 실제 운영 절차는
-[Decision Platform README](../workspaces/decision-platform/README.md)를 따른다.
+S1.6 offline Market Calendar/Event Aggregator는 PR #35, S2.1 Principle CRUD는 PR #41로
+`main`에 병합됐다. 현재 S2.2는 deterministic offline evaluator, portfolio source 선택,
+snapshot/hash 계약과 owner-scoped ACTIVE Principle read adapter까지 구현하며 Decision API
+runtime·persistence·외부 source adapter와 provider online 활성화는 포함하지 않는다. 전체 상태는
+[최종_프로젝트_명세서.md](최종_프로젝트_명세서.md) 8.4.1/11장, API 경계는
+[API_명세서.md](API_명세서.md) 5.1~5.4, 재현 명령과 machine-readable artifact 지도는
+[contracts README](../contracts/README.md#s22-rule-evaluation-offline-contract-v1), 실제 운영
+절차는 [Decision Platform README](../workspaces/decision-platform/README.md)를 따른다.
 
 | 문서 | 내용 |
 |---|---|
@@ -20,6 +22,7 @@ provider online 활성화는 포함하지 않는다. 전체 상태는 [최종_�
 | [중간보고서_작성용_초기설계.md](중간보고서_작성용_초기설계.md) | 중간보고서 작성 가이드 — 문장/표/그림 초안, RISE 심사기준 대응 |
 | [선물옵션_모의주문_확장_시나리오.md](선물옵션_모의주문_확장_시나리오.md) | P2 국내선물옵션 확장 설계 (v1 범위 아님, 기본 OFF) |
 | [선물옵션_모의주문_확장_시나리오_API_명세서.md](선물옵션_모의주문_확장_시나리오_API_명세서.md) | P2 확장 API 계약 + KIS TR_ID 매핑 |
+| [S2.2 offline 계약 변경 기록](../contracts/changes/20260724-s2-2-rule-evaluation-offline-contract.md) | 14-rule evaluator, evidence disposition, portfolio selector, bounds/hash와 S2.3 이연 경계 |
 | [ADR-027] | S1.4X 격리 Scala/Haskell 수치 parity Gate 0 결정 |
 | `decision-platform/` | Decision Platform 공개 기술 문서 — S1.2 OpenDART 근거와 S1.6 offline 상태 경계를 포함 |
 

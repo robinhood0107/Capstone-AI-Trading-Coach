@@ -1,6 +1,6 @@
 package com.capstone.decision
 
-import com.capstone.decision.infrastructure.principle.InvalidPrincipleCursorException
+import com.capstone.decision.application.principle.InvalidPrincipleCursorException
 import com.capstone.decision.infrastructure.principle.PrincipleCatalog
 import com.capstone.decision.infrastructure.principle.PrincipleCursorCodec
 import com.capstone.decision.infrastructure.principle.PrincipleProperties
@@ -136,5 +136,6 @@ class PrincipleCursorCodecTest {
             properties = properties,
             catalog = catalog,
             principleClock = Clock.fixed(now, ZoneOffset.UTC),
+            objectMapper = objectMapper,
         )
 }

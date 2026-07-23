@@ -3,6 +3,7 @@ package com.capstone.decision.infrastructure.security
 import com.capstone.decision.api.common.ApiResponseWriter
 import com.capstone.decision.infrastructure.idempotency.IdempotencyProperties
 import com.capstone.decision.infrastructure.idempotency.IdempotencyService
+import com.capstone.decision.infrastructure.principle.PrincipleProperties
 import com.capstone.decision.infrastructure.web.HttpRequestProperties
 import com.capstone.decision.infrastructure.web.RequestBodyLimitFilter
 import com.capstone.decision.infrastructure.web.RequestIdFilter
@@ -38,6 +39,7 @@ import java.security.MessageDigest
     DemoCredentialBootstrapProperties::class,
     IdempotencyProperties::class,
     HttpRequestProperties::class,
+    PrincipleProperties::class,
 )
 class SecurityConfig {
     @Bean
@@ -48,11 +50,14 @@ class SecurityConfig {
         jwtProperties: JwtProperties,
         loginProperties: LoginAttemptLimiterProperties,
         demoCredentialProperties: DemoCredentialBootstrapProperties,
+        principleProperties: PrincipleProperties,
     ): AuthSecretSeparation {
         jwtProperties.validate()
         loginProperties.validate()
+        principleProperties.validate()
         val jwtSecret = jwtProperties.secret.toByteArray(StandardCharsets.UTF_8)
         val loginScopeKey = loginProperties.scopeHmacKey.toByteArray(StandardCharsets.UTF_8)
+        val principleCursorKey = principleProperties.cursorHmacKey.toByteArray(StandardCharsets.UTF_8)
         val credentialSeparationKey =
             DemoCredentialBundlePolicy.decodeSeparationKey(demoCredentialProperties.separationKey)
         return try {
@@ -61,13 +66,17 @@ class SecurityConfig {
             }
             require(
                 !MessageDigest.isEqual(credentialSeparationKey, jwtSecret) &&
-                    !MessageDigest.isEqual(credentialSeparationKey, loginScopeKey),
-            ) { "Demo credential separation key must be distinct from other authentication secrets." }
+                    !MessageDigest.isEqual(credentialSeparationKey, loginScopeKey) &&
+                    !MessageDigest.isEqual(credentialSeparationKey, principleCursorKey) &&
+                    !MessageDigest.isEqual(jwtSecret, principleCursorKey) &&
+                    !MessageDigest.isEqual(loginScopeKey, principleCursorKey),
+            ) { "Authentication and Principle cursor keys must be purpose-separated." }
             verifyBootstrapBundles(demoCredentialProperties, credentialSeparationKey)
             AuthSecretSeparation
         } finally {
             jwtSecret.fill(0)
             loginScopeKey.fill(0)
+            principleCursorKey.fill(0)
             credentialSeparationKey.fill(0)
         }
     }

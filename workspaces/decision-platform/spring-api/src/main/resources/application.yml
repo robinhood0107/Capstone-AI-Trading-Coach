@@ -52,6 +52,8 @@ app:
     ttl-hours: 12
   login:
     scope-hmac-key: ${LOGIN_SCOPE_HMAC_KEY}
+  principle:
+    cursor-hmac-key: ${PRINCIPLE_CURSOR_HMAC_KEY}
   idempotency:
     ttl-hours: 24
     claim-ttl-seconds: 900

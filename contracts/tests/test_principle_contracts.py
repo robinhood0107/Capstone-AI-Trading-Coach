@@ -1,0 +1,397 @@
+from __future__ import annotations
+
+import copy
+import hashlib
+import os
+import tempfile
+import unittest
+from decimal import Decimal
+from pathlib import Path
+from unittest.mock import patch
+
+from contracts.generate_principle_contracts import (
+    CATALOG_PATH,
+    ContractValidationError,
+    canonical_json_bytes,
+    generate_outputs,
+    load_catalog,
+    load_json_bytes_strict,
+    validate_catalog_semantics,
+)
+from contracts.normalize_openapi import (
+    OpenApiNormalizationError,
+    check_normalized_openapi,
+    normalize_generated_openapi,
+)
+from contracts.openapi_env import OpenApiEnvironmentError, parse_openapi_environment
+from contracts.run_openapi_gate import (
+    OpenApiGateError,
+    _explicit_process_environment,
+    run_gate,
+)
+
+
+class StrictContractJsonTest(unittest.TestCase):
+    def test_duplicate_keys_and_non_finite_constants_are_rejected(self) -> None:
+        with self.assertRaises(ContractValidationError):
+            load_json_bytes_strict(b'{"ruleId":"one","ruleId":"two"}', source="duplicate")
+        for token in (b"NaN", b"Infinity", b"-Infinity"):
+            with self.subTest(token=token):
+                with self.assertRaises(ContractValidationError):
+                    load_json_bytes_strict(b'{"threshold":' + token + b"}", source="constant")
+
+    def test_decimal_spellings_have_one_canonical_byte_representation(self) -> None:
+        variants = (
+            load_json_bytes_strict(b'{"threshold":0.1500}', source="fixed"),
+            load_json_bytes_strict(b'{"threshold":0.15}', source="short"),
+            load_json_bytes_strict(b'{"threshold":1.5e-1}', source="exponent"),
+        )
+
+        self.assertEqual(
+            [b'{\n  "threshold": 0.15\n}\n'] * 3,
+            [canonical_json_bytes(value) for value in variants],
+        )
+
+    def test_canonical_writer_sorts_objects_but_preserves_array_order(self) -> None:
+        value = {"z": [3, 2, 1], "a": {"b": Decimal("2.00"), "a": 1}}
+
+        self.assertEqual(
+            b'{\n  "a": {\n    "a": 1,\n    "b": 2\n  },\n  "z": [\n    3,\n    2,\n    1\n  ]\n}\n',
+            canonical_json_bytes(value),
+        )
+
+
+class PrincipleCatalogGenerationTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.catalog = load_catalog(CATALOG_PATH)
+
+    def test_catalog_and_generated_artifacts_are_deterministic(self) -> None:
+        first = generate_outputs(copy.deepcopy(self.catalog))
+        second = generate_outputs(copy.deepcopy(self.catalog))
+
+        self.assertEqual(first, second)
+        self.assertEqual(
+            {
+                "contracts/schemas/s2-1-principle-catalog.schema.json",
+                "contracts/schemas/principle-rule.schema.json",
+                "contracts/schemas/principle.schema.json",
+                "contracts/schemas/principle-preset-list.schema.json",
+                "contracts/schemas/principle-create-request.schema.json",
+                "contracts/schemas/principle-update-request.schema.json",
+                "contracts/schemas/principle-list-response.schema.json",
+                "contracts/schemas/principle-history-response.schema.json",
+                "contracts/schemas/principle-error.schema.json",
+                "contracts/examples/principle.valid.json",
+                "contracts/examples/principle-presets.valid.json",
+                "contracts/examples/principle-create.valid.json",
+                "contracts/examples/principle-create-custom-rules.valid.json",
+                "contracts/examples/principle-update.valid.json",
+                "contracts/examples/principle-update-no-op.valid.json",
+                "contracts/examples/principle-list.valid.json",
+                "contracts/examples/principle-list-next-page.valid.json",
+                "contracts/examples/principle-list-empty.valid.json",
+                "contracts/examples/principle-history.valid.json",
+                "contracts/examples/principle-history-next-page.valid.json",
+                "contracts/examples/principle-history-empty.valid.json",
+                "contracts/examples/principle-error-validation.valid.json",
+                "contracts/examples/principle-error-cursor.valid.json",
+                "contracts/examples/principle-error-unauthorized.valid.json",
+                "contracts/examples/principle-error-forbidden.valid.json",
+                "contracts/examples/principle-error-not-found.valid.json",
+                "contracts/examples/principle-error-conflict.valid.json",
+                "contracts/examples/principle-error-version-exhausted.valid.json",
+                "contracts/examples/principle-error-payload-too-large.valid.json",
+                "contracts/examples/invalid/principle.invalid.json",
+                "contracts/examples/invalid/principle.duplicate-rule.invalid.json",
+                "contracts/examples/invalid/principle.invalid-tuple.invalid.json",
+                "contracts/examples/invalid/principle.threshold-range.invalid.json",
+                "contracts/examples/invalid/principle.threshold-scale.invalid.json",
+                "contracts/examples/invalid/principle.threshold-null.invalid.json",
+                "contracts/examples/invalid/principle.threshold-string.invalid.json",
+                "contracts/examples/invalid/principle.unknown-property.invalid.json",
+                "contracts/examples/invalid/principle.enabled-allow.invalid.json",
+                "contracts/examples/invalid/principle.disabled-block.invalid.json",
+                "contracts/examples/invalid/principle.too-many-rules.invalid.json",
+                "contracts/examples/invalid/principle-update.empty-rules.invalid.json",
+                "contracts/examples/invalid/principle-update.invalid-status.invalid.json",
+                "contracts/examples/invalid/principle-update.missing-field.invalid.json",
+                "contracts/examples/invalid/principle-create.missing-title.invalid.json",
+            },
+            set(first),
+        )
+        self.assertTrue(all(payload.endswith(b"\n") for payload in first.values()))
+
+    def test_catalog_semantics_reject_tuple_duplicate_scale_and_matrix_drift(self) -> None:
+        mutations = []
+
+        invalid_tuple = copy.deepcopy(self.catalog)
+        invalid_tuple["ruleDefinitions"][0]["metric"] = "attacker_controlled_metric"
+        mutations.append(invalid_tuple)
+
+        duplicate_rule = copy.deepcopy(self.catalog)
+        duplicate_rule["ruleDefinitions"][1]["ruleId"] = duplicate_rule["ruleDefinitions"][0]["ruleId"]
+        mutations.append(duplicate_rule)
+
+        invalid_scale = copy.deepcopy(self.catalog)
+        invalid_scale["presets"][0]["defaultRules"][0]["threshold"] = Decimal("0.12345")
+        mutations.append(invalid_scale)
+
+        invalid_cross_field = copy.deepcopy(self.catalog)
+        invalid_cross_field["presets"][0]["defaultRules"][0]["severity"] = "ALLOW"
+        mutations.append(invalid_cross_field)
+
+        reordered_matrix = copy.deepcopy(self.catalog)
+        reordered_matrix["presets"][0]["defaultRules"].reverse()
+        mutations.append(reordered_matrix)
+
+        for mutation in mutations:
+            with self.subTest(mutation=hashlib.sha256(repr(mutation).encode()).hexdigest()):
+                with self.assertRaises(ContractValidationError):
+                    validate_catalog_semantics(mutation)
+
+
+class OpenApiEnvironmentParserTest(unittest.TestCase):
+    def test_safe_current_auth_bundle_environment_is_accepted(self) -> None:
+        with self.environment_file(self.valid_environment_text()) as path:
+            parsed = parse_openapi_environment(path)
+
+        self.assertEqual("55432", parsed["POSTGRES_HOST_PORT"])
+        self.assertEqual("55432", parsed["POSTGRES_PORT"])
+        self.assertTrue(parsed["DEMO_USER_CREDENTIAL_BUNDLE"].startswith("s21-v1:usr_demo_user:"))
+        self.assertNotIn("KIS_MODE", parsed)
+
+    def test_unsafe_or_ambiguous_environment_inputs_are_rejected(self) -> None:
+        valid = self.valid_environment_text()
+        cases = {
+            "unquoted": valid.replace("POSTGRES_DB='trading'", "POSTGRES_DB=trading"),
+            "duplicate": valid + "POSTGRES_DB='trading'\n",
+            "unknown": valid + "KIS_MODE='live'\n",
+            "interpolation": valid.replace(
+                "JWT_ISSUER='s21-openapi-local'",
+                "JWT_ISSUER='$(touch-should-never-run)'",
+            ),
+            "single-quote": valid.replace(
+                "JWT_AUDIENCE='s21-openapi-client'",
+                "JWT_AUDIENCE='unsafe'quote'",
+            ),
+            "port-mismatch": valid.replace("POSTGRES_PORT='55432'", "POSTGRES_PORT='55433'"),
+            "crlf": valid.replace("\n", "\r\n"),
+        }
+        for name, content in cases.items():
+            with self.subTest(name=name), self.environment_file(content) as path:
+                with self.assertRaises(OpenApiEnvironmentError):
+                    parse_openapi_environment(path)
+
+    def test_symlink_and_broad_permissions_are_rejected(self) -> None:
+        with tempfile.TemporaryDirectory(dir="/tmp") as directory:
+            root = Path(directory)
+            target = root / "target.env"
+            target.write_text(self.valid_environment_text(), encoding="utf-8")
+            target.chmod(0o600)
+            symlink = root / "linked.env"
+            symlink.symlink_to(target)
+            with self.assertRaises(OpenApiEnvironmentError):
+                parse_openapi_environment(symlink)
+
+            target.chmod(0o644)
+            with self.assertRaises(OpenApiEnvironmentError):
+                parse_openapi_environment(target)
+
+    def test_subprocess_environment_replaces_inherited_wslenv_with_exact_fixture_names(
+        self,
+    ) -> None:
+        values = {
+            line.split("=", 1)[0]: line.split("=", 1)[1][1:-1]
+            for line in self.valid_environment_text().splitlines()
+        }
+        with patch.dict(
+            os.environ,
+            {"PATH": "/usr/bin", "WSLENV": "UNSAFE_INHERITED_NAME", "UNSAFE_INHERITED_NAME": "x"},
+            clear=True,
+        ):
+            environment = _explicit_process_environment(values)
+
+        self.assertNotIn("UNSAFE_INHERITED_NAME", environment)
+        self.assertEqual(
+            ":".join((*values, "COMPOSE_DISABLE_ENV_FILE")),
+            environment["WSLENV"],
+        )
+
+    @staticmethod
+    def valid_environment_text() -> str:
+        base64_a = "A" * 43
+        base64_b = "B" * 43
+        base64_c = "C" * 43
+        base64_d = "D" * 43
+        bcrypt_user = "$2b$12$" + "u" * 53
+        bcrypt_admin = "$2b$12$" + "a" * 53
+        values = {
+            "POSTGRES_DB": "trading",
+            "POSTGRES_ADMIN_USER": "postgres",
+            "POSTGRES_HOST": "127.0.0.1",
+            "POSTGRES_HOST_PORT": "55432",
+            "POSTGRES_PORT": "55432",
+            "POSTGRES_ADMIN_PASSWORD": base64_a,
+            "POSTGRES_APP_PASSWORD": base64_b,
+            "POSTGRES_MIGRATION_PASSWORD": base64_c,
+            "POSTGRES_COLLECTOR_PASSWORD": base64_d,
+            "REDIS_PASSWORD": "E" * 43,
+            "JWT_SECRET": "F" * 43,
+            "JWT_ISSUER": "s21-openapi-local",
+            "JWT_AUDIENCE": "s21-openapi-client",
+            "LOGIN_SCOPE_HMAC_KEY": "G" * 43,
+            "PRINCIPLE_CURSOR_HMAC_KEY": "H" * 43,
+            "DEMO_CREDENTIAL_SEPARATION_KEY": "I" * 43,
+            "DEMO_USER_CREDENTIAL_BUNDLE": (
+                f"s21-v1:usr_demo_user:{'J' * 43}:{bcrypt_user}:{'K' * 43}"
+            ),
+            "DEMO_ADMIN_CREDENTIAL_BUNDLE": (
+                f"s21-v1:usr_demo_admin:{'L' * 43}:{bcrypt_admin}:{'M' * 43}"
+            ),
+        }
+        return "".join(f"{name}='{value}'\n" for name, value in values.items())
+
+    class environment_file:
+        def __init__(self, content: str) -> None:
+            self.content = content
+            self.directory: tempfile.TemporaryDirectory[str] | None = None
+            self.path: Path | None = None
+
+        def __enter__(self) -> Path:
+            self.directory = tempfile.TemporaryDirectory(dir="/tmp")
+            self.path = Path(self.directory.name) / "openapi.env"
+            self.path.write_text(self.content, encoding="utf-8", newline="")
+            self.path.chmod(0o600)
+            return self.path
+
+        def __exit__(self, *_: object) -> None:
+            assert self.directory is not None
+            self.directory.cleanup()
+
+
+class OpenApiGateCleanupTest(unittest.TestCase):
+    def test_partial_compose_start_is_cleaned_up(self) -> None:
+        commands: list[list[str]] = []
+
+        def fail_start_then_allow_cleanup(
+            command: list[str],
+            **_: object,
+        ) -> None:
+            commands.append(command)
+            if len(commands) == 1:
+                raise OpenApiGateError("simulated compose health failure")
+
+        with (
+            patch("contracts.run_openapi_gate.parse_openapi_environment", return_value={}),
+            patch("contracts.run_openapi_gate._require_fixture_port_available"),
+            patch(
+                "contracts.run_openapi_gate._run",
+                side_effect=fail_start_then_allow_cleanup,
+            ),
+        ):
+            with self.assertRaisesRegex(
+                OpenApiGateError,
+                "simulated compose health failure",
+            ):
+                run_gate(Path("/unused/openapi.env"), write=False)
+
+        self.assertEqual(2, len(commands))
+        self.assertIn("up", commands[0])
+        self.assertIn("down", commands[1])
+        self.assertIn("--volumes", commands[1])
+
+
+class ContractsCiWorkflowTest(unittest.TestCase):
+    def test_openapi_fixture_task_uses_checked_in_gradle_wrapper(self) -> None:
+        repo_root = Path(__file__).resolve().parents[2]
+        workflow = (repo_root / ".github/workflows/contracts-ci.yml").read_text(encoding="utf-8")
+        expected_command = (
+            "run: workspaces/decision-platform/spring-api/gradlew "
+            "-p workspaces/decision-platform/spring-api prepareOpenApiFixtureEnv"
+        )
+
+        # GitHub runner의 저장소 루트에는 gradlew가 없으므로 workspace wrapper를 직접 호출한다.
+        self.assertIn(expected_command, workflow)
+        self.assertNotIn(
+            "run: ./gradlew -p workspaces/decision-platform/spring-api prepareOpenApiFixtureEnv",
+            workflow,
+        )
+
+
+class OpenApiNormalizerTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.catalog_bytes = canonical_json_bytes(load_catalog(CATALOG_PATH))
+        self.digest = hashlib.sha256(self.catalog_bytes).hexdigest()
+        self.generated = {
+            "openapi": "3.1.0",
+            "jsonSchemaDialect": "https://spec.openapis.org/oas/3.1/dialect/base",
+            "x-s2-1-contract-id": "s2-1-principle-contract/v1",
+            "x-s2-1-contract-sha256": self.digest,
+            "info": {"title": "Decision Platform API", "version": "0"},
+            "paths": {
+                "/api/v1/auth/login": {
+                    "post": {"responses": {"200": {"description": "Successful login"}}}
+                }
+            },
+            "components": {"schemas": {"LoginRequest": {"type": "object"}}},
+        }
+        self.expected = copy.deepcopy(self.generated)
+        self.expected["openapi"] = "3.1.1"
+
+    def test_only_root_patch_and_deterministic_formatting_are_accepted(self) -> None:
+        normalized = check_normalized_openapi(
+            canonical_json_bytes(self.generated),
+            canonical_json_bytes(self.expected),
+            self.catalog_bytes,
+            amendment=True,
+        )
+
+        self.assertEqual(canonical_json_bytes(self.expected), normalized)
+
+    def test_generated_document_must_pass_the_oas_31_schema(self) -> None:
+        invalid_oas = copy.deepcopy(self.generated)
+        invalid_oas["info"] = {"title": "Missing required version"}
+
+        with self.assertRaises(OpenApiNormalizationError):
+            normalize_generated_openapi(
+                canonical_json_bytes(invalid_oas),
+                self.catalog_bytes,
+                amendment=True,
+            )
+
+    def test_dialect_paths_components_and_digest_mutations_fail_closed(self) -> None:
+        mutations = []
+        wrong_dialect = copy.deepcopy(self.generated)
+        wrong_dialect["jsonSchemaDialect"] = "https://json-schema.org/draft/2020-12/schema"
+        mutations.append(wrong_dialect)
+
+        premature_path = copy.deepcopy(self.generated)
+        premature_path["paths"]["/api/v1/principles"] = {"get": {"responses": {"200": {}}}}
+        mutations.append(premature_path)
+
+        drifted_component = copy.deepcopy(self.generated)
+        drifted_component["components"]["schemas"]["Injected"] = {"type": "string"}
+        mutations.append(drifted_component)
+
+        wrong_digest = copy.deepcopy(self.generated)
+        wrong_digest["x-s2-1-contract-sha256"] = "0" * 64
+        mutations.append(wrong_digest)
+
+        invalid_oas = copy.deepcopy(self.generated)
+        invalid_oas["info"] = {"title": "Missing required version"}
+        mutations.append(invalid_oas)
+
+        for mutation in mutations:
+            with self.subTest(mutation=hashlib.sha256(repr(mutation).encode()).hexdigest()):
+                with self.assertRaises(OpenApiNormalizationError):
+                    check_normalized_openapi(
+                        canonical_json_bytes(mutation),
+                        canonical_json_bytes(self.expected),
+                        self.catalog_bytes,
+                        amendment=True,
+                    )
+
+
+if __name__ == "__main__":
+    unittest.main()

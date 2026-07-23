@@ -61,7 +61,6 @@ app:
     max-response-body-bytes: 4194304
     paths:
       - /api/v1/orders/**
-      - /api/v1/principles/**
       - /api/v1/backtests/**
   decision:
     valid-minutes: 10              # validUntil

@@ -1,0 +1,16 @@
+{
+  "mode": "GUIDE",
+  "presetId": "balanced",
+  "rules": [
+    {
+      "enabled": true,
+      "metric": "asset_weight",
+      "operator": "<=",
+      "ruleId": "max_position_per_asset",
+      "ruleType": "POSITION_LIMIT",
+      "severity": "BLOCK",
+      "threshold": 0.2
+    }
+  ],
+  "title": "단일 규칙 원칙"
+}

@@ -1,0 +1,601 @@
+{
+  "$defs": {
+    "PrincipleRule": {
+      "additionalProperties": false,
+      "oneOf": [
+        {
+          "allOf": [
+            {
+              "else": {
+                "properties": {
+                  "severity": {
+                    "const": "BLOCK"
+                  }
+                }
+              },
+              "if": {
+                "properties": {
+                  "enabled": {
+                    "const": false
+                  }
+                },
+                "required": [
+                  "enabled"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "severity": {
+                    "const": "ALLOW"
+                  }
+                }
+              }
+            }
+          ],
+          "properties": {
+            "metric": {
+              "const": "asset_weight"
+            },
+            "operator": {
+              "const": "<="
+            },
+            "ruleId": {
+              "const": "max_position_per_asset"
+            },
+            "ruleType": {
+              "const": "POSITION_LIMIT"
+            },
+            "threshold": {
+              "maximum": 1,
+              "minimum": 0,
+              "multipleOf": 0.0001,
+              "type": "number"
+            }
+          }
+        },
+        {
+          "allOf": [
+            {
+              "else": {
+                "properties": {
+                  "severity": {
+                    "const": "BLOCK"
+                  }
+                }
+              },
+              "if": {
+                "properties": {
+                  "enabled": {
+                    "const": false
+                  }
+                },
+                "required": [
+                  "enabled"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "severity": {
+                    "const": "ALLOW"
+                  }
+                }
+              }
+            }
+          ],
+          "properties": {
+            "metric": {
+              "const": "gold_etf_etn_weight"
+            },
+            "operator": {
+              "const": "<="
+            },
+            "ruleId": {
+              "const": "max_gold_etf_etn_weight"
+            },
+            "ruleType": {
+              "const": "POSITION_LIMIT"
+            },
+            "threshold": {
+              "maximum": 1,
+              "minimum": 0,
+              "multipleOf": 0.0001,
+              "type": "number"
+            }
+          }
+        },
+        {
+          "allOf": [
+            {
+              "else": {
+                "properties": {
+                  "severity": {
+                    "const": "BLOCK"
+                  }
+                }
+              },
+              "if": {
+                "properties": {
+                  "enabled": {
+                    "const": false
+                  }
+                },
+                "required": [
+                  "enabled"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "severity": {
+                    "const": "ALLOW"
+                  }
+                }
+              }
+            }
+          ],
+          "properties": {
+            "metric": {
+              "const": "order_amount_krw"
+            },
+            "operator": {
+              "const": "<="
+            },
+            "ruleId": {
+              "const": "max_single_order_amount"
+            },
+            "ruleType": {
+              "const": "ORDER_SIZE"
+            },
+            "threshold": {
+              "maximum": 10000000000,
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        },
+        {
+          "allOf": [
+            {
+              "else": {
+                "properties": {
+                  "severity": {
+                    "const": "BLOCK"
+                  }
+                }
+              },
+              "if": {
+                "properties": {
+                  "enabled": {
+                    "const": false
+                  }
+                },
+                "required": [
+                  "enabled"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "severity": {
+                    "const": "ALLOW"
+                  }
+                }
+              }
+            }
+          ],
+          "properties": {
+            "metric": {
+              "const": "daily_loss_rate"
+            },
+            "operator": {
+              "const": ">="
+            },
+            "ruleId": {
+              "const": "daily_loss_guard"
+            },
+            "ruleType": {
+              "const": "LOSS_LIMIT"
+            },
+            "threshold": {
+              "maximum": 0,
+              "minimum": -1,
+              "multipleOf": 0.0001,
+              "type": "number"
+            }
+          }
+        },
+        {
+          "allOf": [
+            {
+              "else": {
+                "properties": {
+                  "severity": {
+                    "const": "BLOCK"
+                  }
+                }
+              },
+              "if": {
+                "properties": {
+                  "enabled": {
+                    "const": false
+                  }
+                },
+                "required": [
+                  "enabled"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "severity": {
+                    "const": "ALLOW"
+                  }
+                }
+              }
+            }
+          ],
+          "properties": {
+            "metric": {
+              "const": "mdd"
+            },
+            "operator": {
+              "const": ">="
+            },
+            "ruleId": {
+              "const": "mdd_guard"
+            },
+            "ruleType": {
+              "const": "DRAWDOWN_LIMIT"
+            },
+            "threshold": {
+              "maximum": 0,
+              "minimum": -1,
+              "multipleOf": 0.0001,
+              "type": "number"
+            }
+          }
+        },
+        {
+          "allOf": [
+            {
+              "else": {
+                "properties": {
+                  "severity": {
+                    "enum": [
+                      "WARN",
+                      "BLOCK"
+                    ]
+                  }
+                }
+              },
+              "if": {
+                "properties": {
+                  "enabled": {
+                    "const": false
+                  }
+                },
+                "required": [
+                  "enabled"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "severity": {
+                    "const": "ALLOW"
+                  }
+                }
+              }
+            }
+          ],
+          "properties": {
+            "metric": {
+              "const": "daily_order_count"
+            },
+            "operator": {
+              "const": "<="
+            },
+            "ruleId": {
+              "const": "max_daily_orders"
+            },
+            "ruleType": {
+              "const": "TRADING_FREQUENCY"
+            },
+            "threshold": {
+              "maximum": 1000,
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        },
+        {
+          "allOf": [
+            {
+              "else": {
+                "properties": {
+                  "severity": {
+                    "enum": [
+                      "WARN",
+                      "BLOCK"
+                    ]
+                  }
+                }
+              },
+              "if": {
+                "properties": {
+                  "enabled": {
+                    "const": false
+                  }
+                },
+                "required": [
+                  "enabled"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "severity": {
+                    "const": "ALLOW"
+                  }
+                }
+              }
+            }
+          ],
+          "properties": {
+            "metric": {
+              "const": "negative_news_score"
+            },
+            "operator": {
+              "const": "<="
+            },
+            "ruleId": {
+              "const": "negative_news_guard"
+            },
+            "ruleType": {
+              "const": "NEWS_GUARD"
+            },
+            "threshold": {
+              "maximum": 1,
+              "minimum": 0,
+              "multipleOf": 0.0001,
+              "type": "number"
+            }
+          }
+        },
+        {
+          "allOf": [
+            {
+              "else": {
+                "properties": {
+                  "severity": {
+                    "enum": [
+                      "WARN",
+                      "BLOCK"
+                    ]
+                  }
+                }
+              },
+              "if": {
+                "properties": {
+                  "enabled": {
+                    "const": false
+                  }
+                },
+                "required": [
+                  "enabled"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "severity": {
+                    "const": "ALLOW"
+                  }
+                }
+              }
+            }
+          ],
+          "properties": {
+            "metric": {
+              "const": "disclosure_risk_score"
+            },
+            "operator": {
+              "const": "<="
+            },
+            "ruleId": {
+              "const": "disclosure_risk_guard"
+            },
+            "ruleType": {
+              "const": "DISCLOSURE_GUARD"
+            },
+            "threshold": {
+              "maximum": 1,
+              "minimum": 0,
+              "multipleOf": 0.0001,
+              "type": "number"
+            }
+          }
+        }
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "metric": {
+          "enum": [
+            "asset_weight",
+            "gold_etf_etn_weight",
+            "order_amount_krw",
+            "daily_loss_rate",
+            "mdd",
+            "daily_order_count",
+            "negative_news_score",
+            "disclosure_risk_score"
+          ],
+          "type": "string"
+        },
+        "operator": {
+          "enum": [
+            "<=",
+            ">="
+          ],
+          "type": "string"
+        },
+        "ruleId": {
+          "enum": [
+            "max_position_per_asset",
+            "max_gold_etf_etn_weight",
+            "max_single_order_amount",
+            "daily_loss_guard",
+            "mdd_guard",
+            "max_daily_orders",
+            "negative_news_guard",
+            "disclosure_risk_guard"
+          ],
+          "type": "string"
+        },
+        "ruleType": {
+          "enum": [
+            "POSITION_LIMIT",
+            "ORDER_SIZE",
+            "LOSS_LIMIT",
+            "DRAWDOWN_LIMIT",
+            "TRADING_FREQUENCY",
+            "NEWS_GUARD",
+            "DISCLOSURE_GUARD"
+          ],
+          "type": "string"
+        },
+        "severity": {
+          "enum": [
+            "ALLOW",
+            "WARN",
+            "BLOCK"
+          ],
+          "type": "string"
+        },
+        "threshold": {
+          "type": [
+            "number",
+            "integer"
+          ]
+        }
+      },
+      "required": [
+        "ruleId",
+        "ruleType",
+        "metric",
+        "operator",
+        "threshold",
+        "severity",
+        "enabled"
+      ],
+      "title": "Principle rule",
+      "type": "object"
+    }
+  },
+  "$id": "contracts/schemas/principle-history-response.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "items": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "changedFields": {
+            "items": {
+              "enum": [
+                "presetId",
+                "title",
+                "mode",
+                "status",
+                "rules"
+              ],
+              "type": "string"
+            },
+            "maxItems": 5,
+            "minItems": 1,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "createdAt": {
+            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?\\+09:00$",
+            "type": "string"
+          },
+          "mode": {
+            "enum": [
+              "GUIDE",
+              "STRICT"
+            ],
+            "type": "string"
+          },
+          "presetId": {
+            "enum": [
+              "conservative",
+              "balanced",
+              "aggressive"
+            ],
+            "type": "string"
+          },
+          "principleId": {
+            "pattern": "^prc_[0-9a-f]{32}$",
+            "type": "string"
+          },
+          "rules": {
+            "items": {
+              "$ref": "#/$defs/PrincipleRule"
+            },
+            "maxItems": 8,
+            "minItems": 1,
+            "type": "array"
+          },
+          "status": {
+            "enum": [
+              "ACTIVE",
+              "ARCHIVED"
+            ],
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 120,
+            "minLength": 1,
+            "type": "string"
+          },
+          "version": {
+            "maximum": 2147483647,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "principleId",
+          "version",
+          "presetId",
+          "title",
+          "mode",
+          "status",
+          "rules",
+          "changedFields",
+          "createdAt"
+        ],
+        "type": "object"
+      },
+      "maxItems": 200,
+      "type": "array"
+    },
+    "nextCursor": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "maxLength": 2048,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "required": [
+    "items",
+    "nextCursor"
+  ],
+  "title": "Immutable Principle history page data",
+  "type": "object"
+}

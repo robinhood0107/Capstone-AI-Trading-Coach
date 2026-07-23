@@ -10,6 +10,60 @@
 | `examples/` | schema를 통과해야 하는 예시 payload |
 | `changes/` | 계약 변경 이유·영향 범위 기록 |
 
+## S2.1 Principle contract v1
+
+`catalogs/s2-1-principle-contract.v1.json`은 S2.1 preset/rule/DTO/operation의
+machine-readable 단일 진실이다. object key는 재귀 정렬하고 array 순서는 보존한 UTF-8/LF/2-space
+JSON이며 마지막 LF를 포함한 전체 bytes의 SHA-256을 OpenAPI root
+`x-s2-1-contract-sha256`에 넣는다. contract ID는
+`s2-1-principle-contract/v1`이다. generated schema/fixture를 직접 편집하지 않고
+`generate_principle_contracts.py`로 재생성·비교한다.
+
+Amendment PR의 canonical OpenAPI는 실제 존재하는 auth/health/error runtime path만 포함한다.
+Principle controller가 없는 상태에서 S2.1 path를 수동으로 추가하지 않는다. 후속 implementation
+PR이 controller를 추가할 때 generated path와 canonical OpenAPI를 같은 변경으로 갱신한다.
+
+### Artifact map
+
+| operation | request | success `data` / page examples | error examples |
+|---|---|---|---|
+| `GET /api/v1/principle-presets` | 없음 | `schemas/principle-preset-list.schema.json`, `examples/principle-presets.valid.json` | unauthorized/forbidden |
+| `POST /api/v1/principles` | `schemas/principle-create-request.schema.json`, `examples/principle-create*.valid.json` | `schemas/principle.schema.json`, `examples/principle.valid.json` | validation, unauthorized, forbidden, payload-too-large |
+| `GET /api/v1/principles` | `cursor,size,sort`만 | `schemas/principle-list-response.schema.json`, `examples/principle-list{,-next-page,-empty}.valid.json` | validation/cursor, unauthorized, forbidden |
+| `GET /api/v1/principles/{principleId}` | 없음 | `schemas/principle.schema.json`, `examples/principle.valid.json` | validation, unauthorized, forbidden, not-found |
+| `PUT /api/v1/principles/{principleId}` | `schemas/principle-update-request.schema.json`, `examples/principle-update{,-no-op}.valid.json` | `schemas/principle.schema.json`, `examples/principle.valid.json` | validation, unauthorized, forbidden, not-found, conflict, version-exhausted, payload-too-large |
+| `GET /api/v1/principles/{principleId}/versions` | `cursor,size,sort`만 | `schemas/principle-history-response.schema.json`, `examples/principle-history{,-next-page,-empty}.valid.json` | validation/cursor, unauthorized, forbidden, not-found |
+
+오류의 complete five-field envelope는
+`examples/principle-error-{validation,cursor,unauthorized,forbidden,not-found,conflict,version-exhausted,payload-too-large}.valid.json`에
+있다. rule tuple/range/scale/severity와 unknown/duplicate/empty/oversized negative fixture는
+`examples/invalid/principle*.invalid.json`에 있다. operation/error allowlist와 모든 exact limit은
+catalog를 기준으로 한다.
+
+### Consumer matrix / 소비자 영향
+
+| consumer | KR | EN |
+|---|---|---|
+| Experience Dashboard | exact 3개 preset의 KR/EN 이름·설명·disclaimer와 8 rules를 표시한다. create rules 생략은 deep copy, PUT은 full replacement다. create timeout을 blind retry하지 않고 owner list 후보를 사용자가 확인하게 한다. | Render the exact three localized presets, disclaimer, and eight rules. Omitted create rules deep-copy the preset; PUT is full replacement. Do not blindly retry an indeterminate create. |
+| Return Engine | exact 8개 rule tuple과 canonical 순서를 사용한다. ratio는 fraction, loss/MDD는 signed ratio, money/count는 integer이며 `principleId + version` full snapshot을 참조한다. | Consume the exact eight rule tuples in canonical order. Ratios are fractions, loss/MDD are signed ratios, money/count are integers, and `principleId + version` identifies a full snapshot. |
+| Decision Platform | DB-verified JWT `sub`만 owner로 사용하고 missing/cross-owner를 동일 404로 처리한다. update는 owner-scoped SQL CAS, history/audit는 append-only다. Principle은 finance idempotency 대상이 아니다. | Trust only the DB-verified JWT subject as owner, collapse missing/cross-owner to one 404, use owner-scoped SQL CAS, keep history/audit append-only, and exclude Principle from finance idempotency. |
+
+### Reproducible checks
+
+아래 명령은 provider key를 읽거나 provider 호출을 만들지 않는다. OpenAPI fixture는 Gradle이
+`build/openapi-fixture/openapi.env`에 mode `0600`으로 생성하고 strict parser가 한 descriptor로
+검증한다. dotenv text를 shell에서 `source`하지 않는다.
+
+```bash
+uv run --frozen python contracts/generate_principle_contracts.py --check
+uv run --frozen python -m unittest discover -s contracts/tests -v
+uv run --frozen python contracts/validate.py
+workspaces/decision-platform/spring-api/gradlew \
+  -p workspaces/decision-platform/spring-api --no-daemon prepareOpenApiFixtureEnv
+uv run --frozen python contracts/run_openapi_gate.py \
+  --env-file workspaces/decision-platform/spring-api/build/openapi-fixture/openapi.env
+```
+
 ## S1.5 KIS 데이터 품질 리포트
 
 S1.5는 public API가 아니라 Decision Platform 내부 CLI `kis-data-quality-report`가 생산하는

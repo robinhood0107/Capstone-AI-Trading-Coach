@@ -1,0 +1,41 @@
+{
+  "abstentions": [],
+  "canSubmitOrder": true,
+  "catalogVersion": 1,
+  "decision": "WARN",
+  "evaluationId": "evl_0123456789abcdef",
+  "issues": [],
+  "mode": "GUIDE",
+  "portfolioSource": "INTERNAL_PAPER",
+  "principleVersion": 3,
+  "principleVersionId": "pvr_0123456789abcdef0123456789abcdef",
+  "readinessPolicyVersion": "s2-2-readiness-v1",
+  "riskItems": [
+    {
+      "eventCodes": [
+        "OPENDART:piicDecsn"
+      ],
+      "mappingVersion": "s1.2-v1",
+      "metric": "disclosure_risk_score",
+      "severity": "WARN",
+      "source": "OPENDART",
+      "sourceRefs": [
+        "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      ],
+      "value": 0.6
+    }
+  ],
+  "schemaVersion": "s2-2-risk-decision/v1",
+  "semanticInputHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "snapshotArtifactHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "violations": [
+    {
+      "message": "The ready metric exceeded the configured threshold.",
+      "metricValue": 501,
+      "ruleId": "data_freshness_guard",
+      "severity": "WARN",
+      "threshold": 500
+    }
+  ],
+  "warnings": []
+}

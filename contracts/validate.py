@@ -19,6 +19,11 @@ from contracts.generate_principle_contracts import (  # noqa: E402
     load_json_bytes_strict,
     validate_principle_payload_semantics,
 )
+from contracts.generate_s2_2_contracts import (  # noqa: E402
+    CATALOG_PATH as S2_2_CATALOG_PATH,
+    load_catalog as load_s2_2_catalog,
+    validate_risk_decision_semantics,
+)
 
 SCHEMA_DIR = REPO_ROOT / "contracts" / "schemas"
 EXAMPLES_DIR = REPO_ROOT / "contracts" / "examples"
@@ -87,9 +92,26 @@ def build_validators() -> dict[str, tuple[Path, Draft202012Validator]]:
     return validators
 
 
+def validate_example_semantics(
+    schema_name: str,
+    example: object,
+    principle_catalog: object,
+    s2_2_catalog: object,
+) -> None:
+    if schema_name == "risk_decision":
+        validate_risk_decision_semantics(example, s2_2_catalog)
+        return
+    validate_principle_payload_semantics(
+        schema_name,
+        example,
+        principle_catalog,
+    )
+
+
 def validate_valid_examples(
     validators: dict[str, tuple[Path, Draft202012Validator]],
     principle_catalog: object,
+    s2_2_catalog: object,
 ) -> int:
     failures = 0
     valid_examples = sorted(EXAMPLES_DIR.glob("*.valid.json"))
@@ -105,10 +127,11 @@ def validate_valid_examples(
         semantic_error: ContractValidationError | None = None
         if error is None:
             try:
-                validate_principle_payload_semantics(
+                validate_example_semantics(
                     schema_name,
                     example,
                     principle_catalog,
+                    s2_2_catalog,
                 )
             except ContractValidationError as caught:
                 semantic_error = caught
@@ -134,6 +157,7 @@ def validate_valid_examples(
 def validate_invalid_examples(
     validators: dict[str, tuple[Path, Draft202012Validator]],
     principle_catalog: object,
+    s2_2_catalog: object,
 ) -> int:
     failures = 0
     invalid_examples = sorted(INVALID_EXAMPLES_DIR.glob("*.invalid.json"))
@@ -149,10 +173,11 @@ def validate_invalid_examples(
         semantic_error: ContractValidationError | None = None
         if error is None:
             try:
-                validate_principle_payload_semantics(
+                validate_example_semantics(
                     schema_name,
                     example,
                     principle_catalog,
+                    s2_2_catalog,
                 )
             except ContractValidationError as caught:
                 semantic_error = caught
@@ -266,9 +291,10 @@ def validate_naver_pair_examples(
 
 def main() -> int:
     principle_catalog = load_catalog(CATALOG_PATH)
+    s2_2_catalog = load_s2_2_catalog(S2_2_CATALOG_PATH)
     validators = build_validators()
-    failures = validate_valid_examples(validators, principle_catalog)
-    failures += validate_invalid_examples(validators, principle_catalog)
+    failures = validate_valid_examples(validators, principle_catalog, s2_2_catalog)
+    failures += validate_invalid_examples(validators, principle_catalog, s2_2_catalog)
     failures += validate_naver_pair_examples(validators)
     if failures:
         print(f"contracts validation failed: {failures} failure(s)", file=sys.stderr)

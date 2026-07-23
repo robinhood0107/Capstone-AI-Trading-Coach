@@ -1,0 +1,43 @@
+{
+  "$id": "contracts/schemas/s2-2-hash-vector.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "canonicalizationId": {
+      "const": "HASH-CANONICALIZATION-S22-V1"
+    },
+    "semanticInput": {
+      "type": "object"
+    },
+    "semanticInputCanonicalJson": {
+      "minLength": 2,
+      "type": "string"
+    },
+    "semanticInputHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "snapshotArtifact": {
+      "type": "object"
+    },
+    "snapshotArtifactCanonicalJson": {
+      "minLength": 2,
+      "type": "string"
+    },
+    "snapshotArtifactHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "canonicalizationId",
+    "semanticInput",
+    "semanticInputCanonicalJson",
+    "semanticInputHash",
+    "snapshotArtifact",
+    "snapshotArtifactCanonicalJson",
+    "snapshotArtifactHash"
+  ],
+  "title": "S2.2 canonical hash parity vector",
+  "type": "object"
+}

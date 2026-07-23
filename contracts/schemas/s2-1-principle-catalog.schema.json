@@ -31,6 +31,12 @@
     "enums": {
       "additionalProperties": false,
       "properties": {
+        "evidenceRequirements": {
+          "const": [
+            "OPTIONAL",
+            "REQUIRED"
+          ]
+        },
         "historySorts": {
           "const": [
             "VERSION_DESC",
@@ -73,11 +79,40 @@
         }
       },
       "required": [
+        "evidenceRequirements",
         "historySorts",
         "modes",
         "ownerSorts",
         "statuses",
         "violationReasons"
+      ],
+      "type": "object"
+    },
+    "legacyEvidenceInference": {
+      "additionalProperties": false,
+      "properties": {
+        "disabledMissingField": {
+          "const": "RULE_DEFAULT"
+        },
+        "enabledMissingField": {
+          "const": "REQUIRED"
+        },
+        "policyVersion": {
+          "const": "s2-1-legacy-evidence-inference/v1"
+        },
+        "rewriteHistoricalRows": {
+          "const": false
+        },
+        "unknownTuple": {
+          "const": "REJECT"
+        }
+      },
+      "required": [
+        "disabledMissingField",
+        "enabledMissingField",
+        "policyVersion",
+        "rewriteHistoricalRows",
+        "unknownTuple"
       ],
       "type": "object"
     },
@@ -235,6 +270,12 @@
                 "enabled": {
                   "type": "boolean"
                 },
+                "evidenceRequirement": {
+                  "enum": [
+                    "OPTIONAL",
+                    "REQUIRED"
+                  ]
+                },
                 "ruleId": {
                   "minLength": 1,
                   "type": "string"
@@ -257,7 +298,8 @@
                 "ruleId",
                 "threshold",
                 "severity",
-                "enabled"
+                "enabled",
+                "evidenceRequirement"
               ],
               "type": "object"
             },
@@ -317,6 +359,12 @@
       "items": {
         "additionalProperties": false,
         "properties": {
+          "defaultEvidenceRequirement": {
+            "enum": [
+              "OPTIONAL",
+              "REQUIRED"
+            ]
+          },
           "disabledSeverity": {
             "const": "ALLOW"
           },
@@ -325,6 +373,18 @@
               "enum": [
                 "WARN",
                 "BLOCK"
+              ]
+            },
+            "maxItems": 2,
+            "minItems": 1,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "evidenceRequirements": {
+            "items": {
+              "enum": [
+                "OPTIONAL",
+                "REQUIRED"
               ]
             },
             "maxItems": 2,
@@ -407,7 +467,9 @@
           "operator",
           "thresholdSchema",
           "enabledSeverities",
-          "disabledSeverity"
+          "disabledSeverity",
+          "evidenceRequirements",
+          "defaultEvidenceRequirement"
         ],
         "type": "object"
       },
@@ -462,6 +524,7 @@
     "contractVersion",
     "disclaimer",
     "enums",
+    "legacyEvidenceInference",
     "limits",
     "operations",
     "presets",

@@ -1,0 +1,296 @@
+{
+  "abstentions": [
+    {
+      "code": "MODEL_ABSTAINED",
+      "component": "MODEL_00",
+      "disposition": "ABSTAIN",
+      "message": "The component did not produce threshold evidence."
+    }
+  ],
+  "canSubmitOrder": true,
+  "catalogVersion": 1,
+  "decision": "WARN",
+  "evaluationId": "evl_0123456789abcdef",
+  "issues": [],
+  "mode": "GUIDE",
+  "portfolioSource": "INTERNAL_PAPER",
+  "principleVersion": 3,
+  "principleVersionId": "pvr_0123456789abcdef0123456789abcdef",
+  "readinessPolicyVersion": "s2-2-readiness-v1",
+  "riskItems": [
+    {
+      "eventCodes": [
+        "OPENDART:piicDecsn"
+      ],
+      "mappingVersion": "s1.2-v1",
+      "metric": "disclosure_risk_score",
+      "severity": "WARN",
+      "source": "OPENDART",
+      "sourceRefs": [
+        "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      ],
+      "value": 0.6
+    }
+  ],
+  "schemaVersion": "s2-2-risk-decision/v1",
+  "semanticInputHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "snapshotArtifactHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "violations": [],
+  "warnings": [
+    {
+      "code": "MODEL_ABSTAINED",
+      "message": "Optional evidence was not used for this evaluation.",
+      "source": "MODEL_00"
+    },
+    {
+      "code": "MODEL_ABSTAINED",
+      "message": "Optional evidence was not used for this evaluation.",
+      "source": "MODEL_01"
+    },
+    {
+      "code": "MODEL_ABSTAINED",
+      "message": "Optional evidence was not used for this evaluation.",
+      "source": "MODEL_02"
+    },
+    {
+      "code": "MODEL_ABSTAINED",
+      "message": "Optional evidence was not used for this evaluation.",
+      "source": "MODEL_03"
+    },
+    {
+      "code": "MODEL_ABSTAINED",
+      "message": "Optional evidence was not used for this evaluation.",
+      "source": "MODEL_04"
+    },
+    {
+      "code": "MODEL_ABSTAINED",
+      "message": "Optional evidence was not used for this evaluation.",
+      "source": "MODEL_05"
+    },
+    {
+      "code": "MODEL_ABSTAINED",
+      "message": "Optional evidence was not used for this evaluation.",
+      "source": "MODEL_06"
+    },
+    {
+      "code": "MODEL_ABSTAINED",
+      "message": "Optional evidence was not used for this evaluation.",
+      "source": "MODEL_07"
+    },
+    {
+      "code": "MODEL_ABSTAINED",
+      "message": "Optional evidence was not used for this evaluation.",
+      "source": "MODEL_08"
+    },
+    {
+      "code": "MODEL_ABSTAINED",
+      "message": "Optional evidence was not used for this evaluation.",
+      "source": "MODEL_09"
+    },
+    {
+      "code": "MODEL_ABSTAINED",
+      "message": "Optional evidence was not used for this evaluation.",
+      "source": "MODEL_10"
+    },
+    {
+      "code": "MODEL_ABSTAINED",
+      "message": "Optional evidence was not used for this evaluation.",
+      "source": "MODEL_11"
+    },
+    {
+      "code": "MODEL_ABSTAINED",
+      "message": "Optional evidence was not used for this evaluation.",
+      "source": "MODEL_12"
+    },
+    {
+      "code": "MODEL_ABSTAINED",
+      "message": "Optional evidence was not used for this evaluation.",
+      "source": "MODEL_13"
+    },
+    {
+      "code": "MODEL_ABSTAINED",
+      "message": "Optional evidence was not used for this evaluation.",
+      "source": "MODEL_14"
+    },
+    {
+      "code": "MODEL_ABSTAINED",
+      "message": "Optional evidence was not used for this evaluation.",
+      "source": "MODEL_15"
+    },
+    {
+      "code": "MODEL_ABSTAINED",
+      "message": "Optional evidence was not used for this evaluation.",
+      "source": "MODEL_16"
+    },
+    {
+      "code": "MODEL_ABSTAINED",
+      "message": "Optional evidence was not used for this evaluation.",
+      "source": "MODEL_17"
+    },
+    {
+      "code": "MODEL_ABSTAINED",
+      "message": "Optional evidence was not used for this evaluation.",
+      "source": "MODEL_18"
+    },
+    {
+      "code": "MODEL_ABSTAINED",
+      "message": "Optional evidence was not used for this evaluation.",
+      "source": "MODEL_19"
+    },
+    {
+      "code": "MODEL_ABSTAINED",
+      "message": "Optional evidence was not used for this evaluation.",
+      "source": "MODEL_20"
+    },
+    {
+      "code": "MODEL_ABSTAINED",
+      "message": "Optional evidence was not used for this evaluation.",
+      "source": "MODEL_21"
+    },
+    {
+      "code": "MODEL_ABSTAINED",
+      "message": "Optional evidence was not used for this evaluation.",
+      "source": "MODEL_22"
+    },
+    {
+      "code": "MODEL_ABSTAINED",
+      "message": "Optional evidence was not used for this evaluation.",
+      "source": "MODEL_23"
+    },
+    {
+      "code": "MODEL_ABSTAINED",
+      "message": "Optional evidence was not used for this evaluation.",
+      "source": "MODEL_24"
+    },
+    {
+      "code": "MODEL_ABSTAINED",
+      "message": "Optional evidence was not used for this evaluation.",
+      "source": "MODEL_25"
+    },
+    {
+      "code": "MODEL_ABSTAINED",
+      "message": "Optional evidence was not used for this evaluation.",
+      "source": "MODEL_26"
+    },
+    {
+      "code": "MODEL_ABSTAINED",
+      "message": "Optional evidence was not used for this evaluation.",
+      "source": "MODEL_27"
+    },
+    {
+      "code": "MODEL_ABSTAINED",
+      "message": "Optional evidence was not used for this evaluation.",
+      "source": "MODEL_28"
+    },
+    {
+      "code": "MODEL_ABSTAINED",
+      "message": "Optional evidence was not used for this evaluation.",
+      "source": "MODEL_29"
+    },
+    {
+      "code": "MODEL_ABSTAINED",
+      "message": "Optional evidence was not used for this evaluation.",
+      "source": "MODEL_30"
+    },
+    {
+      "code": "MODEL_ABSTAINED",
+      "message": "Optional evidence was not used for this evaluation.",
+      "source": "MODEL_31"
+    },
+    {
+      "code": "MODEL_ABSTAINED",
+      "message": "Optional evidence was not used for this evaluation.",
+      "source": "MODEL_32"
+    },
+    {
+      "code": "MODEL_ABSTAINED",
+      "message": "Optional evidence was not used for this evaluation.",
+      "source": "MODEL_33"
+    },
+    {
+      "code": "MODEL_ABSTAINED",
+      "message": "Optional evidence was not used for this evaluation.",
+      "source": "MODEL_34"
+    },
+    {
+      "code": "MODEL_ABSTAINED",
+      "message": "Optional evidence was not used for this evaluation.",
+      "source": "MODEL_35"
+    },
+    {
+      "code": "MODEL_ABSTAINED",
+      "message": "Optional evidence was not used for this evaluation.",
+      "source": "MODEL_36"
+    },
+    {
+      "code": "MODEL_ABSTAINED",
+      "message": "Optional evidence was not used for this evaluation.",
+      "source": "MODEL_37"
+    },
+    {
+      "code": "MODEL_ABSTAINED",
+      "message": "Optional evidence was not used for this evaluation.",
+      "source": "MODEL_38"
+    },
+    {
+      "code": "MODEL_ABSTAINED",
+      "message": "Optional evidence was not used for this evaluation.",
+      "source": "MODEL_39"
+    },
+    {
+      "code": "MODEL_ABSTAINED",
+      "message": "Optional evidence was not used for this evaluation.",
+      "source": "MODEL_40"
+    },
+    {
+      "code": "MODEL_ABSTAINED",
+      "message": "Optional evidence was not used for this evaluation.",
+      "source": "MODEL_41"
+    },
+    {
+      "code": "MODEL_ABSTAINED",
+      "message": "Optional evidence was not used for this evaluation.",
+      "source": "MODEL_42"
+    },
+    {
+      "code": "MODEL_ABSTAINED",
+      "message": "Optional evidence was not used for this evaluation.",
+      "source": "MODEL_43"
+    },
+    {
+      "code": "MODEL_ABSTAINED",
+      "message": "Optional evidence was not used for this evaluation.",
+      "source": "MODEL_44"
+    },
+    {
+      "code": "MODEL_ABSTAINED",
+      "message": "Optional evidence was not used for this evaluation.",
+      "source": "MODEL_45"
+    },
+    {
+      "code": "MODEL_ABSTAINED",
+      "message": "Optional evidence was not used for this evaluation.",
+      "source": "MODEL_46"
+    },
+    {
+      "code": "MODEL_ABSTAINED",
+      "message": "Optional evidence was not used for this evaluation.",
+      "source": "MODEL_47"
+    },
+    {
+      "code": "MODEL_ABSTAINED",
+      "message": "Optional evidence was not used for this evaluation.",
+      "source": "MODEL_48"
+    },
+    {
+      "code": "MODEL_ABSTAINED",
+      "message": "Optional evidence was not used for this evaluation.",
+      "source": "MODEL_49"
+    },
+    {
+      "code": "MODEL_ABSTAINED",
+      "message": "Optional evidence was not used for this evaluation.",
+      "source": "MODEL_50"
+    }
+  ]
+}

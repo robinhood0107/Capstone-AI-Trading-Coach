@@ -6,6 +6,7 @@
   "rules": [
     {
       "enabled": true,
+      "evidenceRequirement": "REQUIRED",
       "metric": "order_amount_krw",
       "operator": "<=",
       "ruleId": "max_position_per_asset",

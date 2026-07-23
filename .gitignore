@@ -51,6 +51,7 @@ http-client.private.env.json
 
 # --- Gradle / Kotlin / Java (workspaces/decision-platform/spring-api) ---
 .gradle/
+.kotlin/
 **/build/
 out/
 *.class

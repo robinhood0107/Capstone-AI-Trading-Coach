@@ -1,198 +1,726 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "contracts/schemas/risk_decision.schema.json",
-  "title": "Risk Decision",
-  "description": "Decision API data payload produced by RiskEngine after combining order intent, principle, model signal, and risk context.",
-  "type": "object",
-  "additionalProperties": false,
-  "required": ["decision", "canSubmitOrder", "validUntil", "violations", "riskSummary", "signalSummary", "explanation"],
-  "properties": {
-    "decisionId": {
-      "type": "string",
-      "pattern": "^dec_[A-Za-z0-9_-]+$"
-    },
-    "decision": {
-      "type": "string",
-      "enum": ["ALLOW", "WARN", "BLOCK", "HOLD"]
-    },
-    "mode": {
-      "type": "string",
-      "enum": ["GUIDE", "STRICT"]
-    },
-    "canSubmitOrder": {
-      "type": "boolean"
-    },
-    "validUntil": {
-      "type": "string",
-      "format": "date-time"
-    },
-    "violations": {
-      "type": "array",
-      "items": {
-        "$ref": "#/$defs/violation"
-      }
-    },
-    "riskItems": {
-      "type": "array",
-      "description": "RiskEngine이 소비한 부가 위험 지표의 근거 목록. disclosure_risk_score 같은 외부 원천 기반 지표가 어떤 event/source/mapping 버전으로 산출됐는지 결과 계약에 드러낸다. 범용 구조라 OpenDART 외 원천도 같은 형태로 표현한다.",
-      "items": {
-        "$ref": "#/$defs/riskItem"
-      }
-    },
-    "riskSummary": {
-      "$ref": "#/$defs/riskSummary"
-    },
-    "signalSummary": {
-      "$ref": "#/$defs/signalSummary"
-    },
-    "explanation": {
-      "$ref": "#/$defs/explanation"
-    }
-  },
   "$defs": {
-    "riskItem": {
-      "type": "object",
+    "abstention": {
       "additionalProperties": false,
-      "required": ["metric", "value", "severity", "source"],
-      "properties": {
-        "metric": {
-          "type": "string",
-          "minLength": 1,
-          "description": "위험 지표 식별자. 예: disclosure_risk_score. Principle metric enum과 정렬한다."
-        },
-        "value": {
-          "type": ["number", "null"]
-        },
-        "severity": {
-          "type": "string",
-          "enum": ["ALLOW", "WARN", "BLOCK"]
-        },
-        "source": {
-          "type": "string",
-          "enum": ["OPENDART", "KIS", "NEWS", "MACRO", "INTERNAL"],
-          "description": "지표 원천 시스템. disclosure_risk_score는 OPENDART."
-        },
-        "eventCodes": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
+      "allOf": [
+        {
+          "else": {
+            "properties": {
+              "code": {
+                "enum": [
+                  "MODEL_ABSTAINED",
+                  "OPTIONAL_EVIDENCE_ERROR",
+                  "OPTIONAL_EVIDENCE_INCOMPLETE",
+                  "OPTIONAL_EVIDENCE_MISSING",
+                  "OPTIONAL_EVIDENCE_STALE"
+                ]
+              }
+            }
           },
-          "description": "지표 산출에 기여한 구조화 이벤트 코드. 예: OPENDART:dfOcr. report_nm 문자열이 아니라 endpoint identity 기반이다."
-        },
-        "mappingVersion": {
-          "type": "string",
-          "minLength": 1,
-          "description": "점수 mapping 버전. 같은 입력·같은 버전이면 같은 점수라는 재현성을 계약에 남긴다."
-        },
-        "sourceRefs": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
+          "if": {
+            "properties": {
+              "disposition": {
+                "const": "NOT_APPLICABLE"
+              }
+            },
+            "required": [
+              "disposition"
+            ]
           },
-          "description": "raw observation 또는 citation 참조 id. explanation.citationIds와 교차 추적 가능하다."
+          "then": {
+            "properties": {
+              "code": {
+                "const": "NOT_APPLICABLE_V1"
+              }
+            }
+          }
         }
-      }
-    },
-    "violation": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["ruleId", "severity", "message", "metricValue", "threshold"],
+      ],
       "properties": {
-        "ruleId": {
-          "type": "string",
-          "minLength": 1
+        "code": {
+          "enum": [
+            "MODEL_ABSTAINED",
+            "OPTIONAL_EVIDENCE_ERROR",
+            "OPTIONAL_EVIDENCE_INCOMPLETE",
+            "OPTIONAL_EVIDENCE_MISSING",
+            "OPTIONAL_EVIDENCE_STALE",
+            "NOT_APPLICABLE_V1"
+          ],
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
         },
-        "severity": {
-          "type": "string",
-          "enum": ["WARN", "BLOCK"]
+        "component": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        "disposition": {
+          "enum": [
+            "ABSTAIN",
+            "NOT_APPLICABLE"
+          ]
         },
         "message": {
-          "type": "string",
-          "minLength": 1
+          "maxLength": 1024,
+          "minLength": 1,
+          "type": "string"
+        },
+        "ruleId": {
+          "enum": [
+            "max_position_per_asset",
+            "max_gold_etf_etn_weight",
+            "max_single_order_amount",
+            "daily_loss_guard",
+            "mdd_guard",
+            "max_daily_orders",
+            "negative_news_guard",
+            "disclosure_risk_guard",
+            "high_volatility_guard",
+            "data_freshness_guard",
+            "hmm_risk_off_guard",
+            "mean_reversion_warning",
+            "etf_etn_risk_check",
+            "ad_leading_room_guard"
+          ],
+          "maxLength": 128,
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "component",
+        "disposition",
+        "message"
+      ],
+      "type": "object"
+    },
+    "issue": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "enum": [
+            "BALANCE_PARTIAL",
+            "BALANCE_STALE",
+            "BROKERAGE_UNAVAILABLE",
+            "DISCLOSURE_PARTIAL",
+            "DISCLOSURE_PROVIDER_ERROR",
+            "INSTRUMENT_METADATA_UNAVAILABLE",
+            "MARGIN_CONTEXT_UNAVAILABLE",
+            "NEWS_EVIDENCE_UNAVAILABLE",
+            "PORTFOLIO_CONTEXT_UNAVAILABLE",
+            "PRICE_MISSING",
+            "PRICE_STALE",
+            "PRINCIPLE_CONTEXT_UNAVAILABLE",
+            "RISK_SNAPSHOT_MISSING",
+            "RISK_SNAPSHOT_VERSION_MISMATCH",
+            "SOURCE_DEADLINE_EXCEEDED"
+          ],
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        "message": {
+          "maxLength": 1024,
+          "minLength": 1,
+          "type": "string"
+        },
+        "ruleId": {
+          "enum": [
+            "max_position_per_asset",
+            "max_gold_etf_etn_weight",
+            "max_single_order_amount",
+            "daily_loss_guard",
+            "mdd_guard",
+            "max_daily_orders",
+            "negative_news_guard",
+            "disclosure_risk_guard",
+            "high_volatility_guard",
+            "data_freshness_guard",
+            "hmm_risk_off_guard",
+            "mean_reversion_warning",
+            "etf_etn_risk_check",
+            "ad_leading_room_guard"
+          ],
+          "maxLength": 128,
+          "type": "string"
+        },
+        "source": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "source"
+      ],
+      "type": "object"
+    },
+    "riskItem": {
+      "additionalProperties": false,
+      "properties": {
+        "eventCodes": {
+          "items": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 100,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "mappingVersion": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        "metric": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        "severity": {
+          "enum": [
+            "ALLOW",
+            "WARN",
+            "BLOCK"
+          ]
+        },
+        "source": {
+          "enum": [
+            "OPENDART",
+            "KIS",
+            "NEWS",
+            "MACRO",
+            "INTERNAL"
+          ]
+        },
+        "sourceRefs": {
+          "items": {
+            "maxLength": 64,
+            "minLength": 64,
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "maxItems": 100,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "value": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "metric",
+        "value",
+        "severity",
+        "source"
+      ],
+      "type": "object"
+    },
+    "violation": {
+      "additionalProperties": false,
+      "properties": {
+        "message": {
+          "maxLength": 1024,
+          "minLength": 1,
+          "type": "string"
         },
         "metricValue": {
-          "type": ["number", "null"]
+          "type": "number"
+        },
+        "ruleId": {
+          "enum": [
+            "max_position_per_asset",
+            "max_gold_etf_etn_weight",
+            "max_single_order_amount",
+            "daily_loss_guard",
+            "mdd_guard",
+            "max_daily_orders",
+            "negative_news_guard",
+            "disclosure_risk_guard",
+            "high_volatility_guard",
+            "hmm_risk_off_guard",
+            "mean_reversion_warning",
+            "etf_etn_risk_check"
+          ],
+          "maxLength": 128,
+          "type": "string"
+        },
+        "severity": {
+          "enum": [
+            "WARN",
+            "BLOCK"
+          ]
         },
         "threshold": {
-          "type": ["number", "null"]
+          "type": "number"
+        }
+      },
+      "required": [
+        "ruleId",
+        "severity",
+        "message",
+        "metricValue",
+        "threshold"
+      ],
+      "type": "object"
+    },
+    "warning": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "enum": [
+            "MODEL_ABSTAINED",
+            "OPTIONAL_EVIDENCE_ERROR",
+            "OPTIONAL_EVIDENCE_INCOMPLETE",
+            "OPTIONAL_EVIDENCE_MISSING",
+            "OPTIONAL_EVIDENCE_STALE"
+          ],
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        "message": {
+          "maxLength": 1024,
+          "minLength": 1,
+          "type": "string"
+        },
+        "ruleId": {
+          "enum": [
+            "max_position_per_asset",
+            "max_gold_etf_etn_weight",
+            "max_single_order_amount",
+            "daily_loss_guard",
+            "mdd_guard",
+            "max_daily_orders",
+            "negative_news_guard",
+            "disclosure_risk_guard",
+            "high_volatility_guard",
+            "data_freshness_guard",
+            "hmm_risk_off_guard",
+            "mean_reversion_warning",
+            "etf_etn_risk_check",
+            "ad_leading_room_guard"
+          ],
+          "maxLength": 128,
+          "type": "string"
+        },
+        "source": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "source"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "contracts/schemas/risk_decision.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "decision": {
+            "const": "ALLOW"
+          }
+        },
+        "required": [
+          "decision"
+        ]
+      },
+      "then": {
+        "properties": {
+          "abstentions": {
+            "items": {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/abstention"
+                },
+                {
+                  "properties": {
+                    "disposition": {
+                      "const": "NOT_APPLICABLE"
+                    }
+                  }
+                }
+              ]
+            },
+            "maxItems": 50,
+            "type": "array"
+          },
+          "canSubmitOrder": {
+            "const": true
+          },
+          "issues": {
+            "maxItems": 0
+          },
+          "violations": {
+            "maxItems": 0
+          },
+          "warnings": {
+            "maxItems": 0
+          }
         }
       }
     },
-    "riskSummary": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["mdd", "var95", "cvar95", "hmmRegime", "regimeProbability"],
-      "properties": {
-        "mdd": {
-          "type": "number"
+    {
+      "if": {
+        "properties": {
+          "decision": {
+            "const": "WARN"
+          }
         },
-        "var95": {
-          "type": "number"
-        },
-        "cvar95": {
-          "type": "number"
-        },
-        "hmmRegime": {
-          "type": "string",
-          "enum": ["NORMAL", "SIDEWAYS", "HIGH_VOLATILITY", "RISK_OFF", "RISK_ON"],
-          "description": "P0 결정: API 5.1, 6.1, 8.1 예시의 HMM regime 표현을 함께 수용한다."
-        },
-        "regimeProbability": {
-          "type": "number",
-          "minimum": 0,
-          "maximum": 1
+        "required": [
+          "decision"
+        ]
+      },
+      "then": {
+        "anyOf": [
+          {
+            "properties": {
+              "violations": {
+                "minItems": 1
+              }
+            }
+          },
+          {
+            "properties": {
+              "warnings": {
+                "minItems": 1
+              }
+            }
+          },
+          {
+            "properties": {
+              "abstentions": {
+                "contains": {
+                  "properties": {
+                    "disposition": {
+                      "const": "ABSTAIN"
+                    }
+                  },
+                  "required": [
+                    "disposition"
+                  ],
+                  "type": "object"
+                },
+                "minContains": 1
+              }
+            }
+          }
+        ],
+        "properties": {
+          "canSubmitOrder": {
+            "const": true
+          },
+          "issues": {
+            "maxItems": 0
+          }
         }
       }
     },
-    "signalSummary": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["finalSignal", "confidence", "lstmSignal", "lightgbmSignal", "newsSentiment"],
-      "properties": {
-        "finalSignal": {
-          "type": "string",
-          "enum": ["BUY_STRONG", "BUY_WEAK", "BUY", "HOLD", "SELL", "SELL_WEAK", "SELL_STRONG"],
-          "description": "P0 결정: API 5.1의 BUY_WEAK와 Signal API의 BUY/HOLD/SELL 계열을 함께 수용한다."
+    {
+      "if": {
+        "properties": {
+          "decision": {
+            "const": "HOLD"
+          }
         },
-        "confidence": {
-          "type": "number",
-          "minimum": 0,
-          "maximum": 1
+        "required": [
+          "decision"
+        ]
+      },
+      "then": {
+        "not": {
+          "properties": {
+            "violations": {
+              "contains": {
+                "properties": {
+                  "severity": {
+                    "const": "BLOCK"
+                  }
+                },
+                "required": [
+                  "severity"
+                ],
+                "type": "object"
+              },
+              "minContains": 1
+            }
+          }
         },
-        "lstmSignal": {
-          "type": "string",
-          "enum": ["BUY", "SELL", "HOLD"]
-        },
-        "lightgbmSignal": {
-          "type": "string",
-          "enum": ["BUY", "SELL", "HOLD"]
-        },
-        "newsSentiment": {
-          "type": "number",
-          "minimum": -1,
-          "maximum": 1
+        "properties": {
+          "canSubmitOrder": {
+            "const": false
+          },
+          "issues": {
+            "minItems": 1
+          }
         }
       }
     },
-    "explanation": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["shortText", "citationIds"],
-      "properties": {
-        "shortText": {
-          "type": "string",
-          "minLength": 1
+    {
+      "if": {
+        "properties": {
+          "decision": {
+            "const": "BLOCK"
+          }
         },
-        "citationIds": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
+        "required": [
+          "decision"
+        ]
+      },
+      "then": {
+        "properties": {
+          "canSubmitOrder": {
+            "const": false
+          },
+          "violations": {
+            "contains": {
+              "properties": {
+                "severity": {
+                  "const": "BLOCK"
+                }
+              },
+              "required": [
+                "severity"
+              ],
+              "type": "object"
+            },
+            "minContains": 1
           }
         }
       }
     }
-  }
+  ],
+  "properties": {
+    "abstentions": {
+      "items": {
+        "$ref": "#/$defs/abstention"
+      },
+      "maxItems": 50,
+      "type": "array"
+    },
+    "canSubmitOrder": {
+      "type": "boolean"
+    },
+    "catalogVersion": {
+      "const": 1
+    },
+    "decision": {
+      "enum": [
+        "ALLOW",
+        "WARN",
+        "HOLD",
+        "BLOCK"
+      ]
+    },
+    "decisionId": {
+      "maxLength": 128,
+      "minLength": 1,
+      "type": "string"
+    },
+    "evaluationId": {
+      "maxLength": 128,
+      "minLength": 1,
+      "type": "string"
+    },
+    "explanation": {
+      "additionalProperties": false,
+      "properties": {
+        "citationIds": {
+          "items": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 100,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "shortText": {
+          "maxLength": 1024,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "shortText",
+        "citationIds"
+      ],
+      "type": "object"
+    },
+    "issues": {
+      "items": {
+        "$ref": "#/$defs/issue"
+      },
+      "maxItems": 14,
+      "type": "array"
+    },
+    "mode": {
+      "enum": [
+        "GUIDE",
+        "STRICT"
+      ]
+    },
+    "portfolioSource": {
+      "enum": [
+        "KIS_MOCK",
+        "INTERNAL_PAPER"
+      ]
+    },
+    "principleVersion": {
+      "maximum": 2147483647,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "principleVersionId": {
+      "maxLength": 128,
+      "minLength": 1,
+      "type": "string"
+    },
+    "readinessPolicyVersion": {
+      "const": "s2-2-readiness-v1"
+    },
+    "riskItems": {
+      "items": {
+        "$ref": "#/$defs/riskItem"
+      },
+      "maxItems": 50,
+      "type": "array"
+    },
+    "riskSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "cvar95": {
+          "type": "number"
+        },
+        "hmmRegime": {
+          "enum": [
+            "NORMAL",
+            "SIDEWAYS",
+            "HIGH_VOLATILITY",
+            "RISK_OFF",
+            "RISK_ON"
+          ]
+        },
+        "mdd": {
+          "type": "number"
+        },
+        "regimeProbability": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        "var95": {
+          "type": "number"
+        }
+      },
+      "type": "object"
+    },
+    "schemaVersion": {
+      "const": "s2-2-risk-decision/v1"
+    },
+    "semanticInputHash": {
+      "maxLength": 64,
+      "minLength": 64,
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "signalSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        "finalSignal": {
+          "enum": [
+            "BUY_STRONG",
+            "BUY_WEAK",
+            "BUY",
+            "HOLD",
+            "SELL",
+            "SELL_WEAK",
+            "SELL_STRONG"
+          ]
+        },
+        "lightgbmSignal": {
+          "enum": [
+            "BUY",
+            "SELL",
+            "HOLD"
+          ]
+        },
+        "lstmSignal": {
+          "enum": [
+            "BUY",
+            "SELL",
+            "HOLD"
+          ]
+        },
+        "newsSentiment": {
+          "maximum": 1,
+          "minimum": -1,
+          "type": "number"
+        }
+      },
+      "type": "object"
+    },
+    "snapshotArtifactHash": {
+      "maxLength": 64,
+      "minLength": 64,
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "validUntil": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "violations": {
+      "items": {
+        "$ref": "#/$defs/violation"
+      },
+      "maxItems": 14,
+      "type": "array"
+    },
+    "warnings": {
+      "items": {
+        "$ref": "#/$defs/warning"
+      },
+      "maxItems": 50,
+      "type": "array"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "evaluationId",
+    "catalogVersion",
+    "readinessPolicyVersion",
+    "decision",
+    "mode",
+    "canSubmitOrder",
+    "principleVersionId",
+    "principleVersion",
+    "portfolioSource",
+    "semanticInputHash",
+    "snapshotArtifactHash",
+    "violations",
+    "issues",
+    "warnings",
+    "abstentions",
+    "riskItems"
+  ],
+  "title": "S2.2 offline risk evaluation result",
+  "type": "object"
 }

@@ -1,24 +1,19 @@
 {
-  "decision": "APPROVE",
+  "abstentions": [],
   "canSubmitOrder": true,
-  "validUntil": "2026-06-23T10:10:00+09:00",
+  "catalogVersion": 1,
+  "decision": "APPROVE",
+  "evaluationId": "evl_0123456789abcdef",
+  "issues": [],
+  "mode": "GUIDE",
+  "portfolioSource": "INTERNAL_PAPER",
+  "principleVersion": 3,
+  "principleVersionId": "pvr_0123456789abcdef0123456789abcdef",
+  "readinessPolicyVersion": "s2-2-readiness-v1",
+  "riskItems": [],
+  "schemaVersion": "s2-2-risk-decision/v1",
+  "semanticInputHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "snapshotArtifactHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
   "violations": [],
-  "riskSummary": {
-    "mdd": -0.081,
-    "var95": -0.024,
-    "cvar95": -0.037,
-    "hmmRegime": "HIGH_VOLATILITY",
-    "regimeProbability": 0.71
-  },
-  "signalSummary": {
-    "finalSignal": "BUY_WEAK",
-    "confidence": 0.58,
-    "lstmSignal": "BUY",
-    "lightgbmSignal": "HOLD",
-    "newsSentiment": 0.12
-  },
-  "explanation": {
-    "shortText": "Invalid decision enum should fail.",
-    "citationIds": ["cit_001"]
-  }
+  "warnings": []
 }

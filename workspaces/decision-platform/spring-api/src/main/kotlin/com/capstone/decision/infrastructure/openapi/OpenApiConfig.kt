@@ -217,6 +217,10 @@ class OpenApiConfig {
                         "threshold" to Schema<Any>().types(linkedSetOf("number", "integer")),
                         "severity" to StringSchema()._enum(SEVERITIES),
                         "enabled" to BooleanSchema(),
+                        "evidenceRequirement" to
+                            StringSchema()._enum(
+                                contract.evidenceRequirements.map(Enum<*>::name).sorted(),
+                            ),
                     ),
                 required = RULE_FIELDS,
             )
@@ -273,6 +277,10 @@ class OpenApiConfig {
                     "metric" to StringSchema()._const(definition.metric),
                     "operator" to StringSchema()._const(definition.operator),
                     "threshold" to threshold,
+                    "evidenceRequirement" to
+                        StringSchema()._enum(
+                            definition.evidenceRequirements.map(Enum<*>::name).sorted(),
+                        ),
                 )
             it.allOf = listOf(disabledCondition)
         }
@@ -366,7 +374,16 @@ class OpenApiConfig {
         private const val S21_CONTRACT_ID = "s2-1-principle-contract/v1"
         private const val REQUEST_MAX_BYTES = 1_048_576
         private val RULE_FIELDS =
-            listOf("ruleId", "ruleType", "metric", "operator", "threshold", "severity", "enabled")
+            listOf(
+                "ruleId",
+                "ruleType",
+                "metric",
+                "operator",
+                "threshold",
+                "severity",
+                "enabled",
+                "evidenceRequirement",
+            )
         private val SEVERITIES = listOf("ALLOW", "WARN", "BLOCK")
         private val VALIDATION_REASONS =
             listOf(

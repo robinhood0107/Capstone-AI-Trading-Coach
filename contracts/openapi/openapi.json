@@ -912,6 +912,12 @@
               }
             ],
             "properties": {
+              "evidenceRequirement": {
+                "enum": [
+                  "REQUIRED"
+                ],
+                "type": "string"
+              },
               "metric": {
                 "const": "asset_weight",
                 "type": "string"
@@ -978,6 +984,12 @@
               }
             ],
             "properties": {
+              "evidenceRequirement": {
+                "enum": [
+                  "REQUIRED"
+                ],
+                "type": "string"
+              },
               "metric": {
                 "const": "gold_etf_etn_weight",
                 "type": "string"
@@ -1044,6 +1056,12 @@
               }
             ],
             "properties": {
+              "evidenceRequirement": {
+                "enum": [
+                  "REQUIRED"
+                ],
+                "type": "string"
+              },
               "metric": {
                 "const": "order_amount_krw",
                 "type": "string"
@@ -1110,6 +1128,12 @@
               }
             ],
             "properties": {
+              "evidenceRequirement": {
+                "enum": [
+                  "REQUIRED"
+                ],
+                "type": "string"
+              },
               "metric": {
                 "const": "daily_loss_rate",
                 "type": "string"
@@ -1176,6 +1200,12 @@
               }
             ],
             "properties": {
+              "evidenceRequirement": {
+                "enum": [
+                  "REQUIRED"
+                ],
+                "type": "string"
+              },
               "metric": {
                 "const": "mdd",
                 "type": "string"
@@ -1243,6 +1273,12 @@
               }
             ],
             "properties": {
+              "evidenceRequirement": {
+                "enum": [
+                  "REQUIRED"
+                ],
+                "type": "string"
+              },
               "metric": {
                 "const": "daily_order_count",
                 "type": "string"
@@ -1310,6 +1346,13 @@
               }
             ],
             "properties": {
+              "evidenceRequirement": {
+                "enum": [
+                  "OPTIONAL",
+                  "REQUIRED"
+                ],
+                "type": "string"
+              },
               "metric": {
                 "const": "negative_news_score",
                 "type": "string"
@@ -1377,6 +1420,13 @@
               }
             ],
             "properties": {
+              "evidenceRequirement": {
+                "enum": [
+                  "OPTIONAL",
+                  "REQUIRED"
+                ],
+                "type": "string"
+              },
               "metric": {
                 "const": "disclosure_risk_score",
                 "type": "string"
@@ -1406,6 +1456,13 @@
         "properties": {
           "enabled": {
             "type": "boolean"
+          },
+          "evidenceRequirement": {
+            "enum": [
+              "OPTIONAL",
+              "REQUIRED"
+            ],
+            "type": "string"
           },
           "metric": {
             "enum": [
@@ -1469,6 +1526,7 @@
         },
         "required": [
           "enabled",
+          "evidenceRequirement",
           "metric",
           "operator",
           "ruleId",
@@ -2669,5 +2727,5 @@
     }
   ],
   "x-s2-1-contract-id": "s2-1-principle-contract/v1",
-  "x-s2-1-contract-sha256": "27c9a86201ce6263d10e7d915947dc694bfbc7b684279cde43d63e1201e40d0f"
+  "x-s2-1-contract-sha256": "687e97767beb78d9a58e65de113d323817522975a929099c6991ec8185d83784"
 }

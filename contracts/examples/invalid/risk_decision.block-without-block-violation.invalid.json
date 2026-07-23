@@ -1,0 +1,27 @@
+{
+  "abstentions": [],
+  "canSubmitOrder": false,
+  "catalogVersion": 1,
+  "decision": "BLOCK",
+  "evaluationId": "evl_0123456789abcdef",
+  "issues": [],
+  "mode": "GUIDE",
+  "portfolioSource": "INTERNAL_PAPER",
+  "principleVersion": 3,
+  "principleVersionId": "pvr_0123456789abcdef0123456789abcdef",
+  "readinessPolicyVersion": "s2-2-readiness-v1",
+  "riskItems": [],
+  "schemaVersion": "s2-2-risk-decision/v1",
+  "semanticInputHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "snapshotArtifactHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "violations": [
+    {
+      "message": "The ready metric exceeded the configured threshold.",
+      "metricValue": 500001,
+      "ruleId": "max_single_order_amount",
+      "severity": "WARN",
+      "threshold": 500000
+    }
+  ],
+  "warnings": []
+}

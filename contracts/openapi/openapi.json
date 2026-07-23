@@ -1,0 +1,445 @@
+{
+  "components": {
+    "schemas": {
+      "ApiError": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "details": {
+            "additionalProperties": {},
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ApiResponse": {
+        "properties": {
+          "data": {
+            "type": "null"
+          },
+          "error": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ApiError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ApiWarning"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "ApiResponseLoginResponse": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/LoginResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ApiError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ApiWarning"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "ApiWarning": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "details": {
+            "additionalProperties": {},
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "DataFreshnessResponse": {
+        "properties": {
+          "priceFresh": {
+            "type": "boolean"
+          },
+          "ragFresh": {
+            "type": "boolean"
+          },
+          "signalFresh": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "LoginRequest": {
+        "properties": {
+          "password": {
+            "description": "저장하거나 기록하지 않는 demo password; 인증 허용 범위는 1..72 UTF-8 bytes",
+            "format": "password",
+            "maxLength": 1024,
+            "minLength": 0,
+            "type": "string",
+            "writeOnly": true
+          },
+          "username": {
+            "description": "고정 demo login name",
+            "maxLength": 128,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "password",
+          "username"
+        ],
+        "type": "object"
+      },
+      "LoginResponse": {
+        "properties": {
+          "accessToken": {
+            "description": "HS256 Bearer JWT; sub는 검증된 internal userId",
+            "type": "string"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "tokenType": {
+            "type": "string"
+          },
+          "user": {
+            "$ref": "#/components/schemas/LoginUserResponse"
+          }
+        },
+        "type": "object"
+      },
+      "LoginUserResponse": {
+        "properties": {
+          "role": {
+            "enum": [
+              "USER",
+              "ADMIN"
+            ],
+            "type": "string"
+          },
+          "userId": {
+            "description": "DB users.user_id와 동일한 opaque owner ID",
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "SystemHealthResponse": {
+        "properties": {
+          "asOf": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "brokerage": {
+            "type": "string"
+          },
+          "dataFreshness": {
+            "$ref": "#/components/schemas/DataFreshnessResponse"
+          },
+          "degradedFeatures": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "killSwitchActive": {
+            "type": "boolean"
+          },
+          "pythonService": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "bearerAuth": {
+        "bearerFormat": "JWT",
+        "description": "HS256 JWT. 서버는 configured issuer/audience와 DB actor 상태/version을 검증한다.",
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "title": "Decision Platform API",
+    "version": "0.0.1"
+  },
+  "jsonSchemaDialect": "https://spec.openapis.org/oas/3.1/dialect/base",
+  "openapi": "3.1.1",
+  "paths": {
+    "/api/v1/auth/login": {
+      "post": {
+        "description": "DB-backed demo credential을 검증하고 internal userId를 subject로 쓰는 Bearer JWT를 발급한다.",
+        "operationId": "login",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseLoginResponse"
+                }
+              }
+            },
+            "description": "인증 성공 / Authenticated"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            },
+            "description": "요청 JSON/필드 검증 실패 / Invalid request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            },
+            "description": "동일한 login 실패 envelope / Invalid credential"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            },
+            "description": "로그인 시도 제한 / Login attempt limit"
+          }
+        },
+        "security": [],
+        "summary": "데모 사용자 로그인 / Demo user login",
+        "tags": [
+          "auth-controller"
+        ]
+      }
+    },
+    "/api/v1/system/health": {
+      "get": {
+        "operationId": "health",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemHealthResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "system-health-controller"
+        ]
+      }
+    },
+    "/error": {
+      "delete": {
+        "operationId": "handleError_3",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "api-error-controller"
+        ]
+      },
+      "get": {
+        "operationId": "handleError",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "api-error-controller"
+        ]
+      },
+      "head": {
+        "operationId": "handleError_5",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "api-error-controller"
+        ]
+      },
+      "options": {
+        "operationId": "handleError_6",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "api-error-controller"
+        ]
+      },
+      "patch": {
+        "operationId": "handleError_4",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "api-error-controller"
+        ]
+      },
+      "post": {
+        "operationId": "handleError_1",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "api-error-controller"
+        ]
+      },
+      "put": {
+        "operationId": "handleError_2",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "api-error-controller"
+        ]
+      }
+    }
+  },
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "servers": [
+    {
+      "description": "Generated server url",
+      "url": "http://127.0.0.1:18080"
+    }
+  ],
+  "x-s2-1-contract-id": "s2-1-principle-contract/v1",
+  "x-s2-1-contract-sha256": "27c9a86201ce6263d10e7d915947dc694bfbc7b684279cde43d63e1201e40d0f"
+}

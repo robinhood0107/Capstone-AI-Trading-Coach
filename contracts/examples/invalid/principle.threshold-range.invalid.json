@@ -11,7 +11,7 @@
       "ruleId": "max_position_per_asset",
       "ruleType": "POSITION_LIMIT",
       "severity": "BLOCK",
-      "threshold": 0.2
+      "threshold": 1.0001
     }
   ],
   "status": "ACTIVE",

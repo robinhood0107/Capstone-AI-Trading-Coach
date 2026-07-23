@@ -1,0 +1,473 @@
+{
+  "$id": "contracts/schemas/s2-1-principle-catalog.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "const": "https://json-schema.org/draft/2020-12/schema"
+    },
+    "contractId": {
+      "const": "s2-1-principle-contract"
+    },
+    "contractVersion": {
+      "const": 1
+    },
+    "disclaimer": {
+      "additionalProperties": false,
+      "properties": {
+        "en": {
+          "const": "These presets are educational demo defaults. They are not investment advice, an assessment of personal suitability, or a guarantee against loss."
+        },
+        "ko": {
+          "const": "이 프리셋은 교육·시연용 기본값이며 투자 권유, 개인별 적합성 판단 또는 손실 방지를 보장하지 않습니다."
+        }
+      },
+      "required": [
+        "ko",
+        "en"
+      ],
+      "type": "object"
+    },
+    "enums": {
+      "additionalProperties": false,
+      "properties": {
+        "historySorts": {
+          "const": [
+            "VERSION_DESC",
+            "VERSION_ASC"
+          ]
+        },
+        "modes": {
+          "const": [
+            "GUIDE",
+            "STRICT"
+          ]
+        },
+        "ownerSorts": {
+          "const": [
+            "UPDATED_AT_DESC",
+            "UPDATED_AT_ASC"
+          ]
+        },
+        "statuses": {
+          "const": [
+            "ACTIVE",
+            "ARCHIVED"
+          ]
+        },
+        "violationReasons": {
+          "const": [
+            "REQUIRED",
+            "UNKNOWN_FIELD",
+            "INVALID_FORMAT",
+            "INVALID_ENUM",
+            "UNAVAILABLE",
+            "OUT_OF_RANGE",
+            "INVALID_SCALE",
+            "TOO_FEW_ITEMS",
+            "TOO_MANY_ITEMS",
+            "DUPLICATE",
+            "INVALID_COMBINATION",
+            "INVALID_CURSOR"
+          ]
+        }
+      },
+      "required": [
+        "historySorts",
+        "modes",
+        "ownerSorts",
+        "statuses",
+        "violationReasons"
+      ],
+      "type": "object"
+    },
+    "limits": {
+      "additionalProperties": false,
+      "properties": {
+        "cursorMaxChars": {
+          "const": 2048
+        },
+        "cursorTtlSeconds": {
+          "const": 900
+        },
+        "maxVersion": {
+          "const": 2147483647
+        },
+        "pageDefault": {
+          "const": 50
+        },
+        "pageMax": {
+          "const": 200
+        },
+        "pageMin": {
+          "const": 1
+        },
+        "requestMaxBytes": {
+          "const": 1048576
+        },
+        "rulesMaxItems": {
+          "const": 8
+        },
+        "rulesMinItems": {
+          "const": 1
+        },
+        "titleMaxCodePoints": {
+          "const": 120
+        },
+        "titleMinCodePoints": {
+          "const": 1
+        }
+      },
+      "required": [
+        "cursorMaxChars",
+        "cursorTtlSeconds",
+        "maxVersion",
+        "pageDefault",
+        "pageMax",
+        "pageMin",
+        "requestMaxBytes",
+        "rulesMaxItems",
+        "rulesMinItems",
+        "titleMaxCodePoints",
+        "titleMinCodePoints"
+      ],
+      "type": "object"
+    },
+    "operations": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "errorCodes": {
+            "items": {
+              "enum": [
+                "VALIDATION_ERROR",
+                "UNAUTHORIZED",
+                "FORBIDDEN",
+                "NOT_FOUND",
+                "CONFLICT",
+                "VERSION_EXHAUSTED",
+                "PAYLOAD_TOO_LARGE"
+              ]
+            },
+            "type": "array",
+            "uniqueItems": true
+          },
+          "method": {
+            "enum": [
+              "GET",
+              "POST",
+              "PUT"
+            ]
+          },
+          "operationId": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "path": {
+            "pattern": "^/api/v1/",
+            "type": "string"
+          },
+          "queryFields": {
+            "items": {
+              "enum": [
+                "cursor",
+                "size",
+                "sort"
+              ]
+            },
+            "type": "array",
+            "uniqueItems": true
+          },
+          "requestSchema": {
+            "enum": [
+              null,
+              "PrincipleCreateRequest",
+              "PrincipleUpdateRequest"
+            ],
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "responseSchema": {
+            "enum": [
+              "PrincipleRule",
+              "PrincipleCurrent",
+              "PrinciplePresetListData",
+              "PrincipleCreateRequest",
+              "PrincipleUpdateRequest",
+              "PrincipleOwnerListData",
+              "PrincipleHistoryData",
+              "ErrorEnvelope"
+            ]
+          },
+          "successStatus": {
+            "enum": [
+              200,
+              201
+            ]
+          }
+        },
+        "required": [
+          "operationId",
+          "method",
+          "path",
+          "successStatus",
+          "requestSchema",
+          "queryFields",
+          "responseSchema",
+          "errorCodes"
+        ],
+        "type": "object"
+      },
+      "maxItems": 6,
+      "minItems": 6,
+      "type": "array"
+    },
+    "presets": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "defaultRules": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "ruleId": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "severity": {
+                  "enum": [
+                    "ALLOW",
+                    "WARN",
+                    "BLOCK"
+                  ]
+                },
+                "threshold": {
+                  "type": [
+                    "number",
+                    "integer"
+                  ]
+                }
+              },
+              "required": [
+                "ruleId",
+                "threshold",
+                "severity",
+                "enabled"
+              ],
+              "type": "object"
+            },
+            "maxItems": 8,
+            "minItems": 8,
+            "type": "array"
+          },
+          "descriptionEn": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "descriptionKo": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "mode": {
+            "const": "GUIDE"
+          },
+          "nameEn": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "nameKo": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "order": {
+            "maximum": 3,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "presetId": {
+            "enum": [
+              "conservative",
+              "balanced",
+              "aggressive"
+            ]
+          }
+        },
+        "required": [
+          "order",
+          "presetId",
+          "nameKo",
+          "nameEn",
+          "descriptionKo",
+          "descriptionEn",
+          "mode",
+          "defaultRules"
+        ],
+        "type": "object"
+      },
+      "maxItems": 3,
+      "minItems": 3,
+      "type": "array"
+    },
+    "ruleDefinitions": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "disabledSeverity": {
+            "const": "ALLOW"
+          },
+          "enabledSeverities": {
+            "items": {
+              "enum": [
+                "WARN",
+                "BLOCK"
+              ]
+            },
+            "maxItems": 2,
+            "minItems": 1,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "metric": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "operator": {
+            "enum": [
+              "<=",
+              ">="
+            ]
+          },
+          "order": {
+            "maximum": 8,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "ruleId": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "ruleType": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "thresholdSchema": {
+            "additionalProperties": false,
+            "properties": {
+              "jsonType": {
+                "enum": [
+                  "number",
+                  "integer"
+                ]
+              },
+              "maxNormalizedScale": {
+                "maximum": 4,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "maximum": {
+                "type": [
+                  "number",
+                  "integer"
+                ]
+              },
+              "maximumInclusive": {
+                "const": true
+              },
+              "minimum": {
+                "type": [
+                  "number",
+                  "integer"
+                ]
+              },
+              "minimumInclusive": {
+                "const": true
+              }
+            },
+            "required": [
+              "jsonType",
+              "minimum",
+              "maximum",
+              "minimumInclusive",
+              "maximumInclusive",
+              "maxNormalizedScale"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "order",
+          "ruleId",
+          "ruleType",
+          "metric",
+          "operator",
+          "thresholdSchema",
+          "enabledSeverities",
+          "disabledSeverity"
+        ],
+        "type": "object"
+      },
+      "maxItems": 8,
+      "minItems": 8,
+      "type": "array"
+    },
+    "schemas": {
+      "additionalProperties": false,
+      "properties": {
+        "ErrorEnvelope": {
+          "type": "object"
+        },
+        "PrincipleCreateRequest": {
+          "type": "object"
+        },
+        "PrincipleCurrent": {
+          "type": "object"
+        },
+        "PrincipleHistoryData": {
+          "type": "object"
+        },
+        "PrincipleOwnerListData": {
+          "type": "object"
+        },
+        "PrinciplePresetListData": {
+          "type": "object"
+        },
+        "PrincipleRule": {
+          "type": "object"
+        },
+        "PrincipleUpdateRequest": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "PrincipleRule",
+        "PrincipleCurrent",
+        "PrinciplePresetListData",
+        "PrincipleCreateRequest",
+        "PrincipleUpdateRequest",
+        "PrincipleOwnerListData",
+        "PrincipleHistoryData",
+        "ErrorEnvelope"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "$schema",
+    "contractId",
+    "contractVersion",
+    "disclaimer",
+    "enums",
+    "limits",
+    "operations",
+    "presets",
+    "ruleDefinitions",
+    "schemas"
+  ],
+  "title": "S2.1 Principle contract catalog v1",
+  "type": "object"
+}

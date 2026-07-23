@@ -1,0 +1,17 @@
+{
+  "expectedVersion": 1,
+  "mode": "STRICT",
+  "rules": [
+    {
+      "enabled": true,
+      "metric": "asset_weight",
+      "operator": "<=",
+      "ruleId": "max_position_per_asset",
+      "ruleType": "POSITION_LIMIT",
+      "severity": "BLOCK",
+      "threshold": 0.2
+    }
+  ],
+  "status": "DRAFT",
+  "title": "수정된 원칙"
+}

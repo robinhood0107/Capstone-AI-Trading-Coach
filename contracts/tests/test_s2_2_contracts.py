@@ -240,6 +240,43 @@ class RiskDecisionWireContractTest(unittest.TestCase):
                 self.assertEqual(decision, payload["decision"])
                 validate_risk_decision_semantics(payload, self.catalog)
 
+    def test_wire_schema_rejects_warn_action_with_block_violation(self) -> None:
+        payload = load_json_bytes_strict(
+            self.outputs[
+                "contracts/examples/risk_decision.precedence-block-warn.valid.json"
+            ],
+            source="block precedence fixture",
+        )
+        payload["decision"] = "WARN"
+        payload["canSubmitOrder"] = True
+
+        self.assertTrue(list(self.validator.iter_errors(payload)))
+
+    def test_wire_schema_locks_system_rule_severity_to_catalog(self) -> None:
+        downgrade = load_json_bytes_strict(
+            self.outputs["contracts/examples/risk_decision.block.valid.json"],
+            source="block fixture",
+        )
+        downgrade["violations"][0]["ruleId"] = "high_volatility_guard"
+        downgrade["violations"][0]["severity"] = "WARN"
+        downgrade["decision"] = "WARN"
+        downgrade["canSubmitOrder"] = True
+
+        upgrade = load_json_bytes_strict(
+            self.outputs["contracts/examples/risk_decision.warn.valid.json"],
+            source="warn fixture",
+        )
+        upgrade["violations"][0]["severity"] = "BLOCK"
+        upgrade["decision"] = "BLOCK"
+        upgrade["canSubmitOrder"] = False
+
+        for payload in (downgrade, upgrade):
+            with self.subTest(
+                rule_id=payload["violations"][0]["ruleId"],
+                severity=payload["violations"][0]["severity"],
+            ):
+                self.assertTrue(list(self.validator.iter_errors(payload)))
+
     def test_disclosure_requiredness_changes_only_missing_evidence_disposition(self) -> None:
         optional = load_json_bytes_strict(
             self.outputs[

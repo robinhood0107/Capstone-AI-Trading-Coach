@@ -38,7 +38,19 @@ class PortfolioMetricCalculatorTest {
     }
 
     @Test
-    fun `overflow non-positive denominator and oversell fail before evaluation`() {
+    fun `zero negative and overflow portfolio inputs fail before evaluation`() {
+        assertThrows(IllegalArgumentException::class.java) {
+            calculator.orderAmountKrw(0, 1)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            calculator.orderAmountKrw(-1, 1)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            calculator.orderAmountKrw(1, 0)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            calculator.orderAmountKrw(1, -1)
+        }
         assertThrows(ArithmeticException::class.java) {
             calculator.orderAmountKrw(Long.MAX_VALUE, 2)
         }
@@ -46,11 +58,42 @@ class PortfolioMetricCalculatorTest {
             PortfolioValues(0, emptyList())
         }
         assertThrows(IllegalArgumentException::class.java) {
+            PortfolioValues(-1, emptyList())
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            PositionValue("005930", -1, false)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
             calculator.postOrderAssetWeight(
                 PortfolioValues(1_000_000, listOf(PositionValue("005930", 10_000, false))),
                 "005930",
                 "SELL",
                 10_001,
+            )
+        }
+        assertThrows(ArithmeticException::class.java) {
+            calculator.postOrderAssetWeight(
+                PortfolioValues(
+                    Long.MAX_VALUE,
+                    listOf(
+                        PositionValue("005930", Long.MAX_VALUE, false),
+                        PositionValue("005930", 1, false),
+                    ),
+                ),
+                "005930",
+                "BUY",
+                0,
+            )
+        }
+        assertThrows(ArithmeticException::class.java) {
+            calculator.postOrderAssetWeight(
+                PortfolioValues(
+                    Long.MAX_VALUE,
+                    listOf(PositionValue("005930", Long.MAX_VALUE, false)),
+                ),
+                "005930",
+                "BUY",
+                1,
             )
         }
     }

@@ -348,6 +348,16 @@ class CanonicalSnapshotHashTest {
     }
 
     @Test
+    fun `canonical arrays preserve order when sequence is semantically significant`() {
+        val forward = CanonicalJson.encode(mapOf("steps" to listOf("validate", "evaluate", "aggregate")))
+        val reversed = CanonicalJson.encode(mapOf("steps" to listOf("aggregate", "evaluate", "validate")))
+
+        assertEquals("""{"steps":["validate","evaluate","aggregate"]}""", forward)
+        assertNotEquals(forward, reversed)
+        assertNotEquals(CanonicalJson.sha256(forward), CanonicalJson.sha256(reversed))
+    }
+
+    @Test
     fun `artifact and semantic canonical bytes cannot be mutated through their public boundary`() {
         val artifact =
             MetricSnapshotArtifactV1.from(

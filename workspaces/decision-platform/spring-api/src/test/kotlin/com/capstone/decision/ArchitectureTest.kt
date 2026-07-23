@@ -26,7 +26,7 @@ class ArchitectureTest {
         val apiDoesNotDependOnInfrastructure: ArchRule =
             noClasses()
                 .that()
-                .resideInAPackage("..api..")
+                .resideInAPackage("..api.principle..")
                 .should()
                 .dependOnClassesThat()
                 .resideInAPackage("..infrastructure..")
@@ -37,7 +37,7 @@ class ArchitectureTest {
         val applicationDoesNotDependOnInfrastructure: ArchRule =
             noClasses()
                 .that()
-                .resideInAPackage("..application..")
+                .resideInAPackage("..application.principle..")
                 .should()
                 .dependOnClassesThat()
                 .resideInAPackage("..infrastructure..")

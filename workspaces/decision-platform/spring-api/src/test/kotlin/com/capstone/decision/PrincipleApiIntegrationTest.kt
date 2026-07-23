@@ -515,6 +515,48 @@ class PrincipleApiIntegrationTest(
     }
 
     @Test
+    fun `scientific notation threshold is accepted and returned as the same canonical decimal`() {
+        val token = login("demo-user", userPassword())
+        val response =
+            mockMvc
+                .post("/api/v1/principles") {
+                    bearer(token)
+                    contentType = MediaType.APPLICATION_JSON
+                    header("X-Request-Id", "req-principle-exponent-threshold")
+                    content =
+                        """
+                        {
+                          "presetId":"balanced",
+                          "title":"지수 표기 임계값",
+                          "rules":[{
+                            "ruleId":"max_position_per_asset",
+                            "ruleType":"POSITION_LIMIT",
+                            "metric":"asset_weight",
+                            "operator":"<=",
+                            "threshold":1.5e-1,
+                            "severity":"BLOCK",
+                            "enabled":true
+                          }]
+                        }
+                        """.trimIndent()
+                }.andExpect {
+                    status { isCreated() }
+                    jsonPath("$.data.rules[0].threshold") { value(0.15) }
+                }.andReturn()
+
+        assertFalse(response.response.contentAsString.contains("1.5e-1", ignoreCase = true))
+        assertEquals(
+            1,
+            count(
+                """
+                select count(*) from principle_versions
+                where rules_json -> 0 ->> 'threshold' = '0.15'
+                """.trimIndent(),
+            ),
+        )
+    }
+
+    @Test
     fun `terminal version and oversized request return exact bounded errors`() {
         val token = login("demo-user", userPassword())
         val created = create(token, "req-terminal-create", createBody("balanced", "terminal base"))

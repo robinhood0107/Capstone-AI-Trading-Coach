@@ -144,6 +144,94 @@ class OpenApiConfigIntegrationTest(
         )
     }
 
+    @Test
+    fun `openapi documents Principle success headers typed errors and locked component constraints`() {
+        val document =
+            objectMapper.readTree(
+                mockMvc
+                    .get("/v3/api-docs")
+                    .andExpect {
+                        status { isOk() }
+                    }.andReturn()
+                    .response
+                    .contentAsByteArray,
+            )
+
+        val create = document.at("/paths/~1api~1v1~1principles/post/responses")
+        assertEquals(
+            "#/components/schemas/ApiResponsePrincipleCurrent",
+            create.at("/201/content/application~1json/schema/\$ref").stringValue(),
+        )
+        assertEquals(
+            "string",
+            create.at("/201/headers/Location/schema/type").stringValue(),
+        )
+        assertEquals(
+            "#/components/schemas/PrincipleValidationErrorResponse",
+            create.at("/400/content/application~1json/schema/\$ref").stringValue(),
+        )
+        assertEquals(
+            "#/components/schemas/PrincipleUnauthorizedErrorResponse",
+            create.at("/401/content/application~1json/schema/\$ref").stringValue(),
+        )
+        assertEquals(
+            "#/components/schemas/PrincipleForbiddenErrorResponse",
+            create.at("/403/content/application~1json/schema/\$ref").stringValue(),
+        )
+        assertEquals(
+            "#/components/schemas/PrinciplePayloadTooLargeErrorResponse",
+            create.at("/413/content/application~1json/schema/\$ref").stringValue(),
+        )
+
+        val updateConflict =
+            document.at(
+                "/paths/~1api~1v1~1principles~1{principleId}/put/responses/409/content/application~1json/schema/oneOf",
+            )
+        assertEquals(2, updateConflict.size())
+        assertEquals(
+            setOf(
+                "#/components/schemas/PrincipleConflictErrorResponse",
+                "#/components/schemas/PrincipleVersionExhaustedErrorResponse",
+            ),
+            updateConflict.values().map { it.path("\$ref").stringValue() }.toSet(),
+        )
+
+        val current = document.at("/components/schemas/PrincipleCurrent")
+        assertTrue(
+            current
+                .path("required")
+                .values()
+                .map { it.stringValue() }
+                .toSet()
+                .containsAll(
+                    setOf(
+                        "principleId",
+                        "presetId",
+                        "title",
+                        "mode",
+                        "status",
+                        "version",
+                        "rules",
+                        "createdAt",
+                        "updatedAt",
+                    ),
+                ),
+        )
+        assertEquals("^prc_[0-9a-f]{32}$", current.at("/properties/principleId/pattern").stringValue())
+        assertEquals(8, current.at("/properties/rules/maxItems").intValue())
+
+        val rule = document.at("/components/schemas/PrincipleRule")
+        assertEquals(8, rule.path("oneOf").size())
+        assertTrue(
+            rule
+                .path("required")
+                .values()
+                .map { it.stringValue() }
+                .toSet()
+                .containsAll(setOf("ruleId", "ruleType", "metric", "operator", "threshold", "severity", "enabled")),
+        )
+    }
+
     private fun findRepositoryRoot(): Path {
         var current = Path.of(System.getProperty("user.dir")).toAbsolutePath()
         while (!Files.exists(current.resolve("AGENTS.md"))) {

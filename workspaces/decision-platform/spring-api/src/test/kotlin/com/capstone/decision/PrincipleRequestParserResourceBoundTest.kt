@@ -1,6 +1,7 @@
 package com.capstone.decision
 
 import com.capstone.decision.api.principle.PrincipleRequestParser
+import com.capstone.decision.domain.principle.EvidenceRequirement
 import com.capstone.decision.domain.principle.PrincipleValidationException
 import com.capstone.decision.domain.principle.PrincipleViolation
 import com.capstone.decision.infrastructure.principle.PrincipleCatalog
@@ -27,9 +28,10 @@ class PrincipleRequestParserResourceBoundTest {
                     "ruleType":"ORDER_SIZE",
                     "metric":"order_amount_krw",
                     "operator":"<=",
-                    "threshold":3e5,
-                    "severity":"BLOCK",
-                    "enabled":true
+                        "threshold":3e5,
+                        "severity":"BLOCK",
+                        "enabled":true,
+                        "evidenceRequirement":"REQUIRED"
                   }]
                 }
                 """.trimIndent(),
@@ -52,9 +54,10 @@ class PrincipleRequestParserResourceBoundTest {
                         "ruleType":"POSITION_LIMIT",
                         "metric":"asset_weight",
                         "operator":"<=",
-                        "threshold":1e2147483647,
-                        "severity":"BLOCK",
-                        "enabled":true
+                            "threshold":1e2147483647,
+                            "severity":"BLOCK",
+                            "enabled":true,
+                            "evidenceRequirement":"REQUIRED"
                       }]
                     }
                     """.trimIndent(),
@@ -65,6 +68,54 @@ class PrincipleRequestParserResourceBoundTest {
             listOf(PrincipleViolation("/rules/0/threshold", "OUT_OF_RANGE")),
             exception.violations,
         )
+    }
+
+    @Test
+    fun `evidence requiredness is explicit and hard rules cannot be optional`() {
+        val missing =
+            assertThrows(PrincipleValidationException::class.java) {
+                parser.parseCreate(
+                    """
+                    {"presetId":"balanced","title":"근거 필드 누락","rules":[{
+                      "ruleId":"negative_news_guard","ruleType":"NEWS_GUARD","metric":"negative_news_score",
+                      "operator":"<=","threshold":0.7,"severity":"WARN","enabled":true
+                    }]}
+                    """.trimIndent(),
+                )
+            }
+        assertEquals(
+            PrincipleViolation("/rules/0/evidenceRequirement", "REQUIRED"),
+            missing.violations.single(),
+        )
+
+        val hardOptional =
+            assertThrows(PrincipleValidationException::class.java) {
+                parser.parseCreate(
+                    """
+                    {"presetId":"balanced","title":"필수 근거 강등","rules":[{
+                      "ruleId":"max_position_per_asset","ruleType":"POSITION_LIMIT","metric":"asset_weight",
+                      "operator":"<=","threshold":0.2,"severity":"BLOCK","enabled":true,
+                      "evidenceRequirement":"OPTIONAL"
+                    }]}
+                    """.trimIndent(),
+                )
+            }
+        assertEquals(
+            PrincipleViolation("/rules/0/evidenceRequirement", "INVALID_COMBINATION"),
+            hardOptional.violations.single(),
+        )
+
+        val optional =
+            parser.parseCreate(
+                """
+                {"presetId":"balanced","title":"선택 근거","rules":[{
+                  "ruleId":"negative_news_guard","ruleType":"NEWS_GUARD","metric":"negative_news_score",
+                  "operator":"<=","threshold":0.7,"severity":"WARN","enabled":true,
+                  "evidenceRequirement":"OPTIONAL"
+                }]}
+                """.trimIndent(),
+            )
+        assertEquals(EvidenceRequirement.OPTIONAL, optional.rules!!.single().evidenceRequirement)
     }
 
     @Test

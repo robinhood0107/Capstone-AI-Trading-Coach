@@ -11,6 +11,8 @@ from unittest.mock import patch
 
 from contracts.generate_principle_contracts import (
     CATALOG_PATH,
+    EXPECTED_LEGACY_EVIDENCE_INFERENCE,
+    OUTPUTS,
     ContractValidationError,
     canonical_json_bytes,
     generate_outputs,
@@ -72,7 +74,8 @@ class PrincipleCatalogGenerationTest(unittest.TestCase):
 
         self.assertEqual(first, second)
         self.assertEqual(
-            {
+            frozenset(
+                {
                 "contracts/schemas/s2-1-principle-catalog.schema.json",
                 "contracts/schemas/principle-rule.schema.json",
                 "contracts/schemas/principle.schema.json",
@@ -112,14 +115,18 @@ class PrincipleCatalogGenerationTest(unittest.TestCase):
                 "contracts/examples/invalid/principle.unknown-property.invalid.json",
                 "contracts/examples/invalid/principle.enabled-allow.invalid.json",
                 "contracts/examples/invalid/principle.disabled-block.invalid.json",
+                "contracts/examples/invalid/principle.evidence-missing.invalid.json",
+                "contracts/examples/invalid/principle.evidence-optional-hard.invalid.json",
                 "contracts/examples/invalid/principle.too-many-rules.invalid.json",
                 "contracts/examples/invalid/principle-update.empty-rules.invalid.json",
                 "contracts/examples/invalid/principle-update.invalid-status.invalid.json",
                 "contracts/examples/invalid/principle-update.missing-field.invalid.json",
                 "contracts/examples/invalid/principle-create.missing-title.invalid.json",
-            },
-            set(first),
+                },
+            ),
+            OUTPUTS,
         )
+        self.assertEqual(OUTPUTS, frozenset(first))
         self.assertTrue(all(payload.endswith(b"\n") for payload in first.values()))
 
     def test_catalog_semantics_reject_tuple_duplicate_scale_and_matrix_drift(self) -> None:
@@ -145,8 +152,44 @@ class PrincipleCatalogGenerationTest(unittest.TestCase):
         reordered_matrix["presets"][0]["defaultRules"].reverse()
         mutations.append(reordered_matrix)
 
+        hard_optional = copy.deepcopy(self.catalog)
+        hard_optional["presets"][0]["defaultRules"][0]["evidenceRequirement"] = "OPTIONAL"
+        mutations.append(hard_optional)
+
         for mutation in mutations:
             with self.subTest(mutation=hashlib.sha256(repr(mutation).encode()).hexdigest()):
+                with self.assertRaises(ContractValidationError):
+                    validate_catalog_semantics(mutation)
+
+    def test_legacy_evidence_inference_is_versioned_and_fail_closed(self) -> None:
+        self.assertEqual(
+            EXPECTED_LEGACY_EVIDENCE_INFERENCE,
+            self.catalog["legacyEvidenceInference"],
+        )
+        generated = generate_outputs(self.catalog)
+        schema = load_json_bytes_strict(
+            generated["contracts/schemas/s2-1-principle-catalog.schema.json"],
+            source="generated S2.1 catalog schema",
+        )
+        self.assertIn("legacyEvidenceInference", schema["required"])
+        policy_schema = schema["properties"]["legacyEvidenceInference"]
+        self.assertFalse(policy_schema["additionalProperties"])
+        self.assertEqual(
+            sorted(EXPECTED_LEGACY_EVIDENCE_INFERENCE),
+            policy_schema["required"],
+        )
+
+        invalid_values = {
+            "disabledMissingField": "REQUIRED",
+            "enabledMissingField": "OPTIONAL",
+            "policyVersion": "s2-1-legacy-evidence-inference/v2",
+            "rewriteHistoricalRows": True,
+            "unknownTuple": "INFER",
+        }
+        for field, value in invalid_values.items():
+            mutation = copy.deepcopy(self.catalog)
+            mutation["legacyEvidenceInference"][field] = value
+            with self.subTest(field=field):
                 with self.assertRaises(ContractValidationError):
                     validate_catalog_semantics(mutation)
 
@@ -396,6 +439,19 @@ class OpenApiNormalizerTest(unittest.TestCase):
         )
 
         self.assertIn(b"/api/v1/principles", normalized)
+
+    def test_implementation_mode_rejects_deferred_decision_path(self) -> None:
+        implementation = copy.deepcopy(self.generated)
+        implementation["paths"]["/api/v1/decisions/evaluate-order"] = {
+            "post": {"responses": {"200": {"description": "Premature Decision route"}}}
+        }
+
+        with self.assertRaises(OpenApiNormalizationError):
+            normalize_generated_openapi(
+                canonical_json_bytes(implementation),
+                self.catalog_bytes,
+                amendment=False,
+            )
 
     def test_dialect_paths_components_and_digest_mutations_fail_closed(self) -> None:
         mutations = []

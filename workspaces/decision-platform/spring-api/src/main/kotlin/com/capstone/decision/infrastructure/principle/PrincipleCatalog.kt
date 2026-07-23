@@ -1,31 +1,32 @@
 package com.capstone.decision.infrastructure.principle
 
+import com.capstone.decision.application.principle.CatalogRuleDefinition
+import com.capstone.decision.application.principle.PrincipleContract
 import org.springframework.core.io.ClassPathResource
 import org.springframework.stereotype.Component
 import tools.jackson.databind.ObjectMapper
-import java.math.BigDecimal
 
 // runtime 검증은 사람이 옮겨 적은 상수가 아니라 amendment가 고정한 catalog resource를 직접 읽는다.
 @Component
 class PrincipleCatalog(
     objectMapper: ObjectMapper,
-) {
-    final val presetIds: Set<String>
-    final val modes: Set<String>
-    final val statuses: Set<String>
-    final val disclaimerKo: String
-    final val disclaimerEn: String
-    final val titleMinCodePoints: Int
-    final val titleMaxCodePoints: Int
-    final val rulesMinItems: Int
-    final val rulesMaxItems: Int
-    final val pageDefault: Int
-    final val pageMin: Int
-    final val pageMax: Int
-    final val cursorMaxChars: Int
-    final val cursorTtlSeconds: Long
-    final val maxVersion: Int
-    final val ruleDefinitions: Map<String, CatalogRuleDefinition>
+) : PrincipleContract {
+    final override val presetIds: Set<String>
+    final override val modes: Set<String>
+    final override val statuses: Set<String>
+    final override val disclaimerKo: String
+    final override val disclaimerEn: String
+    final override val titleMinCodePoints: Int
+    final override val titleMaxCodePoints: Int
+    final override val rulesMinItems: Int
+    final override val rulesMaxItems: Int
+    final override val pageDefault: Int
+    final override val pageMin: Int
+    final override val pageMax: Int
+    final override val cursorMaxChars: Int
+    final override val cursorTtlSeconds: Long
+    final override val maxVersion: Int
+    final override val ruleDefinitions: Map<String, CatalogRuleDefinition>
 
     init {
         val root =
@@ -100,17 +101,3 @@ class PrincipleCatalog(
         private const val CATALOG_RESOURCE = "contracts/s2-1-principle-contract.v1.json"
     }
 }
-
-data class CatalogRuleDefinition(
-    val order: Int,
-    val ruleId: String,
-    val ruleType: String,
-    val metric: String,
-    val operator: String,
-    val jsonType: String,
-    val minimum: BigDecimal,
-    val maximum: BigDecimal,
-    val maxNormalizedScale: Int,
-    val enabledSeverities: Set<String>,
-    val disabledSeverity: String,
-)

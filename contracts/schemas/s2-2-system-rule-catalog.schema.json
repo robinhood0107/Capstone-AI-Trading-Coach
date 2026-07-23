@@ -1,0 +1,269 @@
+{
+  "$id": "contracts/schemas/s2-2-system-rule-catalog.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "const": "https://json-schema.org/draft/2020-12/schema"
+    },
+    "bounds": {
+      "additionalProperties": false,
+      "properties": {
+        "abstentionMaxItems": {
+          "const": 50
+        },
+        "codeMaxChars": {
+          "const": 128
+        },
+        "concurrencyMax": {
+          "const": 8
+        },
+        "disclosureEventMaxItems": {
+          "const": 100
+        },
+        "idMaxChars": {
+          "const": 128
+        },
+        "issueMaxItems": {
+          "const": 14
+        },
+        "messageMaxChars": {
+          "const": 1024
+        },
+        "perPortLogicalCallMax": {
+          "const": 1
+        },
+        "positionMaxItems": {
+          "const": 1000
+        },
+        "requestMaxBytes": {
+          "const": 262144
+        },
+        "responseMaxBytes": {
+          "const": 1048576
+        },
+        "sourceDeadlineMillis": {
+          "const": 500
+        },
+        "sourceRefMaxItems": {
+          "const": 100
+        },
+        "sourceRefPattern": {
+          "const": "^[0-9a-f]{64}$"
+        },
+        "totalDeadlineMillis": {
+          "const": 900
+        },
+        "violationMaxItems": {
+          "const": 14
+        },
+        "warningMaxItems": {
+          "const": 50
+        }
+      },
+      "required": [
+        "abstentionMaxItems",
+        "codeMaxChars",
+        "concurrencyMax",
+        "disclosureEventMaxItems",
+        "idMaxChars",
+        "issueMaxItems",
+        "messageMaxChars",
+        "perPortLogicalCallMax",
+        "positionMaxItems",
+        "requestMaxBytes",
+        "responseMaxBytes",
+        "sourceDeadlineMillis",
+        "sourceRefMaxItems",
+        "sourceRefPattern",
+        "totalDeadlineMillis",
+        "violationMaxItems",
+        "warningMaxItems"
+      ],
+      "type": "object"
+    },
+    "canonicalization": {
+      "type": "object"
+    },
+    "catalogId": {
+      "const": "s2-2-system-rule-catalog"
+    },
+    "catalogVersion": {
+      "const": 1
+    },
+    "portfolioPolicy": {
+      "type": "object"
+    },
+    "readinessPolicyVersion": {
+      "const": "s2-2-readiness-v1"
+    },
+    "resultPolicy": {
+      "type": "object"
+    },
+    "rules": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "applicability": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "defaultSeverity": {
+            "enum": [
+              null,
+              "WARN",
+              "BLOCK"
+            ],
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "defaultThreshold": {
+            "type": [
+              "number",
+              "integer",
+              "null"
+            ]
+          },
+          "evidenceCriticality": {
+            "enum": [
+              "HARD",
+              "CONFIGURABLE",
+              "MIXED",
+              "OPTIONAL"
+            ]
+          },
+          "executionKind": {
+            "enum": [
+              "THRESHOLD",
+              "READINESS",
+              "NOT_APPLICABLE"
+            ]
+          },
+          "freshnessPolicy": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maximum": {
+            "type": [
+              "number",
+              "integer",
+              "null"
+            ]
+          },
+          "metric": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "minimum": {
+            "type": [
+              "number",
+              "integer",
+              "null"
+            ]
+          },
+          "operator": {
+            "enum": [
+              null,
+              "<=",
+              ">="
+            ],
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "order": {
+            "maximum": 14,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "ownership": {
+            "enum": [
+              "PUBLIC_PRINCIPLE",
+              "SYSTEM_MANAGED"
+            ]
+          },
+          "ruleId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "scale": {
+            "maximum": 4,
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "severitySource": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "thresholdSource": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "unit": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "applicability",
+          "defaultSeverity",
+          "defaultThreshold",
+          "evidenceCriticality",
+          "executionKind",
+          "freshnessPolicy",
+          "maximum",
+          "metric",
+          "minimum",
+          "operator",
+          "order",
+          "ownership",
+          "ruleId",
+          "scale",
+          "severitySource",
+          "thresholdSource",
+          "unit"
+        ],
+        "type": "object"
+      },
+      "maxItems": 14,
+      "minItems": 14,
+      "type": "array"
+    },
+    "systemManagedRuleIds": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 6,
+      "minItems": 6,
+      "type": "array",
+      "uniqueItems": true
+    }
+  },
+  "required": [
+    "$schema",
+    "bounds",
+    "canonicalization",
+    "catalogId",
+    "catalogVersion",
+    "portfolioPolicy",
+    "readinessPolicyVersion",
+    "resultPolicy",
+    "rules",
+    "systemManagedRuleIds"
+  ],
+  "title": "S2.2 system-managed rule catalog v1",
+  "type": "object"
+}

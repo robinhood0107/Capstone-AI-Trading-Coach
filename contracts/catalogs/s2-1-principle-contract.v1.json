@@ -7,6 +7,10 @@
     "ko": "이 프리셋은 교육·시연용 기본값이며 투자 권유, 개인별 적합성 판단 또는 손실 방지를 보장하지 않습니다."
   },
   "enums": {
+    "evidenceRequirements": [
+      "OPTIONAL",
+      "REQUIRED"
+    ],
     "historySorts": [
       "VERSION_DESC",
       "VERSION_ASC"
@@ -37,6 +41,13 @@
       "INVALID_COMBINATION",
       "INVALID_CURSOR"
     ]
+  },
+  "legacyEvidenceInference": {
+    "disabledMissingField": "RULE_DEFAULT",
+    "enabledMissingField": "REQUIRED",
+    "policyVersion": "s2-1-legacy-evidence-inference/v1",
+    "rewriteHistoricalRows": false,
+    "unknownTuple": "REJECT"
   },
   "limits": {
     "cursorMaxChars": 2048,
@@ -156,48 +167,56 @@
       "defaultRules": [
         {
           "enabled": true,
+          "evidenceRequirement": "REQUIRED",
           "ruleId": "max_position_per_asset",
           "severity": "BLOCK",
           "threshold": 0.15
         },
         {
           "enabled": true,
+          "evidenceRequirement": "REQUIRED",
           "ruleId": "max_gold_etf_etn_weight",
           "severity": "BLOCK",
           "threshold": 0.2
         },
         {
           "enabled": true,
+          "evidenceRequirement": "REQUIRED",
           "ruleId": "max_single_order_amount",
           "severity": "BLOCK",
           "threshold": 300000
         },
         {
           "enabled": true,
+          "evidenceRequirement": "REQUIRED",
           "ruleId": "daily_loss_guard",
           "severity": "BLOCK",
           "threshold": -0.02
         },
         {
           "enabled": true,
+          "evidenceRequirement": "REQUIRED",
           "ruleId": "mdd_guard",
           "severity": "BLOCK",
           "threshold": -0.1
         },
         {
           "enabled": true,
+          "evidenceRequirement": "REQUIRED",
           "ruleId": "max_daily_orders",
           "severity": "BLOCK",
           "threshold": 2
         },
         {
           "enabled": false,
+          "evidenceRequirement": "OPTIONAL",
           "ruleId": "negative_news_guard",
           "severity": "ALLOW",
           "threshold": 0.5
         },
         {
           "enabled": false,
+          "evidenceRequirement": "OPTIONAL",
           "ruleId": "disclosure_risk_guard",
           "severity": "ALLOW",
           "threshold": 0.5
@@ -215,48 +234,56 @@
       "defaultRules": [
         {
           "enabled": true,
+          "evidenceRequirement": "REQUIRED",
           "ruleId": "max_position_per_asset",
           "severity": "BLOCK",
           "threshold": 0.2
         },
         {
           "enabled": true,
+          "evidenceRequirement": "REQUIRED",
           "ruleId": "max_gold_etf_etn_weight",
           "severity": "BLOCK",
           "threshold": 0.3
         },
         {
           "enabled": true,
+          "evidenceRequirement": "REQUIRED",
           "ruleId": "max_single_order_amount",
           "severity": "BLOCK",
           "threshold": 500000
         },
         {
           "enabled": true,
+          "evidenceRequirement": "REQUIRED",
           "ruleId": "daily_loss_guard",
           "severity": "BLOCK",
           "threshold": -0.03
         },
         {
           "enabled": true,
+          "evidenceRequirement": "REQUIRED",
           "ruleId": "mdd_guard",
           "severity": "BLOCK",
           "threshold": -0.15
         },
         {
           "enabled": true,
+          "evidenceRequirement": "REQUIRED",
           "ruleId": "max_daily_orders",
           "severity": "WARN",
           "threshold": 3
         },
         {
           "enabled": false,
+          "evidenceRequirement": "OPTIONAL",
           "ruleId": "negative_news_guard",
           "severity": "ALLOW",
           "threshold": 0.7
         },
         {
           "enabled": false,
+          "evidenceRequirement": "OPTIONAL",
           "ruleId": "disclosure_risk_guard",
           "severity": "ALLOW",
           "threshold": 0.7
@@ -274,48 +301,56 @@
       "defaultRules": [
         {
           "enabled": true,
+          "evidenceRequirement": "REQUIRED",
           "ruleId": "max_position_per_asset",
           "severity": "BLOCK",
           "threshold": 0.3
         },
         {
           "enabled": true,
+          "evidenceRequirement": "REQUIRED",
           "ruleId": "max_gold_etf_etn_weight",
           "severity": "BLOCK",
           "threshold": 0.4
         },
         {
           "enabled": true,
+          "evidenceRequirement": "REQUIRED",
           "ruleId": "max_single_order_amount",
           "severity": "BLOCK",
           "threshold": 1000000
         },
         {
           "enabled": true,
+          "evidenceRequirement": "REQUIRED",
           "ruleId": "daily_loss_guard",
           "severity": "BLOCK",
           "threshold": -0.05
         },
         {
           "enabled": true,
+          "evidenceRequirement": "REQUIRED",
           "ruleId": "mdd_guard",
           "severity": "BLOCK",
           "threshold": -0.25
         },
         {
           "enabled": true,
+          "evidenceRequirement": "REQUIRED",
           "ruleId": "max_daily_orders",
           "severity": "WARN",
           "threshold": 5
         },
         {
           "enabled": false,
+          "evidenceRequirement": "OPTIONAL",
           "ruleId": "negative_news_guard",
           "severity": "ALLOW",
           "threshold": 0.85
         },
         {
           "enabled": false,
+          "evidenceRequirement": "OPTIONAL",
           "ruleId": "disclosure_risk_guard",
           "severity": "ALLOW",
           "threshold": 0.85
@@ -332,9 +367,13 @@
   ],
   "ruleDefinitions": [
     {
+      "defaultEvidenceRequirement": "REQUIRED",
       "disabledSeverity": "ALLOW",
       "enabledSeverities": [
         "BLOCK"
+      ],
+      "evidenceRequirements": [
+        "REQUIRED"
       ],
       "metric": "asset_weight",
       "operator": "<=",
@@ -351,9 +390,13 @@
       }
     },
     {
+      "defaultEvidenceRequirement": "REQUIRED",
       "disabledSeverity": "ALLOW",
       "enabledSeverities": [
         "BLOCK"
+      ],
+      "evidenceRequirements": [
+        "REQUIRED"
       ],
       "metric": "gold_etf_etn_weight",
       "operator": "<=",
@@ -370,9 +413,13 @@
       }
     },
     {
+      "defaultEvidenceRequirement": "REQUIRED",
       "disabledSeverity": "ALLOW",
       "enabledSeverities": [
         "BLOCK"
+      ],
+      "evidenceRequirements": [
+        "REQUIRED"
       ],
       "metric": "order_amount_krw",
       "operator": "<=",
@@ -389,9 +436,13 @@
       }
     },
     {
+      "defaultEvidenceRequirement": "REQUIRED",
       "disabledSeverity": "ALLOW",
       "enabledSeverities": [
         "BLOCK"
+      ],
+      "evidenceRequirements": [
+        "REQUIRED"
       ],
       "metric": "daily_loss_rate",
       "operator": ">=",
@@ -408,9 +459,13 @@
       }
     },
     {
+      "defaultEvidenceRequirement": "REQUIRED",
       "disabledSeverity": "ALLOW",
       "enabledSeverities": [
         "BLOCK"
+      ],
+      "evidenceRequirements": [
+        "REQUIRED"
       ],
       "metric": "mdd",
       "operator": ">=",
@@ -427,10 +482,14 @@
       }
     },
     {
+      "defaultEvidenceRequirement": "REQUIRED",
       "disabledSeverity": "ALLOW",
       "enabledSeverities": [
         "WARN",
         "BLOCK"
+      ],
+      "evidenceRequirements": [
+        "REQUIRED"
       ],
       "metric": "daily_order_count",
       "operator": "<=",
@@ -447,10 +506,15 @@
       }
     },
     {
+      "defaultEvidenceRequirement": "OPTIONAL",
       "disabledSeverity": "ALLOW",
       "enabledSeverities": [
         "WARN",
         "BLOCK"
+      ],
+      "evidenceRequirements": [
+        "OPTIONAL",
+        "REQUIRED"
       ],
       "metric": "negative_news_score",
       "operator": "<=",
@@ -467,10 +531,15 @@
       }
     },
     {
+      "defaultEvidenceRequirement": "OPTIONAL",
       "disabledSeverity": "ALLOW",
       "enabledSeverities": [
         "WARN",
         "BLOCK"
+      ],
+      "evidenceRequirements": [
+        "OPTIONAL",
+        "REQUIRED"
       ],
       "metric": "disclosure_risk_score",
       "operator": "<=",
@@ -1170,6 +1239,9 @@
             }
           ],
           "properties": {
+            "evidenceRequirement": {
+              "const": "REQUIRED"
+            },
             "metric": {
               "const": "asset_weight"
             },
@@ -1220,6 +1292,9 @@
             }
           ],
           "properties": {
+            "evidenceRequirement": {
+              "const": "REQUIRED"
+            },
             "metric": {
               "const": "gold_etf_etn_weight"
             },
@@ -1270,6 +1345,9 @@
             }
           ],
           "properties": {
+            "evidenceRequirement": {
+              "const": "REQUIRED"
+            },
             "metric": {
               "const": "order_amount_krw"
             },
@@ -1319,6 +1397,9 @@
             }
           ],
           "properties": {
+            "evidenceRequirement": {
+              "const": "REQUIRED"
+            },
             "metric": {
               "const": "daily_loss_rate"
             },
@@ -1369,6 +1450,9 @@
             }
           ],
           "properties": {
+            "evidenceRequirement": {
+              "const": "REQUIRED"
+            },
             "metric": {
               "const": "mdd"
             },
@@ -1422,6 +1506,9 @@
             }
           ],
           "properties": {
+            "evidenceRequirement": {
+              "const": "REQUIRED"
+            },
             "metric": {
               "const": "daily_order_count"
             },
@@ -1474,6 +1561,12 @@
             }
           ],
           "properties": {
+            "evidenceRequirement": {
+              "enum": [
+                "OPTIONAL",
+                "REQUIRED"
+              ]
+            },
             "metric": {
               "const": "negative_news_score"
             },
@@ -1527,6 +1620,12 @@
             }
           ],
           "properties": {
+            "evidenceRequirement": {
+              "enum": [
+                "OPTIONAL",
+                "REQUIRED"
+              ]
+            },
             "metric": {
               "const": "disclosure_risk_score"
             },
@@ -1551,6 +1650,13 @@
       "properties": {
         "enabled": {
           "type": "boolean"
+        },
+        "evidenceRequirement": {
+          "enum": [
+            "OPTIONAL",
+            "REQUIRED"
+          ],
+          "type": "string"
         },
         "metric": {
           "enum": [
@@ -1619,7 +1725,8 @@
         "operator",
         "threshold",
         "severity",
-        "enabled"
+        "enabled",
+        "evidenceRequirement"
       ],
       "title": "Principle rule",
       "type": "object"

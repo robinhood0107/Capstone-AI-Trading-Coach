@@ -380,13 +380,7 @@ class PrincipleRequestParser(
         if (node == null) {
             return null
         }
-        val validType =
-            when (definition.jsonType) {
-                "integer" -> node.isIntegralNumber
-                "number" -> node.isNumber
-                else -> false
-            }
-        if (!validType) {
+        if (!node.isNumber || definition.jsonType !in setOf("integer", "number")) {
             violations.add(PrincipleViolation(path, "INVALID_FORMAT"))
             return null
         }
@@ -397,16 +391,21 @@ class PrincipleRequestParser(
                 violations.add(PrincipleViolation(path, "INVALID_FORMAT"))
                 return null
             }
+        val normalized = value.stripTrailingZeros()
+        // JSON의 정수 계약은 lexical token이 아니라 exact decimal의 수학적 값으로 판정한다.
+        if (definition.jsonType == "integer" && normalized.scale() > 0) {
+            violations.add(PrincipleViolation(path, "INVALID_FORMAT"))
+            return null
+        }
         if (value < definition.minimum || value > definition.maximum) {
             violations.add(PrincipleViolation(path, "OUT_OF_RANGE"))
             // 범위를 벗어난 지수 표기는 거대한 정수로 rescale하지 않고 즉시 닫는다.
             return null
         }
-        val normalizedScale = value.stripTrailingZeros().scale().coerceAtLeast(0)
+        val normalizedScale = normalized.scale().coerceAtLeast(0)
         if (normalizedScale > definition.maxNormalizedScale) {
             violations.add(PrincipleViolation(path, "INVALID_SCALE"))
         }
-        val normalized = value.stripTrailingZeros()
         return if (definition.jsonType == "integer" || normalized.scale() < 0) {
             normalized.setScale(0)
         } else {

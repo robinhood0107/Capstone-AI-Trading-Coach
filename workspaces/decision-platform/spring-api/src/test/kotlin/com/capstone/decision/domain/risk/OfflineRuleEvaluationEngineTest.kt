@@ -1,6 +1,9 @@
 package com.capstone.decision.domain.risk
 
 import com.capstone.decision.domain.principle.EvidenceRequirement
+import io.mockk.every
+import io.mockk.mockk
+import io.mockk.verify
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
@@ -54,6 +57,33 @@ class OfflineRuleEvaluationEngineTest {
             result.abstentions.map(Abstention::ruleId),
         )
         assertEquals(EvidenceDisposition.NOT_APPLICABLE, result.abstentions.first().disposition)
+    }
+
+    @Test
+    fun `disabled and not-requested rules never call the threshold evaluator`() {
+        val evaluator = mockk<RuleEvaluator>()
+        every { evaluator.evaluate(any(), any()) } returns null
+        val instrumentedEngine = OfflineRuleEvaluationEngine(ruleEvaluator = evaluator)
+        val rules =
+            canonicalRules().map { rule ->
+                when (rule.ruleId) {
+                    "disclosure_risk_guard" -> rule.copy(enabled = false)
+                    "hmm_risk_off_guard" -> rule.copy(applicable = false)
+                    else -> rule
+                }
+            }
+
+        instrumentedEngine.evaluate(
+            CanonicalEvaluationRuleSet.of(rules),
+            MetricSnapshot.fixture(metrics = passingMetrics()),
+        )
+
+        verify(exactly = 0) {
+            evaluator.evaluate(match { it.ruleId == "disclosure_risk_guard" }, any())
+        }
+        verify(exactly = 0) {
+            evaluator.evaluate(match { it.ruleId == "hmm_risk_off_guard" }, any())
+        }
     }
 
     @Test

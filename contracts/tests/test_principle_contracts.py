@@ -302,6 +302,23 @@ class OpenApiGateCleanupTest(unittest.TestCase):
         self.assertIn("--volumes", commands[1])
 
 
+class ContractsCiWorkflowTest(unittest.TestCase):
+    def test_openapi_fixture_task_uses_checked_in_gradle_wrapper(self) -> None:
+        repo_root = Path(__file__).resolve().parents[2]
+        workflow = (repo_root / ".github/workflows/contracts-ci.yml").read_text(encoding="utf-8")
+        expected_command = (
+            "run: workspaces/decision-platform/spring-api/gradlew "
+            "-p workspaces/decision-platform/spring-api prepareOpenApiFixtureEnv"
+        )
+
+        # GitHub runner의 저장소 루트에는 gradlew가 없으므로 workspace wrapper를 직접 호출한다.
+        self.assertIn(expected_command, workflow)
+        self.assertNotIn(
+            "run: ./gradlew -p workspaces/decision-platform/spring-api prepareOpenApiFixtureEnv",
+            workflow,
+        )
+
+
 class OpenApiNormalizerTest(unittest.TestCase):
     def setUp(self) -> None:
         self.catalog_bytes = canonical_json_bytes(load_catalog(CATALOG_PATH))

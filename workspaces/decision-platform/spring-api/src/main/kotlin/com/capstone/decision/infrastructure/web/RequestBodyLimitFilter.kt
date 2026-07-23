@@ -21,7 +21,12 @@ class RequestBodyLimitFilter(
             try {
                 CachedBodyHttpServletRequest(request, properties.maxRequestBodyBytes)
             } catch (_: RequestBodyTooLargeException) {
-                responseWriter.writeError(request, response, ErrorCode.PAYLOAD_TOO_LARGE)
+                responseWriter.writeError(
+                    request = request,
+                    response = response,
+                    code = ErrorCode.PAYLOAD_TOO_LARGE,
+                    details = mapOf("maxBytes" to properties.maxRequestBodyBytes),
+                )
                 return
             }
         filterChain.doFilter(boundedRequest, response)

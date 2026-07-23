@@ -1,0 +1,21 @@
+{
+  "createdAt": "2026-07-22T18:00:00+09:00",
+  "mode": "GUIDE",
+  "presetId": "balanced",
+  "principleId": "prc_0123456789abcdef0123456789abcdef",
+  "rules": [
+    {
+      "enabled": true,
+      "metric": "asset_weight",
+      "operator": "<=",
+      "ruleId": "max_position_per_asset",
+      "ruleType": "POSITION_LIMIT",
+      "severity": "BLOCK",
+      "threshold": 1.0001
+    }
+  ],
+  "status": "ACTIVE",
+  "title": "단일 규칙 원칙",
+  "updatedAt": "2026-07-22T18:00:00+09:00",
+  "version": 1
+}

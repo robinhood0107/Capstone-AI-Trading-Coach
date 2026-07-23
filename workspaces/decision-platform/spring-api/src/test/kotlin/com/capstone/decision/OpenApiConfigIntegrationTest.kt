@@ -1,5 +1,8 @@
 package com.capstone.decision
 
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -11,6 +14,11 @@ import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.setup.DefaultMockMvcBuilder
 import org.springframework.test.web.servlet.setup.MockMvcBuilders
 import org.springframework.web.context.WebApplicationContext
+import tools.jackson.databind.ObjectMapper
+import java.nio.file.Files
+import java.nio.file.Path
+import java.security.MessageDigest
+import java.util.HexFormat
 
 // swagger-ui 수동 smoke 전에 OpenAPI security/group 계약이 자동으로 노출되는지 확인한다.
 @SpringBootTest(
@@ -21,6 +29,7 @@ import org.springframework.web.context.WebApplicationContext
 @Import(TestAuthRepositoryConfiguration::class)
 class OpenApiConfigIntegrationTest(
     @Autowired private val webApplicationContext: WebApplicationContext,
+    @Autowired private val objectMapper: ObjectMapper,
 ) : SpringApiIntegrationTestBase() {
     private lateinit var mockMvc: MockMvc
 
@@ -76,5 +85,55 @@ class OpenApiConfigIntegrationTest(
                 jsonPath("$.paths['/api/v1/auth/login'].post.responses['401']") { exists() }
                 jsonPath("$.paths['/api/v1/auth/login'].post.responses['429']") { exists() }
             }
+    }
+
+    @Test
+    fun `openapi exposes the locked dialect and catalog digest without premature Principle paths`() {
+        val body =
+            mockMvc
+                .get("/v3/api-docs")
+                .andExpect {
+                    status { isOk() }
+                }.andReturn()
+                .response
+                .contentAsByteArray
+        val document = objectMapper.readTree(body)
+        val repositoryRoot = findRepositoryRoot()
+        val catalogBytes =
+            Files.readAllBytes(
+                repositoryRoot.resolve("contracts/catalogs/s2-1-principle-contract.v1.json"),
+            )
+        val expectedDigest =
+            HexFormat
+                .of()
+                .formatHex(MessageDigest.getInstance("SHA-256").digest(catalogBytes))
+
+        assertEquals("3.1.0", document.path("openapi").stringValue())
+        assertEquals(
+            "https://spec.openapis.org/oas/3.1/dialect/base",
+            document.path("jsonSchemaDialect").stringValue(),
+        )
+        assertEquals("s2-1-principle-contract/v1", document.path("x-s2-1-contract-id").stringValue())
+        assertEquals(expectedDigest, document.path("x-s2-1-contract-sha256").stringValue())
+        assertTrue(Regex("^[0-9a-f]{64}$").matches(expectedDigest))
+
+        val paths =
+            document
+                .path("paths")
+                .propertyNames()
+                .asSequence()
+                .toList()
+        assertFalse(
+            paths.any { it == "/api/v1/principle-presets" || it.startsWith("/api/v1/principles") },
+            "amendment OpenAPI must not advertise S2.1 endpoints before their controllers exist",
+        )
+    }
+
+    private fun findRepositoryRoot(): Path {
+        var current = Path.of(System.getProperty("user.dir")).toAbsolutePath()
+        while (!Files.exists(current.resolve("AGENTS.md"))) {
+            current = current.parent ?: error("repository root was not found")
+        }
+        return current
     }
 }

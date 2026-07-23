@@ -1,0 +1,252 @@
+{
+  "$id": "contracts/schemas/principle-error.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "data": {
+      "type": "null"
+    },
+    "error": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "const": "VALIDATION_ERROR"
+            },
+            "details": {
+              "additionalProperties": false,
+              "properties": {
+                "violations": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "field": {
+                        "maxLength": 512,
+                        "pattern": "^/(?:[^~/]|~0|~1)*(?:/(?:[^~/]|~0|~1)*)*$",
+                        "type": "string"
+                      },
+                      "reason": {
+                        "enum": [
+                          "REQUIRED",
+                          "UNKNOWN_FIELD",
+                          "INVALID_FORMAT",
+                          "INVALID_ENUM",
+                          "UNAVAILABLE",
+                          "OUT_OF_RANGE",
+                          "INVALID_SCALE",
+                          "TOO_FEW_ITEMS",
+                          "TOO_MANY_ITEMS",
+                          "DUPLICATE",
+                          "INVALID_COMBINATION",
+                          "INVALID_CURSOR"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "field",
+                      "reason"
+                    ],
+                    "type": "object"
+                  },
+                  "maxItems": 64,
+                  "minItems": 1,
+                  "type": "array"
+                }
+              },
+              "required": [
+                "violations"
+              ],
+              "type": "object"
+            },
+            "message": {
+              "const": "Request validation failed."
+            }
+          },
+          "required": [
+            "code",
+            "message",
+            "details"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "const": "UNAUTHORIZED"
+            },
+            "details": {
+              "const": {}
+            },
+            "message": {
+              "const": "Authentication is required."
+            }
+          },
+          "required": [
+            "code",
+            "message",
+            "details"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "const": "FORBIDDEN"
+            },
+            "details": {
+              "const": {}
+            },
+            "message": {
+              "const": "Access is denied."
+            }
+          },
+          "required": [
+            "code",
+            "message",
+            "details"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "const": "NOT_FOUND"
+            },
+            "details": {
+              "const": {}
+            },
+            "message": {
+              "const": "Resource was not found."
+            }
+          },
+          "required": [
+            "code",
+            "message",
+            "details"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "const": "CONFLICT"
+            },
+            "details": {
+              "additionalProperties": false,
+              "properties": {
+                "currentVersion": {
+                  "maximum": 2147483647,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "expectedVersion": {
+                  "maximum": 2147483647,
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "expectedVersion",
+                "currentVersion"
+              ],
+              "type": "object"
+            },
+            "message": {
+              "const": "Resource conflict."
+            }
+          },
+          "required": [
+            "code",
+            "message",
+            "details"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "const": "VERSION_EXHAUSTED"
+            },
+            "details": {
+              "additionalProperties": false,
+              "properties": {
+                "currentVersion": {
+                  "const": 2147483647
+                }
+              },
+              "required": [
+                "currentVersion"
+              ],
+              "type": "object"
+            },
+            "message": {
+              "const": "Principle version limit was reached."
+            }
+          },
+          "required": [
+            "code",
+            "message",
+            "details"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "const": "PAYLOAD_TOO_LARGE"
+            },
+            "details": {
+              "additionalProperties": false,
+              "properties": {
+                "maxBytes": {
+                  "const": 1048576
+                }
+              },
+              "required": [
+                "maxBytes"
+              ],
+              "type": "object"
+            },
+            "message": {
+              "const": "Request payload exceeded the configured safety limit."
+            }
+          },
+          "required": [
+            "code",
+            "message",
+            "details"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "requestId": {
+      "maxLength": 128,
+      "minLength": 1,
+      "type": "string"
+    },
+    "success": {
+      "const": false
+    },
+    "warnings": {
+      "const": []
+    }
+  },
+  "required": [
+    "success",
+    "requestId",
+    "data",
+    "warnings",
+    "error"
+  ],
+  "title": "S2.1 error envelope",
+  "type": "object"
+}

@@ -1,0 +1,18 @@
+{
+  "data": null,
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "details": {
+      "violations": [
+        {
+          "field": "/ownerUserId",
+          "reason": "UNKNOWN_FIELD"
+        }
+      ]
+    },
+    "message": "Request validation failed."
+  },
+  "requestId": "req_20260722_000003",
+  "success": false,
+  "warnings": []
+}

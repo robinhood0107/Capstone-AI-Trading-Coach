@@ -1,28 +1,21 @@
 {
-  "principleId": "prc_001",
-  "presetId": "balanced",
-  "title": "Balanced domestic stock and gold ETF principle",
+  "createdAt": "2026-07-22T18:00:00+09:00",
   "mode": "GUIDE",
-  "version": 1,
-  "status": "ACTIVE",
+  "presetId": "balanced",
+  "principleId": "prc_0123456789abcdef0123456789abcdef",
   "rules": [
     {
-      "ruleId": "daily_loss_guard",
-      "ruleType": "LOSS_LIMIT",
-      "metric": "daily_loss_rate",
-      "operator": ">=",
-      "threshold": -0.03,
-      "severity": "BLOCK",
-      "enabled": true
-    },
-    {
-      "ruleId": "max_single_order_amount",
-      "ruleType": "ORDER_SIZE",
-      "metric": "order_amount_krw",
+      "enabled": true,
+      "metric": "asset_weight",
       "operator": "<=",
-      "threshold": 500000,
+      "ruleId": "max_position_per_asset",
+      "ruleType": "POSITION_LIMIT",
       "severity": "BLOCK",
-      "enabled": true
+      "threshold": 0.2
     }
-  ]
+  ],
+  "status": "ACTIVE",
+  "title": "단일 규칙 원칙",
+  "updatedAt": "2026-07-22T18:00:00+09:00",
+  "version": 1
 }

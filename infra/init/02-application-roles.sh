@@ -148,6 +148,35 @@ BEGIN
 END
 $calendar_privileges$;
 
+DO $principle_privileges$
+BEGIN
+    IF to_regclass('public.principle_presets') IS NOT NULL
+       AND EXISTS (
+           SELECT 1
+           FROM information_schema.columns
+           WHERE table_schema = 'public'
+             AND table_name = 'principles'
+             AND column_name = 'title'
+       ) THEN
+        -- 기존 volume에서 bootstrap을 재실행해도 V8 target table의 exact grant를 broad SELECT로 덮지 않는다.
+        REVOKE ALL PRIVILEGES ON TABLE
+            users,
+            principle_presets,
+            principles,
+            principle_versions,
+            audit_logs
+        FROM decision_app;
+        GRANT SELECT ON TABLE users, principle_presets TO decision_app;
+        GRANT SELECT, INSERT ON TABLE principles, principle_versions TO decision_app;
+        GRANT UPDATE (title, mode, status, current_version, updated_at)
+            ON TABLE principles TO decision_app;
+        GRANT INSERT ON TABLE audit_logs TO decision_app;
+        REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_app;
+        REVOKE CREATE ON SCHEMA public FROM decision_app;
+    END IF;
+END
+$principle_privileges$;
+
 DO $block$
 BEGIN
     IF to_regclass('public.flyway_schema_history') IS NOT NULL THEN

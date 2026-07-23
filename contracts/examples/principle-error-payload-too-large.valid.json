@@ -1,0 +1,13 @@
+{
+  "data": null,
+  "error": {
+    "code": "PAYLOAD_TOO_LARGE",
+    "details": {
+      "maxBytes": 1048576
+    },
+    "message": "Request payload exceeded the configured safety limit."
+  },
+  "requestId": "req_20260722_000010",
+  "success": false,
+  "warnings": []
+}

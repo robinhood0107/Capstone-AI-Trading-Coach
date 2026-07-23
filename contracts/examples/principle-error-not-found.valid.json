@@ -1,0 +1,11 @@
+{
+  "data": null,
+  "error": {
+    "code": "NOT_FOUND",
+    "details": {},
+    "message": "Resource was not found."
+  },
+  "requestId": "req_20260722_000007",
+  "success": false,
+  "warnings": []
+}

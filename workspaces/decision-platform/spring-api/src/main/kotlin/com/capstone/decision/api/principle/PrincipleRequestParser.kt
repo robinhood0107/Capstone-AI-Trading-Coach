@@ -18,6 +18,7 @@ import com.capstone.decision.domain.principle.PrincipleViolation
 import jakarta.servlet.http.HttpServletRequest
 import org.springframework.stereotype.Component
 import tools.jackson.core.JacksonException
+import tools.jackson.core.StreamReadConstraints
 import tools.jackson.core.StreamReadFeature
 import tools.jackson.core.json.JsonFactory
 import tools.jackson.databind.DeserializationFeature
@@ -36,7 +37,17 @@ class PrincipleRequestParser(
             .builder(
                 JsonFactory
                     .builder()
-                    .enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION)
+                    .streamReadConstraints(
+                        StreamReadConstraints
+                            .builder()
+                            .maxNestingDepth(MAX_JSON_NESTING_DEPTH)
+                            .maxDocumentLength(MAX_JSON_DOCUMENT_CHARS)
+                            .maxTokenCount(MAX_JSON_TOKENS)
+                            .maxNumberLength(MAX_JSON_NUMBER_CHARS)
+                            .maxStringLength(MAX_JSON_STRING_CHARS)
+                            .maxNameLength(MAX_JSON_NAME_CHARS)
+                            .build(),
+                    ).enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION)
                     .build(),
             ).enable(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS)
             .build()
@@ -388,6 +399,8 @@ class PrincipleRequestParser(
             }
         if (value < definition.minimum || value > definition.maximum) {
             violations.add(PrincipleViolation(path, "OUT_OF_RANGE"))
+            // 범위를 벗어난 지수 표기는 거대한 정수로 rescale하지 않고 즉시 닫는다.
+            return null
         }
         val normalizedScale = value.stripTrailingZeros().scale().coerceAtLeast(0)
         if (normalizedScale > definition.maxNormalizedScale) {
@@ -562,5 +575,11 @@ class PrincipleRequestParser(
             setOf("ruleId", "ruleType", "metric", "operator", "threshold", "severity", "enabled")
         private val OWNER_QUERY_FIELDS = setOf("cursor", "size", "sort")
         private val HISTORY_QUERY_FIELDS = setOf("cursor", "size", "sort")
+        private const val MAX_JSON_NESTING_DEPTH = 16
+        private const val MAX_JSON_DOCUMENT_CHARS = 1_048_576L
+        private const val MAX_JSON_TOKENS = 256L
+        private const val MAX_JSON_NUMBER_CHARS = 128
+        private const val MAX_JSON_STRING_CHARS = 512
+        private const val MAX_JSON_NAME_CHARS = 128
     }
 }

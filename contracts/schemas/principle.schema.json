@@ -1,84 +1,421 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "contracts/schemas/principle.schema.json",
-  "title": "Principle",
-  "description": "Structured investment principle payload shared across Decision Platform, Return Engine backtests, and Dashboard UI.",
-  "type": "object",
-  "additionalProperties": false,
-  "required": ["presetId", "title", "mode", "version", "rules"],
-  "properties": {
-    "principleId": {
-      "type": "string",
-      "pattern": "^prc_[A-Za-z0-9_-]+$"
-    },
-    "presetId": {
-      "type": "string",
-      "enum": ["conservative", "balanced", "aggressive"]
-    },
-    "title": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 120
-    },
-    "mode": {
-      "type": "string",
-      "enum": ["GUIDE", "STRICT"]
-    },
-    "version": {
-      "type": "integer",
-      "minimum": 1
-    },
-    "expectedVersion": {
-      "type": "integer",
-      "minimum": 1
-    },
-    "status": {
-      "type": "string",
-      "enum": ["DRAFT", "ACTIVE", "ARCHIVED", "DEPRECATED"],
-      "description": "P0 결정: API 응답 예시의 ACTIVE와 변경 절차의 DEPRECATED 상태를 함께 수용한다."
-    },
-    "rules": {
-      "type": "array",
-      "minItems": 1,
-      "items": {
-        "$ref": "#/$defs/rule"
-      }
-    }
-  },
   "$defs": {
-    "rule": {
-      "type": "object",
+    "PrincipleRule": {
       "additionalProperties": false,
-      "required": ["ruleId", "ruleType", "metric", "operator", "threshold", "severity", "enabled"],
-      "properties": {
-        "ruleId": {
-          "type": "string",
-          "enum": [
-            "max_position_per_asset",
-            "max_gold_etf_etn_weight",
-            "max_single_order_amount",
-            "daily_loss_guard",
-            "mdd_guard",
-            "max_daily_orders",
-            "negative_news_guard",
-            "disclosure_risk_guard"
-          ]
-        },
-        "ruleType": {
-          "type": "string",
-          "enum": [
-            "POSITION_LIMIT",
-            "ORDER_SIZE",
-            "LOSS_LIMIT",
-            "DRAWDOWN_LIMIT",
-            "TRADING_FREQUENCY",
-            "NEWS_GUARD",
-            "DISCLOSURE_GUARD"
+      "oneOf": [
+        {
+          "allOf": [
+            {
+              "else": {
+                "properties": {
+                  "severity": {
+                    "const": "BLOCK"
+                  }
+                }
+              },
+              "if": {
+                "properties": {
+                  "enabled": {
+                    "const": false
+                  }
+                },
+                "required": [
+                  "enabled"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "severity": {
+                    "const": "ALLOW"
+                  }
+                }
+              }
+            }
           ],
-          "description": "P0 결정: RuleEngine 내부 분류명은 API 4장 ruleId 표를 기준으로 둔다."
+          "properties": {
+            "metric": {
+              "const": "asset_weight"
+            },
+            "operator": {
+              "const": "<="
+            },
+            "ruleId": {
+              "const": "max_position_per_asset"
+            },
+            "ruleType": {
+              "const": "POSITION_LIMIT"
+            },
+            "threshold": {
+              "maximum": 1,
+              "minimum": 0,
+              "multipleOf": 0.0001,
+              "type": "number"
+            }
+          }
+        },
+        {
+          "allOf": [
+            {
+              "else": {
+                "properties": {
+                  "severity": {
+                    "const": "BLOCK"
+                  }
+                }
+              },
+              "if": {
+                "properties": {
+                  "enabled": {
+                    "const": false
+                  }
+                },
+                "required": [
+                  "enabled"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "severity": {
+                    "const": "ALLOW"
+                  }
+                }
+              }
+            }
+          ],
+          "properties": {
+            "metric": {
+              "const": "gold_etf_etn_weight"
+            },
+            "operator": {
+              "const": "<="
+            },
+            "ruleId": {
+              "const": "max_gold_etf_etn_weight"
+            },
+            "ruleType": {
+              "const": "POSITION_LIMIT"
+            },
+            "threshold": {
+              "maximum": 1,
+              "minimum": 0,
+              "multipleOf": 0.0001,
+              "type": "number"
+            }
+          }
+        },
+        {
+          "allOf": [
+            {
+              "else": {
+                "properties": {
+                  "severity": {
+                    "const": "BLOCK"
+                  }
+                }
+              },
+              "if": {
+                "properties": {
+                  "enabled": {
+                    "const": false
+                  }
+                },
+                "required": [
+                  "enabled"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "severity": {
+                    "const": "ALLOW"
+                  }
+                }
+              }
+            }
+          ],
+          "properties": {
+            "metric": {
+              "const": "order_amount_krw"
+            },
+            "operator": {
+              "const": "<="
+            },
+            "ruleId": {
+              "const": "max_single_order_amount"
+            },
+            "ruleType": {
+              "const": "ORDER_SIZE"
+            },
+            "threshold": {
+              "maximum": 10000000000,
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        },
+        {
+          "allOf": [
+            {
+              "else": {
+                "properties": {
+                  "severity": {
+                    "const": "BLOCK"
+                  }
+                }
+              },
+              "if": {
+                "properties": {
+                  "enabled": {
+                    "const": false
+                  }
+                },
+                "required": [
+                  "enabled"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "severity": {
+                    "const": "ALLOW"
+                  }
+                }
+              }
+            }
+          ],
+          "properties": {
+            "metric": {
+              "const": "daily_loss_rate"
+            },
+            "operator": {
+              "const": ">="
+            },
+            "ruleId": {
+              "const": "daily_loss_guard"
+            },
+            "ruleType": {
+              "const": "LOSS_LIMIT"
+            },
+            "threshold": {
+              "maximum": 0,
+              "minimum": -1,
+              "multipleOf": 0.0001,
+              "type": "number"
+            }
+          }
+        },
+        {
+          "allOf": [
+            {
+              "else": {
+                "properties": {
+                  "severity": {
+                    "const": "BLOCK"
+                  }
+                }
+              },
+              "if": {
+                "properties": {
+                  "enabled": {
+                    "const": false
+                  }
+                },
+                "required": [
+                  "enabled"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "severity": {
+                    "const": "ALLOW"
+                  }
+                }
+              }
+            }
+          ],
+          "properties": {
+            "metric": {
+              "const": "mdd"
+            },
+            "operator": {
+              "const": ">="
+            },
+            "ruleId": {
+              "const": "mdd_guard"
+            },
+            "ruleType": {
+              "const": "DRAWDOWN_LIMIT"
+            },
+            "threshold": {
+              "maximum": 0,
+              "minimum": -1,
+              "multipleOf": 0.0001,
+              "type": "number"
+            }
+          }
+        },
+        {
+          "allOf": [
+            {
+              "else": {
+                "properties": {
+                  "severity": {
+                    "enum": [
+                      "WARN",
+                      "BLOCK"
+                    ]
+                  }
+                }
+              },
+              "if": {
+                "properties": {
+                  "enabled": {
+                    "const": false
+                  }
+                },
+                "required": [
+                  "enabled"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "severity": {
+                    "const": "ALLOW"
+                  }
+                }
+              }
+            }
+          ],
+          "properties": {
+            "metric": {
+              "const": "daily_order_count"
+            },
+            "operator": {
+              "const": "<="
+            },
+            "ruleId": {
+              "const": "max_daily_orders"
+            },
+            "ruleType": {
+              "const": "TRADING_FREQUENCY"
+            },
+            "threshold": {
+              "maximum": 1000,
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        },
+        {
+          "allOf": [
+            {
+              "else": {
+                "properties": {
+                  "severity": {
+                    "enum": [
+                      "WARN",
+                      "BLOCK"
+                    ]
+                  }
+                }
+              },
+              "if": {
+                "properties": {
+                  "enabled": {
+                    "const": false
+                  }
+                },
+                "required": [
+                  "enabled"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "severity": {
+                    "const": "ALLOW"
+                  }
+                }
+              }
+            }
+          ],
+          "properties": {
+            "metric": {
+              "const": "negative_news_score"
+            },
+            "operator": {
+              "const": "<="
+            },
+            "ruleId": {
+              "const": "negative_news_guard"
+            },
+            "ruleType": {
+              "const": "NEWS_GUARD"
+            },
+            "threshold": {
+              "maximum": 1,
+              "minimum": 0,
+              "multipleOf": 0.0001,
+              "type": "number"
+            }
+          }
+        },
+        {
+          "allOf": [
+            {
+              "else": {
+                "properties": {
+                  "severity": {
+                    "enum": [
+                      "WARN",
+                      "BLOCK"
+                    ]
+                  }
+                }
+              },
+              "if": {
+                "properties": {
+                  "enabled": {
+                    "const": false
+                  }
+                },
+                "required": [
+                  "enabled"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "severity": {
+                    "const": "ALLOW"
+                  }
+                }
+              }
+            }
+          ],
+          "properties": {
+            "metric": {
+              "const": "disclosure_risk_score"
+            },
+            "operator": {
+              "const": "<="
+            },
+            "ruleId": {
+              "const": "disclosure_risk_guard"
+            },
+            "ruleType": {
+              "const": "DISCLOSURE_GUARD"
+            },
+            "threshold": {
+              "maximum": 1,
+              "minimum": 0,
+              "multipleOf": 0.0001,
+              "type": "number"
+            }
+          }
+        }
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
         },
         "metric": {
-          "type": "string",
           "enum": [
             "asset_weight",
             "gold_etf_etn_weight",
@@ -88,24 +425,139 @@
             "daily_order_count",
             "negative_news_score",
             "disclosure_risk_score"
-          ]
+          ],
+          "type": "string"
         },
         "operator": {
-          "type": "string",
-          "enum": ["<=", ">="]
+          "enum": [
+            "<=",
+            ">="
+          ],
+          "type": "string"
         },
-        "threshold": {
-          "type": "number"
+        "ruleId": {
+          "enum": [
+            "max_position_per_asset",
+            "max_gold_etf_etn_weight",
+            "max_single_order_amount",
+            "daily_loss_guard",
+            "mdd_guard",
+            "max_daily_orders",
+            "negative_news_guard",
+            "disclosure_risk_guard"
+          ],
+          "type": "string"
+        },
+        "ruleType": {
+          "enum": [
+            "POSITION_LIMIT",
+            "ORDER_SIZE",
+            "LOSS_LIMIT",
+            "DRAWDOWN_LIMIT",
+            "TRADING_FREQUENCY",
+            "NEWS_GUARD",
+            "DISCLOSURE_GUARD"
+          ],
+          "type": "string"
         },
         "severity": {
-          "type": "string",
-          "enum": ["ALLOW", "WARN", "BLOCK"],
-          "description": "P0 결정: 부정 뉴스 대응의 허용/경고/차단 UI와 RiskEngine 차단 수준을 함께 표현한다."
+          "enum": [
+            "ALLOW",
+            "WARN",
+            "BLOCK"
+          ],
+          "type": "string"
         },
-        "enabled": {
-          "type": "boolean"
+        "threshold": {
+          "type": [
+            "number",
+            "integer"
+          ]
         }
-      }
+      },
+      "required": [
+        "ruleId",
+        "ruleType",
+        "metric",
+        "operator",
+        "threshold",
+        "severity",
+        "enabled"
+      ],
+      "title": "Principle rule",
+      "type": "object"
     }
-  }
+  },
+  "$id": "contracts/schemas/principle.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "createdAt": {
+      "format": "date-time",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?\\+09:00$",
+      "type": "string"
+    },
+    "mode": {
+      "enum": [
+        "GUIDE",
+        "STRICT"
+      ],
+      "type": "string"
+    },
+    "presetId": {
+      "enum": [
+        "conservative",
+        "balanced",
+        "aggressive"
+      ],
+      "type": "string"
+    },
+    "principleId": {
+      "pattern": "^prc_[0-9a-f]{32}$",
+      "type": "string"
+    },
+    "rules": {
+      "items": {
+        "$ref": "#/$defs/PrincipleRule"
+      },
+      "maxItems": 8,
+      "minItems": 1,
+      "type": "array"
+    },
+    "status": {
+      "enum": [
+        "ACTIVE",
+        "ARCHIVED"
+      ],
+      "type": "string"
+    },
+    "title": {
+      "maxLength": 120,
+      "minLength": 1,
+      "type": "string"
+    },
+    "updatedAt": {
+      "format": "date-time",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?\\+09:00$",
+      "type": "string"
+    },
+    "version": {
+      "maximum": 2147483647,
+      "minimum": 1,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "principleId",
+    "presetId",
+    "title",
+    "mode",
+    "status",
+    "version",
+    "rules",
+    "createdAt",
+    "updatedAt"
+  ],
+  "title": "Principle current representation",
+  "type": "object"
 }

@@ -1,0 +1,11 @@
+{
+  "data": null,
+  "error": {
+    "code": "FORBIDDEN",
+    "details": {},
+    "message": "Access is denied."
+  },
+  "requestId": "req_20260722_000006",
+  "success": false,
+  "warnings": []
+}

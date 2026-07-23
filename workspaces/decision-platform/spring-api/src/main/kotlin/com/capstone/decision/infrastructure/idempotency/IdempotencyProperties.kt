@@ -5,7 +5,7 @@ import jakarta.validation.constraints.Min
 import org.springframework.boot.context.properties.ConfigurationProperties
 import org.springframework.validation.annotation.Validated
 
-// 멱등성 대상 path와 TTL은 향후 주문/원칙/백테스트 API 추가 때 설정으로 조정 가능해야 한다.
+// finance replay key는 주문·백테스트에만 적용하며 expectedVersion을 쓰는 Principle 계약과 섞지 않는다.
 @ConfigurationProperties("app.idempotency")
 @Validated
 data class IdempotencyProperties(
@@ -30,7 +30,6 @@ data class IdempotencyProperties(
     var paths: List<String> =
         listOf(
             "/api/v1/orders/**",
-            "/api/v1/principles/**",
             "/api/v1/backtests/**",
         ),
 )

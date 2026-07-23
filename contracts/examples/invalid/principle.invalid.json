@@ -1,17 +1,21 @@
 {
-  "presetId": "balanced",
-  "title": "Invalid principle with an unknown rule",
+  "createdAt": "2026-07-22T18:00:00+09:00",
   "mode": "GUIDE",
-  "version": 1,
+  "presetId": "balanced",
+  "principleId": "prc_0123456789abcdef0123456789abcdef",
   "rules": [
     {
+      "enabled": true,
+      "metric": "asset_weight",
+      "operator": "<=",
       "ruleId": "unknown_guard",
-      "ruleType": "LOSS_LIMIT",
-      "metric": "daily_loss_rate",
-      "operator": ">=",
-      "threshold": -0.03,
+      "ruleType": "POSITION_LIMIT",
       "severity": "BLOCK",
-      "enabled": true
+      "threshold": 0.2
     }
-  ]
+  ],
+  "status": "ACTIVE",
+  "title": "단일 규칙 원칙",
+  "updatedAt": "2026-07-22T18:00:00+09:00",
+  "version": 1
 }

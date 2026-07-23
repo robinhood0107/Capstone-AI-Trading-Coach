@@ -463,81 +463,99 @@ WebSocket 대비 구현 부담이 작고 시연 반응성을 높인다. v1 필�
 
 ## 4. Principle API
 
-투자 원칙 CRUD, preset, 버전 관리를 담당한다.
+S2.1은 공용 preset, 사용자별 원칙 생성·복구·수정·보관, immutable version history를
+담당한다. 이 절의 machine-readable source of truth는
+`contracts/catalogs/s2-1-principle-contract.v1.json`이고 contract ID는
+`s2-1-principle-contract/v1`이다. standalone schema와 fixture는 catalog에서 기계 생성하며
+사람이 독립적으로 수정하지 않는다.
 
-Principle API의 입력 원칙은 다음과 같다.
+> Amendment 상태(2026-07-23): wire/schema/DB 계약과 생성·drift gate를 확정한 단계다.
+> runtime Principle controller/path는 후속 implementation PR에서 추가한다. 따라서 amendment
+> canonical OpenAPI에는 존재하지 않는 Principle path를 수동으로 넣지 않는다.
 
-1. 프론트는 자연어 원칙을 그대로 저장하지 않고, UI에서 받은 값을 구조화된 rule 배열로 전송한다.
-2. preset은 공용 템플릿이며, `POST /api/v1/principles` 호출 시 사용자별 principle로 복사된다.
-3. 사용자가 수정한 원칙은 `expectedVersion` 기반으로 새 version을 생성한다.
-4. 주문 판단과 백테스트 Guide/Strict 시나리오는 같은 principle version을 참조한다.
-5. ruleId, metric, operator, threshold, severity, enabled 값은 `contracts/schemas/principle.schema.json`을 따른다.
+모든 endpoint는 Bearer 인증을 요구한다. actor/owner는 PR #37이 고정한 DB 검증 후
+`AppPrincipal.userId`(JWT `sub`)에서만 가져오며 request의 user ID를 신뢰하지 않는다.
+`USER`와 `ADMIN` 모두 자기 소유 원칙만 다루고 S2.1 ADMIN 우회는 없다.
 
-| UI 항목 | 입력 방식 | ruleId | metric | 기본 operator |
-|---|---|---|---|---|
-| 단일 종목 최대 비중 | % 입력 또는 slider | `max_position_per_asset` | `asset_weight` | `<=` |
-| 금 ETF/ETN 최대 비중 | % 입력 또는 slider | `max_gold_etf_etn_weight` | `gold_etf_etn_weight` | `<=` |
-| 1회 주문 최대 금액 | 원화 입력 | `max_single_order_amount` | `order_amount_krw` | `<=` |
-| 일일 손실 한도 | % 입력 | `daily_loss_guard` | `daily_loss_rate` | `>=` |
-| MDD 한도 | % 입력 | `mdd_guard` | `mdd` | `>=` |
-| 하루 최대 주문 횟수 | 숫자 stepper | `max_daily_orders` | `daily_order_count` | `<=` |
-| 부정 뉴스 대응 | 허용/경고/차단 선택 | `negative_news_guard` | `negative_news_score` | `<=` |
-| 공시 위험 대응 | 경고/차단 선택 | `disclosure_risk_guard` | `disclosure_risk_score` | `<=` |
+| operationId | method/path | 성공 | request data | response `data` |
+|---|---|---:|---|---|
+| `listPrinciplePresets` | `GET /api/v1/principle-presets` | 200 | 없음 | `PrinciplePresetListData` |
+| `createPrinciple` | `POST /api/v1/principles` | 201 | `PrincipleCreateRequest` | `PrincipleCurrent` |
+| `listPrinciples` | `GET /api/v1/principles` | 200 | query `cursor,size,sort`만 | `PrincipleOwnerListData` |
+| `getPrinciple` | `GET /api/v1/principles/{principleId}` | 200 | 없음 | `PrincipleCurrent` |
+| `updatePrinciple` | `PUT /api/v1/principles/{principleId}` | 200 | `PrincipleUpdateRequest` | `PrincipleCurrent` |
+| `listPrincipleVersions` | `GET /api/v1/principles/{principleId}/versions` | 200 | query `cursor,size,sort`만 | `PrincipleHistoryData` |
 
-### 4.1 원칙 preset 조회
+성공·오류 응답은 모두 `success`, `requestId`, `data`, `warnings`, `error` 다섯 top-level
+field를 보낸다. 성공은 `success=true`, `warnings=[]`, `error=null`이고, 오류는
+`success=false`, `data=null`, `warnings=[]`다. 이 장의 예시 시각은 ISO-8601 KST
+offset(`+09:00`)을 사용한다.
+
+### 4.1 Rule 계약
+
+자연어 원칙을 직접 저장하지 않고 구조화된 rule만 받는다. 배열은 1~8개이고 `ruleId`는 중복될
+수 없으며 catalog의 canonical 순서로 저장·응답한다. object는
+`ruleId,ruleType,metric,operator,threshold,severity,enabled` 일곱 field만 허용한다.
+
+| 순서 | ruleId | 고정 tuple `ruleType / metric / operator` | threshold | enabled severity |
+|---:|---|---|---|---|
+| 1 | `max_position_per_asset` | `POSITION_LIMIT / asset_weight / <=` | number, `0..1`, scale≤4 | `BLOCK` |
+| 2 | `max_gold_etf_etn_weight` | `POSITION_LIMIT / gold_etf_etn_weight / <=` | number, `0..1`, scale≤4 | `BLOCK` |
+| 3 | `max_single_order_amount` | `ORDER_SIZE / order_amount_krw / <=` | integer, `0..10000000000` | `BLOCK` |
+| 4 | `daily_loss_guard` | `LOSS_LIMIT / daily_loss_rate / >=` | number, `-1..0`, scale≤4 | `BLOCK` |
+| 5 | `mdd_guard` | `DRAWDOWN_LIMIT / mdd / >=` | number, `-1..0`, scale≤4 | `BLOCK` |
+| 6 | `max_daily_orders` | `TRADING_FREQUENCY / daily_order_count / <=` | integer, `0..1000` | `WARN` 또는 `BLOCK` |
+| 7 | `negative_news_guard` | `NEWS_GUARD / negative_news_score / <=` | number, `0..1`, scale≤4 | `WARN` 또는 `BLOCK` |
+| 8 | `disclosure_risk_guard` | `DISCLOSURE_GUARD / disclosure_risk_score / <=` | number, `0..1`, scale≤4 | `WARN` 또는 `BLOCK` |
+
+범위 양끝은 포함한다. `enabled=false`이면 severity는 반드시 `ALLOW`, `enabled=true`이면
+해당 행의 non-ALLOW 값이어야 한다. JSON string/null, NaN/Infinity, exponent로 scale 제한을
+우회하는 값, unknown field, tuple 조합 변경을 거부한다. ratio는 fraction, loss/MDD는 signed
+ratio, 금액·횟수는 JSON integer다.
+
+### 4.2 원칙 preset 조회
 
 `GET /api/v1/principle-presets`
 
-응답:
+query parameter는 받지 않는다. `data.disclaimer`와 `data.items`를 반환하며 items는 아래 순서의
+정확히 세 개다. 세 preset의 mode는 모두 `GUIDE`다.
 
-```json
-{
-  "success": true,
-  "data": [
-    {
-      "presetId": "conservative",
-      "name": "보수형",
-      "description": "손실 제한과 분산투자를 우선하는 원칙",
-      "defaultRules": [
-        {
-          "ruleId": "max_position_per_asset",
-          "ruleType": "POSITION_LIMIT",
-          "threshold": 0.15,
-          "severity": "BLOCK"
-        }
-      ]
-    }
-  ]
-}
-```
+| order/presetId | KR / EN | rule 1~8 threshold | severity/enabled |
+|---|---|---|---|
+| 1 `conservative` | 보수형 / Conservative | `0.15, 0.20, 300000, -0.02, -0.10, 2, 0.50, 0.50` | 1~6 `BLOCK/true`, 7~8 `ALLOW/false` |
+| 2 `balanced` | 균형형 / Balanced | `0.20, 0.30, 500000, -0.03, -0.15, 3, 0.70, 0.70` | 1~5 `BLOCK/true`, 6 `WARN/true`, 7~8 `ALLOW/false` |
+| 3 `aggressive` | 공격형 / Aggressive | `0.30, 0.40, 1000000, -0.05, -0.25, 5, 0.85, 0.85` | 1~5 `BLOCK/true`, 6 `WARN/true`, 7~8 `ALLOW/false` |
 
-### 4.2 사용자 원칙 생성
+Dashboard는 preset 선택 전에 locale에 맞는 disclaimer를 그대로 표시한다.
+응답 `data`의 완전한 3×8 예시는 `contracts/examples/principle-presets.valid.json`이며 공통
+성공 envelope의 `data`에 그대로 들어간다.
+
+### 4.3 사용자 원칙 생성
 
 `POST /api/v1/principles`
 
-요청:
+`presetId`, `title`은 필수이고 `mode`, `rules`는 선택이다. mode를 생략하면 preset mode,
+rules를 생략하면 active preset의 canonical 8 rules를 transaction 안에서 deep copy한다.
+rules를 보내면 preset과 merge하지 않고 1~8개 전체 replacement로 사용하며 빈 배열은 400이다.
+초기 status/version은 `ACTIVE`/`1`이다. presetId는 이후 immutable provenance다.
+
+title은 outer Unicode whitespace trim과 NFC 정규화 후 1~120 Unicode code point이며
+CR/LF/NUL과 Unicode control/format category를 거부한다. ID는 서버가
+`^prc_[0-9a-f]{32}$` 형식으로 만든다. create 성공은 `201 Created`,
+`Location: /api/v1/principles/{principleId}`와 전체 current representation을 반환한다.
 
 ```json
 {
   "presetId": "balanced",
-  "title": "균형형 국내주식+금 ETF 원칙",
+  "title": "단일 규칙 원칙",
   "mode": "GUIDE",
   "rules": [
     {
-      "ruleId": "daily_loss_guard",
-      "ruleType": "LOSS_LIMIT",
-      "metric": "daily_loss_rate",
-      "operator": ">=",
-      "threshold": -0.03,
-      "severity": "BLOCK",
-      "enabled": true
-    },
-    {
-      "ruleId": "max_single_order_amount",
-      "ruleType": "ORDER_SIZE",
-      "metric": "order_amount_krw",
+      "ruleId": "max_position_per_asset",
+      "ruleType": "POSITION_LIMIT",
+      "metric": "asset_weight",
       "operator": "<=",
-      "threshold": 500000,
+      "threshold": 0.2,
       "severity": "BLOCK",
       "enabled": true
     }
@@ -545,43 +563,161 @@ Principle API의 입력 원칙은 다음과 같다.
 }
 ```
 
-응답:
+`PrincipleCurrent`는 아래 field를 모두 요구한다.
 
 ```json
 {
   "success": true,
+  "requestId": "req_20260723_000002",
   "data": {
-    "principleId": "prc_001",
-    "version": 1,
+    "principleId": "prc_0123456789abcdef0123456789abcdef",
+    "presetId": "balanced",
+    "title": "단일 규칙 원칙",
+    "mode": "GUIDE",
     "status": "ACTIVE",
-    "createdAt": "2026-06-23T10:00:00+09:00"
-  }
+    "version": 1,
+    "rules": [
+      {
+        "ruleId": "max_position_per_asset",
+        "ruleType": "POSITION_LIMIT",
+        "metric": "asset_weight",
+        "operator": "<=",
+        "threshold": 0.2,
+        "severity": "BLOCK",
+        "enabled": true
+      }
+    ],
+    "createdAt": "2026-07-23T14:00:00+09:00",
+    "updatedAt": "2026-07-23T14:00:00+09:00"
+  },
+  "warnings": [],
+  "error": null
 }
 ```
 
-### 4.3 원칙 조회
+create는 principle row, version-1 full snapshot, sanitized audit를 한 transaction에 저장한다. 금융
+idempotency replay 계약은 Principle에 적용하지 않는다. 응답을 못 받은 POST를 blind retry하면
+중복 원칙이 생길 수 있으므로 client는 owner list의 최근 후보를 사용자에게 보여 준 뒤 재시도
+여부를 명시적으로 받는다. 목록은 기존 POST 성공을 증명하는 correlation key가 아니다.
 
-`GET /api/v1/principles/{principleId}`
+### 4.4 owner 목록과 상세 조회
 
-### 4.4 원칙 수정
+`GET /api/v1/principles`
+
+자기 소유 `ACTIVE`와 `ARCHIVED`를 모두 반환한다. 첫 page는 `cursor` 없이 `size`(기본 50,
+1~200), `sort`(기본 `UPDATED_AT_DESC`, 또는 `UPDATED_AT_ASC`)만 허용한다. next page는 cursor의
+size/sort를 그대로 쓰며 query로 다시 보내면 exact 일치해야 한다. typed filter와 unknown query는
+400이다. `data.items`는 rules를 제외한 current summary이고 필수 nullable `data.nextCursor`를
+항상 보낸다. 안정된 keyset은 `(updatedAt, principleId)`이며 두 column의 정렬 방향을 맞춘다.
+여러 page의 snapshot isolation을 약속하지 않으므로 paging 중 변경이 있으면 첫 page부터
+refresh한다.
+
+`GET /api/v1/principles/{principleId}`는 create/update와 같은 전체 `PrincipleCurrent`를
+반환한다. malformed ID는 DB 조회 전에 400이고, 형식이 맞는 missing/cross-owner는 동일한 404다.
+unscoped 존재 여부 probe를 추가하지 않는다.
+
+### 4.5 원칙 수정
 
 `PUT /api/v1/principles/{principleId}`
 
-수정 시 `expectedVersion`을 포함한다.
+`expectedVersion`, `title`, `mode`, `status`, `rules`를 모두 보내는 full replacement다.
+rules 누락은 preset refill이 아니라 400이고 빈 배열도 400이다. `presetId`, actor, timestamps,
+`version`, `changeSummary`와 unknown property는 받지 않는다.
 
 ```json
 {
   "expectedVersion": 1,
+  "title": "수정된 원칙",
   "mode": "STRICT",
-  "rules": []
+  "status": "ACTIVE",
+  "rules": [
+    {
+      "ruleId": "max_position_per_asset",
+      "ruleType": "POSITION_LIMIT",
+      "metric": "asset_weight",
+      "operator": "<=",
+      "threshold": 0.15,
+      "severity": "BLOCK",
+      "enabled": true
+    }
+  ]
 }
 ```
 
-버전이 다르면 `409 CONFLICT`를 반환한다.
+status는 `ACTIVE|ARCHIVED`만 허용하고 DELETE endpoint는 없다. 두 상태 사이 전환도 동일한 PUT과
+expectedVersion을 사용한다. 사용자당 여러 ACTIVE 원칙과 같은 title을 허용하며 default/selected
+원칙은 S2.1에서 정하지 않는다.
 
-### 4.5 원칙 변경 이력 조회
+owner와 expectedVersion을 먼저 검증한다. canonicalized title/mode/status/rules가 동일한
+matching-version no-op은 200을 반환하되 version, `updatedAt`, version row, audit row를 바꾸지
+않는다. 실제 변경은 아래 owner+CAS predicate 한 SQL에서 version을 정확히 1 올린 뒤 immutable
+snapshot과 audit를 같은 transaction에 INSERT한다. JPA `@Version`, ETag/If-Match를 병행하지 않는다.
+
+```sql
+UPDATE principles
+SET title = :title,
+    mode = :mode,
+    status = :status,
+    current_version = current_version + 1,
+    updated_at = :updatedAt
+WHERE principle_id = :principleId
+  AND user_id = :actorUserId
+  AND current_version = :expectedVersion
+  AND current_version < 2147483647
+RETURNING current_version
+```
+
+동일 expectedVersion race는 정확히 1건만 성공한다. owned stale request는
+`409 CONFLICT`와 `{"expectedVersion":n,"currentVersion":m}`, terminal version은
+`409 VERSION_EXHAUSTED`와 `{"currentVersion":2147483647}`다. missing/cross-owner는
+currentVersion을 공개하지 않고 동일 404다.
+
+### 4.6 원칙 변경 이력 조회
 
 `GET /api/v1/principles/{principleId}/versions`
+
+`size`는 기본 50/최대 200, sort는 기본 `VERSION_DESC` 또는 `VERSION_ASC`다. keyset은 version
+하나이며 next page의 size/sort 규칙과 unknown query 거부는 owner list와 같다. response data는
+`items`와 필수 nullable `nextCursor`다. item은
+`principleId,version,presetId,title,mode,status,rules,changedFields,createdAt`의 full snapshot이고
+DB의 `created_by`는 응답하지 않는다. version 1 `changedFields`는
+`presetId,title,mode,status,rules`; 이후에는 `title,mode,status,rules` 중 실제 변경 field만 이
+순서로 담는다. 과거 version/audit row UPDATE·DELETE는 runtime 권한으로 금지한다.
+
+owner list cursor는 15분 TTL의
+`base64url(canonicalPayload).base64url(HMAC-SHA-256(payloadPart))`이고 최대 2,048자다. raw user ID
+대신 purpose-separated subject binding을 넣고 exact env `PRINCIPLE_CURSOR_HMAC_KEY`를
+JWT/login key와 분리한다. signature 확인 전 payload를 SQL 결정에 쓰지 않는다. 변조·만료·route,
+subject, resource, sort, size mismatch는 모두 `/query/cursor` +
+`INVALID_CURSOR` 하나의 400으로 수렴한다.
+
+### 4.7 오류·artifact·OpenAPI 계약
+
+| HTTP/code | 의미 | exact details |
+|---:|---|---|
+| 400 `VALIDATION_ERROR` | body/path/query/rule/cursor 오류 | `{"violations":[{"field":"<JSON Pointer>","reason":"<enum>"}]}` |
+| 401 `UNAUTHORIZED` | bearer/JWT/DB actor 재검증 실패 | `{}` |
+| 403 `FORBIDDEN` | endpoint capability 없음 | `{}` |
+| 404 `NOT_FOUND` | missing 또는 cross-owner | `{}` |
+| 409 `CONFLICT` | owned stale version | `{"expectedVersion":n,"currentVersion":m}` |
+| 409 `VERSION_EXHAUSTED` | integer terminal version | `{"currentVersion":2147483647}` |
+| 413 `PAYLOAD_TOO_LARGE` | 1,048,576-byte 상한 초과 | `{"maxBytes":1048576}` |
+
+violation reason은
+`REQUIRED,UNKNOWN_FIELD,INVALID_FORMAT,INVALID_ENUM,UNAVAILABLE,OUT_OF_RANGE,INVALID_SCALE,TOO_FEW_ITEMS,TOO_MANY_ITEMS,DUPLICATE,INVALID_COMBINATION,INVALID_CURSOR`
+중 하나다. 목록은 field path 사전순이고 rejected raw value를 반사하지 않는다. 404에는 target/owner,
+로그·metric label에는 raw userId/username/token/title/cursor/rejected payload를 넣지 않는다.
+
+schema와 positive/negative/page/error 예시는 각각 `contracts/schemas/`와
+`contracts/examples/`의 `principle-*` 파일에 있다. `contracts/README.md`의 S2.1 artifact map이
+각 operation을 exact schema/fixture에 연결한다.
+
+tracked OpenAPI는 `contracts/openapi/openapi.json`이며 root는 `openapi=3.1.1`,
+`jsonSchemaDialect=https://spec.openapis.org/oas/3.1/dialect/base`다. standalone schemas는 JSON
+Schema Draft 2020-12다. canonical catalog bytes의 lowercase SHA-256을 generated OpenAPI의
+`x-s2-1-contract-sha256`에 넣고 `x-s2-1-contract-id=s2-1-principle-contract/v1`과 함께 CI에서
+검증한다. Spring generator가 내는 root `3.1.0`에서 tracked `3.1.1`로의 patch 한 field와
+deterministic formatting만 normalizer가 바꿀 수 있으며 paths/components/dialect drift는 실패한다.
 
 ---
 

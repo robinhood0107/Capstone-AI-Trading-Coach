@@ -1,0 +1,11 @@
+{
+  "data": null,
+  "error": {
+    "code": "UNAUTHORIZED",
+    "details": {},
+    "message": "Authentication is required."
+  },
+  "requestId": "req_20260722_000005",
+  "success": false,
+  "warnings": []
+}

@@ -34,9 +34,9 @@ class FlywayMigrationIntegrationTest(
     @Autowired private val jdbcTemplate: JdbcTemplate,
 ) : SpringApiIntegrationTestBase() {
     @Test
-    fun `clean database applies V1 through V7 migrations and creates required objects`() {
+    fun `clean database applies V1 through V8 migrations and creates required objects`() {
         val versions = queryStrings("select version from flyway_schema_history where success order by installed_rank")
-        assertEquals(listOf("1", "2", "3", "4", "5", "6", "7"), versions)
+        assertEquals(listOf("1", "2", "3", "4", "5", "6", "7", "8"), versions)
 
         val requiredTables =
             listOf(
@@ -368,14 +368,26 @@ class FlywayMigrationIntegrationTest(
         )
         jdbcTemplate.update(
             """
-            insert into principles (principle_id, user_id, name, mode, status)
-            values ('prn-flyway', 'usr-flyway', 'Flyway Principle', 'GUIDE', 'ACTIVE')
+            insert into principles (
+                principle_id, user_id, preset_id, title, mode, status, current_version
+            )
+            values (
+                'prn-flyway', 'usr-flyway', 'balanced', 'Flyway Principle', 'GUIDE', 'ACTIVE', 1
+            )
             """.trimIndent(),
         )
         jdbcTemplate.update(
             """
-            insert into principle_versions (principle_version_id, principle_id, version, rules_json)
-            values ('prv-flyway-v1', 'prn-flyway', 1, '[]'::jsonb)
+            insert into principle_versions (
+                principle_version_id, principle_id, version, preset_id, title,
+                mode, status, rules_json, changed_fields, created_by
+            )
+            select
+                'prv-flyway-v1', 'prn-flyway', 1, 'balanced', 'Flyway Principle',
+                'GUIDE', 'ACTIVE', rules_json,
+                array['presetId', 'title', 'mode', 'status', 'rules'], 'usr-flyway'
+            from principle_presets
+            where preset_id = 'balanced'
             """.trimIndent(),
         )
         jdbcTemplate.update(

@@ -1,0 +1,23 @@
+spring:
+  main:
+    banner-mode: "off"
+  autoconfigure:
+    # 문서 생성은 실제 PostgreSQL/Flyway/JPA를 유지하되 broker/provider side effect를 만들지 않는다.
+    exclude:
+      - org.springframework.boot.kafka.autoconfigure.KafkaAutoConfiguration
+      - org.springframework.boot.security.autoconfigure.UserDetailsServiceAutoConfiguration
+
+server:
+  address: 127.0.0.1
+  port: 18080
+
+springdoc:
+  api-docs:
+    enabled: true
+  swagger-ui:
+    enabled: false
+
+logging:
+  level:
+    root: WARN
+    org.flywaydb: INFO

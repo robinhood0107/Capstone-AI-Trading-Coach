@@ -1,3 +1,5 @@
+import org.gradle.language.jvm.tasks.ProcessResources
+
 buildscript {
     configurations.classpath {
         // Spring Boot buildpack 전이 의존성에서 긴 입력 재귀 DoS 수정 버전을 강제한다.
@@ -10,6 +12,7 @@ plugins {
     kotlin("plugin.spring") version "2.4.0" // @Service 등 all-open
     kotlin("plugin.jpa") version "2.4.0" // 엔티티 no-arg 생성자
     id("org.springframework.boot") version "4.1.0"
+    id("org.springdoc.openapi-gradle-plugin") version "1.9.0"
     id("io.spring.dependency-management") version "1.1.7"
     id("org.jlleitschuh.gradle.ktlint") version "14.2.0" // 13.1.0+ Gradle 9, 14.0.1+ Gradle 9.1/Java 25 대응
 }
@@ -90,6 +93,54 @@ kotlin {
 
 tasks.withType<Test> {
     useJUnitPlatform()
+}
+
+tasks.named<ProcessResources>("processResources") {
+    // runtime/OpenAPI가 사람이 복사한 두 번째 matrix가 아니라 canonical catalog bytes를 그대로 읽는다.
+    from(layout.projectDirectory.file("../../../contracts/catalogs/s2-1-principle-contract.v1.json")) {
+        into("contracts")
+    }
+}
+
+openApi {
+    apiDocsUrl.set("http://127.0.0.1:18080/v3/api-docs")
+    outputDir.set(layout.buildDirectory)
+    outputFileName.set("openapi.json")
+    waitTimeInSeconds.set(90)
+    customBootRun {
+        args.set(listOf("--spring.profiles.active=openapi", "--server.port=18080"))
+    }
+}
+
+val cleanOpenApiOutput by tasks.registering(Delete::class) {
+    group = "verification"
+    description = "이전 generated OpenAPI가 새 실행을 통과시키지 못하도록 exact output만 삭제한다."
+    delete(layout.buildDirectory.file("openapi.json"))
+}
+
+tasks.named("generateOpenApiDocs") {
+    dependsOn(cleanOpenApiOutput)
+}
+
+tasks.register<JavaExec>("prepareOpenApiFixtureEnv") {
+    group = "verification"
+    description = "provider key 없이 격리 OpenAPI boot용 0600 credential bundle 환경을 생성한다."
+    dependsOn(tasks.named("testClasses"))
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("com.capstone.decision.OpenApiFixtureEnvironmentWriter")
+    workingDir = projectDir
+    argumentProviders.add(
+        CommandLineArgumentProvider {
+            listOf(
+                layout.buildDirectory
+                    .file("openapi-fixture/openapi.env")
+                    .get()
+                    .asFile.absolutePath,
+            )
+        },
+    )
+    // 매 실행 새 credential을 만들며 secret-bearing output은 cache/up-to-date state로 보존하지 않는다.
+    doNotTrackState("OpenAPI fixture credentials are intentionally regenerated.")
 }
 
 val cleanAuthCutoverEvidence by tasks.registering(Delete::class) {

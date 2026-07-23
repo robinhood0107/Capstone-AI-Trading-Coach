@@ -435,17 +435,105 @@ class PortfolioEvaluationUseCaseTest {
     }
 
     @Test
-    fun `margin not-applicable is a hard readiness HOLD`() {
+    fun `every unavailable or mismatched margin state is a hard readiness HOLD`() {
+        val futureMargin =
+            MetricCell.Available(
+                value = whole(0, MetricUnit.KRW),
+                observedAt = AS_OF.plusNanos(1),
+                retrievedAt = AS_OF.plusNanos(1),
+                freshUntil = AS_OF.plusSeconds(60),
+                source = MetricSource.INTERNAL,
+                sourceRef = "e".repeat(64),
+                sourceVersion = "margin-v1",
+            )
+        val wrongSourceContract =
+            available(
+                whole(0, MetricUnit.COUNT),
+                MetricSource.INTERNAL,
+                "e",
+            )
+        val cases =
+            listOf(
+                Triple("missing", MetricCell.Missing(MetricIssueCode.SOURCE_MISSING), MetricIssueCode.SOURCE_MISSING),
+                Triple(
+                    "stale",
+                    MetricCell.Stale(
+                        observedAt = AS_OF.minusSeconds(61),
+                        freshUntil = AS_OF.minusNanos(1),
+                        reason = MetricIssueCode.SOURCE_STALE,
+                    ),
+                    MetricIssueCode.SOURCE_STALE,
+                ),
+                Triple("error", MetricCell.Error(MetricIssueCode.SOURCE_ERROR), MetricIssueCode.SOURCE_ERROR),
+                Triple(
+                    "incomplete",
+                    MetricCell.Incomplete(MetricIssueCode.BROKERAGE_UNAVAILABLE),
+                    MetricIssueCode.BROKERAGE_UNAVAILABLE,
+                ),
+                Triple(
+                    "abstained",
+                    MetricCell.Abstained(MetricIssueCode.MODEL_ABSTAINED),
+                    MetricIssueCode.MODEL_ABSTAINED,
+                ),
+                Triple(
+                    "not-applicable",
+                    MetricCell.NotApplicable(MetricIssueCode.NOT_APPLICABLE),
+                    MetricIssueCode.NOT_APPLICABLE,
+                ),
+                Triple("future-timestamp", futureMargin, MetricIssueCode.SOURCE_FUTURE_TIMESTAMP),
+                Triple("source-contract-mismatch", wrongSourceContract, MetricIssueCode.SOURCE_ERROR),
+                // S2.2 port 계약은 source/version mismatch를 새 public code 없이 INCOMPLETE cell로 전달한다.
+                Triple(
+                    "source-version-mismatch",
+                    MetricCell.Incomplete(MetricIssueCode.SOURCE_INCOMPLETE),
+                    MetricIssueCode.SOURCE_INCOMPLETE,
+                ),
+            )
+
+        cases.forEach { (name, marginCell, expectedCause) ->
+            val harness = Harness(marginCell = marginCell)
+            val result = harness.useCase.evaluate(harness.command()).result
+            val marginIssue =
+                result.issues.single {
+                    it.ruleId == "data_freshness_guard" &&
+                        it.publicCode.name == "MARGIN_CONTEXT_UNAVAILABLE"
+                }
+
+            assertThat(result.action).describedAs(name).isEqualTo(EvaluationAction.HOLD)
+            assertThat(marginIssue.internalCause).describedAs(name).isEqualTo(expectedCause)
+        }
+    }
+
+    @Test
+    fun `disabled and not-requested optional inputs do not call their source ports`() {
         val harness =
             Harness(
-                marginCell = MetricCell.NotApplicable(MetricIssueCode.NOT_APPLICABLE),
+                principleRuleIds =
+                    setOf(
+                        "max_position_per_asset",
+                        "max_gold_etf_etn_weight",
+                        "max_single_order_amount",
+                        "daily_loss_guard",
+                        "mdd_guard",
+                        "max_daily_orders",
+                    ),
             )
+
+        harness.useCase.evaluate(harness.command(optionalComponents = emptySet()))
+
+        assertThat(harness.newsCalls).isZero()
+        assertThat(harness.disclosureCalls).isZero()
+        assertThat(harness.signalCalls).isZero()
+    }
+
+    @Test
+    fun `margin available only within the evaluation window remains READY`() {
+        val harness = Harness()
 
         val result = harness.useCase.evaluate(harness.command()).result
 
-        assertThat(result.action).isEqualTo(EvaluationAction.HOLD)
         assertThat(result.issues)
-            .anyMatch {
+            .noneMatch {
                 it.ruleId == "data_freshness_guard" &&
                     it.publicCode.name == "MARGIN_CONTEXT_UNAVAILABLE"
             }

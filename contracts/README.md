@@ -19,9 +19,9 @@ JSON이며 마지막 LF를 포함한 전체 bytes의 SHA-256을 OpenAPI root
 `s2-1-principle-contract/v1`이다. generated schema/fixture를 직접 편집하지 않고
 `generate_principle_contracts.py`로 재생성·비교한다.
 
-Amendment PR의 canonical OpenAPI는 실제 존재하는 auth/health/error runtime path만 포함한다.
-Principle controller가 없는 상태에서 S2.1 path를 수동으로 추가하지 않는다. 후속 implementation
-PR이 controller를 추가할 때 generated path와 canonical OpenAPI를 같은 변경으로 갱신한다.
+Implementation PR의 canonical OpenAPI는 실제 Spring controller에서 생성한 S2.1 6개 operation과
+auth/health/error runtime path를 포함한다. Principle path/component는 수동 합성하지 않으며
+controller 변경과 generated canonical OpenAPI를 같은 변경으로 갱신한다.
 
 ### Artifact map
 

@@ -8,12 +8,44 @@ from typing import Iterable
 from jsonschema import Draft202012Validator, FormatChecker
 from jsonschema.exceptions import ValidationError
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from contracts.generate_principle_contracts import (  # noqa: E402
+    CATALOG_PATH,
+    ContractValidationError,
+    load_catalog,
+    load_json_bytes_strict,
+    validate_principle_payload_semantics,
+)
+
 SCHEMA_DIR = REPO_ROOT / "contracts" / "schemas"
 EXAMPLES_DIR = REPO_ROOT / "contracts" / "examples"
 INVALID_EXAMPLES_DIR = EXAMPLES_DIR / "invalid"
 PAIR_EXAMPLES_DIR = EXAMPLES_DIR / "pairs"
+
+S2_EXAMPLE_SCHEMA_PREFIXES = {
+    "principle-create-custom-rules": "principle-create-request",
+    "principle-create": "principle-create-request",
+    "principle-update-no-op": "principle-update-request",
+    "principle-update": "principle-update-request",
+    "principle-presets": "principle-preset-list",
+    "principle-list-next-page": "principle-list-response",
+    "principle-list-empty": "principle-list-response",
+    "principle-list": "principle-list-response",
+    "principle-history-next-page": "principle-history-response",
+    "principle-history-empty": "principle-history-response",
+    "principle-history": "principle-history-response",
+    "principle-error-version-exhausted": "principle-error",
+    "principle-error-payload-too-large": "principle-error",
+    "principle-error-unauthorized": "principle-error",
+    "principle-error-validation": "principle-error",
+    "principle-error-not-found": "principle-error",
+    "principle-error-forbidden": "principle-error",
+    "principle-error-conflict": "principle-error",
+    "principle-error-cursor": "principle-error",
+}
 
 
 def relative(path: Path) -> str:
@@ -21,15 +53,14 @@ def relative(path: Path) -> str:
 
 
 def load_json(path: Path) -> object:
-    with path.open(encoding="utf-8") as file:
-        return json.load(file)
+    return load_json_bytes_strict(path.read_bytes(), source=relative(path))
 
 
 def schema_name_from_example(path: Path, suffix: str) -> str:
     if not path.name.endswith(suffix):
         raise ValueError(f"Unexpected example file name: {relative(path)}")
-    # 같은 schema에 여러 negative case를 둘 수 있게 `schema.case.invalid.json`을 지원한다.
-    return path.name[: -len(suffix)].split(".", maxsplit=1)[0]
+    base_name = path.name[: -len(suffix)].split(".", maxsplit=1)[0]
+    return S2_EXAMPLE_SCHEMA_PREFIXES.get(base_name, base_name)
 
 
 def first_error(errors: Iterable[ValidationError]) -> ValidationError | None:
@@ -56,7 +87,10 @@ def build_validators() -> dict[str, tuple[Path, Draft202012Validator]]:
     return validators
 
 
-def validate_valid_examples(validators: dict[str, tuple[Path, Draft202012Validator]]) -> int:
+def validate_valid_examples(
+    validators: dict[str, tuple[Path, Draft202012Validator]],
+    principle_catalog: object,
+) -> int:
     failures = 0
     valid_examples = sorted(EXAMPLES_DIR.glob("*.valid.json"))
     if not valid_examples:
@@ -68,21 +102,39 @@ def validate_valid_examples(validators: dict[str, tuple[Path, Draft202012Validat
         schema_path, validator = validators[schema_name]
         example = load_json(example_path)
         error = first_error(validator.iter_errors(example))
+        semantic_error: ContractValidationError | None = None
         if error is None:
+            try:
+                validate_principle_payload_semantics(
+                    schema_name,
+                    example,
+                    principle_catalog,
+                )
+            except ContractValidationError as caught:
+                semantic_error = caught
+        if error is None and semantic_error is None:
             print(f"PASS {relative(example_path)} against {relative(schema_path)}")
             continue
 
         failures += 1
+        message = (
+            semantic_error
+            if semantic_error is not None
+            else f"{error_location(error)} {error.message}"
+        )
         print(
             f"FAIL {relative(example_path)} against {relative(schema_path)}: "
-            f"{error_location(error)} {error.message}",
+            f"{message}",
             file=sys.stderr,
         )
 
     return failures
 
 
-def validate_invalid_examples(validators: dict[str, tuple[Path, Draft202012Validator]]) -> int:
+def validate_invalid_examples(
+    validators: dict[str, tuple[Path, Draft202012Validator]],
+    principle_catalog: object,
+) -> int:
     failures = 0
     invalid_examples = sorted(INVALID_EXAMPLES_DIR.glob("*.invalid.json"))
     if not invalid_examples:
@@ -94,10 +146,25 @@ def validate_invalid_examples(validators: dict[str, tuple[Path, Draft202012Valid
         schema_path, validator = validators[schema_name]
         example = load_json(example_path)
         error = first_error(validator.iter_errors(example))
-        if error is not None:
+        semantic_error: ContractValidationError | None = None
+        if error is None:
+            try:
+                validate_principle_payload_semantics(
+                    schema_name,
+                    example,
+                    principle_catalog,
+                )
+            except ContractValidationError as caught:
+                semantic_error = caught
+        if error is not None or semantic_error is not None:
+            message = (
+                semantic_error
+                if semantic_error is not None
+                else f"{error_location(error)} {error.message}"
+            )
             print(
                 f"PASS expected invalid {relative(example_path)} against {relative(schema_path)}: "
-                f"{error_location(error)} {error.message}"
+                f"{message}"
             )
             continue
 
@@ -198,9 +265,10 @@ def validate_naver_pair_examples(
 
 
 def main() -> int:
+    principle_catalog = load_catalog(CATALOG_PATH)
     validators = build_validators()
-    failures = validate_valid_examples(validators)
-    failures += validate_invalid_examples(validators)
+    failures = validate_valid_examples(validators, principle_catalog)
+    failures += validate_invalid_examples(validators, principle_catalog)
     failures += validate_naver_pair_examples(validators)
     if failures:
         print(f"contracts validation failed: {failures} failure(s)", file=sys.stderr)

@@ -160,10 +160,12 @@ class PrincipleCursorCodec(
             val expected = mac(SIGNATURE_PURPOSE, parts[0])
             val actual = DECODER.decode(parts[1])
             require(actual.size == HMAC_BYTES)
+            require(ENCODER.encodeToString(actual) == parts[1])
             require(MessageDigest.isEqual(expected, actual))
 
             val payloadBytes = DECODER.decode(parts[0])
             require(payloadBytes.isNotEmpty())
+            require(ENCODER.encodeToString(payloadBytes) == parts[0])
             val payloadText = String(payloadBytes, StandardCharsets.UTF_8)
             require(payloadText.toByteArray(StandardCharsets.UTF_8).contentEquals(payloadBytes))
             val root = objectMapper.readTree(payloadBytes)

@@ -52,6 +52,7 @@ class IdempotencyIntegrationTest(
     @Autowired private val objectMapper: ObjectMapper,
     @Autowired private val redisTemplate: StringRedisTemplate,
     @Autowired private val idempotencyService: IdempotencyService,
+    @Autowired private val idempotencyProperties: IdempotencyProperties,
 ) : SpringApiIntegrationTestBase() {
     private lateinit var mockMvc: MockMvc
 
@@ -162,6 +163,34 @@ class IdempotencyIntegrationTest(
             }
 
         assertTrue(redisTemplate.keys("*idem-missing-handler*").isEmpty())
+    }
+
+    @Test
+    fun `finance idempotency allowlist excludes Principle and preserves orders and backtests`() {
+        assertEquals(
+            listOf("/api/v1/orders/**", "/api/v1/backtests/**"),
+            idempotencyProperties.paths,
+        )
+        assertFalse(idempotencyProperties.paths.any { it.contains("principle", ignoreCase = true) })
+    }
+
+    @Test
+    fun `Principle request never allocates finance idempotency state`() {
+        val token = login()
+
+        mockMvc
+            .post("/api/v1/principles") {
+                bearer(token)
+                header("X-Idempotency-Key", "principle-must-not-be-finance-idempotent")
+                header("X-Request-Id", "req-principle-idempotency-boundary")
+                contentType = MediaType.APPLICATION_JSON
+                content = """{"presetId":"balanced","title":"Boundary check"}"""
+            }.andExpect {
+                status { isNotFound() }
+                jsonPath("$.error.code") { value("NOT_FOUND") }
+            }
+
+        assertTrue(redisTemplate.keys("*principle-must-not-be-finance-idempotent*").isEmpty())
     }
 
     @Test

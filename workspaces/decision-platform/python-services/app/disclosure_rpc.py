@@ -1,0 +1,286 @@
+"""저장된 정제 공시 관측만 노출하는 S2.3 loopback gRPC 경계."""
+
+from __future__ import annotations
+
+import re
+from collections.abc import Mapping
+from concurrent import futures
+from dataclasses import dataclass
+from datetime import UTC, date, datetime
+from typing import Never, Protocol
+
+import grpc
+from grpc_health.v1 import health, health_pb2, health_pb2_grpc
+
+from app.data.opendart.models import DisclosureRiskEvent
+from app.data.opendart.risk_mapping import load_default_risk_mapping
+from app.data.opendart.scorer import score_disclosure_risk
+from app.generated import disclosure_observation_pb2, disclosure_observation_pb2_grpc
+
+_MAX_REQUEST_BYTES = 256 * 1024
+_MAX_RESPONSE_BYTES = 1024 * 1024
+_MAX_CONCURRENCY = 8
+_MAX_EVENTS = 100
+_MAX_SOURCE_REFS = 100
+_SOURCE_REF_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+_EVENT_CODE_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
+_RECEIPT_NO_PATTERN = re.compile(r"^[0-9]{14}$")
+
+
+@dataclass(frozen=True)
+class StoredDisclosureEvent:
+    """DB projection에서 읽은 한 공시와 불투명 provenance를 변경 불가능한 값으로 운반한다."""
+
+    symbol: str
+    corp_code: str
+    event_code: str
+    receipt_no: str
+    occurred_on: date
+    observed_at: datetime
+    mapping_version: str
+    source_refs: tuple[str, ...]
+    attributes: Mapping[str, str]
+
+
+@dataclass(frozen=True)
+class StoredDisclosureBatch:
+    """같은 조회 window의 event·completeness·mapping 관측을 한 snapshot으로 묶는다."""
+
+    symbol: str
+    corp_code: str
+    observed_at: datetime
+    mapping_version: str
+    complete: bool
+    events: tuple[StoredDisclosureEvent, ...]
+
+
+class StoredDisclosureRepository(Protocol):
+    """provider 호출 없이 PostgreSQL sanitized projection을 한 번 읽는 port다."""
+
+    def load(
+        self,
+        *,
+        symbol: str,
+        corp_code: str | None,
+        window_from: date,
+        window_to: date,
+    ) -> StoredDisclosureBatch: ...
+
+
+class LoopbackServerSettings(Protocol):
+    """서버 factory가 비밀 설정 전체가 아니라 검증된 bind 주소만 보게 한다."""
+
+    @property
+    def bind_address(self) -> str: ...
+
+
+class DisclosureObservationServicer(
+    disclosure_observation_pb2_grpc.DisclosureObservationServiceServicer
+):
+    """저장 관측을 bounded response로 변환하며 HTTP fallback과 재시도를 만들지 않는다."""
+
+    def __init__(self, repository: StoredDisclosureRepository) -> None:
+        self._repository = repository
+
+    def GetDisclosureEvents(
+        self,
+        request: disclosure_observation_pb2.GetDisclosureEventsRequest,
+        context: grpc.ServicerContext,
+    ) -> disclosure_observation_pb2.GetDisclosureEventsResponse:
+        """검증된 symbol/window의 저장 관측만 반환하고 손상된 provenance는 fail-closed한다."""
+        symbol, corp_code, as_of, window_from, window_to = _validate_request(
+            request,
+            context,
+        )
+        try:
+            batch = self._repository.load(
+                symbol=symbol,
+                corp_code=corp_code,
+                window_from=window_from,
+                window_to=window_to,
+            )
+        except (TimeoutError, ConnectionError):
+            _abort(context, grpc.StatusCode.UNAVAILABLE, "stored disclosure observation unavailable")
+        except Exception:
+            _abort(context, grpc.StatusCode.INTERNAL, "stored disclosure observation read failed")
+
+        _validate_batch(
+            batch,
+            symbol=symbol,
+            corp_code=corp_code,
+            context=context,
+        )
+        mapping = load_default_risk_mapping()
+        if batch.mapping_version != mapping.version:
+            _abort(context, grpc.StatusCode.DATA_LOSS, "disclosure mapping version mismatch")
+
+        risk_events = [
+            DisclosureRiskEvent(
+                symbol=event.symbol,
+                corp_code=event.corp_code,
+                event_code=event.event_code,
+                receipt_no=event.receipt_no,
+                occurred_on=event.occurred_on,
+                attributes=dict(event.attributes),
+            )
+            for event in batch.events
+        ]
+        result = score_disclosure_risk(
+            symbol,
+            risk_events,
+            as_of=as_of,
+            mapping=mapping,
+            window_days=max(1, (window_to - window_from).days),
+        )
+        source_refs = sorted(
+            source_ref
+            for event in batch.events
+            for source_ref in event.source_refs
+        )
+        response = disclosure_observation_pb2.GetDisclosureEventsResponse(
+            symbol=symbol,
+            corp_code=corp_code or "",
+            as_of=as_of.isoformat(),
+            window_from=window_from.isoformat(),
+            window_to=window_to.isoformat(),
+            score=result.score,
+            mapping_version=result.mapping_version,
+            source_refs=source_refs,
+            observed_at=_utc_text(batch.observed_at),
+            complete=batch.complete,
+        )
+        response.events.extend(
+            disclosure_observation_pb2.DisclosureRiskEvent(
+                event_code=event.event_code,
+                receipt_no=event.receipt_no,
+                occurred_on=event.occurred_on.isoformat(),
+            )
+            for event in result.events
+        )
+        response.warnings.extend(
+            disclosure_observation_pb2.DisclosureRiskWarning(
+                code=warning.code,
+                event_code=warning.event_code,
+                receipt_no=warning.receipt_no,
+                message=warning.message,
+            )
+            for warning in result.warnings
+        )
+        if response.ByteSize() > _MAX_RESPONSE_BYTES:
+            _abort(context, grpc.StatusCode.RESOURCE_EXHAUSTED, "disclosure response exceeds limit")
+        return response
+
+
+def create_disclosure_server(
+    settings: LoopbackServerSettings,
+    repository: StoredDisclosureRepository,
+) -> grpc.Server:
+    """검증된 loopback 주소에 health와 실제 business RPC만 등록하고 reflection은 제공하지 않는다."""
+    server = grpc.server(
+        futures.ThreadPoolExecutor(max_workers=_MAX_CONCURRENCY),
+        options=(
+            ("grpc.max_receive_message_length", _MAX_REQUEST_BYTES),
+            ("grpc.max_send_message_length", _MAX_RESPONSE_BYTES),
+            ("grpc.max_concurrent_streams", _MAX_CONCURRENCY),
+        ),
+        maximum_concurrent_rpcs=_MAX_CONCURRENCY,
+    )
+    health_servicer = health.HealthServicer()
+    health_pb2_grpc.add_HealthServicer_to_server(health_servicer, server)
+    health_servicer.set(
+        disclosure_observation_pb2.DESCRIPTOR.services_by_name[
+            "DisclosureObservationService"
+        ].full_name,
+        health_pb2.HealthCheckResponse.SERVING,
+    )
+    disclosure_observation_pb2_grpc.add_DisclosureObservationServiceServicer_to_server(
+        DisclosureObservationServicer(repository),
+        server,
+    )  # type: ignore[no-untyped-call]
+    bound_port = server.add_insecure_port(settings.bind_address)
+    if bound_port == 0:
+        raise RuntimeError("Python gRPC loopback port could not be bound")
+    return server
+
+
+def _validate_request(
+    request: disclosure_observation_pb2.GetDisclosureEventsRequest,
+    context: grpc.ServicerContext,
+) -> tuple[str, str | None, date, date, date]:
+    symbol = request.symbol
+    corp_code = request.corp_code or None
+    if not re.fullmatch(r"[0-9]{6}", symbol):
+        _abort(context, grpc.StatusCode.INVALID_ARGUMENT, "symbol is invalid")
+    if corp_code is not None and not re.fullmatch(r"[0-9]{8}", corp_code):
+        _abort(context, grpc.StatusCode.INVALID_ARGUMENT, "corp_code is invalid")
+    try:
+        as_of = date.fromisoformat(request.as_of)
+        window_from = date.fromisoformat(request.window_from)
+        window_to = date.fromisoformat(request.window_to)
+    except ValueError:
+        _abort(context, grpc.StatusCode.INVALID_ARGUMENT, "date field is invalid")
+    if window_from > window_to or window_to != as_of:
+        _abort(context, grpc.StatusCode.INVALID_ARGUMENT, "disclosure window is invalid")
+    return symbol, corp_code, as_of, window_from, window_to
+
+
+def _validate_batch(
+    batch: StoredDisclosureBatch,
+    *,
+    symbol: str,
+    corp_code: str | None,
+    context: grpc.ServicerContext,
+) -> None:
+    if batch.symbol != symbol or (corp_code is not None and batch.corp_code != corp_code):
+        _abort(context, grpc.StatusCode.DATA_LOSS, "disclosure batch identity mismatch")
+    if not 1 <= len(batch.mapping_version) <= 128:
+        _abort(context, grpc.StatusCode.DATA_LOSS, "disclosure mapping version is invalid")
+    if len(batch.events) > _MAX_EVENTS:
+        _abort(context, grpc.StatusCode.RESOURCE_EXHAUSTED, "disclosure event limit exceeded")
+    if batch.observed_at.tzinfo is None:
+        _abort(context, grpc.StatusCode.DATA_LOSS, "disclosure observation time is invalid")
+
+    event_identities: set[tuple[object, ...]] = set()
+    source_refs: set[str] = set()
+    for event in batch.events:
+        identity = (
+            event.symbol,
+            event.corp_code,
+            event.event_code,
+            event.receipt_no,
+            event.occurred_on,
+        )
+        if identity in event_identities:
+            _abort(context, grpc.StatusCode.DATA_LOSS, "duplicate disclosure event")
+        event_identities.add(identity)
+        if (
+            event.symbol != batch.symbol
+            or event.corp_code != batch.corp_code
+            or event.mapping_version != batch.mapping_version
+            or not _EVENT_CODE_PATTERN.fullmatch(event.event_code)
+            or not _RECEIPT_NO_PATTERN.fullmatch(event.receipt_no)
+            or event.observed_at.tzinfo is None
+        ):
+            _abort(context, grpc.StatusCode.DATA_LOSS, "disclosure event is malformed")
+        for source_ref in event.source_refs:
+            if (
+                not _SOURCE_REF_PATTERN.fullmatch(source_ref)
+                or source_ref in source_refs
+            ):
+                _abort(context, grpc.StatusCode.DATA_LOSS, "disclosure source reference is invalid")
+            source_refs.add(source_ref)
+    if len(source_refs) > _MAX_SOURCE_REFS:
+        _abort(context, grpc.StatusCode.RESOURCE_EXHAUSTED, "disclosure source reference limit exceeded")
+
+
+def _utc_text(value: datetime) -> str:
+    return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
+
+
+def _abort(
+    context: grpc.ServicerContext,
+    code: grpc.StatusCode,
+    detail: str,
+) -> Never:
+    context.abort(code, detail)
+    raise AssertionError("gRPC abort returned unexpectedly")

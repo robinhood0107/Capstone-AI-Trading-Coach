@@ -344,6 +344,109 @@ WHERE
   account.status = 'ACTIVE'
   AND account.user_id = current_setting('app.actor_user_id', true);
 
+-- Python sidecar는 provider client 대신 이 allowlisted projection만 읽는다.
+CREATE VIEW disclosure_event_observation_projection
+WITH (security_barrier = true)
+AS
+WITH structured_events AS (
+  SELECT
+    current_event.event_id,
+    current_event.symbol,
+    current_event.detail ->> 'corp_code' AS corp_code,
+    'OPENDART:' || (current_event.detail ->> 'endpoint_id') AS event_code,
+    stored_event.source_event_key AS receipt_no,
+    current_event.event_date AS occurred_on,
+    current_event.detail
+  FROM current_calendar_events current_event
+  JOIN calendar_events stored_event
+    ON stored_event.event_id = current_event.event_id
+  WHERE
+    stored_event.source_id = 'opendart-structured-events'
+    AND current_event.event_type = 'DISCLOSURE'
+    AND current_event.status <> 'CANCELLED'
+    AND current_event.detail ? 'endpoint_id'
+
+  UNION ALL
+
+  SELECT
+    current_event.event_id,
+    current_event.symbol,
+    active_state.corp_code,
+    'OPENDART:bnkMngtPcbg' AS event_code,
+    stored_event.source_event_key AS receipt_no,
+    current_event.event_date AS occurred_on,
+    current_event.detail
+  FROM active_disclosure_risk_states active_state
+  JOIN current_calendar_events current_event
+    ON current_event.event_id = active_state.canonical_event_id
+  JOIN calendar_events stored_event
+    ON stored_event.event_id = current_event.event_id
+  WHERE
+    active_state.state_type = 'BANK_MANAGEMENT'
+    AND stored_event.source_id = 'opendart-structured-events'
+    AND current_event.status <> 'CANCELLED'
+)
+SELECT
+  event.event_id,
+  event.symbol,
+  event.corp_code,
+  event.event_code,
+  event.receipt_no,
+  event.occurred_on,
+  observation.observed_at,
+  observation.mapping_version AS source_mapping_version,
+  source.opaque_source_ref AS source_ref,
+  jsonb_strip_nulls(
+    jsonb_build_object('adt_opinion', event.detail ->> 'adt_opinion')
+  ) AS attributes_json
+FROM structured_events event
+JOIN calendar_event_sources source
+  ON source.event_id = event.event_id
+JOIN calendar_observations observation
+  ON observation.observation_id = source.observation_id
+WHERE
+  event.symbol ~ '^[0-9]{6}$'
+  AND event.corp_code ~ '^[0-9]{8}$'
+  AND event.event_code ~ '^OPENDART:[A-Za-z0-9._:-]{1,118}$'
+  AND event.receipt_no ~ '^[0-9]{14}$'
+  AND source.opaque_source_ref ~ '^[0-9a-f]{64}$';
+
+CREATE VIEW disclosure_collection_status_projection
+WITH (security_barrier = true)
+AS
+SELECT
+  source_id,
+  operation,
+  subject AS corp_code,
+  window_from,
+  window_to,
+  mapping_version,
+  completed,
+  updated_at
+FROM calendar_collection_cursors
+WHERE
+  source_id = 'opendart-structured-events'
+  AND subject ~ '^[0-9]{8}$'
+  AND operation IN (
+    'piicDecsn',
+    'cvbdIsDecsn',
+    'lwstLg',
+    'accnutAdtorNmNdAdtOpinion',
+    'dfOcr',
+    'ctrcvsBgrq',
+    'dsRsOcr',
+    'bnkMngtPcbg',
+    'bnkMngtPcsp',
+    'bsnSp',
+    'crDecsn',
+    'bdwtIsDecsn',
+    'exbdIsDecsn',
+    'cmpMgDecsn',
+    'cmpDvDecsn',
+    'cmpDvmgDecsn',
+    'bsnTrfDecsn'
+  );
+
 CREATE VIEW decision_owner_projection
 WITH (security_barrier = true)
 AS
@@ -475,7 +578,9 @@ REVOKE ALL PRIVILEGES ON TABLE
   decision_audit_projection,
   latest_market_quote_observations,
   latest_portfolio_balance_observations,
-  active_paper_portfolio_projection
+  active_paper_portfolio_projection,
+  disclosure_event_observation_projection,
+  disclosure_collection_status_projection
 FROM PUBLIC;
 
 DO $v9_runtime_grants$
@@ -498,7 +603,9 @@ BEGIN
       decision_audit_projection,
       latest_market_quote_observations,
       latest_portfolio_balance_observations,
-      active_paper_portfolio_projection
+      active_paper_portfolio_projection,
+      disclosure_event_observation_projection,
+      disclosure_collection_status_projection
     FROM decision_app;
 
     GRANT INSERT ON TABLE
@@ -529,7 +636,9 @@ BEGIN
       decision_audit_projection,
       latest_market_quote_observations,
       latest_portfolio_balance_observations,
-      active_paper_portfolio_projection
+      active_paper_portfolio_projection,
+      disclosure_event_observation_projection,
+      disclosure_collection_status_projection
     TO decision_app;
 
     REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_app;

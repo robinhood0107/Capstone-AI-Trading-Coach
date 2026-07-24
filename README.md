@@ -15,9 +15,11 @@ Contracts CI, Kotlin Build, Python CI, S1.4X contract correctness를 수행한�
 STAGE 2에서 S1.6 Market Calendar/Event Aggregator offline 구현, S2.1 Principle CRUD와 S2.2
 offline evaluator까지 `main`에 병합됐다. 이 S2.3 변경은 14개 rule core 위에 owner-scoped
 Decision controller·route, V9 원자 persistence/audit/outbox/idempotency, stored-observation
-gRPC와 저장 source reader를 연결한다. 외부 provider producer와 주문 실행은 포함하지 않는다.
-현물 `estimatedPrice` 단일 field/hash V2를 사용하며 저장 현재가·KIS_MOCK 잔고 producer가 없는
-환경은 가짜 값 없이 persisted HOLD로 동작한다.
+gRPC와 저장 source reader를 연결한다. S1.1/S3/S1.6/deterministic 소유 모듈의 sanitized
+offline producer prerequisite는 fixture/mock transport/Testcontainers로 구현하되 provider
+physical call과 주문 실행은 포함하지 않는다. 현물 `estimatedPrice` 단일 field/hash V2를
+사용하며 source 구조 부재는 hard blocker, 구조가 준비된 뒤 row 부재는 가짜 값 없는 persisted
+HOLD다.
 
 - PR #16 merge commit: `6f439155d9f5ec626fc185f29f2e0bd64ca54780`
 - PR #17 merge commit 및 S1.3/S1.3K 기능 완료 기준점: `814aab377251d76672566d39c3edb379d132248e`
@@ -48,9 +50,10 @@ gRPC와 저장 source reader를 연결한다. 외부 provider producer와 주문
 S1.2c OpenDART 분석 데이터, S1.3 ECOS/Naver snapshot, S1.3K KRX universe 자동화,
 S1.4 금융공학, S1.5 품질 보고, S1.6 내부 offline calendar/event aggregator, S2.1 Principle
 CRUD와 S2.2 offline rule evaluator까지 구현되어 있다. 이 S2.3 변경은 Decision API runtime과
-저장 observation consumer를 추가하지만 S1.1/S3의 provider/ledger producer를 대신 구현하거나
-호출하지 않는다. source가 없거나 stale하면 200 HOLD이며 provider adapter와 주문 실행은 S3
-경계다. 상세 개인 참고 노트는 GitHub에 올리지 않고 로컬
+저장 observation consumer 및 각 소유 모듈의 offline producer prerequisite를 추가하지만
+provider를 호출하거나 S3 주문 orchestration을 대신하지 않는다. 구조가 준비된 뒤 source row가
+없거나 stale하면 200 HOLD이며 provider adapter와 주문 실행은 S3 경계다. 상세 개인 참고 노트는
+GitHub에 올리지 않고 로컬
 `private-reference/` 폴더에서만 관리한다.
 
 ```bash

@@ -83,7 +83,7 @@ class JdbcMarketQuoteAdapter(
             jdbc()
                 .query(
                     """
-                    SELECT price_krw, observed_at, received_at, source_version, source_ref
+                    SELECT price_krw, completeness, observed_at, received_at, source_version, source_ref
                     FROM latest_market_quote_observations
                     WHERE symbol = :symbol
                       AND source = 'KIS_MOCK'
@@ -91,21 +91,27 @@ class JdbcMarketQuoteAdapter(
                     """.trimIndent(),
                     mapOf("symbol" to request.orderIntent.symbol),
                 ) { result, _ ->
-                    MetricCell.Available(
-                        value = MetricValue.Whole(result.getLong("price_krw"), MetricUnit.KRW),
-                        observedAt = result.getObject("observed_at", OffsetDateTime::class.java).toInstant(),
-                        retrievedAt = result.getObject("received_at", OffsetDateTime::class.java).toInstant(),
-                        freshUntil =
-                            result
-                                .getObject("observed_at", OffsetDateTime::class.java)
-                                .toInstant()
-                                .plus(PRICE_TTL),
-                        source = MetricSource.KIS_MOCK,
-                        sourceRef = result.getString("source_ref"),
-                        sourceVersion = result.getString("source_version"),
+                    val observedAt = result.getObject("observed_at", OffsetDateTime::class.java).toInstant()
+                    StoredQuoteRow(
+                        value =
+                            MetricCell.Available(
+                                value = MetricValue.Whole(result.getLong("price_krw"), MetricUnit.KRW),
+                                observedAt = observedAt,
+                                retrievedAt = result.getObject("received_at", OffsetDateTime::class.java).toInstant(),
+                                freshUntil = observedAt.plus(PRICE_TTL),
+                                source = MetricSource.KIS_MOCK,
+                                sourceRef = result.getString("source_ref"),
+                                sourceVersion = result.getString("source_version"),
+                            ),
+                        complete = result.getString("completeness") == COMPLETE,
                     )
                 }
-        return rows.singleOrNull() ?: MetricCell.Missing(MetricIssueCode.SOURCE_MISSING)
+        val row = rows.singleOrNull() ?: return MetricCell.Missing(MetricIssueCode.SOURCE_MISSING)
+        return if (row.complete) {
+            row.value
+        } else {
+            MetricCell.Incomplete(MetricIssueCode.SOURCE_INCOMPLETE)
+        }
     }
 
     private fun jdbc(): NamedParameterJdbcTemplate =
@@ -116,6 +122,11 @@ class JdbcMarketQuoteAdapter(
         val PRICE_TTL: Duration = Duration.ofSeconds(300)
     }
 }
+
+private data class StoredQuoteRow(
+    val value: MetricCell.Available<MetricValue>,
+    val complete: Boolean,
+)
 
 /**
  * KIS_MOCK balance는 sanitized stored observation만 소비하며 account나 provider payload를 노출하지 않는다.
@@ -133,7 +144,7 @@ class JdbcKisMockBalanceAdapter(
                 .kisRows(request.actorUserId, limit = 2)
                 .singleOrNull { it.ownerScopeHash == request.portfolioContext.ownerScopeHash }
                 ?: return MetricCell.Missing(MetricIssueCode.BROKERAGE_UNAVAILABLE)
-        if (row.completeness != COMPLETE || row.positionCount != row.positions.size) {
+        if (row.completeness != COMPLETE || !row.positionsComplete || row.positionCount != row.positions.size) {
             return MetricCell.Incomplete(MetricIssueCode.SOURCE_INCOMPLETE)
         }
         return row.balanceCell(source, MetricSource.KIS_MOCK)
@@ -156,13 +167,16 @@ class JdbcInternalPaperBalanceAdapter(
                 .paperRows(request.actorUserId, limit = 2)
                 .singleOrNull { it.ownerScopeHash == request.portfolioContext.ownerScopeHash }
                 ?: return MetricCell.Missing(MetricIssueCode.PAPER_PORTFOLIO_UNAVAILABLE)
+        if (row.completeness != COMPLETE || !row.positionsComplete || row.positionCount != row.positions.size) {
+            return MetricCell.Incomplete(MetricIssueCode.SOURCE_INCOMPLETE)
+        }
         return row.balanceCell(source, MetricSource.INTERNAL_PAPER)
     }
 }
 
 /**
  * margin 값은 선택한 portfolio source와 같은 stored row에서만 읽는다.
- * cash-only INTERNAL_PAPER의 0원은 ledger 계약이 명시한 실제 값이며 KIS_MOCK 결측 대체값이 아니다.
+ * INTERNAL_PAPER schema에 authoritative 값이 없으면 0을 합성하지 않고 typed missing으로 닫는다.
  */
 @Repository
 class JdbcStoredMarginAdapter(
@@ -175,11 +189,14 @@ class JdbcStoredMarginAdapter(
                 PortfolioSource.INTERNAL_PAPER -> reader.paperRows(request.actorUserId, limit = 2)
             }.singleOrNull { it.ownerScopeHash == request.portfolioContext.ownerScopeHash }
                 ?: return MetricCell.Missing(MetricIssueCode.SOURCE_MISSING)
+        val marginRequirementKrw =
+            row.marginRequirementKrw
+                ?: return MetricCell.Missing(MetricIssueCode.SOURCE_MISSING)
         if (row.completeness != COMPLETE) {
             return MetricCell.Incomplete(MetricIssueCode.SOURCE_INCOMPLETE)
         }
         return MetricCell.Available(
-            value = MetricValue.Whole(row.marginRequirementKrw, MetricUnit.KRW),
+            value = MetricValue.Whole(marginRequirementKrw, MetricUnit.KRW),
             observedAt = row.observedAt,
             retrievedAt = row.receivedAt,
             freshUntil = row.observedAt.plus(BALANCE_TTL),
@@ -227,6 +244,7 @@ class StoredPortfolioObservationReader(
                 """.trimIndent(),
             binder = { statement -> statement.setInt(1, limit) },
         ) { result ->
+            val parsedPositions = parsePositions(result.getString("positions_json"))
             StoredPortfolioRow(
                 ownerScopeHash = result.getString("account_scope_hash"),
                 cashKrw = result.getLong("cash_krw"),
@@ -234,7 +252,8 @@ class StoredPortfolioObservationReader(
                 marginRequirementKrw = result.getLong("margin_requirement_krw"),
                 completeness = result.getString("completeness"),
                 positionCount = result.getInt("position_count"),
-                positions = parsePositions(result.getString("positions_json")),
+                positions = parsedPositions.positions,
+                positionsComplete = parsedPositions.complete,
                 observedAt = result.getObject("observed_at", OffsetDateTime::class.java).toInstant(),
                 receivedAt = result.getObject("received_at", OffsetDateTime::class.java).toInstant(),
                 sourceVersion = result.getString("source_version"),
@@ -276,11 +295,14 @@ class StoredPortfolioObservationReader(
                         ),
                     ),
                 )
-            val positions = parsePositions(result.getString("positions_json"))
+            val positionsJson = result.getString("positions_json")
+            val parsedPositions = parsePositions(positionsJson)
             val observedAt = result.getObject("observed_at", OffsetDateTime::class.java).toInstant()
             val cashKrw = result.getLong("cash_krw")
             val equityKrw = result.getLong("portfolio_equity_krw")
-            val marginKrw = result.getLong("margin_requirement_krw")
+            val marginKrw =
+                result
+                    .getObject("margin_requirement_krw", Long::class.javaObjectType)
             val sourceRef =
                 CanonicalJson.sha256(
                     CanonicalJson.encode(
@@ -290,15 +312,7 @@ class StoredPortfolioObservationReader(
                             "observedAt" to observedAt,
                             "ownerScopeHash" to ownerScopeHash,
                             "portfolioEquityKrw" to equityKrw,
-                            "positions" to
-                                positions.map { position ->
-                                    mapOf(
-                                        "isGoldEtfEtn" to position.isGoldEtfEtn,
-                                        "marketValueKrw" to position.marketValueKrw,
-                                        "quantity" to position.quantity,
-                                        "symbol" to position.symbol,
-                                    )
-                                },
+                            "positionsJson" to positionsJson,
                             "sourceVersion" to PAPER_SOURCE_VERSION,
                         ),
                     ),
@@ -308,9 +322,10 @@ class StoredPortfolioObservationReader(
                 cashKrw = cashKrw,
                 portfolioEquityKrw = equityKrw,
                 marginRequirementKrw = marginKrw,
-                completeness = COMPLETE,
-                positionCount = positions.size,
-                positions = positions,
+                completeness = if (parsedPositions.complete) COMPLETE else "PARTIAL",
+                positionCount = parsedPositions.count,
+                positions = parsedPositions.positions,
+                positionsComplete = parsedPositions.complete,
                 observedAt = observedAt,
                 receivedAt = observedAt,
                 sourceVersion = PAPER_SOURCE_VERSION,
@@ -320,20 +335,24 @@ class StoredPortfolioObservationReader(
         }
     }
 
-    private fun parsePositions(value: String): List<PortfolioPosition> {
+    private fun parsePositions(value: String): ParsedPositions {
         val root = objectMapper.readTree(value)
         check(root.isArray && root.size() <= EvaluationBounds.MAX_POSITIONS) {
             "Stored portfolio positions violated the bounded read-model contract."
         }
-        val positions =
-            root.values().map(::parsePosition).toList()
+        val rawPositions = root.values().map(::parsePosition).toList()
+        val positions = rawPositions.filterNotNull()
         check(positions.map(PortfolioPosition::symbol).distinct().size == positions.size) {
             "Stored portfolio positions contain duplicate symbols."
         }
-        return positions.sortedBy(PortfolioPosition::symbol)
+        return ParsedPositions(
+            positions = positions.sortedBy(PortfolioPosition::symbol),
+            count = root.size(),
+            complete = rawPositions.all { it != null },
+        )
     }
 
-    private fun parsePosition(node: JsonNode): PortfolioPosition {
+    private fun parsePosition(node: JsonNode): PortfolioPosition? {
         check(
             node.isObject &&
                 node
@@ -345,11 +364,15 @@ class StoredPortfolioObservationReader(
         ) {
             "Stored portfolio position shape is invalid."
         }
+        val classification = node.path("isGoldEtfEtn")
+        if (!classification.isBoolean) {
+            return null
+        }
         return PortfolioPosition(
             symbol = node.path("symbol").stringValue(),
             quantity = node.path("quantity").longValue(),
             marketValueKrw = node.path("marketValueKrw").longValue(),
-            isGoldEtfEtn = node.path("isGoldEtfEtn").booleanValue(),
+            isGoldEtfEtn = classification.booleanValue(),
         )
     }
 
@@ -371,10 +394,11 @@ data class StoredPortfolioRow(
     val ownerScopeHash: String,
     val cashKrw: Long,
     val portfolioEquityKrw: Long,
-    val marginRequirementKrw: Long,
+    val marginRequirementKrw: Long?,
     val completeness: String,
     val positionCount: Int,
     val positions: List<PortfolioPosition>,
+    val positionsComplete: Boolean,
     val observedAt: java.time.Instant,
     val receivedAt: java.time.Instant,
     val sourceVersion: String,
@@ -383,7 +407,8 @@ data class StoredPortfolioRow(
 ) {
     init {
         require(ownerScopeHash.matches(Regex(EvaluationBounds.SANITIZED_SHA256_PATTERN)))
-        require(cashKrw >= 0 && portfolioEquityKrw >= 0 && marginRequirementKrw >= 0)
+        require(cashKrw >= 0 && portfolioEquityKrw >= 0)
+        require(marginRequirementKrw == null || marginRequirementKrw >= 0)
         require(completeness in setOf(COMPLETE, "PARTIAL"))
         require(positionCount in 0..EvaluationBounds.MAX_POSITIONS)
         require(!receivedAt.isBefore(observedAt))
@@ -414,6 +439,12 @@ data class StoredPortfolioRow(
             sourceVersion = sourceVersion,
         )
 }
+
+private data class ParsedPositions(
+    val positions: List<PortfolioPosition>,
+    val count: Int,
+    val complete: Boolean,
+)
 
 private const val COMPLETE = "COMPLETE"
 private val BALANCE_TTL: Duration = Duration.ofSeconds(60)

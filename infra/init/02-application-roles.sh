@@ -177,6 +177,46 @@ BEGIN
 END
 $principle_privileges$;
 
+DO $decision_runtime_privileges$
+BEGIN
+    IF to_regclass('public.decision_idempotency_results') IS NOT NULL THEN
+        -- 기존 volume에서도 V9의 source read-only 및 append-only history 경계를 그대로 복원한다.
+        REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_app;
+        GRANT SELECT ON TABLE
+            users,
+            principle_presets,
+            principles,
+            principle_versions,
+            trading_sessions,
+            current_calendar_events,
+            active_disclosure_risk_states,
+            market_calendar,
+            decision_idempotency_results,
+            decision_owner_projection,
+            decision_audit_projection,
+            latest_market_quote_observations,
+            latest_portfolio_balance_observations,
+            active_paper_portfolio_projection
+        TO decision_app;
+        GRANT INSERT ON TABLE
+            principles,
+            principle_versions,
+            decisions,
+            decision_violations,
+            decision_artifacts,
+            decision_traces,
+            audit_logs,
+            event_outbox,
+            decision_idempotency_results
+        TO decision_app;
+        GRANT UPDATE (title, mode, status, current_version, updated_at)
+            ON TABLE principles TO decision_app;
+        REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_app;
+        REVOKE CREATE ON SCHEMA public FROM decision_app;
+    END IF;
+END
+$decision_runtime_privileges$;
+
 DO $block$
 BEGIN
     IF to_regclass('public.flyway_schema_history') IS NOT NULL THEN

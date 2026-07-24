@@ -1,0 +1,947 @@
+{
+  "$defs": {
+    "riskDecision": {
+      "$defs": {
+        "abstention": {
+          "additionalProperties": false,
+          "allOf": [
+            {
+              "else": {
+                "properties": {
+                  "code": {
+                    "enum": [
+                      "MODEL_ABSTAINED",
+                      "OPTIONAL_EVIDENCE_ERROR",
+                      "OPTIONAL_EVIDENCE_INCOMPLETE",
+                      "OPTIONAL_EVIDENCE_MISSING",
+                      "OPTIONAL_EVIDENCE_STALE"
+                    ]
+                  }
+                }
+              },
+              "if": {
+                "properties": {
+                  "disposition": {
+                    "const": "NOT_APPLICABLE"
+                  }
+                },
+                "required": [
+                  "disposition"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "code": {
+                    "const": "NOT_APPLICABLE_V1"
+                  }
+                }
+              }
+            }
+          ],
+          "properties": {
+            "code": {
+              "enum": [
+                "MODEL_ABSTAINED",
+                "OPTIONAL_EVIDENCE_ERROR",
+                "OPTIONAL_EVIDENCE_INCOMPLETE",
+                "OPTIONAL_EVIDENCE_MISSING",
+                "OPTIONAL_EVIDENCE_STALE",
+                "NOT_APPLICABLE_V1"
+              ],
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "component": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "disposition": {
+              "enum": [
+                "ABSTAIN",
+                "NOT_APPLICABLE"
+              ]
+            },
+            "message": {
+              "maxLength": 1024,
+              "minLength": 1,
+              "type": "string"
+            },
+            "ruleId": {
+              "enum": [
+                "max_position_per_asset",
+                "max_gold_etf_etn_weight",
+                "max_single_order_amount",
+                "daily_loss_guard",
+                "mdd_guard",
+                "max_daily_orders",
+                "negative_news_guard",
+                "disclosure_risk_guard",
+                "high_volatility_guard",
+                "data_freshness_guard",
+                "hmm_risk_off_guard",
+                "mean_reversion_warning",
+                "etf_etn_risk_check",
+                "ad_leading_room_guard"
+              ],
+              "maxLength": 128,
+              "type": "string"
+            }
+          },
+          "required": [
+            "code",
+            "component",
+            "disposition",
+            "message"
+          ],
+          "type": "object"
+        },
+        "issue": {
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "enum": [
+                "BALANCE_PARTIAL",
+                "BALANCE_STALE",
+                "BROKERAGE_UNAVAILABLE",
+                "DISCLOSURE_PARTIAL",
+                "DISCLOSURE_PROVIDER_ERROR",
+                "INSTRUMENT_METADATA_UNAVAILABLE",
+                "MARGIN_CONTEXT_UNAVAILABLE",
+                "NEWS_EVIDENCE_UNAVAILABLE",
+                "PORTFOLIO_CONTEXT_UNAVAILABLE",
+                "PRICE_MISSING",
+                "PRICE_STALE",
+                "PRINCIPLE_CONTEXT_UNAVAILABLE",
+                "RISK_SNAPSHOT_MISSING",
+                "RISK_SNAPSHOT_VERSION_MISMATCH",
+                "SOURCE_DEADLINE_EXCEEDED"
+              ],
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "message": {
+              "maxLength": 1024,
+              "minLength": 1,
+              "type": "string"
+            },
+            "ruleId": {
+              "enum": [
+                "max_position_per_asset",
+                "max_gold_etf_etn_weight",
+                "max_single_order_amount",
+                "daily_loss_guard",
+                "mdd_guard",
+                "max_daily_orders",
+                "negative_news_guard",
+                "disclosure_risk_guard",
+                "high_volatility_guard",
+                "data_freshness_guard",
+                "hmm_risk_off_guard",
+                "mean_reversion_warning",
+                "etf_etn_risk_check",
+                "ad_leading_room_guard"
+              ],
+              "maxLength": 128,
+              "type": "string"
+            },
+            "source": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "code",
+            "message",
+            "source"
+          ],
+          "type": "object"
+        },
+        "riskItem": {
+          "additionalProperties": false,
+          "allOf": [
+            {
+              "if": {
+                "anyOf": [
+                  {
+                    "properties": {
+                      "metric": {
+                        "const": "disclosure_risk_score"
+                      }
+                    },
+                    "required": [
+                      "metric"
+                    ]
+                  },
+                  {
+                    "properties": {
+                      "source": {
+                        "const": "OPENDART"
+                      }
+                    },
+                    "required": [
+                      "source"
+                    ]
+                  }
+                ]
+              },
+              "then": {
+                "properties": {
+                  "metric": {
+                    "const": "disclosure_risk_score"
+                  },
+                  "source": {
+                    "const": "OPENDART"
+                  },
+                  "value": {
+                    "maximum": 1,
+                    "minimum": 0,
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "metric",
+                  "value",
+                  "severity",
+                  "source",
+                  "eventCodes",
+                  "mappingVersion",
+                  "sourceRefs"
+                ]
+              }
+            }
+          ],
+          "properties": {
+            "eventCodes": {
+              "items": {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              "maxItems": 100,
+              "type": "array",
+              "uniqueItems": true
+            },
+            "mappingVersion": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "metric": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "severity": {
+              "enum": [
+                "ALLOW",
+                "WARN",
+                "BLOCK"
+              ]
+            },
+            "source": {
+              "enum": [
+                "OPENDART",
+                "KIS",
+                "NEWS",
+                "MACRO",
+                "INTERNAL"
+              ]
+            },
+            "sourceRefs": {
+              "items": {
+                "maxLength": 64,
+                "minLength": 64,
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              "maxItems": 100,
+              "minItems": 1,
+              "type": "array",
+              "uniqueItems": true
+            },
+            "value": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "metric",
+            "value",
+            "severity",
+            "source"
+          ],
+          "type": "object"
+        },
+        "violation": {
+          "additionalProperties": false,
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "ruleId": {
+                    "const": "high_volatility_guard"
+                  }
+                },
+                "required": [
+                  "ruleId"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "severity": {
+                    "const": "BLOCK"
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "ruleId": {
+                    "const": "hmm_risk_off_guard"
+                  }
+                },
+                "required": [
+                  "ruleId"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "severity": {
+                    "const": "WARN"
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "ruleId": {
+                    "const": "mean_reversion_warning"
+                  }
+                },
+                "required": [
+                  "ruleId"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "severity": {
+                    "const": "WARN"
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "ruleId": {
+                    "const": "etf_etn_risk_check"
+                  }
+                },
+                "required": [
+                  "ruleId"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "severity": {
+                    "const": "WARN"
+                  }
+                }
+              }
+            }
+          ],
+          "properties": {
+            "message": {
+              "maxLength": 1024,
+              "minLength": 1,
+              "type": "string"
+            },
+            "metricValue": {
+              "type": "number"
+            },
+            "ruleId": {
+              "enum": [
+                "max_position_per_asset",
+                "max_gold_etf_etn_weight",
+                "max_single_order_amount",
+                "daily_loss_guard",
+                "mdd_guard",
+                "max_daily_orders",
+                "negative_news_guard",
+                "disclosure_risk_guard",
+                "high_volatility_guard",
+                "hmm_risk_off_guard",
+                "mean_reversion_warning",
+                "etf_etn_risk_check"
+              ],
+              "maxLength": 128,
+              "type": "string"
+            },
+            "severity": {
+              "enum": [
+                "WARN",
+                "BLOCK"
+              ]
+            },
+            "threshold": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "ruleId",
+            "severity",
+            "message",
+            "metricValue",
+            "threshold"
+          ],
+          "type": "object"
+        },
+        "warning": {
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "enum": [
+                "MODEL_ABSTAINED",
+                "OPTIONAL_EVIDENCE_ERROR",
+                "OPTIONAL_EVIDENCE_INCOMPLETE",
+                "OPTIONAL_EVIDENCE_MISSING",
+                "OPTIONAL_EVIDENCE_STALE"
+              ],
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "message": {
+              "maxLength": 1024,
+              "minLength": 1,
+              "type": "string"
+            },
+            "ruleId": {
+              "enum": [
+                "max_position_per_asset",
+                "max_gold_etf_etn_weight",
+                "max_single_order_amount",
+                "daily_loss_guard",
+                "mdd_guard",
+                "max_daily_orders",
+                "negative_news_guard",
+                "disclosure_risk_guard",
+                "high_volatility_guard",
+                "data_freshness_guard",
+                "hmm_risk_off_guard",
+                "mean_reversion_warning",
+                "etf_etn_risk_check",
+                "ad_leading_room_guard"
+              ],
+              "maxLength": 128,
+              "type": "string"
+            },
+            "source": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "code",
+            "message",
+            "source"
+          ],
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "decision": {
+                "const": "ALLOW"
+              }
+            },
+            "required": [
+              "decision"
+            ]
+          },
+          "then": {
+            "properties": {
+              "abstentions": {
+                "items": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/riskDecision/$defs/abstention"
+                    },
+                    {
+                      "properties": {
+                        "disposition": {
+                          "const": "NOT_APPLICABLE"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "maxItems": 50,
+                "type": "array"
+              },
+              "canSubmitOrder": {
+                "const": true
+              },
+              "issues": {
+                "maxItems": 0
+              },
+              "violations": {
+                "maxItems": 0
+              },
+              "warnings": {
+                "maxItems": 0
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "decision": {
+                "const": "WARN"
+              }
+            },
+            "required": [
+              "decision"
+            ]
+          },
+          "then": {
+            "anyOf": [
+              {
+                "properties": {
+                  "violations": {
+                    "minItems": 1
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "warnings": {
+                    "minItems": 1
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "abstentions": {
+                    "contains": {
+                      "properties": {
+                        "disposition": {
+                          "const": "ABSTAIN"
+                        }
+                      },
+                      "required": [
+                        "disposition"
+                      ],
+                      "type": "object"
+                    },
+                    "minContains": 1
+                  }
+                }
+              }
+            ],
+            "not": {
+              "properties": {
+                "violations": {
+                  "contains": {
+                    "properties": {
+                      "severity": {
+                        "const": "BLOCK"
+                      }
+                    },
+                    "required": [
+                      "severity"
+                    ],
+                    "type": "object"
+                  },
+                  "minContains": 1
+                }
+              },
+              "required": [
+                "violations"
+              ]
+            },
+            "properties": {
+              "canSubmitOrder": {
+                "const": true
+              },
+              "issues": {
+                "maxItems": 0
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "decision": {
+                "const": "HOLD"
+              }
+            },
+            "required": [
+              "decision"
+            ]
+          },
+          "then": {
+            "not": {
+              "properties": {
+                "violations": {
+                  "contains": {
+                    "properties": {
+                      "severity": {
+                        "const": "BLOCK"
+                      }
+                    },
+                    "required": [
+                      "severity"
+                    ],
+                    "type": "object"
+                  },
+                  "minContains": 1
+                }
+              }
+            },
+            "properties": {
+              "canSubmitOrder": {
+                "const": false
+              },
+              "issues": {
+                "minItems": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "decision": {
+                "const": "BLOCK"
+              }
+            },
+            "required": [
+              "decision"
+            ]
+          },
+          "then": {
+            "properties": {
+              "canSubmitOrder": {
+                "const": false
+              },
+              "violations": {
+                "contains": {
+                  "properties": {
+                    "severity": {
+                      "const": "BLOCK"
+                    }
+                  },
+                  "required": [
+                    "severity"
+                  ],
+                  "type": "object"
+                },
+                "minContains": 1
+              }
+            }
+          }
+        }
+      ],
+      "properties": {
+        "abstentions": {
+          "items": {
+            "$ref": "#/$defs/riskDecision/$defs/abstention"
+          },
+          "maxItems": 50,
+          "type": "array"
+        },
+        "canSubmitOrder": {
+          "type": "boolean"
+        },
+        "catalogVersion": {
+          "const": 1
+        },
+        "decision": {
+          "enum": [
+            "ALLOW",
+            "WARN",
+            "HOLD",
+            "BLOCK"
+          ]
+        },
+        "decisionId": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        "evaluationId": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        "explanation": {
+          "additionalProperties": false,
+          "properties": {
+            "citationIds": {
+              "items": {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              "maxItems": 100,
+              "type": "array",
+              "uniqueItems": true
+            },
+            "shortText": {
+              "maxLength": 1024,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "shortText",
+            "citationIds"
+          ],
+          "type": "object"
+        },
+        "issues": {
+          "items": {
+            "$ref": "#/$defs/riskDecision/$defs/issue"
+          },
+          "maxItems": 14,
+          "type": "array"
+        },
+        "mode": {
+          "enum": [
+            "GUIDE",
+            "STRICT"
+          ]
+        },
+        "portfolioSource": {
+          "enum": [
+            "KIS_MOCK",
+            "INTERNAL_PAPER"
+          ]
+        },
+        "principleVersion": {
+          "maximum": 2147483647,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "principleVersionId": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        "readinessPolicyVersion": {
+          "const": "s2-2-readiness-v1"
+        },
+        "riskItems": {
+          "items": {
+            "$ref": "#/$defs/riskDecision/$defs/riskItem"
+          },
+          "maxItems": 50,
+          "type": "array"
+        },
+        "riskSummary": {
+          "additionalProperties": false,
+          "properties": {
+            "cvar95": {
+              "type": "number"
+            },
+            "hmmRegime": {
+              "enum": [
+                "NORMAL",
+                "SIDEWAYS",
+                "HIGH_VOLATILITY",
+                "RISK_OFF",
+                "RISK_ON"
+              ]
+            },
+            "mdd": {
+              "type": "number"
+            },
+            "regimeProbability": {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            "var95": {
+              "type": "number"
+            }
+          },
+          "type": "object"
+        },
+        "schemaVersion": {
+          "const": "s2-2-risk-decision/v1"
+        },
+        "semanticInputHash": {
+          "maxLength": 64,
+          "minLength": 64,
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "signalSummary": {
+          "additionalProperties": false,
+          "properties": {
+            "confidence": {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            "finalSignal": {
+              "enum": [
+                "BUY_STRONG",
+                "BUY_WEAK",
+                "BUY",
+                "HOLD",
+                "SELL",
+                "SELL_WEAK",
+                "SELL_STRONG"
+              ]
+            },
+            "lightgbmSignal": {
+              "enum": [
+                "BUY",
+                "SELL",
+                "HOLD"
+              ]
+            },
+            "lstmSignal": {
+              "enum": [
+                "BUY",
+                "SELL",
+                "HOLD"
+              ]
+            },
+            "newsSentiment": {
+              "maximum": 1,
+              "minimum": -1,
+              "type": "number"
+            }
+          },
+          "type": "object"
+        },
+        "snapshotArtifactHash": {
+          "maxLength": 64,
+          "minLength": 64,
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "validUntil": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "violations": {
+          "items": {
+            "$ref": "#/$defs/riskDecision/$defs/violation"
+          },
+          "maxItems": 14,
+          "type": "array"
+        },
+        "warnings": {
+          "items": {
+            "$ref": "#/$defs/riskDecision/$defs/warning"
+          },
+          "maxItems": 50,
+          "type": "array"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "evaluationId",
+        "catalogVersion",
+        "readinessPolicyVersion",
+        "decision",
+        "mode",
+        "canSubmitOrder",
+        "principleVersionId",
+        "principleVersion",
+        "portfolioSource",
+        "semanticInputHash",
+        "snapshotArtifactHash",
+        "violations",
+        "issues",
+        "warnings",
+        "abstentions",
+        "riskItems"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "contracts/schemas/s2-3-decision-response.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "createdAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "decisionId": {
+      "pattern": "^dec_[0-9a-f]{32}$",
+      "type": "string"
+    },
+    "enforcementAction": {
+      "enum": [
+        "NONE",
+        "ACKNOWLEDGE_WARNING",
+        "RECONFIRM_PRINCIPLE",
+        "RE_EVALUATE",
+        "DO_NOT_SUBMIT"
+      ]
+    },
+    "mode": {
+      "enum": [
+        "GUIDE",
+        "STRICT"
+      ]
+    },
+    "portfolioSource": {
+      "enum": [
+        "KIS_MOCK",
+        "INTERNAL_PAPER"
+      ]
+    },
+    "principleId": {
+      "pattern": "^prc_[0-9a-f]{32}$",
+      "type": "string"
+    },
+    "principleVersion": {
+      "maximum": 2147483647,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "principleVersionId": {
+      "pattern": "^pvr_[0-9a-f]{32}$",
+      "type": "string"
+    },
+    "riskDecision": {
+      "$ref": "#/$defs/riskDecision"
+    },
+    "validUntil": {
+      "format": "date-time",
+      "type": "string"
+    }
+  },
+  "required": [
+    "decisionId",
+    "createdAt",
+    "validUntil",
+    "principleId",
+    "principleVersionId",
+    "principleVersion",
+    "portfolioSource",
+    "mode",
+    "enforcementAction",
+    "riskDecision"
+  ],
+  "title": "S2.3 persisted decision canonical projection v1",
+  "type": "object"
+}

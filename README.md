@@ -58,7 +58,7 @@ GitHub에 올리지 않고 로컬
 
 ```bash
 cp .env.example .env
-# DB/Redis password, JWT issuer/audience, 목적별 signing/HMAC key와 두 attested demo credential bundle을 채운다.
+# DB/Redis 및 collector/source-writer password, JWT issuer/audience, 목적별 signing/HMAC key와 두 attested demo credential bundle을 채운다.
 # bundle은 $ 포함 BCrypt hash 보존을 위해 single quote 안에 두며 plaintext demo password는 저장하지 않는다.
 # API key는 필요한 provider를 실제 호출할 때 운영자만 주입하며 커밋하지 않는다.
 docker compose --env-file .env -f infra/docker-compose.infra.yml up -d
@@ -70,12 +70,13 @@ cd workspaces/decision-platform/spring-api
 ./gradlew build
 ```
 
-PostgreSQL runtime은 `decision_app`, S1.6 수집은 `decision_collector`, migration은 `flyway`,
+PostgreSQL runtime은 `decision_app`, S1.6 수집은 `decision_collector`, sanitized source append는
+`decision_market_writer`/`decision_portfolio_writer`/`decision_risk_writer`, migration은 `flyway`,
 bootstrap 관리는 `POSTGRES_ADMIN_USER`로 분리된다. 기존 `pgdata` volume에는 init script가
-자동 재실행되지 않으므로, 기존 관리자 이름/비밀번호를 보존하고
-`POSTGRES_COLLECTOR_PASSWORD`를 추가해 컨테이너를 올린 뒤 다음 명령을 한 번 실행한다.
-V6 적용 전에는 collector role을 먼저 만들고, V6 적용 뒤 재실행해도 script가 exact calendar
-권한을 복원한다. volume 삭제는 이 절차에 포함하지 않는다.
+자동 재실행되지 않으므로, 기존 관리자 이름/비밀번호를 보존하고 `.env.example`의 collector와
+세 source-writer password를 추가해 컨테이너를 올린 뒤 다음 명령을 한 번 실행한다. V6/V9 적용
+전에는 role을 먼저 만들고, migration 뒤 재실행하면 현재 table의 exact 권한을 복원한다. volume
+삭제는 이 절차에 포함하지 않는다.
 
 ```bash
 docker compose --env-file .env -f infra/docker-compose.infra.yml exec -T postgres \
@@ -93,4 +94,6 @@ S1.6 OpenDART online collector는 `.env.example`의 네 quota 값을 운영 evid
 - S1.6 내부 계약: 최종 명세 11.1.2와 API 명세 12A
 - [S2.2 offline 계약과 재현 명령](contracts/README.md#s22-rule-evaluation-offline-contract-v1)
 - [S2.2 계약 변경 기록](contracts/changes/20260724-s2-2-rule-evaluation-offline-contract.md)
+- [S2.3 Decision runtime과 stored-source 경계](contracts/README.md#s23-decision-runtime과-stored-source-경계)
+- [S2.3 Decision 계약 잠금](contracts/changes/20260724-s2-3-decision-contract-lock.md)
 - S1.4X dependency amendment 재현: `workspaces/decision-platform/research/s1-4x-numeric-parity/README.md`

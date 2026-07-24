@@ -11,8 +11,8 @@ S2.2 offline evaluator는 PR #43으로 `main`에 병합됐다. 이 S2.3 변경�
 prerequisite를 연결한다. provider physical call 없이 구조적 readiness를 검증하고, 구조가 준비된
 뒤 일시적 source 부재를 persisted HOLD로 처리한다. 전체 상태는
 [최종_프로젝트_명세서.md](최종_프로젝트_명세서.md) 8.4.1/11장, API 경계는
-[API_명세서.md](API_명세서.md) 5.1~5.4, 재현 명령과 machine-readable artifact 지도는
-[contracts README](../contracts/README.md#s22-rule-evaluation-offline-contract-v1), 실제 운영
+[API_명세서.md](API_명세서.md) 5.1~5.5, 재현 명령과 machine-readable artifact 지도는
+[contracts README](../contracts/README.md#s23-decision-runtime과-stored-source-경계), 실제 운영
 절차는 [Decision Platform README](../workspaces/decision-platform/README.md)를 따른다.
 
 | 문서 | 내용 |

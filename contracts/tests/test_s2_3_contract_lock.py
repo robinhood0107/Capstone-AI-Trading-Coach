@@ -44,6 +44,15 @@ CURRENT_CONTRACT_DOCS = (
     Path("docs/S0_2_P0_계약_통합_필드명_결정.md"),
     Path("docs/최종_프로젝트_명세서.md"),
 )
+S23_RUNTIME_DOCS = (
+    Path("README.md"),
+    Path("contracts/README.md"),
+    Path("contracts/changes/20260724-s2-3-decision-contract-lock.md"),
+    Path("docs/README.md"),
+    Path("docs/API_명세서.md"),
+    Path("docs/최종_프로젝트_명세서.md"),
+    Path("workspaces/decision-platform/README.md"),
+)
 LIMIT_PRICE_MARKDOWN_ALLOWLIST = {
     "AGENTS.md",
     "contracts/README.md",
@@ -154,6 +163,22 @@ class S23MarkdownContractDriftTest(unittest.TestCase):
                 self.assertRegex(text, r"(provider HTTP|provider를 직접 호출하지)")
                 self.assertRegex(text, r"(production[^\n]{0,30}seed|운영 seed|가짜|fake)")
                 self.assertRegex(text, r"(HOLD|보류)")
+
+    def test_current_runtime_docs_cannot_regress_to_the_pre_s23_state(self) -> None:
+        stale_state = (
+            "runtime 구현 중",
+            "현재 호출 가능한 endpoint가 아니다",
+            "OpenAPI path 추가 전에는 호출 불가",
+            "S2.3 Decision API (구현 시 활성)",
+        )
+        for relative in S23_RUNTIME_DOCS:
+            text = (REPO_ROOT / relative).read_text(encoding="utf-8")
+            with self.subTest(path=relative.as_posix()):
+                self.assertIn("HOLD", text)
+                if relative.as_posix() not in STALE_OPENAPI_PATH_ALLOWLIST:
+                    self.assertNotIn("contracts/openapi/api.openapi.yaml", text)
+                for token in stale_state:
+                    self.assertNotIn(token, text)
 
 
 class S23CashOrderContractTest(unittest.TestCase):

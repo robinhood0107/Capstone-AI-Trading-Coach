@@ -112,10 +112,10 @@ S2.2 generated artifact는 `generate_s2_2_contracts.py`의 explicit `OUTPUTS`만
 generator output과 겹치지 않는다. canonical catalog SHA-256은
 `a4714ee9ce3031199b9067919b15931fb42e106857da5f8d8ad7a95bafa8ad7b`다. Spring classpath에는
 catalog bytes를 변환 없이 복사하고 Gradle `check`가 byte equality를 검증한다. S2.2에서는
-Decision controller, persistence, OpenAPI path를 추가하지 않으며 normalizer는 implementation
-mode에서도 `/api/v1/decisions/**`를 거절한다. 외부 market/model/balance source adapter는
-추가하지 않고, S2.2 내부 owner-scoped ACTIVE Principle JDBC read adapter만 명시적 production
-source 예외다.
+S2.2 커밋 자체는 Decision controller, persistence, OpenAPI path를 추가하지 않았다. S2.3
+implementation mode부터 normalizer는 승인된 Decision path 3개와 `S23*` component 5개를 exact
+allowlist로 요구한다. 외부 provider adapter는 추가하지 않고 S2.3 stored-source reader만
+연결한다.
 
 ```bash
 uv run --frozen python contracts/generate_principle_contracts.py --check
@@ -124,16 +124,20 @@ uv run --frozen python -m unittest discover -s contracts/tests -v
 uv run --frozen python contracts/validate.py
 ```
 
-## S2.3 stored-source prerequisite
+## S2.3 Decision runtime과 stored-source 경계
 
-S2.3 runtime은 provider HTTP fallback 없이 저장된 sanitized source만 읽는다. V9의
+S2.3 runtime은 `POST /api/v1/decisions/evaluate-order`, owner-scoped detail/audit와 V9
+decision/trace/artifact/audit/outbox/idempotency 원자 저장을 제공한다. provider HTTP fallback
+없이 저장된 sanitized source만 읽는다. V9의
 `market_quote_observations`는 S1.1 producer, KIS_MOCK
 `portfolio_balance_observations`/`portfolio_position_observations`는 S3 producer가 후속 별도
 권한으로 INSERT한다. INTERNAL_PAPER는 기존 ledger의 owner-scoped projection을 사용한다.
 `decision_app`은 SELECT만 가지며 production seed는 없다. source가 비어 있거나 stale/incomplete면
 typed unavailable과 persisted 200 HOLD로 수렴한다. 자세한 소유권·hash 전환은
 [`20260724-s2-3-decision-contract-lock.md`](changes/20260724-s2-3-decision-contract-lock.md)를
-따른다.
+따른다. canonical S2.3 catalog SHA-256은
+`58b658a1482b378d5a7c8c394381a14b6ad6e41c222d2f84e4edec65c1ab1e6f`이며 tracked OpenAPI의
+`x-s2-3-contract-sha256`과 CI에서 일치해야 한다.
 
 ## S1.5 KIS 데이터 품질 리포트
 

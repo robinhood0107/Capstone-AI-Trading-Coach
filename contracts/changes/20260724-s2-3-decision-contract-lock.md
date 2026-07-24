@@ -76,6 +76,18 @@ observation은 owner, source, cash/equity, completeness, position count, UTC 시
   idempotency 저장 transaction에서 Principle current version을 다시 조건부 확인한다.
 - provider HTTP, live account, live order, broker publish는 이 변경에서 모두 0이다.
 
+## 구현·drift 상태
+
+- canonical catalog는 `contracts/catalogs/s2-3-decision-contract.v1.json`이며 SHA-256은
+  `58b658a1482b378d5a7c8c394381a14b6ad6e41c222d2f84e4edec65c1ab1e6f`다.
+- tracked `contracts/openapi/openapi.json`은 같은 digest를
+  `x-s2-3-contract-sha256`으로 기록하고 Decision path 3개와 `S23*` component 5개만 허용한다.
+- V9는 Decision/trace/artifact/audit/outbox/idempotency를 한 transaction에 append하고
+  application role의 UPDATE/DELETE/TRUNCATE, unrelated table, Flyway history와 schema DDL을
+  거부한다.
+- 저장 현재가·KIS_MOCK 잔고 producer는 여전히 S1.1/S3 후속 책임이다. producer가 없는 환경은
+  200 HOLD가 정상이며 S2.3이 fake production row나 provider fallback으로 이를 숨기지 않는다.
+
 # EN: S2.3 Decision API contract lock and stored-source boundary
 
 ## Reason
@@ -110,3 +122,15 @@ not provider HTTP or invented zero/empty production values inside S2.3.
   side effect.
 - Test source rows exist only in test profiles/Testcontainers. Provider HTTP, live-account,
   live-order, and broker-publish calls remain zero.
+
+## Implementation and drift status
+
+- The canonical catalog is `contracts/catalogs/s2-3-decision-contract.v1.json`, with SHA-256
+  `58b658a1482b378d5a7c8c394381a14b6ad6e41c222d2f84e4edec65c1ab1e6f`.
+- Tracked `contracts/openapi/openapi.json` carries the same digest as
+  `x-s2-3-contract-sha256` and permits exactly three Decision paths and five `S23*` components.
+- V9 appends Decision, trace, artifact, audit, outbox, and idempotency state in one transaction.
+  The application role is denied history rewrites, unrelated tables, Flyway history, and schema DDL.
+- Stored quote and KIS_MOCK balance producers remain follow-up S1.1/S3 responsibilities. An
+  environment without those producers correctly returns a persisted 200 HOLD; S2.3 does not hide
+  that state with fake production rows or a provider fallback.

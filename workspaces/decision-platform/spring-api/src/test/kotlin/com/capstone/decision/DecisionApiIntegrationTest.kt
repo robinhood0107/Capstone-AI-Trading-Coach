@@ -6,6 +6,8 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.ValueSource
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.data.redis.core.StringRedisTemplate
@@ -28,6 +30,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer
 import org.testcontainers.utility.DockerImageName
 import tools.jackson.databind.JsonNode
 import tools.jackson.databind.ObjectMapper
+import java.sql.DriverManager
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -305,11 +308,21 @@ class DecisionApiIntegrationTest(
         assertEquals(0, count("select count(*) from decisions"))
     }
 
-    @Test
-    fun `failure after outbox insert rolls back decision trace audit outbox and durable idempotency`() {
+    @ParameterizedTest
+    @ValueSource(
+        strings = [
+            "decisions",
+            "decision_traces",
+            "decision_artifacts",
+            "audit_logs",
+            "event_outbox",
+            "decision_idempotency_results",
+        ],
+    )
+    fun `failure after every reached graph insert rolls back all decision side effects`(targetTable: String) {
         val principleId = insertPrinciple("usr_demo_user", "GUIDE", suffix = "07")
         val token = login("demo-user", userPassword())
-        installIdempotencyFailureTrigger()
+        installGraphFailureTrigger(targetTable)
 
         val response =
             evaluate(
@@ -327,6 +340,102 @@ class DecisionApiIntegrationTest(
         assertEquals(0, count("select count(*) from audit_logs where target_type = 'DECISION'"))
         assertEquals(0, count("select count(*) from event_outbox where event_type = 'risk.decision-created.v1'"))
         assertEquals(0, count("select count(*) from decision_idempotency_results"))
+    }
+
+    @Test
+    fun `updater commit first makes pinned decision return 409 with all writes zero`() {
+        val principleId = insertPrinciple("usr_demo_user", "GUIDE", suffix = "09")
+        insertSecondPrincipleVersion(principleId, "usr_demo_user", "GUIDE", suffix = "09")
+        val token = login("demo-user", userPassword())
+        val updater = DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password)
+        updater.autoCommit = false
+        updater
+            .prepareStatement(
+                "update principles set current_version = 2, updated_at = now() where principle_id = ?",
+            ).use { statement ->
+                statement.setString(1, principleId)
+                assertEquals(1, statement.executeUpdate())
+            }
+
+        val executor = Executors.newSingleThreadExecutor()
+        try {
+            val response =
+                executor.submit<MvcResult> {
+                    evaluate(
+                        token,
+                        "decision-updater-first",
+                        "req-decision-updater-first",
+                        request(principleId),
+                    )
+                }
+            Thread.sleep(250)
+            updater.commit()
+            val result = response.get(10, TimeUnit.SECONDS)
+
+            assertEquals(409, result.response.status)
+            assertEquals("VERSION_CONFLICT", json(result).at("/error/code").stringValue())
+            assertEquals(0, count("select count(*) from decisions"))
+            assertEquals(0, count("select count(*) from decision_traces"))
+            assertEquals(0, count("select count(*) from decision_artifacts"))
+            assertEquals(0, count("select count(*) from audit_logs where target_type = 'DECISION'"))
+            assertEquals(0, count("select count(*) from event_outbox where event_type = 'risk.decision-created.v1'"))
+            assertEquals(0, count("select count(*) from decision_idempotency_results"))
+        } finally {
+            updater.close()
+            executor.shutdownNow()
+        }
+    }
+
+    @Test
+    fun `decision lock first makes Principle updater wait until decision commit`() {
+        val principleId = insertPrinciple("usr_demo_user", "GUIDE", suffix = "10")
+        insertSecondPrincipleVersion(principleId, "usr_demo_user", "GUIDE", suffix = "10")
+        val token = login("demo-user", userPassword())
+        installSlowDecisionTrigger()
+        val executor = Executors.newFixedThreadPool(2)
+        try {
+            val decision =
+                executor.submit<MvcResult> {
+                    evaluate(
+                        token,
+                        "decision-lock-first",
+                        "req-decision-lock-first",
+                        request(principleId),
+                    )
+                }
+            Thread.sleep(350)
+            val updater =
+                executor.submit<Int> {
+                    DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { connection ->
+                        connection
+                            .prepareStatement(
+                                "update principles set current_version = 2, updated_at = now() where principle_id = ?",
+                            ).use { statement ->
+                                statement.setString(1, principleId)
+                                statement.executeUpdate()
+                            }
+                    }
+                }
+
+            Thread.sleep(250)
+            assertFalse(updater.isDone, "Principle updater must wait on the Decision FOR SHARE lock")
+            assertEquals(200, decision.get(10, TimeUnit.SECONDS).response.status)
+            assertEquals(1, updater.get(10, TimeUnit.SECONDS))
+            assertEquals(
+                1,
+                count("select count(*) from decisions where principle_id = ? and principle_version = 1", principleId),
+            )
+            assertEquals(
+                2,
+                jdbcTemplate.queryForObject(
+                    "select current_version from principles where principle_id = ?",
+                    Int::class.java,
+                    principleId,
+                ),
+            )
+        } finally {
+            executor.shutdownNow()
+        }
     }
 
     @Test
@@ -437,6 +546,31 @@ class DecisionApiIntegrationTest(
         return principleId
     }
 
+    private fun insertSecondPrincipleVersion(
+        principleId: String,
+        ownerUserId: String,
+        mode: String,
+        suffix: String,
+    ) {
+        val versionId = "pvr_45" + suffix.padStart(30, '0')
+        jdbcTemplate.update(
+            """
+            insert into principle_versions (
+              principle_version_id, principle_id, version, preset_id, title,
+              mode, status, rules_json, changed_fields, created_by
+            )
+            select ?, ?, 2, preset_id, 'S2.3 fixture v2', ?, 'ACTIVE', rules_json,
+                   array['title'], ?
+            from principle_presets
+            where preset_id = 'balanced'
+            """.trimIndent(),
+            versionId,
+            principleId,
+            mode,
+            ownerUserId,
+        )
+    }
+
     private fun login(
         username: String,
         password: String,
@@ -453,22 +587,33 @@ class DecisionApiIntegrationTest(
         return json(response).at("/data/accessToken").stringValue()
     }
 
-    private fun installIdempotencyFailureTrigger() {
+    private fun installGraphFailureTrigger(targetTable: String) {
+        require(
+            targetTable in
+                setOf(
+                    "decisions",
+                    "decision_traces",
+                    "decision_artifacts",
+                    "audit_logs",
+                    "event_outbox",
+                    "decision_idempotency_results",
+                ),
+        )
         jdbcTemplate.execute(
             """
-            create or replace function s23_test_fail_idempotency() returns trigger
+            create or replace function s23_test_fail_graph_insert() returns trigger
             language plpgsql as ${'$'}${'$'}
             begin
-              raise exception 'synthetic decision idempotency failure';
+              raise exception 'synthetic decision graph failure';
             end
             ${'$'}${'$'}
             """.trimIndent(),
         )
         jdbcTemplate.execute(
             """
-            create trigger s23_test_fail_idempotency
-            before insert on decision_idempotency_results
-            for each row execute function s23_test_fail_idempotency()
+            create trigger s23_test_fail_graph_insert
+            before insert on $targetTable
+            for each row execute function s23_test_fail_graph_insert()
             """.trimIndent(),
         )
     }
@@ -495,8 +640,17 @@ class DecisionApiIntegrationTest(
     }
 
     private fun removeFailureTriggers() {
-        jdbcTemplate.execute("drop trigger if exists s23_test_fail_idempotency on decision_idempotency_results")
-        jdbcTemplate.execute("drop function if exists s23_test_fail_idempotency()")
+        listOf(
+            "decisions",
+            "decision_traces",
+            "decision_artifacts",
+            "audit_logs",
+            "event_outbox",
+            "decision_idempotency_results",
+        ).forEach { table ->
+            jdbcTemplate.execute("drop trigger if exists s23_test_fail_graph_insert on $table")
+        }
+        jdbcTemplate.execute("drop function if exists s23_test_fail_graph_insert()")
         jdbcTemplate.execute("drop trigger if exists s23_test_slow_decision on decisions")
         jdbcTemplate.execute("drop function if exists s23_test_slow_decision()")
     }

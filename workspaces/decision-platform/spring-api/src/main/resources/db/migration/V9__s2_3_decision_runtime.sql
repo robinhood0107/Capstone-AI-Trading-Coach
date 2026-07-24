@@ -14,6 +14,7 @@ $v9_precondition$;
 
 DROP INDEX idx_decisions_account_created_at;
 ALTER TABLE decisions
+  DROP CONSTRAINT decisions_valid_until_after_created_at_check,
   DROP COLUMN account_id,
   DROP COLUMN reason_json,
   DROP COLUMN signal_snapshot_json;
@@ -62,7 +63,7 @@ ALTER TABLE decisions
       OR (outcome = 'BLOCK' AND NOT can_submit_order AND enforcement_action = 'DO_NOT_SUBMIT')
     ),
   ADD CONSTRAINT decisions_evaluation_time_check
-    CHECK (created_at >= evaluation_as_of AND valid_until > evaluation_as_of),
+    CHECK (created_at >= evaluation_as_of AND valid_until >= evaluation_as_of),
   ADD CONSTRAINT decisions_version_text_check
     CHECK (
       char_length(result_schema_version) BETWEEN 1 AND 128
@@ -210,6 +211,7 @@ CREATE TABLE portfolio_balance_observations (
   context_status text NOT NULL CHECK (context_status IN ('ACTIVE', 'INACTIVE')),
   cash_krw bigint NOT NULL CHECK (cash_krw >= 0),
   portfolio_equity_krw bigint NOT NULL CHECK (portfolio_equity_krw >= 0),
+  margin_requirement_krw bigint NOT NULL CHECK (margin_requirement_krw >= 0),
   completeness text NOT NULL CHECK (completeness IN ('COMPLETE', 'PARTIAL')),
   position_count integer NOT NULL CHECK (position_count BETWEEN 0 AND 1000),
   observed_at timestamptz NOT NULL,
@@ -272,6 +274,7 @@ SELECT DISTINCT ON (balance.owner_user_id, balance.account_scope_hash)
   balance.source,
   balance.cash_krw,
   balance.portfolio_equity_krw,
+  balance.margin_requirement_krw,
   balance.completeness,
   balance.position_count,
   balance.observed_at,
@@ -322,7 +325,18 @@ SELECT
     ),
     0
   ) + account.cash_balance AS portfolio_equity_krw,
-  account.updated_at AS observed_at,
+  0::bigint AS margin_requirement_krw,
+  GREATEST(
+    account.updated_at,
+    COALESCE(
+      (
+        SELECT max(position.updated_at)
+        FROM paper_positions position
+        WHERE position.account_id = account.account_id
+      ),
+      account.updated_at
+    )
+  ) AS observed_at,
   COALESCE(
     (
       SELECT jsonb_agg(

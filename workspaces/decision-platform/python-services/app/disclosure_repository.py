@@ -9,8 +9,9 @@ from collections import defaultdict
 from datetime import UTC, date, datetime
 from typing import Any
 
-import psycopg
+from psycopg import Connection
 from psycopg.rows import dict_row
+from psycopg_pool import ConnectionPool
 
 from app.data.opendart.risk_mapping import load_default_risk_mapping
 from app.disclosure_rpc import (
@@ -21,6 +22,8 @@ from app.disclosure_rpc import (
 
 _SOURCE_ID = "opendart-structured-events"
 _QUERY_TIMEOUT_MS = 450
+_POOL_ACQUIRE_TIMEOUT_SECONDS = 0.45
+_POOL_MAX_SIZE = 8
 _STATE_COMPLETENESS_OPERATIONS = ("bnkMngtPcsp",)
 
 
@@ -30,12 +33,34 @@ class PostgresStoredDisclosureRepository:
     def __init__(self, database_dsn: str) -> None:
         if not database_dsn.strip():
             raise ValueError("DECISION_GRPC_DATABASE_DSN is required")
-        self._database_dsn = database_dsn
+        self._pool: ConnectionPool[Connection[dict[str, Any]]] = ConnectionPool(
+            conninfo=database_dsn,
+            kwargs={
+                "autocommit": False,
+                "connect_timeout": 1,
+                "row_factory": dict_row,
+            },
+            min_size=0,
+            max_size=_POOL_MAX_SIZE,
+            timeout=_POOL_ACQUIRE_TIMEOUT_SECONDS,
+            max_waiting=_POOL_MAX_SIZE,
+            open=True,
+        )
 
     @classmethod
     def from_env(cls) -> "PostgresStoredDisclosureRepository":
         """runtime secret store가 주입한 DSN만 받고 테스트/production 값을 코드에 만들지 않는다."""
         return cls(os.environ.get("DECISION_GRPC_DATABASE_DSN", ""))
+
+    def close(self) -> None:
+        """bounded pool worker와 physical connection을 gRPC server lifecycle에 맞춰 닫는다."""
+        self._pool.close()
+
+    def __enter__(self) -> "PostgresStoredDisclosureRepository":
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        self.close()
 
     def load(
         self,
@@ -58,15 +83,13 @@ class PostgresStoredDisclosureRepository:
                 }.union(_STATE_COMPLETENESS_OPERATIONS)
             )
         )
-        with psycopg.connect(
-            self._database_dsn,
-            autocommit=False,
-            connect_timeout=2,
-            row_factory=dict_row,
-        ) as connection:
+        cancellation.raise_if_cancelled()
+        with self._pool.connection(timeout=_POOL_ACQUIRE_TIMEOUT_SECONDS) as connection:
+            cancellation.raise_if_cancelled()
             cancellation.attach(connection)
             try:
                 with connection.transaction():
+                    cancellation.raise_if_cancelled()
                     connection.execute(
                         "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY"
                     )
@@ -76,6 +99,7 @@ class PostgresStoredDisclosureRepository:
                     )
                     resolved_corp_code = corp_code
                     if resolved_corp_code is None:
+                        cancellation.raise_if_cancelled()
                         registry_rows = connection.execute(
                             """
                             SELECT corp_code
@@ -92,24 +116,20 @@ class PostgresStoredDisclosureRepository:
                         event_rows: list[dict[str, Any]] = []
                         cursor_rows: list[dict[str, Any]] = []
                     else:
-                        event_rows = connection.execute(
+                        cancellation.raise_if_cancelled()
+                        event_id_rows = connection.execute(
                             """
                             SELECT
                               event_id,
-                              symbol,
-                              corp_code,
-                              event_code,
-                              receipt_no,
-                              occurred_on,
-                              observed_at,
-                              source_mapping_version,
-                              source_ref,
-                              attributes_json
+                              min(occurred_on) AS occurred_on,
+                              min(event_code) AS event_code,
+                              min(receipt_no) AS receipt_no
                             FROM disclosure_event_observation_projection
                             WHERE symbol = %s
                               AND corp_code = %s
                               AND occurred_on BETWEEN %s AND %s
-                            ORDER BY occurred_on, event_code, receipt_no, source_ref
+                            GROUP BY event_id
+                            ORDER BY occurred_on, event_code, receipt_no, event_id
                             LIMIT 101
                             """,
                             (
@@ -119,6 +139,44 @@ class PostgresStoredDisclosureRepository:
                                 window_to,
                             ),
                         ).fetchall()
+                        if len(event_id_rows) > 100:
+                            raise ValueError("stored disclosure event bound exceeded")
+                        event_ids = [str(row["event_id"]) for row in event_id_rows]
+                        cancellation.raise_if_cancelled()
+                        event_rows = (
+                            connection.execute(
+                                """
+                                SELECT
+                                  event_id,
+                                  symbol,
+                                  corp_code,
+                                  event_code,
+                                  receipt_no,
+                                  occurred_on,
+                                  observed_at,
+                                  source_mapping_version,
+                                  source_ref,
+                                  attributes_json
+                                FROM disclosure_event_observation_projection
+                                WHERE symbol = %s
+                                  AND corp_code = %s
+                                  AND occurred_on BETWEEN %s AND %s
+                                  AND event_id = ANY(%s)
+                                ORDER BY occurred_on, event_code, receipt_no, source_ref
+                                LIMIT 101
+                                """,
+                                (
+                                    symbol,
+                                    resolved_corp_code,
+                                    window_from,
+                                    window_to,
+                                    event_ids,
+                                ),
+                            ).fetchall()
+                            if event_ids
+                            else []
+                        )
+                        cancellation.raise_if_cancelled()
                         cursor_rows = connection.execute(
                             """
                             SELECT DISTINCT ON (operation)

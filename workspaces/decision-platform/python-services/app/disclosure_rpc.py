@@ -104,6 +104,13 @@ class QueryCancellation:
         if cancel_now:
             _cancel_safely(connection)
 
+    def raise_if_cancelled(self) -> None:
+        """connection 획득 전후와 query 사이에서 이미 만료된 RPC가 새 DB 작업을 만들지 않게 한다."""
+        with self._lock:
+            cancelled = self._cancelled
+        if cancelled:
+            raise TimeoutError("stored disclosure query was cancelled")
+
     def detach(self, connection: CancellableDatabaseConnection) -> None:
         """query 종료 뒤 같은 connection만 해제해 다음 RPC resource와 섞이지 않게 한다."""
         with self._lock:
@@ -219,7 +226,7 @@ class DisclosureObservationServicer(
             for warning in result.warnings
         )
         if response.ByteSize() > _MAX_RESPONSE_BYTES:
-            _abort(context, grpc.StatusCode.RESOURCE_EXHAUSTED, "disclosure response exceeds limit")
+            _abort(context, grpc.StatusCode.DATA_LOSS, "disclosure response exceeds limit")
         return response
 
 
@@ -296,7 +303,7 @@ def _validate_batch(
     if not 1 <= len(batch.mapping_version) <= 128:
         _abort(context, grpc.StatusCode.DATA_LOSS, "disclosure mapping version is invalid")
     if len(batch.events) > _MAX_EVENTS:
-        _abort(context, grpc.StatusCode.RESOURCE_EXHAUSTED, "disclosure event limit exceeded")
+        _abort(context, grpc.StatusCode.DATA_LOSS, "disclosure event limit exceeded")
     if batch.observed_at.tzinfo is None:
         _abort(context, grpc.StatusCode.DATA_LOSS, "disclosure observation time is invalid")
 
@@ -337,7 +344,7 @@ def _validate_batch(
                 _abort(context, grpc.StatusCode.DATA_LOSS, "disclosure source reference is invalid")
             source_refs.add(source_ref)
     if len(source_refs) > _MAX_SOURCE_REFS:
-        _abort(context, grpc.StatusCode.RESOURCE_EXHAUSTED, "disclosure source reference limit exceeded")
+        _abort(context, grpc.StatusCode.DATA_LOSS, "disclosure source reference limit exceeded")
     if batch.complete and not source_refs:
         _abort(context, grpc.StatusCode.DATA_LOSS, "complete disclosure batch lacks provenance")
 

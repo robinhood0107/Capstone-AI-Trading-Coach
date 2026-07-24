@@ -147,9 +147,26 @@ S1.1 instrument catalog는 append-only table과
 저장한다. `decision_market_writer`만 exact INSERT를 가지며 S2.3 reader는 symbol당 최대 한 행만
 읽는다. 미래 시각·row 부재·nullable risk score를 `false`나 0으로 꾸미지 않는다.
 
+source orchestration은 queue 없는 최대 8개 worker, source별 500ms, 전체 evaluation 900ms
+shared deadline을 사용한다. 남은 전체 예산이 없으면 새 physical source call을 만들지 않고 실행
+중 timeout은 cancel한다. JDBC source read는 connection acquisition과 statement도 500ms 안에
+끝나야 하며, KIS_MOCK balance/position/margin은 같은 immutable revision만 조립한다. Python
+gRPC reader는 pool 8, acquisition 450ms, connect 1초와 event/source-ref 각 100개 상한을
+적용한다. 초과 구조를 truncate하지 않고 technical failure로 거부한다.
+
+offline writer replay는 완전히 같은 sanitized row만 no-op으로 허용한다. primary key 또는 대체
+unique identity가 같고 의미 필드가 다르면 PostgreSQL `23505`로 전체 transaction을 rollback한다.
+Decision child row는 `decision_id + evaluation_id` composite FK로 같은 graph에 묶고 audit target과
+payload `decisionId`가 달라질 수 없다. owner detail/audit과 idempotency replay는 base table
+SELECT 없이 fixed-search-path bounded function만 사용한다.
+
 canonical S2.3 catalog SHA-256은
 `d035607af50a0f7cb9cd7170e9a6a188e6af32d5bbbdb76e5e4f7b3edc68cd18`이며 tracked OpenAPI의
 `x-s2-3-contract-sha256`과 CI에서 일치해야 한다.
+
+재현 가능한 offline fixture append와 local smoke 절차는
+[`workspaces/decision-platform/README.md`](../workspaces/decision-platform/README.md#s23-offline-golden-path)를
+따른다. 이 절차는 provider/live/account/order/broker 호출을 만들지 않는다.
 
 ## S1.5 KIS 데이터 품질 리포트
 

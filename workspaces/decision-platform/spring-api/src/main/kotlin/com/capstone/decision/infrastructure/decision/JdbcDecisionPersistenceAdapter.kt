@@ -128,6 +128,7 @@ class JdbcDecisionPersistenceAdapter(
         actorScopedReadQuery
             .query(
                 actorUserId = actorUserId,
+                requestedDecisionId = decisionId,
                 sql =
                     """
                     SELECT result_canonical_json
@@ -147,6 +148,7 @@ class JdbcDecisionPersistenceAdapter(
         actorScopedReadQuery
             .query(
                 actorUserId = actorUserId,
+                requestedDecisionId = decisionId,
                 sql =
                     """
                     SELECT audit_log_id,

@@ -298,7 +298,6 @@ class GrpcDisclosureRiskAdapter(
         when (exception.status.code) {
             Status.Code.UNAVAILABLE,
             Status.Code.DEADLINE_EXCEEDED,
-            Status.Code.RESOURCE_EXHAUSTED,
             -> MetricCell.Error(MetricIssueCode.DISCLOSURE_UNAVAILABLE)
 
             else -> throw DisclosureGrpcProtocolException()

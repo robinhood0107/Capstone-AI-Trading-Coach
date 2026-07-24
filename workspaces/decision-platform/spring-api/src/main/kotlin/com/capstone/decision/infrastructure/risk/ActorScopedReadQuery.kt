@@ -19,10 +19,18 @@ class ActorScopedReadQuery(
     fun <T> query(
         actorUserId: String,
         sql: String,
+        requestedDecisionId: String? = null,
         binder: (PreparedStatement) -> Unit = {},
         mapper: (ResultSet) -> T,
     ): List<T> {
         require(actorUserId.isNotBlank() && actorUserId.length <= EvaluationBounds.MAX_ID_OR_CODE_CHARS)
+        require(
+            requestedDecisionId == null ||
+                (
+                    requestedDecisionId.isNotBlank() &&
+                        requestedDecisionId.length <= EvaluationBounds.MAX_ID_OR_CODE_CHARS
+                ),
+        )
         check(!TransactionSynchronizationManager.isActualTransactionActive()) {
             "Stored source read cannot join the Decision persistence transaction."
         }
@@ -42,6 +50,19 @@ class ActorScopedReadQuery(
                         statement.setString(1, actorUserId)
                         statement.executeQuery().use { result -> check(result.next()) }
                     }
+                connection
+                    .prepareStatement("SELECT set_config('statement_timeout', '500ms', true)")
+                    .use { statement ->
+                        statement.executeQuery().use { result -> check(result.next()) }
+                    }
+                if (requestedDecisionId != null) {
+                    connection
+                        .prepareStatement("SELECT set_config('app.requested_decision_id', ?, true)")
+                        .use { statement ->
+                            statement.setString(1, requestedDecisionId)
+                            statement.executeQuery().use { result -> check(result.next()) }
+                        }
+                }
                 val rows =
                     connection.prepareStatement(sql).use { statement ->
                         binder(statement)

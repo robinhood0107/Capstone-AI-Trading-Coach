@@ -7,7 +7,7 @@ spring:
     password: ${POSTGRES_APP_PASSWORD}
     hikari:
       maximum-pool-size: 10        # 코어수x2 근처, 키우지 않는다
-      connection-timeout: 3000     # 풀 고갈 시 무한대기 금지
+      connection-timeout: 500      # source cap보다 긴 pool 대기로 evaluation budget을 넘기지 않는다
   jpa:
     hibernate:
       ddl-auto: validate           # 스키마 진실은 Flyway

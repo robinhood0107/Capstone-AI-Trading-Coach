@@ -7,10 +7,12 @@ data class PortfolioContextRef(
     val opaqueRef: String,
     val source: PortfolioSource,
     val ownerScopeHash: String,
+    val revision: String = opaqueRef,
 ) {
     init {
         require(opaqueRef.isNotBlank() && opaqueRef.length <= EvaluationBounds.MAX_ID_OR_CODE_CHARS)
         require(OWNER_SCOPE_HASH.matches(ownerScopeHash))
+        require(revision.isNotBlank() && revision.length <= EvaluationBounds.MAX_ID_OR_CODE_CHARS)
     }
 
     private companion object {

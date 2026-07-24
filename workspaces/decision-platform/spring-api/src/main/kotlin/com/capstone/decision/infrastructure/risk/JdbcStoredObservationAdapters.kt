@@ -49,6 +49,7 @@ class JdbcPortfolioContextAdapter(
                                 opaqueRef = row.ownerScopeHash,
                                 source = source,
                                 ownerScopeHash = row.ownerScopeHash,
+                                revision = row.revision,
                             )
                         }
 
@@ -60,6 +61,7 @@ class JdbcPortfolioContextAdapter(
                                 opaqueRef = row.ownerScopeHash,
                                 source = source,
                                 ownerScopeHash = row.ownerScopeHash,
+                                revision = row.revision,
                             )
                         }
             }
@@ -142,7 +144,10 @@ class JdbcKisMockBalanceAdapter(
         val row =
             reader
                 .kisRows(request.actorUserId, limit = 2)
-                .singleOrNull { it.ownerScopeHash == request.portfolioContext.ownerScopeHash }
+                .singleOrNull {
+                    it.ownerScopeHash == request.portfolioContext.ownerScopeHash &&
+                        it.revision == request.portfolioContext.revision
+                }
                 ?: return MetricCell.Missing(MetricIssueCode.BROKERAGE_UNAVAILABLE)
         if (row.completeness != COMPLETE || !row.positionsComplete || row.positionCount != row.positions.size) {
             return MetricCell.Incomplete(MetricIssueCode.SOURCE_INCOMPLETE)
@@ -165,7 +170,10 @@ class JdbcInternalPaperBalanceAdapter(
         val row =
             reader
                 .paperRows(request.actorUserId, limit = 2)
-                .singleOrNull { it.ownerScopeHash == request.portfolioContext.ownerScopeHash }
+                .singleOrNull {
+                    it.ownerScopeHash == request.portfolioContext.ownerScopeHash &&
+                        it.revision == request.portfolioContext.revision
+                }
                 ?: return MetricCell.Missing(MetricIssueCode.PAPER_PORTFOLIO_UNAVAILABLE)
         if (row.completeness != COMPLETE || !row.positionsComplete || row.positionCount != row.positions.size) {
             return MetricCell.Incomplete(MetricIssueCode.SOURCE_INCOMPLETE)
@@ -187,7 +195,10 @@ class JdbcStoredMarginAdapter(
             when (request.portfolioContext.source) {
                 PortfolioSource.KIS_MOCK -> reader.kisRows(request.actorUserId, limit = 2)
                 PortfolioSource.INTERNAL_PAPER -> reader.paperRows(request.actorUserId, limit = 2)
-            }.singleOrNull { it.ownerScopeHash == request.portfolioContext.ownerScopeHash }
+            }.singleOrNull {
+                it.ownerScopeHash == request.portfolioContext.ownerScopeHash &&
+                    it.revision == request.portfolioContext.revision
+            }
                 ?: return MetricCell.Missing(MetricIssueCode.SOURCE_MISSING)
         val marginRequirementKrw =
             row.marginRequirementKrw

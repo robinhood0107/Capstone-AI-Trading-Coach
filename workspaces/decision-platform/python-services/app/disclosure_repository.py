@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import os
 import hashlib
 import json
+import os
 from collections import defaultdict
 from datetime import UTC, date, datetime
 from typing import Any
@@ -13,7 +13,11 @@ import psycopg
 from psycopg.rows import dict_row
 
 from app.data.opendart.risk_mapping import load_default_risk_mapping
-from app.disclosure_rpc import StoredDisclosureBatch, StoredDisclosureEvent
+from app.disclosure_rpc import (
+    QueryCancellation,
+    StoredDisclosureBatch,
+    StoredDisclosureEvent,
+)
 
 _SOURCE_ID = "opendart-structured-events"
 _QUERY_TIMEOUT_MS = 450
@@ -40,8 +44,10 @@ class PostgresStoredDisclosureRepository:
         corp_code: str | None,
         window_from: date,
         window_to: date,
+        cancellation: QueryCancellation | None = None,
     ) -> StoredDisclosureBatch:
         """event·sourceRefs·cursor completeness를 한 repeatable-read DB snapshot에서 조립한다."""
+        cancellation = cancellation or QueryCancellation()
         mapping = load_default_risk_mapping()
         required_operations = tuple(
             sorted(
@@ -58,63 +64,85 @@ class PostgresStoredDisclosureRepository:
             connect_timeout=2,
             row_factory=dict_row,
         ) as connection:
-            with connection.transaction():
-                connection.execute(
-                    "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY"
-                )
-                connection.execute(
-                    "SELECT set_config('statement_timeout', %s, true)",
-                    (f"{_QUERY_TIMEOUT_MS}ms",),
-                )
-                event_rows = connection.execute(
-                    """
-                    SELECT
-                      event_id,
-                      symbol,
-                      corp_code,
-                      event_code,
-                      receipt_no,
-                      occurred_on,
-                      observed_at,
-                      source_mapping_version,
-                      source_ref,
-                      attributes_json
-                    FROM disclosure_event_observation_projection
-                    WHERE symbol = %s
-                      AND (%s::text IS NULL OR corp_code = %s::text)
-                      AND occurred_on BETWEEN %s AND %s
-                    ORDER BY occurred_on, event_code, receipt_no, source_ref
-                    """,
-                    (
-                        symbol,
-                        corp_code,
-                        corp_code,
-                        window_from,
-                        window_to,
-                    ),
-                ).fetchall()
-                cursor_rows = connection.execute(
-                    """
-                    SELECT DISTINCT ON (operation)
-                      operation,
-                      completed,
-                      updated_at
-                    FROM disclosure_collection_status_projection
-                    WHERE source_id = %s
-                      AND corp_code = %s
-                      AND window_from <= %s
-                      AND window_to >= %s
-                      AND operation = ANY(%s)
-                    ORDER BY operation, updated_at DESC
-                    """,
-                    (
-                        _SOURCE_ID,
-                        corp_code or "",
-                        window_from,
-                        window_to,
-                        list(required_operations),
-                    ),
-                ).fetchall()
+            cancellation.attach(connection)
+            try:
+                with connection.transaction():
+                    connection.execute(
+                        "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY"
+                    )
+                    connection.execute(
+                        "SELECT set_config('statement_timeout', %s, true)",
+                        (f"{_QUERY_TIMEOUT_MS}ms",),
+                    )
+                    resolved_corp_code = corp_code
+                    if resolved_corp_code is None:
+                        registry_rows = connection.execute(
+                            """
+                            SELECT corp_code
+                            FROM current_corporation_registry_projection
+                            WHERE symbol = %s
+                            ORDER BY corp_code
+                            LIMIT 2
+                            """,
+                            (symbol,),
+                        ).fetchall()
+                        if len(registry_rows) == 1:
+                            resolved_corp_code = str(registry_rows[0]["corp_code"])
+                    if resolved_corp_code is None:
+                        event_rows: list[dict[str, Any]] = []
+                        cursor_rows: list[dict[str, Any]] = []
+                    else:
+                        event_rows = connection.execute(
+                            """
+                            SELECT
+                              event_id,
+                              symbol,
+                              corp_code,
+                              event_code,
+                              receipt_no,
+                              occurred_on,
+                              observed_at,
+                              source_mapping_version,
+                              source_ref,
+                              attributes_json
+                            FROM disclosure_event_observation_projection
+                            WHERE symbol = %s
+                              AND corp_code = %s
+                              AND occurred_on BETWEEN %s AND %s
+                            ORDER BY occurred_on, event_code, receipt_no, source_ref
+                            LIMIT 101
+                            """,
+                            (
+                                symbol,
+                                resolved_corp_code,
+                                window_from,
+                                window_to,
+                            ),
+                        ).fetchall()
+                        cursor_rows = connection.execute(
+                            """
+                            SELECT DISTINCT ON (operation)
+                              operation,
+                              completed,
+                              updated_at
+                            FROM disclosure_collection_status_projection
+                            WHERE source_id = %s
+                              AND corp_code = %s
+                              AND window_from <= %s
+                              AND window_to >= %s
+                              AND operation = ANY(%s)
+                            ORDER BY operation, updated_at DESC
+                            """,
+                            (
+                                _SOURCE_ID,
+                                resolved_corp_code,
+                                window_from,
+                                window_to,
+                                list(required_operations),
+                            ),
+                        ).fetchall()
+            finally:
+                cancellation.detach(connection)
 
         events = _events_from_rows(event_rows, mapping.version)
         completed_operations = {
@@ -122,7 +150,7 @@ class PostgresStoredDisclosureRepository:
             for row in cursor_rows
             if bool(row["completed"])
         }
-        complete = bool(corp_code) and completed_operations == set(required_operations)
+        complete = bool(resolved_corp_code) and completed_operations == set(required_operations)
         observed_at = max(
             (
                 *[event.observed_at for event in events],
@@ -137,7 +165,7 @@ class PostgresStoredDisclosureRepository:
         )
         return StoredDisclosureBatch(
             symbol=symbol,
-            corp_code=corp_code or "",
+            corp_code=resolved_corp_code or "",
             observed_at=observed_at,
             mapping_version=mapping.version,
             complete=complete,

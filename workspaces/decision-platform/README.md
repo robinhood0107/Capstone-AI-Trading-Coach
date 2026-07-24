@@ -27,12 +27,18 @@ KIS outbound는 이 workspace가 단일 owner다. S1.1 client는 실전 18/s har
 ## S2.3 stored-source 경계
 
 Decision 평가 요청의 현물 v1 `orderIntent`는 MARKET/LIMIT 모두 `estimatedPrice`를 사용한다.
-S2.3은 provider HTTP를 호출하지 않고 저장된 sanitized source만 읽는다. 현재가·호가는 S1.1
-producer의 `market_quote_observations`, KIS_MOCK 잔고는 S3 producer의
+S2.3은 provider HTTP를 호출하지 않고 저장된 sanitized source만 읽는다. 현재가·호가와 instrument
+metadata는 S1.1 producer의 `market_quote_observations`,
+`instrument_catalog_observations`/`latest_instrument_catalog_observations`, KIS_MOCK 잔고는
+S3 producer의
 `portfolio_balance_observations`/`portfolio_position_observations`, INTERNAL_PAPER는 기존
 owner-scoped ledger, deterministic risk/order-count와 corp registry는 각 전용 observation이
 권위다. 이번 continuation은 각 소유 모듈의 offline producer/writer/projection을
 fixture/mock transport/Testcontainers로 검증하되 provider/live/order call은 0이다.
+instrument row는
+`symbol,isEtfEtn,isGoldEtfEtn,nullable productRiskScore,catalogVersion,observedAt,receivedAt,sourceRef,artifactHash`를
+저장하고 `decision_market_writer`만 exact INSERT한다. S2.3 reader는 symbol당 최대 한 행만 읽고
+row 부재·미래 시각·nullable score를 false/0으로 만들지 않는다.
 `decision_app`은 source projection SELECT와 append-only
 Decision writer에 필요한 exact 권한만 가지며 production source seed와
 KIS_MOCK→INTERNAL_PAPER 자동 fallback은 없다. source 구조 자체가 없으면

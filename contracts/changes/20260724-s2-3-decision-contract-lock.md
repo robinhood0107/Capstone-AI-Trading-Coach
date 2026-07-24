@@ -1,11 +1,12 @@
 # KR: S2.3 Decision API 계약 잠금과 stored-source 경계
 
-> Review remediation amendment: 2026-07-24
+> Instrument source approval amendment: 2026-07-24
 >
 > Current catalog SHA-256:
-> `58e55ebda0154a079cff3d5c2527da66743cf3fdeeaf063b86b23b581371fab3`
+> `d035607af50a0f7cb9cd7170e9a6a188e6af32d5bbbdb76e5e4f7b3edc68cd18`
 >
-> Superseded provisional SHA-256:
+> Superseded SHA-256:
+> `58e55ebda0154a079cff3d5c2527da66743cf3fdeeaf063b86b23b581371fab3`,
 > `58b658a1482b378d5a7c8c394381a14b6ad6e41c222d2f84e4edec65c1ab1e6f`
 
 ## 변경 이유
@@ -44,6 +45,7 @@ S2.3이 provider HTTP를 호출하거나 0/빈 값으로 운영 데이터를 꾸
 | source | canonical storage/read model | producer owner | S2.3 권한 |
 |---|---|---|---|
 | 현재가·호가 | append-only `market_quote_observations`와 latest sanitized projection | S1.1 market-data offline producer | owner 비의존 bounded `SELECT` only |
+| 종목 분류·상품 위험 | append-only `instrument_catalog_observations`와 `latest_instrument_catalog_observations` | S1.1 instrument catalog offline producer | symbol exact predicate + 최대 1행 bounded `SELECT` only |
 | KIS_MOCK 잔고 | append-only `portfolio_balance_observations` + `portfolio_position_observations` | S3 KIS_MOCK read-side offline producer | JWT owner + `KIS_MOCK` predicate의 `SELECT` only |
 | INTERNAL_PAPER 잔고 | 기존 `paper_accounts` + `paper_positions`의 한 SQL owner-scoped projection | S3 INTERNAL_PAPER ledger | JWT owner + ACTIVE 단일 context `SELECT` only |
 | 결정적 리스크·일일 주문 수 | append-only `deterministic_risk_observations` + `daily_order_count_observations` | deterministic source offline producer | JWT owner + 직전 거래일/coverage predicate `SELECT` only |
@@ -62,6 +64,15 @@ observation은 owner, source, cash/equity, completeness, position count, UTC 시
 가지고 position rows는 symbol별 nonnegative quantity/market value만 가진다. list/문자열 상한을
 넘거나 중복 symbol, partial pagination, invalid hash, future timestamp가 있으면 truncate하거나
 추정하지 않는다.
+
+`S23_INSTRUMENT_SOURCE_APPROVED`에 따라 S1.1은 instrument catalog의 유일한 producer owner다.
+row는 `symbol`, `isEtfEtn`, `isGoldEtfEtn`, nullable `productRiskScore`, `catalogVersion`,
+UTC `observedAt/receivedAt`, lowercase 64-hex `sourceRef`와 `artifactHash`를 저장한다.
+`isGoldEtfEtn=true`이면 `isEtfEtn=true`여야 하고 risk score가 있으면 `0..1` 범위다.
+`decision_market_writer`는 두 S1.1 append-only table에 exact INSERT만 가지며 UPDATE/DELETE/
+TRUNCATE/SELECT는 가지지 않는다. latest projection은 symbol별 시각·ID 순서의 정확히 최신 row를
+제공하고 S2.3 reader는 exact symbol + `LIMIT 1`로만 소비한다. 미래 timestamp, row 부재, nullable
+risk score를 `isEtfEtn=false`, `isGoldEtfEtn=false` 또는 0으로 합성하지 않는다.
 
 canonical table/projection, production bean/port, offline fixture producer, 최소권한 writer,
 bounded reader, freshness/completeness, no-fake test 중 하나라도 빠진 구조적 부재는
@@ -112,7 +123,8 @@ test fixture는 test source set/profile과 Testcontainers 안에서만 INSERT할
 ## 구현·drift 상태
 
 - canonical catalog는 `contracts/catalogs/s2-3-decision-contract.v1.json`이며 SHA-256은
-  `58e55ebda0154a079cff3d5c2527da66743cf3fdeeaf063b86b23b581371fab3`다. provisional
+  `d035607af50a0f7cb9cd7170e9a6a188e6af32d5bbbdb76e5e4f7b3edc68cd18`다. review
+  `58e55ebda0154a079cff3d5c2527da66743cf3fdeeaf063b86b23b581371fab3`와 provisional
   `58b658a1482b378d5a7c8c394381a14b6ad6e41c222d2f84e4edec65c1ab1e6f`는 위 amendment로
   superseded된 역사 증거다.
 - tracked `contracts/openapi/openapi.json`은 같은 digest를
@@ -120,7 +132,8 @@ test fixture는 test source set/profile과 Testcontainers 안에서만 INSERT할
 - V9는 Decision/trace/artifact/audit/outbox/idempotency를 한 transaction에 append하고
   application role의 UPDATE/DELETE/TRUNCATE, unrelated table, Flyway history와 schema DDL을
   거부한다.
-- 저장 현재가·KIS_MOCK 잔고·결정적 risk/order-count·corp registry offline producer는 각
+- 저장 현재가·instrument catalog·KIS_MOCK 잔고·결정적 risk/order-count·corp registry offline
+  producer는 각
   S1.1/S3/deterministic/S1.6 소유 모듈의 S2.3 prerequisite다. 구조가 완성된 뒤 row가 없는
   평가는 200 HOLD이며 S2.3이 fake production row나 provider fallback으로 이를 숨기지 않는다.
 
@@ -149,9 +162,14 @@ not provider HTTP or invented zero/empty production values inside S2.3.
   namespaces and do not change the cash-equity API/hash field.
 - `HASH-CANONICALIZATION-S22-V2` and `s2.2-metric-snapshot-v2` replace V1 and hash all eight
   order-intent fields. Historical V1 artifacts remain in Git history only.
-- S1.1 owns offline writes to `market_quote_observations`; S3 owns offline KIS_MOCK balance
+- S1.1 owns offline writes to `market_quote_observations` and
+  `instrument_catalog_observations`; S3 owns offline KIS_MOCK balance
   observation writes and later INTERNAL_PAPER ledger mutation. Deterministic and S1.6 modules own
   risk/order-count and corporation/disclosure observations. S2.3 has bounded read-only adapters.
+- An instrument row stores `symbol`, ETF/ETN and gold classification, nullable product risk score,
+  catalog version, observed/received time, source reference, and artifact hash. The market writer
+  has INSERT only, and the S2.3 reader returns at most one exact-symbol latest row without a
+  synthetic false/zero fallback.
 - V9 creates no production source seed and gives `decision_app` no source mutation privilege.
   Missing, stale, incomplete, future-dated, malformed, or over-limit source data fails closed.
 - Missing structural source machinery is `S23_RUNTIME_SOURCE_BLOCKED`. Once the machinery exists,
@@ -164,13 +182,16 @@ not provider HTTP or invented zero/empty production values inside S2.3.
 ## Implementation and drift status
 
 - The canonical catalog is `contracts/catalogs/s2-3-decision-contract.v1.json`, with SHA-256
-  `58e55ebda0154a079cff3d5c2527da66743cf3fdeeaf063b86b23b581371fab3`. The provisional
-  `58b658a1482b378d5a7c8c394381a14b6ad6e41c222d2f84e4edec65c1ab1e6f` is superseded evidence.
+  `d035607af50a0f7cb9cd7170e9a6a188e6af32d5bbbdb76e5e4f7b3edc68cd18`. The review
+  `58e55ebda0154a079cff3d5c2527da66743cf3fdeeaf063b86b23b581371fab3` and provisional
+  `58b658a1482b378d5a7c8c394381a14b6ad6e41c222d2f84e4edec65c1ab1e6f` digests are superseded
+  evidence.
 - Tracked `contracts/openapi/openapi.json` carries the same digest as
   `x-s2-3-contract-sha256` and permits exactly three Decision paths and five `S23*` components.
 - V9 appends Decision, trace, artifact, audit, outbox, and idempotency state in one transaction.
   The application role is denied history rewrites, unrelated tables, Flyway history, and schema DDL.
-- Stored quote, KIS_MOCK portfolio, deterministic risk/order-count, and corporation-registry
+- Stored quote, instrument catalog, KIS_MOCK portfolio, deterministic risk/order-count, and
+  corporation-registry
   offline producers are S2.3 prerequisites owned by their respective modules. Missing machinery is
   a hard structural blocker; a missing row after readiness is a persisted 200 HOLD. S2.3 never
   hides either state with fake production rows or a provider fallback.

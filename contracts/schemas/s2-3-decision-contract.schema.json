@@ -12,31 +12,751 @@
     "contractVersion": {
       "const": 1
     },
+    "databaseSecurity": {
+      "additionalProperties": false,
+      "properties": {
+        "auditBaseSelect": {
+          "const": false
+        },
+        "broadSelectGrant": {
+          "const": false
+        },
+        "decisionAppFlags": {
+          "const": [
+            "NOSUPERUSER",
+            "NOCREATEDB",
+            "NOCREATEROLE",
+            "NOBYPASSRLS"
+          ]
+        },
+        "decisionBaseSelect": {
+          "const": false
+        },
+        "futureTableDefaultSelectGrant": {
+          "const": false
+        },
+        "idempotencyBaseSelect": {
+          "const": false
+        },
+        "idempotencyReplayPredicates": {
+          "const": [
+            "scopeHash",
+            "ownerScopeHash",
+            "expiresAt"
+          ]
+        },
+        "idempotencyReplayRead": {
+          "const": "BOUNDED_SECURITY_DEFINER_FUNCTION"
+        },
+        "outboxBaseSelectOrUpdate": {
+          "const": false
+        },
+        "ownerSelectPolicy": {
+          "const": "user_id = current_setting('app.actor_user_id', true)"
+        },
+        "ownerViewsSecurityInvoker": {
+          "const": true
+        },
+        "privilegeReconstructionTransactional": {
+          "const": true
+        }
+      },
+      "required": [
+        "auditBaseSelect",
+        "broadSelectGrant",
+        "decisionAppFlags",
+        "decisionBaseSelect",
+        "futureTableDefaultSelectGrant",
+        "idempotencyBaseSelect",
+        "idempotencyReplayPredicates",
+        "idempotencyReplayRead",
+        "outboxBaseSelectOrUpdate",
+        "ownerSelectPolicy",
+        "ownerViewsSecurityInvoker",
+        "privilegeReconstructionTransactional"
+      ],
+      "type": "object"
+    },
+    "decisionFlow": {
+      "const": [
+        "ORDER_INTENT_VALIDATION",
+        "OWNER_ACTIVE_CURRENT_PRINCIPLE_PIN",
+        "SOURCE_FRESHNESS_APPLICABILITY",
+        "ALL_APPLICABLE_RULES",
+        "FINDINGS_AND_ABSTENTIONS",
+        "PINNED_MODE_OUTCOME",
+        "ATOMIC_PERSISTENCE"
+      ]
+    },
+    "disclosureProvenance": {
+      "additionalProperties": false,
+      "properties": {
+        "eventCodesMaxItems": {
+          "const": 100
+        },
+        "missingRequiredPolicy": {
+          "const": "ISSUE_WITHOUT_FAKE_RISK_ITEM"
+        },
+        "reportNameMatching": {
+          "const": false
+        },
+        "requiredRiskItemFields": {
+          "const": [
+            "metric",
+            "value",
+            "severity",
+            "source",
+            "eventCodes",
+            "mappingVersion",
+            "sourceRefs"
+          ]
+        },
+        "sourceRefPattern": {
+          "const": "^[0-9a-f]{64}$"
+        },
+        "sourceRefsMaxItems": {
+          "const": 100
+        },
+        "stableSortedUnique": {
+          "const": true
+        },
+        "truncateOnOverflow": {
+          "const": false
+        }
+      },
+      "required": [
+        "eventCodesMaxItems",
+        "missingRequiredPolicy",
+        "reportNameMatching",
+        "requiredRiskItemFields",
+        "sourceRefPattern",
+        "sourceRefsMaxItems",
+        "stableSortedUnique",
+        "truncateOnOverflow"
+      ],
+      "type": "object"
+    },
+    "failurePolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "structuralSourceMissing": {
+          "const": "S23_RUNTIME_SOURCE_BLOCKED"
+        },
+        "technicalFailure": {
+          "const": "HTTP_5XX_ALL_WRITES_ZERO"
+        },
+        "transientRequiredDependency": {
+          "const": "PERSISTED_HTTP_200_HOLD"
+        }
+      },
+      "required": [
+        "structuralSourceMissing",
+        "technicalFailure",
+        "transientRequiredDependency"
+      ],
+      "type": "object"
+    },
     "freshness": {
+      "additionalProperties": false,
+      "properties": {
+        "balanceSeconds": {
+          "const": 60
+        },
+        "calendarSource": {
+          "const": "trading_sessions"
+        },
+        "calendarTimezone": {
+          "const": "Asia/Seoul"
+        },
+        "dailySignalPolicy": {
+          "const": "PREVIOUS_TRADING_DAY_CLOSE"
+        },
+        "disclosureHours": {
+          "const": 24
+        },
+        "ecosDays": {
+          "const": 7
+        },
+        "exactMaxAgeFresh": {
+          "const": true
+        },
+        "futureTimestampPolicy": {
+          "const": "STALE"
+        },
+        "hmmPolicy": {
+          "const": "PREVIOUS_TRADING_DAY_CLOSE"
+        },
+        "newsHours": {
+          "const": 24
+        },
+        "priceOrderbookSeconds": {
+          "const": 300
+        },
+        "riskPolicy": {
+          "const": "PREVIOUS_TRADING_DAY_CLOSE"
+        },
+        "sixtyMinuteSignalMinutes": {
+          "const": 90
+        },
+        "storageTimezone": {
+          "const": "UTC"
+        },
+        "validUntilPolicy": {
+          "const": "MIN_EVALUATION_PLUS_TEN_MINUTES_AND_HARD_INPUT_FRESH_UNTIL"
+        },
+        "validityMinutes": {
+          "const": 10
+        }
+      },
+      "required": [
+        "balanceSeconds",
+        "calendarSource",
+        "calendarTimezone",
+        "dailySignalPolicy",
+        "disclosureHours",
+        "ecosDays",
+        "exactMaxAgeFresh",
+        "futureTimestampPolicy",
+        "hmmPolicy",
+        "newsHours",
+        "priceOrderbookSeconds",
+        "riskPolicy",
+        "sixtyMinuteSignalMinutes",
+        "storageTimezone",
+        "validUntilPolicy",
+        "validityMinutes"
+      ],
       "type": "object"
     },
     "grpc": {
+      "additionalProperties": false,
+      "properties": {
+        "businessRpc": {
+          "const": "GetDisclosureEvents"
+        },
+        "concurrencyMax": {
+          "const": 8
+        },
+        "corpCodeRequestPolicy": {
+          "const": "OPTIONAL_EMPTY_RESOLVES_FROM_REGISTRY"
+        },
+        "corpRegistryResolution": {
+          "const": "SYMBOL_EXACTLY_ONE"
+        },
+        "databaseErrorMapping": {
+          "additionalProperties": false,
+          "properties": {
+            "authentication": {
+              "const": "UNAUTHENTICATED"
+            },
+            "connectionOrNetwork": {
+              "const": "UNAVAILABLE"
+            },
+            "insufficientPrivilege": {
+              "const": "PERMISSION_DENIED"
+            },
+            "malformedRow": {
+              "const": "DATA_LOSS"
+            },
+            "queryCancellationOrTimeout": {
+              "const": "DEADLINE_EXCEEDED_OR_UNAVAILABLE"
+            },
+            "unexpectedInvariant": {
+              "const": "INTERNAL"
+            }
+          },
+          "required": [
+            "authentication",
+            "connectionOrNetwork",
+            "insufficientPrivilege",
+            "malformedRow",
+            "queryCancellationOrTimeout",
+            "unexpectedInvariant"
+          ],
+          "type": "object"
+        },
+        "effectiveSourceDeadlineMillis": {
+          "const": 500
+        },
+        "eventLookbackDays": {
+          "const": 365
+        },
+        "hardDeadlineMillis": {
+          "const": 2000
+        },
+        "nonLoopbackStartup": {
+          "const": "FAIL"
+        },
+        "physicalAttemptsMax": {
+          "const": 1
+        },
+        "reflection": {
+          "const": false
+        },
+        "requestMaxBytes": {
+          "const": 262144
+        },
+        "responseMaxBytes": {
+          "const": 1048576
+        },
+        "retryEnabled": {
+          "const": false
+        },
+        "totalEvaluationDeadlineMillis": {
+          "const": 900
+        },
+        "transparentRetryEnabled": {
+          "const": false
+        },
+        "transport": {
+          "const": "NUMERIC_LOOPBACK_PLAINTEXT"
+        }
+      },
+      "required": [
+        "businessRpc",
+        "concurrencyMax",
+        "corpCodeRequestPolicy",
+        "corpRegistryResolution",
+        "databaseErrorMapping",
+        "effectiveSourceDeadlineMillis",
+        "eventLookbackDays",
+        "hardDeadlineMillis",
+        "nonLoopbackStartup",
+        "physicalAttemptsMax",
+        "reflection",
+        "requestMaxBytes",
+        "responseMaxBytes",
+        "retryEnabled",
+        "totalEvaluationDeadlineMillis",
+        "transparentRetryEnabled",
+        "transport"
+      ],
       "type": "object"
     },
     "http": {
+      "additionalProperties": false,
+      "properties": {
+        "auditPath": {
+          "const": "/api/v1/decisions/{decisionId}/audit"
+        },
+        "detailPath": {
+          "const": "/api/v1/decisions/{decisionId}"
+        },
+        "evaluatePath": {
+          "const": "/api/v1/decisions/evaluate-order"
+        },
+        "method": {
+          "const": "POST"
+        },
+        "requestMaxBytes": {
+          "const": 262144
+        },
+        "responseMaxBytes": {
+          "const": 1048576
+        }
+      },
+      "required": [
+        "auditPath",
+        "detailPath",
+        "evaluatePath",
+        "method",
+        "requestMaxBytes",
+        "responseMaxBytes"
+      ],
       "type": "object"
     },
     "idempotency": {
+      "additionalProperties": false,
+      "properties": {
+        "header": {
+          "const": "X-Idempotency-Key"
+        },
+        "keyMaxLength": {
+          "const": 128
+        },
+        "keyMinLength": {
+          "const": 16
+        },
+        "keyPattern": {
+          "const": "^[A-Za-z0-9._:-]+$"
+        },
+        "purposeVersion": {
+          "const": "decision-evaluate-order/v1"
+        },
+        "replayPredicates": {
+          "const": [
+            "scopeHash",
+            "ownerScopeHash",
+            "expiresAt"
+          ]
+        },
+        "retentionHours": {
+          "const": 24
+        },
+        "scope": {
+          "const": "PURPOSE_VERSION_HMAC"
+        }
+      },
+      "required": [
+        "header",
+        "keyMaxLength",
+        "keyMinLength",
+        "keyPattern",
+        "purposeVersion",
+        "replayPredicates",
+        "retentionHours",
+        "scope"
+      ],
       "type": "object"
     },
     "observability": {
+      "additionalProperties": false,
+      "properties": {
+        "failClosedCounter": {
+          "const": "decision.fail_closed"
+        },
+        "failClosedReason": {
+          "const": "FIRST_STABLE_SORTED_ISSUE"
+        },
+        "modes": {
+          "const": [
+            "GUIDE",
+            "STRICT",
+            "UNPINNED"
+          ]
+        },
+        "normalPathExactOnce": {
+          "const": true
+        },
+        "outcomes": {
+          "const": [
+            "ALLOW",
+            "WARN",
+            "HOLD",
+            "BLOCK",
+            "ERROR"
+          ]
+        },
+        "postCommitFaultIsolation": {
+          "const": true
+        },
+        "timer": {
+          "const": "decision.evaluate"
+        }
+      },
+      "required": [
+        "failClosedCounter",
+        "failClosedReason",
+        "modes",
+        "normalPathExactOnce",
+        "outcomes",
+        "postCommitFaultIsolation",
+        "timer"
+      ],
       "type": "object"
     },
     "outcomePolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "precedence": {
+          "const": [
+            "BLOCK",
+            "HOLD",
+            "WARN",
+            "ALLOW"
+          ]
+        },
+        "rows": {
+          "const": [
+            {
+              "canSubmitOrder": true,
+              "enforcementAction": "NONE",
+              "mode": "GUIDE",
+              "outcome": "ALLOW"
+            },
+            {
+              "canSubmitOrder": true,
+              "enforcementAction": "NONE",
+              "mode": "STRICT",
+              "outcome": "ALLOW"
+            },
+            {
+              "canSubmitOrder": true,
+              "enforcementAction": "ACKNOWLEDGE_WARNING",
+              "mode": "GUIDE",
+              "outcome": "WARN"
+            },
+            {
+              "canSubmitOrder": true,
+              "enforcementAction": "RECONFIRM_PRINCIPLE",
+              "mode": "STRICT",
+              "outcome": "WARN"
+            },
+            {
+              "canSubmitOrder": false,
+              "enforcementAction": "RE_EVALUATE",
+              "mode": "GUIDE",
+              "outcome": "HOLD"
+            },
+            {
+              "canSubmitOrder": false,
+              "enforcementAction": "RE_EVALUATE",
+              "mode": "STRICT",
+              "outcome": "HOLD"
+            },
+            {
+              "canSubmitOrder": false,
+              "enforcementAction": "DO_NOT_SUBMIT",
+              "mode": "GUIDE",
+              "outcome": "BLOCK"
+            },
+            {
+              "canSubmitOrder": false,
+              "enforcementAction": "DO_NOT_SUBMIT",
+              "mode": "STRICT",
+              "outcome": "BLOCK"
+            }
+          ]
+        }
+      },
+      "required": [
+        "precedence",
+        "rows"
+      ],
+      "type": "object"
+    },
+    "persistence": {
+      "additionalProperties": false,
+      "properties": {
+        "atomicInsertOrder": {
+          "const": [
+            "decision",
+            "violations",
+            "trace",
+            "artifact",
+            "audit",
+            "outbox",
+            "idempotencyResult"
+          ]
+        },
+        "brokerPublish": {
+          "const": false
+        },
+        "transactionReadPolicy": {
+          "const": "SOURCE_READ_AND_EVALUATION_OUTSIDE"
+        },
+        "transactionWritePolicy": {
+          "const": "FINAL_PERSISTENCE_ONLY"
+        }
+      },
+      "required": [
+        "atomicInsertOrder",
+        "brokerPublish",
+        "transactionReadPolicy",
+        "transactionWritePolicy"
+      ],
+      "type": "object"
+    },
+    "principleConcurrency": {
+      "additionalProperties": false,
+      "properties": {
+        "decisionFirst": {
+          "const": "UPDATER_WAITS_FOR_DECISION_COMMIT"
+        },
+        "lockOrder": {
+          "const": [
+            "IDEMPOTENCY_ADVISORY_LOCK",
+            "PRINCIPLE_FOR_SHARE",
+            "DECISION_GRAPH_INSERT"
+          ]
+        },
+        "principleLock": {
+          "const": "FOR SHARE OF principle"
+        },
+        "updaterFirst": {
+          "const": "HTTP_409_ALL_WRITES_ZERO"
+        }
+      },
+      "required": [
+        "decisionFirst",
+        "lockOrder",
+        "principleLock",
+        "updaterFirst"
+      ],
       "type": "object"
     },
     "request": {
+      "additionalProperties": false,
+      "properties": {
+        "fields": {
+          "const": [
+            "principleId",
+            "portfolioSource",
+            "orderIntent"
+          ]
+        },
+        "forbiddenFields": {
+          "const": [
+            "accountId",
+            "auditActor",
+            "corpCode",
+            "mode",
+            "time",
+            "userId"
+          ]
+        },
+        "orderIntentFields": {
+          "const": [
+            "symbol",
+            "side",
+            "orderType",
+            "quantity",
+            "estimatedPrice",
+            "estimatedAmount",
+            "timeframe",
+            "strategyId"
+          ]
+        },
+        "portfolioSources": {
+          "const": [
+            "KIS_MOCK",
+            "INTERNAL_PAPER"
+          ]
+        }
+      },
+      "required": [
+        "fields",
+        "forbiddenFields",
+        "orderIntentFields",
+        "portfolioSources"
+      ],
       "type": "object"
     },
     "response": {
+      "additionalProperties": false,
+      "properties": {
+        "fields": {
+          "const": [
+            "decisionId",
+            "createdAt",
+            "validUntil",
+            "principleId",
+            "principleVersionId",
+            "principleVersion",
+            "portfolioSource",
+            "mode",
+            "enforcementAction",
+            "riskDecision"
+          ]
+        },
+        "schemaVersion": {
+          "const": "s2-3-persisted-decision/v1"
+        }
+      },
+      "required": [
+        "fields",
+        "schemaVersion"
+      ],
       "type": "object"
     },
     "sourceOwnership": {
+      "additionalProperties": false,
+      "properties": {
+        "balanceTables": {
+          "const": [
+            "portfolio_balance_observations",
+            "portfolio_position_observations"
+          ]
+        },
+        "observationContracts": {
+          "const": [
+            {
+              "producerOwner": "S1.6",
+              "projection": "current_corporation_registry_projection",
+              "table": "corporation_registry_observations",
+              "writerRole": "decision_collector"
+            },
+            {
+              "producerOwner": "DETERMINISTIC_SOURCE",
+              "projection": "latest_daily_order_count_observations",
+              "table": "daily_order_count_observations",
+              "writerRole": "decision_risk_writer"
+            },
+            {
+              "producerOwner": "DETERMINISTIC_SOURCE",
+              "projection": "latest_deterministic_risk_observations",
+              "table": "deterministic_risk_observations",
+              "writerRole": "decision_risk_writer"
+            },
+            {
+              "producerOwner": "S1.1",
+              "projection": "latest_market_quote_observations",
+              "table": "market_quote_observations",
+              "writerRole": "decision_market_writer"
+            },
+            {
+              "producerOwner": "S3",
+              "projection": "latest_portfolio_balance_observations",
+              "table": "portfolio_balance_observations",
+              "writerRole": "decision_portfolio_writer"
+            },
+            {
+              "producerOwner": "S3",
+              "projection": "latest_portfolio_balance_observations",
+              "table": "portfolio_position_observations",
+              "writerRole": "decision_portfolio_writer"
+            }
+          ]
+        },
+        "portfolioProducer": {
+          "const": "S3"
+        },
+        "priceProducer": {
+          "const": "S1.1"
+        },
+        "priceTable": {
+          "const": "market_quote_observations"
+        },
+        "productionSeed": {
+          "const": false
+        },
+        "providerHttpFallback": {
+          "const": false
+        },
+        "reader": {
+          "const": "S2.3"
+        },
+        "structuralMissingPolicy": {
+          "const": "S23_RUNTIME_SOURCE_BLOCKED"
+        },
+        "structuralReadinessRequirements": {
+          "const": [
+            "canonicalTableOrProjection",
+            "productionBeanOrPort",
+            "offlineFixtureProducer",
+            "leastPrivilegeWriterRole",
+            "boundedReader",
+            "freshnessCompletenessContract",
+            "noFakeRegressionTest"
+          ]
+        },
+        "transientUnavailablePolicy": {
+          "const": "PERSISTED_HOLD"
+        }
+      },
+      "required": [
+        "balanceTables",
+        "observationContracts",
+        "portfolioProducer",
+        "priceProducer",
+        "priceTable",
+        "productionSeed",
+        "providerHttpFallback",
+        "reader",
+        "structuralMissingPolicy",
+        "structuralReadinessRequirements",
+        "transientUnavailablePolicy"
+      ],
       "type": "object"
     }
   },
@@ -44,12 +764,18 @@
     "$schema",
     "contractId",
     "contractVersion",
+    "databaseSecurity",
+    "decisionFlow",
+    "disclosureProvenance",
+    "failurePolicy",
     "freshness",
     "grpc",
     "http",
     "idempotency",
     "observability",
     "outcomePolicy",
+    "persistence",
+    "principleConcurrency",
     "request",
     "response",
     "sourceOwnership"

@@ -1,12 +1,21 @@
 # KR: S2.3 Decision API 계약 잠금과 stored-source 경계
 
+> Review remediation amendment: 2026-07-24
+>
+> Current catalog SHA-256:
+> `58e55ebda0154a079cff3d5c2527da66743cf3fdeeaf063b86b23b581371fab3`
+>
+> Superseded provisional SHA-256:
+> `58b658a1482b378d5a7c8c394381a14b6ad6e41c222d2f84e4edec65c1ab1e6f`
+
 ## 변경 이유
 
 S0.2의 현행 주식·ETF/ETN `OrderIntent`는 `estimatedPrice`를 유일한 가격 필드로
 고정했지만, S2.2 snapshot/hash 구현과 API 설명 일부가 `limitPrice`를 사용했다. 이 상태에서는
 같은 요청을 schema는 허용하고 evaluator는 표현하지 못하거나, 서로 다른 payload가 같은
-`semanticInputHash`로 축약될 수 있다. production Decision route와 저장 decision이 아직 없으므로
-호환 shim을 추가하지 않고 런타임 구현 전에 breaking cleanup을 완료한다.
+`semanticInputHash`로 축약될 수 있다. 이 결정을 잠글 당시 `origin/main`에는 production
+Decision route와 저장 이력이 없었고, S2.3 isolated branch에서 처음 구현하므로 호환 shim을
+추가하지 않고 breaking cleanup을 완료한다.
 
 또한 S2.3 판단 경로에는 저장된 현재가·호가와 KIS_MOCK 잔고를 읽는 canonical source가 없다.
 S2.3이 provider HTTP를 호출하거나 0/빈 값으로 운영 데이터를 꾸미지 않도록, producer와 consumer
@@ -34,13 +43,16 @@ S2.3이 provider HTTP를 호출하거나 0/빈 값으로 운영 데이터를 꾸
 
 | source | canonical storage/read model | producer owner | S2.3 권한 |
 |---|---|---|---|
-| 현재가·호가 | append-only `market_quote_observations`와 latest sanitized projection | S1.1 market-data 후속 producer | owner 비의존 bounded `SELECT` only |
-| KIS_MOCK 잔고 | append-only `portfolio_balance_observations` + `portfolio_position_observations` | S3 KIS_MOCK read-side producer | JWT owner + `KIS_MOCK` predicate의 `SELECT` only |
+| 현재가·호가 | append-only `market_quote_observations`와 latest sanitized projection | S1.1 market-data offline producer | owner 비의존 bounded `SELECT` only |
+| KIS_MOCK 잔고 | append-only `portfolio_balance_observations` + `portfolio_position_observations` | S3 KIS_MOCK read-side offline producer | JWT owner + `KIS_MOCK` predicate의 `SELECT` only |
 | INTERNAL_PAPER 잔고 | 기존 `paper_accounts` + `paper_positions`의 한 SQL owner-scoped projection | S3 INTERNAL_PAPER ledger | JWT owner + ACTIVE 단일 context `SELECT` only |
+| 결정적 리스크·일일 주문 수 | append-only `deterministic_risk_observations` + `daily_order_count_observations` | deterministic source offline producer | JWT owner + 직전 거래일/coverage predicate `SELECT` only |
+| 종목↔corp_code | append-only `corporation_registry_observations` + exact current projection | S1.6 collector offline producer | Python gRPC server bounded `SELECT` |
 | 공시 | V6 sanitized PostgreSQL observations를 읽는 loopback `GetDisclosureEvents` | S1.6 collector | gRPC read only |
 
-V9는 source row를 seed하지 않고 S2.3에 source INSERT/UPDATE/DELETE 권한을 주지 않는다. 후속
-S1.1/S3 producer는 별도 migration과 별도 non-superuser role로 필요한 INSERT만 받아야 한다.
+V9는 source row를 seed하지 않고 S2.3에 source INSERT/UPDATE/DELETE 권한을 주지 않는다.
+이번 review remediation은 S1.1/S3/deterministic/S1.6 소유 모듈에 fixture/mock transport 기반
+offline producer와 별도 non-superuser writer role의 exact INSERT만 추가한다.
 KIS account number, provider payload/header/token은 observation, log, metric, audit, outbox에
 저장하지 않는다. account scope가 필요하면 purpose/version HMAC의 64-hex opaque hash만 사용한다.
 
@@ -51,11 +63,32 @@ observation은 owner, source, cash/equity, completeness, position count, UTC 시
 넘거나 중복 symbol, partial pagination, invalid hash, future timestamp가 있으면 truncate하거나
 추정하지 않는다.
 
-저장 row가 없거나 stale/incomplete이면 typed unavailable이며 정상적인 persisted HTTP 200
-`HOLD`가 된다. production seed, 0원 잔고, 빈 position을 “성공 source”로 만드는 fallback은
-금지한다. test fixture는 test source set/profile과 Testcontainers 안에서만 INSERT할 수 있다.
-따라서 S1.1/S3 producer가 아직 배포되지 않은 환경은 거짓 ALLOW를 만들지 않고 HOLD-only로
-동작한다.
+canonical table/projection, production bean/port, offline fixture producer, 최소권한 writer,
+bounded reader, freshness/completeness, no-fake test 중 하나라도 빠진 구조적 부재는
+`S23_RUNTIME_SOURCE_BLOCKED`다. 구조가 갖춰진 뒤 특정 평가 시점의 row 부재,
+stale/incomplete/future timestamp 또는 transient DB failure는 typed unavailable이며 정상적인
+persisted HTTP 200 `HOLD`다. production seed, 0원 잔고, 빈 position, synthetic
+`marginRequirement=0`/`isGoldEtfEtn=false`를 “성공 source”로 만드는 fallback은 금지한다.
+test fixture는 test source set/profile과 Testcontainers 안에서만 INSERT할 수 있다.
+
+## Review remediation amendment
+
+- `GetDisclosureEvents`의 빈 `corp_code`는 Python server가 sanitized corporation registry에서
+  symbol을 exact-one으로 resolve한다. 0개/복수는 incomplete이며 임의 선택하지 않는다.
+- 공시 repository는 `as_of - 365일`부터 exact 365일 경계를 포함하고 365일+1은 제외한다.
+  `report_nm`은 event identity에 관여하지 않는다.
+- gRPC는 숫자 loopback plaintext, reflection/retry/transparent retry 없음, physical attempt
+  최대 1, concurrency 8, source/total/hard deadline 500/900/2,000ms와 256KiB/1MiB 상한을
+  강제한다. cancellation은 실행 중 query/connection을 취소·해제한다.
+- persistence transaction은 idempotency advisory lock → 동일 owner/ACTIVE/current Principle의
+  `FOR SHARE OF principle` 재검증 → Decision graph INSERT 순서다. updater-first mismatch는
+  409/all writes zero, decision-first는 updater가 Decision commit까지 대기한다.
+- `decision_app`은 NOSUPERUSER/NOCREATEDB/NOCREATEROLE/NOBYPASSRLS다. broad/future default
+  SELECT를 제거하고 Decision/audit/outbox/idempotency base read를 금지한다. idempotency replay는
+  fixed-search-path SECURITY DEFINER bounded function이 scope hash, owner scope hash, expiry를
+  모두 확인한다.
+- timer/counter/log는 commit 뒤 fault-isolated다. 정상 path에서는 exact once이며 registry/filter/
+  appender 실패가 이미 commit된 Decision의 원래 200 projection을 뒤집지 않는다.
 
 ## Markdown과 생성물 drift 방지
 
@@ -73,20 +106,23 @@ observation은 owner, source, cash/equity, completeness, position count, UTC 시
 - JWT subject만 owner다. source selector에 user/account를 받지 않으며 cross-owner read는
   no-row로 수렴한다.
 - source read와 평가에는 persistence transaction을 열지 않는다. decision/audit/outbox/
-  idempotency 저장 transaction에서 Principle current version을 다시 조건부 확인한다.
+  idempotency 저장 transaction에서 Principle current version을 `FOR SHARE`로 다시 확인한다.
 - provider HTTP, live account, live order, broker publish는 이 변경에서 모두 0이다.
 
 ## 구현·drift 상태
 
 - canonical catalog는 `contracts/catalogs/s2-3-decision-contract.v1.json`이며 SHA-256은
-  `58b658a1482b378d5a7c8c394381a14b6ad6e41c222d2f84e4edec65c1ab1e6f`다.
+  `58e55ebda0154a079cff3d5c2527da66743cf3fdeeaf063b86b23b581371fab3`다. provisional
+  `58b658a1482b378d5a7c8c394381a14b6ad6e41c222d2f84e4edec65c1ab1e6f`는 위 amendment로
+  superseded된 역사 증거다.
 - tracked `contracts/openapi/openapi.json`은 같은 digest를
   `x-s2-3-contract-sha256`으로 기록하고 Decision path 3개와 `S23*` component 5개만 허용한다.
 - V9는 Decision/trace/artifact/audit/outbox/idempotency를 한 transaction에 append하고
   application role의 UPDATE/DELETE/TRUNCATE, unrelated table, Flyway history와 schema DDL을
   거부한다.
-- 저장 현재가·KIS_MOCK 잔고 producer는 여전히 S1.1/S3 후속 책임이다. producer가 없는 환경은
-  200 HOLD가 정상이며 S2.3이 fake production row나 provider fallback으로 이를 숨기지 않는다.
+- 저장 현재가·KIS_MOCK 잔고·결정적 risk/order-count·corp registry offline producer는 각
+  S1.1/S3/deterministic/S1.6 소유 모듈의 S2.3 prerequisite다. 구조가 완성된 뒤 row가 없는
+  평가는 200 HOLD이며 S2.3이 fake production row나 provider fallback으로 이를 숨기지 않는다.
 
 # EN: S2.3 Decision API contract lock and stored-source boundary
 
@@ -113,24 +149,28 @@ not provider HTTP or invented zero/empty production values inside S2.3.
   namespaces and do not change the cash-equity API/hash field.
 - `HASH-CANONICALIZATION-S22-V2` and `s2.2-metric-snapshot-v2` replace V1 and hash all eight
   order-intent fields. Historical V1 artifacts remain in Git history only.
-- S1.1 owns future writes to `market_quote_observations`; S3 owns future KIS_MOCK balance and
-  INTERNAL_PAPER ledger writes. S2.3 has bounded read-only adapters.
+- S1.1 owns offline writes to `market_quote_observations`; S3 owns offline KIS_MOCK balance
+  observation writes and later INTERNAL_PAPER ledger mutation. Deterministic and S1.6 modules own
+  risk/order-count and corporation/disclosure observations. S2.3 has bounded read-only adapters.
 - V9 creates no production source seed and gives `decision_app` no source mutation privilege.
   Missing, stale, incomplete, future-dated, malformed, or over-limit source data fails closed.
-- A missing expected source is a persisted HTTP 200 HOLD. Invariants, malformed serialization,
-  authorization failures, and database commit failures remain technical failures with no decision
-  side effect.
+- Missing structural source machinery is `S23_RUNTIME_SOURCE_BLOCKED`. Once the machinery exists,
+  a missing or transiently unavailable observation is a persisted HTTP 200 HOLD. Invariants,
+  malformed serialization, authorization failures, and database commit failures remain technical
+  failures with no decision side effect.
 - Test source rows exist only in test profiles/Testcontainers. Provider HTTP, live-account,
   live-order, and broker-publish calls remain zero.
 
 ## Implementation and drift status
 
 - The canonical catalog is `contracts/catalogs/s2-3-decision-contract.v1.json`, with SHA-256
-  `58b658a1482b378d5a7c8c394381a14b6ad6e41c222d2f84e4edec65c1ab1e6f`.
+  `58e55ebda0154a079cff3d5c2527da66743cf3fdeeaf063b86b23b581371fab3`. The provisional
+  `58b658a1482b378d5a7c8c394381a14b6ad6e41c222d2f84e4edec65c1ab1e6f` is superseded evidence.
 - Tracked `contracts/openapi/openapi.json` carries the same digest as
   `x-s2-3-contract-sha256` and permits exactly three Decision paths and five `S23*` components.
 - V9 appends Decision, trace, artifact, audit, outbox, and idempotency state in one transaction.
   The application role is denied history rewrites, unrelated tables, Flyway history, and schema DDL.
-- Stored quote and KIS_MOCK balance producers remain follow-up S1.1/S3 responsibilities. An
-  environment without those producers correctly returns a persisted 200 HOLD; S2.3 does not hide
-  that state with fake production rows or a provider fallback.
+- Stored quote, KIS_MOCK portfolio, deterministic risk/order-count, and corporation-registry
+  offline producers are S2.3 prerequisites owned by their respective modules. Missing machinery is
+  a hard structural blocker; a missing row after readiness is a persisted 200 HOLD. S2.3 never
+  hides either state with fake production rows or a provider fallback.

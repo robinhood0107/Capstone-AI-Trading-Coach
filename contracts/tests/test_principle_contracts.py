@@ -204,6 +204,13 @@ class OpenApiEnvironmentParserTest(unittest.TestCase):
 
         self.assertEqual("55432", parsed["POSTGRES_HOST_PORT"])
         self.assertEqual("55432", parsed["POSTGRES_PORT"])
+        for name in (
+            "POSTGRES_MARKET_WRITER_PASSWORD",
+            "POSTGRES_PORTFOLIO_WRITER_PASSWORD",
+            "POSTGRES_RISK_WRITER_PASSWORD",
+            "DECISION_IDEMPOTENCY_SCOPE_HMAC_KEY",
+        ):
+            self.assertIn(name, parsed)
         self.assertTrue(parsed["DEMO_USER_CREDENTIAL_BUNDLE"].startswith("s21-v1:usr_demo_user:"))
         self.assertNotIn("KIS_MODE", parsed)
 
@@ -282,12 +289,16 @@ class OpenApiEnvironmentParserTest(unittest.TestCase):
             "POSTGRES_APP_PASSWORD": base64_b,
             "POSTGRES_MIGRATION_PASSWORD": base64_c,
             "POSTGRES_COLLECTOR_PASSWORD": base64_d,
+            "POSTGRES_MARKET_WRITER_PASSWORD": "N" * 43,
+            "POSTGRES_PORTFOLIO_WRITER_PASSWORD": "O" * 43,
+            "POSTGRES_RISK_WRITER_PASSWORD": "P" * 43,
             "REDIS_PASSWORD": "E" * 43,
             "JWT_SECRET": "F" * 43,
             "JWT_ISSUER": "s21-openapi-local",
             "JWT_AUDIENCE": "s21-openapi-client",
             "LOGIN_SCOPE_HMAC_KEY": "G" * 43,
             "PRINCIPLE_CURSOR_HMAC_KEY": "H" * 43,
+            "DECISION_IDEMPOTENCY_SCOPE_HMAC_KEY": "Q" * 43,
             "DEMO_CREDENTIAL_SEPARATION_KEY": "I" * 43,
             "DEMO_USER_CREDENTIAL_BUNDLE": (
                 f"s21-v1:usr_demo_user:{'J' * 43}:{bcrypt_user}:{'K' * 43}"

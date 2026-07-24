@@ -105,6 +105,7 @@ class S23MarkdownContractDriftTest(unittest.TestCase):
             payload = path.read_bytes()
             with self.subTest(path=relative):
                 text = payload.decode("utf-8")
+                self.assertNotIn(b"\r", payload)
                 self.assertTrue(payload.endswith(b"\n"))
                 if "limitPrice" in text:
                     self.assertIn(relative, LIMIT_PRICE_MARKDOWN_ALLOWLIST)

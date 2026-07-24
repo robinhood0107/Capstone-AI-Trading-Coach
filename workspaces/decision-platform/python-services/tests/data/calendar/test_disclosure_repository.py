@@ -127,6 +127,113 @@ def test_app_role_reads_only_sanitized_stored_disclosure_projection(
     assert event.attributes == {}
 
 
+def test_disclosure_window_includes_exact_day_365_and_excludes_day_366(
+    postgres_cluster: PostgresTestCluster,
+) -> None:
+    observed_at = datetime(2026, 7, 24, 1, 2, 3, tzinfo=UTC)
+    window_from = date(2025, 7, 24)
+    outside_window = date(2025, 7, 23)
+    window_to = date(2026, 7, 24)
+    with psycopg.connect(postgres_cluster["admin_dsn"]) as connection:
+        connection.execute(
+            """
+            INSERT INTO calendar_observations (
+              observation_id, source_id, origin_group, capability,
+              effective_from, effective_to, observed_at, ingested_at,
+              sanitized_payload, sanitized_payload_hash, adapter_version,
+              mapping_version, registry_version
+            ) VALUES (
+              'obs-s23-365-boundary', 'opendart-structured-events', 'opendart',
+              'DISCLOSURE_EVENT', %s, %s, %s, %s,
+              '{"stored":true}'::jsonb, %s, 's1.6-opendart-v1',
+              's1.6-disclosure-state-v1', 's1.6-registry-v1'
+            )
+            """,
+            (outside_window, window_to, observed_at, observed_at, "4" * 64),
+        )
+        with connection.cursor() as cursor:
+            cursor.executemany(
+                """
+                INSERT INTO calendar_events (
+                  event_id, event_series_key, revision_no, source_id,
+                  source_event_key, event_type, symbol, exchange_mic, event_date,
+                  detail, status, confidence_bps, has_conflict, canonical_hash
+                ) VALUES (
+                  %s, %s, 1, 'opendart-structured-events',
+                  %s, 'DISCLOSURE', '035720', 'XKRX', %s,
+                  '{"corp_code":"00258801","endpoint_id":"dfOcr"}'::jsonb,
+                  'ACTUAL', 9000, false, %s
+                )
+                """,
+                [
+                    (
+                        "evt-s23-exact-365",
+                        "series-s23-exact-365",
+                        "20250724000001",
+                        window_from,
+                        "5" * 64,
+                    ),
+                    (
+                        "evt-s23-outside-366",
+                        "series-s23-outside-366",
+                        "20250723000001",
+                        outside_window,
+                        "6" * 64,
+                    ),
+                ],
+            )
+            cursor.executemany(
+                """
+                INSERT INTO calendar_event_sources (
+                  event_source_id, event_id, observation_id, source_choice,
+                  resolution_reason, opaque_source_ref
+                ) VALUES (
+                  %s, %s, 'obs-s23-365-boundary',
+                  'CHOSEN', 'STRUCTURED_ENDPOINT_IDENTITY', %s
+                )
+                """,
+                [
+                    ("source-s23-exact-365", "evt-s23-exact-365", "7" * 64),
+                    ("source-s23-outside-366", "evt-s23-outside-366", "8" * 64),
+                ],
+            )
+
+    with PostgresStoredDisclosureRepository(postgres_cluster["app_dsn"]) as repository:
+        batch = repository.load(
+            symbol="035720",
+            corp_code="00258801",
+            window_from=window_from,
+            window_to=window_to,
+        )
+
+    assert [event.occurred_on for event in batch.events] == [window_from]
+    assert [event.receipt_no for event in batch.events] == ["20250724000001"]
+
+
+def test_repository_statement_timeout_cancels_a_locked_projection_query(
+    postgres_cluster: PostgresTestCluster,
+) -> None:
+    blocker = psycopg.connect(postgres_cluster["admin_dsn"])
+    try:
+        blocker.execute(
+            "LOCK TABLE corporation_registry_observations IN ACCESS EXCLUSIVE MODE"
+        )
+        with PostgresStoredDisclosureRepository(
+            postgres_cluster["app_dsn"]
+        ) as repository:
+            with pytest.raises(psycopg.errors.QueryCanceled) as raised:
+                repository.load(
+                    symbol="005930",
+                    corp_code=None,
+                    window_from=date(2025, 7, 24),
+                    window_to=date(2026, 7, 24),
+                )
+        assert raised.value.sqlstate == "57014"
+    finally:
+        blocker.rollback()
+        blocker.close()
+
+
 def test_empty_stored_observation_is_incomplete_not_a_fake_zero(
     postgres_cluster: PostgresTestCluster,
 ) -> None:

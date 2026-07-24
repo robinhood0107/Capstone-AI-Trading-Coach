@@ -218,12 +218,13 @@ class GrpcDisclosureRiskAdapter(
             } catch (_: DateTimeException) {
                 throw DisclosureGrpcProtocolException()
             }
-        val score =
-            BigDecimal.valueOf(response.score).also {
-                if (!response.score.isFinite() || it < BigDecimal.ZERO || it > BigDecimal.ONE) {
-                    throw DisclosureGrpcProtocolException()
-                }
-            }
+        if (!response.score.isFinite()) {
+            throw DisclosureGrpcProtocolException()
+        }
+        val score = BigDecimal.valueOf(response.score)
+        if (score < BigDecimal.ZERO || score > BigDecimal.ONE) {
+            throw DisclosureGrpcProtocolException()
+        }
         if (!response.complete) {
             return MetricCell.Incomplete(MetricIssueCode.SOURCE_INCOMPLETE)
         }

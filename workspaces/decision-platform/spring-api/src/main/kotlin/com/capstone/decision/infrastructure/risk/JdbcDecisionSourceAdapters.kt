@@ -19,6 +19,7 @@ import org.springframework.beans.factory.ObjectProvider
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.stereotype.Repository
 import java.math.BigDecimal
+import java.time.Duration
 import java.time.Instant
 import java.time.OffsetDateTime
 import java.time.ZoneId
@@ -235,7 +236,8 @@ class JdbcDailyOrderCountAdapter(
             value = MetricValue.Whole(row.orderCount.toLong(), MetricUnit.COUNT),
             observedAt = row.observedAt,
             retrievedAt = row.receivedAt,
-            freshUntil = row.coveredThrough,
+            // coveredThrough는 point-in-time completeness 증거이고 Decision의 최대 재사용 창은 별도 고정 계약이다.
+            freshUntil = request.evaluationAsOf.plus(ORDER_COUNT_DECISION_VALIDITY),
             source = MetricSource.INTERNAL,
             sourceRef = row.sourceRef,
             sourceVersion = row.sourceVersion,
@@ -255,6 +257,8 @@ private data class StoredInstrumentRow(
     val sourceVersion: String,
     val sourceRef: String,
 )
+
+private val ORDER_COUNT_DECISION_VALIDITY: Duration = Duration.ofMinutes(10)
 
 private data class StoredRiskRow(
     val dailyLossRate: BigDecimal?,

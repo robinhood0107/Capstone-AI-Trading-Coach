@@ -40,6 +40,7 @@ ALTER TABLE decisions
   ADD COLUMN result_json jsonb NOT NULL;
 ALTER TABLE decisions
   ADD CONSTRAINT decisions_evaluation_id_unique UNIQUE (evaluation_id),
+  ADD CONSTRAINT decisions_identity_pair_unique UNIQUE (decision_id, evaluation_id),
   ADD CONSTRAINT decisions_pinned_principle_fkey
     FOREIGN KEY (principle_version_id, principle_id, principle_version)
     REFERENCES principle_versions(principle_version_id, principle_id, version)
@@ -64,6 +65,8 @@ ALTER TABLE decisions
     ),
   ADD CONSTRAINT decisions_evaluation_time_check
     CHECK (created_at >= evaluation_as_of),
+  ADD CONSTRAINT decisions_valid_until_after_created_at_check
+    CHECK (valid_until > created_at),
   ADD CONSTRAINT decisions_version_text_check
     CHECK (
       char_length(result_schema_version) BETWEEN 1 AND 128
@@ -96,10 +99,10 @@ ALTER TABLE decision_violations
   ADD COLUMN ordinal integer NOT NULL,
   ADD COLUMN public_code text;
 ALTER TABLE decision_violations
-  ADD CONSTRAINT decision_violations_decision_id_fkey
-    FOREIGN KEY (decision_id) REFERENCES decisions(decision_id) ON DELETE RESTRICT,
-  ADD CONSTRAINT decision_violations_evaluation_id_fkey
-    FOREIGN KEY (evaluation_id) REFERENCES decisions(evaluation_id) ON DELETE RESTRICT,
+  ADD CONSTRAINT decision_violations_decision_evaluation_fkey
+    FOREIGN KEY (decision_id, evaluation_id)
+    REFERENCES decisions(decision_id, evaluation_id)
+    ON DELETE RESTRICT,
   ADD CONSTRAINT decision_violations_order_unique UNIQUE (decision_id, ordinal),
   ADD CONSTRAINT decision_violations_bounds_check
     CHECK (
@@ -111,8 +114,8 @@ ALTER TABLE decision_violations
     );
 
 CREATE TABLE decision_artifacts (
-  decision_id text PRIMARY KEY REFERENCES decisions(decision_id) ON DELETE RESTRICT,
-  evaluation_id text NOT NULL UNIQUE REFERENCES decisions(evaluation_id) ON DELETE RESTRICT,
+  decision_id text PRIMARY KEY,
+  evaluation_id text NOT NULL UNIQUE,
   result_canonical_json text NOT NULL,
   snapshot_artifact_canonical_json text NOT NULL,
   semantic_input_hash text NOT NULL,
@@ -129,13 +132,17 @@ CREATE TABLE decision_artifacts (
   CONSTRAINT decision_artifacts_json_check CHECK (
     jsonb_typeof(result_canonical_json::jsonb) = 'object'
     AND jsonb_typeof(snapshot_artifact_canonical_json::jsonb) = 'object'
-  )
+  ),
+  CONSTRAINT decision_artifacts_decision_evaluation_fkey
+    FOREIGN KEY (decision_id, evaluation_id)
+    REFERENCES decisions(decision_id, evaluation_id)
+    ON DELETE RESTRICT
 );
 
 CREATE TABLE decision_traces (
   trace_id text PRIMARY KEY,
-  decision_id text NOT NULL REFERENCES decisions(decision_id) ON DELETE RESTRICT,
-  evaluation_id text NOT NULL REFERENCES decisions(evaluation_id) ON DELETE RESTRICT,
+  decision_id text NOT NULL,
+  evaluation_id text NOT NULL,
   step integer NOT NULL CHECK (step BETWEEN 1 AND 7),
   trace_type text NOT NULL CHECK (
     trace_type IN (
@@ -154,7 +161,11 @@ CREATE TABLE decision_traces (
   CONSTRAINT decision_traces_payload_check CHECK (
     jsonb_typeof(trace_json) = 'object'
     AND octet_length(trace_json::text) <= 262144
-  )
+  ),
+  CONSTRAINT decision_traces_decision_evaluation_fkey
+    FOREIGN KEY (decision_id, evaluation_id)
+    REFERENCES decisions(decision_id, evaluation_id)
+    ON DELETE RESTRICT
 );
 
 CREATE TABLE decision_idempotency_results (
@@ -164,8 +175,8 @@ CREATE TABLE decision_idempotency_results (
   request_hash text NOT NULL CHECK (request_hash ~ '^[0-9a-f]{64}$'),
   owner_scope_hash text NOT NULL CHECK (owner_scope_hash ~ '^[0-9a-f]{64}$'),
   purpose_version text NOT NULL CHECK (char_length(purpose_version) BETWEEN 1 AND 128),
-  decision_id text NOT NULL UNIQUE REFERENCES decisions(decision_id) ON DELETE RESTRICT,
-  evaluation_id text NOT NULL UNIQUE REFERENCES decisions(evaluation_id) ON DELETE RESTRICT,
+  decision_id text NOT NULL UNIQUE,
+  evaluation_id text NOT NULL UNIQUE,
   http_status integer NOT NULL CHECK (http_status = 200),
   content_type text NOT NULL CHECK (content_type = 'application/json'),
   result_canonical_json text NOT NULL,
@@ -178,7 +189,11 @@ CREATE TABLE decision_idempotency_results (
   ),
   CONSTRAINT decision_idempotency_expiry_check CHECK (
     expires_at = created_at + interval '24 hours'
-  )
+  ),
+  CONSTRAINT decision_idempotency_decision_evaluation_fkey
+    FOREIGN KEY (decision_id, evaluation_id)
+    REFERENCES decisions(decision_id, evaluation_id)
+    ON DELETE RESTRICT
 );
 
 -- S2.3은 source schema와 consumer projection만 소유하며 production row를 seed하지 않는다.
@@ -251,7 +266,6 @@ CREATE INDEX instrument_catalog_latest_idx
     symbol,
     observed_at DESC,
     received_at DESC,
-    catalog_version DESC,
     observation_id
   );
 
@@ -285,8 +299,7 @@ CREATE TABLE portfolio_balance_observations (
 CREATE INDEX portfolio_balance_latest_idx
   ON portfolio_balance_observations (
     owner_user_id,
-    source,
-    context_status,
+    account_scope_hash,
     observed_at DESC,
     received_at DESC,
     observation_id
@@ -431,6 +444,154 @@ CREATE INDEX corporation_registry_current_idx
     observation_id
   );
 
+-- INSERT-only writer가 committed replay를 exact row로 확인하도록 definer trigger가 base SELECT를 캡슐화한다.
+-- targeted ON CONFLICT는 동일 입력의 동시 race만 흡수하고 alternate unique 충돌은 숨기지 않는다.
+CREATE FUNCTION enforce_exact_observation_replay()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog
+AS $enforce_exact_observation_replay$
+DECLARE
+  primary_identity text;
+  unique_identity jsonb;
+  primary_lock bigint;
+  unique_lock bigint;
+  existing_row jsonb;
+  incoming_row jsonb := to_jsonb(NEW) - 'created_at';
+BEGIN
+  IF TG_TABLE_NAME = 'portfolio_position_observations' THEN
+    primary_identity := NEW.balance_observation_id || ':' || NEW.symbol;
+    unique_identity := jsonb_build_object(
+      'balance_observation_id', NEW.balance_observation_id,
+      'symbol', NEW.symbol
+    );
+  ELSIF TG_TABLE_NAME = 'market_quote_observations' THEN
+    primary_identity := NEW.observation_id;
+    unique_identity := jsonb_build_object(
+      'symbol', NEW.symbol,
+      'source', NEW.source,
+      'observed_at', NEW.observed_at,
+      'artifact_hash', NEW.artifact_hash
+    );
+  ELSIF TG_TABLE_NAME = 'instrument_catalog_observations' THEN
+    primary_identity := NEW.observation_id;
+    unique_identity := jsonb_build_object(
+      'symbol', NEW.symbol,
+      'catalog_version', NEW.catalog_version,
+      'artifact_hash', NEW.artifact_hash
+    );
+  ELSIF TG_TABLE_NAME = 'portfolio_balance_observations' THEN
+    primary_identity := NEW.observation_id;
+    unique_identity := jsonb_build_object(
+      'owner_user_id', NEW.owner_user_id,
+      'account_scope_hash', NEW.account_scope_hash,
+      'source', NEW.source,
+      'observed_at', NEW.observed_at,
+      'artifact_hash', NEW.artifact_hash
+    );
+  ELSIF TG_TABLE_NAME = 'deterministic_risk_observations' THEN
+    primary_identity := NEW.observation_id;
+    unique_identity := jsonb_build_object(
+      'owner_user_id', NEW.owner_user_id,
+      'owner_scope_hash', NEW.owner_scope_hash,
+      'portfolio_source', NEW.portfolio_source,
+      'observed_at', NEW.observed_at,
+      'artifact_hash', NEW.artifact_hash
+    );
+  ELSIF TG_TABLE_NAME = 'daily_order_count_observations' THEN
+    primary_identity := NEW.observation_id;
+    unique_identity := jsonb_build_object(
+      'owner_user_id', NEW.owner_user_id,
+      'owner_scope_hash', NEW.owner_scope_hash,
+      'portfolio_source', NEW.portfolio_source,
+      'trading_date', NEW.trading_date,
+      'covered_through', NEW.covered_through,
+      'artifact_hash', NEW.artifact_hash
+    );
+  ELSIF TG_TABLE_NAME = 'corporation_registry_observations' THEN
+    primary_identity := NEW.observation_id;
+    unique_identity := jsonb_build_object(
+      'symbol', NEW.symbol,
+      'corp_code', NEW.corp_code,
+      'observed_at', NEW.observed_at,
+      'artifact_hash', NEW.artifact_hash
+    );
+  ELSE
+    RAISE EXCEPTION 'unsupported exact replay table'
+      USING ERRCODE = '55000';
+  END IF;
+
+  primary_lock := hashtextextended(
+    TG_TABLE_NAME || ':primary:' || primary_identity,
+    23004401
+  );
+  unique_lock := hashtextextended(
+    TG_TABLE_NAME || ':unique:' || unique_identity::text,
+    23004401
+  );
+  PERFORM pg_advisory_xact_lock(least(primary_lock, unique_lock));
+  IF primary_lock <> unique_lock THEN
+    PERFORM pg_advisory_xact_lock(greatest(primary_lock, unique_lock));
+  END IF;
+
+  IF TG_TABLE_NAME = 'portfolio_position_observations' THEN
+    EXECUTE format(
+      'SELECT to_jsonb(candidate) - ''created_at''
+         FROM public.%I candidate
+        WHERE to_jsonb(candidate) @> $1',
+      TG_TABLE_NAME
+    )
+    INTO existing_row
+    USING unique_identity;
+  ELSE
+    EXECUTE format(
+      'SELECT to_jsonb(candidate) - ''created_at''
+         FROM public.%I candidate
+        WHERE candidate.observation_id = $1
+           OR to_jsonb(candidate) @> $2
+        LIMIT 1',
+      TG_TABLE_NAME
+    )
+    INTO existing_row
+    USING primary_identity, unique_identity;
+  END IF;
+
+  IF existing_row IS NULL THEN
+    RETURN NEW;
+  END IF;
+  IF existing_row = incoming_row THEN
+    RETURN NULL;
+  END IF;
+  RAISE EXCEPTION 'observation replay conflicts with immutable stored row'
+    USING ERRCODE = '23505';
+END
+$enforce_exact_observation_replay$;
+ALTER FUNCTION enforce_exact_observation_replay() OWNER TO flyway;
+REVOKE ALL ON FUNCTION enforce_exact_observation_replay() FROM PUBLIC;
+
+CREATE TRIGGER market_quote_exact_replay
+  BEFORE INSERT ON market_quote_observations
+  FOR EACH ROW EXECUTE FUNCTION enforce_exact_observation_replay();
+CREATE TRIGGER instrument_catalog_exact_replay
+  BEFORE INSERT ON instrument_catalog_observations
+  FOR EACH ROW EXECUTE FUNCTION enforce_exact_observation_replay();
+CREATE TRIGGER portfolio_balance_exact_replay
+  BEFORE INSERT ON portfolio_balance_observations
+  FOR EACH ROW EXECUTE FUNCTION enforce_exact_observation_replay();
+CREATE TRIGGER portfolio_position_exact_replay
+  BEFORE INSERT ON portfolio_position_observations
+  FOR EACH ROW EXECUTE FUNCTION enforce_exact_observation_replay();
+CREATE TRIGGER deterministic_risk_exact_replay
+  BEFORE INSERT ON deterministic_risk_observations
+  FOR EACH ROW EXECUTE FUNCTION enforce_exact_observation_replay();
+CREATE TRIGGER daily_order_count_exact_replay
+  BEFORE INSERT ON daily_order_count_observations
+  FOR EACH ROW EXECUTE FUNCTION enforce_exact_observation_replay();
+CREATE TRIGGER corporation_registry_exact_replay
+  BEFORE INSERT ON corporation_registry_observations
+  FOR EACH ROW EXECUTE FUNCTION enforce_exact_observation_replay();
+
 CREATE VIEW latest_market_quote_observations
 WITH (security_barrier = true)
 AS
@@ -473,7 +634,6 @@ ORDER BY
   symbol,
   observed_at DESC,
   received_at DESC,
-  catalog_version DESC,
   observation_id;
 
 CREATE VIEW latest_portfolio_balance_observations
@@ -787,6 +947,10 @@ CREATE POLICY decisions_owner_insert_policy
   TO decision_app
   WITH CHECK (user_id = current_setting('app.actor_user_id', true));
 
+CREATE INDEX decision_audit_projection_target_idx
+  ON audit_logs (target_id, created_at DESC, audit_log_id)
+  WHERE action = 'DECISION_EVALUATED' AND target_type = 'DECISION';
+
 -- security_invoker view가 base SELECT를 application role에 요구하지 않도록 fixed-search-path
 -- bounded definer function에서 FORCE RLS owner predicate를 먼저 적용한다.
 CREATE FUNCTION read_decision_owner_projection()
@@ -847,7 +1011,10 @@ AS $read_decision_owner_projection$
   FROM public.decisions decision
   JOIN public.decision_artifacts artifact
     ON artifact.decision_id = decision.decision_id
-  WHERE decision.user_id = current_setting('app.actor_user_id', true)
+  WHERE
+    decision.user_id = current_setting('app.actor_user_id', true)
+    AND decision.decision_id = current_setting('app.requested_decision_id', true)
+  LIMIT 1
 $read_decision_owner_projection$;
 ALTER FUNCTION read_decision_owner_projection() OWNER TO flyway;
 REVOKE ALL ON FUNCTION read_decision_owner_projection() FROM PUBLIC;
@@ -887,6 +1054,9 @@ AS $read_decision_audit_projection$
     audit.action = 'DECISION_EVALUATED'
     AND audit.target_type = 'DECISION'
     AND decision.user_id = current_setting('app.actor_user_id', true)
+    AND audit.target_id = current_setting('app.requested_decision_id', true)
+  ORDER BY audit.created_at DESC, audit.audit_log_id
+  LIMIT 1
 $read_decision_audit_projection$;
 ALTER FUNCTION read_decision_audit_projection() OWNER TO flyway;
 REVOKE ALL ON FUNCTION read_decision_audit_projection() FROM PUBLIC;
@@ -960,6 +1130,7 @@ ALTER TABLE audit_logs
       action = 'DECISION_EVALUATED'
       AND user_id IS NOT NULL
       AND target_id IS NOT NULL
+      AND target_id = payload_json ->> 'decisionId'
       AND payload_json ?& ARRAY[
         'evaluationId',
         'decisionId',
@@ -1046,7 +1217,14 @@ BEGIN
       decisions,
       decision_artifacts,
       audit_logs,
-      decision_idempotency_results
+      decision_idempotency_results,
+      market_quote_observations,
+      instrument_catalog_observations,
+      portfolio_balance_observations,
+      portfolio_position_observations,
+      deterministic_risk_observations,
+      daily_order_count_observations,
+      corporation_registry_observations
     TO flyway;
   END IF;
 

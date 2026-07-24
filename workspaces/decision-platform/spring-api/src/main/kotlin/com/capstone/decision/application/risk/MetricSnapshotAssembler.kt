@@ -13,6 +13,7 @@ import com.capstone.decision.application.risk.port.NewsEvidencePort
 import com.capstone.decision.application.risk.port.OrderMetricPort
 import com.capstone.decision.application.risk.port.PortfolioContextRef
 import com.capstone.decision.application.risk.port.PricePort
+import com.capstone.decision.application.risk.port.RiskMetricBundle
 import com.capstone.decision.application.risk.port.RiskSnapshotPort
 import com.capstone.decision.application.risk.port.SignalMetricBundle
 import com.capstone.decision.application.risk.port.SignalPort
@@ -66,6 +67,7 @@ class MetricSnapshotAssembler(
     private val newsEvidencePort: NewsEvidencePort,
     private val disclosureRiskPort: DisclosureRiskPort,
     private val signalPort: SignalPort,
+    private val sourceCallCoordinator: EvaluationSourceCallCoordinator = DirectEvaluationSourceCallCoordinator,
 ) {
     init {
         require(kisMockBalancePort.source == PortfolioSource.KIS_MOCK)
@@ -76,6 +78,8 @@ class MetricSnapshotAssembler(
      * 명시 source의 BalancePort만 한 번 호출하며 KIS 실패 뒤 INTERNAL_PAPER를 호출하지 않는다.
      */
     fun assemble(request: MetricAssemblyRequest): MetricSnapshot {
+        val evaluationDeadlineNanos =
+            System.nanoTime() + EvaluationBounds.EVALUATION_DEADLINE.toNanos()
         val sourceRequest =
             EvaluationSourceRequest(
                 actorUserId = request.actorUserId,
@@ -88,14 +92,27 @@ class MetricSnapshotAssembler(
         val plan = request.acquisitionPlan
         val price =
             if (PRICE_KEYS.any(plan::requires)) {
-                validatePositiveWholeMetric(pricePort.load(sourceRequest), MetricUnit.KRW)
+                validatePositiveWholeMetric(
+                    sourceCallCoordinator.call(
+                        evaluationDeadlineNanos,
+                        sourceError(),
+                    ) {
+                        pricePort.load(sourceRequest)
+                    },
+                    MetricUnit.KRW,
+                )
             } else {
                 notApplicable()
             }
         val balance =
             if (BALANCE_KEYS.any(plan::requires)) {
                 validateBalance(
-                    selectedBalancePort(request.portfolioContext.source).load(sourceRequest),
+                    sourceCallCoordinator.call(
+                        evaluationDeadlineNanos,
+                        sourceError(),
+                    ) {
+                        selectedBalancePort(request.portfolioContext.source).load(sourceRequest)
+                    },
                     request.portfolioContext,
                 )
             } else {
@@ -104,7 +121,12 @@ class MetricSnapshotAssembler(
         val margin =
             if (plan.requires(MetricKey.MARGIN_REQUIREMENT_KRW)) {
                 validateNonNegativeWholeMetric(
-                    marginPort.load(sourceRequest),
+                    sourceCallCoordinator.call(
+                        evaluationDeadlineNanos,
+                        sourceError(),
+                    ) {
+                        marginPort.load(sourceRequest)
+                    },
                     MetricUnit.KRW,
                 )
             } else {
@@ -113,7 +135,12 @@ class MetricSnapshotAssembler(
         val dailyOrderCount =
             if (plan.requires(MetricKey.DAILY_ORDER_COUNT)) {
                 validateNonNegativeWholeMetric(
-                    orderMetricPort.loadDailyOrderCount(sourceRequest),
+                    sourceCallCoordinator.call(
+                        evaluationDeadlineNanos,
+                        sourceError(),
+                    ) {
+                        orderMetricPort.loadDailyOrderCount(sourceRequest)
+                    },
                     MetricUnit.COUNT,
                 )
             } else {
@@ -121,14 +148,24 @@ class MetricSnapshotAssembler(
             }
         val risk =
             if (RISK_KEYS.any(plan::requires)) {
-                riskSnapshotPort.load(sourceRequest)
+                sourceCallCoordinator.call(
+                    evaluationDeadlineNanos,
+                    unavailableRisk(),
+                ) {
+                    riskSnapshotPort.load(sourceRequest)
+                }
             } else {
                 null
             }
         val instrumentCell =
             if (INSTRUMENT_KEYS.any(plan::requires)) {
                 validateInstrument(
-                    instrumentCatalogPort.load(sourceRequest),
+                    sourceCallCoordinator.call(
+                        evaluationDeadlineNanos,
+                        sourceError(),
+                    ) {
+                        instrumentCatalogPort.load(sourceRequest)
+                    },
                     request.orderIntent.symbol,
                 )
             } else {
@@ -137,7 +174,12 @@ class MetricSnapshotAssembler(
         val news =
             if (plan.requires(MetricKey.NEGATIVE_NEWS_SCORE)) {
                 validateDecimalMetric(
-                    newsEvidencePort.loadNegativeScore(sourceRequest),
+                    sourceCallCoordinator.call(
+                        evaluationDeadlineNanos,
+                        sourceError(),
+                    ) {
+                        newsEvidencePort.loadNegativeScore(sourceRequest)
+                    },
                     MetricUnit.RATIO,
                     minimum = BigDecimal.ZERO,
                     maximum = BigDecimal.ONE,
@@ -147,13 +189,23 @@ class MetricSnapshotAssembler(
             }
         val disclosureCell =
             if (plan.requires(MetricKey.DISCLOSURE_RISK_SCORE)) {
-                disclosureRiskPort.load(sourceRequest)
+                sourceCallCoordinator.call(
+                    evaluationDeadlineNanos,
+                    MetricCell.Error(MetricIssueCode.DISCLOSURE_UNAVAILABLE),
+                ) {
+                    disclosureRiskPort.load(sourceRequest)
+                }
             } else {
                 MetricCell.NotApplicable(MetricIssueCode.NOT_APPLICABLE)
             }
         val signals =
             if (SIGNAL_KEYS.any(plan::requires) || plan.optionalComponents.any(GENERIC_SIGNAL_COMPONENTS::contains)) {
-                signalPort.load(sourceRequest)
+                sourceCallCoordinator.call(
+                    evaluationDeadlineNanos,
+                    unavailableSignals(),
+                ) {
+                    signalPort.load(sourceRequest)
+                }
             } else {
                 emptySignals()
             }
@@ -551,6 +603,7 @@ class MetricSnapshotAssembler(
         if (balance is MetricCell.Available) {
             check(balance.value.source == context.source) { "Balance source crossed the selected portfolio mode." }
             check(balance.value.ownerScopeHash == context.ownerScopeHash) { "Balance owner scope mismatch." }
+            check(balance.value.revision == context.revision) { "Balance revision crossed the pinned portfolio context." }
             PortfolioSnapshotIdentity(
                 source = context.source,
                 revision = balance.value.revision,
@@ -711,6 +764,19 @@ class MetricSnapshotAssembler(
         SignalMetricBundle(
             hmmRiskOffProbability = notApplicable(),
             meanReversionAbsoluteZScore = notApplicable(),
+        )
+
+    private fun unavailableSignals(): SignalMetricBundle =
+        SignalMetricBundle(
+            hmmRiskOffProbability = sourceError(),
+            meanReversionAbsoluteZScore = sourceError(),
+        )
+
+    private fun unavailableRisk(): RiskMetricBundle =
+        RiskMetricBundle(
+            dailyLossRate = sourceError(),
+            maxDrawdown = sourceError(),
+            annualizedVolatility = sourceError(),
         )
 
     companion object {

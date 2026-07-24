@@ -1,6 +1,7 @@
 package com.capstone.decision.infrastructure.decision
 
 import com.capstone.decision.application.decision.DecisionValidityPolicy
+import com.capstone.decision.application.risk.EvaluationSourceCallCoordinator
 import com.capstone.decision.application.risk.MetricSnapshotAssembler
 import com.capstone.decision.application.risk.PortfolioEvaluationUseCase
 import com.capstone.decision.application.risk.SystemRuleContract
@@ -60,6 +61,7 @@ class DecisionRuntimeConfiguration {
         newsEvidencePort: NewsEvidencePort,
         disclosureRiskPort: DisclosureRiskPort,
         signalPort: SignalPort,
+        sourceCallCoordinator: EvaluationSourceCallCoordinator,
     ): MetricSnapshotAssembler =
         MetricSnapshotAssembler(
             pricePort = pricePort,
@@ -72,6 +74,7 @@ class DecisionRuntimeConfiguration {
             newsEvidencePort = newsEvidencePort,
             disclosureRiskPort = disclosureRiskPort,
             signalPort = signalPort,
+            sourceCallCoordinator = sourceCallCoordinator,
         )
 
     @Bean

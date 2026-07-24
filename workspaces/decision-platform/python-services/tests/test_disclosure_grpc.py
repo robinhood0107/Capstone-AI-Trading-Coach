@@ -49,7 +49,7 @@ def _batch(event_count: int = 1) -> StoredDisclosureBatch:
         StoredDisclosureEvent(
             symbol="005930",
             corp_code="00126380",
-            event_code=f"OPENDART:dfOcr:{index:03d}",
+            event_code="OPENDART:dfOcr",
             receipt_no=f"202607240000{index:02d}",
             occurred_on=date(2026, 7, 24),
             observed_at=datetime(2026, 7, 24, 1, 2, 3, tzinfo=UTC),
@@ -95,7 +95,7 @@ def test_real_business_rpc_roundtrip_is_loopback_single_call_without_reflection(
         assert response.corp_code == "00126380"
         assert response.mapping_version == "s1.2-v1"
         assert response.complete is True
-        assert [item.event_code for item in response.events] == ["OPENDART:dfOcr:000"]
+        assert [item.event_code for item in response.events] == ["OPENDART:dfOcr"]
         assert list(response.source_refs) == [f"{1:064x}"]
 
         reflection_stub = reflection_pb2_grpc.ServerReflectionStub(channel)

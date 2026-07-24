@@ -9,6 +9,8 @@ import com.capstone.decision.application.decision.DecisionRiskItemProjection
 import com.capstone.decision.application.decision.RiskDecisionProjection
 import com.capstone.decision.domain.risk.PublicIssueCode
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry
+import io.mockk.mockk
+import org.junit.jupiter.api.Assertions.assertDoesNotThrow
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -29,7 +31,7 @@ class DecisionObservabilityTest {
             DecisionMetricOutcome.entries.map { it.name }.toSet(),
         )
         assertEquals(
-            setOf("GUIDE", "STRICT", "UNKNOWN"),
+            setOf("GUIDE", "STRICT", "UNPINNED"),
             DecisionMetricMode.entries.map { it.name }.toSet(),
         )
         assertEquals(
@@ -59,7 +61,7 @@ class DecisionObservabilityTest {
             1.0,
             registry
                 .find("decision.fail_closed")
-                .tag("reason", PublicIssueCode.BROKERAGE_UNAVAILABLE.name)
+                .tag("reason", PublicIssueCode.PORTFOLIO_CONTEXT_UNAVAILABLE.name)
                 .counter()
                 ?.count(),
         )
@@ -83,17 +85,37 @@ class DecisionObservabilityTest {
         val registry = SimpleMeterRegistry()
         val observability = DecisionObservability(registry)
 
-        observability.recordTimer(DecisionMetricOutcome.ERROR, DecisionMetricMode.UNKNOWN, Duration.ofMillis(10))
+        observability.recordTimer(
+            DecisionMetricOutcome.ERROR,
+            DecisionMetricMode.valueOf("UNPINNED"),
+            Duration.ofMillis(10),
+        )
 
         assertEquals(
             1L,
             registry
                 .find("decision.evaluate")
-                .tags("outcome", "ERROR", "mode", "UNKNOWN")
+                .tags("outcome", "ERROR", "mode", "UNPINNED")
                 .timer()
                 ?.count(),
         )
         assertTrue(registry.find("decision.fail_closed").meters().isEmpty())
+    }
+
+    @Test
+    fun `meter registry failure after commit is isolated from the business projection`() {
+        val failingRegistry = mockk<io.micrometer.core.instrument.MeterRegistry>()
+        val observability = DecisionObservability(failingRegistry)
+        val projection = holdProjection()
+
+        assertDoesNotThrow {
+            observability.recordPersisted(projection, "req-post-commit-fault")
+            observability.recordTimer(
+                DecisionMetricOutcome.HOLD,
+                DecisionMetricMode.GUIDE,
+                Duration.ofMillis(1),
+            )
+        }
     }
 
     private fun holdProjection(): DecisionProjection {
@@ -127,6 +149,12 @@ class DecisionObservabilityTest {
                     violations = emptyList(),
                     issues =
                         listOf(
+                            DecisionIssueProjection(
+                                ruleId = "portfolio_context_guard",
+                                code = PublicIssueCode.PORTFOLIO_CONTEXT_UNAVAILABLE.name,
+                                message = "canonical first issue",
+                                source = "KIS_MOCK",
+                            ),
                             DecisionIssueProjection(
                                 ruleId = "balance_guard",
                                 code = PublicIssueCode.BROKERAGE_UNAVAILABLE.name,

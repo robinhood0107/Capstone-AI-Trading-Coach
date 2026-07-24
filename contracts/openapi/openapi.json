@@ -4455,5 +4455,5 @@
   "x-s2-1-contract-id": "s2-1-principle-contract/v1",
   "x-s2-1-contract-sha256": "687e97767beb78d9a58e65de113d323817522975a929099c6991ec8185d83784",
   "x-s2-3-contract-id": "s2-3-decision-contract/v1",
-  "x-s2-3-contract-sha256": "58b658a1482b378d5a7c8c394381a14b6ad6e41c222d2f84e4edec65c1ab1e6f"
+  "x-s2-3-contract-sha256": "58e55ebda0154a079cff3d5c2527da66743cf3fdeeaf063b86b23b581371fab3"
 }

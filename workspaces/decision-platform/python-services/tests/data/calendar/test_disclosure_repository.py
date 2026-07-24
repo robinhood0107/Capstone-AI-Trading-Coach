@@ -13,7 +13,7 @@ def test_app_role_reads_only_sanitized_stored_disclosure_projection(
     postgres_cluster: PostgresTestCluster,
 ) -> None:
     observed_at = datetime(2026, 7, 24, 1, 2, 3, tzinfo=UTC)
-    window_from = date(2026, 6, 24)
+    window_from = date(2025, 7, 24)
     window_to = date(2026, 7, 24)
     mapping = load_default_risk_mapping()
     operations = sorted(
@@ -24,6 +24,21 @@ def test_app_role_reads_only_sanitized_stored_disclosure_projection(
         }.union({"bnkMngtPcsp"})
     )
     with psycopg.connect(postgres_cluster["admin_dsn"]) as connection:
+        connection.execute(
+            """
+            INSERT INTO corporation_registry_observations (
+              observation_id, symbol, corp_code, registry_status, completeness,
+              observed_at, received_at, schema_version, source_version,
+              payload_json, source_ref, artifact_hash
+            ) VALUES (
+              'corp-s23-disclosure', '005930', '00126380', 'ACTIVE', 'COMPLETE',
+              %s, %s, 'corporation-registry-observation.v1',
+              's1.6-sanitized-corp-registry-v1',
+              '{"symbol":"005930","corpCode":"00126380"}'::jsonb, %s, %s
+            )
+            """,
+            (observed_at, observed_at, "0" * 64, "f" * 64),
+        )
         connection.execute(
             """
             INSERT INTO calendar_observations (
@@ -93,13 +108,14 @@ def test_app_role_reads_only_sanitized_stored_disclosure_projection(
 
     batch = PostgresStoredDisclosureRepository(postgres_cluster["app_dsn"]).load(
         symbol="005930",
-        corp_code="00126380",
+        corp_code=None,
         window_from=window_from,
         window_to=window_to,
     )
 
     assert batch.complete is True
     assert batch.mapping_version == mapping.version
+    assert batch.corp_code == "00126380"
     assert batch.observed_at == observed_at
     assert len(batch.events) == 1
     event = batch.events[0]
@@ -122,3 +138,65 @@ def test_empty_stored_observation_is_incomplete_not_a_fake_zero(
     assert batch.complete is False
     assert batch.events == ()
     assert batch.observed_at == datetime.fromtimestamp(0, tz=UTC)
+
+
+def test_empty_or_ambiguous_corporation_registry_is_incomplete(
+    postgres_cluster: PostgresTestCluster,
+) -> None:
+    repository = PostgresStoredDisclosureRepository(postgres_cluster["app_dsn"])
+    missing = repository.load(
+        symbol="000660",
+        corp_code=None,
+        window_from=date(2025, 7, 24),
+        window_to=date(2026, 7, 24),
+    )
+    assert missing.complete is False
+    assert missing.corp_code == ""
+    assert missing.events == ()
+
+    observed_at = datetime(2026, 7, 24, 1, 2, 3, tzinfo=UTC)
+    with psycopg.connect(postgres_cluster["admin_dsn"]) as connection:
+        with connection.cursor() as cursor:
+            cursor.executemany(
+                """
+                INSERT INTO corporation_registry_observations (
+                  observation_id, symbol, corp_code, registry_status, completeness,
+                  observed_at, received_at, schema_version, source_version,
+                  payload_json, source_ref, artifact_hash
+                ) VALUES (
+                  %s, '000660', %s, 'ACTIVE', 'COMPLETE', %s, %s,
+                  'corporation-registry-observation.v1', 'ambiguous-fixture-v1',
+                  %s::jsonb, %s, %s
+                )
+                """,
+                [
+                    (
+                        "corp-ambiguous-a",
+                        "00164779",
+                        observed_at,
+                        observed_at,
+                        '{"symbol":"000660","corpCode":"00164779"}',
+                        "a" * 64,
+                        "b" * 64,
+                    ),
+                    (
+                        "corp-ambiguous-b",
+                        "00999999",
+                        observed_at,
+                        observed_at,
+                        '{"symbol":"000660","corpCode":"00999999"}',
+                        "c" * 64,
+                        "d" * 64,
+                    ),
+                ],
+            )
+
+    ambiguous = repository.load(
+        symbol="000660",
+        corp_code=None,
+        window_from=date(2025, 7, 24),
+        window_to=date(2026, 7, 24),
+    )
+    assert ambiguous.complete is False
+    assert ambiguous.corp_code == ""
+    assert ambiguous.events == ()

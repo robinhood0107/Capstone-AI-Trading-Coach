@@ -1,0 +1,172 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "contractId": "s2-3-decision-contract",
+  "contractVersion": 1,
+  "freshness": {
+    "balanceSeconds": 60,
+    "dailySignalPolicy": "PREVIOUS_TRADING_DAY_CLOSE",
+    "disclosureHours": 24,
+    "ecosDays": 7,
+    "hmmPolicy": "PREVIOUS_TRADING_DAY_CLOSE",
+    "newsHours": 24,
+    "priceOrderbookSeconds": 300,
+    "riskPolicy": "PREVIOUS_TRADING_DAY_CLOSE",
+    "sixtyMinuteSignalMinutes": 90,
+    "validityMinutes": 10
+  },
+  "grpc": {
+    "businessRpc": "GetDisclosureEvents",
+    "concurrencyMax": 8,
+    "effectiveSourceDeadlineMillis": 500,
+    "hardDeadlineMillis": 2000,
+    "reflection": false,
+    "requestMaxBytes": 262144,
+    "responseMaxBytes": 1048576,
+    "retryAttempts": 1,
+    "totalEvaluationDeadlineMillis": 900,
+    "transport": "LOOPBACK_PLAINTEXT"
+  },
+  "http": {
+    "auditPath": "/api/v1/decisions/{decisionId}/audit",
+    "detailPath": "/api/v1/decisions/{decisionId}",
+    "evaluatePath": "/api/v1/decisions/evaluate-order",
+    "method": "POST",
+    "requestMaxBytes": 262144,
+    "responseMaxBytes": 1048576
+  },
+  "idempotency": {
+    "header": "X-Idempotency-Key",
+    "keyMaxLength": 128,
+    "keyMinLength": 16,
+    "keyPattern": "^[A-Za-z0-9._:-]+$",
+    "purposeVersion": "decision-evaluate-order/v1",
+    "retentionHours": 24,
+    "scope": "PURPOSE_VERSION_HMAC"
+  },
+  "observability": {
+    "failClosedCounter": "decision.fail_closed",
+    "outcomes": [
+      "ALLOW",
+      "WARN",
+      "HOLD",
+      "BLOCK",
+      "ERROR"
+    ],
+    "timer": "decision.evaluate"
+  },
+  "outcomePolicy": {
+    "precedence": [
+      "BLOCK",
+      "HOLD",
+      "WARN",
+      "ALLOW"
+    ],
+    "rows": [
+      {
+        "canSubmitOrder": true,
+        "enforcementAction": "NONE",
+        "mode": "GUIDE",
+        "outcome": "ALLOW"
+      },
+      {
+        "canSubmitOrder": true,
+        "enforcementAction": "NONE",
+        "mode": "STRICT",
+        "outcome": "ALLOW"
+      },
+      {
+        "canSubmitOrder": true,
+        "enforcementAction": "ACKNOWLEDGE_WARNING",
+        "mode": "GUIDE",
+        "outcome": "WARN"
+      },
+      {
+        "canSubmitOrder": true,
+        "enforcementAction": "RECONFIRM_PRINCIPLE",
+        "mode": "STRICT",
+        "outcome": "WARN"
+      },
+      {
+        "canSubmitOrder": false,
+        "enforcementAction": "RE_EVALUATE",
+        "mode": "GUIDE",
+        "outcome": "HOLD"
+      },
+      {
+        "canSubmitOrder": false,
+        "enforcementAction": "RE_EVALUATE",
+        "mode": "STRICT",
+        "outcome": "HOLD"
+      },
+      {
+        "canSubmitOrder": false,
+        "enforcementAction": "DO_NOT_SUBMIT",
+        "mode": "GUIDE",
+        "outcome": "BLOCK"
+      },
+      {
+        "canSubmitOrder": false,
+        "enforcementAction": "DO_NOT_SUBMIT",
+        "mode": "STRICT",
+        "outcome": "BLOCK"
+      }
+    ]
+  },
+  "request": {
+    "fields": [
+      "principleId",
+      "portfolioSource",
+      "orderIntent"
+    ],
+    "forbiddenFields": [
+      "accountId",
+      "auditActor",
+      "corpCode",
+      "mode",
+      "time",
+      "userId"
+    ],
+    "orderIntentFields": [
+      "symbol",
+      "side",
+      "orderType",
+      "quantity",
+      "estimatedPrice",
+      "estimatedAmount",
+      "timeframe",
+      "strategyId"
+    ],
+    "portfolioSources": [
+      "KIS_MOCK",
+      "INTERNAL_PAPER"
+    ]
+  },
+  "response": {
+    "fields": [
+      "decisionId",
+      "createdAt",
+      "validUntil",
+      "principleId",
+      "principleVersionId",
+      "principleVersion",
+      "portfolioSource",
+      "mode",
+      "enforcementAction",
+      "riskDecision"
+    ],
+    "schemaVersion": "s2-3-persisted-decision/v1"
+  },
+  "sourceOwnership": {
+    "balanceTables": [
+      "portfolio_balance_observations",
+      "portfolio_position_observations"
+    ],
+    "missingPolicy": "PERSISTED_HOLD",
+    "portfolioProducer": "S3",
+    "priceProducer": "S1.1",
+    "priceTable": "market_quote_observations",
+    "productionSeed": false,
+    "providerHttpFallback": false,
+    "reader": "S2.3"
+  }
+}

@@ -17,6 +17,8 @@ import io.grpc.Status
 import io.grpc.StatusRuntimeException
 import io.grpc.netty.shaded.io.grpc.netty.NettyChannelBuilder
 import jakarta.annotation.PreDestroy
+import org.slf4j.LoggerFactory
+import org.slf4j.MDC
 import org.springframework.stereotype.Component
 import java.math.BigDecimal
 import java.time.Clock
@@ -25,6 +27,7 @@ import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+import java.util.UUID
 import java.util.concurrent.TimeUnit
 import kotlin.math.max
 import kotlin.math.min
@@ -54,6 +57,33 @@ class GrpcDisclosureRiskAdapter(
     }
 
     override fun load(request: EvaluationSourceRequest): MetricCell<DisclosureRiskSnapshot> {
+        val startedAtNanos = System.nanoTime()
+        val traceId = MDC.get(TRACE_ID_MDC_KEY) ?: TRACE_UNAVAILABLE
+        val parentSpanId = MDC.get(SPAN_ID_MDC_KEY) ?: TRACE_UNAVAILABLE
+        val spanId =
+            UUID
+                .randomUUID()
+                .toString()
+                .replace("-", "")
+                .take(16)
+        MDC.put(SPAN_ID_MDC_KEY, spanId)
+        return try {
+            loadOnce(request).also { result ->
+                logSpan(request, traceId, parentSpanId, spanId, resultKind(result), startedAtNanos)
+            }
+        } catch (exception: Exception) {
+            logSpan(request, traceId, parentSpanId, spanId, RESULT_TECHNICAL_ERROR, startedAtNanos)
+            throw exception
+        } finally {
+            if (parentSpanId == TRACE_UNAVAILABLE) {
+                MDC.remove(SPAN_ID_MDC_KEY)
+            } else {
+                MDC.put(SPAN_ID_MDC_KEY, parentSpanId)
+            }
+        }
+    }
+
+    private fun loadOnce(request: EvaluationSourceRequest): MetricCell<DisclosureRiskSnapshot> {
         val callNow = clock.instant()
         val deadlineMillis = effectiveDeadlineMillis(request.evaluationAsOf, callNow)
         if (deadlineMillis <= 0) {
@@ -90,6 +120,36 @@ class GrpcDisclosureRiskAdapter(
             retrievedAt = callNow,
         )
     }
+
+    private fun logSpan(
+        request: EvaluationSourceRequest,
+        traceId: String,
+        parentSpanId: String,
+        spanId: String,
+        result: String,
+        startedAtNanos: Long,
+    ) {
+        log
+            .atInfo()
+            .addKeyValue("trace_id", traceId)
+            .addKeyValue("span_id", spanId)
+            .addKeyValue("parent_span_id", parentSpanId)
+            .addKeyValue("evaluationId", request.evaluationId)
+            .addKeyValue("decisionId", request.decisionId)
+            .addKeyValue("rpc.system", "grpc")
+            .addKeyValue("rpc.method", RPC_METHOD)
+            .addKeyValue("result", result)
+            .addKeyValue(
+                "durationMs",
+                TimeUnit.NANOSECONDS.toMillis((System.nanoTime() - startedAtNanos).coerceAtLeast(0)),
+            ).log("grpc.stored_observation.completed")
+    }
+
+    private fun resultKind(result: MetricCell<DisclosureRiskSnapshot>): String =
+        when (result) {
+            is MetricCell.Available -> RESULT_AVAILABLE
+            else -> RESULT_TYPED_UNAVAILABLE
+        }
 
     private fun responseCell(
         response: GetDisclosureEventsResponse,
@@ -266,6 +326,14 @@ class GrpcDisclosureRiskAdapter(
     ): Instant = if (left.isAfter(right)) left else right
 
     private companion object {
+        val log = LoggerFactory.getLogger(GrpcDisclosureRiskAdapter::class.java)
+        const val TRACE_ID_MDC_KEY = "trace_id"
+        const val SPAN_ID_MDC_KEY = "span_id"
+        const val TRACE_UNAVAILABLE = "unavailable"
+        const val RPC_METHOD = "GetDisclosureEvents"
+        const val RESULT_AVAILABLE = "AVAILABLE"
+        const val RESULT_TYPED_UNAVAILABLE = "TYPED_UNAVAILABLE"
+        const val RESULT_TECHNICAL_ERROR = "TECHNICAL_ERROR"
         val SEOUL: ZoneId = ZoneId.of("Asia/Seoul")
         val SOURCE_REF = Regex(EvaluationBounds.SANITIZED_SHA256_PATTERN)
         val EVENT_CODE = Regex("""[A-Za-z0-9._:-]{1,128}""")

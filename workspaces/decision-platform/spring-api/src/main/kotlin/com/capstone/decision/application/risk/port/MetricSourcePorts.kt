@@ -13,6 +13,8 @@ data class EvaluationSourceRequest(
     val portfolioContext: PortfolioContextRef,
     val orderIntent: OrderIntentSnapshot,
     val evaluationAsOf: Instant,
+    val evaluationId: String = "unavailable",
+    val decisionId: String = "unavailable",
 )
 
 data class PortfolioPosition(

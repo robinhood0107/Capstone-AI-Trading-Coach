@@ -58,6 +58,7 @@ data class PortfolioEvaluationCommand(
     val evaluationAsOf: Instant,
     val orderIntent: OrderIntentSnapshot,
     val optionalComponents: Set<OptionalEvaluationComponent> = emptySet(),
+    val decisionId: String = evaluationId,
 )
 
 data class OfflinePortfolioEvaluation(
@@ -133,6 +134,7 @@ class PortfolioEvaluationUseCase(
                     systemRuleCatalogVersion = systemRuleContract.catalogVersion,
                     readinessPolicyVersion = systemRuleContract.readinessPolicyVersion,
                     acquisitionPlan = plan,
+                    decisionId = command.decisionId,
                 ),
             )
         val candidates = candidateRules(principle, snapshot, command.optionalComponents)

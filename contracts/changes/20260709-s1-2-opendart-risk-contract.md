@@ -1,5 +1,13 @@
 # S1.2 OpenDART Disclosure Risk Contract
 
+> Superseded on: 2026-07-24
+>
+> Superseded by: `contracts/proto/disclosure_observation.proto`
+>
+> 이 기록의 proto 부재와 Spring 소비 이연 서술은 2026-07-09 당시 사실이다. 현재
+> business RPC와 S2.3 runtime 계약은 위 tracked proto 및
+> `contracts/changes/20260724-s2-3-decision-contract-lock.md`가 우선한다.
+
 세션: S1.2 (OpenDART 공시 위험 점수)
 
 ## 변경 이유

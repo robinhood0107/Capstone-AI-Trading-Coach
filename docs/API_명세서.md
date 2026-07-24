@@ -740,7 +740,7 @@ deterministic formatting만 normalizer가 바꿀 수 있으며 paths/components/
 
 ---
 
-## 5. Decision API (S2.3 계획 — 현재 route 없음)
+## 5. Decision API (S2.3 계약 잠금 — runtime 구현 중)
 
 주문 의도와 immutable Principle version, portfolio context, 모델·리스크 evidence를 결합하는
 최종 HTTP API다. 다만 현재 호출 가능한 endpoint가 아니다.
@@ -752,7 +752,8 @@ deterministic formatting만 normalizer가 바꿀 수 있으며 paths/components/
 > decision persistence는 없다. owner + ACTIVE + current immutable version을 한 SQL로 읽는
 > 내부 `JdbcPrincipleSnapshotAdapter`만 S2.2의 유일한 production adapter 예외다. S2.3이
 > 이 read port와 나머지 source port의 owner-scoped runtime orchestration, persistence와
-> 이 장의 endpoint/OpenAPI를 연결하고, S3가 KIS Mock/INTERNAL_PAPER source adapter를 연결한다.
+> 이 장의 endpoint/OpenAPI를 연결한다. S1.1/S3는 provider/ledger producer를 소유하고 S2.3은
+> 저장된 sanitized observation과 INTERNAL_PAPER ledger를 읽는 adapter만 소유한다.
 > tracked `contracts/openapi/openapi.json`에는 현재 `/api/v1/decisions/**` path가 하나도 없다.
 
 ### 5.1 S2.2 offline rule evaluation 계약
@@ -800,6 +801,13 @@ identity로 사용하지 않는다. unavailable evidence를 `riskItems.value=nul
 provider 계좌번호는 받지 않는다. mode는 한 번의 owner-scoped ACTIVE Principle 조회에서 고정한
 immutable version의 값이 권위이며 request가 덮어쓸 수 없다.
 
+현물 v1 `orderIntent`의 exact field는
+`symbol,side,orderType,quantity,estimatedPrice,estimatedAmount,timeframe,strategyId`다.
+MARKET과 LIMIT 모두 `estimatedPrice`를 사용하며 `price`/`limitPrice` alias는 거부한다.
+`estimatedPrice`와 `estimatedAmount`는 양의 원화 정수이고
+`estimatedAmount == quantity * estimatedPrice`를 overflow 없는 exact 연산으로 검증한다.
+P2 `derivativeOrderIntent.limitPrice`와 S3 provider `UNIT_PRICE` mapping은 별도 계약이다.
+
 같은 조회는 `principleVersionId`, `version`, mode, canonical rules를 한 snapshot으로 pin한다.
 형식이 유효한 principle이 missing, cross-owner 또는 inactive이면 존재 여부를 숨기고 모두 같은
 `404 NOT_FOUND`를 반환한다. 성공한 평가 결과는 `principleVersionId`와 `principleVersion`을
@@ -813,6 +821,15 @@ disclosure, signal production adapter는 S2.2에 없으며, S2.3/S3의 별도 �
 `portfolioSource`는 `KIS_MOCK|INTERNAL_PAPER` 중 정확히 하나를 명시한다. 서버가 JWT actor의
 owner scope 안에서 해당 context를 해석하며 raw account ID를 신뢰하지 않는다. 선택한 source만
 조회하고 source 혼합이나 KIS 실패 후 INTERNAL_PAPER 자동 fallback은 금지한다.
+
+S2.3은 provider HTTP를 호출하지 않는다. 현재가·호가는 S1.1 producer가 쓰는 append-only
+`market_quote_observations`, KIS_MOCK 잔고는 S3 producer가 쓰는
+`portfolio_balance_observations`/`portfolio_position_observations`, INTERNAL_PAPER는 기존
+`paper_accounts`/`paper_positions`의 한 SQL owner-scoped projection에서 읽는다. V9는 production
+source row를 seed하지 않고 `decision_app`에는 이 source의 SELECT만 준다. source row 부재,
+stale/incomplete/future timestamp는 가짜 0/빈 값으로 대체하지 않고 typed unavailable
+`issues[]`와 persisted 200 HOLD로 수렴한다. 실제 producer가 배포되기 전 환경은 HOLD-only일 수
+있으며 이는 안전한 degraded state다.
 
 | 상황 | 계획 HTTP/result |
 |---|---|
@@ -834,7 +851,7 @@ correlation과 함께 별도로 관측하며, public code와 같은 문자열로
 정상적으로 unavailable evidence로 변환한 결과는 HOLD/WARN이 될 수 있지만 evaluator invariant나
 직렬화 실패는 5xx다.
 
-### 5.4 S2.2 V1 자원 상한과 hash
+### 5.4 S2.2 자원 상한과 hash V2
 
 `BOUNDS-CONTRACT-S22-V1`은 다음 상한을 고정한다. S2.3 runtime 설정은 낮출 수 있지만 같은
 contract version에서 높일 수 없다.
@@ -852,19 +869,19 @@ contract version에서 높일 수 없다.
 | 동시 source 작업 | 최대 8 |
 | source별 / 전체 evaluation deadline | 500 ms / 900 ms |
 
-`HASH-CANONICALIZATION-S22-V1`은 UTF-8, whitespace 없는 JSON, object key 사전순,
+`HASH-CANONICALIZATION-S22-V2`는 UTF-8, whitespace 없는 JSON, object key 사전순,
 명시적 stable array sort, exponent 없는 plain decimal, negative zero의 `0` 정규화,
 trailing-zero 제거를 사용한다. 두 hash는 lowercase 64-hex SHA-256이며 목적이 다르다.
 
 | hash | 포함/제외 경계 |
 |---|---|
-| `semanticInputHash` | snapshot schema/actor/evaluation 시각, pinned Principle ID·version·mode·rules hash, system catalog/readiness version, full order intent(`orderType`, `limitPrice` 포함), portfolio source/revision/owner scope/position count, 모든 MetricKey의 typed state/value/unit/declared scale·`observedAt`·`freshUntil`·source/version/ref, requested/observed optional evidence, disclosure completeness/mapping version/source refs, provenance refs를 포함한다 |
+| `semanticInputHash` | `HASH-CANONICALIZATION-S22-V2`와 `s2.2-metric-snapshot-v2`를 사용한다. snapshot schema/actor/evaluation 시각, pinned Principle ID·version·mode·rules hash, system catalog/readiness version, full 현물 v1 order intent(`symbol,side,orderType,quantity,estimatedPrice,estimatedAmount,timeframe,strategyId`), portfolio source/revision/owner scope/position count, 모든 MetricKey의 typed state/value/unit/declared scale·`observedAt`·`freshUntil`·source/version/ref, requested/observed optional evidence, disclosure completeness/mapping version/source refs, provenance refs를 포함한다 |
 | semantic 제외 | `requestId`, `evaluationId`, canonical contract의 `retrievedAt`, `traceId`, stable-sort 대상의 원래 입력 순서다. readiness는 `evaluationAsOf`, `observedAt`, `freshUntil`만 사용하며 `freshUntil` 변화로 action이 바뀌면 semantic hash도 바뀐다 |
-| `snapshotArtifactHash` | 위 semantic 필드에 `evaluationId`, snapshot/metric retrieval identity를 더한 versioned full `MetricSnapshotArtifactV1` exact UTF-8 bytes를 그대로 SHA-256한다. 별도 축약 hash map이나 저장용 second representation을 만들지 않는다 |
+| `snapshotArtifactHash` | 위 semantic 필드에 `evaluationId`, snapshot/metric retrieval identity를 더한 versioned full `MetricSnapshotArtifactV2` exact UTF-8 bytes를 그대로 SHA-256한다. 별도 축약 hash map이나 저장용 second representation을 만들지 않는다 |
 
-### 5.5 S2.3 decision 수명주기와 조회 (계획)
+### 5.5 S2.3 decision 수명주기와 조회
 
-S2.3에서 persistence와 함께 아래 route를 별도 contract-change로 OpenAPI에 추가한다.
+S2.3 persistence와 함께 아래 route를 OpenAPI에 추가한다.
 
 | 계획 route | 의미 |
 |---|---|
@@ -1423,7 +1440,10 @@ provider app key/secret과 계좌 allowlist는 서버 배포 운영자만 주입
     "side": "BUY",
     "orderType": "MARKET",
     "quantity": 10,
-    "estimatedPrice": 72000
+    "estimatedPrice": 72000,
+    "estimatedAmount": 720000,
+    "timeframe": "1d",
+    "strategyId": "strategy_lstm_lgbm_001"
   },
   "userAcknowledgement": {
     "warningsAccepted": true
@@ -2620,7 +2640,7 @@ Dashboard는 원천 계산을 다시 정의하는 계층이 아니라, API와 ar
 
 ### 17.4 문서-구현 동기화 규칙
 
-1. `contracts/openapi/api.openapi.yaml`을 단일 진실원천으로 둔다.
+1. `contracts/openapi/openapi.json`을 단일 진실원천으로 둔다.
 2. Spring 구현에서 springdoc으로 OpenAPI를 자동 생성하고, CI에서 계약 파일과의 diff를 검사한다. diff가 있으면 빌드를 실패시킨다.
 3. 이 문서의 예시 payload는 `contracts/examples/`의 파일을 기준으로 하며, 예시 변경은 schema validation 테스트를 통과해야 한다.
 4. 계약 변경은 `contracts/changes/`에 기록 후 반영한다. 이 규칙은 문서-코드 불일치(예시 mode 모순 등)의 재발을 구조적으로 방지한다.

@@ -22,16 +22,20 @@
     },
     "quantity": {
       "type": "integer",
-      "minimum": 1
+      "minimum": 1,
+      "maximum": 9223372036854775807
     },
     "estimatedPrice": {
-      "type": "number",
-      "minimum": 0,
-      "description": "P0 결정: 주문 평가 payload의 canonical 가격 필드다."
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9223372036854775807,
+      "description": "현물 v1 MARKET/LIMIT 주문 평가 payload의 유일한 canonical 원화 가격 필드다."
     },
     "estimatedAmount": {
       "type": "integer",
-      "minimum": 0
+      "minimum": 1,
+      "maximum": 9223372036854775807,
+      "description": "quantity * estimatedPrice의 overflow 없는 exact 원화 정수 결과여야 한다."
     },
     "timeframe": {
       "type": "string",

@@ -189,10 +189,12 @@ CREATE TABLE market_quote_observations (
   price_krw bigint NOT NULL CHECK (price_krw > 0),
   bid_krw bigint CHECK (bid_krw > 0),
   ask_krw bigint CHECK (ask_krw > 0),
+  completeness text NOT NULL CHECK (completeness IN ('COMPLETE', 'PARTIAL')),
   observed_at timestamptz NOT NULL,
   received_at timestamptz NOT NULL,
   schema_version text NOT NULL CHECK (char_length(schema_version) BETWEEN 1 AND 128),
   source_version text NOT NULL CHECK (char_length(source_version) BETWEEN 1 AND 128),
+  payload_json jsonb NOT NULL,
   source_ref text NOT NULL CHECK (source_ref ~ '^[0-9a-f]{64}$'),
   artifact_hash text NOT NULL CHECK (artifact_hash ~ '^[0-9a-f]{64}$'),
   created_at timestamptz NOT NULL DEFAULT now(),
@@ -200,11 +202,58 @@ CREATE TABLE market_quote_observations (
   CONSTRAINT market_quote_spread_check CHECK (
     bid_krw IS NULL OR ask_krw IS NULL OR bid_krw <= ask_krw
   ),
+  CONSTRAINT market_quote_completeness_check CHECK (
+    completeness = 'PARTIAL' OR (bid_krw IS NOT NULL AND ask_krw IS NOT NULL)
+  ),
+  CONSTRAINT market_quote_payload_check CHECK (
+    jsonb_typeof(payload_json) = 'object'
+    AND octet_length(payload_json::text) BETWEEN 2 AND 65536
+  ),
   CONSTRAINT market_quote_identity_unique
     UNIQUE (symbol, source, observed_at, artifact_hash)
 );
 CREATE INDEX market_quote_latest_idx
   ON market_quote_observations (symbol, observed_at DESC, received_at DESC, observation_id);
+
+CREATE TABLE instrument_catalog_observations (
+  observation_id text PRIMARY KEY,
+  symbol text NOT NULL CHECK (symbol ~ '^[0-9A-Z._:-]{1,20}$'),
+  is_etf_etn boolean NOT NULL,
+  is_gold_etf_etn boolean NOT NULL,
+  product_risk_score numeric(9,8),
+  catalog_version text NOT NULL CHECK (char_length(catalog_version) BETWEEN 1 AND 128),
+  observed_at timestamptz NOT NULL,
+  received_at timestamptz NOT NULL,
+  completeness text NOT NULL CHECK (completeness IN ('COMPLETE', 'PARTIAL')),
+  schema_version text NOT NULL CHECK (char_length(schema_version) BETWEEN 1 AND 128),
+  source_version text NOT NULL CHECK (char_length(source_version) BETWEEN 1 AND 128),
+  payload_json jsonb NOT NULL,
+  source_ref text NOT NULL CHECK (source_ref ~ '^[0-9a-f]{64}$'),
+  artifact_hash text NOT NULL CHECK (artifact_hash ~ '^[0-9a-f]{64}$'),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT instrument_catalog_time_check CHECK (received_at >= observed_at),
+  CONSTRAINT instrument_catalog_classification_check CHECK (
+    NOT is_gold_etf_etn OR is_etf_etn
+  ),
+  CONSTRAINT instrument_catalog_risk_check CHECK (
+    product_risk_score IS NULL
+    OR (product_risk_score >= 0 AND product_risk_score <= 1)
+  ),
+  CONSTRAINT instrument_catalog_payload_check CHECK (
+    jsonb_typeof(payload_json) = 'object'
+    AND octet_length(payload_json::text) BETWEEN 2 AND 65536
+  ),
+  CONSTRAINT instrument_catalog_identity_unique
+    UNIQUE (symbol, catalog_version, artifact_hash)
+);
+CREATE INDEX instrument_catalog_latest_idx
+  ON instrument_catalog_observations (
+    symbol,
+    observed_at DESC,
+    received_at DESC,
+    catalog_version DESC,
+    observation_id
+  );
 
 CREATE TABLE portfolio_balance_observations (
   observation_id text PRIMARY KEY,
@@ -221,10 +270,15 @@ CREATE TABLE portfolio_balance_observations (
   received_at timestamptz NOT NULL,
   schema_version text NOT NULL CHECK (char_length(schema_version) BETWEEN 1 AND 128),
   source_version text NOT NULL CHECK (char_length(source_version) BETWEEN 1 AND 128),
+  payload_json jsonb NOT NULL,
   source_ref text NOT NULL CHECK (source_ref ~ '^[0-9a-f]{64}$'),
   artifact_hash text NOT NULL CHECK (artifact_hash ~ '^[0-9a-f]{64}$'),
   created_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT portfolio_balance_time_check CHECK (received_at >= observed_at),
+  CONSTRAINT portfolio_balance_payload_check CHECK (
+    jsonb_typeof(payload_json) = 'object'
+    AND octet_length(payload_json::text) BETWEEN 2 AND 262144
+  ),
   CONSTRAINT portfolio_balance_identity_unique
     UNIQUE (owner_user_id, account_scope_hash, source, observed_at, artifact_hash)
 );
@@ -244,9 +298,138 @@ CREATE TABLE portfolio_position_observations (
   symbol text NOT NULL CHECK (symbol ~ '^[0-9A-Z._:-]{1,20}$'),
   quantity bigint NOT NULL CHECK (quantity >= 0),
   market_value_krw bigint NOT NULL CHECK (market_value_krw >= 0),
-  is_gold_etf_etn boolean NOT NULL DEFAULT false,
+  is_gold_etf_etn boolean NOT NULL,
   PRIMARY KEY (balance_observation_id, symbol)
 );
+
+CREATE TABLE deterministic_risk_observations (
+  observation_id text PRIMARY KEY,
+  owner_user_id text NOT NULL REFERENCES users(user_id) ON DELETE RESTRICT,
+  owner_scope_hash text NOT NULL CHECK (owner_scope_hash ~ '^[0-9a-f]{64}$'),
+  portfolio_source text NOT NULL CHECK (portfolio_source IN ('KIS_MOCK', 'INTERNAL_PAPER')),
+  daily_loss_rate numeric(19,18),
+  max_drawdown numeric(19,18),
+  annualized_volatility numeric(19,18),
+  completeness text NOT NULL CHECK (completeness IN ('COMPLETE', 'PARTIAL')),
+  observed_at timestamptz NOT NULL,
+  received_at timestamptz NOT NULL,
+  schema_version text NOT NULL CHECK (char_length(schema_version) BETWEEN 1 AND 128),
+  source_version text NOT NULL CHECK (char_length(source_version) BETWEEN 1 AND 128),
+  payload_json jsonb NOT NULL,
+  source_ref text NOT NULL CHECK (source_ref ~ '^[0-9a-f]{64}$'),
+  artifact_hash text NOT NULL CHECK (artifact_hash ~ '^[0-9a-f]{64}$'),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT deterministic_risk_time_check CHECK (received_at >= observed_at),
+  CONSTRAINT deterministic_risk_values_check CHECK (
+    (daily_loss_rate IS NULL OR daily_loss_rate BETWEEN -1 AND 0)
+    AND (max_drawdown IS NULL OR max_drawdown BETWEEN -1 AND 0)
+    AND (annualized_volatility IS NULL OR annualized_volatility >= 0)
+    AND (
+      completeness = 'PARTIAL'
+      OR (
+        daily_loss_rate IS NOT NULL
+        AND max_drawdown IS NOT NULL
+        AND annualized_volatility IS NOT NULL
+      )
+    )
+  ),
+  CONSTRAINT deterministic_risk_payload_check CHECK (
+    jsonb_typeof(payload_json) = 'object'
+    AND octet_length(payload_json::text) BETWEEN 2 AND 262144
+  ),
+  CONSTRAINT deterministic_risk_identity_unique
+    UNIQUE (owner_user_id, owner_scope_hash, portfolio_source, observed_at, artifact_hash)
+);
+CREATE INDEX deterministic_risk_latest_idx
+  ON deterministic_risk_observations (
+    owner_user_id,
+    owner_scope_hash,
+    portfolio_source,
+    observed_at DESC,
+    received_at DESC,
+    observation_id
+  );
+
+CREATE TABLE daily_order_count_observations (
+  observation_id text PRIMARY KEY,
+  owner_user_id text NOT NULL REFERENCES users(user_id) ON DELETE RESTRICT,
+  owner_scope_hash text NOT NULL CHECK (owner_scope_hash ~ '^[0-9a-f]{64}$'),
+  portfolio_source text NOT NULL CHECK (portfolio_source IN ('KIS_MOCK', 'INTERNAL_PAPER')),
+  trading_date date NOT NULL,
+  order_count integer,
+  covered_through timestamptz NOT NULL,
+  completeness text NOT NULL CHECK (completeness IN ('COMPLETE', 'PARTIAL')),
+  observed_at timestamptz NOT NULL,
+  received_at timestamptz NOT NULL,
+  schema_version text NOT NULL CHECK (char_length(schema_version) BETWEEN 1 AND 128),
+  source_version text NOT NULL CHECK (char_length(source_version) BETWEEN 1 AND 128),
+  payload_json jsonb NOT NULL,
+  source_ref text NOT NULL CHECK (source_ref ~ '^[0-9a-f]{64}$'),
+  artifact_hash text NOT NULL CHECK (artifact_hash ~ '^[0-9a-f]{64}$'),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT daily_order_count_time_check CHECK (
+    received_at >= observed_at
+    AND covered_through <= observed_at
+  ),
+  CONSTRAINT daily_order_count_value_check CHECK (
+    (order_count IS NULL OR order_count BETWEEN 0 AND 1000000)
+    AND (completeness = 'PARTIAL' OR order_count IS NOT NULL)
+  ),
+  CONSTRAINT daily_order_count_payload_check CHECK (
+    jsonb_typeof(payload_json) = 'object'
+    AND octet_length(payload_json::text) BETWEEN 2 AND 262144
+  ),
+  CONSTRAINT daily_order_count_identity_unique
+    UNIQUE (
+      owner_user_id,
+      owner_scope_hash,
+      portfolio_source,
+      trading_date,
+      covered_through,
+      artifact_hash
+    )
+);
+CREATE INDEX daily_order_count_latest_idx
+  ON daily_order_count_observations (
+    owner_user_id,
+    owner_scope_hash,
+    portfolio_source,
+    trading_date,
+    covered_through DESC,
+    received_at DESC,
+    observation_id
+  );
+
+CREATE TABLE corporation_registry_observations (
+  observation_id text PRIMARY KEY,
+  symbol text NOT NULL CHECK (symbol ~ '^[0-9]{6}$'),
+  corp_code text NOT NULL CHECK (corp_code ~ '^[0-9]{8}$'),
+  registry_status text NOT NULL CHECK (registry_status IN ('ACTIVE', 'INACTIVE')),
+  completeness text NOT NULL CHECK (completeness IN ('COMPLETE', 'PARTIAL')),
+  observed_at timestamptz NOT NULL,
+  received_at timestamptz NOT NULL,
+  schema_version text NOT NULL CHECK (char_length(schema_version) BETWEEN 1 AND 128),
+  source_version text NOT NULL CHECK (char_length(source_version) BETWEEN 1 AND 128),
+  payload_json jsonb NOT NULL,
+  source_ref text NOT NULL CHECK (source_ref ~ '^[0-9a-f]{64}$'),
+  artifact_hash text NOT NULL CHECK (artifact_hash ~ '^[0-9a-f]{64}$'),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT corporation_registry_time_check CHECK (received_at >= observed_at),
+  CONSTRAINT corporation_registry_payload_check CHECK (
+    jsonb_typeof(payload_json) = 'object'
+    AND octet_length(payload_json::text) BETWEEN 2 AND 65536
+  ),
+  CONSTRAINT corporation_registry_identity_unique
+    UNIQUE (symbol, corp_code, observed_at, artifact_hash)
+);
+CREATE INDEX corporation_registry_current_idx
+  ON corporation_registry_observations (
+    symbol,
+    corp_code,
+    observed_at DESC,
+    received_at DESC,
+    observation_id
+  );
 
 CREATE VIEW latest_market_quote_observations
 WITH (security_barrier = true)
@@ -258,6 +441,7 @@ SELECT DISTINCT ON (symbol)
   price_krw,
   bid_krw,
   ask_krw,
+  completeness,
   observed_at,
   received_at,
   schema_version,
@@ -267,10 +451,47 @@ SELECT DISTINCT ON (symbol)
 FROM market_quote_observations
 ORDER BY symbol, observed_at DESC, received_at DESC, observation_id;
 
+CREATE VIEW latest_instrument_catalog_observations
+WITH (security_barrier = true)
+AS
+SELECT DISTINCT ON (symbol)
+  observation_id,
+  symbol,
+  is_etf_etn,
+  is_gold_etf_etn,
+  product_risk_score,
+  catalog_version,
+  observed_at,
+  received_at,
+  completeness,
+  schema_version,
+  source_version,
+  source_ref,
+  artifact_hash
+FROM instrument_catalog_observations
+ORDER BY
+  symbol,
+  observed_at DESC,
+  received_at DESC,
+  catalog_version DESC,
+  observation_id;
+
 CREATE VIEW latest_portfolio_balance_observations
 WITH (security_barrier = true)
 AS
-SELECT DISTINCT ON (balance.owner_user_id, balance.account_scope_hash)
+WITH latest_balance AS (
+  SELECT DISTINCT ON (candidate.owner_user_id, candidate.account_scope_hash)
+    candidate.*
+  FROM portfolio_balance_observations candidate
+  WHERE candidate.owner_user_id = current_setting('app.actor_user_id', true)
+  ORDER BY
+    candidate.owner_user_id,
+    candidate.account_scope_hash,
+    candidate.observed_at DESC,
+    candidate.received_at DESC,
+    candidate.observation_id
+)
+SELECT
   balance.observation_id,
   balance.owner_user_id,
   balance.account_scope_hash,
@@ -302,16 +523,99 @@ SELECT DISTINCT ON (balance.owner_user_id, balance.account_scope_hash)
     ),
     '[]'::jsonb
   ) AS positions_json
-FROM portfolio_balance_observations balance
-WHERE
-  balance.context_status = 'ACTIVE'
-  AND balance.owner_user_id = current_setting('app.actor_user_id', true)
+FROM latest_balance balance
+WHERE balance.context_status = 'ACTIVE';
+
+CREATE VIEW latest_deterministic_risk_observations
+WITH (security_barrier = true)
+AS
+SELECT DISTINCT ON (risk.owner_user_id, risk.owner_scope_hash, risk.portfolio_source)
+  risk.observation_id,
+  risk.owner_user_id,
+  risk.owner_scope_hash,
+  risk.portfolio_source,
+  risk.daily_loss_rate,
+  risk.max_drawdown,
+  risk.annualized_volatility,
+  risk.completeness,
+  risk.observed_at,
+  risk.received_at,
+  risk.schema_version,
+  risk.source_version,
+  risk.source_ref,
+  risk.artifact_hash
+FROM deterministic_risk_observations risk
+WHERE risk.owner_user_id = current_setting('app.actor_user_id', true)
 ORDER BY
-  balance.owner_user_id,
-  balance.account_scope_hash,
-  balance.observed_at DESC,
-  balance.received_at DESC,
-  balance.observation_id;
+  risk.owner_user_id,
+  risk.owner_scope_hash,
+  risk.portfolio_source,
+  risk.observed_at DESC,
+  risk.received_at DESC,
+  risk.observation_id;
+
+CREATE VIEW latest_daily_order_count_observations
+WITH (security_barrier = true)
+AS
+SELECT DISTINCT ON (
+  orders.owner_user_id,
+  orders.owner_scope_hash,
+  orders.portfolio_source,
+  orders.trading_date
+)
+  orders.observation_id,
+  orders.owner_user_id,
+  orders.owner_scope_hash,
+  orders.portfolio_source,
+  orders.trading_date,
+  orders.order_count,
+  orders.covered_through,
+  orders.completeness,
+  orders.observed_at,
+  orders.received_at,
+  orders.schema_version,
+  orders.source_version,
+  orders.source_ref,
+  orders.artifact_hash
+FROM daily_order_count_observations orders
+WHERE orders.owner_user_id = current_setting('app.actor_user_id', true)
+ORDER BY
+  orders.owner_user_id,
+  orders.owner_scope_hash,
+  orders.portfolio_source,
+  orders.trading_date,
+  orders.covered_through DESC,
+  orders.received_at DESC,
+  orders.observation_id;
+
+CREATE VIEW current_corporation_registry_projection
+WITH (security_barrier = true)
+AS
+WITH latest_registry AS (
+  SELECT DISTINCT ON (candidate.symbol, candidate.corp_code)
+    candidate.*
+  FROM corporation_registry_observations candidate
+  ORDER BY
+    candidate.symbol,
+    candidate.corp_code,
+    candidate.observed_at DESC,
+    candidate.received_at DESC,
+    candidate.observation_id
+)
+SELECT
+  registry.observation_id,
+  registry.symbol,
+  registry.corp_code,
+  registry.observed_at,
+  registry.received_at,
+  registry.schema_version,
+  registry.source_version,
+  registry.source_ref,
+  registry.artifact_hash
+FROM latest_registry registry
+WHERE
+  registry.registry_status = 'ACTIVE'
+  AND registry.completeness = 'COMPLETE';
 
 CREATE VIEW active_paper_portfolio_projection
 WITH (security_barrier = true)
@@ -328,7 +632,7 @@ SELECT
     ),
     0
   ) + account.cash_balance AS portfolio_equity_krw,
-  0::bigint AS margin_requirement_krw,
+  NULL::bigint AS margin_requirement_krw,
   GREATEST(
     account.updated_at,
     COALESCE(
@@ -347,11 +651,18 @@ SELECT
           'symbol', position.symbol,
           'quantity', position.quantity,
           'marketValueKrw', position.market_value,
-          'isGoldEtfEtn', false
+          'isGoldEtfEtn',
+            CASE
+              WHEN instrument.completeness = 'COMPLETE'
+              THEN instrument.is_gold_etf_etn
+              ELSE NULL
+            END
         )
         ORDER BY position.symbol
       )
       FROM paper_positions position
+      LEFT JOIN latest_instrument_catalog_observations instrument
+        ON instrument.symbol = position.symbol
       WHERE position.account_id = account.account_id
     ),
     '[]'::jsonb
@@ -464,68 +775,182 @@ WHERE
     'bsnTrfDecsn'
   );
 
-CREATE VIEW decision_owner_projection
-WITH (security_barrier = true)
-AS
-SELECT
-  decisions.decision_id,
-  decisions.evaluation_id,
-  decisions.user_id AS owner_user_id,
-  decisions.principle_id,
-  decisions.principle_version_id,
-  decisions.principle_version,
-  decisions.portfolio_source,
-  decisions.mode,
-  decisions.outcome,
-  decisions.can_submit_order,
-  decisions.enforcement_action,
-  decisions.created_at,
-  decisions.evaluation_as_of,
-  decisions.valid_until,
-  decisions.result_schema_version,
-  decisions.snapshot_schema_version,
-  decisions.catalog_version,
-  decisions.readiness_policy_version,
-  decisions.mapping_versions_json,
-  decisions.semantic_input_hash,
-  decisions.snapshot_artifact_hash,
-  decisions.result_json,
-  artifact.result_canonical_json
-FROM decisions
-JOIN decision_artifacts artifact ON artifact.decision_id = decisions.decision_id
-WHERE user_id = current_setting('app.actor_user_id', true);
-
-CREATE VIEW decision_audit_projection
-WITH (security_barrier = true)
-AS
-SELECT
-  audit.audit_log_id,
-  audit.target_id AS decision_id,
-  audit.action,
-  audit.request_id,
-  audit.created_at,
-  jsonb_build_object(
-    'evaluationId', audit.payload_json -> 'evaluationId',
-    'decisionId', audit.payload_json -> 'decisionId',
-    'outcome', audit.payload_json -> 'outcome',
-    'principleVersionId', audit.payload_json -> 'principleVersionId',
-    'semanticInputHash', audit.payload_json -> 'semanticInputHash',
-    'snapshotArtifactHash', audit.payload_json -> 'snapshotArtifactHash'
-  ) AS payload_json
-FROM audit_logs audit
-JOIN decisions decision ON decision.decision_id = audit.target_id
-WHERE
-  audit.action = 'DECISION_EVALUATED'
-  AND audit.target_type = 'DECISION'
-  AND decision.user_id = current_setting('app.actor_user_id', true);
-
 ALTER TABLE decisions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE decisions FORCE ROW LEVEL SECURITY;
+CREATE POLICY decisions_owner_select_policy
+  ON decisions
+  FOR SELECT
+  USING (user_id = current_setting('app.actor_user_id', true));
 CREATE POLICY decisions_owner_insert_policy
   ON decisions
   FOR INSERT
   TO decision_app
   WITH CHECK (user_id = current_setting('app.actor_user_id', true));
+
+-- security_invoker view가 base SELECT를 application role에 요구하지 않도록 fixed-search-path
+-- bounded definer function에서 FORCE RLS owner predicate를 먼저 적용한다.
+CREATE FUNCTION read_decision_owner_projection()
+RETURNS TABLE (
+  decision_id text,
+  evaluation_id text,
+  owner_user_id text,
+  principle_id text,
+  principle_version_id text,
+  principle_version integer,
+  portfolio_source text,
+  mode text,
+  outcome text,
+  can_submit_order boolean,
+  enforcement_action text,
+  created_at timestamptz,
+  evaluation_as_of timestamptz,
+  valid_until timestamptz,
+  result_schema_version text,
+  snapshot_schema_version text,
+  catalog_version integer,
+  readiness_policy_version text,
+  mapping_versions_json jsonb,
+  semantic_input_hash text,
+  snapshot_artifact_hash text,
+  result_json jsonb,
+  result_canonical_json text
+)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = pg_catalog
+AS $read_decision_owner_projection$
+  SELECT
+    decision.decision_id,
+    decision.evaluation_id,
+    decision.user_id AS owner_user_id,
+    decision.principle_id,
+    decision.principle_version_id,
+    decision.principle_version,
+    decision.portfolio_source,
+    decision.mode,
+    decision.outcome,
+    decision.can_submit_order,
+    decision.enforcement_action,
+    decision.created_at,
+    decision.evaluation_as_of,
+    decision.valid_until,
+    decision.result_schema_version,
+    decision.snapshot_schema_version,
+    decision.catalog_version,
+    decision.readiness_policy_version,
+    decision.mapping_versions_json,
+    decision.semantic_input_hash,
+    decision.snapshot_artifact_hash,
+    decision.result_json,
+    artifact.result_canonical_json
+  FROM public.decisions decision
+  JOIN public.decision_artifacts artifact
+    ON artifact.decision_id = decision.decision_id
+  WHERE decision.user_id = current_setting('app.actor_user_id', true)
+$read_decision_owner_projection$;
+ALTER FUNCTION read_decision_owner_projection() OWNER TO flyway;
+REVOKE ALL ON FUNCTION read_decision_owner_projection() FROM PUBLIC;
+
+CREATE FUNCTION read_decision_audit_projection()
+RETURNS TABLE (
+  audit_log_id text,
+  decision_id text,
+  action text,
+  request_id text,
+  created_at timestamptz,
+  payload_json jsonb
+)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = pg_catalog
+AS $read_decision_audit_projection$
+  SELECT
+    audit.audit_log_id,
+    audit.target_id AS decision_id,
+    audit.action,
+    audit.request_id,
+    audit.created_at,
+    jsonb_build_object(
+      'evaluationId', audit.payload_json -> 'evaluationId',
+      'decisionId', audit.payload_json -> 'decisionId',
+      'outcome', audit.payload_json -> 'outcome',
+      'principleVersionId', audit.payload_json -> 'principleVersionId',
+      'semanticInputHash', audit.payload_json -> 'semanticInputHash',
+      'snapshotArtifactHash', audit.payload_json -> 'snapshotArtifactHash'
+    ) AS payload_json
+  FROM public.audit_logs audit
+  JOIN public.decisions decision
+    ON decision.decision_id = audit.target_id
+  WHERE
+    audit.action = 'DECISION_EVALUATED'
+    AND audit.target_type = 'DECISION'
+    AND decision.user_id = current_setting('app.actor_user_id', true)
+$read_decision_audit_projection$;
+ALTER FUNCTION read_decision_audit_projection() OWNER TO flyway;
+REVOKE ALL ON FUNCTION read_decision_audit_projection() FROM PUBLIC;
+
+CREATE VIEW decision_owner_projection
+WITH (security_barrier = true, security_invoker = true)
+AS
+SELECT * FROM read_decision_owner_projection();
+
+CREATE VIEW decision_audit_projection
+WITH (security_barrier = true, security_invoker = true)
+AS
+SELECT * FROM read_decision_audit_projection();
+
+CREATE FUNCTION find_decision_idempotency_result(
+  requested_scope_hash text,
+  requested_owner_scope_hash text,
+  requested_at timestamptz
+)
+RETURNS TABLE (
+  generation integer,
+  request_hash text,
+  result_canonical_json text,
+  expires_at timestamptz
+)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = pg_catalog
+AS $find_decision_idempotency_result$
+  SELECT
+    result.generation,
+    result.request_hash,
+    result.result_canonical_json,
+    result.expires_at
+  FROM public.decision_idempotency_results result
+  WHERE
+    result.scope_hash = requested_scope_hash
+    AND result.owner_scope_hash = requested_owner_scope_hash
+    AND result.expires_at > requested_at
+  ORDER BY result.generation DESC
+  LIMIT 1
+$find_decision_idempotency_result$;
+ALTER FUNCTION find_decision_idempotency_result(text, text, timestamptz) OWNER TO flyway;
+REVOKE ALL ON FUNCTION find_decision_idempotency_result(text, text, timestamptz) FROM PUBLIC;
+
+CREATE FUNCTION next_decision_idempotency_generation(
+  requested_scope_hash text,
+  requested_owner_scope_hash text
+)
+RETURNS integer
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = pg_catalog
+AS $next_decision_idempotency_generation$
+  SELECT COALESCE(max(result.generation), 0) + 1
+  FROM public.decision_idempotency_results result
+  WHERE
+    result.scope_hash = requested_scope_hash
+    AND result.owner_scope_hash = requested_owner_scope_hash
+$next_decision_idempotency_generation$;
+ALTER FUNCTION next_decision_idempotency_generation(text, text) OWNER TO flyway;
+REVOKE ALL ON FUNCTION next_decision_idempotency_generation(text, text) FROM PUBLIC;
 
 ALTER TABLE audit_logs
   ADD CONSTRAINT audit_logs_decision_contract_check
@@ -591,19 +1016,40 @@ REVOKE ALL PRIVILEGES ON TABLE
   audit_logs,
   event_outbox,
   market_quote_observations,
+  instrument_catalog_observations,
   portfolio_balance_observations,
   portfolio_position_observations,
+  deterministic_risk_observations,
+  daily_order_count_observations,
+  corporation_registry_observations,
   decision_owner_projection,
   decision_audit_projection,
   latest_market_quote_observations,
+  latest_instrument_catalog_observations,
   latest_portfolio_balance_observations,
+  latest_deterministic_risk_observations,
+  latest_daily_order_count_observations,
+  current_corporation_registry_projection,
   active_paper_portfolio_projection,
   disclosure_event_observation_projection,
   disclosure_collection_status_projection
 FROM PUBLIC;
 
+-- V5의 historical default SELECT를 현재와 미래 object 모두에서 회수한다.
+ALTER DEFAULT PRIVILEGES FOR ROLE flyway IN SCHEMA public
+  REVOKE SELECT ON TABLES FROM decision_app;
+
 DO $v9_runtime_grants$
 BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'flyway') THEN
+    GRANT SELECT ON TABLE
+      decisions,
+      decision_artifacts,
+      audit_logs,
+      decision_idempotency_results
+    TO flyway;
+  END IF;
+
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'decision_app') THEN
     -- V5의 과거 broad SELECT와 bootstrap 재실행 흔적을 먼저 제거하고 누적 allowlist를 복원한다.
     REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_app;
@@ -616,12 +1062,20 @@ BEGIN
       audit_logs,
       event_outbox,
       market_quote_observations,
+      instrument_catalog_observations,
       portfolio_balance_observations,
       portfolio_position_observations,
+      deterministic_risk_observations,
+      daily_order_count_observations,
+      corporation_registry_observations,
       decision_owner_projection,
       decision_audit_projection,
       latest_market_quote_observations,
+      latest_instrument_catalog_observations,
       latest_portfolio_balance_observations,
+      latest_deterministic_risk_observations,
+      latest_daily_order_count_observations,
+      current_corporation_registry_projection,
       active_paper_portfolio_projection,
       disclosure_event_observation_projection,
       disclosure_collection_status_projection
@@ -650,19 +1104,63 @@ BEGIN
     GRANT UPDATE (title, mode, status, current_version, updated_at)
       ON TABLE principles TO decision_app;
     GRANT SELECT ON TABLE
-      decision_idempotency_results,
       decision_owner_projection,
       decision_audit_projection,
       latest_market_quote_observations,
+      latest_instrument_catalog_observations,
       latest_portfolio_balance_observations,
+      latest_deterministic_risk_observations,
+      latest_daily_order_count_observations,
+      current_corporation_registry_projection,
       active_paper_portfolio_projection,
       disclosure_event_observation_projection,
       disclosure_collection_status_projection
+    TO decision_app;
+    GRANT EXECUTE ON FUNCTION
+      read_decision_owner_projection(),
+      read_decision_audit_projection(),
+      find_decision_idempotency_result(text, text, timestamptz),
+      next_decision_idempotency_generation(text, text)
     TO decision_app;
 
     REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_app;
     REVOKE CREATE ON SCHEMA public FROM decision_app;
     REVOKE ALL PRIVILEGES ON TABLE flyway_schema_history FROM decision_app;
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'decision_market_writer') THEN
+    REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_market_writer;
+    REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_market_writer;
+    GRANT INSERT ON TABLE
+      market_quote_observations,
+      instrument_catalog_observations
+    TO decision_market_writer;
+    REVOKE CREATE ON SCHEMA public FROM decision_market_writer;
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'decision_portfolio_writer') THEN
+    REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_portfolio_writer;
+    REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_portfolio_writer;
+    GRANT INSERT ON TABLE
+      portfolio_balance_observations,
+      portfolio_position_observations
+    TO decision_portfolio_writer;
+    REVOKE CREATE ON SCHEMA public FROM decision_portfolio_writer;
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'decision_risk_writer') THEN
+    REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_risk_writer;
+    REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_risk_writer;
+    GRANT INSERT ON TABLE
+      deterministic_risk_observations,
+      daily_order_count_observations
+    TO decision_risk_writer;
+    REVOKE CREATE ON SCHEMA public FROM decision_risk_writer;
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'decision_collector') THEN
+    REVOKE ALL PRIVILEGES ON TABLE corporation_registry_observations FROM decision_collector;
+    GRANT INSERT ON TABLE corporation_registry_observations TO decision_collector;
   END IF;
 END
 $v9_runtime_grants$;

@@ -20,7 +20,7 @@ enum class DecisionMetricOutcome {
 enum class DecisionMetricMode {
     GUIDE,
     STRICT,
-    UNKNOWN,
+    UNPINNED,
 }
 
 /**
@@ -35,51 +35,55 @@ class DecisionObservability(
         mode: DecisionMetricMode,
         duration: Duration,
     ) {
-        Timer
-            .builder(EVALUATE_TIMER)
-            .tags(
-                "outcome",
-                outcome.name,
-                "mode",
-                mode.name,
-            ).register(meterRegistry)
-            .record(duration)
+        runCatching {
+            Timer
+                .builder(EVALUATE_TIMER)
+                .tags(
+                    "outcome",
+                    outcome.name,
+                    "mode",
+                    mode.name,
+                ).register(meterRegistry)
+                .record(duration)
+        }
     }
 
     fun recordPersisted(
         projection: DecisionProjection,
         requestId: String,
     ) {
-        val reason =
-            projection.riskDecision.issues
-                .map { it.code }
-                .sorted()
-                .firstOrNull()
-        if (projection.riskDecision.decision == DecisionMetricOutcome.HOLD.name) {
-            require(reason in FAIL_CLOSED_REASONS) {
-                "Persisted HOLD must expose an allowlisted public issue code."
+        runCatching {
+            // issues는 evaluator가 canonical order로 확정했으므로 code 문자열을 다시 정렬하지 않는다.
+            val reason =
+                projection.riskDecision.issues
+                    .firstOrNull()
+                    ?.code
+            if (projection.riskDecision.decision == DecisionMetricOutcome.HOLD.name) {
+                require(reason in FAIL_CLOSED_REASONS) {
+                    "Persisted HOLD must expose an allowlisted public issue code."
+                }
+                Counter
+                    .builder(FAIL_CLOSED_COUNTER)
+                    .tag("reason", requireNotNull(reason))
+                    .register(meterRegistry)
+                    .increment()
             }
-            Counter
-                .builder(FAIL_CLOSED_COUNTER)
-                .tag("reason", requireNotNull(reason))
-                .register(meterRegistry)
-                .increment()
+            log
+                .atInfo()
+                .addKeyValue("requestId", requestId)
+                .addKeyValue("evaluationId", projection.riskDecision.evaluationId)
+                .addKeyValue("decisionId", projection.decisionId)
+                .addKeyValue("trace_id", MDC.get(TRACE_ID_MDC_KEY) ?: TRACE_UNAVAILABLE)
+                .addKeyValue("span_id", MDC.get(SPAN_ID_MDC_KEY) ?: TRACE_UNAVAILABLE)
+                .addKeyValue("outcome", projection.riskDecision.decision)
+                .addKeyValue("publicReason", reason ?: NO_PUBLIC_REASON)
+                .addKeyValue("mode", projection.mode)
+                .addKeyValue("principleVersion", projection.principleVersion)
+                .addKeyValue("catalogVersion", projection.riskDecision.catalogVersion)
+                .addKeyValue("semanticInputHash", projection.riskDecision.semanticInputHash)
+                .addKeyValue("snapshotArtifactHash", projection.riskDecision.snapshotArtifactHash)
+                .log("decision.evaluated")
         }
-        log
-            .atInfo()
-            .addKeyValue("requestId", requestId)
-            .addKeyValue("evaluationId", projection.riskDecision.evaluationId)
-            .addKeyValue("decisionId", projection.decisionId)
-            .addKeyValue("trace_id", MDC.get(TRACE_ID_MDC_KEY) ?: TRACE_UNAVAILABLE)
-            .addKeyValue("span_id", MDC.get(SPAN_ID_MDC_KEY) ?: TRACE_UNAVAILABLE)
-            .addKeyValue("outcome", projection.riskDecision.decision)
-            .addKeyValue("publicReason", reason ?: NO_PUBLIC_REASON)
-            .addKeyValue("mode", projection.mode)
-            .addKeyValue("principleVersion", projection.principleVersion)
-            .addKeyValue("catalogVersion", projection.riskDecision.catalogVersion)
-            .addKeyValue("semanticInputHash", projection.riskDecision.semanticInputHash)
-            .addKeyValue("snapshotArtifactHash", projection.riskDecision.snapshotArtifactHash)
-            .log("decision.evaluated")
     }
 
     companion object {

@@ -35,19 +35,24 @@ class DecisionService(
         command: EvaluateOrderCommand,
     ): DecisionProjection {
         val startedAtNanos = System.nanoTime()
-        var metricMode = DecisionMetricMode.UNKNOWN
+        var metricMode = DecisionMetricMode.UNPINNED
         val evaluationAsOf = clock.instant()
         val identity = idempotencyHasher.identity(actor.userId, rawIdempotencyKey, command)
         try {
-            persistencePort.findIdempotencyResult(identity.scopeHash, evaluationAsOf)?.let { stored ->
-                if (stored.requestHash != identity.requestHash) {
-                    throw DecisionIdempotencyConflictException()
+            persistencePort
+                .findIdempotencyResult(
+                    identity.scopeHash,
+                    identity.ownerScopeHash,
+                    evaluationAsOf,
+                )?.let { stored ->
+                    if (stored.requestHash != identity.requestHash) {
+                        throw DecisionIdempotencyConflictException()
+                    }
+                    return recordTimed(
+                        projectionFactory.fromCanonicalJson(stored.projectionCanonicalJson),
+                        startedAtNanos,
+                    )
                 }
-                return recordTimed(
-                    projectionFactory.fromCanonicalJson(stored.projectionCanonicalJson),
-                    startedAtNanos,
-                )
-            }
             val pinned =
                 principleSnapshotPort.findActiveOwned(actor.userId, command.principleId)
                     ?: throw DecisionNotFoundException()

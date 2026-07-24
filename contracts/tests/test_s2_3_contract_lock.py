@@ -201,6 +201,7 @@ class S23MarkdownContractDriftTest(unittest.TestCase):
             text = (REPO_ROOT / relative).read_text(encoding="utf-8")
             with self.subTest(path=relative.as_posix()):
                 self.assertIn("market_quote_observations", text)
+                self.assertIn("instrument_catalog_observations", text)
                 self.assertIn("portfolio_balance_observations", text)
                 self.assertIn("portfolio_position_observations", text)
                 self.assertRegex(text, r"(provider HTTP|provider를 직접 호출하지)")
@@ -377,6 +378,7 @@ class S23GeneratedContractTest(unittest.TestCase):
                 "corporation_registry_observations",
                 "daily_order_count_observations",
                 "deterministic_risk_observations",
+                "instrument_catalog_observations",
                 "market_quote_observations",
                 "portfolio_balance_observations",
                 "portfolio_position_observations",
@@ -385,6 +387,57 @@ class S23GeneratedContractTest(unittest.TestCase):
         )
         self.assertFalse(ownership["productionSeed"])
         self.assertFalse(ownership["providerHttpFallback"])
+
+    def test_approved_s11_instrument_catalog_source_is_exactly_locked(self) -> None:
+        ownership = self.catalog["sourceOwnership"]
+        self.assertEqual("S1.1", ownership["instrumentProducer"])
+        self.assertEqual(
+            "instrument_catalog_observations",
+            ownership["instrumentTable"],
+        )
+        self.assertEqual(
+            "latest_instrument_catalog_observations",
+            ownership["instrumentProjection"],
+        )
+        self.assertEqual("decision_market_writer", ownership["instrumentWriterRole"])
+        self.assertEqual(1, ownership["instrumentReaderMaxRows"])
+        self.assertEqual(
+            [
+                "symbol",
+                "isEtfEtn",
+                "isGoldEtfEtn",
+                "productRiskScore",
+                "catalogVersion",
+                "observedAt",
+                "receivedAt",
+                "sourceRef",
+                "artifactHash",
+            ],
+            ownership["instrumentFields"],
+        )
+        self.assertTrue(ownership["instrumentProductRiskScoreNullable"])
+        self.assertEqual(
+            "LATEST_OBSERVED_VERSION_NO_FALLBACK",
+            ownership["instrumentVersionPolicy"],
+        )
+        self.assertEqual(
+            "FUTURE_TIMESTAMP_IS_STALE",
+            ownership["instrumentTimePolicy"],
+        )
+        instrument_contract = next(
+            row
+            for row in ownership["observationContracts"]
+            if row["table"] == "instrument_catalog_observations"
+        )
+        self.assertEqual(
+            {
+                "producerOwner": "S1.1",
+                "projection": "latest_instrument_catalog_observations",
+                "table": "instrument_catalog_observations",
+                "writerRole": "decision_market_writer",
+            },
+            instrument_contract,
+        )
 
     def test_database_and_observability_security_amendments_are_locked(self) -> None:
         database = self.catalog["databaseSecurity"]

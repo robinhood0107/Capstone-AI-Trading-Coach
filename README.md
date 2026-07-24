@@ -12,13 +12,12 @@ Contracts CI, Kotlin Build, Python CI, S1.4X contract correctness를 수행한�
 
 ## 현재 구현 상태
 
-STAGE 2에서 S1.6 Market Calendar/Event Aggregator offline 구현과 S2.1 Principle CRUD까지
-`main`에 병합됐다. 현재 S2.2 구현은 14개 rule의 deterministic offline evaluator,
-portfolio source 선택 정책, bounded snapshot/hash 계약, owner-scoped ACTIVE Principle read
-adapter를 포함한다. Decision controller·route·persistence와 외부 market/model/balance adapter,
-provider online 활성화는 포함하지 않는다. S2.3은 현물 `estimatedPrice` 단일 field/hash V2와
-저장 현재가·KIS_MOCK 잔고 read-model 계약을 먼저 고정하며, provider producer가 없는 환경은
-가짜 값 없이 persisted HOLD로 동작하게 구현한다.
+STAGE 2에서 S1.6 Market Calendar/Event Aggregator offline 구현, S2.1 Principle CRUD와 S2.2
+offline evaluator까지 `main`에 병합됐다. 이 S2.3 변경은 14개 rule core 위에 owner-scoped
+Decision controller·route, V9 원자 persistence/audit/outbox/idempotency, stored-observation
+gRPC와 저장 source reader를 연결한다. 외부 provider producer와 주문 실행은 포함하지 않는다.
+현물 `estimatedPrice` 단일 field/hash V2를 사용하며 저장 현재가·KIS_MOCK 잔고 producer가 없는
+환경은 가짜 값 없이 persisted HOLD로 동작한다.
 
 - PR #16 merge commit: `6f439155d9f5ec626fc185f29f2e0bd64ca54780`
 - PR #17 merge commit 및 S1.3/S1.3K 기능 완료 기준점: `814aab377251d76672566d39c3edb379d132248e`
@@ -48,9 +47,10 @@ provider online 활성화는 포함하지 않는다. S2.3은 현물 `estimatedPr
 현재 레포는 STAGE 2이며 Decision Platform의 S0 walking skeleton, S1.1 KIS 시장데이터,
 S1.2c OpenDART 분석 데이터, S1.3 ECOS/Naver snapshot, S1.3K KRX universe 자동화,
 S1.4 금융공학, S1.5 품질 보고, S1.6 내부 offline calendar/event aggregator, S2.1 Principle
-CRUD와 S2.2 offline rule evaluator까지 구현되어 있다. S2.2의 Decision API runtime과 provider
-adapter는 아직 제공하지 않는다. S2.3은 저장 observation consumer만 소유하며 S1.1/S3의
-provider/ledger producer를 대신 구현하거나 호출하지 않는다. 상세 개인 참고 노트는 GitHub에 올리지 않고 로컬
+CRUD와 S2.2 offline rule evaluator까지 구현되어 있다. 이 S2.3 변경은 Decision API runtime과
+저장 observation consumer를 추가하지만 S1.1/S3의 provider/ledger producer를 대신 구현하거나
+호출하지 않는다. source가 없거나 stale하면 200 HOLD이며 provider adapter와 주문 실행은 S3
+경계다. 상세 개인 참고 노트는 GitHub에 올리지 않고 로컬
 `private-reference/` 폴더에서만 관리한다.
 
 ```bash

@@ -30,9 +30,11 @@ Decision 평가 요청의 현물 v1 `orderIntent`는 MARKET/LIMIT 모두 `estima
 S2.3은 provider HTTP를 호출하지 않고 저장된 sanitized source만 읽는다. 현재가·호가는 S1.1
 producer의 `market_quote_observations`, KIS_MOCK 잔고는 S3 producer의
 `portfolio_balance_observations`/`portfolio_position_observations`, INTERNAL_PAPER는 기존
-owner-scoped ledger가 권위다. `decision_app`은 SELECT만 가지며 production source seed와
-KIS_MOCK→INTERNAL_PAPER 자동 fallback은 없다. source row가 없거나 stale/incomplete면
-persisted 200 HOLD가 되고, test fixture는 test profile/Testcontainers에만 존재한다.
+owner-scoped ledger가 권위다. `decision_app`은 source projection SELECT와 append-only
+Decision writer에 필요한 exact 권한만 가지며 production source seed와
+KIS_MOCK→INTERNAL_PAPER 자동 fallback은 없다. source row가 없거나 stale/incomplete면 persisted
+200 HOLD가 되고, test fixture는 test profile/Testcontainers에만 존재한다. source producer와
+mock/live 주문 실행은 S3 경계로 남는다.
 
 ## S1.6 offline 구현 경계
 

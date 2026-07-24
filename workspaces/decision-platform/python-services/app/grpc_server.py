@@ -1,22 +1,17 @@
-"""decision-platform Python gRPC health 서버. 인증 RPC 전에는 loopback 밖으로 노출하지 않는다."""
+"""decision-platform stored-observation gRPC 서버. loopback 밖 plaintext는 허용하지 않는다."""
 
 import os
-from concurrent import futures
 from dataclasses import dataclass
 
-import grpc
-from grpc_health.v1 import health, health_pb2_grpc
-from grpc_reflection.v1alpha import reflection
-
-HEALTH_SERVICE_NAME = "grpc.health.v1.Health"
+from app.disclosure_repository import PostgresStoredDisclosureRepository
+from app.disclosure_rpc import create_disclosure_server
 
 
 @dataclass(frozen=True)
 class GrpcServerSettings:
-    """인증 RPC 도입 전 plaintext health는 loopback에만 bind하고 reflection은 명시 opt-in한다."""
+    """plaintext business RPC는 같은 namespace의 loopback에만 bind하고 reflection은 금지한다."""
 
     bind_address: str = "127.0.0.1:50051"
-    enable_reflection: bool = False
 
     def __post_init__(self) -> None:
         if not _is_loopback_address(self.bind_address):
@@ -30,19 +25,16 @@ class GrpcServerSettings:
         raw_reflection = os.environ.get("PYTHON_GRPC_ENABLE_REFLECTION", "false").strip().lower()
         if raw_reflection not in {"true", "false"}:
             raise ValueError("PYTHON_GRPC_ENABLE_REFLECTION must be true or false")
-        return cls(bind_address=address, enable_reflection=raw_reflection == "true")
+        if raw_reflection == "true":
+            raise ValueError("Python gRPC reflection is disabled by the S2.3 contract")
+        return cls(bind_address=address)
 
 
 def serve(settings: GrpcServerSettings | None = None) -> None:
+    """저장 observation reader를 주입해 health와 business RPC를 함께 시작한다."""
     settings = settings or GrpcServerSettings.from_env()
-    server = grpc.server(futures.ThreadPoolExecutor(max_workers=8))
-    health_servicer = health.HealthServicer()
-    health_pb2_grpc.add_HealthServicer_to_server(health_servicer, server)
-    if settings.enable_reflection:
-        reflection.enable_server_reflection((HEALTH_SERVICE_NAME, reflection.SERVICE_NAME), server)
-    bound_port = server.add_insecure_port(settings.bind_address)
-    if bound_port == 0:
-        raise RuntimeError("Python gRPC loopback port could not be bound")
+    repository = PostgresStoredDisclosureRepository.from_env()
+    server = create_disclosure_server(settings, repository)
     server.start()
     server.wait_for_termination()
 

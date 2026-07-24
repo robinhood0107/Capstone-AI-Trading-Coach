@@ -94,6 +94,45 @@ def test_fixture_rejects_unknown_raw_fields_and_gold_misclassification(tmp_path:
         load_instrument_catalog_fixture(invalid)
 
 
+def test_conflicting_preexisting_observation_is_not_accepted_as_an_exact_replay(
+    postgres_cluster: PostgresTestCluster,
+) -> None:
+    observation = load_instrument_catalog_fixture(FIXTURE)[0]
+    with psycopg.connect(postgres_cluster["admin_dsn"], autocommit=True) as connection:
+        connection.execute("DELETE FROM instrument_catalog_observations")
+        connection.execute(
+            """
+            INSERT INTO instrument_catalog_observations (
+              observation_id, symbol, is_etf_etn, is_gold_etf_etn,
+              product_risk_score, catalog_version, observed_at, received_at,
+              completeness, schema_version, source_version, payload_json,
+              source_ref, artifact_hash
+            ) VALUES (
+              %s, %s, true, false, 0.99, %s, %s, %s,
+              'COMPLETE', %s, %s, %s::jsonb, %s, %s
+            )
+            """,
+            (
+                observation.observation_id,
+                observation.symbol,
+                observation.catalog_version,
+                observation.observed_at,
+                observation.received_at,
+                observation.schema_version,
+                observation.source_version,
+                observation.payload_json,
+                observation.source_ref,
+                observation.artifact_hash,
+            ),
+        )
+
+    with pytest.raises(psycopg.errors.UniqueViolation):
+        append_instrument_catalog_fixture(
+            FIXTURE,
+            database_dsn=postgres_cluster["market_writer_dsn"],
+        )
+
+
 def test_writer_has_no_provider_live_order_or_fallback_dependency() -> None:
     from app.data.kis import instrument_catalog_writer
 

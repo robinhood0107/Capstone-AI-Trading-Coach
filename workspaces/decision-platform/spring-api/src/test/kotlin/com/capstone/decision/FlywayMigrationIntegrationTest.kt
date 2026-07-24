@@ -120,6 +120,85 @@ class FlywayMigrationIntegrationTest(
     }
 
     @Test
+    fun `V9 populated precondition failure preserves the complete V8 schema and row`() {
+        val migrationUrl = createDatabase("v9_populated_precondition")
+        flyway(migrationUrl, target = "8").migrate()
+        DriverManager.getConnection(migrationUrl, postgres.username, postgres.password).use { connection ->
+            connection.createStatement().use { statement ->
+                statement.execute(
+                    """
+                    insert into principles (
+                      principle_id, user_id, preset_id, title, mode, status, current_version
+                    ) values (
+                      'prn-v9-guard', 'usr_demo_user', 'balanced',
+                      'V9 guard fixture', 'GUIDE', 'ACTIVE', 1
+                    )
+                    """.trimIndent(),
+                )
+                statement.execute(
+                    """
+                    insert into principle_versions (
+                      principle_version_id, principle_id, version, preset_id, title,
+                      mode, status, rules_json, changed_fields, created_by
+                    )
+                    select
+                      'prv-v9-guard', 'prn-v9-guard', 1, preset_id, 'V9 guard fixture',
+                      'GUIDE', 'ACTIVE', rules_json, array['title'], 'usr_demo_user'
+                    from principle_presets
+                    where preset_id = 'balanced'
+                    """.trimIndent(),
+                )
+                statement.execute(
+                    """
+                    insert into decisions (
+                      decision_id, user_id, account_id, principle_version_id,
+                      symbol, side, decision, mode, reason_json,
+                      signal_snapshot_json, created_at, valid_until
+                    ) values (
+                      'dec-v9-guard', 'usr_demo_user', 'sanitized-account-scope',
+                      'prv-v9-guard', '005930', 'BUY', 'HOLD', 'GUIDE',
+                      '{}'::jsonb, '{}'::jsonb, now(), now() + interval '10 minutes'
+                    )
+                    """.trimIndent(),
+                )
+            }
+        }
+
+        val failure = assertThrows<FlywayException> { flyway(migrationUrl).migrate() }
+        assertTrue(failure.stackTraceToString().contains("S2.3 V9 precondition failed"))
+
+        DriverManager.getConnection(migrationUrl, postgres.username, postgres.password).use { connection ->
+            connection.createStatement().use { statement ->
+                statement.executeQuery("select count(*) from decisions where decision_id = 'dec-v9-guard'").use {
+                    assertTrue(it.next())
+                    assertEquals(1, it.getInt(1))
+                }
+                statement
+                    .executeQuery(
+                        """
+                        select
+                          count(*) filter (where column_name = 'account_id'),
+                          count(*) filter (where column_name = 'evaluation_id')
+                        from information_schema.columns
+                        where table_schema = 'public' and table_name = 'decisions'
+                        """.trimIndent(),
+                    ).use {
+                        assertTrue(it.next())
+                        assertEquals(1, it.getInt(1))
+                        assertEquals(0, it.getInt(2))
+                    }
+                statement
+                    .executeQuery(
+                        "select version from flyway_schema_history where success order by installed_rank desc limit 1",
+                    ).use {
+                        assertTrue(it.next())
+                        assertEquals("8", it.getString(1))
+                    }
+            }
+        }
+    }
+
+    @Test
     fun `V7 seeds exact demo identities with attested separated credential bundles`() {
         val users =
             jdbcTemplate.query(
@@ -987,7 +1066,203 @@ class FlywayMigrationIntegrationTest(
         }
     }
 
+    @Test
+    fun `Decision child rows reject cross wired decision and evaluation identities`() {
+        insertOrderFixture()
+        insertSecondDecisionFixture()
+
+        assertForeignKeyViolation {
+            jdbcTemplate.update(
+                """
+                insert into decision_artifacts (
+                  decision_id, evaluation_id, result_canonical_json,
+                  snapshot_artifact_canonical_json, semantic_input_hash,
+                  snapshot_artifact_hash, created_at
+                ) values (
+                  'dec-flyway', 'eval-flyway-b', '{}', '{}',
+                  repeat('a', 64), repeat('b', 64), now()
+                )
+                """.trimIndent(),
+            )
+        }
+        assertForeignKeyViolation {
+            jdbcTemplate.update(
+                """
+                insert into decision_violations (
+                  violation_id, decision_id, evaluation_id, ordinal, rule_id,
+                  severity, message, created_at
+                ) values (
+                  'vio-cross-wire', 'dec-flyway', 'eval-flyway-b', 1,
+                  'cross-wire-guard', 'INFO', 'sanitized fixture', now()
+                )
+                """.trimIndent(),
+            )
+        }
+        assertForeignKeyViolation {
+            jdbcTemplate.update(
+                """
+                insert into decision_traces (
+                  trace_id, decision_id, evaluation_id, step, trace_type,
+                  trace_json, created_at
+                ) values (
+                  'trc-cross-wire', 'dec-flyway', 'eval-flyway-b', 1,
+                  'ORDER_VALIDATED', '{}'::jsonb, now()
+                )
+                """.trimIndent(),
+            )
+        }
+        assertForeignKeyViolation {
+            jdbcTemplate.update(
+                """
+                with clock as (select now() as created_at)
+                insert into decision_idempotency_results (
+                  idempotency_result_id, scope_hash, generation, request_hash,
+                  owner_scope_hash, purpose_version, decision_id, evaluation_id,
+                  http_status, content_type, result_canonical_json, created_at, expires_at
+                )
+                select
+                  'idr-cross-wire', repeat('1', 64), 1, repeat('2', 64),
+                  repeat('3', 64), 's2.3-idempotency-v1',
+                  'dec-flyway', 'eval-flyway-b', 200, 'application/json',
+                  '{}', created_at, created_at + interval '24 hours'
+                from clock
+                """.trimIndent(),
+            )
+        }
+    }
+
+    @Test
+    fun `Decision audit target must equal its sanitized payload identity`() {
+        insertOrderFixture()
+        insertSecondDecisionFixture()
+
+        assertCheckViolation {
+            jdbcTemplate.update(
+                """
+                insert into audit_logs (
+                  audit_log_id, user_id, actor_role, action, target_type,
+                  target_id, request_id, payload_json, created_at
+                ) values (
+                  'aud-cross-wire', 'usr-flyway', 'USER', 'DECISION_EVALUATED',
+                  'DECISION', 'dec-flyway', 'req-cross-wire',
+                  jsonb_build_object(
+                    'evaluationId', 'eval-flyway-b',
+                    'decisionId', 'dec-flyway-b',
+                    'outcome', 'ALLOW',
+                    'principleVersionId', 'prv-flyway-v1',
+                    'semanticInputHash', repeat('a', 64),
+                    'snapshotArtifactHash', repeat('b', 64)
+                  ),
+                  now()
+                )
+                """.trimIndent(),
+            )
+        }
+    }
+
+    @Test
+    fun `Decision validity constraint rejects an already expired persisted result`() {
+        insertOrderFixture()
+
+        assertCheckViolation {
+            jdbcTemplate.update(
+                "update decisions set valid_until = created_at where decision_id = 'dec-flyway'",
+            )
+        }
+    }
+
+    @Test
+    fun `instrument latest projection resolves equal times by observation id only`() {
+        jdbcTemplate.update(
+            """
+            insert into instrument_catalog_observations (
+              observation_id, symbol, is_etf_etn, is_gold_etf_etn,
+              product_risk_score, catalog_version, observed_at, received_at,
+              completeness, schema_version, source_version, payload_json,
+              source_ref, artifact_hash
+            ) values
+              (
+                'ins-tie-a', 'ZZTIE', false, false, null, 'catalog-a',
+                '2030-01-01T00:00:00Z', '2030-01-01T00:00:01Z',
+                'COMPLETE', 'instrument-catalog-observation.v1', 'fixture-v1',
+                '{}'::jsonb, repeat('1', 64), repeat('2', 64)
+              ),
+              (
+                'ins-tie-b', 'ZZTIE', true, false, 0.25, 'catalog-z',
+                '2030-01-01T00:00:00Z', '2030-01-01T00:00:01Z',
+                'COMPLETE', 'instrument-catalog-observation.v1', 'fixture-v1',
+                '{}'::jsonb, repeat('3', 64), repeat('4', 64)
+              )
+            """.trimIndent(),
+        )
+
+        assertEquals(
+            "ins-tie-a",
+            jdbcTemplate.queryForObject(
+                "select observation_id from latest_instrument_catalog_observations where symbol = 'ZZTIE'",
+                String::class.java,
+            ),
+        )
+    }
+
+    @Test
+    fun `latest observation indexes match their exact projection partition order`() {
+        val instrumentIndex =
+            jdbcTemplate.queryForObject(
+                "select pg_get_indexdef(indexrelid) from pg_index where indexrelid = 'instrument_catalog_latest_idx'::regclass",
+                String::class.java,
+            )
+        val portfolioIndex =
+            jdbcTemplate.queryForObject(
+                "select pg_get_indexdef(indexrelid) from pg_index where indexrelid = 'portfolio_balance_latest_idx'::regclass",
+                String::class.java,
+            )
+
+        assertTrue(
+            requireNotNull(instrumentIndex).contains(
+                "(symbol, observed_at DESC, received_at DESC, observation_id)",
+            ),
+        )
+        assertTrue(
+            requireNotNull(portfolioIndex).contains(
+                "(owner_user_id, account_scope_hash, observed_at DESC, received_at DESC, observation_id)",
+            ),
+        )
+    }
+
+    @Test
+    fun `Decision owner projections bind the requested id inside the definer function`() {
+        listOf(
+            "read_decision_owner_projection()",
+            "read_decision_audit_projection()",
+        ).forEach { functionName ->
+            val definition =
+                jdbcTemplate.queryForObject(
+                    "select pg_get_functiondef(?::regprocedure)",
+                    String::class.java,
+                    functionName,
+                )
+            assertTrue(requireNotNull(definition).contains("app.requested_decision_id"))
+        }
+        assertTrue(
+            indexExists("decision_audit_projection_target_idx"),
+            "missing bounded Decision audit lookup index",
+        )
+    }
+
     private fun insertOrderFixture() {
+        jdbcTemplate.update("delete from orders where decision_id in ('dec-flyway', 'dec-flyway-b')")
+        jdbcTemplate.update(
+            "delete from decision_idempotency_results where decision_id in ('dec-flyway', 'dec-flyway-b')",
+        )
+        jdbcTemplate.update("delete from decision_traces where decision_id in ('dec-flyway', 'dec-flyway-b')")
+        jdbcTemplate.update("delete from decision_artifacts where decision_id in ('dec-flyway', 'dec-flyway-b')")
+        jdbcTemplate.update("delete from decision_violations where decision_id in ('dec-flyway', 'dec-flyway-b')")
+        jdbcTemplate.update("delete from audit_logs where target_id in ('dec-flyway', 'dec-flyway-b')")
+        jdbcTemplate.update("delete from decisions where decision_id in ('dec-flyway', 'dec-flyway-b')")
+        jdbcTemplate.update("delete from principle_versions where principle_id = 'prn-flyway'")
+        jdbcTemplate.update("delete from principles where principle_id = 'prn-flyway'")
+        jdbcTemplate.update("delete from users where user_id = 'usr-flyway'")
         jdbcTemplate.update(
             """
             insert into users (user_id, username, role, password_hash)
@@ -1036,6 +1311,30 @@ class FlywayMigrationIntegrationTest(
                 's2.3-readiness-v1', '{}'::jsonb, repeat('a', 64),
                 repeat('b', 64), '{}'::jsonb
             )
+            """.trimIndent(),
+        )
+    }
+
+    private fun insertSecondDecisionFixture() {
+        jdbcTemplate.update(
+            """
+            insert into decisions (
+              decision_id, evaluation_id, user_id, principle_id, principle_version_id,
+              principle_version, portfolio_source, symbol, side, outcome, mode,
+              can_submit_order, enforcement_action, evaluation_as_of, created_at, valid_until,
+              result_schema_version, snapshot_schema_version, catalog_version,
+              readiness_policy_version, mapping_versions_json, semantic_input_hash,
+              snapshot_artifact_hash, result_json
+            )
+            select
+              'dec-flyway-b', 'eval-flyway-b', user_id, principle_id, principle_version_id,
+              principle_version, portfolio_source, symbol, side, outcome, mode,
+              can_submit_order, enforcement_action, evaluation_as_of, created_at, valid_until,
+              result_schema_version, snapshot_schema_version, catalog_version,
+              readiness_policy_version, mapping_versions_json, repeat('c', 64),
+              repeat('d', 64), result_json
+            from decisions
+            where decision_id = 'dec-flyway'
             """.trimIndent(),
         )
     }
@@ -1303,6 +1602,18 @@ class FlywayMigrationIntegrationTest(
         assertTrue(
             sqlException?.sqlState == "23514",
             "expected SQLState 23514 but was ${sqlException?.sqlState}: ${exception.mostSpecificCause.message}",
+        )
+    }
+
+    private fun assertForeignKeyViolation(block: () -> Unit) {
+        val exception =
+            org.junit.jupiter.api.assertThrows<DataIntegrityViolationException> {
+                block()
+            }
+        val sqlException = exception.findSqlException()
+        assertTrue(
+            sqlException?.sqlState == "23503",
+            "expected SQLState 23503 but was ${sqlException?.sqlState}: ${exception.mostSpecificCause.message}",
         )
     }
 

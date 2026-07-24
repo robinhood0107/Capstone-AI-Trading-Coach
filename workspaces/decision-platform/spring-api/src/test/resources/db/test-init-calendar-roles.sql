@@ -1,4 +1,8 @@
 -- 운영에서는 infra/init/02-application-roles.sh가 만드는 role을 Flyway보다 먼저 재현한다.
+-- 실제 non-superuser flyway로 V2를 재생할 수 있도록 extension만 database owner가 선설치한다.
+CREATE EXTENSION IF NOT EXISTS vector;
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
 CREATE ROLE decision_app
     LOGIN PASSWORD 'app-test' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
 CREATE ROLE decision_collector

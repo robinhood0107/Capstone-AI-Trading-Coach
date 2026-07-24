@@ -192,15 +192,19 @@ def test_source_fixtures_reject_unknown_raw_fields(
 
 def test_source_writers_have_no_provider_live_order_or_fallback_dependency() -> None:
     from app.brokerage import kis_mock_portfolio_writer
+    from app.data.kis import instrument_catalog_writer
     from app.data.kis import market_quote_observation_writer
+    from app.data.opendart import corporation_registry_writer
     from app.financial_engineering import deterministic_observation_writer
 
     source = "\n".join(
         inspect.getsource(module)
         for module in (
             market_quote_observation_writer,
+            instrument_catalog_writer,
             kis_mock_portfolio_writer,
             deterministic_observation_writer,
+            corporation_registry_writer,
         )
     )
     forbidden = (
@@ -213,6 +217,7 @@ def test_source_writers_have_no_provider_live_order_or_fallback_dependency() -> 
         "access_token",
     )
     assert all(marker not in source for marker in forbidden)
+    assert "ON CONFLICT DO NOTHING" not in source
 
 
 def _reset_source_rows(postgres_cluster: PostgresTestCluster) -> None:

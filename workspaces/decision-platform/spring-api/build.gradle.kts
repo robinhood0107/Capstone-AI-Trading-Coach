@@ -1,4 +1,5 @@
 import org.gradle.language.jvm.tasks.ProcessResources
+import com.google.protobuf.gradle.id
 
 buildscript {
     configurations.classpath {
@@ -15,6 +16,7 @@ plugins {
     id("org.springdoc.openapi-gradle-plugin") version "1.9.0"
     id("io.spring.dependency-management") version "1.1.7"
     id("org.jlleitschuh.gradle.ktlint") version "14.2.0" // 13.1.0+ Gradle 9, 14.0.1+ Gradle 9.1/Java 25 대응
+    id("com.google.protobuf") version "0.10.0"
 }
 
 group = "com.capstone"
@@ -68,7 +70,12 @@ dependencies {
     implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:3.0.3")
     implementation("net.logstash.logback:logstash-logback-encoder:9.0") // 9.0부터 Jackson 3(Boot 4 정렬)
     runtimeOnly("io.micrometer:micrometer-registry-prometheus")
-    // gRPC client는 contracts codegen 모듈 의존 (추후 추가)
+    implementation(platform("io.grpc:grpc-bom:1.81.0"))
+    implementation("io.grpc:grpc-protobuf")
+    implementation("io.grpc:grpc-stub")
+    implementation("io.grpc:grpc-netty-shaded")
+    implementation("com.google.protobuf:protobuf-java:4.35.0")
+    compileOnly("javax.annotation:javax.annotation-api:1.3.2")
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.springframework.security:spring-security-test")
     testImplementation("io.kotest:kotest-assertions-core:5.9.1")
@@ -79,6 +86,26 @@ dependencies {
     testImplementation("org.testcontainers:testcontainers-postgresql")
     testImplementation("org.testcontainers:testcontainers-kafka")
     testImplementation("com.tngtech.archunit:archunit-junit5:1.4.2") // 1.4.1+ Java 25 classfile(major 69) 지원
+}
+
+sourceSets {
+    main {
+        proto {
+            srcDir("../../../contracts/proto")
+            include("disclosure_observation.proto")
+        }
+    }
+}
+
+protobuf {
+    protoc {
+        artifact = "com.google.protobuf:protoc:4.35.0"
+    }
+    plugins {
+        named("grpc") {
+            artifact = "io.grpc:protoc-gen-grpc-java:1.81.0"
+        }
+    }
 }
 
 kotlin {

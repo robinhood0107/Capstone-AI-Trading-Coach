@@ -129,7 +129,7 @@ uv run --frozen python contracts/validate.py
 S2.3 runtime은 `POST /api/v1/decisions/evaluate-order`, owner-scoped detail/audit와 V9
 decision/trace/artifact/audit/outbox/idempotency 원자 저장을 제공한다. provider HTTP fallback
 없이 저장된 sanitized source만 읽는다. V9의
-`market_quote_observations`는 S1.1 producer, KIS_MOCK
+`market_quote_observations`와 `instrument_catalog_observations`는 S1.1 producer, KIS_MOCK
 `portfolio_balance_observations`/`portfolio_position_observations`는 S3 producer가,
 `deterministic_risk_observations`/`daily_order_count_observations`는 deterministic producer가,
 `corporation_registry_observations`는 S1.6 producer가 별도 최소권한으로 INSERT한다.
@@ -139,8 +139,16 @@ decision/trace/artifact/audit/outbox/idempotency 원자 저장을 제공한다. 
 `S23_RUNTIME_SOURCE_BLOCKED`, 구조가 준비된 뒤 row가 비거나 stale/incomplete/future이면 typed
 unavailable과 persisted 200 HOLD다. 자세한 소유권·hash 전환은
 [`20260724-s2-3-decision-contract-lock.md`](changes/20260724-s2-3-decision-contract-lock.md)를
-따른다. canonical S2.3 catalog SHA-256은
-`58e55ebda0154a079cff3d5c2527da66743cf3fdeeaf063b86b23b581371fab3`이며 tracked OpenAPI의
+따른다.
+
+S1.1 instrument catalog는 append-only table과
+`latest_instrument_catalog_observations` projection에
+`symbol,isEtfEtn,isGoldEtfEtn,nullable productRiskScore,catalogVersion,observedAt,receivedAt,sourceRef,artifactHash`를
+저장한다. `decision_market_writer`만 exact INSERT를 가지며 S2.3 reader는 symbol당 최대 한 행만
+읽는다. 미래 시각·row 부재·nullable risk score를 `false`나 0으로 꾸미지 않는다.
+
+canonical S2.3 catalog SHA-256은
+`d035607af50a0f7cb9cd7170e9a6a188e6af32d5bbbdb76e5e4f7b3edc68cd18`이며 tracked OpenAPI의
 `x-s2-3-contract-sha256`과 CI에서 일치해야 한다.
 
 ## S1.5 KIS 데이터 품질 리포트

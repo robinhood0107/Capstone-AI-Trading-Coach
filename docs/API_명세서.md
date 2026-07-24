@@ -736,7 +736,7 @@ tracked OpenAPI는 `contracts/openapi/openapi.json`이며 root는 `openapi=3.1.1
 Schema Draft 2020-12다. canonical catalog bytes의 lowercase SHA-256을 generated OpenAPI의
 `x-s2-1-contract-sha256`에 넣고 `x-s2-1-contract-id=s2-1-principle-contract/v1`과 함께 CI에서
 검증한다. S2.3 catalog도 `x-s2-3-contract-id=s2-3-decision-contract/v1`과
-`x-s2-3-contract-sha256=58e55ebda0154a079cff3d5c2527da66743cf3fdeeaf063b86b23b581371fab3`로
+`x-s2-3-contract-sha256=d035607af50a0f7cb9cd7170e9a6a188e6af32d5bbbdb76e5e4f7b3edc68cd18`로
 고정한다. Spring generator가 내는 root `3.1.0`에서 tracked `3.1.1`로의 patch 한 field와
 deterministic formatting만 normalizer가 바꿀 수 있으며 paths/components/dialect drift는 실패한다.
 
@@ -815,16 +815,19 @@ P2 `derivativeOrderIntent.limitPrice`와 S3 provider `UNIT_PRICE` mapping은 별
 반드시 함께 반환한다.
 
 S2.2의 내부 `JdbcPrincipleSnapshotAdapter`가 owner + ACTIVE + current immutable version
-조회를 한 SQL로 수행하고 S2.3 runtime이 이를 pin한다. 현재가·잔고·공시는 저장 observation
-reader로 연결하지만 producer가 없는 risk/news/signal/instrument source는 typed unavailable로
-남는다. test fake나 다른 portfolio source로 자동 fallback하지 않는다.
+조회를 한 SQL로 수행하고 S2.3 runtime이 이를 pin한다. 현재가·잔고·instrument catalog·결정적
+risk/order-count·공시는 저장 observation reader로 연결한다. producer가 없는 optional
+news/signal source는 typed unavailable로 남으며 test fake나 다른 portfolio source로 자동
+fallback하지 않는다.
 
 `portfolioSource`는 `KIS_MOCK|INTERNAL_PAPER` 중 정확히 하나를 명시한다. 서버가 JWT actor의
 owner scope 안에서 해당 context를 해석하며 raw account ID를 신뢰하지 않는다. 선택한 source만
 조회하고 source 혼합이나 KIS 실패 후 INTERNAL_PAPER 자동 fallback은 금지한다.
 
-S2.3은 provider HTTP를 호출하지 않는다. 현재가·호가는 S1.1 offline producer가 쓰는 append-only
-`market_quote_observations`, KIS_MOCK 잔고는 S3 producer가 쓰는
+S2.3은 provider HTTP를 호출하지 않는다. 현재가·호가와 종목 분류·상품 위험은 S1.1 offline
+producer가 쓰는 append-only `market_quote_observations`와
+`instrument_catalog_observations`/`latest_instrument_catalog_observations`, KIS_MOCK 잔고는
+S3 producer가 쓰는
 `portfolio_balance_observations`/`portfolio_position_observations`, INTERNAL_PAPER는 기존
 `paper_accounts`/`paper_positions`의 한 SQL owner-scoped projection에서 읽는다. 결정적 risk와
 일일 주문 수는 각각 `deterministic_risk_observations`와
@@ -835,6 +838,9 @@ production bean/port, offline producer, 최소권한 writer, bounded reader,
 freshness/completeness, no-fake test 중 하나가 빠지면 `S23_RUNTIME_SOURCE_BLOCKED`다. 구조가
 갖춰진 뒤 row 부재, stale/incomplete/future timestamp 또는 transient dependency failure는
 가짜 0/빈 값으로 대체하지 않고 typed unavailable `issues[]`와 persisted 200 HOLD로 수렴한다.
+instrument row의 exact 의미 필드는
+`symbol,isEtfEtn,isGoldEtfEtn,nullable productRiskScore,catalogVersion,observedAt,receivedAt,sourceRef,artifactHash`다.
+`decision_market_writer`만 exact INSERT하고 S2.3은 exact symbol의 최신 한 행만 읽는다.
 
 | 상황 | HTTP/result |
 |---|---|

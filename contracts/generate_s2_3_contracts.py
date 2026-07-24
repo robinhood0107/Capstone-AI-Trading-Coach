@@ -30,7 +30,7 @@ from contracts.generate_s2_2_contracts import (  # noqa: E402
 REPO_ROOT = _SCRIPT_REPO_ROOT
 CATALOG_PATH = REPO_ROOT / "contracts/catalogs/s2-3-decision-contract.v1.json"
 EXPECTED_CATALOG_SHA256: Final[str] = (
-    "58b658a1482b378d5a7c8c394381a14b6ad6e41c222d2f84e4edec65c1ab1e6f"
+    "58e55ebda0154a079cff3d5c2527da66743cf3fdeeaf063b86b23b581371fab3"
 )
 OUTPUTS: Final[frozenset[str]] = frozenset(
     {
@@ -114,41 +114,27 @@ def load_catalog(path: Path = CATALOG_PATH) -> Mapping[str, Any]:
     return catalog
 
 
-def _catalog_schema() -> dict[str, Any]:
-    return {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "$id": "contracts/schemas/s2-3-decision-contract.schema.json",
-        "type": "object",
-        "additionalProperties": False,
-        "required": [
-            "$schema",
-            "contractId",
-            "contractVersion",
-            "freshness",
-            "grpc",
-            "http",
-            "idempotency",
-            "observability",
-            "outcomePolicy",
-            "request",
-            "response",
-            "sourceOwnership",
-        ],
-        "properties": {
-            "$schema": {"const": "https://json-schema.org/draft/2020-12/schema"},
-            "contractId": {"const": "s2-3-decision-contract"},
-            "contractVersion": {"const": 1},
-            "freshness": {"type": "object"},
-            "grpc": {"type": "object"},
-            "http": {"type": "object"},
-            "idempotency": {"type": "object"},
-            "observability": {"type": "object"},
-            "outcomePolicy": {"type": "object"},
-            "request": {"type": "object"},
-            "response": {"type": "object"},
-            "sourceOwnership": {"type": "object"},
-        },
-    }
+def _closed_catalog_shape(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return {
+            "type": "object",
+            "additionalProperties": False,
+            "required": list(value),
+            "properties": {
+                key: _closed_catalog_shape(item)
+                for key, item in value.items()
+            },
+        }
+    if isinstance(value, list):
+        return {"const": value}
+    return {"const": value}
+
+
+def _catalog_schema(catalog: Mapping[str, Any]) -> dict[str, Any]:
+    schema = _closed_catalog_shape(dict(catalog))
+    schema["$schema"] = "https://json-schema.org/draft/2020-12/schema"
+    schema["$id"] = "contracts/schemas/s2-3-decision-contract.schema.json"
+    return schema
 
 
 def _request_schema() -> dict[str, Any]:
@@ -255,7 +241,7 @@ def _response_schema(risk_schema: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def validate_catalog_semantics(catalog: Mapping[str, Any]) -> None:
-    schema = _catalog_schema()
+    schema = _catalog_schema(catalog)
     Draft202012Validator.check_schema(schema)
     errors = list(Draft202012Validator(schema).iter_errors(catalog))
     if errors:
@@ -287,20 +273,84 @@ def validate_catalog_semantics(catalog: Mapping[str, Any]) -> None:
     if catalog["grpc"] != {
         "businessRpc": "GetDisclosureEvents",
         "concurrencyMax": 8,
+        "corpCodeRequestPolicy": "OPTIONAL_EMPTY_RESOLVES_FROM_REGISTRY",
+        "corpRegistryResolution": "SYMBOL_EXACTLY_ONE",
+        "databaseErrorMapping": {
+            "authentication": "UNAUTHENTICATED",
+            "connectionOrNetwork": "UNAVAILABLE",
+            "insufficientPrivilege": "PERMISSION_DENIED",
+            "malformedRow": "DATA_LOSS",
+            "queryCancellationOrTimeout": "DEADLINE_EXCEEDED_OR_UNAVAILABLE",
+            "unexpectedInvariant": "INTERNAL",
+        },
         "effectiveSourceDeadlineMillis": 500,
+        "eventLookbackDays": 365,
         "hardDeadlineMillis": 2000,
+        "nonLoopbackStartup": "FAIL",
+        "physicalAttemptsMax": 1,
         "reflection": False,
         "requestMaxBytes": 262144,
         "responseMaxBytes": 1048576,
-        "retryAttempts": 1,
+        "retryEnabled": False,
         "totalEvaluationDeadlineMillis": 900,
-        "transport": "LOOPBACK_PLAINTEXT",
+        "transparentRetryEnabled": False,
+        "transport": "NUMERIC_LOOPBACK_PLAINTEXT",
     }:
         raise ContractValidationError("S2.3 gRPC safety tuple drifted.")
+    if catalog["decisionFlow"] != [
+        "ORDER_INTENT_VALIDATION",
+        "OWNER_ACTIVE_CURRENT_PRINCIPLE_PIN",
+        "SOURCE_FRESHNESS_APPLICABILITY",
+        "ALL_APPLICABLE_RULES",
+        "FINDINGS_AND_ABSTENTIONS",
+        "PINNED_MODE_OUTCOME",
+        "ATOMIC_PERSISTENCE",
+    ]:
+        raise ContractValidationError("S2.3 seven-step decision flow drifted.")
+    if catalog["persistence"] != {
+        "atomicInsertOrder": [
+            "decision",
+            "violations",
+            "trace",
+            "artifact",
+            "audit",
+            "outbox",
+            "idempotencyResult",
+        ],
+        "brokerPublish": False,
+        "transactionReadPolicy": "SOURCE_READ_AND_EVALUATION_OUTSIDE",
+        "transactionWritePolicy": "FINAL_PERSISTENCE_ONLY",
+    }:
+        raise ContractValidationError("S2.3 persistence boundary drifted.")
+    if catalog["principleConcurrency"] != {
+        "decisionFirst": "UPDATER_WAITS_FOR_DECISION_COMMIT",
+        "lockOrder": [
+            "IDEMPOTENCY_ADVISORY_LOCK",
+            "PRINCIPLE_FOR_SHARE",
+            "DECISION_GRAPH_INSERT",
+        ],
+        "principleLock": "FOR SHARE OF principle",
+        "updaterFirst": "HTTP_409_ALL_WRITES_ZERO",
+    }:
+        raise ContractValidationError("S2.3 Principle serialization drifted.")
+    if catalog["databaseSecurity"]["broadSelectGrant"]:
+        raise ContractValidationError("S2.3 must not grant broad table SELECT.")
+    if catalog["databaseSecurity"]["futureTableDefaultSelectGrant"]:
+        raise ContractValidationError("S2.3 must not grant future-table SELECT.")
+    if catalog["databaseSecurity"]["idempotencyReplayRead"] != (
+        "BOUNDED_SECURITY_DEFINER_FUNCTION"
+    ):
+        raise ContractValidationError("S2.3 idempotency replay read drifted.")
     if catalog["sourceOwnership"]["productionSeed"]:
         raise ContractValidationError("S2.3 must not generate production source rows.")
     if catalog["sourceOwnership"]["providerHttpFallback"]:
         raise ContractValidationError("S2.3 must not call provider HTTP.")
+    if catalog["sourceOwnership"]["structuralMissingPolicy"] != (
+        "S23_RUNTIME_SOURCE_BLOCKED"
+    ):
+        raise ContractValidationError("S2.3 structural source policy drifted.")
+    if catalog["sourceOwnership"]["transientUnavailablePolicy"] != "PERSISTED_HOLD":
+        raise ContractValidationError("S2.3 transient source policy drifted.")
 
 
 def validate_request_semantics(payload: Any) -> None:
@@ -441,7 +491,7 @@ def generate_outputs(catalog: Mapping[str, Any]) -> dict[str, bytes]:
     response_schema = _response_schema(risk_schema)
     outputs: dict[str, bytes] = {
         "contracts/schemas/s2-3-decision-contract.schema.json": canonical_json_bytes(
-            _catalog_schema()
+            _catalog_schema(catalog)
         ),
         "contracts/schemas/s2-3-evaluate-order-request.schema.json": canonical_json_bytes(
             request_schema

@@ -40,12 +40,16 @@ object OpenApiFixtureEnvironmentWriter {
                     "POSTGRES_APP_PASSWORD" to randomToken(random, 32),
                     "POSTGRES_MIGRATION_PASSWORD" to randomToken(random, 32),
                     "POSTGRES_COLLECTOR_PASSWORD" to randomToken(random, 32),
+                    "POSTGRES_MARKET_WRITER_PASSWORD" to randomToken(random, 32),
+                    "POSTGRES_PORTFOLIO_WRITER_PASSWORD" to randomToken(random, 32),
+                    "POSTGRES_RISK_WRITER_PASSWORD" to randomToken(random, 32),
                     "REDIS_PASSWORD" to randomToken(random, 32),
                     "JWT_SECRET" to randomToken(random, 32),
                     "JWT_ISSUER" to "s21-openapi-local",
                     "JWT_AUDIENCE" to "s21-openapi-client",
                     "LOGIN_SCOPE_HMAC_KEY" to randomToken(random, 32),
                     "PRINCIPLE_CURSOR_HMAC_KEY" to randomToken(random, 32),
+                    "DECISION_IDEMPOTENCY_SCOPE_HMAC_KEY" to randomToken(random, 32),
                     "DEMO_CREDENTIAL_SEPARATION_KEY" to encode(separationKey),
                     "DEMO_USER_CREDENTIAL_BUNDLE" to
                         DemoCredentialBundlePolicy.prepare(

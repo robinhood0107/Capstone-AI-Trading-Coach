@@ -51,6 +51,7 @@ data class MetricAssemblyRequest(
     val systemRuleCatalogVersion: Int,
     val readinessPolicyVersion: String,
     val acquisitionPlan: MetricAcquisitionPlan,
+    val decisionId: String = evaluationId,
 )
 
 // 이 class만 source port I/O를 조율하며 rule 비교, persistence, 현재시각 조회는 수행하지 않는다.
@@ -81,6 +82,8 @@ class MetricSnapshotAssembler(
                 portfolioContext = request.portfolioContext,
                 orderIntent = request.orderIntent,
                 evaluationAsOf = request.evaluationAsOf,
+                evaluationId = request.evaluationId,
+                decisionId = request.decisionId,
             )
         val plan = request.acquisitionPlan
         val price =

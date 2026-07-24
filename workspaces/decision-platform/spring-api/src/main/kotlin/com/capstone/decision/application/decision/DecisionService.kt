@@ -137,6 +137,7 @@ class DecisionService(
                         evaluationId = evaluationId,
                         evaluationAsOf = evaluationAsOf,
                         orderIntent = command.orderIntent,
+                        decisionId = decisionId,
                     ),
                     pinned,
                 )

@@ -1,8 +1,12 @@
 package com.capstone.decision
 
 import com.capstone.decision.application.risk.port.EvaluationSourceRequest
+import com.capstone.decision.application.risk.port.InstrumentCatalogPort
+import com.capstone.decision.application.risk.port.OrderMetricPort
 import com.capstone.decision.application.risk.port.PortfolioContextResolution
+import com.capstone.decision.application.risk.port.RiskSnapshotPort
 import com.capstone.decision.domain.risk.MetricCell
+import com.capstone.decision.domain.risk.MetricSource
 import com.capstone.decision.domain.risk.MetricValue
 import com.capstone.decision.domain.risk.OrderIntentSnapshot
 import com.capstone.decision.domain.risk.PortfolioSource
@@ -35,6 +39,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer
 import org.testcontainers.utility.DockerImageName
 import java.sql.DriverManager
 import java.sql.SQLException
+import java.time.Instant
 import java.util.Base64
 import java.util.HexFormat
 import java.util.stream.Stream
@@ -49,6 +54,9 @@ class FlywayMigrationIntegrationTest(
     @Autowired private val kisMockBalanceAdapter: JdbcKisMockBalanceAdapter,
     @Autowired private val internalPaperBalanceAdapter: JdbcInternalPaperBalanceAdapter,
     @Autowired private val storedMarginAdapter: JdbcStoredMarginAdapter,
+    @Autowired private val instrumentCatalogPort: InstrumentCatalogPort,
+    @Autowired private val orderMetricPort: OrderMetricPort,
+    @Autowired private val riskSnapshotPort: RiskSnapshotPort,
 ) : SpringApiIntegrationTestBase() {
     @Test
     fun `clean database applies V1 through V9 migrations and creates required objects`() {
@@ -78,15 +86,23 @@ class FlywayMigrationIntegrationTest(
                 "calendar_collection_cursors",
                 "disclosure_risk_state_transitions",
                 "market_quote_observations",
+                "instrument_catalog_observations",
                 "portfolio_balance_observations",
                 "portfolio_position_observations",
+                "deterministic_risk_observations",
+                "daily_order_count_observations",
+                "corporation_registry_observations",
                 "decision_artifacts",
                 "decision_traces",
                 "decision_idempotency_results",
                 "decision_owner_projection",
                 "decision_audit_projection",
                 "latest_market_quote_observations",
+                "latest_instrument_catalog_observations",
                 "latest_portfolio_balance_observations",
+                "latest_deterministic_risk_observations",
+                "latest_daily_order_count_observations",
+                "current_corporation_registry_projection",
                 "disclosure_event_observation_projection",
                 "disclosure_collection_status_projection",
             )
@@ -337,9 +353,11 @@ class FlywayMigrationIntegrationTest(
             "latest_market_quote_observations",
             "latest_portfolio_balance_observations",
             "active_paper_portfolio_projection",
+            "latest_instrument_catalog_observations",
+            "latest_deterministic_risk_observations",
+            "latest_daily_order_count_observations",
             "disclosure_event_observation_projection",
             "disclosure_collection_status_projection",
-            "decision_idempotency_results",
         ).forEach { table ->
             assertTrue(hasTablePrivilege("decision_app", table, "SELECT"), "missing SELECT on $table")
         }
@@ -360,6 +378,10 @@ class FlywayMigrationIntegrationTest(
             "market_quote_observations",
             "portfolio_balance_observations",
             "portfolio_position_observations",
+            "instrument_catalog_observations",
+            "deterministic_risk_observations",
+            "daily_order_count_observations",
+            "corporation_registry_observations",
         ).forEach { table ->
             assertFalse(hasTablePrivilege("decision_app", table, "INSERT"), "unexpected source INSERT on $table")
             assertFalse(hasTablePrivilege("decision_app", table, "UPDATE"), "unexpected source UPDATE on $table")
@@ -367,6 +389,7 @@ class FlywayMigrationIntegrationTest(
             assertFalse(hasTablePrivilege("decision_app", table, "TRUNCATE"), "unexpected source TRUNCATE on $table")
         }
         assertFalse(hasTablePrivilege("decision_app", "rag_answers", "SELECT"))
+        assertFalse(hasTablePrivilege("decision_app", "decision_idempotency_results", "SELECT"))
         assertFalse(hasTablePrivilege("decision_app", "flyway_schema_history", "SELECT"))
         assertFalse(hasSchemaPrivilege("decision_app", "CREATE"))
 
@@ -399,9 +422,131 @@ class FlywayMigrationIntegrationTest(
                 "('forbidden', '005930', 'KIS_MOCK', 1, now(), now(), 'v1', 'v1', " +
                 "repeat('a', 64), repeat('b', 64))",
             "select * from rag_answers limit 0",
+            "select * from decisions limit 0",
+            "select * from audit_logs limit 0",
+            "select * from event_outbox limit 0",
+            "select * from decision_idempotency_results limit 0",
             "update flyway_schema_history set success = success where false",
             "create table s23_forbidden_schema_write (id integer)",
         ).forEach(::assertDecisionAppPermissionDenied)
+    }
+
+    @Test
+    fun `V9 owner views use invoker mode while bounded functions keep base tables denied`() {
+        listOf("decision_owner_projection", "decision_audit_projection").forEach { view ->
+            val options =
+                jdbcTemplate.queryForObject(
+                    "select coalesce(array_to_string(reloptions, ','), '') from pg_class where oid = ?::regclass",
+                    String::class.java,
+                    view,
+                ) ?: ""
+            assertTrue(options.contains("security_invoker=true"), "$view must be security_invoker")
+        }
+        assertTrue(hasFunctionPrivilege("decision_app", "find_decision_idempotency_result(text,text,timestamp with time zone)"))
+        assertFalse(hasTablePrivilege("decision_app", "decision_idempotency_results", "SELECT"))
+
+        val probe = "s23_future_acl_probe"
+        jdbcTemplate.execute("drop table if exists $probe")
+        try {
+            DriverManager.getConnection(postgres.jdbcUrl, "flyway", FLYWAY_PASSWORD).use { connection ->
+                connection.createStatement().use { statement ->
+                    statement.execute("create table $probe (id integer)")
+                }
+            }
+            assertDecisionAppPermissionDenied("select * from $probe")
+        } finally {
+            jdbcTemplate.execute("drop table if exists $probe")
+        }
+    }
+
+    @Test
+    fun `source writer roles can append only their own bounded observations`() {
+        assertWriterInsert(
+            "decision_market_writer",
+            MARKET_WRITER_PASSWORD,
+            """
+            insert into instrument_catalog_observations (
+              observation_id, symbol, is_etf_etn, is_gold_etf_etn, product_risk_score,
+              catalog_version, observed_at, received_at, completeness, schema_version,
+              source_version, payload_json, source_ref, artifact_hash
+            ) values (
+              'ins-writer-role', 'WRITER01', true, false, 0.25, 'catalog-writer-v1',
+              '2031-01-01T00:00:00Z', '2031-01-01T00:00:01Z', 'COMPLETE',
+              'instrument-catalog-observation.v1', 'fixture-v1',
+              '{"symbol":"WRITER01"}'::jsonb, repeat('1', 64), repeat('2', 64)
+            )
+            """.trimIndent(),
+        )
+        assertWriterInsert(
+            "decision_risk_writer",
+            RISK_WRITER_PASSWORD,
+            """
+            insert into deterministic_risk_observations (
+              observation_id, owner_user_id, owner_scope_hash, portfolio_source,
+              daily_loss_rate, max_drawdown, annualized_volatility, completeness,
+              observed_at, received_at, schema_version, source_version, payload_json,
+              source_ref, artifact_hash
+            ) values (
+              'risk-writer-role', 'usr_demo_user', repeat('3', 64), 'KIS_MOCK',
+              -0.01, -0.05, 0.20, 'COMPLETE',
+              '2026-06-23T06:31:00Z', '2026-06-23T06:31:01Z',
+              'deterministic-risk-observation.v1', 'fixture-v1',
+              '{"ownerScopeHash":"sanitized"}'::jsonb, repeat('4', 64), repeat('5', 64)
+            )
+            """.trimIndent(),
+        )
+        assertWriterInsert(
+            "decision_portfolio_writer",
+            PORTFOLIO_WRITER_PASSWORD,
+            """
+            insert into portfolio_balance_observations (
+              observation_id, owner_user_id, account_scope_hash, source, context_status,
+              cash_krw, portfolio_equity_krw, margin_requirement_krw, completeness,
+              position_count, observed_at, received_at, schema_version, source_version,
+              source_ref, artifact_hash
+            ) values (
+              'balance-writer-role', 'usr_demo_user', repeat('6', 64), 'KIS_MOCK', 'ACTIVE',
+              1, 1, 0, 'COMPLETE', 0, '2031-01-01T00:00:00Z', '2031-01-01T00:00:01Z',
+              'portfolio-balance-observation.v1', 'fixture-v1', repeat('7', 64), repeat('8', 64)
+            )
+            """.trimIndent(),
+        )
+        assertWriterInsert(
+            "decision_collector",
+            COLLECTOR_PASSWORD,
+            """
+            insert into corporation_registry_observations (
+              observation_id, symbol, corp_code, registry_status, completeness,
+              observed_at, received_at, schema_version, source_version, payload_json,
+              source_ref, artifact_hash
+            ) values (
+              'corp-writer-role', 'WRITER01', '12345678', 'ACTIVE', 'COMPLETE',
+              '2031-01-01T00:00:00Z', '2031-01-01T00:00:01Z',
+              'corporation-registry-observation.v1', 'fixture-v1',
+              '{"symbol":"WRITER01"}'::jsonb, repeat('9', 64), repeat('a', 64)
+            )
+            """.trimIndent(),
+        )
+
+        assertRolePermissionDenied(
+            "decision_market_writer",
+            MARKET_WRITER_PASSWORD,
+            "select * from instrument_catalog_observations",
+        )
+        assertRolePermissionDenied(
+            "decision_market_writer",
+            MARKET_WRITER_PASSWORD,
+            "insert into deterministic_risk_observations " +
+                "(observation_id, owner_user_id, owner_scope_hash, portfolio_source, completeness, " +
+                "observed_at, received_at, schema_version, source_version, payload_json, source_ref, artifact_hash) " +
+                "values ('forbidden-risk', 'usr_demo_user', repeat('b',64), 'KIS_MOCK', 'PARTIAL', " +
+                "now(), now(), 'v1', 'v1', '{}'::jsonb, repeat('c',64), repeat('d',64))",
+        )
+        assertRolePermissionDenied(
+            "decision_market_writer",
+            MARKET_WRITER_PASSWORD,
+            "create table forbidden_writer_ddl (id integer)",
+        )
     }
 
     @Test
@@ -487,7 +632,7 @@ class FlywayMigrationIntegrationTest(
     }
 
     @Test
-    fun `internal paper balance uses the owner ledger and cash-only margin zero is explicit`() {
+    fun `internal paper never synthesizes margin zero or position classification`() {
         jdbcTemplate.update(
             """
             insert into paper_accounts (
@@ -496,6 +641,16 @@ class FlywayMigrationIntegrationTest(
             values (
               'paper-s23', 'usr_demo_admin', 'Paper S2.3', 900000, 'KRW', 'ACTIVE',
               '2031-02-03T04:00:00Z', '2031-02-03T04:05:06Z'
+            )
+            """.trimIndent(),
+        )
+        jdbcTemplate.update(
+            """
+            insert into paper_positions (
+              position_id, account_id, symbol, quantity, average_price, market_value, updated_at
+            )
+            values (
+              'position-s23', 'paper-s23', '999999', 1, 100000, 100000, '2031-02-03T04:05:06Z'
             )
             """.trimIndent(),
         )
@@ -520,11 +675,110 @@ class FlywayMigrationIntegrationTest(
                 evaluationAsOf = java.time.Instant.parse("2031-02-03T04:05:06Z"),
             )
 
-        val balance = internalPaperBalanceAdapter.load(request) as MetricCell.Available
-        val margin = storedMarginAdapter.load(request) as MetricCell.Available
-        assertEquals(PortfolioSource.INTERNAL_PAPER, balance.value.source)
-        assertEquals(900000L, balance.value.portfolioEquityKrw)
-        assertEquals(0L, (margin.value as MetricValue.Whole).value)
+        assertTrue(internalPaperBalanceAdapter.load(request) is MetricCell.Incomplete)
+        assertTrue(storedMarginAdapter.load(request) is MetricCell.Missing)
+    }
+
+    @Test
+    fun `approved stored instrument risk and daily order sources are bounded production ports`() {
+        val evaluationAsOf = Instant.parse("2026-06-24T03:00:00Z")
+        jdbcTemplate.update(
+            """
+            insert into instrument_catalog_observations (
+              observation_id, symbol, is_etf_etn, is_gold_etf_etn, product_risk_score,
+              catalog_version, observed_at, received_at, completeness, schema_version,
+              source_version, payload_json, source_ref, artifact_hash
+            ) values (
+              'ins-s23-v1', '005930', false, false, null, 'catalog-v1',
+              '2026-06-24T01:00:00Z', '2026-06-24T01:00:01Z', 'COMPLETE',
+              'instrument-catalog-observation.v1', 'sanitized-fixture-v1',
+              '{"symbol":"005930","catalogVersion":"catalog-v1"}'::jsonb,
+              repeat('1', 64), repeat('2', 64)
+            ), (
+              'ins-s23-v2', '005930', true, false, 0.35, 'catalog-v2',
+              '2026-06-24T02:00:00Z', '2026-06-24T02:00:01Z', 'COMPLETE',
+              'instrument-catalog-observation.v1', 'sanitized-fixture-v2',
+              '{"symbol":"005930","catalogVersion":"catalog-v2"}'::jsonb,
+              repeat('3', 64), repeat('4', 64)
+            )
+            """.trimIndent(),
+        )
+        jdbcTemplate.update(
+            """
+            insert into deterministic_risk_observations (
+              observation_id, owner_user_id, owner_scope_hash, portfolio_source,
+              daily_loss_rate, max_drawdown, annualized_volatility, completeness,
+              observed_at, received_at, schema_version, source_version, payload_json,
+              source_ref, artifact_hash
+            ) values (
+              'risk-s23-read', 'usr_demo_user', repeat('c', 64), 'KIS_MOCK',
+              -0.0125, -0.0800, 0.2200, 'COMPLETE',
+              '2026-06-23T06:31:00Z', '2026-06-23T06:31:01Z',
+              'deterministic-risk-observation.v1', 'risk-fixture-v1',
+              '{"ownerScopeHash":"sanitized"}'::jsonb, repeat('5', 64), repeat('6', 64)
+            )
+            """.trimIndent(),
+        )
+        jdbcTemplate.update(
+            """
+            insert into daily_order_count_observations (
+              observation_id, owner_user_id, owner_scope_hash, portfolio_source,
+              trading_date, order_count, covered_through, completeness,
+              observed_at, received_at, schema_version, source_version, payload_json,
+              source_ref, artifact_hash
+            ) values (
+              'orders-s23-read', 'usr_demo_user', repeat('c', 64), 'KIS_MOCK',
+              '2026-06-24', 0, ?::timestamptz, 'COMPLETE',
+              ?::timestamptz, ?::timestamptz,
+              'daily-order-count-observation.v1', 'order-ledger-fixture-v1',
+              '{"ownerScopeHash":"sanitized","orderCount":0}'::jsonb,
+              repeat('7', 64), repeat('8', 64)
+            )
+            """.trimIndent(),
+            evaluationAsOf,
+            evaluationAsOf,
+            evaluationAsOf,
+        )
+        val request =
+            EvaluationSourceRequest(
+                actorUserId = "usr_demo_user",
+                portfolioContext =
+                    com.capstone.decision.application.risk.port.PortfolioContextRef(
+                        opaqueRef = "c".repeat(64),
+                        source = PortfolioSource.KIS_MOCK,
+                        ownerScopeHash = "c".repeat(64),
+                    ),
+                orderIntent =
+                    OrderIntentSnapshot(
+                        symbol = "005930",
+                        side = "BUY",
+                        orderType = "MARKET",
+                        quantity = 1,
+                        estimatedPrice = 70000,
+                        estimatedAmount = 70000,
+                        timeframe = "1d",
+                        strategyId = "stored-hard-source-test",
+                    ),
+                evaluationAsOf = evaluationAsOf,
+            )
+
+        val instrument = instrumentCatalogPort.load(request) as MetricCell.Available
+        assertEquals("catalog-v2", instrument.value.catalogVersion)
+        assertEquals(MetricSource.INSTRUMENT_CATALOG, instrument.source)
+        assertEquals(
+            "0.35",
+            instrument.value.productRiskScore
+                ?.stripTrailingZeros()
+                ?.toPlainString(),
+        )
+
+        val risk = riskSnapshotPort.load(request)
+        assertEquals("-0.0125", metricDecimal(risk.dailyLossRate))
+        assertEquals("-0.08", metricDecimal(risk.maxDrawdown))
+        assertEquals("0.22", metricDecimal(risk.annualizedVolatility))
+
+        val orderCount = orderMetricPort.loadDailyOrderCount(request) as MetricCell.Available
+        assertEquals(0L, (orderCount.value as MetricValue.Whole).value)
     }
 
     @Test
@@ -827,14 +1081,52 @@ class FlywayMigrationIntegrationTest(
             privilege,
         ) ?: false
 
+    private fun hasFunctionPrivilege(
+        role: String,
+        functionSignature: String,
+    ): Boolean =
+        jdbcTemplate.queryForObject(
+            "select has_function_privilege(?, ?, 'EXECUTE')",
+            Boolean::class.java,
+            role,
+            functionSignature,
+        ) ?: false
+
     private fun assertDecisionAppPermissionDenied(sql: String) {
-        DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { connection ->
+        assertRolePermissionDenied("decision_app", APP_PASSWORD, sql)
+    }
+
+    private fun assertRolePermissionDenied(
+        role: String,
+        password: String,
+        sql: String,
+    ) {
+        DriverManager.getConnection(postgres.jdbcUrl, role, password).use { connection ->
             connection.createStatement().use { statement ->
-                statement.execute("set role decision_app")
                 val exception = assertThrows<SQLException> { statement.execute(sql) }
                 assertEquals("42501", exception.sqlState, "expected permission denial for: $sql")
             }
         }
+    }
+
+    private fun assertWriterInsert(
+        role: String,
+        password: String,
+        sql: String,
+    ) {
+        DriverManager.getConnection(postgres.jdbcUrl, role, password).use { connection ->
+            connection.createStatement().use { statement ->
+                assertEquals(1, statement.executeUpdate(sql), "writer $role failed its exact INSERT")
+            }
+        }
+    }
+
+    private fun metricDecimal(cell: MetricCell<MetricValue>): String {
+        val available = cell as MetricCell.Available
+        return available.value
+            .asBigDecimal()
+            .stripTrailingZeros()
+            .toPlainString()
     }
 
     private fun countMarketCalendarRows(
@@ -878,6 +1170,12 @@ class FlywayMigrationIntegrationTest(
     }
 
     companion object {
+        private const val APP_PASSWORD = "app-test"
+        private const val COLLECTOR_PASSWORD = "collector-test"
+        private const val MARKET_WRITER_PASSWORD = "market-writer-test"
+        private const val PORTFOLIO_WRITER_PASSWORD = "portfolio-writer-test"
+        private const val RISK_WRITER_PASSWORD = "risk-writer-test"
+        private const val FLYWAY_PASSWORD = "flyway-test"
         private val postgresImage =
             DockerImageName
                 .parse(

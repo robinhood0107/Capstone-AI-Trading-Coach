@@ -2,13 +2,26 @@ from __future__ import annotations
 
 import re
 import unittest
+from copy import deepcopy
 from pathlib import Path
 
+from jsonschema import Draft202012Validator
+
+from contracts.generate_principle_contracts import ContractValidationError
 from contracts.generate_s2_2_contracts import (
     CATALOG_PATH,
     generate_outputs,
     load_catalog,
     load_json_bytes_strict,
+)
+from contracts.generate_s2_3_contracts import (
+    CATALOG_PATH as S23_CATALOG_PATH,
+    EXPECTED_CATALOG_SHA256,
+    OUTPUTS as S23_OUTPUTS,
+    generate_outputs as generate_s23_outputs,
+    load_catalog as load_s23_catalog,
+    validate_decision_response_semantics,
+    validate_request_semantics,
 )
 
 
@@ -171,6 +184,101 @@ class S23CashOrderContractTest(unittest.TestCase):
             vector["snapshotArtifact"]["snapshotSchemaVersion"],
         )
         self.assertEqual(ORDER_FIELDS, set(order_intent))
+
+
+class S23GeneratedContractTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.catalog = load_s23_catalog(S23_CATALOG_PATH)
+        cls.outputs = generate_s23_outputs(cls.catalog)
+
+    def test_catalog_hash_and_generated_output_manifest_are_locked(self) -> None:
+        import hashlib
+
+        self.assertEqual(
+            EXPECTED_CATALOG_SHA256,
+            hashlib.sha256(S23_CATALOG_PATH.read_bytes()).hexdigest(),
+        )
+        self.assertEqual(S23_OUTPUTS, frozenset(self.outputs))
+        for relative, expected in self.outputs.items():
+            with self.subTest(path=relative):
+                self.assertEqual(expected, (REPO_ROOT / relative).read_bytes())
+                self.assertTrue(expected.endswith(b"\n"))
+
+    def test_request_rejects_actor_mode_and_inexact_amount(self) -> None:
+        schema = load_json_bytes_strict(
+            self.outputs["contracts/schemas/s2-3-evaluate-order-request.schema.json"],
+            source="generated S2.3 request schema",
+        )
+        validator = Draft202012Validator(schema)
+        valid = load_json_bytes_strict(
+            self.outputs["contracts/examples/s2-3-evaluate-order-request.valid.json"],
+            source="generated S2.3 request fixture",
+        )
+        self.assertEqual(
+            {"principleId", "portfolioSource", "orderIntent"},
+            set(schema["required"]),
+        )
+        validate_request_semantics(valid)
+        for forbidden in ("userId", "accountId", "mode", "corpCode", "auditActor", "time"):
+            mutated = deepcopy(valid)
+            mutated[forbidden] = "forged"
+            with self.subTest(field=forbidden):
+                self.assertTrue(list(validator.iter_errors(mutated)))
+        mismatched = deepcopy(valid)
+        mismatched["orderIntent"]["estimatedAmount"] += 1
+        with self.assertRaises(ContractValidationError):
+            validate_request_semantics(mismatched)
+
+    def test_persisted_response_requires_identity_times_and_full_outcome_matrix(self) -> None:
+        schema = load_json_bytes_strict(
+            self.outputs["contracts/schemas/s2-3-decision-response.schema.json"],
+            source="generated S2.3 response schema",
+        )
+        self.assertEqual(
+            {
+                "decisionId",
+                "createdAt",
+                "validUntil",
+                "principleId",
+                "principleVersionId",
+                "principleVersion",
+                "portfolioSource",
+                "mode",
+                "enforcementAction",
+                "riskDecision",
+            },
+            set(schema["required"]),
+        )
+        expected = {
+            "allow": ("ALLOW", "GUIDE", "NONE", True),
+            "warn": ("WARN", "STRICT", "RECONFIRM_PRINCIPLE", True),
+            "hold": ("HOLD", "GUIDE", "RE_EVALUATE", False),
+            "block": ("BLOCK", "STRICT", "DO_NOT_SUBMIT", False),
+        }
+        s22_catalog = load_catalog(CATALOG_PATH)
+        for name, row in expected.items():
+            payload = load_json_bytes_strict(
+                self.outputs[
+                    f"contracts/examples/s2-3-decision-response.{name}.valid.json"
+                ],
+                source=f"generated S2.3 {name} fixture",
+            )
+            with self.subTest(outcome=name):
+                validate_decision_response_semantics(payload, s22_catalog)
+                self.assertEqual(row[0], payload["riskDecision"]["decision"])
+                self.assertEqual(row[1], payload["mode"])
+                self.assertEqual(row[2], payload["enforcementAction"])
+                self.assertEqual(row[3], payload["riskDecision"]["canSubmitOrder"])
+
+    def test_proto_is_the_single_stored_observation_business_rpc(self) -> None:
+        proto = self.outputs["contracts/proto/disclosure_observation.proto"].decode("utf-8")
+        self.assertEqual(1, proto.count("rpc GetDisclosureEvents("))
+        self.assertIn("service DisclosureObservationService", proto)
+        self.assertIn("repeated string source_refs = 10;", proto)
+        self.assertIn("string observed_at = 11;", proto)
+        self.assertNotIn("grpc.health", proto)
+        self.assertNotIn("reflection", proto.lower())
 
 
 if __name__ == "__main__":

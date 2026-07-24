@@ -42,6 +42,7 @@ import com.capstone.decision.domain.risk.MetricUnit
 import com.capstone.decision.domain.risk.MetricValue
 import com.capstone.decision.domain.risk.OrderIntentSnapshot
 import com.capstone.decision.domain.risk.PortfolioSource
+import com.capstone.decision.domain.risk.SnapshotHashService
 import com.capstone.decision.infrastructure.risk.ClasspathSystemRuleCatalog
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
@@ -156,6 +157,38 @@ class PortfolioEvaluationUseCaseTest {
         assertThat(optionalResult.warnings.map { it.ruleId }).contains("disclosure_risk_guard")
         assertThat(requiredResult.action).isEqualTo(EvaluationAction.HOLD)
         assertThat(requiredResult.issues.map { it.ruleId }).contains("disclosure_risk_guard")
+    }
+
+    @Test
+    fun `disclosure event codes survive source snapshot and canonical artifact in stable order`() {
+        val harness =
+            Harness(
+                disclosureCell =
+                    available(
+                        DisclosureRiskSnapshot(
+                            score = BigDecimal("0.60"),
+                            mappingVersion = "s1.2-v1",
+                            events =
+                                listOf(
+                                    DisclosureEventEvidence("OPENDART:piicDecsn", "ACTIVE"),
+                                    DisclosureEventEvidence("OPENDART:dfOcr", "ACTIVE"),
+                                ),
+                            warnings = emptyList(),
+                            sourceRefs = listOf("8".repeat(64)),
+                        ),
+                        MetricSource.OPENDART,
+                        "8",
+                    ),
+            )
+
+        val evaluation = harness.useCase.evaluate(harness.command())
+        val snapshot = requireNotNull(evaluation.snapshot)
+
+        assertThat(requireNotNull(snapshot.disclosureEvidence).eventCodes)
+            .containsExactly("OPENDART:dfOcr", "OPENDART:piicDecsn")
+        assertThat(SnapshotHashService().snapshotArtifactCanonicalJson(snapshot))
+            .contains("\"eventCodes\":[\"OPENDART:dfOcr\",\"OPENDART:piicDecsn\"]")
+        assertThat(harness.disclosureCalls).isEqualTo(1)
     }
 
     @Test
@@ -598,7 +631,7 @@ class PortfolioEvaluationUseCaseTest {
                 DisclosureRiskSnapshot(
                     score = BigDecimal("0.10"),
                     mappingVersion = "s1.2-v1",
-                    events = listOf(DisclosureEventEvidence("piicDecsn", "ACTIVE")),
+                    events = listOf(DisclosureEventEvidence("OPENDART:piicDecsn", "ACTIVE")),
                     warnings = emptyList(),
                     sourceRefs = listOf("8".repeat(64)),
                 ),
@@ -826,7 +859,10 @@ class PortfolioEvaluationUseCaseTest {
                         side = "BUY",
                         orderType = "MARKET",
                         quantity = 1,
-                        limitPrice = null,
+                        estimatedPrice = 10_000,
+                        estimatedAmount = 10_000,
+                        timeframe = "1d",
+                        strategyId = "strategy_fixture",
                     ),
                 optionalComponents = optionalComponents,
             )

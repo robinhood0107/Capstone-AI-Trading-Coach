@@ -314,13 +314,13 @@ class S22HashAndBuildContractTest(unittest.TestCase):
             source="hash vector",
         )
 
-        self.assertEqual("HASH-CANONICALIZATION-S22-V1", vector["canonicalizationId"])
+        self.assertEqual("HASH-CANONICALIZATION-S22-V2", vector["canonicalizationId"])
         self.assertEqual(
-            "0bcb5986ed326a7dbf08010c503e2c895a39e66c970544375feb4812c7321e5d",
+            "c10fe3f4c9fa3077fdad1131aaf15d61ad93b77facfc84e87c78e41a41471249",
             vector["semanticInputHash"],
         )
         self.assertEqual(
-            "da2773a7d012377d241fc68b107417666a6002c008c83202a7b11119095078b7",
+            "7cb2a0946cd9923a982e602d798a48924d7a0d677ae6b256c0e6ea905ca3491d",
             vector["snapshotArtifactHash"],
         )
         self.assertEqual(
@@ -363,7 +363,21 @@ class S22HashAndBuildContractTest(unittest.TestCase):
             set(artifact) - set(semantic),
         )
         self.assertEqual("LIMIT", semantic["orderIntent"]["orderType"])
-        self.assertEqual("50000", semantic["orderIntent"]["limitPrice"])
+        self.assertEqual(
+            {
+                "estimatedAmount",
+                "estimatedPrice",
+                "orderType",
+                "quantity",
+                "side",
+                "strategyId",
+                "symbol",
+                "timeframe",
+            },
+            set(semantic["orderIntent"]),
+        )
+        self.assertEqual("50000", semantic["orderIntent"]["estimatedPrice"])
+        self.assertEqual("500000", semantic["orderIntent"]["estimatedAmount"])
         asset_weight = next(
             metric for metric in semantic["metrics"] if metric["metric"] == "asset_weight"
         )
@@ -396,6 +410,10 @@ class S22HashAndBuildContractTest(unittest.TestCase):
         self.assertEqual(
             "s1.2-v1",
             semantic["observedOptionalComponentEvidence"][0]["evidenceVersion"],
+        )
+        self.assertEqual(
+            ["OPENDART:piicDecsn"],
+            semantic["disclosureEvidence"]["eventCodes"],
         )
         self.assertEqual(
             "COMPLETE",

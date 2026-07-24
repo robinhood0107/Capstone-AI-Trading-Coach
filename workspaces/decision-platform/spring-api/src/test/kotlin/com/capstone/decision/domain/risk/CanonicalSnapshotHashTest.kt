@@ -66,6 +66,7 @@ class CanonicalSnapshotHashTest {
                 disclosureEvidence =
                     DisclosureEvidenceIdentity(
                         completeness = "COMPLETE",
+                        eventCodes = listOf("OPENDART:piicDecsn"),
                         mappingVersion = "mapping-v1",
                         sourceRefs = listOf(ref("a")),
                     ),
@@ -75,7 +76,7 @@ class CanonicalSnapshotHashTest {
         val baseDisclosure = requireNotNull(base.disclosureEvidence)
         val mutations =
             listOf(
-                base.copy(snapshotSchemaVersion = "s2.2-metric-snapshot-v2"),
+                base.copy(snapshotSchemaVersion = "s2.2-metric-snapshot-v3"),
                 base.copy(evaluationId = "eval_other"),
                 base.copy(evaluationAsOf = OBSERVED_AT.plusNanos(1)),
                 base.copy(retrievedAt = OBSERVED_AT.plusSeconds(2)),
@@ -93,14 +94,11 @@ class CanonicalSnapshotHashTest {
                 base.copy(portfolio = base.portfolio.copy(positionCount = 1)),
                 base.copy(orderIntent = base.orderIntent.copy(symbol = "000660")),
                 base.copy(orderIntent = base.orderIntent.copy(side = "SELL")),
-                base.copy(
-                    orderIntent =
-                        base.orderIntent.copy(
-                            orderType = "LIMIT",
-                            limitPrice = BigDecimal("9999.00"),
-                        ),
-                ),
-                base.copy(orderIntent = base.orderIntent.copy(quantity = 2)),
+                base.copy(orderIntent = base.orderIntent.copy(orderType = "LIMIT")),
+                base.copy(orderIntent = base.orderIntent.copy(quantity = 2, estimatedAmount = 20_000)),
+                base.copy(orderIntent = base.orderIntent.copy(estimatedPrice = 9_999, estimatedAmount = 9_999)),
+                base.copy(orderIntent = base.orderIntent.copy(timeframe = "60m")),
+                base.copy(orderIntent = base.orderIntent.copy(strategyId = "strategy_other")),
                 base.copy(
                     metrics =
                         mapOf(
@@ -191,6 +189,7 @@ class CanonicalSnapshotHashTest {
                         listOf(baseOptional.copy(sourceRefs = listOf(ref("b")))),
                 ),
                 base.copy(disclosureEvidence = baseDisclosure.copy(completeness = "EMPTY")),
+                base.copy(disclosureEvidence = baseDisclosure.copy(eventCodes = listOf("OPENDART:dfOcr"))),
                 base.copy(disclosureEvidence = baseDisclosure.copy(mappingVersion = "mapping-v2")),
                 base.copy(disclosureEvidence = baseDisclosure.copy(sourceRefs = listOf(ref("b")))),
             )
@@ -211,16 +210,20 @@ class CanonicalSnapshotHashTest {
         val available = base.metric(MetricKey.ASSET_WEIGHT) as MetricCell.Available
         val limitOrder =
             base.copy(
+                orderIntent = base.orderIntent.copy(orderType = "LIMIT"),
+            )
+        val changedPrice =
+            limitOrder.copy(
                 orderIntent =
-                    base.orderIntent.copy(
-                        orderType = "LIMIT",
-                        limitPrice = BigDecimal("10000.00"),
+                    limitOrder.orderIntent.copy(
+                        estimatedPrice = 10_001,
+                        estimatedAmount = 10_001,
                     ),
             )
-        val changedLimit =
-            limitOrder.copy(
-                orderIntent = limitOrder.orderIntent.copy(limitPrice = BigDecimal("10001")),
-            )
+        val changedTimeframe =
+            base.copy(orderIntent = base.orderIntent.copy(timeframe = "60m"))
+        val changedStrategy =
+            base.copy(orderIntent = base.orderIntent.copy(strategyId = "strategy_other"))
         val changedFreshUntil =
             base.copy(
                 metrics =
@@ -237,7 +240,9 @@ class CanonicalSnapshotHashTest {
             )
 
         assertNotEquals(hashes.semanticInputHash(base), hashes.semanticInputHash(limitOrder))
-        assertNotEquals(hashes.semanticInputHash(limitOrder), hashes.semanticInputHash(changedLimit))
+        assertNotEquals(hashes.semanticInputHash(limitOrder), hashes.semanticInputHash(changedPrice))
+        assertNotEquals(hashes.semanticInputHash(base), hashes.semanticInputHash(changedTimeframe))
+        assertNotEquals(hashes.semanticInputHash(base), hashes.semanticInputHash(changedStrategy))
         assertNotEquals(hashes.semanticInputHash(base), hashes.semanticInputHash(changedFreshUntil))
         assertNotEquals(hashes.semanticInputHash(base), hashes.semanticInputHash(changedSource))
     }
@@ -360,7 +365,7 @@ class CanonicalSnapshotHashTest {
     @Test
     fun `artifact and semantic canonical bytes cannot be mutated through their public boundary`() {
         val artifact =
-            MetricSnapshotArtifactV1.from(
+            MetricSnapshotArtifactV2.from(
                 snapshot(
                     evaluationId = "eval_immutable_bytes",
                     retrievedAt = OBSERVED_AT.plusSeconds(1),
@@ -431,13 +436,78 @@ class CanonicalSnapshotHashTest {
     }
 
     @Test
-    fun `jvm canonical bytes and hashes match the generated s2-2 v1 vector exactly`() {
+    fun `cash order intent requires exact positive overflow safe integer amount`() {
+        assertThrows<IllegalArgumentException> {
+            OrderIntentSnapshot(
+                symbol = "005930",
+                side = "BUY",
+                orderType = "MARKET",
+                quantity = 2,
+                estimatedPrice = 10_000,
+                estimatedAmount = 19_999,
+                timeframe = "1d",
+                strategyId = "strategy_fixture",
+            )
+        }
+        assertThrows<IllegalArgumentException> {
+            OrderIntentSnapshot(
+                symbol = "005930",
+                side = "BUY",
+                orderType = "LIMIT",
+                quantity = Long.MAX_VALUE,
+                estimatedPrice = 2,
+                estimatedAmount = Long.MAX_VALUE,
+                timeframe = "1d",
+                strategyId = "strategy_fixture",
+            )
+        }
+    }
+
+    @Test
+    fun `disclosure event identity is bounded unique and canonical order independent`() {
+        val left =
+            MetricSnapshot.fixture(
+                disclosureEvidence =
+                    DisclosureEvidenceIdentity(
+                        completeness = "COMPLETE",
+                        eventCodes = listOf("OPENDART:piicDecsn", "OPENDART:dfOcr"),
+                        mappingVersion = "mapping-v1",
+                        sourceRefs = listOf(ref("b"), ref("a")),
+                    ),
+            )
+        val reordered =
+            left.copy(
+                disclosureEvidence =
+                    requireNotNull(left.disclosureEvidence).copy(
+                        eventCodes = left.disclosureEvidence.eventCodes.reversed(),
+                        sourceRefs = left.disclosureEvidence.sourceRefs.reversed(),
+                    ),
+            )
+
+        assertEquals(hashes.snapshotArtifactHash(left), hashes.snapshotArtifactHash(reordered))
+        assertThrows<IllegalArgumentException> {
+            requireNotNull(left.disclosureEvidence).copy(
+                eventCodes = listOf("OPENDART:dfOcr", "OPENDART:dfOcr"),
+            )
+        }
+        assertThrows<IllegalArgumentException> {
+            requireNotNull(left.disclosureEvidence).copy(
+                eventCodes =
+                    (0..EvaluationBounds.MAX_DISCLOSURE_EVENTS).map { index ->
+                        "OPENDART:E$index"
+                    },
+            )
+        }
+    }
+
+    @Test
+    fun `jvm canonical bytes and hashes match the generated s2-2 v2 vector exactly`() {
         val sourceRef = "1".repeat(64)
         val observedAt = Instant.parse("2026-07-23T00:00:00Z")
         val retrievedAt = Instant.parse("2026-07-23T00:00:01Z")
         val snapshot =
             MetricSnapshot(
-                snapshotSchemaVersion = "s2.2-metric-snapshot-v1",
+                snapshotSchemaVersion = "s2.2-metric-snapshot-v2",
                 evaluationId = "evl_0123456789abcdef",
                 evaluationAsOf = observedAt,
                 retrievedAt = retrievedAt,
@@ -465,7 +535,10 @@ class CanonicalSnapshotHashTest {
                         side = "BUY",
                         orderType = "LIMIT",
                         quantity = 10,
-                        limitPrice = BigDecimal("50000.00"),
+                        estimatedPrice = 50_000,
+                        estimatedAmount = 500_000,
+                        timeframe = "1d",
+                        strategyId = "strategy_hash_fixture",
                     ),
                 metrics =
                     mapOf(
@@ -500,6 +573,7 @@ class CanonicalSnapshotHashTest {
                 disclosureEvidence =
                     DisclosureEvidenceIdentity(
                         completeness = "COMPLETE",
+                        eventCodes = listOf("OPENDART:piicDecsn"),
                         mappingVersion = "s1.2-v1",
                         sourceRefs = listOf(sourceRef),
                     ),

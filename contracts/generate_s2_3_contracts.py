@@ -30,7 +30,7 @@ from contracts.generate_s2_2_contracts import (  # noqa: E402
 REPO_ROOT = _SCRIPT_REPO_ROOT
 CATALOG_PATH = REPO_ROOT / "contracts/catalogs/s2-3-decision-contract.v1.json"
 EXPECTED_CATALOG_SHA256: Final[str] = (
-    "58e55ebda0154a079cff3d5c2527da66743cf3fdeeaf063b86b23b581371fab3"
+    "d035607af50a0f7cb9cd7170e9a6a188e6af32d5bbbdb76e5e4f7b3edc68cd18"
 )
 OUTPUTS: Final[frozenset[str]] = frozenset(
     {
@@ -345,6 +345,54 @@ def validate_catalog_semantics(catalog: Mapping[str, Any]) -> None:
         raise ContractValidationError("S2.3 must not generate production source rows.")
     if catalog["sourceOwnership"]["providerHttpFallback"]:
         raise ContractValidationError("S2.3 must not call provider HTTP.")
+    if catalog["sourceOwnership"]["instrumentFields"] != [
+        "symbol",
+        "isEtfEtn",
+        "isGoldEtfEtn",
+        "productRiskScore",
+        "catalogVersion",
+        "observedAt",
+        "receivedAt",
+        "sourceRef",
+        "artifactHash",
+    ]:
+        raise ContractValidationError("S2.3 instrument catalog fields drifted.")
+    if {
+        "instrumentProducer": catalog["sourceOwnership"]["instrumentProducer"],
+        "instrumentProductRiskScoreNullable": catalog["sourceOwnership"][
+            "instrumentProductRiskScoreNullable"
+        ],
+        "instrumentProjection": catalog["sourceOwnership"]["instrumentProjection"],
+        "instrumentReaderMaxRows": catalog["sourceOwnership"]["instrumentReaderMaxRows"],
+        "instrumentTable": catalog["sourceOwnership"]["instrumentTable"],
+        "instrumentTimePolicy": catalog["sourceOwnership"]["instrumentTimePolicy"],
+        "instrumentVersionPolicy": catalog["sourceOwnership"]["instrumentVersionPolicy"],
+        "instrumentWriterRole": catalog["sourceOwnership"]["instrumentWriterRole"],
+    } != {
+        "instrumentProducer": "S1.1",
+        "instrumentProductRiskScoreNullable": True,
+        "instrumentProjection": "latest_instrument_catalog_observations",
+        "instrumentReaderMaxRows": 1,
+        "instrumentTable": "instrument_catalog_observations",
+        "instrumentTimePolicy": "FUTURE_TIMESTAMP_IS_STALE",
+        "instrumentVersionPolicy": "LATEST_OBSERVED_VERSION_NO_FALLBACK",
+        "instrumentWriterRole": "decision_market_writer",
+    }:
+        raise ContractValidationError("S2.3 instrument source ownership drifted.")
+    instrument_contracts = [
+        row
+        for row in catalog["sourceOwnership"]["observationContracts"]
+        if row["table"] == "instrument_catalog_observations"
+    ]
+    if instrument_contracts != [
+        {
+            "producerOwner": "S1.1",
+            "projection": "latest_instrument_catalog_observations",
+            "table": "instrument_catalog_observations",
+            "writerRole": "decision_market_writer",
+        }
+    ]:
+        raise ContractValidationError("S2.3 instrument observation contract drifted.")
     if catalog["sourceOwnership"]["structuralMissingPolicy"] != (
         "S23_RUNTIME_SOURCE_BLOCKED"
     ):

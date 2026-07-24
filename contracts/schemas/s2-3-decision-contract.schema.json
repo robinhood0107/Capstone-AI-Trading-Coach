@@ -668,6 +668,43 @@
             "portfolio_position_observations"
           ]
         },
+        "instrumentFields": {
+          "const": [
+            "symbol",
+            "isEtfEtn",
+            "isGoldEtfEtn",
+            "productRiskScore",
+            "catalogVersion",
+            "observedAt",
+            "receivedAt",
+            "sourceRef",
+            "artifactHash"
+          ]
+        },
+        "instrumentProducer": {
+          "const": "S1.1"
+        },
+        "instrumentProductRiskScoreNullable": {
+          "const": true
+        },
+        "instrumentProjection": {
+          "const": "latest_instrument_catalog_observations"
+        },
+        "instrumentReaderMaxRows": {
+          "const": 1
+        },
+        "instrumentTable": {
+          "const": "instrument_catalog_observations"
+        },
+        "instrumentTimePolicy": {
+          "const": "FUTURE_TIMESTAMP_IS_STALE"
+        },
+        "instrumentVersionPolicy": {
+          "const": "LATEST_OBSERVED_VERSION_NO_FALLBACK"
+        },
+        "instrumentWriterRole": {
+          "const": "decision_market_writer"
+        },
         "observationContracts": {
           "const": [
             {
@@ -687,6 +724,12 @@
               "projection": "latest_deterministic_risk_observations",
               "table": "deterministic_risk_observations",
               "writerRole": "decision_risk_writer"
+            },
+            {
+              "producerOwner": "S1.1",
+              "projection": "latest_instrument_catalog_observations",
+              "table": "instrument_catalog_observations",
+              "writerRole": "decision_market_writer"
             },
             {
               "producerOwner": "S1.1",
@@ -746,6 +789,15 @@
       },
       "required": [
         "balanceTables",
+        "instrumentFields",
+        "instrumentProducer",
+        "instrumentProductRiskScoreNullable",
+        "instrumentProjection",
+        "instrumentReaderMaxRows",
+        "instrumentTable",
+        "instrumentTimePolicy",
+        "instrumentVersionPolicy",
+        "instrumentWriterRole",
         "observationContracts",
         "portfolioProducer",
         "priceProducer",

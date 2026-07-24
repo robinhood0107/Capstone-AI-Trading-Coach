@@ -69,6 +69,14 @@ STALE_OPENAPI_PATH_ALLOWLIST = {
 V1_HASH_ALLOWLIST = {
     "contracts/changes/20260724-s2-2-rule-evaluation-offline-contract.md",
 }
+HISTORICAL_PROTO_ABSENCE_DOCS = {
+    "contracts/changes/20260709-s1-2-opendart-risk-contract.md",
+}
+PROTO_ABSENCE_CURRENT_TENSE_PATTERNS = (
+    "실제 gRPC proto 파일은 아직 없",
+    "proto 파일은 아직 없",
+    "proto 파일이 필요하면",
+)
 
 
 def public_markdown_paths() -> list[Path]:
@@ -135,6 +143,28 @@ class S23MarkdownContractDriftTest(unittest.TestCase):
         self.assertIn("HASH-CANONICALIZATION-S22-V1", text)
         self.assertIn("2026-07-24 supersession", text)
         self.assertIn("HASH-CANONICALIZATION-S22-V2", text)
+
+    def test_proto_absence_history_is_superseded_and_current_docs_are_current(
+        self,
+    ) -> None:
+        for path in public_markdown_paths():
+            relative = path.relative_to(REPO_ROOT).as_posix()
+            text = path.read_text(encoding="utf-8")
+            matched = [
+                token
+                for token in PROTO_ABSENCE_CURRENT_TENSE_PATTERNS
+                if token in text
+            ]
+            if not matched:
+                continue
+
+            with self.subTest(path=relative, matched=matched):
+                self.assertIn(relative, HISTORICAL_PROTO_ABSENCE_DOCS)
+                self.assertIn("Superseded on: 2026-07-24", text)
+                self.assertIn(
+                    "Superseded by: `contracts/proto/disclosure_observation.proto`",
+                    text,
+                )
 
     def test_current_api_docs_use_the_openapi_json_ssot(self) -> None:
         for relative in (

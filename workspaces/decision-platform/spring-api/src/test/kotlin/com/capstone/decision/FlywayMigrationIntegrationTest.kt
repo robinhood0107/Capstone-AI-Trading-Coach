@@ -356,6 +356,7 @@ class FlywayMigrationIntegrationTest(
             "latest_instrument_catalog_observations",
             "latest_deterministic_risk_observations",
             "latest_daily_order_count_observations",
+            "current_corporation_registry_projection",
             "disclosure_event_observation_projection",
             "disclosure_collection_status_projection",
         ).forEach { table ->
@@ -383,6 +384,7 @@ class FlywayMigrationIntegrationTest(
             "daily_order_count_observations",
             "corporation_registry_observations",
         ).forEach { table ->
+            assertFalse(hasTablePrivilege("decision_app", table, "SELECT"), "unexpected source SELECT on $table")
             assertFalse(hasTablePrivilege("decision_app", table, "INSERT"), "unexpected source INSERT on $table")
             assertFalse(hasTablePrivilege("decision_app", table, "UPDATE"), "unexpected source UPDATE on $table")
             assertFalse(hasTablePrivilege("decision_app", table, "DELETE"), "unexpected source DELETE on $table")
@@ -417,10 +419,10 @@ class FlywayMigrationIntegrationTest(
             "delete from event_outbox where false",
             "truncate table event_outbox",
             "insert into market_quote_observations " +
-                "(observation_id, symbol, source, price_krw, observed_at, received_at, " +
-                "schema_version, source_version, source_ref, artifact_hash) values " +
-                "('forbidden', '005930', 'KIS_MOCK', 1, now(), now(), 'v1', 'v1', " +
-                "repeat('a', 64), repeat('b', 64))",
+                "(observation_id, symbol, source, price_krw, completeness, observed_at, received_at, " +
+                "schema_version, source_version, payload_json, source_ref, artifact_hash) values " +
+                "('forbidden', '005930', 'KIS_MOCK', 1, 'COMPLETE', now(), now(), 'v1', 'v1', " +
+                "'{}'::jsonb, repeat('a', 64), repeat('b', 64))",
             "select * from rag_answers limit 0",
             "select * from decisions limit 0",
             "select * from audit_logs limit 0",
@@ -503,11 +505,12 @@ class FlywayMigrationIntegrationTest(
               observation_id, owner_user_id, account_scope_hash, source, context_status,
               cash_krw, portfolio_equity_krw, margin_requirement_krw, completeness,
               position_count, observed_at, received_at, schema_version, source_version,
-              source_ref, artifact_hash
+              payload_json, source_ref, artifact_hash
             ) values (
-              'balance-writer-role', 'usr_demo_user', repeat('6', 64), 'KIS_MOCK', 'ACTIVE',
+              'balance-writer-role', 'usr_demo_admin', repeat('6', 64), 'KIS_MOCK', 'ACTIVE',
               1, 1, 0, 'COMPLETE', 0, '2031-01-01T00:00:00Z', '2031-01-01T00:00:01Z',
-              'portfolio-balance-observation.v1', 'fixture-v1', repeat('7', 64), repeat('8', 64)
+              'portfolio-balance-observation.v1', 'fixture-v1', '{}'::jsonb,
+              repeat('7', 64), repeat('8', 64)
             )
             """.trimIndent(),
         )
@@ -520,10 +523,10 @@ class FlywayMigrationIntegrationTest(
               observed_at, received_at, schema_version, source_version, payload_json,
               source_ref, artifact_hash
             ) values (
-              'corp-writer-role', 'WRITER01', '12345678', 'ACTIVE', 'COMPLETE',
+              'corp-writer-role', '999998', '12345678', 'ACTIVE', 'COMPLETE',
               '2031-01-01T00:00:00Z', '2031-01-01T00:00:01Z',
               'corporation-registry-observation.v1', 'fixture-v1',
-              '{"symbol":"WRITER01"}'::jsonb, repeat('9', 64), repeat('a', 64)
+              '{"symbol":"999998"}'::jsonb, repeat('9', 64), repeat('a', 64)
             )
             """.trimIndent(),
         )
@@ -547,6 +550,19 @@ class FlywayMigrationIntegrationTest(
             MARKET_WRITER_PASSWORD,
             "create table forbidden_writer_ddl (id integer)",
         )
+        listOf(
+            Triple("decision_market_writer", MARKET_WRITER_PASSWORD, "instrument_catalog_observations"),
+            Triple("decision_portfolio_writer", PORTFOLIO_WRITER_PASSWORD, "portfolio_balance_observations"),
+            Triple("decision_risk_writer", RISK_WRITER_PASSWORD, "deterministic_risk_observations"),
+            Triple("decision_collector", COLLECTOR_PASSWORD, "corporation_registry_observations"),
+        ).forEach { (role, password, ownedTable) ->
+            assertRolePermissionDenied(role, password, "select * from $ownedTable")
+            assertRolePermissionDenied(role, password, "update $ownedTable set observation_id = observation_id")
+            assertRolePermissionDenied(role, password, "delete from $ownedTable")
+            assertRolePermissionDenied(role, password, "truncate table $ownedTable")
+            assertRolePermissionDenied(role, password, "insert into decisions (decision_id) values ('forbidden')")
+            assertRolePermissionDenied(role, password, "create table forbidden_${role}_ddl (id integer)")
+        }
     }
 
     @Test
@@ -555,12 +571,15 @@ class FlywayMigrationIntegrationTest(
         jdbcTemplate.update(
             """
             insert into market_quote_observations (
-              observation_id, symbol, source, price_krw, observed_at, received_at,
-              schema_version, source_version, source_ref, artifact_hash
+              observation_id, symbol, source, price_krw, bid_krw, ask_krw,
+              observed_at, received_at,
+              completeness, schema_version, source_version, payload_json, source_ref, artifact_hash
             )
             values (
-              'obs-quote-s23', '005930', 'KIS_MOCK', 70000, ?::timestamptz, ?::timestamptz,
-              'market-quote-observation.v1', 'kis-mock-fixture-v1', repeat('a', 64), repeat('b', 64)
+              'obs-quote-s23', '005930', 'KIS_MOCK', 70000, 69900, 70000,
+              ?::timestamptz, ?::timestamptz,
+              'COMPLETE', 'market-quote-observation.v1', 'kis-mock-fixture-v1',
+              '{"symbol":"005930"}'::jsonb, repeat('a', 64), repeat('b', 64)
             )
             """.trimIndent(),
             observedAt,
@@ -571,13 +590,16 @@ class FlywayMigrationIntegrationTest(
             insert into portfolio_balance_observations (
               observation_id, owner_user_id, account_scope_hash, source, context_status,
               cash_krw, portfolio_equity_krw, margin_requirement_krw, completeness, position_count,
-              observed_at, received_at, schema_version, source_version, source_ref, artifact_hash
+              observed_at, received_at, schema_version, source_version, payload_json,
+              source_ref, artifact_hash
             )
             values (
               'obs-balance-s23', 'usr_demo_user', repeat('c', 64), 'KIS_MOCK', 'ACTIVE',
               500000, 1000000, 140000, 'COMPLETE', 1,
               ?::timestamptz, ?::timestamptz,
-              'portfolio-balance-observation.v1', 'kis-mock-fixture-v1', repeat('d', 64), repeat('e', 64)
+              'portfolio-balance-observation.v1', 'kis-mock-fixture-v1',
+              '{"ownerScopeHash":"sanitized"}'::jsonb,
+              repeat('d', 64), repeat('e', 64)
             )
             """.trimIndent(),
             observedAt,
@@ -626,7 +648,7 @@ class FlywayMigrationIntegrationTest(
         assertFalse(TransactionSynchronizationManager.isActualTransactionActive())
 
         assertTrue(
-            portfolioContextAdapter.resolve("usr_demo_admin", PortfolioSource.KIS_MOCK)
+            portfolioContextAdapter.resolve("usr_missing_context", PortfolioSource.KIS_MOCK)
                 is PortfolioContextResolution.Unavailable,
         )
     }
@@ -735,9 +757,9 @@ class FlywayMigrationIntegrationTest(
               repeat('7', 64), repeat('8', 64)
             )
             """.trimIndent(),
-            evaluationAsOf,
-            evaluationAsOf,
-            evaluationAsOf,
+            java.time.OffsetDateTime.ofInstant(evaluationAsOf, java.time.ZoneOffset.UTC),
+            java.time.OffsetDateTime.ofInstant(evaluationAsOf, java.time.ZoneOffset.UTC),
+            java.time.OffsetDateTime.ofInstant(evaluationAsOf, java.time.ZoneOffset.UTC),
         )
         val request =
             EvaluationSourceRequest(
@@ -779,6 +801,120 @@ class FlywayMigrationIntegrationTest(
 
         val orderCount = orderMetricPort.loadDailyOrderCount(request) as MetricCell.Available
         assertEquals(0L, (orderCount.value as MetricValue.Whole).value)
+    }
+
+    @Test
+    fun `partial and inactive observations never become complete current source values`() {
+        jdbcTemplate.update(
+            """
+            insert into market_quote_observations (
+              observation_id, symbol, source, price_krw, completeness,
+              observed_at, received_at, schema_version, source_version,
+              payload_json, source_ref, artifact_hash
+            ) values (
+              'quote-partial-s23', '000660', 'KIS_MOCK', 180000, 'PARTIAL',
+              '2026-06-24T02:59:00Z', '2026-06-24T02:59:01Z',
+              'market-quote-observation.v1', 'partial-fixture-v1',
+              '{"symbol":"000660"}'::jsonb, repeat('1', 64), repeat('2', 64)
+            )
+            """.trimIndent(),
+        )
+        val sourceRequest =
+            EvaluationSourceRequest(
+                actorUserId = "usr_demo_user",
+                portfolioContext =
+                    com.capstone.decision.application.risk.port.PortfolioContextRef(
+                        opaqueRef = "c".repeat(64),
+                        source = PortfolioSource.KIS_MOCK,
+                        ownerScopeHash = "c".repeat(64),
+                    ),
+                orderIntent =
+                    OrderIntentSnapshot(
+                        symbol = "000660",
+                        side = "BUY",
+                        orderType = "MARKET",
+                        quantity = 1,
+                        estimatedPrice = 180000,
+                        estimatedAmount = 180000,
+                        timeframe = "1d",
+                        strategyId = "partial-source-test",
+                    ),
+                evaluationAsOf = Instant.parse("2026-06-24T03:00:00Z"),
+            )
+        assertTrue(marketQuoteAdapter.load(sourceRequest) is MetricCell.Incomplete)
+
+        assertCheckViolation {
+            jdbcTemplate.update(
+                """
+                insert into deterministic_risk_observations (
+                  observation_id, owner_user_id, owner_scope_hash, portfolio_source,
+                  daily_loss_rate, completeness, observed_at, received_at,
+                  schema_version, source_version, payload_json, source_ref, artifact_hash
+                ) values (
+                  'risk-partial-invalid', 'usr_demo_user', repeat('d', 64), 'KIS_MOCK',
+                  -2, 'PARTIAL', now(), now(), 'risk-v1', 'fixture-v1', '{}'::jsonb,
+                  repeat('3', 64), repeat('4', 64)
+                )
+                """.trimIndent(),
+            )
+        }
+        assertCheckViolation {
+            jdbcTemplate.update(
+                """
+                insert into daily_order_count_observations (
+                  observation_id, owner_user_id, owner_scope_hash, portfolio_source,
+                  trading_date, order_count, covered_through, completeness,
+                  observed_at, received_at, schema_version, source_version,
+                  payload_json, source_ref, artifact_hash
+                ) values (
+                  'orders-partial-invalid', 'usr_demo_user', repeat('d', 64), 'KIS_MOCK',
+                  current_date, -1, now(), 'PARTIAL', now(), now(),
+                  'orders-v1', 'fixture-v1', '{}'::jsonb, repeat('5', 64), repeat('6', 64)
+                )
+                """.trimIndent(),
+            )
+        }
+
+        jdbcTemplate.update(
+            """
+            insert into portfolio_balance_observations (
+              observation_id, owner_user_id, account_scope_hash, source, context_status,
+              cash_krw, portfolio_equity_krw, margin_requirement_krw, completeness,
+              position_count, observed_at, received_at, schema_version, source_version,
+              payload_json, source_ref, artifact_hash
+            ) values
+              (
+                'balance-active-old', 'usr_demo_user', repeat('e', 64), 'KIS_MOCK', 'ACTIVE',
+                1, 1, 0, 'COMPLETE', 0, '2026-06-24T01:00:00Z', '2026-06-24T01:00:01Z',
+                'balance-v1', 'fixture-v1', '{}'::jsonb, repeat('7', 64), repeat('8', 64)
+              ),
+              (
+                'balance-inactive-new', 'usr_demo_user', repeat('e', 64), 'KIS_MOCK', 'INACTIVE',
+                1, 1, 0, 'COMPLETE', 0, '2026-06-24T02:00:00Z', '2026-06-24T02:00:01Z',
+                'balance-v1', 'fixture-v1', '{}'::jsonb, repeat('9', 64), repeat('a', 64)
+              )
+            """.trimIndent(),
+        )
+        DriverManager.getConnection(postgres.jdbcUrl, "decision_app", APP_PASSWORD).use { connection ->
+            connection.autoCommit = false
+            connection
+                .prepareStatement("select set_config('app.actor_user_id', ?, true)")
+                .use { statement ->
+                    statement.setString(1, "usr_demo_user")
+                    statement.executeQuery().close()
+                }
+            connection
+                .prepareStatement(
+                    "select count(*) from latest_portfolio_balance_observations where account_scope_hash = ?",
+                ).use { statement ->
+                    statement.setString(1, "e".repeat(64))
+                    statement.executeQuery().use { result ->
+                        assertTrue(result.next())
+                        assertEquals(0, result.getInt(1))
+                    }
+                }
+            connection.rollback()
+        }
     }
 
     @Test
@@ -1155,6 +1291,18 @@ class FlywayMigrationIntegrationTest(
         assertTrue(
             sqlException?.sqlState == "23505",
             "expected SQLState 23505 but was ${sqlException?.sqlState}: ${exception.mostSpecificCause.message}",
+        )
+    }
+
+    private fun assertCheckViolation(block: () -> Unit) {
+        val exception =
+            org.junit.jupiter.api.assertThrows<DataIntegrityViolationException> {
+                block()
+            }
+        val sqlException = exception.findSqlException()
+        assertTrue(
+            sqlException?.sqlState == "23514",
+            "expected SQLState 23514 but was ${sqlException?.sqlState}: ${exception.mostSpecificCause.message}",
         )
     }
 

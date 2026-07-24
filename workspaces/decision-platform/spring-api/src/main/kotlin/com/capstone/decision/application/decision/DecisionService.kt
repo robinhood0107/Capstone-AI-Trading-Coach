@@ -7,11 +7,6 @@ import com.capstone.decision.application.risk.port.PrincipleSnapshotPort
 import com.capstone.decision.domain.principle.PrincipleNotFoundException
 import com.capstone.decision.domain.risk.EvaluationBounds
 import com.capstone.decision.domain.risk.SnapshotHashService
-import com.capstone.decision.infrastructure.decision.DecisionClaimLookup
-import com.capstone.decision.infrastructure.decision.DecisionIdempotencyClaim
-import com.capstone.decision.infrastructure.decision.DecisionIdempotencyClaimService
-import com.capstone.decision.infrastructure.decision.DecisionIdempotencyHasher
-import com.capstone.decision.infrastructure.decision.DecisionProperties
 import org.springframework.stereotype.Service
 import tools.jackson.databind.ObjectMapper
 import java.time.Clock
@@ -26,11 +21,11 @@ class DecisionService(
     private val principleSnapshotPort: PrincipleSnapshotPort,
     private val evaluationUseCase: PortfolioEvaluationUseCase,
     private val persistencePort: DecisionPersistencePort,
-    private val idempotencyHasher: DecisionIdempotencyHasher,
-    private val claimService: DecisionIdempotencyClaimService,
+    private val idempotencyHasher: DecisionIdempotencyIdentityPort,
+    private val claimService: DecisionIdempotencyClaimPort,
     private val projectionFactory: DecisionProjectionFactory,
     private val observability: DecisionObservability,
-    private val decisionProperties: DecisionProperties,
+    private val validityPolicy: DecisionValidityPolicy,
     private val objectMapper: ObjectMapper,
     private val clock: Clock,
 ) {
@@ -145,7 +140,7 @@ class DecisionService(
                 projectionFactory.create(
                     decisionId = decisionId,
                     createdAt = evaluationAsOf,
-                    configuredValidity = Duration.ofMinutes(decisionProperties.validMinutes),
+                    configuredValidity = validityPolicy.configuredValidity,
                     evaluation = evaluation,
                 )
             val projectionJson = projectionFactory.canonicalJson(projection)

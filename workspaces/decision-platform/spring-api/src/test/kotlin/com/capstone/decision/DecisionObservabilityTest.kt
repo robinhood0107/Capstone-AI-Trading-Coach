@@ -39,9 +39,7 @@ class DecisionObservabilityTest {
     }
 
     @Test
-    fun `evaluated HOLD records one timer and one allowlisted fail closed counter without sensitive values`(
-        output: CapturedOutput,
-    ) {
+    fun `evaluated HOLD records one timer and one allowlisted fail closed counter without sensitive values`(output: CapturedOutput) {
         val registry = SimpleMeterRegistry()
         val observability = DecisionObservability(registry)
         val projection = holdProjection()

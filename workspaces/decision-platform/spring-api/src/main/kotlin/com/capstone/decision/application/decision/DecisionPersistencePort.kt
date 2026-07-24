@@ -5,6 +5,7 @@ import java.time.Instant
 interface DecisionPersistencePort {
     fun findIdempotencyResult(
         scopeHash: String,
+        ownerScopeHash: String,
         now: Instant,
     ): StoredDecisionIdempotencyResult?
 

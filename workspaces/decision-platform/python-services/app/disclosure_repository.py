@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+import hashlib
+import json
 from collections import defaultdict
 from datetime import UTC, date, datetime
 from typing import Any
@@ -122,8 +124,16 @@ class PostgresStoredDisclosureRepository:
         }
         complete = bool(corp_code) and completed_operations == set(required_operations)
         observed_at = max(
-            (event.observed_at for event in events),
+            (
+                *[event.observed_at for event in events],
+                *[_datetime(row["updated_at"]) for row in cursor_rows],
+            ),
             default=datetime.fromtimestamp(0, tz=UTC),
+        )
+        cursor_ref = (
+            _cursor_source_ref(cursor_rows)
+            if complete
+            else ()
         )
         return StoredDisclosureBatch(
             symbol=symbol,
@@ -132,6 +142,7 @@ class PostgresStoredDisclosureRepository:
             mapping_version=mapping.version,
             complete=complete,
             events=events,
+            source_refs=cursor_ref,
         )
 
 
@@ -192,3 +203,21 @@ def _datetime(value: object) -> datetime:
     if isinstance(value, datetime):
         return value
     return datetime.fromisoformat(str(value))
+
+
+def _cursor_source_ref(rows: list[dict[str, Any]]) -> tuple[str, ...]:
+    canonical = [
+        {
+            "completed": bool(row["completed"]),
+            "operation": str(row["operation"]),
+            "updatedAt": _datetime(row["updated_at"]).astimezone(UTC).isoformat(),
+        }
+        for row in sorted(rows, key=lambda item: str(item["operation"]))
+    ]
+    payload = json.dumps(
+        canonical,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return (hashlib.sha256(payload).hexdigest(),)

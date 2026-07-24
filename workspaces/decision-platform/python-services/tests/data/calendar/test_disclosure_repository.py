@@ -79,13 +79,16 @@ def test_app_role_reads_only_sanitized_stored_disclosure_projection(
                 """
                 INSERT INTO calendar_collection_cursors (
                   source_id, operation, subject, window_from, window_to,
-                  mapping_version, next_page, completed
+                  mapping_version, next_page, completed, updated_at
                 ) VALUES (
                   'opendart-structured-events', %s, '00126380', %s, %s,
-                  's1.6-disclosure-state-v1', 1, true
+                  's1.6-disclosure-state-v1', 1, true, %s
                 )
                 """,
-                [(operation, window_from, window_to) for operation in operations],
+                [
+                    (operation, window_from, window_to, observed_at)
+                    for operation in operations
+                ],
             )
 
     batch = PostgresStoredDisclosureRepository(postgres_cluster["app_dsn"]).load(

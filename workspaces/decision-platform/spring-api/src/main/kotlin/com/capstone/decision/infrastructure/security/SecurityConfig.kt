@@ -1,6 +1,7 @@
 package com.capstone.decision.infrastructure.security
 
 import com.capstone.decision.api.common.ApiResponseWriter
+import com.capstone.decision.infrastructure.decision.DecisionProperties
 import com.capstone.decision.infrastructure.grpc.DecisionGrpcProperties
 import com.capstone.decision.infrastructure.idempotency.IdempotencyProperties
 import com.capstone.decision.infrastructure.idempotency.IdempotencyService
@@ -41,6 +42,7 @@ import java.security.MessageDigest
     IdempotencyProperties::class,
     HttpRequestProperties::class,
     PrincipleProperties::class,
+    DecisionProperties::class,
     DecisionGrpcProperties::class,
 )
 class SecurityConfig {
@@ -53,13 +55,16 @@ class SecurityConfig {
         loginProperties: LoginAttemptLimiterProperties,
         demoCredentialProperties: DemoCredentialBootstrapProperties,
         principleProperties: PrincipleProperties,
+        decisionProperties: DecisionProperties,
     ): AuthSecretSeparation {
         jwtProperties.validate()
         loginProperties.validate()
         principleProperties.validate()
+        decisionProperties.validate()
         val jwtSecret = jwtProperties.secret.toByteArray(StandardCharsets.UTF_8)
         val loginScopeKey = loginProperties.scopeHmacKey.toByteArray(StandardCharsets.UTF_8)
         val principleCursorKey = principleProperties.cursorHmacKey.toByteArray(StandardCharsets.UTF_8)
+        val decisionScopeKey = decisionProperties.idempotencyScopeHmacKey.toByteArray(StandardCharsets.UTF_8)
         val credentialSeparationKey =
             DemoCredentialBundlePolicy.decodeSeparationKey(demoCredentialProperties.separationKey)
         return try {
@@ -70,15 +75,20 @@ class SecurityConfig {
                 !MessageDigest.isEqual(credentialSeparationKey, jwtSecret) &&
                     !MessageDigest.isEqual(credentialSeparationKey, loginScopeKey) &&
                     !MessageDigest.isEqual(credentialSeparationKey, principleCursorKey) &&
+                    !MessageDigest.isEqual(credentialSeparationKey, decisionScopeKey) &&
                     !MessageDigest.isEqual(jwtSecret, principleCursorKey) &&
-                    !MessageDigest.isEqual(loginScopeKey, principleCursorKey),
-            ) { "Authentication and Principle cursor keys must be purpose-separated." }
+                    !MessageDigest.isEqual(jwtSecret, decisionScopeKey) &&
+                    !MessageDigest.isEqual(loginScopeKey, principleCursorKey) &&
+                    !MessageDigest.isEqual(loginScopeKey, decisionScopeKey) &&
+                    !MessageDigest.isEqual(principleCursorKey, decisionScopeKey),
+            ) { "Authentication, Principle, and Decision HMAC keys must be purpose-separated." }
             verifyBootstrapBundles(demoCredentialProperties, credentialSeparationKey)
             AuthSecretSeparation
         } finally {
             jwtSecret.fill(0)
             loginScopeKey.fill(0)
             principleCursorKey.fill(0)
+            decisionScopeKey.fill(0)
             credentialSeparationKey.fill(0)
         }
     }

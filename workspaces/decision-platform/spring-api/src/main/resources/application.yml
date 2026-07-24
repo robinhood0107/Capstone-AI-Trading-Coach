@@ -66,6 +66,8 @@ app:
       - /api/v1/backtests/**
   decision:
     valid-minutes: 10              # validUntil
+    idempotency-scope-hmac-key: ${DECISION_IDEMPOTENCY_SCOPE_HMAC_KEY}
+    claim-ttl-seconds: 30
     grpc:
       target: ${DECISION_GRPC_TARGET:127.0.0.1:50051}
       hard-deadline-millis: 2000

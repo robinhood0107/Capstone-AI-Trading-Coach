@@ -276,6 +276,133 @@ class S23GeneratedContractTest(unittest.TestCase):
                 self.assertEqual(expected, (REPO_ROOT / relative).read_bytes())
                 self.assertTrue(expected.endswith(b"\n"))
 
+    def test_review_remediation_amendment_is_part_of_the_canonical_catalog(
+        self,
+    ) -> None:
+        self.assertEqual(
+            {
+                "corpCodeRequestPolicy": "OPTIONAL_EMPTY_RESOLVES_FROM_REGISTRY",
+                "corpRegistryResolution": "SYMBOL_EXACTLY_ONE",
+                "eventLookbackDays": 365,
+                "physicalAttemptsMax": 1,
+                "retryEnabled": False,
+                "transparentRetryEnabled": False,
+            },
+            {
+                key: self.catalog["grpc"][key]
+                for key in (
+                    "corpCodeRequestPolicy",
+                    "corpRegistryResolution",
+                    "eventLookbackDays",
+                    "physicalAttemptsMax",
+                    "retryEnabled",
+                    "transparentRetryEnabled",
+                )
+            },
+        )
+        self.assertEqual(
+            {
+                "lockOrder": [
+                    "IDEMPOTENCY_ADVISORY_LOCK",
+                    "PRINCIPLE_FOR_SHARE",
+                    "DECISION_GRAPH_INSERT",
+                ],
+                "principleLock": "FOR SHARE OF principle",
+                "updaterFirst": "HTTP_409_ALL_WRITES_ZERO",
+                "decisionFirst": "UPDATER_WAITS_FOR_DECISION_COMMIT",
+            },
+            self.catalog["principleConcurrency"],
+        )
+        self.assertEqual(
+            [
+                "decision",
+                "violations",
+                "trace",
+                "artifact",
+                "audit",
+                "outbox",
+                "idempotencyResult",
+            ],
+            self.catalog["persistence"]["atomicInsertOrder"],
+        )
+        self.assertFalse(self.catalog["persistence"]["brokerPublish"])
+        self.assertEqual(
+            "SOURCE_READ_AND_EVALUATION_OUTSIDE",
+            self.catalog["persistence"]["transactionReadPolicy"],
+        )
+        self.assertEqual(
+            "FINAL_PERSISTENCE_ONLY",
+            self.catalog["persistence"]["transactionWritePolicy"],
+        )
+
+    def test_structural_readiness_and_transient_unavailability_are_distinct(
+        self,
+    ) -> None:
+        ownership = self.catalog["sourceOwnership"]
+        self.assertEqual(
+            "S23_RUNTIME_SOURCE_BLOCKED",
+            ownership["structuralMissingPolicy"],
+        )
+        self.assertEqual(
+            "PERSISTED_HOLD",
+            ownership["transientUnavailablePolicy"],
+        )
+        self.assertEqual(
+            [
+                "canonicalTableOrProjection",
+                "productionBeanOrPort",
+                "offlineFixtureProducer",
+                "leastPrivilegeWriterRole",
+                "boundedReader",
+                "freshnessCompletenessContract",
+                "noFakeRegressionTest",
+            ],
+            ownership["structuralReadinessRequirements"],
+        )
+        self.assertEqual(
+            {
+                "corporation_registry_observations",
+                "daily_order_count_observations",
+                "deterministic_risk_observations",
+                "market_quote_observations",
+                "portfolio_balance_observations",
+                "portfolio_position_observations",
+            },
+            {row["table"] for row in ownership["observationContracts"]},
+        )
+        self.assertFalse(ownership["productionSeed"])
+        self.assertFalse(ownership["providerHttpFallback"])
+
+    def test_database_and_observability_security_amendments_are_locked(self) -> None:
+        database = self.catalog["databaseSecurity"]
+        self.assertEqual(
+            [
+                "NOSUPERUSER",
+                "NOCREATEDB",
+                "NOCREATEROLE",
+                "NOBYPASSRLS",
+            ],
+            database["decisionAppFlags"],
+        )
+        self.assertFalse(database["broadSelectGrant"])
+        self.assertFalse(database["futureTableDefaultSelectGrant"])
+        self.assertEqual(
+            "BOUNDED_SECURITY_DEFINER_FUNCTION",
+            database["idempotencyReplayRead"],
+        )
+        self.assertEqual(
+            ["scopeHash", "ownerScopeHash", "expiresAt"],
+            database["idempotencyReplayPredicates"],
+        )
+        observability = self.catalog["observability"]
+        self.assertEqual(["GUIDE", "STRICT", "UNPINNED"], observability["modes"])
+        self.assertEqual(
+            "FIRST_STABLE_SORTED_ISSUE",
+            observability["failClosedReason"],
+        )
+        self.assertTrue(observability["postCommitFaultIsolation"])
+        self.assertTrue(observability["normalPathExactOnce"])
+
     def test_request_rejects_actor_mode_and_inexact_amount(self) -> None:
         schema = load_json_bytes_strict(
             self.outputs["contracts/schemas/s2-3-evaluate-order-request.schema.json"],

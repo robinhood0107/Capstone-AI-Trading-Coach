@@ -273,6 +273,25 @@
       "portfolio_balance_observations",
       "portfolio_position_observations"
     ],
+    "instrumentFields": [
+      "symbol",
+      "isEtfEtn",
+      "isGoldEtfEtn",
+      "productRiskScore",
+      "catalogVersion",
+      "observedAt",
+      "receivedAt",
+      "sourceRef",
+      "artifactHash"
+    ],
+    "instrumentProducer": "S1.1",
+    "instrumentProductRiskScoreNullable": true,
+    "instrumentProjection": "latest_instrument_catalog_observations",
+    "instrumentReaderMaxRows": 1,
+    "instrumentTable": "instrument_catalog_observations",
+    "instrumentTimePolicy": "FUTURE_TIMESTAMP_IS_STALE",
+    "instrumentVersionPolicy": "LATEST_OBSERVED_VERSION_NO_FALLBACK",
+    "instrumentWriterRole": "decision_market_writer",
     "observationContracts": [
       {
         "producerOwner": "S1.6",
@@ -291,6 +310,12 @@
         "projection": "latest_deterministic_risk_observations",
         "table": "deterministic_risk_observations",
         "writerRole": "decision_risk_writer"
+      },
+      {
+        "producerOwner": "S1.1",
+        "projection": "latest_instrument_catalog_observations",
+        "table": "instrument_catalog_observations",
+        "writerRole": "decision_market_writer"
       },
       {
         "producerOwner": "S1.1",

@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import re
+import threading
 from collections.abc import Mapping
 from concurrent import futures
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from typing import Never, Protocol
+
+import psycopg
 
 import grpc
 from grpc_health.v1 import health, health_pb2, health_pb2_grpc
@@ -65,6 +68,7 @@ class StoredDisclosureRepository(Protocol):
         corp_code: str | None,
         window_from: date,
         window_to: date,
+        cancellation: QueryCancellation,
     ) -> StoredDisclosureBatch: ...
 
 
@@ -73,6 +77,46 @@ class LoopbackServerSettings(Protocol):
 
     @property
     def bind_address(self) -> str: ...
+
+
+class CancellableDatabaseConnection(Protocol):
+    """gRPC cancellation이 현재 DB 작업만 취소하도록 필요한 최소 connection 표면이다."""
+
+    def cancel(self) -> None: ...
+
+
+class QueryCancellation:
+    """RPC lifecycle과 한 physical DB connection을 thread-safe하게 연결한다."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._connection: CancellableDatabaseConnection | None = None
+        self._cancelled = False
+
+    def attach(self, connection: CancellableDatabaseConnection) -> None:
+        """repository가 physical query 직전에 connection을 등록한다."""
+        cancel_now = False
+        with self._lock:
+            if self._connection is not None:
+                raise RuntimeError("database cancellation already has an active connection")
+            self._connection = connection
+            cancel_now = self._cancelled
+        if cancel_now:
+            _cancel_safely(connection)
+
+    def detach(self, connection: CancellableDatabaseConnection) -> None:
+        """query 종료 뒤 같은 connection만 해제해 다음 RPC resource와 섞이지 않게 한다."""
+        with self._lock:
+            if self._connection is connection:
+                self._connection = None
+
+    def cancel(self) -> None:
+        """client cancellation callback에서 secret/error detail 없이 active query를 취소한다."""
+        with self._lock:
+            self._cancelled = True
+            connection = self._connection
+        if connection is not None:
+            _cancel_safely(connection)
 
 
 class DisclosureObservationServicer(
@@ -93,17 +137,19 @@ class DisclosureObservationServicer(
             request,
             context,
         )
+        cancellation = QueryCancellation()
+        context.add_callback(cancellation.cancel)
         try:
             batch = self._repository.load(
                 symbol=symbol,
                 corp_code=corp_code,
                 window_from=window_from,
                 window_to=window_to,
+                cancellation=cancellation,
             )
-        except (TimeoutError, ConnectionError):
-            _abort(context, grpc.StatusCode.UNAVAILABLE, "stored disclosure observation unavailable")
-        except Exception:
-            _abort(context, grpc.StatusCode.INTERNAL, "stored disclosure observation read failed")
+        except Exception as error:
+            code = _database_failure_status(error)
+            _abort(context, code, _database_failure_detail(code))
 
         _validate_batch(
             batch,
@@ -145,7 +191,7 @@ class DisclosureObservationServicer(
         )
         response = disclosure_observation_pb2.GetDisclosureEventsResponse(
             symbol=symbol,
-            corp_code=corp_code or "",
+            corp_code=batch.corp_code,
             as_of=as_of.isoformat(),
             window_from=window_from.isoformat(),
             window_to=window_to.isoformat(),
@@ -187,7 +233,6 @@ def create_disclosure_server(
         options=(
             ("grpc.max_receive_message_length", _MAX_REQUEST_BYTES),
             ("grpc.max_send_message_length", _MAX_RESPONSE_BYTES),
-            ("grpc.max_concurrent_streams", _MAX_CONCURRENCY),
         ),
         maximum_concurrent_rpcs=_MAX_CONCURRENCY,
     )
@@ -225,7 +270,11 @@ def _validate_request(
         window_to = date.fromisoformat(request.window_to)
     except ValueError:
         _abort(context, grpc.StatusCode.INVALID_ARGUMENT, "date field is invalid")
-    if window_from > window_to or window_to != as_of:
+    if (
+        window_from > window_to
+        or window_to != as_of
+        or (window_to - window_from).days > 365
+    ):
         _abort(context, grpc.StatusCode.INVALID_ARGUMENT, "disclosure window is invalid")
     return symbol, corp_code, as_of, window_from, window_to
 
@@ -237,7 +286,12 @@ def _validate_batch(
     corp_code: str | None,
     context: grpc.ServicerContext,
 ) -> None:
-    if batch.symbol != symbol or (corp_code is not None and batch.corp_code != corp_code):
+    if (
+        batch.symbol != symbol
+        or (corp_code is not None and batch.corp_code != corp_code)
+        or (batch.corp_code and re.fullmatch(r"[0-9]{8}", batch.corp_code) is None)
+        or (batch.complete and not batch.corp_code)
+    ):
         _abort(context, grpc.StatusCode.DATA_LOSS, "disclosure batch identity mismatch")
     if not 1 <= len(batch.mapping_version) <= 128:
         _abort(context, grpc.StatusCode.DATA_LOSS, "disclosure mapping version is invalid")
@@ -299,3 +353,45 @@ def _abort(
 ) -> Never:
     context.abort(code, detail)
     raise AssertionError("gRPC abort returned unexpectedly")
+
+
+def _cancel_safely(connection: CancellableDatabaseConnection) -> None:
+    try:
+        connection.cancel()
+    except Exception:
+        # 취소 실패 detail은 이미 종료 중인 RPC에 노출하지 않고 connection context가 close한다.
+        return
+
+
+def _database_failure_status(error: Exception) -> grpc.StatusCode:
+    if isinstance(error, psycopg.Error):
+        sqlstate = error.sqlstate or ""
+        if sqlstate == "57014":
+            return grpc.StatusCode.DEADLINE_EXCEEDED
+        if sqlstate.startswith("28"):
+            return grpc.StatusCode.UNAUTHENTICATED
+        if sqlstate == "42501":
+            return grpc.StatusCode.PERMISSION_DENIED
+        if sqlstate.startswith("08") or (
+            isinstance(error, psycopg.OperationalError) and not sqlstate
+        ):
+            return grpc.StatusCode.UNAVAILABLE
+        if sqlstate.startswith(("21", "22", "23")):
+            return grpc.StatusCode.DATA_LOSS
+        return grpc.StatusCode.INTERNAL
+    if isinstance(error, (ValueError, KeyError, TypeError)):
+        return grpc.StatusCode.DATA_LOSS
+    if isinstance(error, (TimeoutError, ConnectionError)):
+        return grpc.StatusCode.UNAVAILABLE
+    return grpc.StatusCode.INTERNAL
+
+
+def _database_failure_detail(code: grpc.StatusCode) -> str:
+    return {
+        grpc.StatusCode.UNAVAILABLE: "stored disclosure database unavailable",
+        grpc.StatusCode.DEADLINE_EXCEEDED: "stored disclosure database deadline exceeded",
+        grpc.StatusCode.UNAUTHENTICATED: "stored disclosure database authentication failed",
+        grpc.StatusCode.PERMISSION_DENIED: "stored disclosure database permission denied",
+        grpc.StatusCode.DATA_LOSS: "stored disclosure database row is malformed",
+        grpc.StatusCode.INTERNAL: "stored disclosure database invariant failed",
+    }[code]

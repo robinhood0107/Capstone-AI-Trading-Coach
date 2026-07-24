@@ -28,6 +28,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.util.UUID
+import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
 import kotlin.math.max
 import kotlin.math.min
@@ -44,6 +45,7 @@ class GrpcDisclosureRiskAdapter(
 ) : DisclosureRiskPort,
     AutoCloseable {
     private val channel: ManagedChannel
+    private val concurrency = Semaphore(properties.concurrencyMax, true)
 
     init {
         properties.validate()
@@ -90,7 +92,7 @@ class GrpcDisclosureRiskAdapter(
             return MetricCell.Error(MetricIssueCode.DISCLOSURE_UNAVAILABLE)
         }
         val asOf = request.evaluationAsOf.atZone(SEOUL).toLocalDate()
-        val windowFrom = asOf.minusDays(1)
+        val windowFrom = asOf.minusDays(DISCLOSURE_LOOKBACK_DAYS)
         val rpcRequest =
             GetDisclosureEventsRequest
                 .newBuilder()
@@ -103,6 +105,9 @@ class GrpcDisclosureRiskAdapter(
         if (rpcRequest.serializedSize > properties.requestMaxBytes) {
             throw DisclosureGrpcProtocolException()
         }
+        if (!concurrency.tryAcquire()) {
+            return MetricCell.Error(MetricIssueCode.DISCLOSURE_UNAVAILABLE)
+        }
         val response =
             try {
                 DisclosureObservationServiceGrpc
@@ -111,6 +116,8 @@ class GrpcDisclosureRiskAdapter(
                     .getDisclosureEvents(rpcRequest)
             } catch (exception: StatusRuntimeException) {
                 return mapTransportFailure(exception)
+            } finally {
+                concurrency.release()
             }
         return responseCell(
             response = response,
@@ -159,12 +166,8 @@ class GrpcDisclosureRiskAdapter(
         retrievedAt: Instant,
     ): MetricCell<DisclosureRiskSnapshot> {
         validateEnvelope(response, expectedSymbol, expectedAsOf, expectedWindowFrom)
-        if (!response.complete) {
-            return MetricCell.Incomplete(MetricIssueCode.SOURCE_INCOMPLETE)
-        }
         val sourceRefs = response.sourceRefsList.toList()
         if (
-            sourceRefs.isEmpty() ||
             sourceRefs.size > EvaluationBounds.MAX_SOURCE_REFS ||
             sourceRefs.distinct().size != sourceRefs.size ||
             sourceRefs != sourceRefs.sorted() ||
@@ -180,15 +183,18 @@ class GrpcDisclosureRiskAdapter(
         }
         val eventIdentities =
             response.eventsList.map { event ->
+                val occurredOn =
+                    try {
+                        LocalDate.parse(event.occurredOn)
+                    } catch (_: DateTimeException) {
+                        throw DisclosureGrpcProtocolException()
+                    }
                 if (
                     !EVENT_CODE.matches(event.eventCode) ||
-                    !RECEIPT_NO.matches(event.receiptNo)
+                    !RECEIPT_NO.matches(event.receiptNo) ||
+                    occurredOn.isBefore(expectedWindowFrom) ||
+                    occurredOn.isAfter(expectedAsOf)
                 ) {
-                    throw DisclosureGrpcProtocolException()
-                }
-                try {
-                    LocalDate.parse(event.occurredOn)
-                } catch (_: DateTimeException) {
                     throw DisclosureGrpcProtocolException()
                 }
                 Triple(event.eventCode, event.receiptNo, event.occurredOn)
@@ -218,6 +224,12 @@ class GrpcDisclosureRiskAdapter(
                     throw DisclosureGrpcProtocolException()
                 }
             }
+        if (!response.complete) {
+            return MetricCell.Incomplete(MetricIssueCode.SOURCE_INCOMPLETE)
+        }
+        if (sourceRefs.isEmpty()) {
+            throw DisclosureGrpcProtocolException()
+        }
         val events =
             response.eventsList
                 .map { it.eventCode }
@@ -270,7 +282,8 @@ class GrpcDisclosureRiskAdapter(
         if (
             response.serializedSize > properties.responseMaxBytes ||
             response.symbol != expectedSymbol ||
-            response.corpCode.isNotEmpty() ||
+            (response.corpCode.isNotEmpty() && !CORP_CODE.matches(response.corpCode)) ||
+            (response.complete && !CORP_CODE.matches(response.corpCode)) ||
             response.asOf != expectedAsOf.toString() ||
             response.windowFrom != expectedWindowFrom.toString() ||
             response.windowTo != expectedAsOf.toString() ||
@@ -285,6 +298,7 @@ class GrpcDisclosureRiskAdapter(
         when (exception.status.code) {
             Status.Code.UNAVAILABLE,
             Status.Code.DEADLINE_EXCEEDED,
+            Status.Code.RESOURCE_EXHAUSTED,
             -> MetricCell.Error(MetricIssueCode.DISCLOSURE_UNAVAILABLE)
 
             else -> throw DisclosureGrpcProtocolException()
@@ -338,5 +352,7 @@ class GrpcDisclosureRiskAdapter(
         val SOURCE_REF = Regex(EvaluationBounds.SANITIZED_SHA256_PATTERN)
         val EVENT_CODE = Regex("""[A-Za-z0-9._:-]{1,128}""")
         val RECEIPT_NO = Regex("""[0-9]{14}""")
+        val CORP_CODE = Regex("""[0-9]{8}""")
+        const val DISCLOSURE_LOOKBACK_DAYS = 365L
     }
 }

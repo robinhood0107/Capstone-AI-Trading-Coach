@@ -92,14 +92,21 @@ owner-scoped context에 있고 `INTERNAL_PAPER`만 저장 source `PAPER`에 매�
 없다. selector 자체가 잘못되면 HTTP 400 `VALIDATION_ERROR`, 선택한 context가 없거나 사용할 수
 없으면 HTTP 200 `HOLD`다. result는 immutable `principleVersionId + principleVersion`을 pin한다.
 
-hash contract `HASH-CANONICALIZATION-S22-V1`은 semantic input hash와 snapshot artifact hash를
-분리한다. object key는 사전식, 배열은 명시된 stable key, 숫자는 exponent 없는 plain decimal,
+hash contract `HASH-CANONICALIZATION-S22-V2`와 `s2.2-metric-snapshot-v2`는 semantic input
+hash와 snapshot artifact hash를 분리한다. object key는 사전식, 배열은 명시된 stable key,
+숫자는 exponent 없는 plain decimal,
 `-0`은 `0`, trailing zero는 제거한다. exact input/canonical bytes/SHA-256 vector는
 `examples/s2-2-hash-vector.valid.json`에 있다. semantic input은 full order intent, 모든
 MetricKey state/value/freshness/source identity, requested/observed optional evidence, disclosure
 completeness/mapping/source refs와 provenance를 포함한다. artifact hash는 evaluation/retrieval
 identity까지 포함한 versioned full snapshot의 exact UTF-8 bytes를 그대로 사용하며 별도 축약
 hash map을 만들지 않는다.
+
+현물 v1 full order intent는
+`symbol,side,orderType,quantity,estimatedPrice,estimatedAmount,timeframe,strategyId`다. MARKET과
+LIMIT 모두 `estimatedPrice`를 사용하며 `price`/`limitPrice`는 unknown property다.
+`estimatedAmount`는 `quantity * estimatedPrice`의 exact overflow-checked 원화 정수 결과다. P2
+`derivativeOrderIntent.limitPrice`와 provider wire 가격은 별도 namespace다.
 
 S2.2 generated artifact는 `generate_s2_2_contracts.py`의 explicit `OUTPUTS`만 소유하고 S2.1
 generator output과 겹치지 않는다. canonical catalog SHA-256은
@@ -116,6 +123,17 @@ uv run --frozen python contracts/generate_s2_2_contracts.py --check
 uv run --frozen python -m unittest discover -s contracts/tests -v
 uv run --frozen python contracts/validate.py
 ```
+
+## S2.3 stored-source prerequisite
+
+S2.3 runtime은 provider HTTP fallback 없이 저장된 sanitized source만 읽는다. V9의
+`market_quote_observations`는 S1.1 producer, KIS_MOCK
+`portfolio_balance_observations`/`portfolio_position_observations`는 S3 producer가 후속 별도
+권한으로 INSERT한다. INTERNAL_PAPER는 기존 ledger의 owner-scoped projection을 사용한다.
+`decision_app`은 SELECT만 가지며 production seed는 없다. source가 비어 있거나 stale/incomplete면
+typed unavailable과 persisted 200 HOLD로 수렴한다. 자세한 소유권·hash 전환은
+[`20260724-s2-3-decision-contract-lock.md`](changes/20260724-s2-3-decision-contract-lock.md)를
+따른다.
 
 ## S1.5 KIS 데이터 품질 리포트
 

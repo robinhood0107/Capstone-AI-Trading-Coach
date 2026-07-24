@@ -22,4 +22,5 @@ enum class ErrorCode(
     RATE_LIMITED(HttpStatus.TOO_MANY_REQUESTS, "Rate limit exceeded."),
     PYTHON_SERVICE_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "Python service is unavailable."),
     BROKERAGE_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "Brokerage service is unavailable."),
+    INTERNAL_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "The request failed closed."),
 }

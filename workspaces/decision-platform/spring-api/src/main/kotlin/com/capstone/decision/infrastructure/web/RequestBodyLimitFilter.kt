@@ -2,6 +2,7 @@ package com.capstone.decision.infrastructure.web
 
 import com.capstone.decision.api.common.ApiResponseWriter
 import com.capstone.decision.api.common.ErrorCode
+import com.capstone.decision.domain.risk.EvaluationBounds
 import jakarta.servlet.FilterChain
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
@@ -17,18 +18,31 @@ class RequestBodyLimitFilter(
         response: HttpServletResponse,
         filterChain: FilterChain,
     ) {
+        val maxBytes =
+            if (
+                request.method == "POST" &&
+                request.requestURI == DECISION_EVALUATE_PATH
+            ) {
+                EvaluationBounds.MAX_REQUEST_BYTES
+            } else {
+                properties.maxRequestBodyBytes
+            }
         val boundedRequest =
             try {
-                CachedBodyHttpServletRequest(request, properties.maxRequestBodyBytes)
+                CachedBodyHttpServletRequest(request, maxBytes)
             } catch (_: RequestBodyTooLargeException) {
                 responseWriter.writeError(
                     request = request,
                     response = response,
                     code = ErrorCode.PAYLOAD_TOO_LARGE,
-                    details = mapOf("maxBytes" to properties.maxRequestBodyBytes),
+                    details = mapOf("maxBytes" to maxBytes),
                 )
                 return
             }
         filterChain.doFilter(boundedRequest, response)
+    }
+
+    private companion object {
+        const val DECISION_EVALUATE_PATH = "/api/v1/decisions/evaluate-order"
     }
 }

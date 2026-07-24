@@ -5,14 +5,12 @@ import com.capstone.decision.application.risk.MetricSnapshotAssembler
 import com.capstone.decision.application.risk.PortfolioEvaluationUseCase
 import com.capstone.decision.application.risk.SystemRuleContract
 import com.capstone.decision.application.risk.port.DisclosureRiskPort
-import com.capstone.decision.application.risk.port.InstrumentCatalogPort
 import com.capstone.decision.application.risk.port.MarginPort
 import com.capstone.decision.application.risk.port.NewsEvidencePort
 import com.capstone.decision.application.risk.port.OrderMetricPort
 import com.capstone.decision.application.risk.port.PortfolioContextPort
 import com.capstone.decision.application.risk.port.PricePort
 import com.capstone.decision.application.risk.port.PrincipleSnapshotPort
-import com.capstone.decision.application.risk.port.RiskMetricBundle
 import com.capstone.decision.application.risk.port.RiskSnapshotPort
 import com.capstone.decision.application.risk.port.SignalMetricBundle
 import com.capstone.decision.application.risk.port.SignalPort
@@ -32,31 +30,6 @@ class DecisionRuntimeConfiguration {
     @Bean
     fun decisionValidityPolicy(properties: DecisionProperties): DecisionValidityPolicy =
         DecisionValidityPolicy(Duration.ofMinutes(properties.validMinutes))
-
-    @Bean
-    fun decisionOrderMetricPort(): OrderMetricPort =
-        object : OrderMetricPort {
-            override fun loadDailyOrderCount(request: com.capstone.decision.application.risk.port.EvaluationSourceRequest) =
-                MetricCell.Missing(MetricIssueCode.SOURCE_MISSING)
-        }
-
-    @Bean
-    fun decisionRiskSnapshotPort(): RiskSnapshotPort =
-        object : RiskSnapshotPort {
-            override fun load(request: com.capstone.decision.application.risk.port.EvaluationSourceRequest) =
-                RiskMetricBundle(
-                    dailyLossRate = MetricCell.Missing(MetricIssueCode.SOURCE_MISSING),
-                    maxDrawdown = MetricCell.Missing(MetricIssueCode.SOURCE_MISSING),
-                    annualizedVolatility = MetricCell.Missing(MetricIssueCode.SOURCE_MISSING),
-                )
-        }
-
-    @Bean
-    fun decisionInstrumentCatalogPort(): InstrumentCatalogPort =
-        object : InstrumentCatalogPort {
-            override fun load(request: com.capstone.decision.application.risk.port.EvaluationSourceRequest) =
-                MetricCell.Missing(MetricIssueCode.SOURCE_MISSING)
-        }
 
     @Bean
     fun decisionNewsEvidencePort(): NewsEvidencePort =
@@ -83,7 +56,7 @@ class DecisionRuntimeConfiguration {
         marginPort: MarginPort,
         orderMetricPort: OrderMetricPort,
         riskSnapshotPort: RiskSnapshotPort,
-        instrumentCatalogPort: InstrumentCatalogPort,
+        instrumentCatalogPort: com.capstone.decision.application.risk.port.InstrumentCatalogPort,
         newsEvidencePort: NewsEvidencePort,
         disclosureRiskPort: DisclosureRiskPort,
         signalPort: SignalPort,

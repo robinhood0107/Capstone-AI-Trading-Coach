@@ -196,7 +196,9 @@ BEGIN
             decision_audit_projection,
             latest_market_quote_observations,
             latest_portfolio_balance_observations,
-            active_paper_portfolio_projection
+            active_paper_portfolio_projection,
+            disclosure_event_observation_projection,
+            disclosure_collection_status_projection
         TO decision_app;
         GRANT INSERT ON TABLE
             principles,

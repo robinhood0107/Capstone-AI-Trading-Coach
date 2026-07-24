@@ -4,8 +4,10 @@ import com.capstone.decision.application.risk.port.EvaluationSourceRequest
 import com.capstone.decision.application.risk.port.PortfolioContextRef
 import com.capstone.decision.contract.v1.DisclosureObservationServiceGrpc
 import com.capstone.decision.contract.v1.DisclosureRiskEvent
+import com.capstone.decision.contract.v1.DisclosureRiskWarning
 import com.capstone.decision.contract.v1.GetDisclosureEventsRequest
 import com.capstone.decision.contract.v1.GetDisclosureEventsResponse
+import com.capstone.decision.domain.risk.EvaluationBounds
 import com.capstone.decision.domain.risk.MetricCell
 import com.capstone.decision.domain.risk.OrderIntentSnapshot
 import com.capstone.decision.domain.risk.PortfolioSource
@@ -272,6 +274,119 @@ class GrpcDisclosureRiskAdapterTest {
         }
     }
 
+    @Test
+    fun `malformed scalar identity list provenance and warning responses are technical failures`() {
+        val invalidEventCode =
+            validResponse()
+                .eventsList
+                .single()
+                .toBuilder()
+                .setEventCode("")
+                .build()
+        val invalidReceiptNo =
+            validResponse()
+                .eventsList
+                .single()
+                .toBuilder()
+                .setReceiptNo("invalid")
+                .build()
+        val invalidOccurredOn =
+            validResponse()
+                .eventsList
+                .single()
+                .toBuilder()
+                .setOccurredOn("2028-12-31")
+                .build()
+        val tooManySourceRefs = (1..101).map { index -> index.toString(16).padStart(64, '0') }
+        val tooManyWarnings = (1..51).map { validWarning("WARN_$it", "safe") }
+        val invalidResponses =
+            listOf(
+                validResponse().toBuilder().setScore(Double.NaN).build(),
+                validResponse().toBuilder().setScore(Double.POSITIVE_INFINITY).build(),
+                validResponse().toBuilder().setScore(-0.01).build(),
+                validResponse().toBuilder().setScore(1.01).build(),
+                validResponse().toBuilder().setObservedAt("not-an-instant").build(),
+                validResponse().toBuilder().setSymbol("000660").build(),
+                validResponse().toBuilder().setCorpCode("invalid").build(),
+                validResponse().toBuilder().setAsOf("2030-01-01").build(),
+                validResponse().toBuilder().setWindowFrom("2029-01-01").build(),
+                validResponse().toBuilder().setWindowTo("2030-01-01").build(),
+                validResponse().toBuilder().setMappingVersion("").build(),
+                validResponse()
+                    .toBuilder()
+                    .setMappingVersion("m".repeat(EvaluationBounds.MAX_ID_OR_CODE_CHARS + 1))
+                    .build(),
+                validResponse()
+                    .toBuilder()
+                    .clearEvents()
+                    .addEvents(invalidEventCode)
+                    .build(),
+                validResponse()
+                    .toBuilder()
+                    .clearEvents()
+                    .addEvents(invalidReceiptNo)
+                    .build(),
+                validResponse()
+                    .toBuilder()
+                    .clearEvents()
+                    .addEvents(invalidOccurredOn)
+                    .build(),
+                validResponse()
+                    .toBuilder()
+                    .clearSourceRefs()
+                    .addSourceRefs("A".repeat(64))
+                    .build(),
+                validResponse()
+                    .toBuilder()
+                    .clearSourceRefs()
+                    .addAllSourceRefs(tooManySourceRefs)
+                    .build(),
+                validResponse().toBuilder().addAllWarnings(tooManyWarnings).build(),
+                validResponse()
+                    .toBuilder()
+                    .addWarnings(validWarning("", "safe"))
+                    .build(),
+                validResponse()
+                    .toBuilder()
+                    .addWarnings(
+                        validWarning(
+                            "W".repeat(EvaluationBounds.MAX_ID_OR_CODE_CHARS + 1),
+                            "safe",
+                        ),
+                    ).build(),
+                validResponse()
+                    .toBuilder()
+                    .addWarnings(validWarning("WARN", ""))
+                    .build(),
+                validResponse()
+                    .toBuilder()
+                    .addWarnings(
+                        validWarning(
+                            "WARN",
+                            "m".repeat(EvaluationBounds.MAX_SAFE_MESSAGE_CHARS + 1),
+                        ),
+                    ).build(),
+            )
+
+        invalidResponses.forEach(::assertProtocolFailure)
+    }
+
+    @Test
+    fun `actual response larger than one MiB is a technical failure`() {
+        val oversizedResponse =
+            validResponse()
+                .toBuilder()
+                .addWarnings(
+                    validWarning(
+                        "OVERSIZED",
+                        "m".repeat(EvaluationBounds.MAX_RESPONSE_BYTES),
+                    ),
+                ).build()
+        assertThat(oversizedResponse.serializedSize).isGreaterThan(EvaluationBounds.MAX_RESPONSE_BYTES)
+
+        assertProtocolFailure(oversizedResponse)
+    }
+
     private fun adapter(server: Server): GrpcDisclosureRiskAdapter =
         GrpcDisclosureRiskAdapter(
             DecisionGrpcProperties(target = "127.0.0.1:${server.port}"),
@@ -297,6 +412,31 @@ class GrpcDisclosureRiskAdapterTest {
                 responseObserver.onCompleted()
             }
         }
+
+    private fun assertProtocolFailure(response: GetDisclosureEventsResponse) {
+        val server = server(constantService(response))
+        val adapter = adapter(server)
+        try {
+            assertThrows<DisclosureGrpcProtocolException> {
+                adapter.load(request())
+            }
+        } finally {
+            adapter.close()
+            server.shutdownNow().awaitTermination()
+        }
+    }
+
+    private fun validWarning(
+        code: String,
+        message: String,
+    ): DisclosureRiskWarning =
+        DisclosureRiskWarning
+            .newBuilder()
+            .setCode(code)
+            .setEventCode("OPENDART:piicDecsn")
+            .setReceiptNo("20300102000001")
+            .setMessage(message)
+            .build()
 
     private fun failingService(status: Status): DisclosureObservationServiceGrpc.DisclosureObservationServiceImplBase =
         object : DisclosureObservationServiceGrpc.DisclosureObservationServiceImplBase() {

@@ -28,6 +28,7 @@ import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 
 @ExtendWith(OutputCaptureExtension::class)
 class GrpcDisclosureRiskAdapterTest {
@@ -48,6 +49,7 @@ class GrpcDisclosureRiskAdapterTest {
     @Test
     fun `real loopback business RPC preserves provenance with one physical attempt`(output: CapturedOutput) {
         val calls = AtomicInteger()
+        val capturedRequest = AtomicReference<GetDisclosureEventsRequest>()
         val server =
             server(
                 object : DisclosureObservationServiceGrpc.DisclosureObservationServiceImplBase() {
@@ -56,6 +58,7 @@ class GrpcDisclosureRiskAdapterTest {
                         responseObserver: StreamObserver<GetDisclosureEventsResponse>,
                     ) {
                         calls.incrementAndGet()
+                        capturedRequest.set(request)
                         responseObserver.onNext(validResponse())
                         responseObserver.onCompleted()
                     }
@@ -69,6 +72,9 @@ class GrpcDisclosureRiskAdapterTest {
             val available = result as MetricCell.Available
 
             assertThat(calls.get()).isEqualTo(1)
+            assertThat(capturedRequest.get().corpCode).isEmpty()
+            assertThat(capturedRequest.get().windowFrom).isEqualTo("2029-01-02")
+            assertThat(capturedRequest.get().windowTo).isEqualTo("2030-01-02")
             assertThat(available.value.score.toPlainString()).isEqualTo("0.6")
             assertThat(available.value.mappingVersion).isEqualTo("s1.2-v1")
             assertThat(available.value.events.map { it.eventCode })
@@ -185,6 +191,28 @@ class GrpcDisclosureRiskAdapterTest {
         }
     }
 
+    @Test
+    fun `incomplete malformed response is rejected before typed unavailability`() {
+        val malformed =
+            validResponse()
+                .toBuilder()
+                .setComplete(false)
+                .setMappingVersion("")
+                .clearSourceRefs()
+                .addSourceRefs("not-a-sha256")
+                .build()
+        val server = server(constantService(malformed))
+        val adapter = adapter(server)
+        try {
+            assertThrows<DisclosureGrpcProtocolException> {
+                adapter.load(request())
+            }
+        } finally {
+            adapter.close()
+            server.shutdownNow().awaitTermination()
+        }
+    }
+
     private fun adapter(server: Server): GrpcDisclosureRiskAdapter =
         GrpcDisclosureRiskAdapter(
             DecisionGrpcProperties(target = "127.0.0.1:${server.port}"),
@@ -225,9 +253,9 @@ class GrpcDisclosureRiskAdapterTest {
         GetDisclosureEventsResponse
             .newBuilder()
             .setSymbol("005930")
-            .setCorpCode("")
+            .setCorpCode("00126380")
             .setAsOf("2030-01-02")
-            .setWindowFrom("2030-01-01")
+            .setWindowFrom("2029-01-02")
             .setWindowTo("2030-01-02")
             .setScore(0.6)
             .setMappingVersion("s1.2-v1")

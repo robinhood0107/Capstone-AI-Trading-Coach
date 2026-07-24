@@ -27,6 +27,9 @@ class PostgresTestCluster(TypedDict):
     admin_dsn: str
     collector_dsn: str
     app_dsn: str
+    market_writer_dsn: str
+    portfolio_writer_dsn: str
+    risk_writer_dsn: str
 
 
 @pytest.fixture(scope="session")
@@ -44,6 +47,15 @@ def postgres_cluster() -> Iterator[PostgresTestCluster]:
         admin_dsn = f"postgresql://decision:decision@{host}:{port}/decision"
         collector_dsn = f"postgresql://decision_collector:collector-test@{host}:{port}/decision"
         app_dsn = f"postgresql://decision_app:app-test@{host}:{port}/decision"
+        market_writer_dsn = (
+            f"postgresql://decision_market_writer:market-writer-test@{host}:{port}/decision"
+        )
+        portfolio_writer_dsn = (
+            f"postgresql://decision_portfolio_writer:portfolio-writer-test@{host}:{port}/decision"
+        )
+        risk_writer_dsn = (
+            f"postgresql://decision_risk_writer:risk-writer-test@{host}:{port}/decision"
+        )
 
         with psycopg.connect(admin_dsn, autocommit=True) as connection:
             connection.execute(
@@ -52,11 +64,30 @@ def postgres_cluster() -> Iterator[PostgresTestCluster]:
                     NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD 'app-test';
                 CREATE ROLE decision_collector LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
                     NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD 'collector-test';
-                CREATE ROLE flyway NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
-                    NOINHERIT NOREPLICATION NOBYPASSRLS;
-                GRANT CONNECT ON DATABASE decision TO decision_app, decision_collector, flyway;
+                CREATE ROLE decision_market_writer LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
+                    NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD 'market-writer-test';
+                CREATE ROLE decision_portfolio_writer LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
+                    NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD 'portfolio-writer-test';
+                CREATE ROLE decision_risk_writer LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
+                    NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD 'risk-writer-test';
+                CREATE ROLE flyway LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
+                    NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD 'flyway-test';
+                GRANT CONNECT ON DATABASE decision TO
+                    decision_app,
+                    decision_collector,
+                    decision_market_writer,
+                    decision_portfolio_writer,
+                    decision_risk_writer,
+                    flyway;
                 REVOKE CREATE ON SCHEMA public FROM PUBLIC;
-                GRANT USAGE ON SCHEMA public TO decision_app, decision_collector, flyway;
+                GRANT USAGE ON SCHEMA public TO
+                    decision_app,
+                    decision_collector,
+                    decision_market_writer,
+                    decision_portfolio_writer,
+                    decision_risk_writer,
+                    flyway;
+                GRANT CREATE ON SCHEMA public TO flyway;
                 """
             )
             for migration in sorted(MIGRATION_DIR.glob("V*__*.sql"), key=_migration_version):
@@ -77,6 +108,9 @@ def postgres_cluster() -> Iterator[PostgresTestCluster]:
             "admin_dsn": admin_dsn,
             "collector_dsn": collector_dsn,
             "app_dsn": app_dsn,
+            "market_writer_dsn": market_writer_dsn,
+            "portfolio_writer_dsn": portfolio_writer_dsn,
+            "risk_writer_dsn": risk_writer_dsn,
         }
 
 

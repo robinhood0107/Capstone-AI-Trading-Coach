@@ -438,6 +438,7 @@ class OpenApiNormalizerTest(unittest.TestCase):
             "get": {"responses": {"200": {"description": "Owned Principle page"}}}
         }
         implementation["paths"].update(self._decision_paths())
+        implementation["components"]["schemas"].update(self._decision_components())
 
         normalized = normalize_generated_openapi(
             canonical_json_bytes(implementation),
@@ -452,6 +453,7 @@ class OpenApiNormalizerTest(unittest.TestCase):
     ) -> None:
         implementation = copy.deepcopy(self.generated)
         implementation["paths"].update(self._decision_paths())
+        implementation["components"]["schemas"].update(self._decision_components())
 
         normalized = normalize_generated_openapi(
             canonical_json_bytes(implementation),
@@ -474,6 +476,14 @@ class OpenApiNormalizerTest(unittest.TestCase):
             "responses": {"200": {"description": "Unapproved method"}}
         }
         mutations.append(wrong_method)
+        missing_component = copy.deepcopy(implementation)
+        del missing_component["components"]["schemas"]["S23Decision"]
+        mutations.append(missing_component)
+        extra_component = copy.deepcopy(implementation)
+        extra_component["components"]["schemas"]["S23Unapproved"] = {
+            "type": "object"
+        }
+        mutations.append(extra_component)
 
         for mutation in mutations:
             with self.subTest(mutation=hashlib.sha256(repr(mutation).encode()).hexdigest()):
@@ -491,11 +501,37 @@ class OpenApiNormalizerTest(unittest.TestCase):
                 "post": {"responses": {"200": {"description": "Decision result"}}}
             },
             "/api/v1/decisions/{decisionId}": {
+                "parameters": [
+                    {
+                        "name": "decisionId",
+                        "in": "path",
+                        "required": True,
+                        "schema": {"type": "string"},
+                    }
+                ],
                 "get": {"responses": {"200": {"description": "Owned Decision"}}}
             },
             "/api/v1/decisions/{decisionId}/audit": {
+                "parameters": [
+                    {
+                        "name": "decisionId",
+                        "in": "path",
+                        "required": True,
+                        "schema": {"type": "string"},
+                    }
+                ],
                 "get": {"responses": {"200": {"description": "Sanitized audit"}}}
             },
+        }
+
+    @staticmethod
+    def _decision_components() -> dict[str, object]:
+        return {
+            "S23EvaluateOrderRequest": {"type": "object"},
+            "S23Decision": {"type": "object"},
+            "S23DecisionSuccessResponse": {"type": "object"},
+            "S23DecisionAudit": {"type": "object"},
+            "S23DecisionAuditSuccessResponse": {"type": "object"},
         }
 
     def test_dialect_paths_components_and_digest_mutations_fail_closed(self) -> None:

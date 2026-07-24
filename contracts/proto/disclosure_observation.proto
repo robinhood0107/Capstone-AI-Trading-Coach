@@ -1,0 +1,47 @@
+syntax = "proto3";
+
+package capstone.decision.v1;
+
+option java_multiple_files = true;
+option java_package = "com.capstone.decision.contract.v1";
+option java_outer_classname = "DisclosureObservationContract";
+
+service DisclosureObservationService {
+  rpc GetDisclosureEvents(GetDisclosureEventsRequest) returns (GetDisclosureEventsResponse);
+}
+
+message GetDisclosureEventsRequest {
+  string symbol = 1;
+  string corp_code = 2;
+  string as_of = 3;
+  string window_from = 4;
+  string window_to = 5;
+}
+
+message GetDisclosureEventsResponse {
+  string symbol = 1;
+  string corp_code = 2;
+  string as_of = 3;
+  string window_from = 4;
+  string window_to = 5;
+  double score = 6;
+  string mapping_version = 7;
+  repeated DisclosureRiskEvent events = 8;
+  repeated DisclosureRiskWarning warnings = 9;
+  repeated string source_refs = 10;
+  string observed_at = 11;
+  bool complete = 12;
+}
+
+message DisclosureRiskEvent {
+  string event_code = 1;
+  string receipt_no = 2;
+  string occurred_on = 3;
+}
+
+message DisclosureRiskWarning {
+  string code = 1;
+  string event_code = 2;
+  string receipt_no = 3;
+  string message = 4;
+}

@@ -1,0 +1,89 @@
+{
+  "$id": "contracts/schemas/s2-3-evaluate-order-request.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "orderIntent": {
+      "additionalProperties": false,
+      "description": "Order candidate payload evaluated by Decision API before any mock or live order submission.",
+      "properties": {
+        "estimatedAmount": {
+          "description": "quantity * estimatedPrice의 overflow 없는 exact 원화 정수 결과여야 한다.",
+          "maximum": 9223372036854775807,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "estimatedPrice": {
+          "description": "현물 v1 MARKET/LIMIT 주문 평가 payload의 유일한 canonical 원화 가격 필드다.",
+          "maximum": 9223372036854775807,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "orderType": {
+          "description": "P0 결정: API 5.1 예시는 MARKET이며 LIMIT 주문 후보도 같은 estimatedPrice 계약을 사용한다.",
+          "enum": [
+            "MARKET",
+            "LIMIT"
+          ],
+          "type": "string"
+        },
+        "quantity": {
+          "maximum": 9223372036854775807,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "side": {
+          "enum": [
+            "BUY",
+            "SELL"
+          ],
+          "type": "string"
+        },
+        "strategyId": {
+          "maxLength": 120,
+          "minLength": 1,
+          "type": "string"
+        },
+        "symbol": {
+          "pattern": "^[0-9A-Z._:-]{1,20}$",
+          "type": "string"
+        },
+        "timeframe": {
+          "enum": [
+            "1d",
+            "60m"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "symbol",
+        "side",
+        "orderType",
+        "quantity",
+        "estimatedPrice",
+        "estimatedAmount",
+        "timeframe",
+        "strategyId"
+      ],
+      "type": "object"
+    },
+    "portfolioSource": {
+      "enum": [
+        "KIS_MOCK",
+        "INTERNAL_PAPER"
+      ]
+    },
+    "principleId": {
+      "pattern": "^prc_[0-9a-f]{32}$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "principleId",
+    "portfolioSource",
+    "orderIntent"
+  ],
+  "title": "S2.3 evaluate-order request v1",
+  "type": "object"
+}

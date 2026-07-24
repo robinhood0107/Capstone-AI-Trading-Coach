@@ -1,0 +1,58 @@
+{
+  "$id": "contracts/schemas/s2-3-decision-contract.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "const": "https://json-schema.org/draft/2020-12/schema"
+    },
+    "contractId": {
+      "const": "s2-3-decision-contract"
+    },
+    "contractVersion": {
+      "const": 1
+    },
+    "freshness": {
+      "type": "object"
+    },
+    "grpc": {
+      "type": "object"
+    },
+    "http": {
+      "type": "object"
+    },
+    "idempotency": {
+      "type": "object"
+    },
+    "observability": {
+      "type": "object"
+    },
+    "outcomePolicy": {
+      "type": "object"
+    },
+    "request": {
+      "type": "object"
+    },
+    "response": {
+      "type": "object"
+    },
+    "sourceOwnership": {
+      "type": "object"
+    }
+  },
+  "required": [
+    "$schema",
+    "contractId",
+    "contractVersion",
+    "freshness",
+    "grpc",
+    "http",
+    "idempotency",
+    "observability",
+    "outcomePolicy",
+    "request",
+    "response",
+    "sourceOwnership"
+  ],
+  "type": "object"
+}

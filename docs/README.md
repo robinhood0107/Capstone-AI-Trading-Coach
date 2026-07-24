@@ -5,9 +5,10 @@
 ## 현재 완료 상태
 
 S1.6 offline Market Calendar/Event Aggregator는 PR #35, S2.1 Principle CRUD는 PR #41,
-S2.2 offline evaluator는 PR #43으로 `main`에 병합됐다. S2.3은 현물
-`estimatedPrice` 단일 field와 hash V2, 저장 현재가·KIS_MOCK 잔고 read-model 소유권을 먼저
-잠근다. S2.3은 provider producer를 만들지 않고 source 부재를 persisted HOLD로 처리한다. 전체 상태는
+S2.2 offline evaluator는 PR #43으로 `main`에 병합됐다. 이 S2.3 변경은 현물
+`estimatedPrice` 단일 field와 hash V2, Decision API/V9 persistence, 저장 현재가·KIS_MOCK
+잔고 read-model consumer를 연결한다. provider producer를 만들지 않고 source 부재를 persisted
+HOLD로 처리한다. 전체 상태는
 [최종_프로젝트_명세서.md](최종_프로젝트_명세서.md) 8.4.1/11장, API 경계는
 [API_명세서.md](API_명세서.md) 5.1~5.4, 재현 명령과 machine-readable artifact 지도는
 [contracts README](../contracts/README.md#s22-rule-evaluation-offline-contract-v1), 실제 운영

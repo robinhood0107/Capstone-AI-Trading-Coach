@@ -81,6 +81,8 @@ source adapter를 추가하지 않는다. S2.2 내부 owner-scoped ACTIVE Princi
 > `HASH-CANONICALIZATION-S22-V2`/`s2.2-metric-snapshot-v2`가 V1을 대체하며 현물
 > `estimatedPrice`와 나머지 7개 exact field를 hash한다. 이 문서의 V1 설명은 당시 이력이고
 > runtime compatibility 계약이 아니다.
+> 이 문서의 Decision path 거절도 S2.2 역사 경계다. S2.3 implementation mode는 승인된
+> Decision path 3개와 `S23*` component 5개만 exact allowlist로 허용한다.
 
 # EN: S2.2 rule evaluation and portfolio offline contract v1
 
@@ -154,3 +156,5 @@ commands are listed in `contracts/README.md`.
 > before any production route or stored decision exists. `HASH-CANONICALIZATION-S22-V2` and
 > `s2.2-metric-snapshot-v2` replace V1 and hash `estimatedPrice` plus the other seven exact fields.
 > The V1 description above remains historical evidence, not a runtime compatibility contract.
+> The Decision-path rejection above is also historical S2.2 scope. S2.3 implementation mode now
+> permits only the three approved Decision paths and five `S23*` components.

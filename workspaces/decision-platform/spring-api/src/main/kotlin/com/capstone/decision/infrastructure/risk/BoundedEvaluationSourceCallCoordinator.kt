@@ -3,6 +3,7 @@ package com.capstone.decision.infrastructure.risk
 import com.capstone.decision.application.risk.EvaluationSourceCallCoordinator
 import com.capstone.decision.domain.risk.EvaluationBounds
 import jakarta.annotation.PreDestroy
+import org.slf4j.MDC
 import org.springframework.stereotype.Component
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.RejectedExecutionException
@@ -43,9 +44,26 @@ class BoundedEvaluationSourceCallCoordinator :
             return fallback
         }
         val timeoutNanos = min(EvaluationBounds.SOURCE_DEADLINE.toNanos(), remainingNanos)
+        val callerMdc = MDC.getCopyOfContextMap()
         val future =
             try {
-                executor.submit<T>(operation)
+                executor.submit<T> {
+                    val workerMdc = MDC.getCopyOfContextMap()
+                    try {
+                        if (callerMdc == null) {
+                            MDC.clear()
+                        } else {
+                            MDC.setContextMap(callerMdc)
+                        }
+                        operation()
+                    } finally {
+                        if (workerMdc == null) {
+                            MDC.clear()
+                        } else {
+                            MDC.setContextMap(workerMdc)
+                        }
+                    }
+                }
             } catch (_: RejectedExecutionException) {
                 return fallback
             }

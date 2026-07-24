@@ -396,10 +396,17 @@ class PortfolioEvaluationUseCaseTest {
                     balance.copy(source = PortfolioSource.KIS_MOCK)
                 },
             )
+        val wrongRevision =
+            Harness(
+                paperBalanceTransform = { balance ->
+                    balance.copy(revision = "paper-revision-crossed")
+                },
+            )
         val wrongInstrument = Harness(instrumentSymbol = "000660")
 
         assertThrows<IllegalStateException> { wrongOwner.useCase.evaluate(wrongOwner.command()) }
         assertThrows<IllegalStateException> { wrongSource.useCase.evaluate(wrongSource.command()) }
+        assertThrows<IllegalStateException> { wrongRevision.useCase.evaluate(wrongRevision.command()) }
         assertThrows<IllegalStateException> {
             wrongInstrument.useCase.evaluate(wrongInstrument.command())
         }
@@ -729,6 +736,11 @@ class PortfolioEvaluationUseCaseTest {
                                         opaqueRef = "server-owned-context",
                                         source = source,
                                         ownerScopeHash = ownerScopeHash,
+                                        revision =
+                                            when (source) {
+                                                PortfolioSource.KIS_MOCK -> "kis-revision-7"
+                                                PortfolioSource.INTERNAL_PAPER -> "paper-revision-7"
+                                            },
                                     ),
                                 )
                             } else {

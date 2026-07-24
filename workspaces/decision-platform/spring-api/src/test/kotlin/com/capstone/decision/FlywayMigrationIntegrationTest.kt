@@ -70,6 +70,8 @@ class FlywayMigrationIntegrationTest(
                 "decision_audit_projection",
                 "latest_market_quote_observations",
                 "latest_portfolio_balance_observations",
+                "disclosure_event_observation_projection",
+                "disclosure_collection_status_projection",
             )
         requiredTables.forEach { tableName ->
             assertTrue(tableExists(tableName), "expected table $tableName to exist")
@@ -318,6 +320,8 @@ class FlywayMigrationIntegrationTest(
             "latest_market_quote_observations",
             "latest_portfolio_balance_observations",
             "active_paper_portfolio_projection",
+            "disclosure_event_observation_projection",
+            "disclosure_collection_status_projection",
             "decision_idempotency_results",
         ).forEach { table ->
             assertTrue(hasTablePrivilege("decision_app", table, "SELECT"), "missing SELECT on $table")

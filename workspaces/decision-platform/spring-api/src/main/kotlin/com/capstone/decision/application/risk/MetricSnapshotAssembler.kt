@@ -237,7 +237,7 @@ class MetricSnapshotAssembler(
                 ?: request.evaluationAsOf
         val snapshot =
             MetricSnapshot(
-                snapshotSchemaVersion = "s2.2-metric-snapshot-v1",
+                snapshotSchemaVersion = "s2.2-metric-snapshot-v2",
                 evaluationId = request.evaluationId,
                 evaluationAsOf = request.evaluationAsOf,
                 retrievedAt = retrievedAt,
@@ -262,6 +262,7 @@ class MetricSnapshotAssembler(
                     disclosure?.let {
                         DisclosureEvidenceIdentity(
                             completeness = it.completeness,
+                            eventCodes = it.events.map { event -> event.eventCode }.sorted(),
                             mappingVersion = it.mappingVersion,
                             sourceRefs = it.sourceRefs.sorted(),
                         )
@@ -397,15 +398,10 @@ class MetricSnapshotAssembler(
         order: OrderIntentSnapshot,
     ): MetricCell<MetricValue> {
         val available = price as? MetricCell.Available ?: return unavailableMetric(price)
-        val priceKrw = effectiveUnitPriceKrw(available.value, order) ?: return sourceError()
-        return try {
-            fromAvailable(
-                available,
-                MetricValue.Whole(Math.multiplyExact(priceKrw, order.quantity), MetricUnit.KRW),
-            )
-        } catch (_: ArithmeticException) {
-            sourceError()
-        }
+        return fromAvailable(
+            available,
+            MetricValue.Whole(order.estimatedAmount, MetricUnit.KRW),
+        )
     }
 
     private fun assetWeightMetric(
@@ -416,7 +412,7 @@ class MetricSnapshotAssembler(
         val availableBalance = balance as? MetricCell.Available ?: return unavailableMetric(balance)
         val availablePrice = price as? MetricCell.Available ?: return unavailableMetric(price)
         val postValue =
-            postOrderTargetValue(availableBalance.value, availablePrice.value, order)
+            postOrderTargetValue(availableBalance.value, order)
                 ?: return sourceError()
         return ratioMetric(postValue, availableBalance.value.portfolioEquityKrw, availableBalance, availablePrice)
     }
@@ -448,7 +444,7 @@ class MetricSnapshotAssembler(
             }
         val targetCurrent = targetPosition?.marketValueKrw ?: 0L
         val targetPost =
-            postOrderTargetValue(availableBalance.value, availablePrice.value, order)
+            postOrderTargetValue(availableBalance.value, order)
                 ?: return sourceError()
         val postGold =
             try {
@@ -471,41 +467,22 @@ class MetricSnapshotAssembler(
 
     private fun postOrderTargetValue(
         balance: BalanceSnapshot,
-        price: MetricValue,
         order: OrderIntentSnapshot,
     ): Long? {
-        val priceKrw = effectiveUnitPriceKrw(price, order) ?: return null
         return try {
-            val amount = Math.multiplyExact(priceKrw, order.quantity)
             val current =
                 balance.positions
                     .singleOrNull { it.symbol == order.symbol && it.quantity > 0 }
                     ?.marketValueKrw ?: 0L
             when (order.side) {
-                "BUY" -> Math.addExact(current, amount)
-                "SELL" -> Math.subtractExact(current, amount).takeIf { it >= 0 }
+                "BUY" -> Math.addExact(current, order.estimatedAmount)
+                "SELL" -> Math.subtractExact(current, order.estimatedAmount).takeIf { it >= 0 }
                 else -> null
             }
         } catch (_: ArithmeticException) {
             null
         }
     }
-
-    private fun effectiveUnitPriceKrw(
-        currentPrice: MetricValue,
-        order: OrderIntentSnapshot,
-    ): Long? =
-        when (order.orderType) {
-            "MARKET" -> (currentPrice as? MetricValue.Whole)?.value
-            "LIMIT" ->
-                try {
-                    order.limitPrice?.longValueExact()
-                } catch (_: ArithmeticException) {
-                    null
-                }
-
-            else -> null
-        }?.takeIf { it > 0 }
 
     private fun ratioMetric(
         numerator: Long,

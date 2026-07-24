@@ -475,23 +475,30 @@ class CanonicalSnapshotHashTest {
                         sourceRefs = listOf(ref("b"), ref("a")),
                     ),
             )
+        val evidence = requireNotNull(left.disclosureEvidence)
         val reordered =
             left.copy(
                 disclosureEvidence =
-                    requireNotNull(left.disclosureEvidence).copy(
-                        eventCodes = left.disclosureEvidence.eventCodes.reversed(),
-                        sourceRefs = left.disclosureEvidence.sourceRefs.reversed(),
+                    evidence.copy(
+                        eventCodes = evidence.eventCodes.reversed(),
+                        sourceRefs = evidence.sourceRefs.reversed(),
                     ),
+            )
+        val changedEvent =
+            left.copy(
+                disclosureEvidence = evidence.copy(eventCodes = listOf("OPENDART:bsnSp")),
             )
 
         assertEquals(hashes.snapshotArtifactHash(left), hashes.snapshotArtifactHash(reordered))
+        assertNotEquals(hashes.snapshotArtifactHash(left), hashes.snapshotArtifactHash(changedEvent))
+        assertEquals(hashes.semanticInputHash(left), hashes.semanticInputHash(changedEvent))
         assertThrows<IllegalArgumentException> {
-            requireNotNull(left.disclosureEvidence).copy(
+            evidence.copy(
                 eventCodes = listOf("OPENDART:dfOcr", "OPENDART:dfOcr"),
             )
         }
         assertThrows<IllegalArgumentException> {
-            requireNotNull(left.disclosureEvidence).copy(
+            evidence.copy(
                 eventCodes =
                     (0..EvaluationBounds.MAX_DISCLOSURE_EVENTS).map { index ->
                         "OPENDART:E$index"

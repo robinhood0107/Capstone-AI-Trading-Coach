@@ -23,7 +23,7 @@
     "arrayOrder": "EXPLICIT_STABLE_SORT_KEYS",
     "charset": "UTF-8",
     "decimalFormat": "PLAIN_NO_EXPONENT",
-    "id": "HASH-CANONICALIZATION-S22-V1",
+    "id": "HASH-CANONICALIZATION-S22-V2",
     "jsonWhitespace": "NONE",
     "negativeZero": "ZERO",
     "objectKeyOrder": "LEXICOGRAPHIC",

@@ -160,6 +160,58 @@
     },
     "riskItem": {
       "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "anyOf": [
+              {
+                "properties": {
+                  "metric": {
+                    "const": "disclosure_risk_score"
+                  }
+                },
+                "required": [
+                  "metric"
+                ]
+              },
+              {
+                "properties": {
+                  "source": {
+                    "const": "OPENDART"
+                  }
+                },
+                "required": [
+                  "source"
+                ]
+              }
+            ]
+          },
+          "then": {
+            "properties": {
+              "metric": {
+                "const": "disclosure_risk_score"
+              },
+              "source": {
+                "const": "OPENDART"
+              },
+              "value": {
+                "maximum": 1,
+                "minimum": 0,
+                "type": "number"
+              }
+            },
+            "required": [
+              "metric",
+              "value",
+              "severity",
+              "source",
+              "eventCodes",
+              "mappingVersion",
+              "sourceRefs"
+            ]
+          }
+        }
+      ],
       "properties": {
         "eventCodes": {
           "items": {
@@ -205,6 +257,7 @@
             "type": "string"
           },
           "maxItems": 100,
+          "minItems": 1,
           "type": "array",
           "uniqueItems": true
         },

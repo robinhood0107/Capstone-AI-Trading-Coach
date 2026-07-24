@@ -96,6 +96,7 @@ data class DisclosureRiskSnapshot(
         require(mappingVersion.isNotBlank() && mappingVersion.length <= EvaluationBounds.MAX_ID_OR_CODE_CHARS)
         require(completeness in setOf("COMPLETE", "EMPTY"))
         require(events.size <= EvaluationBounds.MAX_DISCLOSURE_EVENTS)
+        require(events.map(DisclosureEventEvidence::eventCode).distinct().size == events.size)
         require(warnings.size <= EvaluationBounds.MAX_WARNINGS)
         require(
             warnings.all {

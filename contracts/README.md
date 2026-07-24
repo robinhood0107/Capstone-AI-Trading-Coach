@@ -110,7 +110,7 @@ LIMIT 모두 `estimatedPrice`를 사용하며 `price`/`limitPrice`는 unknown pr
 
 S2.2 generated artifact는 `generate_s2_2_contracts.py`의 explicit `OUTPUTS`만 소유하고 S2.1
 generator output과 겹치지 않는다. canonical catalog SHA-256은
-`57101a64421805911ddfc7d652c44e8cc2bc08d200ec2c06cc439fd82ce392a2`다. Spring classpath에는
+`a4714ee9ce3031199b9067919b15931fb42e106857da5f8d8ad7a95bafa8ad7b`다. Spring classpath에는
 catalog bytes를 변환 없이 복사하고 Gradle `check`가 byte equality를 검증한다. S2.2에서는
 Decision controller, persistence, OpenAPI path를 추가하지 않으며 normalizer는 implementation
 mode에서도 `/api/v1/decisions/**`를 거절한다. 외부 market/model/balance source adapter는

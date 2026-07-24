@@ -133,6 +133,16 @@ tasks.named<ProcessResources>("processResources") {
     from(layout.projectDirectory.file("../../../contracts/catalogs/s2-2-system-rule-catalog.v1.json")) {
         into("contracts")
     }
+    // S2.3 OpenAPI extension과 component schema는 generator가 잠근 exact bytes만 사용한다.
+    from(layout.projectDirectory.file("../../../contracts/catalogs/s2-3-decision-contract.v1.json")) {
+        into("contracts")
+    }
+    from(layout.projectDirectory.file("../../../contracts/schemas/s2-3-evaluate-order-request.schema.json")) {
+        into("contracts")
+    }
+    from(layout.projectDirectory.file("../../../contracts/schemas/s2-3-decision-response.schema.json")) {
+        into("contracts")
+    }
 }
 
 tasks.named<ProcessResources>("processTestResources") {
@@ -159,6 +169,33 @@ val verifyS22CatalogResource by tasks.registering {
                 .asFile
         check(copied.isFile && source.readBytes().contentEquals(copied.readBytes())) {
             "S2.2 catalog classpath resource must be an exact canonical byte copy."
+        }
+    }
+}
+
+val verifyS23ContractResources by tasks.registering {
+    group = "verification"
+    description = "S2.3 catalog와 OpenAPI component resource의 exact byte equality를 검증한다."
+    dependsOn(tasks.named("processResources"))
+
+    doLast {
+        listOf(
+            "catalogs/s2-3-decision-contract.v1.json" to "s2-3-decision-contract.v1.json",
+            "schemas/s2-3-evaluate-order-request.schema.json" to "s2-3-evaluate-order-request.schema.json",
+            "schemas/s2-3-decision-response.schema.json" to "s2-3-decision-response.schema.json",
+        ).forEach { (sourceRelative, copiedName) ->
+            val source =
+                layout.projectDirectory
+                    .file("../../../contracts/$sourceRelative")
+                    .asFile
+            val copied =
+                layout.buildDirectory
+                    .file("resources/main/contracts/$copiedName")
+                    .get()
+                    .asFile
+            check(copied.isFile && source.readBytes().contentEquals(copied.readBytes())) {
+                "S2.3 contract resource $copiedName must be an exact canonical byte copy."
+            }
         }
     }
 }

@@ -29,6 +29,32 @@ DEFAULT_INPUT = REPO_ROOT / "workspaces" / "decision-platform" / "spring-api" / 
 DEFAULT_EXPECTED = REPO_ROOT / "contracts" / "openapi" / "openapi.json"
 OAS_BASE_DIALECT = "https://spec.openapis.org/oas/3.1/dialect/base"
 CONTRACT_ID = "s2-1-principle-contract/v1"
+S23_CATALOG_PATH = (
+    REPO_ROOT / "contracts/catalogs/s2-3-decision-contract.v1.json"
+)
+S23_CONTRACT_ID = "s2-3-decision-contract/v1"
+DECISION_PATH_METHODS = {
+    "/api/v1/decisions/evaluate-order": {"post"},
+    "/api/v1/decisions/{decisionId}": {"get"},
+    "/api/v1/decisions/{decisionId}/audit": {"get"},
+}
+DECISION_COMPONENTS = {
+    "S23EvaluateOrderRequest",
+    "S23Decision",
+    "S23DecisionSuccessResponse",
+    "S23DecisionAudit",
+    "S23DecisionAuditSuccessResponse",
+}
+HTTP_METHODS = {
+    "delete",
+    "get",
+    "head",
+    "options",
+    "patch",
+    "post",
+    "put",
+    "trace",
+}
 
 
 class OpenApiNormalizationError(ValueError):
@@ -62,13 +88,32 @@ def _catalog_digest(catalog_bytes: bytes) -> str:
     return hashlib.sha256(catalog_bytes).hexdigest()
 
 
-def _assert_contract_roots(document: dict[str, Any], digest: str, *, source: str) -> None:
+def _s23_catalog_digest() -> str:
+    raw = S23_CATALOG_PATH.read_bytes()
+    catalog = load_json_bytes_strict(raw, source="S2.3 Decision catalog")
+    if raw != canonical_json_bytes(catalog):
+        raise OpenApiNormalizationError(
+            "S2.3 Decision catalog bytes must be canonical."
+        )
+    return hashlib.sha256(raw).hexdigest()
+
+
+def _assert_contract_roots(
+    document: dict[str, Any],
+    digest: str,
+    *,
+    source: str,
+) -> None:
     if document.get("jsonSchemaDialect") != OAS_BASE_DIALECT:
         raise OpenApiNormalizationError(f"{source}: OAS 3.1 base dialect is missing or different.")
     if document.get("x-s2-1-contract-id") != CONTRACT_ID:
         raise OpenApiNormalizationError(f"{source}: S2.1 contract ID extension is invalid.")
     if document.get("x-s2-1-contract-sha256") != digest:
         raise OpenApiNormalizationError(f"{source}: S2.1 catalog digest extension is invalid.")
+    if document.get("x-s2-3-contract-id") != S23_CONTRACT_ID:
+        raise OpenApiNormalizationError(f"{source}: S2.3 contract ID extension is invalid.")
+    if document.get("x-s2-3-contract-sha256") != _s23_catalog_digest():
+        raise OpenApiNormalizationError(f"{source}: S2.3 catalog digest extension is invalid.")
 
 
 def _assert_no_premature_principle_paths(document: dict[str, Any], *, source: str) -> None:
@@ -84,18 +129,37 @@ def _assert_no_premature_principle_paths(document: dict[str, Any], *, source: st
         )
 
 
-def _assert_no_deferred_decision_paths(
-    document: dict[str, Any], *, source: str
+def _assert_decision_paths(
+    document: dict[str, Any], *, source: str, amendment: bool
 ) -> None:
     paths = document["paths"]
-    deferred = [
-        path
-        for path in paths
+    actual = {
+        path: {
+            key.lower()
+            for key in item
+            if isinstance(key, str) and key.lower() in HTTP_METHODS
+        }
+        for path, item in paths.items()
         if path == "/api/v1/decisions" or path.startswith("/api/v1/decisions/")
-    ]
-    if deferred:
+    }
+    expected = {} if amendment else DECISION_PATH_METHODS
+    if actual != expected:
         raise OpenApiNormalizationError(
-            f"{source}: S2.2 must not advertise deferred Decision runtime paths."
+            f"{source}: Decision paths or methods differ from the approved S2.3 allowlist."
+        )
+
+
+def _assert_decision_components(
+    document: dict[str, Any], *, source: str, amendment: bool
+) -> None:
+    schemas = document["components"].get("schemas", {})
+    if not isinstance(schemas, dict):
+        raise OpenApiNormalizationError(f"{source}: component schemas must be an object.")
+    actual = {name for name in schemas if name.startswith("S23")}
+    expected = set() if amendment else DECISION_COMPONENTS
+    if actual != expected:
+        raise OpenApiNormalizationError(
+            f"{source}: S2.3 component names differ from the approved allowlist."
         )
 
 
@@ -121,7 +185,16 @@ def normalize_generated_openapi(
     _assert_contract_roots(generated, digest, source="generated OpenAPI")
     if amendment:
         _assert_no_premature_principle_paths(generated, source="generated OpenAPI")
-    _assert_no_deferred_decision_paths(generated, source="generated OpenAPI")
+    _assert_decision_paths(
+        generated,
+        source="generated OpenAPI",
+        amendment=amendment,
+    )
+    _assert_decision_components(
+        generated,
+        source="generated OpenAPI",
+        amendment=amendment,
+    )
     _validate_openapi_schema(generated, source="generated OpenAPI")
 
     normalized = copy.deepcopy(generated)
@@ -147,7 +220,16 @@ def check_normalized_openapi(
     _assert_contract_roots(expected, digest, source="tracked OpenAPI")
     if amendment:
         _assert_no_premature_principle_paths(expected, source="tracked OpenAPI")
-    _assert_no_deferred_decision_paths(expected, source="tracked OpenAPI")
+    _assert_decision_paths(
+        expected,
+        source="tracked OpenAPI",
+        amendment=amendment,
+    )
+    _assert_decision_components(
+        expected,
+        source="tracked OpenAPI",
+        amendment=amendment,
+    )
     _validate_openapi_schema(expected, source="tracked OpenAPI")
     if expected_bytes != canonical_json_bytes(expected):
         raise OpenApiNormalizationError("Tracked OpenAPI bytes are not canonical JSON.")
@@ -171,7 +253,7 @@ def main() -> int:
     parser.add_argument(
         "--implementation",
         action="store_true",
-        help="Allow S2.1 paths after their runtime controllers exist.",
+        help="Require the exact implemented S2.1 and S2.3 runtime paths.",
     )
     arguments = parser.parse_args()
 

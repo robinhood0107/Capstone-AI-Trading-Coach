@@ -822,7 +822,9 @@ fallback하지 않는다.
 
 `portfolioSource`는 `KIS_MOCK|INTERNAL_PAPER` 중 정확히 하나를 명시한다. 서버가 JWT actor의
 owner scope 안에서 해당 context를 해석하며 raw account ID를 신뢰하지 않는다. 선택한 source만
-조회하고 source 혼합이나 KIS 실패 후 INTERNAL_PAPER 자동 fallback은 금지한다.
+조회하고 source 혼합이나 KIS 실패 후 INTERNAL_PAPER 자동 fallback은 금지한다. KIS_MOCK
+balance, positions, margin은 balance가 고정한 하나의 immutable source revision만 읽으며 서로
+다른 revision을 조합한 read-skew snapshot은 unavailable로 거부한다.
 
 S2.3은 provider HTTP를 호출하지 않는다. 현재가·호가와 종목 분류·상품 위험은 S1.1 offline
 producer가 쓰는 append-only `market_quote_observations`와
@@ -842,6 +844,15 @@ instrument row의 exact 의미 필드는
 `symbol,isEtfEtn,isGoldEtfEtn,nullable productRiskScore,catalogVersion,observedAt,receivedAt,sourceRef,artifactHash`다.
 `decision_market_writer`만 exact INSERT하고 S2.3은 exact symbol의 최신 한 행만 읽는다.
 
+source coordinator는 queue 없는 최대 8개 worker에서 source별 500ms와 전체 evaluation 900ms의
+남은 예산을 함께 강제한다. 전체 예산이 끝나면 뒤 source physical call을 시작하지 않고 실행 중
+timeout task는 cancel한다. JDBC connection acquisition과 statement도 500ms를 넘지 않으며
+worker에는 request trace MDC를 전달한 뒤 원래 문맥을 복원한다. Python gRPC repository는 최대
+8개 connection, acquisition 450ms, connect 1초를 사용하고 cancellation 사이마다 connection/
+query를 해제한다. event/source-ref 각 100개 또는 response byte 상한 초과는 truncate된 success가
+아니라 technical failure다. gRPC `RESOURCE_EXHAUSTED`/구조적 `DATA_LOSS`도 typed unavailable
+HOLD로 낮추지 않고 S2.3 orchestration 실패로 처리한다.
+
 | 상황 | HTTP/result |
 |---|---|
 | selector enum/요청 형식 오류 | `400 VALIDATION_ERROR`, decision result 없음 |
@@ -857,7 +868,12 @@ persistence transaction은 idempotency advisory lock →
 순서다. updater가 먼저 version 2를 commit하면 구 version 평가는 409/all writes zero이고,
 Decision이 먼저 share lock을 잡으면 Principle updater는 Decision commit까지 기다린다.
 source read/evaluation은 이 transaction 밖이다. commit 뒤 timer/counter/log 실패는 원래
-persisted 200 projection을 뒤집지 않는다.
+persisted 200 projection을 뒤집지 않는다. Decision child row는
+`decision_id + evaluation_id` composite FK로 같은 graph에 묶고 audit target은 payload
+`decisionId`와 일치해야 한다. offline source writer는 동일 primary/alternate unique identity의
+exact row replay만 no-op으로 허용하며 의미 필드가 다르면 `23505`로 전체 transaction을
+rollback한다. owner detail/audit와 idempotency replay는 base table broad SELECT 없이
+fixed-search-path bounded function만 사용한다.
 
 ### 5.3 public code와 internal cause 경계
 
@@ -910,6 +926,9 @@ tracked `contracts/openapi/openapi.json`은 아래 route만 Decision allowlist�
 persisted decision의 `validUntil`은 고정한 `evaluationAsOf + 10분`과 실제 소비한 hard input의
 가장 이른 `freshUntil` 중 작은 값이다. `now >= validUntil`이면 만료다. 주문 제출과
 one-decision/one-order 소비는 S3 책임이며 S2.3 route가 이를 수행하거나 승인 범위를 넓히지 않는다.
+일일 주문 수는 해당 거래일을 `evaluationAsOf`까지 완전히 coverage한 observation만 ready이고,
+그 경우 `freshUntil=evaluationAsOf + 10분`으로 pin해 이미 끝난 거래일 경계 때문에 생성 즉시
+만료되는 Decision을 만들지 않는다.
 
 ---
 

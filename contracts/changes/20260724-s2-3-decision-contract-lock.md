@@ -90,10 +90,23 @@ test fixture는 test source set/profile과 Testcontainers 안에서만 INSERT할
   `report_nm`은 event identity에 관여하지 않는다.
 - gRPC는 숫자 loopback plaintext, reflection/retry/transparent retry 없음, physical attempt
   최대 1, concurrency 8, source/total/hard deadline 500/900/2,000ms와 256KiB/1MiB 상한을
-  강제한다. cancellation은 실행 중 query/connection을 취소·해제한다.
+  강제한다. Python repository는 pool 8, acquisition 450ms, connect 1초이고 cancellation은 실행
+  중 query/connection을 취소·해제한다. event/source-ref/response 상한 초과와
+  `RESOURCE_EXHAUSTED`/구조적 `DATA_LOSS`는 truncate나 typed unavailable이 아닌 technical
+  failure다.
+- Spring source coordinator는 queue 없는 8개 worker에서 source 500ms와 전체 evaluation 900ms의
+  남은 예산을 함께 사용한다. 전체 예산 만료 뒤 새 physical call을 만들지 않고 timeout task를
+  cancel하며 request trace MDC를 worker 실행 뒤 복원한다. JDBC connection/statement도 500ms
+  안에 끝나야 한다. KIS_MOCK balance/position/margin은 같은 immutable source revision만
+  조립한다.
 - persistence transaction은 idempotency advisory lock → 동일 owner/ACTIVE/current Principle의
   `FOR SHARE OF principle` 재검증 → Decision graph INSERT 순서다. updater-first mismatch는
   409/all writes zero, decision-first는 updater가 Decision commit까지 대기한다.
+- Decision child row는 `decision_id + evaluation_id` composite FK로 같은 graph를 강제하고 audit
+  target은 payload `decisionId`와 같아야 한다. offline writer replay는 primary/alternate unique
+  identity와 모든 의미 필드가 같을 때만 no-op이며 mismatch는 `23505`로 전체 transaction을
+  rollback한다. 일일 주문 수가 해당 거래일을 evaluation 시각까지 완전히 덮으면
+  `freshUntil=evaluationAsOf+10분`으로 pin한다.
 - `decision_app`은 NOSUPERUSER/NOCREATEDB/NOCREATEROLE/NOBYPASSRLS다. broad/future default
   SELECT를 제거하고 Decision/audit/outbox/idempotency base read를 금지한다. idempotency replay는
   fixed-search-path SECURITY DEFINER bounded function이 scope hash, owner scope hash, expiry를
@@ -176,6 +189,18 @@ not provider HTTP or invented zero/empty production values inside S2.3.
   a missing or transiently unavailable observation is a persisted HTTP 200 HOLD. Invariants,
   malformed serialization, authorization failures, and database commit failures remain technical
   failures with no decision side effect.
+- Source execution uses no queue, at most eight workers, a 500 ms per-source budget, and one shared
+  900 ms evaluation budget. It starts no new physical call after expiry and cancels timed-out work.
+  JDBC acquisition/statements are capped at 500 ms. The Python reader uses an eight-connection
+  pool, 450 ms acquisition, and one-second connect budget. Bounds exhaustion and structural data
+  loss are technical failures, not truncated success or typed unavailability.
+- KIS_MOCK balance, positions, and margin must share one immutable revision. Decision children use
+  a composite `decision_id + evaluation_id` foreign key, and the audit target must match its payload
+  decision ID. An offline writer replay is a no-op only when every semantic field matches; a
+  primary or alternate-identity mismatch aborts the full transaction with PostgreSQL `23505`.
+- A daily-order-count observation that completely covers its trading day through the evaluation
+  time pins `freshUntil` to `evaluationAsOf + 10 minutes`, preventing a newly created Decision from
+  expiring immediately at a completed-session boundary.
 - Test source rows exist only in test profiles/Testcontainers. Provider HTTP, live-account,
   live-order, and broker-publish calls remain zero.
 

@@ -1,5 +1,16 @@
 package com.capstone.decision
 
+import com.capstone.decision.application.risk.port.EvaluationSourceRequest
+import com.capstone.decision.application.risk.port.PortfolioContextResolution
+import com.capstone.decision.domain.risk.MetricCell
+import com.capstone.decision.domain.risk.MetricValue
+import com.capstone.decision.domain.risk.OrderIntentSnapshot
+import com.capstone.decision.domain.risk.PortfolioSource
+import com.capstone.decision.infrastructure.risk.JdbcInternalPaperBalanceAdapter
+import com.capstone.decision.infrastructure.risk.JdbcKisMockBalanceAdapter
+import com.capstone.decision.infrastructure.risk.JdbcMarketQuoteAdapter
+import com.capstone.decision.infrastructure.risk.JdbcPortfolioContextAdapter
+import com.capstone.decision.infrastructure.risk.JdbcStoredMarginAdapter
 import org.flywaydb.core.Flyway
 import org.flywaydb.core.api.FlywayException
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -17,6 +28,7 @@ import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
+import org.springframework.transaction.support.TransactionSynchronizationManager
 import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
 import org.testcontainers.postgresql.PostgreSQLContainer
@@ -32,6 +44,11 @@ import java.util.stream.Stream
 @SpringBootTest
 class FlywayMigrationIntegrationTest(
     @Autowired private val jdbcTemplate: JdbcTemplate,
+    @Autowired private val portfolioContextAdapter: JdbcPortfolioContextAdapter,
+    @Autowired private val marketQuoteAdapter: JdbcMarketQuoteAdapter,
+    @Autowired private val kisMockBalanceAdapter: JdbcKisMockBalanceAdapter,
+    @Autowired private val internalPaperBalanceAdapter: JdbcInternalPaperBalanceAdapter,
+    @Autowired private val storedMarginAdapter: JdbcStoredMarginAdapter,
 ) : SpringApiIntegrationTestBase() {
     @Test
     fun `clean database applies V1 through V9 migrations and creates required objects`() {
@@ -385,6 +402,129 @@ class FlywayMigrationIntegrationTest(
             "update flyway_schema_history set success = success where false",
             "create table s23_forbidden_schema_write (id integer)",
         ).forEach(::assertDecisionAppPermissionDenied)
+    }
+
+    @Test
+    fun `stored quote and KIS mock balance are owner scoped exact observations outside the persistence transaction`() {
+        val observedAt = "2031-02-03T04:05:06Z"
+        jdbcTemplate.update(
+            """
+            insert into market_quote_observations (
+              observation_id, symbol, source, price_krw, observed_at, received_at,
+              schema_version, source_version, source_ref, artifact_hash
+            )
+            values (
+              'obs-quote-s23', '005930', 'KIS_MOCK', 70000, ?::timestamptz, ?::timestamptz,
+              'market-quote-observation.v1', 'kis-mock-fixture-v1', repeat('a', 64), repeat('b', 64)
+            )
+            """.trimIndent(),
+            observedAt,
+            observedAt,
+        )
+        jdbcTemplate.update(
+            """
+            insert into portfolio_balance_observations (
+              observation_id, owner_user_id, account_scope_hash, source, context_status,
+              cash_krw, portfolio_equity_krw, margin_requirement_krw, completeness, position_count,
+              observed_at, received_at, schema_version, source_version, source_ref, artifact_hash
+            )
+            values (
+              'obs-balance-s23', 'usr_demo_user', repeat('c', 64), 'KIS_MOCK', 'ACTIVE',
+              500000, 1000000, 140000, 'COMPLETE', 1,
+              ?::timestamptz, ?::timestamptz,
+              'portfolio-balance-observation.v1', 'kis-mock-fixture-v1', repeat('d', 64), repeat('e', 64)
+            )
+            """.trimIndent(),
+            observedAt,
+            observedAt,
+        )
+        jdbcTemplate.update(
+            """
+            insert into portfolio_position_observations (
+              balance_observation_id, symbol, quantity, market_value_krw, is_gold_etf_etn
+            )
+            values ('obs-balance-s23', '005930', 10, 700000, false)
+            """.trimIndent(),
+        )
+
+        assertFalse(TransactionSynchronizationManager.isActualTransactionActive())
+        val context =
+            portfolioContextAdapter.resolve("usr_demo_user", PortfolioSource.KIS_MOCK)
+                as PortfolioContextResolution.Available
+        val sourceRequest =
+            EvaluationSourceRequest(
+                actorUserId = "usr_demo_user",
+                portfolioContext = context.context,
+                orderIntent =
+                    OrderIntentSnapshot(
+                        symbol = "005930",
+                        side = "BUY",
+                        orderType = "MARKET",
+                        quantity = 2,
+                        estimatedPrice = 70000,
+                        estimatedAmount = 140000,
+                        timeframe = "1d",
+                        strategyId = "stored-source-test",
+                    ),
+                evaluationAsOf = java.time.Instant.parse(observedAt),
+            )
+
+        val price = marketQuoteAdapter.load(sourceRequest) as MetricCell.Available
+        val balance = kisMockBalanceAdapter.load(sourceRequest) as MetricCell.Available
+        val margin = storedMarginAdapter.load(sourceRequest) as MetricCell.Available
+        assertEquals(70000L, (price.value as MetricValue.Whole).value)
+        assertEquals(1000000L, balance.value.portfolioEquityKrw)
+        assertEquals(listOf("005930"), balance.value.positions.map { it.symbol })
+        assertEquals(140000L, (margin.value as MetricValue.Whole).value)
+        assertEquals(java.time.Instant.parse("2031-02-03T04:10:06Z"), price.freshUntil)
+        assertEquals(java.time.Instant.parse("2031-02-03T04:06:06Z"), balance.freshUntil)
+        assertFalse(TransactionSynchronizationManager.isActualTransactionActive())
+
+        assertTrue(
+            portfolioContextAdapter.resolve("usr_demo_admin", PortfolioSource.KIS_MOCK)
+                is PortfolioContextResolution.Unavailable,
+        )
+    }
+
+    @Test
+    fun `internal paper balance uses the owner ledger and cash-only margin zero is explicit`() {
+        jdbcTemplate.update(
+            """
+            insert into paper_accounts (
+              account_id, user_id, name, cash_balance, currency, status, created_at, updated_at
+            )
+            values (
+              'paper-s23', 'usr_demo_admin', 'Paper S2.3', 900000, 'KRW', 'ACTIVE',
+              '2031-02-03T04:00:00Z', '2031-02-03T04:05:06Z'
+            )
+            """.trimIndent(),
+        )
+        val resolution =
+            portfolioContextAdapter.resolve("usr_demo_admin", PortfolioSource.INTERNAL_PAPER)
+                as PortfolioContextResolution.Available
+        val request =
+            EvaluationSourceRequest(
+                actorUserId = "usr_demo_admin",
+                portfolioContext = resolution.context,
+                orderIntent =
+                    OrderIntentSnapshot(
+                        symbol = "005930",
+                        side = "BUY",
+                        orderType = "LIMIT",
+                        quantity = 1,
+                        estimatedPrice = 70000,
+                        estimatedAmount = 70000,
+                        timeframe = "1d",
+                        strategyId = "paper-source-test",
+                    ),
+                evaluationAsOf = java.time.Instant.parse("2031-02-03T04:05:06Z"),
+            )
+
+        val balance = internalPaperBalanceAdapter.load(request) as MetricCell.Available
+        val margin = storedMarginAdapter.load(request) as MetricCell.Available
+        assertEquals(PortfolioSource.INTERNAL_PAPER, balance.value.source)
+        assertEquals(900000L, balance.value.portfolioEquityKrw)
+        assertEquals(0L, (margin.value as MetricValue.Whole).value)
     }
 
     @Test

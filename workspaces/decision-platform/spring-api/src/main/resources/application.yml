@@ -66,6 +66,14 @@ app:
       - /api/v1/backtests/**
   decision:
     valid-minutes: 10              # validUntil
+    grpc:
+      target: ${DECISION_GRPC_TARGET:127.0.0.1:50051}
+      hard-deadline-millis: 2000
+      source-deadline-millis: 500
+      total-evaluation-deadline-millis: 900
+      request-max-bytes: 262144
+      response-max-bytes: 1048576
+      concurrency-max: 8
   freshness:                       # 유형별 매트릭스(명세서 4.2.2)의 일부만 우선 정의 — 신호/공시/risk_snapshot 항목은 S2.3에서 확장
     price-seconds: 300
     balance-seconds: 60

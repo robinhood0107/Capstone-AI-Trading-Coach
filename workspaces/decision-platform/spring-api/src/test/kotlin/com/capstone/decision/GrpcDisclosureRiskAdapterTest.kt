@@ -113,13 +113,13 @@ class GrpcDisclosureRiskAdapterTest {
                         responseObserver: StreamObserver<GetDisclosureEventsResponse>,
                     ) {
                         calls.incrementAndGet()
-                        Thread.sleep(150)
+                        Thread.sleep(600)
                         responseObserver.onNext(validResponse())
                         responseObserver.onCompleted()
                     }
                 },
             )
-        val clock = Clock.fixed(EVALUATION_AS_OF.plusMillis(850), ZoneOffset.UTC)
+        val clock = Clock.fixed(EVALUATION_AS_OF.plusMillis(500), ZoneOffset.UTC)
         val adapter =
             GrpcDisclosureRiskAdapter(
                 DecisionGrpcProperties(target = "127.0.0.1:${server.port}"),
@@ -176,9 +176,7 @@ class GrpcDisclosureRiskAdapterTest {
             Clock.fixed(EVALUATION_AS_OF, ZoneOffset.UTC),
         )
 
-    private fun server(
-        service: DisclosureObservationServiceGrpc.DisclosureObservationServiceImplBase,
-    ): Server =
+    private fun server(service: DisclosureObservationServiceGrpc.DisclosureObservationServiceImplBase): Server =
         NettyServerBuilder
             .forAddress(InetSocketAddress("127.0.0.1", 0))
             .addService(service)
@@ -198,9 +196,7 @@ class GrpcDisclosureRiskAdapterTest {
             }
         }
 
-    private fun failingService(
-        status: Status,
-    ): DisclosureObservationServiceGrpc.DisclosureObservationServiceImplBase =
+    private fun failingService(status: Status): DisclosureObservationServiceGrpc.DisclosureObservationServiceImplBase =
         object : DisclosureObservationServiceGrpc.DisclosureObservationServiceImplBase() {
             override fun getDisclosureEvents(
                 request: GetDisclosureEventsRequest,

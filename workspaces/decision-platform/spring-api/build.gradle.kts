@@ -309,4 +309,5 @@ val verifySecurityDependencyVersions by tasks.registering {
 tasks.named("check") {
     dependsOn(verifySecurityDependencyVersions)
     dependsOn(verifyS22CatalogResource)
+    dependsOn(verifyS23ContractResources)
 }

@@ -191,8 +191,8 @@ def test_incomplete_response_is_still_validated_and_malformed_payload_fails() ->
 
 class _SqlStateOperationalError(psycopg.OperationalError):
     def __init__(self, sqlstate: str) -> None:
-        super().__init__("sanitized database failure")
         self._sqlstate = sqlstate
+        super().__init__("sanitized database failure")
 
     @property
     def sqlstate(self) -> str:
@@ -335,10 +335,15 @@ def test_ninth_concurrent_rpc_is_bounded_before_a_ninth_repository_call() -> Non
         while repository.calls < 8 and time.monotonic() < deadline:
             time.sleep(0.01)
         assert repository.calls == 8
-        ninth_errors = []
-        for call in calls:
-            if call.done() and call.exception() is not None:
-                ninth_errors.append(call.exception())
+        error_deadline = time.monotonic() + 0.5
+        ninth_errors: list[BaseException] = []
+        while not ninth_errors and time.monotonic() < error_deadline:
+            ninth_errors = [
+                error
+                for call in calls
+                if call.done() and (error := call.exception()) is not None
+            ]
+            time.sleep(0.01)
         assert any(
             isinstance(error, grpc.RpcError)
             and error.code() == grpc.StatusCode.RESOURCE_EXHAUSTED

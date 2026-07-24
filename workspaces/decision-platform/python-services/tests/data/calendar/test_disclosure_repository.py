@@ -200,3 +200,47 @@ def test_empty_or_ambiguous_corporation_registry_is_incomplete(
     assert ambiguous.complete is False
     assert ambiguous.corp_code == ""
     assert ambiguous.events == ()
+
+    with psycopg.connect(postgres_cluster["admin_dsn"]) as connection:
+        with connection.cursor() as cursor:
+            cursor.executemany(
+                """
+                INSERT INTO corporation_registry_observations (
+                  observation_id, symbol, corp_code, registry_status, completeness,
+                  observed_at, received_at, schema_version, source_version,
+                  payload_json, source_ref, artifact_hash
+                ) VALUES (
+                  %s, '035420', '00266961', %s, 'COMPLETE', %s, %s,
+                  'corporation-registry-observation.v1', 'inactive-fixture-v1',
+                  '{"symbol":"035420","corpCode":"00266961"}'::jsonb, %s, %s
+                )
+                """,
+                [
+                    (
+                        "corp-active-old",
+                        "ACTIVE",
+                        datetime(2026, 7, 23, 1, 2, 3, tzinfo=UTC),
+                        datetime(2026, 7, 23, 1, 2, 3, tzinfo=UTC),
+                        "e" * 64,
+                        "f" * 64,
+                    ),
+                    (
+                        "corp-inactive-new",
+                        "INACTIVE",
+                        observed_at,
+                        observed_at,
+                        "1" * 64,
+                        "2" * 64,
+                    ),
+                ],
+            )
+
+    inactive = repository.load(
+        symbol="035420",
+        corp_code=None,
+        window_from=date(2025, 7, 24),
+        window_to=date(2026, 7, 24),
+    )
+    assert inactive.complete is False
+    assert inactive.corp_code == ""
+    assert inactive.events == ()

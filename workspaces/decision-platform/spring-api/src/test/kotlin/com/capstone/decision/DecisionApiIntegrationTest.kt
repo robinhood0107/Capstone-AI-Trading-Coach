@@ -10,6 +10,10 @@ import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
+import org.springframework.boot.test.context.TestConfiguration
+import org.springframework.context.annotation.Bean
+import org.springframework.context.annotation.Import
+import org.springframework.context.annotation.Primary
 import org.springframework.data.redis.core.StringRedisTemplate
 import org.springframework.http.MediaType
 import org.springframework.jdbc.core.JdbcTemplate
@@ -31,6 +35,10 @@ import org.testcontainers.utility.DockerImageName
 import tools.jackson.databind.JsonNode
 import tools.jackson.databind.ObjectMapper
 import java.sql.DriverManager
+import java.time.Clock
+import java.time.Instant
+import java.time.OffsetDateTime
+import java.time.ZoneOffset
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -42,6 +50,7 @@ import java.util.concurrent.TimeUnit
         "spring.autoconfigure.exclude=org.springframework.boot.kafka.autoconfigure.KafkaAutoConfiguration",
     ],
 )
+@Import(DecisionApiFixedClockConfiguration::class)
 class DecisionApiIntegrationTest(
     @Autowired private val webApplicationContext: WebApplicationContext,
     @Autowired private val objectMapper: ObjectMapper,
@@ -62,6 +71,12 @@ class DecisionApiIntegrationTest(
         jdbcTemplate.update("delete from decision_artifacts")
         jdbcTemplate.update("delete from decision_violations")
         jdbcTemplate.update("delete from decisions")
+        jdbcTemplate.update("delete from portfolio_position_observations")
+        jdbcTemplate.update("delete from portfolio_balance_observations")
+        jdbcTemplate.update("delete from market_quote_observations")
+        jdbcTemplate.update("delete from instrument_catalog_observations")
+        jdbcTemplate.update("delete from deterministic_risk_observations")
+        jdbcTemplate.update("delete from daily_order_count_observations")
         jdbcTemplate.update("delete from principle_versions where principle_id like 'prc_44%'")
         jdbcTemplate.update("delete from principles where principle_id like 'prc_44%'")
         mockMvc =
@@ -69,6 +84,75 @@ class DecisionApiIntegrationTest(
                 .webAppContextSetup(webApplicationContext)
                 .apply<DefaultMockMvcBuilder>(springSecurity())
                 .build()
+    }
+
+    @Test
+    fun `complete stored hard sources make the production bean graph ALLOW`() {
+        val principleId = insertPrinciple("usr_demo_user", "GUIDE", suffix = "11")
+        insertCompleteStoredSources(orderCount = 0)
+        val token = login("demo-user", userPassword())
+
+        val response =
+            evaluate(
+                token,
+                "decision-stored-allow",
+                "req-decision-stored-allow",
+                request(principleId),
+            )
+
+        assertEquals(200, response.response.status)
+        assertEquals("ALLOW", json(response).at("/data/riskDecision/decision").stringValue())
+        assertTrue(json(response).at("/data/riskDecision/canSubmitOrder").booleanValue())
+        assertEquals("NONE", json(response).at("/data/enforcementAction").stringValue())
+        assertEquals(1, count("select count(*) from decisions where outcome = 'ALLOW'"))
+    }
+
+    @Test
+    fun `complete stored warning keeps STRICT reconfirmation semantics`() {
+        val principleId = insertPrinciple("usr_demo_user", "STRICT", suffix = "12")
+        insertCompleteStoredSources(orderCount = 4)
+        val token = login("demo-user", userPassword())
+
+        val response =
+            evaluate(
+                token,
+                "decision-stored-warn",
+                "req-decision-stored-warn",
+                request(principleId),
+            )
+
+        assertEquals(200, response.response.status)
+        assertEquals("WARN", json(response).at("/data/riskDecision/decision").stringValue())
+        assertTrue(json(response).at("/data/riskDecision/canSubmitOrder").booleanValue())
+        assertEquals("RECONFIRM_PRINCIPLE", json(response).at("/data/enforcementAction").stringValue())
+    }
+
+    @Test
+    fun `complete stored source still BLOCKs an oversized order`() {
+        val principleId = insertPrinciple("usr_demo_user", "GUIDE", suffix = "13")
+        insertCompleteStoredSources(orderCount = 0)
+        val token = login("demo-user", userPassword())
+        val oversized =
+            request(principleId).toMutableMap().apply {
+                this["orderIntent"] =
+                    orderIntent().toMutableMap().apply {
+                        this["quantity"] = 10
+                        this["estimatedAmount"] = 700000
+                    }
+            }
+
+        val response =
+            evaluate(
+                token,
+                "decision-stored-block",
+                "req-decision-stored-block",
+                oversized,
+            )
+
+        assertEquals(200, response.response.status)
+        assertEquals("BLOCK", json(response).at("/data/riskDecision/decision").stringValue())
+        assertFalse(json(response).at("/data/riskDecision/canSubmitOrder").booleanValue())
+        assertEquals("DO_NOT_SUBMIT", json(response).at("/data/enforcementAction").stringValue())
     }
 
     @Test
@@ -373,7 +457,7 @@ class DecisionApiIntegrationTest(
             val result = response.get(10, TimeUnit.SECONDS)
 
             assertEquals(409, result.response.status)
-            assertEquals("VERSION_CONFLICT", json(result).at("/error/code").stringValue())
+            assertEquals("CONFLICT", json(result).at("/error/code").stringValue())
             assertEquals(0, count("select count(*) from decisions"))
             assertEquals(0, count("select count(*) from decision_traces"))
             assertEquals(0, count("select count(*) from decision_artifacts"))
@@ -403,7 +487,7 @@ class DecisionApiIntegrationTest(
                         request(principleId),
                     )
                 }
-            Thread.sleep(350)
+            awaitSlowDecisionTriggerEntered()
             val updater =
                 executor.submit<Int> {
                     DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { connection ->
@@ -571,6 +655,102 @@ class DecisionApiIntegrationTest(
         )
     }
 
+    private fun insertCompleteStoredSources(orderCount: Int) {
+        jdbcTemplate.update(
+            """
+            insert into market_quote_observations (
+              observation_id, symbol, source, price_krw, bid_krw, ask_krw,
+              completeness, observed_at, received_at, schema_version,
+              source_version, payload_json, source_ref, artifact_hash
+            ) values (
+              'quote-decision-complete', '005930', 'KIS_MOCK', 70000, 69900, 70000,
+              'COMPLETE', ?::timestamptz, ?::timestamptz,
+              'market-quote-observation.v1', 'decision-fixture-v1',
+              '{"symbol":"005930"}'::jsonb, repeat('1', 64), repeat('2', 64)
+            )
+            """.trimIndent(),
+            EVALUATION_AT,
+            EVALUATION_AT,
+        )
+        jdbcTemplate.update(
+            """
+            insert into instrument_catalog_observations (
+              observation_id, symbol, is_etf_etn, is_gold_etf_etn,
+              product_risk_score, catalog_version, observed_at, received_at,
+              completeness, schema_version, source_version, payload_json,
+              source_ref, artifact_hash
+            ) values (
+              'instrument-decision-complete', '005930', false, false, null,
+              'decision-catalog-v1', ?::timestamptz, ?::timestamptz,
+              'COMPLETE', 'instrument-catalog-observation.v1', 'decision-fixture-v1',
+              '{"symbol":"005930"}'::jsonb, repeat('3', 64), repeat('4', 64)
+            )
+            """.trimIndent(),
+            EVALUATION_AT,
+            EVALUATION_AT,
+        )
+        jdbcTemplate.update(
+            """
+            insert into portfolio_balance_observations (
+              observation_id, owner_user_id, account_scope_hash, source,
+              context_status, cash_krw, portfolio_equity_krw,
+              margin_requirement_krw, completeness, position_count,
+              observed_at, received_at, schema_version, source_version,
+              payload_json, source_ref, artifact_hash
+            ) values (
+              'balance-decision-complete', 'usr_demo_user', repeat('c', 64), 'KIS_MOCK',
+              'ACTIVE', 10000000, 10000000, 0, 'COMPLETE', 0,
+              ?::timestamptz, ?::timestamptz,
+              'portfolio-balance-observation.v1', 'decision-fixture-v1',
+              '{"ownerScopeHash":"sanitized"}'::jsonb,
+              repeat('5', 64), repeat('6', 64)
+            )
+            """.trimIndent(),
+            EVALUATION_AT,
+            EVALUATION_AT,
+        )
+        jdbcTemplate.update(
+            """
+            insert into deterministic_risk_observations (
+              observation_id, owner_user_id, owner_scope_hash, portfolio_source,
+              daily_loss_rate, max_drawdown, annualized_volatility, completeness,
+              observed_at, received_at, schema_version, source_version,
+              payload_json, source_ref, artifact_hash
+            ) values (
+              'risk-decision-complete', 'usr_demo_user', repeat('c', 64), 'KIS_MOCK',
+              -0.01, -0.05, 0.20, 'COMPLETE',
+              ?::timestamptz, ?::timestamptz,
+              'deterministic-risk-observation.v1', 'decision-fixture-v1',
+              '{"ownerScopeHash":"sanitized"}'::jsonb,
+              repeat('7', 64), repeat('8', 64)
+            )
+            """.trimIndent(),
+            EVALUATION_AT,
+            EVALUATION_AT,
+        )
+        jdbcTemplate.update(
+            """
+            insert into daily_order_count_observations (
+              observation_id, owner_user_id, owner_scope_hash, portfolio_source,
+              trading_date, order_count, covered_through, completeness,
+              observed_at, received_at, schema_version, source_version,
+              payload_json, source_ref, artifact_hash
+            ) values (
+              'orders-decision-complete', 'usr_demo_user', repeat('c', 64), 'KIS_MOCK',
+              '2030-01-02', ?, ?::timestamptz, 'COMPLETE',
+              ?::timestamptz, ?::timestamptz,
+              'daily-order-count-observation.v1', 'decision-fixture-v1',
+              '{"ownerScopeHash":"sanitized"}'::jsonb,
+              repeat('9', 64), repeat('a', 64)
+            )
+            """.trimIndent(),
+            orderCount,
+            EVALUATION_AT,
+            EVALUATION_AT,
+            EVALUATION_AT,
+        )
+    }
+
     private fun login(
         username: String,
         password: String,
@@ -624,7 +804,8 @@ class DecisionApiIntegrationTest(
             create or replace function s23_test_slow_decision() returns trigger
             language plpgsql as ${'$'}${'$'}
             begin
-              perform pg_sleep(0.5);
+              perform pg_advisory_xact_lock($SLOW_DECISION_SIGNAL_LOCK);
+              perform pg_sleep(1.0);
               return new;
             end
             ${'$'}${'$'}
@@ -637,6 +818,33 @@ class DecisionApiIntegrationTest(
             for each row execute function s23_test_slow_decision()
             """.trimIndent(),
         )
+    }
+
+    private fun awaitSlowDecisionTriggerEntered() {
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10)
+        DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { connection ->
+            connection.prepareStatement("select pg_try_advisory_lock(?)").use { tryLock ->
+                connection.prepareStatement("select pg_advisory_unlock(?)").use { unlock ->
+                    tryLock.setLong(1, SLOW_DECISION_SIGNAL_LOCK)
+                    unlock.setLong(1, SLOW_DECISION_SIGNAL_LOCK)
+                    while (System.nanoTime() < deadline) {
+                        val acquired =
+                            tryLock.executeQuery().use { result ->
+                                check(result.next())
+                                result.getBoolean(1)
+                            }
+                        if (!acquired) {
+                            return
+                        }
+                        unlock.executeQuery().use { result ->
+                            check(result.next() && result.getBoolean(1))
+                        }
+                        Thread.sleep(20)
+                    }
+                }
+            }
+        }
+        error("Decision insert trigger was not entered within the bounded wait.")
     }
 
     private fun removeFailureTriggers() {
@@ -670,6 +878,9 @@ class DecisionApiIntegrationTest(
                 ).asCompatibleSubstituteFor("postgres")
         private val redisPasswordValue: String = "r" + "p".repeat(24)
         private val decisionScopeKeyValue: String = "d" + "i".repeat(63)
+        private const val SLOW_DECISION_SIGNAL_LOCK = 23_004_401L
+        private val EVALUATION_AS_OF: Instant = Instant.parse("2030-01-02T03:04:05Z")
+        private val EVALUATION_AT: OffsetDateTime = OffsetDateTime.ofInstant(EVALUATION_AS_OF, ZoneOffset.UTC)
 
         @Container
         @JvmStatic
@@ -712,4 +923,15 @@ class DecisionApiIntegrationTest(
             registry.add("app.decision.idempotency-scope-hmac-key") { decisionScopeKeyValue }
         }
     }
+}
+
+@TestConfiguration(proxyBeanMethods = false)
+class DecisionApiFixedClockConfiguration {
+    @Bean
+    @Primary
+    fun decisionApiClock(): Clock =
+        Clock.fixed(
+            Instant.parse("2030-01-02T03:04:05Z"),
+            ZoneOffset.UTC,
+        )
 }

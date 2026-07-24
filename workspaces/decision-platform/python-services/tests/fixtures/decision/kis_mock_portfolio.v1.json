@@ -1,0 +1,26 @@
+{
+  "schemaVersion": "portfolio-balance-observation.v1",
+  "sourceVersion": "s3-sanitized-kis-mock-fixture-20260724",
+  "ownerUserId": "usr_demo_user",
+  "ownerScopeHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "observedAt": "2026-06-24T02:59:00Z",
+  "receivedAt": "2026-06-24T02:59:01Z",
+  "completeness": "COMPLETE",
+  "cashKrw": 500000,
+  "portfolioEquityKrw": 1200000,
+  "marginRequirementKrw": 140000,
+  "positions": [
+    {
+      "symbol": "005930",
+      "quantity": 10,
+      "marketValueKrw": 700000,
+      "isGoldEtfEtn": false
+    },
+    {
+      "symbol": "132030",
+      "quantity": 0,
+      "marketValueKrw": 0,
+      "isGoldEtfEtn": true
+    }
+  ]
+}

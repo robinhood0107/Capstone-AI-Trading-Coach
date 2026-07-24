@@ -496,9 +496,9 @@ requires-dist = [
     { name = "exchange-calendars", specifier = "==4.13.2" },
     { name = "fastapi", specifier = ">=0.111" },
     { name = "flagembedding", specifier = ">=1.2" },
-    { name = "grpcio", specifier = ">=1.64" },
-    { name = "grpcio-health-checking", specifier = ">=1.64" },
-    { name = "grpcio-reflection", specifier = ">=1.64" },
+    { name = "grpcio", specifier = ">=1.81.1" },
+    { name = "grpcio-health-checking", specifier = ">=1.81.1" },
+    { name = "grpcio-reflection", specifier = ">=1.81.1" },
     { name = "hmmlearn", specifier = ">=0.3" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "lightgbm", specifier = ">=4.3" },
@@ -522,7 +522,7 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "fakeredis", specifier = ">=2.23" },
-    { name = "grpcio-tools", specifier = ">=1.64" },
+    { name = "grpcio-tools", specifier = ">=1.81.1" },
     { name = "mypy", specifier = ">=1.10" },
     { name = "pandas-stubs", specifier = ">=2.2" },
     { name = "pytest", specifier = ">=8" },

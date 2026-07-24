@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import inspect
 import json
+from concurrent.futures import ThreadPoolExecutor
+from decimal import Decimal
 from pathlib import Path
 
 import psycopg
@@ -24,16 +26,22 @@ FIXTURE = (
 def test_sanitized_fixture_appends_once_and_latest_projection_keeps_exact_fields(
     postgres_cluster: PostgresTestCluster,
 ) -> None:
-    first = append_instrument_catalog_fixture(
-        FIXTURE,
-        database_dsn=postgres_cluster["market_writer_dsn"],
-    )
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(
+            executor.map(
+                lambda _: append_instrument_catalog_fixture(
+                    FIXTURE,
+                    database_dsn=postgres_cluster["market_writer_dsn"],
+                ),
+                range(2),
+            )
+        )
     replay = append_instrument_catalog_fixture(
         FIXTURE,
         database_dsn=postgres_cluster["market_writer_dsn"],
     )
 
-    assert first == 2
+    assert sorted(results) == [0, 2]
     assert replay == 0
     with psycopg.connect(postgres_cluster["admin_dsn"]) as connection:
         rows = connection.execute(
@@ -61,7 +69,7 @@ def test_sanitized_fixture_appends_once_and_latest_projection_keeps_exact_fields
         "s1.1-sanitized-catalog-20260724",
     )
     assert rows[1][0:4] == ("132030", True, True, rows[1][3])
-    assert str(rows[1][3]) == "0.3500"
+    assert rows[1][3] == Decimal("0.3500")
     assert all(len(row[7]) == 64 and len(row[8]) == 64 for row in rows)
     forbidden = ("account", "token", "authorization", "providerheader", "appkey")
     assert all(

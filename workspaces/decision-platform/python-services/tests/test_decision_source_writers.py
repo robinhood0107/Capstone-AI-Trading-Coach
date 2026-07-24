@@ -34,16 +34,22 @@ def test_quote_fixture_appends_once_and_latest_projection_is_exact(
 ) -> None:
     _reset_source_rows(postgres_cluster)
 
-    first = append_market_quote_fixture(
-        QUOTE_FIXTURE,
-        database_dsn=postgres_cluster["market_writer_dsn"],
-    )
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(
+            executor.map(
+                lambda _: append_market_quote_fixture(
+                    QUOTE_FIXTURE,
+                    database_dsn=postgres_cluster["market_writer_dsn"],
+                ),
+                range(2),
+            )
+        )
     replay = append_market_quote_fixture(
         QUOTE_FIXTURE,
         database_dsn=postgres_cluster["market_writer_dsn"],
     )
 
-    assert first == 2
+    assert sorted(results) == [0, 2]
     assert replay == 0
     with psycopg.connect(postgres_cluster["admin_dsn"]) as connection:
         rows = connection.execute(
@@ -118,16 +124,22 @@ def test_deterministic_fixture_appends_complete_zero_and_previous_session_metric
 ) -> None:
     _reset_source_rows(postgres_cluster)
 
-    first = append_deterministic_metric_fixture(
-        DETERMINISTIC_FIXTURE,
-        database_dsn=postgres_cluster["risk_writer_dsn"],
-    )
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(
+            executor.map(
+                lambda _: append_deterministic_metric_fixture(
+                    DETERMINISTIC_FIXTURE,
+                    database_dsn=postgres_cluster["risk_writer_dsn"],
+                ),
+                range(2),
+            )
+        )
     replay = append_deterministic_metric_fixture(
         DETERMINISTIC_FIXTURE,
         database_dsn=postgres_cluster["risk_writer_dsn"],
     )
 
-    assert first == 2
+    assert sorted(results) == [0, 2]
     assert replay == 0
     with psycopg.connect(postgres_cluster["app_dsn"]) as connection:
         connection.execute("SELECT set_config('app.actor_user_id', 'usr_demo_user', false)")

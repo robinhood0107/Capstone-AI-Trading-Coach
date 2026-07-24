@@ -1,6 +1,10 @@
 package com.capstone.decision.infrastructure.decision
 
+import com.capstone.decision.application.decision.DecisionClaimLookup
+import com.capstone.decision.application.decision.DecisionIdempotencyClaim
+import com.capstone.decision.application.decision.DecisionIdempotencyClaimPort
 import com.capstone.decision.application.decision.DecisionIdempotencyIdentity
+import com.capstone.decision.application.decision.DecisionIdempotencyIdentityPort
 import com.capstone.decision.application.decision.EvaluateOrderCommand
 import com.capstone.decision.domain.risk.CanonicalJson
 import org.springframework.data.redis.core.StringRedisTemplate
@@ -18,8 +22,8 @@ import javax.crypto.spec.SecretKeySpec
 @Component
 class DecisionIdempotencyHasher(
     private val properties: DecisionProperties,
-) {
-    fun identity(
+) : DecisionIdempotencyIdentityPort {
+    override fun identity(
         actorUserId: String,
         rawKey: String,
         command: EvaluateOrderCommand,
@@ -80,22 +84,6 @@ class DecisionIdempotencyHasher(
     }
 }
 
-data class DecisionIdempotencyClaim(
-    val scopeHash: String,
-    val requestHash: String,
-    val token: String,
-)
-
-sealed interface DecisionClaimLookup {
-    data class Acquired(
-        val claim: DecisionIdempotencyClaim,
-    ) : DecisionClaimLookup
-
-    data object Conflict : DecisionClaimLookup
-
-    data object InProgress : DecisionClaimLookup
-}
-
 /**
  * Redis에는 stable 64-hex scope와 random claim token만 두며 durable response는 PostgreSQL이 소유한다.
  */
@@ -103,8 +91,8 @@ sealed interface DecisionClaimLookup {
 class DecisionIdempotencyClaimService(
     private val redisTemplate: StringRedisTemplate,
     private val properties: DecisionProperties,
-) {
-    fun acquire(
+) : DecisionIdempotencyClaimPort {
+    override fun acquire(
         scopeHash: String,
         requestHash: String,
     ): DecisionClaimLookup {
@@ -137,7 +125,7 @@ class DecisionIdempotencyClaimService(
         }
     }
 
-    fun release(claim: DecisionIdempotencyClaim) {
+    override fun release(claim: DecisionIdempotencyClaim) {
         redisTemplate.execute(
             RELEASE_SCRIPT,
             listOf(claimKey(claim.scopeHash)),

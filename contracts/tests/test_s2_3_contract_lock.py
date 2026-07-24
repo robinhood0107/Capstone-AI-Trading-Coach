@@ -280,6 +280,111 @@ class S23GeneratedContractTest(unittest.TestCase):
         self.assertNotIn("grpc.health", proto)
         self.assertNotIn("reflection", proto.lower())
 
+    def test_tracked_openapi_embeds_the_locked_s23_routes_and_schema_components(
+        self,
+    ) -> None:
+        import hashlib
+
+        openapi = load_json_bytes_strict(
+            (REPO_ROOT / "contracts/openapi/openapi.json").read_bytes(),
+            source="tracked OpenAPI",
+        )
+        self.assertEqual(
+            "s2-3-decision-contract/v1",
+            openapi["x-s2-3-contract-id"],
+        )
+        self.assertEqual(
+            hashlib.sha256(S23_CATALOG_PATH.read_bytes()).hexdigest(),
+            openapi["x-s2-3-contract-sha256"],
+        )
+        expected_methods = {
+            "/api/v1/decisions/evaluate-order": {"post"},
+            "/api/v1/decisions/{decisionId}": {"get"},
+            "/api/v1/decisions/{decisionId}/audit": {"get"},
+        }
+        actual_methods = {
+            path: set(item).intersection(
+                {"get", "post", "put", "patch", "delete", "head", "options", "trace"}
+            )
+            for path, item in openapi["paths"].items()
+            if path.startswith("/api/v1/decisions")
+        }
+        self.assertEqual(expected_methods, actual_methods)
+
+        components = openapi["components"]["schemas"]
+        self.assertEqual(
+            {
+                "S23EvaluateOrderRequest",
+                "S23Decision",
+                "S23DecisionSuccessResponse",
+                "S23DecisionAudit",
+                "S23DecisionAuditSuccessResponse",
+            },
+            {name for name in components if name.startswith("S23")},
+        )
+        request_schema = load_json_bytes_strict(
+            self.outputs["contracts/schemas/s2-3-evaluate-order-request.schema.json"],
+            source="generated S2.3 request schema",
+        )
+        response_schema = load_json_bytes_strict(
+            self.outputs["contracts/schemas/s2-3-decision-response.schema.json"],
+            source="generated S2.3 response schema",
+        )
+        self.assertEqual(
+            self._normalize_schema_order(request_schema),
+            self._normalize_schema_order(components["S23EvaluateOrderRequest"]),
+        )
+        self.assertEqual(
+            self._normalize_schema_order(
+                self._openapi_component_refs(response_schema, "S23Decision")
+            ),
+            self._normalize_schema_order(components["S23Decision"]),
+        )
+        evaluate = openapi["paths"]["/api/v1/decisions/evaluate-order"]["post"]
+        self.assertEqual(
+            "#/components/schemas/S23EvaluateOrderRequest",
+            evaluate["requestBody"]["content"]["application/json"]["schema"]["$ref"],
+        )
+        self.assertEqual(
+            "#/components/schemas/S23DecisionSuccessResponse",
+            evaluate["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
+        )
+
+    @classmethod
+    def _openapi_component_refs(cls, value: object, component: str) -> object:
+        if isinstance(value, dict):
+            return {
+                key: (
+                    item.replace(
+                        "#/$defs/",
+                        f"#/components/schemas/{component}/$defs/",
+                    )
+                    if key == "$ref" and isinstance(item, str)
+                    else cls._openapi_component_refs(item, component)
+                )
+                for key, item in value.items()
+            }
+        if isinstance(value, list):
+            return [cls._openapi_component_refs(item, component) for item in value]
+        return value
+
+    @classmethod
+    def _normalize_schema_order(cls, value: object) -> object:
+        if isinstance(value, dict):
+            return {
+                key: (
+                    sorted(item)
+                    if key == "required"
+                    and isinstance(item, list)
+                    and all(isinstance(entry, str) for entry in item)
+                    else cls._normalize_schema_order(item)
+                )
+                for key, item in value.items()
+            }
+        if isinstance(value, list):
+            return [cls._normalize_schema_order(item) for item in value]
+        return value
+
 
 if __name__ == "__main__":
     unittest.main()

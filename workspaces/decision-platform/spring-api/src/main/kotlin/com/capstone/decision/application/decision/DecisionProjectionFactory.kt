@@ -139,14 +139,22 @@ class DecisionProjectionFactory(
             hardMetricKeys
                 .mapNotNull { key ->
                     (snapshot.metric(key) as? MetricCell.Available<MetricValue>)?.freshUntil
-                }
-        return (boundaries + evaluationAsOf.plus(configuredValidity)).minOrNull()
-            ?: evaluationAsOf.plus(configuredValidity)
+                }.filterNot { it.isBefore(evaluationAsOf) }
+        val selected =
+            (boundaries + evaluationAsOf.plus(configuredValidity)).minOrNull()
+                ?: evaluationAsOf.plus(configuredValidity)
+        // PostgreSQL timestamptz의 microsecond 정밀도에서도 생성 즉시 만료된 Decision을 저장하지 않는다.
+        return if (selected.isAfter(evaluationAsOf)) {
+            selected
+        } else {
+            evaluationAsOf.plus(MINIMUM_PERSISTED_VALIDITY)
+        }
     }
 
     private companion object {
         const val RISK_DECISION_SCHEMA_VERSION = "s2-2-risk-decision/v1"
         const val DISCLOSURE_RULE_ID = "disclosure_risk_guard"
+        val MINIMUM_PERSISTED_VALIDITY: Duration = Duration.ofNanos(1_000)
         val HARD_READINESS_METRICS =
             setOf(
                 MetricKey.CURRENT_PRICE_KRW,

@@ -1,5 +1,6 @@
 package com.capstone.decision.infrastructure.decision
 
+import com.capstone.decision.application.decision.DecisionValidityPolicy
 import com.capstone.decision.application.risk.MetricSnapshotAssembler
 import com.capstone.decision.application.risk.PortfolioEvaluationUseCase
 import com.capstone.decision.application.risk.SystemRuleContract
@@ -21,12 +22,17 @@ import com.capstone.decision.infrastructure.risk.JdbcInternalPaperBalanceAdapter
 import com.capstone.decision.infrastructure.risk.JdbcKisMockBalanceAdapter
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
+import java.time.Duration
 
 /**
  * S2.3이 소유하지 않는 producer가 없는 source는 production 값을 합성하지 않고 typed missing으로 닫는다.
  */
 @Configuration(proxyBeanMethods = false)
 class DecisionRuntimeConfiguration {
+    @Bean
+    fun decisionValidityPolicy(properties: DecisionProperties): DecisionValidityPolicy =
+        DecisionValidityPolicy(Duration.ofMinutes(properties.validMinutes))
+
     @Bean
     fun decisionOrderMetricPort(): OrderMetricPort =
         object : OrderMetricPort {

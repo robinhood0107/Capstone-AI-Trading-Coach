@@ -317,6 +317,7 @@ class FlywayMigrationIntegrationTest(
             "decision_audit_projection",
             "latest_market_quote_observations",
             "latest_portfolio_balance_observations",
+            "active_paper_portfolio_projection",
             "decision_idempotency_results",
         ).forEach { table ->
             assertTrue(hasTablePrivilege("decision_app", table, "SELECT"), "missing SELECT on $table")
@@ -357,6 +358,29 @@ class FlywayMigrationIntegrationTest(
                 """.trimIndent(),
             )
         assertTrue(roleFlags.values.all { it == false })
+    }
+
+    @Test
+    fun `decision application role receives SQLSTATE 42501 for forbidden history source and schema operations`() {
+        listOf(
+            "update decisions set outcome = outcome where false",
+            "delete from decisions where false",
+            "truncate table decisions",
+            "update audit_logs set action = action where false",
+            "delete from audit_logs where false",
+            "truncate table audit_logs",
+            "update event_outbox set status = status where false",
+            "delete from event_outbox where false",
+            "truncate table event_outbox",
+            "insert into market_quote_observations " +
+                "(observation_id, symbol, source, price_krw, observed_at, received_at, " +
+                "schema_version, source_version, source_ref, artifact_hash) values " +
+                "('forbidden', '005930', 'KIS_MOCK', 1, now(), now(), 'v1', 'v1', " +
+                "repeat('a', 64), repeat('b', 64))",
+            "select * from rag_answers limit 0",
+            "update flyway_schema_history set success = success where false",
+            "create table s23_forbidden_schema_write (id integer)",
+        ).forEach(::assertDecisionAppPermissionDenied)
     }
 
     @Test
@@ -463,12 +487,20 @@ class FlywayMigrationIntegrationTest(
         jdbcTemplate.update(
             """
             insert into decisions (
-                decision_id, user_id, account_id, principle_version_id,
-                symbol, side, decision, reason_json, created_at, valid_until
+                decision_id, evaluation_id, user_id, principle_id, principle_version_id,
+                principle_version, portfolio_source, symbol, side, outcome, mode,
+                can_submit_order, enforcement_action, evaluation_as_of, created_at, valid_until,
+                result_schema_version, snapshot_schema_version, catalog_version,
+                readiness_policy_version, mapping_versions_json, semantic_input_hash,
+                snapshot_artifact_hash, result_json
             )
             values (
-                'dec-flyway', 'usr-flyway', 'paper-account-1', 'prv-flyway-v1',
-                '005930', 'BUY', 'ALLOW', '{}'::jsonb, now(), now() + interval '10 minutes'
+                'dec-flyway', 'eval-flyway', 'usr-flyway', 'prn-flyway', 'prv-flyway-v1',
+                1, 'INTERNAL_PAPER', '005930', 'BUY', 'ALLOW', 'GUIDE',
+                true, 'NONE', now(), now(), now() + interval '10 minutes',
+                'risk-decision.v1', 's2.2-metric-snapshot-v2', 1,
+                's2.3-readiness-v1', '{}'::jsonb, repeat('a', 64),
+                repeat('b', 64), '{}'::jsonb
             )
             """.trimIndent(),
         )
@@ -650,6 +682,16 @@ class FlywayMigrationIntegrationTest(
             role,
             privilege,
         ) ?: false
+
+    private fun assertDecisionAppPermissionDenied(sql: String) {
+        DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { connection ->
+            connection.createStatement().use { statement ->
+                statement.execute("set role decision_app")
+                val exception = assertThrows<SQLException> { statement.execute(sql) }
+                assertEquals("42501", exception.sqlState, "expected permission denial for: $sql")
+            }
+        }
+    }
 
     private fun countMarketCalendarRows(
         market: String,

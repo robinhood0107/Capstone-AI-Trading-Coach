@@ -130,13 +130,17 @@ S2.3 runtime은 `POST /api/v1/decisions/evaluate-order`, owner-scoped detail/aud
 decision/trace/artifact/audit/outbox/idempotency 원자 저장을 제공한다. provider HTTP fallback
 없이 저장된 sanitized source만 읽는다. V9의
 `market_quote_observations`는 S1.1 producer, KIS_MOCK
-`portfolio_balance_observations`/`portfolio_position_observations`는 S3 producer가 후속 별도
-권한으로 INSERT한다. INTERNAL_PAPER는 기존 ledger의 owner-scoped projection을 사용한다.
-`decision_app`은 SELECT만 가지며 production seed는 없다. source가 비어 있거나 stale/incomplete면
-typed unavailable과 persisted 200 HOLD로 수렴한다. 자세한 소유권·hash 전환은
+`portfolio_balance_observations`/`portfolio_position_observations`는 S3 producer가,
+`deterministic_risk_observations`/`daily_order_count_observations`는 deterministic producer가,
+`corporation_registry_observations`는 S1.6 producer가 별도 최소권한으로 INSERT한다.
+이번 S2.3 prerequisite는 fixture/mock transport/Testcontainers로 offline producer와 projection을
+검증하며 provider 호출 권한이 아니다. INTERNAL_PAPER는 기존 ledger의 owner-scoped projection을
+사용한다. `decision_app`은 SELECT만 가지며 production seed는 없다. source 구조 자체가 빠지면
+`S23_RUNTIME_SOURCE_BLOCKED`, 구조가 준비된 뒤 row가 비거나 stale/incomplete/future이면 typed
+unavailable과 persisted 200 HOLD다. 자세한 소유권·hash 전환은
 [`20260724-s2-3-decision-contract-lock.md`](changes/20260724-s2-3-decision-contract-lock.md)를
 따른다. canonical S2.3 catalog SHA-256은
-`58b658a1482b378d5a7c8c394381a14b6ad6e41c222d2f84e4edec65c1ab1e6f`이며 tracked OpenAPI의
+`58e55ebda0154a079cff3d5c2527da66743cf3fdeeaf063b86b23b581371fab3`이며 tracked OpenAPI의
 `x-s2-3-contract-sha256`과 CI에서 일치해야 한다.
 
 ## S1.5 KIS 데이터 품질 리포트

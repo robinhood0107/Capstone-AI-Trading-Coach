@@ -177,6 +177,19 @@ class S23MarkdownContractDriftTest(unittest.TestCase):
                 self.assertIn("contracts/openapi/openapi.json", text)
                 self.assertNotIn("contracts/openapi/api.openapi.yaml", text)
 
+    def test_current_s23_docs_match_the_canonical_catalog_digest(self) -> None:
+        import hashlib
+
+        digest = hashlib.sha256(S23_CATALOG_PATH.read_bytes()).hexdigest()
+        for relative in (
+            Path("contracts/README.md"),
+            Path("contracts/changes/20260724-s2-3-decision-contract-lock.md"),
+            Path("docs/API_명세서.md"),
+        ):
+            text = (REPO_ROOT / relative).read_text(encoding="utf-8")
+            with self.subTest(path=relative.as_posix()):
+                self.assertIn(digest, text)
+
     def test_source_contract_never_invents_a_production_observation(self) -> None:
         for relative in (
             Path("contracts/README.md"),

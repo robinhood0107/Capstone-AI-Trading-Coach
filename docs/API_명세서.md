@@ -736,7 +736,7 @@ tracked OpenAPI는 `contracts/openapi/openapi.json`이며 root는 `openapi=3.1.1
 Schema Draft 2020-12다. canonical catalog bytes의 lowercase SHA-256을 generated OpenAPI의
 `x-s2-1-contract-sha256`에 넣고 `x-s2-1-contract-id=s2-1-principle-contract/v1`과 함께 CI에서
 검증한다. S2.3 catalog도 `x-s2-3-contract-id=s2-3-decision-contract/v1`과
-`x-s2-3-contract-sha256=58b658a1482b378d5a7c8c394381a14b6ad6e41c222d2f84e4edec65c1ab1e6f`로
+`x-s2-3-contract-sha256=58e55ebda0154a079cff3d5c2527da66743cf3fdeeaf063b86b23b581371fab3`로
 고정한다. Spring generator가 내는 root `3.1.0`에서 tracked `3.1.1`로의 patch 한 field와
 deterministic formatting만 normalizer가 바꿀 수 있으며 paths/components/dialect drift는 실패한다.
 
@@ -752,7 +752,8 @@ deterministic formatting만 normalizer가 바꿀 수 있으며 paths/components/
 > `contracts/schemas/risk_decision.schema.json`과 순수 evaluator/snapshot policy를 offline
 > fixture와 fake port로 검증했다. S2.3은 owner-scoped runtime orchestration, V9
 > decision/trace/artifact/audit/outbox/idempotency persistence와 이 장의 3개 endpoint를
-> tracked OpenAPI에 연결한다. S1.1/S3는 provider/ledger producer를 소유하고 S2.3은 저장된
+> tracked OpenAPI에 연결한다. S1.1/S3/S1.6/deterministic 모듈은 source producer를 소유하고
+> 이번 continuation에서 offline fixture 기반 structural readiness를 제공한다. S2.3은 저장된
 > sanitized observation과 INTERNAL_PAPER ledger를 읽는 adapter만 소유한다. provider HTTP,
 > live account, 주문 제출과 broker publish는 이 경로에서 수행하지 않는다.
 
@@ -822,14 +823,18 @@ reader로 연결하지만 producer가 없는 risk/news/signal/instrument source�
 owner scope 안에서 해당 context를 해석하며 raw account ID를 신뢰하지 않는다. 선택한 source만
 조회하고 source 혼합이나 KIS 실패 후 INTERNAL_PAPER 자동 fallback은 금지한다.
 
-S2.3은 provider HTTP를 호출하지 않는다. 현재가·호가는 S1.1 producer가 쓰는 append-only
+S2.3은 provider HTTP를 호출하지 않는다. 현재가·호가는 S1.1 offline producer가 쓰는 append-only
 `market_quote_observations`, KIS_MOCK 잔고는 S3 producer가 쓰는
 `portfolio_balance_observations`/`portfolio_position_observations`, INTERNAL_PAPER는 기존
-`paper_accounts`/`paper_positions`의 한 SQL owner-scoped projection에서 읽는다. V9는 production
-source row를 seed하지 않고 `decision_app`에는 이 source의 SELECT만 준다. source row 부재,
-stale/incomplete/future timestamp는 가짜 0/빈 값으로 대체하지 않고 typed unavailable
-`issues[]`와 persisted 200 HOLD로 수렴한다. 실제 producer가 배포되기 전 환경은 HOLD-only일 수
-있으며 이는 안전한 degraded state다.
+`paper_accounts`/`paper_positions`의 한 SQL owner-scoped projection에서 읽는다. 결정적 risk와
+일일 주문 수는 각각 `deterministic_risk_observations`와
+`daily_order_count_observations`, 빈 corp_code resolution은
+`corporation_registry_observations`의 exact current projection을 쓴다. V9는 production source
+row를 seed하지 않고 `decision_app`에는 source SELECT만 준다. canonical table/projection,
+production bean/port, offline producer, 최소권한 writer, bounded reader,
+freshness/completeness, no-fake test 중 하나가 빠지면 `S23_RUNTIME_SOURCE_BLOCKED`다. 구조가
+갖춰진 뒤 row 부재, stale/incomplete/future timestamp 또는 transient dependency failure는
+가짜 0/빈 값으로 대체하지 않고 typed unavailable `issues[]`와 persisted 200 HOLD로 수렴한다.
 
 | 상황 | HTTP/result |
 |---|---|
@@ -840,6 +845,13 @@ stale/incomplete/future timestamp는 가짜 0/빈 값으로 대체하지 않고 
 | evaluator invariant, serialization 또는 runtime orchestration 자체 실패 | `5xx`, 실패 envelope. HOLD로 위장하지 않음 |
 
 따라서 HOLD는 HTTP 오류가 아니라 주문 제출을 잠시 막는 성공적인 business 판단이다.
+
+persistence transaction은 idempotency advisory lock →
+`principles`/current version의 `FOR SHARE OF principle` 재확인 → Decision graph INSERT
+순서다. updater가 먼저 version 2를 commit하면 구 version 평가는 409/all writes zero이고,
+Decision이 먼저 share lock을 잡으면 Principle updater는 Decision commit까지 기다린다.
+source read/evaluation은 이 transaction 밖이다. commit 뒤 timer/counter/log 실패는 원래
+persisted 200 projection을 뒤집지 않는다.
 
 ### 5.3 public code와 internal cause 경계
 

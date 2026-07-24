@@ -36,8 +36,12 @@
   `contracts/changes/20260724-s2-3-decision-contract-lock.md`를 따른다. OpenAPI SSOT는
   `contracts/openapi/openapi.json`이다.
 - S2.3은 저장된 sanitized source의 read adapter만 소유한다. 현재가·호가 producer는 S1.1,
-  KIS_MOCK balance producer와 INTERNAL_PAPER ledger mutation은 S3 소유다. source row가 없으면
-  production 값을 꾸미지 않고 persisted HOLD로 처리한다.
+  KIS_MOCK balance producer와 INTERNAL_PAPER ledger mutation은 S3, corp/disclosure는 S1.6,
+  deterministic risk/order-count는 deterministic source 모듈 소유다. 이번 continuation은
+  offline fixture producer·최소권한 writer·bounded projection을 prerequisite로 구현하지만
+  provider/live/order 호출 권한은 아니다. source 구조 자체가 빠지면
+  `S23_RUNTIME_SOURCE_BLOCKED`, 구조가 준비된 뒤 row가 없으면 production 값을 꾸미지 않고
+  persisted HOLD로 처리한다.
 
 ## 워크스페이스 경계
 

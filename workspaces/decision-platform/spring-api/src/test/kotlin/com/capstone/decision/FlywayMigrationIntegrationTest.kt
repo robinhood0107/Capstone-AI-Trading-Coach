@@ -34,9 +34,9 @@ class FlywayMigrationIntegrationTest(
     @Autowired private val jdbcTemplate: JdbcTemplate,
 ) : SpringApiIntegrationTestBase() {
     @Test
-    fun `clean database applies V1 through V8 migrations and creates required objects`() {
+    fun `clean database applies V1 through V9 migrations and creates required objects`() {
         val versions = queryStrings("select version from flyway_schema_history where success order by installed_rank")
-        assertEquals(listOf("1", "2", "3", "4", "5", "6", "7", "8"), versions)
+        assertEquals(listOf("1", "2", "3", "4", "5", "6", "7", "8", "9"), versions)
 
         val requiredTables =
             listOf(
@@ -60,6 +60,16 @@ class FlywayMigrationIntegrationTest(
                 "calendar_conflicts",
                 "calendar_collection_cursors",
                 "disclosure_risk_state_transitions",
+                "market_quote_observations",
+                "portfolio_balance_observations",
+                "portfolio_position_observations",
+                "decision_artifacts",
+                "decision_traces",
+                "decision_idempotency_results",
+                "decision_owner_projection",
+                "decision_audit_projection",
+                "latest_market_quote_observations",
+                "latest_portfolio_balance_observations",
             )
         requiredTables.forEach { tableName ->
             assertTrue(tableExists(tableName), "expected table $tableName to exist")
@@ -287,6 +297,66 @@ class FlywayMigrationIntegrationTest(
         assertFalse(hasTablePrivilege("decision_app", "trading_sessions", "INSERT"))
         assertFalse(hasTablePrivilege("decision_app", "flyway_schema_history", "SELECT"))
         assertFalse(hasSchemaPrivilege("decision_app", "CREATE"))
+    }
+
+    @Test
+    fun `decision application role has exact append only V9 privileges`() {
+        listOf(
+            "decisions",
+            "decision_violations",
+            "decision_artifacts",
+            "decision_traces",
+            "audit_logs",
+            "event_outbox",
+            "decision_idempotency_results",
+        ).forEach { table ->
+            assertTrue(hasTablePrivilege("decision_app", table, "INSERT"), "missing INSERT on $table")
+        }
+        listOf(
+            "decision_owner_projection",
+            "decision_audit_projection",
+            "latest_market_quote_observations",
+            "latest_portfolio_balance_observations",
+            "decision_idempotency_results",
+        ).forEach { table ->
+            assertTrue(hasTablePrivilege("decision_app", table, "SELECT"), "missing SELECT on $table")
+        }
+        listOf(
+            "decisions",
+            "decision_violations",
+            "decision_artifacts",
+            "decision_traces",
+            "audit_logs",
+            "event_outbox",
+        ).forEach { table ->
+            assertFalse(hasTablePrivilege("decision_app", table, "SELECT"), "unexpected SELECT on $table")
+            assertFalse(hasTablePrivilege("decision_app", table, "UPDATE"), "unexpected UPDATE on $table")
+            assertFalse(hasTablePrivilege("decision_app", table, "DELETE"), "unexpected DELETE on $table")
+            assertFalse(hasTablePrivilege("decision_app", table, "TRUNCATE"), "unexpected TRUNCATE on $table")
+        }
+        listOf(
+            "market_quote_observations",
+            "portfolio_balance_observations",
+            "portfolio_position_observations",
+        ).forEach { table ->
+            assertFalse(hasTablePrivilege("decision_app", table, "INSERT"), "unexpected source INSERT on $table")
+            assertFalse(hasTablePrivilege("decision_app", table, "UPDATE"), "unexpected source UPDATE on $table")
+            assertFalse(hasTablePrivilege("decision_app", table, "DELETE"), "unexpected source DELETE on $table")
+            assertFalse(hasTablePrivilege("decision_app", table, "TRUNCATE"), "unexpected source TRUNCATE on $table")
+        }
+        assertFalse(hasTablePrivilege("decision_app", "rag_answers", "SELECT"))
+        assertFalse(hasTablePrivilege("decision_app", "flyway_schema_history", "SELECT"))
+        assertFalse(hasSchemaPrivilege("decision_app", "CREATE"))
+
+        val roleFlags =
+            jdbcTemplate.queryForMap(
+                """
+                select rolsuper, rolcreaterole, rolcreatedb, rolreplication, rolbypassrls
+                from pg_roles
+                where rolname = 'decision_app'
+                """.trimIndent(),
+            )
+        assertTrue(roleFlags.values.all { it == false })
     }
 
     @Test

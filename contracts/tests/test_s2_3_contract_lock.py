@@ -1,0 +1,177 @@
+from __future__ import annotations
+
+import re
+import unittest
+from pathlib import Path
+
+from contracts.generate_s2_2_contracts import (
+    CATALOG_PATH,
+    generate_outputs,
+    load_catalog,
+    load_json_bytes_strict,
+)
+
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+ORDER_FIELDS = {
+    "estimatedAmount",
+    "estimatedPrice",
+    "orderType",
+    "quantity",
+    "side",
+    "strategyId",
+    "symbol",
+    "timeframe",
+}
+CURRENT_CONTRACT_DOCS = (
+    Path("AGENTS.md"),
+    Path("contracts/README.md"),
+    Path("contracts/changes/20260724-s2-3-decision-contract-lock.md"),
+    Path("docs/API_명세서.md"),
+    Path("docs/S0_2_P0_계약_통합_필드명_결정.md"),
+    Path("docs/최종_프로젝트_명세서.md"),
+)
+LIMIT_PRICE_MARKDOWN_ALLOWLIST = {
+    "AGENTS.md",
+    "contracts/README.md",
+    "contracts/changes/20260711-s0-2-order-intent-estimated-price-only.md",
+    "contracts/changes/20260724-s2-3-decision-contract-lock.md",
+    "docs/API_명세서.md",
+    "docs/S0_2_P0_계약_통합_필드명_결정.md",
+    "docs/선물옵션_모의주문_확장_시나리오_API_명세서.md",
+    "docs/최종_프로젝트_명세서.md",
+}
+STALE_OPENAPI_PATH_ALLOWLIST = {
+    "contracts/changes/20260724-s2-3-decision-contract-lock.md",
+}
+V1_HASH_ALLOWLIST = {
+    "contracts/changes/20260724-s2-2-rule-evaluation-offline-contract.md",
+}
+
+
+def public_markdown_paths() -> list[Path]:
+    excluded_parts = {
+        ".git",
+        ".gradle",
+        ".venv",
+        "build",
+        "node_modules",
+        "private-reference",
+    }
+    return sorted(
+        path
+        for path in REPO_ROOT.rglob("*.md")
+        if excluded_parts.isdisjoint(path.relative_to(REPO_ROOT).parts)
+    )
+
+
+class S23MarkdownContractDriftTest(unittest.TestCase):
+    def test_public_markdown_is_utf8_lf_terminated_and_free_of_stale_contract_tokens(
+        self,
+    ) -> None:
+        self.assertGreater(len(public_markdown_paths()), 0)
+        for path in public_markdown_paths():
+            relative = path.relative_to(REPO_ROOT).as_posix()
+            payload = path.read_bytes()
+            with self.subTest(path=relative):
+                text = payload.decode("utf-8")
+                self.assertTrue(payload.endswith(b"\n"))
+                if "limitPrice" in text:
+                    self.assertIn(relative, LIMIT_PRICE_MARKDOWN_ALLOWLIST)
+                if "contracts/openapi/api.openapi.yaml" in text:
+                    self.assertIn(relative, STALE_OPENAPI_PATH_ALLOWLIST)
+                if "HASH-CANONICALIZATION-S22-V1" in text:
+                    self.assertIn(relative, V1_HASH_ALLOWLIST)
+                self.assertNotIn("s2.2-metric-snapshot-v1", text)
+                self.assertNotRegex(text, r"KIS\s*잔고\s*→\s*PAPER\s*→")
+                self.assertNotIn("proto 파일이 필요하면", text)
+                self.assertIsNone(
+                    re.search(r"reflection[^\n]{0,50}(?:opt-in|임시)", text),
+                )
+
+    def test_current_contract_docs_name_the_same_cash_order_and_hash_contract(
+        self,
+    ) -> None:
+        exact_fields = (
+            "symbol,side,orderType,quantity,estimatedPrice,"
+            "estimatedAmount,timeframe,strategyId"
+        )
+        for relative in CURRENT_CONTRACT_DOCS:
+            text = (REPO_ROOT / relative).read_text(encoding="utf-8")
+            compact = re.sub(r"\s+", "", text)
+            with self.subTest(path=relative.as_posix()):
+                self.assertIn(exact_fields, compact)
+                self.assertIn("HASH-CANONICALIZATION-S22-V2", text)
+                self.assertIn("s2.2-metric-snapshot-v2", text)
+
+    def test_historical_v1_record_declares_the_v2_supersession(self) -> None:
+        text = (
+            REPO_ROOT
+            / "contracts/changes/20260724-s2-2-rule-evaluation-offline-contract.md"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("HASH-CANONICALIZATION-S22-V1", text)
+        self.assertIn("2026-07-24 supersession", text)
+        self.assertIn("HASH-CANONICALIZATION-S22-V2", text)
+
+    def test_current_api_docs_use_the_openapi_json_ssot(self) -> None:
+        for relative in (
+            Path("AGENTS.md"),
+            Path("docs/API_명세서.md"),
+            Path("docs/최종_프로젝트_명세서.md"),
+        ):
+            text = (REPO_ROOT / relative).read_text(encoding="utf-8")
+            with self.subTest(path=relative.as_posix()):
+                self.assertIn("contracts/openapi/openapi.json", text)
+                self.assertNotIn("contracts/openapi/api.openapi.yaml", text)
+
+    def test_source_contract_never_invents_a_production_observation(self) -> None:
+        for relative in (
+            Path("contracts/README.md"),
+            Path("contracts/changes/20260724-s2-3-decision-contract-lock.md"),
+            Path("docs/API_명세서.md"),
+            Path("docs/최종_프로젝트_명세서.md"),
+            Path("workspaces/decision-platform/README.md"),
+        ):
+            text = (REPO_ROOT / relative).read_text(encoding="utf-8")
+            with self.subTest(path=relative.as_posix()):
+                self.assertIn("market_quote_observations", text)
+                self.assertIn("portfolio_balance_observations", text)
+                self.assertIn("portfolio_position_observations", text)
+                self.assertRegex(text, r"(provider HTTP|provider를 직접 호출하지)")
+                self.assertRegex(text, r"(production[^\n]{0,30}seed|운영 seed|가짜|fake)")
+                self.assertRegex(text, r"(HOLD|보류)")
+
+
+class S23CashOrderContractTest(unittest.TestCase):
+    def test_order_intent_schema_uses_exact_positive_integer_krw_fields(self) -> None:
+        schema = load_json_bytes_strict(
+            (REPO_ROOT / "contracts/schemas/order_intent.schema.json").read_bytes(),
+            source="order intent schema",
+        )
+
+        self.assertFalse(schema["additionalProperties"])
+        self.assertEqual(ORDER_FIELDS, set(schema["required"]))
+        self.assertEqual(ORDER_FIELDS, set(schema["properties"]))
+        for field in ("estimatedPrice", "estimatedAmount"):
+            self.assertEqual("integer", schema["properties"][field]["type"])
+            self.assertEqual(1, schema["properties"][field]["minimum"])
+
+    def test_s2_2_generated_hash_vector_has_v2_order_identity(self) -> None:
+        outputs = generate_outputs(load_catalog(CATALOG_PATH))
+        vector = load_json_bytes_strict(
+            outputs["contracts/examples/s2-2-hash-vector.valid.json"],
+            source="generated S2.2 hash vector",
+        )
+        order_intent = vector["snapshotArtifact"]["orderIntent"]
+
+        self.assertEqual("HASH-CANONICALIZATION-S22-V2", vector["canonicalizationId"])
+        self.assertEqual(
+            "s2.2-metric-snapshot-v2",
+            vector["snapshotArtifact"]["snapshotSchemaVersion"],
+        )
+        self.assertEqual(ORDER_FIELDS, set(order_intent))
+
+
+if __name__ == "__main__":
+    unittest.main()

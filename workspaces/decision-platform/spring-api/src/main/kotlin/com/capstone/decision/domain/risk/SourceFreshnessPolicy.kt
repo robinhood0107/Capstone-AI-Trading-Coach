@@ -36,8 +36,7 @@ interface TradingSessionPort {
     ): List<TradingSessionBoundary>
 }
 
-class TradingCalendarUnavailableException :
-    IllegalStateException("Canonical previous trading session is unavailable.")
+class TradingCalendarUnavailableException : IllegalStateException("Canonical previous trading session is unavailable.")
 
 class SourceFreshnessPolicy {
     /**

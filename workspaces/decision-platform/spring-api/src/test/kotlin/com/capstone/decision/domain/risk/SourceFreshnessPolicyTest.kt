@@ -57,22 +57,25 @@ class SourceFreshnessPolicyTest {
         val policy = PreviousTradingDayFreshnessPolicy(FakeTradingSessionPort(sessions))
 
         assertThat(
-            policy.assess(
-                Instant.parse("2029-12-28T06:30:00Z"),
-                Instant.parse("2030-01-02T00:00:00Z"),
-            ).previousSessionDate,
+            policy
+                .assess(
+                    Instant.parse("2029-12-28T06:30:00Z"),
+                    Instant.parse("2030-01-02T00:00:00Z"),
+                ).previousSessionDate,
         ).isEqualTo(LocalDate.parse("2029-12-28"))
         assertThat(
-            policy.assess(
-                Instant.parse("2030-01-04T06:30:00Z"),
-                Instant.parse("2030-01-07T00:00:00Z"),
-            ).previousSessionDate,
+            policy
+                .assess(
+                    Instant.parse("2030-01-04T06:30:00Z"),
+                    Instant.parse("2030-01-07T00:00:00Z"),
+                ).previousSessionDate,
         ).isEqualTo(LocalDate.parse("2030-01-04"))
         assertThat(
-            policy.assess(
-                Instant.parse("2030-01-11T06:30:00Z"),
-                Instant.parse("2030-01-14T00:00:00Z"),
-            ).previousSessionDate,
+            policy
+                .assess(
+                    Instant.parse("2030-01-11T06:30:00Z"),
+                    Instant.parse("2030-01-14T00:00:00Z"),
+                ).previousSessionDate,
         ).isEqualTo(LocalDate.parse("2030-01-11"))
     }
 

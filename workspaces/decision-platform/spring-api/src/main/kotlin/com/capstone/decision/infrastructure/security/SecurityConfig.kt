@@ -1,6 +1,7 @@
 package com.capstone.decision.infrastructure.security
 
 import com.capstone.decision.api.common.ApiResponseWriter
+import com.capstone.decision.infrastructure.grpc.DecisionGrpcProperties
 import com.capstone.decision.infrastructure.idempotency.IdempotencyProperties
 import com.capstone.decision.infrastructure.idempotency.IdempotencyService
 import com.capstone.decision.infrastructure.principle.PrincipleProperties
@@ -40,6 +41,7 @@ import java.security.MessageDigest
     IdempotencyProperties::class,
     HttpRequestProperties::class,
     PrincipleProperties::class,
+    DecisionGrpcProperties::class,
 )
 class SecurityConfig {
     @Bean

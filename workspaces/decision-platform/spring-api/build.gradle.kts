@@ -1,5 +1,5 @@
-import org.gradle.language.jvm.tasks.ProcessResources
 import com.google.protobuf.gradle.id
+import org.gradle.language.jvm.tasks.ProcessResources
 
 buildscript {
     configurations.classpath {
@@ -39,6 +39,9 @@ repositories {
 }
 
 dependencyManagement {
+    imports {
+        mavenBom("io.grpc:grpc-bom:1.81.0")
+    }
     dependencies {
         // Boot BOM의 다음 patch 반영 전에도 공개 취약점 수정 버전을 우선한다.
         dependency("com.fasterxml.jackson.core:jackson-databind:2.21.5")
@@ -70,7 +73,6 @@ dependencies {
     implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:3.0.3")
     implementation("net.logstash.logback:logstash-logback-encoder:9.0") // 9.0부터 Jackson 3(Boot 4 정렬)
     runtimeOnly("io.micrometer:micrometer-registry-prometheus")
-    implementation(platform("io.grpc:grpc-bom:1.81.0"))
     implementation("io.grpc:grpc-protobuf")
     implementation("io.grpc:grpc-stub")
     implementation("io.grpc:grpc-netty-shaded")

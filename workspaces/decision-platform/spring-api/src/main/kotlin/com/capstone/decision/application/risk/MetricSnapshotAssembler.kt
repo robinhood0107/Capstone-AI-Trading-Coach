@@ -468,8 +468,8 @@ class MetricSnapshotAssembler(
     private fun postOrderTargetValue(
         balance: BalanceSnapshot,
         order: OrderIntentSnapshot,
-    ): Long? {
-        return try {
+    ): Long? =
+        try {
             val current =
                 balance.positions
                     .singleOrNull { it.symbol == order.symbol && it.quantity > 0 }
@@ -482,7 +482,6 @@ class MetricSnapshotAssembler(
         } catch (_: ArithmeticException) {
             null
         }
-    }
 
     private fun ratioMetric(
         numerator: Long,

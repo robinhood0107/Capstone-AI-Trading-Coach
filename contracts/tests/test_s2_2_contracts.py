@@ -316,7 +316,7 @@ class S22HashAndBuildContractTest(unittest.TestCase):
 
         self.assertEqual("HASH-CANONICALIZATION-S22-V2", vector["canonicalizationId"])
         self.assertEqual(
-            "c10fe3f4c9fa3077fdad1131aaf15d61ad93b77facfc84e87c78e41a41471249",
+            "574b882a28de2dd732b863993dbb9f3638aa2e66fca3307eb3ecc43d0de4448e",
             vector["semanticInputHash"],
         )
         self.assertEqual(
@@ -411,9 +411,10 @@ class S22HashAndBuildContractTest(unittest.TestCase):
             "s1.2-v1",
             semantic["observedOptionalComponentEvidence"][0]["evidenceVersion"],
         )
+        self.assertNotIn("eventCodes", semantic["disclosureEvidence"])
         self.assertEqual(
             ["OPENDART:piicDecsn"],
-            semantic["disclosureEvidence"]["eventCodes"],
+            artifact["disclosureEvidence"]["eventCodes"],
         )
         self.assertEqual(
             "COMPLETE",

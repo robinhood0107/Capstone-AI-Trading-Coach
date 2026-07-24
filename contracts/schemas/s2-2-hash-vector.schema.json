@@ -4,7 +4,7 @@
   "additionalProperties": false,
   "properties": {
     "canonicalizationId": {
-      "const": "HASH-CANONICALIZATION-S22-V1"
+      "const": "HASH-CANONICALIZATION-S22-V2"
     },
     "semanticInput": {
       "type": "object"

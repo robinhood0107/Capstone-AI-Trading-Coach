@@ -29,6 +29,7 @@ class DecisionService(
     private val idempotencyHasher: DecisionIdempotencyHasher,
     private val claimService: DecisionIdempotencyClaimService,
     private val projectionFactory: DecisionProjectionFactory,
+    private val observability: DecisionObservability,
     private val decisionProperties: DecisionProperties,
     private val objectMapper: ObjectMapper,
     private val clock: Clock,
@@ -38,6 +39,8 @@ class DecisionService(
         rawIdempotencyKey: String,
         command: EvaluateOrderCommand,
     ): DecisionProjection {
+        val startedAtNanos = System.nanoTime()
+        var metricMode = DecisionMetricMode.UNKNOWN
         val evaluationAsOf = clock.instant()
         val identity = idempotencyHasher.identity(actor.userId, rawIdempotencyKey, command)
         try {
@@ -45,24 +48,31 @@ class DecisionService(
                 if (stored.requestHash != identity.requestHash) {
                     throw DecisionIdempotencyConflictException()
                 }
-                return projectionFactory.fromCanonicalJson(stored.projectionCanonicalJson)
+                return recordTimed(
+                    projectionFactory.fromCanonicalJson(stored.projectionCanonicalJson),
+                    startedAtNanos,
+                )
             }
             val pinned =
                 principleSnapshotPort.findActiveOwned(actor.userId, command.principleId)
                     ?: throw DecisionNotFoundException()
+            metricMode = DecisionMetricMode.valueOf(pinned.mode.name)
             val claim =
                 when (val lookup = claimService.acquire(identity.scopeHash, identity.requestHash)) {
                     is DecisionClaimLookup.Acquired -> lookup.claim
                     DecisionClaimLookup.Conflict -> throw DecisionIdempotencyConflictException()
                     DecisionClaimLookup.InProgress -> throw DecisionIdempotencyInProgressException()
                 }
-            return evaluateWithClaim(
-                actor = actor,
-                command = command,
-                identity = identity,
-                evaluationAsOf = evaluationAsOf,
-                pinned = pinned,
-                claim = claim,
+            return recordTimed(
+                evaluateWithClaim(
+                    actor = actor,
+                    command = command,
+                    identity = identity,
+                    evaluationAsOf = evaluationAsOf,
+                    pinned = pinned,
+                    claim = claim,
+                ),
+                startedAtNanos,
             )
         } catch (exception: DecisionNotFoundException) {
             throw exception
@@ -73,8 +83,10 @@ class DecisionService(
         } catch (exception: DecisionVersionConflictException) {
             throw exception
         } catch (exception: DecisionTechnicalException) {
+            recordTechnicalFailure(startedAtNanos, metricMode)
             throw exception
         } catch (exception: Exception) {
+            recordTechnicalFailure(startedAtNanos, metricMode)
             throw DecisionTechnicalException(exception)
         }
     }
@@ -171,6 +183,7 @@ class DecisionService(
                 )
             try {
                 persistencePort.persist(writeRequest)
+                observability.recordPersisted(projection, actor.requestId)
                 return projection
             } catch (exception: DecisionPersistenceReplayException) {
                 return projectionFactory.fromCanonicalJson(exception.projectionCanonicalJson)
@@ -182,6 +195,31 @@ class DecisionService(
             runCatching { claimService.release(claim) }
         }
     }
+
+    private fun recordTimed(
+        projection: DecisionProjection,
+        startedAtNanos: Long,
+    ): DecisionProjection {
+        observability.recordTimer(
+            outcome = DecisionMetricOutcome.valueOf(projection.riskDecision.decision),
+            mode = DecisionMetricMode.valueOf(projection.mode),
+            duration = elapsed(startedAtNanos),
+        )
+        return projection
+    }
+
+    private fun recordTechnicalFailure(
+        startedAtNanos: Long,
+        mode: DecisionMetricMode,
+    ) {
+        observability.recordTimer(
+            outcome = DecisionMetricOutcome.ERROR,
+            mode = mode,
+            duration = elapsed(startedAtNanos),
+        )
+    }
+
+    private fun elapsed(startedAtNanos: Long): Duration = Duration.ofNanos((System.nanoTime() - startedAtNanos).coerceAtLeast(0))
 
     private fun id(prefix: String): String = "${prefix}_${UUID.randomUUID().toString().replace("-", "")}"
 }

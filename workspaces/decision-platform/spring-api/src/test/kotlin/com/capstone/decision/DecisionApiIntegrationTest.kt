@@ -1,5 +1,6 @@
 package com.capstone.decision
 
+import io.micrometer.core.instrument.MeterRegistry
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -43,6 +44,7 @@ class DecisionApiIntegrationTest(
     @Autowired private val objectMapper: ObjectMapper,
     @Autowired private val jdbcTemplate: JdbcTemplate,
     @Autowired private val redisTemplate: StringRedisTemplate,
+    @Autowired private val meterRegistry: MeterRegistry,
 ) : SpringApiIntegrationTestBase() {
     private lateinit var mockMvc: MockMvc
 
@@ -72,6 +74,18 @@ class DecisionApiIntegrationTest(
         val token = login("demo-user", userPassword())
         val request = request(principleId)
         val key = "decision-replay-0001"
+        val timerBefore =
+            meterRegistry
+                .find("decision.evaluate")
+                .tags("outcome", "HOLD", "mode", "GUIDE")
+                .timer()
+                ?.count() ?: 0
+        val counterBefore =
+            meterRegistry
+                .find("decision.fail_closed")
+                .tag("reason", "PORTFOLIO_CONTEXT_UNAVAILABLE")
+                .counter()
+                ?.count() ?: 0.0
 
         val first = evaluate(token, key, "req-decision-first", request)
         assertEquals(200, first.response.status)
@@ -116,6 +130,22 @@ class DecisionApiIntegrationTest(
         assertTrue(requireNotNull(scopeHash).matches(Regex("^[0-9a-f]{64}$")))
         assertFalse(scopeHash.contains(key))
         assertFalse(scopeHash.contains("usr_demo_user"))
+        assertEquals(
+            timerBefore + 2,
+            meterRegistry
+                .find("decision.evaluate")
+                .tags("outcome", "HOLD", "mode", "GUIDE")
+                .timer()
+                ?.count(),
+        )
+        assertEquals(
+            counterBefore + 1.0,
+            meterRegistry
+                .find("decision.fail_closed")
+                .tag("reason", "PORTFOLIO_CONTEXT_UNAVAILABLE")
+                .counter()
+                ?.count(),
+        )
     }
 
     @Test

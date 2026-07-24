@@ -20,6 +20,9 @@ from contracts.generate_principle_contracts import (
     load_json_bytes_strict,
     validate_catalog_semantics,
 )
+from contracts.generate_s2_3_contracts import (
+    CATALOG_PATH as S23_CATALOG_PATH,
+)
 from contracts.normalize_openapi import (
     OpenApiNormalizationError,
     check_normalized_openapi,
@@ -389,11 +392,14 @@ class OpenApiNormalizerTest(unittest.TestCase):
     def setUp(self) -> None:
         self.catalog_bytes = canonical_json_bytes(load_catalog(CATALOG_PATH))
         self.digest = hashlib.sha256(self.catalog_bytes).hexdigest()
+        self.s23_digest = hashlib.sha256(S23_CATALOG_PATH.read_bytes()).hexdigest()
         self.generated = {
             "openapi": "3.1.0",
             "jsonSchemaDialect": "https://spec.openapis.org/oas/3.1/dialect/base",
             "x-s2-1-contract-id": "s2-1-principle-contract/v1",
             "x-s2-1-contract-sha256": self.digest,
+            "x-s2-3-contract-id": "s2-3-decision-contract/v1",
+            "x-s2-3-contract-sha256": self.s23_digest,
             "info": {"title": "Decision Platform API", "version": "0"},
             "paths": {
                 "/api/v1/auth/login": {
@@ -431,6 +437,7 @@ class OpenApiNormalizerTest(unittest.TestCase):
         implementation["paths"]["/api/v1/principles"] = {
             "get": {"responses": {"200": {"description": "Owned Principle page"}}}
         }
+        implementation["paths"].update(self._decision_paths())
 
         normalized = normalize_generated_openapi(
             canonical_json_bytes(implementation),
@@ -440,18 +447,56 @@ class OpenApiNormalizerTest(unittest.TestCase):
 
         self.assertIn(b"/api/v1/principles", normalized)
 
-    def test_implementation_mode_rejects_deferred_decision_path(self) -> None:
+    def test_implementation_mode_accepts_only_the_exact_decision_paths_and_methods(
+        self,
+    ) -> None:
         implementation = copy.deepcopy(self.generated)
-        implementation["paths"]["/api/v1/decisions/evaluate-order"] = {
-            "post": {"responses": {"200": {"description": "Premature Decision route"}}}
-        }
+        implementation["paths"].update(self._decision_paths())
 
-        with self.assertRaises(OpenApiNormalizationError):
-            normalize_generated_openapi(
-                canonical_json_bytes(implementation),
-                self.catalog_bytes,
-                amendment=False,
-            )
+        normalized = normalize_generated_openapi(
+            canonical_json_bytes(implementation),
+            self.catalog_bytes,
+            amendment=False,
+        )
+        self.assertIn(b"/api/v1/decisions/evaluate-order", normalized)
+
+        mutations = []
+        missing = copy.deepcopy(implementation)
+        del missing["paths"]["/api/v1/decisions/{decisionId}/audit"]
+        mutations.append(missing)
+        extra = copy.deepcopy(implementation)
+        extra["paths"]["/api/v1/decisions"] = {
+            "get": {"responses": {"200": {"description": "Unapproved collection"}}}
+        }
+        mutations.append(extra)
+        wrong_method = copy.deepcopy(implementation)
+        wrong_method["paths"]["/api/v1/decisions/evaluate-order"]["get"] = {
+            "responses": {"200": {"description": "Unapproved method"}}
+        }
+        mutations.append(wrong_method)
+
+        for mutation in mutations:
+            with self.subTest(mutation=hashlib.sha256(repr(mutation).encode()).hexdigest()):
+                with self.assertRaises(OpenApiNormalizationError):
+                    normalize_generated_openapi(
+                        canonical_json_bytes(mutation),
+                        self.catalog_bytes,
+                        amendment=False,
+                    )
+
+    @staticmethod
+    def _decision_paths() -> dict[str, object]:
+        return {
+            "/api/v1/decisions/evaluate-order": {
+                "post": {"responses": {"200": {"description": "Decision result"}}}
+            },
+            "/api/v1/decisions/{decisionId}": {
+                "get": {"responses": {"200": {"description": "Owned Decision"}}}
+            },
+            "/api/v1/decisions/{decisionId}/audit": {
+                "get": {"responses": {"200": {"description": "Sanitized audit"}}}
+            },
+        }
 
     def test_dialect_paths_components_and_digest_mutations_fail_closed(self) -> None:
         mutations = []

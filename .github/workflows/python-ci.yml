@@ -36,6 +36,9 @@ jobs:
       - name: Sync frozen environment
         run: uv sync --frozen
 
+      - name: Check generated disclosure proto artifacts
+        run: uv run --frozen python ../../../contracts/generate_disclosure_proto.py --check
+
       - name: Run Ruff
         run: uv run --frozen ruff check .
 

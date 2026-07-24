@@ -529,7 +529,3 @@ class DecisionApiIntegrationTest(
         }
     }
 }
-
-private fun org.springframework.test.web.servlet.request.MockHttpServletRequestDsl.bearer(token: String) {
-    header("Authorization", "Bearer $token")
-}

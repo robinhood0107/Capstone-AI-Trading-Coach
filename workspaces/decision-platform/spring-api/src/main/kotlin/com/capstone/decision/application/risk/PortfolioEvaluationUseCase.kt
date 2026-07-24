@@ -84,10 +84,24 @@ class PortfolioEvaluationUseCase(
 ) {
     fun evaluate(command: PortfolioEvaluationCommand): OfflinePortfolioEvaluation {
         // selector가 틀리면 owner lookup이나 source port를 한 번도 호출하지 않는다.
-        val source = parsePortfolioSource(command.portfolioSource)
+        parsePortfolioSource(command.portfolioSource)
         val principle =
             principleSnapshotPort.findActiveOwned(command.actorUserId, command.principleId)
                 ?: throw PrincipleNotFoundException()
+        return evaluatePinned(command, principle)
+    }
+
+    /**
+     * S2.3 HTTP orchestration이 한 SQL로 pin한 immutable Principle을 재사용해 source read 전에 이중 조회를 만들지 않는다.
+     */
+    fun evaluatePinned(
+        command: PortfolioEvaluationCommand,
+        principle: ActivePrincipleSnapshot,
+    ): OfflinePortfolioEvaluation {
+        val source = parsePortfolioSource(command.portfolioSource)
+        check(principle.principleId == command.principleId) {
+            "Pinned Principle does not match the evaluation selector."
+        }
         return when (val resolution = portfolioContextPort.resolve(command.actorUserId, source)) {
             is PortfolioContextResolution.Unavailable ->
                 contextUnavailable(command, principle, source)

@@ -107,12 +107,13 @@ def test_app_role_reads_only_sanitized_stored_disclosure_projection(
                 ],
             )
 
-    batch = PostgresStoredDisclosureRepository(postgres_cluster["app_dsn"]).load(
-        symbol="005930",
-        corp_code=None,
-        window_from=window_from,
-        window_to=window_to,
-    )
+    with PostgresStoredDisclosureRepository(postgres_cluster["app_dsn"]) as repository:
+        batch = repository.load(
+            symbol="005930",
+            corp_code=None,
+            window_from=window_from,
+            window_to=window_to,
+        )
 
     assert batch.complete is True
     assert batch.mapping_version == mapping.version
@@ -129,12 +130,13 @@ def test_app_role_reads_only_sanitized_stored_disclosure_projection(
 def test_empty_stored_observation_is_incomplete_not_a_fake_zero(
     postgres_cluster: PostgresTestCluster,
 ) -> None:
-    batch = PostgresStoredDisclosureRepository(postgres_cluster["app_dsn"]).load(
-        symbol="000660",
-        corp_code="00164779",
-        window_from=date(2026, 6, 24),
-        window_to=date(2026, 7, 24),
-    )
+    with PostgresStoredDisclosureRepository(postgres_cluster["app_dsn"]) as repository:
+        batch = repository.load(
+            symbol="000660",
+            corp_code="00164779",
+            window_from=date(2026, 6, 24),
+            window_to=date(2026, 7, 24),
+        )
 
     assert batch.complete is False
     assert batch.events == ()
@@ -144,16 +146,16 @@ def test_empty_stored_observation_is_incomplete_not_a_fake_zero(
 def test_empty_or_ambiguous_corporation_registry_is_incomplete(
     postgres_cluster: PostgresTestCluster,
 ) -> None:
-    repository = PostgresStoredDisclosureRepository(postgres_cluster["app_dsn"])
-    missing = repository.load(
-        symbol="000660",
-        corp_code=None,
-        window_from=date(2025, 7, 24),
-        window_to=date(2026, 7, 24),
-    )
-    assert missing.complete is False
-    assert missing.corp_code == ""
-    assert missing.events == ()
+    with PostgresStoredDisclosureRepository(postgres_cluster["app_dsn"]) as repository:
+        missing = repository.load(
+            symbol="000660",
+            corp_code=None,
+            window_from=date(2025, 7, 24),
+            window_to=date(2026, 7, 24),
+        )
+        assert missing.complete is False
+        assert missing.corp_code == ""
+        assert missing.events == ()
 
     observed_at = datetime(2026, 7, 24, 1, 2, 3, tzinfo=UTC)
     with psycopg.connect(postgres_cluster["admin_dsn"]) as connection:
@@ -192,12 +194,13 @@ def test_empty_or_ambiguous_corporation_registry_is_incomplete(
                 ],
             )
 
-    ambiguous = repository.load(
-        symbol="000660",
-        corp_code=None,
-        window_from=date(2025, 7, 24),
-        window_to=date(2026, 7, 24),
-    )
+    with PostgresStoredDisclosureRepository(postgres_cluster["app_dsn"]) as repository:
+        ambiguous = repository.load(
+            symbol="000660",
+            corp_code=None,
+            window_from=date(2025, 7, 24),
+            window_to=date(2026, 7, 24),
+        )
     assert ambiguous.complete is False
     assert ambiguous.corp_code == ""
     assert ambiguous.events == ()
@@ -236,12 +239,13 @@ def test_empty_or_ambiguous_corporation_registry_is_incomplete(
                 ],
             )
 
-    inactive = repository.load(
-        symbol="035420",
-        corp_code=None,
-        window_from=date(2025, 7, 24),
-        window_to=date(2026, 7, 24),
-    )
+    with PostgresStoredDisclosureRepository(postgres_cluster["app_dsn"]) as repository:
+        inactive = repository.load(
+            symbol="035420",
+            corp_code=None,
+            window_from=date(2025, 7, 24),
+            window_to=date(2026, 7, 24),
+        )
     assert inactive.complete is False
     assert inactive.corp_code == ""
     assert inactive.events == ()
@@ -329,10 +333,11 @@ def test_more_than_one_hundred_distinct_events_fails_before_source_row_truncatio
                 ],
             )
 
-    with pytest.raises(ValueError, match="event bound"):
-        PostgresStoredDisclosureRepository(postgres_cluster["app_dsn"]).load(
-            symbol="068270",
-            corp_code=None,
-            window_from=window_from,
-            window_to=window_to,
-        )
+    with PostgresStoredDisclosureRepository(postgres_cluster["app_dsn"]) as repository:
+        with pytest.raises(ValueError, match="event bound"):
+            repository.load(
+                symbol="068270",
+                corp_code=None,
+                window_from=window_from,
+                window_to=window_to,
+            )

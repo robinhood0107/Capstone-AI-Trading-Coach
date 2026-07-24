@@ -54,7 +54,7 @@ def _batch(event_count: int = 1) -> StoredDisclosureBatch:
             occurred_on=date(2026, 7, 24),
             observed_at=datetime(2026, 7, 24, 1, 2, 3, tzinfo=UTC),
             mapping_version="s1.2-v1",
-            source_ref=f"{index + 1:064x}",
+            source_refs=(f"{index + 1:064x}",),
             attributes={},
         )
         for index in range(event_count)
@@ -168,6 +168,45 @@ def test_duplicate_event_or_source_reference_is_not_silently_truncated() -> None
         events=(event, event),
     )
     repository = FakeDisclosureRepository(duplicate_batch)
+    settings = GrpcServerSettings(bind_address=_loopback_address())
+    server = create_disclosure_server(settings, repository)
+    server.start()
+    channel = grpc.insecure_channel(settings.bind_address)
+    try:
+        with pytest.raises(grpc.RpcError) as error:
+            disclosure_observation_pb2_grpc.DisclosureObservationServiceStub(
+                channel
+            ).GetDisclosureEvents(_request(), timeout=0.5)
+        assert error.value.code() == grpc.StatusCode.DATA_LOSS
+    finally:
+        channel.close()
+        server.stop(grace=0).wait(timeout=2)
+
+
+def test_duplicate_source_reference_across_distinct_events_fails_closed() -> None:
+    first, second = _batch(event_count=2).events
+    duplicate_source_batch = StoredDisclosureBatch(
+        symbol="005930",
+        corp_code="00126380",
+        observed_at=datetime(2026, 7, 24, 1, 2, 3, tzinfo=UTC),
+        mapping_version="s1.2-v1",
+        complete=True,
+        events=(
+            first,
+            StoredDisclosureEvent(
+                symbol=second.symbol,
+                corp_code=second.corp_code,
+                event_code=second.event_code,
+                receipt_no=second.receipt_no,
+                occurred_on=second.occurred_on,
+                observed_at=second.observed_at,
+                mapping_version=second.mapping_version,
+                source_refs=first.source_refs,
+                attributes=second.attributes,
+            ),
+        ),
+    )
+    repository = FakeDisclosureRepository(duplicate_source_batch)
     settings = GrpcServerSettings(bind_address=_loopback_address())
     server = create_disclosure_server(settings, repository)
     server.start()

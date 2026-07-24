@@ -120,6 +120,33 @@ class FlywayMigrationIntegrationTest(
     }
 
     @Test
+    fun `fresh V9 migration leaves every production source table empty`() {
+        val migrationUrl = createDatabase("v9_source_seed_zero")
+        flyway(migrationUrl).migrate()
+
+        val sourceTables =
+            listOf(
+                "market_quote_observations",
+                "instrument_catalog_observations",
+                "portfolio_balance_observations",
+                "portfolio_position_observations",
+                "deterministic_risk_observations",
+                "daily_order_count_observations",
+                "corporation_registry_observations",
+            )
+        DriverManager.getConnection(migrationUrl, postgres.username, postgres.password).use { connection ->
+            connection.createStatement().use { statement ->
+                sourceTables.forEach { tableName ->
+                    statement.executeQuery("select count(*) from $tableName").use { result ->
+                        assertTrue(result.next())
+                        assertEquals(0, result.getInt(1), "$tableName must not receive production seed rows")
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
     fun `V9 populated precondition failure preserves the complete V8 schema and row`() {
         val migrationUrl = createDatabase("v9_populated_precondition")
         flyway(migrationUrl, target = "8").migrate()
@@ -559,6 +586,22 @@ class FlywayMigrationIntegrationTest(
             """.trimIndent(),
         )
         assertWriterInsert(
+            "decision_market_writer",
+            MARKET_WRITER_PASSWORD,
+            """
+            insert into market_quote_observations (
+              observation_id, symbol, source, price_krw, bid_krw, ask_krw,
+              observed_at, received_at, completeness, schema_version, source_version,
+              payload_json, source_ref, artifact_hash
+            ) values (
+              'quote-writer-role', 'WRITER02', 'KIS_MOCK', 1000, 990, 1010,
+              '2031-01-01T00:00:00Z', '2031-01-01T00:00:01Z', 'COMPLETE',
+              'market-quote-observation.v1', 'fixture-v1',
+              '{"symbol":"WRITER02"}'::jsonb, repeat('b', 64), repeat('c', 64)
+            )
+            """.trimIndent(),
+        )
+        assertWriterInsert(
             "decision_risk_writer",
             RISK_WRITER_PASSWORD,
             """
@@ -577,6 +620,24 @@ class FlywayMigrationIntegrationTest(
             """.trimIndent(),
         )
         assertWriterInsert(
+            "decision_risk_writer",
+            RISK_WRITER_PASSWORD,
+            """
+            insert into daily_order_count_observations (
+              observation_id, owner_user_id, owner_scope_hash, portfolio_source,
+              trading_date, order_count, covered_through, completeness,
+              observed_at, received_at, schema_version, source_version, payload_json,
+              source_ref, artifact_hash
+            ) values (
+              'orders-writer-role', 'usr_demo_user', repeat('d', 64), 'KIS_MOCK',
+              '2031-01-01', 0, '2031-01-01T00:00:00Z', 'COMPLETE',
+              '2031-01-01T00:00:00Z', '2031-01-01T00:00:01Z',
+              'daily-order-count-observation.v1', 'fixture-v1', '{}'::jsonb,
+              repeat('e', 64), repeat('f', 64)
+            )
+            """.trimIndent(),
+        )
+        assertWriterInsert(
             "decision_portfolio_writer",
             PORTFOLIO_WRITER_PASSWORD,
             """
@@ -587,10 +648,19 @@ class FlywayMigrationIntegrationTest(
               payload_json, source_ref, artifact_hash
             ) values (
               'balance-writer-role', 'usr_demo_admin', repeat('6', 64), 'KIS_MOCK', 'ACTIVE',
-              1, 1, 0, 'COMPLETE', 0, '2031-01-01T00:00:00Z', '2031-01-01T00:00:01Z',
+              1, 1, 0, 'COMPLETE', 1, '2031-01-01T00:00:00Z', '2031-01-01T00:00:01Z',
               'portfolio-balance-observation.v1', 'fixture-v1', '{}'::jsonb,
               repeat('7', 64), repeat('8', 64)
             )
+            """.trimIndent(),
+        )
+        assertWriterInsert(
+            "decision_portfolio_writer",
+            PORTFOLIO_WRITER_PASSWORD,
+            """
+            insert into portfolio_position_observations (
+              balance_observation_id, symbol, quantity, market_value_krw, is_gold_etf_etn
+            ) values ('balance-writer-role', 'WRITER03', 1, 1, false)
             """.trimIndent(),
         )
         assertWriterInsert(
@@ -629,19 +699,71 @@ class FlywayMigrationIntegrationTest(
             MARKET_WRITER_PASSWORD,
             "create table forbidden_writer_ddl (id integer)",
         )
-        listOf(
-            Triple("decision_market_writer", MARKET_WRITER_PASSWORD, "instrument_catalog_observations"),
-            Triple("decision_portfolio_writer", PORTFOLIO_WRITER_PASSWORD, "portfolio_balance_observations"),
-            Triple("decision_risk_writer", RISK_WRITER_PASSWORD, "deterministic_risk_observations"),
-            Triple("decision_collector", COLLECTOR_PASSWORD, "corporation_registry_observations"),
-        ).forEach { (role, password, ownedTable) ->
+        val writerOwnedTables =
+            listOf(
+                arrayOf(
+                    "decision_market_writer",
+                    MARKET_WRITER_PASSWORD,
+                    "market_quote_observations",
+                    "observation_id = observation_id",
+                ),
+                arrayOf(
+                    "decision_market_writer",
+                    MARKET_WRITER_PASSWORD,
+                    "instrument_catalog_observations",
+                    "observation_id = observation_id",
+                ),
+                arrayOf(
+                    "decision_portfolio_writer",
+                    PORTFOLIO_WRITER_PASSWORD,
+                    "portfolio_balance_observations",
+                    "observation_id = observation_id",
+                ),
+                arrayOf(
+                    "decision_portfolio_writer",
+                    PORTFOLIO_WRITER_PASSWORD,
+                    "portfolio_position_observations",
+                    "symbol = symbol",
+                ),
+                arrayOf(
+                    "decision_risk_writer",
+                    RISK_WRITER_PASSWORD,
+                    "deterministic_risk_observations",
+                    "observation_id = observation_id",
+                ),
+                arrayOf(
+                    "decision_risk_writer",
+                    RISK_WRITER_PASSWORD,
+                    "daily_order_count_observations",
+                    "observation_id = observation_id",
+                ),
+                arrayOf(
+                    "decision_collector",
+                    COLLECTOR_PASSWORD,
+                    "corporation_registry_observations",
+                    "observation_id = observation_id",
+                ),
+            )
+        writerOwnedTables.forEach { (role, password, ownedTable, noOpAssignment) ->
+            assertTrue(hasTablePrivilege(role, ownedTable, "INSERT"), "missing writer INSERT on $ownedTable")
+            listOf("SELECT", "UPDATE", "DELETE", "TRUNCATE").forEach { privilege ->
+                assertFalse(
+                    hasTablePrivilege(role, ownedTable, privilege),
+                    "unexpected writer $privilege on $ownedTable",
+                )
+            }
             assertRolePermissionDenied(role, password, "select * from $ownedTable")
-            assertRolePermissionDenied(role, password, "update $ownedTable set observation_id = observation_id")
+            assertRolePermissionDenied(role, password, "update $ownedTable set $noOpAssignment")
             assertRolePermissionDenied(role, password, "delete from $ownedTable")
             assertRolePermissionDenied(role, password, "truncate table $ownedTable")
-            assertRolePermissionDenied(role, password, "insert into decisions (decision_id) values ('forbidden')")
-            assertRolePermissionDenied(role, password, "create table forbidden_${role}_ddl (id integer)")
         }
+        writerOwnedTables
+            .map { it[0] to it[1] }
+            .distinct()
+            .forEach { (role, password) ->
+                assertRolePermissionDenied(role, password, "insert into decisions (decision_id) values ('forbidden')")
+                assertRolePermissionDenied(role, password, "create table forbidden_${role}_ddl (id integer)")
+            }
     }
 
     @Test

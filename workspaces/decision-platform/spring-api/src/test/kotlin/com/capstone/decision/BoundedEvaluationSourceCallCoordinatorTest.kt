@@ -3,14 +3,45 @@ package com.capstone.decision
 import com.capstone.decision.domain.risk.EvaluationBounds
 import com.capstone.decision.infrastructure.risk.BoundedEvaluationSourceCallCoordinator
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.slf4j.MDC
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 class BoundedEvaluationSourceCallCoordinatorTest {
+    @Test
+    fun `source worker receives caller MDC without leaking worker changes`() {
+        val coordinator = BoundedEvaluationSourceCallCoordinator()
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2)
+        try {
+            MDC.put("trace_id", "caller-trace")
+            val observedTrace =
+                coordinator.call(deadline, "UNAVAILABLE") {
+                    val trace = MDC.get("trace_id")
+                    MDC.put("worker-only", "must-not-leak")
+                    trace
+                }
+
+            assertEquals("caller-trace", observedTrace)
+            assertEquals("caller-trace", MDC.get("trace_id"))
+            assertNull(MDC.get("worker-only"))
+
+            MDC.remove("trace_id")
+            val nextWorkerContext =
+                coordinator.call(deadline, "UNAVAILABLE") {
+                    "${MDC.get("trace_id")}:${MDC.get("worker-only")}"
+                }
+            assertEquals("null:null", nextWorkerContext)
+        } finally {
+            MDC.clear()
+            coordinator.close()
+        }
+    }
+
     @Test
     fun `shared 900ms budget stops later source calls after two bounded timeouts`() {
         val coordinator = BoundedEvaluationSourceCallCoordinator()

@@ -21,6 +21,7 @@ from app.financial_engineering.deterministic_observation_writer import (
     append_deterministic_metric_fixture,
     load_deterministic_metric_fixture,
 )
+from app.offline_fixture_io import read_bounded_fixture
 from tests.conftest import PostgresTestCluster
 
 FIXTURE_DIR = Path(__file__).resolve().parent / "fixtures" / "decision"
@@ -190,6 +191,16 @@ def test_source_fixtures_reject_unknown_raw_fields(
         loader(unsafe)  # type: ignore[operator]
 
 
+def test_offline_fixture_byte_bound_is_checked_before_reading_payload(tmp_path: Path) -> None:
+    oversized = tmp_path / "oversized.json"
+    with oversized.open("wb") as stream:
+        stream.seek(64)
+        stream.write(b"}")
+
+    with pytest.raises(ValueError, match="byte bound"):
+        read_bounded_fixture(oversized, max_bytes=64, label="test")
+
+
 def test_source_writers_have_no_provider_live_order_or_fallback_dependency() -> None:
     from app.brokerage import kis_mock_portfolio_writer
     from app.data.kis import instrument_catalog_writer
@@ -217,7 +228,7 @@ def test_source_writers_have_no_provider_live_order_or_fallback_dependency() -> 
         "access_token",
     )
     assert all(marker not in source for marker in forbidden)
-    assert "ON CONFLICT DO NOTHING" not in source
+    assert "ON CONFLICT (" not in source
 
 
 def _reset_source_rows(postgres_cluster: PostgresTestCluster) -> None:

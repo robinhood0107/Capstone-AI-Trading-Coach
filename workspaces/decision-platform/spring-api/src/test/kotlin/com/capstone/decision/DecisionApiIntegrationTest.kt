@@ -17,6 +17,7 @@ import org.springframework.context.annotation.Primary
 import org.springframework.data.redis.core.StringRedisTemplate
 import org.springframework.http.MediaType
 import org.springframework.jdbc.core.JdbcTemplate
+import org.springframework.jdbc.datasource.DriverManagerDataSource
 import org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity
 import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
@@ -42,6 +43,7 @@ import java.time.ZoneOffset
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import javax.sql.DataSource
 
 // S2.3 wire, IDOR, durable replay, atomic audit/outbox를 실제 JWT/Redis/PostgreSQL 경계에서 검증한다.
 @Testcontainers
@@ -54,11 +56,20 @@ import java.util.concurrent.TimeUnit
 class DecisionApiIntegrationTest(
     @Autowired private val webApplicationContext: WebApplicationContext,
     @Autowired private val objectMapper: ObjectMapper,
-    @Autowired private val jdbcTemplate: JdbcTemplate,
+    @Autowired private val applicationDataSource: DataSource,
     @Autowired private val redisTemplate: StringRedisTemplate,
     @Autowired private val meterRegistry: MeterRegistry,
 ) : SpringApiIntegrationTestBase() {
     private lateinit var mockMvc: MockMvc
+    private val jdbcTemplate: JdbcTemplate by lazy {
+        JdbcTemplate(
+            DriverManagerDataSource(
+                postgres.jdbcUrl,
+                postgres.username,
+                postgres.password,
+            ),
+        )
+    }
 
     @BeforeEach
     fun setUp() {
@@ -104,6 +115,11 @@ class DecisionApiIntegrationTest(
         assertEquals("ALLOW", json(response).at("/data/riskDecision/decision").stringValue())
         assertTrue(json(response).at("/data/riskDecision/canSubmitOrder").booleanValue())
         assertEquals("NONE", json(response).at("/data/enforcementAction").stringValue())
+        assertTrue(
+            Instant
+                .parse(json(response).at("/data/validUntil").stringValue())
+                .isAfter(Instant.parse(json(response).at("/data/createdAt").stringValue())),
+        )
         assertEquals(1, count("select count(*) from decisions where outcome = 'ALLOW'"))
     }
 
@@ -260,6 +276,17 @@ class DecisionApiIntegrationTest(
 
     @Test
     fun `decision detail and audit are owner scoped and expose only the sanitized projection`() {
+        assertEquals(
+            "decision_app",
+            JdbcTemplate(applicationDataSource).queryForObject("select current_user", String::class.java),
+        )
+        assertEquals(
+            "flyway",
+            jdbcTemplate.queryForObject(
+                "select tableowner from pg_tables where schemaname = 'public' and tablename = 'decisions'",
+                String::class.java,
+            ),
+        )
         val principleId = insertPrinciple("usr_demo_user", "STRICT", suffix = "03")
         val userToken = login("demo-user", userPassword())
         val adminToken = login("demo-admin", adminPassword())
@@ -424,6 +451,53 @@ class DecisionApiIntegrationTest(
         assertEquals(0, count("select count(*) from audit_logs where target_type = 'DECISION'"))
         assertEquals(0, count("select count(*) from event_outbox where event_type = 'risk.decision-created.v1'"))
         assertEquals(0, count("select count(*) from decision_idempotency_results"))
+    }
+
+    @Test
+    fun `violation insert failure rolls back the complete BLOCK graph`() {
+        val principleId = insertPrinciple("usr_demo_user", "GUIDE", suffix = "071")
+        insertCompleteStoredSources(orderCount = 0)
+        val token = login("demo-user", userPassword())
+        installGraphFailureTrigger("decision_violations")
+        val oversized =
+            request(principleId).toMutableMap().apply {
+                this["orderIntent"] =
+                    orderIntent().toMutableMap().apply {
+                        this["quantity"] = 10
+                        this["estimatedAmount"] = 700000
+                    }
+            }
+
+        val response =
+            evaluate(
+                token,
+                "decision-rollback-violation",
+                "req-decision-rollback-violation",
+                oversized,
+            )
+
+        assertEquals(500, response.response.status)
+        assertEquals("INTERNAL_ERROR", json(response).at("/error/code").stringValue())
+        assertDecisionGraphEmpty()
+    }
+
+    @Test
+    fun `deferred commit failure cannot return a successful Decision`() {
+        val principleId = insertPrinciple("usr_demo_user", "GUIDE", suffix = "072")
+        val token = login("demo-user", userPassword())
+        installDeferredCommitFailureTrigger()
+
+        val response =
+            evaluate(
+                token,
+                "decision-rollback-commit",
+                "req-decision-rollback-commit",
+                request(principleId),
+            )
+
+        assertEquals(500, response.response.status)
+        assertEquals("INTERNAL_ERROR", json(response).at("/error/code").stringValue())
+        assertDecisionGraphEmpty()
     }
 
     @Test
@@ -772,6 +846,7 @@ class DecisionApiIntegrationTest(
             targetTable in
                 setOf(
                     "decisions",
+                    "decision_violations",
                     "decision_traces",
                     "decision_artifacts",
                     "audit_logs",
@@ -794,6 +869,27 @@ class DecisionApiIntegrationTest(
             create trigger s23_test_fail_graph_insert
             before insert on $targetTable
             for each row execute function s23_test_fail_graph_insert()
+            """.trimIndent(),
+        )
+    }
+
+    private fun installDeferredCommitFailureTrigger() {
+        jdbcTemplate.execute(
+            """
+            create or replace function s23_test_fail_graph_commit() returns trigger
+            language plpgsql as ${'$'}${'$'}
+            begin
+              raise exception 'synthetic deferred decision graph failure';
+            end
+            ${'$'}${'$'}
+            """.trimIndent(),
+        )
+        jdbcTemplate.execute(
+            """
+            create constraint trigger s23_test_fail_graph_commit
+            after insert on decision_idempotency_results
+            deferrable initially deferred
+            for each row execute function s23_test_fail_graph_commit()
             """.trimIndent(),
         )
     }
@@ -850,6 +946,7 @@ class DecisionApiIntegrationTest(
     private fun removeFailureTriggers() {
         listOf(
             "decisions",
+            "decision_violations",
             "decision_traces",
             "decision_artifacts",
             "audit_logs",
@@ -861,6 +958,20 @@ class DecisionApiIntegrationTest(
         jdbcTemplate.execute("drop function if exists s23_test_fail_graph_insert()")
         jdbcTemplate.execute("drop trigger if exists s23_test_slow_decision on decisions")
         jdbcTemplate.execute("drop function if exists s23_test_slow_decision()")
+        jdbcTemplate.execute(
+            "drop trigger if exists s23_test_fail_graph_commit on decision_idempotency_results",
+        )
+        jdbcTemplate.execute("drop function if exists s23_test_fail_graph_commit()")
+    }
+
+    private fun assertDecisionGraphEmpty() {
+        assertEquals(0, count("select count(*) from decisions"))
+        assertEquals(0, count("select count(*) from decision_violations"))
+        assertEquals(0, count("select count(*) from decision_traces"))
+        assertEquals(0, count("select count(*) from decision_artifacts"))
+        assertEquals(0, count("select count(*) from audit_logs where target_type = 'DECISION'"))
+        assertEquals(0, count("select count(*) from event_outbox where event_type = 'risk.decision-created.v1'"))
+        assertEquals(0, count("select count(*) from decision_idempotency_results"))
     }
 
     private fun count(
@@ -878,6 +989,8 @@ class DecisionApiIntegrationTest(
                 ).asCompatibleSubstituteFor("postgres")
         private val redisPasswordValue: String = "r" + "p".repeat(24)
         private val decisionScopeKeyValue: String = "d" + "i".repeat(63)
+        private const val APP_PASSWORD = "app-test"
+        private const val FLYWAY_PASSWORD = "flyway-test"
         private const val SLOW_DECISION_SIGNAL_LOCK = 23_004_401L
         private val EVALUATION_AS_OF: Instant = Instant.parse("2030-01-02T03:04:05Z")
         private val EVALUATION_AT: OffsetDateTime = OffsetDateTime.ofInstant(EVALUATION_AS_OF, ZoneOffset.UTC)
@@ -913,10 +1026,10 @@ class DecisionApiIntegrationTest(
         @JvmStatic
         fun infrastructureProperties(registry: DynamicPropertyRegistry) {
             registry.add("spring.datasource.url", postgres::getJdbcUrl)
-            registry.add("spring.datasource.username", postgres::getUsername)
-            registry.add("spring.datasource.password", postgres::getPassword)
-            registry.add("spring.flyway.user", postgres::getUsername)
-            registry.add("spring.flyway.password", postgres::getPassword)
+            registry.add("spring.datasource.username") { "decision_app" }
+            registry.add("spring.datasource.password") { APP_PASSWORD }
+            registry.add("spring.flyway.user") { "flyway" }
+            registry.add("spring.flyway.password") { FLYWAY_PASSWORD }
             registry.add("spring.data.redis.host", redis::getHost)
             registry.add("spring.data.redis.port") { redis.getMappedPort(6379) }
             registry.add("spring.data.redis.password") { redisPasswordValue }

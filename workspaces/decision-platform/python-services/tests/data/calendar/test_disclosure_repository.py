@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, date, datetime
 
 import psycopg
+import pytest
 
 from app.data.opendart.risk_mapping import load_default_risk_mapping
 from app.disclosure_repository import PostgresStoredDisclosureRepository
@@ -244,3 +245,94 @@ def test_empty_or_ambiguous_corporation_registry_is_incomplete(
     assert inactive.complete is False
     assert inactive.corp_code == ""
     assert inactive.events == ()
+
+
+def test_more_than_one_hundred_distinct_events_fails_before_source_row_truncation(
+    postgres_cluster: PostgresTestCluster,
+) -> None:
+    observed_at = datetime(2026, 7, 24, 1, 2, 3, tzinfo=UTC)
+    window_from = date(2025, 7, 24)
+    window_to = date(2026, 7, 24)
+    with psycopg.connect(postgres_cluster["admin_dsn"]) as connection:
+        connection.execute(
+            """
+            INSERT INTO corporation_registry_observations (
+              observation_id, symbol, corp_code, registry_status, completeness,
+              observed_at, received_at, schema_version, source_version,
+              payload_json, source_ref, artifact_hash
+            ) VALUES (
+              'corp-s23-event-bound', '068270', '00164742', 'ACTIVE', 'COMPLETE',
+              %s, %s, 'corporation-registry-observation.v1', 'event-bound-fixture-v1',
+              '{"symbol":"068270","corpCode":"00164742"}'::jsonb, %s, %s
+            )
+            """,
+            (observed_at, observed_at, "4" * 64, "5" * 64),
+        )
+        connection.execute(
+            """
+            INSERT INTO calendar_observations (
+              observation_id, source_id, origin_group, capability,
+              effective_from, effective_to, observed_at, ingested_at,
+              sanitized_payload, sanitized_payload_hash, adapter_version,
+              mapping_version, registry_version
+            ) VALUES (
+              'obs-s23-event-bound', 'opendart-structured-events', 'opendart',
+              'DISCLOSURE_EVENT', %s, %s, %s, %s,
+              '{"stored":true}'::jsonb, %s, 's1.6-opendart-v1',
+              's1.6-disclosure-state-v1', 's1.6-registry-v1'
+            )
+            """,
+            (window_from, window_to, observed_at, observed_at, "6" * 64),
+        )
+        with connection.cursor() as cursor:
+            cursor.executemany(
+                """
+                INSERT INTO calendar_events (
+                  event_id, event_series_key, revision_no, source_id,
+                  source_event_key, event_type, symbol, exchange_mic, event_date,
+                  detail, status, confidence_bps, has_conflict, canonical_hash
+                ) VALUES (
+                  %s, %s, 1, 'opendart-structured-events',
+                  %s, 'DISCLOSURE', '068270', 'XKRX', %s,
+                  '{"corp_code":"00164742","endpoint_id":"dfOcr"}'::jsonb,
+                  'ACTUAL', 9000, false, %s
+                )
+                """,
+                [
+                    (
+                        f"evt-s23-bound-{index:03d}",
+                        f"series-s23-bound-{index:03d}",
+                        f"2099{index:010d}",
+                        window_to,
+                        f"{index + 1000:064x}",
+                    )
+                    for index in range(101)
+                ],
+            )
+            cursor.executemany(
+                """
+                INSERT INTO calendar_event_sources (
+                  event_source_id, event_id, observation_id, source_choice,
+                  resolution_reason, opaque_source_ref
+                ) VALUES (
+                  %s, %s, 'obs-s23-event-bound',
+                  'CHOSEN', 'STRUCTURED_ENDPOINT_IDENTITY', %s
+                )
+                """,
+                [
+                    (
+                        f"source-s23-bound-{index:03d}",
+                        f"evt-s23-bound-{index:03d}",
+                        f"{index + 2000:064x}",
+                    )
+                    for index in range(101)
+                ],
+            )
+
+    with pytest.raises(ValueError, match="event bound"):
+        PostgresStoredDisclosureRepository(postgres_cluster["app_dsn"]).load(
+            symbol="068270",
+            corp_code=None,
+            window_from=window_from,
+            window_to=window_to,
+        )

@@ -32,20 +32,22 @@ class JdbcDecisionPersistenceAdapter(
 ) : DecisionPersistencePort {
     override fun findIdempotencyResult(
         scopeHash: String,
+        ownerScopeHash: String,
         now: Instant,
     ): StoredDecisionIdempotencyResult? =
         jdbc()
             .query(
                 """
                 SELECT request_hash, result_canonical_json, expires_at
-                FROM decision_idempotency_results
-                WHERE scope_hash = :scopeHash
-                  AND expires_at > :now
-                ORDER BY generation DESC
-                LIMIT 1
+                FROM find_decision_idempotency_result(
+                  :scopeHash,
+                  :ownerScopeHash,
+                  :now
+                )
                 """.trimIndent(),
                 mapOf(
                     "scopeHash" to scopeHash,
+                    "ownerScopeHash" to ownerScopeHash,
                     "now" to now.utc(),
                 ),
             ) { result, _ ->
@@ -73,30 +75,18 @@ class JdbcDecisionPersistenceAdapter(
             Any::class.java,
         )
         val previous =
-            jdbc
-                .query(
-                    """
-                    SELECT generation, request_hash, result_canonical_json, expires_at
-                    FROM decision_idempotency_results
-                    WHERE scope_hash = :scopeHash
-                    ORDER BY generation DESC
-                    LIMIT 1
-                    """.trimIndent(),
-                    mapOf("scopeHash" to request.idempotency.scopeHash),
-                ) { result, _ ->
-                    PreviousIdempotencyResult(
-                        generation = result.getInt("generation"),
-                        requestHash = result.getString("request_hash"),
-                        projectionCanonicalJson = result.getString("result_canonical_json"),
-                        expiresAt = result.getObject("expires_at", OffsetDateTime::class.java).toInstant(),
-                    )
-                }.singleOrNull()
-        if (previous != null && previous.expiresAt.isAfter(request.projection.createdAt)) {
+            findIdempotencyResult(
+                request.idempotency.scopeHash,
+                request.idempotency.ownerScopeHash,
+                request.projection.createdAt,
+            )
+        if (previous != null) {
             if (previous.requestHash == request.idempotency.requestHash) {
                 throw DecisionPersistenceReplayException(previous.projectionCanonicalJson)
             }
             throw DecisionIdempotencyConflictException()
         }
+        lockPinnedPrinciple(jdbc, request)
         val inserted =
             jdbc.update(
                 """
@@ -108,25 +98,15 @@ class JdbcDecisionPersistenceAdapter(
                   readiness_policy_version, mapping_versions_json, semantic_input_hash,
                   snapshot_artifact_hash, result_json
                 )
-                SELECT
-                  :decisionId, :evaluationId, :actorUserId, principle.principle_id,
-                  version.principle_version_id, version.version, :portfolioSource,
-                  :symbol, :side, :outcome, version.mode, :canSubmitOrder,
+                VALUES (
+                  :decisionId, :evaluationId, :actorUserId, :principleId,
+                  :principleVersionId, :principleVersion, :portfolioSource,
+                  :symbol, :side, :outcome, :mode, :canSubmitOrder,
                   :enforcementAction, :evaluationAsOf, :createdAt, :validUntil,
                   :resultSchemaVersion, :snapshotSchemaVersion, :catalogVersion,
                   :readinessPolicyVersion, CAST(:mappingVersionsJson AS jsonb),
                   :semanticInputHash, :snapshotArtifactHash, CAST(:resultJson AS jsonb)
-                FROM principles principle
-                JOIN principle_versions version
-                  ON version.principle_id = principle.principle_id
-                 AND version.version = principle.current_version
-                WHERE principle.principle_id = :principleId
-                  AND principle.user_id = :actorUserId
-                  AND principle.status = 'ACTIVE'
-                  AND principle.current_version = :principleVersion
-                  AND version.principle_version_id = :principleVersionId
-                  AND version.status = 'ACTIVE'
-                  AND version.mode = :mode
+                )
                 """.trimIndent(),
                 decisionParameters(request),
             )
@@ -134,11 +114,11 @@ class JdbcDecisionPersistenceAdapter(
             throw DecisionVersionConflictException()
         }
         insertViolations(jdbc, request)
-        insertArtifact(jdbc, request)
         insertTraces(jdbc, request)
+        insertArtifact(jdbc, request)
         insertAudit(jdbc, request)
         insertOutbox(jdbc, request)
-        insertIdempotency(jdbc, request, (previous?.generation ?: 0) + 1)
+        insertIdempotency(jdbc, request, nextIdempotencyGeneration(jdbc, request))
     }
 
     override fun findOwnedProjection(
@@ -228,6 +208,54 @@ class JdbcDecisionPersistenceAdapter(
             "principleVersion" to request.projection.principleVersion,
             "principleVersionId" to request.projection.principleVersionId,
             "mode" to request.principleMode.name,
+        )
+
+    private fun lockPinnedPrinciple(
+        jdbc: NamedParameterJdbcTemplate,
+        request: DecisionWriteRequest,
+    ) {
+        val locked =
+            jdbc.query(
+                """
+                SELECT principle.principle_id
+                FROM principles principle
+                JOIN principle_versions version
+                  ON version.principle_id = principle.principle_id
+                 AND version.version = principle.current_version
+                WHERE principle.principle_id = :principleId
+                  AND principle.user_id = :actorUserId
+                  AND principle.status = 'ACTIVE'
+                  AND principle.current_version = :principleVersion
+                  AND version.principle_version_id = :principleVersionId
+                  AND version.status = 'ACTIVE'
+                  AND version.mode = :mode
+                FOR SHARE OF principle
+                """.trimIndent(),
+                decisionParameters(request),
+            ) { result, _ -> result.getString("principle_id") }
+        if (locked.size != 1) {
+            throw DecisionVersionConflictException()
+        }
+    }
+
+    private fun nextIdempotencyGeneration(
+        jdbc: NamedParameterJdbcTemplate,
+        request: DecisionWriteRequest,
+    ): Int =
+        requireNotNull(
+            jdbc.queryForObject(
+                """
+                SELECT next_decision_idempotency_generation(
+                  :scopeHash,
+                  :ownerScopeHash
+                )
+                """.trimIndent(),
+                mapOf(
+                    "scopeHash" to request.idempotency.scopeHash,
+                    "ownerScopeHash" to request.idempotency.ownerScopeHash,
+                ),
+                Int::class.java,
+            ),
         )
 
     private fun insertViolations(
@@ -433,13 +461,6 @@ class JdbcDecisionPersistenceAdapter(
     private fun id(prefix: String): String = "${prefix}_${UUID.randomUUID().toString().replace("-", "")}"
 
     private fun Instant.utc(): OffsetDateTime = OffsetDateTime.ofInstant(this, ZoneOffset.UTC)
-
-    private data class PreviousIdempotencyResult(
-        val generation: Int,
-        val requestHash: String,
-        val projectionCanonicalJson: String,
-        val expiresAt: Instant,
-    )
 
     private companion object {
         const val RESULT_SCHEMA_VERSION = "s2-3-decision-response/v1"

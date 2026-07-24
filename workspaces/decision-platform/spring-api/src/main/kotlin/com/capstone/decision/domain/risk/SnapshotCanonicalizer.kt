@@ -5,7 +5,7 @@ import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import java.time.Instant
 
-// HASH-CANONICALIZATION-S22-V1의 제한된 JSON type만 허용하는 표준-library canonicalizer다.
+// HASH-CANONICALIZATION-S22-V2의 제한된 JSON type만 허용하는 표준-library canonicalizer다.
 object CanonicalJson {
     fun encode(value: Any?): String =
         when (value) {
@@ -70,10 +70,10 @@ object CanonicalJson {
 }
 
 /**
- * 향후 저장 artifact와 hash가 공유하는 유일한 S2.2 V1 canonical representation이다.
+ * 저장 artifact와 hash가 공유하는 유일한 S2.2 V2 canonical representation이다.
  * `canonicalBytes`를 그대로 저장하고 그대로 SHA-256해 별도 축약 hash model이 생기지 않게 한다.
  */
-class MetricSnapshotArtifactV1 private constructor(
+class MetricSnapshotArtifactV2 private constructor(
     private val canonicalValue: Map<String, Any?>,
 ) {
     val canonicalJson: String = CanonicalJson.encode(canonicalValue)
@@ -82,7 +82,7 @@ class MetricSnapshotArtifactV1 private constructor(
         get() = canonicalByteValue.copyOf()
     val sha256: String = CanonicalJson.sha256(canonicalByteValue)
 
-    fun semanticInput(): MetricSnapshotSemanticInputV1 {
+    fun semanticInput(): MetricSnapshotSemanticInputV2 {
         val semantic = canonicalValue.toMutableMap()
         semantic.remove("evaluationId")
         semantic.remove("retrievedAt")
@@ -92,12 +92,18 @@ class MetricSnapshotArtifactV1 private constructor(
             metrics.map { metric ->
                 metric.filterKeys { key -> key != "retrievedAt" }
             }
-        return MetricSnapshotSemanticInputV1(semantic.toMap())
+        @Suppress("UNCHECKED_CAST")
+        val disclosure = semantic["disclosureEvidence"] as? Map<String, Any?>
+        if (disclosure != null) {
+            // v2 rule은 score/mapping/applicability만 소비하므로 event code는 artifact provenance에만 둔다.
+            semantic["disclosureEvidence"] = disclosure.filterKeys { key -> key != "eventCodes" }
+        }
+        return MetricSnapshotSemanticInputV2(semantic.toMap())
     }
 
     companion object {
-        fun from(snapshot: MetricSnapshot): MetricSnapshotArtifactV1 =
-            MetricSnapshotArtifactV1(
+        fun from(snapshot: MetricSnapshot): MetricSnapshotArtifactV2 =
+            MetricSnapshotArtifactV2(
                 mapOf(
                     "actorUserId" to snapshot.actorUserId,
                     "disclosureEvidence" to disclosureEvidence(snapshot),
@@ -140,6 +146,7 @@ class MetricSnapshotArtifactV1 private constructor(
             snapshot.disclosureEvidence?.let { evidence ->
                 mapOf(
                     "completeness" to evidence.completeness,
+                    "eventCodes" to evidence.eventCodes.sorted(),
                     "mappingVersion" to evidence.mappingVersion,
                     "sourceRefs" to evidence.sourceRefs.sorted(),
                 )
@@ -157,11 +164,14 @@ class MetricSnapshotArtifactV1 private constructor(
 
         private fun orderIntent(order: OrderIntentSnapshot): Map<String, Any?> =
             mapOf(
-                "limitPrice" to order.limitPrice?.let(CanonicalJson::decimal),
+                "estimatedAmount" to order.estimatedAmount.toString(),
+                "estimatedPrice" to order.estimatedPrice.toString(),
                 "orderType" to order.orderType,
                 "quantity" to order.quantity.toString(),
                 "side" to order.side,
+                "strategyId" to order.strategyId,
                 "symbol" to order.symbol,
+                "timeframe" to order.timeframe,
             )
 
         private fun metric(
@@ -212,7 +222,7 @@ class MetricSnapshotArtifactV1 private constructor(
     }
 }
 
-class MetricSnapshotSemanticInputV1 internal constructor(
+class MetricSnapshotSemanticInputV2 internal constructor(
     private val canonicalValue: Map<String, Any?>,
 ) {
     val canonicalJson: String = CanonicalJson.encode(canonicalValue)
@@ -234,5 +244,5 @@ class SnapshotHashService {
 
     fun snapshotArtifactCanonicalBytes(snapshot: MetricSnapshot): ByteArray = artifact(snapshot).canonicalBytes
 
-    private fun artifact(snapshot: MetricSnapshot): MetricSnapshotArtifactV1 = MetricSnapshotArtifactV1.from(snapshot)
+    private fun artifact(snapshot: MetricSnapshot): MetricSnapshotArtifactV2 = MetricSnapshotArtifactV2.from(snapshot)
 }

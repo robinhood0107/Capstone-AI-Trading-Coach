@@ -1,7 +1,6 @@
 package com.capstone.decision.domain.risk
 
 import com.capstone.decision.domain.principle.PrincipleMode
-import java.math.BigDecimal
 import java.time.Instant
 
 data class OrderIntentSnapshot(
@@ -9,15 +8,33 @@ data class OrderIntentSnapshot(
     val side: String,
     val orderType: String,
     val quantity: Long,
-    val limitPrice: BigDecimal?,
+    val estimatedPrice: Long,
+    val estimatedAmount: Long,
+    val timeframe: String,
+    val strategyId: String,
 ) {
     init {
         require(symbol.isNotBlank() && symbol.length <= EvaluationBounds.MAX_ID_OR_CODE_CHARS)
         require(side in setOf("BUY", "SELL"))
         require(orderType in setOf("MARKET", "LIMIT"))
         require(quantity > 0)
-        require((orderType == "LIMIT") == (limitPrice != null))
-        require(limitPrice == null || limitPrice.signum() > 0)
+        require(estimatedPrice > 0)
+        require(estimatedAmount > 0)
+        require(timeframe in setOf("1d", "60m"))
+        require(strategyId.isNotBlank() && strategyId.length <= MAX_STRATEGY_ID_CHARS)
+        val exactAmount =
+            try {
+                Math.multiplyExact(quantity, estimatedPrice)
+            } catch (_: ArithmeticException) {
+                throw IllegalArgumentException("Order amount exceeds the signed 64-bit contract.")
+            }
+        require(estimatedAmount == exactAmount) {
+            "estimatedAmount must equal quantity * estimatedPrice exactly."
+        }
+    }
+
+    private companion object {
+        const val MAX_STRATEGY_ID_CHARS = 120
     }
 }
 
@@ -80,11 +97,19 @@ data class OptionalComponentEvidence(
 
 data class DisclosureEvidenceIdentity(
     val completeness: String,
+    val eventCodes: List<String>,
     val mappingVersion: String,
     val sourceRefs: List<String>,
 ) {
     init {
         require(completeness in setOf("COMPLETE", "EMPTY"))
+        require(eventCodes.size <= EvaluationBounds.MAX_DISCLOSURE_EVENTS)
+        require(eventCodes.distinct().size == eventCodes.size)
+        require(
+            eventCodes.all {
+                it.isNotBlank() && it.length <= EvaluationBounds.MAX_ID_OR_CODE_CHARS
+            },
+        )
         require(mappingVersion.isNotBlank() && mappingVersion.length <= EvaluationBounds.MAX_ID_OR_CODE_CHARS)
         require(sourceRefs.size <= EvaluationBounds.MAX_SOURCE_REFS)
         require(sourceRefs.distinct().size == sourceRefs.size)
@@ -154,7 +179,7 @@ data class MetricSnapshot(
             disclosureEvidence: DisclosureEvidenceIdentity? = null,
         ): MetricSnapshot =
             MetricSnapshot(
-                snapshotSchemaVersion = "s2.2-metric-snapshot-v1",
+                snapshotSchemaVersion = "s2.2-metric-snapshot-v2",
                 evaluationId = evaluationId,
                 evaluationAsOf = evaluationAsOf,
                 retrievedAt = retrievedAt,
@@ -182,7 +207,10 @@ data class MetricSnapshot(
                         side = "BUY",
                         orderType = "MARKET",
                         quantity = 1,
-                        limitPrice = null,
+                        estimatedPrice = 10_000,
+                        estimatedAmount = 10_000,
+                        timeframe = "1d",
+                        strategyId = "strategy_fixture",
                     ),
                 metrics = metrics.toMap(),
                 provenanceRefs = provenanceRefs.toList(),

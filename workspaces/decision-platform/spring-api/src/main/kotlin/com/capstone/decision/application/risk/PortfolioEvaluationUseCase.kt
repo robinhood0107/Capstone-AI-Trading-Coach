@@ -402,7 +402,7 @@ class PortfolioEvaluationUseCase(
         // early business HOLD도 wire hash 계약을 만족하도록 provider evidence가 없는 snapshot을 남긴다.
         val snapshot =
             MetricSnapshot(
-                snapshotSchemaVersion = "s2.2-metric-snapshot-v1",
+                snapshotSchemaVersion = "s2.2-metric-snapshot-v2",
                 evaluationId = command.evaluationId,
                 evaluationAsOf = command.evaluationAsOf,
                 retrievedAt = command.evaluationAsOf,

@@ -91,7 +91,14 @@ class InfrastructureSecurityIntegrationTest {
             assertFalse(hasTablePrivilege(connection, "decision_app", "principles", "TRUNCATE"))
             assertFalse(hasTablePrivilege(connection, "decision_app", "principle_versions", "TRUNCATE"))
             assertFalse(hasTablePrivilege(connection, "decision_app", "audit_logs", "TRUNCATE"))
-            listOf("orders", "decisions", "user_sessions").forEach { table ->
+            assertTrue(hasTablePrivilege(connection, "decision_app", "decisions", "INSERT"))
+            assertFalse(hasTablePrivilege(connection, "decision_app", "decisions", "SELECT"))
+            listOf("UPDATE", "DELETE", "TRUNCATE").forEach { privilege ->
+                assertFalse(hasTablePrivilege(connection, "decision_app", "decisions", privilege))
+            }
+            assertTrue(hasTablePrivilege(connection, "decision_app", "decision_owner_projection", "SELECT"))
+            assertTrue(hasTablePrivilege(connection, "decision_app", "decision_audit_projection", "SELECT"))
+            listOf("orders", "user_sessions").forEach { table ->
                 listOf("INSERT", "UPDATE", "DELETE").forEach { privilege ->
                     assertFalse(hasTablePrivilege(connection, "decision_app", table, privilege))
                 }
@@ -148,6 +155,10 @@ class InfrastructureSecurityIntegrationTest {
                     "truncate table principles",
                     "truncate table principle_versions",
                     "truncate table audit_logs",
+                    "select * from decisions limit 0",
+                    "update decisions set outcome = outcome where false",
+                    "delete from decisions where false",
+                    "truncate table decisions",
                     "insert into orders (" +
                         "order_id,user_id,account_id,decision_id,idempotency_key,symbol,side,order_type,quantity,status" +
                         ") values (" +

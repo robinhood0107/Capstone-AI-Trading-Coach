@@ -63,7 +63,7 @@ ALTER TABLE decisions
       OR (outcome = 'BLOCK' AND NOT can_submit_order AND enforcement_action = 'DO_NOT_SUBMIT')
     ),
   ADD CONSTRAINT decisions_evaluation_time_check
-    CHECK (created_at >= evaluation_as_of AND valid_until >= evaluation_as_of),
+    CHECK (created_at >= evaluation_as_of),
   ADD CONSTRAINT decisions_version_text_check
     CHECK (
       char_length(result_schema_version) BETWEEN 1 AND 128
@@ -158,7 +158,9 @@ CREATE TABLE decision_traces (
 );
 
 CREATE TABLE decision_idempotency_results (
-  scope_hash text PRIMARY KEY CHECK (scope_hash ~ '^[0-9a-f]{64}$'),
+  idempotency_result_id text PRIMARY KEY,
+  scope_hash text NOT NULL CHECK (scope_hash ~ '^[0-9a-f]{64}$'),
+  generation integer NOT NULL CHECK (generation > 0),
   request_hash text NOT NULL CHECK (request_hash ~ '^[0-9a-f]{64}$'),
   owner_scope_hash text NOT NULL CHECK (owner_scope_hash ~ '^[0-9a-f]{64}$'),
   purpose_version text NOT NULL CHECK (char_length(purpose_version) BETWEEN 1 AND 128),
@@ -169,6 +171,7 @@ CREATE TABLE decision_idempotency_results (
   result_canonical_json text NOT NULL,
   created_at timestamptz NOT NULL,
   expires_at timestamptz NOT NULL,
+  CONSTRAINT decision_idempotency_scope_generation_unique UNIQUE (scope_hash, generation),
   CONSTRAINT decision_idempotency_result_bounds_check CHECK (
     octet_length(result_canonical_json) BETWEEN 2 AND 1048576
     AND jsonb_typeof(result_canonical_json::jsonb) = 'object'
@@ -465,29 +468,31 @@ CREATE VIEW decision_owner_projection
 WITH (security_barrier = true)
 AS
 SELECT
-  decision_id,
-  evaluation_id,
-  user_id AS owner_user_id,
-  principle_id,
-  principle_version_id,
-  principle_version,
-  portfolio_source,
-  mode,
-  outcome,
-  can_submit_order,
-  enforcement_action,
-  created_at,
-  evaluation_as_of,
-  valid_until,
-  result_schema_version,
-  snapshot_schema_version,
-  catalog_version,
-  readiness_policy_version,
-  mapping_versions_json,
-  semantic_input_hash,
-  snapshot_artifact_hash,
-  result_json
+  decisions.decision_id,
+  decisions.evaluation_id,
+  decisions.user_id AS owner_user_id,
+  decisions.principle_id,
+  decisions.principle_version_id,
+  decisions.principle_version,
+  decisions.portfolio_source,
+  decisions.mode,
+  decisions.outcome,
+  decisions.can_submit_order,
+  decisions.enforcement_action,
+  decisions.created_at,
+  decisions.evaluation_as_of,
+  decisions.valid_until,
+  decisions.result_schema_version,
+  decisions.snapshot_schema_version,
+  decisions.catalog_version,
+  decisions.readiness_policy_version,
+  decisions.mapping_versions_json,
+  decisions.semantic_input_hash,
+  decisions.snapshot_artifact_hash,
+  decisions.result_json,
+  artifact.result_canonical_json
 FROM decisions
+JOIN decision_artifacts artifact ON artifact.decision_id = decisions.decision_id
 WHERE user_id = current_setting('app.actor_user_id', true);
 
 CREATE VIEW decision_audit_projection

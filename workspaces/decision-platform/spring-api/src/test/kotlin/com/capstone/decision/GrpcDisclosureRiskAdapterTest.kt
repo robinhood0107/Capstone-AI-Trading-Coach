@@ -101,7 +101,7 @@ class GrpcDisclosureRiskAdapterTest {
     }
 
     @Test
-    fun `UNAVAILABLE maps to typed absence while INTERNAL remains technical failure`() {
+    fun `only transport unavailability maps to typed absence while structural statuses remain technical`() {
         val unavailable =
             server(
                 failingService(Status.UNAVAILABLE),
@@ -123,6 +123,17 @@ class GrpcDisclosureRiskAdapterTest {
         } finally {
             internalAdapter.close()
             internal.shutdownNow().awaitTermination()
+        }
+
+        val resourceExhausted = server(failingService(Status.RESOURCE_EXHAUSTED))
+        val resourceExhaustedAdapter = adapter(resourceExhausted)
+        try {
+            assertThrows<DisclosureGrpcProtocolException> {
+                resourceExhaustedAdapter.load(request())
+            }
+        } finally {
+            resourceExhaustedAdapter.close()
+            resourceExhausted.shutdownNow().awaitTermination()
         }
     }
 

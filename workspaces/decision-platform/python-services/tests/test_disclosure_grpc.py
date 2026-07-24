@@ -149,7 +149,7 @@ def test_request_and_response_bounds_fail_closed() -> None:
         stub = disclosure_observation_pb2_grpc.DisclosureObservationServiceStub(channel)
         with pytest.raises(grpc.RpcError) as response_error:
             stub.GetDisclosureEvents(_request(), timeout=0.5)
-        assert response_error.value.code() == grpc.StatusCode.RESOURCE_EXHAUSTED
+        assert response_error.value.code() == grpc.StatusCode.DATA_LOSS
         assert repository.calls == 1
 
         oversized = _request()
@@ -290,6 +290,14 @@ def test_client_cancellation_cancels_active_database_resource() -> None:
     finally:
         channel.close()
         server.stop(grace=0).wait(timeout=2)
+
+
+def test_cancellation_before_connection_acquisition_fails_before_query_work() -> None:
+    cancellation = QueryCancellation()
+    cancellation.cancel()
+
+    with pytest.raises(TimeoutError):
+        cancellation.raise_if_cancelled()
 
 
 class _ConcurrencyRepository:

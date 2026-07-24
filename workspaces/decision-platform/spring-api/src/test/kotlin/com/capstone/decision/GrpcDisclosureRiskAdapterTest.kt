@@ -19,12 +19,17 @@ import io.grpc.stub.StreamObserver
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
+import org.junit.jupiter.api.extension.ExtendWith
+import org.slf4j.MDC
+import org.springframework.boot.test.system.CapturedOutput
+import org.springframework.boot.test.system.OutputCaptureExtension
 import java.net.InetSocketAddress
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
 import java.util.concurrent.atomic.AtomicInteger
 
+@ExtendWith(OutputCaptureExtension::class)
 class GrpcDisclosureRiskAdapterTest {
     @Test
     fun `non numeric loopback target is rejected before channel startup`() {
@@ -41,7 +46,7 @@ class GrpcDisclosureRiskAdapterTest {
     }
 
     @Test
-    fun `real loopback business RPC preserves provenance with one physical attempt`() {
+    fun `real loopback business RPC preserves provenance with one physical attempt`(output: CapturedOutput) {
         val calls = AtomicInteger()
         val server =
             server(
@@ -58,6 +63,8 @@ class GrpcDisclosureRiskAdapterTest {
             )
         val adapter = adapter(server)
         try {
+            MDC.put("trace_id", "1".repeat(32))
+            MDC.put("span_id", "2".repeat(16))
             val result = adapter.load(request())
             val available = result as MetricCell.Available
 
@@ -69,7 +76,15 @@ class GrpcDisclosureRiskAdapterTest {
             assertThat(available.value.sourceRefs).containsExactly("a".repeat(64))
             assertThat(available.freshUntil)
                 .isEqualTo(Instant.parse("2030-01-03T03:04:05Z"))
+            assertThat(output.out).contains("dec_grpc_fixture")
+            assertThat(output.out).contains("evl_grpc_fixture")
+            assertThat(output.out).contains("1".repeat(32))
+            assertThat(output.out).doesNotContain("usr_fixture")
+            assertThat(output.out).doesNotContain("paper-context")
+            assertThat(output.out).doesNotContain("a".repeat(64))
         } finally {
+            MDC.remove("trace_id")
+            MDC.remove("span_id")
             adapter.close()
             server.shutdownNow().awaitTermination()
         }
@@ -249,6 +264,8 @@ class GrpcDisclosureRiskAdapterTest {
                     strategyId = "cash-equity-v1",
                 ),
             evaluationAsOf = EVALUATION_AS_OF,
+            evaluationId = "evl_grpc_fixture",
+            decisionId = "dec_grpc_fixture",
         )
 
     private companion object {

@@ -180,6 +180,22 @@ class S23MarkdownContractDriftTest(unittest.TestCase):
                 for token in stale_state:
                     self.assertNotIn(token, text)
 
+    def test_ci_runs_s23_contract_and_proto_drift_checks(self) -> None:
+        contracts_workflow = (
+            REPO_ROOT / ".github/workflows/contracts-ci.yml"
+        ).read_text(encoding="utf-8")
+        python_workflow = (
+            REPO_ROOT / ".github/workflows/python-ci.yml"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            "uv run --frozen python contracts/generate_s2_3_contracts.py --check",
+            contracts_workflow,
+        )
+        self.assertIn(
+            "uv run --frozen python ../../../contracts/generate_disclosure_proto.py --check",
+            python_workflow,
+        )
+
 
 class S23CashOrderContractTest(unittest.TestCase):
     def test_order_intent_schema_uses_exact_positive_integer_krw_fields(self) -> None:

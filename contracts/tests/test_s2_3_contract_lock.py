@@ -240,6 +240,18 @@ class S23MarkdownContractDriftTest(unittest.TestCase):
             python_workflow,
         )
 
+    def test_repo_hygiene_supplies_every_required_source_writer_password(self) -> None:
+        workflow = (
+            REPO_ROOT / ".github/workflows/repo-hygiene.yml"
+        ).read_text(encoding="utf-8")
+        for variable in (
+            "POSTGRES_MARKET_WRITER_PASSWORD",
+            "POSTGRES_PORTFOLIO_WRITER_PASSWORD",
+            "POSTGRES_RISK_WRITER_PASSWORD",
+        ):
+            with self.subTest(variable=variable):
+                self.assertIn(f"{variable}: validation-dummy-", workflow)
+
 
 class S23CashOrderContractTest(unittest.TestCase):
     def test_order_intent_schema_uses_exact_positive_integer_krw_fields(self) -> None:

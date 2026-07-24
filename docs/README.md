@@ -4,10 +4,10 @@
 
 ## 현재 완료 상태
 
-S1.6 offline Market Calendar/Event Aggregator는 PR #35, S2.1 Principle CRUD는 PR #41로
-`main`에 병합됐다. 현재 S2.2는 deterministic offline evaluator, portfolio source 선택,
-snapshot/hash 계약과 owner-scoped ACTIVE Principle read adapter까지 구현하며 Decision API
-runtime·persistence·외부 source adapter와 provider online 활성화는 포함하지 않는다. 전체 상태는
+S1.6 offline Market Calendar/Event Aggregator는 PR #35, S2.1 Principle CRUD는 PR #41,
+S2.2 offline evaluator는 PR #43으로 `main`에 병합됐다. S2.3은 현물
+`estimatedPrice` 단일 field와 hash V2, 저장 현재가·KIS_MOCK 잔고 read-model 소유권을 먼저
+잠근다. S2.3은 provider producer를 만들지 않고 source 부재를 persisted HOLD로 처리한다. 전체 상태는
 [최종_프로젝트_명세서.md](최종_프로젝트_명세서.md) 8.4.1/11장, API 경계는
 [API_명세서.md](API_명세서.md) 5.1~5.4, 재현 명령과 machine-readable artifact 지도는
 [contracts README](../contracts/README.md#s22-rule-evaluation-offline-contract-v1), 실제 운영
@@ -23,6 +23,7 @@ runtime·persistence·외부 source adapter와 provider online 활성화는 포�
 | [선물옵션_모의주문_확장_시나리오.md](선물옵션_모의주문_확장_시나리오.md) | P2 국내선물옵션 확장 설계 (v1 범위 아님, 기본 OFF) |
 | [선물옵션_모의주문_확장_시나리오_API_명세서.md](선물옵션_모의주문_확장_시나리오_API_명세서.md) | P2 확장 API 계약 + KIS TR_ID 매핑 |
 | [S2.2 offline 계약 변경 기록](../contracts/changes/20260724-s2-2-rule-evaluation-offline-contract.md) | 14-rule evaluator, evidence disposition, portfolio selector, bounds/hash와 S2.3 이연 경계 |
+| [S2.3 Decision 계약 잠금](../contracts/changes/20260724-s2-3-decision-contract-lock.md) | 현물 OrderIntent/hash V2, stored quote/KIS_MOCK balance producer-consumer 경계, no-fake HOLD 정책 |
 | [ADR-027] | S1.4X 격리 Scala/Haskell 수치 parity Gate 0 결정 |
 | `decision-platform/` | Decision Platform 공개 기술 문서 — S1.2 OpenDART 근거와 S1.6 offline 상태 경계를 포함 |
 

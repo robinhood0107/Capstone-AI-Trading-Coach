@@ -29,6 +29,15 @@
 - STAGE 0에서는 런타임 기능 구현을 새로 추가하지 않는다.
 - STAGE 2에서도 세션 범위를 넘겨 구현하지 않는다. S1.1에서는 KIS OAuth 토큰, 국내주식 현재가, 국내주식 기간별시세, 선택적 휴장일 조회 같은 읽기 전용 시장데이터만 다룬다.
 - 어느 단계든 다른 팀원 workspace placeholder 경계와 `contracts/` 변경 절차는 동일하게 적용된다.
+- S2.3 현물 Decision `orderIntent`는 MARKET/LIMIT 모두 `estimatedPrice`만 사용한다.
+  `price`/`limitPrice` alias를 추가하지 않으며 exact 8개 field는
+  `symbol,side,orderType,quantity,estimatedPrice,estimatedAmount,timeframe,strategyId`다.
+  `HASH-CANONICALIZATION-S22-V2`와 `s2.2-metric-snapshot-v2`는
+  `contracts/changes/20260724-s2-3-decision-contract-lock.md`를 따른다. OpenAPI SSOT는
+  `contracts/openapi/openapi.json`이다.
+- S2.3은 저장된 sanitized source의 read adapter만 소유한다. 현재가·호가 producer는 S1.1,
+  KIS_MOCK balance producer와 INTERNAL_PAPER ledger mutation은 S3 소유다. source row가 없으면
+  production 값을 꾸미지 않고 persisted HOLD로 처리한다.
 
 ## 워크스페이스 경계
 

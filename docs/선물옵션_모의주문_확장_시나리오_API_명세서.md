@@ -7,6 +7,9 @@
 
 > 구현 상태: 이 문서는 v1/P1 필수 구현 계약이 아니라 후속 P2 확장 API 초안이다. 팀원 1의 현재 구현 시작 범위에서는 국내주식/금 ETF·ETN 기반 Principle, Decision, Risk, RAG, KIS Mock API를 우선한다.
 >
+> 용어 경계: 이 문서의 `limitPrice`는 P2 `derivativeOrderIntent` 전용이다. 현물 v1 Decision
+> `orderIntent`는 MARKET/LIMIT 모두 `estimatedPrice`만 사용하며 두 schema/hash를 섞지 않는다.
+>
 > 문서의 `201V6300`과 관련 ID/수치는 수학·schema 검증용
 > `SYNTHETIC_NOT_ORDERABLE` project fixture다. 실제 KIS 9자리 option `SHTN_PDNO`나
 > option-right mapping이라고 주장하지 않는다. exact official master fixture 승인 전

@@ -24,6 +24,16 @@ python-services/        # uv 프로젝트 — LightGBM/RAG/금융공학/데이�
 
 KIS outbound는 이 workspace가 단일 owner다. S1.1 client는 실전 18/s hard cap·기본 120ms 간격, 모의 1/s·1,000ms 간격을 같은 opaque credential/appkey scope의 Redis 원자 limiter로 공유한다. `/oauth2/tokenP` physical send는 mock/live 합산 deployment-global 1/s를 보수 적용하고 token cache/singleflight만 mode별로 분리한다. Return Engine과 후속 S1.6/S3 adapter는 별도 limiter를 만들지 않고 이 경계를 재사용한다.
 
+## S2.3 stored-source 경계
+
+Decision 평가 요청의 현물 v1 `orderIntent`는 MARKET/LIMIT 모두 `estimatedPrice`를 사용한다.
+S2.3은 provider HTTP를 호출하지 않고 저장된 sanitized source만 읽는다. 현재가·호가는 S1.1
+producer의 `market_quote_observations`, KIS_MOCK 잔고는 S3 producer의
+`portfolio_balance_observations`/`portfolio_position_observations`, INTERNAL_PAPER는 기존
+owner-scoped ledger가 권위다. `decision_app`은 SELECT만 가지며 production source seed와
+KIS_MOCK→INTERNAL_PAPER 자동 fallback은 없다. source row가 없거나 stale/incomplete면
+persisted 200 HOLD가 되고, test fixture는 test profile/Testcontainers에만 존재한다.
+
 ## S1.6 offline 구현 경계
 
 PR #34는 `testcontainers[postgres]==4.14.2`, S1.4X intentional reference refresh와 Market

@@ -2333,9 +2333,18 @@ required evidence 불완전이다. quality `FAIL`과 incomplete evidence가 함�
 
 #### 13.5.1 GetDisclosureEvents 계약 (S1.2)
 
-`GetDisclosureEvents`는 대상 종목·window의 OpenDART 구조화 공시 위험 이벤트와 `disclosure_risk_score`를 반환한다. 실제 gRPC proto 파일은 아직 없으며, 아래는 S1.2 문서 계약이다. Python OpenDART client(`app/data/opendart`)가 산출하는 값과 정렬한다.
+`GetDisclosureEvents`는 대상 종목·window의 저장된 OpenDART 구조화 공시 위험 이벤트와
+`disclosure_risk_score`를 반환한다. 실행 SSOT는
+`contracts/proto/disclosure_observation.proto`이며 아래 메시지는 그 tracked 계약과
+정렬한다. Python server는 sanitized observation projection만 읽고, S2.3 Decision 경로는
+OpenDART HTTP를 직접 호출하지 않는다.
 
 ```proto
+service DisclosureObservationService {
+  rpc GetDisclosureEvents(GetDisclosureEventsRequest)
+      returns (GetDisclosureEventsResponse);
+}
+
 message GetDisclosureEventsRequest {
   string symbol = 1;        // 종목코드(6자리)
   string corp_code = 2;     // OpenDART 고유번호(8자리)
@@ -2355,6 +2364,8 @@ message GetDisclosureEventsResponse {
   repeated DisclosureRiskEvent events = 8;
   repeated DisclosureRiskWarning warnings = 9;
   repeated string source_refs = 10;  // sanitized observation의 opaque 참조 id
+  string observed_at = 11;           // RFC 3339 UTC observation 시각
+  bool complete = 12;                // bounded window completeness
 }
 
 message DisclosureRiskEvent {

@@ -52,6 +52,7 @@ class StoredDisclosureBatch:
     mapping_version: str
     complete: bool
     events: tuple[StoredDisclosureEvent, ...]
+    source_refs: tuple[str, ...] = ()
 
 
 class StoredDisclosureRepository(Protocol):
@@ -133,9 +134,14 @@ class DisclosureObservationServicer(
             window_days=max(1, (window_to - window_from).days),
         )
         source_refs = sorted(
-            source_ref
-            for event in batch.events
-            for source_ref in event.source_refs
+            [
+                *batch.source_refs,
+                *(
+                    source_ref
+                    for event in batch.events
+                    for source_ref in event.source_refs
+                ),
+            ]
         )
         response = disclosure_observation_pb2.GetDisclosureEventsResponse(
             symbol=symbol,
@@ -242,6 +248,13 @@ def _validate_batch(
 
     event_identities: set[tuple[object, ...]] = set()
     source_refs: set[str] = set()
+    for source_ref in batch.source_refs:
+        if (
+            not _SOURCE_REF_PATTERN.fullmatch(source_ref)
+            or source_ref in source_refs
+        ):
+            _abort(context, grpc.StatusCode.DATA_LOSS, "disclosure source reference is invalid")
+        source_refs.add(source_ref)
     for event in batch.events:
         identity = (
             event.symbol,
@@ -271,6 +284,8 @@ def _validate_batch(
             source_refs.add(source_ref)
     if len(source_refs) > _MAX_SOURCE_REFS:
         _abort(context, grpc.StatusCode.RESOURCE_EXHAUSTED, "disclosure source reference limit exceeded")
+    if batch.complete and not source_refs:
+        _abort(context, grpc.StatusCode.DATA_LOSS, "complete disclosure batch lacks provenance")
 
 
 def _utc_text(value: datetime) -> str:

@@ -27,6 +27,9 @@ import java.net.InetSocketAddress
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 
@@ -148,8 +151,53 @@ class GrpcDisclosureRiskAdapterTest {
             )
         try {
             assertThat(adapter.load(request())).isInstanceOf(MetricCell.Error::class.java)
-            assertThat(calls.get()).isEqualTo(1)
+            // cold channel 자체가 deadline을 소비하면 server handler 도달 전 0일 수 있지만 재시도는 없어야 한다.
+            assertThat(calls.get()).isLessThanOrEqualTo(1)
         } finally {
+            adapter.close()
+            server.shutdownNow().awaitTermination()
+        }
+    }
+
+    @Test
+    fun `client boundary rejects ninth concurrent source call before physical RPC`() {
+        val calls = AtomicInteger()
+        val started = CountDownLatch(8)
+        val release = CountDownLatch(1)
+        val server =
+            server(
+                object : DisclosureObservationServiceGrpc.DisclosureObservationServiceImplBase() {
+                    override fun getDisclosureEvents(
+                        request: GetDisclosureEventsRequest,
+                        responseObserver: StreamObserver<GetDisclosureEventsResponse>,
+                    ) {
+                        calls.incrementAndGet()
+                        started.countDown()
+                        release.await(2, TimeUnit.SECONDS)
+                        responseObserver.onNext(validResponse())
+                        responseObserver.onCompleted()
+                    }
+                },
+            )
+        val adapter = adapter(server)
+        val executor = Executors.newFixedThreadPool(9)
+        try {
+            val results = (0 until 9).map { executor.submit<MetricCell<*>> { adapter.load(request()) } }
+            assertThat(started.await(1, TimeUnit.SECONDS)).isTrue()
+            val bounded =
+                results
+                    .firstOrNull { it.isDone }
+                    ?.get(1, TimeUnit.SECONDS)
+            assertThat(bounded).isInstanceOf(MetricCell.Error::class.java)
+            assertThat(calls.get()).isEqualTo(8)
+
+            release.countDown()
+            val completed = results.map { it.get(2, TimeUnit.SECONDS) }
+            assertThat(completed.count { it is MetricCell.Available }).isEqualTo(8)
+            assertThat(completed.count { it is MetricCell.Error }).isEqualTo(1)
+        } finally {
+            release.countDown()
+            executor.shutdownNow()
             adapter.close()
             server.shutdownNow().awaitTermination()
         }

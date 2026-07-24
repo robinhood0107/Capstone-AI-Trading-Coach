@@ -12,6 +12,8 @@ from typing import Any
 
 import psycopg
 
+from app.offline_fixture_io import read_bounded_fixture
+
 _ROOT_FIELDS = {
     "schemaVersion",
     "sourceVersion",
@@ -37,6 +39,7 @@ _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _MAX_POSITIONS = 1_000
 _MAX_PAYLOAD_BYTES = 262_144
 _BIGINT_MAX = 9_223_372_036_854_775_807
+_MAX_FIXTURE_BYTES = 4 * 1024 * 1024
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,7 +75,11 @@ class KisMockPortfolioObservation:
 
 def load_kis_mock_portfolio_fixture(path: Path) -> KisMockPortfolioObservation:
     """versioned sanitized fixture만 읽으며 account number나 provider 응답은 입력으로 받지 않는다."""
-    artifact_bytes = path.read_bytes()
+    artifact_bytes = read_bounded_fixture(
+        path,
+        max_bytes=_MAX_FIXTURE_BYTES,
+        label="KIS_MOCK portfolio",
+    )
     artifact_hash = hashlib.sha256(artifact_bytes).hexdigest()
     root = json.loads(artifact_bytes)
     if not isinstance(root, dict) or set(root) != _ROOT_FIELDS:
@@ -197,25 +204,27 @@ def append_kis_mock_portfolio_fixture(path: Path, *, database_dsn: str) -> int:
                     observation.artifact_hash,
                 ),
             ).rowcount
-            if inserted == 0:
-                return 0
-            for position in observation.positions:
-                connection.execute(
+            with connection.cursor() as cursor:
+                cursor.executemany(
                     """
                     INSERT INTO portfolio_position_observations (
                       balance_observation_id, symbol, quantity,
                       market_value_krw, is_gold_etf_etn
                     ) VALUES (%s, %s, %s, %s, %s)
+                    ON CONFLICT DO NOTHING
                     """,
-                    (
-                        observation.observation_id,
-                        position.symbol,
-                        position.quantity,
-                        position.market_value_krw,
-                        position.is_gold_etf_etn,
-                    ),
+                    [
+                        (
+                            observation.observation_id,
+                            position.symbol,
+                            position.quantity,
+                            position.market_value_krw,
+                            position.is_gold_etf_etn,
+                        )
+                        for position in observation.positions
+                    ],
                 )
-    return 1
+    return inserted
 
 
 def _position(value: object) -> KisMockPositionObservation:

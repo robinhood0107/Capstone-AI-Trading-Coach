@@ -35,8 +35,12 @@ def serve(settings: GrpcServerSettings | None = None) -> None:
     settings = settings or GrpcServerSettings.from_env()
     repository = PostgresStoredDisclosureRepository.from_env()
     server = create_disclosure_server(settings, repository)
-    server.start()
-    server.wait_for_termination()
+    try:
+        server.start()
+        server.wait_for_termination()
+    finally:
+        server.stop(grace=0).wait(timeout=2)
+        repository.close()
 
 
 def _is_loopback_address(address: str) -> bool:

@@ -12,6 +12,8 @@ from typing import Any
 
 import psycopg
 
+from app.offline_fixture_io import read_bounded_fixture
+
 _ROOT_FIELDS = {
     "schemaVersion",
     "sourceVersion",
@@ -29,6 +31,7 @@ _SYMBOL = re.compile(r"^[0-9]{6}$")
 _CORP_CODE = re.compile(r"^[0-9]{8}$")
 _MAX_MAPPINGS = 50_000
 _MAX_PAYLOAD_BYTES = 65_536
+_MAX_FIXTURE_BYTES = 64 * 1024 * 1024
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,7 +56,11 @@ def load_corporation_registry_fixture(
     path: Path,
 ) -> tuple[CorporationRegistryObservation, ...]:
     """versioned sanitized local JSON만 읽고 network나 기본 mapping 없이 observation을 만든다."""
-    artifact_bytes = path.read_bytes()
+    artifact_bytes = read_bounded_fixture(
+        path,
+        max_bytes=_MAX_FIXTURE_BYTES,
+        label="corporation registry",
+    )
     artifact_hash = hashlib.sha256(artifact_bytes).hexdigest()
     root = json.loads(artifact_bytes)
     if not isinstance(root, dict) or set(root) != _ROOT_FIELDS:
@@ -98,8 +105,8 @@ def append_corporation_registry_fixture(path: Path, *, database_dsn: str) -> int
     inserted = 0
     with psycopg.connect(database_dsn, autocommit=False) as connection:
         with connection.transaction():
-            for observation in observations:
-                cursor = connection.execute(
+            with connection.cursor() as cursor:
+                cursor.executemany(
                     """
                     INSERT INTO corporation_registry_observations (
                       observation_id, symbol, corp_code, registry_status,
@@ -112,22 +119,25 @@ def append_corporation_registry_fixture(path: Path, *, database_dsn: str) -> int
                     )
                     ON CONFLICT DO NOTHING
                     """,
-                    (
-                        observation.observation_id,
-                        observation.symbol,
-                        observation.corp_code,
-                        observation.registry_status,
-                        observation.completeness,
-                        observation.observed_at,
-                        observation.received_at,
-                        observation.schema_version,
-                        observation.source_version,
-                        observation.payload_json,
-                        observation.source_ref,
-                        observation.artifact_hash,
-                    ),
+                    [
+                        (
+                            observation.observation_id,
+                            observation.symbol,
+                            observation.corp_code,
+                            observation.registry_status,
+                            observation.completeness,
+                            observation.observed_at,
+                            observation.received_at,
+                            observation.schema_version,
+                            observation.source_version,
+                            observation.payload_json,
+                            observation.source_ref,
+                            observation.artifact_hash,
+                        )
+                        for observation in observations
+                    ],
                 )
-                inserted += cursor.rowcount
+                inserted = cursor.rowcount
     return inserted
 
 

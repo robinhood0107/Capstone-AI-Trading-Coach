@@ -12,6 +12,8 @@ from typing import Any
 
 import psycopg
 
+from app.offline_fixture_io import read_bounded_fixture
+
 _ROOT_FIELDS = {
     "schemaVersion",
     "sourceVersion",
@@ -29,6 +31,7 @@ _QUOTE_FIELDS = {
 _SYMBOL = re.compile(r"^[0-9A-Z._:-]{1,20}$")
 _MAX_QUOTES = 10_000
 _MAX_PAYLOAD_BYTES = 65_536
+_MAX_FIXTURE_BYTES = 16 * 1024 * 1024
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,7 +55,11 @@ class MarketQuoteObservation:
 
 def load_market_quote_fixture(path: Path) -> tuple[MarketQuoteObservation, ...]:
     """versioned local JSON만 읽고 network·provider·production fallback 없이 observation을 만든다."""
-    artifact_bytes = path.read_bytes()
+    artifact_bytes = read_bounded_fixture(
+        path,
+        max_bytes=_MAX_FIXTURE_BYTES,
+        label="market quote",
+    )
     artifact_hash = hashlib.sha256(artifact_bytes).hexdigest()
     root = json.loads(artifact_bytes)
     if not isinstance(root, dict) or set(root) != _ROOT_FIELDS:
@@ -92,8 +99,8 @@ def append_market_quote_fixture(path: Path, *, database_dsn: str) -> int:
     inserted = 0
     with psycopg.connect(database_dsn, autocommit=False) as connection:
         with connection.transaction():
-            for observation in observations:
-                cursor = connection.execute(
+            with connection.cursor() as cursor:
+                cursor.executemany(
                     """
                     INSERT INTO market_quote_observations (
                       observation_id, symbol, source, price_krw, bid_krw, ask_krw,
@@ -105,23 +112,26 @@ def append_market_quote_fixture(path: Path, *, database_dsn: str) -> int:
                     )
                     ON CONFLICT DO NOTHING
                     """,
-                    (
-                        observation.observation_id,
-                        observation.symbol,
-                        observation.price_krw,
-                        observation.bid_krw,
-                        observation.ask_krw,
-                        observation.completeness,
-                        observation.observed_at,
-                        observation.received_at,
-                        observation.schema_version,
-                        observation.source_version,
-                        observation.payload_json,
-                        observation.source_ref,
-                        observation.artifact_hash,
-                    ),
+                    [
+                        (
+                            observation.observation_id,
+                            observation.symbol,
+                            observation.price_krw,
+                            observation.bid_krw,
+                            observation.ask_krw,
+                            observation.completeness,
+                            observation.observed_at,
+                            observation.received_at,
+                            observation.schema_version,
+                            observation.source_version,
+                            observation.payload_json,
+                            observation.source_ref,
+                            observation.artifact_hash,
+                        )
+                        for observation in observations
+                    ],
                 )
-                inserted += cursor.rowcount
+                inserted = cursor.rowcount
     return inserted
 
 

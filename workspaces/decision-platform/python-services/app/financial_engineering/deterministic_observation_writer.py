@@ -13,6 +13,8 @@ from typing import Any
 
 import psycopg
 
+from app.offline_fixture_io import read_bounded_fixture
+
 _ROOT_FIELDS = {
     "schemaVersion",
     "sourceVersion",
@@ -41,6 +43,7 @@ _ORDER_FIELDS = {
 _OWNER_USER_ID = re.compile(r"^[0-9A-Za-z._:-]{1,128}$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _MAX_PAYLOAD_BYTES = 262_144
+_MAX_FIXTURE_BYTES = 1024 * 1024
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,7 +92,11 @@ class DeterministicMetricFixture:
 
 def load_deterministic_metric_fixture(path: Path) -> DeterministicMetricFixture:
     """local deterministic fixture만 검증하며 broker/provider 호출이나 0 fallback을 수행하지 않는다."""
-    artifact_bytes = path.read_bytes()
+    artifact_bytes = read_bounded_fixture(
+        path,
+        max_bytes=_MAX_FIXTURE_BYTES,
+        label="deterministic metric",
+    )
     artifact_hash = hashlib.sha256(artifact_bytes).hexdigest()
     root = json.loads(artifact_bytes)
     if not isinstance(root, dict) or set(root) != _ROOT_FIELDS:

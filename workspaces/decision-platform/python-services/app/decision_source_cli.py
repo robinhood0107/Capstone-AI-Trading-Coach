@@ -17,7 +17,7 @@ from app.data.kis.market_quote_observation_writer import append_market_quote_fix
 from app.data.opendart.corporation_registry_writer import (
     append_corporation_registry_fixture,
 )
-from app.financial_engineering.deterministic_observation_writer import (
+from app.data.decision.deterministic_observation_writer import (
     append_deterministic_metric_fixture,
 )
 

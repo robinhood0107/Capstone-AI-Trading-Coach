@@ -12,7 +12,7 @@ from typing import Any
 
 import psycopg
 
-from app.offline_fixture_io import read_bounded_fixture
+from app.offline_fixture_io import read_json_fixture
 
 _ROOT_FIELDS = {
     "schemaVersion",
@@ -75,13 +75,12 @@ class KisMockPortfolioObservation:
 
 def load_kis_mock_portfolio_fixture(path: Path) -> KisMockPortfolioObservation:
     """versioned sanitized fixture만 읽으며 account number나 provider 응답은 입력으로 받지 않는다."""
-    artifact_bytes = read_bounded_fixture(
+    artifact_bytes, root = read_json_fixture(
         path,
         max_bytes=_MAX_FIXTURE_BYTES,
         label="KIS_MOCK portfolio",
     )
     artifact_hash = hashlib.sha256(artifact_bytes).hexdigest()
-    root = json.loads(artifact_bytes)
     if not isinstance(root, dict) or set(root) != _ROOT_FIELDS:
         raise ValueError("KIS_MOCK portfolio fixture root shape is invalid")
     schema_version = _bounded_text(root["schemaVersion"], "schemaVersion")

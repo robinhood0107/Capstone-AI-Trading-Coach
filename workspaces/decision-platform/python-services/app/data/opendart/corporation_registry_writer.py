@@ -12,7 +12,7 @@ from typing import Any
 
 import psycopg
 
-from app.offline_fixture_io import read_bounded_fixture
+from app.offline_fixture_io import read_json_fixture
 
 _ROOT_FIELDS = {
     "schemaVersion",
@@ -56,13 +56,12 @@ def load_corporation_registry_fixture(
     path: Path,
 ) -> tuple[CorporationRegistryObservation, ...]:
     """versioned sanitized local JSON만 읽고 network나 기본 mapping 없이 observation을 만든다."""
-    artifact_bytes = read_bounded_fixture(
+    artifact_bytes, root = read_json_fixture(
         path,
         max_bytes=_MAX_FIXTURE_BYTES,
         label="corporation registry",
     )
     artifact_hash = hashlib.sha256(artifact_bytes).hexdigest()
-    root = json.loads(artifact_bytes)
     if not isinstance(root, dict) or set(root) != _ROOT_FIELDS:
         raise ValueError("corporation registry fixture root shape is invalid")
     schema_version = _bounded_text(root["schemaVersion"], "schemaVersion")

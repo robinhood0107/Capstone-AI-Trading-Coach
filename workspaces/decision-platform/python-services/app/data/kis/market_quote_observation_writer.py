@@ -12,7 +12,7 @@ from typing import Any
 
 import psycopg
 
-from app.offline_fixture_io import read_bounded_fixture
+from app.offline_fixture_io import read_json_fixture
 
 _ROOT_FIELDS = {
     "schemaVersion",
@@ -55,13 +55,12 @@ class MarketQuoteObservation:
 
 def load_market_quote_fixture(path: Path) -> tuple[MarketQuoteObservation, ...]:
     """versioned local JSON만 읽고 network·provider·production fallback 없이 observation을 만든다."""
-    artifact_bytes = read_bounded_fixture(
+    artifact_bytes, root = read_json_fixture(
         path,
         max_bytes=_MAX_FIXTURE_BYTES,
         label="market quote",
     )
     artifact_hash = hashlib.sha256(artifact_bytes).hexdigest()
-    root = json.loads(artifact_bytes)
     if not isinstance(root, dict) or set(root) != _ROOT_FIELDS:
         raise ValueError("market quote fixture root shape is invalid")
     schema_version = _bounded_text(root["schemaVersion"], "schemaVersion")

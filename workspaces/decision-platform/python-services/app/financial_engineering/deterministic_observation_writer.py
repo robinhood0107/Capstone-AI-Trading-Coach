@@ -13,7 +13,7 @@ from typing import Any
 
 import psycopg
 
-from app.offline_fixture_io import read_bounded_fixture
+from app.offline_fixture_io import read_json_fixture
 
 _ROOT_FIELDS = {
     "schemaVersion",
@@ -92,13 +92,12 @@ class DeterministicMetricFixture:
 
 def load_deterministic_metric_fixture(path: Path) -> DeterministicMetricFixture:
     """local deterministic fixture만 검증하며 broker/provider 호출이나 0 fallback을 수행하지 않는다."""
-    artifact_bytes = read_bounded_fixture(
+    artifact_bytes, root = read_json_fixture(
         path,
         max_bytes=_MAX_FIXTURE_BYTES,
         label="deterministic metric",
     )
     artifact_hash = hashlib.sha256(artifact_bytes).hexdigest()
-    root = json.loads(artifact_bytes)
     if not isinstance(root, dict) or set(root) != _ROOT_FIELDS:
         raise ValueError("deterministic metric fixture root shape is invalid")
     schema_version = _bounded_text(root["schemaVersion"], "schemaVersion")

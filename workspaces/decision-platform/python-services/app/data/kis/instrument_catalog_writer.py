@@ -13,7 +13,7 @@ from typing import Any
 
 import psycopg
 
-from app.offline_fixture_io import read_bounded_fixture
+from app.offline_fixture_io import read_json_fixture
 
 _ROOT_FIELDS = {
     "schemaVersion",
@@ -55,13 +55,12 @@ class InstrumentCatalogObservation:
 
 def load_instrument_catalog_fixture(path: Path) -> tuple[InstrumentCatalogObservation, ...]:
     """versioned local JSON만 읽고 canonical row/hash를 만들며 network나 fallback은 사용하지 않는다."""
-    artifact_bytes = read_bounded_fixture(
+    artifact_bytes, root = read_json_fixture(
         path,
         max_bytes=_MAX_FIXTURE_BYTES,
         label="instrument catalog",
     )
     artifact_hash = hashlib.sha256(artifact_bytes).hexdigest()
-    root = json.loads(artifact_bytes)
     if not isinstance(root, dict) or set(root) != _ROOT_FIELDS:
         raise ValueError("instrument catalog fixture root shape is invalid")
     schema_version = _bounded_text(root["schemaVersion"], "schemaVersion")

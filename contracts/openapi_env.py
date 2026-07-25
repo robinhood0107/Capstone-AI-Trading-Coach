@@ -22,9 +22,12 @@ REQUIRED_NAMES: Final[tuple[str, ...]] = (
     "POSTGRES_APP_PASSWORD",
     "POSTGRES_MIGRATION_PASSWORD",
     "POSTGRES_COLLECTOR_PASSWORD",
+    "POSTGRES_DISCLOSURE_READER_PASSWORD",
     "POSTGRES_MARKET_WRITER_PASSWORD",
     "POSTGRES_PORTFOLIO_WRITER_PASSWORD",
     "POSTGRES_RISK_WRITER_PASSWORD",
+    "DECISION_GRPC_SHARED_SECRET",
+    "PYTHON_GRPC_SHARED_SECRET",
     "REDIS_PASSWORD",
     "JWT_SECRET",
     "JWT_ISSUER",
@@ -146,9 +149,11 @@ def _require_secret_shapes(values: dict[str, str]) -> None:
         "POSTGRES_APP_PASSWORD",
         "POSTGRES_MIGRATION_PASSWORD",
         "POSTGRES_COLLECTOR_PASSWORD",
+        "POSTGRES_DISCLOSURE_READER_PASSWORD",
         "POSTGRES_MARKET_WRITER_PASSWORD",
         "POSTGRES_PORTFOLIO_WRITER_PASSWORD",
         "POSTGRES_RISK_WRITER_PASSWORD",
+        "DECISION_GRPC_SHARED_SECRET",
         "REDIS_PASSWORD",
         "JWT_SECRET",
         "LOGIN_SCOPE_HMAC_KEY",
@@ -160,6 +165,13 @@ def _require_secret_shapes(values: dict[str, str]) -> None:
             raise OpenApiEnvironmentError(f"{name} must use a bounded Base64url-safe value.")
     if len({values[name] for name in general_secret_names}) != len(general_secret_names):
         raise OpenApiEnvironmentError("OpenAPI fixture secrets must not reuse one value.")
+
+    # Spring과 Python gRPC fixture는 shared-secret 계약을 검증하기 위해 같은 값을 쓰되,
+    # 그 외 DB/JWT/HMAC secret과는 목적 분리를 유지한다.
+    if _BASE64URL_SECRET.fullmatch(values["PYTHON_GRPC_SHARED_SECRET"]) is None:
+        raise OpenApiEnvironmentError("PYTHON_GRPC_SHARED_SECRET must use a bounded Base64url-safe value.")
+    if values["PYTHON_GRPC_SHARED_SECRET"] != values["DECISION_GRPC_SHARED_SECRET"]:
+        raise OpenApiEnvironmentError("Decision and Python gRPC fixture secrets must match.")
 
     if _BASE64URL_32.fullmatch(values["DEMO_CREDENTIAL_SEPARATION_KEY"]) is None:
         raise OpenApiEnvironmentError(

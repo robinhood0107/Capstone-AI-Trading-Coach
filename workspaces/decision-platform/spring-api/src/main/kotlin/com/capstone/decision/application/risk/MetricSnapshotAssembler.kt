@@ -453,9 +453,10 @@ class MetricSnapshotAssembler(
         order: OrderIntentSnapshot,
     ): MetricCell<MetricValue> {
         val available = price as? MetricCell.Available ?: return unavailableMetric(price)
+        val orderAmount = quoteBoundOrderAmount(available, order) ?: return sourceError()
         return fromAvailable(
             available,
-            MetricValue.Whole(order.estimatedAmount, MetricUnit.KRW),
+            MetricValue.Whole(orderAmount, MetricUnit.KRW),
         )
     }
 
@@ -466,8 +467,9 @@ class MetricSnapshotAssembler(
     ): MetricCell<MetricValue> {
         val availableBalance = balance as? MetricCell.Available ?: return unavailableMetric(balance)
         val availablePrice = price as? MetricCell.Available ?: return unavailableMetric(price)
+        val orderAmount = quoteBoundOrderAmount(availablePrice, order) ?: return sourceError()
         val postValue =
-            postOrderTargetValue(availableBalance.value, order)
+            postOrderTargetValue(availableBalance.value, order, orderAmount)
                 ?: return sourceError()
         return ratioMetric(postValue, availableBalance.value.portfolioEquityKrw, availableBalance, availablePrice)
     }
@@ -481,6 +483,7 @@ class MetricSnapshotAssembler(
         val availableBalance = balance as? MetricCell.Available ?: return unavailableMetric(balance)
         val availablePrice = price as? MetricCell.Available ?: return unavailableMetric(price)
         val availableInstrument = instrument as? MetricCell.Available ?: return unavailableMetric(instrument)
+        val orderAmount = quoteBoundOrderAmount(availablePrice, order) ?: return sourceError()
         val targetPosition =
             availableBalance.value.positions
                 .singleOrNull { it.symbol == order.symbol && it.quantity > 0 }
@@ -499,7 +502,7 @@ class MetricSnapshotAssembler(
             }
         val targetCurrent = targetPosition?.marketValueKrw ?: 0L
         val targetPost =
-            postOrderTargetValue(availableBalance.value, order)
+            postOrderTargetValue(availableBalance.value, order, orderAmount)
                 ?: return sourceError()
         val postGold =
             try {
@@ -523,6 +526,7 @@ class MetricSnapshotAssembler(
     private fun postOrderTargetValue(
         balance: BalanceSnapshot,
         order: OrderIntentSnapshot,
+        orderAmount: Long,
     ): Long? =
         try {
             val current =
@@ -530,13 +534,29 @@ class MetricSnapshotAssembler(
                     .singleOrNull { it.symbol == order.symbol && it.quantity > 0 }
                     ?.marketValueKrw ?: 0L
             when (order.side) {
-                "BUY" -> Math.addExact(current, order.estimatedAmount)
-                "SELL" -> Math.subtractExact(current, order.estimatedAmount).takeIf { it >= 0 }
+                "BUY" -> Math.addExact(current, orderAmount)
+                "SELL" -> Math.subtractExact(current, orderAmount).takeIf { it >= 0 }
                 else -> null
             }
         } catch (_: ArithmeticException) {
             null
         }
+
+    private fun quoteBoundOrderAmount(
+        availablePrice: MetricCell.Available<MetricValue>,
+        order: OrderIntentSnapshot,
+    ): Long? {
+        val quotePrice = availablePrice.value as? MetricValue.Whole ?: return null
+        if (quotePrice.unit != MetricUnit.KRW || quotePrice.value <= 0) {
+            return null
+        }
+        return try {
+            // 클라이언트 estimate는 의도 표현이고, 위험 한도 판정은 서버가 읽은 authoritative quote에 결속한다.
+            Math.multiplyExact(order.quantity, quotePrice.value)
+        } catch (_: ArithmeticException) {
+            null
+        }
+    }
 
     private fun ratioMetric(
         numerator: Long,

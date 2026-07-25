@@ -735,25 +735,27 @@ tracked OpenAPI는 `contracts/openapi/openapi.json`이며 root는 `openapi=3.1.1
 `jsonSchemaDialect=https://spec.openapis.org/oas/3.1/dialect/base`다. standalone schemas는 JSON
 Schema Draft 2020-12다. canonical catalog bytes의 lowercase SHA-256을 generated OpenAPI의
 `x-s2-1-contract-sha256`에 넣고 `x-s2-1-contract-id=s2-1-principle-contract/v1`과 함께 CI에서
-검증한다. Spring generator가 내는 root `3.1.0`에서 tracked `3.1.1`로의 patch 한 field와
+검증한다. S2.3 catalog도 `x-s2-3-contract-id=s2-3-decision-contract/v1`과
+`x-s2-3-contract-sha256=d035607af50a0f7cb9cd7170e9a6a188e6af32d5bbbdb76e5e4f7b3edc68cd18`로
+고정한다. Spring generator가 내는 root `3.1.0`에서 tracked `3.1.1`로의 patch 한 field와
 deterministic formatting만 normalizer가 바꿀 수 있으며 paths/components/dialect drift는 실패한다.
 
 ---
 
-## 5. Decision API (S2.3 계획 — 현재 route 없음)
+## 5. Decision API (S2.3 runtime)
 
 주문 의도와 immutable Principle version, portfolio context, 모델·리스크 evidence를 결합하는
-최종 HTTP API다. 다만 현재 호출 가능한 endpoint가 아니다.
+최종 HTTP API다.
 
 > 상태 경계(2026-07-24): S2.2는
 > `contracts/catalogs/s2-2-system-rule-catalog.v1.json`,
 > `contracts/schemas/risk_decision.schema.json`과 순수 evaluator/snapshot policy를 offline
-> fixture와 fake port로 검증하는 범위다. provider 호출, Decision controller, HTTP route,
-> decision persistence는 없다. owner + ACTIVE + current immutable version을 한 SQL로 읽는
-> 내부 `JdbcPrincipleSnapshotAdapter`만 S2.2의 유일한 production adapter 예외다. S2.3이
-> 이 read port와 나머지 source port의 owner-scoped runtime orchestration, persistence와
-> 이 장의 endpoint/OpenAPI를 연결하고, S3가 KIS Mock/INTERNAL_PAPER source adapter를 연결한다.
-> tracked `contracts/openapi/openapi.json`에는 현재 `/api/v1/decisions/**` path가 하나도 없다.
+> fixture와 fake port로 검증했다. S2.3은 owner-scoped runtime orchestration, V9
+> decision/trace/artifact/audit/outbox/idempotency persistence와 이 장의 3개 endpoint를
+> tracked OpenAPI에 연결한다. S1.1/S3/S1.6/deterministic 모듈은 source producer를 소유하고
+> 이번 continuation에서 offline fixture 기반 structural readiness를 제공한다. S2.3은 저장된
+> sanitized observation과 INTERNAL_PAPER ledger를 읽는 adapter만 소유한다. provider HTTP,
+> live account, 주문 제출과 broker publish는 이 경로에서 수행하지 않는다.
 
 ### 5.1 S2.2 offline rule evaluation 계약
 
@@ -793,36 +795,85 @@ HOLD/BLOCK을 만들 수 없다. 같은 rule이 `REQUIRED`로 저장된 경우�
 identity로 사용하지 않는다. unavailable evidence를 `riskItems.value=null`만으로 표현해
 `issues|warnings|abstentions`를 우회해서는 안 된다.
 
-### 5.2 S2.3 주문 의도 평가 경계 (계획)
+### 5.2 S2.3 주문 의도 평가 경계
 
-계획 endpoint는 `POST /api/v1/decisions/evaluate-order`다. S2.3 request는 최소
+endpoint는 `POST /api/v1/decisions/evaluate-order`다. S2.3 request는 정확히
 `principleId`, explicit `portfolioSource`, `orderIntent`를 받는다. `mode`, user/owner ID,
 provider 계좌번호는 받지 않는다. mode는 한 번의 owner-scoped ACTIVE Principle 조회에서 고정한
 immutable version의 값이 권위이며 request가 덮어쓸 수 없다.
+
+현물 v1 `orderIntent`의 exact field는
+`symbol,side,orderType,quantity,estimatedPrice,estimatedAmount,timeframe,strategyId`다.
+MARKET과 LIMIT 모두 `estimatedPrice`를 사용하며 `price`/`limitPrice` alias는 거부한다.
+`estimatedPrice`와 `estimatedAmount`는 양의 원화 정수이고
+`estimatedAmount == quantity * estimatedPrice`를 overflow 없는 exact 연산으로 검증한다.
+P2 `derivativeOrderIntent.limitPrice`와 S3 provider `UNIT_PRICE` mapping은 별도 계약이다.
 
 같은 조회는 `principleVersionId`, `version`, mode, canonical rules를 한 snapshot으로 pin한다.
 형식이 유효한 principle이 missing, cross-owner 또는 inactive이면 존재 여부를 숨기고 모두 같은
 `404 NOT_FOUND`를 반환한다. 성공한 평가 결과는 `principleVersionId`와 `principleVersion`을
 반드시 함께 반환한다.
 
-S2.2의 내부 `JdbcPrincipleSnapshotAdapter`는 이 owner + ACTIVE + current immutable version
-조회를 한 SQL로 구현하지만 controller/bean/runtime route를 열지 않는다. Brokerage, risk,
-disclosure, signal production adapter는 S2.2에 없으며, S2.3/S3의 별도 승인 전에는 test fake
-외의 source로 대체하거나 자동 fallback하지 않는다.
+S2.2의 내부 `JdbcPrincipleSnapshotAdapter`가 owner + ACTIVE + current immutable version
+조회를 한 SQL로 수행하고 S2.3 runtime이 이를 pin한다. 현재가·잔고·instrument catalog·결정적
+risk/order-count·공시는 저장 observation reader로 연결한다. producer가 없는 optional
+news/signal source는 typed unavailable로 남으며 test fake나 다른 portfolio source로 자동
+fallback하지 않는다.
 
 `portfolioSource`는 `KIS_MOCK|INTERNAL_PAPER` 중 정확히 하나를 명시한다. 서버가 JWT actor의
 owner scope 안에서 해당 context를 해석하며 raw account ID를 신뢰하지 않는다. 선택한 source만
-조회하고 source 혼합이나 KIS 실패 후 INTERNAL_PAPER 자동 fallback은 금지한다.
+조회하고 source 혼합이나 KIS 실패 후 INTERNAL_PAPER 자동 fallback은 금지한다. KIS_MOCK
+balance, positions, margin은 balance가 고정한 하나의 immutable source revision만 읽으며 서로
+다른 revision을 조합한 read-skew snapshot은 unavailable로 거부한다.
 
-| 상황 | 계획 HTTP/result |
+S2.3은 provider HTTP를 호출하지 않는다. 현재가·호가와 종목 분류·상품 위험은 S1.1 offline
+producer가 쓰는 append-only `market_quote_observations`와
+`instrument_catalog_observations`/`latest_instrument_catalog_observations`, KIS_MOCK 잔고는
+S3 producer가 쓰는
+`portfolio_balance_observations`/`portfolio_position_observations`, INTERNAL_PAPER는 기존
+`paper_accounts`/`paper_positions`의 한 SQL owner-scoped projection에서 읽는다. 결정적 risk와
+일일 주문 수는 각각 `deterministic_risk_observations`와
+`daily_order_count_observations`, 빈 corp_code resolution은
+`corporation_registry_observations`의 exact current projection을 쓴다. V9는 production source
+row를 seed하지 않고 `decision_app`에는 source SELECT만 준다. canonical table/projection,
+production bean/port, offline producer, 최소권한 writer, bounded reader,
+freshness/completeness, no-fake test 중 하나가 빠지면 `S23_RUNTIME_SOURCE_BLOCKED`다. 구조가
+갖춰진 뒤 row 부재, stale/incomplete/future timestamp 또는 transient dependency failure는
+가짜 0/빈 값으로 대체하지 않고 typed unavailable `issues[]`와 persisted 200 HOLD로 수렴한다.
+instrument row의 exact 의미 필드는
+`symbol,isEtfEtn,isGoldEtfEtn,nullable productRiskScore,catalogVersion,observedAt,receivedAt,sourceRef,artifactHash`다.
+`decision_market_writer`만 exact INSERT하고 S2.3은 exact symbol의 최신 한 행만 읽는다.
+
+source coordinator는 queue 없는 최대 8개 worker에서 source별 500ms와 전체 evaluation 900ms의
+남은 예산을 함께 강제한다. 전체 예산이 끝나면 뒤 source physical call을 시작하지 않고 실행 중
+timeout task는 cancel한다. JDBC connection acquisition과 statement도 500ms를 넘지 않으며
+worker에는 request trace MDC를 전달한 뒤 원래 문맥을 복원한다. Python gRPC repository는 최대
+8개 connection, acquisition 450ms, connect 1초를 사용하고 cancellation 사이마다 connection/
+query를 해제한다. event/source-ref 각 100개 또는 response byte 상한 초과는 truncate된 success가
+아니라 technical failure다. gRPC `RESOURCE_EXHAUSTED`/구조적 `DATA_LOSS`도 typed unavailable
+HOLD로 낮추지 않고 S2.3 orchestration 실패로 처리한다.
+
+| 상황 | HTTP/result |
 |---|---|
 | selector enum/요청 형식 오류 | `400 VALIDATION_ERROR`, decision result 없음 |
 | missing/cross-owner/inactive Principle | 동일한 `404 NOT_FOUND`, 존재 정보 없음 |
 | 선택한 owner-scoped portfolio context가 missing/stale/partial/unavailable | 평가가 완료된 business result이므로 `200`, `success=true`, `decision=HOLD`, `issues[]` |
 | threshold 위반 또는 optional abstention을 포함해 평가가 정상 완료 | `200`, `success=true`, `ALLOW|WARN|HOLD|BLOCK` |
-| evaluator invariant, serialization 또는 runtime orchestration 자체 실패 | `503`, 실패 envelope. HOLD로 위장하지 않음 |
+| evaluator invariant, serialization 또는 runtime orchestration 자체 실패 | `5xx`, 실패 envelope. HOLD로 위장하지 않음 |
 
 따라서 HOLD는 HTTP 오류가 아니라 주문 제출을 잠시 막는 성공적인 business 판단이다.
+
+persistence transaction은 idempotency advisory lock →
+`principles`/current version의 `FOR SHARE OF principle` 재확인 → Decision graph INSERT
+순서다. updater가 먼저 version 2를 commit하면 구 version 평가는 409/all writes zero이고,
+Decision이 먼저 share lock을 잡으면 Principle updater는 Decision commit까지 기다린다.
+source read/evaluation은 이 transaction 밖이다. commit 뒤 timer/counter/log 실패는 원래
+persisted 200 projection을 뒤집지 않는다. Decision child row는
+`decision_id + evaluation_id` composite FK로 같은 graph에 묶고 audit target은 payload
+`decisionId`와 일치해야 한다. offline source writer는 동일 primary/alternate unique identity의
+exact row replay만 no-op으로 허용하며 의미 필드가 다르면 `23505`로 전체 transaction을
+rollback한다. owner detail/audit와 idempotency replay는 base table broad SELECT 없이
+fixed-search-path bounded function만 사용한다.
 
 ### 5.3 public code와 internal cause 경계
 
@@ -834,7 +885,7 @@ correlation과 함께 별도로 관측하며, public code와 같은 문자열로
 정상적으로 unavailable evidence로 변환한 결과는 HOLD/WARN이 될 수 있지만 evaluator invariant나
 직렬화 실패는 5xx다.
 
-### 5.4 S2.2 V1 자원 상한과 hash
+### 5.4 S2.2 자원 상한과 hash V2
 
 `BOUNDS-CONTRACT-S22-V1`은 다음 상한을 고정한다. S2.3 runtime 설정은 낮출 수 있지만 같은
 contract version에서 높일 수 없다.
@@ -852,30 +903,32 @@ contract version에서 높일 수 없다.
 | 동시 source 작업 | 최대 8 |
 | source별 / 전체 evaluation deadline | 500 ms / 900 ms |
 
-`HASH-CANONICALIZATION-S22-V1`은 UTF-8, whitespace 없는 JSON, object key 사전순,
+`HASH-CANONICALIZATION-S22-V2`는 UTF-8, whitespace 없는 JSON, object key 사전순,
 명시적 stable array sort, exponent 없는 plain decimal, negative zero의 `0` 정규화,
 trailing-zero 제거를 사용한다. 두 hash는 lowercase 64-hex SHA-256이며 목적이 다르다.
 
 | hash | 포함/제외 경계 |
 |---|---|
-| `semanticInputHash` | snapshot schema/actor/evaluation 시각, pinned Principle ID·version·mode·rules hash, system catalog/readiness version, full order intent(`orderType`, `limitPrice` 포함), portfolio source/revision/owner scope/position count, 모든 MetricKey의 typed state/value/unit/declared scale·`observedAt`·`freshUntil`·source/version/ref, requested/observed optional evidence, disclosure completeness/mapping version/source refs, provenance refs를 포함한다 |
+| `semanticInputHash` | `HASH-CANONICALIZATION-S22-V2`와 `s2.2-metric-snapshot-v2`를 사용한다. snapshot schema/actor/evaluation 시각, pinned Principle ID·version·mode·rules hash, system catalog/readiness version, full 현물 v1 order intent(`symbol,side,orderType,quantity,estimatedPrice,estimatedAmount,timeframe,strategyId`), portfolio source/revision/owner scope/position count, 모든 MetricKey의 typed state/value/unit/declared scale·`observedAt`·`freshUntil`·source/version/ref, requested/observed optional evidence, disclosure completeness/mapping version/source refs, provenance refs를 포함한다 |
 | semantic 제외 | `requestId`, `evaluationId`, canonical contract의 `retrievedAt`, `traceId`, stable-sort 대상의 원래 입력 순서다. readiness는 `evaluationAsOf`, `observedAt`, `freshUntil`만 사용하며 `freshUntil` 변화로 action이 바뀌면 semantic hash도 바뀐다 |
-| `snapshotArtifactHash` | 위 semantic 필드에 `evaluationId`, snapshot/metric retrieval identity를 더한 versioned full `MetricSnapshotArtifactV1` exact UTF-8 bytes를 그대로 SHA-256한다. 별도 축약 hash map이나 저장용 second representation을 만들지 않는다 |
+| `snapshotArtifactHash` | 위 semantic 필드에 `evaluationId`, snapshot/metric retrieval identity를 더한 versioned full `MetricSnapshotArtifactV2` exact UTF-8 bytes를 그대로 SHA-256한다. 별도 축약 hash map이나 저장용 second representation을 만들지 않는다 |
 
-### 5.5 S2.3 decision 수명주기와 조회 (계획)
+### 5.5 S2.3 decision 수명주기와 조회
 
-S2.3에서 persistence와 함께 아래 route를 별도 contract-change로 OpenAPI에 추가한다.
+tracked `contracts/openapi/openapi.json`은 아래 route만 Decision allowlist로 둔다.
 
-| 계획 route | 의미 |
+| route | 의미 |
 |---|---|
 | `POST /api/v1/decisions/evaluate-order` | 평가와 decision 생성 |
 | `GET /api/v1/decisions/{decisionId}` | owner-scoped 결정 상세 |
 | `GET /api/v1/decisions/{decisionId}/audit` | 권한이 허용된 sanitized 감사 이력 |
 
-persisted decision은 기본 10분 `validUntil`, one-decision/one-order를 적용한다. 만료, Kill Switch,
-새 Principle version 또는 freshness invalidation 뒤에는 재평가가 필요하다. 이는 S2.3/S3의 미래
-runtime 계약이며 S2.2 offline evaluator 완료만으로 route, persistence 또는 주문 제출이
-가능해졌다는 뜻이 아니다.
+persisted decision의 `validUntil`은 고정한 `evaluationAsOf + 10분`과 실제 소비한 hard input의
+가장 이른 `freshUntil` 중 작은 값이다. `now >= validUntil`이면 만료다. 주문 제출과
+one-decision/one-order 소비는 S3 책임이며 S2.3 route가 이를 수행하거나 승인 범위를 넓히지 않는다.
+일일 주문 수는 해당 거래일을 `evaluationAsOf`까지 완전히 coverage한 observation만 ready이고,
+그 경우 `freshUntil=evaluationAsOf + 10분`으로 pin해 이미 끝난 거래일 경계 때문에 생성 즉시
+만료되는 Decision을 만들지 않는다.
 
 ---
 
@@ -1423,7 +1476,10 @@ provider app key/secret과 계좌 allowlist는 서버 배포 운영자만 주입
     "side": "BUY",
     "orderType": "MARKET",
     "quantity": 10,
-    "estimatedPrice": 72000
+    "estimatedPrice": 72000,
+    "estimatedAmount": 720000,
+    "timeframe": "1d",
+    "strategyId": "strategy_lstm_lgbm_001"
   },
   "userAcknowledgement": {
     "warningsAccepted": true
@@ -2033,7 +2089,7 @@ proto 파일은 `contracts/proto/`에 둔다.
 
 gRPC status 매핑: `UNAVAILABLE`/`DEADLINE_EXCEEDED` → `PYTHON_SERVICE_UNAVAILABLE`(503), `INVALID_ARGUMENT` → `VALIDATION_ERROR`(400), `NOT_FOUND` → `NOT_FOUND`(404). 주문 관련 실패는 항상 fail-closed로 수렴한다.
 
-gRPC는 기본적으로 loopback에만 bind하고 reflection은 명시적으로 `false`다. request/response message size, stream item 수, deadline을 service별로 제한한다. loopback 밖으로 확장해야 하면 plaintext bind를 허용하지 않고 mTLS client identity와 RPC별 authorization을 먼저 구현·검증한 contract-change가 필요하다.
+gRPC는 기본적으로 loopback에만 bind하고 reflection은 명시적으로 `false`다. request/response message size, stream item 수, deadline을 service별로 제한한다. S2.3 `GetDisclosureEvents` business RPC는 loopback 안에서도 shared-secret metadata와 `decision_disclosure_reader` projection role을 요구한다. loopback 밖으로 확장해야 하면 plaintext bind를 허용하지 않고 mTLS client identity와 RPC별 authorization을 먼저 구현·검증한 contract-change가 필요하다.
 
 ### 13.1 RagService
 
@@ -2314,9 +2370,18 @@ required evidence 불완전이다. quality `FAIL`과 incomplete evidence가 함�
 
 #### 13.5.1 GetDisclosureEvents 계약 (S1.2)
 
-`GetDisclosureEvents`는 대상 종목·window의 OpenDART 구조화 공시 위험 이벤트와 `disclosure_risk_score`를 반환한다. 실제 gRPC proto 파일은 아직 없으며, 아래는 S1.2 문서 계약이다. Python OpenDART client(`app/data/opendart`)가 산출하는 값과 정렬한다.
+`GetDisclosureEvents`는 대상 종목·window의 저장된 OpenDART 구조화 공시 위험 이벤트와
+`disclosure_risk_score`를 반환한다. 실행 SSOT는
+`contracts/proto/disclosure_observation.proto`이며 아래 메시지는 그 tracked 계약과
+정렬한다. Python server는 sanitized observation projection만 읽고, S2.3 Decision 경로는
+OpenDART HTTP를 직접 호출하지 않는다.
 
 ```proto
+service DisclosureObservationService {
+  rpc GetDisclosureEvents(GetDisclosureEventsRequest)
+      returns (GetDisclosureEventsResponse);
+}
+
 message GetDisclosureEventsRequest {
   string symbol = 1;        // 종목코드(6자리)
   string corp_code = 2;     // OpenDART 고유번호(8자리)
@@ -2336,6 +2401,8 @@ message GetDisclosureEventsResponse {
   repeated DisclosureRiskEvent events = 8;
   repeated DisclosureRiskWarning warnings = 9;
   repeated string source_refs = 10;  // sanitized observation의 opaque 참조 id
+  string observed_at = 11;           // RFC 3339 UTC observation 시각
+  bool complete = 12;                // bounded window completeness
 }
 
 message DisclosureRiskEvent {
@@ -2448,7 +2515,7 @@ service SourceRegistryService {
 | S1.6 | OpenDART outbound 전 PostgreSQL charged reservation이 성공해야 하며 DB 오류/budget/cap/020은 non-retry fail-closed다. charged reservation과 actual HTTP send를 분리 집계한다. DS004 ownership canonical은 corpCode·role/category·날짜·주식 수/비율만 허용하고 자연인 성명·주소·등록 식별자를 observation/canonical/log/metric/artifact/event에서 제거한다. Market Calendar RPC/REST는 aggregator 이후 별도 contract change 전까지 미가용이고 sourceRefs는 opaque sanitized ID/hash만 반환한다 |
 | S2.1 | Principle은 DB 재검증된 JWT `sub` owner scope, SQL CAS, immutable version/audit와 strict DTO를 사용한다. `evidenceRequirement`를 새 snapshot에 명시하고 legacy row는 exact catalog tuple 기반 read-time inference만 하며 과거 row를 rewrite하지 않는다 |
 | S2.2 offline | public 8 + system 6, threshold 12/readiness 1/N/A 1과 `BLOCK>HOLD>WARN>ALLOW`를 pure evaluator/fixture로 검증한다. production Decision route/persistence와 provider/source adapter는 열지 않으며 provider 호출은 0이다. public code와 internal cause를 분리하고 V1 bounds/hash를 fail-fast한다 |
-| S2.3 계획 | S2.2 내부 read adapter의 `principle_id + user_id + ACTIVE + current immutable version` 한 조회를 runtime에 연결해 ACTIVE Principle을 pin하고 missing/cross-owner/inactive를 동일 404로 숨긴다. Decision resource/persistence는 owner scope와 append-only audit를 적용하고 HOLD를 HTTP 200 business result로 반환한다. OpenAPI path 추가 전에는 호출 불가다 |
+| S2.3 runtime | S2.2 내부 read adapter의 `principle_id + user_id + ACTIVE + current immutable version` 한 조회를 runtime에 연결해 ACTIVE Principle을 pin하고 missing/cross-owner/inactive를 동일 404로 숨긴다. Decision/trace/artifact/audit/outbox/idempotency를 원자 저장하며 expected source unavailable은 HTTP 200 HOLD로 반환한다. stored disclosure는 shared-secret loopback gRPC와 `decision_disclosure_reader` projection SELECT만 사용한다. OpenAPI는 승인된 3개 path와 5개 `S23*` component만 허용한다 |
 | S3 | accountId는 opaque+owner-scoped다. order body의 price/quantity/position/risk-reduction 주장은 server snapshot으로 재검증한다. Live는 deploy immutable OFF, operator account allowlist, user consent, Kill Switch/reconciliation을 모두 요구하며 공개 API로 gate를 변경할 수 없다 |
 | S4 | RAG source/prompt는 untrusted data이며 내부 지시·URL·tool 호출을 실행하지 않는다. source ingest/register/reindex는 ADMIN 전용이며 scheme/origin/MIME/size/redirect/SSRF gate를 적용한다. answer/cache/feedback는 owner scope·TTL·output encoding을 적용한다. RAG 실행 주체는 provider token cache나 brokerage secret에 접근하지 못한다. model은 exact revision/weight hash/license를 기록하고 remote code/untrusted pickle을 금지한다 |
 | S5 | artifact endpoint는 trusted producer, owner, manifest hash/schema, 고정 root, file count/size/row cap을 먼저 검증한다. arbitrary path/symlink/archive와 untrusted pickle/joblib/code-loading model은 거부한다. 다운로드는 owner-scoped Bearer 인증과 고정 allowlisted 파일명·MIME만 허용하고 `Content-Disposition: attachment`, `nosniff`, `no-store`를 적용한다. Markdown/CSV/JSON을 임의 inline HTML로 실행하지 않는다 |
@@ -2468,7 +2535,7 @@ API/adapter/parser/storage 변경 커밋은 기능 단위로 분리한다. 테�
 |---|---|
 | Principle CRUD | 생성/수정/버전 충돌/비활성화 |
 | S2.2 offline evaluator | public 8+system 6 disposition, ALLOW/WARN/HOLD/BLOCK 우선순위, hard HOLD/optional ABSTAIN, deterministic hash를 fixture로 재현 |
-| S2.3 Decision API (구현 시 활성) | 400 selector 오류와 200 HOLD 분리, owner+ACTIVE version pin, missing/cross-owner/inactive 동일 404, route/OpenAPI/persistence 통합 |
+| S2.3 Decision API | 400 selector 오류와 200 HOLD 분리, owner+ACTIVE version pin, missing/cross-owner/inactive 동일 404, route/OpenAPI/원자 persistence, IDOR/grant/idempotency/metrics 통합 |
 | RiskEngine | 손실한도, 포지션한도, 가격지연, Kill Switch |
 | RAG | 출처 있는 답변, 출처 부족 답변 제한, 피드백 저장 |
 | Signal | 규칙 baseline/LSTM/LightGBM/HMM 결합 신호와 producer/sourceWorkspace 조회 |
@@ -2620,7 +2687,7 @@ Dashboard는 원천 계산을 다시 정의하는 계층이 아니라, API와 ar
 
 ### 17.4 문서-구현 동기화 규칙
 
-1. `contracts/openapi/api.openapi.yaml`을 단일 진실원천으로 둔다.
+1. `contracts/openapi/openapi.json`을 단일 진실원천으로 둔다.
 2. Spring 구현에서 springdoc으로 OpenAPI를 자동 생성하고, CI에서 계약 파일과의 diff를 검사한다. diff가 있으면 빌드를 실패시킨다.
 3. 이 문서의 예시 payload는 `contracts/examples/`의 파일을 기준으로 하며, 예시 변경은 schema validation 테스트를 통과해야 한다.
 4. 계약 변경은 `contracts/changes/`에 기록 후 반영한다. 이 규칙은 문서-코드 불일치(예시 mode 모순 등)의 재발을 구조적으로 방지한다.

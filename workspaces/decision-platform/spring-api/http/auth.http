@@ -2,6 +2,49 @@
 POST http://localhost:8080/api/v1/auth/login
 Content-Type: application/json
 
-{ "username": "demo", "password": "{{demo_password}}" }
+{ "username": "demo-user", "password": "{{demo_password}}" }
 
 > {% client.global.set("token", response.body.data.accessToken); %}
+
+### 2. 균형형 원칙 생성 (생성된 ID를 다음 요청에 전달)
+POST http://localhost:8080/api/v1/principles
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "presetId": "balanced",
+  "title": "S2.3 offline smoke 원칙"
+}
+
+> {% client.global.set("principle_id", response.body.data.principleId); %}
+
+### 3. sanitized stored source로 주문 의도 평가
+POST http://localhost:8080/api/v1/decisions/evaluate-order
+Authorization: Bearer {{token}}
+Content-Type: application/json
+X-Idempotency-Key: {{$uuid}}
+
+{
+  "principleId": "{{principle_id}}",
+  "portfolioSource": "KIS_MOCK",
+  "orderIntent": {
+    "symbol": "005930",
+    "side": "BUY",
+    "orderType": "MARKET",
+    "quantity": 2,
+    "estimatedPrice": 70000,
+    "estimatedAmount": 140000,
+    "timeframe": "1d",
+    "strategyId": "cash-equity-v1"
+  }
+}
+
+> {% client.global.set("decision_id", response.body.data.decisionId); %}
+
+### 4. owner-scoped Decision 상세
+GET http://localhost:8080/api/v1/decisions/{{decision_id}}
+Authorization: Bearer {{token}}
+
+### 5. owner-scoped sanitized audit
+GET http://localhost:8080/api/v1/decisions/{{decision_id}}/audit
+Authorization: Bearer {{token}}

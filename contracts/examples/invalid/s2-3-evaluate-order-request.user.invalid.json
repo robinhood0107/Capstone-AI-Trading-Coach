@@ -1,0 +1,15 @@
+{
+  "orderIntent": {
+    "estimatedAmount": 140000,
+    "estimatedPrice": 70000,
+    "orderType": "MARKET",
+    "quantity": 2,
+    "side": "BUY",
+    "strategyId": "cash-equity-v1",
+    "symbol": "005930",
+    "timeframe": "1d"
+  },
+  "portfolioSource": "INTERNAL_PAPER",
+  "principleId": "prc_0123456789abcdef0123456789abcdef",
+  "userId": "usr_forbidden"
+}

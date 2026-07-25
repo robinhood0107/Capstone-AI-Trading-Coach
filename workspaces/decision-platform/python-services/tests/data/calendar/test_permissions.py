@@ -12,8 +12,8 @@ from tests.data.calendar.conftest import PostgresTestCluster
 REPO_ROOT = Path(__file__).resolve().parents[6]
 
 
-def test_repo_hygiene_supplies_required_collector_password() -> None:
-    """Compose 검증도 collector 필수 비밀번호를 주입해 실제 CI 경계를 재현한다."""
+def test_repo_hygiene_supplies_required_collector_and_disclosure_reader_passwords() -> None:
+    """Compose 검증도 collector/reader 필수 비밀번호를 주입해 실제 CI 경계를 재현한다."""
 
     compose = (REPO_ROOT / "infra/docker-compose.infra.yml").read_text(encoding="utf-8")
     workflow = (REPO_ROOT / ".github/workflows/repo-hygiene.yml").read_text(
@@ -24,7 +24,26 @@ def test_repo_hygiene_supplies_required_collector_password() -> None:
         "${POSTGRES_COLLECTOR_PASSWORD:?POSTGRES_COLLECTOR_PASSWORD is required}"
         in compose
     )
+    assert (
+        "${POSTGRES_DISCLOSURE_READER_PASSWORD:?POSTGRES_DISCLOSURE_READER_PASSWORD is required}"
+        in compose
+    )
     assert "POSTGRES_COLLECTOR_PASSWORD: validation-dummy-collector" in workflow
+    assert "POSTGRES_DISCLOSURE_READER_PASSWORD: validation-dummy-disclosure-reader" in workflow
+
+
+def test_role_bootstrap_disables_statement_logging_before_password_ddl() -> None:
+    """password literal DDL은 bootstrap transaction의 statement log suppression 뒤에만 위치한다."""
+
+    script = (REPO_ROOT / "infra/init/02-application-roles.sh").read_text(
+        encoding="utf-8"
+    )
+    log_statement = script.index("SET LOCAL log_statement = 'none';")
+    log_error_statement = script.index("SET LOCAL log_min_error_statement = 'panic';")
+    first_password_ddl = script.index("PASSWORD %L")
+
+    assert log_statement < first_password_ddl
+    assert log_error_statement < first_password_ddl
 
 
 def test_collector_can_only_perform_allowlisted_calendar_operations(

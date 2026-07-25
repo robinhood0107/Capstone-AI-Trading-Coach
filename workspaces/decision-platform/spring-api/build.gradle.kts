@@ -1,3 +1,4 @@
+import com.google.protobuf.gradle.id
 import org.gradle.language.jvm.tasks.ProcessResources
 
 buildscript {
@@ -15,6 +16,7 @@ plugins {
     id("org.springdoc.openapi-gradle-plugin") version "1.9.0"
     id("io.spring.dependency-management") version "1.1.7"
     id("org.jlleitschuh.gradle.ktlint") version "14.2.0" // 13.1.0+ Gradle 9, 14.0.1+ Gradle 9.1/Java 25 대응
+    id("com.google.protobuf") version "0.10.0"
 }
 
 group = "com.capstone"
@@ -37,6 +39,9 @@ repositories {
 }
 
 dependencyManagement {
+    imports {
+        mavenBom("io.grpc:grpc-bom:1.81.0")
+    }
     dependencies {
         // Boot BOM의 다음 patch 반영 전에도 공개 취약점 수정 버전을 우선한다.
         dependency("com.fasterxml.jackson.core:jackson-databind:2.21.5")
@@ -68,7 +73,11 @@ dependencies {
     implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:3.0.3")
     implementation("net.logstash.logback:logstash-logback-encoder:9.0") // 9.0부터 Jackson 3(Boot 4 정렬)
     runtimeOnly("io.micrometer:micrometer-registry-prometheus")
-    // gRPC client는 contracts codegen 모듈 의존 (추후 추가)
+    implementation("io.grpc:grpc-protobuf")
+    implementation("io.grpc:grpc-stub")
+    implementation("io.grpc:grpc-netty-shaded")
+    implementation("com.google.protobuf:protobuf-java:4.35.0")
+    compileOnly("javax.annotation:javax.annotation-api:1.3.2")
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.springframework.security:spring-security-test")
     testImplementation("io.kotest:kotest-assertions-core:5.9.1")
@@ -79,6 +88,26 @@ dependencies {
     testImplementation("org.testcontainers:testcontainers-postgresql")
     testImplementation("org.testcontainers:testcontainers-kafka")
     testImplementation("com.tngtech.archunit:archunit-junit5:1.4.2") // 1.4.1+ Java 25 classfile(major 69) 지원
+}
+
+sourceSets {
+    main {
+        proto {
+            srcDir("../../../contracts/proto")
+            include("disclosure_observation.proto")
+        }
+    }
+}
+
+protobuf {
+    protoc {
+        artifact = "com.google.protobuf:protoc:4.35.0"
+    }
+    plugins {
+        named("grpc") {
+            artifact = "io.grpc:protoc-gen-grpc-java:1.81.0"
+        }
+    }
 }
 
 kotlin {
@@ -102,6 +131,16 @@ tasks.named<ProcessResources>("processResources") {
     }
     // S2.2 runtime은 별도 복제본 없이 승인된 14-rule catalog bytes를 classpath에서 읽는다.
     from(layout.projectDirectory.file("../../../contracts/catalogs/s2-2-system-rule-catalog.v1.json")) {
+        into("contracts")
+    }
+    // S2.3 OpenAPI extension과 component schema는 generator가 잠근 exact bytes만 사용한다.
+    from(layout.projectDirectory.file("../../../contracts/catalogs/s2-3-decision-contract.v1.json")) {
+        into("contracts")
+    }
+    from(layout.projectDirectory.file("../../../contracts/schemas/s2-3-evaluate-order-request.schema.json")) {
+        into("contracts")
+    }
+    from(layout.projectDirectory.file("../../../contracts/schemas/s2-3-decision-response.schema.json")) {
         into("contracts")
     }
 }
@@ -130,6 +169,33 @@ val verifyS22CatalogResource by tasks.registering {
                 .asFile
         check(copied.isFile && source.readBytes().contentEquals(copied.readBytes())) {
             "S2.2 catalog classpath resource must be an exact canonical byte copy."
+        }
+    }
+}
+
+val verifyS23ContractResources by tasks.registering {
+    group = "verification"
+    description = "S2.3 catalog와 OpenAPI component resource의 exact byte equality를 검증한다."
+    dependsOn(tasks.named("processResources"))
+
+    doLast {
+        listOf(
+            "catalogs/s2-3-decision-contract.v1.json" to "s2-3-decision-contract.v1.json",
+            "schemas/s2-3-evaluate-order-request.schema.json" to "s2-3-evaluate-order-request.schema.json",
+            "schemas/s2-3-decision-response.schema.json" to "s2-3-decision-response.schema.json",
+        ).forEach { (sourceRelative, copiedName) ->
+            val source =
+                layout.projectDirectory
+                    .file("../../../contracts/$sourceRelative")
+                    .asFile
+            val copied =
+                layout.buildDirectory
+                    .file("resources/main/contracts/$copiedName")
+                    .get()
+                    .asFile
+            check(copied.isFile && source.readBytes().contentEquals(copied.readBytes())) {
+                "S2.3 contract resource $copiedName must be an exact canonical byte copy."
+            }
         }
     }
 }
@@ -243,4 +309,5 @@ val verifySecurityDependencyVersions by tasks.registering {
 tasks.named("check") {
     dependsOn(verifySecurityDependencyVersions)
     dependsOn(verifyS22CatalogResource)
+    dependsOn(verifyS23ContractResources)
 }

@@ -2,6 +2,7 @@ package com.capstone.decision.infrastructure.openapi
 
 import com.capstone.decision.application.principle.CatalogRuleDefinition
 import com.capstone.decision.application.principle.PrincipleContract
+import io.swagger.v3.core.util.Json31
 import io.swagger.v3.oas.models.Components
 import io.swagger.v3.oas.models.OpenAPI
 import io.swagger.v3.oas.models.info.Info
@@ -39,6 +40,8 @@ class OpenApiConfig {
                 mapOf(
                     S21_CONTRACT_ID_EXTENSION to S21_CONTRACT_ID,
                     S21_CONTRACT_DIGEST_EXTENSION to catalogDigest(),
+                    S23_CONTRACT_ID_EXTENSION to S23_CONTRACT_ID,
+                    S23_CONTRACT_DIGEST_EXTENSION to resourceDigest(S23_CATALOG_RESOURCE),
                 ),
             ).components(
                 // Authorize 버튼이 JWT Bearer 토큰을 표준 방식으로 주입하도록 scheme을 명시한다.
@@ -204,6 +207,32 @@ class OpenApiConfig {
             )
         }
 
+    @Bean
+    fun decisionContractSchemas(): OpenApiCustomizer =
+        // strict String parser의 annotation inference를 generator-locked JSON Schema component로 교체한다.
+        OpenApiCustomizer { openApi ->
+            openApi.components.addSchemas(
+                S23_REQUEST_COMPONENT,
+                contractSchema(S23_REQUEST_SCHEMA_RESOURCE, S23_REQUEST_COMPONENT),
+            )
+            openApi.components.addSchemas(
+                S23_DECISION_COMPONENT,
+                contractSchema(S23_DECISION_SCHEMA_RESOURCE, S23_DECISION_COMPONENT),
+            )
+            openApi.components.addSchemas(
+                S23_DECISION_ENVELOPE_COMPONENT,
+                successEnvelope(schemaRef(S23_DECISION_COMPONENT)),
+            )
+            openApi.components.addSchemas(
+                S23_AUDIT_COMPONENT,
+                decisionAuditSchema(),
+            )
+            openApi.components.addSchemas(
+                S23_AUDIT_ENVELOPE_COMPONENT,
+                successEnvelope(schemaRef(S23_AUDIT_COMPONENT)),
+            )
+        }
+
     private fun principleRuleSchema(contract: PrincipleContract): Schema<*> {
         val definitions = contract.ruleDefinitions.values.sortedBy(CatalogRuleDefinition::order)
         val schema =
@@ -355,16 +384,80 @@ class OpenApiConfig {
             it.additionalProperties = false
         }
 
-    private fun catalogDigest(): String {
+    private fun catalogDigest(): String = resourceDigest(S21_CATALOG_RESOURCE)
+
+    private fun resourceDigest(resource: String): String {
         // build가 canonical catalog bytes를 classpath에 그대로 복사하므로 extension은 사람이 입력할 수 없다.
-        val bytes = ClassPathResource(S21_CATALOG_RESOURCE).inputStream.use { it.readAllBytes() }
+        val bytes = ClassPathResource(resource).inputStream.use { it.readAllBytes() }
         check(bytes.isNotEmpty() && bytes.last() == '\n'.code.toByte()) {
-            "S2.1 Principle catalog must be a non-empty LF-terminated resource."
+            "Canonical contract resource must be non-empty and LF-terminated."
         }
         return HexFormat
             .of()
             .formatHex(MessageDigest.getInstance("SHA-256").digest(bytes))
     }
+
+    private fun contractSchema(
+        resource: String,
+        component: String,
+    ): Schema<*> {
+        val bytes = ClassPathResource(resource).inputStream.use { it.readAllBytes() }
+        check(bytes.isNotEmpty() && bytes.last() == '\n'.code.toByte()) {
+            "S2.3 OpenAPI schema resource must be non-empty and LF-terminated."
+        }
+        val standaloneRefs = "\"#/\$defs/"
+        val componentRefs = "\"#/components/schemas/$component/\$defs/"
+        val embedded = bytes.toString(Charsets.UTF_8).replace(standaloneRefs, componentRefs)
+        return Json31.mapper().readValue(embedded, Schema::class.java)
+    }
+
+    private fun successEnvelope(dataSchema: Schema<*>): Schema<*> =
+        objectSchema(
+            properties =
+                linkedMapOf(
+                    "success" to BooleanSchema()._const(true),
+                    "requestId" to StringSchema().minLength(1).maxLength(128),
+                    "data" to dataSchema,
+                    "warnings" to ArraySchema().items(schemaRef("ApiWarning")),
+                    "error" to Schema<Any>().types(linkedSetOf("null")),
+                ),
+            required = listOf("success", "requestId", "data", "warnings", "error"),
+        )
+
+    private fun decisionAuditSchema(): Schema<*> =
+        objectSchema(
+            properties =
+                linkedMapOf(
+                    "auditId" to StringSchema().pattern("^aud_[0-9a-f]{32}$"),
+                    "action" to StringSchema()._const("DECISION_EVALUATED"),
+                    "requestId" to StringSchema().minLength(1).maxLength(128),
+                    "createdAt" to StringSchema().format("date-time"),
+                    "payload" to
+                        objectSchema(
+                            properties =
+                                linkedMapOf(
+                                    "evaluationId" to StringSchema().pattern("^evl_[0-9a-f]{32}$"),
+                                    "decisionId" to StringSchema().pattern("^dec_[0-9a-f]{32}$"),
+                                    "outcome" to StringSchema()._enum(listOf("ALLOW", "WARN", "HOLD", "BLOCK")),
+                                    "principleVersionId" to StringSchema().pattern("^pvr_[0-9a-f]{32}$"),
+                                    "semanticInputHash" to StringSchema().pattern("^[0-9a-f]{64}$"),
+                                    "snapshotArtifactHash" to StringSchema().pattern("^[0-9a-f]{64}$"),
+                                ),
+                            required =
+                                listOf(
+                                    "evaluationId",
+                                    "decisionId",
+                                    "outcome",
+                                    "principleVersionId",
+                                    "semanticInputHash",
+                                    "snapshotArtifactHash",
+                                ),
+                        ),
+                ),
+            required = listOf("auditId", "action", "requestId", "createdAt", "payload"),
+        )
+
+    private fun schemaRef(component: String): Schema<Any> = Schema<Any>().also { it.`$ref` = "#/components/schemas/$component" }
 
     companion object {
         private const val OAS_BASE_DIALECT = "https://spec.openapis.org/oas/3.1/dialect/base"
@@ -372,6 +465,17 @@ class OpenApiConfig {
         private const val S21_CONTRACT_ID_EXTENSION = "x-s2-1-contract-id"
         private const val S21_CONTRACT_DIGEST_EXTENSION = "x-s2-1-contract-sha256"
         private const val S21_CONTRACT_ID = "s2-1-principle-contract/v1"
+        private const val S23_CATALOG_RESOURCE = "contracts/s2-3-decision-contract.v1.json"
+        private const val S23_REQUEST_SCHEMA_RESOURCE = "contracts/s2-3-evaluate-order-request.schema.json"
+        private const val S23_DECISION_SCHEMA_RESOURCE = "contracts/s2-3-decision-response.schema.json"
+        private const val S23_CONTRACT_ID_EXTENSION = "x-s2-3-contract-id"
+        private const val S23_CONTRACT_DIGEST_EXTENSION = "x-s2-3-contract-sha256"
+        private const val S23_CONTRACT_ID = "s2-3-decision-contract/v1"
+        private const val S23_REQUEST_COMPONENT = "S23EvaluateOrderRequest"
+        private const val S23_DECISION_COMPONENT = "S23Decision"
+        private const val S23_DECISION_ENVELOPE_COMPONENT = "S23DecisionSuccessResponse"
+        private const val S23_AUDIT_COMPONENT = "S23DecisionAudit"
+        private const val S23_AUDIT_ENVELOPE_COMPONENT = "S23DecisionAuditSuccessResponse"
         private const val REQUEST_MAX_BYTES = 1_048_576
         private val RULE_FIELDS =
             listOf(

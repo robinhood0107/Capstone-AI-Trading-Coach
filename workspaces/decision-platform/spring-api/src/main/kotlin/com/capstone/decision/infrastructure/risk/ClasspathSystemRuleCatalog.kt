@@ -129,7 +129,7 @@ class ClasspathSystemRuleCatalog(
 
     companion object {
         private const val CATALOG_RESOURCE = "contracts/s2-2-system-rule-catalog.v1.json"
-        private const val CATALOG_SHA256 = "57101a64421805911ddfc7d652c44e8cc2bc08d200ec2c06cc439fd82ce392a2"
+        private const val CATALOG_SHA256 = "a4714ee9ce3031199b9067919b15931fb42e106857da5f8d8ad7a95bafa8ad7b"
 
         private fun sha256(bytes: ByteArray): String =
             MessageDigest

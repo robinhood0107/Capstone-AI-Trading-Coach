@@ -29,7 +29,7 @@ from contracts.generate_principle_contracts import (  # noqa: E402
 REPO_ROOT = _SCRIPT_REPO_ROOT
 CATALOG_PATH = REPO_ROOT / "contracts/catalogs/s2-2-system-rule-catalog.v1.json"
 EXPECTED_CATALOG_SHA256: Final[str] = (
-    "57101a64421805911ddfc7d652c44e8cc2bc08d200ec2c06cc439fd82ce392a2"
+    "a4714ee9ce3031199b9067919b15931fb42e106857da5f8d8ad7a95bafa8ad7b"
 )
 OUTPUTS: Final[frozenset[str]] = frozenset(
     {
@@ -60,6 +60,13 @@ OUTPUTS: Final[frozenset[str]] = frozenset(
         "contracts/examples/invalid/risk_decision.too-many-warnings.invalid.json",
         "contracts/examples/invalid/risk_decision.unsorted-violations.invalid.json",
         "contracts/examples/invalid/risk_decision.warning-without-abstention.invalid.json",
+        "contracts/examples/invalid/risk_decision.disclosure-missing-tuple.invalid.json",
+        "contracts/examples/invalid/risk_decision.duplicate-event-codes.invalid.json",
+        "contracts/examples/invalid/risk_decision.too-many-event-codes.invalid.json",
+        "contracts/examples/invalid/risk_decision.unsorted-event-codes.invalid.json",
+        "contracts/examples/invalid/risk_decision.duplicate-source-refs.invalid.json",
+        "contracts/examples/invalid/risk_decision.too-many-source-refs.invalid.json",
+        "contracts/examples/invalid/risk_decision.invalid-source-ref.invalid.json",
     }
 )
 
@@ -292,7 +299,7 @@ def validate_catalog_semantics(catalog: Any) -> None:
         "arrayOrder": "EXPLICIT_STABLE_SORT_KEYS",
         "charset": "UTF-8",
         "decimalFormat": "PLAIN_NO_EXPONENT",
-        "id": "HASH-CANONICALIZATION-S22-V1",
+        "id": "HASH-CANONICALIZATION-S22-V2",
         "jsonWhitespace": "NONE",
         "negativeZero": "ZERO",
         "objectKeyOrder": "LEXICOGRAPHIC",
@@ -323,7 +330,7 @@ def validate_catalog_semantics(catalog: Any) -> None:
         "trailingZeros": "REMOVE",
     }
     if canonicalization != expected_canonicalization:
-        raise ContractValidationError("HASH-CANONICALIZATION-S22-V1 drift.")
+        raise ContractValidationError("HASH-CANONICALIZATION-S22-V2 drift.")
 
     portfolio = catalog["portfolioPolicy"]
     if portfolio != {
@@ -431,6 +438,7 @@ def _risk_decision_schema(catalog: Mapping[str, Any]) -> dict[str, Any]:
     }
     source_ref_array = {
         "type": "array",
+        "minItems": 1,
         "maxItems": bounds["sourceRefMaxItems"],
         "uniqueItems": True,
         "items": {
@@ -551,6 +559,40 @@ def _risk_decision_schema(catalog: Mapping[str, Any]) -> dict[str, Any]:
             "mappingVersion": id_schema,
             "sourceRefs": source_ref_array,
         },
+        "allOf": [
+            {
+                "if": {
+                    "anyOf": [
+                        {
+                            "properties": {
+                                "metric": {"const": "disclosure_risk_score"}
+                            },
+                            "required": ["metric"],
+                        },
+                        {
+                            "properties": {"source": {"const": "OPENDART"}},
+                            "required": ["source"],
+                        },
+                    ]
+                },
+                "then": {
+                    "required": [
+                        "metric",
+                        "value",
+                        "severity",
+                        "source",
+                        "eventCodes",
+                        "mappingVersion",
+                        "sourceRefs",
+                    ],
+                    "properties": {
+                        "metric": {"const": "disclosure_risk_score"},
+                        "value": {"type": "number", "minimum": 0, "maximum": 1},
+                        "source": {"const": "OPENDART"},
+                    },
+                },
+            }
+        ],
     }
     not_applicable_only = {
         "type": "array",
@@ -806,7 +848,7 @@ def _hash_vector_schema() -> dict[str, Any]:
             "snapshotArtifactHash",
         ],
         "properties": {
-            "canonicalizationId": {"const": "HASH-CANONICALIZATION-S22-V1"},
+            "canonicalizationId": {"const": "HASH-CANONICALIZATION-S22-V2"},
             "semanticInput": {"type": "object"},
             "semanticInputCanonicalJson": {"type": "string", "minLength": 2},
             "semanticInputHash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
@@ -907,6 +949,7 @@ def _hash_vector() -> dict[str, Any]:
         "actorUserId": "usr_hash_fixture",
         "disclosureEvidence": {
             "completeness": "COMPLETE",
+            "eventCodes": ["OPENDART:piicDecsn"],
             "mappingVersion": "s1.2-v1",
             "sourceRefs": [source_ref],
         },
@@ -924,11 +967,14 @@ def _hash_vector() -> dict[str, Any]:
             }
         ],
         "orderIntent": {
-            "limitPrice": "50000",
+            "estimatedAmount": "500000",
+            "estimatedPrice": "50000",
             "orderType": "LIMIT",
             "quantity": "10",
             "side": "BUY",
+            "strategyId": "strategy_hash_fixture",
             "symbol": "005930",
+            "timeframe": "1d",
         },
         "portfolio": {
             "ownerScopeHash": "3" * 64,
@@ -947,7 +993,7 @@ def _hash_vector() -> dict[str, Any]:
         "readinessPolicyVersion": "s2-2-readiness-v1",
         "requestedOptionalComponents": ["DISCLOSURE"],
         "retrievedAt": retrieved_at,
-        "snapshotSchemaVersion": "s2.2-metric-snapshot-v1",
+        "snapshotSchemaVersion": "s2.2-metric-snapshot-v2",
         "systemRuleCatalogVersion": 1,
     }
     semantic_input = copy.deepcopy(snapshot_artifact)
@@ -955,11 +1001,13 @@ def _hash_vector() -> dict[str, Any]:
     semantic_input.pop("retrievedAt")
     for metric in semantic_input["metrics"]:
         metric.pop("retrievedAt", None)
+    # v2 rules consume disclosure score/mapping/applicability; eventCodes remain artifact-only provenance.
+    semantic_input["disclosureEvidence"].pop("eventCodes")
 
     semantic_bytes = hash_canonical_bytes(semantic_input)
     artifact_bytes = hash_canonical_bytes(snapshot_artifact)
     return {
-        "canonicalizationId": "HASH-CANONICALIZATION-S22-V1",
+        "canonicalizationId": "HASH-CANONICALIZATION-S22-V2",
         "semanticInput": semantic_input,
         "semanticInputCanonicalJson": semantic_bytes.decode("utf-8"),
         "semanticInputHash": hashlib.sha256(semantic_bytes).hexdigest(),
@@ -1147,6 +1195,30 @@ def _result_fixtures() -> dict[str, dict[str, Any]]:
     ]
     warning_without_abstention = copy.deepcopy(optional_disclosure_missing)
     warning_without_abstention["abstentions"] = []
+    disclosure_missing_tuple = copy.deepcopy(warn)
+    disclosure_missing_tuple["riskItems"][0].pop("eventCodes")
+    duplicate_event_codes = copy.deepcopy(warn)
+    duplicate_event_codes["riskItems"][0]["eventCodes"] = [
+        "OPENDART:piicDecsn",
+        "OPENDART:piicDecsn",
+    ]
+    too_many_event_codes = copy.deepcopy(warn)
+    too_many_event_codes["riskItems"][0]["eventCodes"] = [
+        f"OPENDART:E{index:03d}" for index in range(101)
+    ]
+    unsorted_event_codes = copy.deepcopy(warn)
+    unsorted_event_codes["riskItems"][0]["eventCodes"] = [
+        "OPENDART:piicDecsn",
+        "OPENDART:dfOcr",
+    ]
+    duplicate_source_refs = copy.deepcopy(warn)
+    duplicate_source_refs["riskItems"][0]["sourceRefs"] = ["c" * 64, "c" * 64]
+    too_many_source_refs = copy.deepcopy(warn)
+    too_many_source_refs["riskItems"][0]["sourceRefs"] = [
+        f"{index:064x}" for index in range(101)
+    ]
+    invalid_source_ref = copy.deepcopy(warn)
+    invalid_source_ref["riskItems"][0]["sourceRefs"] = ["g" * 64]
 
     return {
         "contracts/examples/risk_decision.valid.json": warn,
@@ -1192,6 +1264,27 @@ def _result_fixtures() -> dict[str, dict[str, Any]]:
         "contracts/examples/invalid/risk_decision.warning-without-abstention.invalid.json": (
             warning_without_abstention
         ),
+        "contracts/examples/invalid/risk_decision.disclosure-missing-tuple.invalid.json": (
+            disclosure_missing_tuple
+        ),
+        "contracts/examples/invalid/risk_decision.duplicate-event-codes.invalid.json": (
+            duplicate_event_codes
+        ),
+        "contracts/examples/invalid/risk_decision.too-many-event-codes.invalid.json": (
+            too_many_event_codes
+        ),
+        "contracts/examples/invalid/risk_decision.unsorted-event-codes.invalid.json": (
+            unsorted_event_codes
+        ),
+        "contracts/examples/invalid/risk_decision.duplicate-source-refs.invalid.json": (
+            duplicate_source_refs
+        ),
+        "contracts/examples/invalid/risk_decision.too-many-source-refs.invalid.json": (
+            too_many_source_refs
+        ),
+        "contracts/examples/invalid/risk_decision.invalid-source-ref.invalid.json": (
+            invalid_source_ref
+        ),
     }
 
 
@@ -1229,6 +1322,26 @@ def validate_risk_decision_semantics(
     issues = payload["issues"]
     warnings = payload["warnings"]
     abstentions = payload["abstentions"]
+    risk_items = payload.get("riskItems")
+    if not isinstance(risk_items, list):
+        raise ContractValidationError("/riskItems: array required.")
+    for index, item in enumerate(risk_items):
+        if not isinstance(item, dict):
+            raise ContractValidationError(f"/riskItems/{index}: object required.")
+        if (
+            item.get("metric") == "disclosure_risk_score"
+            or item.get("source") == "OPENDART"
+        ):
+            event_codes = item.get("eventCodes")
+            source_refs = item.get("sourceRefs")
+            if not isinstance(event_codes, list) or event_codes != sorted(event_codes):
+                raise ContractValidationError(
+                    f"/riskItems/{index}/eventCodes: stable order is invalid."
+                )
+            if not isinstance(source_refs, list) or source_refs != sorted(source_refs):
+                raise ContractValidationError(
+                    f"/riskItems/{index}/sourceRefs: stable order is invalid."
+                )
     warning_pairs = Counter(
         (item.get("ruleId"), item.get("code")) for item in warnings
     )

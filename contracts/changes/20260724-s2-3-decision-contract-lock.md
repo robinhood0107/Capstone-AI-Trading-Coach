@@ -49,8 +49,8 @@ S2.3이 provider HTTP를 호출하거나 0/빈 값으로 운영 데이터를 꾸
 | KIS_MOCK 잔고 | append-only `portfolio_balance_observations` + `portfolio_position_observations` | S3 KIS_MOCK read-side offline producer | JWT owner + `KIS_MOCK` predicate의 `SELECT` only |
 | INTERNAL_PAPER 잔고 | 기존 `paper_accounts` + `paper_positions`의 한 SQL owner-scoped projection | S3 INTERNAL_PAPER ledger | JWT owner + ACTIVE 단일 context `SELECT` only |
 | 결정적 리스크·일일 주문 수 | append-only `deterministic_risk_observations` + `daily_order_count_observations` | deterministic source offline producer | JWT owner + 직전 거래일/coverage predicate `SELECT` only |
-| 종목↔corp_code | append-only `corporation_registry_observations` + exact current projection | S1.6 collector offline producer | Python gRPC server bounded `SELECT` |
-| 공시 | V6 sanitized PostgreSQL observations를 읽는 loopback `GetDisclosureEvents` | S1.6 collector | gRPC read only |
+| 종목↔corp_code | append-only `corporation_registry_observations` + exact current projection | S1.6 collector offline producer | Python gRPC server의 `decision_disclosure_reader` bounded `SELECT` |
+| 공시 | V6 sanitized PostgreSQL observations를 읽는 loopback `GetDisclosureEvents` | S1.6 collector | shared-secret gRPC + `decision_disclosure_reader` read only |
 
 V9는 source row를 seed하지 않고 S2.3에 source INSERT/UPDATE/DELETE 권한을 주지 않는다.
 이번 review remediation은 S1.1/S3/deterministic/S1.6 소유 모듈에 fixture/mock transport 기반
@@ -88,7 +88,7 @@ test fixture는 test source set/profile과 Testcontainers 안에서만 INSERT할
   symbol을 exact-one으로 resolve한다. 0개/복수는 incomplete이며 임의 선택하지 않는다.
 - 공시 repository는 `as_of - 365일`부터 exact 365일 경계를 포함하고 365일+1은 제외한다.
   `report_nm`은 event identity에 관여하지 않는다.
-- gRPC는 숫자 loopback plaintext, reflection/retry/transparent retry 없음, physical attempt
+- gRPC는 숫자 loopback plaintext 위에서 shared-secret metadata를 요구하고, reflection/retry/transparent retry 없음, physical attempt
   최대 1, concurrency 8, source/total/hard deadline 500/900/2,000ms와 256KiB/1MiB 상한을
   강제한다. Python repository는 pool 8, acquisition 450ms, connect 1초이고 cancellation은 실행
   중 query/connection을 취소·해제한다. event/source-ref/response 상한 초과와
@@ -108,9 +108,10 @@ test fixture는 test source set/profile과 Testcontainers 안에서만 INSERT할
   rollback한다. 일일 주문 수가 해당 거래일을 evaluation 시각까지 완전히 덮으면
   `freshUntil=evaluationAsOf+10분`으로 pin한다.
 - `decision_app`은 NOSUPERUSER/NOCREATEDB/NOCREATEROLE/NOBYPASSRLS다. broad/future default
-  SELECT를 제거하고 Decision/audit/outbox/idempotency base read를 금지한다. idempotency replay는
-  fixed-search-path SECURITY DEFINER bounded function이 scope hash, owner scope hash, expiry를
-  모두 확인한다.
+  SELECT를 제거하고 Decision/audit/outbox/idempotency base read를 금지한다. 공시 sidecar는
+  `decision_app` DSN을 거부하고 `decision_disclosure_reader`의 exact projection SELECT만 사용한다.
+  idempotency replay는 fixed-search-path SECURITY DEFINER bounded function이 scope hash, owner
+  scope hash, expiry를 모두 확인한다.
 - timer/counter/log는 commit 뒤 fault-isolated다. 정상 path에서는 exact once이며 registry/filter/
   appender 실패가 이미 commit된 Decision의 원래 200 projection을 뒤집지 않는다.
 

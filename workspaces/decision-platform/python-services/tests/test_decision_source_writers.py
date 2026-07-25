@@ -13,6 +13,7 @@ from app.brokerage.kis_mock_portfolio_writer import (
     append_kis_mock_portfolio_fixture,
     load_kis_mock_portfolio_fixture,
 )
+from app.decision_source_cli import attest_source_writer_dsn
 from app.data.kis.market_quote_observation_writer import (
     append_market_quote_fixture,
     load_market_quote_fixture,
@@ -199,6 +200,47 @@ def test_offline_fixture_byte_bound_is_checked_before_reading_payload(tmp_path: 
 
     with pytest.raises(ValueError, match="byte bound"):
         read_bounded_fixture(oversized, max_bytes=64, label="test")
+
+
+def test_offline_fixture_reader_uses_bounded_stream_read() -> None:
+    from app import offline_fixture_io
+
+    source = inspect.getsource(offline_fixture_io.read_bounded_fixture)
+    assert ".read_bytes(" not in source
+    assert "read(max_bytes + 1)" in source
+
+
+def test_source_fixture_rejects_duplicate_json_member(tmp_path: Path) -> None:
+    duplicate = tmp_path / "duplicate-deterministic.json"
+    duplicate.write_text(
+        DETERMINISTIC_FIXTURE.read_text(encoding="utf-8").replace(
+            '"orderCount": 0,',
+            '"orderCount": 0, "orderCount": 1,',
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="duplicate"):
+        load_deterministic_metric_fixture(duplicate)
+
+
+def test_source_writer_dsn_attestation_requires_exact_role_and_target(
+    postgres_cluster: PostgresTestCluster,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DECISION_SOURCE_WRITER_OFFLINE_TARGET", "testcontainers")
+
+    attest_source_writer_dsn(
+        postgres_cluster["market_writer_dsn"],
+        expected_role="decision_market_writer",
+        allowed_insert_tables=("market_quote_observations", "instrument_catalog_observations"),
+    )
+    with pytest.raises(ValueError, match="decision_market_writer"):
+        attest_source_writer_dsn(
+            postgres_cluster["app_dsn"],
+            expected_role="decision_market_writer",
+            allowed_insert_tables=("market_quote_observations", "instrument_catalog_observations"),
+        )
 
 
 def test_source_writers_have_no_provider_live_order_or_fallback_dependency() -> None:

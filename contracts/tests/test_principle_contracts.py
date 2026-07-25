@@ -205,12 +205,16 @@ class OpenApiEnvironmentParserTest(unittest.TestCase):
         self.assertEqual("55432", parsed["POSTGRES_HOST_PORT"])
         self.assertEqual("55432", parsed["POSTGRES_PORT"])
         for name in (
+            "POSTGRES_DISCLOSURE_READER_PASSWORD",
             "POSTGRES_MARKET_WRITER_PASSWORD",
             "POSTGRES_PORTFOLIO_WRITER_PASSWORD",
             "POSTGRES_RISK_WRITER_PASSWORD",
+            "DECISION_GRPC_SHARED_SECRET",
+            "PYTHON_GRPC_SHARED_SECRET",
             "DECISION_IDEMPOTENCY_SCOPE_HMAC_KEY",
         ):
             self.assertIn(name, parsed)
+        self.assertEqual(parsed["DECISION_GRPC_SHARED_SECRET"], parsed["PYTHON_GRPC_SHARED_SECRET"])
         self.assertTrue(parsed["DEMO_USER_CREDENTIAL_BUNDLE"].startswith("s21-v1:usr_demo_user:"))
         self.assertNotIn("KIS_MODE", parsed)
 
@@ -289,9 +293,12 @@ class OpenApiEnvironmentParserTest(unittest.TestCase):
             "POSTGRES_APP_PASSWORD": base64_b,
             "POSTGRES_MIGRATION_PASSWORD": base64_c,
             "POSTGRES_COLLECTOR_PASSWORD": base64_d,
+            "POSTGRES_DISCLOSURE_READER_PASSWORD": "R" * 43,
             "POSTGRES_MARKET_WRITER_PASSWORD": "N" * 43,
             "POSTGRES_PORTFOLIO_WRITER_PASSWORD": "O" * 43,
             "POSTGRES_RISK_WRITER_PASSWORD": "P" * 43,
+            "DECISION_GRPC_SHARED_SECRET": "S" * 43,
+            "PYTHON_GRPC_SHARED_SECRET": "S" * 43,
             "REDIS_PASSWORD": "E" * 43,
             "JWT_SECRET": "F" * 43,
             "JWT_ISSUER": "s21-openapi-local",

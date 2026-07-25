@@ -1,6 +1,6 @@
 {
   "schemaVersion": "s1.4x-reference-lock-v1",
-  "referenceBaseCommit": "93b0176ef3f114ca2182ad170449fd419437cfb6",
+  "referenceBaseCommit": "b719f9ff55e962bb0654e2582915ec533036c4aa",
   "pythonRuntime": {
     "implementation": "CPython",
     "version": "3.12.13",

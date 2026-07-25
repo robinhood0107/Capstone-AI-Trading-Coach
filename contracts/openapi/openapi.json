@@ -46,6 +46,80 @@
         },
         "type": "object"
       },
+      "ApiResponseDecisionAuditProjection": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/DecisionAuditProjection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ApiError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ApiWarning"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "ApiResponseDecisionProjection": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/DecisionProjection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ApiError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ApiWarning"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
       "ApiResponseLoginResponse": {
         "properties": {
           "data": {
@@ -256,6 +330,194 @@
           },
           "signalFresh": {
             "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "DecisionAbstentionProjection": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "component": {
+            "type": "string"
+          },
+          "disposition": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "ruleId": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "DecisionAuditPayloadProjection": {
+        "properties": {
+          "decisionId": {
+            "type": "string"
+          },
+          "evaluationId": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": "string"
+          },
+          "principleVersionId": {
+            "type": "string"
+          },
+          "semanticInputHash": {
+            "type": "string"
+          },
+          "snapshotArtifactHash": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "DecisionAuditProjection": {
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "auditId": {
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/components/schemas/DecisionAuditPayloadProjection"
+          },
+          "requestId": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "DecisionIssueProjection": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "ruleId": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "DecisionProjection": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "decisionId": {
+            "type": "string"
+          },
+          "enforcementAction": {
+            "type": "string"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "portfolioSource": {
+            "type": "string"
+          },
+          "principleId": {
+            "type": "string"
+          },
+          "principleVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "principleVersionId": {
+            "type": "string"
+          },
+          "riskDecision": {
+            "$ref": "#/components/schemas/RiskDecisionProjection"
+          },
+          "validUntil": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "DecisionRiskItemProjection": {
+        "properties": {
+          "eventCodes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "mappingVersion": {
+            "type": "string"
+          },
+          "metric": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "sourceRefs": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "value": {
+            "type": "number"
+          }
+        },
+        "type": "object"
+      },
+      "DecisionViolationProjection": {
+        "properties": {
+          "message": {
+            "type": "string"
+          },
+          "metricValue": {
+            "type": "number"
+          },
+          "ruleId": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string"
+          },
+          "threshold": {
+            "type": "number"
+          }
+        },
+        "type": "object"
+      },
+      "DecisionWarningProjection": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "ruleId": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
           }
         },
         "type": "object"
@@ -1970,6 +2232,1263 @@
         ],
         "type": "object"
       },
+      "RiskDecisionProjection": {
+        "properties": {
+          "abstentions": {
+            "items": {
+              "$ref": "#/components/schemas/DecisionAbstentionProjection"
+            },
+            "type": "array"
+          },
+          "canSubmitOrder": {
+            "type": "boolean"
+          },
+          "catalogVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "decision": {
+            "type": "string"
+          },
+          "decisionId": {
+            "type": "string"
+          },
+          "evaluationId": {
+            "type": "string"
+          },
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/DecisionIssueProjection"
+            },
+            "type": "array"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "portfolioSource": {
+            "type": "string"
+          },
+          "principleVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "principleVersionId": {
+            "type": "string"
+          },
+          "readinessPolicyVersion": {
+            "type": "string"
+          },
+          "riskItems": {
+            "items": {
+              "$ref": "#/components/schemas/DecisionRiskItemProjection"
+            },
+            "type": "array"
+          },
+          "schemaVersion": {
+            "type": "string"
+          },
+          "semanticInputHash": {
+            "type": "string"
+          },
+          "snapshotArtifactHash": {
+            "type": "string"
+          },
+          "validUntil": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "violations": {
+            "items": {
+              "$ref": "#/components/schemas/DecisionViolationProjection"
+            },
+            "type": "array"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/DecisionWarningProjection"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "S23Decision": {
+        "$defs": {
+          "riskDecision": {
+            "$defs": {
+              "abstention": {
+                "additionalProperties": false,
+                "allOf": [
+                  {
+                    "else": {
+                      "properties": {
+                        "code": {
+                          "enum": [
+                            "MODEL_ABSTAINED",
+                            "OPTIONAL_EVIDENCE_ERROR",
+                            "OPTIONAL_EVIDENCE_INCOMPLETE",
+                            "OPTIONAL_EVIDENCE_MISSING",
+                            "OPTIONAL_EVIDENCE_STALE"
+                          ]
+                        }
+                      }
+                    },
+                    "if": {
+                      "properties": {
+                        "disposition": {
+                          "const": "NOT_APPLICABLE"
+                        }
+                      },
+                      "required": [
+                        "disposition"
+                      ]
+                    },
+                    "then": {
+                      "properties": {
+                        "code": {
+                          "const": "NOT_APPLICABLE_V1"
+                        }
+                      }
+                    }
+                  }
+                ],
+                "properties": {
+                  "code": {
+                    "enum": [
+                      "MODEL_ABSTAINED",
+                      "OPTIONAL_EVIDENCE_ERROR",
+                      "OPTIONAL_EVIDENCE_INCOMPLETE",
+                      "OPTIONAL_EVIDENCE_MISSING",
+                      "OPTIONAL_EVIDENCE_STALE",
+                      "NOT_APPLICABLE_V1"
+                    ],
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "component": {
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "disposition": {
+                    "enum": [
+                      "ABSTAIN",
+                      "NOT_APPLICABLE"
+                    ]
+                  },
+                  "message": {
+                    "maxLength": 1024,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "ruleId": {
+                    "enum": [
+                      "max_position_per_asset",
+                      "max_gold_etf_etn_weight",
+                      "max_single_order_amount",
+                      "daily_loss_guard",
+                      "mdd_guard",
+                      "max_daily_orders",
+                      "negative_news_guard",
+                      "disclosure_risk_guard",
+                      "high_volatility_guard",
+                      "data_freshness_guard",
+                      "hmm_risk_off_guard",
+                      "mean_reversion_warning",
+                      "etf_etn_risk_check",
+                      "ad_leading_room_guard"
+                    ],
+                    "maxLength": 128,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "code",
+                  "component",
+                  "disposition",
+                  "message"
+                ],
+                "type": "object"
+              },
+              "issue": {
+                "additionalProperties": false,
+                "properties": {
+                  "code": {
+                    "enum": [
+                      "BALANCE_PARTIAL",
+                      "BALANCE_STALE",
+                      "BROKERAGE_UNAVAILABLE",
+                      "DISCLOSURE_PARTIAL",
+                      "DISCLOSURE_PROVIDER_ERROR",
+                      "INSTRUMENT_METADATA_UNAVAILABLE",
+                      "MARGIN_CONTEXT_UNAVAILABLE",
+                      "NEWS_EVIDENCE_UNAVAILABLE",
+                      "PORTFOLIO_CONTEXT_UNAVAILABLE",
+                      "PRICE_MISSING",
+                      "PRICE_STALE",
+                      "PRINCIPLE_CONTEXT_UNAVAILABLE",
+                      "RISK_SNAPSHOT_MISSING",
+                      "RISK_SNAPSHOT_VERSION_MISMATCH",
+                      "SOURCE_DEADLINE_EXCEEDED"
+                    ],
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "message": {
+                    "maxLength": 1024,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "ruleId": {
+                    "enum": [
+                      "max_position_per_asset",
+                      "max_gold_etf_etn_weight",
+                      "max_single_order_amount",
+                      "daily_loss_guard",
+                      "mdd_guard",
+                      "max_daily_orders",
+                      "negative_news_guard",
+                      "disclosure_risk_guard",
+                      "high_volatility_guard",
+                      "data_freshness_guard",
+                      "hmm_risk_off_guard",
+                      "mean_reversion_warning",
+                      "etf_etn_risk_check",
+                      "ad_leading_room_guard"
+                    ],
+                    "maxLength": 128,
+                    "type": "string"
+                  },
+                  "source": {
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "source"
+                ],
+                "type": "object"
+              },
+              "riskItem": {
+                "additionalProperties": false,
+                "allOf": [
+                  {
+                    "if": {
+                      "anyOf": [
+                        {
+                          "properties": {
+                            "metric": {
+                              "const": "disclosure_risk_score"
+                            }
+                          },
+                          "required": [
+                            "metric"
+                          ]
+                        },
+                        {
+                          "properties": {
+                            "source": {
+                              "const": "OPENDART"
+                            }
+                          },
+                          "required": [
+                            "source"
+                          ]
+                        }
+                      ]
+                    },
+                    "then": {
+                      "properties": {
+                        "metric": {
+                          "const": "disclosure_risk_score"
+                        },
+                        "source": {
+                          "const": "OPENDART"
+                        },
+                        "value": {
+                          "maximum": 1,
+                          "minimum": 0,
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "metric",
+                        "value",
+                        "severity",
+                        "source",
+                        "eventCodes",
+                        "mappingVersion",
+                        "sourceRefs"
+                      ]
+                    }
+                  }
+                ],
+                "properties": {
+                  "eventCodes": {
+                    "items": {
+                      "maxLength": 128,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "maxItems": 100,
+                    "type": "array",
+                    "uniqueItems": true
+                  },
+                  "mappingVersion": {
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "metric": {
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "severity": {
+                    "enum": [
+                      "ALLOW",
+                      "WARN",
+                      "BLOCK"
+                    ]
+                  },
+                  "source": {
+                    "enum": [
+                      "OPENDART",
+                      "KIS",
+                      "NEWS",
+                      "MACRO",
+                      "INTERNAL"
+                    ]
+                  },
+                  "sourceRefs": {
+                    "items": {
+                      "maxLength": 64,
+                      "minLength": 64,
+                      "pattern": "^[0-9a-f]{64}$",
+                      "type": "string"
+                    },
+                    "maxItems": 100,
+                    "minItems": 1,
+                    "type": "array",
+                    "uniqueItems": true
+                  },
+                  "value": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "metric",
+                  "value",
+                  "severity",
+                  "source"
+                ],
+                "type": "object"
+              },
+              "violation": {
+                "additionalProperties": false,
+                "allOf": [
+                  {
+                    "if": {
+                      "properties": {
+                        "ruleId": {
+                          "const": "high_volatility_guard"
+                        }
+                      },
+                      "required": [
+                        "ruleId"
+                      ]
+                    },
+                    "then": {
+                      "properties": {
+                        "severity": {
+                          "const": "BLOCK"
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "if": {
+                      "properties": {
+                        "ruleId": {
+                          "const": "hmm_risk_off_guard"
+                        }
+                      },
+                      "required": [
+                        "ruleId"
+                      ]
+                    },
+                    "then": {
+                      "properties": {
+                        "severity": {
+                          "const": "WARN"
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "if": {
+                      "properties": {
+                        "ruleId": {
+                          "const": "mean_reversion_warning"
+                        }
+                      },
+                      "required": [
+                        "ruleId"
+                      ]
+                    },
+                    "then": {
+                      "properties": {
+                        "severity": {
+                          "const": "WARN"
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "if": {
+                      "properties": {
+                        "ruleId": {
+                          "const": "etf_etn_risk_check"
+                        }
+                      },
+                      "required": [
+                        "ruleId"
+                      ]
+                    },
+                    "then": {
+                      "properties": {
+                        "severity": {
+                          "const": "WARN"
+                        }
+                      }
+                    }
+                  }
+                ],
+                "properties": {
+                  "message": {
+                    "maxLength": 1024,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "metricValue": {
+                    "type": "number"
+                  },
+                  "ruleId": {
+                    "enum": [
+                      "max_position_per_asset",
+                      "max_gold_etf_etn_weight",
+                      "max_single_order_amount",
+                      "daily_loss_guard",
+                      "mdd_guard",
+                      "max_daily_orders",
+                      "negative_news_guard",
+                      "disclosure_risk_guard",
+                      "high_volatility_guard",
+                      "hmm_risk_off_guard",
+                      "mean_reversion_warning",
+                      "etf_etn_risk_check"
+                    ],
+                    "maxLength": 128,
+                    "type": "string"
+                  },
+                  "severity": {
+                    "enum": [
+                      "WARN",
+                      "BLOCK"
+                    ]
+                  },
+                  "threshold": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "ruleId",
+                  "severity",
+                  "message",
+                  "metricValue",
+                  "threshold"
+                ],
+                "type": "object"
+              },
+              "warning": {
+                "additionalProperties": false,
+                "properties": {
+                  "code": {
+                    "enum": [
+                      "MODEL_ABSTAINED",
+                      "OPTIONAL_EVIDENCE_ERROR",
+                      "OPTIONAL_EVIDENCE_INCOMPLETE",
+                      "OPTIONAL_EVIDENCE_MISSING",
+                      "OPTIONAL_EVIDENCE_STALE"
+                    ],
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "message": {
+                    "maxLength": 1024,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "ruleId": {
+                    "enum": [
+                      "max_position_per_asset",
+                      "max_gold_etf_etn_weight",
+                      "max_single_order_amount",
+                      "daily_loss_guard",
+                      "mdd_guard",
+                      "max_daily_orders",
+                      "negative_news_guard",
+                      "disclosure_risk_guard",
+                      "high_volatility_guard",
+                      "data_freshness_guard",
+                      "hmm_risk_off_guard",
+                      "mean_reversion_warning",
+                      "etf_etn_risk_check",
+                      "ad_leading_room_guard"
+                    ],
+                    "maxLength": 128,
+                    "type": "string"
+                  },
+                  "source": {
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "source"
+                ],
+                "type": "object"
+              }
+            },
+            "additionalProperties": false,
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "decision": {
+                      "const": "ALLOW"
+                    }
+                  },
+                  "required": [
+                    "decision"
+                  ]
+                },
+                "then": {
+                  "properties": {
+                    "abstentions": {
+                      "items": {
+                        "allOf": [
+                          {
+                            "$ref": "#/components/schemas/S23Decision/$defs/riskDecision/$defs/abstention"
+                          },
+                          {
+                            "properties": {
+                              "disposition": {
+                                "const": "NOT_APPLICABLE"
+                              }
+                            }
+                          }
+                        ]
+                      },
+                      "maxItems": 50,
+                      "type": "array"
+                    },
+                    "canSubmitOrder": {
+                      "const": true
+                    },
+                    "issues": {
+                      "maxItems": 0
+                    },
+                    "violations": {
+                      "maxItems": 0
+                    },
+                    "warnings": {
+                      "maxItems": 0
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "decision": {
+                      "const": "WARN"
+                    }
+                  },
+                  "required": [
+                    "decision"
+                  ]
+                },
+                "then": {
+                  "anyOf": [
+                    {
+                      "properties": {
+                        "violations": {
+                          "minItems": 1
+                        }
+                      }
+                    },
+                    {
+                      "properties": {
+                        "warnings": {
+                          "minItems": 1
+                        }
+                      }
+                    },
+                    {
+                      "properties": {
+                        "abstentions": {
+                          "contains": {
+                            "properties": {
+                              "disposition": {
+                                "const": "ABSTAIN"
+                              }
+                            },
+                            "required": [
+                              "disposition"
+                            ],
+                            "type": "object"
+                          },
+                          "minContains": 1
+                        }
+                      }
+                    }
+                  ],
+                  "not": {
+                    "properties": {
+                      "violations": {
+                        "contains": {
+                          "properties": {
+                            "severity": {
+                              "const": "BLOCK"
+                            }
+                          },
+                          "required": [
+                            "severity"
+                          ],
+                          "type": "object"
+                        },
+                        "minContains": 1
+                      }
+                    },
+                    "required": [
+                      "violations"
+                    ]
+                  },
+                  "properties": {
+                    "canSubmitOrder": {
+                      "const": true
+                    },
+                    "issues": {
+                      "maxItems": 0
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "decision": {
+                      "const": "HOLD"
+                    }
+                  },
+                  "required": [
+                    "decision"
+                  ]
+                },
+                "then": {
+                  "not": {
+                    "properties": {
+                      "violations": {
+                        "contains": {
+                          "properties": {
+                            "severity": {
+                              "const": "BLOCK"
+                            }
+                          },
+                          "required": [
+                            "severity"
+                          ],
+                          "type": "object"
+                        },
+                        "minContains": 1
+                      }
+                    }
+                  },
+                  "properties": {
+                    "canSubmitOrder": {
+                      "const": false
+                    },
+                    "issues": {
+                      "minItems": 1
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "decision": {
+                      "const": "BLOCK"
+                    }
+                  },
+                  "required": [
+                    "decision"
+                  ]
+                },
+                "then": {
+                  "properties": {
+                    "canSubmitOrder": {
+                      "const": false
+                    },
+                    "violations": {
+                      "contains": {
+                        "properties": {
+                          "severity": {
+                            "const": "BLOCK"
+                          }
+                        },
+                        "required": [
+                          "severity"
+                        ],
+                        "type": "object"
+                      },
+                      "minContains": 1
+                    }
+                  }
+                }
+              }
+            ],
+            "properties": {
+              "abstentions": {
+                "items": {
+                  "$ref": "#/components/schemas/S23Decision/$defs/riskDecision/$defs/abstention"
+                },
+                "maxItems": 50,
+                "type": "array"
+              },
+              "canSubmitOrder": {
+                "type": "boolean"
+              },
+              "catalogVersion": {
+                "const": 1
+              },
+              "decision": {
+                "enum": [
+                  "ALLOW",
+                  "WARN",
+                  "HOLD",
+                  "BLOCK"
+                ]
+              },
+              "decisionId": {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              "evaluationId": {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              "explanation": {
+                "additionalProperties": false,
+                "properties": {
+                  "citationIds": {
+                    "items": {
+                      "maxLength": 128,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "maxItems": 100,
+                    "type": "array",
+                    "uniqueItems": true
+                  },
+                  "shortText": {
+                    "maxLength": 1024,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "shortText",
+                  "citationIds"
+                ],
+                "type": "object"
+              },
+              "issues": {
+                "items": {
+                  "$ref": "#/components/schemas/S23Decision/$defs/riskDecision/$defs/issue"
+                },
+                "maxItems": 14,
+                "type": "array"
+              },
+              "mode": {
+                "enum": [
+                  "GUIDE",
+                  "STRICT"
+                ]
+              },
+              "portfolioSource": {
+                "enum": [
+                  "KIS_MOCK",
+                  "INTERNAL_PAPER"
+                ]
+              },
+              "principleVersion": {
+                "maximum": 2147483647,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "principleVersionId": {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              "readinessPolicyVersion": {
+                "const": "s2-2-readiness-v1"
+              },
+              "riskItems": {
+                "items": {
+                  "$ref": "#/components/schemas/S23Decision/$defs/riskDecision/$defs/riskItem"
+                },
+                "maxItems": 50,
+                "type": "array"
+              },
+              "riskSummary": {
+                "additionalProperties": false,
+                "properties": {
+                  "cvar95": {
+                    "type": "number"
+                  },
+                  "hmmRegime": {
+                    "enum": [
+                      "NORMAL",
+                      "SIDEWAYS",
+                      "HIGH_VOLATILITY",
+                      "RISK_OFF",
+                      "RISK_ON"
+                    ]
+                  },
+                  "mdd": {
+                    "type": "number"
+                  },
+                  "regimeProbability": {
+                    "maximum": 1,
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  "var95": {
+                    "type": "number"
+                  }
+                },
+                "type": "object"
+              },
+              "schemaVersion": {
+                "const": "s2-2-risk-decision/v1"
+              },
+              "semanticInputHash": {
+                "maxLength": 64,
+                "minLength": 64,
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              "signalSummary": {
+                "additionalProperties": false,
+                "properties": {
+                  "confidence": {
+                    "maximum": 1,
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  "finalSignal": {
+                    "enum": [
+                      "BUY_STRONG",
+                      "BUY_WEAK",
+                      "BUY",
+                      "HOLD",
+                      "SELL",
+                      "SELL_WEAK",
+                      "SELL_STRONG"
+                    ]
+                  },
+                  "lightgbmSignal": {
+                    "enum": [
+                      "BUY",
+                      "SELL",
+                      "HOLD"
+                    ]
+                  },
+                  "lstmSignal": {
+                    "enum": [
+                      "BUY",
+                      "SELL",
+                      "HOLD"
+                    ]
+                  },
+                  "newsSentiment": {
+                    "maximum": 1,
+                    "minimum": -1,
+                    "type": "number"
+                  }
+                },
+                "type": "object"
+              },
+              "snapshotArtifactHash": {
+                "maxLength": 64,
+                "minLength": 64,
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              "validUntil": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "violations": {
+                "items": {
+                  "$ref": "#/components/schemas/S23Decision/$defs/riskDecision/$defs/violation"
+                },
+                "maxItems": 14,
+                "type": "array"
+              },
+              "warnings": {
+                "items": {
+                  "$ref": "#/components/schemas/S23Decision/$defs/riskDecision/$defs/warning"
+                },
+                "maxItems": 50,
+                "type": "array"
+              }
+            },
+            "required": [
+              "schemaVersion",
+              "evaluationId",
+              "catalogVersion",
+              "readinessPolicyVersion",
+              "decision",
+              "mode",
+              "canSubmitOrder",
+              "principleVersionId",
+              "principleVersion",
+              "portfolioSource",
+              "semanticInputHash",
+              "snapshotArtifactHash",
+              "violations",
+              "issues",
+              "warnings",
+              "abstentions",
+              "riskItems"
+            ],
+            "type": "object"
+          }
+        },
+        "$id": "contracts/schemas/s2-3-decision-response.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "decisionId": {
+            "pattern": "^dec_[0-9a-f]{32}$",
+            "type": "string"
+          },
+          "enforcementAction": {
+            "enum": [
+              "NONE",
+              "ACKNOWLEDGE_WARNING",
+              "RECONFIRM_PRINCIPLE",
+              "RE_EVALUATE",
+              "DO_NOT_SUBMIT"
+            ]
+          },
+          "mode": {
+            "enum": [
+              "GUIDE",
+              "STRICT"
+            ]
+          },
+          "portfolioSource": {
+            "enum": [
+              "KIS_MOCK",
+              "INTERNAL_PAPER"
+            ]
+          },
+          "principleId": {
+            "pattern": "^prc_[0-9a-f]{32}$",
+            "type": "string"
+          },
+          "principleVersion": {
+            "maximum": 2147483647,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "principleVersionId": {
+            "pattern": "^pvr_[0-9a-f]{32}$",
+            "type": "string"
+          },
+          "riskDecision": {
+            "$ref": "#/components/schemas/S23Decision/$defs/riskDecision"
+          },
+          "validUntil": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "createdAt",
+          "decisionId",
+          "enforcementAction",
+          "mode",
+          "portfolioSource",
+          "principleId",
+          "principleVersion",
+          "principleVersionId",
+          "riskDecision",
+          "validUntil"
+        ],
+        "title": "S2.3 persisted decision canonical projection v1",
+        "type": "object"
+      },
+      "S23DecisionAudit": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "const": "DECISION_EVALUATED",
+            "type": "string"
+          },
+          "auditId": {
+            "pattern": "^aud_[0-9a-f]{32}$",
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": false,
+            "properties": {
+              "decisionId": {
+                "pattern": "^dec_[0-9a-f]{32}$",
+                "type": "string"
+              },
+              "evaluationId": {
+                "pattern": "^evl_[0-9a-f]{32}$",
+                "type": "string"
+              },
+              "outcome": {
+                "enum": [
+                  "ALLOW",
+                  "WARN",
+                  "HOLD",
+                  "BLOCK"
+                ],
+                "type": "string"
+              },
+              "principleVersionId": {
+                "pattern": "^pvr_[0-9a-f]{32}$",
+                "type": "string"
+              },
+              "semanticInputHash": {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              "snapshotArtifactHash": {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "decisionId",
+              "evaluationId",
+              "outcome",
+              "principleVersionId",
+              "semanticInputHash",
+              "snapshotArtifactHash"
+            ],
+            "type": "object"
+          },
+          "requestId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "auditId",
+          "createdAt",
+          "payload",
+          "requestId"
+        ],
+        "type": "object"
+      },
+      "S23DecisionAuditSuccessResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/S23DecisionAudit"
+          },
+          "error": {
+            "type": "null"
+          },
+          "requestId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "success": {
+            "const": true,
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ApiWarning"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "error",
+          "requestId",
+          "success",
+          "warnings"
+        ],
+        "type": "object"
+      },
+      "S23DecisionSuccessResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/S23Decision"
+          },
+          "error": {
+            "type": "null"
+          },
+          "requestId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "success": {
+            "const": true,
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ApiWarning"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "error",
+          "requestId",
+          "success",
+          "warnings"
+        ],
+        "type": "object"
+      },
+      "S23EvaluateOrderRequest": {
+        "$id": "contracts/schemas/s2-3-evaluate-order-request.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "orderIntent": {
+            "additionalProperties": false,
+            "description": "Order candidate payload evaluated by Decision API before any mock or live order submission.",
+            "properties": {
+              "estimatedAmount": {
+                "description": "quantity * estimatedPrice의 overflow 없는 exact 원화 정수 결과여야 한다.",
+                "maximum": 9223372036854775807,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "estimatedPrice": {
+                "description": "현물 v1 MARKET/LIMIT 주문 평가 payload의 유일한 canonical 원화 가격 필드다.",
+                "maximum": 9223372036854775807,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "orderType": {
+                "description": "P0 결정: API 5.1 예시는 MARKET이며 LIMIT 주문 후보도 같은 estimatedPrice 계약을 사용한다.",
+                "enum": [
+                  "MARKET",
+                  "LIMIT"
+                ],
+                "type": "string"
+              },
+              "quantity": {
+                "maximum": 9223372036854775807,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "side": {
+                "enum": [
+                  "BUY",
+                  "SELL"
+                ],
+                "type": "string"
+              },
+              "strategyId": {
+                "maxLength": 120,
+                "minLength": 1,
+                "type": "string"
+              },
+              "symbol": {
+                "pattern": "^[0-9A-Z._:-]{1,20}$",
+                "type": "string"
+              },
+              "timeframe": {
+                "enum": [
+                  "1d",
+                  "60m"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "estimatedAmount",
+              "estimatedPrice",
+              "orderType",
+              "quantity",
+              "side",
+              "strategyId",
+              "symbol",
+              "timeframe"
+            ],
+            "type": "object"
+          },
+          "portfolioSource": {
+            "enum": [
+              "KIS_MOCK",
+              "INTERNAL_PAPER"
+            ]
+          },
+          "principleId": {
+            "pattern": "^prc_[0-9a-f]{32}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "orderIntent",
+          "portfolioSource",
+          "principleId"
+        ],
+        "title": "S2.3 evaluate-order request v1",
+        "type": "object"
+      },
       "SystemHealthResponse": {
         "properties": {
           "asOf": {
@@ -2074,6 +3593,213 @@
         "summary": "데모 사용자 로그인 / Demo user login",
         "tags": [
           "auth-controller"
+        ]
+      }
+    },
+    "/api/v1/decisions/evaluate-order": {
+      "post": {
+        "operationId": "evaluateOrder",
+        "parameters": [
+          {
+            "description": "16-128 ASCII characters. Raw value is never stored, logged, or used as a metric tag.",
+            "in": "header",
+            "name": "X-Idempotency-Key",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9._:-]{16,128}$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/S23EvaluateOrderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/S23DecisionSuccessResponse"
+                }
+              }
+            },
+            "description": "Canonical persisted Decision. Expected source absence is a HOLD."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseDecisionProjection"
+                }
+              }
+            },
+            "description": "Invalid selector or body."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseDecisionProjection"
+                }
+              }
+            },
+            "description": "Authentication is required."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseDecisionProjection"
+                }
+              }
+            },
+            "description": "Owned ACTIVE Principle was not found."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseDecisionProjection"
+                }
+              }
+            },
+            "description": "Idempotency or pinned-version conflict."
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseDecisionProjection"
+                }
+              }
+            },
+            "description": "Request payload exceeds 262144 bytes."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseDecisionProjection"
+                }
+              }
+            },
+            "description": "Technical fail-closed error with no Decision side effect."
+          }
+        },
+        "summary": "저장 observation으로 주문 의도를 평가하고 Decision을 원자 저장한다.",
+        "tags": [
+          "decision-controller"
+        ]
+      }
+    },
+    "/api/v1/decisions/{decisionId}": {
+      "get": {
+        "operationId": "getDecision",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "decisionId",
+            "required": true,
+            "schema": {
+              "pattern": "^dec_[0-9a-f]{32}$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/S23DecisionSuccessResponse"
+                }
+              }
+            },
+            "description": "The same canonical projection returned by evaluate-order."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseDecisionProjection"
+                }
+              }
+            },
+            "description": "Authentication is required."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseDecisionProjection"
+                }
+              }
+            },
+            "description": "Owned Decision was not found."
+          }
+        },
+        "summary": "JWT owner에게 canonical persisted Decision을 반환한다.",
+        "tags": [
+          "decision-controller"
+        ]
+      }
+    },
+    "/api/v1/decisions/{decisionId}/audit": {
+      "get": {
+        "operationId": "getDecisionAudit",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "decisionId",
+            "required": true,
+            "schema": {
+              "pattern": "^dec_[0-9a-f]{32}$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/S23DecisionAuditSuccessResponse"
+                }
+              }
+            },
+            "description": "Sanitized owner-scoped audit projection."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseDecisionAuditProjection"
+                }
+              }
+            },
+            "description": "Authentication is required."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseDecisionAuditProjection"
+                }
+              }
+            },
+            "description": "Owned Decision audit was not found."
+          }
+        },
+        "summary": "JWT owner에게 reference-only sanitized Decision audit을 반환한다.",
+        "tags": [
+          "decision-controller"
         ]
       }
     },
@@ -2727,5 +4453,7 @@
     }
   ],
   "x-s2-1-contract-id": "s2-1-principle-contract/v1",
-  "x-s2-1-contract-sha256": "687e97767beb78d9a58e65de113d323817522975a929099c6991ec8185d83784"
+  "x-s2-1-contract-sha256": "687e97767beb78d9a58e65de113d323817522975a929099c6991ec8185d83784",
+  "x-s2-3-contract-id": "s2-3-decision-contract/v1",
+  "x-s2-3-contract-sha256": "d035607af50a0f7cb9cd7170e9a6a188e6af32d5bbbdb76e5e4f7b3edc68cd18"
 }

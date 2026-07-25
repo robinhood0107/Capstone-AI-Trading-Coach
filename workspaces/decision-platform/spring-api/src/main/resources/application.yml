@@ -7,7 +7,7 @@ spring:
     password: ${POSTGRES_APP_PASSWORD}
     hikari:
       maximum-pool-size: 10        # 코어수x2 근처, 키우지 않는다
-      connection-timeout: 3000     # 풀 고갈 시 무한대기 금지
+      connection-timeout: 500      # source cap보다 긴 pool 대기로 evaluation budget을 넘기지 않는다
   jpa:
     hibernate:
       ddl-auto: validate           # 스키마 진실은 Flyway
@@ -66,6 +66,17 @@ app:
       - /api/v1/backtests/**
   decision:
     valid-minutes: 10              # validUntil
+    idempotency-scope-hmac-key: ${DECISION_IDEMPOTENCY_SCOPE_HMAC_KEY}
+    claim-ttl-seconds: 30
+    grpc:
+      target: ${DECISION_GRPC_TARGET:127.0.0.1:50051}
+      shared-secret: ${DECISION_GRPC_SHARED_SECRET:}
+      hard-deadline-millis: 2000
+      source-deadline-millis: 500
+      total-evaluation-deadline-millis: 900
+      request-max-bytes: 262144
+      response-max-bytes: 1048576
+      concurrency-max: 8
   freshness:                       # 유형별 매트릭스(명세서 4.2.2)의 일부만 우선 정의 — 신호/공시/risk_snapshot 항목은 S2.3에서 확장
     price-seconds: 300
     balance-seconds: 60

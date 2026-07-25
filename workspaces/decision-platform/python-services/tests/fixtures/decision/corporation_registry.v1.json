@@ -1,0 +1,20 @@
+{
+  "schemaVersion": "s1.6-corporation-registry/v1",
+  "sourceVersion": "opendart-sanitized-corp-code-20260724",
+  "observedAt": "2026-07-24T00:00:00Z",
+  "receivedAt": "2026-07-24T00:00:01Z",
+  "mappings": [
+    {
+      "symbol": "005930",
+      "corpCode": "00126380",
+      "registryStatus": "ACTIVE",
+      "completeness": "COMPLETE"
+    },
+    {
+      "symbol": "132030",
+      "corpCode": "00999999",
+      "registryStatus": "ACTIVE",
+      "completeness": "COMPLETE"
+    }
+  ]
+}

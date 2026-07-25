@@ -1,0 +1,23 @@
+{
+  "schemaVersion": "decision-deterministic-observation.v1",
+  "sourceVersion": "deterministic-fixture-20260724",
+  "ownerUserId": "usr_demo_user",
+  "ownerScopeHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "portfolioSource": "KIS_MOCK",
+  "risk": {
+    "observedAt": "2026-06-23T06:31:00Z",
+    "receivedAt": "2026-06-23T06:31:01Z",
+    "dailyLossRate": "-0.0125",
+    "maxDrawdown": "-0.0800",
+    "annualizedVolatility": "0.2200",
+    "completeness": "COMPLETE"
+  },
+  "dailyOrderCount": {
+    "tradingDate": "2026-06-24",
+    "orderCount": 0,
+    "coveredThrough": "2026-06-24T03:00:00Z",
+    "observedAt": "2026-06-24T03:00:00Z",
+    "receivedAt": "2026-06-24T03:00:01Z",
+    "completeness": "COMPLETE"
+  }
+}

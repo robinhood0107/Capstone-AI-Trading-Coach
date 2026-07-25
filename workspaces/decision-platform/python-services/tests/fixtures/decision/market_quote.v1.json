@@ -1,0 +1,22 @@
+{
+  "schemaVersion": "market-quote-observation.v1",
+  "sourceVersion": "s1.1-sanitized-quote-fixture-20260724",
+  "observedAt": "2026-06-24T02:59:00Z",
+  "receivedAt": "2026-06-24T02:59:01Z",
+  "quotes": [
+    {
+      "symbol": "005930",
+      "priceKrw": 70000,
+      "bidKrw": 69900,
+      "askKrw": 70000,
+      "completeness": "COMPLETE"
+    },
+    {
+      "symbol": "132030",
+      "priceKrw": 24500,
+      "bidKrw": 24450,
+      "askKrw": 24500,
+      "completeness": "COMPLETE"
+    }
+  ]
+}

@@ -1,0 +1,40 @@
+{
+  "createdAt": "2030-01-02T03:04:05Z",
+  "decisionId": "dec_dddddddddddddddddddddddddddddddd",
+  "enforcementAction": "DO_NOT_SUBMIT",
+  "mode": "STRICT",
+  "portfolioSource": "INTERNAL_PAPER",
+  "principleId": "prc_0123456789abcdef0123456789abcdef",
+  "principleVersion": 3,
+  "principleVersionId": "pvr_0123456789abcdef0123456789abcdef",
+  "riskDecision": {
+    "abstentions": [],
+    "canSubmitOrder": false,
+    "catalogVersion": 1,
+    "decision": "BLOCK",
+    "decisionId": "dec_dddddddddddddddddddddddddddddddd",
+    "evaluationId": "evl_0123456789abcdef",
+    "issues": [],
+    "mode": "STRICT",
+    "portfolioSource": "INTERNAL_PAPER",
+    "principleVersion": 3,
+    "principleVersionId": "pvr_0123456789abcdef0123456789abcdef",
+    "readinessPolicyVersion": "s2-2-readiness-v1",
+    "riskItems": [],
+    "schemaVersion": "s2-2-risk-decision/v1",
+    "semanticInputHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "snapshotArtifactHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "validUntil": "2030-01-02T03:14:05Z",
+    "violations": [
+      {
+        "message": "The ready metric exceeded the configured threshold.",
+        "metricValue": 500001,
+        "ruleId": "max_single_order_amount",
+        "severity": "BLOCK",
+        "threshold": 500000
+      }
+    ],
+    "warnings": []
+  },
+  "validUntil": "2030-01-02T03:14:05Z"
+}

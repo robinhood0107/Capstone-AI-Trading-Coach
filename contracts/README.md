@@ -92,8 +92,9 @@ owner-scoped context에 있고 `INTERNAL_PAPER`만 저장 source `PAPER`에 매�
 없다. selector 자체가 잘못되면 HTTP 400 `VALIDATION_ERROR`, 선택한 context가 없거나 사용할 수
 없으면 HTTP 200 `HOLD`다. result는 immutable `principleVersionId + principleVersion`을 pin한다.
 
-hash contract `HASH-CANONICALIZATION-S22-V1`은 semantic input hash와 snapshot artifact hash를
-분리한다. object key는 사전식, 배열은 명시된 stable key, 숫자는 exponent 없는 plain decimal,
+hash contract `HASH-CANONICALIZATION-S22-V2`와 `s2.2-metric-snapshot-v2`는 semantic input
+hash와 snapshot artifact hash를 분리한다. object key는 사전식, 배열은 명시된 stable key,
+숫자는 exponent 없는 plain decimal,
 `-0`은 `0`, trailing zero는 제거한다. exact input/canonical bytes/SHA-256 vector는
 `examples/s2-2-hash-vector.valid.json`에 있다. semantic input은 full order intent, 모든
 MetricKey state/value/freshness/source identity, requested/observed optional evidence, disclosure
@@ -101,14 +102,20 @@ completeness/mapping/source refs와 provenance를 포함한다. artifact hash는
 identity까지 포함한 versioned full snapshot의 exact UTF-8 bytes를 그대로 사용하며 별도 축약
 hash map을 만들지 않는다.
 
+현물 v1 full order intent는
+`symbol,side,orderType,quantity,estimatedPrice,estimatedAmount,timeframe,strategyId`다. MARKET과
+LIMIT 모두 `estimatedPrice`를 사용하며 `price`/`limitPrice`는 unknown property다.
+`estimatedAmount`는 `quantity * estimatedPrice`의 exact overflow-checked 원화 정수 결과다. P2
+`derivativeOrderIntent.limitPrice`와 provider wire 가격은 별도 namespace다.
+
 S2.2 generated artifact는 `generate_s2_2_contracts.py`의 explicit `OUTPUTS`만 소유하고 S2.1
 generator output과 겹치지 않는다. canonical catalog SHA-256은
-`57101a64421805911ddfc7d652c44e8cc2bc08d200ec2c06cc439fd82ce392a2`다. Spring classpath에는
+`a4714ee9ce3031199b9067919b15931fb42e106857da5f8d8ad7a95bafa8ad7b`다. Spring classpath에는
 catalog bytes를 변환 없이 복사하고 Gradle `check`가 byte equality를 검증한다. S2.2에서는
-Decision controller, persistence, OpenAPI path를 추가하지 않으며 normalizer는 implementation
-mode에서도 `/api/v1/decisions/**`를 거절한다. 외부 market/model/balance source adapter는
-추가하지 않고, S2.2 내부 owner-scoped ACTIVE Principle JDBC read adapter만 명시적 production
-source 예외다.
+S2.2 커밋 자체는 Decision controller, persistence, OpenAPI path를 추가하지 않았다. S2.3
+implementation mode부터 normalizer는 승인된 Decision path 3개와 `S23*` component 5개를 exact
+allowlist로 요구한다. 외부 provider adapter는 추가하지 않고 S2.3 stored-source reader만
+연결한다.
 
 ```bash
 uv run --frozen python contracts/generate_principle_contracts.py --check
@@ -116,6 +123,50 @@ uv run --frozen python contracts/generate_s2_2_contracts.py --check
 uv run --frozen python -m unittest discover -s contracts/tests -v
 uv run --frozen python contracts/validate.py
 ```
+
+## S2.3 Decision runtime과 stored-source 경계
+
+S2.3 runtime은 `POST /api/v1/decisions/evaluate-order`, owner-scoped detail/audit와 V9
+decision/trace/artifact/audit/outbox/idempotency 원자 저장을 제공한다. provider HTTP fallback
+없이 저장된 sanitized source만 읽는다. V9의
+`market_quote_observations`와 `instrument_catalog_observations`는 S1.1 producer, KIS_MOCK
+`portfolio_balance_observations`/`portfolio_position_observations`는 S3 producer가,
+`deterministic_risk_observations`/`daily_order_count_observations`는 deterministic producer가,
+`corporation_registry_observations`는 S1.6 producer가 별도 최소권한으로 INSERT한다.
+이번 S2.3 prerequisite는 fixture/mock transport/Testcontainers로 offline producer와 projection을
+검증하며 provider 호출 권한이 아니다. INTERNAL_PAPER는 기존 ledger의 owner-scoped projection을
+사용한다. `decision_app`은 SELECT만 가지며 production seed는 없다. source 구조 자체가 빠지면
+`S23_RUNTIME_SOURCE_BLOCKED`, 구조가 준비된 뒤 row가 비거나 stale/incomplete/future이면 typed
+unavailable과 persisted 200 HOLD다. 자세한 소유권·hash 전환은
+[`20260724-s2-3-decision-contract-lock.md`](changes/20260724-s2-3-decision-contract-lock.md)를
+따른다.
+
+S1.1 instrument catalog는 append-only table과
+`latest_instrument_catalog_observations` projection에
+`symbol,isEtfEtn,isGoldEtfEtn,nullable productRiskScore,catalogVersion,observedAt,receivedAt,sourceRef,artifactHash`를
+저장한다. `decision_market_writer`만 exact INSERT를 가지며 S2.3 reader는 symbol당 최대 한 행만
+읽는다. 미래 시각·row 부재·nullable risk score를 `false`나 0으로 꾸미지 않는다.
+
+source orchestration은 queue 없는 최대 8개 worker, source별 500ms, 전체 evaluation 900ms
+shared deadline을 사용한다. 남은 전체 예산이 없으면 새 physical source call을 만들지 않고 실행
+중 timeout은 cancel한다. JDBC source read는 connection acquisition과 statement도 500ms 안에
+끝나야 하며, KIS_MOCK balance/position/margin은 같은 immutable revision만 조립한다. Python
+gRPC reader는 pool 8, acquisition 450ms, connect 1초와 event/source-ref 각 100개 상한을
+적용한다. 초과 구조를 truncate하지 않고 technical failure로 거부한다.
+
+offline writer replay는 완전히 같은 sanitized row만 no-op으로 허용한다. primary key 또는 대체
+unique identity가 같고 의미 필드가 다르면 PostgreSQL `23505`로 전체 transaction을 rollback한다.
+Decision child row는 `decision_id + evaluation_id` composite FK로 같은 graph에 묶고 audit target과
+payload `decisionId`가 달라질 수 없다. owner detail/audit과 idempotency replay는 base table
+SELECT 없이 fixed-search-path bounded function만 사용한다.
+
+canonical S2.3 catalog SHA-256은
+`d035607af50a0f7cb9cd7170e9a6a188e6af32d5bbbdb76e5e4f7b3edc68cd18`이며 tracked OpenAPI의
+`x-s2-3-contract-sha256`과 CI에서 일치해야 한다.
+
+재현 가능한 offline fixture append와 local smoke 절차는
+[`workspaces/decision-platform/README.md`](../workspaces/decision-platform/README.md#s23-offline-golden-path)를
+따른다. 이 절차는 provider/live/account/order/broker 호출을 만들지 않는다.
 
 ## S1.5 KIS 데이터 품질 리포트
 

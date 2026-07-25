@@ -15,7 +15,7 @@ python-services/        # uv 프로젝트 — LightGBM/RAG/금융공학/데이�
 
 공개 레포에는 최종 명세/API 계약과 구현 코드를 두고, 상세 개인 참고 노트는 루트의 ignored `private-reference/` 폴더에서만 관리한다. 요약:
 
-1. `cp ../../.env.example ../../.env` 후 PostgreSQL/collector/Redis password, JWT issuer/audience, 목적별 JWT/login/credential HMAC key, single-quoted attested demo credential bundle과 필요한 provider secret을 채운다. plaintext demo password는 `.env`에 저장하지 않는다.
+1. `cp ../../.env.example ../../.env` 후 PostgreSQL/collector/disclosure-reader/source-writer/Redis password, role별 offline DSN, Spring↔Python gRPC shared secret, JWT issuer/audience, 목적별 JWT/login/credential HMAC key, single-quoted attested demo credential bundle과 필요한 provider secret을 채운다. plaintext demo password는 `.env`에 저장하지 않는다.
 2. `docker compose --env-file ../../.env -f ../../infra/docker-compose.infra.yml up -d`로 loopback-only PostgreSQL/Redis를 기동한다.
 3. `spring-api/`는 커밋된 Gradle wrapper로 `./gradlew ktlintCheck build`를 실행한다.
 4. `python-services/`는 `uv sync --frozen` 후 `uv run pytest`, `uv run ruff check .`, `uv run mypy app`으로 검증한다.
@@ -23,6 +23,90 @@ python-services/        # uv 프로젝트 — LightGBM/RAG/금융공학/데이�
 기존 PostgreSQL volume을 유지하는 경우 루트 README의 one-time application role bootstrap 절차를 먼저 따른다. Redis는 password+AOF+`noeviction`이며 OpenDART quota 원장으로는 사용하지 않는다.
 
 KIS outbound는 이 workspace가 단일 owner다. S1.1 client는 실전 18/s hard cap·기본 120ms 간격, 모의 1/s·1,000ms 간격을 같은 opaque credential/appkey scope의 Redis 원자 limiter로 공유한다. `/oauth2/tokenP` physical send는 mock/live 합산 deployment-global 1/s를 보수 적용하고 token cache/singleflight만 mode별로 분리한다. Return Engine과 후속 S1.6/S3 adapter는 별도 limiter를 만들지 않고 이 경계를 재사용한다.
+
+## S2.3 stored-source 경계
+
+Decision 평가 요청의 현물 v1 `orderIntent`는 MARKET/LIMIT 모두 `estimatedPrice`를 사용한다.
+S2.3은 provider HTTP를 호출하지 않고 저장된 sanitized source만 읽는다. 현재가·호가와 instrument
+metadata는 S1.1 producer의 `market_quote_observations`,
+`instrument_catalog_observations`/`latest_instrument_catalog_observations`, KIS_MOCK 잔고는
+S3 producer의
+`portfolio_balance_observations`/`portfolio_position_observations`, INTERNAL_PAPER는 기존
+owner-scoped ledger, deterministic risk/order-count와 corp registry는 각 전용 observation이
+권위다. 이번 continuation은 각 소유 모듈의 offline producer/writer/projection을
+fixture/mock transport/Testcontainers로 검증하되 provider/live/order call은 0이다.
+instrument row는
+`symbol,isEtfEtn,isGoldEtfEtn,nullable productRiskScore,catalogVersion,observedAt,receivedAt,sourceRef,artifactHash`를
+저장하고 `decision_market_writer`만 exact INSERT한다. S2.3 reader는 symbol당 최대 한 행만 읽고
+row 부재·미래 시각·nullable score를 false/0으로 만들지 않는다.
+`decision_app`은 source projection SELECT와 append-only
+Decision writer에 필요한 exact 권한만 가지며 production source seed와
+KIS_MOCK→INTERNAL_PAPER 자동 fallback은 없다. source 구조 자체가 없으면
+`S23_RUNTIME_SOURCE_BLOCKED`, 준비된 구조의 row가 없거나 stale/incomplete면 persisted 200
+HOLD가 된다. test fixture는 test profile/Testcontainers에만 존재하며 mock/live 주문 실행은
+S3 경계로 남는다.
+
+source orchestration은 queue 없는 최대 8개 worker에서 source별 500ms와 전체 evaluation 900ms
+shared deadline을 함께 강제한다. 전체 예산이 끝난 뒤 새 physical call을 만들지 않고 timeout
+작업은 cancel하며 MDC trace 문맥은 worker 실행 뒤 복원한다. JDBC connection acquisition과
+statement timeout도 500ms이고, KIS_MOCK balance/position/margin은 하나의 immutable revision에
+pin한다. Python gRPC reader는 최대 8개 connection, acquisition 450ms, connect 1초와
+event/source-ref 각 100개 상한을 사용한다. `GetDisclosureEvents` business RPC는 loopback
+plaintext 위에서도 shared-secret metadata를 요구하고 `decision_disclosure_reader` DSN만 허용한다.
+초과는 truncate된 성공이 아니라 technical failure다.
+
+offline writer의 같은 fixture 재실행은 exact row가 같을 때만 no-op이다. 같은 primary/alternate
+unique identity에 다른 의미 필드가 들어오면 PostgreSQL `23505`로 transaction 전체를 rollback한다.
+Decision child graph는 `decision_id + evaluation_id` composite FK와 audit payload-target 일치
+constraint로 cross-wire를 막는다.
+
+## S2.3 offline golden path
+
+아래 절차는 개발용 loopback PostgreSQL에 repository의 sanitized fixture만 append한다.
+`DECISION_*_DATABASE_DSN`은 각 exact non-superuser role을 가리켜야 하며 production DB DSN을
+사용하지 않는다. offline writer CLI는 `DECISION_SOURCE_WRITER_OFFLINE_TARGET=local|offline|test|testcontainers`
+가 명시되고 DSN current role/privilege attestation을 통과해야 append한다. provider credential은
+필요하지 않고 provider/live/account/order/broker call은 모두 0이다. Spring/Python process에는
+루트 `.env`의 필요한 값을 IDE나 local secret manager의 env-file 기능으로 주입하되 파일 내용을
+shell command로 출력하거나 추적 파일에 복사하지 않는다.
+
+먼저 루트에서 infrastructure와 role을 준비한다. 기존 volume도 삭제하지 않는다.
+
+```bash
+docker compose --env-file .env -f infra/docker-compose.infra.yml up -d
+docker compose --env-file .env -f infra/docker-compose.infra.yml exec -T postgres \
+  bash /docker-entrypoint-initdb.d/02-application-roles.sh
+```
+
+첫 번째 terminal에서 Spring을 시작한다. startup Flyway가 V9까지 적용하고 실제
+`decision_app` runtime graph를 사용한다.
+
+```bash
+cd workspaces/decision-platform/spring-api
+./gradlew bootRun
+```
+
+두 번째 terminal에서 V9 적용을 확인한 뒤 fixture를 append하고 loopback gRPC를 시작한다.
+각 command는 저장된 row 수와 source 이름만 출력하며 fixture 원문이나 DSN을 출력하지 않는다.
+
+```bash
+cd workspaces/decision-platform/python-services
+uv sync --frozen
+export DECISION_SOURCE_WRITER_OFFLINE_TARGET=testcontainers
+uv run --frozen decision-market-quote-append tests/fixtures/decision/market_quote.v1.json
+uv run --frozen decision-instrument-catalog-append tests/fixtures/decision/instrument_catalog.v1.json
+uv run --frozen decision-kis-mock-portfolio-append tests/fixtures/decision/kis_mock_portfolio.v1.json
+uv run --frozen decision-deterministic-metrics-append tests/fixtures/decision/deterministic_metrics.v1.json
+uv run --frozen decision-corporation-registry-append tests/fixtures/decision/corporation_registry.v1.json
+uv run --frozen decision-disclosure-grpc
+```
+
+세 번째 terminal 또는 IDE HTTP client에서 `spring-api/http/auth.http`를 순서대로 실행한다. 이
+smoke는 `demo-user` 로그인 → 원칙 생성 → KIS_MOCK 평가 → owner detail/audit 조회를 수행한다.
+fixture 시각이 현재 evaluation freshness window 밖이면 결과가 persisted 200 HOLD인 것이
+정상이며, 이를 현재값이나 성공 주문으로 해석하지 않는다. 종료할 때 Spring/gRPC를 중지하고
+필요하면 `docker compose --env-file .env -f infra/docker-compose.infra.yml down`으로 container만
+내린다. volume 삭제와 production seed는 이 절차에 없다.
 
 ## S1.6 offline 구현 경계
 

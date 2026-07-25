@@ -20,6 +20,9 @@ from contracts.generate_principle_contracts import (
     load_json_bytes_strict,
     validate_catalog_semantics,
 )
+from contracts.generate_s2_3_contracts import (
+    CATALOG_PATH as S23_CATALOG_PATH,
+)
 from contracts.normalize_openapi import (
     OpenApiNormalizationError,
     check_normalized_openapi,
@@ -201,6 +204,17 @@ class OpenApiEnvironmentParserTest(unittest.TestCase):
 
         self.assertEqual("55432", parsed["POSTGRES_HOST_PORT"])
         self.assertEqual("55432", parsed["POSTGRES_PORT"])
+        for name in (
+            "POSTGRES_DISCLOSURE_READER_PASSWORD",
+            "POSTGRES_MARKET_WRITER_PASSWORD",
+            "POSTGRES_PORTFOLIO_WRITER_PASSWORD",
+            "POSTGRES_RISK_WRITER_PASSWORD",
+            "DECISION_GRPC_SHARED_SECRET",
+            "PYTHON_GRPC_SHARED_SECRET",
+            "DECISION_IDEMPOTENCY_SCOPE_HMAC_KEY",
+        ):
+            self.assertIn(name, parsed)
+        self.assertEqual(parsed["DECISION_GRPC_SHARED_SECRET"], parsed["PYTHON_GRPC_SHARED_SECRET"])
         self.assertTrue(parsed["DEMO_USER_CREDENTIAL_BUNDLE"].startswith("s21-v1:usr_demo_user:"))
         self.assertNotIn("KIS_MODE", parsed)
 
@@ -279,12 +293,19 @@ class OpenApiEnvironmentParserTest(unittest.TestCase):
             "POSTGRES_APP_PASSWORD": base64_b,
             "POSTGRES_MIGRATION_PASSWORD": base64_c,
             "POSTGRES_COLLECTOR_PASSWORD": base64_d,
+            "POSTGRES_DISCLOSURE_READER_PASSWORD": "R" * 43,
+            "POSTGRES_MARKET_WRITER_PASSWORD": "N" * 43,
+            "POSTGRES_PORTFOLIO_WRITER_PASSWORD": "O" * 43,
+            "POSTGRES_RISK_WRITER_PASSWORD": "P" * 43,
+            "DECISION_GRPC_SHARED_SECRET": "S" * 43,
+            "PYTHON_GRPC_SHARED_SECRET": "S" * 43,
             "REDIS_PASSWORD": "E" * 43,
             "JWT_SECRET": "F" * 43,
             "JWT_ISSUER": "s21-openapi-local",
             "JWT_AUDIENCE": "s21-openapi-client",
             "LOGIN_SCOPE_HMAC_KEY": "G" * 43,
             "PRINCIPLE_CURSOR_HMAC_KEY": "H" * 43,
+            "DECISION_IDEMPOTENCY_SCOPE_HMAC_KEY": "Q" * 43,
             "DEMO_CREDENTIAL_SEPARATION_KEY": "I" * 43,
             "DEMO_USER_CREDENTIAL_BUNDLE": (
                 f"s21-v1:usr_demo_user:{'J' * 43}:{bcrypt_user}:{'K' * 43}"
@@ -389,11 +410,14 @@ class OpenApiNormalizerTest(unittest.TestCase):
     def setUp(self) -> None:
         self.catalog_bytes = canonical_json_bytes(load_catalog(CATALOG_PATH))
         self.digest = hashlib.sha256(self.catalog_bytes).hexdigest()
+        self.s23_digest = hashlib.sha256(S23_CATALOG_PATH.read_bytes()).hexdigest()
         self.generated = {
             "openapi": "3.1.0",
             "jsonSchemaDialect": "https://spec.openapis.org/oas/3.1/dialect/base",
             "x-s2-1-contract-id": "s2-1-principle-contract/v1",
             "x-s2-1-contract-sha256": self.digest,
+            "x-s2-3-contract-id": "s2-3-decision-contract/v1",
+            "x-s2-3-contract-sha256": self.s23_digest,
             "info": {"title": "Decision Platform API", "version": "0"},
             "paths": {
                 "/api/v1/auth/login": {
@@ -431,6 +455,8 @@ class OpenApiNormalizerTest(unittest.TestCase):
         implementation["paths"]["/api/v1/principles"] = {
             "get": {"responses": {"200": {"description": "Owned Principle page"}}}
         }
+        implementation["paths"].update(self._decision_paths())
+        implementation["components"]["schemas"].update(self._decision_components())
 
         normalized = normalize_generated_openapi(
             canonical_json_bytes(implementation),
@@ -440,18 +466,91 @@ class OpenApiNormalizerTest(unittest.TestCase):
 
         self.assertIn(b"/api/v1/principles", normalized)
 
-    def test_implementation_mode_rejects_deferred_decision_path(self) -> None:
+    def test_implementation_mode_accepts_only_the_exact_decision_paths_and_methods(
+        self,
+    ) -> None:
         implementation = copy.deepcopy(self.generated)
-        implementation["paths"]["/api/v1/decisions/evaluate-order"] = {
-            "post": {"responses": {"200": {"description": "Premature Decision route"}}}
+        implementation["paths"].update(self._decision_paths())
+        implementation["components"]["schemas"].update(self._decision_components())
+
+        normalized = normalize_generated_openapi(
+            canonical_json_bytes(implementation),
+            self.catalog_bytes,
+            amendment=False,
+        )
+        self.assertIn(b"/api/v1/decisions/evaluate-order", normalized)
+
+        mutations = []
+        missing = copy.deepcopy(implementation)
+        del missing["paths"]["/api/v1/decisions/{decisionId}/audit"]
+        mutations.append(missing)
+        extra = copy.deepcopy(implementation)
+        extra["paths"]["/api/v1/decisions"] = {
+            "get": {"responses": {"200": {"description": "Unapproved collection"}}}
+        }
+        mutations.append(extra)
+        wrong_method = copy.deepcopy(implementation)
+        wrong_method["paths"]["/api/v1/decisions/evaluate-order"]["get"] = {
+            "responses": {"200": {"description": "Unapproved method"}}
+        }
+        mutations.append(wrong_method)
+        missing_component = copy.deepcopy(implementation)
+        del missing_component["components"]["schemas"]["S23Decision"]
+        mutations.append(missing_component)
+        extra_component = copy.deepcopy(implementation)
+        extra_component["components"]["schemas"]["S23Unapproved"] = {
+            "type": "object"
+        }
+        mutations.append(extra_component)
+
+        for mutation in mutations:
+            with self.subTest(mutation=hashlib.sha256(repr(mutation).encode()).hexdigest()):
+                with self.assertRaises(OpenApiNormalizationError):
+                    normalize_generated_openapi(
+                        canonical_json_bytes(mutation),
+                        self.catalog_bytes,
+                        amendment=False,
+                    )
+
+    @staticmethod
+    def _decision_paths() -> dict[str, object]:
+        return {
+            "/api/v1/decisions/evaluate-order": {
+                "post": {"responses": {"200": {"description": "Decision result"}}}
+            },
+            "/api/v1/decisions/{decisionId}": {
+                "parameters": [
+                    {
+                        "name": "decisionId",
+                        "in": "path",
+                        "required": True,
+                        "schema": {"type": "string"},
+                    }
+                ],
+                "get": {"responses": {"200": {"description": "Owned Decision"}}}
+            },
+            "/api/v1/decisions/{decisionId}/audit": {
+                "parameters": [
+                    {
+                        "name": "decisionId",
+                        "in": "path",
+                        "required": True,
+                        "schema": {"type": "string"},
+                    }
+                ],
+                "get": {"responses": {"200": {"description": "Sanitized audit"}}}
+            },
         }
 
-        with self.assertRaises(OpenApiNormalizationError):
-            normalize_generated_openapi(
-                canonical_json_bytes(implementation),
-                self.catalog_bytes,
-                amendment=False,
-            )
+    @staticmethod
+    def _decision_components() -> dict[str, object]:
+        return {
+            "S23EvaluateOrderRequest": {"type": "object"},
+            "S23Decision": {"type": "object"},
+            "S23DecisionSuccessResponse": {"type": "object"},
+            "S23DecisionAudit": {"type": "object"},
+            "S23DecisionAuditSuccessResponse": {"type": "object"},
+        }
 
     def test_dialect_paths_components_and_digest_mutations_fail_closed(self) -> None:
         mutations = []

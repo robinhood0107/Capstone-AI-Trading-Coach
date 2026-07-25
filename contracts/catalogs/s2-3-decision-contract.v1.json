@@ -1,0 +1,357 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "contractId": "s2-3-decision-contract",
+  "contractVersion": 1,
+  "databaseSecurity": {
+    "auditBaseSelect": false,
+    "broadSelectGrant": false,
+    "decisionAppFlags": [
+      "NOSUPERUSER",
+      "NOCREATEDB",
+      "NOCREATEROLE",
+      "NOBYPASSRLS"
+    ],
+    "decisionBaseSelect": false,
+    "futureTableDefaultSelectGrant": false,
+    "idempotencyBaseSelect": false,
+    "idempotencyReplayPredicates": [
+      "scopeHash",
+      "ownerScopeHash",
+      "expiresAt"
+    ],
+    "idempotencyReplayRead": "BOUNDED_SECURITY_DEFINER_FUNCTION",
+    "outboxBaseSelectOrUpdate": false,
+    "ownerSelectPolicy": "user_id = current_setting('app.actor_user_id', true)",
+    "ownerViewsSecurityInvoker": true,
+    "privilegeReconstructionTransactional": true
+  },
+  "decisionFlow": [
+    "ORDER_INTENT_VALIDATION",
+    "OWNER_ACTIVE_CURRENT_PRINCIPLE_PIN",
+    "SOURCE_FRESHNESS_APPLICABILITY",
+    "ALL_APPLICABLE_RULES",
+    "FINDINGS_AND_ABSTENTIONS",
+    "PINNED_MODE_OUTCOME",
+    "ATOMIC_PERSISTENCE"
+  ],
+  "disclosureProvenance": {
+    "eventCodesMaxItems": 100,
+    "missingRequiredPolicy": "ISSUE_WITHOUT_FAKE_RISK_ITEM",
+    "reportNameMatching": false,
+    "requiredRiskItemFields": [
+      "metric",
+      "value",
+      "severity",
+      "source",
+      "eventCodes",
+      "mappingVersion",
+      "sourceRefs"
+    ],
+    "sourceRefPattern": "^[0-9a-f]{64}$",
+    "sourceRefsMaxItems": 100,
+    "stableSortedUnique": true,
+    "truncateOnOverflow": false
+  },
+  "failurePolicy": {
+    "structuralSourceMissing": "S23_RUNTIME_SOURCE_BLOCKED",
+    "technicalFailure": "HTTP_5XX_ALL_WRITES_ZERO",
+    "transientRequiredDependency": "PERSISTED_HTTP_200_HOLD"
+  },
+  "freshness": {
+    "balanceSeconds": 60,
+    "calendarSource": "trading_sessions",
+    "calendarTimezone": "Asia/Seoul",
+    "dailySignalPolicy": "PREVIOUS_TRADING_DAY_CLOSE",
+    "disclosureHours": 24,
+    "ecosDays": 7,
+    "exactMaxAgeFresh": true,
+    "futureTimestampPolicy": "STALE",
+    "hmmPolicy": "PREVIOUS_TRADING_DAY_CLOSE",
+    "newsHours": 24,
+    "priceOrderbookSeconds": 300,
+    "riskPolicy": "PREVIOUS_TRADING_DAY_CLOSE",
+    "sixtyMinuteSignalMinutes": 90,
+    "storageTimezone": "UTC",
+    "validUntilPolicy": "MIN_EVALUATION_PLUS_TEN_MINUTES_AND_HARD_INPUT_FRESH_UNTIL",
+    "validityMinutes": 10
+  },
+  "grpc": {
+    "businessRpc": "GetDisclosureEvents",
+    "concurrencyMax": 8,
+    "corpCodeRequestPolicy": "OPTIONAL_EMPTY_RESOLVES_FROM_REGISTRY",
+    "corpRegistryResolution": "SYMBOL_EXACTLY_ONE",
+    "databaseErrorMapping": {
+      "authentication": "UNAUTHENTICATED",
+      "connectionOrNetwork": "UNAVAILABLE",
+      "insufficientPrivilege": "PERMISSION_DENIED",
+      "malformedRow": "DATA_LOSS",
+      "queryCancellationOrTimeout": "DEADLINE_EXCEEDED_OR_UNAVAILABLE",
+      "unexpectedInvariant": "INTERNAL"
+    },
+    "effectiveSourceDeadlineMillis": 500,
+    "eventLookbackDays": 365,
+    "hardDeadlineMillis": 2000,
+    "nonLoopbackStartup": "FAIL",
+    "physicalAttemptsMax": 1,
+    "reflection": false,
+    "requestMaxBytes": 262144,
+    "responseMaxBytes": 1048576,
+    "retryEnabled": false,
+    "totalEvaluationDeadlineMillis": 900,
+    "transparentRetryEnabled": false,
+    "transport": "NUMERIC_LOOPBACK_PLAINTEXT"
+  },
+  "http": {
+    "auditPath": "/api/v1/decisions/{decisionId}/audit",
+    "detailPath": "/api/v1/decisions/{decisionId}",
+    "evaluatePath": "/api/v1/decisions/evaluate-order",
+    "method": "POST",
+    "requestMaxBytes": 262144,
+    "responseMaxBytes": 1048576
+  },
+  "idempotency": {
+    "header": "X-Idempotency-Key",
+    "keyMaxLength": 128,
+    "keyMinLength": 16,
+    "keyPattern": "^[A-Za-z0-9._:-]+$",
+    "purposeVersion": "decision-evaluate-order/v1",
+    "replayPredicates": [
+      "scopeHash",
+      "ownerScopeHash",
+      "expiresAt"
+    ],
+    "retentionHours": 24,
+    "scope": "PURPOSE_VERSION_HMAC"
+  },
+  "observability": {
+    "failClosedCounter": "decision.fail_closed",
+    "failClosedReason": "FIRST_STABLE_SORTED_ISSUE",
+    "modes": [
+      "GUIDE",
+      "STRICT",
+      "UNPINNED"
+    ],
+    "normalPathExactOnce": true,
+    "outcomes": [
+      "ALLOW",
+      "WARN",
+      "HOLD",
+      "BLOCK",
+      "ERROR"
+    ],
+    "postCommitFaultIsolation": true,
+    "timer": "decision.evaluate"
+  },
+  "outcomePolicy": {
+    "precedence": [
+      "BLOCK",
+      "HOLD",
+      "WARN",
+      "ALLOW"
+    ],
+    "rows": [
+      {
+        "canSubmitOrder": true,
+        "enforcementAction": "NONE",
+        "mode": "GUIDE",
+        "outcome": "ALLOW"
+      },
+      {
+        "canSubmitOrder": true,
+        "enforcementAction": "NONE",
+        "mode": "STRICT",
+        "outcome": "ALLOW"
+      },
+      {
+        "canSubmitOrder": true,
+        "enforcementAction": "ACKNOWLEDGE_WARNING",
+        "mode": "GUIDE",
+        "outcome": "WARN"
+      },
+      {
+        "canSubmitOrder": true,
+        "enforcementAction": "RECONFIRM_PRINCIPLE",
+        "mode": "STRICT",
+        "outcome": "WARN"
+      },
+      {
+        "canSubmitOrder": false,
+        "enforcementAction": "RE_EVALUATE",
+        "mode": "GUIDE",
+        "outcome": "HOLD"
+      },
+      {
+        "canSubmitOrder": false,
+        "enforcementAction": "RE_EVALUATE",
+        "mode": "STRICT",
+        "outcome": "HOLD"
+      },
+      {
+        "canSubmitOrder": false,
+        "enforcementAction": "DO_NOT_SUBMIT",
+        "mode": "GUIDE",
+        "outcome": "BLOCK"
+      },
+      {
+        "canSubmitOrder": false,
+        "enforcementAction": "DO_NOT_SUBMIT",
+        "mode": "STRICT",
+        "outcome": "BLOCK"
+      }
+    ]
+  },
+  "persistence": {
+    "atomicInsertOrder": [
+      "decision",
+      "violations",
+      "trace",
+      "artifact",
+      "audit",
+      "outbox",
+      "idempotencyResult"
+    ],
+    "brokerPublish": false,
+    "transactionReadPolicy": "SOURCE_READ_AND_EVALUATION_OUTSIDE",
+    "transactionWritePolicy": "FINAL_PERSISTENCE_ONLY"
+  },
+  "principleConcurrency": {
+    "decisionFirst": "UPDATER_WAITS_FOR_DECISION_COMMIT",
+    "lockOrder": [
+      "IDEMPOTENCY_ADVISORY_LOCK",
+      "PRINCIPLE_FOR_SHARE",
+      "DECISION_GRAPH_INSERT"
+    ],
+    "principleLock": "FOR SHARE OF principle",
+    "updaterFirst": "HTTP_409_ALL_WRITES_ZERO"
+  },
+  "request": {
+    "fields": [
+      "principleId",
+      "portfolioSource",
+      "orderIntent"
+    ],
+    "forbiddenFields": [
+      "accountId",
+      "auditActor",
+      "corpCode",
+      "mode",
+      "time",
+      "userId"
+    ],
+    "orderIntentFields": [
+      "symbol",
+      "side",
+      "orderType",
+      "quantity",
+      "estimatedPrice",
+      "estimatedAmount",
+      "timeframe",
+      "strategyId"
+    ],
+    "portfolioSources": [
+      "KIS_MOCK",
+      "INTERNAL_PAPER"
+    ]
+  },
+  "response": {
+    "fields": [
+      "decisionId",
+      "createdAt",
+      "validUntil",
+      "principleId",
+      "principleVersionId",
+      "principleVersion",
+      "portfolioSource",
+      "mode",
+      "enforcementAction",
+      "riskDecision"
+    ],
+    "schemaVersion": "s2-3-persisted-decision/v1"
+  },
+  "sourceOwnership": {
+    "balanceTables": [
+      "portfolio_balance_observations",
+      "portfolio_position_observations"
+    ],
+    "instrumentFields": [
+      "symbol",
+      "isEtfEtn",
+      "isGoldEtfEtn",
+      "productRiskScore",
+      "catalogVersion",
+      "observedAt",
+      "receivedAt",
+      "sourceRef",
+      "artifactHash"
+    ],
+    "instrumentProducer": "S1.1",
+    "instrumentProductRiskScoreNullable": true,
+    "instrumentProjection": "latest_instrument_catalog_observations",
+    "instrumentReaderMaxRows": 1,
+    "instrumentTable": "instrument_catalog_observations",
+    "instrumentTimePolicy": "FUTURE_TIMESTAMP_IS_STALE",
+    "instrumentVersionPolicy": "LATEST_OBSERVED_VERSION_NO_FALLBACK",
+    "instrumentWriterRole": "decision_market_writer",
+    "observationContracts": [
+      {
+        "producerOwner": "S1.6",
+        "projection": "current_corporation_registry_projection",
+        "table": "corporation_registry_observations",
+        "writerRole": "decision_collector"
+      },
+      {
+        "producerOwner": "DETERMINISTIC_SOURCE",
+        "projection": "latest_daily_order_count_observations",
+        "table": "daily_order_count_observations",
+        "writerRole": "decision_risk_writer"
+      },
+      {
+        "producerOwner": "DETERMINISTIC_SOURCE",
+        "projection": "latest_deterministic_risk_observations",
+        "table": "deterministic_risk_observations",
+        "writerRole": "decision_risk_writer"
+      },
+      {
+        "producerOwner": "S1.1",
+        "projection": "latest_instrument_catalog_observations",
+        "table": "instrument_catalog_observations",
+        "writerRole": "decision_market_writer"
+      },
+      {
+        "producerOwner": "S1.1",
+        "projection": "latest_market_quote_observations",
+        "table": "market_quote_observations",
+        "writerRole": "decision_market_writer"
+      },
+      {
+        "producerOwner": "S3",
+        "projection": "latest_portfolio_balance_observations",
+        "table": "portfolio_balance_observations",
+        "writerRole": "decision_portfolio_writer"
+      },
+      {
+        "producerOwner": "S3",
+        "projection": "latest_portfolio_balance_observations",
+        "table": "portfolio_position_observations",
+        "writerRole": "decision_portfolio_writer"
+      }
+    ],
+    "portfolioProducer": "S3",
+    "priceProducer": "S1.1",
+    "priceTable": "market_quote_observations",
+    "productionSeed": false,
+    "providerHttpFallback": false,
+    "reader": "S2.3",
+    "structuralMissingPolicy": "S23_RUNTIME_SOURCE_BLOCKED",
+    "structuralReadinessRequirements": [
+      "canonicalTableOrProjection",
+      "productionBeanOrPort",
+      "offlineFixtureProducer",
+      "leastPrivilegeWriterRole",
+      "boundedReader",
+      "freshnessCompletenessContract",
+      "noFakeRegressionTest"
+    ],
+    "transientUnavailablePolicy": "PERSISTED_HOLD"
+  }
+}

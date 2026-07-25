@@ -58,6 +58,7 @@ data class PortfolioEvaluationCommand(
     val evaluationAsOf: Instant,
     val orderIntent: OrderIntentSnapshot,
     val optionalComponents: Set<OptionalEvaluationComponent> = emptySet(),
+    val decisionId: String = evaluationId,
 )
 
 data class OfflinePortfolioEvaluation(
@@ -84,10 +85,24 @@ class PortfolioEvaluationUseCase(
 ) {
     fun evaluate(command: PortfolioEvaluationCommand): OfflinePortfolioEvaluation {
         // selector가 틀리면 owner lookup이나 source port를 한 번도 호출하지 않는다.
-        val source = parsePortfolioSource(command.portfolioSource)
+        parsePortfolioSource(command.portfolioSource)
         val principle =
             principleSnapshotPort.findActiveOwned(command.actorUserId, command.principleId)
                 ?: throw PrincipleNotFoundException()
+        return evaluatePinned(command, principle)
+    }
+
+    /**
+     * S2.3 HTTP orchestration이 한 SQL로 pin한 immutable Principle을 재사용해 source read 전에 이중 조회를 만들지 않는다.
+     */
+    fun evaluatePinned(
+        command: PortfolioEvaluationCommand,
+        principle: ActivePrincipleSnapshot,
+    ): OfflinePortfolioEvaluation {
+        val source = parsePortfolioSource(command.portfolioSource)
+        check(principle.principleId == command.principleId) {
+            "Pinned Principle does not match the evaluation selector."
+        }
         return when (val resolution = portfolioContextPort.resolve(command.actorUserId, source)) {
             is PortfolioContextResolution.Unavailable ->
                 contextUnavailable(command, principle, source)
@@ -119,6 +134,7 @@ class PortfolioEvaluationUseCase(
                     systemRuleCatalogVersion = systemRuleContract.catalogVersion,
                     readinessPolicyVersion = systemRuleContract.readinessPolicyVersion,
                     acquisitionPlan = plan,
+                    decisionId = command.decisionId,
                 ),
             )
         val candidates = candidateRules(principle, snapshot, command.optionalComponents)
@@ -402,7 +418,7 @@ class PortfolioEvaluationUseCase(
         // early business HOLD도 wire hash 계약을 만족하도록 provider evidence가 없는 snapshot을 남긴다.
         val snapshot =
             MetricSnapshot(
-                snapshotSchemaVersion = "s2.2-metric-snapshot-v1",
+                snapshotSchemaVersion = "s2.2-metric-snapshot-v2",
                 evaluationId = command.evaluationId,
                 evaluationAsOf = command.evaluationAsOf,
                 retrievedAt = command.evaluationAsOf,

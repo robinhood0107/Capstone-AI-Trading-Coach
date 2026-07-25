@@ -1,5 +1,20 @@
 package com.capstone.decision
 
+import com.capstone.decision.application.risk.port.EvaluationSourceRequest
+import com.capstone.decision.application.risk.port.InstrumentCatalogPort
+import com.capstone.decision.application.risk.port.OrderMetricPort
+import com.capstone.decision.application.risk.port.PortfolioContextResolution
+import com.capstone.decision.application.risk.port.RiskSnapshotPort
+import com.capstone.decision.domain.risk.MetricCell
+import com.capstone.decision.domain.risk.MetricSource
+import com.capstone.decision.domain.risk.MetricValue
+import com.capstone.decision.domain.risk.OrderIntentSnapshot
+import com.capstone.decision.domain.risk.PortfolioSource
+import com.capstone.decision.infrastructure.risk.JdbcInternalPaperBalanceAdapter
+import com.capstone.decision.infrastructure.risk.JdbcKisMockBalanceAdapter
+import com.capstone.decision.infrastructure.risk.JdbcMarketQuoteAdapter
+import com.capstone.decision.infrastructure.risk.JdbcPortfolioContextAdapter
+import com.capstone.decision.infrastructure.risk.JdbcStoredMarginAdapter
 import org.flywaydb.core.Flyway
 import org.flywaydb.core.api.FlywayException
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -17,12 +32,14 @@ import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
+import org.springframework.transaction.support.TransactionSynchronizationManager
 import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
 import org.testcontainers.postgresql.PostgreSQLContainer
 import org.testcontainers.utility.DockerImageName
 import java.sql.DriverManager
 import java.sql.SQLException
+import java.time.Instant
 import java.util.Base64
 import java.util.HexFormat
 import java.util.stream.Stream
@@ -32,11 +49,19 @@ import java.util.stream.Stream
 @SpringBootTest
 class FlywayMigrationIntegrationTest(
     @Autowired private val jdbcTemplate: JdbcTemplate,
+    @Autowired private val portfolioContextAdapter: JdbcPortfolioContextAdapter,
+    @Autowired private val marketQuoteAdapter: JdbcMarketQuoteAdapter,
+    @Autowired private val kisMockBalanceAdapter: JdbcKisMockBalanceAdapter,
+    @Autowired private val internalPaperBalanceAdapter: JdbcInternalPaperBalanceAdapter,
+    @Autowired private val storedMarginAdapter: JdbcStoredMarginAdapter,
+    @Autowired private val instrumentCatalogPort: InstrumentCatalogPort,
+    @Autowired private val orderMetricPort: OrderMetricPort,
+    @Autowired private val riskSnapshotPort: RiskSnapshotPort,
 ) : SpringApiIntegrationTestBase() {
     @Test
-    fun `clean database applies V1 through V8 migrations and creates required objects`() {
+    fun `clean database applies V1 through V9 migrations and creates required objects`() {
         val versions = queryStrings("select version from flyway_schema_history where success order by installed_rank")
-        assertEquals(listOf("1", "2", "3", "4", "5", "6", "7", "8"), versions)
+        assertEquals(listOf("1", "2", "3", "4", "5", "6", "7", "8", "9"), versions)
 
         val requiredTables =
             listOf(
@@ -60,6 +85,26 @@ class FlywayMigrationIntegrationTest(
                 "calendar_conflicts",
                 "calendar_collection_cursors",
                 "disclosure_risk_state_transitions",
+                "market_quote_observations",
+                "instrument_catalog_observations",
+                "portfolio_balance_observations",
+                "portfolio_position_observations",
+                "deterministic_risk_observations",
+                "daily_order_count_observations",
+                "corporation_registry_observations",
+                "decision_artifacts",
+                "decision_traces",
+                "decision_idempotency_results",
+                "decision_owner_projection",
+                "decision_audit_projection",
+                "latest_market_quote_observations",
+                "latest_instrument_catalog_observations",
+                "latest_portfolio_balance_observations",
+                "latest_deterministic_risk_observations",
+                "latest_daily_order_count_observations",
+                "current_corporation_registry_projection",
+                "disclosure_event_observation_projection",
+                "disclosure_collection_status_projection",
             )
         requiredTables.forEach { tableName ->
             assertTrue(tableExists(tableName), "expected table $tableName to exist")
@@ -72,6 +117,112 @@ class FlywayMigrationIntegrationTest(
         assertEquals(2, countRows("trading_session_revisions", "canonical_rule_version = 'V4_COMPAT_MIGRATION'"))
         assertTrue(indexExists("idx_chunks_trgm"), "expected pg_trgm index for Korean keyword search")
         assertFalse(indexDefinitionLike("rag_chunks", "%ivfflat%"), "ivfflat must wait until real embeddings are loaded")
+    }
+
+    @Test
+    fun `fresh V9 migration leaves every production source table empty`() {
+        val migrationUrl = createDatabase("v9_source_seed_zero")
+        flyway(migrationUrl).migrate()
+
+        val sourceTables =
+            listOf(
+                "market_quote_observations",
+                "instrument_catalog_observations",
+                "portfolio_balance_observations",
+                "portfolio_position_observations",
+                "deterministic_risk_observations",
+                "daily_order_count_observations",
+                "corporation_registry_observations",
+            )
+        DriverManager.getConnection(migrationUrl, postgres.username, postgres.password).use { connection ->
+            connection.createStatement().use { statement ->
+                sourceTables.forEach { tableName ->
+                    statement.executeQuery("select count(*) from $tableName").use { result ->
+                        assertTrue(result.next())
+                        assertEquals(0, result.getInt(1), "$tableName must not receive production seed rows")
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `V9 populated precondition failure preserves the complete V8 schema and row`() {
+        val migrationUrl = createDatabase("v9_populated_precondition")
+        flyway(migrationUrl, target = "8").migrate()
+        DriverManager.getConnection(migrationUrl, postgres.username, postgres.password).use { connection ->
+            connection.createStatement().use { statement ->
+                statement.execute(
+                    """
+                    insert into principles (
+                      principle_id, user_id, preset_id, title, mode, status, current_version
+                    ) values (
+                      'prn-v9-guard', 'usr_demo_user', 'balanced',
+                      'V9 guard fixture', 'GUIDE', 'ACTIVE', 1
+                    )
+                    """.trimIndent(),
+                )
+                statement.execute(
+                    """
+                    insert into principle_versions (
+                      principle_version_id, principle_id, version, preset_id, title,
+                      mode, status, rules_json, changed_fields, created_by
+                    )
+                    select
+                      'prv-v9-guard', 'prn-v9-guard', 1, preset_id, 'V9 guard fixture',
+                      'GUIDE', 'ACTIVE', rules_json, array['title'], 'usr_demo_user'
+                    from principle_presets
+                    where preset_id = 'balanced'
+                    """.trimIndent(),
+                )
+                statement.execute(
+                    """
+                    insert into decisions (
+                      decision_id, user_id, account_id, principle_version_id,
+                      symbol, side, decision, mode, reason_json,
+                      signal_snapshot_json, created_at, valid_until
+                    ) values (
+                      'dec-v9-guard', 'usr_demo_user', 'sanitized-account-scope',
+                      'prv-v9-guard', '005930', 'BUY', 'HOLD', 'GUIDE',
+                      '{}'::jsonb, '{}'::jsonb, now(), now() + interval '10 minutes'
+                    )
+                    """.trimIndent(),
+                )
+            }
+        }
+
+        val failure = assertThrows<FlywayException> { flyway(migrationUrl).migrate() }
+        assertTrue(failure.stackTraceToString().contains("S2.3 V9 precondition failed"))
+
+        DriverManager.getConnection(migrationUrl, postgres.username, postgres.password).use { connection ->
+            connection.createStatement().use { statement ->
+                statement.executeQuery("select count(*) from decisions where decision_id = 'dec-v9-guard'").use {
+                    assertTrue(it.next())
+                    assertEquals(1, it.getInt(1))
+                }
+                statement
+                    .executeQuery(
+                        """
+                        select
+                          count(*) filter (where column_name = 'account_id'),
+                          count(*) filter (where column_name = 'evaluation_id')
+                        from information_schema.columns
+                        where table_schema = 'public' and table_name = 'decisions'
+                        """.trimIndent(),
+                    ).use {
+                        assertTrue(it.next())
+                        assertEquals(1, it.getInt(1))
+                        assertEquals(0, it.getInt(2))
+                    }
+                statement
+                    .executeQuery(
+                        "select version from flyway_schema_history where success order by installed_rank desc limit 1",
+                    ).use {
+                        assertTrue(it.next())
+                        assertEquals("8", it.getString(1))
+                    }
+            }
+        }
     }
 
     @Test
@@ -290,6 +441,717 @@ class FlywayMigrationIntegrationTest(
     }
 
     @Test
+    fun `decision application role has exact append only V9 privileges`() {
+        listOf(
+            "decisions",
+            "decision_violations",
+            "decision_artifacts",
+            "decision_traces",
+            "audit_logs",
+            "event_outbox",
+            "decision_idempotency_results",
+        ).forEach { table ->
+            assertTrue(hasTablePrivilege("decision_app", table, "INSERT"), "missing INSERT on $table")
+        }
+        listOf(
+            "decision_owner_projection",
+            "decision_audit_projection",
+            "latest_market_quote_observations",
+            "latest_portfolio_balance_observations",
+            "active_paper_portfolio_projection",
+            "latest_instrument_catalog_observations",
+            "latest_deterministic_risk_observations",
+            "latest_daily_order_count_observations",
+        ).forEach { table ->
+            assertTrue(hasTablePrivilege("decision_app", table, "SELECT"), "missing SELECT on $table")
+        }
+        listOf(
+            "decisions",
+            "decision_violations",
+            "decision_artifacts",
+            "decision_traces",
+            "audit_logs",
+            "event_outbox",
+        ).forEach { table ->
+            assertFalse(hasTablePrivilege("decision_app", table, "SELECT"), "unexpected SELECT on $table")
+            assertFalse(hasTablePrivilege("decision_app", table, "UPDATE"), "unexpected UPDATE on $table")
+            assertFalse(hasTablePrivilege("decision_app", table, "DELETE"), "unexpected DELETE on $table")
+            assertFalse(hasTablePrivilege("decision_app", table, "TRUNCATE"), "unexpected TRUNCATE on $table")
+        }
+        listOf(
+            "market_quote_observations",
+            "portfolio_balance_observations",
+            "portfolio_position_observations",
+            "instrument_catalog_observations",
+            "deterministic_risk_observations",
+            "daily_order_count_observations",
+            "corporation_registry_observations",
+            "current_corporation_registry_projection",
+            "disclosure_event_observation_projection",
+            "disclosure_collection_status_projection",
+        ).forEach { table ->
+            assertFalse(hasTablePrivilege("decision_app", table, "SELECT"), "unexpected source SELECT on $table")
+            assertFalse(hasTablePrivilege("decision_app", table, "INSERT"), "unexpected source INSERT on $table")
+            assertFalse(hasTablePrivilege("decision_app", table, "UPDATE"), "unexpected source UPDATE on $table")
+            assertFalse(hasTablePrivilege("decision_app", table, "DELETE"), "unexpected source DELETE on $table")
+            assertFalse(hasTablePrivilege("decision_app", table, "TRUNCATE"), "unexpected source TRUNCATE on $table")
+        }
+        assertFalse(hasTablePrivilege("decision_app", "rag_answers", "SELECT"))
+        assertFalse(hasTablePrivilege("decision_app", "decision_idempotency_results", "SELECT"))
+        assertFalse(hasTablePrivilege("decision_app", "flyway_schema_history", "SELECT"))
+        assertFalse(hasSchemaPrivilege("decision_app", "CREATE"))
+
+        listOf(
+            "current_corporation_registry_projection",
+            "disclosure_event_observation_projection",
+            "disclosure_collection_status_projection",
+        ).forEach { table ->
+            assertTrue(hasTablePrivilege("decision_disclosure_reader", table, "SELECT"), "missing reader SELECT on $table")
+        }
+        listOf(
+            "decisions",
+            "audit_logs",
+            "market_quote_observations",
+            "corporation_registry_observations",
+            "flyway_schema_history",
+        ).forEach { table ->
+            listOf("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE").forEach { privilege ->
+                assertFalse(
+                    hasTablePrivilege("decision_disclosure_reader", table, privilege),
+                    "unexpected disclosure reader $privilege on $table",
+                )
+            }
+        }
+        assertFalse(hasSchemaPrivilege("decision_disclosure_reader", "CREATE"))
+        assertRolePermissionDenied(
+            "decision_disclosure_reader",
+            DISCLOSURE_READER_PASSWORD,
+            "insert into decisions (decision_id) values ('reader-forbidden')",
+        )
+        assertRolePermissionDenied(
+            "decision_disclosure_reader",
+            DISCLOSURE_READER_PASSWORD,
+            "select * from flyway_schema_history",
+        )
+
+        val roleFlags =
+            jdbcTemplate.queryForMap(
+                """
+                select rolsuper, rolcreaterole, rolcreatedb, rolreplication, rolbypassrls
+                from pg_roles
+                where rolname = 'decision_app'
+                """.trimIndent(),
+            )
+        assertTrue(roleFlags.values.all { it == false })
+    }
+
+    @Test
+    fun `decision application role receives SQLSTATE 42501 for forbidden history source and schema operations`() {
+        listOf(
+            "update decisions set outcome = outcome where false",
+            "delete from decisions where false",
+            "truncate table decisions",
+            "update audit_logs set action = action where false",
+            "delete from audit_logs where false",
+            "truncate table audit_logs",
+            "update event_outbox set status = status where false",
+            "delete from event_outbox where false",
+            "truncate table event_outbox",
+            "insert into market_quote_observations " +
+                "(observation_id, symbol, source, price_krw, completeness, observed_at, received_at, " +
+                "schema_version, source_version, payload_json, source_ref, artifact_hash) values " +
+                "('forbidden', '005930', 'KIS_MOCK', 1, 'COMPLETE', now(), now(), 'v1', 'v1', " +
+                "'{}'::jsonb, repeat('a', 64), repeat('b', 64))",
+            "select * from rag_answers limit 0",
+            "select * from decisions limit 0",
+            "select * from audit_logs limit 0",
+            "select * from event_outbox limit 0",
+            "select * from decision_idempotency_results limit 0",
+            "update flyway_schema_history set success = success where false",
+            "create table s23_forbidden_schema_write (id integer)",
+        ).forEach(::assertDecisionAppPermissionDenied)
+    }
+
+    @Test
+    fun `V9 owner views use invoker mode while bounded functions keep base tables denied`() {
+        listOf("decision_owner_projection", "decision_audit_projection").forEach { view ->
+            val options =
+                jdbcTemplate.queryForObject(
+                    "select coalesce(array_to_string(reloptions, ','), '') from pg_class where oid = ?::regclass",
+                    String::class.java,
+                    view,
+                ) ?: ""
+            assertTrue(options.contains("security_invoker=true"), "$view must be security_invoker")
+        }
+        assertTrue(hasFunctionPrivilege("decision_app", "find_decision_idempotency_result(text,text,timestamp with time zone)"))
+        assertFalse(hasTablePrivilege("decision_app", "decision_idempotency_results", "SELECT"))
+
+        val probe = "s23_future_acl_probe"
+        jdbcTemplate.execute("drop table if exists $probe")
+        try {
+            DriverManager.getConnection(postgres.jdbcUrl, "flyway", FLYWAY_PASSWORD).use { connection ->
+                connection.createStatement().use { statement ->
+                    statement.execute("create table $probe (id integer)")
+                }
+            }
+            assertDecisionAppPermissionDenied("select * from $probe")
+        } finally {
+            jdbcTemplate.execute("drop table if exists $probe")
+        }
+    }
+
+    @Test
+    fun `source writer roles can append only their own bounded observations`() {
+        assertWriterInsert(
+            "decision_market_writer",
+            MARKET_WRITER_PASSWORD,
+            """
+            insert into instrument_catalog_observations (
+              observation_id, symbol, is_etf_etn, is_gold_etf_etn, product_risk_score,
+              catalog_version, observed_at, received_at, completeness, schema_version,
+              source_version, payload_json, source_ref, artifact_hash
+            ) values (
+              'ins-writer-role', 'WRITER01', true, false, 0.25, 'catalog-writer-v1',
+              '2031-01-01T00:00:00Z', '2031-01-01T00:00:01Z', 'COMPLETE',
+              'instrument-catalog-observation.v1', 'fixture-v1',
+              '{"symbol":"WRITER01"}'::jsonb, repeat('1', 64), repeat('2', 64)
+            )
+            """.trimIndent(),
+        )
+        assertWriterInsert(
+            "decision_market_writer",
+            MARKET_WRITER_PASSWORD,
+            """
+            insert into market_quote_observations (
+              observation_id, symbol, source, price_krw, bid_krw, ask_krw,
+              observed_at, received_at, completeness, schema_version, source_version,
+              payload_json, source_ref, artifact_hash
+            ) values (
+              'quote-writer-role', 'WRITER02', 'KIS_MOCK', 1000, 990, 1010,
+              '2031-01-01T00:00:00Z', '2031-01-01T00:00:01Z', 'COMPLETE',
+              'market-quote-observation.v1', 'fixture-v1',
+              '{"symbol":"WRITER02"}'::jsonb, repeat('b', 64), repeat('c', 64)
+            )
+            """.trimIndent(),
+        )
+        assertWriterInsert(
+            "decision_risk_writer",
+            RISK_WRITER_PASSWORD,
+            """
+            insert into deterministic_risk_observations (
+              observation_id, owner_user_id, owner_scope_hash, portfolio_source,
+              daily_loss_rate, max_drawdown, annualized_volatility, completeness,
+              observed_at, received_at, schema_version, source_version, payload_json,
+              source_ref, artifact_hash
+            ) values (
+              'risk-writer-role', 'usr_demo_user', repeat('3', 64), 'KIS_MOCK',
+              -0.01, -0.05, 0.20, 'COMPLETE',
+              '2026-06-23T06:31:00Z', '2026-06-23T06:31:01Z',
+              'deterministic-risk-observation.v1', 'fixture-v1',
+              '{"ownerScopeHash":"sanitized"}'::jsonb, repeat('4', 64), repeat('5', 64)
+            )
+            """.trimIndent(),
+        )
+        assertWriterInsert(
+            "decision_risk_writer",
+            RISK_WRITER_PASSWORD,
+            """
+            insert into daily_order_count_observations (
+              observation_id, owner_user_id, owner_scope_hash, portfolio_source,
+              trading_date, order_count, covered_through, completeness,
+              observed_at, received_at, schema_version, source_version, payload_json,
+              source_ref, artifact_hash
+            ) values (
+              'orders-writer-role', 'usr_demo_user', repeat('d', 64), 'KIS_MOCK',
+              '2031-01-01', 0, '2031-01-01T00:00:00Z', 'COMPLETE',
+              '2031-01-01T00:00:00Z', '2031-01-01T00:00:01Z',
+              'daily-order-count-observation.v1', 'fixture-v1', '{}'::jsonb,
+              repeat('e', 64), repeat('f', 64)
+            )
+            """.trimIndent(),
+        )
+        assertWriterInsert(
+            "decision_portfolio_writer",
+            PORTFOLIO_WRITER_PASSWORD,
+            """
+            insert into portfolio_balance_observations (
+              observation_id, owner_user_id, account_scope_hash, source, context_status,
+              cash_krw, portfolio_equity_krw, margin_requirement_krw, completeness,
+              position_count, observed_at, received_at, schema_version, source_version,
+              payload_json, source_ref, artifact_hash
+            ) values (
+              'balance-writer-role', 'usr_demo_admin', repeat('6', 64), 'KIS_MOCK', 'ACTIVE',
+              1, 1, 0, 'COMPLETE', 1, '2031-01-01T00:00:00Z', '2031-01-01T00:00:01Z',
+              'portfolio-balance-observation.v1', 'fixture-v1', '{}'::jsonb,
+              repeat('7', 64), repeat('8', 64)
+            )
+            """.trimIndent(),
+        )
+        assertWriterInsert(
+            "decision_portfolio_writer",
+            PORTFOLIO_WRITER_PASSWORD,
+            """
+            insert into portfolio_position_observations (
+              balance_observation_id, symbol, quantity, market_value_krw, is_gold_etf_etn
+            ) values ('balance-writer-role', 'WRITER03', 1, 1, false)
+            """.trimIndent(),
+        )
+        assertWriterInsert(
+            "decision_collector",
+            COLLECTOR_PASSWORD,
+            """
+            insert into corporation_registry_observations (
+              observation_id, symbol, corp_code, registry_status, completeness,
+              observed_at, received_at, schema_version, source_version, payload_json,
+              source_ref, artifact_hash
+            ) values (
+              'corp-writer-role', '999998', '12345678', 'ACTIVE', 'COMPLETE',
+              '2031-01-01T00:00:00Z', '2031-01-01T00:00:01Z',
+              'corporation-registry-observation.v1', 'fixture-v1',
+              '{"symbol":"999998"}'::jsonb, repeat('9', 64), repeat('a', 64)
+            )
+            """.trimIndent(),
+        )
+
+        assertRolePermissionDenied(
+            "decision_market_writer",
+            MARKET_WRITER_PASSWORD,
+            "select * from instrument_catalog_observations",
+        )
+        assertRolePermissionDenied(
+            "decision_market_writer",
+            MARKET_WRITER_PASSWORD,
+            "insert into deterministic_risk_observations " +
+                "(observation_id, owner_user_id, owner_scope_hash, portfolio_source, completeness, " +
+                "observed_at, received_at, schema_version, source_version, payload_json, source_ref, artifact_hash) " +
+                "values ('forbidden-risk', 'usr_demo_user', repeat('b',64), 'KIS_MOCK', 'PARTIAL', " +
+                "now(), now(), 'v1', 'v1', '{}'::jsonb, repeat('c',64), repeat('d',64))",
+        )
+        assertRolePermissionDenied(
+            "decision_market_writer",
+            MARKET_WRITER_PASSWORD,
+            "create table forbidden_writer_ddl (id integer)",
+        )
+        val writerOwnedTables =
+            listOf(
+                arrayOf(
+                    "decision_market_writer",
+                    MARKET_WRITER_PASSWORD,
+                    "market_quote_observations",
+                    "observation_id = observation_id",
+                ),
+                arrayOf(
+                    "decision_market_writer",
+                    MARKET_WRITER_PASSWORD,
+                    "instrument_catalog_observations",
+                    "observation_id = observation_id",
+                ),
+                arrayOf(
+                    "decision_portfolio_writer",
+                    PORTFOLIO_WRITER_PASSWORD,
+                    "portfolio_balance_observations",
+                    "observation_id = observation_id",
+                ),
+                arrayOf(
+                    "decision_portfolio_writer",
+                    PORTFOLIO_WRITER_PASSWORD,
+                    "portfolio_position_observations",
+                    "symbol = symbol",
+                ),
+                arrayOf(
+                    "decision_risk_writer",
+                    RISK_WRITER_PASSWORD,
+                    "deterministic_risk_observations",
+                    "observation_id = observation_id",
+                ),
+                arrayOf(
+                    "decision_risk_writer",
+                    RISK_WRITER_PASSWORD,
+                    "daily_order_count_observations",
+                    "observation_id = observation_id",
+                ),
+                arrayOf(
+                    "decision_collector",
+                    COLLECTOR_PASSWORD,
+                    "corporation_registry_observations",
+                    "observation_id = observation_id",
+                ),
+            )
+        writerOwnedTables.forEach { (role, password, ownedTable, noOpAssignment) ->
+            assertTrue(hasTablePrivilege(role, ownedTable, "INSERT"), "missing writer INSERT on $ownedTable")
+            listOf("SELECT", "UPDATE", "DELETE", "TRUNCATE").forEach { privilege ->
+                assertFalse(
+                    hasTablePrivilege(role, ownedTable, privilege),
+                    "unexpected writer $privilege on $ownedTable",
+                )
+            }
+            assertRolePermissionDenied(role, password, "select * from $ownedTable")
+            assertRolePermissionDenied(role, password, "update $ownedTable set $noOpAssignment")
+            assertRolePermissionDenied(role, password, "delete from $ownedTable")
+            assertRolePermissionDenied(role, password, "truncate table $ownedTable")
+        }
+        writerOwnedTables
+            .map { it[0] to it[1] }
+            .distinct()
+            .forEach { (role, password) ->
+                assertRolePermissionDenied(role, password, "insert into decisions (decision_id) values ('forbidden')")
+                assertRolePermissionDenied(role, password, "create table forbidden_${role}_ddl (id integer)")
+            }
+    }
+
+    @Test
+    fun `stored quote and KIS mock balance are owner scoped exact observations outside the persistence transaction`() {
+        val observedAt = "2031-02-03T04:05:06Z"
+        jdbcTemplate.update(
+            """
+            insert into market_quote_observations (
+              observation_id, symbol, source, price_krw, bid_krw, ask_krw,
+              observed_at, received_at,
+              completeness, schema_version, source_version, payload_json, source_ref, artifact_hash
+            )
+            values (
+              'obs-quote-s23', '005930', 'KIS_MOCK', 70000, 69900, 70000,
+              ?::timestamptz, ?::timestamptz,
+              'COMPLETE', 'market-quote-observation.v1', 'kis-mock-fixture-v1',
+              '{"symbol":"005930"}'::jsonb, repeat('a', 64), repeat('b', 64)
+            )
+            """.trimIndent(),
+            observedAt,
+            observedAt,
+        )
+        jdbcTemplate.update(
+            """
+            insert into portfolio_balance_observations (
+              observation_id, owner_user_id, account_scope_hash, source, context_status,
+              cash_krw, portfolio_equity_krw, margin_requirement_krw, completeness, position_count,
+              observed_at, received_at, schema_version, source_version, payload_json,
+              source_ref, artifact_hash
+            )
+            values (
+              'obs-balance-s23', 'usr_demo_user', repeat('c', 64), 'KIS_MOCK', 'ACTIVE',
+              500000, 1000000, 140000, 'COMPLETE', 1,
+              ?::timestamptz, ?::timestamptz,
+              'portfolio-balance-observation.v1', 'kis-mock-fixture-v1',
+              '{"ownerScopeHash":"sanitized"}'::jsonb,
+              repeat('d', 64), repeat('e', 64)
+            )
+            """.trimIndent(),
+            observedAt,
+            observedAt,
+        )
+        jdbcTemplate.update(
+            """
+            insert into portfolio_position_observations (
+              balance_observation_id, symbol, quantity, market_value_krw, is_gold_etf_etn
+            )
+            values ('obs-balance-s23', '005930', 10, 700000, false)
+            """.trimIndent(),
+        )
+
+        assertFalse(TransactionSynchronizationManager.isActualTransactionActive())
+        val context =
+            portfolioContextAdapter.resolve("usr_demo_user", PortfolioSource.KIS_MOCK)
+                as PortfolioContextResolution.Available
+        val sourceRequest =
+            EvaluationSourceRequest(
+                actorUserId = "usr_demo_user",
+                portfolioContext = context.context,
+                orderIntent =
+                    OrderIntentSnapshot(
+                        symbol = "005930",
+                        side = "BUY",
+                        orderType = "MARKET",
+                        quantity = 2,
+                        estimatedPrice = 70000,
+                        estimatedAmount = 140000,
+                        timeframe = "1d",
+                        strategyId = "stored-source-test",
+                    ),
+                evaluationAsOf = java.time.Instant.parse(observedAt),
+            )
+
+        val price = marketQuoteAdapter.load(sourceRequest) as MetricCell.Available
+        val balance = kisMockBalanceAdapter.load(sourceRequest) as MetricCell.Available
+        val margin = storedMarginAdapter.load(sourceRequest) as MetricCell.Available
+        assertEquals(70000L, (price.value as MetricValue.Whole).value)
+        assertEquals(1000000L, balance.value.portfolioEquityKrw)
+        assertEquals(listOf("005930"), balance.value.positions.map { it.symbol })
+        assertEquals(140000L, (margin.value as MetricValue.Whole).value)
+        assertEquals(java.time.Instant.parse("2031-02-03T04:10:06Z"), price.freshUntil)
+        assertEquals(java.time.Instant.parse("2031-02-03T04:06:06Z"), balance.freshUntil)
+        assertFalse(TransactionSynchronizationManager.isActualTransactionActive())
+
+        assertTrue(
+            portfolioContextAdapter.resolve("usr_missing_context", PortfolioSource.KIS_MOCK)
+                is PortfolioContextResolution.Unavailable,
+        )
+    }
+
+    @Test
+    fun `internal paper never synthesizes margin zero or position classification`() {
+        jdbcTemplate.update(
+            """
+            insert into paper_accounts (
+              account_id, user_id, name, cash_balance, currency, status, created_at, updated_at
+            )
+            values (
+              'paper-s23', 'usr_demo_admin', 'Paper S2.3', 900000, 'KRW', 'ACTIVE',
+              '2031-02-03T04:00:00Z', '2031-02-03T04:05:06Z'
+            )
+            """.trimIndent(),
+        )
+        jdbcTemplate.update(
+            """
+            insert into paper_positions (
+              position_id, account_id, symbol, quantity, average_price, market_value, updated_at
+            )
+            values (
+              'position-s23', 'paper-s23', '999999', 1, 100000, 100000, '2031-02-03T04:05:06Z'
+            )
+            """.trimIndent(),
+        )
+        val resolution =
+            portfolioContextAdapter.resolve("usr_demo_admin", PortfolioSource.INTERNAL_PAPER)
+                as PortfolioContextResolution.Available
+        val request =
+            EvaluationSourceRequest(
+                actorUserId = "usr_demo_admin",
+                portfolioContext = resolution.context,
+                orderIntent =
+                    OrderIntentSnapshot(
+                        symbol = "005930",
+                        side = "BUY",
+                        orderType = "LIMIT",
+                        quantity = 1,
+                        estimatedPrice = 70000,
+                        estimatedAmount = 70000,
+                        timeframe = "1d",
+                        strategyId = "paper-source-test",
+                    ),
+                evaluationAsOf = java.time.Instant.parse("2031-02-03T04:05:06Z"),
+            )
+
+        assertTrue(internalPaperBalanceAdapter.load(request) is MetricCell.Incomplete)
+        assertTrue(storedMarginAdapter.load(request) is MetricCell.Missing)
+    }
+
+    @Test
+    fun `approved stored instrument risk and daily order sources are bounded production ports`() {
+        val evaluationAsOf = Instant.parse("2026-06-24T03:00:00Z")
+        jdbcTemplate.update(
+            """
+            insert into instrument_catalog_observations (
+              observation_id, symbol, is_etf_etn, is_gold_etf_etn, product_risk_score,
+              catalog_version, observed_at, received_at, completeness, schema_version,
+              source_version, payload_json, source_ref, artifact_hash
+            ) values (
+              'ins-s23-v1', '005930', false, false, null, 'catalog-v1',
+              '2026-06-24T01:00:00Z', '2026-06-24T01:00:01Z', 'COMPLETE',
+              'instrument-catalog-observation.v1', 'sanitized-fixture-v1',
+              '{"symbol":"005930","catalogVersion":"catalog-v1"}'::jsonb,
+              repeat('1', 64), repeat('2', 64)
+            ), (
+              'ins-s23-v2', '005930', true, false, 0.35, 'catalog-v2',
+              '2026-06-24T02:00:00Z', '2026-06-24T02:00:01Z', 'COMPLETE',
+              'instrument-catalog-observation.v1', 'sanitized-fixture-v2',
+              '{"symbol":"005930","catalogVersion":"catalog-v2"}'::jsonb,
+              repeat('3', 64), repeat('4', 64)
+            )
+            """.trimIndent(),
+        )
+        jdbcTemplate.update(
+            """
+            insert into deterministic_risk_observations (
+              observation_id, owner_user_id, owner_scope_hash, portfolio_source,
+              daily_loss_rate, max_drawdown, annualized_volatility, completeness,
+              observed_at, received_at, schema_version, source_version, payload_json,
+              source_ref, artifact_hash
+            ) values (
+              'risk-s23-read', 'usr_demo_user', repeat('c', 64), 'KIS_MOCK',
+              -0.0125, -0.0800, 0.2200, 'COMPLETE',
+              '2026-06-23T06:31:00Z', '2026-06-23T06:31:01Z',
+              'deterministic-risk-observation.v1', 'risk-fixture-v1',
+              '{"ownerScopeHash":"sanitized"}'::jsonb, repeat('5', 64), repeat('6', 64)
+            )
+            """.trimIndent(),
+        )
+        jdbcTemplate.update(
+            """
+            insert into daily_order_count_observations (
+              observation_id, owner_user_id, owner_scope_hash, portfolio_source,
+              trading_date, order_count, covered_through, completeness,
+              observed_at, received_at, schema_version, source_version, payload_json,
+              source_ref, artifact_hash
+            ) values (
+              'orders-s23-read', 'usr_demo_user', repeat('c', 64), 'KIS_MOCK',
+              '2026-06-24', 0, ?::timestamptz, 'COMPLETE',
+              ?::timestamptz, ?::timestamptz,
+              'daily-order-count-observation.v1', 'order-ledger-fixture-v1',
+              '{"ownerScopeHash":"sanitized","orderCount":0}'::jsonb,
+              repeat('7', 64), repeat('8', 64)
+            )
+            """.trimIndent(),
+            java.time.OffsetDateTime.ofInstant(evaluationAsOf, java.time.ZoneOffset.UTC),
+            java.time.OffsetDateTime.ofInstant(evaluationAsOf, java.time.ZoneOffset.UTC),
+            java.time.OffsetDateTime.ofInstant(evaluationAsOf, java.time.ZoneOffset.UTC),
+        )
+        val request =
+            EvaluationSourceRequest(
+                actorUserId = "usr_demo_user",
+                portfolioContext =
+                    com.capstone.decision.application.risk.port.PortfolioContextRef(
+                        opaqueRef = "c".repeat(64),
+                        source = PortfolioSource.KIS_MOCK,
+                        ownerScopeHash = "c".repeat(64),
+                    ),
+                orderIntent =
+                    OrderIntentSnapshot(
+                        symbol = "005930",
+                        side = "BUY",
+                        orderType = "MARKET",
+                        quantity = 1,
+                        estimatedPrice = 70000,
+                        estimatedAmount = 70000,
+                        timeframe = "1d",
+                        strategyId = "stored-hard-source-test",
+                    ),
+                evaluationAsOf = evaluationAsOf,
+            )
+
+        val instrument = instrumentCatalogPort.load(request) as MetricCell.Available
+        assertEquals("catalog-v2", instrument.value.catalogVersion)
+        assertEquals(MetricSource.INSTRUMENT_CATALOG, instrument.source)
+        assertEquals(
+            "0.35",
+            instrument.value.productRiskScore
+                ?.stripTrailingZeros()
+                ?.toPlainString(),
+        )
+
+        val risk = riskSnapshotPort.load(request)
+        assertEquals("-0.0125", metricDecimal(risk.dailyLossRate))
+        assertEquals("-0.08", metricDecimal(risk.maxDrawdown))
+        assertEquals("0.22", metricDecimal(risk.annualizedVolatility))
+
+        val orderCount = orderMetricPort.loadDailyOrderCount(request) as MetricCell.Available
+        assertEquals(0L, (orderCount.value as MetricValue.Whole).value)
+    }
+
+    @Test
+    fun `partial and inactive observations never become complete current source values`() {
+        jdbcTemplate.update(
+            """
+            insert into market_quote_observations (
+              observation_id, symbol, source, price_krw, completeness,
+              observed_at, received_at, schema_version, source_version,
+              payload_json, source_ref, artifact_hash
+            ) values (
+              'quote-partial-s23', '000660', 'KIS_MOCK', 180000, 'PARTIAL',
+              '2026-06-24T02:59:00Z', '2026-06-24T02:59:01Z',
+              'market-quote-observation.v1', 'partial-fixture-v1',
+              '{"symbol":"000660"}'::jsonb, repeat('1', 64), repeat('2', 64)
+            )
+            """.trimIndent(),
+        )
+        val sourceRequest =
+            EvaluationSourceRequest(
+                actorUserId = "usr_demo_user",
+                portfolioContext =
+                    com.capstone.decision.application.risk.port.PortfolioContextRef(
+                        opaqueRef = "c".repeat(64),
+                        source = PortfolioSource.KIS_MOCK,
+                        ownerScopeHash = "c".repeat(64),
+                    ),
+                orderIntent =
+                    OrderIntentSnapshot(
+                        symbol = "000660",
+                        side = "BUY",
+                        orderType = "MARKET",
+                        quantity = 1,
+                        estimatedPrice = 180000,
+                        estimatedAmount = 180000,
+                        timeframe = "1d",
+                        strategyId = "partial-source-test",
+                    ),
+                evaluationAsOf = Instant.parse("2026-06-24T03:00:00Z"),
+            )
+        assertTrue(marketQuoteAdapter.load(sourceRequest) is MetricCell.Incomplete)
+
+        assertCheckViolation {
+            jdbcTemplate.update(
+                """
+                insert into deterministic_risk_observations (
+                  observation_id, owner_user_id, owner_scope_hash, portfolio_source,
+                  daily_loss_rate, completeness, observed_at, received_at,
+                  schema_version, source_version, payload_json, source_ref, artifact_hash
+                ) values (
+                  'risk-partial-invalid', 'usr_demo_user', repeat('d', 64), 'KIS_MOCK',
+                  -2, 'PARTIAL', now(), now(), 'risk-v1', 'fixture-v1', '{}'::jsonb,
+                  repeat('3', 64), repeat('4', 64)
+                )
+                """.trimIndent(),
+            )
+        }
+        assertCheckViolation {
+            jdbcTemplate.update(
+                """
+                insert into daily_order_count_observations (
+                  observation_id, owner_user_id, owner_scope_hash, portfolio_source,
+                  trading_date, order_count, covered_through, completeness,
+                  observed_at, received_at, schema_version, source_version,
+                  payload_json, source_ref, artifact_hash
+                ) values (
+                  'orders-partial-invalid', 'usr_demo_user', repeat('d', 64), 'KIS_MOCK',
+                  current_date, -1, now(), 'PARTIAL', now(), now(),
+                  'orders-v1', 'fixture-v1', '{}'::jsonb, repeat('5', 64), repeat('6', 64)
+                )
+                """.trimIndent(),
+            )
+        }
+
+        jdbcTemplate.update(
+            """
+            insert into portfolio_balance_observations (
+              observation_id, owner_user_id, account_scope_hash, source, context_status,
+              cash_krw, portfolio_equity_krw, margin_requirement_krw, completeness,
+              position_count, observed_at, received_at, schema_version, source_version,
+              payload_json, source_ref, artifact_hash
+            ) values
+              (
+                'balance-active-old', 'usr_demo_user', repeat('e', 64), 'KIS_MOCK', 'ACTIVE',
+                1, 1, 0, 'COMPLETE', 0, '2026-06-24T01:00:00Z', '2026-06-24T01:00:01Z',
+                'balance-v1', 'fixture-v1', '{}'::jsonb, repeat('7', 64), repeat('8', 64)
+              ),
+              (
+                'balance-inactive-new', 'usr_demo_user', repeat('e', 64), 'KIS_MOCK', 'INACTIVE',
+                1, 1, 0, 'COMPLETE', 0, '2026-06-24T02:00:00Z', '2026-06-24T02:00:01Z',
+                'balance-v1', 'fixture-v1', '{}'::jsonb, repeat('9', 64), repeat('a', 64)
+              )
+            """.trimIndent(),
+        )
+        DriverManager.getConnection(postgres.jdbcUrl, "decision_app", APP_PASSWORD).use { connection ->
+            connection.autoCommit = false
+            connection
+                .prepareStatement("select set_config('app.actor_user_id', ?, true)")
+                .use { statement ->
+                    statement.setString(1, "usr_demo_user")
+                    statement.executeQuery().close()
+                }
+            connection
+                .prepareStatement(
+                    "select count(*) from latest_portfolio_balance_observations where account_scope_hash = ?",
+                ).use { statement ->
+                    statement.setString(1, "e".repeat(64))
+                    statement.executeQuery().use { result ->
+                        assertTrue(result.next())
+                        assertEquals(0, result.getInt(1))
+                    }
+                }
+            connection.rollback()
+        }
+    }
+
+    @Test
     fun `processed event rejects duplicate event per consumer`() {
         jdbcTemplate.update(
             """
@@ -359,7 +1221,203 @@ class FlywayMigrationIntegrationTest(
         }
     }
 
+    @Test
+    fun `Decision child rows reject cross wired decision and evaluation identities`() {
+        insertOrderFixture()
+        insertSecondDecisionFixture()
+
+        assertForeignKeyViolation {
+            jdbcTemplate.update(
+                """
+                insert into decision_artifacts (
+                  decision_id, evaluation_id, result_canonical_json,
+                  snapshot_artifact_canonical_json, semantic_input_hash,
+                  snapshot_artifact_hash, created_at
+                ) values (
+                  'dec-flyway', 'eval-flyway-b', '{}', '{}',
+                  repeat('a', 64), repeat('b', 64), now()
+                )
+                """.trimIndent(),
+            )
+        }
+        assertForeignKeyViolation {
+            jdbcTemplate.update(
+                """
+                insert into decision_violations (
+                  violation_id, decision_id, evaluation_id, ordinal, rule_id,
+                  severity, message, created_at
+                ) values (
+                  'vio-cross-wire', 'dec-flyway', 'eval-flyway-b', 1,
+                  'cross-wire-guard', 'INFO', 'sanitized fixture', now()
+                )
+                """.trimIndent(),
+            )
+        }
+        assertForeignKeyViolation {
+            jdbcTemplate.update(
+                """
+                insert into decision_traces (
+                  trace_id, decision_id, evaluation_id, step, trace_type,
+                  trace_json, created_at
+                ) values (
+                  'trc-cross-wire', 'dec-flyway', 'eval-flyway-b', 1,
+                  'ORDER_VALIDATED', '{}'::jsonb, now()
+                )
+                """.trimIndent(),
+            )
+        }
+        assertForeignKeyViolation {
+            jdbcTemplate.update(
+                """
+                with clock as (select now() as created_at)
+                insert into decision_idempotency_results (
+                  idempotency_result_id, scope_hash, generation, request_hash,
+                  owner_scope_hash, purpose_version, decision_id, evaluation_id,
+                  http_status, content_type, result_canonical_json, created_at, expires_at
+                )
+                select
+                  'idr-cross-wire', repeat('1', 64), 1, repeat('2', 64),
+                  repeat('3', 64), 's2.3-idempotency-v1',
+                  'dec-flyway', 'eval-flyway-b', 200, 'application/json',
+                  '{}', created_at, created_at + interval '24 hours'
+                from clock
+                """.trimIndent(),
+            )
+        }
+    }
+
+    @Test
+    fun `Decision audit target must equal its sanitized payload identity`() {
+        insertOrderFixture()
+        insertSecondDecisionFixture()
+
+        assertCheckViolation {
+            jdbcTemplate.update(
+                """
+                insert into audit_logs (
+                  audit_log_id, user_id, actor_role, action, target_type,
+                  target_id, request_id, payload_json, created_at
+                ) values (
+                  'aud-cross-wire', 'usr-flyway', 'USER', 'DECISION_EVALUATED',
+                  'DECISION', 'dec-flyway', 'req-cross-wire',
+                  jsonb_build_object(
+                    'evaluationId', 'eval-flyway-b',
+                    'decisionId', 'dec-flyway-b',
+                    'outcome', 'ALLOW',
+                    'principleVersionId', 'prv-flyway-v1',
+                    'semanticInputHash', repeat('a', 64),
+                    'snapshotArtifactHash', repeat('b', 64)
+                  ),
+                  now()
+                )
+                """.trimIndent(),
+            )
+        }
+    }
+
+    @Test
+    fun `Decision validity constraint rejects an already expired persisted result`() {
+        insertOrderFixture()
+
+        assertCheckViolation {
+            jdbcTemplate.update(
+                "update decisions set valid_until = created_at where decision_id = 'dec-flyway'",
+            )
+        }
+    }
+
+    @Test
+    fun `instrument latest projection resolves equal times by observation id only`() {
+        jdbcTemplate.update(
+            """
+            insert into instrument_catalog_observations (
+              observation_id, symbol, is_etf_etn, is_gold_etf_etn,
+              product_risk_score, catalog_version, observed_at, received_at,
+              completeness, schema_version, source_version, payload_json,
+              source_ref, artifact_hash
+            ) values
+              (
+                'ins-tie-a', 'ZZTIE', false, false, null, 'catalog-a',
+                '2030-01-01T00:00:00Z', '2030-01-01T00:00:01Z',
+                'COMPLETE', 'instrument-catalog-observation.v1', 'fixture-v1',
+                '{}'::jsonb, repeat('1', 64), repeat('2', 64)
+              ),
+              (
+                'ins-tie-b', 'ZZTIE', true, false, 0.25, 'catalog-z',
+                '2030-01-01T00:00:00Z', '2030-01-01T00:00:01Z',
+                'COMPLETE', 'instrument-catalog-observation.v1', 'fixture-v1',
+                '{}'::jsonb, repeat('3', 64), repeat('4', 64)
+              )
+            """.trimIndent(),
+        )
+
+        assertEquals(
+            "ins-tie-a",
+            jdbcTemplate.queryForObject(
+                "select observation_id from latest_instrument_catalog_observations where symbol = 'ZZTIE'",
+                String::class.java,
+            ),
+        )
+    }
+
+    @Test
+    fun `latest observation indexes match their exact projection partition order`() {
+        val instrumentIndex =
+            jdbcTemplate.queryForObject(
+                "select pg_get_indexdef(indexrelid) from pg_index where indexrelid = 'instrument_catalog_latest_idx'::regclass",
+                String::class.java,
+            )
+        val portfolioIndex =
+            jdbcTemplate.queryForObject(
+                "select pg_get_indexdef(indexrelid) from pg_index where indexrelid = 'portfolio_balance_latest_idx'::regclass",
+                String::class.java,
+            )
+
+        assertTrue(
+            requireNotNull(instrumentIndex).contains(
+                "(symbol, observed_at DESC, received_at DESC, observation_id)",
+            ),
+        )
+        assertTrue(
+            requireNotNull(portfolioIndex).contains(
+                "(owner_user_id, account_scope_hash, observed_at DESC, received_at DESC, observation_id)",
+            ),
+        )
+    }
+
+    @Test
+    fun `Decision owner projections bind the requested id inside the definer function`() {
+        listOf(
+            "read_decision_owner_projection()",
+            "read_decision_audit_projection()",
+        ).forEach { functionName ->
+            val definition =
+                jdbcTemplate.queryForObject(
+                    "select pg_get_functiondef(?::regprocedure)",
+                    String::class.java,
+                    functionName,
+                )
+            assertTrue(requireNotNull(definition).contains("app.requested_decision_id"))
+        }
+        assertTrue(
+            indexExists("decision_audit_projection_target_idx"),
+            "missing bounded Decision audit lookup index",
+        )
+    }
+
     private fun insertOrderFixture() {
+        jdbcTemplate.update("delete from orders where decision_id in ('dec-flyway', 'dec-flyway-b')")
+        jdbcTemplate.update(
+            "delete from decision_idempotency_results where decision_id in ('dec-flyway', 'dec-flyway-b')",
+        )
+        jdbcTemplate.update("delete from decision_traces where decision_id in ('dec-flyway', 'dec-flyway-b')")
+        jdbcTemplate.update("delete from decision_artifacts where decision_id in ('dec-flyway', 'dec-flyway-b')")
+        jdbcTemplate.update("delete from decision_violations where decision_id in ('dec-flyway', 'dec-flyway-b')")
+        jdbcTemplate.update("delete from audit_logs where target_id in ('dec-flyway', 'dec-flyway-b')")
+        jdbcTemplate.update("delete from decisions where decision_id in ('dec-flyway', 'dec-flyway-b')")
+        jdbcTemplate.update("delete from principle_versions where principle_id = 'prn-flyway'")
+        jdbcTemplate.update("delete from principles where principle_id = 'prn-flyway'")
+        jdbcTemplate.update("delete from users where user_id = 'usr-flyway'")
         jdbcTemplate.update(
             """
             insert into users (user_id, username, role, password_hash)
@@ -393,13 +1451,45 @@ class FlywayMigrationIntegrationTest(
         jdbcTemplate.update(
             """
             insert into decisions (
-                decision_id, user_id, account_id, principle_version_id,
-                symbol, side, decision, reason_json, created_at, valid_until
+                decision_id, evaluation_id, user_id, principle_id, principle_version_id,
+                principle_version, portfolio_source, symbol, side, outcome, mode,
+                can_submit_order, enforcement_action, evaluation_as_of, created_at, valid_until,
+                result_schema_version, snapshot_schema_version, catalog_version,
+                readiness_policy_version, mapping_versions_json, semantic_input_hash,
+                snapshot_artifact_hash, result_json
             )
             values (
-                'dec-flyway', 'usr-flyway', 'paper-account-1', 'prv-flyway-v1',
-                '005930', 'BUY', 'ALLOW', '{}'::jsonb, now(), now() + interval '10 minutes'
+                'dec-flyway', 'eval-flyway', 'usr-flyway', 'prn-flyway', 'prv-flyway-v1',
+                1, 'INTERNAL_PAPER', '005930', 'BUY', 'ALLOW', 'GUIDE',
+                true, 'NONE', now(), now(), now() + interval '10 minutes',
+                'risk-decision.v1', 's2.2-metric-snapshot-v2', 1,
+                's2.3-readiness-v1', '{}'::jsonb, repeat('a', 64),
+                repeat('b', 64), '{}'::jsonb
             )
+            """.trimIndent(),
+        )
+    }
+
+    private fun insertSecondDecisionFixture() {
+        jdbcTemplate.update(
+            """
+            insert into decisions (
+              decision_id, evaluation_id, user_id, principle_id, principle_version_id,
+              principle_version, portfolio_source, symbol, side, outcome, mode,
+              can_submit_order, enforcement_action, evaluation_as_of, created_at, valid_until,
+              result_schema_version, snapshot_schema_version, catalog_version,
+              readiness_policy_version, mapping_versions_json, semantic_input_hash,
+              snapshot_artifact_hash, result_json
+            )
+            select
+              'dec-flyway-b', 'eval-flyway-b', user_id, principle_id, principle_version_id,
+              principle_version, portfolio_source, symbol, side, outcome, mode,
+              can_submit_order, enforcement_action, evaluation_as_of, created_at, valid_until,
+              result_schema_version, snapshot_schema_version, catalog_version,
+              readiness_policy_version, mapping_versions_json, repeat('c', 64),
+              repeat('d', 64), result_json
+            from decisions
+            where decision_id = 'dec-flyway'
             """.trimIndent(),
         )
     }
@@ -581,6 +1671,54 @@ class FlywayMigrationIntegrationTest(
             privilege,
         ) ?: false
 
+    private fun hasFunctionPrivilege(
+        role: String,
+        functionSignature: String,
+    ): Boolean =
+        jdbcTemplate.queryForObject(
+            "select has_function_privilege(?, ?, 'EXECUTE')",
+            Boolean::class.java,
+            role,
+            functionSignature,
+        ) ?: false
+
+    private fun assertDecisionAppPermissionDenied(sql: String) {
+        assertRolePermissionDenied("decision_app", APP_PASSWORD, sql)
+    }
+
+    private fun assertRolePermissionDenied(
+        role: String,
+        password: String,
+        sql: String,
+    ) {
+        DriverManager.getConnection(postgres.jdbcUrl, role, password).use { connection ->
+            connection.createStatement().use { statement ->
+                val exception = assertThrows<SQLException> { statement.execute(sql) }
+                assertEquals("42501", exception.sqlState, "expected permission denial for: $sql")
+            }
+        }
+    }
+
+    private fun assertWriterInsert(
+        role: String,
+        password: String,
+        sql: String,
+    ) {
+        DriverManager.getConnection(postgres.jdbcUrl, role, password).use { connection ->
+            connection.createStatement().use { statement ->
+                assertEquals(1, statement.executeUpdate(sql), "writer $role failed its exact INSERT")
+            }
+        }
+    }
+
+    private fun metricDecimal(cell: MetricCell<MetricValue>): String {
+        val available = cell as MetricCell.Available
+        return available.value
+            .asBigDecimal()
+            .stripTrailingZeros()
+            .toPlainString()
+    }
+
     private fun countMarketCalendarRows(
         market: String,
         calendarDate: String,
@@ -610,6 +1748,30 @@ class FlywayMigrationIntegrationTest(
         )
     }
 
+    private fun assertCheckViolation(block: () -> Unit) {
+        val exception =
+            org.junit.jupiter.api.assertThrows<DataIntegrityViolationException> {
+                block()
+            }
+        val sqlException = exception.findSqlException()
+        assertTrue(
+            sqlException?.sqlState == "23514",
+            "expected SQLState 23514 but was ${sqlException?.sqlState}: ${exception.mostSpecificCause.message}",
+        )
+    }
+
+    private fun assertForeignKeyViolation(block: () -> Unit) {
+        val exception =
+            org.junit.jupiter.api.assertThrows<DataIntegrityViolationException> {
+                block()
+            }
+        val sqlException = exception.findSqlException()
+        assertTrue(
+            sqlException?.sqlState == "23503",
+            "expected SQLState 23503 but was ${sqlException?.sqlState}: ${exception.mostSpecificCause.message}",
+        )
+    }
+
     private fun Throwable.findSqlException(): SQLException? {
         var current: Throwable? = this
         while (current != null) {
@@ -622,6 +1784,13 @@ class FlywayMigrationIntegrationTest(
     }
 
     companion object {
+        private const val APP_PASSWORD = "app-test"
+        private const val COLLECTOR_PASSWORD = "collector-test"
+        private const val DISCLOSURE_READER_PASSWORD = "disclosure-reader-test"
+        private const val MARKET_WRITER_PASSWORD = "market-writer-test"
+        private const val PORTFOLIO_WRITER_PASSWORD = "portfolio-writer-test"
+        private const val RISK_WRITER_PASSWORD = "risk-writer-test"
+        private const val FLYWAY_PASSWORD = "flyway-test"
         private val postgresImage =
             DockerImageName
                 .parse(
@@ -645,6 +1814,7 @@ class FlywayMigrationIntegrationTest(
             registry.add("spring.datasource.password", postgres::getPassword)
             registry.add("spring.flyway.user", postgres::getUsername)
             registry.add("spring.flyway.password", postgres::getPassword)
+            registry.add("app.decision.grpc.shared-secret") { SpringApiIntegrationTestBase.TEST_GRPC_SHARED_SECRET }
         }
 
         @JvmStatic

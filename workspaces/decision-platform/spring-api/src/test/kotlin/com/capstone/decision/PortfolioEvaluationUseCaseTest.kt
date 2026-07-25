@@ -42,6 +42,7 @@ import com.capstone.decision.domain.risk.MetricUnit
 import com.capstone.decision.domain.risk.MetricValue
 import com.capstone.decision.domain.risk.OrderIntentSnapshot
 import com.capstone.decision.domain.risk.PortfolioSource
+import com.capstone.decision.domain.risk.SnapshotHashService
 import com.capstone.decision.infrastructure.risk.ClasspathSystemRuleCatalog
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
@@ -135,6 +136,40 @@ class PortfolioEvaluationUseCaseTest {
     }
 
     @Test
+    fun `order amount rule uses stored quote instead of client supplied estimate`() {
+        val harness = Harness(principleRuleIds = setOf("max_single_order_amount"))
+
+        val evaluation =
+            harness.useCase.evaluate(
+                harness.command(
+                    orderIntent =
+                        OrderIntentSnapshot(
+                            symbol = "005930",
+                            side = "BUY",
+                            orderType = "MARKET",
+                            quantity = 101,
+                            estimatedPrice = 1,
+                            estimatedAmount = 101,
+                            timeframe = "1d",
+                            strategyId = "client-understated-estimate",
+                        ),
+                ),
+            )
+        val orderAmount =
+            requireNotNull(evaluation.snapshot)
+                .metric(MetricKey.ORDER_AMOUNT_KRW) as MetricCell.Available
+
+        assertThat((orderAmount.value as MetricValue.Whole).value).isEqualTo(1_010_000)
+        assertThat(evaluation.result.action).isEqualTo(EvaluationAction.BLOCK)
+        assertThat(evaluation.result.violations)
+            .anySatisfy { violation ->
+                assertThat(violation.ruleId).isEqualTo("max_single_order_amount")
+                assertThat(violation.metricValue.toPlainString()).isEqualTo("1010000")
+                assertThat(violation.threshold.toPlainString()).isEqualTo("1000000")
+            }
+    }
+
+    @Test
     fun `missing optional disclosure abstains only that rule while required disclosure holds`() {
         val optional =
             Harness(
@@ -156,6 +191,38 @@ class PortfolioEvaluationUseCaseTest {
         assertThat(optionalResult.warnings.map { it.ruleId }).contains("disclosure_risk_guard")
         assertThat(requiredResult.action).isEqualTo(EvaluationAction.HOLD)
         assertThat(requiredResult.issues.map { it.ruleId }).contains("disclosure_risk_guard")
+    }
+
+    @Test
+    fun `disclosure event codes survive source snapshot and canonical artifact in stable order`() {
+        val harness =
+            Harness(
+                disclosureCell =
+                    available(
+                        DisclosureRiskSnapshot(
+                            score = BigDecimal("0.60"),
+                            mappingVersion = "s1.2-v1",
+                            events =
+                                listOf(
+                                    DisclosureEventEvidence("OPENDART:piicDecsn", "ACTIVE"),
+                                    DisclosureEventEvidence("OPENDART:dfOcr", "ACTIVE"),
+                                ),
+                            warnings = emptyList(),
+                            sourceRefs = listOf("8".repeat(64)),
+                        ),
+                        MetricSource.OPENDART,
+                        "8",
+                    ),
+            )
+
+        val evaluation = harness.useCase.evaluate(harness.command())
+        val snapshot = requireNotNull(evaluation.snapshot)
+
+        assertThat(requireNotNull(snapshot.disclosureEvidence).eventCodes)
+            .containsExactly("OPENDART:dfOcr", "OPENDART:piicDecsn")
+        assertThat(SnapshotHashService().snapshotArtifactCanonicalJson(snapshot))
+            .contains("\"eventCodes\":[\"OPENDART:dfOcr\",\"OPENDART:piicDecsn\"]")
+        assertThat(harness.disclosureCalls).isEqualTo(1)
     }
 
     @Test
@@ -363,10 +430,17 @@ class PortfolioEvaluationUseCaseTest {
                     balance.copy(source = PortfolioSource.KIS_MOCK)
                 },
             )
+        val wrongRevision =
+            Harness(
+                paperBalanceTransform = { balance ->
+                    balance.copy(revision = "paper-revision-crossed")
+                },
+            )
         val wrongInstrument = Harness(instrumentSymbol = "000660")
 
         assertThrows<IllegalStateException> { wrongOwner.useCase.evaluate(wrongOwner.command()) }
         assertThrows<IllegalStateException> { wrongSource.useCase.evaluate(wrongSource.command()) }
+        assertThrows<IllegalStateException> { wrongRevision.useCase.evaluate(wrongRevision.command()) }
         assertThrows<IllegalStateException> {
             wrongInstrument.useCase.evaluate(wrongInstrument.command())
         }
@@ -598,7 +672,7 @@ class PortfolioEvaluationUseCaseTest {
                 DisclosureRiskSnapshot(
                     score = BigDecimal("0.10"),
                     mappingVersion = "s1.2-v1",
-                    events = listOf(DisclosureEventEvidence("piicDecsn", "ACTIVE")),
+                    events = listOf(DisclosureEventEvidence("OPENDART:piicDecsn", "ACTIVE")),
                     warnings = emptyList(),
                     sourceRefs = listOf("8".repeat(64)),
                 ),
@@ -696,6 +770,11 @@ class PortfolioEvaluationUseCaseTest {
                                         opaqueRef = "server-owned-context",
                                         source = source,
                                         ownerScopeHash = ownerScopeHash,
+                                        revision =
+                                            when (source) {
+                                                PortfolioSource.KIS_MOCK -> "kis-revision-7"
+                                                PortfolioSource.INTERNAL_PAPER -> "paper-revision-7"
+                                            },
                                     ),
                                 )
                             } else {
@@ -813,6 +892,17 @@ class PortfolioEvaluationUseCaseTest {
             portfolioSource: String = PortfolioSource.INTERNAL_PAPER.name,
             optionalComponents: Set<OptionalEvaluationComponent> = emptySet(),
             evaluationId: String = "evl_0123456789abcdef",
+            orderIntent: OrderIntentSnapshot =
+                OrderIntentSnapshot(
+                    symbol = "005930",
+                    side = "BUY",
+                    orderType = "MARKET",
+                    quantity = 1,
+                    estimatedPrice = 10_000,
+                    estimatedAmount = 10_000,
+                    timeframe = "1d",
+                    strategyId = "strategy_fixture",
+                ),
         ): PortfolioEvaluationCommand =
             PortfolioEvaluationCommand(
                 actorUserId = "usr_demo_user",
@@ -820,14 +910,7 @@ class PortfolioEvaluationUseCaseTest {
                 portfolioSource = portfolioSource,
                 evaluationId = evaluationId,
                 evaluationAsOf = AS_OF,
-                orderIntent =
-                    OrderIntentSnapshot(
-                        symbol = "005930",
-                        side = "BUY",
-                        orderType = "MARKET",
-                        quantity = 1,
-                        limitPrice = null,
-                    ),
+                orderIntent = orderIntent,
                 optionalComponents = optionalComponents,
             )
 

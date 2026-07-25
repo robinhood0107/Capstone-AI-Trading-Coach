@@ -61,9 +61,14 @@ S1.2의 두 번째 핵심은 점수를 계산만 하지 않고, 판단 결과 �
 - Principle 계약(`contracts/schemas/principle.schema.json`)에는 이미 `disclosure_risk_guard`/`disclosure_risk_score`가 있다(입력 축).
 - 판단 결과 계약(`contracts/schemas/risk_decision.schema.json`)에는 disclosure 근거가 없었다. 이를 범용 `riskItems[]`로 추가했다. OpenDART 전용 거대 객체 대신, 다른 원천(뉴스/거시 등)도 같은 형태로 표현할 수 있는 구조다.
 - `riskItems[]` 항목: `metric`(예 `disclosure_risk_score`), `value`, `severity`, `source`(예 `OPENDART`), `eventCodes`(예 `OPENDART:dfOcr`), `mappingVersion`, `sourceRefs`(sanitized observation/citation의 opaque 참조).
-- 서비스 경계는 `docs/API_명세서.md` 13.5 `MarketDataService.GetDisclosureEvents`의 request/response 계약으로 문서화했다. 실제 gRPC proto 파일은 아직 없고, 구현은 컨트롤러 도입 세션에서 계약을 따라 붙인다.
+- 서비스 경계는 `contracts/proto/disclosure_observation.proto`의
+  `DisclosureObservationService.GetDisclosureEvents`와 `docs/API_명세서.md` 13.5.1로
+  고정했다. S2.3 Spring adapter는 이 stored-observation RPC를 단일 시도로 소비하고,
+  주문 판단 경로에서 OpenDART HTTP를 직접 호출하지 않는다.
 
-이 연결로 “점수는 계산되지만 어디에도 안 쓰인다”는 감사 지적(P1)을 계약 수준에서 먼저 해소한다. 실제 Spring RiskEngine 소비 구현은 Decision/Risk 컨트롤러 세션의 과제로 남는다.
+이 연결로 “점수는 계산되지만 어디에도 안 쓰인다”는 감사 지적(P1)을 계약과 S2.3
+Decision runtime에서 해소한다. provider 수집과 sanitized stored-observation 생산은 S1.6
+소유이며, live provider 활성화는 별도 승인 범위다.
 
 ## 프로젝트 문서와의 정합성
 

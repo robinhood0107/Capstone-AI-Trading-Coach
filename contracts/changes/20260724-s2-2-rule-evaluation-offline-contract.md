@@ -76,6 +76,14 @@ source adapter를 추가하지 않는다. S2.2 내부 owner-scoped ACTIVE Princi
 
 재현 명령은 `contracts/README.md`에 있고 모두 offline이다.
 
+> 2026-07-24 supersession: production route 또는 저장 decision이 생기기 전에 발견된 현물
+> `OrderIntent` field drift는 S2.3 change record에서 breaking cleanup했다.
+> `HASH-CANONICALIZATION-S22-V2`/`s2.2-metric-snapshot-v2`가 V1을 대체하며 현물
+> `estimatedPrice`와 나머지 7개 exact field를 hash한다. 이 문서의 V1 설명은 당시 이력이고
+> runtime compatibility 계약이 아니다.
+> 이 문서의 Decision path 거절도 S2.2 역사 경계다. S2.3 implementation mode는 승인된
+> Decision path 3개와 `S23*` component 5개만 exact allowlist로 허용한다.
+
 # EN: S2.2 rule evaluation and portfolio offline contract v1
 
 ## Reason
@@ -143,3 +151,10 @@ ports to runtime orchestration, HTTP mapping, and persistence under a separate g
 source sessions retain live market/order adapter ownership. Existing S2.1 version rows remain
 immutable and unknown legacy tuples are never guessed or overwritten. Reproducible offline
 commands are listed in `contracts/README.md`.
+
+> 2026-07-24 supersession: the S2.3 change record fixes a cash-equity `OrderIntent` field drift
+> before any production route or stored decision exists. `HASH-CANONICALIZATION-S22-V2` and
+> `s2.2-metric-snapshot-v2` replace V1 and hash `estimatedPrice` plus the other seven exact fields.
+> The V1 description above remains historical evidence, not a runtime compatibility contract.
+> The Decision-path rejection above is also historical S2.2 scope. S2.3 implementation mode now
+> permits only the three approved Decision paths and five `S23*` components.

@@ -12,17 +12,21 @@ Contracts CI, Kotlin Build, Python CI, S1.4X contract correctness를 수행한�
 
 ## 현재 구현 상태
 
-STAGE 2에서 S1.6 Market Calendar/Event Aggregator offline 구현과 S2.1 Principle CRUD까지
-`main`에 병합됐다. 현재 S2.2 구현은 14개 rule의 deterministic offline evaluator,
-portfolio source 선택 정책, bounded snapshot/hash 계약, owner-scoped ACTIVE Principle read
-adapter를 포함한다. Decision controller·route·persistence와 외부 market/model/balance adapter,
-provider online 활성화는 포함하지 않으며 S2.3 이후 별도 gate로 이연한다.
+STAGE 2에서 S1.6 Market Calendar/Event Aggregator offline 구현, S2.1 Principle CRUD와 S2.2
+offline evaluator까지 `main`에 병합됐다. 이 S2.3 변경은 14개 rule core 위에 owner-scoped
+Decision controller·route, V9 원자 persistence/audit/outbox/idempotency, stored-observation
+gRPC와 저장 source reader를 연결한다. S1.1/S3/S1.6/deterministic 소유 모듈의 sanitized
+offline producer prerequisite는 fixture/mock transport/Testcontainers로 구현하되 provider
+physical call과 주문 실행은 포함하지 않는다. 현물 `estimatedPrice` 단일 field/hash V2를
+사용하며 source 구조 부재는 hard blocker, 구조가 준비된 뒤 row 부재는 가짜 값 없는 persisted
+HOLD다.
 
 - PR #16 merge commit: `6f439155d9f5ec626fc185f29f2e0bd64ca54780`
 - PR #17 merge commit 및 S1.3/S1.3K 기능 완료 기준점: `814aab377251d76672566d39c3edb379d132248e`
 - PR #28 S1.4X Gate 1, PR #30 모델 위험 계약, PR #32 S1.5 Data Quality Report까지 병합
 - PR #34 S1.6 prerequisite merge commit: `5f537857a1b57c5b8321f70d8df292a851514b2d`
 - PR #35 S1.6 offline 구현, PR #39 S2.1 계약 amendment, PR #41 S2.1 Principle CRUD까지 병합
+- PR #43 S2.2 offline Rule Evaluator와 owner-scoped Principle read adapter 병합
 - S2.2 검증 범위: Kotlin evaluator/portfolio/hash/readiness 회귀, PostgreSQL 16 Testcontainers,
   generated contract와 OpenAPI drift gate, repo hygiene와 secret scan
 
@@ -45,13 +49,16 @@ provider online 활성화는 포함하지 않으며 S2.3 이후 별도 gate로 �
 현재 레포는 STAGE 2이며 Decision Platform의 S0 walking skeleton, S1.1 KIS 시장데이터,
 S1.2c OpenDART 분석 데이터, S1.3 ECOS/Naver snapshot, S1.3K KRX universe 자동화,
 S1.4 금융공학, S1.5 품질 보고, S1.6 내부 offline calendar/event aggregator, S2.1 Principle
-CRUD와 S2.2 offline rule evaluator까지 구현되어 있다. S2.2의 Decision API runtime과 provider
-adapter는 아직 제공하지 않는다. 상세 개인 참고 노트는 GitHub에 올리지 않고 로컬
+CRUD와 S2.2 offline rule evaluator까지 구현되어 있다. 이 S2.3 변경은 Decision API runtime과
+저장 observation consumer 및 각 소유 모듈의 offline producer prerequisite를 추가하지만
+provider를 호출하거나 S3 주문 orchestration을 대신하지 않는다. 구조가 준비된 뒤 source row가
+없거나 stale하면 200 HOLD이며 provider adapter와 주문 실행은 S3 경계다. 상세 개인 참고 노트는
+GitHub에 올리지 않고 로컬
 `private-reference/` 폴더에서만 관리한다.
 
 ```bash
 cp .env.example .env
-# DB/Redis password, JWT issuer/audience, 목적별 signing/HMAC key와 두 attested demo credential bundle을 채운다.
+# DB/Redis 및 collector/source-writer password, JWT issuer/audience, 목적별 signing/HMAC key와 두 attested demo credential bundle을 채운다.
 # bundle은 $ 포함 BCrypt hash 보존을 위해 single quote 안에 두며 plaintext demo password는 저장하지 않는다.
 # API key는 필요한 provider를 실제 호출할 때 운영자만 주입하며 커밋하지 않는다.
 docker compose --env-file .env -f infra/docker-compose.infra.yml up -d
@@ -63,12 +70,13 @@ cd workspaces/decision-platform/spring-api
 ./gradlew build
 ```
 
-PostgreSQL runtime은 `decision_app`, S1.6 수집은 `decision_collector`, migration은 `flyway`,
+PostgreSQL runtime은 `decision_app`, S1.6 수집은 `decision_collector`, sanitized source append는
+`decision_market_writer`/`decision_portfolio_writer`/`decision_risk_writer`, migration은 `flyway`,
 bootstrap 관리는 `POSTGRES_ADMIN_USER`로 분리된다. 기존 `pgdata` volume에는 init script가
-자동 재실행되지 않으므로, 기존 관리자 이름/비밀번호를 보존하고
-`POSTGRES_COLLECTOR_PASSWORD`를 추가해 컨테이너를 올린 뒤 다음 명령을 한 번 실행한다.
-V6 적용 전에는 collector role을 먼저 만들고, V6 적용 뒤 재실행해도 script가 exact calendar
-권한을 복원한다. volume 삭제는 이 절차에 포함하지 않는다.
+자동 재실행되지 않으므로, 기존 관리자 이름/비밀번호를 보존하고 `.env.example`의 collector와
+세 source-writer password를 추가해 컨테이너를 올린 뒤 다음 명령을 한 번 실행한다. V6/V9 적용
+전에는 role을 먼저 만들고, migration 뒤 재실행하면 현재 table의 exact 권한을 복원한다. volume
+삭제는 이 절차에 포함하지 않는다.
 
 ```bash
 docker compose --env-file .env -f infra/docker-compose.infra.yml exec -T postgres \
@@ -86,4 +94,6 @@ S1.6 OpenDART online collector는 `.env.example`의 네 quota 값을 운영 evid
 - S1.6 내부 계약: 최종 명세 11.1.2와 API 명세 12A
 - [S2.2 offline 계약과 재현 명령](contracts/README.md#s22-rule-evaluation-offline-contract-v1)
 - [S2.2 계약 변경 기록](contracts/changes/20260724-s2-2-rule-evaluation-offline-contract.md)
+- [S2.3 Decision runtime과 stored-source 경계](contracts/README.md#s23-decision-runtime과-stored-source-경계)
+- [S2.3 Decision 계약 잠금](contracts/changes/20260724-s2-3-decision-contract-lock.md)
 - S1.4X dependency amendment 재현: `workspaces/decision-platform/research/s1-4x-numeric-parity/README.md`

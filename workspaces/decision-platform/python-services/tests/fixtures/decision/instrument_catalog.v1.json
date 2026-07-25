@@ -1,0 +1,21 @@
+{
+  "schemaVersion": "instrument-catalog-fixture.v1",
+  "catalogVersion": "s1.1-sanitized-catalog-20260724",
+  "sourceVersion": "s1.1-existing-local-artifact-v1",
+  "observedAt": "2026-07-24T06:30:00Z",
+  "receivedAt": "2026-07-24T06:30:01Z",
+  "instruments": [
+    {
+      "symbol": "005930",
+      "isEtfEtn": false,
+      "isGoldEtfEtn": false,
+      "productRiskScore": null
+    },
+    {
+      "symbol": "132030",
+      "isEtfEtn": true,
+      "isGoldEtfEtn": true,
+      "productRiskScore": "0.3500"
+    }
+  ]
+}

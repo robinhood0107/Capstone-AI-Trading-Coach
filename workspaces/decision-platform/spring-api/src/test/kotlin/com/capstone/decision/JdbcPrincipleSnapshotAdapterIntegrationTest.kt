@@ -85,26 +85,34 @@ class JdbcPrincipleSnapshotAdapterIntegrationTest(
     }
 
     @Test
-    fun `S2_2 production context exposes no fake source adapters or runtime route orchestration`() {
-        val deferredPortTypes =
-            listOf(
-                PricePort::class.java,
-                BalancePort::class.java,
-                MarginPort::class.java,
-                OrderMetricPort::class.java,
-                RiskSnapshotPort::class.java,
-                InstrumentCatalogPort::class.java,
-                NewsEvidencePort::class.java,
-                DisclosureRiskPort::class.java,
-                SignalPort::class.java,
-                PortfolioContextPort::class.java,
+    fun `S2_3 production context exposes only stored observation or typed unavailable source adapters`() {
+        val expectedBeans =
+            mapOf(
+                PricePort::class.java to setOf("jdbcMarketQuoteAdapter"),
+                BalancePort::class.java to
+                    setOf(
+                        "jdbcKisMockBalanceAdapter",
+                        "jdbcInternalPaperBalanceAdapter",
+                    ),
+                MarginPort::class.java to setOf("jdbcStoredMarginAdapter"),
+                OrderMetricPort::class.java to setOf("jdbcDailyOrderCountAdapter"),
+                RiskSnapshotPort::class.java to setOf("jdbcDeterministicRiskAdapter"),
+                InstrumentCatalogPort::class.java to setOf("jdbcInstrumentCatalogAdapter"),
+                NewsEvidencePort::class.java to setOf("decisionNewsEvidencePort"),
+                DisclosureRiskPort::class.java to setOf("grpcDisclosureRiskAdapter"),
+                SignalPort::class.java to setOf("decisionSignalPort"),
+                PortfolioContextPort::class.java to setOf("jdbcPortfolioContextAdapter"),
             )
 
-        assertThat(deferredPortTypes).allSatisfy { portType ->
-            assertThat(applicationContext.getBeansOfType(portType)).isEmpty()
+        expectedBeans.forEach { (portType, beanNames) ->
+            val actualBeans = applicationContext.getBeansOfType(portType)
+            assertThat(actualBeans.keys).containsExactlyInAnyOrderElementsOf(beanNames)
+            assertThat(actualBeans.keys).noneMatch { it.contains("fake", ignoreCase = true) }
         }
-        assertThat(applicationContext.getBeansOfType(MetricSnapshotAssembler::class.java)).isEmpty()
-        assertThat(applicationContext.getBeansOfType(PortfolioEvaluationUseCase::class.java)).isEmpty()
+        assertThat(applicationContext.getBeansOfType(MetricSnapshotAssembler::class.java))
+            .containsOnlyKeys("decisionMetricSnapshotAssembler")
+        assertThat(applicationContext.getBeansOfType(PortfolioEvaluationUseCase::class.java))
+            .containsOnlyKeys("decisionPortfolioEvaluationUseCase")
         assertThat(applicationContext.getBeansOfType(JdbcPrincipleSnapshotAdapter::class.java))
             .containsOnlyKeys("jdbcPrincipleSnapshotAdapter")
     }

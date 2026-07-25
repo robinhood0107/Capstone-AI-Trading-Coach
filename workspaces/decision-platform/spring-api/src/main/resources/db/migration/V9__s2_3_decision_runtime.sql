@@ -1289,10 +1289,7 @@ BEGIN
       latest_portfolio_balance_observations,
       latest_deterministic_risk_observations,
       latest_daily_order_count_observations,
-      current_corporation_registry_projection,
-      active_paper_portfolio_projection,
-      disclosure_event_observation_projection,
-      disclosure_collection_status_projection
+      active_paper_portfolio_projection
     TO decision_app;
     GRANT EXECUTE ON FUNCTION
       read_decision_owner_projection(),
@@ -1304,6 +1301,18 @@ BEGIN
     REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_app;
     REVOKE CREATE ON SCHEMA public FROM decision_app;
     REVOKE ALL PRIVILEGES ON TABLE flyway_schema_history FROM decision_app;
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'decision_disclosure_reader') THEN
+    REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_disclosure_reader;
+    REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_disclosure_reader;
+    GRANT SELECT ON TABLE
+      current_corporation_registry_projection,
+      disclosure_event_observation_projection,
+      disclosure_collection_status_projection
+    TO decision_disclosure_reader;
+    REVOKE CREATE ON SCHEMA public FROM decision_disclosure_reader;
+    REVOKE ALL PRIVILEGES ON TABLE flyway_schema_history FROM decision_disclosure_reader;
   END IF;
 
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'decision_market_writer') THEN

@@ -45,7 +45,7 @@ def test_registry_fixture_is_concurrently_idempotent_and_projection_is_exact(
 
     assert sorted(results) == [0, 2]
     assert replay == 0
-    with psycopg.connect(postgres_cluster["app_dsn"]) as connection:
+    with psycopg.connect(postgres_cluster["disclosure_reader_dsn"]) as connection:
         rows = connection.execute(
             """
             SELECT symbol, corp_code, observed_at, received_at,

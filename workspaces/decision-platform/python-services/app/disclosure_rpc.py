@@ -8,6 +8,7 @@ from collections.abc import Mapping
 from concurrent import futures
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
+from hmac import compare_digest
 from typing import Never, Protocol
 
 import psycopg
@@ -28,6 +29,7 @@ _MAX_SOURCE_REFS = 100
 _SOURCE_REF_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 _EVENT_CODE_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 _RECEIPT_NO_PATTERN = re.compile(r"^[0-9]{14}$")
+_AUTH_METADATA_KEY = "x-decision-grpc-auth"
 
 
 @dataclass(frozen=True)
@@ -77,6 +79,9 @@ class LoopbackServerSettings(Protocol):
 
     @property
     def bind_address(self) -> str: ...
+
+    @property
+    def shared_secret(self) -> str: ...
 
 
 class CancellableDatabaseConnection(Protocol):
@@ -131,8 +136,9 @@ class DisclosureObservationServicer(
 ):
     """저장 관측을 bounded response로 변환하며 HTTP fallback과 재시도를 만들지 않는다."""
 
-    def __init__(self, repository: StoredDisclosureRepository) -> None:
+    def __init__(self, repository: StoredDisclosureRepository, shared_secret: str) -> None:
         self._repository = repository
+        self._shared_secret = shared_secret
 
     def GetDisclosureEvents(
         self,
@@ -140,6 +146,7 @@ class DisclosureObservationServicer(
         context: grpc.ServicerContext,
     ) -> disclosure_observation_pb2.GetDisclosureEventsResponse:
         """검증된 symbol/window의 저장 관측만 반환하고 손상된 provenance는 fail-closed한다."""
+        _require_authenticated(context, self._shared_secret)
         symbol, corp_code, as_of, window_from, window_to = _validate_request(
             request,
             context,
@@ -252,13 +259,28 @@ def create_disclosure_server(
         health_pb2.HealthCheckResponse.SERVING,
     )
     disclosure_observation_pb2_grpc.add_DisclosureObservationServiceServicer_to_server(
-        DisclosureObservationServicer(repository),
+        DisclosureObservationServicer(repository, settings.shared_secret),
         server,
     )  # type: ignore[no-untyped-call]
     bound_port = server.add_insecure_port(settings.bind_address)
     if bound_port == 0:
         raise RuntimeError("Python gRPC loopback port could not be bound")
     return server
+
+
+def _require_authenticated(context: grpc.ServicerContext, shared_secret: str) -> None:
+    values = [
+        value
+        for key, value in context.invocation_metadata()
+        if key == _AUTH_METADATA_KEY
+    ]
+    value = values[0] if len(values) == 1 else None
+    if not isinstance(value, str) or not compare_digest(value, shared_secret):
+        _abort(
+            context,
+            grpc.StatusCode.UNAUTHENTICATED,
+            "disclosure grpc authentication failed",
+        )
 
 
 def _validate_request(

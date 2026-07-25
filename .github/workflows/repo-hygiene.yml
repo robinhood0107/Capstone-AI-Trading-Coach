@@ -61,6 +61,7 @@ jobs:
           POSTGRES_APP_PASSWORD: validation-dummy-app
           POSTGRES_MIGRATION_PASSWORD: validation-dummy-migration
           POSTGRES_COLLECTOR_PASSWORD: validation-dummy-collector
+          POSTGRES_DISCLOSURE_READER_PASSWORD: validation-dummy-disclosure-reader
           POSTGRES_MARKET_WRITER_PASSWORD: validation-dummy-market-writer
           POSTGRES_PORTFOLIO_WRITER_PASSWORD: validation-dummy-portfolio-writer
           POSTGRES_RISK_WRITER_PASSWORD: validation-dummy-risk-writer

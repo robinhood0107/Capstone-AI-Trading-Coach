@@ -14,7 +14,12 @@ import com.capstone.decision.domain.risk.PortfolioSource
 import com.capstone.decision.infrastructure.grpc.DecisionGrpcProperties
 import com.capstone.decision.infrastructure.grpc.DisclosureGrpcProtocolException
 import com.capstone.decision.infrastructure.grpc.GrpcDisclosureRiskAdapter
+import io.grpc.Metadata
 import io.grpc.Server
+import io.grpc.ServerCall
+import io.grpc.ServerCallHandler
+import io.grpc.ServerInterceptor
+import io.grpc.ServerInterceptors
 import io.grpc.Status
 import io.grpc.netty.shaded.io.grpc.netty.NettyServerBuilder
 import io.grpc.stub.StreamObserver
@@ -46,8 +51,41 @@ class GrpcDisclosureRiskAdapterTest {
             "dns:///127.0.0.1:50051",
         ).forEach { target ->
             assertThrows<IllegalArgumentException> {
-                DecisionGrpcProperties(target = target).validate()
+                DecisionGrpcProperties(target = target, sharedSecret = SHARED_SECRET).validate()
             }
+        }
+    }
+
+    @Test
+    fun `shared secret is required and attached to every business RPC`() {
+        listOf("", "short", "has whitespace ${"s".repeat(32)}").forEach { secret ->
+            assertThrows<IllegalArgumentException> {
+                DecisionGrpcProperties(target = "127.0.0.1:50051", sharedSecret = secret).validate()
+            }
+        }
+
+        val capturedSecret = AtomicReference<String?>()
+        val server =
+            server(
+                constantService(validResponse()),
+                object : ServerInterceptor {
+                    override fun <ReqT : Any, RespT : Any> interceptCall(
+                        call: ServerCall<ReqT, RespT>,
+                        headers: Metadata,
+                        next: ServerCallHandler<ReqT, RespT>,
+                    ): ServerCall.Listener<ReqT> {
+                        capturedSecret.set(headers.get(AUTH_HEADER))
+                        return next.startCall(call, headers)
+                    }
+                },
+            )
+        val adapter = adapter(server)
+        try {
+            assertThat(adapter.load(request())).isInstanceOf(MetricCell.Available::class.java)
+            assertThat(capturedSecret.get()).isEqualTo(SHARED_SECRET)
+        } finally {
+            adapter.close()
+            server.shutdownNow().awaitTermination()
         }
     }
 
@@ -159,7 +197,7 @@ class GrpcDisclosureRiskAdapterTest {
         val clock = Clock.fixed(EVALUATION_AS_OF.plusMillis(500), ZoneOffset.UTC)
         val adapter =
             GrpcDisclosureRiskAdapter(
-                DecisionGrpcProperties(target = "127.0.0.1:${server.port}"),
+                DecisionGrpcProperties(target = "127.0.0.1:${server.port}", sharedSecret = SHARED_SECRET),
                 clock,
             )
         try {
@@ -389,14 +427,17 @@ class GrpcDisclosureRiskAdapterTest {
 
     private fun adapter(server: Server): GrpcDisclosureRiskAdapter =
         GrpcDisclosureRiskAdapter(
-            DecisionGrpcProperties(target = "127.0.0.1:${server.port}"),
+            DecisionGrpcProperties(target = "127.0.0.1:${server.port}", sharedSecret = SHARED_SECRET),
             Clock.fixed(EVALUATION_AS_OF, ZoneOffset.UTC),
         )
 
-    private fun server(service: DisclosureObservationServiceGrpc.DisclosureObservationServiceImplBase): Server =
+    private fun server(
+        service: DisclosureObservationServiceGrpc.DisclosureObservationServiceImplBase,
+        vararg interceptors: ServerInterceptor,
+    ): Server =
         NettyServerBuilder
             .forAddress(InetSocketAddress("127.0.0.1", 0))
-            .addService(service)
+            .addService(ServerInterceptors.intercept(service, *interceptors))
             .build()
             .start()
 
@@ -497,5 +538,8 @@ class GrpcDisclosureRiskAdapterTest {
 
     private companion object {
         val EVALUATION_AS_OF: Instant = Instant.parse("2030-01-02T03:04:05Z")
+        const val SHARED_SECRET = "grpc-shared-secret-for-s2-3-tests-0001"
+        val AUTH_HEADER: Metadata.Key<String> =
+            Metadata.Key.of("x-decision-grpc-auth", Metadata.ASCII_STRING_MARSHALLER)
     }
 }

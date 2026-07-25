@@ -26,6 +26,7 @@ MIGRATION_DIR = (
 class PostgresTestCluster(TypedDict):
     admin_dsn: str
     collector_dsn: str
+    disclosure_reader_dsn: str
     app_dsn: str
     market_writer_dsn: str
     portfolio_writer_dsn: str
@@ -46,6 +47,9 @@ def postgres_cluster() -> Iterator[PostgresTestCluster]:
         port = container.get_exposed_port(5432)
         admin_dsn = f"postgresql://decision:decision@{host}:{port}/decision"
         collector_dsn = f"postgresql://decision_collector:collector-test@{host}:{port}/decision"
+        disclosure_reader_dsn = (
+            f"postgresql://decision_disclosure_reader:disclosure-reader-test@{host}:{port}/decision"
+        )
         app_dsn = f"postgresql://decision_app:app-test@{host}:{port}/decision"
         market_writer_dsn = (
             f"postgresql://decision_market_writer:market-writer-test@{host}:{port}/decision"
@@ -64,6 +68,8 @@ def postgres_cluster() -> Iterator[PostgresTestCluster]:
                     NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD 'app-test';
                 CREATE ROLE decision_collector LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
                     NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD 'collector-test';
+                CREATE ROLE decision_disclosure_reader LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
+                    NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD 'disclosure-reader-test';
                 CREATE ROLE decision_market_writer LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
                     NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD 'market-writer-test';
                 CREATE ROLE decision_portfolio_writer LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
@@ -75,6 +81,7 @@ def postgres_cluster() -> Iterator[PostgresTestCluster]:
                 GRANT CONNECT ON DATABASE decision TO
                     decision_app,
                     decision_collector,
+                    decision_disclosure_reader,
                     decision_market_writer,
                     decision_portfolio_writer,
                     decision_risk_writer,
@@ -83,6 +90,7 @@ def postgres_cluster() -> Iterator[PostgresTestCluster]:
                 GRANT USAGE ON SCHEMA public TO
                     decision_app,
                     decision_collector,
+                    decision_disclosure_reader,
                     decision_market_writer,
                     decision_portfolio_writer,
                     decision_risk_writer,
@@ -116,6 +124,7 @@ def postgres_cluster() -> Iterator[PostgresTestCluster]:
         yield {
             "admin_dsn": admin_dsn,
             "collector_dsn": collector_dsn,
+            "disclosure_reader_dsn": disclosure_reader_dsn,
             "app_dsn": app_dsn,
             "market_writer_dsn": market_writer_dsn,
             "portfolio_writer_dsn": portfolio_writer_dsn,

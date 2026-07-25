@@ -18,7 +18,7 @@ from app.data.kis.market_quote_observation_writer import (
     append_market_quote_fixture,
     load_market_quote_fixture,
 )
-from app.financial_engineering.deterministic_observation_writer import (
+from app.data.decision.deterministic_observation_writer import (
     append_deterministic_metric_fixture,
     load_deterministic_metric_fixture,
 )
@@ -248,7 +248,7 @@ def test_source_writers_have_no_provider_live_order_or_fallback_dependency() -> 
     from app.data.kis import instrument_catalog_writer
     from app.data.kis import market_quote_observation_writer
     from app.data.opendart import corporation_registry_writer
-    from app.financial_engineering import deterministic_observation_writer
+    from app.data.decision import deterministic_observation_writer
 
     source = "\n".join(
         inspect.getsource(module)

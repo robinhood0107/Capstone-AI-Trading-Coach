@@ -23,6 +23,9 @@ from app.generated import (
 )
 from app.grpc_server import GrpcServerSettings
 
+_SHARED_SECRET = "python-grpc-shared-secret-for-s2-3-tests-0001"
+_AUTH_METADATA = (("x-decision-grpc-auth", _SHARED_SECRET),)
+
 
 class FakeDisclosureRepository:
     def __init__(self, batch: StoredDisclosureBatch) -> None:
@@ -85,16 +88,42 @@ def _request() -> disclosure_observation_pb2.GetDisclosureEventsRequest:
     )
 
 
+def _settings() -> GrpcServerSettings:
+    return GrpcServerSettings(
+        bind_address=_loopback_address(),
+        shared_secret=_SHARED_SECRET,
+    )
+
+
+def _authorized_metadata() -> tuple[tuple[str, str], ...]:
+    return _AUTH_METADATA
+
+
+def _get_disclosure_events(
+    stub: disclosure_observation_pb2_grpc.DisclosureObservationServiceStub,
+    request: disclosure_observation_pb2.GetDisclosureEventsRequest,
+    *,
+    timeout: float,
+) -> disclosure_observation_pb2.GetDisclosureEventsResponse:
+    return stub.GetDisclosureEvents(
+        request,
+        timeout=timeout,
+        metadata=_authorized_metadata(),
+    )
+
+
 def test_real_business_rpc_roundtrip_is_loopback_single_call_without_reflection() -> None:
     repository = FakeDisclosureRepository(_batch())
-    settings = GrpcServerSettings(bind_address=_loopback_address())
+    settings = _settings()
     server = create_disclosure_server(settings, repository)
     server.start()
     channel = grpc.insecure_channel(settings.bind_address)
     try:
-        response = disclosure_observation_pb2_grpc.DisclosureObservationServiceStub(
-            channel
-        ).GetDisclosureEvents(_request(), timeout=0.5)
+        response = _get_disclosure_events(
+            disclosure_observation_pb2_grpc.DisclosureObservationServiceStub(channel),
+            _request(),
+            timeout=0.5,
+        )
 
         assert repository.calls == 1
         assert response.symbol == "005930"
@@ -124,6 +153,31 @@ def test_real_business_rpc_roundtrip_is_loopback_single_call_without_reflection(
         server.stop(grace=0).wait(timeout=2)
 
 
+def test_business_rpc_rejects_missing_shared_secret_before_repository_work() -> None:
+    repository = FakeDisclosureRepository(_batch())
+    settings = _settings()
+    server = create_disclosure_server(settings, repository)
+    server.start()
+    channel = grpc.insecure_channel(settings.bind_address)
+    try:
+        stub = disclosure_observation_pb2_grpc.DisclosureObservationServiceStub(channel)
+        with pytest.raises(grpc.RpcError) as missing:
+            stub.GetDisclosureEvents(_request(), timeout=0.5)
+        assert missing.value.code() == grpc.StatusCode.UNAUTHENTICATED
+
+        with pytest.raises(grpc.RpcError) as wrong:
+            stub.GetDisclosureEvents(
+                _request(),
+                timeout=0.5,
+                metadata=(("x-decision-grpc-auth", "wrong-secret".ljust(32, "x")),),
+            )
+        assert wrong.value.code() == grpc.StatusCode.UNAUTHENTICATED
+        assert repository.calls == 0
+    finally:
+        channel.close()
+        server.stop(grace=0).wait(timeout=2)
+
+
 def test_stopped_python_process_is_unavailable_without_retry() -> None:
     address = _loopback_address()
     channel = grpc.insecure_channel(address)
@@ -141,21 +195,21 @@ def test_stopped_python_process_is_unavailable_without_retry() -> None:
 
 def test_request_and_response_bounds_fail_closed() -> None:
     repository = FakeDisclosureRepository(_batch(event_count=101))
-    settings = GrpcServerSettings(bind_address=_loopback_address())
+    settings = _settings()
     server = create_disclosure_server(settings, repository)
     server.start()
     channel = grpc.insecure_channel(settings.bind_address)
     try:
         stub = disclosure_observation_pb2_grpc.DisclosureObservationServiceStub(channel)
         with pytest.raises(grpc.RpcError) as response_error:
-            stub.GetDisclosureEvents(_request(), timeout=0.5)
+            _get_disclosure_events(stub, _request(), timeout=0.5)
         assert response_error.value.code() == grpc.StatusCode.DATA_LOSS
         assert repository.calls == 1
 
         oversized = _request()
         oversized.symbol = "9" * (256 * 1024)
         with pytest.raises(grpc.RpcError) as request_error:
-            stub.GetDisclosureEvents(oversized, timeout=0.5)
+            _get_disclosure_events(stub, oversized, timeout=0.5)
         assert request_error.value.code() == grpc.StatusCode.RESOURCE_EXHAUSTED
         assert repository.calls == 1
     finally:
@@ -174,15 +228,17 @@ def test_incomplete_response_is_still_validated_and_malformed_payload_fails() ->
         source_refs=("not-a-sha256",),
     )
     repository = FakeDisclosureRepository(malformed)
-    settings = GrpcServerSettings(bind_address=_loopback_address())
+    settings = _settings()
     server = create_disclosure_server(settings, repository)
     server.start()
     channel = grpc.insecure_channel(settings.bind_address)
     try:
         with pytest.raises(grpc.RpcError) as error:
-            disclosure_observation_pb2_grpc.DisclosureObservationServiceStub(
-                channel
-            ).GetDisclosureEvents(_request(), timeout=0.5)
+            _get_disclosure_events(
+                disclosure_observation_pb2_grpc.DisclosureObservationServiceStub(channel),
+                _request(),
+                timeout=0.5,
+            )
         assert error.value.code() == grpc.StatusCode.DATA_LOSS
     finally:
         channel.close()
@@ -229,15 +285,17 @@ def test_database_failures_map_to_exact_sanitized_status(
     error: Exception,
     expected: grpc.StatusCode,
 ) -> None:
-    settings = GrpcServerSettings(bind_address=_loopback_address())
+    settings = _settings()
     server = create_disclosure_server(settings, _FailingRepository(error))
     server.start()
     channel = grpc.insecure_channel(settings.bind_address)
     try:
         with pytest.raises(grpc.RpcError) as raised:
-            disclosure_observation_pb2_grpc.DisclosureObservationServiceStub(
-                channel
-            ).GetDisclosureEvents(_request(), timeout=0.5)
+            _get_disclosure_events(
+                disclosure_observation_pb2_grpc.DisclosureObservationServiceStub(channel),
+                _request(),
+                timeout=0.5,
+            )
         assert raised.value.code() == expected
         assert "sanitized" not in raised.value.details()
     finally:
@@ -276,15 +334,17 @@ class _BlockingRepository:
 
 def test_client_cancellation_cancels_active_database_resource() -> None:
     repository = _BlockingRepository()
-    settings = GrpcServerSettings(bind_address=_loopback_address())
+    settings = _settings()
     server = create_disclosure_server(settings, repository)
     server.start()
     channel = grpc.insecure_channel(settings.bind_address)
     try:
         with pytest.raises(grpc.RpcError):
-            disclosure_observation_pb2_grpc.DisclosureObservationServiceStub(
-                channel
-            ).GetDisclosureEvents(_request(), timeout=0.1)
+            _get_disclosure_events(
+                disclosure_observation_pb2_grpc.DisclosureObservationServiceStub(channel),
+                _request(),
+                timeout=0.1,
+            )
         assert repository.started.wait(timeout=1)
         assert repository.connection.cancelled.wait(timeout=1)
     finally:
@@ -331,14 +391,17 @@ class _ConcurrencyRepository:
 
 def test_ninth_concurrent_rpc_is_bounded_before_a_ninth_repository_call() -> None:
     repository = _ConcurrencyRepository()
-    settings = GrpcServerSettings(bind_address=_loopback_address())
+    settings = _settings()
     server = create_disclosure_server(settings, repository)
     server.start()
     channel = grpc.insecure_channel(settings.bind_address)
     executor = futures.ThreadPoolExecutor(max_workers=9)
     try:
         stub = disclosure_observation_pb2_grpc.DisclosureObservationServiceStub(channel)
-        calls = [executor.submit(stub.GetDisclosureEvents, _request(), timeout=1.5) for _ in range(9)]
+        calls = [
+            executor.submit(_get_disclosure_events, stub, _request(), timeout=1.5)
+            for _ in range(9)
+        ]
         deadline = time.monotonic() + 1
         while repository.calls < 8 and time.monotonic() < deadline:
             time.sleep(0.01)
@@ -383,15 +446,17 @@ def test_duplicate_event_or_source_reference_is_not_silently_truncated() -> None
         events=(event, event),
     )
     repository = FakeDisclosureRepository(duplicate_batch)
-    settings = GrpcServerSettings(bind_address=_loopback_address())
+    settings = _settings()
     server = create_disclosure_server(settings, repository)
     server.start()
     channel = grpc.insecure_channel(settings.bind_address)
     try:
         with pytest.raises(grpc.RpcError) as error:
-            disclosure_observation_pb2_grpc.DisclosureObservationServiceStub(
-                channel
-            ).GetDisclosureEvents(_request(), timeout=0.5)
+            _get_disclosure_events(
+                disclosure_observation_pb2_grpc.DisclosureObservationServiceStub(channel),
+                _request(),
+                timeout=0.5,
+            )
         assert error.value.code() == grpc.StatusCode.DATA_LOSS
     finally:
         channel.close()
@@ -422,15 +487,17 @@ def test_duplicate_source_reference_across_distinct_events_fails_closed() -> Non
         ),
     )
     repository = FakeDisclosureRepository(duplicate_source_batch)
-    settings = GrpcServerSettings(bind_address=_loopback_address())
+    settings = _settings()
     server = create_disclosure_server(settings, repository)
     server.start()
     channel = grpc.insecure_channel(settings.bind_address)
     try:
         with pytest.raises(grpc.RpcError) as error:
-            disclosure_observation_pb2_grpc.DisclosureObservationServiceStub(
-                channel
-            ).GetDisclosureEvents(_request(), timeout=0.5)
+            _get_disclosure_events(
+                disclosure_observation_pb2_grpc.DisclosureObservationServiceStub(channel),
+                _request(),
+                timeout=0.5,
+            )
         assert error.value.code() == grpc.StatusCode.DATA_LOSS
     finally:
         channel.close()

@@ -13,9 +13,11 @@ import com.capstone.decision.domain.risk.MetricCell
 import com.capstone.decision.domain.risk.MetricIssueCode
 import com.capstone.decision.domain.risk.MetricSource
 import io.grpc.ManagedChannel
+import io.grpc.Metadata
 import io.grpc.Status
 import io.grpc.StatusRuntimeException
 import io.grpc.netty.shaded.io.grpc.netty.NettyChannelBuilder
+import io.grpc.stub.MetadataUtils
 import jakarta.annotation.PreDestroy
 import org.slf4j.LoggerFactory
 import org.slf4j.MDC
@@ -112,6 +114,7 @@ class GrpcDisclosureRiskAdapter(
             try {
                 DisclosureObservationServiceGrpc
                     .newBlockingStub(channel)
+                    .withInterceptors(MetadataUtils.newAttachHeadersInterceptor(authHeaders()))
                     .withDeadlineAfter(deadlineMillis, TimeUnit.MILLISECONDS)
                     .getDisclosureEvents(rpcRequest)
             } catch (exception: StatusRuntimeException) {
@@ -339,8 +342,17 @@ class GrpcDisclosureRiskAdapter(
         right: Instant,
     ): Instant = if (left.isAfter(right)) left else right
 
+    private fun authHeaders(): Metadata {
+        val headers = Metadata()
+        // plaintext loopback v1에서 business RPC 호출자를 같은 배포 단위의 Spring app으로 한 번 더 결속한다.
+        headers.put(AUTH_HEADER, properties.sharedSecret)
+        return headers
+    }
+
     private companion object {
         val log = LoggerFactory.getLogger(GrpcDisclosureRiskAdapter::class.java)
+        val AUTH_HEADER: Metadata.Key<String> =
+            Metadata.Key.of("x-decision-grpc-auth", Metadata.ASCII_STRING_MARSHALLER)
         const val TRACE_ID_MDC_KEY = "trace_id"
         const val SPAN_ID_MDC_KEY = "span_id"
         const val TRACE_UNAVAILABLE = "unavailable"

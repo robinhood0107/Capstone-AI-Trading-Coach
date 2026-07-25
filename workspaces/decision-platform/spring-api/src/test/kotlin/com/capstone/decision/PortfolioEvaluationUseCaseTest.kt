@@ -136,6 +136,40 @@ class PortfolioEvaluationUseCaseTest {
     }
 
     @Test
+    fun `order amount rule uses stored quote instead of client supplied estimate`() {
+        val harness = Harness(principleRuleIds = setOf("max_single_order_amount"))
+
+        val evaluation =
+            harness.useCase.evaluate(
+                harness.command(
+                    orderIntent =
+                        OrderIntentSnapshot(
+                            symbol = "005930",
+                            side = "BUY",
+                            orderType = "MARKET",
+                            quantity = 101,
+                            estimatedPrice = 1,
+                            estimatedAmount = 101,
+                            timeframe = "1d",
+                            strategyId = "client-understated-estimate",
+                        ),
+                ),
+            )
+        val orderAmount =
+            requireNotNull(evaluation.snapshot)
+                .metric(MetricKey.ORDER_AMOUNT_KRW) as MetricCell.Available
+
+        assertThat((orderAmount.value as MetricValue.Whole).value).isEqualTo(1_010_000)
+        assertThat(evaluation.result.action).isEqualTo(EvaluationAction.BLOCK)
+        assertThat(evaluation.result.violations)
+            .anySatisfy { violation ->
+                assertThat(violation.ruleId).isEqualTo("max_single_order_amount")
+                assertThat(violation.metricValue.toPlainString()).isEqualTo("1010000")
+                assertThat(violation.threshold.toPlainString()).isEqualTo("1000000")
+            }
+    }
+
+    @Test
     fun `missing optional disclosure abstains only that rule while required disclosure holds`() {
         val optional =
             Harness(
@@ -858,6 +892,17 @@ class PortfolioEvaluationUseCaseTest {
             portfolioSource: String = PortfolioSource.INTERNAL_PAPER.name,
             optionalComponents: Set<OptionalEvaluationComponent> = emptySet(),
             evaluationId: String = "evl_0123456789abcdef",
+            orderIntent: OrderIntentSnapshot =
+                OrderIntentSnapshot(
+                    symbol = "005930",
+                    side = "BUY",
+                    orderType = "MARKET",
+                    quantity = 1,
+                    estimatedPrice = 10_000,
+                    estimatedAmount = 10_000,
+                    timeframe = "1d",
+                    strategyId = "strategy_fixture",
+                ),
         ): PortfolioEvaluationCommand =
             PortfolioEvaluationCommand(
                 actorUserId = "usr_demo_user",
@@ -865,17 +910,7 @@ class PortfolioEvaluationUseCaseTest {
                 portfolioSource = portfolioSource,
                 evaluationId = evaluationId,
                 evaluationAsOf = AS_OF,
-                orderIntent =
-                    OrderIntentSnapshot(
-                        symbol = "005930",
-                        side = "BUY",
-                        orderType = "MARKET",
-                        quantity = 1,
-                        estimatedPrice = 10_000,
-                        estimatedAmount = 10_000,
-                        timeframe = "1d",
-                        strategyId = "strategy_fixture",
-                    ),
+                orderIntent = orderIntent,
                 optionalComponents = optionalComponents,
             )
 

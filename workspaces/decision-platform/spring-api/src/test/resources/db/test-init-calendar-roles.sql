@@ -7,6 +7,9 @@ CREATE ROLE decision_app
     LOGIN PASSWORD 'app-test' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
 CREATE ROLE decision_collector
     LOGIN PASSWORD 'collector-test' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
+CREATE ROLE decision_disclosure_reader
+    LOGIN PASSWORD 'disclosure-reader-test'
+    NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
 CREATE ROLE decision_market_writer
     LOGIN PASSWORD 'market-writer-test'
     NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
@@ -30,6 +33,7 @@ REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 GRANT USAGE ON SCHEMA public TO
     decision_app,
     decision_collector,
+    decision_disclosure_reader,
     decision_market_writer,
     decision_portfolio_writer,
     decision_risk_writer,

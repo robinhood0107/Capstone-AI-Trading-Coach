@@ -35,6 +35,7 @@ abstract class SpringApiIntegrationTestBase {
         internal val TEST_LOGIN_SCOPE_HMAC_KEY: String = "l" + "h".repeat(63)
         internal val TEST_PRINCIPLE_CURSOR_HMAC_KEY: String = "p" + "c".repeat(63)
         internal val TEST_DECISION_SCOPE_HMAC_KEY: String = "d" + "i".repeat(63)
+        internal val TEST_GRPC_SHARED_SECRET: String = "g" + "r".repeat(63)
         internal val TEST_CREDENTIAL_SEPARATION_KEY_BYTES: ByteArray = ByteArray(32) { index -> (index + 17).toByte() }
         internal val TEST_CREDENTIAL_SEPARATION_KEY: String =
             Base64.getUrlEncoder().withoutPadding().encodeToString(TEST_CREDENTIAL_SEPARATION_KEY_BYTES)
@@ -70,6 +71,7 @@ abstract class SpringApiIntegrationTestBase {
             registry.add("app.login.scope-hmac-key") { TEST_LOGIN_SCOPE_HMAC_KEY }
             registry.add("app.principle.cursor-hmac-key") { TEST_PRINCIPLE_CURSOR_HMAC_KEY }
             registry.add("app.decision.idempotency-scope-hmac-key") { TEST_DECISION_SCOPE_HMAC_KEY }
+            registry.add("app.decision.grpc.shared-secret") { TEST_GRPC_SHARED_SECRET }
             registry.add("app.demo-credentials.user-credential-bundle") { TEST_USER_CREDENTIAL_BUNDLE }
             registry.add("app.demo-credentials.admin-credential-bundle") { TEST_ADMIN_CREDENTIAL_BUNDLE }
             registry.add("app.demo-credentials.separation-key") { TEST_CREDENTIAL_SEPARATION_KEY }

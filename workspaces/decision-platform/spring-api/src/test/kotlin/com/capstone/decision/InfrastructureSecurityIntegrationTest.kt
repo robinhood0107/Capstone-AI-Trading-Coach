@@ -103,6 +103,30 @@ class InfrastructureSecurityIntegrationTest {
                     assertFalse(hasTablePrivilege(connection, "decision_app", table, privilege))
                 }
             }
+            listOf(
+                "current_corporation_registry_projection",
+                "disclosure_event_observation_projection",
+                "disclosure_collection_status_projection",
+            ).forEach { table ->
+                assertTrue(
+                    hasTablePrivilege(connection, "decision_disclosure_reader", table, "SELECT"),
+                    "disclosure reader must read $table",
+                )
+            }
+            listOf(
+                "decisions",
+                "audit_logs",
+                "market_quote_observations",
+                "corporation_registry_observations",
+                "flyway_schema_history",
+            ).forEach { table ->
+                listOf("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE").forEach { privilege ->
+                    assertFalse(
+                        hasTablePrivilege(connection, "decision_disclosure_reader", table, privilege),
+                        "unexpected disclosure reader $privilege on $table",
+                    )
+                }
+            }
         }
 
         DriverManager.getConnection(postgres.jdbcUrl, runtimeProperties()).use { connection ->
@@ -246,6 +270,7 @@ class InfrastructureSecurityIntegrationTest {
         private val runtimePassword: String = "r" + "p".repeat(24)
         private val migrationPassword: String = "m" + "p".repeat(24)
         private val collectorPassword: String = "c" + "p".repeat(24)
+        private val disclosureReaderPassword: String = "d" + "r".repeat(24)
         private val marketWriterPassword: String = "w" + "m".repeat(24)
         private val portfolioWriterPassword: String = "w" + "p".repeat(24)
         private val riskWriterPassword: String = "w" + "r".repeat(24)
@@ -265,6 +290,7 @@ class InfrastructureSecurityIntegrationTest {
                 .withEnv("POSTGRES_APP_PASSWORD", runtimePassword)
                 .withEnv("POSTGRES_MIGRATION_PASSWORD", migrationPassword)
                 .withEnv("POSTGRES_COLLECTOR_PASSWORD", collectorPassword)
+                .withEnv("POSTGRES_DISCLOSURE_READER_PASSWORD", disclosureReaderPassword)
                 .withEnv("POSTGRES_MARKET_WRITER_PASSWORD", marketWriterPassword)
                 .withEnv("POSTGRES_PORTFOLIO_WRITER_PASSWORD", portfolioWriterPassword)
                 .withEnv("POSTGRES_RISK_WRITER_PASSWORD", riskWriterPassword)

@@ -9,6 +9,7 @@ from collections import defaultdict
 from datetime import UTC, date, datetime
 from typing import Any
 
+import psycopg
 from psycopg import Connection
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
@@ -25,6 +26,20 @@ _QUERY_TIMEOUT_MS = 450
 _POOL_ACQUIRE_TIMEOUT_SECONDS = 0.45
 _POOL_MAX_SIZE = 8
 _STATE_COMPLETENESS_OPERATIONS = ("bnkMngtPcsp",)
+_EXPECTED_READER_ROLE = "decision_disclosure_reader"
+_REQUIRED_SELECT_TABLES = (
+    "current_corporation_registry_projection",
+    "disclosure_event_observation_projection",
+    "disclosure_collection_status_projection",
+)
+_FORBIDDEN_TABLES = (
+    "decisions",
+    "audit_logs",
+    "market_quote_observations",
+    "corporation_registry_observations",
+    "flyway_schema_history",
+)
+_FORBIDDEN_PRIVILEGES = ("INSERT", "UPDATE", "DELETE", "TRUNCATE")
 
 
 class PostgresStoredDisclosureRepository:
@@ -32,7 +47,8 @@ class PostgresStoredDisclosureRepository:
 
     def __init__(self, database_dsn: str) -> None:
         if not database_dsn.strip():
-            raise ValueError("DECISION_GRPC_DATABASE_DSN is required")
+            raise ValueError("DECISION_DISCLOSURE_READER_DATABASE_DSN is required")
+        _attest_reader_dsn(database_dsn)
         self._pool: ConnectionPool[Connection[dict[str, Any]]] = ConnectionPool(
             conninfo=database_dsn,
             kwargs={
@@ -50,7 +66,7 @@ class PostgresStoredDisclosureRepository:
     @classmethod
     def from_env(cls) -> "PostgresStoredDisclosureRepository":
         """runtime secret store가 주입한 DSN만 받고 테스트/production 값을 코드에 만들지 않는다."""
-        return cls(os.environ.get("DECISION_GRPC_DATABASE_DSN", ""))
+        return cls(os.environ.get("DECISION_DISCLOSURE_READER_DATABASE_DSN", ""))
 
     def close(self) -> None:
         """bounded pool worker와 physical connection을 gRPC server lifecycle에 맞춰 닫는다."""
@@ -307,3 +323,50 @@ def _cursor_source_ref(rows: list[dict[str, Any]]) -> tuple[str, ...]:
         separators=(",", ":"),
     ).encode("utf-8")
     return (hashlib.sha256(payload).hexdigest(),)
+
+
+def _attest_reader_dsn(database_dsn: str) -> None:
+    """공시 sidecar DSN이 전용 projection reader role인지 pool 생성 전에 검증한다."""
+    with psycopg.connect(database_dsn, autocommit=True, connect_timeout=1) as connection:
+        current_user = str(_required_scalar(connection.execute("select current_user").fetchone()))
+        if current_user != _EXPECTED_READER_ROLE:
+            raise ValueError("stored disclosure repository requires decision_disclosure_reader role")
+        for table in _REQUIRED_SELECT_TABLES:
+            if not _has_table_privilege(connection, table, "SELECT"):
+                raise ValueError("stored disclosure reader lacks required projection SELECT")
+            for privilege in _FORBIDDEN_PRIVILEGES:
+                if _has_table_privilege(connection, table, privilege):
+                    raise ValueError("stored disclosure reader has unexpected write privilege")
+        for table in _FORBIDDEN_TABLES:
+            for privilege in ("SELECT", *_FORBIDDEN_PRIVILEGES):
+                if _has_table_privilege(connection, table, privilege):
+                    raise ValueError("stored disclosure reader has unrelated table privilege")
+        if bool(
+            _required_scalar(
+                connection.execute(
+                    "select has_schema_privilege(current_user, 'public', 'CREATE')"
+                ).fetchone()
+            )
+        ):
+            raise ValueError("stored disclosure reader must not create schema objects")
+
+
+def _has_table_privilege(
+    connection: Connection[Any],
+    table: str,
+    privilege: str,
+) -> bool:
+    return bool(
+        _required_scalar(
+            connection.execute(
+                "select has_table_privilege(current_user, %s, %s)",
+                (f"public.{table}", privilege),
+            ).fetchone()
+        )
+    )
+
+
+def _required_scalar(row: tuple[Any, ...] | None) -> Any:
+    if row is None:
+        raise ValueError("stored disclosure reader attestation returned no row")
+    return row[0]

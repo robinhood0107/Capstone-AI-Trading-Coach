@@ -6,6 +6,7 @@ set -Eeuo pipefail
 : "${POSTGRES_APP_PASSWORD:?POSTGRES_APP_PASSWORD is required}"
 : "${POSTGRES_MIGRATION_PASSWORD:?POSTGRES_MIGRATION_PASSWORD is required}"
 : "${POSTGRES_COLLECTOR_PASSWORD:?POSTGRES_COLLECTOR_PASSWORD is required}"
+: "${POSTGRES_DISCLOSURE_READER_PASSWORD:?POSTGRES_DISCLOSURE_READER_PASSWORD is required}"
 : "${POSTGRES_MARKET_WRITER_PASSWORD:?POSTGRES_MARKET_WRITER_PASSWORD is required}"
 : "${POSTGRES_PORTFOLIO_WRITER_PASSWORD:?POSTGRES_PORTFOLIO_WRITER_PASSWORD is required}"
 : "${POSTGRES_RISK_WRITER_PASSWORD:?POSTGRES_RISK_WRITER_PASSWORD is required}"
@@ -17,11 +18,16 @@ psql -v ON_ERROR_STOP=1 --no-password --username "$POSTGRES_USER" --dbname "$POS
 \getenv app_password POSTGRES_APP_PASSWORD
 \getenv migration_password POSTGRES_MIGRATION_PASSWORD
 \getenv collector_password POSTGRES_COLLECTOR_PASSWORD
+\getenv disclosure_reader_password POSTGRES_DISCLOSURE_READER_PASSWORD
 \getenv market_writer_password POSTGRES_MARKET_WRITER_PASSWORD
 \getenv portfolio_writer_password POSTGRES_PORTFOLIO_WRITER_PASSWORD
 \getenv risk_writer_password POSTGRES_RISK_WRITER_PASSWORD
 
 BEGIN;
+
+-- role password DDL은 literalized SQL로 실행되므로 bootstrap transaction에서는 statement log를 닫는다.
+SET LOCAL log_statement = 'none';
+SET LOCAL log_min_error_statement = 'panic';
 
 SELECT format(
     'CREATE ROLE decision_app LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD %L',
@@ -63,6 +69,19 @@ WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'decision_collector')
 SELECT format(
     'ALTER ROLE decision_collector WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD %L',
     :'collector_password'
+)
+\gexec
+
+SELECT format(
+    'CREATE ROLE decision_disclosure_reader LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD %L',
+    :'disclosure_reader_password'
+)
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'decision_disclosure_reader')
+\gexec
+
+SELECT format(
+    'ALTER ROLE decision_disclosure_reader WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD %L',
+    :'disclosure_reader_password'
 )
 \gexec
 
@@ -109,6 +128,7 @@ REVOKE ALL ON DATABASE :"database_name" FROM PUBLIC;
 GRANT CONNECT ON DATABASE :"database_name" TO
     decision_app,
     decision_collector,
+    decision_disclosure_reader,
     decision_market_writer,
     decision_portfolio_writer,
     decision_risk_writer,
@@ -117,6 +137,7 @@ REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 GRANT USAGE ON SCHEMA public TO
     decision_app,
     decision_collector,
+    decision_disclosure_reader,
     decision_market_writer,
     decision_portfolio_writer,
     decision_risk_writer,
@@ -129,6 +150,8 @@ REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_app;
 REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_app;
 REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_collector;
 REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_collector;
+REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_disclosure_reader;
+REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_disclosure_reader;
 REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_market_writer;
 REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_market_writer;
 REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_portfolio_writer;
@@ -145,6 +168,10 @@ ALTER DEFAULT PRIVILEGES FOR ROLE flyway IN SCHEMA public
     REVOKE ALL PRIVILEGES ON TABLES FROM decision_collector;
 ALTER DEFAULT PRIVILEGES FOR ROLE flyway IN SCHEMA public
     REVOKE ALL PRIVILEGES ON SEQUENCES FROM decision_collector;
+ALTER DEFAULT PRIVILEGES FOR ROLE flyway IN SCHEMA public
+    REVOKE ALL PRIVILEGES ON TABLES FROM decision_disclosure_reader;
+ALTER DEFAULT PRIVILEGES FOR ROLE flyway IN SCHEMA public
+    REVOKE ALL PRIVILEGES ON SEQUENCES FROM decision_disclosure_reader;
 
 DO $calendar_privileges$
 BEGIN
@@ -246,6 +273,7 @@ BEGIN
     IF to_regclass('public.decision_idempotency_results') IS NOT NULL THEN
         -- 기존 volume에서도 V9의 source read-only 및 append-only history 경계를 그대로 복원한다.
         REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_app;
+        REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_disclosure_reader;
         GRANT SELECT ON TABLE
             users,
             principle_presets,
@@ -262,10 +290,7 @@ BEGIN
             latest_portfolio_balance_observations,
             latest_deterministic_risk_observations,
             latest_daily_order_count_observations,
-            current_corporation_registry_projection,
-            active_paper_portfolio_projection,
-            disclosure_event_observation_projection,
-            disclosure_collection_status_projection
+            active_paper_portfolio_projection
         TO decision_app;
         GRANT INSERT ON TABLE
             principles,
@@ -287,7 +312,14 @@ BEGIN
         GRANT UPDATE (title, mode, status, current_version, updated_at)
             ON TABLE principles TO decision_app;
         REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_app;
+        GRANT SELECT ON TABLE
+            current_corporation_registry_projection,
+            disclosure_event_observation_projection,
+            disclosure_collection_status_projection
+        TO decision_disclosure_reader;
+        REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_disclosure_reader;
         REVOKE CREATE ON SCHEMA public FROM decision_app;
+        REVOKE CREATE ON SCHEMA public FROM decision_disclosure_reader;
     END IF;
 END
 $decision_runtime_privileges$;
@@ -298,6 +330,7 @@ BEGIN
         REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_market_writer;
         REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_portfolio_writer;
         REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_risk_writer;
+        REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_disclosure_reader;
 
         GRANT INSERT ON TABLE
             market_quote_observations,
@@ -316,10 +349,17 @@ BEGIN
         REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_market_writer;
         REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_portfolio_writer;
         REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_risk_writer;
+        REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_disclosure_reader;
+        GRANT SELECT ON TABLE
+            current_corporation_registry_projection,
+            disclosure_event_observation_projection,
+            disclosure_collection_status_projection
+        TO decision_disclosure_reader;
         REVOKE CREATE ON SCHEMA public FROM
             decision_market_writer,
             decision_portfolio_writer,
-            decision_risk_writer;
+            decision_risk_writer,
+            decision_disclosure_reader;
     END IF;
 END
 $decision_source_writer_privileges$;
@@ -330,6 +370,7 @@ BEGIN
         -- 기존 volume에 role bootstrap을 재적용해도 runtime이 migration 이력을 변조하지 못한다.
         REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_app;
         REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_collector;
+        REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_disclosure_reader;
     END IF;
 END
 $block$;

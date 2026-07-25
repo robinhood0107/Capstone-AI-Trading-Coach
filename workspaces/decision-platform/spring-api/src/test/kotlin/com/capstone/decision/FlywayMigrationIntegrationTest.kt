@@ -462,9 +462,6 @@ class FlywayMigrationIntegrationTest(
             "latest_instrument_catalog_observations",
             "latest_deterministic_risk_observations",
             "latest_daily_order_count_observations",
-            "current_corporation_registry_projection",
-            "disclosure_event_observation_projection",
-            "disclosure_collection_status_projection",
         ).forEach { table ->
             assertTrue(hasTablePrivilege("decision_app", table, "SELECT"), "missing SELECT on $table")
         }
@@ -489,6 +486,9 @@ class FlywayMigrationIntegrationTest(
             "deterministic_risk_observations",
             "daily_order_count_observations",
             "corporation_registry_observations",
+            "current_corporation_registry_projection",
+            "disclosure_event_observation_projection",
+            "disclosure_collection_status_projection",
         ).forEach { table ->
             assertFalse(hasTablePrivilege("decision_app", table, "SELECT"), "unexpected source SELECT on $table")
             assertFalse(hasTablePrivilege("decision_app", table, "INSERT"), "unexpected source INSERT on $table")
@@ -500,6 +500,39 @@ class FlywayMigrationIntegrationTest(
         assertFalse(hasTablePrivilege("decision_app", "decision_idempotency_results", "SELECT"))
         assertFalse(hasTablePrivilege("decision_app", "flyway_schema_history", "SELECT"))
         assertFalse(hasSchemaPrivilege("decision_app", "CREATE"))
+
+        listOf(
+            "current_corporation_registry_projection",
+            "disclosure_event_observation_projection",
+            "disclosure_collection_status_projection",
+        ).forEach { table ->
+            assertTrue(hasTablePrivilege("decision_disclosure_reader", table, "SELECT"), "missing reader SELECT on $table")
+        }
+        listOf(
+            "decisions",
+            "audit_logs",
+            "market_quote_observations",
+            "corporation_registry_observations",
+            "flyway_schema_history",
+        ).forEach { table ->
+            listOf("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE").forEach { privilege ->
+                assertFalse(
+                    hasTablePrivilege("decision_disclosure_reader", table, privilege),
+                    "unexpected disclosure reader $privilege on $table",
+                )
+            }
+        }
+        assertFalse(hasSchemaPrivilege("decision_disclosure_reader", "CREATE"))
+        assertRolePermissionDenied(
+            "decision_disclosure_reader",
+            DISCLOSURE_READER_PASSWORD,
+            "insert into decisions (decision_id) values ('reader-forbidden')",
+        )
+        assertRolePermissionDenied(
+            "decision_disclosure_reader",
+            DISCLOSURE_READER_PASSWORD,
+            "select * from flyway_schema_history",
+        )
 
         val roleFlags =
             jdbcTemplate.queryForMap(
@@ -1753,6 +1786,7 @@ class FlywayMigrationIntegrationTest(
     companion object {
         private const val APP_PASSWORD = "app-test"
         private const val COLLECTOR_PASSWORD = "collector-test"
+        private const val DISCLOSURE_READER_PASSWORD = "disclosure-reader-test"
         private const val MARKET_WRITER_PASSWORD = "market-writer-test"
         private const val PORTFOLIO_WRITER_PASSWORD = "portfolio-writer-test"
         private const val RISK_WRITER_PASSWORD = "risk-writer-test"
@@ -1780,6 +1814,7 @@ class FlywayMigrationIntegrationTest(
             registry.add("spring.datasource.password", postgres::getPassword)
             registry.add("spring.flyway.user", postgres::getUsername)
             registry.add("spring.flyway.password", postgres::getPassword)
+            registry.add("app.decision.grpc.shared-secret") { SpringApiIntegrationTestBase.TEST_GRPC_SHARED_SECRET }
         }
 
         @JvmStatic

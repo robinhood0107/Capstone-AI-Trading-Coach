@@ -9,6 +9,7 @@ import org.springframework.validation.annotation.Validated
 @Validated
 data class DecisionGrpcProperties(
     var target: String = "127.0.0.1:50051",
+    var sharedSecret: String = "",
     @field:Min(1)
     @field:Max(2_000)
     var hardDeadlineMillis: Long = 2_000,
@@ -35,6 +36,9 @@ data class DecisionGrpcProperties(
         require(NUMERIC_LOOPBACK.matches(target)) {
             "Decision gRPC target must be a numeric loopback address."
         }
+        require(SHARED_SECRET.matches(sharedSecret)) {
+            "Decision gRPC shared secret must be 32..256 safe ASCII characters."
+        }
         val port =
             target
                 .substringAfterLast(':')
@@ -50,5 +54,6 @@ data class DecisionGrpcProperties(
 
     private companion object {
         val NUMERIC_LOOPBACK = Regex("""(?:127\.0\.0\.1:\d{1,5}|\[::1]:\d{1,5})""")
+        val SHARED_SECRET = Regex("""[A-Za-z0-9._~:-]{32,256}""")
     }
 }

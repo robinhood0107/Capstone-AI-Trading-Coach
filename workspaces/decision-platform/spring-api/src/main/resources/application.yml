@@ -70,6 +70,7 @@ app:
     claim-ttl-seconds: 30
     grpc:
       target: ${DECISION_GRPC_TARGET:127.0.0.1:50051}
+      shared-secret: ${DECISION_GRPC_SHARED_SECRET:}
       hard-deadline-millis: 2000
       source-deadline-millis: 500
       total-evaluation-deadline-millis: 900

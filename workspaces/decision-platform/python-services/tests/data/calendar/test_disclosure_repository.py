@@ -107,7 +107,7 @@ def test_app_role_reads_only_sanitized_stored_disclosure_projection(
                 ],
             )
 
-    with PostgresStoredDisclosureRepository(postgres_cluster["app_dsn"]) as repository:
+    with PostgresStoredDisclosureRepository(postgres_cluster["disclosure_reader_dsn"]) as repository:
         batch = repository.load(
             symbol="005930",
             corp_code=None,
@@ -198,7 +198,7 @@ def test_disclosure_window_includes_exact_day_365_and_excludes_day_366(
                 ],
             )
 
-    with PostgresStoredDisclosureRepository(postgres_cluster["app_dsn"]) as repository:
+    with PostgresStoredDisclosureRepository(postgres_cluster["disclosure_reader_dsn"]) as repository:
         batch = repository.load(
             symbol="035720",
             corp_code="00258801",
@@ -219,7 +219,7 @@ def test_repository_statement_timeout_cancels_a_locked_projection_query(
             "LOCK TABLE corporation_registry_observations IN ACCESS EXCLUSIVE MODE"
         )
         with PostgresStoredDisclosureRepository(
-            postgres_cluster["app_dsn"]
+            postgres_cluster["disclosure_reader_dsn"]
         ) as repository:
             with pytest.raises(psycopg.errors.QueryCanceled) as raised:
                 repository.load(
@@ -234,10 +234,17 @@ def test_repository_statement_timeout_cancels_a_locked_projection_query(
         blocker.close()
 
 
+def test_repository_rejects_broad_application_role_dsn(
+    postgres_cluster: PostgresTestCluster,
+) -> None:
+    with pytest.raises(ValueError, match="decision_disclosure_reader"):
+        PostgresStoredDisclosureRepository(postgres_cluster["app_dsn"])
+
+
 def test_empty_stored_observation_is_incomplete_not_a_fake_zero(
     postgres_cluster: PostgresTestCluster,
 ) -> None:
-    with PostgresStoredDisclosureRepository(postgres_cluster["app_dsn"]) as repository:
+    with PostgresStoredDisclosureRepository(postgres_cluster["disclosure_reader_dsn"]) as repository:
         batch = repository.load(
             symbol="000660",
             corp_code="00164779",
@@ -253,7 +260,7 @@ def test_empty_stored_observation_is_incomplete_not_a_fake_zero(
 def test_empty_or_ambiguous_corporation_registry_is_incomplete(
     postgres_cluster: PostgresTestCluster,
 ) -> None:
-    with PostgresStoredDisclosureRepository(postgres_cluster["app_dsn"]) as repository:
+    with PostgresStoredDisclosureRepository(postgres_cluster["disclosure_reader_dsn"]) as repository:
         missing = repository.load(
             symbol="000660",
             corp_code=None,
@@ -301,7 +308,7 @@ def test_empty_or_ambiguous_corporation_registry_is_incomplete(
                 ],
             )
 
-    with PostgresStoredDisclosureRepository(postgres_cluster["app_dsn"]) as repository:
+    with PostgresStoredDisclosureRepository(postgres_cluster["disclosure_reader_dsn"]) as repository:
         ambiguous = repository.load(
             symbol="000660",
             corp_code=None,
@@ -346,7 +353,7 @@ def test_empty_or_ambiguous_corporation_registry_is_incomplete(
                 ],
             )
 
-    with PostgresStoredDisclosureRepository(postgres_cluster["app_dsn"]) as repository:
+    with PostgresStoredDisclosureRepository(postgres_cluster["disclosure_reader_dsn"]) as repository:
         inactive = repository.load(
             symbol="035420",
             corp_code=None,
@@ -440,7 +447,7 @@ def test_more_than_one_hundred_distinct_events_fails_before_source_row_truncatio
                 ],
             )
 
-    with PostgresStoredDisclosureRepository(postgres_cluster["app_dsn"]) as repository:
+    with PostgresStoredDisclosureRepository(postgres_cluster["disclosure_reader_dsn"]) as repository:
         with pytest.raises(ValueError, match="event bound"):
             repository.load(
                 symbol="068270",

@@ -365,38 +365,40 @@ class FlywayMigrationIntegrationTest(
             )
 
             DriverManager.getConnection(postgres.jdbcUrl, "decision_app", APP_PASSWORD).use { connection ->
-                connection.prepareStatement(
-                    """
-                    select invalidate_unused_decisions_for_kill_switch(
-                      generation,
-                      changed_at,
-                      request_id
-                    )
-                    from risk_kill_switch
-                    where kill_switch_id = 'GLOBAL'
-                    """.trimIndent(),
-                ).use { statement ->
-                    statement.executeQuery().use { result ->
-                        assertTrue(result.next())
-                        assertEquals(2, result.getInt(1))
+                connection
+                    .prepareStatement(
+                        """
+                        select invalidate_unused_decisions_for_kill_switch(
+                          generation,
+                          changed_at,
+                          request_id
+                        )
+                        from risk_kill_switch
+                        where kill_switch_id = 'GLOBAL'
+                        """.trimIndent(),
+                    ).use { statement ->
+                        statement.executeQuery().use { result ->
+                            assertTrue(result.next())
+                            assertEquals(2, result.getInt(1))
+                        }
                     }
-                }
-                connection.prepareStatement(
-                    """
-                    select invalidate_unused_decisions_for_kill_switch(
-                      generation,
-                      changed_at,
-                      request_id
-                    )
-                    from risk_kill_switch
-                    where kill_switch_id = 'GLOBAL'
-                    """.trimIndent(),
-                ).use { statement ->
-                    statement.executeQuery().use { result ->
-                        assertTrue(result.next())
-                        assertEquals(0, result.getInt(1))
+                connection
+                    .prepareStatement(
+                        """
+                        select invalidate_unused_decisions_for_kill_switch(
+                          generation,
+                          changed_at,
+                          request_id
+                        )
+                        from risk_kill_switch
+                        where kill_switch_id = 'GLOBAL'
+                        """.trimIndent(),
+                    ).use { statement ->
+                        statement.executeQuery().use { result ->
+                            assertTrue(result.next())
+                            assertEquals(0, result.getInt(1))
+                        }
                     }
-                }
             }
 
             assertEquals(1, countDecisionInvalidations("dec-flyway"))

@@ -145,7 +145,11 @@ class DecisionApiIntegrationTest(
         assertEquals(200, activation.response.status)
         assertEquals(
             setOf("active", "reasonClass", "changedAt"),
-            json(activation).at("/data").propertyNames().asSequence().toSet(),
+            json(activation)
+                .at("/data")
+                .propertyNames()
+                .asSequence()
+                .toSet(),
         )
         assertTrue(json(activation).at("/data/active").booleanValue())
         assertEquals("USER_MANUAL_STOP", json(activation).at("/data/reasonClass").stringValue())
@@ -196,7 +200,14 @@ class DecisionApiIntegrationTest(
                     String::class.java,
                 ),
             )
-        assertEquals(setOf("active", "changedAt"), objectMapper.readTree(outbox).propertyNames().asSequence().toSet())
+        assertEquals(
+            setOf("active", "changedAt"),
+            objectMapper
+                .readTree(outbox)
+                .propertyNames()
+                .asSequence()
+                .toSet(),
+        )
         assertFalse(outbox.contains("usr_demo_user"))
         assertFalse(outbox.contains("시연 중 안전 정지"))
 

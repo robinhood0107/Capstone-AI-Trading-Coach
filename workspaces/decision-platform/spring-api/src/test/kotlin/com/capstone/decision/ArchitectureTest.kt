@@ -56,8 +56,7 @@ class ArchitectureTest {
                     "java.sql..",
                     "javax.sql..",
                     "io.grpc..",
-                )
-                .allowEmptyShould(true)
+                ).allowEmptyShould(true)
 
         @ArchTest
         @JvmField

@@ -14,6 +14,8 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder
 import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
 import java.util.Base64
+import java.util.HexFormat
+import java.security.MessageDigest
 
 // 테스트 credential과 hash는 런타임에 생성해 실제 secret이나 고정 BCrypt material을 fixture에 남기지 않는다.
 abstract class SpringApiIntegrationTestBase {
@@ -36,6 +38,15 @@ abstract class SpringApiIntegrationTestBase {
         internal val TEST_PRINCIPLE_CURSOR_HMAC_KEY: String = "p" + "c".repeat(63)
         internal val TEST_DECISION_SCOPE_HMAC_KEY: String = "d" + "i".repeat(63)
         internal val TEST_BROKERAGE_SCOPE_HMAC_KEY: String = "b" + "r".repeat(63)
+        internal val TEST_BROKERAGE_DB_CAPABILITY_TOKEN: String = "q" + "c".repeat(63)
+        internal val TEST_BROKERAGE_DB_CAPABILITY_TOKEN_SHA256: String =
+            HexFormat
+                .of()
+                .formatHex(
+                    MessageDigest
+                        .getInstance("SHA-256")
+                        .digest(TEST_BROKERAGE_DB_CAPABILITY_TOKEN.toByteArray(Charsets.UTF_8)),
+                )
         internal val TEST_GRPC_SHARED_SECRET: String = "g" + "r".repeat(63)
         internal val TEST_CREDENTIAL_SEPARATION_KEY_BYTES: ByteArray = ByteArray(32) { index -> (index + 17).toByte() }
         internal val TEST_CREDENTIAL_SEPARATION_KEY: String =
@@ -73,6 +84,13 @@ abstract class SpringApiIntegrationTestBase {
             registry.add("app.principle.cursor-hmac-key") { TEST_PRINCIPLE_CURSOR_HMAC_KEY }
             registry.add("app.decision.idempotency-scope-hmac-key") { TEST_DECISION_SCOPE_HMAC_KEY }
             registry.add("app.brokerage.idempotency-scope-hmac-key") { TEST_BROKERAGE_SCOPE_HMAC_KEY }
+            registry.add("app.brokerage.database-capability-token") { TEST_BROKERAGE_DB_CAPABILITY_TOKEN }
+            registry.add("app.brokerage.database-capability-token-sha256") {
+                TEST_BROKERAGE_DB_CAPABILITY_TOKEN_SHA256
+            }
+            registry.add("spring.flyway.placeholders.brokerageDbCapabilityTokenSha256") {
+                TEST_BROKERAGE_DB_CAPABILITY_TOKEN_SHA256
+            }
             registry.add("app.decision.grpc.shared-secret") { TEST_GRPC_SHARED_SECRET }
             registry.add("app.demo-credentials.user-credential-bundle") { TEST_USER_CREDENTIAL_BUNDLE }
             registry.add("app.demo-credentials.admin-credential-bundle") { TEST_ADMIN_CREDENTIAL_BUNDLE }

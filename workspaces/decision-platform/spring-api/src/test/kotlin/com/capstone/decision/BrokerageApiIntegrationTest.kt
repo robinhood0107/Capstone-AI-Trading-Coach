@@ -34,9 +34,14 @@ import org.testcontainers.postgresql.PostgreSQLContainer
 import org.testcontainers.utility.DockerImageName
 import tools.jackson.databind.JsonNode
 import tools.jackson.databind.ObjectMapper
+import java.sql.DriverManager
+import java.sql.SQLException
 import java.time.Instant
 import java.time.OffsetDateTime
 import java.time.ZoneOffset
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 import javax.sql.DataSource
 
 // S3.1 mock order path는 실제 KIS/provider 호출 없이 PostgreSQL ledger와 Redis-free durable idempotency만 검증한다.
@@ -136,6 +141,7 @@ class BrokerageApiIntegrationTest(
         assertFalse(first.response.contentAsString.contains("account_scope_hash", ignoreCase = true))
         assertEquals(1, count("select count(*) from orders where decision_id = ?", decisionId))
         assertEquals(1, count("select count(*) from order_events where order_id = ?", orderId))
+        assertEquals(1, count("select count(*) from audit_logs where target_type = 'ORDER' and target_id = ?", orderId))
         assertEquals(1, count("select count(*) from event_outbox where event_type = 'brokerage.mock-order-submitted.v1'"))
 
         val ledgerText =
@@ -213,6 +219,15 @@ class BrokerageApiIntegrationTest(
         assertEquals(200, cancel.response.status, cancel.response.contentAsString)
         assertEquals("CANCEL_REQUESTED", json(cancel).at("/data/status").stringValue())
         assertEquals(2, count("select count(*) from order_events where order_id = ?", orderId))
+        assertEquals(
+            listOf(1, 2),
+            jdbcTemplate.queryForList(
+                "select event_seq from order_events where order_id = ? order by event_seq",
+                Int::class.java,
+                orderId,
+            ),
+        )
+        assertEquals(2, count("select count(*) from audit_logs where target_type = 'ORDER' and target_id = ?", orderId))
         assertEquals(
             1,
             count("select count(*) from event_outbox where event_type = 'brokerage.mock-order-cancel-requested.v1'"),
@@ -412,6 +427,151 @@ class BrokerageApiIntegrationTest(
         assertEquals(400, mismatch.response.status, mismatch.response.contentAsString)
         assertEquals("VALIDATION_ERROR", json(mismatch).at("/error/code").stringValue())
         assertEquals(0, count("select count(*) from orders"))
+    }
+
+    @Test
+    fun `caller writable GUCs cannot unlock brokerage rows or explicit owner projections`() {
+        val token = login("demo-user", userPassword())
+        val decisionId = createDecision(token, suffix = "07", order = orderIntent())
+        val submitted =
+            submitMockOrder(
+                token,
+                "brokerage-guc-0001",
+                "req-brokerage-guc",
+                decisionId,
+                orderIntent(),
+            )
+        assertEquals(200, submitted.response.status)
+        val orderId = json(submitted).at("/data/orderId").stringValue()
+
+        appDataSource.connection.use { connection ->
+            connection.autoCommit = false
+            connection.prepareStatement("SELECT set_config('app.actor_user_id', ?, true)").use { statement ->
+                statement.setString(1, "usr_demo_user")
+                statement.executeQuery().use { result -> check(result.next()) }
+            }
+            connection.prepareStatement("SELECT set_config('app.requested_order_id', ?, true)").use { statement ->
+                statement.setString(1, orderId)
+                statement.executeQuery().use { result -> check(result.next()) }
+            }
+            val denied = org.junit.jupiter.api.assertThrows<SQLException> {
+                connection.createStatement().use { statement ->
+                    statement.executeQuery("SELECT order_id FROM orders")
+                }
+            }
+            assertEquals("42501", denied.sqlState)
+            connection.rollback()
+        }
+
+        appDataSource.connection.use { connection ->
+            val denied =
+                org.junit.jupiter.api.assertThrows<SQLException> {
+                    connection
+                        .prepareStatement(
+                            "SELECT * FROM read_mock_order_owner_projection(?, ?, ?)",
+                        ).use { statement ->
+                            statement.setString(1, "usr_demo_user")
+                            statement.setString(2, orderId)
+                            statement.setString(3, "0".repeat(64))
+                            statement.executeQuery()
+                        }
+                }
+            assertEquals("42501", denied.sqlState)
+        }
+
+        appDataSource.connection.use { connection ->
+            connection
+                .prepareStatement(
+                    "SELECT count(*) FROM read_mock_order_owner_projection(?, ?, ?)",
+                ).use { statement ->
+                    statement.setString(1, "usr_demo_admin")
+                    statement.setString(2, orderId)
+                    statement.setString(3, TEST_BROKERAGE_DB_CAPABILITY_TOKEN)
+                    statement.executeQuery().use { result ->
+                        assertTrue(result.next())
+                        assertEquals(0, result.getInt(1))
+                    }
+                }
+        }
+    }
+
+    @Test
+    fun `order sink serializes with a concurrent Kill Switch activation`() {
+        val token = login("demo-user", userPassword())
+        val decisionId = createDecision(token, suffix = "08", order = orderIntent())
+        val executor = Executors.newSingleThreadExecutor()
+
+        DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { activation ->
+            activation.autoCommit = false
+            var committed = false
+            try {
+                activation
+                    .prepareStatement(
+                        "SELECT generation FROM risk_kill_switch WHERE kill_switch_id = 'GLOBAL' FOR UPDATE",
+                    ).use { statement ->
+                        statement.executeQuery().use { result ->
+                            assertTrue(result.next())
+                            assertEquals(1L, result.getLong(1))
+                        }
+                    }
+                activation
+                    .prepareStatement(
+                        """
+                        UPDATE risk_kill_switch
+                        SET active = true,
+                            reason_class = 'USER_MANUAL_STOP',
+                            generation = generation + 1,
+                            changed_by = 'usr_demo_user',
+                            changed_by_role = 'USER',
+                            changed_at = ?::timestamptz,
+                            request_id = 'req-race-activation'
+                        WHERE kill_switch_id = 'GLOBAL'
+                        """.trimIndent(),
+                    ).use { statement ->
+                        statement.setObject(1, EVALUATION_AT)
+                        assertEquals(1, statement.executeUpdate())
+                    }
+
+                val responseFuture =
+                    executor.submit<MvcResult> {
+                        submitMockOrder(
+                            token,
+                            "brokerage-race-0001",
+                            "req-brokerage-race",
+                            decisionId,
+                            orderIntent(),
+                        )
+                    }
+                val completedBeforeActivationCommit =
+                    try {
+                        responseFuture.get(750, TimeUnit.MILLISECONDS)
+                        true
+                    } catch (_: TimeoutException) {
+                        false
+                    }
+
+                activation.commit()
+                committed = true
+                val response = responseFuture.get(10, TimeUnit.SECONDS)
+
+                assertFalse(
+                    completedBeforeActivationCommit,
+                    "order persistence must wait for the locked Kill Switch generation",
+                )
+                assertEquals(422, response.response.status, response.response.contentAsString)
+                assertEquals("RISK_BLOCKED", json(response).at("/error/code").stringValue())
+            } finally {
+                if (!committed) {
+                    runCatching { activation.rollback() }
+                }
+                executor.shutdownNow()
+            }
+        }
+
+        assertEquals(0, count("select count(*) from orders where decision_id = ?", decisionId))
+        assertEquals(0, count("select count(*) from order_events"))
+        assertEquals(0, count("select count(*) from audit_logs where target_type = 'ORDER'"))
+        assertEquals(0, count("select count(*) from event_outbox where aggregate_type = 'ORDER'"))
     }
 
     private fun createDecision(

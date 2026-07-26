@@ -83,7 +83,12 @@ class S24ContractFirstTest {
                     repositoryRoot.resolve("contracts/schemas/s2-4-kill-switch-state.schema.json"),
                 ),
             )
-        val fields = schema.path("properties").propertyNames().asSequence().toSet()
+        val fields =
+            schema
+                .path("properties")
+                .propertyNames()
+                .asSequence()
+                .toSet()
 
         assertEquals(setOf("active", "reasonClass", "changedAt"), fields)
         assertTrue(schema.path("additionalProperties").isBoolean && !schema.path("additionalProperties").booleanValue())

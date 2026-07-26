@@ -345,7 +345,7 @@ class BrokerageRequestParser {
         val TIMEFRAMES = setOf("1d", "60m")
         val SYMBOL = Regex("^[0-9A-Z._:-]{1,20}$")
         val DECISION_ID = Regex("^dec_[0-9a-f]{32}$")
-        val ORDER_ID = Regex("^ord_mock_[0-9a-f]{32}$")
+        val ORDER_ID = Regex("^ord_(?:mock|paper)_[0-9a-f]{32}$")
         val ACCOUNT_ID = Regex("^acct_[0-9a-f]{32}$")
         val BUYABLE_QUERY_FIELDS = setOf("symbol", "price")
     }

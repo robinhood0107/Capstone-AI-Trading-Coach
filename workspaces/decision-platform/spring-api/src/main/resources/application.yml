@@ -87,6 +87,10 @@ app:
     database-capability-token: ${BROKERAGE_DB_CAPABILITY_TOKEN}
     database-capability-token-sha256: ${BROKERAGE_DB_CAPABILITY_TOKEN_SHA256}
     idempotency-ttl-hours: 24
+    paper:
+      slippage-bps: 5
+      # S2.3 price freshness와 같은 300초 계약을 별도 fallback 없이 공유한다.
+      price-max-age-seconds: ${app.freshness.price-seconds}
     grpc:
       enabled: ${BROKERAGE_GRPC_ENABLED:false}
       target: ${BROKERAGE_GRPC_TARGET:127.0.0.1:50052}

@@ -99,6 +99,16 @@ def postgres_cluster() -> Iterator[PostgresTestCluster]:
                 """
             )
             for migration in sorted(MIGRATION_DIR.glob("V*__*.sql"), key=_migration_version):
+                if migration.name.startswith("V8__"):
+                    # Java V7 migration은 Python SQL runner 대상이 아니므로 V8 전에 FK용 test identity만 모사한다.
+                    connection.execute(
+                        """
+                        INSERT INTO users (user_id, username, role, password_hash)
+                        VALUES
+                          ('usr_demo_user', 'python-fixture-user', 'USER', 'test-only-hash'),
+                          ('usr_demo_admin', 'python-fixture-admin', 'ADMIN', 'test-only-hash')
+                        """
+                    )
                 connection.execute(migration.read_text(encoding="utf-8"))
                 if migration.name.startswith("V4__"):
                     # Python test path도 V5/V6 protection SQL이 참조하는 Flyway history object만 모사한다.
@@ -111,15 +121,6 @@ def postgres_cluster() -> Iterator[PostgresTestCluster]:
                         )
                         """
                     )
-            # Java V7 migration은 Python SQL fixture runner의 범위 밖이므로 FK용 test identity만 보충한다.
-            connection.execute(
-                """
-                INSERT INTO users (user_id, username, role, password_hash)
-                VALUES
-                  ('usr_demo_user', 'python-fixture-user', 'USER', 'test-only-hash'),
-                  ('usr_demo_admin', 'python-fixture-admin', 'ADMIN', 'test-only-hash')
-                """
-            )
 
         yield {
             "admin_dsn": admin_dsn,

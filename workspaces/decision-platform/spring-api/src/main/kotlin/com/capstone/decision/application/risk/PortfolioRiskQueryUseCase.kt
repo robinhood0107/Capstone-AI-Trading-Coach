@@ -58,8 +58,15 @@ class PortfolioRiskQueryUseCase(
         val startedAt = System.nanoTime()
         try {
             return query(actorUserId)
+        } catch (exception: KillSwitchUnavailableException) {
+            throw exception
+        } catch (exception: Exception) {
+            throw KillSwitchUnavailableException(exception)
         } finally {
-            observationPort.recordPortfolioQuery(Duration.ofNanos(System.nanoTime() - startedAt))
+            // read 결과나 fail-closed 오류를 관측성 backend 장애가 덮어쓰지 않게 한다.
+            runCatching {
+                observationPort.recordPortfolioQuery(Duration.ofNanos(System.nanoTime() - startedAt))
+            }
         }
     }
 

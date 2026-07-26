@@ -73,13 +73,13 @@ class IdempotencyIntegrationTest(
         val first =
             postIdempotent(
                 token = token,
-                key = "idem-replay",
+                key = "idem-replay-00001",
                 body = """{"symbol":"005930","quantity":1}""",
             )
         val second =
             postIdempotent(
                 token = token,
-                key = "idem-replay",
+                key = "idem-replay-00001",
                 body = """{"symbol":"005930","quantity":1}""",
             )
 
@@ -94,14 +94,14 @@ class IdempotencyIntegrationTest(
         val token = login()
         postIdempotent(
             token = token,
-            key = "idem-conflict",
+            key = "idem-conflict-0001",
             body = """{"symbol":"005930","quantity":1}""",
         )
 
         mockMvc
             .post("/api/v1/orders/test-idempotency") {
                 bearer(token)
-                header("X-Idempotency-Key", "idem-conflict")
+                header("X-Idempotency-Key", "idem-conflict-0001")
                 header("X-Request-Id", "req-idem-conflict")
                 contentType = MediaType.APPLICATION_JSON
                 content = """{"symbol":"005930","quantity":2}"""
@@ -119,11 +119,11 @@ class IdempotencyIntegrationTest(
         val token = login()
         postIdempotent(
             token = token,
-            key = "idem-ttl",
+            key = "idem-ttl-00000001",
             body = """{"symbol":"005930","quantity":1}""",
         )
 
-        val keys = redisTemplate.keys("idempotency:usr_demo_user:idem-ttl")
+        val keys = redisTemplate.keys("idempotency:usr_demo_user:idem-ttl-00000001")
         assertEquals(1, keys.size)
         val ttlHours = redisTemplate.getExpire(keys.single(), TimeUnit.HOURS)
         assertTrue(ttlHours in 23..24, "expected Redis TTL close to 24h but was $ttlHours")
@@ -166,9 +166,13 @@ class IdempotencyIntegrationTest(
     }
 
     @Test
-    fun `finance idempotency allowlist excludes Principle and preserves orders and backtests`() {
+    fun `finance idempotency allowlist excludes Principle and includes Kill Switch mutation`() {
         assertEquals(
-            listOf("/api/v1/orders/**", "/api/v1/backtests/**"),
+            listOf(
+                "/api/v1/orders/**",
+                "/api/v1/backtests/**",
+                "/api/v1/risk/kill-switch",
+            ),
             idempotencyProperties.paths,
         )
         assertFalse(idempotencyProperties.paths.any { it.contains("principle", ignoreCase = true) })
@@ -305,7 +309,7 @@ class IdempotencyIntegrationTest(
         mockMvc
             .post("/api/v1/orders/test-idempotency") {
                 bearer(token)
-                header("X-Idempotency-Key", "idem-body-limit")
+                header("X-Idempotency-Key", "idem-body-limit-01")
                 header("X-Request-Id", "req-idem-body-limit")
                 contentType = MediaType.APPLICATION_JSON
                 content = "x".repeat(257)
@@ -314,7 +318,7 @@ class IdempotencyIntegrationTest(
                 jsonPath("$.error.code") { value("PAYLOAD_TOO_LARGE") }
             }
 
-        assertTrue(redisTemplate.keys("*idem-body-limit*").isEmpty())
+        assertTrue(redisTemplate.keys("*idem-body-limit-01*").isEmpty())
     }
 
     @Test

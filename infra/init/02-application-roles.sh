@@ -324,6 +324,41 @@ BEGIN
 END
 $decision_runtime_privileges$;
 
+DO $risk_kill_switch_privileges$
+BEGIN
+    IF to_regclass('public.risk_kill_switch') IS NOT NULL THEN
+        -- 기존 volume bootstrap 재적용 뒤에도 V10의 singleton 및 append-only 최소권한을 복원한다.
+        REVOKE ALL PRIVILEGES ON TABLE
+            risk_kill_switch,
+            risk_kill_switch_transitions,
+            decision_invalidations,
+            kill_switch_user_projection
+        FROM decision_app;
+        GRANT SELECT ON TABLE risk_kill_switch TO decision_app;
+        GRANT UPDATE (
+            active,
+            reason_class,
+            generation,
+            changed_by,
+            changed_by_role,
+            changed_at,
+            request_id
+        ) ON TABLE risk_kill_switch TO decision_app;
+        GRANT INSERT ON TABLE risk_kill_switch_transitions TO decision_app;
+        GRANT SELECT ON TABLE kill_switch_user_projection TO decision_app;
+        GRANT EXECUTE ON FUNCTION
+            read_kill_switch_gate(),
+            revalidate_kill_switch_admin(text, bigint),
+            read_kill_switch_audit_projection(),
+            read_decision_usability(),
+            invalidate_unused_decisions_for_kill_switch(bigint, timestamptz, text)
+        TO decision_app;
+        REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_app;
+        REVOKE CREATE ON SCHEMA public FROM decision_app;
+    END IF;
+END
+$risk_kill_switch_privileges$;
+
 DO $decision_source_writer_privileges$
 BEGIN
     IF to_regclass('public.instrument_catalog_observations') IS NOT NULL THEN

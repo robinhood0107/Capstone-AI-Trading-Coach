@@ -10,6 +10,8 @@ import com.capstone.decision.application.decision.DecisionNotFoundException
 import com.capstone.decision.application.decision.DecisionTechnicalException
 import com.capstone.decision.application.decision.DecisionValidationException
 import com.capstone.decision.application.decision.DecisionVersionConflictException
+import com.capstone.decision.application.risk.KillSwitchBlockedException
+import com.capstone.decision.application.risk.KillSwitchUnavailableException
 import jakarta.servlet.http.HttpServletRequest
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.ExceptionHandler
@@ -45,6 +47,13 @@ class DecisionExceptionHandler {
 
     @ExceptionHandler(DecisionTechnicalException::class)
     fun handleTechnicalFailure(request: HttpServletRequest): ResponseEntity<ApiResponse<Nothing>> = error(request, ErrorCode.INTERNAL_ERROR)
+
+    @ExceptionHandler(KillSwitchBlockedException::class)
+    fun handleKillSwitchBlocked(request: HttpServletRequest): ResponseEntity<ApiResponse<Nothing>> = error(request, ErrorCode.RISK_BLOCKED)
+
+    @ExceptionHandler(KillSwitchUnavailableException::class)
+    fun handleKillSwitchUnavailable(request: HttpServletRequest): ResponseEntity<ApiResponse<Nothing>> =
+        error(request, ErrorCode.RISK_UNAVAILABLE)
 
     private fun error(
         request: HttpServletRequest,

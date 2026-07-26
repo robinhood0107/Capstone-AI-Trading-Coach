@@ -9,6 +9,7 @@ import com.capstone.decision.application.risk.port.PortfolioContextRef
 import com.capstone.decision.application.risk.port.PortfolioContextResolution
 import com.capstone.decision.application.risk.port.PortfolioContextUnavailableReason
 import com.capstone.decision.application.risk.port.PortfolioPosition
+import com.capstone.decision.application.risk.port.PortfolioSourceRequest
 import com.capstone.decision.application.risk.port.PricePort
 import com.capstone.decision.domain.risk.CanonicalJson
 import com.capstone.decision.domain.risk.EvaluationBounds
@@ -80,18 +81,39 @@ class JdbcPortfolioContextAdapter(
 class JdbcMarketQuoteAdapter(
     private val jdbcProvider: ObjectProvider<NamedParameterJdbcTemplate>,
 ) : PricePort {
-    override fun load(request: EvaluationSourceRequest): MetricCell<MetricValue> {
+    override fun load(request: EvaluationSourceRequest): MetricCell<MetricValue> =
+        loadStored(
+            """
+            SELECT price_krw, completeness, observed_at, received_at, source_version, source_ref
+            FROM latest_market_quote_observations
+            WHERE symbol = :symbol
+              AND source = 'KIS_MOCK'
+            LIMIT 1
+            """.trimIndent(),
+            mapOf("symbol" to request.orderIntent.symbol),
+        )
+
+    override fun loadPortfolio(request: PortfolioSourceRequest): MetricCell<MetricValue> =
+        loadStored(
+            """
+            SELECT price_krw, completeness, observed_at, received_at, source_version, source_ref
+            FROM latest_market_quote_observations
+            WHERE source = 'KIS_MOCK'
+            ORDER BY observed_at DESC, received_at DESC, observation_id
+            LIMIT 1
+            """.trimIndent(),
+            emptyMap(),
+        )
+
+    private fun loadStored(
+        sql: String,
+        parameters: Map<String, Any>,
+    ): MetricCell<MetricValue> {
         val rows =
             jdbc()
                 .query(
-                    """
-                    SELECT price_krw, completeness, observed_at, received_at, source_version, source_ref
-                    FROM latest_market_quote_observations
-                    WHERE symbol = :symbol
-                      AND source = 'KIS_MOCK'
-                    LIMIT 1
-                    """.trimIndent(),
-                    mapOf("symbol" to request.orderIntent.symbol),
+                    sql,
+                    parameters,
                 ) { result, _ ->
                     val observedAt = result.getObject("observed_at", OffsetDateTime::class.java).toInstant()
                     StoredQuoteRow(
@@ -139,14 +161,23 @@ class JdbcKisMockBalanceAdapter(
 ) : BalancePort {
     override val source: PortfolioSource = PortfolioSource.KIS_MOCK
 
-    override fun load(request: EvaluationSourceRequest): MetricCell<BalanceSnapshot> {
-        require(request.portfolioContext.source == source)
+    override fun load(request: EvaluationSourceRequest): MetricCell<BalanceSnapshot> =
+        loadStored(request.actorUserId, request.portfolioContext)
+
+    override fun loadPortfolio(request: PortfolioSourceRequest): MetricCell<BalanceSnapshot> =
+        loadStored(request.actorUserId, request.portfolioContext)
+
+    private fun loadStored(
+        actorUserId: String,
+        context: PortfolioContextRef,
+    ): MetricCell<BalanceSnapshot> {
+        require(context.source == source)
         val row =
             reader
-                .kisRows(request.actorUserId, limit = 2)
+                .kisRows(actorUserId, limit = 2)
                 .singleOrNull {
-                    it.ownerScopeHash == request.portfolioContext.ownerScopeHash &&
-                        it.revision == request.portfolioContext.revision
+                    it.ownerScopeHash == context.ownerScopeHash &&
+                        it.revision == context.revision
                 }
                 ?: return MetricCell.Missing(MetricIssueCode.BROKERAGE_UNAVAILABLE)
         if (row.completeness != COMPLETE || !row.positionsComplete || row.positionCount != row.positions.size) {
@@ -165,14 +196,23 @@ class JdbcInternalPaperBalanceAdapter(
 ) : BalancePort {
     override val source: PortfolioSource = PortfolioSource.INTERNAL_PAPER
 
-    override fun load(request: EvaluationSourceRequest): MetricCell<BalanceSnapshot> {
-        require(request.portfolioContext.source == source)
+    override fun load(request: EvaluationSourceRequest): MetricCell<BalanceSnapshot> =
+        loadStored(request.actorUserId, request.portfolioContext)
+
+    override fun loadPortfolio(request: PortfolioSourceRequest): MetricCell<BalanceSnapshot> =
+        loadStored(request.actorUserId, request.portfolioContext)
+
+    private fun loadStored(
+        actorUserId: String,
+        context: PortfolioContextRef,
+    ): MetricCell<BalanceSnapshot> {
+        require(context.source == source)
         val row =
             reader
-                .paperRows(request.actorUserId, limit = 2)
+                .paperRows(actorUserId, limit = 2)
                 .singleOrNull {
-                    it.ownerScopeHash == request.portfolioContext.ownerScopeHash &&
-                        it.revision == request.portfolioContext.revision
+                    it.ownerScopeHash == context.ownerScopeHash &&
+                        it.revision == context.revision
                 }
                 ?: return MetricCell.Missing(MetricIssueCode.PAPER_PORTFOLIO_UNAVAILABLE)
         if (row.completeness != COMPLETE || !row.positionsComplete || row.positionCount != row.positions.size) {

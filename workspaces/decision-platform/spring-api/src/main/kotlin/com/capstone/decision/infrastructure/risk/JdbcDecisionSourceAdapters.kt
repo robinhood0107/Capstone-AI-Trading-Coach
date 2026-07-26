@@ -4,6 +4,7 @@ import com.capstone.decision.application.risk.port.EvaluationSourceRequest
 import com.capstone.decision.application.risk.port.InstrumentCatalogPort
 import com.capstone.decision.application.risk.port.InstrumentSnapshot
 import com.capstone.decision.application.risk.port.OrderMetricPort
+import com.capstone.decision.application.risk.port.PortfolioSourceRequest
 import com.capstone.decision.application.risk.port.RiskMetricBundle
 import com.capstone.decision.application.risk.port.RiskSnapshotPort
 import com.capstone.decision.domain.risk.FreshnessState
@@ -103,10 +104,31 @@ class JdbcDeterministicRiskAdapter(
 ) : RiskSnapshotPort {
     private val freshnessPolicy = PreviousTradingDayFreshnessPolicy(tradingSessionPort)
 
-    override fun load(request: EvaluationSourceRequest): RiskMetricBundle {
+    override fun load(request: EvaluationSourceRequest): RiskMetricBundle =
+        loadStored(
+            actorUserId = request.actorUserId,
+            ownerScopeHash = request.portfolioContext.ownerScopeHash,
+            portfolioSource = request.portfolioContext.source.name,
+            evaluationAsOf = request.evaluationAsOf,
+        )
+
+    override fun loadPortfolio(request: PortfolioSourceRequest): RiskMetricBundle =
+        loadStored(
+            actorUserId = request.actorUserId,
+            ownerScopeHash = request.portfolioContext.ownerScopeHash,
+            portfolioSource = request.portfolioContext.source.name,
+            evaluationAsOf = request.evaluationAsOf,
+        )
+
+    private fun loadStored(
+        actorUserId: String,
+        ownerScopeHash: String,
+        portfolioSource: String,
+        evaluationAsOf: Instant,
+    ): RiskMetricBundle {
         val rows =
             actorScopedReadQuery.query(
-                actorUserId = request.actorUserId,
+                actorUserId = actorUserId,
                 sql =
                     """
                     SELECT daily_loss_rate,
@@ -123,8 +145,8 @@ class JdbcDeterministicRiskAdapter(
                     LIMIT 2
                     """.trimIndent(),
                 binder = { statement ->
-                    statement.setString(1, request.portfolioContext.ownerScopeHash)
-                    statement.setString(2, request.portfolioContext.source.name)
+                    statement.setString(1, ownerScopeHash)
+                    statement.setString(2, portfolioSource)
                 },
             ) { result ->
                 StoredRiskRow(
@@ -149,7 +171,7 @@ class JdbcDeterministicRiskAdapter(
         }
         val assessment =
             try {
-                freshnessPolicy.assess(row.observedAt, request.evaluationAsOf)
+                freshnessPolicy.assess(row.observedAt, evaluationAsOf)
             } catch (_: TradingCalendarUnavailableException) {
                 return unavailableRisk(MetricCell.Missing(MetricIssueCode.SOURCE_MISSING))
             }

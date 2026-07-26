@@ -1,0 +1,18 @@
+{
+  "annualizedVolatility20d": null,
+  "asOf": "2026-07-26T05:00:00Z",
+  "cvar95": null,
+  "dailyPnlRate": null,
+  "dataFreshness": {
+    "priceFresh": null,
+    "ragFresh": null,
+    "signalFresh": null
+  },
+  "hmmRegime": null,
+  "hmmRegimeProbability": null,
+  "killSwitchActive": false,
+  "mdd": null,
+  "portfolioValue": null,
+  "realizedVolatility20d": null,
+  "var95": null
+}

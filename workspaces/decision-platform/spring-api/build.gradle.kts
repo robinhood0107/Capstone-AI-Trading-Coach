@@ -143,6 +143,16 @@ tasks.named<ProcessResources>("processResources") {
     from(layout.projectDirectory.file("../../../contracts/schemas/s2-3-decision-response.schema.json")) {
         into("contracts")
     }
+    // S2.4 OpenAPI도 승인된 JSON Schema bytes를 별도 DTO 추론 없이 component로 사용한다.
+    from(layout.projectDirectory.file("../../../contracts/schemas/s2-4-kill-switch-request.schema.json")) {
+        into("contracts")
+    }
+    from(layout.projectDirectory.file("../../../contracts/schemas/s2-4-kill-switch-state.schema.json")) {
+        into("contracts")
+    }
+    from(layout.projectDirectory.file("../../../contracts/schemas/s2-4-risk-portfolio.schema.json")) {
+        into("contracts")
+    }
 }
 
 tasks.named<ProcessResources>("processTestResources") {
@@ -195,6 +205,33 @@ val verifyS23ContractResources by tasks.registering {
                     .asFile
             check(copied.isFile && source.readBytes().contentEquals(copied.readBytes())) {
                 "S2.3 contract resource $copiedName must be an exact canonical byte copy."
+            }
+        }
+    }
+}
+
+val verifyS24ContractResources by tasks.registering {
+    group = "verification"
+    description = "S2.4 Risk/Kill Switch OpenAPI schema의 exact byte equality를 검증한다."
+    dependsOn(tasks.named("processResources"))
+
+    doLast {
+        listOf(
+            "s2-4-kill-switch-request.schema.json",
+            "s2-4-kill-switch-state.schema.json",
+            "s2-4-risk-portfolio.schema.json",
+        ).forEach { fileName ->
+            val source =
+                layout.projectDirectory
+                    .file("../../../contracts/schemas/$fileName")
+                    .asFile
+            val copied =
+                layout.buildDirectory
+                    .file("resources/main/contracts/$fileName")
+                    .get()
+                    .asFile
+            check(copied.isFile && source.readBytes().contentEquals(copied.readBytes())) {
+                "S2.4 contract resource $fileName must be an exact canonical byte copy."
             }
         }
     }
@@ -310,4 +347,5 @@ tasks.named("check") {
     dependsOn(verifySecurityDependencyVersions)
     dependsOn(verifyS22CatalogResource)
     dependsOn(verifyS23ContractResources)
+    dependsOn(verifyS24ContractResources)
 }

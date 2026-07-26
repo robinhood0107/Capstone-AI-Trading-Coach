@@ -126,6 +126,7 @@ flowchart LR
 | `PAYLOAD_TOO_LARGE` | 413 | 전역 또는 idempotency request body 상한 초과 | 요청 크기 축소 |
 | `DECISION_EXPIRED` | 409 | decision 유효시간(`validUntil`) 초과 | 주문 재평가 유도 |
 | `RISK_BLOCKED` | 422 | 원칙/안전장치 위반으로 주문 차단 | 주문 불가 |
+| `RISK_UNAVAILABLE` | 503 | Kill Switch DB authority 또는 Risk 조회 경계 장애 | fail-closed, 신규 판단/주문 보류 |
 | `DATA_STALE` | 409 | 가격/신호/뉴스 데이터 지연 | 주문 보류 |
 | `RATE_LIMITED` | 429 | 호출 한도 초과(KIS rate limit, LLM 비용 가드) | KIS `EGW00201`/HTTP 429는 adapter가 자동 재시도하지 않고 공유 limiter scope·외부 caller 유무를 점검한다. 일반 API의 안전한 멱등 조회만 명시적 `Retry-After`에 따라 제한 재시도하며 write와 provider quota 소진은 자동 재시도 금지 |
 | `PYTHON_SERVICE_UNAVAILABLE` | 503 | 내부 gRPC 서비스 장애 | fail-closed |
@@ -945,30 +946,54 @@ RiskEngine은 Spring에 있으며, 금융공학 계산값은 Python에서 받아
 ```json
 {
   "success": true,
+  "requestId": "req_20260726_risk_portfolio",
   "data": {
     "asOf": "2026-06-23T15:30:00+09:00",
     "portfolioValue": 10000000,
     "dailyPnlRate": -0.012,
     "mdd": -0.064,
-    "var95": -0.021,
-    "cvar95": -0.034,
-    "realizedVolatility20d": 0.24,
+    "var95": null,
+    "cvar95": null,
+    "realizedVolatility20d": null,
     "annualizedVolatility20d": 0.38,
-    "hmmRegime": "RISK_OFF",
-    "hmmRegimeProbability": 0.67,
+    "hmmRegime": null,
+    "hmmRegimeProbability": null,
     "killSwitchActive": false,
     "dataFreshness": {
       "priceFresh": true,
-      "signalFresh": true,
-      "ragFresh": true
+      "signalFresh": null,
+      "ragFresh": null
     }
-  }
+  },
+  "warnings": [
+    {
+      "code": "MISSING_SOURCE",
+      "message": "One or more portfolio risk sources are unavailable.",
+      "details": {
+        "fields": ["var95", "cvar95", "realizedVolatility20d", "hmmRegime", "hmmRegimeProbability"]
+      }
+    }
+  ],
+  "error": null
 }
 ```
+
+S2.4는 legacy `risk_snapshots`를 읽지 않는다. S2.3의 owner-scoped
+`latest_portfolio_balance_observations`,
+`latest_deterministic_risk_observations`와 기존
+`MetricSnapshotAssembler`를 재사용한다. 다른 owner의 row는 0행으로
+수렴한다. 구조 또는 row가 없는 값은 0이나 임의 값으로 합성하지 않고
+nullable 필드와 sanitized warning으로 표현한다. S6 producer가 없는
+`var95`, `cvar95`, `realizedVolatility20d`, `hmmRegime`,
+`hmmRegimeProbability`는 현재 항상 null이다. `killSwitchActive`는 캐시 없이
+DB의 `GLOBAL` 단일 행을 매 요청 읽는다.
 
 ### 6.2 종목별 리스크 조회
 
 `GET /api/v1/risk/assets/{symbol}`
+
+S2.4에는 이 route를 구현하거나 OpenAPI에 등록하지 않는다. 종목별 producer와
+응답 계약이 준비되는 후속 세션에서 별도 contract change와 함께 추가한다.
 
 ### 6.3 Kill Switch 변경
 
@@ -983,9 +1008,40 @@ RiskEngine은 Spring에 있으며, 금융공학 계산값은 Python에서 받아
 }
 ```
 
-Kill Switch 활성화 상태에서는 모든 신규 주문을 `RISK_BLOCKED`로 처리한다. 변경 행위자와 시각은 요청 body가 아니라 인증 principal과 서버 clock에서 생성한다.
+`X-Idempotency-Key`는 필수다. body의 exact 허용 필드는 `active`와 선택적
+`reason`뿐이며 `changedBy`, `changedAt`, `generation`, `userId` 같은
+서버 권한 필드는 `VALIDATION_ERROR`로 거부한다. reason은 200자 이내의
+제어문자·injection 신호가 없는 문자열만 받고 저장 전에 allowlisted
+`reasonClass`로 매핑한 뒤 원문을 폐기한다.
 
-`GET /api/v1/risk/kill-switch`의 USER 응답은 활성 여부, sanitized 사유, 변경 시각만 반환한다. 마지막 변경 행위자 식별자는 ADMIN append-only audit에서만 조회한다. 활성화는 USER 권한으로 가능하지만 해제는 ADMIN 전용이며(2.4 권한 표), 모든 변경은 행위자와 사유를 감사로그에 남긴다.
+Kill Switch authority는 `risk_kill_switch(kill_switch_id='GLOBAL')` 단일
+DB 행이다. Redis, `@Cacheable`, JVM/static cache를 사용하지 않으며 실제
+전이마다 `generation`을 단조 증가시킨다. 같은 상태 요청은 200 no-op으로
+현재 sanitized 상태를 반환하고 generation, transition, audit, outbox를
+추가하지 않는다.
+
+활성화는 USER와 ADMIN 모두 가능하고 해제는 ADMIN 전용이다. 해제 transaction
+안에서 현재 DB의 `status`, `role`, `securityVersion`을 다시 읽는다. 계정
+비활성 또는 version 불일치는 `UNAUTHORIZED`, 현재 ADMIN이 아니면
+`FORBIDDEN`, generation CAS 경합은 `CONFLICT`이며 모두 write 0건이다.
+
+상태 전이는 singleton `FOR UPDATE`/CAS, append-only transition, 활성화 시
+유효하고 미소비된 모든 owner Decision의 집합 무효화, bounded ADMIN audit,
+`kill-switch.changed` outbox를 한 transaction에 둔다. `decisions`는 V9의
+append-only 계약을 유지하며 별도 `decision_invalidations`와
+`read_decision_usability()` projection으로 무효화를 표현한다. 관측
+metric/log는 commit 뒤에만 기록한다.
+
+`GET /api/v1/risk/kill-switch`와 POST 성공 응답의 `data` key는 정확히
+`active`, allowlisted `reasonClass`, `changedAt`이다. `changedBy`, actor user
+ID, request ID, generation과 자유 서술 reason은 포함하지 않는다. 마지막 변경
+행위자 식별자는 현재 DB ADMIN으로 재검증되는 bounded append-only audit
+projection에서만 조회한다.
+
+Kill Switch 활성화 상태에서는 신규 Decision 평가와 S3 주문 제출을
+`RISK_BLOCKED`로 차단한다. DB authority를 읽지 못하면 통과시키지 않고
+`RISK_UNAVAILABLE`로 fail-closed한다. S3 주문 제출은 Decision 판단 시점의
+generation과 제출 직전 generation을 다시 비교한다.
 
 ---
 

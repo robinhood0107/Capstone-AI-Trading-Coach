@@ -15,7 +15,7 @@ data class IdempotencyProperties(
     @field:Min(60)
     @field:Max(3600)
     var claimTtlSeconds: Long = 900,
-    @field:Min(128)
+    @field:Min(16)
     @field:Max(128)
     var maxKeyLength: Int = 128,
     @field:Min(1)

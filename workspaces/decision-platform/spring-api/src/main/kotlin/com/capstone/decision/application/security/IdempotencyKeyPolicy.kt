@@ -5,9 +5,12 @@ package com.capstone.decision.application.security
  * 원문은 요청 처리 중에만 사용하며 로그·metric·영속 저장에는 전달하지 않는다.
  */
 object IdempotencyKeyPolicy {
-    fun isValid(value: String?): Boolean =
+    fun isValid(
+        value: String?,
+        configuredMaxLength: Int = MAX_LENGTH,
+    ): Boolean =
         value != null &&
-            value.length in MIN_LENGTH..MAX_LENGTH &&
+            value.length in MIN_LENGTH..minOf(configuredMaxLength, MAX_LENGTH) &&
             ALLOWED.matches(value)
 
     const val MIN_LENGTH: Int = 16

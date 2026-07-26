@@ -229,7 +229,7 @@ class JwtAuthenticationFilter(
             idempotencyProperties.paths.any { pathMatcher.match(it, request.requestURI) } &&
             handlerMappingProvider.getObject().getHandler(request)?.handler is HandlerMethod
 
-    private fun isValidIdempotencyKey(value: String): Boolean = IdempotencyKeyPolicy.isValid(value)
+    private fun isValidIdempotencyKey(value: String): Boolean = IdempotencyKeyPolicy.isValid(value, idempotencyProperties.maxKeyLength)
 
     private fun requestHash(request: CachedBodyHttpServletRequest): String {
         val digest = MessageDigest.getInstance("SHA-256")

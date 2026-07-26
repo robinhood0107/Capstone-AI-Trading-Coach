@@ -226,6 +226,36 @@ class InfrastructureSecurityIntegrationTest {
                     "truncate table principles",
                     "truncate table principle_versions",
                     "truncate table audit_logs",
+                    "insert into audit_logs (" +
+                        "audit_log_id, user_id, actor_role, action, target_type, " +
+                        "target_id, request_id, payload_json, created_at" +
+                        ") values (" +
+                        "'aud-runtime-forged-order', 'usr_demo_user', 'USER', " +
+                        "'MOCK_ORDER_SUBMITTED', 'ORDER', 'ord_mock_0000000000000000000000000000f001', " +
+                        "'req-runtime-forged-order', " +
+                        "jsonb_build_object(" +
+                        "'orderId', 'ord_mock_0000000000000000000000000000f001', " +
+                        "'decisionId', 'dec-runtime-forged-order', " +
+                        "'evaluationId', 'eval-runtime-forged-order', " +
+                        "'brokerageMode', 'KIS_MOCK', " +
+                        "'status', 'SUBMITTED', " +
+                        "'idempotencyScopeHash', repeat('1', 64)" +
+                        "), now())",
+                    "insert into event_outbox (" +
+                        "event_id, event_type, aggregate_type, aggregate_id, partition_key, " +
+                        "payload_json, schema_version, status, retry_count, created_at, updated_at" +
+                        ") values (" +
+                        "'evt-runtime-forged-order', 'brokerage.mock-order-submitted.v1', " +
+                        "'ORDER', 'ord_mock_0000000000000000000000000000f001', " +
+                        "'ord_mock_0000000000000000000000000000f001', " +
+                        "jsonb_build_object(" +
+                        "'orderId', 'ord_mock_0000000000000000000000000000f001', " +
+                        "'decisionId', 'dec-runtime-forged-order', " +
+                        "'evaluationId', 'eval-runtime-forged-order', " +
+                        "'brokerageMode', 'KIS_MOCK', " +
+                        "'status', 'SUBMITTED', " +
+                        "'idempotencyScopeHash', repeat('1', 64)" +
+                        "), '1.0.0', 'PENDING', 0, now(), now())",
                     "select * from decisions limit 0",
                     "update decisions set outcome = outcome where false",
                     "delete from decisions where false",

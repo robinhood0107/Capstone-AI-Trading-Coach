@@ -305,6 +305,80 @@
         },
         "type": "object"
       },
+      "ApiResponseS24KillSwitchState": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/S24KillSwitchState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ApiError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ApiWarning"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "ApiResponseS24PortfolioRisk": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/S24PortfolioRisk"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ApiError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ApiWarning"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
       "ApiWarning": {
         "properties": {
           "code": {
@@ -3489,6 +3563,268 @@
         "title": "S2.3 evaluate-order request v1",
         "type": "object"
       },
+      "S24KillSwitchRequest": {
+        "$id": "contracts/schemas/s2-4-kill-switch-request.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "reason": {
+            "maxLength": 200,
+            "minLength": 1,
+            "pattern": "^(?!.*(?:['\\\";=]|--|/\\*|\\*/))[^\\u0000-\\u001F\\u007F]*$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "active"
+        ],
+        "title": "S2.4 Kill Switch mutation request v1",
+        "type": "object"
+      },
+      "S24KillSwitchState": {
+        "$id": "contracts/schemas/s2-4-kill-switch-state.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "changedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "reasonClass": {
+            "enum": [
+              "USER_MANUAL_STOP",
+              "OPERATOR_MANUAL_STOP",
+              "DATA_FRESHNESS_STOP",
+              "BROKERAGE_FAILURE_STOP",
+              "DEMO_SAFETY_STOP",
+              "ADMIN_RESUME",
+              "INITIAL_STATE"
+            ]
+          }
+        },
+        "required": [
+          "active",
+          "changedAt",
+          "reasonClass"
+        ],
+        "title": "S2.4 sanitized Kill Switch state v1",
+        "type": "object"
+      },
+      "S24KillSwitchSuccessResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/S24KillSwitchState"
+          },
+          "error": {
+            "type": "null"
+          },
+          "requestId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "success": {
+            "const": true,
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ApiWarning"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "error",
+          "requestId",
+          "success",
+          "warnings"
+        ],
+        "type": "object"
+      },
+      "S24PortfolioRisk": {
+        "$id": "contracts/schemas/s2-4-risk-portfolio.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "annualizedVolatility20d": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "asOf": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "cvar95": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "dailyPnlRate": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "dataFreshness": {
+            "additionalProperties": false,
+            "properties": {
+              "priceFresh": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "ragFresh": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "signalFresh": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "priceFresh",
+              "ragFresh",
+              "signalFresh"
+            ],
+            "type": "object"
+          },
+          "hmmRegime": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "hmmRegimeProbability": {
+            "maximum": 1,
+            "minimum": 0,
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "killSwitchActive": {
+            "type": "boolean"
+          },
+          "mdd": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "portfolioValue": {
+            "minimum": 0,
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "realizedVolatility20d": {
+            "minimum": 0,
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "var95": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "annualizedVolatility20d",
+          "asOf",
+          "cvar95",
+          "dailyPnlRate",
+          "dataFreshness",
+          "hmmRegime",
+          "hmmRegimeProbability",
+          "killSwitchActive",
+          "mdd",
+          "portfolioValue",
+          "realizedVolatility20d",
+          "var95"
+        ],
+        "title": "S2.4 owner-scoped portfolio risk projection v1",
+        "type": "object"
+      },
+      "S24PortfolioRiskFreshness": {
+        "additionalProperties": false,
+        "properties": {
+          "priceFresh": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "ragFresh": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "signalFresh": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "S24PortfolioRiskSuccessResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/S24PortfolioRisk"
+          },
+          "error": {
+            "type": "null"
+          },
+          "requestId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "success": {
+            "const": true,
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ApiWarning"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "error",
+          "requestId",
+          "success",
+          "warnings"
+        ],
+        "type": "object"
+      },
       "SystemHealthResponse": {
         "properties": {
           "asOf": {
@@ -4289,6 +4625,178 @@
         "summary": "원칙 버전 이력 / List immutable Principle versions",
         "tags": [
           "principle-controller"
+        ]
+      }
+    },
+    "/api/v1/risk/kill-switch": {
+      "get": {
+        "operationId": "getKillSwitch",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/S24KillSwitchSuccessResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseS24KillSwitchState"
+                }
+              }
+            },
+            "description": "Authentication is required."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseS24KillSwitchState"
+                }
+              }
+            },
+            "description": "Risk authority is unavailable."
+          }
+        },
+        "summary": "현재 GLOBAL Kill Switch의 sanitized 상태를 DB에서 직접 조회한다.",
+        "tags": [
+          "risk-controller"
+        ]
+      },
+      "post": {
+        "operationId": "changeKillSwitch",
+        "parameters": [
+          {
+            "description": "16-128 bounded ASCII identifier. Raw value is handled only by the idempotency filter.",
+            "in": "header",
+            "name": "X-Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/S24KillSwitchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/S24KillSwitchSuccessResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseS24KillSwitchState"
+                }
+              }
+            },
+            "description": "Invalid body or idempotency key."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseS24KillSwitchState"
+                }
+              }
+            },
+            "description": "Authentication is required."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseS24KillSwitchState"
+                }
+              }
+            },
+            "description": "Only a current ADMIN can resume."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseS24KillSwitchState"
+                }
+              }
+            },
+            "description": "Concurrent generation conflict."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseS24KillSwitchState"
+                }
+              }
+            },
+            "description": "Risk authority is unavailable."
+          }
+        },
+        "summary": "Kill Switch를 변경한다. USER는 활성화만, ADMIN은 활성화와 해제가 가능하다.",
+        "tags": [
+          "risk-controller"
+        ]
+      }
+    },
+    "/api/v1/risk/portfolio": {
+      "get": {
+        "operationId": "getPortfolio",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/S24PortfolioRiskSuccessResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseS24PortfolioRisk"
+                }
+              }
+            },
+            "description": "Authentication is required."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseS24PortfolioRisk"
+                }
+              }
+            },
+            "description": "Risk authority is unavailable."
+          }
+        },
+        "summary": "현재 owner-scoped portfolio 리스크를 stored observation으로 조회한다.",
+        "tags": [
+          "risk-controller"
         ]
       }
     },

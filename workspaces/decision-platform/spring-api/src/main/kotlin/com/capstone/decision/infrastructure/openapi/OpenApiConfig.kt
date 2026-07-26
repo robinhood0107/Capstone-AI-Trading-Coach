@@ -233,6 +233,32 @@ class OpenApiConfig {
             )
         }
 
+    @Bean
+    fun riskContractSchemas(): OpenApiCustomizer =
+        // S2.4 nullable/source-missing 및 sanitized 3-field projection을 canonical JSON Schema로 고정한다.
+        OpenApiCustomizer { openApi ->
+            openApi.components.addSchemas(
+                S24_KILL_SWITCH_REQUEST_COMPONENT,
+                contractSchema(S24_KILL_SWITCH_REQUEST_RESOURCE, S24_KILL_SWITCH_REQUEST_COMPONENT),
+            )
+            openApi.components.addSchemas(
+                S24_KILL_SWITCH_STATE_COMPONENT,
+                contractSchema(S24_KILL_SWITCH_STATE_RESOURCE, S24_KILL_SWITCH_STATE_COMPONENT),
+            )
+            openApi.components.addSchemas(
+                S24_PORTFOLIO_RISK_COMPONENT,
+                contractSchema(S24_PORTFOLIO_RISK_RESOURCE, S24_PORTFOLIO_RISK_COMPONENT),
+            )
+            openApi.components.addSchemas(
+                S24_KILL_SWITCH_ENVELOPE_COMPONENT,
+                successEnvelope(schemaRef(S24_KILL_SWITCH_STATE_COMPONENT)),
+            )
+            openApi.components.addSchemas(
+                S24_PORTFOLIO_RISK_ENVELOPE_COMPONENT,
+                successEnvelope(schemaRef(S24_PORTFOLIO_RISK_COMPONENT)),
+            )
+        }
+
     private fun principleRuleSchema(contract: PrincipleContract): Schema<*> {
         val definitions = contract.ruleDefinitions.values.sortedBy(CatalogRuleDefinition::order)
         val schema =
@@ -476,6 +502,14 @@ class OpenApiConfig {
         private const val S23_DECISION_ENVELOPE_COMPONENT = "S23DecisionSuccessResponse"
         private const val S23_AUDIT_COMPONENT = "S23DecisionAudit"
         private const val S23_AUDIT_ENVELOPE_COMPONENT = "S23DecisionAuditSuccessResponse"
+        private const val S24_KILL_SWITCH_REQUEST_RESOURCE = "contracts/s2-4-kill-switch-request.schema.json"
+        private const val S24_KILL_SWITCH_STATE_RESOURCE = "contracts/s2-4-kill-switch-state.schema.json"
+        private const val S24_PORTFOLIO_RISK_RESOURCE = "contracts/s2-4-risk-portfolio.schema.json"
+        private const val S24_KILL_SWITCH_REQUEST_COMPONENT = "S24KillSwitchRequest"
+        private const val S24_KILL_SWITCH_STATE_COMPONENT = "S24KillSwitchState"
+        private const val S24_PORTFOLIO_RISK_COMPONENT = "S24PortfolioRisk"
+        private const val S24_KILL_SWITCH_ENVELOPE_COMPONENT = "S24KillSwitchSuccessResponse"
+        private const val S24_PORTFOLIO_RISK_ENVELOPE_COMPONENT = "S24PortfolioRiskSuccessResponse"
         private const val REQUEST_MAX_BYTES = 1_048_576
         private val RULE_FIELDS =
             listOf(

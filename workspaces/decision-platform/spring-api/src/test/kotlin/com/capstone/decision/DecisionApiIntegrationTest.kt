@@ -137,7 +137,7 @@ class DecisionApiIntegrationTest(
         val activation =
             changeKillSwitch(
                 token = userToken,
-                key = "risk-kill-activate-0001",
+                idempotencyHeader = "risk-kill-activate-0001",
                 requestId = "req-risk-kill-activate",
                 active = true,
                 reason = "시연 중 안전 정지",
@@ -215,7 +215,7 @@ class DecisionApiIntegrationTest(
         val replay =
             changeKillSwitch(
                 token = userToken,
-                key = "risk-kill-activate-0001",
+                idempotencyHeader = "risk-kill-activate-0001",
                 requestId = "req-risk-kill-replay",
                 active = true,
                 reason = "시연 중 안전 정지",
@@ -226,7 +226,7 @@ class DecisionApiIntegrationTest(
         val conflict =
             changeKillSwitch(
                 token = userToken,
-                key = "risk-kill-activate-0001",
+                idempotencyHeader = "risk-kill-activate-0001",
                 requestId = "req-risk-kill-conflict",
                 active = false,
                 reason = null,
@@ -237,7 +237,7 @@ class DecisionApiIntegrationTest(
         val userResume =
             changeKillSwitch(
                 token = userToken,
-                key = "risk-kill-user-resume-01",
+                idempotencyHeader = "risk-kill-user-resume-01",
                 requestId = "req-risk-kill-user-resume",
                 active = false,
                 reason = null,
@@ -249,7 +249,7 @@ class DecisionApiIntegrationTest(
         val adminResume =
             changeKillSwitch(
                 token = adminToken,
-                key = "risk-kill-admin-resume-1",
+                idempotencyHeader = "risk-kill-admin-resume-1",
                 requestId = "req-risk-kill-admin-resume",
                 active = false,
                 reason = null,
@@ -268,7 +268,7 @@ class DecisionApiIntegrationTest(
         val noOp =
             changeKillSwitch(
                 token = adminToken,
-                key = "risk-kill-admin-noop-001",
+                idempotencyHeader = "risk-kill-admin-noop-001",
                 requestId = "req-risk-kill-admin-noop",
                 active = false,
                 reason = null,
@@ -294,7 +294,7 @@ class DecisionApiIntegrationTest(
         val activation =
             changeKillSwitch(
                 token = userToken,
-                key = "risk-kill-revalidate-on1",
+                idempotencyHeader = "risk-kill-revalidate-on1",
                 requestId = "req-risk-kill-revalidate-on",
                 active = true,
                 reason = null,
@@ -326,7 +326,7 @@ class DecisionApiIntegrationTest(
                 val denied =
                     changeKillSwitch(
                         token = adminToken,
-                        key = "risk-kill-revalidate-${index}01",
+                        idempotencyHeader = "risk-kill-revalidate-${index}01",
                         requestId = "req-risk-kill-revalidate-$suffix",
                         active = false,
                         reason = null,
@@ -390,7 +390,7 @@ class DecisionApiIntegrationTest(
         val missingKey =
             changeKillSwitch(
                 token = token,
-                key = null,
+                idempotencyHeader = null,
                 requestId = "req-risk-kill-no-key",
                 active = true,
                 reason = null,
@@ -434,7 +434,7 @@ class DecisionApiIntegrationTest(
         val failed =
             changeKillSwitch(
                 token = token,
-                key = "risk-kill-rollback-0001",
+                idempotencyHeader = "risk-kill-rollback-0001",
                 requestId = "req-risk-kill-rollback",
                 active = true,
                 reason = null,
@@ -525,7 +525,7 @@ class DecisionApiIntegrationTest(
         val activation =
             changeKillSwitch(
                 token = token,
-                key = "risk-kill-invalidate-01",
+                idempotencyHeader = "risk-kill-invalidate-01",
                 requestId = "req-risk-kill-invalidate",
                 active = true,
                 reason = null,
@@ -1173,7 +1173,7 @@ class DecisionApiIntegrationTest(
 
     private fun changeKillSwitch(
         token: String,
-        key: String?,
+        idempotencyHeader: String?,
         requestId: String,
         active: Boolean,
         reason: String?,
@@ -1181,7 +1181,7 @@ class DecisionApiIntegrationTest(
         mockMvc
             .post("/api/v1/risk/kill-switch") {
                 bearer(token)
-                key?.let { header("X-Idempotency-Key", it) }
+                idempotencyHeader?.let { header("X-Idempotency-Key", it) }
                 header("X-Request-Id", requestId)
                 contentType = MediaType.APPLICATION_JSON
                 content =

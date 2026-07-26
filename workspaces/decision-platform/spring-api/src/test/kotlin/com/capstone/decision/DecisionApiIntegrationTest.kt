@@ -1,5 +1,10 @@
 package com.capstone.decision
 
+import com.capstone.decision.application.risk.KillSwitchActor
+import com.capstone.decision.application.risk.KillSwitchMutationCommand
+import com.capstone.decision.application.risk.KillSwitchMutationPort
+import com.capstone.decision.domain.risk.KillSwitchActorRole
+import com.capstone.decision.domain.risk.KillSwitchReasonClass
 import io.micrometer.core.instrument.MeterRegistry
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -60,6 +65,7 @@ class DecisionApiIntegrationTest(
     @Autowired private val applicationDataSource: DataSource,
     @Autowired private val redisTemplate: StringRedisTemplate,
     @Autowired private val meterRegistry: MeterRegistry,
+    @Autowired private val killSwitchMutationPort: KillSwitchMutationPort,
 ) : SpringApiIntegrationTestBase() {
     private lateinit var mockMvc: MockMvc
     private val jdbcTemplate: JdbcTemplate by lazy {
@@ -500,6 +506,34 @@ class DecisionApiIntegrationTest(
         assertEquals(
             transitionCount,
             count("select count(distinct generation) from risk_kill_switch_transitions"),
+        )
+    }
+
+    @Test
+    fun `Kill Switch mutation uses locked database time when caller clock is behind`() {
+        val result =
+            killSwitchMutationPort.mutate(
+                KillSwitchMutationCommand(
+                    actor =
+                        KillSwitchActor(
+                            userId = "usr_demo_user",
+                            role = KillSwitchActorRole.USER,
+                            securityVersion = 1,
+                            requestId = "req-risk-kill-clock-behind",
+                        ),
+                    requestedActive = true,
+                    reasonClass = KillSwitchReasonClass.USER_MANUAL_STOP,
+                    changedAt = EVALUATION_AS_OF.minusSeconds(1),
+                ),
+            )
+
+        assertTrue(result.changed)
+        assertEquals(
+            EVALUATION_AT,
+            jdbcTemplate.queryForObject(
+                "select changed_at from risk_kill_switch where kill_switch_id = 'GLOBAL'",
+                OffsetDateTime::class.java,
+            ),
         )
     }
 

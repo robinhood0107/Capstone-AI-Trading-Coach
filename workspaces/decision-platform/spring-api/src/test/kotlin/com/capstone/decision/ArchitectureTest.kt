@@ -26,7 +26,7 @@ class ArchitectureTest {
         val apiDoesNotDependOnInfrastructure: ArchRule =
             noClasses()
                 .that()
-                .resideInAPackage("..api.principle..")
+                .resideInAnyPackage("..api.principle..", "..api.risk..")
                 .should()
                 .dependOnClassesThat()
                 .resideInAPackage("..infrastructure..")
@@ -51,7 +51,12 @@ class ArchitectureTest {
                 .resideInAPackage("..domain.risk..")
                 .should()
                 .dependOnClassesThat()
-                .resideInAnyPackage("org.springframework..")
+                .resideInAnyPackage(
+                    "org.springframework..",
+                    "java.sql..",
+                    "javax.sql..",
+                    "io.grpc..",
+                )
                 .allowEmptyShould(true)
 
         @ArchTest

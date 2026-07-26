@@ -173,11 +173,269 @@ class FlywayMigrationIntegrationTest(
         }
         listOf(
             "read_kill_switch_gate()",
+            "revalidate_kill_switch_admin(text,bigint)",
             "read_kill_switch_audit_projection()",
             "read_decision_usability()",
             "invalidate_unused_decisions_for_kill_switch(bigint,timestamp with time zone,text)",
         ).forEach { function ->
             assertTrue(hasFunctionPrivilege("decision_app", function), "missing EXECUTE on $function")
+        }
+    }
+
+    @Test
+    fun `V10 precondition rejects a conflicting Kill Switch object without changing V9 state`() {
+        val migrationUrl = createDatabase("v10_precondition_conflict")
+        flyway(migrationUrl, target = "9").migrate()
+        DriverManager.getConnection(migrationUrl, postgres.username, postgres.password).use { connection ->
+            connection.createStatement().use { statement ->
+                statement.execute("create table risk_kill_switch (fixture_id integer primary key)")
+            }
+        }
+
+        val failure = assertThrows<FlywayException> { flyway(migrationUrl).migrate() }
+
+        assertTrue(requireNotNull(failure.message).contains("V10 precondition failed"))
+        DriverManager.getConnection(migrationUrl, postgres.username, postgres.password).use { connection ->
+            connection.createStatement().use { statement ->
+                statement.executeQuery("select count(*) from flyway_schema_history where success").use { result ->
+                    assertTrue(result.next())
+                    assertEquals(9, result.getInt(1))
+                }
+                assertTrue(
+                    statement
+                        .executeQuery("select to_regclass('public.decisions') is not null")
+                        .use { result -> result.next() && result.getBoolean(1) },
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `V10 singleton actor resume and audit constraints reject unsafe rows`() {
+        assertCheckViolation {
+            jdbcTemplate.update(
+                """
+                insert into risk_kill_switch (
+                  kill_switch_id, active, reason_class, generation,
+                  changed_by, changed_by_role, changed_at
+                ) values (
+                  'OTHER', true, 'USER_MANUAL_STOP', 2,
+                  'usr_demo_user', 'USER', now()
+                )
+                """.trimIndent(),
+            )
+        }
+        assertCheckViolation {
+            jdbcTemplate.update(
+                """
+                update risk_kill_switch
+                set active = false,
+                    reason_class = 'ADMIN_RESUME',
+                    changed_by = 'usr_demo_user',
+                    changed_by_role = 'USER'
+                where kill_switch_id = 'GLOBAL'
+                """.trimIndent(),
+            )
+        }
+        assertCheckViolation {
+            jdbcTemplate.update(
+                """
+                update risk_kill_switch
+                set active = true,
+                    reason_class = 'OPERATOR_MANUAL_STOP',
+                    changed_by = null,
+                    changed_by_role = 'ADMIN'
+                where kill_switch_id = 'GLOBAL'
+                """.trimIndent(),
+            )
+        }
+
+        listOf(
+            "'KILL_SWITCH_CHANGED', jsonb_build_object(" +
+                "'generation', 2, 'previousActive', false, 'nextActive', true, " +
+                "'reasonClass', 'OPERATOR_MANUAL_STOP', 'changedBy', 'usr_demo_admin', " +
+                "'changedByRole', 'ADMIN', 'correlationId', 'req-audit-missing')",
+            "'KILL_SWITCH_CHANGED', jsonb_build_object(" +
+                "'generation', 2, 'previousActive', false, 'nextActive', true, " +
+                "'reasonClass', 'OPERATOR_MANUAL_STOP', 'changedBy', 'usr_demo_admin', " +
+                "'changedByRole', 'ADMIN', 'correlationId', 'req-audit-extra', " +
+                "'invalidatedDecisionCount', 0, 'rawReason', 'forbidden')",
+            "'UNSAFE_ACTION', jsonb_build_object(" +
+                "'generation', 2, 'previousActive', false, 'nextActive', true, " +
+                "'reasonClass', 'OPERATOR_MANUAL_STOP', 'changedBy', 'usr_demo_admin', " +
+                "'changedByRole', 'ADMIN', 'correlationId', 'req-audit-action', " +
+                "'invalidatedDecisionCount', 0)",
+        ).forEachIndexed { index, actionAndPayload ->
+            assertCheckViolation {
+                jdbcTemplate.update(
+                    """
+                    insert into audit_logs (
+                      audit_log_id, user_id, actor_role, action, target_type,
+                      target_id, request_id, payload_json, created_at
+                    )
+                    select
+                      'aud-v10-denied-$index', 'usr_demo_admin', 'ADMIN',
+                      unsafe.action, 'KILL_SWITCH', 'GLOBAL',
+                      'req-audit-${listOf("missing", "extra", "action")[index]}',
+                      unsafe.payload, now()
+                    from (
+                      select $actionAndPayload
+                    ) as unsafe(action, payload)
+                    """.trimIndent(),
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `Kill Switch admin revalidation classifies current status role and security version`() {
+        val original =
+            jdbcTemplate.queryForMap(
+                """
+                select role, status, security_version
+                from users
+                where user_id = 'usr_demo_admin'
+                """.trimIndent(),
+            )
+        val securityVersion = (original["security_version"] as Number).toLong()
+        try {
+            assertEquals("AUTHORIZED", revalidateKillSwitchAdmin(securityVersion))
+
+            jdbcTemplate.update("update users set role = 'USER' where user_id = 'usr_demo_admin'")
+            assertEquals("FORBIDDEN", revalidateKillSwitchAdmin(securityVersion))
+
+            jdbcTemplate.update(
+                "update users set role = 'ADMIN', status = 'DISABLED' where user_id = 'usr_demo_admin'",
+            )
+            assertEquals("UNAUTHORIZED", revalidateKillSwitchAdmin(securityVersion))
+
+            jdbcTemplate.update(
+                """
+                update users
+                set status = 'ACTIVE', security_version = security_version + 1
+                where user_id = 'usr_demo_admin'
+                """.trimIndent(),
+            )
+            assertEquals("UNAUTHORIZED", revalidateKillSwitchAdmin(securityVersion))
+        } finally {
+            jdbcTemplate.update(
+                """
+                update users
+                set role = ?, status = ?, security_version = ?
+                where user_id = 'usr_demo_admin'
+                """.trimIndent(),
+                original["role"],
+                original["status"],
+                original["security_version"],
+            )
+        }
+    }
+
+    @Test
+    fun `global invalidation spans owners excludes consumed decisions and remains owner scoped`() {
+        cleanupS24InvalidationFixtures()
+        try {
+            insertOrderFixture()
+            insertSecondDecisionFixture()
+            insertAdminDecisionFixture()
+            jdbcTemplate.update(
+                """
+                update risk_kill_switch
+                set active = true,
+                    reason_class = 'OPERATOR_MANUAL_STOP',
+                    generation = 7,
+                    changed_by = 'usr_demo_admin',
+                    changed_by_role = 'ADMIN',
+                    changed_at = now(),
+                    request_id = 'req-v10-global-invalidation'
+                where kill_switch_id = 'GLOBAL'
+                """.trimIndent(),
+            )
+            jdbcTemplate.update(
+                """
+                insert into orders (
+                  order_id, user_id, account_id, decision_id, idempotency_key,
+                  symbol, side, order_type, quantity, status
+                ) values (
+                  'ord-v10-consumed', 'usr-flyway', 'paper-account-v10',
+                  'dec-flyway-b', 'idem-v10-consumed',
+                  '005930', 'BUY', 'LIMIT', 1, 'REQUESTED'
+                )
+                """.trimIndent(),
+            )
+
+            DriverManager.getConnection(postgres.jdbcUrl, "decision_app", APP_PASSWORD).use { connection ->
+                connection.prepareStatement(
+                    """
+                    select invalidate_unused_decisions_for_kill_switch(
+                      generation,
+                      changed_at,
+                      request_id
+                    )
+                    from risk_kill_switch
+                    where kill_switch_id = 'GLOBAL'
+                    """.trimIndent(),
+                ).use { statement ->
+                    statement.executeQuery().use { result ->
+                        assertTrue(result.next())
+                        assertEquals(2, result.getInt(1))
+                    }
+                }
+                connection.prepareStatement(
+                    """
+                    select invalidate_unused_decisions_for_kill_switch(
+                      generation,
+                      changed_at,
+                      request_id
+                    )
+                    from risk_kill_switch
+                    where kill_switch_id = 'GLOBAL'
+                    """.trimIndent(),
+                ).use { statement ->
+                    statement.executeQuery().use { result ->
+                        assertTrue(result.next())
+                        assertEquals(0, result.getInt(1))
+                    }
+                }
+            }
+
+            assertEquals(1, countDecisionInvalidations("dec-flyway"))
+            assertEquals(0, countDecisionInvalidations("dec-flyway-b"))
+            assertEquals(1, countDecisionInvalidations("dec-v10-admin"))
+
+            assertInvalidationOwnerScope("usr-flyway", 1)
+            assertInvalidationOwnerScope("usr_demo_admin", 1)
+            assertInvalidationOwnerScope("usr_demo_user", 0)
+            assertDecisionUsability("usr-flyway", "dec-flyway", expectedRows = 1, invalidated = true, consumed = null)
+            assertDecisionUsability(
+                "usr-flyway",
+                "dec-flyway-b",
+                expectedRows = 1,
+                invalidated = false,
+                consumed = "ord-v10-consumed",
+            )
+            assertDecisionUsability(
+                "usr-flyway",
+                "dec-v10-admin",
+                expectedRows = 0,
+                invalidated = false,
+                consumed = null,
+            )
+        } finally {
+            jdbcTemplate.update(
+                """
+                update risk_kill_switch
+                set active = false,
+                    reason_class = 'INITIAL_STATE',
+                    generation = 1,
+                    changed_by = null,
+                    changed_by_role = 'SYSTEM',
+                    changed_at = now(),
+                    request_id = null
+                where kill_switch_id = 'GLOBAL'
+                """.trimIndent(),
+            )
+            cleanupS24InvalidationFixtures()
         }
     }
 
@@ -1467,8 +1725,160 @@ class FlywayMigrationIntegrationTest(
         )
     }
 
+    private fun assertInvalidationOwnerScope(
+        actorUserId: String,
+        expectedRows: Int,
+    ) {
+        DriverManager.getConnection(postgres.jdbcUrl, "flyway", FLYWAY_PASSWORD).use { connection ->
+            connection.autoCommit = false
+            connection.prepareStatement("select set_config('app.actor_user_id', ?, true)").use { statement ->
+                statement.setString(1, actorUserId)
+                statement.executeQuery().close()
+            }
+            connection.createStatement().use { statement ->
+                statement.executeQuery("select count(*) from decision_invalidations").use { result ->
+                    assertTrue(result.next())
+                    assertEquals(expectedRows, result.getInt(1))
+                }
+            }
+            connection.rollback()
+        }
+    }
+
+    private fun revalidateKillSwitchAdmin(securityVersion: Long): String =
+        DriverManager.getConnection(postgres.jdbcUrl, "decision_app", APP_PASSWORD).use { connection ->
+            connection.prepareStatement("select revalidate_kill_switch_admin('usr_demo_admin', ?)").use { statement ->
+                statement.setLong(1, securityVersion)
+                statement.executeQuery().use { result ->
+                    assertTrue(result.next())
+                    result.getString(1)
+                }
+            }
+        }
+
+    private fun countDecisionInvalidations(decisionId: String): Int =
+        jdbcTemplate.queryForObject(
+            "select count(*) from decision_invalidations where decision_id = ?",
+            Int::class.java,
+            decisionId,
+        ) ?: 0
+
+    private fun assertDecisionUsability(
+        actorUserId: String,
+        decisionId: String,
+        expectedRows: Int,
+        invalidated: Boolean,
+        consumed: String?,
+    ) {
+        DriverManager.getConnection(postgres.jdbcUrl, "decision_app", APP_PASSWORD).use { connection ->
+            connection.autoCommit = false
+            connection.prepareStatement("select set_config('app.actor_user_id', ?, true)").use { statement ->
+                statement.setString(1, actorUserId)
+                statement.executeQuery().close()
+            }
+            connection.prepareStatement("select set_config('app.requested_decision_id', ?, true)").use { statement ->
+                statement.setString(1, decisionId)
+                statement.executeQuery().close()
+            }
+            connection.createStatement().use { statement ->
+                statement.executeQuery("select * from read_decision_usability()").use { result ->
+                    var rows = 0
+                    while (result.next()) {
+                        rows += 1
+                        assertEquals(invalidated, result.getBoolean("invalidated"))
+                        assertEquals(consumed, result.getString("consumed_by_order_id"))
+                    }
+                    assertEquals(expectedRows, rows)
+                }
+            }
+            connection.rollback()
+        }
+    }
+
+    private fun insertAdminDecisionFixture() {
+        jdbcTemplate.update(
+            """
+            insert into principles (
+              principle_id, user_id, preset_id, title, mode, status, current_version
+            ) values (
+              'prn-v10-admin', 'usr_demo_admin', 'balanced',
+              'V10 Admin Principle', 'GUIDE', 'ACTIVE', 1
+            )
+            """.trimIndent(),
+        )
+        jdbcTemplate.update(
+            """
+            insert into principle_versions (
+              principle_version_id, principle_id, version, preset_id, title,
+              mode, status, rules_json, changed_fields, created_by
+            )
+            select
+              'prv-v10-admin-v1', 'prn-v10-admin', 1, 'balanced',
+              'V10 Admin Principle', 'GUIDE', 'ACTIVE', rules_json,
+              array['presetId', 'title', 'mode', 'status', 'rules'], 'usr_demo_admin'
+            from principle_presets
+            where preset_id = 'balanced'
+            """.trimIndent(),
+        )
+        jdbcTemplate.update(
+            """
+            insert into decisions (
+              decision_id, evaluation_id, user_id, principle_id, principle_version_id,
+              principle_version, portfolio_source, symbol, side, outcome, mode,
+              can_submit_order, enforcement_action, evaluation_as_of, created_at, valid_until,
+              result_schema_version, snapshot_schema_version, catalog_version,
+              readiness_policy_version, mapping_versions_json, semantic_input_hash,
+              snapshot_artifact_hash, result_json
+            ) values (
+              'dec-v10-admin', 'eval-v10-admin', 'usr_demo_admin',
+              'prn-v10-admin', 'prv-v10-admin-v1', 1, 'INTERNAL_PAPER',
+              '005930', 'BUY', 'ALLOW', 'GUIDE', true, 'NONE',
+              now(), now(), now() + interval '10 minutes',
+              'risk-decision.v1', 's2.2-metric-snapshot-v2', 1,
+              's2.3-readiness-v1', '{}'::jsonb, repeat('e', 64),
+              repeat('f', 64), '{}'::jsonb
+            )
+            """.trimIndent(),
+        )
+    }
+
+    private fun cleanupS24InvalidationFixtures() {
+        jdbcTemplate.update(
+            "delete from orders where decision_id in ('dec-flyway', 'dec-flyway-b', 'dec-v10-admin')",
+        )
+        jdbcTemplate.update(
+            "delete from decision_invalidations where decision_id in ('dec-flyway', 'dec-flyway-b', 'dec-v10-admin')",
+        )
+        jdbcTemplate.update(
+            "delete from decision_idempotency_results where decision_id in ('dec-flyway', 'dec-flyway-b', 'dec-v10-admin')",
+        )
+        jdbcTemplate.update(
+            "delete from decision_traces where decision_id in ('dec-flyway', 'dec-flyway-b', 'dec-v10-admin')",
+        )
+        jdbcTemplate.update(
+            "delete from decision_artifacts where decision_id in ('dec-flyway', 'dec-flyway-b', 'dec-v10-admin')",
+        )
+        jdbcTemplate.update(
+            "delete from decision_violations where decision_id in ('dec-flyway', 'dec-flyway-b', 'dec-v10-admin')",
+        )
+        jdbcTemplate.update(
+            "delete from audit_logs where target_id in ('dec-flyway', 'dec-flyway-b', 'dec-v10-admin')",
+        )
+        jdbcTemplate.update(
+            "delete from decisions where decision_id in ('dec-flyway', 'dec-flyway-b', 'dec-v10-admin')",
+        )
+        jdbcTemplate.update(
+            "delete from principle_versions where principle_id in ('prn-flyway', 'prn-v10-admin')",
+        )
+        jdbcTemplate.update("delete from principles where principle_id in ('prn-flyway', 'prn-v10-admin')")
+        jdbcTemplate.update("delete from users where user_id = 'usr-flyway'")
+    }
+
     private fun insertOrderFixture() {
         jdbcTemplate.update("delete from orders where decision_id in ('dec-flyway', 'dec-flyway-b')")
+        jdbcTemplate.update(
+            "delete from decision_invalidations where decision_id in ('dec-flyway', 'dec-flyway-b')",
+        )
         jdbcTemplate.update(
             "delete from decision_idempotency_results where decision_id in ('dec-flyway', 'dec-flyway-b')",
         )

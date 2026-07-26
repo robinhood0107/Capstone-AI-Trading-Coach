@@ -81,18 +81,39 @@ class JdbcPortfolioContextAdapter(
 class JdbcMarketQuoteAdapter(
     private val jdbcProvider: ObjectProvider<NamedParameterJdbcTemplate>,
 ) : PricePort {
-    override fun load(request: EvaluationSourceRequest): MetricCell<MetricValue> {
+    override fun load(request: EvaluationSourceRequest): MetricCell<MetricValue> =
+        loadStored(
+            """
+            SELECT price_krw, completeness, observed_at, received_at, source_version, source_ref
+            FROM latest_market_quote_observations
+            WHERE symbol = :symbol
+              AND source = 'KIS_MOCK'
+            LIMIT 1
+            """.trimIndent(),
+            mapOf("symbol" to request.orderIntent.symbol),
+        )
+
+    override fun loadPortfolio(request: PortfolioSourceRequest): MetricCell<MetricValue> =
+        loadStored(
+            """
+            SELECT price_krw, completeness, observed_at, received_at, source_version, source_ref
+            FROM latest_market_quote_observations
+            WHERE source = 'KIS_MOCK'
+            ORDER BY observed_at DESC, received_at DESC, observation_id
+            LIMIT 1
+            """.trimIndent(),
+            emptyMap(),
+        )
+
+    private fun loadStored(
+        sql: String,
+        parameters: Map<String, Any>,
+    ): MetricCell<MetricValue> {
         val rows =
             jdbc()
                 .query(
-                    """
-                    SELECT price_krw, completeness, observed_at, received_at, source_version, source_ref
-                    FROM latest_market_quote_observations
-                    WHERE symbol = :symbol
-                      AND source = 'KIS_MOCK'
-                    LIMIT 1
-                    """.trimIndent(),
-                    mapOf("symbol" to request.orderIntent.symbol),
+                    sql,
+                    parameters,
                 ) { result, _ ->
                     val observedAt = result.getObject("observed_at", OffsetDateTime::class.java).toInstant()
                     StoredQuoteRow(

@@ -63,6 +63,7 @@ data class PortfolioRiskAssemblyRequest(
 )
 
 data class PortfolioRiskAssembly(
+    val latestPrice: MetricCell<MetricValue>,
     val portfolioValue: MetricCell<MetricValue>,
     val dailyPnlRate: MetricCell<MetricValue>,
     val maxDrawdown: MetricCell<MetricValue>,
@@ -99,6 +100,13 @@ class MetricSnapshotAssembler(
                 portfolioContext = request.portfolioContext,
                 evaluationAsOf = request.evaluationAsOf,
             )
+        val latestPrice =
+            validatePositiveWholeMetric(
+                sourceCallCoordinator.call(deadline, sourceError()) {
+                    pricePort.loadPortfolio(sourceRequest)
+                },
+                MetricUnit.KRW,
+            ).atAsOf(request.evaluationAsOf)
         val balance =
             validateBalance(
                 sourceCallCoordinator.call(deadline, sourceError()) {
@@ -111,6 +119,7 @@ class MetricSnapshotAssembler(
                 riskSnapshotPort.loadPortfolio(sourceRequest)
             }
         return PortfolioRiskAssembly(
+            latestPrice = latestPrice,
             portfolioValue =
                 when (balance) {
                     is MetricCell.Available ->

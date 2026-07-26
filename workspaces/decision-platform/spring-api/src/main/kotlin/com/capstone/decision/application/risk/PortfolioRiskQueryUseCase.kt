@@ -124,7 +124,7 @@ class PortfolioRiskQueryUseCase(
                     killSwitchActive = gate.active,
                     dataFreshness =
                         PortfolioRiskFreshness(
-                            priceFresh = assembly.portfolioValue.freshness(),
+                            priceFresh = assembly.latestPrice.freshness(),
                             signalFresh = null,
                             ragFresh = null,
                         ),
@@ -165,7 +165,7 @@ class PortfolioRiskQueryUseCase(
 
     private fun missingAssembly(): PortfolioRiskAssembly {
         val missing = MetricCell.Missing(MetricIssueCode.PORTFOLIO_CONTEXT_UNAVAILABLE)
-        return PortfolioRiskAssembly(missing, missing, missing, missing)
+        return PortfolioRiskAssembly(missing, missing, missing, missing, missing)
     }
 
     private fun unavailableWarning(

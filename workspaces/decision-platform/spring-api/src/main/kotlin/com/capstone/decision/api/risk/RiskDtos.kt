@@ -50,6 +50,9 @@ data class PortfolioRiskFreshnessDto(
     val ragFresh: Boolean?,
 )
 
+@Schema(name = "S24RiskErrorResponse")
+class S24RiskErrorResponseSchema
+
 fun KillSwitchPublicState.toDto(): KillSwitchStateDto =
     KillSwitchStateDto(
         active = active,

@@ -263,6 +263,48 @@ class OpenApiConfig {
             )
         }
 
+    @Bean
+    fun brokerageContractSchemas(): OpenApiCustomizer =
+        // S3.1 Brokerage Mock 요청/응답도 canonical schema resource를 그대로 component로 노출한다.
+        OpenApiCustomizer { openApi ->
+            openApi.components.addSchemas(
+                S31_MOCK_ORDER_REQUEST_COMPONENT,
+                contractSchema(S31_MOCK_ORDER_REQUEST_RESOURCE, S31_MOCK_ORDER_REQUEST_COMPONENT),
+            )
+            openApi.components.addSchemas(
+                S31_MOCK_ORDER_RESPONSE_COMPONENT,
+                contractSchema(S31_MOCK_ORDER_RESPONSE_RESOURCE, S31_MOCK_ORDER_RESPONSE_COMPONENT),
+            )
+            openApi.components.addSchemas(
+                S31_MOCK_ORDER_DETAIL_COMPONENT,
+                contractSchema(S31_MOCK_ORDER_DETAIL_RESOURCE, S31_MOCK_ORDER_DETAIL_COMPONENT),
+            )
+            openApi.components.addSchemas(
+                S31_MOCK_BALANCE_COMPONENT,
+                contractSchema(S31_MOCK_BALANCE_RESOURCE, S31_MOCK_BALANCE_COMPONENT),
+            )
+            openApi.components.addSchemas(
+                S31_MOCK_BUYABLE_COMPONENT,
+                contractSchema(S31_MOCK_BUYABLE_RESOURCE, S31_MOCK_BUYABLE_COMPONENT),
+            )
+            openApi.components.addSchemas(
+                S31_MOCK_ORDER_ENVELOPE_COMPONENT,
+                successEnvelope(schemaRef(S31_MOCK_ORDER_RESPONSE_COMPONENT)),
+            )
+            openApi.components.addSchemas(
+                S31_MOCK_ORDER_DETAIL_ENVELOPE_COMPONENT,
+                successEnvelope(schemaRef(S31_MOCK_ORDER_DETAIL_COMPONENT)),
+            )
+            openApi.components.addSchemas(
+                S31_MOCK_BALANCE_ENVELOPE_COMPONENT,
+                successEnvelope(schemaRef(S31_MOCK_BALANCE_COMPONENT)),
+            )
+            openApi.components.addSchemas(
+                S31_MOCK_BUYABLE_ENVELOPE_COMPONENT,
+                successEnvelope(schemaRef(S31_MOCK_BUYABLE_COMPONENT)),
+            )
+        }
+
     private fun riskErrorEnvelope(): Schema<*> =
         objectSchema(
             properties =
@@ -537,6 +579,20 @@ class OpenApiConfig {
         private const val S24_KILL_SWITCH_ENVELOPE_COMPONENT = "S24KillSwitchSuccessResponse"
         private const val S24_PORTFOLIO_RISK_ENVELOPE_COMPONENT = "S24PortfolioRiskSuccessResponse"
         private const val S24_RISK_ERROR_COMPONENT = "S24RiskErrorResponse"
+        private const val S31_MOCK_ORDER_REQUEST_RESOURCE = "contracts/s3-1-mock-order-request.schema.json"
+        private const val S31_MOCK_ORDER_RESPONSE_RESOURCE = "contracts/s3-1-mock-order-response.schema.json"
+        private const val S31_MOCK_ORDER_DETAIL_RESOURCE = "contracts/s3-1-mock-order-detail.schema.json"
+        private const val S31_MOCK_BALANCE_RESOURCE = "contracts/s3-1-mock-balance.schema.json"
+        private const val S31_MOCK_BUYABLE_RESOURCE = "contracts/s3-1-mock-buyable.schema.json"
+        private const val S31_MOCK_ORDER_REQUEST_COMPONENT = "S31MockOrderRequest"
+        private const val S31_MOCK_ORDER_RESPONSE_COMPONENT = "S31MockOrderSubmitted"
+        private const val S31_MOCK_ORDER_DETAIL_COMPONENT = "S31MockOrderDetail"
+        private const val S31_MOCK_BALANCE_COMPONENT = "S31MockBalance"
+        private const val S31_MOCK_BUYABLE_COMPONENT = "S31MockBuyable"
+        private const val S31_MOCK_ORDER_ENVELOPE_COMPONENT = "S31MockOrderSuccessResponse"
+        private const val S31_MOCK_ORDER_DETAIL_ENVELOPE_COMPONENT = "S31MockOrderDetailSuccessResponse"
+        private const val S31_MOCK_BALANCE_ENVELOPE_COMPONENT = "S31MockBalanceSuccessResponse"
+        private const val S31_MOCK_BUYABLE_ENVELOPE_COMPONENT = "S31MockBuyableSuccessResponse"
         private val S24_RISK_ERROR_CODES =
             listOf(
                 "VALIDATION_ERROR",

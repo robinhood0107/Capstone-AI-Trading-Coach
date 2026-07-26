@@ -1,0 +1,11 @@
+{
+  "accountId": "acct_cccccccccccccccccccccccccccccccc",
+  "brokerageMode": "KIS_MOCK",
+  "buyableAmountKrw": 9940000,
+  "buyableQuantity": 142,
+  "cashKrw": 10000000,
+  "estimatedPrice": 70000,
+  "observedAt": "2026-07-26T09:30:00Z",
+  "sourceVersion": "s31-fixture-v1",
+  "symbol": "005930"
+}

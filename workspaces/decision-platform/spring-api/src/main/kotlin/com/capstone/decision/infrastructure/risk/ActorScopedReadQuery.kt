@@ -20,6 +20,7 @@ class ActorScopedReadQuery(
         actorUserId: String,
         sql: String,
         requestedDecisionId: String? = null,
+        requestedOrderId: String? = null,
         binder: (PreparedStatement) -> Unit = {},
         mapper: (ResultSet) -> T,
     ): List<T> {
@@ -29,6 +30,13 @@ class ActorScopedReadQuery(
                 (
                     requestedDecisionId.isNotBlank() &&
                         requestedDecisionId.length <= EvaluationBounds.MAX_ID_OR_CODE_CHARS
+                ),
+        )
+        require(
+            requestedOrderId == null ||
+                (
+                    requestedOrderId.isNotBlank() &&
+                        requestedOrderId.length <= EvaluationBounds.MAX_ID_OR_CODE_CHARS
                 ),
         )
         check(!TransactionSynchronizationManager.isActualTransactionActive()) {
@@ -60,6 +68,14 @@ class ActorScopedReadQuery(
                         .prepareStatement("SELECT set_config('app.requested_decision_id', ?, true)")
                         .use { statement ->
                             statement.setString(1, requestedDecisionId)
+                            statement.executeQuery().use { result -> check(result.next()) }
+                        }
+                }
+                if (requestedOrderId != null) {
+                    connection
+                        .prepareStatement("SELECT set_config('app.requested_order_id', ?, true)")
+                        .use { statement ->
+                            statement.setString(1, requestedOrderId)
                             statement.executeQuery().use { result -> check(result.next()) }
                         }
                 }

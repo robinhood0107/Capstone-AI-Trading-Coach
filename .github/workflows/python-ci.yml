@@ -39,6 +39,9 @@ jobs:
       - name: Check generated disclosure proto artifacts
         run: uv run --frozen python ../../../contracts/generate_disclosure_proto.py --check
 
+      - name: Check generated brokerage proto artifacts
+        run: uv run --frozen python ../../../contracts/generate_brokerage_proto.py --check
+
       - name: Run Ruff
         run: uv run --frozen ruff check .
 

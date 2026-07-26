@@ -95,6 +95,8 @@ CREATE TABLE decision_invalidations (
 );
 CREATE INDEX decision_invalidations_owner_idx
   ON decision_invalidations (owner_user_id, invalidated_at DESC, invalidation_id);
+CREATE INDEX decisions_valid_until_invalidation_idx
+  ON decisions (valid_until, decision_id);
 
 INSERT INTO risk_kill_switch (
   kill_switch_id,

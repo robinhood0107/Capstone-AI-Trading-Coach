@@ -24,6 +24,7 @@ _ROOT_FIELDS = {
 _QUOTE_FIELDS = {
     "symbol",
     "priceKrw",
+    "previousCloseKrw",
     "bidKrw",
     "askKrw",
     "completeness",
@@ -40,7 +41,8 @@ class MarketQuoteObservation:
 
     observation_id: str
     symbol: str
-    price_krw: int
+    price_krw: int | None
+    previous_close_krw: int | None
     bid_krw: int | None
     ask_krw: int | None
     completeness: str
@@ -102,11 +104,12 @@ def append_market_quote_fixture(path: Path, *, database_dsn: str) -> int:
                 cursor.executemany(
                     """
                     INSERT INTO market_quote_observations (
-                      observation_id, symbol, source, price_krw, bid_krw, ask_krw,
+                      observation_id, symbol, source, price_krw, previous_close_krw,
+                      bid_krw, ask_krw,
                       completeness, observed_at, received_at, schema_version,
                       source_version, payload_json, source_ref, artifact_hash
                     ) VALUES (
-                      %s, %s, 'KIS_MOCK', %s, %s, %s,
+                      %s, %s, 'KIS_MOCK', %s, %s, %s, %s,
                       %s, %s, %s, %s, %s, %s::jsonb, %s, %s
                     )
                     ON CONFLICT DO NOTHING
@@ -116,6 +119,7 @@ def append_market_quote_fixture(path: Path, *, database_dsn: str) -> int:
                             observation.observation_id,
                             observation.symbol,
                             observation.price_krw,
+                            observation.previous_close_krw,
                             observation.bid_krw,
                             observation.ask_krw,
                             observation.completeness,
@@ -148,7 +152,13 @@ def _observation(
     symbol = value["symbol"]
     if not isinstance(symbol, str) or _SYMBOL.fullmatch(symbol) is None:
         raise ValueError("market quote symbol is invalid")
-    price_krw = _positive_int(value["priceKrw"], "priceKrw")
+    price_krw = _optional_positive_int(value["priceKrw"], "priceKrw")
+    previous_close_krw = _optional_positive_int(
+        value["previousCloseKrw"],
+        "previousCloseKrw",
+    )
+    if price_krw is None and previous_close_krw is None:
+        raise ValueError("market quote requires priceKrw or previousCloseKrw")
     bid_krw = _optional_positive_int(value["bidKrw"], "bidKrw")
     ask_krw = _optional_positive_int(value["askKrw"], "askKrw")
     if bid_krw is not None and ask_krw is not None and bid_krw > ask_krw:
@@ -164,6 +174,7 @@ def _observation(
         "bidKrw": bid_krw,
         "completeness": completeness,
         "priceKrw": price_krw,
+        "previousCloseKrw": previous_close_krw,
         "symbol": symbol,
     }
     payload_json = _canonical_json(payload)
@@ -183,6 +194,7 @@ def _observation(
         observation_id=f"mqo_{identity_hash}",
         symbol=symbol,
         price_krw=price_krw,
+        previous_close_krw=previous_close_krw,
         bid_krw=bid_krw,
         ask_krw=ask_krw,
         completeness=completeness,

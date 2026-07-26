@@ -94,4 +94,13 @@ data class StoredPaperBalance(
     val asOf: Instant,
 )
 
+/**
+ * application service가 필요로 하는 paper 실행 상한만 노출한다.
+ * 외부 설정 binding 타입은 이 port를 구현해 계층 의존 방향을 infrastructure → application으로 유지한다.
+ */
+interface PaperExecutionPolicy {
+    val slippageBps: Int
+    val priceMaxAgeSeconds: Int
+}
+
 class PaperDataStaleException : RuntimeException("Stored paper price source is stale.")

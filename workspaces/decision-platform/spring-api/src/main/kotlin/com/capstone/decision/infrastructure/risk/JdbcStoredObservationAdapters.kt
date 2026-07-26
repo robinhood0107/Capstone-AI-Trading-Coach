@@ -243,7 +243,12 @@ class JdbcStoredMarginAdapter(
         val marginRequirementKrw =
             row.marginRequirementKrw
                 ?: return MetricCell.Missing(MetricIssueCode.SOURCE_MISSING)
-        if (row.completeness != COMPLETE) {
+        // Paper margin은 position classification과 별도 owner projection의 명시값이다.
+        // KIS snapshot만 전체 balance completeness를 margin availability에 결합한다.
+        if (
+            request.portfolioContext.source == PortfolioSource.KIS_MOCK &&
+            row.completeness != COMPLETE
+        ) {
             return MetricCell.Incomplete(MetricIssueCode.SOURCE_INCOMPLETE)
         }
         return MetricCell.Available(

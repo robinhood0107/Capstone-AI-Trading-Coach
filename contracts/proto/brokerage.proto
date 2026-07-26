@@ -1,0 +1,85 @@
+syntax = "proto3";
+
+package capstone.decision.v1;
+
+option java_multiple_files = true;
+option java_outer_classname = "BrokerageContract";
+option java_package = "com.capstone.decision.contract.v1";
+
+message SubmitMockCashOrderRequest {
+  string request_id = 1;
+  string order_id = 2;
+  string account_id = 3;
+  string symbol = 4;
+  string side = 5;
+  string order_type = 6;
+  int64 quantity = 7;
+  int64 estimated_price_krw = 8;
+}
+
+message SubmitMockCashOrderResponse {
+  string order_id = 1;
+  bool accepted = 2;
+  string provider_order_ref_hash = 3;
+  string tr_id = 4;
+  string received_at = 5;
+}
+
+message CancelMockCashOrderRequest {
+  string request_id = 1;
+  string order_id = 2;
+  string account_id = 3;
+}
+
+message CancelMockCashOrderResponse {
+  string order_id = 1;
+  string status = 2;
+  string received_at = 3;
+}
+
+message GetMockBalanceRequest {
+  string request_id = 1;
+  string account_id = 2;
+}
+
+message MockBalancePosition {
+  string symbol = 1;
+  int64 quantity = 2;
+  int64 market_value_krw = 3;
+  bool is_gold_etf_etn = 4;
+}
+
+message GetMockBalanceResponse {
+  string account_id = 1;
+  int64 cash_krw = 2;
+  int64 portfolio_equity_krw = 3;
+  int64 margin_requirement_krw = 4;
+  repeated MockBalancePosition positions = 5;
+  string observed_at = 6;
+  string source_version = 7;
+}
+
+message GetMockBuyableRequest {
+  string request_id = 1;
+  string account_id = 2;
+  string symbol = 3;
+  int64 estimated_price_krw = 4;
+}
+
+message GetMockBuyableResponse {
+  string account_id = 1;
+  string symbol = 2;
+  int64 estimated_price_krw = 3;
+  int64 buyable_quantity = 4;
+  int64 buyable_amount_krw = 5;
+  int64 cash_krw = 6;
+  string observed_at = 7;
+  string source_version = 8;
+}
+
+service BrokerageService {
+  rpc SubmitMockCashOrder(SubmitMockCashOrderRequest) returns (SubmitMockCashOrderResponse);
+  rpc CancelMockCashOrder(CancelMockCashOrderRequest) returns (CancelMockCashOrderResponse);
+  rpc GetMockBalance(GetMockBalanceRequest) returns (GetMockBalanceResponse);
+  rpc GetMockBuyable(GetMockBuyableRequest) returns (GetMockBuyableResponse);
+}

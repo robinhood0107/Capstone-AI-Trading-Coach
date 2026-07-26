@@ -1826,6 +1826,7 @@ class DecisionApiIntegrationTest(
                 ).asCompatibleSubstituteFor("postgres")
         private val redisPasswordValue: String = "r" + "p".repeat(24)
         private val decisionScopeKeyValue: String = "d" + "i".repeat(63)
+        private val brokerageScopeKeyValue: String = "b" + "r".repeat(63)
         private const val APP_PASSWORD = "app-test"
         private const val FLYWAY_PASSWORD = "flyway-test"
         private const val SLOW_DECISION_SIGNAL_LOCK = 23_004_401L
@@ -1871,6 +1872,7 @@ class DecisionApiIntegrationTest(
             registry.add("spring.data.redis.port") { redis.getMappedPort(6379) }
             registry.add("spring.data.redis.password") { redisPasswordValue }
             registry.add("app.decision.idempotency-scope-hmac-key") { decisionScopeKeyValue }
+            registry.add("app.brokerage.idempotency-scope-hmac-key") { brokerageScopeKeyValue }
         }
     }
 }

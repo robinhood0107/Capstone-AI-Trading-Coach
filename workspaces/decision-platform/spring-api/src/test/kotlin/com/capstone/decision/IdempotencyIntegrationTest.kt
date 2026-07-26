@@ -171,6 +171,7 @@ class IdempotencyIntegrationTest(
             listOf(
                 "/api/v1/orders/**",
                 "/api/v1/backtests/**",
+                "/api/v1/brokerage/orders/**",
                 "/api/v1/risk/kill-switch",
             ),
             idempotencyProperties.paths,

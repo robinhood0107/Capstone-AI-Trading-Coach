@@ -1,0 +1,47 @@
+{
+  "$id": "contracts/schemas/s3-1-mock-order-detail.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "accountId": {
+      "pattern": "^acct_[0-9a-f]{32}$",
+      "type": "string"
+    },
+    "brokerageMode": {
+      "const": "KIS_MOCK"
+    },
+    "decisionId": {
+      "pattern": "^dec_[0-9a-f]{32}$",
+      "type": "string"
+    },
+    "orderId": {
+      "pattern": "^ord_mock_[0-9a-f]{32}$",
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "SUBMITTED",
+        "ACCEPTED",
+        "PARTIALLY_FILLED",
+        "FILLED",
+        "CANCEL_REQUESTED",
+        "CANCELLED",
+        "REJECTED"
+      ]
+    },
+    "submittedAt": {
+      "format": "date-time",
+      "type": "string"
+    }
+  },
+  "required": [
+    "orderId",
+    "accountId",
+    "brokerageMode",
+    "status",
+    "submittedAt",
+    "decisionId"
+  ],
+  "title": "S3.1 KIS Mock order detail response v1",
+  "type": "object"
+}

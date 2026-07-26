@@ -1,0 +1,10 @@
+{
+  "accountId": "acct_cccccccccccccccccccccccccccccccc",
+  "brokerageMode": "KIS_MOCK",
+  "cashKrw": 10000000,
+  "marginRequirementKrw": 0,
+  "observedAt": "2026-07-26T09:30:00Z",
+  "portfolioEquityKrw": 10000000,
+  "positions": [],
+  "sourceVersion": "s31-fixture-v1"
+}

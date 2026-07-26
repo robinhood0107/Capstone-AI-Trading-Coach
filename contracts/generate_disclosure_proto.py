@@ -83,7 +83,7 @@ def _run_protoc(output_dir: Path) -> dict[Path, bytes]:
     descriptor_hash = hashlib.sha256(descriptor).hexdigest().encode("ascii") + b"\n"
     return {
         OUTPUTS[0]: (
-            '"""S2.3 disclosure proto의 tracked Python codegen package."""\n'
+            '"""Tracked Python gRPC codegen package for Decision Platform contracts."""\n'
         ).encode("utf-8"),
         OUTPUTS[1]: pb2,
         OUTPUTS[2]: pb2_pyi,

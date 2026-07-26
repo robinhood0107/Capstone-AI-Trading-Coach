@@ -1,0 +1,34 @@
+{
+  "$id": "contracts/schemas/s3-1-mock-order-response.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "accountId": {
+      "pattern": "^acct_[0-9a-f]{32}$",
+      "type": "string"
+    },
+    "brokerageMode": {
+      "const": "KIS_MOCK"
+    },
+    "orderId": {
+      "pattern": "^ord_mock_[0-9a-f]{32}$",
+      "type": "string"
+    },
+    "status": {
+      "const": "SUBMITTED"
+    },
+    "submittedAt": {
+      "format": "date-time",
+      "type": "string"
+    }
+  },
+  "required": [
+    "orderId",
+    "accountId",
+    "brokerageMode",
+    "status",
+    "submittedAt"
+  ],
+  "title": "S3.1 KIS Mock order submitted response v1",
+  "type": "object"
+}

@@ -20,6 +20,7 @@ import org.springframework.boot.test.context.TestConfiguration
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Import
 import org.springframework.context.annotation.Primary
+import org.springframework.dao.InvalidDataAccessApiUsageException
 import org.springframework.data.redis.core.StringRedisTemplate
 import org.springframework.http.MediaType
 import org.springframework.jdbc.core.JdbcTemplate
@@ -646,7 +647,7 @@ class DecisionApiIntegrationTest(
 
     @Test
     fun `Kill Switch mutation adapter enforces the locked transition policy reason class`() {
-        assertThrows(IllegalArgumentException::class.java) {
+        assertThrows(InvalidDataAccessApiUsageException::class.java) {
             killSwitchMutationPort.mutate(
                 KillSwitchMutationCommand(
                     actor =

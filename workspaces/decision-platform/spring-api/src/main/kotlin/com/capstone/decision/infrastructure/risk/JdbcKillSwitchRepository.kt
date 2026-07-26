@@ -12,6 +12,8 @@ import com.capstone.decision.application.risk.KillSwitchQueryPort
 import com.capstone.decision.application.risk.KillSwitchUnauthorizedException
 import com.capstone.decision.domain.risk.KillSwitchReasonClass
 import com.capstone.decision.domain.risk.KillSwitchState
+import com.capstone.decision.domain.risk.KillSwitchTransition
+import com.capstone.decision.domain.risk.KillSwitchTransitionPolicy
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.stereotype.Repository
@@ -33,6 +35,8 @@ class JdbcKillSwitchRepository(
 ) : KillSwitchQueryPort,
     KillSwitchGatePort,
     KillSwitchMutationPort {
+    private val transitionPolicy = KillSwitchTransitionPolicy()
+
     override fun readPublicState(): KillSwitchPublicState =
         jdbc()
             .query(
@@ -69,20 +73,33 @@ class JdbcKillSwitchRepository(
         if (!command.requestedActive) {
             revalidateAdmin(jdbc, command)
         }
-        if (current.active == command.requestedActive) {
-            return KillSwitchMutationResult(
-                state = current.publicState(),
-                changed = false,
-                previousActive = current.active,
-                generation = current.generation,
-                invalidatedDecisionCount = 0,
+        val transition =
+            transitionPolicy.decide(
+                current = current,
+                requestedActive = command.requestedActive,
+                actorRole = command.actor.role,
             )
+        when (transition) {
+            KillSwitchTransition.ResumeRequiresAdmin -> throw KillSwitchForbiddenException()
+            KillSwitchTransition.NoOp ->
+                return KillSwitchMutationResult(
+                    state = current.publicState(),
+                    changed = false,
+                    previousActive = current.active,
+                    generation = current.generation,
+                    invalidatedDecisionCount = 0,
+                )
+
+            is KillSwitchTransition.Applied ->
+                require(command.reasonClass == transition.reasonClass) {
+                    "Kill Switch reason class does not match the locked transition policy."
+                }
         }
 
         val next =
             current.next(
-                active = command.requestedActive,
-                reasonClass = command.reasonClass,
+                active = transition.nextActive,
+                reasonClass = transition.reasonClass,
                 changedAt = lockedDatabaseTime(jdbc, current),
             )
         val updateCount =

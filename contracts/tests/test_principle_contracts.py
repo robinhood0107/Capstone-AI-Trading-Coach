@@ -213,8 +213,14 @@ class OpenApiEnvironmentParserTest(unittest.TestCase):
             "PYTHON_GRPC_SHARED_SECRET",
             "DECISION_IDEMPOTENCY_SCOPE_HMAC_KEY",
             "BROKERAGE_IDEMPOTENCY_SCOPE_HMAC_KEY",
+            "BROKERAGE_DB_CAPABILITY_TOKEN",
+            "BROKERAGE_DB_CAPABILITY_TOKEN_SHA256",
         ):
             self.assertIn(name, parsed)
+        self.assertEqual(
+            hashlib.sha256(parsed["BROKERAGE_DB_CAPABILITY_TOKEN"].encode("utf-8")).hexdigest(),
+            parsed["BROKERAGE_DB_CAPABILITY_TOKEN_SHA256"],
+        )
         self.assertEqual(parsed["DECISION_GRPC_SHARED_SECRET"], parsed["PYTHON_GRPC_SHARED_SECRET"])
         self.assertTrue(parsed["DEMO_USER_CREDENTIAL_BUNDLE"].startswith("s21-v1:usr_demo_user:"))
         self.assertNotIn("KIS_MODE", parsed)
@@ -234,6 +240,10 @@ class OpenApiEnvironmentParserTest(unittest.TestCase):
                 "JWT_AUDIENCE='unsafe'quote'",
             ),
             "port-mismatch": valid.replace("POSTGRES_PORT='55432'", "POSTGRES_PORT='55433'"),
+            "capability-digest-mismatch": valid.replace(
+                f"BROKERAGE_DB_CAPABILITY_TOKEN_SHA256='{hashlib.sha256(('U' * 43).encode()).hexdigest()}'",
+                f"BROKERAGE_DB_CAPABILITY_TOKEN_SHA256='{'0' * 64}'",
+            ),
             "crlf": valid.replace("\n", "\r\n"),
         }
         for name, content in cases.items():
@@ -308,6 +318,8 @@ class OpenApiEnvironmentParserTest(unittest.TestCase):
             "PRINCIPLE_CURSOR_HMAC_KEY": "H" * 43,
             "DECISION_IDEMPOTENCY_SCOPE_HMAC_KEY": "Q" * 43,
             "BROKERAGE_IDEMPOTENCY_SCOPE_HMAC_KEY": "T" * 43,
+            "BROKERAGE_DB_CAPABILITY_TOKEN": "U" * 43,
+            "BROKERAGE_DB_CAPABILITY_TOKEN_SHA256": hashlib.sha256(("U" * 43).encode()).hexdigest(),
             "DEMO_CREDENTIAL_SEPARATION_KEY": "I" * 43,
             "DEMO_USER_CREDENTIAL_BUNDLE": (
                 f"s21-v1:usr_demo_user:{'J' * 43}:{bcrypt_user}:{'K' * 43}"

@@ -24,7 +24,7 @@ class BrokerageService(
         rawIdempotencyKey: String,
         command: SubmitMockOrderCommand,
     ): MockOrderProjection {
-        killSwitchGuard.check()
+        val observedGate = killSwitchGuard.check()
         val now = clock.instant()
         val identity = idempotencyHasher.identity(actor.userId, rawIdempotencyKey, command)
         try {
@@ -53,6 +53,7 @@ class BrokerageService(
                     orderId = projection.orderId,
                     projection = projection,
                     projectionCanonicalJson = projectionFactory.canonicalJson(projection),
+                    observedKillSwitchGeneration = observedGate.generation,
                     createdAt = now,
                 ),
             )

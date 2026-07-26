@@ -59,9 +59,9 @@ class FlywayMigrationIntegrationTest(
     @Autowired private val riskSnapshotPort: RiskSnapshotPort,
 ) : SpringApiIntegrationTestBase() {
     @Test
-    fun `clean database applies V1 through V11 migrations and creates required objects`() {
+    fun `clean database applies V1 through V12 migrations and creates required objects`() {
         val versions = queryStrings("select version from flyway_schema_history where success order by installed_rank")
-        assertEquals((1..11).map(Int::toString), versions)
+        assertEquals((1..12).map(Int::toString), versions)
 
         val requiredTables =
             listOf(
@@ -101,6 +101,7 @@ class FlywayMigrationIntegrationTest(
                 "risk_kill_switch",
                 "risk_kill_switch_transitions",
                 "decision_invalidations",
+                "brokerage_db_capability_keys",
                 "mock_order_owner_projection",
                 "kill_switch_user_projection",
                 "latest_market_quote_observations",
@@ -165,18 +166,18 @@ class FlywayMigrationIntegrationTest(
     }
 
     @Test
-    fun `decision application role receives exact V11 append only privileges`() {
+    fun `decision application role receives only V12 brokerage capabilities`() {
         assertTrue(hasTablePrivilege("decision_app", "risk_kill_switch", "SELECT"))
         assertFalse(hasTablePrivilege("decision_app", "risk_kill_switch", "INSERT"))
         assertFalse(hasTablePrivilege("decision_app", "risk_kill_switch", "DELETE"))
         assertFalse(hasTablePrivilege("decision_app", "risk_kill_switch", "TRUNCATE"))
         assertTrue(hasTablePrivilege("decision_app", "risk_kill_switch_transitions", "INSERT"))
         assertTrue(hasTablePrivilege("decision_app", "kill_switch_user_projection", "SELECT"))
-        assertTrue(hasTablePrivilege("decision_app", "orders", "INSERT"))
-        assertTrue(hasTablePrivilege("decision_app", "orders", "SELECT"))
-        assertTrue(hasTablePrivilege("decision_app", "order_events", "INSERT"))
-        assertTrue(hasTablePrivilege("decision_app", "order_events", "SELECT"))
-        assertTrue(hasTablePrivilege("decision_app", "mock_order_owner_projection", "SELECT"))
+        listOf("orders", "order_events", "mock_order_owner_projection", "brokerage_db_capability_keys").forEach { table ->
+            listOf("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE").forEach { privilege ->
+                assertFalse(hasTablePrivilege("decision_app", table, privilege), "unexpected $privilege on $table")
+            }
+        }
         listOf("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE").forEach { privilege ->
             assertFalse(
                 hasTablePrivilege("decision_app", "decision_invalidations", privilege),
@@ -199,12 +200,23 @@ class FlywayMigrationIntegrationTest(
             "read_kill_switch_audit_projection()",
             "read_decision_usability()",
             "invalidate_unused_decisions_for_kill_switch(bigint,timestamp with time zone,text)",
-            "read_mock_order_decision()",
-            "find_mock_order_idempotency_result(text,text,timestamp with time zone)",
-            "read_mock_order_owner_projection()",
+            "read_mock_order_decision(text,text,text)",
+            "find_mock_order_idempotency_result(text,text,timestamp with time zone,text)",
+            "read_mock_order_owner_projection(text,text,text)",
+            "create_mock_order(jsonb,text)",
+            "request_mock_order_cancel(jsonb,text)",
         ).forEach { function ->
             assertTrue(hasFunctionPrivilege("decision_app", function), "missing EXECUTE on $function")
         }
+        assertFalse(
+            hasFunctionPrivilege("decision_app", "assert_brokerage_database_capability(text)"),
+            "runtime role must not call the private capability verifier directly",
+        )
+        assertDecisionAppPermissionDenied("select * from orders")
+        assertDecisionAppPermissionDenied("insert into orders default values")
+        assertDecisionAppPermissionDenied("select * from order_events")
+        assertDecisionAppPermissionDenied("insert into order_events default values")
+        assertDecisionAppPermissionDenied("select * from mock_order_owner_projection")
     }
 
     @Test
@@ -233,6 +245,127 @@ class FlywayMigrationIntegrationTest(
                 )
             }
         }
+    }
+
+    @Test
+    fun `V12 order events use monotonic sequence and coupled type status constraints`() {
+        assertEquals(
+            listOf("event_seq"),
+            queryStrings(
+                """
+                select column_name
+                from information_schema.columns
+                where table_schema = 'public'
+                  and table_name = 'order_events'
+                  and column_name = 'event_seq'
+                  and is_nullable = 'NO'
+                """.trimIndent(),
+            ),
+        )
+        assertTrue(indexExists("order_events_order_sequence_unique"))
+        val pairConstraint =
+            requireNotNull(
+                jdbcTemplate.queryForObject(
+                    """
+                    select pg_get_constraintdef(oid)
+                    from pg_constraint
+                    where conname = 'order_events_type_status_pair_check'
+                    """.trimIndent(),
+                    String::class.java,
+                ),
+            )
+        assertTrue(pairConstraint.contains("MOCK_ORDER_SUBMITTED"))
+        assertTrue(pairConstraint.contains("SUBMITTED"))
+        assertTrue(pairConstraint.contains("MOCK_ORDER_CANCEL_REQUESTED"))
+        assertTrue(pairConstraint.contains("CANCEL_REQUESTED"))
+        val projectionDefinition =
+            requireNotNull(
+                jdbcTemplate.queryForObject(
+                    "select pg_get_functiondef('read_mock_order_owner_projection(text,text,text)'::regprocedure)",
+                    String::class.java,
+                ),
+            )
+        assertTrue(projectionDefinition.contains("event.event_seq DESC"))
+        assertFalse(projectionDefinition.contains("current_setting('app.actor_user_id'"))
+    }
+
+    @Test
+    fun `V12 brokerage evidence contracts pin writer identity status values and live expiry clock`() {
+        val auditConstraint =
+            requireNotNull(
+                jdbcTemplate.queryForObject(
+                    """
+                    select pg_get_constraintdef(oid)
+                    from pg_constraint
+                    where conname = 'audit_logs_brokerage_order_contract_check'
+                    """.trimIndent(),
+                    String::class.java,
+                ),
+            )
+        assertTrue(auditConstraint.contains("brokerageMode"))
+        assertTrue(auditConstraint.contains("KIS_MOCK"))
+        assertTrue(auditConstraint.contains("SUBMITTED"))
+        assertTrue(auditConstraint.contains("CANCEL_REQUESTED"))
+
+        val outboxConstraint =
+            requireNotNull(
+                jdbcTemplate.queryForObject(
+                    """
+                    select pg_get_constraintdef(oid)
+                    from pg_constraint
+                    where conname = 'event_outbox_brokerage_order_contract_check'
+                    """.trimIndent(),
+                    String::class.java,
+                ),
+            )
+        assertTrue(outboxConstraint.contains("brokerageMode"))
+        assertTrue(outboxConstraint.contains("KIS_MOCK"))
+        assertTrue(outboxConstraint.contains("SUBMITTED"))
+        assertTrue(outboxConstraint.contains("CANCEL_REQUESTED"))
+
+        val guardDefinition =
+            requireNotNull(
+                jdbcTemplate.queryForObject(
+                    "select pg_get_functiondef('enforce_brokerage_evidence_writer()'::regprocedure)",
+                    String::class.java,
+                ),
+            ).lowercase()
+        assertTrue(guardDefinition.contains("pg_has_role"))
+        assertTrue(guardDefinition.contains("current_user"))
+        assertTrue(guardDefinition.contains("flyway"))
+        assertTrue(guardDefinition.contains("42501"))
+
+        val triggerDefinitions =
+            queryStrings(
+                """
+                select pg_get_triggerdef(oid)
+                from pg_trigger
+                where not tgisinternal
+                  and tgname in (
+                    'audit_logs_brokerage_writer_guard',
+                    'event_outbox_brokerage_writer_guard'
+                  )
+                order by tgname
+                """.trimIndent(),
+            )
+        assertEquals(2, triggerDefinitions.size)
+        val triggerText = triggerDefinitions.joinToString("\n").lowercase()
+        assertTrue(triggerText.contains("before insert"))
+        assertTrue(triggerText.contains("audit_logs"))
+        assertTrue(triggerText.contains("target_type = 'order'"))
+        assertTrue(triggerText.contains("event_outbox"))
+        assertTrue(triggerText.contains("brokerage.mock-order-submitted.v1"))
+        assertTrue(triggerText.contains("brokerage.mock-order-cancel-requested.v1"))
+
+        val createOrderDefinition =
+            requireNotNull(
+                jdbcTemplate.queryForObject(
+                    "select pg_get_functiondef('create_mock_order(jsonb,text)'::regprocedure)",
+                    String::class.java,
+                ),
+            )
+        assertTrue(createOrderDefinition.contains("clock_timestamp()"))
+        assertFalse(createOrderDefinition.contains("valid_until > requested_created_at"))
     }
 
     @Test
@@ -2112,7 +2245,11 @@ class FlywayMigrationIntegrationTest(
                 .configure()
                 .dataSource(url, postgres.username, postgres.password)
                 .locations("classpath:db/migration")
-                .javaMigrations(s21ActorTrustMigration())
+                .placeholders(
+                    mapOf(
+                        "brokerageDbCapabilityTokenSha256" to TEST_BROKERAGE_DB_CAPABILITY_TOKEN_SHA256,
+                    ),
+                ).javaMigrations(s21ActorTrustMigration())
         target?.let(configuration::target)
         return configuration.load()
     }

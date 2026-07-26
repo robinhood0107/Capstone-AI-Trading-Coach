@@ -6,6 +6,7 @@ import java.time.Instant
 data class BrokerageActor(
     val userId: String,
     val role: String,
+    val securityVersion: Long,
     val requestId: String,
 )
 
@@ -101,6 +102,7 @@ data class BrokerageOrderWriteRequest(
     val orderId: String,
     val projection: MockOrderProjection,
     val projectionCanonicalJson: String,
+    val observedKillSwitchGeneration: Long,
     val createdAt: Instant,
 )
 

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+import hmac
 import os
 import re
 import stat
@@ -36,6 +38,8 @@ REQUIRED_NAMES: Final[tuple[str, ...]] = (
     "PRINCIPLE_CURSOR_HMAC_KEY",
     "DECISION_IDEMPOTENCY_SCOPE_HMAC_KEY",
     "BROKERAGE_IDEMPOTENCY_SCOPE_HMAC_KEY",
+    "BROKERAGE_DB_CAPABILITY_TOKEN",
+    "BROKERAGE_DB_CAPABILITY_TOKEN_SHA256",
     "DEMO_CREDENTIAL_SEPARATION_KEY",
     "DEMO_USER_CREDENTIAL_BUNDLE",
     "DEMO_ADMIN_CREDENTIAL_BUNDLE",
@@ -44,6 +48,7 @@ REQUIRED_NAMES: Final[tuple[str, ...]] = (
 _ASSIGNMENT = re.compile(r"^([A-Z][A-Z0-9_]*)='([^']*)'$")
 _BASE64URL_SECRET = re.compile(r"^[A-Za-z0-9_-]{43,128}$")
 _BASE64URL_32 = re.compile(r"^[A-Za-z0-9_-]{43}$")
+_SHA256_HEX = re.compile(r"^[0-9a-f]{64}$")
 _SAFE_LABEL = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$")
 _BUNDLE = re.compile(
     r"^s21-v1:(usr_demo_user|usr_demo_admin):"
@@ -161,12 +166,25 @@ def _require_secret_shapes(values: dict[str, str]) -> None:
         "PRINCIPLE_CURSOR_HMAC_KEY",
         "DECISION_IDEMPOTENCY_SCOPE_HMAC_KEY",
         "BROKERAGE_IDEMPOTENCY_SCOPE_HMAC_KEY",
+        "BROKERAGE_DB_CAPABILITY_TOKEN",
     )
     for name in general_secret_names:
         if _BASE64URL_SECRET.fullmatch(values[name]) is None:
             raise OpenApiEnvironmentError(f"{name} must use a bounded Base64url-safe value.")
     if len({values[name] for name in general_secret_names}) != len(general_secret_names):
         raise OpenApiEnvironmentError("OpenAPI fixture secrets must not reuse one value.")
+    capability_digest = values["BROKERAGE_DB_CAPABILITY_TOKEN_SHA256"]
+    if _SHA256_HEX.fullmatch(capability_digest) is None:
+        raise OpenApiEnvironmentError(
+            "BROKERAGE_DB_CAPABILITY_TOKEN_SHA256 must use lowercase SHA-256 hex."
+        )
+    expected_capability_digest = hashlib.sha256(
+        values["BROKERAGE_DB_CAPABILITY_TOKEN"].encode("utf-8")
+    ).hexdigest()
+    if not hmac.compare_digest(capability_digest, expected_capability_digest):
+        raise OpenApiEnvironmentError(
+            "Brokerage database capability token and digest must match."
+        )
 
     # Spring과 Python gRPC fixture는 shared-secret 계약을 검증하기 위해 같은 값을 쓰되,
     # 그 외 DB/JWT/HMAC secret과는 목적 분리를 유지한다.

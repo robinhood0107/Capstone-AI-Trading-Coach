@@ -46,7 +46,12 @@ class InfrastructureSecurityIntegrationTest {
             .configure()
             .dataSource(postgres.jdbcUrl, MIGRATION_USER, migrationPassword)
             .locations("classpath:db/migration")
-            .javaMigrations(s21ActorTrustMigration())
+            .placeholders(
+                mapOf(
+                    "brokerageDbCapabilityTokenSha256" to
+                        SpringApiIntegrationTestBase.TEST_BROKERAGE_DB_CAPABILITY_TOKEN_SHA256,
+                ),
+            ).javaMigrations(s21ActorTrustMigration())
             .load()
             .migrate()
 
@@ -127,19 +132,16 @@ class InfrastructureSecurityIntegrationTest {
                 "read_kill_switch_audit_projection()",
                 "read_decision_usability()",
                 "invalidate_unused_decisions_for_kill_switch(bigint,timestamp with time zone,text)",
-                "read_mock_order_decision()",
-                "find_mock_order_idempotency_result(text,text,timestamp with time zone)",
-                "read_mock_order_owner_projection()",
+                "read_mock_order_decision(text,text,text)",
+                "find_mock_order_idempotency_result(text,text,timestamp with time zone,text)",
+                "read_mock_order_owner_projection(text,text,text)",
+                "create_mock_order(jsonb,text)",
+                "request_mock_order_cancel(jsonb,text)",
             ).forEach { function ->
                 assertTrue(hasFunctionPrivilege(connection, "decision_app", function))
             }
-            assertTrue(hasTablePrivilege(connection, "decision_app", "orders", "INSERT"))
-            assertTrue(hasTablePrivilege(connection, "decision_app", "orders", "SELECT"))
-            assertTrue(hasTablePrivilege(connection, "decision_app", "order_events", "INSERT"))
-            assertTrue(hasTablePrivilege(connection, "decision_app", "order_events", "SELECT"))
-            assertTrue(hasTablePrivilege(connection, "decision_app", "mock_order_owner_projection", "SELECT"))
-            listOf("orders", "order_events").forEach { table ->
-                listOf("UPDATE", "DELETE", "TRUNCATE").forEach { privilege ->
+            listOf("orders", "order_events", "mock_order_owner_projection", "brokerage_db_capability_keys").forEach { table ->
+                listOf("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE").forEach { privilege ->
                     assertFalse(hasTablePrivilege(connection, "decision_app", table, privilege))
                 }
             }
@@ -224,6 +226,36 @@ class InfrastructureSecurityIntegrationTest {
                     "truncate table principles",
                     "truncate table principle_versions",
                     "truncate table audit_logs",
+                    "insert into audit_logs (" +
+                        "audit_log_id, user_id, actor_role, action, target_type, " +
+                        "target_id, request_id, payload_json, created_at" +
+                        ") values (" +
+                        "'aud-runtime-forged-order', 'usr_demo_user', 'USER', " +
+                        "'MOCK_ORDER_SUBMITTED', 'ORDER', 'ord_mock_0000000000000000000000000000f001', " +
+                        "'req-runtime-forged-order', " +
+                        "jsonb_build_object(" +
+                        "'orderId', 'ord_mock_0000000000000000000000000000f001', " +
+                        "'decisionId', 'dec-runtime-forged-order', " +
+                        "'evaluationId', 'eval-runtime-forged-order', " +
+                        "'brokerageMode', 'KIS_MOCK', " +
+                        "'status', 'SUBMITTED', " +
+                        "'idempotencyScopeHash', repeat('1', 64)" +
+                        "), now())",
+                    "insert into event_outbox (" +
+                        "event_id, event_type, aggregate_type, aggregate_id, partition_key, " +
+                        "payload_json, schema_version, status, retry_count, created_at, updated_at" +
+                        ") values (" +
+                        "'evt-runtime-forged-order', 'brokerage.mock-order-submitted.v1', " +
+                        "'ORDER', 'ord_mock_0000000000000000000000000000f001', " +
+                        "'ord_mock_0000000000000000000000000000f001', " +
+                        "jsonb_build_object(" +
+                        "'orderId', 'ord_mock_0000000000000000000000000000f001', " +
+                        "'decisionId', 'dec-runtime-forged-order', " +
+                        "'evaluationId', 'eval-runtime-forged-order', " +
+                        "'brokerageMode', 'KIS_MOCK', " +
+                        "'status', 'SUBMITTED', " +
+                        "'idempotencyScopeHash', repeat('1', 64)" +
+                        "), '1.0.0', 'PENDING', 0, now(), now())",
                     "select * from decisions limit 0",
                     "update decisions set outcome = outcome where false",
                     "delete from decisions where false",
@@ -237,6 +269,12 @@ class InfrastructureSecurityIntegrationTest {
                     "insert into decision_invalidations (" +
                         "invalidation_id,decision_id,evaluation_id,owner_user_id,reason_class,invalidated_at" +
                         ") values ('denied','denied','denied','usr_demo_user','KILL_SWITCH_ACTIVATED',now())",
+                    "select * from orders",
+                    "insert into orders default values",
+                    "select * from order_events",
+                    "insert into order_events default values",
+                    "select * from mock_order_owner_projection",
+                    "select * from brokerage_db_capability_keys",
                 ).forEach { sql ->
                     val mutationFailure = assertThrows<SQLException> { statement.execute(sql) }
                     assertTrue(mutationFailure.sqlState == "42501")

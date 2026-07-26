@@ -59,9 +59,9 @@ class FlywayMigrationIntegrationTest(
     @Autowired private val riskSnapshotPort: RiskSnapshotPort,
 ) : SpringApiIntegrationTestBase() {
     @Test
-    fun `clean database applies V1 through V11 migrations and creates required objects`() {
+    fun `clean database applies V1 through V12 migrations and creates required objects`() {
         val versions = queryStrings("select version from flyway_schema_history where success order by installed_rank")
-        assertEquals((1..11).map(Int::toString), versions)
+        assertEquals((1..12).map(Int::toString), versions)
 
         val requiredTables =
             listOf(
@@ -101,6 +101,7 @@ class FlywayMigrationIntegrationTest(
                 "risk_kill_switch",
                 "risk_kill_switch_transitions",
                 "decision_invalidations",
+                "brokerage_db_capability_keys",
                 "mock_order_owner_projection",
                 "kill_switch_user_projection",
                 "latest_market_quote_observations",
@@ -165,18 +166,18 @@ class FlywayMigrationIntegrationTest(
     }
 
     @Test
-    fun `decision application role receives exact V11 append only privileges`() {
+    fun `decision application role receives only V12 brokerage capabilities`() {
         assertTrue(hasTablePrivilege("decision_app", "risk_kill_switch", "SELECT"))
         assertFalse(hasTablePrivilege("decision_app", "risk_kill_switch", "INSERT"))
         assertFalse(hasTablePrivilege("decision_app", "risk_kill_switch", "DELETE"))
         assertFalse(hasTablePrivilege("decision_app", "risk_kill_switch", "TRUNCATE"))
         assertTrue(hasTablePrivilege("decision_app", "risk_kill_switch_transitions", "INSERT"))
         assertTrue(hasTablePrivilege("decision_app", "kill_switch_user_projection", "SELECT"))
-        assertTrue(hasTablePrivilege("decision_app", "orders", "INSERT"))
-        assertTrue(hasTablePrivilege("decision_app", "orders", "SELECT"))
-        assertTrue(hasTablePrivilege("decision_app", "order_events", "INSERT"))
-        assertTrue(hasTablePrivilege("decision_app", "order_events", "SELECT"))
-        assertTrue(hasTablePrivilege("decision_app", "mock_order_owner_projection", "SELECT"))
+        listOf("orders", "order_events", "mock_order_owner_projection", "brokerage_db_capability_keys").forEach { table ->
+            listOf("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE").forEach { privilege ->
+                assertFalse(hasTablePrivilege("decision_app", table, privilege), "unexpected $privilege on $table")
+            }
+        }
         listOf("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE").forEach { privilege ->
             assertFalse(
                 hasTablePrivilege("decision_app", "decision_invalidations", privilege),
@@ -199,12 +200,23 @@ class FlywayMigrationIntegrationTest(
             "read_kill_switch_audit_projection()",
             "read_decision_usability()",
             "invalidate_unused_decisions_for_kill_switch(bigint,timestamp with time zone,text)",
-            "read_mock_order_decision()",
-            "find_mock_order_idempotency_result(text,text,timestamp with time zone)",
-            "read_mock_order_owner_projection()",
+            "read_mock_order_decision(text,text,text)",
+            "find_mock_order_idempotency_result(text,text,timestamp with time zone,text)",
+            "read_mock_order_owner_projection(text,text,text)",
+            "create_mock_order(jsonb,text)",
+            "request_mock_order_cancel(jsonb,text)",
         ).forEach { function ->
             assertTrue(hasFunctionPrivilege("decision_app", function), "missing EXECUTE on $function")
         }
+        assertFalse(
+            hasFunctionPrivilege("decision_app", "assert_brokerage_database_capability(text)"),
+            "runtime role must not call the private capability verifier directly",
+        )
+        assertDecisionAppPermissionDenied("select * from orders")
+        assertDecisionAppPermissionDenied("insert into orders default values")
+        assertDecisionAppPermissionDenied("select * from order_events")
+        assertDecisionAppPermissionDenied("insert into order_events default values")
+        assertDecisionAppPermissionDenied("select * from mock_order_owner_projection")
     }
 
     @Test
@@ -233,6 +245,48 @@ class FlywayMigrationIntegrationTest(
                 )
             }
         }
+    }
+
+    @Test
+    fun `V12 order events use monotonic sequence and coupled type status constraints`() {
+        assertEquals(
+            listOf("event_seq"),
+            queryStrings(
+                """
+                select column_name
+                from information_schema.columns
+                where table_schema = 'public'
+                  and table_name = 'order_events'
+                  and column_name = 'event_seq'
+                  and is_nullable = 'NO'
+                """.trimIndent(),
+            ),
+        )
+        assertTrue(indexExists("order_events_order_sequence_unique"))
+        val pairConstraint =
+            requireNotNull(
+                jdbcTemplate.queryForObject(
+                    """
+                    select pg_get_constraintdef(oid)
+                    from pg_constraint
+                    where conname = 'order_events_type_status_pair_check'
+                    """.trimIndent(),
+                    String::class.java,
+                ),
+            )
+        assertTrue(pairConstraint.contains("MOCK_ORDER_SUBMITTED"))
+        assertTrue(pairConstraint.contains("SUBMITTED"))
+        assertTrue(pairConstraint.contains("MOCK_ORDER_CANCEL_REQUESTED"))
+        assertTrue(pairConstraint.contains("CANCEL_REQUESTED"))
+        val projectionDefinition =
+            requireNotNull(
+                jdbcTemplate.queryForObject(
+                    "select pg_get_functiondef('read_mock_order_owner_projection(text,text,text)'::regprocedure)",
+                    String::class.java,
+                ),
+            )
+        assertTrue(projectionDefinition.contains("event.event_seq DESC"))
+        assertFalse(projectionDefinition.contains("current_setting('app.actor_user_id'"))
     }
 
     @Test
@@ -2112,6 +2166,11 @@ class FlywayMigrationIntegrationTest(
                 .configure()
                 .dataSource(url, postgres.username, postgres.password)
                 .locations("classpath:db/migration")
+                .placeholders(
+                    mapOf(
+                        "brokerageDbCapabilityTokenSha256" to TEST_BROKERAGE_DB_CAPABILITY_TOKEN_SHA256,
+                    ),
+                )
                 .javaMigrations(s21ActorTrustMigration())
         target?.let(configuration::target)
         return configuration.load()

@@ -507,6 +507,12 @@ class PrincipleContractMigrationIntegrationTest(
                 .configure()
                 .dataSource(url, postgres.username, postgres.password)
                 .locations("classpath:db/migration")
+                .placeholders(
+                    mapOf(
+                        "brokerageDbCapabilityTokenSha256" to
+                            SpringApiIntegrationTestBase.TEST_BROKERAGE_DB_CAPABILITY_TOKEN_SHA256,
+                    ),
+                )
                 .javaMigrations(s21ActorTrustMigration())
         target?.let(configuration::target)
         return configuration.load()

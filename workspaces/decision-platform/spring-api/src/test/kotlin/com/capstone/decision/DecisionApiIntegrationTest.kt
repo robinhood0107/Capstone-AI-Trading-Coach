@@ -685,6 +685,16 @@ class DecisionApiIntegrationTest(
         assertTrue(json(missing).at("/warnings").size() > 0)
 
         insertCompleteStoredSources(orderCount = 0)
+        jdbcTemplate.update(
+            """
+            update market_quote_observations
+            set observed_at = ?::timestamptz,
+                received_at = ?::timestamptz
+            where observation_id = 'quote-decision-complete'
+            """.trimIndent(),
+            EVALUATION_AT.minusSeconds(301),
+            EVALUATION_AT.minusSeconds(301),
+        )
         insertOtherOwnerPortfolioSources()
         val available =
             mockMvc
@@ -704,6 +714,7 @@ class DecisionApiIntegrationTest(
                 .compareTo(BigDecimal("0.20")),
         )
         assertTrue(json(available).at("/data/var95").isNull)
+        assertFalse(json(available).at("/data/dataFreshness/priceFresh").booleanValue())
         assertFalse(json(available).at("/data/killSwitchActive").booleanValue())
         assertEquals(timerBefore + 2L, meterRegistry.find("risk.portfolio.query").timer()?.count())
     }

@@ -123,6 +123,7 @@ class InfrastructureSecurityIntegrationTest {
             }
             listOf(
                 "read_kill_switch_gate()",
+                "revalidate_kill_switch_admin(text,bigint)",
                 "read_kill_switch_audit_projection()",
                 "read_decision_usability()",
                 "invalidate_unused_decisions_for_kill_switch(bigint,timestamp with time zone,text)",

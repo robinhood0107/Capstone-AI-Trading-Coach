@@ -250,7 +250,8 @@ class DecisionApiIntegrationTest(
             changeKillSwitch(
                 token = adminToken,
                 idempotencyHeader = "risk-kill-admin-resume-1",
-                requestId = "req-risk-kill-admin-resume",
+                // 추적 ID는 멱등성 키가 아니므로 독립 전이가 같은 값을 재사용해도 상태 변경을 막지 않는다.
+                requestId = "req-risk-kill-activate",
                 active = false,
                 reason = null,
             )

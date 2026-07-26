@@ -21,7 +21,6 @@ import com.capstone.decision.domain.brokerage.PaperFillRequest
 import com.capstone.decision.domain.brokerage.TickSizePolicy
 import com.capstone.decision.domain.brokerage.TickValidation
 import com.capstone.decision.domain.risk.OrderIntentSnapshot
-import com.capstone.decision.infrastructure.brokerage.PaperBrokerageProperties
 import org.springframework.stereotype.Service
 import tools.jackson.databind.ObjectMapper
 import java.time.Clock
@@ -39,7 +38,7 @@ class PaperBrokerageService(
     private val claimPort: PaperIdempotencyClaimPort,
     private val projectionFactory: PaperProjectionFactory,
     private val observability: PaperBrokerageObservability,
-    private val properties: PaperBrokerageProperties,
+    private val properties: PaperExecutionPolicy,
     private val killSwitchGuard: KillSwitchGuard,
     private val objectMapper: ObjectMapper,
     private val clock: Clock,

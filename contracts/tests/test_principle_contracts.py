@@ -212,6 +212,7 @@ class OpenApiEnvironmentParserTest(unittest.TestCase):
             "DECISION_GRPC_SHARED_SECRET",
             "PYTHON_GRPC_SHARED_SECRET",
             "DECISION_IDEMPOTENCY_SCOPE_HMAC_KEY",
+            "BROKERAGE_IDEMPOTENCY_SCOPE_HMAC_KEY",
         ):
             self.assertIn(name, parsed)
         self.assertEqual(parsed["DECISION_GRPC_SHARED_SECRET"], parsed["PYTHON_GRPC_SHARED_SECRET"])
@@ -306,6 +307,7 @@ class OpenApiEnvironmentParserTest(unittest.TestCase):
             "LOGIN_SCOPE_HMAC_KEY": "G" * 43,
             "PRINCIPLE_CURSOR_HMAC_KEY": "H" * 43,
             "DECISION_IDEMPOTENCY_SCOPE_HMAC_KEY": "Q" * 43,
+            "BROKERAGE_IDEMPOTENCY_SCOPE_HMAC_KEY": "T" * 43,
             "DEMO_CREDENTIAL_SEPARATION_KEY": "I" * 43,
             "DEMO_USER_CREDENTIAL_BUNDLE": (
                 f"s21-v1:usr_demo_user:{'J' * 43}:{bcrypt_user}:{'K' * 43}"

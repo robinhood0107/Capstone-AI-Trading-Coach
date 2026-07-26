@@ -14,6 +14,7 @@ enum class ErrorCode(
     NOT_FOUND(HttpStatus.NOT_FOUND, "Resource was not found."),
     CONFLICT(HttpStatus.CONFLICT, "Resource conflict."),
     VERSION_EXHAUSTED(HttpStatus.CONFLICT, "Principle version limit was reached."),
+    DECISION_EXPIRED(HttpStatus.CONFLICT, "Decision validity window has expired."),
     IDEMPOTENCY_CONFLICT(HttpStatus.CONFLICT, "Idempotency key was reused with a different payload."),
     IDEMPOTENCY_IN_PROGRESS(HttpStatus.CONFLICT, "A request with this idempotency key is already in progress."),
     PAYLOAD_TOO_LARGE(HttpStatusCode.valueOf(413), "Request payload exceeded the configured safety limit."),

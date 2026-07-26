@@ -359,6 +359,29 @@ BEGIN
 END
 $risk_kill_switch_privileges$;
 
+DO $brokerage_mock_order_privileges$
+BEGIN
+    IF to_regclass('public.mock_order_owner_projection') IS NOT NULL THEN
+        -- 기존 volume bootstrap 재적용 뒤에도 S3.1 mock order ledger 최소권한을 복원한다.
+        REVOKE ALL PRIVILEGES ON TABLE
+            orders,
+            order_events,
+            mock_order_owner_projection
+        FROM decision_app;
+        GRANT INSERT, SELECT ON TABLE orders TO decision_app;
+        GRANT INSERT, SELECT ON TABLE order_events TO decision_app;
+        GRANT SELECT ON TABLE mock_order_owner_projection TO decision_app;
+        GRANT EXECUTE ON FUNCTION
+            read_mock_order_decision(),
+            find_mock_order_idempotency_result(text, text, timestamptz),
+            read_mock_order_owner_projection()
+        TO decision_app;
+        REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_app;
+        REVOKE CREATE ON SCHEMA public FROM decision_app;
+    END IF;
+END
+$brokerage_mock_order_privileges$;
+
 DO $decision_source_writer_privileges$
 BEGIN
     IF to_regclass('public.instrument_catalog_observations') IS NOT NULL THEN

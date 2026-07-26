@@ -1515,6 +1515,19 @@ artifact 다운로드 URL은 공개 링크가 아니며 다른 API와 동일한 
 
 KIS Mock 중심으로 구현하고, KIS Live는 고급해제/3단계 동의/재동의 조건을 충족할 때만 확장한다. S1.1의 KIS 작업은 Brokerage API가 아니라 MarketDataService 내부 구현이며, 주문·정정·취소·잔고 변경을 만들지 않는다. KIS 전체 API 목록과 모의 지원 경계는 자동 생성 부록 `KIS_API_카탈로그.md`를 참조한다.
 
+> Implementation 상태(2026-07-26): S3.1은 `POST /api/v1/brokerage/mock/orders`,
+> `GET /api/v1/brokerage/orders/{orderId}`, `POST /api/v1/brokerage/orders/{orderId}/cancel`,
+> `GET /api/v1/brokerage/mock/accounts/{accountId}/balances`,
+> `GET /api/v1/brokerage/mock/accounts/{accountId}/buyable`을 runtime으로 구현한다. 주문 제출은
+> S2.3의 저장 Decision과 S2.4 Kill Switch를 DB write path에서 다시 검증하고 V11 mock order
+> ledger에 sanitized projection만 저장한다. 요청 body는 `decisionId`, exact 8-field
+> `orderIntent`, `userAcknowledgement.warningsAccepted`만 허용하며 body-supplied
+> account/provider/actor 필드는 `VALIDATION_ERROR`다. raw idempotency key, raw 계좌번호,
+> provider raw payload는 저장하지 않고, KIS Mock adapter와 Brokerage gRPC boundary는
+> injected/fake transport 테스트로만 검증한다. S3.1 provider/live account/broker/order physical
+> call은 0건이다. verified KRX tick-table context가 없는 LIMIT 주문은 `BROKERAGE_UNAVAILABLE`로
+> fail-closed한다.
+
 Live 경계는 다음과 같이 분리한다.
 
 | 구분 | 의미 | 기본 상태 |
@@ -1530,6 +1543,10 @@ provider app key/secret과 계좌 allowlist는 서버 배포 운영자만 주입
 ### 10.1 Mock 주문 제출
 
 `POST /api/v1/brokerage/mock/orders`
+
+S3.1 구현 route다. `X-Idempotency-Key`는 필수이고 원문은 ledger에 저장하지 않는다.
+서버는 인증 principal에서 owner와 opaque account scope를 만들며, 요청 body에 포함된
+account/provider/actor 계열 필드는 unknown field로 거부한다.
 
 요청:
 
@@ -1560,7 +1577,8 @@ provider app key/secret과 계좌 allowlist는 서버 배포 운영자만 주입
 {
   "success": true,
   "data": {
-    "orderId": "ord_mock_001",
+    "orderId": "ord_mock_0123456789abcdef0123456789abcdef",
+    "accountId": "acct_cccccccccccccccccccccccccccccccc",
     "brokerageMode": "KIS_MOCK",
     "status": "SUBMITTED",
     "submittedAt": "2026-06-23T10:10:01+09:00"
@@ -1573,10 +1591,30 @@ provider app key/secret과 계좌 allowlist는 서버 배포 운영자만 주입
 1. `decisionId`가 만료(`validUntil` 초과)되었으면 `DECISION_EXPIRED`(409)로 거부한다.
 2. 이미 주문에 사용된 `decisionId`는 재사용할 수 없다(1 decision = 1 order).
 3. `X-Idempotency-Key`가 동일한 재요청은 저장된 원 응답을 반환한다(2.5 시맨틱).
+4. body-supplied `accountId`, provider, actor, raw receipt 필드는 `VALIDATION_ERROR`(400)다.
+5. 활성 Kill Switch 또는 Decision invalidation은 `RISK_BLOCKED`(422)다.
+6. LIMIT 주문은 verified tick-table context가 없으면 `BROKERAGE_UNAVAILABLE`(503)로 닫는다.
 
 ### 10.2 주문 상태 조회
 
 `GET /api/v1/brokerage/orders/{orderId}`
+
+S3.1 구현 route다. 응답은 owner-scoped sanitized projection이며 raw 계좌번호, raw provider
+payload, raw idempotency key를 포함하지 않는다.
+
+```json
+{
+  "success": true,
+  "data": {
+    "orderId": "ord_mock_0123456789abcdef0123456789abcdef",
+    "accountId": "acct_cccccccccccccccccccccccccccccccc",
+    "decisionId": "dec_001",
+    "brokerageMode": "KIS_MOCK",
+    "status": "SUBMITTED",
+    "submittedAt": "2026-06-23T10:10:01+09:00"
+  }
+}
+```
 
 주문 상태 머신:
 
@@ -1592,13 +1630,55 @@ provider app key/secret과 계좌 allowlist는 서버 배포 운영자만 주입
 
 `POST /api/v1/brokerage/orders/{orderId}/cancel`
 
+S3.1 구현 route다. body는 비어 있거나 `{}`만 허용하고 `X-Idempotency-Key`는 필수다. S3.1의
+취소는 provider 호출을 만들지 않고 owner-scoped order row에 append-only
+`MOCK_ORDER_CANCEL_REQUESTED` event와 sanitized outbox/audit만 기록한다. `SUBMITTED`,
+`ACCEPTED`, `PARTIALLY_FILLED`만 취소 요청 가능하며, 이미 `CANCEL_REQUESTED`인 주문을 다른
+idempotency key로 다시 취소하면 `CONFLICT`다.
+
+```json
+{
+  "success": true,
+  "data": {
+    "orderId": "ord_mock_0123456789abcdef0123456789abcdef",
+    "accountId": "acct_cccccccccccccccccccccccccccccccc",
+    "decisionId": "dec_001",
+    "brokerageMode": "KIS_MOCK",
+    "status": "CANCEL_REQUESTED",
+    "submittedAt": "2026-06-23T10:10:01+09:00"
+  }
+}
+```
+
 ### 10.4 잔고 조회
 
 `GET /api/v1/brokerage/mock/accounts/{accountId}/balances`
 
+S3.1 구현 route다. raw 계좌번호를 받지 않고 S2.3 stored-source의 `KIS_MOCK` balance/position
+projection 중 opaque `accountId`와 owner scope가 맞는 최신 immutable revision만 공개한다. 같은
+opaque prefix가 여러 account scope로 매칭되거나 source가 incomplete하면 `BROKERAGE_UNAVAILABLE`,
+owner가 다르거나 row가 없으면 provider 값을 꾸미지 않고 404로 닫는다.
+
+```json
+{
+  "success": true,
+  "data": {
+    "accountId": "acct_cccccccccccccccccccccccccccccccc",
+    "brokerageMode": "KIS_MOCK",
+    "asOf": "2026-06-23T10:10:01+09:00",
+    "cashKrw": 10000000,
+    "totalEquityKrw": 10000000,
+    "positions": []
+  }
+}
+```
+
 ### 10.5 Live 활성화 상태 조회
 
 `GET /api/v1/brokerage/live-readiness`
+
+S3.1에서는 runtime route를 만들지 않는다. 아래 shape는 Live trading gate를 켜는 API가 아니라
+후속 read-only readiness 계약 초안이다.
 
 응답:
 
@@ -1644,11 +1724,29 @@ provider app key/secret과 계좌 allowlist는 서버 배포 운영자만 주입
 
 KIS 주식일별주문체결조회(모의 `VTTC0081R`, 3개월 이전 `VTSC9215R`)를 매핑한다. 대시보드 계좌 뷰의 체결 목록 소스이며 S3에서 구현한다.
 
-### 10.8 매수가능 조회 (S3 계약)
+### 10.8 매수가능 조회
 
 `GET /api/v1/brokerage/mock/accounts/{accountId}/buyable?symbol=005930&price=70000`
 
-KIS 매수가능조회(모의 `VTTC8908R`)를 매핑한다. 주문 제출 전 상한 검증과 대시보드 주문 패널의 입력 검증에 사용한다.
+S3.1 구현 route다. provider 매수가능조회 호출을 만들지 않고 stored balance cash와 요청 price로
+정수 수량·금액을 계산한다. query는 `symbol`, `price`만 허용하고, price가 양의 정수가 아니면
+`VALIDATION_ERROR`다. 후속 S3에서 KIS 매수가능조회(모의 `VTTC8908R`)와 reconciliation을 붙일 수
+있지만 이 변경에서는 물리 호출이 0건이다.
+
+```json
+{
+  "success": true,
+  "data": {
+    "accountId": "acct_cccccccccccccccccccccccccccccccc",
+    "brokerageMode": "KIS_MOCK",
+    "symbol": "005930",
+    "price": 70000,
+    "buyableQuantity": 142,
+    "buyableAmountKrw": 9940000,
+    "asOf": "2026-06-23T10:10:01+09:00"
+  }
+}
+```
 
 ### 10.9 계좌 지표 조회 (S3 계약)
 
@@ -2581,6 +2679,7 @@ service SourceRegistryService {
 | S2.1 | Principle은 DB 재검증된 JWT `sub` owner scope, SQL CAS, immutable version/audit와 strict DTO를 사용한다. `evidenceRequirement`를 새 snapshot에 명시하고 legacy row는 exact catalog tuple 기반 read-time inference만 하며 과거 row를 rewrite하지 않는다 |
 | S2.2 offline | public 8 + system 6, threshold 12/readiness 1/N/A 1과 `BLOCK>HOLD>WARN>ALLOW`를 pure evaluator/fixture로 검증한다. production Decision route/persistence와 provider/source adapter는 열지 않으며 provider 호출은 0이다. public code와 internal cause를 분리하고 V1 bounds/hash를 fail-fast한다 |
 | S2.3 runtime | S2.2 내부 read adapter의 `principle_id + user_id + ACTIVE + current immutable version` 한 조회를 runtime에 연결해 ACTIVE Principle을 pin하고 missing/cross-owner/inactive를 동일 404로 숨긴다. Decision/trace/artifact/audit/outbox/idempotency를 원자 저장하며 expected source unavailable은 HTTP 200 HOLD로 반환한다. stored disclosure는 shared-secret loopback gRPC와 `decision_disclosure_reader` projection SELECT만 사용한다. OpenAPI는 승인된 3개 path와 5개 `S23*` component만 허용한다 |
+| S3.1 | `POST /api/v1/brokerage/mock/orders`, owner-scoped `GET /api/v1/brokerage/orders/{orderId}`, `POST /api/v1/brokerage/orders/{orderId}/cancel`, stored balance/buyable 조회를 구현한다. S2.3 Decision과 S2.4 Kill Switch를 DB write path에서 재검증하고 V11 ledger에 sanitized projection과 append-only order event만 저장한다. raw idempotency/account/provider payload는 저장하지 않으며 provider/live account/broker/order physical call은 0건이다. LIMIT은 verified tick context가 없으면 `BROKERAGE_UNAVAILABLE`이다 |
 | S3 | accountId는 opaque+owner-scoped다. order body의 price/quantity/position/risk-reduction 주장은 server snapshot으로 재검증한다. Live는 deploy immutable OFF, operator account allowlist, user consent, Kill Switch/reconciliation을 모두 요구하며 공개 API로 gate를 변경할 수 없다 |
 | S4 | RAG source/prompt는 untrusted data이며 내부 지시·URL·tool 호출을 실행하지 않는다. source ingest/register/reindex는 ADMIN 전용이며 scheme/origin/MIME/size/redirect/SSRF gate를 적용한다. answer/cache/feedback는 owner scope·TTL·output encoding을 적용한다. RAG 실행 주체는 provider token cache나 brokerage secret에 접근하지 못한다. model은 exact revision/weight hash/license를 기록하고 remote code/untrusted pickle을 금지한다 |
 | S5 | artifact endpoint는 trusted producer, owner, manifest hash/schema, 고정 root, file count/size/row cap을 먼저 검증한다. arbitrary path/symlink/archive와 untrusted pickle/joblib/code-loading model은 거부한다. 다운로드는 owner-scoped Bearer 인증과 고정 allowlisted 파일명·MIME만 허용하고 `Content-Disposition: attachment`, `nosniff`, `no-store`를 적용한다. Markdown/CSV/JSON을 임의 inline HTML로 실행하지 않는다 |
@@ -2605,7 +2704,7 @@ API/adapter/parser/storage 변경 커밋은 기능 단위로 분리한다. 테�
 | RAG | 출처 있는 답변, 출처 부족 답변 제한, 피드백 저장 |
 | Signal | 규칙 baseline/LSTM/LightGBM/HMM 결합 신호와 producer/sourceWorkspace 조회 |
 | Backtest | Baseline/Guide/Strict 결과 비교 |
-| Brokerage Mock | 주문/취소/잔고/체결 이벤트 |
+| S3.1 Brokerage Mock | exact body/account reject, decision one-use, expiry, idempotency replay/conflict, Kill Switch invalidation, RLS owner projection, cancel replay/conflict, stored balance/buyable owner scope, LIMIT tick-context fail-closed, injected fake transport 0 provider calls |
 | KIS REST quota | mock >1/s·live >18/s 설정 거부, live 120ms/mock 1,000ms no-burst, 두 client의 같은 opaque scope 공유, Redis 장애 outbound 0건, physical retry마다 슬롯 재예약 |
 | KIS OAuth quota | mock/live 동시 cache miss에서도 `/tokenP` physical send는 deployment-global 1/s 슬롯을 공유하고, token cache/singleflight는 mode별 scope로 분리해 lock 후 재확인 |
 | KIS retry | routing 오류 GET 1회 다음 슬롯 재호출, `EGW00201`/429 재시도 0회, 주문성 호출 자동 재시도 0회 |

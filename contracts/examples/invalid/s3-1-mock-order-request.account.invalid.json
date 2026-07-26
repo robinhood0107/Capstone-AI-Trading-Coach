@@ -1,0 +1,17 @@
+{
+  "accountId": "raw-account-should-not-be-accepted",
+  "decisionId": "dec_00112233445566778899aabbccddeeff",
+  "orderIntent": {
+    "estimatedAmount": 140000,
+    "estimatedPrice": 70000,
+    "orderType": "MARKET",
+    "quantity": 2,
+    "side": "BUY",
+    "strategyId": "cash-equity-v1",
+    "symbol": "005930",
+    "timeframe": "1d"
+  },
+  "userAcknowledgement": {
+    "warningsAccepted": true
+  }
+}

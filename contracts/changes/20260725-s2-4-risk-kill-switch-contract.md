@@ -104,6 +104,24 @@ Redis 또는 metric/log를 호출하지 않는다. metric/log는 commit이 끝�
 ADMIN 재검증 뒤 bounded definer projection으로만 읽는다. collector, worker,
 source writer와 disclosure reader에는 새 권한을 주지 않는다.
 
+### 리뷰 후 고정한 구현 불변식
+
+- Decision 저장은 Kill Switch singleton을 shared lock으로 다시 확인한다. 따라서
+  진행 중인 Decision이 먼저 commit된 뒤 활성화 transaction에서 무효화되거나,
+  활성화가 먼저 commit되어 Decision 저장이 `RISK_BLOCKED`로 끝나며 활성화와
+  저장 사이의 사용 가능한 Decision 누락 구간을 만들지 않는다.
+- 전이 시각은 singleton lock을 얻은 뒤 DB 시각으로 계산하고 직전
+  `changed_at`보다 작아지지 않게 저장한다. request ID는 correlation 값일 뿐
+  전역 유일 식별자가 아니므로 nullable이고 재사용해도 전이를 막지 않는다.
+- `priceFresh`는 잔고 revision을 대용하지 않고
+  `latest_market_quote_observations`의 실제 `observedAt`/`freshUntil`만 사용한다.
+- 모든 금융 write의 멱등성 키는 공통 정책의 16~128자 허용 alphabet을 따르고,
+  배포 설정은 이 상한을 더 낮출 수만 있다.
+- Decision 무효화 조회는 `(valid_until, decision_id)` 인덱스로 전역 scan을
+  제한한다. JSON Schema는 active/reason 조합, 정수 원화 값과 비율 범위를
+  fail-closed하며 OpenAPI 오류 응답은 `success=false`, `data=null`인 전용
+  envelope만 허용한다.
+
 ## EN
 
 ### Purpose and boundary
@@ -135,6 +153,22 @@ The state-change transaction serializes the singleton row, performs a
 generation CAS, appends the transition, invalidates eligible Decisions in one
 set operation, appends the bounded audit record and writes the outbox event.
 No external call or cache operation occurs inside the transaction.
+
+### Post-review invariants
+
+- Decision persistence takes a shared lock on the Kill Switch singleton and
+  rechecks that it is inactive. An in-flight Decision therefore either commits
+  before activation and is invalidated by that transaction, or is rejected
+  after activation.
+- Transition time is obtained after the singleton lock and remains monotonic
+  against the stored database timestamp. Request IDs are nullable correlation
+  values, not globally unique transition identifiers.
+- `priceFresh` is derived only from the latest persisted market quote. The
+  shared financial-write idempotency policy accepts 16 to 128 characters, while
+  deployment configuration may choose a lower upper bound.
+- The invalidation lookup is indexed by validity horizon. Conditional state
+  schemas, integer/range constraints, and fail-closed OpenAPI error envelopes
+  prevent impossible or success-shaped error payloads.
 
 ## Contract artifacts
 

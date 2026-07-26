@@ -970,7 +970,15 @@ RiskEngine은 Spring에 있으며, 금융공학 계산값은 Python에서 받아
       "code": "MISSING_SOURCE",
       "message": "One or more portfolio risk sources are unavailable.",
       "details": {
-        "fields": ["var95", "cvar95", "realizedVolatility20d", "hmmRegime", "hmmRegimeProbability"]
+        "fields": [
+          "var95",
+          "cvar95",
+          "realizedVolatility20d",
+          "hmmRegime",
+          "hmmRegimeProbability",
+          "signalFresh",
+          "ragFresh"
+        ]
       }
     }
   ],
@@ -980,7 +988,8 @@ RiskEngine은 Spring에 있으며, 금융공학 계산값은 Python에서 받아
 
 S2.4는 legacy `risk_snapshots`를 읽지 않는다. S2.3의 owner-scoped
 `latest_portfolio_balance_observations`,
-`latest_deterministic_risk_observations`와 기존
+`latest_deterministic_risk_observations`, 실제 현재가의
+`latest_market_quote_observations`와 기존
 `MetricSnapshotAssembler`를 재사용한다. 다른 owner의 row는 0행으로
 수렴한다. 구조 또는 row가 없는 값은 0이나 임의 값으로 합성하지 않고
 nullable 필드와 sanitized warning으로 표현한다. S6 producer가 없는

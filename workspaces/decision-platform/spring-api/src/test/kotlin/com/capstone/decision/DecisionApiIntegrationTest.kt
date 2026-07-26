@@ -35,6 +35,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer
 import org.testcontainers.utility.DockerImageName
 import tools.jackson.databind.JsonNode
 import tools.jackson.databind.ObjectMapper
+import java.math.BigDecimal
 import java.sql.DriverManager
 import java.time.Clock
 import java.time.Instant
@@ -599,6 +600,7 @@ class DecisionApiIntegrationTest(
         assertTrue(json(missing).at("/warnings").size() > 0)
 
         insertCompleteStoredSources(orderCount = 0)
+        insertOtherOwnerPortfolioSources()
         val available =
             mockMvc
                 .get("/api/v1/risk/portfolio") {
@@ -606,10 +608,16 @@ class DecisionApiIntegrationTest(
                     header("X-Request-Id", "req-risk-portfolio-available")
                 }.andReturn()
         assertEquals(200, available.response.status)
-        assertTrue(json(available).at("/data/portfolioValue").isIntegralNumber)
-        assertTrue(json(available).at("/data/dailyPnlRate").isNumber)
-        assertTrue(json(available).at("/data/mdd").isNumber)
-        assertTrue(json(available).at("/data/annualizedVolatility20d").isNumber)
+        assertEquals(10_000_000L, json(available).at("/data/portfolioValue").longValue())
+        assertEquals(0, json(available).at("/data/dailyPnlRate").decimalValue().compareTo(BigDecimal("-0.01")))
+        assertEquals(0, json(available).at("/data/mdd").decimalValue().compareTo(BigDecimal("-0.05")))
+        assertEquals(
+            0,
+            json(available)
+                .at("/data/annualizedVolatility20d")
+                .decimalValue()
+                .compareTo(BigDecimal("0.20")),
+        )
         assertTrue(json(available).at("/data/var95").isNull)
         assertFalse(json(available).at("/data/killSwitchActive").booleanValue())
         assertEquals(timerBefore + 2L, meterRegistry.find("risk.portfolio.query").timer()?.count())
@@ -1360,6 +1368,48 @@ class DecisionApiIntegrationTest(
             """.trimIndent(),
             orderCount,
             EVALUATION_AT,
+            EVALUATION_AT,
+            EVALUATION_AT,
+        )
+    }
+
+    private fun insertOtherOwnerPortfolioSources() {
+        jdbcTemplate.update(
+            """
+            insert into portfolio_balance_observations (
+              observation_id, owner_user_id, account_scope_hash, source,
+              context_status, cash_krw, portfolio_equity_krw,
+              margin_requirement_krw, completeness, position_count,
+              observed_at, received_at, schema_version, source_version,
+              payload_json, source_ref, artifact_hash
+            ) values (
+              'balance-risk-other-owner', 'usr_demo_admin', repeat('d', 64), 'KIS_MOCK',
+              'ACTIVE', 999999999, 999999999, 0, 'COMPLETE', 0,
+              ?::timestamptz, ?::timestamptz,
+              'portfolio-balance-observation.v1', 'risk-idor-fixture-v1',
+              '{"ownerScopeHash":"other"}'::jsonb,
+              repeat('b', 64), repeat('c', 64)
+            )
+            """.trimIndent(),
+            EVALUATION_AT,
+            EVALUATION_AT,
+        )
+        jdbcTemplate.update(
+            """
+            insert into deterministic_risk_observations (
+              observation_id, owner_user_id, owner_scope_hash, portfolio_source,
+              daily_loss_rate, max_drawdown, annualized_volatility, completeness,
+              observed_at, received_at, schema_version, source_version,
+              payload_json, source_ref, artifact_hash
+            ) values (
+              'risk-other-owner', 'usr_demo_admin', repeat('d', 64), 'KIS_MOCK',
+              -0.99, -0.98, 9.9, 'COMPLETE',
+              ?::timestamptz, ?::timestamptz,
+              'deterministic-risk-observation.v1', 'risk-idor-fixture-v1',
+              '{"ownerScopeHash":"other"}'::jsonb,
+              repeat('d', 64), repeat('e', 64)
+            )
+            """.trimIndent(),
             EVALUATION_AT,
             EVALUATION_AT,
         )

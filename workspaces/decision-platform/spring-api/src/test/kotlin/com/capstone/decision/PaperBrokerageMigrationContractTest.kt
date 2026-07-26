@@ -40,11 +40,12 @@ class PaperBrokerageMigrationContractTest {
 
     @Test
     fun `V13 paper 함수는 actor kill-switch decision 계좌 순서로 재검증한다`() {
-        val actor = migration.indexOf("FROM public.users actor")
-        val idempotencyLock = migration.indexOf("paper-order:idempotency:")
-        val decisionLock = migration.indexOf("paper-order:decision:")
-        val killSwitch = migration.indexOf("FROM public.risk_kill_switch gate")
-        val account = migration.indexOf("FROM public.paper_accounts account")
+        val createFunction = migration.substring(migration.indexOf("CREATE FUNCTION create_paper_order("))
+        val actor = createFunction.indexOf("FROM public.users actor")
+        val idempotencyLock = createFunction.indexOf("paper-order:idempotency:")
+        val decisionLock = createFunction.indexOf("paper-order:decision:")
+        val killSwitch = createFunction.indexOf("FROM public.risk_kill_switch gate")
+        val account = createFunction.indexOf("FROM public.paper_accounts account")
 
         assertTrue(actor in 0..<idempotencyLock)
         assertTrue(idempotencyLock < decisionLock)

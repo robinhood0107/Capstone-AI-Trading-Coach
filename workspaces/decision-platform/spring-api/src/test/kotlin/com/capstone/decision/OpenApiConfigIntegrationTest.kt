@@ -280,6 +280,79 @@ class OpenApiConfigIntegrationTest(
         )
     }
 
+    @Test
+    fun `openapi locks S3_2 paper routes digest and exact request response schemas`() {
+        val document =
+            objectMapper.readTree(
+                mockMvc
+                    .get("/v3/api-docs")
+                    .andExpect {
+                        status { isOk() }
+                    }.andReturn()
+                    .response
+                    .contentAsByteArray,
+            )
+        val repositoryRoot = findRepositoryRoot()
+        val catalogBytes =
+            Files.readAllBytes(
+                repositoryRoot.resolve("contracts/catalogs/s3-2-internal-paper-contract.v1.json"),
+            )
+        val expectedDigest =
+            HexFormat
+                .of()
+                .formatHex(MessageDigest.getInstance("SHA-256").digest(catalogBytes))
+
+        assertEquals("s3-2-internal-paper-contract/v1", document.path("x-s3-2-contract-id").stringValue())
+        assertEquals(expectedDigest, document.path("x-s3-2-contract-sha256").stringValue())
+        val paperPaths =
+            document
+                .path("paths")
+                .propertyNames()
+                .asSequence()
+                .filter { "/api/v1/brokerage/paper/" in it }
+                .toSet()
+        assertEquals(
+            setOf(
+                "/api/v1/brokerage/paper/orders",
+                "/api/v1/brokerage/paper/accounts/{accountId}/balances",
+                "/api/v1/brokerage/paper/accounts/{accountId}/buyable",
+            ),
+            paperPaths,
+        )
+        assertEquals(
+            "#/components/schemas/S32PaperOrderRequest",
+            document
+                .at(
+                    "/paths/~1api~1v1~1brokerage~1paper~1orders/post/requestBody/content/application~1json/schema/\$ref",
+                ).stringValue(),
+        )
+        assertEquals(
+            "#/components/schemas/S32PaperOrderSuccessResponse",
+            document
+                .at(
+                    "/paths/~1api~1v1~1brokerage~1paper~1orders/post/responses/200/content/application~1json/schema/\$ref",
+                ).stringValue(),
+        )
+        assertEquals(
+            "#/components/schemas/S32OrderDetailSuccessResponse",
+            document
+                .at(
+                    "/paths/~1api~1v1~1brokerage~1orders~1{orderId}/get/responses/200/content/application~1json/schema/\$ref",
+                ).stringValue(),
+        )
+        assertEquals(false, document.at("/components/schemas/S32PaperOrderRequest/additionalProperties").booleanValue())
+        assertEquals(
+            setOf("decisionId", "orderIntent", "userAcknowledgement"),
+            document
+                .at("/components/schemas/S32PaperOrderRequest/required")
+                .values()
+                .map { it.stringValue() }
+                .toSet(),
+        )
+        assertTrue(document.at("/paths/~1api~1v1~1brokerage~1paper~1accounts~1{accountId}/post").isMissingNode)
+        assertTrue(document.at("/paths/~1api~1v1~1brokerage~1paper~1accounts~1{accountId}/delete").isMissingNode)
+    }
+
     private fun findRepositoryRoot(): Path {
         var current = Path.of(System.getProperty("user.dir")).toAbsolutePath()
         while (!Files.exists(current.resolve("AGENTS.md"))) {

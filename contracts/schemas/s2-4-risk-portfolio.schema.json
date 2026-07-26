@@ -4,6 +4,7 @@
   "additionalProperties": false,
   "properties": {
     "annualizedVolatility20d": {
+      "minimum": 0,
       "type": [
         "number",
         "null"
@@ -20,6 +21,8 @@
       ]
     },
     "dailyPnlRate": {
+      "maximum": 0,
+      "minimum": -1,
       "type": [
         "number",
         "null"
@@ -72,6 +75,8 @@
       "type": "boolean"
     },
     "mdd": {
+      "maximum": 0,
+      "minimum": -1,
       "type": [
         "number",
         "null"
@@ -80,7 +85,7 @@
     "portfolioValue": {
       "minimum": 0,
       "type": [
-        "number",
+        "integer",
         "null"
       ]
     },

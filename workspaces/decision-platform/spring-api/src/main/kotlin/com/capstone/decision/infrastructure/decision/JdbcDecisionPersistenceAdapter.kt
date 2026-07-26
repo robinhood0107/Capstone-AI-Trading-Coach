@@ -9,6 +9,8 @@ import com.capstone.decision.application.decision.DecisionProjection
 import com.capstone.decision.application.decision.DecisionVersionConflictException
 import com.capstone.decision.application.decision.DecisionWriteRequest
 import com.capstone.decision.application.decision.StoredDecisionIdempotencyResult
+import com.capstone.decision.application.risk.KillSwitchBlockedException
+import com.capstone.decision.application.risk.KillSwitchUnavailableException
 import com.capstone.decision.infrastructure.risk.ActorScopedReadQuery
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
@@ -86,6 +88,7 @@ class JdbcDecisionPersistenceAdapter(
             }
             throw DecisionIdempotencyConflictException()
         }
+        lockInactiveKillSwitch(jdbc)
         lockPinnedPrinciple(jdbc, request)
         val inserted =
             jdbc.update(
@@ -237,6 +240,32 @@ class JdbcDecisionPersistenceAdapter(
             ) { result, _ -> result.getString("principle_id") }
         if (locked.size != 1) {
             throw DecisionVersionConflictException()
+        }
+    }
+
+    /**
+     * Decision INSERT와 Kill Switch 활성화의 전역 무효화를 같은 singleton lock 순서로 직렬화한다.
+     * 활성화가 먼저면 저장을 막고, 저장이 먼저면 활성화가 commit 뒤 해당 decision을 무효화한다.
+     */
+    private fun lockInactiveKillSwitch(jdbc: NamedParameterJdbcTemplate) {
+        val active =
+            try {
+                jdbc
+                    .query(
+                        """
+                        SELECT active
+                        FROM risk_kill_switch
+                        WHERE kill_switch_id = 'GLOBAL'
+                        FOR SHARE
+                        """.trimIndent(),
+                        emptyMap<String, Any>(),
+                    ) { result, _ -> result.getBoolean("active") }
+                    .single()
+            } catch (exception: Exception) {
+                throw KillSwitchUnavailableException(exception)
+            }
+        if (active) {
+            throw KillSwitchBlockedException()
         }
     }
 

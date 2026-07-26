@@ -3,6 +3,7 @@ package com.capstone.decision.infrastructure.security
 import com.capstone.decision.api.common.ApiResponseWriter
 import com.capstone.decision.api.common.ErrorCode
 import com.capstone.decision.application.security.AppPrincipal
+import com.capstone.decision.application.security.IdempotencyKeyPolicy
 import com.capstone.decision.infrastructure.idempotency.IdempotencyLookup
 import com.capstone.decision.infrastructure.idempotency.IdempotencyProperties
 import com.capstone.decision.infrastructure.idempotency.IdempotencyService
@@ -228,8 +229,7 @@ class JwtAuthenticationFilter(
             idempotencyProperties.paths.any { pathMatcher.match(it, request.requestURI) } &&
             handlerMappingProvider.getObject().getHandler(request)?.handler is HandlerMethod
 
-    private fun isValidIdempotencyKey(value: String): Boolean =
-        value.length <= idempotencyProperties.maxKeyLength && IDEMPOTENCY_KEY_PATTERN.matches(value)
+    private fun isValidIdempotencyKey(value: String): Boolean = IdempotencyKeyPolicy.isValid(value, idempotencyProperties.maxKeyLength)
 
     private fun requestHash(request: CachedBodyHttpServletRequest): String {
         val digest = MessageDigest.getInstance("SHA-256")
@@ -250,6 +250,5 @@ class JwtAuthenticationFilter(
         private const val IDEMPOTENCY_HEADER = "X-Idempotency-Key"
         private val WRITE_METHODS = setOf("POST", "PUT", "PATCH", "DELETE")
         private val NON_REPLAYABLE_CLIENT_ERRORS = setOf(400, 401, 403, 404, 405, 413, 422, 429)
-        private val IDEMPOTENCY_KEY_PATTERN = Regex("[A-Za-z0-9][A-Za-z0-9._-]*")
     }
 }

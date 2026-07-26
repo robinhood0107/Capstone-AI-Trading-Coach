@@ -42,6 +42,8 @@ class OpenApiConfig {
                     S21_CONTRACT_DIGEST_EXTENSION to catalogDigest(),
                     S23_CONTRACT_ID_EXTENSION to S23_CONTRACT_ID,
                     S23_CONTRACT_DIGEST_EXTENSION to resourceDigest(S23_CATALOG_RESOURCE),
+                    S32_CONTRACT_ID_EXTENSION to S32_CONTRACT_ID,
+                    S32_CONTRACT_DIGEST_EXTENSION to resourceDigest(S32_CATALOG_RESOURCE),
                 ),
             ).components(
                 // Authorize 버튼이 JWT Bearer 토큰을 표준 방식으로 주입하도록 scheme을 명시한다.
@@ -302,6 +304,42 @@ class OpenApiConfig {
             openApi.components.addSchemas(
                 S31_MOCK_BUYABLE_ENVELOPE_COMPONENT,
                 successEnvelope(schemaRef(S31_MOCK_BUYABLE_COMPONENT)),
+            )
+            openApi.components.addSchemas(
+                S32_PAPER_ORDER_REQUEST_COMPONENT,
+                contractSchema(S32_PAPER_ORDER_REQUEST_RESOURCE, S32_PAPER_ORDER_REQUEST_COMPONENT),
+            )
+            openApi.components.addSchemas(
+                S32_PAPER_ORDER_RESPONSE_COMPONENT,
+                contractSchema(S32_PAPER_ORDER_RESPONSE_RESOURCE, S32_PAPER_ORDER_RESPONSE_COMPONENT),
+            )
+            openApi.components.addSchemas(
+                S32_ORDER_DETAIL_COMPONENT,
+                contractSchema(S32_ORDER_DETAIL_RESOURCE, S32_ORDER_DETAIL_COMPONENT),
+            )
+            openApi.components.addSchemas(
+                S32_PAPER_BALANCE_COMPONENT,
+                contractSchema(S32_PAPER_BALANCE_RESOURCE, S32_PAPER_BALANCE_COMPONENT),
+            )
+            openApi.components.addSchemas(
+                S32_PAPER_BUYABLE_COMPONENT,
+                contractSchema(S32_PAPER_BUYABLE_RESOURCE, S32_PAPER_BUYABLE_COMPONENT),
+            )
+            openApi.components.addSchemas(
+                S32_PAPER_ORDER_ENVELOPE_COMPONENT,
+                successEnvelope(schemaRef(S32_PAPER_ORDER_RESPONSE_COMPONENT)),
+            )
+            openApi.components.addSchemas(
+                S32_ORDER_DETAIL_ENVELOPE_COMPONENT,
+                successEnvelope(schemaRef(S32_ORDER_DETAIL_COMPONENT)),
+            )
+            openApi.components.addSchemas(
+                S32_PAPER_BALANCE_ENVELOPE_COMPONENT,
+                successEnvelope(schemaRef(S32_PAPER_BALANCE_COMPONENT)),
+            )
+            openApi.components.addSchemas(
+                S32_PAPER_BUYABLE_ENVELOPE_COMPONENT,
+                successEnvelope(schemaRef(S32_PAPER_BUYABLE_COMPONENT)),
             )
         }
 
@@ -593,6 +631,24 @@ class OpenApiConfig {
         private const val S31_MOCK_ORDER_DETAIL_ENVELOPE_COMPONENT = "S31MockOrderDetailSuccessResponse"
         private const val S31_MOCK_BALANCE_ENVELOPE_COMPONENT = "S31MockBalanceSuccessResponse"
         private const val S31_MOCK_BUYABLE_ENVELOPE_COMPONENT = "S31MockBuyableSuccessResponse"
+        private const val S32_CATALOG_RESOURCE = "contracts/s3-2-internal-paper-contract.v1.json"
+        private const val S32_PAPER_ORDER_REQUEST_RESOURCE = "contracts/s3-2-paper-order-request.schema.json"
+        private const val S32_PAPER_ORDER_RESPONSE_RESOURCE = "contracts/s3-2-paper-order-response.schema.json"
+        private const val S32_ORDER_DETAIL_RESOURCE = "contracts/s3-2-order-detail.schema.json"
+        private const val S32_PAPER_BALANCE_RESOURCE = "contracts/s3-2-paper-balance.schema.json"
+        private const val S32_PAPER_BUYABLE_RESOURCE = "contracts/s3-2-paper-buyable.schema.json"
+        private const val S32_CONTRACT_ID_EXTENSION = "x-s3-2-contract-id"
+        private const val S32_CONTRACT_DIGEST_EXTENSION = "x-s3-2-contract-sha256"
+        private const val S32_CONTRACT_ID = "s3-2-internal-paper-contract/v1"
+        private const val S32_PAPER_ORDER_REQUEST_COMPONENT = "S32PaperOrderRequest"
+        private const val S32_PAPER_ORDER_RESPONSE_COMPONENT = "S32PaperOrder"
+        private const val S32_ORDER_DETAIL_COMPONENT = "S32OrderDetail"
+        private const val S32_PAPER_BALANCE_COMPONENT = "S32PaperBalance"
+        private const val S32_PAPER_BUYABLE_COMPONENT = "S32PaperBuyable"
+        private const val S32_PAPER_ORDER_ENVELOPE_COMPONENT = "S32PaperOrderSuccessResponse"
+        private const val S32_ORDER_DETAIL_ENVELOPE_COMPONENT = "S32OrderDetailSuccessResponse"
+        private const val S32_PAPER_BALANCE_ENVELOPE_COMPONENT = "S32PaperBalanceSuccessResponse"
+        private const val S32_PAPER_BUYABLE_ENVELOPE_COMPONENT = "S32PaperBuyableSuccessResponse"
         private val S24_RISK_ERROR_CODES =
             listOf(
                 "VALIDATION_ERROR",

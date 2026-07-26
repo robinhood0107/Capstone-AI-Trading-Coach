@@ -305,6 +305,117 @@
         },
         "type": "object"
       },
+      "ApiResponsePaperBalanceProjection": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PaperBalanceProjection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ApiError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ApiWarning"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "ApiResponsePaperBuyableProjection": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PaperBuyableProjection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ApiError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ApiWarning"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "ApiResponsePaperOrderProjection": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PaperOrderProjection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ApiError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ApiWarning"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
       "ApiResponsePrincipleCurrent": {
         "properties": {
           "data": {
@@ -854,6 +965,154 @@
           },
           "decisionId": {
             "type": "string"
+          },
+          "orderId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "submittedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "PaperBalancePositionProjection": {
+        "properties": {
+          "averagePriceKrw": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "marketValueKrw": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "quantity": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "symbol": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "PaperBalanceProjection": {
+        "properties": {
+          "accountId": {
+            "type": "string"
+          },
+          "asOf": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "brokerageMode": {
+            "type": "string"
+          },
+          "cashKrw": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "positions": {
+            "items": {
+              "$ref": "#/components/schemas/PaperBalancePositionProjection"
+            },
+            "type": "array"
+          },
+          "totalEquityKrw": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "valuationBasis": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "PaperBuyableProjection": {
+        "properties": {
+          "accountId": {
+            "type": "string"
+          },
+          "asOf": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "brokerageMode": {
+            "type": "string"
+          },
+          "buyableAmountKrw": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "buyableQuantity": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "cashKrw": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "estimatedPrice": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "symbol": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "PaperFillProjection": {
+        "properties": {
+          "amountKrw": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "feeModel": {
+            "type": "string"
+          },
+          "observedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "priceBasis": {
+            "type": "string"
+          },
+          "priceKrw": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "quantity": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "slippageBps": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "PaperOrderProjection": {
+        "properties": {
+          "accountId": {
+            "type": "string"
+          },
+          "brokerageMode": {
+            "type": "string"
+          },
+          "fill": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PaperFillProjection"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "orderId": {
             "type": "string"
@@ -4563,6 +4822,641 @@
         ],
         "type": "object"
       },
+      "S32OrderDetail": {
+        "$id": "contracts/schemas/s3-2-order-detail.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "brokerageMode": {
+                  "const": "KIS_MOCK"
+                }
+              },
+              "required": [
+                "brokerageMode"
+              ]
+            },
+            "then": {
+              "properties": {
+                "orderId": {
+                  "pattern": "^ord_mock_[0-9a-f]{32}$",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "brokerageMode": {
+                  "const": "INTERNAL_PAPER"
+                }
+              },
+              "required": [
+                "brokerageMode"
+              ]
+            },
+            "then": {
+              "properties": {
+                "orderId": {
+                  "pattern": "^ord_paper_[0-9a-f]{32}$",
+                  "type": "string"
+                }
+              }
+            }
+          }
+        ],
+        "properties": {
+          "accountId": {
+            "pattern": "^acct_[0-9a-f]{32}$",
+            "type": "string"
+          },
+          "brokerageMode": {
+            "enum": [
+              "KIS_MOCK",
+              "INTERNAL_PAPER"
+            ]
+          },
+          "decisionId": {
+            "pattern": "^dec_[0-9a-f]{32}$",
+            "type": "string"
+          },
+          "orderId": {
+            "oneOf": [
+              {
+                "pattern": "^ord_mock_[0-9a-f]{32}$",
+                "type": "string"
+              },
+              {
+                "pattern": "^ord_paper_[0-9a-f]{32}$",
+                "type": "string"
+              }
+            ]
+          },
+          "status": {
+            "enum": [
+              "SUBMITTED",
+              "ACCEPTED",
+              "PARTIALLY_FILLED",
+              "FILLED",
+              "CANCEL_REQUESTED",
+              "CANCELLED",
+              "REJECTED"
+            ]
+          },
+          "submittedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "accountId",
+          "brokerageMode",
+          "decisionId",
+          "orderId",
+          "status",
+          "submittedAt"
+        ],
+        "title": "S3.2 shared brokerage order detail response v1",
+        "type": "object"
+      },
+      "S32OrderDetailSuccessResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/S32OrderDetail"
+          },
+          "error": {
+            "type": "null"
+          },
+          "requestId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "success": {
+            "const": true,
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ApiWarning"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "error",
+          "requestId",
+          "success",
+          "warnings"
+        ],
+        "type": "object"
+      },
+      "S32PaperBalance": {
+        "$id": "contracts/schemas/s3-2-paper-balance.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "accountId": {
+            "pattern": "^acct_[0-9a-f]{32}$",
+            "type": "string"
+          },
+          "asOf": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "brokerageMode": {
+            "const": "INTERNAL_PAPER"
+          },
+          "cashKrw": {
+            "maximum": 9223372036854775807,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "positions": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "averagePriceKrw": {
+                  "maximum": 9223372036854775807,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "marketValueKrw": {
+                  "maximum": 9223372036854775807,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "quantity": {
+                  "maximum": 9223372036854775807,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "symbol": {
+                  "pattern": "^[0-9A-Z._:-]{1,20}$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "averagePriceKrw",
+                "marketValueKrw",
+                "quantity",
+                "symbol"
+              ],
+              "type": "object"
+            },
+            "maxItems": 1000,
+            "type": "array"
+          },
+          "totalEquityKrw": {
+            "maximum": 9223372036854775807,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "valuationBasis": {
+            "const": "LAST_FILL_PRICE_V1"
+          }
+        },
+        "required": [
+          "accountId",
+          "asOf",
+          "brokerageMode",
+          "cashKrw",
+          "positions",
+          "totalEquityKrw",
+          "valuationBasis"
+        ],
+        "title": "S3.2 INTERNAL_PAPER balance response v1",
+        "type": "object"
+      },
+      "S32PaperBalanceSuccessResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/S32PaperBalance"
+          },
+          "error": {
+            "type": "null"
+          },
+          "requestId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "success": {
+            "const": true,
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ApiWarning"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "error",
+          "requestId",
+          "success",
+          "warnings"
+        ],
+        "type": "object"
+      },
+      "S32PaperBuyable": {
+        "$id": "contracts/schemas/s3-2-paper-buyable.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "accountId": {
+            "pattern": "^acct_[0-9a-f]{32}$",
+            "type": "string"
+          },
+          "asOf": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "brokerageMode": {
+            "const": "INTERNAL_PAPER"
+          },
+          "buyableAmountKrw": {
+            "maximum": 9223372036854775807,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "buyableQuantity": {
+            "maximum": 9223372036854775807,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "cashKrw": {
+            "maximum": 9223372036854775807,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "estimatedPrice": {
+            "maximum": 9223372036854775807,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "symbol": {
+            "pattern": "^[0-9A-Z._:-]{1,20}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "accountId",
+          "asOf",
+          "brokerageMode",
+          "buyableAmountKrw",
+          "buyableQuantity",
+          "cashKrw",
+          "estimatedPrice",
+          "symbol"
+        ],
+        "title": "S3.2 INTERNAL_PAPER buyable response v1",
+        "type": "object"
+      },
+      "S32PaperBuyableSuccessResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/S32PaperBuyable"
+          },
+          "error": {
+            "type": "null"
+          },
+          "requestId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "success": {
+            "const": true,
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ApiWarning"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "error",
+          "requestId",
+          "success",
+          "warnings"
+        ],
+        "type": "object"
+      },
+      "S32PaperOrder": {
+        "$id": "contracts/schemas/s3-2-paper-order-response.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "FILLED"
+                }
+              },
+              "required": [
+                "status"
+              ]
+            },
+            "then": {
+              "properties": {
+                "fill": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "amountKrw": {
+                      "maximum": 9223372036854775807,
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "feeModel": {
+                      "const": "NONE_V1"
+                    },
+                    "observedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "priceBasis": {
+                      "enum": [
+                        "LAST_QUOTE",
+                        "PREVIOUS_CLOSE"
+                      ]
+                    },
+                    "priceKrw": {
+                      "maximum": 9223372036854775807,
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "quantity": {
+                      "maximum": 9223372036854775807,
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "slippageBps": {
+                      "maximum": 100,
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "amountKrw",
+                    "feeModel",
+                    "observedAt",
+                    "priceBasis",
+                    "priceKrw",
+                    "quantity",
+                    "slippageBps"
+                  ],
+                  "type": "object"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "ACCEPTED"
+                }
+              },
+              "required": [
+                "status"
+              ]
+            },
+            "then": {
+              "properties": {
+                "fill": {
+                  "type": "null"
+                }
+              }
+            }
+          }
+        ],
+        "properties": {
+          "accountId": {
+            "pattern": "^acct_[0-9a-f]{32}$",
+            "type": "string"
+          },
+          "brokerageMode": {
+            "const": "INTERNAL_PAPER"
+          },
+          "fill": {
+            "oneOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "amountKrw": {
+                    "maximum": 9223372036854775807,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "feeModel": {
+                    "const": "NONE_V1"
+                  },
+                  "observedAt": {
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  "priceBasis": {
+                    "enum": [
+                      "LAST_QUOTE",
+                      "PREVIOUS_CLOSE"
+                    ]
+                  },
+                  "priceKrw": {
+                    "maximum": 9223372036854775807,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "quantity": {
+                    "maximum": 9223372036854775807,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "slippageBps": {
+                    "maximum": 100,
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "amountKrw",
+                  "feeModel",
+                  "observedAt",
+                  "priceBasis",
+                  "priceKrw",
+                  "quantity",
+                  "slippageBps"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "orderId": {
+            "pattern": "^ord_paper_[0-9a-f]{32}$",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ACCEPTED",
+              "FILLED"
+            ]
+          },
+          "submittedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "accountId",
+          "brokerageMode",
+          "fill",
+          "orderId",
+          "status",
+          "submittedAt"
+        ],
+        "title": "S3.2 INTERNAL_PAPER order response v1",
+        "type": "object"
+      },
+      "S32PaperOrderRequest": {
+        "$id": "contracts/schemas/s3-2-paper-order-request.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "decisionId": {
+            "pattern": "^dec_[0-9a-f]{32}$",
+            "type": "string"
+          },
+          "orderIntent": {
+            "additionalProperties": false,
+            "properties": {
+              "estimatedAmount": {
+                "maximum": 9223372036854775807,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "estimatedPrice": {
+                "maximum": 9223372036854775807,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "orderType": {
+                "enum": [
+                  "MARKET",
+                  "LIMIT"
+                ]
+              },
+              "quantity": {
+                "maximum": 9223372036854775807,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "side": {
+                "enum": [
+                  "BUY",
+                  "SELL"
+                ]
+              },
+              "strategyId": {
+                "maxLength": 120,
+                "minLength": 1,
+                "type": "string"
+              },
+              "symbol": {
+                "maxLength": 20,
+                "minLength": 1,
+                "pattern": "^[0-9A-Z._:-]{1,20}$",
+                "type": "string"
+              },
+              "timeframe": {
+                "enum": [
+                  "1d",
+                  "60m"
+                ]
+              }
+            },
+            "required": [
+              "estimatedAmount",
+              "estimatedPrice",
+              "orderType",
+              "quantity",
+              "side",
+              "strategyId",
+              "symbol",
+              "timeframe"
+            ],
+            "type": "object"
+          },
+          "userAcknowledgement": {
+            "additionalProperties": false,
+            "properties": {
+              "warningsAccepted": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "warningsAccepted"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "decisionId",
+          "orderIntent",
+          "userAcknowledgement"
+        ],
+        "title": "S3.2 INTERNAL_PAPER order submit request v1",
+        "type": "object"
+      },
+      "S32PaperOrderSuccessResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/S32PaperOrder"
+          },
+          "error": {
+            "type": "null"
+          },
+          "requestId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "success": {
+            "const": true,
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ApiWarning"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "error",
+          "requestId",
+          "success",
+          "warnings"
+        ],
+        "type": "object"
+      },
       "SystemHealthResponse": {
         "properties": {
           "asOf": {
@@ -4926,7 +5820,7 @@
             "name": "orderId",
             "required": true,
             "schema": {
-              "pattern": "^ord_mock_[0-9a-f]{32}$",
+              "pattern": "^ord_(?:mock|paper)_[0-9a-f]{32}$",
               "type": "string"
             }
           }
@@ -4936,7 +5830,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/S31MockOrderDetailSuccessResponse"
+                  "$ref": "#/components/schemas/S32OrderDetailSuccessResponse"
                 }
               }
             },
@@ -4988,7 +5882,7 @@
             "name": "orderId",
             "required": true,
             "schema": {
-              "pattern": "^ord_mock_[0-9a-f]{32}$",
+              "pattern": "^ord_(?:mock|paper)_[0-9a-f]{32}$",
               "type": "string"
             }
           }
@@ -5007,7 +5901,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/S31MockOrderDetailSuccessResponse"
+                  "$ref": "#/components/schemas/S32OrderDetailSuccessResponse"
                 }
               }
             },
@@ -5067,6 +5961,223 @@
         "summary": "Owner-scoped mock order cancel request를 append-only event로 기록한다.",
         "tags": [
           "brokerage-controller"
+        ]
+      }
+    },
+    "/api/v1/brokerage/paper/accounts/{accountId}/balances": {
+      "get": {
+        "operationId": "getPaperBalance",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "accountId",
+            "required": true,
+            "schema": {
+              "pattern": "^acct_[0-9a-f]{32}$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/S32PaperBalanceSuccessResponse"
+                }
+              }
+            },
+            "description": "Paper balance projection."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponsePaperBalanceProjection"
+                }
+              }
+            },
+            "description": "Authentication is required."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponsePaperBalanceProjection"
+                }
+              }
+            },
+            "description": "Owned paper account was not found."
+          }
+        },
+        "summary": "Owner-scoped INTERNAL_PAPER 현금·포지션 파생 상태를 조회한다.",
+        "tags": [
+          "paper-brokerage-controller"
+        ]
+      }
+    },
+    "/api/v1/brokerage/paper/accounts/{accountId}/buyable": {
+      "get": {
+        "operationId": "getPaperBuyable",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "accountId",
+            "required": true,
+            "schema": {
+              "pattern": "^acct_[0-9a-f]{32}$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/S32PaperBuyableSuccessResponse"
+                }
+              }
+            },
+            "description": "Paper buyable projection."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponsePaperBuyableProjection"
+                }
+              }
+            },
+            "description": "Invalid path or query."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponsePaperBuyableProjection"
+                }
+              }
+            },
+            "description": "Authentication is required."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponsePaperBuyableProjection"
+                }
+              }
+            },
+            "description": "Owned paper account was not found."
+          }
+        },
+        "summary": "Owner-scoped INTERNAL_PAPER 현금으로 주문가능 수량을 계산한다.",
+        "tags": [
+          "paper-brokerage-controller"
+        ]
+      }
+    },
+    "/api/v1/brokerage/paper/orders": {
+      "post": {
+        "operationId": "submitPaperOrder",
+        "parameters": [
+          {
+            "description": "16-128 ASCII characters. Raw value is never persisted.",
+            "in": "header",
+            "name": "X-Idempotency-Key",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9._:-]{16,128}$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/S32PaperOrderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/S32PaperOrderSuccessResponse"
+                }
+              }
+            },
+            "description": "Filled or accepted paper order."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponsePaperOrderProjection"
+                }
+              }
+            },
+            "description": "Invalid body or unverified LIMIT tick table."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponsePaperOrderProjection"
+                }
+              }
+            },
+            "description": "Authentication is required."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponsePaperOrderProjection"
+                }
+              }
+            },
+            "description": "Owned Decision or paper account was not found."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponsePaperOrderProjection"
+                }
+              }
+            },
+            "description": "Decision/idempotency conflict or stale price."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponsePaperOrderProjection"
+                }
+              }
+            },
+            "description": "Risk controls block order submission."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponsePaperOrderProjection"
+                }
+              }
+            },
+            "description": "Stored paper source is unavailable."
+          }
+        },
+        "summary": "저장된 sanitized 시세만 사용해 INTERNAL_PAPER 주문을 원자 체결한다.",
+        "tags": [
+          "paper-brokerage-controller"
         ]
       }
     },
@@ -6104,5 +7215,7 @@
   "x-s2-1-contract-id": "s2-1-principle-contract/v1",
   "x-s2-1-contract-sha256": "687e97767beb78d9a58e65de113d323817522975a929099c6991ec8185d83784",
   "x-s2-3-contract-id": "s2-3-decision-contract/v1",
-  "x-s2-3-contract-sha256": "d035607af50a0f7cb9cd7170e9a6a188e6af32d5bbbdb76e5e4f7b3edc68cd18"
+  "x-s2-3-contract-sha256": "d035607af50a0f7cb9cd7170e9a6a188e6af32d5bbbdb76e5e4f7b3edc68cd18",
+  "x-s3-2-contract-id": "s3-2-internal-paper-contract/v1",
+  "x-s3-2-contract-sha256": "91e348550e3dfd84ddc5d580d3e1726433eb3e7db04977c1161b09e3a5e7b1c0"
 }

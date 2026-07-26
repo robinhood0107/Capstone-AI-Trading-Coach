@@ -286,6 +286,12 @@ S3.2는 `POST /api/v1/brokerage/paper/orders`,
 소스이며 account/position row는 같은 transaction에서 갱신되는 projection이다. rebuild는 비교
 전용이고 application role에 노출하지 않는다.
 
+동시 제출은 purpose-version HMAC scope만 담는 30초 Redis claim으로 먼저 직렬화하고, 완료 결과와
+재시도 응답의 진실은 PostgreSQL durable idempotency row에 둔다. Redis key/value에는 raw key,
+owner, account, payload를 넣지 않으며 장애 시 paper write 전에 fail-closed한다. 구현 OpenAPI
+normalizer는 S3.2 contract ID/SHA-256, exact 5개 path/method와 exact 9개 `S32*` component를
+allowlist로 검사한다.
+
 paper account 생성·충전·삭제 route, 부분 체결, 미체결 worker, 수수료·세금·시장충격 모델,
 mark-to-market job은 없다. 테스트 account는 admin seed만 사용하고 시연 seed는 S8.3에 남긴다.
 KIS/provider/live-account/live-order/fill-query physical call은 0건이다.

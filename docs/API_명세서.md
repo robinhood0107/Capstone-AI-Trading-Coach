@@ -1531,7 +1531,7 @@ KIS Mock 중심으로 구현하고, KIS Live는 고급해제/3단계 동의/재�
 > call은 0건이다. verified KRX tick-table context가 없는 LIMIT 주문은 `BROKERAGE_UNAVAILABLE`로
 > fail-closed한다.
 >
-> Contract-lock 상태(2026-07-27): S3.2는 별도
+> 구현 상태(2026-07-27): S3.2는 별도
 > `POST /api/v1/brokerage/paper/orders`와 paper balance/buyable route를 추가하고 기존 공통
 > order 조회·취소를 `INTERNAL_PAPER`로 확장한다. paper path는 KIS Mock gRPC port를 참조하지
 > 않으며 stored quote와 append-only `paper_order_events`만 사용한다. provider 장애 fallback,
@@ -1640,6 +1640,11 @@ MARKET은 BUY 올림/SELL 내림의 불리한 방향으로 기본 5bps를 정수
 조건 충족 시 전량 체결, 미충족 시 `ACCEPTED`, `fill: null`, warning
 `PAPER_LIMIT_NOT_FILLED`, paper ledger mutation 0건이다. 둘 다 없거나 stale/partial이면 가격을
 합성하지 않는다. 부분 체결, queue, worker, 추측 수수료는 없다.
+
+같은 idempotency scope의 동시 진입은 purpose HMAC만 key에 넣은 30초 Redis claim으로 막고,
+완료 결과/replay의 진실은 PostgreSQL row에 둔다. Redis 장애는 원장 write 전에 503으로 닫힌다.
+metric tag는 닫힌 rejection reason/price basis enum만 허용하며 stable log에는 reference ID,
+mode, price basis 외의 account/symbol/quantity/amount/raw key를 넣지 않는다.
 
 ### 10.2 주문 상태 조회
 

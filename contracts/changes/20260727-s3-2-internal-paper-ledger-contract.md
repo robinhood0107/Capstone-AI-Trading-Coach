@@ -28,6 +28,10 @@ route의 mode 확장이다. KIS gRPC, provider, live account, live order, 체결
      `userAcknowledgement`다. body-supplied mode/account/provider/actor는 거부한다.
    - account는 Decision snapshot의 `portfolio.ownerScopeHash`와
      `paper_accounts.owner_scope_hash`가 일치하는 단 하나의 ACTIVE KRW account로 해석한다.
+   - nullable `margin_requirement_krw`는 security-barrier
+     `paper_margin_owner_projection`으로만 owner-scoped read를 연다. 값이 없으면 0을 합성하지
+     않고 S2.2/S2.3 readiness는 HOLD를 유지한다. 기존
+     `active_paper_portfolio_projection`은 변경하지 않는다.
    - 타인 account/order/decision과 미존재 값은 동일한 404 envelope로 닫는다.
    - paper account 생성·충전·삭제 API는 없다. 테스트는 flyway/admin seed, 시연은 S8.3
      `demo_seed`만 사용한다.
@@ -57,9 +61,9 @@ route의 mode 확장이다. KIS gRPC, provider, live account, live order, 체결
      빈틈없이 증가한다.
    - ledger payload exact set은
      `orderId,symbol,side,fillQuantity,fillPriceKrw,fillAmountKrw,priceBasis,
-     slippageBps,feeModel,cashBeforeKrw,cashAfterKrw,quantityBefore,quantityAfter,
-     averagePriceBeforeKrw,averagePriceAfterKrw,marketValueBeforeKrw,
-     marketValueAfterKrw,occurredAt`이다.
+     slippageBps,feeModel,observedAt,beforeCashKrw,afterCashKrw,beforeQuantity,
+     afterQuantity,beforeAveragePriceKrw,afterAveragePriceKrw,beforeMarketValueKrw,
+     afterMarketValueKrw`이다.
    - 첫 fill의 before state가 admin/demo seed의 opening state를 고정하고, 이후 event의
      before state는 직전 event에서 계산한 after state와 정확히 이어져야 한다.
      계정에 fill이 없으면 order-derived mutation도 없으므로 rebuild 결과는 `NO_EVENTS`다.
@@ -87,6 +91,10 @@ route의 mode 확장이다. KIS gRPC, provider, live account, live order, 체결
      `PAPER_ORDER_FILLED`와 `brokerage.paper-order-filled.v1`은 위 filled set을 공유한다.
    - 계좌번호, raw idempotency key, raw provider payload/header, token, 자유서술 provider
      message는 response/event/audit/outbox/log/metric에 넣지 않는다.
+   - metric은 `brokerage.paper.fill`, `brokerage.paper.rejected`,
+     `brokerage.paper.price_basis`만 추가한다. tag는 닫힌 `reason`/`basis` enum만 허용한다.
+     stable fill log는 reference ID, `INTERNAL_PAPER`, price basis만 기록하고 계좌·종목·수량·금액·
+     raw key를 기록하지 않는다.
 
 7. **원자성·동시성·권한**
    - lock 순서는 user share → idempotency/decision advisory lock → Kill Switch share →
@@ -103,6 +111,12 @@ route의 mode 확장이다. KIS gRPC, provider, live account, live order, 체결
 8. **멱등성**
    - 기존 HMAC key를 재사용하되 purpose를
      `BROKERAGE_PAPER_ORDER_SUBMIT`으로 분리한다. 새 secret은 추가하지 않는다.
+   - PostgreSQL의 durable replay를 최종 진실로 유지하면서, 같은 scope의 동시 진입만 막는
+     Redis claim을 30초 TTL로 둔다. key에는 64자리 purpose HMAC scope만, value에는 임의 token과
+     request hash만 저장하고 owner/raw key/payload를 넣지 않는다. release는 token+hash가 같은
+     holder만 삭제하는 compare-and-delete다.
+   - Redis 장애는 `BROKERAGE_UNAVAILABLE`로 fail-closed하며 DB write를 만들지 않는다. claim
+     만료는 완료 결과 보존이 아니므로 이후 요청도 PostgreSQL durable replay를 먼저 확인한다.
    - same key/same payload replay, same key/different payload conflict, in-progress conflict,
      다른 owner 동일 raw key 무충돌을 유지한다.
    - mock과 paper의 같은 raw key는 purpose가 달라 충돌하지 않지만, 같은 Decision은 전역
@@ -116,7 +130,9 @@ route의 mode 확장이다. KIS gRPC, provider, live account, live order, 체결
 
 10. **검증**
     - catalog, five generated JSON Schemas, positive/negative fixtures, generator `--check`,
-      OpenAPI path/resource equality를 CI에서 확인한다.
+      OpenAPI path/resource equality를 CI에서 확인한다. implementation normalizer는 S3.2
+      contract ID/SHA-256, exact 5개 path/method, exact 9개 `S32*` component를 allowlist로
+      검사한다.
     - pure policy, Testcontainers migration/privilege/rebuild/concurrency, API E2E,
       non-exposure, no-fallback, OpenAPI drift, full Kotlin/Python/hygiene gates가 모두
       통과해야 한다.
@@ -134,7 +150,8 @@ endpoints and never falls back from a failed KIS_MOCK request to paper.
   `userAcknowledgement`; client-supplied mode/account/provider/actor fields are rejected.
 - The account is selected by exact equality between the Decision snapshot owner scope and
   one ACTIVE KRW paper account owner scope. Missing and cross-owner resources share the same
-  404 response.
+  404 response. A nullable margin requirement is exposed only through a security-barrier
+  owner projection; absence remains unavailable rather than becoming a synthetic zero.
 - V13 extends stored market observations with nullable `previous_close_krw` and allows a
   nullable last price only when at least one stored price exists. Existing S2.3 reads ignore
   a null current price and remain fail-closed. Only the offline fixture writer is extended.
@@ -154,8 +171,15 @@ endpoints and never falls back from a failed KIS_MOCK request to paper.
   Exact ACCEPTED and CANCELLED audit/outbox branches are also present so state changes never
   become unaudited.
 - Existing HMAC key material is reused with a distinct
-  `BROKERAGE_PAPER_ORDER_SUBMIT` purpose. Raw keys, account numbers, provider payloads,
-  headers, tokens, and free-form provider messages are never persisted or emitted.
+  `BROKERAGE_PAPER_ORDER_SUBMIT` purpose. A 30-second Redis claim stores only the purpose
+  scope hash, random holder token, and request hash to suppress concurrent entry; PostgreSQL
+  remains the durable replay authority. Claim release is holder-checked and Redis failure
+  fails closed before a ledger write. Raw keys, account numbers, provider payloads, headers,
+  tokens, and free-form provider messages are never persisted or emitted.
+- Metrics use only closed rejection-reason and price-basis tags. Stable logs contain bounded
+  reference IDs, mode, and price basis, never account, symbol, quantity, amount, or raw key.
+- The implementation OpenAPI normalizer requires the S3.2 contract ID/digest, exactly five
+  approved path/method pairs, and exactly nine `S32*` schemas.
 - Provider calls, live-order enablement, partial fills, public paper account APIs, fee/tax
   models, Kafka publication, historical migration edits, and changes to
   `active_paper_portfolio_projection` are out of scope.

@@ -613,6 +613,52 @@ class DecisionApiIntegrationTest(
     }
 
     @Test
+    fun `Kill Switch activation cannot miss an in flight decision persistence`() {
+        val principleId = insertPrinciple("usr_demo_user", "GUIDE", suffix = "912")
+        val token = login("demo-user", userPassword())
+        installSlowDecisionTrigger()
+        val executor = Executors.newSingleThreadExecutor()
+        try {
+            val decision =
+                executor.submit<MvcResult> {
+                    evaluate(
+                        token,
+                        "decision-kill-race-0001",
+                        "req-decision-kill-race",
+                        request(principleId),
+                    )
+                }
+            awaitSlowDecisionTriggerEntered()
+
+            val activation =
+                changeKillSwitch(
+                    token = token,
+                    idempotencyHeader = "risk-kill-race-000001",
+                    requestId = "req-risk-kill-race",
+                    active = true,
+                    reason = null,
+                )
+            val evaluated = decision.get(15, TimeUnit.SECONDS)
+
+            assertEquals(200, evaluated.response.status)
+            assertEquals(200, activation.response.status)
+            val decisionId = json(evaluated).at("/data/decisionId").stringValue()
+            assertEquals(
+                1,
+                count(
+                    """
+                    select count(*) from decision_invalidations
+                    where decision_id = ? and reason_class = 'KILL_SWITCH_ACTIVATED'
+                    """.trimIndent(),
+                    decisionId,
+                ),
+            )
+        } finally {
+            executor.shutdownNow()
+        }
+    }
+
+    @Test
     fun `portfolio Risk API keeps absent producers null and reads actual owner observations only`() {
         val token = login("demo-user", userPassword())
         val timerBefore = meterRegistry.find("risk.portfolio.query").timer()?.count() ?: 0L

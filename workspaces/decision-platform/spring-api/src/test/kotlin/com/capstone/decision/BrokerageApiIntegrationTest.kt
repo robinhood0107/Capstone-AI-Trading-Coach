@@ -36,6 +36,7 @@ import tools.jackson.databind.JsonNode
 import tools.jackson.databind.ObjectMapper
 import java.sql.DriverManager
 import java.sql.SQLException
+import java.sql.Timestamp
 import java.time.Instant
 import java.time.OffsetDateTime
 import java.time.ZoneOffset
@@ -374,6 +375,118 @@ class BrokerageApiIntegrationTest(
         assertEquals(0, count("select count(*) from orders"))
         assertEquals(0, count("select count(*) from order_events"))
         assertEquals(0, count("select count(*) from event_outbox where event_type = 'brokerage.mock-order-submitted.v1'"))
+    }
+
+    @Test
+    fun `database order sink rejects a Decision expired after a stale service timestamp`() {
+        val token = login("demo-user", userPassword())
+        val decisionId = createDecision(token, suffix = "09", order = orderIntent())
+        val ownerScopeHash =
+            requireNotNull(
+                jdbcTemplate.queryForObject(
+                    """
+                    select snapshot_artifact_canonical_json::jsonb #>> '{portfolio,ownerScopeHash}'
+                    from decision_artifacts
+                    where decision_id = ?
+                    """.trimIndent(),
+                    String::class.java,
+                    decisionId,
+                ),
+            )
+        val staleWindow =
+            jdbcTemplate.queryForMap(
+                """
+                select
+                  clock_timestamp() - interval '10 minutes' as requested_created_at,
+                  clock_timestamp() - interval '1 second' as expired_at
+                """.trimIndent(),
+            )
+        val requestedCreatedAtTimestamp = staleWindow["requested_created_at"] as Timestamp
+        val expiredAtTimestamp = staleWindow["expired_at"] as Timestamp
+        val requestedCreatedAt = requestedCreatedAtTimestamp.toInstant()
+        jdbcTemplate.update(
+            """
+            update decisions
+            set evaluation_as_of = ?::timestamptz,
+                created_at = ?::timestamptz,
+                valid_until = ?::timestamptz
+            where decision_id = ?
+            """.trimIndent(),
+            requestedCreatedAtTimestamp,
+            requestedCreatedAtTimestamp,
+            expiredAtTimestamp,
+            decisionId,
+        )
+
+        val orderId = "ord_mock_00000000000000000000000000000009"
+        val pinnedOrderIntent =
+            mapOf(
+                "symbol" to "005930",
+                "side" to "BUY",
+                "orderType" to "MARKET",
+                "quantity" to "2",
+                "estimatedPrice" to "70000",
+                "estimatedAmount" to "140000",
+                "timeframe" to "1d",
+                "strategyId" to "cash-equity-v1",
+            )
+        val payload =
+            objectMapper.writeValueAsString(
+                mapOf<String, Any?>(
+                    "actorUserId" to "usr_demo_user",
+                    "actorRole" to "USER",
+                    "securityVersion" to 1,
+                    "requestId" to "req-brokerage-stale-expiry",
+                    "decisionId" to decisionId,
+                    "orderId" to orderId,
+                    "observedKillSwitchGeneration" to 1,
+                    "idempotencyScopeHash" to "9".repeat(64),
+                    "idempotencyOwnerScopeHash" to "8".repeat(64),
+                    "requestHash" to "7".repeat(64),
+                    "accountId" to "acct_${ownerScopeHash.take(32)}",
+                    "accountScopeHash" to ownerScopeHash,
+                    "symbol" to "005930",
+                    "side" to "BUY",
+                    "orderType" to "MARKET",
+                    "quantity" to 2,
+                    "submittedPriceKrw" to null,
+                    "orderIntent" to pinnedOrderIntent,
+                    "resultCanonicalJson" to
+                        objectMapper.writeValueAsString(
+                            mapOf(
+                                "orderId" to orderId,
+                                "brokerageMode" to "KIS_MOCK",
+                                "status" to "SUBMITTED",
+                                "submittedAt" to requestedCreatedAt.toString(),
+                            ),
+                        ),
+                    "warningsAccepted" to true,
+                    "submittedAt" to requestedCreatedAt.toString(),
+                    "createdAt" to requestedCreatedAt.toString(),
+                    "orderEventId" to "oev_00000000000000000000000000000009",
+                    "auditLogId" to "aud-brokerage-stale-expiry",
+                    "outboxEventId" to "evt-brokerage-stale-expiry",
+                ),
+            )
+
+        appDataSource.connection.use { connection ->
+            connection
+                .prepareStatement(
+                    """
+                    select operation_outcome
+                    from create_mock_order(cast(? as jsonb), ?)
+                    """.trimIndent(),
+                ).use { statement ->
+                    statement.setString(1, payload)
+                    statement.setString(2, TEST_BROKERAGE_DB_CAPABILITY_TOKEN)
+                    statement.executeQuery().use { result ->
+                        assertTrue(result.next())
+                        assertEquals("DECISION_EXPIRED", result.getString(1))
+                    }
+                }
+        }
+        assertEquals(0, count("select count(*) from orders where decision_id = ?", decisionId))
+        assertEquals(0, count("select count(*) from event_outbox where event_id = 'evt-brokerage-stale-expiry'"))
     }
 
     @Test

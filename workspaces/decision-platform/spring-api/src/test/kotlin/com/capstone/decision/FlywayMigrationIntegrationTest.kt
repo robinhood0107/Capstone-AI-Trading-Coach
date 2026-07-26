@@ -290,6 +290,85 @@ class FlywayMigrationIntegrationTest(
     }
 
     @Test
+    fun `V12 brokerage evidence contracts pin writer identity status values and live expiry clock`() {
+        val auditConstraint =
+            requireNotNull(
+                jdbcTemplate.queryForObject(
+                    """
+                    select pg_get_constraintdef(oid)
+                    from pg_constraint
+                    where conname = 'audit_logs_brokerage_order_contract_check'
+                    """.trimIndent(),
+                    String::class.java,
+                ),
+            )
+        assertTrue(auditConstraint.contains("brokerageMode"))
+        assertTrue(auditConstraint.contains("KIS_MOCK"))
+        assertTrue(auditConstraint.contains("SUBMITTED"))
+        assertTrue(auditConstraint.contains("CANCEL_REQUESTED"))
+
+        val outboxConstraint =
+            requireNotNull(
+                jdbcTemplate.queryForObject(
+                    """
+                    select pg_get_constraintdef(oid)
+                    from pg_constraint
+                    where conname = 'event_outbox_brokerage_order_contract_check'
+                    """.trimIndent(),
+                    String::class.java,
+                ),
+            )
+        assertTrue(outboxConstraint.contains("brokerageMode"))
+        assertTrue(outboxConstraint.contains("KIS_MOCK"))
+        assertTrue(outboxConstraint.contains("SUBMITTED"))
+        assertTrue(outboxConstraint.contains("CANCEL_REQUESTED"))
+
+        val guardDefinition =
+            requireNotNull(
+                jdbcTemplate.queryForObject(
+                    "select pg_get_functiondef('enforce_brokerage_evidence_writer()'::regprocedure)",
+                    String::class.java,
+                ),
+            ).lowercase()
+        assertTrue(guardDefinition.contains("pg_has_role"))
+        assertTrue(guardDefinition.contains("current_user"))
+        assertTrue(guardDefinition.contains("flyway"))
+        assertTrue(guardDefinition.contains("42501"))
+
+        val triggerDefinitions =
+            queryStrings(
+                """
+                select pg_get_triggerdef(oid)
+                from pg_trigger
+                where not tgisinternal
+                  and tgname in (
+                    'audit_logs_brokerage_writer_guard',
+                    'event_outbox_brokerage_writer_guard'
+                  )
+                order by tgname
+                """.trimIndent(),
+            )
+        assertEquals(2, triggerDefinitions.size)
+        val triggerText = triggerDefinitions.joinToString("\n").lowercase()
+        assertTrue(triggerText.contains("before insert"))
+        assertTrue(triggerText.contains("audit_logs"))
+        assertTrue(triggerText.contains("target_type = 'order'"))
+        assertTrue(triggerText.contains("event_outbox"))
+        assertTrue(triggerText.contains("brokerage.mock-order-submitted.v1"))
+        assertTrue(triggerText.contains("brokerage.mock-order-cancel-requested.v1"))
+
+        val createOrderDefinition =
+            requireNotNull(
+                jdbcTemplate.queryForObject(
+                    "select pg_get_functiondef('create_mock_order(jsonb,text)'::regprocedure)",
+                    String::class.java,
+                ),
+            )
+        assertTrue(createOrderDefinition.contains("clock_timestamp()"))
+        assertFalse(createOrderDefinition.contains("valid_until > requested_created_at"))
+    }
+
+    @Test
     fun `V10 singleton actor resume and audit constraints reject unsafe rows`() {
         assertCheckViolation {
             jdbcTemplate.update(

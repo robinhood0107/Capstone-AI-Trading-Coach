@@ -17,6 +17,12 @@ data class EvaluationSourceRequest(
     val decisionId: String = "unavailable",
 )
 
+data class PortfolioSourceRequest(
+    val actorUserId: String,
+    val portfolioContext: PortfolioContextRef,
+    val evaluationAsOf: Instant,
+)
+
 data class PortfolioPosition(
     val symbol: String,
     val quantity: Long,
@@ -142,6 +148,10 @@ interface BalancePort {
     val source: PortfolioSource
 
     fun load(request: EvaluationSourceRequest): MetricCell<BalanceSnapshot>
+
+    // 주문 의도를 합성하지 않고 현재 portfolio read model만 조회하는 S2.4 경계다.
+    fun loadPortfolio(request: PortfolioSourceRequest): MetricCell<BalanceSnapshot> =
+        MetricCell.Missing(com.capstone.decision.domain.risk.MetricIssueCode.SOURCE_MISSING)
 }
 
 interface MarginPort {
@@ -154,6 +164,11 @@ interface OrderMetricPort {
 
 interface RiskSnapshotPort {
     fun load(request: EvaluationSourceRequest): RiskMetricBundle
+
+    fun loadPortfolio(request: PortfolioSourceRequest): RiskMetricBundle {
+        val missing = MetricCell.Missing(com.capstone.decision.domain.risk.MetricIssueCode.SOURCE_MISSING)
+        return RiskMetricBundle(missing, missing, missing)
+    }
 }
 
 interface InstrumentCatalogPort {

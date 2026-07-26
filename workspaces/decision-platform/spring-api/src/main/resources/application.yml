@@ -64,6 +64,7 @@ app:
     paths:
       - /api/v1/orders/**
       - /api/v1/backtests/**
+      - /api/v1/risk/kill-switch
   decision:
     valid-minutes: 10              # validUntil
     idempotency-scope-hmac-key: ${DECISION_IDEMPOTENCY_SCOPE_HMAC_KEY}

@@ -1867,6 +1867,50 @@ class FlywayMigrationIntegrationTest(
     }
 
     @Test
+    fun `previous close only observation never becomes a zero current price metric`() {
+        jdbcTemplate.update(
+            """
+            insert into market_quote_observations (
+              observation_id, symbol, source, price_krw, previous_close_krw,
+              bid_krw, ask_krw, completeness, observed_at, received_at,
+              schema_version, source_version, payload_json, source_ref, artifact_hash
+            ) values (
+              'quote-previous-close-only-s32', '035720', 'KIS_MOCK', null, 45000,
+              44950, 45000, 'COMPLETE',
+              '2026-06-24T02:59:00Z', '2026-06-24T02:59:01Z',
+              'market-quote-observation.v1', 'previous-close-only-v1',
+              '{"symbol":"035720","priceKrw":null,"previousCloseKrw":45000}'::jsonb,
+              repeat('b', 64), repeat('c', 64)
+            )
+            """.trimIndent(),
+        )
+        val request =
+            EvaluationSourceRequest(
+                actorUserId = "usr_demo_user",
+                portfolioContext =
+                    com.capstone.decision.application.risk.port.PortfolioContextRef(
+                        opaqueRef = "c".repeat(64),
+                        source = PortfolioSource.KIS_MOCK,
+                        ownerScopeHash = "c".repeat(64),
+                    ),
+                orderIntent =
+                    OrderIntentSnapshot(
+                        symbol = "035720",
+                        side = "BUY",
+                        orderType = "MARKET",
+                        quantity = 1,
+                        estimatedPrice = 45_000,
+                        estimatedAmount = 45_000,
+                        timeframe = "1d",
+                        strategyId = "previous-close-only-test",
+                    ),
+                evaluationAsOf = Instant.parse("2026-06-24T03:00:00Z"),
+            )
+
+        assertTrue(marketQuoteAdapter.load(request) is MetricCell.Missing)
+    }
+
+    @Test
     fun `processed event rejects duplicate event per consumer`() {
         jdbcTemplate.update(
             """

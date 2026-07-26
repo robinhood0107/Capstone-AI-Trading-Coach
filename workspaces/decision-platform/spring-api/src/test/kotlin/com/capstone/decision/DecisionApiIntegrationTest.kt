@@ -8,6 +8,7 @@ import com.capstone.decision.domain.risk.KillSwitchReasonClass
 import io.micrometer.core.instrument.MeterRegistry
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -641,6 +642,30 @@ class DecisionApiIntegrationTest(
                 OffsetDateTime::class.java,
             ),
         )
+    }
+
+    @Test
+    fun `Kill Switch mutation adapter enforces the locked transition policy reason class`() {
+        assertThrows(IllegalArgumentException::class.java) {
+            killSwitchMutationPort.mutate(
+                KillSwitchMutationCommand(
+                    actor =
+                        KillSwitchActor(
+                            userId = "usr_demo_user",
+                            role = KillSwitchActorRole.USER,
+                            securityVersion = 1,
+                            requestId = "req-risk-kill-policy-drift",
+                        ),
+                    requestedActive = true,
+                    reasonClass = KillSwitchReasonClass.DATA_FRESHNESS_STOP,
+                ),
+            )
+        }
+
+        assertEquals(false, jdbcTemplate.queryForObject("select active from risk_kill_switch", Boolean::class.java))
+        assertEquals(0, count("select count(*) from risk_kill_switch_transitions"))
+        assertEquals(0, count("select count(*) from audit_logs where target_type = 'KILL_SWITCH'"))
+        assertEquals(0, count("select count(*) from event_outbox where event_type = 'kill-switch.changed'"))
     }
 
     @Test

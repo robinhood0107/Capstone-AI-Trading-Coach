@@ -33,6 +33,10 @@ S23_CATALOG_PATH = (
     REPO_ROOT / "contracts/catalogs/s2-3-decision-contract.v1.json"
 )
 S23_CONTRACT_ID = "s2-3-decision-contract/v1"
+S32_CATALOG_PATH = (
+    REPO_ROOT / "contracts/catalogs/s3-2-internal-paper-contract.v1.json"
+)
+S32_CONTRACT_ID = "s3-2-internal-paper-contract/v1"
 DECISION_PATH_METHODS = {
     "/api/v1/decisions/evaluate-order": {"post"},
     "/api/v1/decisions/{decisionId}": {"get"},
@@ -44,6 +48,24 @@ DECISION_COMPONENTS = {
     "S23DecisionSuccessResponse",
     "S23DecisionAudit",
     "S23DecisionAuditSuccessResponse",
+}
+S32_PATH_METHODS = {
+    "/api/v1/brokerage/paper/orders": {"post"},
+    "/api/v1/brokerage/paper/accounts/{accountId}/balances": {"get"},
+    "/api/v1/brokerage/paper/accounts/{accountId}/buyable": {"get"},
+    "/api/v1/brokerage/orders/{orderId}": {"get"},
+    "/api/v1/brokerage/orders/{orderId}/cancel": {"post"},
+}
+S32_COMPONENTS = {
+    "S32PaperOrderRequest",
+    "S32PaperOrder",
+    "S32OrderDetail",
+    "S32PaperBalance",
+    "S32PaperBuyable",
+    "S32PaperOrderSuccessResponse",
+    "S32OrderDetailSuccessResponse",
+    "S32PaperBalanceSuccessResponse",
+    "S32PaperBuyableSuccessResponse",
 }
 HTTP_METHODS = {
     "delete",
@@ -98,11 +120,22 @@ def _s23_catalog_digest() -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
+def _s32_catalog_digest() -> str:
+    raw = S32_CATALOG_PATH.read_bytes()
+    catalog = load_json_bytes_strict(raw, source="S3.2 INTERNAL_PAPER catalog")
+    if raw != canonical_json_bytes(catalog):
+        raise OpenApiNormalizationError(
+            "S3.2 INTERNAL_PAPER catalog bytes must be canonical."
+        )
+    return hashlib.sha256(raw).hexdigest()
+
+
 def _assert_contract_roots(
     document: dict[str, Any],
     digest: str,
     *,
     source: str,
+    amendment: bool,
 ) -> None:
     if document.get("jsonSchemaDialect") != OAS_BASE_DIALECT:
         raise OpenApiNormalizationError(f"{source}: OAS 3.1 base dialect is missing or different.")
@@ -114,6 +147,15 @@ def _assert_contract_roots(
         raise OpenApiNormalizationError(f"{source}: S2.3 contract ID extension is invalid.")
     if document.get("x-s2-3-contract-sha256") != _s23_catalog_digest():
         raise OpenApiNormalizationError(f"{source}: S2.3 catalog digest extension is invalid.")
+    if not amendment:
+        if document.get("x-s3-2-contract-id") != S32_CONTRACT_ID:
+            raise OpenApiNormalizationError(
+                f"{source}: S3.2 contract ID extension is invalid."
+            )
+        if document.get("x-s3-2-contract-sha256") != _s32_catalog_digest():
+            raise OpenApiNormalizationError(
+                f"{source}: S3.2 catalog digest extension is invalid."
+            )
 
 
 def _assert_no_premature_principle_paths(document: dict[str, Any], *, source: str) -> None:
@@ -163,6 +205,44 @@ def _assert_decision_components(
         )
 
 
+def _assert_s32_paths(
+    document: dict[str, Any], *, source: str, amendment: bool
+) -> None:
+    paths = document["paths"]
+    actual = {
+        path: {
+            key.lower()
+            for key in item
+            if isinstance(key, str) and key.lower() in HTTP_METHODS
+        }
+        for path, item in paths.items()
+        if path.startswith("/api/v1/brokerage/paper/")
+        or path in {
+            "/api/v1/brokerage/orders/{orderId}",
+            "/api/v1/brokerage/orders/{orderId}/cancel",
+        }
+    }
+    expected = {} if amendment else S32_PATH_METHODS
+    if actual != expected:
+        raise OpenApiNormalizationError(
+            f"{source}: INTERNAL_PAPER paths or methods differ from the approved S3.2 allowlist."
+        )
+
+
+def _assert_s32_components(
+    document: dict[str, Any], *, source: str, amendment: bool
+) -> None:
+    schemas = document["components"].get("schemas", {})
+    if not isinstance(schemas, dict):
+        raise OpenApiNormalizationError(f"{source}: component schemas must be an object.")
+    actual = {name for name in schemas if name.startswith("S32")}
+    expected = set() if amendment else S32_COMPONENTS
+    if actual != expected:
+        raise OpenApiNormalizationError(
+            f"{source}: S3.2 component names differ from the approved allowlist."
+        )
+
+
 def _validate_openapi_schema(document: dict[str, Any], *, source: str) -> None:
     try:
         validate(document)
@@ -182,7 +262,12 @@ def normalize_generated_openapi(
         raise OpenApiNormalizationError(
             "Generated OpenAPI root must be exactly 3.1.0 before the approved patch."
         )
-    _assert_contract_roots(generated, digest, source="generated OpenAPI")
+    _assert_contract_roots(
+        generated,
+        digest,
+        source="generated OpenAPI",
+        amendment=amendment,
+    )
     if amendment:
         _assert_no_premature_principle_paths(generated, source="generated OpenAPI")
     _assert_decision_paths(
@@ -191,6 +276,16 @@ def normalize_generated_openapi(
         amendment=amendment,
     )
     _assert_decision_components(
+        generated,
+        source="generated OpenAPI",
+        amendment=amendment,
+    )
+    _assert_s32_paths(
+        generated,
+        source="generated OpenAPI",
+        amendment=amendment,
+    )
+    _assert_s32_components(
         generated,
         source="generated OpenAPI",
         amendment=amendment,
@@ -217,7 +312,12 @@ def check_normalized_openapi(
     digest = _catalog_digest(catalog_bytes)
     if expected.get("openapi") != "3.1.1":
         raise OpenApiNormalizationError("Tracked OpenAPI root must be exactly 3.1.1.")
-    _assert_contract_roots(expected, digest, source="tracked OpenAPI")
+    _assert_contract_roots(
+        expected,
+        digest,
+        source="tracked OpenAPI",
+        amendment=amendment,
+    )
     if amendment:
         _assert_no_premature_principle_paths(expected, source="tracked OpenAPI")
     _assert_decision_paths(
@@ -226,6 +326,16 @@ def check_normalized_openapi(
         amendment=amendment,
     )
     _assert_decision_components(
+        expected,
+        source="tracked OpenAPI",
+        amendment=amendment,
+    )
+    _assert_s32_paths(
+        expected,
+        source="tracked OpenAPI",
+        amendment=amendment,
+    )
+    _assert_s32_components(
         expected,
         source="tracked OpenAPI",
         amendment=amendment,
@@ -253,7 +363,7 @@ def main() -> int:
     parser.add_argument(
         "--implementation",
         action="store_true",
-        help="Require the exact implemented S2.1 and S2.3 runtime paths.",
+        help="Require the exact implemented S2.1, S2.3, and S3.2 runtime paths.",
     )
     arguments = parser.parse_args()
 

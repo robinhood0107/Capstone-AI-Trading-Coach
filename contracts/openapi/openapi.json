@@ -305,80 +305,6 @@
         },
         "type": "object"
       },
-      "ApiResponseS24KillSwitchState": {
-        "properties": {
-          "data": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/S24KillSwitchState"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "error": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/ApiError"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "requestId": {
-            "type": "string"
-          },
-          "success": {
-            "type": "boolean"
-          },
-          "warnings": {
-            "items": {
-              "$ref": "#/components/schemas/ApiWarning"
-            },
-            "type": "array"
-          }
-        },
-        "type": "object"
-      },
-      "ApiResponseS24PortfolioRisk": {
-        "properties": {
-          "data": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/S24PortfolioRisk"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "error": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/ApiError"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "requestId": {
-            "type": "string"
-          },
-          "success": {
-            "type": "boolean"
-          },
-          "warnings": {
-            "items": {
-              "$ref": "#/components/schemas/ApiWarning"
-            },
-            "type": "array"
-          }
-        },
-        "type": "object"
-      },
       "ApiWarning": {
         "properties": {
           "code": {
@@ -3588,6 +3514,43 @@
         "$id": "contracts/schemas/s2-4-kill-switch-state.schema.json",
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
+        "allOf": [
+          {
+            "else": {
+              "properties": {
+                "reasonClass": {
+                  "enum": [
+                    "ADMIN_RESUME",
+                    "INITIAL_STATE"
+                  ]
+                }
+              }
+            },
+            "if": {
+              "properties": {
+                "active": {
+                  "const": true
+                }
+              },
+              "required": [
+                "active"
+              ]
+            },
+            "then": {
+              "properties": {
+                "reasonClass": {
+                  "enum": [
+                    "USER_MANUAL_STOP",
+                    "OPERATOR_MANUAL_STOP",
+                    "DATA_FRESHNESS_STOP",
+                    "BROKERAGE_FAILURE_STOP",
+                    "DEMO_SAFETY_STOP"
+                  ]
+                }
+              }
+            }
+          }
+        ],
         "properties": {
           "active": {
             "type": "boolean"
@@ -3656,6 +3619,7 @@
         "additionalProperties": false,
         "properties": {
           "annualizedVolatility20d": {
+            "minimum": 0,
             "type": [
               "number",
               "null"
@@ -3672,6 +3636,8 @@
             ]
           },
           "dailyPnlRate": {
+            "maximum": 0,
+            "minimum": -1,
             "type": [
               "number",
               "null"
@@ -3724,6 +3690,8 @@
             "type": "boolean"
           },
           "mdd": {
+            "maximum": 0,
+            "minimum": -1,
             "type": [
               "number",
               "null"
@@ -3732,7 +3700,7 @@
           "portfolioValue": {
             "minimum": 0,
             "type": [
-              "number",
+              "integer",
               "null"
             ]
           },
@@ -3767,30 +3735,6 @@
         "title": "S2.4 owner-scoped portfolio risk projection v1",
         "type": "object"
       },
-      "S24PortfolioRiskFreshness": {
-        "additionalProperties": false,
-        "properties": {
-          "priceFresh": {
-            "type": [
-              "boolean",
-              "null"
-            ]
-          },
-          "ragFresh": {
-            "type": [
-              "boolean",
-              "null"
-            ]
-          },
-          "signalFresh": {
-            "type": [
-              "boolean",
-              "null"
-            ]
-          }
-        },
-        "type": "object"
-      },
       "S24PortfolioRiskSuccessResponse": {
         "additionalProperties": false,
         "properties": {
@@ -3813,6 +3757,65 @@
             "items": {
               "$ref": "#/components/schemas/ApiWarning"
             },
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "error",
+          "requestId",
+          "success",
+          "warnings"
+        ],
+        "type": "object"
+      },
+      "S24RiskErrorResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "type": "null"
+          },
+          "error": {
+            "additionalProperties": false,
+            "properties": {
+              "code": {
+                "enum": [
+                  "VALIDATION_ERROR",
+                  "UNAUTHORIZED",
+                  "FORBIDDEN",
+                  "CONFLICT",
+                  "RISK_UNAVAILABLE"
+                ],
+                "type": "string"
+              },
+              "details": {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              "message": {
+                "maxLength": 512,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "details",
+              "message"
+            ],
+            "type": "object"
+          },
+          "requestId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "success": {
+            "const": false,
+            "type": "boolean"
+          },
+          "warnings": {
+            "const": [],
             "type": "array"
           }
         },
@@ -4646,7 +4649,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseS24KillSwitchState"
+                  "$ref": "#/components/schemas/S24RiskErrorResponse"
                 }
               }
             },
@@ -4656,7 +4659,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseS24KillSwitchState"
+                  "$ref": "#/components/schemas/S24RiskErrorResponse"
                 }
               }
             },
@@ -4677,6 +4680,9 @@
             "name": "X-Idempotency-Key",
             "required": true,
             "schema": {
+              "maxLength": 128,
+              "minLength": 16,
+              "pattern": "^[A-Za-z0-9._:-]+$",
               "type": "string"
             }
           }
@@ -4706,7 +4712,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseS24KillSwitchState"
+                  "$ref": "#/components/schemas/S24RiskErrorResponse"
                 }
               }
             },
@@ -4716,7 +4722,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseS24KillSwitchState"
+                  "$ref": "#/components/schemas/S24RiskErrorResponse"
                 }
               }
             },
@@ -4726,7 +4732,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseS24KillSwitchState"
+                  "$ref": "#/components/schemas/S24RiskErrorResponse"
                 }
               }
             },
@@ -4736,7 +4742,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseS24KillSwitchState"
+                  "$ref": "#/components/schemas/S24RiskErrorResponse"
                 }
               }
             },
@@ -4746,7 +4752,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseS24KillSwitchState"
+                  "$ref": "#/components/schemas/S24RiskErrorResponse"
                 }
               }
             },
@@ -4777,7 +4783,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseS24PortfolioRisk"
+                  "$ref": "#/components/schemas/S24RiskErrorResponse"
                 }
               }
             },
@@ -4787,7 +4793,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseS24PortfolioRisk"
+                  "$ref": "#/components/schemas/S24RiskErrorResponse"
                 }
               }
             },

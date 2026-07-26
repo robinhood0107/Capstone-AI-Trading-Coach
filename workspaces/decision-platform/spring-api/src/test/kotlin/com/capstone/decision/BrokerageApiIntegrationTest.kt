@@ -129,7 +129,7 @@ class BrokerageApiIntegrationTest(
                 order = orderIntent(),
             )
 
-        assertEquals(200, first.response.status)
+        assertEquals(200, first.response.status, first.response.contentAsString)
         val data = json(first).at("/data")
         val orderId = data.path("orderId").stringValue()
         val accountId = data.path("accountId").stringValue()
@@ -441,7 +441,7 @@ class BrokerageApiIntegrationTest(
                 decisionId,
                 orderIntent(),
             )
-        assertEquals(200, submitted.response.status)
+        assertEquals(200, submitted.response.status, submitted.response.contentAsString)
         val orderId = json(submitted).at("/data/orderId").stringValue()
 
         appDataSource.connection.use { connection ->
@@ -454,11 +454,12 @@ class BrokerageApiIntegrationTest(
                 statement.setString(1, orderId)
                 statement.executeQuery().use { result -> check(result.next()) }
             }
-            val denied = org.junit.jupiter.api.assertThrows<SQLException> {
-                connection.createStatement().use { statement ->
-                    statement.executeQuery("SELECT order_id FROM orders")
+            val denied =
+                org.junit.jupiter.api.assertThrows<SQLException> {
+                    connection.createStatement().use { statement ->
+                        statement.executeQuery("SELECT order_id FROM orders")
+                    }
                 }
-            }
             assertEquals("42501", denied.sqlState)
             connection.rollback()
         }
@@ -606,31 +607,17 @@ class BrokerageApiIntegrationTest(
 
     private fun visibleOrderableDecisionCount(decisionId: String): Int =
         appDataSource.connection.use { connection ->
-            connection.autoCommit = false
-            try {
-                connection.prepareStatement("SELECT set_config('app.actor_user_id', ?, true)").use { statement ->
+            connection
+                .prepareStatement("SELECT count(*) FROM read_mock_order_decision(?, ?, ?)")
+                .use { statement ->
                     statement.setString(1, "usr_demo_user")
-                    statement.executeQuery().use { result -> check(result.next()) }
-                }
-                connection.prepareStatement("SELECT set_config('app.requested_decision_id', ?, true)").use { statement ->
-                    statement.setString(1, decisionId)
-                    statement.executeQuery().use { result -> check(result.next()) }
-                }
-                val count =
-                    connection.prepareStatement("SELECT count(*) FROM read_mock_order_decision()").use { statement ->
-                        statement.executeQuery().use { result ->
-                            check(result.next())
-                            result.getInt(1)
-                        }
+                    statement.setString(2, decisionId)
+                    statement.setString(3, TEST_BROKERAGE_DB_CAPABILITY_TOKEN)
+                    statement.executeQuery().use { result ->
+                        check(result.next())
+                        result.getInt(1)
                     }
-                connection.commit()
-                count
-            } catch (exception: Exception) {
-                runCatching { connection.rollback() }
-                throw exception
-            } finally {
-                runCatching { connection.autoCommit = true }
-            }
+                }
         }
 
     private fun visibleDecisionOwnerProjectionCount(decisionId: String): Int =

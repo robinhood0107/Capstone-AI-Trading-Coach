@@ -18,6 +18,8 @@ spring:
     locations: classpath:db/migration
     user: flyway
     password: ${POSTGRES_MIGRATION_PASSWORD}
+    placeholders:
+      brokerageDbCapabilityTokenSha256: ${BROKERAGE_DB_CAPABILITY_TOKEN_SHA256}
   data:
     redis:
       host: ${REDIS_HOST:127.0.0.1}
@@ -81,6 +83,9 @@ app:
       concurrency-max: 8
   brokerage:
     idempotency-scope-hmac-key: ${BROKERAGE_IDEMPOTENCY_SCOPE_HMAC_KEY}
+    # DB에는 digest만 migration으로 저장하고 raw capability는 prepared bind로만 전달한다.
+    database-capability-token: ${BROKERAGE_DB_CAPABILITY_TOKEN}
+    database-capability-token-sha256: ${BROKERAGE_DB_CAPABILITY_TOKEN_SHA256}
     idempotency-ttl-hours: 24
     grpc:
       enabled: ${BROKERAGE_GRPC_ENABLED:false}

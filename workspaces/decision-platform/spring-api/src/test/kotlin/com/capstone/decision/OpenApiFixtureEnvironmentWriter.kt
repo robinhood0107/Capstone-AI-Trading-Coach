@@ -10,8 +10,10 @@ import java.nio.file.StandardCopyOption
 import java.nio.file.StandardOpenOption
 import java.nio.file.attribute.PosixFilePermission
 import java.nio.file.attribute.PosixFilePermissions
+import java.security.MessageDigest
 import java.security.SecureRandom
 import java.util.Base64
+import java.util.HexFormat
 
 // OpenAPI boot에 필요한 non-provider secret을 매 실행 새로 만들고 값은 stdout이나 tracked 파일에 남기지 않는다.
 object OpenApiFixtureEnvironmentWriter {
@@ -26,6 +28,7 @@ object OpenApiFixtureEnvironmentWriter {
         val random = SecureRandom()
         val separationKey = ByteArray(32).also(random::nextBytes)
         val grpcSharedSecret = randomToken(random, 32)
+        val brokerageDatabaseCapability = randomToken(random, 32)
         val userPassword = randomToken(random, 18).toCharArray()
         val adminPassword = randomToken(random, 18).toCharArray()
         val encoder = BCryptPasswordEncoder(12)
@@ -55,6 +58,8 @@ object OpenApiFixtureEnvironmentWriter {
                     "PRINCIPLE_CURSOR_HMAC_KEY" to randomToken(random, 32),
                     "DECISION_IDEMPOTENCY_SCOPE_HMAC_KEY" to randomToken(random, 32),
                     "BROKERAGE_IDEMPOTENCY_SCOPE_HMAC_KEY" to randomToken(random, 32),
+                    "BROKERAGE_DB_CAPABILITY_TOKEN" to brokerageDatabaseCapability,
+                    "BROKERAGE_DB_CAPABILITY_TOKEN_SHA256" to sha256(brokerageDatabaseCapability),
                     "DEMO_CREDENTIAL_SEPARATION_KEY" to encode(separationKey),
                     "DEMO_USER_CREDENTIAL_BUNDLE" to
                         DemoCredentialBundlePolicy.prepare(
@@ -93,6 +98,15 @@ object OpenApiFixtureEnvironmentWriter {
     }
 
     private fun encode(value: ByteArray): String = Base64.getUrlEncoder().withoutPadding().encodeToString(value)
+
+    private fun sha256(value: String): String =
+        HexFormat
+            .of()
+            .formatHex(
+                MessageDigest
+                    .getInstance("SHA-256")
+                    .digest(value.toByteArray(StandardCharsets.UTF_8)),
+            )
 
     private fun writePrivateEnvironment(
         output: Path,

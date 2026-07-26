@@ -32,9 +32,9 @@ class PrincipleContractMigrationIntegrationTest(
     @Autowired private val principleRuleJsonCodec: PrincipleRuleJsonCodec,
 ) : SpringApiIntegrationTestBase() {
     @Test
-    fun `clean V1 through V11 migration preserves the exact Principle schema and seed`() {
+    fun `clean V1 through V12 migration preserves the exact Principle schema and seed`() {
         assertEquals(
-            (1..11).map(Int::toString),
+            (1..12).map(Int::toString),
             jdbcTemplate.query(
                 "select version from flyway_schema_history where success order by installed_rank",
             ) { result, _ -> result.getString(1) },
@@ -512,8 +512,7 @@ class PrincipleContractMigrationIntegrationTest(
                         "brokerageDbCapabilityTokenSha256" to
                             SpringApiIntegrationTestBase.TEST_BROKERAGE_DB_CAPABILITY_TOKEN_SHA256,
                     ),
-                )
-                .javaMigrations(s21ActorTrustMigration())
+                ).javaMigrations(s21ActorTrustMigration())
         target?.let(configuration::target)
         return configuration.load()
     }

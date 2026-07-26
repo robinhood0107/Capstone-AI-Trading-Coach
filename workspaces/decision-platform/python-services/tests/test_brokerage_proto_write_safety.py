@@ -80,3 +80,19 @@ def test_check_mode_rejects_symlink_even_when_target_bytes_match() -> None:
                 generator.generate(check=True)
 
         assert marker.read_bytes() == b"expected"
+
+
+def test_check_mode_does_not_create_missing_output_parent() -> None:
+    generator = _load_generator()
+    with tempfile.TemporaryDirectory(prefix="s31-proto-check-missing-") as raw_dir:
+        root = Path(raw_dir)
+        missing_parent = root / "generated" / "python"
+        output = missing_parent / "brokerage_pb2.py"
+
+        with (
+            patch.object(generator, "REPO_ROOT", root),
+            patch.object(generator, "_run_protoc", return_value={output: b"expected"}),
+        ):
+            assert generator.generate(check=True) == 1
+
+        assert not missing_parent.exists()

@@ -2,13 +2,11 @@ package com.capstone.decision.application.risk
 
 import com.capstone.decision.domain.risk.KillSwitchActorRole
 import com.capstone.decision.domain.risk.KillSwitchReasonClass
-import java.time.Clock
 
 // 자유 서술 reason은 domain validation 뒤 즉시 버리고 persistence에는 enum만 전달한다.
 class KillSwitchService(
     private val queryPort: KillSwitchQueryPort,
     private val mutationPort: KillSwitchMutationPort,
-    private val clock: Clock,
     private val observationPort: RiskObservationPort = RiskObservationPort.NONE,
 ) {
     fun getState(): KillSwitchPublicState =
@@ -41,7 +39,6 @@ class KillSwitchService(
                         actor = actor,
                         requestedActive = active,
                         reasonClass = reasonClass,
-                        changedAt = clock.instant(),
                     ),
                 )
             } catch (exception: KillSwitchForbiddenException) {

@@ -2,6 +2,43 @@
   "$id": "contracts/schemas/s2-4-kill-switch-state.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
+  "allOf": [
+    {
+      "else": {
+        "properties": {
+          "reasonClass": {
+            "enum": [
+              "ADMIN_RESUME",
+              "INITIAL_STATE"
+            ]
+          }
+        }
+      },
+      "if": {
+        "properties": {
+          "active": {
+            "const": true
+          }
+        },
+        "required": [
+          "active"
+        ]
+      },
+      "then": {
+        "properties": {
+          "reasonClass": {
+            "enum": [
+              "USER_MANUAL_STOP",
+              "OPERATOR_MANUAL_STOP",
+              "DATA_FRESHNESS_STOP",
+              "BROKERAGE_FAILURE_STOP",
+              "DEMO_SAFETY_STOP"
+            ]
+          }
+        }
+      }
+    }
+  ],
   "properties": {
     "active": {
       "type": "boolean"

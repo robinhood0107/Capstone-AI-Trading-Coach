@@ -62,7 +62,7 @@ CREATE TABLE risk_kill_switch_transitions (
   changed_by text REFERENCES users(user_id) ON DELETE RESTRICT,
   changed_by_role text NOT NULL CHECK (changed_by_role IN ('USER', 'ADMIN', 'SYSTEM')),
   changed_at timestamptz NOT NULL,
-  request_id text NOT NULL UNIQUE CHECK (char_length(request_id) BETWEEN 1 AND 128),
+    request_id text CHECK (request_id IS NULL OR char_length(request_id) BETWEEN 1 AND 128),
   invalidated_decision_count integer NOT NULL CHECK (invalidated_decision_count >= 0),
   CONSTRAINT risk_kill_switch_transitions_change_check CHECK (previous_active <> next_active),
   CONSTRAINT risk_kill_switch_transitions_actor_check CHECK (

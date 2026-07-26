@@ -157,6 +157,154 @@
         },
         "type": "object"
       },
+      "ApiResponseMockBalanceProjection": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/MockBalanceProjection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ApiError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ApiWarning"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "ApiResponseMockBuyableProjection": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/MockBuyableProjection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ApiError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ApiWarning"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "ApiResponseMockOrderProjection": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/MockOrderProjection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ApiError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ApiWarning"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "ApiResponseOrderDetailProjection": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/OrderDetailProjection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ApiError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ApiWarning"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
       "ApiResponsePrincipleCurrent": {
         "properties": {
           "data": {
@@ -578,6 +726,143 @@
             "type": "string"
           },
           "username": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "MockBalancePositionProjection": {
+        "properties": {
+          "goldEtfEtn": {
+            "type": "boolean"
+          },
+          "marketValueKrw": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "quantity": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "symbol": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "MockBalanceProjection": {
+        "properties": {
+          "accountId": {
+            "type": "string"
+          },
+          "brokerageMode": {
+            "type": "string"
+          },
+          "cashKrw": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "marginRequirementKrw": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "observedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "portfolioEquityKrw": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "positions": {
+            "items": {
+              "$ref": "#/components/schemas/MockBalancePositionProjection"
+            },
+            "type": "array"
+          },
+          "sourceVersion": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "MockBuyableProjection": {
+        "properties": {
+          "accountId": {
+            "type": "string"
+          },
+          "brokerageMode": {
+            "type": "string"
+          },
+          "buyableAmountKrw": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "buyableQuantity": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "cashKrw": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "estimatedPrice": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "observedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "sourceVersion": {
+            "type": "string"
+          },
+          "symbol": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "MockOrderProjection": {
+        "properties": {
+          "accountId": {
+            "type": "string"
+          },
+          "brokerageMode": {
+            "type": "string"
+          },
+          "orderId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "submittedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "OrderDetailProjection": {
+        "properties": {
+          "accountId": {
+            "type": "string"
+          },
+          "brokerageMode": {
+            "type": "string"
+          },
+          "decisionId": {
+            "type": "string"
+          },
+          "orderId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "submittedAt": {
+            "format": "date-time",
             "type": "string"
           }
         },
@@ -3828,6 +4113,456 @@
         ],
         "type": "object"
       },
+      "S31MockBalance": {
+        "$id": "contracts/schemas/s3-1-mock-balance.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "accountId": {
+            "pattern": "^acct_[0-9a-f]{32}$",
+            "type": "string"
+          },
+          "brokerageMode": {
+            "const": "KIS_MOCK"
+          },
+          "cashKrw": {
+            "maximum": 9223372036854775807,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "marginRequirementKrw": {
+            "maximum": 9223372036854775807,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "observedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "portfolioEquityKrw": {
+            "maximum": 9223372036854775807,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "positions": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "isGoldEtfEtn": {
+                  "type": "boolean"
+                },
+                "marketValueKrw": {
+                  "maximum": 9223372036854775807,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "quantity": {
+                  "maximum": 9223372036854775807,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "symbol": {
+                  "pattern": "^[0-9A-Z._:-]{1,20}$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "isGoldEtfEtn",
+                "marketValueKrw",
+                "quantity",
+                "symbol"
+              ],
+              "type": "object"
+            },
+            "maxItems": 1000,
+            "type": "array"
+          },
+          "sourceVersion": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "accountId",
+          "brokerageMode",
+          "cashKrw",
+          "marginRequirementKrw",
+          "observedAt",
+          "portfolioEquityKrw",
+          "positions",
+          "sourceVersion"
+        ],
+        "title": "S3.1 KIS Mock balance response v1",
+        "type": "object"
+      },
+      "S31MockBalanceSuccessResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/S31MockBalance"
+          },
+          "error": {
+            "type": "null"
+          },
+          "requestId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "success": {
+            "const": true,
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ApiWarning"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "error",
+          "requestId",
+          "success",
+          "warnings"
+        ],
+        "type": "object"
+      },
+      "S31MockBuyable": {
+        "$id": "contracts/schemas/s3-1-mock-buyable.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "accountId": {
+            "pattern": "^acct_[0-9a-f]{32}$",
+            "type": "string"
+          },
+          "brokerageMode": {
+            "const": "KIS_MOCK"
+          },
+          "buyableAmountKrw": {
+            "maximum": 9223372036854775807,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "buyableQuantity": {
+            "maximum": 9223372036854775807,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "cashKrw": {
+            "maximum": 9223372036854775807,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "estimatedPrice": {
+            "maximum": 9223372036854775807,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "observedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "sourceVersion": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "symbol": {
+            "pattern": "^[0-9A-Z._:-]{1,20}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "accountId",
+          "brokerageMode",
+          "buyableAmountKrw",
+          "buyableQuantity",
+          "cashKrw",
+          "estimatedPrice",
+          "observedAt",
+          "sourceVersion",
+          "symbol"
+        ],
+        "title": "S3.1 KIS Mock buyable response v1",
+        "type": "object"
+      },
+      "S31MockBuyableSuccessResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/S31MockBuyable"
+          },
+          "error": {
+            "type": "null"
+          },
+          "requestId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "success": {
+            "const": true,
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ApiWarning"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "error",
+          "requestId",
+          "success",
+          "warnings"
+        ],
+        "type": "object"
+      },
+      "S31MockOrderDetail": {
+        "$id": "contracts/schemas/s3-1-mock-order-detail.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "accountId": {
+            "pattern": "^acct_[0-9a-f]{32}$",
+            "type": "string"
+          },
+          "brokerageMode": {
+            "const": "KIS_MOCK"
+          },
+          "decisionId": {
+            "pattern": "^dec_[0-9a-f]{32}$",
+            "type": "string"
+          },
+          "orderId": {
+            "pattern": "^ord_mock_[0-9a-f]{32}$",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "SUBMITTED",
+              "ACCEPTED",
+              "PARTIALLY_FILLED",
+              "FILLED",
+              "CANCEL_REQUESTED",
+              "CANCELLED",
+              "REJECTED"
+            ]
+          },
+          "submittedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "accountId",
+          "brokerageMode",
+          "decisionId",
+          "orderId",
+          "status",
+          "submittedAt"
+        ],
+        "title": "S3.1 KIS Mock order detail response v1",
+        "type": "object"
+      },
+      "S31MockOrderDetailSuccessResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/S31MockOrderDetail"
+          },
+          "error": {
+            "type": "null"
+          },
+          "requestId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "success": {
+            "const": true,
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ApiWarning"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "error",
+          "requestId",
+          "success",
+          "warnings"
+        ],
+        "type": "object"
+      },
+      "S31MockOrderRequest": {
+        "$id": "contracts/schemas/s3-1-mock-order-request.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "decisionId": {
+            "pattern": "^dec_[0-9a-f]{32}$",
+            "type": "string"
+          },
+          "orderIntent": {
+            "additionalProperties": false,
+            "properties": {
+              "estimatedAmount": {
+                "maximum": 9223372036854775807,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "estimatedPrice": {
+                "maximum": 9223372036854775807,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "orderType": {
+                "enum": [
+                  "MARKET",
+                  "LIMIT"
+                ]
+              },
+              "quantity": {
+                "maximum": 9223372036854775807,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "side": {
+                "enum": [
+                  "BUY",
+                  "SELL"
+                ]
+              },
+              "strategyId": {
+                "maxLength": 120,
+                "minLength": 1,
+                "type": "string"
+              },
+              "symbol": {
+                "maxLength": 20,
+                "minLength": 1,
+                "pattern": "^[0-9A-Z._:-]{1,20}$",
+                "type": "string"
+              },
+              "timeframe": {
+                "enum": [
+                  "1d",
+                  "60m"
+                ]
+              }
+            },
+            "required": [
+              "estimatedAmount",
+              "estimatedPrice",
+              "orderType",
+              "quantity",
+              "side",
+              "strategyId",
+              "symbol",
+              "timeframe"
+            ],
+            "type": "object"
+          },
+          "userAcknowledgement": {
+            "additionalProperties": false,
+            "properties": {
+              "warningsAccepted": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "warningsAccepted"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "decisionId",
+          "orderIntent",
+          "userAcknowledgement"
+        ],
+        "title": "S3.1 KIS Mock order submit request v1",
+        "type": "object"
+      },
+      "S31MockOrderSubmitted": {
+        "$id": "contracts/schemas/s3-1-mock-order-response.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "accountId": {
+            "pattern": "^acct_[0-9a-f]{32}$",
+            "type": "string"
+          },
+          "brokerageMode": {
+            "const": "KIS_MOCK"
+          },
+          "orderId": {
+            "pattern": "^ord_mock_[0-9a-f]{32}$",
+            "type": "string"
+          },
+          "status": {
+            "const": "SUBMITTED"
+          },
+          "submittedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "accountId",
+          "brokerageMode",
+          "orderId",
+          "status",
+          "submittedAt"
+        ],
+        "title": "S3.1 KIS Mock order submitted response v1",
+        "type": "object"
+      },
+      "S31MockOrderSuccessResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/S31MockOrderSubmitted"
+          },
+          "error": {
+            "type": "null"
+          },
+          "requestId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "success": {
+            "const": true,
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ApiWarning"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "error",
+          "requestId",
+          "success",
+          "warnings"
+        ],
+        "type": "object"
+      },
       "SystemHealthResponse": {
         "properties": {
           "asOf": {
@@ -3932,6 +4667,406 @@
         "summary": "데모 사용자 로그인 / Demo user login",
         "tags": [
           "auth-controller"
+        ]
+      }
+    },
+    "/api/v1/brokerage/mock/accounts/{accountId}/balances": {
+      "get": {
+        "operationId": "getMockBalance",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "accountId",
+            "required": true,
+            "schema": {
+              "pattern": "^acct_[0-9a-f]{32}$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/S31MockBalanceSuccessResponse"
+                }
+              }
+            },
+            "description": "Stored KIS_MOCK balance projection."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseMockBalanceProjection"
+                }
+              }
+            },
+            "description": "Invalid path or query."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseMockBalanceProjection"
+                }
+              }
+            },
+            "description": "Authentication is required."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseMockBalanceProjection"
+                }
+              }
+            },
+            "description": "Owned account was not found."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseMockBalanceProjection"
+                }
+              }
+            },
+            "description": "Stored balance source is unavailable."
+          }
+        },
+        "summary": "S2.3 stored KIS_MOCK balance observation을 owner-scoped opaque accountId로 조회한다.",
+        "tags": [
+          "brokerage-controller"
+        ]
+      }
+    },
+    "/api/v1/brokerage/mock/accounts/{accountId}/buyable": {
+      "get": {
+        "operationId": "getMockBuyable",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "accountId",
+            "required": true,
+            "schema": {
+              "pattern": "^acct_[0-9a-f]{32}$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/S31MockBuyableSuccessResponse"
+                }
+              }
+            },
+            "description": "Stored KIS_MOCK buyable projection."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseMockBuyableProjection"
+                }
+              }
+            },
+            "description": "Invalid path or query."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseMockBuyableProjection"
+                }
+              }
+            },
+            "description": "Authentication is required."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseMockBuyableProjection"
+                }
+              }
+            },
+            "description": "Owned account was not found."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseMockBuyableProjection"
+                }
+              }
+            },
+            "description": "Stored balance source is unavailable."
+          }
+        },
+        "summary": "Stored KIS_MOCK cash balance로 지정가 기준 주문가능 수량을 계산한다.",
+        "tags": [
+          "brokerage-controller"
+        ]
+      }
+    },
+    "/api/v1/brokerage/mock/orders": {
+      "post": {
+        "operationId": "submitMockOrder",
+        "parameters": [
+          {
+            "description": "16-128 ASCII characters. Raw value is never persisted in the order ledger.",
+            "in": "header",
+            "name": "X-Idempotency-Key",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9._:-]{16,128}$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/S31MockOrderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/S31MockOrderSuccessResponse"
+                }
+              }
+            },
+            "description": "Submitted mock order projection."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseMockOrderProjection"
+                }
+              }
+            },
+            "description": "Invalid body or idempotency key."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseMockOrderProjection"
+                }
+              }
+            },
+            "description": "Authentication is required."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseMockOrderProjection"
+                }
+              }
+            },
+            "description": "Owned Decision was not found."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseMockOrderProjection"
+                }
+              }
+            },
+            "description": "Decision expired, consumed, or idempotency conflict."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseMockOrderProjection"
+                }
+              }
+            },
+            "description": "Risk controls block order submission."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseMockOrderProjection"
+                }
+              }
+            },
+            "description": "Brokerage or risk gate is unavailable."
+          }
+        },
+        "summary": "KIS Mock 주문을 Decision 기반으로 제출하고 mock ledger에 원자 저장한다.",
+        "tags": [
+          "brokerage-controller"
+        ]
+      }
+    },
+    "/api/v1/brokerage/orders/{orderId}": {
+      "get": {
+        "operationId": "getOrder",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "orderId",
+            "required": true,
+            "schema": {
+              "pattern": "^ord_mock_[0-9a-f]{32}$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/S31MockOrderDetailSuccessResponse"
+                }
+              }
+            },
+            "description": "Owner-scoped order projection."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseOrderDetailProjection"
+                }
+              }
+            },
+            "description": "Authentication is required."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseOrderDetailProjection"
+                }
+              }
+            },
+            "description": "Owned order was not found."
+          }
+        },
+        "summary": "JWT owner에게 sanitized mock order projection을 반환한다.",
+        "tags": [
+          "brokerage-controller"
+        ]
+      }
+    },
+    "/api/v1/brokerage/orders/{orderId}/cancel": {
+      "post": {
+        "operationId": "cancelOrder",
+        "parameters": [
+          {
+            "description": "16-128 ASCII characters. Global write idempotency replays cancel responses.",
+            "in": "header",
+            "name": "X-Idempotency-Key",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9._:-]{16,128}$",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "orderId",
+            "required": true,
+            "schema": {
+              "pattern": "^ord_mock_[0-9a-f]{32}$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/S31MockOrderDetailSuccessResponse"
+                }
+              }
+            },
+            "description": "Cancel requested projection."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseOrderDetailProjection"
+                }
+              }
+            },
+            "description": "Invalid path/body/idempotency key."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseOrderDetailProjection"
+                }
+              }
+            },
+            "description": "Authentication is required."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseOrderDetailProjection"
+                }
+              }
+            },
+            "description": "Owned order was not found."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseOrderDetailProjection"
+                }
+              }
+            },
+            "description": "Order is not cancelable."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseOrderDetailProjection"
+                }
+              }
+            },
+            "description": "Brokerage gate is unavailable."
+          }
+        },
+        "summary": "Owner-scoped mock order cancel request를 append-only event로 기록한다.",
+        "tags": [
+          "brokerage-controller"
         ]
       }
     },

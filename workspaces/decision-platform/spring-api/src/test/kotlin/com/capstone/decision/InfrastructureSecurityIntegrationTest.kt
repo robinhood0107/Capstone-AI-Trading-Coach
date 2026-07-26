@@ -127,10 +127,23 @@ class InfrastructureSecurityIntegrationTest {
                 "read_kill_switch_audit_projection()",
                 "read_decision_usability()",
                 "invalidate_unused_decisions_for_kill_switch(bigint,timestamp with time zone,text)",
+                "read_mock_order_decision()",
+                "find_mock_order_idempotency_result(text,text,timestamp with time zone)",
+                "read_mock_order_owner_projection()",
             ).forEach { function ->
                 assertTrue(hasFunctionPrivilege(connection, "decision_app", function))
             }
-            listOf("orders", "user_sessions").forEach { table ->
+            assertTrue(hasTablePrivilege(connection, "decision_app", "orders", "INSERT"))
+            assertTrue(hasTablePrivilege(connection, "decision_app", "orders", "SELECT"))
+            assertTrue(hasTablePrivilege(connection, "decision_app", "order_events", "INSERT"))
+            assertTrue(hasTablePrivilege(connection, "decision_app", "order_events", "SELECT"))
+            assertTrue(hasTablePrivilege(connection, "decision_app", "mock_order_owner_projection", "SELECT"))
+            listOf("orders", "order_events").forEach { table ->
+                listOf("UPDATE", "DELETE", "TRUNCATE").forEach { privilege ->
+                    assertFalse(hasTablePrivilege(connection, "decision_app", table, privilege))
+                }
+            }
+            listOf("user_sessions").forEach { table ->
                 listOf("INSERT", "UPDATE", "DELETE").forEach { privilege ->
                     assertFalse(hasTablePrivilege(connection, "decision_app", table, privilege))
                 }
@@ -215,11 +228,6 @@ class InfrastructureSecurityIntegrationTest {
                     "update decisions set outcome = outcome where false",
                     "delete from decisions where false",
                     "truncate table decisions",
-                    "insert into orders (" +
-                        "order_id,user_id,account_id,decision_id,idempotency_key,symbol,side,order_type,quantity,status" +
-                        ") values (" +
-                        "'denied','usr_demo_user','denied','denied','denied','005930','BUY','LIMIT',1,'REQUESTED'" +
-                        ")",
                     "insert into risk_kill_switch (" +
                         "kill_switch_id,active,reason_class,generation,changed_by,changed_by_role,changed_at" +
                         ") values ('OTHER',true,'USER_MANUAL_STOP',2,'usr_demo_user','USER',now())",

@@ -114,11 +114,36 @@ def validate_example_semantics(
     if schema_name == "s2-3-decision-response":
         validate_decision_response_semantics(example, s2_2_catalog)
         return
+    if schema_name == "s3-1-mock-order-request":
+        validate_s3_1_mock_order_request_semantics(example)
+        return
     validate_principle_payload_semantics(
         schema_name,
         example,
         principle_catalog,
     )
+
+
+def validate_s3_1_mock_order_request_semantics(example: object) -> None:
+    if not isinstance(example, dict):
+        raise ContractValidationError("S3.1 mock order request must be an object.")
+    order = example.get("orderIntent")
+    if not isinstance(order, dict):
+        raise ContractValidationError("S3.1 orderIntent must be an object.")
+    quantity = order.get("quantity")
+    price = order.get("estimatedPrice")
+    amount = order.get("estimatedAmount")
+    if (
+        not isinstance(quantity, int)
+        or isinstance(quantity, bool)
+        or not isinstance(price, int)
+        or isinstance(price, bool)
+        or not isinstance(amount, int)
+        or isinstance(amount, bool)
+    ):
+        raise ContractValidationError("S3.1 orderIntent numeric fields must be integers.")
+    if quantity * price != amount:
+        raise ContractValidationError("S3.1 estimatedAmount must equal quantity * estimatedPrice.")
 
 
 def validate_valid_examples(

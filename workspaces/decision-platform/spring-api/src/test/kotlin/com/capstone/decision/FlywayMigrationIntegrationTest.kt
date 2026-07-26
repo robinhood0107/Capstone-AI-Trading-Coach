@@ -59,9 +59,9 @@ class FlywayMigrationIntegrationTest(
     @Autowired private val riskSnapshotPort: RiskSnapshotPort,
 ) : SpringApiIntegrationTestBase() {
     @Test
-    fun `clean database applies V1 through V10 migrations and creates required objects`() {
+    fun `clean database applies V1 through V11 migrations and creates required objects`() {
         val versions = queryStrings("select version from flyway_schema_history where success order by installed_rank")
-        assertEquals(listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "10"), versions)
+        assertEquals((1..11).map(Int::toString), versions)
 
         val requiredTables =
             listOf(
@@ -70,6 +70,7 @@ class FlywayMigrationIntegrationTest(
                 "principle_versions",
                 "decisions",
                 "orders",
+                "order_events",
                 "processed_event",
                 "artifact_ingest_state",
                 "rag_sources",
@@ -100,6 +101,7 @@ class FlywayMigrationIntegrationTest(
                 "risk_kill_switch",
                 "risk_kill_switch_transitions",
                 "decision_invalidations",
+                "mock_order_owner_projection",
                 "kill_switch_user_projection",
                 "latest_market_quote_observations",
                 "latest_instrument_catalog_observations",
@@ -163,18 +165,27 @@ class FlywayMigrationIntegrationTest(
     }
 
     @Test
-    fun `decision application role receives exact V10 append only privileges`() {
+    fun `decision application role receives exact V11 append only privileges`() {
         assertTrue(hasTablePrivilege("decision_app", "risk_kill_switch", "SELECT"))
         assertFalse(hasTablePrivilege("decision_app", "risk_kill_switch", "INSERT"))
         assertFalse(hasTablePrivilege("decision_app", "risk_kill_switch", "DELETE"))
         assertFalse(hasTablePrivilege("decision_app", "risk_kill_switch", "TRUNCATE"))
         assertTrue(hasTablePrivilege("decision_app", "risk_kill_switch_transitions", "INSERT"))
         assertTrue(hasTablePrivilege("decision_app", "kill_switch_user_projection", "SELECT"))
+        assertTrue(hasTablePrivilege("decision_app", "orders", "INSERT"))
+        assertTrue(hasTablePrivilege("decision_app", "orders", "SELECT"))
+        assertTrue(hasTablePrivilege("decision_app", "order_events", "INSERT"))
+        assertTrue(hasTablePrivilege("decision_app", "order_events", "SELECT"))
+        assertTrue(hasTablePrivilege("decision_app", "mock_order_owner_projection", "SELECT"))
         listOf("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE").forEach { privilege ->
             assertFalse(
                 hasTablePrivilege("decision_app", "decision_invalidations", privilege),
                 "unexpected $privilege on decision_invalidations",
             )
+        }
+        listOf("UPDATE", "DELETE", "TRUNCATE").forEach { privilege ->
+            assertFalse(hasTablePrivilege("decision_app", "orders", privilege), "unexpected $privilege on orders")
+            assertFalse(hasTablePrivilege("decision_app", "order_events", privilege), "unexpected $privilege on order_events")
         }
         listOf("SELECT", "UPDATE", "DELETE", "TRUNCATE").forEach { privilege ->
             assertFalse(
@@ -188,6 +199,9 @@ class FlywayMigrationIntegrationTest(
             "read_kill_switch_audit_projection()",
             "read_decision_usability()",
             "invalidate_unused_decisions_for_kill_switch(bigint,timestamp with time zone,text)",
+            "read_mock_order_decision()",
+            "find_mock_order_idempotency_result(text,text,timestamp with time zone)",
+            "read_mock_order_owner_projection()",
         ).forEach { function ->
             assertTrue(hasFunctionPrivilege("decision_app", function), "missing EXECUTE on $function")
         }
@@ -365,12 +379,20 @@ class FlywayMigrationIntegrationTest(
             jdbcTemplate.update(
                 """
                 insert into orders (
-                  order_id, user_id, account_id, decision_id, idempotency_key,
-                  symbol, side, order_type, quantity, status
+                  order_id, user_id, account_id, account_scope_hash, decision_id,
+                  decision_evaluation_id, brokerage_mode, idempotency_scope_hash,
+                  idempotency_owner_scope_hash, request_hash, symbol, side, order_type,
+                  quantity, submitted_price_krw, status, order_intent_json,
+                  result_canonical_json, acknowledged_by, acknowledged_at, submitted_at
                 ) values (
-                  'ord-v10-consumed', 'usr-flyway', 'paper-account-v10',
-                  'dec-flyway-b', 'idem-v10-consumed',
-                  '005930', 'BUY', 'LIMIT', 1, 'REQUESTED'
+                  'ord_mock_0000000000000000000000000000000b', 'usr-flyway',
+                  'acct_0000000000000000000000000000000b', repeat('b', 64),
+                  'dec-flyway-b', 'eval-flyway-b', 'KIS_MOCK', repeat('1', 64),
+                  repeat('2', 64), repeat('3', 64), '005930', 'BUY', 'MARKET',
+                  1, null, 'SUBMITTED',
+                  '{"symbol":"005930","side":"BUY","orderType":"MARKET","quantity":"1","estimatedPrice":"70000","estimatedAmount":"70000","timeframe":"1d","strategyId":"flyway-fixture"}'::jsonb,
+                  '{"orderId":"ord_mock_0000000000000000000000000000000b","brokerageMode":"KIS_MOCK","status":"SUBMITTED","submittedAt":"2030-01-02T03:04:05Z"}',
+                  'usr-flyway', now(), now()
                 )
                 """.trimIndent(),
             )
@@ -430,7 +452,7 @@ class FlywayMigrationIntegrationTest(
                 "dec-flyway-b",
                 expectedRows = 1,
                 invalidated = false,
-                consumed = "ord-v10-consumed",
+                consumed = "ord_mock_0000000000000000000000000000000b",
             )
             assertDecisionUsability(
                 "usr-flyway",
@@ -1533,12 +1555,21 @@ class FlywayMigrationIntegrationTest(
         jdbcTemplate.update(
             """
             insert into orders (
-                order_id, user_id, account_id, decision_id, idempotency_key,
-                symbol, side, order_type, quantity, status
+                order_id, user_id, account_id, account_scope_hash, decision_id,
+                decision_evaluation_id, brokerage_mode, idempotency_scope_hash,
+                idempotency_owner_scope_hash, request_hash, symbol, side, order_type,
+                quantity, submitted_price_krw, status, order_intent_json,
+                result_canonical_json, acknowledged_by, acknowledged_at, submitted_at
             )
             values (
-                'ord-1', 'usr-flyway', 'paper-account-1', 'dec-flyway', 'idem-order-1',
-                '005930', 'BUY', 'LIMIT', 1, 'REQUESTED'
+                'ord_mock_00000000000000000000000000000001', 'usr-flyway',
+                'acct_00000000000000000000000000000001', repeat('1', 64),
+                'dec-flyway', 'eval-flyway', 'KIS_MOCK', repeat('2', 64),
+                repeat('3', 64), repeat('4', 64), '005930', 'BUY', 'MARKET',
+                1, null, 'SUBMITTED',
+                '{"symbol":"005930","side":"BUY","orderType":"MARKET","quantity":"1","estimatedPrice":"70000","estimatedAmount":"70000","timeframe":"1d","strategyId":"flyway-fixture"}'::jsonb,
+                '{"orderId":"ord_mock_00000000000000000000000000000001","brokerageMode":"KIS_MOCK","status":"SUBMITTED","submittedAt":"2030-01-02T03:04:05Z"}',
+                'usr-flyway', now(), now()
             )
             """.trimIndent(),
         )
@@ -1547,12 +1578,21 @@ class FlywayMigrationIntegrationTest(
             jdbcTemplate.update(
                 """
                 insert into orders (
-                    order_id, user_id, account_id, decision_id, idempotency_key,
-                    symbol, side, order_type, quantity, status
+                    order_id, user_id, account_id, account_scope_hash, decision_id,
+                    decision_evaluation_id, brokerage_mode, idempotency_scope_hash,
+                    idempotency_owner_scope_hash, request_hash, symbol, side, order_type,
+                    quantity, submitted_price_krw, status, order_intent_json,
+                    result_canonical_json, acknowledged_by, acknowledged_at, submitted_at
                 )
                 values (
-                    'ord-2', 'usr-flyway', 'paper-account-1', 'dec-flyway', 'idem-order-2',
-                    '005930', 'BUY', 'LIMIT', 1, 'REQUESTED'
+                    'ord_mock_00000000000000000000000000000002', 'usr-flyway',
+                    'acct_00000000000000000000000000000001', repeat('1', 64),
+                    'dec-flyway', 'eval-flyway', 'KIS_MOCK', repeat('5', 64),
+                    repeat('6', 64), repeat('7', 64), '005930', 'BUY', 'MARKET',
+                    1, null, 'SUBMITTED',
+                    '{"symbol":"005930","side":"BUY","orderType":"MARKET","quantity":"1","estimatedPrice":"70000","estimatedAmount":"70000","timeframe":"1d","strategyId":"flyway-fixture"}'::jsonb,
+                    '{"orderId":"ord_mock_00000000000000000000000000000002","brokerageMode":"KIS_MOCK","status":"SUBMITTED","submittedAt":"2030-01-02T03:04:05Z"}',
+                    'usr-flyway', now(), now()
                 )
                 """.trimIndent(),
             )

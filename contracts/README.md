@@ -208,6 +208,59 @@ uv run --frozen python contracts/run_openapi_gate.py \
 [`20260725-s2-4-risk-kill-switch-contract.md`](changes/20260725-s2-4-risk-kill-switch-contract.md)를
 따른다.
 
+## S3.1 Brokerage Mock 주문
+
+S3.1은 `POST /api/v1/brokerage/mock/orders`, `GET /api/v1/brokerage/orders/{orderId}`,
+`POST /api/v1/brokerage/orders/{orderId}/cancel`,
+`GET /api/v1/brokerage/mock/accounts/{accountId}/balances`,
+`GET /api/v1/brokerage/mock/accounts/{accountId}/buyable`을 추가한다. 제출 route는 S2.3에서
+저장된 owner-scoped Decision과 S2.4 Kill Switch DB authority를 같은 write path에서 재검증한 뒤
+KIS Mock ledger에 `SUBMITTED` projection을 원자 저장한다. cancel route는 provider 호출 없이
+append-only `MOCK_ORDER_CANCEL_REQUESTED` event를 기록한다. 요청 body는 `decisionId`,
+exact 8-field `orderIntent`, `userAcknowledgement.warningsAccepted`만 허용하며 `accountId`,
+provider, actor, raw receipt 필드는 모두 unknown field로 거부한다.
+
+| 계약 | 경계 |
+|---|---|
+| `schemas/s3-1-mock-order-request.schema.json` | body-supplied account/provider 금지, exact 현물 order intent |
+| `schemas/s3-1-mock-order-response.schema.json` | `ord_mock_[0-9a-f]{32}` submitted projection과 opaque `accountId` |
+| `schemas/s3-1-mock-order-detail.schema.json` | owner-scoped sanitized order detail |
+| `schemas/s3-1-mock-balance.schema.json` | stored `KIS_MOCK` balance projection, raw account 없음 |
+| `schemas/s3-1-mock-buyable.schema.json` | stored balance 기반 buyable 계산 projection |
+| `proto/brokerage.proto` | Spring/Python gRPC boundary, 기본 disabled, raw credential/account 금지 |
+| `db/migration/V11__s3_1_brokerage_mock_orders.sql` | one Decision = one order, HMAC idempotency, FORCE RLS, append-only order events, sanitized outbox/audit |
+| `openapi/openapi.json` | S3.1 route와 `S31*` schema component의 generated SSOT |
+
+raw `X-Idempotency-Key`와 raw 계좌번호는 ledger에 저장하지 않고 purpose-version HMAC만 남긴다.
+동일 idempotency key와 동일 payload는 저장된 canonical result를 replay하며, 같은 Decision을
+다른 key로 재사용하면 `CONFLICT`다. cancel은 전역 write idempotency scope에서 동일 key replay와
+다른 key 재취소 conflict를 구분한다. balance/buyable은 S2.3 stored-source projection의 opaque
+account scope만 읽고 raw 계좌번호를 공개하지 않는다. 만료 Decision은 `DECISION_EXPIRED`, 활성
+Kill Switch 또는 무효화 Decision은 `RISK_BLOCKED`, verified tick-table context가 없는 LIMIT
+주문은 `BROKERAGE_UNAVAILABLE`로 닫는다. S3.1 구현과 테스트는 KIS/broker/live account/order
+provider를 물리 호출하지 않는다.
+
+재현 명령:
+
+```bash
+uv run --frozen python -m unittest discover -s contracts/tests -v
+uv run --frozen python contracts/validate.py
+workspaces/decision-platform/spring-api/gradlew \
+  -p workspaces/decision-platform/spring-api --no-daemon ktlintCheck build
+workspaces/decision-platform/spring-api/gradlew \
+  -p workspaces/decision-platform/spring-api --no-daemon prepareOpenApiFixtureEnv
+uv run --frozen python contracts/run_openapi_gate.py \
+  --env-file workspaces/decision-platform/spring-api/build/openapi-fixture/openapi.env
+cd workspaces/decision-platform/python-services
+uv run --frozen ruff check .
+uv run --frozen mypy app
+TMPDIR="$(mktemp -d /tmp/s31-pytest-XXXXXX)" uv run --frozen pytest -q
+```
+
+상세 결정과 소비자 영향은
+[`20260726-s3-1-brokerage-mock-contract.md`](changes/20260726-s3-1-brokerage-mock-contract.md)를
+따른다.
+
 ## S1.5 KIS 데이터 품질 리포트
 
 S1.5는 public API가 아니라 Decision Platform 내부 CLI `kis-data-quality-report`가 생산하는

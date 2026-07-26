@@ -64,6 +64,7 @@ app:
     paths:
       - /api/v1/orders/**
       - /api/v1/backtests/**
+      - /api/v1/brokerage/orders/**
       - /api/v1/risk/kill-switch
   decision:
     valid-minutes: 10              # validUntil
@@ -78,6 +79,17 @@ app:
       request-max-bytes: 262144
       response-max-bytes: 1048576
       concurrency-max: 8
+  brokerage:
+    idempotency-scope-hmac-key: ${BROKERAGE_IDEMPOTENCY_SCOPE_HMAC_KEY}
+    idempotency-ttl-hours: 24
+    grpc:
+      enabled: ${BROKERAGE_GRPC_ENABLED:false}
+      target: ${BROKERAGE_GRPC_TARGET:127.0.0.1:50052}
+      shared-secret: ${BROKERAGE_GRPC_SHARED_SECRET:}
+      deadline-millis: 1000
+      request-max-bytes: 262144
+      response-max-bytes: 1048576
+      circuit-breaker-name: kisMockBrokerage
   freshness:                       # 유형별 매트릭스(명세서 4.2.2)의 일부만 우선 정의 — 신호/공시/risk_snapshot 항목은 S2.3에서 확장
     price-seconds: 300
     balance-seconds: 60
@@ -98,3 +110,13 @@ springdoc:
   swagger-ui:
     path: /swagger-ui.html
   default-produces-media-type: application/json
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      kisMockBrokerage:
+        sliding-window-size: 3
+        minimum-number-of-calls: 3
+        failure-rate-threshold: 100
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 1

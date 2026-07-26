@@ -1,0 +1,83 @@
+{
+  "$id": "contracts/schemas/s3-1-mock-balance.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "accountId": {
+      "pattern": "^acct_[0-9a-f]{32}$",
+      "type": "string"
+    },
+    "brokerageMode": {
+      "const": "KIS_MOCK"
+    },
+    "cashKrw": {
+      "maximum": 9223372036854775807,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "marginRequirementKrw": {
+      "maximum": 9223372036854775807,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "observedAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "portfolioEquityKrw": {
+      "maximum": 9223372036854775807,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "positions": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "isGoldEtfEtn": {
+            "type": "boolean"
+          },
+          "marketValueKrw": {
+            "maximum": 9223372036854775807,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "quantity": {
+            "maximum": 9223372036854775807,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "symbol": {
+            "pattern": "^[0-9A-Z._:-]{1,20}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "symbol",
+          "quantity",
+          "marketValueKrw",
+          "isGoldEtfEtn"
+        ],
+        "type": "object"
+      },
+      "maxItems": 1000,
+      "type": "array"
+    },
+    "sourceVersion": {
+      "maxLength": 128,
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "accountId",
+    "brokerageMode",
+    "cashKrw",
+    "portfolioEquityKrw",
+    "marginRequirementKrw",
+    "positions",
+    "observedAt",
+    "sourceVersion"
+  ],
+  "title": "S3.1 KIS Mock balance response v1",
+  "type": "object"
+}

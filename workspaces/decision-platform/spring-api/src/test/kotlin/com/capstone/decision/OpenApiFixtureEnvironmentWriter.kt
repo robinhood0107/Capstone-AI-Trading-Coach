@@ -54,6 +54,7 @@ object OpenApiFixtureEnvironmentWriter {
                     "LOGIN_SCOPE_HMAC_KEY" to randomToken(random, 32),
                     "PRINCIPLE_CURSOR_HMAC_KEY" to randomToken(random, 32),
                     "DECISION_IDEMPOTENCY_SCOPE_HMAC_KEY" to randomToken(random, 32),
+                    "BROKERAGE_IDEMPOTENCY_SCOPE_HMAC_KEY" to randomToken(random, 32),
                     "DEMO_CREDENTIAL_SEPARATION_KEY" to encode(separationKey),
                     "DEMO_USER_CREDENTIAL_BUNDLE" to
                         DemoCredentialBundlePolicy.prepare(

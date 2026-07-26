@@ -13,13 +13,15 @@ Contracts CI, Kotlin Build, Python CI, S1.4X contract correctness를 수행한�
 ## 현재 구현 상태
 
 STAGE 2에서 S1.6 Market Calendar/Event Aggregator offline 구현, S2.1 Principle CRUD,
-S2.2 offline evaluator와 S2.3 Decision runtime까지 `main`에 병합됐다. 이 S2.4 변경은
-owner-scoped portfolio Risk 조회와 DB-authoritative 전역 Kill Switch를 추가한다. Kill Switch
-활성화는 유효한 Decision을 append-only 방식으로 무효화하고 신규 평가를 fail-closed하며,
-재가동은 transaction 안에서 현재 ADMIN 권한을 다시 확인한다. portfolio freshness는 실제 저장
-현재가·잔고·결정적 risk observation만 사용하고 없는 source를 0이나 false로 꾸미지 않는다.
-Decision runtime의 missing/stale source는 기존 S2.3 계약처럼 `HOLD` 경로를 유지한다.
-S2.4의 KIS/broker/gRPC/외부 HTTP와 주문 호출은 모두 0건이다.
+S2.2 offline evaluator, S2.3 Decision runtime, S2.4 Risk/Kill Switch까지 `main`에 병합됐다.
+이 S3.1 변경은 S2.3 Decision과 S2.4 Kill Switch를 소비하는 KIS Mock 주문 제출/조회/취소와
+stored balance/buyable projection을 추가한다. 주문 요청 body는 `decisionId`, exact 8-field
+`orderIntent`, `userAcknowledgement`만 허용하고 account/provider/actor 필드는 인증 principal과
+서버-side HMAC scope에서만 만든다. Decision은 한 번만 소비되며 raw idempotency key, raw account,
+provider raw payload는 저장하지 않는다. S2.3 stored-source가 없거나 stale/incomplete이면 Decision
+runtime은 production 값을 꾸미지 않고 persisted `HOLD`로 남긴다. LIMIT 주문은 verified KRX
+tick-table context가 없으면 `BROKERAGE_UNAVAILABLE`로 fail-closed하며, S3.1의 provider/live
+account/broker/order physical call은 모두 0건이다.
 
 - PR #16 merge commit: `6f439155d9f5ec626fc185f29f2e0bd64ca54780`
 - PR #17 merge commit 및 S1.3/S1.3K 기능 완료 기준점: `814aab377251d76672566d39c3edb379d132248e`
@@ -50,10 +52,14 @@ S2.4의 KIS/broker/gRPC/외부 HTTP와 주문 호출은 모두 0건이다.
 현재 레포는 STAGE 2이며 Decision Platform의 S0 walking skeleton, S1.1 KIS 시장데이터,
 S1.2c OpenDART 분석 데이터, S1.3 ECOS/Naver snapshot, S1.3K KRX universe 자동화,
 S1.4 금융공학, S1.5 품질 보고, S1.6 내부 offline calendar/event aggregator, S2.1 Principle
-CRUD, S2.2 offline rule evaluator와 S2.3 Decision runtime까지 구현되어 있다. 이 S2.4 변경은
-`GET /api/v1/risk/portfolio`, Kill Switch 조회·변경, V10 원자 전이·무효화·audit·outbox와
-Decision guard를 추가한다. provider를 호출하거나 S3 주문 orchestration을 대신하지 않으며,
-구조가 준비된 뒤 source row가 없거나 stale하면 nullable 값과 sanitized warning으로 응답한다.
+CRUD, S2.2 offline rule evaluator, S2.3 Decision runtime과 S2.4 Risk/Kill Switch까지 구현되어
+있다. 이 S3.1 변경은 `POST /api/v1/brokerage/mock/orders`,
+`GET /api/v1/brokerage/orders/{orderId}`, `POST /api/v1/brokerage/orders/{orderId}/cancel`,
+`GET /api/v1/brokerage/mock/accounts/{accountId}/balances`,
+`GET /api/v1/brokerage/mock/accounts/{accountId}/buyable`, V11 mock order ledger/RLS/one-use
+constraint와 fixture-first KIS Mock adapter/gRPC boundary를 추가한다. provider를 호출하거나 live
+계좌·실주문을 열지 않으며, LIMIT 주문은 현재 KRX 호가단위 source가 pinned artifact로 검증되기
+전까지 `BROKERAGE_UNAVAILABLE`로 fail-closed한다.
 상세 개인 참고 노트는 GitHub에 올리지 않고 로컬
 `private-reference/` 폴더에서만 관리한다.
 
@@ -99,4 +105,6 @@ S1.6 OpenDART online collector는 `.env.example`의 네 quota 값을 운영 evid
 - [S2.3 Decision 계약 잠금](contracts/changes/20260724-s2-3-decision-contract-lock.md)
 - [S2.4 Risk와 Kill Switch 계약](contracts/README.md#s24-risk-api와-kill-switch)
 - [S2.4 계약 변경 기록](contracts/changes/20260725-s2-4-risk-kill-switch-contract.md)
+- [S3.1 Brokerage Mock 주문 계약](contracts/README.md#s31-brokerage-mock-주문)
+- [S3.1 계약 변경 기록](contracts/changes/20260726-s3-1-brokerage-mock-contract.md)
 - S1.4X dependency amendment 재현: `workspaces/decision-platform/research/s1-4x-numeric-parity/README.md`

@@ -1,0 +1,16 @@
+{
+  "accountId": "acct_cccccccccccccccccccccccccccccccc",
+  "asOf": "2026-07-27T01:10:01Z",
+  "brokerageMode": "INTERNAL_PAPER",
+  "cashKrw": 9279640,
+  "positions": [
+    {
+      "averagePriceKrw": 72036,
+      "marketValueKrw": 720360,
+      "quantity": 10,
+      "symbol": "005930"
+    }
+  ],
+  "totalEquityKrw": 10000000,
+  "valuationBasis": "LAST_FILL_PRICE_V1"
+}

@@ -1,0 +1,16 @@
+{
+  "accountId": "acct_cccccccccccccccccccccccccccccccc",
+  "brokerageMode": "INTERNAL_PAPER",
+  "fill": {
+    "amountKrw": 720360,
+    "feeModel": "NONE_V1",
+    "observedAt": "2026-07-27T01:09:58Z",
+    "priceBasis": "LAST_QUOTE",
+    "priceKrw": 72036,
+    "quantity": 10,
+    "slippageBps": 5
+  },
+  "orderId": "ord_paper_0123456789abcdef0123456789abcdef",
+  "status": "FILLED",
+  "submittedAt": "2026-07-27T01:10:01Z"
+}

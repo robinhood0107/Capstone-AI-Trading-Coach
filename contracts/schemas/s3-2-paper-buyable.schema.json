@@ -1,0 +1,54 @@
+{
+  "$id": "contracts/schemas/s3-2-paper-buyable.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "accountId": {
+      "pattern": "^acct_[0-9a-f]{32}$",
+      "type": "string"
+    },
+    "asOf": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "brokerageMode": {
+      "const": "INTERNAL_PAPER"
+    },
+    "buyableAmountKrw": {
+      "maximum": 9223372036854775807,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "buyableQuantity": {
+      "maximum": 9223372036854775807,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "cashKrw": {
+      "maximum": 9223372036854775807,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "estimatedPrice": {
+      "maximum": 9223372036854775807,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "symbol": {
+      "pattern": "^[0-9A-Z._:-]{1,20}$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "accountId",
+    "brokerageMode",
+    "symbol",
+    "estimatedPrice",
+    "buyableQuantity",
+    "buyableAmountKrw",
+    "cashKrw",
+    "asOf"
+  ],
+  "title": "S3.2 INTERNAL_PAPER buyable response v1",
+  "type": "object"
+}

@@ -166,9 +166,13 @@ class IdempotencyIntegrationTest(
     }
 
     @Test
-    fun `finance idempotency allowlist excludes Principle and preserves orders and backtests`() {
+    fun `finance idempotency allowlist excludes Principle and includes Kill Switch mutation`() {
         assertEquals(
-            listOf("/api/v1/orders/**", "/api/v1/backtests/**"),
+            listOf(
+                "/api/v1/orders/**",
+                "/api/v1/backtests/**",
+                "/api/v1/risk/kill-switch",
+            ),
             idempotencyProperties.paths,
         )
         assertFalse(idempotencyProperties.paths.any { it.contains("principle", ignoreCase = true) })

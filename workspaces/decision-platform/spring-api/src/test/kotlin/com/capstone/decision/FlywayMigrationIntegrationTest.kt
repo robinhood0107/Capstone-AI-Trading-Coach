@@ -152,6 +152,17 @@ class FlywayMigrationIntegrationTest(
     }
 
     @Test
+    fun `V10 indexes the global unused decision invalidation scan`() {
+        assertTrue(indexExists("decisions_valid_until_invalidation_idx"))
+        assertTrue(
+            indexDefinitionLike(
+                "decisions",
+                "%(valid_until, decision_id)%",
+            ),
+        )
+    }
+
+    @Test
     fun `decision application role receives exact V10 append only privileges`() {
         assertTrue(hasTablePrivilege("decision_app", "risk_kill_switch", "SELECT"))
         assertFalse(hasTablePrivilege("decision_app", "risk_kill_switch", "INSERT"))

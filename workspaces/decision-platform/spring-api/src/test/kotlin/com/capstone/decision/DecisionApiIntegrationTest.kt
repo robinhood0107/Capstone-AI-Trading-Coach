@@ -211,10 +211,145 @@ class DecisionApiIntegrationTest(
                 active = false,
                 reason = null,
             )
-        assertEquals(200, adminResume.response.status)
+        assertEquals(
+            200,
+            adminResume.response.status,
+            generateSequence<Throwable>(adminResume.resolvedException) { it.cause }
+                .joinToString(" <- ") { "${it::class.simpleName}:${it.message}" },
+        )
         assertFalse(json(adminResume).at("/data/active").booleanValue())
         assertEquals("ADMIN_RESUME", json(adminResume).at("/data/reasonClass").stringValue())
         assertEquals(3L, jdbcTemplate.queryForObject("select generation from risk_kill_switch", Long::class.java))
+
+        val noOp =
+            changeKillSwitch(
+                token = adminToken,
+                key = "risk-kill-admin-noop-001",
+                requestId = "req-risk-kill-admin-noop",
+                active = false,
+                reason = null,
+            )
+        assertEquals(200, noOp.response.status)
+        assertEquals(3L, jdbcTemplate.queryForObject("select generation from risk_kill_switch", Long::class.java))
+        assertEquals(2, count("select count(*) from risk_kill_switch_transitions"))
+    }
+
+    @Test
+    fun `Kill Switch validation authentication and idempotency failures make no database writes`() {
+        val token = login("demo-user", userPassword())
+        val missingKey =
+            changeKillSwitch(
+                token = token,
+                key = null,
+                requestId = "req-risk-kill-no-key",
+                active = true,
+                reason = null,
+            )
+        assertEquals(400, missingKey.response.status)
+        assertEquals("VALIDATION_ERROR", json(missingKey).at("/error/code").stringValue())
+
+        val injected =
+            mockMvc
+                .post("/api/v1/risk/kill-switch") {
+                    bearer(token)
+                    header("X-Idempotency-Key", "risk-kill-injection-001")
+                    header("X-Request-Id", "req-risk-kill-injection")
+                    contentType = MediaType.APPLICATION_JSON
+                    content = """{"active":true,"changedBy":"usr_attacker"}"""
+                }.andReturn()
+        assertEquals(400, injected.response.status)
+        assertEquals("VALIDATION_ERROR", json(injected).at("/error/code").stringValue())
+        assertFalse(injected.response.contentAsString.contains("usr_attacker"))
+
+        val unauthenticated =
+            mockMvc
+                .post("/api/v1/risk/kill-switch") {
+                    header("X-Idempotency-Key", "risk-kill-unauth-0001")
+                    header("X-Request-Id", "req-risk-kill-unauth")
+                    contentType = MediaType.APPLICATION_JSON
+                    content = """{"active":true}"""
+                }.andReturn()
+        assertEquals(401, unauthenticated.response.status)
+        assertEquals(1L, jdbcTemplate.queryForObject("select generation from risk_kill_switch", Long::class.java))
+        assertEquals(0, count("select count(*) from risk_kill_switch_transitions"))
+        assertEquals(0, count("select count(*) from audit_logs where target_type = 'KILL_SWITCH'"))
+        assertEquals(0, count("select count(*) from event_outbox where event_type = 'kill-switch.changed'"))
+    }
+
+    @Test
+    fun `Kill Switch transaction rollback leaves state history invalidations audit and outbox unchanged`() {
+        val token = login("demo-user", userPassword())
+        installGraphFailureTrigger("event_outbox")
+
+        val failed =
+            changeKillSwitch(
+                token = token,
+                key = "risk-kill-rollback-0001",
+                requestId = "req-risk-kill-rollback",
+                active = true,
+                reason = null,
+            )
+
+        assertEquals(503, failed.response.status)
+        assertEquals("RISK_UNAVAILABLE", json(failed).at("/error/code").stringValue())
+        assertEquals(false, jdbcTemplate.queryForObject("select active from risk_kill_switch", Boolean::class.java))
+        assertEquals(1L, jdbcTemplate.queryForObject("select generation from risk_kill_switch", Long::class.java))
+        assertEquals(0, count("select count(*) from risk_kill_switch_transitions"))
+        assertEquals(0, count("select count(*) from decision_invalidations"))
+        assertEquals(0, count("select count(*) from audit_logs where target_type = 'KILL_SWITCH'"))
+        assertEquals(0, count("select count(*) from event_outbox where event_type = 'kill-switch.changed'"))
+    }
+
+    @Test
+    fun `concurrent stop and resume serialize to one valid singleton history`() {
+        val userToken = login("demo-user", userPassword())
+        val adminToken = login("demo-admin", adminPassword())
+        val start = CountDownLatch(1)
+        val executor = Executors.newFixedThreadPool(2)
+        val futures =
+            listOf(
+                executor.submit<MvcResult> {
+                    start.await()
+                    changeKillSwitch(
+                        userToken,
+                        "risk-kill-concurrent-on1",
+                        "req-risk-kill-concurrent-on",
+                        true,
+                        null,
+                    )
+                },
+                executor.submit<MvcResult> {
+                    start.await()
+                    changeKillSwitch(
+                        adminToken,
+                        "risk-kill-concurrent-off",
+                        "req-risk-kill-concurrent-off",
+                        false,
+                        null,
+                    )
+                },
+            )
+        start.countDown()
+        val results = futures.map { it.get(15, TimeUnit.SECONDS) }
+        executor.shutdownNow()
+
+        assertEquals(listOf(200, 200), results.map { it.response.status }.sorted())
+        val transitionCount = count("select count(*) from risk_kill_switch_transitions")
+        val generation = requireNotNull(jdbcTemplate.queryForObject("select generation from risk_kill_switch", Long::class.java))
+        assertEquals(transitionCount + 1L, generation)
+        assertEquals(
+            transitionCount,
+            count(
+                """
+                select count(*) from risk_kill_switch_transitions
+                where previous_active <> next_active
+                """.trimIndent(),
+            ),
+        )
+        assertEquals(
+            transitionCount,
+            count("select count(distinct generation) from risk_kill_switch_transitions"),
+        )
     }
 
     @Test

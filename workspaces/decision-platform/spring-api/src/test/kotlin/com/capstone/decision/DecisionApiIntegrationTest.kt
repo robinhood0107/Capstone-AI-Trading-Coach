@@ -392,6 +392,31 @@ class DecisionApiIntegrationTest(
     }
 
     @Test
+    fun `Kill Switch accepts schema valid ordinary reason text and discards it before persistence`() {
+        val token = login("demo-user", userPassword())
+        val response =
+            changeKillSwitch(
+                token = token,
+                idempotencyHeader = "risk-kill-reason-normal",
+                requestId = "req-risk-kill-reason-normal",
+                active = true,
+                reason = "safe and sound",
+            )
+
+        assertEquals(200, response.response.status)
+        assertEquals("USER_MANUAL_STOP", json(response).at("/data/reasonClass").stringValue())
+        assertFalse(response.response.contentAsString.contains("safe and sound"))
+        assertFalse(
+            requireNotNull(
+                jdbcTemplate.queryForObject(
+                    "select payload_json::text from audit_logs where target_type = 'KILL_SWITCH'",
+                    String::class.java,
+                ),
+            ).contains("safe and sound"),
+        )
+    }
+
+    @Test
     fun `Kill Switch validation authentication and idempotency failures make no database writes`() {
         val token = login("demo-user", userPassword())
         val missingKey =

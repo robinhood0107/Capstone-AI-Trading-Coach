@@ -60,6 +60,34 @@ unique identity에 다른 의미 필드가 들어오면 PostgreSQL `23505`로 tr
 Decision child graph는 `decision_id + evaluation_id` composite FK와 audit payload-target 일치
 constraint로 cross-wire를 막는다.
 
+## S2.4 Risk와 Kill Switch
+
+S2.4는 owner-scoped `GET /api/v1/risk/portfolio`와 DB-authoritative
+`GET|POST /api/v1/risk/kill-switch`를 제공한다. portfolio 조회는 S2.3의
+`latest_portfolio_balance_observations`, `latest_deterministic_risk_observations`,
+`latest_market_quote_observations`와 기존 `MetricSnapshotAssembler`를 재사용한다.
+legacy `risk_snapshots`는 읽지 않고, source가 없거나 stale이면 nullable 값과 sanitized
+warning을 반환한다.
+
+Kill Switch는 V10의 `GLOBAL` singleton과 monotonic generation이 권위다. 활성화는 현재
+사용 가능한 Decision을 append-only invalidation으로 막고 신규 평가·저장을 fail-closed한다.
+같은 상태 요청은 멱등 no-op이며, 해제는 transaction 안에서 현재 DB의 ADMIN 권한과 security
+version을 다시 확인한다. 공개 상태에는 `active`, `reasonClass`, `changedAt`만 포함한다.
+
+아래 검증은 Testcontainers와 tracked fixture만 사용한다. KIS/broker/gRPC/외부 HTTP와
+account/order 호출은 모두 0이다.
+
+```bash
+cd spring-api
+./gradlew --no-daemon ktlintCheck build
+./gradlew --no-daemon prepareOpenApiFixtureEnv
+
+cd ../../..
+uv run --frozen python contracts/validate.py
+uv run --frozen python contracts/run_openapi_gate.py \
+  --env-file workspaces/decision-platform/spring-api/build/openapi-fixture/openapi.env
+```
+
 ## S2.3 offline golden path
 
 아래 절차는 개발용 loopback PostgreSQL에 repository의 sanitized fixture만 append한다.

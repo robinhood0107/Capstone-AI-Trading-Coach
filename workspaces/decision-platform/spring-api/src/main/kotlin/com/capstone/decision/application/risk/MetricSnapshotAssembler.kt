@@ -12,6 +12,7 @@ import com.capstone.decision.application.risk.port.MarginPort
 import com.capstone.decision.application.risk.port.NewsEvidencePort
 import com.capstone.decision.application.risk.port.OrderMetricPort
 import com.capstone.decision.application.risk.port.PortfolioContextRef
+import com.capstone.decision.application.risk.port.PortfolioSourceRequest
 import com.capstone.decision.application.risk.port.PricePort
 import com.capstone.decision.application.risk.port.RiskMetricBundle
 import com.capstone.decision.application.risk.port.RiskSnapshotPort
@@ -55,6 +56,20 @@ data class MetricAssemblyRequest(
     val decisionId: String = evaluationId,
 )
 
+data class PortfolioRiskAssemblyRequest(
+    val actorUserId: String,
+    val evaluationAsOf: Instant,
+    val portfolioContext: PortfolioContextRef,
+)
+
+data class PortfolioRiskAssembly(
+    val latestPrice: MetricCell<MetricValue>,
+    val portfolioValue: MetricCell<MetricValue>,
+    val dailyPnlRate: MetricCell<MetricValue>,
+    val maxDrawdown: MetricCell<MetricValue>,
+    val annualizedVolatility: MetricCell<MetricValue>,
+)
+
 // 이 class만 source port I/O를 조율하며 rule 비교, persistence, 현재시각 조회는 수행하지 않는다.
 class MetricSnapshotAssembler(
     private val pricePort: PricePort,
@@ -72,6 +87,70 @@ class MetricSnapshotAssembler(
     init {
         require(kisMockBalancePort.source == PortfolioSource.KIS_MOCK)
         require(internalPaperBalancePort.source == PortfolioSource.INTERNAL_PAPER)
+    }
+
+    /**
+     * 같은 Balance/Risk source port와 coordinator를 재사용하되 주문 의도를 만들지 않고 read projection만 조립한다.
+     */
+    fun assemblePortfolioRisk(request: PortfolioRiskAssemblyRequest): PortfolioRiskAssembly {
+        val deadline = System.nanoTime() + EvaluationBounds.EVALUATION_DEADLINE.toNanos()
+        val sourceRequest =
+            PortfolioSourceRequest(
+                actorUserId = request.actorUserId,
+                portfolioContext = request.portfolioContext,
+                evaluationAsOf = request.evaluationAsOf,
+            )
+        val latestPrice =
+            validatePositiveWholeMetric(
+                sourceCallCoordinator.call(deadline, sourceError()) {
+                    pricePort.loadPortfolio(sourceRequest)
+                },
+                MetricUnit.KRW,
+            ).atAsOf(request.evaluationAsOf)
+        val balance =
+            validateBalance(
+                sourceCallCoordinator.call(deadline, sourceError()) {
+                    selectedBalancePort(request.portfolioContext.source).loadPortfolio(sourceRequest)
+                },
+                request.portfolioContext,
+            ).atAsOf(request.evaluationAsOf)
+        val risk =
+            sourceCallCoordinator.call(deadline, unavailableRisk()) {
+                riskSnapshotPort.loadPortfolio(sourceRequest)
+            }
+        return PortfolioRiskAssembly(
+            latestPrice = latestPrice,
+            portfolioValue =
+                when (balance) {
+                    is MetricCell.Available ->
+                        fromAvailable(
+                            balance,
+                            MetricValue.Whole(balance.value.portfolioEquityKrw, MetricUnit.KRW),
+                        )
+
+                    else -> unavailableMetric(balance)
+                },
+            dailyPnlRate =
+                validateDecimalMetric(
+                    risk.dailyLossRate.atAsOf(request.evaluationAsOf),
+                    MetricUnit.RATIO,
+                    minimum = BigDecimal.ONE.negate(),
+                    maximum = BigDecimal.ZERO,
+                ),
+            maxDrawdown =
+                validateDecimalMetric(
+                    risk.maxDrawdown.atAsOf(request.evaluationAsOf),
+                    MetricUnit.RATIO,
+                    minimum = BigDecimal.ONE.negate(),
+                    maximum = BigDecimal.ZERO,
+                ),
+            annualizedVolatility =
+                validateDecimalMetric(
+                    risk.annualizedVolatility.atAsOf(request.evaluationAsOf),
+                    MetricUnit.RATIO,
+                    minimum = BigDecimal.ZERO,
+                ),
+        )
     }
 
     /**
@@ -774,6 +853,16 @@ class MetricSnapshotAssembler(
             is MetricCell.Abstained -> MetricCell.Abstained(cell.reason)
             is MetricCell.NotApplicable -> MetricCell.NotApplicable(cell.reason)
             is MetricCell.Available -> sourceError()
+        }
+
+    private fun <T> MetricCell<T>.atAsOf(evaluationAsOf: Instant): MetricCell<T> =
+        when {
+            this !is MetricCell.Available -> this
+            observedAt.isAfter(evaluationAsOf) ->
+                MetricCell.Stale(observedAt, freshUntil, MetricIssueCode.SOURCE_FUTURE_TIMESTAMP)
+            evaluationAsOf.isAfter(freshUntil) ->
+                MetricCell.Stale(observedAt, freshUntil, MetricIssueCode.SOURCE_STALE)
+            else -> this
         }
 
     private fun sourceError(): MetricCell.Error = MetricCell.Error(MetricIssueCode.SOURCE_ERROR)

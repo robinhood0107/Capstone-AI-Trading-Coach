@@ -1,0 +1,122 @@
+{
+  "$id": "contracts/schemas/s2-4-risk-portfolio.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "annualizedVolatility20d": {
+      "minimum": 0,
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "asOf": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "cvar95": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "dailyPnlRate": {
+      "maximum": 0,
+      "minimum": -1,
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "dataFreshness": {
+      "additionalProperties": false,
+      "properties": {
+        "priceFresh": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "ragFresh": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "signalFresh": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "priceFresh",
+        "signalFresh",
+        "ragFresh"
+      ],
+      "type": "object"
+    },
+    "hmmRegime": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "hmmRegimeProbability": {
+      "maximum": 1,
+      "minimum": 0,
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "killSwitchActive": {
+      "type": "boolean"
+    },
+    "mdd": {
+      "maximum": 0,
+      "minimum": -1,
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "portfolioValue": {
+      "minimum": 0,
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "realizedVolatility20d": {
+      "minimum": 0,
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "var95": {
+      "type": [
+        "number",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "asOf",
+    "portfolioValue",
+    "dailyPnlRate",
+    "mdd",
+    "var95",
+    "cvar95",
+    "realizedVolatility20d",
+    "annualizedVolatility20d",
+    "hmmRegime",
+    "hmmRegimeProbability",
+    "killSwitchActive",
+    "dataFreshness"
+  ],
+  "title": "S2.4 owner-scoped portfolio risk projection v1",
+  "type": "object"
+}

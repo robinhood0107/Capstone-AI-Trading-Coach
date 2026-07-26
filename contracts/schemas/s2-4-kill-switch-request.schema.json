@@ -1,0 +1,21 @@
+{
+  "$id": "contracts/schemas/s2-4-kill-switch-request.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "active": {
+      "type": "boolean"
+    },
+    "reason": {
+      "maxLength": 200,
+      "minLength": 1,
+      "pattern": "^(?!.*(?:['\\\";=]|--|/\\*|\\*/))[^\\u0000-\\u001F\\u007F]*$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "active"
+  ],
+  "title": "S2.4 Kill Switch mutation request v1",
+  "type": "object"
+}

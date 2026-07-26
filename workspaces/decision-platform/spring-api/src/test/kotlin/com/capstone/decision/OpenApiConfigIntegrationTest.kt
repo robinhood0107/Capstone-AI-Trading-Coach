@@ -243,6 +243,43 @@ class OpenApiConfigIntegrationTest(
         )
     }
 
+    @Test
+    fun `openapi locks S2_4 idempotency header and fail closed error envelope`() {
+        val document =
+            objectMapper.readTree(
+                mockMvc
+                    .get("/v3/api-docs")
+                    .andExpect {
+                        status { isOk() }
+                    }.andReturn()
+                    .response
+                    .contentAsByteArray,
+            )
+        val post = document.at("/paths/~1api~1v1~1risk~1kill-switch/post")
+        val header = post.at("/parameters/0/schema")
+        assertEquals(16, header.path("minLength").intValue())
+        assertEquals(128, header.path("maxLength").intValue())
+        assertEquals("^[A-Za-z0-9._:-]+\$", header.path("pattern").stringValue())
+        listOf("400", "401", "403", "409", "503").forEach { status ->
+            assertEquals(
+                "#/components/schemas/S24RiskErrorResponse",
+                post.at("/responses/$status/content/application~1json/schema/\$ref").stringValue(),
+            )
+        }
+
+        val error = document.at("/components/schemas/S24RiskErrorResponse")
+        assertEquals(false, error.at("/properties/success/const").booleanValue())
+        assertEquals("null", error.at("/properties/data/type").stringValue())
+        assertEquals(
+            setOf("success", "requestId", "data", "warnings", "error"),
+            error
+                .path("required")
+                .values()
+                .map { it.stringValue() }
+                .toSet(),
+        )
+    }
+
     private fun findRepositoryRoot(): Path {
         var current = Path.of(System.getProperty("user.dir")).toAbsolutePath()
         while (!Files.exists(current.resolve("AGENTS.md"))) {

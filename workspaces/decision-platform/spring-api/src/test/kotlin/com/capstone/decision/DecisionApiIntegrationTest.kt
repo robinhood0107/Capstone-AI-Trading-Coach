@@ -1,8 +1,14 @@
 package com.capstone.decision
 
+import com.capstone.decision.application.risk.KillSwitchActor
+import com.capstone.decision.application.risk.KillSwitchMutationCommand
+import com.capstone.decision.application.risk.KillSwitchMutationPort
+import com.capstone.decision.domain.risk.KillSwitchActorRole
+import com.capstone.decision.domain.risk.KillSwitchReasonClass
 import io.micrometer.core.instrument.MeterRegistry
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -14,6 +20,7 @@ import org.springframework.boot.test.context.TestConfiguration
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Import
 import org.springframework.context.annotation.Primary
+import org.springframework.dao.InvalidDataAccessApiUsageException
 import org.springframework.data.redis.core.StringRedisTemplate
 import org.springframework.http.MediaType
 import org.springframework.jdbc.core.JdbcTemplate
@@ -35,6 +42,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer
 import org.testcontainers.utility.DockerImageName
 import tools.jackson.databind.JsonNode
 import tools.jackson.databind.ObjectMapper
+import java.math.BigDecimal
 import java.sql.DriverManager
 import java.time.Clock
 import java.time.Instant
@@ -59,6 +67,7 @@ class DecisionApiIntegrationTest(
     @Autowired private val applicationDataSource: DataSource,
     @Autowired private val redisTemplate: StringRedisTemplate,
     @Autowired private val meterRegistry: MeterRegistry,
+    @Autowired private val killSwitchMutationPort: KillSwitchMutationPort,
 ) : SpringApiIntegrationTestBase() {
     private lateinit var mockMvc: MockMvc
     private val jdbcTemplate: JdbcTemplate by lazy {
@@ -75,6 +84,25 @@ class DecisionApiIntegrationTest(
     fun setUp() {
         removeFailureTriggers()
         redisTemplate.keys("decision-idempotency:*").takeIf { it.isNotEmpty() }?.let(redisTemplate::delete)
+        redisTemplate.keys("idempotency:*").takeIf { it.isNotEmpty() }?.let(redisTemplate::delete)
+        jdbcTemplate.update("delete from decision_invalidations")
+        jdbcTemplate.update("delete from risk_kill_switch_transitions")
+        jdbcTemplate.update("delete from event_outbox where event_type = 'kill-switch.changed'")
+        jdbcTemplate.update("delete from audit_logs where target_type = 'KILL_SWITCH'")
+        jdbcTemplate.update(
+            """
+            update risk_kill_switch
+            set active = false,
+                reason_class = 'INITIAL_STATE',
+                generation = 1,
+                changed_by = null,
+                changed_by_role = 'SYSTEM',
+                changed_at = ?::timestamptz,
+                request_id = null
+            where kill_switch_id = 'GLOBAL'
+            """.trimIndent(),
+            EVALUATION_AT,
+        )
         jdbcTemplate.update("delete from event_outbox where event_type = 'risk.decision-created.v1'")
         jdbcTemplate.update("delete from audit_logs where target_type = 'DECISION'")
         jdbcTemplate.update("delete from decision_idempotency_results")
@@ -95,6 +123,751 @@ class DecisionApiIntegrationTest(
                 .webAppContextSetup(webApplicationContext)
                 .apply<DefaultMockMvcBuilder>(springSecurity())
                 .build()
+    }
+
+    @Test
+    fun `Kill Switch public API enforces asymmetric authority exact projection and idempotent replay`() {
+        val userToken = login("demo-user", userPassword())
+        val activationMetricBefore =
+            meterRegistry
+                .find("risk.kill_switch.changed")
+                .tags(
+                    "previous",
+                    "false",
+                    "next",
+                    "true",
+                    "reasonClass",
+                    "USER_MANUAL_STOP",
+                    "actorRole",
+                    "USER",
+                ).counter()
+                ?.count() ?: 0.0
+        val activation =
+            changeKillSwitch(
+                token = userToken,
+                idempotencyHeader = "risk-kill-activate-0001",
+                requestId = "req-risk-kill-activate",
+                active = true,
+                reason = "시연 중 안전 정지",
+            )
+
+        assertEquals(200, activation.response.status)
+        assertEquals(
+            setOf("active", "reasonClass", "changedAt"),
+            json(activation)
+                .at("/data")
+                .propertyNames()
+                .asSequence()
+                .toSet(),
+        )
+        assertTrue(json(activation).at("/data/active").booleanValue())
+        assertEquals("USER_MANUAL_STOP", json(activation).at("/data/reasonClass").stringValue())
+        assertEquals(2L, jdbcTemplate.queryForObject("select generation from risk_kill_switch", Long::class.java))
+        assertEquals(1, count("select count(*) from risk_kill_switch_transitions"))
+        assertEquals(
+            activationMetricBefore + 1.0,
+            meterRegistry
+                .find("risk.kill_switch.changed")
+                .tags(
+                    "previous",
+                    "false",
+                    "next",
+                    "true",
+                    "reasonClass",
+                    "USER_MANUAL_STOP",
+                    "actorRole",
+                    "USER",
+                ).counter()
+                ?.count(),
+        )
+        assertEquals(1.0, meterRegistry.find("risk.kill_switch.state").gauge()?.value())
+        assertEquals(
+            setOf(
+                "generation",
+                "previousActive",
+                "nextActive",
+                "reasonClass",
+                "changedBy",
+                "changedByRole",
+                "correlationId",
+                "invalidatedDecisionCount",
+            ),
+            objectMapper
+                .readTree(
+                    jdbcTemplate.queryForObject(
+                        "select payload_json::text from audit_logs where target_type = 'KILL_SWITCH'",
+                        String::class.java,
+                    ),
+                ).propertyNames()
+                .asSequence()
+                .toSet(),
+        )
+        val outbox =
+            requireNotNull(
+                jdbcTemplate.queryForObject(
+                    "select payload_json::text from event_outbox where event_type = 'kill-switch.changed'",
+                    String::class.java,
+                ),
+            )
+        assertEquals(
+            setOf("active", "changedAt"),
+            objectMapper
+                .readTree(outbox)
+                .propertyNames()
+                .asSequence()
+                .toSet(),
+        )
+        assertFalse(outbox.contains("usr_demo_user"))
+        assertFalse(outbox.contains("시연 중 안전 정지"))
+
+        val replay =
+            changeKillSwitch(
+                token = userToken,
+                idempotencyHeader = "risk-kill-activate-0001",
+                requestId = "req-risk-kill-replay",
+                active = true,
+                reason = "시연 중 안전 정지",
+            )
+        assertEquals(activation.response.contentAsString, replay.response.contentAsString)
+        assertEquals(1, count("select count(*) from risk_kill_switch_transitions"))
+
+        val conflict =
+            changeKillSwitch(
+                token = userToken,
+                idempotencyHeader = "risk-kill-activate-0001",
+                requestId = "req-risk-kill-conflict",
+                active = false,
+                reason = null,
+            )
+        assertEquals(409, conflict.response.status)
+        assertEquals("IDEMPOTENCY_CONFLICT", json(conflict).at("/error/code").stringValue())
+
+        val userResume =
+            changeKillSwitch(
+                token = userToken,
+                idempotencyHeader = "risk-kill-user-resume-01",
+                requestId = "req-risk-kill-user-resume",
+                active = false,
+                reason = null,
+            )
+        assertEquals(403, userResume.response.status)
+        assertEquals("FORBIDDEN", json(userResume).at("/error/code").stringValue())
+
+        val adminToken = login("demo-admin", adminPassword())
+        val adminResume =
+            changeKillSwitch(
+                token = adminToken,
+                idempotencyHeader = "risk-kill-admin-resume-1",
+                // 추적 ID는 멱등성 키가 아니므로 독립 전이가 같은 값을 재사용해도 상태 변경을 막지 않는다.
+                requestId = "req-risk-kill-activate",
+                active = false,
+                reason = null,
+            )
+        assertEquals(
+            200,
+            adminResume.response.status,
+            generateSequence<Throwable>(adminResume.resolvedException) { it.cause }
+                .joinToString(" <- ") { "${it::class.simpleName}:${it.message}" },
+        )
+        assertFalse(json(adminResume).at("/data/active").booleanValue())
+        assertEquals("ADMIN_RESUME", json(adminResume).at("/data/reasonClass").stringValue())
+        assertEquals(3L, jdbcTemplate.queryForObject("select generation from risk_kill_switch", Long::class.java))
+        assertEquals(0.0, meterRegistry.find("risk.kill_switch.state").gauge()?.value())
+
+        val noOp =
+            changeKillSwitch(
+                token = adminToken,
+                idempotencyHeader = "risk-kill-admin-noop-001",
+                requestId = "req-risk-kill-admin-noop",
+                active = false,
+                reason = null,
+            )
+        assertEquals(200, noOp.response.status)
+        assertEquals(3L, jdbcTemplate.queryForObject("select generation from risk_kill_switch", Long::class.java))
+        assertEquals(2, count("select count(*) from risk_kill_switch_transitions"))
+        assertTrue(
+            meterRegistry.meters
+                .filter { it.id.name.startsWith("risk.") || it.id.name.startsWith("decision.invalidated") }
+                .flatMap { it.id.tags }
+                .none { tag ->
+                    tag.value.contains("usr_demo") ||
+                        tag.value.contains("시연 중 안전 정지") ||
+                        tag.key in setOf("userId", "decisionId", "requestId", "reason")
+                },
+        )
+    }
+
+    @Test
+    fun `Kill Switch USER GET returns only the sanitized state and rejects query fields`() {
+        val token = login("demo-user", userPassword())
+        val state =
+            mockMvc
+                .get("/api/v1/risk/kill-switch") {
+                    bearer(token)
+                    header("X-Request-Id", "req-risk-kill-get")
+                }.andReturn()
+
+        assertEquals(200, state.response.status)
+        assertEquals(
+            setOf("active", "reasonClass", "changedAt"),
+            json(state)
+                .at("/data")
+                .propertyNames()
+                .asSequence()
+                .toSet(),
+        )
+        listOf("generation", "changedBy", "changedByRole", "requestId", "reason").forEach { forbidden ->
+            assertFalse(json(state).at("/data").has(forbidden))
+        }
+
+        val queryInjection =
+            mockMvc
+                .get("/api/v1/risk/kill-switch") {
+                    bearer(token)
+                    header("X-Request-Id", "req-risk-kill-get-query")
+                    param("generation", "2")
+                }.andReturn()
+        assertEquals(400, queryInjection.response.status)
+        assertEquals("VALIDATION_ERROR", json(queryInjection).at("/error/code").stringValue())
+    }
+
+    @Test
+    fun `Kill Switch resume revalidates current admin status role and security version without writes`() {
+        val userToken = login("demo-user", userPassword())
+        val activation =
+            changeKillSwitch(
+                token = userToken,
+                idempotencyHeader = "risk-kill-revalidate-on1",
+                requestId = "req-risk-kill-revalidate-on",
+                active = true,
+                reason = null,
+            )
+        assertEquals(200, activation.response.status)
+        val adminToken = login("demo-admin", adminPassword())
+        val original =
+            jdbcTemplate.queryForMap(
+                """
+                select role, status, security_version
+                from users
+                where user_id = 'usr_demo_admin'
+                """.trimIndent(),
+            )
+        val baselineGeneration =
+            requireNotNull(jdbcTemplate.queryForObject("select generation from risk_kill_switch", Long::class.java))
+        val baselineTransitions = count("select count(*) from risk_kill_switch_transitions")
+        val cases =
+            listOf(
+                Triple("status = 'DISABLED'", 401, "disabled"),
+                // 전역 JWT 검증이 stale role claim을 먼저 무효화하고, DB definer는 별도 테스트에서 FORBIDDEN을 고정한다.
+                Triple("role = 'USER'", 401, "role"),
+                Triple("security_version = security_version + 1", 401, "version"),
+            )
+
+        cases.forEachIndexed { index, (mutation, expectedStatus, suffix) ->
+            jdbcTemplate.update("update users set $mutation where user_id = 'usr_demo_admin'")
+            try {
+                val denied =
+                    changeKillSwitch(
+                        token = adminToken,
+                        idempotencyHeader = "risk-kill-revalidate-${index}01",
+                        requestId = "req-risk-kill-revalidate-$suffix",
+                        active = false,
+                        reason = null,
+                    )
+                assertEquals(expectedStatus, denied.response.status, "$suffix must be rejected")
+            } finally {
+                jdbcTemplate.update(
+                    """
+                    update users
+                    set role = ?, status = ?, security_version = ?
+                    where user_id = 'usr_demo_admin'
+                    """.trimIndent(),
+                    original["role"],
+                    original["status"],
+                    original["security_version"],
+                )
+            }
+            assertEquals(
+                baselineGeneration,
+                jdbcTemplate.queryForObject("select generation from risk_kill_switch", Long::class.java),
+            )
+            assertEquals(baselineTransitions, count("select count(*) from risk_kill_switch_transitions"))
+        }
+    }
+
+    @Test
+    fun `Kill Switch reason injection matrix is rejected without side effects`() {
+        val token = login("demo-user", userPassword())
+        val invalidReasons =
+            listOf(
+                "' OR 1=1",
+                "-- comment",
+                "/* comment */",
+                "stop\u0000now",
+                "가".repeat(201),
+            )
+
+        invalidReasons.forEachIndexed { index, reason ->
+            val response =
+                mockMvc
+                    .post("/api/v1/risk/kill-switch") {
+                        bearer(token)
+                        header("X-Idempotency-Key", "risk-kill-reason-${index}001")
+                        header("X-Request-Id", "req-risk-kill-reason-$index")
+                        contentType = MediaType.APPLICATION_JSON
+                        content = objectMapper.writeValueAsString(mapOf("active" to true, "reason" to reason))
+                    }.andReturn()
+            assertEquals(400, response.response.status)
+            assertEquals("VALIDATION_ERROR", json(response).at("/error/code").stringValue())
+        }
+
+        assertEquals(1L, jdbcTemplate.queryForObject("select generation from risk_kill_switch", Long::class.java))
+        assertEquals(0, count("select count(*) from risk_kill_switch_transitions"))
+        assertEquals(0, count("select count(*) from audit_logs where target_type = 'KILL_SWITCH'"))
+        assertEquals(0, count("select count(*) from event_outbox where event_type = 'kill-switch.changed'"))
+    }
+
+    @Test
+    fun `Kill Switch accepts schema valid ordinary reason text and discards it before persistence`() {
+        val token = login("demo-user", userPassword())
+        val response =
+            changeKillSwitch(
+                token = token,
+                idempotencyHeader = "risk-kill-reason-normal",
+                requestId = "req-risk-kill-reason-normal",
+                active = true,
+                reason = "safe and sound",
+            )
+
+        assertEquals(200, response.response.status)
+        assertEquals("USER_MANUAL_STOP", json(response).at("/data/reasonClass").stringValue())
+        assertFalse(response.response.contentAsString.contains("safe and sound"))
+        assertFalse(
+            requireNotNull(
+                jdbcTemplate.queryForObject(
+                    "select payload_json::text from audit_logs where target_type = 'KILL_SWITCH'",
+                    String::class.java,
+                ),
+            ).contains("safe and sound"),
+        )
+    }
+
+    @Test
+    fun `Kill Switch validation authentication and idempotency failures make no database writes`() {
+        val token = login("demo-user", userPassword())
+        val missingKey =
+            changeKillSwitch(
+                token = token,
+                idempotencyHeader = null,
+                requestId = "req-risk-kill-no-key",
+                active = true,
+                reason = null,
+            )
+        assertEquals(400, missingKey.response.status)
+        assertEquals("VALIDATION_ERROR", json(missingKey).at("/error/code").stringValue())
+
+        val injected =
+            mockMvc
+                .post("/api/v1/risk/kill-switch") {
+                    bearer(token)
+                    header("X-Idempotency-Key", "risk-kill-injection-001")
+                    header("X-Request-Id", "req-risk-kill-injection")
+                    contentType = MediaType.APPLICATION_JSON
+                    content = """{"active":true,"changedBy":"usr_attacker"}"""
+                }.andReturn()
+        assertEquals(400, injected.response.status)
+        assertEquals("VALIDATION_ERROR", json(injected).at("/error/code").stringValue())
+        assertFalse(injected.response.contentAsString.contains("usr_attacker"))
+
+        val unauthenticated =
+            mockMvc
+                .post("/api/v1/risk/kill-switch") {
+                    header("X-Idempotency-Key", "risk-kill-unauth-0001")
+                    header("X-Request-Id", "req-risk-kill-unauth")
+                    contentType = MediaType.APPLICATION_JSON
+                    content = """{"active":true}"""
+                }.andReturn()
+        assertEquals(401, unauthenticated.response.status)
+        assertEquals(1L, jdbcTemplate.queryForObject("select generation from risk_kill_switch", Long::class.java))
+        assertEquals(0, count("select count(*) from risk_kill_switch_transitions"))
+        assertEquals(0, count("select count(*) from audit_logs where target_type = 'KILL_SWITCH'"))
+        assertEquals(0, count("select count(*) from event_outbox where event_type = 'kill-switch.changed'"))
+    }
+
+    @Test
+    fun `Kill Switch idempotency key uses the canonical alphabet and 16 to 128 bounds`() {
+        val token = login("demo-user", userPassword())
+        val minimum =
+            changeKillSwitch(
+                token = token,
+                idempotencyHeader = ":".repeat(16),
+                requestId = "req-risk-key-minimum",
+                active = true,
+                reason = null,
+            )
+        val maximum =
+            changeKillSwitch(
+                token = token,
+                idempotencyHeader = ".".repeat(128),
+                requestId = "req-risk-key-maximum",
+                active = true,
+                reason = null,
+            )
+        val tooShort =
+            changeKillSwitch(
+                token = token,
+                idempotencyHeader = "-".repeat(15),
+                requestId = "req-risk-key-short",
+                active = true,
+                reason = null,
+            )
+        val tooLong =
+            changeKillSwitch(
+                token = token,
+                idempotencyHeader = "_".repeat(129),
+                requestId = "req-risk-key-long",
+                active = true,
+                reason = null,
+            )
+
+        assertEquals(200, minimum.response.status)
+        assertEquals(200, maximum.response.status)
+        assertEquals(400, tooShort.response.status)
+        assertEquals(400, tooLong.response.status)
+        assertEquals(1, count("select count(*) from risk_kill_switch_transitions"))
+    }
+
+    @Test
+    fun `Kill Switch transaction rollback leaves state history invalidations audit and outbox unchanged`() {
+        val token = login("demo-user", userPassword())
+        installGraphFailureTrigger("event_outbox")
+
+        val failed =
+            changeKillSwitch(
+                token = token,
+                idempotencyHeader = "risk-kill-rollback-0001",
+                requestId = "req-risk-kill-rollback",
+                active = true,
+                reason = null,
+            )
+
+        assertEquals(503, failed.response.status)
+        assertEquals("RISK_UNAVAILABLE", json(failed).at("/error/code").stringValue())
+        assertEquals(false, jdbcTemplate.queryForObject("select active from risk_kill_switch", Boolean::class.java))
+        assertEquals(1L, jdbcTemplate.queryForObject("select generation from risk_kill_switch", Long::class.java))
+        assertEquals(0, count("select count(*) from risk_kill_switch_transitions"))
+        assertEquals(0, count("select count(*) from decision_invalidations"))
+        assertEquals(0, count("select count(*) from audit_logs where target_type = 'KILL_SWITCH'"))
+        assertEquals(0, count("select count(*) from event_outbox where event_type = 'kill-switch.changed'"))
+    }
+
+    @Test
+    fun `concurrent stop and resume serialize to one valid singleton history`() {
+        val userToken = login("demo-user", userPassword())
+        val adminToken = login("demo-admin", adminPassword())
+        val start = CountDownLatch(1)
+        val executor = Executors.newFixedThreadPool(2)
+        val futures =
+            listOf(
+                executor.submit<MvcResult> {
+                    start.await()
+                    changeKillSwitch(
+                        userToken,
+                        "risk-kill-concurrent-on1",
+                        "req-risk-kill-concurrent-on",
+                        true,
+                        null,
+                    )
+                },
+                executor.submit<MvcResult> {
+                    start.await()
+                    changeKillSwitch(
+                        adminToken,
+                        "risk-kill-concurrent-off",
+                        "req-risk-kill-concurrent-off",
+                        false,
+                        null,
+                    )
+                },
+            )
+        start.countDown()
+        val results = futures.map { it.get(15, TimeUnit.SECONDS) }
+        executor.shutdownNow()
+
+        assertEquals(listOf(200, 200), results.map { it.response.status }.sorted())
+        val transitionCount = count("select count(*) from risk_kill_switch_transitions")
+        val generation = requireNotNull(jdbcTemplate.queryForObject("select generation from risk_kill_switch", Long::class.java))
+        assertEquals(transitionCount + 1L, generation)
+        assertEquals(
+            transitionCount,
+            count(
+                """
+                select count(*) from risk_kill_switch_transitions
+                where previous_active <> next_active
+                """.trimIndent(),
+            ),
+        )
+        assertEquals(
+            transitionCount,
+            count("select count(distinct generation) from risk_kill_switch_transitions"),
+        )
+    }
+
+    @Test
+    fun `Kill Switch mutation uses locked database time when caller clock is behind`() {
+        val storedFuture = EVALUATION_AT.plusSeconds(1)
+        jdbcTemplate.update(
+            "update risk_kill_switch set changed_at = ? where kill_switch_id = 'GLOBAL'",
+            storedFuture,
+        )
+        val result =
+            killSwitchMutationPort.mutate(
+                KillSwitchMutationCommand(
+                    actor =
+                        KillSwitchActor(
+                            userId = "usr_demo_user",
+                            role = KillSwitchActorRole.USER,
+                            securityVersion = 1,
+                            requestId = "req-risk-kill-clock-behind",
+                        ),
+                    requestedActive = true,
+                    reasonClass = KillSwitchReasonClass.USER_MANUAL_STOP,
+                ),
+            )
+
+        assertTrue(result.changed)
+        assertEquals(
+            storedFuture,
+            jdbcTemplate.queryForObject(
+                "select changed_at from risk_kill_switch where kill_switch_id = 'GLOBAL'",
+                OffsetDateTime::class.java,
+            ),
+        )
+    }
+
+    @Test
+    fun `Kill Switch mutation adapter enforces the locked transition policy reason class`() {
+        assertThrows(InvalidDataAccessApiUsageException::class.java) {
+            killSwitchMutationPort.mutate(
+                KillSwitchMutationCommand(
+                    actor =
+                        KillSwitchActor(
+                            userId = "usr_demo_user",
+                            role = KillSwitchActorRole.USER,
+                            securityVersion = 1,
+                            requestId = "req-risk-kill-policy-drift",
+                        ),
+                    requestedActive = true,
+                    reasonClass = KillSwitchReasonClass.DATA_FRESHNESS_STOP,
+                ),
+            )
+        }
+
+        assertEquals(false, jdbcTemplate.queryForObject("select active from risk_kill_switch", Boolean::class.java))
+        assertEquals(0, count("select count(*) from risk_kill_switch_transitions"))
+        assertEquals(0, count("select count(*) from audit_logs where target_type = 'KILL_SWITCH'"))
+        assertEquals(0, count("select count(*) from event_outbox where event_type = 'kill-switch.changed'"))
+    }
+
+    @Test
+    fun `Kill Switch activation atomically invalidates unused decisions and blocks later evaluations`() {
+        val principleId = insertPrinciple("usr_demo_user", "GUIDE", suffix = "91")
+        val token = login("demo-user", userPassword())
+        val first =
+            evaluate(
+                token,
+                "decision-before-kill-01",
+                "req-decision-before-kill",
+                request(principleId),
+            )
+        assertEquals(200, first.response.status)
+        val decisionId = json(first).at("/data/decisionId").stringValue()
+        val invalidationMetricBefore =
+            meterRegistry
+                .find("decision.invalidated")
+                .tag("reasonClass", "KILL_SWITCH_ACTIVATED")
+                .counter()
+                ?.count() ?: 0.0
+
+        val activation =
+            changeKillSwitch(
+                token = token,
+                idempotencyHeader = "risk-kill-invalidate-01",
+                requestId = "req-risk-kill-invalidate",
+                active = true,
+                reason = null,
+            )
+        assertEquals(200, activation.response.status)
+        assertEquals(
+            1,
+            count(
+                """
+                select count(*) from decision_invalidations
+                where decision_id = ? and reason_class = 'KILL_SWITCH_ACTIVATED'
+                """.trimIndent(),
+                decisionId,
+            ),
+        )
+        assertEquals(
+            1,
+            objectMapper
+                .readTree(
+                    jdbcTemplate.queryForObject(
+                        "select payload_json::text from audit_logs where target_type = 'KILL_SWITCH'",
+                        String::class.java,
+                    ),
+                ).path("invalidatedDecisionCount")
+                .intValue(),
+        )
+        assertEquals(
+            invalidationMetricBefore + 1.0,
+            meterRegistry
+                .find("decision.invalidated")
+                .tag("reasonClass", "KILL_SWITCH_ACTIVATED")
+                .counter()
+                ?.count(),
+        )
+
+        val blocked =
+            evaluate(
+                token,
+                "decision-after-kill-001",
+                "req-decision-after-kill",
+                request(principleId),
+            )
+        assertEquals(422, blocked.response.status)
+        assertEquals("RISK_BLOCKED", json(blocked).at("/error/code").stringValue())
+        assertEquals(1, count("select count(*) from decisions"))
+    }
+
+    @Test
+    fun `Kill Switch activation cannot miss an in flight decision persistence`() {
+        val principleId = insertPrinciple("usr_demo_user", "GUIDE", suffix = "912")
+        val token = login("demo-user", userPassword())
+        installSlowDecisionTrigger()
+        val executor = Executors.newSingleThreadExecutor()
+        try {
+            val decision =
+                executor.submit<MvcResult> {
+                    evaluate(
+                        token,
+                        "decision-kill-race-0001",
+                        "req-decision-kill-race",
+                        request(principleId),
+                    )
+                }
+            awaitSlowDecisionTriggerEntered()
+
+            val activation =
+                changeKillSwitch(
+                    token = token,
+                    idempotencyHeader = "risk-kill-race-000001",
+                    requestId = "req-risk-kill-race",
+                    active = true,
+                    reason = null,
+                )
+            val evaluated = decision.get(15, TimeUnit.SECONDS)
+
+            assertEquals(200, evaluated.response.status)
+            assertEquals(200, activation.response.status)
+            val decisionId = json(evaluated).at("/data/decisionId").stringValue()
+            assertEquals(
+                1,
+                count(
+                    """
+                    select count(*) from decision_invalidations
+                    where decision_id = ? and reason_class = 'KILL_SWITCH_ACTIVATED'
+                    """.trimIndent(),
+                    decisionId,
+                ),
+            )
+        } finally {
+            executor.shutdownNow()
+        }
+    }
+
+    @Test
+    fun `portfolio Risk API keeps absent producers null and reads actual owner observations only`() {
+        val token = login("demo-user", userPassword())
+        val timerBefore = meterRegistry.find("risk.portfolio.query").timer()?.count() ?: 0L
+        val missing =
+            mockMvc
+                .get("/api/v1/risk/portfolio") {
+                    bearer(token)
+                    header("X-Request-Id", "req-risk-portfolio-missing")
+                }.andReturn()
+        assertEquals(200, missing.response.status)
+        listOf(
+            "portfolioValue",
+            "dailyPnlRate",
+            "mdd",
+            "var95",
+            "cvar95",
+            "realizedVolatility20d",
+            "annualizedVolatility20d",
+            "hmmRegime",
+            "hmmRegimeProbability",
+        ).forEach { field ->
+            assertTrue(json(missing).at("/data/$field").isNull, "$field must remain null without a source")
+        }
+        assertTrue(json(missing).at("/warnings").size() > 0)
+
+        insertCompleteStoredSources(orderCount = 0)
+        jdbcTemplate.update(
+            """
+            update market_quote_observations
+            set observed_at = ?::timestamptz,
+                received_at = ?::timestamptz
+            where observation_id = 'quote-decision-complete'
+            """.trimIndent(),
+            EVALUATION_AT.minusSeconds(301),
+            EVALUATION_AT.minusSeconds(301),
+        )
+        insertOtherOwnerPortfolioSources()
+        val available =
+            mockMvc
+                .get("/api/v1/risk/portfolio") {
+                    bearer(token)
+                    header("X-Request-Id", "req-risk-portfolio-available")
+                }.andReturn()
+        assertEquals(200, available.response.status)
+        assertEquals(10_000_000L, json(available).at("/data/portfolioValue").longValue())
+        assertEquals(0, json(available).at("/data/dailyPnlRate").decimalValue().compareTo(BigDecimal("-0.01")))
+        assertEquals(0, json(available).at("/data/mdd").decimalValue().compareTo(BigDecimal("-0.05")))
+        assertEquals(
+            0,
+            json(available)
+                .at("/data/annualizedVolatility20d")
+                .decimalValue()
+                .compareTo(BigDecimal("0.20")),
+        )
+        assertTrue(json(available).at("/data/var95").isNull)
+        assertFalse(json(available).at("/data/dataFreshness/priceFresh").booleanValue())
+        assertFalse(json(available).at("/data/killSwitchActive").booleanValue())
+        assertEquals(timerBefore + 2L, meterRegistry.find("risk.portfolio.query").timer()?.count())
+    }
+
+    @Test
+    fun `portfolio Risk API maps owner context authority failure to typed unavailable`() {
+        val token = login("demo-user", userPassword())
+        jdbcTemplate.execute(
+            "revoke select on latest_portfolio_balance_observations from decision_app",
+        )
+        val response =
+            try {
+                mockMvc
+                    .get("/api/v1/risk/portfolio") {
+                        bearer(token)
+                        header("X-Request-Id", "req-risk-portfolio-authority-failure")
+                    }.andReturn()
+            } finally {
+                jdbcTemplate.execute(
+                    "grant select on latest_portfolio_balance_observations to decision_app",
+                )
+            }
+
+        assertEquals(503, response.response.status)
+        assertEquals("RISK_UNAVAILABLE", json(response).at("/error/code").stringValue())
     }
 
     @Test
@@ -645,6 +1418,28 @@ class DecisionApiIntegrationTest(
                 content = objectMapper.writeValueAsString(body)
             }.andReturn()
 
+    private fun changeKillSwitch(
+        token: String,
+        idempotencyHeader: String?,
+        requestId: String,
+        active: Boolean,
+        reason: String?,
+    ): MvcResult =
+        mockMvc
+            .post("/api/v1/risk/kill-switch") {
+                bearer(token)
+                idempotencyHeader?.let { header("X-Idempotency-Key", it) }
+                header("X-Request-Id", requestId)
+                contentType = MediaType.APPLICATION_JSON
+                content =
+                    objectMapper.writeValueAsString(
+                        buildMap<String, Any> {
+                            put("active", active)
+                            reason?.let { put("reason", it) }
+                        },
+                    )
+            }.andReturn()
+
     private fun request(principleId: String): Map<String, Any> =
         mapOf(
             "principleId" to principleId,
@@ -820,6 +1615,48 @@ class DecisionApiIntegrationTest(
             """.trimIndent(),
             orderCount,
             EVALUATION_AT,
+            EVALUATION_AT,
+            EVALUATION_AT,
+        )
+    }
+
+    private fun insertOtherOwnerPortfolioSources() {
+        jdbcTemplate.update(
+            """
+            insert into portfolio_balance_observations (
+              observation_id, owner_user_id, account_scope_hash, source,
+              context_status, cash_krw, portfolio_equity_krw,
+              margin_requirement_krw, completeness, position_count,
+              observed_at, received_at, schema_version, source_version,
+              payload_json, source_ref, artifact_hash
+            ) values (
+              'balance-risk-other-owner', 'usr_demo_admin', repeat('d', 64), 'KIS_MOCK',
+              'ACTIVE', 999999999, 999999999, 0, 'COMPLETE', 0,
+              ?::timestamptz, ?::timestamptz,
+              'portfolio-balance-observation.v1', 'risk-idor-fixture-v1',
+              '{"ownerScopeHash":"other"}'::jsonb,
+              repeat('b', 64), repeat('c', 64)
+            )
+            """.trimIndent(),
+            EVALUATION_AT,
+            EVALUATION_AT,
+        )
+        jdbcTemplate.update(
+            """
+            insert into deterministic_risk_observations (
+              observation_id, owner_user_id, owner_scope_hash, portfolio_source,
+              daily_loss_rate, max_drawdown, annualized_volatility, completeness,
+              observed_at, received_at, schema_version, source_version,
+              payload_json, source_ref, artifact_hash
+            ) values (
+              'risk-other-owner', 'usr_demo_admin', repeat('d', 64), 'KIS_MOCK',
+              -0.99, -0.98, 9.9, 'COMPLETE',
+              ?::timestamptz, ?::timestamptz,
+              'deterministic-risk-observation.v1', 'risk-idor-fixture-v1',
+              '{"ownerScopeHash":"other"}'::jsonb,
+              repeat('d', 64), repeat('e', 64)
+            )
+            """.trimIndent(),
             EVALUATION_AT,
             EVALUATION_AT,
         )

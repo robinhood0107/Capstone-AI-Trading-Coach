@@ -168,6 +168,46 @@ canonical S2.3 catalog SHA-256은
 [`workspaces/decision-platform/README.md`](../workspaces/decision-platform/README.md#s23-offline-golden-path)를
 따른다. 이 절차는 provider/live/account/order/broker 호출을 만들지 않는다.
 
+## S2.4 Risk API와 Kill Switch
+
+S2.4는 `GET /api/v1/risk/portfolio`, `GET /api/v1/risk/kill-switch`,
+`POST /api/v1/risk/kill-switch` 세 route를 추가한다. portfolio 조회는 S2.3의 owner-scoped
+stored observation과 기존 `MetricSnapshotAssembler`를 재사용하며 legacy `risk_snapshots`를
+읽지 않는다. `priceFresh`는 `latest_market_quote_observations`의 실제 시각에서만 계산하고,
+producer나 row가 없는 필드는 nullable 값과 sanitized `MISSING_SOURCE` warning으로 남긴다.
+
+Kill Switch 권위는 V10의 `risk_kill_switch(kill_switch_id='GLOBAL')` 단일 행이다. 상태
+변경 transaction은 singleton lock, generation CAS, append-only transition, 유효 Decision
+집합 무효화, bounded audit와 outbox를 원자적으로 기록한다. USER와 ADMIN은 정지할 수 있지만
+재가동은 현재 DB의 status/role/security version을 transaction 안에서 다시 확인한 ADMIN만
+가능하다. Decision 저장도 singleton을 shared lock으로 재확인해 활성화와 저장 사이의
+TOCTOU를 닫는다.
+
+| 계약 | 경계 |
+|---|---|
+| `schemas/s2-4-risk-portfolio.schema.json` | nullable producer 값, 정수 원화와 비율 범위, exact freshness |
+| `schemas/s2-4-kill-switch-state.schema.json` | active/reason 조합과 actor-free public projection |
+| `schemas/s2-4-kill-switch-request.schema.json` | exact `active`/optional `reason` 요청 |
+| `openapi/openapi.json` | 세 route와 fail-closed 오류 envelope의 generated SSOT |
+
+재현 명령은 모두 fixture/Testcontainers 경계에서 실행되며 provider/live/account/order/broker
+호출을 만들지 않는다.
+
+```bash
+uv run --frozen python -m unittest discover -s contracts/tests -v
+uv run --frozen python contracts/validate.py
+workspaces/decision-platform/spring-api/gradlew \
+  -p workspaces/decision-platform/spring-api --no-daemon ktlintCheck build
+workspaces/decision-platform/spring-api/gradlew \
+  -p workspaces/decision-platform/spring-api --no-daemon prepareOpenApiFixtureEnv
+uv run --frozen python contracts/run_openapi_gate.py \
+  --env-file workspaces/decision-platform/spring-api/build/openapi-fixture/openapi.env
+```
+
+상세 결정과 소비자 영향은
+[`20260725-s2-4-risk-kill-switch-contract.md`](changes/20260725-s2-4-risk-kill-switch-contract.md)를
+따른다.
+
 ## S1.5 KIS 데이터 품질 리포트
 
 S1.5는 public API가 아니라 Decision Platform 내부 CLI `kis-data-quality-report`가 생산하는

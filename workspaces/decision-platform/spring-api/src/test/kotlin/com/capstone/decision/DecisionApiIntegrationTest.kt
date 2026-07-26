@@ -434,6 +434,49 @@ class DecisionApiIntegrationTest(
     }
 
     @Test
+    fun `Kill Switch idempotency key uses the canonical alphabet and 16 to 128 bounds`() {
+        val token = login("demo-user", userPassword())
+        val minimum =
+            changeKillSwitch(
+                token = token,
+                idempotencyHeader = ":".repeat(16),
+                requestId = "req-risk-key-minimum",
+                active = true,
+                reason = null,
+            )
+        val maximum =
+            changeKillSwitch(
+                token = token,
+                idempotencyHeader = ".".repeat(128),
+                requestId = "req-risk-key-maximum",
+                active = true,
+                reason = null,
+            )
+        val tooShort =
+            changeKillSwitch(
+                token = token,
+                idempotencyHeader = "-".repeat(15),
+                requestId = "req-risk-key-short",
+                active = true,
+                reason = null,
+            )
+        val tooLong =
+            changeKillSwitch(
+                token = token,
+                idempotencyHeader = "_".repeat(129),
+                requestId = "req-risk-key-long",
+                active = true,
+                reason = null,
+            )
+
+        assertEquals(200, minimum.response.status)
+        assertEquals(200, maximum.response.status)
+        assertEquals(400, tooShort.response.status)
+        assertEquals(400, tooLong.response.status)
+        assertEquals(1, count("select count(*) from risk_kill_switch_transitions"))
+    }
+
+    @Test
     fun `Kill Switch transaction rollback leaves state history invalidations audit and outbox unchanged`() {
         val token = login("demo-user", userPassword())
         installGraphFailureTrigger("event_outbox")

@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test
 import tools.jackson.databind.ObjectMapper
 import java.nio.file.Files
 import java.nio.file.Path
+import kotlin.io.path.extension
 
 // S2.4 구현 전에 외부 계약과 최소 보안 구조를 실행 가능한 실패로 먼저 잠근다.
 class S24ContractFirstTest {
@@ -86,5 +87,39 @@ class S24ContractFirstTest {
 
         assertEquals(setOf("active", "reasonClass", "changedAt"), fields)
         assertTrue(schema.path("additionalProperties").isBoolean && !schema.path("additionalProperties").booleanValue())
+    }
+
+    @Test
+    fun `Kill Switch authority has no cache dependency and portfolio risk has one assembler`() {
+        val sourceRoot =
+            repositoryRoot.resolve(
+                "workspaces/decision-platform/spring-api/src/main/kotlin/com/capstone/decision",
+            )
+        val riskSources =
+            Files
+                .walk(sourceRoot)
+                .use { paths ->
+                    paths
+                        .filter { Files.isRegularFile(it) && it.extension == "kt" }
+                        .filter {
+                            it.toString().contains("/risk/") ||
+                                it.fileName.toString().contains("KillSwitch")
+                        }.map(Files::readString)
+                        .toList()
+                }
+        val source = riskSources.joinToString("\n")
+
+        listOf("@Cacheable", "RedisTemplate", "ConcurrentHashMap").forEach { forbidden ->
+            assertFalse(source.contains(forbidden), "Kill Switch authority must not depend on $forbidden")
+        }
+        assertFalse(
+            riskSources.any { it.contains("risk_snapshots") },
+            "S2.4 portfolio risk must not read the legacy risk_snapshots table",
+        )
+        assertEquals(
+            1,
+            Regex("""class\s+MetricSnapshotAssembler\b""").findAll(source).count(),
+            "MetricSnapshotAssembler must remain the single metric assembly point",
+        )
     }
 }

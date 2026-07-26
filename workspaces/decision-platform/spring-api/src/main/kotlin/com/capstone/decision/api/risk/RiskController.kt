@@ -8,6 +8,7 @@ import com.capstone.decision.application.risk.KillSwitchActor
 import com.capstone.decision.application.risk.KillSwitchService
 import com.capstone.decision.application.risk.PortfolioRiskQueryUseCase
 import com.capstone.decision.application.security.AppPrincipal
+import com.capstone.decision.application.security.IdempotencyKeyPolicy
 import com.capstone.decision.domain.risk.KillSwitchActorRole
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
@@ -109,6 +110,13 @@ class RiskController(
         @Parameter(
             description = "16-128 bounded ASCII identifier. Raw value is handled only by the idempotency filter.",
             required = true,
+            schema =
+                OasSchema(
+                    type = "string",
+                    minLength = IdempotencyKeyPolicy.MIN_LENGTH,
+                    maxLength = IdempotencyKeyPolicy.MAX_LENGTH,
+                    pattern = IdempotencyKeyPolicy.PATTERN,
+                ),
         )
         @RequestHeader(name = "X-Idempotency-Key", required = false) idempotencyKey: String?,
         @RequestBody(required = false) body: String?,

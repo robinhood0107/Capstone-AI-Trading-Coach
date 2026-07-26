@@ -35,6 +35,7 @@ REQUIRED_NAMES: Final[tuple[str, ...]] = (
     "LOGIN_SCOPE_HMAC_KEY",
     "PRINCIPLE_CURSOR_HMAC_KEY",
     "DECISION_IDEMPOTENCY_SCOPE_HMAC_KEY",
+    "BROKERAGE_IDEMPOTENCY_SCOPE_HMAC_KEY",
     "DEMO_CREDENTIAL_SEPARATION_KEY",
     "DEMO_USER_CREDENTIAL_BUNDLE",
     "DEMO_ADMIN_CREDENTIAL_BUNDLE",
@@ -159,6 +160,7 @@ def _require_secret_shapes(values: dict[str, str]) -> None:
         "LOGIN_SCOPE_HMAC_KEY",
         "PRINCIPLE_CURSOR_HMAC_KEY",
         "DECISION_IDEMPOTENCY_SCOPE_HMAC_KEY",
+        "BROKERAGE_IDEMPOTENCY_SCOPE_HMAC_KEY",
     )
     for name in general_secret_names:
         if _BASE64URL_SECRET.fullmatch(values[name]) is None:

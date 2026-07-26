@@ -1,0 +1,60 @@
+{
+  "$id": "contracts/schemas/s3-1-mock-buyable.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "accountId": {
+      "pattern": "^acct_[0-9a-f]{32}$",
+      "type": "string"
+    },
+    "brokerageMode": {
+      "const": "KIS_MOCK"
+    },
+    "buyableAmountKrw": {
+      "maximum": 9223372036854775807,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "buyableQuantity": {
+      "maximum": 9223372036854775807,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "cashKrw": {
+      "maximum": 9223372036854775807,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "estimatedPrice": {
+      "maximum": 9223372036854775807,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "observedAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "sourceVersion": {
+      "maxLength": 128,
+      "minLength": 1,
+      "type": "string"
+    },
+    "symbol": {
+      "pattern": "^[0-9A-Z._:-]{1,20}$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "accountId",
+    "brokerageMode",
+    "symbol",
+    "estimatedPrice",
+    "buyableQuantity",
+    "buyableAmountKrw",
+    "cashKrw",
+    "observedAt",
+    "sourceVersion"
+  ],
+  "title": "S3.1 KIS Mock buyable response v1",
+  "type": "object"
+}

@@ -1,0 +1,7 @@
+{
+  "accountId": "acct_cccccccccccccccccccccccccccccccc",
+  "brokerageMode": "KIS_MOCK",
+  "orderId": "ord_mock_00112233445566778899aabbccddeeff",
+  "status": "SUBMITTED",
+  "submittedAt": "2026-07-26T09:30:00Z"
+}

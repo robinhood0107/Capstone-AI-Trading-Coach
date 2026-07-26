@@ -12,14 +12,13 @@ Contracts CI, Kotlin Build, Python CI, S1.4X contract correctness를 수행한�
 
 ## 현재 구현 상태
 
-STAGE 2에서 S1.6 Market Calendar/Event Aggregator offline 구현, S2.1 Principle CRUD와 S2.2
-offline evaluator까지 `main`에 병합됐다. 이 S2.3 변경은 14개 rule core 위에 owner-scoped
-Decision controller·route, V9 원자 persistence/audit/outbox/idempotency, stored-observation
-gRPC와 저장 source reader를 연결한다. S1.1/S3/S1.6/deterministic 소유 모듈의 sanitized
-offline producer prerequisite는 fixture/mock transport/Testcontainers로 구현하되 provider
-physical call과 주문 실행은 포함하지 않는다. 현물 `estimatedPrice` 단일 field/hash V2를
-사용하며 source 구조 부재는 hard blocker, 구조가 준비된 뒤 row 부재는 가짜 값 없는 persisted
-HOLD다.
+STAGE 2에서 S1.6 Market Calendar/Event Aggregator offline 구현, S2.1 Principle CRUD,
+S2.2 offline evaluator와 S2.3 Decision runtime까지 `main`에 병합됐다. 이 S2.4 변경은
+owner-scoped portfolio Risk 조회와 DB-authoritative 전역 Kill Switch를 추가한다. Kill Switch
+활성화는 유효한 Decision을 append-only 방식으로 무효화하고 신규 평가를 fail-closed하며,
+재가동은 transaction 안에서 현재 ADMIN 권한을 다시 확인한다. portfolio freshness는 실제 저장
+현재가·잔고·결정적 risk observation만 사용하고 없는 source를 0이나 false로 꾸미지 않는다.
+S2.4의 KIS/broker/gRPC/외부 HTTP와 주문 호출은 모두 0건이다.
 
 - PR #16 merge commit: `6f439155d9f5ec626fc185f29f2e0bd64ca54780`
 - PR #17 merge commit 및 S1.3/S1.3K 기능 완료 기준점: `814aab377251d76672566d39c3edb379d132248e`
@@ -27,6 +26,7 @@ HOLD다.
 - PR #34 S1.6 prerequisite merge commit: `5f537857a1b57c5b8321f70d8df292a851514b2d`
 - PR #35 S1.6 offline 구현, PR #39 S2.1 계약 amendment, PR #41 S2.1 Principle CRUD까지 병합
 - PR #43 S2.2 offline Rule Evaluator와 owner-scoped Principle read adapter 병합
+- PR #45 S2.3 Decision API/V9 persistence와 stored-source runtime 병합
 - S2.2 검증 범위: Kotlin evaluator/portfolio/hash/readiness 회귀, PostgreSQL 16 Testcontainers,
   generated contract와 OpenAPI drift gate, repo hygiene와 secret scan
 
@@ -49,11 +49,11 @@ HOLD다.
 현재 레포는 STAGE 2이며 Decision Platform의 S0 walking skeleton, S1.1 KIS 시장데이터,
 S1.2c OpenDART 분석 데이터, S1.3 ECOS/Naver snapshot, S1.3K KRX universe 자동화,
 S1.4 금융공학, S1.5 품질 보고, S1.6 내부 offline calendar/event aggregator, S2.1 Principle
-CRUD와 S2.2 offline rule evaluator까지 구현되어 있다. 이 S2.3 변경은 Decision API runtime과
-저장 observation consumer 및 각 소유 모듈의 offline producer prerequisite를 추가하지만
-provider를 호출하거나 S3 주문 orchestration을 대신하지 않는다. 구조가 준비된 뒤 source row가
-없거나 stale하면 200 HOLD이며 provider adapter와 주문 실행은 S3 경계다. 상세 개인 참고 노트는
-GitHub에 올리지 않고 로컬
+CRUD, S2.2 offline rule evaluator와 S2.3 Decision runtime까지 구현되어 있다. 이 S2.4 변경은
+`GET /api/v1/risk/portfolio`, Kill Switch 조회·변경, V10 원자 전이·무효화·audit·outbox와
+Decision guard를 추가한다. provider를 호출하거나 S3 주문 orchestration을 대신하지 않으며,
+구조가 준비된 뒤 source row가 없거나 stale하면 nullable 값과 sanitized warning으로 응답한다.
+상세 개인 참고 노트는 GitHub에 올리지 않고 로컬
 `private-reference/` 폴더에서만 관리한다.
 
 ```bash
@@ -96,4 +96,6 @@ S1.6 OpenDART online collector는 `.env.example`의 네 quota 값을 운영 evid
 - [S2.2 계약 변경 기록](contracts/changes/20260724-s2-2-rule-evaluation-offline-contract.md)
 - [S2.3 Decision runtime과 stored-source 경계](contracts/README.md#s23-decision-runtime과-stored-source-경계)
 - [S2.3 Decision 계약 잠금](contracts/changes/20260724-s2-3-decision-contract-lock.md)
+- [S2.4 Risk와 Kill Switch 계약](contracts/README.md#s24-risk-api와-kill-switch)
+- [S2.4 계약 변경 기록](contracts/changes/20260725-s2-4-risk-kill-switch-contract.md)
 - S1.4X dependency amendment 재현: `workspaces/decision-platform/research/s1-4x-numeric-parity/README.md`

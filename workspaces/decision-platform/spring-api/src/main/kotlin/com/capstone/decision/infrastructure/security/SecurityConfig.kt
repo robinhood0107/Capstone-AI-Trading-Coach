@@ -2,6 +2,7 @@ package com.capstone.decision.infrastructure.security
 
 import com.capstone.decision.api.common.ApiResponseWriter
 import com.capstone.decision.infrastructure.brokerage.BrokerageProperties
+import com.capstone.decision.infrastructure.brokerage.PaperBrokerageProperties
 import com.capstone.decision.infrastructure.decision.DecisionProperties
 import com.capstone.decision.infrastructure.grpc.BrokerageGrpcProperties
 import com.capstone.decision.infrastructure.grpc.DecisionGrpcProperties
@@ -46,6 +47,7 @@ import java.security.MessageDigest
     PrincipleProperties::class,
     DecisionProperties::class,
     BrokerageProperties::class,
+    PaperBrokerageProperties::class,
     BrokerageGrpcProperties::class,
     DecisionGrpcProperties::class,
 )

@@ -326,10 +326,12 @@ class StoredPortfolioObservationReader(
                 SELECT paper.account_id,
                        paper.cash_krw,
                        paper.portfolio_equity_krw,
-                       paper.margin_requirement_krw,
+                       margin.margin_requirement_krw,
                        paper.positions_json::text AS positions_json,
                        paper.observed_at
                 FROM active_paper_portfolio_projection paper
+                LEFT JOIN paper_margin_owner_projection margin
+                  ON margin.account_id = paper.account_id
                 ORDER BY paper.account_id
                 LIMIT ?
                 """.trimIndent(),

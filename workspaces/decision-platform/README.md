@@ -88,6 +88,42 @@ uv run --frozen python contracts/run_openapi_gate.py \
   --env-file workspaces/decision-platform/spring-api/build/openapi-fixture/openapi.env
 ```
 
+## S3.1 Brokerage Mock 주문
+
+S3.1은 S2.3 Decision과 S2.4 Kill Switch를 소비하는 `KIS_MOCK` 주문 제출/조회/취소와
+stored balance/buyable 조회 경계다. runtime route는 `POST /api/v1/brokerage/mock/orders`,
+`GET /api/v1/brokerage/orders/{orderId}`, `POST /api/v1/brokerage/orders/{orderId}/cancel`,
+`GET /api/v1/brokerage/mock/accounts/{accountId}/balances`,
+`GET /api/v1/brokerage/mock/accounts/{accountId}/buyable`을 추가하며, 체결·live readiness는 후속
+S3 계약까지 계획 상태다.
+
+요청 body는 `decisionId`, exact 8-field `orderIntent`, `userAcknowledgement.warningsAccepted`만
+허용한다. account/provider/actor/raw receipt 필드는 거부하고, raw `X-Idempotency-Key`, raw
+계좌번호, provider raw payload는 저장하지 않는다. V11 ledger는 one Decision = one order,
+purpose-version HMAC idempotency, FORCE RLS owner projection, append-only cancel event와
+sanitized outbox를 강제한다.
+verified KRX tick-table context가 없는 LIMIT 주문은 `BROKERAGE_UNAVAILABLE`로 fail-closed한다.
+
+아래 검증은 Testcontainers, contract fixture와 injected/fake Python transport만 사용한다.
+KIS/broker/live account/order provider 물리 호출은 모두 0이다.
+
+```bash
+cd spring-api
+./gradlew --no-daemon ktlintCheck build
+./gradlew --no-daemon prepareOpenApiFixtureEnv
+
+cd ../../..
+uv run --frozen python -m unittest discover -s contracts/tests -v
+uv run --frozen python contracts/validate.py
+uv run --frozen python contracts/run_openapi_gate.py \
+  --env-file workspaces/decision-platform/spring-api/build/openapi-fixture/openapi.env
+
+cd workspaces/decision-platform/python-services
+uv run --frozen ruff check app/brokerage tests/brokerage
+uv run --frozen mypy app
+uv run --frozen pytest -q tests/brokerage
+```
+
 ## S2.3 offline golden path
 
 아래 절차는 개발용 loopback PostgreSQL에 repository의 sanitized fixture만 append한다.

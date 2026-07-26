@@ -6,17 +6,13 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
-import java.time.Clock
 import java.time.Instant
-import java.time.ZoneOffset
 
 class KillSwitchApplicationTest {
-    private val now = Instant.parse("2026-07-26T06:00:00Z")
-
     @Test
     fun `USER resume fails before any mutation port call`() {
         val port = RecordingPort()
-        val service = KillSwitchService(port, port, Clock.fixed(now, ZoneOffset.UTC))
+        val service = KillSwitchService(port, port)
 
         assertThrows(KillSwitchForbiddenException::class.java) {
             service.change(actor(KillSwitchActorRole.USER), active = false, rawReason = null)
@@ -27,12 +23,11 @@ class KillSwitchApplicationTest {
     @Test
     fun `manual free text is discarded before persistence and only enum is passed`() {
         val port = RecordingPort()
-        val service = KillSwitchService(port, port, Clock.fixed(now, ZoneOffset.UTC))
+        val service = KillSwitchService(port, port)
 
         val result = service.change(actor(KillSwitchActorRole.USER), active = true, rawReason = "안전 정지")
 
         assertEquals(KillSwitchReasonClass.USER_MANUAL_STOP, port.lastCommand?.reasonClass)
-        assertEquals(now, port.lastCommand?.changedAt)
         assertFalse(result.state.active)
     }
 

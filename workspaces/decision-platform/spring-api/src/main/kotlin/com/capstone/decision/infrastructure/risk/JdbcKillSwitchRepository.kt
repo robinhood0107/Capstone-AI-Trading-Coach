@@ -83,7 +83,7 @@ class JdbcKillSwitchRepository(
             current.next(
                 active = command.requestedActive,
                 reasonClass = command.reasonClass,
-                changedAt = command.changedAt,
+                changedAt = lockedDatabaseTime(jdbc, current),
             )
         val updateCount =
             jdbc.update(
@@ -167,6 +167,24 @@ class JdbcKillSwitchRepository(
                     changedAt = result.getObject("changed_at", OffsetDateTime::class.java).toInstant(),
                 )
             }.single()
+
+    // 잠금 대기와 clock rollback 뒤에도 안전 정지가 과거 시각 때문에 실패하지 않도록 DB 시각을 단조화한다.
+    private fun lockedDatabaseTime(
+        jdbc: NamedParameterJdbcTemplate,
+        current: KillSwitchState,
+    ): Instant =
+        requireNotNull(
+            jdbc.queryForObject(
+                """
+                SELECT GREATEST(
+                  clock_timestamp(),
+                  CAST(:currentChangedAt AS timestamptz)
+                )
+                """.trimIndent(),
+                mapOf("currentChangedAt" to current.changedAt.utc()),
+                OffsetDateTime::class.java,
+            ),
+        ).toInstant()
 
     private fun revalidateAdmin(
         jdbc: NamedParameterJdbcTemplate,

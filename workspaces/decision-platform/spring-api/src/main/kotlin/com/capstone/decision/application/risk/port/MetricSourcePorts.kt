@@ -142,6 +142,10 @@ typealias OptionalComponentEvidence = com.capstone.decision.domain.risk.Optional
 
 interface PricePort {
     fun load(request: EvaluationSourceRequest): MetricCell<MetricValue>
+
+    // 종목 인자가 없는 portfolio projection은 저장된 최신 시장가격 source의 freshness만 읽는다.
+    fun loadPortfolio(request: PortfolioSourceRequest): MetricCell<MetricValue> =
+        MetricCell.Missing(com.capstone.decision.domain.risk.MetricIssueCode.SOURCE_MISSING)
 }
 
 interface BalancePort {

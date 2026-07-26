@@ -475,8 +475,7 @@ class DemoCredentialRotationIntegrationTest {
                         "brokerageDbCapabilityTokenSha256" to
                             SpringApiIntegrationTestBase.TEST_BROKERAGE_DB_CAPABILITY_TOKEN_SHA256,
                     ),
-                )
-                .javaMigrations(s21ActorTrustMigration())
+                ).javaMigrations(s21ActorTrustMigration())
                 .load()
                 .migrate()
         }

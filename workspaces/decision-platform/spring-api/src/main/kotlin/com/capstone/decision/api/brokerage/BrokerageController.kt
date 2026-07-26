@@ -78,6 +78,7 @@ class BrokerageController(
                         BrokerageActor(
                             userId = principal.userId,
                             role = principal.role,
+                            securityVersion = principal.securityVersion,
                             requestId = requestId,
                         ),
                     rawIdempotencyKey = rawKey,
@@ -155,6 +156,7 @@ class BrokerageController(
                         BrokerageActor(
                             userId = principal.userId,
                             role = principal.role,
+                            securityVersion = principal.securityVersion,
                             requestId = requestId,
                         ),
                     orderId = parsedId,

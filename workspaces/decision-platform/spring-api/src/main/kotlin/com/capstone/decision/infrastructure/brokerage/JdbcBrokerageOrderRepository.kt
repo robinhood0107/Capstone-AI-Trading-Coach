@@ -23,7 +23,6 @@ import com.capstone.decision.domain.brokerage.TickValidation
 import com.capstone.decision.domain.risk.OrderIntentSnapshot
 import com.capstone.decision.infrastructure.risk.ActorScopedReadQuery
 import org.springframework.beans.factory.ObjectProvider
-import org.springframework.dao.DuplicateKeyException
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.stereotype.Repository
 import org.springframework.transaction.annotation.Transactional
@@ -35,8 +34,8 @@ import java.time.ZoneOffset
 import java.util.UUID
 
 /**
- * S3.1 주문 writer는 Decision/Kill Switch/ledger/idempotency를 같은 PostgreSQL transaction에서 판정한다.
- * provider payload, raw 계좌번호, raw idempotency key는 이 adapter 경계로 들어오지 않는다.
+ * S3.1 주문 writer는 capability-protected DB 함수만 호출해 Decision/Kill Switch/evidence를 원자 판정한다.
+ * raw DB capability, provider payload, 계좌번호, raw idempotency key는 영속·로그 경계에 남기지 않는다.
  */
 @Repository
 class JdbcBrokerageOrderRepository(
@@ -57,13 +56,15 @@ class JdbcBrokerageOrderRepository(
                 FROM find_mock_order_idempotency_result(
                   :scopeHash,
                   :ownerScopeHash,
-                  :now
+                  :now,
+                  :capabilityToken
                 )
                 """.trimIndent(),
                 mapOf(
                     "scopeHash" to scopeHash,
                     "ownerScopeHash" to ownerScopeHash,
                     "now" to now.utc(),
+                    "capabilityToken" to properties.databaseCapabilityToken,
                 ),
             ) { result, _ ->
                 StoredBrokerageIdempotencyResult(
@@ -76,88 +77,76 @@ class JdbcBrokerageOrderRepository(
     @Transactional
     override fun persist(request: BrokerageOrderWriteRequest) {
         val jdbc = jdbc()
-        jdbc.queryForObject(
-            "SELECT set_config('app.actor_user_id', :actorUserId, true)",
-            mapOf("actorUserId" to request.actor.userId),
-            String::class.java,
-        )
-        jdbc.queryForObject(
-            "SELECT set_config('app.requested_decision_id', :decisionId, true)",
-            mapOf("decisionId" to request.command.decisionId),
-            String::class.java,
-        )
-        lock(jdbc, "mock-order:idempotency:${request.idempotency.scopeHash}", ADVISORY_LOCK_SEED)
-        lock(jdbc, "mock-order:decision:${request.command.decisionId}", ADVISORY_LOCK_SEED)
-        findIdempotencyResult(
-            request.idempotency.scopeHash,
-            request.idempotency.ownerScopeHash,
-            request.createdAt,
-        )?.let { stored ->
-            if (stored.requestHash == request.idempotency.requestHash) {
-                throw BrokeragePersistenceReplayException(stored.projectionCanonicalJson)
-            }
-            throw BrokerageIdempotencyConflictException()
-        }
-
-        val decision = readOrderableDecision(jdbc) ?: throw BrokerageDecisionNotFoundException()
+        val decision =
+            readOrderableDecision(
+                jdbc = jdbc,
+                actorUserId = request.actor.userId,
+                decisionId = request.command.decisionId,
+            ) ?: throw BrokerageDecisionNotFoundException()
         validateDecision(request, decision)
-        try {
-            insertOrder(jdbc, request, decision)
-            insertOrderEvent(jdbc, request)
-            insertAudit(jdbc, request, decision)
-            insertOutbox(jdbc, request, decision)
-        } catch (exception: DuplicateKeyException) {
-            throw BrokerageDecisionConflictException()
+        val result =
+            jdbc
+                .query(
+                    """
+                    SELECT operation_outcome, projection_canonical_json
+                    FROM create_mock_order(
+                      CAST(:payloadJson AS jsonb),
+                      :capabilityToken
+                    )
+                    """.trimIndent(),
+                    mapOf(
+                        "payloadJson" to createOrderPayload(request, decision),
+                        "capabilityToken" to properties.databaseCapabilityToken,
+                    ),
+                ) { row, _ ->
+                    CreateOrderFunctionResult(
+                        outcome = row.getString("operation_outcome"),
+                        projectionCanonicalJson = row.getString("projection_canonical_json"),
+                    )
+                }.singleOrNull()
+                ?: throw BrokerageUnavailableException("Brokerage order function returned no result.")
+        when (result.outcome) {
+            "CREATED" -> Unit
+            "REPLAY" ->
+                throw BrokeragePersistenceReplayException(
+                    requireNotNull(result.projectionCanonicalJson) {
+                        "Brokerage replay result is missing its projection."
+                    },
+                )
+            "IDEMPOTENCY_CONFLICT" -> throw BrokerageIdempotencyConflictException()
+            "DECISION_NOT_FOUND" -> throw BrokerageDecisionNotFoundException()
+            "DECISION_EXPIRED" -> throw DecisionExpiredException()
+            "DECISION_CONFLICT" -> throw BrokerageDecisionConflictException()
+            "RISK_BLOCKED" -> throw KillSwitchBlockedException()
+            "VALIDATION_ERROR" ->
+                throw BrokerageValidationException(
+                    listOf(BrokerageFieldViolation("/orderIntent", "DATABASE_CONTRACT_REJECTED")),
+                )
+            "ACTOR_UNAUTHORIZED", "BROKERAGE_UNAVAILABLE" ->
+                throw BrokerageUnavailableException("Brokerage database security boundary rejected the request.")
+            else -> throw BrokerageUnavailableException("Brokerage order function returned an unknown outcome.")
         }
     }
 
-    @Transactional
     override fun findOrderableDecisionAccountId(
         actorUserId: String,
         decisionId: String,
-    ): String? {
-        val jdbc = jdbc()
-        jdbc.queryForObject(
-            "SELECT set_config('app.actor_user_id', :actorUserId, true)",
-            mapOf("actorUserId" to actorUserId),
-            String::class.java,
-        )
-        jdbc.queryForObject(
-            "SELECT set_config('app.requested_decision_id', :decisionId, true)",
-            mapOf("decisionId" to decisionId),
-            String::class.java,
-        )
-        return readOrderableDecision(jdbc)?.let { decision ->
-            accountId(decision.portfolioOwnerScopeHash)
-        }
-    }
+    ): String? =
+        readOrderableDecision(
+            jdbc = jdbc(),
+            actorUserId = actorUserId,
+            decisionId = decisionId,
+        )?.let { decision -> accountId(decision.portfolioOwnerScopeHash) }
 
     override fun findOwnedProjection(
         actorUserId: String,
         orderId: String,
     ): OrderDetailProjection? =
-        actorScopedReadQuery
-            .query(
-                actorUserId = actorUserId,
-                requestedOrderId = orderId,
-                sql =
-                    """
-                    SELECT order_id, account_id, brokerage_mode, status, submitted_at, decision_id
-                    FROM mock_order_owner_projection
-                    WHERE order_id = ?
-                    LIMIT 1
-                    """.trimIndent(),
-                binder = { statement -> statement.setString(1, orderId) },
-            ) { result ->
-                OrderDetailProjection(
-                    orderId = result.getString("order_id"),
-                    accountId = result.getString("account_id"),
-                    brokerageMode = result.getString("brokerage_mode"),
-                    status = result.getString("status"),
-                    submittedAt = result.getObject("submitted_at", OffsetDateTime::class.java).toInstant(),
-                    decisionId = result.getString("decision_id"),
-                )
-            }.singleOrNull()
+        readOwnedProjection(
+            jdbc = jdbc(),
+            actorUserId = actorUserId,
+            orderId = orderId,
+        )
 
     @Transactional
     override fun cancelOwnedOrder(
@@ -165,26 +154,49 @@ class JdbcBrokerageOrderRepository(
         orderId: String,
         cancelledAt: Instant,
     ): OrderDetailProjection {
-        val jdbc = jdbc()
-        jdbc.queryForObject(
-            "SELECT set_config('app.actor_user_id', :actorUserId, true)",
-            mapOf("actorUserId" to actor.userId),
-            String::class.java,
-        )
-        jdbc.queryForObject(
-            "SELECT set_config('app.requested_order_id', :orderId, true)",
-            mapOf("orderId" to orderId),
-            String::class.java,
-        )
-        lock(jdbc, "mock-order:cancel:$orderId", ADVISORY_LOCK_SEED)
-        val current = readOwnedProjection(jdbc) ?: throw BrokerageOrderNotFoundException()
-        if (current.status !in CANCELABLE_STATUSES) {
-            throw BrokerageDecisionConflictException()
+        val result =
+            jdbc()
+                .query(
+                    """
+                    SELECT operation_outcome, order_id, account_id, brokerage_mode,
+                           status, submitted_at, decision_id
+                    FROM request_mock_order_cancel(
+                      CAST(:payloadJson AS jsonb),
+                      :capabilityToken
+                    )
+                    """.trimIndent(),
+                    mapOf(
+                        "payloadJson" to cancelOrderPayload(actor, orderId, cancelledAt),
+                        "capabilityToken" to properties.databaseCapabilityToken,
+                    ),
+                ) { row, _ ->
+                    CancelOrderFunctionResult(
+                        outcome = row.getString("operation_outcome"),
+                        orderId = row.getString("order_id"),
+                        accountId = row.getString("account_id"),
+                        brokerageMode = row.getString("brokerage_mode"),
+                        status = row.getString("status"),
+                        submittedAt = row.getObject("submitted_at", OffsetDateTime::class.java)?.toInstant(),
+                        decisionId = row.getString("decision_id"),
+                    )
+                }.singleOrNull()
+                ?: throw BrokerageUnavailableException("Brokerage cancel function returned no result.")
+        return when (result.outcome) {
+            "CANCEL_REQUESTED" ->
+                OrderDetailProjection(
+                    orderId = requireNotNull(result.orderId),
+                    accountId = requireNotNull(result.accountId),
+                    brokerageMode = requireNotNull(result.brokerageMode),
+                    status = requireNotNull(result.status),
+                    submittedAt = requireNotNull(result.submittedAt),
+                    decisionId = requireNotNull(result.decisionId),
+                )
+            "ORDER_NOT_FOUND" -> throw BrokerageOrderNotFoundException()
+            "ORDER_CONFLICT" -> throw BrokerageDecisionConflictException()
+            "ACTOR_UNAUTHORIZED", "VALIDATION_ERROR" ->
+                throw BrokerageUnavailableException("Brokerage database security boundary rejected the cancel request.")
+            else -> throw BrokerageUnavailableException("Brokerage cancel function returned an unknown outcome.")
         }
-        insertCancelEvent(jdbc, current, actor, cancelledAt)
-        insertCancelAudit(jdbc, current, actor, cancelledAt)
-        insertCancelOutbox(jdbc, current, actor, cancelledAt)
-        return current.copy(status = "CANCEL_REQUESTED")
     }
 
     override fun findOwnedBalance(
@@ -239,7 +251,9 @@ class JdbcBrokerageOrderRepository(
         decision: OrderableDecision,
     ) {
         if (decision.portfolioSource != "KIS_MOCK") {
-            throw BrokerageValidationException(listOf(BrokerageFieldViolation("/decisionId", "UNSUPPORTED_PORTFOLIO_SOURCE")))
+            throw BrokerageValidationException(
+                listOf(BrokerageFieldViolation("/decisionId", "UNSUPPORTED_PORTFOLIO_SOURCE")),
+            )
         }
         if (!decision.canSubmitOrder || decision.outcome !in setOf("ALLOW", "WARN")) {
             throw KillSwitchBlockedException()
@@ -258,7 +272,9 @@ class JdbcBrokerageOrderRepository(
         }
         val pinnedOrder = parsePinnedOrderIntent(decision.snapshotArtifactCanonicalJson)
         if (pinnedOrder != request.command.orderIntent) {
-            throw BrokerageValidationException(listOf(BrokerageFieldViolation("/orderIntent", "DECISION_MISMATCH")))
+            throw BrokerageValidationException(
+                listOf(BrokerageFieldViolation("/orderIntent", "DECISION_MISMATCH")),
+            )
         }
         when (
             val tick =
@@ -269,9 +285,12 @@ class JdbcBrokerageOrderRepository(
                 )
         ) {
             TickValidation.Valid -> Unit
-            TickValidation.Unavailable -> throw BrokerageUnavailableException("LIMIT tick table is not verified for S3.1.")
+            TickValidation.Unavailable ->
+                throw BrokerageUnavailableException("LIMIT tick table is not verified for S3.1.")
             is TickValidation.Invalid ->
-                throw BrokerageValidationException(listOf(BrokerageFieldViolation("/orderIntent/estimatedPrice", tick.reason)))
+                throw BrokerageValidationException(
+                    listOf(BrokerageFieldViolation("/orderIntent/estimatedPrice", tick.reason)),
+                )
         }
     }
 
@@ -296,17 +315,29 @@ class JdbcBrokerageOrderRepository(
             throw BrokerageUnavailableException("Stored Decision order intent is not readable.", exception)
         }
 
-    private fun readOrderableDecision(jdbc: NamedParameterJdbcTemplate): OrderableDecision? =
+    private fun readOrderableDecision(
+        jdbc: NamedParameterJdbcTemplate,
+        actorUserId: String,
+        decisionId: String,
+    ): OrderableDecision? =
         jdbc
             .query(
                 """
                 SELECT decision_id, evaluation_id, portfolio_source, outcome, mode,
                        can_submit_order, enforcement_action, valid_until,
-                       snapshot_artifact_canonical_json, portfolio_owner_scope_hash, invalidated,
-                       invalidation_reason_class, consumed_by_order_id
-                FROM read_mock_order_decision()
+                       snapshot_artifact_canonical_json, portfolio_owner_scope_hash,
+                       invalidated, invalidation_reason_class, consumed_by_order_id
+                FROM read_mock_order_decision(
+                  :actorUserId,
+                  :decisionId,
+                  :capabilityToken
+                )
                 """.trimIndent(),
-                emptyMap<String, Any>(),
+                mapOf(
+                    "actorUserId" to actorUserId,
+                    "decisionId" to decisionId,
+                    "capabilityToken" to properties.databaseCapabilityToken,
+                ),
             ) { result, _ ->
                 OrderableDecision(
                     decisionId = result.getString("decision_id"),
@@ -325,14 +356,26 @@ class JdbcBrokerageOrderRepository(
                 )
             }.singleOrNull()
 
-    private fun readOwnedProjection(jdbc: NamedParameterJdbcTemplate): OrderDetailProjection? =
+    private fun readOwnedProjection(
+        jdbc: NamedParameterJdbcTemplate,
+        actorUserId: String,
+        orderId: String,
+    ): OrderDetailProjection? =
         jdbc
             .query(
                 """
                 SELECT order_id, account_id, brokerage_mode, status, submitted_at, decision_id
-                FROM read_mock_order_owner_projection()
+                FROM read_mock_order_owner_projection(
+                  :actorUserId,
+                  :orderId,
+                  :capabilityToken
+                )
                 """.trimIndent(),
-                emptyMap<String, Any>(),
+                mapOf(
+                    "actorUserId" to actorUserId,
+                    "orderId" to orderId,
+                    "capabilityToken" to properties.databaseCapabilityToken,
+                ),
             ) { result, _ ->
                 OrderDetailProjection(
                     orderId = result.getString("order_id"),
@@ -344,231 +387,70 @@ class JdbcBrokerageOrderRepository(
                 )
             }.singleOrNull()
 
-    private fun insertOrder(
-        jdbc: NamedParameterJdbcTemplate,
+    private fun createOrderPayload(
         request: BrokerageOrderWriteRequest,
         decision: OrderableDecision,
-    ) {
-        jdbc.update(
-            """
-            INSERT INTO orders (
-              order_id, user_id, account_id, account_scope_hash, decision_id,
-              decision_evaluation_id, brokerage_mode, idempotency_scope_hash,
-              idempotency_owner_scope_hash, request_hash, symbol, side, order_type,
-              quantity, submitted_price_krw, status, order_intent_json,
-              result_canonical_json, acknowledged_by, acknowledged_at, submitted_at,
-              created_at, updated_at
-            )
-            VALUES (
-              :orderId, :actorUserId, :accountId, :accountScopeHash, :decisionId,
-              :evaluationId, 'KIS_MOCK', :scopeHash, :ownerScopeHash, :requestHash,
-              :symbol, :side, :orderType, :quantity, :submittedPriceKrw, 'SUBMITTED',
-              CAST(:orderIntentJson AS jsonb), :resultJson, :actorUserId,
-              :acknowledgedAt, :submittedAt, :createdAt, :createdAt
-            )
-            """.trimIndent(),
-            parameters(request, decision),
-        )
-    }
-
-    private fun insertOrderEvent(
-        jdbc: NamedParameterJdbcTemplate,
-        request: BrokerageOrderWriteRequest,
-    ) {
-        jdbc.update(
-            """
-            INSERT INTO order_events (
-              order_event_id, order_id, event_type, event_status, payload_json, created_at
-            )
-            VALUES (
-              :eventId, :orderId, 'MOCK_ORDER_SUBMITTED', 'SUBMITTED',
-              CAST(:payloadJson AS jsonb), :createdAt
-            )
-            """.trimIndent(),
+    ): String {
+        val intent = request.command.orderIntent
+        return objectMapper.writeValueAsString(
             mapOf(
-                "eventId" to id("oev"),
+                "actorUserId" to request.actor.userId,
+                "actorRole" to request.actor.role,
+                "securityVersion" to request.actor.securityVersion,
+                "requestId" to request.actor.requestId,
+                "decisionId" to request.command.decisionId,
                 "orderId" to request.orderId,
-                "payloadJson" to
-                    objectMapper.writeValueAsString(
-                        mapOf(
-                            "orderId" to request.orderId,
-                            "brokerageMode" to "KIS_MOCK",
-                            "status" to "SUBMITTED",
-                        ),
+                "observedKillSwitchGeneration" to request.observedKillSwitchGeneration,
+                "idempotencyScopeHash" to request.idempotency.scopeHash,
+                "idempotencyOwnerScopeHash" to request.idempotency.ownerScopeHash,
+                "requestHash" to request.idempotency.requestHash,
+                "accountId" to accountId(decision.portfolioOwnerScopeHash),
+                "accountScopeHash" to decision.portfolioOwnerScopeHash,
+                "symbol" to intent.symbol,
+                "side" to intent.side,
+                "orderType" to intent.orderType,
+                "quantity" to intent.quantity,
+                "submittedPriceKrw" to intent.estimatedPrice.takeIf { intent.orderType == "LIMIT" },
+                "orderIntent" to
+                    mapOf(
+                        "symbol" to intent.symbol,
+                        "side" to intent.side,
+                        "orderType" to intent.orderType,
+                        "quantity" to intent.quantity.toString(),
+                        "estimatedPrice" to intent.estimatedPrice.toString(),
+                        "estimatedAmount" to intent.estimatedAmount.toString(),
+                        "timeframe" to intent.timeframe,
+                        "strategyId" to intent.strategyId,
                     ),
-                "createdAt" to request.createdAt.utc(),
+                "resultCanonicalJson" to request.projectionCanonicalJson,
+                "warningsAccepted" to request.command.userAcknowledgement.warningsAccepted,
+                "submittedAt" to request.projection.submittedAt.toString(),
+                "createdAt" to request.createdAt.toString(),
+                "orderEventId" to id("oev"),
+                "auditLogId" to id("aud"),
+                "outboxEventId" to id("evt"),
             ),
         )
     }
 
-    private fun insertAudit(
-        jdbc: NamedParameterJdbcTemplate,
-        request: BrokerageOrderWriteRequest,
-        decision: OrderableDecision,
-    ) {
-        jdbc.update(
-            """
-            INSERT INTO audit_logs (
-              audit_log_id, user_id, actor_role, action, target_type, target_id,
-              request_id, payload_json, created_at
-            )
-            VALUES (
-              :auditId, :actorUserId, :actorRole, 'MOCK_ORDER_SUBMITTED', 'ORDER',
-              :orderId, :requestId, CAST(:payloadJson AS jsonb), :createdAt
-            )
-            """.trimIndent(),
-            referencePayloadParameters(request, decision) +
-                mapOf(
-                    "auditId" to id("aud"),
-                    "actorUserId" to request.actor.userId,
-                    "actorRole" to request.actor.role,
-                    "requestId" to request.actor.requestId,
-                    "createdAt" to request.createdAt.utc(),
-                ),
-        )
-    }
-
-    private fun insertOutbox(
-        jdbc: NamedParameterJdbcTemplate,
-        request: BrokerageOrderWriteRequest,
-        decision: OrderableDecision,
-    ) {
-        jdbc.update(
-            """
-            INSERT INTO event_outbox (
-              event_id, event_type, aggregate_type, aggregate_id, partition_key,
-              payload_json, schema_version, status, retry_count, created_at, updated_at
-            )
-            VALUES (
-              :eventId, 'brokerage.mock-order-submitted.v1', 'ORDER', :orderId,
-              :orderId, CAST(:payloadJson AS jsonb), '1.0.0', 'PENDING', 0,
-              :createdAt, :createdAt
-            )
-            """.trimIndent(),
-            referencePayloadParameters(request, decision) +
-                mapOf(
-                    "eventId" to id("evt"),
-                    "createdAt" to request.createdAt.utc(),
-                ),
-        )
-    }
-
-    private fun referencePayloadParameters(
-        request: BrokerageOrderWriteRequest,
-        decision: OrderableDecision,
-    ): Map<String, Any> {
-        val payload =
+    private fun cancelOrderPayload(
+        actor: BrokerageActor,
+        orderId: String,
+        cancelledAt: Instant,
+    ): String =
+        objectMapper.writeValueAsString(
             mapOf(
-                "orderId" to request.orderId,
-                "decisionId" to decision.decisionId,
-                "evaluationId" to decision.evaluationId,
-                "brokerageMode" to "KIS_MOCK",
-                "status" to "SUBMITTED",
-                "idempotencyScopeHash" to request.idempotency.scopeHash,
-            )
-        return mapOf(
-            "orderId" to request.orderId,
-            "payloadJson" to objectMapper.writeValueAsString(payload),
+                "actorUserId" to actor.userId,
+                "actorRole" to actor.role,
+                "securityVersion" to actor.securityVersion,
+                "requestId" to actor.requestId,
+                "orderId" to orderId,
+                "cancelledAt" to cancelledAt.toString(),
+                "orderEventId" to id("oev"),
+                "auditLogId" to id("aud"),
+                "outboxEventId" to id("evt"),
+            ),
         )
-    }
-
-    private fun insertCancelEvent(
-        jdbc: NamedParameterJdbcTemplate,
-        order: OrderDetailProjection,
-        actor: BrokerageActor,
-        cancelledAt: Instant,
-    ) {
-        jdbc.update(
-            """
-            INSERT INTO order_events (
-              order_event_id, order_id, event_type, event_status, payload_json, created_at
-            )
-            VALUES (
-              :eventId, :orderId, 'MOCK_ORDER_CANCEL_REQUESTED', 'CANCEL_REQUESTED',
-              CAST(:payloadJson AS jsonb), :createdAt
-            )
-            """.trimIndent(),
-            cancelPayloadParameters(order, actor, cancelledAt) +
-                mapOf(
-                    "eventId" to id("oev"),
-                    "createdAt" to cancelledAt.utc(),
-                ),
-        )
-    }
-
-    private fun insertCancelAudit(
-        jdbc: NamedParameterJdbcTemplate,
-        order: OrderDetailProjection,
-        actor: BrokerageActor,
-        cancelledAt: Instant,
-    ) {
-        jdbc.update(
-            """
-            INSERT INTO audit_logs (
-              audit_log_id, user_id, actor_role, action, target_type, target_id,
-              request_id, payload_json, created_at
-            )
-            VALUES (
-              :auditId, :actorUserId, :actorRole, 'MOCK_ORDER_CANCEL_REQUESTED',
-              'ORDER', :orderId, :requestId, CAST(:payloadJson AS jsonb), :createdAt
-            )
-            """.trimIndent(),
-            cancelPayloadParameters(order, actor, cancelledAt) +
-                mapOf(
-                    "auditId" to id("aud"),
-                    "actorUserId" to actor.userId,
-                    "actorRole" to actor.role,
-                    "requestId" to actor.requestId,
-                    "createdAt" to cancelledAt.utc(),
-                ),
-        )
-    }
-
-    private fun insertCancelOutbox(
-        jdbc: NamedParameterJdbcTemplate,
-        order: OrderDetailProjection,
-        actor: BrokerageActor,
-        cancelledAt: Instant,
-    ) {
-        jdbc.update(
-            """
-            INSERT INTO event_outbox (
-              event_id, event_type, aggregate_type, aggregate_id, partition_key,
-              payload_json, schema_version, status, retry_count, created_at, updated_at
-            )
-            VALUES (
-              :eventId, 'brokerage.mock-order-cancel-requested.v1', 'ORDER',
-              :orderId, :orderId, CAST(:payloadJson AS jsonb), '1.0.0', 'PENDING',
-              0, :createdAt, :createdAt
-            )
-            """.trimIndent(),
-            cancelPayloadParameters(order, actor, cancelledAt) +
-                mapOf(
-                    "eventId" to id("evt"),
-                    "createdAt" to cancelledAt.utc(),
-                ),
-        )
-    }
-
-    private fun cancelPayloadParameters(
-        order: OrderDetailProjection,
-        actor: BrokerageActor,
-        cancelledAt: Instant,
-    ): Map<String, Any> {
-        val payload =
-            mapOf(
-                "orderId" to order.orderId,
-                "decisionId" to order.decisionId,
-                "brokerageMode" to "KIS_MOCK",
-                "status" to "CANCEL_REQUESTED",
-                "requestedByRole" to actor.role,
-                "requestedAt" to cancelledAt.toString(),
-            )
-        return mapOf(
-            "orderId" to order.orderId,
-            "payloadJson" to objectMapper.writeValueAsString(payload),
-        )
-    }
 
     private fun parseBalancePositions(value: String): List<MockBalancePositionProjection> {
         val root = objectMapper.readTree(value)
@@ -601,58 +483,6 @@ class JdbcBrokerageOrderRepository(
             .toList()
     }
 
-    private fun parameters(
-        request: BrokerageOrderWriteRequest,
-        decision: OrderableDecision,
-    ): Map<String, Any?> =
-        mapOf(
-            "orderId" to request.orderId,
-            "actorUserId" to request.actor.userId,
-            "accountId" to accountId(decision.portfolioOwnerScopeHash),
-            "accountScopeHash" to decision.portfolioOwnerScopeHash,
-            "decisionId" to decision.decisionId,
-            "evaluationId" to decision.evaluationId,
-            "scopeHash" to request.idempotency.scopeHash,
-            "ownerScopeHash" to request.idempotency.ownerScopeHash,
-            "requestHash" to request.idempotency.requestHash,
-            "symbol" to request.command.orderIntent.symbol,
-            "side" to request.command.orderIntent.side,
-            "orderType" to request.command.orderIntent.orderType,
-            "quantity" to request.command.orderIntent.quantity,
-            "submittedPriceKrw" to
-                request.command.orderIntent.estimatedPrice
-                    .takeIf { request.command.orderIntent.orderType == "LIMIT" },
-            "orderIntentJson" to
-                objectMapper.writeValueAsString(
-                    mapOf(
-                        "symbol" to request.command.orderIntent.symbol,
-                        "side" to request.command.orderIntent.side,
-                        "orderType" to request.command.orderIntent.orderType,
-                        "quantity" to request.command.orderIntent.quantity,
-                        "estimatedPrice" to request.command.orderIntent.estimatedPrice,
-                        "estimatedAmount" to request.command.orderIntent.estimatedAmount,
-                        "timeframe" to request.command.orderIntent.timeframe,
-                        "strategyId" to request.command.orderIntent.strategyId,
-                    ),
-                ),
-            "resultJson" to request.projectionCanonicalJson,
-            "acknowledgedAt" to request.createdAt.utc(),
-            "submittedAt" to request.projection.submittedAt.utc(),
-            "createdAt" to request.createdAt.utc(),
-        )
-
-    private fun lock(
-        jdbc: NamedParameterJdbcTemplate,
-        lockKey: String,
-        seed: Long,
-    ) {
-        jdbc.queryForObject(
-            "SELECT pg_advisory_xact_lock(hashtextextended(:lockKey, :seed))",
-            mapOf("lockKey" to lockKey, "seed" to seed),
-            Any::class.java,
-        )
-    }
-
     private fun accountId(ownerScopeHash: String): String {
         if (!OWNER_SCOPE_HASH.matches(ownerScopeHash)) {
             throw BrokerageUnavailableException("Decision portfolio owner scope is malformed.")
@@ -668,9 +498,22 @@ class JdbcBrokerageOrderRepository(
 
     private fun Instant.utc(): OffsetDateTime = OffsetDateTime.ofInstant(this, ZoneOffset.UTC)
 
+    private data class CreateOrderFunctionResult(
+        val outcome: String,
+        val projectionCanonicalJson: String?,
+    )
+
+    private data class CancelOrderFunctionResult(
+        val outcome: String,
+        val orderId: String?,
+        val accountId: String?,
+        val brokerageMode: String?,
+        val status: String?,
+        val submittedAt: Instant?,
+        val decisionId: String?,
+    )
+
     private companion object {
-        const val ADVISORY_LOCK_SEED = 3101L
-        val CANCELABLE_STATUSES = setOf("SUBMITTED", "ACCEPTED", "PARTIALLY_FILLED")
         val OWNER_SCOPE_HASH = Regex("^[0-9a-f]{64}$")
     }
 }

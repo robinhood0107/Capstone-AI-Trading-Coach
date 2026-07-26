@@ -51,9 +51,8 @@ class DecisionRuntimeConfiguration {
     fun killSwitchService(
         queryPort: KillSwitchQueryPort,
         mutationPort: KillSwitchMutationPort,
-        clock: Clock,
         observationPort: RiskObservationPort,
-    ): KillSwitchService = KillSwitchService(queryPort, mutationPort, clock, observationPort)
+    ): KillSwitchService = KillSwitchService(queryPort, mutationPort, observationPort)
 
     @Bean
     fun portfolioRiskQueryUseCase(

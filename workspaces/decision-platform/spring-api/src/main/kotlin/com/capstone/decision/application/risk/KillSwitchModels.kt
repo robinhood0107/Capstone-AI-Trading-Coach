@@ -36,7 +36,6 @@ data class KillSwitchMutationCommand(
     val actor: KillSwitchActor,
     val requestedActive: Boolean,
     val reasonClass: KillSwitchReasonClass,
-    val changedAt: Instant,
 )
 
 data class KillSwitchMutationResult(

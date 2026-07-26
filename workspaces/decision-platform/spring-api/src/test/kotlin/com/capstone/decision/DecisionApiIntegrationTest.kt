@@ -511,6 +511,11 @@ class DecisionApiIntegrationTest(
 
     @Test
     fun `Kill Switch mutation uses locked database time when caller clock is behind`() {
+        val storedFuture = EVALUATION_AT.plusSeconds(1)
+        jdbcTemplate.update(
+            "update risk_kill_switch set changed_at = ? where kill_switch_id = 'GLOBAL'",
+            storedFuture,
+        )
         val result =
             killSwitchMutationPort.mutate(
                 KillSwitchMutationCommand(
@@ -523,13 +528,12 @@ class DecisionApiIntegrationTest(
                         ),
                     requestedActive = true,
                     reasonClass = KillSwitchReasonClass.USER_MANUAL_STOP,
-                    changedAt = EVALUATION_AS_OF.minusSeconds(1),
                 ),
             )
 
         assertTrue(result.changed)
         assertEquals(
-            EVALUATION_AT,
+            storedFuture,
             jdbcTemplate.queryForObject(
                 "select changed_at from risk_kill_switch where kill_switch_id = 'GLOBAL'",
                 OffsetDateTime::class.java,

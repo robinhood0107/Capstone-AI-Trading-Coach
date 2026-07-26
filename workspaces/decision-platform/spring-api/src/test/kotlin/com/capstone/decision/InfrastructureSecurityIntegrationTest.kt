@@ -98,6 +98,37 @@ class InfrastructureSecurityIntegrationTest {
             }
             assertTrue(hasTablePrivilege(connection, "decision_app", "decision_owner_projection", "SELECT"))
             assertTrue(hasTablePrivilege(connection, "decision_app", "decision_audit_projection", "SELECT"))
+            assertTrue(hasTablePrivilege(connection, "decision_app", "risk_kill_switch", "SELECT"))
+            assertTrue(hasTablePrivilege(connection, "decision_app", "risk_kill_switch_transitions", "INSERT"))
+            assertTrue(hasTablePrivilege(connection, "decision_app", "kill_switch_user_projection", "SELECT"))
+            listOf(
+                "active",
+                "reason_class",
+                "generation",
+                "changed_by",
+                "changed_by_role",
+                "changed_at",
+                "request_id",
+            ).forEach { column ->
+                assertTrue(hasColumnPrivilege(connection, "decision_app", "risk_kill_switch", column, "UPDATE"))
+            }
+            listOf("INSERT", "DELETE", "TRUNCATE").forEach { privilege ->
+                assertFalse(hasTablePrivilege(connection, "decision_app", "risk_kill_switch", privilege))
+            }
+            listOf("SELECT", "UPDATE", "DELETE", "TRUNCATE").forEach { privilege ->
+                assertFalse(hasTablePrivilege(connection, "decision_app", "risk_kill_switch_transitions", privilege))
+            }
+            listOf("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE").forEach { privilege ->
+                assertFalse(hasTablePrivilege(connection, "decision_app", "decision_invalidations", privilege))
+            }
+            listOf(
+                "read_kill_switch_gate()",
+                "read_kill_switch_audit_projection()",
+                "read_decision_usability()",
+                "invalidate_unused_decisions_for_kill_switch(bigint,timestamp with time zone,text)",
+            ).forEach { function ->
+                assertTrue(hasFunctionPrivilege(connection, "decision_app", function))
+            }
             listOf("orders", "user_sessions").forEach { table ->
                 listOf("INSERT", "UPDATE", "DELETE").forEach { privilege ->
                     assertFalse(hasTablePrivilege(connection, "decision_app", table, privilege))
@@ -188,6 +219,15 @@ class InfrastructureSecurityIntegrationTest {
                         ") values (" +
                         "'denied','usr_demo_user','denied','denied','denied','005930','BUY','LIMIT',1,'REQUESTED'" +
                         ")",
+                    "insert into risk_kill_switch (" +
+                        "kill_switch_id,active,reason_class,generation,changed_by,changed_by_role,changed_at" +
+                        ") values ('OTHER',true,'USER_MANUAL_STOP',2,'usr_demo_user','USER',now())",
+                    "delete from risk_kill_switch where false",
+                    "update risk_kill_switch_transitions set reason_class = reason_class where false",
+                    "delete from risk_kill_switch_transitions where false",
+                    "insert into decision_invalidations (" +
+                        "invalidation_id,decision_id,evaluation_id,owner_user_id,reason_class,invalidated_at" +
+                        ") values ('denied','denied','denied','usr_demo_user','KILL_SWITCH_ACTIVATED',now())",
                 ).forEach { sql ->
                     val mutationFailure = assertThrows<SQLException> { statement.execute(sql) }
                     assertTrue(mutationFailure.sqlState == "42501")
@@ -252,6 +292,19 @@ class InfrastructureSecurityIntegrationTest {
                 statement.setString(2, table)
                 statement.setString(3, column)
                 statement.setString(4, privilege)
+                statement.executeQuery().use { result -> result.next() && result.getBoolean(1) }
+            }
+
+    private fun hasFunctionPrivilege(
+        connection: Connection,
+        role: String,
+        functionSignature: String,
+    ): Boolean =
+        connection
+            .prepareStatement("select has_function_privilege(?, ?, 'EXECUTE')")
+            .use { statement ->
+                statement.setString(1, role)
+                statement.setString(2, functionSignature)
                 statement.executeQuery().use { result -> result.next() && result.getBoolean(1) }
             }
 

@@ -1520,7 +1520,10 @@ KIS Mock 중심으로 구현하고, KIS Live는 고급해제/3단계 동의/재�
 > `GET /api/v1/brokerage/mock/accounts/{accountId}/balances`,
 > `GET /api/v1/brokerage/mock/accounts/{accountId}/buyable`을 runtime으로 구현한다. 주문 제출은
 > S2.3의 저장 Decision과 S2.4 Kill Switch를 DB write path에서 다시 검증하고 V11 mock order
-> ledger에 sanitized projection만 저장한다. 요청 body는 `decisionId`, exact 8-field
+> ledger와 additive V12 capability 함수 경계에 sanitized projection만 저장한다. runtime DB
+> role에는 `orders`·`order_events` 직접 DML/조회 권한이 없으며, 주문 함수가 Kill Switch row
+> lock과 관측 generation 비교, Decision one-use, order/event/audit/outbox 원자 기록을 최종
+> 판정한다. 요청 body는 `decisionId`, exact 8-field
 > `orderIntent`, `userAcknowledgement.warningsAccepted`만 허용하며 body-supplied
 > account/provider/actor 필드는 `VALIDATION_ERROR`다. raw idempotency key, raw 계좌번호,
 > provider raw payload는 저장하지 않고, KIS Mock adapter와 Brokerage gRPC boundary는
@@ -2679,7 +2682,7 @@ service SourceRegistryService {
 | S2.1 | Principle은 DB 재검증된 JWT `sub` owner scope, SQL CAS, immutable version/audit와 strict DTO를 사용한다. `evidenceRequirement`를 새 snapshot에 명시하고 legacy row는 exact catalog tuple 기반 read-time inference만 하며 과거 row를 rewrite하지 않는다 |
 | S2.2 offline | public 8 + system 6, threshold 12/readiness 1/N/A 1과 `BLOCK>HOLD>WARN>ALLOW`를 pure evaluator/fixture로 검증한다. production Decision route/persistence와 provider/source adapter는 열지 않으며 provider 호출은 0이다. public code와 internal cause를 분리하고 V1 bounds/hash를 fail-fast한다 |
 | S2.3 runtime | S2.2 내부 read adapter의 `principle_id + user_id + ACTIVE + current immutable version` 한 조회를 runtime에 연결해 ACTIVE Principle을 pin하고 missing/cross-owner/inactive를 동일 404로 숨긴다. Decision/trace/artifact/audit/outbox/idempotency를 원자 저장하며 expected source unavailable은 HTTP 200 HOLD로 반환한다. stored disclosure는 shared-secret loopback gRPC와 `decision_disclosure_reader` projection SELECT만 사용한다. OpenAPI는 승인된 3개 path와 5개 `S23*` component만 허용한다 |
-| S3.1 | `POST /api/v1/brokerage/mock/orders`, owner-scoped `GET /api/v1/brokerage/orders/{orderId}`, `POST /api/v1/brokerage/orders/{orderId}/cancel`, stored balance/buyable 조회를 구현한다. S2.3 Decision과 S2.4 Kill Switch를 DB write path에서 재검증하고 V11 ledger에 sanitized projection과 append-only order event만 저장한다. raw idempotency/account/provider payload는 저장하지 않으며 provider/live account/broker/order physical call은 0건이다. LIMIT은 verified tick context가 없으면 `BROKERAGE_UNAVAILABLE`이다 |
+| S3.1 | `POST /api/v1/brokerage/mock/orders`, owner-scoped `GET /api/v1/brokerage/orders/{orderId}`, `POST /api/v1/brokerage/orders/{orderId}/cancel`, stored balance/buyable 조회를 구현한다. S2.3 Decision과 S2.4 Kill Switch를 V12 capability 함수에서 원자 재검증하고, runtime role의 direct order/event table DML·조회는 거부한다. Kill Switch generation lock, Decision one-use, `(order_id,event_seq)` lifecycle, sanitized order/event/audit/outbox를 DB가 강제한다. raw idempotency/account/provider payload는 저장하지 않으며 provider/live account/broker/order physical call은 0건이다. LIMIT은 verified tick context가 없으면 `BROKERAGE_UNAVAILABLE`이다 |
 | S3 | accountId는 opaque+owner-scoped다. order body의 price/quantity/position/risk-reduction 주장은 server snapshot으로 재검증한다. Live는 deploy immutable OFF, operator account allowlist, user consent, Kill Switch/reconciliation을 모두 요구하며 공개 API로 gate를 변경할 수 없다 |
 | S4 | RAG source/prompt는 untrusted data이며 내부 지시·URL·tool 호출을 실행하지 않는다. source ingest/register/reindex는 ADMIN 전용이며 scheme/origin/MIME/size/redirect/SSRF gate를 적용한다. answer/cache/feedback는 owner scope·TTL·output encoding을 적용한다. RAG 실행 주체는 provider token cache나 brokerage secret에 접근하지 못한다. model은 exact revision/weight hash/license를 기록하고 remote code/untrusted pickle을 금지한다 |
 | S5 | artifact endpoint는 trusted producer, owner, manifest hash/schema, 고정 root, file count/size/row cap을 먼저 검증한다. arbitrary path/symlink/archive와 untrusted pickle/joblib/code-loading model은 거부한다. 다운로드는 owner-scoped Bearer 인증과 고정 allowlisted 파일명·MIME만 허용하고 `Content-Disposition: attachment`, `nosniff`, `no-store`를 적용한다. Markdown/CSV/JSON을 임의 inline HTML로 실행하지 않는다 |

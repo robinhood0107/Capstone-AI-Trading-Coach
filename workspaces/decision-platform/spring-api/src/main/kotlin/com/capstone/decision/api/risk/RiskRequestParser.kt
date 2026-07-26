@@ -2,6 +2,7 @@ package com.capstone.decision.api.risk
 
 import com.capstone.decision.application.risk.RiskFieldViolation
 import com.capstone.decision.application.risk.RiskValidationException
+import com.capstone.decision.application.security.IdempotencyKeyPolicy
 import com.capstone.decision.domain.risk.KillSwitchReasonClass
 import jakarta.servlet.http.HttpServletRequest
 import org.springframework.stereotype.Component
@@ -64,7 +65,7 @@ class RiskRequestParser {
     }
 
     fun requireIdempotencyKey(value: String?) {
-        if (value == null || value.length !in 16..128 || !IDEMPOTENCY_KEY.matches(value)) {
+        if (!IdempotencyKeyPolicy.isValid(value)) {
             throw RiskValidationException(
                 listOf(RiskFieldViolation("/headers/X-Idempotency-Key", "INVALID_FORMAT")),
             )
@@ -137,6 +138,5 @@ class RiskRequestParser {
     private companion object {
         const val MAX_DOCUMENT_BYTES: Long = 1_048_576
         val FIELDS = setOf("active", "reason")
-        val IDEMPOTENCY_KEY = Regex("^[A-Za-z0-9._:-]+$")
     }
 }

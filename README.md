@@ -18,6 +18,7 @@ owner-scoped portfolio Risk 조회와 DB-authoritative 전역 Kill Switch를 추
 활성화는 유효한 Decision을 append-only 방식으로 무효화하고 신규 평가를 fail-closed하며,
 재가동은 transaction 안에서 현재 ADMIN 권한을 다시 확인한다. portfolio freshness는 실제 저장
 현재가·잔고·결정적 risk observation만 사용하고 없는 source를 0이나 false로 꾸미지 않는다.
+Decision runtime의 missing/stale source는 기존 S2.3 계약처럼 `HOLD` 경로를 유지한다.
 S2.4의 KIS/broker/gRPC/외부 HTTP와 주문 호출은 모두 0건이다.
 
 - PR #16 merge commit: `6f439155d9f5ec626fc185f29f2e0bd64ca54780`

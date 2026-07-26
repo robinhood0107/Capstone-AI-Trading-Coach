@@ -46,6 +46,12 @@ class InfrastructureSecurityIntegrationTest {
             .configure()
             .dataSource(postgres.jdbcUrl, MIGRATION_USER, migrationPassword)
             .locations("classpath:db/migration")
+            .placeholders(
+                mapOf(
+                    "brokerageDbCapabilityTokenSha256" to
+                        SpringApiIntegrationTestBase.TEST_BROKERAGE_DB_CAPABILITY_TOKEN_SHA256,
+                ),
+            )
             .javaMigrations(s21ActorTrustMigration())
             .load()
             .migrate()
@@ -127,19 +133,16 @@ class InfrastructureSecurityIntegrationTest {
                 "read_kill_switch_audit_projection()",
                 "read_decision_usability()",
                 "invalidate_unused_decisions_for_kill_switch(bigint,timestamp with time zone,text)",
-                "read_mock_order_decision()",
-                "find_mock_order_idempotency_result(text,text,timestamp with time zone)",
-                "read_mock_order_owner_projection()",
+                "read_mock_order_decision(text,text,text)",
+                "find_mock_order_idempotency_result(text,text,timestamp with time zone,text)",
+                "read_mock_order_owner_projection(text,text,text)",
+                "create_mock_order(jsonb,text)",
+                "request_mock_order_cancel(jsonb,text)",
             ).forEach { function ->
                 assertTrue(hasFunctionPrivilege(connection, "decision_app", function))
             }
-            assertTrue(hasTablePrivilege(connection, "decision_app", "orders", "INSERT"))
-            assertTrue(hasTablePrivilege(connection, "decision_app", "orders", "SELECT"))
-            assertTrue(hasTablePrivilege(connection, "decision_app", "order_events", "INSERT"))
-            assertTrue(hasTablePrivilege(connection, "decision_app", "order_events", "SELECT"))
-            assertTrue(hasTablePrivilege(connection, "decision_app", "mock_order_owner_projection", "SELECT"))
-            listOf("orders", "order_events").forEach { table ->
-                listOf("UPDATE", "DELETE", "TRUNCATE").forEach { privilege ->
+            listOf("orders", "order_events", "mock_order_owner_projection", "brokerage_db_capability_keys").forEach { table ->
+                listOf("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE").forEach { privilege ->
                     assertFalse(hasTablePrivilege(connection, "decision_app", table, privilege))
                 }
             }
@@ -237,6 +240,12 @@ class InfrastructureSecurityIntegrationTest {
                     "insert into decision_invalidations (" +
                         "invalidation_id,decision_id,evaluation_id,owner_user_id,reason_class,invalidated_at" +
                         ") values ('denied','denied','denied','usr_demo_user','KILL_SWITCH_ACTIVATED',now())",
+                    "select * from orders",
+                    "insert into orders default values",
+                    "select * from order_events",
+                    "insert into order_events default values",
+                    "select * from mock_order_owner_projection",
+                    "select * from brokerage_db_capability_keys",
                 ).forEach { sql ->
                     val mutationFailure = assertThrows<SQLException> { statement.execute(sql) }
                     assertTrue(mutationFailure.sqlState == "42501")

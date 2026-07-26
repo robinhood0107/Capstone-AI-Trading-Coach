@@ -2,6 +2,7 @@ package com.capstone.decision.domain.brokerage
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import java.time.Instant
@@ -106,6 +107,19 @@ class PaperFillPolicyTest {
     }
 
     @Test
+    fun `SELL slippage가 0원 체결가를 만들면 가격 source 오류로 닫는다`() {
+        val error =
+            assertThrows<PaperFillPolicyException> {
+                policy.decide(
+                    request = request(side = "SELL"),
+                    quote = quote(lastPriceKrw = 1),
+                )
+            }
+
+        assertEquals(PaperFillFailure.PRICE_UNAVAILABLE, error.failure)
+    }
+
+    @Test
     fun `설정과 입력 범위를 닫는다`() {
         assertThrows<IllegalArgumentException> { PaperFillPolicy(slippageBps = 101) }
         assertThrows<IllegalArgumentException> { PaperFillPolicy(slippageBps = -1) }
@@ -133,6 +147,59 @@ class PaperFillPolicyTest {
 
         assertEquals(PaperFillFailure.INVALID_INPUT, invalid.failure)
         assertNull(accepted.fill)
+    }
+
+    @Test
+    fun `side orderType source fillability 24조합은 bounded 결과로 수렴한다`() {
+        val outcomes =
+            buildList {
+                listOf("BUY", "SELL").forEach { side ->
+                    listOf("MARKET", "LIMIT").forEach { orderType ->
+                        listOf("LAST", "PREVIOUS", "ABSENT").forEach { source ->
+                            listOf(true, false).forEach { fillable ->
+                                val limit =
+                                    if (side == "BUY") {
+                                        if (fillable) 10_000L else 9_999L
+                                    } else {
+                                        if (fillable) 10_000L else 10_001L
+                                    }
+                                val result =
+                                    runCatching {
+                                        policy.decide(
+                                            request =
+                                                request(
+                                                    side = side,
+                                                    orderType = orderType,
+                                                    limitPriceKrw = limit.takeIf { orderType == "LIMIT" },
+                                                ),
+                                            quote =
+                                                when (source) {
+                                                    "LAST" -> quote(lastPriceKrw = 10_000)
+                                                    "PREVIOUS" -> quote(lastPriceKrw = null, previousCloseKrw = 10_000)
+                                                    else -> quote(lastPriceKrw = null, previousCloseKrw = null)
+                                                },
+                                        )
+                                    }
+                                add("$side:$orderType:$source:$fillable" to result)
+                            }
+                        }
+                    }
+                }
+            }
+
+        assertEquals(24, outcomes.size)
+        outcomes.forEach { (case, result) ->
+            when {
+                ":ABSENT:" in case ->
+                    assertEquals(
+                        PaperFillFailure.PRICE_UNAVAILABLE,
+                        (result.exceptionOrNull() as PaperFillPolicyException).failure,
+                    )
+                ":LIMIT:" in case && case.endsWith("false") ->
+                    assertEquals(PaperFillDecision.Accepted(PaperAcceptedReason.LIMIT_NOT_FILLED), result.getOrThrow())
+                else -> assertTrue(result.getOrThrow() is PaperFillDecision.Filled)
+            }
+        }
     }
 
     private fun request(

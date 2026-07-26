@@ -1,0 +1,4 @@
+# S2.4 offline idempotency fixtures were generic-key false positives; current call sites use an explicit header parameter name.
+cc3e639dc50d44c17e208250da4d1f27a74b5057:workspaces/decision-platform/spring-api/src/test/kotlin/com/capstone/decision/DecisionApiIntegrationTest.kt:generic-api-key:125
+cc3e639dc50d44c17e208250da4d1f27a74b5057:workspaces/decision-platform/spring-api/src/test/kotlin/com/capstone/decision/DecisionApiIntegrationTest.kt:generic-api-key:175
+cc3e639dc50d44c17e208250da4d1f27a74b5057:workspaces/decision-platform/spring-api/src/test/kotlin/com/capstone/decision/DecisionApiIntegrationTest.kt:generic-api-key:186

@@ -100,6 +100,8 @@ ALTER TABLE audit_logs
       action = 'MOCK_ORDER_SUBMITTED'
       AND user_id IS NOT NULL
       AND target_id = payload_json ->> 'orderId'
+      AND payload_json ->> 'brokerageMode' = 'KIS_MOCK'
+      AND payload_json ->> 'status' = 'SUBMITTED'
       AND payload_json ?& ARRAY[
         'orderId',
         'decisionId',
@@ -121,6 +123,8 @@ ALTER TABLE audit_logs
       action = 'MOCK_ORDER_CANCEL_REQUESTED'
       AND user_id IS NOT NULL
       AND target_id = payload_json ->> 'orderId'
+      AND payload_json ->> 'brokerageMode' = 'KIS_MOCK'
+      AND payload_json ->> 'status' = 'CANCEL_REQUESTED'
       AND payload_json ?& ARRAY[
         'orderId',
         'decisionId',
@@ -153,6 +157,8 @@ ALTER TABLE event_outbox
       AND aggregate_id = payload_json ->> 'orderId'
       AND partition_key = aggregate_id
       AND schema_version = '1.0.0'
+      AND payload_json ->> 'brokerageMode' = 'KIS_MOCK'
+      AND payload_json ->> 'status' = 'SUBMITTED'
       AND payload_json ?& ARRAY[
         'orderId',
         'decisionId',
@@ -176,6 +182,8 @@ ALTER TABLE event_outbox
       AND aggregate_id = payload_json ->> 'orderId'
       AND partition_key = aggregate_id
       AND schema_version = '1.0.0'
+      AND payload_json ->> 'brokerageMode' = 'KIS_MOCK'
+      AND payload_json ->> 'status' = 'CANCEL_REQUESTED'
       AND payload_json ?& ARRAY[
         'orderId',
         'decisionId',
@@ -194,6 +202,41 @@ ALTER TABLE event_outbox
       ] = '{}'::jsonb
     )
   );
+
+CREATE FUNCTION enforce_brokerage_evidence_writer()
+RETURNS trigger
+LANGUAGE plpgsql
+VOLATILE
+SET search_path = pg_catalog
+AS $enforce_brokerage_evidence_writer$
+BEGIN
+  -- brokerage ORDER evidence는 SECURITY DEFINER 함수가 원자 order write와 함께 만들 때만 신뢰한다.
+  IF NOT pg_has_role(current_user, 'flyway', 'USAGE') THEN
+    RAISE EXCEPTION 'S3.1 brokerage evidence writer denied'
+      USING ERRCODE = '42501';
+  END IF;
+  RETURN NEW;
+END
+$enforce_brokerage_evidence_writer$;
+ALTER FUNCTION enforce_brokerage_evidence_writer() OWNER TO flyway;
+REVOKE ALL ON FUNCTION enforce_brokerage_evidence_writer() FROM PUBLIC;
+
+CREATE TRIGGER audit_logs_brokerage_writer_guard
+BEFORE INSERT ON audit_logs
+FOR EACH ROW
+WHEN (NEW.target_type = 'ORDER')
+EXECUTE FUNCTION enforce_brokerage_evidence_writer();
+
+CREATE TRIGGER event_outbox_brokerage_writer_guard
+BEFORE INSERT ON event_outbox
+FOR EACH ROW
+WHEN (
+  NEW.event_type IN (
+    'brokerage.mock-order-submitted.v1',
+    'brokerage.mock-order-cancel-requested.v1'
+  )
+)
+EXECUTE FUNCTION enforce_brokerage_evidence_writer();
 
 CREATE FUNCTION assert_brokerage_database_capability(requested_token text)
 RETURNS void
@@ -595,10 +638,6 @@ BEGIN
     RETURN QUERY SELECT 'DECISION_NOT_FOUND'::text, NULL::text;
     RETURN;
   END IF;
-  IF NOT stored_decision.valid_until > requested_created_at THEN
-    RETURN QUERY SELECT 'DECISION_EXPIRED'::text, NULL::text;
-    RETURN;
-  END IF;
   IF stored_decision.invalidated
      OR NOT stored_decision.can_submit_order
      OR stored_decision.outcome NOT IN ('ALLOW', 'WARN')
@@ -619,6 +658,11 @@ BEGIN
      OR stored_decision.snapshot_artifact_canonical_json::jsonb -> 'orderIntent'
        <> requested_payload -> 'orderIntent' THEN
     RETURN QUERY SELECT 'VALIDATION_ERROR'::text, NULL::text;
+    RETURN;
+  END IF;
+  -- app service clock은 요청 metadata일 뿐이다. 주문 소비 직전 DB live clock으로 expiry를 최종 판정한다.
+  IF NOT stored_decision.valid_until > pg_catalog.clock_timestamp() THEN
+    RETURN QUERY SELECT 'DECISION_EXPIRED'::text, NULL::text;
     RETURN;
   END IF;
 
@@ -890,6 +934,7 @@ REVOKE ALL PRIVILEGES ON TABLE
   brokerage_db_capability_keys
 FROM PUBLIC;
 REVOKE ALL ON FUNCTION
+  enforce_brokerage_evidence_writer(),
   assert_brokerage_database_capability(text),
   read_mock_order_decision(text, text, text),
   find_mock_order_idempotency_result(text, text, timestamptz, text),
@@ -907,6 +952,8 @@ BEGIN
       mock_order_owner_projection,
       brokerage_db_capability_keys
     FROM decision_app;
+    REVOKE ALL ON FUNCTION enforce_brokerage_evidence_writer()
+      FROM decision_app;
     REVOKE ALL ON FUNCTION assert_brokerage_database_capability(text)
       FROM decision_app;
     GRANT EXECUTE ON FUNCTION

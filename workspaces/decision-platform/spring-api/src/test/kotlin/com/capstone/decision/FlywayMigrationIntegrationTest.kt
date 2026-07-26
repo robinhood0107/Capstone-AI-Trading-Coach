@@ -403,9 +403,14 @@ class FlywayMigrationIntegrationTest(
             assertEquals(0, countDecisionInvalidations("dec-flyway-b"))
             assertEquals(1, countDecisionInvalidations("dec-v10-admin"))
 
-            assertInvalidationOwnerScope("usr-flyway", 1)
-            assertInvalidationOwnerScope("usr_demo_admin", 1)
-            assertInvalidationOwnerScope("usr_demo_user", 0)
+            jdbcTemplate.execute("grant select on table decision_invalidations to decision_app")
+            try {
+                assertInvalidationOwnerScope("usr-flyway", 1)
+                assertInvalidationOwnerScope("usr_demo_admin", 1)
+                assertInvalidationOwnerScope("usr_demo_user", 0)
+            } finally {
+                jdbcTemplate.execute("revoke select on table decision_invalidations from decision_app")
+            }
             assertDecisionUsability("usr-flyway", "dec-flyway", expectedRows = 1, invalidated = true, consumed = null)
             assertDecisionUsability(
                 "usr-flyway",
@@ -1729,7 +1734,7 @@ class FlywayMigrationIntegrationTest(
         actorUserId: String,
         expectedRows: Int,
     ) {
-        DriverManager.getConnection(postgres.jdbcUrl, "flyway", FLYWAY_PASSWORD).use { connection ->
+        DriverManager.getConnection(postgres.jdbcUrl, "decision_app", APP_PASSWORD).use { connection ->
             connection.autoCommit = false
             connection.prepareStatement("select set_config('app.actor_user_id', ?, true)").use { statement ->
                 statement.setString(1, actorUserId)

@@ -848,6 +848,29 @@ class DecisionApiIntegrationTest(
     }
 
     @Test
+    fun `portfolio Risk API maps owner context authority failure to typed unavailable`() {
+        val token = login("demo-user", userPassword())
+        jdbcTemplate.execute(
+            "revoke select on latest_portfolio_balance_observations from decision_app",
+        )
+        val response =
+            try {
+                mockMvc
+                    .get("/api/v1/risk/portfolio") {
+                        bearer(token)
+                        header("X-Request-Id", "req-risk-portfolio-authority-failure")
+                    }.andReturn()
+            } finally {
+                jdbcTemplate.execute(
+                    "grant select on latest_portfolio_balance_observations to decision_app",
+                )
+            }
+
+        assertEquals(503, response.response.status)
+        assertEquals("RISK_UNAVAILABLE", json(response).at("/error/code").stringValue())
+    }
+
+    @Test
     fun `complete stored hard sources make the production bean graph ALLOW`() {
         val principleId = insertPrinciple("usr_demo_user", "GUIDE", suffix = "11")
         insertCompleteStoredSources(orderCount = 0)

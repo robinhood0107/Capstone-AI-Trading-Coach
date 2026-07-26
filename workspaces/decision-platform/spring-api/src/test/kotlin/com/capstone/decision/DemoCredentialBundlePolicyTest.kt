@@ -18,6 +18,7 @@ import org.junit.jupiter.api.assertThrows
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder
 import java.security.MessageDigest
 import java.util.Base64
+import java.util.HexFormat
 
 // bundle 정책은 BCrypt의 정상적인 salt 차이를 plaintext 분리 증거로 오인하지 않도록 고정한다.
 class DemoCredentialBundlePolicyTest {
@@ -110,7 +111,20 @@ class DemoCredentialBundlePolicyTest {
         val login = LoginAttemptLimiterProperties(scopeHmacKey = "l".repeat(32))
         val principle = PrincipleProperties(cursorHmacKey = "p".repeat(32))
         val decision = DecisionProperties(idempotencyScopeHmacKey = "d".repeat(32))
-        val brokerage = BrokerageProperties(idempotencyScopeHmacKey = "b".repeat(32))
+        val brokerageCapability = "c".repeat(32)
+        val brokerage =
+            BrokerageProperties(
+                idempotencyScopeHmacKey = "b".repeat(32),
+                databaseCapabilityToken = brokerageCapability,
+                databaseCapabilityTokenSha256 =
+                    HexFormat
+                        .of()
+                        .formatHex(
+                            MessageDigest
+                                .getInstance("SHA-256")
+                                .digest(brokerageCapability.toByteArray()),
+                        ),
+            )
 
         assertDoesNotThrow { SecurityConfig().authSecretSeparation(jwt, login, properties, principle, decision, brokerage) }
         assertThrows<IllegalArgumentException> {
@@ -121,6 +135,20 @@ class DemoCredentialBundlePolicyTest {
 
         properties.separationKey =
             Base64.getUrlEncoder().withoutPadding().encodeToString(jwt.secret.toByteArray())
+        assertThrows<IllegalArgumentException> {
+            SecurityConfig().authSecretSeparation(jwt, login, properties, principle, decision, brokerage)
+        }
+
+        principle.cursorHmacKey = "p".repeat(32)
+        brokerage.databaseCapabilityToken = brokerage.idempotencyScopeHmacKey
+        brokerage.databaseCapabilityTokenSha256 =
+            HexFormat
+                .of()
+                .formatHex(
+                    MessageDigest
+                        .getInstance("SHA-256")
+                        .digest(brokerage.databaseCapabilityToken.toByteArray()),
+                )
         assertThrows<IllegalArgumentException> {
             SecurityConfig().authSecretSeparation(jwt, login, properties, principle, decision, brokerage)
         }

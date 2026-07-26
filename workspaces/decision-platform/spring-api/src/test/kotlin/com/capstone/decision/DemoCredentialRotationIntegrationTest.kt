@@ -470,7 +470,12 @@ class DemoCredentialRotationIntegrationTest {
                 .configure()
                 .dataSource(postgres.jdbcUrl, "flyway", MIGRATION_PASSWORD)
                 .locations("classpath:db/migration")
-                .javaMigrations(s21ActorTrustMigration())
+                .placeholders(
+                    mapOf(
+                        "brokerageDbCapabilityTokenSha256" to
+                            SpringApiIntegrationTestBase.TEST_BROKERAGE_DB_CAPABILITY_TOKEN_SHA256,
+                    ),
+                ).javaMigrations(s21ActorTrustMigration())
                 .load()
                 .migrate()
         }

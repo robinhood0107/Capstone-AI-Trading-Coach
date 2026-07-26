@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Iterator
 from pathlib import Path
 from typing import TypedDict
@@ -21,6 +22,10 @@ MIGRATION_DIR = (
     / "db"
     / "migration"
 )
+TEST_BROKERAGE_DB_CAPABILITY_TOKEN = "python-s31-brokerage-capability-test-only"
+TEST_BROKERAGE_DB_CAPABILITY_TOKEN_SHA256 = hashlib.sha256(
+    TEST_BROKERAGE_DB_CAPABILITY_TOKEN.encode("utf-8")
+).hexdigest()
 
 
 class PostgresTestCluster(TypedDict):
@@ -109,7 +114,11 @@ def postgres_cluster() -> Iterator[PostgresTestCluster]:
                           ('usr_demo_admin', 'python-fixture-admin', 'ADMIN', 'test-only-hash')
                         """
                     )
-                connection.execute(migration.read_text(encoding="utf-8"))
+                migration_sql = migration.read_text(encoding="utf-8").replace(
+                    "${brokerageDbCapabilityTokenSha256}",
+                    TEST_BROKERAGE_DB_CAPABILITY_TOKEN_SHA256,
+                )
+                connection.execute(migration_sql)
                 if migration.name.startswith("V4__"):
                     # Python test path도 V5/V6 protection SQL이 참조하는 Flyway history object만 모사한다.
                     connection.execute(

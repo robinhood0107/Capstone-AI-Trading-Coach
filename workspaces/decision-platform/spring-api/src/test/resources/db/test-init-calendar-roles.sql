@@ -26,6 +26,8 @@ CREATE ROLE flyway
 -- Spring 통합 migration user와 실제 flyway role 모두 production의 bind-log 기본값을 재현한다.
 ALTER ROLE decision SET log_parameter_max_length = 0;
 ALTER ROLE decision SET log_parameter_max_length_on_error = 0;
+ALTER ROLE decision_app SET log_parameter_max_length = 0;
+ALTER ROLE decision_app SET log_parameter_max_length_on_error = 0;
 ALTER ROLE flyway SET log_parameter_max_length = 0;
 ALTER ROLE flyway SET log_parameter_max_length_on_error = 0;
 

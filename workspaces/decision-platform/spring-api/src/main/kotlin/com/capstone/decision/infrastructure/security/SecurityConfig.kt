@@ -72,6 +72,8 @@ class SecurityConfig {
         val principleCursorKey = principleProperties.cursorHmacKey.toByteArray(StandardCharsets.UTF_8)
         val decisionScopeKey = decisionProperties.idempotencyScopeHmacKey.toByteArray(StandardCharsets.UTF_8)
         val brokerageScopeKey = brokerageProperties.idempotencyScopeHmacKey.toByteArray(StandardCharsets.UTF_8)
+        val brokerageDatabaseCapability =
+            brokerageProperties.databaseCapabilityToken.toByteArray(StandardCharsets.UTF_8)
         val credentialSeparationKey =
             DemoCredentialBundlePolicy.decodeSeparationKey(demoCredentialProperties.separationKey)
         return try {
@@ -84,16 +86,24 @@ class SecurityConfig {
                     !MessageDigest.isEqual(credentialSeparationKey, principleCursorKey) &&
                     !MessageDigest.isEqual(credentialSeparationKey, decisionScopeKey) &&
                     !MessageDigest.isEqual(credentialSeparationKey, brokerageScopeKey) &&
+                    !MessageDigest.isEqual(credentialSeparationKey, brokerageDatabaseCapability) &&
                     !MessageDigest.isEqual(jwtSecret, principleCursorKey) &&
                     !MessageDigest.isEqual(jwtSecret, decisionScopeKey) &&
                     !MessageDigest.isEqual(jwtSecret, brokerageScopeKey) &&
+                    !MessageDigest.isEqual(jwtSecret, brokerageDatabaseCapability) &&
                     !MessageDigest.isEqual(loginScopeKey, principleCursorKey) &&
                     !MessageDigest.isEqual(loginScopeKey, decisionScopeKey) &&
                     !MessageDigest.isEqual(loginScopeKey, brokerageScopeKey) &&
+                    !MessageDigest.isEqual(loginScopeKey, brokerageDatabaseCapability) &&
                     !MessageDigest.isEqual(principleCursorKey, decisionScopeKey) &&
                     !MessageDigest.isEqual(principleCursorKey, brokerageScopeKey) &&
-                    !MessageDigest.isEqual(decisionScopeKey, brokerageScopeKey),
-            ) { "Authentication, Principle, Decision, and Brokerage HMAC keys must be purpose-separated." }
+                    !MessageDigest.isEqual(principleCursorKey, brokerageDatabaseCapability) &&
+                    !MessageDigest.isEqual(decisionScopeKey, brokerageScopeKey) &&
+                    !MessageDigest.isEqual(decisionScopeKey, brokerageDatabaseCapability) &&
+                    !MessageDigest.isEqual(brokerageScopeKey, brokerageDatabaseCapability),
+            ) {
+                "Authentication, Principle, Decision, Brokerage HMAC, and database capability secrets must be purpose-separated."
+            }
             verifyBootstrapBundles(demoCredentialProperties, credentialSeparationKey)
             AuthSecretSeparation
         } finally {
@@ -102,6 +112,7 @@ class SecurityConfig {
             principleCursorKey.fill(0)
             decisionScopeKey.fill(0)
             brokerageScopeKey.fill(0)
+            brokerageDatabaseCapability.fill(0)
             credentialSeparationKey.fill(0)
         }
     }

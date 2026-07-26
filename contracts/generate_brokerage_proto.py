@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import os
+import secrets
+import stat
 import subprocess
 import sys
 import tempfile
@@ -26,6 +29,142 @@ OUTPUTS = {
 
 class ProtoGenerationError(RuntimeError):
     """Generated brokerage proto artifacts drifted from the committed contract."""
+
+
+def _output_relative_path(path: Path) -> Path:
+    try:
+        relative = path.relative_to(REPO_ROOT)
+    except ValueError as error:
+        raise ProtoGenerationError("generated proto output escaped the repository root") from error
+    if not relative.parts or any(part in {"", ".", ".."} for part in relative.parts):
+        raise ProtoGenerationError("generated proto output path is invalid")
+    return relative
+
+
+def _open_output_parent(path: Path, *, create: bool) -> tuple[int, str]:
+    relative = _output_relative_path(path)
+    directory_flags = os.O_RDONLY | os.O_CLOEXEC | os.O_DIRECTORY | os.O_NOFOLLOW
+    try:
+        root_status = REPO_ROOT.lstat()
+    except OSError as error:
+        raise ProtoGenerationError("repository root is not accessible") from error
+    if stat.S_ISLNK(root_status.st_mode) or not stat.S_ISDIR(root_status.st_mode):
+        raise ProtoGenerationError("repository root must be a non-symlink directory")
+
+    try:
+        directory_fd = os.open(REPO_ROOT, directory_flags)
+    except OSError as error:
+        raise ProtoGenerationError("repository root could not be opened safely") from error
+    try:
+        for component in relative.parts[:-1]:
+            if create:
+                try:
+                    os.mkdir(component, mode=0o755, dir_fd=directory_fd)
+                except FileExistsError:
+                    pass
+            try:
+                next_fd = os.open(component, directory_flags, dir_fd=directory_fd)
+            except FileNotFoundError:
+                raise
+            except OSError as error:
+                raise ProtoGenerationError(
+                    "generated proto output parent must be a non-symlink directory"
+                ) from error
+            os.close(directory_fd)
+            directory_fd = next_fd
+        return directory_fd, relative.name
+    except Exception:
+        os.close(directory_fd)
+        raise
+
+
+def _read_regular_output(path: Path) -> bytes | None:
+    try:
+        directory_fd, name = _open_output_parent(path, create=False)
+    except FileNotFoundError:
+        return None
+    try:
+        try:
+            target_status = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
+        except FileNotFoundError:
+            return None
+        if not stat.S_ISREG(target_status.st_mode):
+            raise ProtoGenerationError("generated proto output must be a regular non-symlink file")
+        try:
+            output_fd = os.open(
+                name,
+                os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW,
+                dir_fd=directory_fd,
+            )
+        except OSError as error:
+            raise ProtoGenerationError("generated proto output could not be opened safely") from error
+        try:
+            if not stat.S_ISREG(os.fstat(output_fd).st_mode):
+                raise ProtoGenerationError("generated proto output changed type during validation")
+            chunks: list[bytes] = []
+            while chunk := os.read(output_fd, 64 * 1024):
+                chunks.append(chunk)
+            return b"".join(chunks)
+        finally:
+            os.close(output_fd)
+    finally:
+        os.close(directory_fd)
+
+
+def _validate_replace_target(directory_fd: int, name: str) -> None:
+    try:
+        target_status = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
+    except FileNotFoundError:
+        return
+    if not stat.S_ISREG(target_status.st_mode):
+        raise ProtoGenerationError("generated proto output must be a regular non-symlink file")
+
+
+def _write_regular_output(path: Path, expected: bytes) -> None:
+    directory_fd, name = _open_output_parent(path, create=True)
+    temporary_name = f".{name}.{secrets.token_hex(16)}.tmp"
+    temporary_created = False
+    try:
+        _validate_replace_target(directory_fd, name)
+        try:
+            temporary_fd = os.open(
+                temporary_name,
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC | os.O_NOFOLLOW,
+                0o644,
+                dir_fd=directory_fd,
+            )
+            temporary_created = True
+        except OSError as error:
+            raise ProtoGenerationError("generated proto temporary file could not be created safely") from error
+        try:
+            remaining = memoryview(expected)
+            while remaining:
+                written = os.write(temporary_fd, remaining)
+                if written <= 0:
+                    raise ProtoGenerationError("generated proto temporary write did not progress")
+                remaining = remaining[written:]
+            os.fsync(temporary_fd)
+        finally:
+            os.close(temporary_fd)
+
+        _validate_replace_target(directory_fd, name)
+        os.replace(
+            temporary_name,
+            name,
+            src_dir_fd=directory_fd,
+            dst_dir_fd=directory_fd,
+        )
+        temporary_created = False
+        os.fsync(directory_fd)
+    except OSError as error:
+        raise ProtoGenerationError("generated proto output could not be replaced safely") from error
+    finally:
+        if temporary_created:
+            try:
+                os.unlink(temporary_name, dir_fd=directory_fd)
+            except FileNotFoundError:
+                pass
+        os.close(directory_fd)
 
 
 def _run_protoc(output_dir: Path) -> dict[Path, bytes]:
@@ -96,18 +235,18 @@ def generate(*, check: bool) -> int:
     failures = 0
     for path, expected in outputs.items():
         if check:
-            if not path.is_file():
+            actual = _read_regular_output(path)
+            if actual is None:
                 print(f"FAIL missing generated proto artifact {path.relative_to(REPO_ROOT)}", file=sys.stderr)
                 failures += 1
                 continue
-            if path.read_bytes() != expected:
+            if actual != expected:
                 print(f"FAIL generated proto drift {path.relative_to(REPO_ROOT)}", file=sys.stderr)
                 failures += 1
                 continue
             print(f"PASS generated proto {path.relative_to(REPO_ROOT)}")
         else:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_bytes(expected)
+            _write_regular_output(path, expected)
             print(f"WROTE {path.relative_to(REPO_ROOT)}")
     return 1 if failures else 0
 

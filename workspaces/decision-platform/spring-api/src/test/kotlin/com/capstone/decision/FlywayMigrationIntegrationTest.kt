@@ -59,9 +59,9 @@ class FlywayMigrationIntegrationTest(
     @Autowired private val riskSnapshotPort: RiskSnapshotPort,
 ) : SpringApiIntegrationTestBase() {
     @Test
-    fun `clean database applies V1 through V12 migrations and creates required objects`() {
+    fun `clean database applies V1 through V13 migrations and creates required objects`() {
         val versions = queryStrings("select version from flyway_schema_history where success order by installed_rank")
-        assertEquals((1..12).map(Int::toString), versions)
+        assertEquals((1..13).map(Int::toString), versions)
 
         val requiredTables =
             listOf(
@@ -166,7 +166,7 @@ class FlywayMigrationIntegrationTest(
     }
 
     @Test
-    fun `decision application role receives only V12 brokerage capabilities`() {
+    fun `decision application role receives only V13 brokerage capabilities`() {
         assertTrue(hasTablePrivilege("decision_app", "risk_kill_switch", "SELECT"))
         assertFalse(hasTablePrivilege("decision_app", "risk_kill_switch", "INSERT"))
         assertFalse(hasTablePrivilege("decision_app", "risk_kill_switch", "DELETE"))
@@ -178,6 +178,12 @@ class FlywayMigrationIntegrationTest(
                 assertFalse(hasTablePrivilege("decision_app", table, privilege), "unexpected $privilege on $table")
             }
         }
+        listOf("paper_accounts", "paper_positions", "paper_order_events").forEach { table ->
+            listOf("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE").forEach { privilege ->
+                assertFalse(hasTablePrivilege("decision_app", table, privilege), "unexpected $privilege on $table")
+            }
+        }
+        assertTrue(hasTablePrivilege("decision_app", "paper_margin_owner_projection", "SELECT"))
         listOf("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE").forEach { privilege ->
             assertFalse(
                 hasTablePrivilege("decision_app", "decision_invalidations", privilege),
@@ -205,6 +211,10 @@ class FlywayMigrationIntegrationTest(
             "read_mock_order_owner_projection(text,text,text)",
             "create_mock_order(jsonb,text)",
             "request_mock_order_cancel(jsonb,text)",
+            "read_paper_order_context(text,text,text)",
+            "find_paper_order_idempotency_result(text,text,timestamp with time zone,text)",
+            "read_paper_balance_projection(text,text,text)",
+            "create_paper_order(jsonb,text)",
         ).forEach { function ->
             assertTrue(hasFunctionPrivilege("decision_app", function), "missing EXECUTE on $function")
         }
@@ -212,11 +222,205 @@ class FlywayMigrationIntegrationTest(
             hasFunctionPrivilege("decision_app", "assert_brokerage_database_capability(text)"),
             "runtime role must not call the private capability verifier directly",
         )
+        assertFalse(
+            hasFunctionPrivilege("decision_app", "rebuild_paper_state(text,text)"),
+            "runtime role must not call the paper ledger rebuild verifier",
+        )
         assertDecisionAppPermissionDenied("select * from orders")
         assertDecisionAppPermissionDenied("insert into orders default values")
         assertDecisionAppPermissionDenied("select * from order_events")
         assertDecisionAppPermissionDenied("insert into order_events default values")
         assertDecisionAppPermissionDenied("select * from mock_order_owner_projection")
+        assertDecisionAppPermissionDenied("select * from paper_accounts")
+        assertDecisionAppPermissionDenied("insert into paper_order_events default values")
+        assertDecisionAppPermissionDenied("update paper_order_events set event_seq = event_seq")
+        assertDecisionAppPermissionDenied("delete from paper_order_events")
+        assertDecisionAppPermissionDenied("truncate table paper_order_events")
+        assertDecisionAppPermissionDenied(
+            "select * from read_paper_order_context('usr_demo_user', 'dec_${"0".repeat(32)}', '${"0".repeat(64)}')",
+        )
+    }
+
+    @Test
+    fun `V13 precondition rejects a preexisting paper ledger row and rolls back`() {
+        val migrationUrl = createDatabase("v13_precondition_paper_row")
+        flyway(migrationUrl, target = "12").migrate()
+        DriverManager.getConnection(migrationUrl, postgres.username, postgres.password).use { connection ->
+            connection.createStatement().use { statement ->
+                statement.execute(
+                    """
+                    insert into paper_accounts (
+                      account_id, user_id, name, cash_balance, currency, status
+                    ) values (
+                      'acct_00000000000000000000000000000013',
+                      'usr_demo_user', 'V13 precondition fixture', 1, 'KRW', 'ACTIVE'
+                    )
+                    """.trimIndent(),
+                )
+            }
+        }
+
+        val failure = assertThrows<FlywayException> { flyway(migrationUrl).migrate() }
+
+        assertTrue(failure.stackTraceToString().contains("S3.2 V13 precondition failed"))
+        DriverManager.getConnection(migrationUrl, postgres.username, postgres.password).use { connection ->
+            connection.createStatement().use { statement ->
+                statement
+                    .executeQuery("select count(*) from flyway_schema_history where version = '13'")
+                    .use { result ->
+                        assertTrue(result.next())
+                        assertEquals(0, result.getInt(1))
+                    }
+                statement
+                    .executeQuery("select count(*) from paper_accounts")
+                    .use { result ->
+                        assertTrue(result.next())
+                        assertEquals(1, result.getInt(1))
+                    }
+            }
+        }
+    }
+
+    @Test
+    fun `V13 mode prefix와 paper ledger checks reject cross wired and mutable rows`() {
+        insertOrderFixture()
+        jdbcTemplate.update(
+            """
+            insert into orders (
+              order_id, user_id, account_id, account_scope_hash, decision_id,
+              decision_evaluation_id, brokerage_mode, idempotency_scope_hash,
+              idempotency_owner_scope_hash, request_hash, symbol, side, order_type,
+              quantity, submitted_price_krw, status, order_intent_json,
+              result_canonical_json, acknowledged_by, acknowledged_at, submitted_at
+            ) values (
+              'ord_mock_00000000000000000000000000000013', 'usr-flyway',
+              'acct_00000000000000000000000000000013', repeat('1', 64),
+              'dec-flyway', 'eval-flyway', 'KIS_MOCK', repeat('2', 64),
+              repeat('3', 64), repeat('4', 64), '005930', 'BUY', 'MARKET',
+              1, null, 'SUBMITTED',
+              '{"symbol":"005930","side":"BUY","orderType":"MARKET","quantity":"1","estimatedPrice":"10000","estimatedAmount":"10000","timeframe":"1d","strategyId":"v13-check"}'::jsonb,
+              '{"orderId":"ord_mock_00000000000000000000000000000013","accountId":"acct_00000000000000000000000000000013","brokerageMode":"KIS_MOCK","status":"SUBMITTED","submittedAt":"2030-01-02T03:04:05Z"}',
+              'usr-flyway', now(), now()
+            )
+            """.trimIndent(),
+        )
+        assertCheckViolation {
+            jdbcTemplate.update(
+                "update orders set brokerage_mode = 'INTERNAL_PAPER' where decision_id = 'dec-flyway'",
+            )
+        }
+        assertCheckViolation {
+            jdbcTemplate.update(
+                "update orders set order_id = 'ord_paper_00000000000000000000000000000013' where decision_id = 'dec-flyway'",
+            )
+        }
+        assertCheckViolation {
+            jdbcTemplate.update("update orders set brokerage_mode = 'KIS_LIVE' where decision_id = 'dec-flyway'")
+        }
+        assertCheckViolation {
+            jdbcTemplate.update(
+                "update orders set order_id = 'ord_mock_A0000000000000000000000000000013' where decision_id = 'dec-flyway'",
+            )
+        }
+
+        jdbcTemplate.update(
+            """
+            insert into paper_accounts (
+              account_id, user_id, name, cash_balance, currency, status,
+              owner_scope_hash, margin_requirement_krw
+            ) values (
+              'acct_00000000000000000000000000000013', 'usr-flyway',
+              'V13 ledger fixture', 100000, 'KRW', 'ACTIVE', repeat('5', 64), 0
+            )
+            """.trimIndent(),
+        )
+        jdbcTemplate.update(
+            """
+            insert into paper_positions (
+              position_id, account_id, symbol, quantity, average_price, market_value
+            ) values (
+              'ppos_00000000000000000000000000000013',
+              'acct_00000000000000000000000000000013',
+              '005930', 1, 10000, 10000
+            )
+            """.trimIndent(),
+        )
+        assertCheckViolation {
+            jdbcTemplate.update(
+                "update paper_accounts set cash_balance = -1 where account_id = 'acct_00000000000000000000000000000013'",
+            )
+        }
+        assertCheckViolation {
+            jdbcTemplate.update(
+                "update paper_positions set quantity = -1 where position_id = 'ppos_00000000000000000000000000000013'",
+            )
+        }
+
+        jdbcTemplate.update(
+            """
+            update orders
+            set order_id = 'ord_paper_00000000000000000000000000000013',
+                brokerage_mode = 'INTERNAL_PAPER',
+                status = 'FILLED',
+                result_canonical_json =
+                  '{"orderId":"ord_paper_00000000000000000000000000000013","accountId":"acct_00000000000000000000000000000013","brokerageMode":"INTERNAL_PAPER","status":"FILLED","submittedAt":"2030-01-02T03:04:05Z","fill":null}'
+            where decision_id = 'dec-flyway'
+            """.trimIndent(),
+        )
+        jdbcTemplate.update(
+            """
+            insert into paper_order_events (
+              paper_order_event_id, account_id, order_id, event_type,
+              payload_json, event_seq
+            ) values (
+              'pev_00000000000000000000000000000013',
+              'acct_00000000000000000000000000000013',
+              'ord_paper_00000000000000000000000000000013',
+              'PAPER_ORDER_FILLED',
+              jsonb_build_object(
+                'orderId', 'ord_paper_00000000000000000000000000000013',
+                'symbol', '005930', 'side', 'BUY',
+                'fillQuantity', 1, 'fillPriceKrw', 10000, 'fillAmountKrw', 10000,
+                'priceBasis', 'LAST_QUOTE', 'slippageBps', 5, 'feeModel', 'NONE_V1',
+                'observedAt', '2030-01-02T03:04:05Z',
+                'beforeCashKrw', 110000, 'afterCashKrw', 100000,
+                'beforeQuantity', 0, 'afterQuantity', 1,
+                'beforeAveragePriceKrw', 0, 'afterAveragePriceKrw', 10000,
+                'beforeMarketValueKrw', 0, 'afterMarketValueKrw', 10000
+              ),
+              1
+            )
+            """.trimIndent(),
+        )
+        assertCheckViolation {
+            jdbcTemplate.update(
+                "update paper_order_events set event_seq = 0 where paper_order_event_id = 'pev_00000000000000000000000000000013'",
+            )
+        }
+        assertCheckViolation {
+            jdbcTemplate.update(
+                """
+                update paper_order_events
+                set payload_json = payload_json - 'feeModel'
+                where paper_order_event_id = 'pev_00000000000000000000000000000013'
+                """.trimIndent(),
+            )
+        }
+        assertUniqueViolation {
+            jdbcTemplate.update(
+                """
+                insert into paper_order_events (
+                  paper_order_event_id, account_id, order_id, event_type,
+                  payload_json, event_seq
+                )
+                select
+                  'pev_00000000000000000000000000000014',
+                  account_id, order_id, event_type, payload_json, 2
+                from paper_order_events
+                where paper_order_event_id = 'pev_00000000000000000000000000000013'
+                """.trimIndent(),
+            )
+        }
     }
 
     @Test
@@ -1381,15 +1585,18 @@ class FlywayMigrationIntegrationTest(
     }
 
     @Test
-    fun `internal paper never synthesizes margin zero or position classification`() {
+    fun `internal paper uses only explicit margin and never synthesizes position classification`() {
         jdbcTemplate.update(
             """
             insert into paper_accounts (
-              account_id, user_id, name, cash_balance, currency, status, created_at, updated_at
+              account_id, user_id, name, cash_balance, currency, status,
+              created_at, updated_at, owner_scope_hash, margin_requirement_krw
             )
             values (
-              'paper-s23', 'usr_demo_admin', 'Paper S2.3', 900000, 'KRW', 'ACTIVE',
-              '2031-02-03T04:00:00Z', '2031-02-03T04:05:06Z'
+              'acct_00000000000000000000000000000023',
+              'usr_demo_admin', 'Paper S2.3', 900000, 'KRW', 'ACTIVE',
+              '2031-02-03T04:00:00Z', '2031-02-03T04:05:06Z',
+              repeat('2', 64), null
             )
             """.trimIndent(),
         )
@@ -1399,7 +1606,8 @@ class FlywayMigrationIntegrationTest(
               position_id, account_id, symbol, quantity, average_price, market_value, updated_at
             )
             values (
-              'position-s23', 'paper-s23', '999999', 1, 100000, 100000, '2031-02-03T04:05:06Z'
+              'position-s23', 'acct_00000000000000000000000000000023',
+              '999999', 1, 100000, 100000, '2031-02-03T04:05:06Z'
             )
             """.trimIndent(),
         )
@@ -1426,6 +1634,20 @@ class FlywayMigrationIntegrationTest(
 
         assertTrue(internalPaperBalanceAdapter.load(request) is MetricCell.Incomplete)
         assertTrue(storedMarginAdapter.load(request) is MetricCell.Missing)
+
+        jdbcTemplate.update(
+            """
+            update paper_accounts
+            set margin_requirement_krw = 0
+            where account_id = 'acct_00000000000000000000000000000023'
+            """.trimIndent(),
+        )
+        val explicitResolution =
+            portfolioContextAdapter.resolve("usr_demo_admin", PortfolioSource.INTERNAL_PAPER)
+                as PortfolioContextResolution.Available
+        val explicitRequest = request.copy(portfolioContext = explicitResolution.context)
+        val explicitMargin = storedMarginAdapter.load(explicitRequest) as MetricCell.Available
+        assertEquals(0L, (explicitMargin.value as MetricValue.Whole).value)
     }
 
     @Test

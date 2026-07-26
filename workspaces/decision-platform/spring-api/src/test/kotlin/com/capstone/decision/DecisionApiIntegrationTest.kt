@@ -296,6 +296,40 @@ class DecisionApiIntegrationTest(
     }
 
     @Test
+    fun `Kill Switch USER GET returns only the sanitized state and rejects query fields`() {
+        val token = login("demo-user", userPassword())
+        val state =
+            mockMvc
+                .get("/api/v1/risk/kill-switch") {
+                    bearer(token)
+                    header("X-Request-Id", "req-risk-kill-get")
+                }.andReturn()
+
+        assertEquals(200, state.response.status)
+        assertEquals(
+            setOf("active", "reasonClass", "changedAt"),
+            json(state)
+                .at("/data")
+                .propertyNames()
+                .asSequence()
+                .toSet(),
+        )
+        listOf("generation", "changedBy", "changedByRole", "requestId", "reason").forEach { forbidden ->
+            assertFalse(json(state).at("/data").has(forbidden))
+        }
+
+        val queryInjection =
+            mockMvc
+                .get("/api/v1/risk/kill-switch") {
+                    bearer(token)
+                    header("X-Request-Id", "req-risk-kill-get-query")
+                    param("generation", "2")
+                }.andReturn()
+        assertEquals(400, queryInjection.response.status)
+        assertEquals("VALIDATION_ERROR", json(queryInjection).at("/error/code").stringValue())
+    }
+
+    @Test
     fun `Kill Switch resume revalidates current admin status role and security version without writes`() {
         val userToken = login("demo-user", userPassword())
         val activation =

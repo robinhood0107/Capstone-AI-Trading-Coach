@@ -59,9 +59,9 @@ class FlywayMigrationIntegrationTest(
     @Autowired private val riskSnapshotPort: RiskSnapshotPort,
 ) : SpringApiIntegrationTestBase() {
     @Test
-    fun `clean database applies V1 through V9 migrations and creates required objects`() {
+    fun `clean database applies V1 through V10 migrations and creates required objects`() {
         val versions = queryStrings("select version from flyway_schema_history where success order by installed_rank")
-        assertEquals(listOf("1", "2", "3", "4", "5", "6", "7", "8", "9"), versions)
+        assertEquals(listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "10"), versions)
 
         val requiredTables =
             listOf(
@@ -97,6 +97,10 @@ class FlywayMigrationIntegrationTest(
                 "decision_idempotency_results",
                 "decision_owner_projection",
                 "decision_audit_projection",
+                "risk_kill_switch",
+                "risk_kill_switch_transitions",
+                "decision_invalidations",
+                "kill_switch_user_projection",
                 "latest_market_quote_observations",
                 "latest_instrument_catalog_observations",
                 "latest_portfolio_balance_observations",
@@ -117,6 +121,64 @@ class FlywayMigrationIntegrationTest(
         assertEquals(2, countRows("trading_session_revisions", "canonical_rule_version = 'V4_COMPAT_MIGRATION'"))
         assertTrue(indexExists("idx_chunks_trgm"), "expected pg_trgm index for Korean keyword search")
         assertFalse(indexDefinitionLike("rag_chunks", "%ivfflat%"), "ivfflat must wait until real embeddings are loaded")
+    }
+
+    @Test
+    fun `V10 seeds one safe singleton and exposes only the sanitized user projection`() {
+        val state =
+            jdbcTemplate.queryForMap(
+                """
+                select active, reason_class, generation, changed_by, changed_by_role, request_id
+                from risk_kill_switch
+                """.trimIndent(),
+            )
+        assertEquals(false, state["active"])
+        assertEquals("INITIAL_STATE", state["reason_class"])
+        assertEquals(1L, state["generation"])
+        assertEquals(null, state["changed_by"])
+        assertEquals("SYSTEM", state["changed_by_role"])
+        assertEquals(null, state["request_id"])
+        assertEquals(
+            listOf("active", "reason_class", "changed_at"),
+            queryStrings(
+                """
+                select column_name
+                from information_schema.columns
+                where table_schema = 'public' and table_name = 'kill_switch_user_projection'
+                order by ordinal_position
+                """.trimIndent(),
+            ),
+        )
+    }
+
+    @Test
+    fun `decision application role receives exact V10 append only privileges`() {
+        assertTrue(hasTablePrivilege("decision_app", "risk_kill_switch", "SELECT"))
+        assertFalse(hasTablePrivilege("decision_app", "risk_kill_switch", "INSERT"))
+        assertFalse(hasTablePrivilege("decision_app", "risk_kill_switch", "DELETE"))
+        assertFalse(hasTablePrivilege("decision_app", "risk_kill_switch", "TRUNCATE"))
+        assertTrue(hasTablePrivilege("decision_app", "risk_kill_switch_transitions", "INSERT"))
+        assertTrue(hasTablePrivilege("decision_app", "kill_switch_user_projection", "SELECT"))
+        listOf("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE").forEach { privilege ->
+            assertFalse(
+                hasTablePrivilege("decision_app", "decision_invalidations", privilege),
+                "unexpected $privilege on decision_invalidations",
+            )
+        }
+        listOf("SELECT", "UPDATE", "DELETE", "TRUNCATE").forEach { privilege ->
+            assertFalse(
+                hasTablePrivilege("decision_app", "risk_kill_switch_transitions", privilege),
+                "unexpected $privilege on risk_kill_switch_transitions",
+            )
+        }
+        listOf(
+            "read_kill_switch_gate()",
+            "read_kill_switch_audit_projection()",
+            "read_decision_usability()",
+            "invalidate_unused_decisions_for_kill_switch(bigint,timestamp with time zone,text)",
+        ).forEach { function ->
+            assertTrue(hasFunctionPrivilege("decision_app", function), "missing EXECUTE on $function")
+        }
     }
 
     @Test

@@ -257,7 +257,33 @@ class OpenApiConfig {
                 S24_PORTFOLIO_RISK_ENVELOPE_COMPONENT,
                 successEnvelope(schemaRef(S24_PORTFOLIO_RISK_COMPONENT)),
             )
+            openApi.components.addSchemas(
+                S24_RISK_ERROR_COMPONENT,
+                riskErrorEnvelope(),
+            )
         }
+
+    private fun riskErrorEnvelope(): Schema<*> =
+        objectSchema(
+            properties =
+                linkedMapOf(
+                    "success" to BooleanSchema()._const(false),
+                    "requestId" to StringSchema().minLength(1).maxLength(128),
+                    "data" to Schema<Any>().types(linkedSetOf("null")),
+                    "warnings" to Schema<Any>().types(linkedSetOf("array"))._const(emptyList<Any>()),
+                    "error" to
+                        objectSchema(
+                            properties =
+                                linkedMapOf(
+                                    "code" to StringSchema()._enum(S24_RISK_ERROR_CODES),
+                                    "message" to StringSchema().minLength(1).maxLength(512),
+                                    "details" to ObjectSchema().additionalProperties(true),
+                                ),
+                            required = listOf("code", "message", "details"),
+                        ),
+                ),
+            required = listOf("success", "requestId", "data", "warnings", "error"),
+        )
 
     private fun principleRuleSchema(contract: PrincipleContract): Schema<*> {
         val definitions = contract.ruleDefinitions.values.sortedBy(CatalogRuleDefinition::order)
@@ -510,6 +536,15 @@ class OpenApiConfig {
         private const val S24_PORTFOLIO_RISK_COMPONENT = "S24PortfolioRisk"
         private const val S24_KILL_SWITCH_ENVELOPE_COMPONENT = "S24KillSwitchSuccessResponse"
         private const val S24_PORTFOLIO_RISK_ENVELOPE_COMPONENT = "S24PortfolioRiskSuccessResponse"
+        private const val S24_RISK_ERROR_COMPONENT = "S24RiskErrorResponse"
+        private val S24_RISK_ERROR_CODES =
+            listOf(
+                "VALIDATION_ERROR",
+                "UNAUTHORIZED",
+                "FORBIDDEN",
+                "CONFLICT",
+                "RISK_UNAVAILABLE",
+            )
         private const val REQUEST_MAX_BYTES = 1_048_576
         private val RULE_FIELDS =
             listOf(

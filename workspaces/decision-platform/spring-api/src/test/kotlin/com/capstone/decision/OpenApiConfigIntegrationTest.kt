@@ -272,7 +272,11 @@ class OpenApiConfigIntegrationTest(
         assertEquals("null", error.at("/properties/data/type").stringValue())
         assertEquals(
             setOf("success", "requestId", "data", "warnings", "error"),
-            error.path("required").values().map { it.stringValue() }.toSet(),
+            error
+                .path("required")
+                .values()
+                .map { it.stringValue() }
+                .toSet(),
         )
     }
 

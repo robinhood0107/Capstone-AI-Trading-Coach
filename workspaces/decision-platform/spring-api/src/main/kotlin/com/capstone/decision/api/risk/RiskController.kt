@@ -40,8 +40,16 @@ class RiskController(
                 responseCode = "200",
                 content = [Content(schema = OasSchema(ref = "#/components/schemas/S24PortfolioRiskSuccessResponse"))],
             ),
-            OasApiResponse(responseCode = "401", description = "Authentication is required."),
-            OasApiResponse(responseCode = "503", description = "Risk authority is unavailable."),
+            OasApiResponse(
+                responseCode = "401",
+                description = "Authentication is required.",
+                content = [Content(schema = OasSchema(implementation = S24RiskErrorResponseSchema::class))],
+            ),
+            OasApiResponse(
+                responseCode = "503",
+                description = "Risk authority is unavailable.",
+                content = [Content(schema = OasSchema(implementation = S24RiskErrorResponseSchema::class))],
+            ),
         ],
     )
     @GetMapping("/portfolio")
@@ -72,8 +80,16 @@ class RiskController(
                 responseCode = "200",
                 content = [Content(schema = OasSchema(ref = "#/components/schemas/S24KillSwitchSuccessResponse"))],
             ),
-            OasApiResponse(responseCode = "401", description = "Authentication is required."),
-            OasApiResponse(responseCode = "503", description = "Risk authority is unavailable."),
+            OasApiResponse(
+                responseCode = "401",
+                description = "Authentication is required.",
+                content = [Content(schema = OasSchema(implementation = S24RiskErrorResponseSchema::class))],
+            ),
+            OasApiResponse(
+                responseCode = "503",
+                description = "Risk authority is unavailable.",
+                content = [Content(schema = OasSchema(implementation = S24RiskErrorResponseSchema::class))],
+            ),
         ],
     )
     @GetMapping("/kill-switch")
@@ -97,11 +113,31 @@ class RiskController(
                 responseCode = "200",
                 content = [Content(schema = OasSchema(ref = "#/components/schemas/S24KillSwitchSuccessResponse"))],
             ),
-            OasApiResponse(responseCode = "400", description = "Invalid body or idempotency key."),
-            OasApiResponse(responseCode = "401", description = "Authentication is required."),
-            OasApiResponse(responseCode = "403", description = "Only a current ADMIN can resume."),
-            OasApiResponse(responseCode = "409", description = "Concurrent generation conflict."),
-            OasApiResponse(responseCode = "503", description = "Risk authority is unavailable."),
+            OasApiResponse(
+                responseCode = "400",
+                description = "Invalid body or idempotency key.",
+                content = [Content(schema = OasSchema(implementation = S24RiskErrorResponseSchema::class))],
+            ),
+            OasApiResponse(
+                responseCode = "401",
+                description = "Authentication is required.",
+                content = [Content(schema = OasSchema(implementation = S24RiskErrorResponseSchema::class))],
+            ),
+            OasApiResponse(
+                responseCode = "403",
+                description = "Only a current ADMIN can resume.",
+                content = [Content(schema = OasSchema(implementation = S24RiskErrorResponseSchema::class))],
+            ),
+            OasApiResponse(
+                responseCode = "409",
+                description = "Concurrent generation conflict.",
+                content = [Content(schema = OasSchema(implementation = S24RiskErrorResponseSchema::class))],
+            ),
+            OasApiResponse(
+                responseCode = "503",
+                description = "Risk authority is unavailable.",
+                content = [Content(schema = OasSchema(implementation = S24RiskErrorResponseSchema::class))],
+            ),
         ],
     )
     @PostMapping("/kill-switch", consumes = [MediaType.APPLICATION_JSON_VALUE])

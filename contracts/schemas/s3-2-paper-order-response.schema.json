@@ -1,0 +1,178 @@
+{
+  "$id": "contracts/schemas/s3-2-paper-order-response.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "FILLED"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "fill": {
+            "additionalProperties": false,
+            "properties": {
+              "amountKrw": {
+                "maximum": 9223372036854775807,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "feeModel": {
+                "const": "NONE_V1"
+              },
+              "observedAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "priceBasis": {
+                "enum": [
+                  "LAST_QUOTE",
+                  "PREVIOUS_CLOSE"
+                ]
+              },
+              "priceKrw": {
+                "maximum": 9223372036854775807,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "quantity": {
+                "maximum": 9223372036854775807,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "slippageBps": {
+                "maximum": 100,
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "quantity",
+              "priceKrw",
+              "amountKrw",
+              "priceBasis",
+              "slippageBps",
+              "feeModel",
+              "observedAt"
+            ],
+            "type": "object"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "ACCEPTED"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "fill": {
+            "type": "null"
+          }
+        }
+      }
+    }
+  ],
+  "properties": {
+    "accountId": {
+      "pattern": "^acct_[0-9a-f]{32}$",
+      "type": "string"
+    },
+    "brokerageMode": {
+      "const": "INTERNAL_PAPER"
+    },
+    "fill": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "amountKrw": {
+              "maximum": 9223372036854775807,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "feeModel": {
+              "const": "NONE_V1"
+            },
+            "observedAt": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "priceBasis": {
+              "enum": [
+                "LAST_QUOTE",
+                "PREVIOUS_CLOSE"
+              ]
+            },
+            "priceKrw": {
+              "maximum": 9223372036854775807,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "quantity": {
+              "maximum": 9223372036854775807,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "slippageBps": {
+              "maximum": 100,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "quantity",
+            "priceKrw",
+            "amountKrw",
+            "priceBasis",
+            "slippageBps",
+            "feeModel",
+            "observedAt"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "orderId": {
+      "pattern": "^ord_paper_[0-9a-f]{32}$",
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "ACCEPTED",
+        "FILLED"
+      ]
+    },
+    "submittedAt": {
+      "format": "date-time",
+      "type": "string"
+    }
+  },
+  "required": [
+    "orderId",
+    "accountId",
+    "brokerageMode",
+    "status",
+    "submittedAt",
+    "fill"
+  ],
+  "title": "S3.2 INTERNAL_PAPER order response v1",
+  "type": "object"
+}

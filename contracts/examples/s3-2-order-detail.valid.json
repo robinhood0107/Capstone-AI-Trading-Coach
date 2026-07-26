@@ -1,0 +1,8 @@
+{
+  "accountId": "acct_cccccccccccccccccccccccccccccccc",
+  "brokerageMode": "INTERNAL_PAPER",
+  "decisionId": "dec_11111111111111111111111111111111",
+  "orderId": "ord_paper_0123456789abcdef0123456789abcdef",
+  "status": "FILLED",
+  "submittedAt": "2026-07-27T01:10:01Z"
+}

@@ -1,0 +1,90 @@
+{
+  "$id": "contracts/schemas/s3-2-paper-order-request.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "decisionId": {
+      "pattern": "^dec_[0-9a-f]{32}$",
+      "type": "string"
+    },
+    "orderIntent": {
+      "additionalProperties": false,
+      "properties": {
+        "estimatedAmount": {
+          "maximum": 9223372036854775807,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "estimatedPrice": {
+          "maximum": 9223372036854775807,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "orderType": {
+          "enum": [
+            "MARKET",
+            "LIMIT"
+          ]
+        },
+        "quantity": {
+          "maximum": 9223372036854775807,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "side": {
+          "enum": [
+            "BUY",
+            "SELL"
+          ]
+        },
+        "strategyId": {
+          "maxLength": 120,
+          "minLength": 1,
+          "type": "string"
+        },
+        "symbol": {
+          "maxLength": 20,
+          "minLength": 1,
+          "pattern": "^[0-9A-Z._:-]{1,20}$",
+          "type": "string"
+        },
+        "timeframe": {
+          "enum": [
+            "1d",
+            "60m"
+          ]
+        }
+      },
+      "required": [
+        "symbol",
+        "side",
+        "orderType",
+        "quantity",
+        "estimatedPrice",
+        "estimatedAmount",
+        "timeframe",
+        "strategyId"
+      ],
+      "type": "object"
+    },
+    "userAcknowledgement": {
+      "additionalProperties": false,
+      "properties": {
+        "warningsAccepted": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "warningsAccepted"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "decisionId",
+    "orderIntent",
+    "userAcknowledgement"
+  ],
+  "title": "S3.2 INTERNAL_PAPER order submit request v1",
+  "type": "object"
+}

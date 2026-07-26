@@ -48,14 +48,11 @@ enum class KillSwitchReasonClass {
                 require(rawReason.length <= MAX_REASON_CHARS)
                 require(rawReason.none(Char::isISOControl))
                 require(FORBIDDEN_FRAGMENTS.none(rawReason::contains))
-                require(!SQL_EXPRESSION.containsMatchIn(rawReason))
             }
         }
 
         const val MAX_REASON_CHARS: Int = 200
         private val FORBIDDEN_FRAGMENTS = listOf("'", "\"", ";", "--", "/*", "*/", "=")
-        private val SQL_EXPRESSION =
-            Regex("""(?i)(?:^|\s)(?:select|insert|update|delete|drop|alter|union|or|and)(?:\s|$)""")
     }
 }
 

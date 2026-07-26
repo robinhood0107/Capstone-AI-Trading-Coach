@@ -18,6 +18,7 @@ enum class ErrorCode(
     IDEMPOTENCY_IN_PROGRESS(HttpStatus.CONFLICT, "A request with this idempotency key is already in progress."),
     PAYLOAD_TOO_LARGE(HttpStatusCode.valueOf(413), "Request payload exceeded the configured safety limit."),
     RISK_BLOCKED(HttpStatusCode.valueOf(422), "Request was blocked by risk controls."),
+    RISK_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "Risk controls are unavailable."),
     DATA_STALE(HttpStatus.CONFLICT, "Required data is stale."),
     RATE_LIMITED(HttpStatus.TOO_MANY_REQUESTS, "Rate limit exceeded."),
     PYTHON_SERVICE_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "Python service is unavailable."),

@@ -1,6 +1,9 @@
 package com.capstone.decision.application.decision
 
 import com.capstone.decision.api.common.ApiResponseFactory
+import com.capstone.decision.application.risk.KillSwitchBlockedException
+import com.capstone.decision.application.risk.KillSwitchGuard
+import com.capstone.decision.application.risk.KillSwitchUnavailableException
 import com.capstone.decision.application.risk.PortfolioEvaluationCommand
 import com.capstone.decision.application.risk.PortfolioEvaluationUseCase
 import com.capstone.decision.application.risk.port.PrincipleSnapshotPort
@@ -28,6 +31,7 @@ class DecisionService(
     private val validityPolicy: DecisionValidityPolicy,
     private val objectMapper: ObjectMapper,
     private val clock: Clock,
+    private val killSwitchGuard: KillSwitchGuard,
 ) {
     fun evaluate(
         actor: DecisionActor,
@@ -36,6 +40,7 @@ class DecisionService(
     ): DecisionProjection {
         val startedAtNanos = System.nanoTime()
         var metricMode = DecisionMetricMode.UNPINNED
+        killSwitchGuard.check()
         val evaluationAsOf = clock.instant()
         val identity = idempotencyHasher.identity(actor.userId, rawIdempotencyKey, command)
         try {
@@ -81,6 +86,10 @@ class DecisionService(
         } catch (exception: DecisionIdempotencyInProgressException) {
             throw exception
         } catch (exception: DecisionVersionConflictException) {
+            throw exception
+        } catch (exception: KillSwitchBlockedException) {
+            throw exception
+        } catch (exception: KillSwitchUnavailableException) {
             throw exception
         } catch (exception: DecisionTechnicalException) {
             recordTechnicalFailure(startedAtNanos, metricMode)

@@ -2,8 +2,15 @@ package com.capstone.decision.infrastructure.decision
 
 import com.capstone.decision.application.decision.DecisionValidityPolicy
 import com.capstone.decision.application.risk.EvaluationSourceCallCoordinator
+import com.capstone.decision.application.risk.KillSwitchGatePort
+import com.capstone.decision.application.risk.KillSwitchGuard
+import com.capstone.decision.application.risk.KillSwitchMutationPort
+import com.capstone.decision.application.risk.KillSwitchQueryPort
+import com.capstone.decision.application.risk.KillSwitchService
 import com.capstone.decision.application.risk.MetricSnapshotAssembler
 import com.capstone.decision.application.risk.PortfolioEvaluationUseCase
+import com.capstone.decision.application.risk.PortfolioRiskQueryUseCase
+import com.capstone.decision.application.risk.RiskObservationPort
 import com.capstone.decision.application.risk.SystemRuleContract
 import com.capstone.decision.application.risk.port.DisclosureRiskPort
 import com.capstone.decision.application.risk.port.MarginPort
@@ -19,8 +26,11 @@ import com.capstone.decision.domain.risk.MetricCell
 import com.capstone.decision.domain.risk.MetricIssueCode
 import com.capstone.decision.infrastructure.risk.JdbcInternalPaperBalanceAdapter
 import com.capstone.decision.infrastructure.risk.JdbcKisMockBalanceAdapter
+import com.capstone.decision.infrastructure.risk.MicrometerRiskObservability
+import io.micrometer.core.instrument.MeterRegistry
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
+import java.time.Clock
 import java.time.Duration
 
 /**
@@ -28,6 +38,39 @@ import java.time.Duration
  */
 @Configuration(proxyBeanMethods = false)
 class DecisionRuntimeConfiguration {
+    @Bean
+    fun killSwitchGuard(gatePort: KillSwitchGatePort): KillSwitchGuard = KillSwitchGuard(gatePort)
+
+    @Bean
+    fun riskObservationPort(
+        meterRegistry: MeterRegistry,
+        gatePort: KillSwitchGatePort,
+    ): RiskObservationPort = MicrometerRiskObservability(meterRegistry, gatePort)
+
+    @Bean
+    fun killSwitchService(
+        queryPort: KillSwitchQueryPort,
+        mutationPort: KillSwitchMutationPort,
+        clock: Clock,
+        observationPort: RiskObservationPort,
+    ): KillSwitchService = KillSwitchService(queryPort, mutationPort, clock, observationPort)
+
+    @Bean
+    fun portfolioRiskQueryUseCase(
+        portfolioContextPort: PortfolioContextPort,
+        snapshotAssembler: MetricSnapshotAssembler,
+        killSwitchQueryPort: KillSwitchQueryPort,
+        clock: Clock,
+        observationPort: RiskObservationPort,
+    ): PortfolioRiskQueryUseCase =
+        PortfolioRiskQueryUseCase(
+            portfolioContextPort = portfolioContextPort,
+            snapshotAssembler = snapshotAssembler,
+            killSwitchQueryPort = killSwitchQueryPort,
+            clock = clock,
+            observationPort = observationPort,
+        )
+
     @Bean
     fun decisionValidityPolicy(properties: DecisionProperties): DecisionValidityPolicy =
         DecisionValidityPolicy(Duration.ofMinutes(properties.validMinutes))

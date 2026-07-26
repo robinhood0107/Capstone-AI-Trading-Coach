@@ -2170,8 +2170,7 @@ class FlywayMigrationIntegrationTest(
                     mapOf(
                         "brokerageDbCapabilityTokenSha256" to TEST_BROKERAGE_DB_CAPABILITY_TOKEN_SHA256,
                     ),
-                )
-                .javaMigrations(s21ActorTrustMigration())
+                ).javaMigrations(s21ActorTrustMigration())
         target?.let(configuration::target)
         return configuration.load()
     }

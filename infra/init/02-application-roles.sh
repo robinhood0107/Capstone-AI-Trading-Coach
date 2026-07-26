@@ -42,6 +42,10 @@ SELECT format(
 )
 \gexec
 
+-- DB capability bind가 statement/error log 설정과 무관하게 값으로 노출되지 않게 한다.
+ALTER ROLE decision_app SET log_parameter_max_length = 0;
+ALTER ROLE decision_app SET log_parameter_max_length_on_error = 0;
+
 SELECT format(
     'CREATE ROLE flyway LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD %L',
     :'migration_password'
@@ -368,14 +372,28 @@ BEGIN
             order_events,
             mock_order_owner_projection
         FROM decision_app;
-        GRANT INSERT, SELECT ON TABLE orders TO decision_app;
-        GRANT INSERT, SELECT ON TABLE order_events TO decision_app;
-        GRANT SELECT ON TABLE mock_order_owner_projection TO decision_app;
-        GRANT EXECUTE ON FUNCTION
-            read_mock_order_decision(),
-            find_mock_order_idempotency_result(text, text, timestamptz),
-            read_mock_order_owner_projection()
-        TO decision_app;
+        IF to_regclass('public.brokerage_db_capability_keys') IS NOT NULL THEN
+            REVOKE ALL PRIVILEGES ON TABLE brokerage_db_capability_keys
+            FROM decision_app;
+            REVOKE ALL ON FUNCTION assert_brokerage_database_capability(text)
+            FROM decision_app;
+            GRANT EXECUTE ON FUNCTION
+                read_mock_order_decision(text, text, text),
+                find_mock_order_idempotency_result(text, text, timestamptz, text),
+                read_mock_order_owner_projection(text, text, text),
+                create_mock_order(jsonb, text),
+                request_mock_order_cancel(jsonb, text)
+            TO decision_app;
+        ELSE
+            GRANT INSERT, SELECT ON TABLE orders TO decision_app;
+            GRANT INSERT, SELECT ON TABLE order_events TO decision_app;
+            GRANT SELECT ON TABLE mock_order_owner_projection TO decision_app;
+            GRANT EXECUTE ON FUNCTION
+                read_mock_order_decision(),
+                find_mock_order_idempotency_result(text, text, timestamptz),
+                read_mock_order_owner_projection()
+            TO decision_app;
+        END IF;
         REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_app;
         REVOKE CREATE ON SCHEMA public FROM decision_app;
     END IF;

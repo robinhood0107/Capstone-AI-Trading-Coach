@@ -13,9 +13,9 @@ import org.springframework.context.annotation.Primary
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder
 import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
+import java.security.MessageDigest
 import java.util.Base64
 import java.util.HexFormat
-import java.security.MessageDigest
 
 // 테스트 credential과 hash는 런타임에 생성해 실제 secret이나 고정 BCrypt material을 fixture에 남기지 않는다.
 abstract class SpringApiIntegrationTestBase {

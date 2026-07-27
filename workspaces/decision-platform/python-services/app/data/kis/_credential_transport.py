@@ -149,6 +149,7 @@ class _CredentialTransport(httpx.BaseTransport):
         accounting: CollectionRunRecorder | None = None,
         max_response_bytes: int = _MAX_RESPONSE_BYTES,
         max_json_depth: int = _MAX_JSON_DEPTH,
+        sensitive_values: Callable[[], tuple[str, ...]] | None = None,
     ) -> None:
         self._inner = inner
         self._mode = settings.mode
@@ -159,6 +160,7 @@ class _CredentialTransport(httpx.BaseTransport):
         self._accounting = accounting
         self._max_response_bytes = max_response_bytes
         self._max_json_depth = max_json_depth
+        self._sensitive_values = sensitive_values
 
     def handle_request(self, request: httpx.Request) -> httpx.Response:
         _ensure_origin(request.url, self._origin)
@@ -177,10 +179,13 @@ class _CredentialTransport(httpx.BaseTransport):
         response_too_large = False
         attempt_recorded = False
         outcome_recorded = False
+        call_budget_exceeded = False
+        additional: tuple[str, ...] = ()
         try:
             request.headers.pop(_INTERNAL_TR_ID_HEADER, None)
             request.headers["tr_id"] = tr_id
             request.headers["custtype"] = "P"
+            additional = self._sensitive_values() if self._sensitive_values is not None else ()
             if self._enabled:
                 if self._token_provider is None:
                     raise KISCredentialError("KIS authentication is unavailable")
@@ -190,17 +195,20 @@ class _CredentialTransport(httpx.BaseTransport):
                 credentials = _read_credentials(self._mode)
                 app_key = credentials.app_key.get_secret_value()
                 app_secret = credentials.app_secret.get_secret_value()
-                candidates = (app_key, app_secret, token)
+                candidates = (app_key, app_secret, token, *additional)
                 request.headers["authorization"] = f"Bearer {token}"
                 request.headers["appkey"] = app_key
                 request.headers["appsecret"] = app_secret
             else:
                 self._rate_limiter.acquire()
+                candidates = additional
             if self._accounting is not None:
                 self._accounting.record_physical_attempt(PhysicalChannel.MARKET_DATA)
                 attempt_recorded = True
             try:
                 provider_response = self._inner.handle_request(request)
+            except KISCallBudgetExceeded:
+                call_budget_exceeded = True
             except Exception:
                 if self._accounting is not None and attempt_recorded:
                     self._accounting.record_physical_failure(
@@ -209,22 +217,23 @@ class _CredentialTransport(httpx.BaseTransport):
                     )
                     outcome_recorded = True
                 raise
-            try:
-                sanitized_response = _scrub_response(
-                    provider_response,
-                    candidates,
-                    max_response_bytes=self._max_response_bytes,
-                    max_json_depth=self._max_json_depth,
-                )
-            except KISResponseTooLargeError:
-                # recursive sanitizer frame의 credential candidates를 새 외부 예외 traceback에 연결하지 않는다.
-                response_too_large = True
-                if self._accounting is not None and attempt_recorded:
-                    self._accounting.record_physical_failure(
-                        PhysicalChannel.MARKET_DATA,
-                        FailureCode.RESPONSE_TOO_LARGE,
+            if provider_response is not None:
+                try:
+                    sanitized_response = _scrub_response(
+                        provider_response,
+                        candidates,
+                        max_response_bytes=self._max_response_bytes,
+                        max_json_depth=self._max_json_depth,
                     )
-                    outcome_recorded = True
+                except KISResponseTooLargeError:
+                    # recursive sanitizer frame의 credential candidates를 새 외부 예외 traceback에 연결하지 않는다.
+                    response_too_large = True
+                    if self._accounting is not None and attempt_recorded:
+                        self._accounting.record_physical_failure(
+                            PhysicalChannel.MARKET_DATA,
+                            FailureCode.RESPONSE_TOO_LARGE,
+                        )
+                        outcome_recorded = True
         finally:
             if provider_response is not None:
                 provider_response.close()
@@ -232,6 +241,7 @@ class _CredentialTransport(httpx.BaseTransport):
             request.headers.clear()
             request.headers.update(original_headers)
             candidates = ()
+            additional = ()
             credentials = None
             token = ""
             app_key = ""
@@ -247,6 +257,8 @@ class _CredentialTransport(httpx.BaseTransport):
                     FailureCode.UNKNOWN_INTERNAL,
                 )
 
+        if call_budget_exceeded:
+            raise KISCallBudgetExceeded("KIS physical call budget exhausted") from None
         if response_too_large:
             raise KISResponseTooLargeError("KIS response exceeded the safety limit") from None
         if sanitized_response is None:

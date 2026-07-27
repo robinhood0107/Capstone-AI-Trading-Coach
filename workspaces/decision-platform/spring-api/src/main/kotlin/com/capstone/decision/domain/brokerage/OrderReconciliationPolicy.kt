@@ -14,6 +14,7 @@ data class OrderReconciliationInput(
     val storedAverageFillPriceKrw: Long?,
     val observedFillQuantity: Long?,
     val recomputedAverageFillPriceKrw: Long?,
+    val providerFinalAverageFillPriceKrw: Long? = recomputedAverageFillPriceKrw,
 )
 
 /**
@@ -36,7 +37,9 @@ object OrderReconciliationPolicy {
             }
         val quantityMatches = input.observedFillQuantity == input.filledQuantity
         val averageMatches = input.recomputedAverageFillPriceKrw == input.storedAverageFillPriceKrw
-        return if (conservationMatches && quantityMatches && averageMatches) {
+        val providerAverageMatches =
+            input.providerFinalAverageFillPriceKrw == input.recomputedAverageFillPriceKrw
+        return if (conservationMatches && quantityMatches && averageMatches && providerAverageMatches) {
             OrderReconciliationStatus.MATCHED
         } else {
             OrderReconciliationStatus.MISMATCH

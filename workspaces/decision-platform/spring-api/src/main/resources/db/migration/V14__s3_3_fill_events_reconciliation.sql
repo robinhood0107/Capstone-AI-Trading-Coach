@@ -113,7 +113,7 @@ BEGIN
       NEW.leaves_quantity := 0;
       NEW.unfilled_terminated_quantity := 0;
       NEW.average_fill_price_krw :=
-        (NEW.result_canonical_json::jsonb #>> '{fill,fillPriceKrw}')::bigint;
+        (NEW.result_canonical_json::jsonb #>> '{fill,priceKrw}')::bigint;
     ELSE
       NEW.filled_quantity := 0;
       NEW.leaves_quantity := NEW.quantity;
@@ -331,6 +331,10 @@ DECLARE
   stored_order record;
   observations jsonb;
   remaining boolean;
+  observation_count bigint;
+  observed_fill_quantity bigint;
+  recomputed_average bigint;
+  provider_final_average bigint;
 BEGIN
   PERFORM public.assert_brokerage_database_capability(requested_capability_token);
   IF requested_payload IS NULL
@@ -392,6 +396,7 @@ BEGIN
         ) AS item
       FROM public.order_fill_observations observation
       WHERE observation.order_id = requested_order_id
+        AND observation.completeness = 'COMPLETE'
         AND NOT EXISTS (
           SELECT 1
           FROM public.order_fill_application_receipts receipt
@@ -404,6 +409,7 @@ BEGIN
     INTO remaining
     FROM public.order_fill_observations observation
     WHERE observation.order_id = requested_order_id
+      AND observation.completeness = 'COMPLETE'
       AND NOT EXISTS (
         SELECT 1
         FROM public.order_fill_application_receipts receipt
@@ -412,6 +418,62 @@ BEGIN
   ELSE
     observations := '[]'::jsonb;
     remaining := false;
+  END IF;
+
+  IF stored_order.brokerage_mode = 'INTERNAL_PAPER' THEN
+    SELECT
+      count(*),
+      COALESCE(sum((paper.payload_json ->> 'fillQuantity')::bigint), 0),
+      CASE
+        WHEN count(*) = 0 THEN NULL
+        ELSE trunc(
+          sum(
+            (paper.payload_json ->> 'fillQuantity')::numeric
+            * (paper.payload_json ->> 'fillPriceKrw')::numeric
+          )
+          / sum((paper.payload_json ->> 'fillQuantity')::numeric)
+        )::bigint
+      END
+    INTO observation_count, observed_fill_quantity, recomputed_average
+    FROM public.paper_order_events paper
+    WHERE paper.order_id = requested_order_id;
+    provider_final_average := recomputed_average;
+  ELSE
+    SELECT
+      count(*),
+      COALESCE(
+        sum(aggregate_observation.fill_quantity)
+          FILTER (WHERE aggregate_observation.exec_type IN ('PARTIAL_FILL', 'FILL')),
+        0
+      ),
+      CASE
+        WHEN COALESCE(
+          sum(aggregate_observation.fill_quantity)
+            FILTER (WHERE aggregate_observation.exec_type IN ('PARTIAL_FILL', 'FILL')),
+          0
+        ) = 0 THEN NULL
+        ELSE trunc(
+          sum(
+            aggregate_observation.fill_quantity::numeric
+            * aggregate_observation.fill_price_krw::numeric
+          ) FILTER (WHERE aggregate_observation.exec_type IN ('PARTIAL_FILL', 'FILL'))
+          / sum(aggregate_observation.fill_quantity::numeric)
+            FILTER (WHERE aggregate_observation.exec_type IN ('PARTIAL_FILL', 'FILL'))
+        )::bigint
+      END
+    INTO observation_count, observed_fill_quantity, recomputed_average
+    FROM public.order_fill_observations aggregate_observation
+    WHERE aggregate_observation.order_id = requested_order_id;
+    SELECT final_observation.average_fill_price_krw
+    INTO provider_final_average
+    FROM public.order_fill_observations final_observation
+    WHERE final_observation.order_id = requested_order_id
+      AND final_observation.exec_type IN ('PARTIAL_FILL', 'FILL')
+    ORDER BY
+      final_observation.cumulative_quantity DESC,
+      final_observation.observed_at DESC,
+      final_observation.observation_id DESC
+    LIMIT 1;
   END IF;
 
   RETURN QUERY
@@ -426,6 +488,11 @@ BEGIN
       'leavesQuantity', stored_order.leaves_quantity,
       'unfilledTerminatedQuantity', stored_order.unfilled_terminated_quantity,
       'averageFillPriceKrw', stored_order.average_fill_price_krw,
+      'reconciliationStatus', stored_order.reconciliation_status,
+      'observationCount', observation_count,
+      'observedFillQuantity', observed_fill_quantity,
+      'recomputedAverageFillPriceKrw', recomputed_average,
+      'providerFinalAverageFillPriceKrw', provider_final_average,
       'observations', observations,
       'hasMore', remaining
     )::text;
@@ -433,6 +500,67 @@ END
 $read_order_reconciliation_state$;
 ALTER FUNCTION read_order_reconciliation_state(jsonb, text) OWNER TO flyway;
 REVOKE ALL ON FUNCTION read_order_reconciliation_state(jsonb, text) FROM PUBLIC;
+
+-- 대기 중 snapshot이 낡지 않도록 advisory lock은 state read와 분리된 선행 statement에서 획득한다.
+CREATE FUNCTION acquire_order_fill_reconciliation_lock(
+  requested_payload jsonb,
+  requested_capability_token text
+)
+RETURNS text
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = pg_catalog
+AS $acquire_order_fill_reconciliation_lock$
+DECLARE
+  requested_actor_user_id text;
+  requested_actor_role text;
+  requested_security_version bigint;
+  requested_order_id text;
+  stored_actor record;
+BEGIN
+  PERFORM public.assert_brokerage_database_capability(requested_capability_token);
+  IF requested_payload IS NULL
+     OR jsonb_typeof(requested_payload) <> 'object'
+     OR NOT requested_payload ?& ARRAY[
+       'actorUserId', 'actorRole', 'securityVersion', 'orderId'
+     ]
+     OR requested_payload - ARRAY[
+       'actorUserId', 'actorRole', 'securityVersion', 'orderId'
+     ] <> '{}'::jsonb THEN
+    RETURN 'VALIDATION_ERROR';
+  END IF;
+  requested_actor_user_id := requested_payload ->> 'actorUserId';
+  requested_actor_role := requested_payload ->> 'actorRole';
+  requested_security_version := (requested_payload ->> 'securityVersion')::bigint;
+  requested_order_id := requested_payload ->> 'orderId';
+
+  SELECT actor.role, actor.status, actor.security_version
+  INTO stored_actor
+  FROM public.users actor
+  WHERE actor.user_id = requested_actor_user_id
+  FOR SHARE;
+  IF NOT FOUND
+     OR stored_actor.status <> 'ACTIVE'
+     OR stored_actor.role <> 'ADMIN'
+     OR requested_actor_role <> 'ADMIN'
+     OR stored_actor.security_version <> requested_security_version THEN
+    RETURN 'ACTOR_UNAUTHORIZED';
+  END IF;
+
+  PERFORM pg_advisory_xact_lock(
+    hashtextextended('order-fill:' || requested_order_id, 3301)
+  );
+  IF NOT EXISTS (
+    SELECT 1 FROM public.orders stored WHERE stored.order_id = requested_order_id
+  ) THEN
+    RETURN 'ORDER_NOT_FOUND';
+  END IF;
+  RETURN 'LOCKED';
+END
+$acquire_order_fill_reconciliation_lock$;
+ALTER FUNCTION acquire_order_fill_reconciliation_lock(jsonb, text) OWNER TO flyway;
+REVOKE ALL ON FUNCTION acquire_order_fill_reconciliation_lock(jsonb, text) FROM PUBLIC;
 
 CREATE FUNCTION apply_stored_order_fills(
   requested_payload jsonb,
@@ -577,6 +705,7 @@ BEGIN
       SELECT source.*
       FROM public.order_fill_observations source
       WHERE source.order_id = requested_order_id
+        AND source.completeness = 'COMPLETE'
         AND NOT EXISTS (
           SELECT 1
           FROM public.order_fill_application_receipts receipt
@@ -624,7 +753,7 @@ BEGIN
             transition_reason := 'INVALID_LEAVES_QUANTITY';
           ELSE
             next_average :=
-              (
+              trunc(
                 (
                   COALESCE(current_average, 0)::numeric * current_filled::numeric
                   + observation.fill_price_krw::numeric * delta_quantity::numeric
@@ -740,7 +869,7 @@ BEGIN
       COALESCE(sum((paper.payload_json ->> 'fillQuantity')::bigint), 0),
       CASE
         WHEN count(*) = 0 THEN NULL
-        ELSE (
+        ELSE trunc(
           sum(
             (paper.payload_json ->> 'fillQuantity')::numeric
             * (paper.payload_json ->> 'fillPriceKrw')::numeric
@@ -756,33 +885,37 @@ BEGIN
     SELECT
       count(*),
       COALESCE(
-        sum(observation.fill_quantity)
-          FILTER (WHERE observation.exec_type IN ('PARTIAL_FILL', 'FILL')),
+        sum(aggregate_observation.fill_quantity)
+          FILTER (WHERE aggregate_observation.exec_type IN ('PARTIAL_FILL', 'FILL')),
         0
       ),
       CASE
         WHEN COALESCE(
-          sum(observation.fill_quantity)
-            FILTER (WHERE observation.exec_type IN ('PARTIAL_FILL', 'FILL')),
+          sum(aggregate_observation.fill_quantity)
+            FILTER (WHERE aggregate_observation.exec_type IN ('PARTIAL_FILL', 'FILL')),
           0
         ) = 0 THEN NULL
-        ELSE (
+        ELSE trunc(
           sum(
-            observation.fill_quantity::numeric * observation.fill_price_krw::numeric
-          ) FILTER (WHERE observation.exec_type IN ('PARTIAL_FILL', 'FILL'))
-          / sum(observation.fill_quantity::numeric)
-            FILTER (WHERE observation.exec_type IN ('PARTIAL_FILL', 'FILL'))
+            aggregate_observation.fill_quantity::numeric
+            * aggregate_observation.fill_price_krw::numeric
+          ) FILTER (WHERE aggregate_observation.exec_type IN ('PARTIAL_FILL', 'FILL'))
+          / sum(aggregate_observation.fill_quantity::numeric)
+            FILTER (WHERE aggregate_observation.exec_type IN ('PARTIAL_FILL', 'FILL'))
         )::bigint
       END
     INTO observation_count, observed_fill_quantity, recomputed_average
-    FROM public.order_fill_observations observation
-    WHERE observation.order_id = requested_order_id;
-    SELECT observation.average_fill_price_krw
+    FROM public.order_fill_observations aggregate_observation
+    WHERE aggregate_observation.order_id = requested_order_id;
+    SELECT final_observation.average_fill_price_krw
     INTO provider_final_average
-    FROM public.order_fill_observations observation
-    WHERE observation.order_id = requested_order_id
-      AND observation.exec_type IN ('PARTIAL_FILL', 'FILL')
-    ORDER BY observation.cumulative_quantity DESC, observation.observed_at DESC, observation.observation_id DESC
+    FROM public.order_fill_observations final_observation
+    WHERE final_observation.order_id = requested_order_id
+      AND final_observation.exec_type IN ('PARTIAL_FILL', 'FILL')
+    ORDER BY
+      final_observation.cumulative_quantity DESC,
+      final_observation.observed_at DESC,
+      final_observation.observation_id DESC
     LIMIT 1;
   END IF;
 
@@ -816,12 +949,13 @@ BEGIN
 
   SELECT EXISTS (
     SELECT 1
-    FROM public.order_fill_observations observation
-    WHERE observation.order_id = requested_order_id
+    FROM public.order_fill_observations remaining_observation
+    WHERE remaining_observation.order_id = requested_order_id
+      AND remaining_observation.completeness = 'COMPLETE'
       AND NOT EXISTS (
         SELECT 1
         FROM public.order_fill_application_receipts receipt
-        WHERE receipt.observation_id = observation.observation_id
+        WHERE receipt.observation_id = remaining_observation.observation_id
       )
   )
   INTO remaining;
@@ -895,15 +1029,8 @@ CREATE FUNCTION read_owned_order_fills(
   requested_capability_token text
 )
 RETURNS TABLE (
-  order_id text,
-  brokerage_mode text,
-  symbol text,
-  side text,
-  fill_quantity bigint,
-  fill_price_krw bigint,
-  fill_amount_krw bigint,
-  filled_at timestamptz,
-  exec_ref_hash text
+  operation_outcome text,
+  page_json text
 )
 LANGUAGE plpgsql
 STABLE
@@ -936,6 +1063,7 @@ BEGIN
        'brokerageMode', 'fromInclusive', 'toExclusive', 'lastFilledAt',
        'lastOrderId', 'lastExecRefHash'
      ] <> '{}'::jsonb THEN
+    RETURN QUERY SELECT 'VALIDATION_ERROR'::text, NULL::text;
     RETURN;
   END IF;
   requested_actor_user_id := requested_payload ->> 'actorUserId';
@@ -958,14 +1086,19 @@ BEGIN
   IF NOT FOUND
      OR stored_actor.status <> 'ACTIVE'
      OR stored_actor.role <> requested_actor_role
-     OR stored_actor.security_version <> requested_security_version
-     OR requested_brokerage_mode NOT IN ('KIS_MOCK', 'INTERNAL_PAPER')
+     OR stored_actor.security_version <> requested_security_version THEN
+    RETURN QUERY SELECT 'ACTOR_UNAUTHORIZED'::text, NULL::text;
+    RETURN;
+  END IF;
+  IF requested_brokerage_mode NOT IN ('KIS_MOCK', 'INTERNAL_PAPER')
      OR requested_to <= requested_from
+     OR requested_to - requested_from > interval '31 days'
      OR (
        (requested_last_filled_at IS NULL)::integer
        + (requested_last_order_id IS NULL)::integer
        + (requested_last_exec_ref_hash IS NULL)::integer
      ) NOT IN (0, 3) THEN
+    RETURN QUERY SELECT 'VALIDATION_ERROR'::text, NULL::text;
     RETURN;
   END IF;
 
@@ -977,6 +1110,7 @@ BEGIN
          AND owned.account_id = requested_account_id
          AND owned.brokerage_mode = 'KIS_MOCK'
      ) THEN
+    RETURN QUERY SELECT 'ACCOUNT_NOT_FOUND'::text, NULL::text;
     RETURN;
   END IF;
   IF requested_brokerage_mode = 'INTERNAL_PAPER'
@@ -986,67 +1120,90 @@ BEGIN
        WHERE account.user_id = requested_actor_user_id
          AND account.account_id = requested_account_id
      ) THEN
+    RETURN QUERY SELECT 'ACCOUNT_NOT_FOUND'::text, NULL::text;
     RETURN;
   END IF;
 
   RETURN QUERY
-  SELECT candidate.*
-  FROM (
-    SELECT
-      stored.order_id,
-      stored.brokerage_mode,
-      stored.symbol,
-      stored.side,
-      observation.fill_quantity,
-      observation.fill_price_krw,
-      observation.fill_quantity * observation.fill_price_krw,
-      observation.observed_at,
-      observation.provider_exec_ref_hash
-    FROM public.orders stored
-    JOIN public.order_fill_observations observation
-      ON observation.order_id = stored.order_id
-    JOIN public.order_fill_application_receipts receipt
-      ON receipt.observation_id = observation.observation_id
-     AND receipt.outcome = 'APPLIED'
-    WHERE requested_brokerage_mode = 'KIS_MOCK'
-      AND stored.brokerage_mode = 'KIS_MOCK'
-      AND stored.user_id = requested_actor_user_id
-      AND stored.account_id = requested_account_id
-      AND observation.exec_type IN ('PARTIAL_FILL', 'FILL')
-      AND observation.observed_at >= requested_from
-      AND observation.observed_at < requested_to
-    UNION ALL
-    SELECT
-      stored.order_id,
-      stored.brokerage_mode,
-      stored.symbol,
-      stored.side,
-      (paper.payload_json ->> 'fillQuantity')::bigint,
-      (paper.payload_json ->> 'fillPriceKrw')::bigint,
-      (paper.payload_json ->> 'fillAmountKrw')::bigint,
-      paper.created_at,
-      encode(
-        sha256(convert_to('paper-fill:' || stored.order_id, 'UTF8')),
-        'hex'
-      )
-    FROM public.orders stored
-    JOIN public.paper_order_events paper ON paper.order_id = stored.order_id
-    WHERE requested_brokerage_mode = 'INTERNAL_PAPER'
-      AND stored.brokerage_mode = 'INTERNAL_PAPER'
-      AND stored.user_id = requested_actor_user_id
-      AND stored.account_id = requested_account_id
-      AND paper.created_at >= requested_from
-      AND paper.created_at < requested_to
-  ) candidate
-  WHERE requested_last_filled_at IS NULL
-     OR (candidate.filled_at, candidate.order_id, candidate.exec_ref_hash)
-        < (
-          requested_last_filled_at,
-          requested_last_order_id,
-          requested_last_exec_ref_hash
+  WITH candidate AS (
+    SELECT source.*
+    FROM (
+      SELECT
+        stored.order_id,
+        stored.brokerage_mode,
+        stored.symbol,
+        stored.side,
+        observation.fill_quantity,
+        observation.fill_price_krw,
+        observation.fill_quantity * observation.fill_price_krw AS fill_amount_krw,
+        observation.observed_at AS filled_at,
+        observation.provider_exec_ref_hash AS exec_ref_hash
+      FROM public.orders stored
+      JOIN public.order_fill_observations observation
+        ON observation.order_id = stored.order_id
+      JOIN public.order_fill_application_receipts receipt
+        ON receipt.observation_id = observation.observation_id
+       AND receipt.outcome = 'APPLIED'
+      WHERE requested_brokerage_mode = 'KIS_MOCK'
+        AND stored.brokerage_mode = 'KIS_MOCK'
+        AND stored.user_id = requested_actor_user_id
+        AND stored.account_id = requested_account_id
+        AND observation.exec_type IN ('PARTIAL_FILL', 'FILL')
+        AND observation.observed_at >= requested_from
+        AND observation.observed_at < requested_to
+      UNION ALL
+      SELECT
+        stored.order_id,
+        stored.brokerage_mode,
+        stored.symbol,
+        stored.side,
+        (paper.payload_json ->> 'fillQuantity')::bigint,
+        (paper.payload_json ->> 'fillPriceKrw')::bigint,
+        (paper.payload_json ->> 'fillAmountKrw')::bigint,
+        paper.created_at,
+        encode(
+          sha256(convert_to('paper-fill:' || stored.order_id, 'UTF8')),
+          'hex'
         )
-  ORDER BY candidate.filled_at DESC, candidate.order_id DESC, candidate.exec_ref_hash DESC
-  LIMIT 51;
+      FROM public.orders stored
+      JOIN public.paper_order_events paper ON paper.order_id = stored.order_id
+      WHERE requested_brokerage_mode = 'INTERNAL_PAPER'
+        AND stored.brokerage_mode = 'INTERNAL_PAPER'
+        AND stored.user_id = requested_actor_user_id
+        AND stored.account_id = requested_account_id
+        AND paper.created_at >= requested_from
+        AND paper.created_at < requested_to
+    ) source
+    WHERE requested_last_filled_at IS NULL
+       OR (source.filled_at, source.order_id, source.exec_ref_hash)
+          < (
+            requested_last_filled_at,
+            requested_last_order_id,
+            requested_last_exec_ref_hash
+          )
+    ORDER BY source.filled_at DESC, source.order_id DESC, source.exec_ref_hash DESC
+    LIMIT 51
+  )
+  SELECT
+    'READY'::text,
+    COALESCE(
+      jsonb_agg(
+        jsonb_build_object(
+          'orderId', candidate.order_id,
+          'brokerageMode', candidate.brokerage_mode,
+          'symbol', candidate.symbol,
+          'side', candidate.side,
+          'fillQuantity', candidate.fill_quantity,
+          'fillPriceKrw', candidate.fill_price_krw,
+          'fillAmountKrw', candidate.fill_amount_krw,
+          'filledAt', candidate.filled_at::text,
+          'execRefHash', candidate.exec_ref_hash
+        )
+        ORDER BY candidate.filled_at DESC, candidate.order_id DESC, candidate.exec_ref_hash DESC
+      ),
+      '[]'::jsonb
+    )::text
+  FROM candidate;
 END
 $read_owned_order_fills$;
 ALTER FUNCTION read_owned_order_fills(jsonb, text) OWNER TO flyway;
@@ -1059,6 +1216,7 @@ FROM PUBLIC;
 REVOKE ALL ON FUNCTION
   initialize_order_fill_projection(),
   read_order_reconciliation_state(jsonb, text),
+  acquire_order_fill_reconciliation_lock(jsonb, text),
   apply_stored_order_fills(jsonb, text),
   read_owned_order_fills(jsonb, text)
 FROM PUBLIC;
@@ -1072,6 +1230,7 @@ BEGIN
     FROM decision_app;
     GRANT EXECUTE ON FUNCTION
       read_order_reconciliation_state(jsonb, text),
+      acquire_order_fill_reconciliation_lock(jsonb, text),
       apply_stored_order_fills(jsonb, text),
       read_owned_order_fills(jsonb, text)
     TO decision_app;

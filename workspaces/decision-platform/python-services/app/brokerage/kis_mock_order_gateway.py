@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Any, Literal, Protocol
 
 from app.brokerage.mock_order_reference_store import (
+    MockOrderReferenceIntent,
     MockOrderReferenceStore,
     MockProviderOrderReference,
 )
@@ -35,6 +36,23 @@ class LiveOrderGateClosed(RuntimeError):
 
 class MockOrderRejected(RuntimeError):
     """KIS mock adapter returned a non-success response."""
+
+
+class MockOrderRecoveryError(MockOrderRejected):
+    """accepted 주문의 reference commit/보상 결과를 원문 없이 typed leaf로 전달한다."""
+
+    def __init__(
+        self,
+        reason_code: Literal[
+            "ORDER_REFERENCE_COMMIT_COMPENSATED",
+            "ORDER_OUTCOME_UNCERTAIN",
+        ],
+        message: str,
+    ) -> None:
+        super().__init__(message)
+        self.reason_code = reason_code
+        self.provider_code: str | None = None
+        self.http_status: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,13 +105,27 @@ class KISMockOrderGateway:
             raise LiveOrderGateClosed("S3.1 live order gate is immutable closed.")
         _validate_intent(intent)
         tr_id = MOCK_BUY_TR_ID if intent.side == "BUY" else MOCK_SELL_TR_ID
+        order_division = "01" if intent.order_type == "MARKET" else "00"
+        reference_store = self._reference_store
+        if reference_store is not None:
+            if order_id is None or account_id is None:
+                raise MockOrderRejected("KIS mock order identity is missing.")
+            # provider 수락 뒤 reference 유실을 막기 위해 비민감 PENDING marker를 send 전에 확정한다.
+            reference_store.prepare(
+                order_id,
+                account_id,
+                MockOrderReferenceIntent(
+                    order_division=order_division,
+                    quantity=intent.quantity,
+                ),
+            )
         response = self._transport.request(
             "POST",
             ORDER_CASH_PATH,
             tr_id,
             json_body={
                 "PDNO": intent.symbol,
-                "ORD_DVSN": "01" if intent.order_type == "MARKET" else "00",
+                "ORD_DVSN": order_division,
                 "ORD_QTY": str(intent.quantity),
                 # KIS 시장가 현금주문은 가격을 0으로 보낸다. Spring은 추정가를 별도 Decision 근거로 보존한다.
                 "ORD_UNPR": "0" if intent.order_type == "MARKET" else str(intent.estimated_price),
@@ -107,22 +139,39 @@ class KISMockOrderGateway:
         provider_order_no = output.get("ODNO")
         if not isinstance(provider_order_no, str) or not provider_order_no:
             raise MockOrderRejected("KIS mock order receipt is missing ODNO.")
-        if self._reference_store is not None:
-            if order_id is None or account_id is None:
-                raise MockOrderRejected("KIS mock order identity is missing.")
+        if reference_store is not None:
+            assert order_id is not None
+            assert account_id is not None
             provider_org_no = output.get("KRX_FWDG_ORD_ORGNO")
             if not isinstance(provider_org_no, str) or not provider_org_no:
-                raise MockOrderRejected("KIS mock order receipt is missing provider org reference.")
-            self._reference_store.put(
-                order_id,
-                account_id,
-                MockProviderOrderReference(
-                    provider_order_no=provider_order_no,
-                    provider_org_no=provider_org_no,
-                    order_division="01" if intent.order_type == "MARKET" else "00",
-                    quantity=intent.quantity,
-                ),
+                raise MockOrderRecoveryError(
+                    "ORDER_OUTCOME_UNCERTAIN",
+                    "KIS mock accepted order outcome is uncertain.",
+                )
+            reference = MockProviderOrderReference(
+                provider_order_no=provider_order_no,
+                provider_org_no=provider_org_no,
+                order_division=order_division,
+                quantity=intent.quantity,
             )
+            try:
+                reference_store.commit(order_id, account_id, reference)
+            except Exception:
+                # accepted 주문은 저장 실패 시 in-memory reference로 전량취소를 단 한 번만 시도한다.
+                compensated = False
+                try:
+                    compensated = self._request_full_cancel(reference)
+                except Exception:
+                    pass
+                if compensated:
+                    raise MockOrderRecoveryError(
+                        "ORDER_REFERENCE_COMMIT_COMPENSATED",
+                        "KIS mock accepted order was compensated after reference storage failure.",
+                    ) from None
+                raise MockOrderRecoveryError(
+                    "ORDER_OUTCOME_UNCERTAIN",
+                    "KIS mock accepted order outcome is uncertain.",
+                ) from None
         return MockOrderReceipt(provider_order_no=provider_order_no, accepted=True, tr_id=tr_id)
 
     def cancel_cash_order(
@@ -140,6 +189,12 @@ class KISMockOrderGateway:
         reference = self._reference_store.get(order_id, account_id)
         if reference is None:
             raise MockOrderRejected("KIS mock cancel reference is unavailable.")
+        if not self._request_full_cancel(reference):
+            raise MockOrderRejected("KIS mock cancel response was not accepted.")
+        return MockCancelReceipt(status="CANCELLED", tr_id=MOCK_CANCEL_TR_ID)
+
+    def _request_full_cancel(self, reference: MockProviderOrderReference) -> bool:
+        """검증된 in-memory reference로 mock 전량취소를 provider retry 없이 한 번 요청한다."""
         response = self._transport.request(
             "POST",
             ORDER_CANCEL_PATH,
@@ -155,9 +210,7 @@ class KISMockOrderGateway:
                 "EXCG_ID_DVSN_CD": "KRX",
             },
         )
-        if response.get("rt_cd") != "0":
-            raise MockOrderRejected("KIS mock cancel response was not accepted.")
-        return MockCancelReceipt(status="CANCELLED", tr_id=MOCK_CANCEL_TR_ID)
+        return response.get("rt_cd") == "0"
 
 
 def _validate_intent(intent: MockOrderIntent) -> None:

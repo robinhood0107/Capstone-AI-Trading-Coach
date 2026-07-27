@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import hmac
 import json
 import os
 import re
@@ -39,7 +40,11 @@ from app.brokerage.kis_mock_online_runtime import (
     KISMockOnlineBalanceReader,
     KISMockProjectionError,
 )
-from app.brokerage.kis_mock_order_gateway import KISMockOrderGateway, MockOrderIntent
+from app.brokerage.kis_mock_order_gateway import (
+    KISMockOrderGateway,
+    MockOrderIntent,
+    MockOrderRecoveryError,
+)
 from app.brokerage.mock_order_reference_store import (
     EncryptedRedisOrderReferenceStore,
 )
@@ -400,6 +405,7 @@ def _load_packet(
     if _git_revision(resolved_root, remote_ref) != packet.repository.remote_head_sha:
         raise KISMockApprovalRejected("approval remote HEAD does not match")
     _validate_security_report(packet.evidence)
+    _require_clean_repository(resolved_root)
     return packet
 
 
@@ -493,10 +499,48 @@ def _git_revision(repository_root: Path, ref: str) -> str:
     return revision
 
 
+def _require_clean_repository(repository_root: Path) -> None:
+    """ignored local secret는 제외하고 staged·unstaged·untracked 변경을 exact HEAD에서 거부한다."""
+    try:
+        completed = subprocess.run(
+            [
+                "git",
+                "--no-optional-locks",
+                "-c",
+                "core.fsmonitor=false",
+                "-c",
+                "core.hooksPath=/dev/null",
+                "status",
+                "--porcelain=v1",
+                "-z",
+                "--untracked-files=all",
+            ],
+            cwd=repository_root,
+            check=True,
+            capture_output=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        raise KISMockApprovalRejected("repository clean-tree evidence is unavailable") from None
+    if completed.stdout:
+        raise KISMockApprovalRejected("repository worktree is not clean")
+
+
+def _require_bound_account_id(account_id: str) -> str:
+    """승인 packet의 opaque account와 KIS_MOCK credential binding을 runtime 생성 전에 맞춘다."""
+    bound_account_id = os.environ.get("KIS_MOCK_BOUND_ACCOUNT_ID", "").strip()
+    if re.fullmatch(_ACCOUNT_ID, bound_account_id) is None or not hmac.compare_digest(
+        account_id, bound_account_id
+    ):
+        raise KISMockApprovalRejected("KIS_MOCK bound account does not match")
+    return bound_account_id
+
+
 class _KISMockProbeOperations:
     """production mock transport, encrypted reference store와 parser를 그대로 실행한다."""
 
     def __init__(self, packet: KISMockApprovalPacket) -> None:
+        _require_bound_account_id(packet.order.account_id)
         encryption_key = ""
         if packet.probe_type == "FULL":
             encryption_key = os.environ.get(
@@ -544,7 +588,9 @@ class _KISMockProbeOperations:
     def run(self, operation: str, packet: KISMockApprovalPacket) -> None:
         """canonical operation 이름을 exact packet parameter에만 매핑한다."""
         if operation == "balance":
-            balance_response = self._balance_reader.balance(packet.order.account_id)
+            balance_response = self._balance_reader.probe_balance_source(
+                packet.order.account_id
+            )
             if balance_response is None or balance_response.account_id != packet.order.account_id:
                 raise KISMockProjectionError(
                     KISMockFailureReason.BALANCE_PROBE_RESPONSE_INVALID,
@@ -698,7 +744,10 @@ def _probe_failure(
     exception: Exception,
 ) -> KISMockProbeFailed:
     """untrusted 예외 문자열을 버리고 typed allowlist만 operator 출력으로 승격한다."""
-    if isinstance(exception, (KISMockBrokerageError, KISMockProjectionError)):
+    if isinstance(
+        exception,
+        (KISMockBrokerageError, KISMockProjectionError, MockOrderRecoveryError),
+    ):
         return KISMockProbeFailed(
             failed_step,
             physical_reservations,

@@ -25,11 +25,31 @@ psql -v ON_ERROR_STOP=1 --no-password --username "$POSTGRES_USER" --dbname "$POS
 \getenv risk_writer_password POSTGRES_RISK_WRITER_PASSWORD
 \getenv fill_writer_password POSTGRES_FILL_WRITER_PASSWORD
 
-BEGIN;
+-- role password DDL 전에 session 전체의 statement·duration·sampling log를 닫는다.
+SET log_statement = 'none';
+SET log_min_error_statement = 'panic';
+SET log_duration = 'off';
+SET log_min_duration_statement = -1;
+SET log_min_duration_sample = -1;
+SET log_statement_sample_rate = 0;
+SET log_transaction_sample_rate = 0;
 
--- role password DDL은 literalized SQL로 실행되므로 bootstrap transaction에서는 statement log를 닫는다.
-SET LOCAL log_statement = 'none';
-SET LOCAL log_min_error_statement = 'panic';
+-- 설정이 정책이나 버전 차이로 적용되지 않으면 password 변수를 서버에 보내기 전에 중단한다.
+DO $logging_guard$
+BEGIN
+    IF current_setting('log_statement') <> 'none'
+       OR current_setting('log_min_error_statement') <> 'panic'
+       OR current_setting('log_duration') <> 'off'
+       OR current_setting('log_min_duration_statement') <> '-1'
+       OR current_setting('log_min_duration_sample') <> '-1'
+       OR current_setting('log_statement_sample_rate')::numeric <> 0
+       OR current_setting('log_transaction_sample_rate')::numeric <> 0 THEN
+        RAISE EXCEPTION 'secure role bootstrap logging guard is unavailable';
+    END IF;
+END
+$logging_guard$;
+
+BEGIN;
 
 SELECT format(
     'CREATE ROLE decision_app LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD %L',

@@ -267,13 +267,14 @@ def test_reference_commit_failure_compensates_accepted_order_once_without_retry(
     order_id = "ord_mock_" + "5" * 32
     account_id = "acct_" + "6" * 32
 
-    with pytest.raises(MockOrderRejected, match="compensated"):
+    with pytest.raises(MockOrderRejected, match="compensated") as captured:
         gateway.submit_cash_order(
             MockOrderIntent("005930", "BUY", "LIMIT", quantity=1, estimated_price=70_000),
             order_id=order_id,
             account_id=account_id,
         )
 
+    assert captured.value.reason_code == "ORDER_REFERENCE_COMMIT_COMPENSATED"  # type: ignore[attr-defined]
     assert len(transport.calls) == 2
     assert transport.calls[1][1:3] == (
         "/uapi/domestic-stock/v1/trading/order-rvsecncl",
@@ -304,13 +305,14 @@ def test_failed_compensation_leaves_durable_pending_outcome_for_reconciliation()
     order_id = "ord_mock_" + "7" * 32
     account_id = "acct_" + "8" * 32
 
-    with pytest.raises(MockOrderRejected, match="outcome is uncertain"):
+    with pytest.raises(MockOrderRejected, match="outcome is uncertain") as captured:
         gateway.submit_cash_order(
             MockOrderIntent("005930", "BUY", "LIMIT", quantity=1, estimated_price=70_000),
             order_id=order_id,
             account_id=account_id,
         )
 
+    assert captured.value.reason_code == "ORDER_OUTCOME_UNCERTAIN"  # type: ignore[attr-defined]
     assert len(transport.calls) == 2
     assert reference_store.pending == {(order_id, account_id)}
 

@@ -386,15 +386,51 @@ class OpenApiConfigIntegrationTest(
                         "responses/200/content/application~1json/schema/\$ref",
                 ).stringValue(),
         )
+        val reconcile =
+            document.at(
+                "/paths/~1api~1v1~1brokerage~1orders~1{orderId}~1reconcile/post",
+            )
+        val idempotencyHeader =
+            reconcile
+                .path("parameters")
+                .values()
+                .first { it.path("name").stringValue() == "X-Idempotency-Key" }
+        assertEquals(true, idempotencyHeader.path("required").booleanValue())
+        assertEquals(16, idempotencyHeader.at("/schema/minLength").intValue())
+        assertEquals(128, idempotencyHeader.at("/schema/maxLength").intValue())
+        assertEquals(
+            "^[A-Za-z0-9._:-]{16,128}$",
+            idempotencyHeader.at("/schema/pattern").stringValue(),
+        )
+        val emptyBody = reconcile.at("/requestBody/content/application~1json/schema")
+        assertEquals("object", emptyBody.path("type").stringValue())
+        assertEquals(false, emptyBody.path("additionalProperties").booleanValue())
+        assertEquals(0, emptyBody.path("maxProperties").intValue())
         listOf("mock", "paper").forEach { mode ->
+            val fillGet =
+                document.at(
+                    "/paths/~1api~1v1~1brokerage~1$mode~1accounts~1{accountId}~1fills/get",
+                )
             assertEquals(
                 "#/components/schemas/S33FillPageSuccessResponse",
-                document
-                    .at(
-                        "/paths/~1api~1v1~1brokerage~1$mode~1accounts~1{accountId}~1fills/get/" +
-                            "responses/200/content/application~1json/schema/\$ref",
-                    ).stringValue(),
+                fillGet
+                    .at("/responses/200/content/application~1json/schema/\$ref")
+                    .stringValue(),
             )
+            val queryParameters =
+                fillGet
+                    .path("parameters")
+                    .values()
+                    .filter { it.path("in").stringValue() == "query" }
+                    .associateBy { it.path("name").stringValue() }
+            assertEquals(setOf("from", "to", "cursor"), queryParameters.keys)
+            listOf("from", "to").forEach { name ->
+                assertEquals(true, queryParameters.getValue(name).path("required").booleanValue())
+                assertEquals("string", queryParameters.getValue(name).at("/schema/type").stringValue())
+                assertEquals("date", queryParameters.getValue(name).at("/schema/format").stringValue())
+            }
+            assertEquals(false, queryParameters.getValue("cursor").path("required").booleanValue())
+            assertEquals(1024, queryParameters.getValue("cursor").at("/schema/maxLength").intValue())
         }
         assertEquals(false, document.at("/components/schemas/S33Reconcile/additionalProperties").booleanValue())
         assertEquals(50, document.at("/components/schemas/S33FillPage/properties/items/maxItems").intValue())

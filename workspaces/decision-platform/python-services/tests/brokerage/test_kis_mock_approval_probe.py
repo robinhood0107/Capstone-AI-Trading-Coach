@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import shutil
+import subprocess
 import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
@@ -11,6 +12,22 @@ from typing import Any
 import pytest
 
 from app.brokerage import kis_mock_approval_probe as probe
+
+
+@pytest.fixture(autouse=True)
+def clean_repository_guard(
+    monkeypatch: pytest.MonkeyPatch,
+) -> object:
+    """기존 packet 단위 테스트는 clean-tree 검사를 격리하고 전용 테스트만 실제 Git을 사용한다."""
+
+    original = getattr(probe, "_require_clean_repository", None)
+    monkeypatch.setattr(
+        probe,
+        "_require_clean_repository",
+        lambda _repository_root: None,
+        raising=False,
+    )
+    return original
 
 
 @pytest.fixture
@@ -127,6 +144,81 @@ def test_exact_packet_is_consumed_once_before_runtime_factory(
 
     assert runtime_builds == 1
     assert len(consumer.calls) == 2
+
+
+def test_dirty_repository_is_rejected_before_approval_consumption_or_runtime(
+    secure_tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    packet_path, packet_sha = _write_packet(secure_tmp_path)
+    consumed = False
+    built = False
+    monkeypatch.setattr(probe, "_git_revision", lambda _root, _ref: "a" * 40)
+
+    def reject_dirty(_repository_root: Path) -> None:
+        raise probe.KISMockApprovalRejected("repository worktree is not clean")
+
+    def consume(_packet: probe.KISMockApprovalPacket, _now: datetime) -> None:
+        nonlocal consumed
+        consumed = True
+
+    def factory(_packet: probe.KISMockApprovalPacket) -> FakeOperations:
+        nonlocal built
+        built = True
+        return FakeOperations()
+
+    monkeypatch.setattr(probe, "_require_clean_repository", reject_dirty)
+
+    with pytest.raises(probe.KISMockApprovalRejected, match="not clean"):
+        probe.execute_approved_probe(
+            packet_path,
+            now=datetime(2030, 1, 2, 3, 10, tzinfo=UTC),
+            expected_approval_id="approval-s3-online-test",
+            expected_packet_sha256=packet_sha,
+            repository_root=secure_tmp_path,
+            operations_factory=factory,
+            approval_consumer=consume,
+        )
+
+    assert consumed is False
+    assert built is False
+
+
+def test_clean_repository_guard_ignores_ignored_files_and_rejects_all_dirty_states(
+    secure_tmp_path: Path,
+    clean_repository_guard: object,
+) -> None:
+    assert callable(clean_repository_guard)
+    repository = secure_tmp_path / "repository"
+    repository.mkdir()
+    _run_git(repository, "init")
+    _run_git(repository, "config", "user.name", "S3 Test")
+    _run_git(repository, "config", "user.email", "s3-test@example.invalid")
+    (repository / ".gitignore").write_text(".env\nprivate-reference/\n", encoding="utf-8")
+    tracked = repository / "tracked.txt"
+    tracked.write_text("base\n", encoding="utf-8")
+    _run_git(repository, "add", ".gitignore", "tracked.txt")
+    _run_git(repository, "commit", "-m", "test fixture")
+
+    (repository / ".env").write_text("SECRET=ignored\n", encoding="utf-8")
+    ignored_private = repository / "private-reference"
+    ignored_private.mkdir()
+    (ignored_private / "note.md").write_text("ignored\n", encoding="utf-8")
+    clean_repository_guard(repository)
+
+    untracked = repository / "untracked.txt"
+    untracked.write_text("dirty\n", encoding="utf-8")
+    with pytest.raises(probe.KISMockApprovalRejected, match="not clean"):
+        clean_repository_guard(repository)
+    untracked.unlink()
+
+    tracked.write_text("unstaged\n", encoding="utf-8")
+    with pytest.raises(probe.KISMockApprovalRejected, match="not clean"):
+        clean_repository_guard(repository)
+
+    _run_git(repository, "add", "tracked.txt")
+    with pytest.raises(probe.KISMockApprovalRejected, match="not clean"):
+        clean_repository_guard(repository)
 
 
 def test_failed_probe_keeps_exact_packet_consumed(
@@ -337,6 +429,37 @@ def test_balance_diagnostic_packet_runs_only_one_read(
     assert summary.physical_reservations == {"tokenP": 0, "brokerage": 1}
 
 
+def test_balance_probe_operation_uses_source_shape_probe_not_complete_balance(
+    secure_tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    packet_path, packet_sha = _write_packet(secure_tmp_path)
+    monkeypatch.setattr(probe, "_git_revision", lambda _root, _ref: "a" * 40)
+    packet = probe._load_packet(
+        packet_path,
+        now=datetime(2030, 1, 2, 3, 10, tzinfo=UTC),
+        expected_approval_id="approval-s3-online-test",
+        expected_packet_sha256=packet_sha,
+        repository_root=secure_tmp_path,
+    )
+    calls: list[str] = []
+
+    class SourceReader:
+        def balance(self, _account_id: str) -> None:
+            raise AssertionError("complete balance must not be used by the source probe")
+
+        def probe_balance_source(self, account_id: str) -> object:
+            calls.append(account_id)
+            return type("Source", (), {"account_id": account_id})()
+
+    operations = object.__new__(probe._KISMockProbeOperations)
+    operations._balance_reader = SourceReader()
+
+    operations.run("balance", packet)
+
+    assert calls == [packet.order.account_id]
+
+
 def test_balance_diagnostic_packet_rejects_full_probe_cap_before_runtime(
     secure_tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -364,6 +487,32 @@ def test_balance_diagnostic_packet_rejects_full_probe_cap_before_runtime(
         )
 
     assert built is False
+
+
+def test_probe_runtime_requires_packet_account_to_match_bound_mock_account(
+    secure_tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    packet_path, packet_sha = _write_packet(secure_tmp_path)
+    monkeypatch.setattr(probe, "_git_revision", lambda _root, _ref: "a" * 40)
+    packet = probe._load_packet(
+        packet_path,
+        now=datetime(2030, 1, 2, 3, 10, tzinfo=UTC),
+        expected_approval_id="approval-s3-online-test",
+        expected_packet_sha256=packet_sha,
+        repository_root=secure_tmp_path,
+    )
+
+    monkeypatch.delenv("KIS_MOCK_BOUND_ACCOUNT_ID", raising=False)
+    with pytest.raises(probe.KISMockApprovalRejected, match="bound account"):
+        probe._require_bound_account_id(packet.order.account_id)
+
+    monkeypatch.setenv("KIS_MOCK_BOUND_ACCOUNT_ID", "acct_" + "3" * 32)
+    with pytest.raises(probe.KISMockApprovalRejected, match="bound account"):
+        probe._require_bound_account_id(packet.order.account_id)
+
+    monkeypatch.setenv("KIS_MOCK_BOUND_ACCOUNT_ID", packet.order.account_id)
+    assert probe._require_bound_account_id(packet.order.account_id) == packet.order.account_id
 
 
 def test_probe_preserves_allowlisted_failure_leaf_without_raw_exception(
@@ -643,3 +792,14 @@ def _rewrite_packet(
     )
     packet_path.chmod(0o600)
     return packet_sha
+
+
+def _run_git(repository: Path, *args: str) -> None:
+    subprocess.run(
+        ["git", "-c", "core.fsmonitor=false", *args],
+        cwd=repository,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=5,
+    )

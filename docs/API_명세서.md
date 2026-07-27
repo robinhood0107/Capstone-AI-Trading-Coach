@@ -1530,6 +1530,14 @@ KIS Mock 중심으로 구현하고, KIS Live는 고급해제/3단계 동의/재�
 > injected/fake transport 테스트로만 검증한다. S3.1 provider/live account/broker/order physical
 > call은 0건이다. verified KRX tick-table context가 없는 LIMIT 주문은 `BROKERAGE_UNAVAILABLE`로
 > fail-closed한다.
+>
+> 구현 상태(2026-07-27): S3.2는 별도
+> `POST /api/v1/brokerage/paper/orders`와 paper balance/buyable route를 추가하고 기존 공통
+> order 조회·취소를 `INTERNAL_PAPER`로 확장한다. paper path는 KIS Mock gRPC port를 참조하지
+> 않으며 stored quote와 append-only `paper_order_events`만 사용한다. provider 장애 fallback,
+> live/order/fill 조회, partial fill은 0건이다. canonical SSOT는
+> `contracts/catalogs/s3-2-internal-paper-contract.v1.json`과
+> `contracts/changes/20260727-s3-2-internal-paper-ledger-contract.md`다.
 
 Live 경계는 다음과 같이 분리한다.
 
@@ -1598,12 +1606,54 @@ account/provider/actor 계열 필드는 unknown field로 거부한다.
 5. 활성 Kill Switch 또는 Decision invalidation은 `RISK_BLOCKED`(422)다.
 6. LIMIT 주문은 verified tick-table context가 없으면 `BROKERAGE_UNAVAILABLE`(503)로 닫는다.
 
+### 10.1A INTERNAL_PAPER 주문 제출
+
+`POST /api/v1/brokerage/paper/orders`
+
+S3.2 구현 route다. 헤더와 body exact shape는 10.1과 같고, account와 mode는 서버가 Decision
+owner scope에서 결정한다. KIS gRPC/provider transport는 이 use case의 dependency가 아니다.
+
+```json
+{
+  "success": true,
+  "data": {
+    "orderId": "ord_paper_0123456789abcdef0123456789abcdef",
+    "accountId": "acct_cccccccccccccccccccccccccccccccc",
+    "brokerageMode": "INTERNAL_PAPER",
+    "status": "FILLED",
+    "submittedAt": "2026-07-27T10:10:01+09:00",
+    "fill": {
+      "quantity": 10,
+      "priceKrw": 72036,
+      "amountKrw": 720360,
+      "priceBasis": "LAST_QUOTE",
+      "slippageBps": 5,
+      "feeModel": "NONE_V1",
+      "observedAt": "2026-07-27T10:09:58+09:00"
+    }
+  }
+}
+```
+
+가격은 최신 COMPLETE stored `price_krw`, 다음으로 같은 관측의 `previous_close_krw`만 쓴다.
+MARKET은 BUY 올림/SELL 내림의 불리한 방향으로 기본 5bps를 정수 연산한다. LIMIT은 slippage 0이며
+조건 충족 시 전량 체결, 미충족 시 `ACCEPTED`, `fill: null`, warning
+`PAPER_LIMIT_NOT_FILLED`, paper ledger mutation 0건이다. 둘 다 없거나 stale/partial이면 가격을
+합성하지 않는다. 부분 체결, queue, worker, 추측 수수료는 없다.
+
+같은 idempotency scope의 동시 진입은 purpose HMAC만 key에 넣은 30초 Redis claim으로 막고,
+완료 결과/replay의 진실은 PostgreSQL row에 둔다. Redis 장애는 원장 write 전에 503으로 닫힌다.
+metric tag는 닫힌 rejection reason/price basis enum만 허용하며 stable log에는 reference ID,
+mode, price basis 외의 account/symbol/quantity/amount/raw key를 넣지 않는다.
+
 ### 10.2 주문 상태 조회
 
 `GET /api/v1/brokerage/orders/{orderId}`
 
 S3.1 구현 route다. 응답은 owner-scoped sanitized projection이며 raw 계좌번호, raw provider
 payload, raw idempotency key를 포함하지 않는다.
+S3.2부터 `ord_paper_*`도 같은 route로 읽고 저장된 `brokerageMode=INTERNAL_PAPER`를 반환한다.
+mode와 order ID prefix가 맞지 않는 row는 DB가 거부한다.
 
 ```json
 {
@@ -1639,6 +1689,11 @@ S3.1 구현 route다. body는 비어 있거나 `{}`만 허용하고 `X-Idempoten
 `ACCEPTED`, `PARTIALLY_FILLED`만 취소 요청 가능하며, 이미 `CANCEL_REQUESTED`인 주문을 다른
 idempotency key로 다시 취소하면 `CONFLICT`다.
 
+S3.2 paper는 `ACCEPTED` LIMIT만 취소 가능하다. 같은 transaction에서
+`PAPER_ORDER_CANCEL_REQUESTED`와 `PAPER_ORDER_CANCELLED`를 순서대로 append하고 최종
+`CANCELLED` projection/audit/outbox를 반환한다. provider가 없으므로 비동기 취소확정 상태를
+만들지 않는다. `FILLED` paper 주문은 종료 상태이므로 409다.
+
 ```json
 {
   "success": true,
@@ -1672,6 +1727,36 @@ owner가 다르거나 row가 없으면 provider 값을 꾸미지 않고 404로 �
     "cashKrw": 10000000,
     "totalEquityKrw": 10000000,
     "positions": []
+  }
+}
+```
+
+### 10.4A INTERNAL_PAPER 잔고 조회
+
+`GET /api/v1/brokerage/paper/accounts/{accountId}/balances`
+
+JWT owner와 `paper_accounts.owner_scope_hash`가 일치하는 synthetic account만 반환한다. 타인과
+미존재 account는 같은 404다. 값은 append-only fill ledger와 같은 transaction에서 갱신된
+projection이며 원장과 불일치하면 값을 자동 수정하지 않고 오류로 닫는다.
+
+```json
+{
+  "success": true,
+  "data": {
+    "accountId": "acct_cccccccccccccccccccccccccccccccc",
+    "brokerageMode": "INTERNAL_PAPER",
+    "cashKrw": 9279640,
+    "totalEquityKrw": 10000000,
+    "positions": [
+      {
+        "symbol": "005930",
+        "quantity": 10,
+        "marketValueKrw": 720360,
+        "averagePriceKrw": 72036
+      }
+    ],
+    "asOf": "2026-07-27T10:10:01+09:00",
+    "valuationBasis": "LAST_FILL_PRICE_V1"
   }
 }
 ```
@@ -1747,6 +1832,29 @@ S3.1 구현 route다. provider 매수가능조회 호출을 만들지 않고 sto
     "buyableQuantity": 142,
     "buyableAmountKrw": 9940000,
     "asOf": "2026-06-23T10:10:01+09:00"
+  }
+}
+```
+
+### 10.8A INTERNAL_PAPER 매수가능 조회
+
+`GET /api/v1/brokerage/paper/accounts/{accountId}/buyable?symbol=005930&price=72000`
+
+query exact set은 `symbol`, `price`다. `cashKrw / price` 정수 몫과
+`buyableQuantity * price` exact 연산만 수행하며 외부 주문가능조회는 호출하지 않는다.
+
+```json
+{
+  "success": true,
+  "data": {
+    "accountId": "acct_cccccccccccccccccccccccccccccccc",
+    "brokerageMode": "INTERNAL_PAPER",
+    "symbol": "005930",
+    "estimatedPrice": 72000,
+    "buyableQuantity": 128,
+    "buyableAmountKrw": 9216000,
+    "cashKrw": 9279640,
+    "asOf": "2026-07-27T10:10:01+09:00"
   }
 }
 ```
@@ -2683,6 +2791,7 @@ service SourceRegistryService {
 | S2.2 offline | public 8 + system 6, threshold 12/readiness 1/N/A 1과 `BLOCK>HOLD>WARN>ALLOW`를 pure evaluator/fixture로 검증한다. production Decision route/persistence와 provider/source adapter는 열지 않으며 provider 호출은 0이다. public code와 internal cause를 분리하고 V1 bounds/hash를 fail-fast한다 |
 | S2.3 runtime | S2.2 내부 read adapter의 `principle_id + user_id + ACTIVE + current immutable version` 한 조회를 runtime에 연결해 ACTIVE Principle을 pin하고 missing/cross-owner/inactive를 동일 404로 숨긴다. Decision/trace/artifact/audit/outbox/idempotency를 원자 저장하며 expected source unavailable은 HTTP 200 HOLD로 반환한다. stored disclosure는 shared-secret loopback gRPC와 `decision_disclosure_reader` projection SELECT만 사용한다. OpenAPI는 승인된 3개 path와 5개 `S23*` component만 허용한다 |
 | S3.1 | `POST /api/v1/brokerage/mock/orders`, owner-scoped `GET /api/v1/brokerage/orders/{orderId}`, `POST /api/v1/brokerage/orders/{orderId}/cancel`, stored balance/buyable 조회를 구현한다. S2.3 Decision과 S2.4 Kill Switch를 V12 capability 함수에서 원자 재검증하고, runtime role의 direct order/event table DML·조회는 거부한다. Kill Switch generation lock, Decision one-use, `(order_id,event_seq)` lifecycle, sanitized order/event/audit/outbox를 DB가 강제한다. raw idempotency/account/provider payload는 저장하지 않으며 provider/live account/broker/order physical call은 0건이다. LIMIT은 verified tick context가 없으면 `BROKERAGE_UNAVAILABLE`이다 |
+| S3.2 | INTERNAL_PAPER controller/use case/repository/DB function을 KIS Mock gRPC와 물리 분리한다. V13은 mode↔ID prefix, owner-scope account, append-only full-fill ledger, before/after replay chain, projection 동일 transaction, exact audit/outbox, FORCE RLS와 bounded definer 함수를 강제한다. `decision_app`은 paper table 직접 DML/조회와 rebuild EXECUTE가 없고, account create/fund/delete route도 없다. 저장 last quote/previous close만 사용하며 provider/live/order/fill 호출과 자동 fallback은 0건이다 |
 | S3 | accountId는 opaque+owner-scoped다. order body의 price/quantity/position/risk-reduction 주장은 server snapshot으로 재검증한다. Live는 deploy immutable OFF, operator account allowlist, user consent, Kill Switch/reconciliation을 모두 요구하며 공개 API로 gate를 변경할 수 없다 |
 | S4 | RAG source/prompt는 untrusted data이며 내부 지시·URL·tool 호출을 실행하지 않는다. source ingest/register/reindex는 ADMIN 전용이며 scheme/origin/MIME/size/redirect/SSRF gate를 적용한다. answer/cache/feedback는 owner scope·TTL·output encoding을 적용한다. RAG 실행 주체는 provider token cache나 brokerage secret에 접근하지 못한다. model은 exact revision/weight hash/license를 기록하고 remote code/untrusted pickle을 금지한다 |
 | S5 | artifact endpoint는 trusted producer, owner, manifest hash/schema, 고정 root, file count/size/row cap을 먼저 검증한다. arbitrary path/symlink/archive와 untrusted pickle/joblib/code-loading model은 거부한다. 다운로드는 owner-scoped Bearer 인증과 고정 allowlisted 파일명·MIME만 허용하고 `Content-Disposition: attachment`, `nosniff`, `no-store`를 적용한다. Markdown/CSV/JSON을 임의 inline HTML로 실행하지 않는다 |
@@ -2708,6 +2817,7 @@ API/adapter/parser/storage 변경 커밋은 기능 단위로 분리한다. 테�
 | Signal | 규칙 baseline/LSTM/LightGBM/HMM 결합 신호와 producer/sourceWorkspace 조회 |
 | Backtest | Baseline/Guide/Strict 결과 비교 |
 | S3.1 Brokerage Mock | exact body/account reject, decision one-use, expiry, idempotency replay/conflict, Kill Switch invalidation, RLS owner projection, cancel replay/conflict, stored balance/buyable owner scope, LIMIT tick-context fail-closed, injected fake transport 0 provider calls |
+| S3.2 INTERNAL_PAPER | no-gRPC architecture, stored last/previous-close 3분기, MARKET 5bps 반올림, LIMIT fill/ACCEPTED 경계, append-only before/after chain rebuild, 평균단가/현금 exact 연산, mode↔ID, owner/IDOR, direct privilege 거부, same-decision race, no-fallback 5종, non-exposure, provider call 0 |
 | KIS REST quota | mock >1/s·live >18/s 설정 거부, live 120ms/mock 1,000ms no-burst, 두 client의 같은 opaque scope 공유, Redis 장애 outbound 0건, physical retry마다 슬롯 재예약 |
 | KIS OAuth quota | mock/live 동시 cache miss에서도 `/tokenP` physical send는 deployment-global 1/s 슬롯을 공유하고, token cache/singleflight는 mode별 scope로 분리해 lock 후 재확인 |
 | KIS retry | routing 오류 GET 1회 다음 슬롯 재호출, `EGW00201`/429 재시도 0회, 주문성 호출 자동 재시도 0회 |

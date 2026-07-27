@@ -7,6 +7,7 @@
     {
       "symbol": "005930",
       "priceKrw": 70000,
+      "previousCloseKrw": 69800,
       "bidKrw": 69900,
       "askKrw": 70000,
       "completeness": "COMPLETE"
@@ -14,6 +15,7 @@
     {
       "symbol": "132030",
       "priceKrw": 24500,
+      "previousCloseKrw": 24400,
       "bidKrw": 24450,
       "askKrw": 24500,
       "completeness": "COMPLETE"

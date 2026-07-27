@@ -1,10 +1,15 @@
 package com.capstone.decision
 
+import com.capstone.decision.application.brokerage.SubmitMockOrderCommand
+import com.capstone.decision.application.brokerage.UserAcknowledgement
 import com.capstone.decision.application.risk.KillSwitchActor
 import com.capstone.decision.application.risk.KillSwitchMutationCommand
 import com.capstone.decision.application.risk.KillSwitchMutationPort
+import com.capstone.decision.domain.risk.CanonicalJson
 import com.capstone.decision.domain.risk.KillSwitchActorRole
 import com.capstone.decision.domain.risk.KillSwitchReasonClass
+import com.capstone.decision.infrastructure.brokerage.BrokerageIdempotencyHasher
+import com.capstone.decision.infrastructure.brokerage.RedisPaperIdempotencyClaimAdapter
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -37,6 +42,7 @@ import tools.jackson.databind.ObjectMapper
 import java.sql.DriverManager
 import java.sql.SQLException
 import java.sql.Timestamp
+import java.time.Duration
 import java.time.Instant
 import java.time.OffsetDateTime
 import java.time.ZoneOffset
@@ -59,6 +65,7 @@ class BrokerageApiIntegrationTest(
     @Autowired private val redisTemplate: StringRedisTemplate,
     @Autowired private val killSwitchMutationPort: KillSwitchMutationPort,
     @Autowired private val appDataSource: DataSource,
+    @Autowired private val brokerageIdempotencyHasher: BrokerageIdempotencyHasher,
 ) : SpringApiIntegrationTestBase() {
     private lateinit var mockMvc: MockMvc
     private val jdbcTemplate: JdbcTemplate by lazy {
@@ -76,6 +83,9 @@ class BrokerageApiIntegrationTest(
         redisTemplate.keys("brokerage*").takeIf { it.isNotEmpty() }?.let(redisTemplate::delete)
         redisTemplate.keys("decision-idempotency:*").takeIf { it.isNotEmpty() }?.let(redisTemplate::delete)
         redisTemplate.keys("idempotency:*").takeIf { it.isNotEmpty() }?.let(redisTemplate::delete)
+        jdbcTemplate.update("delete from paper_order_events")
+        jdbcTemplate.update("delete from paper_positions")
+        jdbcTemplate.update("delete from paper_accounts")
         jdbcTemplate.update("delete from order_events")
         jdbcTemplate.update("delete from orders")
         jdbcTemplate.update("delete from decision_invalidations")
@@ -114,6 +124,622 @@ class BrokerageApiIntegrationTest(
                 .webAppContextSetup(webApplicationContext)
                 .apply<DefaultMockMvcBuilder>(springSecurity())
                 .build()
+    }
+
+    @Test
+    fun `paper MARKET order fills atomically and rebuilds to the stored ledger state`() {
+        val token = login("demo-user", userPassword())
+        val decisionId =
+            createDecision(
+                token = token,
+                suffix = "0a",
+                order = orderIntent(),
+                portfolioSource = "INTERNAL_PAPER",
+            )
+
+        val submitted =
+            submitPaperOrder(
+                token = token,
+                idempotencyKey = "brokerage-paper-0001",
+                requestId = "req-brokerage-paper-submit",
+                decisionId = decisionId,
+                order = orderIntent(),
+            )
+
+        assertEquals(200, submitted.response.status, submitted.response.contentAsString)
+        val data = json(submitted).at("/data")
+        val orderId = data.path("orderId").stringValue()
+        val accountId = data.path("accountId").stringValue()
+        assertTrue(Regex("^ord_paper_[0-9a-f]{32}$").matches(orderId))
+        assertEquals("acct_${"c".repeat(32)}", accountId)
+        assertEquals("INTERNAL_PAPER", data.path("brokerageMode").stringValue())
+        assertEquals("FILLED", data.path("status").stringValue())
+        assertEquals(2, data.at("/fill/quantity").longValue())
+        assertEquals(70_035, data.at("/fill/priceKrw").longValue())
+        assertEquals(140_070, data.at("/fill/amountKrw").longValue())
+        assertEquals("LAST_QUOTE", data.at("/fill/priceBasis").stringValue())
+        assertEquals(5, data.at("/fill/slippageBps").intValue())
+        assertEquals("NONE_V1", data.at("/fill/feeModel").stringValue())
+        assertEquals(1, count("select count(*) from paper_order_events where order_id = ?", orderId))
+        assertEquals(1, count("select count(*) from order_events where order_id = ?", orderId))
+        assertEquals(1, count("select count(*) from audit_logs where action = 'PAPER_ORDER_FILLED'"))
+        assertEquals(
+            1,
+            count("select count(*) from event_outbox where event_type = 'brokerage.paper-order-filled.v1'"),
+        )
+        assertEquals(
+            9_859_930,
+            jdbcTemplate.queryForObject(
+                "select cash_balance from paper_accounts where account_id = ?",
+                Long::class.java,
+                accountId,
+            ),
+        )
+        val storedPosition =
+            jdbcTemplate.queryForMap(
+                """
+                select quantity, average_price, market_value
+                from paper_positions
+                where account_id = ? and symbol = '005930'
+                """.trimIndent(),
+                accountId,
+            )
+        assertEquals(2L, storedPosition["quantity"])
+        assertEquals(70_035L, storedPosition["average_price"])
+        assertEquals(140_070L, storedPosition["market_value"])
+
+        val replay =
+            submitPaperOrder(
+                token,
+                "brokerage-paper-0001",
+                "req-brokerage-paper-replay",
+                decisionId,
+                orderIntent(),
+            )
+        assertEquals(200, replay.response.status, replay.response.contentAsString)
+        assertEquals(data, json(replay).at("/data"))
+        assertEquals(1, count("select count(*) from paper_order_events"))
+
+        val detail =
+            mockMvc
+                .get("/api/v1/brokerage/orders/$orderId") {
+                    bearer(token)
+                    header("X-Request-Id", "req-brokerage-paper-detail")
+                }.andReturn()
+        assertEquals(200, detail.response.status, detail.response.contentAsString)
+        assertEquals("INTERNAL_PAPER", json(detail).at("/data/brokerageMode").stringValue())
+        assertEquals("FILLED", json(detail).at("/data/status").stringValue())
+
+        val balance =
+            mockMvc
+                .get("/api/v1/brokerage/paper/accounts/$accountId/balances") {
+                    bearer(token)
+                    header("X-Request-Id", "req-brokerage-paper-balance")
+                }.andReturn()
+        assertEquals(200, balance.response.status, balance.response.contentAsString)
+        assertEquals(9_859_930, json(balance).at("/data/cashKrw").longValue())
+        assertEquals(10_000_000, json(balance).at("/data/totalEquityKrw").longValue())
+        assertEquals("LAST_FILL_PRICE_V1", json(balance).at("/data/valuationBasis").stringValue())
+        assertEquals(2, json(balance).at("/data/positions/0/quantity").longValue())
+
+        val rebuild =
+            jdbcTemplate.queryForMap(
+                """
+                select operation_outcome, event_count, rebuilt_cash_krw,
+                       stored_cash_krw, positions_match
+                from rebuild_paper_state(?, ?)
+                """.trimIndent(),
+                accountId,
+                TEST_BROKERAGE_DB_CAPABILITY_TOKEN,
+            )
+        assertEquals("MATCHED", rebuild["operation_outcome"])
+        assertEquals(1L, rebuild["event_count"])
+        assertEquals(true, rebuild["positions_match"])
+
+        val cancel =
+            cancelOrder(
+                token,
+                brokerageIdempotency("paper-cancel", 1),
+                "req-brokerage-paper-cancel",
+                orderId,
+            )
+        assertEquals(409, cancel.response.status)
+        assertEquals(1, count("select count(*) from paper_order_events"))
+
+        val adminToken = login("demo-admin", adminPassword())
+        val crossOwner =
+            mockMvc
+                .get("/api/v1/brokerage/paper/accounts/$accountId/balances") {
+                    bearer(adminToken)
+                    header("X-Request-Id", "req-brokerage-paper-cross-owner")
+                }.andReturn()
+        assertEquals(404, crossOwner.response.status)
+        val missing =
+            mockMvc
+                .get("/api/v1/brokerage/paper/accounts/acct_${"f".repeat(32)}/balances") {
+                    bearer(adminToken)
+                    header("X-Request-Id", "req-brokerage-paper-missing")
+                }.andReturn()
+        assertEquals(404, missing.response.status)
+        assertEquals(json(crossOwner).at("/error"), json(missing).at("/error"))
+    }
+
+    @Test
+    fun `paper uses stored previous close when the latest observation has no current price`() {
+        val token = login("demo-user", userPassword())
+        val decisionId =
+            createDecision(
+                token = token,
+                suffix = "0b",
+                order = orderIntent(),
+                portfolioSource = "INTERNAL_PAPER",
+            )
+        jdbcTemplate.update(
+            """
+            insert into market_quote_observations (
+              observation_id, symbol, source, price_krw, previous_close_krw,
+              bid_krw, ask_krw, completeness, observed_at, received_at,
+              schema_version, source_version, payload_json, source_ref, artifact_hash
+            ) values (
+              'quote-s32-fallback', '005930', 'KIS_MOCK', null, 69000,
+              68900, 69000, 'COMPLETE', ?::timestamptz,
+              (?::timestamptz + interval '1 second'),
+              'market-quote-observation.v1', 's32-fallback-v1',
+              '{"symbol":"005930","priceKrw":null,"previousCloseKrw":69000}'::jsonb,
+              repeat('b', 64), repeat('c', 64)
+            )
+            """.trimIndent(),
+            EVALUATION_AT,
+            EVALUATION_AT,
+        )
+
+        val submitted =
+            submitPaperOrder(
+                token,
+                "brokerage-paper-fallback-0001",
+                "req-brokerage-paper-fallback",
+                decisionId,
+                orderIntent(),
+            )
+
+        assertEquals(200, submitted.response.status, submitted.response.contentAsString)
+        assertEquals("PREVIOUS_CLOSE", json(submitted).at("/data/fill/priceBasis").stringValue())
+        assertEquals(69_035, json(submitted).at("/data/fill/priceKrw").longValue())
+        assertEquals(
+            "PREVIOUS_CLOSE",
+            jdbcTemplate.queryForObject(
+                """
+                select payload_json ->> 'priceBasis'
+                from paper_order_events
+                where order_id = ?
+                """.trimIndent(),
+                String::class.java,
+                json(submitted).at("/data/orderId").stringValue(),
+            ),
+        )
+    }
+
+    @Test
+    fun `mock and paper routes reject the opposite Decision source without fallback writes`() {
+        val token = login("demo-user", userPassword())
+        val mockDecision = createDecision(token, "0c", orderIntent())
+        val paperAttempt =
+            submitPaperOrder(
+                token,
+                "brokerage-wrong-source-0001",
+                "req-brokerage-wrong-source-paper",
+                mockDecision,
+                orderIntent(),
+            )
+        assertEquals(400, paperAttempt.response.status, paperAttempt.response.contentAsString)
+        assertEquals(0, count("select count(*) from paper_order_events"))
+        assertEquals(0, count("select count(*) from paper_positions"))
+
+        val paperDecision =
+            createDecision(
+                token,
+                "0d",
+                orderIntent(),
+                portfolioSource = "INTERNAL_PAPER",
+            )
+        val mockAttempt =
+            submitMockOrder(
+                token,
+                "brokerage-wrong-source-0002",
+                "req-brokerage-wrong-source-mock",
+                paperDecision,
+                orderIntent(),
+            )
+        assertEquals(400, mockAttempt.response.status, mockAttempt.response.contentAsString)
+        assertEquals(0, count("select count(*) from orders"))
+        assertEquals(0, count("select count(*) from paper_order_events"))
+    }
+
+    @Test
+    fun `paper LIMIT은 검증된 tick table이 없으면 원장 write 전에 거부한다`() {
+        val token = login("demo-user", userPassword())
+        val limitOrder = orderIntent(orderType = "LIMIT")
+        val decisionId = createDecision(token, "0d1", limitOrder, portfolioSource = "INTERNAL_PAPER")
+
+        val response =
+            submitPaperOrder(
+                token,
+                "brokerage-paper-limit-0001",
+                "req-brokerage-paper-limit",
+                decisionId,
+                limitOrder,
+            )
+
+        assertEquals(400, response.response.status, response.response.contentAsString)
+        assertEquals("VALIDATION_ERROR", json(response).at("/error/code").stringValue())
+        assertEquals(
+            "TICK_TABLE_UNVERIFIED",
+            json(response).at("/error/details/violations/0/reason").stringValue(),
+        )
+        assertEquals(0, count("select count(*) from orders"))
+        assertEquals(0, count("select count(*) from paper_order_events"))
+    }
+
+    @Test
+    fun `저장된 paper ACCEPTED 주문은 공통 cancel route에서 즉시 CANCELLED로 닫힌다`() {
+        val token = login("demo-user", userPassword())
+        val limitOrder = orderIntent(orderType = "LIMIT", estimatedPrice = 69_900)
+        val decisionId = createDecision(token, "0d2", limitOrder, portfolioSource = "INTERNAL_PAPER")
+        val ownerScopeHash =
+            requireNotNull(
+                jdbcTemplate.queryForObject(
+                    """
+                    select snapshot_artifact_canonical_json::jsonb #>> '{portfolio,ownerScopeHash}'
+                    from decision_artifacts
+                    where decision_id = ?
+                    """.trimIndent(),
+                    String::class.java,
+                    decisionId,
+                ),
+            )
+        val orderId = "ord_paper_${"d".repeat(32)}"
+        jdbcTemplate.update(
+            """
+            insert into orders (
+              order_id, user_id, account_id, account_scope_hash, decision_id,
+              decision_evaluation_id, brokerage_mode, idempotency_scope_hash,
+              idempotency_owner_scope_hash, request_hash, symbol, side, order_type,
+              quantity, submitted_price_krw, status, order_intent_json,
+              result_canonical_json, acknowledged_by, acknowledged_at,
+              submitted_at, created_at, updated_at
+            )
+            select
+              ?, 'usr_demo_user', 'acct_${"c".repeat(32)}', ?, decision_id,
+              evaluation_id, 'INTERNAL_PAPER', repeat('1', 64), repeat('2', 64),
+              repeat('3', 64), '005930', 'BUY', 'LIMIT', 2, 69900, 'ACCEPTED',
+              cast(? as jsonb),
+              ?, 'usr_demo_user', ?::timestamptz, ?::timestamptz,
+              ?::timestamptz, ?::timestamptz
+            from decisions
+            where decision_id = ?
+            """.trimIndent(),
+            orderId,
+            ownerScopeHash,
+            objectMapper.writeValueAsString(limitOrder),
+            """
+            {"orderId":"$orderId","accountId":"acct_${"c".repeat(
+                32,
+            )}","brokerageMode":"INTERNAL_PAPER","status":"ACCEPTED","submittedAt":"$EVALUATION_AS_OF","fill":null}
+            """.trimIndent(),
+            EVALUATION_AT,
+            EVALUATION_AT,
+            EVALUATION_AT,
+            EVALUATION_AT,
+            decisionId,
+        )
+        jdbcTemplate.update(
+            """
+            insert into order_events (
+              order_event_id, order_id, event_type, event_status, payload_json, created_at, event_seq
+            ) values (
+              'oev_${"d".repeat(32)}', ?, 'PAPER_ORDER_ACCEPTED', 'ACCEPTED',
+              jsonb_build_object(
+                'orderId', ?, 'brokerageMode', 'INTERNAL_PAPER', 'status', 'ACCEPTED'
+              ),
+              ?::timestamptz, 1
+            )
+            """.trimIndent(),
+            orderId,
+            orderId,
+            EVALUATION_AT,
+        )
+
+        val cancelled =
+            cancelOrder(
+                token,
+                "brokerage-paper-cancel-accepted-0001",
+                "req-brokerage-paper-cancel-accepted",
+                orderId,
+            )
+
+        assertEquals(200, cancelled.response.status, cancelled.response.contentAsString)
+        assertEquals("INTERNAL_PAPER", json(cancelled).at("/data/brokerageMode").stringValue())
+        assertEquals("CANCELLED", json(cancelled).at("/data/status").stringValue())
+        val lifecycle =
+            jdbcTemplate.query(
+                """
+                select event_type, event_status, event_seq
+                from order_events
+                where order_id = ?
+                order by event_seq
+                """.trimIndent(),
+                { row, _ ->
+                    Triple(
+                        row.getString("event_type"),
+                        row.getString("event_status"),
+                        row.getInt("event_seq"),
+                    )
+                },
+                orderId,
+            )
+        assertEquals(
+            listOf(
+                Triple("PAPER_ORDER_ACCEPTED", "ACCEPTED", 1),
+                Triple("PAPER_ORDER_CANCEL_REQUESTED", "CANCEL_REQUESTED", 2),
+                Triple("PAPER_ORDER_CANCELLED", "CANCELLED", 3),
+            ),
+            lifecycle,
+        )
+        assertEquals(0, count("select count(*) from paper_order_events"))
+        assertEquals(
+            1,
+            count("select count(*) from event_outbox where event_type = 'brokerage.paper-order-cancelled.v1'"),
+        )
+    }
+
+    @Test
+    fun `paper 진행중 claim은 stable HMAC scope만 노출하고 충돌을 구분한다`() {
+        val token = login("demo-user", userPassword())
+        val decisionId = createDecision(token, "0e", orderIntent(), portfolioSource = "INTERNAL_PAPER")
+        val rawKey = "brokerage-paper-claim-0001"
+        val identity =
+            brokerageIdempotencyHasher.paperIdentity(
+                "usr_demo_user",
+                rawKey,
+                paperCommand(decisionId, orderIntent()),
+            )
+        val claimKey = RedisPaperIdempotencyClaimAdapter.CLAIM_PREFIX + identity.scopeHash
+        redisTemplate.opsForValue().set(claimKey, "occupied:${identity.requestHash}", Duration.ofSeconds(30))
+
+        val inProgress =
+            submitPaperOrder(token, rawKey, "req-brokerage-paper-in-progress", decisionId, orderIntent())
+
+        assertEquals(409, inProgress.response.status, inProgress.response.contentAsString)
+        assertEquals("IDEMPOTENCY_IN_PROGRESS", json(inProgress).at("/error/code").stringValue())
+        assertFalse(claimKey.contains(rawKey))
+        assertFalse(claimKey.contains("usr_demo_user"))
+        assertEquals(0, count("select count(*) from orders"))
+        redisTemplate.delete(claimKey)
+
+        redisTemplate.opsForValue().set(claimKey, "occupied:${"f".repeat(64)}", Duration.ofSeconds(30))
+        val conflict =
+            submitPaperOrder(token, rawKey, "req-brokerage-paper-claim-conflict", decisionId, orderIntent())
+        assertEquals(409, conflict.response.status, conflict.response.contentAsString)
+        assertEquals("IDEMPOTENCY_CONFLICT", json(conflict).at("/error/code").stringValue())
+        assertEquals(0, count("select count(*) from orders"))
+        redisTemplate.delete(claimKey)
+    }
+
+    @Test
+    fun `mock과 paper는 같은 raw key를 독립 처리하고 paper claim을 완료 후 반납한다`() {
+        val token = login("demo-user", userPassword())
+        val rawKey = "brokerage-shared-mode-key-0001"
+        val mockDecision = createDecision(token, "0f", orderIntent())
+        val mock = submitMockOrder(token, rawKey, "req-brokerage-shared-mock", mockDecision, orderIntent())
+        val paperDecision = createDecision(token, "10", orderIntent(), portfolioSource = "INTERNAL_PAPER")
+        val paper = submitPaperOrder(token, rawKey, "req-brokerage-shared-paper", paperDecision, orderIntent())
+
+        assertEquals(200, mock.response.status, mock.response.contentAsString)
+        assertEquals(200, paper.response.status, paper.response.contentAsString)
+        assertEquals(1, count("select count(*) from orders where brokerage_mode = 'KIS_MOCK'"))
+        assertEquals(1, count("select count(*) from orders where brokerage_mode = 'INTERNAL_PAPER'"))
+        assertTrue(redisTemplate.keys("${RedisPaperIdempotencyClaimAdapter.CLAIM_PREFIX}*").isEmpty())
+    }
+
+    @Test
+    fun `paper kill switch stale quote absent quote와 expired decision은 원장 write 없이 닫힌다`() {
+        val token = login("demo-user", userPassword())
+        val staleDecision = createDecision(token, "11", orderIntent(), portfolioSource = "INTERNAL_PAPER")
+        jdbcTemplate.update(
+            """
+            update market_quote_observations
+            set observed_at = ?::timestamptz,
+                received_at = ?::timestamptz
+            where observation_id = 'quote-s31-11'
+            """.trimIndent(),
+            EVALUATION_AT.minusSeconds(301),
+            EVALUATION_AT.minusSeconds(301),
+        )
+        val stale =
+            submitPaperOrder(
+                token,
+                "brokerage-paper-stale-0001",
+                "req-brokerage-paper-stale",
+                staleDecision,
+                orderIntent(),
+            )
+        assertEquals(409, stale.response.status, stale.response.contentAsString)
+        assertEquals("DATA_STALE", json(stale).at("/error/code").stringValue())
+
+        val absentDecision = createDecision(token, "12", orderIntent(), portfolioSource = "INTERNAL_PAPER")
+        jdbcTemplate.update("delete from market_quote_observations")
+        val absent =
+            submitPaperOrder(
+                token,
+                "brokerage-paper-absent-0001",
+                "req-brokerage-paper-absent",
+                absentDecision,
+                orderIntent(),
+            )
+        assertEquals(503, absent.response.status, absent.response.contentAsString)
+        assertEquals("BROKERAGE_UNAVAILABLE", json(absent).at("/error/code").stringValue())
+
+        val expiredDecision = createDecision(token, "13", orderIntent(), portfolioSource = "INTERNAL_PAPER")
+        jdbcTemplate.update(
+            """
+            update decisions
+            set evaluation_as_of = ?::timestamptz,
+                created_at = ?::timestamptz,
+                valid_until = ?::timestamptz
+            where decision_id = ?
+            """.trimIndent(),
+            EVALUATION_AT.minusSeconds(2),
+            EVALUATION_AT.minusSeconds(2),
+            EVALUATION_AT.minusSeconds(1),
+            expiredDecision,
+        )
+        val expired =
+            submitPaperOrder(
+                token,
+                "brokerage-paper-expired-0001",
+                "req-brokerage-paper-expired",
+                expiredDecision,
+                orderIntent(),
+            )
+        assertEquals(409, expired.response.status, expired.response.contentAsString)
+        assertEquals("DECISION_EXPIRED", json(expired).at("/error/code").stringValue())
+
+        val blockedDecision = createDecision(token, "14", orderIntent(), portfolioSource = "INTERNAL_PAPER")
+        killSwitchMutationPort.mutate(
+            KillSwitchMutationCommand(
+                actor =
+                    KillSwitchActor(
+                        userId = "usr_demo_user",
+                        role = KillSwitchActorRole.USER,
+                        securityVersion = 1,
+                        requestId = "req-paper-kill-switch",
+                    ),
+                requestedActive = true,
+                reasonClass = KillSwitchReasonClass.USER_MANUAL_STOP,
+            ),
+        )
+        val blocked =
+            submitPaperOrder(
+                token,
+                "brokerage-paper-blocked-0001",
+                "req-brokerage-paper-blocked",
+                blockedDecision,
+                orderIntent(),
+            )
+        assertEquals(422, blocked.response.status, blocked.response.contentAsString)
+        assertEquals("RISK_BLOCKED", json(blocked).at("/error/code").stringValue())
+        assertEquals(0, count("select count(*) from orders"))
+        assertEquals(0, count("select count(*) from paper_order_events"))
+        assertEquals(0, count("select count(*) from paper_positions"))
+    }
+
+    @Test
+    fun `paper event 20건은 append only chain으로 저장 파생 상태를 정확히 재구성한다`() {
+        val token = login("demo-user", userPassword())
+        repeat(20) { index ->
+            val side = if (index % 2 == 0) "BUY" else "SELL"
+            val order = orderIntent(side = side, quantity = 1)
+            val suffix = (0x20 + index).toString(16)
+            val decisionId = createDecision(token, suffix, order, portfolioSource = "INTERNAL_PAPER")
+            val submitted =
+                submitPaperOrder(
+                    token,
+                    "brokerage-paper-chain-${index.toString().padStart(4, '0')}",
+                    "req-brokerage-paper-chain-$index",
+                    decisionId,
+                    order,
+                )
+            assertEquals(200, submitted.response.status, submitted.response.contentAsString)
+            assertEquals("FILLED", json(submitted).at("/data/status").stringValue())
+        }
+
+        val accountId = "acct_${"c".repeat(32)}"
+        val rebuild =
+            jdbcTemplate.queryForMap(
+                """
+                select operation_outcome, event_count, positions_match
+                from rebuild_paper_state(?, ?)
+                """.trimIndent(),
+                accountId,
+                TEST_BROKERAGE_DB_CAPABILITY_TOKEN,
+            )
+        assertEquals("MATCHED", rebuild["operation_outcome"])
+        assertEquals(20L, rebuild["event_count"])
+        assertEquals(true, rebuild["positions_match"])
+        assertEquals(20, count("select count(*) from paper_order_events"))
+        assertEquals(20, count("select count(*) from orders where brokerage_mode = 'INTERNAL_PAPER'"))
+    }
+
+    @Test
+    fun `같은 paper decision 동시 제출은 정확히 한 건만 체결한다`() {
+        val token = login("demo-user", userPassword())
+        val decisionId = createDecision(token, "15", orderIntent(), portfolioSource = "INTERNAL_PAPER")
+        val executor = Executors.newFixedThreadPool(2)
+        try {
+            val responses =
+                listOf("a", "b")
+                    .map { suffix ->
+                        executor.submit<MvcResult> {
+                            submitPaperOrder(
+                                token,
+                                "brokerage-paper-race-$suffix-0001",
+                                "req-brokerage-paper-race-$suffix",
+                                decisionId,
+                                orderIntent(),
+                            )
+                        }
+                    }.map { it.get(15, TimeUnit.SECONDS) }
+
+            assertEquals(listOf(200, 409), responses.map { it.response.status }.sorted())
+            assertEquals(
+                listOf("CONFLICT"),
+                responses
+                    .filter { it.response.status == 409 }
+                    .map { json(it).at("/error/code").stringValue() },
+            )
+        } finally {
+            executor.shutdownNow()
+        }
+        assertEquals(1, count("select count(*) from orders where decision_id = ?", decisionId))
+        assertEquals(1, count("select count(*) from paper_order_events"))
+    }
+
+    @Test
+    fun `paper 잔고 경계 동시 제출은 account lock으로 초과 체결을 막는다`() {
+        val token = login("demo-user", userPassword())
+        val firstDecision = createDecision(token, "16", orderIntent(), portfolioSource = "INTERNAL_PAPER")
+        val secondDecision = createDecision(token, "17", orderIntent(), portfolioSource = "INTERNAL_PAPER")
+        jdbcTemplate.update(
+            "update paper_accounts set cash_balance = 200000 where account_id = 'acct_${"c".repeat(32)}'",
+        )
+        val executor = Executors.newFixedThreadPool(2)
+        try {
+            val responses =
+                listOf(firstDecision, secondDecision)
+                    .mapIndexed { index, decisionId ->
+                        executor.submit<MvcResult> {
+                            submitPaperOrder(
+                                token,
+                                "brokerage-paper-cash-race-${index.toString().padStart(4, '0')}",
+                                "req-brokerage-paper-cash-race-$index",
+                                decisionId,
+                                orderIntent(),
+                            )
+                        }
+                    }.map { it.get(15, TimeUnit.SECONDS) }
+
+            assertEquals(listOf(200, 400), responses.map { it.response.status }.sorted())
+        } finally {
+            executor.shutdownNow()
+        }
+        assertEquals(1, count("select count(*) from paper_order_events"))
+        assertEquals(
+            59_930,
+            jdbcTemplate.queryForObject(
+                "select cash_balance from paper_accounts where account_id = 'acct_${"c".repeat(32)}'",
+                Long::class.java,
+            ),
+        )
     }
 
     @Test
@@ -692,9 +1318,10 @@ class BrokerageApiIntegrationTest(
         token: String,
         suffix: String,
         order: Map<String, Any>,
+        portfolioSource: String = "KIS_MOCK",
     ): String {
         val principleId = insertPrinciple("usr_demo_user", "GUIDE", suffix)
-        insertCompleteStoredSources(suffix = suffix, orderCount = 0)
+        insertCompleteStoredSources(suffix = suffix, orderCount = 0, portfolioSource = portfolioSource)
         val response =
             evaluate(
                 token,
@@ -702,12 +1329,16 @@ class BrokerageApiIntegrationTest(
                 "req-decision-s31-$suffix",
                 mapOf(
                     "principleId" to principleId,
-                    "portfolioSource" to "KIS_MOCK",
+                    "portfolioSource" to portfolioSource,
                     "orderIntent" to order,
                 ),
             )
         assertEquals(200, response.response.status)
-        assertEquals("ALLOW", json(response).at("/data/riskDecision/decision").stringValue())
+        assertEquals(
+            "ALLOW",
+            json(response).at("/data/riskDecision/decision").stringValue(),
+            response.response.contentAsString,
+        )
         val decisionId = json(response).at("/data/decisionId").stringValue()
         assertEquals(1, visibleOrderableDecisionCount(decisionId), decisionVisibilityDebug(decisionId))
         return decisionId
@@ -810,6 +1441,29 @@ class BrokerageApiIntegrationTest(
                 content = objectMapper.writeValueAsString(body)
             }.andReturn()
 
+    private fun submitPaperOrder(
+        token: String,
+        idempotencyKey: String,
+        requestId: String,
+        decisionId: String,
+        order: Map<String, Any>,
+    ): MvcResult =
+        mockMvc
+            .post("/api/v1/brokerage/paper/orders") {
+                bearer(token)
+                header("X-Idempotency-Key", idempotencyKey)
+                header("X-Request-Id", requestId)
+                contentType = MediaType.APPLICATION_JSON
+                content =
+                    objectMapper.writeValueAsString(
+                        mapOf(
+                            "decisionId" to decisionId,
+                            "orderIntent" to order,
+                            "userAcknowledgement" to mapOf("warningsAccepted" to true),
+                        ),
+                    )
+            }.andReturn()
+
     private fun cancelOrder(
         token: String,
         idempotencyKey: String,
@@ -831,6 +1485,7 @@ class BrokerageApiIntegrationTest(
     ): String = "brokerage-$action-${sequence.toString().padStart(4, '0')}"
 
     private fun orderIntent(
+        side: String = "BUY",
         orderType: String = "MARKET",
         quantity: Long = 2,
         estimatedPrice: Long = 70_000,
@@ -838,7 +1493,7 @@ class BrokerageApiIntegrationTest(
     ): Map<String, Any> =
         mapOf(
             "symbol" to "005930",
-            "side" to "BUY",
+            "side" to side,
             "orderType" to orderType,
             "quantity" to quantity,
             "estimatedPrice" to estimatedPrice,
@@ -887,7 +1542,22 @@ class BrokerageApiIntegrationTest(
     private fun insertCompleteStoredSources(
         suffix: String,
         orderCount: Int,
+        portfolioSource: String = "KIS_MOCK",
     ) {
+        val ownerScopeHash =
+            if (portfolioSource == "INTERNAL_PAPER") {
+                CanonicalJson.sha256(
+                    CanonicalJson.encode(
+                        mapOf(
+                            "actorUserId" to "usr_demo_user",
+                            "paperAccountId" to "acct_${"c".repeat(32)}",
+                            "purpose" to "s2.3-paper-owner-scope-v1",
+                        ),
+                    ),
+                )
+            } else {
+                "c".repeat(64)
+            }
         jdbcTemplate.update(
             """
             insert into market_quote_observations (
@@ -925,28 +1595,47 @@ class BrokerageApiIntegrationTest(
             EVALUATION_AT,
             hex(suffix, "4"),
         )
-        jdbcTemplate.update(
-            """
-            insert into portfolio_balance_observations (
-              observation_id, owner_user_id, account_scope_hash, source,
-              context_status, cash_krw, portfolio_equity_krw,
-              margin_requirement_krw, completeness, position_count,
-              observed_at, received_at, schema_version, source_version,
-              payload_json, source_ref, artifact_hash
-            ) values (
-              ?, 'usr_demo_user', repeat('c', 64), 'KIS_MOCK',
-              'ACTIVE', 10000000, 10000000, 0, 'COMPLETE', 0,
-              ?::timestamptz, ?::timestamptz,
-              'portfolio-balance-observation.v1', 's31-fixture-v1',
-              '{"ownerScopeHash":"sanitized"}'::jsonb,
-              repeat('5', 64), ?
+        if (portfolioSource == "KIS_MOCK") {
+            jdbcTemplate.update(
+                """
+                insert into portfolio_balance_observations (
+                  observation_id, owner_user_id, account_scope_hash, source,
+                  context_status, cash_krw, portfolio_equity_krw,
+                  margin_requirement_krw, completeness, position_count,
+                  observed_at, received_at, schema_version, source_version,
+                  payload_json, source_ref, artifact_hash
+                ) values (
+                  ?, 'usr_demo_user', repeat('c', 64), 'KIS_MOCK',
+                  'ACTIVE', 10000000, 10000000, 0, 'COMPLETE', 0,
+                  ?::timestamptz, ?::timestamptz,
+                  'portfolio-balance-observation.v1', 's31-fixture-v1',
+                  '{"ownerScopeHash":"sanitized"}'::jsonb,
+                  repeat('5', 64), ?
+                )
+                """.trimIndent(),
+                "balance-s31-$suffix",
+                EVALUATION_AT,
+                EVALUATION_AT,
+                hex(suffix, "6"),
             )
-            """.trimIndent(),
-            "balance-s31-$suffix",
-            EVALUATION_AT,
-            EVALUATION_AT,
-            hex(suffix, "6"),
-        )
+        } else {
+            jdbcTemplate.update(
+                """
+                insert into paper_accounts (
+                  account_id, user_id, name, cash_balance, currency, status,
+                  created_at, updated_at, owner_scope_hash, margin_requirement_krw
+                ) values (
+                  ?, 'usr_demo_user', 'S3.2 fixture', 10000000, 'KRW', 'ACTIVE',
+                  ?::timestamptz, ?::timestamptz, ?, 0
+                )
+                on conflict (account_id) do nothing
+                """.trimIndent(),
+                "acct_${"c".repeat(32)}",
+                EVALUATION_AT,
+                EVALUATION_AT,
+                ownerScopeHash,
+            )
+        }
         jdbcTemplate.update(
             """
             insert into deterministic_risk_observations (
@@ -955,7 +1644,7 @@ class BrokerageApiIntegrationTest(
               observed_at, received_at, schema_version, source_version,
               payload_json, source_ref, artifact_hash
             ) values (
-              ?, 'usr_demo_user', repeat('c', 64), 'KIS_MOCK',
+              ?, 'usr_demo_user', ?, ?,
               -0.01, -0.05, 0.20, 'COMPLETE',
               ?::timestamptz, ?::timestamptz,
               'deterministic-risk-observation.v1', 's31-fixture-v1',
@@ -964,6 +1653,8 @@ class BrokerageApiIntegrationTest(
             )
             """.trimIndent(),
             "risk-s31-$suffix",
+            ownerScopeHash,
+            portfolioSource,
             EVALUATION_AT,
             EVALUATION_AT,
             hex(suffix, "8"),
@@ -976,7 +1667,7 @@ class BrokerageApiIntegrationTest(
               observed_at, received_at, schema_version, source_version,
               payload_json, source_ref, artifact_hash
             ) values (
-              ?, 'usr_demo_user', repeat('c', 64), 'KIS_MOCK',
+              ?, 'usr_demo_user', ?, ?,
               '2030-01-02', ?, ?::timestamptz, 'COMPLETE',
               ?::timestamptz, ?::timestamptz,
               'daily-order-count-observation.v1', 's31-fixture-v1',
@@ -985,6 +1676,8 @@ class BrokerageApiIntegrationTest(
             )
             """.trimIndent(),
             "orders-s31-$suffix",
+            ownerScopeHash,
+            portfolioSource,
             orderCount,
             EVALUATION_AT,
             EVALUATION_AT,
@@ -992,6 +1685,26 @@ class BrokerageApiIntegrationTest(
             hex(suffix, "a"),
         )
     }
+
+    private fun paperCommand(
+        decisionId: String,
+        order: Map<String, Any>,
+    ): SubmitMockOrderCommand =
+        SubmitMockOrderCommand(
+            decisionId = decisionId,
+            orderIntent =
+                com.capstone.decision.domain.risk.OrderIntentSnapshot(
+                    symbol = order.getValue("symbol") as String,
+                    side = order.getValue("side") as String,
+                    orderType = order.getValue("orderType") as String,
+                    quantity = order.getValue("quantity") as Long,
+                    estimatedPrice = order.getValue("estimatedPrice") as Long,
+                    estimatedAmount = order.getValue("estimatedAmount") as Long,
+                    timeframe = order.getValue("timeframe") as String,
+                    strategyId = order.getValue("strategyId") as String,
+                ),
+            userAcknowledgement = UserAcknowledgement(warningsAccepted = true),
+        )
 
     private fun login(
         username: String,

@@ -261,6 +261,59 @@ TMPDIR="$(mktemp -d /tmp/s31-pytest-XXXXXX)" uv run --frozen pytest -q
 [`20260726-s3-1-brokerage-mock-contract.md`](changes/20260726-s3-1-brokerage-mock-contract.md)를
 따른다.
 
+## S3.2 INTERNAL_PAPER 체결 원장
+
+S3.2는 `POST /api/v1/brokerage/paper/orders`,
+`GET /api/v1/brokerage/paper/accounts/{accountId}/balances`,
+`GET /api/v1/brokerage/paper/accounts/{accountId}/buyable`을 추가하고 공통 주문 조회·취소 route가
+저장된 `brokerageMode`를 그대로 반환하도록 확장한다. paper application path는 KIS Mock gRPC port를
+참조하지 않으며 provider 장애 시 자동 fallback으로 호출되지 않는다.
+
+| 계약 | 경계 |
+|---|---|
+| `catalogs/s3-2-internal-paper-contract.v1.json` | route, mode, id pattern, 가격·증거 exact 계약의 SSOT |
+| `schemas/s3-2-paper-order-request.schema.json` | S3.1과 같은 exact body, client mode/account 금지 |
+| `schemas/s3-2-paper-order-response.schema.json` | FILLED fill object 또는 ACCEPTED null의 상호강제 |
+| `schemas/s3-2-order-detail.schema.json` | 공통 조회·취소의 mode↔orderId prefix 상호강제 |
+| `schemas/s3-2-paper-balance.schema.json` | append-only ledger 파생 잔고와 `LAST_FILL_PRICE_V1` 고지 |
+| `schemas/s3-2-paper-buyable.schema.json` | owner-scoped cash/price 정수 몫 projection |
+| `db/migration/V13__s3_2_internal_paper_ledger.sql` | mode identity, append-only fill ledger, FORCE RLS, exact evidence, bounded definer 함수 |
+| `openapi/openapi.json` | paper 3 route와 공통 route mode 확장의 generated SSOT |
+
+가격은 최신 COMPLETE stored last quote, 다음으로 같은 관측의 previous close만 사용한다. MARKET은
+정수 KRW 5bps 불리한 방향 반올림, LIMIT은 slippage 0과 전량 체결 또는 ACCEPTED만 허용한다.
+`paper_order_events`의 exact before/after chain이 order-derived 현금·포지션 mutation의 진실
+소스이며 account/position row는 같은 transaction에서 갱신되는 projection이다. rebuild는 비교
+전용이고 application role에 노출하지 않는다.
+
+동시 제출은 purpose-version HMAC scope만 담는 30초 Redis claim으로 먼저 직렬화하고, 완료 결과와
+재시도 응답의 진실은 PostgreSQL durable idempotency row에 둔다. Redis key/value에는 raw key,
+owner, account, payload를 넣지 않으며 장애 시 paper write 전에 fail-closed한다. 구현 OpenAPI
+normalizer는 S3.2 contract ID/SHA-256, exact 5개 path/method와 exact 9개 `S32*` component를
+allowlist로 검사한다.
+
+paper account 생성·충전·삭제 route, 부분 체결, 미체결 worker, 수수료·세금·시장충격 모델,
+mark-to-market job은 없다. 테스트 account는 admin seed만 사용하고 시연 seed는 S8.3에 남긴다.
+KIS/provider/live-account/live-order/fill-query physical call은 0건이다.
+
+재현 명령:
+
+```bash
+uv run --frozen python contracts/generate_s3_2_contracts.py --check
+uv run --frozen python -m unittest discover -s contracts/tests -v
+uv run --frozen python contracts/validate.py
+workspaces/decision-platform/spring-api/gradlew \
+  -p workspaces/decision-platform/spring-api --no-daemon ktlintCheck build
+workspaces/decision-platform/spring-api/gradlew \
+  -p workspaces/decision-platform/spring-api --no-daemon prepareOpenApiFixtureEnv
+uv run --frozen python contracts/run_openapi_gate.py \
+  --env-file workspaces/decision-platform/spring-api/build/openapi-fixture/openapi.env
+```
+
+상세 결정과 소비자 영향은
+[`20260727-s3-2-internal-paper-ledger-contract.md`](changes/20260727-s3-2-internal-paper-ledger-contract.md)를
+따른다.
+
 ## S1.5 KIS 데이터 품질 리포트
 
 S1.5는 public API가 아니라 Decision Platform 내부 CLI `kis-data-quality-report`가 생산하는

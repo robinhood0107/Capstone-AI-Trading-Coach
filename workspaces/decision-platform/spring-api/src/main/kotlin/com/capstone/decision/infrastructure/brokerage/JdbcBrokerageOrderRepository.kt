@@ -182,7 +182,7 @@ class JdbcBrokerageOrderRepository(
                 }.singleOrNull()
                 ?: throw BrokerageUnavailableException("Brokerage cancel function returned no result.")
         return when (result.outcome) {
-            "CANCEL_REQUESTED" ->
+            "CANCEL_REQUESTED", "CANCELLED" ->
                 OrderDetailProjection(
                     orderId = requireNotNull(result.orderId),
                     accountId = requireNotNull(result.accountId),

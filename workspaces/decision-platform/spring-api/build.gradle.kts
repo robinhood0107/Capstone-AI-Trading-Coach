@@ -170,6 +170,25 @@ tasks.named<ProcessResources>("processResources") {
     from(layout.projectDirectory.file("../../../contracts/schemas/s3-1-mock-buyable.schema.json")) {
         into("contracts")
     }
+    // S3.2 INTERNAL_PAPER도 generator가 만든 canonical schema bytes만 OpenAPI에 노출한다.
+    from(layout.projectDirectory.file("../../../contracts/catalogs/s3-2-internal-paper-contract.v1.json")) {
+        into("contracts")
+    }
+    from(layout.projectDirectory.file("../../../contracts/schemas/s3-2-paper-order-request.schema.json")) {
+        into("contracts")
+    }
+    from(layout.projectDirectory.file("../../../contracts/schemas/s3-2-paper-order-response.schema.json")) {
+        into("contracts")
+    }
+    from(layout.projectDirectory.file("../../../contracts/schemas/s3-2-order-detail.schema.json")) {
+        into("contracts")
+    }
+    from(layout.projectDirectory.file("../../../contracts/schemas/s3-2-paper-balance.schema.json")) {
+        into("contracts")
+    }
+    from(layout.projectDirectory.file("../../../contracts/schemas/s3-2-paper-buyable.schema.json")) {
+        into("contracts")
+    }
 }
 
 tasks.named<ProcessResources>("processTestResources") {
@@ -278,6 +297,51 @@ val verifyS31ContractResources by tasks.registering {
                     .asFile
             check(copied.isFile && source.readBytes().contentEquals(copied.readBytes())) {
                 "S3.1 contract resource $fileName must be an exact canonical byte copy."
+            }
+        }
+    }
+}
+
+val verifyS32ContractResources by tasks.registering {
+    group = "verification"
+    description = "S3.2 INTERNAL_PAPER OpenAPI schema의 exact byte equality를 검증한다."
+    dependsOn(tasks.named("processResources"))
+
+    doLast {
+        listOf(
+            "catalogs/s3-2-internal-paper-contract.v1.json" to "s3-2-internal-paper-contract.v1.json",
+        ).forEach { (sourceRelative, copiedName) ->
+            val source =
+                layout.projectDirectory
+                    .file("../../../contracts/$sourceRelative")
+                    .asFile
+            val copied =
+                layout.buildDirectory
+                    .file("resources/main/contracts/$copiedName")
+                    .get()
+                    .asFile
+            check(copied.isFile && source.readBytes().contentEquals(copied.readBytes())) {
+                "S3.2 contract resource $copiedName must be an exact canonical byte copy."
+            }
+        }
+        listOf(
+            "s3-2-paper-order-request.schema.json",
+            "s3-2-paper-order-response.schema.json",
+            "s3-2-order-detail.schema.json",
+            "s3-2-paper-balance.schema.json",
+            "s3-2-paper-buyable.schema.json",
+        ).forEach { fileName ->
+            val source =
+                layout.projectDirectory
+                    .file("../../../contracts/schemas/$fileName")
+                    .asFile
+            val copied =
+                layout.buildDirectory
+                    .file("resources/main/contracts/$fileName")
+                    .get()
+                    .asFile
+            check(copied.isFile && source.readBytes().contentEquals(copied.readBytes())) {
+                "S3.2 contract resource $fileName must be an exact canonical byte copy."
             }
         }
     }
@@ -395,4 +459,5 @@ tasks.named("check") {
     dependsOn(verifyS23ContractResources)
     dependsOn(verifyS24ContractResources)
     dependsOn(verifyS31ContractResources)
+    dependsOn(verifyS32ContractResources)
 }

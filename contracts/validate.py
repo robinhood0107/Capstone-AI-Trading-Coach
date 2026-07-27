@@ -117,6 +117,9 @@ def validate_example_semantics(
     if schema_name == "s3-1-mock-order-request":
         validate_s3_1_mock_order_request_semantics(example)
         return
+    if schema_name == "s3-2-paper-order-request":
+        validate_s3_2_paper_order_request_semantics(example)
+        return
     validate_principle_payload_semantics(
         schema_name,
         example,
@@ -125,11 +128,21 @@ def validate_example_semantics(
 
 
 def validate_s3_1_mock_order_request_semantics(example: object) -> None:
+    validate_brokerage_order_request_semantics(example, session="S3.1 mock")
+
+
+def validate_s3_2_paper_order_request_semantics(example: object) -> None:
+    validate_brokerage_order_request_semantics(example, session="S3.2 paper")
+
+
+def validate_brokerage_order_request_semantics(
+    example: object, *, session: str
+) -> None:
     if not isinstance(example, dict):
-        raise ContractValidationError("S3.1 mock order request must be an object.")
+        raise ContractValidationError(f"{session} order request must be an object.")
     order = example.get("orderIntent")
     if not isinstance(order, dict):
-        raise ContractValidationError("S3.1 orderIntent must be an object.")
+        raise ContractValidationError(f"{session} orderIntent must be an object.")
     quantity = order.get("quantity")
     price = order.get("estimatedPrice")
     amount = order.get("estimatedAmount")
@@ -141,9 +154,13 @@ def validate_s3_1_mock_order_request_semantics(example: object) -> None:
         or not isinstance(amount, int)
         or isinstance(amount, bool)
     ):
-        raise ContractValidationError("S3.1 orderIntent numeric fields must be integers.")
+        raise ContractValidationError(
+            f"{session} orderIntent numeric fields must be integers."
+        )
     if quantity * price != amount:
-        raise ContractValidationError("S3.1 estimatedAmount must equal quantity * estimatedPrice.")
+        raise ContractValidationError(
+            f"{session} estimatedAmount must equal quantity * estimatedPrice."
+        )
 
 
 def validate_valid_examples(
@@ -186,8 +203,7 @@ def validate_valid_examples(
             else f"{error_location(error)} {error.message}"
         )
         print(
-            f"FAIL {relative(example_path)} against {relative(schema_path)}: "
-            f"{message}",
+            f"FAIL {relative(example_path)} against {relative(schema_path)}: {message}",
             file=sys.stderr,
         )
 
@@ -203,7 +219,10 @@ def validate_invalid_examples(
     failures = 0
     invalid_examples = sorted(INVALID_EXAMPLES_DIR.glob("*.invalid.json"))
     if not invalid_examples:
-        print("FAIL no invalid examples found in contracts/examples/invalid", file=sys.stderr)
+        print(
+            "FAIL no invalid examples found in contracts/examples/invalid",
+            file=sys.stderr,
+        )
         return 1
 
     for example_path in invalid_examples:
@@ -247,7 +266,10 @@ def validate_invalid_examples(
 
 def _load_naver_pair(path: Path) -> tuple[object, object]:
     pair = load_json(path)
-    if not isinstance(pair, dict) or set(pair) != {"snapshotExample", "manifestExample"}:
+    if not isinstance(pair, dict) or set(pair) != {
+        "snapshotExample",
+        "manifestExample",
+    }:
         raise ValueError("Naver pair fixture must contain two example references")
     snapshot_name = pair["snapshotExample"]
     manifest_name = pair["manifestExample"]
@@ -286,12 +308,17 @@ def validate_naver_pair_examples(
 ) -> int:
     """JSON Schema 밖의 snapshot/manifest query-count 교차 계약을 fixture pair로 검증한다."""
     failures = 0
-    pair_examples = [(path, True) for path in sorted(PAIR_EXAMPLES_DIR.glob("*.valid.json"))]
+    pair_examples = [
+        (path, True) for path in sorted(PAIR_EXAMPLES_DIR.glob("*.valid.json"))
+    ]
     pair_examples.extend(
         (path, False) for path in sorted(PAIR_EXAMPLES_DIR.glob("*.invalid.json"))
     )
     if not pair_examples:
-        print("FAIL no Naver pair examples found in contracts/examples/pairs", file=sys.stderr)
+        print(
+            "FAIL no Naver pair examples found in contracts/examples/pairs",
+            file=sys.stderr,
+        )
         return 1
 
     snapshot_validator = validators["naver_news_metadata_snapshot"][1]
@@ -299,9 +326,18 @@ def validate_naver_pair_examples(
     for example_path, expected_valid in pair_examples:
         try:
             snapshot, manifest = _load_naver_pair(example_path)
-        except (OSError, UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError):
+        except (
+            OSError,
+            UnicodeDecodeError,
+            json.JSONDecodeError,
+            TypeError,
+            ValueError,
+        ):
             failures += 1
-            print(f"FAIL invalid Naver pair fixture {relative(example_path)}", file=sys.stderr)
+            print(
+                f"FAIL invalid Naver pair fixture {relative(example_path)}",
+                file=sys.stderr,
+            )
             continue
 
         snapshot_error = first_error(snapshot_validator.iter_errors(snapshot))

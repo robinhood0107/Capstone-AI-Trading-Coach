@@ -1,0 +1,69 @@
+{
+  "accountIdPattern": "^acct_[0-9a-f]{32}$",
+  "brokerageMode": "INTERNAL_PAPER",
+  "contractId": "s3-2-internal-paper-contract/v1",
+  "evidence": {
+    "auditActions": [
+      "PAPER_ORDER_ACCEPTED",
+      "PAPER_ORDER_CANCELLED",
+      "PAPER_ORDER_FILLED"
+    ],
+    "eventTypes": [
+      "brokerage.paper-order-accepted.v1",
+      "brokerage.paper-order-cancelled.v1",
+      "brokerage.paper-order-filled.v1"
+    ],
+    "filledExactKeys": [
+      "brokerageMode",
+      "decisionId",
+      "evaluationId",
+      "feeModel",
+      "fillPriceKrw",
+      "fillQuantity",
+      "idempotencyScopeHash",
+      "orderId",
+      "priceBasis",
+      "slippageBps",
+      "status"
+    ]
+  },
+  "feeModel": "NONE_V1",
+  "orderIdPattern": "^ord_paper_[0-9a-f]{32}$",
+  "orderIntentFields": [
+    "estimatedAmount",
+    "estimatedPrice",
+    "orderType",
+    "quantity",
+    "side",
+    "strategyId",
+    "symbol",
+    "timeframe"
+  ],
+  "priceBasis": [
+    "LAST_QUOTE",
+    "PREVIOUS_CLOSE"
+  ],
+  "requestFields": [
+    "decisionId",
+    "orderIntent",
+    "userAcknowledgement"
+  ],
+  "routes": {
+    "balance": "GET /api/v1/brokerage/paper/accounts/{accountId}/balances",
+    "buyable": "GET /api/v1/brokerage/paper/accounts/{accountId}/buyable",
+    "cancel": "POST /api/v1/brokerage/orders/{orderId}/cancel",
+    "orderDetail": "GET /api/v1/brokerage/orders/{orderId}",
+    "submit": "POST /api/v1/brokerage/paper/orders"
+  },
+  "slippageBpsDefault": 5,
+  "slippageBpsMaximum": 100,
+  "statuses": [
+    "ACCEPTED",
+    "CANCELLED",
+    "FILLED"
+  ],
+  "valuationBasis": "LAST_FILL_PRICE_V1",
+  "warningCodes": [
+    "PAPER_LIMIT_NOT_FILLED"
+  ]
+}

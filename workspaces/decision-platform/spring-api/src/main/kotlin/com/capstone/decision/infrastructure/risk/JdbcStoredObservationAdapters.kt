@@ -88,6 +88,7 @@ class JdbcMarketQuoteAdapter(
             FROM latest_market_quote_observations
             WHERE symbol = :symbol
               AND source = 'KIS_MOCK'
+              AND price_krw IS NOT NULL
             LIMIT 1
             """.trimIndent(),
             mapOf("symbol" to request.orderIntent.symbol),
@@ -99,6 +100,7 @@ class JdbcMarketQuoteAdapter(
             SELECT price_krw, completeness, observed_at, received_at, source_version, source_ref
             FROM latest_market_quote_observations
             WHERE source = 'KIS_MOCK'
+              AND price_krw IS NOT NULL
             ORDER BY observed_at DESC, received_at DESC, observation_id
             LIMIT 1
             """.trimIndent(),
@@ -243,7 +245,12 @@ class JdbcStoredMarginAdapter(
         val marginRequirementKrw =
             row.marginRequirementKrw
                 ?: return MetricCell.Missing(MetricIssueCode.SOURCE_MISSING)
-        if (row.completeness != COMPLETE) {
+        // Paper margin은 position classification과 별도 owner projection의 명시값이다.
+        // KIS snapshot만 전체 balance completeness를 margin availability에 결합한다.
+        if (
+            request.portfolioContext.source == PortfolioSource.KIS_MOCK &&
+            row.completeness != COMPLETE
+        ) {
             return MetricCell.Incomplete(MetricIssueCode.SOURCE_INCOMPLETE)
         }
         return MetricCell.Available(
@@ -326,10 +333,12 @@ class StoredPortfolioObservationReader(
                 SELECT paper.account_id,
                        paper.cash_krw,
                        paper.portfolio_equity_krw,
-                       paper.margin_requirement_krw,
+                       margin.margin_requirement_krw,
                        paper.positions_json::text AS positions_json,
                        paper.observed_at
                 FROM active_paper_portfolio_projection paper
+                LEFT JOIN paper_margin_owner_projection margin
+                  ON margin.account_id = paper.account_id
                 ORDER BY paper.account_id
                 LIMIT ?
                 """.trimIndent(),

@@ -56,7 +56,7 @@ def test_quote_fixture_appends_once_and_latest_projection_is_exact(
     with psycopg.connect(postgres_cluster["admin_dsn"]) as connection:
         rows = connection.execute(
             """
-            SELECT symbol, price_krw, bid_krw, ask_krw, completeness,
+            SELECT symbol, price_krw, previous_close_krw, bid_krw, ask_krw, completeness,
                    observed_at, received_at, source_ref, artifact_hash
             FROM latest_market_quote_observations
             ORDER BY symbol
@@ -66,12 +66,24 @@ def test_quote_fixture_appends_once_and_latest_projection_is_exact(
             "SELECT payload_json::text FROM market_quote_observations ORDER BY symbol"
         ).fetchall()
 
-    assert [row[:5] for row in rows] == [
-        ("005930", 70000, 69900, 70000, "COMPLETE"),
-        ("132030", 24500, 24450, 24500, "COMPLETE"),
+    assert [row[:6] for row in rows] == [
+        ("005930", 70000, 69800, 69900, 70000, "COMPLETE"),
+        ("132030", 24500, 24400, 24450, 24500, "COMPLETE"),
     ]
-    assert all(len(row[7]) == 64 and len(row[8]) == 64 for row in rows)
+    assert all(len(row[8]) == 64 and len(row[9]) == 64 for row in rows)
     _assert_sanitized(payload for (payload,) in payloads)
+
+
+def test_quote_fixture_accepts_previous_close_without_current_price(tmp_path: Path) -> None:
+    payload = json.loads(QUOTE_FIXTURE.read_text(encoding="utf-8"))
+    payload["quotes"][0]["priceKrw"] = None
+    fallback = tmp_path / "market-quote-previous-close.json"
+    fallback.write_text(json.dumps(payload), encoding="utf-8")
+
+    observations = load_market_quote_fixture(fallback)
+
+    assert observations[0].price_krw is None
+    assert observations[0].previous_close_krw == 69800
 
 
 def test_kis_mock_fixture_is_concurrently_idempotent_and_owner_scoped(

@@ -1,0 +1,16 @@
+{
+  "decisionId": "dec_11111111111111111111111111111111",
+  "orderIntent": {
+    "estimatedAmount": 720000,
+    "estimatedPrice": 0,
+    "orderType": "MARKET",
+    "quantity": 10,
+    "side": "BUY",
+    "strategyId": "paper-demo-v1",
+    "symbol": "005930",
+    "timeframe": "1d"
+  },
+  "userAcknowledgement": {
+    "warningsAccepted": true
+  }
+}

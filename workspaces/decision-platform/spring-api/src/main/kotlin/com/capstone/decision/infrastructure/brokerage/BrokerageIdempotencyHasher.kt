@@ -3,6 +3,7 @@ package com.capstone.decision.infrastructure.brokerage
 import com.capstone.decision.application.brokerage.BrokerageIdempotencyIdentity
 import com.capstone.decision.application.brokerage.BrokerageIdempotencyIdentityPort
 import com.capstone.decision.application.brokerage.SubmitMockOrderCommand
+import com.capstone.decision.application.brokerage.paper.PaperIdempotencyIdentityPort
 import com.capstone.decision.domain.risk.CanonicalJson
 import org.springframework.stereotype.Component
 import java.nio.charset.StandardCharsets
@@ -15,8 +16,34 @@ import javax.crypto.spec.SecretKeySpec
 @Component
 class BrokerageIdempotencyHasher(
     private val properties: BrokerageProperties,
-) : BrokerageIdempotencyIdentityPort {
+) : BrokerageIdempotencyIdentityPort,
+    PaperIdempotencyIdentityPort {
     override fun identity(
+        actorUserId: String,
+        rawKey: String,
+        command: SubmitMockOrderCommand,
+    ): BrokerageIdempotencyIdentity =
+        identityForPurpose(
+            purpose = BrokerageProperties.PURPOSE_VERSION,
+            actorUserId = actorUserId,
+            rawKey = rawKey,
+            command = command,
+        )
+
+    override fun paperIdentity(
+        actorUserId: String,
+        rawKey: String,
+        command: SubmitMockOrderCommand,
+    ): BrokerageIdempotencyIdentity =
+        identityForPurpose(
+            purpose = PAPER_ORDER_PURPOSE_VERSION,
+            actorUserId = actorUserId,
+            rawKey = rawKey,
+            command = command,
+        )
+
+    private fun identityForPurpose(
+        purpose: String,
         actorUserId: String,
         rawKey: String,
         command: SubmitMockOrderCommand,
@@ -25,7 +52,7 @@ class BrokerageIdempotencyHasher(
             scopeHash =
                 hmac(
                     listOf(
-                        BrokerageProperties.PURPOSE_VERSION,
+                        purpose,
                         "scope",
                         actorUserId,
                         rawKey,
@@ -34,7 +61,7 @@ class BrokerageIdempotencyHasher(
             ownerScopeHash =
                 hmac(
                     listOf(
-                        BrokerageProperties.PURPOSE_VERSION,
+                        purpose,
                         "owner",
                         actorUserId,
                     ),
@@ -77,5 +104,9 @@ class BrokerageIdempotencyHasher(
             keyBytes.fill(0)
             messageBytes.fill(0)
         }
+    }
+
+    private companion object {
+        const val PAPER_ORDER_PURPOSE_VERSION = "BROKERAGE_PAPER_ORDER_SUBMIT/v1"
     }
 }

@@ -119,6 +119,37 @@ def test_first_probe_failure_stops_all_remaining_calls(
     assert operations.closed is True
 
 
+@pytest.mark.parametrize(
+    ("path", "value"),
+    [
+        (("kisLiveOrderEnabled",), 0),
+        (("retryCount",), False),
+        (("evidence", "securityFindings"), False),
+        (("order", "quantity"), True),
+        (("execution", "recent"), 1),
+    ],
+)
+def test_packet_rejects_boolean_integer_aliases(
+    secure_tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    path: tuple[str, ...],
+    value: object,
+) -> None:
+    packet_path, _ = _write_packet(secure_tmp_path)
+    packet_sha = _rewrite_packet(packet_path, path, value)
+    monkeypatch.setattr(probe, "_git_revision", lambda _root, _ref: "a" * 40)
+
+    with pytest.raises(probe.KISMockApprovalRejected, match="contract"):
+        probe.execute_approved_probe(
+            packet_path,
+            now=datetime(2030, 1, 2, 3, 10, tzinfo=UTC),
+            expected_approval_id="approval-s3-online-test",
+            expected_packet_sha256=packet_sha,
+            repository_root=secure_tmp_path,
+            operations_factory=lambda _packet: FakeOperations(),
+        )
+
+
 def _write_packet(tmp_path: Path) -> tuple[Path, str]:
     report_path = tmp_path / "security-report.md"
     report_path.write_text("SECURITY_SCAN_COMPLETE\n", encoding="utf-8")
@@ -204,3 +235,31 @@ def _write_packet(tmp_path: Path) -> tuple[Path, str]:
     )
     packet_path.chmod(0o600)
     return packet_path, packet_sha
+
+
+def _rewrite_packet(
+    packet_path: Path,
+    field_path: tuple[str, ...],
+    value: object,
+) -> str:
+    payload = json.loads(packet_path.read_text(encoding="utf-8"))
+    target = payload
+    for field in field_path[:-1]:
+        target = target[field]
+    target[field_path[-1]] = value
+    payload.pop("packetSha256")
+    packet_sha = hashlib.sha256(
+        json.dumps(
+            payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
+    payload["packetSha256"] = packet_sha
+    packet_path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    packet_path.chmod(0o600)
+    return packet_sha

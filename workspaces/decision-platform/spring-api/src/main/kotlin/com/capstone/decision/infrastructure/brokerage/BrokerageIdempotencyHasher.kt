@@ -42,6 +42,34 @@ class BrokerageIdempotencyHasher(
             command = command,
         )
 
+    /**
+     * Redis replay key도 raw subject/key를 쓰지 않고 write operation별 purpose HMAC으로만 식별한다.
+     */
+    fun replayIdentity(
+        actorUserId: String,
+        rawKey: String,
+        purpose: BrokerageWriteReplayPurpose,
+    ): BrokerageReplayIdentity =
+        BrokerageReplayIdentity(
+            scopeHash =
+                hmac(
+                    listOf(
+                        purpose.purposeVersion,
+                        "scope",
+                        actorUserId,
+                        rawKey,
+                    ),
+                ),
+            ownerScopeHash =
+                hmac(
+                    listOf(
+                        purpose.purposeVersion,
+                        "owner",
+                        actorUserId,
+                    ),
+                ),
+        )
+
     private fun identityForPurpose(
         purpose: String,
         actorUserId: String,
@@ -109,4 +137,17 @@ class BrokerageIdempotencyHasher(
     private companion object {
         const val PAPER_ORDER_PURPOSE_VERSION = "BROKERAGE_PAPER_ORDER_SUBMIT/v1"
     }
+}
+
+data class BrokerageReplayIdentity(
+    val scopeHash: String,
+    val ownerScopeHash: String,
+)
+
+enum class BrokerageWriteReplayPurpose(
+    val purposeVersion: String,
+) {
+    ORDER_CANCEL("BROKERAGE_ORDER_CANCEL/v1"),
+    FILL_APPLY("BROKERAGE_FILL_APPLY/v1"),
+    GENERIC_FINANCE_WRITE("FINANCE_WRITE_REPLAY/v1"),
 }

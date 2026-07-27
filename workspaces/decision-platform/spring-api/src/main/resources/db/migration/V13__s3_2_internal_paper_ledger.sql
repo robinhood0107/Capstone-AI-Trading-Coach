@@ -67,6 +67,7 @@ ALTER TABLE order_events
       'MOCK_ORDER_CANCELLED',
       'PAPER_ORDER_ACCEPTED',
       'PAPER_ORDER_FILLED',
+      'PAPER_ORDER_CANCEL_REQUESTED',
       'PAPER_ORDER_CANCELLED',
       'INVALID_TRANSITION'
     )
@@ -81,6 +82,7 @@ ALTER TABLE order_events
     OR (event_type = 'MOCK_ORDER_CANCELLED' AND event_status = 'CANCELLED')
     OR (event_type = 'PAPER_ORDER_ACCEPTED' AND event_status = 'ACCEPTED')
     OR (event_type = 'PAPER_ORDER_FILLED' AND event_status = 'FILLED')
+    OR (event_type = 'PAPER_ORDER_CANCEL_REQUESTED' AND event_status = 'CANCEL_REQUESTED')
     OR (event_type = 'PAPER_ORDER_CANCELLED' AND event_status = 'CANCELLED')
     OR (event_type = 'INVALID_TRANSITION' AND event_status IS NULL)
   );
@@ -1457,6 +1459,7 @@ DECLARE
   requested_order_id text;
   requested_cancelled_at timestamptz;
   requested_order_event_id text;
+  terminal_order_event_id text;
   requested_audit_log_id text;
   requested_outbox_event_id text;
   stored_actor record;
@@ -1492,6 +1495,7 @@ BEGIN
   requested_order_id := requested_payload ->> 'orderId';
   requested_cancelled_at := (requested_payload ->> 'cancelledAt')::timestamptz;
   requested_order_event_id := requested_payload ->> 'orderEventId';
+  terminal_order_event_id := requested_order_event_id;
   requested_audit_log_id := requested_payload ->> 'auditLogId';
   requested_outbox_event_id := requested_payload ->> 'outboxEventId';
 
@@ -1568,12 +1572,42 @@ BEGIN
   INTO next_event_seq
   FROM public.order_events event
   WHERE event.order_id = requested_order_id;
+
+  IF stored_order.brokerage_mode = 'INTERNAL_PAPER' THEN
+    INSERT INTO public.order_events (
+      order_event_id, order_id, event_type, event_status, payload_json,
+      created_at, event_seq
+    )
+    VALUES (
+      requested_order_event_id, requested_order_id,
+      'PAPER_ORDER_CANCEL_REQUESTED', 'CANCEL_REQUESTED',
+      jsonb_build_object(
+        'orderId', requested_order_id,
+        'brokerageMode', stored_order.brokerage_mode,
+        'status', 'CANCEL_REQUESTED'
+      ),
+      requested_cancelled_at,
+      next_event_seq
+    );
+    next_event_seq := next_event_seq + 1;
+    -- 단일 cancel 입력에서도 두 append-only 이벤트가 충돌하지 않도록 확정 ID를 결정적으로 분리한다.
+    terminal_order_event_id :=
+      'oev_' || substr(
+        encode(
+          sha256(convert_to(requested_order_event_id || ':paper-cancelled', 'UTF8')),
+          'hex'
+        ),
+        1,
+        32
+      );
+  END IF;
+
   INSERT INTO public.order_events (
     order_event_id, order_id, event_type, event_status, payload_json,
     created_at, event_seq
   )
   VALUES (
-    requested_order_event_id, requested_order_id, target_event_type,
+    terminal_order_event_id, requested_order_id, target_event_type,
     target_status,
     jsonb_build_object(
       'orderId', requested_order_id,

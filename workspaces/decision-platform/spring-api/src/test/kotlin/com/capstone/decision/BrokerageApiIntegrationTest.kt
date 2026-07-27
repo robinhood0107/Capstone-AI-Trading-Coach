@@ -559,6 +559,8 @@ class BrokerageApiIntegrationTest(
         assertEquals(200, nextPage.response.status, nextPage.response.contentAsString)
         assertEquals(50, json(nextPage).at("/data/items").size())
 
+        val tamperedCursor = tamperCursorSignature(cursor)
+        assertTrue(tamperedCursor != cursor)
         val tampered =
             getFills(
                 token = userToken,
@@ -566,7 +568,7 @@ class BrokerageApiIntegrationTest(
                 accountId = accountId,
                 from = "2030-01-02",
                 to = "2030-01-02",
-                cursor = cursor.dropLast(1) + "A",
+                cursor = tamperedCursor,
             )
         assertEquals(400, tampered.response.status, tampered.response.contentAsString)
         assertEquals("VALIDATION_ERROR", json(tampered).at("/error/code").stringValue())
@@ -2810,6 +2812,8 @@ class BrokerageApiIntegrationTest(
         suffix: String,
         fill: String,
     ): String = (suffix.filter { it in '0'..'9' || it in 'a'..'f' } + fill.repeat(64)).take(64)
+
+    private fun tamperCursorSignature(cursor: String): String = cursor.dropLast(1) + if (cursor.last() == 'A') "Q" else "A"
 
     private fun json(result: MvcResult): JsonNode = objectMapper.readTree(result.response.contentAsString)
 

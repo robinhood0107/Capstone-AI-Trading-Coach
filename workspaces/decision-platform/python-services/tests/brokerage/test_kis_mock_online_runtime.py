@@ -157,3 +157,65 @@ def test_execution_reader_enforces_quantity_invariant_and_hashes_raw_reference()
     assert snapshot.leaves_quantity == 1
     assert len(snapshot.provider_exec_ref_hash) == 64
     assert raw_order_no not in repr(snapshot)
+    assert client.calls == [
+        (
+            "GET",
+            "/uapi/domestic-stock/v1/trading/inquire-daily-ccld",
+            "VTTC0081R",
+            {
+                "INQR_STRT_DT": "20260727",
+                "INQR_END_DT": "20260727",
+                "SLL_BUY_DVSN_CD": "00",
+                "INQR_DVSN": "00",
+                "PDNO": "",
+                "CCLD_DVSN": "00",
+                "ORD_GNO_BRNO": "synthetic-provider-org",
+                "ODNO": raw_order_no,
+                "INQR_DVSN_3": "00",
+                "INQR_DVSN_1": "",
+                "CTX_AREA_FK100": "",
+                "CTX_AREA_NK100": "",
+                "EXCG_ID_DVSN_CD": "KRX",
+            },
+        )
+    ]
+
+
+def test_balance_and_execution_reject_incomplete_or_oversized_mock_pages() -> None:
+    balance_reader = KISMockOnlineBalanceReader(
+        FakeClient(
+            {
+                "rt_cd": "0",
+                "ctx_area_fk100": "next",
+                "ctx_area_nk100": "next",
+                "output1": [],
+                "output2": [{"dnca_tot_amt": "0", "tot_evlu_amt": "0"}],
+            }
+        )  # type: ignore[arg-type]
+    )
+    with pytest.raises(ValueError, match="another bounded page"):
+        balance_reader.balance("acct_" + "a" * 32)
+
+    raw_order_no = "synthetic-provider-order"
+    execution_reader = KISMockExecutionReader(
+        FakeClient(
+            {
+                "rt_cd": "0",
+                "ctx_area_fk100": "",
+                "ctx_area_nk100": "",
+                "output1": [{"odno": raw_order_no}] * 16,
+            }
+        )  # type: ignore[arg-type]
+    )
+    with pytest.raises(ValueError, match="incomplete"):
+        execution_reader.read(
+            reference=MockProviderOrderReference(
+                provider_order_no=raw_order_no,
+                provider_org_no="synthetic-provider-org",
+                order_division="00",
+                quantity=1,
+            ),
+            start=date(2026, 7, 27),
+            end=date(2026, 7, 27),
+            recent=True,
+        )

@@ -77,6 +77,10 @@ class FakeRedis:
         self.closed = True
 
 
+def allow_replay_consumer(_packet: probe.KISMockApprovalPacket, _now: datetime) -> None:
+    return None
+
+
 def test_exact_packet_is_consumed_once_before_runtime_factory(
     secure_tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -241,6 +245,7 @@ def test_exact_packet_preflight_rejects_missing_latch_before_runtime_factory(
             expected_packet_sha256=packet_sha,
             repository_root=secure_tmp_path,
             operations_factory=factory,
+            approval_consumer=allow_replay_consumer,
         )
 
     assert built is False
@@ -261,6 +266,7 @@ def test_exact_packet_runs_canonical_steps_once_and_closes_runtime(
         expected_packet_sha256=packet_sha,
         repository_root=secure_tmp_path,
         operations_factory=lambda _packet: operations,
+        approval_consumer=allow_replay_consumer,
     )
 
     assert operations.calls == [
@@ -291,6 +297,7 @@ def test_first_probe_failure_stops_all_remaining_calls(
             expected_packet_sha256=packet_sha,
             repository_root=secure_tmp_path,
             operations_factory=lambda _packet: operations,
+            approval_consumer=allow_replay_consumer,
         )
 
     assert captured.value.failed_step == "submitLimitBuy"
@@ -326,6 +333,7 @@ def test_packet_rejects_boolean_integer_aliases(
             expected_packet_sha256=packet_sha,
             repository_root=secure_tmp_path,
             operations_factory=lambda _packet: FakeOperations(),
+            approval_consumer=allow_replay_consumer,
         )
 
 
@@ -362,6 +370,7 @@ def test_packet_rejects_missing_required_ci_or_changed_execution_command(
             expected_packet_sha256=packet_sha,
             repository_root=secure_tmp_path,
             operations_factory=lambda _packet: FakeOperations(),
+            approval_consumer=allow_replay_consumer,
         )
 
 

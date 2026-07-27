@@ -223,8 +223,7 @@ class KISMockBrokerageHttpClient:
         if settings.mode != "mock":
             raise KISMockLiveOrderGateClosed("KIS live brokerage allowlist is empty")
         if not settings.offline and any(
-            value is not None
-            for value in (account_number, transport, rate_limiter, token_provider)
+            value is not None for value in (account_number, transport, rate_limiter, token_provider)
         ):
             raise ValueError("KIS online private dependencies cannot be overridden")
 
@@ -244,9 +243,7 @@ class KISMockBrokerageHttpClient:
             try:
                 selected_account = _KISMockBrokerageSecrets().kis_mock_account_no  # type: ignore[call-arg]
             except ValidationError:
-                raise KISCredentialError(
-                    "KIS mock brokerage account is unavailable"
-                ) from None
+                raise KISCredentialError("KIS mock brokerage account is unavailable") from None
             redis_client = _build_redis_client()
             token_issuer: _TokenIssuer | None = None
             try:
@@ -301,6 +298,8 @@ class KISMockBrokerageHttpClient:
                 settings=settings,
                 token_provider=token_provider,
                 rate_limiter=limiter,
+                max_response_bytes=_MAX_RESPONSE_BYTES,
+                max_json_depth=32,
                 sensitive_values=lambda: (self._cano,),
             )
             self._http = httpx.Client(
@@ -371,9 +370,7 @@ class KISMockBrokerageHttpClient:
                 "KIS brokerage physical reservation cap exhausted"
             ) from None
         except Exception:
-            raise KISMockBrokerageError(
-                "KIS mock brokerage transport is unavailable"
-            ) from None
+            raise KISMockBrokerageError("KIS mock brokerage transport is unavailable") from None
         finally:
             if body is not None:
                 body.clear()
@@ -386,9 +383,7 @@ class KISMockBrokerageHttpClient:
         try:
             raw: object = response.json()
         except ValueError:
-            raise KISMockBrokerageError(
-                "KIS mock brokerage response was invalid"
-            ) from None
+            raise KISMockBrokerageError("KIS mock brokerage response was invalid") from None
         if not isinstance(raw, dict):
             raise KISMockBrokerageError("KIS mock brokerage response was invalid")
         payload = cast(dict[str, Any], raw)

@@ -83,6 +83,10 @@ class BrokerageApiIntegrationTest(
         redisTemplate.keys("brokerage*").takeIf { it.isNotEmpty() }?.let(redisTemplate::delete)
         redisTemplate.keys("decision-idempotency:*").takeIf { it.isNotEmpty() }?.let(redisTemplate::delete)
         redisTemplate.keys("idempotency:*").takeIf { it.isNotEmpty() }?.let(redisTemplate::delete)
+        redisTemplate.keys("idempotency-claim:*").takeIf { it.isNotEmpty() }?.let(redisTemplate::delete)
+        redisTemplate.keys("idempotency-admission:*").takeIf { it.isNotEmpty() }?.let(redisTemplate::delete)
+        jdbcTemplate.update("delete from order_fill_application_receipts")
+        jdbcTemplate.update("delete from order_fill_observations")
         jdbcTemplate.update("delete from paper_order_events")
         jdbcTemplate.update("delete from paper_positions")
         jdbcTemplate.update("delete from paper_accounts")
@@ -91,7 +95,9 @@ class BrokerageApiIntegrationTest(
         jdbcTemplate.update("delete from decision_invalidations")
         jdbcTemplate.update("delete from risk_kill_switch_transitions")
         jdbcTemplate.update("delete from event_outbox")
-        jdbcTemplate.update("delete from audit_logs where target_type in ('DECISION', 'ORDER', 'KILL_SWITCH')")
+        jdbcTemplate.update(
+            "delete from audit_logs where target_type in ('DECISION', 'ORDER', 'ORDER_RECONCILIATION', 'KILL_SWITCH')",
+        )
         jdbcTemplate.update(
             """
             update risk_kill_switch
@@ -124,6 +130,171 @@ class BrokerageApiIntegrationTest(
                 .webAppContextSetup(webApplicationContext)
                 .apply<DefaultMockMvcBuilder>(springSecurity())
                 .build()
+    }
+
+    @Test
+    fun `stored mock fills reconcile atomically and expose only owner scoped sanitized history`() {
+        val userToken = login("demo-user", userPassword())
+        val adminToken = login("demo-admin", adminPassword())
+        val decisionId =
+            createDecision(
+                token = userToken,
+                suffix = "33",
+                order = orderIntent(),
+            )
+        val submitted =
+            submitMockOrder(
+                token = userToken,
+                idempotencyKey = "brokerage-fill-submit-0001",
+                requestId = "req-brokerage-fill-submit",
+                decisionId = decisionId,
+                order = orderIntent(),
+            )
+        assertEquals(200, submitted.response.status, submitted.response.contentAsString)
+        val orderId = json(submitted).at("/data/orderId").stringValue()
+        val accountId = json(submitted).at("/data/accountId").stringValue()
+        insertMockFillObservation(
+            orderId = orderId,
+            suffix = "1",
+            execType = "PARTIAL_FILL",
+            fillQuantity = 1,
+            cumulativeQuantity = 1,
+            leavesQuantity = 1,
+            observedAt = EVALUATION_AS_OF.plusSeconds(10),
+        )
+        insertMockFillObservation(
+            orderId = orderId,
+            suffix = "2",
+            execType = "FILL",
+            fillQuantity = 1,
+            cumulativeQuantity = 2,
+            leavesQuantity = 0,
+            observedAt = EVALUATION_AS_OF.plusSeconds(20),
+        )
+
+        val reconciled =
+            reconcileOrder(
+                token = adminToken,
+                idempotencyKey = "brokerage-fill-apply-0001",
+                requestId = "req-brokerage-fill-apply",
+                orderId = orderId,
+            )
+        assertEquals(200, reconciled.response.status, reconciled.response.contentAsString)
+        val projection = json(reconciled).at("/data")
+        assertEquals(orderId, projection.path("orderId").stringValue())
+        assertEquals("KIS_MOCK", projection.path("brokerageMode").stringValue())
+        assertEquals("FILLED", projection.path("status").stringValue())
+        assertEquals(2, projection.path("filledQuantity").longValue())
+        assertEquals(0, projection.path("leavesQuantity").longValue())
+        assertEquals(0, projection.path("unfilledTerminatedQuantity").longValue())
+        assertEquals(70_000, projection.path("averageFillPriceKrw").longValue())
+        assertEquals("MATCHED", projection.at("/reconciliation/status").stringValue())
+        assertTrue(projection.at("/reconciliation/checkedAt").isString)
+        assertEquals(2, projection.path("appliedEventCount").intValue())
+        assertFalse(projection.path("hasMore").booleanValue())
+        assertEquals(
+            listOf("MOCK_ORDER_SUBMITTED", "MOCK_ORDER_PARTIALLY_FILLED", "MOCK_ORDER_FILLED"),
+            jdbcTemplate.queryForList(
+                "select event_type from order_events where order_id = ? order by event_seq",
+                String::class.java,
+                orderId,
+            ),
+        )
+
+        val fills =
+            getFills(
+                token = userToken,
+                mode = "mock",
+                accountId = accountId,
+                from = "2030-01-02",
+                to = "2030-01-02",
+            )
+        assertEquals(200, fills.response.status, fills.response.contentAsString)
+        val items = json(fills).at("/data/items")
+        assertEquals(2, items.size())
+        assertEquals(listOf(1L, 1L), items.map { it.path("fillQuantity").longValue() })
+        assertTrue(items.all { it.path("execRefHash").stringValue().matches(Regex("^[0-9a-f]{64}$")) })
+        assertFalse(fills.response.contentAsString.contains("provider-exec-raw"))
+        assertTrue(json(fills).at("/data/nextCursor").isNull)
+
+        val replay =
+            reconcileOrder(
+                token = adminToken,
+                idempotencyKey = "brokerage-fill-apply-0001",
+                requestId = "req-brokerage-fill-replay",
+                orderId = orderId,
+            )
+        assertEquals(reconciled.response.contentAsString, replay.response.contentAsString)
+        assertEquals(3, count("select count(*) from order_events where order_id = ?", orderId))
+        assertEquals(1, count("select count(*) from audit_logs where target_type = 'ORDER_RECONCILIATION'"))
+    }
+
+    @Test
+    fun `paper reconciliation reuses deterministic fill and user or invalid date requests fail closed`() {
+        val userToken = login("demo-user", userPassword())
+        val adminToken = login("demo-admin", adminPassword())
+        val decisionId =
+            createDecision(
+                token = userToken,
+                suffix = "34",
+                order = orderIntent(),
+                portfolioSource = "INTERNAL_PAPER",
+            )
+        val submitted =
+            submitPaperOrder(
+                token = userToken,
+                idempotencyKey = "brokerage-paper-fill-0001",
+                requestId = "req-brokerage-paper-fill",
+                decisionId = decisionId,
+                order = orderIntent(),
+            )
+        assertEquals(200, submitted.response.status, submitted.response.contentAsString)
+        val orderId = json(submitted).at("/data/orderId").stringValue()
+        val accountId = json(submitted).at("/data/accountId").stringValue()
+
+        reconcileOrder(
+            token = userToken,
+            idempotencyKey = "brokerage-fill-user-denied",
+            requestId = "req-brokerage-fill-user-denied",
+            orderId = orderId,
+        ).also { denied ->
+            assertEquals(403, denied.response.status, denied.response.contentAsString)
+        }
+
+        val reconciled =
+            reconcileOrder(
+                token = adminToken,
+                idempotencyKey = "brokerage-paper-reconcile-0001",
+                requestId = "req-brokerage-paper-reconcile",
+                orderId = orderId,
+            )
+        assertEquals(200, reconciled.response.status, reconciled.response.contentAsString)
+        assertEquals("MATCHED", json(reconciled).at("/data/reconciliation/status").stringValue())
+        assertEquals(0, json(reconciled).at("/data/appliedEventCount").intValue())
+        assertEquals(1, count("select count(*) from order_events where order_id = ?", orderId))
+
+        val fills =
+            getFills(
+                token = userToken,
+                mode = "paper",
+                accountId = accountId,
+                from = "2030-01-02",
+                to = "2030-01-02",
+            )
+        assertEquals(200, fills.response.status, fills.response.contentAsString)
+        assertEquals(1, json(fills).at("/data/items").size())
+        assertEquals(70_035, json(fills).at("/data/items/0/fillPriceKrw").longValue())
+
+        val invalidRange =
+            getFills(
+                token = userToken,
+                mode = "paper",
+                accountId = accountId,
+                from = "2030-01-01",
+                to = "2030-02-01",
+            )
+        assertEquals(400, invalidRange.response.status, invalidRange.response.contentAsString)
+        assertEquals("VALIDATION_ERROR", json(invalidRange).at("/error/code").stringValue())
     }
 
     @Test
@@ -1478,6 +1649,73 @@ class BrokerageApiIntegrationTest(
                 contentType = MediaType.APPLICATION_JSON
                 content = "{}"
             }.andReturn()
+
+    private fun reconcileOrder(
+        token: String,
+        idempotencyKey: String,
+        requestId: String,
+        orderId: String,
+    ): MvcResult =
+        mockMvc
+            .post("/api/v1/brokerage/orders/$orderId/reconcile") {
+                bearer(token)
+                header("X-Idempotency-Key", idempotencyKey)
+                header("X-Request-Id", requestId)
+                contentType = MediaType.APPLICATION_JSON
+                content = "{}"
+            }.andReturn()
+
+    private fun getFills(
+        token: String,
+        mode: String,
+        accountId: String,
+        from: String,
+        to: String,
+        cursor: String? = null,
+    ): MvcResult =
+        mockMvc
+            .get("/api/v1/brokerage/$mode/accounts/$accountId/fills") {
+                bearer(token)
+                param("from", from)
+                param("to", to)
+                cursor?.let { param("cursor", it) }
+                header("X-Request-Id", "req-brokerage-$mode-fills")
+            }.andReturn()
+
+    private fun insertMockFillObservation(
+        orderId: String,
+        suffix: String,
+        execType: String,
+        fillQuantity: Long,
+        cumulativeQuantity: Long,
+        leavesQuantity: Long,
+        observedAt: Instant,
+    ) {
+        jdbcTemplate.update(
+            """
+            insert into order_fill_observations (
+              observation_id, order_id, provider_exec_ref_hash, exec_type,
+              fill_quantity, fill_price_krw, cumulative_quantity, leaves_quantity,
+              average_fill_price_krw, observed_at, received_at, schema_version,
+              source_version, source_ref, completeness, artifact_hash
+            ) values (
+              ?, ?, ?, ?, ?, 70000, ?, ?, 70000, ?::timestamptz,
+              ?::timestamptz, '1', 's3.3-fill-observation-v1',
+              'offline-s33-fixture', 'COMPLETE', ?
+            )
+            """.trimIndent(),
+            "ofo_${suffix.repeat(32)}",
+            orderId,
+            suffix.repeat(64),
+            execType,
+            fillQuantity,
+            cumulativeQuantity,
+            leavesQuantity,
+            OffsetDateTime.ofInstant(observedAt, ZoneOffset.UTC),
+            OffsetDateTime.ofInstant(observedAt.plusSeconds(1), ZoneOffset.UTC),
+            hex(suffix, "f"),
+        )
+    }
 
     private fun brokerageIdempotency(
         action: String,

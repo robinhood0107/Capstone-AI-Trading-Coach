@@ -215,30 +215,49 @@ S3.1은 `POST /api/v1/brokerage/mock/orders`, `GET /api/v1/brokerage/orders/{ord
 `GET /api/v1/brokerage/mock/accounts/{accountId}/balances`,
 `GET /api/v1/brokerage/mock/accounts/{accountId}/buyable`을 추가한다. 제출 route는 S2.3에서
 저장된 owner-scoped Decision과 S2.4 Kill Switch DB authority를 같은 write path에서 재검증한 뒤
-KIS Mock ledger에 `SUBMITTED` projection을 원자 저장한다. cancel route는 provider 호출 없이
-append-only `MOCK_ORDER_CANCEL_REQUESTED` event를 기록한다. 요청 body는 `decisionId`,
-exact 8-field `orderIntent`, `userAcknowledgement.warningsAccepted`만 허용하며 `accountId`,
-provider, actor, raw receipt 필드는 모두 unknown field로 거부한다.
+KIS Mock ledger에 durable reservation을 원자 저장한다. online gate가 닫힌 기본 경로는
+`SUBMITTED`를 유지하고, 명시적으로 열린 KIS_MOCK 경로는 provider를 한 번 호출해 `ACCEPTED`
+outcome을 기록하거나 모호한 결과에 `PENDING_RECONCILIATION` 기록을 시도한다. 후자도 실패하면
+최초 `SUBMITTED` reservation이 recovery anchor로 남는다. cancel도 DB cancel-request를 먼저
+기록하고 online gate가 열린 경우에만 provider 전량 취소를 한 번 호출한다. 요청 body는
+`decisionId`, exact 8-field `orderIntent`, `userAcknowledgement.warningsAccepted`만 허용하며
+`accountId`, provider, actor, raw receipt 필드는 모두 unknown field로 거부한다.
 
 | 계약 | 경계 |
 |---|---|
 | `schemas/s3-1-mock-order-request.schema.json` | body-supplied account/provider 금지, exact 현물 order intent |
-| `schemas/s3-1-mock-order-response.schema.json` | `ord_mock_[0-9a-f]{32}` submitted projection과 opaque `accountId` |
+| `schemas/s3-1-mock-order-response.schema.json` | `SUBMITTED | PENDING_RECONCILIATION | ACCEPTED`와 opaque `accountId` |
 | `schemas/s3-1-mock-order-detail.schema.json` | owner-scoped sanitized order detail |
 | `schemas/s3-1-mock-balance.schema.json` | stored `KIS_MOCK` balance projection, raw account 없음 |
 | `schemas/s3-1-mock-buyable.schema.json` | stored balance 기반 buyable 계산 projection |
 | `proto/brokerage.proto` | Spring/Python gRPC boundary, 기본 disabled, raw credential/account 금지 |
 | `db/migration/V11__s3_1_brokerage_mock_orders.sql` | one Decision = one order, HMAC idempotency, FORCE RLS, append-only order events, sanitized outbox/audit |
+| `db/migration/V15__s3_online_kis_mock_provider_outcomes.sql` | mock-only provider outcome, pending 상태, bounded atomic writer |
 | `openapi/openapi.json` | S3.1 route와 `S31*` schema component의 generated SSOT |
 
 raw `X-Idempotency-Key`와 raw 계좌번호는 ledger에 저장하지 않고 purpose-version HMAC만 남긴다.
 동일 idempotency key와 동일 payload는 저장된 canonical result를 replay하며, 같은 Decision을
 다른 key로 재사용하면 `CONFLICT`다. cancel은 전역 write idempotency scope에서 동일 key replay와
-다른 key 재취소 conflict를 구분한다. balance/buyable은 S2.3 stored-source projection의 opaque
-account scope만 읽고 raw 계좌번호를 공개하지 않는다. 만료 Decision은 `DECISION_EXPIRED`, 활성
-Kill Switch 또는 무효화 Decision은 `RISK_BLOCKED`, verified tick-table context가 없는 LIMIT
-주문은 `BROKERAGE_UNAVAILABLE`로 닫는다. S3.1 구현과 테스트는 KIS/broker/live account/order
-provider를 물리 호출하지 않는다.
+다른 key 재취소 conflict를 구분한다. 기본 balance/buyable은 S2.3 stored-source projection을
+읽는다. online gate가 열린 경우에도 그 owner/account anchor를 먼저 확인한 뒤 mock provider를
+조회하며 raw 계좌번호를 공개하지 않는다. 만료 Decision은 `DECISION_EXPIRED`, 활성 Kill Switch
+또는 무효화 Decision은 `RISK_BLOCKED`, verified tick-table context가 없는 LIMIT 주문은
+`BROKERAGE_UNAVAILABLE`로 닫는다.
+
+S3-online transport는 공식 KIS Mock origin과 주문 `VTTC0011U | VTTC0012U`, 전량 취소
+`VTTC0013U`, 잔고 `VTTC8434R`, 매수가능 `VTTC8908R`, 체결
+`VTTC0081R | VTSC9215R`의 exact path/TR만 허용한다. S1.1 mock 1초 no-burst와
+deployment-global tokenP limiter를 재사용하고 주문성 retry·redirect는 0이다. Python gRPC는
+numeric loopback과 finite cap을 요구하며 기본값은
+`KIS_MOCK_BROKERAGE_ONLINE_ENABLED=false`다. raw provider reference는 Spring/DB로 넘기지
+않고 owner/order에 결속한 bounded-TTL Fernet ciphertext로만 Redis에 둔다.
+
+online 1회 검증은 최종 HEAD/PR #55 CI/fresh security report/Redis baseline을 결속한 60분 이하
+0600 packet과 별도 current-user approval ID/SHA가 있을 때만
+`balance -> buyable -> LIMIT BUY 1주 -> 전량 취소 -> 최근 체결조회`를 cap
+`tokenP=1`, `brokerage=5`, retry/artifact 0으로 실행한다. 이 packet은 gRPC server 상시
+활성화, background polling, S3.3 fill append, KIS_LIVE 계좌·주문 권한을 승인하지 않는다.
+구현·fixture·OpenAPI·일반 테스트의 provider physical call은 0건이다.
 
 재현 명령:
 
@@ -274,7 +293,7 @@ S3.2는 `POST /api/v1/brokerage/paper/orders`,
 | `catalogs/s3-2-internal-paper-contract.v1.json` | route, mode, id pattern, 가격·증거 exact 계약의 SSOT |
 | `schemas/s3-2-paper-order-request.schema.json` | S3.1과 같은 exact body, client mode/account 금지 |
 | `schemas/s3-2-paper-order-response.schema.json` | FILLED fill object 또는 ACCEPTED null의 상호강제 |
-| `schemas/s3-2-order-detail.schema.json` | 공통 조회·취소의 mode↔orderId prefix 상호강제 |
+| `schemas/s3-2-order-detail.schema.json` | 공통 조회·취소의 mode↔orderId prefix; pending은 KIS_MOCK read만 허용 |
 | `schemas/s3-2-paper-balance.schema.json` | append-only ledger 파생 잔고와 `LAST_FILL_PRICE_V1` 고지 |
 | `schemas/s3-2-paper-buyable.schema.json` | owner-scoped cash/price 정수 몫 projection |
 | `db/migration/V13__s3_2_internal_paper_ledger.sql` | mode identity, append-only fill ledger, FORCE RLS, exact evidence, bounded definer 함수 |
@@ -332,7 +351,7 @@ S3.3은 stored sanitized fill observation을 append-only 주문 이벤트와 수
 | `openapi/openapi.json` | exact 3 route와 exact 5개 `S33*` component의 generated SSOT |
 
 catalog ID는 `s3-3-fill-contract/v1`, SHA-256은
-`d76cd087592e4a9f0a87a9d0213836cbcdd20acd2723815ac762def2b9ef61b4`다.
+`937508069d35ee087e7c8cdd171f52f876396097f27b14f82528a839efae9da7`다.
 관측은 `(order_id, provider_exec_ref_hash)`로 중복 방어하며 provider exec 원문을 저장하지 않는다.
 Kotlin 순수 전이는 Applied/Duplicate/Invalid를 구분하고 SQL 원자 write가 같은 판정을 재검증한다.
 단일 수량 보존식은
@@ -344,6 +363,12 @@ reconcile은 현재 ADMIN role/status/security version을 transaction 안에서 
 page size 50, `(filledAt DESC, orderId DESC, execRefHash DESC)` 정렬과 owner/mode/account/기간을
 결속한 900초 HMAC cursor를 사용한다. `decision_fill_writer`만 관측 INSERT 권한을 가지며
 `decision_app`의 직접 source 접근과 application role의 UPDATE/DELETE/TRUNCATE는 없다.
+
+S3-online은 공통 주문 상태에 provider outcome 복구용 `PENDING_RECONCILIATION`을 additive하게
+추가하되 mode/status schema는 이 상태를 KIS_MOCK에만 허용한다. 이는
+`MATCHED | MISMATCH` 대사 판정과 별개다. 체결조회 strict parser는 exact 5단계 approval
+probe의 마지막 read에서만 사용할 수 있으며 background polling, scheduler,
+`decision_fill_writer` append 또는 자동 DB fill 반영은 없다.
 
 재현 명령:
 
@@ -359,9 +384,10 @@ uv run --frozen python contracts/run_openapi_gate.py \
   --env-file workspaces/decision-platform/spring-api/build/openapi-fixture/openapi.env
 ```
 
-전체 P0-11~P0-19 결정과 비범위는
+전체 P0-11~P0-20 결정과 비범위는
 [`20260727-s3-3-fill-events-reconciliation-contract.md`](changes/20260727-s3-3-fill-events-reconciliation-contract.md)를
-따른다. provider/live-account/live-order physical call은 0건이다.
+따른다. 일반 구현·계약·OpenAPI·테스트의 provider call은 0건이고, 별도 exact-approved KIS_MOCK
+one-shot probe만 위의 고정 5회 상한 안에서 실행할 수 있다. KIS_LIVE 실계좌 주문은 계속 OFF다.
 
 ## S1.5 KIS 데이터 품질 리포트
 

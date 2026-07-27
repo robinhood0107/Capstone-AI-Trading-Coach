@@ -138,6 +138,14 @@ route의 mode 확장이다. KIS gRPC, provider, live account, live order, 체결
       통과해야 한다.
     - provider physical call count는 0이다.
 
+### S3-online 공통 조회 schema 보강
+
+S3-online은 공통 주문 상세 schema가 KIS_MOCK의
+`PENDING_RECONCILIATION`을 읽을 수 있도록 additive하게 확장한다. INTERNAL_PAPER 생성·전이
+함수는 이 상태를 만들 수 없고, paper controller/use case/repository의 no-gRPC·no-provider
+경계도 바뀌지 않는다. 갱신된 `s3-2-internal-paper-contract/v1` catalog SHA-256은
+`d2eea9d27ea066884fa0986c89b3e4932c9293484569dbe45a99005b606f94fe`다.
+
 ## EN
 
 This change locks a physically separate `INTERNAL_PAPER` order path consuming the
@@ -183,6 +191,12 @@ endpoints and never falls back from a failed KIS_MOCK request to paper.
 - Provider calls, live-order enablement, partial fills, public paper account APIs, fee/tax
   models, Kafka publication, historical migration edits, and changes to
   `active_paper_portfolio_projection` are out of scope.
+
+The additive S3-online update lets the shared order-detail schema read
+`PENDING_RECONCILIATION` for KIS_MOCK orders only. INTERNAL_PAPER cannot produce that
+state, and its no-gRPC/no-provider architecture is unchanged. The updated canonical
+catalog digest is
+`d2eea9d27ea066884fa0986c89b3e4932c9293484569dbe45a99005b606f94fe`.
 
 ## Verification
 

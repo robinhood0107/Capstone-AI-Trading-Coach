@@ -460,7 +460,31 @@ class BrokerageApiIntegrationTest(
         assertEquals(200, cancelled.response.status, cancelled.response.contentAsString)
         assertEquals("INTERNAL_PAPER", json(cancelled).at("/data/brokerageMode").stringValue())
         assertEquals("CANCELLED", json(cancelled).at("/data/status").stringValue())
-        assertEquals(2, count("select count(*) from order_events where order_id = ?", orderId))
+        val lifecycle =
+            jdbcTemplate.query(
+                """
+                select event_type, event_status, event_seq
+                from order_events
+                where order_id = ?
+                order by event_seq
+                """.trimIndent(),
+                { row, _ ->
+                    Triple(
+                        row.getString("event_type"),
+                        row.getString("event_status"),
+                        row.getInt("event_seq"),
+                    )
+                },
+                orderId,
+            )
+        assertEquals(
+            listOf(
+                Triple("PAPER_ORDER_ACCEPTED", "ACCEPTED", 1),
+                Triple("PAPER_ORDER_CANCEL_REQUESTED", "CANCEL_REQUESTED", 2),
+                Triple("PAPER_ORDER_CANCELLED", "CANCELLED", 3),
+            ),
+            lifecycle,
+        )
         assertEquals(0, count("select count(*) from paper_order_events"))
         assertEquals(
             1,

@@ -64,9 +64,11 @@ class OrderFillCursorTest {
                 toExclusive = request.toExclusive,
             )
         }
+        val tamperedCursor = tamperSignature(cursor)
 
+        assertFalse(tamperedCursor == cursor)
         assertThrows<InvalidOrderFillCursorException> {
-            decode(request.actor, request.accountId, request.fromInclusive, cursor.dropLast(1) + "A")
+            decode(request.actor, request.accountId, request.fromInclusive, tamperedCursor)
         }
         assertThrows<InvalidOrderFillCursorException> {
             decode(request.actor.copy(userId = "usr_other"), request.accountId, request.fromInclusive, cursor)
@@ -124,4 +126,6 @@ class OrderFillCursorTest {
             objectMapper = mapper,
             principleClock = Clock.fixed(clockAt, ZoneOffset.UTC),
         )
+
+    private fun tamperSignature(cursor: String): String = cursor.dropLast(1) + if (cursor.last() == 'A') "Q" else "A"
 }

@@ -147,7 +147,8 @@ shared secret, finite cap, Fernet reference key를 모두 검증하며 reflectio
 raw 계좌번호와 provider 주문번호는 Spring/DB/응답으로 보내지 않고 취소에 필요한 reference만
 owner/order에 결속한 bounded-TTL ciphertext로 Redis에 저장한다.
 
-실제 KIS_MOCK 1회 검증은 다음 순서를 바꿀 수 없는 exact packet으로만 수행한다.
+실제 KIS_MOCK 최종 검증은 `probeType=FULL`인 다음 순서를 바꿀 수 없는 exact packet으로만
+수행한다.
 
 1. 잔고 `VTTC8434R`
 2. 매수가능 `VTTC8908R`
@@ -164,6 +165,15 @@ regular file mode `0600`으로만 발급하고, 현재 사용자가 packet의 ex
 `approvalId`와 packet SHA-256에서 파생한 opaque Redis key를 `SET NX PX`로 claim하며,
 성공·첫 실패·runtime 생성 실패 모두 해당 packet을 재사용할 수 없다. Redis 장애나 기존 claim도
 provider handoff 전에 fail-closed한다.
+
+`FULL` 실패 원인을 stable 출력으로 좁힐 수 없으면 같은 packet이나 5단계를 다시 실행하지 않는다.
+새 final HEAD/CI/security evidence에 결속한 `probeType=BALANCE_DIAGNOSTIC`,
+`steps=["balance"]`, cap `tokenP=1`/`brokerage=1`, retry/artifact 0 packet과 새 exact 승인을
+발급해 production transport·limiter·balance parser만 1회 실행한다. 이 profile은 Fernet
+reference key, 주문 gateway, 취소, 체결조회를 만들지 않는다. 실패 JSON은 allowlisted
+`reasonCode`, 선택적 `httpStatus`, `[A-Z0-9_-]{1,32}` `providerCode`만 출력하고 provider
+body/header/URL/`msg1`/계좌/credential은 출력하지 않는다. diagnostic도 single-use이며,
+성공해도 최종 5단계에는 또 다른 새 `FULL` packet과 현재 사용자의 새 exact 승인이 필요하다.
 
 첫 실패는 남은 호출을 모두 중단한다. 주문 접수 뒤 취소가 실패해도 자동 retry하지 않으며,
 모의투자 포털에서 확인·정리가 필요하면 실패 evidence를 고정한 뒤 새 authorization을 받는다.

@@ -4791,6 +4791,7 @@
           "status": {
             "enum": [
               "SUBMITTED",
+              "PENDING_RECONCILIATION",
               "ACCEPTED",
               "PARTIALLY_FILLED",
               "FILLED",
@@ -4956,7 +4957,11 @@
             "type": "string"
           },
           "status": {
-            "const": "SUBMITTED"
+            "enum": [
+              "SUBMITTED",
+              "PENDING_RECONCILIATION",
+              "ACCEPTED"
+            ]
           },
           "submittedAt": {
             "format": "date-time",
@@ -4970,7 +4975,7 @@
           "status",
           "submittedAt"
         ],
-        "title": "S3.1 KIS Mock order submitted response v1",
+        "title": "S3.1 KIS Mock order response v1",
         "type": "object"
       },
       "S31MockOrderSuccessResponse": {
@@ -5028,6 +5033,18 @@
                 "orderId": {
                   "pattern": "^ord_mock_[0-9a-f]{32}$",
                   "type": "string"
+                },
+                "status": {
+                  "enum": [
+                    "ACCEPTED",
+                    "CANCELLED",
+                    "CANCEL_REQUESTED",
+                    "FILLED",
+                    "PARTIALLY_FILLED",
+                    "PENDING_RECONCILIATION",
+                    "REJECTED",
+                    "SUBMITTED"
+                  ]
                 }
               }
             }
@@ -5048,6 +5065,13 @@
                 "orderId": {
                   "pattern": "^ord_paper_[0-9a-f]{32}$",
                   "type": "string"
+                },
+                "status": {
+                  "enum": [
+                    "ACCEPTED",
+                    "CANCELLED",
+                    "FILLED"
+                  ]
                 }
               }
             }
@@ -5082,13 +5106,14 @@
           },
           "status": {
             "enum": [
-              "SUBMITTED",
               "ACCEPTED",
-              "PARTIALLY_FILLED",
-              "FILLED",
-              "CANCEL_REQUESTED",
               "CANCELLED",
-              "REJECTED"
+              "CANCEL_REQUESTED",
+              "FILLED",
+              "PARTIALLY_FILLED",
+              "PENDING_RECONCILIATION",
+              "REJECTED",
+              "SUBMITTED"
             ]
           },
           "submittedAt": {
@@ -6002,6 +6027,13 @@
                 "orderId": {
                   "pattern": "^ord_paper_[0-9a-f]{32}$",
                   "type": "string"
+                },
+                "status": {
+                  "enum": [
+                    "ACCEPTED",
+                    "CANCELLED",
+                    "FILLED"
+                  ]
                 }
               }
             }
@@ -6022,6 +6054,18 @@
                 "orderId": {
                   "pattern": "^ord_mock_[0-9a-f]{32}$",
                   "type": "string"
+                },
+                "status": {
+                  "enum": [
+                    "ACCEPTED",
+                    "CANCELLED",
+                    "CANCEL_REQUESTED",
+                    "FILLED",
+                    "PARTIALLY_FILLED",
+                    "PENDING_RECONCILIATION",
+                    "REJECTED",
+                    "SUBMITTED"
+                  ]
                 }
               }
             }
@@ -6140,6 +6184,7 @@
               "CANCEL_REQUESTED",
               "FILLED",
               "PARTIALLY_FILLED",
+              "PENDING_RECONCILIATION",
               "REJECTED",
               "SUBMITTED"
             ]
@@ -8200,7 +8245,7 @@
   "x-s2-3-contract-id": "s2-3-decision-contract/v1",
   "x-s2-3-contract-sha256": "d035607af50a0f7cb9cd7170e9a6a188e6af32d5bbbdb76e5e4f7b3edc68cd18",
   "x-s3-2-contract-id": "s3-2-internal-paper-contract/v1",
-  "x-s3-2-contract-sha256": "91e348550e3dfd84ddc5d580d3e1726433eb3e7db04977c1161b09e3a5e7b1c0",
+  "x-s3-2-contract-sha256": "d2eea9d27ea066884fa0986c89b3e4932c9293484569dbe45a99005b606f94fe",
   "x-s3-3-contract-id": "s3-3-fill-contract/v1",
-  "x-s3-3-contract-sha256": "d76cd087592e4a9f0a87a9d0213836cbcdd20acd2723815ac762def2b9ef61b4"
+  "x-s3-3-contract-sha256": "937508069d35ee087e7c8cdd171f52f876396097f27b14f82528a839efae9da7"
 }

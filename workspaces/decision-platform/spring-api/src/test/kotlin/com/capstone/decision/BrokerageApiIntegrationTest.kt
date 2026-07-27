@@ -1906,6 +1906,136 @@ class BrokerageApiIntegrationTest(
     }
 
     @Test
+    fun `mock provider outcome is owner bound and atomically updates order plus event`() {
+        val token = login("demo-user", userPassword())
+        val decisionId = createDecision(token, suffix = "3d", order = orderIntent())
+        val submitted =
+            submitMockOrder(
+                token = token,
+                idempotencyKey = "brokerage-provider-outcome-0001",
+                requestId = "req-brokerage-provider-outcome",
+                decisionId = decisionId,
+                order = orderIntent(),
+            )
+        assertEquals(200, submitted.response.status, submitted.response.contentAsString)
+        val orderId = json(submitted).at("/data/orderId").stringValue()
+        jdbcTemplate.update(
+            """
+            with test_clock as (
+              select clock_timestamp() - interval '1 second' as value
+            )
+            update orders
+            set created_at = test_clock.value,
+                acknowledged_at = test_clock.value,
+                submitted_at = test_clock.value,
+                updated_at = test_clock.value
+            from test_clock
+            where order_id = ?
+            """.trimIndent(),
+            orderId,
+        )
+        val receivedAt =
+            requireNotNull(
+                jdbcTemplate.queryForObject(
+                    "select clock_timestamp()",
+                    OffsetDateTime::class.java,
+                ),
+            )
+        val acceptedPayload =
+            objectMapper.writeValueAsString(
+                mapOf<String, Any?>(
+                    "actorUserId" to "usr_demo_user",
+                    "actorRole" to "USER",
+                    "securityVersion" to 1,
+                    "requestId" to "req-provider-outcome-accepted",
+                    "orderId" to orderId,
+                    "status" to "ACCEPTED",
+                    "providerOrderRefHash" to "a".repeat(64),
+                    "trId" to "VTTC0012U",
+                    "receivedAt" to receivedAt.toString(),
+                    "orderEventId" to "oev_3d000000000000000000000000000001",
+                ),
+            )
+
+        appDataSource.connection.use { connection ->
+            connection
+                .prepareStatement(
+                    """
+                    select operation_outcome, status
+                    from record_mock_order_provider_outcome(cast(? as jsonb), ?)
+                    """.trimIndent(),
+                ).use { statement ->
+                    statement.setString(1, acceptedPayload)
+                    statement.setString(2, TEST_BROKERAGE_DB_CAPABILITY_TOKEN)
+                    statement.executeQuery().use { result ->
+                        assertTrue(result.next())
+                        assertEquals("APPLIED", result.getString("operation_outcome"))
+                        assertEquals("ACCEPTED", result.getString("status"))
+                    }
+                }
+        }
+        assertEquals(
+            mapOf(
+                "status" to "ACCEPTED",
+                "provider_order_ref_hash" to "a".repeat(64),
+                "provider_tr_id" to "VTTC0012U",
+            ),
+            jdbcTemplate.queryForMap(
+                """
+                select status, provider_order_ref_hash, provider_tr_id
+                from orders
+                where order_id = ?
+                """.trimIndent(),
+                orderId,
+            ),
+        )
+        assertEquals(
+            1,
+            count(
+                """
+                select count(*)
+                from order_events
+                where order_id = ? and event_type = 'MOCK_ORDER_ACCEPTED'
+                """.trimIndent(),
+                orderId,
+            ),
+        )
+
+        val crossOwnerPayload =
+            objectMapper.writeValueAsString(
+                mapOf<String, Any?>(
+                    "actorUserId" to "usr_demo_admin",
+                    "actorRole" to "ADMIN",
+                    "securityVersion" to 1,
+                    "requestId" to "req-provider-outcome-cross-owner",
+                    "orderId" to orderId,
+                    "status" to "PENDING_RECONCILIATION",
+                    "providerOrderRefHash" to null,
+                    "trId" to null,
+                    "receivedAt" to receivedAt.toString(),
+                    "orderEventId" to "oev_3d000000000000000000000000000002",
+                ),
+            )
+        appDataSource.connection.use { connection ->
+            connection
+                .prepareStatement(
+                    """
+                    select operation_outcome
+                    from record_mock_order_provider_outcome(cast(? as jsonb), ?)
+                    """.trimIndent(),
+                ).use { statement ->
+                    statement.setString(1, crossOwnerPayload)
+                    statement.setString(2, TEST_BROKERAGE_DB_CAPABILITY_TOKEN)
+                    statement.executeQuery().use { result ->
+                        assertTrue(result.next())
+                        assertEquals("ORDER_NOT_FOUND", result.getString("operation_outcome"))
+                    }
+                }
+        }
+        assertEquals(2, count("select count(*) from order_events where order_id = ?", orderId))
+    }
+
+    @Test
     fun `LIMIT order is unavailable until current KRX tick table verification is attached`() {
         val token = login("demo-user", userPassword())
         val limitOrder = orderIntent(orderType = "LIMIT", estimatedPrice = 70_000)

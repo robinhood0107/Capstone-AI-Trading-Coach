@@ -40,6 +40,185 @@ class FakeOperations:
         self.closed = True
 
 
+class OnceApprovalConsumer:
+    def __init__(self) -> None:
+        self.claimed: set[tuple[str, str]] = set()
+        self.calls: list[tuple[str, str, datetime]] = []
+
+    def __call__(self, packet: probe.KISMockApprovalPacket, now: datetime) -> None:
+        key = (packet.approval_id, packet.packet_sha256)
+        self.calls.append((packet.approval_id, packet.packet_sha256, now))
+        if key in self.claimed:
+            raise probe.KISMockApprovalRejected("approval packet was already consumed")
+        self.claimed.add(key)
+
+
+class FakeRedis:
+    def __init__(self, result: bool | None = True, error: Exception | None = None) -> None:
+        self.result = result
+        self.error = error
+        self.calls: list[tuple[str, str, bool | None, int | None]] = []
+        self.closed = False
+
+    def set(
+        self,
+        key: str,
+        value: str,
+        *,
+        nx: bool | None = None,
+        px: int | None = None,
+    ) -> bool | None:
+        self.calls.append((key, value, nx, px))
+        if self.error is not None:
+            raise self.error
+        return self.result
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def test_exact_packet_is_consumed_once_before_runtime_factory(
+    secure_tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    packet_path, packet_sha = _write_packet(secure_tmp_path)
+    consumer = OnceApprovalConsumer()
+    runtime_builds = 0
+    monkeypatch.setattr(probe, "_git_revision", lambda _root, _ref: "a" * 40)
+
+    def factory(_packet: probe.KISMockApprovalPacket) -> FakeOperations:
+        nonlocal runtime_builds
+        runtime_builds += 1
+        return FakeOperations()
+
+    summary = probe.execute_approved_probe(
+        packet_path,
+        now=datetime(2030, 1, 2, 3, 10, tzinfo=UTC),
+        expected_approval_id="approval-s3-online-test",
+        expected_packet_sha256=packet_sha,
+        repository_root=secure_tmp_path,
+        operations_factory=factory,
+        approval_consumer=consumer,
+    )
+
+    assert summary.physical_reservations == {"tokenP": 0, "brokerage": 5}
+    assert runtime_builds == 1
+
+    with pytest.raises(probe.KISMockApprovalRejected, match="consumed"):
+        probe.execute_approved_probe(
+            packet_path,
+            now=datetime(2030, 1, 2, 3, 10, tzinfo=UTC),
+            expected_approval_id="approval-s3-online-test",
+            expected_packet_sha256=packet_sha,
+            repository_root=secure_tmp_path,
+            operations_factory=factory,
+            approval_consumer=consumer,
+        )
+
+    assert runtime_builds == 1
+    assert len(consumer.calls) == 2
+
+
+def test_failed_probe_keeps_exact_packet_consumed(
+    secure_tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    packet_path, packet_sha = _write_packet(secure_tmp_path)
+    consumer = OnceApprovalConsumer()
+    failed_operations = FakeOperations(fail_at="submitLimitBuy")
+    replay_builds = 0
+    monkeypatch.setattr(probe, "_git_revision", lambda _root, _ref: "a" * 40)
+
+    with pytest.raises(probe.KISMockProbeFailed):
+        probe.execute_approved_probe(
+            packet_path,
+            now=datetime(2030, 1, 2, 3, 10, tzinfo=UTC),
+            expected_approval_id="approval-s3-online-test",
+            expected_packet_sha256=packet_sha,
+            repository_root=secure_tmp_path,
+            operations_factory=lambda _packet: failed_operations,
+            approval_consumer=consumer,
+        )
+
+    def replay_factory(_packet: probe.KISMockApprovalPacket) -> FakeOperations:
+        nonlocal replay_builds
+        replay_builds += 1
+        return FakeOperations()
+
+    with pytest.raises(probe.KISMockApprovalRejected, match="consumed"):
+        probe.execute_approved_probe(
+            packet_path,
+            now=datetime(2030, 1, 2, 3, 11, tzinfo=UTC),
+            expected_approval_id="approval-s3-online-test",
+            expected_packet_sha256=packet_sha,
+            repository_root=secure_tmp_path,
+            operations_factory=replay_factory,
+            approval_consumer=consumer,
+        )
+
+    assert failed_operations.calls == ["balance", "buyable", "submitLimitBuy"]
+    assert replay_builds == 0
+
+
+def test_redis_approval_consumer_uses_atomic_single_use_claim(
+    secure_tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    packet_path, packet_sha = _write_packet(secure_tmp_path)
+    redis_client = FakeRedis()
+    monkeypatch.setattr(probe, "_git_revision", lambda _root, _ref: "a" * 40)
+    monkeypatch.setattr(probe, "_build_redis_client", lambda: redis_client)
+    packet = probe._load_packet(
+        packet_path,
+        now=datetime(2030, 1, 2, 3, 10, tzinfo=UTC),
+        expected_approval_id="approval-s3-online-test",
+        expected_packet_sha256=packet_sha,
+        repository_root=secure_tmp_path,
+    )
+
+    probe._consume_exact_approval_once(packet, datetime(2030, 1, 2, 3, 10, tzinfo=UTC))
+
+    assert redis_client.closed is True
+    assert len(redis_client.calls) == 1
+    key, value, nx, px = redis_client.calls[0]
+    assert key.startswith("kis:mock:approval-consumed:v1:")
+    assert packet.approval_id not in key
+    assert packet.packet_sha256 not in key
+    assert value == "1"
+    assert nx is True
+    assert px == 3_000_000
+
+
+@pytest.mark.parametrize(
+    ("redis_client", "message"),
+    [
+        (FakeRedis(result=None), "already consumed"),
+        (FakeRedis(error=RuntimeError("synthetic")), "approval consumption"),
+    ],
+)
+def test_redis_approval_consumer_fails_closed(
+    secure_tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    redis_client: FakeRedis,
+    message: str,
+) -> None:
+    packet_path, packet_sha = _write_packet(secure_tmp_path)
+    monkeypatch.setattr(probe, "_git_revision", lambda _root, _ref: "a" * 40)
+    monkeypatch.setattr(probe, "_build_redis_client", lambda: redis_client)
+    packet = probe._load_packet(
+        packet_path,
+        now=datetime(2030, 1, 2, 3, 10, tzinfo=UTC),
+        expected_approval_id="approval-s3-online-test",
+        expected_packet_sha256=packet_sha,
+        repository_root=secure_tmp_path,
+    )
+
+    with pytest.raises(probe.KISMockApprovalRejected, match=message):
+        probe._consume_exact_approval_once(packet, datetime(2030, 1, 2, 3, 10, tzinfo=UTC))
+
+    assert redis_client.closed is True
+
+
 def test_exact_packet_preflight_rejects_missing_latch_before_runtime_factory(
     secure_tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

@@ -21,7 +21,9 @@ from app.brokerage.kis_mock_order_gateway import (
 
 
 class FakeTransport:
-    def __init__(self, response: dict[str, Any] | None = None, error: Exception | None = None) -> None:
+    def __init__(
+        self, response: dict[str, Any] | None = None, error: Exception | None = None
+    ) -> None:
         self.calls: list[tuple[str, str, str, dict[str, str]]] = []
         self.response = response or {"rt_cd": "0", "output": {"ODNO": "000001"}}
         self.error = error
@@ -48,6 +50,37 @@ class FakeReferenceStore:
 
     def get(self, order_id: str, account_id: str) -> object | None:
         return self.values.get((order_id, account_id))
+
+
+class CountingByteStream(httpx.SyncByteStream):
+    def __init__(self, *, size_bytes: int, chunk_size: int = 64 * 1024) -> None:
+        self.size_bytes = size_bytes
+        self.chunk_size = chunk_size
+        self.bytes_yielded = 0
+        self.completed = False
+        self.closed = False
+
+    def __iter__(self):
+        remaining = self.size_bytes
+        while remaining:
+            chunk_length = min(self.chunk_size, remaining)
+            remaining -= chunk_length
+            self.bytes_yielded += chunk_length
+            yield b"x" * chunk_length
+        self.completed = True
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class StreamingTransport(httpx.BaseTransport):
+    def __init__(self, stream: CountingByteStream) -> None:
+        self.stream = stream
+        self.calls = 0
+
+    def handle_request(self, request: httpx.Request) -> httpx.Response:
+        self.calls += 1
+        return httpx.Response(200, stream=self.stream, request=request)
 
 
 def test_mock_cash_order_maps_buy_sell_tr_ids_and_does_not_retry() -> None:
@@ -142,9 +175,9 @@ def test_submit_reference_enables_exact_mock_cancel_without_exposing_live_tr_id(
     )
     assert body["RVSE_CNCL_DVSN_CD"] == "02"
     assert body["QTY_ALL_ORD_YN"] == "Y"
-    assert "TTTC0013U" not in Path(
-        "app/brokerage/kis_mock_order_gateway.py"
-    ).read_text(encoding="utf-8")
+    assert "TTTC0013U" not in Path("app/brokerage/kis_mock_order_gateway.py").read_text(
+        encoding="utf-8"
+    )
 
 
 def test_private_online_transport_is_mock_only_bounded_and_scrubs_account_echo(
@@ -212,6 +245,46 @@ def test_private_online_transport_is_mock_only_bounded_and_scrubs_account_echo(
         client.close()
 
     assert len(sends) == 1
+
+
+def test_private_online_transport_enforces_mock_response_cap_before_full_stream(
+    tmp_path: Path,
+) -> None:
+    online = importlib.import_module("app.brokerage.kis_mock_online_client")
+    stream = CountingByteStream(size_bytes=online._MAX_RESPONSE_BYTES + 1)  # noqa: SLF001
+    transport = StreamingTransport(stream)
+    client = online.KISMockBrokerageHttpClient(
+        settings=online.KISSettings(
+            kis_mode="mock",
+            kis_offline=True,
+            kis_data_dir=tmp_path,
+            _env_file=None,
+        ),
+        account_number=SecretStr("00000000-01"),
+        transport=transport,
+        rate_limiter=online.TokenBucket(rate_per_second=1_000),
+        budget=online.KISBrokerageCallBudget(token_p_cap=0, brokerage_cap=1),
+    )
+    try:
+        with pytest.raises(online.KISMockBrokerageError):
+            client.request(
+                "POST",
+                "/uapi/domestic-stock/v1/trading/order-cash",
+                "VTTC0012U",
+                json_body={
+                    "PDNO": "005930",
+                    "ORD_DVSN": "00",
+                    "ORD_QTY": "1",
+                    "ORD_UNPR": "70000",
+                },
+            )
+    finally:
+        client.close()
+
+    assert transport.calls == 1
+    assert stream.closed is True
+    assert stream.completed is False
+    assert stream.bytes_yielded <= online._MAX_RESPONSE_BYTES + stream.chunk_size  # noqa: SLF001
 
 
 def test_encrypted_reference_store_never_persists_provider_reference_plaintext() -> None:

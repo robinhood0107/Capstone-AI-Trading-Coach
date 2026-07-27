@@ -8,7 +8,7 @@ owner-scoped fills 조회 2개뿐이다. 클라이언트가 체결을 주장하�
 실계좌 조회·주문, 스케줄러는 포함하지 않는다.
 
 canonical catalog는 `s3-3-fill-contract/v1`이며 SHA-256은
-`d76cd087592e4a9f0a87a9d0213836cbcdd20acd2723815ac762def2b9ef61b4`다.
+`937508069d35ee087e7c8cdd171f52f876396097f27b14f82528a839efae9da7`다.
 OpenAPI는 같은 ID와 digest를 `x-s3-3-contract-id`,
 `x-s3-3-contract-sha256`으로 노출한다.
 
@@ -57,7 +57,11 @@ OpenAPI는 같은 ID와 digest를 `x-s3-3-contract-id`,
      다르면 transaction을 503으로 fail-closed한다.
 
 5. **P0-15 — 대사 상태와 자동 수정 금지**
-   - 주문 status enum은 늘리지 않는다. 별도 `reconciliation_status`는
+   - S3-online provider outcome을 안전하게 복구하기 위해 공통 주문 status에
+     `PENDING_RECONCILIATION`을 additive하게 추가하고 mode/status schema는 KIS_MOCK에만
+     허용한다. 이는 체결·대사 판정이 아니라 provider 결과가 모호하거나 durable 결과 기록을
+     확인하지 못한 transport 상태다.
+   - 별도 `reconciliation_status`는
      `NOT_APPLICABLE | MATCHED | MISMATCH`, `reconciled_at`은
      NOT_APPLICABLE일 때만 NULL이다.
    - 관측 수량, 단일 보존식, 재계산 평균가, provider final 평균가가 모두 일치할 때만
@@ -101,9 +105,19 @@ OpenAPI는 같은 ID와 digest를 `x-s3-3-contract-id`,
 9. **P0-19 — offline 기본값과 비범위**
    - 구현·테스트·OpenAPI 생성의 provider physical call은 0건이다.
      fixture writer는 `decision_fill_writer` DSN과 sanitized local JSON만 사용한다.
-   - `VTTC0081R`/`VTSC9215R`, WebSocket, `/oauth2/Approval`, live account/order,
-     실전 주문·정정·취소, 자동 polling은 별도 exact approval 없이는 실행하거나 추가하지 않는다.
+   - S3-online은 `VTTC0081R`/`VTSC9215R` strict parser/read를 exact 5단계 approval probe의
+     마지막 단계에만 추가한다. background polling, scheduler, fill observation append,
+     자동 DB 반영은 추가하지 않는다.
+   - WebSocket, `/oauth2/Approval`, live account/order, 실전 주문·정정·취소는 구현하지 않으며
+     별도 exact approval로도 이번 KIS_MOCK packet 범위를 확장할 수 없다.
    - V1~V13, 다른 workspace, `active_paper_portfolio_projection`은 변경하지 않는다.
+
+10. **P0-20 — V15 provider outcome 보강**
+    - V15는 `PENDING_RECONCILIATION`과 sanitized provider outcome hash/TR/received-at을
+      additive하게 추가한다. `record_mock_order_provider_outcome`은 현재 actor/owner/capability/
+      role/securityVersion을 재검증하고 advisory lock 아래 order/event/result를 원자 갱신한다.
+    - mock order TR은 `VTTC0011U | VTTC0012U`만 저장할 수 있고 raw provider order/account/
+      payload/header/message는 저장하지 않는다. `KIS_LIVE` TR은 CHECK와 함수에서 모두 거부한다.
 
 ### 계약 산출물과 소비자 영향
 
@@ -115,6 +129,7 @@ OpenAPI는 같은 ID와 digest를 `x-s3-3-contract-id`,
 | `schemas/s3-3-fill-page.schema.json` | owner-scoped 최대 50개 fill page |
 | `openapi/openapi.json` | exact 3 route와 exact 5개 `S33*` component |
 | `V14__s3_3_fill_events_reconciliation.sql` | additive columns, source, RLS, definer functions, evidence |
+| `V15__s3_online_kis_mock_provider_outcomes.sql` | pending provider outcome, mock-only TR, bounded atomic writer |
 
 Return Engine과 Experience Dashboard workspace에는 구현 파일을 추가하지 않는다. Dashboard는
 향후 이 owner-scoped projection을 계약 소비할 수 있지만 현재 cross-workspace handoff나 push
@@ -143,6 +158,8 @@ live-order authority is introduced.
    atomically. Kotlin/SQL divergence fails closed.
 5. **P0-15:** reconciliation is a separate
    `NOT_APPLICABLE | MATCHED | MISMATCH` field and never repairs observations or orders.
+   S3-online additively introduces `PENDING_RECONCILIATION` only for KIS_MOCK and only
+   as a provider-outcome transport state, not as a fill-reconciliation verdict.
    One `reconciledAt` cutoff admits only observations whose observed and received timestamps
    are both at or before the cutoff; future rows do not count as current `hasMore` work.
 6. **P0-16:** reconcile is ADMIN-only, requires an idempotency key, accepts only an empty
@@ -154,11 +171,17 @@ live-order authority is introduced.
 8. **P0-18:** all four brokerage writes use purpose/version-separated HMAC identities,
    role/security-version-bound replay, owner-token fencing, user-purpose admission caps,
    database uniqueness, and Decision TTL/one-use protections.
-9. **P0-19:** provider physical calls remain zero. KIS execution polling, WebSocket,
-   live-account access, and live trading require a separate exact approval.
+9. **P0-19:** implementation and ordinary validation provider calls remain zero.
+   `VTTC0081R`/`VTSC9215R` is available only as the final read in the exact five-step
+   one-shot approval probe; it does not poll, schedule, append observations, or mutate
+   S3.3 fill state. WebSocket, live-account access, and live trading remain absent.
+10. **P0-20:** V15 atomically records mock-only provider outcomes under current
+    actor/owner/capability/role/security-version checks and an advisory lock. It stores
+    only bounded hashes, mock TR identity, and received time; raw provider/account data
+    and all live-order TRs are rejected.
 
 The canonical catalog digest is
-`d76cd087592e4a9f0a87a9d0213836cbcdd20acd2723815ac762def2b9ef61b4`.
+`937508069d35ee087e7c8cdd171f52f876396097f27b14f82528a839efae9da7`.
 The implementation normalizer requires the complete approved S3.1-S3.3 brokerage route
 inventory, exactly three S3.3 path/method pairs, and exactly five `S33*` components. No other
 workspace or historical migration is changed.

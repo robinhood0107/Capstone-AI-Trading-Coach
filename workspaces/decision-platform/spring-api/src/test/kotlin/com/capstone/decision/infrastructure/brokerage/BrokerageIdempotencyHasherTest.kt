@@ -25,12 +25,16 @@ class BrokerageIdempotencyHasherTest {
         val cancel =
             hasher.replayIdentity(
                 "usr_demo_user",
+                "USER",
+                1,
                 "same-order-key-0001",
                 BrokerageWriteReplayPurpose.ORDER_CANCEL,
             )
         val fill =
             hasher.replayIdentity(
                 "usr_demo_user",
+                "USER",
+                1,
                 "same-order-key-0001",
                 BrokerageWriteReplayPurpose.FILL_APPLY,
             )
@@ -56,6 +60,37 @@ class BrokerageIdempotencyHasherTest {
             paper.scopeHash,
             hasher.paperIdentity("usr_demo_admin", "same-order-key-0001", command()).scopeHash,
         )
+    }
+
+    @Test
+    fun `replay scope는 현재 role과 security version을 묶고 owner quota scope는 유지한다`() {
+        val userV1 =
+            hasher.replayIdentity(
+                "usr_demo_admin",
+                "USER",
+                1,
+                "same-order-key-0002",
+                BrokerageWriteReplayPurpose.FILL_APPLY,
+            )
+        val adminV1 =
+            hasher.replayIdentity(
+                "usr_demo_admin",
+                "ADMIN",
+                1,
+                "same-order-key-0002",
+                BrokerageWriteReplayPurpose.FILL_APPLY,
+            )
+        val adminV2 =
+            hasher.replayIdentity(
+                "usr_demo_admin",
+                "ADMIN",
+                2,
+                "same-order-key-0002",
+                BrokerageWriteReplayPurpose.FILL_APPLY,
+            )
+
+        assertEquals(3, setOf(userV1.scopeHash, adminV1.scopeHash, adminV2.scopeHash).size)
+        assertEquals(1, setOf(userV1.ownerScopeHash, adminV1.ownerScopeHash, adminV2.ownerScopeHash).size)
     }
 
     private fun command(): SubmitMockOrderCommand =

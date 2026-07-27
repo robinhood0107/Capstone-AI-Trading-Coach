@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
+import java.math.BigInteger
 
 class OrderFillDomainTest {
     @Test
@@ -229,23 +230,24 @@ class OrderFillDomainTest {
     fun `가중 평균가는 정수 내림이고 overflow는 fail closed다`() {
         assertEquals(
             100,
-            OrderFillAggregation.nextAveragePrice(
-                currentFilledQuantity = 4,
-                currentAverageFillPriceKrw = 100,
-                fillQuantity = 6,
-                fillPriceKrw = 101,
-            ),
+            OrderFillAggregation
+                .addFill(
+                    currentFilledQuantity = 4,
+                    currentFillNotionalKrw = BigInteger.valueOf(400),
+                    fillQuantity = 6,
+                    fillPriceKrw = 101,
+                ).averageFillPriceKrw,
         )
         assertThrows<ArithmeticException> {
-            OrderFillAggregation.nextAveragePrice(
+            OrderFillAggregation.addFill(
                 currentFilledQuantity = Long.MAX_VALUE,
-                currentAverageFillPriceKrw = Long.MAX_VALUE,
+                currentFillNotionalKrw = BigInteger.valueOf(Long.MAX_VALUE),
                 fillQuantity = 1,
                 fillPriceKrw = 1,
             )
         }
         assertThrows<IllegalArgumentException> {
-            OrderFillAggregation.nextAveragePrice(0, null, 0, 100)
+            OrderFillAggregation.addFill(0, BigInteger.ZERO, 0, 100)
         }
     }
 
@@ -261,6 +263,7 @@ class OrderFillDomainTest {
         }
 
         assertEquals(2, current.averageFillPriceKrw)
+        assertEquals(BigInteger.valueOf(6), current.fillNotionalKrw)
     }
 
     @Test
@@ -305,6 +308,14 @@ class OrderFillDomainTest {
             filledQuantity = filled,
             leavesQuantity = leaves,
             unfilledTerminatedQuantity = 0,
+            fillNotionalKrw =
+                if (filled == 0L) {
+                    BigInteger.ZERO
+                } else {
+                    BigInteger
+                        .valueOf(requireNotNull(average))
+                        .multiply(BigInteger.valueOf(filled))
+                },
             averageFillPriceKrw = average,
             status = status,
         )

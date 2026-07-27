@@ -19,11 +19,20 @@ class IdempotencyService(
 ) {
     fun acquire(
         userId: String,
+        actorRole: String,
+        securityVersion: Long,
         idempotencyKey: String,
         requestHash: String,
         purpose: BrokerageWriteReplayPurpose,
     ): IdempotencyLookup {
-        val identity = scopeHasher.replayIdentity(userId, idempotencyKey, purpose)
+        val identity =
+            scopeHasher.replayIdentity(
+                actorUserId = userId,
+                actorRole = actorRole,
+                securityVersion = securityVersion,
+                rawKey = idempotencyKey,
+                purpose = purpose,
+            )
         val redisKey = redisKey(identity)
         completedLookup(redisKey, requestHash)?.let { return it }
 
@@ -62,6 +71,8 @@ class IdempotencyService(
 
     fun store(
         userId: String,
+        actorRole: String,
+        securityVersion: Long,
         idempotencyKey: String,
         requestHash: String,
         claimToken: String,
@@ -70,7 +81,14 @@ class IdempotencyService(
         contentType: String,
         purpose: BrokerageWriteReplayPurpose,
     ) {
-        val identity = scopeHasher.replayIdentity(userId, idempotencyKey, purpose)
+        val identity =
+            scopeHasher.replayIdentity(
+                actorUserId = userId,
+                actorRole = actorRole,
+                securityVersion = securityVersion,
+                rawKey = idempotencyKey,
+                purpose = purpose,
+            )
         val redisKey = redisKey(identity)
         val claimKey = claimKey(identity)
         val stored =
@@ -92,18 +110,38 @@ class IdempotencyService(
 
     fun redisKey(
         userId: String,
+        actorRole: String,
+        securityVersion: Long,
         idempotencyKey: String,
         purpose: BrokerageWriteReplayPurpose,
-    ): String = redisKey(scopeHasher.replayIdentity(userId, idempotencyKey, purpose))
+    ): String =
+        redisKey(
+            scopeHasher.replayIdentity(
+                actorUserId = userId,
+                actorRole = actorRole,
+                securityVersion = securityVersion,
+                rawKey = idempotencyKey,
+                purpose = purpose,
+            ),
+        )
 
     fun discard(
         userId: String,
+        actorRole: String,
+        securityVersion: Long,
         idempotencyKey: String,
         requestHash: String,
         claimToken: String,
         purpose: BrokerageWriteReplayPurpose,
     ) {
-        val identity = scopeHasher.replayIdentity(userId, idempotencyKey, purpose)
+        val identity =
+            scopeHasher.replayIdentity(
+                actorUserId = userId,
+                actorRole = actorRole,
+                securityVersion = securityVersion,
+                rawKey = idempotencyKey,
+                purpose = purpose,
+            )
         discardClaim(
             ownerScopeHash = identity.ownerScopeHash,
             claimKey = claimKey(identity),

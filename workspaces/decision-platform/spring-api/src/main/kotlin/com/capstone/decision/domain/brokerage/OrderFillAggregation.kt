@@ -1,33 +1,42 @@
 package com.capstone.decision.domain.brokerage
 
+import java.math.BigInteger
+
+data class ExactFillAggregation(
+    val fillNotionalKrw: BigInteger,
+    val averageFillPriceKrw: Long,
+)
+
 /**
- * provider 평균가를 신뢰하지 않고 fill delta만으로 정수 KRW 가중평균을 재계산한다.
- * Long 범위를 넘는 입력은 wraparound하지 않고 ArithmeticException으로 fail-closed한다.
+ * provider 평균가를 신뢰하지 않고 적용된 fill delta의 정확한 notional을 누적해 정수 KRW 평균을 계산한다.
+ * 수량과 최종 평균의 Long 경계는 fail-closed하고, 중간 notional은 BigInteger로 나머지를 보존한다.
  */
 object OrderFillAggregation {
-    fun nextAveragePrice(
+    fun addFill(
         currentFilledQuantity: Long,
-        currentAverageFillPriceKrw: Long?,
+        currentFillNotionalKrw: BigInteger,
         fillQuantity: Long,
         fillPriceKrw: Long,
-    ): Long {
+    ): ExactFillAggregation {
         require(currentFilledQuantity >= 0)
         require(fillQuantity > 0)
         require(fillPriceKrw > 0)
-        require((currentFilledQuantity == 0L) == (currentAverageFillPriceKrw == null))
+        require(currentFillNotionalKrw.signum() >= 0)
+        require((currentFilledQuantity == 0L) == (currentFillNotionalKrw.signum() == 0))
 
-        val currentNotional =
-            if (currentFilledQuantity == 0L) {
-                0L
-            } else {
-                Math.multiplyExact(
-                    currentFilledQuantity,
-                    requireNotNull(currentAverageFillPriceKrw),
-                )
-            }
-        val fillNotional = Math.multiplyExact(fillQuantity, fillPriceKrw)
-        val totalNotional = Math.addExact(currentNotional, fillNotional)
         val totalQuantity = Math.addExact(currentFilledQuantity, fillQuantity)
-        return totalNotional / totalQuantity
+        val fillNotional =
+            BigInteger
+                .valueOf(fillQuantity)
+                .multiply(BigInteger.valueOf(fillPriceKrw))
+        val totalNotional = currentFillNotionalKrw.add(fillNotional)
+        val average =
+            totalNotional
+                .divide(BigInteger.valueOf(totalQuantity))
+                .longValueExact()
+        return ExactFillAggregation(
+            fillNotionalKrw = totalNotional,
+            averageFillPriceKrw = average,
+        )
     }
 }

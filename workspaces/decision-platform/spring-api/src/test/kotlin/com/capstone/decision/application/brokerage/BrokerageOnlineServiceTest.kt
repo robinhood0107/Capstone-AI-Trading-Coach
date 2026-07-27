@@ -72,6 +72,30 @@ class BrokerageOnlineServiceTest {
     }
 
     @Test
+    fun `accepted provider result becomes pending when durable outcome write fails`() {
+        arrangeSubmit()
+        every { gateway.submitMockOrder(any()) } returns
+            BrokerageGatewaySubmitResult(ORDER_ID, "a".repeat(64), "VTTC0012U", NOW.plusSeconds(1))
+        every {
+            persistence.recordProviderOutcome(match { it.status == "ACCEPTED" })
+        } throws RuntimeException("synthetic database failure")
+        every { persistence.recordProviderOutcome(match { it.status == "PENDING_RECONCILIATION" }) } returns
+            detail("PENDING_RECONCILIATION")
+
+        assertThrows(BrokerageUnavailableException::class.java) {
+            service.submitMockOrder(ACTOR, "online-idempotency-0003", command())
+        }
+
+        verify(exactly = 1) { gateway.submitMockOrder(any()) }
+        verify(exactly = 1) {
+            persistence.recordProviderOutcome(match { it.status == "ACCEPTED" })
+        }
+        verify(exactly = 1) {
+            persistence.recordProviderOutcome(match { it.status == "PENDING_RECONCILIATION" })
+        }
+    }
+
+    @Test
     fun `provider cancel runs after cancel requested event and confirms cancelled`() {
         every { gatewayProvider.getIfAvailable() } returns gateway
         every { persistence.cancelOwnedOrder(any(), ORDER_ID, NOW) } returns detail("CANCEL_REQUESTED")

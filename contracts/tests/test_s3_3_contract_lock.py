@@ -166,6 +166,37 @@ class S33FillContractTest(unittest.TestCase):
         self.assertNotIn("password\": \"demo", text)
         self.assertNotIn("providerExecRef\":", text)
 
+    def test_public_docs_lock_digest_routes_bounds_and_fill_writer_role(self) -> None:
+        digest = hashlib.sha256(
+            (
+                ROOT / "contracts/catalogs/s3-3-fill-contract.v1.json"
+            ).read_bytes()
+        ).hexdigest()
+        change = (
+            ROOT
+            / "contracts/changes/"
+            "20260727-s3-3-fill-events-reconciliation-contract.md"
+        ).read_text(encoding="utf-8")
+        contracts_readme = (ROOT / "contracts/README.md").read_text(
+            encoding="utf-8"
+        )
+        api = (ROOT / "docs/API_명세서.md").read_text(encoding="utf-8")
+        root_readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        for document in (change, contracts_readme):
+            self.assertIn(digest, document)
+            self.assertIn("200", document)
+            self.assertIn("50", document)
+            self.assertIn("31", document)
+        for route in (
+            "POST /api/v1/brokerage/orders/{orderId}/reconcile",
+            "GET /api/v1/brokerage/mock/accounts/{accountId}/fills",
+            "GET /api/v1/brokerage/paper/accounts/{accountId}/fills",
+        ):
+            self.assertIn(route, change)
+            self.assertIn(route, api)
+        self.assertIn("decision_fill_writer", root_readme)
+        self.assertIn("V6/V9/V14", root_readme)
+
     def _validator(self, name: str) -> Draft202012Validator:
         schema = self._load(f"contracts/schemas/{name}.schema.json")
         Draft202012Validator.check_schema(schema)

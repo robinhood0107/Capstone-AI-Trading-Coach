@@ -42,14 +42,55 @@ class FakeTransport:
 
 
 class FakeReferenceStore:
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        fail_prepare: bool = False,
+        fail_commit: bool = False,
+    ) -> None:
         self.values: dict[tuple[str, str], object] = {}
+        self.pending: set[tuple[str, str]] = set()
+        self.fail_prepare = fail_prepare
+        self.fail_commit = fail_commit
+        self.prepare_calls = 0
+        self.commit_calls = 0
 
-    def put(self, order_id: str, account_id: str, reference: object) -> None:
+    def prepare(self, order_id: str, account_id: str, intent: object) -> None:
+        del intent
+        self.prepare_calls += 1
+        if self.fail_prepare:
+            raise RuntimeError("mock order reference storage is unavailable")
+        self.pending.add((order_id, account_id))
+
+    def commit(self, order_id: str, account_id: str, reference: object) -> None:
+        self.commit_calls += 1
+        if self.fail_commit:
+            raise RuntimeError("mock order reference storage is unavailable")
+        assert (order_id, account_id) in self.pending
         self.values[(order_id, account_id)] = reference
+        self.pending.remove((order_id, account_id))
 
     def get(self, order_id: str, account_id: str) -> object | None:
         return self.values.get((order_id, account_id))
+
+
+class SequencedTransport:
+    def __init__(self, outcomes: list[dict[str, Any] | Exception]) -> None:
+        self.outcomes = list(outcomes)
+        self.calls: list[tuple[str, str, str, dict[str, str]]] = []
+
+    def request(
+        self,
+        method: str,
+        path: str,
+        tr_id: str,
+        json_body: dict[str, str],
+    ) -> dict[str, Any]:
+        self.calls.append((method, path, tr_id, json_body))
+        outcome = self.outcomes.pop(0)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
 
 
 class CountingByteStream(httpx.SyncByteStream):
@@ -165,6 +206,9 @@ def test_submit_reference_enables_exact_mock_cancel_without_exposing_live_tr_id(
     )
     receipt = gateway.cancel_cash_order(order_id=order_id, account_id=account_id)
 
+    assert reference_store.prepare_calls == 1
+    assert reference_store.commit_calls == 1
+    assert reference_store.pending == set()
     assert receipt.status == "CANCELLED"
     assert len(transport.calls) == 2
     method, path, tr_id, body = transport.calls[1]
@@ -178,6 +222,97 @@ def test_submit_reference_enables_exact_mock_cancel_without_exposing_live_tr_id(
     assert "TTTC0013U" not in Path("app/brokerage/kis_mock_order_gateway.py").read_text(
         encoding="utf-8"
     )
+
+
+def test_reference_prepare_failure_stops_before_provider_order_send() -> None:
+    transport = FakeTransport()
+    reference_store = FakeReferenceStore(fail_prepare=True)
+    gateway = KISMockOrderGateway(
+        transport,
+        mode="mock",
+        reference_store=reference_store,  # type: ignore[arg-type]
+    )
+
+    with pytest.raises(RuntimeError, match="storage is unavailable"):
+        gateway.submit_cash_order(
+            MockOrderIntent("005930", "BUY", "LIMIT", quantity=1, estimated_price=70_000),
+            order_id="ord_mock_" + "3" * 32,
+            account_id="acct_" + "4" * 32,
+        )
+
+    assert reference_store.prepare_calls == 1
+    assert reference_store.commit_calls == 0
+    assert transport.calls == []
+
+
+def test_reference_commit_failure_compensates_accepted_order_once_without_retry() -> None:
+    transport = SequencedTransport(
+        [
+            {
+                "rt_cd": "0",
+                "output": {
+                    "ODNO": "synthetic-provider-order",
+                    "KRX_FWDG_ORD_ORGNO": "synthetic-provider-org",
+                },
+            },
+            {"rt_cd": "0", "output": {}},
+        ]
+    )
+    reference_store = FakeReferenceStore(fail_commit=True)
+    gateway = KISMockOrderGateway(
+        transport,
+        mode="mock",
+        reference_store=reference_store,  # type: ignore[arg-type]
+    )
+    order_id = "ord_mock_" + "5" * 32
+    account_id = "acct_" + "6" * 32
+
+    with pytest.raises(MockOrderRejected, match="compensated"):
+        gateway.submit_cash_order(
+            MockOrderIntent("005930", "BUY", "LIMIT", quantity=1, estimated_price=70_000),
+            order_id=order_id,
+            account_id=account_id,
+        )
+
+    assert len(transport.calls) == 2
+    assert transport.calls[1][1:3] == (
+        "/uapi/domestic-stock/v1/trading/order-rvsecncl",
+        "VTTC0013U",
+    )
+    assert reference_store.pending == {(order_id, account_id)}
+
+
+def test_failed_compensation_leaves_durable_pending_outcome_for_reconciliation() -> None:
+    transport = SequencedTransport(
+        [
+            {
+                "rt_cd": "0",
+                "output": {
+                    "ODNO": "synthetic-provider-order",
+                    "KRX_FWDG_ORD_ORGNO": "synthetic-provider-org",
+                },
+            },
+            {"rt_cd": "1", "msg1": "synthetic"},
+        ]
+    )
+    reference_store = FakeReferenceStore(fail_commit=True)
+    gateway = KISMockOrderGateway(
+        transport,
+        mode="mock",
+        reference_store=reference_store,  # type: ignore[arg-type]
+    )
+    order_id = "ord_mock_" + "7" * 32
+    account_id = "acct_" + "8" * 32
+
+    with pytest.raises(MockOrderRejected, match="outcome is uncertain"):
+        gateway.submit_cash_order(
+            MockOrderIntent("005930", "BUY", "LIMIT", quantity=1, estimated_price=70_000),
+            order_id=order_id,
+            account_id=account_id,
+        )
+
+    assert len(transport.calls) == 2
+    assert reference_store.pending == {(order_id, account_id)}
 
 
 def test_private_online_transport_is_mock_only_bounded_and_scrubs_account_echo(
@@ -352,7 +487,19 @@ def test_encrypted_reference_store_never_persists_provider_reference_plaintext()
     provider_order_no = "synthetic-provider-order"
     provider_org_no = "synthetic-provider-org"
 
-    store.put(
+    store.prepare(
+        order_id,
+        account_id,
+        reference.MockOrderReferenceIntent(
+            order_division="00",
+            quantity=1,
+        ),
+    )
+    assert store.state(order_id, account_id) == "PENDING"
+    with pytest.raises(reference.MockOrderReferenceUnavailable):
+        store.get(order_id, account_id)
+
+    store.commit(
         order_id,
         account_id,
         reference.MockProviderOrderReference(
@@ -366,6 +513,7 @@ def test_encrypted_reference_store_never_persists_provider_reference_plaintext()
     restored = store.get(order_id, account_id)
     assert restored is not None
     assert restored.provider_order_no == provider_order_no
+    assert store.state(order_id, account_id) == "COMMITTED"
     persisted = b" ".join(
         value if isinstance(value, bytes) else str(value).encode()
         for value in redis_client.scan_iter()

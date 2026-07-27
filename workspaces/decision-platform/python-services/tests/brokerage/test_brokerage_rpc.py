@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 
 import grpc
 import pytest
 
-from app.brokerage.brokerage_rpc import BrokerageServicer, metadata
+from app.brokerage.brokerage_rpc import BrokerageServicer, _now, metadata
 from app.brokerage.kis_mock_order_gateway import KISMockOrderGateway
 from app.generated import brokerage_pb2
 
@@ -41,6 +42,13 @@ class FakeTransport:
     ) -> dict[str, Any]:
         self.calls.append((method, path, tr_id, json_body))
         return {"rt_cd": "0", "output": {"ODNO": "raw-provider-order-no"}}
+
+
+def test_provider_received_at_preserves_microseconds_for_db_ordering() -> None:
+    assert re.fullmatch(
+        r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{6}Z",
+        _now(),
+    )
 
 
 def test_submit_rpc_hashes_provider_receipt_and_uses_one_fake_transport_call() -> None:

@@ -19,7 +19,7 @@ import java.math.BigInteger
 
 class OrderFillDomainTest {
     @Test
-    fun `상태 7종과 exec type 4종 전이표를 전수 검증한다`() {
+    fun `상태 8종과 exec type 4종 전이표를 전수 검증한다`() {
         var cases = 0
         OrderFillStatus.entries.forEach { status ->
             FillExecutionType.entries.forEach { execType ->
@@ -77,7 +77,7 @@ class OrderFillDomainTest {
                 cases++
             }
         }
-        assertEquals(28, cases)
+        assertEquals(32, cases)
     }
 
     @Test

@@ -94,8 +94,8 @@ S3.1은 S2.3 Decision과 S2.4 Kill Switch를 소비하는 `KIS_MOCK` 주문 제�
 stored balance/buyable 조회 경계다. runtime route는 `POST /api/v1/brokerage/mock/orders`,
 `GET /api/v1/brokerage/orders/{orderId}`, `POST /api/v1/brokerage/orders/{orderId}/cancel`,
 `GET /api/v1/brokerage/mock/accounts/{accountId}/balances`,
-`GET /api/v1/brokerage/mock/accounts/{accountId}/buyable`을 추가하며, 체결·live readiness는 후속
-S3 계약까지 계획 상태다.
+`GET /api/v1/brokerage/mock/accounts/{accountId}/buyable`을 추가한다. S3.3은 stored sanitized
+체결 관측·대사와 owner fills 조회를 후속 구현했으며 live readiness는 여전히 별도 gate다.
 
 요청 body는 `decisionId`, exact 8-field `orderIntent`, `userAcknowledgement.warningsAccepted`만
 허용한다. account/provider/actor/raw receipt 필드는 거부하고, raw `X-Idempotency-Key`, raw
@@ -123,6 +123,19 @@ uv run --frozen ruff check app/brokerage tests/brokerage
 uv run --frozen mypy app
 uv run --frozen pytest -q tests/brokerage
 ```
+
+## S3.3 체결 관측·대사
+
+S3.3은 KIS_MOCK offline fill observation과 S3.2 INTERNAL_PAPER 결정적 fill을 같은 주문 수량
+보존식으로 대사한다. ADMIN reconcile은 저장된 COMPLETE 관측만 최대 200개씩 처리하고,
+owner fills 조회는 KST 31일·50개 page·HMAC cursor로 제한한다. provider polling, scheduler,
+실계좌와 실주문 호출은 없다.
+
+`decision_fill_writer`는 `.env.example`의 별도 password로 bootstrap하며 sanitized observation
+INSERT만 수행한다. 기존 PostgreSQL volume은 삭제하지 않고 루트 README의 one-time role
+bootstrap을 재실행한 뒤 V14 migration을 적용한다. offline writer와 왕복 HTTP 절차는
+`spring-api/http/s3-3-offline-roundtrip.http`, 계약과 exact bounds는 루트
+`contracts/README.md`의 S3.3 절을 따른다.
 
 ## S2.3 offline golden path
 

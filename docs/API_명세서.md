@@ -1538,6 +1538,17 @@ KIS Mock 중심으로 구현하고, KIS Live는 고급해제/3단계 동의/재�
 > live/order/fill 조회, partial fill은 0건이다. canonical SSOT는
 > `contracts/catalogs/s3-2-internal-paper-contract.v1.json`과
 > `contracts/changes/20260727-s3-2-internal-paper-ledger-contract.md`다.
+>
+> 구현 상태(2026-07-27): S3.3은
+> `POST /api/v1/brokerage/orders/{orderId}/reconcile`,
+> `GET /api/v1/brokerage/mock/accounts/{accountId}/fills`,
+> `GET /api/v1/brokerage/paper/accounts/{accountId}/fills`를 구현한다. KIS_MOCK 체결은
+> `decision_fill_writer`가 저장한 sanitized COMPLETE 관측만 ADMIN reconcile이 최대 200개씩
+> 소비하며, INTERNAL_PAPER는 S3.2의 결정적 체결을 재사용한다. owner fill page는 최대 50개,
+> KST 날짜 범위 최대 31일, HMAC cursor를 사용한다. 체결 보고 public route, scheduler,
+> provider/live-account/live-order 호출은 0건이다. canonical SSOT는
+> `contracts/catalogs/s3-3-fill-contract.v1.json`과
+> `contracts/changes/20260727-s3-3-fill-events-reconciliation-contract.md`다.
 
 Live 경계는 다음과 같이 분리한다.
 
@@ -1679,6 +1690,53 @@ mode와 order ID prefix가 맞지 않는 row는 DB가 거부한다.
 | `CANCEL_REQUESTED` | `CANCELLED`, `FILLED` | 취소 접수 후에도 체결이 먼저 도착할 수 있음(race 허용) |
 | `FILLED` / `CANCELLED` / `REJECTED` | 종료 상태 | 종료 상태 이후 전이는 오류로 기록 |
 
+S3.3부터 저장 주문은 다음 체결 projection을 함께 유지한다.
+
+- `filledQuantity`, `leavesQuantity`, `unfilledTerminatedQuantity`,
+  `averageFillPriceKrw`
+- 모든 상태의 단일 보존식:
+  `filledQuantity + leavesQuantity + unfilledTerminatedQuantity = quantity`
+- `averageFillPriceKrw`는 fill 수량 가중 정수 평균이며 `filledQuantity=0`일 때만 null이다.
+- 일반 주문 상태 조회는 기존 owner-scoped summary 계약을 유지한다. 체결 수량과 대사 상태의
+  authoritative sanitized projection은 아래 ADMIN reconcile 응답과 10.7 owner fills 조회가
+  제공한다.
+
+### 10.2A 저장 체결 대사
+
+`POST /api/v1/brokerage/orders/{orderId}/reconcile`
+
+S3.3 구현 route다. ADMIN 전용이며 `X-Idempotency-Key`가 필수이고 body는 비어 있거나 `{}`만
+허용한다. 필터와 method 권한 검사 뒤 DB transaction 안에서 현재 `status`, `role`,
+`securityVersion`을 다시 검증한다. 저장된 COMPLETE 관측만 `(observedAt, observationId)` 순으로
+최대 200개 처리하며 provider 호출을 만들지 않는다.
+
+```json
+{
+  "success": true,
+  "data": {
+    "orderId": "ord_mock_0123456789abcdef0123456789abcdef",
+    "brokerageMode": "KIS_MOCK",
+    "status": "FILLED",
+    "filledQuantity": 2,
+    "leavesQuantity": 0,
+    "unfilledTerminatedQuantity": 0,
+    "averageFillPriceKrw": 70000,
+    "reconciliation": {
+      "status": "MATCHED",
+      "checkedAt": "2030-01-02T09:00:20+09:00"
+    },
+    "appliedEventCount": 2,
+    "hasMore": false
+  }
+}
+```
+
+`reconciliation.status`는 `NOT_APPLICABLE | MATCHED | MISMATCH`다. MISMATCH는 warning과
+sanitized audit/outbox를 남기지만 주문이나 관측을 자동 수정하지 않는다. Duplicate 관측은
+event를 추가하지 않고, 역행·초과·종료 상태 관측은 `INVALID_TRANSITION` 증거를 남긴다.
+`CANCEL_REQUESTED -> FILLED` race는 허용한다. `hasMore=true`면 같은 ADMIN workflow가 새
+idempotency key로 다음 bounded batch를 실행한다.
+
 ### 10.3 주문 취소
 
 `POST /api/v1/brokerage/orders/{orderId}/cancel`
@@ -1806,11 +1864,44 @@ S3.1에서는 runtime route를 만들지 않는다. 아래 shape는 Live trading
 
 동의 이력의 행위자와 시각은 인증 principal과 서버 clock으로 생성해 append-only로 저장한다. 원칙/주문 상한/universe/RiskEngine 기준이 변경되면 기존 동의는 무효 처리되어 재동의가 필요하다.
 
-### 10.7 체결 내역 조회 (S3 계약)
+### 10.7 체결 내역 조회
 
-`GET /api/v1/brokerage/mock/accounts/{accountId}/fills?from=YYYY-MM-DD&to=YYYY-MM-DD`
+```text
+GET /api/v1/brokerage/mock/accounts/{accountId}/fills?from=YYYY-MM-DD&to=YYYY-MM-DD&cursor=
+GET /api/v1/brokerage/paper/accounts/{accountId}/fills?from=YYYY-MM-DD&to=YYYY-MM-DD&cursor=
+```
 
-KIS 주식일별주문체결조회(모의 `VTTC0081R`, 3개월 이전 `VTSC9215R`)를 매핑한다. 대시보드 계좌 뷰의 체결 목록 소스이며 S3에서 구현한다.
+S3.3 구현 route다. `accountId`는 opaque owner scope이고 타인 account와 미존재 account는 같은
+404로 닫는다. `from`/`to`는 KST inclusive 날짜이며 최대 31일이다. page size는 50으로
+고정하고 정렬은 `(filledAt DESC, orderId DESC, execRefHash DESC)`다. cursor는 owner, mode,
+account, 기간과 마지막 정렬키를 HMAC으로 결속하고 900초 뒤 만료된다. raw offset과 raw
+owner/account는 cursor에 넣지 않는다.
+
+```json
+{
+  "success": true,
+  "data": {
+    "items": [
+      {
+        "orderId": "ord_mock_0123456789abcdef0123456789abcdef",
+        "brokerageMode": "KIS_MOCK",
+        "symbol": "005930",
+        "side": "BUY",
+        "fillQuantity": 1,
+        "fillPriceKrw": 70000,
+        "fillAmountKrw": 70000,
+        "filledAt": "2030-01-02T09:00:10+09:00",
+        "execRefHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    ],
+    "nextCursor": null
+  }
+}
+```
+
+provider 체결번호 원문, 계좌번호, provider raw body/header/message는 응답에 없다. 현재 KIS_MOCK
+목록은 offline fixture writer가 저장하고 reconcile한 관측만 사용한다.
+`VTTC0081R`/`VTSC9215R` 실제 polling은 별도 exact approval 전까지 비활성이다.
 
 ### 10.8 매수가능 조회
 
@@ -1859,7 +1950,7 @@ query exact set은 `symbol`, `price`다. `cashKrw / price` 정수 몫과
 }
 ```
 
-### 10.9 계좌 지표 조회 (S3 계약)
+### 10.9 계좌 지표 조회 (대사 상태 구현, 지표 route 계획)
 
 `GET /api/v1/brokerage/accounts/{accountId}/metrics`
 
@@ -1881,7 +1972,11 @@ query exact set은 `symbol`, `price`다. `cashKrw / price` 정수 몫과
 ```
 
 - `source`: `INTERNAL_CALC`(v1 기본, INTERNAL_PAPER 원장 + KIS Mock 잔고/체결 스냅샷 계산) 또는 `KIS_LIVE_READONLY`(S3 이후 live read-only gate 통과 시)
-- `reconciliation.status`: `NOT_APPLICABLE`(단일 소스) \| `MATCHED` \| `MISMATCH`(두 소스 대조 불일치, 화면에서 구분 표시)
+- `reconciliation.status`: `NOT_APPLICABLE`(관측 없음) \| `MATCHED`(수량 보존식·관측 합계·
+  재계산 평균가 일치) \| `MISMATCH`(하나 이상 불일치, 화면에서 구분 표시)
+
+S3.3은 이 3상태와 `checkedAt`을 10.2A reconcile 응답에 구현했다. 위 account metrics route와
+손익 지표 전체는 아직 계획 상태이며, 구현되지 않은 route를 OpenAPI에 노출하지 않는다.
 
 ---
 

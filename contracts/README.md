@@ -314,6 +314,55 @@ uv run --frozen python contracts/run_openapi_gate.py \
 [`20260727-s3-2-internal-paper-ledger-contract.md`](changes/20260727-s3-2-internal-paper-ledger-contract.md)를
 따른다.
 
+## S3.3 체결 이벤트와 대사
+
+S3.3은 stored sanitized fill observation을 append-only 주문 이벤트와 수량 projection으로
+반영하고, 주문/체결 대사를 자동 보정 없이 기록한다. 공개 surface는 ADMIN 전용
+`POST /api/v1/brokerage/orders/{orderId}/reconcile`과 owner-scoped
+`GET /api/v1/brokerage/{mock|paper}/accounts/{accountId}/fills` 두 route다.
+클라이언트가 체결을 보고하는 route와 provider polling 경로는 없다.
+
+| 계약 | 경계 |
+|---|---|
+| `catalogs/s3-3-fill-contract.v1.json` | route, mode, ID, 200/50/31일 bounds, cursor, status SSOT |
+| `schemas/s3-3-fill-observation.schema.json` | 최대 4 MiB/10,000개의 sanitized offline fixture |
+| `schemas/s3-3-reconcile-response.schema.json` | ADMIN reconcile data와 3상태 대사 projection |
+| `schemas/s3-3-fill-page.schema.json` | exact 9-field owner fill, 최대 50개와 HMAC cursor |
+| `db/migration/V14__s3_3_fill_events_reconciliation.sql` | additive 수량 컬럼, source, FORCE RLS, bounded definer 함수 |
+| `openapi/openapi.json` | exact 3 route와 exact 5개 `S33*` component의 generated SSOT |
+
+catalog ID는 `s3-3-fill-contract/v1`, SHA-256은
+`d76cd087592e4a9f0a87a9d0213836cbcdd20acd2723815ac762def2b9ef61b4`다.
+관측은 `(order_id, provider_exec_ref_hash)`로 중복 방어하며 provider exec 원문을 저장하지 않는다.
+Kotlin 순수 전이는 Applied/Duplicate/Invalid를 구분하고 SQL 원자 write가 같은 판정을 재검증한다.
+단일 수량 보존식은
+`filled_quantity + leaves_quantity + unfilled_terminated_quantity = quantity`다.
+MISMATCH는 warning/audit로만 남기며 관측이나 주문을 자동 수정하지 않는다.
+
+reconcile은 현재 ADMIN role/status/security version을 transaction 안에서 재검증하고 advisory lock
+아래 한 번에 COMPLETE 관측 최대 200개를 처리한다. fills 조회는 KST inclusive 범위 최대 31일,
+page size 50, `(filledAt DESC, orderId DESC, execRefHash DESC)` 정렬과 owner/mode/account/기간을
+결속한 900초 HMAC cursor를 사용한다. `decision_fill_writer`만 관측 INSERT 권한을 가지며
+`decision_app`의 직접 source 접근과 application role의 UPDATE/DELETE/TRUNCATE는 없다.
+
+재현 명령:
+
+```bash
+uv run --frozen python contracts/generate_s3_3_contracts.py --check
+uv run --frozen python -m unittest discover -s contracts/tests -v
+uv run --frozen python contracts/validate.py
+workspaces/decision-platform/spring-api/gradlew \
+  -p workspaces/decision-platform/spring-api --no-daemon ktlintCheck build
+workspaces/decision-platform/spring-api/gradlew \
+  -p workspaces/decision-platform/spring-api --no-daemon prepareOpenApiFixtureEnv
+uv run --frozen python contracts/run_openapi_gate.py \
+  --env-file workspaces/decision-platform/spring-api/build/openapi-fixture/openapi.env
+```
+
+전체 P0-11~P0-19 결정과 비범위는
+[`20260727-s3-3-fill-events-reconciliation-contract.md`](changes/20260727-s3-3-fill-events-reconciliation-contract.md)를
+따른다. provider/live-account/live-order physical call은 0건이다.
+
 ## S1.5 KIS 데이터 품질 리포트
 
 S1.5는 public API가 아니라 Decision Platform 내부 CLI `kis-data-quality-report`가 생산하는

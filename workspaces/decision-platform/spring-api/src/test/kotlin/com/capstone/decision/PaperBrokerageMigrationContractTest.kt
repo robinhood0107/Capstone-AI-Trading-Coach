@@ -59,7 +59,13 @@ class PaperBrokerageMigrationContractTest {
     fun `V13 evidence와 payload는 allowlist key만 허용한다`() {
         assertTrue(migration.contains("'PAPER_ORDER_ACCEPTED'"))
         assertTrue(migration.contains("'PAPER_ORDER_FILLED'"))
+        assertTrue(migration.contains("'PAPER_ORDER_CANCEL_REQUESTED'"))
         assertTrue(migration.contains("'PAPER_ORDER_CANCELLED'"))
+        assertTrue(
+            migration.contains(
+                "(event_type = 'PAPER_ORDER_CANCEL_REQUESTED' AND event_status = 'CANCEL_REQUESTED')",
+            ),
+        )
         assertTrue(migration.contains("'brokerage.paper-order-accepted.v1'"))
         assertTrue(migration.contains("'brokerage.paper-order-filled.v1'"))
         assertTrue(migration.contains("'brokerage.paper-order-cancelled.v1'"))

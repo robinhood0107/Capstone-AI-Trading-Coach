@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import re
 from collections.abc import Sequence
 from datetime import UTC, datetime
@@ -154,7 +155,11 @@ class BrokerageServicer(brokerage_pb2_grpc.BrokerageServiceServicer):
 
 def _require_authenticated(context: grpc.ServicerContext, shared_secret: str) -> None:
     values = [value for key, value in context.invocation_metadata() if key == _AUTH_METADATA_KEY]
-    if len(values) != 1 or not hmac.compare_digest(values[0], shared_secret):
+    if (
+        len(values) != 1
+        or not isinstance(values[0], str)
+        or not hmac.compare_digest(values[0], shared_secret)
+    ):
         _abort(context, grpc.StatusCode.UNAUTHENTICATED, "brokerage grpc authentication failed")
 
 

@@ -57,6 +57,7 @@ _CANONICAL_STEPS = (
     "cancelFull",
     "executionRead",
 )
+_APPROVAL_CONSUMED_KEY_PREFIX = "kis:mock:approval-consumed:v1:"
 _REQUIRED_CI_CHECKS = frozenset(
     {
         "Contract schema validation",
@@ -246,8 +247,9 @@ def execute_approved_probe(
     expected_packet_sha256: str | None,
     repository_root: Path,
     operations_factory: Callable[[KISMockApprovalPacket], ProbeOperations],
+    approval_consumer: Callable[[KISMockApprovalPacket, datetime], None],
 ) -> ProbeSummary:
-    """모든 local evidence와 current-user latch를 검증한 뒤에만 runtime factory를 만든다."""
+    """local evidence 검증 뒤 single-use claim을 먼저 잡고 runtime factory를 만든다."""
     packet = _load_packet(
         packet_path,
         now=now,
@@ -255,6 +257,7 @@ def execute_approved_probe(
         expected_packet_sha256=expected_packet_sha256,
         repository_root=repository_root,
     )
+    approval_consumer(packet, now)
     operations = operations_factory(packet)
     completed: list[str] = []
     failure: KISMockProbeFailed | None = None
@@ -310,10 +313,7 @@ def _load_packet(
     unsigned = dict(document)
     unsigned.pop("packetSha256", None)
     computed_digest = hashlib.sha256(_canonical_json(unsigned)).hexdigest()
-    if (
-        supplied_digest != computed_digest
-        or expected_packet_sha256 != computed_digest
-    ):
+    if supplied_digest != computed_digest or expected_packet_sha256 != computed_digest:
         raise KISMockApprovalRejected("approval packet digest does not match")
     try:
         packet = KISMockApprovalPacket.model_validate(document)
@@ -343,6 +343,27 @@ def _load_packet(
         raise KISMockApprovalRejected("approval remote HEAD does not match")
     _validate_security_report(packet.evidence)
     return packet
+
+
+def _consume_exact_approval_once(packet: KISMockApprovalPacket, now: datetime) -> None:
+    """Redis 원자 claim으로 exact packet 재실행을 성공/실패와 무관하게 차단한다."""
+    current = now.astimezone(UTC)
+    remaining_ms = int((packet.expires_at - current).total_seconds() * 1000)
+    if remaining_ms <= 0:
+        raise KISMockApprovalRejected("approval packet is not inside its TTL")
+    key_material = f"{packet.approval_id}\0{packet.packet_sha256}".encode()
+    redis_key = _APPROVAL_CONSUMED_KEY_PREFIX + hashlib.sha256(key_material).hexdigest()
+    redis_client: Any | None = None
+    try:
+        redis_client = _build_redis_client()
+        claimed = redis_client.set(redis_key, "1", nx=True, px=remaining_ms)
+    except Exception:
+        raise KISMockApprovalRejected("approval consumption state is unavailable") from None
+    finally:
+        if redis_client is not None:
+            redis_client.close()
+    if claimed is not True:
+        raise KISMockApprovalRejected("approval packet was already consumed")
 
 
 def _read_secure_packet(packet_path: Path) -> tuple[Path, bytes]:
@@ -454,10 +475,7 @@ class _KISMockProbeOperations:
         """canonical operation 이름을 exact packet parameter에만 매핑한다."""
         if operation == "balance":
             balance_response = self._balance_reader.balance(packet.order.account_id)
-            if (
-                balance_response is None
-                or balance_response.account_id != packet.order.account_id
-            ):
+            if balance_response is None or balance_response.account_id != packet.order.account_id:
                 raise ValueError("KIS mock balance probe response is invalid")
             return
         if operation == "buyable":
@@ -536,11 +554,10 @@ def main(argv: list[str] | None = None) -> int:
             args.approval_packet,
             now=datetime.now(tz=UTC),
             expected_approval_id=os.environ.get("S3_KIS_MOCK_EXACT_APPROVAL_ID"),
-            expected_packet_sha256=os.environ.get(
-                "S3_KIS_MOCK_EXACT_APPROVAL_SHA256"
-            ),
+            expected_packet_sha256=os.environ.get("S3_KIS_MOCK_EXACT_APPROVAL_SHA256"),
             repository_root=_REPOSITORY_ROOT,
             operations_factory=_KISMockProbeOperations,
+            approval_consumer=_consume_exact_approval_once,
         )
     except KISMockApprovalRejected:
         print("S3_KIS_MOCK_APPROVAL_REJECTED", file=sys.stderr)

@@ -11,6 +11,7 @@ import com.capstone.decision.application.brokerage.BrokerageOrderNotFoundExcepti
 import com.capstone.decision.application.brokerage.BrokerageUnavailableException
 import com.capstone.decision.application.brokerage.BrokerageValidationException
 import com.capstone.decision.application.brokerage.DecisionExpiredException
+import com.capstone.decision.application.brokerage.InvalidOrderFillCursorException
 import com.capstone.decision.application.brokerage.paper.PaperDataStaleException
 import com.capstone.decision.application.brokerage.paper.PaperIdempotencyInProgressException
 import com.capstone.decision.application.risk.KillSwitchBlockedException
@@ -20,7 +21,13 @@ import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
 
-@RestControllerAdvice(assignableTypes = [BrokerageController::class, PaperBrokerageController::class])
+@RestControllerAdvice(
+    assignableTypes = [
+        BrokerageController::class,
+        PaperBrokerageController::class,
+        BrokerageFillController::class,
+    ],
+)
 class BrokerageExceptionHandler {
     @ExceptionHandler(BrokerageValidationException::class)
     fun handleValidation(
@@ -33,6 +40,23 @@ class BrokerageExceptionHandler {
             details =
                 mapOf(
                     "violations" to exception.violations.map { mapOf("field" to it.field, "reason" to it.reason) },
+                ),
+        )
+
+    @ExceptionHandler(InvalidOrderFillCursorException::class)
+    fun handleInvalidFillCursor(request: HttpServletRequest): ResponseEntity<ApiResponse<Nothing>> =
+        error(
+            request,
+            ErrorCode.VALIDATION_ERROR,
+            details =
+                mapOf(
+                    "violations" to
+                        listOf(
+                            mapOf(
+                                "field" to "/query/cursor",
+                                "reason" to "INVALID_CURSOR",
+                            ),
+                        ),
                 ),
         )
 

@@ -3,6 +3,8 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+import subprocess
+import sys
 import unittest
 
 from jsonschema import Draft202012Validator, FormatChecker
@@ -40,6 +42,21 @@ class S33FillContractTest(unittest.TestCase):
                 (ROOT / f"contracts/schemas/{name}.schema.json").is_file(),
                 name,
             )
+
+    def test_generator_check_uses_only_the_python_standard_library(self) -> None:
+        completed = subprocess.run(
+            [
+                sys.executable,
+                "-S",
+                str(ROOT / "contracts/generate_s3_3_contracts.py"),
+                "--check",
+            ],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(0, completed.returncode, completed.stderr)
 
     def test_fill_observation_schema_rejects_raw_or_inconsistent_reports(self) -> None:
         validator = self._validator("s3-3-fill-observation")

@@ -387,10 +387,14 @@ uv run --frozen python contracts/run_openapi_gate.py \
 전체 P0-11~P0-20 결정과 비범위는
 [`20260727-s3-3-fill-events-reconciliation-contract.md`](changes/20260727-s3-3-fill-events-reconciliation-contract.md)를
 따른다. 일반 구현·계약·OpenAPI·테스트의 provider call은 0건이고, 별도 exact-approved KIS_MOCK
-one-shot probe만 위의 고정 5회 상한 안에서 실행할 수 있다. 이 packet은 `approvalId`와
+`FULL` one-shot probe만 위의 고정 5회 상한 안에서 최종 검증으로 실행할 수 있다. 반복 실패
+recovery는 새 exact-approved `BALANCE_DIAGNOSTIC` packet으로 balance 1회,
+`tokenP=1`/`brokerage=1`, retry/artifact 0만 허용하며 성공해도 새 `FULL` 승인이 필요하다.
+두 profile의 packet은 `approvalId`와
 canonical SHA-256에 결속한 Redis `SET NX PX` single-use claim을 runtime 생성 전에 획득해야 하며,
 성공·첫 실패·runtime 생성 실패 모두 재사용 권한을 남기지 않는다. KIS_MOCK provider response는
-JSON parse/sanitize 전에 1 MiB cap을 적용한다. KIS_LIVE 실계좌 주문은 계속 OFF다.
+JSON parse/sanitize 전에 1 MiB cap을 적용하고 실패 출력은 allowlisted reason/HTTP status/
+provider code만 허용한다. KIS_LIVE 실계좌 주문은 계속 OFF다.
 
 ## S1.5 KIS 데이터 품질 리포트
 

@@ -4,6 +4,7 @@ import java.math.BigInteger
 
 enum class OrderFillStatus {
     SUBMITTED,
+    PENDING_RECONCILIATION,
     ACCEPTED,
     PARTIALLY_FILLED,
     FILLED,

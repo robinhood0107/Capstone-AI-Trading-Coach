@@ -69,7 +69,9 @@ class BrokerageServicer(brokerage_pb2_grpc.BrokerageServiceServicer):
                     order_type=request.order_type,  # type: ignore[arg-type]
                     quantity=request.quantity,
                     estimated_price=request.estimated_price_krw,
-                )
+                ),
+                order_id=request.order_id,
+                account_id=request.account_id,
             )
         except LiveOrderGateClosed:
             _abort(context, grpc.StatusCode.PERMISSION_DENIED, "live order gate is closed")
@@ -94,9 +96,22 @@ class BrokerageServicer(brokerage_pb2_grpc.BrokerageServiceServicer):
     ) -> brokerage_pb2.CancelMockCashOrderResponse:
         _require_authenticated(context, self._shared_secret)
         _validate_order_and_account(request.order_id, request.account_id, context)
+        try:
+            receipt = self._gateway.cancel_cash_order(
+                order_id=request.order_id,
+                account_id=request.account_id,
+            )
+        except LiveOrderGateClosed:
+            _abort(context, grpc.StatusCode.PERMISSION_DENIED, "live order gate is closed")
+        except (MockOrderRejected, ValueError):
+            _abort(context, grpc.StatusCode.FAILED_PRECONDITION, "mock cancel was rejected")
+        except TimeoutError:
+            _abort(context, grpc.StatusCode.DEADLINE_EXCEEDED, "mock cancel transport timed out")
+        except Exception:
+            _abort(context, grpc.StatusCode.UNAVAILABLE, "mock cancel transport unavailable")
         return brokerage_pb2.CancelMockCashOrderResponse(
             order_id=request.order_id,
-            status="CANCEL_REQUESTED",
+            status=receipt.status,
             received_at=_now(),
         )
 
@@ -139,7 +154,7 @@ class BrokerageServicer(brokerage_pb2_grpc.BrokerageServiceServicer):
 
 def _require_authenticated(context: grpc.ServicerContext, shared_secret: str) -> None:
     values = [value for key, value in context.invocation_metadata() if key == _AUTH_METADATA_KEY]
-    if len(values) != 1 or values[0] != shared_secret:
+    if len(values) != 1 or not hmac.compare_digest(values[0], shared_secret):
         _abort(context, grpc.StatusCode.UNAUTHENTICATED, "brokerage grpc authentication failed")
 
 
@@ -181,7 +196,8 @@ def _receipt_hash(provider_order_no: str) -> str:
 
 
 def _now() -> str:
-    return datetime.now(tz=UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    # Spring의 submittedAt보다 같은 초 안에서 과거로 잘리지 않도록 microsecond를 보존한다.
+    return datetime.now(tz=UTC).isoformat(timespec="microseconds").replace("+00:00", "Z")
 
 
 def _abort(

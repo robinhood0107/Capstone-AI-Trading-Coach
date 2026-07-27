@@ -92,6 +92,10 @@ docker compose --env-file .env -f infra/docker-compose.infra.yml exec -T postgre
   bash /docker-entrypoint-initdb.d/02-application-roles.sh
 ```
 
+role bootstrap은 password DDL 전에 session의 statement/error-statement/duration/sample logging을
+모두 끄고 `current_setting`으로 effective 값을 검증한다. 하나라도 안전값이 아니면
+`ON_ERROR_STOP`으로 password bind 전 중단한다.
+
 S1.6 OpenDART online collector는 `.env.example`의 네 quota 값을 운영 evidence에 맞게 모두
 명시해야 하지만, 설정만으로 활성화되지 않는다. 현재 구현은 offline fixture와 mock transport로만
 검증됐으며 KIS/KASI/OpenDART provider 호출, 운영 DB 배포와 collector schedule은 별도 승인 대상이다.

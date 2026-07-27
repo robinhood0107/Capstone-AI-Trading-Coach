@@ -138,19 +138,23 @@ recovery anchor로 남는다.
 
 - `BROKERAGE_GRPC_ENABLED=false`
 - `KIS_MOCK_BROKERAGE_ONLINE_ENABLED=false`
+- `KIS_MOCK_BOUND_ACCOUNT_ID`는 승인된 단일 opaque mock account와 credential이 준비되기 전까지 비움
 - `KIS_LIVE` 주문·정정·취소용 enable flag와 TR allowlist는 없음
 - `KIS_BROKERAGE_TOKEN_P_PHYSICAL_CAP`과 `KIS_BROKERAGE_PHYSICAL_CAP`은 승인 없이는 비움
 - `S3_KIS_MOCK_EXACT_APPROVAL_ID`와 `S3_KIS_MOCK_EXACT_APPROVAL_SHA256`은 승인 없이는 비움
 
 일반 개발·테스트에서는 이 값을 바꾸지 않는다. online gRPC server는 numeric loopback,
-shared secret, finite cap, Fernet reference key를 모두 검증하며 reflection을 열지 않는다.
+shared secret, finite cap, Fernet reference key와 `KIS_MOCK_BOUND_ACCOUNT_ID`를 모두 검증하며
+모든 RPC의 opaque `accountId`가 이 값과 일치할 때만 reader/gateway를 호출한다. reflection은 열지 않는다.
 raw 계좌번호와 provider 주문번호는 Spring/DB/응답으로 보내지 않고 취소에 필요한 reference만
-owner/order에 결속한 bounded-TTL ciphertext로 Redis에 저장한다.
+owner/order에 결속한 bounded-TTL ciphertext로 Redis에 저장한다. 주문 send 전에 encrypted
+`PENDING` marker를 `SET NX`로 확정하고 접수 reference를 `COMMITTED`로 원자 전환한다.
+전환 실패 시 in-memory reference로 전량취소를 retry 없이 최대 1회 보상한다.
 
 실제 KIS_MOCK 최종 검증은 `probeType=FULL`인 다음 순서를 바꿀 수 없는 exact packet으로만
 수행한다.
 
-1. 잔고 `VTTC8434R`
+1. 잔고 source-shape 진단 `VTTC8434R`
 2. 매수가능 `VTTC8908R`
 3. 지정가 매수 1주 `VTTC0012U`
 4. 전량 취소 `VTTC0013U`
@@ -162,6 +166,9 @@ report digest, Redis PTTL baseline, symbol/price/date/account/order opaque ident
 regular file mode `0600`으로만 발급하고, 현재 사용자가 packet의 exact approval ID와 SHA-256을
 별도 승인한 뒤 packet 안의 `executionCommand` 그대로 한 번 실행한다. approval latch가
 없거나 다르거나 만료되면 provider handoff 전에 종료한다. packet 검증 뒤에는 runtime 생성 전에
+tracked/untracked/staged 변경이 없는 clean worktree와 packet account가
+`KIS_MOCK_BOUND_ACCOUNT_ID`에 정확히 결속됐는지도 확인한다. ignored `.env`와
+`private-reference/`는 clean 판정에서 제외한다. 이어서
 `approvalId`와 packet SHA-256에서 파생한 opaque Redis key를 `SET NX PX`로 claim하며,
 성공·첫 실패·runtime 생성 실패 모두 해당 packet을 재사용할 수 없다. Redis 장애나 기존 claim도
 provider handoff 전에 fail-closed한다.
@@ -174,6 +181,9 @@ reference key, 주문 gateway, 취소, 체결조회를 만들지 않는다. 실�
 `reasonCode`, 선택적 `httpStatus`, `[A-Z0-9_-]{1,32}` `providerCode`만 출력하고 provider
 body/header/URL/`msg1`/계좌/credential은 출력하지 않는다. diagnostic도 single-use이며,
 성공해도 최종 5단계에는 또 다른 새 `FULL` packet과 현재 사용자의 새 exact 승인이 필요하다.
+이 balance 단계는 cash/equity/position source shape만 검증하며 margin requirement나
+gold ETF/ETN 분류를 합성하지 않는다. trusted margin/catalog enrichment가 없는 persistent
+online balance projection은 provider 호출 전에 `BALANCE_RISK_FIELDS_UNAVAILABLE`로 닫힌다.
 
 첫 실패는 남은 호출을 모두 중단한다. 주문 접수 뒤 취소가 실패해도 자동 retry하지 않으며,
 모의투자 포털에서 확인·정리가 필요하면 실패 evidence를 고정한 뒤 새 authorization을 받는다.

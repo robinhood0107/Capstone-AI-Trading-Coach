@@ -19,6 +19,13 @@
           "orderId": {
             "pattern": "^ord_paper_[0-9a-f]{32}$",
             "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ACCEPTED",
+              "CANCELLED",
+              "FILLED"
+            ]
           }
         }
       }
@@ -39,6 +46,18 @@
           "orderId": {
             "pattern": "^ord_mock_[0-9a-f]{32}$",
             "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ACCEPTED",
+              "CANCELLED",
+              "CANCEL_REQUESTED",
+              "FILLED",
+              "PARTIALLY_FILLED",
+              "PENDING_RECONCILIATION",
+              "REJECTED",
+              "SUBMITTED"
+            ]
           }
         }
       }
@@ -157,6 +176,7 @@
         "CANCEL_REQUESTED",
         "FILLED",
         "PARTIALLY_FILLED",
+        "PENDING_RECONCILIATION",
         "REJECTED",
         "SUBMITTED"
       ]

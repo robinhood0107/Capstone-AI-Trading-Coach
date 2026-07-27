@@ -121,6 +121,29 @@ def _mode_order_pair_constraints(catalog: dict[str, Any]) -> list[dict[str, obje
     ]
 
 
+def _mode_order_status_constraints(
+    catalog: dict[str, Any],
+) -> list[dict[str, object]]:
+    return [
+        {
+            "if": {
+                "properties": {"brokerageMode": {"const": mode}},
+                "required": ["brokerageMode"],
+            },
+            "then": {
+                "properties": {
+                    "orderId": {
+                        "pattern": catalog["orderIdPatterns"][mode],
+                        "type": "string",
+                    },
+                    "status": {"enum": catalog["orderStatusesByMode"][mode]},
+                }
+            },
+        }
+        for mode in catalog["brokerageModes"]
+    ]
+
+
 def _fill_observation_item(catalog: dict[str, Any]) -> dict[str, object]:
     item = _object(
         {
@@ -266,7 +289,7 @@ def _reconcile_schema(catalog: dict[str, Any]) -> dict[str, object]:
         ],
         title="S3.3 sanitized order reconciliation response v1",
     )
-    schema["allOf"] = _mode_order_pair_constraints(catalog)
+    schema["allOf"] = _mode_order_status_constraints(catalog)
     return _document("s3-3-reconcile-response", schema)
 
 
@@ -438,6 +461,7 @@ def _validate_catalog(catalog: object) -> dict[str, Any]:
         "fillObservation",
         "orderIdPatterns",
         "orderStatuses",
+        "orderStatusesByMode",
         "reconcileObservationMaximum",
         "reconciliationStatuses",
         "routes",
@@ -503,6 +527,32 @@ def _validate_catalog(catalog: object) -> dict[str, Any]:
         "MISMATCH",
     }:
         raise ContractValidationError("S3.3 reconciliation statuses drifted.")
+    if set(catalog["orderStatuses"]) != {
+        "SUBMITTED",
+        "PENDING_RECONCILIATION",
+        "ACCEPTED",
+        "PARTIALLY_FILLED",
+        "FILLED",
+        "CANCEL_REQUESTED",
+        "CANCELLED",
+        "REJECTED",
+    }:
+        raise ContractValidationError("S3.3 order statuses drifted.")
+    expected_statuses_by_mode = {
+        "INTERNAL_PAPER": {"ACCEPTED", "CANCELLED", "FILLED"},
+        "KIS_MOCK": set(catalog["orderStatuses"]),
+    }
+    statuses_by_mode = catalog["orderStatusesByMode"]
+    if (
+        not isinstance(statuses_by_mode, dict)
+        or set(statuses_by_mode) != set(expected_statuses_by_mode)
+        or any(
+            not isinstance(statuses_by_mode[mode], list)
+            or set(statuses_by_mode[mode]) != expected_statuses
+            for mode, expected_statuses in expected_statuses_by_mode.items()
+        )
+    ):
+        raise ContractValidationError("S3.3 mode/status pairs drifted.")
     return catalog
 
 

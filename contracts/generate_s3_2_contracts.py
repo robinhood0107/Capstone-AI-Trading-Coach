@@ -166,17 +166,7 @@ def _order_detail_schema(catalog: dict[str, Any]) -> dict[str, object]:
                     {"pattern": catalog["orderIdPattern"], "type": "string"},
                 ]
             },
-            "status": {
-                "enum": [
-                    "SUBMITTED",
-                    "ACCEPTED",
-                    "PARTIALLY_FILLED",
-                    "FILLED",
-                    "CANCEL_REQUESTED",
-                    "CANCELLED",
-                    "REJECTED",
-                ]
-            },
+            "status": {"enum": catalog["sharedOrderStatuses"]},
             "submittedAt": {"format": "date-time", "type": "string"},
         },
         [
@@ -197,7 +187,11 @@ def _order_detail_schema(catalog: dict[str, Any]) -> dict[str, object]:
             },
             "then": {
                 "properties": {
-                    "orderId": {"pattern": "^ord_mock_[0-9a-f]{32}$", "type": "string"}
+                    "orderId": {
+                        "pattern": "^ord_mock_[0-9a-f]{32}$",
+                        "type": "string",
+                    },
+                    "status": {"enum": catalog["sharedOrderStatuses"]},
                 }
             },
         },
@@ -208,7 +202,11 @@ def _order_detail_schema(catalog: dict[str, Any]) -> dict[str, object]:
             },
             "then": {
                 "properties": {
-                    "orderId": {"pattern": catalog["orderIdPattern"], "type": "string"}
+                    "orderId": {
+                        "pattern": catalog["orderIdPattern"],
+                        "type": "string",
+                    },
+                    "status": {"enum": catalog["statuses"]},
                 }
             },
         },
@@ -389,6 +387,7 @@ def _validate_catalog(catalog: object) -> dict[str, Any]:
         "priceBasis",
         "requestFields",
         "routes",
+        "sharedOrderStatuses",
         "slippageBpsDefault",
         "slippageBpsMaximum",
         "statuses",
@@ -422,6 +421,17 @@ def _validate_catalog(catalog: object) -> dict[str, Any]:
         raise ContractValidationError("S3.2 price basis drifted.")
     if catalog["slippageBpsDefault"] != 5 or catalog["slippageBpsMaximum"] != 100:
         raise ContractValidationError("S3.2 slippage bounds drifted.")
+    if set(catalog["sharedOrderStatuses"]) != {
+        "SUBMITTED",
+        "PENDING_RECONCILIATION",
+        "ACCEPTED",
+        "PARTIALLY_FILLED",
+        "FILLED",
+        "CANCEL_REQUESTED",
+        "CANCELLED",
+        "REJECTED",
+    }:
+        raise ContractValidationError("S3.2 shared order statuses drifted.")
     evidence = catalog["evidence"]
     if not isinstance(evidence, dict) or set(evidence) != {
         "auditActions",

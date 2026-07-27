@@ -42,9 +42,27 @@
     "CANCEL_REQUESTED",
     "FILLED",
     "PARTIALLY_FILLED",
+    "PENDING_RECONCILIATION",
     "REJECTED",
     "SUBMITTED"
   ],
+  "orderStatusesByMode": {
+    "INTERNAL_PAPER": [
+      "ACCEPTED",
+      "CANCELLED",
+      "FILLED"
+    ],
+    "KIS_MOCK": [
+      "ACCEPTED",
+      "CANCELLED",
+      "CANCEL_REQUESTED",
+      "FILLED",
+      "PARTIALLY_FILLED",
+      "PENDING_RECONCILIATION",
+      "REJECTED",
+      "SUBMITTED"
+    ]
+  },
   "reconcileObservationMaximum": 200,
   "reconciliationStatuses": [
     "MATCHED",

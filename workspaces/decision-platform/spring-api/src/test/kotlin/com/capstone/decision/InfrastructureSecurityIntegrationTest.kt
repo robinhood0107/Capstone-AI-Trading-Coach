@@ -374,6 +374,7 @@ class InfrastructureSecurityIntegrationTest {
         private val marketWriterPassword: String = "w" + "m".repeat(24)
         private val portfolioWriterPassword: String = "w" + "p".repeat(24)
         private val riskWriterPassword: String = "w" + "r".repeat(24)
+        private val fillWriterPassword: String = "w" + "f".repeat(24)
         private val postgresImage =
             DockerImageName
                 .parse(
@@ -394,5 +395,6 @@ class InfrastructureSecurityIntegrationTest {
                 .withEnv("POSTGRES_MARKET_WRITER_PASSWORD", marketWriterPassword)
                 .withEnv("POSTGRES_PORTFOLIO_WRITER_PASSWORD", portfolioWriterPassword)
                 .withEnv("POSTGRES_RISK_WRITER_PASSWORD", riskWriterPassword)
+                .withEnv("POSTGRES_FILL_WRITER_PASSWORD", fillWriterPassword)
     }
 }

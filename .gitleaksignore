@@ -2,3 +2,9 @@
 cc3e639dc50d44c17e208250da4d1f27a74b5057:workspaces/decision-platform/spring-api/src/test/kotlin/com/capstone/decision/DecisionApiIntegrationTest.kt:generic-api-key:125
 cc3e639dc50d44c17e208250da4d1f27a74b5057:workspaces/decision-platform/spring-api/src/test/kotlin/com/capstone/decision/DecisionApiIntegrationTest.kt:generic-api-key:175
 cc3e639dc50d44c17e208250da4d1f27a74b5057:workspaces/decision-platform/spring-api/src/test/kotlin/com/capstone/decision/DecisionApiIntegrationTest.kt:generic-api-key:186
+
+# S3.3 offline brokerage fixtures use explicit idempotency-key parameters and contain no provider secret.
+ba004f1ed0d04370832cc6c2facbf46db1df801c:workspaces/decision-platform/spring-api/src/test/kotlin/com/capstone/decision/BrokerageApiIntegrationTest.kt:generic-api-key:354
+ba004f1ed0d04370832cc6c2facbf46db1df801c:workspaces/decision-platform/spring-api/src/test/kotlin/com/capstone/decision/BrokerageApiIntegrationTest.kt:generic-api-key:366
+436fc2d6b1963d6f4e5244f50a373b18fe5c6d25:workspaces/decision-platform/spring-api/src/test/kotlin/com/capstone/decision/BrokerageApiIntegrationTest.kt:generic-api-key:178
+436fc2d6b1963d6f4e5244f50a373b18fe5c6d25:workspaces/decision-platform/spring-api/src/test/kotlin/com/capstone/decision/BrokerageApiIntegrationTest.kt:generic-api-key:223

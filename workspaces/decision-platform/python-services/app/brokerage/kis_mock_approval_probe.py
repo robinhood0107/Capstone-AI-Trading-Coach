@@ -6,6 +6,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import stat
 import subprocess
 import sys
@@ -28,17 +29,21 @@ from pydantic import (
 
 from app.brokerage.kis_mock_online_client import (
     KISBrokerageCallBudget,
+    KISBrokerageCallBudgetExceeded,
+    KISMockBrokerageError,
     KISMockBrokerageHttpClient,
+    KISMockFailureReason,
 )
 from app.brokerage.kis_mock_online_runtime import (
     KISMockExecutionReader,
     KISMockOnlineBalanceReader,
+    KISMockProjectionError,
 )
 from app.brokerage.kis_mock_order_gateway import KISMockOrderGateway, MockOrderIntent
 from app.brokerage.mock_order_reference_store import (
     EncryptedRedisOrderReferenceStore,
 )
-from app.data.kis._credential_transport import _build_redis_client
+from app.data.kis._credential_transport import KISCredentialError, _build_redis_client
 from app.data.kis.settings import KISSettings
 
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[5]
@@ -57,7 +62,9 @@ _CANONICAL_STEPS = (
     "cancelFull",
     "executionRead",
 )
+_BALANCE_DIAGNOSTIC_STEPS = ("balance",)
 _APPROVAL_CONSUMED_KEY_PREFIX = "kis:mock:approval-consumed:v1:"
+_PROVIDER_CODE = re.compile(r"^[A-Z0-9][A-Z0-9_-]{0,31}$")
 _REQUIRED_CI_CHECKS = frozenset(
     {
         "Contract schema validation",
@@ -74,16 +81,37 @@ class KISMockApprovalRejected(RuntimeError):
 
 
 class KISMockProbeFailed(RuntimeError):
-    """첫 실패 지점과 이미 예약된 호출 수만 보존하는 stable probe 오류다."""
+    """첫 실패 지점, bounded 원인과 이미 예약된 호출 수만 보존한다."""
 
     def __init__(
         self,
         failed_step: str,
         physical_reservations: dict[str, int],
+        *,
+        reason_code: str = KISMockFailureReason.UNCLASSIFIED_FAILURE.value,
+        provider_code: str | None = None,
+        http_status: int | None = None,
     ) -> None:
         super().__init__("KIS_MOCK brokerage probe failed")
         self.failed_step = failed_step
         self.physical_reservations = dict(physical_reservations)
+        allowed_reasons = {reason.value for reason in KISMockFailureReason}
+        self.reason_code = (
+            reason_code
+            if reason_code in allowed_reasons
+            else KISMockFailureReason.UNCLASSIFIED_FAILURE.value
+        )
+        self.provider_code = (
+            provider_code
+            if provider_code is not None
+            and _PROVIDER_CODE.fullmatch(provider_code) is not None
+            else None
+        )
+        self.http_status = (
+            http_status
+            if type(http_status) is int and 100 <= http_status <= 599
+            else None
+        )
 
 
 class _StrictModel(BaseModel):
@@ -128,7 +156,7 @@ class ApprovalEvidence(_StrictModel):
 
 class PhysicalCaps(_StrictModel):
     token_p: StrictInt = Field(alias="tokenP", ge=1, le=1)
-    brokerage: StrictInt = Field(ge=5, le=5)
+    brokerage: StrictInt = Field(ge=1, le=5)
 
 
 class RedisBaseline(_StrictModel):
@@ -177,6 +205,10 @@ class KISMockApprovalPacket(_StrictModel):
         ge=0,
         le=0,
     )
+    probe_type: Literal["FULL", "BALANCE_DIAGNOSTIC"] = Field(
+        default="FULL",
+        alias="probeType",
+    )
     repository: RepositoryEvidence
     evidence: ApprovalEvidence
     physical_caps: PhysicalCaps = Field(alias="physicalCaps")
@@ -204,8 +236,17 @@ class KISMockApprovalPacket(_StrictModel):
     def _cross_field_contract(self) -> "KISMockApprovalPacket":
         if self.kis_live_order_enabled is not False:
             raise ValueError("KIS_LIVE order must remain disabled")
-        if self.steps != _CANONICAL_STEPS:
-            raise ValueError("approval steps must match the canonical five-step probe")
+        expected_steps = (
+            _CANONICAL_STEPS
+            if self.probe_type == "FULL"
+            else _BALANCE_DIAGNOSTIC_STEPS
+        )
+        expected_brokerage_cap = 5 if self.probe_type == "FULL" else 1
+        if (
+            self.steps != expected_steps
+            or self.physical_caps.brokerage != expected_brokerage_cap
+        ):
+            raise ValueError("approval steps and caps must match the probe type")
         if not self.issued_at < self.expires_at:
             raise ValueError("approval TTL must be positive")
         if (self.expires_at - self.issued_at).total_seconds() > 3_600:
@@ -258,15 +299,28 @@ def execute_approved_probe(
         repository_root=repository_root,
     )
     approval_consumer(packet, now)
-    operations = operations_factory(packet)
+    try:
+        operations = operations_factory(packet)
+    except KISMockApprovalRejected:
+        raise
+    except Exception as exception:
+        raise _probe_failure(
+            "runtimeInit",
+            {"tokenP": 0, "brokerage": 0},
+            exception,
+        ) from None
     completed: list[str] = []
     failure: KISMockProbeFailed | None = None
     try:
         for operation in packet.steps:
             try:
                 operations.run(operation, packet)
-            except Exception:
-                failure = KISMockProbeFailed(operation, operations.counts())
+            except Exception as exception:
+                failure = _probe_failure(
+                    operation,
+                    operations.counts(),
+                    exception,
+                )
                 break
             completed.append(operation)
         counts = operations.counts()
@@ -275,7 +329,11 @@ def execute_approved_probe(
             operations.close()
         except Exception:
             if failure is None:
-                failure = KISMockProbeFailed("runtimeClose", operations.counts())
+                failure = KISMockProbeFailed(
+                    "runtimeClose",
+                    operations.counts(),
+                    reason_code=KISMockFailureReason.RUNTIME_CLOSE_FAILED.value,
+                )
     if failure is not None:
         raise failure from None
     return ProbeSummary(
@@ -439,18 +497,31 @@ class _KISMockProbeOperations:
     """production mock transport, encrypted reference store와 parser를 그대로 실행한다."""
 
     def __init__(self, packet: KISMockApprovalPacket) -> None:
-        encryption_key = os.environ.get("KIS_MOCK_ORDER_REFERENCE_KEY", "").strip()
-        if not encryption_key:
-            raise KISMockApprovalRejected("mock reference encryption key is unavailable")
+        encryption_key = ""
+        if packet.probe_type == "FULL":
+            encryption_key = os.environ.get(
+                "KIS_MOCK_ORDER_REFERENCE_KEY",
+                "",
+            ).strip()
+            if not encryption_key:
+                raise KISMockApprovalRejected(
+                    "mock reference encryption key is unavailable"
+                )
         self._budget = KISBrokerageCallBudget(
             token_p_cap=packet.physical_caps.token_p,
             brokerage_cap=packet.physical_caps.brokerage,
         )
+        self._reference_redis: Any | None = None
+        self._reference_store: EncryptedRedisOrderReferenceStore | None = None
+        self._gateway: KISMockOrderGateway | None = None
+        self._execution_reader: KISMockExecutionReader | None = None
         self._client = KISMockBrokerageHttpClient(
             settings=KISSettings(kis_mode="mock", kis_offline=False),
             budget=self._budget,
         )
-        self._reference_redis: Any | None = None
+        self._balance_reader = KISMockOnlineBalanceReader(self._client)
+        if packet.probe_type == "BALANCE_DIAGNOSTIC":
+            return
         try:
             self._reference_redis = _build_redis_client()
             self._reference_store = EncryptedRedisOrderReferenceStore(
@@ -463,7 +534,6 @@ class _KISMockProbeOperations:
                 mode="mock",
                 reference_store=self._reference_store,
             )
-            self._balance_reader = KISMockOnlineBalanceReader(self._client)
             self._execution_reader = KISMockExecutionReader(self._client)
         except Exception:
             self.close()
@@ -476,7 +546,10 @@ class _KISMockProbeOperations:
         if operation == "balance":
             balance_response = self._balance_reader.balance(packet.order.account_id)
             if balance_response is None or balance_response.account_id != packet.order.account_id:
-                raise ValueError("KIS mock balance probe response is invalid")
+                raise KISMockProjectionError(
+                    KISMockFailureReason.BALANCE_PROBE_RESPONSE_INVALID,
+                    "KIS mock balance probe response is invalid",
+                )
             return
         if operation == "buyable":
             buyable_response = self._balance_reader.buyable(
@@ -490,9 +563,14 @@ class _KISMockProbeOperations:
                 or buyable_response.buyable_quantity < packet.order.quantity
                 or buyable_response.buyable_amount_krw < packet.order.limit_price_krw
             ):
-                raise ValueError("KIS mock buyable probe cannot fund the exact order")
+                raise KISMockProjectionError(
+                    KISMockFailureReason.BUYABLE_PROBE_UNFUNDED,
+                    "KIS mock buyable probe cannot fund the exact order",
+                )
             return
         if operation == "submitLimitBuy":
+            if self._gateway is None:
+                raise ValueError("KIS mock approval operation is not allowed")
             order_receipt = self._gateway.submit_cash_order(
                 MockOrderIntent(
                     symbol=packet.order.symbol,
@@ -505,23 +583,36 @@ class _KISMockProbeOperations:
                 account_id=packet.order.account_id,
             )
             if not order_receipt.accepted:
-                raise ValueError("KIS mock order probe was not accepted")
+                raise KISMockProjectionError(
+                    KISMockFailureReason.ORDER_PROBE_REJECTED,
+                    "KIS mock order probe was not accepted",
+                )
             return
         if operation == "cancelFull":
+            if self._gateway is None:
+                raise ValueError("KIS mock approval operation is not allowed")
             cancel_receipt = self._gateway.cancel_cash_order(
                 order_id=packet.order.order_id,
                 account_id=packet.order.account_id,
             )
             if cancel_receipt.status != "CANCELLED":
-                raise ValueError("KIS mock cancel probe was not confirmed")
+                raise KISMockProjectionError(
+                    KISMockFailureReason.CANCEL_PROBE_UNCONFIRMED,
+                    "KIS mock cancel probe was not confirmed",
+                )
             return
         if operation == "executionRead":
+            if self._reference_store is None or self._execution_reader is None:
+                raise ValueError("KIS mock approval operation is not allowed")
             reference = self._reference_store.get(
                 packet.order.order_id,
                 packet.order.account_id,
             )
             if reference is None:
-                raise ValueError("KIS mock execution probe reference is unavailable")
+                raise KISMockProjectionError(
+                    KISMockFailureReason.EXECUTION_REFERENCE_UNAVAILABLE,
+                    "KIS mock execution probe reference is unavailable",
+                )
             self._execution_reader.read(
                 reference=reference,
                 start=packet.execution.start,
@@ -563,15 +654,21 @@ def main(argv: list[str] | None = None) -> int:
         print("S3_KIS_MOCK_APPROVAL_REJECTED", file=sys.stderr)
         return 2
     except KISMockProbeFailed as exception:
+        failure_payload: dict[str, object] = {
+            "status": "FAILED",
+            "failedStep": exception.failed_step,
+            "reasonCode": exception.reason_code,
+            "physicalReservations": exception.physical_reservations,
+            "artifactWrites": 0,
+            "retryCount": 0,
+        }
+        if exception.provider_code is not None:
+            failure_payload["providerCode"] = exception.provider_code
+        if exception.http_status is not None:
+            failure_payload["httpStatus"] = exception.http_status
         print(
             json.dumps(
-                {
-                    "status": "FAILED",
-                    "failedStep": exception.failed_step,
-                    "physicalReservations": exception.physical_reservations,
-                    "artifactWrites": 0,
-                    "retryCount": 0,
-                },
+                failure_payload,
                 sort_keys=True,
                 separators=(",", ":"),
             ),
@@ -593,6 +690,37 @@ def main(argv: list[str] | None = None) -> int:
         )
     )
     return 0
+
+
+def _probe_failure(
+    failed_step: str,
+    physical_reservations: dict[str, int],
+    exception: Exception,
+) -> KISMockProbeFailed:
+    """untrusted 예외 문자열을 버리고 typed allowlist만 operator 출력으로 승격한다."""
+    if isinstance(exception, (KISMockBrokerageError, KISMockProjectionError)):
+        return KISMockProbeFailed(
+            failed_step,
+            physical_reservations,
+            reason_code=exception.reason_code,
+            provider_code=exception.provider_code,
+            http_status=exception.http_status,
+        )
+    if isinstance(exception, KISBrokerageCallBudgetExceeded):
+        reason = KISMockFailureReason.CALL_BUDGET_EXCEEDED
+    elif isinstance(exception, KISCredentialError):
+        reason = KISMockFailureReason.CREDENTIAL_UNAVAILABLE
+    else:
+        reason = (
+            KISMockFailureReason.RUNTIME_INIT_FAILED
+            if failed_step == "runtimeInit"
+            else KISMockFailureReason.UNCLASSIFIED_FAILURE
+        )
+    return KISMockProbeFailed(
+        failed_step,
+        physical_reservations,
+        reason_code=reason.value,
+    )
 
 
 def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:

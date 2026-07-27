@@ -241,15 +241,15 @@ ADMIN의 운영 조회·재시도·replay는 업무상 필요한 최소 범위�
 | 동일 key + 다른 payload | `IDEMPOTENCY_CONFLICT`(409) |
 | 동일 key 처리 중 | `IDEMPOTENCY_IN_PROGRESS`(409), controller 재실행 금지 |
 | key 보존 기간 | 24시간(Redis TTL) |
-| 저장 namespace | `(subject, HTTP method, route template, idempotency key)` |
-| payload fingerprint | bounded request body를 canonical form으로 만든 뒤 method/route/subject와 함께 hash |
+| 금융 write replay namespace | `(purpose/version, subject, current role, securityVersion, idempotency key)` |
+| payload fingerprint | bounded request body를 method/request URI/query와 함께 hash |
 | key 형식 | 16~128자, `[A-Za-z0-9._:-]`만 허용. 원문은 로그·metric label에 남기지 않음 |
 
 Redis claim은 고유 owner token으로 선점하고, owner 확인·응답 저장·TTL 설정·claim 삭제를 단일 Lua script로 처리한다. Redis는 인증+AOF+`noeviction`으로 운영하지만 금융 부작용의 최종 방어는 DB unique/state transition이다.
 
 Idempotency HMAC key rotation 중에는 active와 previous version의 scope digest를 모두 조회해 기존 replay/DB unique를 확인하고 새 기록만 active version으로 쓴다. previous version은 24시간 replay TTL과 미완료 reconciliation이 모두 끝나기 전에 폐기하지 않는다. 이 dual-read가 불가능하면 rotation 중 금융 write를 fail-closed로 막는다.
 
-멱등 선점은 설정 wildcard에 단순 일치하는 URL이 아니라 실제 MVC write handler가 매핑된 요청에만 적용한다. 인가와 owner 검증이 끝난 뒤 claim하며, 사용자별 TTL 구간의 신규 key는 기본 1,000개로 제한하고 초과 시 `RATE_LIMITED`(429)를 반환한다. 인가·라우팅·검증성 4xx는 owner claim을 원자 반납해 장기 replay state로 남기지 않고, controller 응답 버퍼는 설정 byte 상한 이상을 메모리에 보관하지 않는다. 동일 key replay도 원래 subject에게만 반환한다.
+멱등 선점은 설정 wildcard에 단순 일치하는 URL이 아니라 실제 MVC write handler가 매핑된 요청에만 적용한다. DB-backed JWT 인증이 확인한 현재 role/securityVersion을 replay scope에 묶으므로 권한 변경 전 저장 응답은 새 principal에서 cache miss가 되고 route 인가를 다시 통과해야 한다. 사용자별 TTL 구간의 신규 key는 owner·purpose 단위로 기본 1,000개로 제한한다. 인가·라우팅·검증성 4xx는 owner claim을 원자 반납해 장기 replay state로 남기지 않고, controller 응답 버퍼는 설정 byte 상한 이상을 메모리에 보관하지 않는다. 동일 key replay도 같은 subject·현재 권한 context에서만 반환한다.
 
 금융 부작용 또는 안전 gate를 변경하는 다음 write에 위 시맨틱을 의무 적용한다.
 
@@ -1544,8 +1544,10 @@ KIS Mock 중심으로 구현하고, KIS Live는 고급해제/3단계 동의/재�
 > `GET /api/v1/brokerage/mock/accounts/{accountId}/fills`,
 > `GET /api/v1/brokerage/paper/accounts/{accountId}/fills`를 구현한다. KIS_MOCK 체결은
 > `decision_fill_writer`가 저장한 sanitized COMPLETE 관측만 ADMIN reconcile이 최대 200개씩
-> 소비하며, INTERNAL_PAPER는 S3.2의 결정적 체결을 재사용한다. owner fill page는 최대 50개,
-> KST 날짜 범위 최대 31일, HMAC cursor를 사용한다. 체결 보고 public route, scheduler,
+> 소비한다. 한 번 캡처한 `reconciledAt`까지 observed/received된 관측만 현재 batch와
+> `hasMore`에 포함하고, exact fill notional을 batch 사이에도 보존한다. INTERNAL_PAPER는
+> S3.2의 결정적 체결을 재사용한다. owner fill page는 최대 50개, KST 날짜 범위 최대 31일,
+> HMAC cursor를 사용한다. 체결 보고 public route, scheduler,
 > provider/live-account/live-order 호출은 0건이다. canonical SSOT는
 > `contracts/catalogs/s3-3-fill-contract.v1.json`과
 > `contracts/changes/20260727-s3-3-fill-events-reconciliation-contract.md`다.
@@ -1696,7 +1698,9 @@ S3.3부터 저장 주문은 다음 체결 projection을 함께 유지한다.
   `averageFillPriceKrw`
 - 모든 상태의 단일 보존식:
   `filledQuantity + leavesQuantity + unfilledTerminatedQuantity = quantity`
-- `averageFillPriceKrw`는 fill 수량 가중 정수 평균이며 `filledQuantity=0`일 때만 null이다.
+- 내부 전이는 적용된 fill의 exact 누적 notional을 batch 사이에도 보존하고
+  `averageFillPriceKrw = floor(exactNotional / filledQuantity)`로 계산한다.
+  `averageFillPriceKrw`는 `filledQuantity=0`일 때만 null이다.
 - 일반 주문 상태 조회는 기존 owner-scoped summary 계약을 유지한다. 체결 수량과 대사 상태의
   authoritative sanitized projection은 아래 ADMIN reconcile 응답과 10.7 owner fills 조회가
   제공한다.
@@ -1706,9 +1710,12 @@ S3.3부터 저장 주문은 다음 체결 projection을 함께 유지한다.
 `POST /api/v1/brokerage/orders/{orderId}/reconcile`
 
 S3.3 구현 route다. ADMIN 전용이며 `X-Idempotency-Key`가 필수이고 body는 비어 있거나 `{}`만
-허용한다. 필터와 method 권한 검사 뒤 DB transaction 안에서 현재 `status`, `role`,
-`securityVersion`을 다시 검증한다. 저장된 COMPLETE 관측만 `(observedAt, observationId)` 순으로
-최대 200개 처리하며 provider 호출을 만들지 않는다.
+허용한다. JWT 인증이 확인한 현재 role/securityVersion은 replay scope에도 묶여 권한 변경 전
+ADMIN 응답을 새 권한 context에서 재생할 수 없다. cache miss는 method 권한 검사를 거치고,
+DB transaction 안에서 현재 `status`, `role`, `securityVersion`을 다시 검증한다.
+대사 시작 시 `reconciledAt`을 한 번만 캡처하고, `observedAt <= reconciledAt`이면서
+`receivedAt <= reconciledAt`인 COMPLETE 관측만 `(observedAt, observationId)` 순으로 최대
+200개 처리하며 provider 호출을 만들지 않는다.
 
 ```json
 {
@@ -1734,8 +1741,10 @@ S3.3 구현 route다. ADMIN 전용이며 `X-Idempotency-Key`가 필수이고 bod
 `reconciliation.status`는 `NOT_APPLICABLE | MATCHED | MISMATCH`다. MISMATCH는 warning과
 sanitized audit/outbox를 남기지만 주문이나 관측을 자동 수정하지 않는다. Duplicate 관측은
 event를 추가하지 않고, 역행·초과·종료 상태 관측은 `INVALID_TRANSITION` 증거를 남긴다.
-`CANCEL_REQUESTED -> FILLED` race는 허용한다. `hasMore=true`면 같은 ADMIN workflow가 새
-idempotency key로 다음 bounded batch를 실행한다.
+`CANCEL_REQUESTED -> PARTIALLY_FILLED`는 취소 의도를 지우지 않도록 Invalid로 남기고,
+`CANCEL_REQUESTED -> FILLED` full-fill race만 허용한다. cutoff 이후 관측은 현재
+`hasMore`에 포함하지 않고 다음 대사 시각까지 연기한다. `hasMore=true`면 같은 ADMIN
+workflow가 새 idempotency key로 다음 bounded batch를 실행한다.
 
 ### 10.3 주문 취소
 

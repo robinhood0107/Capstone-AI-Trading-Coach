@@ -172,17 +172,14 @@ class EncryptedRedisOrderReferenceStore:
         account_id: str,
         reference: MockProviderOrderReference,
     ) -> None:
-        """같은 PENDING ciphertext일 때만 provider reference를 COMMITTED로 원자 전환한다."""
+        """Redis의 durable PENDING ciphertext일 때만 reference를 COMMITTED로 원자 전환한다."""
         _validate_identity(order_id, account_id)
         _validate_reference(reference)
         key = self._key(order_id, account_id)
-        with self._pending_lock:
-            expected = self._pending_ciphertexts.get(key)
-        if expected is None:
-            raise MockOrderReferenceUnavailable("mock order reference storage is unavailable")
-        pending = self._decode(expected, order_id, account_id)
+        expected, pending = self._pending_snapshot(key, order_id, account_id)
         if (
             pending.get("state") != "PENDING"
+            or set(pending) != _PENDING_FIELDS
             or pending.get("orderDivision") != reference.order_division
             or pending.get("quantity") != reference.quantity
         ):
@@ -213,6 +210,8 @@ class EncryptedRedisOrderReferenceStore:
                 pipeline.multi()
                 pipeline.set(key, encrypted, ex=self._ttl_seconds)
                 results = pipeline.execute()
+        except MockOrderReferenceUnavailable:
+            raise
         except Exception:
             raise MockOrderReferenceUnavailable(
                 "mock order reference storage is unavailable"
@@ -221,6 +220,30 @@ class EncryptedRedisOrderReferenceStore:
             raise MockOrderReferenceUnavailable("mock order reference storage is unavailable")
         with self._pending_lock:
             self._pending_ciphertexts.pop(key, None)
+
+    def _pending_snapshot(
+        self,
+        key: str,
+        order_id: str,
+        account_id: str,
+    ) -> tuple[bytes, dict[str, object]]:
+        """재시작 후 process-local map이 비어도 Redis PENDING 자체를 CAS 기준으로 사용한다."""
+        with self._pending_lock:
+            expected = self._pending_ciphertexts.get(key)
+        if expected is None:
+            try:
+                stored = self._redis.get(key)
+            except Exception:
+                raise MockOrderReferenceUnavailable(
+                    "mock order reference storage is unavailable"
+                ) from None
+            if not isinstance(stored, (bytes, bytearray, memoryview)):
+                raise MockOrderReferenceUnavailable(
+                    "mock order reference storage is unavailable"
+                )
+            expected = bytes(stored)
+        pending = self._decode(expected, order_id, account_id)
+        return expected, pending
 
     def get(
         self,

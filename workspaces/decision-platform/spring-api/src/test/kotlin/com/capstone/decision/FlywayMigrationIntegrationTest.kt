@@ -59,9 +59,9 @@ class FlywayMigrationIntegrationTest(
     @Autowired private val riskSnapshotPort: RiskSnapshotPort,
 ) : SpringApiIntegrationTestBase() {
     @Test
-    fun `clean database applies V1 through V14 migrations and creates required objects`() {
+    fun `clean database applies V1 through V15 migrations and creates required objects`() {
         val versions = queryStrings("select version from flyway_schema_history where success order by installed_rank")
-        assertEquals((1..14).map(Int::toString), versions)
+        assertEquals((1..15).map(Int::toString), versions)
 
         val requiredTables =
             listOf(
@@ -168,7 +168,7 @@ class FlywayMigrationIntegrationTest(
     }
 
     @Test
-    fun `decision application role receives only V13 brokerage capabilities`() {
+    fun `decision application role receives only V15 brokerage capabilities`() {
         assertTrue(hasTablePrivilege("decision_app", "risk_kill_switch", "SELECT"))
         assertFalse(hasTablePrivilege("decision_app", "risk_kill_switch", "INSERT"))
         assertFalse(hasTablePrivilege("decision_app", "risk_kill_switch", "DELETE"))
@@ -213,6 +213,7 @@ class FlywayMigrationIntegrationTest(
             "read_mock_order_owner_projection(text,text,text)",
             "create_mock_order(jsonb,text)",
             "request_mock_order_cancel(jsonb,text)",
+            "record_mock_order_provider_outcome(jsonb,text)",
             "read_paper_order_context(text,text,text)",
             "find_paper_order_idempotency_result(text,text,timestamp with time zone,text)",
             "read_paper_balance_projection(text,text,text)",

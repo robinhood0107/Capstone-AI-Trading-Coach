@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 from pathlib import Path
@@ -116,6 +117,17 @@ class S33FillContractTest(unittest.TestCase):
             self._load("contracts/schemas/s3-3-fill-page.schema.json")
             ["properties"]["items"]["maxItems"],
         )
+
+        pending_mock = copy.deepcopy(
+            self._load("contracts/examples/s3-3-reconcile-response.valid.json")
+        )
+        pending_mock["status"] = "PENDING_RECONCILIATION"
+        self.assertEqual([], list(reconcile.iter_errors(pending_mock)))
+
+        pending_paper = copy.deepcopy(pending_mock)
+        pending_paper["brokerageMode"] = "INTERNAL_PAPER"
+        pending_paper["orderId"] = "ord_paper_0123456789abcdef0123456789abcdef"
+        self.assertNotEqual([], list(reconcile.iter_errors(pending_paper)))
 
     def test_openapi_has_exact_s33_routes_components_and_digest(self) -> None:
         document = self._load("contracts/openapi/openapi.json")

@@ -6,13 +6,14 @@ import hashlib
 import re
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
-from typing import Any
+from typing import Any, NoReturn
 
 from app.brokerage.kis_mock_online_client import (
     BALANCE_PATH,
     BUYABLE_PATH,
     EXECUTIONS_PATH,
     KISMockBrokerageHttpClient,
+    KISMockFailureReason,
     MOCK_BALANCE_TR_ID,
     MOCK_BUYABLE_TR_ID,
     MOCK_EXECUTIONS_ARCHIVE_TR_ID,
@@ -43,6 +44,16 @@ class MockExecutionSnapshot:
     observed_at: datetime
 
 
+class KISMockProjectionError(ValueError):
+    """provider 원문 없이 sanitized projection의 exact validation leaf만 보존한다."""
+
+    def __init__(self, reason: KISMockFailureReason, message: str) -> None:
+        super().__init__(message)
+        self.reason_code = reason.value
+        self.provider_code: str | None = None
+        self.http_status: int | None = None
+
+
 class KISMockOnlineBalanceReader:
     """KIS raw balance를 bounded protobuf projection으로 즉시 축약한다."""
 
@@ -67,15 +78,27 @@ class KISMockOnlineBalanceReader:
             },
         )
         if payload.get("ctx_area_fk100") or payload.get("ctx_area_nk100"):
-            raise ValueError("KIS mock balance response requires another bounded page")
+            raise KISMockProjectionError(
+                KISMockFailureReason.BALANCE_PAGINATION_REQUIRED,
+                "KIS mock balance response requires another bounded page",
+            )
         positions = _positions(payload.get("output1"))
-        summary = _single_object(payload.get("output2"), "balance summary")
+        summary = _single_object(
+            payload.get("output2"),
+            "balance summary",
+            reason=KISMockFailureReason.BALANCE_SUMMARY_INVALID,
+        )
         response = brokerage_pb2.GetMockBalanceResponse(
             account_id=account_id,
-            cash_krw=_nonnegative(summary.get("dnca_tot_amt"), "cash"),
+            cash_krw=_nonnegative(
+                summary.get("dnca_tot_amt"),
+                "cash",
+                reason=KISMockFailureReason.BALANCE_CASH_INVALID,
+            ),
             portfolio_equity_krw=_nonnegative(
                 summary.get("tot_evlu_amt"),
                 "portfolio equity",
+                reason=KISMockFailureReason.BALANCE_EQUITY_INVALID,
             ),
             # KIS cash balance 응답에 독립 margin requirement가 없어 v1 sanitized projection은 0으로 고정한다.
             margin_requirement_krw=0,
@@ -231,46 +254,96 @@ class KISMockExecutionReader:
 
 def _positions(value: object) -> tuple[tuple[str, int, int], ...]:
     if not isinstance(value, list) or len(value) > _MAX_POSITIONS:
-        raise ValueError("KIS mock balance positions are invalid")
+        raise KISMockProjectionError(
+            KISMockFailureReason.BALANCE_POSITIONS_INVALID,
+            "KIS mock balance positions are invalid",
+        )
     parsed: list[tuple[str, int, int]] = []
     for row in value:
         if not isinstance(row, dict):
-            raise ValueError("KIS mock balance position is invalid")
+            raise KISMockProjectionError(
+                KISMockFailureReason.BALANCE_POSITIONS_INVALID,
+                "KIS mock balance position is invalid",
+            )
         symbol = row.get("pdno")
         if not isinstance(symbol, str) or _SYMBOL.fullmatch(symbol) is None:
-            raise ValueError("KIS mock balance symbol is invalid")
+            raise KISMockProjectionError(
+                KISMockFailureReason.BALANCE_POSITIONS_INVALID,
+                "KIS mock balance symbol is invalid",
+            )
         parsed.append(
             (
                 symbol,
-                _nonnegative(row.get("hldg_qty"), "holding quantity"),
-                _nonnegative(row.get("evlu_amt"), "position market value"),
+                _nonnegative(
+                    row.get("hldg_qty"),
+                    "holding quantity",
+                    reason=KISMockFailureReason.BALANCE_POSITIONS_INVALID,
+                ),
+                _nonnegative(
+                    row.get("evlu_amt"),
+                    "position market value",
+                    reason=KISMockFailureReason.BALANCE_POSITIONS_INVALID,
+                ),
             )
         )
     if len({row[0] for row in parsed}) != len(parsed):
-        raise ValueError("KIS mock balance contains duplicate symbols")
+        raise KISMockProjectionError(
+            KISMockFailureReason.BALANCE_POSITIONS_INVALID,
+            "KIS mock balance contains duplicate symbols",
+        )
     return tuple(sorted(parsed))
 
 
-def _single_object(value: object, label: str) -> dict[str, Any]:
+def _single_object(
+    value: object,
+    label: str,
+    *,
+    reason: KISMockFailureReason | None = None,
+) -> dict[str, Any]:
     if isinstance(value, list):
         if len(value) != 1 or not isinstance(value[0], dict):
-            raise ValueError(f"KIS mock {label} response is invalid")
+            _raise_projection_error(label, reason)
         return value[0]
     if not isinstance(value, dict):
-        raise ValueError(f"KIS mock {label} response is invalid")
+        _raise_projection_error(label, reason)
     return value
 
 
-def _nonnegative(value: object, field: str) -> int:
+def _nonnegative(
+    value: object,
+    field: str,
+    *,
+    reason: KISMockFailureReason | None = None,
+) -> int:
     if not isinstance(value, (str, int)) or isinstance(value, bool):
-        raise ValueError(f"KIS mock {field} is invalid")
+        _raise_numeric_error(field, reason)
     normalized = str(value).replace(",", "").strip()
     if not normalized.isdigit():
-        raise ValueError(f"KIS mock {field} is invalid")
+        _raise_numeric_error(field, reason)
     parsed = int(normalized)
     if parsed > _MAX_BIGINT:
-        raise ValueError(f"KIS mock {field} is invalid")
+        _raise_numeric_error(field, reason)
     return parsed
+
+
+def _raise_projection_error(
+    label: str,
+    reason: KISMockFailureReason | None,
+) -> NoReturn:
+    message = f"KIS mock {label} response is invalid"
+    if reason is None:
+        raise ValueError(message)
+    raise KISMockProjectionError(reason, message)
+
+
+def _raise_numeric_error(
+    field: str,
+    reason: KISMockFailureReason | None,
+) -> NoReturn:
+    message = f"KIS mock {field} is invalid"
+    if reason is None:
+        raise ValueError(message)
+    raise KISMockProjectionError(reason, message)
 
 
 def _now_text() -> str:

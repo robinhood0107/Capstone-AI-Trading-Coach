@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable
+from enum import StrEnum
 from pathlib import Path
 from threading import Lock
 from typing import Any, cast
@@ -14,14 +15,21 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.data.kis._credential_transport import (
     KISCredentialError,
+    KISResponseTooLargeError,
     _CredentialTransport,
     _TokenIssuer,
     _build_redis_client,
     _provider_scope,
 )
-from app.data.kis.auth import KISTokenManager
 from app.data.kis.accounting import KISCallBudgetExceeded
-from app.data.kis.rate_limiter import RateLimiter, RedisIntervalLimiter, TokenBucket
+from app.data.kis.auth import KISTokenCacheError, KISTokenManager
+from app.data.kis.rate_limiter import (
+    KISRateLimitUnavailable,
+    KISRateLimitWaitExceeded,
+    RateLimiter,
+    RedisIntervalLimiter,
+    TokenBucket,
+)
 from app.data.kis.settings import KISSettings
 
 ORDER_CASH_PATH = "/uapi/domestic-stock/v1/trading/order-cash"
@@ -127,14 +135,58 @@ _ACCOUNT_PATTERN = re.compile(r"^[0-9]{8}-[0-9]{2}$")
 _INTERNAL_TR_ID_HEADER = "x-kis-internal-tr-id"
 _MAX_RESPONSE_BYTES = 1024 * 1024
 _ROOT_ENV_FILE = Path(__file__).resolve().parents[5] / ".env"
+_PROVIDER_CODE_PATTERN = re.compile(r"^[A-Z0-9][A-Z0-9_-]{0,31}$")
 
 
 class KISMockLiveOrderGateClosed(RuntimeError):
     """실전 주문 mode나 실전 주문 TR은 provider send 전에 영구 거부한다."""
 
 
+class KISMockFailureReason(StrEnum):
+    """원문 없이 operator에게 공개할 수 있는 KIS_MOCK 실패 분류 allowlist다."""
+
+    CREDENTIAL_UNAVAILABLE = "BROKERAGE_CREDENTIAL_UNAVAILABLE"
+    RATE_LIMIT_UNAVAILABLE = "BROKERAGE_RATE_LIMIT_UNAVAILABLE"
+    CALL_BUDGET_EXCEEDED = "BROKERAGE_CALL_BUDGET_EXCEEDED"
+    TRANSPORT_UNAVAILABLE = "BROKERAGE_TRANSPORT_UNAVAILABLE"
+    HTTP_ERROR = "BROKERAGE_HTTP_ERROR"
+    RESPONSE_TOO_LARGE = "BROKERAGE_RESPONSE_TOO_LARGE"
+    RESPONSE_INVALID = "BROKERAGE_RESPONSE_INVALID"
+    RESPONSE_SANITIZATION_FAILED = "BROKERAGE_RESPONSE_SANITIZATION_FAILED"
+    PROVIDER_REJECTED = "BROKERAGE_PROVIDER_REJECTED"
+    BALANCE_PAGINATION_REQUIRED = "BALANCE_PAGINATION_REQUIRED"
+    BALANCE_POSITIONS_INVALID = "BALANCE_POSITIONS_INVALID"
+    BALANCE_SUMMARY_INVALID = "BALANCE_SUMMARY_INVALID"
+    BALANCE_CASH_INVALID = "BALANCE_CASH_INVALID"
+    BALANCE_EQUITY_INVALID = "BALANCE_EQUITY_INVALID"
+    BALANCE_PROBE_RESPONSE_INVALID = "BALANCE_PROBE_RESPONSE_INVALID"
+    BUYABLE_PROBE_UNFUNDED = "BUYABLE_PROBE_UNFUNDED"
+    ORDER_PROBE_REJECTED = "ORDER_PROBE_REJECTED"
+    CANCEL_PROBE_UNCONFIRMED = "CANCEL_PROBE_UNCONFIRMED"
+    EXECUTION_REFERENCE_UNAVAILABLE = "EXECUTION_REFERENCE_UNAVAILABLE"
+    RUNTIME_INIT_FAILED = "RUNTIME_INIT_FAILED"
+    RUNTIME_CLOSE_FAILED = "RUNTIME_CLOSE_FAILED"
+    UNCLASSIFIED_FAILURE = "UNCLASSIFIED_FAILURE"
+
+
 class KISMockBrokerageError(RuntimeError):
     """provider 원문을 보존하지 않는 stable brokerage transport 오류다."""
+
+    def __init__(
+        self,
+        reason: KISMockFailureReason,
+        *,
+        provider_code: str | None = None,
+        http_status: int | None = None,
+    ) -> None:
+        super().__init__("KIS_MOCK brokerage request failed")
+        self.reason_code = reason.value
+        self.provider_code = _bounded_provider_code(provider_code)
+        self.http_status = (
+            http_status
+            if type(http_status) is int and 100 <= http_status <= 599
+            else None
+        )
 
 
 class KISBrokerageCallBudgetExceeded(KISCallBudgetExceeded):
@@ -352,6 +404,7 @@ class KISMockBrokerageHttpClient:
             query["CANO"] = self._cano
             query["ACNT_PRDT_CD"] = self._product_code
             body = None
+        brokerage_before = self._budget.counts["brokerage"]
         try:
             response = self._http.request(
                 normalized_method,
@@ -361,34 +414,63 @@ class KISMockBrokerageHttpClient:
                 json=body,
             )
         except (
-            KISCredentialError,
             KISBrokerageCallBudgetExceeded,
         ):
             raise
+        except KISResponseTooLargeError:
+            raise KISMockBrokerageError(
+                KISMockFailureReason.RESPONSE_TOO_LARGE
+            ) from None
+        except (KISRateLimitUnavailable, KISRateLimitWaitExceeded):
+            raise KISMockBrokerageError(
+                KISMockFailureReason.RATE_LIMIT_UNAVAILABLE
+            ) from None
+        except KISTokenCacheError:
+            raise KISMockBrokerageError(
+                KISMockFailureReason.CREDENTIAL_UNAVAILABLE
+            ) from None
+        except KISCredentialError:
+            reason = (
+                KISMockFailureReason.RESPONSE_SANITIZATION_FAILED
+                if self._budget.counts["brokerage"] > brokerage_before
+                else KISMockFailureReason.CREDENTIAL_UNAVAILABLE
+            )
+            raise KISMockBrokerageError(reason) from None
         except KISCallBudgetExceeded:
             raise KISBrokerageCallBudgetExceeded(
                 "KIS brokerage physical reservation cap exhausted"
             ) from None
         except Exception:
-            raise KISMockBrokerageError("KIS mock brokerage transport is unavailable") from None
+            raise KISMockBrokerageError(
+                KISMockFailureReason.TRANSPORT_UNAVAILABLE
+            ) from None
         finally:
             if body is not None:
                 body.clear()
             if query is not None:
                 query.clear()
         if response.status_code >= 400:
-            raise KISMockBrokerageError("KIS mock brokerage HTTP request failed")
+            raise KISMockBrokerageError(
+                KISMockFailureReason.HTTP_ERROR,
+                http_status=response.status_code,
+            )
         if len(response.content) > _MAX_RESPONSE_BYTES:
-            raise KISMockBrokerageError("KIS mock brokerage response exceeded limit")
+            raise KISMockBrokerageError(KISMockFailureReason.RESPONSE_TOO_LARGE)
         try:
             raw: object = response.json()
         except ValueError:
-            raise KISMockBrokerageError("KIS mock brokerage response was invalid") from None
+            raise KISMockBrokerageError(
+                KISMockFailureReason.RESPONSE_INVALID
+            ) from None
         if not isinstance(raw, dict):
-            raise KISMockBrokerageError("KIS mock brokerage response was invalid")
+            raise KISMockBrokerageError(KISMockFailureReason.RESPONSE_INVALID)
         payload = cast(dict[str, Any], raw)
         if payload.get("rt_cd") not in ("0", 0):
-            raise KISMockBrokerageError("KIS mock brokerage provider rejected the request")
+            provider_code = payload.get("msg_cd")
+            raise KISMockBrokerageError(
+                KISMockFailureReason.PROVIDER_REJECTED,
+                provider_code=provider_code if isinstance(provider_code, str) else None,
+            )
         return _sanitize_payload(payload)
 
     def close(self) -> None:
@@ -417,13 +499,13 @@ class KISMockBrokerageHttpClient:
 def _sanitize_payload(value: dict[str, Any]) -> dict[str, Any]:
     sanitized = _sanitize_value(value)
     if not isinstance(sanitized, dict):
-        raise KISMockBrokerageError("KIS mock brokerage response was invalid")
+        raise KISMockBrokerageError(KISMockFailureReason.RESPONSE_INVALID)
     return cast(dict[str, Any], sanitized)
 
 
 def _sanitize_value(value: object, *, depth: int = 0) -> object:
     if depth > 32:
-        raise KISMockBrokerageError("KIS mock brokerage response exceeded depth")
+        raise KISMockBrokerageError(KISMockFailureReason.RESPONSE_TOO_LARGE)
     if isinstance(value, dict):
         return {
             str(key): _sanitize_value(child, depth=depth + 1)
@@ -442,10 +524,17 @@ def _sanitize_value(value: object, *, depth: int = 0) -> object:
         }
     if isinstance(value, list):
         if len(value) > 1_000:
-            raise KISMockBrokerageError("KIS mock brokerage response exceeded list bound")
+            raise KISMockBrokerageError(KISMockFailureReason.RESPONSE_TOO_LARGE)
         return [_sanitize_value(child, depth=depth + 1) for child in value]
     if isinstance(value, str) and len(value) > 8_192:
-        raise KISMockBrokerageError("KIS mock brokerage response exceeded text bound")
+        raise KISMockBrokerageError(KISMockFailureReason.RESPONSE_TOO_LARGE)
+    return value
+
+
+def _bounded_provider_code(value: str | None) -> str | None:
+    """provider 자유서술 대신 짧은 공식 code 형태만 diagnostic으로 통과시킨다."""
+    if value is None or _PROVIDER_CODE_PATTERN.fullmatch(value) is None:
+        return None
     return value
 
 
@@ -455,7 +544,9 @@ def _normalized(value: str) -> str:
 
 __all__ = [
     "KISBrokerageCallBudget",
+    "KISMockBrokerageError",
     "KISMockBrokerageHttpClient",
+    "KISMockFailureReason",
     "KISSettings",
     "TokenBucket",
 ]

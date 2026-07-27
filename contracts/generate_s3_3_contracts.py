@@ -3,23 +3,54 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import sys
 import tempfile
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
-
-from contracts.generate_principle_contracts import (  # noqa: E402
-    ContractValidationError,
-    load_json_bytes_strict,
-)
-
-
 CATALOG_PATH = REPO_ROOT / "contracts/catalogs/s3-3-fill-contract.v1.json"
 LONG_MAX = 9_223_372_036_854_775_807
+
+
+class ContractValidationError(ValueError):
+    """S3.3 catalog/schema/fixture가 잠긴 v1 계약을 위반할 때 발생한다."""
+
+
+def _reject_duplicate_pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ContractValidationError(f"Duplicate JSON object key: {key}")
+        result[key] = value
+    return result
+
+
+def _reject_constant(token: str) -> None:
+    raise ContractValidationError(f"Non-finite JSON number is forbidden: {token}")
+
+
+def load_json_bytes_strict(raw: bytes, *, source: str) -> Any:
+    if raw.startswith(b"\xef\xbb\xbf"):
+        raise ContractValidationError(f"{source}: UTF-8 BOM is forbidden.")
+    try:
+        text = raw.decode("utf-8", errors="strict")
+    except UnicodeDecodeError as error:
+        raise ContractValidationError(f"{source}: invalid UTF-8.") from error
+    try:
+        return json.loads(
+            text,
+            object_pairs_hook=_reject_duplicate_pairs,
+            parse_float=Decimal,
+            parse_int=int,
+            parse_constant=_reject_constant,
+        )
+    except (json.JSONDecodeError, ContractValidationError) as error:
+        if isinstance(error, ContractValidationError):
+            raise
+        raise ContractValidationError(
+            f"{source}: invalid JSON: {error.msg}"
+        ) from error
 
 
 def _object(

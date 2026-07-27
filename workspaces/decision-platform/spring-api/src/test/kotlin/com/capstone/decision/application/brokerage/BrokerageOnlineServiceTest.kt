@@ -113,6 +113,64 @@ class BrokerageOnlineServiceTest {
         }
     }
 
+    @Test
+    fun `online balance runs only after stored owner anchor is found`() {
+        every { persistence.findOwnedBalance(ACTOR.userId, ACCOUNT_ID) } returns storedBalance()
+        every { gatewayProvider.getIfAvailable() } returns gateway
+        every { gateway.getMockBalance(any()) } returns
+            BrokerageGatewayBalanceResult(
+                accountId = ACCOUNT_ID,
+                cashKrw = 1_000_000,
+                portfolioEquityKrw = 1_140_000,
+                marginRequirementKrw = 0,
+                positions =
+                    listOf(
+                        MockBalancePositionProjection("005930", 2, 140_000, false),
+                    ),
+                observedAt = NOW.plusSeconds(1),
+                sourceVersion = "kis-mock-balance-v1",
+            )
+
+        val result = service.getOwnedBalance(ACTOR, ACCOUNT_ID)
+
+        assertEquals(1_000_000, result.cashKrw)
+        verifyOrder {
+            persistence.findOwnedBalance(ACTOR.userId, ACCOUNT_ID)
+            gateway.getMockBalance(match { it.requestId == ACTOR.requestId })
+        }
+    }
+
+    @Test
+    fun `online buyable uses exact query after stored owner anchor is found`() {
+        every { persistence.findOwnedBalance(ACTOR.userId, ACCOUNT_ID) } returns storedBalance()
+        every { gatewayProvider.getIfAvailable() } returns gateway
+        every { gateway.getMockBuyable(any()) } returns
+            BrokerageGatewayBuyableResult(
+                accountId = ACCOUNT_ID,
+                symbol = "005930",
+                estimatedPriceKrw = 70_000,
+                buyableQuantity = 14,
+                buyableAmountKrw = 980_000,
+                cashKrw = 1_000_000,
+                observedAt = NOW.plusSeconds(1),
+                sourceVersion = "kis-mock-buyable-v1",
+            )
+
+        val result = service.getOwnedBuyable(ACTOR, ACCOUNT_ID, "005930", 70_000)
+
+        assertEquals(14, result.buyableQuantity)
+        verifyOrder {
+            persistence.findOwnedBalance(ACTOR.userId, ACCOUNT_ID)
+            gateway.getMockBuyable(
+                match {
+                    it.requestId == ACTOR.requestId &&
+                        it.symbol == "005930" &&
+                        it.estimatedPriceKrw == 70_000L
+                },
+            )
+        }
+    }
+
     private fun arrangeSubmit() {
         every { killSwitch.check() } returns KillSwitchGate(active = false, generation = 1)
         every { gatewayProvider.getIfAvailable() } returns gateway
@@ -125,6 +183,20 @@ class BrokerageOnlineServiceTest {
             """{"orderId":"$ORDER_ID","status":"SUBMITTED"}"""
         every { persistence.persist(any()) } just runs
     }
+
+    private fun storedBalance() =
+        StoredMockBalance(
+            accountId = ACCOUNT_ID,
+            accountScopeHash = "a".repeat(64),
+            cashKrw = 1_000_000,
+            portfolioEquityKrw = 1_140_000,
+            marginRequirementKrw = 0,
+            completeness = "COMPLETE",
+            positionCount = 1,
+            positions = listOf(MockBalancePositionProjection("005930", 2, 140_000, false)),
+            observedAt = NOW,
+            sourceVersion = "stored-kis-mock-v1",
+        )
 
     private fun command() =
         SubmitMockOrderCommand(

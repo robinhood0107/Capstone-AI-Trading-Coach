@@ -140,6 +140,32 @@ class S33FillContractTest(unittest.TestCase):
             any("report-fill" in path or "fill-observation" in path for path in paths)
         )
 
+    def test_offline_roundtrip_covers_mock_and_paper_without_embedded_secrets(
+        self,
+    ) -> None:
+        text = (
+            ROOT
+            / "workspaces/decision-platform/spring-api/http/"
+            "s3-3-offline-roundtrip.http"
+        ).read_text(encoding="utf-8")
+        for fragment in (
+            "/api/v1/principles",
+            "/api/v1/decisions/evaluate-order",
+            "/api/v1/brokerage/mock/orders",
+            "app.brokerage.cli.write_fill_observations",
+            "/api/v1/brokerage/orders/{{mock_order_id}}/reconcile",
+            "/api/v1/brokerage/mock/accounts/{{mock_account_id}}/fills",
+            "/api/v1/brokerage/mock/accounts/{{mock_account_id}}/balances",
+            "/api/v1/brokerage/paper/orders",
+            "/api/v1/brokerage/orders/{{paper_order_id}}/reconcile",
+            "/api/v1/brokerage/paper/accounts/{{paper_account_id}}/fills",
+            "/api/v1/brokerage/paper/accounts/{{paper_account_id}}/balances",
+        ):
+            self.assertIn(fragment, text)
+        self.assertNotIn("Bearer eyJ", text)
+        self.assertNotIn("password\": \"demo", text)
+        self.assertNotIn("providerExecRef\":", text)
+
     def _validator(self, name: str) -> Draft202012Validator:
         schema = self._load(f"contracts/schemas/{name}.schema.json")
         Draft202012Validator.check_schema(schema)

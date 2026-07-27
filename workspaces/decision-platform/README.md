@@ -91,7 +91,7 @@ uv run --frozen python contracts/run_openapi_gate.py \
 ## S3.1 Brokerage Mock 주문
 
 S3.1은 S2.3 Decision과 S2.4 Kill Switch를 소비하는 `KIS_MOCK` 주문 제출/조회/취소와
-stored balance/buyable 조회 경계다. runtime route는 `POST /api/v1/brokerage/mock/orders`,
+balance/buyable 조회 경계다. runtime route는 `POST /api/v1/brokerage/mock/orders`,
 `GET /api/v1/brokerage/orders/{orderId}`, `POST /api/v1/brokerage/orders/{orderId}/cancel`,
 `GET /api/v1/brokerage/mock/accounts/{accountId}/balances`,
 `GET /api/v1/brokerage/mock/accounts/{accountId}/buyable`을 추가한다. S3.3은 stored sanitized
@@ -105,7 +105,7 @@ sanitized outbox를 강제한다.
 verified KRX tick-table context가 없는 LIMIT 주문은 `BROKERAGE_UNAVAILABLE`로 fail-closed한다.
 
 아래 검증은 Testcontainers, contract fixture와 injected/fake Python transport만 사용한다.
-KIS/broker/live account/order provider 물리 호출은 모두 0이다.
+검증 중 KIS/broker/live account/order provider 물리 호출은 모두 0이다.
 
 ```bash
 cd spring-api
@@ -124,11 +124,55 @@ uv run --frozen mypy app
 uv run --frozen pytest -q tests/brokerage
 ```
 
+## S3-online KIS_MOCK 통합과 exact approval
+
+S3-online은 S3.1 REST route를 기본 OFF인 loopback Brokerage gRPC에 연결한다. Spring은 DB에서
+owner/account anchor와 Decision/Kill Switch/one-use를 먼저 검증하고 durable reservation을
+만든 뒤에만 Python에 전달한다. Python은 공식 KIS Mock origin과 exact mock TR만 허용하고,
+S1.1 Redis limiter와 deployment-global tokenP limiter를 재사용한다. 성공 접수는 `ACCEPTED`,
+모호한 transport 또는 durable outcome 확인 실패는 `PENDING_RECONCILIATION` 기록을 시도하며
+같은 주문을 자동 재전송하지 않는다. 이 보조 기록도 실패하면 최초 `SUBMITTED` reservation이
+recovery anchor로 남는다.
+
+기본 `.env`는 다음 불변식을 유지한다.
+
+- `BROKERAGE_GRPC_ENABLED=false`
+- `KIS_MOCK_BROKERAGE_ONLINE_ENABLED=false`
+- `KIS_LIVE` 주문·정정·취소용 enable flag와 TR allowlist는 없음
+- `KIS_BROKERAGE_TOKEN_P_PHYSICAL_CAP`과 `KIS_BROKERAGE_PHYSICAL_CAP`은 승인 없이는 비움
+- `S3_KIS_MOCK_EXACT_APPROVAL_ID`와 `S3_KIS_MOCK_EXACT_APPROVAL_SHA256`은 승인 없이는 비움
+
+일반 개발·테스트에서는 이 값을 바꾸지 않는다. online gRPC server는 numeric loopback,
+shared secret, finite cap, Fernet reference key를 모두 검증하며 reflection을 열지 않는다.
+raw 계좌번호와 provider 주문번호는 Spring/DB/응답으로 보내지 않고 취소에 필요한 reference만
+owner/order에 결속한 bounded-TTL ciphertext로 Redis에 저장한다.
+
+실제 KIS_MOCK 1회 검증은 다음 순서를 바꿀 수 없는 exact packet으로만 수행한다.
+
+1. 잔고 `VTTC8434R`
+2. 매수가능 `VTTC8908R`
+3. 지정가 매수 1주 `VTTC0012U`
+4. 전량 취소 `VTTC0013U`
+5. 최근 체결조회 `VTTC0081R`
+
+packet은 최종 local/remote HEAD, PR #55 required CI 성공, 같은 HEAD의 fresh clean security
+report digest, Redis PTTL baseline, symbol/price/date/account/order opaque identity, 물리 cap
+`tokenP=1`/`brokerage=5`, retry 0, artifact 0, 60분 이하 TTL을 결속한다. `/tmp` 아래 owner
+regular file mode `0600`으로만 발급하고, 현재 사용자가 packet의 exact approval ID와 SHA-256을
+별도 승인한 뒤 packet 안의 `executionCommand` 그대로 한 번 실행한다. approval latch가
+없거나 다르거나 만료되면 provider handoff 전에 종료한다.
+
+첫 실패는 남은 호출을 모두 중단한다. 주문 접수 뒤 취소가 실패해도 자동 retry하지 않으며,
+모의투자 포털에서 확인·정리가 필요하면 실패 evidence를 고정한 뒤 새 authorization을 받는다.
+probe 성공은 background polling, gRPC 상시 활성화, S3.3 fill observation append 또는
+KIS_LIVE 실계좌 주문 권한이 아니다.
+
 ## S3.3 체결 관측·대사
 
 S3.3은 KIS_MOCK offline fill observation과 S3.2 INTERNAL_PAPER 결정적 fill을 같은 주문 수량
 보존식으로 대사한다. ADMIN reconcile은 저장된 COMPLETE 관측만 최대 200개씩 처리하고,
-owner fills 조회는 KST 31일·50개 page·HMAC cursor로 제한한다. provider polling, scheduler,
+owner fills 조회는 KST 31일·50개 page·HMAC cursor로 제한한다. S3-online 체결조회 parser는
+위 exact probe의 마지막 read에만 쓰며 provider polling, scheduler, fill writer append,
 실계좌와 실주문 호출은 없다.
 
 `decision_fill_writer`는 `.env.example`의 별도 password로 bootstrap하며 sanitized observation

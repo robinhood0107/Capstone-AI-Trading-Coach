@@ -13,6 +13,7 @@ from app.brokerage.kis_mock_online_client import (
 from app.brokerage.kis_mock_online_runtime import (
     KISMockExecutionReader,
     KISMockOnlineBalanceReader,
+    KISMockProjectionError,
 )
 from app.brokerage.mock_order_reference_store import MockProviderOrderReference
 
@@ -52,6 +53,31 @@ def test_online_server_defaults_closed_before_any_runtime_client_is_built(
         BrokerageGrpcServerSettings.from_env()
 
 
+def test_online_server_requires_one_valid_bound_opaque_account(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("KIS_MOCK_BROKERAGE_ONLINE_ENABLED", "true")
+    monkeypatch.setenv("KIS_BROKERAGE_TOKEN_P_PHYSICAL_CAP", "0")
+    monkeypatch.setenv("KIS_BROKERAGE_PHYSICAL_CAP", "1")
+    monkeypatch.setenv("BROKERAGE_GRPC_SHARED_SECRET", "s" * 32)
+    monkeypatch.setenv(
+        "KIS_MOCK_ORDER_REFERENCE_KEY",
+        "MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA=",
+    )
+
+    monkeypatch.delenv("KIS_MOCK_BOUND_ACCOUNT_ID", raising=False)
+    with pytest.raises(ValueError, match="BOUND_ACCOUNT_ID"):
+        BrokerageGrpcServerSettings.from_env()
+
+    monkeypatch.setenv("KIS_MOCK_BOUND_ACCOUNT_ID", "acct_invalid")
+    with pytest.raises(ValueError, match="BOUND_ACCOUNT_ID"):
+        BrokerageGrpcServerSettings.from_env()
+
+    account_id = "acct_" + "a" * 32
+    monkeypatch.setenv("KIS_MOCK_BOUND_ACCOUNT_ID", account_id)
+    assert BrokerageGrpcServerSettings.from_env().bound_account_id == account_id
+
+
 def test_brokerage_physical_budget_fails_before_exceeding_exact_packet_cap() -> None:
     budget = KISBrokerageCallBudget(token_p_cap=1, brokerage_cap=2)
 
@@ -66,7 +92,7 @@ def test_brokerage_physical_budget_fails_before_exceeding_exact_packet_cap() -> 
     assert budget.counts == {"tokenP": 1, "brokerage": 2}
 
 
-def test_online_balance_and_buyable_parser_returns_only_sanitized_projection() -> None:
+def test_online_balance_probe_parses_source_without_fabricating_risk_fields() -> None:
     balance_client = FakeClient(
         {
             "rt_cd": "0",
@@ -87,17 +113,23 @@ def test_online_balance_and_buyable_parser_returns_only_sanitized_projection() -
         }
     )
     balance_reader = KISMockOnlineBalanceReader(balance_client)  # type: ignore[arg-type]
+    account_id = "acct_" + "a" * 32
 
-    balance = balance_reader.balance("acct_" + "a" * 32)
+    with pytest.raises(KISMockProjectionError) as captured:
+        balance_reader.balance(account_id)
 
-    assert balance is not None
-    assert balance.cash_krw == 1_000_000
-    assert balance.portfolio_equity_krw == 1_140_000
-    assert [(position.symbol, position.quantity) for position in balance.positions] == [
-        ("005930", 2)
-    ]
-    assert "provider-free-text" not in repr(balance)
+    assert captured.value.reason_code == "BALANCE_RISK_FIELDS_UNAVAILABLE"
+    assert balance_client.calls == []
 
+    source = balance_reader.probe_balance_source(account_id)
+    assert source.account_id == account_id
+    assert source.cash_krw == 1_000_000
+    assert source.portfolio_equity_krw == 1_140_000
+    assert source.positions == (("005930", 2, 140_000),)
+    assert "provider-free-text" not in repr(source)
+
+
+def test_online_buyable_parser_returns_only_sanitized_projection() -> None:
     buyable_client = FakeClient(
         {
             "rt_cd": "0",
@@ -194,7 +226,7 @@ def test_balance_and_execution_reject_incomplete_or_oversized_mock_pages() -> No
         )  # type: ignore[arg-type]
     )
     with pytest.raises(ValueError, match="another bounded page") as captured:
-        balance_reader.balance("acct_" + "a" * 32)
+        balance_reader.probe_balance_source("acct_" + "a" * 32)
     assert captured.value.reason_code == "BALANCE_PAGINATION_REQUIRED"  # type: ignore[attr-defined]
 
     raw_order_no = "synthetic-provider-order"

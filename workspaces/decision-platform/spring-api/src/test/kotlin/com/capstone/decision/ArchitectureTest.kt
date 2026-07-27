@@ -68,5 +68,37 @@ class ArchitectureTest {
                 .dependOnClassesThat()
                 .resideInAnyPackage("org.springframework..")
                 .allowEmptyShould(true)
+
+        @ArchTest
+        @JvmField
+        val brokerageDomainIsTransportAndPersistenceAgnostic: ArchRule =
+            noClasses()
+                .that()
+                .resideInAPackage("..domain.brokerage..")
+                .should()
+                .dependOnClassesThat()
+                .resideInAnyPackage(
+                    "org.springframework..",
+                    "java.sql..",
+                    "javax.sql..",
+                    "io.grpc..",
+                    "com.google.protobuf..",
+                ).allowEmptyShould(true)
+
+        @ArchTest
+        @JvmField
+        val brokerageApplicationDoesNotUseJdbcOrGeneratedTransport: ArchRule =
+            noClasses()
+                .that()
+                .resideInAPackage("..application.brokerage..")
+                .should()
+                .dependOnClassesThat()
+                .resideInAnyPackage(
+                    "java.sql..",
+                    "javax.sql..",
+                    "io.grpc..",
+                    "com.google.protobuf..",
+                    "..brokerage.v1..",
+                ).allowEmptyShould(true)
     }
 }

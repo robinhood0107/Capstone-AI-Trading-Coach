@@ -266,7 +266,7 @@ def test_private_online_transport_enforces_mock_response_cap_before_full_stream(
         budget=online.KISBrokerageCallBudget(token_p_cap=0, brokerage_cap=1),
     )
     try:
-        with pytest.raises(online.KISMockBrokerageError):
+        with pytest.raises(online.KISMockBrokerageError) as captured:
             client.request(
                 "POST",
                 "/uapi/domestic-stock/v1/trading/order-cash",
@@ -285,6 +285,58 @@ def test_private_online_transport_enforces_mock_response_cap_before_full_stream(
     assert stream.closed is True
     assert stream.completed is False
     assert stream.bytes_yielded <= online._MAX_RESPONSE_BYTES + stream.chunk_size  # noqa: SLF001
+    assert captured.value.reason_code == "BROKERAGE_RESPONSE_TOO_LARGE"
+
+
+def test_private_online_transport_exposes_only_bounded_provider_rejection_code(
+    tmp_path: Path,
+) -> None:
+    online = importlib.import_module("app.brokerage.kis_mock_online_client")
+    provider_message = "raw account 00000000 must never escape"
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "rt_cd": "1",
+                "msg_cd": "SAFE001",
+                "msg1": provider_message,
+            },
+        )
+
+    client = online.KISMockBrokerageHttpClient(
+        settings=online.KISSettings(
+            kis_mode="mock",
+            kis_offline=True,
+            kis_data_dir=tmp_path,
+            _env_file=None,
+        ),
+        account_number=SecretStr("00000000-01"),
+        transport=httpx.MockTransport(handler),
+        rate_limiter=online.TokenBucket(rate_per_second=1_000),
+        budget=online.KISBrokerageCallBudget(token_p_cap=0, brokerage_cap=1),
+    )
+    try:
+        with pytest.raises(online.KISMockBrokerageError) as captured:
+            client.request(
+                "POST",
+                "/uapi/domestic-stock/v1/trading/order-cash",
+                "VTTC0012U",
+                json_body={
+                    "PDNO": "005930",
+                    "ORD_DVSN": "00",
+                    "ORD_QTY": "1",
+                    "ORD_UNPR": "70000",
+                },
+            )
+    finally:
+        client.close()
+
+    assert captured.value.reason_code == "BROKERAGE_PROVIDER_REJECTED"
+    assert captured.value.provider_code == "SAFE001"
+    assert captured.value.http_status is None
+    assert provider_message not in str(captured.value)
+    assert provider_message not in repr(captured.value)
 
 
 def test_encrypted_reference_store_never_persists_provider_reference_plaintext() -> None:

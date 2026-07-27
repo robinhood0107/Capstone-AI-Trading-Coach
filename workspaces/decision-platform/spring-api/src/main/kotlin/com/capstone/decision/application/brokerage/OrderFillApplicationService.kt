@@ -24,8 +24,10 @@ class OrderFillApplicationService(
         orderId: String,
     ): OrderFillReconciliationProjection {
         try {
+            // read와 apply가 같은 증거 cutoff를 사용해야 대기 중 도착한 미래/신규 row가 snapshot을 바꾸지 않는다.
+            val reconciledAt = clock.instant()
             persistencePort.acquireReconciliationLock(actor, orderId)
-            val stored = persistencePort.readReconciliationState(actor, orderId)
+            val stored = persistencePort.readReconciliationState(actor, orderId, reconciledAt)
             var state = stored.orderState
             var eventCount = 0
             stored.observations.forEach { storedObservation ->
@@ -70,13 +72,14 @@ class OrderFillApplicationService(
                 OrderFillApplyRequest(
                     actor = actor,
                     orderId = orderId,
-                    reconciledAt = clock.instant(),
+                    reconciledAt = reconciledAt,
                     expectedFinal =
                         ExpectedOrderFillState(
                             status = state.status.name,
                             filledQuantity = state.filledQuantity,
                             leavesQuantity = state.leavesQuantity,
                             unfilledTerminatedQuantity = state.unfilledTerminatedQuantity,
+                            fillNotionalKrw = state.fillNotionalKrw,
                             averageFillPriceKrw = state.averageFillPriceKrw,
                             reconciliationStatus = reconciliationStatus,
                             appliedEventCount = eventCount,

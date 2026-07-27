@@ -1551,6 +1551,9 @@ KIS Mock 중심으로 구현하고, KIS Live는 고급해제/3단계 동의/재�
 > provider/live-account/live-order 호출은 일반 구현·테스트에서 0건이다. canonical SSOT는
 > `contracts/catalogs/s3-3-fill-contract.v1.json`과
 > `contracts/changes/20260727-s3-3-fill-events-reconciliation-contract.md`다.
+> OpenAPI는 fill 조회의 필수 `from`/`to` date query와 optional 최대 1024자 `cursor`,
+> reconcile의 필수 16~128자 ASCII `X-Idempotency-Key`, additional-properties가 닫힌
+> empty-object request body를 runtime parser와 동일하게 노출한다.
 >
 > 구현 상태(2026-07-27): S3-online은 기본 OFF인 loopback Brokerage gRPC와 official
 > KIS_MOCK fixed-origin transport를 연결한다. 주문 `VTTC0011U | VTTC0012U`, 전량 취소
@@ -1574,6 +1577,14 @@ KIS Mock 중심으로 구현하고, KIS Live는 고급해제/3단계 동의/재�
 > 실패 모두 재사용할 수 없다. KIS_MOCK response는 provider echo scrub/JSON parse 전에 1 MiB
 > cap을 적용한다. KIS_LIVE 실계좌 주문·정정·취소는 구현·allowlist·enable flag가 없어
 > 계속 OFF다.
+> 모든 online RPC와 exact packet은 credential별 `KIS_MOCK_BOUND_ACCOUNT_ID` 하나에
+> 결속되며 다른 opaque account는 limiter/provider 접근 전에 닫힌다. packet 검증은 ignored
+> local secret를 제외한 clean worktree도 요구한다. reference store는 provider send 전에
+> encrypted `PENDING` marker를 쓰고 접수 뒤 `COMMITTED`로 원자 전환하며, commit 실패 시
+> 전량취소를 retry 없이 최대 1회 보상한다. balance probe는 cash/equity/position source
+> shape만 확인하고 margin requirement나 gold ETF/ETN 여부를 합성하지 않는다. trusted
+> enrichment가 없는 persistent online balance는 `BALANCE_RISK_FIELDS_UNAVAILABLE`로
+> provider 호출 전에 닫힌다.
 
 Live 경계는 다음과 같이 분리한다.
 

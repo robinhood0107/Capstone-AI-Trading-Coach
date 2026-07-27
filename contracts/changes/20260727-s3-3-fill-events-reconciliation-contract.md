@@ -72,7 +72,8 @@ OpenAPI는 같은 ID와 digest를 `x-s3-3-contract-id`,
 
 6. **P0-16 — ADMIN reconcile**
    - `POST /api/v1/brokerage/orders/{orderId}/reconcile`은 ADMIN 전용이며
-     `X-Idempotency-Key`가 필수다. body는 empty 또는 `{}`만 허용한다.
+     16~128자 ASCII `X-Idempotency-Key`가 필수다. body는 empty 또는 `{}`만 허용하며
+     OpenAPI도 additional-properties가 닫힌 object로 노출한다.
    - JWT 인증의 현재 role/security version을 replay identity에 묶어 권한 변경 전 ADMIN
      응답을 새 권한 context에서 재생하지 못하게 한다. cache miss는 method authorization을
      통과하고 transaction 안에서 DB의 현재 role/status/security version을 다시 확인한다.
@@ -87,6 +88,7 @@ OpenAPI는 같은 ID와 digest를 `x-s3-3-contract-id`,
      - `GET /api/v1/brokerage/paper/accounts/{accountId}/fills`
    - `from`/`to`는 KST inclusive 날짜이고 최대 31일이다. page size는 50이며 정렬은
      `(filledAt DESC, orderId DESC, execRefHash DESC)`다.
+     OpenAPI는 두 date query를 필수, `cursor`를 optional 최대 1024자로 명시한다.
    - HMAC cursor는 owner, mode, opaque account, 기간, 마지막 정렬키를 결속하고
      900초 후 만료된다. raw offset, raw owner/account는 cursor에 넣지 않는다.
    - 타인과 미존재 account는 같은 404다. 응답은 exact 9개 fill field와 optional
@@ -162,12 +164,15 @@ live-order authority is introduced.
    as a provider-outcome transport state, not as a fill-reconciliation verdict.
    One `reconciledAt` cutoff admits only observations whose observed and received timestamps
    are both at or before the cutoff; future rows do not count as current `hasMore` work.
-6. **P0-16:** reconcile is ADMIN-only, requires an idempotency key, accepts only an empty
-   object, binds replay to the current role/security version, revalidates current DB
+6. **P0-16:** reconcile is ADMIN-only, requires a 16-128 character ASCII idempotency key,
+   accepts only an empty object represented as a closed object in OpenAPI, binds replay
+   to the current role/security version, revalidates current DB
    authority, and returns `hasMore` for bounded continuation. No scheduler or ShedLock table
    is added.
 7. **P0-17:** mock and paper fill queries are owner-scoped, KST date-bounded to 31 days,
    limited to 50 records, and use a 900-second HMAC cursor over the exact descending sort.
+   OpenAPI explicitly marks `from`/`to` as required date queries and bounds the optional
+   cursor to 1024 characters.
 8. **P0-18:** all four brokerage writes use purpose/version-separated HMAC identities,
    role/security-version-bound replay, owner-token fencing, user-purpose admission caps,
    database uniqueness, and Decision TTL/one-use protections.

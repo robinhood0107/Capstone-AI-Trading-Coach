@@ -1941,6 +1941,51 @@ class BrokerageApiIntegrationTest(
                     OffsetDateTime::class.java,
                 ),
             )
+        val malformedPayloads =
+            listOf(
+                mapOf<String, Any?>(
+                    "actorUserId" to "usr_demo_user",
+                    "actorRole" to "USER",
+                    "securityVersion" to "not-an-integer",
+                    "requestId" to "req-provider-outcome-malformed-1",
+                    "orderId" to orderId,
+                    "status" to "ACCEPTED",
+                    "providerOrderRefHash" to "a".repeat(64),
+                    "trId" to "VTTC0012U",
+                    "receivedAt" to receivedAt.toString(),
+                    "orderEventId" to "oev_3d000000000000000000000000000010",
+                ),
+                mapOf<String, Any?>(
+                    "actorUserId" to "usr_demo_user",
+                    "actorRole" to "USER",
+                    "securityVersion" to 1,
+                    "requestId" to "req-provider-outcome-malformed-2",
+                    "orderId" to orderId,
+                    "status" to "ACCEPTED",
+                    "providerOrderRefHash" to "a".repeat(64),
+                    "trId" to "VTTC0012U",
+                    "receivedAt" to null,
+                    "orderEventId" to "oev_3d000000000000000000000000000011",
+                ),
+            )
+        malformedPayloads.forEach { malformedPayload ->
+            appDataSource.connection.use { connection ->
+                connection
+                    .prepareStatement(
+                        """
+                        select operation_outcome
+                        from record_mock_order_provider_outcome(cast(? as jsonb), ?)
+                        """.trimIndent(),
+                    ).use { statement ->
+                        statement.setString(1, objectMapper.writeValueAsString(malformedPayload))
+                        statement.setString(2, TEST_BROKERAGE_DB_CAPABILITY_TOKEN)
+                        statement.executeQuery().use { result ->
+                            assertTrue(result.next())
+                            assertEquals("VALIDATION_ERROR", result.getString("operation_outcome"))
+                        }
+                    }
+            }
+        }
         val acceptedPayload =
             objectMapper.writeValueAsString(
                 mapOf<String, Any?>(

@@ -26,6 +26,7 @@ from app.data.kis.settings import KISSettings
 from app.generated import brokerage_pb2, brokerage_pb2_grpc
 
 _SAFE_SECRET = re.compile(r"^[A-Za-z0-9._~:-]{32,256}$")
+_ACCOUNT_ID = re.compile(r"^acct_[0-9a-f]{32}$")
 _MAX_REQUEST_BYTES = 256 * 1024
 _MAX_RESPONSE_BYTES = 1024 * 1024
 _MAX_CONCURRENCY = 8
@@ -37,6 +38,7 @@ class BrokerageGrpcServerSettings:
 
     bind_address: str
     shared_secret: str
+    bound_account_id: str
     online_enabled: bool
     token_p_physical_cap: int
     brokerage_physical_cap: int
@@ -60,6 +62,7 @@ class BrokerageGrpcServerSettings:
                 "127.0.0.1:50052",
             ).strip(),
             shared_secret=os.environ.get("BROKERAGE_GRPC_SHARED_SECRET", "").strip(),
+            bound_account_id=os.environ.get("KIS_MOCK_BOUND_ACCOUNT_ID", "").strip(),
             online_enabled=enabled == "true",
             token_p_physical_cap=token_cap,
             brokerage_physical_cap=brokerage_cap,
@@ -78,6 +81,8 @@ class BrokerageGrpcServerSettings:
             raise ValueError("KIS Mock brokerage gRPC must bind to numeric loopback")
         if _SAFE_SECRET.fullmatch(self.shared_secret) is None:
             raise ValueError("BROKERAGE_GRPC_SHARED_SECRET is invalid")
+        if _ACCOUNT_ID.fullmatch(self.bound_account_id) is None:
+            raise ValueError("KIS_MOCK_BOUND_ACCOUNT_ID is invalid")
         if self.token_p_physical_cap not in {0, 1}:
             raise ValueError("KIS brokerage tokenP cap must be 0 or 1")
         if not 1 <= self.brokerage_physical_cap <= 32:
@@ -126,6 +131,7 @@ def create_brokerage_server(
         servicer = BrokerageServicer(
             gateway,
             settings.shared_secret,
+            bound_account_id=settings.bound_account_id,
             balance_reader=KISMockOnlineBalanceReader(client),
         )
         server = grpc.server(

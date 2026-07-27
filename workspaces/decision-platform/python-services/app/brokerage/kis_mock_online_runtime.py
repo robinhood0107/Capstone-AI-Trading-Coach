@@ -44,6 +44,16 @@ class MockExecutionSnapshot:
     observed_at: datetime
 
 
+@dataclass(frozen=True, slots=True)
+class KISMockBalanceSourceProbe:
+    """연결성 진단용 sanitized source shape이며 완전한 risk balance를 표현하지 않는다."""
+
+    account_id: str
+    cash_krw: int
+    portfolio_equity_krw: int
+    positions: tuple[tuple[str, int, int], ...]
+
+
 class KISMockProjectionError(ValueError):
     """provider 원문 없이 sanitized projection의 exact validation leaf만 보존한다."""
 
@@ -61,6 +71,16 @@ class KISMockOnlineBalanceReader:
         self._client = client
 
     def balance(self, account_id: str) -> brokerage_pb2.GetMockBalanceResponse | None:
+        """trusted margin/catalog enrichment 없이는 owner-facing balance를 만들지 않는다."""
+        del account_id
+        # KIS cash balance 원문만으로 margin과 gold ETF/ETN 분류를 추정하면 risk 계산이 약화된다.
+        raise KISMockProjectionError(
+            KISMockFailureReason.BALANCE_RISK_FIELDS_UNAVAILABLE,
+            "KIS mock balance risk fields are unavailable",
+        )
+
+    def probe_balance_source(self, account_id: str) -> KISMockBalanceSourceProbe:
+        """exact-approved 진단에서 cash/equity/position source shape만 bounded 검증한다."""
         payload = self._client.request(
             "GET",
             BALANCE_PATH,
@@ -88,7 +108,7 @@ class KISMockOnlineBalanceReader:
             "balance summary",
             reason=KISMockFailureReason.BALANCE_SUMMARY_INVALID,
         )
-        response = brokerage_pb2.GetMockBalanceResponse(
+        return KISMockBalanceSourceProbe(
             account_id=account_id,
             cash_krw=_nonnegative(
                 summary.get("dnca_tot_amt"),
@@ -100,21 +120,8 @@ class KISMockOnlineBalanceReader:
                 "portfolio equity",
                 reason=KISMockFailureReason.BALANCE_EQUITY_INVALID,
             ),
-            # KIS cash balance 응답에 독립 margin requirement가 없어 v1 sanitized projection은 0으로 고정한다.
-            margin_requirement_krw=0,
-            observed_at=_now_text(),
-            source_version="kis-mock-balance-v1",
+            positions=positions,
         )
-        response.positions.extend(
-            brokerage_pb2.MockBalancePosition(
-                symbol=symbol,
-                quantity=quantity,
-                market_value_krw=market_value,
-                is_gold_etf_etn=False,
-            )
-            for symbol, quantity, market_value in positions
-        )
-        return response
 
     def buyable(
         self,

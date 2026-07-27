@@ -428,7 +428,8 @@ class OpenApiConfigIntegrationTest(
                 assertEquals("string", queryParameters.getValue(name).at("/schema/type").stringValue())
                 assertEquals("date", queryParameters.getValue(name).at("/schema/format").stringValue())
             }
-            assertEquals(false, queryParameters.getValue("cursor").path("required").booleanValue())
+            val cursorRequired = queryParameters.getValue("cursor").path("required")
+            assertTrue(cursorRequired.isMissingNode || !cursorRequired.booleanValue())
             assertEquals(1024, queryParameters.getValue("cursor").at("/schema/maxLength").intValue())
         }
         assertEquals(false, document.at("/components/schemas/S33Reconcile/additionalProperties").booleanValue())

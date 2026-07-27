@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
+import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -9,6 +11,15 @@ from typing import Any
 import pytest
 
 from app.brokerage import kis_mock_approval_probe as probe
+
+
+@pytest.fixture
+def secure_tmp_path() -> Path:
+    path = Path(tempfile.mkdtemp(prefix="s3-online-probe-test-", dir="/tmp"))
+    try:
+        yield path
+    finally:
+        shutil.rmtree(path)
 
 
 class FakeOperations:
@@ -30,10 +41,10 @@ class FakeOperations:
 
 
 def test_exact_packet_preflight_rejects_missing_latch_before_runtime_factory(
-    tmp_path: Path,
+    secure_tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    packet_path, packet_sha = _write_packet(tmp_path)
+    packet_path, packet_sha = _write_packet(secure_tmp_path)
     built = False
 
     def factory(packet: probe.KISMockApprovalPacket) -> FakeOperations:
@@ -49,7 +60,7 @@ def test_exact_packet_preflight_rejects_missing_latch_before_runtime_factory(
             now=datetime(2030, 1, 2, 3, 10, tzinfo=UTC),
             expected_approval_id=None,
             expected_packet_sha256=packet_sha,
-            repository_root=tmp_path,
+            repository_root=secure_tmp_path,
             operations_factory=factory,
         )
 
@@ -57,10 +68,10 @@ def test_exact_packet_preflight_rejects_missing_latch_before_runtime_factory(
 
 
 def test_exact_packet_runs_canonical_steps_once_and_closes_runtime(
-    tmp_path: Path,
+    secure_tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    packet_path, packet_sha = _write_packet(tmp_path)
+    packet_path, packet_sha = _write_packet(secure_tmp_path)
     operations = FakeOperations()
     monkeypatch.setattr(probe, "_git_revision", lambda _root, _ref: "a" * 40)
 
@@ -69,7 +80,7 @@ def test_exact_packet_runs_canonical_steps_once_and_closes_runtime(
         now=datetime(2030, 1, 2, 3, 10, tzinfo=UTC),
         expected_approval_id="approval-s3-online-test",
         expected_packet_sha256=packet_sha,
-        repository_root=tmp_path,
+        repository_root=secure_tmp_path,
         operations_factory=lambda _packet: operations,
     )
 
@@ -86,10 +97,10 @@ def test_exact_packet_runs_canonical_steps_once_and_closes_runtime(
 
 
 def test_first_probe_failure_stops_all_remaining_calls(
-    tmp_path: Path,
+    secure_tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    packet_path, packet_sha = _write_packet(tmp_path)
+    packet_path, packet_sha = _write_packet(secure_tmp_path)
     operations = FakeOperations(fail_at="submitLimitBuy")
     monkeypatch.setattr(probe, "_git_revision", lambda _root, _ref: "a" * 40)
 
@@ -99,7 +110,7 @@ def test_first_probe_failure_stops_all_remaining_calls(
             now=datetime(2030, 1, 2, 3, 10, tzinfo=UTC),
             expected_approval_id="approval-s3-online-test",
             expected_packet_sha256=packet_sha,
-            repository_root=tmp_path,
+            repository_root=secure_tmp_path,
             operations_factory=lambda _packet: operations,
         )
 

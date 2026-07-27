@@ -13,6 +13,7 @@ import com.capstone.decision.application.brokerage.OrderFillReconciliationProjec
 import com.capstone.decision.application.security.AppPrincipal
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
+import io.swagger.v3.oas.annotations.enums.ParameterIn
 import io.swagger.v3.oas.annotations.media.Content
 import jakarta.servlet.http.HttpServletRequest
 import org.springframework.http.MediaType
@@ -26,6 +27,7 @@ import org.springframework.web.bind.annotation.RequestHeader
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 import io.swagger.v3.oas.annotations.media.Schema as OasSchema
+import io.swagger.v3.oas.annotations.parameters.RequestBody as OasRequestBody
 import io.swagger.v3.oas.annotations.responses.ApiResponse as OasApiResponse
 
 /**
@@ -41,6 +43,20 @@ class BrokerageFillController(
 ) {
     @Operation(
         summary = "저장된 체결 관측을 ADMIN 권한으로 bounded 대사한다.",
+        requestBody =
+            OasRequestBody(
+                required = false,
+                content = [
+                    Content(
+                        schema =
+                            OasSchema(
+                                type = "object",
+                                maxProperties = 0,
+                                additionalProperties = OasSchema.AdditionalPropertiesValue.FALSE,
+                            ),
+                    ),
+                ],
+            ),
         responses = [
             OasApiResponse(
                 responseCode = "200",
@@ -60,6 +76,16 @@ class BrokerageFillController(
         @AuthenticationPrincipal principal: AppPrincipal,
         @Parameter(schema = OasSchema(pattern = "^ord_(?:mock|paper)_[0-9a-f]{32}$"))
         @PathVariable orderId: String,
+        @Parameter(
+            description = "16-128 ASCII characters. Reconciliation is globally idempotent.",
+            required = true,
+            schema =
+                OasSchema(
+                    pattern = "^[A-Za-z0-9._:-]{16,128}$",
+                    minLength = 16,
+                    maxLength = 128,
+                ),
+        )
         @RequestHeader(name = "X-Idempotency-Key", required = false) idempotencyKey: String?,
         @RequestBody(required = false) body: String?,
         request: HttpServletRequest,
@@ -92,6 +118,25 @@ class BrokerageFillController(
 
     @Operation(
         summary = "Owner-scoped KIS_MOCK 체결 내역을 KST 날짜와 HMAC cursor로 조회한다.",
+        parameters = [
+            Parameter(
+                name = "from",
+                `in` = ParameterIn.QUERY,
+                required = true,
+                schema = OasSchema(type = "string", format = "date"),
+            ),
+            Parameter(
+                name = "to",
+                `in` = ParameterIn.QUERY,
+                required = true,
+                schema = OasSchema(type = "string", format = "date"),
+            ),
+            Parameter(
+                name = "cursor",
+                `in` = ParameterIn.QUERY,
+                schema = OasSchema(type = "string", maxLength = 1024),
+            ),
+        ],
         responses = [
             OasApiResponse(
                 responseCode = "200",
@@ -119,6 +164,25 @@ class BrokerageFillController(
 
     @Operation(
         summary = "Owner-scoped INTERNAL_PAPER 체결 내역을 KST 날짜와 HMAC cursor로 조회한다.",
+        parameters = [
+            Parameter(
+                name = "from",
+                `in` = ParameterIn.QUERY,
+                required = true,
+                schema = OasSchema(type = "string", format = "date"),
+            ),
+            Parameter(
+                name = "to",
+                `in` = ParameterIn.QUERY,
+                required = true,
+                schema = OasSchema(type = "string", format = "date"),
+            ),
+            Parameter(
+                name = "cursor",
+                `in` = ParameterIn.QUERY,
+                schema = OasSchema(type = "string", maxLength = 1024),
+            ),
+        ],
         responses = [
             OasApiResponse(
                 responseCode = "200",

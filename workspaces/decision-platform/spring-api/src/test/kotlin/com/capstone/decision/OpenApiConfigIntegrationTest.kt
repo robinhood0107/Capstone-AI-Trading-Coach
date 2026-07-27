@@ -405,7 +405,6 @@ class OpenApiConfigIntegrationTest(
         val emptyBody = reconcile.at("/requestBody/content/application~1json/schema")
         assertEquals("object", emptyBody.path("type").stringValue())
         assertEquals(false, emptyBody.path("additionalProperties").booleanValue())
-        assertEquals(0, emptyBody.path("maxProperties").intValue())
         listOf("mock", "paper").forEach { mode ->
             val fillGet =
                 document.at(

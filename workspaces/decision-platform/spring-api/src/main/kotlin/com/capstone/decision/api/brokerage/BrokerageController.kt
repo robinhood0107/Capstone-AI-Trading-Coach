@@ -93,7 +93,7 @@ class BrokerageController(
             OasApiResponse(
                 responseCode = "200",
                 description = "Owner-scoped order projection.",
-                content = [Content(schema = OasSchema(ref = "#/components/schemas/S31MockOrderDetailSuccessResponse"))],
+                content = [Content(schema = OasSchema(ref = "#/components/schemas/S32OrderDetailSuccessResponse"))],
             ),
             OasApiResponse(responseCode = "401", description = "Authentication is required."),
             OasApiResponse(responseCode = "404", description = "Owned order was not found."),
@@ -102,7 +102,7 @@ class BrokerageController(
     @GetMapping("/orders/{orderId}")
     fun getOrder(
         @AuthenticationPrincipal principal: AppPrincipal,
-        @Parameter(schema = OasSchema(pattern = "^ord_mock_[0-9a-f]{32}$"))
+        @Parameter(schema = OasSchema(pattern = "^ord_(?:mock|paper)_[0-9a-f]{32}$"))
         @PathVariable orderId: String,
         request: HttpServletRequest,
     ): ApiResponse<OrderDetailProjection> {
@@ -120,7 +120,7 @@ class BrokerageController(
             OasApiResponse(
                 responseCode = "200",
                 description = "Cancel requested projection.",
-                content = [Content(schema = OasSchema(ref = "#/components/schemas/S31MockOrderDetailSuccessResponse"))],
+                content = [Content(schema = OasSchema(ref = "#/components/schemas/S32OrderDetailSuccessResponse"))],
             ),
             OasApiResponse(responseCode = "400", description = "Invalid path/body/idempotency key."),
             OasApiResponse(responseCode = "401", description = "Authentication is required."),
@@ -138,7 +138,7 @@ class BrokerageController(
             schema = OasSchema(pattern = "^[A-Za-z0-9._:-]{16,128}$"),
         )
         @RequestHeader(name = "X-Idempotency-Key", required = false) idempotencyKey: String?,
-        @Parameter(schema = OasSchema(pattern = "^ord_mock_[0-9a-f]{32}$"))
+        @Parameter(schema = OasSchema(pattern = "^ord_(?:mock|paper)_[0-9a-f]{32}$"))
         @PathVariable orderId: String,
         @RequestBody(required = false) body: String?,
         request: HttpServletRequest,

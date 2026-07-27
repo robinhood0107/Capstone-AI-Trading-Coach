@@ -193,8 +193,9 @@ def test_balance_and_execution_reject_incomplete_or_oversized_mock_pages() -> No
             }
         )  # type: ignore[arg-type]
     )
-    with pytest.raises(ValueError, match="another bounded page"):
+    with pytest.raises(ValueError, match="another bounded page") as captured:
         balance_reader.balance("acct_" + "a" * 32)
+    assert captured.value.reason_code == "BALANCE_PAGINATION_REQUIRED"  # type: ignore[attr-defined]
 
     raw_order_no = "synthetic-provider-order"
     execution_reader = KISMockExecutionReader(

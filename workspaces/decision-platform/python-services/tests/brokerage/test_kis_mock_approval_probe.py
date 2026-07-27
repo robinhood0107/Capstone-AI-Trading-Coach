@@ -23,15 +23,21 @@ def secure_tmp_path() -> Path:
 
 
 class FakeOperations:
-    def __init__(self, *, fail_at: str | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        fail_at: str | None = None,
+        failure: Exception | None = None,
+    ) -> None:
         self.fail_at = fail_at
+        self.failure = failure
         self.calls: list[str] = []
         self.closed = False
 
     def run(self, operation: str, packet: probe.KISMockApprovalPacket) -> None:
         self.calls.append(operation)
         if operation == self.fail_at:
-            raise RuntimeError("synthetic")
+            raise self.failure or RuntimeError("synthetic")
 
     def counts(self) -> dict[str, int]:
         return {"tokenP": 0, "brokerage": len(self.calls)}
@@ -303,6 +309,154 @@ def test_first_probe_failure_stops_all_remaining_calls(
     assert captured.value.failed_step == "submitLimitBuy"
     assert operations.calls == ["balance", "buyable", "submitLimitBuy"]
     assert operations.closed is True
+
+
+def test_balance_diagnostic_packet_runs_only_one_read(
+    secure_tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    packet_path, _ = _write_packet(secure_tmp_path)
+    _rewrite_packet(packet_path, ("probeType",), "BALANCE_DIAGNOSTIC")
+    _rewrite_packet(packet_path, ("steps",), ["balance"])
+    packet_sha = _rewrite_packet(packet_path, ("physicalCaps", "brokerage"), 1)
+    operations = FakeOperations()
+    monkeypatch.setattr(probe, "_git_revision", lambda _root, _ref: "a" * 40)
+
+    summary = probe.execute_approved_probe(
+        packet_path,
+        now=datetime(2030, 1, 2, 3, 10, tzinfo=UTC),
+        expected_approval_id="approval-s3-online-test",
+        expected_packet_sha256=packet_sha,
+        repository_root=secure_tmp_path,
+        operations_factory=lambda _packet: operations,
+        approval_consumer=allow_replay_consumer,
+    )
+
+    assert operations.calls == ["balance"]
+    assert summary.completed_steps == ("balance",)
+    assert summary.physical_reservations == {"tokenP": 0, "brokerage": 1}
+
+
+def test_balance_diagnostic_packet_rejects_full_probe_cap_before_runtime(
+    secure_tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    packet_path, _ = _write_packet(secure_tmp_path)
+    _rewrite_packet(packet_path, ("probeType",), "BALANCE_DIAGNOSTIC")
+    packet_sha = _rewrite_packet(packet_path, ("steps",), ["balance"])
+    built = False
+    monkeypatch.setattr(probe, "_git_revision", lambda _root, _ref: "a" * 40)
+
+    def factory(_packet: probe.KISMockApprovalPacket) -> FakeOperations:
+        nonlocal built
+        built = True
+        return FakeOperations()
+
+    with pytest.raises(probe.KISMockApprovalRejected, match="contract"):
+        probe.execute_approved_probe(
+            packet_path,
+            now=datetime(2030, 1, 2, 3, 10, tzinfo=UTC),
+            expected_approval_id="approval-s3-online-test",
+            expected_packet_sha256=packet_sha,
+            repository_root=secure_tmp_path,
+            operations_factory=factory,
+            approval_consumer=allow_replay_consumer,
+        )
+
+    assert built is False
+
+
+def test_probe_preserves_allowlisted_failure_leaf_without_raw_exception(
+    secure_tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.brokerage.kis_mock_online_client import (
+        KISMockBrokerageError,
+        KISMockFailureReason,
+    )
+
+    packet_path, packet_sha = _write_packet(secure_tmp_path)
+    operations = FakeOperations(
+        fail_at="balance",
+        failure=KISMockBrokerageError(
+            KISMockFailureReason.PROVIDER_REJECTED,
+            provider_code="SAFE001",
+        ),
+    )
+    monkeypatch.setattr(probe, "_git_revision", lambda _root, _ref: "a" * 40)
+
+    with pytest.raises(probe.KISMockProbeFailed) as captured:
+        probe.execute_approved_probe(
+            packet_path,
+            now=datetime(2030, 1, 2, 3, 10, tzinfo=UTC),
+            expected_approval_id="approval-s3-online-test",
+            expected_packet_sha256=packet_sha,
+            repository_root=secure_tmp_path,
+            operations_factory=lambda _packet: operations,
+            approval_consumer=allow_replay_consumer,
+        )
+
+    assert captured.value.reason_code == "BROKERAGE_PROVIDER_REJECTED"
+    assert captured.value.provider_code == "SAFE001"
+    assert captured.value.http_status is None
+    assert "provider" not in str(captured.value).lower()
+    assert operations.calls == ["balance"]
+
+
+def test_probe_replaces_untyped_exception_text_with_closed_reason(
+    secure_tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    packet_path, packet_sha = _write_packet(secure_tmp_path)
+    sensitive_text = "raw-account-00000000 provider-message"
+    operations = FakeOperations(
+        fail_at="balance",
+        failure=RuntimeError(sensitive_text),
+    )
+    monkeypatch.setattr(probe, "_git_revision", lambda _root, _ref: "a" * 40)
+
+    with pytest.raises(probe.KISMockProbeFailed) as captured:
+        probe.execute_approved_probe(
+            packet_path,
+            now=datetime(2030, 1, 2, 3, 10, tzinfo=UTC),
+            expected_approval_id="approval-s3-online-test",
+            expected_packet_sha256=packet_sha,
+            repository_root=secure_tmp_path,
+            operations_factory=lambda _packet: operations,
+            approval_consumer=allow_replay_consumer,
+        )
+
+    assert captured.value.reason_code == "UNCLASSIFIED_FAILURE"
+    assert sensitive_text not in str(captured.value)
+    assert sensitive_text not in repr(captured.value)
+
+
+def test_cli_failure_json_contains_only_bounded_diagnostics(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_probe(*_args: object, **_kwargs: object) -> probe.ProbeSummary:
+        raise probe.KISMockProbeFailed(
+            "balance",
+            {"tokenP": 1, "brokerage": 1},
+            reason_code="BROKERAGE_PROVIDER_REJECTED",
+            provider_code="SAFE001",
+            http_status=None,
+        )
+
+    monkeypatch.setattr(probe, "execute_approved_probe", fail_probe)
+
+    assert probe.main(["--approval-packet", "/tmp/unused"]) == 1
+    output = json.loads(capsys.readouterr().err)
+    assert output == {
+        "artifactWrites": 0,
+        "failedStep": "balance",
+        "physicalReservations": {"brokerage": 1, "tokenP": 1},
+        "providerCode": "SAFE001",
+        "reasonCode": "BROKERAGE_PROVIDER_REJECTED",
+        "retryCount": 0,
+        "status": "FAILED",
+    }
 
 
 @pytest.mark.parametrize(

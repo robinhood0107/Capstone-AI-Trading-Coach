@@ -1,0 +1,176 @@
+@baseUrl = http://localhost:8080
+@fillFrom = 2026-07-27
+@fillTo = 2026-07-27
+
+### 0. USER 로그인
+POST {{baseUrl}}/api/v1/auth/login
+Content-Type: application/json
+
+{ "username": "demo-user", "password": "{{demo_password}}" }
+
+> {% client.global.set("user_token", response.body.data.accessToken); %}
+
+### 0A. ADMIN 로그인
+POST {{baseUrl}}/api/v1/auth/login
+Content-Type: application/json
+
+{ "username": "demo-admin", "password": "{{demo_admin_password}}" }
+
+> {% client.global.set("admin_token", response.body.data.accessToken); %}
+
+### 1. 원칙 생성
+POST {{baseUrl}}/api/v1/principles
+Authorization: Bearer {{user_token}}
+Content-Type: application/json
+
+{
+  "presetId": "balanced",
+  "title": "S3.3 offline 체결 대사"
+}
+
+> {% client.global.set("principle_id", response.body.data.principleId); %}
+
+### 2. KIS_MOCK 주문 의도 평가
+POST {{baseUrl}}/api/v1/decisions/evaluate-order
+Authorization: Bearer {{user_token}}
+Content-Type: application/json
+X-Idempotency-Key: {{$uuid}}
+
+{
+  "principleId": "{{principle_id}}",
+  "portfolioSource": "KIS_MOCK",
+  "orderIntent": {
+    "symbol": "005930",
+    "side": "BUY",
+    "orderType": "MARKET",
+    "quantity": 2,
+    "estimatedPrice": 70000,
+    "estimatedAmount": 140000,
+    "timeframe": "1d",
+    "strategyId": "s3-3-offline-v1"
+  }
+}
+
+> {% client.global.set("mock_decision_id", response.body.data.decisionId); %}
+
+### 3. KIS_MOCK 주문 제출
+POST {{baseUrl}}/api/v1/brokerage/mock/orders
+Authorization: Bearer {{user_token}}
+Content-Type: application/json
+X-Idempotency-Key: {{$uuid}}
+
+{
+  "decisionId": "{{mock_decision_id}}",
+  "orderIntent": {
+    "symbol": "005930",
+    "side": "BUY",
+    "orderType": "MARKET",
+    "quantity": 2,
+    "estimatedPrice": 70000,
+    "estimatedAmount": 140000,
+    "timeframe": "1d",
+    "strategyId": "s3-3-offline-v1"
+  },
+  "userAcknowledgement": {
+    "warningsAccepted": true
+  }
+}
+
+> {%
+    client.global.set("mock_order_id", response.body.data.orderId);
+    client.global.set("mock_account_id", response.body.data.accountId);
+%}
+
+### 4. KIS_MOCK sanitized 체결 관측 append — 이 단계만 HTTP 밖의 offline writer
+# contracts/schemas/s3-3-fill-observation.schema.json을 만족하는 local JSON에
+# 위 mock_order_id를 넣고 provider 체결번호 원문 대신 사전 계산한 64-hex providerExecRefHash를 쓴다.
+# secret/DSN은 IDE private environment에서만 주입하고 파일이나 이 runbook에 기록하지 않는다.
+#
+# cd workspaces/decision-platform/python-services
+# DECISION_SOURCE_WRITER_OFFLINE_TARGET=offline \
+# DECISION_FILL_WRITER_DATABASE_DSN={{fill_writer_dsn}} \
+# uv run --frozen python -m app.brokerage.cli.write_fill_observations \
+#   --fixture {{sanitized_fill_fixture}}
+
+### 5. ADMIN stored-fill reconcile
+POST {{baseUrl}}/api/v1/brokerage/orders/{{mock_order_id}}/reconcile
+Authorization: Bearer {{admin_token}}
+Content-Type: application/json
+X-Idempotency-Key: {{$uuid}}
+
+{}
+
+### 6. KIS_MOCK owner fill page
+GET {{baseUrl}}/api/v1/brokerage/mock/accounts/{{mock_account_id}}/fills?from={{fillFrom}}&to={{fillTo}}
+Authorization: Bearer {{user_token}}
+
+### 7. KIS_MOCK owner balance
+GET {{baseUrl}}/api/v1/brokerage/mock/accounts/{{mock_account_id}}/balances
+Authorization: Bearer {{user_token}}
+
+### 8. INTERNAL_PAPER 주문 의도 평가
+POST {{baseUrl}}/api/v1/decisions/evaluate-order
+Authorization: Bearer {{user_token}}
+Content-Type: application/json
+X-Idempotency-Key: {{$uuid}}
+
+{
+  "principleId": "{{principle_id}}",
+  "portfolioSource": "INTERNAL_PAPER",
+  "orderIntent": {
+    "symbol": "005930",
+    "side": "BUY",
+    "orderType": "MARKET",
+    "quantity": 2,
+    "estimatedPrice": 70000,
+    "estimatedAmount": 140000,
+    "timeframe": "1d",
+    "strategyId": "s3-3-paper-v1"
+  }
+}
+
+> {% client.global.set("paper_decision_id", response.body.data.decisionId); %}
+
+### 9. INTERNAL_PAPER 결정적 주문·체결
+POST {{baseUrl}}/api/v1/brokerage/paper/orders
+Authorization: Bearer {{user_token}}
+Content-Type: application/json
+X-Idempotency-Key: {{$uuid}}
+
+{
+  "decisionId": "{{paper_decision_id}}",
+  "orderIntent": {
+    "symbol": "005930",
+    "side": "BUY",
+    "orderType": "MARKET",
+    "quantity": 2,
+    "estimatedPrice": 70000,
+    "estimatedAmount": 140000,
+    "timeframe": "1d",
+    "strategyId": "s3-3-paper-v1"
+  },
+  "userAcknowledgement": {
+    "warningsAccepted": true
+  }
+}
+
+> {%
+    client.global.set("paper_order_id", response.body.data.orderId);
+    client.global.set("paper_account_id", response.body.data.accountId);
+%}
+
+### 10. ADMIN INTERNAL_PAPER reconcile
+POST {{baseUrl}}/api/v1/brokerage/orders/{{paper_order_id}}/reconcile
+Authorization: Bearer {{admin_token}}
+Content-Type: application/json
+X-Idempotency-Key: {{$uuid}}
+
+{}
+
+### 11. INTERNAL_PAPER owner fill page
+GET {{baseUrl}}/api/v1/brokerage/paper/accounts/{{paper_account_id}}/fills?from={{fillFrom}}&to={{fillTo}}
+Authorization: Bearer {{user_token}}
+
+### 12. INTERNAL_PAPER owner balance
+GET {{baseUrl}}/api/v1/brokerage/paper/accounts/{{paper_account_id}}/balances
+Authorization: Bearer {{user_token}}

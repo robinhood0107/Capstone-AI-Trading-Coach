@@ -46,13 +46,15 @@ OpenAPI는 같은 ID와 digest를 `x-s3-3-contract-id`,
 4. **P0-14 — 순수 전이와 원자 적용**
    - Kotlin `OrderFillTransition`은 `Applied | Duplicate | Invalid`만 반환한다.
      같은 누적수량은 no-op Duplicate, 역행/초과/종료 후 전이는 Invalid다.
-     `CANCEL_REQUESTED -> FILLED` race만 허용한다.
+     `CANCEL_REQUESTED -> PARTIALLY_FILLED`는 Invalid로 취소 의도를 보존하고
+     `CANCEL_REQUESTED -> FILLED` full-fill race만 허용한다.
    - Invalid는 버리지 않고 `INVALID_TRANSITION` 이벤트와 sanitized audit로 남기며 주문
      projection은 바꾸지 않는다. Duplicate는 이벤트를 만들지 않는다.
    - ADMIN 현재 권한 재검증, advisory transaction lock, order row lock, 최대 200개 관측,
      event append, order projection, reconciliation, audit, outbox를 한 transaction에서 처리한다.
-   - 평균가는 `sum(fillQuantity * fillPriceKrw) / sum(fillQuantity)` 정수 내림으로 재계산한다.
-     Kotlin 예상 결과와 SQL 결과가 다르면 transaction을 503으로 fail-closed한다.
+   - 적용된 fill의 exact 누적 notional을 batch 사이에도 보존하고 평균가는
+     `floor(exactNotional / filledQuantity)`로 재계산한다. Kotlin 예상 결과와 SQL 결과가
+     다르면 transaction을 503으로 fail-closed한다.
 
 5. **P0-15 — 대사 상태와 자동 수정 금지**
    - 주문 status enum은 늘리지 않는다. 별도 `reconciliation_status`는
@@ -60,15 +62,19 @@ OpenAPI는 같은 ID와 digest를 `x-s3-3-contract-id`,
      NOT_APPLICABLE일 때만 NULL이다.
    - 관측 수량, 단일 보존식, 재계산 평균가, provider final 평균가가 모두 일치할 때만
      MATCHED다. 하나라도 다르면 MISMATCH warning/audit를 남긴다.
+   - 대사마다 `reconciledAt`을 한 번 캡처하고 `observed_at`, `received_at`이 모두 cutoff
+     이하인 관측만 read/apply/aggregate한다. 미래 관측은 현재 `hasMore`에서도 제외한다.
    - 대사는 관측이나 주문값을 임의 보정하지 않는다.
 
 6. **P0-16 — ADMIN reconcile**
    - `POST /api/v1/brokerage/orders/{orderId}/reconcile`은 ADMIN 전용이며
      `X-Idempotency-Key`가 필수다. body는 empty 또는 `{}`만 허용한다.
-   - 필터와 method authorization 뒤 transaction 안에서 DB의 현재 role/status/
-     security version을 다시 확인한다. 응답은 account/owner/raw provider 값을 제외한
-     sanitized projection이다.
-   - 한 번에 최대 200개를 처리하고 남은 COMPLETE 관측이 있으면 `hasMore=true`다.
+   - JWT 인증의 현재 role/security version을 replay identity에 묶어 권한 변경 전 ADMIN
+     응답을 새 권한 context에서 재생하지 못하게 한다. cache miss는 method authorization을
+     통과하고 transaction 안에서 DB의 현재 role/status/security version을 다시 확인한다.
+     응답은 account/owner/raw provider 값을 제외한 sanitized projection이다.
+   - 한 번에 최대 200개를 처리하고 cutoff 안의 남은 COMPLETE 관측이 있으면
+     `hasMore=true`다.
      ShedLock, `@Scheduled`, background polling은 없다.
 
 7. **P0-17 — owner-scoped fills**
@@ -84,7 +90,8 @@ OpenAPI는 같은 ID와 digest를 `x-s3-3-contract-id`,
 
 8. **P0-18 — 중복 방어**
    - mock submit, paper submit, cancel, fill apply는 서로 다른 purpose/version HMAC
-     scope를 사용한다. Redis key에는 opaque 64-hex identity만 둔다.
+     scope를 사용한다. replay scope는 현재 role/securityVersion도 결속하고 owner admission
+     scope는 사용자·purpose 단위로 유지한다. Redis key에는 opaque 64-hex identity만 둔다.
    - same key/same payload는 저장 응답을 replay하고, different payload는 409다.
      owner-token compare-and-save/delete, 다른 owner 완료/삭제 거부, 사용자 admission cap,
      bounded replay, DB unique, Decision TTL/one-use를 회귀 테스트로 고정한다.
@@ -129,26 +136,32 @@ live-order authority is introduced.
 3. **P0-13:** every order satisfies exactly one arithmetic conservation equation:
    `filled + leaves + unfilled_terminated = quantity`.
 4. **P0-14:** a pure transition returns Applied, Duplicate, or Invalid. Invalid transitions
-   become sanitized evidence without mutating the order; duplicates are no-ops. ADMIN
-   revalidation, advisory locking, at most 200 observations, events, projection, audit, and
-   outbox commit atomically. Kotlin/SQL divergence fails closed.
+   become sanitized evidence without mutating the order; duplicates are no-ops.
+   `CANCEL_REQUESTED + PARTIAL_FILL` is invalid while the full-fill race remains valid.
+   Exact cumulative fill notional survives reconciliation batches. ADMIN revalidation,
+   advisory locking, at most 200 observations, events, projection, audit, and outbox commit
+   atomically. Kotlin/SQL divergence fails closed.
 5. **P0-15:** reconciliation is a separate
    `NOT_APPLICABLE | MATCHED | MISMATCH` field and never repairs observations or orders.
+   One `reconciledAt` cutoff admits only observations whose observed and received timestamps
+   are both at or before the cutoff; future rows do not count as current `hasMore` work.
 6. **P0-16:** reconcile is ADMIN-only, requires an idempotency key, accepts only an empty
-   object, revalidates current DB authority, and returns `hasMore` for bounded continuation.
-   No scheduler or ShedLock table is added.
+   object, binds replay to the current role/security version, revalidates current DB
+   authority, and returns `hasMore` for bounded continuation. No scheduler or ShedLock table
+   is added.
 7. **P0-17:** mock and paper fill queries are owner-scoped, KST date-bounded to 31 days,
    limited to 50 records, and use a 900-second HMAC cursor over the exact descending sort.
 8. **P0-18:** all four brokerage writes use purpose/version-separated HMAC identities,
-   bounded replay, owner-token fencing, admission caps, database uniqueness, and Decision
-   TTL/one-use protections.
+   role/security-version-bound replay, owner-token fencing, user-purpose admission caps,
+   database uniqueness, and Decision TTL/one-use protections.
 9. **P0-19:** provider physical calls remain zero. KIS execution polling, WebSocket,
    live-account access, and live trading require a separate exact approval.
 
 The canonical catalog digest is
 `d76cd087592e4a9f0a87a9d0213836cbcdd20acd2723815ac762def2b9ef61b4`.
-The implementation normalizer requires exactly three S3.3 path/method pairs and exactly
-five `S33*` components. No other workspace or historical migration is changed.
+The implementation normalizer requires the complete approved S3.1-S3.3 brokerage route
+inventory, exactly three S3.3 path/method pairs, and exactly five `S33*` components. No other
+workspace or historical migration is changed.
 
 ## Verification
 

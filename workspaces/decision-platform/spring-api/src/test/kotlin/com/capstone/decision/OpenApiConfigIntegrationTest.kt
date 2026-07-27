@@ -316,6 +316,7 @@ class OpenApiConfigIntegrationTest(
                 "/api/v1/brokerage/paper/orders",
                 "/api/v1/brokerage/paper/accounts/{accountId}/balances",
                 "/api/v1/brokerage/paper/accounts/{accountId}/buyable",
+                "/api/v1/brokerage/paper/accounts/{accountId}/fills",
             ),
             paperPaths,
         )
@@ -351,6 +352,74 @@ class OpenApiConfigIntegrationTest(
         )
         assertTrue(document.at("/paths/~1api~1v1~1brokerage~1paper~1accounts~1{accountId}/post").isMissingNode)
         assertTrue(document.at("/paths/~1api~1v1~1brokerage~1paper~1accounts~1{accountId}/delete").isMissingNode)
+    }
+
+    @Test
+    fun `openapi locks S3_3 routes digest and sanitized bounded schemas`() {
+        val document =
+            objectMapper.readTree(
+                mockMvc
+                    .get("/v3/api-docs")
+                    .andExpect {
+                        status { isOk() }
+                    }.andReturn()
+                    .response
+                    .contentAsByteArray,
+            )
+        val repositoryRoot = findRepositoryRoot()
+        val catalogBytes =
+            Files.readAllBytes(
+                repositoryRoot.resolve("contracts/catalogs/s3-3-fill-contract.v1.json"),
+            )
+        val expectedDigest =
+            HexFormat
+                .of()
+                .formatHex(MessageDigest.getInstance("SHA-256").digest(catalogBytes))
+
+        assertEquals("s3-3-fill-contract/v1", document.path("x-s3-3-contract-id").stringValue())
+        assertEquals(expectedDigest, document.path("x-s3-3-contract-sha256").stringValue())
+        assertEquals(
+            "#/components/schemas/S33ReconcileSuccessResponse",
+            document
+                .at(
+                    "/paths/~1api~1v1~1brokerage~1orders~1{orderId}~1reconcile/post/" +
+                        "responses/200/content/application~1json/schema/\$ref",
+                ).stringValue(),
+        )
+        listOf("mock", "paper").forEach { mode ->
+            assertEquals(
+                "#/components/schemas/S33FillPageSuccessResponse",
+                document
+                    .at(
+                        "/paths/~1api~1v1~1brokerage~1$mode~1accounts~1{accountId}~1fills/get/" +
+                            "responses/200/content/application~1json/schema/\$ref",
+                    ).stringValue(),
+            )
+        }
+        assertEquals(false, document.at("/components/schemas/S33Reconcile/additionalProperties").booleanValue())
+        assertEquals(50, document.at("/components/schemas/S33FillPage/properties/items/maxItems").intValue())
+        assertEquals(
+            setOf(
+                "S33FillObservation",
+                "S33Reconcile",
+                "S33FillPage",
+                "S33ReconcileSuccessResponse",
+                "S33FillPageSuccessResponse",
+            ),
+            document
+                .at("/components/schemas")
+                .propertyNames()
+                .asSequence()
+                .filter { it.startsWith("S33") }
+                .toSet(),
+        )
+        assertTrue(
+            document
+                .at("/paths")
+                .propertyNames()
+                .asSequence()
+                .none { "report-fill" in it || "fill-observation" in it },
+        )
     }
 
     private fun findRepositoryRoot(): Path {

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-import importlib.util
+import hashlib
 import json
 from pathlib import Path
 import unittest
+
+from jsonschema import Draft202012Validator, FormatChecker
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -11,14 +13,23 @@ ROOT = Path(__file__).resolve().parents[2]
 
 class S33FillContractTest(unittest.TestCase):
     def test_generator_catalog_and_required_schemas_exist(self) -> None:
-        self.assertIsNotNone(
-            importlib.util.spec_from_file_location(
-                "generate_s3_3_contracts",
-                ROOT / "contracts/generate_s3_3_contracts.py",
-            )
-        )
         self.assertTrue(
-            (ROOT / "contracts/catalogs/s3-3-fill-contract.v1.json").is_file()
+            (ROOT / "contracts/generate_s3_3_contracts.py").is_file()
+        )
+        catalog = self._load(
+            "contracts/catalogs/s3-3-fill-contract.v1.json"
+        )
+        self.assertEqual("s3-3-fill-contract/v1", catalog["contractId"])
+        self.assertEqual(200, catalog["reconcileObservationMaximum"])
+        self.assertEqual(31, catalog["cursor"]["dateRangeDaysMaximum"])
+        self.assertEqual(50, catalog["cursor"]["pageSizeMaximum"])
+        self.assertEqual(
+            {
+                "GET /api/v1/brokerage/mock/accounts/{accountId}/fills",
+                "GET /api/v1/brokerage/paper/accounts/{accountId}/fills",
+                "POST /api/v1/brokerage/orders/{orderId}/reconcile",
+            },
+            set(catalog["routes"].values()),
         )
         for name in (
             "s3-3-fill-observation",
@@ -30,23 +41,113 @@ class S33FillContractTest(unittest.TestCase):
                 name,
             )
 
-    def test_openapi_has_reconcile_and_two_owner_fill_routes_only(self) -> None:
-        document = json.loads(
-            (ROOT / "contracts/openapi/openapi.json").read_text(encoding="utf-8")
+    def test_fill_observation_schema_rejects_raw_or_inconsistent_reports(self) -> None:
+        validator = self._validator("s3-3-fill-observation")
+        valid = self._load("contracts/examples/s3-3-fill-observation.valid.json")
+        self.assertEqual([], list(validator.iter_errors(valid)))
+        for suffix in ("raw-ref", "terminal-quantity", "unknown"):
+            invalid = self._load(
+                f"contracts/examples/invalid/s3-3-fill-observation.{suffix}.invalid.json"
+            )
+            self.assertNotEqual([], list(validator.iter_errors(invalid)), suffix)
+
+    def test_reconcile_and_fill_page_schemas_are_sanitized_and_bounded(self) -> None:
+        reconcile = self._validator("s3-3-reconcile-response")
+        fill_page = self._validator("s3-3-fill-page")
+        self.assertEqual(
+            [],
+            list(
+                reconcile.iter_errors(
+                    self._load(
+                        "contracts/examples/s3-3-reconcile-response.valid.json"
+                    )
+                )
+            ),
         )
+        self.assertEqual(
+            [],
+            list(
+                fill_page.iter_errors(
+                    self._load("contracts/examples/s3-3-fill-page.valid.json")
+                )
+            ),
+        )
+        self.assertNotEqual(
+            [],
+            list(
+                reconcile.iter_errors(
+                    self._load(
+                        "contracts/examples/invalid/"
+                        "s3-3-reconcile-response.account.invalid.json"
+                    )
+                )
+            ),
+        )
+        self.assertNotEqual(
+            [],
+            list(
+                fill_page.iter_errors(
+                    self._load(
+                        "contracts/examples/invalid/"
+                        "s3-3-fill-page.raw-ref.invalid.json"
+                    )
+                )
+            ),
+        )
+        self.assertEqual(
+            50,
+            self._load("contracts/schemas/s3-3-fill-page.schema.json")
+            ["properties"]["items"]["maxItems"],
+        )
+
+    def test_openapi_has_exact_s33_routes_components_and_digest(self) -> None:
+        document = self._load("contracts/openapi/openapi.json")
+        catalog_path = ROOT / "contracts/catalogs/s3-3-fill-contract.v1.json"
+        digest = hashlib.sha256(catalog_path.read_bytes()).hexdigest()
+        self.assertEqual(
+            "s3-3-fill-contract/v1",
+            document["x-s3-3-contract-id"],
+        )
+        self.assertEqual(digest, document["x-s3-3-contract-sha256"])
         paths = document["paths"]
-        self.assertIn("/api/v1/brokerage/orders/{orderId}/reconcile", paths)
-        self.assertIn(
-            "/api/v1/brokerage/mock/accounts/{accountId}/fills",
-            paths,
-        )
-        self.assertIn(
-            "/api/v1/brokerage/paper/accounts/{accountId}/fills",
-            paths,
+        expected = {
+            "/api/v1/brokerage/orders/{orderId}/reconcile": {"post"},
+            "/api/v1/brokerage/mock/accounts/{accountId}/fills": {"get"},
+            "/api/v1/brokerage/paper/accounts/{accountId}/fills": {"get"},
+        }
+        actual = {
+            path: set(paths[path]).intersection(
+                {"delete", "get", "head", "options", "patch", "post", "put", "trace"}
+            )
+            for path in expected
+        }
+        self.assertEqual(expected, actual)
+        self.assertEqual(
+            {
+                "S33FillObservation",
+                "S33Reconcile",
+                "S33FillPage",
+                "S33ReconcileSuccessResponse",
+                "S33FillPageSuccessResponse",
+            },
+            {
+                name
+                for name in document["components"]["schemas"]
+                if name.startswith("S33")
+            },
         )
         self.assertFalse(
             any("report-fill" in path or "fill-observation" in path for path in paths)
         )
+
+    def _validator(self, name: str) -> Draft202012Validator:
+        schema = self._load(f"contracts/schemas/{name}.schema.json")
+        Draft202012Validator.check_schema(schema)
+        return Draft202012Validator(schema, format_checker=FormatChecker())
+
+    @staticmethod
+    def _load(relative: str) -> object:
+        return json.loads((ROOT / relative).read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

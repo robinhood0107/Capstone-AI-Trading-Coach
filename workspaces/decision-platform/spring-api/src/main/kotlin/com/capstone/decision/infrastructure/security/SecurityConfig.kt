@@ -196,6 +196,10 @@ class SecurityConfig {
                     .requestMatchers("/actuator/**")
                     .hasRole("ADMIN")
                 authorize
+                    // ADMIN route는 method security와 filter-chain 양쪽에서 기능 수준 권한을 고정한다.
+                    .requestMatchers(HttpMethod.POST, "/api/v1/brokerage/orders/*/reconcile")
+                    .hasRole("ADMIN")
+                authorize
                     // 로그인과 개발 문서 endpoint는 토큰 발급 전에도 접근되어야 한다.
                     .requestMatchers(
                         "/swagger-ui/**",

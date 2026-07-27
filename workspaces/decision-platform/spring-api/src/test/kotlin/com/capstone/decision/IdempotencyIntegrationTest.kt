@@ -1,5 +1,7 @@
 package com.capstone.decision
 
+import com.capstone.decision.infrastructure.brokerage.BrokerageIdempotencyHasher
+import com.capstone.decision.infrastructure.brokerage.BrokerageWriteReplayPurpose
 import com.capstone.decision.infrastructure.idempotency.IdempotencyClaimLostException
 import com.capstone.decision.infrastructure.idempotency.IdempotencyLookup
 import com.capstone.decision.infrastructure.idempotency.IdempotencyProperties
@@ -53,6 +55,7 @@ class IdempotencyIntegrationTest(
     @Autowired private val redisTemplate: StringRedisTemplate,
     @Autowired private val idempotencyService: IdempotencyService,
     @Autowired private val idempotencyProperties: IdempotencyProperties,
+    @Autowired private val brokerageIdempotencyHasher: BrokerageIdempotencyHasher,
 ) : SpringApiIntegrationTestBase() {
     private lateinit var mockMvc: MockMvc
 
@@ -123,9 +126,16 @@ class IdempotencyIntegrationTest(
             body = """{"symbol":"005930","quantity":1}""",
         )
 
-        val keys = redisTemplate.keys("idempotency:usr_demo_user:idem-ttl-00000001")
-        assertEquals(1, keys.size)
-        val ttlHours = redisTemplate.getExpire(keys.single(), TimeUnit.HOURS)
+        val redisKey =
+            idempotencyService.redisKey(
+                "usr_demo_user",
+                "idem-ttl-00000001",
+                GENERIC_PURPOSE,
+            )
+        assertTrue(redisTemplate.hasKey(redisKey))
+        assertFalse(redisKey.contains("usr_demo_user"))
+        assertFalse(redisKey.contains("idem-ttl-00000001"))
+        val ttlHours = redisTemplate.getExpire(redisKey, TimeUnit.HOURS)
         assertTrue(ttlHours in 23..24, "expected Redis TTL close to 24h but was $ttlHours")
     }
 
@@ -205,12 +215,14 @@ class IdempotencyIntegrationTest(
                 userId = "demo-user",
                 idempotencyKey = "idem-atomic-claim",
                 requestHash = "hash-one",
+                purpose = GENERIC_PURPOSE,
             )
         val second =
             idempotencyService.acquire(
                 userId = "demo-user",
                 idempotencyKey = "idem-atomic-claim",
                 requestHash = "hash-one",
+                purpose = GENERIC_PURPOSE,
             )
 
         assertTrue(first is IdempotencyLookup.New)
@@ -223,17 +235,19 @@ class IdempotencyIntegrationTest(
             IdempotencyService(
                 redisTemplate,
                 IdempotencyProperties(maxNewKeysPerUserPerTtl = 2),
+                brokerageIdempotencyHasher,
             )
         val userId = "quota-${UUID.randomUUID()}"
 
         repeat(2) { index ->
             assertTrue(
-                boundedService.acquire(userId, "key-$index", "hash-$index") is IdempotencyLookup.New,
+                boundedService.acquire(userId, "key-$index", "hash-$index", GENERIC_PURPOSE) is
+                    IdempotencyLookup.New,
             )
         }
 
         assertTrue(
-            boundedService.acquire(userId, "key-overflow", "hash-overflow") is
+            boundedService.acquire(userId, "key-overflow", "hash-overflow", GENERIC_PURPOSE) is
                 IdempotencyLookup.CapacityExceeded,
         )
     }
@@ -245,13 +259,22 @@ class IdempotencyIntegrationTest(
                 userId = "demo-user",
                 idempotencyKey = "idem-claim-owner",
                 requestHash = "hash-owner",
+                purpose = GENERIC_PURPOSE,
             ) as IdempotencyLookup.New
-        redisTemplate.delete("idempotency-claim:demo-user:idem-claim-owner")
+        val resultKey =
+            idempotencyService.redisKey(
+                "demo-user",
+                "idem-claim-owner",
+                GENERIC_PURPOSE,
+            )
+        val claimKey = resultKey.replace("idempotency:", "idempotency-claim:")
+        redisTemplate.delete(claimKey)
         val replacement =
             idempotencyService.acquire(
                 userId = "demo-user",
                 idempotencyKey = "idem-claim-owner",
                 requestHash = "hash-owner",
+                purpose = GENERIC_PURPOSE,
             ) as IdempotencyLookup.New
 
         org.junit.jupiter.api.assertThrows<IdempotencyClaimLostException> {
@@ -263,6 +286,7 @@ class IdempotencyIntegrationTest(
                 status = 200,
                 body = """{"owner":"stale"}""",
                 contentType = MediaType.APPLICATION_JSON_VALUE,
+                purpose = GENERIC_PURPOSE,
             )
         }
         idempotencyService.store(
@@ -273,6 +297,7 @@ class IdempotencyIntegrationTest(
             status = 200,
             body = """{"owner":"replacement"}""",
             contentType = MediaType.APPLICATION_JSON_VALUE,
+            purpose = GENERIC_PURPOSE,
         )
 
         val replay =
@@ -280,10 +305,63 @@ class IdempotencyIntegrationTest(
                 userId = "demo-user",
                 idempotencyKey = "idem-claim-owner",
                 requestHash = "hash-owner",
+                purpose = GENERIC_PURPOSE,
             ) as IdempotencyLookup.Replay
         assertEquals("""{"owner":"replacement"}""", replay.body)
-        assertTrue(redisTemplate.getExpire(idempotencyService.redisKey("demo-user", "idem-claim-owner")) > 0)
-        assertFalse(redisTemplate.hasKey("idempotency-claim:demo-user:idem-claim-owner"))
+        assertTrue(redisTemplate.getExpire(resultKey) > 0)
+        assertFalse(redisTemplate.hasKey(claimKey))
+        assertTrue(redisTemplate.keys("*").none { it.contains("demo-user") || it.contains("idem-claim-owner") })
+    }
+
+    @Test
+    fun `different owner cannot complete or delete another owner claim`() {
+        val owner =
+            idempotencyService.acquire(
+                userId = "owner-a",
+                idempotencyKey = "shared-raw-key",
+                requestHash = "hash-owner-a",
+                purpose = BrokerageWriteReplayPurpose.FILL_APPLY,
+            ) as IdempotencyLookup.New
+
+        org.junit.jupiter.api.assertThrows<IdempotencyClaimLostException> {
+            idempotencyService.store(
+                userId = "owner-b",
+                idempotencyKey = "shared-raw-key",
+                requestHash = "hash-owner-a",
+                claimToken = owner.claimToken,
+                status = 200,
+                body = """{"owner":"wrong"}""",
+                contentType = MediaType.APPLICATION_JSON_VALUE,
+                purpose = BrokerageWriteReplayPurpose.FILL_APPLY,
+            )
+        }
+        idempotencyService.discard(
+            userId = "owner-b",
+            idempotencyKey = "shared-raw-key",
+            requestHash = "hash-owner-a",
+            claimToken = owner.claimToken,
+            purpose = BrokerageWriteReplayPurpose.FILL_APPLY,
+        )
+        assertTrue(
+            idempotencyService.acquire(
+                userId = "owner-a",
+                idempotencyKey = "shared-raw-key",
+                requestHash = "hash-owner-a",
+                purpose = BrokerageWriteReplayPurpose.FILL_APPLY,
+            ) is IdempotencyLookup.InProgress,
+        )
+        idempotencyService.discard(
+            userId = "owner-a",
+            idempotencyKey = "shared-raw-key",
+            requestHash = "hash-owner-a",
+            claimToken = owner.claimToken,
+            purpose = BrokerageWriteReplayPurpose.FILL_APPLY,
+        )
+        assertTrue(
+            redisTemplate.keys("*").none {
+                it.contains("owner-a") || it.contains("owner-b") || it.contains("shared-raw-key")
+            },
+        )
     }
 
     @Test
@@ -340,7 +418,11 @@ class IdempotencyIntegrationTest(
 
         val storedBody =
             redisTemplate.opsForHash<String, String>().get(
-                "idempotency:usr_demo_user:idem-response-limit",
+                idempotencyService.redisKey(
+                    "usr_demo_user",
+                    "idem-response-limit",
+                    GENERIC_PURPOSE,
+                ),
                 "body",
             )
         assertTrue(!storedBody.isNullOrBlank() && storedBody.toByteArray().size <= 256)
@@ -405,6 +487,7 @@ class IdempotencyIntegrationTest(
     }
 
     companion object {
+        private val GENERIC_PURPOSE = BrokerageWriteReplayPurpose.GENERIC_FINANCE_WRITE
         private val redisPasswordValue: String = "r" + "p".repeat(24)
 
         // CI와 로컬에서 동일한 Redis 버전으로 TTL/Hash 동작 차이를 줄인다.

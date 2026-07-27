@@ -18,6 +18,58 @@ import org.junit.jupiter.api.assertThrows
 
 class OrderFillDomainTest {
     @Test
+    fun `상태 7종과 exec type 4종 전이표를 전수 검증한다`() {
+        var cases = 0
+        OrderFillStatus.entries.forEach { status ->
+            FillExecutionType.entries.forEach { execType ->
+                val current =
+                    if (status == OrderFillStatus.PARTIALLY_FILLED) {
+                        state(status = status, filled = 4, leaves = 6, average = 100)
+                    } else if (status in setOf(OrderFillStatus.FILLED, OrderFillStatus.CANCELLED, OrderFillStatus.REJECTED)) {
+                        state(status = status, filled = 10, leaves = 0, average = 100)
+                    } else {
+                        state(status = status)
+                    }
+                val observation =
+                    when (execType) {
+                        FillExecutionType.PARTIAL_FILL ->
+                            observation(
+                                execType,
+                                fillQuantity = if (current.filledQuantity == 0L) 4 else 2,
+                                fillPrice = 100,
+                                cumulative = if (current.filledQuantity == 0L) 4 else 6,
+                                leaves = if (current.filledQuantity == 0L) 6 else 4,
+                            )
+                        FillExecutionType.FILL ->
+                            observation(
+                                execType,
+                                fillQuantity = current.quantity - current.filledQuantity,
+                                fillPrice = 100,
+                                cumulative = current.quantity,
+                                leaves = 0,
+                            )
+                        FillExecutionType.CANCELLED,
+                        FillExecutionType.REJECTED,
+                        -> observation(execType, 0, null, current.filledQuantity, 0)
+                    }
+
+                val result = OrderFillTransition.apply(current, observation)
+                if (status in setOf(OrderFillStatus.FILLED, OrderFillStatus.CANCELLED, OrderFillStatus.REJECTED)) {
+                    assertEquals(
+                        FillTransitionResult.Invalid(FillInvalidReason.TERMINAL_STATE),
+                        result,
+                        "$status/$execType",
+                    )
+                } else {
+                    assertTrue(result is FillTransitionResult.Applied, "$status/$execType -> $result")
+                }
+                cases++
+            }
+        }
+        assertEquals(28, cases)
+    }
+
+    @Test
     fun `종료 상태 3종은 모든 exec type을 invalid로 남긴다`() {
         val terminalStatuses =
             listOf(
@@ -198,6 +250,7 @@ class OrderFillDomainTest {
             listOf(
                 matched.copy(observedFillQuantity = 3),
                 matched.copy(recomputedAverageFillPriceKrw = 101),
+                matched.copy(providerFinalAverageFillPriceKrw = 101),
                 matched.copy(leavesQuantity = 5),
             ).all {
                 OrderReconciliationPolicy.evaluate(it) == OrderReconciliationStatus.MISMATCH

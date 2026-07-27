@@ -39,6 +39,11 @@ S32_CATALOG_PATH = (
 S32_CONTRACT_ID = "s3-2-internal-paper-contract/v1"
 S33_CATALOG_PATH = REPO_ROOT / "contracts/catalogs/s3-3-fill-contract.v1.json"
 S33_CONTRACT_ID = "s3-3-fill-contract/v1"
+S31_PATH_METHODS = {
+    "/api/v1/brokerage/mock/orders": {"post"},
+    "/api/v1/brokerage/mock/accounts/{accountId}/balances": {"get"},
+    "/api/v1/brokerage/mock/accounts/{accountId}/buyable": {"get"},
+}
 DECISION_PATH_METHODS = {
     "/api/v1/decisions/evaluate-order": {"post"},
     "/api/v1/decisions/{decisionId}": {"get"},
@@ -73,6 +78,11 @@ S33_PATH_METHODS = {
     "/api/v1/brokerage/orders/{orderId}/reconcile": {"post"},
     "/api/v1/brokerage/mock/accounts/{accountId}/fills": {"get"},
     "/api/v1/brokerage/paper/accounts/{accountId}/fills": {"get"},
+}
+BROKERAGE_PATH_METHODS = {
+    **S31_PATH_METHODS,
+    **S32_PATH_METHODS,
+    **S33_PATH_METHODS,
 }
 S33_COMPONENTS = {
     "S33FillObservation",
@@ -290,12 +300,11 @@ def _assert_s33_paths(
         }
         for path, item in paths.items()
         if path.startswith("/api/v1/brokerage/")
-        and ("fill" in path or path.endswith("/reconcile"))
     }
-    expected = {} if amendment else S33_PATH_METHODS
+    expected = {} if amendment else BROKERAGE_PATH_METHODS
     if actual != expected:
         raise OpenApiNormalizationError(
-            f"{source}: fill/reconcile paths or methods differ from the approved S3.3 allowlist."
+            f"{source}: brokerage paths or methods differ from the approved S3.1-S3.3 allowlist."
         )
 
 

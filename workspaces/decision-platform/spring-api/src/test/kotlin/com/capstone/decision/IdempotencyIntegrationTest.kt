@@ -128,9 +128,11 @@ class IdempotencyIntegrationTest(
 
         val redisKey =
             idempotencyService.redisKey(
-                "usr_demo_user",
-                "idem-ttl-00000001",
-                GENERIC_PURPOSE,
+                userId = "usr_demo_user",
+                actorRole = TEST_ACTOR_ROLE,
+                securityVersion = TEST_SECURITY_VERSION,
+                idempotencyKey = "idem-ttl-00000001",
+                purpose = GENERIC_PURPOSE,
             )
         assertTrue(redisTemplate.hasKey(redisKey))
         assertFalse(redisKey.contains("usr_demo_user"))
@@ -213,6 +215,8 @@ class IdempotencyIntegrationTest(
         val first =
             idempotencyService.acquire(
                 userId = "demo-user",
+                actorRole = TEST_ACTOR_ROLE,
+                securityVersion = TEST_SECURITY_VERSION,
                 idempotencyKey = "idem-atomic-claim",
                 requestHash = "hash-one",
                 purpose = GENERIC_PURPOSE,
@@ -220,6 +224,8 @@ class IdempotencyIntegrationTest(
         val second =
             idempotencyService.acquire(
                 userId = "demo-user",
+                actorRole = TEST_ACTOR_ROLE,
+                securityVersion = TEST_SECURITY_VERSION,
                 idempotencyKey = "idem-atomic-claim",
                 requestHash = "hash-one",
                 purpose = GENERIC_PURPOSE,
@@ -241,13 +247,27 @@ class IdempotencyIntegrationTest(
 
         repeat(2) { index ->
             assertTrue(
-                boundedService.acquire(userId, "key-$index", "hash-$index", GENERIC_PURPOSE) is
+                boundedService.acquire(
+                    userId = userId,
+                    actorRole = TEST_ACTOR_ROLE,
+                    securityVersion = TEST_SECURITY_VERSION,
+                    idempotencyKey = "key-$index",
+                    requestHash = "hash-$index",
+                    purpose = GENERIC_PURPOSE,
+                ) is
                     IdempotencyLookup.New,
             )
         }
 
         assertTrue(
-            boundedService.acquire(userId, "key-overflow", "hash-overflow", GENERIC_PURPOSE) is
+            boundedService.acquire(
+                userId = userId,
+                actorRole = TEST_ACTOR_ROLE,
+                securityVersion = TEST_SECURITY_VERSION,
+                idempotencyKey = "key-overflow",
+                requestHash = "hash-overflow",
+                purpose = GENERIC_PURPOSE,
+            ) is
                 IdempotencyLookup.CapacityExceeded,
         )
     }
@@ -257,21 +277,27 @@ class IdempotencyIntegrationTest(
         val first =
             idempotencyService.acquire(
                 userId = "demo-user",
+                actorRole = TEST_ACTOR_ROLE,
+                securityVersion = TEST_SECURITY_VERSION,
                 idempotencyKey = "idem-claim-owner",
                 requestHash = "hash-owner",
                 purpose = GENERIC_PURPOSE,
             ) as IdempotencyLookup.New
         val resultKey =
             idempotencyService.redisKey(
-                "demo-user",
-                "idem-claim-owner",
-                GENERIC_PURPOSE,
+                userId = "demo-user",
+                actorRole = TEST_ACTOR_ROLE,
+                securityVersion = TEST_SECURITY_VERSION,
+                idempotencyKey = "idem-claim-owner",
+                purpose = GENERIC_PURPOSE,
             )
         val claimKey = resultKey.replace("idempotency:", "idempotency-claim:")
         redisTemplate.delete(claimKey)
         val replacement =
             idempotencyService.acquire(
                 userId = "demo-user",
+                actorRole = TEST_ACTOR_ROLE,
+                securityVersion = TEST_SECURITY_VERSION,
                 idempotencyKey = "idem-claim-owner",
                 requestHash = "hash-owner",
                 purpose = GENERIC_PURPOSE,
@@ -280,6 +306,8 @@ class IdempotencyIntegrationTest(
         org.junit.jupiter.api.assertThrows<IdempotencyClaimLostException> {
             idempotencyService.store(
                 userId = "demo-user",
+                actorRole = TEST_ACTOR_ROLE,
+                securityVersion = TEST_SECURITY_VERSION,
                 idempotencyKey = "idem-claim-owner",
                 requestHash = "hash-owner",
                 claimToken = first.claimToken,
@@ -291,6 +319,8 @@ class IdempotencyIntegrationTest(
         }
         idempotencyService.store(
             userId = "demo-user",
+            actorRole = TEST_ACTOR_ROLE,
+            securityVersion = TEST_SECURITY_VERSION,
             idempotencyKey = "idem-claim-owner",
             requestHash = "hash-owner",
             claimToken = replacement.claimToken,
@@ -303,6 +333,8 @@ class IdempotencyIntegrationTest(
         val replay =
             idempotencyService.acquire(
                 userId = "demo-user",
+                actorRole = TEST_ACTOR_ROLE,
+                securityVersion = TEST_SECURITY_VERSION,
                 idempotencyKey = "idem-claim-owner",
                 requestHash = "hash-owner",
                 purpose = GENERIC_PURPOSE,
@@ -318,6 +350,8 @@ class IdempotencyIntegrationTest(
         val owner =
             idempotencyService.acquire(
                 userId = "owner-a",
+                actorRole = TEST_ACTOR_ROLE,
+                securityVersion = TEST_SECURITY_VERSION,
                 idempotencyKey = "shared-raw-key",
                 requestHash = "hash-owner-a",
                 purpose = BrokerageWriteReplayPurpose.FILL_APPLY,
@@ -326,6 +360,8 @@ class IdempotencyIntegrationTest(
         org.junit.jupiter.api.assertThrows<IdempotencyClaimLostException> {
             idempotencyService.store(
                 userId = "owner-b",
+                actorRole = TEST_ACTOR_ROLE,
+                securityVersion = TEST_SECURITY_VERSION,
                 idempotencyKey = "shared-raw-key",
                 requestHash = "hash-owner-a",
                 claimToken = owner.claimToken,
@@ -337,6 +373,8 @@ class IdempotencyIntegrationTest(
         }
         idempotencyService.discard(
             userId = "owner-b",
+            actorRole = TEST_ACTOR_ROLE,
+            securityVersion = TEST_SECURITY_VERSION,
             idempotencyKey = "shared-raw-key",
             requestHash = "hash-owner-a",
             claimToken = owner.claimToken,
@@ -345,6 +383,8 @@ class IdempotencyIntegrationTest(
         assertTrue(
             idempotencyService.acquire(
                 userId = "owner-a",
+                actorRole = TEST_ACTOR_ROLE,
+                securityVersion = TEST_SECURITY_VERSION,
                 idempotencyKey = "shared-raw-key",
                 requestHash = "hash-owner-a",
                 purpose = BrokerageWriteReplayPurpose.FILL_APPLY,
@@ -352,6 +392,8 @@ class IdempotencyIntegrationTest(
         )
         idempotencyService.discard(
             userId = "owner-a",
+            actorRole = TEST_ACTOR_ROLE,
+            securityVersion = TEST_SECURITY_VERSION,
             idempotencyKey = "shared-raw-key",
             requestHash = "hash-owner-a",
             claimToken = owner.claimToken,
@@ -419,9 +461,11 @@ class IdempotencyIntegrationTest(
         val storedBody =
             redisTemplate.opsForHash<String, String>().get(
                 idempotencyService.redisKey(
-                    "usr_demo_user",
-                    "idem-response-limit",
-                    GENERIC_PURPOSE,
+                    userId = "usr_demo_user",
+                    actorRole = TEST_ACTOR_ROLE,
+                    securityVersion = TEST_SECURITY_VERSION,
+                    idempotencyKey = "idem-response-limit",
+                    purpose = GENERIC_PURPOSE,
                 ),
                 "body",
             )
@@ -488,6 +532,8 @@ class IdempotencyIntegrationTest(
 
     companion object {
         private val GENERIC_PURPOSE = BrokerageWriteReplayPurpose.GENERIC_FINANCE_WRITE
+        private const val TEST_ACTOR_ROLE = "USER"
+        private const val TEST_SECURITY_VERSION = 1L
         private val redisPasswordValue: String = "r" + "p".repeat(24)
 
         // CI와 로컬에서 동일한 Redis 버전으로 TTL/Hash 동작 차이를 줄인다.

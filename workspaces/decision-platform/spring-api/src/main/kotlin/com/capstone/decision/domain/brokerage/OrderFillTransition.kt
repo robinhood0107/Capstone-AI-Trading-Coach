@@ -1,5 +1,7 @@
 package com.capstone.decision.domain.brokerage
 
+import java.math.BigInteger
+
 enum class OrderFillStatus {
     SUBMITTED,
     ACCEPTED,
@@ -24,6 +26,7 @@ enum class FillInvalidReason {
     INVALID_QUANTITY,
     INVALID_LEAVES_QUANTITY,
     INVALID_FILL_PRICE,
+    CANCEL_REQUESTED_PARTIAL_FILL,
 }
 
 data class OrderFillState(
@@ -31,6 +34,7 @@ data class OrderFillState(
     val filledQuantity: Long,
     val leavesQuantity: Long,
     val unfilledTerminatedQuantity: Long,
+    val fillNotionalKrw: BigInteger,
     val averageFillPriceKrw: Long?,
     val status: OrderFillStatus,
 ) {
@@ -39,6 +43,19 @@ data class OrderFillState(
         require(filledQuantity >= 0)
         require(leavesQuantity >= 0)
         require(unfilledTerminatedQuantity >= 0)
+        require(fillNotionalKrw.signum() >= 0)
+        if (filledQuantity == 0L) {
+            require(fillNotionalKrw == BigInteger.ZERO)
+            require(averageFillPriceKrw == null)
+        } else {
+            require(fillNotionalKrw.signum() > 0)
+            requireNotNull(averageFillPriceKrw)
+            require(averageFillPriceKrw > 0)
+            require(
+                fillNotionalKrw.divide(BigInteger.valueOf(filledQuantity)) ==
+                    BigInteger.valueOf(averageFillPriceKrw),
+            )
+        }
     }
 }
 
@@ -85,6 +102,12 @@ object OrderFillTransition {
         }
         if (observation.leavesQuantity < 0) {
             return FillTransitionResult.Invalid(FillInvalidReason.INVALID_LEAVES_QUANTITY)
+        }
+        if (
+            current.status == OrderFillStatus.CANCEL_REQUESTED &&
+            observation.execType == FillExecutionType.PARTIAL_FILL
+        ) {
+            return FillTransitionResult.Invalid(FillInvalidReason.CANCEL_REQUESTED_PARTIAL_FILL)
         }
 
         return when (observation.execType) {
@@ -138,10 +161,10 @@ object OrderFillTransition {
         if (observation.execType == FillExecutionType.FILL && expectedLeaves != 0L) {
             return FillTransitionResult.Invalid(FillInvalidReason.INVALID_LEAVES_QUANTITY)
         }
-        val average =
-            OrderFillAggregation.nextAveragePrice(
+        val aggregation =
+            OrderFillAggregation.addFill(
                 currentFilledQuantity = current.filledQuantity,
-                currentAverageFillPriceKrw = current.averageFillPriceKrw,
+                currentFillNotionalKrw = current.fillNotionalKrw,
                 fillQuantity = delta,
                 fillPriceKrw = observation.fillPriceKrw,
             )
@@ -151,7 +174,8 @@ object OrderFillTransition {
                 filledQuantity = observation.cumulativeQuantity,
                 leavesQuantity = expectedLeaves,
                 unfilledTerminatedQuantity = 0,
-                averageFillPriceKrw = average,
+                fillNotionalKrw = aggregation.fillNotionalKrw,
+                averageFillPriceKrw = aggregation.averageFillPriceKrw,
                 status =
                     if (expectedLeaves == 0L) {
                         OrderFillStatus.FILLED

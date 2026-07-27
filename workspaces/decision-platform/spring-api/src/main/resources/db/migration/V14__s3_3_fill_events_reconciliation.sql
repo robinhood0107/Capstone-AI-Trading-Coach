@@ -203,7 +203,8 @@ CREATE TABLE order_fill_application_receipts (
         'TERMINAL_STATE',
         'INVALID_QUANTITY',
         'INVALID_LEAVES_QUANTITY',
-        'INVALID_FILL_PRICE'
+        'INVALID_FILL_PRICE',
+        'CANCEL_REQUESTED_PARTIAL_FILL'
       )
     )
   ),
@@ -327,23 +328,26 @@ DECLARE
   requested_actor_role text;
   requested_security_version bigint;
   requested_order_id text;
+  requested_reconciled_at timestamptz;
   stored_actor record;
   stored_order record;
+  current_status text;
   observations jsonb;
   remaining boolean;
   observation_count bigint;
   observed_fill_quantity bigint;
   recomputed_average bigint;
   provider_final_average bigint;
+  fill_notional numeric;
 BEGIN
   PERFORM public.assert_brokerage_database_capability(requested_capability_token);
   IF requested_payload IS NULL
      OR jsonb_typeof(requested_payload) <> 'object'
      OR NOT requested_payload ?& ARRAY[
-       'actorUserId', 'actorRole', 'securityVersion', 'orderId'
+       'actorUserId', 'actorRole', 'securityVersion', 'orderId', 'reconciledAt'
      ]
      OR requested_payload - ARRAY[
-       'actorUserId', 'actorRole', 'securityVersion', 'orderId'
+       'actorUserId', 'actorRole', 'securityVersion', 'orderId', 'reconciledAt'
      ] <> '{}'::jsonb THEN
     RETURN QUERY SELECT 'VALIDATION_ERROR'::text, NULL::text;
     RETURN;
@@ -352,6 +356,7 @@ BEGIN
   requested_actor_role := requested_payload ->> 'actorRole';
   requested_security_version := (requested_payload ->> 'securityVersion')::bigint;
   requested_order_id := requested_payload ->> 'orderId';
+  requested_reconciled_at := (requested_payload ->> 'reconciledAt')::timestamptz;
 
   SELECT actor.role, actor.status, actor.security_version
   INTO stored_actor
@@ -376,6 +381,37 @@ BEGIN
     RETURN;
   END IF;
 
+  SELECT event.event_status
+  INTO current_status
+  FROM public.order_events event
+  WHERE event.order_id = requested_order_id
+    AND event.event_status IS NOT NULL
+  ORDER BY event.event_seq DESC
+  LIMIT 1;
+  current_status := COALESCE(current_status, stored_order.status);
+
+  IF stored_order.brokerage_mode = 'KIS_MOCK' THEN
+    SELECT COALESCE(
+      sum(
+        applied_observation.fill_quantity::numeric
+        * applied_observation.fill_price_krw::numeric
+      ) FILTER (
+        WHERE applied_receipt.outcome = 'APPLIED'
+          AND applied_observation.exec_type IN ('PARTIAL_FILL', 'FILL')
+      ),
+      0
+    )
+    INTO fill_notional
+    FROM public.order_fill_application_receipts applied_receipt
+    JOIN public.order_fill_observations applied_observation
+      ON applied_observation.observation_id = applied_receipt.observation_id
+    WHERE applied_receipt.order_id = requested_order_id;
+  ELSE
+    fill_notional :=
+      stored_order.filled_quantity::numeric
+      * COALESCE(stored_order.average_fill_price_krw, 0)::numeric;
+  END IF;
+
   IF stored_order.brokerage_mode = 'KIS_MOCK' THEN
     SELECT COALESCE(jsonb_agg(candidate.item ORDER BY candidate.observed_at, candidate.observation_id), '[]'::jsonb)
     INTO observations
@@ -397,6 +433,8 @@ BEGIN
       FROM public.order_fill_observations observation
       WHERE observation.order_id = requested_order_id
         AND observation.completeness = 'COMPLETE'
+        AND observation.observed_at <= requested_reconciled_at
+        AND observation.received_at <= requested_reconciled_at
         AND NOT EXISTS (
           SELECT 1
           FROM public.order_fill_application_receipts receipt
@@ -410,6 +448,8 @@ BEGIN
     FROM public.order_fill_observations observation
     WHERE observation.order_id = requested_order_id
       AND observation.completeness = 'COMPLETE'
+      AND observation.observed_at <= requested_reconciled_at
+      AND observation.received_at <= requested_reconciled_at
       AND NOT EXISTS (
         SELECT 1
         FROM public.order_fill_application_receipts receipt
@@ -463,12 +503,16 @@ BEGIN
       END
     INTO observation_count, observed_fill_quantity, recomputed_average
     FROM public.order_fill_observations aggregate_observation
-    WHERE aggregate_observation.order_id = requested_order_id;
+    WHERE aggregate_observation.order_id = requested_order_id
+      AND aggregate_observation.observed_at <= requested_reconciled_at
+      AND aggregate_observation.received_at <= requested_reconciled_at;
     SELECT final_observation.average_fill_price_krw
     INTO provider_final_average
     FROM public.order_fill_observations final_observation
     WHERE final_observation.order_id = requested_order_id
       AND final_observation.exec_type IN ('PARTIAL_FILL', 'FILL')
+      AND final_observation.observed_at <= requested_reconciled_at
+      AND final_observation.received_at <= requested_reconciled_at
     ORDER BY
       final_observation.cumulative_quantity DESC,
       final_observation.observed_at DESC,
@@ -482,11 +526,12 @@ BEGIN
     jsonb_build_object(
       'orderId', stored_order.order_id,
       'brokerageMode', stored_order.brokerage_mode,
-      'status', stored_order.status,
+      'status', current_status,
       'quantity', stored_order.quantity,
       'filledQuantity', stored_order.filled_quantity,
       'leavesQuantity', stored_order.leaves_quantity,
       'unfilledTerminatedQuantity', stored_order.unfilled_terminated_quantity,
+      'fillNotionalKrw', fill_notional,
       'averageFillPriceKrw', stored_order.average_fill_price_krw,
       'reconciliationStatus', stored_order.reconciliation_status,
       'observationCount', observation_count,
@@ -603,6 +648,7 @@ DECLARE
   current_leaves bigint;
   current_unfilled_terminated bigint;
   current_average bigint;
+  current_notional numeric;
   delta_quantity bigint;
   next_average bigint;
   next_event_seq integer;
@@ -690,11 +736,38 @@ BEGIN
     RETURN;
   END IF;
 
-  current_status := stored_order.status;
+  SELECT event.event_status
+  INTO current_status
+  FROM public.order_events event
+  WHERE event.order_id = requested_order_id
+    AND event.event_status IS NOT NULL
+  ORDER BY event.event_seq DESC
+  LIMIT 1;
+  current_status := COALESCE(current_status, stored_order.status);
   current_filled := stored_order.filled_quantity;
   current_leaves := stored_order.leaves_quantity;
   current_unfilled_terminated := stored_order.unfilled_terminated_quantity;
   current_average := stored_order.average_fill_price_krw;
+  IF stored_order.brokerage_mode = 'KIS_MOCK' THEN
+    SELECT COALESCE(
+      sum(
+        applied_observation.fill_quantity::numeric
+        * applied_observation.fill_price_krw::numeric
+      ) FILTER (
+        WHERE applied_receipt.outcome = 'APPLIED'
+          AND applied_observation.exec_type IN ('PARTIAL_FILL', 'FILL')
+      ),
+      0
+    )
+    INTO current_notional
+    FROM public.order_fill_application_receipts applied_receipt
+    JOIN public.order_fill_observations applied_observation
+      ON applied_observation.observation_id = applied_receipt.observation_id
+    WHERE applied_receipt.order_id = requested_order_id;
+  ELSE
+    current_notional :=
+      current_filled::numeric * COALESCE(current_average, 0)::numeric;
+  END IF;
   SELECT COALESCE(max(event.event_seq), 0) + 1
   INTO next_event_seq
   FROM public.order_events event
@@ -706,6 +779,8 @@ BEGIN
       FROM public.order_fill_observations source
       WHERE source.order_id = requested_order_id
         AND source.completeness = 'COMPLETE'
+        AND source.observed_at <= requested_reconciled_at
+        AND source.received_at <= requested_reconciled_at
         AND NOT EXISTS (
           SELECT 1
           FROM public.order_fill_application_receipts receipt
@@ -728,6 +803,10 @@ BEGIN
       ELSIF observation.cumulative_quantity > stored_order.quantity THEN
         transition_outcome := 'INVALID';
         transition_reason := 'CUM_QTY_OVERFLOW';
+      ELSIF current_status = 'CANCEL_REQUESTED'
+            AND observation.exec_type = 'PARTIAL_FILL' THEN
+        transition_outcome := 'INVALID';
+        transition_reason := 'CANCEL_REQUESTED_PARTIAL_FILL';
       ELSIF observation.exec_type IN ('PARTIAL_FILL', 'FILL') THEN
         IF observation.cumulative_quantity = current_filled THEN
           transition_outcome := 'DUPLICATE';
@@ -752,12 +831,12 @@ BEGIN
             transition_outcome := 'INVALID';
             transition_reason := 'INVALID_LEAVES_QUANTITY';
           ELSE
+            current_notional :=
+              current_notional
+              + observation.fill_price_krw::numeric * delta_quantity::numeric;
             next_average :=
               trunc(
-                (
-                  COALESCE(current_average, 0)::numeric * current_filled::numeric
-                  + observation.fill_price_krw::numeric * delta_quantity::numeric
-                ) / observation.cumulative_quantity::numeric
+                current_notional / observation.cumulative_quantity::numeric
               )::bigint;
             current_filled := observation.cumulative_quantity;
             current_leaves := observation.leaves_quantity;
@@ -906,12 +985,16 @@ BEGIN
       END
     INTO observation_count, observed_fill_quantity, recomputed_average
     FROM public.order_fill_observations aggregate_observation
-    WHERE aggregate_observation.order_id = requested_order_id;
+    WHERE aggregate_observation.order_id = requested_order_id
+      AND aggregate_observation.observed_at <= requested_reconciled_at
+      AND aggregate_observation.received_at <= requested_reconciled_at;
     SELECT final_observation.average_fill_price_krw
     INTO provider_final_average
     FROM public.order_fill_observations final_observation
     WHERE final_observation.order_id = requested_order_id
       AND final_observation.exec_type IN ('PARTIAL_FILL', 'FILL')
+      AND final_observation.observed_at <= requested_reconciled_at
+      AND final_observation.received_at <= requested_reconciled_at
     ORDER BY
       final_observation.cumulative_quantity DESC,
       final_observation.observed_at DESC,
@@ -952,6 +1035,8 @@ BEGIN
     FROM public.order_fill_observations remaining_observation
     WHERE remaining_observation.order_id = requested_order_id
       AND remaining_observation.completeness = 'COMPLETE'
+      AND remaining_observation.observed_at <= requested_reconciled_at
+      AND remaining_observation.received_at <= requested_reconciled_at
       AND NOT EXISTS (
         SELECT 1
         FROM public.order_fill_application_receipts receipt
@@ -966,6 +1051,7 @@ BEGIN
       'filledQuantity', current_filled,
       'leavesQuantity', current_leaves,
       'unfilledTerminatedQuantity', current_unfilled_terminated,
+      'fillNotionalKrw', current_notional,
       'averageFillPriceKrw', current_average,
       'reconciliationStatus', final_reconciliation_status,
       'appliedEventCount', event_count,

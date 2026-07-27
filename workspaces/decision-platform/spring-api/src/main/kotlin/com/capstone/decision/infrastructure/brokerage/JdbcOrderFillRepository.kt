@@ -23,6 +23,7 @@ import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.stereotype.Repository
 import tools.jackson.databind.JsonNode
 import tools.jackson.databind.ObjectMapper
+import java.math.BigInteger
 import java.sql.SQLException
 import java.time.Instant
 import java.time.OffsetDateTime
@@ -68,6 +69,7 @@ class JdbcOrderFillRepository(
     override fun readReconciliationState(
         actor: BrokerageActor,
         orderId: String,
+        reconciledAt: Instant,
     ): StoredOrderFillState {
         val row =
             jdbc()
@@ -80,7 +82,7 @@ class JdbcOrderFillRepository(
                     )
                     """.trimIndent(),
                     mapOf(
-                        "payloadJson" to actorOrderPayload(actor, orderId),
+                        "payloadJson" to readPayload(actor, orderId, reconciledAt),
                         "capabilityToken" to properties.databaseCapabilityToken,
                     ),
                 ) { result, _ ->
@@ -224,12 +226,28 @@ class JdbcOrderFillRepository(
             ),
         )
 
+    private fun readPayload(
+        actor: BrokerageActor,
+        orderId: String,
+        reconciledAt: Instant,
+    ): String =
+        objectMapper.writeValueAsString(
+            mapOf(
+                "actorUserId" to actor.userId,
+                "actorRole" to actor.role,
+                "securityVersion" to actor.securityVersion,
+                "orderId" to orderId,
+                "reconciledAt" to reconciledAt.toString(),
+            ),
+        )
+
     private fun expectedFinal(value: ExpectedOrderFillState): Map<String, Any?> =
         mapOf(
             "status" to value.status,
             "filledQuantity" to value.filledQuantity,
             "leavesQuantity" to value.leavesQuantity,
             "unfilledTerminatedQuantity" to value.unfilledTerminatedQuantity,
+            "fillNotionalKrw" to value.fillNotionalKrw,
             "averageFillPriceKrw" to value.averageFillPriceKrw,
             "reconciliationStatus" to value.reconciliationStatus,
             "appliedEventCount" to value.appliedEventCount,
@@ -264,6 +282,7 @@ class JdbcOrderFillRepository(
                 filledQuantity = root.requiredLong("filledQuantity"),
                 leavesQuantity = root.requiredLong("leavesQuantity"),
                 unfilledTerminatedQuantity = root.requiredLong("unfilledTerminatedQuantity"),
+                fillNotionalKrw = root.requiredBigInteger("fillNotionalKrw"),
                 averageFillPriceKrw = root.longOrNull("averageFillPriceKrw"),
                 status = OrderFillStatus.valueOf(root.requiredText("status")),
             )
@@ -327,6 +346,10 @@ class JdbcOrderFillRepository(
     private fun JsonNode.requiredLong(field: String): Long =
         path(field).takeIf(JsonNode::isIntegralNumber)?.longValue()
             ?: throw BrokerageUnavailableException("Stored order fill numeric field is invalid.")
+
+    private fun JsonNode.requiredBigInteger(field: String): BigInteger =
+        path(field).takeIf(JsonNode::isIntegralNumber)?.bigIntegerValue()
+            ?: throw BrokerageUnavailableException("Stored order fill exact numeric field is invalid.")
 
     private fun JsonNode.longOrNull(field: String): Long? {
         val node = path(field)

@@ -2,6 +2,7 @@ package com.capstone.decision.application.brokerage
 
 import com.capstone.decision.domain.brokerage.FillExecutionType
 import com.capstone.decision.domain.brokerage.OrderFillState
+import java.math.BigInteger
 import java.time.Instant
 
 enum class BrokerageFillMode(
@@ -41,6 +42,7 @@ data class ExpectedOrderFillState(
     val filledQuantity: Long,
     val leavesQuantity: Long,
     val unfilledTerminatedQuantity: Long,
+    val fillNotionalKrw: BigInteger,
     val averageFillPriceKrw: Long?,
     val reconciliationStatus: String,
     val appliedEventCount: Int,
@@ -117,6 +119,7 @@ interface OrderFillPersistencePort {
     fun readReconciliationState(
         actor: BrokerageActor,
         orderId: String,
+        reconciledAt: Instant,
     ): StoredOrderFillState
 
     fun applyStoredFills(request: OrderFillApplyRequest): OrderFillReconciliationProjection

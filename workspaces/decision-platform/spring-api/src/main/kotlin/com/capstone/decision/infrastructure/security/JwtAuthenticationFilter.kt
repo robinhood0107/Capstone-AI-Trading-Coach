@@ -143,6 +143,8 @@ class JwtAuthenticationFilter(
             val lookup =
                 idempotencyService.acquire(
                     userId = principal.userId,
+                    actorRole = principal.role,
+                    securityVersion = principal.securityVersion,
                     idempotencyKey = idempotencyKey,
                     requestHash = requestHash,
                     purpose = replayPurpose,
@@ -205,6 +207,8 @@ class JwtAuthenticationFilter(
                     // 인가/라우팅/검증 실패는 부작용 결과가 아니므로 Redis 장기 점유 없이 owner claim을 반납한다.
                     idempotencyService.discard(
                         userId = principal.userId,
+                        actorRole = principal.role,
+                        securityVersion = principal.securityVersion,
                         idempotencyKey = idempotencyKey,
                         requestHash = requestHash,
                         claimToken = lookup.claimToken,
@@ -216,6 +220,8 @@ class JwtAuthenticationFilter(
                 val responseBody = responseBodyBytes.toString(StandardCharsets.UTF_8)
                 idempotencyService.store(
                     userId = principal.userId,
+                    actorRole = principal.role,
+                    securityVersion = principal.securityVersion,
                     idempotencyKey = idempotencyKey,
                     requestHash = requestHash,
                     claimToken = lookup.claimToken,

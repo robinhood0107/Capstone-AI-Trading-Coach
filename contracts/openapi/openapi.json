@@ -305,6 +305,80 @@
         },
         "type": "object"
       },
+      "ApiResponseOrderFillPageProjection": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/OrderFillPageProjection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ApiError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ApiWarning"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "ApiResponseOrderFillReconciliationProjection": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/OrderFillReconciliationProjection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ApiError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ApiWarning"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
       "ApiResponsePaperBalanceProjection": {
         "properties": {
           "data": {
@@ -974,6 +1048,102 @@
           },
           "submittedAt": {
             "format": "date-time",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "OrderFillPageProjection": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/OrderFillRecord"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "OrderFillReconciliationProjection": {
+        "properties": {
+          "appliedEventCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "averageFillPriceKrw": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "brokerageMode": {
+            "type": "string"
+          },
+          "filledQuantity": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "hasMore": {
+            "type": "boolean"
+          },
+          "leavesQuantity": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "orderId": {
+            "type": "string"
+          },
+          "reconciliation": {
+            "$ref": "#/components/schemas/ReconciliationProjection"
+          },
+          "status": {
+            "type": "string"
+          },
+          "unfilledTerminatedQuantity": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "OrderFillRecord": {
+        "properties": {
+          "brokerageMode": {
+            "type": "string"
+          },
+          "execRefHash": {
+            "type": "string"
+          },
+          "fillAmountKrw": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "fillPriceKrw": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "fillQuantity": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "filledAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "orderId": {
+            "type": "string"
+          },
+          "side": {
+            "type": "string"
+          },
+          "symbol": {
             "type": "string"
           }
         },
@@ -2774,6 +2944,21 @@
           "success",
           "warnings"
         ],
+        "type": "object"
+      },
+      "ReconciliationProjection": {
+        "properties": {
+          "checkedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "RiskDecisionProjection": {
@@ -5457,6 +5642,563 @@
         ],
         "type": "object"
       },
+      "S33FillObservation": {
+        "$id": "contracts/schemas/s3-3-fill-observation.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "observations": {
+            "items": {
+              "additionalProperties": false,
+              "allOf": [
+                {
+                  "else": {
+                    "properties": {
+                      "fillPriceKrw": {
+                        "type": "null"
+                      },
+                      "fillQuantity": {
+                        "const": 0
+                      }
+                    }
+                  },
+                  "if": {
+                    "properties": {
+                      "execType": {
+                        "enum": [
+                          "PARTIAL_FILL",
+                          "FILL"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "execType"
+                    ]
+                  },
+                  "then": {
+                    "properties": {
+                      "fillPriceKrw": {
+                        "maximum": 9223372036854775807,
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "fillQuantity": {
+                        "maximum": 9223372036854775807,
+                        "minimum": 1,
+                        "type": "integer"
+                      }
+                    }
+                  }
+                }
+              ],
+              "properties": {
+                "averageFillPriceKrw": {
+                  "oneOf": [
+                    {
+                      "maximum": 9223372036854775807,
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "completeness": {
+                  "enum": [
+                    "COMPLETE",
+                    "PARTIAL"
+                  ]
+                },
+                "cumulativeQuantity": {
+                  "maximum": 9223372036854775807,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "execType": {
+                  "enum": [
+                    "CANCELLED",
+                    "FILL",
+                    "PARTIAL_FILL",
+                    "REJECTED"
+                  ]
+                },
+                "fillPriceKrw": {
+                  "oneOf": [
+                    {
+                      "maximum": 9223372036854775807,
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "fillQuantity": {
+                  "maximum": 9223372036854775807,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "leavesQuantity": {
+                  "maximum": 9223372036854775807,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "observedAt": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "orderId": {
+                  "pattern": "^ord_mock_[0-9a-f]{32}$",
+                  "type": "string"
+                },
+                "providerExecRefHash": {
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "receivedAt": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "sourceRef": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[0-9A-Za-z._:-]+$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "averageFillPriceKrw",
+                "completeness",
+                "cumulativeQuantity",
+                "execType",
+                "fillPriceKrw",
+                "fillQuantity",
+                "leavesQuantity",
+                "observedAt",
+                "orderId",
+                "providerExecRefHash",
+                "receivedAt",
+                "sourceRef"
+              ],
+              "type": "object"
+            },
+            "maxItems": 10000,
+            "minItems": 1,
+            "type": "array"
+          },
+          "schemaVersion": {
+            "const": "1"
+          },
+          "sourceVersion": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "observations",
+          "schemaVersion",
+          "sourceVersion"
+        ],
+        "title": "S3.3 sanitized offline fill observation fixture v1",
+        "type": "object"
+      },
+      "S33FillPage": {
+        "$id": "contracts/schemas/s3-3-fill-page.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "additionalProperties": false,
+              "allOf": [
+                {
+                  "if": {
+                    "properties": {
+                      "brokerageMode": {
+                        "const": "INTERNAL_PAPER"
+                      }
+                    },
+                    "required": [
+                      "brokerageMode"
+                    ]
+                  },
+                  "then": {
+                    "properties": {
+                      "orderId": {
+                        "pattern": "^ord_paper_[0-9a-f]{32}$",
+                        "type": "string"
+                      }
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "brokerageMode": {
+                        "const": "KIS_MOCK"
+                      }
+                    },
+                    "required": [
+                      "brokerageMode"
+                    ]
+                  },
+                  "then": {
+                    "properties": {
+                      "orderId": {
+                        "pattern": "^ord_mock_[0-9a-f]{32}$",
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              ],
+              "properties": {
+                "brokerageMode": {
+                  "enum": [
+                    "INTERNAL_PAPER",
+                    "KIS_MOCK"
+                  ]
+                },
+                "execRefHash": {
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "fillAmountKrw": {
+                  "maximum": 9223372036854775807,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "fillPriceKrw": {
+                  "maximum": 9223372036854775807,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "fillQuantity": {
+                  "maximum": 9223372036854775807,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "filledAt": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "orderId": {
+                  "oneOf": [
+                    {
+                      "pattern": "^ord_mock_[0-9a-f]{32}$",
+                      "type": "string"
+                    },
+                    {
+                      "pattern": "^ord_paper_[0-9a-f]{32}$",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "side": {
+                  "enum": [
+                    "BUY",
+                    "SELL"
+                  ]
+                },
+                "symbol": {
+                  "maxLength": 20,
+                  "minLength": 1,
+                  "pattern": "^[0-9A-Z._:-]{1,20}$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "brokerageMode",
+                "execRefHash",
+                "fillAmountKrw",
+                "fillPriceKrw",
+                "fillQuantity",
+                "filledAt",
+                "orderId",
+                "side",
+                "symbol"
+              ],
+              "type": "object"
+            },
+            "maxItems": 50,
+            "type": "array"
+          },
+          "nextCursor": {
+            "oneOf": [
+              {
+                "maxLength": 1024,
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "title": "S3.3 owner-scoped fill page v1",
+        "type": "object"
+      },
+      "S33FillPageSuccessResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/S33FillPage"
+          },
+          "error": {
+            "type": "null"
+          },
+          "requestId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "success": {
+            "const": true,
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ApiWarning"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "error",
+          "requestId",
+          "success",
+          "warnings"
+        ],
+        "type": "object"
+      },
+      "S33Reconcile": {
+        "$id": "contracts/schemas/s3-3-reconcile-response.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "brokerageMode": {
+                  "const": "INTERNAL_PAPER"
+                }
+              },
+              "required": [
+                "brokerageMode"
+              ]
+            },
+            "then": {
+              "properties": {
+                "orderId": {
+                  "pattern": "^ord_paper_[0-9a-f]{32}$",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "brokerageMode": {
+                  "const": "KIS_MOCK"
+                }
+              },
+              "required": [
+                "brokerageMode"
+              ]
+            },
+            "then": {
+              "properties": {
+                "orderId": {
+                  "pattern": "^ord_mock_[0-9a-f]{32}$",
+                  "type": "string"
+                }
+              }
+            }
+          }
+        ],
+        "properties": {
+          "appliedEventCount": {
+            "maximum": 200,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "averageFillPriceKrw": {
+            "oneOf": [
+              {
+                "maximum": 9223372036854775807,
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "brokerageMode": {
+            "enum": [
+              "INTERNAL_PAPER",
+              "KIS_MOCK"
+            ]
+          },
+          "filledQuantity": {
+            "maximum": 9223372036854775807,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "hasMore": {
+            "type": "boolean"
+          },
+          "leavesQuantity": {
+            "maximum": 9223372036854775807,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "orderId": {
+            "oneOf": [
+              {
+                "pattern": "^ord_mock_[0-9a-f]{32}$",
+                "type": "string"
+              },
+              {
+                "pattern": "^ord_paper_[0-9a-f]{32}$",
+                "type": "string"
+              }
+            ]
+          },
+          "reconciliation": {
+            "additionalProperties": false,
+            "allOf": [
+              {
+                "else": {
+                  "properties": {
+                    "checkedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    }
+                  }
+                },
+                "if": {
+                  "properties": {
+                    "status": {
+                      "const": "NOT_APPLICABLE"
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
+                },
+                "then": {
+                  "properties": {
+                    "checkedAt": {
+                      "type": "null"
+                    }
+                  }
+                }
+              }
+            ],
+            "properties": {
+              "checkedAt": {
+                "oneOf": [
+                  {
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "enum": [
+                  "MATCHED",
+                  "MISMATCH",
+                  "NOT_APPLICABLE"
+                ]
+              }
+            },
+            "required": [
+              "checkedAt",
+              "status"
+            ],
+            "type": "object"
+          },
+          "status": {
+            "enum": [
+              "ACCEPTED",
+              "CANCELLED",
+              "CANCEL_REQUESTED",
+              "FILLED",
+              "PARTIALLY_FILLED",
+              "REJECTED",
+              "SUBMITTED"
+            ]
+          },
+          "unfilledTerminatedQuantity": {
+            "maximum": 9223372036854775807,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "appliedEventCount",
+          "averageFillPriceKrw",
+          "brokerageMode",
+          "filledQuantity",
+          "hasMore",
+          "leavesQuantity",
+          "orderId",
+          "reconciliation",
+          "status",
+          "unfilledTerminatedQuantity"
+        ],
+        "title": "S3.3 sanitized order reconciliation response v1",
+        "type": "object"
+      },
+      "S33ReconcileSuccessResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/S33Reconcile"
+          },
+          "error": {
+            "type": "null"
+          },
+          "requestId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "success": {
+            "const": true,
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ApiWarning"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "error",
+          "requestId",
+          "success",
+          "warnings"
+        ],
+        "type": "object"
+      },
       "SystemHealthResponse": {
         "properties": {
           "asOf": {
@@ -5705,6 +6447,77 @@
         "summary": "Stored KIS_MOCK cash balance로 지정가 기준 주문가능 수량을 계산한다.",
         "tags": [
           "brokerage-controller"
+        ]
+      }
+    },
+    "/api/v1/brokerage/mock/accounts/{accountId}/fills": {
+      "get": {
+        "operationId": "mockFills",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "accountId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/S33FillPageSuccessResponse"
+                }
+              }
+            },
+            "description": "Owner-scoped sanitized fill page."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseOrderFillPageProjection"
+                }
+              }
+            },
+            "description": "Invalid account/date/cursor."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseOrderFillPageProjection"
+                }
+              }
+            },
+            "description": "Authentication is required."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseOrderFillPageProjection"
+                }
+              }
+            },
+            "description": "Owned account was not found."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseOrderFillPageProjection"
+                }
+              }
+            },
+            "description": "Stored fill source is unavailable."
+          }
+        },
+        "summary": "Owner-scoped KIS_MOCK 체결 내역을 KST 날짜와 HMAC cursor로 조회한다.",
+        "tags": [
+          "brokerage-fill-controller"
         ]
       }
     },
@@ -5964,6 +6777,105 @@
         ]
       }
     },
+    "/api/v1/brokerage/orders/{orderId}/reconcile": {
+      "post": {
+        "operationId": "reconcile",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "orderId",
+            "required": true,
+            "schema": {
+              "pattern": "^ord_(?:mock|paper)_[0-9a-f]{32}$",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Idempotency-Key",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/S33ReconcileSuccessResponse"
+                }
+              }
+            },
+            "description": "Sanitized order reconciliation projection."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseOrderFillReconciliationProjection"
+                }
+              }
+            },
+            "description": "Invalid path/body/idempotency key."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseOrderFillReconciliationProjection"
+                }
+              }
+            },
+            "description": "Authentication is required."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseOrderFillReconciliationProjection"
+                }
+              }
+            },
+            "description": "ADMIN role is required."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseOrderFillReconciliationProjection"
+                }
+              }
+            },
+            "description": "Order was not found."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseOrderFillReconciliationProjection"
+                }
+              }
+            },
+            "description": "Stored reconciliation source is unavailable."
+          }
+        },
+        "summary": "저장된 체결 관측을 ADMIN 권한으로 bounded 대사한다.",
+        "tags": [
+          "brokerage-fill-controller"
+        ]
+      }
+    },
     "/api/v1/brokerage/paper/accounts/{accountId}/balances": {
       "get": {
         "operationId": "getPaperBalance",
@@ -6075,6 +6987,77 @@
         "summary": "Owner-scoped INTERNAL_PAPER 현금으로 주문가능 수량을 계산한다.",
         "tags": [
           "paper-brokerage-controller"
+        ]
+      }
+    },
+    "/api/v1/brokerage/paper/accounts/{accountId}/fills": {
+      "get": {
+        "operationId": "paperFills",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "accountId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/S33FillPageSuccessResponse"
+                }
+              }
+            },
+            "description": "Owner-scoped sanitized fill page."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseOrderFillPageProjection"
+                }
+              }
+            },
+            "description": "Invalid account/date/cursor."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseOrderFillPageProjection"
+                }
+              }
+            },
+            "description": "Authentication is required."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseOrderFillPageProjection"
+                }
+              }
+            },
+            "description": "Owned account was not found."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseOrderFillPageProjection"
+                }
+              }
+            },
+            "description": "Stored fill source is unavailable."
+          }
+        },
+        "summary": "Owner-scoped INTERNAL_PAPER 체결 내역을 KST 날짜와 HMAC cursor로 조회한다.",
+        "tags": [
+          "brokerage-fill-controller"
         ]
       }
     },
@@ -7217,5 +8200,7 @@
   "x-s2-3-contract-id": "s2-3-decision-contract/v1",
   "x-s2-3-contract-sha256": "d035607af50a0f7cb9cd7170e9a6a188e6af32d5bbbdb76e5e4f7b3edc68cd18",
   "x-s3-2-contract-id": "s3-2-internal-paper-contract/v1",
-  "x-s3-2-contract-sha256": "91e348550e3dfd84ddc5d580d3e1726433eb3e7db04977c1161b09e3a5e7b1c0"
+  "x-s3-2-contract-sha256": "91e348550e3dfd84ddc5d580d3e1726433eb3e7db04977c1161b09e3a5e7b1c0",
+  "x-s3-3-contract-id": "s3-3-fill-contract/v1",
+  "x-s3-3-contract-sha256": "d76cd087592e4a9f0a87a9d0213836cbcdd20acd2723815ac762def2b9ef61b4"
 }

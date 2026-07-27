@@ -1,0 +1,184 @@
+{
+  "$id": "contracts/schemas/s3-3-reconcile-response.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "brokerageMode": {
+            "const": "INTERNAL_PAPER"
+          }
+        },
+        "required": [
+          "brokerageMode"
+        ]
+      },
+      "then": {
+        "properties": {
+          "orderId": {
+            "pattern": "^ord_paper_[0-9a-f]{32}$",
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "brokerageMode": {
+            "const": "KIS_MOCK"
+          }
+        },
+        "required": [
+          "brokerageMode"
+        ]
+      },
+      "then": {
+        "properties": {
+          "orderId": {
+            "pattern": "^ord_mock_[0-9a-f]{32}$",
+            "type": "string"
+          }
+        }
+      }
+    }
+  ],
+  "properties": {
+    "appliedEventCount": {
+      "maximum": 200,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "averageFillPriceKrw": {
+      "oneOf": [
+        {
+          "maximum": 9223372036854775807,
+          "minimum": 1,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "brokerageMode": {
+      "enum": [
+        "INTERNAL_PAPER",
+        "KIS_MOCK"
+      ]
+    },
+    "filledQuantity": {
+      "maximum": 9223372036854775807,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "hasMore": {
+      "type": "boolean"
+    },
+    "leavesQuantity": {
+      "maximum": 9223372036854775807,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "orderId": {
+      "oneOf": [
+        {
+          "pattern": "^ord_mock_[0-9a-f]{32}$",
+          "type": "string"
+        },
+        {
+          "pattern": "^ord_paper_[0-9a-f]{32}$",
+          "type": "string"
+        }
+      ]
+    },
+    "reconciliation": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "else": {
+            "properties": {
+              "checkedAt": {
+                "format": "date-time",
+                "type": "string"
+              }
+            }
+          },
+          "if": {
+            "properties": {
+              "status": {
+                "const": "NOT_APPLICABLE"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "checkedAt": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ],
+      "properties": {
+        "checkedAt": {
+          "oneOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "enum": [
+            "MATCHED",
+            "MISMATCH",
+            "NOT_APPLICABLE"
+          ]
+        }
+      },
+      "required": [
+        "status",
+        "checkedAt"
+      ],
+      "type": "object"
+    },
+    "status": {
+      "enum": [
+        "ACCEPTED",
+        "CANCELLED",
+        "CANCEL_REQUESTED",
+        "FILLED",
+        "PARTIALLY_FILLED",
+        "REJECTED",
+        "SUBMITTED"
+      ]
+    },
+    "unfilledTerminatedQuantity": {
+      "maximum": 9223372036854775807,
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "orderId",
+    "brokerageMode",
+    "status",
+    "filledQuantity",
+    "leavesQuantity",
+    "unfilledTerminatedQuantity",
+    "averageFillPriceKrw",
+    "reconciliation",
+    "appliedEventCount",
+    "hasMore"
+  ],
+  "title": "S3.3 sanitized order reconciliation response v1",
+  "type": "object"
+}

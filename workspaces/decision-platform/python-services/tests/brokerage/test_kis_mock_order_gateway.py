@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+import importlib
+from pathlib import Path
 from typing import Any
 
+import fakeredis
+import httpx
 import pytest
+from pydantic import SecretStr
 
 from app.brokerage.kis_mock_order_gateway import (
     KISMockOrderGateway,
@@ -32,6 +37,17 @@ class FakeTransport:
         if self.error is not None:
             raise self.error
         return self.response
+
+
+class FakeReferenceStore:
+    def __init__(self) -> None:
+        self.values: dict[tuple[str, str], object] = {}
+
+    def put(self, order_id: str, account_id: str, reference: object) -> None:
+        self.values[(order_id, account_id)] = reference
+
+    def get(self, order_id: str, account_id: str) -> object | None:
+        return self.values.get((order_id, account_id))
 
 
 def test_mock_cash_order_maps_buy_sell_tr_ids_and_does_not_retry() -> None:
@@ -88,3 +104,146 @@ def test_rejected_or_malformed_receipt_is_fail_closed() -> None:
             gateway.submit_cash_order(
                 MockOrderIntent("005930", "BUY", "MARKET", quantity=1, estimated_price=70_000)
             )
+
+
+def test_submit_reference_enables_exact_mock_cancel_without_exposing_live_tr_id() -> None:
+    transport = FakeTransport(
+        response={
+            "rt_cd": "0",
+            "output": {
+                "ODNO": "synthetic-provider-order",
+                "KRX_FWDG_ORD_ORGNO": "synthetic-provider-org",
+            },
+        }
+    )
+    reference_store = FakeReferenceStore()
+    gateway = KISMockOrderGateway(
+        transport,
+        mode="mock",
+        reference_store=reference_store,  # type: ignore[arg-type]
+    )
+    order_id = "ord_mock_" + "1" * 32
+    account_id = "acct_" + "2" * 32
+
+    gateway.submit_cash_order(
+        MockOrderIntent("005930", "BUY", "LIMIT", quantity=1, estimated_price=70_000),
+        order_id=order_id,
+        account_id=account_id,
+    )
+    receipt = gateway.cancel_cash_order(order_id=order_id, account_id=account_id)
+
+    assert receipt.status == "CANCELLED"
+    assert len(transport.calls) == 2
+    method, path, tr_id, body = transport.calls[1]
+    assert (method, path, tr_id) == (
+        "POST",
+        "/uapi/domestic-stock/v1/trading/order-rvsecncl",
+        "VTTC0013U",
+    )
+    assert body["RVSE_CNCL_DVSN_CD"] == "02"
+    assert body["QTY_ALL_ORD_YN"] == "Y"
+    assert "TTTC0013U" not in Path(
+        "app/brokerage/kis_mock_order_gateway.py"
+    ).read_text(encoding="utf-8")
+
+
+def test_private_online_transport_is_mock_only_bounded_and_scrubs_account_echo(
+    tmp_path: Path,
+) -> None:
+    online = importlib.import_module("app.brokerage.kis_mock_online_client")
+    sends: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        sends.append(request)
+        body = request.read().decode("utf-8")
+        assert '"CANO":"00000000"' in body
+        assert '"ACNT_PRDT_CD":"01"' in body
+        return httpx.Response(
+            200,
+            json={
+                "rt_cd": "0",
+                "output": {
+                    "ODNO": "synthetic-provider-order",
+                    "KRX_FWDG_ORD_ORGNO": "synthetic-provider-org",
+                    "CANO": "00000000",
+                },
+            },
+        )
+
+    client = online.KISMockBrokerageHttpClient(
+        settings=online.KISSettings(
+            kis_mode="mock",
+            kis_offline=True,
+            kis_data_dir=tmp_path,
+            _env_file=None,
+        ),
+        account_number=SecretStr("00000000-01"),
+        transport=httpx.MockTransport(handler),
+        rate_limiter=online.TokenBucket(rate_per_second=1_000),
+        budget=online.KISBrokerageCallBudget(token_p_cap=0, brokerage_cap=1),
+    )
+    try:
+        response = client.request(
+            "POST",
+            "/uapi/domestic-stock/v1/trading/order-cash",
+            "VTTC0012U",
+            json_body={
+                "PDNO": "005930",
+                "ORD_DVSN": "00",
+                "ORD_QTY": "1",
+                "ORD_UNPR": "70000",
+            },
+        )
+        assert "CANO" not in repr(response)
+
+        with pytest.raises(ValueError, match="allowlist"):
+            client.request(
+                "POST",
+                "/uapi/domestic-stock/v1/trading/order-cash",
+                "TTTC0012U",
+                json_body={
+                    "PDNO": "005930",
+                    "ORD_DVSN": "00",
+                    "ORD_QTY": "1",
+                    "ORD_UNPR": "70000",
+                },
+            )
+    finally:
+        client.close()
+
+    assert len(sends) == 1
+
+
+def test_encrypted_reference_store_never_persists_provider_reference_plaintext() -> None:
+    reference = importlib.import_module("app.brokerage.mock_order_reference_store")
+    redis_client = fakeredis.FakeRedis()
+    store = reference.EncryptedRedisOrderReferenceStore(
+        redis_client,
+        encryption_key=SecretStr("MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA="),
+        ttl_seconds=900,
+    )
+    order_id = "ord_mock_" + "a" * 32
+    account_id = "acct_" + "b" * 32
+    provider_order_no = "synthetic-provider-order"
+    provider_org_no = "synthetic-provider-org"
+
+    store.put(
+        order_id,
+        account_id,
+        reference.MockProviderOrderReference(
+            provider_order_no=provider_order_no,
+            provider_org_no=provider_org_no,
+            order_division="00",
+            quantity=1,
+        ),
+    )
+
+    restored = store.get(order_id, account_id)
+    assert restored is not None
+    assert restored.provider_order_no == provider_order_no
+    persisted = b" ".join(
+        value if isinstance(value, bytes) else str(value).encode()
+        for value in redis_client.scan_iter()
+    ) + b" ".join(redis_client.mget(list(redis_client.scan_iter())))
+    assert provider_order_no.encode() not in persisted
+    assert provider_org_no.encode() not in persisted

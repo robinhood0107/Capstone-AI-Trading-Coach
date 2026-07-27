@@ -139,7 +139,9 @@ KIS_MOCK online boundary.
   or configurable.
 - Mock REST calls share the S1.1 Redis one-second no-burst limiter; `/oauth2/tokenP`
   shares its deployment-global one-second limiter. Redis/limiter failures close before
-  outbound, and order-like calls have zero automatic retries and no redirects.
+  outbound, and order-like calls have zero automatic retries and no redirects. The
+  brokerage cap is the outer provider-adjacent gate: exhaustion must reject before token
+  lookup or issuance, shared limiter acquisition, provider accounting, and socket handoff.
 - A durable database reservation is created before provider handoff, and V15 atomically
   records a confirmed mock acceptance as `ACCEPTED`. Ambiguous transport or
   outcome-persistence failures attempt `PENDING_RECONCILIATION`; if that auxiliary write
@@ -147,8 +149,11 @@ KIS_MOCK online boundary.
   provider/account values never cross into Spring, the database, or responses. Cancel
   references are owner/order-bound Fernet ciphertext in Redis with a bounded 60-second
   to seven-day TTL. An encrypted `PENDING` marker is stored with `SET NX` before the send
-  and atomically becomes `COMMITTED` only after a valid receipt. A commit failure keeps
-  the pending recovery anchor and attempts at most one no-retry full-cancel compensation.
+  and atomically becomes `COMMITTED` only after a valid receipt. A restarted process may
+  use the encrypted Redis `PENDING` ciphertext itself as the CAS basis for that commit;
+  it must not require a process-local pending map. A commit failure keeps the pending
+  recovery anchor and attempts at most one no-retry full-cancel compensation when the
+  accepted reference is still in memory.
 - Online balance/buyable is reachable only after a stored owner/account anchor succeeds.
   Callers cannot override the account number, origin, transport, token, or limiter.
   Python gRPC requires numeric loopback, bounded deadlines/messages/concurrency, a shared

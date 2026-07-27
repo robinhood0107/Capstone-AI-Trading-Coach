@@ -250,7 +250,10 @@ S3-online transport는 공식 KIS Mock origin과 주문 `VTTC0011U | VTTC0012U`,
 deployment-global tokenP limiter를 재사용하고 주문성 retry·redirect는 0이다. Python gRPC는
 numeric loopback과 finite cap을 요구하며 기본값은
 `KIS_MOCK_BROKERAGE_ONLINE_ENABLED=false`다. raw provider reference는 Spring/DB로 넘기지
-않고 owner/order에 결속한 bounded-TTL Fernet ciphertext로만 Redis에 둔다.
+않고 owner/order에 결속한 bounded-TTL Fernet ciphertext로만 Redis에 둔다. brokerage cap은
+token/cache, shared limiter, provider accounting, socket handoff보다 먼저 소비되어야 하며,
+재시작 후에도 Redis의 encrypted `PENDING` ciphertext를 CAS 기준으로 `COMMITTED` 전환할 수
+있어야 한다.
 
 online 1회 검증은 최종 HEAD/PR #55 CI/fresh security report/Redis baseline을 결속한 60분 이하
 0600 packet과 별도 current-user approval ID/SHA가 있을 때만

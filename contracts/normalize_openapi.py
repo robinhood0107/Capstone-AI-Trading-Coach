@@ -37,6 +37,8 @@ S32_CATALOG_PATH = (
     REPO_ROOT / "contracts/catalogs/s3-2-internal-paper-contract.v1.json"
 )
 S32_CONTRACT_ID = "s3-2-internal-paper-contract/v1"
+S33_CATALOG_PATH = REPO_ROOT / "contracts/catalogs/s3-3-fill-contract.v1.json"
+S33_CONTRACT_ID = "s3-3-fill-contract/v1"
 DECISION_PATH_METHODS = {
     "/api/v1/decisions/evaluate-order": {"post"},
     "/api/v1/decisions/{decisionId}": {"get"},
@@ -66,6 +68,18 @@ S32_COMPONENTS = {
     "S32OrderDetailSuccessResponse",
     "S32PaperBalanceSuccessResponse",
     "S32PaperBuyableSuccessResponse",
+}
+S33_PATH_METHODS = {
+    "/api/v1/brokerage/orders/{orderId}/reconcile": {"post"},
+    "/api/v1/brokerage/mock/accounts/{accountId}/fills": {"get"},
+    "/api/v1/brokerage/paper/accounts/{accountId}/fills": {"get"},
+}
+S33_COMPONENTS = {
+    "S33FillObservation",
+    "S33Reconcile",
+    "S33FillPage",
+    "S33ReconcileSuccessResponse",
+    "S33FillPageSuccessResponse",
 }
 HTTP_METHODS = {
     "delete",
@@ -130,6 +144,16 @@ def _s32_catalog_digest() -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
+def _s33_catalog_digest() -> str:
+    raw = S33_CATALOG_PATH.read_bytes()
+    catalog = load_json_bytes_strict(raw, source="S3.3 fill contract catalog")
+    if raw != canonical_json_bytes(catalog):
+        raise OpenApiNormalizationError(
+            "S3.3 fill contract catalog bytes must be canonical."
+        )
+    return hashlib.sha256(raw).hexdigest()
+
+
 def _assert_contract_roots(
     document: dict[str, Any],
     digest: str,
@@ -155,6 +179,14 @@ def _assert_contract_roots(
         if document.get("x-s3-2-contract-sha256") != _s32_catalog_digest():
             raise OpenApiNormalizationError(
                 f"{source}: S3.2 catalog digest extension is invalid."
+            )
+        if document.get("x-s3-3-contract-id") != S33_CONTRACT_ID:
+            raise OpenApiNormalizationError(
+                f"{source}: S3.3 contract ID extension is invalid."
+            )
+        if document.get("x-s3-3-contract-sha256") != _s33_catalog_digest():
+            raise OpenApiNormalizationError(
+                f"{source}: S3.3 catalog digest extension is invalid."
             )
 
 
@@ -216,7 +248,10 @@ def _assert_s32_paths(
             if isinstance(key, str) and key.lower() in HTTP_METHODS
         }
         for path, item in paths.items()
-        if path.startswith("/api/v1/brokerage/paper/")
+        if (
+            path.startswith("/api/v1/brokerage/paper/")
+            and not path.endswith("/fills")
+        )
         or path in {
             "/api/v1/brokerage/orders/{orderId}",
             "/api/v1/brokerage/orders/{orderId}/cancel",
@@ -240,6 +275,41 @@ def _assert_s32_components(
     if actual != expected:
         raise OpenApiNormalizationError(
             f"{source}: S3.2 component names differ from the approved allowlist."
+        )
+
+
+def _assert_s33_paths(
+    document: dict[str, Any], *, source: str, amendment: bool
+) -> None:
+    paths = document["paths"]
+    actual = {
+        path: {
+            key.lower()
+            for key in item
+            if isinstance(key, str) and key.lower() in HTTP_METHODS
+        }
+        for path, item in paths.items()
+        if path.startswith("/api/v1/brokerage/")
+        and ("fill" in path or path.endswith("/reconcile"))
+    }
+    expected = {} if amendment else S33_PATH_METHODS
+    if actual != expected:
+        raise OpenApiNormalizationError(
+            f"{source}: fill/reconcile paths or methods differ from the approved S3.3 allowlist."
+        )
+
+
+def _assert_s33_components(
+    document: dict[str, Any], *, source: str, amendment: bool
+) -> None:
+    schemas = document["components"].get("schemas", {})
+    if not isinstance(schemas, dict):
+        raise OpenApiNormalizationError(f"{source}: component schemas must be an object.")
+    actual = {name for name in schemas if name.startswith("S33")}
+    expected = set() if amendment else S33_COMPONENTS
+    if actual != expected:
+        raise OpenApiNormalizationError(
+            f"{source}: S3.3 component names differ from the approved allowlist."
         )
 
 
@@ -286,6 +356,16 @@ def normalize_generated_openapi(
         amendment=amendment,
     )
     _assert_s32_components(
+        generated,
+        source="generated OpenAPI",
+        amendment=amendment,
+    )
+    _assert_s33_paths(
+        generated,
+        source="generated OpenAPI",
+        amendment=amendment,
+    )
+    _assert_s33_components(
         generated,
         source="generated OpenAPI",
         amendment=amendment,
@@ -340,6 +420,16 @@ def check_normalized_openapi(
         source="tracked OpenAPI",
         amendment=amendment,
     )
+    _assert_s33_paths(
+        expected,
+        source="tracked OpenAPI",
+        amendment=amendment,
+    )
+    _assert_s33_components(
+        expected,
+        source="tracked OpenAPI",
+        amendment=amendment,
+    )
     _validate_openapi_schema(expected, source="tracked OpenAPI")
     if expected_bytes != canonical_json_bytes(expected):
         raise OpenApiNormalizationError("Tracked OpenAPI bytes are not canonical JSON.")
@@ -363,7 +453,7 @@ def main() -> int:
     parser.add_argument(
         "--implementation",
         action="store_true",
-        help="Require the exact implemented S2.1, S2.3, and S3.2 runtime paths.",
+        help="Require the exact implemented S2.1, S2.3, S3.2, and S3.3 runtime paths.",
     )
     arguments = parser.parse_args()
 

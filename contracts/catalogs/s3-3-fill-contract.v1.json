@@ -1,0 +1,62 @@
+{
+  "accountIdPattern": "^acct_[0-9a-f]{32}$",
+  "brokerageModes": [
+    "INTERNAL_PAPER",
+    "KIS_MOCK"
+  ],
+  "contractId": "s3-3-fill-contract/v1",
+  "cursor": {
+    "dateRangeDaysMaximum": 31,
+    "maximumLength": 1024,
+    "pageSizeMaximum": 50,
+    "sort": [
+      "filledAt DESC",
+      "orderId DESC",
+      "execRefHash DESC"
+    ],
+    "ttlSeconds": 900
+  },
+  "fillObservation": {
+    "completeness": [
+      "COMPLETE",
+      "PARTIAL"
+    ],
+    "execTypes": [
+      "CANCELLED",
+      "FILL",
+      "PARTIAL_FILL",
+      "REJECTED"
+    ],
+    "fixtureBytesMaximum": 4194304,
+    "fixtureItemsMaximum": 10000,
+    "schemaVersion": "1",
+    "sourceTextMaximum": 128
+  },
+  "orderIdPatterns": {
+    "INTERNAL_PAPER": "^ord_paper_[0-9a-f]{32}$",
+    "KIS_MOCK": "^ord_mock_[0-9a-f]{32}$"
+  },
+  "orderStatuses": [
+    "ACCEPTED",
+    "CANCELLED",
+    "CANCEL_REQUESTED",
+    "FILLED",
+    "PARTIALLY_FILLED",
+    "REJECTED",
+    "SUBMITTED"
+  ],
+  "reconcileObservationMaximum": 200,
+  "reconciliationStatuses": [
+    "MATCHED",
+    "MISMATCH",
+    "NOT_APPLICABLE"
+  ],
+  "routes": {
+    "mockFills": "GET /api/v1/brokerage/mock/accounts/{accountId}/fills",
+    "paperFills": "GET /api/v1/brokerage/paper/accounts/{accountId}/fills",
+    "reconcile": "POST /api/v1/brokerage/orders/{orderId}/reconcile"
+  },
+  "warningCodes": [
+    "ORDER_RECONCILIATION_MISMATCH"
+  ]
+}

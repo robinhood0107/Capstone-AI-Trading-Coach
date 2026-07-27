@@ -1,0 +1,20 @@
+{
+  "observations": [
+    {
+      "averageFillPriceKrw": null,
+      "completeness": "COMPLETE",
+      "cumulativeQuantity": 1,
+      "execType": "CANCELLED",
+      "fillPriceKrw": null,
+      "fillQuantity": 1,
+      "leavesQuantity": 1,
+      "observedAt": "2030-01-02T00:00:10Z",
+      "orderId": "ord_mock_0123456789abcdef0123456789abcdef",
+      "providerExecRefHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "receivedAt": "2030-01-02T00:00:11Z",
+      "sourceRef": "offline-fill-fixture-001"
+    }
+  ],
+  "schemaVersion": "1",
+  "sourceVersion": "s3.3-fill-observation-v1"
+}

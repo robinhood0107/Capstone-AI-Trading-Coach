@@ -150,6 +150,42 @@ def test_packet_rejects_boolean_integer_aliases(
         )
 
 
+@pytest.mark.parametrize(
+    ("path", "value"),
+    [
+        (
+            ("evidence", "requiredChecks"),
+            [
+                {"name": "Contract schema validation", "conclusion": "SUCCESS"},
+                {"name": "Kotlin ktlint and build", "conclusion": "SUCCESS"},
+                {"name": "Python quality gates", "conclusion": "SUCCESS"},
+                {"name": "Repo hygiene", "conclusion": "SUCCESS"},
+            ],
+        ),
+        (("executionCommand",), "printf unsafe"),
+    ],
+)
+def test_packet_rejects_missing_required_ci_or_changed_execution_command(
+    secure_tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    path: tuple[str, ...],
+    value: object,
+) -> None:
+    packet_path, _ = _write_packet(secure_tmp_path)
+    packet_sha = _rewrite_packet(packet_path, path, value)
+    monkeypatch.setattr(probe, "_git_revision", lambda _root, _ref: "a" * 40)
+
+    with pytest.raises(probe.KISMockApprovalRejected):
+        probe.execute_approved_probe(
+            packet_path,
+            now=datetime(2030, 1, 2, 3, 10, tzinfo=UTC),
+            expected_approval_id="approval-s3-online-test",
+            expected_packet_sha256=packet_sha,
+            repository_root=secure_tmp_path,
+            operations_factory=lambda _packet: FakeOperations(),
+        )
+
+
 def _write_packet(tmp_path: Path) -> tuple[Path, str]:
     report_path = tmp_path / "security-report.md"
     report_path.write_text("SECURITY_SCAN_COMPLETE\n", encoding="utf-8")
@@ -175,10 +211,11 @@ def _write_packet(tmp_path: Path) -> tuple[Path, str]:
         "evidence": {
             "ciHeadSha": "a" * 40,
             "requiredChecks": [
-                {"name": "contracts-ci", "conclusion": "SUCCESS"},
-                {"name": "kotlin-build", "conclusion": "SUCCESS"},
-                {"name": "python-ci", "conclusion": "SUCCESS"},
-                {"name": "repo-hygiene", "conclusion": "SUCCESS"},
+                {"name": "Contract schema validation", "conclusion": "SUCCESS"},
+                {"name": "Spring OpenAPI drift", "conclusion": "SUCCESS"},
+                {"name": "Kotlin ktlint and build", "conclusion": "SUCCESS"},
+                {"name": "Python quality gates", "conclusion": "SUCCESS"},
+                {"name": "Repo hygiene", "conclusion": "SUCCESS"},
             ],
             "securityHeadSha": "a" * 40,
             "securityStatus": "SECURITY_SCAN_COMPLETE",
@@ -216,7 +253,8 @@ def _write_packet(tmp_path: Path) -> tuple[Path, str]:
         ],
         "stopRule": "FIRST_FAILURE_STOPS_REMAINING_CALLS",
         "executionCommand": (
-            "uv run --frozen kis-mock-brokerage-probe "
+            f"uv run --directory {tmp_path}/workspaces/decision-platform/python-services "
+            "--frozen kis-mock-brokerage-probe "
             f"--approval-packet {packet_path}"
         ),
     }

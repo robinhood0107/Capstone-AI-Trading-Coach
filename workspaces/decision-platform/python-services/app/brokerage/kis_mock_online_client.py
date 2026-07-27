@@ -243,8 +243,8 @@ class _KISMockBrokerageSecrets(BaseSettings):
     kis_mock_account_no: SecretStr = Field(repr=False, exclude=True)
 
 
-class _BudgetedInnerTransport(httpx.BaseTransport):
-    """공유 limiter 통과 뒤 실제 socket handoff 직전에 승인 cap을 소비한다."""
+class _BrokerageBudgetTransport(httpx.BaseTransport):
+    """승인 cap을 token, shared limiter, socket handoff보다 앞에서 소비한다."""
 
     def __init__(
         self,
@@ -346,10 +346,11 @@ class KISMockBrokerageHttpClient:
             raise KISCredentialError("KIS mock brokerage account is unavailable")
         self._cano, self._product_code = account_text.split("-", maxsplit=1)
         account_text = ""
-        budgeted_inner = _BudgetedInnerTransport(inner, budget)
+        budgeted_transport: _BrokerageBudgetTransport | None = None
+        credential_transport: _CredentialTransport | None = None
         try:
             credential_transport = _CredentialTransport(
-                budgeted_inner,
+                inner,
                 settings=settings,
                 token_provider=token_provider,
                 rate_limiter=limiter,
@@ -357,14 +358,20 @@ class KISMockBrokerageHttpClient:
                 max_json_depth=32,
                 sensitive_values=lambda: (self._cano,),
             )
+            budgeted_transport = _BrokerageBudgetTransport(credential_transport, budget)
             self._http = httpx.Client(
-                transport=credential_transport,
+                transport=budgeted_transport,
                 timeout=settings.kis_timeout_seconds,
                 follow_redirects=False,
                 trust_env=False,
             )
         except Exception:
-            budgeted_inner.close()
+            if budgeted_transport is not None:
+                budgeted_transport.close()
+            elif credential_transport is not None:
+                credential_transport.close()
+            else:
+                inner.close()
             self._close_private_dependencies()
             self._clear_account()
             raise

@@ -1562,7 +1562,10 @@ KIS Mock 중심으로 구현하고, KIS Live는 고급해제/3단계 동의/재�
 > balance/buyable도 stored owner/account anchor를 먼저 요구한다. 일반 구현·fixture·OpenAPI·
 > 테스트 provider call은 0이고, 최종 HEAD/PR #55 CI/fresh security report에 결속된 별도
 > exact-approved 5단계 KIS_MOCK probe만 cap `tokenP=1`/`brokerage=5`, retry/artifact 0으로
-> 실행할 수 있다. KIS_LIVE 실계좌 주문·정정·취소는 구현·allowlist·enable flag가 없어
+> 실행할 수 있다. exact packet은 packet 검증 뒤 runtime 생성 전에 `approvalId`와 canonical
+> SHA-256에서 파생한 opaque Redis key를 `SET NX PX`로 claim하며 성공·첫 실패·runtime 생성
+> 실패 모두 재사용할 수 없다. KIS_MOCK response는 provider echo scrub/JSON parse 전에 1 MiB
+> cap을 적용한다. KIS_LIVE 실계좌 주문·정정·취소는 구현·allowlist·enable flag가 없어
 > 계속 OFF다.
 
 Live 경계는 다음과 같이 분리한다.
@@ -1939,7 +1942,9 @@ provider 체결번호 원문, 계좌번호, provider raw body/header/message는 
 KIS_MOCK 목록은 offline fixture writer가 저장하고 reconcile한 관측만 사용한다.
 `VTTC0081R`/`VTSC9215R` strict read는 exact-approved one-shot probe의 마지막 단계에만
 사용할 수 있다. 그 결과를 public fills, `decision_fill_writer`, order projection에 자동
-append하지 않으며 polling/scheduler는 없다.
+append하지 않으며 polling/scheduler는 없다. exact packet은 Redis single-use claim을 runtime
+생성 전에 획득해야 하고, KIS_MOCK 체결조회 response는 provider echo scrub/JSON parse 전에
+1 MiB cap을 적용한다.
 
 ### 10.8 매수가능 조회
 

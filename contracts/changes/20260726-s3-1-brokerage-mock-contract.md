@@ -62,6 +62,11 @@
   digest, 60분 이하 TTL, Redis PTTL baseline, 물리 cap `tokenP=1`/`brokerage=5`, retry 0,
   artifact 0을 결속한다. absolute regular file·owner·mode `0600`·`O_NOFOLLOW`, canonical
   SHA-256과 현재 사용자의 별도 approval ID/SHA latch가 모두 맞아야 실행된다.
+- exact probe는 packet 검증 뒤 runtime factory를 만들기 전에 `approvalId`와 canonical
+  SHA-256에서 파생한 opaque Redis key를 `SET NX PX`로 claim한다. claim은 성공·첫 실패·
+  runtime 생성 실패 뒤에도 packet TTL까지 유지되며 Redis 장애나 이미 존재하는 claim은 provider
+  handoff 전에 fail-closed한다. KIS_MOCK response body는 shared credential scrubber의 JSON
+  parse/sanitize 전에 1 MiB cap으로 중단한다.
 - exact probe는 background polling, gRPC server 상시 활성화, S3.3 fill writer/DB append를
   승인하지 않는다. gRPC online server를 켜는 작업은 별도 bounded operator approval 없이는
   수행하지 않는다. 구현·fixture·OpenAPI·일반 테스트의 provider physical call은 계속 0이다.
@@ -135,6 +140,12 @@ KIS_MOCK online boundary.
   security report digest, a TTL of at most 60 minutes, Redis PTTL baselines, caps
   `tokenP=1` and `brokerage=5`, retry 0, artifact 0, a protected absolute 0600 file, a
   canonical digest, and a separate current-user approval ID/SHA latch.
+- After packet validation and before runtime construction, the exact probe claims an
+  opaque Redis key derived from `approvalId` and the canonical SHA-256 using `SET NX PX`.
+  The claim remains consumed through success, first failure, and runtime-construction
+  failure until packet expiry; Redis failure or an existing claim rejects before provider
+  handoff. KIS_MOCK response bodies are capped at 1 MiB before JSON parse/sanitize in the
+  shared credential scrubber.
 - The exact probe does not authorize background polling, persistent gRPC enablement, or
   S3.3 fill-writer/database append. Enabling the online gRPC server requires a separate
   bounded operator approval. Implementation, fixture, OpenAPI, and ordinary test calls

@@ -160,12 +160,19 @@ report digest, Redis PTTL baseline, symbol/price/date/account/order opaque ident
 `tokenP=1`/`brokerage=5`, retry 0, artifact 0, 60분 이하 TTL을 결속한다. `/tmp` 아래 owner
 regular file mode `0600`으로만 발급하고, 현재 사용자가 packet의 exact approval ID와 SHA-256을
 별도 승인한 뒤 packet 안의 `executionCommand` 그대로 한 번 실행한다. approval latch가
-없거나 다르거나 만료되면 provider handoff 전에 종료한다.
+없거나 다르거나 만료되면 provider handoff 전에 종료한다. packet 검증 뒤에는 runtime 생성 전에
+`approvalId`와 packet SHA-256에서 파생한 opaque Redis key를 `SET NX PX`로 claim하며,
+성공·첫 실패·runtime 생성 실패 모두 해당 packet을 재사용할 수 없다. Redis 장애나 기존 claim도
+provider handoff 전에 fail-closed한다.
 
 첫 실패는 남은 호출을 모두 중단한다. 주문 접수 뒤 취소가 실패해도 자동 retry하지 않으며,
 모의투자 포털에서 확인·정리가 필요하면 실패 evidence를 고정한 뒤 새 authorization을 받는다.
 probe 성공은 background polling, gRPC 상시 활성화, S3.3 fill observation append 또는
 KIS_LIVE 실계좌 주문 권한이 아니다.
+
+KIS_MOCK online response는 credential scrubber가 provider echo를 제거하기 전에 1 MiB cap을
+적용한다. 더 큰 body, 과도한 JSON depth/list/text는 stable error로 축약하며 raw provider body,
+header, 계좌번호, credential은 로그·DB·응답에 남기지 않는다.
 
 ## S3.3 체결 관측·대사
 

@@ -485,6 +485,7 @@ class OpenApiNormalizerTest(unittest.TestCase):
         }
         implementation["paths"].update(self._decision_paths())
         implementation["components"]["schemas"].update(self._decision_components())
+        implementation["paths"].update(self._s31_paths())
         implementation["paths"].update(self._s32_paths())
         implementation["components"]["schemas"].update(self._s32_components())
         implementation["paths"].update(self._s33_paths())
@@ -504,6 +505,7 @@ class OpenApiNormalizerTest(unittest.TestCase):
         implementation = copy.deepcopy(self.generated)
         implementation["paths"].update(self._decision_paths())
         implementation["components"]["schemas"].update(self._decision_components())
+        implementation["paths"].update(self._s31_paths())
         implementation["paths"].update(self._s32_paths())
         implementation["components"]["schemas"].update(self._s32_components())
         implementation["paths"].update(self._s33_paths())
@@ -594,6 +596,7 @@ class OpenApiNormalizerTest(unittest.TestCase):
         implementation = copy.deepcopy(self.generated)
         implementation["paths"].update(self._decision_paths())
         implementation["components"]["schemas"].update(self._decision_components())
+        implementation["paths"].update(self._s31_paths())
         implementation["paths"].update(self._s32_paths())
         implementation["components"]["schemas"].update(self._s32_components())
         implementation["paths"].update(self._s33_paths())
@@ -640,6 +643,28 @@ class OpenApiNormalizerTest(unittest.TestCase):
                         self.catalog_bytes,
                         amendment=False,
                     )
+
+    @staticmethod
+    def _s31_paths() -> dict[str, object]:
+        account_id_parameter = {
+            "name": "accountId",
+            "in": "path",
+            "required": True,
+            "schema": {"type": "string"},
+        }
+        return {
+            "/api/v1/brokerage/mock/orders": {
+                "post": {"responses": {"200": {"description": "Mock order"}}}
+            },
+            "/api/v1/brokerage/mock/accounts/{accountId}/balances": {
+                "parameters": [account_id_parameter],
+                "get": {"responses": {"200": {"description": "Mock balance"}}},
+            },
+            "/api/v1/brokerage/mock/accounts/{accountId}/buyable": {
+                "parameters": [account_id_parameter],
+                "get": {"responses": {"200": {"description": "Mock buyable"}}},
+            },
+        }
 
     @staticmethod
     def _s32_paths() -> dict[str, object]:
@@ -697,6 +722,7 @@ class OpenApiNormalizerTest(unittest.TestCase):
         implementation = copy.deepcopy(self.generated)
         implementation["paths"].update(self._decision_paths())
         implementation["components"]["schemas"].update(self._decision_components())
+        implementation["paths"].update(self._s31_paths())
         implementation["paths"].update(self._s32_paths())
         implementation["components"]["schemas"].update(self._s32_components())
         implementation["paths"].update(self._s33_paths())
@@ -718,6 +744,16 @@ class OpenApiNormalizerTest(unittest.TestCase):
             "post": {"responses": {"200": {"description": "Unapproved fill claim"}}}
         }
         mutations.append(public_report)
+        executions = copy.deepcopy(implementation)
+        executions["paths"]["/api/v1/brokerage/orders/{orderId}/executions"] = {
+            "parameters": copy.deepcopy(
+                implementation["paths"][
+                    "/api/v1/brokerage/orders/{orderId}/reconcile"
+                ]["parameters"]
+            ),
+            "post": {"responses": {"200": {"description": "Unapproved execution claim"}}}
+        }
+        mutations.append(executions)
         wrong_method = copy.deepcopy(implementation)
         wrong_method["paths"]["/api/v1/brokerage/orders/{orderId}/reconcile"]["get"] = {
             "responses": {"200": {"description": "Unapproved method"}}

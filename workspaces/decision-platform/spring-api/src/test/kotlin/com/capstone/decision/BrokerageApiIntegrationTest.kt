@@ -10,6 +10,9 @@ import com.capstone.decision.domain.risk.KillSwitchActorRole
 import com.capstone.decision.domain.risk.KillSwitchReasonClass
 import com.capstone.decision.infrastructure.brokerage.BrokerageIdempotencyHasher
 import com.capstone.decision.infrastructure.brokerage.RedisPaperIdempotencyClaimAdapter
+import com.capstone.decision.infrastructure.security.DemoAccount
+import com.capstone.decision.infrastructure.security.DemoRole
+import com.capstone.decision.infrastructure.security.JwtService
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -66,6 +69,7 @@ class BrokerageApiIntegrationTest(
     @Autowired private val killSwitchMutationPort: KillSwitchMutationPort,
     @Autowired private val appDataSource: DataSource,
     @Autowired private val brokerageIdempotencyHasher: BrokerageIdempotencyHasher,
+    @Autowired private val jwtService: JwtService,
 ) : SpringApiIntegrationTestBase() {
     private lateinit var mockMvc: MockMvc
     private val jdbcTemplate: JdbcTemplate by lazy {
@@ -160,7 +164,7 @@ class BrokerageApiIntegrationTest(
             fillQuantity = 1,
             cumulativeQuantity = 1,
             leavesQuantity = 1,
-            observedAt = EVALUATION_AS_OF.plusSeconds(10),
+            observedAt = EVALUATION_AS_OF.minusSeconds(20),
         )
         insertMockFillObservation(
             orderId = orderId,
@@ -169,7 +173,7 @@ class BrokerageApiIntegrationTest(
             fillQuantity = 1,
             cumulativeQuantity = 2,
             leavesQuantity = 0,
-            observedAt = EVALUATION_AS_OF.plusSeconds(20),
+            observedAt = EVALUATION_AS_OF.minusSeconds(10),
         )
         val reconciled =
             reconcileOrder(
@@ -238,6 +242,162 @@ class BrokerageApiIntegrationTest(
         assertEquals(reconciled.response.contentAsString, replay.response.contentAsString)
         assertEquals(3, count("select count(*) from order_events where order_id = ?", orderId))
         assertEquals(1, count("select count(*) from audit_logs where target_type = 'ORDER_RECONCILIATION'"))
+    }
+
+    @Test
+    fun `demoted admin cannot replay a cached reconciliation response`() {
+        val userToken = login("demo-user", userPassword())
+        val adminToken = login("demo-admin", adminPassword())
+        val decisionId = createDecision(userToken, "39", orderIntent())
+        val submitted =
+            submitMockOrder(
+                token = userToken,
+                idempotencyKey = "brokerage-fill-auth-replay-submit",
+                requestId = "req-brokerage-fill-auth-replay-submit",
+                decisionId = decisionId,
+                order = orderIntent(),
+            )
+        assertEquals(200, submitted.response.status, submitted.response.contentAsString)
+        val orderId = json(submitted).at("/data/orderId").stringValue()
+        val replayKey = "brokerage-fill-auth-replay-apply"
+        val initial =
+            reconcileOrder(
+                token = adminToken,
+                idempotencyKey = replayKey,
+                requestId = "req-brokerage-fill-auth-replay-initial",
+                orderId = orderId,
+            )
+        assertEquals(200, initial.response.status, initial.response.contentAsString)
+        val eventCountBefore = count("select count(*) from order_events where order_id = ?", orderId)
+        val auditCountBefore =
+            count(
+                "select count(*) from audit_logs where target_type = 'ORDER_RECONCILIATION' and target_id = ?",
+                orderId,
+            )
+        val originalRole =
+            requireNotNull(
+                jdbcTemplate.queryForObject(
+                    "select role from users where user_id = ?",
+                    String::class.java,
+                    "usr_demo_admin",
+                ),
+            )
+        val originalSecurityVersion =
+            requireNotNull(
+                jdbcTemplate.queryForObject(
+                    "select security_version from users where user_id = ?",
+                    Long::class.java,
+                    "usr_demo_admin",
+                ),
+            )
+
+        try {
+            val demotedSecurityVersion = Math.addExact(originalSecurityVersion, 1L)
+            assertEquals(
+                1,
+                jdbcTemplate.update(
+                    "update users set role = 'USER', security_version = ? where user_id = ?",
+                    demotedSecurityVersion,
+                    "usr_demo_admin",
+                ),
+            )
+            val demotedToken =
+                jwtService
+                    .issue(
+                        DemoAccount(
+                            userId = "usr_demo_admin",
+                            username = "demo-admin",
+                            role = DemoRole.USER,
+                            securityVersion = demotedSecurityVersion,
+                        ),
+                    ).token
+
+            val replay =
+                reconcileOrder(
+                    token = demotedToken,
+                    idempotencyKey = replayKey,
+                    requestId = "req-brokerage-fill-auth-replay-demoted",
+                    orderId = orderId,
+                )
+            assertEquals(403, replay.response.status, replay.response.contentAsString)
+            assertEquals("FORBIDDEN", json(replay).at("/error/code").stringValue())
+
+            val control =
+                reconcileOrder(
+                    token = demotedToken,
+                    idempotencyKey = "brokerage-fill-auth-replay-control",
+                    requestId = "req-brokerage-fill-auth-replay-control",
+                    orderId = orderId,
+                )
+            assertEquals(403, control.response.status, control.response.contentAsString)
+            assertEquals(eventCountBefore, count("select count(*) from order_events where order_id = ?", orderId))
+            assertEquals(
+                auditCountBefore,
+                count(
+                    "select count(*) from audit_logs where target_type = 'ORDER_RECONCILIATION' and target_id = ?",
+                    orderId,
+                ),
+            )
+        } finally {
+            jdbcTemplate.update(
+                "update users set role = ?, security_version = ? where user_id = ?",
+                originalRole,
+                originalSecurityVersion,
+                "usr_demo_admin",
+            )
+        }
+    }
+
+    @Test
+    fun `future dated complete fill is deferred without current work or state mutation`() {
+        val userToken = login("demo-user", userPassword())
+        val adminToken = login("demo-admin", adminPassword())
+        val decisionId = createDecision(userToken, "3a", orderIntent())
+        val submitted =
+            submitMockOrder(
+                token = userToken,
+                idempotencyKey = "brokerage-fill-future-submit",
+                requestId = "req-brokerage-fill-future-submit",
+                decisionId = decisionId,
+                order = orderIntent(),
+            )
+        assertEquals(200, submitted.response.status, submitted.response.contentAsString)
+        val orderId = json(submitted).at("/data/orderId").stringValue()
+        insertMockFillObservation(
+            orderId = orderId,
+            suffix = "d",
+            execType = "FILL",
+            fillQuantity = 2,
+            cumulativeQuantity = 2,
+            leavesQuantity = 0,
+            observedAt = EVALUATION_AS_OF.plusSeconds(3_600),
+        )
+
+        val reconciled =
+            reconcileOrder(
+                token = adminToken,
+                idempotencyKey = "brokerage-fill-future-apply",
+                requestId = "req-brokerage-fill-future-apply",
+                orderId = orderId,
+            )
+
+        assertEquals(200, reconciled.response.status, reconciled.response.contentAsString)
+        assertEquals("SUBMITTED", json(reconciled).at("/data/status").stringValue())
+        assertEquals(0, json(reconciled).at("/data/filledQuantity").longValue())
+        assertEquals("NOT_APPLICABLE", json(reconciled).at("/data/reconciliation/status").stringValue())
+        assertTrue(json(reconciled).at("/data/reconciliation/checkedAt").isNull)
+        assertEquals(0, json(reconciled).at("/data/appliedEventCount").intValue())
+        assertFalse(json(reconciled).at("/data/hasMore").booleanValue())
+        assertEquals(0, count("select count(*) from order_fill_application_receipts where order_id = ?", orderId))
+        assertEquals(1, count("select count(*) from order_events where order_id = ?", orderId))
+        assertEquals(
+            "SUBMITTED",
+            jdbcTemplate.queryForObject(
+                "select status from orders where order_id = ?",
+                String::class.java,
+                orderId,
+            ),
+        )
     }
 
     @Test
@@ -434,7 +594,7 @@ class BrokerageApiIntegrationTest(
             1,
             1,
             1,
-            EVALUATION_AS_OF.plusSeconds(10),
+            EVALUATION_AS_OF.minusSeconds(20),
         )
         insertMockFillObservation(
             orderId,
@@ -443,7 +603,7 @@ class BrokerageApiIntegrationTest(
             1,
             2,
             0,
-            EVALUATION_AS_OF.plusSeconds(20),
+            EVALUATION_AS_OF.minusSeconds(10),
         )
 
         val executor = Executors.newFixedThreadPool(2)
@@ -498,7 +658,7 @@ class BrokerageApiIntegrationTest(
             4,
             4,
             6,
-            EVALUATION_AS_OF.plusSeconds(10),
+            EVALUATION_AS_OF.minusSeconds(40),
             fillPriceKrw = 100,
             averageFillPriceKrw = 100,
         )
@@ -509,7 +669,7 @@ class BrokerageApiIntegrationTest(
             1,
             4,
             6,
-            EVALUATION_AS_OF.plusSeconds(20),
+            EVALUATION_AS_OF.minusSeconds(30),
             fillPriceKrw = 100,
             averageFillPriceKrw = 100,
         )
@@ -520,7 +680,7 @@ class BrokerageApiIntegrationTest(
             1,
             3,
             7,
-            EVALUATION_AS_OF.plusSeconds(30),
+            EVALUATION_AS_OF.minusSeconds(20),
             fillPriceKrw = 100,
             averageFillPriceKrw = 100,
         )
@@ -531,7 +691,7 @@ class BrokerageApiIntegrationTest(
             6,
             10,
             0,
-            EVALUATION_AS_OF.plusSeconds(40),
+            EVALUATION_AS_OF.minusSeconds(10),
             fillPriceKrw = 101,
             averageFillPriceKrw = 100,
         )
@@ -594,7 +754,7 @@ class BrokerageApiIntegrationTest(
             2,
             2,
             0,
-            EVALUATION_AS_OF.plusSeconds(10),
+            EVALUATION_AS_OF.minusSeconds(10),
         )
 
         val reconciled =
@@ -615,6 +775,145 @@ class BrokerageApiIntegrationTest(
                 orderId,
             ),
         )
+    }
+
+    @Test
+    fun `cancel requested mock order rejects a partial fill without erasing cancellation intent`() {
+        val userToken = login("demo-user", userPassword())
+        val adminToken = login("demo-admin", adminPassword())
+        val decisionId = createDecision(userToken, "3b", orderIntent())
+        val submitted =
+            submitMockOrder(
+                userToken,
+                "brokerage-fill-cancel-partial-submit",
+                "req-brokerage-fill-cancel-partial-submit",
+                decisionId,
+                orderIntent(),
+            )
+        assertEquals(200, submitted.response.status, submitted.response.contentAsString)
+        val orderId = json(submitted).at("/data/orderId").stringValue()
+        val cancelled =
+            cancelOrder(
+                userToken,
+                "brokerage-fill-cancel-partial-cancel",
+                "req-brokerage-fill-cancel-partial-cancel",
+                orderId,
+            )
+        assertEquals("CANCEL_REQUESTED", json(cancelled).at("/data/status").stringValue())
+        insertMockFillObservation(
+            orderId = orderId,
+            suffix = "e",
+            execType = "PARTIAL_FILL",
+            fillQuantity = 1,
+            cumulativeQuantity = 1,
+            leavesQuantity = 1,
+            observedAt = EVALUATION_AS_OF.minusSeconds(10),
+        )
+
+        val reconciled =
+            reconcileOrder(
+                adminToken,
+                "brokerage-fill-cancel-partial-apply",
+                "req-brokerage-fill-cancel-partial-apply",
+                orderId,
+            )
+
+        assertEquals(200, reconciled.response.status, reconciled.response.contentAsString)
+        assertEquals("CANCEL_REQUESTED", json(reconciled).at("/data/status").stringValue())
+        assertEquals(0, json(reconciled).at("/data/filledQuantity").longValue())
+        assertEquals(2, json(reconciled).at("/data/leavesQuantity").longValue())
+        assertTrue(json(reconciled).at("/data/averageFillPriceKrw").isNull)
+        assertEquals("MISMATCH", json(reconciled).at("/data/reconciliation/status").stringValue())
+        assertEquals(1, json(reconciled).at("/data/appliedEventCount").intValue())
+        assertEquals(
+            "CANCEL_REQUESTED_PARTIAL_FILL",
+            jdbcTemplate.queryForObject(
+                """
+                select invalid_reason
+                from order_fill_application_receipts
+                where order_id = ?
+                """.trimIndent(),
+                String::class.java,
+                orderId,
+            ),
+        )
+        assertEquals(
+            listOf("MOCK_ORDER_SUBMITTED", "MOCK_ORDER_CANCEL_REQUESTED", "INVALID_TRANSITION"),
+            jdbcTemplate.queryForList(
+                "select event_type from order_events where order_id = ? order by event_seq",
+                String::class.java,
+                orderId,
+            ),
+        )
+    }
+
+    @Test
+    fun `three unit fills preserve exact notional remainder across reconciliation`() {
+        val userToken = login("demo-user", userPassword())
+        val adminToken = login("demo-admin", adminPassword())
+        val decisionId = createDecision(userToken, "3c", orderIntent())
+        val submitted =
+            submitMockOrder(
+                token = userToken,
+                idempotencyKey = "brokerage-fill-notional-submit",
+                requestId = "req-brokerage-fill-notional-submit",
+                decisionId = decisionId,
+                order = orderIntent(),
+            )
+        assertEquals(200, submitted.response.status, submitted.response.contentAsString)
+        val orderId = json(submitted).at("/data/orderId").stringValue()
+        jdbcTemplate.update(
+            "update orders set quantity = 3, leaves_quantity = 3 where order_id = ?",
+            orderId,
+        )
+        insertMockFillObservation(
+            orderId,
+            "5",
+            "PARTIAL_FILL",
+            1,
+            1,
+            2,
+            EVALUATION_AS_OF.minusSeconds(30),
+            fillPriceKrw = 1,
+            averageFillPriceKrw = 1,
+        )
+        insertMockFillObservation(
+            orderId,
+            "6",
+            "PARTIAL_FILL",
+            1,
+            2,
+            1,
+            EVALUATION_AS_OF.minusSeconds(20),
+            fillPriceKrw = 2,
+            averageFillPriceKrw = 1,
+        )
+        insertMockFillObservation(
+            orderId,
+            "7",
+            "FILL",
+            1,
+            3,
+            0,
+            EVALUATION_AS_OF.minusSeconds(10),
+            fillPriceKrw = 3,
+            averageFillPriceKrw = 2,
+        )
+
+        val reconciled =
+            reconcileOrder(
+                token = adminToken,
+                idempotencyKey = "brokerage-fill-notional-apply",
+                requestId = "req-brokerage-fill-notional-apply",
+                orderId = orderId,
+            )
+
+        assertEquals(200, reconciled.response.status, reconciled.response.contentAsString)
+        assertEquals("FILLED", json(reconciled).at("/data/status").stringValue())
+        assertEquals(3, json(reconciled).at("/data/filledQuantity").longValue())
+        assertEquals(2, json(reconciled).at("/data/averageFillPriceKrw").longValue())
+        assertEquals("MATCHED", json(reconciled).at("/data/reconciliation/status").stringValue())
+        assertEquals(3, json(reconciled).at("/data/appliedEventCount").intValue())
     }
 
     @Test
@@ -2071,8 +2370,14 @@ class BrokerageApiIntegrationTest(
                 sequence,
                 count - sequence,
                 fillPriceKrw,
-                OffsetDateTime.ofInstant(EVALUATION_AS_OF.plusSeconds(sequence.toLong()), ZoneOffset.UTC),
-                OffsetDateTime.ofInstant(EVALUATION_AS_OF.plusSeconds(sequence.toLong() + 1), ZoneOffset.UTC),
+                OffsetDateTime.ofInstant(
+                    EVALUATION_AS_OF.minusSeconds((count - sequence + 1).toLong()),
+                    ZoneOffset.UTC,
+                ),
+                OffsetDateTime.ofInstant(
+                    EVALUATION_AS_OF.minusSeconds((count - sequence).toLong()),
+                    ZoneOffset.UTC,
+                ),
                 (sequence + count).toString(16).padStart(64, '0'),
             )
         }

@@ -60,6 +60,16 @@ class OrderFillDomainTest {
                         result,
                         "$status/$execType",
                     )
+                } else if (
+                    status == OrderFillStatus.CANCEL_REQUESTED &&
+                    execType == FillExecutionType.PARTIAL_FILL
+                ) {
+                    assertTrue(result is FillTransitionResult.Invalid, "$status/$execType -> $result")
+                    assertEquals(
+                        "CANCEL_REQUESTED_PARTIAL_FILL",
+                        (result as FillTransitionResult.Invalid).reason.name,
+                        "$status/$execType",
+                    )
                 } else {
                     assertTrue(result is FillTransitionResult.Applied, "$status/$execType -> $result")
                 }
@@ -186,6 +196,18 @@ class OrderFillDomainTest {
     }
 
     @Test
+    fun `cancel requested 주문은 partial fill로 취소 의도를 지우지 않는다`() {
+        val result =
+            OrderFillTransition.apply(
+                state(status = OrderFillStatus.CANCEL_REQUESTED),
+                observation(FillExecutionType.PARTIAL_FILL, 4, 100, 4, 6),
+            )
+
+        assertTrue(result is FillTransitionResult.Invalid)
+        assertEquals("CANCEL_REQUESTED_PARTIAL_FILL", (result as FillTransitionResult.Invalid).reason.name)
+    }
+
+    @Test
     fun `취소와 거부는 남은 수량을 terminated 항으로 이동한다`() {
         listOf(
             FillExecutionType.CANCELLED to OrderFillStatus.CANCELLED,
@@ -225,6 +247,20 @@ class OrderFillDomainTest {
         assertThrows<IllegalArgumentException> {
             OrderFillAggregation.nextAveragePrice(0, null, 0, 100)
         }
+    }
+
+    @Test
+    fun `세 번의 단위 체결은 정수 평균에서 버려진 notional 나머지를 보존한다`() {
+        var current = state()
+        listOf(
+            observation(FillExecutionType.PARTIAL_FILL, 1, 1, 1, 9),
+            observation(FillExecutionType.PARTIAL_FILL, 1, 2, 2, 8),
+            observation(FillExecutionType.PARTIAL_FILL, 1, 3, 3, 7),
+        ).forEach { fill ->
+            current = (OrderFillTransition.apply(current, fill) as FillTransitionResult.Applied).next
+        }
+
+        assertEquals(2, current.averageFillPriceKrw)
     }
 
     @Test

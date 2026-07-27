@@ -19,6 +19,7 @@ dependencies = [
 ]
 
 [project.scripts]
+# S3-online KIS_MOCK runtime entrypoints are included in the S1.4X dependency reference lock.
 kis-backfill = "app.data.kis.backfill_cli:main"
 kis-data-quality-report = "app.data.quality.cli:main"
 kis-universe-refresh = "app.data.kis.universe_refresh_cli:main"

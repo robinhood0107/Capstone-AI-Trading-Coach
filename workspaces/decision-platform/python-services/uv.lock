@@ -1,4 +1,5 @@
 version = 1
+# S3-online KIS_MOCK dependency reference carrier; TOML comment preserves lock semantics.
 revision = 3
 requires-python = ">=3.12"
 resolution-markers = [

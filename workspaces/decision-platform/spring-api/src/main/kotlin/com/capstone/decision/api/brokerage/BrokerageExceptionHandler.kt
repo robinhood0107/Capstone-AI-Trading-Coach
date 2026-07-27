@@ -11,6 +11,8 @@ import com.capstone.decision.application.brokerage.BrokerageOrderNotFoundExcepti
 import com.capstone.decision.application.brokerage.BrokerageUnavailableException
 import com.capstone.decision.application.brokerage.BrokerageValidationException
 import com.capstone.decision.application.brokerage.DecisionExpiredException
+import com.capstone.decision.application.brokerage.paper.PaperDataStaleException
+import com.capstone.decision.application.brokerage.paper.PaperIdempotencyInProgressException
 import com.capstone.decision.application.risk.KillSwitchBlockedException
 import com.capstone.decision.application.risk.KillSwitchUnavailableException
 import jakarta.servlet.http.HttpServletRequest
@@ -18,7 +20,7 @@ import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
 
-@RestControllerAdvice(assignableTypes = [BrokerageController::class])
+@RestControllerAdvice(assignableTypes = [BrokerageController::class, PaperBrokerageController::class])
 class BrokerageExceptionHandler {
     @ExceptionHandler(BrokerageValidationException::class)
     fun handleValidation(
@@ -47,6 +49,13 @@ class BrokerageExceptionHandler {
     @ExceptionHandler(BrokerageIdempotencyConflictException::class)
     fun handleIdempotencyConflict(request: HttpServletRequest): ResponseEntity<ApiResponse<Nothing>> =
         error(request, ErrorCode.IDEMPOTENCY_CONFLICT)
+
+    @ExceptionHandler(PaperIdempotencyInProgressException::class)
+    fun handleIdempotencyInProgress(request: HttpServletRequest): ResponseEntity<ApiResponse<Nothing>> =
+        error(request, ErrorCode.IDEMPOTENCY_IN_PROGRESS)
+
+    @ExceptionHandler(PaperDataStaleException::class)
+    fun handleDataStale(request: HttpServletRequest): ResponseEntity<ApiResponse<Nothing>> = error(request, ErrorCode.DATA_STALE)
 
     @ExceptionHandler(KillSwitchBlockedException::class)
     fun handleRiskBlocked(request: HttpServletRequest): ResponseEntity<ApiResponse<Nothing>> = error(request, ErrorCode.RISK_BLOCKED)

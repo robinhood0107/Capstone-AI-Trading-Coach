@@ -24,6 +24,7 @@ from contracts.generate_s2_3_contracts import (
     CATALOG_PATH as S23_CATALOG_PATH,
 )
 from contracts.normalize_openapi import (
+    S32_CATALOG_PATH,
     OpenApiNormalizationError,
     check_normalized_openapi,
     normalize_generated_openapi,
@@ -425,6 +426,7 @@ class OpenApiNormalizerTest(unittest.TestCase):
         self.catalog_bytes = canonical_json_bytes(load_catalog(CATALOG_PATH))
         self.digest = hashlib.sha256(self.catalog_bytes).hexdigest()
         self.s23_digest = hashlib.sha256(S23_CATALOG_PATH.read_bytes()).hexdigest()
+        self.s32_digest = hashlib.sha256(S32_CATALOG_PATH.read_bytes()).hexdigest()
         self.generated = {
             "openapi": "3.1.0",
             "jsonSchemaDialect": "https://spec.openapis.org/oas/3.1/dialect/base",
@@ -432,6 +434,8 @@ class OpenApiNormalizerTest(unittest.TestCase):
             "x-s2-1-contract-sha256": self.digest,
             "x-s2-3-contract-id": "s2-3-decision-contract/v1",
             "x-s2-3-contract-sha256": self.s23_digest,
+            "x-s3-2-contract-id": "s3-2-internal-paper-contract/v1",
+            "x-s3-2-contract-sha256": self.s32_digest,
             "info": {"title": "Decision Platform API", "version": "0"},
             "paths": {
                 "/api/v1/auth/login": {
@@ -471,6 +475,8 @@ class OpenApiNormalizerTest(unittest.TestCase):
         }
         implementation["paths"].update(self._decision_paths())
         implementation["components"]["schemas"].update(self._decision_components())
+        implementation["paths"].update(self._s32_paths())
+        implementation["components"]["schemas"].update(self._s32_components())
 
         normalized = normalize_generated_openapi(
             canonical_json_bytes(implementation),
@@ -486,6 +492,8 @@ class OpenApiNormalizerTest(unittest.TestCase):
         implementation = copy.deepcopy(self.generated)
         implementation["paths"].update(self._decision_paths())
         implementation["components"]["schemas"].update(self._decision_components())
+        implementation["paths"].update(self._s32_paths())
+        implementation["components"]["schemas"].update(self._s32_components())
 
         normalized = normalize_generated_openapi(
             canonical_json_bytes(implementation),
@@ -564,6 +572,107 @@ class OpenApiNormalizerTest(unittest.TestCase):
             "S23DecisionSuccessResponse": {"type": "object"},
             "S23DecisionAudit": {"type": "object"},
             "S23DecisionAuditSuccessResponse": {"type": "object"},
+        }
+
+    def test_implementation_mode_accepts_only_the_exact_s32_paths_and_components(
+        self,
+    ) -> None:
+        implementation = copy.deepcopy(self.generated)
+        implementation["paths"].update(self._decision_paths())
+        implementation["components"]["schemas"].update(self._decision_components())
+        implementation["paths"].update(self._s32_paths())
+        implementation["components"]["schemas"].update(self._s32_components())
+
+        normalized = normalize_generated_openapi(
+            canonical_json_bytes(implementation),
+            self.catalog_bytes,
+            amendment=False,
+        )
+        self.assertIn(b"/api/v1/brokerage/paper/orders", normalized)
+
+        mutations = []
+        missing = copy.deepcopy(implementation)
+        del missing["paths"]["/api/v1/brokerage/paper/accounts/{accountId}/balances"]
+        mutations.append(missing)
+        extra = copy.deepcopy(implementation)
+        extra["paths"]["/api/v1/brokerage/paper/accounts/{accountId}/positions"] = {
+            "get": {"responses": {"200": {"description": "Unapproved paper route"}}}
+        }
+        mutations.append(extra)
+        wrong_method = copy.deepcopy(implementation)
+        wrong_method["paths"]["/api/v1/brokerage/paper/orders"]["get"] = {
+            "responses": {"200": {"description": "Unapproved method"}}
+        }
+        mutations.append(wrong_method)
+        missing_component = copy.deepcopy(implementation)
+        del missing_component["components"]["schemas"]["S32PaperOrder"]
+        mutations.append(missing_component)
+        extra_component = copy.deepcopy(implementation)
+        extra_component["components"]["schemas"]["S32Unapproved"] = {
+            "type": "object"
+        }
+        mutations.append(extra_component)
+        wrong_digest = copy.deepcopy(implementation)
+        wrong_digest["x-s3-2-contract-sha256"] = "0" * 64
+        mutations.append(wrong_digest)
+
+        for mutation in mutations:
+            with self.subTest(mutation=hashlib.sha256(repr(mutation).encode()).hexdigest()):
+                with self.assertRaises(OpenApiNormalizationError):
+                    normalize_generated_openapi(
+                        canonical_json_bytes(mutation),
+                        self.catalog_bytes,
+                        amendment=False,
+                    )
+
+    @staticmethod
+    def _s32_paths() -> dict[str, object]:
+        order_id_parameter = {
+            "name": "orderId",
+            "in": "path",
+            "required": True,
+            "schema": {"type": "string"},
+        }
+        account_id_parameter = {
+            "name": "accountId",
+            "in": "path",
+            "required": True,
+            "schema": {"type": "string"},
+        }
+        return {
+            "/api/v1/brokerage/paper/orders": {
+                "post": {"responses": {"200": {"description": "Paper order"}}}
+            },
+            "/api/v1/brokerage/paper/accounts/{accountId}/balances": {
+                "parameters": [account_id_parameter],
+                "get": {"responses": {"200": {"description": "Paper balance"}}},
+            },
+            "/api/v1/brokerage/paper/accounts/{accountId}/buyable": {
+                "parameters": [account_id_parameter],
+                "get": {"responses": {"200": {"description": "Paper buyable"}}},
+            },
+            "/api/v1/brokerage/orders/{orderId}": {
+                "parameters": [order_id_parameter],
+                "get": {"responses": {"200": {"description": "Order detail"}}},
+            },
+            "/api/v1/brokerage/orders/{orderId}/cancel": {
+                "parameters": [order_id_parameter],
+                "post": {"responses": {"200": {"description": "Cancelled order"}}},
+            },
+        }
+
+    @staticmethod
+    def _s32_components() -> dict[str, object]:
+        return {
+            "S32PaperOrderRequest": {"type": "object"},
+            "S32PaperOrder": {"type": "object"},
+            "S32OrderDetail": {"type": "object"},
+            "S32PaperBalance": {"type": "object"},
+            "S32PaperBuyable": {"type": "object"},
+            "S32PaperOrderSuccessResponse": {"type": "object"},
+            "S32OrderDetailSuccessResponse": {"type": "object"},
+            "S32PaperBalanceSuccessResponse": {"type": "object"},
+            "S32PaperBuyableSuccessResponse": {"type": "object"},
         }
 
     def test_dialect_paths_components_and_digest_mutations_fail_closed(self) -> None:

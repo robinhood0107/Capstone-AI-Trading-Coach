@@ -1,0 +1,10 @@
+{
+  "accountId": "acct_cccccccccccccccccccccccccccccccc",
+  "asOf": "2026-07-27T01:10:01Z",
+  "brokerageMode": "INTERNAL_PAPER",
+  "buyableAmountKrw": 9216000,
+  "buyableQuantity": 128,
+  "cashKrw": 9279640,
+  "estimatedPrice": 72000,
+  "symbol": "005930"
+}

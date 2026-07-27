@@ -124,6 +124,23 @@ class StreamingTransport(httpx.BaseTransport):
         return httpx.Response(200, stream=self.stream, request=request)
 
 
+class RecordingLimiter:
+    def __init__(self) -> None:
+        self.acquire_calls = 0
+
+    def acquire(self) -> None:
+        self.acquire_calls += 1
+
+
+class NoSendTransport:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        self.calls += 1
+        return httpx.Response(200, json={"rt_cd": "0"}, request=request)
+
+
 def test_mock_cash_order_maps_buy_sell_tr_ids_and_does_not_retry() -> None:
     transport = FakeTransport()
     gateway = KISMockOrderGateway(transport, mode="mock")
@@ -476,6 +493,50 @@ def test_private_online_transport_exposes_only_bounded_provider_rejection_code(
     assert provider_message not in repr(captured.value)
 
 
+def test_exhausted_brokerage_cap_rejects_before_shared_limiter_or_provider(
+    tmp_path: Path,
+) -> None:
+    online = importlib.import_module("app.brokerage.kis_mock_online_client")
+    limiter = RecordingLimiter()
+    sender = NoSendTransport()
+    client = online.KISMockBrokerageHttpClient(
+        settings=online.KISSettings(
+            kis_mode="mock",
+            kis_offline=True,
+            kis_data_dir=tmp_path,
+            _env_file=None,
+        ),
+        account_number=SecretStr("00000000-01"),
+        transport=httpx.MockTransport(sender),
+        rate_limiter=limiter,  # type: ignore[arg-type]
+        budget=online.KISBrokerageCallBudget(token_p_cap=0, brokerage_cap=0),
+    )
+    try:
+        with pytest.raises(online.KISBrokerageCallBudgetExceeded):
+            client.request(
+                "GET",
+                online.BALANCE_PATH,
+                online.MOCK_BALANCE_TR_ID,
+                params={
+                    "AFHR_FLPR_YN": "N",
+                    "OFL_YN": "",
+                    "INQR_DVSN": "02",
+                    "UNPR_DVSN": "01",
+                    "FUND_STTL_ICLD_YN": "N",
+                    "FNCG_AMT_AUTO_RDPT_YN": "N",
+                    "PRCS_DVSN": "00",
+                    "CTX_AREA_FK100": "",
+                    "CTX_AREA_NK100": "",
+                },
+            )
+    finally:
+        client.close()
+
+    assert limiter.acquire_calls == 0
+    assert sender.calls == 0
+    assert client._budget.counts["brokerage"] == 0  # noqa: SLF001
+
+
 def test_encrypted_reference_store_never_persists_provider_reference_plaintext() -> None:
     reference = importlib.import_module("app.brokerage.mock_order_reference_store")
     redis_client = fakeredis.FakeRedis()
@@ -522,3 +583,47 @@ def test_encrypted_reference_store_never_persists_provider_reference_plaintext()
     ) + b" ".join(redis_client.mget(list(redis_client.scan_iter())))
     assert provider_order_no.encode() not in persisted
     assert provider_org_no.encode() not in persisted
+
+
+def test_pending_reference_can_commit_after_store_restart() -> None:
+    reference = importlib.import_module("app.brokerage.mock_order_reference_store")
+    redis_client = fakeredis.FakeRedis()
+    encryption_key = SecretStr("MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA=")
+    first_store = reference.EncryptedRedisOrderReferenceStore(
+        redis_client,
+        encryption_key=encryption_key,
+        ttl_seconds=900,
+    )
+    order_id = "ord_mock_" + "c" * 32
+    account_id = "acct_" + "d" * 32
+
+    first_store.prepare(
+        order_id,
+        account_id,
+        reference.MockOrderReferenceIntent(
+            order_division="00",
+            quantity=1,
+        ),
+    )
+    del first_store
+
+    restarted_store = reference.EncryptedRedisOrderReferenceStore(
+        redis_client,
+        encryption_key=encryption_key,
+        ttl_seconds=900,
+    )
+    restarted_store.commit(
+        order_id,
+        account_id,
+        reference.MockProviderOrderReference(
+            provider_order_no="synthetic-provider-order",
+            provider_org_no="synthetic-provider-org",
+            order_division="00",
+            quantity=1,
+        ),
+    )
+
+    restored = restarted_store.get(order_id, account_id)
+    assert restored is not None
+    assert restored.provider_order_no == "synthetic-provider-order"
+    assert restarted_store.state(order_id, account_id) == "COMMITTED"

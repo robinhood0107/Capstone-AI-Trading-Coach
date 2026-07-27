@@ -427,6 +427,12 @@ class OpenApiNormalizerTest(unittest.TestCase):
         self.digest = hashlib.sha256(self.catalog_bytes).hexdigest()
         self.s23_digest = hashlib.sha256(S23_CATALOG_PATH.read_bytes()).hexdigest()
         self.s32_digest = hashlib.sha256(S32_CATALOG_PATH.read_bytes()).hexdigest()
+        self.s33_digest = hashlib.sha256(
+            (
+                Path(__file__).resolve().parents[2]
+                / "contracts/catalogs/s3-3-fill-contract.v1.json"
+            ).read_bytes()
+        ).hexdigest()
         self.generated = {
             "openapi": "3.1.0",
             "jsonSchemaDialect": "https://spec.openapis.org/oas/3.1/dialect/base",
@@ -436,6 +442,8 @@ class OpenApiNormalizerTest(unittest.TestCase):
             "x-s2-3-contract-sha256": self.s23_digest,
             "x-s3-2-contract-id": "s3-2-internal-paper-contract/v1",
             "x-s3-2-contract-sha256": self.s32_digest,
+            "x-s3-3-contract-id": "s3-3-fill-contract/v1",
+            "x-s3-3-contract-sha256": self.s33_digest,
             "info": {"title": "Decision Platform API", "version": "0"},
             "paths": {
                 "/api/v1/auth/login": {
@@ -477,6 +485,8 @@ class OpenApiNormalizerTest(unittest.TestCase):
         implementation["components"]["schemas"].update(self._decision_components())
         implementation["paths"].update(self._s32_paths())
         implementation["components"]["schemas"].update(self._s32_components())
+        implementation["paths"].update(self._s33_paths())
+        implementation["components"]["schemas"].update(self._s33_components())
 
         normalized = normalize_generated_openapi(
             canonical_json_bytes(implementation),
@@ -494,6 +504,8 @@ class OpenApiNormalizerTest(unittest.TestCase):
         implementation["components"]["schemas"].update(self._decision_components())
         implementation["paths"].update(self._s32_paths())
         implementation["components"]["schemas"].update(self._s32_components())
+        implementation["paths"].update(self._s33_paths())
+        implementation["components"]["schemas"].update(self._s33_components())
 
         normalized = normalize_generated_openapi(
             canonical_json_bytes(implementation),
@@ -582,6 +594,8 @@ class OpenApiNormalizerTest(unittest.TestCase):
         implementation["components"]["schemas"].update(self._decision_components())
         implementation["paths"].update(self._s32_paths())
         implementation["components"]["schemas"].update(self._s32_components())
+        implementation["paths"].update(self._s33_paths())
+        implementation["components"]["schemas"].update(self._s33_components())
 
         normalized = normalize_generated_openapi(
             canonical_json_bytes(implementation),
@@ -673,6 +687,100 @@ class OpenApiNormalizerTest(unittest.TestCase):
             "S32OrderDetailSuccessResponse": {"type": "object"},
             "S32PaperBalanceSuccessResponse": {"type": "object"},
             "S32PaperBuyableSuccessResponse": {"type": "object"},
+        }
+
+    def test_implementation_mode_accepts_only_exact_s33_paths_components_and_digest(
+        self,
+    ) -> None:
+        implementation = copy.deepcopy(self.generated)
+        implementation["paths"].update(self._decision_paths())
+        implementation["components"]["schemas"].update(self._decision_components())
+        implementation["paths"].update(self._s32_paths())
+        implementation["components"]["schemas"].update(self._s32_components())
+        implementation["paths"].update(self._s33_paths())
+        implementation["components"]["schemas"].update(self._s33_components())
+
+        normalized = normalize_generated_openapi(
+            canonical_json_bytes(implementation),
+            self.catalog_bytes,
+            amendment=False,
+        )
+        self.assertIn(b"/api/v1/brokerage/orders/{orderId}/reconcile", normalized)
+
+        mutations = []
+        missing = copy.deepcopy(implementation)
+        del missing["paths"]["/api/v1/brokerage/mock/accounts/{accountId}/fills"]
+        mutations.append(missing)
+        public_report = copy.deepcopy(implementation)
+        public_report["paths"]["/api/v1/brokerage/orders/{orderId}/report-fill"] = {
+            "post": {"responses": {"200": {"description": "Unapproved fill claim"}}}
+        }
+        mutations.append(public_report)
+        wrong_method = copy.deepcopy(implementation)
+        wrong_method["paths"]["/api/v1/brokerage/orders/{orderId}/reconcile"]["get"] = {
+            "responses": {"200": {"description": "Unapproved method"}}
+        }
+        mutations.append(wrong_method)
+        missing_component = copy.deepcopy(implementation)
+        del missing_component["components"]["schemas"]["S33FillPage"]
+        mutations.append(missing_component)
+        extra_component = copy.deepcopy(implementation)
+        extra_component["components"]["schemas"]["S33RawObservation"] = {
+            "type": "object"
+        }
+        mutations.append(extra_component)
+        wrong_digest = copy.deepcopy(implementation)
+        wrong_digest["x-s3-3-contract-sha256"] = "0" * 64
+        mutations.append(wrong_digest)
+
+        for mutation in mutations:
+            with self.subTest(
+                mutation=hashlib.sha256(repr(mutation).encode()).hexdigest()
+            ):
+                with self.assertRaises(OpenApiNormalizationError):
+                    normalize_generated_openapi(
+                        canonical_json_bytes(mutation),
+                        self.catalog_bytes,
+                        amendment=False,
+                    )
+
+    @staticmethod
+    def _s33_paths() -> dict[str, object]:
+        order_id_parameter = {
+            "name": "orderId",
+            "in": "path",
+            "required": True,
+            "schema": {"type": "string"},
+        }
+        account_id_parameter = {
+            "name": "accountId",
+            "in": "path",
+            "required": True,
+            "schema": {"type": "string"},
+        }
+        return {
+            "/api/v1/brokerage/orders/{orderId}/reconcile": {
+                "parameters": [order_id_parameter],
+                "post": {"responses": {"200": {"description": "Reconciliation"}}},
+            },
+            "/api/v1/brokerage/mock/accounts/{accountId}/fills": {
+                "parameters": [account_id_parameter],
+                "get": {"responses": {"200": {"description": "Mock fills"}}},
+            },
+            "/api/v1/brokerage/paper/accounts/{accountId}/fills": {
+                "parameters": [account_id_parameter],
+                "get": {"responses": {"200": {"description": "Paper fills"}}},
+            },
+        }
+
+    @staticmethod
+    def _s33_components() -> dict[str, object]:
+        return {
+            "S33FillObservation": {"type": "object"},
+            "S33Reconcile": {"type": "object"},
+            "S33FillPage": {"type": "object"},
+            "S33ReconcileSuccessResponse": {"type": "object"},
+            "S33FillPageSuccessResponse": {"type": "object"},
         }
 
     def test_dialect_paths_components_and_digest_mutations_fail_closed(self) -> None:

@@ -460,6 +460,59 @@ def test_balance_probe_operation_uses_source_shape_probe_not_complete_balance(
     assert calls == [packet.order.account_id]
 
 
+def test_execution_probe_operation_uses_source_shape_probe_not_strict_reconciliation(
+    secure_tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    packet_path, packet_sha = _write_packet(secure_tmp_path)
+    monkeypatch.setattr(probe, "_git_revision", lambda _root, _ref: "a" * 40)
+    packet = probe._load_packet(
+        packet_path,
+        now=datetime(2030, 1, 2, 3, 10, tzinfo=UTC),
+        expected_approval_id="approval-s3-online-test",
+        expected_packet_sha256=packet_sha,
+        repository_root=secure_tmp_path,
+    )
+    reference = object()
+    calls: list[tuple[object, object, object, bool]] = []
+
+    class SourceExecutionReader:
+        def read(self, **_kwargs: object) -> None:
+            raise AssertionError("strict execution reconciliation must not gate probe")
+
+        def probe_execution_source(self, **kwargs: object) -> object:
+            calls.append(
+                (
+                    kwargs["reference"],
+                    kwargs["start"],
+                    kwargs["end"],
+                    kwargs["recent"],
+                )
+            )
+            return object()
+
+    class SourceReferenceStore:
+        def get(self, order_id: str, account_id: str) -> object | None:
+            assert order_id == packet.order.order_id
+            assert account_id == packet.order.account_id
+            return reference
+
+    operations = object.__new__(probe._KISMockProbeOperations)
+    operations._reference_store = SourceReferenceStore()
+    operations._execution_reader = SourceExecutionReader()
+
+    operations.run("executionRead", packet)
+
+    assert calls == [
+        (
+            reference,
+            packet.execution.start,
+            packet.execution.end,
+            packet.execution.recent,
+        )
+    ]
+
+
 def test_balance_diagnostic_packet_rejects_full_probe_cap_before_runtime(
     secure_tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

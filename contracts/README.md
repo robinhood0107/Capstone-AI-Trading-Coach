@@ -260,6 +260,8 @@ online 1회 검증은 최종 HEAD/PR #55 CI/fresh security report/Redis baseline
 `balance -> buyable -> LIMIT BUY 1주 -> 전량 취소 -> 최근 체결조회`를 cap
 `tokenP=1`, `brokerage=5`, retry/artifact 0으로 실행한다. 이 packet은 gRPC server 상시
 활성화, background polling, S3.3 fill append, KIS_LIVE 계좌·주문 권한을 승인하지 않는다.
+마지막 체결조회는 source-shape/readability 진단이며, 낮은 지정가 주문을 즉시 취소해 해당 주문
+row가 아직 없더라도 public fill이나 대사 snapshot을 합성하지 않는다.
 구현·fixture·OpenAPI·일반 테스트의 provider physical call은 0건이다.
 
 재현 명령:
@@ -369,8 +371,9 @@ page size 50, `(filledAt DESC, orderId DESC, execRefHash DESC)` 정렬과 owner/
 
 S3-online은 공통 주문 상태에 provider outcome 복구용 `PENDING_RECONCILIATION`을 additive하게
 추가하되 mode/status schema는 이 상태를 KIS_MOCK에만 허용한다. 이는
-`MATCHED | MISMATCH` 대사 판정과 별개다. 체결조회 strict parser는 exact 5단계 approval
-probe의 마지막 read에서만 사용할 수 있으며 background polling, scheduler,
+`MATCHED | MISMATCH` 대사 판정과 별개다. 체결조회 strict parser는 provider order row가 정확히
+하나 있을 때만 대사 snapshot을 만들고, exact 5단계 approval probe의 마지막 read는 bounded
+source-shape만 확인한다. 둘 다 background polling, scheduler,
 `decision_fill_writer` append 또는 자동 DB fill 반영은 없다.
 
 재현 명령:

@@ -460,6 +460,73 @@ def test_balance_probe_operation_uses_source_shape_probe_not_complete_balance(
     assert calls == [packet.order.account_id]
 
 
+def test_full_probe_uses_packet_order_division_for_buyable_and_submit(
+    secure_tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    packet_path, _ = _write_packet(secure_tmp_path)
+    packet_sha = _rewrite_packet(packet_path, ("order", "orderDivision"), "07")
+    monkeypatch.setattr(probe, "_git_revision", lambda _root, _ref: "a" * 40)
+    packet = probe._load_packet(
+        packet_path,
+        now=datetime(2030, 1, 2, 3, 10, tzinfo=UTC),
+        expected_approval_id="approval-s3-online-test",
+        expected_packet_sha256=packet_sha,
+        repository_root=secure_tmp_path,
+    )
+    buyable_calls: list[tuple[str, str, int, str]] = []
+    submit_order_divisions: list[str | None] = []
+
+    class SourceBalance:
+        def buyable(
+            self,
+            account_id: str,
+            symbol: str,
+            limit_price_krw: int,
+            order_division: str,
+        ) -> object:
+            buyable_calls.append((account_id, symbol, limit_price_krw, order_division))
+            return type(
+                "Buyable",
+                (),
+                {
+                    "account_id": account_id,
+                    "buyable_quantity": 1,
+                    "buyable_amount_krw": limit_price_krw,
+                },
+            )()
+
+    class SourceGateway:
+        def submit_cash_order(
+            self,
+            intent: object,
+            *,
+            order_id: str | None = None,
+            account_id: str | None = None,
+        ) -> object:
+            assert order_id == packet.order.order_id
+            assert account_id == packet.order.account_id
+            submit_order_divisions.append(getattr(intent, "order_division"))
+            return type("Receipt", (), {"accepted": True})()
+
+    operations = object.__new__(probe._KISMockProbeOperations)
+    operations._balance_reader = SourceBalance()
+    operations._gateway = SourceGateway()
+
+    operations.run("buyable", packet)
+    operations.run("submitLimitBuy", packet)
+
+    assert buyable_calls == [
+        (
+            packet.order.account_id,
+            packet.order.symbol,
+            packet.order.limit_price_krw,
+            "07",
+        )
+    ]
+    assert submit_order_divisions == ["07"]
+
+
 def test_execution_probe_operation_uses_source_shape_probe_not_strict_reconciliation(
     secure_tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

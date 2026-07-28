@@ -241,6 +241,43 @@ def test_submit_reference_enables_exact_mock_cancel_without_exposing_live_tr_id(
     )
 
 
+def test_exact_probe_limit_order_division_flows_to_order_reference_and_cancel() -> None:
+    transport = FakeTransport(
+        response={
+            "rt_cd": "0",
+            "output": {
+                "ODNO": "synthetic-provider-order",
+                "KRX_FWDG_ORD_ORGNO": "synthetic-provider-org",
+            },
+        }
+    )
+    reference_store = FakeReferenceStore()
+    gateway = KISMockOrderGateway(
+        transport,
+        mode="mock",
+        reference_store=reference_store,  # type: ignore[arg-type]
+    )
+    order_id = "ord_mock_" + "9" * 32
+    account_id = "acct_" + "a" * 32
+
+    gateway.submit_cash_order(
+        MockOrderIntent(
+            "005930",
+            "BUY",
+            "LIMIT",
+            quantity=1,
+            estimated_price=70_000,
+            order_division="07",
+        ),
+        order_id=order_id,
+        account_id=account_id,
+    )
+    gateway.cancel_cash_order(order_id=order_id, account_id=account_id)
+
+    assert transport.calls[0][3]["ORD_DVSN"] == "07"
+    assert transport.calls[1][3]["ORD_DVSN"] == "07"
+
+
 def test_reference_prepare_failure_stops_before_provider_order_send() -> None:
     transport = FakeTransport()
     reference_store = FakeReferenceStore(fail_prepare=True)

@@ -55,6 +55,16 @@
     "orderDetail": "GET /api/v1/brokerage/orders/{orderId}",
     "submit": "POST /api/v1/brokerage/paper/orders"
   },
+  "sharedOrderStatuses": [
+    "ACCEPTED",
+    "CANCELLED",
+    "CANCEL_REQUESTED",
+    "FILLED",
+    "PARTIALLY_FILLED",
+    "PENDING_RECONCILIATION",
+    "REJECTED",
+    "SUBMITTED"
+  ],
   "slippageBpsDefault": 5,
   "slippageBpsMaximum": 100,
   "statuses": [

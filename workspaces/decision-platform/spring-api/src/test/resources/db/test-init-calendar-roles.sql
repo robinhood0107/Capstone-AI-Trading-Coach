@@ -19,6 +19,9 @@ CREATE ROLE decision_portfolio_writer
 CREATE ROLE decision_risk_writer
     LOGIN PASSWORD 'risk-writer-test'
     NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
+CREATE ROLE decision_fill_writer
+    LOGIN PASSWORD 'fill-writer-test'
+    NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
 CREATE ROLE flyway
     LOGIN PASSWORD 'flyway-test'
     NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
@@ -39,5 +42,6 @@ GRANT USAGE ON SCHEMA public TO
     decision_market_writer,
     decision_portfolio_writer,
     decision_risk_writer,
+    decision_fill_writer,
     flyway;
 GRANT CREATE ON SCHEMA public TO flyway;

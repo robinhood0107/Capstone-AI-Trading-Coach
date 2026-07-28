@@ -316,6 +316,7 @@ class OpenApiConfigIntegrationTest(
                 "/api/v1/brokerage/paper/orders",
                 "/api/v1/brokerage/paper/accounts/{accountId}/balances",
                 "/api/v1/brokerage/paper/accounts/{accountId}/buyable",
+                "/api/v1/brokerage/paper/accounts/{accountId}/fills",
             ),
             paperPaths,
         )
@@ -351,6 +352,110 @@ class OpenApiConfigIntegrationTest(
         )
         assertTrue(document.at("/paths/~1api~1v1~1brokerage~1paper~1accounts~1{accountId}/post").isMissingNode)
         assertTrue(document.at("/paths/~1api~1v1~1brokerage~1paper~1accounts~1{accountId}/delete").isMissingNode)
+    }
+
+    @Test
+    fun `openapi locks S3_3 routes digest and sanitized bounded schemas`() {
+        val document =
+            objectMapper.readTree(
+                mockMvc
+                    .get("/v3/api-docs")
+                    .andExpect {
+                        status { isOk() }
+                    }.andReturn()
+                    .response
+                    .contentAsByteArray,
+            )
+        val repositoryRoot = findRepositoryRoot()
+        val catalogBytes =
+            Files.readAllBytes(
+                repositoryRoot.resolve("contracts/catalogs/s3-3-fill-contract.v1.json"),
+            )
+        val expectedDigest =
+            HexFormat
+                .of()
+                .formatHex(MessageDigest.getInstance("SHA-256").digest(catalogBytes))
+
+        assertEquals("s3-3-fill-contract/v1", document.path("x-s3-3-contract-id").stringValue())
+        assertEquals(expectedDigest, document.path("x-s3-3-contract-sha256").stringValue())
+        assertEquals(
+            "#/components/schemas/S33ReconcileSuccessResponse",
+            document
+                .at(
+                    "/paths/~1api~1v1~1brokerage~1orders~1{orderId}~1reconcile/post/" +
+                        "responses/200/content/application~1json/schema/\$ref",
+                ).stringValue(),
+        )
+        val reconcile =
+            document.at(
+                "/paths/~1api~1v1~1brokerage~1orders~1{orderId}~1reconcile/post",
+            )
+        val idempotencyHeader =
+            reconcile
+                .path("parameters")
+                .values()
+                .first { it.path("name").stringValue() == "X-Idempotency-Key" }
+        assertEquals(true, idempotencyHeader.path("required").booleanValue())
+        assertEquals(16, idempotencyHeader.at("/schema/minLength").intValue())
+        assertEquals(128, idempotencyHeader.at("/schema/maxLength").intValue())
+        assertEquals(
+            "^[A-Za-z0-9._:-]{16,128}$",
+            idempotencyHeader.at("/schema/pattern").stringValue(),
+        )
+        val emptyBody = reconcile.at("/requestBody/content/application~1json/schema")
+        assertEquals("object", emptyBody.path("type").stringValue())
+        assertEquals(false, emptyBody.path("additionalProperties").booleanValue())
+        listOf("mock", "paper").forEach { mode ->
+            val fillGet =
+                document.at(
+                    "/paths/~1api~1v1~1brokerage~1$mode~1accounts~1{accountId}~1fills/get",
+                )
+            assertEquals(
+                "#/components/schemas/S33FillPageSuccessResponse",
+                fillGet
+                    .at("/responses/200/content/application~1json/schema/\$ref")
+                    .stringValue(),
+            )
+            val queryParameters =
+                fillGet
+                    .path("parameters")
+                    .values()
+                    .filter { it.path("in").stringValue() == "query" }
+                    .associateBy { it.path("name").stringValue() }
+            assertEquals(setOf("from", "to", "cursor"), queryParameters.keys)
+            listOf("from", "to").forEach { name ->
+                assertEquals(true, queryParameters.getValue(name).path("required").booleanValue())
+                assertEquals("string", queryParameters.getValue(name).at("/schema/type").stringValue())
+                assertEquals("date", queryParameters.getValue(name).at("/schema/format").stringValue())
+            }
+            val cursorRequired = queryParameters.getValue("cursor").path("required")
+            assertTrue(cursorRequired.isMissingNode || !cursorRequired.booleanValue())
+            assertEquals(1024, queryParameters.getValue("cursor").at("/schema/maxLength").intValue())
+        }
+        assertEquals(false, document.at("/components/schemas/S33Reconcile/additionalProperties").booleanValue())
+        assertEquals(50, document.at("/components/schemas/S33FillPage/properties/items/maxItems").intValue())
+        assertEquals(
+            setOf(
+                "S33FillObservation",
+                "S33Reconcile",
+                "S33FillPage",
+                "S33ReconcileSuccessResponse",
+                "S33FillPageSuccessResponse",
+            ),
+            document
+                .at("/components/schemas")
+                .propertyNames()
+                .asSequence()
+                .filter { it.startsWith("S33") }
+                .toSet(),
+        )
+        assertTrue(
+            document
+                .at("/paths")
+                .propertyNames()
+                .asSequence()
+                .none { "report-fill" in it || "fill-observation" in it },
+        )
     }
 
     private fun findRepositoryRoot(): Path {

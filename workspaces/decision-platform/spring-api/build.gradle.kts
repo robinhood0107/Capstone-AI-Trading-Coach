@@ -189,6 +189,19 @@ tasks.named<ProcessResources>("processResources") {
     from(layout.projectDirectory.file("../../../contracts/schemas/s3-2-paper-buyable.schema.json")) {
         into("contracts")
     }
+    // S3.3 체결 관측·대사·owner 조회도 generator의 canonical bytes만 사용한다.
+    from(layout.projectDirectory.file("../../../contracts/catalogs/s3-3-fill-contract.v1.json")) {
+        into("contracts")
+    }
+    from(layout.projectDirectory.file("../../../contracts/schemas/s3-3-fill-observation.schema.json")) {
+        into("contracts")
+    }
+    from(layout.projectDirectory.file("../../../contracts/schemas/s3-3-reconcile-response.schema.json")) {
+        into("contracts")
+    }
+    from(layout.projectDirectory.file("../../../contracts/schemas/s3-3-fill-page.schema.json")) {
+        into("contracts")
+    }
 }
 
 tasks.named<ProcessResources>("processTestResources") {
@@ -347,6 +360,49 @@ val verifyS32ContractResources by tasks.registering {
     }
 }
 
+val verifyS33ContractResources by tasks.registering {
+    group = "verification"
+    description = "S3.3 fill observation/reconciliation OpenAPI schema의 exact byte equality를 검증한다."
+    dependsOn(tasks.named("processResources"))
+
+    doLast {
+        listOf(
+            "catalogs/s3-3-fill-contract.v1.json" to "s3-3-fill-contract.v1.json",
+        ).forEach { (sourceRelative, copiedName) ->
+            val source =
+                layout.projectDirectory
+                    .file("../../../contracts/$sourceRelative")
+                    .asFile
+            val copied =
+                layout.buildDirectory
+                    .file("resources/main/contracts/$copiedName")
+                    .get()
+                    .asFile
+            check(copied.isFile && source.readBytes().contentEquals(copied.readBytes())) {
+                "S3.3 contract resource $copiedName must be an exact canonical byte copy."
+            }
+        }
+        listOf(
+            "s3-3-fill-observation.schema.json",
+            "s3-3-reconcile-response.schema.json",
+            "s3-3-fill-page.schema.json",
+        ).forEach { fileName ->
+            val source =
+                layout.projectDirectory
+                    .file("../../../contracts/schemas/$fileName")
+                    .asFile
+            val copied =
+                layout.buildDirectory
+                    .file("resources/main/contracts/$fileName")
+                    .get()
+                    .asFile
+            check(copied.isFile && source.readBytes().contentEquals(copied.readBytes())) {
+                "S3.3 contract resource $fileName must be an exact canonical byte copy."
+            }
+        }
+    }
+}
+
 openApi {
     apiDocsUrl.set("http://127.0.0.1:18080/v3/api-docs")
     outputDir.set(layout.buildDirectory)
@@ -460,4 +516,5 @@ tasks.named("check") {
     dependsOn(verifyS24ContractResources)
     dependsOn(verifyS31ContractResources)
     dependsOn(verifyS32ContractResources)
+    dependsOn(verifyS33ContractResources)
 }

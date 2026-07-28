@@ -78,17 +78,23 @@ cd workspaces/decision-platform/spring-api
 ```
 
 PostgreSQL runtime은 `decision_app`, S1.6 수집은 `decision_collector`, sanitized source append는
-`decision_market_writer`/`decision_portfolio_writer`/`decision_risk_writer`, migration은 `flyway`,
-bootstrap 관리는 `POSTGRES_ADMIN_USER`로 분리된다. 기존 `pgdata` volume에는 init script가
-자동 재실행되지 않으므로, 기존 관리자 이름/비밀번호를 보존하고 `.env.example`의 collector와
-세 source-writer password를 추가해 컨테이너를 올린 뒤 다음 명령을 한 번 실행한다. V6/V9 적용
-전에는 role을 먼저 만들고, migration 뒤 재실행하면 현재 table의 exact 권한을 복원한다. volume
-삭제는 이 절차에 포함하지 않는다.
+`decision_market_writer`/`decision_portfolio_writer`/`decision_risk_writer`/
+`decision_fill_writer`, migration은 `flyway`, bootstrap 관리는 `POSTGRES_ADMIN_USER`로
+분리된다. 기존 `pgdata` volume에는 init script가 자동 재실행되지 않으므로, 기존 관리자
+이름/비밀번호를 보존하고 `.env.example`의 collector와 네 source-writer password를 추가해
+컨테이너를 올린 뒤 다음 명령을 한 번 실행한다. V6/V9/V14 적용 전에는 role을 먼저 만들고,
+migration 뒤 재실행하면 현재 table의 exact 권한을 복원한다. volume 삭제는 이 절차에 포함하지
+않는다. `decision_fill_writer`는 sanitized offline fill observation INSERT만 소유하며
+주문·이벤트·Flyway schema에는 접근하지 않는다.
 
 ```bash
 docker compose --env-file .env -f infra/docker-compose.infra.yml exec -T postgres \
   bash /docker-entrypoint-initdb.d/02-application-roles.sh
 ```
+
+role bootstrap은 password DDL 전에 session의 statement/error-statement/duration/sample logging을
+모두 끄고 `current_setting`으로 effective 값을 검증한다. 하나라도 안전값이 아니면
+`ON_ERROR_STOP`으로 password bind 전 중단한다.
 
 S1.6 OpenDART online collector는 `.env.example`의 네 quota 값을 운영 evidence에 맞게 모두
 명시해야 하지만, 설정만으로 활성화되지 않는다. 현재 구현은 offline fixture와 mock transport로만
@@ -107,4 +113,8 @@ S1.6 OpenDART online collector는 `.env.example`의 네 quota 값을 운영 evid
 - [S2.4 계약 변경 기록](contracts/changes/20260725-s2-4-risk-kill-switch-contract.md)
 - [S3.1 Brokerage Mock 주문 계약](contracts/README.md#s31-brokerage-mock-주문)
 - [S3.1 계약 변경 기록](contracts/changes/20260726-s3-1-brokerage-mock-contract.md)
+- [S3.2 INTERNAL_PAPER 원장 계약](contracts/README.md#s32-internal_paper-체결-원장)
+- [S3.2 계약 변경 기록](contracts/changes/20260727-s3-2-internal-paper-ledger-contract.md)
+- [S3.3 체결 이벤트와 대사 계약](contracts/README.md#s33-체결-이벤트와-대사)
+- [S3.3 계약 변경 기록](contracts/changes/20260727-s3-3-fill-events-reconciliation-contract.md)
 - S1.4X dependency amendment 재현: `workspaces/decision-platform/research/s1-4x-numeric-parity/README.md`

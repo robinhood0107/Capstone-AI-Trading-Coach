@@ -1,0 +1,163 @@
+{
+  "$id": "contracts/schemas/s3-3-fill-observation.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "observations": {
+      "items": {
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "else": {
+              "properties": {
+                "fillPriceKrw": {
+                  "type": "null"
+                },
+                "fillQuantity": {
+                  "const": 0
+                }
+              }
+            },
+            "if": {
+              "properties": {
+                "execType": {
+                  "enum": [
+                    "PARTIAL_FILL",
+                    "FILL"
+                  ]
+                }
+              },
+              "required": [
+                "execType"
+              ]
+            },
+            "then": {
+              "properties": {
+                "fillPriceKrw": {
+                  "maximum": 9223372036854775807,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "fillQuantity": {
+                  "maximum": 9223372036854775807,
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        ],
+        "properties": {
+          "averageFillPriceKrw": {
+            "oneOf": [
+              {
+                "maximum": 9223372036854775807,
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "completeness": {
+            "enum": [
+              "COMPLETE",
+              "PARTIAL"
+            ]
+          },
+          "cumulativeQuantity": {
+            "maximum": 9223372036854775807,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "execType": {
+            "enum": [
+              "CANCELLED",
+              "FILL",
+              "PARTIAL_FILL",
+              "REJECTED"
+            ]
+          },
+          "fillPriceKrw": {
+            "oneOf": [
+              {
+                "maximum": 9223372036854775807,
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "fillQuantity": {
+            "maximum": 9223372036854775807,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "leavesQuantity": {
+            "maximum": 9223372036854775807,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "observedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "orderId": {
+            "pattern": "^ord_mock_[0-9a-f]{32}$",
+            "type": "string"
+          },
+          "providerExecRefHash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "receivedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "sourceRef": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[0-9A-Za-z._:-]+$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "orderId",
+          "providerExecRefHash",
+          "execType",
+          "fillQuantity",
+          "fillPriceKrw",
+          "cumulativeQuantity",
+          "leavesQuantity",
+          "averageFillPriceKrw",
+          "observedAt",
+          "receivedAt",
+          "completeness",
+          "sourceRef"
+        ],
+        "type": "object"
+      },
+      "maxItems": 10000,
+      "minItems": 1,
+      "type": "array"
+    },
+    "schemaVersion": {
+      "const": "1"
+    },
+    "sourceVersion": {
+      "maxLength": 128,
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "sourceVersion",
+    "observations"
+  ],
+  "title": "S3.3 sanitized offline fill observation fixture v1",
+  "type": "object"
+}

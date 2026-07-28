@@ -21,6 +21,7 @@
     "status": {
       "enum": [
         "SUBMITTED",
+        "PENDING_RECONCILIATION",
         "ACCEPTED",
         "PARTIALLY_FILLED",
         "FILLED",

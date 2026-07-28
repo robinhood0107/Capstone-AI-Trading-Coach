@@ -1,0 +1,16 @@
+{
+  "accountId": "acct_cccccccccccccccccccccccccccccccc",
+  "appliedEventCount": 2,
+  "averageFillPriceKrw": 70000,
+  "brokerageMode": "KIS_MOCK",
+  "filledQuantity": 2,
+  "hasMore": false,
+  "leavesQuantity": 0,
+  "orderId": "ord_mock_0123456789abcdef0123456789abcdef",
+  "reconciliation": {
+    "checkedAt": "2030-01-02T00:00:20Z",
+    "status": "MATCHED"
+  },
+  "status": "FILLED",
+  "unfilledTerminatedQuantity": 0
+}

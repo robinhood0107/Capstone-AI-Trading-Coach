@@ -106,6 +106,15 @@ data class BrokerageOrderWriteRequest(
     val createdAt: Instant,
 )
 
+data class BrokerageProviderOutcomeRequest(
+    val actor: BrokerageActor,
+    val orderId: String,
+    val status: String,
+    val providerOrderRefHash: String?,
+    val trId: String?,
+    val receivedAt: Instant,
+)
+
 data class StoredMockBalance(
     val accountId: String,
     val accountScopeHash: String,

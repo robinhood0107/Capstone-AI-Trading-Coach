@@ -32,18 +32,28 @@ def test_repo_hygiene_supplies_required_collector_and_disclosure_reader_password
     assert "POSTGRES_DISCLOSURE_READER_PASSWORD: validation-dummy-disclosure-reader" in workflow
 
 
-def test_role_bootstrap_disables_statement_logging_before_password_ddl() -> None:
-    """password literal DDL은 bootstrap transaction의 statement log suppression 뒤에만 위치한다."""
+def test_role_bootstrap_disables_all_duration_and_statement_logging_before_password_ddl() -> None:
+    """password literal DDL 전에 session logging을 닫고 effective 값까지 fail-closed 검증한다."""
 
     script = (REPO_ROOT / "infra/init/02-application-roles.sh").read_text(
         encoding="utf-8"
     )
-    log_statement = script.index("SET LOCAL log_statement = 'none';")
-    log_error_statement = script.index("SET LOCAL log_min_error_statement = 'panic';")
+    begin = script.index("BEGIN;")
     first_password_ddl = script.index("PASSWORD %L")
+    settings = {
+        "log_statement": "'none'",
+        "log_min_error_statement": "'panic'",
+        "log_duration": "'off'",
+        "log_min_duration_statement": "-1",
+        "log_min_duration_sample": "-1",
+        "log_statement_sample_rate": "0",
+        "log_transaction_sample_rate": "0",
+    }
 
-    assert log_statement < first_password_ddl
-    assert log_error_statement < first_password_ddl
+    for setting, value in settings.items():
+        assert script.index(f"SET {setting} = {value};") < begin
+        assert script.index(f"current_setting('{setting}')") < first_password_ddl
+    assert "psql -v ON_ERROR_STOP=1" in script
 
 
 def test_collector_can_only_perform_allowlisted_calendar_operations(

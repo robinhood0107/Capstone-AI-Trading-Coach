@@ -10,6 +10,7 @@ set -Eeuo pipefail
 : "${POSTGRES_MARKET_WRITER_PASSWORD:?POSTGRES_MARKET_WRITER_PASSWORD is required}"
 : "${POSTGRES_PORTFOLIO_WRITER_PASSWORD:?POSTGRES_PORTFOLIO_WRITER_PASSWORD is required}"
 : "${POSTGRES_RISK_WRITER_PASSWORD:?POSTGRES_RISK_WRITER_PASSWORD is required}"
+: "${POSTGRES_FILL_WRITER_PASSWORD:?POSTGRES_FILL_WRITER_PASSWORD is required}"
 
 # psql argv나 shell-expanded SQL에 password를 넣지 않고 process environment에서 안전하게 인용한다.
 export PGPASSWORD="${POSTGRES_PASSWORD:-}"
@@ -22,12 +23,33 @@ psql -v ON_ERROR_STOP=1 --no-password --username "$POSTGRES_USER" --dbname "$POS
 \getenv market_writer_password POSTGRES_MARKET_WRITER_PASSWORD
 \getenv portfolio_writer_password POSTGRES_PORTFOLIO_WRITER_PASSWORD
 \getenv risk_writer_password POSTGRES_RISK_WRITER_PASSWORD
+\getenv fill_writer_password POSTGRES_FILL_WRITER_PASSWORD
+
+-- role password DDL 전에 session 전체의 statement·duration·sampling log를 닫는다.
+SET log_statement = 'none';
+SET log_min_error_statement = 'panic';
+SET log_duration = 'off';
+SET log_min_duration_statement = -1;
+SET log_min_duration_sample = -1;
+SET log_statement_sample_rate = 0;
+SET log_transaction_sample_rate = 0;
+
+-- 설정이 정책이나 버전 차이로 적용되지 않으면 password 변수를 서버에 보내기 전에 중단한다.
+DO $logging_guard$
+BEGIN
+    IF current_setting('log_statement') <> 'none'
+       OR current_setting('log_min_error_statement') <> 'panic'
+       OR current_setting('log_duration') <> 'off'
+       OR current_setting('log_min_duration_statement') <> '-1'
+       OR current_setting('log_min_duration_sample') <> '-1'
+       OR current_setting('log_statement_sample_rate')::numeric <> 0
+       OR current_setting('log_transaction_sample_rate')::numeric <> 0 THEN
+        RAISE EXCEPTION 'secure role bootstrap logging guard is unavailable';
+    END IF;
+END
+$logging_guard$;
 
 BEGIN;
-
--- role password DDL은 literalized SQL로 실행되므로 bootstrap transaction에서는 statement log를 닫는다.
-SET LOCAL log_statement = 'none';
-SET LOCAL log_min_error_statement = 'panic';
 
 SELECT format(
     'CREATE ROLE decision_app LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD %L',
@@ -128,6 +150,19 @@ SELECT format(
 )
 \gexec
 
+SELECT format(
+    'CREATE ROLE decision_fill_writer LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD %L',
+    :'fill_writer_password'
+)
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'decision_fill_writer')
+\gexec
+
+SELECT format(
+    'ALTER ROLE decision_fill_writer WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD %L',
+    :'fill_writer_password'
+)
+\gexec
+
 REVOKE ALL ON DATABASE :"database_name" FROM PUBLIC;
 GRANT CONNECT ON DATABASE :"database_name" TO
     decision_app,
@@ -136,6 +171,7 @@ GRANT CONNECT ON DATABASE :"database_name" TO
     decision_market_writer,
     decision_portfolio_writer,
     decision_risk_writer,
+    decision_fill_writer,
     flyway;
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 GRANT USAGE ON SCHEMA public TO
@@ -145,6 +181,7 @@ GRANT USAGE ON SCHEMA public TO
     decision_market_writer,
     decision_portfolio_writer,
     decision_risk_writer,
+    decision_fill_writer,
     flyway;
 GRANT CREATE ON SCHEMA public TO flyway;
 
@@ -162,6 +199,8 @@ REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_portfolio_wri
 REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_portfolio_writer;
 REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_risk_writer;
 REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_risk_writer;
+REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_fill_writer;
+REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_fill_writer;
 ALTER DEFAULT PRIVILEGES FOR ROLE flyway IN SCHEMA public
     REVOKE ALL PRIVILEGES ON TABLES FROM decision_app;
 ALTER DEFAULT PRIVILEGES FOR ROLE flyway IN SCHEMA public
@@ -176,6 +215,10 @@ ALTER DEFAULT PRIVILEGES FOR ROLE flyway IN SCHEMA public
     REVOKE ALL PRIVILEGES ON TABLES FROM decision_disclosure_reader;
 ALTER DEFAULT PRIVILEGES FOR ROLE flyway IN SCHEMA public
     REVOKE ALL PRIVILEGES ON SEQUENCES FROM decision_disclosure_reader;
+ALTER DEFAULT PRIVILEGES FOR ROLE flyway IN SCHEMA public
+    REVOKE ALL PRIVILEGES ON TABLES FROM decision_fill_writer;
+ALTER DEFAULT PRIVILEGES FOR ROLE flyway IN SCHEMA public
+    REVOKE ALL PRIVILEGES ON SEQUENCES FROM decision_fill_writer;
 
 DO $calendar_privileges$
 BEGIN
@@ -440,6 +483,36 @@ BEGIN
 END
 $decision_source_writer_privileges$;
 
+DO $fill_writer_privileges$
+BEGIN
+    IF to_regclass('public.order_fill_observations') IS NOT NULL THEN
+        REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public
+        FROM decision_fill_writer;
+        GRANT INSERT ON TABLE order_fill_observations
+        TO decision_fill_writer;
+        REVOKE UPDATE, DELETE, TRUNCATE ON TABLE order_fill_observations
+        FROM decision_fill_writer;
+        REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public
+        FROM decision_fill_writer;
+        REVOKE CREATE ON SCHEMA public FROM decision_fill_writer;
+
+        IF NOT EXISTS (
+            SELECT 1
+            FROM pg_policies
+            WHERE schemaname = 'public'
+              AND tablename = 'order_fill_observations'
+              AND policyname = 'order_fill_observations_writer_insert_policy'
+        ) THEN
+            CREATE POLICY order_fill_observations_writer_insert_policy
+              ON order_fill_observations
+              FOR INSERT
+              TO decision_fill_writer
+              WITH CHECK (true);
+        END IF;
+    END IF;
+END
+$fill_writer_privileges$;
+
 DO $block$
 BEGIN
     IF to_regclass('public.flyway_schema_history') IS NOT NULL THEN
@@ -447,6 +520,7 @@ BEGIN
         REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_app;
         REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_collector;
         REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_disclosure_reader;
+        REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_fill_writer;
     END IF;
 END
 $block$;

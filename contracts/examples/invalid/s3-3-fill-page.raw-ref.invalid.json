@@ -1,0 +1,17 @@
+{
+  "items": [
+    {
+      "brokerageMode": "KIS_MOCK",
+      "execRefHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "fillAmountKrw": 70000,
+      "fillPriceKrw": 70000,
+      "fillQuantity": 1,
+      "filledAt": "2030-01-02T00:00:10Z",
+      "orderId": "ord_mock_0123456789abcdef0123456789abcdef",
+      "providerExecRef": "provider-exec-raw",
+      "side": "BUY",
+      "symbol": "005930"
+    }
+  ],
+  "nextCursor": null
+}

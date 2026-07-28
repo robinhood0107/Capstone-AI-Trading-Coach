@@ -9,6 +9,7 @@ import com.capstone.decision.application.brokerage.BrokerageOrderNotFoundExcepti
 import com.capstone.decision.application.brokerage.BrokerageOrderPersistencePort
 import com.capstone.decision.application.brokerage.BrokerageOrderWriteRequest
 import com.capstone.decision.application.brokerage.BrokeragePersistenceReplayException
+import com.capstone.decision.application.brokerage.BrokerageProviderOutcomeRequest
 import com.capstone.decision.application.brokerage.BrokerageUnavailableException
 import com.capstone.decision.application.brokerage.BrokerageValidationException
 import com.capstone.decision.application.brokerage.DecisionExpiredException
@@ -126,6 +127,48 @@ class JdbcBrokerageOrderRepository(
                 throw BrokerageUnavailableException("Brokerage database security boundary rejected the request.")
             else -> throw BrokerageUnavailableException("Brokerage order function returned an unknown outcome.")
         }
+    }
+
+    @Transactional
+    override fun recordProviderOutcome(request: BrokerageProviderOutcomeRequest): OrderDetailProjection {
+        val result =
+            jdbc()
+                .query(
+                    """
+                    SELECT operation_outcome, order_id, account_id, brokerage_mode,
+                           status, submitted_at, decision_id
+                    FROM record_mock_order_provider_outcome(
+                      CAST(:payloadJson AS jsonb),
+                      :capabilityToken
+                    )
+                    """.trimIndent(),
+                    mapOf(
+                        "payloadJson" to providerOutcomePayload(request),
+                        "capabilityToken" to properties.databaseCapabilityToken,
+                    ),
+                ) { row, _ ->
+                    ProviderOutcomeFunctionResult(
+                        outcome = row.getString("operation_outcome"),
+                        orderId = row.getString("order_id"),
+                        accountId = row.getString("account_id"),
+                        brokerageMode = row.getString("brokerage_mode"),
+                        status = row.getString("status"),
+                        submittedAt = row.getObject("submitted_at", OffsetDateTime::class.java)?.toInstant(),
+                        decisionId = row.getString("decision_id"),
+                    )
+                }.singleOrNull()
+                ?: throw BrokerageUnavailableException("Brokerage provider outcome returned no result.")
+        if (result.outcome != "APPLIED") {
+            throw BrokerageUnavailableException("Brokerage provider outcome was rejected.")
+        }
+        return OrderDetailProjection(
+            orderId = requireNotNull(result.orderId),
+            accountId = requireNotNull(result.accountId),
+            brokerageMode = requireNotNull(result.brokerageMode),
+            status = requireNotNull(result.status),
+            submittedAt = requireNotNull(result.submittedAt),
+            decisionId = requireNotNull(result.decisionId),
+        )
     }
 
     override fun findOrderableDecisionAccountId(
@@ -452,6 +495,22 @@ class JdbcBrokerageOrderRepository(
             ),
         )
 
+    private fun providerOutcomePayload(request: BrokerageProviderOutcomeRequest): String =
+        objectMapper.writeValueAsString(
+            mapOf(
+                "actorUserId" to request.actor.userId,
+                "actorRole" to request.actor.role,
+                "securityVersion" to request.actor.securityVersion,
+                "requestId" to request.actor.requestId,
+                "orderId" to request.orderId,
+                "status" to request.status,
+                "providerOrderRefHash" to request.providerOrderRefHash,
+                "trId" to request.trId,
+                "receivedAt" to request.receivedAt.toString(),
+                "orderEventId" to id("oev"),
+            ),
+        )
+
     private fun parseBalancePositions(value: String): List<MockBalancePositionProjection> {
         val root = objectMapper.readTree(value)
         if (!root.isArray || root.size() > 1_000) {
@@ -504,6 +563,16 @@ class JdbcBrokerageOrderRepository(
     )
 
     private data class CancelOrderFunctionResult(
+        val outcome: String,
+        val orderId: String?,
+        val accountId: String?,
+        val brokerageMode: String?,
+        val status: String?,
+        val submittedAt: Instant?,
+        val decisionId: String?,
+    )
+
+    private data class ProviderOutcomeFunctionResult(
         val outcome: String,
         val orderId: String?,
         val accountId: String?,

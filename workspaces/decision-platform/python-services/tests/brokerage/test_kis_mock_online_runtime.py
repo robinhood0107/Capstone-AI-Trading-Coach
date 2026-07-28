@@ -326,6 +326,44 @@ def test_execution_probe_allows_sparse_matched_row_without_publish_snapshot() ->
         )
 
 
+def test_execution_probe_allows_blank_cursor_and_singleton_row_shape() -> None:
+    raw_order_no = "synthetic-provider-order"
+    client = FakeClient(
+        {
+            "rt_cd": "0",
+            "ctx_area_fk100": "   ",
+            "ctx_area_nk100": "\t",
+            "output1": {"ODNO": raw_order_no},
+        }
+    )
+    reader = KISMockExecutionReader(client)  # type: ignore[arg-type]
+    reference = MockProviderOrderReference(
+        provider_order_no=raw_order_no,
+        provider_org_no="synthetic-provider-org",
+        order_division="00",
+        quantity=1,
+    )
+
+    source = reader.probe_execution_source(
+        reference=reference,
+        start=date(2026, 7, 27),
+        end=date(2026, 7, 27),
+        recent=True,
+    )
+
+    assert source.rows_seen == 1
+    assert source.matched is True
+    assert len(source.provider_exec_ref_hash or "") == 64
+    assert raw_order_no not in repr(source)
+    with pytest.raises(ValueError, match="incomplete"):
+        reader.read(
+            reference=reference,
+            start=date(2026, 7, 27),
+            end=date(2026, 7, 27),
+            recent=True,
+        )
+
+
 def test_balance_probe_marks_partial_page_without_publishing_complete_positions() -> None:
     balance_reader = KISMockOnlineBalanceReader(
         FakeClient(

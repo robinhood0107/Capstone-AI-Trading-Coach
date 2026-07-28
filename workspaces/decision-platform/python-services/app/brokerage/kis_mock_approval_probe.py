@@ -659,7 +659,7 @@ class _KISMockProbeOperations:
                     KISMockFailureReason.EXECUTION_REFERENCE_UNAVAILABLE,
                     "KIS mock execution probe reference is unavailable",
                 )
-            self._execution_reader.read(
+            self._execution_reader.probe_execution_source(
                 reference=reference,
                 start=packet.execution.start,
                 end=packet.execution.end,

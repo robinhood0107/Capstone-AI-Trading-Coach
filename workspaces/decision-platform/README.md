@@ -189,6 +189,9 @@ online balance projection은 provider 호출 전에 `BALANCE_RISK_FIELDS_UNAVAIL
 모의투자 포털에서 확인·정리가 필요하면 실패 evidence를 고정한 뒤 새 authorization을 받는다.
 probe 성공은 background polling, gRPC 상시 활성화, S3.3 fill observation append 또는
 KIS_LIVE 실계좌 주문 권한이 아니다.
+마지막 `executionRead`는 source-shape/readability 확인이다. provider가 즉시 취소 주문 row를
+아직 반환하지 않아도 probe는 fill이나 대사 snapshot을 꾸미지 않으며, strict reconciliation
+reader는 실제 row가 정확히 하나일 때만 사용한다.
 
 KIS_MOCK online response는 credential scrubber가 provider echo를 제거하기 전에 1 MiB cap을
 적용한다. 더 큰 body, 과도한 JSON depth/list/text는 stable error로 축약하며 raw provider body,
@@ -199,8 +202,8 @@ header, 계좌번호, credential은 로그·DB·응답에 남기지 않는다.
 S3.3은 KIS_MOCK offline fill observation과 S3.2 INTERNAL_PAPER 결정적 fill을 같은 주문 수량
 보존식으로 대사한다. ADMIN reconcile은 저장된 COMPLETE 관측만 최대 200개씩 처리하고,
 owner fills 조회는 KST 31일·50개 page·HMAC cursor로 제한한다. S3-online 체결조회 parser는
-위 exact probe의 마지막 read에만 쓰며 provider polling, scheduler, fill writer append,
-실계좌와 실주문 호출은 없다.
+위 exact probe의 source-shape read 또는 별도 strict reconciliation reader로만 존재하며
+provider polling, scheduler, fill writer append, 실계좌와 실주문 호출은 없다.
 
 `decision_fill_writer`는 `.env.example`의 별도 password로 bootstrap하며 sanitized observation
 INSERT만 수행한다. 기존 PostgreSQL volume은 삭제하지 않고 루트 README의 one-time role

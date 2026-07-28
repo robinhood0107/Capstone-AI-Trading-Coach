@@ -68,10 +68,11 @@
   artifact 0을 결속한다. absolute regular file·owner·mode `0600`·`O_NOFOLLOW`, clean
   worktree, packet account/bound account 일치, canonical
   SHA-256과 현재 사용자의 별도 approval ID/SHA latch가 모두 맞아야 실행된다.
-  packet의 주문 surface는 `orderDivision`과 선택적 `exchangeDivision`을 포함한다.
-  `exchangeDivision=NXT`는 지정가·보통(`orderDivision=00`) 1주 probe에만 허용하고,
-  생략 시 `KRX`로 고정한다. 이 값은 주문 submit, encrypted cancel reference, 전량취소,
-  최근 체결조회 source-shape probe에 동일하게 결속한다.
+  packet의 주문 surface는 `orderDivision`과 선택적 `exchangeDivision`을 포함하지만,
+  KIS_MOCK 현금 신규주문은 KIS Developers 문서 기준 `KRX`만 provider handoff 전에 허용한다.
+  `NXT`는 packet 검증/online transport 단계에서 fail-closed 하고, 생략 시 `KRX`로 고정한다.
+  이 값은 주문 submit, encrypted cancel reference, 전량취소, 최근 체결조회 source-shape probe에
+  동일하게 결속한다.
   마지막 최근 체결조회는 endpoint source-shape/readability 진단이다. 즉시 취소한 낮은 지정가
   주문 row가 아직 없거나 sparse matched row만 보이면 source-shape evidence로만 남기고,
   public fill·대사 snapshot·DB append를 만들지 않는다. 실제 reconciliation reader는 provider
@@ -175,11 +176,12 @@ KIS_MOCK online boundary.
   `tokenP=1` and `brokerage=5`, retry 0, artifact 0, a protected absolute 0600 file, a
   canonical digest, a clean worktree, an exact packet-account/bound-account match, and a
   separate current-user approval ID/SHA latch.
-  The packet order surface includes `orderDivision` and optional `exchangeDivision`.
-  `exchangeDivision=NXT` is allowed only for a regular limit quantity-1 probe
-  (`orderDivision=00`), and omission defaults to `KRX`. The same value is bound through
-  order submit, encrypted cancel reference, full cancel, and the recent execution
-  source-shape probe.
+  The packet order surface includes `orderDivision` and optional `exchangeDivision`,
+  but KIS_MOCK cash-order submit allows only `KRX` before provider handoff per the
+  KIS Developers order-cash contract. `NXT` fails closed during packet/online
+  transport validation, and omission defaults to `KRX`. The same value is bound
+  through order submit, encrypted cancel reference, full cancel, and the recent
+  execution source-shape probe.
   The final recent execution read is an endpoint source-shape/readability diagnostic.
   If a low-priced limit order was immediately cancelled and its order row is not visible
   yet, or the provider returns only a sparse matched row, the probe records source-shape

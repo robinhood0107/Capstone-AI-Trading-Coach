@@ -1566,8 +1566,9 @@ KIS Mock 중심으로 구현하고, KIS Live는 고급해제/3단계 동의/재�
 > 테스트 provider call은 0이고, 최종 HEAD/PR #55 CI/fresh security report에 결속된 별도
 > exact-approved `FULL` 5단계 KIS_MOCK probe만 cap `tokenP=1`/`brokerage=5`,
 > retry/artifact 0으로 실행할 수 있다. `FULL` packet은 `orderDivision`과 선택적
-> `exchangeDivision`을 결속하며, `exchangeDivision=NXT`는 지정가·보통(`orderDivision=00`)
-> 1주 probe에만 허용된다. 생략 시 `KRX`가 기본이고 같은 값이 주문 submit, encrypted cancel
+> `exchangeDivision`을 결속하지만, KIS_MOCK 현금 신규주문은 KIS Developers 계약상 `KRX`만
+> provider handoff 전에 허용한다. `exchangeDivision=NXT`는 packet/online transport 검증에서
+> fail-closed 하며, 생략 시 `KRX`가 기본이고 같은 값이 주문 submit, encrypted cancel
 > reference, 전량취소, 최근 체결조회 source-shape probe에 적용된다. 반복 실패 원인을 기존 출력으로 식별할 수 없을 때는
 > 같은 5단계를 재실행하지 않고 별도 `BALANCE_DIAGNOSTIC` packet과 새 exact 승인으로 balance
 > endpoint만 cap `tokenP=1`/`brokerage=1`, retry/artifact 0으로 1회 검증한다. diagnostic은

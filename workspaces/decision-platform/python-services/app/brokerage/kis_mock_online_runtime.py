@@ -45,6 +45,15 @@ class MockExecutionSnapshot:
 
 
 @dataclass(frozen=True, slots=True)
+class KISMockExecutionSourceProbe:
+    """exact probe용 체결조회 source-shape이며 특정 주문 row 출현을 보장하지 않는다."""
+
+    provider_exec_ref_hash: str | None
+    rows_seen: int
+    matched: bool
+
+
+@dataclass(frozen=True, slots=True)
 class KISMockBalanceSourceProbe:
     """연결성 진단용 sanitized source shape이며 완전한 risk balance를 표현하지 않는다."""
 
@@ -175,6 +184,65 @@ class KISMockExecutionReader:
         end: date,
         recent: bool,
     ) -> MockExecutionSnapshot:
+        """대사용 strict reader는 지정 주문 row가 정확히 하나 보일 때만 snapshot을 만든다."""
+        payload = self._request_execution_page(
+            reference=reference,
+            start=start,
+            end=end,
+            recent=recent,
+        )
+        rows = _strict_execution_rows(payload, require_nonempty=True)
+        return _execution_snapshot_from_rows(rows, reference)
+
+    def probe_execution_source(
+        self,
+        *,
+        reference: MockProviderOrderReference,
+        start: date,
+        end: date,
+        recent: bool,
+    ) -> KISMockExecutionSourceProbe:
+        """exact-approved FULL probe에서는 endpoint shape와 bounded page만 검증한다.
+
+        낮은 지정가 주문을 즉시 전량취소하면 체결 row가 없거나 provider 조회 반영이 늦을 수 있다.
+        이 진단은 publish/reconciliation 근거가 아니므로 row 부재는 성공적인 source-shape로 남기고,
+        실제 대사는 기존 ``read``가 계속 fail-closed로 처리한다.
+        """
+        payload = self._request_execution_page(
+            reference=reference,
+            start=start,
+            end=end,
+            recent=recent,
+        )
+        rows = _strict_execution_rows(payload, require_nonempty=False)
+        matches = [
+            row
+            for row in rows
+            if row.get("odno") == reference.provider_order_no
+        ]
+        if len(matches) > 1:
+            raise ValueError("KIS mock execution order match is not unique")
+        if not matches:
+            return KISMockExecutionSourceProbe(
+                provider_exec_ref_hash=None,
+                rows_seen=len(rows),
+                matched=False,
+            )
+        snapshot = _execution_snapshot_from_rows(matches, reference)
+        return KISMockExecutionSourceProbe(
+            provider_exec_ref_hash=snapshot.provider_exec_ref_hash,
+            rows_seen=len(rows),
+            matched=True,
+        )
+
+    def _request_execution_page(
+        self,
+        *,
+        reference: MockProviderOrderReference,
+        start: date,
+        end: date,
+        recent: bool,
+    ) -> dict[str, Any]:
         if start > end or (end - start).days > 31:
             raise ValueError("KIS mock execution window is invalid")
         tr_id = (
@@ -202,66 +270,84 @@ class KISMockExecutionReader:
                 "EXCG_ID_DVSN_CD": "KRX",
             },
         )
-        if payload.get("ctx_area_fk100") or payload.get("ctx_area_nk100"):
-            raise ValueError("KIS mock execution response requires another bounded page")
-        rows = payload.get("output1")
-        if not isinstance(rows, list) or not 1 <= len(rows) <= _MAX_MOCK_EXECUTION_ROWS:
-            raise ValueError("KIS mock execution response is incomplete")
-        matches = [
-            row
-            for row in rows
-            if isinstance(row, dict) and row.get("odno") == reference.provider_order_no
-        ]
-        if len(matches) != 1:
-            raise ValueError("KIS mock execution order match is not unique")
-        row = matches[0]
-        symbol = row.get("pdno")
-        if not isinstance(symbol, str) or _SYMBOL.fullmatch(symbol) is None:
-            raise ValueError("KIS mock execution symbol is invalid")
-        cumulative = _nonnegative(row.get("tot_ccld_qty"), "cumulative quantity")
-        leaves = _nonnegative(row.get("rmn_qty"), "leaves quantity")
-        if cumulative + leaves > reference.quantity:
-            raise ValueError("KIS mock execution quantity invariant failed")
-        average = _nonnegative(row.get("avg_prvs"), "average fill price")
-        if cumulative == 0:
-            average_value: int | None = None
-        elif average > 0:
-            average_value = average
-        else:
-            raise ValueError("KIS mock execution average price is invalid")
-        order_date = row.get("ord_dt")
-        order_time = row.get("ord_tmd")
-        if (
-            not isinstance(order_date, str)
-            or _DATE.fullmatch(order_date) is None
-            or not isinstance(order_time, str)
-            or _TIME.fullmatch(order_time) is None
-        ):
-            raise ValueError("KIS mock execution timestamp is invalid")
-        observed_at = datetime.strptime(
-            f"{order_date}{order_time}",
-            "%Y%m%d%H%M%S",
-        ).replace(tzinfo=__import__("zoneinfo").ZoneInfo("Asia/Seoul")).astimezone(UTC)
-        cancelled_quantity = _nonnegative(
-            row.get("cnc_cfrm_qty"),
-            "cancelled quantity",
-        )
-        rejected_quantity = _nonnegative(row.get("rjct_qty"), "rejected quantity")
-        identity = (
-            "kis-mock-execution/v1\0"
-            f"{reference.provider_order_no}\0{cumulative}\0{leaves}\0"
-            f"{average_value or 0}\0{order_date}\0{order_time}"
-        )
-        return MockExecutionSnapshot(
-            provider_exec_ref_hash=hashlib.sha256(identity.encode()).hexdigest(),
-            symbol=symbol,
-            cumulative_quantity=cumulative,
-            leaves_quantity=leaves,
-            average_fill_price_krw=average_value,
-            cancelled=cancelled_quantity > 0 or str(row.get("cncl_yn") or "") == "Y",
-            rejected=rejected_quantity > 0,
-            observed_at=observed_at,
-        )
+        return payload
+
+
+def _strict_execution_rows(
+    payload: dict[str, Any],
+    *,
+    require_nonempty: bool,
+) -> list[dict[str, Any]]:
+    if payload.get("ctx_area_fk100") or payload.get("ctx_area_nk100"):
+        raise ValueError("KIS mock execution response requires another bounded page")
+    rows = payload.get("output1")
+    min_rows = 1 if require_nonempty else 0
+    if not isinstance(rows, list) or not min_rows <= len(rows) <= _MAX_MOCK_EXECUTION_ROWS:
+        raise ValueError("KIS mock execution response is incomplete")
+    if not all(isinstance(row, dict) for row in rows):
+        raise ValueError("KIS mock execution response is incomplete")
+    return rows
+
+
+def _execution_snapshot_from_rows(
+    rows: list[dict[str, Any]],
+    reference: MockProviderOrderReference,
+) -> MockExecutionSnapshot:
+    matches = [
+        row
+        for row in rows
+        if row.get("odno") == reference.provider_order_no
+    ]
+    if len(matches) != 1:
+        raise ValueError("KIS mock execution order match is not unique")
+    row = matches[0]
+    symbol = row.get("pdno")
+    if not isinstance(symbol, str) or _SYMBOL.fullmatch(symbol) is None:
+        raise ValueError("KIS mock execution symbol is invalid")
+    cumulative = _nonnegative(row.get("tot_ccld_qty"), "cumulative quantity")
+    leaves = _nonnegative(row.get("rmn_qty"), "leaves quantity")
+    if cumulative + leaves > reference.quantity:
+        raise ValueError("KIS mock execution quantity invariant failed")
+    average = _nonnegative(row.get("avg_prvs"), "average fill price")
+    if cumulative == 0:
+        average_value: int | None = None
+    elif average > 0:
+        average_value = average
+    else:
+        raise ValueError("KIS mock execution average price is invalid")
+    order_date = row.get("ord_dt")
+    order_time = row.get("ord_tmd")
+    if (
+        not isinstance(order_date, str)
+        or _DATE.fullmatch(order_date) is None
+        or not isinstance(order_time, str)
+        or _TIME.fullmatch(order_time) is None
+    ):
+        raise ValueError("KIS mock execution timestamp is invalid")
+    observed_at = datetime.strptime(
+        f"{order_date}{order_time}",
+        "%Y%m%d%H%M%S",
+    ).replace(tzinfo=__import__("zoneinfo").ZoneInfo("Asia/Seoul")).astimezone(UTC)
+    cancelled_quantity = _nonnegative(
+        row.get("cnc_cfrm_qty"),
+        "cancelled quantity",
+    )
+    rejected_quantity = _nonnegative(row.get("rjct_qty"), "rejected quantity")
+    identity = (
+        "kis-mock-execution/v1\0"
+        f"{reference.provider_order_no}\0{cumulative}\0{leaves}\0"
+        f"{average_value or 0}\0{order_date}\0{order_time}"
+    )
+    return MockExecutionSnapshot(
+        provider_exec_ref_hash=hashlib.sha256(identity.encode()).hexdigest(),
+        symbol=symbol,
+        cumulative_quantity=cumulative,
+        leaves_quantity=leaves,
+        average_fill_price_krw=average_value,
+        cancelled=cancelled_quantity > 0 or str(row.get("cncl_yn") or "") == "Y",
+        rejected=rejected_quantity > 0,
+        observed_at=observed_at,
+    )
 
 
 def _positions(value: object) -> tuple[tuple[str, int, int], ...]:

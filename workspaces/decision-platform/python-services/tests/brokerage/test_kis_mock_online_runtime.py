@@ -220,6 +220,35 @@ def test_execution_reader_enforces_quantity_invariant_and_hashes_raw_reference()
     ]
 
 
+def test_execution_reader_uses_reference_exchange_division() -> None:
+    raw_order_no = "synthetic-provider-order"
+    client = FakeClient(
+        {
+            "rt_cd": "0",
+            "ctx_area_fk100": "",
+            "ctx_area_nk100": "",
+            "output1": [{"odno": raw_order_no}],
+        }
+    )
+    reader = KISMockExecutionReader(client)  # type: ignore[arg-type]
+
+    source = reader.probe_execution_source(
+        reference=MockProviderOrderReference(
+            provider_order_no=raw_order_no,
+            provider_org_no="synthetic-provider-org",
+            order_division="00",
+            exchange_division="NXT",
+            quantity=1,
+        ),
+        start=date(2026, 7, 27),
+        end=date(2026, 7, 27),
+        recent=True,
+    )
+
+    assert source.matched is True
+    assert client.calls[0][3]["EXCG_ID_DVSN_CD"] == "NXT"
+
+
 def test_execution_probe_allows_empty_cancelled_order_page_without_publish_snapshot() -> None:
     raw_order_no = "synthetic-provider-order"
     client = FakeClient(

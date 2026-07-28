@@ -527,6 +527,45 @@ def test_full_probe_uses_packet_order_division_for_buyable_and_submit(
     assert submit_order_divisions == ["07"]
 
 
+def test_full_probe_uses_packet_exchange_division_for_submit(
+    secure_tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    packet_path, _ = _write_packet(secure_tmp_path)
+    _rewrite_packet(packet_path, ("order", "limitPriceKrw"), 220_000)
+    _rewrite_packet(packet_path, ("order", "orderDivision"), "00")
+    packet_sha = _rewrite_packet(packet_path, ("order", "exchangeDivision"), "NXT")
+    monkeypatch.setattr(probe, "_git_revision", lambda _root, _ref: "a" * 40)
+    packet = probe._load_packet(
+        packet_path,
+        now=datetime(2030, 1, 2, 3, 10, tzinfo=UTC),
+        expected_approval_id="approval-s3-online-test",
+        expected_packet_sha256=packet_sha,
+        repository_root=secure_tmp_path,
+    )
+    submit_intents: list[object] = []
+
+    class SourceGateway:
+        def submit_cash_order(
+            self,
+            intent: object,
+            *,
+            order_id: str | None = None,
+            account_id: str | None = None,
+        ) -> object:
+            assert order_id == packet.order.order_id
+            assert account_id == packet.order.account_id
+            submit_intents.append(intent)
+            return type("Receipt", (), {"accepted": True})()
+
+    operations = object.__new__(probe._KISMockProbeOperations)
+    operations._gateway = SourceGateway()
+
+    operations.run("submitLimitBuy", packet)
+
+    assert [getattr(intent, "exchange_division") for intent in submit_intents] == ["NXT"]
+
+
 def test_execution_probe_operation_uses_source_shape_probe_not_strict_reconciliation(
     secure_tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

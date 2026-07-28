@@ -189,8 +189,8 @@ class ApprovalOrder(_StrictModel):
 
     @model_validator(mode="after")
     def _exchange_contract(self) -> "ApprovalOrder":
-        if self.exchange_division == "NXT" and self.order_division != "00":
-            raise ValueError("NXT probe orders must use regular limit order division")
+        if self.exchange_division != "KRX":
+            raise ValueError("KIS_MOCK cash-order probe supports KRX only")
         return self
 
 

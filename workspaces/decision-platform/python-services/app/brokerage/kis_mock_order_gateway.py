@@ -65,7 +65,7 @@ class MockOrderIntent:
     # exact KIS_MOCK probe는 정규장 밖에도 동일 주문/취소/reference 경계를 검증해야 하므로
     # packet에 명시된 KRX 주문구분만 선택적으로 운반한다. 일반 runtime 호출은 None으로 기존 매핑을 쓴다.
     order_division: Literal["00", "01", "05", "06", "07"] | None = None
-    # packet이 NXT 장을 명시할 때만 provider order/cancel/execution reference에 같이 묶는다.
+    # KIS_MOCK 현금 신규주문은 KIS Developers 문서 기준 KRX만 provider handoff 전에 허용한다.
     exchange_division: Literal["KRX", "NXT"] | None = None
 
 
@@ -111,7 +111,7 @@ class KISMockOrderGateway:
         _validate_intent(intent)
         tr_id = MOCK_BUY_TR_ID if intent.side == "BUY" else MOCK_SELL_TR_ID
         order_division = _order_division(intent)
-        exchange_division = _exchange_division(intent, order_division)
+        exchange_division = _exchange_division(intent)
         reference_store = self._reference_store
         if reference_store is not None:
             if order_id is None or account_id is None:
@@ -239,12 +239,10 @@ def _order_division(intent: MockOrderIntent) -> str:
     return intent.order_division
 
 
-def _exchange_division(intent: MockOrderIntent, order_division: str) -> Literal["KRX", "NXT"]:
+def _exchange_division(intent: MockOrderIntent) -> Literal["KRX", "NXT"]:
     exchange_division = intent.exchange_division or "KRX"
     if exchange_division not in {"KRX", "NXT"}:
         raise ValueError("KIS mock exchange division is invalid.")
-    if exchange_division == "NXT" and (
-        intent.order_type != "LIMIT" or order_division != "00"
-    ):
-        raise ValueError("KIS mock NXT probe requires a regular limit order.")
+    if exchange_division != "KRX":
+        raise ValueError("KIS mock cash order supports KRX only.")
     return exchange_division

@@ -409,6 +409,11 @@ class KISMockBrokerageHttpClient:
                 exchange_division = body.get("EXCG_ID_DVSN_CD", "KRX")
                 if _EXCHANGE_DIVISION.fullmatch(exchange_division) is None:
                     raise ValueError("KIS mock brokerage exchange division is invalid")
+                if exchange_division != "KRX":
+                    # KIS Developers order-cash 문서는 모의투자 현금주문 거래소를 KRX로 제한한다.
+                    # 취소/체결조회 reference에는 exchange field를 보존하되, mock 신규 주문은
+                    # provider reject를 만들기 전에 fail-closed 한다.
+                    raise ValueError("KIS mock cash order supports KRX only")
                 body["EXCG_ID_DVSN_CD"] = exchange_division
                 body["SLL_TYPE"] = "01" if tr_id == MOCK_SELL_TR_ID else ""
                 body["CNDT_PRIC"] = ""

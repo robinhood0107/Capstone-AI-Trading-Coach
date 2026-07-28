@@ -376,10 +376,10 @@ S3-online은 공통 주문 상태에 provider outcome 복구용 `PENDING_RECONCI
 하나 있을 때만 대사 snapshot을 만들고, exact 5단계 approval probe의 마지막 read는 bounded
 source-shape만 확인한다. 둘 다 background polling, scheduler,
 `decision_fill_writer` append 또는 자동 DB fill 반영은 없다.
-exact KIS_MOCK probe가 정규장 외 주문가능 시간을 검증할 때 `orderDivision`은 승인 packet에
-명시되어야 하며, buyable 조회·주문·취소 reference에 같은 값이 적용된다. packet이
-`exchangeDivision=NXT`를 명시하면 지정가·보통(`orderDivision=00`) 1주 probe에 한해
-주문·취소·체결조회 reference가 `NXT`로 결속되고, 생략 시 기존처럼 `KRX`가 기본이다.
+exact KIS_MOCK probe가 주문가능 시간을 검증할 때 `orderDivision`은 승인 packet에
+명시되어야 하며, buyable 조회·주문·취소 reference에 같은 값이 적용된다. packet의
+`exchangeDivision`은 KIS_MOCK 현금 신규주문에서 `KRX`만 허용하며, `NXT`는 provider handoff
+전에 fail-closed 된다. 생략 시 기존처럼 `KRX`가 기본이다.
 
 재현 명령:
 

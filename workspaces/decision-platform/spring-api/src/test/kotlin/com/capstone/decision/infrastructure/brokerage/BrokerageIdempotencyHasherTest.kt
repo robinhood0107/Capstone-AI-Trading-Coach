@@ -19,19 +19,78 @@ class BrokerageIdempotencyHasherTest {
         )
 
     @Test
-    fun `같은 raw key도 mock과 paper purpose hash가 분리된다`() {
+    fun `같은 raw key도 submit cancel paper fill 네 purpose hash가 모두 분리된다`() {
         val mock = hasher.identity("usr_demo_user", "same-order-key-0001", command())
         val paper = hasher.paperIdentity("usr_demo_user", "same-order-key-0001", command())
+        val cancel =
+            hasher.replayIdentity(
+                "usr_demo_user",
+                "USER",
+                1,
+                "same-order-key-0001",
+                BrokerageWriteReplayPurpose.ORDER_CANCEL,
+            )
+        val fill =
+            hasher.replayIdentity(
+                "usr_demo_user",
+                "USER",
+                1,
+                "same-order-key-0001",
+                BrokerageWriteReplayPurpose.FILL_APPLY,
+            )
 
-        assertNotEquals(mock.scopeHash, paper.scopeHash)
-        assertNotEquals(mock.ownerScopeHash, paper.ownerScopeHash)
+        assertEquals(
+            4,
+            setOf(mock.scopeHash, paper.scopeHash, cancel.scopeHash, fill.scopeHash).size,
+        )
+        assertEquals(
+            4,
+            setOf(mock.ownerScopeHash, paper.ownerScopeHash, cancel.ownerScopeHash, fill.ownerScopeHash).size,
+        )
         assertEquals(mock.requestHash, paper.requestHash)
-        assertTrue(listOf(mock.scopeHash, paper.scopeHash).all { it.matches(Regex("^[0-9a-f]{64}$")) })
-        assertTrue(listOf(mock.scopeHash, paper.scopeHash).none { it.contains("same-order-key-0001") })
+        assertTrue(
+            listOf(mock.scopeHash, paper.scopeHash, cancel.scopeHash, fill.scopeHash)
+                .all { it.matches(Regex("^[0-9a-f]{64}$")) },
+        )
+        assertTrue(
+            listOf(mock.scopeHash, paper.scopeHash, cancel.scopeHash, fill.scopeHash)
+                .none { it.contains("same-order-key-0001") || it.contains("usr_demo_user") },
+        )
         assertNotEquals(
             paper.scopeHash,
             hasher.paperIdentity("usr_demo_admin", "same-order-key-0001", command()).scopeHash,
         )
+    }
+
+    @Test
+    fun `replay scope는 현재 role과 security version을 묶고 owner quota scope는 유지한다`() {
+        val userV1 =
+            hasher.replayIdentity(
+                "usr_demo_admin",
+                "USER",
+                1,
+                "same-order-key-0002",
+                BrokerageWriteReplayPurpose.FILL_APPLY,
+            )
+        val adminV1 =
+            hasher.replayIdentity(
+                "usr_demo_admin",
+                "ADMIN",
+                1,
+                "same-order-key-0002",
+                BrokerageWriteReplayPurpose.FILL_APPLY,
+            )
+        val adminV2 =
+            hasher.replayIdentity(
+                "usr_demo_admin",
+                "ADMIN",
+                2,
+                "same-order-key-0002",
+                BrokerageWriteReplayPurpose.FILL_APPLY,
+            )
+
+        assertEquals(3, setOf(userV1.scopeHash, adminV1.scopeHash, adminV2.scopeHash).size)
+        assertEquals(1, setOf(userV1.ownerScopeHash, adminV1.ownerScopeHash, adminV2.ownerScopeHash).size)
     }
 
     private fun command(): SubmitMockOrderCommand =

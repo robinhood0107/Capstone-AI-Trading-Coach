@@ -95,7 +95,7 @@ app:
       enabled: ${BROKERAGE_GRPC_ENABLED:false}
       target: ${BROKERAGE_GRPC_TARGET:127.0.0.1:50052}
       shared-secret: ${BROKERAGE_GRPC_SHARED_SECRET:}
-      deadline-millis: 1000
+      deadline-millis: ${BROKERAGE_GRPC_DEADLINE_MILLIS:45000}
       request-max-bytes: 262144
       response-max-bytes: 1048576
       circuit-breaker-name: kisMockBrokerage

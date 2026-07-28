@@ -187,9 +187,19 @@ class BrokerageController(
     ): ApiResponse<MockBalanceProjection> {
         parser.requireNoQuery(request)
         val parsedAccountId = parser.parseAccountId(accountId)
+        val requestId = RequestIds.currentOrCreate(request)
         return ApiResponseFactory.success(
-            requestId = RequestIds.currentOrCreate(request),
-            data = service.getOwnedBalance(principal.userId, parsedAccountId),
+            requestId = requestId,
+            data =
+                service.getOwnedBalance(
+                    BrokerageActor(
+                        userId = principal.userId,
+                        role = principal.role,
+                        securityVersion = principal.securityVersion,
+                        requestId = requestId,
+                    ),
+                    parsedAccountId,
+                ),
         )
     }
 
@@ -216,11 +226,18 @@ class BrokerageController(
     ): ApiResponse<MockBuyableProjection> {
         val parsedAccountId = parser.parseAccountId(accountId)
         val query = parser.parseBuyableQuery(request)
+        val requestId = RequestIds.currentOrCreate(request)
         return ApiResponseFactory.success(
-            requestId = RequestIds.currentOrCreate(request),
+            requestId = requestId,
             data =
                 service.getOwnedBuyable(
-                    actorUserId = principal.userId,
+                    actor =
+                        BrokerageActor(
+                            userId = principal.userId,
+                            role = principal.role,
+                            securityVersion = principal.securityVersion,
+                            requestId = requestId,
+                        ),
                     accountId = parsedAccountId,
                     symbol = query.symbol,
                     estimatedPrice = query.price,

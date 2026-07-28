@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import re
 from collections.abc import Sequence
 from datetime import UTC, datetime
@@ -46,12 +47,17 @@ class BrokerageServicer(brokerage_pb2_grpc.BrokerageServiceServicer):
         self,
         gateway: KISMockOrderGateway,
         shared_secret: str,
+        *,
+        bound_account_id: str,
         balance_reader: BalanceReadPort | None = None,
     ) -> None:
         if _SAFE_SECRET.fullmatch(shared_secret) is None:
             raise ValueError("Brokerage gRPC shared secret must be 32..256 safe ASCII characters")
+        if _ACCOUNT_ID.fullmatch(bound_account_id) is None:
+            raise ValueError("Brokerage gRPC bound account id is invalid")
         self._gateway = gateway
         self._shared_secret = shared_secret
+        self._bound_account_id = bound_account_id
         self._balance_reader = balance_reader
 
     def SubmitMockCashOrder(
@@ -61,6 +67,7 @@ class BrokerageServicer(brokerage_pb2_grpc.BrokerageServiceServicer):
     ) -> brokerage_pb2.SubmitMockCashOrderResponse:
         _require_authenticated(context, self._shared_secret)
         _validate_submit_request(request, context)
+        _require_bound_account(request.account_id, self._bound_account_id, context)
         try:
             receipt = self._gateway.submit_cash_order(
                 MockOrderIntent(
@@ -69,7 +76,9 @@ class BrokerageServicer(brokerage_pb2_grpc.BrokerageServiceServicer):
                     order_type=request.order_type,  # type: ignore[arg-type]
                     quantity=request.quantity,
                     estimated_price=request.estimated_price_krw,
-                )
+                ),
+                order_id=request.order_id,
+                account_id=request.account_id,
             )
         except LiveOrderGateClosed:
             _abort(context, grpc.StatusCode.PERMISSION_DENIED, "live order gate is closed")
@@ -94,9 +103,23 @@ class BrokerageServicer(brokerage_pb2_grpc.BrokerageServiceServicer):
     ) -> brokerage_pb2.CancelMockCashOrderResponse:
         _require_authenticated(context, self._shared_secret)
         _validate_order_and_account(request.order_id, request.account_id, context)
+        _require_bound_account(request.account_id, self._bound_account_id, context)
+        try:
+            receipt = self._gateway.cancel_cash_order(
+                order_id=request.order_id,
+                account_id=request.account_id,
+            )
+        except LiveOrderGateClosed:
+            _abort(context, grpc.StatusCode.PERMISSION_DENIED, "live order gate is closed")
+        except (MockOrderRejected, ValueError):
+            _abort(context, grpc.StatusCode.FAILED_PRECONDITION, "mock cancel was rejected")
+        except TimeoutError:
+            _abort(context, grpc.StatusCode.DEADLINE_EXCEEDED, "mock cancel transport timed out")
+        except Exception:
+            _abort(context, grpc.StatusCode.UNAVAILABLE, "mock cancel transport unavailable")
         return brokerage_pb2.CancelMockCashOrderResponse(
             order_id=request.order_id,
-            status="CANCEL_REQUESTED",
+            status=receipt.status,
             received_at=_now(),
         )
 
@@ -107,10 +130,14 @@ class BrokerageServicer(brokerage_pb2_grpc.BrokerageServiceServicer):
     ) -> brokerage_pb2.GetMockBalanceResponse:
         _require_authenticated(context, self._shared_secret)
         _validate_account(request.account_id, context)
+        _require_bound_account(request.account_id, self._bound_account_id, context)
         reader = self._balance_reader
         if reader is None:
             _abort(context, grpc.StatusCode.UNAVAILABLE, "mock balance reader is not wired")
-        response = reader.balance(request.account_id)
+        try:
+            response = reader.balance(request.account_id)
+        except Exception:
+            _abort(context, grpc.StatusCode.UNAVAILABLE, "mock balance source unavailable")
         if response is None:
             _abort(context, grpc.StatusCode.NOT_FOUND, "mock balance was not found")
         return response
@@ -122,16 +149,20 @@ class BrokerageServicer(brokerage_pb2_grpc.BrokerageServiceServicer):
     ) -> brokerage_pb2.GetMockBuyableResponse:
         _require_authenticated(context, self._shared_secret)
         _validate_account(request.account_id, context)
+        _require_bound_account(request.account_id, self._bound_account_id, context)
         if not _symbol(request.symbol) or request.estimated_price_krw <= 0:
             _abort(context, grpc.StatusCode.INVALID_ARGUMENT, "buyable query is invalid")
         reader = self._balance_reader
         if reader is None:
             _abort(context, grpc.StatusCode.UNAVAILABLE, "mock buyable reader is not wired")
-        response = reader.buyable(
-            request.account_id,
-            request.symbol,
-            request.estimated_price_krw,
-        )
+        try:
+            response = reader.buyable(
+                request.account_id,
+                request.symbol,
+                request.estimated_price_krw,
+            )
+        except Exception:
+            _abort(context, grpc.StatusCode.UNAVAILABLE, "mock buyable source unavailable")
         if response is None:
             _abort(context, grpc.StatusCode.NOT_FOUND, "mock buyable account was not found")
         return response
@@ -139,7 +170,11 @@ class BrokerageServicer(brokerage_pb2_grpc.BrokerageServiceServicer):
 
 def _require_authenticated(context: grpc.ServicerContext, shared_secret: str) -> None:
     values = [value for key, value in context.invocation_metadata() if key == _AUTH_METADATA_KEY]
-    if len(values) != 1 or values[0] != shared_secret:
+    if (
+        len(values) != 1
+        or not isinstance(values[0], str)
+        or not hmac.compare_digest(values[0], shared_secret)
+    ):
         _abort(context, grpc.StatusCode.UNAUTHENTICATED, "brokerage grpc authentication failed")
 
 
@@ -171,6 +206,16 @@ def _validate_account(account_id: str, context: grpc.ServicerContext) -> None:
         _abort(context, grpc.StatusCode.INVALID_ARGUMENT, "account id is invalid")
 
 
+def _require_bound_account(
+    account_id: str,
+    bound_account_id: str,
+    context: grpc.ServicerContext,
+) -> None:
+    # opaque account ownership과 실제 KIS_MOCK credential의 1:1 결속을 provider 접근 전에 강제한다.
+    if not hmac.compare_digest(account_id, bound_account_id):
+        _abort(context, grpc.StatusCode.PERMISSION_DENIED, "mock account binding rejected")
+
+
 def _symbol(symbol: str) -> bool:
     return symbol.isdigit() and len(symbol) == 6
 
@@ -181,7 +226,8 @@ def _receipt_hash(provider_order_no: str) -> str:
 
 
 def _now() -> str:
-    return datetime.now(tz=UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    # Spring의 submittedAt보다 같은 초 안에서 과거로 잘리지 않도록 microsecond를 보존한다.
+    return datetime.now(tz=UTC).isoformat(timespec="microseconds").replace("+00:00", "Z")
 
 
 def _abort(

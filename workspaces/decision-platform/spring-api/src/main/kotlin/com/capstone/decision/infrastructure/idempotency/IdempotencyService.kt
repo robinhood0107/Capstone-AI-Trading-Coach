@@ -1,5 +1,8 @@
 package com.capstone.decision.infrastructure.idempotency
 
+import com.capstone.decision.infrastructure.brokerage.BrokerageIdempotencyHasher
+import com.capstone.decision.infrastructure.brokerage.BrokerageReplayIdentity
+import com.capstone.decision.infrastructure.brokerage.BrokerageWriteReplayPurpose
 import org.springframework.data.redis.core.StringRedisTemplate
 import org.springframework.data.redis.core.script.DefaultRedisScript
 import org.springframework.http.MediaType
@@ -12,17 +15,29 @@ import java.util.UUID
 class IdempotencyService(
     private val redisTemplate: StringRedisTemplate,
     private val properties: IdempotencyProperties,
+    private val scopeHasher: BrokerageIdempotencyHasher,
 ) {
     fun acquire(
         userId: String,
+        actorRole: String,
+        securityVersion: Long,
         idempotencyKey: String,
         requestHash: String,
+        purpose: BrokerageWriteReplayPurpose,
     ): IdempotencyLookup {
-        val redisKey = redisKey(userId, idempotencyKey)
+        val identity =
+            scopeHasher.replayIdentity(
+                actorUserId = userId,
+                actorRole = actorRole,
+                securityVersion = securityVersion,
+                rawKey = idempotencyKey,
+                purpose = purpose,
+            )
+        val redisKey = redisKey(identity)
         completedLookup(redisKey, requestHash)?.let { return it }
 
-        val claimKey = claimKey(userId, idempotencyKey)
-        val admissionKey = admissionKey(userId)
+        val claimKey = claimKey(identity)
+        val admissionKey = admissionKey(identity)
         val claimToken = UUID.randomUUID().toString()
         val claimValue = claimValue(claimToken, requestHash)
         val claimed =
@@ -37,7 +52,7 @@ class IdempotencyService(
         if (claimed == 1L) {
             // result 저장과 claim 삭제 사이 경합에서 새 claim을 잡았더라도 completed result를 다시 확인한다.
             completedLookup(redisKey, requestHash)?.let { completed ->
-                discardClaim(userId, claimKey, claimValue)
+                discardClaim(identity.ownerScopeHash, claimKey, claimValue)
                 return completed
             }
             return IdempotencyLookup.New(claimToken)
@@ -56,15 +71,26 @@ class IdempotencyService(
 
     fun store(
         userId: String,
+        actorRole: String,
+        securityVersion: Long,
         idempotencyKey: String,
         requestHash: String,
         claimToken: String,
         status: Int,
         body: String,
         contentType: String,
+        purpose: BrokerageWriteReplayPurpose,
     ) {
-        val redisKey = redisKey(userId, idempotencyKey)
-        val claimKey = claimKey(userId, idempotencyKey)
+        val identity =
+            scopeHasher.replayIdentity(
+                actorUserId = userId,
+                actorRole = actorRole,
+                securityVersion = securityVersion,
+                rawKey = idempotencyKey,
+                purpose = purpose,
+            )
+        val redisKey = redisKey(identity)
+        val claimKey = claimKey(identity)
         val stored =
             redisTemplate.execute(
                 STORE_RESULT_SCRIPT,
@@ -84,28 +110,52 @@ class IdempotencyService(
 
     fun redisKey(
         userId: String,
+        actorRole: String,
+        securityVersion: Long,
         idempotencyKey: String,
-    ): String = "idempotency:$userId:$idempotencyKey"
+        purpose: BrokerageWriteReplayPurpose,
+    ): String =
+        redisKey(
+            scopeHasher.replayIdentity(
+                actorUserId = userId,
+                actorRole = actorRole,
+                securityVersion = securityVersion,
+                rawKey = idempotencyKey,
+                purpose = purpose,
+            ),
+        )
 
     fun discard(
         userId: String,
+        actorRole: String,
+        securityVersion: Long,
         idempotencyKey: String,
         requestHash: String,
         claimToken: String,
+        purpose: BrokerageWriteReplayPurpose,
     ) {
+        val identity =
+            scopeHasher.replayIdentity(
+                actorUserId = userId,
+                actorRole = actorRole,
+                securityVersion = securityVersion,
+                rawKey = idempotencyKey,
+                purpose = purpose,
+            )
         discardClaim(
-            userId = userId,
-            claimKey = claimKey(userId, idempotencyKey),
+            ownerScopeHash = identity.ownerScopeHash,
+            claimKey = claimKey(identity),
             claimValue = claimValue(claimToken, requestHash),
         )
     }
 
-    private fun claimKey(
-        userId: String,
-        idempotencyKey: String,
-    ): String = "idempotency-claim:$userId:$idempotencyKey"
+    private fun redisKey(identity: BrokerageReplayIdentity): String = "idempotency:${identity.scopeHash}"
 
-    private fun admissionKey(userId: String): String = "idempotency-admission:$userId"
+    private fun claimKey(identity: BrokerageReplayIdentity): String = "idempotency-claim:${identity.scopeHash}"
+
+    private fun admissionKey(identity: BrokerageReplayIdentity): String = admissionKey(identity.ownerScopeHash)
+
+    private fun admissionKey(ownerScopeHash: String): String = "idempotency-admission:$ownerScopeHash"
 
     private fun claimValue(
         claimToken: String,
@@ -113,13 +163,13 @@ class IdempotencyService(
     ): String = "$claimToken:$requestHash"
 
     private fun discardClaim(
-        userId: String,
+        ownerScopeHash: String,
         claimKey: String,
         claimValue: String,
     ) {
         redisTemplate.execute(
             DISCARD_CLAIM_SCRIPT,
-            listOf(claimKey, admissionKey(userId)),
+            listOf(claimKey, admissionKey(ownerScopeHash)),
             claimValue,
         )
     }

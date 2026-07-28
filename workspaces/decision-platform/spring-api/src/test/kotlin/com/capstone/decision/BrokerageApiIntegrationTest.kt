@@ -10,6 +10,9 @@ import com.capstone.decision.domain.risk.KillSwitchActorRole
 import com.capstone.decision.domain.risk.KillSwitchReasonClass
 import com.capstone.decision.infrastructure.brokerage.BrokerageIdempotencyHasher
 import com.capstone.decision.infrastructure.brokerage.RedisPaperIdempotencyClaimAdapter
+import com.capstone.decision.infrastructure.security.DemoAccount
+import com.capstone.decision.infrastructure.security.DemoRole
+import com.capstone.decision.infrastructure.security.JwtService
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -66,6 +69,7 @@ class BrokerageApiIntegrationTest(
     @Autowired private val killSwitchMutationPort: KillSwitchMutationPort,
     @Autowired private val appDataSource: DataSource,
     @Autowired private val brokerageIdempotencyHasher: BrokerageIdempotencyHasher,
+    @Autowired private val jwtService: JwtService,
 ) : SpringApiIntegrationTestBase() {
     private lateinit var mockMvc: MockMvc
     private val jdbcTemplate: JdbcTemplate by lazy {
@@ -83,6 +87,10 @@ class BrokerageApiIntegrationTest(
         redisTemplate.keys("brokerage*").takeIf { it.isNotEmpty() }?.let(redisTemplate::delete)
         redisTemplate.keys("decision-idempotency:*").takeIf { it.isNotEmpty() }?.let(redisTemplate::delete)
         redisTemplate.keys("idempotency:*").takeIf { it.isNotEmpty() }?.let(redisTemplate::delete)
+        redisTemplate.keys("idempotency-claim:*").takeIf { it.isNotEmpty() }?.let(redisTemplate::delete)
+        redisTemplate.keys("idempotency-admission:*").takeIf { it.isNotEmpty() }?.let(redisTemplate::delete)
+        jdbcTemplate.update("delete from order_fill_application_receipts")
+        jdbcTemplate.update("delete from order_fill_observations")
         jdbcTemplate.update("delete from paper_order_events")
         jdbcTemplate.update("delete from paper_positions")
         jdbcTemplate.update("delete from paper_accounts")
@@ -91,7 +99,9 @@ class BrokerageApiIntegrationTest(
         jdbcTemplate.update("delete from decision_invalidations")
         jdbcTemplate.update("delete from risk_kill_switch_transitions")
         jdbcTemplate.update("delete from event_outbox")
-        jdbcTemplate.update("delete from audit_logs where target_type in ('DECISION', 'ORDER', 'KILL_SWITCH')")
+        jdbcTemplate.update(
+            "delete from audit_logs where target_type in ('DECISION', 'ORDER', 'ORDER_RECONCILIATION', 'KILL_SWITCH')",
+        )
         jdbcTemplate.update(
             """
             update risk_kill_switch
@@ -124,6 +134,788 @@ class BrokerageApiIntegrationTest(
                 .webAppContextSetup(webApplicationContext)
                 .apply<DefaultMockMvcBuilder>(springSecurity())
                 .build()
+    }
+
+    @Test
+    fun `stored mock fills reconcile atomically and expose only owner scoped sanitized history`() {
+        val userToken = login("demo-user", userPassword())
+        val adminToken = login("demo-admin", adminPassword())
+        val decisionId =
+            createDecision(
+                token = userToken,
+                suffix = "33",
+                order = orderIntent(),
+            )
+        val submitted =
+            submitMockOrder(
+                token = userToken,
+                idempotencyKey = "brokerage-fill-submit-0001",
+                requestId = "req-brokerage-fill-submit",
+                decisionId = decisionId,
+                order = orderIntent(),
+            )
+        assertEquals(200, submitted.response.status, submitted.response.contentAsString)
+        val orderId = json(submitted).at("/data/orderId").stringValue()
+        val accountId = json(submitted).at("/data/accountId").stringValue()
+        insertMockFillObservation(
+            orderId = orderId,
+            suffix = "1",
+            execType = "PARTIAL_FILL",
+            fillQuantity = 1,
+            cumulativeQuantity = 1,
+            leavesQuantity = 1,
+            observedAt = EVALUATION_AS_OF.minusSeconds(20),
+        )
+        insertMockFillObservation(
+            orderId = orderId,
+            suffix = "2",
+            execType = "FILL",
+            fillQuantity = 1,
+            cumulativeQuantity = 2,
+            leavesQuantity = 0,
+            observedAt = EVALUATION_AS_OF.minusSeconds(10),
+        )
+        val reconciled =
+            reconcileOrder(
+                token = adminToken,
+                idempotencyKey = "brokerage-fill-apply-0001",
+                requestId = "req-brokerage-fill-apply",
+                orderId = orderId,
+            )
+        assertEquals(200, reconciled.response.status, reconciled.response.contentAsString)
+        val projection = json(reconciled).at("/data")
+        assertEquals(orderId, projection.path("orderId").stringValue())
+        assertEquals("KIS_MOCK", projection.path("brokerageMode").stringValue())
+        assertEquals("FILLED", projection.path("status").stringValue())
+        assertEquals(2, projection.path("filledQuantity").longValue())
+        assertEquals(0, projection.path("leavesQuantity").longValue())
+        assertEquals(0, projection.path("unfilledTerminatedQuantity").longValue())
+        assertEquals(70_000, projection.path("averageFillPriceKrw").longValue())
+        assertEquals("MATCHED", projection.at("/reconciliation/status").stringValue())
+        assertTrue(projection.at("/reconciliation/checkedAt").isString)
+        assertEquals(2, projection.path("appliedEventCount").intValue())
+        assertFalse(projection.path("hasMore").booleanValue())
+        assertEquals(
+            listOf("MOCK_ORDER_SUBMITTED", "MOCK_ORDER_PARTIALLY_FILLED", "MOCK_ORDER_FILLED"),
+            jdbcTemplate.queryForList(
+                "select event_type from order_events where order_id = ? order by event_seq",
+                String::class.java,
+                orderId,
+            ),
+        )
+
+        val fills =
+            getFills(
+                token = userToken,
+                mode = "mock",
+                accountId = accountId,
+                from = "2030-01-02",
+                to = "2030-01-02",
+            )
+        assertEquals(200, fills.response.status, fills.response.contentAsString)
+        val items = json(fills).at("/data/items")
+        assertEquals(2, items.size())
+        assertEquals(
+            listOf(1L, 1L),
+            items
+                .values()
+                .asSequence()
+                .map { it.path("fillQuantity").longValue() }
+                .toList(),
+        )
+        assertTrue(
+            items
+                .values()
+                .asSequence()
+                .all { it.path("execRefHash").stringValue().matches(Regex("^[0-9a-f]{64}$")) },
+        )
+        assertFalse(fills.response.contentAsString.contains("provider-exec-raw"))
+        assertTrue(json(fills).at("/data/nextCursor").isNull)
+
+        val replay =
+            reconcileOrder(
+                token = adminToken,
+                idempotencyKey = "brokerage-fill-apply-0001",
+                requestId = "req-brokerage-fill-replay",
+                orderId = orderId,
+            )
+        assertEquals(reconciled.response.contentAsString, replay.response.contentAsString)
+        assertEquals(3, count("select count(*) from order_events where order_id = ?", orderId))
+        assertEquals(1, count("select count(*) from audit_logs where target_type = 'ORDER_RECONCILIATION'"))
+    }
+
+    @Test
+    fun `demoted admin cannot replay a cached reconciliation response`() {
+        val userToken = login("demo-user", userPassword())
+        val adminToken = login("demo-admin", adminPassword())
+        val decisionId = createDecision(userToken, "39", orderIntent())
+        val submitted =
+            submitMockOrder(
+                token = userToken,
+                idempotencyKey = "brokerage-fill-auth-replay-submit",
+                requestId = "req-brokerage-fill-auth-replay-submit",
+                decisionId = decisionId,
+                order = orderIntent(),
+            )
+        assertEquals(200, submitted.response.status, submitted.response.contentAsString)
+        val orderId = json(submitted).at("/data/orderId").stringValue()
+        val replayKey = "brokerage-fill-auth-replay-apply"
+        val initial =
+            reconcileOrder(
+                token = adminToken,
+                idempotencyKey = replayKey,
+                requestId = "req-brokerage-fill-auth-replay-initial",
+                orderId = orderId,
+            )
+        assertEquals(200, initial.response.status, initial.response.contentAsString)
+        val eventCountBefore = count("select count(*) from order_events where order_id = ?", orderId)
+        val auditCountBefore =
+            count(
+                "select count(*) from audit_logs where target_type = 'ORDER_RECONCILIATION' and target_id = ?",
+                orderId,
+            )
+        val originalRole =
+            requireNotNull(
+                jdbcTemplate.queryForObject(
+                    "select role from users where user_id = ?",
+                    String::class.java,
+                    "usr_demo_admin",
+                ),
+            )
+        val originalSecurityVersion =
+            requireNotNull(
+                jdbcTemplate.queryForObject(
+                    "select security_version from users where user_id = ?",
+                    Long::class.java,
+                    "usr_demo_admin",
+                ),
+            )
+
+        try {
+            val demotedSecurityVersion = Math.addExact(originalSecurityVersion, 1L)
+            assertEquals(
+                1,
+                jdbcTemplate.update(
+                    "update users set role = 'USER', security_version = ? where user_id = ?",
+                    demotedSecurityVersion,
+                    "usr_demo_admin",
+                ),
+            )
+            val demotedToken =
+                jwtService
+                    .issue(
+                        DemoAccount(
+                            userId = "usr_demo_admin",
+                            username = "demo-admin",
+                            role = DemoRole.USER,
+                            securityVersion = demotedSecurityVersion,
+                        ),
+                    ).token
+
+            val replay =
+                reconcileOrder(
+                    token = demotedToken,
+                    idempotencyKey = replayKey,
+                    requestId = "req-brokerage-fill-auth-replay-demoted",
+                    orderId = orderId,
+                )
+            assertEquals(403, replay.response.status, replay.response.contentAsString)
+            assertEquals("FORBIDDEN", json(replay).at("/error/code").stringValue())
+
+            val control =
+                reconcileOrder(
+                    token = demotedToken,
+                    idempotencyKey = "brokerage-fill-auth-replay-control",
+                    requestId = "req-brokerage-fill-auth-replay-control",
+                    orderId = orderId,
+                )
+            assertEquals(403, control.response.status, control.response.contentAsString)
+            assertEquals(eventCountBefore, count("select count(*) from order_events where order_id = ?", orderId))
+            assertEquals(
+                auditCountBefore,
+                count(
+                    "select count(*) from audit_logs where target_type = 'ORDER_RECONCILIATION' and target_id = ?",
+                    orderId,
+                ),
+            )
+        } finally {
+            jdbcTemplate.update(
+                "update users set role = ?, security_version = ? where user_id = ?",
+                originalRole,
+                originalSecurityVersion,
+                "usr_demo_admin",
+            )
+        }
+    }
+
+    @Test
+    fun `future dated complete fill is deferred without current work or state mutation`() {
+        val userToken = login("demo-user", userPassword())
+        val adminToken = login("demo-admin", adminPassword())
+        val decisionId = createDecision(userToken, "3a", orderIntent())
+        val submitted =
+            submitMockOrder(
+                token = userToken,
+                idempotencyKey = "brokerage-fill-future-submit",
+                requestId = "req-brokerage-fill-future-submit",
+                decisionId = decisionId,
+                order = orderIntent(),
+            )
+        assertEquals(200, submitted.response.status, submitted.response.contentAsString)
+        val orderId = json(submitted).at("/data/orderId").stringValue()
+        insertMockFillObservation(
+            orderId = orderId,
+            suffix = "d",
+            execType = "FILL",
+            fillQuantity = 2,
+            cumulativeQuantity = 2,
+            leavesQuantity = 0,
+            observedAt = EVALUATION_AS_OF.plusSeconds(3_600),
+        )
+
+        val reconciled =
+            reconcileOrder(
+                token = adminToken,
+                idempotencyKey = "brokerage-fill-future-apply",
+                requestId = "req-brokerage-fill-future-apply",
+                orderId = orderId,
+            )
+
+        assertEquals(200, reconciled.response.status, reconciled.response.contentAsString)
+        assertEquals("SUBMITTED", json(reconciled).at("/data/status").stringValue())
+        assertEquals(0, json(reconciled).at("/data/filledQuantity").longValue())
+        assertEquals("NOT_APPLICABLE", json(reconciled).at("/data/reconciliation/status").stringValue())
+        assertTrue(json(reconciled).at("/data/reconciliation/checkedAt").isNull)
+        assertEquals(0, json(reconciled).at("/data/appliedEventCount").intValue())
+        assertFalse(json(reconciled).at("/data/hasMore").booleanValue())
+        assertEquals(0, count("select count(*) from order_fill_application_receipts where order_id = ?", orderId))
+        assertEquals(1, count("select count(*) from order_events where order_id = ?", orderId))
+        assertEquals(
+            "SUBMITTED",
+            jdbcTemplate.queryForObject(
+                "select status from orders where order_id = ?",
+                String::class.java,
+                orderId,
+            ),
+        )
+    }
+
+    @Test
+    fun `paper reconciliation reuses deterministic fill and user or invalid date requests fail closed`() {
+        val userToken = login("demo-user", userPassword())
+        val adminToken = login("demo-admin", adminPassword())
+        val decisionId =
+            createDecision(
+                token = userToken,
+                suffix = "34",
+                order = orderIntent(),
+                portfolioSource = "INTERNAL_PAPER",
+            )
+        val submitted =
+            submitPaperOrder(
+                token = userToken,
+                idempotencyKey = "brokerage-paper-fill-0001",
+                requestId = "req-brokerage-paper-fill",
+                decisionId = decisionId,
+                order = orderIntent(),
+            )
+        assertEquals(200, submitted.response.status, submitted.response.contentAsString)
+        val orderId = json(submitted).at("/data/orderId").stringValue()
+        val accountId = json(submitted).at("/data/accountId").stringValue()
+
+        reconcileOrder(
+            token = userToken,
+            idempotencyKey = "brokerage-fill-user-denied",
+            requestId = "req-brokerage-fill-user-denied",
+            orderId = orderId,
+        ).also { denied ->
+            assertEquals(403, denied.response.status, denied.response.contentAsString)
+        }
+
+        val reconciled =
+            reconcileOrder(
+                token = adminToken,
+                idempotencyKey = "brokerage-paper-reconcile-0001",
+                requestId = "req-brokerage-paper-reconcile",
+                orderId = orderId,
+            )
+        assertEquals(200, reconciled.response.status, reconciled.response.contentAsString)
+        assertEquals("MATCHED", json(reconciled).at("/data/reconciliation/status").stringValue())
+        assertEquals(0, json(reconciled).at("/data/appliedEventCount").intValue())
+        assertEquals(1, count("select count(*) from order_events where order_id = ?", orderId))
+
+        val fills =
+            getFills(
+                token = userToken,
+                mode = "paper",
+                accountId = accountId,
+                from = "2030-01-02",
+                to = "2030-01-02",
+            )
+        assertEquals(200, fills.response.status, fills.response.contentAsString)
+        assertEquals(1, json(fills).at("/data/items").size())
+        assertEquals(70_035, json(fills).at("/data/items/0/fillPriceKrw").longValue())
+
+        val invalidRange =
+            getFills(
+                token = userToken,
+                mode = "paper",
+                accountId = accountId,
+                from = "2030-01-01",
+                to = "2030-02-01",
+            )
+        assertEquals(400, invalidRange.response.status, invalidRange.response.contentAsString)
+        assertEquals("VALIDATION_ERROR", json(invalidRange).at("/error/code").stringValue())
+    }
+
+    @Test
+    fun `two hundred fifty stored fills are losslessly drained and cursor stays bounded and tamper evident`() {
+        val userToken = login("demo-user", userPassword())
+        val adminToken = login("demo-admin", adminPassword())
+        val largeOrder = orderIntent()
+        val decisionId =
+            createDecision(
+                token = userToken,
+                suffix = "35",
+                order = largeOrder,
+            )
+        val submitted =
+            submitMockOrder(
+                token = userToken,
+                idempotencyKey = "brokerage-fill-bounded-submit",
+                requestId = "req-brokerage-fill-bounded-submit",
+                decisionId = decisionId,
+                order = largeOrder,
+            )
+        assertEquals(200, submitted.response.status, submitted.response.contentAsString)
+        val orderId = json(submitted).at("/data/orderId").stringValue()
+        val accountId = json(submitted).at("/data/accountId").stringValue()
+        // bounded consumer만 검증하는 격리 fixture이므로 제출 후 수량 projection을 원자적으로 확장한다.
+        jdbcTemplate.update(
+            """
+            update orders
+            set quantity = 250,
+                leaves_quantity = 250,
+                order_intent_json =
+                  jsonb_set(
+                    jsonb_set(order_intent_json, '{quantity}', '"250"'::jsonb),
+                    '{estimatedAmount}',
+                    '"17500000"'::jsonb
+                  )
+            where order_id = ?
+            """.trimIndent(),
+            orderId,
+        )
+        insertMockFillSeries(orderId = orderId, count = 250, fillPriceKrw = 70_000)
+
+        val first =
+            reconcileOrder(
+                token = adminToken,
+                idempotencyKey = "brokerage-fill-bounded-apply-1",
+                requestId = "req-brokerage-fill-bounded-apply-1",
+                orderId = orderId,
+            )
+        assertEquals(200, first.response.status, first.response.contentAsString)
+        assertEquals(200, json(first).at("/data/appliedEventCount").intValue())
+        assertTrue(json(first).at("/data/hasMore").booleanValue())
+        assertEquals("MISMATCH", json(first).at("/data/reconciliation/status").stringValue())
+
+        val second =
+            reconcileOrder(
+                token = adminToken,
+                idempotencyKey = "brokerage-fill-bounded-apply-2",
+                requestId = "req-brokerage-fill-bounded-apply-2",
+                orderId = orderId,
+            )
+        assertEquals(200, second.response.status, second.response.contentAsString)
+        assertEquals(50, json(second).at("/data/appliedEventCount").intValue())
+        assertFalse(json(second).at("/data/hasMore").booleanValue())
+        assertEquals("FILLED", json(second).at("/data/status").stringValue())
+        assertEquals("MATCHED", json(second).at("/data/reconciliation/status").stringValue())
+        assertEquals(251, count("select count(*) from order_events where order_id = ?", orderId))
+        assertEquals(250, count("select count(*) from order_fill_application_receipts where order_id = ?", orderId))
+
+        val page =
+            getFills(
+                token = userToken,
+                mode = "mock",
+                accountId = accountId,
+                from = "2030-01-02",
+                to = "2030-01-02",
+            )
+        assertEquals(200, page.response.status, page.response.contentAsString)
+        assertEquals(50, json(page).at("/data/items").size())
+        val cursor = json(page).at("/data/nextCursor").stringValue()
+        assertTrue(cursor.isNotBlank())
+        val nextPage =
+            getFills(
+                token = userToken,
+                mode = "mock",
+                accountId = accountId,
+                from = "2030-01-02",
+                to = "2030-01-02",
+                cursor = cursor,
+            )
+        assertEquals(200, nextPage.response.status, nextPage.response.contentAsString)
+        assertEquals(50, json(nextPage).at("/data/items").size())
+
+        val tamperedCursor = tamperCursorSignature(cursor)
+        assertTrue(tamperedCursor != cursor)
+        val tampered =
+            getFills(
+                token = userToken,
+                mode = "mock",
+                accountId = accountId,
+                from = "2030-01-02",
+                to = "2030-01-02",
+                cursor = tamperedCursor,
+            )
+        assertEquals(400, tampered.response.status, tampered.response.contentAsString)
+        assertEquals("VALIDATION_ERROR", json(tampered).at("/error/code").stringValue())
+    }
+
+    @Test
+    fun `concurrent reconciliation serializes without duplicate fill events`() {
+        val userToken = login("demo-user", userPassword())
+        val adminToken = login("demo-admin", adminPassword())
+        val decisionId = createDecision(userToken, "36", orderIntent())
+        val submitted =
+            submitMockOrder(
+                token = userToken,
+                idempotencyKey = "brokerage-fill-race-submit",
+                requestId = "req-brokerage-fill-race-submit",
+                decisionId = decisionId,
+                order = orderIntent(),
+            )
+        assertEquals(200, submitted.response.status, submitted.response.contentAsString)
+        val orderId = json(submitted).at("/data/orderId").stringValue()
+        insertMockFillObservation(
+            orderId,
+            "a",
+            "PARTIAL_FILL",
+            1,
+            1,
+            1,
+            EVALUATION_AS_OF.minusSeconds(20),
+        )
+        insertMockFillObservation(
+            orderId,
+            "b",
+            "FILL",
+            1,
+            2,
+            0,
+            EVALUATION_AS_OF.minusSeconds(10),
+        )
+
+        val executor = Executors.newFixedThreadPool(2)
+        try {
+            val responses =
+                listOf("a", "b")
+                    .map { suffix ->
+                        executor.submit<MvcResult> {
+                            reconcileOrder(
+                                token = adminToken,
+                                idempotencyKey = "brokerage-fill-race-apply-$suffix",
+                                requestId = "req-brokerage-fill-race-$suffix",
+                                orderId = orderId,
+                            )
+                        }
+                    }.map { it.get(15, TimeUnit.SECONDS) }
+            assertEquals(listOf(200, 200), responses.map { it.response.status }.sorted())
+            assertEquals(
+                listOf(0, 2),
+                responses.map { json(it).at("/data/appliedEventCount").intValue() }.sorted(),
+            )
+        } finally {
+            executor.shutdownNow()
+        }
+        assertEquals(3, count("select count(*) from order_events where order_id = ?", orderId))
+        assertEquals(2, count("select count(*) from order_fill_application_receipts where order_id = ?", orderId))
+    }
+
+    @Test
+    fun `duplicate and out of order observations do not mutate twice and average price floors`() {
+        val userToken = login("demo-user", userPassword())
+        val adminToken = login("demo-admin", adminPassword())
+        val decisionId = createDecision(userToken, "37", orderIntent())
+        val submitted =
+            submitMockOrder(
+                token = userToken,
+                idempotencyKey = "brokerage-fill-ordering-submit",
+                requestId = "req-brokerage-fill-ordering-submit",
+                decisionId = decisionId,
+                order = orderIntent(),
+            )
+        assertEquals(200, submitted.response.status, submitted.response.contentAsString)
+        val orderId = json(submitted).at("/data/orderId").stringValue()
+        jdbcTemplate.update(
+            "update orders set quantity = 10, leaves_quantity = 10 where order_id = ?",
+            orderId,
+        )
+        insertMockFillObservation(
+            orderId,
+            "1",
+            "PARTIAL_FILL",
+            4,
+            4,
+            6,
+            EVALUATION_AS_OF.minusSeconds(40),
+            fillPriceKrw = 100,
+            averageFillPriceKrw = 100,
+        )
+        insertMockFillObservation(
+            orderId,
+            "2",
+            "PARTIAL_FILL",
+            1,
+            4,
+            6,
+            EVALUATION_AS_OF.minusSeconds(30),
+            fillPriceKrw = 100,
+            averageFillPriceKrw = 100,
+        )
+        insertMockFillObservation(
+            orderId,
+            "3",
+            "PARTIAL_FILL",
+            1,
+            3,
+            7,
+            EVALUATION_AS_OF.minusSeconds(20),
+            fillPriceKrw = 100,
+            averageFillPriceKrw = 100,
+        )
+        insertMockFillObservation(
+            orderId,
+            "4",
+            "FILL",
+            6,
+            10,
+            0,
+            EVALUATION_AS_OF.minusSeconds(10),
+            fillPriceKrw = 101,
+            averageFillPriceKrw = 100,
+        )
+
+        val reconciled =
+            reconcileOrder(
+                token = adminToken,
+                idempotencyKey = "brokerage-fill-ordering-apply",
+                requestId = "req-brokerage-fill-ordering-apply",
+                orderId = orderId,
+            )
+        assertEquals(200, reconciled.response.status, reconciled.response.contentAsString)
+        assertEquals("FILLED", json(reconciled).at("/data/status").stringValue())
+        assertEquals(100, json(reconciled).at("/data/averageFillPriceKrw").longValue())
+        assertEquals(3, json(reconciled).at("/data/appliedEventCount").intValue())
+        assertEquals("MISMATCH", json(reconciled).at("/data/reconciliation/status").stringValue())
+        assertEquals(
+            listOf(
+                "MOCK_ORDER_SUBMITTED",
+                "MOCK_ORDER_PARTIALLY_FILLED",
+                "INVALID_TRANSITION",
+                "MOCK_ORDER_FILLED",
+            ),
+            jdbcTemplate.queryForList(
+                "select event_type from order_events where order_id = ? order by event_seq",
+                String::class.java,
+                orderId,
+            ),
+        )
+        assertEquals(4, count("select count(*) from order_fill_application_receipts where order_id = ?", orderId))
+    }
+
+    @Test
+    fun `cancel requested mock order accepts a later authoritative full fill`() {
+        val userToken = login("demo-user", userPassword())
+        val adminToken = login("demo-admin", adminPassword())
+        val decisionId = createDecision(userToken, "38", orderIntent())
+        val submitted =
+            submitMockOrder(
+                userToken,
+                "brokerage-fill-cancel-race-submit",
+                "req-brokerage-fill-cancel-race-submit",
+                decisionId,
+                orderIntent(),
+            )
+        assertEquals(200, submitted.response.status, submitted.response.contentAsString)
+        val orderId = json(submitted).at("/data/orderId").stringValue()
+        val cancelled =
+            cancelOrder(
+                userToken,
+                "brokerage-fill-cancel-race-cancel",
+                "req-brokerage-fill-cancel-race-cancel",
+                orderId,
+            )
+        assertEquals("CANCEL_REQUESTED", json(cancelled).at("/data/status").stringValue())
+        insertMockFillObservation(
+            orderId,
+            "c",
+            "FILL",
+            2,
+            2,
+            0,
+            EVALUATION_AS_OF.minusSeconds(10),
+        )
+
+        val reconciled =
+            reconcileOrder(
+                adminToken,
+                "brokerage-fill-cancel-race-apply",
+                "req-brokerage-fill-cancel-race-apply",
+                orderId,
+            )
+        assertEquals(200, reconciled.response.status, reconciled.response.contentAsString)
+        assertEquals("FILLED", json(reconciled).at("/data/status").stringValue())
+        assertEquals("MATCHED", json(reconciled).at("/data/reconciliation/status").stringValue())
+        assertEquals(
+            listOf("MOCK_ORDER_SUBMITTED", "MOCK_ORDER_CANCEL_REQUESTED", "MOCK_ORDER_FILLED"),
+            jdbcTemplate.queryForList(
+                "select event_type from order_events where order_id = ? order by event_seq",
+                String::class.java,
+                orderId,
+            ),
+        )
+    }
+
+    @Test
+    fun `cancel requested mock order rejects a partial fill without erasing cancellation intent`() {
+        val userToken = login("demo-user", userPassword())
+        val adminToken = login("demo-admin", adminPassword())
+        val decisionId = createDecision(userToken, "3b", orderIntent())
+        val submitted =
+            submitMockOrder(
+                userToken,
+                "brokerage-fill-cancel-partial-submit",
+                "req-brokerage-fill-cancel-partial-submit",
+                decisionId,
+                orderIntent(),
+            )
+        assertEquals(200, submitted.response.status, submitted.response.contentAsString)
+        val orderId = json(submitted).at("/data/orderId").stringValue()
+        val cancelled =
+            cancelOrder(
+                userToken,
+                "brokerage-fill-cancel-partial-cancel",
+                "req-brokerage-fill-cancel-partial-cancel",
+                orderId,
+            )
+        assertEquals("CANCEL_REQUESTED", json(cancelled).at("/data/status").stringValue())
+        insertMockFillObservation(
+            orderId = orderId,
+            suffix = "e",
+            execType = "PARTIAL_FILL",
+            fillQuantity = 1,
+            cumulativeQuantity = 1,
+            leavesQuantity = 1,
+            observedAt = EVALUATION_AS_OF.minusSeconds(10),
+        )
+
+        val reconciled =
+            reconcileOrder(
+                adminToken,
+                "brokerage-fill-cancel-partial-apply",
+                "req-brokerage-fill-cancel-partial-apply",
+                orderId,
+            )
+
+        assertEquals(200, reconciled.response.status, reconciled.response.contentAsString)
+        assertEquals("CANCEL_REQUESTED", json(reconciled).at("/data/status").stringValue())
+        assertEquals(0, json(reconciled).at("/data/filledQuantity").longValue())
+        assertEquals(2, json(reconciled).at("/data/leavesQuantity").longValue())
+        assertTrue(json(reconciled).at("/data/averageFillPriceKrw").isNull)
+        assertEquals("MISMATCH", json(reconciled).at("/data/reconciliation/status").stringValue())
+        assertEquals(1, json(reconciled).at("/data/appliedEventCount").intValue())
+        assertEquals(
+            "CANCEL_REQUESTED_PARTIAL_FILL",
+            jdbcTemplate.queryForObject(
+                """
+                select invalid_reason
+                from order_fill_application_receipts
+                where order_id = ?
+                """.trimIndent(),
+                String::class.java,
+                orderId,
+            ),
+        )
+        assertEquals(
+            listOf("MOCK_ORDER_SUBMITTED", "MOCK_ORDER_CANCEL_REQUESTED", "INVALID_TRANSITION"),
+            jdbcTemplate.queryForList(
+                "select event_type from order_events where order_id = ? order by event_seq",
+                String::class.java,
+                orderId,
+            ),
+        )
+    }
+
+    @Test
+    fun `three unit fills preserve exact notional remainder across reconciliation`() {
+        val userToken = login("demo-user", userPassword())
+        val adminToken = login("demo-admin", adminPassword())
+        val decisionId = createDecision(userToken, "3c", orderIntent())
+        val submitted =
+            submitMockOrder(
+                token = userToken,
+                idempotencyKey = "brokerage-fill-notional-submit",
+                requestId = "req-brokerage-fill-notional-submit",
+                decisionId = decisionId,
+                order = orderIntent(),
+            )
+        assertEquals(200, submitted.response.status, submitted.response.contentAsString)
+        val orderId = json(submitted).at("/data/orderId").stringValue()
+        jdbcTemplate.update(
+            "update orders set quantity = 3, leaves_quantity = 3 where order_id = ?",
+            orderId,
+        )
+        insertMockFillObservation(
+            orderId,
+            "5",
+            "PARTIAL_FILL",
+            1,
+            1,
+            2,
+            EVALUATION_AS_OF.minusSeconds(30),
+            fillPriceKrw = 1,
+            averageFillPriceKrw = 1,
+        )
+        insertMockFillObservation(
+            orderId,
+            "6",
+            "PARTIAL_FILL",
+            1,
+            2,
+            1,
+            EVALUATION_AS_OF.minusSeconds(20),
+            fillPriceKrw = 2,
+            averageFillPriceKrw = 1,
+        )
+        insertMockFillObservation(
+            orderId,
+            "7",
+            "FILL",
+            1,
+            3,
+            0,
+            EVALUATION_AS_OF.minusSeconds(10),
+            fillPriceKrw = 3,
+            averageFillPriceKrw = 2,
+        )
+
+        val reconciled =
+            reconcileOrder(
+                token = adminToken,
+                idempotencyKey = "brokerage-fill-notional-apply",
+                requestId = "req-brokerage-fill-notional-apply",
+                orderId = orderId,
+            )
+
+        assertEquals(200, reconciled.response.status, reconciled.response.contentAsString)
+        assertEquals("FILLED", json(reconciled).at("/data/status").stringValue())
+        assertEquals(3, json(reconciled).at("/data/filledQuantity").longValue())
+        assertEquals(2, json(reconciled).at("/data/averageFillPriceKrw").longValue())
+        assertEquals("MATCHED", json(reconciled).at("/data/reconciliation/status").stringValue())
+        assertEquals(3, json(reconciled).at("/data/appliedEventCount").intValue())
     }
 
     @Test
@@ -1116,6 +1908,181 @@ class BrokerageApiIntegrationTest(
     }
 
     @Test
+    fun `mock provider outcome is owner bound and atomically updates order plus event`() {
+        val token = login("demo-user", userPassword())
+        val decisionId = createDecision(token, suffix = "3d", order = orderIntent())
+        val submitted =
+            submitMockOrder(
+                token = token,
+                idempotencyKey = "brokerage-provider-outcome-0001",
+                requestId = "req-brokerage-provider-outcome",
+                decisionId = decisionId,
+                order = orderIntent(),
+            )
+        assertEquals(200, submitted.response.status, submitted.response.contentAsString)
+        val orderId = json(submitted).at("/data/orderId").stringValue()
+        jdbcTemplate.update(
+            """
+            with test_clock as (
+              select clock_timestamp() - interval '1 second' as value
+            )
+            update orders
+            set created_at = test_clock.value,
+                acknowledged_at = test_clock.value,
+                submitted_at = test_clock.value,
+                updated_at = test_clock.value
+            from test_clock
+            where order_id = ?
+            """.trimIndent(),
+            orderId,
+        )
+        val receivedAt =
+            requireNotNull(
+                jdbcTemplate.queryForObject(
+                    "select clock_timestamp()",
+                    OffsetDateTime::class.java,
+                ),
+            )
+        val malformedPayloads =
+            listOf(
+                mapOf<String, Any?>(
+                    "actorUserId" to "usr_demo_user",
+                    "actorRole" to "USER",
+                    "securityVersion" to "not-an-integer",
+                    "requestId" to "req-provider-outcome-malformed-1",
+                    "orderId" to orderId,
+                    "status" to "ACCEPTED",
+                    "providerOrderRefHash" to "a".repeat(64),
+                    "trId" to "VTTC0012U",
+                    "receivedAt" to receivedAt.toString(),
+                    "orderEventId" to "oev_3d000000000000000000000000000010",
+                ),
+                mapOf<String, Any?>(
+                    "actorUserId" to "usr_demo_user",
+                    "actorRole" to "USER",
+                    "securityVersion" to 1,
+                    "requestId" to "req-provider-outcome-malformed-2",
+                    "orderId" to orderId,
+                    "status" to "ACCEPTED",
+                    "providerOrderRefHash" to "a".repeat(64),
+                    "trId" to "VTTC0012U",
+                    "receivedAt" to null,
+                    "orderEventId" to "oev_3d000000000000000000000000000011",
+                ),
+            )
+        malformedPayloads.forEach { malformedPayload ->
+            appDataSource.connection.use { connection ->
+                connection
+                    .prepareStatement(
+                        """
+                        select operation_outcome
+                        from record_mock_order_provider_outcome(cast(? as jsonb), ?)
+                        """.trimIndent(),
+                    ).use { statement ->
+                        statement.setString(1, objectMapper.writeValueAsString(malformedPayload))
+                        statement.setString(2, TEST_BROKERAGE_DB_CAPABILITY_TOKEN)
+                        statement.executeQuery().use { result ->
+                            assertTrue(result.next())
+                            assertEquals("VALIDATION_ERROR", result.getString("operation_outcome"))
+                        }
+                    }
+            }
+        }
+        val acceptedPayload =
+            objectMapper.writeValueAsString(
+                mapOf<String, Any?>(
+                    "actorUserId" to "usr_demo_user",
+                    "actorRole" to "USER",
+                    "securityVersion" to 1,
+                    "requestId" to "req-provider-outcome-accepted",
+                    "orderId" to orderId,
+                    "status" to "ACCEPTED",
+                    "providerOrderRefHash" to "a".repeat(64),
+                    "trId" to "VTTC0012U",
+                    "receivedAt" to receivedAt.toString(),
+                    "orderEventId" to "oev_3d000000000000000000000000000001",
+                ),
+            )
+
+        appDataSource.connection.use { connection ->
+            connection
+                .prepareStatement(
+                    """
+                    select operation_outcome, status
+                    from record_mock_order_provider_outcome(cast(? as jsonb), ?)
+                    """.trimIndent(),
+                ).use { statement ->
+                    statement.setString(1, acceptedPayload)
+                    statement.setString(2, TEST_BROKERAGE_DB_CAPABILITY_TOKEN)
+                    statement.executeQuery().use { result ->
+                        assertTrue(result.next())
+                        assertEquals("APPLIED", result.getString("operation_outcome"))
+                        assertEquals("ACCEPTED", result.getString("status"))
+                    }
+                }
+        }
+        assertEquals(
+            mapOf(
+                "status" to "ACCEPTED",
+                "provider_order_ref_hash" to "a".repeat(64),
+                "provider_tr_id" to "VTTC0012U",
+            ),
+            jdbcTemplate.queryForMap(
+                """
+                select status, provider_order_ref_hash, provider_tr_id
+                from orders
+                where order_id = ?
+                """.trimIndent(),
+                orderId,
+            ),
+        )
+        assertEquals(
+            1,
+            count(
+                """
+                select count(*)
+                from order_events
+                where order_id = ? and event_type = 'MOCK_ORDER_ACCEPTED'
+                """.trimIndent(),
+                orderId,
+            ),
+        )
+
+        val crossOwnerPayload =
+            objectMapper.writeValueAsString(
+                mapOf<String, Any?>(
+                    "actorUserId" to "usr_demo_admin",
+                    "actorRole" to "ADMIN",
+                    "securityVersion" to 1,
+                    "requestId" to "req-provider-outcome-cross-owner",
+                    "orderId" to orderId,
+                    "status" to "PENDING_RECONCILIATION",
+                    "providerOrderRefHash" to null,
+                    "trId" to null,
+                    "receivedAt" to receivedAt.toString(),
+                    "orderEventId" to "oev_3d000000000000000000000000000002",
+                ),
+            )
+        appDataSource.connection.use { connection ->
+            connection
+                .prepareStatement(
+                    """
+                    select operation_outcome
+                    from record_mock_order_provider_outcome(cast(? as jsonb), ?)
+                    """.trimIndent(),
+                ).use { statement ->
+                    statement.setString(1, crossOwnerPayload)
+                    statement.setString(2, TEST_BROKERAGE_DB_CAPABILITY_TOKEN)
+                    statement.executeQuery().use { result ->
+                        assertTrue(result.next())
+                        assertEquals("ORDER_NOT_FOUND", result.getString("operation_outcome"))
+                    }
+                }
+        }
+        assertEquals(2, count("select count(*) from order_events where order_id = ?", orderId))
+    }
+
+    @Test
     fun `LIMIT order is unavailable until current KRX tick table verification is attached`() {
         val token = login("demo-user", userPassword())
         val limitOrder = orderIntent(orderType = "LIMIT", estimatedPrice = 70_000)
@@ -1479,6 +2446,120 @@ class BrokerageApiIntegrationTest(
                 content = "{}"
             }.andReturn()
 
+    private fun reconcileOrder(
+        token: String,
+        idempotencyKey: String,
+        requestId: String,
+        orderId: String,
+    ): MvcResult =
+        mockMvc
+            .post("/api/v1/brokerage/orders/$orderId/reconcile") {
+                bearer(token)
+                header("X-Idempotency-Key", idempotencyKey)
+                header("X-Request-Id", requestId)
+                contentType = MediaType.APPLICATION_JSON
+                content = "{}"
+            }.andReturn()
+
+    private fun getFills(
+        token: String,
+        mode: String,
+        accountId: String,
+        from: String,
+        to: String,
+        cursor: String? = null,
+    ): MvcResult =
+        mockMvc
+            .get("/api/v1/brokerage/$mode/accounts/$accountId/fills") {
+                bearer(token)
+                param("from", from)
+                param("to", to)
+                cursor?.let { param("cursor", it) }
+                header("X-Request-Id", "req-brokerage-$mode-fills")
+            }.andReturn()
+
+    private fun insertMockFillObservation(
+        orderId: String,
+        suffix: String,
+        execType: String,
+        fillQuantity: Long,
+        cumulativeQuantity: Long,
+        leavesQuantity: Long,
+        observedAt: Instant,
+        fillPriceKrw: Long = 70_000,
+        averageFillPriceKrw: Long = fillPriceKrw,
+    ) {
+        jdbcTemplate.update(
+            """
+            insert into order_fill_observations (
+              observation_id, order_id, provider_exec_ref_hash, exec_type,
+              fill_quantity, fill_price_krw, cumulative_quantity, leaves_quantity,
+              average_fill_price_krw, observed_at, received_at, schema_version,
+              source_version, source_ref, completeness, artifact_hash
+            ) values (
+              ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::timestamptz,
+              ?::timestamptz, '1', 's3.3-fill-observation-v1',
+              'offline-s33-fixture', 'COMPLETE', ?
+            )
+            """.trimIndent(),
+            "ofo_${suffix.repeat(32)}",
+            orderId,
+            suffix.repeat(64),
+            execType,
+            fillQuantity,
+            fillPriceKrw,
+            cumulativeQuantity,
+            leavesQuantity,
+            averageFillPriceKrw,
+            OffsetDateTime.ofInstant(observedAt, ZoneOffset.UTC),
+            OffsetDateTime.ofInstant(observedAt.plusSeconds(1), ZoneOffset.UTC),
+            hex(suffix, "f"),
+        )
+    }
+
+    private fun insertMockFillSeries(
+        orderId: String,
+        count: Int,
+        fillPriceKrw: Long,
+    ) {
+        require(count in 1..250)
+        repeat(count) { zeroBased ->
+            val sequence = zeroBased + 1
+            val suffix = sequence.toString(16).padStart(32, '0')
+            jdbcTemplate.update(
+                """
+                insert into order_fill_observations (
+                  observation_id, order_id, provider_exec_ref_hash, exec_type,
+                  fill_quantity, fill_price_krw, cumulative_quantity, leaves_quantity,
+                  average_fill_price_krw, observed_at, received_at, schema_version,
+                  source_version, source_ref, completeness, artifact_hash
+                ) values (
+                  ?, ?, ?, ?, 1, ?, ?, ?, ?, ?::timestamptz,
+                  ?::timestamptz, '1', 's3.3-fill-observation-v1',
+                  'offline-s33-bounded', 'COMPLETE', ?
+                )
+                """.trimIndent(),
+                "ofo_$suffix",
+                orderId,
+                sequence.toString(16).padStart(64, '0'),
+                if (sequence == count) "FILL" else "PARTIAL_FILL",
+                fillPriceKrw,
+                sequence,
+                count - sequence,
+                fillPriceKrw,
+                OffsetDateTime.ofInstant(
+                    EVALUATION_AS_OF.minusSeconds((count - sequence + 1).toLong()),
+                    ZoneOffset.UTC,
+                ),
+                OffsetDateTime.ofInstant(
+                    EVALUATION_AS_OF.minusSeconds((count - sequence).toLong()),
+                    ZoneOffset.UTC,
+                ),
+                (sequence + count).toString(16).padStart(64, '0'),
+            )
+        }
+    }
+
     private fun brokerageIdempotency(
         action: String,
         sequence: Int,
@@ -1731,6 +2812,8 @@ class BrokerageApiIntegrationTest(
         suffix: String,
         fill: String,
     ): String = (suffix.filter { it in '0'..'9' || it in 'a'..'f' } + fill.repeat(64)).take(64)
+
+    private fun tamperCursorSignature(cursor: String): String = cursor.dropLast(1) + if (cursor.last() == 'A') "Q" else "A"
 
     private fun json(result: MvcResult): JsonNode = objectMapper.readTree(result.response.contentAsString)
 

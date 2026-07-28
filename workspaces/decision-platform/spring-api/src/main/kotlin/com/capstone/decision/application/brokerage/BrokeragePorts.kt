@@ -37,10 +37,47 @@ data class BrokerageGatewayCancelResult(
     val receivedAt: Instant,
 )
 
+data class BrokerageGatewayBalanceRequest(
+    val requestId: String,
+    val accountId: String,
+)
+
+data class BrokerageGatewayBalanceResult(
+    val accountId: String,
+    val cashKrw: Long,
+    val portfolioEquityKrw: Long,
+    val marginRequirementKrw: Long,
+    val positions: List<MockBalancePositionProjection>,
+    val observedAt: Instant,
+    val sourceVersion: String,
+)
+
+data class BrokerageGatewayBuyableRequest(
+    val requestId: String,
+    val accountId: String,
+    val symbol: String,
+    val estimatedPriceKrw: Long,
+)
+
+data class BrokerageGatewayBuyableResult(
+    val accountId: String,
+    val symbol: String,
+    val estimatedPriceKrw: Long,
+    val buyableQuantity: Long,
+    val buyableAmountKrw: Long,
+    val cashKrw: Long,
+    val observedAt: Instant,
+    val sourceVersion: String,
+)
+
 interface BrokerageGatewayPort {
     fun submitMockOrder(request: BrokerageGatewaySubmitRequest): BrokerageGatewaySubmitResult
 
     fun cancelMockOrder(request: BrokerageGatewayCancelRequest): BrokerageGatewayCancelResult
+
+    fun getMockBalance(request: BrokerageGatewayBalanceRequest): BrokerageGatewayBalanceResult
+
+    fun getMockBuyable(request: BrokerageGatewayBuyableRequest): BrokerageGatewayBuyableResult
 }
 
 interface BrokerageOrderPersistencePort {
@@ -51,6 +88,8 @@ interface BrokerageOrderPersistencePort {
     ): StoredBrokerageIdempotencyResult?
 
     fun persist(request: BrokerageOrderWriteRequest)
+
+    fun recordProviderOutcome(request: BrokerageProviderOutcomeRequest): OrderDetailProjection
 
     fun findOrderableDecisionAccountId(
         actorUserId: String,

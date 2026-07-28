@@ -33,6 +33,15 @@ class BrokerageProjectionFactory(
             ),
         )
 
+    fun fromDetail(projection: OrderDetailProjection): MockOrderProjection =
+        MockOrderProjection(
+            orderId = projection.orderId,
+            accountId = projection.accountId,
+            brokerageMode = projection.brokerageMode,
+            status = projection.status,
+            submittedAt = projection.submittedAt,
+        )
+
     fun fromCanonicalJson(payload: String): MockOrderProjection {
         val node = objectMapper.readTree(payload)
         return MockOrderProjection(

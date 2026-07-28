@@ -62,6 +62,9 @@ class MockOrderIntent:
     order_type: Literal["MARKET", "LIMIT"]
     quantity: int
     estimated_price: int
+    # exact KIS_MOCK probe는 정규장 밖에도 동일 주문/취소/reference 경계를 검증해야 하므로
+    # packet에 명시된 KRX 주문구분만 선택적으로 운반한다. 일반 runtime 호출은 None으로 기존 매핑을 쓴다.
+    order_division: Literal["00", "01", "05", "06", "07"] | None = None
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -105,7 +108,7 @@ class KISMockOrderGateway:
             raise LiveOrderGateClosed("S3.1 live order gate is immutable closed.")
         _validate_intent(intent)
         tr_id = MOCK_BUY_TR_ID if intent.side == "BUY" else MOCK_SELL_TR_ID
-        order_division = "01" if intent.order_type == "MARKET" else "00"
+        order_division = _order_division(intent)
         reference_store = self._reference_store
         if reference_store is not None:
             if order_id is None or account_id is None:
@@ -218,3 +221,13 @@ def _validate_intent(intent: MockOrderIntent) -> None:
         raise ValueError("KIS domestic mock order requires a six digit symbol.")
     if intent.quantity <= 0 or intent.estimated_price <= 0:
         raise ValueError("KIS mock order quantity and estimated price must be positive.")
+
+
+def _order_division(intent: MockOrderIntent) -> str:
+    if intent.order_division is None:
+        return "01" if intent.order_type == "MARKET" else "00"
+    if intent.order_type == "MARKET" and intent.order_division != "01":
+        raise ValueError("KIS mock market order division is invalid.")
+    if intent.order_type == "LIMIT" and intent.order_division not in {"00", "05", "06", "07"}:
+        raise ValueError("KIS mock limit order division is invalid.")
+    return intent.order_division

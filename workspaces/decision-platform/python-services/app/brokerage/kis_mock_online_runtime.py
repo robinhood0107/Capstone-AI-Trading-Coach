@@ -23,6 +23,7 @@ from app.brokerage.mock_order_reference_store import MockProviderOrderReference
 from app.generated import brokerage_pb2
 
 _SYMBOL = re.compile(r"^[0-9]{6}$")
+_ORDER_DIVISION = re.compile(r"^[0-9]{2}$")
 _DATE = re.compile(r"^[0-9]{8}$")
 _TIME = re.compile(r"^[0-9]{6}$")
 _MAX_BIGINT = 9_223_372_036_854_775_807
@@ -143,8 +144,14 @@ class KISMockOnlineBalanceReader:
         account_id: str,
         symbol: str,
         estimated_price_krw: int,
+        order_division: str = "00",
     ) -> brokerage_pb2.GetMockBuyableResponse | None:
-        if _SYMBOL.fullmatch(symbol) is None or estimated_price_krw <= 0:
+        """주문가능 조회는 실제 주문과 같은 KRX 주문구분으로만 검증한다."""
+        if (
+            _SYMBOL.fullmatch(symbol) is None
+            or estimated_price_krw <= 0
+            or _ORDER_DIVISION.fullmatch(order_division) is None
+        ):
             raise ValueError("KIS mock buyable input is invalid")
         payload = self._client.request(
             "GET",
@@ -153,7 +160,7 @@ class KISMockOnlineBalanceReader:
             params={
                 "PDNO": symbol,
                 "ORD_UNPR": str(estimated_price_krw),
-                "ORD_DVSN": "00",
+                "ORD_DVSN": order_division,
                 "CMA_EVLU_AMT_ICLD_YN": "N",
                 "OVRS_ICLD_YN": "N",
             },

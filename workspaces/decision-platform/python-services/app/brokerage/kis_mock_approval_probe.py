@@ -178,6 +178,10 @@ class ApprovalOrder(_StrictModel):
     order_type: Literal["LIMIT"] = Field(alias="orderType")
     quantity: StrictInt = Field(ge=1, le=1)
     limit_price_krw: StrictInt = Field(alias="limitPriceKrw", ge=1, le=1_000_000_000)
+    order_division: Literal["00", "05", "06", "07"] = Field(
+        default="00",
+        alias="orderDivision",
+    )
 
 
 class ExecutionWindow(_StrictModel):
@@ -602,6 +606,7 @@ class _KISMockProbeOperations:
                 packet.order.account_id,
                 packet.order.symbol,
                 packet.order.limit_price_krw,
+                packet.order.order_division,
             )
             if (
                 buyable_response is None
@@ -624,6 +629,7 @@ class _KISMockProbeOperations:
                     order_type="LIMIT",
                     quantity=packet.order.quantity,
                     estimated_price=packet.order.limit_price_krw,
+                    order_division=packet.order.order_division,
                 ),
                 order_id=packet.order.order_id,
                 account_id=packet.order.account_id,

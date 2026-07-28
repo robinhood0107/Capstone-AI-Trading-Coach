@@ -393,6 +393,8 @@ uv run --frozen python contracts/run_openapi_gate.py \
 `FULL` one-shot probe만 위의 고정 5회 상한 안에서 최종 검증으로 실행할 수 있다. 반복 실패
 recovery는 새 exact-approved `BALANCE_DIAGNOSTIC` packet으로 balance 1회,
 `tokenP=1`/`brokerage=1`, retry/artifact 0만 허용하며 성공해도 새 `FULL` 승인이 필요하다.
+balance source page의 continuation cursor는 `positions_complete=false`인 connectivity evidence로만
+허용하고 authoritative position universe나 risk input으로 게시하지 않는다.
 두 profile의 packet은 `approvalId`와
 canonical SHA-256에 결속한 Redis `SET NX PX` single-use claim을 runtime 생성 전에 획득해야 하며,
 성공·첫 실패·runtime 생성 실패 모두 재사용 권한을 남기지 않는다. KIS_MOCK provider response는

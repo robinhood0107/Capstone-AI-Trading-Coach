@@ -77,8 +77,9 @@
   body/header/URL/`msg1`/계좌/credential을 버린다. diagnostic도 single-use이며 성공 뒤 최종
   5단계에는 별도의 새 `FULL` packet과 새 exact 승인이 필요하다.
   balance parser는 cash/equity/position source shape만 검증하고 margin requirement나
-  gold ETF/ETN 분류를 합성하지 않는다. trusted enrichment가 없는 persistent online
-  balance projection은 provider 호출 전에 fail-closed한다.
+  gold ETF/ETN 분류를 합성하지 않는다. continuation cursor가 있는 source page는
+  `positions_complete=false`로 표시해 connectivity evidence로만 쓰며, trusted enrichment가
+  없는 persistent online balance projection은 provider 호출 전에 fail-closed한다.
 - exact probe는 packet 검증 뒤 runtime factory를 만들기 전에 `approvalId`와 canonical
   SHA-256에서 파생한 opaque Redis key를 `SET NX PX`로 claim한다. claim은 성공·첫 실패·
   runtime 생성 실패 뒤에도 packet TTL까지 유지되며 Redis 장애나 이미 존재하는 claim은 provider
@@ -175,9 +176,10 @@ KIS_MOCK online boundary.
   HTTP status, and an optional `[A-Z0-9_-]{1,32}` provider code; bodies, headers, URLs,
   `msg1`, account data, and credentials are discarded. The diagnostic packet is
   single-use, and success still requires another new `FULL` packet and approval. Its
-  balance parser validates only bounded cash/equity/position source shape; it never
-  fabricates margin or gold ETF/ETN risk fields, and persistent online balance fails
-  closed before provider access without trusted enrichment.
+  balance parser validates only bounded cash/equity/position source shape; continuation
+  source pages are marked `positions_complete=false` and used only as connectivity
+  evidence. It never fabricates margin or gold ETF/ETN risk fields, and persistent
+  online balance fails closed before provider access without trusted enrichment.
 - After packet validation and before runtime construction, the exact probe claims an
   opaque Redis key derived from `approvalId` and the canonical SHA-256 using `SET NX PX`.
   The claim remains consumed through success, first failure, and runtime-construction

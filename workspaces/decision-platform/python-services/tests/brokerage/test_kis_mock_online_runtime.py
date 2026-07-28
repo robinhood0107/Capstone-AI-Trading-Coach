@@ -143,10 +143,16 @@ def test_online_buyable_parser_returns_only_sanitized_projection() -> None:
     )
     buyable_reader = KISMockOnlineBalanceReader(buyable_client)  # type: ignore[arg-type]
 
-    buyable = buyable_reader.buyable("acct_" + "a" * 32, "005930", 70_000)
+    buyable = buyable_reader.buyable(
+        "acct_" + "a" * 32,
+        "005930",
+        70_000,
+        order_division="07",
+    )
 
     assert buyable is not None
     assert (buyable.buyable_quantity, buyable.buyable_amount_krw) == (14, 980_000)
+    assert buyable_client.calls[0][3]["ORD_DVSN"] == "07"
 
 
 def test_execution_reader_enforces_quantity_invariant_and_hashes_raw_reference() -> None:

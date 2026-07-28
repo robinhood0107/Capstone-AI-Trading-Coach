@@ -286,16 +286,8 @@ def test_exact_probe_limit_order_division_flows_to_order_reference_and_cancel() 
     assert transport.calls[1][3]["ORD_DVSN"] == "07"
 
 
-def test_exact_probe_exchange_division_flows_to_order_reference_and_cancel() -> None:
-    transport = FakeTransport(
-        response={
-            "rt_cd": "0",
-            "output": {
-                "ODNO": "synthetic-provider-order",
-                "KRX_FWDG_ORD_ORGNO": "synthetic-provider-org",
-            },
-        }
-    )
+def test_mock_order_cash_nxt_fails_before_reference_or_provider_send() -> None:
+    transport = FakeTransport()
     reference_store = FakeReferenceStore()
     gateway = KISMockOrderGateway(
         transport,
@@ -305,26 +297,24 @@ def test_exact_probe_exchange_division_flows_to_order_reference_and_cancel() -> 
     order_id = "ord_mock_" + "2" * 32
     account_id = "acct_" + "2" * 32
 
-    gateway.submit_cash_order(
-        MockOrderIntent(
-            "005930",
-            "BUY",
-            "LIMIT",
-            quantity=1,
-            estimated_price=220_000,
-            order_division="00",
-            exchange_division="NXT",
-        ),
-        order_id=order_id,
-        account_id=account_id,
-    )
-    gateway.cancel_cash_order(order_id=order_id, account_id=account_id)
+    with pytest.raises(ValueError, match="KRX only"):
+        gateway.submit_cash_order(
+            MockOrderIntent(
+                "005930",
+                "BUY",
+                "LIMIT",
+                quantity=1,
+                estimated_price=220_000,
+                order_division="00",
+                exchange_division="NXT",
+            ),
+            order_id=order_id,
+            account_id=account_id,
+        )
 
-    assert getattr(reference_store.prepare_intents[0], "exchange_division") == "NXT"
-    reference = reference_store.values[(order_id, account_id)]
-    assert getattr(reference, "exchange_division") == "NXT"
-    assert transport.calls[0][3]["EXCG_ID_DVSN_CD"] == "NXT"
-    assert transport.calls[1][3]["EXCG_ID_DVSN_CD"] == "NXT"
+    assert reference_store.prepare_intents == []
+    assert reference_store.values == {}
+    assert transport.calls == []
 
 
 def test_reference_prepare_failure_stops_before_provider_order_send() -> None:
@@ -487,7 +477,7 @@ def test_private_online_transport_is_mock_only_bounded_and_scrubs_account_echo(
     assert len(sends) == 1
 
 
-def test_private_online_transport_preserves_order_cash_exchange_division(
+def test_private_online_transport_rejects_mock_order_cash_nxt_before_send(
     tmp_path: Path,
 ) -> None:
     online = importlib.import_module("app.brokerage.kis_mock_online_client")
@@ -520,24 +510,23 @@ def test_private_online_transport_preserves_order_cash_exchange_division(
         budget=online.KISBrokerageCallBudget(token_p_cap=0, brokerage_cap=1),
     )
     try:
-        client.request(
-            "POST",
-            "/uapi/domestic-stock/v1/trading/order-cash",
-            "VTTC0012U",
-            json_body={
-                "PDNO": "005930",
-                "ORD_DVSN": "00",
-                "ORD_QTY": "1",
-                "ORD_UNPR": "220000",
-                "EXCG_ID_DVSN_CD": "NXT",
-            },
-        )
+        with pytest.raises(ValueError, match="KRX only"):
+            client.request(
+                "POST",
+                "/uapi/domestic-stock/v1/trading/order-cash",
+                "VTTC0012U",
+                json_body={
+                    "PDNO": "005930",
+                    "ORD_DVSN": "00",
+                    "ORD_QTY": "1",
+                    "ORD_UNPR": "220000",
+                    "EXCG_ID_DVSN_CD": "NXT",
+                },
+            )
     finally:
         client.close()
 
-    assert len(sent_bodies) == 1
-    assert '"EXCG_ID_DVSN_CD":"NXT"' in sent_bodies[0]
-    assert '"EXCG_ID_DVSN_CD":"KRX"' not in sent_bodies[0]
+    assert sent_bodies == []
 
 
 def test_private_online_transport_enforces_mock_response_cap_before_full_stream(

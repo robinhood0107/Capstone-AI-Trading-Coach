@@ -50,16 +50,17 @@ class FakeReferenceStore:
     ) -> None:
         self.values: dict[tuple[str, str], object] = {}
         self.pending: set[tuple[str, str]] = set()
+        self.prepare_intents: list[object] = []
         self.fail_prepare = fail_prepare
         self.fail_commit = fail_commit
         self.prepare_calls = 0
         self.commit_calls = 0
 
     def prepare(self, order_id: str, account_id: str, intent: object) -> None:
-        del intent
         self.prepare_calls += 1
         if self.fail_prepare:
             raise RuntimeError("mock order reference storage is unavailable")
+        self.prepare_intents.append(intent)
         self.pending.add((order_id, account_id))
 
     def commit(self, order_id: str, account_id: str, reference: object) -> None:
@@ -159,9 +160,16 @@ def test_mock_cash_order_maps_buy_sell_tr_ids_and_does_not_retry() -> None:
         "POST",
         ORDER_CASH_PATH,
         MOCK_BUY_TR_ID,
-        {"PDNO": "005930", "ORD_DVSN": "01", "ORD_QTY": "2", "ORD_UNPR": "0"},
+        {
+            "PDNO": "005930",
+            "ORD_DVSN": "01",
+            "ORD_QTY": "2",
+            "ORD_UNPR": "0",
+            "EXCG_ID_DVSN_CD": "KRX",
+        },
     )
     assert transport.calls[1][3]["ORD_UNPR"] == "70000"
+    assert transport.calls[1][3]["EXCG_ID_DVSN_CD"] == "KRX"
 
 
 def test_live_mode_fails_before_transport_call() -> None:
@@ -276,6 +284,47 @@ def test_exact_probe_limit_order_division_flows_to_order_reference_and_cancel() 
 
     assert transport.calls[0][3]["ORD_DVSN"] == "07"
     assert transport.calls[1][3]["ORD_DVSN"] == "07"
+
+
+def test_exact_probe_exchange_division_flows_to_order_reference_and_cancel() -> None:
+    transport = FakeTransport(
+        response={
+            "rt_cd": "0",
+            "output": {
+                "ODNO": "synthetic-provider-order",
+                "KRX_FWDG_ORD_ORGNO": "synthetic-provider-org",
+            },
+        }
+    )
+    reference_store = FakeReferenceStore()
+    gateway = KISMockOrderGateway(
+        transport,
+        mode="mock",
+        reference_store=reference_store,  # type: ignore[arg-type]
+    )
+    order_id = "ord_mock_" + "2" * 32
+    account_id = "acct_" + "2" * 32
+
+    gateway.submit_cash_order(
+        MockOrderIntent(
+            "005930",
+            "BUY",
+            "LIMIT",
+            quantity=1,
+            estimated_price=220_000,
+            order_division="00",
+            exchange_division="NXT",
+        ),
+        order_id=order_id,
+        account_id=account_id,
+    )
+    gateway.cancel_cash_order(order_id=order_id, account_id=account_id)
+
+    assert getattr(reference_store.prepare_intents[0], "exchange_division") == "NXT"
+    reference = reference_store.values[(order_id, account_id)]
+    assert getattr(reference, "exchange_division") == "NXT"
+    assert transport.calls[0][3]["EXCG_ID_DVSN_CD"] == "NXT"
+    assert transport.calls[1][3]["EXCG_ID_DVSN_CD"] == "NXT"
 
 
 def test_reference_prepare_failure_stops_before_provider_order_send() -> None:
@@ -436,6 +485,59 @@ def test_private_online_transport_is_mock_only_bounded_and_scrubs_account_echo(
         client.close()
 
     assert len(sends) == 1
+
+
+def test_private_online_transport_preserves_order_cash_exchange_division(
+    tmp_path: Path,
+) -> None:
+    online = importlib.import_module("app.brokerage.kis_mock_online_client")
+    sent_bodies: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        sent_bodies.append(request.read().decode("utf-8"))
+        return httpx.Response(
+            200,
+            json={
+                "rt_cd": "0",
+                "output": {
+                    "ODNO": "synthetic-provider-order",
+                    "KRX_FWDG_ORD_ORGNO": "synthetic-provider-org",
+                },
+            },
+            request=request,
+        )
+
+    client = online.KISMockBrokerageHttpClient(
+        settings=online.KISSettings(
+            kis_mode="mock",
+            kis_offline=True,
+            kis_data_dir=tmp_path,
+            _env_file=None,
+        ),
+        account_number=SecretStr("00000000-01"),
+        transport=httpx.MockTransport(handler),
+        rate_limiter=online.TokenBucket(rate_per_second=1_000),
+        budget=online.KISBrokerageCallBudget(token_p_cap=0, brokerage_cap=1),
+    )
+    try:
+        client.request(
+            "POST",
+            "/uapi/domestic-stock/v1/trading/order-cash",
+            "VTTC0012U",
+            json_body={
+                "PDNO": "005930",
+                "ORD_DVSN": "00",
+                "ORD_QTY": "1",
+                "ORD_UNPR": "220000",
+                "EXCG_ID_DVSN_CD": "NXT",
+            },
+        )
+    finally:
+        client.close()
+
+    assert len(sent_bodies) == 1
+    assert '"EXCG_ID_DVSN_CD":"NXT"' in sent_bodies[0]
+    assert '"EXCG_ID_DVSN_CD":"KRX"' not in sent_bodies[0]
 
 
 def test_private_online_transport_enforces_mock_response_cap_before_full_stream(
@@ -620,6 +722,43 @@ def test_encrypted_reference_store_never_persists_provider_reference_plaintext()
     ) + b" ".join(redis_client.mget(list(redis_client.scan_iter())))
     assert provider_order_no.encode() not in persisted
     assert provider_org_no.encode() not in persisted
+
+
+def test_encrypted_reference_store_persists_exchange_division_inside_ciphertext() -> None:
+    reference = importlib.import_module("app.brokerage.mock_order_reference_store")
+    redis_client = fakeredis.FakeRedis()
+    store = reference.EncryptedRedisOrderReferenceStore(
+        redis_client,
+        encryption_key=SecretStr("MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA="),
+        ttl_seconds=900,
+    )
+    order_id = "ord_mock_" + "e" * 32
+    account_id = "acct_" + "f" * 32
+
+    store.prepare(
+        order_id,
+        account_id,
+        reference.MockOrderReferenceIntent(
+            order_division="00",
+            exchange_division="NXT",
+            quantity=1,
+        ),
+    )
+    store.commit(
+        order_id,
+        account_id,
+        reference.MockProviderOrderReference(
+            provider_order_no="synthetic-provider-order",
+            provider_org_no="synthetic-provider-org",
+            order_division="00",
+            exchange_division="NXT",
+            quantity=1,
+        ),
+    )
+
+    restored = store.get(order_id, account_id)
+    assert restored is not None
+    assert restored.exchange_division == "NXT"
 
 
 def test_pending_reference_can_commit_after_store_restart() -> None:

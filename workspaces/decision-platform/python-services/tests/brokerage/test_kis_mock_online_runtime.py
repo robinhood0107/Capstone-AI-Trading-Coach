@@ -126,6 +126,7 @@ def test_online_balance_probe_parses_source_without_fabricating_risk_fields() ->
     assert source.cash_krw == 1_000_000
     assert source.portfolio_equity_krw == 1_140_000
     assert source.positions == (("005930", 2, 140_000),)
+    assert source.positions_complete is True
     assert "provider-free-text" not in repr(source)
 
 
@@ -213,22 +214,24 @@ def test_execution_reader_enforces_quantity_invariant_and_hashes_raw_reference()
     ]
 
 
-def test_balance_and_execution_reject_incomplete_or_oversized_mock_pages() -> None:
+def test_balance_probe_marks_partial_page_without_publishing_complete_positions() -> None:
     balance_reader = KISMockOnlineBalanceReader(
         FakeClient(
             {
                 "rt_cd": "0",
                 "ctx_area_fk100": "next",
                 "ctx_area_nk100": "next",
-                "output1": [],
+                "output1": [{"pdno": "005930", "hldg_qty": "1", "evlu_amt": "70,000"}],
                 "output2": [{"dnca_tot_amt": "0", "tot_evlu_amt": "0"}],
             }
         )  # type: ignore[arg-type]
     )
-    with pytest.raises(ValueError, match="another bounded page") as captured:
-        balance_reader.probe_balance_source("acct_" + "a" * 32)
-    assert captured.value.reason_code == "BALANCE_PAGINATION_REQUIRED"  # type: ignore[attr-defined]
+    source = balance_reader.probe_balance_source("acct_" + "a" * 32)
+    assert source.positions == (("005930", 1, 70_000),)
+    assert source.positions_complete is False
 
+
+def test_execution_rejects_incomplete_or_oversized_mock_pages() -> None:
     raw_order_no = "synthetic-provider-order"
     execution_reader = KISMockExecutionReader(
         FakeClient(

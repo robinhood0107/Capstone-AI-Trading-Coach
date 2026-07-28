@@ -110,6 +110,9 @@ OpenAPI는 같은 ID와 digest를 `x-s3-3-contract-id`,
    - S3-online은 `VTTC0081R`/`VTSC9215R` strict parser/read를 exact 5단계 approval probe의
      마지막 단계에만 추가한다. background polling, scheduler, fill observation append,
      자동 DB 반영은 추가하지 않는다.
+   - exact KIS_MOCK `FULL` packet은 선택적 `exchangeDivision`을 가질 수 있다.
+     `NXT`는 지정가·보통(`orderDivision=00`) 1주 probe에만 허용하며, 주문 submit,
+     encrypted cancel reference, 전량취소, 최근 체결조회 source-shape probe가 같은 값을 쓴다.
    - WebSocket, `/oauth2/Approval`, live account/order, 실전 주문·정정·취소는 구현하지 않으며
      별도 exact approval로도 이번 KIS_MOCK packet 범위를 확장할 수 없다.
    - V1~V13, 다른 workspace, `active_paper_portfolio_projection`은 변경하지 않는다.

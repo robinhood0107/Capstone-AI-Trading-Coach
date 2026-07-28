@@ -113,7 +113,8 @@ class KISMockOnlineBalanceReader:
             },
         )
         positions_complete = not (
-            bool(payload.get("ctx_area_fk100")) or bool(payload.get("ctx_area_nk100"))
+            _has_continuation_cursor(payload.get("ctx_area_fk100"))
+            or _has_continuation_cursor(payload.get("ctx_area_nk100"))
         )
         positions = _positions(payload.get("output1"))
         summary = _single_object(
@@ -218,7 +219,7 @@ class KISMockExecutionReader:
         matches = [
             row
             for row in rows
-            if row.get("odno") == reference.provider_order_no
+            if _execution_order_no(row) == reference.provider_order_no
         ]
         if len(matches) > 1:
             raise ValueError("KIS mock execution order match is not unique")
@@ -277,7 +278,9 @@ def _strict_execution_rows(
     *,
     require_nonempty: bool,
 ) -> list[dict[str, Any]]:
-    if payload.get("ctx_area_fk100") or payload.get("ctx_area_nk100"):
+    if _has_continuation_cursor(payload.get("ctx_area_fk100")) or _has_continuation_cursor(
+        payload.get("ctx_area_nk100")
+    ):
         raise ValueError("KIS mock execution response requires another bounded page")
     rows = payload.get("output1")
     min_rows = 1 if require_nonempty else 0
@@ -291,11 +294,15 @@ def _strict_execution_rows(
 def _execution_source_probe_rows(payload: dict[str, Any]) -> list[dict[str, Any]]:
     """exact probe 전용 parser: no-data 표현은 snapshot 없이 source-shape로만 닫는다."""
 
-    if payload.get("ctx_area_fk100") or payload.get("ctx_area_nk100"):
+    if _has_continuation_cursor(payload.get("ctx_area_fk100")) or _has_continuation_cursor(
+        payload.get("ctx_area_nk100")
+    ):
         raise ValueError("KIS mock execution response requires another bounded page")
     rows = payload.get("output1")
     if rows is None or rows == "" or rows == {}:
         return []
+    if isinstance(rows, dict):
+        return [rows]
     if not isinstance(rows, list) or len(rows) > _MAX_MOCK_EXECUTION_ROWS:
         raise ValueError("KIS mock execution response is incomplete")
     if not all(isinstance(row, dict) for row in rows):
@@ -310,6 +317,24 @@ def _execution_source_probe_hash(reference: MockProviderOrderReference) -> str:
     return hashlib.sha256(identity.encode()).hexdigest()
 
 
+def _has_continuation_cursor(value: object) -> bool:
+    """KIS가 빈 cursor를 공백 문자열로 보낼 수 있어 trim 후 continuation 여부를 판단한다."""
+
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return value.strip() != ""
+    return bool(value)
+
+
+def _execution_order_no(row: dict[str, Any]) -> object:
+    """KIS output row의 주문번호 key는 문서/환경에 따라 lower/upper case가 섞일 수 있다."""
+
+    if "odno" in row:
+        return row.get("odno")
+    return row.get("ODNO")
+
+
 def _execution_snapshot_from_rows(
     rows: list[dict[str, Any]],
     reference: MockProviderOrderReference,
@@ -317,7 +342,7 @@ def _execution_snapshot_from_rows(
     matches = [
         row
         for row in rows
-        if row.get("odno") == reference.provider_order_no
+        if _execution_order_no(row) == reference.provider_order_no
     ]
     if len(matches) != 1:
         raise ValueError("KIS mock execution order match is not unique")

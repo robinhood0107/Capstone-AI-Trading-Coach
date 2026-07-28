@@ -214,7 +214,7 @@ class KISMockExecutionReader:
             end=end,
             recent=recent,
         )
-        rows = _strict_execution_rows(payload, require_nonempty=False)
+        rows = _execution_source_probe_rows(payload)
         matches = [
             row
             for row in rows
@@ -228,9 +228,8 @@ class KISMockExecutionReader:
                 rows_seen=len(rows),
                 matched=False,
             )
-        snapshot = _execution_snapshot_from_rows(matches, reference)
         return KISMockExecutionSourceProbe(
-            provider_exec_ref_hash=snapshot.provider_exec_ref_hash,
+            provider_exec_ref_hash=_execution_source_probe_hash(reference),
             rows_seen=len(rows),
             matched=True,
         )
@@ -287,6 +286,28 @@ def _strict_execution_rows(
     if not all(isinstance(row, dict) for row in rows):
         raise ValueError("KIS mock execution response is incomplete")
     return rows
+
+
+def _execution_source_probe_rows(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    """exact probe 전용 parser: no-data 표현은 snapshot 없이 source-shape로만 닫는다."""
+
+    if payload.get("ctx_area_fk100") or payload.get("ctx_area_nk100"):
+        raise ValueError("KIS mock execution response requires another bounded page")
+    rows = payload.get("output1")
+    if rows is None or rows == "" or rows == {}:
+        return []
+    if not isinstance(rows, list) or len(rows) > _MAX_MOCK_EXECUTION_ROWS:
+        raise ValueError("KIS mock execution response is incomplete")
+    if not all(isinstance(row, dict) for row in rows):
+        raise ValueError("KIS mock execution response is incomplete")
+    return rows
+
+
+def _execution_source_probe_hash(reference: MockProviderOrderReference) -> str:
+    """raw provider order number는 probe 결과에도 싣지 않고 one-way digest만 남긴다."""
+
+    identity = f"kis-mock-execution-source-probe/v1\0{reference.provider_order_no}"
+    return hashlib.sha256(identity.encode()).hexdigest()
 
 
 def _execution_snapshot_from_rows(

@@ -214,6 +214,43 @@ def test_execution_reader_enforces_quantity_invariant_and_hashes_raw_reference()
     ]
 
 
+def test_execution_probe_allows_empty_cancelled_order_page_without_publish_snapshot() -> None:
+    raw_order_no = "synthetic-provider-order"
+    client = FakeClient(
+        {
+            "rt_cd": "0",
+            "ctx_area_fk100": "",
+            "ctx_area_nk100": "",
+            "output1": [],
+        }
+    )
+    reader = KISMockExecutionReader(client)  # type: ignore[arg-type]
+    reference = MockProviderOrderReference(
+        provider_order_no=raw_order_no,
+        provider_org_no="synthetic-provider-org",
+        order_division="00",
+        quantity=1,
+    )
+
+    source = reader.probe_execution_source(
+        reference=reference,
+        start=date(2026, 7, 27),
+        end=date(2026, 7, 27),
+        recent=True,
+    )
+
+    assert source.rows_seen == 0
+    assert source.matched is False
+    assert source.provider_exec_ref_hash is None
+    with pytest.raises(ValueError, match="incomplete"):
+        reader.read(
+            reference=reference,
+            start=date(2026, 7, 27),
+            end=date(2026, 7, 27),
+            recent=True,
+        )
+
+
 def test_balance_probe_marks_partial_page_without_publishing_complete_positions() -> None:
     balance_reader = KISMockOnlineBalanceReader(
         FakeClient(

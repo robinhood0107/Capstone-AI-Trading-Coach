@@ -1582,7 +1582,9 @@ KIS Mock 중심으로 구현하고, KIS Live는 고급해제/3단계 동의/재�
 > local secret를 제외한 clean worktree도 요구한다. reference store는 provider send 전에
 > encrypted `PENDING` marker를 쓰고 접수 뒤 `COMMITTED`로 원자 전환하며, commit 실패 시
 > 전량취소를 retry 없이 최대 1회 보상한다. balance probe는 cash/equity/position source
-> shape만 확인하고 margin requirement나 gold ETF/ETN 여부를 합성하지 않는다. trusted
+> shape만 확인하고 margin requirement나 gold ETF/ETN 여부를 합성하지 않는다. provider가
+> continuation cursor를 돌려준 source page는 `positions_complete=false`로 표시해 connectivity
+> evidence로만 쓰며 authoritative position universe나 risk input으로 게시하지 않는다. trusted
 > enrichment가 없는 persistent online balance는 `BALANCE_RISK_FIELDS_UNAVAILABLE`로
 > provider 호출 전에 닫힌다.
 

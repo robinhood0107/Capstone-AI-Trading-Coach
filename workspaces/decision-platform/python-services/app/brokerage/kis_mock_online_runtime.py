@@ -52,6 +52,7 @@ class KISMockBalanceSourceProbe:
     cash_krw: int
     portfolio_equity_krw: int
     positions: tuple[tuple[str, int, int], ...]
+    positions_complete: bool
 
 
 class KISMockProjectionError(ValueError):
@@ -80,7 +81,12 @@ class KISMockOnlineBalanceReader:
         )
 
     def probe_balance_source(self, account_id: str) -> KISMockBalanceSourceProbe:
-        """exact-approved 진단에서 cash/equity/position source shape만 bounded 검증한다."""
+        """exact-approved 진단에서 cash/equity/position source shape만 bounded 검증한다.
+
+        provider가 continuation cursor를 돌려줘도 이 probe 결과는 publish/risk 근거가 아니므로
+        첫 page shape만 검증하고 partial flag를 남긴다. 완전한 owner-facing balance는 여전히
+        trusted enrichment와 별도 pagination 처리가 없으면 fail-closed다.
+        """
         payload = self._client.request(
             "GET",
             BALANCE_PATH,
@@ -97,11 +103,9 @@ class KISMockOnlineBalanceReader:
                 "CTX_AREA_NK100": "",
             },
         )
-        if payload.get("ctx_area_fk100") or payload.get("ctx_area_nk100"):
-            raise KISMockProjectionError(
-                KISMockFailureReason.BALANCE_PAGINATION_REQUIRED,
-                "KIS mock balance response requires another bounded page",
-            )
+        positions_complete = not (
+            bool(payload.get("ctx_area_fk100")) or bool(payload.get("ctx_area_nk100"))
+        )
         positions = _positions(payload.get("output1"))
         summary = _single_object(
             payload.get("output2"),
@@ -121,6 +125,7 @@ class KISMockOnlineBalanceReader:
                 reason=KISMockFailureReason.BALANCE_EQUITY_INVALID,
             ),
             positions=positions,
+            positions_complete=positions_complete,
         )
 
     def buyable(

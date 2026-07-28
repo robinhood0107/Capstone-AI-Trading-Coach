@@ -190,8 +190,9 @@ online balance projection은 provider 호출 전에 `BALANCE_RISK_FIELDS_UNAVAIL
 probe 성공은 background polling, gRPC 상시 활성화, S3.3 fill observation append 또는
 KIS_LIVE 실계좌 주문 권한이 아니다.
 마지막 `executionRead`는 source-shape/readability 확인이다. provider가 즉시 취소 주문 row를
-아직 반환하지 않아도 probe는 fill이나 대사 snapshot을 꾸미지 않으며, strict reconciliation
-reader는 실제 row가 정확히 하나일 때만 사용한다.
+아직 반환하지 않거나 sparse matched row만 반환해도 probe는 fill이나 대사 snapshot을 꾸미지
+않으며, strict reconciliation reader는 실제 row가 정확히 하나이고 필수 field/invariant가 맞을
+때만 사용한다.
 
 KIS_MOCK online response는 credential scrubber가 provider echo를 제거하기 전에 1 MiB cap을
 적용한다. 더 큰 body, 과도한 JSON depth/list/text는 stable error로 축약하며 raw provider body,

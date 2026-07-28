@@ -69,9 +69,9 @@
   worktree, packet account/bound account 일치, canonical
   SHA-256과 현재 사용자의 별도 approval ID/SHA latch가 모두 맞아야 실행된다.
   마지막 최근 체결조회는 endpoint source-shape/readability 진단이다. 즉시 취소한 낮은 지정가
-  주문 row가 아직 없으면 match=false evidence로만 남기고, public fill·대사 snapshot·DB append를
-  만들지 않는다. 실제 reconciliation reader는 provider order row가 정확히 하나일 때만 snapshot을
-  만든다.
+  주문 row가 아직 없거나 sparse matched row만 보이면 source-shape evidence로만 남기고,
+  public fill·대사 snapshot·DB append를 만들지 않는다. 실제 reconciliation reader는 provider
+  order row가 정확히 하나이고 필수 field/invariant가 모두 맞을 때만 snapshot을 만든다.
 - `FULL` 실패 뒤 stable 출력만으로 exact leaf를 식별할 수 없으면 같은 5단계를 재실행하지 않는다.
   새 final HEAD/CI/security evidence에 결속한 `probeType=BALANCE_DIAGNOSTIC`,
   `steps=["balance"]`, cap `tokenP=1`/`brokerage=1`, retry/artifact 0 packet과 현재 사용자의
@@ -173,9 +173,10 @@ KIS_MOCK online boundary.
   separate current-user approval ID/SHA latch.
   The final recent execution read is an endpoint source-shape/readability diagnostic.
   If a low-priced limit order was immediately cancelled and its order row is not visible
-  yet, the probe records only unmatched evidence; it does not fabricate public fills,
-  reconciliation snapshots, or database appends. The strict reconciliation reader still
-  creates a snapshot only when exactly one provider order row is present.
+  yet, or the provider returns only a sparse matched row, the probe records source-shape
+  evidence only; it does not fabricate public fills, reconciliation snapshots, or
+  database appends. The strict reconciliation reader still creates a snapshot only when
+  exactly one provider order row is present with all required fields and invariants.
 - When a `FULL` failure cannot be narrowed by the stable output, the same five steps are
   not rerun. A new same-HEAD/CI/security-bound `BALANCE_DIAGNOSTIC` packet with only
   `steps=["balance"]`, caps `tokenP=1` and `brokerage=1`, retry 0, artifact 0, and a new

@@ -261,7 +261,8 @@ online 1회 검증은 최종 HEAD/PR #55 CI/fresh security report/Redis baseline
 `tokenP=1`, `brokerage=5`, retry/artifact 0으로 실행한다. 이 packet은 gRPC server 상시
 활성화, background polling, S3.3 fill append, KIS_LIVE 계좌·주문 권한을 승인하지 않는다.
 마지막 체결조회는 source-shape/readability 진단이며, 낮은 지정가 주문을 즉시 취소해 해당 주문
-row가 아직 없더라도 public fill이나 대사 snapshot을 합성하지 않는다.
+row가 아직 없거나 provider가 sparse matched row만 반환하더라도 public fill이나 대사 snapshot을
+합성하지 않는다. strict reconciliation reader만 완전한 provider row를 snapshot으로 해석한다.
 구현·fixture·OpenAPI·일반 테스트의 provider physical call은 0건이다.
 
 재현 명령:

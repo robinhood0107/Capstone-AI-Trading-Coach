@@ -1962,8 +1962,8 @@ provider 체결번호 원문, 계좌번호, provider raw body/header/message는 
 KIS_MOCK 목록은 offline fixture writer가 저장하고 reconcile한 관측만 사용한다.
 `VTTC0081R`/`VTSC9215R` strict reconciliation read는 provider order row가 정확히 하나일 때만
 snapshot을 만든다. exact-approved one-shot probe의 마지막 단계는 같은 endpoint의 bounded
-source-shape/readability만 확인하며, 즉시 취소한 낮은 지정가 주문 row가 아직 없으면 public
-fills, `decision_fill_writer`, order projection을 합성하거나 append하지 않는다.
+source-shape/readability만 확인하며, 즉시 취소한 낮은 지정가 주문 row가 아직 없거나 sparse matched
+row만 있으면 public fills, `decision_fill_writer`, order projection을 합성하거나 append하지 않는다.
 polling/scheduler는 없다. exact packet은 Redis single-use claim을 runtime 생성 전에 획득해야
 하고, KIS_MOCK 체결조회 response는 provider echo scrub/JSON parse 전에 1 MiB cap을 적용한다.
 

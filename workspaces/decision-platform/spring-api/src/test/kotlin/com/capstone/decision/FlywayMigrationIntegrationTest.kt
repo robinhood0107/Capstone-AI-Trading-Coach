@@ -59,9 +59,9 @@ class FlywayMigrationIntegrationTest(
     @Autowired private val riskSnapshotPort: RiskSnapshotPort,
 ) : SpringApiIntegrationTestBase() {
     @Test
-    fun `clean database applies V1 through V13 migrations and creates required objects`() {
+    fun `clean database applies V1 through V15 migrations and creates required objects`() {
         val versions = queryStrings("select version from flyway_schema_history where success order by installed_rank")
-        assertEquals((1..13).map(Int::toString), versions)
+        assertEquals((1..15).map(Int::toString), versions)
 
         val requiredTables =
             listOf(
@@ -71,6 +71,8 @@ class FlywayMigrationIntegrationTest(
                 "decisions",
                 "orders",
                 "order_events",
+                "order_fill_observations",
+                "order_fill_application_receipts",
                 "processed_event",
                 "artifact_ingest_state",
                 "rag_sources",
@@ -166,7 +168,7 @@ class FlywayMigrationIntegrationTest(
     }
 
     @Test
-    fun `decision application role receives only V13 brokerage capabilities`() {
+    fun `decision application role receives only V15 brokerage capabilities`() {
         assertTrue(hasTablePrivilege("decision_app", "risk_kill_switch", "SELECT"))
         assertFalse(hasTablePrivilege("decision_app", "risk_kill_switch", "INSERT"))
         assertFalse(hasTablePrivilege("decision_app", "risk_kill_switch", "DELETE"))
@@ -211,6 +213,7 @@ class FlywayMigrationIntegrationTest(
             "read_mock_order_owner_projection(text,text,text)",
             "create_mock_order(jsonb,text)",
             "request_mock_order_cancel(jsonb,text)",
+            "record_mock_order_provider_outcome(jsonb,text)",
             "read_paper_order_context(text,text,text)",
             "find_paper_order_idempotency_result(text,text,timestamp with time zone,text)",
             "read_paper_balance_projection(text,text,text)",
@@ -362,6 +365,10 @@ class FlywayMigrationIntegrationTest(
             set order_id = 'ord_paper_00000000000000000000000000000013',
                 brokerage_mode = 'INTERNAL_PAPER',
                 status = 'FILLED',
+                filled_quantity = quantity,
+                leaves_quantity = 0,
+                unfilled_terminated_quantity = 0,
+                average_fill_price_krw = 10000,
                 result_canonical_json =
                   '{"orderId":"ord_paper_00000000000000000000000000000013","accountId":"acct_00000000000000000000000000000013","brokerageMode":"INTERNAL_PAPER","status":"FILLED","submittedAt":"2030-01-02T03:04:05Z","fill":null}'
             where decision_id = 'dec-flyway'
@@ -1585,6 +1592,134 @@ class FlywayMigrationIntegrationTest(
     }
 
     @Test
+    fun `V14 fill projection observation checks and writer role are fail closed`() {
+        insertOrderFixture()
+        val orderId = "ord_mock_${"e".repeat(32)}"
+        jdbcTemplate.update(
+            """
+            insert into orders (
+              order_id, user_id, account_id, account_scope_hash, decision_id,
+              decision_evaluation_id, brokerage_mode, idempotency_scope_hash,
+              idempotency_owner_scope_hash, request_hash, symbol, side, order_type,
+              quantity, submitted_price_krw, status, order_intent_json,
+              result_canonical_json, acknowledged_by, acknowledged_at, submitted_at
+            ) values (
+              ?, 'usr-flyway', 'acct_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee', repeat('1', 64),
+              'dec-flyway', 'eval-flyway', 'KIS_MOCK', repeat('2', 64),
+              repeat('3', 64), repeat('4', 64), '005930', 'BUY', 'MARKET',
+              10, null, 'SUBMITTED',
+              '{"symbol":"005930","side":"BUY","orderType":"MARKET","quantity":"10","estimatedPrice":"10000","estimatedAmount":"100000","timeframe":"1d","strategyId":"s33-check"}'::jsonb,
+              '{"orderId":"sanitized","brokerageMode":"KIS_MOCK","status":"SUBMITTED"}',
+              'usr-flyway', now(), now()
+            )
+            """.trimIndent(),
+            orderId,
+        )
+        val projection =
+            jdbcTemplate.queryForMap(
+                """
+                select filled_quantity, leaves_quantity, unfilled_terminated_quantity,
+                       average_fill_price_krw, reconciliation_status, reconciled_at
+                from orders
+                where order_id = ?
+                """.trimIndent(),
+                orderId,
+            )
+        assertEquals(0L, projection["filled_quantity"])
+        assertEquals(10L, projection["leaves_quantity"])
+        assertEquals(0L, projection["unfilled_terminated_quantity"])
+        assertEquals(null, projection["average_fill_price_krw"])
+        assertEquals("NOT_APPLICABLE", projection["reconciliation_status"])
+        assertEquals(null, projection["reconciled_at"])
+
+        assertCheckViolation {
+            jdbcTemplate.update(
+                "update orders set filled_quantity = 1 where order_id = ?",
+                orderId,
+            )
+        }
+        assertCheckViolation {
+            jdbcTemplate.update(
+                """
+                insert into order_fill_observations (
+                  observation_id, order_id, provider_exec_ref_hash, exec_type,
+                  fill_quantity, fill_price_krw, cumulative_quantity, leaves_quantity,
+                  average_fill_price_krw, observed_at, received_at, schema_version,
+                  source_version, source_ref, completeness, artifact_hash
+                ) values (
+                  'ofo_ffffffffffffffffffffffffffffffff', ?, repeat('5', 64),
+                  'FILL', 10, null, 10, 0, 10000, now(), now(), '1',
+                  's3.3-fill-observation-v1', 'fixture-s33-invalid',
+                  'COMPLETE', repeat('6', 64)
+                )
+                """.trimIndent(),
+                orderId,
+            )
+        }
+
+        assertTrue(hasTablePrivilege("decision_fill_writer", "order_fill_observations", "INSERT"))
+        listOf("SELECT", "UPDATE", "DELETE", "TRUNCATE").forEach { privilege ->
+            assertFalse(
+                hasTablePrivilege("decision_fill_writer", "order_fill_observations", privilege),
+                "unexpected decision_fill_writer $privilege",
+            )
+        }
+        assertFalse(hasTablePrivilege("decision_app", "order_fill_observations", "SELECT"))
+        assertFalse(hasTablePrivilege("decision_app", "order_fill_observations", "INSERT"))
+        assertWriterInsert(
+            "decision_fill_writer",
+            FILL_WRITER_PASSWORD,
+            """
+            insert into order_fill_observations (
+              observation_id, order_id, provider_exec_ref_hash, exec_type,
+              fill_quantity, fill_price_krw, cumulative_quantity, leaves_quantity,
+              average_fill_price_krw, observed_at, received_at, schema_version,
+              source_version, source_ref, completeness, artifact_hash
+            ) values (
+              'ofo_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee', '$orderId', repeat('7', 64),
+              'PARTIAL_FILL', 4, 10000, 4, 6, 10000,
+              '2031-01-01T00:00:00Z', '2031-01-01T00:00:01Z', '1',
+              's3.3-fill-observation-v1', 'fixture-s33-valid',
+              'COMPLETE', repeat('8', 64)
+            )
+            """.trimIndent(),
+        )
+        assertUniqueViolation {
+            jdbcTemplate.update(
+                """
+                insert into order_fill_observations (
+                  observation_id, order_id, provider_exec_ref_hash, exec_type,
+                  fill_quantity, fill_price_krw, cumulative_quantity, leaves_quantity,
+                  observed_at, received_at, schema_version, source_version,
+                  source_ref, completeness, artifact_hash
+                ) values (
+                  'ofo_dddddddddddddddddddddddddddddddd', ?, repeat('7', 64),
+                  'PARTIAL_FILL', 4, 10000, 4, 6, now(), now(), '1',
+                  's3.3-fill-observation-v1', 'fixture-s33-duplicate',
+                  'COMPLETE', repeat('9', 64)
+                )
+                """.trimIndent(),
+                orderId,
+            )
+        }
+        assertRolePermissionDenied(
+            "decision_fill_writer",
+            FILL_WRITER_PASSWORD,
+            "select * from order_fill_observations",
+        )
+        assertRolePermissionDenied(
+            "decision_fill_writer",
+            FILL_WRITER_PASSWORD,
+            "update orders set status = status where false",
+        )
+        assertRolePermissionDenied(
+            "decision_app",
+            APP_PASSWORD,
+            "select * from apply_stored_order_fills('{}'::jsonb, 'invalid-capability')",
+        )
+    }
+
+    @Test
     fun `internal paper uses only explicit margin and never synthesizes position classification`() {
         jdbcTemplate.update(
             """
@@ -2300,6 +2435,7 @@ class FlywayMigrationIntegrationTest(
     }
 
     private fun cleanupS24InvalidationFixtures() {
+        deleteOrderFillFixtures("('dec-flyway', 'dec-flyway-b', 'dec-v10-admin')")
         jdbcTemplate.update(
             "delete from orders where decision_id in ('dec-flyway', 'dec-flyway-b', 'dec-v10-admin')",
         )
@@ -2332,6 +2468,7 @@ class FlywayMigrationIntegrationTest(
     }
 
     private fun insertOrderFixture() {
+        deleteOrderFillFixtures("('dec-flyway', 'dec-flyway-b')")
         jdbcTemplate.update("delete from orders where decision_id in ('dec-flyway', 'dec-flyway-b')")
         jdbcTemplate.update(
             "delete from decision_invalidations where decision_id in ('dec-flyway', 'dec-flyway-b')",
@@ -2394,6 +2531,26 @@ class FlywayMigrationIntegrationTest(
                 'risk-decision.v1', 's2.2-metric-snapshot-v2', 1,
                 's2.3-readiness-v1', '{}'::jsonb, repeat('a', 64),
                 repeat('b', 64), '{}'::jsonb
+            )
+            """.trimIndent(),
+        )
+    }
+
+    private fun deleteOrderFillFixtures(decisionIds: String) {
+        // append-only 운영 계약은 유지하되, Testcontainers superuser만 격리 fixture를 역순 정리한다.
+        jdbcTemplate.update(
+            """
+            delete from order_fill_application_receipts
+            where order_id in (
+              select order_id from orders where decision_id in $decisionIds
+            )
+            """.trimIndent(),
+        )
+        jdbcTemplate.update(
+            """
+            delete from order_fill_observations
+            where order_id in (
+              select order_id from orders where decision_id in $decisionIds
             )
             """.trimIndent(),
         )
@@ -2723,6 +2880,7 @@ class FlywayMigrationIntegrationTest(
         private const val MARKET_WRITER_PASSWORD = "market-writer-test"
         private const val PORTFOLIO_WRITER_PASSWORD = "portfolio-writer-test"
         private const val RISK_WRITER_PASSWORD = "risk-writer-test"
+        private const val FILL_WRITER_PASSWORD = "fill-writer-test"
         private const val FLYWAY_PASSWORD = "flyway-test"
         private val postgresImage =
             DockerImageName

@@ -48,6 +48,7 @@ object OpenApiFixtureEnvironmentWriter {
                     "POSTGRES_MARKET_WRITER_PASSWORD" to randomToken(random, 32),
                     "POSTGRES_PORTFOLIO_WRITER_PASSWORD" to randomToken(random, 32),
                     "POSTGRES_RISK_WRITER_PASSWORD" to randomToken(random, 32),
+                    "POSTGRES_FILL_WRITER_PASSWORD" to randomToken(random, 32),
                     "DECISION_GRPC_SHARED_SECRET" to grpcSharedSecret,
                     "PYTHON_GRPC_SHARED_SECRET" to grpcSharedSecret,
                     "REDIS_PASSWORD" to randomToken(random, 32),

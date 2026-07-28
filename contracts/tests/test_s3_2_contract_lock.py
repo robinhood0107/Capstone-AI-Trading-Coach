@@ -98,6 +98,15 @@ class S32InternalPaperContractTest(unittest.TestCase):
         mixed["orderId"] = "ord_mock_0123456789abcdef0123456789abcdef"
         self.assertNotEqual([], list(validator.iter_errors(mixed)))
 
+        pending_paper = copy.deepcopy(paper)
+        pending_paper["status"] = "PENDING_RECONCILIATION"
+        self.assertNotEqual([], list(validator.iter_errors(pending_paper)))
+
+        pending_mock = copy.deepcopy(pending_paper)
+        pending_mock["brokerageMode"] = "KIS_MOCK"
+        pending_mock["orderId"] = "ord_mock_0123456789abcdef0123456789abcdef"
+        self.assertEqual([], list(validator.iter_errors(pending_mock)))
+
     def test_balance_and_buyable_examples_are_paper_only_and_bounded(self) -> None:
         for name in ("s3-2-paper-balance", "s3-2-paper-buyable"):
             schema = _load(f"contracts/schemas/{name}.schema.json")

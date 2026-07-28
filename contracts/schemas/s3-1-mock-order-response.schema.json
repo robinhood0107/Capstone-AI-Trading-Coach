@@ -15,7 +15,11 @@
       "type": "string"
     },
     "status": {
-      "const": "SUBMITTED"
+      "enum": [
+        "SUBMITTED",
+        "PENDING_RECONCILIATION",
+        "ACCEPTED"
+      ]
     },
     "submittedAt": {
       "format": "date-time",
@@ -29,6 +33,6 @@
     "status",
     "submittedAt"
   ],
-  "title": "S3.1 KIS Mock order submitted response v1",
+  "title": "S3.1 KIS Mock order response v1",
   "type": "object"
 }

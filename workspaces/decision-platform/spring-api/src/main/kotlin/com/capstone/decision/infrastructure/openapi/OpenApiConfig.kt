@@ -44,6 +44,8 @@ class OpenApiConfig {
                     S23_CONTRACT_DIGEST_EXTENSION to resourceDigest(S23_CATALOG_RESOURCE),
                     S32_CONTRACT_ID_EXTENSION to S32_CONTRACT_ID,
                     S32_CONTRACT_DIGEST_EXTENSION to resourceDigest(S32_CATALOG_RESOURCE),
+                    S33_CONTRACT_ID_EXTENSION to S33_CONTRACT_ID,
+                    S33_CONTRACT_DIGEST_EXTENSION to resourceDigest(S33_CATALOG_RESOURCE),
                 ),
             ).components(
                 // Authorize 버튼이 JWT Bearer 토큰을 표준 방식으로 주입하도록 scheme을 명시한다.
@@ -340,6 +342,27 @@ class OpenApiConfig {
             openApi.components.addSchemas(
                 S32_PAPER_BUYABLE_ENVELOPE_COMPONENT,
                 successEnvelope(schemaRef(S32_PAPER_BUYABLE_COMPONENT)),
+            )
+            // 관측 schema는 offline writer 계약만 설명하며 public 체결 보고 route를 만들지 않는다.
+            openApi.components.addSchemas(
+                S33_FILL_OBSERVATION_COMPONENT,
+                contractSchema(S33_FILL_OBSERVATION_RESOURCE, S33_FILL_OBSERVATION_COMPONENT),
+            )
+            openApi.components.addSchemas(
+                S33_RECONCILE_COMPONENT,
+                contractSchema(S33_RECONCILE_RESOURCE, S33_RECONCILE_COMPONENT),
+            )
+            openApi.components.addSchemas(
+                S33_FILL_PAGE_COMPONENT,
+                contractSchema(S33_FILL_PAGE_RESOURCE, S33_FILL_PAGE_COMPONENT),
+            )
+            openApi.components.addSchemas(
+                S33_RECONCILE_ENVELOPE_COMPONENT,
+                successEnvelope(schemaRef(S33_RECONCILE_COMPONENT)),
+            )
+            openApi.components.addSchemas(
+                S33_FILL_PAGE_ENVELOPE_COMPONENT,
+                successEnvelope(schemaRef(S33_FILL_PAGE_COMPONENT)),
             )
         }
 
@@ -649,6 +672,18 @@ class OpenApiConfig {
         private const val S32_ORDER_DETAIL_ENVELOPE_COMPONENT = "S32OrderDetailSuccessResponse"
         private const val S32_PAPER_BALANCE_ENVELOPE_COMPONENT = "S32PaperBalanceSuccessResponse"
         private const val S32_PAPER_BUYABLE_ENVELOPE_COMPONENT = "S32PaperBuyableSuccessResponse"
+        private const val S33_CATALOG_RESOURCE = "contracts/s3-3-fill-contract.v1.json"
+        private const val S33_FILL_OBSERVATION_RESOURCE = "contracts/s3-3-fill-observation.schema.json"
+        private const val S33_RECONCILE_RESOURCE = "contracts/s3-3-reconcile-response.schema.json"
+        private const val S33_FILL_PAGE_RESOURCE = "contracts/s3-3-fill-page.schema.json"
+        private const val S33_CONTRACT_ID_EXTENSION = "x-s3-3-contract-id"
+        private const val S33_CONTRACT_DIGEST_EXTENSION = "x-s3-3-contract-sha256"
+        private const val S33_CONTRACT_ID = "s3-3-fill-contract/v1"
+        private const val S33_FILL_OBSERVATION_COMPONENT = "S33FillObservation"
+        private const val S33_RECONCILE_COMPONENT = "S33Reconcile"
+        private const val S33_FILL_PAGE_COMPONENT = "S33FillPage"
+        private const val S33_RECONCILE_ENVELOPE_COMPONENT = "S33ReconcileSuccessResponse"
+        private const val S33_FILL_PAGE_ENVELOPE_COMPONENT = "S33FillPageSuccessResponse"
         private val S24_RISK_ERROR_CODES =
             listOf(
                 "VALIDATION_ERROR",

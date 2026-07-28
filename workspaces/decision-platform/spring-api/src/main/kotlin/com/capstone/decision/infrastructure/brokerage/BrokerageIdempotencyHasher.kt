@@ -42,6 +42,42 @@ class BrokerageIdempotencyHasher(
             command = command,
         )
 
+    /**
+     * Redis replay key는 현재 role/security version까지 HMAC에 묶어 권한 변경 전 응답을 재사용하지 못하게 한다.
+     * owner admission scope는 사용자·purpose 단위로 유지해 권한 변경이 key quota를 분할하지 않게 한다.
+     */
+    fun replayIdentity(
+        actorUserId: String,
+        actorRole: String,
+        securityVersion: Long,
+        rawKey: String,
+        purpose: BrokerageWriteReplayPurpose,
+    ): BrokerageReplayIdentity {
+        require(actorRole.matches(Regex("^[A-Z_]{1,32}$")))
+        require(securityVersion > 0)
+        return BrokerageReplayIdentity(
+            scopeHash =
+                hmac(
+                    listOf(
+                        purpose.purposeVersion,
+                        "scope",
+                        actorUserId,
+                        actorRole,
+                        securityVersion.toString(),
+                        rawKey,
+                    ),
+                ),
+            ownerScopeHash =
+                hmac(
+                    listOf(
+                        purpose.purposeVersion,
+                        "owner",
+                        actorUserId,
+                    ),
+                ),
+        )
+    }
+
     private fun identityForPurpose(
         purpose: String,
         actorUserId: String,
@@ -109,4 +145,17 @@ class BrokerageIdempotencyHasher(
     private companion object {
         const val PAPER_ORDER_PURPOSE_VERSION = "BROKERAGE_PAPER_ORDER_SUBMIT/v1"
     }
+}
+
+data class BrokerageReplayIdentity(
+    val scopeHash: String,
+    val ownerScopeHash: String,
+)
+
+enum class BrokerageWriteReplayPurpose(
+    val purposeVersion: String,
+) {
+    ORDER_CANCEL("BROKERAGE_ORDER_CANCEL/v1"),
+    FILL_APPLY("BROKERAGE_FILL_APPLY/v1"),
+    GENERIC_FINANCE_WRITE("FINANCE_WRITE_REPLAY/v1"),
 }

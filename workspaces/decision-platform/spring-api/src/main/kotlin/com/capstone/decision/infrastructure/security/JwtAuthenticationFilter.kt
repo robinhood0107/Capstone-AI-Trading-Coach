@@ -4,6 +4,7 @@ import com.capstone.decision.api.common.ApiResponseWriter
 import com.capstone.decision.api.common.ErrorCode
 import com.capstone.decision.application.security.AppPrincipal
 import com.capstone.decision.application.security.IdempotencyKeyPolicy
+import com.capstone.decision.infrastructure.brokerage.BrokerageWriteReplayPurpose
 import com.capstone.decision.infrastructure.idempotency.IdempotencyLookup
 import com.capstone.decision.infrastructure.idempotency.IdempotencyProperties
 import com.capstone.decision.infrastructure.idempotency.IdempotencyService
@@ -137,12 +138,16 @@ class JwtAuthenticationFilter(
             return
         }
         val requestHash = requestHash(cachedRequest)
+        val replayPurpose = replayPurpose(cachedRequest)
         when (
             val lookup =
                 idempotencyService.acquire(
                     userId = principal.userId,
+                    actorRole = principal.role,
+                    securityVersion = principal.securityVersion,
                     idempotencyKey = idempotencyKey,
                     requestHash = requestHash,
+                    purpose = replayPurpose,
                 )
         ) {
             IdempotencyLookup.Conflict -> {
@@ -202,9 +207,12 @@ class JwtAuthenticationFilter(
                     // 인가/라우팅/검증 실패는 부작용 결과가 아니므로 Redis 장기 점유 없이 owner claim을 반납한다.
                     idempotencyService.discard(
                         userId = principal.userId,
+                        actorRole = principal.role,
+                        securityVersion = principal.securityVersion,
                         idempotencyKey = idempotencyKey,
                         requestHash = requestHash,
                         claimToken = lookup.claimToken,
+                        purpose = replayPurpose,
                     )
                     responseWrapper.copyBodyToResponse()
                     return
@@ -212,12 +220,15 @@ class JwtAuthenticationFilter(
                 val responseBody = responseBodyBytes.toString(StandardCharsets.UTF_8)
                 idempotencyService.store(
                     userId = principal.userId,
+                    actorRole = principal.role,
+                    securityVersion = principal.securityVersion,
                     idempotencyKey = idempotencyKey,
                     requestHash = requestHash,
                     claimToken = lookup.claimToken,
                     status = responseWrapper.status,
                     body = responseBody,
                     contentType = responseWrapper.contentType ?: MediaType.APPLICATION_JSON_VALUE,
+                    purpose = replayPurpose,
                 )
                 responseWrapper.copyBodyToResponse()
             }
@@ -230,6 +241,13 @@ class JwtAuthenticationFilter(
             handlerMappingProvider.getObject().getHandler(request)?.handler is HandlerMethod
 
     private fun isValidIdempotencyKey(value: String): Boolean = IdempotencyKeyPolicy.isValid(value, idempotencyProperties.maxKeyLength)
+
+    private fun replayPurpose(request: HttpServletRequest): BrokerageWriteReplayPurpose =
+        when {
+            ORDER_CANCEL_PATH.matches(request.requestURI) -> BrokerageWriteReplayPurpose.ORDER_CANCEL
+            FILL_APPLY_PATH.matches(request.requestURI) -> BrokerageWriteReplayPurpose.FILL_APPLY
+            else -> BrokerageWriteReplayPurpose.GENERIC_FINANCE_WRITE
+        }
 
     private fun requestHash(request: CachedBodyHttpServletRequest): String {
         val digest = MessageDigest.getInstance("SHA-256")
@@ -248,6 +266,10 @@ class JwtAuthenticationFilter(
         private const val BEARER_PREFIX = "Bearer "
         private const val LOGIN_PATH = "/api/v1/auth/login"
         private const val IDEMPOTENCY_HEADER = "X-Idempotency-Key"
+        private val ORDER_CANCEL_PATH =
+            Regex("^/api/v1/brokerage/orders/ord_(?:mock|paper)_[0-9a-f]{32}/cancel$")
+        private val FILL_APPLY_PATH =
+            Regex("^/api/v1/brokerage/orders/ord_(?:mock|paper)_[0-9a-f]{32}/reconcile$")
         private val WRITE_METHODS = setOf("POST", "PUT", "PATCH", "DELETE")
         private val NON_REPLAYABLE_CLIENT_ERRORS = setOf(400, 401, 403, 404, 405, 413, 422, 429)
     }

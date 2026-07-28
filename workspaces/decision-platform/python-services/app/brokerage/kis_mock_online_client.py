@@ -132,6 +132,7 @@ _GET_FIELDS = {
     },
 }
 _ACCOUNT_PATTERN = re.compile(r"^[0-9]{8}-[0-9]{2}$")
+_EXCHANGE_DIVISION = re.compile(r"^(?:KRX|NXT)$")
 _INTERNAL_TR_ID_HEADER = "x-kis-internal-tr-id"
 _MAX_RESPONSE_BYTES = 1024 * 1024
 _ROOT_ENV_FILE = Path(__file__).resolve().parents[5] / ".env"
@@ -394,13 +395,28 @@ class KISMockBrokerageHttpClient:
             if params is not None or json_body is None:
                 raise ValueError("KIS mock brokerage POST shape is invalid")
             expected = _POST_FIELDS[(path, tr_id)]
-            if set(json_body) != expected:
+            fields = set(json_body)
+            if path == ORDER_CASH_PATH:
+                allowed = expected | {"EXCG_ID_DVSN_CD"}
+                if fields != expected and fields != allowed:
+                    raise ValueError(
+                        "KIS mock brokerage POST field allowlist rejected the request"
+                    )
+            elif fields != expected:
                 raise ValueError("KIS mock brokerage POST field allowlist rejected the request")
             body = dict(json_body)
             if path == ORDER_CASH_PATH:
-                body["EXCG_ID_DVSN_CD"] = "KRX"
+                exchange_division = body.get("EXCG_ID_DVSN_CD", "KRX")
+                if _EXCHANGE_DIVISION.fullmatch(exchange_division) is None:
+                    raise ValueError("KIS mock brokerage exchange division is invalid")
+                body["EXCG_ID_DVSN_CD"] = exchange_division
                 body["SLL_TYPE"] = "01" if tr_id == MOCK_SELL_TR_ID else ""
                 body["CNDT_PRIC"] = ""
+            elif (
+                "EXCG_ID_DVSN_CD" in body
+                and _EXCHANGE_DIVISION.fullmatch(body["EXCG_ID_DVSN_CD"]) is None
+            ):
+                raise ValueError("KIS mock brokerage exchange division is invalid")
             body["CANO"] = self._cano
             body["ACNT_PRDT_CD"] = self._product_code
             query = None

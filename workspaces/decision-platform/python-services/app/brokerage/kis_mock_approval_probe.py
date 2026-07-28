@@ -182,6 +182,16 @@ class ApprovalOrder(_StrictModel):
         default="00",
         alias="orderDivision",
     )
+    exchange_division: Literal["KRX", "NXT"] = Field(
+        default="KRX",
+        alias="exchangeDivision",
+    )
+
+    @model_validator(mode="after")
+    def _exchange_contract(self) -> "ApprovalOrder":
+        if self.exchange_division == "NXT" and self.order_division != "00":
+            raise ValueError("NXT probe orders must use regular limit order division")
+        return self
 
 
 class ExecutionWindow(_StrictModel):
@@ -630,6 +640,7 @@ class _KISMockProbeOperations:
                     quantity=packet.order.quantity,
                     estimated_price=packet.order.limit_price_krw,
                     order_division=packet.order.order_division,
+                    exchange_division=packet.order.exchange_division,
                 ),
                 order_id=packet.order.order_id,
                 account_id=packet.order.account_id,

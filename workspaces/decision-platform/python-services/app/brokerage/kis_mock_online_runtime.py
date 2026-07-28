@@ -274,7 +274,7 @@ class KISMockExecutionReader:
                 "INQR_DVSN_1": "",
                 "CTX_AREA_FK100": "",
                 "CTX_AREA_NK100": "",
-                "EXCG_ID_DVSN_CD": "KRX",
+                "EXCG_ID_DVSN_CD": reference.exchange_division,
             },
         )
         return payload

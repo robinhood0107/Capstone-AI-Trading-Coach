@@ -18,8 +18,10 @@ _ORDER_ID = re.compile(r"^ord_mock_[0-9a-f]{32}$")
 _ACCOUNT_ID = re.compile(r"^acct_[0-9a-f]{32}$")
 _PROVIDER_REFERENCE = re.compile(r"^[0-9A-Za-z._:-]{1,64}$")
 _ORDER_DIVISION = re.compile(r"^[0-9]{2}$")
+_EXCHANGE_DIVISION = re.compile(r"^(?:KRX|NXT)$")
 _PENDING_FIELDS = {
     "accountId",
+    "exchangeDivision",
     "orderDivision",
     "orderId",
     "quantity",
@@ -27,6 +29,7 @@ _PENDING_FIELDS = {
 }
 _COMMITTED_FIELDS = {
     "accountId",
+    "exchangeDivision",
     "orderDivision",
     "orderId",
     "providerOrderNo",
@@ -49,6 +52,7 @@ class MockProviderOrderReference:
     provider_org_no: str
     order_division: str
     quantity: int
+    exchange_division: Literal["KRX", "NXT"] = "KRX"
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,6 +61,7 @@ class MockOrderReferenceIntent:
 
     order_division: str
     quantity: int
+    exchange_division: Literal["KRX", "NXT"] = "KRX"
 
 
 class MockOrderReferenceStore(Protocol):
@@ -144,6 +149,7 @@ class EncryptedRedisOrderReferenceStore:
         encrypted = self._encrypt(
             {
                 "accountId": account_id,
+                "exchangeDivision": intent.exchange_division,
                 "orderDivision": intent.order_division,
                 "orderId": order_id,
                 "quantity": intent.quantity,
@@ -180,6 +186,7 @@ class EncryptedRedisOrderReferenceStore:
         if (
             pending.get("state") != "PENDING"
             or set(pending) != _PENDING_FIELDS
+            or pending.get("exchangeDivision") != reference.exchange_division
             or pending.get("orderDivision") != reference.order_division
             or pending.get("quantity") != reference.quantity
         ):
@@ -187,6 +194,7 @@ class EncryptedRedisOrderReferenceStore:
         encrypted = self._encrypt(
             {
                 "accountId": account_id,
+                "exchangeDivision": reference.exchange_division,
                 "orderDivision": reference.order_division,
                 "orderId": order_id,
                 "providerOrderNo": reference.provider_order_no,
@@ -262,6 +270,7 @@ class EncryptedRedisOrderReferenceStore:
             provider_org_no=str(payload["providerOrgNo"]),
             order_division=str(payload["orderDivision"]),
             quantity=payload["quantity"] if type(payload["quantity"]) is int else -1,
+            exchange_division=cast(Literal["KRX", "NXT"], str(payload["exchangeDivision"])),
         )
         try:
             _validate_reference(reference)
@@ -289,6 +298,10 @@ class EncryptedRedisOrderReferenceStore:
                     MockOrderReferenceIntent(
                         order_division=str(payload["orderDivision"]),
                         quantity=payload["quantity"] if type(payload["quantity"]) is int else -1,
+                        exchange_division=cast(
+                            Literal["KRX", "NXT"],
+                            str(payload["exchangeDivision"]),
+                        ),
                     )
                 )
             else:
@@ -298,6 +311,10 @@ class EncryptedRedisOrderReferenceStore:
                         provider_org_no=str(payload["providerOrgNo"]),
                         order_division=str(payload["orderDivision"]),
                         quantity=payload["quantity"] if type(payload["quantity"]) is int else -1,
+                        exchange_division=cast(
+                            Literal["KRX", "NXT"],
+                            str(payload["exchangeDivision"]),
+                        ),
                     )
                 )
         except ValueError:
@@ -373,6 +390,7 @@ def _validate_reference(reference: MockProviderOrderReference) -> None:
         _PROVIDER_REFERENCE.fullmatch(reference.provider_order_no) is None
         or _PROVIDER_REFERENCE.fullmatch(reference.provider_org_no) is None
         or _ORDER_DIVISION.fullmatch(reference.order_division) is None
+        or _EXCHANGE_DIVISION.fullmatch(reference.exchange_division) is None
         or type(reference.quantity) is not int
         or not 1 <= reference.quantity <= _MAX_QUANTITY
     ):
@@ -382,6 +400,7 @@ def _validate_reference(reference: MockProviderOrderReference) -> None:
 def _validate_intent(intent: MockOrderReferenceIntent) -> None:
     if (
         _ORDER_DIVISION.fullmatch(intent.order_division) is None
+        or _EXCHANGE_DIVISION.fullmatch(intent.exchange_division) is None
         or type(intent.quantity) is not int
         or not 1 <= intent.quantity <= _MAX_QUANTITY
     ):

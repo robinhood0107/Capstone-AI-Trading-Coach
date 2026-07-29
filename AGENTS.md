@@ -78,7 +78,7 @@
 - 테스트 코드와 실제 구현 코드는 원칙적으로 별도 커밋으로 분리한다. 권장 순서는 `test(<session>): 실패/회귀 테스트 추가` → `feat|fix(<session>): 구현` → `docs|chore(<session>): 문서/설정 정리`다.
 - Markdown/AGENTS/명세서/규칙 파일 변경은 코드 구현 커밋과 분리한다. 구현과 문서가 같은 세션에서 필요하더라도 리뷰자가 diff를 따로 볼 수 있게 별도 커밋으로 남긴다.
 - 예외는 오타 수정, import 정리, 테스트 fixture 이름 변경처럼 해당 커밋의 코드가 없으면 테스트가 실행조차 되지 않는 기계적 동반 변경뿐이다. 예외를 쓰면 커밋 메시지나 PR 본문에 이유를 적는다.
-- 커밋과 PR에 AI 도구(Claude, Codex 등)를 author/co-author로 표기하지 않는다. `Co-Authored-By` trailer와 AI 서명 footer를 넣지 않으며, contributors에는 사용자 계정만 남긴다.
+- 커밋과 PR에는 Codex·Claude 등 AI 도구의 기여 표시를 절대 남기지 않는다.
 - PR에는 문서/API/계약 변경 여부, secret 포함 여부, 다른 팀원 workspace 수정 여부를 명시한다.
 - 모든 Issue와 PR 제목/본문은 한국어와 영어를 함께 작성한다. 최소한 `KR:`와 `EN:` 구역을 두어 같은 의도를 양쪽 언어로 확인 가능해야 한다.
 - 서로 연관된 Issue, PR, commit은 GitHub 번호로 연결한다. PR 본문에는 `Closes #<issue>` 또는 `Refs #<issue>`를 쓰고, 해당 변경을 직접 수행한 commit 메시지에도 관련 번호(`#<issue>` 또는 `#<pr>`)를 포함한다.

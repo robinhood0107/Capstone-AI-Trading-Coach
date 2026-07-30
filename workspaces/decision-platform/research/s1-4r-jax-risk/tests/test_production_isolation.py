@@ -112,6 +112,10 @@ ALLOWED_BRANCH_DIFF_PATHS = (
         "workspaces/decision-platform/research/s1-4x-numeric-parity/"
         "benchmarks/benchmark-plan.v1.sha256"
     ),
+    (
+        "workspaces/decision-platform/research/s1-4x-numeric-parity/"
+        "benchmarks/tests/test_benchmark_contract.py"
+    ),
 )
 
 

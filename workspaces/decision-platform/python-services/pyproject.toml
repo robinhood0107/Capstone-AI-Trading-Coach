@@ -38,6 +38,8 @@ decision-disclosure-grpc = "app.grpc_server:serve"
 decision-brokerage-grpc = "app.brokerage.brokerage_grpc_server:serve"
 kis-mock-brokerage-probe = "app.brokerage.kis_mock_approval_probe:main"
 rag-source-register = "app.rag.register_sources_cli:main"
+rag-source-card-validate = "app.rag.source_card:main"
+rag-official-evidence-validate = "app.rag.official_evidence:main"
 
 [build-system]
 requires = ["hatchling"]

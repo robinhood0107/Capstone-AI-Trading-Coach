@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import hashlib
 import ipaddress
 import re
+import unicodedata
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from importlib.resources import files
@@ -11,6 +13,8 @@ from typing import Mapping
 from urllib.parse import SplitResult, urlsplit
 
 import yaml
+from yaml.nodes import MappingNode
+from yaml.tokens import AliasToken, AnchorToken, TagToken
 
 SOURCE_ID_PATTERN = re.compile(r"^src_[a-z0-9]+_[a-z0-9_]+_[0-9]{3}$")
 RAG_SOURCE_OWNER = "python-rag-corpus-privacy"
@@ -27,6 +31,36 @@ ALLOWED_LICENSE_DECISIONS = frozenset(
 
 class RagSourceRegistryError(ValueError):
     """RAG source seed가 S4.1 source registry 보안 계약을 위반할 때 발생한다."""
+
+
+class _StrictSafeLoader(yaml.SafeLoader):
+    """duplicate key와 merge key를 허용하지 않는 registry 전용 SafeLoader."""
+
+
+def _construct_unique_mapping(
+    loader: _StrictSafeLoader,
+    node: MappingNode,
+    deep: bool = False,
+) -> dict[str, object]:
+    if not isinstance(node, MappingNode):
+        raise RagSourceRegistryError("RAG source seed YAML mapping node is invalid.")
+    result: dict[str, object] = {}
+    for key_node, value_node in node.value:
+        key = loader.construct_object(key_node, deep=deep)
+        if not isinstance(key, str):
+            raise RagSourceRegistryError("RAG source seed YAML keys must be strings.")
+        if key == "<<":
+            raise RagSourceRegistryError("RAG source seed YAML merge keys are forbidden.")
+        if key in result:
+            raise RagSourceRegistryError("RAG source seed YAML contains a duplicate key.")
+        result[key] = loader.construct_object(value_node, deep=deep)
+    return result
+
+
+_StrictSafeLoader.add_constructor(
+    yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG,
+    _construct_unique_mapping,
+)
 
 
 @dataclass(frozen=True)
@@ -80,6 +114,7 @@ class RagSourceRegistry:
     generated_at: datetime
     sources: Mapping[str, RagSourceDefinition]
     seed_path: Path
+    seed_sha256: str
 
 
 def load_default_source_registry() -> RagSourceRegistry:
@@ -93,8 +128,26 @@ def load_source_registry(path: Path) -> RagSourceRegistry:
     """unknown field, unsafe URL, duplicate ID, external-processing drift를 fail-closed한다."""
 
     try:
-        payload = yaml.safe_load(path.read_text(encoding="utf-8"))
-    except (OSError, yaml.YAMLError):
+        raw = path.read_bytes()
+        text = raw.decode("utf-8", errors="strict")
+        if (
+            "\r" in text
+            or text.startswith("\ufeff")
+            or not text.endswith("\n")
+            or unicodedata.normalize("NFC", text) != text
+        ):
+            raise RagSourceRegistryError(
+                "RAG source seed must use canonical UTF-8 NFC text and LF line endings."
+            )
+        tokens = yaml.scan(text)
+        if any(isinstance(token, (AnchorToken, AliasToken, TagToken)) for token in tokens):
+            raise RagSourceRegistryError(
+                "RAG source seed YAML tags, anchors, and aliases are forbidden."
+            )
+        payload = yaml.load(text, Loader=_StrictSafeLoader)
+    except RagSourceRegistryError:
+        raise
+    except (OSError, UnicodeDecodeError, yaml.YAMLError):
         raise RagSourceRegistryError("RAG source seed YAML is invalid.") from None
     if not isinstance(payload, dict):
         raise RagSourceRegistryError("RAG source seed root must be an object.")
@@ -124,6 +177,7 @@ def load_source_registry(path: Path) -> RagSourceRegistry:
         generated_at=generated_at,
         sources=MappingProxyType(sources),
         seed_path=path,
+        seed_sha256=hashlib.sha256(raw).hexdigest(),
     )
 
 
@@ -140,8 +194,26 @@ def validate_resolved_addresses(hostname: str, addresses: list[str]) -> None:
             parsed = ipaddress.ip_address(address)
         except ValueError as error:
             raise RagSourceRegistryError("resolved DNS address is invalid.") from error
-        if not parsed.is_global:
+        if (
+            not parsed.is_global
+            or parsed.is_loopback
+            or parsed.is_private
+            or parsed.is_link_local
+            or parsed.is_multicast
+            or parsed.is_reserved
+            or parsed.is_unspecified
+        ):
             raise RagSourceRegistryError("resolved DNS address is not globally routable.")
+
+
+def validate_canonical_https_url(url: str) -> None:
+    """source seed와 project-authored card가 공유하는 SSRF 전단 canonical URL gate다.
+
+    이 검증은 network나 DNS 조회를 만들지 않는다. 실제 fetch가 승인되는 미래 단계에서는
+    resolution 뒤 `validate_resolved_addresses`와 redirect별 재검증을 추가해야 한다.
+    """
+
+    _require_safe_https_url(url)
 
 
 def _parse_source(value: object) -> RagSourceDefinition:
@@ -181,6 +253,12 @@ def _parse_source(value: object) -> RagSourceDefinition:
     license_decision = _required_enum(value, "licenseDecision", ALLOWED_LICENSE_DECISIONS)
     initial_processing = _required_enum(value, "initialProcessing", ALLOWED_INITIAL_PROCESSING)
     external_processing_allowed = _required_bool(value, "externalProcessingAllowed")
+    source_type = _required_text(value, "sourceType")
+    tier = _required_text(value, "tier")
+    if source_type != "UPSTREAM_REFERENCE" or tier != "OFFICIAL" or access_level != "PUBLIC":
+        raise RagSourceRegistryError(
+            "S4.1 seed entries must be PUBLIC OFFICIAL UPSTREAM_REFERENCE metadata."
+        )
     if external_processing_allowed:
         raise RagSourceRegistryError("P0 upstream references cannot be sent to external providers.")
     owner = _required_text(value, "owner")
@@ -194,8 +272,8 @@ def _parse_source(value: object) -> RagSourceDefinition:
         institution=institution,
         topic=topic,
         sequence=sequence,
-        source_type=_required_text(value, "sourceType"),
-        tier=_required_text(value, "tier"),
+        source_type=source_type,
+        tier=tier,
         access_level=access_level,
         license_decision=license_decision,
         external_processing_allowed=external_processing_allowed,
@@ -218,8 +296,11 @@ def _parse_locator(value: object) -> RagSourceLocator:
     origin = f"{parsed.scheme}://{parsed.netloc}"
     if allowed_origin != origin:
         raise RagSourceRegistryError("RAG source allowed origin must exactly match canonical URL origin.")
-    if allowed_path != parsed.path:
-        raise RagSourceRegistryError("RAG source allowed path must exactly match canonical URL path.")
+    path_and_query = parsed.path + (f"?{parsed.query}" if parsed.query else "")
+    if allowed_path != path_and_query:
+        raise RagSourceRegistryError(
+            "RAG source allowed path/query must exactly match canonical URL."
+        )
     return RagSourceLocator(
         canonical_url=canonical_url,
         allowed_origin=allowed_origin,
@@ -244,6 +325,13 @@ def _parse_retention(value: object) -> RagSourceRetention:
 
 
 def _require_safe_https_url(url: str) -> SplitResult:
+    if (
+        not url
+        or any(character.isspace() or ord(character) < 0x20 or ord(character) == 0x7F for character in url)
+        or "\\" in url
+        or "%" in url
+    ):
+        raise RagSourceRegistryError("RAG source URL contains an ambiguous character.")
     parsed = urlsplit(url)
     if parsed.scheme != "https":
         raise RagSourceRegistryError("RAG source URL must use https.")
@@ -251,13 +339,46 @@ def _require_safe_https_url(url: str) -> SplitResult:
         raise RagSourceRegistryError("RAG source URL userinfo is forbidden.")
     if parsed.fragment:
         raise RagSourceRegistryError("RAG source URL fragment is forbidden.")
-    if not parsed.hostname or not parsed.path:
+    if (
+        not parsed.hostname
+        or not parsed.path
+        or "//" in parsed.path
+        or any(segment in {".", ".."} for segment in parsed.path.split("/"))
+    ):
         raise RagSourceRegistryError("RAG source URL must include host and path.")
     try:
-        ipaddress.ip_address(parsed.hostname)
+        port = parsed.port
+    except ValueError as error:
+        raise RagSourceRegistryError("RAG source URL port is invalid.") from error
+    if port not in {None, 443}:
+        raise RagSourceRegistryError("RAG source URL port must be absent or 443.")
+    hostname = parsed.hostname
+    expected_netloc = hostname if port is None else f"{hostname}:{port}"
+    if parsed.netloc != expected_netloc:
+        raise RagSourceRegistryError("RAG source URL authority is not canonical.")
+    if (
+        not hostname.isascii()
+        or not re.fullmatch(r"[a-z0-9.-]+", hostname)
+        or ".." in hostname
+        or hostname.startswith(("-", "."))
+        or hostname.endswith(("-", "."))
+        or "." not in hostname
+    ):
+        raise RagSourceRegistryError("RAG source URL hostname is not canonical.")
+    try:
+        ipaddress.ip_address(hostname)
     except ValueError:
-        return parsed
-    raise RagSourceRegistryError("RAG source URL IP literal is forbidden.")
+        labels = hostname.split(".")
+        if all(re.fullmatch(r"(?:0x[0-9a-f]+|0[0-7]+|[0-9]+)", label) for label in labels):
+            raise RagSourceRegistryError("RAG source URL alternate IP spelling is forbidden.")
+    else:
+        raise RagSourceRegistryError("RAG source URL IP literal is forbidden.")
+    canonical = f"https://{parsed.netloc}{parsed.path}"
+    if parsed.query:
+        canonical += f"?{parsed.query}"
+    if canonical != url:
+        raise RagSourceRegistryError("RAG source URL is not canonically serialized.")
+    return parsed
 
 
 def _validate_source_id_components(
@@ -294,9 +415,9 @@ def _require_exact_fields(value: Mapping[str, object], fields: set[str], context
 
 def _required_text(value: Mapping[str, object], field: str) -> str:
     item = value.get(field)
-    if not isinstance(item, str) or not item.strip():
-        raise RagSourceRegistryError(f"{field} must be a non-empty string.")
-    return item.strip()
+    if not isinstance(item, str) or not item or item != item.strip():
+        raise RagSourceRegistryError(f"{field} must be canonical non-empty text.")
+    return item
 
 
 def _required_enum(value: Mapping[str, object], field: str, allowed: frozenset[str]) -> str:

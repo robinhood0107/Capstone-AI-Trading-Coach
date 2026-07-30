@@ -12,57 +12,20 @@ data class RagSourceListResponse(
 data class RagSourceResponse(
     val sourceId: String,
     val title: String,
-    val sourceType: String,
-    val tier: String,
-    val accessLevel: String,
-    val licenseDecision: String,
-    val externalProcessingAllowed: Boolean,
-    val initialProcessing: String,
-    val retentionMode: String,
-    val retentionDays: Int,
-    val retentionOwner: String,
+    val institution: String,
+    val topic: String,
+    val attribution: String,
     val canonicalUrl: String,
-    val attribution: String?,
-    val ingestStatus: String,
-    val createdAt: Instant,
-    val retiredAt: Instant?,
     val lastCheckedAt: Instant?,
-    val latestCheckResult: String?,
 )
 
 fun RagSourceRegistryEntry.toResponse(): RagSourceResponse =
     RagSourceResponse(
         sourceId = sourceId,
         title = title,
-        sourceType = sourceType,
-        tier = tier,
-        accessLevel = accessLevel,
-        licenseDecision = licenseDecision,
-        externalProcessingAllowed = externalProcessingAllowed,
-        initialProcessing = initialProcessing,
-        retentionMode = retentionMode,
-        retentionDays = retentionDays,
-        retentionOwner = retentionOwner,
-        canonicalUrl = canonicalUrl,
+        institution = institution,
+        topic = topic,
         attribution = attribution,
-        ingestStatus = ingestStatus,
-        createdAt = createdAt,
-        retiredAt = retiredAt,
+        canonicalUrl = canonicalUrl,
         lastCheckedAt = lastCheckedAt,
-        latestCheckResult = latestCheckResult,
     )
-
-@Schema(name = "S4RagErrorResponse")
-data class S4RagErrorResponseSchema(
-    val success: Boolean = false,
-    val requestId: String = "req_example",
-    val data: Nothing? = null,
-    val warnings: List<Any> = emptyList(),
-    val error: S4RagErrorSchema = S4RagErrorSchema(),
-)
-
-data class S4RagErrorSchema(
-    val code: String = "VALIDATION_ERROR",
-    val message: String = "Request validation failed.",
-    val details: Map<String, Any?> = emptyMap(),
-)

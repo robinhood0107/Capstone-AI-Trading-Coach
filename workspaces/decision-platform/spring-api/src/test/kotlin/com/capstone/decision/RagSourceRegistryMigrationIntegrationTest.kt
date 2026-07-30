@@ -1287,6 +1287,7 @@ class RagSourceRegistryMigrationIntegrationTest {
                 connection.createStatement().use { statement ->
                     statement.execute("create extension if not exists vector")
                     statement.execute("create extension if not exists pg_trgm")
+                    statement.execute("create extension if not exists pgcrypto")
                     statement.execute("revoke create on schema public from public")
                     statement.execute(
                         """

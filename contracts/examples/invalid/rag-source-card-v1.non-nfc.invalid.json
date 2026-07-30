@@ -1,0 +1,42 @@
+{
+  "accessLevel": "PUBLIC",
+  "accessNote": "공식 공개 페이지를 브라우저에서 수동 확인한 합성 fixture다.",
+  "adoptedSession": "S4.7A",
+  "allowedUses": [
+    "조정주가 선택 provenance 설명의 합성 계약 검증"
+  ],
+  "attribution": "한국투자증권 Open API GitHub sample",
+  "canonicalUrl": "https://github.com/koreainvestment/open-trading-api/blob/b093e42ba32d1df5f5ddad7a71cb715cbc800832/examples_llm/domestic_stock/inquire_daily_itemchartprice/inquire_daily_itemchartprice.py",
+  "canonicalUrlSha256": "d2ff26041b01ef258e2a43310f79293631c415f3339484df04887b21fac2ee74",
+  "cardId": "card_kis_adjusted_price_001",
+  "claim": "조정주가와 원주가 선택은 시계열 provenance에 명시적으로 기록해야 한다.",
+  "contradicts": [],
+  "evidenceClass": "OFFICIAL_API_DOCUMENTATION",
+  "evidenceContentSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "externalProcessingAllowed": false,
+  "forbiddenInferences": [
+    "현재가나 특정 종목의 수익을 이 카드에서 추론하지 않는다."
+  ],
+  "institution": "kis",
+  "licenseNote": "공식 sample은 reference-only이며 원문 corpus나 실행 명령을 복사하지 않는다.",
+  "limitations": [
+    "공식 sample의 현재 field 계약만 설명하며 미래 변경을 보장하지 않는다."
+  ],
+  "modelAssumptions": [],
+  "representativeQuestions": [
+    "KIS 일봉에서 조정주가 선택 provenance는 어떻게 기록하나요?"
+  ],
+  "retentionDays": 365,
+  "retentionOwner": "python-rag-corpus-privacy",
+  "schemaVersion": "1",
+  "sourceId": "src_project_kis_adjusted_price_001",
+  "sourceType": "PROJECT_SOURCE_CARD",
+  "status": "VERIFIED",
+  "tier": "PROJECT",
+  "title": "Café source card",
+  "topic": "kis_adjusted_price",
+  "upstreamSourceIds": [
+    "src_kis_marketdata_daily_001"
+  ],
+  "verifiedAt": "2026-07-30T00:00:00Z"
+}

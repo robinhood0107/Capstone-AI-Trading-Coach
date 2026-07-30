@@ -458,6 +458,157 @@ class OpenApiConfigIntegrationTest(
         )
     }
 
+    @Test
+    fun `openapi locks S4 public source projection to seven fields and zero selectors`() {
+        val document =
+            objectMapper.readTree(
+                mockMvc
+                    .get("/v3/api-docs")
+                    .andExpect {
+                        status { isOk() }
+                    }.andReturn()
+                    .response
+                    .contentAsByteArray,
+            )
+        val sourceSchema = document.at("/components/schemas/RagSourceResponse")
+        assertEquals(
+            setOf(
+                "sourceId",
+                "title",
+                "institution",
+                "topic",
+                "attribution",
+                "canonicalUrl",
+                "lastCheckedAt",
+            ),
+            sourceSchema
+                .path("properties")
+                .propertyNames()
+                .asSequence()
+                .toSet(),
+        )
+        assertEquals("object", sourceSchema.path("type").stringValue())
+        assertEquals(false, sourceSchema.path("additionalProperties").booleanValue())
+        assertEquals(
+            setOf(
+                "sourceId",
+                "title",
+                "institution",
+                "topic",
+                "attribution",
+                "canonicalUrl",
+                "lastCheckedAt",
+            ),
+            sourceSchema
+                .path("required")
+                .values()
+                .map { it.stringValue() }
+                .toSet(),
+        )
+        assertEquals(
+            setOf("string", "null"),
+            sourceSchema
+                .at("/properties/lastCheckedAt/type")
+                .values()
+                .map { it.stringValue() }
+                .toSet(),
+        )
+        assertEquals(
+            "date-time",
+            sourceSchema.at("/properties/lastCheckedAt/format").stringValue(),
+        )
+        val sourceListSchema = document.at("/components/schemas/RagSourceListResponse")
+        assertEquals("object", sourceListSchema.path("type").stringValue())
+        assertEquals(false, sourceListSchema.path("additionalProperties").booleanValue())
+        assertEquals(30, sourceListSchema.at("/properties/items/maxItems").intValue())
+        assertEquals(
+            "#/components/schemas/RagSourceResponse",
+            sourceListSchema.at("/properties/items/items/\$ref").stringValue(),
+        )
+        assertEquals(
+            listOf("items"),
+            sourceListSchema
+                .path("required")
+                .values()
+                .map { it.stringValue() },
+        )
+        val sourceGet = document.at("/paths/~1api~1v1~1rag~1sources/get")
+        assertTrue(
+            sourceGet
+                .path("parameters")
+                .values()
+                .none { it.path("in").stringValue() == "query" },
+        )
+        assertEquals(
+            "#/components/schemas/S4RagSourceListSuccessResponse",
+            sourceGet.at("/responses/200/content/application~1json/schema/\$ref").stringValue(),
+        )
+        val successEnvelope = document.at("/components/schemas/S4RagSourceListSuccessResponse")
+        assertEquals(false, successEnvelope.path("additionalProperties").booleanValue())
+        assertEquals(
+            setOf("success", "requestId", "data", "warnings", "error"),
+            successEnvelope
+                .path("properties")
+                .propertyNames()
+                .asSequence()
+                .toSet(),
+        )
+        assertEquals(
+            "#/components/schemas/RagSourceListResponse",
+            successEnvelope.at("/properties/data/\$ref").stringValue(),
+        )
+        val expectedErrors =
+            mapOf(
+                "400" to Pair("S4RagValidationErrorResponse", "VALIDATION_ERROR"),
+                "401" to Pair("S4RagUnauthorizedErrorResponse", "UNAUTHORIZED"),
+                "503" to Pair("S4RagUnavailableErrorResponse", "RAG_UNAVAILABLE"),
+            )
+        expectedErrors.forEach { (status, expected) ->
+            val (component, code) = expected
+            assertEquals(
+                "#/components/schemas/$component",
+                sourceGet
+                    .at("/responses/$status/content/application~1json/schema/\$ref")
+                    .stringValue(),
+            )
+            val envelope = document.at("/components/schemas/$component")
+            assertEquals(false, envelope.path("additionalProperties").booleanValue())
+            assertEquals(
+                setOf("success", "requestId", "data", "warnings", "error"),
+                envelope
+                    .path("properties")
+                    .propertyNames()
+                    .asSequence()
+                    .toSet(),
+            )
+            assertEquals(
+                setOf("success", "requestId", "data", "warnings", "error"),
+                envelope
+                    .path("required")
+                    .values()
+                    .map { it.stringValue() }
+                    .toSet(),
+            )
+            assertEquals(false, envelope.at("/properties/success/const").booleanValue())
+            assertEquals(code, envelope.at("/properties/error/properties/code/const").stringValue())
+            assertEquals(false, envelope.at("/properties/error/additionalProperties").booleanValue())
+        }
+        val validationDetails =
+            document.at(
+                "/components/schemas/S4RagValidationErrorResponse/" +
+                    "properties/error/properties/details",
+            )
+        assertEquals(false, validationDetails.path("additionalProperties").booleanValue())
+        assertEquals(
+            listOf("violations"),
+            validationDetails.path("required").values().map { it.stringValue() },
+        )
+        assertEquals(
+            64,
+            validationDetails.at("/properties/violations/maxItems").intValue(),
+        )
+    }
+
     private fun findRepositoryRoot(): Path {
         var current = Path.of(System.getProperty("user.dir")).toAbsolutePath()
         while (!Files.exists(current.resolve("AGENTS.md"))) {

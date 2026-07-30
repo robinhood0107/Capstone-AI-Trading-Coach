@@ -47,7 +47,7 @@ def test_bounded_acquisition_uses_pinned_urls_and_publishes_manifest_last(
                 "content-length": str(len(payload)),
                 "content-type": "application/octet-stream",
             },
-            content=payload,
+            stream=httpx.ByteStream(payload),
         )
 
     packet_root = posix_tmp_path / "packet"

@@ -41,6 +41,7 @@ rag-source-register = "app.rag.register_sources_cli:main"
 rag-source-card-validate = "app.rag.source_card:main"
 rag-official-evidence-validate = "app.rag.official_evidence:main"
 rag-bge-artifact-acquire = "app.rag.bge_acquisition:main"
+rag-bge-five-card-poc = "app.rag.bge_poc_cli:main"
 
 [build-system]
 requires = ["hatchling"]

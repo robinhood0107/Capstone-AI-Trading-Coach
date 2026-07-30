@@ -42,9 +42,11 @@ def test_approved_bge_packet_is_exactly_pinned_to_ten_files() -> None:
     }
 
 
-def test_packet_verifier_requires_exact_hash_size_mode_and_membership(tmp_path: Path) -> None:
+def test_packet_verifier_requires_exact_hash_size_mode_and_membership(
+    posix_tmp_path: Path,
+) -> None:
     spec = _tiny_spec()
-    packet_root = _write_tiny_packet(tmp_path, spec)
+    packet_root = _write_tiny_packet(posix_tmp_path, spec)
 
     verified = verify_bge_packet(packet_root, spec=spec)
 
@@ -65,20 +67,22 @@ def test_packet_verifier_requires_exact_hash_size_mode_and_membership(tmp_path: 
         verify_bge_packet(packet_root, spec=spec)
 
 
-def test_packet_verifier_rejects_symlink_hardlink_hash_and_path_escape(tmp_path: Path) -> None:
+def test_packet_verifier_rejects_symlink_hardlink_hash_and_path_escape(
+    posix_tmp_path: Path,
+) -> None:
     spec = _tiny_spec()
-    packet_root = _write_tiny_packet(tmp_path, spec)
+    packet_root = _write_tiny_packet(posix_tmp_path, spec)
     model_path = packet_root / "onnx/model.onnx"
 
     model_path.unlink()
-    model_path.symlink_to(tmp_path / "outside.onnx")
+    model_path.symlink_to(posix_tmp_path / "outside.onnx")
     with pytest.raises(BgeArtifactError, match="NON_REGULAR_ARTIFACT"):
         verify_bge_packet(packet_root, spec=spec)
 
     model_path.unlink()
     model_path.write_bytes(b"onnx")
     model_path.chmod(0o600)
-    hardlink = tmp_path / "outside-hardlink.onnx"
+    hardlink = posix_tmp_path / "outside-hardlink.onnx"
     os.link(model_path, hardlink)
     with pytest.raises(BgeArtifactError, match="HARDLINK_ARTIFACT"):
         verify_bge_packet(packet_root, spec=spec)

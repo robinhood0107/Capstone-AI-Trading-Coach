@@ -77,7 +77,7 @@ def test_build_canonical_chunks_never_splits_table_blocks() -> None:
         blocks=blocks,
         tokenizer=TOKENIZER,
         min_tokens=6,
-        max_tokens=12,
+        max_tokens=30,
     )
 
     table_chunks = [chunk for chunk in chunks if chunk.contains_table]
@@ -122,10 +122,12 @@ def test_embedding_inputs_keep_canonical_hashes_profile_specific() -> None:
     assert len(chunks) >= 3
     assert bge[1].context_set_hash is None
     assert chunks[1].text in bge[1].text
-    assert bge[1].text != chunks[1].text
+    # 짧은 청크의 floor(6 * 7.5%)는 0이며 missing budget을 최소 1로 올리지 않는다.
+    assert bge[1].text == chunks[1].text
     assert voyage[1].text == chunks[1].text
     assert voyage[1].context_set_hash == compute_context_set_hash(chunks)
-    assert bge[1].embedding_input_hash != voyage[1].embedding_input_hash
+    assert bge[1].embedding_input_hash == voyage[1].embedding_input_hash
+    assert bge[1].context_set_hash != voyage[1].context_set_hash
     assert chunks[1].content_hash == chunks[1].content_hash
 
 

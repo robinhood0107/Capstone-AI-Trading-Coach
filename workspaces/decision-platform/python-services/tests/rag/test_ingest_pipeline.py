@@ -85,7 +85,7 @@ def test_build_canonical_chunks_never_splits_table_blocks() -> None:
     assert "| row1 | value1 |" in table_chunks[0].text
     assert "| row3 | value3 |" in table_chunks[0].text
     assert table_chunks[0].content_hash
-    assert table_chunks[0].chunk_revision_id.startswith("chkrev_src_rev_demo_")
+    assert re.fullmatch(r"rag_chk_[0-9a-f]{32}", table_chunks[0].chunk_revision_id)
 
 
 def test_embedding_inputs_keep_canonical_hashes_profile_specific() -> None:

@@ -136,6 +136,12 @@ def test_source_card_validator_accepts_exact_contract_and_emits_bounded_summary(
     assert cards[0].claim == _valid_front_matter()["claim"]
     assert cards[0].relative_path == "kis.md"
     assert len(cards[0].content_sha256) == 64
+    assert cards[0].canonical_body == _valid_body()
+    assert cards[0].license_note == _valid_front_matter()["licenseNote"]
+    assert cards[0].attribution == _valid_front_matter()["attribution"]
+    assert cards[0].retention_owner == "python-rag-corpus-privacy"
+    assert cards[0].retention_days == 365
+    assert cards[0].external_processing_allowed is False
     assert set(cards[0].sections) == {
         "핵심 claim",
         "적용 범위와 전제",

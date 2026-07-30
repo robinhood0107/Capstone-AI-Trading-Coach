@@ -2,6 +2,7 @@
 -- 실제 non-superuser flyway로 V2를 재생할 수 있도록 extension만 database owner가 선설치한다.
 CREATE EXTENSION IF NOT EXISTS vector;
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 CREATE ROLE decision_app
     LOGIN PASSWORD 'app-test' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;

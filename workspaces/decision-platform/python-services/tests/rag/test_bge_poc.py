@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from types import MappingProxyType
 
 import numpy as np
+import psycopg
 import pytest
 
 from app.rag.bge_artifact import BgeVerifiedPacket
@@ -15,6 +16,7 @@ from app.rag.bge_poc import (
     BgePocError,
     BgePocPlan,
     BgeStagedEmbedding,
+    PsycopgBgePocRepository,
     execute_bge_poc,
     prepare_bge_poc,
 )
@@ -103,6 +105,63 @@ def test_poc_plan_rejects_any_card_membership_drift() -> None:
             tokenizer=_FixtureTokenizer(),
             artifact=_artifact_receipt(),
         )
+
+
+def test_postgres_adapter_materializes_five_cards_without_pointer_change(
+    postgres_cluster: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plan = prepare_bge_poc(
+        cards=_approved_cards(),
+        tokenizer=_FixtureTokenizer(),
+        artifact=_artifact_receipt(),
+    )
+    monkeypatch.setenv("RAG_SOURCE_REGISTER_TARGET", "testcontainers")
+    with psycopg.connect(postgres_cluster["admin_dsn"]) as admin:
+        pointer_before = admin.execute(
+            """
+            SELECT policy_id, effective_profile_id, active_generation_id, version
+            FROM rag_embedding_policy_state
+            WHERE state_id = 'default'
+            """
+        ).fetchone()
+
+    receipt = execute_bge_poc(
+        plan=plan,
+        embedder=_FixtureEmbedder(),
+        repository=PsycopgBgePocRepository(
+            database_dsn=postgres_cluster["rag_writer_dsn"],
+        ),
+    )
+
+    assert receipt.status == "EVAL_PASSED"
+    assert receipt.active_pointer_changed is False
+    with psycopg.connect(postgres_cluster["admin_dsn"]) as admin:
+        assert admin.execute(
+            "SELECT count(*) FROM rag_chunk_embeddings WHERE corpus_generation_id = %s",
+            (plan.generation_id,),
+        ).fetchone() == (5,)
+        assert admin.execute(
+            "SELECT count(*) FROM rag_embedding_staging WHERE generation_id = %s",
+            (plan.generation_id,),
+        ).fetchone() == (0,)
+        assert admin.execute(
+            """
+            SELECT status, actual_chunk_count, evaluation_status,
+                   evaluated_at IS NOT NULL, activated_at IS NULL
+            FROM rag_corpus_generations
+            WHERE corpus_generation_id = %s
+            """,
+            (plan.generation_id,),
+        ).fetchone() == ("EVAL_PASSED", 5, "PASSED", True, True)
+        pointer_after = admin.execute(
+            """
+            SELECT policy_id, effective_profile_id, active_generation_id, version
+            FROM rag_embedding_policy_state
+            WHERE state_id = 'default'
+            """
+        ).fetchone()
+    assert pointer_after == pointer_before
 
 
 class _FixtureTokenizer:

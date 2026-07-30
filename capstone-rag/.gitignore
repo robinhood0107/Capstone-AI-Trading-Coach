@@ -1,0 +1,7 @@
+/evidence/**
+!/evidence/README.md
+/secrets/**
+!/secrets/README.md
+/runtime/**
+!/runtime/README.md
+/tmp/**

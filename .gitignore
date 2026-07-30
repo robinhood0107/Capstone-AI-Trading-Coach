@@ -95,6 +95,22 @@ artifacts/decision-platform/*
 !artifacts/decision-platform/.gitkeep
 !artifacts/decision-platform/README.md
 
+# --- RAG repository-local approved roots ---
+# 정책·manifest·직접 작성한 card/평가 보고서만 추적한다. 원 evidence, secret, runtime
+# 산출물과 Hugging Face 모델 payload는 저장소 안에 두더라도 Git에는 올리지 않는다.
+/capstone-rag/evidence/**
+!/capstone-rag/evidence/README.md
+/capstone-rag/secrets/**
+!/capstone-rag/secrets/README.md
+/capstone-rag/runtime/**
+!/capstone-rag/runtime/README.md
+/capstone-rag/tmp/**
+/huggingface_model/**
+!/huggingface_model/.gitignore
+!/huggingface_model/README.md
+!/huggingface_model/manifests/
+!/huggingface_model/manifests/README.md
+
 # --- IDE ---
 .idea/
 *.iml

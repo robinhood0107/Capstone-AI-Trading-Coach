@@ -133,14 +133,27 @@ jobs:
           mapfile -t ACTUAL_PATHS < <(
             git diff-tree --no-commit-id --name-only -r "$REFERENCE_BASE" | LC_ALL=C sort
           )
-          EXPECTED_PATHS=(
-            "workspaces/decision-platform/python-services/pyproject.toml"
-            "workspaces/decision-platform/python-services/uv.lock"
-          )
+          case "$REFERENCE_BASE" in
+            e5d70dc113ed87c690cf538879c0b9df17121b1d)
+              EXPECTED_PATHS=(
+                "workspaces/decision-platform/python-services/pyproject.toml"
+                "workspaces/decision-platform/python-services/uv.lock"
+              )
+              ;;
+            15decd1e6ed3bbbad0dce22f7171d34d80cee367)
+              EXPECTED_PATHS=(
+                "workspaces/decision-platform/research/s1-4r-jax-risk/tests/test_production_isolation.py"
+              )
+              ;;
+            *)
+              echo "referenceBaseCommit is not an approved narrow carrier" >&2
+              exit 1
+              ;;
+          esac
           if ! diff -u \
             <(printf '%s\n' "${EXPECTED_PATHS[@]}") \
             <(printf '%s\n' "${ACTUAL_PATHS[@]}"); then
-            echo "referenceBaseCommit must change exactly the approved dependency files" >&2
+            echo "referenceBaseCommit must change exactly its approved carrier files" >&2
             exit 1
           fi
 
@@ -154,7 +167,7 @@ jobs:
             test "$BASE_ISOLATION_SHA" = \
               "daca84be569df6358ac84e171825b91f9610dfdabe99fb5f0ecab4f02b47c3cc"
             test "$HEAD_ISOLATION_SHA" = \
-              "4347f250fe3ec933aacecf4a91d3e5a8e720b935f7f7a75783493d6bbe47f8e9"
+              "1c9eb13d8191a8877c1d2c97d0692ee6dbe07a133b27e2ebb708fccdfdc55ebe"
           fi
 
           # 의존성 amendment가 수치 구현·테스트·fixture를 함께 바꾸는 것을 독립적으로 막는다.

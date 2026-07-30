@@ -13,6 +13,7 @@ from app.rag.bge_artifact import (
     BgeArtifactFile,
     BgeArtifactSpec,
     OnnxGraphContract,
+    inspect_onnx_graph_contract,
     validate_download_redirect,
     validate_onnx_graph_contract,
     verify_bge_packet,
@@ -163,6 +164,65 @@ def test_onnx_graph_contract_rejects_external_path_and_custom_domain() -> None:
             validate_onnx_graph_contract(invalid)
 
 
+def test_onnx_protobuf_is_inspected_before_runtime_session(posix_tmp_path: Path) -> None:
+    model_path = posix_tmp_path / "model.onnx"
+    model_bytes = _minimal_onnx_model()
+    model_path.write_bytes(model_bytes)
+    model_path.chmod(0o600)
+
+    contract = inspect_onnx_graph_contract(
+        model_path,
+        expected_sha256=hashlib.sha256(model_bytes).hexdigest(),
+        external_file_sizes={
+            "Constant_7_attr__value": 4,
+            "model.onnx_data": 7,
+        },
+    )
+
+    assert contract.external_data_locations == (
+        "Constant_7_attr__value",
+        "model.onnx_data",
+    )
+    assert contract.external_data_bytes == 11
+    assert contract.node_domains == ("",)
+    assert contract.input_names == ("input_ids", "attention_mask")
+    assert contract.output_names == ("last_hidden_state",)
+    assert contract.output_dtype == "float32"
+    assert contract.output_dimension == 1024
+    assert contract.dynamic_batch is True
+    assert contract.dynamic_sequence is True
+    validate_onnx_graph_contract(contract)
+
+
+@pytest.mark.parametrize(
+    ("location", "domain"),
+    [
+        ("../model.onnx_data", ""),
+        ("model.onnx_data", "com.example.custom"),
+    ],
+)
+def test_onnx_protobuf_inspector_rejects_external_traversal_and_custom_domain(
+    posix_tmp_path: Path,
+    location: str,
+    domain: str,
+) -> None:
+    model_path = posix_tmp_path / "model.onnx"
+    model_bytes = _minimal_onnx_model(location=location, domain=domain)
+    model_path.write_bytes(model_bytes)
+    model_path.chmod(0o600)
+
+    with pytest.raises(BgeArtifactError):
+        contract = inspect_onnx_graph_contract(
+            model_path,
+            expected_sha256=hashlib.sha256(model_bytes).hexdigest(),
+            external_file_sizes={
+                "Constant_7_attr__value": 4,
+                "model.onnx_data": 7,
+            },
+        )
+        validate_onnx_graph_contract(contract)
+
+
 def _tiny_spec() -> BgeArtifactSpec:
     files = (
         BgeArtifactFile(
@@ -194,3 +254,70 @@ def _write_tiny_packet(tmp_path: Path, spec: BgeArtifactSpec) -> Path:
         path.write_bytes(content)
         path.chmod(0o600)
     return packet_root
+
+
+def _minimal_onnx_model(
+    *,
+    location: str = "model.onnx_data",
+    domain: str = "",
+) -> bytes:
+    node = _bytes_field(4, b"Identity")
+    if domain:
+        node += _bytes_field(7, domain.encode("utf-8"))
+    initializers = (
+        _external_tensor("constant", "Constant_7_attr__value", length=4),
+        _external_tensor("weights", location, length=7),
+    )
+    graph = _bytes_field(1, node)
+    graph += b"".join(_bytes_field(5, tensor) for tensor in initializers)
+    graph += _bytes_field(11, _value_info("input_ids", 7, ("batch", "sequence")))
+    graph += _bytes_field(11, _value_info("attention_mask", 7, ("batch", "sequence")))
+    graph += _bytes_field(
+        12,
+        _value_info("last_hidden_state", 1, ("batch", "sequence", 1024)),
+    )
+    return _bytes_field(7, graph)
+
+
+def _external_tensor(name: str, location: str, *, length: int) -> bytes:
+    tensor = _bytes_field(8, name.encode("utf-8"))
+    tensor += _bytes_field(13, _string_entry("location", location))
+    tensor += _bytes_field(13, _string_entry("offset", "0"))
+    tensor += _bytes_field(13, _string_entry("length", str(length)))
+    tensor += _varint_field(14, 1)
+    return tensor
+
+
+def _string_entry(key: str, value: str) -> bytes:
+    return _bytes_field(1, key.encode("utf-8")) + _bytes_field(2, value.encode("utf-8"))
+
+
+def _value_info(name: str, element_type: int, dimensions: tuple[str | int, ...]) -> bytes:
+    shape = b""
+    for dimension in dimensions:
+        encoded = (
+            _varint_field(1, dimension)
+            if isinstance(dimension, int)
+            else _bytes_field(2, dimension.encode("utf-8"))
+        )
+        shape += _bytes_field(1, encoded)
+    tensor_type = _varint_field(1, element_type) + _bytes_field(2, shape)
+    type_proto = _bytes_field(1, tensor_type)
+    return _bytes_field(1, name.encode("utf-8")) + _bytes_field(2, type_proto)
+
+
+def _bytes_field(field_number: int, value: bytes) -> bytes:
+    return _varint((field_number << 3) | 2) + _varint(len(value)) + value
+
+
+def _varint_field(field_number: int, value: int) -> bytes:
+    return _varint(field_number << 3) + _varint(value)
+
+
+def _varint(value: int) -> bytes:
+    encoded = bytearray()
+    while value > 0x7F:
+        encoded.append((value & 0x7F) | 0x80)
+        value >>= 7
+    encoded.append(value)
+    return bytes(encoded)

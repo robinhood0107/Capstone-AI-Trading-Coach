@@ -1,6 +1,6 @@
 {
   "schemaVersion": "s1.4x-reference-lock-v1",
-  "referenceBaseCommit": "e5d70dc113ed87c690cf538879c0b9df17121b1d",
+  "referenceBaseCommit": "15decd1e6ed3bbbad0dce22f7171d34d80cee367",
   "pythonRuntime": {
     "implementation": "CPython",
     "version": "3.12.13",
@@ -162,7 +162,7 @@
     {
       "role": "research-production-isolation-tests",
       "path": "workspaces/decision-platform/research/s1-4r-jax-risk/tests/test_production_isolation.py",
-      "sha256": "4347f250fe3ec933aacecf4a91d3e5a8e720b935f7f7a75783493d6bbe47f8e9"
+      "sha256": "1c9eb13d8191a8877c1d2c97d0692ee6dbe07a133b27e2ebb708fccdfdc55ebe"
     },
     {
       "role": "research-property-tests",
@@ -299,7 +299,7 @@
         "tests/fixtures/canonical/*.sha256"
       ],
       "fileCount": 11,
-      "canonicalManifestSha256": "a520821114698ea4c87218f640075c02b62126fe9c41eb7d3f2880381081117d",
+      "canonicalManifestSha256": "814987ea90cf68057a0ce96fd2f898fe737c953ae63ba64225025dee082c49ab",
       "files": [
         {
           "path": "tests/conftest.py",
@@ -339,7 +339,7 @@
         },
         {
           "path": "tests/test_production_isolation.py",
-          "sha256": "4347f250fe3ec933aacecf4a91d3e5a8e720b935f7f7a75783493d6bbe47f8e9"
+          "sha256": "1c9eb13d8191a8877c1d2c97d0692ee6dbe07a133b27e2ebb708fccdfdc55ebe"
         },
         {
           "path": "tests/test_properties.py",

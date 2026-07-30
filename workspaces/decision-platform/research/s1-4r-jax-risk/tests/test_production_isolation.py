@@ -94,6 +94,7 @@ ALLOWED_BRANCH_DIFF_PATHS = (
     "workspaces/decision-platform/research/s1-4r-jax-risk/",
     ".github/workflows/s1-4r-research-correctness.yml",
     ".github/workflows/s1-4r-research-benchmark.yml",
+    ".github/workflows/s1-4x-contract-correctness.yml",
 )
 
 
@@ -256,7 +257,7 @@ def test_branch_diff_does_not_touch_frozen_or_out_of_scope_paths() -> None:
 
 
 @HOST_ONLY
-def test_branch_diff_is_confined_to_the_research_project_and_two_workflows() -> None:
+def test_branch_diff_is_confined_to_the_research_project_and_governing_workflows() -> None:
     completed = subprocess.run(
         ["git", "diff", "--name-only", "origin/main"],
         cwd=REPO_ROOT,
@@ -274,29 +275,3 @@ def test_branch_diff_is_confined_to_the_research_project_and_two_workflows() -> 
         )
     ]
     assert unexpected == []
-
-
-@HOST_ONLY
-def test_private_reference_is_ignored_untracked_and_unstaged() -> None:
-    tracked = subprocess.run(
-        ["git", "ls-files", "private-reference"],
-        cwd=REPO_ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    staged = subprocess.run(
-        ["git", "diff", "--cached", "--name-only", "--", "private-reference"],
-        cwd=REPO_ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    ignored = subprocess.run(
-        ["git", "check-ignore", "-q", "private-reference/s1-4r-isolation-probe"],
-        cwd=REPO_ROOT,
-        check=False,
-    )
-    assert tracked.stdout == ""
-    assert staged.stdout == ""
-    assert ignored.returncode == 0

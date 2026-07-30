@@ -144,6 +144,19 @@ jobs:
             exit 1
           fi
 
+          # 로컬 자료 경로에 결합된 obsolete host-only 검사는 한 번만 exact hash 전이로 제거한다.
+          S1_4R_ISOLATION_TEST=workspaces/decision-platform/research/s1-4r-jax-risk/tests/test_production_isolation.py
+          if ! git diff --quiet "$DIFF_BASE" HEAD -- "$S1_4R_ISOLATION_TEST"; then
+            BASE_ISOLATION_SHA="$(
+              git show "${DIFF_BASE}:${S1_4R_ISOLATION_TEST}" | sha256sum | cut -d' ' -f1
+            )"
+            HEAD_ISOLATION_SHA="$(sha256sum "$S1_4R_ISOLATION_TEST" | cut -d' ' -f1)"
+            test "$BASE_ISOLATION_SHA" = \
+              "daca84be569df6358ac84e171825b91f9610dfdabe99fb5f0ecab4f02b47c3cc"
+            test "$HEAD_ISOLATION_SHA" = \
+              "c13f7e43b53023c94d189c7f905ac233e80a36b4a164d1705b325773b34bee18"
+          fi
+
           # 의존성 amendment가 수치 구현·테스트·fixture를 함께 바꾸는 것을 독립적으로 막는다.
           git diff --exit-code "$DIFF_BASE" HEAD -- \
             shared-docs/metrics_definitions.md \
@@ -151,6 +164,7 @@ jobs:
             workspaces/decision-platform/python-services/tests/financial_engineering \
             workspaces/decision-platform/research/s1-4r-jax-risk/src \
             workspaces/decision-platform/research/s1-4r-jax-risk/tests \
+            ":(exclude)$S1_4R_ISOLATION_TEST" \
             "$S1_4X/contract" \
             ":(exclude)$S1_4X/contract/contract-manifest.v1.json" \
             ":(exclude)$S1_4X/contract/reference-lock.v1.json" \

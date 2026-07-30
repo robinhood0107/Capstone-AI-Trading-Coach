@@ -3,9 +3,8 @@ title = "Capstone AI Trading Coach Gitleaks configuration"
 [extend]
 useDefault = true
 
-[[allowlists]]
+[allowlist]
 description = "Approved public BGE tokenizer artifact SHA-256"
-targetRules = ["generic-api-key"]
 regexTarget = "line"
 regexes = [
   '''6710678b12670bc442b99edc952c4d996ae309a7020c1fa0096dd245c2faf790''',

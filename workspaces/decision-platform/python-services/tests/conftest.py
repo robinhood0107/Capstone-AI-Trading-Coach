@@ -36,6 +36,8 @@ class PostgresTestCluster(TypedDict):
     market_writer_dsn: str
     portfolio_writer_dsn: str
     risk_writer_dsn: str
+    rag_writer_dsn: str
+    rag_query_dsn: str
 
 
 @pytest.fixture(scope="session")
@@ -65,6 +67,12 @@ def postgres_cluster() -> Iterator[PostgresTestCluster]:
         risk_writer_dsn = (
             f"postgresql://decision_risk_writer:risk-writer-test@{host}:{port}/decision"
         )
+        rag_writer_dsn = (
+            f"postgresql://decision_rag_writer:rag-writer-test@{host}:{port}/decision"
+        )
+        rag_query_dsn = (
+            f"postgresql://decision_rag_query:rag-query-test@{host}:{port}/decision"
+        )
 
         with psycopg.connect(admin_dsn, autocommit=True) as connection:
             connection.execute(
@@ -81,8 +89,15 @@ def postgres_cluster() -> Iterator[PostgresTestCluster]:
                     NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD 'portfolio-writer-test';
                 CREATE ROLE decision_risk_writer LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
                     NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD 'risk-writer-test';
+                CREATE ROLE decision_rag_writer LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
+                    NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD 'rag-writer-test';
+                CREATE ROLE decision_rag_query LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
+                    NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD 'rag-query-test';
                 CREATE ROLE flyway LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
                     NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD 'flyway-test';
+                ALTER ROLE decision_app SET statement_timeout = '2s';
+                ALTER ROLE decision_app SET lock_timeout = '500ms';
+                ALTER ROLE decision_app SET idle_in_transaction_session_timeout = '5s';
                 GRANT CONNECT ON DATABASE decision TO
                     decision_app,
                     decision_collector,
@@ -90,6 +105,8 @@ def postgres_cluster() -> Iterator[PostgresTestCluster]:
                     decision_market_writer,
                     decision_portfolio_writer,
                     decision_risk_writer,
+                    decision_rag_writer,
+                    decision_rag_query,
                     flyway;
                 REVOKE CREATE ON SCHEMA public FROM PUBLIC;
                 GRANT USAGE ON SCHEMA public TO
@@ -99,6 +116,8 @@ def postgres_cluster() -> Iterator[PostgresTestCluster]:
                     decision_market_writer,
                     decision_portfolio_writer,
                     decision_risk_writer,
+                    decision_rag_writer,
+                    decision_rag_query,
                     flyway;
                 GRANT CREATE ON SCHEMA public TO flyway;
                 """
@@ -139,6 +158,8 @@ def postgres_cluster() -> Iterator[PostgresTestCluster]:
             "market_writer_dsn": market_writer_dsn,
             "portfolio_writer_dsn": portfolio_writer_dsn,
             "risk_writer_dsn": risk_writer_dsn,
+            "rag_writer_dsn": rag_writer_dsn,
+            "rag_query_dsn": rag_query_dsn,
         }
 
 

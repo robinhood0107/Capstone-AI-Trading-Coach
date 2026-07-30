@@ -8,6 +8,25 @@ import java.math.BigDecimal
 import java.time.Instant
 
 class MetricReadinessPolicyTest {
+    @Test
+    fun `oversized disclosure evidence becomes partial public HOLD without exposing internal detail`() {
+        val result =
+            policy.classify(
+                candidate(
+                    metricKey = MetricKey.DISCLOSURE_RISK_SCORE,
+                    requirement = EvidenceRequirement.REQUIRED,
+                ),
+                snapshot(
+                    MetricCell.Incomplete(MetricIssueCode.SOURCE_OVERSIZED),
+                    metricKey = MetricKey.DISCLOSURE_RISK_SCORE,
+                ),
+            )
+
+        val hold = assertInstanceOf(RuleReadiness.Hold::class.java, result)
+        assertEquals(PublicIssueCode.DISCLOSURE_PARTIAL, hold.issue.publicCode)
+        assertEquals(MetricIssueCode.SOURCE_OVERSIZED, hold.issue.internalCause)
+    }
+
     private val policy = MetricReadinessPolicy()
 
     @Test
@@ -133,6 +152,7 @@ class MetricReadinessPolicyTest {
 
     private fun candidate(
         ruleId: String = "max_position_per_asset",
+        metricKey: MetricKey = MetricKey.ASSET_WEIGHT,
         enabled: Boolean = true,
         applicable: Boolean = true,
         requirement: EvidenceRequirement = EvidenceRequirement.REQUIRED,
@@ -140,7 +160,7 @@ class MetricReadinessPolicyTest {
         CandidateRule(
             order = 2,
             ruleId = ruleId,
-            metricKey = MetricKey.ASSET_WEIGHT,
+            metricKey = metricKey,
             operator = RuleOperator.LESS_THAN_OR_EQUAL,
             threshold = BigDecimal("0.15"),
             thresholdScale = 4,
@@ -153,10 +173,11 @@ class MetricReadinessPolicyTest {
     private fun snapshot(
         cell: MetricCell<MetricValue>,
         evaluationAsOf: Instant = NOW,
+        metricKey: MetricKey = MetricKey.ASSET_WEIGHT,
     ): MetricSnapshot =
         MetricSnapshot.fixture(
             evaluationAsOf = evaluationAsOf,
-            metrics = mapOf(MetricKey.ASSET_WEIGHT to cell),
+            metrics = mapOf(metricKey to cell),
         )
 
     companion object {

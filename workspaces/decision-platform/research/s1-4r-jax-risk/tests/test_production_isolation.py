@@ -95,6 +95,22 @@ ALLOWED_BRANCH_DIFF_PATHS = (
     ".github/workflows/s1-4r-research-correctness.yml",
     ".github/workflows/s1-4r-research-benchmark.yml",
     ".github/workflows/s1-4x-contract-correctness.yml",
+    (
+        "workspaces/decision-platform/research/s1-4x-numeric-parity/"
+        "contract/reference-lock.v1.json"
+    ),
+    (
+        "workspaces/decision-platform/research/s1-4x-numeric-parity/"
+        "contract/contract-manifest.v1.json"
+    ),
+    (
+        "workspaces/decision-platform/research/s1-4x-numeric-parity/"
+        "benchmarks/benchmark-plan.v1.json"
+    ),
+    (
+        "workspaces/decision-platform/research/s1-4x-numeric-parity/"
+        "benchmarks/benchmark-plan.v1.sha256"
+    ),
 )
 
 

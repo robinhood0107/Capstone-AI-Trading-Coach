@@ -162,7 +162,7 @@
     {
       "role": "research-production-isolation-tests",
       "path": "workspaces/decision-platform/research/s1-4r-jax-risk/tests/test_production_isolation.py",
-      "sha256": "daca84be569df6358ac84e171825b91f9610dfdabe99fb5f0ecab4f02b47c3cc"
+      "sha256": "4347f250fe3ec933aacecf4a91d3e5a8e720b935f7f7a75783493d6bbe47f8e9"
     },
     {
       "role": "research-property-tests",
@@ -299,7 +299,7 @@
         "tests/fixtures/canonical/*.sha256"
       ],
       "fileCount": 11,
-      "canonicalManifestSha256": "1cd11b463d3a9fbaaebcf49fcb9dd95e763e7c269807551aeb4f49ee8f9b0325",
+      "canonicalManifestSha256": "a520821114698ea4c87218f640075c02b62126fe9c41eb7d3f2880381081117d",
       "files": [
         {
           "path": "tests/conftest.py",
@@ -339,7 +339,7 @@
         },
         {
           "path": "tests/test_production_isolation.py",
-          "sha256": "daca84be569df6358ac84e171825b91f9610dfdabe99fb5f0ecab4f02b47c3cc"
+          "sha256": "4347f250fe3ec933aacecf4a91d3e5a8e720b935f7f7a75783493d6bbe47f8e9"
         },
         {
           "path": "tests/test_properties.py",

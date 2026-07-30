@@ -28,8 +28,18 @@ def test_repo_hygiene_supplies_required_collector_and_disclosure_reader_password
         "${POSTGRES_DISCLOSURE_READER_PASSWORD:?POSTGRES_DISCLOSURE_READER_PASSWORD is required}"
         in compose
     )
+    assert (
+        "${POSTGRES_RAG_WRITER_PASSWORD:?POSTGRES_RAG_WRITER_PASSWORD is required}"
+        in compose
+    )
+    assert (
+        "${POSTGRES_RAG_QUERY_PASSWORD:?POSTGRES_RAG_QUERY_PASSWORD is required}"
+        in compose
+    )
     assert "POSTGRES_COLLECTOR_PASSWORD: validation-dummy-collector" in workflow
     assert "POSTGRES_DISCLOSURE_READER_PASSWORD: validation-dummy-disclosure-reader" in workflow
+    assert "POSTGRES_RAG_WRITER_PASSWORD: validation-dummy-rag-writer" in workflow
+    assert "POSTGRES_RAG_QUERY_PASSWORD: validation-dummy-rag-query" in workflow
 
 
 def test_role_bootstrap_disables_all_duration_and_statement_logging_before_password_ddl() -> None:
@@ -54,6 +64,19 @@ def test_role_bootstrap_disables_all_duration_and_statement_logging_before_passw
         assert script.index(f"SET {setting} = {value};") < begin
         assert script.index(f"current_setting('{setting}')") < first_password_ddl
     assert "psql -v ON_ERROR_STOP=1" in script
+
+
+def test_role_bootstrap_sets_bounded_application_query_and_transaction_timeouts() -> None:
+    script = (REPO_ROOT / "infra/init/02-application-roles.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "ALTER ROLE decision_app SET statement_timeout = '2s'" in script
+    assert "ALTER ROLE decision_app SET lock_timeout = '500ms'" in script
+    assert (
+        "ALTER ROLE decision_app SET idle_in_transaction_session_timeout = '5s'"
+        in script
+    )
 
 
 def test_collector_can_only_perform_allowlisted_calendar_operations(

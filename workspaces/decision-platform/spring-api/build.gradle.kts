@@ -206,6 +206,9 @@ tasks.named<ProcessResources>("processResources") {
     from(layout.projectDirectory.file("../../../contracts/catalogs/s4-rag-contract.v1.json")) {
         into("contracts")
     }
+    from(layout.projectDirectory.file("../../../contracts/catalogs/s4-rag-contract.v1.sha256.json")) {
+        into("contracts")
+    }
     from(layout.projectDirectory.file("../../../contracts/schemas/s4-rag-ask-request.schema.json")) {
         into("contracts")
     }
@@ -421,6 +424,7 @@ val verifyS4RagContractResources by tasks.registering {
     doLast {
         listOf(
             "catalogs/s4-rag-contract.v1.json" to "s4-rag-contract.v1.json",
+            "catalogs/s4-rag-contract.v1.sha256.json" to "s4-rag-contract.v1.sha256.json",
         ).forEach { (sourceRelative, copiedName) ->
             val source =
                 layout.projectDirectory

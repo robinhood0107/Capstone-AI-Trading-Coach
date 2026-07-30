@@ -165,7 +165,7 @@ sources:
     locator:
       canonicalUrl: https://opendart.fss.or.kr/guide/detail.do?apiGrpCd=DS001&apiId=2019001
       allowedOrigin: https://opendart.fss.or.kr
-      allowedPath: /guide/detail.do
+      allowedPath: /guide/detail.do?apiGrpCd=DS001&apiId=2019001
     retention:
       mode: REFERENCE_METADATA_ONLY
       days: 365
@@ -186,7 +186,7 @@ sources:
     locator:
       canonicalUrl: https://opendart.fss.or.kr/guide/detail.do?apiGrpCd=DS001&apiId=2019018
       allowedOrigin: https://opendart.fss.or.kr
-      allowedPath: /guide/detail.do
+      allowedPath: /guide/detail.do?apiGrpCd=DS001&apiId=2019018
     retention:
       mode: REFERENCE_METADATA_ONLY
       days: 365
@@ -207,7 +207,7 @@ sources:
     locator:
       canonicalUrl: https://opendart.fss.or.kr/guide/detail.do?apiGrpCd=DS003&apiId=2019016
       allowedOrigin: https://opendart.fss.or.kr
-      allowedPath: /guide/detail.do
+      allowedPath: /guide/detail.do?apiGrpCd=DS003&apiId=2019016
     retention:
       mode: REFERENCE_METADATA_ONLY
       days: 365
@@ -228,7 +228,7 @@ sources:
     locator:
       canonicalUrl: https://opendart.fss.or.kr/guide/main.do?apiGrpCd=DS005
       allowedOrigin: https://opendart.fss.or.kr
-      allowedPath: /guide/main.do
+      allowedPath: /guide/main.do?apiGrpCd=DS005
     retention:
       mode: REFERENCE_METADATA_ONLY
       days: 365
@@ -375,7 +375,7 @@ sources:
     locator:
       canonicalUrl: https://www.samsungfund.com/etf/product/view.do?id=2ETF24
       allowedOrigin: https://www.samsungfund.com
-      allowedPath: /etf/product/view.do
+      allowedPath: /etf/product/view.do?id=2ETF24
     retention:
       mode: REFERENCE_METADATA_ONLY
       days: 365

@@ -33,7 +33,7 @@ REST/gRPC 계약은 [API 명세서](API_명세서.md), machine-readable S4 profi
 [contracts README](../contracts/README.md#s48-교차시장애널리스트-계획-계약)를 따르며,
 machine-readable 계약 링크는 S4.8A contract-lock이 실제 생성된 뒤에만 추가한다.
 exact 42개 integration target 행과 exact KIS 18개 allowlist는
-로컬 `private-reference/agent/금융공학_RAG_자료수급_레지스트리.md`가
+Git으로 추적하지 않는 로컬 전용 자료수급 레지스트리가
 authority이며 공개 문서에는 전체 목록을 복제하지 않는다.
 
 | 문서 | 내용 |

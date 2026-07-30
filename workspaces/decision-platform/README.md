@@ -13,7 +13,7 @@ python-services/        # uv 프로젝트 — LightGBM/RAG/금융공학/데이�
 
 ## 세팅
 
-공개 레포에는 최종 명세/API 계약과 구현 코드를 두고, 상세 개인 참고 노트는 루트의 ignored `private-reference/` 폴더에서만 관리한다. 요약:
+공개 레포에는 최종 명세/API 계약과 구현 코드만 두고, 로컬 전용 참고자료와 개인 파일 경로는 커밋하지 않는다. 요약:
 
 1. `cp ../../.env.example ../../.env` 후 PostgreSQL/collector/disclosure-reader/source-writer/Redis password, role별 offline DSN, Spring↔Python gRPC shared secret, JWT issuer/audience, 목적별 JWT/login/credential HMAC key, single-quoted attested demo credential bundle과 필요한 provider secret을 채운다. plaintext demo password는 `.env`에 저장하지 않는다.
 2. `docker compose --env-file ../../.env -f ../../infra/docker-compose.infra.yml up -d`로 loopback-only PostgreSQL/Redis를 기동한다.
@@ -56,7 +56,7 @@ P1 기본 mode는 `WARN_ONLY`다. versioned exposure catalog에 명시된 종목
 
 - KIS 18개 endpoint adapter는 fixture-first이며 기본 physical call은 0이다.
   exact 42개 integration target 행과 exact 18개 allowlist의 authority는
-  로컬 `private-reference/agent/금융공학_RAG_자료수급_레지스트리.md`이며
+  Git으로 추적하지 않는 로컬 전용 자료수급 레지스트리이며
   공개 문서에는 전체 inventory를 복제하지 않는다.
 - 구조화 애널리스트 자료는 같은 증권사의 이전 값 대비 목표가·EPS·매출 revision만 설명에
   사용하고 `BUY` 의견 자체의 가중치는 0이다.
@@ -256,7 +256,7 @@ regular file mode `0600`으로만 발급하고, 현재 사용자가 packet의 ex
 없거나 다르거나 만료되면 provider handoff 전에 종료한다. packet 검증 뒤에는 runtime 생성 전에
 tracked/untracked/staged 변경이 없는 clean worktree와 packet account가
 `KIS_MOCK_BOUND_ACCOUNT_ID`에 정확히 결속됐는지도 확인한다. ignored `.env`와
-`private-reference/`는 clean 판정에서 제외한다. 이어서
+Git ignore 규칙에 포함된 로컬 전용 파일은 clean 판정에서 제외한다. 이어서
 `approvalId`와 packet SHA-256에서 파생한 opaque Redis key를 `SET NX PX`로 claim하며,
 성공·첫 실패·runtime 생성 실패 모두 해당 packet을 재사용할 수 없다. Redis 장애나 기존 claim도
 provider handoff 전에 fail-closed한다.

@@ -13,9 +13,6 @@ http-client.private.env.json
 *.jks
 *.keystore
 
-# --- Private reference notes (never commit) ---
-private-reference/
-
 # --- Generated/raw market data (never commit) ---
 /data/
 /data/kis/**

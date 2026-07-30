@@ -485,7 +485,7 @@ P1 `WARN_ONLY` RiskEngine 연결을 소유한다. S7.3은 기존 작업을 예�
 조사 inventory 42개는 사용 가능한 API 수가 아니다. 39개 machine 연동 후보 계열과 3개
 manual-link 원천의 합이며 현재 S4.8 활성 provider와 usable adapter는 0이다. KIS 18개
 endpoint도 disabled fixture-first 후보로만 계획한다. exact 42개 행과 exact 18개 allowlist는
-로컬 `private-reference/agent/금융공학_RAG_자료수급_레지스트리.md`가
+Git으로 추적하지 않는 로컬 전용 자료수급 레지스트리가
 운영 authority이며 공개 계약에는 집계와 불변식만 두고 전체 inventory를 복제하지 않는다.
 provider raw body, PDF·뉴스 원문,
 credential·계좌 데이터는 저장하지 않고, RAG source registry와 기존 30-card corpus/hash는

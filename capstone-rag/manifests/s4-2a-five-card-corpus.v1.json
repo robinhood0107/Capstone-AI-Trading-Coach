@@ -1,0 +1,72 @@
+{
+  "schemaVersion": "s4-2a-five-card-corpus/v1",
+  "producer": "decision-platform-rag-ingest",
+  "generatedAt": "2026-07-30T17:28:17Z",
+  "membershipPolicy": "S4.2A_EXACT_OFFICIAL_FIVE",
+  "cardCount": 5,
+  "chunkCount": 5,
+  "corpusManifestSha256": "2d3c7daba02e8b4601dfec3e2870a2b145394b19e89c00b45ad0eab35011982f",
+  "identityAlgorithm": "sha256-canonical-json-over-sorted-card-and-chunk-membership-v1",
+  "parserVersion": "rag-markdown-heading-v2",
+  "canonicalizerVersion": "utf8-nfc-lf-source-card-body-v1",
+  "chunkerVersion": "bge-tokenizer-heading-400-600-v1",
+  "inputStrategyVersion": "adjacent-7.5pct-per-side-no-reallocation-v1",
+  "embeddingProfileId": "bge_m3_local_1024_v1",
+  "modelRevision": "5617a9f61b028005a4858fdac845db406aefb181",
+  "tokenizerSha256": "6710678b12670bc442b99edc952c4d996ae309a7020c1fa0096dd245c2faf790",
+  "artifactManifestSha256": "a0ae6372b2d735b593d806d24c1155cb48dd7188adebe7d6b7619a1622fb71aa",
+  "generationId": "rag_gen_32a2abae3348ece3d441cce38eabd06e",
+  "generationHash": "32a2abae3348ece3d441cce38eabd06e8a5b5a3c9db221eade2630d59e1bd8a6",
+  "members": [
+    {
+      "sourceId": "src_project_ecos_pit_availability_001",
+      "cardId": "card_ecos_pit_availability_001",
+      "cardSha256": "364ca099f205cfe30d50007eae1b44a69564eec383b23aa2fb5451bc47c169bc",
+      "sourceRevisionId": "src_rev_62b593499b63fd9aa0ee570da78f2818",
+      "chunkRevisionId": "rag_chk_7bd11076778008496f2850f70ad5ca8d",
+      "canonicalContentHash": "4f5e2dd7a1bc024bbba4b7b77357ac5e6e87dd53304ab23c909f9b403a47624b",
+      "embeddingInputHash": "4f5e2dd7a1bc024bbba4b7b77357ac5e6e87dd53304ab23c909f9b403a47624b",
+      "tokenCount": 250
+    },
+    {
+      "sourceId": "src_project_gold_futures_etf_132030_001",
+      "cardId": "card_gold_futures_etf_132030_001",
+      "cardSha256": "fc11696af98c8423f83b0a63fbbef72f1b3bbee945015ca300cffd569cc0b6cd",
+      "sourceRevisionId": "src_rev_7177152c16c1539fcf683f17c7bf04a0",
+      "chunkRevisionId": "rag_chk_79f9b95f4e5299297efb11893d4f267c",
+      "canonicalContentHash": "8b47984c119a31b75c5feb1a501ef93d326262d438410e87e99438ab0c37ca2e",
+      "embeddingInputHash": "8b47984c119a31b75c5feb1a501ef93d326262d438410e87e99438ab0c37ca2e",
+      "tokenCount": 264
+    },
+    {
+      "sourceId": "src_project_kis_adjusted_price_001",
+      "cardId": "card_kis_adjusted_price_001",
+      "cardSha256": "9def5746b06f0a7264597ae6f5933678bc4abfd37a3b51cd00b02278c7285605",
+      "sourceRevisionId": "src_rev_ba00bb314bfa8f9872cde75881c487bd",
+      "chunkRevisionId": "rag_chk_81c93584e07147d1faa48ea70cf450b7",
+      "canonicalContentHash": "7df55f6c111f87f78d7a224ca81647667dc8f5e820cd29ba81588ce65f78a3e9",
+      "embeddingInputHash": "7df55f6c111f87f78d7a224ca81647667dc8f5e820cd29ba81588ce65f78a3e9",
+      "tokenCount": 239
+    },
+    {
+      "sourceId": "src_project_krx_service_coverage_001",
+      "cardId": "card_krx_service_coverage_001",
+      "cardSha256": "bf3fe6653513e57fc2629bd474eb185419a24013341395ff74b399f37501f577",
+      "sourceRevisionId": "src_rev_2deadab429176f19405399f827bbaf44",
+      "chunkRevisionId": "rag_chk_a69e914f7c2c29696f242d575e93599c",
+      "canonicalContentHash": "10f26c4a30cb77535cb2be6210e658556247c6ea7964153e2d4aa41e9eb8e3a8",
+      "embeddingInputHash": "10f26c4a30cb77535cb2be6210e658556247c6ea7964153e2d4aa41e9eb8e3a8",
+      "tokenCount": 197
+    },
+    {
+      "sourceId": "src_project_opendart_status_quota_001",
+      "cardId": "card_opendart_status_quota_001",
+      "cardSha256": "e359845e1e984f6f1da68e1ca5d076432ace29fa4f8bae51481fea31e68d5946",
+      "sourceRevisionId": "src_rev_21aeb6a0f56be39a717d45c63edc5ec9",
+      "chunkRevisionId": "rag_chk_51bf9ca2dd5da71e10daea35155ae7ee",
+      "canonicalContentHash": "00daf780b9f7d173e281bdd4eca405043239e95a5d000fd20d1e0c8b8e7da676",
+      "embeddingInputHash": "00daf780b9f7d173e281bdd4eca405043239e95a5d000fd20d1e0c8b8e7da676",
+      "tokenCount": 207
+    }
+  ]
+}

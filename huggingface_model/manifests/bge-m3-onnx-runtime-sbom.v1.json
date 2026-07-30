@@ -1,0 +1,35 @@
+{
+  "schemaVersion": "runtime-sbom/v1",
+  "generatedAt": "2026-07-30T17:28:17Z",
+  "pythonVersion": "3.12.13",
+  "lockfileSha256": "ccd22fd798fe71b1830c6738dffb45cb87dfebb8d0a0864e3d0e5e860ef9e127",
+  "components": [
+    {
+      "name": "onnxruntime",
+      "version": "1.28.0",
+      "license": "MIT",
+      "source": "https://pypi.org/project/onnxruntime/1.28.0/",
+      "python312LinuxX8664WheelSha256": "0a83bdb70d143cede762b677789bf2a7acca54b3fb82565601d5c30695aa933c"
+    },
+    {
+      "name": "tokenizers",
+      "version": "0.23.1",
+      "license": "Apache-2.0",
+      "source": "https://pypi.org/project/tokenizers/0.23.1/",
+      "pythonAbi3LinuxX8664WheelSha256": "5075b405006415ea148a992d093699c66eb01952bf59f4d5727089a98bda45a4"
+    }
+  ],
+  "removedDirectDependency": "FlagEmbedding",
+  "absentRuntimePackages": [
+    "FlagEmbedding",
+    "sentence-transformers",
+    "torch",
+    "transformers"
+  ],
+  "runtimePolicy": {
+    "executionProvider": "CPUExecutionProvider",
+    "sourceBuildAllowed": false,
+    "floatingVersionAllowed": false,
+    "networkDuringInference": false
+  }
+}

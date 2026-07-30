@@ -20,6 +20,7 @@ enum class ErrorCode(
     PAYLOAD_TOO_LARGE(HttpStatusCode.valueOf(413), "Request payload exceeded the configured safety limit."),
     RISK_BLOCKED(HttpStatusCode.valueOf(422), "Request was blocked by risk controls."),
     RISK_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "Risk controls are unavailable."),
+    RAG_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "RAG source registry is unavailable."),
     DATA_STALE(HttpStatus.CONFLICT, "Required data is stale."),
     RATE_LIMITED(HttpStatus.TOO_MANY_REQUESTS, "Rate limit exceeded."),
     PYTHON_SERVICE_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "Python service is unavailable."),

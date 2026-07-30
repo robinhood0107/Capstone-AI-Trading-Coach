@@ -2946,6 +2946,93 @@
         ],
         "type": "object"
       },
+      "RagSourceListResponse": {
+        "properties": {
+          "items": {
+            "description": "인증된 subject에게 노출 가능한 RAG source registry metadata",
+            "items": {
+              "$ref": "#/components/schemas/RagSourceResponse"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "RagSourceResponse": {
+        "properties": {
+          "accessLevel": {
+            "type": "string"
+          },
+          "attribution": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "canonicalUrl": {
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "externalProcessingAllowed": {
+            "type": "boolean"
+          },
+          "ingestStatus": {
+            "type": "string"
+          },
+          "initialProcessing": {
+            "type": "string"
+          },
+          "lastCheckedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "latestCheckResult": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "licenseDecision": {
+            "type": "string"
+          },
+          "retentionDays": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "retentionMode": {
+            "type": "string"
+          },
+          "retentionOwner": {
+            "type": "string"
+          },
+          "retiredAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sourceId": {
+            "type": "string"
+          },
+          "sourceType": {
+            "type": "string"
+          },
+          "tier": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "ReconciliationProjection": {
         "properties": {
           "checkedAt": {
@@ -6244,6 +6331,39 @@
         ],
         "type": "object"
       },
+      "S4RagErrorResponse": {
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/S4RagErrorSchema"
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {},
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "S4RagErrorSchema": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "details": {
+            "additionalProperties": {},
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "SystemHealthResponse": {
         "properties": {
           "asOf": {
@@ -7959,6 +8079,57 @@
         "summary": "원칙 버전 이력 / List immutable Principle versions",
         "tags": [
           "principle-controller"
+        ]
+      }
+    },
+    "/api/v1/rag/sources": {
+      "get": {
+        "operationId": "listSources",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RagSourceListResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/S4RagErrorResponse"
+                }
+              }
+            },
+            "description": "Unexpected query parameter."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/S4RagErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication is required."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/S4RagErrorResponse"
+                }
+              }
+            },
+            "description": "RAG source registry is unavailable."
+          }
+        },
+        "summary": "인증된 subject에게 S4.1 RAG source registry metadata만 반환한다.",
+        "tags": [
+          "rag-controller"
         ]
       }
     },

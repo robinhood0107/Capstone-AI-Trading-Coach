@@ -17,6 +17,7 @@ from app.rag.bge_runtime import (
     BgeOnnxEmbedder,
     BgeRuntimeError,
     BgeStaticTokenizer,
+    load_model_dimension,
     validate_embedding_batch,
 )
 
@@ -71,6 +72,40 @@ def test_static_tokenizer_rejects_unknown_top_level_json_field(
         BgeStaticTokenizer.from_file(
             tokenizer_path,
             expected_sha256=hashlib.sha256(tokenizer_path.read_bytes()).hexdigest(),
+        )
+
+
+def test_model_config_pins_float32_xlm_roberta_1024_dimension(
+    posix_tmp_path: Path,
+) -> None:
+    config_path = posix_tmp_path / "config.json"
+    payload = {
+        "architectures": ["XLMRobertaModel"],
+        "hidden_size": 1024,
+        "model_type": "xlm-roberta",
+        "torch_dtype": "float32",
+        "vocab_size": 250002,
+    }
+    config_path.write_text(json.dumps(payload), encoding="utf-8")
+    config_path.chmod(0o600)
+    digest = hashlib.sha256(config_path.read_bytes()).hexdigest()
+
+    assert (
+        load_model_dimension(
+            config_path,
+            expected_sha256=digest,
+            expected_size=config_path.stat().st_size,
+        )
+        == 1024
+    )
+
+    payload["hidden_size"] = 768
+    config_path.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(BgeRuntimeError, match="BGE_MODEL_CONFIG_CONTRACT"):
+        load_model_dimension(
+            config_path,
+            expected_sha256=hashlib.sha256(config_path.read_bytes()).hexdigest(),
+            expected_size=config_path.stat().st_size,
         )
 
 

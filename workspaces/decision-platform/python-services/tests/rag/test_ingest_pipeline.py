@@ -176,6 +176,15 @@ def test_count_tokens_uses_the_injected_static_tokenizer_port() -> None:
     assert count_tokens(text, tokenizer=TOKENIZER) == 4
 
 
+def test_monotonic_overlapping_subword_offsets_count_without_rebuilding_text() -> None:
+    class _OverlappingSubwordTokenizer:
+        def token_spans(self, text: str) -> tuple[tuple[int, int], ...]:
+            assert text == "KIS X"
+            return ((0, 1), (0, 3), (4, 5))
+
+    assert count_tokens("KIS X", tokenizer=_OverlappingSubwordTokenizer()) == 3
+
+
 def test_canonical_chunks_never_merge_across_heading_boundaries() -> None:
     chunks = build_canonical_chunks(
         source_id="src_project_heading_boundary_001",

@@ -36,6 +36,7 @@ from contracts.generate_s4_rag_contracts import (  # noqa: E402
     validate_admin_policy_selection_semantics,
     validate_catalog_semantics as validate_s4_rag_catalog_semantics,
     validate_rag_ask_request_semantics,
+    validate_rag_source_card_semantics,
 )
 
 SCHEMA_DIR = REPO_ROOT / "contracts" / "schemas"
@@ -140,6 +141,9 @@ def validate_example_semantics(
         if not isinstance(s4_rag_catalog, dict):
             raise ContractValidationError("S4 RAG catalog must be available.")
         validate_admin_policy_selection_semantics(example, s4_rag_catalog)
+        return
+    if schema_name == "rag-source-card-v1":
+        validate_rag_source_card_semantics(example)
         return
     validate_principle_payload_semantics(
         schema_name,

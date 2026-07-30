@@ -2947,42 +2947,32 @@
         "type": "object"
       },
       "RagSourceListResponse": {
+        "additionalProperties": false,
         "properties": {
           "items": {
-            "description": "인증된 subject에게 노출 가능한 RAG source registry metadata",
             "items": {
               "$ref": "#/components/schemas/RagSourceResponse"
             },
+            "maxItems": 30,
             "type": "array"
           }
         },
+        "required": [
+          "items"
+        ],
         "type": "object"
       },
       "RagSourceResponse": {
+        "additionalProperties": false,
+        "description": "인증된 subject에게 노출 가능한 RAG source registry metadata",
         "properties": {
-          "accessLevel": {
-            "type": "string"
-          },
           "attribution": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": "string"
           },
           "canonicalUrl": {
             "type": "string"
           },
-          "createdAt": {
-            "format": "date-time",
-            "type": "string"
-          },
-          "externalProcessingAllowed": {
-            "type": "boolean"
-          },
-          "ingestStatus": {
-            "type": "string"
-          },
-          "initialProcessing": {
+          "institution": {
             "type": "string"
           },
           "lastCheckedAt": {
@@ -2992,45 +2982,25 @@
               "null"
             ]
           },
-          "latestCheckResult": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "licenseDecision": {
-            "type": "string"
-          },
-          "retentionDays": {
-            "format": "int32",
-            "type": "integer"
-          },
-          "retentionMode": {
-            "type": "string"
-          },
-          "retentionOwner": {
-            "type": "string"
-          },
-          "retiredAt": {
-            "format": "date-time",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "sourceId": {
-            "type": "string"
-          },
-          "sourceType": {
-            "type": "string"
-          },
-          "tier": {
             "type": "string"
           },
           "title": {
             "type": "string"
+          },
+          "topic": {
+            "type": "string"
           }
         },
+        "required": [
+          "attribution",
+          "canonicalUrl",
+          "institution",
+          "lastCheckedAt",
+          "sourceId",
+          "title",
+          "topic"
+        ],
         "type": "object"
       },
       "ReconciliationProjection": {
@@ -6331,37 +6301,265 @@
         ],
         "type": "object"
       },
-      "S4RagErrorResponse": {
+      "S4RagSourceListSuccessResponse": {
+        "additionalProperties": false,
         "properties": {
+          "data": {
+            "$ref": "#/components/schemas/RagSourceListResponse"
+          },
           "error": {
-            "$ref": "#/components/schemas/S4RagErrorSchema"
+            "type": "null"
           },
           "requestId": {
+            "maxLength": 128,
+            "minLength": 1,
             "type": "string"
           },
           "success": {
+            "const": true,
             "type": "boolean"
           },
           "warnings": {
-            "items": {},
+            "items": {
+              "$ref": "#/components/schemas/ApiWarning"
+            },
             "type": "array"
           }
         },
+        "required": [
+          "data",
+          "error",
+          "requestId",
+          "success",
+          "warnings"
+        ],
         "type": "object"
       },
-      "S4RagErrorSchema": {
-        "properties": {
-          "code": {
-            "type": "string"
+      "S4RagUnauthorizedErrorResponse": {
+        "additionalProperties": false,
+        "example": {
+          "error": {
+            "code": "UNAUTHORIZED",
+            "details": {},
+            "message": "Authentication is required."
           },
-          "details": {
-            "additionalProperties": {},
+          "requestId": "req_20260723_example",
+          "success": false,
+          "warnings": []
+        },
+        "properties": {
+          "data": {
+            "type": "null"
+          },
+          "error": {
+            "additionalProperties": false,
+            "properties": {
+              "code": {
+                "const": "UNAUTHORIZED",
+                "type": "string"
+              },
+              "details": {
+                "additionalProperties": false,
+                "const": {},
+                "properties": {},
+                "type": "object"
+              },
+              "message": {
+                "const": "Authentication is required.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "details",
+              "message"
+            ],
             "type": "object"
           },
-          "message": {
+          "requestId": {
+            "maxLength": 128,
+            "minLength": 1,
             "type": "string"
+          },
+          "success": {
+            "const": false,
+            "type": "boolean"
+          },
+          "warnings": {
+            "const": [],
+            "type": "array"
           }
         },
+        "required": [
+          "data",
+          "error",
+          "requestId",
+          "success",
+          "warnings"
+        ],
+        "type": "object"
+      },
+      "S4RagUnavailableErrorResponse": {
+        "additionalProperties": false,
+        "example": {
+          "error": {
+            "code": "RAG_UNAVAILABLE",
+            "details": {},
+            "message": "RAG source registry is unavailable."
+          },
+          "requestId": "req_20260723_example",
+          "success": false,
+          "warnings": []
+        },
+        "properties": {
+          "data": {
+            "type": "null"
+          },
+          "error": {
+            "additionalProperties": false,
+            "properties": {
+              "code": {
+                "const": "RAG_UNAVAILABLE",
+                "type": "string"
+              },
+              "details": {
+                "additionalProperties": false,
+                "const": {},
+                "properties": {},
+                "type": "object"
+              },
+              "message": {
+                "const": "RAG source registry is unavailable.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "details",
+              "message"
+            ],
+            "type": "object"
+          },
+          "requestId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "success": {
+            "const": false,
+            "type": "boolean"
+          },
+          "warnings": {
+            "const": [],
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "error",
+          "requestId",
+          "success",
+          "warnings"
+        ],
+        "type": "object"
+      },
+      "S4RagValidationErrorResponse": {
+        "additionalProperties": false,
+        "example": {
+          "error": {
+            "code": "VALIDATION_ERROR",
+            "details": {
+              "violations": [
+                {
+                  "field": "/query/sourceTier",
+                  "reason": "UNKNOWN_FIELD"
+                }
+              ]
+            },
+            "message": "Request validation failed."
+          },
+          "requestId": "req_20260723_example",
+          "success": false,
+          "warnings": []
+        },
+        "properties": {
+          "data": {
+            "type": "null"
+          },
+          "error": {
+            "additionalProperties": false,
+            "properties": {
+              "code": {
+                "const": "VALIDATION_ERROR",
+                "type": "string"
+              },
+              "details": {
+                "additionalProperties": false,
+                "properties": {
+                  "violations": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "field": {
+                          "maxLength": 512,
+                          "minLength": 1,
+                          "pattern": "^/(?:[^~/]|~0|~1)*(?:/(?:[^~/]|~0|~1)*)*$",
+                          "type": "string"
+                        },
+                        "reason": {
+                          "const": "UNKNOWN_FIELD",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "field",
+                        "reason"
+                      ],
+                      "type": "object"
+                    },
+                    "maxItems": 64,
+                    "minItems": 1,
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "violations"
+                ],
+                "type": "object"
+              },
+              "message": {
+                "const": "Request validation failed.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "details",
+              "message"
+            ],
+            "type": "object"
+          },
+          "requestId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "success": {
+            "const": false,
+            "type": "boolean"
+          },
+          "warnings": {
+            "const": [],
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "error",
+          "requestId",
+          "success",
+          "warnings"
+        ],
         "type": "object"
       },
       "SystemHealthResponse": {
@@ -8090,7 +8288,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RagSourceListResponse"
+                  "$ref": "#/components/schemas/S4RagSourceListSuccessResponse"
                 }
               }
             },
@@ -8100,7 +8298,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/S4RagErrorResponse"
+                  "$ref": "#/components/schemas/S4RagValidationErrorResponse"
                 }
               }
             },
@@ -8110,7 +8308,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/S4RagErrorResponse"
+                  "$ref": "#/components/schemas/S4RagUnauthorizedErrorResponse"
                 }
               }
             },
@@ -8120,7 +8318,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/S4RagErrorResponse"
+                  "$ref": "#/components/schemas/S4RagUnavailableErrorResponse"
                 }
               }
             },

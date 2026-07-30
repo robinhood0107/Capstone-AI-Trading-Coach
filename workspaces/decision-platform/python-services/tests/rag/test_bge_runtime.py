@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -54,6 +55,25 @@ def test_static_tokenizer_loads_only_the_hash_pinned_local_json(
         BgeStaticTokenizer.from_file(tokenizer_path, expected_sha256="0" * 64)
 
 
+def test_static_tokenizer_rejects_unknown_top_level_json_field(
+    posix_tmp_path: Path,
+) -> None:
+    tokenizer_path = posix_tmp_path / "tokenizer.json"
+    tokenizer = Tokenizer(WordLevel({"[UNK]": 0}, unk_token="[UNK]"))
+    tokenizer.pre_tokenizer = Whitespace()
+    tokenizer.save(str(tokenizer_path))
+    payload = json.loads(tokenizer_path.read_text(encoding="utf-8"))
+    payload["unexpectedRemoteLoader"] = "forbidden"
+    tokenizer_path.write_text(json.dumps(payload), encoding="utf-8")
+    tokenizer_path.chmod(0o600)
+
+    with pytest.raises(BgeRuntimeError, match="TOKENIZER_JSON_CONTRACT"):
+        BgeStaticTokenizer.from_file(
+            tokenizer_path,
+            expected_sha256=hashlib.sha256(tokenizer_path.read_bytes()).hexdigest(),
+        )
+
+
 @pytest.mark.parametrize(
     "embedding",
     [
@@ -100,6 +120,21 @@ def test_query_embedding_has_no_neighbor_context_and_uses_cpu_only() -> None:
     assert result[0] == pytest.approx(1.0)
 
 
+def test_runtime_supplies_zero_token_type_ids_when_graph_requires_them() -> None:
+    session = _FakeSession(requires_token_type_ids=True)
+    embedder = BgeOnnxEmbedder(
+        tokenizer=_RecordingTokenizer(),
+        session=session,
+        output_mode="LAST_HIDDEN_STATE_CLS",
+    )
+
+    embedder.embed_query("token type fallback")
+
+    assert session.last_inputs is not None
+    assert "token_type_ids" in session.last_inputs
+    assert np.count_nonzero(session.last_inputs["token_type_ids"]) == 0
+
+
 def test_runtime_rejects_non_cpu_provider_and_unknown_output_contract() -> None:
     with pytest.raises(BgeRuntimeError, match="CPUExecutionProvider"):
         BgeOnnxEmbedder(
@@ -131,18 +166,27 @@ class _RecordingTokenizer:
 
 
 class _FakeSession:
-    def __init__(self, *, providers: tuple[str, ...] = ("CPUExecutionProvider",)) -> None:
+    def __init__(
+        self,
+        *,
+        providers: tuple[str, ...] = ("CPUExecutionProvider",),
+        requires_token_type_ids: bool = False,
+    ) -> None:
         self._providers = providers
+        self._requires_token_type_ids = requires_token_type_ids
         self.last_inputs: dict[str, np.ndarray] | None = None
 
     def get_providers(self) -> list[str]:
         return list(self._providers)
 
     def get_inputs(self) -> list[Any]:
-        return [
+        inputs = [
             SimpleNamespace(name="input_ids"),
             SimpleNamespace(name="attention_mask"),
         ]
+        if self._requires_token_type_ids:
+            inputs.append(SimpleNamespace(name="token_type_ids"))
+        return inputs
 
     def get_outputs(self) -> list[Any]:
         return [SimpleNamespace(name="last_hidden_state")]

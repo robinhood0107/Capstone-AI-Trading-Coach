@@ -147,6 +147,7 @@ def test_onnx_graph_contract_rejects_external_path_and_custom_domain() -> None:
         output_dimension=1024,
         dynamic_batch=True,
         dynamic_sequence=True,
+        external_data_bytes=11,
     )
 
     validate_onnx_graph_contract(valid)

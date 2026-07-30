@@ -24,6 +24,94 @@ python-services/        # uv 프로젝트 — LightGBM/RAG/금융공학/데이�
 
 KIS outbound는 이 workspace가 단일 owner다. S1.1 client는 실전 18/s hard cap·기본 120ms 간격, 모의 1/s·1,000ms 간격을 같은 opaque credential/appkey scope의 Redis 원자 limiter로 공유한다. `/oauth2/tokenP` physical send는 mock/live 합산 deployment-global 1/s를 보수 적용하고 token cache/singleflight만 mode별로 분리한다. Return Engine과 후속 S1.6/S3 adapter는 별도 limiter를 만들지 않고 이 경계를 재사용한다.
 
+## S4.8→S6.7 교차시장 위험 오버레이
+
+> 계획 타당성: `PLAN_FEASIBILITY=GO`.
+> 구현 상태: `IMPLEMENTATION=SPEC_ONLY / NOT_IMPLEMENTED / PLANNED`.
+> 월 데이터 비용 목표는 `0원`이고 offline fixture·지연/EOD가 먼저다. 기관용 데이터와
+> 실시간 SOX/VIX feed는 post-P1 선택지이고, 새 agent framework·별도 cloud·Kafka는 hard
+> dependency가 아니다.
+>
+> 아래 구조·API·명령은 목표 계약이며,
+> 일곱 schema, `s2-2-system-rule-catalog.v2`, contract-change, fixture/golden vector가
+> contract gate를 통과하기 전에는 구현 또는 실행 가능 상태를 뜻하지 않는다. provider/live
+> account/live order physical call은 0이다.
+
+순서 0 `S4.READ`에서 관련 공개·private 명세를 EOF까지 읽고 receipt·충돌 목록만 남긴다.
+그다음 S4.8A의 일곱 계약, fixture, generator, parity만 담은 contract-only PR을
+검증·병합하며, 이 PR 전에는 adapter·DB·API·RiskEngine runtime PR을 시작하지 않는다.
+
+교차시장 모듈은 RAG와 분리된 저장형 위험 evidence를 목표로 한다. Python은 entitlement가 허용된
+offline fixture/EOD 관측, 애널리스트 revision projection, 원인 evidence ledger, 252개 완료
+세션 empirical percentile, S6.6 event-study와 LightGBM BUY policy replay를 소유할 예정이다.
+Spring은 provider를 호출하지 않고 owner-scoped latest snapshot과 같은 시점의 versioned
+exposure를 한 내부 입력으로 결속해 S6.7 RiskEngine에 적용할 예정이다.
+
+P1 기본 mode는 `WARN_ONLY`다. versioned exposure catalog에 명시된 종목의 신규 BUY만
+`ALLOW`에서 최대 `WARN`으로 강화할 수 있다. `OFF`와 `SHADOW`는 판단을 바꾸지 않으며,
+`ENFORCED`의 HOLD/BLOCK은 post-P1 별도 승인 전 비활성이다. SELL, 기존 보유분 자동매도,
+주문 생성, 수량 축소는 범위 밖이다.
+
+다음 경계를 지킨다.
+
+- KIS 18개 endpoint adapter는 fixture-first이며 기본 physical call은 0이다.
+  exact 42개 integration target 행과 exact 18개 allowlist의 authority는
+  로컬 `private-reference/agent/금융공학_RAG_자료수급_레지스트리.md`이며
+  공개 문서에는 전체 inventory를 복제하지 않는다.
+- 구조화 애널리스트 자료는 같은 증권사의 이전 값 대비 목표가·EPS·매출 revision만 설명에
+  사용하고 `BUY` 의견 자체의 가중치는 0이다.
+- 증권사 PDF는 기본 `MANUAL_LINK_ONLY`다. 자동 다운로드·영속 저장·외부 LLM 전송은 하지
+  않는다. 별도 권리 확인을 거친 `LICENSED_EPHEMERAL_LOCAL`도 `투자포인트`, `실적전망`,
+  `Valuation`, `목표주가`, `위험요인`, `Disclaimer` 여섯 절과 사용자가 확인한 bounded tag만
+  projection할 수 있다. `derivedDataAllowed=false`이면 파생 결과도 저장·전달하지 않고
+  임시 입력과 함께 폐기한다.
+- provider body, PDF·뉴스 원문, credential·계좌 식별자는 DB와 test fixture에 저장하지 않는다.
+- 기존 Decision request/response, RAG ask/history, Signal v1/v2 payload에 추가하는 교차시장
+  필드는 0이다. 내부 `CrossMarketDecisionInput(snapshot, exposure)` wrapper와 별도 planned
+  조회 DTO만 사용한다.
+- 가격·신선도·설정·exposure처럼 판단에 사용한 field는 Decision semantic/artifact hash v3에
+  포함하고, 애널리스트·뉴스·원인 text·RAG·LLM 설명과 snapshot identity 시각은 판단 hash에서
+  제외한다. 별도 저장 snapshot artifact는 bounded provenance/evidence를 포함할 수 있고 자신의
+  `artifactHash`를 canonical preimage에 넣지 않는다.
+- synthetic fixture 결과는 실제 성과로 표시하지 않는다. 최소 3년 PIT 자료가 없으면
+  event-study 결과는 `DATASET_UNAVAILABLE`이다. `evidenceMode=SYNTHETIC_FIXTURE`이면
+  `validationStatus=UNVALIDATED`, `performanceClaimAllowed=false`를 강제한다.
+
+S4.8B는 수동/offline EOD materialization, append-only 저장과 I/O 없는 결정적
+`CrossMarketScorer` kernel을 만들 계획이다. S6.6은 scorer output으로 event-study/replay와
+threshold 동결만 수행하고, S6.7이 snapshot을 materialize해 저장 reader/RiskEngine에 연결한다.
+S7.3은 동일 저장 port의 scheduling만 추가하며 새 provider 호출이나 source ownership을 만들지
+않는다.
+
+관측 가능 시간 지표는 signed integer milliseconds로 분리한다.
+
+- `sourceAvailableAt = max(required component source.availableAt)`이며 optional
+  analyst/news 시각은 제외한다.
+- `detectionLatency = snapshotAvailableAt - sourceAvailableAt`
+- `preOpenLeadTime = XKRXOpen - snapshotAvailableAt`
+- `preOpenLeadTime < 0`은 `LATE`, `= 0`은 `AT_OPEN`, `> 0`은 `EARLY`이며 0으로 clamp하지 않는다.
+  적용할 XKRX open이 없을 때만 `NOT_APPLICABLE`이다.
+
+계약·구현 파일이 생성된 뒤 사용할 planned focused offline 검증:
+
+```bash
+cd python-services
+uv run --frozen pytest -q tests/cross_market
+
+cd ../spring-api
+./gradlew --no-daemon test --tests '*CrossMarket*'
+```
+
+S8/P1의 planned 공개 조회는 query parameter가 없는 인증형
+`GET /api/v1/risk/cross-market`이다. 구현되면 저장된 네 점수, 정확히 네 component freshness,
+config version, artifact hash, evidence/validation/performance-claim 상태와 원인·반론을 합친
+최대 10개 sanitized evidence만 반환한다. versioned exposure는 내부 Decision 입력에만 결속하고
+공개 DTO에는 노출하지 않는다.
+
+S8.4 사용자 과제는 synthetic/paper 화면에서 `WARN_ONLY`, `LATE`, 근거와 반론을 구분하고
+교차시장 evidence가 주문 생성·매도·BLOCK을 직접 만들지 않음을 확인하는 것이다. 사용자
+피드백은 사용성·이해도·경고 후 수정/보류 여부만 수집하며 실거래를 요구하지 않는다.
+
 ## S2.3 stored-source 경계
 
 Decision 평가 요청의 현물 v1 `orderIntent`는 MARKET/LIMIT 모두 `estimatedPrice`를 사용한다.

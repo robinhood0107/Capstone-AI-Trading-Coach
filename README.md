@@ -35,6 +35,31 @@ account/broker/order physical call은 모두 0건이다.
 
 완료된 A4/B1/KRX11 approval packet은 재사용하지 않는다. 이후 실제 provider 호출은 새 HEAD·명령·기준일·호출 예산·TTL에 결속한 별도 승인 뒤에만 실행한다.
 
+### 교차시장·애널리스트 오버레이 계획 상태
+
+교차시장 계획 타당성은 `PLAN_FEASIBILITY=GO`이고, 현재 구현 상태는
+`IMPLEMENTATION=SPEC_ONLY / NOT_IMPLEMENTED / PLANNED`다. 월 데이터 비용 목표는 `0원`,
+offline fixture와 지연/EOD가 우선이다. 기관용 데이터 제품과 실시간 SOX/VIX feed는
+post-P1 선택지이며 완주 조건이 아니다. 새 agent framework·별도 cloud·Kafka hard
+dependency 없이 기존 Spring/Python/PostgreSQL/Redis/gRPC를 재사용한다.
+
+순서 0은 관련 명세를 EOF까지 읽고 receipt를 남기는 read-only `S4.READ`다. 이후 첫 변경은
+S4.8A contract-only PR이며, 이것이 검증·병합되기 전 runtime 구현 PR은 시작하지 않는다.
+S4.8A/B/C·S6.6·S6.7의 P1 최고 권한은 적용 대상 신규 BUY의
+`ALLOW → WARN`이며, 애널리스트·뉴스·RAG·LLM은 RiskDecision과 판단 hash를 바꾸지 않는다.
+기존 Decision/RAG/Signal v1/v2 payload에 추가하는 교차시장 필드는 0이다.
+
+42개는 integration target 조사 행 수이지 사용 가능한 API 수가 아니고, KIS 18개도
+fixture-first adapter 후보다. exact 42개 행과 exact 18개 allowlist의 authority는
+로컬 `private-reference/agent/금융공학_RAG_자료수급_레지스트리.md`이며,
+공개 문서에는 전체 inventory를 복제하지 않는다.
+
+2026-07-30 계획 확정 변경은 Markdown 명세만 동기화한다. 이 변경 자체로
+Python/Kotlin/SQL, JSON Schema·fixture·catalog, OpenAPI, Gradle, 환경설정 또는 provider
+activation을 구현한 것으로 보지 않는다. 상세 순서는
+[최종 프로젝트 명세서의 S4~P1 실행 순서](docs/최종_프로젝트_명세서.md#171-2026-07-29-s4p1-실행-순서)를
+따른다.
+
 ## 워크스페이스 소유권
 
 | 경로 | 담당 | 상태 |
@@ -117,4 +142,5 @@ S1.6 OpenDART online collector는 `.env.example`의 네 quota 값을 운영 evid
 - [S3.2 계약 변경 기록](contracts/changes/20260727-s3-2-internal-paper-ledger-contract.md)
 - [S3.3 체결 이벤트와 대사 계약](contracts/README.md#s33-체결-이벤트와-대사)
 - [S3.3 계약 변경 기록](contracts/changes/20260727-s3-3-fill-events-reconciliation-contract.md)
+- [S4.8 교차시장 계획 계약](contracts/README.md#s48-교차시장애널리스트-계획-계약)
 - S1.4X dependency amendment 재현: `workspaces/decision-platform/research/s1-4x-numeric-parity/README.md`

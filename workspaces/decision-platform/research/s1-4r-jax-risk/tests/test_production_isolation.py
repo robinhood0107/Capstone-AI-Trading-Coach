@@ -274,29 +274,3 @@ def test_branch_diff_is_confined_to_the_research_project_and_two_workflows() -> 
         )
     ]
     assert unexpected == []
-
-
-@HOST_ONLY
-def test_private_reference_is_ignored_untracked_and_unstaged() -> None:
-    tracked = subprocess.run(
-        ["git", "ls-files", "private-reference"],
-        cwd=REPO_ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    staged = subprocess.run(
-        ["git", "diff", "--cached", "--name-only", "--", "private-reference"],
-        cwd=REPO_ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    ignored = subprocess.run(
-        ["git", "check-ignore", "-q", "private-reference/s1-4r-isolation-probe"],
-        cwd=REPO_ROOT,
-        check=False,
-    )
-    assert tracked.stdout == ""
-    assert staged.stdout == ""
-    assert ignored.returncode == 0

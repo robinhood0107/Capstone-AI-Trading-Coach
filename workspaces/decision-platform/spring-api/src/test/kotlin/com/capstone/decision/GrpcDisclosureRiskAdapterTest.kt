@@ -9,6 +9,7 @@ import com.capstone.decision.contract.v1.GetDisclosureEventsRequest
 import com.capstone.decision.contract.v1.GetDisclosureEventsResponse
 import com.capstone.decision.domain.risk.EvaluationBounds
 import com.capstone.decision.domain.risk.MetricCell
+import com.capstone.decision.domain.risk.MetricIssueCode
 import com.capstone.decision.domain.risk.OrderIntentSnapshot
 import com.capstone.decision.domain.risk.PortfolioSource
 import com.capstone.decision.infrastructure.grpc.DecisionGrpcProperties
@@ -141,17 +142,40 @@ class GrpcDisclosureRiskAdapterTest {
     }
 
     @Test
-    fun `only transport unavailability maps to typed absence while structural statuses remain technical`() {
+    fun `transport and bounded evidence failures map to distinct typed absence`() {
         val unavailable =
             server(
                 failingService(Status.UNAVAILABLE),
             )
         val unavailableAdapter = adapter(unavailable)
         try {
-            assertThat(unavailableAdapter.load(request())).isInstanceOf(MetricCell.Error::class.java)
+            assertThat(unavailableAdapter.load(request()))
+                .isEqualTo(MetricCell.Error(MetricIssueCode.DISCLOSURE_UNAVAILABLE))
         } finally {
             unavailableAdapter.close()
             unavailable.shutdownNow().awaitTermination()
+        }
+
+        listOf(Status.DEADLINE_EXCEEDED, Status.FAILED_PRECONDITION).forEach { status ->
+            val incomplete = server(failingService(status))
+            val incompleteAdapter = adapter(incomplete)
+            try {
+                assertThat(incompleteAdapter.load(request()))
+                    .isEqualTo(MetricCell.Incomplete(MetricIssueCode.SOURCE_INCOMPLETE))
+            } finally {
+                incompleteAdapter.close()
+                incomplete.shutdownNow().awaitTermination()
+            }
+        }
+
+        val oversized = server(failingService(Status.OUT_OF_RANGE))
+        val oversizedAdapter = adapter(oversized)
+        try {
+            assertThat(oversizedAdapter.load(request()))
+                .isEqualTo(MetricCell.Incomplete(MetricIssueCode.SOURCE_OVERSIZED))
+        } finally {
+            oversizedAdapter.close()
+            oversized.shutdownNow().awaitTermination()
         }
 
         val internal = server(failingService(Status.INTERNAL))
@@ -165,15 +189,15 @@ class GrpcDisclosureRiskAdapterTest {
             internal.shutdownNow().awaitTermination()
         }
 
-        val resourceExhausted = server(failingService(Status.RESOURCE_EXHAUSTED))
-        val resourceExhaustedAdapter = adapter(resourceExhausted)
+        val ambiguousResourceFailure = server(failingService(Status.RESOURCE_EXHAUSTED))
+        val ambiguousResourceAdapter = adapter(ambiguousResourceFailure)
         try {
             assertThrows<DisclosureGrpcProtocolException> {
-                resourceExhaustedAdapter.load(request())
+                ambiguousResourceAdapter.load(request())
             }
         } finally {
-            resourceExhaustedAdapter.close()
-            resourceExhausted.shutdownNow().awaitTermination()
+            ambiguousResourceAdapter.close()
+            ambiguousResourceFailure.shutdownNow().awaitTermination()
         }
     }
 
@@ -201,7 +225,8 @@ class GrpcDisclosureRiskAdapterTest {
                 clock,
             )
         try {
-            assertThat(adapter.load(request())).isInstanceOf(MetricCell.Error::class.java)
+            assertThat(adapter.load(request()))
+                .isEqualTo(MetricCell.Incomplete(MetricIssueCode.SOURCE_INCOMPLETE))
             // cold channel 자체가 deadline을 소비하면 server handler 도달 전 0일 수 있지만 재시도는 없어야 한다.
             assertThat(calls.get()).isLessThanOrEqualTo(1)
         } finally {

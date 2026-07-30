@@ -22,6 +22,12 @@ CREATE ROLE decision_risk_writer
 CREATE ROLE decision_fill_writer
     LOGIN PASSWORD 'fill-writer-test'
     NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
+CREATE ROLE decision_rag_writer
+    LOGIN PASSWORD 'rag-writer-test'
+    NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
+CREATE ROLE decision_rag_query
+    LOGIN PASSWORD 'rag-query-test'
+    NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
 CREATE ROLE flyway
     LOGIN PASSWORD 'flyway-test'
     NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
@@ -31,6 +37,9 @@ ALTER ROLE decision SET log_parameter_max_length = 0;
 ALTER ROLE decision SET log_parameter_max_length_on_error = 0;
 ALTER ROLE decision_app SET log_parameter_max_length = 0;
 ALTER ROLE decision_app SET log_parameter_max_length_on_error = 0;
+ALTER ROLE decision_app SET statement_timeout = '2s';
+ALTER ROLE decision_app SET lock_timeout = '500ms';
+ALTER ROLE decision_app SET idle_in_transaction_session_timeout = '5s';
 ALTER ROLE flyway SET log_parameter_max_length = 0;
 ALTER ROLE flyway SET log_parameter_max_length_on_error = 0;
 
@@ -43,5 +52,7 @@ GRANT USAGE ON SCHEMA public TO
     decision_portfolio_writer,
     decision_risk_writer,
     decision_fill_writer,
+    decision_rag_writer,
+    decision_rag_query,
     flyway;
 GRANT CREATE ON SCHEMA public TO flyway;

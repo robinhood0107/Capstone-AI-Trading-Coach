@@ -1074,7 +1074,7 @@ generation과 제출 직전 generation을 다시 비교한다.
 > API나 사용 가능한 entitlement 수가 아니다. 로컬 KIS catalog 338개·명시적 모의지원
 > 43개와 이번 disabled adapter 후보 18개도 서로 다른 집계다. 현재 S4.8 활성
 > provider/adapter 수는 0이다. exact 42개 행과 exact 18개 allowlist의 authority는
-> 로컬 `private-reference/agent/금융공학_RAG_자료수급_레지스트리.md`이며
+> Git으로 추적하지 않는 로컬 전용 자료수급 레지스트리이며
 > 공개 API 명세에는 전체 inventory를 복제하지 않는다.
 
 인증된 사용자의 latest-only 조회다. query parameter, cursor, 날짜, symbol, profile, provider

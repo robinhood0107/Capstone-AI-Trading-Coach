@@ -51,7 +51,7 @@ S4.8A/B/C·S6.6·S6.7의 P1 최고 권한은 적용 대상 신규 BUY의
 
 42개는 integration target 조사 행 수이지 사용 가능한 API 수가 아니고, KIS 18개도
 fixture-first adapter 후보다. exact 42개 행과 exact 18개 allowlist의 authority는
-로컬 `private-reference/agent/금융공학_RAG_자료수급_레지스트리.md`이며,
+Git으로 추적하지 않는 로컬 전용 자료수급 레지스트리이며,
 공개 문서에는 전체 inventory를 복제하지 않는다.
 
 2026-07-30 계획 확정 변경은 Markdown 명세만 동기화한다. 이 변경 자체로
@@ -85,12 +85,16 @@ CRUD, S2.2 offline rule evaluator, S2.3 Decision runtime과 S2.4 Risk/Kill Switc
 constraint와 fixture-first KIS Mock adapter/gRPC boundary를 추가한다. provider를 호출하거나 live
 계좌·실주문을 열지 않으며, LIMIT 주문은 현재 KRX 호가단위 source가 pinned artifact로 검증되기
 전까지 `BROKERAGE_UNAVAILABLE`로 fail-closed한다.
-상세 개인 참고 노트는 GitHub에 올리지 않고 로컬
-`private-reference/` 폴더에서만 관리한다.
+로컬 전용 참고자료와 개인 파일 경로는 GitHub에 올리지 않는다.
+
+S4.0/S4.1/S4.7A는 source-card 계약과 정규화 RAG registry, owner-scoped source 조회,
+공식 근거 manifest와 안전한 로컬 입력 경계를 추가한다. S4.2+ generation runtime과
+provider/model/account/order physical call은 이 범위에 포함하지 않는다.
 
 ```bash
 cp .env.example .env
-# DB/Redis 및 collector/source-writer password, JWT issuer/audience, 목적별 signing/HMAC key와 두 attested demo credential bundle을 채운다.
+# DB/Redis, collector/source-writer/RAG writer/query password, JWT issuer/audience,
+# 목적별 signing/HMAC key와 두 attested demo credential bundle을 채운다.
 # bundle은 $ 포함 BCrypt hash 보존을 위해 single quote 안에 두며 plaintext demo password는 저장하지 않는다.
 # API key는 필요한 provider를 실제 호출할 때 운영자만 주입하며 커밋하지 않는다.
 docker compose --env-file .env -f infra/docker-compose.infra.yml up -d
@@ -104,11 +108,13 @@ cd workspaces/decision-platform/spring-api
 
 PostgreSQL runtime은 `decision_app`, S1.6 수집은 `decision_collector`, sanitized source append는
 `decision_market_writer`/`decision_portfolio_writer`/`decision_risk_writer`/
-`decision_fill_writer`, migration은 `flyway`, bootstrap 관리는 `POSTGRES_ADMIN_USER`로
-분리된다. 기존 `pgdata` volume에는 init script가 자동 재실행되지 않으므로, 기존 관리자
-이름/비밀번호를 보존하고 `.env.example`의 collector와 네 source-writer password를 추가해
-컨테이너를 올린 뒤 다음 명령을 한 번 실행한다. V6/V9/V14 적용 전에는 role을 먼저 만들고,
-migration 뒤 재실행하면 현재 table의 exact 권한을 복원한다. volume 삭제는 이 절차에 포함하지
+`decision_fill_writer`, RAG ingest/materialization은 `decision_rag_writer`, bounded active
+chunk retrieval은 `decision_rag_query`, migration은 `flyway`, bootstrap 관리는
+`POSTGRES_ADMIN_USER`로 분리된다. 기존 `pgdata` volume에는 init script가 자동 재실행되지
+않으므로, 기존 관리자 이름/비밀번호를 보존하고 `.env.example`의 collector, source-writer,
+`POSTGRES_RAG_WRITER_PASSWORD`, `POSTGRES_RAG_QUERY_PASSWORD`를 추가해 컨테이너를 올린 뒤
+다음 명령을 실행한다. V6/V9/V14/V16 적용 전에는 role을 먼저 만들고, migration 뒤 다시
+실행하면 현재 table과 function의 exact 권한을 복원한다. volume 삭제는 이 절차에 포함하지
 않는다. `decision_fill_writer`는 sanitized offline fill observation INSERT만 소유하며
 주문·이벤트·Flyway schema에는 접근하지 않는다.
 
@@ -116,6 +122,13 @@ migration 뒤 재실행하면 현재 table의 exact 권한을 복원한다. volu
 docker compose --env-file .env -f infra/docker-compose.infra.yml exec -T postgres \
   bash /docker-entrypoint-initdb.d/02-application-roles.sh
 ```
+
+V16은 기존 V2 RAG 다섯 table(`rag_sources`, `rag_chunks`, `rag_answers`, `rag_citations`,
+`rag_answer_feedback`)이 모두 비어 있을 때만 정규화 registry로 전환한다. 하나라도 row가
+있으면 자동 삭제나 강제 전환 없이 migration이 중단되므로 별도 승인된 migration packet으로
+처리한다. 기존 volume은 위 role bootstrap을 먼저 실행하고 V16을 적용한 뒤 같은 bootstrap을
+한 번 더 실행해 `decision_rag_writer`의 append/update allowlist와
+`decision_rag_query`의 bounded function `EXECUTE`만 복원한다.
 
 role bootstrap은 password DDL 전에 session의 statement/error-statement/duration/sample logging을
 모두 끄고 `current_setting`으로 effective 값을 검증한다. 하나라도 안전값이 아니면

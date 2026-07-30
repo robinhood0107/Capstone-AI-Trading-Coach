@@ -1,4 +1,5 @@
 version = 1
+# S4.2A BGE ONNX dependency reference carrier; TOML 주석은 lock 의미를 바꾸지 않는다.
 revision = 3
 requires-python = ">=3.12"
 resolution-markers = [

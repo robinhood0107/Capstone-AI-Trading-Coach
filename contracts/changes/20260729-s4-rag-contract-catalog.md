@@ -1,12 +1,11 @@
 # S4 RAG profile·policy contract catalog
 
-상태: `CONTRACT_LOCKED / RUNTIME_PARTIAL / MIGRATION_RED`
+상태: `S4_0_VERIFIED / S4_1_VERIFIED / S4_7A_VERIFIED / S4_2_APPROVAL_GATED`
 현재 catalog SHA-256: `9b9881f9b25b6486f20999f27c0dd7043048fc26491e33cf2af892817dabbe0a`
 
 > 이 SHA는 두 profile·세 policy와 public ask의 server-owned selector 경계를 식별한다.
-> catalog generator/schema/fixture와 Spring/Python consumer parity는 고정됐지만,
-> next-free normalized migration·source API·registry가 red이므로 S4.0 완료나 release
-> contract로 과장하지 않는다.
+> deterministic manifest, generator/schema/fixture, Spring/Python semantic parity,
+> next-free V16 normalized migration과 exact source projection이 같은 bytes를 검증한다.
 
 ## KR
 
@@ -14,7 +13,8 @@
 잠근다. public API, Spring, Python은 임의 model/provider 문자열을 받지 않고
 `contracts/catalogs/s4-rag-contract.v1.json`의 exact bytes만 소비한다.
 
-catalog ID는 `s4-rag-contract/v1`이다. 위 SHA-256은 아직 보정 전 draft bytes의 식별자다.
+catalog ID는 `s4-rag-contract/v1`이다. 위 SHA-256은 현재 승인된 canonical catalog bytes의
+식별자이며 `catalogs/s4-rag-contract.v1.sha256.json`이 이를 단일 source로 전달한다.
 
 ### 잠긴 결정
 
@@ -37,10 +37,19 @@ catalog ID는 `s4-rag-contract/v1`이다. 위 SHA-256은 아직 보정 전 draft
    strategy, API enum과 negative fixture를 소유한다. DB는 source/revision, generation,
    materialization/evaluation, active pointer, policy transition, usage ledger 같은 동적 상태만
    소유한다.
+7. `rag-source-card-v1`은 PROJECT tier 공식 source card의 exact 30개 front matter field,
+   canonical HTTPS locator·digest, UTC `Z` 검증 시각, exact 20 upstream source ID,
+   evidence class별 기관 authority, 보존·외부 처리 제한, 근거·반증·질문 경계를 잠근다.
+   unknown field/upstream, authority 불일치, non-NFC, non-UTC offset, 과대 입력, 잘못된
+   hash·URL·enum, 필수 license·retention 누락, 비어 있는 model assumption과
+   instruction-like content는 거부한다.
+8. S4.7A는 공식 source card 정확히 5개를 local private 영역에서 검증했고, tracked
+   manifest는 bounded evidence 5개의 digest·bytes·locator와 card content digest만
+   보존한다. 원 evidence payload와 private card 본문은 Git에 포함하지 않는다.
 
-### merge 전 필수 보정
+### 검증 완료된 보정
 
-아래 네 항목은 이미 잠긴 S4.0 계약이며 현재 draft bytes와 다르다.
+아래 네 항목은 generator·schema·fixture와 두 runtime consumer에서 함께 검증된다.
 
 1. `answerModes`는 정확히 `CONCISE`, `DETAILED`다.
 2. question은 NFC 정규화 뒤 1~1,000 Unicode scalar이고 UTF-8 최대 8KiB다.
@@ -48,21 +57,35 @@ catalog ID는 `s4-rag-contract/v1`이다. 위 SHA-256은 아직 보정 전 draft
    production artifact로 읽지 않는다.
 4. canonical chunk 자체는 overlap 0이다. BGE의 15% 인접 문맥은 ephemeral embedding input일
    뿐 저장 chunk/citation/content hash가 아니다.
+5. source card parser는 bounded UTF-8/NFC/LF Markdown과 exact YAML front matter만 읽고
+   duplicate key, custom tag, anchor·alias·merge, raw HTML, code fence와 instruction-like
+   content를 fail-closed한다.
+6. S4.7A official evidence manifest는 `evidenceCount=5`, `rawEvidenceTracked=false`를
+   검증하며 corpus generation은 활성화하지 않는다.
+7. repository-owned source-card/evidence 파일은 absolute fixed root에서만 읽고 symlink,
+   hardlink, raw dot-segment, 소유자 불일치, group/other writable mode와 read race를
+   거부한다. 새 파일 publish는 current-owner `0600` anonymous inode와 no-overwrite
+   hard-link를 사용한다.
 
-이 보정은 generated catalog만 수동 편집하지 않고 source generator, JSON Schema,
-positive/negative fixture, Spring/Python parity test를 함께 바꾼다. 보정 뒤 catalog hash가
-바뀌는 것은 정상이며 본 문서의 draft SHA를 새 검증값으로 교체한다.
+generated catalog만 수동 편집하거나 manifest와 catalog를 함께 임의 변경하면 contract
+change digest 검증 또는 semantic parity test가 실패한다.
 
 ### 산출물과 검증
 
 | 산출물 | 역할 |
 |---|---|
 | `catalogs/s4-rag-contract.v1.json` | S4 RAG profile/policy SSOT |
+| `catalogs/s4-rag-contract.v1.sha256.json` | canonical bytes 승인 digest의 deterministic manifest |
 | `schemas/s4-rag-contract.schema.json` | catalog exact-shape schema |
 | `schemas/s4-rag-ask-request.schema.json` | public ask body schema |
 | `schemas/s4-rag-admin-policy-selection.schema.json` | admin policy pointer selection schema |
+| `schemas/rag-source-card-v1.schema.json` | PROJECT source card exact-shape schema |
 | `generate_s4_rag_contracts.py` | generated artifacts drift check |
 | `examples/invalid/s4-rag-*.invalid.json` | context-3, profile/policy confusion, public model selection 거부 |
+| `examples/rag-source-card-v1.valid.json` | source card positive contract fixture |
+| `examples/invalid/rag-source-card-v1.*.invalid.json` | source card shape·encoding·URL·policy negative fixtures |
+| `../capstone-rag/manifests/s4-7a-official-evidence.v1.json` | official evidence/card digest 5개 manifest |
+| `../workspaces/decision-platform/python-services/app/rag/source_card.py` | bounded Markdown parser와 semantic validator |
 
 재현 명령은 provider/live/account/order/broker 호출을 만들지 않는다.
 
@@ -86,9 +109,18 @@ transition after BGE SLA failure and Voyage evaluation success, not a per-reques
 runtime fallback. Public ask requests cannot carry profile, policy, provider,
 model, top-k, or source-tier controls.
 
-This file currently describes an implementation draft, not a release-ready
-contract. Before merge, answer modes must become exactly `CONCISE` and `DETAILED`,
-the question boundary must become 1,000 Unicode scalars plus an 8 KiB UTF-8 cap,
-and the pinned BGE artifact format must become data-only ONNX. The generator,
-schemas, fixtures, and Spring/Python parity tests must change together and the
-catalog SHA-256 must then be regenerated.
+The canonical catalog, deterministic digest manifest, schemas, fixtures, and
+Spring/Python semantic consumers now verify the same approved bytes. Answer modes
+are exactly `CONCISE` and `DETAILED`; questions are bounded by 1,000 Unicode
+scalars and 8 KiB after NFC normalization; BGE artifacts are pinned to data-only
+ONNX; and stored canonical chunks have zero overlap.
+
+S4.7A also locks the exact project source-card shape and fail-closed Markdown
+validation boundary. The contract requires canonical UTC `Z`, the exact 20-source
+upstream allowlist, and evidence-class authority parity. Repository-owned reads
+also require a fixed absolute root, current ownership, non-shared-writable modes,
+and symlink/hardlink/dot-segment/race rejection. Five local private official cards
+and five bounded official evidence records are verified; only their deterministic
+manifest and digests are tracked. Raw evidence and private card bodies remain
+untracked, corpus generation remains inactive, and S4.2 model acquisition and
+runtime materialization remain separately approval-gated.

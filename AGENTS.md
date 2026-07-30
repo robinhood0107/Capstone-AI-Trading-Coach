@@ -12,9 +12,9 @@
 2. `docs/API_명세서.md`
 3. 공개 문서에 명시된 계약과 workspace 경계
 
-로컬 private notes는 `private-reference/`에만 둔다. 이 폴더는 `.gitignore` 대상이며 GitHub 커밋에 포함하지 않는다.
-
-`private-reference/agent/`는 구현 세션용 로컬 보조 자료다. 에이전트는 사용자가 명시하거나 작업상 필요할 때만 이 폴더를 참고한다. `private-reference/study/CS개념/`은 사용자 학습용 자료이며 구현 입력이 아니다. 에이전트는 이 학습용 문서를 자동으로 읽지 않고, 관련 주제가 나왔을 때 사용자에게 읽어보라고 제안만 한다.
+로컬 전용 참고자료와 개인 파일 경로는 Git 저장소 밖에서 관리하며 GitHub 커밋에 포함하지 않는다.
+구현 세션용 로컬 보조 자료는 사용자가 명시하거나 작업상 필요할 때만 참고한다. 사용자 학습용
+로컬 자료는 구현 입력이 아니며, 관련 주제가 나왔을 때 읽어볼 자료로만 제안한다.
 
 ## 현재 단계
 
@@ -74,9 +74,8 @@
   사용자가 확인한 bounded tag로 제한한다. `derivedDataAllowed=false`이면 parser/LLM의
   파생 결과도 저장·전달하지 않고 임시 입력과 함께 폐기한다.
   exact 42개 integration target 행과 exact KIS 18개 endpoint allowlist의 운영 authority는
-  로컬 `private-reference/agent/금융공학_RAG_자료수급_레지스트리.md`다.
-  `private-reference/repo/api docs 위치 및 각 웹사이트 위치.txt`는 원 API 문서의 위치
-  evidence이며 integration target 행 자체의 SSOT가 아니다.
+  Git으로 추적하지 않는 로컬 전용 자료수급 레지스트리다. 원 API 문서 위치 evidence는
+  별도의 로컬 전용 참고자료이며 integration target 행 자체의 SSOT가 아니다.
   공개 문서에는 집계와 불변식만 두고 전체 inventory를 복제하지 않는다.
 - 기존 Decision request/response, RAG ask/history, Signal v1/v2 payload에 교차시장 필드를
   추가하는 수는 0이다. 내부 `CrossMarketDecisionInput(snapshot, exposure)` wrapper와 별도
@@ -96,7 +95,7 @@
 
 - `.env`, `.env.local`, `*.env`, `http-client.private.env.json`은 커밋하지 않는다.
 - 커밋 가능한 환경 파일은 `.env.example`뿐이다.
-- `private-reference/` 아래 파일은 커밋하지 않는다.
+- 로컬 전용 참고자료와 개인 파일 경로는 커밋하지 않는다.
 - API key, JWT secret, 계좌번호, 토큰, 주문/잔고 원본 로그는 코드, 문서, 테스트 fixture에 넣지 않는다.
 - KIS 원본 응답, 응답 헤더, access token, 계좌 식별자, raw/parquet/csv/jsonl 산출물은 커밋하지 않는다. 테스트에는 마스킹된 offline fixture만 둔다.
 - KIS Live 시장데이터 조회 계획과 KIS Live 주문 기능은 분리한다. 실계좌 주문·정정·취소는 S3 이후 별도 live-order gate가 명시되기 전까지 기본 비활성이다.
@@ -151,7 +150,7 @@ Gradle build), `python-ci.yml`(Python 3.12 품질 게이트)이다. 아래 시�
 - 웹 QA나 브라우저 작업에서 사용자가 gstack을 명시하면 gstack `/browse` 또는 `/qa` 흐름을 우선한다.
 - 사용자가 Codex native browser, web search, connector, app-specific tool을 명시하면 그 명시를 우선한다.
 - plugin은 설치되어 현재 세션에 노출된 skill/MCP/app만 사용한다. 도움이 되는 plugin이 미설치라면 설치를 제안할 수 있지만 자동 설치하거나 핵심 작업의 선행 조건으로 만들지 않는다.
-- 어떤 skill/plugin 지침도 이 레포의 보안·승인 gate·workspace·`private-reference/`·Git 규칙보다 우선하지 않는다.
+- 어떤 skill/plugin 지침도 이 레포의 보안·승인 gate·workspace·로컬 자료 비공개·Git 규칙보다 우선하지 않는다.
 - Claude 전용 설정(`.claude` hook, Claude-only MCP, Claude-only command)은 사용자가 별도로 요청하기 전까지 추가하지 않는다.
 - `CLAUDE.md`는 이 파일을 따르는 짧은 연결 문서로만 유지한다.
 
@@ -160,7 +159,7 @@ Gradle build), `python-ci.yml`(Python 3.12 품질 게이트)이다. 아래 시�
 - 구현 또는 구현 계획 세션을 시작할 때는 로컬 agent 프라이머 문서를 먼저 확인한다. 이 프라이머의 문서 지도, 세션 프롬프트 템플릿, 과거 실수 기록을 사용해 사용자가 매번 같은 컨텍스트를 다시 설명하지 않게 한다.
 - 프라이머 확인 뒤에는 현재 세션에 해당하는 로컬 세션별 작업계획 문서의 작업, DoD, 함정과 대비책을 확인한다. Decision/Risk/Order/RAG처럼 세부 설계가 필요한 작업은 프라이머의 문서 지도에 따라 상세 구현명세서, ADR, 권장 코딩패턴 예시집을 추가로 읽는다.
 - 세션 운영 판단은 로컬 세션별 작업계획 문서 10장의 운영 팁을 따른다. 특히 S6.4(BSM/Greeks/IV)는 막힌 날 사용할 버퍼 세션으로 보고, Kafka 트랙은 S7.0+S7.3만으로 시연·계약·보고서가 성립한다는 기준 아래 매몰비용을 경계한다.
-- `private-reference/study/CS개념/`은 구현 입력으로 자동 사용하지 않는다. 관련 개념이 나오면 사용자에게 읽을 문서를 추천하되, 사용자가 명시적으로 요구한 경우에만 구현 컨텍스트로 읽는다.
+- 사용자 학습용 로컬 자료는 구현 입력으로 자동 사용하지 않는다. 관련 개념이 나오면 읽을 자료를 추천하되, 사용자가 명시적으로 요구한 경우에만 구현 컨텍스트로 읽는다.
 - 확정된 스택, 단계, 세션 운영 규칙, 문서 우선순위가 바뀌면 이 파일과 프라이머를 함께 갱신한다. public 문서에는 private 문서의 내용을 길게 복사하지 말고 행동 규칙만 짧게 남긴다.
 - 세션이 막히면 새 기능을 넓히기 전에 walking skeleton이 여전히 도는지 확인한다. 계약 변경은 같은 세션에서 `contracts/changes/`와 명세서까지 함께 정리하고, DoD 명령은 실제 실행 가능한 형태로 남긴다.
 

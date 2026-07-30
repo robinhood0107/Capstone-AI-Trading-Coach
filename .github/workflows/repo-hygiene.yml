@@ -102,17 +102,6 @@ jobs:
           git check-ignore -q workspaces/return-engine/example.py
           git check-ignore -q workspaces/experience-dashboard/app/page.tsx
           git check-ignore -q artifacts/decision-platform/run-001/result.json
-          test -z "$(git ls-files private-reference)"
-
-          private_prefix="private-reference/"
-          private_suffix="\\.md"
-          git check-ignore -q "${private_prefix}agent/example.md"
-          git check-ignore -q "${private_prefix}study/CS개념/example.md"
-
-          if git grep -n -E "${private_prefix}[^[:space:]]+${private_suffix}" -- .; then
-            echo "Tracked files must not reference specific private markdown paths." >&2
-            exit 1
-          fi
 
       - name: Secret scan
         uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9

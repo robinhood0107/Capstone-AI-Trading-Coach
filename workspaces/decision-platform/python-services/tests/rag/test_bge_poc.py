@@ -162,6 +162,39 @@ def test_postgres_adapter_materializes_five_cards_without_pointer_change(
             """
         ).fetchone()
     assert pointer_after == pointer_before
+    with psycopg.connect(postgres_cluster["admin_dsn"]) as admin:
+        chunk_ids = [item.chunk.chunk_revision_id for item in plan.items]
+        ingest_ids = [item.ingest_run_id for item in plan.items]
+        revision_ids = [item.source_revision_id for item in plan.items]
+        source_ids = [item.card.source_id for item in plan.items]
+        admin.execute(
+            "DELETE FROM rag_chunk_embeddings WHERE corpus_generation_id = %s",
+            (plan.generation_id,),
+        )
+        admin.execute(
+            "DELETE FROM rag_generation_chunks WHERE corpus_generation_id = %s",
+            (plan.generation_id,),
+        )
+        admin.execute(
+            "DELETE FROM rag_corpus_generations WHERE corpus_generation_id = %s",
+            (plan.generation_id,),
+        )
+        admin.execute(
+            "DELETE FROM rag_chunk_revisions WHERE chunk_revision_id = ANY(%s)",
+            (chunk_ids,),
+        )
+        admin.execute(
+            "DELETE FROM rag_ingest_runs WHERE ingest_run_id = ANY(%s)",
+            (ingest_ids,),
+        )
+        admin.execute(
+            "DELETE FROM rag_source_revisions WHERE source_revision_id = ANY(%s)",
+            (revision_ids,),
+        )
+        admin.execute(
+            "DELETE FROM rag_sources WHERE source_id = ANY(%s)",
+            (source_ids,),
+        )
 
 
 class _FixtureTokenizer:

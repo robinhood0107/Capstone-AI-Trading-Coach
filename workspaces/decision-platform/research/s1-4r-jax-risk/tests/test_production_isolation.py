@@ -95,6 +95,7 @@ ALLOWED_BRANCH_DIFF_PATHS = (
     ".github/workflows/s1-4r-research-correctness.yml",
     ".github/workflows/s1-4r-research-benchmark.yml",
     ".github/workflows/s1-4x-contract-correctness.yml",
+    # S1.4R source amendment는 아래의 파생 hash closure만 함께 갱신할 수 있다.
     (
         "workspaces/decision-platform/research/s1-4x-numeric-parity/"
         "contract/reference-lock.v1.json"

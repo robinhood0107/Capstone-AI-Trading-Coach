@@ -135,6 +135,12 @@ def test_download_redirect_accepts_only_the_bounded_hugging_face_cas_hosts() -> 
         ).hostname
         == "cdn-lfs.huggingface.co"
     )
+    assert (
+        validate_download_redirect(
+            "https://us.aws.cdn.hf.co/repos/approved-object?signature=abc"
+        ).hostname
+        == "us.aws.cdn.hf.co"
+    )
 
 
 def test_onnx_graph_contract_rejects_external_path_and_custom_domain() -> None:

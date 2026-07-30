@@ -3,17 +3,24 @@ from __future__ import annotations
 import hashlib
 import re
 from dataclasses import dataclass
-from typing import Iterable, Literal
+from typing import Iterable, Literal, Protocol
 
 from app.rag.contract_catalog import PROFILE_IDS, RagContractCatalogError
 
 BlockKind = Literal["paragraph", "table"]
 _HEADING_PATTERN = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
-_TOKEN_PATTERN = re.compile(r"[A-Za-z0-9_]+|[가-힣]+|[^\s]")
+_BGE_CONTEXT_RATIO_PER_SIDE = 0.075
 
 
 class RagIngestError(ValueError):
     """RAG parse/chunk/embedding-input 계약 위반을 내부 파일 경로 없이 보고한다."""
+
+
+class RagTokenizer(Protocol):
+    """canonical chunk와 transient context가 공유하는 static tokenizer port."""
+
+    def token_spans(self, text: str) -> tuple[tuple[int, int], ...]:
+        """special token을 제외한 token별 원문 character span을 순서대로 반환한다."""
 
 
 @dataclass(frozen=True)
@@ -28,10 +35,6 @@ class RagParsedBlock:
     heading_path: tuple[str, ...]
     text: str
     ordinal: int
-
-    @property
-    def token_count(self) -> int:
-        return count_tokens(self.text)
 
 
 @dataclass(frozen=True)
@@ -125,10 +128,17 @@ def build_canonical_chunks(
     source_id: str,
     source_revision_id: str,
     blocks: Iterable[RagParsedBlock],
+    tokenizer: RagTokenizer,
     min_tokens: int = 400,
     max_tokens: int = 600,
+    atomic_document: bool = False,
 ) -> tuple[RagCanonicalChunk, ...]:
-    """heading-aware canonical chunks를 만들며 table block은 절대 분할하지 않는다."""
+    """heading-aware canonical chunks를 만들며 원문 span과 atomic block을 보존한다.
+
+    일반 문서는 heading 경계를 넘겨 합치지 않는다. source card처럼 호출자가 명시한
+    `atomic_document`는 문서 전체를 정확히 한 chunk로 만들되 600-token 상한을 넘으면
+    분할하지 않고 즉시 거부한다.
+    """
 
     if min_tokens <= 0 or max_tokens < min_tokens:
         raise RagIngestError("RAG chunk token bounds are invalid.")
@@ -136,6 +146,12 @@ def build_canonical_chunks(
     if not parsed_blocks:
         raise RagIngestError("RAG chunker requires at least one parsed block.")
 
+    units = _build_atomic_units(
+        parsed_blocks,
+        tokenizer=tokenizer,
+        max_tokens=max_tokens,
+        atomic_document=atomic_document,
+    )
     chunks: list[RagCanonicalChunk] = []
     buffer: list[RagParsedBlock] = []
     buffer_tokens = 0
@@ -144,16 +160,29 @@ def build_canonical_chunks(
         nonlocal buffer, buffer_tokens
         if not buffer:
             return
-        chunks.append(_make_chunk(source_id, source_revision_id, len(chunks), tuple(buffer)))
+        chunks.append(
+            _make_chunk(
+                source_id,
+                source_revision_id,
+                len(chunks),
+                tuple(buffer),
+                tokenizer=tokenizer,
+            )
+        )
         buffer = []
         buffer_tokens = 0
 
-    for block in _split_large_paragraph_blocks(parsed_blocks, max_tokens=max_tokens):
-        block_tokens = block.token_count
-        if buffer and buffer_tokens >= min_tokens and buffer_tokens + block_tokens > max_tokens:
+    for unit in units:
+        unit_text = _join_blocks(unit)
+        unit_tokens = count_tokens(unit_text, tokenizer=tokenizer)
+        if unit_tokens > max_tokens:
+            raise RagIngestError("OVERSIZED_ATOMIC_BLOCK")
+        if buffer and not atomic_document and buffer[-1].heading_path != unit[0].heading_path:
             flush()
-        buffer.append(block)
-        buffer_tokens += block_tokens
+        if buffer and buffer_tokens + unit_tokens > max_tokens:
+            flush()
+        buffer.extend(unit)
+        buffer_tokens += unit_tokens
         if buffer_tokens >= max_tokens:
             flush()
     flush()
@@ -164,7 +193,7 @@ def build_embedding_inputs(
     chunks: Iterable[RagCanonicalChunk],
     *,
     embedding_profile_id: str,
-    bge_overlap_ratio: float = 0.15,
+    tokenizer: RagTokenizer | None = None,
 ) -> tuple[RagEmbeddingInput, ...]:
     """profile별 embedding input hash를 생성하되 canonical chunk hash는 바꾸지 않는다."""
 
@@ -173,8 +202,6 @@ def build_embedding_inputs(
         raise RagIngestError("RAG embedding input requires at least one chunk.")
     if embedding_profile_id not in PROFILE_IDS:
         raise RagContractCatalogError("RAG embedding profile is not in the approved catalog.")
-    if not 0 <= bge_overlap_ratio <= 0.5:
-        raise RagIngestError("BGE overlap ratio must be between 0 and 0.5.")
     if embedding_profile_id == "voyage_context_4_1024_v1":
         context_hash = compute_context_set_hash(ordered)
         return tuple(
@@ -187,13 +214,15 @@ def build_embedding_inputs(
             )
             for chunk in ordered
         )
+    if tokenizer is None:
+        raise RagIngestError("BGE embedding input requires the pinned static tokenizer.")
     return tuple(
         RagEmbeddingInput(
             chunk_revision_id=chunk.chunk_revision_id,
             embedding_profile_id=embedding_profile_id,
-            text=_bge_text_with_adjacent_context(ordered, index, overlap_ratio=bge_overlap_ratio),
+            text=_bge_text_with_adjacent_context(ordered, index, tokenizer=tokenizer),
             embedding_input_hash=_sha256_text(
-                _bge_text_with_adjacent_context(ordered, index, overlap_ratio=bge_overlap_ratio)
+                _bge_text_with_adjacent_context(ordered, index, tokenizer=tokenizer)
             ),
             context_set_hash=None,
         )
@@ -221,13 +250,10 @@ def compute_context_set_hash(chunks: Iterable[RagCanonicalChunk]) -> str:
     return digest.hexdigest()
 
 
-def count_tokens(text: str) -> int:
-    """S4.2 offline chunk planning용 deterministic tokenizer count.
+def count_tokens(text: str, *, tokenizer: RagTokenizer) -> int:
+    """주입된 pinned/static tokenizer의 원문 span으로 token 수를 계산한다."""
 
-    실제 BGE/Voyage tokenizer accounting은 adapter 단계에서 별도 golden fixture로 검증한다.
-    """
-
-    return len(_TOKEN_PATTERN.findall(text))
+    return len(_validated_token_spans(text, tokenizer=tokenizer))
 
 
 def _normalize_text(text: str) -> str:
@@ -258,26 +284,85 @@ def _make_block(
     )
 
 
-def _split_large_paragraph_blocks(
-    blocks: Iterable[RagParsedBlock],
+def _build_atomic_units(
+    blocks: tuple[RagParsedBlock, ...],
     *,
+    tokenizer: RagTokenizer,
+    max_tokens: int,
+    atomic_document: bool,
+) -> tuple[tuple[RagParsedBlock, ...], ...]:
+    if atomic_document:
+        if count_tokens(_join_blocks(blocks), tokenizer=tokenizer) > max_tokens:
+            raise RagIngestError("OVERSIZED_ATOMIC_BLOCK")
+        return (blocks,)
+
+    result: list[tuple[RagParsedBlock, ...]] = []
+    index = 0
+    while index < len(blocks):
+        block = blocks[index]
+        if (
+            block.kind == "paragraph"
+            and index + 1 < len(blocks)
+            and blocks[index + 1].kind == "table"
+            and blocks[index + 1].heading_path == block.heading_path
+        ):
+            table_unit = (block, blocks[index + 1])
+            if count_tokens(_join_blocks(table_unit), tokenizer=tokenizer) > max_tokens:
+                raise RagIngestError("OVERSIZED_ATOMIC_BLOCK")
+            result.append(table_unit)
+            index += 2
+            continue
+        if block.kind == "table":
+            if count_tokens(block.text, tokenizer=tokenizer) > max_tokens:
+                raise RagIngestError("OVERSIZED_ATOMIC_BLOCK")
+            result.append((block,))
+            index += 1
+            continue
+        result.extend(
+            (split_block,)
+            for split_block in _split_large_paragraph_block(
+                block,
+                tokenizer=tokenizer,
+                max_tokens=max_tokens,
+            )
+        )
+        index += 1
+    return tuple(result)
+
+
+def _split_large_paragraph_block(
+    block: RagParsedBlock,
+    *,
+    tokenizer: RagTokenizer,
     max_tokens: int,
 ) -> tuple[RagParsedBlock, ...]:
+    spans = _validated_token_spans(block.text, tokenizer=tokenizer)
+    if len(spans) <= max_tokens:
+        return (block,)
     result: list[RagParsedBlock] = []
-    for block in blocks:
-        if block.kind == "table" or block.token_count <= max_tokens:
-            result.append(block)
+    character_cursor = 0
+    for token_start in range(0, len(spans), max_tokens):
+        token_end = min(token_start + max_tokens, len(spans))
+        character_end = spans[token_end - 1][1]
+        if character_end <= character_cursor:
             continue
-        tokens = _TOKEN_PATTERN.findall(block.text)
-        for start in range(0, len(tokens), max_tokens):
-            result.append(
-                RagParsedBlock(
-                    kind="paragraph",
-                    heading_path=block.heading_path,
-                    text=" ".join(tokens[start : start + max_tokens]),
-                    ordinal=block.ordinal,
-                )
+        character_start = max(character_cursor, spans[token_start][0])
+        segment = block.text[character_start:character_end]
+        if not segment:
+            raise RagIngestError("RAG tokenizer produced an empty paragraph span.")
+        if count_tokens(segment, tokenizer=tokenizer) > max_tokens:
+            raise RagIngestError("RAG tokenizer paragraph split exceeded the token bound.")
+        result.append(
+            RagParsedBlock(
+                kind="paragraph",
+                heading_path=block.heading_path,
+                text=segment,
+                ordinal=block.ordinal,
             )
+        )
+        character_cursor = character_end
+    if character_cursor != len(block.text):
+        raise RagIngestError("RAG tokenizer paragraph spans did not preserve the full text.")
     return tuple(result)
 
 
@@ -286,11 +371,16 @@ def _make_chunk(
     source_revision_id: str,
     sequence: int,
     blocks: tuple[RagParsedBlock, ...],
+    *,
+    tokenizer: RagTokenizer,
 ) -> RagCanonicalChunk:
-    text = "\n\n".join(block.text for block in blocks).strip()
+    text = _join_blocks(blocks)
     content_hash = _sha256_text(text)
-    chunk_revision_id = f"chkrev_{source_revision_id}_{sequence + 1:05d}_{content_hash[:16]}"
-    heading_path = blocks[-1].heading_path if blocks else ()
+    chunk_identity = _sha256_text(
+        f"{source_revision_id}\0{sequence + 1}\0{content_hash}"
+    )
+    chunk_revision_id = f"rag_chk_{chunk_identity[:32]}"
+    heading_path = _common_heading_prefix(blocks)
     return RagCanonicalChunk(
         source_id=source_id,
         source_revision_id=source_revision_id,
@@ -299,7 +389,7 @@ def _make_chunk(
         heading_path=heading_path,
         text=text,
         content_hash=content_hash,
-        token_count=count_tokens(text),
+        token_count=count_tokens(text, tokenizer=tokenizer),
         contains_table=any(block.kind == "table" for block in blocks),
     )
 
@@ -312,14 +402,93 @@ def _bge_text_with_adjacent_context(
     chunks: tuple[RagCanonicalChunk, ...],
     index: int,
     *,
-    overlap_ratio: float,
+    tokenizer: RagTokenizer,
 ) -> str:
     chunk = chunks[index]
-    side_tokens = max(1, int(chunk.token_count * overlap_ratio)) if chunk.token_count else 0
+    side_tokens = int(chunk.token_count * _BGE_CONTEXT_RATIO_PER_SIDE)
     parts: list[str] = []
     if index > 0 and side_tokens:
-        parts.append(" ".join(_TOKEN_PATTERN.findall(chunks[index - 1].text)[-side_tokens:]))
+        parts.append(
+            _take_token_suffix(
+                chunks[index - 1].text,
+                side_tokens,
+                tokenizer=tokenizer,
+            )
+        )
     parts.append(chunk.text)
     if index + 1 < len(chunks) and side_tokens:
-        parts.append(" ".join(_TOKEN_PATTERN.findall(chunks[index + 1].text)[:side_tokens]))
+        parts.append(
+            _take_token_prefix(
+                chunks[index + 1].text,
+                side_tokens,
+                tokenizer=tokenizer,
+            )
+        )
     return "\n\n".join(part for part in parts if part)
+
+
+def _take_token_prefix(
+    text: str,
+    maximum_tokens: int,
+    *,
+    tokenizer: RagTokenizer,
+) -> str:
+    spans = _validated_token_spans(text, tokenizer=tokenizer)
+    if maximum_tokens <= 0 or not spans:
+        return ""
+    return text[: spans[min(maximum_tokens, len(spans)) - 1][1]].rstrip()
+
+
+def _take_token_suffix(
+    text: str,
+    maximum_tokens: int,
+    *,
+    tokenizer: RagTokenizer,
+) -> str:
+    spans = _validated_token_spans(text, tokenizer=tokenizer)
+    if maximum_tokens <= 0 or not spans:
+        return ""
+    return text[spans[max(0, len(spans) - maximum_tokens)][0] :].lstrip()
+
+
+def _validated_token_spans(
+    text: str,
+    *,
+    tokenizer: RagTokenizer,
+) -> tuple[tuple[int, int], ...]:
+    spans = tuple(tokenizer.token_spans(text))
+    previous_start = 0
+    previous_end = 0
+    for start, end in spans:
+        if (
+            not isinstance(start, int)
+            or not isinstance(end, int)
+            or start < previous_start
+            or end < previous_end
+            or end <= start
+            or end > len(text)
+        ):
+            raise RagIngestError("RAG tokenizer produced an invalid non-monotonic token span.")
+        previous_start = start
+        previous_end = end
+    return spans
+
+
+def _join_blocks(blocks: Iterable[RagParsedBlock]) -> str:
+    return "\n\n".join(block.text for block in blocks)
+
+
+def _common_heading_prefix(blocks: tuple[RagParsedBlock, ...]) -> tuple[str, ...]:
+    if not blocks:
+        raise RagIngestError("RAG chunk requires at least one block.")
+    prefix = list(blocks[0].heading_path)
+    for block in blocks[1:]:
+        common_length = 0
+        for left, right in zip(prefix, block.heading_path, strict=False):
+            if left != right:
+                break
+            common_length += 1
+        prefix = prefix[:common_length]
+    if not prefix:
+        raise RagIngestError("RAG chunk cannot cross unrelated heading roots.")
+    return tuple(prefix)

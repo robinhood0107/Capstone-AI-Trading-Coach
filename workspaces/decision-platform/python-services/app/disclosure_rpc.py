@@ -32,6 +32,14 @@ _RECEIPT_NO_PATTERN = re.compile(r"^[0-9]{14}$")
 _AUTH_METADATA_KEY = "x-decision-grpc-auth"
 
 
+class StoredDisclosureOversizedError(RuntimeError):
+    """정제 projection의 event 수가 결정 계약의 hard bound를 넘었음을 나타낸다."""
+
+
+class StoredDisclosureIncompleteError(RuntimeError):
+    """정제 projection을 bounded query 안에서 완전하게 조립하지 못했음을 나타낸다."""
+
+
 @dataclass(frozen=True)
 class StoredDisclosureEvent:
     """DB projection에서 읽은 한 공시와 불투명 provenance를 변경 불가능한 값으로 운반한다."""
@@ -325,7 +333,7 @@ def _validate_batch(
     if not 1 <= len(batch.mapping_version) <= 128:
         _abort(context, grpc.StatusCode.DATA_LOSS, "disclosure mapping version is invalid")
     if len(batch.events) > _MAX_EVENTS:
-        _abort(context, grpc.StatusCode.DATA_LOSS, "disclosure event limit exceeded")
+        _abort(context, grpc.StatusCode.OUT_OF_RANGE, "disclosure event limit exceeded")
     if batch.observed_at.tzinfo is None:
         _abort(context, grpc.StatusCode.DATA_LOSS, "disclosure observation time is invalid")
 
@@ -366,7 +374,11 @@ def _validate_batch(
                 _abort(context, grpc.StatusCode.DATA_LOSS, "disclosure source reference is invalid")
             source_refs.add(source_ref)
     if len(source_refs) > _MAX_SOURCE_REFS:
-        _abort(context, grpc.StatusCode.DATA_LOSS, "disclosure source reference limit exceeded")
+        _abort(
+            context,
+            grpc.StatusCode.FAILED_PRECONDITION,
+            "disclosure source reference limit exceeded",
+        )
     if batch.complete and not source_refs:
         _abort(context, grpc.StatusCode.DATA_LOSS, "complete disclosure batch lacks provenance")
 
@@ -393,6 +405,10 @@ def _cancel_safely(connection: CancellableDatabaseConnection) -> None:
 
 
 def _database_failure_status(error: Exception) -> grpc.StatusCode:
+    if isinstance(error, StoredDisclosureOversizedError):
+        return grpc.StatusCode.OUT_OF_RANGE
+    if isinstance(error, StoredDisclosureIncompleteError):
+        return grpc.StatusCode.FAILED_PRECONDITION
     if isinstance(error, psycopg.Error):
         sqlstate = error.sqlstate or ""
         if sqlstate == "57014":
@@ -410,7 +426,9 @@ def _database_failure_status(error: Exception) -> grpc.StatusCode:
         return grpc.StatusCode.INTERNAL
     if isinstance(error, (ValueError, KeyError, TypeError)):
         return grpc.StatusCode.DATA_LOSS
-    if isinstance(error, (TimeoutError, ConnectionError)):
+    if isinstance(error, TimeoutError):
+        return grpc.StatusCode.DEADLINE_EXCEEDED
+    if isinstance(error, ConnectionError):
         return grpc.StatusCode.UNAVAILABLE
     return grpc.StatusCode.INTERNAL
 
@@ -421,6 +439,8 @@ def _database_failure_detail(code: grpc.StatusCode) -> str:
         grpc.StatusCode.DEADLINE_EXCEEDED: "stored disclosure database deadline exceeded",
         grpc.StatusCode.UNAUTHENTICATED: "stored disclosure database authentication failed",
         grpc.StatusCode.PERMISSION_DENIED: "stored disclosure database permission denied",
+        grpc.StatusCode.OUT_OF_RANGE: "stored disclosure event bound exceeded",
+        grpc.StatusCode.FAILED_PRECONDITION: "stored disclosure projection is incomplete",
         grpc.StatusCode.DATA_LOSS: "stored disclosure database row is malformed",
         grpc.StatusCode.INTERNAL: "stored disclosure database invariant failed",
     }[code]

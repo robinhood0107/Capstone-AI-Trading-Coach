@@ -11,6 +11,8 @@ set -Eeuo pipefail
 : "${POSTGRES_PORTFOLIO_WRITER_PASSWORD:?POSTGRES_PORTFOLIO_WRITER_PASSWORD is required}"
 : "${POSTGRES_RISK_WRITER_PASSWORD:?POSTGRES_RISK_WRITER_PASSWORD is required}"
 : "${POSTGRES_FILL_WRITER_PASSWORD:?POSTGRES_FILL_WRITER_PASSWORD is required}"
+: "${POSTGRES_RAG_WRITER_PASSWORD:?POSTGRES_RAG_WRITER_PASSWORD is required}"
+: "${POSTGRES_RAG_QUERY_PASSWORD:?POSTGRES_RAG_QUERY_PASSWORD is required}"
 
 # psql argv나 shell-expanded SQL에 password를 넣지 않고 process environment에서 안전하게 인용한다.
 export PGPASSWORD="${POSTGRES_PASSWORD:-}"
@@ -24,6 +26,8 @@ psql -v ON_ERROR_STOP=1 --no-password --username "$POSTGRES_USER" --dbname "$POS
 \getenv portfolio_writer_password POSTGRES_PORTFOLIO_WRITER_PASSWORD
 \getenv risk_writer_password POSTGRES_RISK_WRITER_PASSWORD
 \getenv fill_writer_password POSTGRES_FILL_WRITER_PASSWORD
+\getenv rag_writer_password POSTGRES_RAG_WRITER_PASSWORD
+\getenv rag_query_password POSTGRES_RAG_QUERY_PASSWORD
 
 -- role password DDL 전에 session 전체의 statement·duration·sampling log를 닫는다.
 SET log_statement = 'none';
@@ -67,6 +71,9 @@ SELECT format(
 -- DB capability bind가 statement/error log 설정과 무관하게 값으로 노출되지 않게 한다.
 ALTER ROLE decision_app SET log_parameter_max_length = 0;
 ALTER ROLE decision_app SET log_parameter_max_length_on_error = 0;
+ALTER ROLE decision_app SET statement_timeout = '2s';
+ALTER ROLE decision_app SET lock_timeout = '500ms';
+ALTER ROLE decision_app SET idle_in_transaction_session_timeout = '5s';
 
 SELECT format(
     'CREATE ROLE flyway LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD %L',
@@ -163,6 +170,32 @@ SELECT format(
 )
 \gexec
 
+SELECT format(
+    'CREATE ROLE decision_rag_writer LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD %L',
+    :'rag_writer_password'
+)
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'decision_rag_writer')
+\gexec
+
+SELECT format(
+    'ALTER ROLE decision_rag_writer WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD %L',
+    :'rag_writer_password'
+)
+\gexec
+
+SELECT format(
+    'CREATE ROLE decision_rag_query LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD %L',
+    :'rag_query_password'
+)
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'decision_rag_query')
+\gexec
+
+SELECT format(
+    'ALTER ROLE decision_rag_query WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD %L',
+    :'rag_query_password'
+)
+\gexec
+
 REVOKE ALL ON DATABASE :"database_name" FROM PUBLIC;
 GRANT CONNECT ON DATABASE :"database_name" TO
     decision_app,
@@ -172,6 +205,8 @@ GRANT CONNECT ON DATABASE :"database_name" TO
     decision_portfolio_writer,
     decision_risk_writer,
     decision_fill_writer,
+    decision_rag_writer,
+    decision_rag_query,
     flyway;
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 GRANT USAGE ON SCHEMA public TO
@@ -182,6 +217,8 @@ GRANT USAGE ON SCHEMA public TO
     decision_portfolio_writer,
     decision_risk_writer,
     decision_fill_writer,
+    decision_rag_writer,
+    decision_rag_query,
     flyway;
 GRANT CREATE ON SCHEMA public TO flyway;
 
@@ -201,6 +238,10 @@ REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_risk_writer;
 REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_risk_writer;
 REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_fill_writer;
 REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_fill_writer;
+REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_rag_writer;
+REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_rag_writer;
+REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_rag_query;
+REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_rag_query;
 ALTER DEFAULT PRIVILEGES FOR ROLE flyway IN SCHEMA public
     REVOKE ALL PRIVILEGES ON TABLES FROM decision_app;
 ALTER DEFAULT PRIVILEGES FOR ROLE flyway IN SCHEMA public
@@ -219,6 +260,14 @@ ALTER DEFAULT PRIVILEGES FOR ROLE flyway IN SCHEMA public
     REVOKE ALL PRIVILEGES ON TABLES FROM decision_fill_writer;
 ALTER DEFAULT PRIVILEGES FOR ROLE flyway IN SCHEMA public
     REVOKE ALL PRIVILEGES ON SEQUENCES FROM decision_fill_writer;
+ALTER DEFAULT PRIVILEGES FOR ROLE flyway IN SCHEMA public
+    REVOKE ALL PRIVILEGES ON TABLES FROM decision_rag_writer;
+ALTER DEFAULT PRIVILEGES FOR ROLE flyway IN SCHEMA public
+    REVOKE ALL PRIVILEGES ON SEQUENCES FROM decision_rag_writer;
+ALTER DEFAULT PRIVILEGES FOR ROLE flyway IN SCHEMA public
+    REVOKE ALL PRIVILEGES ON TABLES FROM decision_rag_query;
+ALTER DEFAULT PRIVILEGES FOR ROLE flyway IN SCHEMA public
+    REVOKE ALL PRIVILEGES ON SEQUENCES FROM decision_rag_query;
 
 DO $calendar_privileges$
 BEGIN
@@ -513,6 +562,127 @@ BEGIN
 END
 $fill_writer_privileges$;
 
+DO $paper_projection_privileges$
+BEGIN
+    IF to_regclass('public.paper_margin_owner_projection') IS NOT NULL THEN
+        -- V13의 owner-scoped margin projection은 bootstrap 재실행 뒤에도 유일한 paper base read다.
+        REVOKE ALL PRIVILEGES ON TABLE
+            paper_accounts,
+            paper_positions,
+            paper_order_events,
+            paper_margin_owner_projection
+        FROM decision_app;
+        GRANT SELECT ON TABLE paper_margin_owner_projection TO decision_app;
+    END IF;
+END
+$paper_projection_privileges$;
+
+DO $fill_projection_privileges$
+BEGIN
+    IF to_regclass('public.order_fill_observations') IS NOT NULL THEN
+        -- reconciliation은 SECURITY DEFINER 함수만 호출하며 raw fill table read/write는 허용하지 않는다.
+        REVOKE ALL PRIVILEGES ON TABLE
+            order_fill_observations,
+            order_fill_application_receipts
+        FROM decision_app;
+    END IF;
+END
+$fill_projection_privileges$;
+
+DO $rag_source_registry_privileges$
+BEGIN
+    IF to_regclass('public.rag_sources') IS NOT NULL
+       AND to_regclass('public.rag_source_revisions') IS NOT NULL
+       AND to_regclass('public.rag_source_checks') IS NOT NULL THEN
+        -- RAG seed 등록은 Python RAG corpus privacy owner 전용 role의 append-only 경계로만 허용한다.
+        REVOKE ALL PRIVILEGES ON TABLE
+            rag_sources,
+            rag_source_revisions,
+            rag_source_checks,
+            rag_chunks,
+            rag_answers,
+            rag_citations,
+            rag_answer_feedback
+        FROM decision_rag_writer;
+        GRANT SELECT, INSERT ON TABLE
+            rag_sources,
+            rag_source_revisions
+        TO decision_rag_writer;
+    END IF;
+END
+$rag_source_registry_privileges$;
+
+-- 기존 volume의 PUBLIC과 모든 runtime role에서 함수 grant를 제거한 뒤 app allowlist만 다시 만든다.
+-- PUBLIC 또는 비앱 writer/reader에 남은 stale SECURITY DEFINER EXECUTE도 bootstrap replay가 보존하면 안 된다.
+REVOKE ALL PRIVILEGES ON ALL FUNCTIONS IN SCHEMA public FROM
+    PUBLIC,
+    decision_app,
+    decision_collector,
+    decision_disclosure_reader,
+    decision_market_writer,
+    decision_portfolio_writer,
+    decision_risk_writer,
+    decision_fill_writer,
+    decision_rag_writer,
+    decision_rag_query;
+
+DO $decision_runtime_function_privileges$
+BEGIN
+    IF to_regprocedure('public.read_decision_owner_projection()') IS NOT NULL THEN
+        GRANT EXECUTE ON FUNCTION
+            read_decision_owner_projection(),
+            read_decision_audit_projection(),
+            find_decision_idempotency_result(text, text, timestamptz),
+            next_decision_idempotency_generation(text, text)
+        TO decision_app;
+    END IF;
+    IF to_regprocedure('public.read_kill_switch_gate()') IS NOT NULL THEN
+        GRANT EXECUTE ON FUNCTION
+            read_kill_switch_gate(),
+            revalidate_kill_switch_admin(text, bigint),
+            read_kill_switch_audit_projection(),
+            read_decision_usability(),
+            invalidate_unused_decisions_for_kill_switch(bigint, timestamptz, text)
+        TO decision_app;
+    END IF;
+    IF to_regprocedure('public.read_mock_order_decision(text,text,text)') IS NOT NULL THEN
+        GRANT EXECUTE ON FUNCTION
+            read_mock_order_decision(text, text, text),
+            find_mock_order_idempotency_result(text, text, timestamptz, text),
+            read_mock_order_owner_projection(text, text, text),
+            create_mock_order(jsonb, text),
+            request_mock_order_cancel(jsonb, text)
+        TO decision_app;
+    END IF;
+    IF to_regprocedure('public.read_paper_order_context(text,text,text)') IS NOT NULL THEN
+        GRANT EXECUTE ON FUNCTION
+            read_paper_order_context(text, text, text),
+            find_paper_order_idempotency_result(text, text, timestamptz, text),
+            read_paper_balance_projection(text, text, text),
+            create_paper_order(jsonb, text)
+        TO decision_app;
+    END IF;
+    IF to_regprocedure('public.read_order_reconciliation_state(jsonb,text)') IS NOT NULL THEN
+        GRANT EXECUTE ON FUNCTION
+            read_order_reconciliation_state(jsonb, text),
+            acquire_order_fill_reconciliation_lock(jsonb, text),
+            apply_stored_order_fills(jsonb, text),
+            read_owned_order_fills(jsonb, text)
+        TO decision_app;
+    END IF;
+    IF to_regprocedure('public.record_mock_order_provider_outcome(jsonb,text)') IS NOT NULL THEN
+        GRANT EXECUTE ON FUNCTION
+            record_mock_order_provider_outcome(jsonb, text)
+        TO decision_app;
+    END IF;
+    IF to_regprocedure('public.read_rag_source_registry(text)') IS NOT NULL THEN
+        GRANT EXECUTE ON FUNCTION
+            read_rag_source_registry(text)
+        TO decision_app;
+    END IF;
+END
+$decision_runtime_function_privileges$;
+
 DO $block$
 BEGIN
     IF to_regclass('public.flyway_schema_history') IS NOT NULL THEN
@@ -521,6 +691,8 @@ BEGIN
         REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_collector;
         REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_disclosure_reader;
         REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_fill_writer;
+        REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_rag_writer;
+        REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_rag_query;
     END IF;
 END
 $block$;

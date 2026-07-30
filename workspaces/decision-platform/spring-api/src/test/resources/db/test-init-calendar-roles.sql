@@ -40,6 +40,16 @@ ALTER ROLE decision_app SET log_parameter_max_length_on_error = 0;
 ALTER ROLE decision_app SET statement_timeout = '2s';
 ALTER ROLE decision_app SET lock_timeout = '500ms';
 ALTER ROLE decision_app SET idle_in_transaction_session_timeout = '5s';
+ALTER ROLE decision_rag_writer SET log_parameter_max_length = 0;
+ALTER ROLE decision_rag_writer SET log_parameter_max_length_on_error = 0;
+ALTER ROLE decision_rag_writer SET statement_timeout = '2s';
+ALTER ROLE decision_rag_writer SET lock_timeout = '500ms';
+ALTER ROLE decision_rag_writer SET idle_in_transaction_session_timeout = '5s';
+ALTER ROLE decision_rag_query SET log_parameter_max_length = 0;
+ALTER ROLE decision_rag_query SET log_parameter_max_length_on_error = 0;
+ALTER ROLE decision_rag_query SET statement_timeout = '1500ms';
+ALTER ROLE decision_rag_query SET lock_timeout = '250ms';
+ALTER ROLE decision_rag_query SET idle_in_transaction_session_timeout = '5s';
 ALTER ROLE flyway SET log_parameter_max_length = 0;
 ALTER ROLE flyway SET log_parameter_max_length_on_error = 0;
 

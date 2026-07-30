@@ -7,19 +7,23 @@ import sys
 import unittest
 from pathlib import Path
 
+import yaml
 from jsonschema import Draft202012Validator
 
 from contracts.generate_principle_contracts import ContractValidationError
 from contracts.generate_s4_rag_contracts import (
     CATALOG_PATH,
+    CATALOG_SHA256_MANIFEST_PATH,
     EXPECTED_CATALOG_SHA256,
     OUTPUTS,
+    RAG_SOURCE_CARD_UPSTREAM_SOURCE_IDS,
     generate_outputs,
     load_catalog,
     load_json_bytes_strict,
     validate_admin_policy_selection_semantics,
     validate_catalog_semantics,
     validate_rag_ask_request_semantics,
+    validate_rag_source_card_semantics,
 )
 
 
@@ -33,6 +37,19 @@ class S4RagContractCatalogTest(unittest.TestCase):
 
     def test_catalog_locks_exact_profiles_policies_and_digest(self) -> None:
         self.assertEqual(EXPECTED_CATALOG_SHA256, hashlib.sha256(CATALOG_PATH.read_bytes()).hexdigest())
+        manifest = load_json_bytes_strict(
+            CATALOG_SHA256_MANIFEST_PATH.read_bytes(),
+            source="contracts/catalogs/s4-rag-contract.v1.sha256.json",
+        )
+        self.assertEqual(
+            {
+                "catalogPath": "contracts/catalogs/s4-rag-contract.v1.json",
+                "contractChangePath": "contracts/changes/20260729-s4-rag-contract-catalog.md",
+                "schemaVersion": 1,
+                "sha256": EXPECTED_CATALOG_SHA256,
+            },
+            manifest,
+        )
         self.assertEqual(
             ["bge_m3_local_1024_v1", "voyage_context_4_1024_v1"],
             self.catalog["profileIds"],
@@ -43,8 +60,32 @@ class S4RagContractCatalogTest(unittest.TestCase):
         )
         self.assertEqual(["voyage_context_3_1024_v1"], self.catalog["forbiddenProfileIds"])
         self.assertNotIn("voyage_context_3_1024_v1", self.catalog["profileIds"])
+
+    def test_source_card_upstream_allowlist_matches_the_runtime_seed(self) -> None:
+        seed_path = (
+            ROOT
+            / "workspaces/decision-platform/python-services/app/rag/rag_source_seed.yaml"
+        )
+        seed = yaml.safe_load(seed_path.read_text(encoding="utf-8"))
+        self.assertEqual(
+            RAG_SOURCE_CARD_UPSTREAM_SOURCE_IDS,
+            tuple(source["sourceId"] for source in seed["sources"]),
+        )
         self.assertEqual(1024, self.catalog["dimension"])
         self.assertEqual(["CONCISE", "DETAILED"], self.catalog["answerModes"])
+        self.assertEqual(
+            [
+                "REGISTERED",
+                "PLANNED",
+                "MATERIALIZING",
+                "MATERIALIZED",
+                "EVAL_PASSED",
+                "ACTIVE",
+                "FAILED_FINAL",
+                "DISABLED",
+            ],
+            self.catalog["generationStatuses"],
+        )
         self.assertEqual(0, self.catalog["canonicalChunking"]["overlapPercent"])
         self.assertEqual(
             "ONNX_DATA_ONLY",
@@ -110,6 +151,18 @@ class S4RagContractCatalogTest(unittest.TestCase):
         voyage_downgrade = copy.deepcopy(self.catalog)
         voyage_downgrade["profiles"][1]["model"] = "voyage-context-3"
         mutations.append(voyage_downgrade)
+
+        lifecycle_drift = copy.deepcopy(self.catalog)
+        lifecycle_drift["generationStatuses"] = ["MATERIALIZING", "ACTIVE"]
+        mutations.append(lifecycle_drift)
+
+        topic_drift = copy.deepcopy(self.catalog)
+        topic_drift["topicAllowlist"] = ["RISK", "API"]
+        mutations.append(topic_drift)
+
+        idempotency_drift = copy.deepcopy(self.catalog)
+        idempotency_drift["askRequest"]["idempotencyKeyPattern"] = "^.*$"
+        mutations.append(idempotency_drift)
 
         for mutation in mutations:
             with self.subTest(mutation=hashlib.sha256(repr(mutation).encode()).hexdigest()):
@@ -186,3 +239,67 @@ class S4RagContractCatalogTest(unittest.TestCase):
             source="s4-rag-admin-policy-selection.profile-as-policy.invalid.json",
         )
         self.assertNotEqual([], list(validator.iter_errors(invalid)))
+
+    def test_rag_source_card_schema_and_semantics_reject_control_text(self) -> None:
+        schema = load_json_bytes_strict(
+            (ROOT / "contracts/schemas/rag-source-card-v1.schema.json").read_bytes(),
+            source="contracts/schemas/rag-source-card-v1.schema.json",
+        )
+        validator = Draft202012Validator(schema)
+        valid = load_json_bytes_strict(
+            (ROOT / "contracts/examples/rag-source-card-v1.valid.json").read_bytes(),
+            source="contracts/examples/rag-source-card-v1.valid.json",
+        )
+        self.assertEqual([], list(validator.iter_errors(valid)))
+        validate_rag_source_card_semantics(valid)
+
+        injection = load_json_bytes_strict(
+            (
+                ROOT
+                / "contracts/examples/invalid"
+                / "rag-source-card-v1.injection-like.invalid.json"
+            ).read_bytes(),
+            source="rag-source-card-v1.injection-like.invalid.json",
+        )
+        self.assertEqual([], list(validator.iter_errors(injection)))
+        with self.assertRaises(ContractValidationError):
+            validate_rag_source_card_semantics(injection)
+
+        unsafe_ip = copy.deepcopy(valid)
+        unsafe_ip["canonicalUrl"] = "https://127.0.0.1/private"
+        unsafe_ip["canonicalUrlSha256"] = hashlib.sha256(
+            unsafe_ip["canonicalUrl"].encode("utf-8")
+        ).hexdigest()
+        with self.assertRaises(ContractValidationError):
+            validate_rag_source_card_semantics(unsafe_ip)
+
+        for field, value in (
+            ("verifiedAt", "2026-07-30T09:00:00+09:00"),
+            ("upstreamSourceIds", ["src_kis_nonexistent_999"]),
+        ):
+            drifted = copy.deepcopy(valid)
+            drifted[field] = value
+            with self.subTest(field=field):
+                with self.assertRaises(ContractValidationError):
+                    validate_rag_source_card_semantics(drifted)
+
+        authority_mismatch = copy.deepcopy(valid)
+        authority_mismatch["institution"] = "krx"
+        authority_mismatch["upstreamSourceIds"] = ["src_krx_openapi_service_catalog_001"]
+        with self.assertRaises(ContractValidationError):
+            validate_rag_source_card_semantics(authority_mismatch)
+
+        for unsafe_url in (
+            "https://Example.com/private",
+            "https://example.com/a/../private",
+            "https://example.com/a/./private",
+            "https://example.com/a//private",
+        ):
+            unsafe_shape = copy.deepcopy(valid)
+            unsafe_shape["canonicalUrl"] = unsafe_url
+            unsafe_shape["canonicalUrlSha256"] = hashlib.sha256(
+                unsafe_url.encode("utf-8")
+            ).hexdigest()
+            with self.subTest(unsafe_url=unsafe_url):
+                with self.assertRaises(ContractValidationError):
+                    validate_rag_source_card_semantics(unsafe_shape)

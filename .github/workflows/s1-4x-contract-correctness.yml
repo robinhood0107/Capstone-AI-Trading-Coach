@@ -133,15 +133,63 @@ jobs:
           mapfile -t ACTUAL_PATHS < <(
             git diff-tree --no-commit-id --name-only -r "$REFERENCE_BASE" | LC_ALL=C sort
           )
-          EXPECTED_PATHS=(
-            "workspaces/decision-platform/python-services/pyproject.toml"
-            "workspaces/decision-platform/python-services/uv.lock"
-          )
+          case "$REFERENCE_BASE" in
+            e5d70dc113ed87c690cf538879c0b9df17121b1d)
+              EXPECTED_PATHS=(
+                "workspaces/decision-platform/python-services/pyproject.toml"
+                "workspaces/decision-platform/python-services/uv.lock"
+              )
+              ;;
+            15decd1e6ed3bbbad0dce22f7171d34d80cee367)
+              EXPECTED_PATHS=(
+                "workspaces/decision-platform/research/s1-4r-jax-risk/tests/test_production_isolation.py"
+              )
+              ;;
+            cf4cc867a9543de194f04fdc805a0bd23a371221)
+              EXPECTED_PATHS=(
+                "workspaces/decision-platform/research/s1-4r-jax-risk/tests/test_production_isolation.py"
+              )
+              ;;
+            *)
+              echo "referenceBaseCommit is not an approved narrow carrier" >&2
+              exit 1
+              ;;
+          esac
           if ! diff -u \
             <(printf '%s\n' "${EXPECTED_PATHS[@]}") \
             <(printf '%s\n' "${ACTUAL_PATHS[@]}"); then
-            echo "referenceBaseCommit must change exactly the approved dependency files" >&2
+            echo "referenceBaseCommit must change exactly its approved carrier files" >&2
             exit 1
+          fi
+
+          # 로컬 자료 경로에 결합된 obsolete host-only 검사는 한 번만 exact hash 전이로 제거한다.
+          S1_4R_ISOLATION_TEST=workspaces/decision-platform/research/s1-4r-jax-risk/tests/test_production_isolation.py
+          if ! git diff --quiet "$DIFF_BASE" HEAD -- "$S1_4R_ISOLATION_TEST"; then
+            BASE_ISOLATION_SHA="$(
+              git show "${DIFF_BASE}:${S1_4R_ISOLATION_TEST}" | sha256sum | cut -d' ' -f1
+            )"
+            HEAD_ISOLATION_SHA="$(sha256sum "$S1_4R_ISOLATION_TEST" | cut -d' ' -f1)"
+            test "$BASE_ISOLATION_SHA" = \
+              "daca84be569df6358ac84e171825b91f9610dfdabe99fb5f0ecab4f02b47c3cc"
+            test "$HEAD_ISOLATION_SHA" = \
+              "fa3b83093028f23166d3c6ad8ba8976008f96e74982671ed7282d71a756331af"
+          fi
+
+          # 고정 snapshot의 실제 테스트 수 변경은 해당 workflow assertion과 exact hash로 묶는다.
+          S1_4X_BENCHMARK_CONTRACT_TEST="$S1_4X/benchmarks/tests/test_benchmark_contract.py"
+          if ! git diff --quiet \
+            "$DIFF_BASE" HEAD -- "$S1_4X_BENCHMARK_CONTRACT_TEST"; then
+            BASE_BENCHMARK_CONTRACT_SHA="$(
+              git show "${DIFF_BASE}:${S1_4X_BENCHMARK_CONTRACT_TEST}" \
+                | sha256sum | cut -d' ' -f1
+            )"
+            HEAD_BENCHMARK_CONTRACT_SHA="$(
+              sha256sum "$S1_4X_BENCHMARK_CONTRACT_TEST" | cut -d' ' -f1
+            )"
+            test "$BASE_BENCHMARK_CONTRACT_SHA" = \
+              "567d09ce0c7b621bc0a9fd85a2a47d4946dfaeb80d520689ae63b4ce7464cf53"
+            test "$HEAD_BENCHMARK_CONTRACT_SHA" = \
+              "b5a3b1f3c9dc2fff025f465f28c6be35b6e46177b7a2a7267bc5c342a01ecba6"
           fi
 
           # 의존성 amendment가 수치 구현·테스트·fixture를 함께 바꾸는 것을 독립적으로 막는다.
@@ -151,6 +199,7 @@ jobs:
             workspaces/decision-platform/python-services/tests/financial_engineering \
             workspaces/decision-platform/research/s1-4r-jax-risk/src \
             workspaces/decision-platform/research/s1-4r-jax-risk/tests \
+            ":(exclude)$S1_4R_ISOLATION_TEST" \
             "$S1_4X/contract" \
             ":(exclude)$S1_4X/contract/contract-manifest.v1.json" \
             ":(exclude)$S1_4X/contract/reference-lock.v1.json" \
@@ -158,7 +207,8 @@ jobs:
             ":(exclude)$S1_4X/oracle/tests/test_validate_contract.py" \
             "$S1_4X/benchmarks" \
             ":(exclude)$S1_4X/benchmarks/benchmark-plan.v1.json" \
-            ":(exclude)$S1_4X/benchmarks/benchmark-plan.v1.sha256"
+            ":(exclude)$S1_4X/benchmarks/benchmark-plan.v1.sha256" \
+            ":(exclude)$S1_4X_BENCHMARK_CONTRACT_TEST"
 
       - name: Check and sync frozen oracle environment
         run: |
@@ -296,12 +346,12 @@ jobs:
             uv run --frozen mypy src benchmarks
           )
 
-      - name: Run and account for all 263 frozen S1.4R tests
+      - name: Run and account for all 262 frozen S1.4R tests
         env:
           SNAPSHOT: ${{ steps.reference-snapshot.outputs.snapshot }}
         run: |
           RESEARCH="$SNAPSHOT/workspaces/decision-platform/research/s1-4r-jax-risk"
-          JUNIT="${RUNNER_TEMP}/s1-4r-reference-263.xml"
+          JUNIT="${RUNNER_TEMP}/s1-4r-reference-262.xml"
           (
             cd "$RESEARCH"
             uv run --frozen pytest -q --junitxml="$JUNIT"
@@ -317,9 +367,9 @@ jobs:
           failures = sum(int(suite.attrib.get("failures", "0")) for suite in suites)
           errors = sum(int(suite.attrib.get("errors", "0")) for suite in suites)
           skipped = sum(int(suite.attrib.get("skipped", "0")) for suite in suites)
-          assert tests == 263, f"expected 263 frozen S1.4R tests, got {tests}"
+          assert tests == 262, f"expected 262 frozen S1.4R tests, got {tests}"
           assert failures == 0 and errors == 0 and skipped == 0
-          print("S1.4R_REFERENCE_REGRESSION_PASS tests=263 failures=0 errors=0 skipped=0")
+          print("S1.4R_REFERENCE_REGRESSION_PASS tests=262 failures=0 errors=0 skipped=0")
           PY
-          echo "S1.4R reference snapshot: 263/263 tests passed." \
+          echo "S1.4R reference snapshot: 262/262 tests passed." \
             >> "$GITHUB_STEP_SUMMARY"

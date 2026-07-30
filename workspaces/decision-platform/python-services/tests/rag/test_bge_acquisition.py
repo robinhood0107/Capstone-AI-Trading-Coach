@@ -8,7 +8,11 @@ from pathlib import Path
 import httpx
 import pytest
 
-from app.rag.bge_acquisition import BgeAcquisitionError, acquire_bge_packet
+from app.rag.bge_acquisition import (
+    BgeAcquisitionError,
+    acquire_bge_packet,
+    verify_bge_completion_manifest,
+)
 from app.rag.bge_artifact import (
     BgeArtifactFile,
     BgeArtifactSpec,
@@ -77,6 +81,14 @@ def test_bounded_acquisition_uses_pinned_urls_and_publishes_manifest_last(
     assert manifest["complete"] is True
     assert manifest["fileManifestSha256"] == receipt.file_manifest_sha256
     assert manifest["revision"] == spec.revision
+    assert (
+        verify_bge_completion_manifest(
+            packet_root,
+            manifest_path=manifest_path,
+            spec=spec,
+        )
+        == receipt
+    )
     assert not tuple(posix_tmp_path.glob(".packet.staging-*"))
 
 

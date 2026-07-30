@@ -157,6 +157,13 @@ def test_onnx_graph_contract_rejects_external_path_and_custom_domain() -> None:
     )
 
     validate_onnx_graph_contract(valid)
+    validate_onnx_graph_contract(
+        replace(
+            valid,
+            output_names=("token_embeddings", "sentence_embedding"),
+            output_dimension=-1,
+        )
+    )
 
     for invalid in (
         replace(valid, external_data_locations=("../model.onnx_data",)),
@@ -165,6 +172,7 @@ def test_onnx_graph_contract_rejects_external_path_and_custom_domain() -> None:
         replace(valid, external_data_locations=("model.onnx_data", "model.onnx_data")),
         replace(valid, node_domains=("", "com.example.custom")),
         replace(valid, output_dimension=768),
+        replace(valid, output_dimension=-1),
         replace(valid, output_dtype="float64"),
     ):
         with pytest.raises(BgeArtifactError):

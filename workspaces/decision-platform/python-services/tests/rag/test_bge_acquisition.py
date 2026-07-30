@@ -130,18 +130,18 @@ def test_source_cache_redirect_is_exact_revision_path_and_query_bounded() -> Non
     entry = spec.files[0]
     location = (
         f"/api/resolve-cache/models/BAAI/bge-m3/{spec.revision}/"
-        'onnx/model.onnx?download=true&etag=%22aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa%22'
+        'onnx%2Fmodel.onnx?download=true&etag=%22aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa%22'
     )
 
     resolved = resolve_download_redirect(location, entry=entry, spec=spec)
 
     assert resolved.scheme == "https"
     assert resolved.hostname == "huggingface.co"
-    assert resolved.path.endswith("/onnx/model.onnx")
+    assert resolved.path.endswith("/onnx%2Fmodel.onnx")
 
     for drifted in (
         location.replace(spec.revision, "0" * 40),
-        location.replace("onnx/model.onnx", "pytorch_model.bin"),
+        location.replace("onnx%2Fmodel.onnx", "pytorch_model.bin"),
         location + "&unexpected=true",
     ):
         with pytest.raises(BgeAcquisitionError, match="DOWNLOAD_REDIRECT"):

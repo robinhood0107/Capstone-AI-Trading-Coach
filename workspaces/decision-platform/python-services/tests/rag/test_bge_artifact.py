@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import tomllib
 from dataclasses import replace
 from pathlib import Path
 
@@ -18,6 +19,18 @@ from app.rag.bge_artifact import (
     validate_onnx_graph_contract,
     verify_bge_packet,
 )
+
+_TOKENIZER_SHA256 = "6710678b12670bc442b99edc952c4d996ae309a7020c1fa0096dd245c2faf790"
+
+
+def test_public_tokenizer_digest_allowlist_targets_only_the_exact_secret() -> None:
+    repo_root = Path(__file__).resolve().parents[5]
+    with (repo_root / ".gitleaks.toml").open("rb") as config_file:
+        config = tomllib.load(config_file)
+
+    allowlist = config["allowlist"]
+    assert "regexTarget" not in allowlist
+    assert allowlist["regexes"] == [f"^{_TOKENIZER_SHA256}$"]
 
 
 def test_approved_bge_packet_is_exactly_pinned_to_ten_files() -> None:

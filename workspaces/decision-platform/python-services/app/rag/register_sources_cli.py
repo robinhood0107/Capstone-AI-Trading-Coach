@@ -28,7 +28,6 @@ _WRITER_OWNED_TABLES = (
     "rag_chunk_revisions",
     "rag_corpus_generations",
     "rag_generation_chunks",
-    "rag_chunk_embeddings",
 )
 _FORBIDDEN_TABLES = (
     "rag_embedding_policy_state",

@@ -300,9 +300,13 @@ class GrpcDisclosureRiskAdapter(
 
     private fun mapTransportFailure(exception: StatusRuntimeException): MetricCell<DisclosureRiskSnapshot> =
         when (exception.status.code) {
-            Status.Code.UNAVAILABLE,
+            Status.Code.UNAVAILABLE -> MetricCell.Error(MetricIssueCode.DISCLOSURE_UNAVAILABLE)
+
             Status.Code.DEADLINE_EXCEEDED,
-            -> MetricCell.Error(MetricIssueCode.DISCLOSURE_UNAVAILABLE)
+            Status.Code.FAILED_PRECONDITION,
+            -> MetricCell.Incomplete(MetricIssueCode.SOURCE_INCOMPLETE)
+
+            Status.Code.OUT_OF_RANGE -> MetricCell.Incomplete(MetricIssueCode.SOURCE_OVERSIZED)
 
             else -> throw DisclosureGrpcProtocolException()
         }

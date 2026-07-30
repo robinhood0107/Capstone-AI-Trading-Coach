@@ -111,7 +111,9 @@ class MetricReadinessPolicy {
             -> PublicEvidenceCode.OPTIONAL_EVIDENCE_STALE
 
             MetricIssueCode.SOURCE_ERROR -> PublicEvidenceCode.OPTIONAL_EVIDENCE_ERROR
-            MetricIssueCode.SOURCE_INCOMPLETE -> PublicEvidenceCode.OPTIONAL_EVIDENCE_INCOMPLETE
+            MetricIssueCode.SOURCE_INCOMPLETE,
+            MetricIssueCode.SOURCE_OVERSIZED,
+            -> PublicEvidenceCode.OPTIONAL_EVIDENCE_INCOMPLETE
             MetricIssueCode.SOURCE_MISSING,
             MetricIssueCode.NOT_APPLICABLE,
             MetricIssueCode.PORTFOLIO_CONTEXT_UNAVAILABLE,
@@ -145,7 +147,9 @@ class MetricReadinessPolicy {
                     MetricIssueCode.SOURCE_FUTURE_TIMESTAMP,
                     -> PublicIssueCode.BALANCE_STALE
 
-                    MetricIssueCode.SOURCE_INCOMPLETE -> PublicIssueCode.BALANCE_PARTIAL
+                    MetricIssueCode.SOURCE_INCOMPLETE,
+                    MetricIssueCode.SOURCE_OVERSIZED,
+                    -> PublicIssueCode.BALANCE_PARTIAL
                     else -> PublicIssueCode.BROKERAGE_UNAVAILABLE
                 }
 
@@ -153,7 +157,7 @@ class MetricReadinessPolicy {
             MetricKey.MDD,
             MetricKey.ANNUALIZED_VOLATILITY,
             ->
-                if (reason == MetricIssueCode.SOURCE_INCOMPLETE) {
+                if (reason == MetricIssueCode.SOURCE_INCOMPLETE || reason == MetricIssueCode.SOURCE_OVERSIZED) {
                     PublicIssueCode.RISK_SNAPSHOT_VERSION_MISMATCH
                 } else {
                     PublicIssueCode.RISK_SNAPSHOT_MISSING
@@ -161,7 +165,7 @@ class MetricReadinessPolicy {
 
             MetricKey.NEGATIVE_NEWS_SCORE -> PublicIssueCode.NEWS_EVIDENCE_UNAVAILABLE
             MetricKey.DISCLOSURE_RISK_SCORE ->
-                if (reason == MetricIssueCode.SOURCE_INCOMPLETE) {
+                if (reason == MetricIssueCode.SOURCE_INCOMPLETE || reason == MetricIssueCode.SOURCE_OVERSIZED) {
                     PublicIssueCode.DISCLOSURE_PARTIAL
                 } else {
                     PublicIssueCode.DISCLOSURE_PROVIDER_ERROR

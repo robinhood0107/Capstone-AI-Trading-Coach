@@ -94,6 +94,28 @@ ALLOWED_BRANCH_DIFF_PATHS = (
     "workspaces/decision-platform/research/s1-4r-jax-risk/",
     ".github/workflows/s1-4r-research-correctness.yml",
     ".github/workflows/s1-4r-research-benchmark.yml",
+    ".github/workflows/s1-4x-contract-correctness.yml",
+    # S1.4R source amendment는 아래의 파생 hash closure만 함께 갱신할 수 있다.
+    (
+        "workspaces/decision-platform/research/s1-4x-numeric-parity/"
+        "contract/reference-lock.v1.json"
+    ),
+    (
+        "workspaces/decision-platform/research/s1-4x-numeric-parity/"
+        "contract/contract-manifest.v1.json"
+    ),
+    (
+        "workspaces/decision-platform/research/s1-4x-numeric-parity/"
+        "benchmarks/benchmark-plan.v1.json"
+    ),
+    (
+        "workspaces/decision-platform/research/s1-4x-numeric-parity/"
+        "benchmarks/benchmark-plan.v1.sha256"
+    ),
+    (
+        "workspaces/decision-platform/research/s1-4x-numeric-parity/"
+        "benchmarks/tests/test_benchmark_contract.py"
+    ),
 )
 
 
@@ -256,7 +278,7 @@ def test_branch_diff_does_not_touch_frozen_or_out_of_scope_paths() -> None:
 
 
 @HOST_ONLY
-def test_branch_diff_is_confined_to_the_research_project_and_two_workflows() -> None:
+def test_branch_diff_is_confined_to_the_research_project_and_governing_workflows() -> None:
     completed = subprocess.run(
         ["git", "diff", "--name-only", "origin/main"],
         cwd=REPO_ROOT,

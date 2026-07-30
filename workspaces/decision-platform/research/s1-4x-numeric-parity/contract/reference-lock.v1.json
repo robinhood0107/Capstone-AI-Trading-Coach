@@ -52,12 +52,12 @@
     {
       "role": "production-project-runtime-projection",
       "path": "workspaces/decision-platform/python-services/pyproject.toml",
-      "sha256": "11ef3cfd12668b046a85d9f258f47ccaa97202dc29aaee674b1450b8b6e23568"
+      "sha256": "f1be8c96053dba874097f96e8b9e0c5d61c5583ad5af4c0c955cf067ed967161"
     },
     {
       "role": "production-environment-lock",
       "path": "workspaces/decision-platform/python-services/uv.lock",
-      "sha256": "ccd22fd798fe71b1830c6738dffb45cb87dfebb8d0a0864e3d0e5e860ef9e127"
+      "sha256": "4188bb5816bbadac2b53350ebff2de1771e4a3ab2f0eb4f9362eea61fda7d158"
     },
     {
       "role": "research-contract-readme",
@@ -196,7 +196,7 @@
         "uv.lock"
       ],
       "fileCount": 8,
-      "canonicalManifestSha256": "50f81de365dc48688eeb6a7aa9205625d34a986da74c11547bb7df49b0acc051",
+      "canonicalManifestSha256": "b4abdce334aa7db4d0187713429192e9daf5920d3f8a1a31e364fdf4d13e652b",
       "files": [
         {
           "path": "app/financial_engineering/__init__.py",
@@ -216,7 +216,7 @@
         },
         {
           "path": "pyproject.toml",
-          "sha256": "11ef3cfd12668b046a85d9f258f47ccaa97202dc29aaee674b1450b8b6e23568"
+          "sha256": "f1be8c96053dba874097f96e8b9e0c5d61c5583ad5af4c0c955cf067ed967161"
         },
         {
           "path": "tests/financial_engineering/test_returns.py",
@@ -228,7 +228,7 @@
         },
         {
           "path": "uv.lock",
-          "sha256": "ccd22fd798fe71b1830c6738dffb45cb87dfebb8d0a0864e3d0e5e860ef9e127"
+          "sha256": "4188bb5816bbadac2b53350ebff2de1771e4a3ab2f0eb4f9362eea61fda7d158"
         }
       ]
     },

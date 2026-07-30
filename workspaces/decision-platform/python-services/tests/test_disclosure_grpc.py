@@ -15,6 +15,8 @@ from app.disclosure_rpc import (
     QueryCancellation,
     StoredDisclosureBatch,
     StoredDisclosureEvent,
+    StoredDisclosureIncompleteError,
+    StoredDisclosureOversizedError,
     create_disclosure_server,
 )
 from app.generated import (
@@ -203,7 +205,7 @@ def test_request_and_response_bounds_fail_closed() -> None:
         stub = disclosure_observation_pb2_grpc.DisclosureObservationServiceStub(channel)
         with pytest.raises(grpc.RpcError) as response_error:
             _get_disclosure_events(stub, _request(), timeout=0.5)
-        assert response_error.value.code() == grpc.StatusCode.DATA_LOSS
+        assert response_error.value.code() == grpc.StatusCode.OUT_OF_RANGE
         assert repository.calls == 1
 
         oversized = _request()
@@ -278,6 +280,9 @@ class _FailingRepository:
         (_SqlStateOperationalError("57014"), grpc.StatusCode.DEADLINE_EXCEEDED),
         (_SqlStateOperationalError("28P01"), grpc.StatusCode.UNAUTHENTICATED),
         (_SqlStateOperationalError("42501"), grpc.StatusCode.PERMISSION_DENIED),
+        (StoredDisclosureOversizedError(), grpc.StatusCode.OUT_OF_RANGE),
+        (StoredDisclosureIncompleteError(), grpc.StatusCode.FAILED_PRECONDITION),
+        (TimeoutError(), grpc.StatusCode.DEADLINE_EXCEEDED),
         (ValueError("malformed sanitized row"), grpc.StatusCode.DATA_LOSS),
     ],
 )
@@ -499,6 +504,53 @@ def test_duplicate_source_reference_across_distinct_events_fails_closed() -> Non
                 timeout=0.5,
             )
         assert error.value.code() == grpc.StatusCode.DATA_LOSS
+    finally:
+        channel.close()
+        server.stop(grace=0).wait(timeout=2)
+
+
+def test_source_reference_overflow_is_typed_incomplete_instead_of_partial_success() -> None:
+    events = []
+    for index in range(51):
+        event = _batch(event_count=51).events[index]
+        events.append(
+            StoredDisclosureEvent(
+                symbol=event.symbol,
+                corp_code=event.corp_code,
+                event_code=event.event_code,
+                receipt_no=event.receipt_no,
+                occurred_on=event.occurred_on,
+                observed_at=event.observed_at,
+                mapping_version=event.mapping_version,
+                source_refs=(
+                    f"{index * 2 + 1:064x}",
+                    f"{index * 2 + 2:064x}",
+                ),
+                attributes=event.attributes,
+            )
+        )
+    repository = FakeDisclosureRepository(
+        StoredDisclosureBatch(
+            symbol="005930",
+            corp_code="00126380",
+            observed_at=datetime(2026, 7, 24, 1, 2, 3, tzinfo=UTC),
+            mapping_version="s1.2-v1",
+            complete=True,
+            events=tuple(events),
+        )
+    )
+    settings = _settings()
+    server = create_disclosure_server(settings, repository)
+    server.start()
+    channel = grpc.insecure_channel(settings.bind_address)
+    try:
+        with pytest.raises(grpc.RpcError) as error:
+            _get_disclosure_events(
+                disclosure_observation_pb2_grpc.DisclosureObservationServiceStub(channel),
+                _request(),
+                timeout=0.5,
+            )
+        assert error.value.code() == grpc.StatusCode.FAILED_PRECONDITION
     finally:
         channel.close()
         server.stop(grace=0).wait(timeout=2)

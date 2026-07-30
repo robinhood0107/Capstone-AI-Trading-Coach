@@ -30,6 +30,14 @@ from contracts.generate_s2_3_contracts import (  # noqa: E402
     validate_decision_response_semantics,
     validate_request_semantics,
 )
+from contracts.generate_s4_rag_contracts import (  # noqa: E402
+    CATALOG_PATH as S4_RAG_CATALOG_PATH,
+    load_catalog as load_s4_rag_catalog,
+    validate_admin_policy_selection_semantics,
+    validate_catalog_semantics as validate_s4_rag_catalog_semantics,
+    validate_rag_ask_request_semantics,
+    validate_rag_source_card_semantics,
+)
 
 SCHEMA_DIR = REPO_ROOT / "contracts" / "schemas"
 EXAMPLES_DIR = REPO_ROOT / "contracts" / "examples"
@@ -57,8 +65,6 @@ S2_EXAMPLE_SCHEMA_PREFIXES = {
     "principle-error-conflict": "principle-error",
     "principle-error-cursor": "principle-error",
 }
-
-
 def relative(path: Path) -> str:
     return path.relative_to(REPO_ROOT).as_posix()
 
@@ -104,6 +110,7 @@ def validate_example_semantics(
     principle_catalog: object,
     s2_2_catalog: object,
     s2_3_catalog: object,
+    s4_rag_catalog: object,
 ) -> None:
     if schema_name == "risk_decision":
         validate_risk_decision_semantics(example, s2_2_catalog)
@@ -119,6 +126,24 @@ def validate_example_semantics(
         return
     if schema_name == "s3-2-paper-order-request":
         validate_s3_2_paper_order_request_semantics(example)
+        return
+    if schema_name == "s4-rag-contract":
+        if not isinstance(example, dict):
+            raise ContractValidationError("S4 RAG contract example must be an object.")
+        validate_s4_rag_catalog_semantics(example)
+        return
+    if schema_name == "s4-rag-ask-request":
+        if not isinstance(s4_rag_catalog, dict):
+            raise ContractValidationError("S4 RAG catalog must be available.")
+        validate_rag_ask_request_semantics(example, s4_rag_catalog)
+        return
+    if schema_name == "s4-rag-admin-policy-selection":
+        if not isinstance(s4_rag_catalog, dict):
+            raise ContractValidationError("S4 RAG catalog must be available.")
+        validate_admin_policy_selection_semantics(example, s4_rag_catalog)
+        return
+    if schema_name == "rag-source-card-v1":
+        validate_rag_source_card_semantics(example)
         return
     validate_principle_payload_semantics(
         schema_name,
@@ -168,6 +193,7 @@ def validate_valid_examples(
     principle_catalog: object,
     s2_2_catalog: object,
     s2_3_catalog: object,
+    s4_rag_catalog: object,
 ) -> int:
     failures = 0
     valid_examples = sorted(EXAMPLES_DIR.glob("*.valid.json"))
@@ -189,6 +215,7 @@ def validate_valid_examples(
                     principle_catalog,
                     s2_2_catalog,
                     s2_3_catalog,
+                    s4_rag_catalog,
                 )
             except ContractValidationError as caught:
                 semantic_error = caught
@@ -215,6 +242,7 @@ def validate_invalid_examples(
     principle_catalog: object,
     s2_2_catalog: object,
     s2_3_catalog: object,
+    s4_rag_catalog: object,
 ) -> int:
     failures = 0
     invalid_examples = sorted(INVALID_EXAMPLES_DIR.glob("*.invalid.json"))
@@ -239,6 +267,7 @@ def validate_invalid_examples(
                     principle_catalog,
                     s2_2_catalog,
                     s2_3_catalog,
+                    s4_rag_catalog,
                 )
             except ContractValidationError as caught:
                 semantic_error = caught
@@ -371,18 +400,21 @@ def main() -> int:
     principle_catalog = load_catalog(CATALOG_PATH)
     s2_2_catalog = load_s2_2_catalog(S2_2_CATALOG_PATH)
     s2_3_catalog = load_s2_3_catalog(S2_3_CATALOG_PATH)
+    s4_rag_catalog = load_s4_rag_catalog(S4_RAG_CATALOG_PATH)
     validators = build_validators()
     failures = validate_valid_examples(
         validators,
         principle_catalog,
         s2_2_catalog,
         s2_3_catalog,
+        s4_rag_catalog,
     )
     failures += validate_invalid_examples(
         validators,
         principle_catalog,
         s2_2_catalog,
         s2_3_catalog,
+        s4_rag_catalog,
     )
     failures += validate_naver_pair_examples(validators)
     if failures:

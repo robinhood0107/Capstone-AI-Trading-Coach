@@ -1,0 +1,173 @@
+{
+  "answerModes": [
+    "CONCISE",
+    "DETAILED"
+  ],
+  "askRequest": {
+    "forbiddenBodyFields": [
+      "embeddingPolicyId",
+      "embeddingProfileId",
+      "model",
+      "policyId",
+      "profileId",
+      "provider",
+      "sourceTier",
+      "topK"
+    ],
+    "idempotencyHeader": "X-Idempotency-Key",
+    "idempotencyKeyPattern": "^[A-Za-z0-9._~-]{16,128}$",
+    "maximumQuestionUnicodeScalars": 1000,
+    "maximumQuestionUtf8Bytes": 8192,
+    "minimumQuestionUnicodeScalars": 1,
+    "normalization": "NFC",
+    "relatedSymbolsMaximumItems": 5,
+    "relatedSymbolsPattern": "^[0-9]{6}$",
+    "route": "POST /api/v1/rag/ask",
+    "topicsMaximumItems": 5
+  },
+  "canonicalChunking": {
+    "boundaryStrategy": "MARKDOWN_HEADING_PARAGRAPH",
+    "maximumTargetTokens": 600,
+    "minimumTargetTokens": 400,
+    "overlapPercent": 0,
+    "oversizedTablePolicy": "REJECT",
+    "tableSplitAllowed": false
+  },
+  "contractId": "s4-rag-contract/v1",
+  "dimension": 1024,
+  "embeddingInputStrategies": [
+    "BGE_TRANSIENT_ADJACENT_CONTEXT_MAX_15",
+    "VOYAGE_CONTEXTUAL_DOCUMENT_BATCH_OVERLAP_0"
+  ],
+  "embeddingOperations": [
+    "DOCUMENT_EMBED",
+    "QUERY_EMBED"
+  ],
+  "forbiddenProfileIds": [
+    "voyage_context_3_1024_v1"
+  ],
+  "generationStatuses": [
+    "REGISTERED",
+    "PLANNED",
+    "MATERIALIZING",
+    "MATERIALIZED",
+    "EVAL_PASSED",
+    "ACTIVE",
+    "FAILED_FINAL",
+    "DISABLED"
+  ],
+  "policies": [
+    {
+      "defaultProfileId": "bge_m3_local_1024_v1",
+      "documentProfileId": "bge_m3_local_1024_v1",
+      "outboundProviderCalls": false,
+      "perRequestFallback": false,
+      "policyId": "bge_only_v1",
+      "providerOutageFallback": false,
+      "queryProfileId": "bge_m3_local_1024_v1",
+      "transition": {
+        "adminApprovalRequired": false,
+        "allowed": false,
+        "targetProfileId": null,
+        "trigger": null
+      }
+    },
+    {
+      "defaultProfileId": "voyage_context_4_1024_v1",
+      "documentProfileId": "voyage_context_4_1024_v1",
+      "outboundProviderCalls": true,
+      "perRequestFallback": false,
+      "policyId": "voyage_only_v1",
+      "providerOutageFallback": false,
+      "queryProfileId": "voyage_context_4_1024_v1",
+      "transition": {
+        "adminApprovalRequired": false,
+        "allowed": false,
+        "targetProfileId": null,
+        "trigger": null
+      }
+    },
+    {
+      "defaultProfileId": "bge_m3_local_1024_v1",
+      "documentProfileId": "bge_m3_local_1024_v1",
+      "outboundProviderCalls": false,
+      "perRequestFallback": false,
+      "policyId": "bge_then_voyage_on_sla_v1",
+      "providerOutageFallback": false,
+      "queryProfileId": "bge_m3_local_1024_v1",
+      "transition": {
+        "adminApprovalRequired": true,
+        "allowed": true,
+        "targetProfileId": "voyage_context_4_1024_v1",
+        "trigger": "BGE_WARM_P95_SLA_FAILED_AND_VOYAGE_EVAL_PASSED"
+      }
+    }
+  ],
+  "policyIds": [
+    "bge_only_v1",
+    "voyage_only_v1",
+    "bge_then_voyage_on_sla_v1"
+  ],
+  "profileIds": [
+    "bge_m3_local_1024_v1",
+    "voyage_context_4_1024_v1"
+  ],
+  "profiles": [
+    {
+      "artifactFormat": "ONNX_DATA_ONLY",
+      "canonicalChunkOverlapPercent": 0,
+      "dimension": 1024,
+      "embeddingInputStrategy": "BGE_TRANSIENT_ADJACENT_CONTEXT_MAX_15",
+      "externalProvider": false,
+      "freeTokenEligible": false,
+      "model": "BAAI/bge-m3",
+      "operationAllowlist": [
+        "DOCUMENT_EMBED",
+        "QUERY_EMBED"
+      ],
+      "profileId": "bge_m3_local_1024_v1",
+      "provider": "LOCAL",
+      "providerEndpoint": null,
+      "providerOrigin": null,
+      "transientAdjacentContextMaxPercent": 15,
+      "trustRemoteCode": false,
+      "vectorSpace": "bge_m3_local_1024_v1"
+    },
+    {
+      "artifactFormat": "PROVIDER_API_RESPONSE_DATA_ONLY",
+      "canonicalChunkOverlapPercent": 0,
+      "dimension": 1024,
+      "embeddingInputStrategy": "VOYAGE_CONTEXTUAL_DOCUMENT_BATCH_OVERLAP_0",
+      "externalProvider": true,
+      "freeTokenEligible": true,
+      "model": "voyage-context-4",
+      "operationAllowlist": [
+        "DOCUMENT_EMBED",
+        "QUERY_EMBED"
+      ],
+      "profileId": "voyage_context_4_1024_v1",
+      "provider": "VOYAGE",
+      "providerEndpoint": "POST /v1/contextualizedembeddings",
+      "providerOrigin": "https://api.voyageai.com",
+      "transientAdjacentContextMaxPercent": 0,
+      "trustRemoteCode": false,
+      "vectorSpace": "voyage_context_4_1024_v1"
+    }
+  ],
+  "schemaVersion": 1,
+  "sourceMetadata": {
+    "maximumItems": 30,
+    "publicSourceType": "PROJECT_SOURCE_CARD",
+    "queryParametersAllowed": false,
+    "rawChunkIncluded": false,
+    "rawUpstreamBodyIncluded": false
+  },
+  "topicAllowlist": [
+    "API",
+    "DATA",
+    "FINANCIAL_ENGINEERING",
+    "METHODOLOGY",
+    "PRODUCT_RISK",
+    "RISK"
+  ]
+}

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import subprocess
 import unittest
 from copy import deepcopy
 from pathlib import Path
@@ -77,25 +78,46 @@ PROTO_ABSENCE_CURRENT_TENSE_PATTERNS = (
     "proto 파일은 아직 없",
     "proto 파일이 필요하면",
 )
+NON_PUBLIC_LOCAL_REFERENCE_MARKER = b"private" + b"-reference"
 
 
-def public_markdown_paths() -> list[Path]:
-    excluded_parts = {
-        ".git",
-        ".gradle",
-        ".venv",
-        "build",
-        "node_modules",
-        "private-reference",
-    }
+def repository_candidate_paths() -> list[Path]:
+    completed = subprocess.run(
+        ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+    )
     return sorted(
-        path
-        for path in REPO_ROOT.rglob("*.md")
-        if excluded_parts.isdisjoint(path.relative_to(REPO_ROOT).parts)
+        REPO_ROOT / relative
+        for raw_path in completed.stdout.split(b"\0")
+        if raw_path
+        for relative in (Path(raw_path.decode("utf-8")),)
     )
 
 
+def public_markdown_paths() -> list[Path]:
+    return [path for path in repository_candidate_paths() if path.suffix == ".md"]
+
+
 class S23MarkdownContractDriftTest(unittest.TestCase):
+    def test_publishable_repository_candidates_do_not_name_local_reference_storage(
+        self,
+    ) -> None:
+        candidates = repository_candidate_paths()
+        self.assertGreater(len(candidates), 0)
+        for path in candidates:
+            relative = path.relative_to(REPO_ROOT).as_posix()
+            with self.subTest(path=relative):
+                self.assertNotIn(
+                    NON_PUBLIC_LOCAL_REFERENCE_MARKER,
+                    relative.encode("utf-8"),
+                )
+                self.assertNotIn(
+                    NON_PUBLIC_LOCAL_REFERENCE_MARKER,
+                    path.read_bytes(),
+                )
+
     def test_public_markdown_is_utf8_lf_terminated_and_free_of_stale_contract_tokens(
         self,
     ) -> None:
@@ -249,6 +271,8 @@ class S23MarkdownContractDriftTest(unittest.TestCase):
             "POSTGRES_MARKET_WRITER_PASSWORD",
             "POSTGRES_PORTFOLIO_WRITER_PASSWORD",
             "POSTGRES_RISK_WRITER_PASSWORD",
+            "POSTGRES_RAG_WRITER_PASSWORD",
+            "POSTGRES_RAG_QUERY_PASSWORD",
         ):
             with self.subTest(variable=variable):
                 self.assertIn(f"{variable}: validation-dummy-", workflow)

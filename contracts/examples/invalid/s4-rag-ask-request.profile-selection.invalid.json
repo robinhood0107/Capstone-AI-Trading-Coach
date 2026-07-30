@@ -1,0 +1,12 @@
+{
+  "answerMode": "CONCISE",
+  "embeddingProfileId": "bge_m3_local_1024_v1",
+  "question": "KIS 일봉 조정주가 사용 시 어떤 한계를 인용해야 하나요?",
+  "relatedSymbols": [
+    "005930"
+  ],
+  "topics": [
+    "API",
+    "PRODUCT_RISK"
+  ]
+}

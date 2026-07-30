@@ -35,6 +35,31 @@ account/broker/order physical call은 모두 0건이다.
 
 완료된 A4/B1/KRX11 approval packet은 재사용하지 않는다. 이후 실제 provider 호출은 새 HEAD·명령·기준일·호출 예산·TTL에 결속한 별도 승인 뒤에만 실행한다.
 
+### 교차시장·애널리스트 오버레이 계획 상태
+
+교차시장 계획 타당성은 `PLAN_FEASIBILITY=GO`이고, 현재 구현 상태는
+`IMPLEMENTATION=SPEC_ONLY / NOT_IMPLEMENTED / PLANNED`다. 월 데이터 비용 목표는 `0원`,
+offline fixture와 지연/EOD가 우선이다. 기관용 데이터 제품과 실시간 SOX/VIX feed는
+post-P1 선택지이며 완주 조건이 아니다. 새 agent framework·별도 cloud·Kafka hard
+dependency 없이 기존 Spring/Python/PostgreSQL/Redis/gRPC를 재사용한다.
+
+순서 0은 관련 명세를 EOF까지 읽고 receipt를 남기는 read-only `S4.READ`다. 이후 첫 변경은
+S4.8A contract-only PR이며, 이것이 검증·병합되기 전 runtime 구현 PR은 시작하지 않는다.
+S4.8A/B/C·S6.6·S6.7의 P1 최고 권한은 적용 대상 신규 BUY의
+`ALLOW → WARN`이며, 애널리스트·뉴스·RAG·LLM은 RiskDecision과 판단 hash를 바꾸지 않는다.
+기존 Decision/RAG/Signal v1/v2 payload에 추가하는 교차시장 필드는 0이다.
+
+42개는 integration target 조사 행 수이지 사용 가능한 API 수가 아니고, KIS 18개도
+fixture-first adapter 후보다. exact 42개 행과 exact 18개 allowlist의 authority는
+Git으로 추적하지 않는 로컬 전용 자료수급 레지스트리이며,
+공개 문서에는 전체 inventory를 복제하지 않는다.
+
+2026-07-30 계획 확정 변경은 Markdown 명세만 동기화한다. 이 변경 자체로
+Python/Kotlin/SQL, JSON Schema·fixture·catalog, OpenAPI, Gradle, 환경설정 또는 provider
+activation을 구현한 것으로 보지 않는다. 상세 순서는
+[최종 프로젝트 명세서의 S4~P1 실행 순서](docs/최종_프로젝트_명세서.md#171-2026-07-29-s4p1-실행-순서)를
+따른다.
+
 ## 워크스페이스 소유권
 
 | 경로 | 담당 | 상태 |
@@ -60,12 +85,16 @@ CRUD, S2.2 offline rule evaluator, S2.3 Decision runtime과 S2.4 Risk/Kill Switc
 constraint와 fixture-first KIS Mock adapter/gRPC boundary를 추가한다. provider를 호출하거나 live
 계좌·실주문을 열지 않으며, LIMIT 주문은 현재 KRX 호가단위 source가 pinned artifact로 검증되기
 전까지 `BROKERAGE_UNAVAILABLE`로 fail-closed한다.
-상세 개인 참고 노트는 GitHub에 올리지 않고 로컬
-`private-reference/` 폴더에서만 관리한다.
+로컬 전용 참고자료와 개인 파일 경로는 GitHub에 올리지 않는다.
+
+S4.0/S4.1/S4.7A는 source-card 계약과 정규화 RAG registry, owner-scoped source 조회,
+공식 근거 manifest와 안전한 로컬 입력 경계를 추가한다. S4.2+ generation runtime과
+provider/model/account/order physical call은 이 범위에 포함하지 않는다.
 
 ```bash
 cp .env.example .env
-# DB/Redis 및 collector/source-writer password, JWT issuer/audience, 목적별 signing/HMAC key와 두 attested demo credential bundle을 채운다.
+# DB/Redis, collector/source-writer/RAG writer/query password, JWT issuer/audience,
+# 목적별 signing/HMAC key와 두 attested demo credential bundle을 채운다.
 # bundle은 $ 포함 BCrypt hash 보존을 위해 single quote 안에 두며 plaintext demo password는 저장하지 않는다.
 # API key는 필요한 provider를 실제 호출할 때 운영자만 주입하며 커밋하지 않는다.
 docker compose --env-file .env -f infra/docker-compose.infra.yml up -d
@@ -79,11 +108,13 @@ cd workspaces/decision-platform/spring-api
 
 PostgreSQL runtime은 `decision_app`, S1.6 수집은 `decision_collector`, sanitized source append는
 `decision_market_writer`/`decision_portfolio_writer`/`decision_risk_writer`/
-`decision_fill_writer`, migration은 `flyway`, bootstrap 관리는 `POSTGRES_ADMIN_USER`로
-분리된다. 기존 `pgdata` volume에는 init script가 자동 재실행되지 않으므로, 기존 관리자
-이름/비밀번호를 보존하고 `.env.example`의 collector와 네 source-writer password를 추가해
-컨테이너를 올린 뒤 다음 명령을 한 번 실행한다. V6/V9/V14 적용 전에는 role을 먼저 만들고,
-migration 뒤 재실행하면 현재 table의 exact 권한을 복원한다. volume 삭제는 이 절차에 포함하지
+`decision_fill_writer`, RAG ingest/materialization은 `decision_rag_writer`, bounded active
+chunk retrieval은 `decision_rag_query`, migration은 `flyway`, bootstrap 관리는
+`POSTGRES_ADMIN_USER`로 분리된다. 기존 `pgdata` volume에는 init script가 자동 재실행되지
+않으므로, 기존 관리자 이름/비밀번호를 보존하고 `.env.example`의 collector, source-writer,
+`POSTGRES_RAG_WRITER_PASSWORD`, `POSTGRES_RAG_QUERY_PASSWORD`를 추가해 컨테이너를 올린 뒤
+다음 명령을 실행한다. V6/V9/V14/V16 적용 전에는 role을 먼저 만들고, migration 뒤 다시
+실행하면 현재 table과 function의 exact 권한을 복원한다. volume 삭제는 이 절차에 포함하지
 않는다. `decision_fill_writer`는 sanitized offline fill observation INSERT만 소유하며
 주문·이벤트·Flyway schema에는 접근하지 않는다.
 
@@ -91,6 +122,13 @@ migration 뒤 재실행하면 현재 table의 exact 권한을 복원한다. volu
 docker compose --env-file .env -f infra/docker-compose.infra.yml exec -T postgres \
   bash /docker-entrypoint-initdb.d/02-application-roles.sh
 ```
+
+V16은 기존 V2 RAG 다섯 table(`rag_sources`, `rag_chunks`, `rag_answers`, `rag_citations`,
+`rag_answer_feedback`)이 모두 비어 있을 때만 정규화 registry로 전환한다. 하나라도 row가
+있으면 자동 삭제나 강제 전환 없이 migration이 중단되므로 별도 승인된 migration packet으로
+처리한다. 기존 volume은 위 role bootstrap을 먼저 실행하고 V16을 적용한 뒤 같은 bootstrap을
+한 번 더 실행해 `decision_rag_writer`의 append/update allowlist와
+`decision_rag_query`의 bounded function `EXECUTE`만 복원한다.
 
 role bootstrap은 password DDL 전에 session의 statement/error-statement/duration/sample logging을
 모두 끄고 `current_setting`으로 effective 값을 검증한다. 하나라도 안전값이 아니면
@@ -117,4 +155,5 @@ S1.6 OpenDART online collector는 `.env.example`의 네 quota 값을 운영 evid
 - [S3.2 계약 변경 기록](contracts/changes/20260727-s3-2-internal-paper-ledger-contract.md)
 - [S3.3 체결 이벤트와 대사 계약](contracts/README.md#s33-체결-이벤트와-대사)
 - [S3.3 계약 변경 기록](contracts/changes/20260727-s3-3-fill-events-reconciliation-contract.md)
+- [S4.8 교차시장 계획 계약](contracts/README.md#s48-교차시장애널리스트-계획-계약)
 - S1.4X dependency amendment 재현: `workspaces/decision-platform/research/s1-4x-numeric-parity/README.md`

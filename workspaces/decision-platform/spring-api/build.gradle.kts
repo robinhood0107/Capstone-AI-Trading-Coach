@@ -202,6 +202,19 @@ tasks.named<ProcessResources>("processResources") {
     from(layout.projectDirectory.file("../../../contracts/schemas/s3-3-fill-page.schema.json")) {
         into("contracts")
     }
+    // S4 RAG profile/policy catalog도 public API가 임의 provider/model 문자열을 받지 않도록 exact bytes만 사용한다.
+    from(layout.projectDirectory.file("../../../contracts/catalogs/s4-rag-contract.v1.json")) {
+        into("contracts")
+    }
+    from(layout.projectDirectory.file("../../../contracts/catalogs/s4-rag-contract.v1.sha256.json")) {
+        into("contracts")
+    }
+    from(layout.projectDirectory.file("../../../contracts/schemas/s4-rag-ask-request.schema.json")) {
+        into("contracts")
+    }
+    from(layout.projectDirectory.file("../../../contracts/schemas/s4-rag-admin-policy-selection.schema.json")) {
+        into("contracts")
+    }
 }
 
 tasks.named<ProcessResources>("processTestResources") {
@@ -403,6 +416,49 @@ val verifyS33ContractResources by tasks.registering {
     }
 }
 
+val verifyS4RagContractResources by tasks.registering {
+    group = "verification"
+    description = "S4 RAG profile/policy catalog와 request schema의 exact byte equality를 검증한다."
+    dependsOn(tasks.named("processResources"))
+
+    doLast {
+        listOf(
+            "catalogs/s4-rag-contract.v1.json" to "s4-rag-contract.v1.json",
+            "catalogs/s4-rag-contract.v1.sha256.json" to "s4-rag-contract.v1.sha256.json",
+        ).forEach { (sourceRelative, copiedName) ->
+            val source =
+                layout.projectDirectory
+                    .file("../../../contracts/$sourceRelative")
+                    .asFile
+            val copied =
+                layout.buildDirectory
+                    .file("resources/main/contracts/$copiedName")
+                    .get()
+                    .asFile
+            check(copied.isFile && source.readBytes().contentEquals(copied.readBytes())) {
+                "S4 RAG contract resource $copiedName must be an exact canonical byte copy."
+            }
+        }
+        listOf(
+            "s4-rag-ask-request.schema.json",
+            "s4-rag-admin-policy-selection.schema.json",
+        ).forEach { fileName ->
+            val source =
+                layout.projectDirectory
+                    .file("../../../contracts/schemas/$fileName")
+                    .asFile
+            val copied =
+                layout.buildDirectory
+                    .file("resources/main/contracts/$fileName")
+                    .get()
+                    .asFile
+            check(copied.isFile && source.readBytes().contentEquals(copied.readBytes())) {
+                "S4 RAG contract resource $fileName must be an exact canonical byte copy."
+            }
+        }
+    }
+}
+
 openApi {
     apiDocsUrl.set("http://127.0.0.1:18080/v3/api-docs")
     outputDir.set(layout.buildDirectory)
@@ -517,4 +573,5 @@ tasks.named("check") {
     dependsOn(verifyS31ContractResources)
     dependsOn(verifyS32ContractResources)
     dependsOn(verifyS33ContractResources)
+    dependsOn(verifyS4RagContractResources)
 }

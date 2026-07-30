@@ -2946,6 +2946,63 @@
         ],
         "type": "object"
       },
+      "RagSourceListResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RagSourceResponse"
+            },
+            "maxItems": 30,
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "RagSourceResponse": {
+        "additionalProperties": false,
+        "description": "인증된 subject에게 노출 가능한 RAG source registry metadata",
+        "properties": {
+          "attribution": {
+            "type": "string"
+          },
+          "canonicalUrl": {
+            "type": "string"
+          },
+          "institution": {
+            "type": "string"
+          },
+          "lastCheckedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sourceId": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "topic": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "attribution",
+          "canonicalUrl",
+          "institution",
+          "lastCheckedAt",
+          "sourceId",
+          "title",
+          "topic"
+        ],
+        "type": "object"
+      },
       "ReconciliationProjection": {
         "properties": {
           "checkedAt": {
@@ -6244,6 +6301,267 @@
         ],
         "type": "object"
       },
+      "S4RagSourceListSuccessResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/RagSourceListResponse"
+          },
+          "error": {
+            "type": "null"
+          },
+          "requestId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "success": {
+            "const": true,
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ApiWarning"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "error",
+          "requestId",
+          "success",
+          "warnings"
+        ],
+        "type": "object"
+      },
+      "S4RagUnauthorizedErrorResponse": {
+        "additionalProperties": false,
+        "example": {
+          "error": {
+            "code": "UNAUTHORIZED",
+            "details": {},
+            "message": "Authentication is required."
+          },
+          "requestId": "req_20260723_example",
+          "success": false,
+          "warnings": []
+        },
+        "properties": {
+          "data": {
+            "type": "null"
+          },
+          "error": {
+            "additionalProperties": false,
+            "properties": {
+              "code": {
+                "const": "UNAUTHORIZED",
+                "type": "string"
+              },
+              "details": {
+                "additionalProperties": false,
+                "const": {},
+                "properties": {},
+                "type": "object"
+              },
+              "message": {
+                "const": "Authentication is required.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "details",
+              "message"
+            ],
+            "type": "object"
+          },
+          "requestId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "success": {
+            "const": false,
+            "type": "boolean"
+          },
+          "warnings": {
+            "const": [],
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "error",
+          "requestId",
+          "success",
+          "warnings"
+        ],
+        "type": "object"
+      },
+      "S4RagUnavailableErrorResponse": {
+        "additionalProperties": false,
+        "example": {
+          "error": {
+            "code": "RAG_UNAVAILABLE",
+            "details": {},
+            "message": "RAG source registry is unavailable."
+          },
+          "requestId": "req_20260723_example",
+          "success": false,
+          "warnings": []
+        },
+        "properties": {
+          "data": {
+            "type": "null"
+          },
+          "error": {
+            "additionalProperties": false,
+            "properties": {
+              "code": {
+                "const": "RAG_UNAVAILABLE",
+                "type": "string"
+              },
+              "details": {
+                "additionalProperties": false,
+                "const": {},
+                "properties": {},
+                "type": "object"
+              },
+              "message": {
+                "const": "RAG source registry is unavailable.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "details",
+              "message"
+            ],
+            "type": "object"
+          },
+          "requestId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "success": {
+            "const": false,
+            "type": "boolean"
+          },
+          "warnings": {
+            "const": [],
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "error",
+          "requestId",
+          "success",
+          "warnings"
+        ],
+        "type": "object"
+      },
+      "S4RagValidationErrorResponse": {
+        "additionalProperties": false,
+        "example": {
+          "error": {
+            "code": "VALIDATION_ERROR",
+            "details": {
+              "violations": [
+                {
+                  "field": "/query/sourceTier",
+                  "reason": "UNKNOWN_FIELD"
+                }
+              ]
+            },
+            "message": "Request validation failed."
+          },
+          "requestId": "req_20260723_example",
+          "success": false,
+          "warnings": []
+        },
+        "properties": {
+          "data": {
+            "type": "null"
+          },
+          "error": {
+            "additionalProperties": false,
+            "properties": {
+              "code": {
+                "const": "VALIDATION_ERROR",
+                "type": "string"
+              },
+              "details": {
+                "additionalProperties": false,
+                "properties": {
+                  "violations": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "field": {
+                          "maxLength": 512,
+                          "minLength": 1,
+                          "pattern": "^/(?:[^~/]|~0|~1)*(?:/(?:[^~/]|~0|~1)*)*$",
+                          "type": "string"
+                        },
+                        "reason": {
+                          "const": "UNKNOWN_FIELD",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "field",
+                        "reason"
+                      ],
+                      "type": "object"
+                    },
+                    "maxItems": 64,
+                    "minItems": 1,
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "violations"
+                ],
+                "type": "object"
+              },
+              "message": {
+                "const": "Request validation failed.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "details",
+              "message"
+            ],
+            "type": "object"
+          },
+          "requestId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "success": {
+            "const": false,
+            "type": "boolean"
+          },
+          "warnings": {
+            "const": [],
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "error",
+          "requestId",
+          "success",
+          "warnings"
+        ],
+        "type": "object"
+      },
       "SystemHealthResponse": {
         "properties": {
           "asOf": {
@@ -7959,6 +8277,57 @@
         "summary": "원칙 버전 이력 / List immutable Principle versions",
         "tags": [
           "principle-controller"
+        ]
+      }
+    },
+    "/api/v1/rag/sources": {
+      "get": {
+        "operationId": "listSources",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/S4RagSourceListSuccessResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/S4RagValidationErrorResponse"
+                }
+              }
+            },
+            "description": "Unexpected query parameter."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/S4RagUnauthorizedErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication is required."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/S4RagUnavailableErrorResponse"
+                }
+              }
+            },
+            "description": "RAG source registry is unavailable."
+          }
+        },
+        "summary": "인증된 subject에게 S4.1 RAG source registry metadata만 반환한다.",
+        "tags": [
+          "rag-controller"
         ]
       }
     },

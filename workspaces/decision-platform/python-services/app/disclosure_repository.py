@@ -19,12 +19,15 @@ from app.disclosure_rpc import (
     QueryCancellation,
     StoredDisclosureBatch,
     StoredDisclosureEvent,
+    StoredDisclosureIncompleteError,
+    StoredDisclosureOversizedError,
 )
 
 _SOURCE_ID = "opendart-structured-events"
 _QUERY_TIMEOUT_MS = 450
 _POOL_ACQUIRE_TIMEOUT_SECONDS = 0.45
 _POOL_MAX_SIZE = 8
+_MAX_EVENT_SOURCE_ROWS = 10_000
 _STATE_COMPLETENESS_OPERATIONS = ("bnkMngtPcsp",)
 _EXPECTED_READER_ROLE = "decision_disclosure_reader"
 _REQUIRED_SELECT_TABLES = (
@@ -156,7 +159,9 @@ class PostgresStoredDisclosureRepository:
                             ),
                         ).fetchall()
                         if len(event_id_rows) > 100:
-                            raise ValueError("stored disclosure event bound exceeded")
+                            raise StoredDisclosureOversizedError(
+                                "stored disclosure event bound exceeded"
+                            )
                         event_ids = [str(row["event_id"]) for row in event_id_rows]
                         cancellation.raise_if_cancelled()
                         event_rows = (
@@ -178,8 +183,8 @@ class PostgresStoredDisclosureRepository:
                                   AND corp_code = %s
                                   AND occurred_on BETWEEN %s AND %s
                                   AND event_id = ANY(%s)
-                                ORDER BY occurred_on, event_code, receipt_no, source_ref
-                                LIMIT 101
+                                ORDER BY occurred_on, event_code, receipt_no, event_id, source_ref
+                                LIMIT %s
                                 """,
                                 (
                                     symbol,
@@ -187,11 +192,16 @@ class PostgresStoredDisclosureRepository:
                                     window_from,
                                     window_to,
                                     event_ids,
+                                    _MAX_EVENT_SOURCE_ROWS + 1,
                                 ),
                             ).fetchall()
                             if event_ids
                             else []
                         )
+                        if len(event_rows) > _MAX_EVENT_SOURCE_ROWS:
+                            raise StoredDisclosureIncompleteError(
+                                "stored disclosure source reference row bound exceeded"
+                            )
                         cancellation.raise_if_cancelled()
                         cursor_rows = connection.execute(
                             """
@@ -279,7 +289,9 @@ def _events_from_rows(
                 occurred_on=_date(first["occurred_on"]),
                 observed_at=_datetime(first["observed_at"]),
                 mapping_version=mapping_version,
-                source_refs=tuple(sorted(str(row["source_ref"]) for row in group)),
+                source_refs=tuple(
+                    sorted({str(row["source_ref"]) for row in group})
+                ),
                 attributes=attributes,
             )
         )

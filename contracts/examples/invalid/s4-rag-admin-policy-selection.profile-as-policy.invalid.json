@@ -1,0 +1,5 @@
+{
+  "approvedAt": "2026-07-29T00:00:00Z",
+  "policyId": "voyage_context_4_1024_v1",
+  "reason": "BGE warm p95 failed and Voyage evaluation passed with admin approval."
+}

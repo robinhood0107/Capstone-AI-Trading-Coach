@@ -194,16 +194,16 @@ def test_clean_repository_guard_ignores_ignored_files_and_rejects_all_dirty_stat
     _run_git(repository, "init")
     _run_git(repository, "config", "user.name", "S3 Test")
     _run_git(repository, "config", "user.email", "s3-test@example.invalid")
-    (repository / ".gitignore").write_text(".env\nprivate-reference/\n", encoding="utf-8")
+    (repository / ".gitignore").write_text(".env\nlocal-only-notes/\n", encoding="utf-8")
     tracked = repository / "tracked.txt"
     tracked.write_text("base\n", encoding="utf-8")
     _run_git(repository, "add", ".gitignore", "tracked.txt")
     _run_git(repository, "commit", "-m", "test fixture")
 
     (repository / ".env").write_text("SECRET=ignored\n", encoding="utf-8")
-    ignored_private = repository / "private-reference"
-    ignored_private.mkdir()
-    (ignored_private / "note.md").write_text("ignored\n", encoding="utf-8")
+    ignored_notes = repository / "local-only-notes"
+    ignored_notes.mkdir()
+    (ignored_notes / "note.md").write_text("ignored\n", encoding="utf-8")
     clean_repository_guard(repository)
 
     untracked = repository / "untracked.txt"

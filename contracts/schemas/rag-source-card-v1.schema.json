@@ -1,0 +1,328 @@
+{
+  "$id": "contracts/schemas/rag-source-card-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "evidenceClass": {
+            "const": "MODEL_ESTIMATOR"
+          }
+        },
+        "required": [
+          "evidenceClass"
+        ]
+      },
+      "then": {
+        "properties": {
+          "modelAssumptions": {
+            "minItems": 1
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "evidenceClass": {
+            "const": "OFFICIAL_API_DOCUMENTATION"
+          }
+        },
+        "required": [
+          "evidenceClass"
+        ]
+      },
+      "then": {
+        "properties": {
+          "institution": {
+            "enum": [
+              "ecos",
+              "kis",
+              "opendart"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "evidenceClass": {
+            "const": "OFFICIAL_SERVICE_DOCUMENTATION"
+          }
+        },
+        "required": [
+          "evidenceClass"
+        ]
+      },
+      "then": {
+        "properties": {
+          "institution": {
+            "enum": [
+              "krx"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "evidenceClass": {
+            "const": "OFFICIAL_PRODUCT_DOCUMENTATION"
+          }
+        },
+        "required": [
+          "evidenceClass"
+        ]
+      },
+      "then": {
+        "properties": {
+          "institution": {
+            "enum": [
+              "samsungfund"
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "properties": {
+    "accessLevel": {
+      "enum": [
+        "PUBLIC",
+        "INTERNAL"
+      ]
+    },
+    "accessNote": {
+      "maxLength": 1000,
+      "minLength": 8,
+      "type": "string"
+    },
+    "adoptedSession": {
+      "const": "S4.7A"
+    },
+    "allowedUses": {
+      "items": {
+        "maxLength": 1000,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 12,
+      "minItems": 1,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "attribution": {
+      "maxLength": 500,
+      "minLength": 2,
+      "type": "string"
+    },
+    "canonicalUrl": {
+      "format": "uri",
+      "maxLength": 2048,
+      "pattern": "^https://",
+      "type": "string"
+    },
+    "canonicalUrlSha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "cardId": {
+      "pattern": "^card_[a-z0-9][a-z0-9_]*_[0-9]{3}$",
+      "type": "string"
+    },
+    "claim": {
+      "maxLength": 1000,
+      "minLength": 20,
+      "type": "string"
+    },
+    "contradicts": {
+      "items": {
+        "pattern": "^card_[a-z0-9][a-z0-9_]*_[0-9]{3}$",
+        "type": "string"
+      },
+      "maxItems": 10,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "evidenceClass": {
+      "enum": [
+        "OFFICIAL_API_DOCUMENTATION",
+        "OFFICIAL_SERVICE_DOCUMENTATION",
+        "OFFICIAL_PRODUCT_DOCUMENTATION",
+        "MODEL_ESTIMATOR"
+      ]
+    },
+    "evidenceContentSha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "externalProcessingAllowed": {
+      "const": false
+    },
+    "forbiddenInferences": {
+      "items": {
+        "maxLength": 1000,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 12,
+      "minItems": 1,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "institution": {
+      "maxLength": 64,
+      "pattern": "^[a-z0-9][a-z0-9_]*$",
+      "type": "string"
+    },
+    "licenseNote": {
+      "maxLength": 1000,
+      "minLength": 8,
+      "type": "string"
+    },
+    "limitations": {
+      "items": {
+        "maxLength": 1000,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 12,
+      "minItems": 1,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "modelAssumptions": {
+      "items": {
+        "maxLength": 1000,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 12,
+      "minItems": 0,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "representativeQuestions": {
+      "items": {
+        "maxLength": 500,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 5,
+      "minItems": 1,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "retentionDays": {
+      "maximum": 3650,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "retentionOwner": {
+      "const": "python-rag-corpus-privacy"
+    },
+    "schemaVersion": {
+      "const": "1"
+    },
+    "sourceId": {
+      "pattern": "^src_project_[a-z0-9][a-z0-9_]*_[0-9]{3}$",
+      "type": "string"
+    },
+    "sourceType": {
+      "const": "PROJECT_SOURCE_CARD"
+    },
+    "status": {
+      "enum": [
+        "VERIFIED",
+        "BLOCKED_EVIDENCE",
+        "RETIRED"
+      ]
+    },
+    "tier": {
+      "const": "PROJECT"
+    },
+    "title": {
+      "maxLength": 300,
+      "minLength": 2,
+      "type": "string"
+    },
+    "topic": {
+      "maxLength": 128,
+      "pattern": "^[a-z0-9][a-z0-9_]*$",
+      "type": "string"
+    },
+    "upstreamSourceIds": {
+      "items": {
+        "enum": [
+          "src_kis_openapi_overview_001",
+          "src_kis_marketdata_daily_001",
+          "src_kis_marketdata_price_001",
+          "src_kis_trading_cash_order_001",
+          "src_kis_account_balance_001",
+          "src_kis_market_calendar_001",
+          "src_kis_rate_limit_001",
+          "src_opendart_disclosure_search_001",
+          "src_opendart_corporation_code_001",
+          "src_opendart_financial_statement_001",
+          "src_opendart_major_report_001",
+          "src_ecos_api_overview_001",
+          "src_ecos_statistic_search_001",
+          "src_krx_openapi_service_catalog_001",
+          "src_krx_openapi_terms_001",
+          "src_krx_etf_etn_structure_001",
+          "src_krx_etn_risk_indicator_001",
+          "src_samsungfund_gold_futures_etf_001",
+          "src_naver_news_search_001",
+          "src_naver_legacy_sunset_001"
+        ],
+        "type": "string"
+      },
+      "maxItems": 5,
+      "minItems": 1,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "verifiedAt": {
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{1,6})?Z$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "sourceId",
+    "cardId",
+    "title",
+    "institution",
+    "topic",
+    "sourceType",
+    "tier",
+    "accessLevel",
+    "claim",
+    "evidenceClass",
+    "status",
+    "verifiedAt",
+    "accessNote",
+    "licenseNote",
+    "attribution",
+    "canonicalUrl",
+    "canonicalUrlSha256",
+    "evidenceContentSha256",
+    "upstreamSourceIds",
+    "retentionOwner",
+    "retentionDays",
+    "externalProcessingAllowed",
+    "adoptedSession",
+    "contradicts",
+    "modelAssumptions",
+    "limitations",
+    "allowedUses",
+    "forbiddenInferences",
+    "representativeQuestions"
+  ],
+  "title": "RAG project source card front matter v1",
+  "type": "object"
+}

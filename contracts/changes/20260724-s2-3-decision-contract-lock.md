@@ -122,9 +122,8 @@ test fixture는 test source set/profile과 Testcontainers 안에서만 INSERT할
 - CI는 Decision API/S2.2 hash를 설명하는 규범 Markdown에서 현물 `limitPrice`와 stale
   `contracts/openapi/api.openapi.yaml` 경로를 거부한다.
 - 파생 P2 문서는 `derivativeOrderIntent` namespace를 명시해 허용한다.
-- `private-reference/repo/**`, `private-reference/evidence/**`, frozen worktree mirror와 과거 실행
-  prompt는 비규범 역사 자료다. 내용을 재작성하지 않고, 현재 규범 문서의 supersession 표지만
-  사용한다.
+- 로컬 전용 참고자료·근거 자료, frozen worktree mirror와 과거 실행 prompt는 비규범 역사
+  자료다. 내용을 재작성하지 않고, 현재 규범 문서의 supersession 표지만 사용한다.
 
 ## 보안·운영 결과
 

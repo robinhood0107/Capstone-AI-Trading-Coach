@@ -741,7 +741,7 @@ class DecisionApiIntegrationTest(
     }
 
     @Test
-    fun `Kill Switch activation cannot miss an in flight decision persistence`() {
+    fun `Kill Switch activation lock wait is bounded without partial mutation`() {
         val principleId = insertPrinciple("usr_demo_user", "GUIDE", suffix = "912")
         val token = login("demo-user", userPassword())
         installSlowDecisionTrigger()
@@ -769,10 +769,11 @@ class DecisionApiIntegrationTest(
             val evaluated = decision.get(15, TimeUnit.SECONDS)
 
             assertEquals(200, evaluated.response.status)
-            assertEquals(200, activation.response.status)
+            assertEquals(503, activation.response.status)
+            assertEquals("RISK_UNAVAILABLE", json(activation).at("/error/code").stringValue())
             val decisionId = json(evaluated).at("/data/decisionId").stringValue()
             assertEquals(
-                1,
+                0,
                 count(
                     """
                     select count(*) from decision_invalidations
@@ -781,6 +782,16 @@ class DecisionApiIntegrationTest(
                     decisionId,
                 ),
             )
+            assertEquals(
+                0,
+                count(
+                    """
+                    select count(*) from risk_kill_switch_transitions
+                    where request_id = 'req-risk-kill-race'
+                    """.trimIndent(),
+                ),
+            )
+            assertEquals(0, count("select count(*) from risk_kill_switch where active"))
         } finally {
             executor.shutdownNow()
         }

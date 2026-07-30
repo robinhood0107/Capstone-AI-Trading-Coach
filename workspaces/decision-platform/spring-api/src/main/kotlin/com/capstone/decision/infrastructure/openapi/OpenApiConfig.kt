@@ -1,7 +1,9 @@
 package com.capstone.decision.infrastructure.openapi
 
+import com.capstone.decision.api.rag.RagSourceListResponse
 import com.capstone.decision.application.principle.CatalogRuleDefinition
 import com.capstone.decision.application.principle.PrincipleContract
+import io.swagger.v3.core.converter.ModelConverters
 import io.swagger.v3.core.util.Json31
 import io.swagger.v3.oas.models.Components
 import io.swagger.v3.oas.models.OpenAPI
@@ -207,6 +209,111 @@ class OpenApiConfig {
                                 ),
                         ),
                     exampleDetails = mapOf("maxBytes" to REQUEST_MAX_BYTES),
+                ),
+            )
+        }
+
+    @Bean
+    fun ragContractSchemas(): OpenApiCustomizer =
+        // 실제 wire 응답은 공통 envelope이므로 data 객체와 성공 응답 schema를 분리해 고정한다.
+        OpenApiCustomizer { openApi ->
+            // response annotation을 envelope로 교체해도 중첩 DTO component가 누락되지 않게 명시적으로 해석한다.
+            ModelConverters
+                .getInstance()
+                .readAll(RagSourceListResponse::class.java)
+                .forEach(openApi.components::addSchemas)
+            openApi.components.schemas.getValue(S4_RAG_SOURCE_COMPONENT).also {
+                // OAS 3.1 validator가 scalar payload에 object 전용 제약을 건너뛰지 않게 타입도 명시한다.
+                it.types = linkedSetOf("object")
+                it.required = S4_RAG_SOURCE_FIELDS
+                it.additionalProperties = false
+                // 등록 직후 아직 check 이력이 없는 active source도 exact 7-field projection에서 null을 유지한다.
+                it.properties["lastCheckedAt"] =
+                    Schema<Any>()
+                        .types(linkedSetOf("string", "null"))
+                        .format("date-time")
+            }
+            openApi.components.schemas.getValue(S4_RAG_SOURCE_LIST_COMPONENT).also {
+                it.types = linkedSetOf("object")
+                it.required = listOf("items")
+                it.additionalProperties = false
+                it.properties["items"] =
+                    ArraySchema()
+                        .items(schemaRef(S4_RAG_SOURCE_COMPONENT))
+                        .maxItems(S4_RAG_SOURCE_MAX_ITEMS)
+            }
+            openApi.components.addSchemas(
+                S4_RAG_SOURCE_LIST_ENVELOPE_COMPONENT,
+                successEnvelope(schemaRef(S4_RAG_SOURCE_LIST_COMPONENT)),
+            )
+            openApi.components.addSchemas(
+                S4_RAG_VALIDATION_ERROR_COMPONENT,
+                errorEnvelope(
+                    error =
+                        errorSchema(
+                            code = "VALIDATION_ERROR",
+                            message = "Request validation failed.",
+                            details =
+                                objectSchema(
+                                    properties =
+                                        linkedMapOf(
+                                            "violations" to
+                                                ArraySchema()
+                                                    .items(
+                                                        objectSchema(
+                                                            properties =
+                                                                linkedMapOf(
+                                                                    "field" to
+                                                                        StringSchema()
+                                                                            .minLength(1)
+                                                                            .maxLength(512)
+                                                                            .pattern(
+                                                                                "^/(?:[^~/]|~0|~1)*(?:/(?:[^~/]|~0|~1)*)*$",
+                                                                            ),
+                                                                    "reason" to StringSchema()._const("UNKNOWN_FIELD"),
+                                                                ),
+                                                            required = listOf("field", "reason"),
+                                                        ),
+                                                    ).minItems(1)
+                                                    .maxItems(64),
+                                        ),
+                                    required = listOf("violations"),
+                                ),
+                        ),
+                    exampleDetails =
+                        mapOf(
+                            "violations" to
+                                listOf(
+                                    mapOf(
+                                        "field" to "/query/sourceTier",
+                                        "reason" to "UNKNOWN_FIELD",
+                                    ),
+                                ),
+                        ),
+                ),
+            )
+            openApi.components.addSchemas(
+                S4_RAG_UNAUTHORIZED_ERROR_COMPONENT,
+                errorEnvelope(
+                    error =
+                        errorSchema(
+                            "UNAUTHORIZED",
+                            "Authentication is required.",
+                            emptyDetailsSchema(),
+                        ),
+                    exampleDetails = emptyMap(),
+                ),
+            )
+            openApi.components.addSchemas(
+                S4_RAG_UNAVAILABLE_ERROR_COMPONENT,
+                errorEnvelope(
+                    error =
+                        errorSchema(
+                            "RAG_UNAVAILABLE",
+                            "RAG source registry is unavailable.",
+                            emptyDetailsSchema(),
+                        ),
+                    exampleDetails = emptyMap(),
                 ),
             )
         }
@@ -620,6 +727,23 @@ class OpenApiConfig {
         private const val S21_CONTRACT_ID_EXTENSION = "x-s2-1-contract-id"
         private const val S21_CONTRACT_DIGEST_EXTENSION = "x-s2-1-contract-sha256"
         private const val S21_CONTRACT_ID = "s2-1-principle-contract/v1"
+        private const val S4_RAG_SOURCE_COMPONENT = "RagSourceResponse"
+        private const val S4_RAG_SOURCE_LIST_COMPONENT = "RagSourceListResponse"
+        private const val S4_RAG_SOURCE_LIST_ENVELOPE_COMPONENT = "S4RagSourceListSuccessResponse"
+        private const val S4_RAG_VALIDATION_ERROR_COMPONENT = "S4RagValidationErrorResponse"
+        private const val S4_RAG_UNAUTHORIZED_ERROR_COMPONENT = "S4RagUnauthorizedErrorResponse"
+        private const val S4_RAG_UNAVAILABLE_ERROR_COMPONENT = "S4RagUnavailableErrorResponse"
+        private const val S4_RAG_SOURCE_MAX_ITEMS = 30
+        private val S4_RAG_SOURCE_FIELDS =
+            listOf(
+                "sourceId",
+                "title",
+                "institution",
+                "topic",
+                "attribution",
+                "canonicalUrl",
+                "lastCheckedAt",
+            )
         private const val S23_CATALOG_RESOURCE = "contracts/s2-3-decision-contract.v1.json"
         private const val S23_REQUEST_SCHEMA_RESOURCE = "contracts/s2-3-evaluate-order-request.schema.json"
         private const val S23_DECISION_SCHEMA_RESOURCE = "contracts/s2-3-decision-response.schema.json"

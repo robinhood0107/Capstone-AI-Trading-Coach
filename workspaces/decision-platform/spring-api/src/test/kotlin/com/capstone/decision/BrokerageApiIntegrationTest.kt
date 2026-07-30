@@ -51,7 +51,6 @@ import java.time.OffsetDateTime
 import java.time.ZoneOffset
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.TimeoutException
 import javax.sql.DataSource
 
 // S3.1 mock order path는 실제 KIS/provider 호출 없이 PostgreSQL ledger와 Redis-free durable idempotency만 검증한다.
@@ -2203,7 +2202,7 @@ class BrokerageApiIntegrationTest(
     }
 
     @Test
-    fun `order sink serializes with a concurrent Kill Switch activation`() {
+    fun `order sink lock wait is bounded and fails closed during Kill Switch activation`() {
         val token = login("demo-user", userPassword())
         val decisionId = createDecision(token, suffix = "08", order = orderIntent())
         val executor = Executors.newSingleThreadExecutor()
@@ -2249,24 +2248,13 @@ class BrokerageApiIntegrationTest(
                             orderIntent(),
                         )
                     }
-                val completedBeforeActivationCommit =
-                    try {
-                        responseFuture.get(750, TimeUnit.MILLISECONDS)
-                        true
-                    } catch (_: TimeoutException) {
-                        false
-                    }
+                val response = responseFuture.get(3, TimeUnit.SECONDS)
 
                 activation.commit()
                 committed = true
-                val response = responseFuture.get(10, TimeUnit.SECONDS)
 
-                assertFalse(
-                    completedBeforeActivationCommit,
-                    "order persistence must wait for the locked Kill Switch generation",
-                )
-                assertEquals(422, response.response.status, response.response.contentAsString)
-                assertEquals("RISK_BLOCKED", json(response).at("/error/code").stringValue())
+                assertEquals(503, response.response.status, response.response.contentAsString)
+                assertEquals("BROKERAGE_UNAVAILABLE", json(response).at("/error/code").stringValue())
             } finally {
                 if (!committed) {
                     runCatching { activation.rollback() }

@@ -1,0 +1,30 @@
+{
+  "$id": "contracts/schemas/s4-rag-admin-policy-selection.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "approvedAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "policyId": {
+      "enum": [
+        "bge_only_v1",
+        "voyage_only_v1",
+        "bge_then_voyage_on_sla_v1"
+      ]
+    },
+    "reason": {
+      "maxLength": 300,
+      "minLength": 12,
+      "type": "string"
+    }
+  },
+  "required": [
+    "policyId",
+    "reason",
+    "approvedAt"
+  ],
+  "title": "S4 RAG admin policy pointer selection v1",
+  "type": "object"
+}

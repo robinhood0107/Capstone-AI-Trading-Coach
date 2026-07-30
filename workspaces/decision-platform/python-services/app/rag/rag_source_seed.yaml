@@ -1,0 +1,424 @@
+schemaVersion: '1'
+registryVersion: s4-rag-p0-upstream-v1
+generatedAt: '2026-07-29T00:00:00Z'
+sources:
+  - sourceId: src_kis_openapi_overview_001
+    title: KIS Open API 소개
+    institution: kis
+    topic: openapi_overview
+    sequence: 1
+    sourceType: UPSTREAM_REFERENCE
+    tier: OFFICIAL
+    accessLevel: PUBLIC
+    licenseDecision: REFERENCE_ONLY_TERMS_RESTRICTED
+    externalProcessingAllowed: false
+    initialProcessing: REFERENCE_ONLY
+    owner: python-rag-corpus-privacy
+    attribution: 한국투자증권 Open API
+    locator:
+      canonicalUrl: https://apiportal.koreainvestment.com/about-open-api
+      allowedOrigin: https://apiportal.koreainvestment.com
+      allowedPath: /about-open-api
+    retention:
+      mode: REFERENCE_METADATA_ONLY
+      days: 365
+      owner: python-rag-corpus-privacy
+  - sourceId: src_kis_marketdata_daily_001
+    title: KIS 기간별시세 pinned sample
+    institution: kis
+    topic: marketdata_daily
+    sequence: 1
+    sourceType: UPSTREAM_REFERENCE
+    tier: OFFICIAL
+    accessLevel: PUBLIC
+    licenseDecision: REFERENCE_ONLY_LICENSE_UNSPECIFIED
+    externalProcessingAllowed: false
+    initialProcessing: REFERENCE_ONLY
+    owner: python-rag-corpus-privacy
+    attribution: 한국투자증권 Open API GitHub sample
+    locator:
+      canonicalUrl: https://github.com/koreainvestment/open-trading-api/blob/b093e42ba32d1df5f5ddad7a71cb715cbc800832/examples_llm/domestic_stock/inquire_daily_itemchartprice/inquire_daily_itemchartprice.py
+      allowedOrigin: https://github.com
+      allowedPath: /koreainvestment/open-trading-api/blob/b093e42ba32d1df5f5ddad7a71cb715cbc800832/examples_llm/domestic_stock/inquire_daily_itemchartprice/inquire_daily_itemchartprice.py
+    retention:
+      mode: REFERENCE_METADATA_ONLY
+      days: 365
+      owner: python-rag-corpus-privacy
+  - sourceId: src_kis_marketdata_price_001
+    title: KIS 현재가 pinned sample
+    institution: kis
+    topic: marketdata_price
+    sequence: 1
+    sourceType: UPSTREAM_REFERENCE
+    tier: OFFICIAL
+    accessLevel: PUBLIC
+    licenseDecision: REFERENCE_ONLY_LICENSE_UNSPECIFIED
+    externalProcessingAllowed: false
+    initialProcessing: REFERENCE_ONLY
+    owner: python-rag-corpus-privacy
+    attribution: 한국투자증권 Open API GitHub sample
+    locator:
+      canonicalUrl: https://github.com/koreainvestment/open-trading-api/blob/b093e42ba32d1df5f5ddad7a71cb715cbc800832/examples_llm/domestic_stock/inquire_price/inquire_price.py
+      allowedOrigin: https://github.com
+      allowedPath: /koreainvestment/open-trading-api/blob/b093e42ba32d1df5f5ddad7a71cb715cbc800832/examples_llm/domestic_stock/inquire_price/inquire_price.py
+    retention:
+      mode: REFERENCE_METADATA_ONLY
+      days: 365
+      owner: python-rag-corpus-privacy
+  - sourceId: src_kis_trading_cash_order_001
+    title: KIS 현금주문 pinned sample
+    institution: kis
+    topic: trading_cash_order
+    sequence: 1
+    sourceType: UPSTREAM_REFERENCE
+    tier: OFFICIAL
+    accessLevel: PUBLIC
+    licenseDecision: REFERENCE_ONLY_LICENSE_UNSPECIFIED
+    externalProcessingAllowed: false
+    initialProcessing: REFERENCE_ONLY
+    owner: python-rag-corpus-privacy
+    attribution: 한국투자증권 Open API GitHub sample
+    locator:
+      canonicalUrl: https://github.com/koreainvestment/open-trading-api/blob/b093e42ba32d1df5f5ddad7a71cb715cbc800832/examples_llm/domestic_stock/order_cash/order_cash.py
+      allowedOrigin: https://github.com
+      allowedPath: /koreainvestment/open-trading-api/blob/b093e42ba32d1df5f5ddad7a71cb715cbc800832/examples_llm/domestic_stock/order_cash/order_cash.py
+    retention:
+      mode: REFERENCE_METADATA_ONLY
+      days: 365
+      owner: python-rag-corpus-privacy
+  - sourceId: src_kis_account_balance_001
+    title: KIS 잔고 pinned sample
+    institution: kis
+    topic: account_balance
+    sequence: 1
+    sourceType: UPSTREAM_REFERENCE
+    tier: OFFICIAL
+    accessLevel: PUBLIC
+    licenseDecision: REFERENCE_ONLY_LICENSE_UNSPECIFIED
+    externalProcessingAllowed: false
+    initialProcessing: REFERENCE_ONLY
+    owner: python-rag-corpus-privacy
+    attribution: 한국투자증권 Open API GitHub sample
+    locator:
+      canonicalUrl: https://github.com/koreainvestment/open-trading-api/blob/b093e42ba32d1df5f5ddad7a71cb715cbc800832/examples_llm/domestic_stock/inquire_balance/inquire_balance.py
+      allowedOrigin: https://github.com
+      allowedPath: /koreainvestment/open-trading-api/blob/b093e42ba32d1df5f5ddad7a71cb715cbc800832/examples_llm/domestic_stock/inquire_balance/inquire_balance.py
+    retention:
+      mode: REFERENCE_METADATA_ONLY
+      days: 365
+      owner: python-rag-corpus-privacy
+  - sourceId: src_kis_market_calendar_001
+    title: KIS 휴장일 pinned sample
+    institution: kis
+    topic: market_calendar
+    sequence: 1
+    sourceType: UPSTREAM_REFERENCE
+    tier: OFFICIAL
+    accessLevel: PUBLIC
+    licenseDecision: REFERENCE_ONLY_LICENSE_UNSPECIFIED
+    externalProcessingAllowed: false
+    initialProcessing: REFERENCE_ONLY
+    owner: python-rag-corpus-privacy
+    attribution: 한국투자증권 Open API GitHub sample
+    locator:
+      canonicalUrl: https://github.com/koreainvestment/open-trading-api/blob/b093e42ba32d1df5f5ddad7a71cb715cbc800832/examples_llm/domestic_stock/chk_holiday/chk_holiday.py
+      allowedOrigin: https://github.com
+      allowedPath: /koreainvestment/open-trading-api/blob/b093e42ba32d1df5f5ddad7a71cb715cbc800832/examples_llm/domestic_stock/chk_holiday/chk_holiday.py
+    retention:
+      mode: REFERENCE_METADATA_ONLY
+      days: 365
+      owner: python-rag-corpus-privacy
+  - sourceId: src_kis_rate_limit_001
+    title: KIS 호출 유량 공지
+    institution: kis
+    topic: rate_limit
+    sequence: 1
+    sourceType: UPSTREAM_REFERENCE
+    tier: OFFICIAL
+    accessLevel: PUBLIC
+    licenseDecision: REFERENCE_ONLY_TERMS_RESTRICTED
+    externalProcessingAllowed: false
+    initialProcessing: REFERENCE_ONLY
+    owner: python-rag-corpus-privacy
+    attribution: 한국투자증권 Open API 공지
+    locator:
+      canonicalUrl: https://apiportal.koreainvestment.com/community/10000000-0000-0011-0000-000000000001/post/d0d1a83f-6f8d-4437-9700-6d26702fd989
+      allowedOrigin: https://apiportal.koreainvestment.com
+      allowedPath: /community/10000000-0000-0011-0000-000000000001/post/d0d1a83f-6f8d-4437-9700-6d26702fd989
+    retention:
+      mode: REFERENCE_METADATA_ONLY
+      days: 365
+      owner: python-rag-corpus-privacy
+  - sourceId: src_opendart_disclosure_search_001
+    title: OpenDART 공시검색
+    institution: opendart
+    topic: disclosure_search
+    sequence: 1
+    sourceType: UPSTREAM_REFERENCE
+    tier: OFFICIAL
+    accessLevel: PUBLIC
+    licenseDecision: REFERENCE_ONLY_TERMS_RESTRICTED
+    externalProcessingAllowed: false
+    initialProcessing: REFERENCE_ONLY
+    owner: python-rag-corpus-privacy
+    attribution: 금융감독원 OpenDART
+    locator:
+      canonicalUrl: https://opendart.fss.or.kr/guide/detail.do?apiGrpCd=DS001&apiId=2019001
+      allowedOrigin: https://opendart.fss.or.kr
+      allowedPath: /guide/detail.do?apiGrpCd=DS001&apiId=2019001
+    retention:
+      mode: REFERENCE_METADATA_ONLY
+      days: 365
+      owner: python-rag-corpus-privacy
+  - sourceId: src_opendart_corporation_code_001
+    title: OpenDART 고유번호
+    institution: opendart
+    topic: corporation_code
+    sequence: 1
+    sourceType: UPSTREAM_REFERENCE
+    tier: OFFICIAL
+    accessLevel: PUBLIC
+    licenseDecision: REFERENCE_ONLY_TERMS_RESTRICTED
+    externalProcessingAllowed: false
+    initialProcessing: REFERENCE_ONLY
+    owner: python-rag-corpus-privacy
+    attribution: 금융감독원 OpenDART
+    locator:
+      canonicalUrl: https://opendart.fss.or.kr/guide/detail.do?apiGrpCd=DS001&apiId=2019018
+      allowedOrigin: https://opendart.fss.or.kr
+      allowedPath: /guide/detail.do?apiGrpCd=DS001&apiId=2019018
+    retention:
+      mode: REFERENCE_METADATA_ONLY
+      days: 365
+      owner: python-rag-corpus-privacy
+  - sourceId: src_opendart_financial_statement_001
+    title: OpenDART 단일회사 주요계정
+    institution: opendart
+    topic: financial_statement
+    sequence: 1
+    sourceType: UPSTREAM_REFERENCE
+    tier: OFFICIAL
+    accessLevel: PUBLIC
+    licenseDecision: REFERENCE_ONLY_TERMS_RESTRICTED
+    externalProcessingAllowed: false
+    initialProcessing: REFERENCE_ONLY
+    owner: python-rag-corpus-privacy
+    attribution: 금융감독원 OpenDART
+    locator:
+      canonicalUrl: https://opendart.fss.or.kr/guide/detail.do?apiGrpCd=DS003&apiId=2019016
+      allowedOrigin: https://opendart.fss.or.kr
+      allowedPath: /guide/detail.do?apiGrpCd=DS003&apiId=2019016
+    retention:
+      mode: REFERENCE_METADATA_ONLY
+      days: 365
+      owner: python-rag-corpus-privacy
+  - sourceId: src_opendart_major_report_001
+    title: OpenDART 주요사항보고서 목록
+    institution: opendart
+    topic: major_report
+    sequence: 1
+    sourceType: UPSTREAM_REFERENCE
+    tier: OFFICIAL
+    accessLevel: PUBLIC
+    licenseDecision: REFERENCE_ONLY_TERMS_RESTRICTED
+    externalProcessingAllowed: false
+    initialProcessing: REFERENCE_ONLY
+    owner: python-rag-corpus-privacy
+    attribution: 금융감독원 OpenDART
+    locator:
+      canonicalUrl: https://opendart.fss.or.kr/guide/main.do?apiGrpCd=DS005
+      allowedOrigin: https://opendart.fss.or.kr
+      allowedPath: /guide/main.do?apiGrpCd=DS005
+    retention:
+      mode: REFERENCE_METADATA_ONLY
+      days: 365
+      owner: python-rag-corpus-privacy
+  - sourceId: src_ecos_api_overview_001
+    title: ECOS Open API
+    institution: ecos
+    topic: api_overview
+    sequence: 1
+    sourceType: UPSTREAM_REFERENCE
+    tier: OFFICIAL
+    accessLevel: PUBLIC
+    licenseDecision: REFERENCE_ONLY_TERMS_RESTRICTED
+    externalProcessingAllowed: false
+    initialProcessing: REFERENCE_ONLY
+    owner: python-rag-corpus-privacy
+    attribution: 한국은행 ECOS
+    locator:
+      canonicalUrl: https://ecos.bok.or.kr/api/
+      allowedOrigin: https://ecos.bok.or.kr
+      allowedPath: /api/
+    retention:
+      mode: REFERENCE_METADATA_ONLY
+      days: 365
+      owner: python-rag-corpus-privacy
+  - sourceId: src_ecos_statistic_search_001
+    title: ECOS StatisticSearch DevGuide locator
+    institution: ecos
+    topic: statistic_search
+    sequence: 1
+    sourceType: UPSTREAM_REFERENCE
+    tier: OFFICIAL
+    accessLevel: PUBLIC
+    licenseDecision: REFERENCE_ONLY_TERMS_RESTRICTED
+    externalProcessingAllowed: false
+    initialProcessing: REFERENCE_ONLY
+    owner: python-rag-corpus-privacy
+    attribution: 한국은행 ECOS
+    locator:
+      canonicalUrl: https://ecos.bok.or.kr/api/
+      allowedOrigin: https://ecos.bok.or.kr
+      allowedPath: /api/
+    retention:
+      mode: REFERENCE_METADATA_ONLY
+      days: 365
+      owner: python-rag-corpus-privacy
+  - sourceId: src_krx_openapi_service_catalog_001
+    title: KRX OpenAPI 서비스 목록
+    institution: krx
+    topic: openapi_service_catalog
+    sequence: 1
+    sourceType: UPSTREAM_REFERENCE
+    tier: OFFICIAL
+    accessLevel: PUBLIC
+    licenseDecision: REFERENCE_ONLY_TERMS_RESTRICTED
+    externalProcessingAllowed: false
+    initialProcessing: REFERENCE_ONLY
+    owner: python-rag-corpus-privacy
+    attribution: 한국거래소 KRX OpenAPI
+    locator:
+      canonicalUrl: https://openapi.krx.co.kr/contents/OPP/INFO/service/OPPINFO004.cmd
+      allowedOrigin: https://openapi.krx.co.kr
+      allowedPath: /contents/OPP/INFO/service/OPPINFO004.cmd
+    retention:
+      mode: REFERENCE_METADATA_ONLY
+      days: 365
+      owner: python-rag-corpus-privacy
+  - sourceId: src_krx_openapi_terms_001
+    title: KRX OpenAPI 이용약관
+    institution: krx
+    topic: openapi_terms
+    sequence: 1
+    sourceType: UPSTREAM_REFERENCE
+    tier: OFFICIAL
+    accessLevel: PUBLIC
+    licenseDecision: REFERENCE_ONLY_TERMS_RESTRICTED
+    externalProcessingAllowed: false
+    initialProcessing: REFERENCE_ONLY
+    owner: python-rag-corpus-privacy
+    attribution: 한국거래소 KRX OpenAPI
+    locator:
+      canonicalUrl: https://openapi.krx.co.kr/contents/OPP/INFO/OPPINFO002.jsp
+      allowedOrigin: https://openapi.krx.co.kr
+      allowedPath: /contents/OPP/INFO/OPPINFO002.jsp
+    retention:
+      mode: REFERENCE_METADATA_ONLY
+      days: 365
+      owner: python-rag-corpus-privacy
+  - sourceId: src_krx_etf_etn_structure_001
+    title: KRX 증권상품 소개
+    institution: krx
+    topic: etf_etn_structure
+    sequence: 1
+    sourceType: UPSTREAM_REFERENCE
+    tier: OFFICIAL
+    accessLevel: PUBLIC
+    licenseDecision: REFERENCE_ONLY_TERMS_RESTRICTED
+    externalProcessingAllowed: false
+    initialProcessing: REFERENCE_ONLY
+    owner: python-rag-corpus-privacy
+    attribution: 한국거래소 정보데이터시스템
+    locator:
+      canonicalUrl: https://open.krx.co.kr/contents/OPN/01/01030100/OPN01030100.jsp
+      allowedOrigin: https://open.krx.co.kr
+      allowedPath: /contents/OPN/01/01030100/OPN01030100.jsp
+    retention:
+      mode: REFERENCE_METADATA_ONLY
+      days: 365
+      owner: python-rag-corpus-privacy
+  - sourceId: src_krx_etn_risk_indicator_001
+    title: KRX ETN 투자지표
+    institution: krx
+    topic: etn_risk_indicator
+    sequence: 1
+    sourceType: UPSTREAM_REFERENCE
+    tier: OFFICIAL
+    accessLevel: PUBLIC
+    licenseDecision: REFERENCE_ONLY_TERMS_RESTRICTED
+    externalProcessingAllowed: false
+    initialProcessing: REFERENCE_ONLY
+    owner: python-rag-corpus-privacy
+    attribution: 한국거래소 정보데이터시스템
+    locator:
+      canonicalUrl: https://open.krx.co.kr/contents/OPN/01/01030302/OPN01030302.jsp
+      allowedOrigin: https://open.krx.co.kr
+      allowedPath: /contents/OPN/01/01030302/OPN01030302.jsp
+    retention:
+      mode: REFERENCE_METADATA_ONLY
+      days: 365
+      owner: python-rag-corpus-privacy
+  - sourceId: src_samsungfund_gold_futures_etf_001
+    title: 삼성자산운용 KODEX 골드선물 ETF 132030 공식 페이지
+    institution: samsungfund
+    topic: gold_futures_etf
+    sequence: 1
+    sourceType: UPSTREAM_REFERENCE
+    tier: OFFICIAL
+    accessLevel: PUBLIC
+    licenseDecision: REFERENCE_ONLY_TERMS_RESTRICTED
+    externalProcessingAllowed: false
+    initialProcessing: REFERENCE_ONLY
+    owner: python-rag-corpus-privacy
+    attribution: 삼성자산운용
+    locator:
+      canonicalUrl: https://www.samsungfund.com/etf/product/view.do?id=2ETF24
+      allowedOrigin: https://www.samsungfund.com
+      allowedPath: /etf/product/view.do?id=2ETF24
+    retention:
+      mode: REFERENCE_METADATA_ONLY
+      days: 365
+      owner: python-rag-corpus-privacy
+  - sourceId: src_naver_news_search_001
+    title: Naver 뉴스검색 API
+    institution: naver
+    topic: news_search
+    sequence: 1
+    sourceType: UPSTREAM_REFERENCE
+    tier: OFFICIAL
+    accessLevel: PUBLIC
+    licenseDecision: REFERENCE_ONLY_TERMS_RESTRICTED
+    externalProcessingAllowed: false
+    initialProcessing: REFERENCE_ONLY
+    owner: python-rag-corpus-privacy
+    attribution: 네이버 개발자센터
+    locator:
+      canonicalUrl: https://developers.naver.com/docs/serviceapi/search/news/news.md
+      allowedOrigin: https://developers.naver.com
+      allowedPath: /docs/serviceapi/search/news/news.md
+    retention:
+      mode: REFERENCE_METADATA_ONLY
+      days: 365
+      owner: python-rag-corpus-privacy
+  - sourceId: src_naver_legacy_sunset_001
+    title: Naver legacy 종료 공지
+    institution: naver
+    topic: legacy_sunset
+    sequence: 1
+    sourceType: UPSTREAM_REFERENCE
+    tier: OFFICIAL
+    accessLevel: PUBLIC
+    licenseDecision: REFERENCE_ONLY_TERMS_RESTRICTED
+    externalProcessingAllowed: false
+    initialProcessing: REFERENCE_ONLY
+    owner: python-rag-corpus-privacy
+    attribution: 네이버 개발자센터
+    locator:
+      canonicalUrl: https://developers.naver.com/notice/article/32973
+      allowedOrigin: https://developers.naver.com
+      allowedPath: /notice/article/32973
+    retention:
+      mode: REFERENCE_METADATA_ONLY
+      days: 365
+      owner: python-rag-corpus-privacy

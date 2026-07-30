@@ -59,9 +59,9 @@ class FlywayMigrationIntegrationTest(
     @Autowired private val riskSnapshotPort: RiskSnapshotPort,
 ) : SpringApiIntegrationTestBase() {
     @Test
-    fun `clean database applies V1 through V15 migrations and creates required objects`() {
+    fun `clean database applies V1 through V16 migrations and creates required objects`() {
         val versions = queryStrings("select version from flyway_schema_history where success order by installed_rank")
-        assertEquals((1..15).map(Int::toString), versions)
+        assertEquals((1..16).map(Int::toString), versions)
 
         val requiredTables =
             listOf(
@@ -76,7 +76,20 @@ class FlywayMigrationIntegrationTest(
                 "processed_event",
                 "artifact_ingest_state",
                 "rag_sources",
-                "rag_chunks",
+                "rag_source_revisions",
+                "rag_source_checks",
+                "rag_ingest_runs",
+                "rag_chunk_revisions",
+                "rag_corpus_generations",
+                "rag_generation_chunks",
+                "rag_chunk_embeddings",
+                "rag_embedding_policy_state",
+                "rag_embedding_policy_transitions",
+                "rag_sources_v2_legacy",
+                "rag_chunks_v2_legacy",
+                "rag_answers_v2_legacy",
+                "rag_citations_v2_legacy",
+                "rag_answer_feedback_v2_legacy",
                 "market_calendar",
                 "opendart_quota_usage",
                 "calendar_source_health",
@@ -124,8 +137,11 @@ class FlywayMigrationIntegrationTest(
         assertEquals("VIEW", tableType("market_calendar"))
         assertEquals(2, countRows("trading_sessions", "canonical_rule_version = 'V4_COMPAT_MIGRATION'"))
         assertEquals(2, countRows("trading_session_revisions", "canonical_rule_version = 'V4_COMPAT_MIGRATION'"))
-        assertTrue(indexExists("idx_chunks_trgm"), "expected pg_trgm index for Korean keyword search")
-        assertFalse(indexDefinitionLike("rag_chunks", "%ivfflat%"), "ivfflat must wait until real embeddings are loaded")
+        assertTrue(indexExists("rag_chunk_revisions_trgm_idx"), "expected pg_trgm index for Korean keyword search")
+        assertFalse(
+            indexDefinitionLike("rag_chunk_embeddings", "%ivfflat%"),
+            "ivfflat must wait until real embeddings are loaded",
+        )
     }
 
     @Test
@@ -1200,7 +1216,7 @@ class FlywayMigrationIntegrationTest(
             assertFalse(hasTablePrivilege("decision_app", table, "DELETE"), "unexpected source DELETE on $table")
             assertFalse(hasTablePrivilege("decision_app", table, "TRUNCATE"), "unexpected source TRUNCATE on $table")
         }
-        assertFalse(hasTablePrivilege("decision_app", "rag_answers", "SELECT"))
+        assertFalse(hasTablePrivilege("decision_app", "rag_answers_v2_legacy", "SELECT"))
         assertFalse(hasTablePrivilege("decision_app", "decision_idempotency_results", "SELECT"))
         assertFalse(hasTablePrivilege("decision_app", "flyway_schema_history", "SELECT"))
         assertFalse(hasSchemaPrivilege("decision_app", "CREATE"))
@@ -1266,7 +1282,7 @@ class FlywayMigrationIntegrationTest(
                 "schema_version, source_version, payload_json, source_ref, artifact_hash) values " +
                 "('forbidden', '005930', 'KIS_MOCK', 1, 'COMPLETE', now(), now(), 'v1', 'v1', " +
                 "'{}'::jsonb, repeat('a', 64), repeat('b', 64))",
-            "select * from rag_answers limit 0",
+            "select * from rag_answers_v2_legacy limit 0",
             "select * from decisions limit 0",
             "select * from audit_logs limit 0",
             "select * from event_outbox limit 0",

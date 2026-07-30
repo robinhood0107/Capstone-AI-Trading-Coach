@@ -1052,6 +1052,174 @@ Kill Switch 활성화 상태에서는 신규 Decision 평가와 S3 주문 제출
 `RISK_UNAVAILABLE`로 fail-closed한다. S3 주문 제출은 Decision 판단 시점의
 generation과 제출 직전 generation을 다시 비교한다.
 
+### 6.4 교차시장 위험 조회
+
+`GET /api/v1/risk/cross-market`
+
+> 계획 타당성: `PLAN_FEASIBILITY=GO`.
+> 구현 상태: `IMPLEMENTATION=SPEC_ONLY / NOT_IMPLEMENTED / PLANNED`.
+> 월 데이터 비용 목표는 `0원`, offline fixture와 지연/EOD가 우선이다. 기관용 데이터 제품과
+> 실시간 SOX/VIX feed는 post-P1 선택지이며 P1 완료 조건이 아니다. 새 agent framework·별도
+> cloud·Kafka는 hard dependency가 아니다.
+>
+> 순서 0 `S4.READ`는 관련 공개·private 명세 EOF receipt와 충돌 목록만 만드는 read-only
+> preflight다. 이후 S4.8A 일곱 계약·fixture·generator/parity만 담은 contract-only PR을
+> 검증·병합하기 전에는 runtime PR을 시작하지 않는다. S4.8A의 일곱 schema,
+> `s2-2-system-rule-catalog.v2`, contract-change, fixture/golden vector가 먼저 고정되기
+> 전에는 이 endpoint, 내부 port, DB projection과 아래 검증 항목을 구현 완료로 해석하지 않는다.
+> provider/live account/live order physical call은 0이며 P1 권한은 `WARN_ONLY`다.
+> 2026-07-30 계획 확정 변경은 Markdown만 동기화하며 OpenAPI, schema, fixture, catalog,
+> migration, runtime code와 환경설정을 생성하거나 수정하는 구현 세션이 아니다.
+> 조사한 42개는 integration target(39 machine 후보 계열 + 3 manual-link 원천)이지 공개
+> API나 사용 가능한 entitlement 수가 아니다. 로컬 KIS catalog 338개·명시적 모의지원
+> 43개와 이번 disabled adapter 후보 18개도 서로 다른 집계다. 현재 S4.8 활성
+> provider/adapter 수는 0이다. exact 42개 행과 exact 18개 allowlist의 authority는
+> 로컬 `private-reference/agent/금융공학_RAG_자료수급_레지스트리.md`이며
+> 공개 API 명세에는 전체 inventory를 복제하지 않는다.
+
+인증된 사용자의 latest-only 조회다. query parameter, cursor, 날짜, symbol, profile, provider
+selector를 받지 않는다. Spring은 provider를 호출하지 않고 저장 projection만 읽는다.
+
+응답 예시:
+
+```json
+{
+  "success": true,
+  "requestId": "req_opaque",
+  "data": {
+    "mode": "WARN_ONLY",
+    "evidenceMode": "SYNTHETIC_FIXTURE",
+    "validationStatus": "UNVALIDATED",
+    "performanceClaimAllowed": false,
+    "availability": "AVAILABLE",
+    "timing": {
+      "sourceAvailableAt": "2026-07-29T20:00:00Z",
+      "snapshotAvailableAt": "2026-07-29T20:15:00Z",
+      "xkrxOpenAt": "2026-07-30T00:00:00Z",
+      "detectionLatency": 900000,
+      "preOpenLeadTime": 13500000,
+      "preOpenState": "EARLY"
+    },
+    "semiconductorShockScore": 98.25,
+    "broadRiskOffScore": 94.10,
+    "fxStressScore": 72.00,
+    "domesticLeverageStressScore": 96.50,
+    "freshness": [
+      {
+        "component": "SEMICONDUCTOR",
+        "state": "AVAILABLE",
+        "asOf": "2026-07-29T20:00:00Z",
+        "freshUntil": "2026-07-30T00:30:00Z"
+      },
+      {
+        "component": "BROAD_MARKET",
+        "state": "AVAILABLE",
+        "asOf": "2026-07-29T20:00:00Z",
+        "freshUntil": "2026-07-30T00:30:00Z"
+      },
+      {
+        "component": "FX",
+        "state": "AVAILABLE",
+        "asOf": "2026-07-29T20:00:00Z",
+        "freshUntil": "2026-07-30T00:30:00Z"
+      },
+      {
+        "component": "DOMESTIC_AMPLIFICATION",
+        "state": "AVAILABLE",
+        "asOf": "2026-07-29T06:30:00Z",
+        "freshUntil": "2026-07-30T00:30:00Z"
+      }
+    ],
+    "configVersion": "cross-market-risk-config.v1",
+    "artifactHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "evidence": [
+      {
+        "evidenceId": "ev_opaque",
+        "classification": "MARKET_INTERPRETATION",
+        "relation": "REPORTED_AS_CAUSE",
+        "summary": "복수 증권사의 반도체 이익 추정치 하향 폭이 확대되었습니다.",
+        "counterargument": false
+      },
+      {
+        "evidenceId": "ev_counter_opaque",
+        "classification": "HYPOTHESIS",
+        "relation": "CONTRADICTS",
+        "summary": "가격 선행만으로 기술 뉴스의 인과를 확정할 수 없습니다.",
+        "counterargument": true
+      }
+    ]
+  },
+  "warnings": [],
+  "error": null
+}
+```
+
+응답 계약:
+
+| 필드 | 계약 |
+|---|---|
+| `mode` | `OFF | SHADOW | WARN_ONLY | ENFORCED`; P1은 `WARN_ONLY` |
+| `evidenceMode` | `SYNTHETIC_FIXTURE | HISTORICAL_REPLAY | PROSPECTIVE_SHADOW` |
+| `validationStatus` | `UNVALIDATED | VALIDATED`; synthetic은 항상 `UNVALIDATED` |
+| `performanceClaimAllowed` | synthetic은 항상 `false`; 검증된 historical/prospective만 `true` 가능 |
+| `availability` | `DISABLED | AVAILABLE | UNAVAILABLE | STALE | INCOMPLETE` |
+| `timing` | `sourceAvailableAt`은 snapshot의 필수 component에 실제 사용된 source들의 `availableAt` 최댓값이며 optional analyst/news 시각은 제외한다. duration 단위는 signed integer millisecond다. `detectionLatency = snapshotAvailableAt - sourceAvailableAt`, `preOpenLeadTime = XKRXOpen - snapshotAvailableAt`을 각각 보존하며 하나로 합치지 않는다. detection 음수는 future-time 위반으로 거부한다. `preOpenState`는 lead time이 양수/0/음수일 때 각각 `EARLY | AT_OPEN | LATE`이고 0으로 clamp하지 않는다. 적용할 XKRX open이 없을 때만 시각·lead를 nullable로 두고 `NOT_APPLICABLE`을 사용한다 |
+| 네 score | available일 때만 `0..100`, unavailable을 `0`으로 합성하지 않고 nullable |
+| `freshness` | 네 component를 정확히 한 번씩 포함하고 state는 `DISABLED | AVAILABLE | UNAVAILABLE | STALE | INCOMPLETE` |
+| `configVersion` | versioned exposure/scoring config ID |
+| `artifactHash` | bounded provenance/evidence를 포함할 수 있는 standalone snapshot canonical SHA-256. 자기 hash는 preimage에서 제외 |
+| `evidence` | 원인과 반론을 합쳐 최대 10개, 원문·인용문·provider body는 반환하지 않음 |
+
+`CONFIRMED_FACT`, `REPORTED_CLAIM`, `MARKET_INTERPRETATION`, `HYPOTHESIS`를 서로 바꾸어
+표시하지 않는다. 관계는 `PRECEDES`, `CO_MOVES_WITH`, `REPORTED_AS_CAUSE`,
+`CORROBORATES`, `CONTRADICTS`만 허용한다. 가격의 시간 선행은 `PRECEDES`일 뿐 인과 확정이
+아니다.
+
+증권사 PDF 기본값은 `MANUAL_LINK_ONLY`다. 별도 권리 확인을 거친
+`LICENSED_EPHEMERAL_LOCAL`에서도 parser/LLM projection은 `투자포인트`, `실적전망`,
+`Valuation`, `목표주가`, `위험요인`, `Disclaimer` 여섯 절과 사용자가 직접 확인한 bounded
+tag만 허용한다. `derivedDataAllowed=false`이면 파생 projection을 response·DB·artifact로
+전달하거나 저장하지 않고 임시 입력과 함께 폐기한다.
+
+내부 경계는 다음 하나다.
+
+```kotlin
+data class CrossMarketDecisionInput(
+    val snapshot: CrossMarketRiskSnapshot,
+    val exposure: CrossMarketExposure,
+)
+
+interface CrossMarketRiskPort {
+    fun load(request: EvaluationSourceRequest): CrossMarketDecisionInput
+}
+```
+
+`CrossMarketExposure`는 요청 symbol과 같은 `availableAt` 기준의 versioned catalog 결과이며
+Decision hash에 결속한다. 범위 밖과 미분류를 구분하고 미분류 종목을 추정하지 않는다. 공개
+GET DTO에는 이 내부 exposure를 노출하지 않는다.
+
+기존 Decision request/response, RAG ask/history, Signal v1/v2 payload에 추가하는 교차시장
+필드는 0이다. 위 `CrossMarketDecisionInput(snapshot, exposure)`는 내부 wrapper이고 이 별도
+planned GET DTO를 기존 payload에 끼워 넣지 않는다. 변경이 필요해지면 별도 breaking
+contract-change와 consumer 합의를 먼저 거친다.
+
+Decision/Risk/RAG 평가 중 provider fan-out은 0이다. `OFF`와 `SHADOW`는 주문 판단을 바꾸지
+않고, P1 `WARN_ONLY`는 신선한 적용 대상 신규 BUY의 `ALLOW`를 최대 `WARN`으로만 강화한다.
+결측·stale은 warning을 추가하되 P1에서 HOLD/BLOCK을 만들지 않는다. `ENFORCED`의 결측
+신규 BUY `HOLD`와 위험 `BLOCK`은 post-P1 별도 contract·사용자 승인을 통과한 뒤에만
+활성화한다. SELL, 기존 보유분 매도, 주문 생성, 수량 축소는 항상 범위 밖이다.
+
+`s2-2-system-rule-catalog.v1`은 그대로 유지한다. 후속 v2의 15번째 system rule
+`cross_market_new_buy_guard`와 `s2.2-metric-snapshot-v3`/hash v3 golden vector는 함께
+배포한다. 애널리스트 `BUY` 의견, 원인 설명, RAG/LLM 출력만 바꾸어도 RiskDecision과
+`semanticInputHash`는 변하지 않아야 한다.
+
+Decision v3 권위 hash에는 `mode, availability, four scores, component freshness,
+configVersion, versioned exposure`를 포함한다. `snapshotId`, `snapshotAsOf`, `availableAt`,
+`evidenceMode`, `performanceClaimAllowed`, standalone `artifactHash`, analyst/news/cause text,
+RAG/LLM 출력은 제외한다. standalone snapshot artifact와 Decision 판단 hash는 서로 다른
+canonical domain이다.
+
 ---
 
 ## 7. RAG API
@@ -1062,28 +1230,38 @@ RAG는 v1 핵심 구현이다. 단, RAG 답변은 매수/매도 지시가 아니
 
 `POST /api/v1/rag/ask`
 
+필수 header:
+
+```http
+X-Idempotency-Key: [A-Za-z0-9._~-]{16,128}
+```
+
 요청:
 
 ```json
 {
-  "question": "금 ETF와 금 ETN의 차이가 뭐야?",
-  "intent": "LEARNING",
+  "question": "금 ETF의 롤오버 위험은 무엇인가요?",
   "answerMode": "CONCISE",
   "relatedSymbols": ["132030"],
-  "principleId": "prc_001",
-  "relatedArtifacts": [
-    {
-      "artifactType": "NEWS_SENTIMENT_SUMMARY",
-      "artifactId": "news_sum_005930_20260623"
-    }
-  ],
-  "retrievalOptions": {
-    "sourceTiers": ["RUNTIME_PUBLIC", "PROJECT_ARTIFACT", "INTERNAL_STUDY_CARD"],
-    "topK": 8,
-    "requireCitation": true
-  }
+  "topics": ["PRODUCT_RISK"]
 }
 ```
+
+public ask body는 `contracts/schemas/s4-rag-ask-request.schema.json`을 따른다. 클라이언트는
+`embeddingProfileId`, `embeddingPolicyId`, `profileId`, `policyId`, `provider`, `model`, `topK`,
+`sourceTier`, `intent`, `principleId`, `orderId`, `artifactId`, `retrievalOptions`를 보낼 수 없다.
+profile/policy와 active generation 선택은 `contracts/catalogs/s4-rag-contract.v1.json`과
+append-only 관리자 승인 transition이 소유한다.
+
+입력 상한:
+
+| 필드 | 계약 |
+|---|---|
+| `question` | NFC 정규화 후 1~1,000 Unicode scalar, UTF-8 최대 8KiB |
+| `answerMode` | `CONCISE | DETAILED` |
+| `relatedSymbols` | 숫자 6자리, 중복 없는 최대 5개 |
+| `topics` | versioned allowlist, 중복 없는 최대 5개 |
+| unknown field | 거부 |
 
 응답:
 
@@ -1091,150 +1269,155 @@ RAG는 v1 핵심 구현이다. 단, RAG 답변은 매수/매도 지시가 아니
 {
   "success": true,
   "data": {
-    "answerId": "rag_ans_001",
-    "answer": "금 ETF는 금 가격을 추종하는 상장지수펀드이고, 금 ETN은 증권사가 발행한 상장지수증권입니다. 둘 다 금 가격에 연동될 수 있지만 발행 구조와 신용위험이 다릅니다.",
-    "confidence": 0.82,
-    "citationCoverage": 0.91,
+    "requestId": "req_opaque",
+    "answerId": "rag_ans_opaque",
+    "generationStatus": "ANSWERED",
+    "answer": "금 선물 ETF는 월물 교체 과정에서 현물 금과 다른 성과가 날 수 있습니다. [cit_1]",
+    "citationCoverage": 1.0,
     "retrievalFailure": false,
-    "sources": [
+    "citations": [
       {
-        "citationId": "cit_001",
-        "sourceId": "src_fss_etf_risk_001",
-        "title": "ETF 투자위험 체크포인트",
-        "sourceType": "OFFICIAL",
-        "url": "https://www.fss.or.kr/",
-        "snippet": "ETF 투자 시 추적오차, 괴리율, 기초자산 위험을 확인해야 한다.",
-        "usedInAnswer": true
+        "citationId": "cit_opaque",
+        "sourceId": "src_project_gold_futures_etf_132030_001",
+        "title": "132030 금선물 ETF의 구조와 롤오버 위험",
+        "sectionTitle": "핵심 한계",
+        "canonicalUrl": "https://www.samsungfund.com/etf/product/view.do?id=2ETF24"
       }
     ],
-    "guardrails": {
-      "investmentAdviceBlocked": true,
-      "missingCitationWarning": false,
-      "directAdviceBlocked": true
-    }
+    "guardrailFlags": []
   }
 }
 ```
 
-`answerMode`는 `CONCISE`(기본)/`DETAILED`를 지원한다. 답변 토큰 스트리밍(SSE)은 고도화 항목이며, 채택 시 `POST /api/v1/rag/ask/stream`으로 별도 계약을 추가한다.
+`generationStatus`는 `ANSWERED`, `RETRIEVAL_ONLY`, `RETRIEVAL_FAILURE`,
+`BLOCKED_SENSITIVE`, `BLOCKED_ADVICE`, `GENERATION_UNAVAILABLE`의 typed 상태를 사용한다.
+응답에서 relevance `confidence`, RRF/vector/lexical score, raw chunk/snippet, provider usage,
+model/profile/policy, 내부 hash/path를 노출하지 않는다. answer는 최대 8KiB, citation은 최대
+5개, 전체 Spring response는 최대 32KiB다.
 
-### 7.2 RAG source 검색
+동의가 없으면 external generation 없이 `RETRIEVAL_ONLY`다. 민감·개인화·계좌·보유종목·주문·
+연락처·식별자 질문은 provider 호출 전에 `BLOCKED_SENSITIVE`다. evidence sufficiency가
+부족하면 provider 호출 없이 `RETRIEVAL_FAILURE`다. 스트리밍은 P1 범위 밖이며 별도 contract
+승인 없이 SSE/WebSocket route를 추가하지 않는다.
 
-`GET /api/v1/rag/sources?query=ETF&sourceTier=RUNTIME_PUBLIC`
+### 7.2 RAG source metadata
+
+`GET /api/v1/rag/sources`
+
+P1 canonical corpus는 project-authored source card 30개로 동결한다. 이 endpoint는 인증된
+사용자에게 active card의 citation 표시용 metadata를 최대 30개 반환한다. corpus 크기가
+고정되어 있으므로 query parameter, cursor, limit, keyword, top-k, tier/profile selector를 받지
+않는다.
+
+반환 field allowlist:
+
+- `sourceId`
+- `title`
+- `institution`
+- `topic`
+- `attribution`
+- `canonicalUrl`
+- `lastCheckedAt`
+
+P0 upstream `REFERENCE_ONLY` 20개는 lineage registry이며 public source 목록이 아니다.
+upstream raw body, source revision/hash, allowed origin/path, peer IP, provider response, raw chunk,
+원문 preview를 반환하지 않는다. source 등록·수정·삭제·fetch·재색인 API도 제공하지 않는다.
 
 ### 7.3 RAG 답변 평가 저장
 
 `POST /api/v1/rag/answers/{answerId}/feedback`
 
-요청:
+```json
+{"helpful": true}
+```
+
+body는 boolean `helpful` 하나만 허용한다. `comment`, `citationHelpful`, 자유서술은 금지한다.
+owner answer만 수정할 수 있고 cross-owner와 missing은 같은 404다. 같은 상태 replay는 멱등이며
+feedback 조회·검색·삭제 API는 제공하지 않는다.
+
+### 7.4 30일 RAG history
+
+```http
+GET    /api/v1/rag/history?cursor=...&limit=20
+GET    /api/v1/rag/history/{answerId}
+DELETE /api/v1/rag/history/{answerId}
+```
+
+목록은 `answerId`, `createdAt`, `expiresAt`, `answerMode`, `generationStatus`, `helpful`만
+반환한다. 목록 생성 시 질문·답변 preview를 복호화하지 않는다.
+
+단건은 JWT owner와 미만료 상태를 SQL에서 확인한 뒤 정확히 한 row의 질문·답변만
+AES-256-GCM으로 복호화한다. citation은 별도 bounded query로 읽고 현재 source access scope를
+다시 검사한다.
+
+삭제는 owner predicate를 포함한 one-statement delete다. 존재, cross-owner, 이미 삭제된
+answerId는 모두 204로 응답해 존재 여부를 노출하지 않는다. search, export, share, restore,
+admin bulk API는 없다.
+
+`expiresAt=createdAt+30일`이며 만료 row는 즉시 조회에서 제외한다. hourly purge와 purge lag
+1시간 초과 alert를 둔다. history가 삭제·만료된 idempotency replay는 provider를 다시 호출하지
+않고 `IDEMPOTENCY_RESULT_UNAVAILABLE`을 반환한다.
+
+### 7.5 External AI RAG consent
+
+새 CRUD를 만들지 않고 기존 append-only `POST /api/v1/consents`에 다음 event를 추가한다.
 
 ```json
 {
-  "helpful": true,
-  "citationHelpful": true,
-  "comment": "ETF와 ETN 차이를 이해하는 데 도움이 됨"
+  "consentType": "EXTERNAL_AI_RAG_V1",
+  "action": "GRANT",
+  "policyVersion": "EXTERNAL_AI_RAG_V1"
 }
 ```
 
-### 7.4 공개 모델 후보 및 평가 리포트 조회
+`action`은 `GRANT | REVOKE`다. actor와 시간은 JWT/server clock에서 생성한다. policy, prompt,
+privacy 경계가 바뀌면 재동의를 요구한다. revoke는 이후 external generation을 막지만 기존
+30일 history를 임의 삭제하지 않는다. 사용자는 7.4 DELETE로 즉시 삭제할 수 있다.
 
-`GET /api/v1/rag/model-candidates`
+### 7.6 Admin embedding profile status
 
-용도:
+`GET /api/v1/admin/rag/embedding-profiles`
 
-1. Hugging Face 등 공개 모델 후보를 시스템에 기록한다.
-2. RAG embedding, reranker, 감성분석 모델의 채택/보류/제외 판단을 조회한다.
-3. 중간보고서와 최종보고서에서 모델 선택 근거를 재사용한다.
+Admin 전용 read API이며 다음만 반환한다.
 
-응답:
+- `profileId`
+- `dimension`
+- `status`
+- `selectable`
+- `corpusHash`
+- `corpusGenerationId`
+- `indexedAt`
+- `evaluationStatus`
+- `paidUsage`
 
-```json
-{
-  "success": true,
-  "data": {
-    "checkedAt": "2026-06-23",
-    "embeddingCandidates": [
-      {
-        "modelId": "BAAI/bge-m3",
-        "provider": "HUGGING_FACE",
-        "license": "mit",
-        "role": "RUNTIME_DEFAULT",
-        "status": "ADOPTED",
-        "reason": "한국어/영어 혼합 RAG 기본 embedding"
-      },
-      {
-        "modelId": "dragonkue/BGE-m3-ko",
-        "provider": "HUGGING_FACE",
-        "license": "apache-2.0",
-        "role": "COMPARISON_CANDIDATE",
-        "status": "EVALUATING",
-        "reason": "한국어 공식자료 검색 비교 후보"
-      }
-    ],
-    "sentimentCandidates": [
-      {
-        "modelId": "ProsusAI/finbert",
-        "role": "ENGLISH_NEWS_BASELINE",
-        "status": "COMPARISON_ONLY"
-      },
-      {
-        "modelId": "snunlp/KR-FinBert-SC",
-        "role": "KOREAN_FINANCE_CANDIDATE_WITH_RULE_FALLBACK",
-        "status": "COMPARISON_ONLY"
-      }
-    ],
-    "excludedCandidates": [
-      {
-        "query": "trading bot",
-        "reason": "개인 실험/데모 중심이며 KIS/RiskEngine/투자 원칙 요구사항을 충족하지 않음"
-      }
-    ]
-  }
-}
-```
-
-`GET /api/v1/rag/model-evaluations/{evaluationId}`
-
-응답:
-
-```json
-{
-  "success": true,
-  "data": {
-    "evaluationId": "rag_eval_20260623_001",
-    "task": "RAG_EMBEDDING_RETRIEVAL",
-    "dataset": "internal_finance_rag_eval_50",
-    "metrics": {
-      "recallAt5": 0.86,
-      "mrr": 0.72,
-      "citationCoverage": 0.91,
-      "retrievalFailureRate": 0.08
-    },
-    "winner": "BAAI/bge-m3",
-    "notes": "한국어 공식자료와 영어 논문 source card 혼합 질의에서 가장 안정적이었다."
-  }
-}
-```
-
-상태값:
-
-| 상태 | 의미 |
-|---|---|
-| `EVALUATING` | 후보 평가 중 |
-| `ADOPTED` | v1 기본 모델로 채택 |
-| `COMPARISON_ONLY` | 비교/보고서용으로만 사용 |
-| `RESEARCH_ONLY` | 후순위 연구 |
-| `EXCLUDED` | 채택 제외 |
+정확히 `bge_m3_local_1024_v1`, `voyage_context_4_1024_v1`만 존재한다.
+`voyage_context_3_1024_v1`과 임의 model string은 거부한다. 이 API는 API key 조회·교체,
+source URL CRUD, materialization 시작, policy pointer 변경을 제공하지 않는다. generation
+materialization과 pointer transition은 별도 승인 packet이 필요한 CLI 경계다.
 
 ---
 
 ## 8. Signal API
 
-Return Engine과 Decision Platform이 생성한 모델 신호를 Spring에서 조회한다. 팀원 B는 LSTM/규칙 baseline artifact를, 팀원 1은 LightGBM artifact를 계약에 맞춰 export한다.
+Return Engine과 Decision Platform이 생성한 모델 신호를 Spring에서 조회한다. 팀원 B는
+LSTM/규칙 baseline artifact를, 팀원 1은 LightGBM artifact를 계약에 맞춰 export한다.
 
-### 8.1 종목 신호 조회
+현재 `contracts/schemas/signal.schema.json`의 v1 success payload는 HMM을 required
+`hmmRegime`으로 요구하므로 component unavailable을 정직하게 표현하지 못한다. 따라서 v1
+payload에 가짜 state를 넣거나 이전 `asOf`를 갱신해 새 success view를 만들지 않는다.
 
-`GET /api/v1/signals/{symbol}?timeframe=1d`
+- `/api/v1/signals/{symbol}`: 기존 계약과 fixture의 legacy read 경계다. 새 S5/S6 artifact를
+  이 형식으로 active publication하지 않는다.
+- `/api/v2/signals/{symbol}`: 아래 tagged-union contract가 별도
+  `contracts/changes/` 승인을 통과한 뒤 구현·활성화한다.
+- Signal v2 승인 전 artifact ingest와 internal component 조립까지만 허용하고,
+  RiskDecision/order response 연결은 `NO_GO`다.
+
+### 8.1 Signal v2 종목 신호 조회
+
+계획 route:
+
+`GET /api/v2/signals/{symbol}`
 
 응답:
 
@@ -1245,53 +1428,68 @@ Return Engine과 Decision Platform이 생성한 모델 신호를 Spring에서 �
     "symbol": "005930",
     "asOf": "2026-06-23T15:30:00+09:00",
     "timeframe": "1d",
-    "finalSignal": "HOLD",
-    "confidence": 0.62,
+    "composite": {
+      "status": "ABSTAIN",
+      "reason": "REQUIRED_COMPONENT_UNAVAILABLE"
+    },
     "modelReportId": "model_report_return_engine_20260623",
     "components": {
       "ruleBaseline": {
+        "status": "AVAILABLE",
         "producer": "RULE_BASELINE",
         "sourceWorkspace": "return-engine",
         "asOf": "2026-06-23T15:30:00+09:00",
         "signal": "HOLD",
         "confidence": 0.51,
-        "predictedReturn": 0.001,
-        "featureSummary": ["ma20_above_ma60", "rsi_neutral"],
-        "rulesTriggered": ["ma20_above_ma60", "rsi_neutral"]
+        "predictedReturn": 0.001
       },
       "lstm": {
+        "status": "AVAILABLE",
         "producer": "LSTM",
         "sourceWorkspace": "return-engine",
         "asOf": "2026-06-23T15:30:00+09:00",
         "signal": "BUY",
         "confidence": 0.57,
-        "predictedReturn": 0.008,
-        "featureSummary": ["close_sequence_60", "volume_sequence_60"]
+        "predictedReturn": 0.008
       },
       "lightgbm": {
+        "status": "AVAILABLE",
         "producer": "LIGHTGBM",
         "sourceWorkspace": "decision-platform",
         "asOf": "2026-06-23T15:30:00+09:00",
         "signal": "HOLD",
         "confidence": 0.66,
-        "predictedReturn": 0.003,
-        "featureSummary": ["momentum_20d", "volatility_20d", "news_sentiment_3d"],
-        "featureImportanceTop": ["momentum_20d", "volatility_20d", "news_sentiment_3d"]
-      },
-      "newsSentiment": {
-        "score": 0.14,
-        "articleCount": 18,
-        "summaryArtifactId": "news_sum_005930_20260623",
-        "conflictFlag": false
+        "predictedReturn": 0.003
       },
       "hmmRegime": {
-        "state": "SIDEWAYS",
-        "probability": 0.52
+        "status": "ABSTAIN",
+        "producer": "HMM",
+        "sourceWorkspace": "decision-platform",
+        "reason": "POSTERIOR_BELOW_THRESHOLD",
+        "warnings": ["HMM evidence was excluded from the composite."]
       }
-    }
+    },
+    "warnings": ["One or more required components are unavailable."]
   }
 }
 ```
+
+component는 정확히 다음 tagged union을 따른다.
+
+| `status` | 필수 field | 금지 field | 의미 |
+|---|---|---|---|
+| `AVAILABLE` | `producer`, `sourceWorkspace`, `asOf`, `signal`, `confidence` | `reason` | 검증되고 fresh한 모델 evidence |
+| `ABSTAIN` | `producer`, `sourceWorkspace`, `reason` | `signal`, `confidence`, `predictedReturn` | missing, stale, FAIL, drift, 식별 불가 또는 모델 자체의 abstention |
+
+`AVAILABLE + signal=HOLD`는 모델이 산출한 정상 neutral prediction이다. `ABSTAIN`과
+RiskEngine `DecisionStatus.HOLD`는 서로 다른 상태이며 변환하지 않는다. stale component는
+후보·설명·composite 계산에서 제외하고, required component가 부족하면 composite 자체가
+`ABSTAIN`이다. HMM posterior가 불충분할 때 `SIDEWAYS` 같은 state를 위조하지 않는다.
+
+public response에 artifact path, internal raw score/margin, hash, account/user ID를 넣지 않는다.
+artifact ingest는 approved-root, no-follow, bounded size/row/decompression, exact schema/version/hash/
+producer/provenance, unknown-column 거부를 통과해야 한다. Signal v2 schema와 positive/negative
+fixture가 승인되기 전 이 route를 runtime에 연결하지 않는다.
 
 ### 8.2 뉴스감성 요약 artifact 조회
 
@@ -1347,8 +1545,9 @@ Return Engine과 Decision Platform이 생성한 모델 신호를 Spring에서 �
 
 ### 8.3 Signal API 해석 규칙
 
-Signal API는 모델 결과를 노출하지만 주문 권한을 갖지 않는다. 프론트는 `finalSignal`을 참고 정보로
-보여주고, 실제 주문 가능 여부는 향후 S2.3 Decision API와 RiskEngine 결과를 따라야 한다.
+Signal API는 모델 결과를 노출하지만 주문 권한을 갖지 않는다. 프론트는 `AVAILABLE`인 component와
+composite만 참고 정보로 보여주고, 실제 주문 가능 여부는 S2.3 Decision API와 deterministic
+RiskEngine 결과를 따라야 한다.
 
 | 규칙 | 설명 |
 |---|---|
@@ -1357,8 +1556,9 @@ Signal API는 모델 결과를 노출하지만 주문 권한을 갖지 않는다
 | `sourceWorkspace` | 규칙 baseline/LSTM은 `return-engine`, LightGBM은 `decision-platform`으로 기록한다 |
 | HMM 처리 | HMM은 가격 예측 모델이 아니라 시장국면/고변동 리스크 필터로 해석한다 |
 | 뉴스감성 제한 | 뉴스감성은 보조 feature이며 뉴스만으로 매수/매도를 결정하지 않는다 |
-| stale signal | optional model evidence이면 `warnings+abstentions`와 WARN, 명시적으로 required인 input이면 `issues`와 HOLD다. missing/stale 자체를 threshold BLOCK으로 표현하지 않는다 |
-| 상충 신호 | LSTM이 BUY여도 LightGBM이 HOLD이고 HMM이 고변동이면 Decision API는 WARN/HOLD를 반환할 수 있다 |
+| stale/missing/FAIL/drift | component `ABSTAIN`; stale 값을 재사용하거나 `asOf`를 갱신하지 않는다 |
+| required component 부족 | composite `ABSTAIN`; 새 v1 success payload를 위조하지 않는다 |
+| 상충 신호 | Signal은 불일치 자체만 표시하며 RiskEngine status를 직접 만들지 않는다 |
 | 모델 리포트 | `modelReportId`를 통해 데이터 기간, feature, 학습/검증 분리, 한계가 기록된 `model_report.md`를 참조한다 |
 
 ### 8.4 Dashboard API 소비 기준
@@ -2519,8 +2719,7 @@ proto 파일은 `contracts/proto/`에 둔다.
 |---|---|---|---|
 | `SignalService.GetSignal`/`BatchGetSignals` | 2s | 멱등 조회 1회 재시도 | `PYTHON_SERVICE_UNAVAILABLE` → HOLD |
 | `FinancialEngineeringService.*` | 3s (`RunMonteCarloStress`는 10s) | 1회 재시도 | `PYTHON_SERVICE_UNAVAILABLE` → HOLD |
-| `RagService.GenerateAnswer` | 15s | 재시도 없음 | 답변 실패 안내 |
-| `RagService.SearchSources` | 3s | 1회 재시도 | 검색 실패 표시 |
+| `RagService.Ask` | 15s | 재시도 없음 | typed RAG failure, 생성 답변 비전달 |
 | `BrokerageService.SubmitMockOrder`/`CancelOrder` | 5s | 재시도 금지(멱등 키 재요청만 허용) | `BROKERAGE_UNAVAILABLE` → 주문 보류 |
 | `MarketDataService.GetPriceSnapshot` | 2s | gRPC 계층 재시도 없음. Python KIS adapter가 physical attempt 상한과 공유 quota 안에서만 GET 재시도를 소유 | `DATA_STALE` 또는 `PYTHON_SERVICE_UNAVAILABLE` → HOLD |
 | `BacktestService.RunBacktest` | 동기 대기 금지, async job 전환 | - | async job 상태로 추적 |
@@ -2533,21 +2732,34 @@ gRPC는 기본적으로 loopback에만 bind하고 reflection은 명시적으로 
 
 ```proto
 service RagService {
-  rpc SearchSources(SearchSourcesRequest) returns (SearchSourcesResponse);
-  rpc GenerateAnswer(GenerateAnswerRequest) returns (GenerateAnswerResponse);
-  rpc EvaluateAnswer(EvaluateAnswerRequest) returns (EvaluateAnswerResponse);
+  rpc Ask(RagAskRequest) returns (RagAskResponse);
 }
 ```
+
+Spring은 인증, consent, rate limit, idempotency claim, owner scope, history crypto를 소유한다.
+Python은 local privacy/advice classification, retrieval, conditional provider generation,
+structured output validation을 소유한다.
+
+Python request에 raw JWT subject, user/tenant/account ID, principle/order/artifact ID를 넣지
+않는다. request는 opaque `requestId`, public question, answerMode, bounded symbols/topics,
+server-selected profile/generation/prompt version만 포함한다.
 
 필수 반환:
 
 | 필드 | 설명 |
 |---|---|
-| `answer` | 답변 본문 |
-| `citations` | 출처 목록 |
+| `generationStatus` | typed answer/retrieval/block/failure status |
+| `answer` | bounded 답변 본문, 생성되지 않으면 비어 있음 |
+| `citationRevisionIds` | Python이 사용한 bounded source/chunk revision 참조 |
 | `citationCoverage` | 답변 내 출처 커버리지 |
 | `retrievalFailure` | 검색 실패 여부 |
 | `guardrailFlags` | 투자권유/출처부족/환각 의심 flag |
+| `providerUsage` | Spring public response가 아닌 내부 usage ledger commit용 bounded metadata |
+
+Spring은 citation revision이 현재 actor access와 server-selected generation에 속하는지 다시
+확인한 뒤 history를 암호화 저장한다. provider 성공 후 저장이 실패하면 답변을 사용자에게
+전달하지 않는다. gRPC deadline 15초, Spring read timeout 17초, response 최대 256KiB,
+retry 0이다.
 
 ### 13.2 SignalService
 
@@ -2930,6 +3142,9 @@ service SourceRegistryService {
 | Live order gate 미충족 | `RISK_BLOCKED`, 주문 차단 |
 | 원칙 버전 충돌 | `CONFLICT`, 재조회 요구 |
 | Kill Switch 활성 | `RISK_BLOCKED`, 주문 차단 |
+| 교차시장 `WARN_ONLY` fresh high risk | 적용 대상 신규 BUY의 `ALLOW`를 최대 `WARN`으로만 강화 |
+| 교차시장 `WARN_ONLY` missing/stale/incomplete | sanitized warning과 unavailable projection, P1에서 HOLD/BLOCK 생성 0 |
+| 교차시장 `ENFORCED` missing/stale | post-P1 승인 뒤 적용 대상 신규 BUY만 `HOLD`; P1에서는 활성화 금지 |
 
 필수/선택 입력 분류:
 
@@ -2958,8 +3173,10 @@ service SourceRegistryService {
 | S3.2 | INTERNAL_PAPER controller/use case/repository/DB function을 KIS Mock gRPC와 물리 분리한다. V13은 mode↔ID prefix, owner-scope account, append-only full-fill ledger, before/after replay chain, projection 동일 transaction, exact audit/outbox, FORCE RLS와 bounded definer 함수를 강제한다. `decision_app`은 paper table 직접 DML/조회와 rebuild EXECUTE가 없고, account create/fund/delete route도 없다. 저장 last quote/previous close만 사용하며 provider/live/order/fill 호출과 자동 fallback은 0건이다 |
 | S3 | accountId는 opaque+owner-scoped다. order body의 price/quantity/position/risk-reduction 주장은 server snapshot으로 재검증한다. Live는 deploy immutable OFF, operator account allowlist, user consent, Kill Switch/reconciliation을 모두 요구하며 공개 API로 gate를 변경할 수 없다 |
 | S4 | RAG source/prompt는 untrusted data이며 내부 지시·URL·tool 호출을 실행하지 않는다. source ingest/register/reindex는 ADMIN 전용이며 scheme/origin/MIME/size/redirect/SSRF gate를 적용한다. answer/cache/feedback는 owner scope·TTL·output encoding을 적용한다. RAG 실행 주체는 provider token cache나 brokerage secret에 접근하지 못한다. model은 exact revision/weight hash/license를 기록하고 remote code/untrusted pickle을 금지한다 |
+| S4.8 | 시장 source entitlement와 RAG source registry를 분리한다. expired/disabled entitlement, retention·raw-store·embedding·external-LLM 권한 불충족은 outbound 전에 거부한다. provider body/PDF/뉴스 원문은 DB·artifact·log에 저장하지 않는다. licensed local file 경로를 열게 되면 approved root, dirfd/`O_NOFOLLOW`, symlink·archive/decompression·MIME·byte/page/time cap과 삭제 영수증을 요구한다. 일반 fixture/EOD 구현의 provider physical call은 0이다 |
 | S5 | artifact endpoint는 trusted producer, owner, manifest hash/schema, 고정 root, file count/size/row cap을 먼저 검증한다. arbitrary path/symlink/archive와 untrusted pickle/joblib/code-loading model은 거부한다. 다운로드는 owner-scoped Bearer 인증과 고정 allowlisted 파일명·MIME만 허용하고 `Content-Disposition: attachment`, `nosniff`, `no-store`를 적용한다. Markdown/CSV/JSON을 임의 inline HTML로 실행하지 않는다 |
 | S6 | 금융공학·시뮬레이션 API는 user별 symbol/period/path/iteration/concurrency/deadline/output cap을 둔다. 입력 snapshot provenance와 owner를 검증하고 계산·모델 출력이 deterministic RiskEngine 검증을 우회하지 못하게 한다 |
+| S6.6/S6.7 | PIT `availableAt` 미래정보, incomplete coverage, fake zero, threshold 재선택을 거부한다. 저장 snapshot reader만 사용하고 Decision/Risk/RAG 평가 중 provider fan-out은 0이다. analyst/RAG/LLM 설명은 판단 hash에서 제외하며 P1 mode를 `WARN_ONLY`보다 강하게 설정하지 않는다 |
 | S7 | 로컬 plaintext Kafka는 loopback-only다. 배포 시 TLS+client 인증+topic ACL+schema/message/retention cap을 요구한다. event에 secret/token/account/PII/raw payload를 금지하고 ADMIN replay/DLQ를 audit하며 consumer idempotency/outbox를 검증한다 |
 | S8 | 외부 REST는 TLS, 제한 CORS와 HSTS/CSP/`nosniff`/frame/referrer security header를 적용한다. Dashboard는 access token을 URL·localStorage·IndexedDB·로그에 저장하지 않고 메모리에서만 보유하며, RAG/뉴스/Markdown을 raw HTML로 렌더링하지 않는다. 외부 link는 검증된 scheme과 `noopener noreferrer`를 적용한다. 내부 DB/Redis/Kafka/gRPC를 public bind하지 않고 non-loopback gRPC는 mTLS 전환 후에만 허용한다. 서비스별 outbound는 default-deny egress에서 승인된 provider HTTPS/DNS 목적지만 허용하고 metadata/private/link-local network를 방화벽에서도 차단한다. production container는 non-root, read-only root filesystem, explicit writable volume, `cap_drop=ALL`, `no-new-privileges`, 기본 seccomp와 CPU/memory/PID 제한을 적용한다. production debug/heap/core dump와 Actuator env/config dump를 비활성화하고 진단 절차가 process env를 출력하지 않게 한다. secret rotation, 민감정보별 retention/delete, encrypted backup+restore test, dependency/container/model SCA와 body/query/header redaction을 release gate로 둔다 |
 
@@ -2977,6 +3194,13 @@ API/adapter/parser/storage 변경 커밋은 기능 단위로 분리한다. 테�
 | S2.2 offline evaluator | public 8+system 6 disposition, ALLOW/WARN/HOLD/BLOCK 우선순위, hard HOLD/optional ABSTAIN, deterministic hash를 fixture로 재현 |
 | S2.3 Decision API | 400 selector 오류와 200 HOLD 분리, owner+ACTIVE version pin, missing/cross-owner/inactive 동일 404, route/OpenAPI/원자 persistence, IDOR/grant/idempotency/metrics 통합 |
 | RiskEngine | 손실한도, 포지션한도, 가격지연, Kill Switch |
+| Cross-market contract/adapter | 7개 schema positive/negative fixture, KIS 18개 disabled adapter의 outbound 0, expired entitlement·future `availableAt`·stale·incomplete·fake zero 거부 |
+| Cross-market analyst/cause | `BUY` 의견만 바꾼 hash/score/RiskDecision 불변, 목표가·EPS·매출 하향 explanation 반영, broker 3 미만 insufficient, dedupe/supersede/retraction, 상반 evidence와 비확정 인과 보존 |
+| Cross-market PDF entitlement | 기본 `MANUAL_LINK_ONLY`, 권리 확인된 ephemeral 입력도 정확히 여섯 section과 user-confirmed tag만 projection, `derivedDataAllowed=false`이면 파생 결과 저장·응답·외부 전송 0 및 삭제 영수증 |
+| Cross-market timing | 두 formula의 signed millisecond exact 계산, negative detection 거부, pre-open 양수/0/음수의 `EARLY/AT_OPEN/LATE`, 음수 lead zero-clamp 0 |
+| Cross-market scorer/replay | 252 완료 세션, basket/domestic 최소 coverage, adverse percentile·median 결정성, 60/20/20와 5-session purge/embargo, threshold freeze, downside/missed-upside/net-protection 식 검증 |
+| Cross-market Risk API | 인증·query 0·latest-only·max10 evidence, OFF/SHADOW/WARN_ONLY/ENFORCED mode, cross-owner read 0, provider fan-out 0, numeric field별 v3 hash mutation과 analyst/RAG/LLM hash 불변 |
+| Cross-market payload freeze | 기존 Decision request/response·RAG ask/history·Signal v1/v2 schema field diff 0, 내부 `CrossMarketDecisionInput(snapshot, exposure)`와 별도 GET만 허용 |
 | RAG | 출처 있는 답변, 출처 부족 답변 제한, 피드백 저장 |
 | Signal | 규칙 baseline/LSTM/LightGBM/HMM 결합 신호와 producer/sourceWorkspace 조회 |
 | Backtest | Baseline/Guide/Strict 결과 비교 |
@@ -3017,6 +3241,7 @@ API/adapter/parser/storage 변경 커밋은 기능 단위로 분리한다. 테�
 | 필수 | FinancialEngineeringService |
 | 필수 | Black-Scholes 계산기, Greeks 계산, implied volatility 역산 |
 | 필수 | Auth(login/role), System Health, Kill Switch 상태 조회 |
+| 필수(P1 WARN_ONLY, 현재 `SPEC_ONLY/NOT_IMPLEMENTED/PLANNED`) | Cross-market latest risk 조회, offline fixture/EOD producer, event-study/policy replay |
 | 고도화 | Async Job 상태 조회, Stream Metric, Artifact Ingest 상태 조회 |
 | 고도화 | SourceRegistryService 고도화 |
 | 고도화 | 이벤트 push 채널(SSE), RAG 답변 스트리밍, Journal 수정/삭제 |
@@ -3045,6 +3270,9 @@ API/adapter/parser/storage 변경 커밋은 기능 단위로 분리한다. 테�
 ### 17.2 구현 전 반드시 계약으로 확정할 세부 스키마
 
 아래 항목은 실제 코드 작성 전 `contracts/`에 JSON Schema 또는 proto로 고정한다.
+교차시장 일곱 schema와 catalog v2는 현재 `SPEC_ONLY / NOT_IMPLEMENTED / PLANNED`이며,
+contract-change·generator·positive/negative fixture·byte-parity gate가 생기기 전 runtime
+구현은 `NO_GO`다.
 
 | 계약 | 필요 필드 |
 |---|---|
@@ -3061,6 +3289,17 @@ API/adapter/parser/storage 변경 커밋은 기능 단위로 분리한다. 테�
 | `contracts/schemas/option_analytics.schema.json` | optionType, S, K, T, r, q, sigma, price, Greeks, IV status |
 | `contracts/schemas/rag_source.schema.json` | sourceId, tier, sourceType, title, url, doi, accessLevel, lastCheckedAt |
 | `contracts/schemas/rag_answer.schema.json` | answer, citations, citationCoverage, retrievalFailure, guardrailFlags |
+| `contracts/schemas/market_source_entitlement.v1.schema.json` | logicalIdentityHash, sourceId, activationStatus, machine/raw/embedding/externalLlm/derived/nonDisplay 권한, rawRetentionMax, projectionRetentionMax, contractExpiry, payloadHash, artifactHash |
+| `contracts/schemas/cross_market_exposure_catalog.v1.schema.json` | logicalIdentityHash, configVersion, symbol, `inScope`, `classification`, `effectiveAt`, `availableAt`, `validationState=AVAILABLE|UNCLASSIFIED|REJECTED`, source lineage, payloadHash, artifactHash. unknown symbol을 추정하지 않음 |
+| `contracts/schemas/cross_market_observation.v1.schema.json` | logicalIdentityHash, instrument, market, sessionDate, timeframe, `valueType=PRICE|SESSION_RETURN|STRESS_LEVEL`, nullable value, observedAt, receivedAt, availableAt, completeness, sourceRef, payloadHash, artifactHash. PARTIAL을 0으로 합성하지 않음 |
+| `contracts/schemas/analyst_revision_evidence.v1.schema.json` | logicalIdentityHash, broker, symbol, publishedAt/availableAt, rating/target/EPS/revenue previous-current pair, revision, dispersion, contributorCount, supersede/retraction, decisionAuthority, bounded six-section provenance와 user-confirmed tags, payloadHash, artifactHash. 파생데이터 권한이 없으면 해당 projection 자체를 생성하지 않음 |
+| `contracts/schemas/market_cause_evidence.v1.schema.json` | logicalIdentityHash, classification, relation, availableAt, supersede/retraction, source lineage, bounded `sanitizedSummary`, counterargument flag, payloadHash, artifactHash. snapshot 응답의 원인+반론은 최대 10개 |
+| `contracts/schemas/cross_market_risk_snapshot.v1.schema.json` | logicalIdentityHash, owner, mode, evidenceMode, validationStatus, performanceClaimAllowed, availability, four nullable scores, 정확히 네 component freshness/source refs, source/snapshot/XKRX-open timing과 signed detection/pre-open duration·`EARLY|AT_OPEN|LATE|NOT_APPLICABLE`, configVersion, upstreamArtifactHashes와 bounded provenance, payloadHash, artifactHash. symbol별 exposure는 별도 catalog 결과로 같은 시점에 결속 |
+| `contracts/schemas/cross_market_policy_evaluation.v1.schema.json` | logicalIdentityHash, evaluation kind, split/threshold freeze, trigger counts, falseBlockRate, downsideAvoidedBps, missedUpsideBps, netProtectionBps, coverage/stale/latency/conflict/unsupported/look-ahead와 estimationStatus, artifactHash. trigger 0이면 rate/BPS는 null+NOT_ESTIMABLE |
+
+각 append-only producer는 logical identity와 payload/artifact hash를 분리한다. 같은 identity와
+같은 payload의 재실행만 no-op이고, 같은 identity의 다른 payload는 PostgreSQL `23505`로 해당
+transaction 전체를 rollback한다. runtime writer의 base table SELECT/UPDATE/DELETE 권한은 0이다.
 
 ### 17.2.1 Artifact Manifest 예시
 

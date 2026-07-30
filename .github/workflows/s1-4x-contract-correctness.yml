@@ -154,7 +154,7 @@ jobs:
             test "$BASE_ISOLATION_SHA" = \
               "daca84be569df6358ac84e171825b91f9610dfdabe99fb5f0ecab4f02b47c3cc"
             test "$HEAD_ISOLATION_SHA" = \
-              "c13f7e43b53023c94d189c7f905ac233e80a36b4a164d1705b325773b34bee18"
+              "4347f250fe3ec933aacecf4a91d3e5a8e720b935f7f7a75783493d6bbe47f8e9"
           fi
 
           # 의존성 amendment가 수치 구현·테스트·fixture를 함께 바꾸는 것을 독립적으로 막는다.

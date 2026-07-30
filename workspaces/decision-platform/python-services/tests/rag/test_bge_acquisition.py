@@ -11,6 +11,7 @@ import pytest
 from app.rag.bge_acquisition import (
     BgeAcquisitionError,
     acquire_bge_packet,
+    resolve_download_redirect,
     verify_bge_completion_manifest,
 )
 from app.rag.bge_artifact import (
@@ -117,6 +118,34 @@ def test_bounded_acquisition_rejects_unapproved_redirect_without_partial_publish
     assert not packet_root.exists()
     assert not manifest_path.exists()
     assert not tuple(posix_tmp_path.glob(".packet.staging-*"))
+
+
+def test_source_cache_redirect_is_exact_revision_path_and_query_bounded() -> None:
+    spec = _tiny_spec(
+        {
+            "onnx/model.onnx": b"onnx",
+            "onnx/model.onnx_data": b"weights",
+        }
+    )
+    entry = spec.files[0]
+    location = (
+        f"/api/resolve-cache/models/BAAI/bge-m3/{spec.revision}/"
+        'onnx/model.onnx?download=true&etag=%22aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa%22'
+    )
+
+    resolved = resolve_download_redirect(location, entry=entry, spec=spec)
+
+    assert resolved.scheme == "https"
+    assert resolved.hostname == "huggingface.co"
+    assert resolved.path.endswith("/onnx/model.onnx")
+
+    for drifted in (
+        location.replace(spec.revision, "0" * 40),
+        location.replace("onnx/model.onnx", "pytorch_model.bin"),
+        location + "&unexpected=true",
+    ):
+        with pytest.raises(BgeAcquisitionError, match="DOWNLOAD_REDIRECT"):
+            resolve_download_redirect(drifted, entry=entry, spec=spec)
 
 
 def _tiny_spec(payloads: dict[str, bytes]) -> BgeArtifactSpec:

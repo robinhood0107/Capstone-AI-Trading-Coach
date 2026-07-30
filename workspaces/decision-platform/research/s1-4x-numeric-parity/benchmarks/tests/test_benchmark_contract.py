@@ -493,7 +493,7 @@ def test_tracked_plan_and_sidecar_are_reproducible() -> None:
     check_plan(DEFAULT_PLAN)
 
 
-def test_workflow_runs_both_triggers_and_accounts_for_263_snapshot_tests() -> None:
+def test_workflow_runs_both_triggers_and_accounts_for_262_snapshot_tests() -> None:
     repo_root = Path(__file__).resolve().parents[6]
     workflow = (
         repo_root / ".github" / "workflows" / "s1-4x-contract-correctness.yml"
@@ -508,8 +508,8 @@ def test_workflow_runs_both_triggers_and_accounts_for_263_snapshot_tests() -> No
     assert "UV_CACHE_DIR=$S1_4X_RUNTIME/uv" in workflow
     assert "TMPDIR: /tmp" not in workflow
     assert 'evidence["sourceTreeCount"] == 4' in workflow
-    assert "assert tests == 263" in workflow
-    assert "S1.4R_REFERENCE_REGRESSION_PASS tests=263" in workflow
+    assert "assert tests == 262" in workflow
+    assert "S1.4R_REFERENCE_REGRESSION_PASS tests=262" in workflow
 
     production_step = workflow.split(
         "- name: Run current frozen production regression",

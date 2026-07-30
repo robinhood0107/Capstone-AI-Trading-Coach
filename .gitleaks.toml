@@ -5,7 +5,6 @@ useDefault = true
 
 [allowlist]
 description = "Approved public BGE tokenizer artifact SHA-256"
-regexTarget = "line"
 regexes = [
-  '''6710678b12670bc442b99edc952c4d996ae309a7020c1fa0096dd245c2faf790''',
+  '''^6710678b12670bc442b99edc952c4d996ae309a7020c1fa0096dd245c2faf790$''',
 ]

@@ -16,7 +16,7 @@ class RagSourceRegistryMigrationContractTest {
         val selectedVersion = migrationVersion(migrationPath)
         val previousHighest =
             migrations
-                .filterNot { it == migrationPath }
+                .filter { migrationVersion(it) < selectedVersion }
                 .maxOf(::migrationVersion)
 
         assertThat(selectedVersion).isEqualTo(previousHighest + 1)

@@ -409,6 +409,112 @@ canonical SHA-256에 결속한 Redis `SET NX PX` single-use claim을 runtime 생
 JSON parse/sanitize 전에 1 MiB cap을 적용하고 실패 출력은 allowlisted reason/HTTP status/
 provider code만 허용한다. KIS_LIVE 실계좌 주문은 계속 OFF다.
 
+## S4 RAG profile·policy catalog
+
+S4/P1 RAG는 LangChain agent가 아니라 결정적 2-step RAG 경계로 구현하며, embedding profile과
+policy는 static contract catalog 하나에서만 읽는다. 활성 profile은
+`bge_m3_local_1024_v1`, `voyage_context_4_1024_v1` 두 개뿐이고
+`voyage_context_3_1024_v1`은 active·comparison·fallback 어디에도 등록하지 않는다.
+
+| 계약 | 경계 |
+|---|---|
+| `catalogs/s4-rag-contract.v1.json` | profile, policy, dimension 1024, provider/model identity, chunk strategy SSOT |
+| `schemas/s4-rag-contract.schema.json` | catalog exact-shape schema |
+| `schemas/s4-rag-ask-request.schema.json` | public ask body; profile/policy/provider/topK/sourceTier 입력 금지 |
+| `schemas/s4-rag-admin-policy-selection.schema.json` | 관리자 policy pointer 선택; profile ID를 policy ID로 쓰면 실패 |
+
+catalog ID는 `s4-rag-contract/v1`이고 canonical SHA-256은
+`9b9881f9b25b6486f20999f27c0dd7043048fc26491e33cf2af892817dabbe0a`다.
+generator/schema/positive·negative fixture와 Spring/Python consumer가
+`CONCISE/DETAILED`, NFC 후 1~1,000 Unicode scalar+8KiB,
+pinned `ONNX_DATA_ONLY`, `embeddingInputStrategy`를 같은 bytes로 검증한다.
+이 catalog lock은 완료됐지만 next-free normalized migration과 source registry/API는
+아직 red이므로 S4.0 또는 S4.1 완료를 뜻하지 않는다.
+`bge_then_voyage_on_sla_v1`은 요청별 runtime fallback이 아니라 BGE warm p95 SLA 실패,
+Voyage 평가 통과, 관리자 승인 뒤 default pointer를 한 번 원자 전환하는 정책이다.
+public `POST /api/v1/rag/ask` body는 `question`, `answerMode`, `relatedSymbols`, `topics`만
+허용하며 `X-Idempotency-Key`는 별도 header 계약으로 처리한다. DB는 source/revision,
+generation, materialization/evaluation, active pointer, usage ledger 같은 동적 상태만 소유한다.
+
+재현 명령:
+
+```bash
+uv run --frozen python contracts/generate_s4_rag_contracts.py --check
+uv run --frozen python -m unittest discover -s contracts/tests -v
+uv run --frozen python contracts/validate.py
+```
+
+상세 결정과 소비자 영향은
+[`20260729-s4-rag-contract-catalog.md`](changes/20260729-s4-rag-contract-catalog.md)를 따른다.
+
+## S4.8 교차시장·애널리스트 계획 계약
+
+> 계획 타당성: `PLAN_FEASIBILITY=GO`.
+> 구현 상태: `IMPLEMENTATION=SPEC_ONLY / NOT_IMPLEMENTED / PLANNED`.
+> 월 데이터 비용 목표는 `0원`이고 offline fixture·지연/EOD가 먼저다. 기관용 제품과
+> 실시간 SOX/VIX feed는 post-P1 선택지이며 P1 DoD가 아니다. 새 agent framework·별도
+> cloud·Kafka는 hard dependency가 아니다.
+>
+> 이 절은 Markdown 수준의 contract plan이다.
+> 아래 이름의 JSON Schema·fixture·catalog·migration·OpenAPI/runtime 구현이 현재 존재하거나
+> 검증됐다는 뜻이 아니다. 실제 machine-readable 파일은 S4.8A contract-lock에서
+> positive/negative fixture와 generator/hash parity를 함께 만들 때만 추가한다.
+
+순서 0 `S4.READ`는 관련 공개·private 명세 EOF receipt와 충돌 목록만 남기는 read-only
+preflight다. 첫 변경 PR은 아래 일곱 계약과 fixture/generator/parity만 포함하는
+**contract-only PR**이어야 한다. 이 PR이 검증·병합되기 전 adapter·DB·API·RiskEngine
+runtime PR은 시작하지 않는다.
+
+계획된 versioned SSOT는 다음 일곱 개다.
+
+1. `market_source_entitlement.v1`
+2. `cross_market_exposure_catalog.v1`
+3. `cross_market_observation.v1`
+4. `analyst_revision_evidence.v1`
+5. `market_cause_evidence.v1`
+6. `cross_market_risk_snapshot.v1`
+7. `cross_market_policy_evaluation.v1`
+
+S4.8A가 계약·entitlement와 fixture를 잠그고, S4.8B가 provider 호출 없는 offline/EOD
+materialization·append-only projection·순수 scorer kernel을 소유한다. S4.8C는
+`decisionAuthority=NONE`인 cause/analyst 설명만 만든다. S6.6은 scorer output의
+event-study/policy replay와 threshold 동결, S6.7은 snapshot materialization·stored reader와
+P1 `WARN_ONLY` RiskEngine 연결을 소유한다. S7.3은 기존 작업을 예약할 뿐 수집·계산·저장
+소유권이나 provider 권한을 새로 만들지 않는다.
+
+조사 inventory 42개는 사용 가능한 API 수가 아니다. 39개 machine 연동 후보 계열과 3개
+manual-link 원천의 합이며 현재 S4.8 활성 provider와 usable adapter는 0이다. KIS 18개
+endpoint도 disabled fixture-first 후보로만 계획한다. exact 42개 행과 exact 18개 allowlist는
+로컬 `private-reference/agent/금융공학_RAG_자료수급_레지스트리.md`가
+운영 authority이며 공개 계약에는 집계와 불변식만 두고 전체 inventory를 복제하지 않는다.
+provider raw body, PDF·뉴스 원문,
+credential·계좌 데이터는 저장하지 않고, RAG source registry와 기존 30-card corpus/hash는
+변경하지 않는다.
+
+증권사 PDF 기본값은 `MANUAL_LINK_ONLY`다. 별도 권리 확인을 거친
+`LICENSED_EPHEMERAL_LOCAL`에서도 추출 projection은 `투자포인트`, `실적전망`,
+`Valuation`, `목표주가`, `위험요인`, `Disclaimer` 여섯 절과 사용자가 직접 확인한 bounded
+tag만 허용한다. `derivedDataAllowed=false`이면 parser/LLM 파생 결과를 저장·전달하지 않고
+임시 입력과 함께 폐기한다.
+
+계획된 timing 계약은 signed integer milliseconds를 유지한다.
+
+- `sourceAvailableAt = max(required component source.availableAt)`이며 optional
+  analyst/news 시각은 포함하지 않는다.
+- `detectionLatency = snapshotAvailableAt - sourceAvailableAt`
+- `preOpenLeadTime = XKRXOpen - snapshotAvailableAt`
+- `preOpenLeadTime < 0`이면 `LATE`, `= 0`이면 `AT_OPEN`, `> 0`이면 `EARLY`다.
+  값을 0으로 clamp하지 않으며 적용할 XKRX open이 없을 때만 `NOT_APPLICABLE`로 둔다.
+
+기존 Decision request/response, RAG ask/history, Signal v1/v2 payload에 추가하는 교차시장
+필드는 0이다. `CrossMarketDecisionInput(snapshot, exposure)`는 내부 wrapper이고, 별도 planned
+조회 DTO와 일곱 신규 계약은 기존 payload를 조용히 확장하지 않는다.
+
+P1 교차시장 권한은 적용 대상 신규 BUY의 `ALLOW → WARN`뿐이다. `ENFORCED`의 HOLD/BLOCK,
+SELL, 기존 보유분 매도, 주문 생성, 수량 축소와 KIS Live는 post-P1 별도 계약·승인 전
+비활성이다. 현재 변경은 Markdown만 수정하며 schema·fixture·catalog·OpenAPI·SQL·runtime
+파일을 추가하지 않는다.
+
 ## S1.5 KIS 데이터 품질 리포트
 
 S1.5는 public API가 아니라 Decision Platform 내부 CLI `kis-data-quality-report`가 생산하는

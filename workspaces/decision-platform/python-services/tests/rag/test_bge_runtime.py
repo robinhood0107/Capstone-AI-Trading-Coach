@@ -20,8 +20,10 @@ from app.rag.bge_runtime import (
 )
 
 
-def test_static_tokenizer_loads_only_the_hash_pinned_local_json(tmp_path: Path) -> None:
-    tokenizer_path = tmp_path / "tokenizer.json"
+def test_static_tokenizer_loads_only_the_hash_pinned_local_json(
+    posix_tmp_path: Path,
+) -> None:
+    tokenizer_path = posix_tmp_path / "tokenizer.json"
     tokenizer = Tokenizer(
         WordLevel(
             {

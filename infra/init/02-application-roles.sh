@@ -183,6 +183,13 @@ SELECT format(
 )
 \gexec
 
+-- ingest는 기본 2초로 닫고, 승인된 대량 transaction만 application이 SET LOCAL 60s를 사용한다.
+ALTER ROLE decision_rag_writer SET log_parameter_max_length = 0;
+ALTER ROLE decision_rag_writer SET log_parameter_max_length_on_error = 0;
+ALTER ROLE decision_rag_writer SET statement_timeout = '2s';
+ALTER ROLE decision_rag_writer SET lock_timeout = '500ms';
+ALTER ROLE decision_rag_writer SET idle_in_transaction_session_timeout = '5s';
+
 SELECT format(
     'CREATE ROLE decision_rag_query LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD %L',
     :'rag_query_password'
@@ -195,6 +202,13 @@ SELECT format(
     :'rag_query_password'
 )
 \gexec
+
+-- retrieval transaction은 active bounded projection 밖으로 오래 점유하지 못하게 writer보다 더 짧게 둔다.
+ALTER ROLE decision_rag_query SET log_parameter_max_length = 0;
+ALTER ROLE decision_rag_query SET log_parameter_max_length_on_error = 0;
+ALTER ROLE decision_rag_query SET statement_timeout = '1500ms';
+ALTER ROLE decision_rag_query SET lock_timeout = '250ms';
+ALTER ROLE decision_rag_query SET idle_in_transaction_session_timeout = '5s';
 
 REVOKE ALL ON DATABASE :"database_name" FROM PUBLIC;
 GRANT CONNECT ON DATABASE :"database_name" TO
@@ -593,38 +607,86 @@ DO $rag_source_registry_privileges$
 BEGIN
     IF to_regclass('public.rag_sources') IS NOT NULL
        AND to_regclass('public.rag_source_revisions') IS NOT NULL
-       AND to_regclass('public.rag_source_checks') IS NOT NULL THEN
-        -- RAG seed 등록은 Python RAG corpus privacy owner 전용 role의 append-only 경계로만 허용한다.
+       AND to_regclass('public.rag_source_checks') IS NOT NULL
+       AND to_regclass('public.rag_ingest_runs') IS NOT NULL
+       AND to_regclass('public.rag_chunk_revisions') IS NOT NULL
+       AND to_regclass('public.rag_corpus_generations') IS NOT NULL
+       AND to_regclass('public.rag_generation_chunks') IS NOT NULL
+       AND to_regclass('public.rag_chunk_embeddings') IS NOT NULL THEN
+        -- bootstrap replay도 V16의 raw-table deny와 append-only writer allowlist를 그대로 복원한다.
         REVOKE ALL PRIVILEGES ON TABLE
             rag_sources,
             rag_source_revisions,
             rag_source_checks,
-            rag_chunks,
-            rag_answers,
-            rag_citations,
-            rag_answer_feedback
-        FROM decision_rag_writer;
+            rag_ingest_runs,
+            rag_chunk_revisions,
+            rag_corpus_generations,
+            rag_generation_chunks,
+            rag_chunk_embeddings,
+            rag_embedding_policy_state,
+            rag_embedding_policy_transitions
+        FROM
+            decision_app,
+            decision_rag_writer,
+            decision_rag_query;
         GRANT SELECT, INSERT ON TABLE
             rag_sources,
-            rag_source_revisions
+            rag_source_revisions,
+            rag_source_checks,
+            rag_ingest_runs,
+            rag_chunk_revisions,
+            rag_corpus_generations,
+            rag_generation_chunks,
+            rag_chunk_embeddings
         TO decision_rag_writer;
+        GRANT UPDATE (status, started_at, completed_at, actual_chunk_count, failure_class)
+            ON TABLE rag_ingest_runs TO decision_rag_writer;
+        GRANT UPDATE (
+            status,
+            actual_chunk_count,
+            evaluation_status,
+            evaluated_at,
+            activated_at,
+            failed_at,
+            disabled_at,
+            failure_class
+        )
+            ON TABLE rag_corpus_generations TO decision_rag_writer;
+        REVOKE CREATE ON SCHEMA public FROM decision_rag_writer;
+        REVOKE CREATE ON SCHEMA public FROM decision_rag_query;
     END IF;
 END
 $rag_source_registry_privileges$;
 
--- 기존 volume의 PUBLIC과 모든 runtime role에서 함수 grant를 제거한 뒤 app allowlist만 다시 만든다.
+-- extension I/O 함수는 건드리지 않고 public schema의 project-owned 함수 grant만 제거해 allowlist를 다시 만든다.
 -- PUBLIC 또는 비앱 writer/reader에 남은 stale SECURITY DEFINER EXECUTE도 bootstrap replay가 보존하면 안 된다.
-REVOKE ALL PRIVILEGES ON ALL FUNCTIONS IN SCHEMA public FROM
-    PUBLIC,
-    decision_app,
-    decision_collector,
-    decision_disclosure_reader,
-    decision_market_writer,
-    decision_portfolio_writer,
-    decision_risk_writer,
-    decision_fill_writer,
-    decision_rag_writer,
-    decision_rag_query;
+DO $revoke_custom_function_privileges$
+DECLARE
+    routine record;
+BEGIN
+    FOR routine IN
+        SELECT proc.oid::regprocedure AS signature
+        FROM pg_proc AS proc
+        JOIN pg_namespace AS namespace ON namespace.oid = proc.pronamespace
+        WHERE namespace.nspname = 'public'
+          AND NOT EXISTS (
+              SELECT 1
+              FROM pg_depend AS dependency
+              WHERE dependency.classid = 'pg_proc'::regclass
+                AND dependency.objid = proc.oid
+                AND dependency.deptype = 'e'
+          )
+    LOOP
+        EXECUTE format(
+            'REVOKE ALL PRIVILEGES ON FUNCTION %s FROM ' ||
+            'PUBLIC, decision_app, decision_collector, decision_disclosure_reader, ' ||
+            'decision_market_writer, decision_portfolio_writer, decision_risk_writer, ' ||
+            'decision_fill_writer, decision_rag_writer, decision_rag_query',
+            routine.signature
+        );
+    END LOOP;
+END
+$revoke_custom_function_privileges$;
 
 DO $decision_runtime_function_privileges$
 BEGIN
@@ -679,6 +741,17 @@ BEGIN
         GRANT EXECUTE ON FUNCTION
             read_rag_source_registry(text)
         TO decision_app;
+    END IF;
+    IF to_regprocedure('public.read_active_rag_chunks(text,integer)') IS NOT NULL THEN
+        GRANT EXECUTE ON FUNCTION
+            read_active_rag_chunks(text, integer)
+        TO decision_rag_query;
+    END IF;
+    IF to_regprocedure('public.retire_rag_source_for_relocation(text,text)') IS NOT NULL THEN
+        -- writer는 rag_sources UPDATE 대신 exact previous→next identity 전이만 호출한다.
+        GRANT EXECUTE ON FUNCTION
+            retire_rag_source_for_relocation(text, text)
+        TO decision_rag_writer;
     END IF;
 END
 $decision_runtime_function_privileges$;

@@ -27,22 +27,38 @@ class RagController(
         responses = [
             OasApiResponse(
                 responseCode = "200",
-                content = [Content(schema = OasSchema(implementation = RagSourceListResponse::class))],
+                content = [
+                    Content(
+                        schema = OasSchema(ref = "#/components/schemas/S4RagSourceListSuccessResponse"),
+                    ),
+                ],
             ),
             OasApiResponse(
                 responseCode = "400",
                 description = "Unexpected query parameter.",
-                content = [Content(schema = OasSchema(implementation = S4RagErrorResponseSchema::class))],
+                content = [
+                    Content(
+                        schema = OasSchema(ref = "#/components/schemas/S4RagValidationErrorResponse"),
+                    ),
+                ],
             ),
             OasApiResponse(
                 responseCode = "401",
                 description = "Authentication is required.",
-                content = [Content(schema = OasSchema(implementation = S4RagErrorResponseSchema::class))],
+                content = [
+                    Content(
+                        schema = OasSchema(ref = "#/components/schemas/S4RagUnauthorizedErrorResponse"),
+                    ),
+                ],
             ),
             OasApiResponse(
                 responseCode = "503",
                 description = "RAG source registry is unavailable.",
-                content = [Content(schema = OasSchema(implementation = S4RagErrorResponseSchema::class))],
+                content = [
+                    Content(
+                        schema = OasSchema(ref = "#/components/schemas/S4RagUnavailableErrorResponse"),
+                    ),
+                ],
             ),
         ],
     )

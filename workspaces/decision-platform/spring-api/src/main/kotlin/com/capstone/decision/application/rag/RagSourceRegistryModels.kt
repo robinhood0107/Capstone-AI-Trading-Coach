@@ -5,22 +5,11 @@ import java.time.Instant
 data class RagSourceRegistryEntry(
     val sourceId: String,
     val title: String,
-    val sourceType: String,
-    val tier: String,
-    val accessLevel: String,
-    val licenseDecision: String,
-    val externalProcessingAllowed: Boolean,
-    val initialProcessing: String,
-    val retentionMode: String,
-    val retentionDays: Int,
-    val retentionOwner: String,
+    val institution: String,
+    val topic: String,
+    val attribution: String,
     val canonicalUrl: String,
-    val attribution: String?,
-    val ingestStatus: String,
-    val createdAt: Instant,
-    val retiredAt: Instant?,
     val lastCheckedAt: Instant?,
-    val latestCheckResult: String?,
 )
 
 data class RagSourceRegistryList(

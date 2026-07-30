@@ -3,8 +3,10 @@ package com.capstone.decision.infrastructure.rag
 import com.capstone.decision.application.rag.RagSourceRegistryEntry
 import com.capstone.decision.application.rag.RagSourceRegistryList
 import com.capstone.decision.application.rag.RagSourceRegistryPort
+import com.capstone.decision.application.rag.RagSourceRegistryUnavailableException
 import com.capstone.decision.infrastructure.risk.ActorScopedReadQuery
 import org.springframework.stereotype.Repository
+import java.sql.SQLException
 import java.time.OffsetDateTime
 
 @Repository
@@ -16,55 +18,38 @@ class JdbcRagSourceRegistryAdapter(
      * 함수와 ActorScopedReadQuery가 같은 actor binding을 재검증해 authenticated owner 경계를 고정한다.
      */
     override fun listVisibleSources(actorUserId: String): RagSourceRegistryList {
-        val items =
-            actorScopedReadQuery.query(
-                actorUserId = actorUserId,
-                sql =
-                    """
-                    SELECT source_id,
-                           title,
-                           source_type,
-                           tier,
-                           access_level,
-                           license_decision,
-                           external_processing_allowed,
-                           initial_processing,
-                           retention_mode,
-                           retention_days,
-                           retention_owner,
-                           canonical_url,
-                           attribution,
-                           ingest_status,
-                           created_at,
-                           retired_at,
-                           last_checked_at,
-                           latest_check_result
-                    FROM read_rag_source_registry(?)
-                    """.trimIndent(),
-                binder = { statement -> statement.setString(1, actorUserId) },
-            ) { result ->
-                RagSourceRegistryEntry(
-                    sourceId = result.getString("source_id"),
-                    title = result.getString("title"),
-                    sourceType = result.getString("source_type"),
-                    tier = result.getString("tier"),
-                    accessLevel = result.getString("access_level"),
-                    licenseDecision = result.getString("license_decision"),
-                    externalProcessingAllowed = result.getBoolean("external_processing_allowed"),
-                    initialProcessing = result.getString("initial_processing"),
-                    retentionMode = result.getString("retention_mode"),
-                    retentionDays = result.getInt("retention_days"),
-                    retentionOwner = result.getString("retention_owner"),
-                    canonicalUrl = result.getString("canonical_url"),
-                    attribution = result.getString("attribution"),
-                    ingestStatus = result.getString("ingest_status"),
-                    createdAt = result.getObject("created_at", OffsetDateTime::class.java).toInstant(),
-                    retiredAt = result.getNullableInstant("retired_at"),
-                    lastCheckedAt = result.getNullableInstant("last_checked_at"),
-                    latestCheckResult = result.getString("latest_check_result"),
-                )
-            }
-        return RagSourceRegistryList(items)
+        try {
+            val items =
+                actorScopedReadQuery.query(
+                    actorUserId = actorUserId,
+                    sql =
+                        """
+                        SELECT source_id,
+                               title,
+                               institution,
+                               topic,
+                               attribution,
+                               canonical_url,
+                               last_checked_at
+                        FROM read_rag_source_registry(?)
+                        """.trimIndent(),
+                    binder = { statement -> statement.setString(1, actorUserId) },
+                ) { result ->
+                    RagSourceRegistryEntry(
+                        sourceId = result.getString("source_id"),
+                        title = result.getString("title"),
+                        institution = result.getString("institution"),
+                        topic = result.getString("topic"),
+                        attribution = result.getString("attribution"),
+                        canonicalUrl = result.getString("canonical_url"),
+                        lastCheckedAt = result.getNullableInstant("last_checked_at"),
+                    )
+                }
+            return RagSourceRegistryList(items)
+        } catch (exception: SQLException) {
+            // JDBC driver의 checked exception도 public handler에 raw SQL/role 정보를 노출하지 않는다.
+            throw RagSourceRegistryUnavailableException(exception)
+        }
     }
 
     private fun java.sql.ResultSet.getNullableInstant(column: String) = getObject(column, OffsetDateTime::class.java)?.toInstant()

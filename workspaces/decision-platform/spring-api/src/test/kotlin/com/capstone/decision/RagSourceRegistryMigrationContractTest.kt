@@ -25,6 +25,10 @@ class RagSourceRegistryMigrationContractTest {
     @Test
     fun `S4 migration fails before mutation unless every V2 RAG table is empty`() {
         assertThat(migration).contains("S4 normalized RAG precondition failed")
+        val lockPosition = migration.indexOf("LOCK TABLE")
+        val preconditionPosition = migration.indexOf("DO \$s4_v2_precondition\$")
+        assertThat(lockPosition).isGreaterThanOrEqualTo(0)
+        assertThat(lockPosition).isLessThan(preconditionPosition)
         listOf(
             "rag_sources",
             "rag_chunks",
@@ -32,6 +36,7 @@ class RagSourceRegistryMigrationContractTest {
             "rag_citations",
             "rag_answer_feedback",
         ).forEach { legacyTable ->
+            assertThat(migration.substring(lockPosition, preconditionPosition)).contains(legacyTable)
             assertThat(migration).contains("FROM $legacyTable")
         }
         assertThat(migration).contains("V2 legacy RAG tables must all be empty")
@@ -68,7 +73,23 @@ class RagSourceRegistryMigrationContractTest {
         assertThat(migration).doesNotContain("GRANT UPDATE ON", "TO decision_worker")
         assertThat(migration).doesNotContain("GRANT DELETE ON", "TO decision_worker")
         assertThat(migration).contains("REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM PUBLIC")
-        assertThat(migration).contains("REVOKE ALL PRIVILEGES ON ALL FUNCTIONS IN SCHEMA public FROM PUBLIC")
+        listOf(
+            "guard_rag_source_revision_locator()",
+            "guard_rag_ingest_run_transition()",
+            "guard_rag_chunk_scope()",
+            "guard_rag_generation_materialization()",
+            "guard_rag_generation_transition()",
+            "guard_rag_generation_activation()",
+            "retire_rag_source_for_relocation(text, text)",
+            "read_rag_source_registry(text)",
+            "read_active_rag_chunks(text, integer)",
+        ).forEach { signature ->
+            assertThat(migration).contains("REVOKE ALL PRIVILEGES ON FUNCTION $signature FROM PUBLIC")
+        }
+        assertThat(migration).contains(
+            "GRANT EXECUTE\n      ON FUNCTION retire_rag_source_for_relocation(text, text)\n" +
+                "      TO decision_rag_writer",
+        )
     }
 
     @Test
@@ -84,6 +105,19 @@ class RagSourceRegistryMigrationContractTest {
         assertThat(migration).contains("embedding_profile_id")
         assertThat(migration).contains("embedding_input_hash")
         assertThat(migration).contains("context_set_hash")
+        listOf(
+            "REGISTERED",
+            "PLANNED",
+            "MATERIALIZING",
+            "MATERIALIZED",
+            "EVAL_PASSED",
+            "ACTIVE",
+            "FAILED_FINAL",
+            "DISABLED",
+        ).forEach { status ->
+            assertThat(migration).contains("'$status'")
+        }
+        assertThat(migration).doesNotContain("'EVALUATING'", "'RETIRED'")
     }
 
     private fun resolveNextFreeS4Migration(): Path {

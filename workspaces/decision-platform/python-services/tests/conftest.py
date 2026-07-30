@@ -98,6 +98,12 @@ def postgres_cluster() -> Iterator[PostgresTestCluster]:
                 ALTER ROLE decision_app SET statement_timeout = '2s';
                 ALTER ROLE decision_app SET lock_timeout = '500ms';
                 ALTER ROLE decision_app SET idle_in_transaction_session_timeout = '5s';
+                ALTER ROLE decision_rag_writer SET statement_timeout = '2s';
+                ALTER ROLE decision_rag_writer SET lock_timeout = '500ms';
+                ALTER ROLE decision_rag_writer SET idle_in_transaction_session_timeout = '5s';
+                ALTER ROLE decision_rag_query SET statement_timeout = '1500ms';
+                ALTER ROLE decision_rag_query SET lock_timeout = '250ms';
+                ALTER ROLE decision_rag_query SET idle_in_transaction_session_timeout = '5s';
                 GRANT CONNECT ON DATABASE decision TO
                     decision_app,
                     decision_collector,
@@ -122,33 +128,39 @@ def postgres_cluster() -> Iterator[PostgresTestCluster]:
                 GRANT CREATE ON SCHEMA public TO flyway;
                 """
             )
-            for migration in sorted(MIGRATION_DIR.glob("V*__*.sql"), key=_migration_version):
-                if migration.name.startswith("V8__"):
-                    # Java V7 migration은 Python SQL runner 대상이 아니므로 V8 전에 FK용 test identity만 모사한다.
-                    connection.execute(
-                        """
-                        INSERT INTO users (user_id, username, role, password_hash)
-                        VALUES
-                          ('usr_demo_user', 'python-fixture-user', 'USER', 'test-only-hash'),
-                          ('usr_demo_admin', 'python-fixture-admin', 'ADMIN', 'test-only-hash')
-                        """
-                    )
-                migration_sql = migration.read_text(encoding="utf-8").replace(
-                    "${brokerageDbCapabilityTokenSha256}",
-                    TEST_BROKERAGE_DB_CAPABILITY_TOKEN_SHA256,
-                )
-                connection.execute(migration_sql)
-                if migration.name.startswith("V4__"):
-                    # Python test path도 V5/V6 protection SQL이 참조하는 Flyway history object만 모사한다.
-                    connection.execute(
-                        """
-                        CREATE TABLE flyway_schema_history (
-                            installed_rank integer PRIMARY KEY,
-                            version text,
-                            success boolean NOT NULL DEFAULT true
+            connection.execute("CREATE EXTENSION IF NOT EXISTS vector")
+            connection.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm")
+            connection.execute("SET ROLE flyway")
+            try:
+                for migration in sorted(MIGRATION_DIR.glob("V*__*.sql"), key=_migration_version):
+                    if migration.name.startswith("V8__"):
+                        # Java V7 migration은 Python SQL runner 대상이 아니므로 V8 전에 FK용 test identity만 모사한다.
+                        connection.execute(
+                            """
+                            INSERT INTO users (user_id, username, role, password_hash)
+                            VALUES
+                              ('usr_demo_user', 'python-fixture-user', 'USER', 'test-only-hash'),
+                              ('usr_demo_admin', 'python-fixture-admin', 'ADMIN', 'test-only-hash')
+                            """
                         )
-                        """
+                    migration_sql = migration.read_text(encoding="utf-8").replace(
+                        "${brokerageDbCapabilityTokenSha256}",
+                        TEST_BROKERAGE_DB_CAPABILITY_TOKEN_SHA256,
                     )
+                    connection.execute(migration_sql)
+                    if migration.name.startswith("V4__"):
+                        # Python test path도 V5/V6 protection SQL이 참조하는 Flyway history object만 모사한다.
+                        connection.execute(
+                            """
+                            CREATE TABLE flyway_schema_history (
+                                installed_rank integer PRIMARY KEY,
+                                version text,
+                                success boolean NOT NULL DEFAULT true
+                            )
+                            """
+                        )
+            finally:
+                connection.execute("RESET ROLE")
 
         yield {
             "admin_dsn": admin_dsn,

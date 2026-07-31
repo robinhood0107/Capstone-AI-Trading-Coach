@@ -80,7 +80,7 @@ activation을 구현한 것으로 보지 않는다. 상세 순서는
 ## 시작하기 (decision-platform)
 
 현재 레포는 STAGE 2이며 Decision Platform의 S0 walking skeleton, S1.1 KIS 시장데이터,
-S1.2c OpenDART 분석 데이터, S1.3 ECOS와 퇴역 예정 Naver historical snapshot,
+S1.2c OpenDART 분석 데이터, S1.3 ECOS와 퇴역 완료된 Naver historical audit,
 S1.3G GDELT aggregate contract, S1.3K KRX universe 자동화,
 S1.4 금융공학, S1.5 품질 보고, S1.6 내부 offline calendar/event aggregator, S2.1 Principle
 CRUD, S2.2 offline rule evaluator, S2.3 Decision runtime과 S2.4 Risk/Kill Switch까지 구현되어

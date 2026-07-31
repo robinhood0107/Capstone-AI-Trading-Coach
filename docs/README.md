@@ -10,10 +10,11 @@
   evaluator, S2.3 Decision runtime, S2.4 Risk/Kill Switch, S3 mock/internal-paper 흐름은
   각 세션의 merge evidence를 기준으로 판정한다.
 - S4 RAG static catalog, P0 source registry 20개, owner-scoped source metadata API,
-  offline safe I/O/parser/chunker는 현재 작업 브랜치의 `IMPLEMENTED_DRAFT`다. 아직
-  commit/PR/main 병합 완료로 표시하지 않는다.
-- BGE model download·inference, Voyage/Gemini/OpenAI 호출, `/rag/ask`, 암호화 history,
-  retrieval/RRF/evaluator, S5 LightGBM은 아직 완료되지 않았다.
+  offline safe I/O/parser/chunker, exact project source card 30개와 pinned BGE full
+  generation은 각 merge evidence를 기준으로 판정한다. S4.2B local benchmark는 exact
+  30/30 DB parity와 bounded admin CAS를 통과했고 provider physical call은 0이다.
+- Voyage/Gemini/OpenAI 호출, `/rag/ask`, 암호화 history, retrieval/RRF/evaluator,
+  S5 LightGBM은 아직 완료되지 않았다.
 - S4.8A/B/C·S6.6/S6.7 교차시장 계획 타당성은 `PLAN_FEASIBILITY=GO`, 구현 상태는
   `IMPLEMENTATION=SPEC_ONLY / NOT_IMPLEMENTED / PLANNED`다. 월 데이터 비용 `0원`,
   offline fixture·지연/EOD 우선이며 기관용/실시간 feed는 P1 완주 조건이 아니다.

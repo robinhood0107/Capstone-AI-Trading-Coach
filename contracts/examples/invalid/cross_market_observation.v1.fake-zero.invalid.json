@@ -1,0 +1,22 @@
+{
+  "abstainReason": "SOURCE_MISSING",
+  "artifactHash": "1111111111111111111111111111111111111111111111111111111111111111",
+  "availableAt": "2026-07-31T00:00:03Z",
+  "completeness": "MISSING",
+  "contractId": "cross_market_observation.v1",
+  "decisionAuthority": "NONE",
+  "evaluatedAt": "2026-07-31T00:00:04Z",
+  "instrument": "NVDA",
+  "logicalIdentityHash": "2222222222222222222222222222222222222222222222222222222222222222",
+  "market": "XNAS",
+  "observedAt": "2026-07-31T00:00:00Z",
+  "payloadHash": "3333333333333333333333333333333333333333333333333333333333333333",
+  "receivedAt": "2026-07-31T00:00:02Z",
+  "schemaVersion": "1",
+  "sessionDate": "2026-07-30",
+  "sourceRef": "4444444444444444444444444444444444444444444444444444444444444444",
+  "status": "ABSTAIN",
+  "timeframe": "EOD",
+  "value": 0,
+  "valueType": "SESSION_RETURN"
+}

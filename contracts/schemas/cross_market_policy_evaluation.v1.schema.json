@@ -1,0 +1,242 @@
+{
+  "$id": "contracts/schemas/cross_market_policy_evaluation.v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "oneOf": [
+    {
+      "properties": {
+        "estimationStatus": {
+          "const": "NOT_ESTIMABLE"
+        },
+        "metrics": {
+          "properties": {
+            "conflictRate": {
+              "const": null
+            },
+            "coverageRate": {
+              "const": null
+            },
+            "downsideAvoidedBps": {
+              "const": null
+            },
+            "falseBlockRate": {
+              "const": null
+            },
+            "latencyP95Millis": {
+              "const": null
+            },
+            "missedUpsideBps": {
+              "const": null
+            },
+            "netProtectionBps": {
+              "const": null
+            },
+            "staleRate": {
+              "const": null
+            },
+            "unsupportedRate": {
+              "const": null
+            }
+          }
+        },
+        "triggerCount": {
+          "const": 0
+        }
+      }
+    },
+    {
+      "properties": {
+        "estimationStatus": {
+          "const": "ESTIMABLE"
+        },
+        "triggerCount": {
+          "minimum": 1
+        }
+      }
+    }
+  ],
+  "properties": {
+    "artifactHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "contractId": {
+      "const": "cross_market_policy_evaluation.v1"
+    },
+    "decisionAuthority": {
+      "const": "NONE"
+    },
+    "estimationStatus": {
+      "enum": [
+        "ESTIMABLE",
+        "NOT_ESTIMABLE"
+      ]
+    },
+    "evaluationKind": {
+      "enum": [
+        "EVENT_STUDY",
+        "LIGHTGBM_POLICY_REPLAY",
+        "RUNTIME_SHADOW"
+      ]
+    },
+    "frozenThreshold": {
+      "maximum": 100,
+      "minimum": 0,
+      "type": "number"
+    },
+    "logicalIdentityHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "metrics": {
+      "additionalProperties": false,
+      "properties": {
+        "conflictRate": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "coverageRate": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "downsideAvoidedBps": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "falseBlockRate": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "latencyP95Millis": {
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "missedUpsideBps": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "netProtectionBps": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "staleRate": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "unsupportedRate": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "conflictRate",
+        "coverageRate",
+        "downsideAvoidedBps",
+        "falseBlockRate",
+        "latencyP95Millis",
+        "missedUpsideBps",
+        "netProtectionBps",
+        "staleRate",
+        "unsupportedRate"
+      ],
+      "type": "object"
+    },
+    "payloadHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "runtimeRiskEngineSource": {
+      "const": false
+    },
+    "schemaVersion": {
+      "const": "1"
+    },
+    "severeLossCutoffBps": {
+      "maximum": 0,
+      "type": "number"
+    },
+    "split": {
+      "additionalProperties": false,
+      "properties": {
+        "embargoSessions": {
+          "const": 5
+        },
+        "purgeSessions": {
+          "const": 5
+        },
+        "testPercent": {
+          "const": 20
+        },
+        "trainPercent": {
+          "const": 60
+        },
+        "validationPercent": {
+          "const": 20
+        }
+      },
+      "required": [
+        "embargoSessions",
+        "purgeSessions",
+        "testPercent",
+        "trainPercent",
+        "validationPercent"
+      ],
+      "type": "object"
+    },
+    "thresholdFrozen": {
+      "const": true
+    },
+    "triggerCount": {
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "artifactHash",
+    "contractId",
+    "decisionAuthority",
+    "estimationStatus",
+    "evaluationKind",
+    "frozenThreshold",
+    "logicalIdentityHash",
+    "metrics",
+    "payloadHash",
+    "runtimeRiskEngineSource",
+    "schemaVersion",
+    "severeLossCutoffBps",
+    "split",
+    "thresholdFrozen",
+    "triggerCount"
+  ],
+  "title": "cross_market_policy_evaluation.v1",
+  "type": "object"
+}

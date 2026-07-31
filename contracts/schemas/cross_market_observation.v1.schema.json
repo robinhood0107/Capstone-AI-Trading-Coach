@@ -1,0 +1,170 @@
+{
+  "$id": "contracts/schemas/cross_market_observation.v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "oneOf": [
+    {
+      "not": {
+        "required": [
+          "abstainReason"
+        ]
+      },
+      "properties": {
+        "completeness": {
+          "const": "COMPLETE"
+        },
+        "status": {
+          "const": "AVAILABLE"
+        },
+        "value": {
+          "type": "number"
+        }
+      }
+    },
+    {
+      "properties": {
+        "completeness": {
+          "enum": [
+            "INCOMPLETE",
+            "MISSING"
+          ]
+        },
+        "status": {
+          "const": "ABSTAIN"
+        },
+        "value": {
+          "const": null
+        }
+      },
+      "required": [
+        "abstainReason"
+      ]
+    }
+  ],
+  "properties": {
+    "abstainReason": {
+      "enum": [
+        "SOURCE_MISSING",
+        "SOURCE_INCOMPLETE",
+        "SOURCE_STALE",
+        "ENTITLEMENT_DISABLED"
+      ]
+    },
+    "artifactHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "availableAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "completeness": {
+      "enum": [
+        "COMPLETE",
+        "INCOMPLETE",
+        "MISSING"
+      ]
+    },
+    "contractId": {
+      "const": "cross_market_observation.v1"
+    },
+    "decisionAuthority": {
+      "const": "NONE"
+    },
+    "evaluatedAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "instrument": {
+      "pattern": "^[0-9A-Z._:-]{1,32}$",
+      "type": "string"
+    },
+    "logicalIdentityHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "market": {
+      "enum": [
+        "XNAS",
+        "XNYS",
+        "XKRX",
+        "FX",
+        "INDEX"
+      ]
+    },
+    "observedAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "payloadHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "receivedAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": "1"
+    },
+    "sessionDate": {
+      "format": "date",
+      "type": "string"
+    },
+    "sourceRef": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "AVAILABLE",
+        "ABSTAIN"
+      ]
+    },
+    "timeframe": {
+      "enum": [
+        "EOD",
+        "DAILY",
+        "SESSION"
+      ]
+    },
+    "value": {
+      "maximum": 1000000000,
+      "minimum": -1000000000,
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "valueType": {
+      "enum": [
+        "PRICE",
+        "SESSION_RETURN",
+        "STRESS_LEVEL"
+      ]
+    }
+  },
+  "required": [
+    "artifactHash",
+    "availableAt",
+    "completeness",
+    "contractId",
+    "decisionAuthority",
+    "evaluatedAt",
+    "instrument",
+    "logicalIdentityHash",
+    "market",
+    "observedAt",
+    "payloadHash",
+    "receivedAt",
+    "schemaVersion",
+    "sessionDate",
+    "sourceRef",
+    "status",
+    "timeframe",
+    "value",
+    "valueType"
+  ],
+  "title": "cross_market_observation.v1",
+  "type": "object"
+}

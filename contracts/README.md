@@ -453,25 +453,24 @@ uv run --frozen python contracts/validate.py
 상세 결정과 소비자 영향은
 [`20260729-s4-rag-contract-catalog.md`](changes/20260729-s4-rag-contract-catalog.md)를 따른다.
 
-## S4.8 교차시장·애널리스트 계획 계약
+## S4.8 교차시장·애널리스트 계약
 
 > 계획 타당성: `PLAN_FEASIBILITY=GO`.
-> 구현 상태: `IMPLEMENTATION=SPEC_ONLY / NOT_IMPLEMENTED / PLANNED`.
+> 현재 상태: `S4.8A_CONTRACT=LOCKED / S4.8B_C_RUNTIME=NOT_IMPLEMENTED`.
 > 월 데이터 비용 목표는 `0원`이고 offline fixture·지연/EOD가 먼저다. 기관용 제품과
 > 실시간 SOX/VIX feed는 post-P1 선택지이며 P1 DoD가 아니다. 새 agent framework·별도
 > cloud·Kafka는 hard dependency가 아니다.
 >
-> 이 절은 Markdown 수준의 contract plan이다.
-> 아래 이름의 JSON Schema·fixture·catalog·migration·OpenAPI/runtime 구현이 현재 존재하거나
-> 검증됐다는 뜻이 아니다. 실제 machine-readable 파일은 S4.8A contract-lock에서
-> positive/negative fixture와 generator/hash parity를 함께 만들 때만 추가한다.
+> S4.8A의 machine-readable schema·fixture·catalog와 generator/hash parity는 계약으로
+> 고정됐다. migration, provider activation, OpenAPI/Spring/Python runtime은 아직 구현되지
+> 않았으며 이 계약 잠금을 runtime 완료로 해석하지 않는다.
 
 순서 0 `S4.READ`는 관련 공개·private 명세 EOF receipt와 충돌 목록만 남기는 read-only
 preflight다. 첫 변경 PR은 아래 일곱 계약과 fixture/generator/parity만 포함하는
 **contract-only PR**이어야 한다. 이 PR이 검증·병합되기 전 adapter·DB·API·RiskEngine
 runtime PR은 시작하지 않는다.
 
-계획된 versioned SSOT는 다음 일곱 개다.
+고정된 versioned SSOT는 다음 일곱 개다.
 
 1. `market_source_entitlement.v1`
 2. `cross_market_exposure_catalog.v1`
@@ -493,7 +492,9 @@ manual-link 원천의 합이며 현재 S4.8 활성 provider와 usable adapter는
 endpoint도 disabled fixture-first 후보로만 계획한다. exact 42개 행과 exact 18개 allowlist는
 Git으로 추적하지 않는 로컬 전용 자료수급 레지스트리가
 운영 authority이며 공개 계약에는 집계와 불변식만 두고 전체 inventory를 복제하지 않는다.
-provider raw body, PDF·뉴스 원문,
+공개 fixture의 exact KIS 18 identity는 endpoint 이름을 노출하지 않는 opaque SHA-256이며
+모두 `CANDIDATE_DISABLED`다. 별도 GDELT aggregate entitlement도
+`CANDIDATE_DISABLED`, `decisionAuthority=NONE`이다. provider raw body, PDF·뉴스 원문,
 credential·계좌 데이터는 저장하지 않고, RAG source registry와 기존 30-card corpus/hash는
 변경하지 않는다.
 
@@ -518,8 +519,9 @@ tag만 허용한다. `derivedDataAllowed=false`이면 parser/LLM 파생 결과�
 
 P1 교차시장 권한은 적용 대상 신규 BUY의 `ALLOW → WARN`뿐이다. `ENFORCED`의 HOLD/BLOCK,
 SELL, 기존 보유분 매도, 주문 생성, 수량 축소와 KIS Live는 post-P1 별도 계약·승인 전
-비활성이다. 현재 변경은 Markdown만 수정하며 schema·fixture·catalog·OpenAPI·SQL·runtime
-파일을 추가하지 않는다.
+비활성이다. 계약 산출물과 재현 명령은
+[`20260731-s4-8a-cross-market-contract-lock.md`](changes/20260731-s4-8a-cross-market-contract-lock.md)에
+기록하며 SQL·OpenAPI·runtime 구현과 provider 호출은 포함하지 않는다.
 
 ## S1.5 KIS 데이터 품질 리포트
 

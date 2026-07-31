@@ -1,0 +1,75 @@
+{
+  "artifactHash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "availability": "AVAILABLE",
+  "broadRiskOffScore": 72.5,
+  "configVersion": "cross-market-risk-config.v1",
+  "contractId": "cross_market_risk_snapshot.v1",
+  "decisionAuthority": "NEW_BUY_ALLOW_TO_BLOCK",
+  "domesticLeverageStressScore": 81.25,
+  "evidenceMode": "SYNTHETIC_FIXTURE",
+  "evidenceRefs": [
+    "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+  ],
+  "freshness": [
+    {
+      "asOf": "2026-07-31T00:00:00Z",
+      "component": "SEMICONDUCTOR",
+      "freshUntil": "2026-08-01T00:00:00Z",
+      "sourceRefs": [
+        "1111111111111111111111111111111111111111111111111111111111111111"
+      ],
+      "state": "AVAILABLE"
+    },
+    {
+      "asOf": "2026-07-31T00:00:00Z",
+      "component": "BROAD_MARKET",
+      "freshUntil": "2026-08-01T00:00:00Z",
+      "sourceRefs": [
+        "2222222222222222222222222222222222222222222222222222222222222222"
+      ],
+      "state": "AVAILABLE"
+    },
+    {
+      "asOf": "2026-07-31T00:00:00Z",
+      "component": "FX",
+      "freshUntil": "2026-08-01T00:00:00Z",
+      "sourceRefs": [
+        "3333333333333333333333333333333333333333333333333333333333333333"
+      ],
+      "state": "AVAILABLE"
+    },
+    {
+      "asOf": "2026-07-31T00:00:00Z",
+      "component": "DOMESTIC_AMPLIFICATION",
+      "freshUntil": "2026-08-01T00:00:00Z",
+      "sourceRefs": [
+        "4444444444444444444444444444444444444444444444444444444444444444"
+      ],
+      "state": "AVAILABLE"
+    }
+  ],
+  "fxStressScore": 63,
+  "logicalIdentityHash": "0000000000000000000000000000000000000000000000000000000000000000",
+  "mode": "WARN_ONLY",
+  "orderAuthority": "NONE",
+  "owner": "1111111111111111111111111111111111111111111111111111111111111111",
+  "payloadHash": "2222222222222222222222222222222222222222222222222222222222222222",
+  "performanceClaimAllowed": false,
+  "schemaVersion": "1",
+  "semiconductorShockScore": 88.75,
+  "timing": {
+    "detectionLatencyMillis": 900000,
+    "preOpenLeadTimeMillis": 13500000,
+    "preOpenState": "EARLY",
+    "snapshotAvailableAt": "2026-07-31T00:15:00Z",
+    "sourceAvailableAt": "2026-07-31T00:00:00Z",
+    "xkrxOpenAt": "2026-07-31T04:00:00Z"
+  },
+  "upstreamArtifactHashes": [
+    "3333333333333333333333333333333333333333333333333333333333333333",
+    "4444444444444444444444444444444444444444444444444444444444444444",
+    "5555555555555555555555555555555555555555555555555555555555555555",
+    "6666666666666666666666666666666666666666666666666666666666666666"
+  ],
+  "validationStatus": "UNVALIDATED"
+}

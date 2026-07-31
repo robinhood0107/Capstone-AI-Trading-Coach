@@ -45,6 +45,10 @@ from contracts.generate_s1_3g_news_contracts import (  # noqa: E402
     validate_gdelt_observation_semantics,
     validate_news_summary_semantics,
 )
+from contracts.generate_s4_8a_cross_market_contracts import (  # noqa: E402
+    SCHEMA_IDS as S4_8A_SCHEMA_IDS,
+    validate_semantics as validate_s4_8a_semantics,
+)
 
 SCHEMA_DIR = REPO_ROOT / "contracts" / "schemas"
 EXAMPLES_DIR = REPO_ROOT / "contracts" / "examples"
@@ -74,6 +78,13 @@ S2_EXAMPLE_SCHEMA_PREFIXES = {
     "principle-error-conflict": "principle-error",
     "principle-error-cursor": "principle-error",
 }
+
+VERSIONED_EXAMPLE_SCHEMAS = {
+    **{schema_id: schema_id for schema_id in S4_8A_SCHEMA_IDS},
+    "s2-2-hash-vector.v3": "s2-2-hash-vector.v3",
+}
+
+
 def relative(path: Path) -> str:
     return path.relative_to(REPO_ROOT).as_posix()
 
@@ -85,7 +96,13 @@ def load_json(path: Path) -> object:
 def schema_name_from_example(path: Path, suffix: str) -> str:
     if not path.name.endswith(suffix):
         raise ValueError(f"Unexpected example file name: {relative(path)}")
-    base_name = path.name[: -len(suffix)].split(".", maxsplit=1)[0]
+    example_name = path.name[: -len(suffix)]
+    for versioned_prefix, schema_name in VERSIONED_EXAMPLE_SCHEMAS.items():
+        if example_name == versioned_prefix or example_name.startswith(
+            f"{versioned_prefix}."
+        ):
+            return schema_name
+    base_name = example_name.split(".", maxsplit=1)[0]
     return S2_EXAMPLE_SCHEMA_PREFIXES.get(base_name, base_name)
 
 
@@ -162,6 +179,11 @@ def validate_example_semantics(
         return
     if schema_name == "news_sentiment_summary.v2":
         validate_news_summary_semantics(example)
+        return
+    if schema_name in S4_8A_SCHEMA_IDS:
+        if not isinstance(example, dict):
+            raise ContractValidationError("S4.8A contract example must be an object.")
+        validate_s4_8a_semantics(schema_name, example)
         return
     validate_principle_payload_semantics(
         schema_name,

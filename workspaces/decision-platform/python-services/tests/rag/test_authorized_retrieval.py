@@ -613,7 +613,7 @@ def test_tracked_s4_3_benchmark_is_hash_bound_and_passed() -> None:
     ).hexdigest()
 
     assert actual_hash == expected_hash
-    assert report["commitSha"] == "9e533e486e8c3ddc85adf31fdf272027706a85d2"
+    assert report["commitSha"] == "bb64fed76f37f297796d8fac02d2b8a97ab78d34"
     assert report["querySetSha256"] == hashlib.sha256(query_path.read_bytes()).hexdigest()
     assert report["status"] == "PASS"
     assert report["expectedTop5HitRate"] == 1.0

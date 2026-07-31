@@ -1,0 +1,38 @@
+{
+  "allowedUses": [
+    "EXPLANATION_ONLY"
+  ],
+  "articleCount": 39,
+  "articleMetadataStored": false,
+  "artifactHash": "3333333333333333333333333333333333333333333333333333333333333333",
+  "artifactId": "news_sum_005930_20260731",
+  "asOf": "2026-07-31T00:00:02Z",
+  "attentionScore": 0.0001625,
+  "attribution": {
+    "citation": "The GDELT Project",
+    "projectUrl": "https://www.gdeltproject.org/",
+    "provider": "GDELT",
+    "termsUrl": "https://www.gdeltproject.org/about.html"
+  },
+  "availableAt": "2026-07-31T00:00:03Z",
+  "conflictFlag": true,
+  "decisionAuthority": "NONE",
+  "modelRecommendation": "BUY",
+  "producer": "NEWS_SENTIMENT_AGGREGATOR",
+  "qualityStatus": "COMPLETE",
+  "rawProviderDataStored": false,
+  "riskDecisionHashIncluded": false,
+  "s5FeatureEligible": false,
+  "schemaVersion": "2",
+  "sentimentScore": -0.1875,
+  "sourceObservationRefs": [
+    {
+      "artifactHash": "1111111111111111111111111111111111111111111111111111111111111111",
+      "observationId": "gdelt_obs_semiconductor_20260731"
+    }
+  ],
+  "sourceWorkspace": "decision-platform",
+  "status": "AVAILABLE",
+  "summary": "합성 fixture의 뉴스 톤과 관심도 집계가 상반되어 설명 근거만 제공한다.",
+  "symbol": "005930"
+}

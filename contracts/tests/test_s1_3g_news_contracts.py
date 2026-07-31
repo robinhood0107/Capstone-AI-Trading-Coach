@@ -125,7 +125,7 @@ class S13gNewsContractTest(unittest.TestCase):
         }
         for relative_path in sorted(INVALID_FIXTURE_PATHS):
             path = ROOT / relative_path
-            schema_id = path.name.split(".", maxsplit=1)[0]
+            schema_id = ".".join(path.name.split(".")[:2])
             try:
                 payload = _load(path)
             except ContractValidationError:

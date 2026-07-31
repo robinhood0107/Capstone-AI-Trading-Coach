@@ -1,0 +1,46 @@
+{
+  "approvalPacketHash": null,
+  "articleMetadataStored": false,
+  "artifactHash": "1111111111111111111111111111111111111111111111111111111111111111",
+  "attribution": {
+    "citation": "The GDELT Project",
+    "projectUrl": "https://www.gdeltproject.org/",
+    "provider": "GDELT",
+    "termsUrl": "https://www.gdeltproject.org/about.html"
+  },
+  "availableAt": "2026-07-31T00:00:02Z",
+  "collectionMode": "OFFLINE_FIXTURE",
+  "decisionAuthority": "NONE",
+  "modes": [
+    "TIMELINE_TONE",
+    "TIMELINE_VOL_RAW"
+  ],
+  "observationId": "gdelt_obs_semiconductor_20260731",
+  "observedAt": "2026-07-31T00:00:00Z",
+  "physicalAttemptCount": 0,
+  "points": [
+    {
+      "articleCount": 24,
+      "averageTone": -2.5,
+      "coverageRatio": 0.0002,
+      "norm": 120000,
+      "timestamp": "2026-07-30T00:00:00Z"
+    },
+    {
+      "articleCount": 15,
+      "averageTone": -1.25,
+      "coverageRatio": 0.000125,
+      "norm": 120000,
+      "timestamp": "2026-07-30T12:00:00Z"
+    }
+  ],
+  "queryRegistryId": "global_semiconductor_stress_v1",
+  "rawProviderDataStored": false,
+  "rawQuery": "semiconductor stocks",
+  "receivedAt": "2026-07-31T00:00:01Z",
+  "schemaVersion": "1",
+  "sourceCompleteness": "COMPLETE",
+  "status": "AVAILABLE",
+  "windowEnd": "2026-07-31T00:00:00Z",
+  "windowStart": "2026-07-30T00:00:00Z"
+}

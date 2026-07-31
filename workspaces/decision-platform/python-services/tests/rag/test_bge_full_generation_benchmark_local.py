@@ -65,11 +65,12 @@ class _CountingEmbedder:
 
 
 def test_exact_30_generation_parity_benchmark_and_atomic_activation(
-    postgres_cluster: dict[str, str],
+    isolated_postgres_cluster: dict[str, str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """pinned exact 30 corpus를 materialize·재독립 검증한 뒤 최종 SLA로 CAS 활성화한다."""
 
+    postgres_cluster = isolated_postgres_cluster
     monkeypatch.setenv("RAG_SOURCE_REGISTER_TARGET", "testcontainers")
     batch_report = json.loads(_BATCH_REPORT_PATH.read_text(encoding="utf-8"))
     batch_receipt = batch_receipt_from_report(batch_report)

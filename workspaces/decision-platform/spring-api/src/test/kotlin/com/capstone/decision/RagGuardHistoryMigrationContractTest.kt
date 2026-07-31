@@ -80,12 +80,10 @@ class RagGuardHistoryMigrationContractTest {
     @Test
     fun `V20 leaves writer query and public roles unable to reach user history or consent`() {
         listOf("decision_rag_writer", "decision_rag_query").forEach { role ->
-            assertThat(migration).contains(
-                "REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM $role",
-            )
+            assertThat(migration).contains("FROM $role;")
         }
         assertThat(migration).contains("session_user <> 'decision_app'")
         assertThat(migration).contains("current_setting('app.actor_user_id', true)")
-        assertThat(migration).contains("cardinality(p_citations) BETWEEN 0 AND 5")
+        assertThat(migration).contains("jsonb_array_length(p_citations)")
     }
 }

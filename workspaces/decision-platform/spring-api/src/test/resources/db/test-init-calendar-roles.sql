@@ -26,6 +26,9 @@ CREATE ROLE decision_fill_writer
 CREATE ROLE decision_rag_writer
     LOGIN PASSWORD 'rag-writer-test'
     NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
+CREATE ROLE decision_rag_admin
+    LOGIN PASSWORD 'rag-admin-test'
+    NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
 CREATE ROLE decision_rag_query
     LOGIN PASSWORD 'rag-query-test'
     NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
@@ -46,6 +49,11 @@ ALTER ROLE decision_rag_writer SET log_parameter_max_length_on_error = 0;
 ALTER ROLE decision_rag_writer SET statement_timeout = '2s';
 ALTER ROLE decision_rag_writer SET lock_timeout = '500ms';
 ALTER ROLE decision_rag_writer SET idle_in_transaction_session_timeout = '5s';
+ALTER ROLE decision_rag_admin SET log_parameter_max_length = 0;
+ALTER ROLE decision_rag_admin SET log_parameter_max_length_on_error = 0;
+ALTER ROLE decision_rag_admin SET statement_timeout = '5s';
+ALTER ROLE decision_rag_admin SET lock_timeout = '500ms';
+ALTER ROLE decision_rag_admin SET idle_in_transaction_session_timeout = '5s';
 ALTER ROLE decision_rag_query SET log_parameter_max_length = 0;
 ALTER ROLE decision_rag_query SET log_parameter_max_length_on_error = 0;
 ALTER ROLE decision_rag_query SET statement_timeout = '1500ms';
@@ -64,6 +72,7 @@ GRANT USAGE ON SCHEMA public TO
     decision_risk_writer,
     decision_fill_writer,
     decision_rag_writer,
+    decision_rag_admin,
     decision_rag_query,
     flyway;
 GRANT CREATE ON SCHEMA public TO flyway;

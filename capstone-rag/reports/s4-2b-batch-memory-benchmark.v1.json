@@ -1,0 +1,55 @@
+{
+  "artifactManifestSha256": "a0ae6372b2d735b593d806d24c1155cb48dd7188adebe7d6b7619a1622fb71aa",
+  "benchmarkSha256": "9aa704533622c4014a463706e85084ac2aab0ab6b1e578a445fff0376e9296c0",
+  "candidateBatchSizes": [
+    16,
+    32,
+    64
+  ],
+  "corpusManifestSha256": "7f2b4d72dcbaccf57cbe49a980973b17b4a9bfd85bec4694fd66fd7fd2a9decd",
+  "environment": {
+    "cpuCount": 8,
+    "kernelRelease": "6.18.33.2-microsoft-standard-WSL2",
+    "machine": "x86_64",
+    "onnxRuntimeVersion": "1.28.0",
+    "processor": "",
+    "pythonVersion": "3.12.13",
+    "system": "Linux",
+    "tokenizersVersion": "0.23.1"
+  },
+  "environmentFingerprintSha256": "7f5821b582e14ff0d5671381d48492ad0cee705e0341dbfb72d5ba8689a8412d",
+  "memoryLimitBytes": 11555859660,
+  "minimumHostHeadroomBytes": 4294967296,
+  "modelRevision": "5617a9f61b028005a4858fdac845db406aefb181",
+  "networkCalls": 0,
+  "physicalCalls": {
+    "gemini": 0,
+    "openai": 0,
+    "voyage": 0
+  },
+  "results": [
+    {
+      "batchSize": 16,
+      "effectiveLargestBatch": 16,
+      "elapsedMs": 60137.251976,
+      "peakRssBytes": 6377021440
+    },
+    {
+      "batchSize": 32,
+      "effectiveLargestBatch": 30,
+      "elapsedMs": 61971.020105,
+      "peakRssBytes": 6376796160
+    },
+    {
+      "batchSize": 64,
+      "effectiveLargestBatch": 30,
+      "elapsedMs": 65400.606078,
+      "peakRssBytes": 6376812544
+    }
+  ],
+  "schemaVersion": "s4-2b-batch-memory-benchmark/v1",
+  "selectedBatchSize": 32,
+  "selectionPolicy": "LOWEST_SAFE_ONE_PHYSICAL_BATCH_THEN_LARGEST_SAFE",
+  "status": "PASS",
+  "totalMemoryBytes": 16508370944
+}

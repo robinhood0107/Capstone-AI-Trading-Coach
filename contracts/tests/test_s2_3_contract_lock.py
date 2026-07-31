@@ -272,6 +272,7 @@ class S23MarkdownContractDriftTest(unittest.TestCase):
             "POSTGRES_PORTFOLIO_WRITER_PASSWORD",
             "POSTGRES_RISK_WRITER_PASSWORD",
             "POSTGRES_RAG_WRITER_PASSWORD",
+            "POSTGRES_RAG_ADMIN_PASSWORD",
             "POSTGRES_RAG_QUERY_PASSWORD",
         ):
             with self.subTest(variable=variable):

@@ -89,6 +89,28 @@ def test_fixture_rag_rpc_answers_with_authorized_top5_and_zero_provider_calls() 
     assert response.external_provider_candidate is False
 
 
+def test_effective_consent_context_uses_existing_s4_4_policy_without_enabling_provider() -> None:
+    resources = create_rag_server(_Settings(), S45FixtureRagEngine())
+    resources.server.start()
+    channel = grpc.insecure_channel(f"127.0.0.1:{resources.bound_port}")
+    request = _request(
+        "공개 source identifier src_project_backtest_overfitting_001의 핵심 경계와 "
+        "허용된 해석을 정확히 알려 주세요."
+    )
+    request.consent_context.granted = True
+    request.consent_context.policy_version = "EXTERNAL_AI_RAG_V1"
+    try:
+        response = rag_pb2_grpc.RagServiceStub(channel).Ask(
+            request, metadata=AUTH, timeout=2
+        )
+        assert response.status == rag_pb2.RAG_RESPONSE_STATUS_ANSWERED
+        assert response.provider_physical_counts.total == 0
+        assert response.external_provider_candidate is False
+    finally:
+        channel.close()
+        resources.server.stop(grace=0).wait(timeout=2)
+
+
 @pytest.mark.parametrize(
     ("question", "expected_status", "expected_failure"),
     [

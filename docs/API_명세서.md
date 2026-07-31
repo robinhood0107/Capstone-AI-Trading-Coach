@@ -1241,6 +1241,12 @@ RAG는 v1 핵심 구현이다. 단, RAG 답변은 매수/매도 지시가 아니
 > purpose-separated HMAC과 AES-256-GCM envelope encryption으로 구현한다. 이 단계의
 > Gemini·OpenAI·Voyage physical call은 0이고 허용 질문도 `RETRIEVAL_ONLY`로 닫는다.
 > 실제 Python retrieval/generation E2E는 S4.6, Gemini live는 별도 승인형 S4.4G 범위다.
+>
+> S4.5 구현 기준(2026-08-01): 공개·합성 exact 60 fixture가 production RRF·local
+> guardrail·citation parser를 재사용해 모든 metric gate를 통과했다. Voyage S4.2C와 Gemini
+> S4.4G는 내부 approval packet schema, usage state, mock transport와 fail-closed validator만
+> 구현한다. public ask/answer/history/OpenAPI field 변경은 0이며 fresh provider 승인과 paid
+> ZDR evidence가 없으므로 provider physical call, generation materialization과 activation은 0이다.
 
 ### 7.1 RAG 질문
 

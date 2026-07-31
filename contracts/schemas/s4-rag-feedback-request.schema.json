@@ -1,0 +1,15 @@
+{
+  "$id": "contracts/schemas/s4-rag-feedback-request.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "helpful": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "helpful"
+  ],
+  "title": "S4.4 RAG feedback request v1",
+  "type": "object"
+}

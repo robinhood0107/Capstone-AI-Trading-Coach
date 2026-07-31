@@ -1,0 +1,26 @@
+{
+  "$id": "contracts/schemas/s4-rag-consent-request.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "enum": [
+        "GRANT",
+        "REVOKE"
+      ]
+    },
+    "consentType": {
+      "const": "EXTERNAL_AI_RAG_V1"
+    },
+    "policyVersion": {
+      "const": "EXTERNAL_AI_RAG_V1"
+    }
+  },
+  "required": [
+    "consentType",
+    "action",
+    "policyVersion"
+  ],
+  "title": "S4.4 external AI RAG consent event request v1",
+  "type": "object"
+}

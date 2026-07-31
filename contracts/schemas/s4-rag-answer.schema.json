@@ -1,0 +1,176 @@
+{
+  "$id": "contracts/schemas/s4-rag-answer.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "else": {
+        "properties": {
+          "answer": {
+            "type": "null"
+          },
+          "citationCoverage": {
+            "const": 0
+          },
+          "citations": {
+            "maxItems": 0
+          }
+        }
+      },
+      "if": {
+        "properties": {
+          "generationStatus": {
+            "const": "ANSWERED"
+          }
+        },
+        "required": [
+          "generationStatus"
+        ]
+      },
+      "then": {
+        "properties": {
+          "answer": {
+            "maxLength": 8192,
+            "minLength": 1,
+            "type": "string"
+          },
+          "citationCoverage": {
+            "const": 1
+          },
+          "citations": {
+            "minItems": 1
+          },
+          "retrievalFailure": {
+            "const": false
+          }
+        }
+      }
+    },
+    {
+      "else": {
+        "properties": {
+          "retrievalFailure": {
+            "const": false
+          }
+        }
+      },
+      "if": {
+        "properties": {
+          "generationStatus": {
+            "const": "RETRIEVAL_FAILURE"
+          }
+        },
+        "required": [
+          "generationStatus"
+        ]
+      },
+      "then": {
+        "properties": {
+          "retrievalFailure": {
+            "const": true
+          }
+        }
+      }
+    }
+  ],
+  "properties": {
+    "answer": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "answerId": {
+      "pattern": "^rag_ans_[0-9a-f]{32}$",
+      "type": "string"
+    },
+    "citationCoverage": {
+      "maximum": 1,
+      "minimum": 0,
+      "type": "number"
+    },
+    "citations": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "canonicalUrl": {
+            "format": "uri",
+            "maxLength": 2048,
+            "pattern": "^https://",
+            "type": "string"
+          },
+          "citationId": {
+            "pattern": "^cit_[1-5]$",
+            "type": "string"
+          },
+          "sectionTitle": {
+            "maxLength": 512,
+            "minLength": 1,
+            "type": "string"
+          },
+          "sourceId": {
+            "pattern": "^src_project_[a-z0-9][a-z0-9_]*_[0-9]{3}$",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 300,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "citationId",
+          "sourceId",
+          "title",
+          "sectionTitle",
+          "canonicalUrl"
+        ],
+        "type": "object"
+      },
+      "maxItems": 5,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "generationStatus": {
+      "enum": [
+        "ANSWERED",
+        "RETRIEVAL_ONLY",
+        "RETRIEVAL_FAILURE",
+        "BLOCKED_SENSITIVE",
+        "BLOCKED_ADVICE",
+        "GENERATION_UNAVAILABLE"
+      ]
+    },
+    "guardrailFlags": {
+      "items": {
+        "maxLength": 64,
+        "minLength": 1,
+        "pattern": "^[A-Z0-9_]+$",
+        "type": "string"
+      },
+      "maxItems": 8,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "requestId": {
+      "maxLength": 128,
+      "minLength": 1,
+      "type": "string"
+    },
+    "retrievalFailure": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "requestId",
+    "answerId",
+    "generationStatus",
+    "answer",
+    "citationCoverage",
+    "retrievalFailure",
+    "citations",
+    "guardrailFlags"
+  ],
+  "title": "S4.4 RAG answer data v1",
+  "type": "object"
+}

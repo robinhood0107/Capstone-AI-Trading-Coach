@@ -1,0 +1,11 @@
+{
+  "answer": null,
+  "answerId": "rag_ans_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "answerMode": "CONCISE",
+  "citations": [],
+  "createdAt": "2026-07-31T00:00:00Z",
+  "expiresAt": "2026-08-30T00:00:00Z",
+  "generationStatus": "RETRIEVAL_ONLY",
+  "helpful": null,
+  "question": "VaR와 ES의 차이를 공개 근거 범위에서 설명해 주세요."
+}

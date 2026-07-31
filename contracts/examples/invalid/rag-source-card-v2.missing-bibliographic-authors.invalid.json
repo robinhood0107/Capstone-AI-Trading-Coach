@@ -1,0 +1,60 @@
+{
+  "accessLevel": "PUBLIC",
+  "accessNote": "공개 DOI registry와 공식 publisher metadata의 bounded locator만 확인했다.",
+  "adoptedSession": "S4.7B",
+  "allowedUses": [
+    "risk-neutral pricing의 해석 한계를 설명하는 계약 fixture"
+  ],
+  "attribution": "Fischer Black and Myron Scholes, Journal of Political Economy",
+  "bibliographicLocator": {
+    "authorityType": "DOI_REGISTRY",
+    "locatorType": "DOI",
+    "value": "10.1086/260062"
+  },
+  "bibliographicMetadata": {
+    "editionOrVersion": "Volume 81, Number 3",
+    "title": "The Pricing of Options and Corporate Liabilities",
+    "venue": "Journal of Political Economy",
+    "year": 1973
+  },
+  "canonicalUrl": "https://doi.org/10.1086/260062",
+  "canonicalUrlSha256": "08c7e61fc0aa1f29292774d24814428748b23026825a04896266eeeafca52ae8",
+  "cardId": "card_bsm_risk_neutral_001",
+  "cardVariant": "SCHOLARLY_PRIMARY_CARD",
+  "claim": "BSM은 무차익 복제 가격식이며 physical 상승확률을 직접 예측하는 모델이 아니다.",
+  "contentClass": "PROJECT_AUTHORED_SANITIZED_CARD",
+  "contradicts": [],
+  "evidenceClass": "PRIMARY_RESEARCH",
+  "evidenceContentSha256": "57c63c36372768918024d98d3575d5b4bcbfb4866dc4b171f23d03d6b3c5f4fc",
+  "externalProcessingAllowed": false,
+  "externalProcessingGate": "NOT_GRANTED",
+  "forbiddenInferences": [
+    "risk-neutral measure를 physical 상승확률로 해석하지 않는다."
+  ],
+  "institution": "university_of_chicago_press",
+  "licenseNote": "서지 metadata와 bounded claim만 사용하며 논문 원문은 corpus에 복제하지 않는다.",
+  "limitations": [
+    "원 논문의 가정 밖 실제 시장 확률이나 미래 가격을 보장하지 않는다."
+  ],
+  "modelAssumptions": [
+    {
+      "key": "RISK_NEUTRAL_NOT_PHYSICAL_PROBABILITY",
+      "statement": "복제와 무차익 가격결정의 measure를 실제 상승확률로 치환하지 않는다."
+    }
+  ],
+  "modelSensitive": true,
+  "representativeQuestions": [
+    "BSM 가격을 주가 상승확률로 읽으면 왜 안 되나요?"
+  ],
+  "retentionDays": 365,
+  "retentionOwner": "python-rag-corpus-privacy",
+  "schemaVersion": "2",
+  "sourceId": "src_project_bsm_risk_neutral_001",
+  "sourceType": "PROJECT_SOURCE_CARD",
+  "status": "VERIFIED",
+  "tier": "PROJECT",
+  "title": "BSM risk-neutral 가격과 physical 확률의 경계",
+  "topic": "bsm_risk_neutral",
+  "upstreamSourceIds": [],
+  "verifiedAt": "2026-07-31T00:00:00Z"
+}

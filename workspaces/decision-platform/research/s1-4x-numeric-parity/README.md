@@ -8,7 +8,7 @@ production `RiskEngine`, 공개 API, root `contracts/` 또는 다른 팀 workspa
 ## 현재 gate
 
 이 tree의 **Gate 1 neutral fixture freeze**는 PR #28로 `main`에 병합되었고, 현재는
-그 frozen contract와 S1.6 선행 runtime dependency amendment를 함께 재현한다.
+그 frozen contract와 후속 production runtime dependency amendment를 함께 재현한다.
 
 - 언어 중립 JSON/binary exchange schema와 20개 함수·32개 stable error registry
 - upstream Python/NumPy/JAX source·fixture byte lock, project runtime projection과 `uv.lock` lock
@@ -19,7 +19,7 @@ production `RiskEngine`, 공개 API, root `contracts/` 또는 다른 팀 workspa
 - PR과 `main` push에서 모두 실행되는 contract correctness workflow
 
 Gate 1 병합 전에 `scala/`, `haskell/`, 언어별 correctness workflow와 candidate report를
-추적하지 않던 경계는 이력으로 완료됐다. 현재 S1.6 선행 amendment는 candidate
+추적하지 않던 경계는 이력으로 완료됐다. runtime dependency amendment는 candidate
 source/report를 추가하지 않고 benchmark timing도 실행하지 않는다.
 
 ## 경계
@@ -87,33 +87,34 @@ dependency amendment에서는 dependency 파일만 바꾼 commit이 된다. refe
 향후 merge SHA를 가리켜 self-reference를 만들지 않는다. 최초 Gate 2 integration report가
 immutable GitHub merge event의 Gate 1 SHA와 이 tree의 byte-identical 상태를 연결한다.
 
-S1.6 PR A의 병합은 dependency commit이 최종 `main` HEAD의 조상으로 남는
+runtime dependency amendment PR의 병합은 dependency commit이 최종 `main` HEAD의 조상으로 남는
 **merge commit 방식만** 허용한다. squash/rebase merge는 `referenceBaseCommit` 조상성을
-없애 `main` push correctness check를 깨므로 금지한다. exact 승인 token은 PR 번호,
-검증한 head SHA, `METHOD-MERGE-COMMIT`을 모두 결속하고, 실행 단계는
+없애 `main` push correctness check를 깨므로 금지한다. 승인된 방식 marker는
+`METHOD-MERGE-COMMIT`이며, 실행 단계는 PR 번호와 검증한 head SHA를 결속해
 `gh pr merge <pr-number> --merge --match-head-commit <head-sha>`를 사용한다.
 
 ## 승인된 runtime dependency amendment 재생성
 
-S1.6 prerequisite amendment는 production Python dev dependency와 `uv.lock`만 바꾼 commit
-`93b0176ef3f114ca2182ad170449fd419437cfb6`을 새 reference input으로 승인했다. 이 commit의
+S4.7B source-card v2 validator amendment는 production Python runtime dependency와
+`uv.lock`만 바꾼 commit
+`13b7b21a904fc37ce0947d5da2de7d04794e497a`를 새 reference input으로 승인했다. 이 commit의
 자체 diff가 아래 두 파일뿐이고 최종 HEAD의 조상인지 먼저 확인한다.
 
 ```bash
 set -euo pipefail
 export TMPDIR=/tmp TEMP=/tmp TMP=/tmp
-S16_DEPENDENCY_SHA=93b0176ef3f114ca2182ad170449fd419437cfb6
-S16_S1_4X=workspaces/decision-platform/research/s1-4x-numeric-parity
-S16_ORACLE="$S16_S1_4X/oracle"
-export S16_DEPENDENCY_SHA S16_S1_4X
+S47B_DEPENDENCY_SHA=13b7b21a904fc37ce0947d5da2de7d04794e497a
+S47B_S1_4X=workspaces/decision-platform/research/s1-4x-numeric-parity
+S47B_ORACLE="$S47B_S1_4X/oracle"
+export S47B_DEPENDENCY_SHA S47B_S1_4X
 
-git cat-file -e "$S16_DEPENDENCY_SHA^{commit}"
-git merge-base --is-ancestor "$S16_DEPENDENCY_SHA" HEAD
+git cat-file -e "$S47B_DEPENDENCY_SHA^{commit}"
+git merge-base --is-ancestor "$S47B_DEPENDENCY_SHA" HEAD
 diff -u \
   <(printf '%s\n' \
     workspaces/decision-platform/python-services/pyproject.toml \
     workspaces/decision-platform/python-services/uv.lock) \
-  <(git diff-tree --no-commit-id --name-only -r "$S16_DEPENDENCY_SHA" | LC_ALL=C sort)
+  <(git diff-tree --no-commit-id --name-only -r "$S47B_DEPENDENCY_SHA" | LC_ALL=C sort)
 ```
 
 reference lock writer는 현재 validator의 projection/tree helper를 그대로 사용한다. JSON 표시
@@ -121,7 +122,7 @@ reference lock writer는 현재 validator의 projection/tree helper를 그대로
 
 ```bash
 set -euo pipefail
-PYTHONPATH="$S16_ORACLE" uv run --frozen --project "$S16_ORACLE" python - <<'PY'
+PYTHONPATH="$S47B_ORACLE" uv run --frozen --project "$S47B_ORACLE" python - <<'PY'
 import json
 import os
 from pathlib import Path
@@ -135,9 +136,9 @@ from oracle_common import (
 from validate_contract import _reference_source_sha256, _reference_tree_manifest
 
 repo = Path.cwd().resolve(strict=True)
-lock_path = repo / os.environ["S16_S1_4X"] / "contract/reference-lock.v1.json"
+lock_path = repo / os.environ["S47B_S1_4X"] / "contract/reference-lock.v1.json"
 lock = strict_json_load(lock_path)
-lock["referenceBaseCommit"] = os.environ["S16_DEPENDENCY_SHA"]
+lock["referenceBaseCommit"] = os.environ["S47B_DEPENDENCY_SHA"]
 source_roles_by_path = {
     source["path"]: source["role"] for source in lock["sources"]
 }
@@ -165,12 +166,12 @@ rendered = (json.dumps(lock, ensure_ascii=False, indent=2) + "\n").encode("utf-8
 atomic_write_bytes(lock_path, rendered)
 PY
 
-uv run --frozen --project "$S16_ORACLE" \
-  python "$S16_S1_4X/benchmarks/render_benchmark_plan.py" --write
+uv run --frozen --project "$S47B_ORACLE" \
+  python "$S47B_S1_4X/benchmarks/render_benchmark_plan.py" --write
 
 # manifest는 reference lock, oracle test, benchmark plan/sidecar가 모두 고정된 뒤 마지막에 쓴다.
-uv run --frozen --project "$S16_ORACLE" \
-  python "$S16_ORACLE/validate_contract.py" --write-manifest
+uv run --frozen --project "$S47B_ORACLE" \
+  python "$S47B_ORACLE/validate_contract.py" --write-manifest
 ```
 
 그 뒤 이 문서의 재현 명령 전체를 실행한다. PR에서는 base SHA, `main` push에서는
@@ -179,22 +180,20 @@ push-before SHA를 diff base로 사용해 `shared-docs/metrics_definitions.md`, 
 reference lock/manifest 제외), `oracle/`(추가된 validator regression test 제외),
 `benchmarks/`(재생성된 plan/sidecar 제외)의 drift가 0임을 검증한다. 로컬에서는
 같은 범위를 `origin/main` 대비로 확인한다. 이번 amendment의
-reference lock SHA는 `6357f224b1c9bcb4d08c89281e3442c7bfab31fef14fb6f54616a99bb206523f`에서
-`356dda6cd719f81fcc78a6516c324c47ef5d6da59afe7e44b932ca2af286b738`, benchmark plan
-SHA는 `387ea1fa36e5377e597cb32b05ca5ef0faed90e189cf147a383531287c4202a6`에서
-`6bb394368ef784d291e7795cb20ca6d7631f12661ccdb172acec59c6c9edea45`, benchmark plan
-sidecar file SHA는 `ce34347f895a55731bce3a0f0ab643df4baf9fa6d669f65fdf6d8076e1a7ca79`에서
-`6c0088d8ad203dfaf2fe299067c5803eb48d7a6f978542633d16d826ddc16fd2`, contract manifest SHA는
-`d9f5a4842a64c8655e1a3f0a0574c94f75bcba3ab3f79ee9435965a1c4a5f393`에서
-`6df5318aa969b63bccf9281ec761f6063e1e74a8e11489f88bb948022b6ba6d2`로 바뀌었고 numeric
+reference lock SHA는
+`c3261e0c6e7d074ab7099b9d050f646ee552e129da2e3b29319646df572cba87`,
+benchmark plan SHA는
+`5ca4beb69938371b47702e35eb6943ac85f8b5ba84e54017c572caa3871e7549`,
+benchmark plan sidecar file SHA는
+`75530891b5b78c4c2dc3d4512fc01991bf60cec7c92cb5ec18018dd5453466e1`,
+contract manifest SHA는
+`1884a130724a54041c80a37ecbdce6cc6cf088b9a89b824833a6c2585d0c939f`이며 numeric
 source/fixture bytes는 바뀌지 않았다. dependency, lock,
 reference/plan/manifest와 이 의미 설명은 한 rollback unit이며 일부만 cherry-pick/revert하지 않는다.
 
-## 다음 승인
+## 현재 연속 실행
 
-Gate 1 병합은 PR #28에서 완료됐다. 현재 S1.6 PR A는 review와 required checks가
-모두 끝나더라도 사용자의 별도 exact merge 승인 전에는 병합하지 않는다.
-승인은 PR/head/method에 결속한 `METHOD-MERGE-COMMIT` token으로만 받으며
-squash/rebase는 허용하지 않는다. Gate 2 연속 실행은 병합된
-`fixtureFreezeMergeSha`와 이 tree의 immutable SHA를 포함한 별도 readiness packet을
-소비한다.
+Gate 1 병합은 PR #28에서 완료됐다. S4.7B contract-only PR은 required checks가 모두
+통과한 검증 head를 merge commit 방식으로만 병합한다. squash/rebase는 허용하지 않는다.
+이 amendment는 S4.7B source-card corpus freeze를 위한 선행 계약이며 S1.4X candidate
+구현이나 benchmark 실행을 승인하지 않는다.

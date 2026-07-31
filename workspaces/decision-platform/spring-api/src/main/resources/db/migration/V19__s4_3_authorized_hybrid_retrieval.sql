@@ -336,6 +336,27 @@ BEGIN
   ) AS approved(source_id, identifier, identifier_kind)
   WHERE approved.source_id = p_source_id
   ON CONFLICT DO NOTHING;
+
+  IF EXISTS (
+    SELECT 1
+    FROM (
+      VALUES
+        ('src_project_kis_current_price_snapshot_001', 'FHKST01010100', 'KIS_TR_ID'),
+        ('src_project_kis_adjusted_price_001', 'FHKST03010100', 'KIS_TR_ID'),
+        ('src_project_gold_futures_etf_132030_001', '132030', 'SYMBOL')
+    ) AS approved(source_id, identifier, identifier_kind)
+    WHERE approved.source_id = p_source_id
+      AND NOT EXISTS (
+        SELECT 1
+        FROM public.rag_source_exact_identifiers AS exact_identifier
+        WHERE exact_identifier.source_id = approved.source_id
+          AND exact_identifier.identifier = approved.identifier
+          AND exact_identifier.identifier_kind = approved.identifier_kind
+      )
+  ) THEN
+    RAISE EXCEPTION 'RAG exact identifier identity drifted'
+      USING ERRCODE = '23514';
+  END IF;
   RETURN inserted_count;
 END
 $register_rag_verified_source_card$;

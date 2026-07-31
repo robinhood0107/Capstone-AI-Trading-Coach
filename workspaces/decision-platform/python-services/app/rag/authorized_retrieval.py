@@ -37,6 +37,7 @@ INTERNAL_FINAL_LIMIT = 5
 RRF_K = 60
 EMBEDDING_DIMENSION = 1024
 _MAX_LEXICAL_QUERY_BYTES = 12_288
+_MAX_EXACT_IDENTIFIERS = 16
 _ALLOWED_REQUEST_FIELDS = frozenset(
     {"question", "answerMode", "relatedSymbols", "topics"}
 )
@@ -250,10 +251,13 @@ class QueryNormalizer:
 
         question = payload.get("question")
         answer_mode = payload.get("answerMode")
+        if not isinstance(question, str):
+            raise QueryValidationError("RAG question bounds are invalid.")
+        question_octets = _utf8_octet_length(question)
         if (
-            not isinstance(question, str)
-            or not 1 <= len(question) <= 1000
-            or len(question.encode("utf-8")) > 8192
+            not 1 <= len(question) <= 1000
+            or question_octets is None
+            or question_octets > 8192
             or unicodedata.normalize("NFC", question) != question
             or any(
                 (ord(character) < 0x20 and character not in "\t\n")
@@ -294,14 +298,17 @@ class ExactIdentifierExtractor:
     """고정 길이·boundary regex로 symbol/source/TR_ID literal만 추출한다."""
 
     def extract(self, text: str) -> tuple[str, ...]:
-        if not isinstance(text, str) or len(text.encode("utf-8")) > 8192:
+        if not isinstance(text, str):
+            raise QueryValidationError("RAG identifier input is invalid.")
+        text_octets = _utf8_octet_length(text)
+        if text_octets is None or text_octets > 8192:
             raise QueryValidationError("RAG identifier input is invalid.")
         identifiers = {
             match.group(0)
             for pattern in (_SIX_DIGIT_SYMBOL, _SOURCE_ID, _KIS_TR_ID)
             for match in pattern.finditer(text)
         }
-        if len(identifiers) > 16:
+        if len(identifiers) > _MAX_EXACT_IDENTIFIERS:
             raise QueryValidationError("RAG exact identifier count is invalid.")
         return tuple(sorted(identifiers, key=lambda value: value.encode("utf-8")))
 
@@ -442,6 +449,8 @@ class AuthorizedHybridRetrieval:
                     key=lambda value: value.encode("utf-8"),
                 )
             )
+            if len(identifiers) > _MAX_EXACT_IDENTIFIERS:
+                raise QueryValidationError("RAG exact identifier count is invalid.")
         except QueryValidationError:
             return _failure(RetrievalFailureCode.INVALID_QUERY)
         try:
@@ -529,6 +538,15 @@ def _bounded_string_array(
     if pattern is not None and any(pattern.fullmatch(item) is None for item in items):
         raise QueryValidationError(f"RAG {field_name} format is invalid.")
     return items
+
+
+def _utf8_octet_length(value: str) -> int | None:
+    """surrogate를 Unicode scalar 위반으로 처리해 public query 예외를 typed failure로 고정한다."""
+
+    try:
+        return len(value.encode("utf-8"))
+    except UnicodeEncodeError:
+        return None
 
 
 def _expand_synonyms(question: str) -> str:

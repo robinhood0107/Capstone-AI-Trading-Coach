@@ -213,6 +213,93 @@ class S4RagContractCatalogTest(unittest.TestCase):
             invalid_symbols["relatedSymbols"] = invalid_symbol_list
             self.assertNotEqual([], list(validator.iter_errors(invalid_symbols)))
 
+    def test_s4_4_answer_history_feedback_and_consent_schemas_are_closed(self) -> None:
+        fixtures = {
+            "s4-rag-answer": "provider",
+            "s4-rag-history-page": "preview",
+            "s4-rag-history-detail": "provider",
+            "s4-rag-feedback-request": "comment",
+            "s4-rag-consent-request": "actor",
+        }
+        for name, invalid_suffix in fixtures.items():
+            with self.subTest(name=name):
+                schema = load_json_bytes_strict(
+                    (ROOT / f"contracts/schemas/{name}.schema.json").read_bytes(),
+                    source=f"contracts/schemas/{name}.schema.json",
+                )
+                validator = Draft202012Validator(schema)
+                valid = load_json_bytes_strict(
+                    (ROOT / f"contracts/examples/{name}.valid.json").read_bytes(),
+                    source=f"contracts/examples/{name}.valid.json",
+                )
+                invalid = load_json_bytes_strict(
+                    (
+                        ROOT
+                        / "contracts/examples/invalid"
+                        / f"{name}.{invalid_suffix}.invalid.json"
+                    ).read_bytes(),
+                    source=f"{name}.{invalid_suffix}.invalid.json",
+                )
+                self.assertEqual([], list(validator.iter_errors(valid)))
+                self.assertNotEqual([], list(validator.iter_errors(invalid)))
+                self.assertFalse(schema["additionalProperties"])
+
+        answer_schema = load_json_bytes_strict(
+            (ROOT / "contracts/schemas/s4-rag-answer.schema.json").read_bytes(),
+            source="contracts/schemas/s4-rag-answer.schema.json",
+        )
+        answer_validator = Draft202012Validator(answer_schema)
+        answered_with_inconsistent_status = {
+            "answer": "공개 근거로 답변합니다. [cit_1]",
+            "answerId": "rag_ans_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "citationCoverage": 0.5,
+            "citations": [
+                {
+                    "canonicalUrl": "https://example.com/evidence",
+                    "citationId": "cit_1",
+                    "sectionTitle": "근거",
+                    "sourceId": "src_project_example_001",
+                    "title": "공개 근거",
+                }
+            ],
+            "generationStatus": "ANSWERED",
+            "guardrailFlags": [],
+            "requestId": "req_s4_4_consistency",
+            "retrievalFailure": True,
+        }
+        self.assertNotEqual(
+            [],
+            list(answer_validator.iter_errors(answered_with_inconsistent_status)),
+        )
+
+        detail_schema = load_json_bytes_strict(
+            (ROOT / "contracts/schemas/s4-rag-history-detail.schema.json").read_bytes(),
+            source="contracts/schemas/s4-rag-history-detail.schema.json",
+        )
+        detail_validator = Draft202012Validator(detail_schema)
+        answered_without_answer = load_json_bytes_strict(
+            (ROOT / "contracts/examples/s4-rag-history-detail.valid.json").read_bytes(),
+            source="contracts/examples/s4-rag-history-detail.valid.json",
+        )
+        answered_without_answer["generationStatus"] = "ANSWERED"
+        self.assertNotEqual(
+            [],
+            list(detail_validator.iter_errors(answered_without_answer)),
+        )
+
+        history_page = load_json_bytes_strict(
+            (ROOT / "contracts/schemas/s4-rag-history-page.schema.json").read_bytes(),
+            source="contracts/schemas/s4-rag-history-page.schema.json",
+        )
+        self.assertNotIn(
+            "question",
+            history_page["properties"]["items"]["items"]["properties"],
+        )
+        self.assertNotIn(
+            "answer",
+            history_page["properties"]["items"]["items"]["properties"],
+        )
+
     def test_admin_policy_selection_cannot_accept_profile_ids(self) -> None:
         schema = load_json_bytes_strict(
             (

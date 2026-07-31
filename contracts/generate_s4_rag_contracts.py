@@ -116,10 +116,20 @@ OUTPUTS: Final[frozenset[str]] = frozenset(
         "contracts/schemas/s4-rag-contract.schema.json",
         "contracts/catalogs/s4-rag-contract.v1.sha256.json",
         "contracts/schemas/s4-rag-ask-request.schema.json",
+        "contracts/schemas/s4-rag-answer.schema.json",
+        "contracts/schemas/s4-rag-history-page.schema.json",
+        "contracts/schemas/s4-rag-history-detail.schema.json",
+        "contracts/schemas/s4-rag-feedback-request.schema.json",
+        "contracts/schemas/s4-rag-consent-request.schema.json",
         "contracts/schemas/s4-rag-admin-policy-selection.schema.json",
         "contracts/schemas/rag-source-card-v1.schema.json",
         "contracts/examples/s4-rag-contract.valid.json",
         "contracts/examples/s4-rag-ask-request.valid.json",
+        "contracts/examples/s4-rag-answer.valid.json",
+        "contracts/examples/s4-rag-history-page.valid.json",
+        "contracts/examples/s4-rag-history-detail.valid.json",
+        "contracts/examples/s4-rag-feedback-request.valid.json",
+        "contracts/examples/s4-rag-consent-request.valid.json",
         "contracts/examples/s4-rag-admin-policy-selection.valid.json",
         "contracts/examples/rag-source-card-v1.valid.json",
         "contracts/examples/invalid/s4-rag-contract.voyage-context-3.invalid.json",
@@ -129,6 +139,11 @@ OUTPUTS: Final[frozenset[str]] = frozenset(
         "contracts/examples/invalid/s4-rag-ask-request.symbol-count.invalid.json",
         "contracts/examples/invalid/s4-rag-ask-request.symbol-shape.invalid.json",
         "contracts/examples/invalid/s4-rag-ask-request.top-k.invalid.json",
+        "contracts/examples/invalid/s4-rag-answer.provider.invalid.json",
+        "contracts/examples/invalid/s4-rag-history-page.preview.invalid.json",
+        "contracts/examples/invalid/s4-rag-history-detail.provider.invalid.json",
+        "contracts/examples/invalid/s4-rag-feedback-request.comment.invalid.json",
+        "contracts/examples/invalid/s4-rag-consent-request.actor.invalid.json",
         "contracts/examples/invalid/s4-rag-admin-policy-selection.profile-as-policy.invalid.json",
         "contracts/examples/invalid/rag-source-card-v1.unknown-field.invalid.json",
         "contracts/examples/invalid/rag-source-card-v1.non-nfc.invalid.json",
@@ -242,6 +257,254 @@ def _ask_request_schema(catalog: Mapping[str, Any]) -> dict[str, Any]:
         },
         "required": ["question", "answerMode"],
         "title": "S4 RAG public ask request v1",
+        "type": "object",
+    }
+
+
+def _rag_citation_schema() -> dict[str, Any]:
+    return {
+        "additionalProperties": False,
+        "properties": {
+            "canonicalUrl": {
+                "format": "uri",
+                "maxLength": 2_048,
+                "pattern": "^https://",
+                "type": "string",
+            },
+            "citationId": {"pattern": "^cit_[1-5]$", "type": "string"},
+            "sectionTitle": {"maxLength": 512, "minLength": 1, "type": "string"},
+            "sourceId": {
+                "pattern": "^src_project_[a-z0-9][a-z0-9_]*_[0-9]{3}$",
+                "type": "string",
+            },
+            "title": {"maxLength": 300, "minLength": 1, "type": "string"},
+        },
+        "required": [
+            "citationId",
+            "sourceId",
+            "title",
+            "sectionTitle",
+            "canonicalUrl",
+        ],
+        "type": "object",
+    }
+
+
+def _rag_answer_schema() -> dict[str, Any]:
+    return {
+        "$id": "contracts/schemas/s4-rag-answer.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": False,
+        "allOf": [
+            {
+                "if": {
+                    "properties": {"generationStatus": {"const": "ANSWERED"}},
+                    "required": ["generationStatus"],
+                },
+                "then": {
+                    "properties": {
+                        "answer": {"maxLength": 8_192, "minLength": 1, "type": "string"},
+                        "citations": {"minItems": 1},
+                        "citationCoverage": {"const": 1.0},
+                        "retrievalFailure": {"const": False},
+                    },
+                },
+                "else": {
+                    "properties": {
+                        "answer": {"type": "null"},
+                        "citations": {"maxItems": 0},
+                        "citationCoverage": {"const": 0.0},
+                    },
+                },
+            },
+            {
+                "if": {
+                    "properties": {
+                        "generationStatus": {"const": "RETRIEVAL_FAILURE"},
+                    },
+                    "required": ["generationStatus"],
+                },
+                "then": {
+                    "properties": {
+                        "retrievalFailure": {"const": True},
+                    },
+                },
+                "else": {
+                    "properties": {
+                        "retrievalFailure": {"const": False},
+                    },
+                },
+            },
+        ],
+        "properties": {
+            "answer": {"type": ["string", "null"]},
+            "answerId": {"pattern": "^rag_ans_[0-9a-f]{32}$", "type": "string"},
+            "citationCoverage": {"maximum": 1.0, "minimum": 0.0, "type": "number"},
+            "citations": {
+                "items": _rag_citation_schema(),
+                "maxItems": 5,
+                "type": "array",
+                "uniqueItems": True,
+            },
+            "generationStatus": {
+                "enum": [
+                    "ANSWERED",
+                    "RETRIEVAL_ONLY",
+                    "RETRIEVAL_FAILURE",
+                    "BLOCKED_SENSITIVE",
+                    "BLOCKED_ADVICE",
+                    "GENERATION_UNAVAILABLE",
+                ],
+            },
+            "guardrailFlags": {
+                "items": {
+                    "maxLength": 64,
+                    "minLength": 1,
+                    "pattern": "^[A-Z0-9_]+$",
+                    "type": "string",
+                },
+                "maxItems": 8,
+                "type": "array",
+                "uniqueItems": True,
+            },
+            "requestId": {"maxLength": 128, "minLength": 1, "type": "string"},
+            "retrievalFailure": {"type": "boolean"},
+        },
+        "required": [
+            "requestId",
+            "answerId",
+            "generationStatus",
+            "answer",
+            "citationCoverage",
+            "retrievalFailure",
+            "citations",
+            "guardrailFlags",
+        ],
+        "title": "S4.4 RAG answer data v1",
+        "type": "object",
+    }
+
+
+def _history_metadata_schema() -> dict[str, Any]:
+    return {
+        "additionalProperties": False,
+        "properties": {
+            "answerId": {"pattern": "^rag_ans_[0-9a-f]{32}$", "type": "string"},
+            "answerMode": {"enum": ["CONCISE", "DETAILED"]},
+            "createdAt": {"format": "date-time", "type": "string"},
+            "expiresAt": {"format": "date-time", "type": "string"},
+            "generationStatus": {
+                "enum": [
+                    "ANSWERED",
+                    "RETRIEVAL_ONLY",
+                    "RETRIEVAL_FAILURE",
+                    "BLOCKED_SENSITIVE",
+                    "BLOCKED_ADVICE",
+                    "GENERATION_UNAVAILABLE",
+                ],
+            },
+            "helpful": {"type": ["boolean", "null"]},
+        },
+        "required": [
+            "answerId",
+            "createdAt",
+            "expiresAt",
+            "answerMode",
+            "generationStatus",
+            "helpful",
+        ],
+        "type": "object",
+    }
+
+
+def _rag_history_page_schema() -> dict[str, Any]:
+    return {
+        "$id": "contracts/schemas/s4-rag-history-page.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": False,
+        "properties": {
+            "items": {
+                "items": _history_metadata_schema(),
+                "maxItems": 50,
+                "type": "array",
+            },
+            "nextCursor": {"maxLength": 512, "minLength": 1, "type": ["string", "null"]},
+        },
+        "required": ["items", "nextCursor"],
+        "title": "S4.4 metadata-only RAG history page v1",
+        "type": "object",
+    }
+
+
+def _rag_history_detail_schema() -> dict[str, Any]:
+    detail = copy.deepcopy(_history_metadata_schema())
+    detail.update(
+        {
+            "$id": "contracts/schemas/s4-rag-history-detail.schema.json",
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "title": "S4.4 owner RAG history detail v1",
+        }
+    )
+    detail["properties"].update(
+        {
+            "answer": {"maxLength": 8_192, "type": ["string", "null"]},
+            "citations": {
+                "items": _rag_citation_schema(),
+                "maxItems": 5,
+                "type": "array",
+                "uniqueItems": True,
+            },
+            "question": {"maxLength": 1_000, "minLength": 1, "type": "string"},
+        }
+    )
+    detail["required"].extend(["question", "answer", "citations"])
+    detail["allOf"] = [
+        {
+            "if": {
+                "properties": {"generationStatus": {"const": "ANSWERED"}},
+                "required": ["generationStatus"],
+            },
+            "then": {
+                "properties": {
+                    "answer": {"maxLength": 8_192, "minLength": 1, "type": "string"},
+                    "citations": {"minItems": 1},
+                },
+            },
+            "else": {
+                "properties": {
+                    "answer": {"type": "null"},
+                    "citations": {"maxItems": 0},
+                },
+            },
+        },
+    ]
+    return detail
+
+
+def _rag_feedback_request_schema() -> dict[str, Any]:
+    return {
+        "$id": "contracts/schemas/s4-rag-feedback-request.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": False,
+        "properties": {"helpful": {"type": "boolean"}},
+        "required": ["helpful"],
+        "title": "S4.4 RAG feedback request v1",
+        "type": "object",
+    }
+
+
+def _rag_consent_request_schema() -> dict[str, Any]:
+    return {
+        "$id": "contracts/schemas/s4-rag-consent-request.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": False,
+        "properties": {
+            "action": {"enum": ["GRANT", "REVOKE"]},
+            "consentType": {"const": "EXTERNAL_AI_RAG_V1"},
+            "policyVersion": {"const": "EXTERNAL_AI_RAG_V1"},
+        },
+        "required": ["consentType", "action", "policyVersion"],
+        "title": "S4.4 external AI RAG consent event request v1",
         "type": "object",
     }
 
@@ -865,6 +1128,40 @@ def _fixtures(catalog: Mapping[str, Any]) -> dict[str, Any]:
         "policyId": "bge_then_voyage_on_sla_v1",
         "reason": "BGE warm p95 failed and Voyage evaluation passed with admin approval.",
     }
+    valid_answer = {
+        "answer": None,
+        "answerId": f"rag_ans_{'a' * 32}",
+        "citationCoverage": 0.0,
+        "citations": [],
+        "generationStatus": "RETRIEVAL_ONLY",
+        "guardrailFlags": ["FIXTURE_ONLY"],
+        "requestId": "req_s4_4_fixture_answer",
+        "retrievalFailure": False,
+    }
+    valid_history_item = {
+        "answerId": f"rag_ans_{'a' * 32}",
+        "answerMode": "CONCISE",
+        "createdAt": "2026-07-31T00:00:00Z",
+        "expiresAt": "2026-08-30T00:00:00Z",
+        "generationStatus": "RETRIEVAL_ONLY",
+        "helpful": None,
+    }
+    valid_history_page = {
+        "items": [valid_history_item],
+        "nextCursor": None,
+    }
+    valid_history_detail = {
+        **valid_history_item,
+        "answer": None,
+        "citations": [],
+        "question": "VaR와 ES의 차이를 공개 근거 범위에서 설명해 주세요.",
+    }
+    valid_feedback = {"helpful": True}
+    valid_consent = {
+        "action": "GRANT",
+        "consentType": "EXTERNAL_AI_RAG_V1",
+        "policyVersion": "EXTERNAL_AI_RAG_V1",
+    }
     source_card_url = (
         "https://github.com/koreainvestment/open-trading-api/blob/"
         "b093e42ba32d1df5f5ddad7a71cb715cbc800832/examples_llm/domestic_stock/"
@@ -905,6 +1202,11 @@ def _fixtures(catalog: Mapping[str, Any]) -> dict[str, Any]:
     fixtures: dict[str, Any] = {
         "contracts/examples/s4-rag-contract.valid.json": dict(catalog),
         "contracts/examples/s4-rag-ask-request.valid.json": valid_ask,
+        "contracts/examples/s4-rag-answer.valid.json": valid_answer,
+        "contracts/examples/s4-rag-history-page.valid.json": valid_history_page,
+        "contracts/examples/s4-rag-history-detail.valid.json": valid_history_detail,
+        "contracts/examples/s4-rag-feedback-request.valid.json": valid_feedback,
+        "contracts/examples/s4-rag-consent-request.valid.json": valid_consent,
         "contracts/examples/s4-rag-admin-policy-selection.valid.json": valid_policy,
         "contracts/examples/rag-source-card-v1.valid.json": valid_source_card,
     }
@@ -969,6 +1271,31 @@ def _fixtures(catalog: Mapping[str, Any]) -> dict[str, Any]:
     fixtures["contracts/examples/invalid/s4-rag-ask-request.top-k.invalid.json"] = (
         ask_with_top_k
     )
+    answer_with_provider = copy.deepcopy(valid_answer)
+    answer_with_provider["provider"] = "hidden"
+    fixtures[
+        "contracts/examples/invalid/s4-rag-answer.provider.invalid.json"
+    ] = answer_with_provider
+    history_with_preview = copy.deepcopy(valid_history_page)
+    history_with_preview["items"][0]["questionPreview"] = "forbidden"
+    fixtures[
+        "contracts/examples/invalid/s4-rag-history-page.preview.invalid.json"
+    ] = history_with_preview
+    detail_with_provider = copy.deepcopy(valid_history_detail)
+    detail_with_provider["model"] = "hidden"
+    fixtures[
+        "contracts/examples/invalid/s4-rag-history-detail.provider.invalid.json"
+    ] = detail_with_provider
+    feedback_with_comment = copy.deepcopy(valid_feedback)
+    feedback_with_comment["comment"] = "forbidden"
+    fixtures[
+        "contracts/examples/invalid/s4-rag-feedback-request.comment.invalid.json"
+    ] = feedback_with_comment
+    consent_with_actor = copy.deepcopy(valid_consent)
+    consent_with_actor["actor"] = "caller-controlled"
+    fixtures[
+        "contracts/examples/invalid/s4-rag-consent-request.actor.invalid.json"
+    ] = consent_with_actor
     profile_as_policy = copy.deepcopy(valid_policy)
     profile_as_policy["policyId"] = "voyage_context_4_1024_v1"
     fixtures[
@@ -1054,10 +1381,20 @@ def generate_outputs(catalog: Mapping[str, Any]) -> dict[str, bytes]:
     validate_catalog_semantics(catalog)
     catalog_schema = _catalog_schema(catalog)
     ask_schema = _ask_request_schema(catalog)
+    answer_schema = _rag_answer_schema()
+    history_page_schema = _rag_history_page_schema()
+    history_detail_schema = _rag_history_detail_schema()
+    feedback_schema = _rag_feedback_request_schema()
+    consent_schema = _rag_consent_request_schema()
     policy_schema = _admin_policy_selection_schema(catalog)
     source_card_schema = _rag_source_card_schema()
     Draft202012Validator.check_schema(catalog_schema)
     Draft202012Validator.check_schema(ask_schema)
+    Draft202012Validator.check_schema(answer_schema)
+    Draft202012Validator.check_schema(history_page_schema)
+    Draft202012Validator.check_schema(history_detail_schema)
+    Draft202012Validator.check_schema(feedback_schema)
+    Draft202012Validator.check_schema(consent_schema)
     Draft202012Validator.check_schema(policy_schema)
     Draft202012Validator.check_schema(source_card_schema)
     outputs: dict[str, bytes] = {
@@ -1066,6 +1403,19 @@ def generate_outputs(catalog: Mapping[str, Any]) -> dict[str, bytes]:
         ),
         "contracts/schemas/s4-rag-contract.schema.json": canonical_json_bytes(catalog_schema),
         "contracts/schemas/s4-rag-ask-request.schema.json": canonical_json_bytes(ask_schema),
+        "contracts/schemas/s4-rag-answer.schema.json": canonical_json_bytes(answer_schema),
+        "contracts/schemas/s4-rag-history-page.schema.json": canonical_json_bytes(
+            history_page_schema
+        ),
+        "contracts/schemas/s4-rag-history-detail.schema.json": canonical_json_bytes(
+            history_detail_schema
+        ),
+        "contracts/schemas/s4-rag-feedback-request.schema.json": canonical_json_bytes(
+            feedback_schema
+        ),
+        "contracts/schemas/s4-rag-consent-request.schema.json": canonical_json_bytes(
+            consent_schema
+        ),
         "contracts/schemas/s4-rag-admin-policy-selection.schema.json": canonical_json_bytes(policy_schema),
         "contracts/schemas/rag-source-card-v1.schema.json": canonical_json_bytes(
             source_card_schema
@@ -1080,6 +1430,11 @@ def generate_outputs(catalog: Mapping[str, Any]) -> dict[str, bytes]:
     validators = {
         "s4-rag-contract": Draft202012Validator(catalog_schema),
         "s4-rag-ask-request": Draft202012Validator(ask_schema),
+        "s4-rag-answer": Draft202012Validator(answer_schema),
+        "s4-rag-history-page": Draft202012Validator(history_page_schema),
+        "s4-rag-history-detail": Draft202012Validator(history_detail_schema),
+        "s4-rag-feedback-request": Draft202012Validator(feedback_schema),
+        "s4-rag-consent-request": Draft202012Validator(consent_schema),
         "s4-rag-admin-policy-selection": Draft202012Validator(policy_schema),
         "rag-source-card-v1": Draft202012Validator(source_card_schema),
     }

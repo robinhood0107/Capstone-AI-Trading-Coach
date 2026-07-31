@@ -98,8 +98,12 @@ v1을 변경하지 않는 source-card v2 union과 project-authored exact 30 corp
 PostgreSQL+pgvector에 materialize하고 독립 DB 재검증, 20회 warmup/100회 measured
 local benchmark와 bounded admin CAS를 통과해 generation
 `rag_gen_6f2aa814a39d0532d0fa4bbd4e4456d2`를 활성화했다. provider physical call은 0이며
-S4.3 retrieval과 S4.4 fixture-only answer/history는 각 후속 세션 gate 전까지 활성화하지
-않는다.
+S4.3은 owner/access 제한 exact·lexical·dense channel과 application RRF를 구현했다.
+S4.4는 local sensitive/advice guard, purpose-separated idempotency, append-only consent,
+owner-scoped AES-256-GCM 30일 history와 metadata-only list를 `FIXTURE_ONLY`로 구현한다.
+허용 질문도 현재 `RETRIEVAL_ONLY`이며 Gemini·OpenAI·Voyage 물리 호출은 0이다. 실제
+Spring↔Python retrieval/generation E2E와 live generation은 각각 후속 S4.6과 별도 승인형
+S4.4G 전까지 활성화하지 않는다.
 
 ```bash
 cp .env.example .env

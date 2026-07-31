@@ -9,6 +9,7 @@ import com.capstone.decision.infrastructure.grpc.DecisionGrpcProperties
 import com.capstone.decision.infrastructure.idempotency.IdempotencyProperties
 import com.capstone.decision.infrastructure.idempotency.IdempotencyService
 import com.capstone.decision.infrastructure.principle.PrincipleProperties
+import com.capstone.decision.infrastructure.rag.RagGuardHistoryProperties
 import com.capstone.decision.infrastructure.web.HttpRequestProperties
 import com.capstone.decision.infrastructure.web.RequestBodyLimitFilter
 import com.capstone.decision.infrastructure.web.RequestIdFilter
@@ -50,6 +51,7 @@ import java.security.MessageDigest
     PaperBrokerageProperties::class,
     BrokerageGrpcProperties::class,
     DecisionGrpcProperties::class,
+    RagGuardHistoryProperties::class,
 )
 class SecurityConfig {
     @Bean
@@ -63,59 +65,57 @@ class SecurityConfig {
         principleProperties: PrincipleProperties,
         decisionProperties: DecisionProperties,
         brokerageProperties: BrokerageProperties,
+        ragProperties: RagGuardHistoryProperties,
     ): AuthSecretSeparation {
         jwtProperties.validate()
         loginProperties.validate()
         principleProperties.validate()
         decisionProperties.validate()
         brokerageProperties.validate()
-        val jwtSecret = jwtProperties.secret.toByteArray(StandardCharsets.UTF_8)
-        val loginScopeKey = loginProperties.scopeHmacKey.toByteArray(StandardCharsets.UTF_8)
-        val principleCursorKey = principleProperties.cursorHmacKey.toByteArray(StandardCharsets.UTF_8)
-        val decisionScopeKey = decisionProperties.idempotencyScopeHmacKey.toByteArray(StandardCharsets.UTF_8)
-        val brokerageScopeKey = brokerageProperties.idempotencyScopeHmacKey.toByteArray(StandardCharsets.UTF_8)
-        val brokerageDatabaseCapability =
-            brokerageProperties.databaseCapabilityToken.toByteArray(StandardCharsets.UTF_8)
-        val credentialSeparationKey =
-            DemoCredentialBundlePolicy.decodeSeparationKey(demoCredentialProperties.separationKey)
+        ragProperties.validate()
+        val secrets =
+            linkedMapOf(
+                "JWT" to jwtProperties.secret.toByteArray(StandardCharsets.UTF_8),
+                "login scope" to loginProperties.scopeHmacKey.toByteArray(StandardCharsets.UTF_8),
+                "Principle cursor" to principleProperties.cursorHmacKey.toByteArray(StandardCharsets.UTF_8),
+                "Decision scope" to decisionProperties.idempotencyScopeHmacKey.toByteArray(StandardCharsets.UTF_8),
+                "Brokerage scope" to brokerageProperties.idempotencyScopeHmacKey.toByteArray(StandardCharsets.UTF_8),
+                "Brokerage database capability" to
+                    brokerageProperties.databaseCapabilityToken.toByteArray(StandardCharsets.UTF_8),
+                "demo credential separation" to
+                    DemoCredentialBundlePolicy.decodeSeparationKey(demoCredentialProperties.separationKey),
+                "RAG idempotency scope" to
+                    ragProperties.idempotencyScopeHmacKey.toByteArray(StandardCharsets.UTF_8),
+                "RAG request fingerprint" to
+                    ragProperties.requestFingerprintHmacKey.toByteArray(StandardCharsets.UTF_8),
+                "RAG provider usage" to
+                    ragProperties.providerUsageHmacKey.toByteArray(StandardCharsets.UTF_8),
+                "RAG rate limit" to
+                    ragProperties.rateLimitHmacKey.toByteArray(StandardCharsets.UTF_8),
+                "RAG history cursor" to
+                    ragProperties.historyCursorHmacKey.toByteArray(StandardCharsets.UTF_8),
+            )
         return try {
-            require(!MessageDigest.isEqual(jwtSecret, loginScopeKey)) {
-                "JWT and login scope HMAC secrets must be different."
+            val entries = secrets.entries.toList()
+            entries.indices.forEach { leftIndex ->
+                ((leftIndex + 1) until entries.size).forEach { rightIndex ->
+                    require(
+                        !MessageDigest.isEqual(
+                            entries[leftIndex].value,
+                            entries[rightIndex].value,
+                        ),
+                    ) {
+                        "${entries[leftIndex].key} and ${entries[rightIndex].key} secrets must be purpose-separated."
+                    }
+                }
             }
-            require(
-                !MessageDigest.isEqual(credentialSeparationKey, jwtSecret) &&
-                    !MessageDigest.isEqual(credentialSeparationKey, loginScopeKey) &&
-                    !MessageDigest.isEqual(credentialSeparationKey, principleCursorKey) &&
-                    !MessageDigest.isEqual(credentialSeparationKey, decisionScopeKey) &&
-                    !MessageDigest.isEqual(credentialSeparationKey, brokerageScopeKey) &&
-                    !MessageDigest.isEqual(credentialSeparationKey, brokerageDatabaseCapability) &&
-                    !MessageDigest.isEqual(jwtSecret, principleCursorKey) &&
-                    !MessageDigest.isEqual(jwtSecret, decisionScopeKey) &&
-                    !MessageDigest.isEqual(jwtSecret, brokerageScopeKey) &&
-                    !MessageDigest.isEqual(jwtSecret, brokerageDatabaseCapability) &&
-                    !MessageDigest.isEqual(loginScopeKey, principleCursorKey) &&
-                    !MessageDigest.isEqual(loginScopeKey, decisionScopeKey) &&
-                    !MessageDigest.isEqual(loginScopeKey, brokerageScopeKey) &&
-                    !MessageDigest.isEqual(loginScopeKey, brokerageDatabaseCapability) &&
-                    !MessageDigest.isEqual(principleCursorKey, decisionScopeKey) &&
-                    !MessageDigest.isEqual(principleCursorKey, brokerageScopeKey) &&
-                    !MessageDigest.isEqual(principleCursorKey, brokerageDatabaseCapability) &&
-                    !MessageDigest.isEqual(decisionScopeKey, brokerageScopeKey) &&
-                    !MessageDigest.isEqual(decisionScopeKey, brokerageDatabaseCapability) &&
-                    !MessageDigest.isEqual(brokerageScopeKey, brokerageDatabaseCapability),
-            ) {
-                "Authentication, Principle, Decision, Brokerage HMAC, and database capability secrets must be purpose-separated."
-            }
-            verifyBootstrapBundles(demoCredentialProperties, credentialSeparationKey)
+            verifyBootstrapBundles(
+                demoCredentialProperties,
+                requireNotNull(secrets["demo credential separation"]),
+            )
             AuthSecretSeparation
         } finally {
-            jwtSecret.fill(0)
-            loginScopeKey.fill(0)
-            principleCursorKey.fill(0)
-            decisionScopeKey.fill(0)
-            brokerageScopeKey.fill(0)
-            brokerageDatabaseCapability.fill(0)
-            credentialSeparationKey.fill(0)
+            secrets.values.forEach { secret -> secret.fill(0) }
         }
     }
 

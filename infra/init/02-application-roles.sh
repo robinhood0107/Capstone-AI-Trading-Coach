@@ -12,6 +12,7 @@ set -Eeuo pipefail
 : "${POSTGRES_RISK_WRITER_PASSWORD:?POSTGRES_RISK_WRITER_PASSWORD is required}"
 : "${POSTGRES_FILL_WRITER_PASSWORD:?POSTGRES_FILL_WRITER_PASSWORD is required}"
 : "${POSTGRES_RAG_WRITER_PASSWORD:?POSTGRES_RAG_WRITER_PASSWORD is required}"
+: "${POSTGRES_RAG_ADMIN_PASSWORD:?POSTGRES_RAG_ADMIN_PASSWORD is required}"
 : "${POSTGRES_RAG_QUERY_PASSWORD:?POSTGRES_RAG_QUERY_PASSWORD is required}"
 
 # psql argv나 shell-expanded SQL에 password를 넣지 않고 process environment에서 안전하게 인용한다.
@@ -27,6 +28,7 @@ psql -v ON_ERROR_STOP=1 --no-password --username "$POSTGRES_USER" --dbname "$POS
 \getenv risk_writer_password POSTGRES_RISK_WRITER_PASSWORD
 \getenv fill_writer_password POSTGRES_FILL_WRITER_PASSWORD
 \getenv rag_writer_password POSTGRES_RAG_WRITER_PASSWORD
+\getenv rag_admin_password POSTGRES_RAG_ADMIN_PASSWORD
 \getenv rag_query_password POSTGRES_RAG_QUERY_PASSWORD
 
 -- role password DDL 전에 session 전체의 statement·duration·sampling log를 닫는다.
@@ -191,6 +193,26 @@ ALTER ROLE decision_rag_writer SET lock_timeout = '500ms';
 ALTER ROLE decision_rag_writer SET idle_in_transaction_session_timeout = '5s';
 
 SELECT format(
+    'CREATE ROLE decision_rag_admin LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD %L',
+    :'rag_admin_password'
+)
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'decision_rag_admin')
+\gexec
+
+SELECT format(
+    'ALTER ROLE decision_rag_admin WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD %L',
+    :'rag_admin_password'
+)
+\gexec
+
+-- 활성화 role은 table DML 없이 bounded definer 함수만 호출하므로 짧은 lock/transaction 상한을 둔다.
+ALTER ROLE decision_rag_admin SET log_parameter_max_length = 0;
+ALTER ROLE decision_rag_admin SET log_parameter_max_length_on_error = 0;
+ALTER ROLE decision_rag_admin SET statement_timeout = '5s';
+ALTER ROLE decision_rag_admin SET lock_timeout = '500ms';
+ALTER ROLE decision_rag_admin SET idle_in_transaction_session_timeout = '5s';
+
+SELECT format(
     'CREATE ROLE decision_rag_query LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD %L',
     :'rag_query_password'
 )
@@ -220,6 +242,7 @@ GRANT CONNECT ON DATABASE :"database_name" TO
     decision_risk_writer,
     decision_fill_writer,
     decision_rag_writer,
+    decision_rag_admin,
     decision_rag_query,
     flyway;
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;
@@ -232,6 +255,7 @@ GRANT USAGE ON SCHEMA public TO
     decision_risk_writer,
     decision_fill_writer,
     decision_rag_writer,
+    decision_rag_admin,
     decision_rag_query,
     flyway;
 GRANT CREATE ON SCHEMA public TO flyway;
@@ -254,6 +278,8 @@ REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_fill_writer;
 REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_fill_writer;
 REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_rag_writer;
 REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_rag_writer;
+REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_rag_admin;
+REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_rag_admin;
 REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_rag_query;
 REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_rag_query;
 ALTER DEFAULT PRIVILEGES FOR ROLE flyway IN SCHEMA public
@@ -278,6 +304,10 @@ ALTER DEFAULT PRIVILEGES FOR ROLE flyway IN SCHEMA public
     REVOKE ALL PRIVILEGES ON TABLES FROM decision_rag_writer;
 ALTER DEFAULT PRIVILEGES FOR ROLE flyway IN SCHEMA public
     REVOKE ALL PRIVILEGES ON SEQUENCES FROM decision_rag_writer;
+ALTER DEFAULT PRIVILEGES FOR ROLE flyway IN SCHEMA public
+    REVOKE ALL PRIVILEGES ON TABLES FROM decision_rag_admin;
+ALTER DEFAULT PRIVILEGES FOR ROLE flyway IN SCHEMA public
+    REVOKE ALL PRIVILEGES ON SEQUENCES FROM decision_rag_admin;
 ALTER DEFAULT PRIVILEGES FOR ROLE flyway IN SCHEMA public
     REVOKE ALL PRIVILEGES ON TABLES FROM decision_rag_query;
 ALTER DEFAULT PRIVILEGES FOR ROLE flyway IN SCHEMA public
@@ -628,6 +658,7 @@ BEGIN
         FROM
             decision_app,
             decision_rag_writer,
+            decision_rag_admin,
             decision_rag_query;
         GRANT SELECT, INSERT ON TABLE
             rag_sources,
@@ -653,6 +684,7 @@ BEGIN
         )
             ON TABLE rag_corpus_generations TO decision_rag_writer;
         REVOKE CREATE ON SCHEMA public FROM decision_rag_writer;
+        REVOKE CREATE ON SCHEMA public FROM decision_rag_admin;
         REVOKE CREATE ON SCHEMA public FROM decision_rag_query;
     END IF;
 END
@@ -670,6 +702,7 @@ BEGIN
         REVOKE ALL PRIVILEGES ON TABLE rag_embedding_staging FROM
             decision_app,
             decision_rag_writer,
+            decision_rag_admin,
             decision_rag_query;
         GRANT INSERT, SELECT ON TABLE rag_embedding_staging TO decision_rag_writer;
     END IF;
@@ -699,7 +732,7 @@ BEGIN
             'REVOKE ALL PRIVILEGES ON FUNCTION %s FROM ' ||
             'PUBLIC, decision_app, decision_collector, decision_disclosure_reader, ' ||
             'decision_market_writer, decision_portfolio_writer, decision_risk_writer, ' ||
-            'decision_fill_writer, decision_rag_writer, decision_rag_query',
+            'decision_fill_writer, decision_rag_writer, decision_rag_admin, decision_rag_query',
             routine.signature
         );
     END LOOP;
@@ -778,6 +811,27 @@ BEGIN
             purge_rag_embedding_staging(text, text)
         TO decision_rag_writer;
     END IF;
+    IF to_regprocedure('public.finalize_rag_embedding_staging_v2(text,text,text,integer,text)') IS NOT NULL THEN
+        -- full generation bootstrap 재적용 뒤에도 writer의 유일한 final-table 경계는 bounded v2 함수다.
+        GRANT EXECUTE ON FUNCTION
+            finalize_rag_embedding_staging_v2(text, text, text, integer, text)
+        TO decision_rag_writer;
+    END IF;
+    IF to_regprocedure(
+        'public.activate_verified_rag_generation(text,text,bigint,text,text,text,text,text,integer,integer,integer,text,text,text,text,text,text,text,text,text,numeric,text)'
+    ) IS NOT NULL THEN
+        -- admin은 raw table DML 없이 verification projection과 단일 CAS 전이만 호출한다.
+        GRANT EXECUTE ON FUNCTION
+            read_rag_activation_state(),
+            read_rag_generation_embeddings_for_verification(text, text, integer),
+            activate_verified_rag_generation(
+                text, text, bigint, text, text, text, text, text,
+                integer, integer, integer,
+                text, text, text, text, text, text, text, text, text,
+                numeric, text
+            )
+        TO decision_rag_admin;
+    END IF;
 END
 $decision_runtime_function_privileges$;
 
@@ -790,6 +844,7 @@ BEGIN
         REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_disclosure_reader;
         REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_fill_writer;
         REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_rag_writer;
+        REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_rag_admin;
         REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_rag_query;
     END IF;
 END

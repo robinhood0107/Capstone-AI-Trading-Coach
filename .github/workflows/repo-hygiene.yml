@@ -67,6 +67,7 @@ jobs:
           POSTGRES_RISK_WRITER_PASSWORD: validation-dummy-risk-writer
           POSTGRES_FILL_WRITER_PASSWORD: validation-dummy-fill-writer
           POSTGRES_RAG_WRITER_PASSWORD: validation-dummy-rag-writer
+          POSTGRES_RAG_ADMIN_PASSWORD: validation-dummy-rag-admin
           POSTGRES_RAG_QUERY_PASSWORD: validation-dummy-rag-query
           REDIS_PASSWORD: validation-dummy-redis-password-0001
         run: docker compose -f infra/docker-compose.infra.yml config --quiet

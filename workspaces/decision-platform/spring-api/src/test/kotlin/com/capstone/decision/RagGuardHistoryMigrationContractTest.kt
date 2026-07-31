@@ -36,6 +36,13 @@ class RagGuardHistoryMigrationContractTest {
             "'REVOKE'",
         )
         assertThat(migration).contains("expires_at = created_at + interval '30 days'")
+        assertThat(migration).contains(
+            "chunk_revision_id text NOT NULL",
+            "'chunkRevisionId'",
+            "(item.value ->> 'chunkRevisionId') ~ '^rag_chk_[0-9a-f]{32}$'",
+            "item.value ->> 'sectionTitle' =",
+            "chunk.heading_path[cardinality(chunk.heading_path)]",
+        )
         assertThat(migration).doesNotContain(
             "question_plaintext",
             "answer_plaintext",

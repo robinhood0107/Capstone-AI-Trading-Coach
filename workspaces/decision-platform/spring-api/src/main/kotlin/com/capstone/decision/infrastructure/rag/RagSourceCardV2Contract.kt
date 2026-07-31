@@ -499,7 +499,7 @@ object RagSourceCardV2Contract {
     private val REQUIRED_NON_EMPTY_ARRAYS = setOf("allowedUses", "limitations", "forbiddenInferences")
     private val OFFICIAL_AUTHORITY_INSTITUTIONS =
         mapOf(
-            "OFFICIAL_API_DOCUMENTATION" to setOf("ecos", "kis", "opendart"),
+            "OFFICIAL_API_DOCUMENTATION" to setOf("ecos", "kis", "naver", "opendart"),
             "OFFICIAL_SERVICE_DOCUMENTATION" to setOf("krx"),
             "OFFICIAL_PRODUCT_DOCUMENTATION" to setOf("samsungfund"),
         )

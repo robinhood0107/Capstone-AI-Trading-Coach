@@ -2,6 +2,7 @@ package com.capstone.decision.infrastructure.rag
 
 import com.capstone.decision.application.rag.RagAnswerMode
 import com.capstone.decision.application.rag.RagAskCommand
+import com.capstone.decision.application.rag.RagEvaluationContext
 import com.capstone.decision.application.rag.RagGenerationStatus
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -33,7 +34,7 @@ class RagFixtureEvaluationAdapterTest {
             )
 
         cases.forEach { (question, expected) ->
-            val result = adapter.evaluate(command(question))
+            val result = adapter.evaluate(command(question), context())
             assertEquals(expected, result.generationStatus)
             assertEquals(0, result.providerPhysicalAttempts)
             assertFalse(result.externalProviderCandidate)
@@ -42,7 +43,7 @@ class RagFixtureEvaluationAdapterTest {
 
     @Test
     fun `fixture-only allowed question stays retrieval-only with every provider at zero`() {
-        val result = adapter.evaluate(command("VaR와 ES의 차이를 근거로 설명해 주세요"))
+        val result = adapter.evaluate(command("VaR와 ES의 차이를 근거로 설명해 주세요"), context())
 
         assertEquals(RagGenerationStatus.RETRIEVAL_ONLY, result.generationStatus)
         assertEquals(null, result.answer)
@@ -60,5 +61,17 @@ class RagFixtureEvaluationAdapterTest {
             answerMode = RagAnswerMode.CONCISE,
             relatedSymbols = emptyList(),
             topics = listOf("RISK"),
+        )
+
+    private fun context(): RagEvaluationContext =
+        RagEvaluationContext(
+            requestId = "req_fixture_adapter_0001",
+            ownerScopeClaim = "rag_scope_${"a".repeat(32)}",
+            consentGranted = false,
+            consentPolicyVersion = "NONE",
+            policyId = "bge_only_v1",
+            policyVersion = 1,
+            activeGenerationId = "rag_gen_${"b".repeat(32)}",
+            embeddingProfileId = "bge_m3_local_1024_v1",
         )
 }

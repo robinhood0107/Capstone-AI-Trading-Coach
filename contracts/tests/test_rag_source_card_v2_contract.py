@@ -27,6 +27,9 @@ SCHEMA_PATH = ROOT / "contracts/schemas/rag-source-card-v2.schema.json"
 OFFICIAL_FIXTURE_PATH = (
     ROOT / "contracts/examples/rag-source-card-v2.official-migration.valid.json"
 )
+NAVER_OFFICIAL_FIXTURE_PATH = (
+    ROOT / "contracts/examples/rag-source-card-v2.naver-official.valid.json"
+)
 SCHOLARLY_FIXTURE_PATH = (
     ROOT / "contracts/examples/rag-source-card-v2.scholarly.valid.json"
 )
@@ -74,19 +77,30 @@ class RagSourceCardV2ContractTest(unittest.TestCase):
         self.assertEqual(0, completed.returncode, completed.stderr)
         self.assertIn("RAG_SOURCE_CARD_V2_CONTRACT_LOCK_VERIFIED", completed.stdout)
 
-    def test_union_accepts_official_migration_and_scholarly_primary(self) -> None:
+    def test_union_accepts_official_migration_naver_and_scholarly_primary(self) -> None:
         schema = _load(SCHEMA_PATH)
         self.assertIsInstance(schema, dict)
         validator = Draft202012Validator(schema)
 
         official = _load(OFFICIAL_FIXTURE_PATH)
+        naver_official = _load(NAVER_OFFICIAL_FIXTURE_PATH)
         scholarly = _load(SCHOLARLY_FIXTURE_PATH)
         self.assertEqual([], list(validator.iter_errors(official)))
+        self.assertEqual([], list(validator.iter_errors(naver_official)))
         self.assertEqual([], list(validator.iter_errors(scholarly)))
         validate_rag_source_card_v2_semantics(official)
+        validate_rag_source_card_v2_semantics(naver_official)
         validate_rag_source_card_v2_semantics(scholarly)
 
         self.assertEqual("OFFICIAL_UPSTREAM_CARD", official["cardVariant"])
+        self.assertEqual("naver", naver_official["institution"])
+        self.assertEqual(
+            [
+                "src_naver_news_search_001",
+                "src_naver_legacy_sunset_001",
+            ],
+            naver_official["upstreamSourceIds"],
+        )
         self.assertEqual("SCHOLARLY_PRIMARY_CARD", scholarly["cardVariant"])
         self.assertEqual([], scholarly["upstreamSourceIds"])
         self.assertEqual(

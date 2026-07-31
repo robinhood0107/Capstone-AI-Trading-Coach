@@ -145,6 +145,67 @@ def test_prompt_rejects_mixed_external_processing_scope_without_silent_drop() ->
         )
 
 
+@pytest.mark.parametrize(
+    "canonical_url",
+    [
+        "https://127.0.0.1/internal",
+        "https://[::1]/internal",
+        "https://localhost/internal",
+        "https://metadata.localhost/internal",
+    ],
+)
+def test_prompt_rejects_non_public_citation_hosts(canonical_url: str) -> None:
+    internal = EvidenceChunk(
+        **{**evidence()[0].__dict__, "canonical_url": canonical_url}
+    )
+
+    with pytest.raises(FixtureProviderContractError):
+        build_fixture_prompt(
+            "VaR와 ES 차이를 설명해 주세요",
+            (internal,),
+        )
+
+
+def test_structured_answer_rejects_credential_shaped_output() -> None:
+    payload = json.dumps(
+        {
+            "answer": "전달된 값은 sk-aaaaaaaaaaaaaaaa 입니다. [cit_1]",
+            "citations": ["cit_1"],
+        },
+        ensure_ascii=False,
+    ).encode("utf-8")
+
+    with pytest.raises(FixtureProviderContractError):
+        parse_structured_answer(
+            payload,
+            evidence(),
+            active_generation_id="rag_gen_active",
+        )
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        b'{"answer":"credential-value-that-must-not-enter-error-chain"',
+        b"\xffcredential-value-that-must-not-enter-error-chain",
+    ],
+)
+def test_structured_answer_suppresses_untrusted_payload_from_error_chain(
+    payload: bytes,
+) -> None:
+    secret = "credential-value-that-must-not-enter-error-chain"
+
+    with pytest.raises(FixtureProviderContractError) as captured:
+        parse_structured_answer(
+            payload,
+            evidence(),
+            active_generation_id="rag_gen_active",
+        )
+
+    assert captured.value.__cause__ is None
+    assert secret not in repr(captured.value)
+
+
 def test_structured_answer_rejects_uncited_sentence_before_later_citation() -> None:
     payload = json.dumps(
         {
@@ -198,6 +259,8 @@ def test_fixture_provider_factory_fixes_transport_and_loads_credential_only_at_s
     assert request.headers["x-goog-api-key"] == secret
     assert secret.encode() not in request.body
     assert secret.encode() not in body
+    assert secret not in repr(request)
+    assert "typed fixture payload" not in repr(request)
     request_json = json.loads(request.body)
     assert request_json["generationConfig"]["maxOutputTokens"] == 800
     assert request_json["generationConfig"]["responseMimeType"] == "application/json"
@@ -207,6 +270,26 @@ def test_fixture_provider_factory_fixes_transport_and_loads_credential_only_at_s
         "required",
         "type",
     }
+
+
+def test_fixture_provider_sanitizes_credential_supplier_failure() -> None:
+    secret = "credential-value-that-must-not-enter-error-chain"
+
+    def failing_supplier() -> str:
+        raise RuntimeError(secret)
+
+    client = BoundedFixtureProviderClient(
+        transport=NetworkDisabledFixtureTransport(response=b"{}"),
+        credential_supplier=failing_supplier,
+    )
+
+    with pytest.raises(FixtureProviderContractError) as captured:
+        client.send_once({"prompt": "bounded"})
+
+    assert str(captured.value) == "fixture_credential_unavailable"
+    assert captured.value.__cause__ is None
+    assert secret not in repr(captured.value)
+    assert client.transport_attempts == 0
 
 
 @pytest.mark.parametrize(

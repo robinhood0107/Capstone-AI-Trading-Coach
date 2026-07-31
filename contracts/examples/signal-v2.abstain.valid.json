@@ -1,0 +1,51 @@
+{
+  "asOf": "2026-07-31T00:00:00Z",
+  "components": {
+    "hmmRegime": {
+      "producer": "HMM",
+      "reason": "POSTERIOR_BELOW_THRESHOLD",
+      "sourceWorkspace": "decision-platform",
+      "status": "ABSTAIN",
+      "warnings": [
+        "HMM evidence was excluded from the composite."
+      ]
+    },
+    "lightgbm": {
+      "asOf": "2026-07-31T00:00:00Z",
+      "confidence": 0.66,
+      "predictedReturn": 0.003,
+      "producer": "LIGHTGBM",
+      "signal": "HOLD",
+      "sourceWorkspace": "decision-platform",
+      "status": "AVAILABLE"
+    },
+    "lstm": {
+      "asOf": "2026-07-31T00:00:00Z",
+      "confidence": 0.57,
+      "predictedReturn": 0.008,
+      "producer": "LSTM",
+      "signal": "BUY",
+      "sourceWorkspace": "return-engine",
+      "status": "AVAILABLE"
+    },
+    "ruleBaseline": {
+      "asOf": "2026-07-31T00:00:00Z",
+      "confidence": 0.51,
+      "predictedReturn": 0.001,
+      "producer": "RULE_BASELINE",
+      "signal": "HOLD",
+      "sourceWorkspace": "return-engine",
+      "status": "AVAILABLE"
+    }
+  },
+  "composite": {
+    "reason": "REQUIRED_COMPONENT_UNAVAILABLE",
+    "status": "ABSTAIN"
+  },
+  "modelReportId": "model_report_fixture_20260731",
+  "symbol": "005930",
+  "timeframe": "1d",
+  "warnings": [
+    "One or more required components are unavailable."
+  ]
+}

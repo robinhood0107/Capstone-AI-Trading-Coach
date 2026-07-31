@@ -1,0 +1,47 @@
+{
+  "accessLevel": "PUBLIC",
+  "accessNote": "Naver Developers의 공개 Search API 문서 locator를 확인한 계약 fixture다.",
+  "adoptedSession": "S4.7B",
+  "allowedUses": [
+    "뉴스 검색 metadata의 discovery-only 경계를 검증한다."
+  ],
+  "attribution": "NAVER Developers Search API 공식 문서",
+  "canonicalUrl": "https://developers.naver.com/docs/serviceapi/search/news/news.md",
+  "canonicalUrlSha256": "dd013514bbda02d6f2d731ec39f5928f2b4fc9c3cf558671a33590898597ff48",
+  "cardId": "card_naver_news_discovery_boundary_001",
+  "cardVariant": "OFFICIAL_UPSTREAM_CARD",
+  "claim": "뉴스 검색 metadata는 discovery와 reference에만 사용하며 기사 원문 권한을 만들지 않는다.",
+  "contentClass": "PROJECT_AUTHORED_SANITIZED_CARD",
+  "contradicts": [],
+  "evidenceClass": "OFFICIAL_API_DOCUMENTATION",
+  "evidenceContentSha256": "0ee9637cc331155fb7c41ec377b7c081e641aa26abfdda5120c48ec50a334714",
+  "externalProcessingAllowed": false,
+  "externalProcessingGate": "NOT_GRANTED",
+  "forbiddenInferences": [
+    "검색 결과 metadata를 기사 원문 사용 권한으로 해석하지 않는다."
+  ],
+  "institution": "naver",
+  "licenseNote": "공식 문서의 bounded metadata만 사용하고 기사 본문은 복제하지 않는다.",
+  "limitations": [
+    "현재 Search API와 legacy API의 수명주기는 별도 lineage로 확인한다."
+  ],
+  "modelAssumptions": [],
+  "modelSensitive": false,
+  "representativeQuestions": [
+    "뉴스 검색 결과를 기사 원문 corpus로 저장해도 되나요?"
+  ],
+  "retentionDays": 365,
+  "retentionOwner": "python-rag-corpus-privacy",
+  "schemaVersion": "2",
+  "sourceId": "src_project_naver_news_discovery_boundary_001",
+  "sourceType": "PROJECT_SOURCE_CARD",
+  "status": "VERIFIED",
+  "tier": "PROJECT",
+  "title": "Naver 뉴스 검색 discovery 경계",
+  "topic": "naver_news_discovery_boundary",
+  "upstreamSourceIds": [
+    "src_naver_news_search_001",
+    "src_naver_legacy_sunset_001"
+  ],
+  "verifiedAt": "2026-07-31T00:00:00Z"
+}

@@ -43,13 +43,14 @@ class RagSourceRegistryMigrationIntegrationTest {
                         "rag_generation_chunks",
                         "rag_chunk_embeddings",
                         "rag_embedding_staging",
+                        "rag_generation_attestations",
                         "rag_embedding_policy_state",
                         "rag_embedding_policy_transitions",
                     )
                 assertThat(queryStrings(connection, normalizedTableQuery))
                     .containsAll(expectedTables)
                 assertThat(queryString(connection, "select max(version::integer) from flyway_schema_history where success"))
-                    .isEqualTo("17")
+                    .isEqualTo("18")
 
                 expectedTables.forEach { table ->
                     assertThat(
@@ -62,6 +63,12 @@ class RagSourceRegistryMigrationIntegrationTest {
                 assertThat(roleSettings(connection, "decision_rag_writer"))
                     .contains(
                         "statement_timeout=2s",
+                        "lock_timeout=500ms",
+                        "idle_in_transaction_session_timeout=5s",
+                    )
+                assertThat(roleSettings(connection, "decision_rag_admin"))
+                    .contains(
+                        "statement_timeout=5s",
                         "lock_timeout=500ms",
                         "idle_in_transaction_session_timeout=5s",
                     )
@@ -1294,7 +1301,8 @@ class RagSourceRegistryMigrationIntegrationTest {
                         grant usage on schema public to
                           decision_app, decision_collector, decision_disclosure_reader,
                           decision_market_writer, decision_portfolio_writer, decision_risk_writer,
-                          decision_fill_writer, decision_rag_writer, decision_rag_query, flyway
+                          decision_fill_writer, decision_rag_writer, decision_rag_admin,
+                          decision_rag_query, flyway
                         """.trimIndent(),
                     )
                     statement.execute("grant create on schema public to flyway")

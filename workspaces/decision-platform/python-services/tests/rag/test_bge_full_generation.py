@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from dataclasses import replace
 from typing import Any
 
@@ -16,8 +17,6 @@ from app.rag.bge_full_generation import (
     BgeFullGenerationError,
     BgeGenerationBenchmarkReceipt,
     BgeGenerationDatabaseReceipt,
-    BgeGenerationParityReceipt,
-    BgeMaterializedGeneration,
     PsycopgBgeFullGenerationAdminRepository,
     PsycopgBgeFullGenerationReader,
     PsycopgBgeFullGenerationWriterRepository,
@@ -26,9 +25,15 @@ from app.rag.bge_full_generation import (
     prepare_bge_full_generation,
     verify_bge_full_generation_parity,
 )
+from app.rag.bge_full_generation_benchmark_cli import batch_receipt_from_report
 from app.rag.source_card_corpus import (
+    REPO_ROOT,
     FrozenSourceCardCorpus,
     load_frozen_source_card_corpus,
+)
+
+_BATCH_REPORT_PATH = (
+    REPO_ROOT / "capstone-rag/reports/s4-2b-batch-memory-benchmark.v1.json"
 )
 
 
@@ -146,6 +151,20 @@ def test_prepare_full_generation_binds_exact_30_manifest_and_batch_identity() ->
     assert [item.card.source_id for item in first.items] == sorted(
         (card.source_id for card in corpus.cards),
         key=lambda value: value.encode("utf-8"),
+    )
+
+
+def test_tracked_batch_memory_report_is_hash_bound_and_selects_32() -> None:
+    report = json.loads(_BATCH_REPORT_PATH.read_text(encoding="utf-8"))
+    receipt = batch_receipt_from_report(report)
+
+    assert receipt.selected_batch_size == 32
+    assert receipt.candidates == (16, 32, 64)
+    assert receipt.environment_fingerprint_sha256 == (
+        "7f5821b582e14ff0d5671381d48492ad0cee705e0341dbfb72d5ba8689a8412d"
+    )
+    assert receipt.benchmark_sha256 == (
+        "9aa704533622c4014a463706e85084ac2aab0ab6b1e578a445fff0376e9296c0"
     )
 
 
@@ -314,8 +333,12 @@ def test_postgres_full_generation_uses_writer_reader_and_admin_boundaries(
             connection.execute(
                 """
                 SELECT * FROM activate_verified_rag_generation(
-                  NULL, NULL, 1, NULL, NULL, NULL, NULL, NULL, 30, 30, 16,
-                  NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, NULL
+                  NULL::text, NULL::text, 1::bigint,
+                  NULL::text, NULL::text, NULL::text, NULL::text, NULL::text,
+                  30::integer, 30::integer, 16::integer,
+                  NULL::text, NULL::text, NULL::text, NULL::text, NULL::text,
+                  NULL::text, NULL::text, NULL::text, NULL::text,
+                  1::numeric, NULL::text
                 )
                 """
             ).fetchone()
@@ -323,16 +346,12 @@ def test_postgres_full_generation_uses_writer_reader_and_admin_boundaries(
 
 def _artifact_receipt() -> BgeVerifiedPacket:
     return BgeVerifiedPacket(
-        repository="BAAI/bge-m3",
         revision="5617a9f61b028005a4858fdac845db406aefb181",
-        license_spdx="MIT",
-        artifact_type="ONNX_DATA_ONLY",
         file_count=10,
         total_bytes=2_289_781_803,
         file_manifest_sha256=(
             "a0ae6372b2d735b593d806d24c1155cb48dd7188adebe7d6b7619a1622fb71aa"
         ),
-        model_root="/ignored/generic/model/root",
     )
 
 
@@ -361,4 +380,3 @@ def _final_benchmark(*, p95_ms: float) -> BgeGenerationBenchmarkReceipt:
         openai_physical_calls=0,
         passed=p95_ms <= 1500.0,
     )
-

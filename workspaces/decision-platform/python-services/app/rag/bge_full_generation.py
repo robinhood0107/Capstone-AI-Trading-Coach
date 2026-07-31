@@ -42,9 +42,24 @@ _PARSER_VERSION = "rag-source-card-v2-markdown-v1"
 _CANONICALIZER_VERSION = "utf8-nfc-lf-source-card-body-v1"
 _CHUNKER_VERSION = "bge-tokenizer-heading-400-600-v1"
 _INPUT_STRATEGY_VERSION = "adjacent-7.5pct-per-side-no-reallocation-v1"
-_CORPUS_MANIFEST_SHA256 = (
+_S4_7B_CORPUS_MANIFEST_SHA256 = (
     "7f2b4d72dcbaccf57cbe49a980973b17b4a9bfd85bec4694fd66fd7fd2a9decd"
 )
+_S4_7C_CORPUS_MANIFEST_SHA256 = (
+    "bdc42bfb735b411156ec2f79626d6fd2cf56662c57d83e2cdb960fb74e7b0e04"
+)
+_ALLOWED_CORPUS_BINDINGS = {
+    _S4_7B_CORPUS_MANIFEST_SHA256: (
+        "s4-7b-project-source-cards-30",
+        "FROZEN",
+        None,
+    ),
+    _S4_7C_CORPUS_MANIFEST_SHA256: (
+        "s4-7c-project-source-cards-30-external",
+        "FROZEN_EXTERNAL",
+        "s4_7c_external_v1",
+    ),
+}
 _EXPECTED_ARTIFACT_FILE_COUNT = 10
 _EXPECTED_ARTIFACT_BYTES = 2_289_781_803
 _EXPECTED_CARD_COUNT = 30
@@ -89,6 +104,9 @@ class BgeFullGenerationPlan:
     generation_id: str
     generation_hash: str
     corpus_hash: str
+    corpus_profile_id: str
+    source_registry_version: str
+    external_processing_allowed: bool
     membership_hash: str
     materialization_run_id: str
     embedding_profile_id: str
@@ -255,6 +273,14 @@ def prepare_bge_full_generation(
     _validate_corpus_binding(corpus)
     _validate_artifact(artifact)
     _validate_batch_benchmark(batch_benchmark)
+    binding = _ALLOWED_CORPUS_BINDINGS[corpus.corpus_manifest_sha256]
+    external_processing_allowed = binding[2] is not None
+    corpus_profile_id = binding[2] or "s4_7b_internal_v1"
+    source_registry_version = (
+        "s4-7c-source-card-v2"
+        if external_processing_allowed
+        else "s4-7b-source-card-v2"
+    )
 
     intermediate: list[
         tuple[FrozenSourceCard, str, str, RagCanonicalChunk]
@@ -333,6 +359,15 @@ def prepare_bge_full_generation(
         "parserVersion": _PARSER_VERSION,
         "tokenizerSha256": _TOKENIZER_SHA256,
     }
+    # 기존 S4.7B generation identity는 보존하고, 새 external profile에만 전환 경계를 결합한다.
+    if external_processing_allowed:
+        generation_payload.update(
+            {
+                "corpusProfileId": corpus_profile_id,
+                "externalProcessingAllowed": True,
+                "sourceRegistryVersion": source_registry_version,
+            }
+        )
     generation_hash = _canonical_json_hash(generation_payload)
     generation_id = f"rag_gen_{generation_hash[:32]}"
     materialization_run_id = (
@@ -347,6 +382,9 @@ def prepare_bge_full_generation(
         generation_id=generation_id,
         generation_hash=generation_hash,
         corpus_hash=corpus.corpus_manifest_sha256,
+        corpus_profile_id=corpus_profile_id,
+        source_registry_version=source_registry_version,
+        external_processing_allowed=external_processing_allowed,
         membership_hash=membership_hash,
         materialization_run_id=materialization_run_id,
         embedding_profile_id=_PROFILE_ID,
@@ -377,7 +415,22 @@ def execute_bge_full_generation(
     if (
         len(plan.items) != _EXPECTED_CARD_COUNT
         or plan.batch_size not in range(16, 65)
-        or plan.corpus_hash != _CORPUS_MANIFEST_SHA256
+        or plan.corpus_hash not in _ALLOWED_CORPUS_BINDINGS
+        or (
+            plan.corpus_profile_id,
+            plan.source_registry_version,
+            plan.external_processing_allowed,
+        )
+        != (
+            _ALLOWED_CORPUS_BINDINGS[plan.corpus_hash][2]
+            or "s4_7b_internal_v1",
+            (
+                "s4-7c-source-card-v2"
+                if _ALLOWED_CORPUS_BINDINGS[plan.corpus_hash][2] is not None
+                else "s4-7b-source-card-v2"
+            ),
+            _ALLOWED_CORPUS_BINDINGS[plan.corpus_hash][2] is not None,
+        )
     ):
         raise BgeFullGenerationError("FULL_GENERATION_PLAN")
     vectors: list[NDArray[np.float32]] = []
@@ -827,24 +880,27 @@ class PsycopgBgeFullGenerationAdminRepository:
 
 
 def _validate_corpus_binding(corpus: FrozenSourceCardCorpus) -> None:
-    ordered = tuple(
-        sorted(corpus.cards, key=lambda card: card.source_id.encode("utf-8"))
-    )
+    ordered = tuple(sorted(corpus.cards, key=lambda card: card.source_id.encode("utf-8")))
     manifest_cards = corpus.manifest.get("cards")
-    identity = {
-        "schemaVersion": "1",
-        "orderedCards": [
-            {"sourceId": card.source_id, "cardSha256": card.card_sha256}
-            for card in ordered
-        ],
-    }
+    binding = _ALLOWED_CORPUS_BINDINGS.get(corpus.corpus_manifest_sha256)
+    if binding is None:
+        raise BgeFullGenerationError("CORPUS_MANIFEST_BINDING")
+    corpus_id, status, profile_id = binding
+    identity: dict[str, object] = {"schemaVersion": "1"}
+    if profile_id is not None:
+        identity["profileId"] = profile_id
+    identity["orderedCards"] = [
+        {"sourceId": card.source_id, "cardSha256": card.card_sha256} for card in ordered
+    ]
     derived_hash = hashlib.sha256(_canonical_json_bytes(identity)).hexdigest()
     if (
         len(ordered) != _EXPECTED_CARD_COUNT
         or len({card.source_id for card in ordered}) != _EXPECTED_CARD_COUNT
-        or corpus.corpus_manifest_sha256 != _CORPUS_MANIFEST_SHA256
         or corpus.manifest.get("corpusManifestSha256") != corpus.corpus_manifest_sha256
-        or corpus.manifest.get("status") != "FROZEN"
+        or corpus.manifest.get("corpusId") != corpus_id
+        or corpus.manifest.get("status") != status
+        or corpus.manifest.get("profileId") != profile_id
+        and profile_id is not None
         or corpus.manifest.get("projectCards") != _EXPECTED_CARD_COUNT
         or corpus.manifest.get("parserVersion") != _PARSER_VERSION
         or corpus.manifest.get("chunkerVersion") != _CHUNKER_VERSION
@@ -858,6 +914,18 @@ def _validate_corpus_binding(corpus: FrozenSourceCardCorpus) -> None:
             or manifest_card.get("cardSha256") != card.card_sha256
             or manifest_card.get("contentSha256") != card.content_sha256
             for manifest_card, card in zip(manifest_cards, ordered, strict=True)
+        )
+        or (
+            profile_id is not None
+            and (
+                corpus.manifest.get("approvalId")
+                != "AUTH_EXTERNAL_PROCESSING_30_PROJECT_CARDS_20260731"
+                or corpus.manifest.get("externalProcessingCardCount") != _EXPECTED_CARD_COUNT
+                or corpus.manifest.get("externalProcessingGate") != "LICENSE_AND_CONSENT_VERIFIED"
+                or corpus.manifest.get("rawOrReferenceEvidenceOutbound") != 0
+                or not isinstance(corpus.manifest.get("licenseConsentReceipts"), list)
+                or len(corpus.manifest["licenseConsentReceipts"]) != _EXPECTED_CARD_COUNT
+            )
         )
     ):
         raise BgeFullGenerationError("CORPUS_MANIFEST_BINDING")
@@ -1045,9 +1113,9 @@ def _insert_cards_and_chunks(
                   locator_sha256, metadata_hash
                 )
                 VALUES (
-                  %s, %s, %s, 's4-7b-source-card-v2',
+                  %s, %s, %s, %s,
                   %s, 'PROJECT', 'PUBLIC', 'PROJECT_AUTHORED_PUBLIC', %s, %s,
-                  'PROJECT_CARD', %s, %s, false,
+                  'PROJECT_CARD', %s, %s, %s,
                   'PROJECT_AUTHORED_CARD', %s, %s, %s,
                   %s, %s
                 )
@@ -1056,11 +1124,13 @@ def _insert_cards_and_chunks(
                     item.source_revision_id,
                     card.source_id,
                     next_revision,
+                    plan.source_registry_version,
                     _required_mapping_text(payload, "title"),
                     _required_mapping_text(payload, "licenseNote"),
                     _required_mapping_text(payload, "attribution"),
                     _required_mapping_int(payload, "retentionDays"),
                     _required_mapping_text(payload, "retentionOwner"),
+                    plan.external_processing_allowed,
                     canonical_url,
                     allowed_origin,
                     locator.path,

@@ -1,5 +1,7 @@
 package com.capstone.decision.infrastructure.openapi
 
+import com.capstone.decision.api.rag.RagConsentResponse
+import com.capstone.decision.api.rag.RagFeedbackResponse
 import com.capstone.decision.api.rag.RagSourceListResponse
 import com.capstone.decision.application.principle.CatalogRuleDefinition
 import com.capstone.decision.application.principle.PrincipleContract
@@ -217,6 +219,72 @@ class OpenApiConfig {
     fun ragContractSchemas(): OpenApiCustomizer =
         // 실제 wire 응답은 공통 envelope이므로 data 객체와 성공 응답 schema를 분리해 고정한다.
         OpenApiCustomizer { openApi ->
+            openApi.components.addSchemas(
+                S44_RAG_ASK_REQUEST_COMPONENT,
+                contractSchema(S44_RAG_ASK_REQUEST_RESOURCE, S44_RAG_ASK_REQUEST_COMPONENT),
+            )
+            openApi.components.addSchemas(
+                S44_RAG_ANSWER_COMPONENT,
+                contractSchema(S44_RAG_ANSWER_RESOURCE, S44_RAG_ANSWER_COMPONENT),
+            )
+            openApi.components.addSchemas(
+                S44_RAG_HISTORY_PAGE_COMPONENT,
+                contractSchema(S44_RAG_HISTORY_PAGE_RESOURCE, S44_RAG_HISTORY_PAGE_COMPONENT),
+            )
+            openApi.components.addSchemas(
+                S44_RAG_HISTORY_DETAIL_COMPONENT,
+                contractSchema(S44_RAG_HISTORY_DETAIL_RESOURCE, S44_RAG_HISTORY_DETAIL_COMPONENT),
+            )
+            openApi.components.addSchemas(
+                S44_RAG_FEEDBACK_REQUEST_COMPONENT,
+                contractSchema(S44_RAG_FEEDBACK_REQUEST_RESOURCE, S44_RAG_FEEDBACK_REQUEST_COMPONENT),
+            )
+            openApi.components.addSchemas(
+                S44_RAG_CONSENT_REQUEST_COMPONENT,
+                contractSchema(S44_RAG_CONSENT_REQUEST_RESOURCE, S44_RAG_CONSENT_REQUEST_COMPONENT),
+            )
+            openApi.components.addSchemas(
+                S44_RAG_ANSWER_ENVELOPE_COMPONENT,
+                successEnvelope(schemaRef(S44_RAG_ANSWER_COMPONENT)),
+            )
+            openApi.components.addSchemas(
+                S44_RAG_HISTORY_PAGE_ENVELOPE_COMPONENT,
+                successEnvelope(schemaRef(S44_RAG_HISTORY_PAGE_COMPONENT)),
+            )
+            openApi.components.addSchemas(
+                S44_RAG_HISTORY_DETAIL_ENVELOPE_COMPONENT,
+                successEnvelope(schemaRef(S44_RAG_HISTORY_DETAIL_COMPONENT)),
+            )
+            ModelConverters
+                .getInstance()
+                .readAll(RagFeedbackResponse::class.java)
+                .plus(ModelConverters.getInstance().readAll(RagConsentResponse::class.java))
+                .forEach(openApi.components::addSchemas)
+            openApi.components.schemas.getValue(S44_RAG_FEEDBACK_RESPONSE_COMPONENT).also {
+                it.types = linkedSetOf("object")
+                it.required = listOf("answerId", "helpful")
+                it.additionalProperties = false
+            }
+            openApi.components.schemas.getValue(S44_RAG_CONSENT_RESPONSE_COMPONENT).also {
+                it.types = linkedSetOf("object")
+                it.required =
+                    listOf(
+                        "consentEventId",
+                        "consentType",
+                        "action",
+                        "policyVersion",
+                        "createdAt",
+                    )
+                it.additionalProperties = false
+            }
+            openApi.components.addSchemas(
+                S44_RAG_FEEDBACK_ENVELOPE_COMPONENT,
+                successEnvelope(schemaRef(S44_RAG_FEEDBACK_RESPONSE_COMPONENT)),
+            )
+            openApi.components.addSchemas(
+                S44_RAG_CONSENT_ENVELOPE_COMPONENT,
+                successEnvelope(schemaRef(S44_RAG_CONSENT_RESPONSE_COMPONENT)),
+            )
             // response annotation을 envelope로 교체해도 중첩 DTO component가 누락되지 않게 명시적으로 해석한다.
             ModelConverters
                 .getInstance()
@@ -734,6 +802,25 @@ class OpenApiConfig {
         private const val S4_RAG_UNAUTHORIZED_ERROR_COMPONENT = "S4RagUnauthorizedErrorResponse"
         private const val S4_RAG_UNAVAILABLE_ERROR_COMPONENT = "S4RagUnavailableErrorResponse"
         private const val S4_RAG_SOURCE_MAX_ITEMS = 30
+        private const val S44_RAG_ASK_REQUEST_RESOURCE = "contracts/s4-rag-ask-request.schema.json"
+        private const val S44_RAG_ANSWER_RESOURCE = "contracts/s4-rag-answer.schema.json"
+        private const val S44_RAG_HISTORY_PAGE_RESOURCE = "contracts/s4-rag-history-page.schema.json"
+        private const val S44_RAG_HISTORY_DETAIL_RESOURCE = "contracts/s4-rag-history-detail.schema.json"
+        private const val S44_RAG_FEEDBACK_REQUEST_RESOURCE = "contracts/s4-rag-feedback-request.schema.json"
+        private const val S44_RAG_CONSENT_REQUEST_RESOURCE = "contracts/s4-rag-consent-request.schema.json"
+        private const val S44_RAG_ASK_REQUEST_COMPONENT = "S44RagAskRequest"
+        private const val S44_RAG_ANSWER_COMPONENT = "S44RagAnswer"
+        private const val S44_RAG_HISTORY_PAGE_COMPONENT = "S44RagHistoryPage"
+        private const val S44_RAG_HISTORY_DETAIL_COMPONENT = "S44RagHistoryDetail"
+        private const val S44_RAG_FEEDBACK_REQUEST_COMPONENT = "S44RagFeedbackRequest"
+        private const val S44_RAG_CONSENT_REQUEST_COMPONENT = "S44RagConsentRequest"
+        private const val S44_RAG_ANSWER_ENVELOPE_COMPONENT = "S44RagAnswerSuccessResponse"
+        private const val S44_RAG_HISTORY_PAGE_ENVELOPE_COMPONENT = "S44RagHistoryPageSuccessResponse"
+        private const val S44_RAG_HISTORY_DETAIL_ENVELOPE_COMPONENT = "S44RagHistoryDetailSuccessResponse"
+        private const val S44_RAG_FEEDBACK_RESPONSE_COMPONENT = "RagFeedbackResponse"
+        private const val S44_RAG_CONSENT_RESPONSE_COMPONENT = "RagConsentResponse"
+        private const val S44_RAG_FEEDBACK_ENVELOPE_COMPONENT = "S44RagFeedbackSuccessResponse"
+        private const val S44_RAG_CONSENT_ENVELOPE_COMPONENT = "S44RagConsentSuccessResponse"
         private val S4_RAG_SOURCE_FIELDS =
             listOf(
                 "sourceId",

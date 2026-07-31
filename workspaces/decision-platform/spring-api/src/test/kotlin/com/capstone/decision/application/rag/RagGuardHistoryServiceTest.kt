@@ -18,6 +18,7 @@ class RagGuardHistoryServiceTest {
         val persistence = mockk<RagGuardHistoryPersistencePort>()
         val rateLimit = mockk<RagRateLimitPort>()
         val idempotency = mockk<RagIdempotencyPort>()
+        val scopePort = mockk<RagRetrievalScopePort>()
         val identity =
             RagIdempotencyIdentity(
                 scopeHmac = "a".repeat(64),
@@ -31,10 +32,20 @@ class RagGuardHistoryServiceTest {
                 topics = listOf("RISK"),
             )
         every { rateLimit.acquire("usr_demo_user") } just runs
+        every { persistence.effectiveConsent("usr_demo_user") } returns
+            RagEffectiveConsent(false, null, null)
         every { idempotency.identity("usr_demo_user", "idem-rag-service-0001", command) } returns identity
         every { persistence.claim("usr_demo_user", identity, 120) } returns RagClaimDecision.Claimed
         every { persistence.failBeforeProvider("usr_demo_user", identity) } just runs
-        every { evaluation.evaluate(command) } returns
+        every { scopePort.issue("usr_demo_user", "req_service_boundary", listOf("RISK")) } returns
+            RagRetrievalScope(
+                scopeClaimId = "rag_scope_${"c".repeat(32)}",
+                policyId = "bge_only_v1",
+                policyVersion = 2,
+                activeGenerationId = "rag_gen_${"d".repeat(32)}",
+                embeddingProfileId = "bge_m3_local_1024_v1",
+            )
+        every { evaluation.evaluate(command, any()) } returns
             RagEvaluationResult(
                 generationStatus = RagGenerationStatus.RETRIEVAL_ONLY,
                 answer = null,
@@ -51,6 +62,7 @@ class RagGuardHistoryServiceTest {
                 persistence = persistence,
                 rateLimit = rateLimit,
                 idempotency = idempotency,
+                scopePort = scopePort,
             )
 
         assertThrows<RagGuardHistoryUnavailableException> {
@@ -135,6 +147,7 @@ class RagGuardHistoryServiceTest {
         crypto: RagHistoryCryptoPort = mockk(relaxed = true),
         rateLimit: RagRateLimitPort = mockk(relaxed = true),
         idempotency: RagIdempotencyPort = mockk(relaxed = true),
+        scopePort: RagRetrievalScopePort = mockk(relaxed = true),
     ): RagGuardHistoryService {
         val policy =
             mockk<RagGuardHistoryPolicy> {
@@ -147,6 +160,7 @@ class RagGuardHistoryServiceTest {
             rateLimitPort = rateLimit,
             cursorPort = mockk(relaxed = true),
             idempotencyPort = idempotency,
+            retrievalScopePort = scopePort,
             policy = policy,
             clockProvider = mockk<ObjectProvider<Clock>>(relaxed = true),
         )

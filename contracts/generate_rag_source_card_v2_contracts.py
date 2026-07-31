@@ -25,7 +25,6 @@ from contracts.generate_principle_contracts import (  # noqa: E402
     load_json_bytes_strict,
 )
 from contracts.generate_s4_rag_contracts import (  # noqa: E402
-    RAG_SOURCE_CARD_AUTHORITY_INSTITUTIONS,
     RAG_SOURCE_CARD_UPSTREAM_SOURCE_IDS,
 )
 
@@ -87,6 +86,13 @@ SCHOLARLY_EVIDENCE_CLASSES: Final[tuple[str, ...]] = (
     "OFFICIAL_REPORT",
     "OFFICIAL_STANDARD",
 )
+RAG_SOURCE_CARD_V2_AUTHORITY_INSTITUTIONS: Final[
+    Mapping[str, tuple[str, ...]]
+] = {
+    "OFFICIAL_API_DOCUMENTATION": ("ecos", "kis", "naver", "opendart"),
+    "OFFICIAL_SERVICE_DOCUMENTATION": ("krx",),
+    "OFFICIAL_PRODUCT_DOCUMENTATION": ("samsungfund",),
+}
 SECONDARY_HOSTS: Final[frozenset[str]] = frozenset(
     {
         "blogspot.com",
@@ -141,6 +147,7 @@ INVALID_JSON_FIXTURE_PATHS: Final[frozenset[str]] = frozenset(
 )
 VALID_FIXTURE_PATHS: Final[frozenset[str]] = frozenset(
     {
+        "contracts/examples/rag-source-card-v2.naver-official.valid.json",
         "contracts/examples/rag-source-card-v2.official-migration.valid.json",
         "contracts/examples/rag-source-card-v2.scholarly.valid.json",
     }
@@ -743,7 +750,7 @@ def validate_rag_source_card_v2_semantics(card: object) -> None:
             raise ContractValidationError(
                 "RAG source card v2 official card requires institution-matching upstream authority."
             )
-        allowed_institutions = RAG_SOURCE_CARD_AUTHORITY_INSTITUTIONS.get(
+        allowed_institutions = RAG_SOURCE_CARD_V2_AUTHORITY_INSTITUTIONS.get(
             evidence_class
         )
         if (
@@ -878,6 +885,57 @@ def _scholarly_fixture() -> dict[str, Any]:
     }
 
 
+def _naver_official_fixture() -> dict[str, Any]:
+    canonical_url = "https://developers.naver.com/docs/serviceapi/search/news/news.md"
+    bounded_evidence = (
+        "네이버 검색 API|뉴스 검색 결과 metadata|"
+        "src_naver_news_search_001|src_naver_legacy_sunset_001"
+    )
+    return {
+        "accessLevel": "PUBLIC",
+        "accessNote": "Naver Developers의 공개 Search API 문서 locator를 확인한 계약 fixture다.",
+        "adoptedSession": "S4.7B",
+        "allowedUses": ["뉴스 검색 metadata의 discovery-only 경계를 검증한다."],
+        "attribution": "NAVER Developers Search API 공식 문서",
+        "canonicalUrl": canonical_url,
+        "canonicalUrlSha256": hashlib.sha256(
+            canonical_url.encode("utf-8")
+        ).hexdigest(),
+        "cardId": "card_naver_news_discovery_boundary_001",
+        "cardVariant": "OFFICIAL_UPSTREAM_CARD",
+        "claim": "뉴스 검색 metadata는 discovery와 reference에만 사용하며 기사 원문 권한을 만들지 않는다.",
+        "contentClass": "PROJECT_AUTHORED_SANITIZED_CARD",
+        "contradicts": [],
+        "evidenceClass": "OFFICIAL_API_DOCUMENTATION",
+        "evidenceContentSha256": hashlib.sha256(
+            bounded_evidence.encode("utf-8")
+        ).hexdigest(),
+        "externalProcessingAllowed": False,
+        "externalProcessingGate": "NOT_GRANTED",
+        "forbiddenInferences": ["검색 결과 metadata를 기사 원문 사용 권한으로 해석하지 않는다."],
+        "institution": "naver",
+        "licenseNote": "공식 문서의 bounded metadata만 사용하고 기사 본문은 복제하지 않는다.",
+        "limitations": ["현재 Search API와 legacy API의 수명주기는 별도 lineage로 확인한다."],
+        "modelAssumptions": [],
+        "modelSensitive": False,
+        "representativeQuestions": ["뉴스 검색 결과를 기사 원문 corpus로 저장해도 되나요?"],
+        "retentionDays": 365,
+        "retentionOwner": "python-rag-corpus-privacy",
+        "schemaVersion": "2",
+        "sourceId": "src_project_naver_news_discovery_boundary_001",
+        "sourceType": "PROJECT_SOURCE_CARD",
+        "status": "VERIFIED",
+        "tier": "PROJECT",
+        "title": "Naver 뉴스 검색 discovery 경계",
+        "topic": "naver_news_discovery_boundary",
+        "upstreamSourceIds": [
+            "src_naver_news_search_001",
+            "src_naver_legacy_sunset_001",
+        ],
+        "verifiedAt": "2026-07-31T00:00:00Z",
+    }
+
+
 def _with_url(
     card: Mapping[str, Any],
     url: str,
@@ -898,8 +956,10 @@ def _with_url(
 
 def fixtures() -> dict[str, Any]:
     official = _official_migration_fixture()
+    naver_official = _naver_official_fixture()
     scholarly = _scholarly_fixture()
     generated: dict[str, Any] = {
+        "contracts/examples/rag-source-card-v2.naver-official.valid.json": naver_official,
         "contracts/examples/rag-source-card-v2.official-migration.valid.json": official,
         "contracts/examples/rag-source-card-v2.scholarly.valid.json": scholarly,
     }

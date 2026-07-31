@@ -96,6 +96,7 @@ sourceSets {
             srcDir("../../../contracts/proto")
             include("disclosure_observation.proto")
             include("brokerage.proto")
+            include("rag.proto")
         }
     }
 }

@@ -38,6 +38,9 @@ from contracts.generate_s4_rag_contracts import (  # noqa: E402
     validate_rag_ask_request_semantics,
     validate_rag_source_card_semantics,
 )
+from contracts.generate_rag_source_card_v2_contracts import (  # noqa: E402
+    validate_rag_source_card_v2_semantics,
+)
 
 SCHEMA_DIR = REPO_ROOT / "contracts" / "schemas"
 EXAMPLES_DIR = REPO_ROOT / "contracts" / "examples"
@@ -144,6 +147,9 @@ def validate_example_semantics(
         return
     if schema_name == "rag-source-card-v1":
         validate_rag_source_card_semantics(example)
+        return
+    if schema_name == "rag-source-card-v2":
+        validate_rag_source_card_v2_semantics(example)
         return
     validate_principle_payload_semantics(
         schema_name,

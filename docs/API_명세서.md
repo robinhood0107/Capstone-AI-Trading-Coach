@@ -1065,16 +1065,15 @@ generation과 제출 직전 generation을 다시 비교한다.
 `GET /api/v1/risk/cross-market`
 
 > 계획 타당성: `PLAN_FEASIBILITY=GO`.
-> 구현 상태: `IMPLEMENTATION=SPEC_ONLY / NOT_IMPLEMENTED / PLANNED`.
+> 현재 상태: `S4.8A_CONTRACT=LOCKED / ENDPOINT_RUNTIME=NOT_IMPLEMENTED`.
 > 월 데이터 비용 목표는 `0원`, offline fixture와 지연/EOD가 우선이다. 기관용 데이터 제품과
 > 실시간 SOX/VIX feed는 post-P1 선택지이며 P1 완료 조건이 아니다. 새 agent framework·별도
 > cloud·Kafka는 hard dependency가 아니다.
 >
-> 순서 0 `S4.READ`는 관련 공개·private 명세 EOF receipt와 충돌 목록만 만드는 read-only
-> preflight다. 이후 S4.8A 일곱 계약·fixture·generator/parity만 담은 contract-only PR을
-> 검증·병합하기 전에는 runtime PR을 시작하지 않는다. S4.8A의 일곱 schema,
-> `s2-2-system-rule-catalog.v2`, contract-change, fixture/golden vector가 먼저 고정되기
-> 전에는 이 endpoint, 내부 port, DB projection과 아래 검증 항목을 구현 완료로 해석하지 않는다.
+> 순서 0 `S4.READ` EOF receipt 뒤 S4.8A contract-only gate가 일곱
+> schema·fixture·generator/parity, `s2-2-system-rule-catalog.v2`, contract-change와 v3
+> golden vector를 고정한다. 이 계약은 endpoint, 내부 port, DB projection의 runtime 구현
+> 완료 증거가 아니다. S4.8B/C는 S4.8A의 main 병합과 post-merge CI 확인 뒤에만 시작한다.
 > provider/live account/live order physical call은 0이며 P1 권한은 `WARN_ONLY`다.
 > 2026-07-30 계획 확정 변경은 Markdown만 동기화하며 OpenAPI, schema, fixture, catalog,
 > migration, runtime code와 환경설정을 생성하거나 수정하는 구현 세션이 아니다.
@@ -3296,9 +3295,9 @@ API/adapter/parser/storage 변경 커밋은 기능 단위로 분리한다. 테�
 ### 17.2 구현 전 반드시 계약으로 확정할 세부 스키마
 
 아래 항목은 실제 코드 작성 전 `contracts/`에 JSON Schema 또는 proto로 고정한다.
-교차시장 일곱 schema와 catalog v2는 현재 `SPEC_ONLY / NOT_IMPLEMENTED / PLANNED`이며,
-contract-change·generator·positive/negative fixture·byte-parity gate가 생기기 전 runtime
-구현은 `NO_GO`다.
+교차시장 일곱 schema와 catalog v2/v3는 S4.8A contract-change·generator·positive/negative
+fixture·byte-parity gate로 고정했다. 이는 runtime 완료 증거가 아니며 S4.8A의 main 병합과
+post-merge CI 확인 전 runtime 구현은 `NO_GO`다.
 
 | 계약 | 필요 필드 |
 |---|---|

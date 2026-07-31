@@ -1,0 +1,65 @@
+{
+  "$id": "contracts/schemas/s2-2-hash-vector.v3.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "canonicalizationId": {
+      "const": "HASH-CANONICALIZATION-S22-V3"
+    },
+    "catalogVersion": {
+      "const": 2
+    },
+    "compatibility": {
+      "additionalProperties": false,
+      "properties": {
+        "catalogV1Sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "hashVectorV2Sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "v1Unchanged": {
+          "const": true
+        }
+      },
+      "required": [
+        "catalogV1Sha256",
+        "hashVectorV2Sha256",
+        "v1Unchanged"
+      ],
+      "type": "object"
+    },
+    "excludedFields": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 9,
+      "minItems": 9,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "metricSnapshotVersion": {
+      "const": "s2.2-metric-snapshot-v3"
+    },
+    "semanticInput": {
+      "type": "object"
+    },
+    "semanticInputHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "canonicalizationId",
+    "catalogVersion",
+    "compatibility",
+    "excludedFields",
+    "metricSnapshotVersion",
+    "semanticInput",
+    "semanticInputHash"
+  ],
+  "title": "s2-2-hash-vector.v3",
+  "type": "object"
+}

@@ -15,13 +15,12 @@
   30/30 DB parity와 bounded admin CAS를 통과했고 provider physical call은 0이다.
 - Voyage/Gemini/OpenAI 호출, `/rag/ask`, 암호화 history, retrieval/RRF/evaluator,
   S5 LightGBM은 아직 완료되지 않았다.
-- S4.8A/B/C·S6.6/S6.7 교차시장 계획 타당성은 `PLAN_FEASIBILITY=GO`, 구현 상태는
-  `IMPLEMENTATION=SPEC_ONLY / NOT_IMPLEMENTED / PLANNED`다. 월 데이터 비용 `0원`,
-  offline fixture·지연/EOD 우선이며 기관용/실시간 feed는 P1 완주 조건이 아니다.
-- 순서 0 `S4.READ`에서 관련 공개·private 명세를 EOF까지 읽고 receipt를 남긴 뒤,
-  S4.8A contract-only PR을 먼저 검증·병합한다. 일곱 schema,
-  catalog v2, contract-change, fixture/golden vector를 먼저 고정하기 전에는 코드·DB·API
-  구현이나 focused 명령을 가용하다고 표시하지 않는다. 문서 정의 자체는 완료 증거가 아니다.
+- S4.8A 교차시장 일곱 schema·fixture·catalog v2/v3는 계약 잠금 상태다. S4.8B/C·S6.6/S6.7
+  runtime은 `NOT_IMPLEMENTED / PLANNED`다. 월 데이터 비용 `0원`, offline
+  fixture·지연/EOD 우선이며 기관용/실시간 feed는 P1 완주 조건이 아니다.
+- 순서 0 `S4.READ` receipt 뒤 S4.8A contract-only gate가 일곱 schema, catalog v2,
+  contract-change, fixture/golden vector를 고정했다. 이 계약은 코드·DB·API runtime 완료
+  증거가 아니며 후속 구현은 S4.8A의 main 병합과 post-merge CI를 먼저 확인해야 한다.
 - 기존 Decision/RAG/Signal v1/v2 payload 추가 필드는 0이고 새 framework·cloud·Kafka hard
   dependency를 만들지 않는다.
 - provider/live account/live order 호출은 승인 packet 없이는 항상 0이다.
@@ -33,9 +32,9 @@ S4부터 P1 종료까지의 공개 방향과 교차시장 역할·검증 순서�
 [최종 프로젝트 명세서](최종_프로젝트_명세서.md),
 REST/gRPC 계약은 [API 명세서](API_명세서.md), machine-readable S4 profile/policy는
 [contracts README](../contracts/README.md#s4-rag-profilepolicy-catalog)를 따른다.
-교차시장 문서 전용 계약 계획은
-[contracts README](../contracts/README.md#s48-교차시장애널리스트-계획-계약)를 따르며,
-machine-readable 계약 링크는 S4.8A contract-lock이 실제 생성된 뒤에만 추가한다.
+교차시장 계약은
+[contracts README](../contracts/README.md#s48-교차시장애널리스트-계약)와
+[S4.8A 변경기록](../contracts/changes/20260731-s4-8a-cross-market-contract-lock.md)을 따른다.
 exact 42개 integration target 행과 exact KIS 18개 allowlist는
 Git으로 추적하지 않는 로컬 전용 자료수급 레지스트리가
 authority이며 공개 문서에는 전체 목록을 복제하지 않는다.

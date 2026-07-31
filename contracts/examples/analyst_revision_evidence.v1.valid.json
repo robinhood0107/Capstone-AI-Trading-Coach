@@ -1,0 +1,45 @@
+{
+  "artifactHash": "5555555555555555555555555555555555555555555555555555555555555555",
+  "availableAt": "2026-07-31T00:00:03Z",
+  "brokerId": "broker_0123456789abcdef",
+  "buyOpinionWeight": 0,
+  "contractId": "analyst_revision_evidence.v1",
+  "contributorCount": 3,
+  "current": {
+    "eps": 8,
+    "rating": "BUY",
+    "revenue": 980,
+    "targetPrice": 110
+  },
+  "decisionAuthority": "NONE",
+  "dedupeKeyHash": "6666666666666666666666666666666666666666666666666666666666666666",
+  "dispersion": 0.12,
+  "estimatePeriod": "2026Q3",
+  "logicalIdentityHash": "7777777777777777777777777777777777777777777777777777777777777777",
+  "originalEvidenceId": "analyst_revision_0001",
+  "payloadHash": "8888888888888888888888888888888888888888888888888888888888888888",
+  "previous": {
+    "eps": 10,
+    "rating": "BUY",
+    "revenue": 1000,
+    "targetPrice": 120
+  },
+  "publishedAt": "2026-07-31T00:00:00Z",
+  "rawTextStored": false,
+  "receivedAt": "2026-07-31T00:00:02Z",
+  "retracted": false,
+  "revision": {
+    "epsDelta": -2,
+    "ratingChanged": false,
+    "revenueDelta": -20,
+    "targetPriceDelta": -10
+  },
+  "schemaVersion": "1",
+  "sourceLicense": "STRUCTURED_FIXTURE",
+  "supersedesEvidenceId": null,
+  "symbol": "NVDA",
+  "userConfirmedTags": [
+    "CHANGE",
+    "RISK"
+  ]
+}

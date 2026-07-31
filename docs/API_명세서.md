@@ -1226,6 +1226,12 @@ canonical domain이다.
 
 RAG는 v1 핵심 구현이다. 단, RAG 답변은 매수/매도 지시가 아니라 근거 기반 설명으로 제한한다. 런타임 RAG corpus는 공식자료, 공시/API 문서, 프로젝트 산출물, 금융공학 source card로 제한한다. 뉴스 원문 전체는 RAG corpus에 포함하지 않고, Return Engine이 만든 `news_sentiment_summary` artifact만 설명 근거로 연결한다.
 
+> S4.4 구현 기준(2026-07-31): 아래 ask·feedback·history·consent 계약은
+> `FIXTURE_ONLY` answerer, owner-scoped PostgreSQL functions, Redis rate limit,
+> purpose-separated HMAC과 AES-256-GCM envelope encryption으로 구현한다. 이 단계의
+> Gemini·OpenAI·Voyage physical call은 0이고 허용 질문도 `RETRIEVAL_ONLY`로 닫는다.
+> 실제 Python retrieval/generation E2E는 S4.6, Gemini live는 별도 승인형 S4.4G 범위다.
+
 ### 7.1 RAG 질문
 
 `POST /api/v1/rag/ask`
@@ -1265,19 +1271,23 @@ append-only 관리자 승인 transition이 소유한다.
 
 응답:
 
+아래는 향후 승인형 generation에서도 그대로 사용하는 `ANSWERED` contract variant 예다.
+현재 `FIXTURE_ONLY` runtime의 허용 질문은 같은 schema에서 `generationStatus=RETRIEVAL_ONLY`,
+`answer=null`, `citations=[]`로 반환한다.
+
 ```json
 {
   "success": true,
   "data": {
     "requestId": "req_opaque",
-    "answerId": "rag_ans_opaque",
+    "answerId": "rag_ans_0123456789abcdef0123456789abcdef",
     "generationStatus": "ANSWERED",
     "answer": "금 선물 ETF는 월물 교체 과정에서 현물 금과 다른 성과가 날 수 있습니다. [cit_1]",
     "citationCoverage": 1.0,
     "retrievalFailure": false,
     "citations": [
       {
-        "citationId": "cit_opaque",
+        "citationId": "cit_1",
         "sourceId": "src_project_gold_futures_etf_132030_001",
         "title": "132030 금선물 ETF의 구조와 롤오버 위험",
         "sectionTitle": "핵심 한계",
@@ -1373,6 +1383,10 @@ admin bulk API는 없다.
 `action`은 `GRANT | REVOKE`다. actor와 시간은 JWT/server clock에서 생성한다. policy, prompt,
 privacy 경계가 바뀌면 재동의를 요구한다. revoke는 이후 external generation을 막지만 기존
 30일 history를 임의 삭제하지 않는다. 사용자는 7.4 DELETE로 즉시 삭제할 수 있다.
+GRANT event만으로 external generation을 활성화하지 않는다. 현재 frozen 30-card corpus는
+external processing 대상이 아니며, 별도 S4.4G 승인과
+`externalProcessingAllowed=true`인 active·verified·PUBLIC·PROJECT exact chunk가 함께
+확인되기 전에는 outbound가 0이다.
 
 ### 7.6 Admin embedding profile status
 

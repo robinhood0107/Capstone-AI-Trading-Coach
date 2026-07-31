@@ -50,11 +50,18 @@ class RagSourceRegistryMigrationIntegrationTest {
                         "rag_retrieval_scope_claims",
                         "rag_embedding_policy_state",
                         "rag_embedding_policy_transitions",
+                        "rag_consent_events",
+                        "rag_answer_claims",
+                        "rag_answer_claim_transitions",
+                        "rag_answer_history",
+                        "rag_answer_citations",
+                        "rag_answer_feedback",
+                        "rag_provider_usage_ledger",
                     )
                 assertThat(queryStrings(connection, normalizedTableQuery))
                     .containsAll(expectedTables)
                 assertThat(queryString(connection, "select max(version::integer) from flyway_schema_history where success"))
-                    .isEqualTo("19")
+                    .isEqualTo("20")
 
                 expectedTables.forEach { table ->
                     assertThat(

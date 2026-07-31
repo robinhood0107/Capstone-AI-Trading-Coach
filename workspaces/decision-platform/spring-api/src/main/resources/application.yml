@@ -81,6 +81,19 @@ app:
       request-max-bytes: 262144
       response-max-bytes: 1048576
       concurrency-max: 8
+  rag:
+    # S4.4는 local classifier/retrieval-only 경계만 활성화하며 live provider adapter는 열지 않는다.
+    answerer: ${RAG_ANSWERER:FIXTURE_ONLY}
+    history-secret-directory: ${RAG_HISTORY_SECRET_DIRECTORY}
+    current-kek-version: ${RAG_HISTORY_CURRENT_KEK_VERSION:kek-v1}
+    idempotency-scope-hmac-key: ${RAG_IDEMPOTENCY_SCOPE_HMAC_KEY}
+    request-fingerprint-hmac-key: ${RAG_REQUEST_FINGERPRINT_HMAC_KEY}
+    provider-usage-hmac-key: ${RAG_PROVIDER_USAGE_HMAC_KEY}
+    rate-limit-hmac-key: ${RAG_RATE_LIMIT_HMAC_KEY}
+    history-cursor-hmac-key: ${RAG_HISTORY_CURSOR_HMAC_KEY}
+    claim-ttl-seconds: 120
+    retention-days: 30
+    rate-limit-per-minute: 20
   brokerage:
     idempotency-scope-hmac-key: ${BROKERAGE_IDEMPOTENCY_SCOPE_HMAC_KEY}
     # DB에는 digest만 migration으로 저장하고 raw capability는 prepared bind로만 전달한다.

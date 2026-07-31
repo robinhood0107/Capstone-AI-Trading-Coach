@@ -421,6 +421,11 @@ policy는 static contract catalog 하나에서만 읽는다. 활성 profile은
 | `catalogs/s4-rag-contract.v1.json` | profile, policy, dimension 1024, provider/model identity, chunk strategy SSOT |
 | `schemas/s4-rag-contract.schema.json` | catalog exact-shape schema |
 | `schemas/s4-rag-ask-request.schema.json` | public ask body; profile/policy/provider/topK/sourceTier 입력 금지 |
+| `schemas/s4-rag-answer.schema.json` | provider/model/internal score를 노출하지 않는 S4.4 answer data |
+| `schemas/s4-rag-history-page.schema.json` | 질문·답변 preview가 없는 metadata-only owner history page |
+| `schemas/s4-rag-history-detail.schema.json` | owner 단건 복호화와 bounded public citation detail |
+| `schemas/s4-rag-feedback-request.schema.json` | boolean `helpful` 하나만 허용하는 feedback body |
+| `schemas/s4-rag-consent-request.schema.json` | append-only `EXTERNAL_AI_RAG_V1` GRANT/REVOKE event |
 | `schemas/s4-rag-admin-policy-selection.schema.json` | 관리자 policy pointer 선택; profile ID를 policy ID로 쓰면 실패 |
 
 catalog ID는 `s4-rag-contract/v1`이고 canonical SHA-256은
@@ -428,8 +433,9 @@ catalog ID는 `s4-rag-contract/v1`이고 canonical SHA-256은
 generator/schema/positive·negative fixture와 Spring/Python consumer가
 `CONCISE/DETAILED`, NFC 후 1~1,000 Unicode scalar+8KiB,
 pinned `ONNX_DATA_ONLY`, `embeddingInputStrategy`를 같은 bytes로 검증한다.
-이 catalog lock은 완료됐지만 next-free normalized migration과 source registry/API는
-아직 red이므로 S4.0 또는 S4.1 완료를 뜻하지 않는다.
+S4.0 catalog, S4.1 registry/API, S4.2A/S4.2B generation, S4.3 authorized retrieval에 이어
+S4.4는 V20 owner claim·consent·encrypted history 경계와 위 closed request/response schema를
+구현한다. 기본 answerer는 `FIXTURE_ONLY`이고 external provider physical call은 0이다.
 `bge_then_voyage_on_sla_v1`은 요청별 runtime fallback이 아니라 BGE warm p95 SLA 실패,
 Voyage 평가 통과, 관리자 승인 뒤 default pointer를 한 번 원자 전환하는 정책이다.
 public `POST /api/v1/rag/ask` body는 `question`, `answerMode`, `relatedSymbols`, `topics`만

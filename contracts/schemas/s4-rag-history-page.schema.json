@@ -1,0 +1,73 @@
+{
+  "$id": "contracts/schemas/s4-rag-history-page.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "items": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "answerId": {
+            "pattern": "^rag_ans_[0-9a-f]{32}$",
+            "type": "string"
+          },
+          "answerMode": {
+            "enum": [
+              "CONCISE",
+              "DETAILED"
+            ]
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "generationStatus": {
+            "enum": [
+              "ANSWERED",
+              "RETRIEVAL_ONLY",
+              "RETRIEVAL_FAILURE",
+              "BLOCKED_SENSITIVE",
+              "BLOCKED_ADVICE",
+              "GENERATION_UNAVAILABLE"
+            ]
+          },
+          "helpful": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "answerId",
+          "createdAt",
+          "expiresAt",
+          "answerMode",
+          "generationStatus",
+          "helpful"
+        ],
+        "type": "object"
+      },
+      "maxItems": 50,
+      "type": "array"
+    },
+    "nextCursor": {
+      "maxLength": 512,
+      "minLength": 1,
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "items",
+    "nextCursor"
+  ],
+  "title": "S4.4 metadata-only RAG history page v1",
+  "type": "object"
+}

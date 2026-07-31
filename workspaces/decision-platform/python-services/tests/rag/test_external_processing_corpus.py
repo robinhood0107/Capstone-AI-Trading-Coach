@@ -207,6 +207,16 @@ def test_external_profile_produces_append_only_body_equivalent_bge_generation() 
 
     assert new_plan.generation_id != old_plan.generation_id
     assert new_plan.corpus_hash != old_plan.corpus_hash
+    assert (
+        old_plan.corpus_profile_id,
+        old_plan.source_registry_version,
+        old_plan.external_processing_allowed,
+    ) == ("s4_7b_internal_v1", "s4-7b-source-card-v2", False)
+    assert (
+        new_plan.corpus_profile_id,
+        new_plan.source_registry_version,
+        new_plan.external_processing_allowed,
+    ) == ("s4_7c_external_v1", "s4-7c-source-card-v2", True)
     assert [item.embedding_input.text for item in new_plan.items] == [
         item.embedding_input.text for item in old_plan.items
     ]

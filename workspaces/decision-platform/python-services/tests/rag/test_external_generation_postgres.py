@@ -88,7 +88,7 @@ def test_external_generation_appends_revisions_and_atomically_supersedes_interna
     new_parity = verify_bge_full_generation_parity(materialized=new_materialized, reader=reader)
     assert admin.read_activation_state() == (old_pointer, old_version)
 
-    with pytest.raises(BgeFullGenerationError, match="FULL_DATABASE_OPERATION_FAILED"):
+    with pytest.raises(BgeFullGenerationError, match="ACTIVATION_DATABASE_OPERATION_FAILED"):
         activate_bge_full_generation(
             materialized=new_materialized,
             parity=new_parity,

@@ -87,6 +87,7 @@ class FlywayMigrationIntegrationTest(
                 "rag_generation_attestations",
                 "rag_source_card_verifications",
                 "rag_source_public_topics",
+                "rag_source_exact_identifiers",
                 "rag_retrieval_scope_claims",
                 "rag_embedding_policy_state",
                 "rag_embedding_policy_transitions",

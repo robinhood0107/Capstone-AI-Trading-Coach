@@ -490,3 +490,23 @@ def test_no_evidence_refuses_generation() -> None:
     assert outcome.failure_code is RetrievalFailureCode.INSUFFICIENT_EVIDENCE
     assert outcome.evidence == ()
     assert not outcome.generation_permitted
+
+
+def test_dense_only_top_candidate_is_not_sufficient_relevance() -> None:
+    first = _candidate(1)
+    second = _candidate(2)
+    outcome = _hybrid(
+        exact=_channel("exact"),
+        lexical=_channel("lexical"),
+        dense=_channel("dense", first, second),
+    ).retrieve(
+        scope=_scope(),
+        payload={
+            "question": "dense only",
+            "answerMode": "CONCISE",
+            "topics": ["FINANCIAL_ENGINEERING"],
+        },
+    )
+
+    assert outcome.failure_code is RetrievalFailureCode.INSUFFICIENT_EVIDENCE
+    assert outcome.evidence == ()

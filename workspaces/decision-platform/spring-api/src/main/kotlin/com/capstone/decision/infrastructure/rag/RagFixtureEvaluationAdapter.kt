@@ -1,9 +1,11 @@
 package com.capstone.decision.infrastructure.rag
 
 import com.capstone.decision.application.rag.RagAskCommand
+import com.capstone.decision.application.rag.RagEvaluationContext
 import com.capstone.decision.application.rag.RagEvaluationPort
 import com.capstone.decision.application.rag.RagEvaluationResult
 import com.capstone.decision.application.rag.RagGenerationStatus
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.stereotype.Component
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
@@ -11,11 +13,19 @@ import java.text.Normalizer
 import java.util.Base64
 
 @Component
+@ConditionalOnProperty(
+    name = ["app.rag.grpc.enabled"],
+    havingValue = "false",
+    matchIfMissing = true,
+)
 class RagFixtureEvaluationAdapter : RagEvaluationPort {
     /**
      * 실제 retrieval/gRPC를 연결하는 S4.6 전에는 local rule만 실행하고 허용 질문도 retrieval-only로 닫는다.
      */
-    override fun evaluate(command: RagAskCommand): RagEvaluationResult {
+    override fun evaluate(
+        command: RagAskCommand,
+        context: RagEvaluationContext,
+    ): RagEvaluationResult {
         val variants = variants(command.question)
         return when {
             variants.any(::isPromptInjection) ->

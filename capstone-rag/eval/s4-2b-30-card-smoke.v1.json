@@ -1,0 +1,77 @@
+{
+  "schemaVersion": "s4-2b-30-card-smoke/v1",
+  "datasetId": "s4-2b-30-card-smoke/v1",
+  "corpusManifestSha256": "7f2b4d72dcbaccf57cbe49a980973b17b4a9bfd85bec4694fd66fd7fd2a9decd",
+  "queries": [
+    {
+      "id": "q01",
+      "text": "BSM 가격을 실제 주가 상승확률로 읽으면 왜 안 되나요?",
+      "expectedSourceIds": [
+        "src_project_bsm_risk_neutral_001"
+      ]
+    },
+    {
+      "id": "q02",
+      "text": "VaR와 ES를 같은 tail-risk 숫자로 취급하면 왜 안 되나요?",
+      "expectedSourceIds": [
+        "src_project_var_es_coherence_001"
+      ]
+    },
+    {
+      "id": "q03",
+      "text": "같은 history에서 반복 선택한 최고 backtest를 그대로 채택하면 왜 안 되나요?",
+      "expectedSourceIds": [
+        "src_project_backtest_overfitting_001"
+      ]
+    },
+    {
+      "id": "q04",
+      "text": "OU 식을 적었다는 이유만으로 market price가 mean reverting이라고 말할 수 있나요?",
+      "expectedSourceIds": [
+        "src_project_mean_reversion_stationarity_001"
+      ]
+    },
+    {
+      "id": "q05",
+      "text": "파생상품 notional을 실제 위험 노출액으로 그대로 써도 되나요?",
+      "expectedSourceIds": [
+        "src_project_notional_not_exposure_001"
+      ]
+    },
+    {
+      "id": "q06",
+      "text": "KIS REST와 token 발급을 하나의 retry budget으로 합쳐도 되나요?",
+      "expectedSourceIds": [
+        "src_project_kis_rate_limit_token_001"
+      ]
+    },
+    {
+      "id": "q07",
+      "text": "Naver Search API metadata를 기사 원문 corpus로 저장해도 되나요?",
+      "expectedSourceIds": [
+        "src_project_naver_news_discovery_boundary_001"
+      ]
+    },
+    {
+      "id": "q08",
+      "text": "OpenDART status 020을 만나면 왜 20,000건 고정 한도로 처리하면 안 되나요?",
+      "expectedSourceIds": [
+        "src_project_opendart_status_quota_001"
+      ]
+    },
+    {
+      "id": "q09",
+      "text": "last trading day와 final settlement day를 같은 expiry 값으로 써도 되나요?",
+      "expectedSourceIds": [
+        "src_project_krx_last_trading_settlement_001"
+      ]
+    },
+    {
+      "id": "q10",
+      "text": "132030 KODEX 골드선물(H)을 현물 금과 같은 투자로 보면 왜 안 되나요?",
+      "expectedSourceIds": [
+        "src_project_gold_futures_etf_132030_001"
+      ]
+    }
+  ]
+}

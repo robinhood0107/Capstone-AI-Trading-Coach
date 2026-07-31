@@ -87,9 +87,8 @@ class RagFullGenerationActivationMigrationContractTest {
         assertThat(migration).contains("staging.staging_row_hash")
         assertThat(migration).contains("aggregate_row_hash")
         assertThat(migration).contains("generation_vector_hash")
-        assertThat(migration).contains(
-            "session_user = 'decision_rag_writer' AND NEW.status IN ('ACTIVE', 'DISABLED')",
-        )
+        assertThat(migration).contains("session_user = 'decision_rag_writer'")
+        assertThat(migration).contains("OLD.status = 'ACTIVE' AND NEW.status = 'DISABLED'")
         assertThat(migration).contains(
             "REVOKE ALL PRIVILEGES ON TABLE rag_generation_attestations FROM decision_rag_writer",
         )

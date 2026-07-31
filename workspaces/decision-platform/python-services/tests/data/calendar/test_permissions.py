@@ -33,12 +33,17 @@ def test_repo_hygiene_supplies_required_collector_and_disclosure_reader_password
         in compose
     )
     assert (
+        "${POSTGRES_RAG_ADMIN_PASSWORD:?POSTGRES_RAG_ADMIN_PASSWORD is required}"
+        in compose
+    )
+    assert (
         "${POSTGRES_RAG_QUERY_PASSWORD:?POSTGRES_RAG_QUERY_PASSWORD is required}"
         in compose
     )
     assert "POSTGRES_COLLECTOR_PASSWORD: validation-dummy-collector" in workflow
     assert "POSTGRES_DISCLOSURE_READER_PASSWORD: validation-dummy-disclosure-reader" in workflow
     assert "POSTGRES_RAG_WRITER_PASSWORD: validation-dummy-rag-writer" in workflow
+    assert "POSTGRES_RAG_ADMIN_PASSWORD: validation-dummy-rag-admin" in workflow
     assert "POSTGRES_RAG_QUERY_PASSWORD: validation-dummy-rag-query" in workflow
 
 

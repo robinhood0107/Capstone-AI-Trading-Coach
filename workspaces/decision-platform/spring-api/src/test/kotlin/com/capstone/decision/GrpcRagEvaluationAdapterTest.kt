@@ -191,12 +191,13 @@ class GrpcRagEvaluationAdapterTest {
         service: RagServiceGrpc.RagServiceImplBase,
         interceptor: ServerInterceptor? = null,
     ): Server {
-        val bound = if (interceptor == null) service else ServerInterceptors.intercept(service, interceptor)
-        return NettyServerBuilder
-            .forAddress(InetSocketAddress("127.0.0.1", 0))
-            .addService(bound)
-            .build()
-            .start()
+        val builder = NettyServerBuilder.forAddress(InetSocketAddress("127.0.0.1", 0))
+        if (interceptor == null) {
+            builder.addService(service)
+        } else {
+            builder.addService(ServerInterceptors.intercept(service, interceptor))
+        }
+        return builder.build().start()
     }
 
     private fun constantService(response: RagAskResponse): RagServiceGrpc.RagServiceImplBase =

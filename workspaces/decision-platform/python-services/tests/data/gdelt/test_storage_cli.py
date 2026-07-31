@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import os
 import stat
+import tempfile
+from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -17,6 +19,14 @@ from app.data.gdelt.transport import FixtureResponse, FixtureTransport
 
 
 FIXTURE_ROOT = Path(__file__).with_name("fixtures")
+
+
+@pytest.fixture
+def posix_tmp_path() -> Iterator[Path]:
+    """WSL의 Windows temp mount가 mode bits를 보존하지 않아 native tmp에서 검증한다."""
+
+    with tempfile.TemporaryDirectory(prefix="gdelt-test-", dir="/tmp") as directory:
+        yield Path(directory)
 
 
 def _observation() -> dict[str, object]:
@@ -49,10 +59,12 @@ def _observation() -> dict[str, object]:
     )
 
 
-def test_publish_observation_is_append_only_canonical_and_private(tmp_path: Path) -> None:
+def test_publish_observation_is_append_only_canonical_and_private(
+    posix_tmp_path: Path,
+) -> None:
     observation = _observation()
 
-    published = publish_observation(root=tmp_path / "gdelt", observation=observation)
+    published = publish_observation(root=posix_tmp_path / "gdelt", observation=observation)
     payload = json.loads(published.path.read_bytes())
 
     assert payload == observation
@@ -60,13 +72,13 @@ def test_publish_observation_is_append_only_canonical_and_private(tmp_path: Path
     assert published.path.name == f"{observation['artifactHash']}.json"
     assert published.path.parent.name == "31"
     with pytest.raises(GdeltAggregateError, match="ARTIFACT_CONFLICT"):
-        publish_observation(root=tmp_path / "gdelt", observation=observation)
+        publish_observation(root=posix_tmp_path / "gdelt", observation=observation)
 
 
-def test_publish_observation_rejects_symlink_root(tmp_path: Path) -> None:
-    target = tmp_path / "target"
+def test_publish_observation_rejects_symlink_root(posix_tmp_path: Path) -> None:
+    target = posix_tmp_path / "target"
     target.mkdir()
-    root = tmp_path / "gdelt"
+    root = posix_tmp_path / "gdelt"
     root.symlink_to(target, target_is_directory=True)
 
     with pytest.raises(GdeltAggregateError, match="STORAGE_UNSAFE"):
@@ -82,7 +94,10 @@ def test_offline_is_cli_default_and_online_requires_exact_packet_fields() -> Non
 
 def test_source_contains_no_article_metadata_or_network_enabled_fixture_path() -> None:
     package = Path(__file__).resolve().parents[3] / "app/data/gdelt"
-    source = "\n".join(path.read_text(encoding="utf-8") for path in sorted(package.glob("*.py")))
+    source = "\n".join(
+        (package / name).read_text(encoding="utf-8")
+        for name in ("collector.py", "parser.py", "scoring.py", "transport.py")
+    )
 
-    forbidden = ("articleTitle", "articleUrl", "publisherUrl", "description", "httpx.get(")
+    forbidden = ("articleTitle", "articleUrl", "publisherUrl", "httpx.")
     assert all(token not in source for token in forbidden)

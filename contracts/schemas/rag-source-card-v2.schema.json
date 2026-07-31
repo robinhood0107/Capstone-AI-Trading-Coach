@@ -1,0 +1,529 @@
+{
+  "$id": "contracts/schemas/rag-source-card-v2.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "else": {
+        "properties": {
+          "modelAssumptions": {
+            "maxItems": 0
+          }
+        }
+      },
+      "if": {
+        "properties": {
+          "modelSensitive": {
+            "const": true
+          }
+        },
+        "required": [
+          "modelSensitive"
+        ]
+      },
+      "then": {
+        "properties": {
+          "modelAssumptions": {
+            "minItems": 1
+          }
+        }
+      }
+    },
+    {
+      "else": {
+        "properties": {
+          "externalProcessingGate": {
+            "const": "NOT_GRANTED"
+          }
+        }
+      },
+      "if": {
+        "properties": {
+          "externalProcessingAllowed": {
+            "const": true
+          }
+        },
+        "required": [
+          "externalProcessingAllowed"
+        ]
+      },
+      "then": {
+        "properties": {
+          "contentClass": {
+            "const": "PROJECT_AUTHORED_SANITIZED_CARD"
+          },
+          "externalProcessingGate": {
+            "const": "LICENSE_AND_CONSENT_VERIFIED"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "contentClass": {
+            "const": "RAW_OR_REFERENCE_EVIDENCE"
+          }
+        },
+        "required": [
+          "contentClass"
+        ]
+      },
+      "then": {
+        "properties": {
+          "externalProcessingAllowed": {
+            "const": false
+          }
+        }
+      }
+    }
+  ],
+  "oneOf": [
+    {
+      "not": {
+        "anyOf": [
+          {
+            "required": [
+              "bibliographicLocator"
+            ]
+          },
+          {
+            "required": [
+              "bibliographicMetadata"
+            ]
+          }
+        ]
+      },
+      "properties": {
+        "cardVariant": {
+          "const": "OFFICIAL_UPSTREAM_CARD"
+        },
+        "evidenceClass": {
+          "enum": [
+            "OFFICIAL_API_DOCUMENTATION",
+            "OFFICIAL_SERVICE_DOCUMENTATION",
+            "OFFICIAL_PRODUCT_DOCUMENTATION"
+          ]
+        },
+        "upstreamSourceIds": {
+          "items": {
+            "enum": [
+              "src_kis_openapi_overview_001",
+              "src_kis_marketdata_daily_001",
+              "src_kis_marketdata_price_001",
+              "src_kis_trading_cash_order_001",
+              "src_kis_account_balance_001",
+              "src_kis_market_calendar_001",
+              "src_kis_rate_limit_001",
+              "src_opendart_disclosure_search_001",
+              "src_opendart_corporation_code_001",
+              "src_opendart_financial_statement_001",
+              "src_opendart_major_report_001",
+              "src_ecos_api_overview_001",
+              "src_ecos_statistic_search_001",
+              "src_krx_openapi_service_catalog_001",
+              "src_krx_openapi_terms_001",
+              "src_krx_etf_etn_structure_001",
+              "src_krx_etn_risk_indicator_001",
+              "src_samsungfund_gold_futures_etf_001",
+              "src_naver_news_search_001",
+              "src_naver_legacy_sunset_001"
+            ],
+            "type": "string"
+          },
+          "maxItems": 5,
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "cardVariant",
+        "evidenceClass",
+        "upstreamSourceIds"
+      ]
+    },
+    {
+      "properties": {
+        "cardVariant": {
+          "const": "SCHOLARLY_PRIMARY_CARD"
+        },
+        "evidenceClass": {
+          "enum": [
+            "PRIMARY_RESEARCH",
+            "OFFICIAL_REPORT",
+            "OFFICIAL_STANDARD"
+          ]
+        },
+        "upstreamSourceIds": {
+          "maxItems": 0,
+          "type": "array"
+        }
+      },
+      "required": [
+        "cardVariant",
+        "evidenceClass",
+        "upstreamSourceIds",
+        "bibliographicLocator",
+        "bibliographicMetadata"
+      ]
+    }
+  ],
+  "properties": {
+    "accessLevel": {
+      "enum": [
+        "PUBLIC",
+        "INTERNAL"
+      ]
+    },
+    "accessNote": {
+      "maxLength": 1000,
+      "minLength": 8,
+      "type": "string"
+    },
+    "adoptedSession": {
+      "enum": [
+        "S4.7A",
+        "S4.7B"
+      ]
+    },
+    "allowedUses": {
+      "items": {
+        "maxLength": 1000,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 12,
+      "minItems": 1,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "attribution": {
+      "maxLength": 500,
+      "minLength": 2,
+      "type": "string"
+    },
+    "bibliographicLocator": {
+      "additionalProperties": false,
+      "properties": {
+        "authorityType": {
+          "enum": [
+            "DOI_REGISTRY",
+            "ISBN_REGISTRY",
+            "OFFICIAL_PUBLISHER",
+            "OFFICIAL_AUTHOR_ARCHIVE",
+            "OFFICIAL_INSTITUTION"
+          ]
+        },
+        "locatorType": {
+          "enum": [
+            "DOI",
+            "ISBN",
+            "OFFICIAL_URL"
+          ]
+        },
+        "value": {
+          "maxLength": 2048,
+          "minLength": 4,
+          "type": "string"
+        }
+      },
+      "required": [
+        "authorityType",
+        "locatorType",
+        "value"
+      ],
+      "type": "object"
+    },
+    "bibliographicMetadata": {
+      "additionalProperties": false,
+      "properties": {
+        "authors": {
+          "items": {
+            "maxLength": 300,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 20,
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "editionOrVersion": {
+          "maxLength": 300,
+          "minLength": 1,
+          "type": "string"
+        },
+        "title": {
+          "maxLength": 500,
+          "minLength": 2,
+          "type": "string"
+        },
+        "venue": {
+          "maxLength": 300,
+          "minLength": 2,
+          "type": "string"
+        },
+        "year": {
+          "maximum": 2100,
+          "minimum": 1600,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "authors",
+        "editionOrVersion",
+        "title",
+        "venue",
+        "year"
+      ],
+      "type": "object"
+    },
+    "canonicalUrl": {
+      "format": "uri",
+      "maxLength": 2048,
+      "pattern": "^https://",
+      "type": "string"
+    },
+    "canonicalUrlSha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "cardId": {
+      "pattern": "^card_[a-z0-9][a-z0-9_]*_[0-9]{3}$",
+      "type": "string"
+    },
+    "cardVariant": {
+      "enum": [
+        "OFFICIAL_UPSTREAM_CARD",
+        "SCHOLARLY_PRIMARY_CARD"
+      ]
+    },
+    "claim": {
+      "maxLength": 1000,
+      "minLength": 20,
+      "type": "string"
+    },
+    "contentClass": {
+      "enum": [
+        "RAW_OR_REFERENCE_EVIDENCE",
+        "PROJECT_AUTHORED_SANITIZED_CARD"
+      ]
+    },
+    "contradicts": {
+      "items": {
+        "pattern": "^card_[a-z0-9][a-z0-9_]*_[0-9]{3}$",
+        "type": "string"
+      },
+      "maxItems": 10,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "evidenceClass": {
+      "enum": [
+        "OFFICIAL_API_DOCUMENTATION",
+        "OFFICIAL_SERVICE_DOCUMENTATION",
+        "OFFICIAL_PRODUCT_DOCUMENTATION",
+        "PRIMARY_RESEARCH",
+        "OFFICIAL_REPORT",
+        "OFFICIAL_STANDARD"
+      ]
+    },
+    "evidenceContentSha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "externalProcessingAllowed": {
+      "type": "boolean"
+    },
+    "externalProcessingGate": {
+      "enum": [
+        "NOT_GRANTED",
+        "LICENSE_AND_CONSENT_VERIFIED"
+      ]
+    },
+    "forbiddenInferences": {
+      "items": {
+        "maxLength": 1000,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 12,
+      "minItems": 1,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "institution": {
+      "maxLength": 128,
+      "pattern": "^[a-z0-9][a-z0-9_]*$",
+      "type": "string"
+    },
+    "licenseNote": {
+      "maxLength": 1000,
+      "minLength": 8,
+      "type": "string"
+    },
+    "limitations": {
+      "items": {
+        "maxLength": 1000,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 12,
+      "minItems": 1,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "modelAssumptions": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "maxLength": 128,
+            "pattern": "^[A-Z][A-Z0-9_]{2,127}$",
+            "type": "string"
+          },
+          "statement": {
+            "maxLength": 1000,
+            "minLength": 12,
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "statement"
+        ],
+        "type": "object"
+      },
+      "maxItems": 12,
+      "minItems": 0,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "modelSensitive": {
+      "type": "boolean"
+    },
+    "representativeQuestions": {
+      "items": {
+        "maxLength": 500,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 5,
+      "minItems": 1,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "retentionDays": {
+      "maximum": 3650,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "retentionOwner": {
+      "const": "python-rag-corpus-privacy"
+    },
+    "schemaVersion": {
+      "const": "2"
+    },
+    "sourceId": {
+      "pattern": "^src_project_[a-z0-9][a-z0-9_]*_[0-9]{3}$",
+      "type": "string"
+    },
+    "sourceType": {
+      "const": "PROJECT_SOURCE_CARD"
+    },
+    "status": {
+      "enum": [
+        "VERIFIED",
+        "BLOCKED_EVIDENCE",
+        "RETIRED"
+      ]
+    },
+    "tier": {
+      "const": "PROJECT"
+    },
+    "title": {
+      "maxLength": 300,
+      "minLength": 2,
+      "type": "string"
+    },
+    "topic": {
+      "maxLength": 128,
+      "pattern": "^[a-z0-9][a-z0-9_]*$",
+      "type": "string"
+    },
+    "upstreamSourceIds": {
+      "items": {
+        "enum": [
+          "src_kis_openapi_overview_001",
+          "src_kis_marketdata_daily_001",
+          "src_kis_marketdata_price_001",
+          "src_kis_trading_cash_order_001",
+          "src_kis_account_balance_001",
+          "src_kis_market_calendar_001",
+          "src_kis_rate_limit_001",
+          "src_opendart_disclosure_search_001",
+          "src_opendart_corporation_code_001",
+          "src_opendart_financial_statement_001",
+          "src_opendart_major_report_001",
+          "src_ecos_api_overview_001",
+          "src_ecos_statistic_search_001",
+          "src_krx_openapi_service_catalog_001",
+          "src_krx_openapi_terms_001",
+          "src_krx_etf_etn_structure_001",
+          "src_krx_etn_risk_indicator_001",
+          "src_samsungfund_gold_futures_etf_001",
+          "src_naver_news_search_001",
+          "src_naver_legacy_sunset_001"
+        ],
+        "type": "string"
+      },
+      "maxItems": 5,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "verifiedAt": {
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{1,6})?Z$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "cardVariant",
+    "sourceId",
+    "cardId",
+    "title",
+    "institution",
+    "topic",
+    "sourceType",
+    "tier",
+    "accessLevel",
+    "claim",
+    "evidenceClass",
+    "status",
+    "verifiedAt",
+    "accessNote",
+    "licenseNote",
+    "attribution",
+    "canonicalUrl",
+    "canonicalUrlSha256",
+    "evidenceContentSha256",
+    "upstreamSourceIds",
+    "retentionOwner",
+    "retentionDays",
+    "contentClass",
+    "externalProcessingAllowed",
+    "externalProcessingGate",
+    "adoptedSession",
+    "contradicts",
+    "modelSensitive",
+    "modelAssumptions",
+    "limitations",
+    "allowedUses",
+    "forbiddenInferences",
+    "representativeQuestions"
+  ],
+  "title": "RAG project source card front matter v2",
+  "type": "object"
+}

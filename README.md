@@ -43,14 +43,15 @@ provider 호출, RiskDecision/hash/order 권한, S5 feature 주입은 모두 0�
 
 ### 교차시장·애널리스트 오버레이 계획 상태
 
-교차시장 계획 타당성은 `PLAN_FEASIBILITY=GO`이고, 현재 구현 상태는
-`IMPLEMENTATION=SPEC_ONLY / NOT_IMPLEMENTED / PLANNED`다. 월 데이터 비용 목표는 `0원`,
+교차시장 계획 타당성은 `PLAN_FEASIBILITY=GO`다. S4.8A 계약은 잠겼고 S4.8B/C offline
+fixture/scorer/append-only evidence/설명 경계는 이 merge candidate에서 구현됐다. S6.6/S6.7과
+cross-market REST/RiskEngine runtime은 `NOT_IMPLEMENTED / PLANNED`다. 월 데이터 비용 목표는 `0원`,
 offline fixture와 지연/EOD가 우선이다. 기관용 데이터 제품과 실시간 SOX/VIX feed는
 post-P1 선택지이며 완주 조건이 아니다. 새 agent framework·별도 cloud·Kafka hard
 dependency 없이 기존 Spring/Python/PostgreSQL/Redis/gRPC를 재사용한다.
 
-순서 0은 관련 명세를 EOF까지 읽고 receipt를 남기는 read-only `S4.READ`다. 이후 첫 변경은
-S4.8A contract-only PR이며, 이것이 검증·병합되기 전 runtime 구현 PR은 시작하지 않는다.
+순서 0 read-only `S4.READ`와 S4.8A contract-only merge gate는 충족했다. 이 후속 변경은
+provider 없는 S4.8B/C만 구현하며 S6.6/S6.7은 시작하지 않는다.
 S4.8A/B/C·S6.6·S6.7의 P1 최고 권한은 적용 대상 신규 BUY의
 `ALLOW → WARN`이며, 애널리스트·뉴스·RAG·LLM은 RiskDecision과 판단 hash를 바꾸지 않는다.
 기존 Decision/RAG/Signal v1/v2 payload에 추가하는 교차시장 필드는 0이다.
@@ -60,11 +61,15 @@ fixture-first adapter 후보다. exact 42개 행과 exact 18개 allowlist의 aut
 Git으로 추적하지 않는 로컬 전용 자료수급 레지스트리이며,
 공개 문서에는 전체 inventory를 복제하지 않는다.
 
-2026-07-30 계획 확정 변경은 Markdown 명세만 동기화한다. 이 변경 자체로
-Python/Kotlin/SQL, JSON Schema·fixture·catalog, OpenAPI, Gradle, 환경설정 또는 provider
-activation을 구현한 것으로 보지 않는다. 상세 순서는
+2026-07-30 계획 확정 변경은 Markdown-only였고, 후속 S4.8A 계약 PR과 이 S4.8B/C offline
+implementation candidate를 구분한다. provider activation과 RiskEngine/OpenAPI endpoint는
+여전히 포함하지 않는다. 상세 순서는
 [최종 프로젝트 명세서의 S4~P1 실행 순서](docs/최종_프로젝트_명세서.md#171-2026-07-29-s4p1-실행-순서)를
 따른다.
+
+S5.0은 Signal v1/OpenAPI를 변경하지 않는 `AVAILABLE | ABSTAIN` Signal v2 contract lock과
+Python/Spring parity까지만 구현했다. active v2 endpoint, artifact ingest, RiskDecision/order
+wiring은 `NO_GO`다.
 
 ## 워크스페이스 소유권
 

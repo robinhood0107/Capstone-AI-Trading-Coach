@@ -463,14 +463,16 @@ uv run --frozen python contracts/validate.py
 ## S4.8 교차시장·애널리스트 계약
 
 > 계획 타당성: `PLAN_FEASIBILITY=GO`.
-> 현재 상태: `S4.8A_CONTRACT=LOCKED / S4.8B_C_RUNTIME=NOT_IMPLEMENTED`.
+> 현재 상태: `S4.8A_CONTRACT=LOCKED / S4.8B_C_OFFLINE_RUNTIME=IMPLEMENTED_MERGE_CANDIDATE /
+> S6.6_S6.7=NOT_IMPLEMENTED`.
 > 월 데이터 비용 목표는 `0원`이고 offline fixture·지연/EOD가 먼저다. 기관용 제품과
 > 실시간 SOX/VIX feed는 post-P1 선택지이며 P1 DoD가 아니다. 새 agent framework·별도
 > cloud·Kafka는 hard dependency가 아니다.
 >
 > S4.8A의 machine-readable schema·fixture·catalog와 generator/hash parity는 계약으로
-> 고정됐다. migration, provider activation, OpenAPI/Spring/Python runtime은 아직 구현되지
-> 않았으며 이 계약 잠금을 runtime 완료로 해석하지 않는다.
+> 고정됐다. S4.8B/C merge candidate는 provider 없는 Python fixture/scorer/projection,
+> V23 append-only evidence 저장과 Spring latest snapshot read port를 추가한다. snapshot
+> materialization, provider activation, OpenAPI endpoint, RiskEngine 연결은 아직 구현되지 않았다.
 
 순서 0 `S4.READ`는 관련 공개·private 명세 EOF receipt와 충돌 목록만 남기는 read-only
 preflight다. 첫 변경 PR은 아래 일곱 계약과 fixture/generator/parity만 포함하는
@@ -495,8 +497,8 @@ P1 `WARN_ONLY` RiskEngine 연결을 소유한다. S7.3은 기존 작업을 예�
 소유권이나 provider 권한을 새로 만들지 않는다.
 
 조사 inventory 42개는 사용 가능한 API 수가 아니다. 39개 machine 연동 후보 계열과 3개
-manual-link 원천의 합이며 현재 S4.8 활성 provider와 usable adapter는 0이다. KIS 18개
-endpoint도 disabled fixture-first 후보로만 계획한다. exact 42개 행과 exact 18개 allowlist는
+manual-link 원천의 합이며 현재 S4.8 활성/live provider adapter는 0이다. KIS 18개
+endpoint도 disabled fixture-only 행으로만 materialize한다. exact 42개 행과 exact 18개 allowlist는
 Git으로 추적하지 않는 로컬 전용 자료수급 레지스트리가
 운영 authority이며 공개 계약에는 집계와 불변식만 두고 전체 inventory를 복제하지 않는다.
 공개 fixture의 exact KIS 18 identity는 endpoint 이름을 노출하지 않는 opaque SHA-256이며
@@ -528,7 +530,33 @@ P1 교차시장 권한은 적용 대상 신규 BUY의 `ALLOW → WARN`뿐이다.
 SELL, 기존 보유분 매도, 주문 생성, 수량 축소와 KIS Live는 post-P1 별도 계약·승인 전
 비활성이다. 계약 산출물과 재현 명령은
 [`20260731-s4-8a-cross-market-contract-lock.md`](changes/20260731-s4-8a-cross-market-contract-lock.md)에
-기록하며 SQL·OpenAPI·runtime 구현과 provider 호출은 포함하지 않는다.
+기록한다. 후속 offline runtime·권한·coverage는
+[`20260801-s4-8b-s4-8c-offline-runtime.md`](changes/20260801-s4-8b-s4-8c-offline-runtime.md)를
+따르며 provider/live/account/order 호출은 포함하지 않는다.
+
+## S5.0 Signal v2 contract lock
+
+Signal v1과 current OpenAPI bytes는 그대로 두고 component별 `AVAILABLE | ABSTAIN` closed
+union인 `schemas/signal-v2.schema.json`을 추가한다. `AVAILABLE + HOLD`는 정상 neutral
+prediction이고, stale·producer failure·artifact drift·missing evidence는 signal/confidence/asOf/
+HMM state를 만들지 않는 `ABSTAIN`이다. required component가 하나라도 ABSTAIN이면 composite도
+ABSTAIN이다.
+
+`catalogs/s5-0-signal-v2-contract.v1.json`은 cross-market/analyst/news/cause/RAG/LLM field와
+RiskDecision/order wiring을 금지하고 current Signal v1/OpenAPI hash를 고정한다. Python generator와
+Spring contract-only parser가 같은 positive/negative fixture를 소비한다. active
+`/api/v2/signals/{symbol}` endpoint, artifact ingest, RiskDecision/order wiring과 external call은
+모두 0이다.
+
+```bash
+uv run --frozen python contracts/generate_s5_0_signal_v2_contracts.py --check
+uv run --frozen python -m unittest contracts.tests.test_generate_s5_0_signal_v2_contracts -v
+uv run --frozen python contracts/validate.py
+```
+
+상세 변경과 parity/coverage는
+[`20260801-s5-0-signal-v2-contract-lock.md`](changes/20260801-s5-0-signal-v2-contract-lock.md)를
+따른다.
 
 ## S1.5 KIS 데이터 품질 리포트
 

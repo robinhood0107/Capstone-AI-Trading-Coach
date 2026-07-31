@@ -1068,22 +1068,24 @@ generation과 제출 직전 generation을 다시 비교한다.
 `GET /api/v1/risk/cross-market`
 
 > 계획 타당성: `PLAN_FEASIBILITY=GO`.
-> 현재 상태: `S4.8A_CONTRACT=LOCKED / ENDPOINT_RUNTIME=NOT_IMPLEMENTED`.
+> 현재 상태: `S4.8A_CONTRACT=LOCKED / S4.8B_C_OFFLINE_RUNTIME=IMPLEMENTED_MERGE_CANDIDATE /
+> ENDPOINT_RUNTIME=NOT_IMPLEMENTED`.
 > 월 데이터 비용 목표는 `0원`, offline fixture와 지연/EOD가 우선이다. 기관용 데이터 제품과
 > 실시간 SOX/VIX feed는 post-P1 선택지이며 P1 완료 조건이 아니다. 새 agent framework·별도
 > cloud·Kafka는 hard dependency가 아니다.
 >
 > 순서 0 `S4.READ` EOF receipt 뒤 S4.8A contract-only gate가 일곱
 > schema·fixture·generator/parity, `s2-2-system-rule-catalog.v2`, contract-change와 v3
-> golden vector를 고정한다. 이 계약은 endpoint, 내부 port, DB projection의 runtime 구현
-> 완료 증거가 아니다. S4.8B/C는 S4.8A의 main 병합과 post-merge CI 확인 뒤에만 시작한다.
+> golden vector를 고정했다. 이 계약 자체는 endpoint, 내부 port, DB projection의 runtime 구현
+> 완료 증거가 아니다. S4.8A main 병합과 post-merge CI 확인 뒤 S4.8B/C offline fixture,
+> V23 evidence store와 Spring snapshot read port를 구현했지만 endpoint와 RiskEngine은 연결하지 않는다.
 > provider/live account/live order physical call은 0이며 P1 권한은 `WARN_ONLY`다.
 > 2026-07-30 계획 확정 변경은 Markdown만 동기화하며 OpenAPI, schema, fixture, catalog,
 > migration, runtime code와 환경설정을 생성하거나 수정하는 구현 세션이 아니다.
 > 조사한 42개는 integration target(39 machine 후보 계열 + 3 manual-link 원천)이지 공개
 > API나 사용 가능한 entitlement 수가 아니다. 로컬 KIS catalog 338개·명시적 모의지원
-> 43개와 이번 disabled adapter 후보 18개도 서로 다른 집계다. 현재 S4.8 활성
-> provider/adapter 수는 0이다. exact 42개 행과 exact 18개 allowlist의 authority는
+> 43개와 이번 disabled adapter 후보 18개도 서로 다른 집계다. 현재 S4.8 활성/live
+> provider adapter 수는 0이고 18개 후보는 offline fixture 행으로만 존재한다. exact 42개 행과 exact 18개 allowlist의 authority는
 > Git으로 추적하지 않는 로컬 전용 자료수급 레지스트리이며
 > 공개 API 명세에는 전체 inventory를 복제하지 않는다.
 
@@ -1453,12 +1455,17 @@ payload에 가짜 state를 넣거나 이전 `asOf`를 갱신해 새 success view
 
 - `/api/v1/signals/{symbol}`: 기존 계약과 fixture의 legacy read 경계다. 새 S5/S6 artifact를
   이 형식으로 active publication하지 않는다.
-- `/api/v2/signals/{symbol}`: 아래 tagged-union contract가 별도
-  `contracts/changes/` 승인을 통과한 뒤 구현·활성화한다.
-- Signal v2 승인 전 artifact ingest와 internal component 조립까지만 허용하고,
-  RiskDecision/order response 연결은 `NO_GO`다.
+- `/api/v2/signals/{symbol}`: 아래 tagged-union contract는 S5.0에서 잠겼지만 route는 아직
+  current OpenAPI에 없으며 별도 runtime 구현·활성화 승인이 필요하다.
+- S5.0은 deterministic schema/catalog/fixture와 Spring/Python parser parity까지만 소유한다.
+  artifact ingest, RiskDecision/order response 연결은 `NO_GO`다.
 
 ### 8.1 Signal v2 종목 신호 조회
+
+> 현재 상태: `S5_0_CONTRACT=LOCKED / ACTIVE_ENDPOINT=NO_GO /
+> RISK_DECISION_ORDER_WIRING=NO_GO`. `contracts/schemas/signal-v2.schema.json`과 generated
+> positive/negative fixture, Python semantic validator, Spring contract-only parser parity까지
+> 구현했으며 current OpenAPI는 변경하지 않는다.
 
 계획 route:
 
@@ -1521,10 +1528,11 @@ payload에 가짜 state를 넣거나 이전 `asOf`를 갱신해 새 success view
 
 component는 정확히 다음 tagged union을 따른다.
 
-| `status` | 필수 field | 금지 field | 의미 |
+| component/status | 필수 field | 금지 field | 의미 |
 |---|---|---|---|
-| `AVAILABLE` | `producer`, `sourceWorkspace`, `asOf`, `signal`, `confidence` | `reason` | 검증되고 fresh한 모델 evidence |
-| `ABSTAIN` | `producer`, `sourceWorkspace`, `reason` | `signal`, `confidence`, `predictedReturn` | missing, stale, FAIL, drift, 식별 불가 또는 모델 자체의 abstention |
+| predictive `AVAILABLE` | `producer`, `sourceWorkspace`, `asOf`, `signal`, `confidence` | `reason`, `state` | 검증되고 fresh한 예측 evidence |
+| HMM `AVAILABLE` | `producer`, `sourceWorkspace`, `asOf`, `state`, `confidence` | `reason`, `signal`, `predictedReturn` | 검증되고 fresh한 regime evidence |
+| 모든 `ABSTAIN` | `producer`, `sourceWorkspace`, `reason` | `asOf`, `signal`, `confidence`, `predictedReturn`, `state` | missing, stale, FAIL, drift, 식별 불가 또는 모델 자체의 abstention |
 
 `AVAILABLE + signal=HOLD`는 모델이 산출한 정상 neutral prediction이다. `ABSTAIN`과
 RiskEngine `DecisionStatus.HOLD`는 서로 다른 상태이며 변환하지 않는다. stale component는
@@ -1534,7 +1542,7 @@ RiskEngine `DecisionStatus.HOLD`는 서로 다른 상태이며 변환하지 않�
 public response에 artifact path, internal raw score/margin, hash, account/user ID를 넣지 않는다.
 artifact ingest는 approved-root, no-follow, bounded size/row/decompression, exact schema/version/hash/
 producer/provenance, unknown-column 거부를 통과해야 한다. Signal v2 schema와 positive/negative
-fixture가 승인되기 전 이 route를 runtime에 연결하지 않는다.
+fixture는 잠겼지만 artifact ingest와 이 route의 runtime 연결은 별도 후속 session 전까지 금지한다.
 
 ### 8.2 뉴스감성 요약 artifact 조회
 
@@ -3292,7 +3300,7 @@ API/adapter/parser/storage 변경 커밋은 기능 단위로 분리한다. 테�
 | 필수 | FinancialEngineeringService |
 | 필수 | Black-Scholes 계산기, Greeks 계산, implied volatility 역산 |
 | 필수 | Auth(login/role), System Health, Kill Switch 상태 조회 |
-| 필수(P1 WARN_ONLY, 현재 `SPEC_ONLY/NOT_IMPLEMENTED/PLANNED`) | Cross-market latest risk 조회, offline fixture/EOD producer, event-study/policy replay |
+| 필수(P1 WARN_ONLY, S4.8B/C offline 구현·S6.6/S6.7/endpoint 미구현) | Cross-market latest risk 조회, offline fixture/EOD producer, event-study/policy replay |
 | 고도화 | Async Job 상태 조회, Stream Metric, Artifact Ingest 상태 조회 |
 | 고도화 | SourceRegistryService 고도화 |
 | 고도화 | 이벤트 push 채널(SSE), RAG 답변 스트리밍, Journal 수정/삭제 |

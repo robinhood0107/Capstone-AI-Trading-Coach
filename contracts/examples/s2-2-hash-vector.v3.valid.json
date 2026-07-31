@@ -1,0 +1,70 @@
+{
+  "canonicalizationId": "HASH-CANONICALIZATION-S22-V3",
+  "catalogVersion": 2,
+  "compatibility": {
+    "catalogV1Sha256": "a4714ee9ce3031199b9067919b15931fb42e106857da5f8d8ad7a95bafa8ad7b",
+    "hashVectorV2Sha256": "d4c56df918cdd15a9143ab46efb498e75d1145a338c817d0119b7519029895da",
+    "v1Unchanged": true
+  },
+  "excludedFields": [
+    "analystEvidence",
+    "artifactHash",
+    "causeEvidence",
+    "evidenceMode",
+    "newsEvidence",
+    "performanceClaimAllowed",
+    "ragOutput",
+    "snapshotAsOf",
+    "snapshotId"
+  ],
+  "metricSnapshotVersion": "s2.2-metric-snapshot-v3",
+  "semanticInput": {
+    "crossMarketDecisionInput": {
+      "availability": "AVAILABLE",
+      "broadRiskOffScore": 72.5,
+      "configVersion": "cross-market-risk-config.v1",
+      "domesticLeverageStressScore": 81.25,
+      "exposure": {
+        "classification": "SEMICONDUCTOR",
+        "configVersion": "cross-market-exposure.v1",
+        "inScope": true,
+        "symbol": "005930",
+        "validationState": "AVAILABLE"
+      },
+      "freshness": [
+        {
+          "component": "BROAD_MARKET",
+          "state": "AVAILABLE"
+        },
+        {
+          "component": "DOMESTIC_AMPLIFICATION",
+          "state": "AVAILABLE"
+        },
+        {
+          "component": "FX",
+          "state": "AVAILABLE"
+        },
+        {
+          "component": "SEMICONDUCTOR",
+          "state": "AVAILABLE"
+        }
+      ],
+      "fxStressScore": 63,
+      "mode": "WARN_ONLY",
+      "semiconductorShockScore": 88.75
+    },
+    "metricSnapshotVersion": "s2.2-metric-snapshot-v3",
+    "orderIntent": {
+      "estimatedAmount": 70000,
+      "estimatedPrice": 70000,
+      "orderType": "MARKET",
+      "quantity": 1,
+      "side": "BUY",
+      "strategyId": "lightgbm-v1",
+      "symbol": "005930",
+      "timeframe": "1d"
+    },
+    "snapshotV2SemanticInputHash": "574b882a28de2dd732b863993dbb9f3638aa2e66fca3307eb3ecc43d0de4448e"
+  },
+  "semanticInputHash": "35547049e8557f9ff7901e870b7d24cecccac66370049627f8cc6721ab6282cf"
+}

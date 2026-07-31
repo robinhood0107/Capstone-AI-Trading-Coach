@@ -1,0 +1,322 @@
+{
+  "$id": "contracts/schemas/market_source_entitlement.v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "artifactHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "contractId": {
+      "const": "market_source_entitlement.v1"
+    },
+    "entitlements": {
+      "items": {
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "materializationDeclaration": {
+                  "properties": {
+                    "rawStored": {
+                      "const": true
+                    }
+                  }
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "rawStoreAllowed": {
+                  "const": true
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "materializationDeclaration": {
+                  "properties": {
+                    "derivedPayloadProduced": {
+                      "const": true
+                    }
+                  }
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "derivedDataAllowed": {
+                  "const": true
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "materializationDeclaration": {
+                  "properties": {
+                    "embedded": {
+                      "const": true
+                    }
+                  }
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "embeddingAllowed": {
+                  "const": true
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "materializationDeclaration": {
+                  "properties": {
+                    "externalLlmProcessed": {
+                      "const": true
+                    }
+                  }
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "externalLlmAllowed": {
+                  "const": true
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "materializationDeclaration": {
+                  "properties": {
+                    "nonDisplayUsed": {
+                      "const": true
+                    }
+                  }
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "nonDisplayAllowed": {
+                  "const": true
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "providerCallsAllowed": {
+                  "const": true
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "activationStatus": {
+                  "const": "ACTIVE"
+                },
+                "machineFetchAllowed": {
+                  "const": true
+                }
+              }
+            }
+          }
+        ],
+        "properties": {
+          "activationStatus": {
+            "enum": [
+              "CANDIDATE_DISABLED",
+              "ACTIVE",
+              "BLOCKED",
+              "EXPIRED"
+            ]
+          },
+          "attributionRequired": {
+            "type": "boolean"
+          },
+          "category": {
+            "enum": [
+              "ANALYST",
+              "OVERSEAS_LEAD",
+              "DOMESTIC_AMPLIFICATION",
+              "NEWS_AGGREGATE"
+            ]
+          },
+          "contractExpiry": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "decisionAuthority": {
+            "const": "NONE"
+          },
+          "deletionOwner": {
+            "pattern": "^[a-z0-9][a-z0-9:_-]{2,127}$",
+            "type": "string"
+          },
+          "derivedDataAllowed": {
+            "type": "boolean"
+          },
+          "embeddingAllowed": {
+            "type": "boolean"
+          },
+          "endpointIdentityHash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "entitlementVersion": {
+            "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$",
+            "type": "string"
+          },
+          "externalLlmAllowed": {
+            "type": "boolean"
+          },
+          "logicalIdentityHash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "machineFetchAllowed": {
+            "type": "boolean"
+          },
+          "materializationDeclaration": {
+            "additionalProperties": false,
+            "properties": {
+              "derivedPayloadProduced": {
+                "type": "boolean"
+              },
+              "embedded": {
+                "type": "boolean"
+              },
+              "externalLlmProcessed": {
+                "type": "boolean"
+              },
+              "nonDisplayUsed": {
+                "type": "boolean"
+              },
+              "rawStored": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "derivedPayloadProduced",
+              "embedded",
+              "externalLlmProcessed",
+              "nonDisplayUsed",
+              "rawStored"
+            ],
+            "type": "object"
+          },
+          "nonDisplayAllowed": {
+            "type": "boolean"
+          },
+          "projectionRetentionMaxDays": {
+            "maximum": 3650,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "providerCallsAllowed": {
+            "type": "boolean"
+          },
+          "rawRetentionMaxHours": {
+            "maximum": 8760,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "rawStoreAllowed": {
+            "type": "boolean"
+          },
+          "region": {
+            "enum": [
+              "KR",
+              "US",
+              "GLOBAL"
+            ]
+          },
+          "sourceFamily": {
+            "enum": [
+              "KIS",
+              "GDELT_AGGREGATE"
+            ]
+          },
+          "sourceId": {
+            "pattern": "^[A-Z][A-Z0-9_]{2,63}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "activationStatus",
+          "attributionRequired",
+          "category",
+          "contractExpiry",
+          "decisionAuthority",
+          "deletionOwner",
+          "derivedDataAllowed",
+          "embeddingAllowed",
+          "endpointIdentityHash",
+          "entitlementVersion",
+          "externalLlmAllowed",
+          "logicalIdentityHash",
+          "machineFetchAllowed",
+          "materializationDeclaration",
+          "nonDisplayAllowed",
+          "projectionRetentionMaxDays",
+          "providerCallsAllowed",
+          "rawRetentionMaxHours",
+          "rawStoreAllowed",
+          "region",
+          "sourceFamily",
+          "sourceId"
+        ],
+        "type": "object"
+      },
+      "maxItems": 19,
+      "minItems": 19,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "evaluatedAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "inventoryAuthority": {
+      "const": "LOCAL_PRIVATE_REGISTRY"
+    },
+    "payloadHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "publicIdentityMode": {
+      "const": "OPAQUE_SHA256_ONLY"
+    },
+    "registryId": {
+      "const": "s4-8a-source-entitlements-20260731"
+    },
+    "schemaVersion": {
+      "const": "1"
+    }
+  },
+  "required": [
+    "artifactHash",
+    "contractId",
+    "entitlements",
+    "evaluatedAt",
+    "inventoryAuthority",
+    "payloadHash",
+    "publicIdentityMode",
+    "registryId",
+    "schemaVersion"
+  ],
+  "title": "market_source_entitlement.v1",
+  "type": "object"
+}

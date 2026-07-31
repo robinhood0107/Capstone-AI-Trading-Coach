@@ -690,6 +690,27 @@ BEGIN
 END
 $rag_source_registry_privileges$;
 
+DO $rag_authorized_retrieval_privileges$
+BEGIN
+    IF to_regclass('public.rag_source_card_verifications') IS NOT NULL
+       AND to_regclass('public.rag_source_public_topics') IS NOT NULL
+       AND to_regclass('public.rag_source_exact_identifiers') IS NOT NULL
+       AND to_regclass('public.rag_retrieval_scope_claims') IS NOT NULL THEN
+        -- V19 sidecar와 scope claim은 모든 runtime role에 raw table 권한을 주지 않는다.
+        REVOKE ALL PRIVILEGES ON TABLE
+            rag_source_card_verifications,
+            rag_source_public_topics,
+            rag_source_exact_identifiers,
+            rag_retrieval_scope_claims
+        FROM
+            decision_app,
+            decision_rag_writer,
+            decision_rag_admin,
+            decision_rag_query;
+    END IF;
+END
+$rag_authorized_retrieval_privileges$;
+
 DO $rag_embedding_staging_privileges$
 BEGIN
     IF to_regclass('public.rag_embedding_staging') IS NOT NULL THEN
@@ -816,6 +837,34 @@ BEGIN
         GRANT EXECUTE ON FUNCTION
             finalize_rag_embedding_staging_v2(text, text, text, integer, text)
         TO decision_rag_writer;
+    END IF;
+    IF to_regprocedure(
+        'public.register_rag_verified_source_card(text,text,text,text,timestamptz,text[])'
+    ) IS NOT NULL THEN
+        -- source-card status/topic/exact alias는 raw sidecar DML 없이 immutable revision 함수로만 등록한다.
+        GRANT EXECUTE ON FUNCTION
+            register_rag_verified_source_card(
+                text, text, text, text, timestamptz, text[]
+            )
+        TO decision_rag_writer;
+    END IF;
+    IF to_regprocedure(
+        'public.create_rag_retrieval_scope_claim(text,text,text[])'
+    ) IS NOT NULL THEN
+        -- 인증된 app만 active pointer에 묶인 짧은 owner/session claim을 발급한다.
+        GRANT EXECUTE ON FUNCTION
+            create_rag_retrieval_scope_claim(text, text, text[])
+        TO decision_app;
+    END IF;
+    IF to_regprocedure(
+        'public.search_authorized_rag_exact(text,text,text,text[],text[])'
+    ) IS NOT NULL THEN
+        -- query role은 raw table 대신 independently scoped exact/lexical/dense 함수만 호출한다.
+        GRANT EXECUTE ON FUNCTION
+            search_authorized_rag_exact(text, text, text, text[], text[]),
+            search_authorized_rag_lexical(text, text, text, text[], text),
+            search_authorized_rag_dense(text, text, text, text[], vector)
+        TO decision_rag_query;
     END IF;
     IF to_regprocedure(
         'public.activate_verified_rag_generation(text,text,bigint,text,text,text,text,text,integer,integer,integer,text,text,text,text,text,text,text,text,text,numeric,text)'

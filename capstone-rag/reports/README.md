@@ -13,3 +13,7 @@
 - `s4-7c-external-generation.v1.json`: old/new exact-30 local BGE vector 동등성,
   retrieval non-regression, stale CAS rollback, old `DISABLED`/new `ACTIVE`와 exactly-one-active
   상태를 고정한 offline 전환 receipt. 외부 provider physical call은 0이다.
+- `s4-5-fixture-evaluation.v1.json`: exact 60의 metric 분모·분자·gate·비식별 실패 question ID와
+  provider physical call 0을 고정한 deterministic 평가 report
+- `s4-5-provider-control-plane.v1.json`: Voyage one-shot plan과 Gemini Interactions DTO hash,
+  packet 부재, outbound hard-disable, materialization/activation 0을 고정한 offline control receipt

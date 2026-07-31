@@ -33,6 +33,7 @@ REQUIRED_NAMES: Final[tuple[str, ...]] = (
     "POSTGRES_RAG_ADMIN_PASSWORD",
     "POSTGRES_RAG_QUERY_PASSWORD",
     "DECISION_GRPC_SHARED_SECRET",
+    "RAG_GRPC_SHARED_SECRET",
     "PYTHON_GRPC_SHARED_SECRET",
     "REDIS_PASSWORD",
     "JWT_SECRET",
@@ -215,12 +216,18 @@ def _require_secret_shapes(values: dict[str, str]) -> None:
             "Brokerage database capability token and digest must match."
         )
 
-    # Spring과 Python gRPC fixture는 shared-secret 계약을 검증하기 위해 같은 값을 쓰되,
+    # Spring의 두 gRPC client와 Python fixture server는 동일 wire secret을 사용하되,
     # 그 외 DB/JWT/HMAC secret과는 목적 분리를 유지한다.
-    if _BASE64URL_SECRET.fullmatch(values["PYTHON_GRPC_SHARED_SECRET"]) is None:
-        raise OpenApiEnvironmentError("PYTHON_GRPC_SHARED_SECRET must use a bounded Base64url-safe value.")
-    if values["PYTHON_GRPC_SHARED_SECRET"] != values["DECISION_GRPC_SHARED_SECRET"]:
-        raise OpenApiEnvironmentError("Decision and Python gRPC fixture secrets must match.")
+    grpc_secret_names = (
+        "DECISION_GRPC_SHARED_SECRET",
+        "RAG_GRPC_SHARED_SECRET",
+        "PYTHON_GRPC_SHARED_SECRET",
+    )
+    for name in grpc_secret_names:
+        if _BASE64URL_SECRET.fullmatch(values[name]) is None:
+            raise OpenApiEnvironmentError(f"{name} must use a bounded Base64url-safe value.")
+    if len({values[name] for name in grpc_secret_names}) != 1:
+        raise OpenApiEnvironmentError("Decision, RAG, and Python gRPC fixture secrets must match.")
 
     if _BASE64URL_32.fullmatch(values["DEMO_CREDENTIAL_SEPARATION_KEY"]) is None:
         raise OpenApiEnvironmentError(

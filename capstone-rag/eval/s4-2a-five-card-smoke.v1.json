@@ -1,0 +1,85 @@
+{
+  "datasetId": "s4-2a-five-card-smoke/v1",
+  "networkAllowed": false,
+  "queries": [
+    {
+      "category": "EXACT_IDENTIFIER",
+      "expectedSourceIds": [
+        "src_project_kis_adjusted_price_001"
+      ],
+      "queryId": "s4-2a-q001",
+      "text": "FID_ORG_ADJ_PRC"
+    },
+    {
+      "category": "EXACT_IDENTIFIER",
+      "expectedSourceIds": [
+        "src_project_opendart_status_quota_001"
+      ],
+      "queryId": "s4-2a-q002",
+      "text": "OpenDART status 020"
+    },
+    {
+      "category": "MIXED_KO_ENGLISH_API",
+      "expectedSourceIds": [
+        "src_project_ecos_pit_availability_001"
+      ],
+      "queryId": "s4-2a-q003",
+      "text": "ECOS StatisticSearch DATA_VALUE TIME"
+    },
+    {
+      "category": "KOREAN_CONCEPT",
+      "expectedSourceIds": [
+        "src_project_krx_service_coverage_001"
+      ],
+      "queryId": "s4-2a-q004",
+      "text": "KRX ETF 일별매매정보 제공기간 범위"
+    },
+    {
+      "category": "MIXED_KO_ENGLISH_API",
+      "expectedSourceIds": [
+        "src_project_gold_futures_etf_132030_001"
+      ],
+      "queryId": "s4-2a-q005",
+      "text": "132030 COMEX 금선물 rollover 환헤지"
+    },
+    {
+      "category": "KOREAN_CONCEPT",
+      "expectedSourceIds": [
+        "src_project_kis_adjusted_price_001"
+      ],
+      "queryId": "s4-2a-q006",
+      "text": "KIS 기간별시세 조정주가 provenance 경계"
+    },
+    {
+      "category": "TYPO_LEXICAL",
+      "expectedSourceIds": [
+        "src_project_opendart_status_quota_001"
+      ],
+      "queryId": "s4-2a-q007",
+      "text": "OpenDART statu 020 요청 제한"
+    },
+    {
+      "category": "TYPO_LEXICAL",
+      "expectedSourceIds": [
+        "src_project_gold_futures_etf_132030_001"
+      ],
+      "queryId": "s4-2a-q008",
+      "text": "gold futres ETF roll over risk"
+    },
+    {
+      "category": "NO_EVIDENCE",
+      "expectedSourceIds": [],
+      "queryId": "s4-2a-q009",
+      "text": "블랙숄즈 내재변동성 공식과 Greeks"
+    },
+    {
+      "category": "NO_EVIDENCE",
+      "expectedSourceIds": [],
+      "queryId": "s4-2a-q010",
+      "text": "실시간 삼성전자 매수 가격과 주문 수량"
+    }
+  ],
+  "queryCount": 10,
+  "schemaVersion": 1,
+  "sourceCardCount": 5
+}

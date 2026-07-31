@@ -15,7 +15,8 @@ dependencies = [
   "lightgbm>=4.3", "scikit-learn>=1.5", "hmmlearn>=0.3", "statsmodels>=0.14", "scipy>=1.13",
   "psycopg[binary]>=3.1", "psycopg_pool>=3.2", "pgvector>=0.2",
   "redis>=5.0", "confluent-kafka>=2.4",
-  "FlagEmbedding>=1.2",
+  # S4.2A BGE ONNX runtime 의존성은 S1.4X reference lock에 함께 고정한다.
+  "onnxruntime==1.28.0", "tokenizers==0.23.1",
 ]
 
 [project.scripts]
@@ -40,6 +41,8 @@ kis-mock-brokerage-probe = "app.brokerage.kis_mock_approval_probe:main"
 rag-source-register = "app.rag.register_sources_cli:main"
 rag-source-card-validate = "app.rag.source_card:main"
 rag-official-evidence-validate = "app.rag.official_evidence:main"
+rag-bge-artifact-acquire = "app.rag.bge_acquisition:main"
+rag-bge-five-card-poc = "app.rag.bge_poc_cli:main"
 
 [build-system]
 requires = ["hatchling"]

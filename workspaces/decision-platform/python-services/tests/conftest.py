@@ -130,6 +130,7 @@ def postgres_cluster() -> Iterator[PostgresTestCluster]:
             )
             connection.execute("CREATE EXTENSION IF NOT EXISTS vector")
             connection.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm")
+            connection.execute("CREATE EXTENSION IF NOT EXISTS pgcrypto")
             connection.execute("SET ROLE flyway")
             try:
                 for migration in sorted(MIGRATION_DIR.glob("V*__*.sql"), key=_migration_version):

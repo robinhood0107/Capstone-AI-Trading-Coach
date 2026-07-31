@@ -94,6 +94,12 @@ class RagSourceCard:
     representative_questions: tuple[str, ...]
     relative_path: str
     content_sha256: str
+    canonical_body: str
+    license_note: str
+    attribution: str
+    retention_owner: str
+    retention_days: int
+    external_processing_allowed: bool
     sections: Mapping[str, str]
 
 
@@ -219,6 +225,12 @@ def _load_single_source_card(
         ),
         relative_path=result.relative_path,
         content_sha256=result.content_sha256,
+        canonical_body=body,
+        license_note=_require_text(front_matter, "licenseNote"),
+        attribution=_require_text(front_matter, "attribution"),
+        retention_owner=_require_text(front_matter, "retentionOwner"),
+        retention_days=_require_int(front_matter, "retentionDays"),
+        external_processing_allowed=_require_bool(front_matter, "externalProcessingAllowed"),
         sections=MappingProxyType(sections),
     )
 
@@ -484,6 +496,20 @@ def _require_text_tuple(value: Mapping[str, Any], field: str) -> tuple[str, ...]
     if not isinstance(item, list) or not all(isinstance(entry, str) for entry in item):
         raise RagSourceCardError(f"{field} must be a string array.")
     return tuple(item)
+
+
+def _require_int(value: Mapping[str, Any], field: str) -> int:
+    item = value.get(field)
+    if type(item) is not int:
+        raise RagSourceCardError(f"{field} must be an integer.")
+    return item
+
+
+def _require_bool(value: Mapping[str, Any], field: str) -> bool:
+    item = value.get(field)
+    if type(item) is not bool:
+        raise RagSourceCardError(f"{field} must be a boolean.")
+    return item
 
 
 def _require_utc_datetime(value: Any, *, field: str) -> datetime:

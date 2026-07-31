@@ -1,0 +1,106 @@
+{
+  "schemaVersion": "s4-2a-five-card-poc-benchmark/v1",
+  "measuredAt": "2026-07-30T17:28:17Z",
+  "status": "PASS_PRELIMINARY",
+  "implementationCommitSha": "0ecdb13b0f9e5ae72f4abaf6ee5b52ed76dcd993",
+  "datasetId": "s4-2a-five-card-smoke/v1",
+  "querySetSha256": "e47407236d8e12b8ac63f09e575429550e2b5939bc051153eb7dc08ccaeb3eeb",
+  "corpusManifestSha256": "2d3c7daba02e8b4601dfec3e2870a2b145394b19e89c00b45ad0eab35011982f",
+  "generationId": "rag_gen_32a2abae3348ece3d441cce38eabd06e",
+  "generationHash": "32a2abae3348ece3d441cce38eabd06e8a5b5a3c9db221eade2630d59e1bd8a6",
+  "artifactManifestSha256": "a0ae6372b2d735b593d806d24c1155cb48dd7188adebe7d6b7619a1622fb71aa",
+  "operation": "query normalization + query embedding + authorized exact/lexical/dense + application RRF",
+  "authorizationMode": "TEST_ONLY_EXPLICIT_PUBLIC_PROJECT_GENERATION_PREDICATES",
+  "rrfK": 60,
+  "warmup": 20,
+  "measured": 100,
+  "concurrency": 1,
+  "outliersRetained": true,
+  "networkCalls": 0,
+  "physicalCalls": {
+    "gemini": 0,
+    "openai": 0,
+    "voyage": 0
+  },
+  "activePointerChanged": false,
+  "evaluationExpectedTop5HitRate": 1.0,
+  "sla": {
+    "metric": "total.warm.p95.ms",
+    "maximum": 1500.0,
+    "observed": 141.44599245,
+    "passed": true
+  },
+  "host": {
+    "cpuModel": "Intel(R) Core(TM) Ultra 5 228V",
+    "cpuCount": 8,
+    "memoryBytes": 16508379136,
+    "system": "Linux",
+    "machine": "x86_64",
+    "kernelRelease": "6.18.33.2-microsoft-standard-WSL2",
+    "pythonVersion": "3.12.13",
+    "onnxRuntimeVersion": "1.28.0",
+    "tokenizersVersion": "0.23.1",
+    "postgresVersion": "16.14 (Debian 16.14-1.pgdg12+1)",
+    "postgresExtensions": {
+      "pg_trgm": "1.6",
+      "pgcrypto": "1.3",
+      "vector": "0.8.5"
+    }
+  },
+  "stagesMs": {
+    "normalization": {
+      "p50": 0.0071515,
+      "p90": 0.00804,
+      "p95": 0.008594,
+      "p99": 0.00982043,
+      "max": 0.041939
+    },
+    "queryEmbedding": {
+      "p50": 108.195413,
+      "p90": 127.7336715,
+      "p95": 138.8220737,
+      "p99": 151.20489896,
+      "max": 157.152221
+    },
+    "exactSql": {
+      "p50": 1.193246,
+      "p90": 1.4453958,
+      "p95": 1.4941354,
+      "p99": 1.74070327,
+      "max": 1.947343
+    },
+    "lexicalSql": {
+      "p50": 0.958061,
+      "p90": 1.2774063,
+      "p95": 1.34053625,
+      "p99": 1.69632543,
+      "max": 1.706961
+    },
+    "denseSql": {
+      "p50": 0.544196,
+      "p90": 0.7025024,
+      "p95": 0.73839965,
+      "p99": 1.00515619,
+      "max": 1.406422
+    },
+    "rrf": {
+      "p50": 0.0221285,
+      "p90": 0.0249488,
+      "p95": 0.03393645,
+      "p99": 0.0501896,
+      "max": 0.050744
+    },
+    "total": {
+      "p50": 110.8224085,
+      "p90": 130.16613,
+      "p95": 141.44599245,
+      "p99": 155.5047083,
+      "max": 160.26941
+    }
+  },
+  "limitations": [
+    "The corpus has only five cards, so this is not a production capacity claim.",
+    "The authorization SQL is a test-only explicit predicate path; the production retrieval adapter belongs to S4.3.",
+    "The active generation pointer was intentionally unchanged."
+  ]
+}

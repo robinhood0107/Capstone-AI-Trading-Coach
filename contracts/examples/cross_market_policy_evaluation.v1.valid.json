@@ -1,0 +1,33 @@
+{
+  "artifactHash": "7777777777777777777777777777777777777777777777777777777777777777",
+  "contractId": "cross_market_policy_evaluation.v1",
+  "decisionAuthority": "NONE",
+  "estimationStatus": "ESTIMABLE",
+  "evaluationKind": "EVENT_STUDY",
+  "frozenThreshold": 80,
+  "logicalIdentityHash": "8888888888888888888888888888888888888888888888888888888888888888",
+  "metrics": {
+    "conflictRate": 0.05,
+    "coverageRate": 0.95,
+    "downsideAvoidedBps": 42,
+    "falseBlockRate": 0,
+    "latencyP95Millis": 900000,
+    "missedUpsideBps": 12,
+    "netProtectionBps": 30,
+    "staleRate": 0.02,
+    "unsupportedRate": 0.01
+  },
+  "payloadHash": "9999999999999999999999999999999999999999999999999999999999999999",
+  "runtimeRiskEngineSource": false,
+  "schemaVersion": "1",
+  "severeLossCutoffBps": -300,
+  "split": {
+    "embargoSessions": 5,
+    "purgeSessions": 5,
+    "testPercent": 20,
+    "trainPercent": 60,
+    "validationPercent": 20
+  },
+  "thresholdFrozen": true,
+  "triggerCount": 12
+}

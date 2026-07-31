@@ -1,0 +1,42 @@
+{
+  "authenticated": true,
+  "contractId": "s4-8a-cross-market-get.v1",
+  "dataFieldAllowlist": [
+    "artifactHash",
+    "availability",
+    "broadRiskOffScore",
+    "configVersion",
+    "domesticLeverageStressScore",
+    "evidence",
+    "evidenceMode",
+    "freshness",
+    "fxStressScore",
+    "mode",
+    "performanceClaimAllowed",
+    "semiconductorShockScore",
+    "timing",
+    "validationStatus"
+  ],
+  "evidenceFieldAllowlist": [
+    "classification",
+    "counterargument",
+    "evidenceId",
+    "relation",
+    "summary"
+  ],
+  "existingPayloadFieldAdditions": {
+    "decisionRequest": 0,
+    "decisionResponse": 0,
+    "ragAsk": 0,
+    "ragHistory": 0,
+    "signalV1": 0,
+    "signalV2": 0
+  },
+  "maxEvidenceItems": 10,
+  "method": "GET",
+  "path": "/api/v1/risk/cross-market",
+  "projection": "LATEST_OWNER_ONLY",
+  "providerFanoutAllowed": false,
+  "queryParameters": [],
+  "runtimeStatus": "NOT_IMPLEMENTED"
+}

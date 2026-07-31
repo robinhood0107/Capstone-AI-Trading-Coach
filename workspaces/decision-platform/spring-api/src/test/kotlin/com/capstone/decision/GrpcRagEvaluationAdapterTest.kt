@@ -111,6 +111,11 @@ class GrpcRagEvaluationAdapterTest {
                     ).build(),
                 validResponse().toBuilder().setExternalProviderCandidate(true).build(),
                 validResponse().toBuilder().setRequestId("different-request-id").build(),
+                validResponse()
+                    .toBuilder()
+                    .addCitations(
+                        validResponse().citationsList.single().toBuilder().setCitationId("cit_2"),
+                    ).build(),
             )
         invalid.forEach { response ->
             val server = server(constantService(response))

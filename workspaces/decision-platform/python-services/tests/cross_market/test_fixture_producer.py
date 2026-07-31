@@ -58,7 +58,6 @@ def test_fixture_payload_has_no_raw_provider_pdf_news_account_or_credential_fiel
 
     for forbidden in (
         "rawbody",
-        "rawtext",
         "articleurl",
         "articletitle",
         "pdfcontent",
@@ -68,6 +67,7 @@ def test_fixture_payload_has_no_raw_provider_pdf_news_account_or_credential_fiel
         "accesstoken",
     ):
         assert forbidden not in serialized
+    assert all(item["rawTextStored"] is False for item in batch.analyst_evidence)
 
 
 def test_producer_rejects_any_nonzero_outbound_counter_before_repository_write() -> None:

@@ -20,6 +20,7 @@ from app.rag.bge_poc import (
     execute_bge_poc,
     prepare_bge_poc,
 )
+from app.rag.official_evidence import OfficialEvidenceReceipt
 from app.rag.source_card import RagSourceCard
 
 APPROVED_SOURCE_IDENTITIES = (
@@ -43,11 +44,18 @@ def test_five_card_plan_is_deterministic_one_card_one_chunk_and_db_compatible() 
     cards = _approved_cards()
     artifact = _artifact_receipt()
 
-    first = prepare_bge_poc(cards=cards, tokenizer=_FixtureTokenizer(), artifact=artifact)
+    evidence = _official_evidence_receipt(cards)
+    first = prepare_bge_poc(
+        cards=cards,
+        tokenizer=_FixtureTokenizer(),
+        artifact=artifact,
+        official_evidence=evidence,
+    )
     second = prepare_bge_poc(
         cards=tuple(reversed(cards)),
         tokenizer=_FixtureTokenizer(),
         artifact=artifact,
+        official_evidence=evidence,
     )
 
     assert first == second
@@ -69,6 +77,7 @@ def test_poc_execution_stages_normalized_vectors_and_requires_eval_passed_withou
         cards=_approved_cards(),
         tokenizer=_FixtureTokenizer(),
         artifact=_artifact_receipt(),
+        official_evidence=_official_evidence_receipt(_approved_cards()),
     )
     repository = _RecordingRepository()
 
@@ -104,6 +113,29 @@ def test_poc_plan_rejects_any_card_membership_drift() -> None:
             cards=tuple(cards),
             tokenizer=_FixtureTokenizer(),
             artifact=_artifact_receipt(),
+            official_evidence=_official_evidence_receipt(_approved_cards()),
+        )
+
+
+def test_poc_plan_rejects_same_identity_card_content_drift() -> None:
+    approved_cards = _approved_cards()
+    cards = list(approved_cards)
+    drifted_body = cards[0].canonical_body.replace(
+        "공식 공개 근거에 기반한 독립 claim 1",
+        "같은 identity로 바뀐 승인되지 않은 claim",
+    )
+    cards[0] = replace(
+        cards[0],
+        canonical_body=drifted_body,
+        content_sha256=hashlib.sha256(drifted_body.encode()).hexdigest(),
+    )
+
+    with pytest.raises(BgePocError, match="OFFICIAL_EVIDENCE_CARD_BINDING"):
+        prepare_bge_poc(
+            cards=tuple(cards),
+            tokenizer=_FixtureTokenizer(),
+            artifact=_artifact_receipt(),
+            official_evidence=_official_evidence_receipt(approved_cards),
         )
 
 
@@ -112,9 +144,10 @@ def test_postgres_adapter_materializes_five_cards_without_pointer_change(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     plan = prepare_bge_poc(
-        cards=_approved_cards(),
+        cards=(cards := _approved_cards()),
         tokenizer=_FixtureTokenizer(),
         artifact=_artifact_receipt(),
+        official_evidence=_official_evidence_receipt(cards),
     )
     monkeypatch.setenv("RAG_SOURCE_REGISTER_TARGET", "testcontainers")
     with psycopg.connect(postgres_cluster["admin_dsn"]) as admin:
@@ -293,4 +326,15 @@ def _artifact_receipt() -> BgeVerifiedPacket:
         file_count=10,
         total_bytes=2_289_781_803,
         file_manifest_sha256="a" * 64,
+    )
+
+
+def _official_evidence_receipt(
+    cards: tuple[RagSourceCard, ...],
+) -> OfficialEvidenceReceipt:
+    ordered = tuple(sorted(cards, key=lambda card: card.source_id.encode("utf-8")))
+    return OfficialEvidenceReceipt(
+        source_ids=tuple(card.source_id for card in ordered),
+        evidence_sha256=tuple(card.evidence_content_sha256 for card in ordered),
+        source_card_content_sha256=tuple(card.content_sha256 for card in ordered),
     )

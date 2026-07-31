@@ -1,0 +1,314 @@
+{
+  "$id": "contracts/schemas/cross_market_risk_snapshot.v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "else": {
+        "properties": {
+          "broadRiskOffScore": {
+            "const": null
+          },
+          "domesticLeverageStressScore": {
+            "const": null
+          },
+          "fxStressScore": {
+            "const": null
+          },
+          "semiconductorShockScore": {
+            "const": null
+          }
+        }
+      },
+      "if": {
+        "properties": {
+          "availability": {
+            "const": "AVAILABLE"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "broadRiskOffScore": {
+            "type": "number"
+          },
+          "domesticLeverageStressScore": {
+            "type": "number"
+          },
+          "fxStressScore": {
+            "type": "number"
+          },
+          "semiconductorShockScore": {
+            "type": "number"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "evidenceMode": {
+            "const": "SYNTHETIC_FIXTURE"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "performanceClaimAllowed": {
+            "const": false
+          },
+          "validationStatus": {
+            "const": "UNVALIDATED"
+          }
+        }
+      }
+    }
+  ],
+  "properties": {
+    "artifactHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "availability": {
+      "enum": [
+        "DISABLED",
+        "AVAILABLE",
+        "UNAVAILABLE",
+        "STALE",
+        "INCOMPLETE"
+      ]
+    },
+    "broadRiskOffScore": {
+      "maximum": 100,
+      "minimum": 0,
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "configVersion": {
+      "const": "cross-market-risk-config.v1"
+    },
+    "contractId": {
+      "const": "cross_market_risk_snapshot.v1"
+    },
+    "decisionAuthority": {
+      "const": "NEW_BUY_ALLOW_TO_WARN_ONLY"
+    },
+    "domesticLeverageStressScore": {
+      "maximum": 100,
+      "minimum": 0,
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "evidenceMode": {
+      "enum": [
+        "SYNTHETIC_FIXTURE",
+        "HISTORICAL_REPLAY",
+        "PROSPECTIVE_SHADOW"
+      ]
+    },
+    "evidenceRefs": {
+      "items": {
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string"
+      },
+      "maxItems": 10,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "freshness": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "asOf": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "component": {
+            "enum": [
+              "SEMICONDUCTOR",
+              "BROAD_MARKET",
+              "FX",
+              "DOMESTIC_AMPLIFICATION"
+            ]
+          },
+          "freshUntil": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sourceRefs": {
+            "items": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "maxItems": 20,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "state": {
+            "enum": [
+              "DISABLED",
+              "AVAILABLE",
+              "UNAVAILABLE",
+              "STALE",
+              "INCOMPLETE"
+            ]
+          }
+        },
+        "required": [
+          "asOf",
+          "component",
+          "freshUntil",
+          "sourceRefs",
+          "state"
+        ],
+        "type": "object"
+      },
+      "maxItems": 4,
+      "minItems": 4,
+      "type": "array"
+    },
+    "fxStressScore": {
+      "maximum": 100,
+      "minimum": 0,
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "logicalIdentityHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "mode": {
+      "enum": [
+        "OFF",
+        "SHADOW",
+        "WARN_ONLY"
+      ]
+    },
+    "orderAuthority": {
+      "const": "NONE"
+    },
+    "owner": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "payloadHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "performanceClaimAllowed": {
+      "type": "boolean"
+    },
+    "schemaVersion": {
+      "const": "1"
+    },
+    "semiconductorShockScore": {
+      "maximum": 100,
+      "minimum": 0,
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "timing": {
+      "additionalProperties": false,
+      "properties": {
+        "detectionLatencyMillis": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "preOpenLeadTimeMillis": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "preOpenState": {
+          "enum": [
+            "EARLY",
+            "AT_OPEN",
+            "LATE",
+            "NOT_APPLICABLE"
+          ]
+        },
+        "snapshotAvailableAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "sourceAvailableAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "xkrxOpenAt": {
+          "format": "date-time",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "detectionLatencyMillis",
+        "preOpenLeadTimeMillis",
+        "preOpenState",
+        "snapshotAvailableAt",
+        "sourceAvailableAt",
+        "xkrxOpenAt"
+      ],
+      "type": "object"
+    },
+    "upstreamArtifactHashes": {
+      "items": {
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string"
+      },
+      "maxItems": 64,
+      "minItems": 4,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "validationStatus": {
+      "enum": [
+        "UNVALIDATED",
+        "VALIDATED"
+      ]
+    }
+  },
+  "required": [
+    "artifactHash",
+    "availability",
+    "broadRiskOffScore",
+    "configVersion",
+    "contractId",
+    "decisionAuthority",
+    "domesticLeverageStressScore",
+    "evidenceMode",
+    "evidenceRefs",
+    "freshness",
+    "fxStressScore",
+    "logicalIdentityHash",
+    "mode",
+    "orderAuthority",
+    "owner",
+    "payloadHash",
+    "performanceClaimAllowed",
+    "schemaVersion",
+    "semiconductorShockScore",
+    "timing",
+    "upstreamArtifactHashes",
+    "validationStatus"
+  ],
+  "title": "cross_market_risk_snapshot.v1",
+  "type": "object"
+}

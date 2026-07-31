@@ -1,0 +1,140 @@
+{
+  "$id": "contracts/schemas/market_cause_evidence.v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "artifactHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "availableAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "classification": {
+      "enum": [
+        "CONFIRMED_FACT",
+        "REPORTED_CLAIM",
+        "MARKET_INTERPRETATION",
+        "HYPOTHESIS"
+      ]
+    },
+    "contractId": {
+      "const": "market_cause_evidence.v1"
+    },
+    "contradictionEvidenceIds": {
+      "items": {
+        "pattern": "^cause_[a-z0-9_-]{8,64}$",
+        "type": "string"
+      },
+      "maxItems": 10,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "counterargument": {
+      "type": "boolean"
+    },
+    "decisionAuthority": {
+      "const": "NONE"
+    },
+    "dedupeKeyHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "logicalIdentityHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "occurredAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "payloadHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "publishedAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "receivedAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "relatedEvidenceIds": {
+      "items": {
+        "pattern": "^cause_[a-z0-9_-]{8,64}$",
+        "type": "string"
+      },
+      "maxItems": 10,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "relation": {
+      "enum": [
+        "PRECEDES",
+        "CO_MOVES_WITH",
+        "REPORTED_AS_CAUSE",
+        "CORROBORATES",
+        "CONTRADICTS"
+      ]
+    },
+    "retracted": {
+      "type": "boolean"
+    },
+    "sanitizedSummary": {
+      "maxLength": 512,
+      "minLength": 1,
+      "pattern": "^[^\\u0000-\\u001F\\u007F<>]*$",
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": "1"
+    },
+    "sourceFamily": {
+      "enum": [
+        "KIS_ANALYST",
+        "GDELT_AGGREGATE",
+        "OPENDART",
+        "SEC",
+        "CORPORATE_IR"
+      ]
+    },
+    "sourceLineageHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "supersedesEvidenceId": {
+      "pattern": "^cause_[a-z0-9_-]{8,64}$",
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "artifactHash",
+    "availableAt",
+    "classification",
+    "contractId",
+    "contradictionEvidenceIds",
+    "counterargument",
+    "decisionAuthority",
+    "dedupeKeyHash",
+    "logicalIdentityHash",
+    "occurredAt",
+    "payloadHash",
+    "publishedAt",
+    "receivedAt",
+    "relatedEvidenceIds",
+    "relation",
+    "retracted",
+    "sanitizedSummary",
+    "schemaVersion",
+    "sourceFamily",
+    "sourceLineageHash",
+    "supersedesEvidenceId"
+  ],
+  "title": "market_cause_evidence.v1",
+  "type": "object"
+}

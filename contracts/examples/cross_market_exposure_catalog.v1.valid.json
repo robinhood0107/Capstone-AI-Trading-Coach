@@ -1,0 +1,17 @@
+{
+  "artifactHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "availableAt": "2026-07-31T00:00:01Z",
+  "classification": "SEMICONDUCTOR",
+  "configVersion": "cross-market-exposure.v1",
+  "contractId": "cross_market_exposure_catalog.v1",
+  "effectiveAt": "2026-07-31T00:00:00Z",
+  "inScope": true,
+  "logicalIdentityHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "payloadHash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "schemaVersion": "1",
+  "sourceLineage": [
+    "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+  ],
+  "symbol": "NVDA",
+  "validationState": "AVAILABLE"
+}

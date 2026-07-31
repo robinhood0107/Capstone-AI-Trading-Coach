@@ -112,9 +112,12 @@ S4.7C는 기존 S4.7B bytes를 보존한 채 동일 body exact 30의 새
 `s4_7c_external_v1` revision을 append하고, local BGE vector 30/30 동등성·retrieval
 non-regression·stale CAS rollback을 검증해
 `rag_gen_789b3ba9589ad399373194c0e3c0e76f`를 단일 active generation으로 전환했다.
-허용 질문도 현재 `RETRIEVAL_ONLY`이며 Gemini·OpenAI·Voyage 물리 호출은 0이다. 실제
-Spring↔Python retrieval/generation E2E와 live generation은 각각 후속 S4.6과 별도 승인형
-S4.4G 전까지 활성화하지 않는다.
+기본 `RAG_GRPC_ENABLED=false`는 `RETRIEVAL_ONLY` S4.4 호환 모드다. S4.6은 canonical
+`RagService.Ask`, numeric loopback, consent/rate/idempotency 순서, owner scope·active generation·
+top-5 citation 재검증과 encrypted history E2E를 구현했다. 동일 배포 Python
+fixture process와 shared secret이 준비된 뒤만 true로 활성화한다. 현재
+Gemini·OpenAI·Voyage·account·order 물리 호출은 0이며 live generation은 별도
+승인형 S4.4G 경계다.
 
 ```bash
 cp .env.example .env

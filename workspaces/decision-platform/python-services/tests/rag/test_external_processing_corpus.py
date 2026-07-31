@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import subprocess
 import sys
 from dataclasses import replace
@@ -34,6 +35,7 @@ from app.rag.source_card_corpus import (
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 GENERATOR = REPO_ROOT / "capstone-rag/generate_s4_7c_external_corpus.py"
+GENERATION_REPORT = REPO_ROOT / "capstone-rag/reports/s4-7c-external-generation.v1.json"
 OLD_MANIFEST_FILE_SHA256 = "d772ab9a54c5477afeccfd41cd41e496645967dee59dd50c0bcc304ae3c95558"
 OLD_CORPUS_MANIFEST_SHA256 = "7f2b4d72dcbaccf57cbe49a980973b17b4a9bfd85bec4694fd66fd7fd2a9decd"
 
@@ -276,6 +278,30 @@ def test_external_generator_is_deterministic_and_current() -> None:
     )
     assert completed.returncode == 0, completed.stderr
     assert "S4_7C_EXTERNAL_PROCESSING_CORPUS_VERIFIED" in completed.stdout
+
+
+def test_tracked_external_generation_report_proves_complete_atomic_transition() -> None:
+    report = json.loads(GENERATION_REPORT.read_text(encoding="utf-8"))
+    expected_hash = report.pop("reportSha256")
+    actual_hash = hashlib.sha256(
+        (
+            json.dumps(report, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n"
+        ).encode()
+    ).hexdigest()
+
+    assert expected_hash == actual_hash
+    assert report["status"] == "PASS"
+    assert report["externalProfileId"] == "s4_7c_external_v1"
+    assert report["sourceCount"] == report["chunkCount"] == 30
+    assert report["bodyEquivalentCount"] == 30
+    assert report["vectorEquivalentCount"] == 30
+    assert report["activeGenerationCount"] == 1
+    assert report["oldGenerationStatus"] == "DISABLED"
+    assert report["newGenerationStatus"] == "ACTIVE"
+    assert report["activePointerBefore"] == report["oldGenerationId"]
+    assert report["activePointerAfter"] == report["newGenerationId"]
+    assert report["retrievalNonRegression"] is True
+    assert report["providerPhysicalCalls"] == 0
 
 
 def _artifact() -> BgeVerifiedPacket:

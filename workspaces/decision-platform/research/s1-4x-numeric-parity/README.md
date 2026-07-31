@@ -89,8 +89,8 @@ immutable GitHub merge event의 Gate 1 SHA와 이 tree의 byte-identical 상태�
 
 runtime dependency amendment PR의 병합은 dependency commit이 최종 `main` HEAD의 조상으로 남는
 **merge commit 방식만** 허용한다. squash/rebase merge는 `referenceBaseCommit` 조상성을
-없애 `main` push correctness check를 깨므로 금지한다. 실행 단계는 PR 번호와 검증한
-head SHA를 결속해
+없애 `main` push correctness check를 깨므로 금지한다. 승인된 방식 marker는
+`METHOD-MERGE-COMMIT`이며, 실행 단계는 PR 번호와 검증한 head SHA를 결속해
 `gh pr merge <pr-number> --merge --match-head-commit <head-sha>`를 사용한다.
 
 ## 승인된 runtime dependency amendment 재생성

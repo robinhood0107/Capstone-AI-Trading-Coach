@@ -906,8 +906,39 @@ BEGIN
             )
         TO decision_rag_admin;
     END IF;
+    IF to_regprocedure('public.issue_rag_rpc_scope(text,text,jsonb)') IS NOT NULL THEN
+        -- V22의 Spring→Python RPC 경계는 app actor scope와 citation 재검증 함수만 노출한다.
+        GRANT EXECUTE ON FUNCTION
+            issue_rag_rpc_scope(text, text, jsonb),
+            recheck_rag_rpc_citations(
+                text, text, text, text, bigint, text, text, jsonb
+            )
+        TO decision_app;
+    END IF;
 END
 $decision_runtime_function_privileges$;
+
+DO $cross_market_runtime_privileges$
+BEGIN
+    IF to_regclass('public.latest_cross_market_risk_snapshots') IS NOT NULL THEN
+        -- V23 bootstrap 재적용 뒤에도 app은 bounded latest view만 읽고 raw evidence에는 접근하지 않는다.
+        GRANT SELECT ON TABLE
+            latest_cross_market_observations,
+            latest_analyst_revision_evidence,
+            latest_market_cause_evidence,
+            latest_cross_market_risk_snapshots
+        TO decision_app;
+        -- market writer는 append-only SECURITY DEFINER 함수만 호출하며 raw table DML은 갖지 않는다.
+        GRANT EXECUTE ON FUNCTION
+            append_market_source_entitlement(jsonb),
+            append_cross_market_exposure_catalog_entry(jsonb),
+            append_cross_market_observation(jsonb),
+            append_analyst_revision_evidence(jsonb),
+            append_market_cause_evidence(jsonb)
+        TO decision_market_writer;
+    END IF;
+END
+$cross_market_runtime_privileges$;
 
 DO $block$
 BEGIN

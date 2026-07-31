@@ -1,10 +1,14 @@
 package com.capstone.decision.api.rag
 
+import com.capstone.decision.api.common.ApiResponseFactory
+import com.capstone.decision.api.common.ErrorCode
 import com.capstone.decision.application.rag.RagValidationException
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.springframework.mock.web.MockHttpServletRequest
+import tools.jackson.databind.json.JsonMapper
 
 class RagAskRequestParserTest {
     private val parser = RagRequestParser()
@@ -138,5 +142,35 @@ class RagAskRequestParserTest {
         assertThrows(RagValidationException::class.java) {
             parser.parseHistoryQuery(invalidQuery)
         }
+    }
+
+    @Test
+    fun `attacker controlled query validation response stays inside 32 KiB`() {
+        val request =
+            MockHttpServletRequest().apply {
+                repeat(40) { index ->
+                    addParameter("${"\\".repeat(500)}$index", "value")
+                }
+            }
+
+        val exception =
+            assertThrows(RagValidationException::class.java) {
+                parser.requireNoQuery(request)
+            }
+        val envelope =
+            ApiResponseFactory.error(
+                requestId = "req_rag_query_budget",
+                code = ErrorCode.VALIDATION_ERROR,
+                details = mapOf("violations" to exception.violations),
+            )
+
+        assertTrue(exception.violations.size <= 64)
+        assertTrue(
+            JsonMapper
+                .builder()
+                .build()
+                .writeValueAsBytes(envelope)
+                .size <= 32 * 1_024,
+        )
     }
 }

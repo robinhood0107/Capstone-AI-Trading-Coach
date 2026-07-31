@@ -34,12 +34,16 @@ class RagGuardHistoryMigrationContractTest {
             "'EXTERNAL_AI_RAG_V1'",
             "'GRANT'",
             "'REVOKE'",
+            "consent_sequence bigint GENERATED ALWAYS AS IDENTITY",
+            "ORDER BY event.consent_sequence DESC",
         )
         assertThat(migration).contains("expires_at = created_at + interval '30 days'")
         assertThat(migration).contains(
+            "citation_count integer NOT NULL",
             "chunk_revision_id text NOT NULL",
             "'chunkRevisionId'",
             "(item.value ->> 'chunkRevisionId') ~ '^rag_chk_[0-9a-f]{32}$'",
+            "(item.value ->> 'ordinal')::integer BETWEEN 1 AND citation_count",
             "item.value ->> 'sectionTitle' =",
             "chunk.heading_path[cardinality(chunk.heading_path)]",
         )
@@ -92,5 +96,17 @@ class RagGuardHistoryMigrationContractTest {
         assertThat(migration).contains("session_user <> 'decision_app'")
         assertThat(migration).contains("current_setting('app.actor_user_id', true)")
         assertThat(migration).contains("jsonb_array_length(p_citations)")
+        assertThat(migration).contains(
+            "p_context_citations jsonb",
+            "jsonb_array_length(p_context_citations)",
+            "revision.external_processing_allowed",
+            "mark_rag_provider_attempt(text, text, text, text, text, text, jsonb)",
+        )
+        assertThat(migration).contains(
+            "pg_advisory_xact_lock(",
+            "clock_timestamp()",
+        )
+        assertThat(migration.indexOf("pg_advisory_xact_lock("))
+            .isLessThan(migration.indexOf("clock_timestamp()"))
     }
 }

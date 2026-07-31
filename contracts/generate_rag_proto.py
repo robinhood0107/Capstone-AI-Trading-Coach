@@ -62,6 +62,7 @@ def _run_protoc(output_dir: Path) -> dict[Path, bytes]:
     pb2 = (python_dir / "rag_pb2.py").read_bytes()
     pb2_pyi = (python_dir / "rag_pb2.pyi").read_bytes()
     pb2_grpc = (python_dir / "rag_pb2_grpc.py").read_text(encoding="utf-8")
+    pb2_grpc = pb2_grpc.replace("import grpc\nimport warnings\n", "import grpc\n")
     pb2_grpc = pb2_grpc.replace(
         "import rag_pb2 as rag__pb2",
         "from app.generated import rag_pb2 as rag__pb2",

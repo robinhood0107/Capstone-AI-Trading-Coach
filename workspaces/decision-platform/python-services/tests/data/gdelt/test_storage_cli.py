@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import stat
@@ -10,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+from app.data._shared.canonical_json import canonical_json_bytes
 from app.data.gdelt.cli import main, parse_args
 from app.data.gdelt.collector import GdeltCollector
 from app.data.gdelt.errors import GdeltAggregateError
@@ -85,6 +87,38 @@ def test_publish_observation_rejects_symlink_root(posix_tmp_path: Path) -> None:
         publish_observation(root=root, observation=_observation())
 
 
+@pytest.mark.parametrize(
+    "field",
+    (
+        "rawQuery",
+        "requestUrl",
+        "responseHeaders",
+        "rawProviderPayload",
+        "articleId",
+        "articleTitle",
+        "articleBody",
+        "articleSummary",
+        "articleUrl",
+        "articleImage",
+        "articleImageUrl",
+        "articleDomain",
+        "publisherUrl",
+        "publisherDomain",
+    ),
+)
+def test_publish_observation_rejects_nested_article_and_raw_metadata(
+    posix_tmp_path: Path,
+    field: str,
+) -> None:
+    observation = _observation()
+    observation["nestedProviderMetadata"] = {field: "forbidden"}
+    observation.pop("artifactHash")
+    observation["artifactHash"] = hashlib.sha256(canonical_json_bytes(observation)).hexdigest()
+
+    with pytest.raises(GdeltAggregateError, match="STORAGE_UNSAFE"):
+        publish_observation(root=posix_tmp_path / "gdelt", observation=observation)
+
+
 def test_offline_is_cli_default_and_online_requires_exact_packet_fields() -> None:
     assert parse_args([]).mode == "offline"
 
@@ -113,5 +147,17 @@ def test_source_contains_no_article_metadata_or_network_enabled_fixture_path() -
         for name in ("collector.py", "parser.py", "scoring.py", "transport.py")
     )
 
-    forbidden = ("articleTitle", "articleUrl", "publisherUrl", "httpx.")
+    forbidden = (
+        "articleId",
+        "articleTitle",
+        "articleBody",
+        "articleSummary",
+        "articleUrl",
+        "articleImage",
+        "articleImageUrl",
+        "articleDomain",
+        "publisherUrl",
+        "publisherDomain",
+        "httpx.",
+    )
     assert all(token not in source for token in forbidden)

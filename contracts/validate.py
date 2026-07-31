@@ -48,6 +48,9 @@ from contracts.generate_s4_8a_cross_market_contracts import (  # noqa: E402
     SCHEMA_IDS as S4_8A_SCHEMA_IDS,
     validate_semantics as validate_s4_8a_semantics,
 )
+from contracts.generate_s5_0_signal_v2_contracts import (  # noqa: E402
+    validate_signal_v2_semantics,
+)
 
 SCHEMA_DIR = REPO_ROOT / "contracts" / "schemas"
 EXAMPLES_DIR = REPO_ROOT / "contracts" / "examples"
@@ -190,6 +193,9 @@ def validate_example_semantics(
         if not isinstance(example, dict):
             raise ContractValidationError("S4.8A contract example must be an object.")
         validate_s4_8a_semantics(schema_name, example)
+        return
+    if schema_name == "signal-v2":
+        validate_signal_v2_semantics(example)
         return
     validate_principle_payload_semantics(
         schema_name,

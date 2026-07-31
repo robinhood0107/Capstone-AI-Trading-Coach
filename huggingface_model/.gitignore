@@ -3,3 +3,5 @@
 !/README.md
 !/manifests/
 !/manifests/README.md
+!/manifests/bge-m3-onnx-5617a9f61b028005a4858fdac845db406aefb181.v1.json
+!/manifests/bge-m3-onnx-runtime-sbom.v1.json

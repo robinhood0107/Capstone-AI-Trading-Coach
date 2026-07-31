@@ -134,6 +134,12 @@ jobs:
             git diff-tree --no-commit-id --name-only -r "$REFERENCE_BASE" | LC_ALL=C sort
           )
           case "$REFERENCE_BASE" in
+            bf965d00c98e63127ebc385164e71c30402ce6fc)
+              EXPECTED_PATHS=(
+                "workspaces/decision-platform/python-services/pyproject.toml"
+                "workspaces/decision-platform/python-services/uv.lock"
+              )
+              ;;
             e5d70dc113ed87c690cf538879c0b9df17121b1d)
               EXPECTED_PATHS=(
                 "workspaces/decision-platform/python-services/pyproject.toml"
@@ -187,9 +193,9 @@ jobs:
               sha256sum "$S1_4X_BENCHMARK_CONTRACT_TEST" | cut -d' ' -f1
             )"
             test "$BASE_BENCHMARK_CONTRACT_SHA" = \
-              "567d09ce0c7b621bc0a9fd85a2a47d4946dfaeb80d520689ae63b4ce7464cf53"
-            test "$HEAD_BENCHMARK_CONTRACT_SHA" = \
               "b5a3b1f3c9dc2fff025f465f28c6be35b6e46177b7a2a7267bc5c342a01ecba6"
+            test "$HEAD_BENCHMARK_CONTRACT_SHA" = \
+              "276637c89ec1e31e8a7682d3dbfcc224897c9381343fbeda243f298df5998707"
           fi
 
           # 의존성 amendment가 수치 구현·테스트·fixture를 함께 바꾸는 것을 독립적으로 막는다.

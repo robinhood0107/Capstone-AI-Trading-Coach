@@ -150,6 +150,7 @@ PUBLIC_TOPICS_BY_SOURCE_ID = MappingProxyType(
         "src_project_kis_current_price_snapshot_001": ("API", "DATA"),
         "src_project_kis_discovery_write_boundary_001": (
             "API",
+            "METHODOLOGY",
             "PRODUCT_RISK",
         ),
         "src_project_kis_market_calendar_001": ("API", "DATA"),
@@ -158,6 +159,7 @@ PUBLIC_TOPICS_BY_SOURCE_ID = MappingProxyType(
         "src_project_krx_etn_risk_indicator_001": ("PRODUCT_RISK", "RISK"),
         "src_project_krx_last_trading_settlement_001": (
             "DATA",
+            "METHODOLOGY",
             "PRODUCT_RISK",
         ),
         "src_project_krx_service_coverage_001": ("DATA",),

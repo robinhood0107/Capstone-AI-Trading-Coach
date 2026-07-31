@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+import json
 from pathlib import Path
 
 import pytest
+from jsonschema import Draft202012Validator
 
 from app.data.gdelt.collector import GdeltCollector
 from app.data.gdelt.errors import GdeltAggregateError
@@ -76,6 +78,14 @@ def test_fixture_collection_is_available_reproducible_and_network_free() -> None
     assert len(str(first["artifactHash"])) == 64
     assert transport.requests == ["TIMELINE_TONE", "TIMELINE_VOL_RAW"]
 
+    schema = json.loads(
+        (
+            Path(__file__).resolve().parents[6]
+            / "contracts/schemas/gdelt_news_tone_observation.v1.schema.json"
+        ).read_text(encoding="utf-8")
+    )
+    Draft202012Validator(schema, format_checker=Draft202012Validator.FORMAT_CHECKER).validate(first)
+
 
 @pytest.mark.parametrize(
     "response",
@@ -140,6 +150,16 @@ def test_news_summary_is_explanation_only_and_does_not_enter_decision_hash() -> 
     assert summary["riskDecisionHashIncluded"] is False
     assert summary["s5FeatureEligible"] is False
     assert summary["decisionAuthority"] == "NONE"
+
+    schema = json.loads(
+        (
+            Path(__file__).resolve().parents[6]
+            / "contracts/schemas/news_sentiment_summary.v2.schema.json"
+        ).read_text(encoding="utf-8")
+    )
+    Draft202012Validator(schema, format_checker=Draft202012Validator.FORMAT_CHECKER).validate(
+        summary
+    )
 
 
 def test_query_registry_rejects_alias_and_ticker_collisions() -> None:

@@ -35,6 +35,9 @@ def test_active_naver_runtime_contract_and_credentials_are_removed() -> None:
     shared_models = (PYTHON_ROOT / "app/data/_shared/source_snapshot_models.py").read_text(
         encoding="utf-8"
     )
+    secure_storage = (PYTHON_ROOT / "app/data/_shared/secure_snapshot_storage.py").read_text(
+        encoding="utf-8"
+    )
 
     assert "naver-news-metadata-collect" not in pyproject
     assert "NAVER_" not in env_example
@@ -42,6 +45,7 @@ def test_active_naver_runtime_contract_and_credentials_are_removed() -> None:
     assert '"naver"' not in manifest_schema
     assert "app.data.naver" not in retention_cli
     assert "Naver" not in shared_models
+    assert "naver" not in secure_storage.casefold()
 
 
 def test_historical_boundary_card_and_supersession_record_are_preserved() -> None:

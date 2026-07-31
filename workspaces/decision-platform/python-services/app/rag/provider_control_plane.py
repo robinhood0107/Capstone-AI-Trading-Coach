@@ -8,16 +8,15 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, Final
+from typing import Any, Final, cast
 
-from app.rag.external_processing_corpus import FrozenSourceCardCorpus
 from app.rag.fixture_answering import (
     EvidenceChunk,
     FixtureProviderContractError,
     StructuredAnswer,
     parse_structured_answer,
 )
-from app.rag.source_card_corpus import REPO_ROOT
+from app.rag.source_card_corpus import REPO_ROOT, FrozenSourceCardCorpus
 
 
 VOYAGE_MODEL: Final[str] = "voyage-context-4"
@@ -143,9 +142,12 @@ def load_s4_5_provider_report(
     """tracked provider report가 current offline plan과 정확히 같은지 확인한다."""
 
     try:
-        tracked = json.loads(path.read_text(encoding="utf-8"))
+        parsed: object = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
         raise ProviderControlPlaneError("s4_5_provider_report_unavailable") from error
+    if not isinstance(parsed, dict) or any(not isinstance(key, str) for key in parsed):
+        raise ProviderControlPlaneError("s4_5_provider_report_unavailable")
+    tracked = cast(dict[str, Any], parsed)
     expected = build_s4_5_provider_report()
     if tracked != expected:
         raise ProviderControlPlaneError("s4_5_provider_report_drift")

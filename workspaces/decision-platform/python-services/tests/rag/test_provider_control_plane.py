@@ -18,11 +18,14 @@ from app.rag.provider_control_plane import (
     OutboundDisabledVoyageExecutor,
     ProviderControlPlaneError,
     ProviderUsageLedger,
+    S4_5_PROVIDER_REPORT_PATH,
     UsageState,
     build_gemini_interaction_request,
+    build_s4_5_provider_report,
     build_voyage_generation_plan,
     execute_gemini_fixture,
     execute_voyage_fixture,
+    load_s4_5_provider_report,
     validate_gemini_approval_packet,
     validate_voyage_approval_packet,
     validate_voyage_generation,
@@ -93,6 +96,25 @@ def test_voyage_plan_is_single_shot_stable_bounded_and_offline() -> None:
     assert len(first.context_set_hash) == 64
     assert len(first.plan_sha256) == 64
     assert len(first.generation_sha256) == 64
+
+
+def test_tracked_provider_report_reproduces_disabled_control_plane() -> None:
+    report = load_s4_5_provider_report()
+
+    assert report == build_s4_5_provider_report()
+    assert S4_5_PROVIDER_REPORT_PATH.is_file()
+    assert report["mode"] == "OFFLINE_PLAN_ONLY"
+    assert report["providerPhysicalCalls"] == {"gemini": 0, "voyage": 0}
+    assert report["voyage"]["outboundExecutor"] == "HARD_DISABLED"
+    assert report["voyage"]["documentCount"] == 30
+    assert report["voyage"]["batchCount"] == 1
+    assert report["voyage"]["tokenizerMode"] == "OFFICIAL_TOKENIZER_REVIEW_REQUIRED"
+    assert report["gemini"]["outboundExecutor"] == "HARD_DISABLED"
+    assert report["gemini"]["store"] is False
+    assert report["gemini"]["tools"] == 0
+    assert report["gemini"]["background"] == 0
+    assert report["partialGenerationCount"] == 0
+    assert report["activationCount"] == 0
 
 
 def test_voyage_packet_and_live_executor_remain_fail_closed() -> None:

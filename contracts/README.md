@@ -436,6 +436,11 @@ pinned `ONNX_DATA_ONLY`, `embeddingInputStrategy`를 같은 bytes로 검증한�
 S4.0 catalog, S4.1 registry/API, S4.2A/S4.2B generation, S4.3 authorized retrieval에 이어
 S4.4는 V20 owner claim·consent·encrypted history 경계와 위 closed request/response schema를
 구현한다. 기본 answerer는 `FIXTURE_ONLY`이고 external provider physical call은 0이다.
+S4.5는 `s4-5-evaluation-60.v1.json`의 공개·합성 exact 60과 deterministic report를
+S4.7C corpus에 결속한다. `s4-2c-voyage-approval.schema.json`과
+`s4-4g-gemini-approval.schema.json`은 내부 provider 제어 packet이며 public RAG API 계약이
+아니다. 전자는 zero-paid one-shot plan 목적만, 후자는 preflight/evaluation/production
+activation 목적을 분리해 허용한다. fresh packet이 없으므로 두 outbound executor는 닫혀 있다.
 `bge_then_voyage_on_sla_v1`은 요청별 runtime fallback이 아니라 BGE warm p95 SLA 실패,
 Voyage 평가 통과, 관리자 승인 뒤 default pointer를 한 번 원자 전환하는 정책이다.
 public `POST /api/v1/rag/ask` body는 `question`, `answerMode`, `relatedSymbols`, `topics`만
@@ -446,6 +451,8 @@ generation, materialization/evaluation, active pointer, usage ledger 같은 동�
 
 ```bash
 uv run --frozen python contracts/generate_s4_rag_contracts.py --check
+uv run --frozen python contracts/generate_s4_5_provider_contracts.py --check
+uv run --frozen python capstone-rag/generate_s4_5_evaluation.py --check
 uv run --frozen python -m unittest discover -s contracts/tests -v
 uv run --frozen python contracts/validate.py
 ```

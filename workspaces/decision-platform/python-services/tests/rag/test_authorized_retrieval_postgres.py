@@ -237,6 +237,9 @@ def test_postgres_three_channels_share_only_active_opaque_scope(
         replace(scope, owner_user_id="usr_demo_admin"),
         replace(scope, session_id="s4-3-session-00000002"),
         replace(scope, claim_id="rag_scope_" + "f" * 32),
+        replace(scope, generation_id="rag_gen_" + "f" * 32),
+        replace(scope, embedding_profile_id="bge_m3_local_1024_v1-drift"),
+        replace(scope, policy_version=scope.policy_version + 1),
     ):
         assert adapter.retrieve_exact(
             scope=crossed_scope,
@@ -269,6 +272,10 @@ def test_postgres_three_channels_share_only_active_opaque_scope(
     with psycopg.connect(cluster["rag_query_dsn"]) as connection:
         assert connection.execute("SHOW statement_timeout").fetchone() == ("1500ms",)
     _assert_forbidden(cluster["rag_query_dsn"], "SELECT * FROM rag_chunk_revisions")
+    _assert_forbidden(
+        cluster["rag_query_dsn"],
+        "SELECT * FROM rag_source_exact_identifiers",
+    )
     _assert_forbidden(
         cluster["rag_query_dsn"],
         "INSERT INTO rag_retrieval_scope_claims DEFAULT VALUES",

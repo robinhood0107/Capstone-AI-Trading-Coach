@@ -298,8 +298,9 @@ def test_s4_3_authorized_retrieval_exact_10_smoke_and_benchmark(
     queries = query_set["queries"]
     assert isinstance(queries, list) and len(queries) == 10
 
-    for query in queries:
-        _run_one(hybrid=hybrid, scope=scope, query=query)
+    for _ in range(2):
+        for query in queries:
+            _run_one(hybrid=hybrid, scope=scope, query=query)
     recorder.clear()
 
     expected_hit_count = 0
@@ -394,7 +395,7 @@ def test_s4_3_authorized_retrieval_exact_10_smoke_and_benchmark(
         "postgresExtensions": extension_versions,
         "queryDatasetId": query_set["datasetId"],
         "querySetSha256": hashlib.sha256(_QUERY_SET_PATH.read_bytes()).hexdigest(),
-        "warmup": 10,
+        "warmup": 20,
         "measured": 100,
         "concurrency": 1,
         "outliersRetained": True,

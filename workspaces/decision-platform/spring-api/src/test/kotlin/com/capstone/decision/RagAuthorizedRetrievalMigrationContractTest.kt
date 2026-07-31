@@ -45,6 +45,7 @@ class RagAuthorizedRetrievalMigrationContractTest {
         assertThat(migration).contains("gin_trgm_ops")
         assertThat(migration).contains("vector_cosine_ops")
         assertThat(migration).contains("FHKST01010100", "'132030', 'SYMBOL'")
+        assertThat(migration).contains("RAG exact identifier identity drifted")
         assertThat(migration).doesNotContain("EXECUTE format", "EXECUTE p_", "quote_ident")
     }
 

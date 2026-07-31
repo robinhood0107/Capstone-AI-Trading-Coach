@@ -207,6 +207,7 @@ def test_query_normalizer_enforces_contract_bounds_and_forbidden_controls() -> N
 
     invalid_payloads = (
         {"question": "", "answerMode": "CONCISE"},
+        {"question": "\ud800", "answerMode": "CONCISE"},
         {"question": "e\u0301", "answerMode": "CONCISE"},
         {"question": "가" * 1001, "answerMode": "CONCISE"},
         {"question": "a" * 1000, "answerMode": "CONCISE", "topK": 1},
@@ -259,6 +260,38 @@ def test_exact_identifier_extractor_uses_literal_bounded_identifiers() -> None:
     assert "0059300" not in extracted
     assert ".*" not in extracted
     assert "DROP" not in extracted
+    with pytest.raises(QueryValidationError):
+        ExactIdentifierExtractor().extract("\ud800")
+
+
+def test_hybrid_rejects_combined_exact_identifier_count_before_embedding() -> None:
+    exact = _StaticExact(_channel("exact"))
+    lexical = _StaticLexical(_channel("lexical"))
+    dense = _StaticDense(_channel("dense"))
+    embedder = _StaticEmbedder()
+    hybrid = AuthorizedHybridRetrieval(
+        query_normalizer=QueryNormalizer(),
+        exact_identifier_extractor=ExactIdentifierExtractor(),
+        query_embedder=embedder,
+        exact_retriever=exact,
+        lexical_retriever=lexical,
+        dense_retriever=dense,
+        rrf_fusion=RrfFusion(),
+        evidence_sufficiency_policy=EvidenceSufficiencyPolicy(),
+    )
+
+    outcome = hybrid.retrieve(
+        scope=_scope(),
+        payload={
+            "question": " ".join(f"{value:06d}" for value in range(16)),
+            "answerMode": "CONCISE",
+            "relatedSymbols": [f"{100_000 + value:06d}" for value in range(5)],
+        },
+    )
+
+    assert outcome.failure_code is RetrievalFailureCode.INVALID_QUERY
+    assert outcome.evidence == ()
+    assert embedder.calls == exact.calls == lexical.calls == dense.calls == 0
 
 
 def test_rrf_uses_k60_deduplicates_channel_and_applies_deterministic_tie_break() -> None:
@@ -447,6 +480,48 @@ def test_channel_timeout_or_partial_result_discards_every_channel() -> None:
     assert outcome.evidence == ()
 
 
+def test_channel_timeout_discards_every_channel() -> None:
+    class _TimeoutExact(_StaticExact):
+        def retrieve_exact(
+            self,
+            *,
+            scope: AuthorizedRetrievalScope,
+            query: NormalizedRetrievalQuery,
+            identifiers: tuple[str, ...],
+        ) -> ChannelResult:
+            self.calls += 1
+            raise TimeoutError("fixture timeout")
+
+    first = _candidate(1)
+    exact = _TimeoutExact(_channel("exact", first))
+    lexical = _StaticLexical(_channel("lexical", first))
+    dense = _StaticDense(_channel("dense", first))
+    hybrid = AuthorizedHybridRetrieval(
+        query_normalizer=QueryNormalizer(),
+        exact_identifier_extractor=ExactIdentifierExtractor(),
+        query_embedder=_StaticEmbedder(),
+        exact_retriever=exact,
+        lexical_retriever=lexical,
+        dense_retriever=dense,
+        rrf_fusion=RrfFusion(),
+        evidence_sufficiency_policy=EvidenceSufficiencyPolicy(),
+    )
+
+    outcome = hybrid.retrieve(
+        scope=_scope(),
+        payload={
+            "question": "bounded evidence",
+            "answerMode": "CONCISE",
+            "topics": ["FINANCIAL_ENGINEERING"],
+        },
+    )
+
+    assert outcome.failure_code is RetrievalFailureCode.CHANNEL_UNAVAILABLE
+    assert outcome.evidence == ()
+    assert exact.calls == 1
+    assert lexical.calls == dense.calls == 0
+
+
 def test_nan_query_vector_fails_before_any_retrieval_channel() -> None:
     first = _candidate(1)
     exact = _StaticExact(_channel("exact", first))
@@ -543,5 +618,7 @@ def test_tracked_s4_3_benchmark_is_hash_bound_and_passed() -> None:
     assert report["status"] == "PASS"
     assert report["expectedTop5HitRate"] == 1.0
     assert report["noEvidenceRefusalRate"] == 1.0
+    assert report["warmup"] >= 20
+    assert report["measured"] >= 100
     assert report["stagesMs"]["total"]["p95"] <= 1500.0
     assert report["physicalCalls"]["providerTotal"] == 0

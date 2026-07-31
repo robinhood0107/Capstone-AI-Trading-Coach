@@ -14,6 +14,25 @@ data class RagAskCommand(
     val topics: List<String>,
 )
 
+data class RagEvaluationContext(
+    val requestId: String,
+    val ownerScopeClaim: String,
+    val consentGranted: Boolean,
+    val consentPolicyVersion: String,
+    val policyId: String,
+    val policyVersion: Long,
+    val activeGenerationId: String,
+    val embeddingProfileId: String,
+)
+
+data class RagRetrievalScope(
+    val scopeClaimId: String,
+    val policyId: String,
+    val policyVersion: Long,
+    val activeGenerationId: String,
+    val embeddingProfileId: String,
+)
+
 enum class RagGenerationStatus {
     ANSWERED,
     RETRIEVAL_ONLY,

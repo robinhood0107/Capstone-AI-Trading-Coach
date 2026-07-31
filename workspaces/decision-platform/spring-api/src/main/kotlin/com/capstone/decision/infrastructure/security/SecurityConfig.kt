@@ -6,6 +6,7 @@ import com.capstone.decision.infrastructure.brokerage.PaperBrokerageProperties
 import com.capstone.decision.infrastructure.decision.DecisionProperties
 import com.capstone.decision.infrastructure.grpc.BrokerageGrpcProperties
 import com.capstone.decision.infrastructure.grpc.DecisionGrpcProperties
+import com.capstone.decision.infrastructure.grpc.RagGrpcProperties
 import com.capstone.decision.infrastructure.idempotency.IdempotencyProperties
 import com.capstone.decision.infrastructure.idempotency.IdempotencyService
 import com.capstone.decision.infrastructure.principle.PrincipleProperties
@@ -52,6 +53,7 @@ import java.security.MessageDigest
     BrokerageGrpcProperties::class,
     DecisionGrpcProperties::class,
     RagGuardHistoryProperties::class,
+    RagGrpcProperties::class,
 )
 class SecurityConfig {
     @Bean

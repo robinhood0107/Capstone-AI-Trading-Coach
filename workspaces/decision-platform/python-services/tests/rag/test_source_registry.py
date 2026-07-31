@@ -286,6 +286,46 @@ def test_register_sources_rejects_target_role_and_privilege_attestation_drift(
             connection.execute("revoke select on flyway_schema_history from decision_rag_writer")
 
 
+@pytest.mark.parametrize(
+    "privilege",
+    ("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE"),
+)
+def test_register_sources_rejects_every_final_embedding_table_privilege(
+    privilege: str,
+    postgres_cluster: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry = load_default_source_registry()
+    monkeypatch.setenv("RAG_SOURCE_REGISTER_TARGET", "testcontainers")
+    with psycopg.connect(postgres_cluster["admin_dsn"]) as connection:
+        source_count_before = _scalar(connection, "select count(*) from rag_sources")
+        revision_count_before = _scalar(connection, "select count(*) from rag_source_revisions")
+
+    assert privilege in {"SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE"}
+    with psycopg.connect(postgres_cluster["admin_dsn"], autocommit=True) as connection:
+        connection.execute(
+            f"grant {privilege} on rag_chunk_embeddings to decision_rag_writer"
+        )
+    try:
+        with pytest.raises(ValueError, match="forbidden table"):
+            register_source_registry(
+                registry,
+                database_dsn=postgres_cluster["rag_writer_dsn"],
+            )
+    finally:
+        with psycopg.connect(postgres_cluster["admin_dsn"], autocommit=True) as connection:
+            connection.execute(
+                f"revoke {privilege} on rag_chunk_embeddings from decision_rag_writer"
+            )
+
+    with psycopg.connect(postgres_cluster["admin_dsn"]) as connection:
+        assert _scalar(connection, "select count(*) from rag_sources") == source_count_before
+        assert (
+            _scalar(connection, "select count(*) from rag_source_revisions")
+            == revision_count_before
+        )
+
+
 def test_register_sources_cli_writes_seed_with_rag_writer_only(
     postgres_cluster: dict[str, str],
     monkeypatch: pytest.MonkeyPatch,

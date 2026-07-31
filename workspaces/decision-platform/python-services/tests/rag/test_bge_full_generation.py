@@ -407,6 +407,15 @@ def test_postgres_writer_rejects_raw_exact_privilege_and_alias_binding_drift(
         connection.execute(
             "REVOKE SELECT ON TABLE rag_source_exact_identifiers FROM decision_rag_writer"
         )
+    execute_bge_full_generation(
+        plan=plan,
+        embedder=_FixtureEmbedder(),
+        repository=PsycopgBgeFullGenerationWriterRepository(
+            database_dsn=cluster["rag_writer_dsn"],
+        ),
+    )
+
+    with psycopg.connect(cluster["admin_dsn"], autocommit=True) as connection:
         connection.execute(
             """
             UPDATE rag_source_exact_identifiers
@@ -415,12 +424,18 @@ def test_postgres_writer_rejects_raw_exact_privilege_and_alias_binding_drift(
               AND identifier_kind = 'KIS_TR_ID'
             """
         )
+    drift_plan = prepare_bge_full_generation(
+        corpus=load_frozen_source_card_corpus(),
+        tokenizer=_WhitespaceTokenizer(),
+        artifact=_artifact_receipt(),
+        batch_benchmark=_batch_benchmark(selected=32),
+    )
     with pytest.raises(
         BgeFullGenerationError,
         match="FULL_DATABASE_OPERATION_FAILED",
     ):
         execute_bge_full_generation(
-            plan=plan,
+            plan=drift_plan,
             embedder=_FixtureEmbedder(),
             repository=PsycopgBgeFullGenerationWriterRepository(
                 database_dsn=cluster["rag_writer_dsn"],

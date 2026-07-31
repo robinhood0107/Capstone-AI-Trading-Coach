@@ -35,6 +35,9 @@ from app.rag.source_card_corpus import (
 _BATCH_REPORT_PATH = (
     REPO_ROOT / "capstone-rag/reports/s4-2b-batch-memory-benchmark.v1.json"
 )
+_FINAL_REPORT_PATH = (
+    REPO_ROOT / "capstone-rag/reports/s4-2b-full-generation-benchmark.v1.json"
+)
 
 
 class _WhitespaceTokenizer:
@@ -166,6 +169,32 @@ def test_tracked_batch_memory_report_is_hash_bound_and_selects_32() -> None:
     assert receipt.benchmark_sha256 == (
         "9aa704533622c4014a463706e85084ac2aab0ab6b1e578a445fff0376e9296c0"
     )
+
+
+def test_tracked_final_report_is_hash_bound_to_active_exact_30_generation() -> None:
+    report = json.loads(_FINAL_REPORT_PATH.read_text(encoding="utf-8"))
+    expected_report_hash = report.pop("benchmarkReportSha256")
+    actual_report_hash = hashlib.sha256(
+        (
+            json.dumps(
+                report,
+                ensure_ascii=False,
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+            + "\n"
+        ).encode("utf-8")
+    ).hexdigest()
+
+    assert actual_report_hash == expected_report_hash
+    assert report["commitSha"] == "418858b97f597a96cab85a0781a5961de6efc8f2"
+    assert report["status"] == "PASS"
+    assert report["parity"]["rowCount"] == 30
+    assert report["expectedTop5HitRate"] == 1.0
+    assert report["stagesMs"]["total"]["p95"] <= 1500.0
+    assert report["activePointerBefore"]["generationId"] is None
+    assert report["activePointerAfter"]["generationId"] == report["generationId"]
+    assert report["physicalCalls"]["providerTotal"] == 0
 
 
 def test_prepare_full_generation_rejects_manifest_or_batch_drift() -> None:

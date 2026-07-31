@@ -35,6 +35,38 @@ def _load(path: Path) -> object:
 
 
 class S13gNewsContractTest(unittest.TestCase):
+    def test_normative_docs_retire_naver_and_lock_gdelt_authority(self) -> None:
+        required_markers = {
+            "docs/최종_프로젝트_명세서.md": (
+                "NAVER_ACTIVE_PROVIDER_RUNTIME_STORAGE=RETIRED",
+                "GDELT_ARTICLE_METADATA_STORAGE=0",
+                "GDELT_DECISION_AUTHORITY=NONE",
+                "GDELT_S5_FEATURE_ELIGIBLE=FALSE",
+            ),
+            "docs/API_명세서.md": (
+                "NAVER_ACTIVE_PROVIDER_RUNTIME_STORAGE=RETIRED",
+                "GDELT_PROVIDER_PHYSICAL_CALLS=0",
+                "SECURITY_SCAN_TIMING=FINAL_CONSOLIDATED_CAMPAIGN",
+            ),
+            "contracts/README.md": (
+                "S1.3G Naver 퇴역과 GDELT aggregate active 계약",
+                "HISTORICAL_SUPERSEDED",
+            ),
+        }
+        for relative_path, markers in required_markers.items():
+            text = (ROOT / relative_path).read_text(encoding="utf-8")
+            for marker in markers:
+                self.assertIn(marker, text, f"{relative_path}: {marker}")
+
+        final_spec = (ROOT / "docs/최종_프로젝트_명세서.md").read_text(
+            encoding="utf-8"
+        )
+        active_news_section = final_spec.split("### 11.2 뉴스 데이터 원칙", maxsplit=1)[
+            1
+        ].split("### 11.3 RAG 설계", maxsplit=1)[0]
+        self.assertNotIn("Naver Search API:", active_news_section)
+        self.assertNotIn("representativeSources", active_news_section)
+
     def test_generator_is_deterministic_complete_and_checked_in(self) -> None:
         first = generate_outputs()
         second = generate_outputs()

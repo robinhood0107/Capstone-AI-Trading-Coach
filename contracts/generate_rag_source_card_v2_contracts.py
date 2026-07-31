@@ -32,6 +32,9 @@ from contracts.generate_s4_rag_contracts import (  # noqa: E402
 REPO_ROOT = _SCRIPT_REPO_ROOT
 SCHEMA_PATH = REPO_ROOT / "contracts/schemas/rag-source-card-v2.schema.json"
 V1_FIXTURE_PATH = REPO_ROOT / "contracts/examples/rag-source-card-v1.valid.json"
+CONTRACT_CHANGE_PATH = (
+    REPO_ROOT / "contracts/changes/20260731-s4-7b-source-card-v2.md"
+)
 
 RAG_SOURCE_CARD_V2_COMMON_FIELDS: Final[tuple[str, ...]] = (
     "schemaVersion",
@@ -1029,6 +1032,17 @@ def fixtures() -> dict[str, Any]:
 
 
 def generate_outputs() -> dict[str, bytes]:
+    contract_change = CONTRACT_CHANGE_PATH.read_text(encoding="utf-8")
+    for required_marker in (
+        "AUTH_SOURCE_CARD_V2_CONTRACT=APPROVED",
+        "89f25e66d8165ceb813045e17c689e1000bb86f710f8d8c0acb22ccc6d0c846c",
+        "6a77525100c67a9bfcc1a966f1550cfe9bd19f73179544d716a5b8e963fea0c4",
+        "LICENSE_AND_CONSENT_VERIFIED",
+    ):
+        if required_marker not in contract_change:
+            raise ContractValidationError(
+                "RAG source card v2 contract-change rationale drifted."
+            )
     schema = source_card_v2_schema()
     Draft202012Validator.check_schema(schema)
     validator = Draft202012Validator(schema)

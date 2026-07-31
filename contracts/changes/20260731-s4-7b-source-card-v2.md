@@ -22,6 +22,7 @@ v2는 `cardVariant`로 구분되는 closed union이다.
    - exact upstream reference allowlist에서 1~5개를 사용한다.
    - 하나 이상의 upstream ID가 card `institution`과 일치해야 한다.
    - 공식 API·service·product evidence class만 허용한다.
+   - v2 API authority에는 exact inventory의 Naver Search API lineage를 포함한다.
 2. `SCHOLARLY_PRIMARY_CARD`
    - `upstreamSourceIds`는 빈 배열이다.
    - DOI, ISBN 또는 공식 publisher·author archive·institution URL을 사용한다.
@@ -88,6 +89,7 @@ V2 is a closed union discriminated by `cardVariant`.
    - Uses one to five entries from the exact upstream-reference allowlist.
    - At least one upstream ID must match the card institution.
    - Only official API, service, or product evidence classes are allowed.
+   - The v2 API authorities include the exact inventory's Naver Search API lineage.
 2. `SCHOLARLY_PRIMARY_CARD`
    - Uses an empty `upstreamSourceIds` array.
    - Requires a DOI, ISBN, or official publisher, author-archive, or institution URL.

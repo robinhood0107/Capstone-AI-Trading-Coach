@@ -180,6 +180,33 @@ def test_postgres_three_channels_share_only_active_opaque_scope(
         assert all(item.tier == "PROJECT" for item in channel.items)
         assert all(item.source_status == "VERIFIED" for item in channel.items)
 
+    tr_id_query = normalizer.normalize(
+        {
+            "question": "FHKST01010100",
+            "answerMode": "CONCISE",
+            "topics": ["API", "DATA"],
+        }
+    )
+    assert adapter.retrieve_exact(
+        scope=scope,
+        query=tr_id_query,
+        identifiers=ExactIdentifierExtractor().extract(tr_id_query.question),
+    ).items[0].source_id == "src_project_kis_current_price_snapshot_001"
+
+    symbol_query = normalizer.normalize(
+        {
+            "question": "132030",
+            "answerMode": "CONCISE",
+            "relatedSymbols": ["132030"],
+            "topics": ["DATA"],
+        }
+    )
+    assert adapter.retrieve_exact(
+        scope=scope,
+        query=symbol_query,
+        identifiers=ExactIdentifierExtractor().extract(symbol_query.question),
+    ).items[0].source_id == "src_project_gold_futures_etf_132030_001"
+
     hybrid = AuthorizedHybridRetrieval(
         query_normalizer=normalizer,
         exact_identifier_extractor=ExactIdentifierExtractor(),

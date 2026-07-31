@@ -16,6 +16,7 @@ class RagAuthorizedRetrievalMigrationContractTest {
     @Test
     fun `V19 creates opaque owner-session claim and three independently scoped channels`() {
         assertThat(migration).contains("CREATE TABLE rag_retrieval_scope_claims")
+        assertThat(migration).contains("CREATE TABLE rag_source_exact_identifiers")
         assertThat(migration).contains("CREATE FUNCTION create_rag_retrieval_scope_claim")
         listOf(
             "search_authorized_rag_exact",
@@ -43,6 +44,7 @@ class RagAuthorizedRetrievalMigrationContractTest {
         assertThat(migration).contains("similarity(")
         assertThat(migration).contains("gin_trgm_ops")
         assertThat(migration).contains("vector_cosine_ops")
+        assertThat(migration).contains("FHKST01010100", "'132030', 'SYMBOL'")
         assertThat(migration).doesNotContain("EXECUTE format", "EXECUTE p_", "quote_ident")
     }
 

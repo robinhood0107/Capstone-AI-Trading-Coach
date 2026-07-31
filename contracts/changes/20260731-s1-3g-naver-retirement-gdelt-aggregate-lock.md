@@ -1,7 +1,7 @@
 # S1.3G Naver 퇴역과 GDELT aggregate 계약 고정
 
-상태: `APPROVED_CONTRACT_LOCK`  
-관련 Issue: #20  
+상태: `APPROVED_CONTRACT_LOCK`
+관련 Issue: #20
 승인 표식: `AUTH_NAVER_RETIREMENT_GDELT_AGGREGATE_CONTRACT=APPROVED`
 
 ## KR: 변경 이유

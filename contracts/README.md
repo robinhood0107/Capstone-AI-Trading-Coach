@@ -546,9 +546,37 @@ fingerprint 재실행은 existing mode/hash/content를 검증한 no-op이고 손
 event date가 미확정이면 `HOLD_UNTIL_EVENT_DATE_CONFIGURED`, 인용한 reportId는 최종 제출 완료까지
 pin한다. S1.5는 canonical Parquet이나 bundle을 자동 삭제하지 않는다.
 
-## S1.3 ECOS/Naver 내부 source snapshot
+## S1.3G Naver 퇴역과 GDELT aggregate active 계약
 
-S1.3은 public REST/gRPC를 추가하지 않는다. Decision Platform이 아래 sanitized JSON을 생성하고,
+2026-07-31부터 active 뉴스 권한은
+`changes/20260731-s1-3g-naver-retirement-gdelt-aggregate-lock.md`와
+`docs/adr/ADR-038-naver-retirement-gdelt-aggregate.md`를 따른다.
+
+```text
+NAVER_ACTIVE_PROVIDER_RUNTIME_STORAGE=RETIRED
+GDELT_PROVIDER_PHYSICAL_CALLS=0
+GDELT_ARTICLE_METADATA_STORAGE=0
+GDELT_DECISION_AUTHORITY=NONE
+GDELT_S5_FEATURE_ELIGIBLE=FALSE
+SECURITY_SCAN_TIMING=FINAL_CONSOLIDATED_CAMPAIGN
+```
+
+| 계약 | Producer | Future consumer | 권한 |
+|---|---|---|---|
+| `schemas/gdelt_news_tone_observation.v1.schema.json` | Decision Platform fixture-first aggregate producer | 저장된 sanitized observation reader | 설명 evidence only, `decisionAuthority=NONE` |
+| `schemas/news_sentiment_summary.v2.schema.json` | Decision Platform news sentiment aggregator | 별도 합의 뒤 Return Engine | `EXPLANATION_ONLY`, S5 feature 비활성 |
+
+두 schema는 `AVAILABLE | ABSTAIN` closed union이며 불완전한 데이터를 수치 0으로 바꾸지 않는다.
+GDELT 출처·프로젝트 URL·공식 About/Terms URL이 항상 있어야 하고 기사 본문·제목·URL·domain·
+article ID·raw query와 raw provider payload 저장을 거부한다. 실제 provider 호출은 별도 승인형
+후속 작업이며 현재 기본값과 이번 계약 wave의 physical call은 0이다. Naver boundary source card와
+exact-30 RAG corpus는 provider 결과가 아니므로 유지한다.
+
+## S1.3 ECOS/Naver 내부 source snapshot — HISTORICAL_SUPERSEDED
+
+아래 내용은 2026-07-16 당시의 감사 가능한 이력이며 신규 실행 권한이 아니다. Naver active
+provider/runtime/storage 권한은 S1.3G에서 퇴역했다. S1.3은 public REST/gRPC를 추가하지 않았다.
+당시 Decision Platform이 아래 sanitized JSON을 생성하고,
 Return Engine은 이후 합의된 `contracts/`·`artifacts/` handoff 경계에서 manifest를 검증해 소비한다.
 다른 workspace의 구현 파일이나 Decision Platform의 임의 로컬 경로를 직접 읽는 방식은 계약이 아니다.
 

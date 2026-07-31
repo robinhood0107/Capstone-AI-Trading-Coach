@@ -36,6 +36,26 @@ CREATE TABLE rag_source_public_topics (
 CREATE INDEX rag_source_public_topics_topic_source_idx
   ON rag_source_public_topics (public_topic, source_id);
 
+CREATE TABLE rag_source_exact_identifiers (
+  source_id text NOT NULL REFERENCES rag_sources(source_id) ON DELETE RESTRICT,
+  identifier text NOT NULL,
+  identifier_kind text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
+  CONSTRAINT rag_source_exact_identifiers_kind_check
+    CHECK (identifier_kind IN ('KIS_TR_ID', 'SYMBOL')),
+  CONSTRAINT rag_source_exact_identifiers_value_check
+    CHECK (
+      (identifier_kind = 'KIS_TR_ID' AND identifier ~ '^[A-Z][A-Z0-9]{7,15}$')
+      OR
+      (identifier_kind = 'SYMBOL' AND identifier ~ '^[0-9]{6}$')
+    ),
+  CONSTRAINT rag_source_exact_identifiers_pkey
+    PRIMARY KEY (source_id, identifier, identifier_kind),
+  CONSTRAINT rag_source_exact_identifiers_unique UNIQUE (identifier, identifier_kind)
+);
+CREATE INDEX rag_source_exact_identifiers_lookup_idx
+  ON rag_source_exact_identifiers (identifier, identifier_kind, source_id);
+
 -- 기존 V18 active candidate는 exact S4.7B identity와 immutable metadata hash가 맞을 때만
 -- VERIFIED sidecar로 승격한다. 다른 registry/version/source는 자동 backfill하지 않는다.
 WITH approved_cards(source_id, card_id) AS (
@@ -133,6 +153,7 @@ WITH approved_topics(source_id, public_topic) AS (
   ('src_project_kis_current_price_snapshot_001', 'API'),
   ('src_project_kis_current_price_snapshot_001', 'DATA'),
   ('src_project_kis_discovery_write_boundary_001', 'API'),
+  ('src_project_kis_discovery_write_boundary_001', 'METHODOLOGY'),
   ('src_project_kis_discovery_write_boundary_001', 'PRODUCT_RISK'),
   ('src_project_kis_market_calendar_001', 'API'),
   ('src_project_kis_market_calendar_001', 'DATA'),
@@ -142,6 +163,7 @@ WITH approved_topics(source_id, public_topic) AS (
   ('src_project_krx_etn_risk_indicator_001', 'PRODUCT_RISK'),
   ('src_project_krx_etn_risk_indicator_001', 'RISK'),
   ('src_project_krx_last_trading_settlement_001', 'DATA'),
+  ('src_project_krx_last_trading_settlement_001', 'METHODOLOGY'),
   ('src_project_krx_last_trading_settlement_001', 'PRODUCT_RISK'),
   ('src_project_krx_service_coverage_001', 'DATA'),
   ('src_project_mean_reversion_stationarity_001', 'METHODOLOGY'),
@@ -168,6 +190,21 @@ WITH approved_topics(source_id, public_topic) AS (
 INSERT INTO rag_source_public_topics (source_id, public_topic)
 SELECT approved.source_id, approved.public_topic
 FROM approved_topics AS approved
+JOIN rag_sources AS source
+  ON source.source_id = approved.source_id
+ AND source.source_type = 'PROJECT_SOURCE_CARD'
+ AND source.retired_at IS NULL
+ON CONFLICT DO NOTHING;
+
+WITH approved_identifiers(source_id, identifier, identifier_kind) AS (
+  VALUES
+    ('src_project_kis_current_price_snapshot_001', 'FHKST01010100', 'KIS_TR_ID'),
+    ('src_project_kis_adjusted_price_001', 'FHKST03010100', 'KIS_TR_ID'),
+    ('src_project_gold_futures_etf_132030_001', '132030', 'SYMBOL')
+)
+INSERT INTO rag_source_exact_identifiers (source_id, identifier, identifier_kind)
+SELECT approved.source_id, approved.identifier, approved.identifier_kind
+FROM approved_identifiers AS approved
 JOIN rag_sources AS source
   ON source.source_id = approved.source_id
  AND source.source_type = 'PROJECT_SOURCE_CARD'
@@ -284,6 +321,21 @@ BEGIN
     RAISE EXCEPTION 'RAG verified source-card public topic identity drifted'
       USING ERRCODE = '23514';
   END IF;
+
+  INSERT INTO public.rag_source_exact_identifiers (
+    source_id,
+    identifier,
+    identifier_kind
+  )
+  SELECT approved.source_id, approved.identifier, approved.identifier_kind
+  FROM (
+    VALUES
+      ('src_project_kis_current_price_snapshot_001', 'FHKST01010100', 'KIS_TR_ID'),
+      ('src_project_kis_adjusted_price_001', 'FHKST03010100', 'KIS_TR_ID'),
+      ('src_project_gold_futures_etf_132030_001', '132030', 'SYMBOL')
+  ) AS approved(source_id, identifier, identifier_kind)
+  WHERE approved.source_id = p_source_id
+  ON CONFLICT DO NOTHING;
   RETURN inserted_count;
 END
 $register_rag_verified_source_card$;
@@ -555,7 +607,21 @@ BEGIN
       ORDER BY
         CASE
           WHEN source.source_id = ANY(p_identifiers) THEN 0
-          ELSE 1
+          WHEN EXISTS (
+            SELECT 1
+            FROM public.rag_source_exact_identifiers AS exact_identifier
+            WHERE exact_identifier.source_id = source.source_id
+              AND exact_identifier.identifier = ANY(p_identifiers)
+              AND exact_identifier.identifier_kind = 'KIS_TR_ID'
+          ) THEN 1
+          WHEN EXISTS (
+            SELECT 1
+            FROM public.rag_source_exact_identifiers AS exact_identifier
+            WHERE exact_identifier.source_id = source.source_id
+              AND exact_identifier.identifier = ANY(p_identifiers)
+              AND exact_identifier.identifier_kind = 'SYMBOL'
+          ) THEN 2
+          ELSE 3
         END,
         membership.ordinal,
         convert_to(source.source_id, 'UTF8'),
@@ -635,13 +701,33 @@ BEGIN
       SELECT 1
       FROM unnest(p_identifiers) AS identifier
       WHERE source.source_id = identifier
+         OR EXISTS (
+           SELECT 1
+           FROM public.rag_source_exact_identifiers AS exact_identifier
+           WHERE exact_identifier.source_id = source.source_id
+             AND exact_identifier.identifier = identifier
+         )
          OR strpos(lower(revision.title), lower(identifier)) > 0
          OR strpos(lower(chunk.canonical_content), lower(identifier)) > 0
     )
   ORDER BY
     CASE
       WHEN source.source_id = ANY(p_identifiers) THEN 0
-      ELSE 1
+      WHEN EXISTS (
+        SELECT 1
+        FROM public.rag_source_exact_identifiers AS exact_identifier
+        WHERE exact_identifier.source_id = source.source_id
+          AND exact_identifier.identifier = ANY(p_identifiers)
+          AND exact_identifier.identifier_kind = 'KIS_TR_ID'
+      ) THEN 1
+      WHEN EXISTS (
+        SELECT 1
+        FROM public.rag_source_exact_identifiers AS exact_identifier
+        WHERE exact_identifier.source_id = source.source_id
+          AND exact_identifier.identifier = ANY(p_identifiers)
+          AND exact_identifier.identifier_kind = 'SYMBOL'
+      ) THEN 2
+      ELSE 3
     END,
     membership.ordinal,
     convert_to(source.source_id, 'UTF8'),
@@ -799,7 +885,7 @@ BEGIN
         AND topic.public_topic = ANY(claim.allowed_topics)
         AND topic.public_topic = ANY(p_topics)
     )
-    AND lexical.score > 0
+    AND lexical.score >= 0.05
   ORDER BY
     lexical.score DESC,
     membership.ordinal,
@@ -948,6 +1034,7 @@ BEGIN
         AND topic.public_topic = ANY(claim.allowed_topics)
         AND topic.public_topic = ANY(p_topics)
     )
+    AND embedding.embedding <=> p_query_embedding <= 0.55
   ORDER BY
     embedding.embedding <=> p_query_embedding,
     membership.ordinal,
@@ -971,6 +1058,7 @@ BEGIN
     REVOKE ALL PRIVILEGES ON TABLE
       rag_source_card_verifications,
       rag_source_public_topics,
+      rag_source_exact_identifiers,
       rag_retrieval_scope_claims
     FROM decision_app;
     REVOKE CREATE ON SCHEMA public FROM decision_app;
@@ -983,6 +1071,7 @@ BEGIN
     REVOKE ALL PRIVILEGES ON TABLE
       rag_source_card_verifications,
       rag_source_public_topics,
+      rag_source_exact_identifiers,
       rag_retrieval_scope_claims
     FROM decision_rag_writer;
     GRANT EXECUTE
@@ -1011,6 +1100,7 @@ BEGIN
     REVOKE ALL PRIVILEGES ON TABLE
       rag_source_card_verifications,
       rag_source_public_topics,
+      rag_source_exact_identifiers,
       rag_retrieval_scope_claims
     FROM decision_rag_admin;
   END IF;
@@ -1019,6 +1109,7 @@ BEGIN
     REVOKE ALL PRIVILEGES ON TABLE
       rag_source_card_verifications,
       rag_source_public_topics,
+      rag_source_exact_identifiers,
       rag_retrieval_scope_claims
     FROM decision_worker;
   END IF;

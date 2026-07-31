@@ -359,8 +359,11 @@ class EvidenceSufficiencyPolicy:
         scope: AuthorizedRetrievalScope,
         query: NormalizedRetrievalQuery,
         evidence: Sequence[RetrievalCandidate],
+        fusion: Sequence[FusedCandidate] = (),
     ) -> EvidenceDecision:
         if len({item.source_id for item in evidence}) < 2:
+            return EvidenceDecision(False, False, ())
+        if fusion and fusion[0].channel_count < 2 and fusion[0].exact_rank is None:
             return EvidenceDecision(False, False, ())
         if any(not _candidate_in_scope(scope, query, item) for item in evidence):
             return EvidenceDecision(False, False, ())
@@ -493,6 +496,7 @@ class AuthorizedHybridRetrieval:
             scope=scope,
             query=query,
             evidence=candidates,
+            fusion=fused,
         )
         if not decision.sufficient:
             return _failure(RetrievalFailureCode.INSUFFICIENT_EVIDENCE)

@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import mmap
 import os
 import stat
 from dataclasses import dataclass
@@ -44,6 +45,20 @@ OutputMode = Literal["LAST_HIDDEN_STATE_CLS", "POOLED_OUTPUT"]
 
 class BgeRuntimeError(ValueError):
     """BGE tokenizer/ONNX runtime 계약 위반을 payload나 원문 없이 보고한다."""
+
+
+@dataclass
+class _BgeOnnxMemorySnapshot:
+    """ORT session 생성 동안 경로 교체와 분리된 승인 graph/external-data bytes를 보유한다."""
+
+    model_bytes: bytes
+    external_names: tuple[str, ...]
+    external_buffers: tuple[mmap.mmap, ...]
+    external_lengths: tuple[int, ...]
+
+    def close(self) -> None:
+        for buffer in self.external_buffers:
+            buffer.close()
 
 
 @dataclass(frozen=True)
@@ -303,8 +318,8 @@ def validate_embedding_batch(
 def load_bge_onnx_embedder(packet_root: Path) -> BgeOnnxEmbedder:
     """검증된 packet에서만 ORT CPU session과 static tokenizer를 구성한다.
 
-    session thread 수를 각각 1로 고정해 PoC가 host 전체 CPU를 점유하지 않게 하고, model
-    directory는 호출자가 read-only로 전환한 뒤 사용한다.
+    graph와 참조된 external-data 파일을 O_NOFOLLOW descriptor에서 anonymous memory로 복사·재검증해
+    ORT에 bytes로 전달한다. session thread 수를 각각 1로 고정해 PoC의 CPU 점유도 제한한다.
     """
 
     try:
@@ -360,11 +375,28 @@ def load_bge_onnx_embedder(packet_root: Path) -> BgeOnnxEmbedder:
     session_options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
     session_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_BASIC
     session_options.enable_mem_pattern = False
-    session = ort.InferenceSession(
-        str(packet_root / "onnx/model.onnx"),
-        sess_options=session_options,
-        providers=["CPUExecutionProvider"],
-    )
+    try:
+        snapshot = _capture_onnx_memory_snapshot(
+            packet_root,
+            external_locations=graph_contract.external_data_locations,
+        )
+    except (BgeRuntimeError, OSError, ValueError, MemoryError) as error:
+        raise BgeRuntimeError("BGE_ONNX_SNAPSHOT_FAILED") from error
+    try:
+        session_options.add_external_initializers_from_files_in_memory(
+            snapshot.external_names,
+            snapshot.external_buffers,
+            snapshot.external_lengths,
+        )
+        session = ort.InferenceSession(
+            snapshot.model_bytes,
+            sess_options=session_options,
+            providers=["CPUExecutionProvider"],
+        )
+    except Exception as error:
+        raise BgeRuntimeError("BGE_ORT_SESSION_FAILED") from error
+    finally:
+        snapshot.close()
     output_names = tuple(item.name for item in session.get_outputs())
     if "sentence_embedding" in output_names:
         output_mode: OutputMode = "POOLED_OUTPUT"
@@ -401,6 +433,155 @@ def load_bge_onnx_embedder(packet_root: Path) -> BgeOnnxEmbedder:
         session=cast(BgeOnnxSessionPort, session),
         output_mode=output_mode,
     )
+
+
+def _capture_onnx_memory_snapshot(
+    packet_root: Path,
+    *,
+    external_locations: tuple[str, ...],
+) -> _BgeOnnxMemorySnapshot:
+    """native loader가 pathname을 재해석하지 않도록 exact 승인 파일을 stable memory로 복사한다."""
+
+    entries = {
+        entry.relative_path: entry
+        for entry in APPROVED_BGE_ARTIFACT_SPEC.files
+    }
+    model_entry = entries.get("onnx/model.onnx")
+    allowed_external_paths = {
+        "onnx/Constant_7_attr__value",
+        "onnx/model.onnx_data",
+    }
+    actual_external_paths = {f"onnx/{location}" for location in external_locations}
+    if (
+        model_entry is None
+        or not actual_external_paths
+        or not actual_external_paths.issubset(allowed_external_paths)
+        or any(path not in entries for path in actual_external_paths)
+    ):
+        raise BgeRuntimeError("BGE_ONNX_SNAPSHOT_CONTRACT")
+
+    model_bytes = _read_verified_snapshot_bytes(
+        packet_root / model_entry.relative_path,
+        expected_size=model_entry.size_bytes,
+        expected_sha256=model_entry.sha256,
+    )
+    names: list[str] = []
+    buffers: list[mmap.mmap] = []
+    lengths: list[int] = []
+    try:
+        for location in external_locations:
+            entry = entries[f"onnx/{location}"]
+            buffers.append(
+                _read_verified_snapshot_buffer(
+                    packet_root / entry.relative_path,
+                    expected_size=entry.size_bytes,
+                    expected_sha256=entry.sha256,
+                )
+            )
+            names.append(location)
+            lengths.append(entry.size_bytes)
+    except Exception:
+        for buffer in buffers:
+            buffer.close()
+        raise
+    return _BgeOnnxMemorySnapshot(
+        model_bytes=model_bytes,
+        external_names=tuple(names),
+        external_buffers=tuple(buffers),
+        external_lengths=tuple(lengths),
+    )
+
+
+def _read_verified_snapshot_bytes(
+    path: Path,
+    *,
+    expected_size: int,
+    expected_sha256: str,
+) -> bytes:
+    raw = bytearray()
+    digest = hashlib.sha256()
+    file_descriptor = _open_snapshot_source(path, expected_size=expected_size)
+    try:
+        while len(raw) < expected_size:
+            chunk = os.read(
+                file_descriptor,
+                min(4 * 1024 * 1024, expected_size - len(raw)),
+            )
+            if not chunk:
+                break
+            raw.extend(chunk)
+            digest.update(chunk)
+    finally:
+        os.close(file_descriptor)
+    if len(raw) != expected_size or digest.hexdigest() != expected_sha256:
+        raise BgeRuntimeError("BGE_ONNX_SNAPSHOT_IDENTITY")
+    return bytes(raw)
+
+
+def _read_verified_snapshot_buffer(
+    path: Path,
+    *,
+    expected_size: int,
+    expected_sha256: str,
+) -> mmap.mmap:
+    """외부 tensor 파일을 anonymous mapping으로 복사한 뒤 그 복사본의 exact digest를 검증한다."""
+
+    snapshot = mmap.mmap(-1, expected_size, access=mmap.ACCESS_WRITE)
+    digest = hashlib.sha256()
+    bytes_read = 0
+    file_descriptor = _open_snapshot_source(path, expected_size=expected_size)
+    try:
+        while bytes_read < expected_size:
+            chunk = os.read(
+                file_descriptor,
+                min(4 * 1024 * 1024, expected_size - bytes_read),
+            )
+            if not chunk:
+                break
+            snapshot.write(chunk)
+            digest.update(chunk)
+            bytes_read += len(chunk)
+    except Exception:
+        snapshot.close()
+        raise
+    finally:
+        os.close(file_descriptor)
+    if bytes_read != expected_size or digest.hexdigest() != expected_sha256:
+        snapshot.close()
+        raise BgeRuntimeError("BGE_ONNX_SNAPSHOT_IDENTITY")
+    snapshot.seek(0)
+    return snapshot
+
+
+def _open_snapshot_source(path: Path, *, expected_size: int) -> int:
+    try:
+        path_stat = path.lstat()
+    except FileNotFoundError as error:
+        raise BgeRuntimeError("BGE_ONNX_SNAPSHOT_SOURCE") from error
+    if (
+        not stat.S_ISREG(path_stat.st_mode)
+        or stat.S_ISLNK(path_stat.st_mode)
+        or path_stat.st_nlink != 1
+        or stat.S_IMODE(path_stat.st_mode) != 0o600
+        or path_stat.st_size != expected_size
+    ):
+        raise BgeRuntimeError("BGE_ONNX_SNAPSHOT_SOURCE")
+    flags = os.O_RDONLY | os.O_NOFOLLOW
+    if hasattr(os, "O_CLOEXEC"):
+        flags |= os.O_CLOEXEC
+    file_descriptor = os.open(path, flags)
+    descriptor_stat = os.fstat(file_descriptor)
+    if (
+        not stat.S_ISREG(descriptor_stat.st_mode)
+        or descriptor_stat.st_ino != path_stat.st_ino
+        or descriptor_stat.st_dev != path_stat.st_dev
+        or descriptor_stat.st_nlink != 1
+        or stat.S_IMODE(descriptor_stat.st_mode) != 0o600
+        or descriptor_stat.st_size != expected_size
+    ):
+        os.close(file_descriptor)
+        raise BgeRuntimeError("BGE_ONNX_SNAPSHOT_SOURCE")
+    return file_descriptor
 
 
 def load_pooling_mode(packet_root: Path) -> Literal["CLS"]:

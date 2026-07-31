@@ -30,6 +30,7 @@ _WRITER_OWNED_TABLES = (
     "rag_generation_chunks",
 )
 _FORBIDDEN_TABLES = (
+    "rag_chunk_embeddings",
     "rag_embedding_policy_state",
     "rag_embedding_policy_transitions",
     "rag_sources_v2_legacy",

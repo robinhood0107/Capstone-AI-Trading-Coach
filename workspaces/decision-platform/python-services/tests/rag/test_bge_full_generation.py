@@ -304,9 +304,10 @@ def test_activation_requires_parity_and_final_benchmark_before_admin_call() -> N
 
 
 def test_postgres_full_generation_uses_writer_reader_and_admin_boundaries(
-    postgres_cluster: dict[str, str],
+    isolated_postgres_cluster: dict[str, str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    postgres_cluster = isolated_postgres_cluster
     plan = prepare_bge_full_generation(
         corpus=load_frozen_source_card_corpus(),
         tokenizer=_WhitespaceTokenizer(),

@@ -1,0 +1,5 @@
+{
+  "action": "GRANT",
+  "consentType": "EXTERNAL_AI_RAG_V1",
+  "policyVersion": "EXTERNAL_AI_RAG_V1"
+}

@@ -1,0 +1,144 @@
+{
+  "$id": "contracts/schemas/s4-rag-history-detail.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "else": {
+        "properties": {
+          "answer": {
+            "type": "null"
+          },
+          "citations": {
+            "maxItems": 0
+          }
+        }
+      },
+      "if": {
+        "properties": {
+          "generationStatus": {
+            "const": "ANSWERED"
+          }
+        },
+        "required": [
+          "generationStatus"
+        ]
+      },
+      "then": {
+        "properties": {
+          "answer": {
+            "maxLength": 8192,
+            "minLength": 1,
+            "type": "string"
+          },
+          "citations": {
+            "minItems": 1
+          }
+        }
+      }
+    }
+  ],
+  "properties": {
+    "answer": {
+      "maxLength": 8192,
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "answerId": {
+      "pattern": "^rag_ans_[0-9a-f]{32}$",
+      "type": "string"
+    },
+    "answerMode": {
+      "enum": [
+        "CONCISE",
+        "DETAILED"
+      ]
+    },
+    "citations": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "canonicalUrl": {
+            "format": "uri",
+            "maxLength": 2048,
+            "pattern": "^https://",
+            "type": "string"
+          },
+          "citationId": {
+            "pattern": "^cit_[1-5]$",
+            "type": "string"
+          },
+          "sectionTitle": {
+            "maxLength": 512,
+            "minLength": 1,
+            "type": "string"
+          },
+          "sourceId": {
+            "pattern": "^src_project_[a-z0-9][a-z0-9_]*_[0-9]{3}$",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 300,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "citationId",
+          "sourceId",
+          "title",
+          "sectionTitle",
+          "canonicalUrl"
+        ],
+        "type": "object"
+      },
+      "maxItems": 5,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "createdAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "expiresAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "generationStatus": {
+      "enum": [
+        "ANSWERED",
+        "RETRIEVAL_ONLY",
+        "RETRIEVAL_FAILURE",
+        "BLOCKED_SENSITIVE",
+        "BLOCKED_ADVICE",
+        "GENERATION_UNAVAILABLE"
+      ]
+    },
+    "helpful": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "question": {
+      "maxLength": 1000,
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "answerId",
+    "createdAt",
+    "expiresAt",
+    "answerMode",
+    "generationStatus",
+    "helpful",
+    "question",
+    "answer",
+    "citations"
+  ],
+  "title": "S4.4 owner RAG history detail v1",
+  "type": "object"
+}

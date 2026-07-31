@@ -91,6 +91,12 @@ S4.0/S4.1/S4.7A는 source-card 계약과 정규화 RAG registry, owner-scoped so
 공식 근거 manifest와 안전한 로컬 입력 경계를 추가한다. S4.2+ generation runtime과
 provider/model/account/order physical call은 이 범위에 포함하지 않는다.
 
+S4.2A는 pinned local BGE ONNX artifact verifier와 공식 5-card PoC를 추가했고, S4.7B는
+v1을 변경하지 않는 source-card v2 union과 project-authored exact 30 corpus를 동결한다.
+30-card manifest는 금융공학 15개·공식자료/API 15개만 포함하며 upstream reference-only
+20개와 원문 payload는 제외한다. S4.2B full generation과 이후 retrieval/answer runtime은
+각 후속 세션 gate를 통과하기 전까지 활성화하지 않는다.
+
 ```bash
 cp .env.example .env
 # DB/Redis, collector/source-writer/RAG writer/query password, JWT issuer/audience,

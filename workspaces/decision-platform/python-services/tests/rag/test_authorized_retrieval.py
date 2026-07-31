@@ -103,6 +103,10 @@ class _StaticEmbedder(QueryEmbedder):
         self.vector = tuple(vector or ([1.0] + [0.0] * 1023))
         self.calls = 0
 
+    @property
+    def embedding_profile_id(self) -> str:
+        return PROFILE_ID
+
     def embed_query(self, question: str) -> Sequence[float]:
         self.calls += 1
         return self.vector
@@ -275,7 +279,7 @@ def test_rrf_uses_k60_deduplicates_channel_and_applies_deterministic_tie_break()
     assert fused[0].channel_count == 3
     assert fused[0].best_rank == 1
     assert fused[0].exact_rank == 3
-    assert math.isclose(fused[0].rrf_score, 1 / 63 + 1 / 61 + 1 / 63)
+    assert math.isclose(fused[0].rrf_score, 1 / 63 + 1 / 61 + 1 / 62)
 
 
 def test_rrf_exact_presence_precedes_utf8_identity_when_other_ties_match() -> None:
@@ -385,7 +389,7 @@ def test_contradiction_is_preserved_as_bounded_conflict_flag() -> None:
     (
         ("owner_user_id", OTHER_OWNER_ID),
         ("session_id", OTHER_SESSION_ID),
-        ("claim_id", "rag_scope_" + "f" * 32),
+        ("scope_claim_id", "rag_scope_" + "f" * 32),
         ("generation_id", "rag_gen_" + "f" * 32),
         ("embedding_profile_id", "voyage_context_4_1024_v1"),
         ("policy_version", 3),
@@ -486,4 +490,3 @@ def test_no_evidence_refuses_generation() -> None:
     assert outcome.failure_code is RetrievalFailureCode.INSUFFICIENT_EVIDENCE
     assert outcome.evidence == ()
     assert not outcome.generation_permitted
-

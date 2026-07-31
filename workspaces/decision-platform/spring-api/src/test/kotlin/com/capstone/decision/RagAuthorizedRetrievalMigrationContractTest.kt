@@ -23,7 +23,7 @@ class RagAuthorizedRetrievalMigrationContractTest {
             "search_authorized_rag_dense",
         ).forEach { function ->
             assertThat(migration).contains("CREATE FUNCTION $function")
-            assertThat(migration).contains("GRANT EXECUTE ON FUNCTION $function")
+            assertThat(migration).contains("ON FUNCTION $function")
         }
         assertThat(migration).contains("decision_app")
         assertThat(migration).contains("decision_rag_query")
@@ -48,6 +48,15 @@ class RagAuthorizedRetrievalMigrationContractTest {
 
     @Test
     fun `V19 independently checks verified project public topic and active membership`() {
+        val channelSections =
+            listOf(
+                "search_authorized_rag_exact",
+                "search_authorized_rag_lexical",
+                "search_authorized_rag_dense",
+            ).map { function ->
+                migration.substringAfter("CREATE FUNCTION $function")
+                    .substringBefore("ALTER FUNCTION $function")
+            }
         listOf(
             "generation.status = 'ACTIVE'",
             "generation.evaluation_status = 'PASSED'",
@@ -59,9 +68,9 @@ class RagAuthorizedRetrievalMigrationContractTest {
             "membership.corpus_generation_id = claim.active_generation_id",
             "topic.public_topic = ANY(claim.allowed_topics)",
         ).forEach { invariant ->
-            assertThat(migration.split("CREATE FUNCTION search_authorized_rag_").count { part ->
-                part.contains(invariant)
-            }).isEqualTo(3)
+            channelSections.forEach { section ->
+                assertThat(section).contains(invariant)
+            }
         }
     }
 

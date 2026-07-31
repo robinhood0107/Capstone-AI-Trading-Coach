@@ -1247,6 +1247,19 @@ RAG는 v1 핵심 구현이다. 단, RAG 답변은 매수/매도 지시가 아니
 > S4.4G는 내부 approval packet schema, usage state, mock transport와 fail-closed validator만
 > 구현한다. public ask/answer/history/OpenAPI field 변경은 0이며 fresh provider 승인과 paid
 > ZDR evidence가 없으므로 provider physical call, generation materialization과 activation은 0이다.
+>
+> S4.6 구현 기준(2026-08-01): `capstone.decision.v1.RagService.Ask` unary proto와
+> canonical descriptor를 Python/JVM이 공유한다. Spring은 owner consent 확인 뒤
+> rate limit·idempotency claim을 수행하고, 신규 claim에서만 짧은 수명의 opaque
+> retrieval scope를 발급해 numeric loopback Python RPC를 한 번 호출한다. Python은
+> local privacy/advice/injection guard, S4.5 fixture RRF·citation parser만 실행한다.
+> Spring은 request/generation/profile/policy, authorized top-5 subset, citation identity,
+> provider physical count 0을 다시 검증하고 DB owner/topic/active-generation recheck와
+> encrypted history atomic complete가 모두 성공한 뒤만 public response를 반환한다.
+> gRPC deadline은 15초, Spring read budget은 17초, request/response는 64KiB/256KiB,
+> retry 0, reflection false다. JWT·API key·owner ID·account/order·history ciphertext는 proto에 없다.
+> `RAG_GRPC_ENABLED=false`는 기존 S4.4 retrieval-only compatibility mode이며, true는
+> same-deployment Python process와 shared secret이 준비된 경우에만 사용한다.
 
 ### 7.1 RAG 질문
 

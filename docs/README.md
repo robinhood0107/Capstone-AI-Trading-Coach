@@ -25,6 +25,9 @@
 - 기존 Decision/RAG/Signal v1/v2 payload 추가 필드는 0이고 새 framework·cloud·Kafka hard
   dependency를 만들지 않는다.
 - provider/live account/live order 호출은 승인 packet 없이는 항상 0이다.
+- S1.3G active 뉴스 authority는 Naver provider/runtime/storage를 퇴역시키고 GDELT의
+  aggregate-only synthetic fixture 계약을 사용한다. 기사 metadata 저장, RiskDecision/hash/order
+  권한, S5 feature 주입은 모두 0이며 실제 GDELT 호출은 별도 승인 전까지 0이다.
 
 S4부터 P1 종료까지의 공개 방향과 교차시장 역할·검증 순서는
 [최종 프로젝트 명세서](최종_프로젝트_명세서.md),
@@ -42,6 +45,8 @@ authority이며 공개 문서에는 전체 목록을 복제하지 않는다.
 | [최종_프로젝트_명세서.md](최종_프로젝트_명세서.md) | 프로젝트 전체 명세 — 방향, 시스템 구조, 모노레포 설계, 역할분담, 팀별 축소 계획(18.A) |
 | [API_명세서.md](API_명세서.md) | Decision Platform API 전체 명세 — REST/gRPC 계약, 오류 코드, fail-closed 정책 |
 | [S4 RAG profile/policy 결정 기록](../contracts/changes/20260729-s4-rag-contract-catalog.md) | 정확히 두 embedding profile, 세 policy, public model 선택 금지와 negative fixture |
+| [ADR-038](adr/ADR-038-naver-retirement-gdelt-aggregate.md) | Naver active 뉴스 경계 퇴역, GDELT aggregate-only ownership와 ABSTAIN 권한 결정 |
+| [S1.3G 뉴스 계약 잠금](../contracts/changes/20260731-s1-3g-naver-retirement-gdelt-aggregate-lock.md) | GDELT observation/news summary v2, 기사 metadata 저장 0, 판단 권한 없음 |
 | [S0_2_P0_계약_통합_필드명_결정.md](S0_2_P0_계약_통합_필드명_결정.md) | S0.2 P0 contracts 통합 기준 — order intent, signal artifact/API view, HMM regime, Return Engine export 필드명 결정 |
 | [decision-platform/S1_2_OpenDART_공시위험점수_근거.md](decision-platform/S1_2_OpenDART_공시위험점수_근거.md) | S1.2 OpenDART 점수와 S1.6 offline state/quota/privacy 경계 — 공식 endpoint, 점수 한계, 신뢰성 단계 |
 | [중간보고서_작성용_초기설계.md](중간보고서_작성용_초기설계.md) | 중간보고서 작성 가이드 — 문장/표/그림 초안, RISE 심사기준 대응 |

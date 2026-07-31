@@ -1,0 +1,291 @@
+{
+  "$id": "contracts/schemas/gdelt_news_tone_observation.v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "else": {
+        "not": {
+          "required": [
+            "points"
+          ]
+        },
+        "properties": {
+          "sourceCompleteness": {
+            "enum": [
+              "EMPTY",
+              "MALFORMED",
+              "PARTIAL",
+              "UNAVAILABLE"
+            ]
+          }
+        },
+        "required": [
+          "abstainReason"
+        ]
+      },
+      "if": {
+        "properties": {
+          "status": {
+            "const": "AVAILABLE"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "then": {
+        "not": {
+          "required": [
+            "abstainReason"
+          ]
+        },
+        "properties": {
+          "sourceCompleteness": {
+            "const": "COMPLETE"
+          }
+        },
+        "required": [
+          "points"
+        ]
+      }
+    },
+    {
+      "else": {
+        "properties": {
+          "approvalPacketHash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "physicalAttemptCount": {
+            "const": 1
+          }
+        }
+      },
+      "if": {
+        "properties": {
+          "collectionMode": {
+            "const": "OFFLINE_FIXTURE"
+          }
+        },
+        "required": [
+          "collectionMode"
+        ]
+      },
+      "then": {
+        "properties": {
+          "approvalPacketHash": {
+            "type": "null"
+          },
+          "physicalAttemptCount": {
+            "const": 0
+          }
+        }
+      }
+    }
+  ],
+  "properties": {
+    "abstainReason": {
+      "enum": [
+        "EMPTY_WINDOW",
+        "INCOMPLETE_SOURCE",
+        "INVALID_RESPONSE",
+        "MAPPING_AMBIGUOUS",
+        "NORM_ZERO",
+        "PROVIDER_DISABLED"
+      ]
+    },
+    "approvalPacketHash": {
+      "oneOf": [
+        {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "articleMetadataStored": {
+      "const": false
+    },
+    "artifactHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "attribution": {
+      "additionalProperties": false,
+      "properties": {
+        "citation": {
+          "const": "The GDELT Project"
+        },
+        "projectUrl": {
+          "const": "https://www.gdeltproject.org/"
+        },
+        "provider": {
+          "const": "GDELT"
+        },
+        "termsUrl": {
+          "const": "https://www.gdeltproject.org/about.html"
+        }
+      },
+      "required": [
+        "provider",
+        "citation",
+        "projectUrl",
+        "termsUrl"
+      ],
+      "type": "object"
+    },
+    "availableAt": {
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{1,6})?Z$",
+      "type": "string"
+    },
+    "collectionMode": {
+      "enum": [
+        "APPROVED_ONLINE",
+        "OFFLINE_FIXTURE"
+      ]
+    },
+    "decisionAuthority": {
+      "const": "NONE"
+    },
+    "modes": {
+      "maxItems": 2,
+      "minItems": 2,
+      "prefixItems": [
+        {
+          "const": "TIMELINE_TONE"
+        },
+        {
+          "const": "TIMELINE_VOL_RAW"
+        }
+      ],
+      "type": "array"
+    },
+    "observationId": {
+      "maxLength": 96,
+      "minLength": 8,
+      "pattern": "^gdelt_obs_[a-z0-9][a-z0-9_-]+$",
+      "type": "string"
+    },
+    "observedAt": {
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{1,6})?Z$",
+      "type": "string"
+    },
+    "physicalAttemptCount": {
+      "maximum": 1,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "points": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "articleCount": {
+            "maximum": 1000000000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "averageTone": {
+            "maximum": 100,
+            "minimum": -100,
+            "type": "number"
+          },
+          "coverageRatio": {
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          "norm": {
+            "maximum": 10000000000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "timestamp": {
+            "format": "date-time",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{1,6})?Z$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "timestamp",
+          "averageTone",
+          "articleCount",
+          "norm",
+          "coverageRatio"
+        ],
+        "type": "object"
+      },
+      "maxItems": 512,
+      "minItems": 1,
+      "type": "array"
+    },
+    "queryRegistryId": {
+      "maxLength": 64,
+      "minLength": 3,
+      "pattern": "^[a-z][a-z0-9_]+_v[0-9]+$",
+      "type": "string"
+    },
+    "rawProviderDataStored": {
+      "const": false
+    },
+    "receivedAt": {
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{1,6})?Z$",
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": "1"
+    },
+    "sourceCompleteness": {
+      "enum": [
+        "COMPLETE",
+        "EMPTY",
+        "MALFORMED",
+        "PARTIAL",
+        "UNAVAILABLE"
+      ]
+    },
+    "status": {
+      "enum": [
+        "ABSTAIN",
+        "AVAILABLE"
+      ]
+    },
+    "windowEnd": {
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{1,6})?Z$",
+      "type": "string"
+    },
+    "windowStart": {
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{1,6})?Z$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "observationId",
+    "queryRegistryId",
+    "status",
+    "decisionAuthority",
+    "collectionMode",
+    "physicalAttemptCount",
+    "approvalPacketHash",
+    "windowStart",
+    "windowEnd",
+    "observedAt",
+    "receivedAt",
+    "availableAt",
+    "sourceCompleteness",
+    "modes",
+    "rawProviderDataStored",
+    "articleMetadataStored",
+    "attribution",
+    "artifactHash"
+  ],
+  "type": "object"
+}

@@ -37,6 +37,14 @@
 > `6f439155d9f5ec626fc185f29f2e0bd64ca54780`, S1.3K KRX 내부 collector는 PR #17 merge
 > commit `814aab377251d76672566d39c3edb379d132248e`으로 `main`에 병합됐다. 두 트랙은 public
 > REST/gRPC가 아니라 아래에 명시한 내부 artifact/CLI 경계만 구현 완료 상태다.
+> 이 Naver 문단은 당시 완료 evidence이며 신규 실행 권한이 아니다.
+>
+> S1.3G active 뉴스 API/contract authority(2026-07-31):
+> `NAVER_ACTIVE_PROVIDER_RUNTIME_STORAGE=RETIRED`, `GDELT_PROVIDER_PHYSICAL_CALLS=0`,
+> `GDELT_ARTICLE_METADATA_STORAGE=0`, `GDELT_DECISION_AUTHORITY=NONE`,
+> `GDELT_S5_FEATURE_ELIGIBLE=FALSE`다. 실제 provider outbound는 별도 승인이 필요하고,
+> 이번 통합 보안 검사는 `SECURITY_SCAN_TIMING=FINAL_CONSOLIDATED_CAMPAIGN`으로 모든
+> offline 구현과 일반 gate 완료 뒤 실행한다.
 
 ---
 
@@ -53,7 +61,7 @@ flowchart LR
   GRPC --> RETURN["Return Engine: LSTM/Rule Baseline/Backtest"]
   GRPC --> DECISION_MODEL["Decision Model: LightGBM/HMM/FE Calculators"]
   GRPC --> KIS["KIS Adapter"]
-  GRPC --> DATA["KIS/OpenDART/ECOS/Naver + optional GDELT"]
+  GRPC --> DATA["KIS/OpenDART/ECOS + fixture-first GDELT aggregate"]
   KIS --> MOCK["KIS Mock"]
   KIS -. 후순위 .-> LIVE["KIS Live"]
 ```
@@ -1224,7 +1232,7 @@ canonical domain이다.
 
 ## 7. RAG API
 
-RAG는 v1 핵심 구현이다. 단, RAG 답변은 매수/매도 지시가 아니라 근거 기반 설명으로 제한한다. 런타임 RAG corpus는 공식자료, 공시/API 문서, 프로젝트 산출물, 금융공학 source card로 제한한다. 뉴스 원문 전체는 RAG corpus에 포함하지 않고, Return Engine이 만든 `news_sentiment_summary` artifact만 설명 근거로 연결한다.
+RAG는 v1 핵심 구현이다. 단, RAG 답변은 매수/매도 지시가 아니라 근거 기반 설명으로 제한한다. 런타임 RAG corpus는 공식자료, 공시/API 문서, 프로젝트 산출물, 금융공학 source card로 제한한다. 뉴스 원문과 기사 metadata는 RAG corpus에 포함하지 않고, Decision Platform이 만든 검증된 `news_sentiment_summary.v2`만 설명 근거 후보로 연결한다.
 
 > S4.4 구현 기준(2026-07-31): 아래 ask·feedback·history·consent 계약은
 > `FIXTURE_ONLY` answerer, owner-scoped PostgreSQL functions, Redis rate limit,
@@ -1509,7 +1517,10 @@ fixture가 승인되기 전 이 route를 runtime에 연결하지 않는다.
 
 `GET /api/v1/signals/{symbol}/news-sentiment-summary?asOf=2026-06-23`
 
-이 API는 RAG가 뉴스 원문 전체를 직접 ingest하지 않도록 Return Engine이 만든 요약 artifact를 제공한다. RAG는 이 artifact를 출처와 함께 설명하지만, 뉴스만으로 매수/매도 결정을 수행하지 않는다.
+이 planned API는 RAG가 뉴스 원문·기사 metadata를 ingest하지 않도록 Decision Platform이 만든
+aggregate-only v2 artifact를 제공한다. Return Engine 소비는 별도 cross-workspace 구현 뒤에만
+가능하고, RAG는 검증된 artifact를 설명 근거로만 사용한다. 현재 runtime route는 아직 게시하지
+않으며 뉴스만으로 매수/매도 결정을 수행하지 않는다.
 
 응답:
 
@@ -1517,32 +1528,27 @@ fixture가 승인되기 전 이 route를 runtime에 연결하지 않는다.
 {
   "success": true,
   "data": {
-    "artifactId": "news_sum_005930_20260623",
+    "artifactId": "news_sum_005930_20260731",
     "symbol": "005930",
-    "asOf": "2026-06-23T15:30:00+09:00",
-    "sentimentScore": 0.14,
-    "articleCount": 18,
-    "conflictFlag": false,
-    "summary": "최근 3일간 반도체 업황 회복 기대 기사와 단기 차익실현 우려 기사가 함께 관측되었으며, 종합 감성은 약한 긍정으로 분류되었다.",
-    "representativeSources": [
-      {
-        "title": "반도체 업황 회복 기대",
-        "url": "https://example.com/news/1",
-        "publishedAt": "2026-06-23T09:10:00+09:00",
-        "sentimentLabel": "POSITIVE"
-      },
-      {
-        "title": "단기 차익실현 우려",
-        "url": "https://example.com/news/2",
-        "publishedAt": "2026-06-22T14:20:00+09:00",
-        "sentimentLabel": "NEGATIVE"
-      }
-    ],
-    "ragUsage": {
-      "ingestMode": "ARTIFACT_ONLY",
-      "rawNewsCorpusStored": false,
-      "allowedUse": "EXPLANATION_ONLY"
-    }
+    "schemaVersion": "2",
+    "status": "AVAILABLE",
+    "asOf": "2026-07-31T00:00:02Z",
+    "availableAt": "2026-07-31T00:00:03Z",
+    "sentimentScore": -0.1875,
+    "attentionScore": 0.0001625,
+    "articleCount": 39,
+    "qualityStatus": "COMPLETE",
+    "attribution": {
+      "citation": "The GDELT Project",
+      "projectUrl": "https://www.gdeltproject.org/",
+      "termsUrl": "https://www.gdeltproject.org/about.html"
+    },
+    "allowedUses": ["EXPLANATION_ONLY"],
+    "decisionAuthority": "NONE",
+    "riskDecisionHashIncluded": false,
+    "s5FeatureEligible": false,
+    "rawProviderDataStored": false,
+    "articleMetadataStored": false
   }
 }
 ```
@@ -1551,11 +1557,13 @@ fixture가 승인되기 전 이 route를 runtime에 연결하지 않는다.
 
 | 필드 | 규칙 |
 |---|---|
-| `sentimentScore` | -1에서 1 사이 값 |
-| `articleCount` | 집계 기사 수. 0이면 `DATA_INSUFFICIENT` 경고 |
-| `conflictFlag` | 긍정/부정 대표 출처가 동시에 강할 때 true |
-| `representativeSources` | 원문 전체 저장이 아니라 URL/제목/시각/라벨 metadata |
-| `ragUsage.rawNewsCorpusStored` | v1에서는 항상 false |
+| `status` | 완전한 aggregate는 `AVAILABLE`, incomplete/missing은 numeric field 없이 `ABSTAIN` |
+| `sentimentScore` | `AVAILABLE`에서만 -1에서 1 사이 finite 값. 실패를 0으로 만들지 않음 |
+| `articleCount` | `AVAILABLE`에서만 집계 기사 수 |
+| `attribution` | `The GDELT Project`, project URL, 공식 About/Terms URL 필수 |
+| `decisionAuthority` | 항상 `NONE`; RiskDecision/hash/order에 영향 없음 |
+| `s5FeatureEligible` | 별도 조건부 feature group gate 전까지 항상 false |
+| `rawProviderDataStored`, `articleMetadataStored` | 항상 false |
 
 ### 8.3 Signal API 해석 규칙
 
@@ -2821,7 +2829,7 @@ service MarketDataService {
 
 > S1.3 가용성(2026-07-16): 위 `GetNewsSummary`와 `GetMacroSnapshot`은 미래 interface
 > sketch이며 현재 proto/controller가 없어 **호출 불가**다. S1.3은 아래 내부 file artifact만
-> 생산한다. `GetNewsSummary`는 Naver provider 응답이 아니라 Return Engine이 생성할 감성 요약
+> 생산한다. `GetNewsSummary`는 Naver provider 응답이 아니라 Decision Platform이 생성할 v2 감성 요약
 > 계약을 뜻하며, 두 RPC를 공개하려면 별도의 `contracts/changes/`와 인증·인가 구현이 필요하다.
 > 아래 lower-only batch/retry, strict CLI와 JSON Schema를 구현하고 PR #16 merge commit
 > `6f439155d9f5ec626fc185f29f2e0bd64ca54780`으로 `main`에 병합했다. Approval A1·A2·A3는
@@ -2834,6 +2842,10 @@ service MarketDataService {
 > `approval-b1-23618d21265d-20260715T072151Z`를 실행 HEAD `23618d21265d`에서 ECOS
 > physical `2`·Redis `+2`, Naver physical `1`·Redis `+1`로 성공했다. B1 evidence SHA는
 > `ecb62e114352439994fa799096a916757ba7fba081f08f1d1b78ec35397d85fb`다.
+
+> **HISTORICAL_SUPERSEDED:** 위 Naver 항목과 아래 Naver 표는 당시 성공 run의 감사 기록이며
+> 신규 실행 권한이 아니다. active provider/runtime/storage는 ADR-038과 S1.3G 계약에서
+> 퇴역했다. ECOS 계약은 계속 active다.
 
 S1.3 내부 source snapshot 계약은 다음과 같다.
 
@@ -3175,7 +3187,7 @@ service SourceRegistryService {
 
 | 세션/트랙 | API/RPC 보안 계약 |
 |---|---|
-| S1.3 | ECOS/Naver는 내부 fixed-origin collector만 호출한다. static credential은 private transport가 send 순간에 env에서 읽고 공개 settings/business client/API에 두지 않는다. TLS 검증을 강제하고 redirect·ambient proxy/`.netrc`·caller proxy/CA/절대 URL·인증성 parameter override를 금지한다. bytes/JSON depth/list/text/date/query/symbol/call cap을 검증한다. Naver title/description은 active HTML/control을 제거한 plain text로 저장하고 consumer가 output escape한다. 기사 link는 표시 metadata일 뿐 backend fetch 대상이 아니며 userinfo/control/private·link-local host를 거부하고 query credential을 제거한다. canonical `queries` 길이와 manifest `queryCount`의 `1..4` 일치를 검증한다. stable 로그에는 `source`·`operation`·allowlisted `code`만 남기고 ECOS path key는 URL/log/exception/fingerprint/artifact에서 제거한다. 출력은 ignored root의 versioned sanitized snapshot artifact와 manifest/hash/asOf로 한정하고 dirfd+`O_NOFOLLOW`+exclusive create, mode `0600`을 적용한다. S1.3에는 DB write를 추가하지 않는다. source별 양의 `retentionDays`와 삭제 owner가 승인되지 않으면 persistent snapshot/online write를 열지 않는다. Decision/팀원 B 경로는 이 snapshot만 읽는다. GDELT는 팀원 B optional enrichment이며 blocker가 아니다 |
+| S1.3 / S1.3G | ECOS fixed-origin collector와 secure artifact는 active다. Naver metadata collector·credential·retention 설명은 historical audit이며 신규 authority가 아니다. GDELT는 fixture-first bounded aggregate만 허용하고 기사 metadata/raw payload 저장을 거부한다. incomplete/missing은 `ABSTAIN`, 판단 권한과 S5 feature 권한은 0이며 actual outbound는 새 승인 전 0이다 |
 | S1.3K (offline·live 검증 완료) | KRX private transport는 exact HTTPS origin과 `stk_bydd_trd`/`ksq_bydd_trd` GET만 허용하고 `AUTH_KEY`를 send 직전에만 부착한다. caller origin/path/auth/proxy/CA/transport override, ambient proxy/`.netrc`, redirect, response echo를 거부한다. byte/depth/list/text/row/numeric/date 상한과 exact `BAS_DD`, KRX source `[0-9A-Z]{6}`, KIS/Naver manifest `[0-9]{6}`, nonnegative int64, duplicate 금지를 검증한다. 영문 issue code는 source hash에 남기되 manifest 후보에서는 제외한다. 단일 probe도 같은 private transport·strict parser를 사용하고 파일을 쓰지 않는다. 공식 hard cap보다 낮은 Redis rolling-24h 9,000을 유지하며 probe/full 각 프로세스 cap은 `1/1/2`, retry `0`이다. KRX1~5/KRX8/KRX10 실패와 KRX6/7/9 만료 evidence는 성공 회계와 분리한다. timeout은 probe `120/130초`, full `120/260초`다. KRX11은 physical `4`, Redis `4→8`, retry·추가 호출 `0`으로 두 시장 strict parse와 ignored manifest/report 원자 게시를 실제 통과했다. raw provider 정보는 저장하지 않으며 public API·DB·S1.6 calendar는 변경하지 않는다 |
 | S1.4 | 계산 request의 배열·기간·숫자 finite/상하한, deadline, 동시 실행과 output 크기를 제한한다. 계산 오류·NaN·timeout은 주문 허용값이 아니다 |
 | S1.5 | Data Quality Report API/산출물은 finite/missing/duplicate aggregate와 sanitized sample만 제공한다. provider raw/query/credential/token/account/PII를 report·로그·metric에 넣지 않고 상세 ignored artifact에는 retention을 적용한다 |
@@ -3225,11 +3237,11 @@ API/adapter/parser/storage 변경 커밋은 기능 단위로 분리한다. 테�
 | KIS retry | routing 오류 GET 1회 다음 슬롯 재호출, `EGW00201`/429 재시도 0회, 주문성 호출 자동 재시도 0회 |
 | KIS backfill | 같은 parquet 기간 두 번째 실행의 daily outbound 0건, 양 끝 누락 범위만 조회 |
 | KIS WebSocket 계획 수용 | 두 번째 session·42번째 합산 등록 사전 거부, 중복 dedupe, Approval 동시 miss 1회, reconnect ledger 복원(S3/P2 구현 시 활성) |
-| S1.3 Naver batch/snapshot | 기본 4, 1·4 성공, 0·5 거부, selection/cursor/deferred 결정성과 snapshot `queries`/manifest `queryCount` 일치 검증 |
+| S1.3 Naver batch/snapshot — historical | 과거 계약 회귀 evidence만 보존하며 active runtime 제거 뒤 신규 실행 대상이 아님 |
 | S1.3 retry/strict CLI | attempts 기본 2·smoke 1·preflight hard 1, setting 1에서 두 번째 send 0회, 첫 failed/empty/deferred 뒤 후속 호출·incomplete publish 0회, exit `0/1/2/3` 검증 |
 | S1.3 ECOS ItemList identity | 동일 stat/item의 `A/D/M/Q` 중 요청 `D`만 선택, 동일 cycle의 `Group1..4` 중 `Group1`만 선택, 행 순서 불변, 요청 주기 0건·완전 identity 2건·malformed group/cycle fail-closed와 진단값 비노출을 검증 |
-| S1.3 sanitized failure | Naver 11개 allowlist exact line, ECOS `sanitizedPreflight.diagnostic` allowlist/stage/reason/context, unknown exception의 diagnostic 생략, canonical one-line JSON·deterministic SHA와 path-key 비노출을 검증한다. credential·provider message·raw field·traceback은 log/exception/fingerprint/artifact에 없어야 하고, credential/query가 포함된 provider request URL과 auth/header는 모든 관측 경계에서 금지한다. 정규화된 기사 metadata URL과 고정 provenance URL은 canonical artifact에서만 허용한다 |
-| S1.3 transport/URL/storage | credential echo, ambient proxy/`.netrc`, redirect, TLS false, caller proxy/CA/transport override, origin/endpoint bypass, bounded JSON stage, exact `StatisticSearch` raw path/trailing slash/query 생략, Naver quota reservation/physical handoff 분리, oversize/depth/list/text, URL userinfo/control/private-host/query credential, 기사 DNS/GET/HEAD, symlink/overwrite를 offline fixture/mock으로 회귀 검증 |
+| S1.3 sanitized failure — historical Naver / active ECOS | 과거 Naver allowlist evidence는 보존하되 active regression은 ECOS credential·provider message·raw field·traceback 비노출을 계속 검증한다 |
+| S1.3G GDELT fixture/parser/storage | aggregate unknown field·article metadata·NaN/Infinity·partial/future/inverted timestamp를 fail-closed하고 exact attribution, no-zero ABSTAIN, raw/article storage 0을 검증한다 |
 | S1.3 online smoke | A1/A2/A3는 실패 evidence로 분리한다. A4는 physical `4`·Redis `+4`로 성공했고 `semantic-3bb3810728cf` 의미 승인 뒤 exact full-tuple registry를 활성화했다. 단일 필드 mismatch는 client/provider 0건으로 차단한다. 실제 KRX audit·`naver-policy-23618d21265d-20260715T064502Z`·원격 green 뒤 B1 `approval-b1-23618d21265d-20260715T072151Z`를 exact 승인받아 ECOS `D-29..D` physical `2`·Redis `+2`와 Naver rank-1 `display=10` physical `1`·Redis `+1`을 원자적으로 성공했다. accepted set은 A4+B1 evidence의 ECOS `6`+Naver `1`=`7` attempts만 포함하고 실패 run과 lifetime 호출을 합산하지 않으며, timeout/invalid key live negative injection은 수행하지 않음 |
 | S1.3K catalog/parser/ranking (offline 통과) | 공식 7분류·31 API ID가 NOW 2/NEXT 7/LATER 13/EXCLUDE 9로 정확히 분류되고 NOW 외 ID는 client/provider 0건임을 검증한다. official-shape sanitized fixture에서 exact date/market, KRX `[0-9A-Z]{6}` issue code와 lowercase·공백·Unicode 거부, KIS manifest 숫자 6자리 guard, digit-only nonnegative int64, `-` 정규화, duplicate/empty/oversize/malformed를 검증한다. 영문 issue code가 전체 canonical hash에는 포함되고 numeric-positive top-30에서는 제외되는지와 KOSPI+KOSDAQ 정렬·hash 결정성을 확인함 |
 | S1.3K transport/quota/storage (offline 통과) | final send에서만 AUTH_KEY 부착·종료 후 제거, fixed-origin/GET/JSON/TLS 1.2+, redirect·ambient/caller override 거부, credential/provider echo 비노출과 공식 5,000행 credential scan 경계를 검증한다. Redis 장애 outbound 0, credential 실패 시 reservation `+1`/physical `0`, quota wait 재예약·deadline 차단, full refresh 2 reservation/2 handoff, no-refund와 retry 0을 확인한다. timeout `2/120/2/1초`, probe logical `130초`, full shared logical `260초`, lower-only override와 상한 초과/boolean 거부, 첫 endpoint가 130초를 소비해도 둘째 read 120초를 확보함을 검증한다. probe는 exact service 하나·reservation/handoff `1`·ordinal `1`·파일 write `0`, cleanup-before-complete·deterministic safe-row SHA·untrusted diagnostic 비노출을 검증한다. 기존 첫 endpoint 실패 시 둘째 send `0`, 둘째 endpoint 실패 시 ordinal `2`/physical `2`, 두 시장 성공 뒤 report→manifest 0600 fsync+atomic replace 계약을 유지함 |

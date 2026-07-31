@@ -108,6 +108,10 @@ local benchmark와 bounded admin CAS를 통과해 generation
 S4.3은 owner/access 제한 exact·lexical·dense channel과 application RRF를 구현했다.
 S4.4는 local sensitive/advice guard, purpose-separated idempotency, append-only consent,
 owner-scoped AES-256-GCM 30일 history와 metadata-only list를 `FIXTURE_ONLY`로 구현한다.
+S4.7C는 기존 S4.7B bytes를 보존한 채 동일 body exact 30의 새
+`s4_7c_external_v1` revision을 append하고, local BGE vector 30/30 동등성·retrieval
+non-regression·stale CAS rollback을 검증해
+`rag_gen_789b3ba9589ad399373194c0e3c0e76f`를 단일 active generation으로 전환했다.
 허용 질문도 현재 `RETRIEVAL_ONLY`이며 Gemini·OpenAI·Voyage 물리 호출은 0이다. 실제
 Spring↔Python retrieval/generation E2E와 live generation은 각각 후속 S4.6과 별도 승인형
 S4.4G 전까지 활성화하지 않는다.

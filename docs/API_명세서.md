@@ -1393,10 +1393,12 @@ admin bulk API는 없다.
 `action`은 `GRANT | REVOKE`다. actor와 시간은 JWT/server clock에서 생성한다. policy, prompt,
 privacy 경계가 바뀌면 재동의를 요구한다. revoke는 이후 external generation을 막지만 기존
 30일 history를 임의 삭제하지 않는다. 사용자는 7.4 DELETE로 즉시 삭제할 수 있다.
-GRANT event만으로 external generation을 활성화하지 않는다. 현재 frozen 30-card corpus는
-external processing 대상이 아니며, 별도 S4.4G 승인과
-`externalProcessingAllowed=true`인 active·verified·PUBLIC·PROJECT exact chunk가 함께
-확인되기 전에는 outbound가 0이다.
+GRANT event만으로 external generation을 활성화하지 않는다. S4.7C는 기존 S4.7B와 동일한
+project-authored sanitized body exact 30의 새 revision에만 external-processing card gate를
+부여하고 local BGE generation을 원자 전환했다. 이 card gate는 upstream 원문이나 provider
+payload 전송 권한이 아니다. 별도 S4.4G provider/evaluation 승인과
+`externalProcessingAllowed=true`인 active·verified·PUBLIC·PROJECT exact chunk, 그리고 해당
+question의 독립 consent/privacy/advice gate가 함께 확인되기 전에는 outbound가 0이다.
 
 ### 7.6 Admin embedding profile status
 

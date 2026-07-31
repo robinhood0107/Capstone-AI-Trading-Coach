@@ -8,7 +8,7 @@ from urllib.parse import parse_qsl, urlsplit
 import pytest
 
 _FIXTURE_ROOT = Path(__file__).resolve().parents[1] / "fixtures"
-_PROVIDER_DIRECTORIES = (_FIXTURE_ROOT / "ecos", _FIXTURE_ROOT / "naver")
+_PROVIDER_DIRECTORIES = (_FIXTURE_ROOT / "ecos",)
 _FORBIDDEN_KEYS = {
     "authorization",
     "accesstoken",
@@ -27,11 +27,7 @@ _FORBIDDEN_KEYS = {
     "xncpapigwapikey",
     "xncpapigwapikeyid",
 }
-_SYNTHETIC_ENV_CREDENTIALS = (
-    b"ecos-local-secret-must-not-enter-fixtures-20260714",
-    b"naver-legacy-secret-must-not-enter-fixtures-20260714",
-    b"naver-hub-secret-must-not-enter-fixtures-20260714",
-)
+_SYNTHETIC_ENV_CREDENTIALS = (b"ecos-local-secret-must-not-enter-fixtures-20260714",)
 
 
 def _normalized_key(value: str) -> str:

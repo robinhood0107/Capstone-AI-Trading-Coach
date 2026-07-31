@@ -47,19 +47,17 @@
   event-study/LightGBM BUY policy replay 뒤 S6.7 저장 snapshot reader로만 RiskEngine에
   연결한다. P1 최고 권한은 `WARN_ONLY`이며 analyst/news/RAG/LLM은 RiskDecision과 판단
   hash를 바꾸지 않는다.
-- **교차시장 계획 타당성은 `PLAN_FEASIBILITY=GO`이고 구현 상태는
-  `IMPLEMENTATION=SPEC_ONLY / NOT_IMPLEMENTED / PLANNED`다.** 월 데이터 비용 목표는
+- **교차시장 계획 타당성은 `PLAN_FEASIBILITY=GO`다. S4.8A 일곱 계약은
+  `CONTRACT_LOCKED`, S4.8B/C·S6.6/S6.7 runtime은 `NOT_IMPLEMENTED / PLANNED`다.** 월 데이터 비용 목표는
   `0원`이며 offline fixture와 지연/EOD를 먼저 사용한다. Bloomberg·LSEG·FactSet·코스콤과
   실시간 SOX/VIX feed는 `ENTERPRISE_ONLY_DISABLED`인 post-P1 선택지로서 P1 완주 조건이
   아니다. 기존 Spring/Python/PostgreSQL/Redis/gRPC를 재사용하고 새 agent framework,
   별도 cloud, Kafka를 이 lane의 hard dependency로 추가하지 않는다.
-- 교차시장 실행의 순서 0은 `S4.READ`다. 관련 공개·private 명세를 EOF까지 읽고 receipt와
-  충돌 목록을 남기는 read-only preflight이며 구현을 뜻하지 않는다. 그다음 S4.8A의
-  **contract-only PR**에서 일곱 JSON Schema,
-  `s2-2-system-rule-catalog.v2`, contract-change 기록, fixture/golden vector가
-  `contracts/`에 먼저 고정·검증·병합되기 전에는 S4.8/S6.6/S6.7 코드·DB·API runtime PR을
-  시작하거나 구현 완료로
-  표시하거나 검증 명령을 실행 가능하다고 안내하지 않는다. 전체 RiskEngine은 기존
+- 교차시장 실행의 순서 0은 `S4.READ`다. 관련 공개·private 명세의 EOF receipt와 충돌
+  목록을 남긴 뒤 S4.8A **contract-only PR**이 일곱 JSON Schema,
+  `s2-2-system-rule-catalog.v2`, contract-change 기록과 fixture/golden vector를 고정한다.
+  이 계약은 runtime 완료 증거가 아니며 S4.8B/C는 S4.8A의 main 병합과 post-merge CI를
+  확인한 뒤에만 시작한다. 전체 RiskEngine은 기존
   `ALLOW/WARN/HOLD/BLOCK`을 유지하지만 P1 교차시장 overlay가 추가할 수 있는 변화는
   적용 대상 신규 BUY의 `ALLOW → WARN`뿐이다.
 - S4.8B는 provider 호출 없는 수동/offline EOD materialization, append-only 저장 경계와

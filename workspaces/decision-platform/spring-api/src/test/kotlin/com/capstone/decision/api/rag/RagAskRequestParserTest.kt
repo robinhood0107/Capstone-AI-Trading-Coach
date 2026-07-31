@@ -4,6 +4,7 @@ import com.capstone.decision.application.rag.RagValidationException
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
+import org.springframework.mock.web.MockHttpServletRequest
 
 class RagAskRequestParserTest {
     private val parser = RagRequestParser()
@@ -70,6 +71,72 @@ class RagAskRequestParserTest {
             assertThrows(RagValidationException::class.java) {
                 parser.requireIdempotencyKey(key)
             }
+        }
+    }
+
+    @Test
+    fun `history feedback and consent parsers keep exact bounded public shapes`() {
+        assertEquals(
+            "rag_ans_${"a".repeat(32)}",
+            parser.parseAnswerId("rag_ans_${"a".repeat(32)}"),
+        )
+        assertEquals(true, parser.parseFeedback("""{"helpful":true}"""))
+        val consent =
+            parser.parseConsent(
+                """
+                {
+                  "consentType":"EXTERNAL_AI_RAG_V1",
+                  "action":"REVOKE",
+                  "policyVersion":"EXTERNAL_AI_RAG_V1"
+                }
+                """.trimIndent(),
+            )
+        assertEquals("REVOKE", consent.action)
+        assertEquals("EXTERNAL_AI_RAG_V1", consent.policyVersion)
+
+        val request =
+            MockHttpServletRequest().apply {
+                addParameter("cursor", "opaque-cursor")
+                addParameter("limit", "50")
+            }
+        val history = parser.parseHistoryQuery(request)
+        assertEquals("opaque-cursor", history.cursor)
+        assertEquals(50, history.limit)
+    }
+
+    @Test
+    fun `history feedback and consent reject unknown duplicate and out of range input`() {
+        listOf(
+            """{"helpful":true,"comment":"no"}""",
+            """{"helpful":true,"helpful":false}""",
+            """{"helpful":"true"}""",
+        ).forEach { body ->
+            assertThrows(RagValidationException::class.java) {
+                parser.parseFeedback(body)
+            }
+        }
+        listOf(
+            """{"consentType":"EXTERNAL_AI_RAG_V1","action":"GRANT","policyVersion":"v2"}""",
+            """{"consentType":"LIVE_STEP1_STRATEGY_SUMMARY","action":"GRANT","policyVersion":"EXTERNAL_AI_RAG_V1"}""",
+            """{"consentType":"EXTERNAL_AI_RAG_V1","action":"GRANT","policyVersion":"EXTERNAL_AI_RAG_V1","actor":"caller"}""",
+        ).forEach { body ->
+            assertThrows(RagValidationException::class.java) {
+                parser.parseConsent(body)
+            }
+        }
+        listOf("missing", "rag_ans_${"g".repeat(32)}", "rag_ans_${"a".repeat(31)}").forEach { answerId ->
+            assertThrows(RagValidationException::class.java) {
+                parser.parseAnswerId(answerId)
+            }
+        }
+
+        val invalidQuery =
+            MockHttpServletRequest().apply {
+                addParameter("limit", "51")
+                addParameter("preview", "true")
+            }
+        assertThrows(RagValidationException::class.java) {
+            parser.parseHistoryQuery(invalidQuery)
         }
     }
 }

@@ -1,5 +1,7 @@
 package com.capstone.decision.infrastructure.rag
 
+import com.capstone.decision.application.rag.RagHistoryCorruptedException
+import com.capstone.decision.application.rag.RagHistoryIdentity
 import org.junit.jupiter.api.Assertions.assertArrayEquals
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse

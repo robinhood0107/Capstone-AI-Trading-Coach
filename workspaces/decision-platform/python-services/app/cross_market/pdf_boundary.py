@@ -80,7 +80,7 @@ class EphemeralPdfReceipt:
     derived_data_stored: bool
     normalized_tags: tuple[str, ...]
     section_names: tuple[str, ...]
-    page_count: int
+    page_count: int | None
     raw_text_stored: bool = False
     quote_stored: bool = False
     external_llm_calls: int = 0
@@ -136,9 +136,11 @@ def process_licensed_ephemeral_pdf(
         if approval.derived_data_allowed:
             tags = tuple(sorted(approval.user_confirmed_tags, key=lambda item: item.encode("utf-8")))
             sections = tuple(section for section in APPROVED_PDF_SECTIONS if section in parsed.section_names)
+            page_count = parsed.page_count
         else:
             tags = ()
             sections = ()
+            page_count = None
         return EphemeralPdfReceipt(
             input_sha256=approval.expected_sha256,
             relative_path_hash=hashlib.sha256(approval.relative_path.encode("utf-8")).hexdigest(),
@@ -146,7 +148,7 @@ def process_licensed_ephemeral_pdf(
             derived_data_stored=bool(approval.derived_data_allowed and (tags or sections)),
             normalized_tags=tags,
             section_names=sections,
-            page_count=parsed.page_count,
+            page_count=page_count,
         )
     finally:
         payload[:] = b"\x00" * len(payload)

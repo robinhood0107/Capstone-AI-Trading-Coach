@@ -82,6 +82,11 @@ VERSIONED_EXAMPLE_SCHEMAS = {
     "s2-2-hash-vector.v3": "s2-2-hash-vector.v3",
 }
 
+S4_5_PROVIDER_PACKET_SCHEMAS = {
+    "s4-2c-voyage-approval",
+    "s4-4g-gemini-approval",
+}
+
 
 def relative(path: Path) -> str:
     return path.relative_to(REPO_ROOT).as_posix()
@@ -136,6 +141,9 @@ def validate_example_semantics(
     s2_3_catalog: object,
     s4_rag_catalog: object,
 ) -> None:
+    if schema_name in S4_5_PROVIDER_PACKET_SCHEMAS:
+        # Packet의 zero-paid/store=false/purpose 불변식은 closed JSON Schema가 직접 고정한다.
+        return
     if schema_name == "risk_decision":
         validate_risk_decision_semantics(example, s2_2_catalog)
         return

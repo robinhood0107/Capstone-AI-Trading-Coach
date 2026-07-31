@@ -1,0 +1,85 @@
+{
+  "$id": "contracts/schemas/s4-4g-gemini-approval.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "evaluationManifestSha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "loggingPolicyEvidenceSha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "logicalCallCap": {
+      "const": 60
+    },
+    "model": {
+      "const": "gemini-3.5-flash-lite"
+    },
+    "paidProject": {
+      "const": true
+    },
+    "physicalCallCap": {
+      "const": 60
+    },
+    "projectFingerprintSha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "promptSha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "provider": {
+      "const": "GEMINI"
+    },
+    "purpose": {
+      "enum": [
+        "PREFLIGHT",
+        "EVALUATION",
+        "PRODUCTION_ACTIVATION"
+      ]
+    },
+    "responseSchemaSha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "retryCount": {
+      "const": 0
+    },
+    "schemaVersion": {
+      "const": "s4-4g-gemini-approval/v1"
+    },
+    "state": {
+      "const": "APPROVED"
+    },
+    "store": {
+      "const": false
+    },
+    "zdrEvidenceSha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "evaluationManifestSha256",
+    "loggingPolicyEvidenceSha256",
+    "logicalCallCap",
+    "model",
+    "paidProject",
+    "physicalCallCap",
+    "projectFingerprintSha256",
+    "promptSha256",
+    "provider",
+    "purpose",
+    "responseSchemaSha256",
+    "retryCount",
+    "schemaVersion",
+    "state",
+    "store",
+    "zdrEvidenceSha256"
+  ],
+  "title": "s4-4g-gemini-approval",
+  "type": "object"
+}

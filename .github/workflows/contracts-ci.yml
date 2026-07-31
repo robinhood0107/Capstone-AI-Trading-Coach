@@ -50,6 +50,12 @@ jobs:
       - name: Check generated S4.7C external-processing corpus artifacts
         run: uv run --frozen python capstone-rag/generate_s4_7c_external_corpus.py --check
 
+      - name: Check generated S4.5 evaluation artifacts
+        run: uv run --frozen python capstone-rag/generate_s4_5_evaluation.py --check
+
+      - name: Check generated S4.5 provider approval contracts
+        run: uv run --frozen python contracts/generate_s4_5_provider_contracts.py --check
+
       - name: Check generated S1.3G news aggregate contract artifacts
         run: uv run --frozen python contracts/generate_s1_3g_news_contracts.py --check
 

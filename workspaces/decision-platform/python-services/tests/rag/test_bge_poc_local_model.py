@@ -16,6 +16,7 @@ from app.rag.bge_poc import (
     prepare_bge_poc,
 )
 from app.rag.bge_runtime import BgeStaticTokenizer, load_bge_onnx_embedder
+from app.rag.official_evidence import validate_official_evidence_manifest
 from app.rag.source_card import OFFICIAL_SOURCE_CARD_ROOT, load_rag_source_cards
 
 pytestmark = pytest.mark.skipif(
@@ -49,7 +50,12 @@ def test_exact_local_model_materializes_official_five_card_poc(
     tokenizer = BgeStaticTokenizer.from_file(
         DEFAULT_MODEL_ROOT / "onnx/tokenizer.json"
     )
-    plan = prepare_bge_poc(cards=cards, tokenizer=tokenizer, artifact=artifact)
+    plan = prepare_bge_poc(
+        cards=cards,
+        tokenizer=tokenizer,
+        artifact=artifact,
+        official_evidence=validate_official_evidence_manifest(),
+    )
     assert [item.chunk.token_count for item in plan.items] == [250, 264, 239, 197, 207]
 
     with psycopg.connect(postgres_cluster["admin_dsn"]) as admin:

@@ -56,7 +56,8 @@ class RagAuthorizedRetrievalMigrationContractTest {
                 "search_authorized_rag_lexical",
                 "search_authorized_rag_dense",
             ).map { function ->
-                migration.substringAfter("CREATE FUNCTION $function")
+                migration
+                    .substringAfter("CREATE FUNCTION $function")
                     .substringBefore("ALTER FUNCTION $function")
             }
         listOf(

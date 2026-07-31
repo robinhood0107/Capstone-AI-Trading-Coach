@@ -114,7 +114,11 @@ class GrpcRagEvaluationAdapterTest {
                 validResponse()
                     .toBuilder()
                     .addCitations(
-                        validResponse().citationsList.single().toBuilder().setCitationId("cit_2"),
+                        validResponse()
+                            .citationsList
+                            .single()
+                            .toBuilder()
+                            .setCitationId("cit_2"),
                     ).build(),
             )
         invalid.forEach { response ->

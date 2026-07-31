@@ -25,10 +25,11 @@ def _load(relative_path: str) -> object:
     "relative_path",
     [
         "contracts/examples/rag-source-card-v2.official-migration.valid.json",
+        "contracts/examples/rag-source-card-v2.naver-official.valid.json",
         "contracts/examples/rag-source-card-v2.scholarly.valid.json",
     ],
 )
-def test_python_validator_accepts_both_v2_union_variants(relative_path: str) -> None:
+def test_python_validator_accepts_all_v2_authority_variants(relative_path: str) -> None:
     payload = _load(relative_path)
 
     validated = validate_source_card_v2_payload(payload)

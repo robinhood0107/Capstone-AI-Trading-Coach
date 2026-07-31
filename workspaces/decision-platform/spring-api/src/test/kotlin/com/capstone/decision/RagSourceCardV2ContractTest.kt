@@ -16,9 +16,10 @@ class RagSourceCardV2ContractTest {
             .normalize()
 
     @Test
-    fun `Spring validator accepts both v2 union variants`() {
+    fun `Spring validator accepts all v2 authority variants`() {
         listOf(
             "rag-source-card-v2.official-migration.valid.json",
+            "rag-source-card-v2.naver-official.valid.json",
             "rag-source-card-v2.scholarly.valid.json",
         ).forEach { fileName ->
             val payload = Files.readAllBytes(repositoryRoot.resolve("contracts/examples/$fileName"))

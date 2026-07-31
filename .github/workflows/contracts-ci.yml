@@ -62,6 +62,14 @@ jobs:
       - name: Check generated S4.8A cross-market contract artifacts
         run: uv run --frozen python contracts/generate_s4_8a_cross_market_contracts.py --check
 
+      - name: Check generated S4.6 RAG proto artifacts
+        run: >-
+          uv run --project workspaces/decision-platform/python-services --frozen
+          python contracts/generate_rag_proto.py --check
+
+      - name: Check generated S5.0 Signal v2 contract artifacts
+        run: uv run --frozen python contracts/generate_s5_0_signal_v2_contracts.py --check
+
       - name: Run contract tooling tests
         run: uv run --frozen python -m unittest discover -s contracts/tests -v
 

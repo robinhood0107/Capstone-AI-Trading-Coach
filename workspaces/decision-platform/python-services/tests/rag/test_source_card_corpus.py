@@ -97,11 +97,11 @@ def test_manifest_is_current_deterministic_and_excludes_upstream_count() -> None
 
 
 def test_manifest_validation_rejects_same_identity_card_drift(
-    tmp_path: Path,
+    posix_tmp_path: Path,
 ) -> None:
-    copied_root = tmp_path / "source-cards"
+    copied_root = posix_tmp_path / "source-cards"
     shutil.copytree(S4_7B_SOURCE_CARD_ROOT, copied_root)
-    manifest_path = tmp_path / "manifest.json"
+    manifest_path = posix_tmp_path / "manifest.json"
     shutil.copy2(S4_7B_CORPUS_MANIFEST_PATH, manifest_path)
     target = sorted(copied_root.glob("*.md"))[0]
     target.write_text(

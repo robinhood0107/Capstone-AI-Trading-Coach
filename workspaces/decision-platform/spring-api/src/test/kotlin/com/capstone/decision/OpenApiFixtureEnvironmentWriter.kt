@@ -54,6 +54,7 @@ object OpenApiFixtureEnvironmentWriter {
                     "POSTGRES_RAG_ADMIN_PASSWORD" to randomToken(random, 32),
                     "POSTGRES_RAG_QUERY_PASSWORD" to randomToken(random, 32),
                     "DECISION_GRPC_SHARED_SECRET" to grpcSharedSecret,
+                    "RAG_GRPC_SHARED_SECRET" to grpcSharedSecret,
                     "PYTHON_GRPC_SHARED_SECRET" to grpcSharedSecret,
                     "REDIS_PASSWORD" to randomToken(random, 32),
                     "JWT_SECRET" to randomToken(random, 32),

@@ -199,9 +199,9 @@ jobs:
               sha256sum "$S1_4X_BENCHMARK_CONTRACT_TEST" | cut -d' ' -f1
             )"
             test "$BASE_BENCHMARK_CONTRACT_SHA" = \
-              "b5a3b1f3c9dc2fff025f465f28c6be35b6e46177b7a2a7267bc5c342a01ecba6"
-            test "$HEAD_BENCHMARK_CONTRACT_SHA" = \
               "276637c89ec1e31e8a7682d3dbfcc224897c9381343fbeda243f298df5998707"
+            test "$HEAD_BENCHMARK_CONTRACT_SHA" = \
+              "b4daf347275761ff2a53e2096a4b6db5317bd5822a3fe7764809e10ea9abb4f4"
           fi
 
           # 의존성 amendment가 수치 구현·테스트·fixture를 함께 바꾸는 것을 독립적으로 막는다.

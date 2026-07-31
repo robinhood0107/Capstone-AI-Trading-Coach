@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from app.data.gdelt.cli import parse_args
+from app.data.gdelt.cli import main, parse_args
 from app.data.gdelt.collector import GdeltCollector
 from app.data.gdelt.errors import GdeltAggregateError
 from app.data.gdelt.policy import QueryDefinition
@@ -90,6 +90,20 @@ def test_offline_is_cli_default_and_online_requires_exact_packet_fields() -> Non
 
     with pytest.raises(SystemExit):
         parse_args(["--mode", "online"])
+
+
+def test_offline_cli_collects_fixture_and_can_publish(
+    posix_tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    output_root = posix_tmp_path / "published"
+
+    assert main(["--output-root", str(output_root)]) == 0
+    output = capsys.readouterr().out
+
+    assert "status=AVAILABLE" in output
+    assert "physicalProviderCalls=0" in output
+    assert len(list(output_root.rglob("*.json"))) == 1
 
 
 def test_source_contains_no_article_metadata_or_network_enabled_fixture_path() -> None:

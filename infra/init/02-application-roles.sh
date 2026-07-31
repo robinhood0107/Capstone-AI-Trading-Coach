@@ -811,6 +811,12 @@ BEGIN
             purge_rag_embedding_staging(text, text)
         TO decision_rag_writer;
     END IF;
+    IF to_regprocedure('public.finalize_rag_embedding_staging_v2(text,text,text,integer,text)') IS NOT NULL THEN
+        -- full generation bootstrap 재적용 뒤에도 writer의 유일한 final-table 경계는 bounded v2 함수다.
+        GRANT EXECUTE ON FUNCTION
+            finalize_rag_embedding_staging_v2(text, text, text, integer, text)
+        TO decision_rag_writer;
+    END IF;
     IF to_regprocedure(
         'public.activate_verified_rag_generation(text,text,bigint,text,text,text,text,text,integer,integer,integer,text,text,text,text,text,text,text,text,text,numeric,text)'
     ) IS NOT NULL THEN

@@ -1,0 +1,13 @@
+{
+  "answer": null,
+  "answerId": "rag_ans_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "citationCoverage": 0,
+  "citations": [],
+  "generationStatus": "RETRIEVAL_ONLY",
+  "guardrailFlags": [
+    "FIXTURE_ONLY"
+  ],
+  "provider": "hidden",
+  "requestId": "req_s4_4_fixture_answer",
+  "retrievalFailure": false
+}

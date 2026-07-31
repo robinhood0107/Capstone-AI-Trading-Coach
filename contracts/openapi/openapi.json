@@ -638,6 +638,191 @@
         },
         "type": "object"
       },
+      "ApiResponseRagAnswerProjection": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/RagAnswerProjection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ApiError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ApiWarning"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "ApiResponseRagConsentResponse": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/RagConsentResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ApiError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ApiWarning"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "ApiResponseRagFeedbackResponse": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/RagFeedbackResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ApiError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ApiWarning"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "ApiResponseRagHistoryDetail": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/RagHistoryDetail"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ApiError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ApiWarning"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "ApiResponseRagHistoryPage": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/RagHistoryPage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ApiError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ApiWarning"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
       "ApiWarning": {
         "properties": {
           "code": {
@@ -2944,6 +3129,230 @@
           "success",
           "warnings"
         ],
+        "type": "object"
+      },
+      "RagAnswerProjection": {
+        "properties": {
+          "answer": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "answerId": {
+            "type": "string"
+          },
+          "citationCoverage": {
+            "format": "double",
+            "type": "number"
+          },
+          "citations": {
+            "items": {
+              "$ref": "#/components/schemas/RagPublicCitation"
+            },
+            "type": "array"
+          },
+          "generationStatus": {
+            "enum": [
+              "ANSWERED",
+              "RETRIEVAL_ONLY",
+              "RETRIEVAL_FAILURE",
+              "BLOCKED_SENSITIVE",
+              "BLOCKED_ADVICE",
+              "GENERATION_UNAVAILABLE"
+            ],
+            "type": "string"
+          },
+          "guardrailFlags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "retrievalFailure": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "RagConsentResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "consentEventId": {
+            "type": "string"
+          },
+          "consentType": {
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "policyVersion": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "consentEventId",
+          "consentType",
+          "createdAt",
+          "policyVersion"
+        ],
+        "type": "object"
+      },
+      "RagFeedbackResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "answerId": {
+            "type": "string"
+          },
+          "helpful": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "answerId",
+          "helpful"
+        ],
+        "type": "object"
+      },
+      "RagHistoryDetail": {
+        "properties": {
+          "answer": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "answerId": {
+            "type": "string"
+          },
+          "answerMode": {
+            "enum": [
+              "CONCISE",
+              "DETAILED"
+            ],
+            "type": "string"
+          },
+          "citations": {
+            "items": {
+              "$ref": "#/components/schemas/RagPublicCitation"
+            },
+            "type": "array"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "generationStatus": {
+            "enum": [
+              "ANSWERED",
+              "RETRIEVAL_ONLY",
+              "RETRIEVAL_FAILURE",
+              "BLOCKED_SENSITIVE",
+              "BLOCKED_ADVICE",
+              "GENERATION_UNAVAILABLE"
+            ],
+            "type": "string"
+          },
+          "helpful": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "question": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RagHistoryMetadata": {
+        "properties": {
+          "answerId": {
+            "type": "string"
+          },
+          "answerMode": {
+            "enum": [
+              "CONCISE",
+              "DETAILED"
+            ],
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "generationStatus": {
+            "enum": [
+              "ANSWERED",
+              "RETRIEVAL_ONLY",
+              "RETRIEVAL_FAILURE",
+              "BLOCKED_SENSITIVE",
+              "BLOCKED_ADVICE",
+              "GENERATION_UNAVAILABLE"
+            ],
+            "type": "string"
+          },
+          "helpful": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "RagHistoryPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RagHistoryMetadata"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "RagPublicCitation": {
+        "properties": {
+          "canonicalUrl": {
+            "type": "string"
+          },
+          "citationId": {
+            "type": "string"
+          },
+          "sectionTitle": {
+            "type": "string"
+          },
+          "sourceId": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "RagSourceListResponse": {
@@ -6301,6 +6710,658 @@
         ],
         "type": "object"
       },
+      "S44RagAnswer": {
+        "$id": "contracts/schemas/s4-rag-answer.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "else": {
+              "properties": {
+                "answer": {
+                  "type": "null"
+                },
+                "citationCoverage": {
+                  "const": 0
+                },
+                "citations": {
+                  "maxItems": 0
+                }
+              }
+            },
+            "if": {
+              "properties": {
+                "generationStatus": {
+                  "const": "ANSWERED"
+                }
+              },
+              "required": [
+                "generationStatus"
+              ]
+            },
+            "then": {
+              "properties": {
+                "answer": {
+                  "maxLength": 8192,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "citationCoverage": {
+                  "const": 1
+                },
+                "citations": {
+                  "minItems": 1
+                },
+                "retrievalFailure": {
+                  "const": false
+                }
+              }
+            }
+          },
+          {
+            "else": {
+              "properties": {
+                "retrievalFailure": {
+                  "const": false
+                }
+              }
+            },
+            "if": {
+              "properties": {
+                "generationStatus": {
+                  "const": "RETRIEVAL_FAILURE"
+                }
+              },
+              "required": [
+                "generationStatus"
+              ]
+            },
+            "then": {
+              "properties": {
+                "retrievalFailure": {
+                  "const": true
+                }
+              }
+            }
+          }
+        ],
+        "properties": {
+          "answer": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "answerId": {
+            "pattern": "^rag_ans_[0-9a-f]{32}$",
+            "type": "string"
+          },
+          "citationCoverage": {
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          "citations": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "canonicalUrl": {
+                  "format": "uri",
+                  "maxLength": 2048,
+                  "pattern": "^https://",
+                  "type": "string"
+                },
+                "citationId": {
+                  "pattern": "^cit_[1-5]$",
+                  "type": "string"
+                },
+                "sectionTitle": {
+                  "maxLength": 512,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "sourceId": {
+                  "pattern": "^src_project_[a-z0-9][a-z0-9_]*_[0-9]{3}$",
+                  "type": "string"
+                },
+                "title": {
+                  "maxLength": 300,
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "canonicalUrl",
+                "citationId",
+                "sectionTitle",
+                "sourceId",
+                "title"
+              ],
+              "type": "object"
+            },
+            "maxItems": 5,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "generationStatus": {
+            "enum": [
+              "ANSWERED",
+              "RETRIEVAL_ONLY",
+              "RETRIEVAL_FAILURE",
+              "BLOCKED_SENSITIVE",
+              "BLOCKED_ADVICE",
+              "GENERATION_UNAVAILABLE"
+            ]
+          },
+          "guardrailFlags": {
+            "items": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^[A-Z0-9_]+$",
+              "type": "string"
+            },
+            "maxItems": 8,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "requestId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "retrievalFailure": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "answer",
+          "answerId",
+          "citationCoverage",
+          "citations",
+          "generationStatus",
+          "guardrailFlags",
+          "requestId",
+          "retrievalFailure"
+        ],
+        "title": "S4.4 RAG answer data v1",
+        "type": "object"
+      },
+      "S44RagAnswerSuccessResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/S44RagAnswer"
+          },
+          "error": {
+            "type": "null"
+          },
+          "requestId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "success": {
+            "const": true,
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ApiWarning"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "error",
+          "requestId",
+          "success",
+          "warnings"
+        ],
+        "type": "object"
+      },
+      "S44RagAskRequest": {
+        "$id": "contracts/schemas/s4-rag-ask-request.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "answerMode": {
+            "enum": [
+              "CONCISE",
+              "DETAILED"
+            ]
+          },
+          "question": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "relatedSymbols": {
+            "items": {
+              "pattern": "^[0-9]{6}$",
+              "type": "string"
+            },
+            "maxItems": 5,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "topics": {
+            "items": {
+              "enum": [
+                "API",
+                "DATA",
+                "FINANCIAL_ENGINEERING",
+                "METHODOLOGY",
+                "PRODUCT_RISK",
+                "RISK"
+              ]
+            },
+            "maxItems": 5,
+            "type": "array",
+            "uniqueItems": true
+          }
+        },
+        "required": [
+          "answerMode",
+          "question"
+        ],
+        "title": "S4 RAG public ask request v1",
+        "type": "object"
+      },
+      "S44RagConsentRequest": {
+        "$id": "contracts/schemas/s4-rag-consent-request.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "enum": [
+              "GRANT",
+              "REVOKE"
+            ]
+          },
+          "consentType": {
+            "const": "EXTERNAL_AI_RAG_V1"
+          },
+          "policyVersion": {
+            "const": "EXTERNAL_AI_RAG_V1"
+          }
+        },
+        "required": [
+          "action",
+          "consentType",
+          "policyVersion"
+        ],
+        "title": "S4.4 external AI RAG consent event request v1",
+        "type": "object"
+      },
+      "S44RagConsentSuccessResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/RagConsentResponse"
+          },
+          "error": {
+            "type": "null"
+          },
+          "requestId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "success": {
+            "const": true,
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ApiWarning"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "error",
+          "requestId",
+          "success",
+          "warnings"
+        ],
+        "type": "object"
+      },
+      "S44RagFeedbackRequest": {
+        "$id": "contracts/schemas/s4-rag-feedback-request.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "helpful": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "helpful"
+        ],
+        "title": "S4.4 RAG feedback request v1",
+        "type": "object"
+      },
+      "S44RagFeedbackSuccessResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/RagFeedbackResponse"
+          },
+          "error": {
+            "type": "null"
+          },
+          "requestId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "success": {
+            "const": true,
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ApiWarning"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "error",
+          "requestId",
+          "success",
+          "warnings"
+        ],
+        "type": "object"
+      },
+      "S44RagHistoryDetail": {
+        "$id": "contracts/schemas/s4-rag-history-detail.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "else": {
+              "properties": {
+                "answer": {
+                  "type": "null"
+                },
+                "citations": {
+                  "maxItems": 0
+                }
+              }
+            },
+            "if": {
+              "properties": {
+                "generationStatus": {
+                  "const": "ANSWERED"
+                }
+              },
+              "required": [
+                "generationStatus"
+              ]
+            },
+            "then": {
+              "properties": {
+                "answer": {
+                  "maxLength": 8192,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "citations": {
+                  "minItems": 1
+                }
+              }
+            }
+          }
+        ],
+        "properties": {
+          "answer": {
+            "maxLength": 8192,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "answerId": {
+            "pattern": "^rag_ans_[0-9a-f]{32}$",
+            "type": "string"
+          },
+          "answerMode": {
+            "enum": [
+              "CONCISE",
+              "DETAILED"
+            ]
+          },
+          "citations": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "canonicalUrl": {
+                  "format": "uri",
+                  "maxLength": 2048,
+                  "pattern": "^https://",
+                  "type": "string"
+                },
+                "citationId": {
+                  "pattern": "^cit_[1-5]$",
+                  "type": "string"
+                },
+                "sectionTitle": {
+                  "maxLength": 512,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "sourceId": {
+                  "pattern": "^src_project_[a-z0-9][a-z0-9_]*_[0-9]{3}$",
+                  "type": "string"
+                },
+                "title": {
+                  "maxLength": 300,
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "canonicalUrl",
+                "citationId",
+                "sectionTitle",
+                "sourceId",
+                "title"
+              ],
+              "type": "object"
+            },
+            "maxItems": 5,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "generationStatus": {
+            "enum": [
+              "ANSWERED",
+              "RETRIEVAL_ONLY",
+              "RETRIEVAL_FAILURE",
+              "BLOCKED_SENSITIVE",
+              "BLOCKED_ADVICE",
+              "GENERATION_UNAVAILABLE"
+            ]
+          },
+          "helpful": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "question": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "answer",
+          "answerId",
+          "answerMode",
+          "citations",
+          "createdAt",
+          "expiresAt",
+          "generationStatus",
+          "helpful",
+          "question"
+        ],
+        "title": "S4.4 owner RAG history detail v1",
+        "type": "object"
+      },
+      "S44RagHistoryDetailSuccessResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/S44RagHistoryDetail"
+          },
+          "error": {
+            "type": "null"
+          },
+          "requestId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "success": {
+            "const": true,
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ApiWarning"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "error",
+          "requestId",
+          "success",
+          "warnings"
+        ],
+        "type": "object"
+      },
+      "S44RagHistoryPage": {
+        "$id": "contracts/schemas/s4-rag-history-page.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "answerId": {
+                  "pattern": "^rag_ans_[0-9a-f]{32}$",
+                  "type": "string"
+                },
+                "answerMode": {
+                  "enum": [
+                    "CONCISE",
+                    "DETAILED"
+                  ]
+                },
+                "createdAt": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "expiresAt": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "generationStatus": {
+                  "enum": [
+                    "ANSWERED",
+                    "RETRIEVAL_ONLY",
+                    "RETRIEVAL_FAILURE",
+                    "BLOCKED_SENSITIVE",
+                    "BLOCKED_ADVICE",
+                    "GENERATION_UNAVAILABLE"
+                  ]
+                },
+                "helpful": {
+                  "type": [
+                    "boolean",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "answerId",
+                "answerMode",
+                "createdAt",
+                "expiresAt",
+                "generationStatus",
+                "helpful"
+              ],
+              "type": "object"
+            },
+            "maxItems": 50,
+            "type": "array"
+          },
+          "nextCursor": {
+            "maxLength": 512,
+            "minLength": 1,
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "title": "S4.4 metadata-only RAG history page v1",
+        "type": "object"
+      },
+      "S44RagHistoryPageSuccessResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/S44RagHistoryPage"
+          },
+          "error": {
+            "type": "null"
+          },
+          "requestId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "success": {
+            "const": true,
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ApiWarning"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "data",
+          "error",
+          "requestId",
+          "success",
+          "warnings"
+        ],
+        "type": "object"
+      },
       "S4RagSourceListSuccessResponse": {
         "additionalProperties": false,
         "properties": {
@@ -7584,6 +8645,67 @@
         ]
       }
     },
+    "/api/v1/consents": {
+      "post": {
+        "operationId": "record",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/S44RagConsentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/S44RagConsentSuccessResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseRagConsentResponse"
+                }
+              }
+            },
+            "description": "Consent type, action, or policy version is invalid."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseRagConsentResponse"
+                }
+              }
+            },
+            "description": "Authentication is required."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseRagConsentResponse"
+                }
+              }
+            },
+            "description": "Consent persistence failed closed."
+          }
+        },
+        "summary": "Append-only EXTERNAL_AI_RAG_V1 consent event를 기록한다.",
+        "tags": [
+          "rag-consent-controller"
+        ]
+      }
+    },
     "/api/v1/decisions/evaluate-order": {
       "post": {
         "operationId": "evaluateOrder",
@@ -8277,6 +9399,321 @@
         "summary": "원칙 버전 이력 / List immutable Principle versions",
         "tags": [
           "principle-controller"
+        ]
+      }
+    },
+    "/api/v1/rag/answers/{answerId}/feedback": {
+      "post": {
+        "operationId": "feedback",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "answerId",
+            "required": true,
+            "schema": {
+              "pattern": "^rag_ans_[0-9a-f]{32}$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/S44RagFeedbackRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/S44RagFeedbackSuccessResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseRagFeedbackResponse"
+                }
+              }
+            },
+            "description": "Only boolean helpful is accepted."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseRagFeedbackResponse"
+                }
+              }
+            },
+            "description": "Authentication is required."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseRagFeedbackResponse"
+                }
+              }
+            },
+            "description": "Owned unexpired answer was not found."
+          }
+        },
+        "summary": "Owner answer에 boolean helpful 하나만 멱등 저장한다.",
+        "tags": [
+          "rag-controller"
+        ]
+      }
+    },
+    "/api/v1/rag/ask": {
+      "post": {
+        "operationId": "ask",
+        "parameters": [
+          {
+            "description": "Raw value is HMACed at the request boundary and never persisted.",
+            "in": "header",
+            "name": "X-Idempotency-Key",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9._~-]{16,128}$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/S44RagAskRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/S44RagAnswerSuccessResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseRagAnswerProjection"
+                }
+              }
+            },
+            "description": "Strict request validation failed."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseRagAnswerProjection"
+                }
+              }
+            },
+            "description": "Authentication is required."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseRagAnswerProjection"
+                }
+              }
+            },
+            "description": "Idempotency conflict, in-progress, or result unavailable."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseRagAnswerProjection"
+                }
+              }
+            },
+            "description": "Owner RAG rate limit exceeded."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseRagAnswerProjection"
+                }
+              }
+            },
+            "description": "Guard, crypto, or persistence failed closed."
+          }
+        },
+        "summary": "Fixture-only RAG guard와 암호화 history 경계를 실행한다.",
+        "tags": [
+          "rag-controller"
+        ]
+      }
+    },
+    "/api/v1/rag/history": {
+      "get": {
+        "operationId": "listHistory",
+        "parameters": [
+          {
+            "description": "Owner-bound opaque HMAC cursor.",
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "maxLength": 512,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 20,
+              "maximum": 50,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/S44RagHistoryPageSuccessResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseRagHistoryPage"
+                }
+              }
+            },
+            "description": "Invalid cursor, limit, or unknown query."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseRagHistoryPage"
+                }
+              }
+            },
+            "description": "Authentication is required."
+          }
+        },
+        "summary": "질문·답변 복호화 없이 owner의 RAG history metadata만 page 조회한다.",
+        "tags": [
+          "rag-controller"
+        ]
+      }
+    },
+    "/api/v1/rag/history/{answerId}": {
+      "delete": {
+        "operationId": "deleteHistory",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "answerId",
+            "required": true,
+            "schema": {
+              "pattern": "^rag_ans_[0-9a-f]{32}$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deletion outcome is intentionally indistinguishable."
+          },
+          "401": {
+            "description": "Authentication is required."
+          }
+        },
+        "summary": "Owner predicate 단일 delete를 수행하고 존재 여부와 무관하게 204를 반환한다.",
+        "tags": [
+          "rag-controller"
+        ]
+      },
+      "get": {
+        "operationId": "getHistory",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "answerId",
+            "required": true,
+            "schema": {
+              "pattern": "^rag_ans_[0-9a-f]{32}$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/S44RagHistoryDetailSuccessResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseRagHistoryDetail"
+                }
+              }
+            },
+            "description": "Authentication is required."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseRagHistoryDetail"
+                }
+              }
+            },
+            "description": "Owned unexpired history was not found."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseRagHistoryDetail"
+                }
+              }
+            },
+            "description": "Ciphertext or citation state failed closed."
+          }
+        },
+        "summary": "Owner-scoped RAG history 한 건만 복호화하고 citation access를 재검증한다.",
+        "tags": [
+          "rag-controller"
         ]
       }
     },

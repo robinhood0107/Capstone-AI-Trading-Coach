@@ -215,6 +215,10 @@ tasks.named<ProcessResources>("processResources") {
     from(layout.projectDirectory.file("../../../contracts/schemas/s4-rag-admin-policy-selection.schema.json")) {
         into("contracts")
     }
+    // S4.7B source-card v2 validator도 Python과 같은 canonical union schema bytes를 사용한다.
+    from(layout.projectDirectory.file("../../../contracts/schemas/rag-source-card-v2.schema.json")) {
+        into("contracts")
+    }
 }
 
 tasks.named<ProcessResources>("processTestResources") {
@@ -442,6 +446,7 @@ val verifyS4RagContractResources by tasks.registering {
         listOf(
             "s4-rag-ask-request.schema.json",
             "s4-rag-admin-policy-selection.schema.json",
+            "rag-source-card-v2.schema.json",
         ).forEach { fileName ->
             val source =
                 layout.projectDirectory

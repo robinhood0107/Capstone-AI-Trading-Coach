@@ -419,6 +419,7 @@ class InfrastructureSecurityIntegrationTest {
                             'decision_risk_writer',
                             'decision_fill_writer',
                             'decision_rag_writer',
+                            'decision_rag_admin',
                             'decision_rag_query'
                           ])
                         )
@@ -638,6 +639,7 @@ class InfrastructureSecurityIntegrationTest {
         private val riskWriterPassword: String = "w" + "r".repeat(24)
         private val fillWriterPassword: String = "w" + "f".repeat(24)
         private val ragWriterPassword: String = "w" + "g".repeat(24)
+        private val ragAdminPassword: String = "a" + "g".repeat(24)
         private val ragQueryPassword: String = "q" + "g".repeat(24)
         private val postgresImage =
             DockerImageName
@@ -661,6 +663,7 @@ class InfrastructureSecurityIntegrationTest {
                 .withEnv("POSTGRES_RISK_WRITER_PASSWORD", riskWriterPassword)
                 .withEnv("POSTGRES_FILL_WRITER_PASSWORD", fillWriterPassword)
                 .withEnv("POSTGRES_RAG_WRITER_PASSWORD", ragWriterPassword)
+                .withEnv("POSTGRES_RAG_ADMIN_PASSWORD", ragAdminPassword)
                 .withEnv("POSTGRES_RAG_QUERY_PASSWORD", ragQueryPassword)
     }
 }

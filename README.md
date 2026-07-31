@@ -94,12 +94,16 @@ provider/model/account/order physical call은 이 범위에 포함하지 않는�
 S4.2A는 pinned local BGE ONNX artifact verifier와 공식 5-card PoC를 추가했고, S4.7B는
 v1을 변경하지 않는 source-card v2 union과 project-authored exact 30 corpus를 동결한다.
 30-card manifest는 금융공학 15개·공식자료/API 15개만 포함하며 upstream reference-only
-20개와 원문 payload는 제외한다. S4.2B full generation과 이후 retrieval/answer runtime은
-각 후속 세션 gate를 통과하기 전까지 활성화하지 않는다.
+20개와 원문 payload는 제외한다. S4.2B는 이 frozen corpus의 30개 BGE embedding을
+PostgreSQL+pgvector에 materialize하고 독립 DB 재검증, 20회 warmup/100회 measured
+local benchmark와 bounded admin CAS를 통과해 generation
+`rag_gen_6f2aa814a39d0532d0fa4bbd4e4456d2`를 활성화했다. provider physical call은 0이며
+S4.3 retrieval과 S4.4 fixture-only answer/history는 각 후속 세션 gate 전까지 활성화하지
+않는다.
 
 ```bash
 cp .env.example .env
-# DB/Redis, collector/source-writer/RAG writer/query password, JWT issuer/audience,
+# DB/Redis, collector/source-writer/RAG writer/admin/query password, JWT issuer/audience,
 # 목적별 signing/HMAC key와 두 attested demo credential bundle을 채운다.
 # bundle은 $ 포함 BCrypt hash 보존을 위해 single quote 안에 두며 plaintext demo password는 저장하지 않는다.
 # API key는 필요한 provider를 실제 호출할 때 운영자만 주입하며 커밋하지 않는다.
@@ -115,14 +119,17 @@ cd workspaces/decision-platform/spring-api
 PostgreSQL runtime은 `decision_app`, S1.6 수집은 `decision_collector`, sanitized source append는
 `decision_market_writer`/`decision_portfolio_writer`/`decision_risk_writer`/
 `decision_fill_writer`, RAG ingest/materialization은 `decision_rag_writer`, bounded active
-chunk retrieval은 `decision_rag_query`, migration은 `flyway`, bootstrap 관리는
+generation 검증·CAS 활성화는 `decision_rag_admin`, bounded active chunk retrieval은
+`decision_rag_query`, migration은 `flyway`, bootstrap 관리는
 `POSTGRES_ADMIN_USER`로 분리된다. 기존 `pgdata` volume에는 init script가 자동 재실행되지
 않으므로, 기존 관리자 이름/비밀번호를 보존하고 `.env.example`의 collector, source-writer,
-`POSTGRES_RAG_WRITER_PASSWORD`, `POSTGRES_RAG_QUERY_PASSWORD`를 추가해 컨테이너를 올린 뒤
-다음 명령을 실행한다. V6/V9/V14/V16 적용 전에는 role을 먼저 만들고, migration 뒤 다시
-실행하면 현재 table과 function의 exact 권한을 복원한다. volume 삭제는 이 절차에 포함하지
-않는다. `decision_fill_writer`는 sanitized offline fill observation INSERT만 소유하며
-주문·이벤트·Flyway schema에는 접근하지 않는다.
+`POSTGRES_RAG_WRITER_PASSWORD`, `POSTGRES_RAG_ADMIN_PASSWORD`,
+`POSTGRES_RAG_QUERY_PASSWORD`를 추가해 컨테이너를 올린 뒤 다음 명령을 실행한다.
+V6/V9/V14/V16/V18 적용 전에는 role을 먼저 만들고, migration 뒤 다시 실행하면 현재
+table과 function의 exact 권한을 복원한다. volume 삭제는 이 절차에 포함하지 않는다.
+`decision_fill_writer`는 sanitized offline fill observation INSERT만 소유하며
+주문·이벤트·Flyway schema에는 접근하지 않는다. `decision_rag_admin`은 raw table
+SELECT/DML 없이 verification projection과 원자 pointer CAS 함수만 실행한다.
 
 ```bash
 docker compose --env-file .env -f infra/docker-compose.infra.yml exec -T postgres \

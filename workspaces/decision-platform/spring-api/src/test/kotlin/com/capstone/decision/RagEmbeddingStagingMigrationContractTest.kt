@@ -11,7 +11,7 @@ class RagEmbeddingStagingMigrationContractTest {
     private val migration by lazy { Files.readString(migrationPath) }
 
     @Test
-    fun `S4_2A embedding staging migration uses the current next-free Flyway version`() {
+    fun `S4_2A embedding staging migration preserves its original next-free Flyway version`() {
         val migrations = migrationFiles()
         val selectedVersion = migrationVersion(migrationPath)
         val previousHighest =
@@ -20,7 +20,7 @@ class RagEmbeddingStagingMigrationContractTest {
                 .maxOf(::migrationVersion)
 
         assertThat(selectedVersion).isEqualTo(previousHighest + 1)
-        assertThat(selectedVersion).isEqualTo(migrations.maxOf(::migrationVersion))
+        assertThat(selectedVersion).isEqualTo(17)
     }
 
     @Test

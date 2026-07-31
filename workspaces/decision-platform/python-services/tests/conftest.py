@@ -37,11 +37,11 @@ class PostgresTestCluster(TypedDict):
     portfolio_writer_dsn: str
     risk_writer_dsn: str
     rag_writer_dsn: str
+    rag_admin_dsn: str
     rag_query_dsn: str
 
 
-@pytest.fixture(scope="session")
-def postgres_cluster() -> Iterator[PostgresTestCluster]:
+def _start_postgres_cluster() -> Iterator[PostgresTestCluster]:
     """운영 PostgreSQL 이미지와 실제 migration/role 경계를 Python 통합 테스트 전체에 공유한다."""
     container = PostgresContainer(
         image=POSTGRES_IMAGE,
@@ -70,6 +70,9 @@ def postgres_cluster() -> Iterator[PostgresTestCluster]:
         rag_writer_dsn = (
             f"postgresql://decision_rag_writer:rag-writer-test@{host}:{port}/decision"
         )
+        rag_admin_dsn = (
+            f"postgresql://decision_rag_admin:rag-admin-test@{host}:{port}/decision"
+        )
         rag_query_dsn = (
             f"postgresql://decision_rag_query:rag-query-test@{host}:{port}/decision"
         )
@@ -91,6 +94,8 @@ def postgres_cluster() -> Iterator[PostgresTestCluster]:
                     NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD 'risk-writer-test';
                 CREATE ROLE decision_rag_writer LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
                     NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD 'rag-writer-test';
+                CREATE ROLE decision_rag_admin LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
+                    NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD 'rag-admin-test';
                 CREATE ROLE decision_rag_query LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
                     NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD 'rag-query-test';
                 CREATE ROLE flyway LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
@@ -101,6 +106,9 @@ def postgres_cluster() -> Iterator[PostgresTestCluster]:
                 ALTER ROLE decision_rag_writer SET statement_timeout = '2s';
                 ALTER ROLE decision_rag_writer SET lock_timeout = '500ms';
                 ALTER ROLE decision_rag_writer SET idle_in_transaction_session_timeout = '5s';
+                ALTER ROLE decision_rag_admin SET statement_timeout = '5s';
+                ALTER ROLE decision_rag_admin SET lock_timeout = '500ms';
+                ALTER ROLE decision_rag_admin SET idle_in_transaction_session_timeout = '5s';
                 ALTER ROLE decision_rag_query SET statement_timeout = '1500ms';
                 ALTER ROLE decision_rag_query SET lock_timeout = '250ms';
                 ALTER ROLE decision_rag_query SET idle_in_transaction_session_timeout = '5s';
@@ -112,6 +120,7 @@ def postgres_cluster() -> Iterator[PostgresTestCluster]:
                     decision_portfolio_writer,
                     decision_risk_writer,
                     decision_rag_writer,
+                    decision_rag_admin,
                     decision_rag_query,
                     flyway;
                 REVOKE CREATE ON SCHEMA public FROM PUBLIC;
@@ -123,6 +132,7 @@ def postgres_cluster() -> Iterator[PostgresTestCluster]:
                     decision_portfolio_writer,
                     decision_risk_writer,
                     decision_rag_writer,
+                    decision_rag_admin,
                     decision_rag_query,
                     flyway;
                 GRANT CREATE ON SCHEMA public TO flyway;
@@ -172,8 +182,23 @@ def postgres_cluster() -> Iterator[PostgresTestCluster]:
             "portfolio_writer_dsn": portfolio_writer_dsn,
             "risk_writer_dsn": risk_writer_dsn,
             "rag_writer_dsn": rag_writer_dsn,
+            "rag_admin_dsn": rag_admin_dsn,
             "rag_query_dsn": rag_query_dsn,
         }
+
+
+@pytest.fixture(scope="session")
+def postgres_cluster() -> Iterator[PostgresTestCluster]:
+    """대부분의 DB 통합 테스트가 공유하는 migration 완료 PostgreSQL cluster다."""
+
+    yield from _start_postgres_cluster()
+
+
+@pytest.fixture
+def isolated_postgres_cluster() -> Iterator[PostgresTestCluster]:
+    """generation처럼 영속 상태를 전이하는 테스트에 독립 PostgreSQL cluster를 제공한다."""
+
+    yield from _start_postgres_cluster()
 
 
 def _migration_version(path: Path) -> int:

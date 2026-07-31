@@ -553,6 +553,8 @@ pin한다. S1.5는 canonical Parquet이나 bundle을 자동 삭제하지 않는�
 2026-07-31부터 active 뉴스 권한은
 `changes/20260731-s1-3g-naver-retirement-gdelt-aggregate-lock.md`와
 `docs/adr/ADR-038-naver-retirement-gdelt-aggregate.md`를 따른다.
+2026-08-01 offline 구현은
+`changes/20260801-s1-3g-gdelt-offline-producer.md`에 고정한다.
 
 ```text
 NAVER_ACTIVE_PROVIDER_RUNTIME_STORAGE=RETIRED
@@ -573,6 +575,13 @@ GDELT 출처·프로젝트 URL·공식 About/Terms URL이 항상 있어야 하�
 article ID·raw query와 raw provider payload 저장을 거부한다. 실제 provider 호출은 별도 승인형
 후속 작업이며 현재 기본값과 이번 계약 wave의 physical call은 0이다. Naver boundary source card와
 exact-30 RAG corpus는 provider 결과가 아니므로 유지한다.
+
+구현된 `gdelt-aggregate-collect`의 기본 모드는 bundled synthetic fixture다. strict parser는 두
+mode의 timestamp set을 교차 검증하고 4 MiB·512 point·finite/count/norm/window 상한을 적용한다.
+완전한 입력만 `AVAILABLE`이며 empty/partial/malformed/norm-zero는 numeric field 없는
+`ABSTAIN`이다. canonical artifact publication은 0600·append-only·fsync·no-follow 경계이고,
+future online packet은 exact hash/HEAD/query/window/cap/retry 0을 검증해도 HTTP transport가 아직
+`NOT_ACTIVATED`이므로 provider 호출을 만들 수 없다.
 
 ## S1.3 ECOS/Naver 내부 source snapshot — HISTORICAL_SUPERSEDED
 

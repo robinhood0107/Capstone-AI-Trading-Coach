@@ -23,6 +23,10 @@ from app.rag.bge_runtime import (
     BgeStaticTokenizer,
     load_bge_onnx_embedder,
 )
+from app.rag.official_evidence import (
+    OfficialEvidenceError,
+    validate_official_evidence_manifest,
+)
 from app.rag.source_card import (
     OFFICIAL_SOURCE_CARD_ROOT,
     RagSourceCardError,
@@ -56,6 +60,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             DEFAULT_MODEL_ROOT,
             manifest_path=DEFAULT_MODEL_MANIFEST,
         )
+        official_evidence = validate_official_evidence_manifest()
         cards = load_rag_source_cards(
             approved_root=OFFICIAL_SOURCE_CARD_ROOT,
             relative_paths=_CARD_PATHS,
@@ -67,6 +72,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             cards=cards,
             tokenizer=tokenizer,
             artifact=artifact,
+            official_evidence=official_evidence,
         )
         receipt = execute_bge_poc(
             plan=plan,
@@ -78,6 +84,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         BgeArtifactError,
         BgePocError,
         BgeRuntimeError,
+        OfficialEvidenceError,
         RagSourceCardError,
     ) as error:
         print(f"S4_2A_BGE_POC_FAILED:{error}")

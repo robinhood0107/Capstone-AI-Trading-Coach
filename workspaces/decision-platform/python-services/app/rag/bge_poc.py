@@ -21,6 +21,7 @@ from app.rag.ingest_pipeline import (
     build_embedding_inputs,
     parse_markdown_document,
 )
+from app.rag.official_evidence import OfficialEvidenceReceipt
 from app.rag.source_card import RagSourceCard
 
 _PROFILE_ID = "bge_m3_local_1024_v1"
@@ -141,8 +142,9 @@ def prepare_bge_poc(
     cards: Sequence[RagSourceCard],
     tokenizer: RagTokenizer,
     artifact: BgeVerifiedPacket,
+    official_evidence: OfficialEvidenceReceipt,
 ) -> BgePocPlan:
-    """exact 공식 5-card를 각각 한 canonical chunk로 동결해 PoC plan을 만든다."""
+    """manifest에 결합된 exact 공식 5-card를 한 chunk씩 동결해 PoC plan을 만든다."""
 
     identities = {(card.source_id, card.card_id) for card in cards}
     if (
@@ -157,6 +159,32 @@ def prepare_bge_poc(
         )
     ):
         raise BgePocError("FIVE_CARD_MEMBERSHIP")
+    if (
+        len(official_evidence.source_ids) != 5
+        or len(set(official_evidence.source_ids)) != 5
+        or len(official_evidence.evidence_sha256) != 5
+        or len(official_evidence.source_card_content_sha256) != 5
+    ):
+        raise BgePocError("OFFICIAL_EVIDENCE_RECEIPT")
+    evidence_by_source_id = {
+        source_id: (evidence_sha256, card_content_sha256)
+        for source_id, evidence_sha256, card_content_sha256 in zip(
+            official_evidence.source_ids,
+            official_evidence.evidence_sha256,
+            official_evidence.source_card_content_sha256,
+            strict=True,
+        )
+    }
+    if (
+        set(evidence_by_source_id) != {card.source_id for card in cards}
+        or any(
+            evidence_by_source_id[card.source_id]
+            != (card.evidence_content_sha256, card.content_sha256)
+            for card in cards
+        )
+    ):
+        # identity만 유지한 card drift도 DB materialization 전에 manifest receipt에서 차단한다.
+        raise BgePocError("OFFICIAL_EVIDENCE_CARD_BINDING")
     if (
         artifact.revision != _MODEL_REVISION
         or artifact.file_count != _EXPECTED_ARTIFACT_FILE_COUNT

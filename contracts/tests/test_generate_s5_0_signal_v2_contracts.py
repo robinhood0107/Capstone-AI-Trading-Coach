@@ -132,6 +132,11 @@ class SignalV2ContractGenerationTest(unittest.TestCase):
             actual = json.loads((ROOT / relative).read_text(encoding="utf-8"))
             self.assertEqual(expected, actual, relative)
 
+    def test_contracts_ci_runs_new_generator_checks(self) -> None:
+        workflow = (ROOT / ".github/workflows/contracts-ci.yml").read_text(encoding="utf-8")
+        self.assertIn("contracts/generate_rag_proto.py --check", workflow)
+        self.assertIn("contracts/generate_s5_0_signal_v2_contracts.py --check", workflow)
+
 
 if __name__ == "__main__":
     unittest.main()

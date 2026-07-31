@@ -14,6 +14,24 @@ from app.data.gdelt.errors import GdeltAggregateError
 
 _DIRECTORY_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
 _HASH_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+_FORBIDDEN_METADATA_KEYS = frozenset(
+    {
+        "rawquery",
+        "requesturl",
+        "responseheaders",
+        "headline",
+        "title",
+        "body",
+        "summary",
+        "url",
+        "image",
+        "imageurl",
+        "domain",
+        "accountid",
+        "orderid",
+        "userid",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -62,25 +80,29 @@ def publish_observation(*, root: Path, observation: dict[str, object]) -> Publis
 
 
 def _reject_sensitive_keys(value: object) -> None:
-    forbidden = {
-        "rawQuery",
-        "requestUrl",
-        "responseHeaders",
-        "articleTitle",
-        "articleUrl",
-        "publisherUrl",
-        "accountId",
-        "orderId",
-        "userId",
-    }
     if isinstance(value, dict):
-        if forbidden & value.keys():
-            raise GdeltAggregateError("STORAGE_UNSAFE", "sensitive field is forbidden")
-        for nested in value.values():
+        for key, nested in value.items():
+            if not isinstance(key, str) or _is_sensitive_key(key, nested):
+                raise GdeltAggregateError("STORAGE_UNSAFE", "sensitive field is forbidden")
             _reject_sensitive_keys(nested)
     elif isinstance(value, list):
         for nested in value:
             _reject_sensitive_keys(nested)
+
+
+def _is_sensitive_key(key: str, value: object) -> bool:
+    # 집계 count와 명시적인 false 표식만 article/rawProvider 접두어의 허용 예외다.
+    if key == "articleCount":
+        return False
+    if key in {"articleMetadataStored", "rawProviderDataStored"}:
+        return value is not False
+    normalized = key.casefold()
+    return (
+        normalized in _FORBIDDEN_METADATA_KEYS
+        or normalized.startswith("article")
+        or normalized.startswith("publisher")
+        or normalized.startswith("rawprovider")
+    )
 
 
 def _absolute_root(root: Path) -> Path:

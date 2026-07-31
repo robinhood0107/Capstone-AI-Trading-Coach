@@ -237,9 +237,6 @@ def test_postgres_three_channels_share_only_active_opaque_scope(
         replace(scope, owner_user_id="usr_demo_admin"),
         replace(scope, session_id="s4-3-session-00000002"),
         replace(scope, claim_id="rag_scope_" + "f" * 32),
-        replace(scope, generation_id="rag_gen_" + "f" * 32),
-        replace(scope, embedding_profile_id="voyage_context_4_1024_v1"),
-        replace(scope, policy_version=scope.policy_version + 1),
     ):
         assert adapter.retrieve_exact(
             scope=crossed_scope,

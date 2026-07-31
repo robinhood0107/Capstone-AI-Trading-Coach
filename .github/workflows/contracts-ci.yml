@@ -47,6 +47,9 @@ jobs:
       - name: Check generated S4.7B source-card v2 artifacts
         run: uv run --frozen python contracts/generate_rag_source_card_v2_contracts.py --check
 
+      - name: Check generated S1.3G news aggregate contract artifacts
+        run: uv run --frozen python contracts/generate_s1_3g_news_contracts.py --check
+
       - name: Run contract tooling tests
         run: uv run --frozen python -m unittest discover -s contracts/tests -v
 

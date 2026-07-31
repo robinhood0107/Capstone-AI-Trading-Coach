@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import math
 from dataclasses import replace
 from typing import Sequence
@@ -25,6 +27,7 @@ from app.rag.authorized_retrieval import (
     RetrievalFailureCode,
     RrfFusion,
 )
+from app.rag.source_card_corpus import REPO_ROOT
 
 
 OWNER_ID = "00000000-0000-0000-0000-000000000001"
@@ -510,3 +513,35 @@ def test_dense_only_top_candidate_is_not_sufficient_relevance() -> None:
 
     assert outcome.failure_code is RetrievalFailureCode.INSUFFICIENT_EVIDENCE
     assert outcome.evidence == ()
+
+
+def test_tracked_s4_3_benchmark_is_hash_bound_and_passed() -> None:
+    report_path = (
+        REPO_ROOT
+        / "capstone-rag/reports/s4-3-authorized-retrieval-benchmark.v1.json"
+    )
+    query_path = (
+        REPO_ROOT / "capstone-rag/eval/s4-3-authorized-retrieval-smoke.v1.json"
+    )
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    expected_hash = report.pop("benchmarkReportSha256")
+    actual_hash = hashlib.sha256(
+        (
+            json.dumps(
+                report,
+                ensure_ascii=False,
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+            + "\n"
+        ).encode("utf-8")
+    ).hexdigest()
+
+    assert actual_hash == expected_hash
+    assert report["commitSha"] == "9e533e486e8c3ddc85adf31fdf272027706a85d2"
+    assert report["querySetSha256"] == hashlib.sha256(query_path.read_bytes()).hexdigest()
+    assert report["status"] == "PASS"
+    assert report["expectedTop5HitRate"] == 1.0
+    assert report["noEvidenceRefusalRate"] == 1.0
+    assert report["stagesMs"]["total"]["p95"] <= 1500.0
+    assert report["physicalCalls"]["providerTotal"] == 0

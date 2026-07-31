@@ -16,7 +16,7 @@ from pydantic import (
 )
 
 _SNAPSHOT_PATH_PATTERN = re.compile(
-    r"(?P<source>ecos|naver)/(?P<year>[0-9]{4})/(?P<month>[0-9]{2})/"
+    r"(?P<source>ecos)/(?P<year>[0-9]{4})/(?P<month>[0-9]{2})/"
     r"(?P<day>[0-9]{2})/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-"
     r"[89ab][0-9a-f]{3}-[0-9a-f]{12}/snapshot\.json"
 )
@@ -32,20 +32,6 @@ class EcosCountBreakdown(_SnapshotModel):
     duplicate_count: StrictInt = Field(alias="duplicateCount", ge=0)
 
 
-class NaverCountBreakdown(_SnapshotModel):
-    query_count: StrictInt = Field(alias="queryCount", ge=0)
-    accepted_item_count: StrictInt = Field(alias="acceptedItemCount", ge=0)
-    filtered_item_count: StrictInt = Field(alias="filteredItemCount", ge=0)
-    redacted_url_count: StrictInt = Field(alias="redactedUrlCount", ge=0)
-
-    @field_validator("query_count", mode="before")
-    @classmethod
-    def _reject_boolean_query_count(cls, value: object) -> object:
-        if isinstance(value, bool):
-            raise ValueError("queryCount must be an integer")
-        return value
-
-
 class SourceProvenance(_SnapshotModel):
     documentation_url: HttpUrl = Field(alias="documentationUrl")
     policy_url: HttpUrl = Field(alias="policyUrl")
@@ -55,7 +41,7 @@ class SourceSnapshotManifest(_SnapshotModel):
     """source snapshot의 provenance·hash·보존·부분수집 상태를 strict DTO로 고정한다."""
 
     schema_version: StrictInt = Field(alias="schemaVersion", ge=1, le=1)
-    source: Literal["ecos", "naver"]
+    source: Literal["ecos"]
     provider_profile: str = Field(alias="providerProfile", min_length=1, max_length=64)
     operation: str = Field(min_length=1, max_length=64)
     generated_at: datetime = Field(alias="generatedAt")
@@ -63,7 +49,7 @@ class SourceSnapshotManifest(_SnapshotModel):
     snapshot_path: str = Field(alias="snapshotPath")
     snapshot_sha256: str = Field(alias="snapshotSha256", pattern=r"^[0-9a-f]{64}$")
     record_count: StrictInt = Field(alias="recordCount", ge=0)
-    count_breakdown: EcosCountBreakdown | NaverCountBreakdown = Field(alias="countBreakdown")
+    count_breakdown: EcosCountBreakdown = Field(alias="countBreakdown")
     partial: StrictBool
     coverage: Literal["complete", "partial", "empty"]
     deferred_queries: StrictInt = Field(alias="deferredQueries", ge=0)
@@ -106,22 +92,8 @@ class SourceSnapshotManifest(_SnapshotModel):
             raise ValueError("partial and coverage must agree")
         if self.coverage == "empty" and self.record_count != 0:
             raise ValueError("empty coverage requires zero records")
-        if self.source == "ecos":
-            if not isinstance(self.count_breakdown, EcosCountBreakdown):
-                raise ValueError("ECOS requires an ECOS count breakdown")
-            if self.record_count != self.count_breakdown.observation_count:
-                raise ValueError("ECOS recordCount must equal observationCount")
-            if self.deferred_queries != 0:
-                raise ValueError("ECOS does not support deferred queries")
-        else:
-            if not isinstance(self.count_breakdown, NaverCountBreakdown):
-                raise ValueError("Naver requires a Naver count breakdown")
-            if self.record_count != self.count_breakdown.accepted_item_count:
-                raise ValueError("Naver recordCount must equal acceptedItemCount")
-            if not 1 <= self.count_breakdown.query_count <= 4:
-                raise ValueError("Naver queryCount must be between one and four")
-            if self.deferred_queries > self.count_breakdown.query_count:
-                raise ValueError("Naver deferredQueries cannot exceed queryCount")
-            if self.physical_attempt_count > 2 * self.count_breakdown.query_count:
-                raise ValueError("Naver attempts cannot exceed two per query")
+        if self.record_count != self.count_breakdown.observation_count:
+            raise ValueError("ECOS recordCount must equal observationCount")
+        if self.deferred_queries != 0:
+            raise ValueError("ECOS does not support deferred queries")
         return self

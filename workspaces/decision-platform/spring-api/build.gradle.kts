@@ -212,6 +212,17 @@ tasks.named<ProcessResources>("processResources") {
     from(layout.projectDirectory.file("../../../contracts/schemas/s4-rag-ask-request.schema.json")) {
         into("contracts")
     }
+    listOf(
+        "s4-rag-answer.schema.json",
+        "s4-rag-history-page.schema.json",
+        "s4-rag-history-detail.schema.json",
+        "s4-rag-feedback-request.schema.json",
+        "s4-rag-consent-request.schema.json",
+    ).forEach { fileName ->
+        from(layout.projectDirectory.file("../../../contracts/schemas/$fileName")) {
+            into("contracts")
+        }
+    }
     from(layout.projectDirectory.file("../../../contracts/schemas/s4-rag-admin-policy-selection.schema.json")) {
         into("contracts")
     }
@@ -445,6 +456,11 @@ val verifyS4RagContractResources by tasks.registering {
         }
         listOf(
             "s4-rag-ask-request.schema.json",
+            "s4-rag-answer.schema.json",
+            "s4-rag-history-page.schema.json",
+            "s4-rag-history-detail.schema.json",
+            "s4-rag-feedback-request.schema.json",
+            "s4-rag-consent-request.schema.json",
             "s4-rag-admin-policy-selection.schema.json",
             "rag-source-card-v2.schema.json",
         ).forEach { fileName ->

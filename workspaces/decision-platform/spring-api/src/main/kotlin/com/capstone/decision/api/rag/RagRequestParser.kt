@@ -1,15 +1,187 @@
 package com.capstone.decision.api.rag
 
+import com.capstone.decision.application.rag.RagAnswerMode
+import com.capstone.decision.application.rag.RagAskCommand
 import com.capstone.decision.application.rag.RagFieldViolation
 import com.capstone.decision.application.rag.RagValidationException
 import jakarta.servlet.http.HttpServletRequest
 import org.springframework.stereotype.Component
+import tools.jackson.core.JacksonException
+import tools.jackson.core.StreamReadConstraints
+import tools.jackson.core.StreamReadFeature
+import tools.jackson.core.json.JsonFactory
+import tools.jackson.databind.JsonNode
+import tools.jackson.databind.json.JsonMapper
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
+import java.text.Normalizer
 import java.util.HexFormat
 
 @Component
 class RagRequestParser {
+    private val strictMapper =
+        JsonMapper
+            .builder(
+                JsonFactory
+                    .builder()
+                    .streamReadConstraints(
+                        StreamReadConstraints
+                            .builder()
+                            .maxNestingDepth(4)
+                            .maxDocumentLength(MAX_ASK_BYTES.toLong())
+                            .maxTokenCount(64)
+                            .maxNumberLength(16)
+                            .maxStringLength(MAX_ASK_BYTES)
+                            .maxNameLength(64)
+                            .build(),
+                    ).enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION)
+                    .build(),
+            ).build()
+
+    /**
+     * public ask body의 네 field만 coercion 없이 읽고 NFC/scalar/UTF-8/list 계약을 같은 경계에서 검증한다.
+     */
+    fun parseAsk(body: String): RagAskCommand {
+        val root = parseObject(body)
+        val violations = mutableListOf<RagFieldViolation>()
+        rejectUnknown(root, ASK_FIELDS, violations)
+        val question = requiredString(root, "question", violations)
+        if (
+            question != null &&
+            (
+                Normalizer.normalize(question, Normalizer.Form.NFC) != question ||
+                    question.codePointCount(0, question.length) !in 1..1_000 ||
+                    question.toByteArray(StandardCharsets.UTF_8).size > MAX_QUESTION_BYTES ||
+                    question.any(Char::isSurrogate) ||
+                    question.codePoints().anyMatch(Character::isISOControl)
+            )
+        ) {
+            violations.add(RagFieldViolation("/question", "INVALID_FORMAT"))
+        }
+        val answerMode =
+            requiredString(root, "answerMode", violations)?.let { value ->
+                runCatching { RagAnswerMode.valueOf(value) }.getOrNull()
+                    ?: run {
+                        violations.add(RagFieldViolation("/answerMode", "INVALID_ENUM"))
+                        null
+                    }
+            }
+        val relatedSymbols =
+            stringArray(
+                root = root,
+                field = "relatedSymbols",
+                allowed = null,
+                pattern = SYMBOL,
+                violations = violations,
+            )
+        val topics =
+            stringArray(
+                root = root,
+                field = "topics",
+                allowed = TOPICS,
+                pattern = null,
+                violations = violations,
+            )
+        throwIfInvalid(violations)
+        return RagAskCommand(
+            question = requireNotNull(question),
+            answerMode = requireNotNull(answerMode),
+            relatedSymbols = relatedSymbols,
+            topics = topics,
+        )
+    }
+
+    fun requireIdempotencyKey(value: String?): String {
+        if (value == null || !IDEMPOTENCY_KEY.matches(value)) {
+            throw RagValidationException(
+                listOf(RagFieldViolation("/headers/X-Idempotency-Key", "INVALID_FORMAT")),
+            )
+        }
+        return value
+    }
+
+    fun parseAnswerId(value: String): String {
+        if (!ANSWER_ID.matches(value)) {
+            throw RagValidationException(
+                listOf(RagFieldViolation("/path/answerId", "INVALID_FORMAT")),
+            )
+        }
+        return value
+    }
+
+    fun parseFeedback(body: String): Boolean {
+        val root = parseObject(body)
+        val violations = mutableListOf<RagFieldViolation>()
+        rejectUnknown(root, setOf("helpful"), violations)
+        val helpful = root.get("helpful")
+        if (helpful == null) {
+            violations.add(RagFieldViolation("/helpful", "REQUIRED"))
+        } else if (!helpful.isBoolean) {
+            violations.add(RagFieldViolation("/helpful", "INVALID_FORMAT"))
+        }
+        throwIfInvalid(violations)
+        return requireNotNull(helpful).booleanValue()
+    }
+
+    fun parseConsent(body: String): RagConsentCommand {
+        val root = parseObject(body)
+        val violations = mutableListOf<RagFieldViolation>()
+        rejectUnknown(root, CONSENT_FIELDS, violations)
+        val consentType = requiredString(root, "consentType", violations)
+        val action = requiredString(root, "action", violations)
+        val policyVersion = requiredString(root, "policyVersion", violations)
+        if (consentType != "EXTERNAL_AI_RAG_V1") {
+            violations.add(RagFieldViolation("/consentType", "INVALID_ENUM"))
+        }
+        if (action !in setOf("GRANT", "REVOKE")) {
+            violations.add(RagFieldViolation("/action", "INVALID_ENUM"))
+        }
+        if (policyVersion != "EXTERNAL_AI_RAG_V1") {
+            violations.add(RagFieldViolation("/policyVersion", "INVALID_ENUM"))
+        }
+        throwIfInvalid(violations)
+        return RagConsentCommand(
+            action = requireNotNull(action),
+            policyVersion = requireNotNull(policyVersion),
+        )
+    }
+
+    fun parseHistoryQuery(request: HttpServletRequest): RagHistoryQuery {
+        val violations =
+            request.parameterMap.keys
+                .filterNot { it in HISTORY_QUERY_FIELDS }
+                .map { name ->
+                    RagFieldViolation(
+                        "/query/${escapePointer(name)}",
+                        "UNKNOWN_FIELD",
+                    )
+                }.toMutableList()
+        val cursor =
+            request.parameterMap["cursor"]?.let { values ->
+                if (values.size != 1 || values.single().isBlank() || values.single().length > 512) {
+                    violations.add(RagFieldViolation("/query/cursor", "INVALID_CURSOR"))
+                    null
+                } else {
+                    values.single()
+                }
+            }
+        val limit =
+            request.parameterMap["limit"]?.let { values ->
+                if (values.size != 1) {
+                    violations.add(RagFieldViolation("/query/limit", "INVALID_FORMAT"))
+                    null
+                } else {
+                    values.single().toIntOrNull()?.takeIf { it in 1..50 }
+                        ?: run {
+                            violations.add(RagFieldViolation("/query/limit", "OUT_OF_RANGE"))
+                            null
+                        }
+                }
+            } ?: 20
+        throwIfInvalid(violations)
+        return RagHistoryQuery(cursor = cursor, limit = limit)
+    }
+
     /**
      * `/rag/sources`는 cursor/query/filter CRUD 표면을 열지 않는 고정 metadata 목록이다.
      * 검색어, sourceTier, profile 같은 제어 입력은 S4.3 이후 별도 계약으로만 추가한다.
@@ -22,6 +194,91 @@ class RagRequestParser {
                 .map { name -> RagFieldViolation(boundedQueryPointer(name), "UNKNOWN_FIELD") }
         if (violations.isNotEmpty()) {
             throw RagValidationException(violations)
+        }
+    }
+
+    private fun parseObject(body: String): JsonNode {
+        val root =
+            try {
+                strictMapper.readTree(body)
+            } catch (_: JacksonException) {
+                null
+            } catch (_: IllegalArgumentException) {
+                null
+            }
+        if (root == null || !root.isObject) {
+            throw RagValidationException(listOf(RagFieldViolation("/", "INVALID_FORMAT")))
+        }
+        return root
+    }
+
+    private fun rejectUnknown(
+        root: JsonNode,
+        allowed: Set<String>,
+        violations: MutableList<RagFieldViolation>,
+    ) {
+        root.properties().forEach { (name, _) ->
+            if (name !in allowed) {
+                violations.add(RagFieldViolation("/${escapePointer(name)}", "UNKNOWN_FIELD"))
+            }
+        }
+    }
+
+    private fun requiredString(
+        root: JsonNode,
+        field: String,
+        violations: MutableList<RagFieldViolation>,
+    ): String? {
+        val node = root.get(field)
+        if (node == null) {
+            violations.add(RagFieldViolation("/$field", "REQUIRED"))
+            return null
+        }
+        if (!node.isString || node.stringValue().isBlank()) {
+            violations.add(RagFieldViolation("/$field", "INVALID_FORMAT"))
+            return null
+        }
+        return node.stringValue()
+    }
+
+    private fun stringArray(
+        root: JsonNode,
+        field: String,
+        allowed: Set<String>?,
+        pattern: Regex?,
+        violations: MutableList<RagFieldViolation>,
+    ): List<String> {
+        val node = root.get(field) ?: return emptyList()
+        if (!node.isArray || node.size() > 5) {
+            violations.add(RagFieldViolation("/$field", "OUT_OF_RANGE"))
+            return emptyList()
+        }
+        val values =
+            node
+                .values()
+                .asSequence()
+                .mapIndexedNotNull { index, value ->
+                    if (!value.isString) {
+                        violations.add(RagFieldViolation("/$field/$index", "INVALID_FORMAT"))
+                        null
+                    } else {
+                        value.stringValue()
+                    }
+                }.toList()
+        if (values.size != values.toSet().size) {
+            violations.add(RagFieldViolation("/$field", "DUPLICATE"))
+        }
+        values.forEachIndexed { index, value ->
+            if ((allowed != null && value !in allowed) || (pattern != null && !pattern.matches(value))) {
+                violations.add(RagFieldViolation("/$field/$index", "INVALID_FORMAT"))
+            }
+        }
+        return values
+    }
+
+    private fun throwIfInvalid(violations: List<RagFieldViolation>) {
+        if (violations.isNotEmpty()) {
+            throw RagValidationException(violations.take(MAX_QUERY_VIOLATIONS))
         }
     }
 
@@ -45,6 +302,23 @@ class RagRequestParser {
 
     private companion object {
         const val MAX_QUERY_VIOLATIONS = 64
-        const val MAX_FIELD_LENGTH = 512
+        const val MAX_FIELD_LENGTH = 256
+        const val MAX_ASK_BYTES = 32_768
+        const val MAX_QUESTION_BYTES = 8_192
+        val ASK_FIELDS = setOf("question", "answerMode", "relatedSymbols", "topics")
+        val CONSENT_FIELDS = setOf("consentType", "action", "policyVersion")
+        val HISTORY_QUERY_FIELDS = setOf("cursor", "limit")
+        val SYMBOL = Regex("^[0-9]{6}$")
+        val ANSWER_ID = Regex("^rag_ans_[0-9a-f]{32}$")
+        val IDEMPOTENCY_KEY = Regex("^[A-Za-z0-9._~-]{16,128}$")
+        val TOPICS =
+            setOf(
+                "API",
+                "DATA",
+                "FINANCIAL_ENGINEERING",
+                "METHODOLOGY",
+                "PRODUCT_RISK",
+                "RISK",
+            )
     }
 }

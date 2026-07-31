@@ -44,6 +44,13 @@ REQUIRED_NAMES: Final[tuple[str, ...]] = (
     "BROKERAGE_IDEMPOTENCY_SCOPE_HMAC_KEY",
     "BROKERAGE_DB_CAPABILITY_TOKEN",
     "BROKERAGE_DB_CAPABILITY_TOKEN_SHA256",
+    "RAG_HISTORY_SECRET_DIRECTORY",
+    "RAG_HISTORY_CURRENT_KEK_VERSION",
+    "RAG_IDEMPOTENCY_SCOPE_HMAC_KEY",
+    "RAG_REQUEST_FINGERPRINT_HMAC_KEY",
+    "RAG_PROVIDER_USAGE_HMAC_KEY",
+    "RAG_RATE_LIMIT_HMAC_KEY",
+    "RAG_HISTORY_CURSOR_HMAC_KEY",
     "DEMO_CREDENTIAL_SEPARATION_KEY",
     "DEMO_USER_CREDENTIAL_BUNDLE",
     "DEMO_ADMIN_CREDENTIAL_BUNDLE",
@@ -151,6 +158,15 @@ def _require_fixed_values(values: dict[str, str]) -> None:
             raise OpenApiEnvironmentError(f"{name} must equal the isolated fixture value.")
     if values["POSTGRES_HOST_PORT"] != values["POSTGRES_PORT"]:
         raise OpenApiEnvironmentError("PostgreSQL host and application ports must match.")
+    rag_secret_directory = Path(values["RAG_HISTORY_SECRET_DIRECTORY"])
+    if (
+        not rag_secret_directory.is_absolute()
+        or rag_secret_directory != Path(os.path.normpath(rag_secret_directory))
+        or ".." in rag_secret_directory.parts
+    ):
+        raise OpenApiEnvironmentError("RAG_HISTORY_SECRET_DIRECTORY must be an absolute normalized path.")
+    if values["RAG_HISTORY_CURRENT_KEK_VERSION"] != "kek-v1":
+        raise OpenApiEnvironmentError("RAG_HISTORY_CURRENT_KEK_VERSION must equal kek-v1.")
 
 
 def _require_secret_shapes(values: dict[str, str]) -> None:
@@ -175,6 +191,11 @@ def _require_secret_shapes(values: dict[str, str]) -> None:
         "DECISION_IDEMPOTENCY_SCOPE_HMAC_KEY",
         "BROKERAGE_IDEMPOTENCY_SCOPE_HMAC_KEY",
         "BROKERAGE_DB_CAPABILITY_TOKEN",
+        "RAG_IDEMPOTENCY_SCOPE_HMAC_KEY",
+        "RAG_REQUEST_FINGERPRINT_HMAC_KEY",
+        "RAG_PROVIDER_USAGE_HMAC_KEY",
+        "RAG_RATE_LIMIT_HMAC_KEY",
+        "RAG_HISTORY_CURSOR_HMAC_KEY",
     )
     for name in general_secret_names:
         if _BASE64URL_SECRET.fullmatch(values[name]) is None:

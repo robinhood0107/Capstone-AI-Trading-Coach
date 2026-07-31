@@ -61,7 +61,7 @@ class S13gNewsContractTest(unittest.TestCase):
         final_spec = (ROOT / "docs/최종_프로젝트_명세서.md").read_text(
             encoding="utf-8"
         )
-        active_news_section = final_spec.split("### 11.2 뉴스 데이터 원칙", maxsplit=1)[
+        active_news_section = final_spec.split("### 11.2 뉴스 수집 원칙", maxsplit=1)[
             1
         ].split("### 11.3 RAG 설계", maxsplit=1)[0]
         self.assertNotIn("Naver Search API:", active_news_section)

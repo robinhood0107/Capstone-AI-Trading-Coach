@@ -658,6 +658,24 @@ BEGIN
 END
 $rag_source_registry_privileges$;
 
+DO $rag_embedding_staging_privileges$
+BEGIN
+    IF to_regclass('public.rag_embedding_staging') IS NOT NULL THEN
+        -- V17 이후 writer는 final embedding과 generation 활성화를 직접 변경하지 않는다.
+        REVOKE INSERT, UPDATE, DELETE, TRUNCATE
+            ON TABLE rag_chunk_embeddings FROM decision_rag_writer;
+        REVOKE SELECT ON TABLE rag_chunk_embeddings FROM decision_rag_writer;
+        REVOKE UPDATE (activated_at)
+            ON TABLE rag_corpus_generations FROM decision_rag_writer;
+        REVOKE ALL PRIVILEGES ON TABLE rag_embedding_staging FROM
+            decision_app,
+            decision_rag_writer,
+            decision_rag_query;
+        GRANT INSERT, SELECT ON TABLE rag_embedding_staging TO decision_rag_writer;
+    END IF;
+END
+$rag_embedding_staging_privileges$;
+
 -- extension I/O 함수는 건드리지 않고 public schema의 project-owned 함수 grant만 제거해 allowlist를 다시 만든다.
 -- PUBLIC 또는 비앱 writer/reader에 남은 stale SECURITY DEFINER EXECUTE도 bootstrap replay가 보존하면 안 된다.
 DO $revoke_custom_function_privileges$
@@ -751,6 +769,13 @@ BEGIN
         -- writer는 rag_sources UPDATE 대신 exact previous→next identity 전이만 호출한다.
         GRANT EXECUTE ON FUNCTION
             retire_rag_source_for_relocation(text, text)
+        TO decision_rag_writer;
+    END IF;
+    IF to_regprocedure('public.finalize_rag_embedding_staging(text,text,text,integer,text)') IS NOT NULL THEN
+        -- staging writer는 bounded SECURITY DEFINER finalizer와 자기 run purge만 호출한다.
+        GRANT EXECUTE ON FUNCTION
+            finalize_rag_embedding_staging(text, text, text, integer, text),
+            purge_rag_embedding_staging(text, text)
         TO decision_rag_writer;
     END IF;
 END

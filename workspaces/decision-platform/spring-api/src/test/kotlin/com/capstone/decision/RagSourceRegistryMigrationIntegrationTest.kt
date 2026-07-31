@@ -42,13 +42,14 @@ class RagSourceRegistryMigrationIntegrationTest {
                         "rag_corpus_generations",
                         "rag_generation_chunks",
                         "rag_chunk_embeddings",
+                        "rag_embedding_staging",
                         "rag_embedding_policy_state",
                         "rag_embedding_policy_transitions",
                     )
                 assertThat(queryStrings(connection, normalizedTableQuery))
                     .containsAll(expectedTables)
                 assertThat(queryString(connection, "select max(version::integer) from flyway_schema_history where success"))
-                    .isEqualTo("16")
+                    .isEqualTo("17")
 
                 expectedTables.forEach { table ->
                     assertThat(
@@ -80,13 +81,49 @@ class RagSourceRegistryMigrationIntegrationTest {
                         "rag_chunk_revisions",
                         "rag_corpus_generations",
                         "rag_generation_chunks",
-                        "rag_chunk_embeddings",
                     )
                 writerTables.forEach { table ->
                     assertTrue(hasTablePrivilege(connection, "decision_rag_writer", table, "SELECT"))
                     assertTrue(hasTablePrivilege(connection, "decision_rag_writer", table, "INSERT"))
                     assertFalse(hasTablePrivilege(connection, "decision_rag_writer", table, "DELETE"))
                     assertFalse(hasTablePrivilege(connection, "decision_rag_writer", table, "TRUNCATE"))
+                }
+                assertTrue(
+                    hasTablePrivilege(
+                        connection,
+                        "decision_rag_writer",
+                        "rag_embedding_staging",
+                        "SELECT",
+                    ),
+                )
+                assertTrue(
+                    hasTablePrivilege(
+                        connection,
+                        "decision_rag_writer",
+                        "rag_embedding_staging",
+                        "INSERT",
+                    ),
+                )
+                listOf("UPDATE", "DELETE", "TRUNCATE").forEach { privilege ->
+                    assertFalse(
+                        hasTablePrivilege(
+                            connection,
+                            "decision_rag_writer",
+                            "rag_embedding_staging",
+                            privilege,
+                        ),
+                    )
+                }
+                listOf("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE").forEach { privilege ->
+                    assertFalse(
+                        hasTablePrivilege(
+                            connection,
+                            "decision_rag_writer",
+                            "rag_chunk_embeddings",
+                            privilege,
+                        ),
+                        "unexpected direct final embedding $privilege privilege",
+                    )
                 }
                 assertFalse(hasTablePrivilege(connection, "decision_rag_writer", "rag_sources", "UPDATE"))
                 assertTrue(
@@ -112,7 +149,6 @@ class RagSourceRegistryMigrationIntegrationTest {
                     "actual_chunk_count",
                     "evaluation_status",
                     "evaluated_at",
-                    "activated_at",
                     "failed_at",
                     "disabled_at",
                     "failure_class",
@@ -140,6 +176,16 @@ class RagSourceRegistryMigrationIntegrationTest {
                         "unexpected RAG generation writer UPDATE on $column",
                     )
                 }
+                assertFalse(
+                    hasColumnPrivilege(
+                        connection,
+                        "decision_rag_writer",
+                        "rag_corpus_generations",
+                        "activated_at",
+                        "UPDATE",
+                    ),
+                    "writer must not gain generation activation authority",
+                )
                 listOf("users", "principles", "orders", "flyway_schema_history").forEach { unrelated ->
                     listOf("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE").forEach { privilege ->
                         assertFalse(
@@ -219,6 +265,28 @@ class RagSourceRegistryMigrationIntegrationTest {
                         "select pg_get_userbyid(proowner) from pg_proc where oid = '$retirementFunction'::regprocedure",
                     ),
                 ).isEqualTo("flyway")
+                listOf(
+                    "public.finalize_rag_embedding_staging(text,text,text,integer,text)",
+                    "public.purge_rag_embedding_staging(text,text)",
+                ).forEach { signature ->
+                    assertFalse(hasPublicFunctionExecute(connection, signature))
+                    assertTrue(
+                        hasFunctionPrivilege(connection, "decision_rag_writer", signature),
+                        "missing bounded staging function privilege on $signature",
+                    )
+                    listOf("decision_app", "decision_rag_query").forEach { role ->
+                        assertFalse(
+                            hasFunctionPrivilege(connection, role, signature),
+                            "unexpected $role EXECUTE on $signature",
+                        )
+                    }
+                    assertThat(
+                        queryString(
+                            connection,
+                            "select pg_get_userbyid(proowner) from pg_proc where oid = '$signature'::regprocedure",
+                        ),
+                    ).isEqualTo("flyway")
+                }
                 assertThat(
                     queryStrings(
                         connection,
@@ -234,7 +302,9 @@ class RagSourceRegistryMigrationIntegrationTest {
                           'public.guard_rag_generation_activation()'::regprocedure,
                           'public.retire_rag_source_for_relocation(text,text)'::regprocedure,
                           'public.read_rag_source_registry(text)'::regprocedure,
-                          'public.read_active_rag_chunks(text,integer)'::regprocedure
+                          'public.read_active_rag_chunks(text,integer)'::regprocedure,
+                          'public.finalize_rag_embedding_staging(text,text,text,integer,text)'::regprocedure,
+                          'public.purge_rag_embedding_staging(text,text)'::regprocedure
                         )
                         """.trimIndent(),
                     ),
@@ -764,18 +834,38 @@ class RagSourceRegistryMigrationIntegrationTest {
                     connection.createStatement().use { statement ->
                         statement.execute(
                             """
+                            insert into rag_embedding_staging (
+                              generation_id, materialization_run_id, chunk_revision_id,
+                              embedding_profile_id, embedding_input_hash, context_set_hash,
+                              embedding, staging_row_hash
+                            )
+                            values (
+                              'rag_gen_11111111111111111111111111111111',
+                              'rag_mat_11111111111111111111111111111111',
+                              'rag_chk_11111111111111111111111111111111',
+                              'bge_m3_local_1024_v1', repeat('7', 64), null,
+                              array_fill(0.0::real, array[1024])::vector, repeat('0', 64)
+                            )
+                            """.trimIndent(),
+                        )
+                    }
+                }
+                assertThrows(SQLException::class.java) {
+                    connection.createStatement().use { statement ->
+                        statement.execute(
+                            """
                             insert into rag_chunk_embeddings (
                               chunk_embedding_id, corpus_generation_id, chunk_revision_id,
                               embedding_profile_id, vector_space, embedding_input_hash,
                               context_set_hash, embedding
                             )
                             values (
-                              'rag_emb_00000000000000000000000000000000',
+                              'rag_emb_11111111111111111111111111111111',
                               'rag_gen_11111111111111111111111111111111',
                               'rag_chk_11111111111111111111111111111111',
                               'bge_m3_local_1024_v1', 'bge_m3_local_1024_v1',
                               repeat('7', 64), null,
-                              array_fill(0.0::real, array[1024])::vector
+                              ('[' || '1' || repeat(',0', 1023) || ']')::vector
                             )
                             """.trimIndent(),
                         )
@@ -784,21 +874,34 @@ class RagSourceRegistryMigrationIntegrationTest {
                 connection.createStatement().use { statement ->
                     statement.execute(
                         """
-                        insert into rag_chunk_embeddings (
-                          chunk_embedding_id, corpus_generation_id, chunk_revision_id,
-                          embedding_profile_id, vector_space, embedding_input_hash,
-                          context_set_hash, embedding
+                        insert into rag_embedding_staging (
+                          generation_id, materialization_run_id, chunk_revision_id,
+                          embedding_profile_id, embedding_input_hash, context_set_hash,
+                          embedding, staging_row_hash
                         )
                         values (
-                          'rag_emb_11111111111111111111111111111111',
                           'rag_gen_11111111111111111111111111111111',
+                          'rag_mat_11111111111111111111111111111111',
                           'rag_chk_11111111111111111111111111111111',
-                          'bge_m3_local_1024_v1', 'bge_m3_local_1024_v1',
-                          repeat('7', 64), null,
-                          ('[' || '1' || repeat(',0', 1023) || ']')::vector
+                          'bge_m3_local_1024_v1', repeat('7', 64), null,
+                          ('[' || '1' || repeat(',0', 1023) || ']')::vector, repeat('8', 64)
                         )
                         """.trimIndent(),
                     )
+                    assertThat(
+                        queryString(
+                            connection,
+                            """
+                            select finalize_rag_embedding_staging(
+                              'rag_gen_11111111111111111111111111111111',
+                              'rag_mat_11111111111111111111111111111111',
+                              'decision_rag_writer',
+                              1,
+                              encode(digest(repeat('8', 64), 'sha256'), 'hex')
+                            )
+                            """.trimIndent(),
+                        ),
+                    ).isEqualTo("1")
                     statement.execute(
                         """
                         update rag_corpus_generations
@@ -814,13 +917,17 @@ class RagSourceRegistryMigrationIntegrationTest {
                         where corpus_generation_id = 'rag_gen_11111111111111111111111111111111'
                         """.trimIndent(),
                     )
-                    statement.execute(
-                        """
-                        update rag_corpus_generations
-                        set status = 'ACTIVE', activated_at = transaction_timestamp()
-                        where corpus_generation_id = 'rag_gen_11111111111111111111111111111111'
-                        """.trimIndent(),
-                    )
+                }
+                assertThrows(SQLException::class.java) {
+                    connection.createStatement().use { statement ->
+                        statement.execute(
+                            """
+                            update rag_corpus_generations
+                            set status = 'ACTIVE', activated_at = transaction_timestamp()
+                            where corpus_generation_id = 'rag_gen_11111111111111111111111111111111'
+                            """.trimIndent(),
+                        )
+                    }
                 }
                 assertThrows(SQLException::class.java) {
                     connection.createStatement().use { statement ->
@@ -865,7 +972,7 @@ class RagSourceRegistryMigrationIntegrationTest {
                           and actual_chunk_count = expected_chunk_count
                           and evaluation_status = 'PASSED'
                           and evaluated_at is not null
-                          and activated_at is not null
+                          and activated_at is null
                           and disabled_at is not null
                         )
                         from rag_corpus_generations
@@ -913,28 +1020,17 @@ class RagSourceRegistryMigrationIntegrationTest {
                         )
                         """.trimIndent(),
                     )
-                    statement.execute(
-                        """
-                        update rag_corpus_generations
-                        set status = 'MATERIALIZED', actual_chunk_count = 1
-                        where corpus_generation_id = 'rag_gen_22222222222222222222222222222222'
-                        """.trimIndent(),
-                    )
-                    statement.execute(
-                        """
-                        update rag_corpus_generations
-                        set status = 'EVAL_PASSED', evaluation_status = 'PASSED',
-                            evaluated_at = transaction_timestamp()
-                        where corpus_generation_id = 'rag_gen_22222222222222222222222222222222'
-                        """.trimIndent(),
-                    )
-                    statement.execute(
-                        """
-                        update rag_corpus_generations
-                        set status = 'ACTIVE', activated_at = transaction_timestamp()
-                        where corpus_generation_id = 'rag_gen_22222222222222222222222222222222'
-                        """.trimIndent(),
-                    )
+                }
+                assertThrows(SQLException::class.java) {
+                    connection.createStatement().use { statement ->
+                        statement.execute(
+                            """
+                            update rag_corpus_generations
+                            set status = 'MATERIALIZED', actual_chunk_count = 1
+                            where corpus_generation_id = 'rag_gen_22222222222222222222222222222222'
+                            """.trimIndent(),
+                        )
+                    }
                 }
             }
         }
@@ -1191,6 +1287,7 @@ class RagSourceRegistryMigrationIntegrationTest {
                 connection.createStatement().use { statement ->
                     statement.execute("create extension if not exists vector")
                     statement.execute("create extension if not exists pg_trgm")
+                    statement.execute("create extension if not exists pgcrypto")
                     statement.execute("revoke create on schema public from public")
                     statement.execute(
                         """

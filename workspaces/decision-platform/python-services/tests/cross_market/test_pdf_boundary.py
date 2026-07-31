@@ -99,6 +99,7 @@ def test_ephemeral_pdf_is_deleted_before_local_parse_and_returns_no_raw_text(tmp
     assert receipt.quote_stored is False
     assert receipt.external_llm_calls == 0
     assert receipt.section_names == APPROVED_PDF_SECTIONS
+    assert receipt.page_count == 1
 
 
 def test_derived_data_false_discards_even_user_confirmed_tags(tmp_path: Path) -> None:
@@ -108,6 +109,8 @@ def test_derived_data_false_discards_even_user_confirmed_tags(tmp_path: Path) ->
     receipt = process_licensed_ephemeral_pdf(approval, parser)
 
     assert receipt.normalized_tags == ()
+    assert receipt.section_names == ()
+    assert receipt.page_count is None
     assert receipt.derived_data_stored is False
     assert len(receipt.deletion_receipt_hash) == 64
 

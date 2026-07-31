@@ -28,6 +28,7 @@ from app.rag.bge_poc import (
     prepare_bge_poc,
 )
 from app.rag.bge_runtime import BgeStaticTokenizer, load_bge_onnx_embedder
+from app.rag.official_evidence import validate_official_evidence_manifest
 from app.rag.source_card import OFFICIAL_SOURCE_CARD_ROOT, REPO_ROOT, load_rag_source_cards
 
 pytestmark = pytest.mark.skipif(
@@ -63,7 +64,12 @@ def test_preliminary_five_card_warm_p95(
     tokenizer = BgeStaticTokenizer.from_file(
         DEFAULT_MODEL_ROOT / "onnx/tokenizer.json"
     )
-    plan = prepare_bge_poc(cards=cards, tokenizer=tokenizer, artifact=artifact)
+    plan = prepare_bge_poc(
+        cards=cards,
+        tokenizer=tokenizer,
+        artifact=artifact,
+        official_evidence=validate_official_evidence_manifest(),
+    )
     embedder = load_bge_onnx_embedder(DEFAULT_MODEL_ROOT)
     monkeypatch.setenv("RAG_SOURCE_REGISTER_TARGET", "testcontainers")
     execute_bge_poc(

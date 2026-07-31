@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import tomllib
 from dataclasses import replace
@@ -21,6 +22,16 @@ from app.rag.bge_artifact import (
 )
 
 _TOKENIZER_SHA256 = "6710678b12670bc442b99edc952c4d996ae309a7020c1fa0096dd245c2faf790"
+
+
+def test_runtime_sbom_binds_the_current_production_lockfile() -> None:
+    repo_root = Path(__file__).resolve().parents[5]
+    lockfile = repo_root / "workspaces/decision-platform/python-services/uv.lock"
+    sbom_path = repo_root / "huggingface_model/manifests/bge-m3-onnx-runtime-sbom.v1.json"
+
+    sbom = json.loads(sbom_path.read_text(encoding="utf-8"))
+
+    assert sbom["lockfileSha256"] == hashlib.sha256(lockfile.read_bytes()).hexdigest()
 
 
 def test_public_tokenizer_digest_allowlist_targets_only_the_exact_secret() -> None:

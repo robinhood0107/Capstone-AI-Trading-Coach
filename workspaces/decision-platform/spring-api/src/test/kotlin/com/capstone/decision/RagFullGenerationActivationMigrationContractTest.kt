@@ -20,7 +20,7 @@ class RagFullGenerationActivationMigrationContractTest {
                 .maxOf(::migrationVersion)
 
         assertThat(selectedVersion).isEqualTo(previousHighest + 1)
-        assertThat(selectedVersion).isEqualTo(migrations.maxOf(::migrationVersion))
+        assertThat(selectedVersion).isLessThanOrEqualTo(migrations.maxOf(::migrationVersion))
     }
 
     @Test

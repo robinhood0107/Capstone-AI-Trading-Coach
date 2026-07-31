@@ -69,9 +69,9 @@ class AuthTrustRootIntegrationTest(
     }
 
     @Test
-    fun `V18 preserves the V7 active demo trust root with strength twelve bcrypt hashes`() {
+    fun `V19 preserves the V7 active demo trust root with strength twelve bcrypt hashes`() {
         val versions = jdbcTemplate.queryForList("select version from flyway_schema_history order by installed_rank", String::class.java)
-        assertEquals((1..18).map(Int::toString), versions)
+        assertEquals((1..19).map(Int::toString), versions)
 
         val users =
             jdbcTemplate.query(

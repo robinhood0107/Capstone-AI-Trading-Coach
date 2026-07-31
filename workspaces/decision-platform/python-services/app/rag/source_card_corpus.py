@@ -113,6 +113,84 @@ REQUIRED_STABLE_ASSUMPTIONS = MappingProxyType(
         ),
     }
 )
+PUBLIC_TOPICS_BY_SOURCE_ID = MappingProxyType(
+    {
+        "src_project_backtest_overfitting_001": ("METHODOLOGY",),
+        "src_project_bsm_continuous_hedge_assumptions_001": (
+            "FINANCIAL_ENGINEERING",
+            "METHODOLOGY",
+        ),
+        "src_project_bsm_risk_neutral_001": (
+            "FINANCIAL_ENGINEERING",
+            "RISK",
+        ),
+        "src_project_bsm_time_to_expiry_001": (
+            "FINANCIAL_ENGINEERING",
+            "METHODOLOGY",
+        ),
+        "src_project_delta_hedge_residual_cost_001": (
+            "FINANCIAL_ENGINEERING",
+            "RISK",
+        ),
+        "src_project_ecos_pit_availability_001": ("API", "DATA"),
+        "src_project_expected_payoff_measure_discount_001": (
+            "FINANCIAL_ENGINEERING",
+            "METHODOLOGY",
+        ),
+        "src_project_finance_diffusion_not_ddpm_001": (
+            "FINANCIAL_ENGINEERING",
+            "METHODOLOGY",
+        ),
+        "src_project_gold_futures_etf_132030_001": (
+            "DATA",
+            "PRODUCT_RISK",
+        ),
+        "src_project_hmm_latent_state_boundary_001": ("METHODOLOGY",),
+        "src_project_kis_adjusted_price_001": ("API", "DATA"),
+        "src_project_kis_current_price_snapshot_001": ("API", "DATA"),
+        "src_project_kis_discovery_write_boundary_001": (
+            "API",
+            "METHODOLOGY",
+            "PRODUCT_RISK",
+        ),
+        "src_project_kis_market_calendar_001": ("API", "DATA"),
+        "src_project_kis_rate_limit_token_001": ("API",),
+        "src_project_krx_etf_etn_structure_001": ("DATA", "PRODUCT_RISK"),
+        "src_project_krx_etn_risk_indicator_001": ("PRODUCT_RISK", "RISK"),
+        "src_project_krx_last_trading_settlement_001": (
+            "DATA",
+            "METHODOLOGY",
+            "PRODUCT_RISK",
+        ),
+        "src_project_krx_service_coverage_001": ("DATA",),
+        "src_project_mean_reversion_stationarity_001": ("METHODOLOGY",),
+        "src_project_monte_carlo_not_stress_probability_001": (
+            "FINANCIAL_ENGINEERING",
+            "RISK",
+        ),
+        "src_project_naver_news_discovery_boundary_001": ("API", "DATA"),
+        "src_project_notional_not_exposure_001": ("RISK",),
+        "src_project_opendart_corporation_code_001": ("API", "DATA"),
+        "src_project_opendart_financial_statement_scope_001": ("API", "DATA"),
+        "src_project_opendart_status_quota_001": ("API", "DATA"),
+        "src_project_sharpe_drawdown_partial_metrics_001": (
+            "METHODOLOGY",
+            "RISK",
+        ),
+        "src_project_threshold_cvar_not_exact_es_001": (
+            "FINANCIAL_ENGINEERING",
+            "RISK",
+        ),
+        "src_project_valuation_delta_not_guard_delta_001": (
+            "FINANCIAL_ENGINEERING",
+            "RISK",
+        ),
+        "src_project_var_es_coherence_001": (
+            "FINANCIAL_ENGINEERING",
+            "RISK",
+        ),
+    }
+)
 _MIGRATED_S4_7A_SOURCE_IDS = frozenset(
     {
         "src_project_ecos_pit_availability_001",
@@ -372,6 +450,10 @@ def _validate_exact_membership(cards: tuple[FrozenSourceCard, ...]) -> None:
     if set(source_ids) != expected:
         raise RagSourceCardCorpusError(
             "RAG source-card corpus membership drifted from the approved exact 30."
+        )
+    if set(PUBLIC_TOPICS_BY_SOURCE_ID) != expected:
+        raise RagSourceCardCorpusError(
+            "RAG source-card public topic mapping drifted from the approved exact 30."
         )
 
     known_card_ids = frozenset(card_ids)

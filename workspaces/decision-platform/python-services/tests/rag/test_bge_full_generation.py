@@ -374,6 +374,75 @@ def test_postgres_full_generation_uses_writer_reader_and_admin_boundaries(
             ).fetchone()
 
 
+def test_postgres_writer_rejects_raw_exact_privilege_and_alias_binding_drift(
+    isolated_postgres_cluster: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cluster = isolated_postgres_cluster
+    plan = prepare_bge_full_generation(
+        corpus=load_frozen_source_card_corpus(),
+        tokenizer=_WhitespaceTokenizer(),
+        artifact=_artifact_receipt(),
+        batch_benchmark=_batch_benchmark(selected=16),
+    )
+    monkeypatch.setenv("RAG_SOURCE_REGISTER_TARGET", "testcontainers")
+
+    with psycopg.connect(cluster["admin_dsn"], autocommit=True) as connection:
+        connection.execute(
+            "GRANT SELECT ON TABLE rag_source_exact_identifiers TO decision_rag_writer"
+        )
+    with pytest.raises(
+        BgeFullGenerationError,
+        match="FULL_DATABASE_FORBIDDEN_WRITER_PRIVILEGE",
+    ):
+        execute_bge_full_generation(
+            plan=plan,
+            embedder=_FixtureEmbedder(),
+            repository=PsycopgBgeFullGenerationWriterRepository(
+                database_dsn=cluster["rag_writer_dsn"],
+            ),
+        )
+
+    with psycopg.connect(cluster["admin_dsn"], autocommit=True) as connection:
+        connection.execute(
+            "REVOKE SELECT ON TABLE rag_source_exact_identifiers FROM decision_rag_writer"
+        )
+    execute_bge_full_generation(
+        plan=plan,
+        embedder=_FixtureEmbedder(),
+        repository=PsycopgBgeFullGenerationWriterRepository(
+            database_dsn=cluster["rag_writer_dsn"],
+        ),
+    )
+
+    with psycopg.connect(cluster["admin_dsn"], autocommit=True) as connection:
+        connection.execute(
+            """
+            UPDATE rag_source_exact_identifiers
+            SET source_id = 'src_project_kis_adjusted_price_001'
+            WHERE identifier = 'FHKST01010100'
+              AND identifier_kind = 'KIS_TR_ID'
+            """
+        )
+    drift_plan = prepare_bge_full_generation(
+        corpus=load_frozen_source_card_corpus(),
+        tokenizer=_WhitespaceTokenizer(),
+        artifact=_artifact_receipt(),
+        batch_benchmark=_batch_benchmark(selected=32),
+    )
+    with pytest.raises(
+        BgeFullGenerationError,
+        match="FULL_DATABASE_OPERATION_FAILED",
+    ):
+        execute_bge_full_generation(
+            plan=drift_plan,
+            embedder=_FixtureEmbedder(),
+            repository=PsycopgBgeFullGenerationWriterRepository(
+                database_dsn=cluster["rag_writer_dsn"],
+            ),
+        )
+
+
 def _artifact_receipt() -> BgeVerifiedPacket:
     return BgeVerifiedPacket(
         revision="5617a9f61b028005a4858fdac845db406aefb181",

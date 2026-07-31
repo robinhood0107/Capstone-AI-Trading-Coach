@@ -6,6 +6,7 @@ import math
 import os
 import re
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Literal, Mapping, Protocol, Sequence, cast
 from urllib.parse import urlsplit
 
@@ -23,7 +24,11 @@ from app.rag.ingest_pipeline import (
     build_embedding_inputs,
     parse_markdown_document,
 )
-from app.rag.source_card_corpus import FrozenSourceCard, FrozenSourceCardCorpus
+from app.rag.source_card_corpus import (
+    PUBLIC_TOPICS_BY_SOURCE_ID,
+    FrozenSourceCard,
+    FrozenSourceCardCorpus,
+)
 
 _PROFILE_ID = "bge_m3_local_1024_v1"
 _MODEL_REVISION = "5617a9f61b028005a4858fdac845db406aefb181"
@@ -1066,6 +1071,36 @@ def _insert_cards_and_chunks(
         elif existing_revision != (card.source_id, card.card_sha256):
             raise BgeFullGenerationError("FULL_SOURCE_REVISION_DRIFT")
 
+        verified_at_text = _required_mapping_text(payload, "verifiedAt")
+        try:
+            verified_at = datetime.fromisoformat(
+                verified_at_text.replace("Z", "+00:00")
+            )
+        except ValueError as error:
+            raise BgeFullGenerationError("FULL_CARD_VERIFIEDAT") from error
+        registration = connection.execute(
+            """
+            SELECT public.register_rag_verified_source_card(
+              %s, %s, %s, %s, %s, %s
+            )
+            """,
+            (
+                item.source_revision_id,
+                card.source_id,
+                card.card_id,
+                card.card_sha256,
+                verified_at,
+                list(PUBLIC_TOPICS_BY_SOURCE_ID[card.source_id]),
+            ),
+        ).fetchone()
+        if (
+            registration is None
+            or len(registration) != 1
+            or type(registration[0]) is not int
+            or registration[0] not in (0, 1)
+        ):
+            raise BgeFullGenerationError("FULL_SOURCE_VERIFICATION_RECEIPT")
+
         existing_ingest = connection.execute(
             """
             SELECT source_revision_id, status, expected_chunk_count, actual_chunk_count
@@ -1268,6 +1303,10 @@ def _attest_writer_connection(connection: psycopg.Connection[Any]) -> None:
         "rag_chunk_embeddings",
         "rag_embedding_policy_state",
         "rag_generation_attestations",
+        "rag_source_card_verifications",
+        "rag_source_public_topics",
+        "rag_source_exact_identifiers",
+        "rag_retrieval_scope_claims",
     ):
         for privilege in ("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE"):
             if _has_table_privilege(connection, table, privilege):
@@ -1277,6 +1316,14 @@ def _attest_writer_connection(connection: psycopg.Connection[Any]) -> None:
         "public.finalize_rag_embedding_staging_v2(text,text,text,integer,text)",
     ):
         raise BgeFullGenerationError("FULL_DATABASE_FINALIZER_PRIVILEGE")
+    if not _has_function_privilege(
+        connection,
+        (
+            "public.register_rag_verified_source_card("
+            "text,text,text,text,timestamp with time zone,text[])"
+        ),
+    ):
+        raise BgeFullGenerationError("FULL_DATABASE_VERIFICATION_FUNCTION_PRIVILEGE")
     if _has_function_privilege(
         connection,
         (

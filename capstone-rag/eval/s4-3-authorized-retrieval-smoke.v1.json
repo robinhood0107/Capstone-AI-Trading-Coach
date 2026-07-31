@@ -1,0 +1,88 @@
+{
+  "schemaVersion": "s4-3-authorized-retrieval-smoke/v1",
+  "datasetId": "s4-3-authorized-retrieval-smoke/v1",
+  "corpusManifestSha256": "7f2b4d72dcbaccf57cbe49a980973b17b4a9bfd85bec4694fd66fd7fd2a9decd",
+  "queries": [
+    {
+      "id": "q01-source-id-model-assumption",
+      "question": "src_project_bsm_risk_neutral_001 근거로 위험중립 가격을 실제 상승확률로 읽으면 왜 안 되는지 설명해 주세요.",
+      "answerMode": "DETAILED",
+      "topics": ["FINANCIAL_ENGINEERING", "RISK"],
+      "expectedSourceIds": ["src_project_bsm_risk_neutral_001"],
+      "expectedFailure": null
+    },
+    {
+      "id": "q02-kis-tr-id",
+      "question": "KIS TR_ID FHKST01010100이 어떤 현재가 snapshot 경계인지 설명해 주세요.",
+      "answerMode": "CONCISE",
+      "topics": ["API", "DATA"],
+      "expectedSourceIds": ["src_project_kis_current_price_snapshot_001"],
+      "expectedFailure": null
+    },
+    {
+      "id": "q03-symbol-precedence",
+      "question": "132030 상품을 현물 금과 동일하게 보면 왜 안 되나요?",
+      "answerMode": "CONCISE",
+      "relatedSymbols": ["132030"],
+      "topics": ["DATA", "PRODUCT_RISK"],
+      "expectedSourceIds": ["src_project_gold_futures_etf_132030_001"],
+      "expectedFailure": null
+    },
+    {
+      "id": "q04-lexical-typo",
+      "question": "KIS 토큰 발급 유량 재한과 REST budget을 합쳐도 되나요?",
+      "answerMode": "CONCISE",
+      "topics": ["API"],
+      "expectedSourceIds": ["src_project_kis_rate_limit_token_001"],
+      "expectedFailure": null
+    },
+    {
+      "id": "q05-korean-synonym",
+      "question": "위험중립과 실제 확률의 차이를 알려 주세요.",
+      "answerMode": "DETAILED",
+      "topics": ["FINANCIAL_ENGINEERING", "RISK"],
+      "expectedSourceIds": ["src_project_bsm_risk_neutral_001"],
+      "expectedFailure": null
+    },
+    {
+      "id": "q06-dense-concept",
+      "question": "관측모형이 붙인 숨은 상태 이름을 확인된 시장 원인이라고 선언할 수 있나요?",
+      "answerMode": "DETAILED",
+      "topics": ["METHODOLOGY"],
+      "expectedSourceIds": ["src_project_hmm_latent_state_boundary_001"],
+      "expectedFailure": null
+    },
+    {
+      "id": "q07-notional-assumption",
+      "question": "파생상품 명목금액을 실제 위험 노출액으로 그대로 사용해도 되나요?",
+      "answerMode": "DETAILED",
+      "topics": ["RISK"],
+      "expectedSourceIds": ["src_project_notional_not_exposure_001"],
+      "expectedFailure": null
+    },
+    {
+      "id": "q08-opendart-exact-status",
+      "question": "OpenDART status 020을 고정 20,000건 한도로 해석해도 되나요?",
+      "answerMode": "CONCISE",
+      "topics": ["API", "DATA"],
+      "expectedSourceIds": ["src_project_opendart_status_quota_001"],
+      "expectedFailure": null
+    },
+    {
+      "id": "q09-settlement-boundary",
+      "question": "last trading day와 final settlement day를 같은 expiry 값으로 써도 되나요?",
+      "answerMode": "DETAILED",
+      "topics": ["DATA", "METHODOLOGY", "PRODUCT_RISK"],
+      "expectedSourceIds": ["src_project_krx_last_trading_settlement_001"],
+      "expectedFailure": null
+    },
+    {
+      "id": "q10-no-evidence",
+      "question": "달의 뒷면 토양에서 치즈 발효 온도를 결정하는 공식은 무엇인가요?",
+      "answerMode": "CONCISE",
+      "topics": ["API"],
+      "expectedSourceIds": [],
+      "expectedFailure": "RAG_INSUFFICIENT_EVIDENCE"
+    }
+  ]
+}

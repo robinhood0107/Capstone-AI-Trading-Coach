@@ -59,9 +59,9 @@ class FlywayMigrationIntegrationTest(
     @Autowired private val riskSnapshotPort: RiskSnapshotPort,
 ) : SpringApiIntegrationTestBase() {
     @Test
-    fun `clean database applies V1 through V18 migrations and creates required objects`() {
+    fun `clean database applies V1 through V19 migrations and creates required objects`() {
         val versions = queryStrings("select version from flyway_schema_history where success order by installed_rank")
-        assertEquals((1..18).map(Int::toString), versions)
+        assertEquals((1..19).map(Int::toString), versions)
 
         val requiredTables =
             listOf(
@@ -85,6 +85,10 @@ class FlywayMigrationIntegrationTest(
                 "rag_chunk_embeddings",
                 "rag_embedding_staging",
                 "rag_generation_attestations",
+                "rag_source_card_verifications",
+                "rag_source_public_topics",
+                "rag_source_exact_identifiers",
+                "rag_retrieval_scope_claims",
                 "rag_embedding_policy_state",
                 "rag_embedding_policy_transitions",
                 "rag_sources_v2_legacy",

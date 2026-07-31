@@ -130,6 +130,35 @@ def test_structured_answer_rechecks_access_and_generation() -> None:
         )
 
 
+def test_prompt_rejects_mixed_external_processing_scope_without_silent_drop() -> None:
+    restricted = EvidenceChunk(
+        **{**evidence()[0].__dict__, "external_processing_allowed": False}
+    )
+
+    with pytest.raises(FixtureProviderContractError):
+        build_fixture_prompt(
+            "VaR와 ES 차이를 설명해 주세요",
+            (restricted, evidence()[1]),
+        )
+
+
+def test_structured_answer_rejects_uncited_sentence_before_later_citation() -> None:
+    payload = json.dumps(
+        {
+            "answer": "첫 번째 근거 없는 문장입니다. 두 번째 문장만 인용합니다. [cit_1]",
+            "citations": ["cit_1"],
+        },
+        ensure_ascii=False,
+    ).encode("utf-8")
+
+    with pytest.raises(FixtureProviderContractError):
+        parse_structured_answer(
+            payload,
+            evidence(),
+            active_generation_id="rag_gen_active",
+        )
+
+
 def test_fixture_provider_factory_fixes_transport_and_loads_credential_only_at_send() -> None:
     secret = "fixture-credential-must-not-leak"
     response = b'{"answer":"bounded claim [cit_1]","citations":["cit_1"]}'
@@ -166,6 +195,15 @@ def test_fixture_provider_factory_fixes_transport_and_loads_credential_only_at_s
     assert request.headers["x-goog-api-key"] == secret
     assert secret.encode() not in request.body
     assert secret.encode() not in body
+    request_json = json.loads(request.body)
+    assert request_json["generationConfig"]["maxOutputTokens"] == 800
+    assert request_json["generationConfig"]["responseMimeType"] == "application/json"
+    assert set(request_json["generationConfig"]["responseJsonSchema"]) == {
+        "additionalProperties",
+        "properties",
+        "required",
+        "type",
+    }
 
 
 @pytest.mark.parametrize(
@@ -175,6 +213,7 @@ def test_fixture_provider_factory_fixes_transport_and_loads_credential_only_at_s
         {"path": "/v1/other"},
         {"model": "other-model"},
         {"headers": {"Authorization": "Bearer caller-controlled"}},
+        {"max_output_tokens": 801},
     ],
 )
 def test_fixture_provider_rejects_all_caller_transport_overrides_before_send(

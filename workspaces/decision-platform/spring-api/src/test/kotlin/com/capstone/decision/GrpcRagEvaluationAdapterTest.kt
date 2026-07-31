@@ -30,7 +30,6 @@ import org.junit.jupiter.api.extension.ExtendWith
 import org.springframework.boot.test.system.CapturedOutput
 import org.springframework.boot.test.system.OutputCaptureExtension
 import java.net.InetSocketAddress
-import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 
@@ -104,7 +103,11 @@ class GrpcRagEvaluationAdapterTest {
                 validResponse()
                     .toBuilder()
                     .setProviderPhysicalCounts(
-                        ProviderPhysicalCounts.newBuilder().setTotal(1).setGemini(1).build(),
+                        ProviderPhysicalCounts
+                            .newBuilder()
+                            .setTotal(1)
+                            .setGemini(1)
+                            .build(),
                     ).build(),
                 validResponse().toBuilder().setExternalProviderCandidate(true).build(),
                 validResponse().toBuilder().setRequestId("different-request-id").build(),

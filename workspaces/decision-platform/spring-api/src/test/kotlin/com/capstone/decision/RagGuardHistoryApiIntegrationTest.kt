@@ -212,8 +212,9 @@ class RagGuardHistoryApiIntegrationTest(
     }
 
     @Test
-    fun `append only consent revoke blocks provider attempt and new tables stay behind functions`() {
+    fun `consent alone cannot authorize restricted evidence and new tables stay behind functions`() {
         val token = login("demo-user", userPassword())
+        val restrictedContext = restrictedActiveContext()
         val grantId = recordConsent(token, "GRANT", "req-rag-consent-grant")
         val revokeId = recordConsent(token, "REVOKE", "req-rag-consent-revoke")
         assertNotEquals(grantId, revokeId)
@@ -234,33 +235,29 @@ class RagGuardHistoryApiIntegrationTest(
                 deniedScope,
                 deniedFingerprint,
                 "rpu_${"a".repeat(32)}",
+                restrictedContext,
             )
         }
 
         recordConsent(token, "GRANT", "req-rag-consent-regrant")
-        val allowedScope = "c".repeat(64)
-        val allowedFingerprint = "d".repeat(64)
-        assertEquals("CLAIMED", callClaim(allowedScope, allowedFingerprint))
-        callProviderAttempt(
-            allowedScope,
-            allowedFingerprint,
-            "rpu_${"b".repeat(32)}",
-        )
-        assertEquals(
-            1,
-            ownerJdbc.queryForObject(
-                "select count(*) from rag_provider_usage_ledger where scope_hmac = ?",
-                Int::class.java,
-                allowedScope,
-            ),
-        )
+        val restrictedScope = "c".repeat(64)
+        val restrictedFingerprint = "d".repeat(64)
+        assertEquals("CLAIMED", callClaim(restrictedScope, restrictedFingerprint))
         assertThrows<Exception> {
             callProviderAttempt(
-                allowedScope,
-                allowedFingerprint,
-                "rpu_${"c".repeat(32)}",
+                restrictedScope,
+                restrictedFingerprint,
+                "rpu_${"b".repeat(32)}",
+                restrictedContext,
             )
         }
+        assertEquals(
+            0,
+            ownerJdbc.queryForObject(
+                "select count(*) from rag_provider_usage_ledger",
+                Int::class.java,
+            ),
+        )
 
         val protectedTables =
             listOf(
@@ -415,21 +412,32 @@ class RagGuardHistoryApiIntegrationTest(
         scopeHmac: String,
         fingerprint: String,
         usageEventId: String,
+        contextCitations: String,
     ) {
         appTransaction { connection ->
             connection
                 .prepareStatement(
-                    "select mark_rag_provider_attempt(?, ?, ?, ?, ?, 'GEMINI')",
+                    "select mark_rag_provider_attempt(?, ?, ?, ?, ?, 'GEMINI', cast(? as jsonb))",
                 ).use { statement ->
                     statement.setString(1, "usr_demo_user")
                     statement.setString(2, scopeHmac)
                     statement.setString(3, fingerprint)
                     statement.setString(4, usageEventId)
                     statement.setString(5, "7".repeat(64))
+                    statement.setString(6, contextCitations)
                     statement.execute()
                 }
         }
     }
+
+    private fun restrictedActiveContext(): String =
+        """
+        [{
+          "sourceRevisionId":"src_rev_${"0".repeat(32)}",
+          "chunkRevisionId":"rag_chk_${"0".repeat(32)}",
+          "generationId":"rag_gen_${"0".repeat(32)}"
+        }]
+        """.trimIndent()
 
     private fun <T> appTransaction(block: (Connection) -> T): T {
         DriverManager

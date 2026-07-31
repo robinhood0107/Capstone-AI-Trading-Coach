@@ -1,0 +1,33 @@
+{
+  "abstainReason": "INPUT_INCOMPLETE",
+  "allowedUses": [
+    "EXPLANATION_ONLY"
+  ],
+  "articleMetadataStored": false,
+  "artifactHash": "4444444444444444444444444444444444444444444444444444444444444444",
+  "artifactId": "news_sum_005930_20260731",
+  "asOf": "2026-07-31T00:00:02Z",
+  "attribution": {
+    "citation": "The GDELT Project",
+    "projectUrl": "https://www.gdeltproject.org/",
+    "provider": "GDELT",
+    "termsUrl": "https://www.gdeltproject.org/about.html"
+  },
+  "availableAt": "2026-07-31T00:00:03Z",
+  "decisionAuthority": "NONE",
+  "producer": "NEWS_SENTIMENT_AGGREGATOR",
+  "qualityStatus": "INCOMPLETE",
+  "rawProviderDataStored": false,
+  "riskDecisionHashIncluded": false,
+  "s5FeatureEligible": false,
+  "schemaVersion": "2",
+  "sourceObservationRefs": [
+    {
+      "artifactHash": "1111111111111111111111111111111111111111111111111111111111111111",
+      "observationId": "gdelt_obs_semiconductor_20260731"
+    }
+  ],
+  "sourceWorkspace": "decision-platform",
+  "status": "ABSTAIN",
+  "symbol": "005930"
+}

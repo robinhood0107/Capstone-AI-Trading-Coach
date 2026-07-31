@@ -35,6 +35,11 @@ account/broker/order physical call은 모두 0건이다.
 
 완료된 A4/B1/KRX11 approval packet은 재사용하지 않는다. 이후 실제 provider 호출은 새 HEAD·명령·기준일·호출 예산·TTL에 결속한 별도 승인 뒤에만 실행한다.
 
+S1.3G 뉴스 authority는 2026-07-31부터 Naver active provider/runtime/storage를 퇴역시키고,
+기사 metadata가 없는 GDELT aggregate synthetic fixture 계약으로 전환한다. contract-only wave에서
+runtime 제거는 아직 수행하지 않으며 후속 구현 wave가 tracked code와 exact 승인된 로컬 snapshot을
+제거한다. GDELT provider 호출, RiskDecision/hash/order 권한, S5 feature 주입은 모두 0이다.
+
 ### 교차시장·애널리스트 오버레이 계획 상태
 
 교차시장 계획 타당성은 `PLAN_FEASIBILITY=GO`이고, 현재 구현 상태는
@@ -75,7 +80,8 @@ activation을 구현한 것으로 보지 않는다. 상세 순서는
 ## 시작하기 (decision-platform)
 
 현재 레포는 STAGE 2이며 Decision Platform의 S0 walking skeleton, S1.1 KIS 시장데이터,
-S1.2c OpenDART 분석 데이터, S1.3 ECOS/Naver snapshot, S1.3K KRX universe 자동화,
+S1.2c OpenDART 분석 데이터, S1.3 ECOS와 퇴역 예정 Naver historical snapshot,
+S1.3G GDELT aggregate contract, S1.3K KRX universe 자동화,
 S1.4 금융공학, S1.5 품질 보고, S1.6 내부 offline calendar/event aggregator, S2.1 Principle
 CRUD, S2.2 offline rule evaluator, S2.3 Decision runtime과 S2.4 Risk/Kill Switch까지 구현되어
 있다. 이 S3.1 변경은 `POST /api/v1/brokerage/mock/orders`,

@@ -41,6 +41,10 @@ from contracts.generate_s4_rag_contracts import (  # noqa: E402
 from contracts.generate_rag_source_card_v2_contracts import (  # noqa: E402
     validate_rag_source_card_v2_semantics,
 )
+from contracts.generate_s1_3g_news_contracts import (  # noqa: E402
+    validate_gdelt_observation_semantics,
+    validate_news_summary_semantics,
+)
 
 SCHEMA_DIR = REPO_ROOT / "contracts" / "schemas"
 EXAMPLES_DIR = REPO_ROOT / "contracts" / "examples"
@@ -48,6 +52,8 @@ INVALID_EXAMPLES_DIR = EXAMPLES_DIR / "invalid"
 PAIR_EXAMPLES_DIR = EXAMPLES_DIR / "pairs"
 
 S2_EXAMPLE_SCHEMA_PREFIXES = {
+    "gdelt_news_tone_observation": "gdelt_news_tone_observation.v1",
+    "news_sentiment_summary": "news_sentiment_summary.v2",
     "principle-create-custom-rules": "principle-create-request",
     "principle-create": "principle-create-request",
     "principle-update-no-op": "principle-update-request",
@@ -150,6 +156,12 @@ def validate_example_semantics(
         return
     if schema_name == "rag-source-card-v2":
         validate_rag_source_card_v2_semantics(example)
+        return
+    if schema_name == "gdelt_news_tone_observation.v1":
+        validate_gdelt_observation_semantics(example)
+        return
+    if schema_name == "news_sentiment_summary.v2":
+        validate_news_summary_semantics(example)
         return
     validate_principle_payload_semantics(
         schema_name,
@@ -262,7 +274,14 @@ def validate_invalid_examples(
     for example_path in invalid_examples:
         schema_name = schema_name_from_example(example_path, ".invalid.json")
         schema_path, validator = validators[schema_name]
-        example = load_json(example_path)
+        try:
+            example = load_json(example_path)
+        except ContractValidationError as error:
+            print(
+                f"PASS expected invalid {relative(example_path)} against "
+                f"{relative(schema_path)}: {error}"
+            )
+            continue
         error = first_error(validator.iter_errors(example))
         semantic_error: ContractValidationError | None = None
         if error is None:

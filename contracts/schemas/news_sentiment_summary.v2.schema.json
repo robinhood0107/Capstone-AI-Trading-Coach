@@ -1,0 +1,269 @@
+{
+  "$id": "contracts/schemas/news_sentiment_summary.v2.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "else": {
+        "allOf": [
+          {
+            "not": {
+              "required": [
+                "sentimentScore"
+              ]
+            }
+          },
+          {
+            "not": {
+              "required": [
+                "attentionScore"
+              ]
+            }
+          },
+          {
+            "not": {
+              "required": [
+                "articleCount"
+              ]
+            }
+          },
+          {
+            "not": {
+              "required": [
+                "conflictFlag"
+              ]
+            }
+          },
+          {
+            "not": {
+              "required": [
+                "summary"
+              ]
+            }
+          }
+        ],
+        "properties": {
+          "qualityStatus": {
+            "enum": [
+              "CONFLICTED",
+              "INCOMPLETE",
+              "STALE",
+              "UNAVAILABLE"
+            ]
+          }
+        },
+        "required": [
+          "abstainReason"
+        ]
+      },
+      "if": {
+        "properties": {
+          "status": {
+            "const": "AVAILABLE"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "then": {
+        "not": {
+          "required": [
+            "abstainReason"
+          ]
+        },
+        "properties": {
+          "qualityStatus": {
+            "const": "COMPLETE"
+          }
+        },
+        "required": [
+          "sentimentScore",
+          "attentionScore",
+          "articleCount",
+          "conflictFlag",
+          "summary"
+        ]
+      }
+    }
+  ],
+  "properties": {
+    "abstainReason": {
+      "enum": [
+        "CONFLICT_UNRESOLVED",
+        "INPUT_INCOMPLETE",
+        "INPUT_STALE",
+        "NO_OBSERVATIONS",
+        "PRODUCER_FAILURE"
+      ]
+    },
+    "allowedUses": {
+      "const": [
+        "EXPLANATION_ONLY"
+      ],
+      "items": {
+        "const": "EXPLANATION_ONLY"
+      },
+      "maxItems": 1,
+      "minItems": 1,
+      "type": "array"
+    },
+    "articleCount": {
+      "maximum": 1000000000,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "articleMetadataStored": {
+      "const": false
+    },
+    "artifactHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "artifactId": {
+      "maxLength": 96,
+      "minLength": 8,
+      "pattern": "^news_sum_[a-z0-9][a-z0-9_-]+$",
+      "type": "string"
+    },
+    "asOf": {
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{1,6})?Z$",
+      "type": "string"
+    },
+    "attentionScore": {
+      "maximum": 1,
+      "minimum": 0,
+      "type": "number"
+    },
+    "attribution": {
+      "additionalProperties": false,
+      "properties": {
+        "citation": {
+          "const": "The GDELT Project"
+        },
+        "projectUrl": {
+          "const": "https://www.gdeltproject.org/"
+        },
+        "provider": {
+          "const": "GDELT"
+        },
+        "termsUrl": {
+          "const": "https://www.gdeltproject.org/about.html"
+        }
+      },
+      "required": [
+        "provider",
+        "citation",
+        "projectUrl",
+        "termsUrl"
+      ],
+      "type": "object"
+    },
+    "availableAt": {
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{1,6})?Z$",
+      "type": "string"
+    },
+    "conflictFlag": {
+      "type": "boolean"
+    },
+    "decisionAuthority": {
+      "const": "NONE"
+    },
+    "producer": {
+      "const": "NEWS_SENTIMENT_AGGREGATOR"
+    },
+    "qualityStatus": {
+      "enum": [
+        "COMPLETE",
+        "CONFLICTED",
+        "INCOMPLETE",
+        "STALE",
+        "UNAVAILABLE"
+      ]
+    },
+    "rawProviderDataStored": {
+      "const": false
+    },
+    "riskDecisionHashIncluded": {
+      "const": false
+    },
+    "s5FeatureEligible": {
+      "const": false
+    },
+    "schemaVersion": {
+      "const": "2"
+    },
+    "sentimentScore": {
+      "maximum": 1,
+      "minimum": -1,
+      "type": "number"
+    },
+    "sourceObservationRefs": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "artifactHash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "observationId": {
+            "maxLength": 96,
+            "minLength": 8,
+            "pattern": "^[a-z0-9][a-z0-9._:-]+$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "observationId",
+          "artifactHash"
+        ],
+        "type": "object"
+      },
+      "maxItems": 32,
+      "minItems": 1,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "sourceWorkspace": {
+      "const": "decision-platform"
+    },
+    "status": {
+      "enum": [
+        "ABSTAIN",
+        "AVAILABLE"
+      ]
+    },
+    "summary": {
+      "maxLength": 1000,
+      "minLength": 1,
+      "type": "string"
+    },
+    "symbol": {
+      "pattern": "^[0-9]{6}$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "artifactId",
+    "symbol",
+    "asOf",
+    "availableAt",
+    "status",
+    "producer",
+    "sourceWorkspace",
+    "decisionAuthority",
+    "allowedUses",
+    "riskDecisionHashIncluded",
+    "s5FeatureEligible",
+    "rawProviderDataStored",
+    "articleMetadataStored",
+    "sourceObservationRefs",
+    "attribution",
+    "artifactHash",
+    "qualityStatus"
+  ],
+  "type": "object"
+}

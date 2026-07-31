@@ -369,9 +369,18 @@ cd python-services
 uv run --frozen pytest -q tests/data/calendar tests/data/opendart
 ```
 
-## S1.3 ECOS/Naver snapshot
+## S1.3G active 뉴스 source 경계
 
-S1.3 ECOS 거시지표와 Naver 뉴스 metadata collector는 PR #16 merge commit
+Naver provider/runtime/storage 권한은 2026-07-31 계약에서 퇴역했다. tracked runtime 제거와
+승인된 로컬 snapshot의 exact 삭제는 해당 contract-only PR 병합 뒤 후속 구현 wave에서 수행한다.
+새 active 계약은 기사 metadata를 저장하지 않는 GDELT aggregate synthetic fixture와
+`AVAILABLE | ABSTAIN` semantics만 허용한다. 실제 GDELT outbound, RiskDecision/hash/order 권한,
+S5 feature 주입은 모두 0이다. Decision Platform이 producer 경계를 소유하고 Return Engine은
+별도 합의된 public artifact만 미래에 소비할 수 있다.
+
+## S1.3 ECOS/Naver snapshot — HISTORICAL_SUPERSEDED
+
+아래는 신규 실행 지침이 아니라 과거 감사 기록이다. S1.3 ECOS 거시지표와 Naver 뉴스 metadata collector는 PR #16 merge commit
 `6f439155d9f5ec626fc185f29f2e0bd64ca54780`으로 `main`에 병합됐다. A4 metadata preflight와
 의미 승인, B1 atomic ECOS+Naver smoke가 완료됐으며 accepted set은 성공한 A4+B1의
 ECOS `6`+Naver `1`=`7` physical attempts다. A1/A2/A3 실패 evidence나 프로젝트 lifetime

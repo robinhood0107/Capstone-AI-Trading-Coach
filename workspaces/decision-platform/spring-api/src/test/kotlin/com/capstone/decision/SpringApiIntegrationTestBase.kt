@@ -13,6 +13,9 @@ import org.springframework.context.annotation.Primary
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder
 import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
+import java.nio.file.Files
+import java.nio.file.Path
+import java.nio.file.attribute.PosixFilePermission
 import java.security.MessageDigest
 import java.util.Base64
 import java.util.HexFormat
@@ -39,6 +42,13 @@ abstract class SpringApiIntegrationTestBase {
         internal val TEST_DECISION_SCOPE_HMAC_KEY: String = "d" + "i".repeat(63)
         internal val TEST_BROKERAGE_SCOPE_HMAC_KEY: String = "b" + "r".repeat(63)
         internal val TEST_BROKERAGE_DB_CAPABILITY_TOKEN: String = "q" + "c".repeat(63)
+        internal val TEST_RAG_IDEMPOTENCY_SCOPE_HMAC_KEY: String = "i" + "s".repeat(63)
+        internal val TEST_RAG_REQUEST_FINGERPRINT_HMAC_KEY: String = "r" + "f".repeat(63)
+        internal val TEST_RAG_PROVIDER_USAGE_HMAC_KEY: String = "u" + "g".repeat(63)
+        internal val TEST_RAG_RATE_LIMIT_HMAC_KEY: String = "r" + "l".repeat(63)
+        internal val TEST_RAG_HISTORY_CURSOR_HMAC_KEY: String = "h" + "c".repeat(63)
+        internal const val TEST_RAG_KEK_VERSION: String = "kek-v1"
+        internal val TEST_RAG_SECRET_DIRECTORY: String = prepareRagSecretDirectory()
         internal val TEST_BROKERAGE_DB_CAPABILITY_TOKEN_SHA256: String =
             HexFormat
                 .of()
@@ -88,6 +98,22 @@ abstract class SpringApiIntegrationTestBase {
             registry.add("app.brokerage.database-capability-token-sha256") {
                 TEST_BROKERAGE_DB_CAPABILITY_TOKEN_SHA256
             }
+            registry.add("app.rag.answerer") { "FIXTURE_ONLY" }
+            registry.add("app.rag.history-secret-directory") { TEST_RAG_SECRET_DIRECTORY }
+            registry.add("app.rag.current-kek-version") { TEST_RAG_KEK_VERSION }
+            registry.add("app.rag.idempotency-scope-hmac-key") {
+                TEST_RAG_IDEMPOTENCY_SCOPE_HMAC_KEY
+            }
+            registry.add("app.rag.request-fingerprint-hmac-key") {
+                TEST_RAG_REQUEST_FINGERPRINT_HMAC_KEY
+            }
+            registry.add("app.rag.provider-usage-hmac-key") {
+                TEST_RAG_PROVIDER_USAGE_HMAC_KEY
+            }
+            registry.add("app.rag.rate-limit-hmac-key") { TEST_RAG_RATE_LIMIT_HMAC_KEY }
+            registry.add("app.rag.history-cursor-hmac-key") {
+                TEST_RAG_HISTORY_CURSOR_HMAC_KEY
+            }
             registry.add("spring.flyway.placeholders.brokerageDbCapabilityTokenSha256") {
                 TEST_BROKERAGE_DB_CAPABILITY_TOKEN_SHA256
             }
@@ -113,6 +139,30 @@ abstract class SpringApiIntegrationTestBase {
             } finally {
                 chars.fill('\u0000')
             }
+        }
+
+        private fun prepareRagSecretDirectory(): String {
+            val directory = Files.createTempDirectory(Path.of("/tmp"), "capstone-rag-history-")
+            Files.setPosixFilePermissions(
+                directory,
+                setOf(
+                    PosixFilePermission.OWNER_READ,
+                    PosixFilePermission.OWNER_WRITE,
+                    PosixFilePermission.OWNER_EXECUTE,
+                ),
+            )
+            val keyFile = directory.resolve("rag-history-$TEST_RAG_KEK_VERSION.key")
+            Files.writeString(keyFile, "42".repeat(32))
+            Files.setPosixFilePermissions(
+                keyFile,
+                setOf(
+                    PosixFilePermission.OWNER_READ,
+                    PosixFilePermission.OWNER_WRITE,
+                ),
+            )
+            keyFile.toFile().deleteOnExit()
+            directory.toFile().deleteOnExit()
+            return directory.toString()
         }
     }
 }

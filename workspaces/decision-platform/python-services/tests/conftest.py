@@ -41,8 +41,7 @@ class PostgresTestCluster(TypedDict):
     rag_query_dsn: str
 
 
-@pytest.fixture(scope="session")
-def postgres_cluster() -> Iterator[PostgresTestCluster]:
+def _start_postgres_cluster() -> Iterator[PostgresTestCluster]:
     """운영 PostgreSQL 이미지와 실제 migration/role 경계를 Python 통합 테스트 전체에 공유한다."""
     container = PostgresContainer(
         image=POSTGRES_IMAGE,
@@ -186,6 +185,20 @@ def postgres_cluster() -> Iterator[PostgresTestCluster]:
             "rag_admin_dsn": rag_admin_dsn,
             "rag_query_dsn": rag_query_dsn,
         }
+
+
+@pytest.fixture(scope="session")
+def postgres_cluster() -> Iterator[PostgresTestCluster]:
+    """대부분의 DB 통합 테스트가 공유하는 migration 완료 PostgreSQL cluster다."""
+
+    yield from _start_postgres_cluster()
+
+
+@pytest.fixture
+def isolated_postgres_cluster() -> Iterator[PostgresTestCluster]:
+    """generation처럼 영속 상태를 전이하는 테스트에 독립 PostgreSQL cluster를 제공한다."""
+
+    yield from _start_postgres_cluster()
 
 
 def _migration_version(path: Path) -> int:

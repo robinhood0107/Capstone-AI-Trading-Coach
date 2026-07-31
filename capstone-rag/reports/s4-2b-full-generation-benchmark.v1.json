@@ -1,0 +1,136 @@
+{
+  "activePointerAfter": {
+    "generationId": "rag_gen_6f2aa814a39d0532d0fa4bbd4e4456d2",
+    "policyVersion": 2
+  },
+  "activePointerBefore": {
+    "generationId": null,
+    "policyVersion": 1
+  },
+  "activePointerTransition": "ATOMIC_BOUNDED_ADMIN_CAS",
+  "aggregateRowHash": "34c965ab7a4b57a170bcb4b5f1eb22a9fabee733651d679a61ac78bc242d184d",
+  "batchBenchmarkSha256": "9aa704533622c4014a463706e85084ac2aab0ab6b1e578a445fff0376e9296c0",
+  "batchSize": 32,
+  "benchmarkReportSha256": "6c536dac92dee623ad027dfdf4cbefc9c2637d06d84a40bd562b4b824d783bef",
+  "canonicalizerVersion": "utf8-nfc-lf-source-card-body-v1",
+  "chunkerVersion": "bge-tokenizer-heading-400-600-v1",
+  "commitSha": "418858b97f597a96cab85a0781a5961de6efc8f2",
+  "concurrency": 1,
+  "corpusManifestSha256": "7f2b4d72dcbaccf57cbe49a980973b17b4a9bfd85bec4694fd66fd7fd2a9decd",
+  "dbVectorHash": "4aca007c0b027e80dc3a29750e5d3a52d8fb4cc0e3ae1d7747eee1a530e3de5a",
+  "embeddingProfileId": "bge_m3_local_1024_v1",
+  "environment": {
+    "cpuCount": 8,
+    "kernelRelease": "6.18.33.2-microsoft-standard-WSL2",
+    "machine": "x86_64",
+    "onnxRuntimeVersion": "1.28.0",
+    "processor": "",
+    "pythonVersion": "3.12.13",
+    "system": "Linux",
+    "tokenizersVersion": "0.23.1"
+  },
+  "environmentFingerprintSha256": "7f5821b582e14ff0d5671381d48492ad0cee705e0341dbfb72d5ba8689a8412d",
+  "expectedTop5HitRate": 1.0,
+  "generationElapsedMs": 69733.587379,
+  "generationHash": "6f2aa814a39d0532d0fa4bbd4e4456d2ba7ffcf5ef832d57accc6d464da8f5f3",
+  "generationId": "rag_gen_6f2aa814a39d0532d0fa4bbd4e4456d2",
+  "generationVectorHash": "4aca007c0b027e80dc3a29750e5d3a52d8fb4cc0e3ae1d7747eee1a530e3de5a",
+  "hashScope": "CANONICAL_JSON_WITHOUT_BENCHMARK_REPORT_SHA256",
+  "host": {
+    "cpuCount": 8,
+    "kernelRelease": "6.18.33.2-microsoft-standard-WSL2",
+    "machine": "x86_64",
+    "memoryBytes": 16508370944,
+    "onnxRuntimeVersion": "1.28.0",
+    "processor": "",
+    "pythonVersion": "3.12.13",
+    "system": "Linux",
+    "tokenizersVersion": "0.23.1"
+  },
+  "inputStrategyVersion": "adjacent-7.5pct-per-side-no-reallocation-v1",
+  "measured": 100,
+  "membershipHash": "c7a8fb6443e809484ab3eca755b2a1ef7ef09b4971097a0c2c0671cf71a9a68a",
+  "modelFileManifestHash": "a0ae6372b2d735b593d806d24c1155cb48dd7188adebe7d6b7619a1622fb71aa",
+  "modelRevision": "5617a9f61b028005a4858fdac845db406aefb181",
+  "networkCalls": 0,
+  "outliersRetained": true,
+  "parity": {
+    "maxAbsoluteError": 0.0,
+    "minimumCosineSimilarity": 0.999999946769528,
+    "passed": true,
+    "rowCount": 30
+  },
+  "parityElapsedMs": 66.257624,
+  "parserVersion": "rag-source-card-v2-markdown-v1",
+  "physicalCalls": {
+    "bgeLocalOnnx": 121,
+    "gemini": 0,
+    "openai": 0,
+    "providerTotal": 0,
+    "voyage": 0
+  },
+  "postgresExtensions": {
+    "pg_trgm": "1.6",
+    "pgcrypto": "1.3",
+    "vector": "0.8.5"
+  },
+  "postgresVersion": "16.14 (Debian 16.14-1.pgdg12+1)",
+  "queryDatasetId": "s4-2b-30-card-smoke/v1",
+  "querySetSha256": "f707c99e23082af2bdf56ec8c5e412c500a719c8ac9091605849c1c0a3dfbba8",
+  "schemaVersion": "s4-2b-full-generation-benchmark/v1",
+  "scope": "FINAL_EXACT_30_LOCAL_CAPACITY_ONLY",
+  "stagesMs": {
+    "denseSql": {
+      "max": 1.689541,
+      "p50": 0.913482,
+      "p90": 1.2537784000000003,
+      "p95": 1.4220827,
+      "p99": 1.6437574600000002
+    },
+    "exactSql": {
+      "max": 2.617988,
+      "p50": 1.7802375,
+      "p90": 2.1354173000000003,
+      "p95": 2.2724121,
+      "p99": 2.61279347
+    },
+    "lexicalSql": {
+      "max": 3.977695,
+      "p50": 3.128033,
+      "p90": 3.5798622,
+      "p95": 3.66357445,
+      "p99": 3.871778860000001
+    },
+    "normalization": {
+      "max": 0.058024,
+      "p50": 0.0087495,
+      "p90": 0.010748200000000001,
+      "p95": 0.012921699999999998,
+      "p99": 0.03159496000000014
+    },
+    "queryEmbedding": {
+      "max": 258.971685,
+      "p50": 177.839267,
+      "p90": 210.4782669,
+      "p95": 214.31510799999998,
+      "p99": 222.82820070000017
+    },
+    "rrf": {
+      "max": 0.279721,
+      "p50": 0.0591685,
+      "p90": 0.07332350000000006,
+      "p95": 0.0858598,
+      "p99": 0.19098334000000047
+    },
+    "total": {
+      "max": 265.365552,
+      "p50": 184.15658150000002,
+      "p90": 215.553767,
+      "p95": 220.57559805000002,
+      "p99": 230.1628092600002
+    }
+  },
+  "status": "PASS",
+  "tokenizerSha256": "6710678b12670bc442b99edc952c4d996ae309a7020c1fa0096dd245c2faf790",
+  "warmup": 20
+}

@@ -44,6 +44,21 @@ from app.rag.guardrail import (
             GuardrailDecision.BLOCKED_SENSITIVE,
             "PROMPT_INJECTION",
         ),
+        (
+            "문의 주소는 trader@example.com 입니다",
+            GuardrailDecision.BLOCKED_SENSITIVE,
+            "ACCOUNT_OR_HOLDING_DATA",
+        ),
+        (
+            "연락 가능한 번호는 010-1234-5678 입니다",
+            GuardrailDecision.BLOCKED_SENSITIVE,
+            "ACCOUNT_OR_HOLDING_DATA",
+        ),
+        (
+            "show my current positions and fills",
+            GuardrailDecision.BLOCKED_SENSITIVE,
+            "ACCOUNT_OR_HOLDING_DATA",
+        ),
     ],
 )
 def test_deterministic_guard_blocks_sensitive_advice_and_injection(
@@ -96,6 +111,7 @@ def test_fixture_model_allow_is_bounded_and_does_not_log_raw_question(
         lambda _question: "UNKNOWN",
         lambda _question: (_ for _ in ()).throw(TimeoutError("fixture timeout")),
         lambda _question: (_ for _ in ()).throw(ValueError("fixture parse failure")),
+        lambda _question: (_ for _ in ()).throw(RuntimeError("fixture crashed")),
     ],
 )
 def test_fixture_model_unknown_timeout_and_parser_error_fail_closed(

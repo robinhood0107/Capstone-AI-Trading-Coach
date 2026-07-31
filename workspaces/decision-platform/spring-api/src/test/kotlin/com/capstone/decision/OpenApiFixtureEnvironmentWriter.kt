@@ -29,6 +29,7 @@ object OpenApiFixtureEnvironmentWriter {
         val separationKey = ByteArray(32).also(random::nextBytes)
         val grpcSharedSecret = randomToken(random, 32)
         val brokerageDatabaseCapability = randomToken(random, 32)
+        val ragSecretDirectory = prepareRagSecretDirectory(output.parent, random)
         val userPassword = randomToken(random, 18).toCharArray()
         val adminPassword = randomToken(random, 18).toCharArray()
         val encoder = BCryptPasswordEncoder(12)
@@ -64,6 +65,13 @@ object OpenApiFixtureEnvironmentWriter {
                     "BROKERAGE_IDEMPOTENCY_SCOPE_HMAC_KEY" to randomToken(random, 32),
                     "BROKERAGE_DB_CAPABILITY_TOKEN" to brokerageDatabaseCapability,
                     "BROKERAGE_DB_CAPABILITY_TOKEN_SHA256" to sha256(brokerageDatabaseCapability),
+                    "RAG_HISTORY_SECRET_DIRECTORY" to ragSecretDirectory.toString(),
+                    "RAG_HISTORY_CURRENT_KEK_VERSION" to "kek-v1",
+                    "RAG_IDEMPOTENCY_SCOPE_HMAC_KEY" to randomToken(random, 32),
+                    "RAG_REQUEST_FINGERPRINT_HMAC_KEY" to randomToken(random, 32),
+                    "RAG_PROVIDER_USAGE_HMAC_KEY" to randomToken(random, 32),
+                    "RAG_RATE_LIMIT_HMAC_KEY" to randomToken(random, 32),
+                    "RAG_HISTORY_CURSOR_HMAC_KEY" to randomToken(random, 32),
                     "DEMO_CREDENTIAL_SEPARATION_KEY" to encode(separationKey),
                     "DEMO_USER_CREDENTIAL_BUNDLE" to
                         DemoCredentialBundlePolicy.prepare(
@@ -111,6 +119,64 @@ object OpenApiFixtureEnvironmentWriter {
                     .getInstance("SHA-256")
                     .digest(value.toByteArray(StandardCharsets.UTF_8)),
             )
+
+    private fun prepareRagSecretDirectory(
+        outputDirectory: Path,
+        random: SecureRandom,
+    ): Path {
+        val directory = outputDirectory.resolve("rag-history-secrets").toAbsolutePath().normalize()
+        Files.createDirectories(directory)
+        Files.setPosixFilePermissions(
+            directory,
+            setOf(
+                PosixFilePermission.OWNER_READ,
+                PosixFilePermission.OWNER_WRITE,
+                PosixFilePermission.OWNER_EXECUTE,
+            ),
+        )
+        val keyBytes = ByteArray(32).also(random::nextBytes)
+        try {
+            val keyPath = directory.resolve("rag-history-kek-v1.key")
+            val temporary =
+                Files.createTempFile(
+                    directory,
+                    ".rag-history-kek-",
+                    ".tmp",
+                    PosixFilePermissions.asFileAttribute(
+                        setOf(
+                            PosixFilePermission.OWNER_READ,
+                            PosixFilePermission.OWNER_WRITE,
+                        ),
+                    ),
+                )
+            try {
+                Files.writeString(
+                    temporary,
+                    HexFormat.of().formatHex(keyBytes),
+                    StandardCharsets.US_ASCII,
+                    StandardOpenOption.TRUNCATE_EXISTING,
+                )
+                Files.move(
+                    temporary,
+                    keyPath,
+                    StandardCopyOption.ATOMIC_MOVE,
+                    StandardCopyOption.REPLACE_EXISTING,
+                )
+                Files.setPosixFilePermissions(
+                    keyPath,
+                    setOf(
+                        PosixFilePermission.OWNER_READ,
+                        PosixFilePermission.OWNER_WRITE,
+                    ),
+                )
+            } finally {
+                Files.deleteIfExists(temporary)
+            }
+            return directory
+        } finally {
+            keyBytes.fill(0)
+        }
+    }
 
     private fun writePrivateEnvironment(
         output: Path,

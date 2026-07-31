@@ -220,6 +220,13 @@ class OpenApiEnvironmentParserTest(unittest.TestCase):
             "BROKERAGE_IDEMPOTENCY_SCOPE_HMAC_KEY",
             "BROKERAGE_DB_CAPABILITY_TOKEN",
             "BROKERAGE_DB_CAPABILITY_TOKEN_SHA256",
+            "RAG_HISTORY_SECRET_DIRECTORY",
+            "RAG_HISTORY_CURRENT_KEK_VERSION",
+            "RAG_IDEMPOTENCY_SCOPE_HMAC_KEY",
+            "RAG_REQUEST_FINGERPRINT_HMAC_KEY",
+            "RAG_PROVIDER_USAGE_HMAC_KEY",
+            "RAG_RATE_LIMIT_HMAC_KEY",
+            "RAG_HISTORY_CURSOR_HMAC_KEY",
         ):
             self.assertIn(name, parsed)
         self.assertEqual(
@@ -329,6 +336,13 @@ class OpenApiEnvironmentParserTest(unittest.TestCase):
             "BROKERAGE_IDEMPOTENCY_SCOPE_HMAC_KEY": "T" * 43,
             "BROKERAGE_DB_CAPABILITY_TOKEN": "U" * 43,
             "BROKERAGE_DB_CAPABILITY_TOKEN_SHA256": hashlib.sha256(("U" * 43).encode()).hexdigest(),
+            "RAG_HISTORY_SECRET_DIRECTORY": "/tmp/capstone-openapi-rag-secrets",
+            "RAG_HISTORY_CURRENT_KEK_VERSION": "kek-v1",
+            "RAG_IDEMPOTENCY_SCOPE_HMAC_KEY": "Z" * 43,
+            "RAG_REQUEST_FINGERPRINT_HMAC_KEY": "0" * 43,
+            "RAG_PROVIDER_USAGE_HMAC_KEY": "1" * 43,
+            "RAG_RATE_LIMIT_HMAC_KEY": "2" * 43,
+            "RAG_HISTORY_CURSOR_HMAC_KEY": "3" * 43,
             "DEMO_CREDENTIAL_SEPARATION_KEY": "I" * 43,
             "DEMO_USER_CREDENTIAL_BUNDLE": (
                 f"s21-v1:usr_demo_user:{'J' * 43}:{bcrypt_user}:{'K' * 43}"

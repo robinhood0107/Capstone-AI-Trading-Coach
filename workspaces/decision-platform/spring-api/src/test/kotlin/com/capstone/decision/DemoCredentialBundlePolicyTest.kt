@@ -3,6 +3,7 @@ package com.capstone.decision
 import com.capstone.decision.infrastructure.brokerage.BrokerageProperties
 import com.capstone.decision.infrastructure.decision.DecisionProperties
 import com.capstone.decision.infrastructure.principle.PrincipleProperties
+import com.capstone.decision.infrastructure.rag.RagGuardHistoryProperties
 import com.capstone.decision.infrastructure.security.DemoAccounts
 import com.capstone.decision.infrastructure.security.DemoCredentialBootstrapProperties
 import com.capstone.decision.infrastructure.security.DemoCredentialBundlePolicy
@@ -125,8 +126,27 @@ class DemoCredentialBundlePolicyTest {
                                 .digest(brokerageCapability.toByteArray()),
                         ),
             )
+        val rag =
+            RagGuardHistoryProperties(
+                historySecretDirectory = "/tmp/synthetic-rag-history-secrets",
+                idempotencyScopeHmacKey = "i".repeat(32),
+                requestFingerprintHmacKey = "f".repeat(32),
+                providerUsageHmacKey = "u".repeat(32),
+                rateLimitHmacKey = "r".repeat(32),
+                historyCursorHmacKey = "h".repeat(32),
+            )
 
-        assertDoesNotThrow { SecurityConfig().authSecretSeparation(jwt, login, properties, principle, decision, brokerage) }
+        assertDoesNotThrow {
+            SecurityConfig().authSecretSeparation(
+                jwt,
+                login,
+                properties,
+                principle,
+                decision,
+                brokerage,
+                rag,
+            )
+        }
         assertThrows<IllegalArgumentException> {
             DemoCredentialBundlePolicy.decodeSeparationKey(
                 Base64.getUrlEncoder().withoutPadding().encodeToString(ByteArray(31)),
@@ -136,9 +156,10 @@ class DemoCredentialBundlePolicyTest {
         properties.separationKey =
             Base64.getUrlEncoder().withoutPadding().encodeToString(jwt.secret.toByteArray())
         assertThrows<IllegalArgumentException> {
-            SecurityConfig().authSecretSeparation(jwt, login, properties, principle, decision, brokerage)
+            SecurityConfig().authSecretSeparation(jwt, login, properties, principle, decision, brokerage, rag)
         }
 
+        properties.separationKey = encodedKey
         principle.cursorHmacKey = "p".repeat(32)
         brokerage.databaseCapabilityToken = brokerage.idempotencyScopeHmacKey
         brokerage.databaseCapabilityTokenSha256 =
@@ -150,19 +171,34 @@ class DemoCredentialBundlePolicyTest {
                         .digest(brokerage.databaseCapabilityToken.toByteArray()),
                 )
         assertThrows<IllegalArgumentException> {
-            SecurityConfig().authSecretSeparation(jwt, login, properties, principle, decision, brokerage)
+            SecurityConfig().authSecretSeparation(jwt, login, properties, principle, decision, brokerage, rag)
         }
 
+        brokerage.databaseCapabilityToken = brokerageCapability
+        brokerage.databaseCapabilityTokenSha256 =
+            HexFormat
+                .of()
+                .formatHex(
+                    MessageDigest
+                        .getInstance("SHA-256")
+                        .digest(brokerage.databaseCapabilityToken.toByteArray()),
+                )
         properties.separationKey =
             Base64.getUrlEncoder().withoutPadding().encodeToString(login.scopeHmacKey.toByteArray())
         assertThrows<IllegalArgumentException> {
-            SecurityConfig().authSecretSeparation(jwt, login, properties, principle, decision, brokerage)
+            SecurityConfig().authSecretSeparation(jwt, login, properties, principle, decision, brokerage, rag)
         }
 
         properties.separationKey = encodedKey
         principle.cursorHmacKey = jwt.secret
         assertThrows<IllegalArgumentException> {
-            SecurityConfig().authSecretSeparation(jwt, login, properties, principle, decision, brokerage)
+            SecurityConfig().authSecretSeparation(jwt, login, properties, principle, decision, brokerage, rag)
+        }
+
+        principle.cursorHmacKey = "p".repeat(32)
+        rag.historyCursorHmacKey = rag.rateLimitHmacKey
+        assertThrows<IllegalArgumentException> {
+            SecurityConfig().authSecretSeparation(jwt, login, properties, principle, decision, brokerage, rag)
         }
     }
 

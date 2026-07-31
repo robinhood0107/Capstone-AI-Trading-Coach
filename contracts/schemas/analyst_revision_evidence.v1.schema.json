@@ -1,0 +1,256 @@
+{
+  "$id": "contracts/schemas/analyst_revision_evidence.v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "artifactHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "availableAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "brokerId": {
+      "pattern": "^broker_[0-9a-f]{16}$",
+      "type": "string"
+    },
+    "buyOpinionWeight": {
+      "const": 0
+    },
+    "contractId": {
+      "const": "analyst_revision_evidence.v1"
+    },
+    "contributorCount": {
+      "maximum": 1000,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "current": {
+      "additionalProperties": false,
+      "properties": {
+        "eps": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "rating": {
+          "enum": [
+            null,
+            "BUY",
+            "HOLD",
+            "SELL"
+          ],
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "revenue": {
+          "minimum": 0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "targetPrice": {
+          "minimum": 0,
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "eps",
+        "rating",
+        "revenue",
+        "targetPrice"
+      ],
+      "type": "object"
+    },
+    "decisionAuthority": {
+      "const": "NONE"
+    },
+    "dedupeKeyHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "dispersion": {
+      "minimum": 0,
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "estimatePeriod": {
+      "pattern": "^[0-9]{4}(?:Q[1-4]|FY)$",
+      "type": "string"
+    },
+    "logicalIdentityHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "originalEvidenceId": {
+      "pattern": "^analyst_[a-z0-9_-]{8,64}$",
+      "type": "string"
+    },
+    "payloadHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "previous": {
+      "additionalProperties": false,
+      "properties": {
+        "eps": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "rating": {
+          "enum": [
+            null,
+            "BUY",
+            "HOLD",
+            "SELL"
+          ],
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "revenue": {
+          "minimum": 0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "targetPrice": {
+          "minimum": 0,
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "eps",
+        "rating",
+        "revenue",
+        "targetPrice"
+      ],
+      "type": "object"
+    },
+    "publishedAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "rawTextStored": {
+      "const": false
+    },
+    "receivedAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "retracted": {
+      "type": "boolean"
+    },
+    "revision": {
+      "additionalProperties": false,
+      "properties": {
+        "epsDelta": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "ratingChanged": {
+          "type": "boolean"
+        },
+        "revenueDelta": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "targetPriceDelta": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "epsDelta",
+        "ratingChanged",
+        "revenueDelta",
+        "targetPriceDelta"
+      ],
+      "type": "object"
+    },
+    "schemaVersion": {
+      "const": "1"
+    },
+    "sourceLicense": {
+      "enum": [
+        "STRUCTURED_FIXTURE",
+        "MANUAL_LINK_ONLY",
+        "LICENSED_EPHEMERAL_LOCAL"
+      ]
+    },
+    "supersedesEvidenceId": {
+      "pattern": "^analyst_[a-z0-9_-]{8,64}$",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "symbol": {
+      "pattern": "^[0-9A-Z._:-]{1,20}$",
+      "type": "string"
+    },
+    "userConfirmedTags": {
+      "items": {
+        "enum": [
+          "CHANGE",
+          "RISK"
+        ]
+      },
+      "maxItems": 20,
+      "type": "array",
+      "uniqueItems": true
+    }
+  },
+  "required": [
+    "artifactHash",
+    "availableAt",
+    "brokerId",
+    "buyOpinionWeight",
+    "contractId",
+    "contributorCount",
+    "current",
+    "decisionAuthority",
+    "dedupeKeyHash",
+    "dispersion",
+    "estimatePeriod",
+    "logicalIdentityHash",
+    "originalEvidenceId",
+    "payloadHash",
+    "previous",
+    "publishedAt",
+    "rawTextStored",
+    "receivedAt",
+    "retracted",
+    "revision",
+    "schemaVersion",
+    "sourceLicense",
+    "supersedesEvidenceId",
+    "symbol",
+    "userConfirmedTags"
+  ],
+  "title": "analyst_revision_evidence.v1",
+  "type": "object"
+}

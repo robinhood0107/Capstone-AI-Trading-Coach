@@ -120,9 +120,7 @@ class S48aCrossMarketContractTest(unittest.TestCase):
             self.assertTrue(errors or semantic_error, relative_path)
 
     def test_kis_exact_18_are_opaque_disabled_and_gdelt_is_separate(self) -> None:
-        registry = _load(
-            "contracts/examples/market_source_entitlement.v1.valid.json"
-        )
+        registry = _load("contracts/examples/market_source_entitlement.v1.valid.json")
         self.assertIsInstance(registry, dict)
         entries = registry["entitlements"]
         kis_entries = [entry for entry in entries if entry["sourceFamily"] == "KIS"]
@@ -147,6 +145,7 @@ class S48aCrossMarketContractTest(unittest.TestCase):
             all(entry["activationStatus"] == "CANDIDATE_DISABLED" for entry in entries)
         )
         self.assertTrue(all(not entry["providerCallsAllowed"] for entry in entries))
+        self.assertEqual("NONE", gdelt_entries[0]["decisionAuthority"])
 
         serialized = json.dumps(registry, ensure_ascii=False)
         for forbidden in (
@@ -159,9 +158,7 @@ class S48aCrossMarketContractTest(unittest.TestCase):
             self.assertNotIn(forbidden, serialized)
 
     def test_queryless_get_and_v3_compatibility_are_exact(self) -> None:
-        get_contract = _load(
-            "contracts/catalogs/s4-8a-cross-market-get.v1.json"
-        )
+        get_contract = _load("contracts/catalogs/s4-8a-cross-market-get.v1.json")
         self.assertEqual("GET", get_contract["method"])
         self.assertEqual("/api/v1/risk/cross-market", get_contract["path"])
         self.assertEqual([], get_contract["queryParameters"])
@@ -173,22 +170,21 @@ class S48aCrossMarketContractTest(unittest.TestCase):
         self.assertEqual(v1["rules"], v2["rules"][:14])
         self.assertEqual("cross_market_new_buy_guard", v2["rules"][14]["ruleId"])
         self.assertEqual(2, v2["catalogVersion"])
-        self.assertEqual(
-            "HASH-CANONICALIZATION-S22-V3", v2["canonicalization"]["id"]
-        )
+        self.assertEqual("HASH-CANONICALIZATION-S22-V3", v2["canonicalization"]["id"])
 
         vector = _load("contracts/examples/s2-2-hash-vector.v3.valid.json")
         self.assertEqual("s2.2-metric-snapshot-v3", vector["metricSnapshotVersion"])
-        self.assertEqual(
-            "HASH-CANONICALIZATION-S22-V3", vector["canonicalizationId"]
-        )
+        self.assertEqual("HASH-CANONICALIZATION-S22-V3", vector["canonicalizationId"])
         canonical = json.dumps(
             vector["semanticInput"],
+            default=float,
             ensure_ascii=False,
             sort_keys=True,
             separators=(",", ":"),
         ).encode("utf-8")
-        self.assertEqual(hashlib.sha256(canonical).hexdigest(), vector["semanticInputHash"])
+        self.assertEqual(
+            hashlib.sha256(canonical).hexdigest(), vector["semanticInputHash"]
+        )
         self.assertEqual(
             [
                 "analystEvidence",
@@ -206,7 +202,9 @@ class S48aCrossMarketContractTest(unittest.TestCase):
 
     def test_existing_payload_and_catalog_v1_bytes_are_frozen(self) -> None:
         for relative_path, expected_hash in FROZEN_EXISTING_PAYLOAD_HASHES.items():
-            actual_hash = hashlib.sha256((ROOT / relative_path).read_bytes()).hexdigest()
+            actual_hash = hashlib.sha256(
+                (ROOT / relative_path).read_bytes()
+            ).hexdigest()
             self.assertEqual(expected_hash, actual_hash, relative_path)
 
         for workspace in ("return-engine", "experience-dashboard"):

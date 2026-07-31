@@ -1,0 +1,121 @@
+{
+  "$id": "contracts/schemas/cross_market_exposure_catalog.v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "else": {
+        "properties": {
+          "classification": {
+            "const": null
+          },
+          "inScope": {
+            "const": false
+          }
+        }
+      },
+      "if": {
+        "properties": {
+          "validationState": {
+            "const": "AVAILABLE"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "classification": {
+            "type": "string"
+          },
+          "inScope": {
+            "const": true
+          }
+        }
+      }
+    }
+  ],
+  "properties": {
+    "artifactHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "availableAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "classification": {
+      "enum": [
+        null,
+        "SEMICONDUCTOR",
+        "BROAD_MARKET",
+        "FX",
+        "DOMESTIC_AMPLIFICATION"
+      ],
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "configVersion": {
+      "const": "cross-market-exposure.v1"
+    },
+    "contractId": {
+      "const": "cross_market_exposure_catalog.v1"
+    },
+    "effectiveAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "inScope": {
+      "type": "boolean"
+    },
+    "logicalIdentityHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "payloadHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": "1"
+    },
+    "sourceLineage": {
+      "items": {
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string"
+      },
+      "maxItems": 10,
+      "minItems": 1,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "symbol": {
+      "pattern": "^[0-9A-Z._:-]{1,20}$",
+      "type": "string"
+    },
+    "validationState": {
+      "enum": [
+        "AVAILABLE",
+        "UNCLASSIFIED",
+        "REJECTED"
+      ]
+    }
+  },
+  "required": [
+    "artifactHash",
+    "availableAt",
+    "classification",
+    "configVersion",
+    "contractId",
+    "effectiveAt",
+    "inScope",
+    "logicalIdentityHash",
+    "payloadHash",
+    "schemaVersion",
+    "sourceLineage",
+    "symbol",
+    "validationState"
+  ],
+  "title": "cross_market_exposure_catalog.v1",
+  "type": "object"
+}

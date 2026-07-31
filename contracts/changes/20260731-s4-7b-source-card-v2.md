@@ -60,6 +60,12 @@ validator 및 canonical schema byte parity만 포함한다. 실제 source-card �
 manifest, DB/API/retrieval/generation runtime은 후속 변경이다. 수동 security scan은
 승인된 전체 S4 구현이 끝난 최종 통합 HEAD에서 한 번 수행한다.
 
+Python validator의 runtime dependency인 `jsonschema[format]`은 `4.26.0`으로 고정한다.
+production `pyproject.toml`과 `uv.lock`만 변경한 carrier commit
+`13b7b21a904fc37ce0947d5da2de7d04794e497a`를 S1.4X reference lock과 correctness
+workflow allowlist에 연결하며, PR은 이 commit의 조상성을 보존하는 merge commit
+방식으로만 병합한다.
+
 ## EN
 
 ### Decision
@@ -122,3 +128,10 @@ positive/negative fixtures, Python/Spring validators, and canonical schema-byte
 parity. Source-card bodies, the corpus manifest, and DB/API/retrieval/generation
 runtime remain follow-up work. The manual security scan runs once on the final
 integrated HEAD after all approved S4 implementation is complete.
+
+The Python validator pins its `jsonschema[format]` runtime dependency to
+`4.26.0`. The carrier commit
+`13b7b21a904fc37ce0947d5da2de7d04794e497a`, whose own diff contains only the
+production `pyproject.toml` and `uv.lock`, is bound into the S1.4X reference
+lock and correctness-workflow allowlist. The PR must use a merge commit so this
+carrier remains an ancestor.

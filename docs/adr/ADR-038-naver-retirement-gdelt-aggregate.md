@@ -2,6 +2,7 @@
 
 - 상태: Accepted
 - 결정일: 2026-07-31
+- 구현 상태: 2026-08-01 Naver active 경계 퇴역 및 GDELT offline fixture producer 완료
 - 관련 Issue: #20
 - supersedes: S1.3 Naver active provider/runtime/storage authority
 
@@ -33,9 +34,9 @@ publisher archive를 포함하지 않는다.
 6. 두 계약은 `decisionAuthority=NONE`, `riskDecisionHashIncluded=false`,
    `s5FeatureEligible=false`다. RiskDecision·판단 hash·주문을 변경하지 않고, 별도 조건부
    feature group gate 전에는 S5 입력으로 주입하지 않는다.
-7. Naver runtime·credential·active schema/test 제거와 승인된 로컬 snapshot의 exact 삭제는
-   이 계약 병합 뒤 구현 wave에서 수행한다. 기존 V16~V20 migration과 historical DB row는
-   수정하지 않는다.
+7. Naver runtime·credential·active schema/test 제거와 승인된 로컬 snapshot의 exact
+   application-visible 삭제를 2026-08-01 완료했다. 기존 V16~V20 migration과 historical DB
+   row는 수정하지 않았다.
 8. 이번 통합 작업의 Codex Security full-repository scan은 모든 offline 구현과 일반 gate
    완료 뒤 한 번의 consolidated campaign으로 실행한다. 계약 CI·repo hygiene·gitleaks는
    각 wave에서 계속 실행한다.
@@ -47,9 +48,12 @@ publisher archive를 포함하지 않는다.
 - exact-30 RAG corpus, active local BGE generation, ECOS 계약, KIS/Decision API는 이 결정으로
   변경되지 않는다.
 - 외부 provider, model, account, order physical call은 모두 0을 유지한다.
+- GDELT offline producer는 strict two-mode parser, no-zero `ABSTAIN`, canonical append-only
+  artifact와 packet validator까지 구현했지만 실제 HTTP transport는 활성화하지 않는다.
 
 ## Contract pointers
 
 - `contracts/changes/20260731-s1-3g-naver-retirement-gdelt-aggregate-lock.md`
+- `contracts/changes/20260801-s1-3g-gdelt-offline-producer.md`
 - `contracts/schemas/gdelt_news_tone_observation.v1.schema.json`
 - `contracts/schemas/news_sentiment_summary.v2.schema.json`

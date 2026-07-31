@@ -45,6 +45,9 @@
 > `GDELT_S5_FEATURE_ELIGIBLE=FALSE`다. 실제 provider outbound는 별도 승인이 필요하고,
 > 이번 통합 보안 검사는 `SECURITY_SCAN_TIMING=FINAL_CONSOLIDATED_CAMPAIGN`으로 모든
 > offline 구현과 일반 gate 완료 뒤 실행한다.
+> 2026-08-01 현재 strict two-mode parser, network-free fixture collector, no-zero `ABSTAIN`,
+> 0600 append-only publisher와 exact approval packet validator는 구현됐지만 HTTP transport는
+> `NOT_ACTIVATED`다.
 
 ---
 

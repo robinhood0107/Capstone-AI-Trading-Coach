@@ -36,9 +36,10 @@ account/broker/order physical call은 모두 0건이다.
 완료된 A4/B1/KRX11 approval packet은 재사용하지 않는다. 이후 실제 provider 호출은 새 HEAD·명령·기준일·호출 예산·TTL에 결속한 별도 승인 뒤에만 실행한다.
 
 S1.3G 뉴스 authority는 2026-07-31부터 Naver active provider/runtime/storage를 퇴역시키고,
-기사 metadata가 없는 GDELT aggregate synthetic fixture 계약으로 전환한다. contract-only wave에서
-runtime 제거는 아직 수행하지 않으며 후속 구현 wave가 tracked code와 exact 승인된 로컬 snapshot을
-제거한다. GDELT provider 호출, RiskDecision/hash/order 권한, S5 feature 주입은 모두 0이다.
+기사 metadata가 없는 GDELT aggregate synthetic fixture 계약으로 전환한다. 2026-08-01 현재
+Naver active runtime/schema/test와 승인된 local leaf 제거, GDELT strict parser·ABSTAIN·append-only
+offline artifact·승인 packet validator 구현까지 완료했다. GDELT HTTP transport는 활성화하지 않았고
+provider 호출, RiskDecision/hash/order 권한, S5 feature 주입은 모두 0이다.
 
 ### 교차시장·애널리스트 오버레이 계획 상태
 

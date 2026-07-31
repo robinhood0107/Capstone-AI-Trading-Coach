@@ -29,3 +29,26 @@ fun RagSourceRegistryEntry.toResponse(): RagSourceResponse =
         canonicalUrl = canonicalUrl,
         lastCheckedAt = lastCheckedAt,
     )
+
+data class RagFeedbackResponse(
+    val answerId: String,
+    val helpful: Boolean,
+)
+
+data class RagConsentResponse(
+    val consentEventId: String,
+    val consentType: String,
+    val action: String,
+    val policyVersion: String,
+    val createdAt: Instant,
+)
+
+data class RagHistoryQuery(
+    val cursor: String?,
+    val limit: Int,
+)
+
+data class RagConsentCommand(
+    val action: String,
+    val policyVersion: String,
+)

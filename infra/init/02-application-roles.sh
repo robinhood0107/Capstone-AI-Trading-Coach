@@ -814,6 +814,31 @@ BEGIN
             read_rag_source_registry(text)
         TO decision_app;
     END IF;
+    IF to_regprocedure(
+        'public.record_rag_consent_event(text,text,text,text)'
+    ) IS NOT NULL THEN
+        -- bootstrap 재적용 뒤에도 앱은 V20의 owner-bound SECURITY DEFINER 경계만 호출한다.
+        GRANT EXECUTE ON FUNCTION
+            record_rag_consent_event(text, text, text, text),
+            read_effective_rag_consent(text),
+            claim_rag_answer(text, text, text, integer),
+            mark_rag_provider_attempt(text, text, text, text, text, text, jsonb),
+            complete_rag_answer(
+                text, text, text, text, text, text,
+                double precision, boolean, text[],
+                text, bytea, bytea, bytea, bytea, bytea, bytea,
+                bytea, bytea, bytea, timestamptz, integer, jsonb
+            ),
+            fail_rag_answer_before_provider(text, text, text),
+            mark_rag_answer_unknown_after_provider(text, text, text),
+            read_rag_history_metadata(text, timestamptz, text, integer),
+            read_rag_history_detail(text, text),
+            read_rag_history_citations(text, text),
+            delete_owned_rag_history(text, text),
+            upsert_owned_rag_answer_feedback(text, text, boolean),
+            purge_expired_rag_history(integer)
+        TO decision_app;
+    END IF;
     IF to_regprocedure('public.read_active_rag_chunks(text,integer)') IS NOT NULL THEN
         GRANT EXECUTE ON FUNCTION
             read_active_rag_chunks(text, integer)

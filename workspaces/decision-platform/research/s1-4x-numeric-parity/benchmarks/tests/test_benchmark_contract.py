@@ -495,7 +495,7 @@ def test_tracked_plan_and_sidecar_are_reproducible() -> None:
 
 def test_workflow_runs_both_triggers_and_accounts_for_262_snapshot_tests() -> None:
     repo_root = Path(__file__).resolve().parents[6]
-    s4_2a_reference_carrier = "bf965d00c98e63127ebc385164e71c30402ce6fc"
+    s4_7b_reference_carrier = "13b7b21a904fc37ce0947d5da2de7d04794e497a"
     workflow = (
         repo_root / ".github" / "workflows" / "s1-4x-contract-correctness.yml"
     ).read_text(encoding="utf-8")
@@ -522,8 +522,8 @@ def test_workflow_runs_both_triggers_and_accounts_for_262_snapshot_tests() -> No
     assert 'evidence["sourceTreeCount"] == 4' in workflow
     assert "assert tests == 262" in workflow
     assert "S1.4R_REFERENCE_REGRESSION_PASS tests=262" in workflow
-    assert f"{s4_2a_reference_carrier})" in workflow
-    assert reference_lock["referenceBaseCommit"] == s4_2a_reference_carrier
+    assert f"{s4_7b_reference_carrier})" in workflow
+    assert reference_lock["referenceBaseCommit"] == s4_7b_reference_carrier
 
     production_step = workflow.split(
         "- name: Run current frozen production regression",

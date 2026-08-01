@@ -14,8 +14,10 @@ from app.rag.safe_io import read_approved_regular_file
 from app.rag.safe_io import write_approved_generated_file, write_approved_new_file
 
 
-def test_read_approved_regular_file_uses_relative_bounded_regular_files(tmp_path: Path) -> None:
-    root = tmp_path / "approved"
+def test_read_approved_regular_file_uses_relative_bounded_regular_files(
+    posix_tmp_path: Path,
+) -> None:
+    root = posix_tmp_path / "approved"
     document = root / "cards" / "kis.md"
     document.parent.mkdir(parents=True)
     document.write_bytes(b"# KIS\n\nreference only\n")
@@ -33,8 +35,10 @@ def test_read_approved_regular_file_uses_relative_bounded_regular_files(tmp_path
     assert result.inode > 0
 
 
-def test_read_approved_regular_file_rejects_path_escape_and_oversize(tmp_path: Path) -> None:
-    root = tmp_path / "approved"
+def test_read_approved_regular_file_rejects_path_escape_and_oversize(
+    posix_tmp_path: Path,
+) -> None:
+    root = posix_tmp_path / "approved"
     root.mkdir()
     (root / "safe.md").write_bytes(b"x" * 8)
 
@@ -67,10 +71,10 @@ def test_read_approved_regular_file_rejects_path_escape_and_oversize(tmp_path: P
 
 
 @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlink support is required")
-def test_read_approved_regular_file_rejects_symlink_leaf(tmp_path: Path) -> None:
-    root = tmp_path / "approved"
+def test_read_approved_regular_file_rejects_symlink_leaf(posix_tmp_path: Path) -> None:
+    root = posix_tmp_path / "approved"
     root.mkdir()
-    target = tmp_path / "outside.md"
+    target = posix_tmp_path / "outside.md"
     target.write_text("outside", encoding="utf-8")
     os.symlink(target, root / "link.md")
 
@@ -78,8 +82,8 @@ def test_read_approved_regular_file_rejects_symlink_leaf(tmp_path: Path) -> None
         read_approved_regular_file(approved_root=root, relative_path="link.md", max_bytes=64)
 
 
-def test_read_approved_regular_file_rejects_directory_leaf(tmp_path: Path) -> None:
-    root = tmp_path / "approved"
+def test_read_approved_regular_file_rejects_directory_leaf(posix_tmp_path: Path) -> None:
+    root = posix_tmp_path / "approved"
     (root / "nested").mkdir(parents=True)
 
     with pytest.raises(RagSafeIoError):
@@ -87,8 +91,8 @@ def test_read_approved_regular_file_rejects_directory_leaf(tmp_path: Path) -> No
 
 
 @pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="FIFO support is required")
-def test_read_approved_regular_file_rejects_fifo_without_blocking(tmp_path: Path) -> None:
-    root = tmp_path / "approved"
+def test_read_approved_regular_file_rejects_fifo_without_blocking(posix_tmp_path: Path) -> None:
+    root = posix_tmp_path / "approved"
     root.mkdir()
     os.mkfifo(root / "blocking.md")
     python_services_root = Path(__file__).resolve().parents[2]
@@ -125,10 +129,10 @@ raise SystemExit(1)
 
 
 def test_read_approved_regular_file_rejects_shared_write_and_wrong_owner(
-    tmp_path: Path,
+    posix_tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    root = tmp_path / "approved"
+    root = posix_tmp_path / "approved"
     cards = root / "cards"
     cards.mkdir(parents=True)
     document = cards / "safe.md"
@@ -163,12 +167,12 @@ def test_read_approved_regular_file_rejects_shared_write_and_wrong_owner(
 
 
 def test_read_approved_regular_file_rejects_hardlink_and_mid_read_change(
-    tmp_path: Path,
+    posix_tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    root = tmp_path / "approved"
+    root = posix_tmp_path / "approved"
     root.mkdir()
-    outside = tmp_path / "outside.md"
+    outside = posix_tmp_path / "outside.md"
     outside.write_bytes(b"outside")
     os.link(outside, root / "hardlink.md")
     with pytest.raises(RagSafeIoError):
@@ -231,10 +235,10 @@ def test_write_approved_new_file_is_mode_0600_durable_and_no_overwrite() -> None
 
 
 @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlink support is required")
-def test_write_approved_new_file_rejects_symlink_parent_and_target(tmp_path: Path) -> None:
-    root = tmp_path / "approved"
+def test_write_approved_new_file_rejects_symlink_parent_and_target(posix_tmp_path: Path) -> None:
+    root = posix_tmp_path / "approved"
     root.mkdir()
-    outside = tmp_path / "outside"
+    outside = posix_tmp_path / "outside"
     outside.mkdir()
     os.symlink(outside, root / "linked-parent")
     with pytest.raises(RagSafeIoError):
@@ -260,10 +264,10 @@ def test_write_approved_new_file_rejects_symlink_parent_and_target(tmp_path: Pat
 
 
 def test_write_approved_new_file_rejects_unsafe_parent_mode_and_owner(
-    tmp_path: Path,
+    posix_tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    root = tmp_path / "approved"
+    root = posix_tmp_path / "approved"
     cards = root / "cards"
     cards.mkdir(parents=True)
 

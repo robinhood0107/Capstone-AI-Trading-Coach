@@ -251,11 +251,15 @@ class _BrokerageBudgetTransport(httpx.BaseTransport):
         self,
         inner: httpx.BaseTransport,
         budget: KISBrokerageCallBudget,
+        approval_deadline_guard: Callable[[], None] | None = None,
     ) -> None:
         self._inner = inner
         self._budget = budget
+        self._approval_deadline_guard = approval_deadline_guard
 
     def handle_request(self, request: httpx.Request) -> httpx.Response:
+        if self._approval_deadline_guard is not None:
+            self._approval_deadline_guard()
         self._budget.reserve_brokerage()
         return self._inner.handle_request(request)
 
@@ -275,6 +279,7 @@ class KISMockBrokerageHttpClient:
         transport: httpx.BaseTransport | None = None,
         rate_limiter: RateLimiter | None = None,
         token_provider: Callable[[], str] | None = None,
+        approval_deadline_guard: Callable[[], None] | None = None,
     ) -> None:
         if settings.mode != "mock":
             raise KISMockLiveOrderGateClosed("KIS live brokerage allowlist is empty")
@@ -318,9 +323,15 @@ class KISMockBrokerageHttpClient:
                     max_wait_seconds=float(settings.kis_rate_limit_max_wait_seconds),
                     io_budget_seconds=8.0,
                 )
-                token_issuer = _TokenIssuer(settings, rate_limiter=token_limiter)
+                token_issuer = _TokenIssuer(
+                    settings,
+                    rate_limiter=token_limiter,
+                    deadline_guard=approval_deadline_guard,
+                )
 
                 def budgeted_issue() -> dict[str, Any]:
+                    if approval_deadline_guard is not None:
+                        approval_deadline_guard()
                     budget.reserve_token_p()
                     return token_issuer.issue()
 
@@ -358,8 +369,13 @@ class KISMockBrokerageHttpClient:
                 max_response_bytes=_MAX_RESPONSE_BYTES,
                 max_json_depth=32,
                 sensitive_values=lambda: (self._cano,),
+                deadline_guard=approval_deadline_guard,
             )
-            budgeted_transport = _BrokerageBudgetTransport(credential_transport, budget)
+            budgeted_transport = _BrokerageBudgetTransport(
+                credential_transport,
+                budget,
+                approval_deadline_guard=approval_deadline_guard,
+            )
             self._http = httpx.Client(
                 transport=budgeted_transport,
                 timeout=settings.kis_timeout_seconds,

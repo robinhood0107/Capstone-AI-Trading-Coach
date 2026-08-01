@@ -20,6 +20,7 @@ import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
+import org.springframework.context.annotation.DependsOn
 import org.springframework.http.HttpMethod
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity
 import org.springframework.security.config.annotation.web.builders.HttpSecurity
@@ -68,6 +69,9 @@ class SecurityConfig {
         decisionProperties: DecisionProperties,
         brokerageProperties: BrokerageProperties,
         ragProperties: RagGuardHistoryProperties,
+        decisionGrpcProperties: DecisionGrpcProperties,
+        brokerageGrpcProperties: BrokerageGrpcProperties,
+        ragGrpcProperties: RagGrpcProperties,
     ): AuthSecretSeparation {
         jwtProperties.validate()
         loginProperties.validate()
@@ -75,6 +79,13 @@ class SecurityConfig {
         decisionProperties.validate()
         brokerageProperties.validate()
         ragProperties.validate()
+        decisionGrpcProperties.validate()
+        if (brokerageGrpcProperties.enabled) {
+            brokerageGrpcProperties.validate()
+        }
+        if (ragGrpcProperties.enabled) {
+            ragGrpcProperties.validate()
+        }
         val secrets =
             linkedMapOf(
                 "JWT" to jwtProperties.secret.toByteArray(StandardCharsets.UTF_8),
@@ -97,6 +108,13 @@ class SecurityConfig {
                 "RAG history cursor" to
                     ragProperties.historyCursorHmacKey.toByteArray(StandardCharsets.UTF_8),
             )
+        secrets["Decision/Python gRPC"] = decisionGrpcProperties.sharedSecret.toByteArray(StandardCharsets.UTF_8)
+        if (brokerageGrpcProperties.enabled) {
+            secrets["Brokerage gRPC"] = brokerageGrpcProperties.sharedSecret.toByteArray(StandardCharsets.UTF_8)
+        }
+        if (ragGrpcProperties.enabled) {
+            secrets["RAG gRPC"] = ragGrpcProperties.sharedSecret.toByteArray(StandardCharsets.UTF_8)
+        }
         return try {
             val entries = secrets.entries.toList()
             entries.indices.forEach { leftIndex ->
@@ -122,9 +140,10 @@ class SecurityConfig {
     }
 
     /**
-     * RAG gRPC를 켤 때만 dedicated wire secret을 검증해 RAG process credential이 Disclosure RPC에 재사용되지 않게 한다.
+     * RAG gRPC를 켤 때만 dedicated wire secret을 검증해 RAG process credential이 다른 privileged credential에 재사용되지 않게 한다.
      */
     @Bean
+    @DependsOn("authSecretSeparation")
     fun ragGrpcSecretSeparation(
         decisionGrpcProperties: DecisionGrpcProperties,
         ragGrpcProperties: RagGrpcProperties,

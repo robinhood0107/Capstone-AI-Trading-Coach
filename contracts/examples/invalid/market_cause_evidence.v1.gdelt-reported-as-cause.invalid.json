@@ -1,6 +1,4 @@
 {
-  "articleText": "synthetic article text",
-  "articleUrl": "https://example.test/article/1",
   "artifactHash": "9999999999999999999999999999999999999999999999999999999999999999",
   "availableAt": "2026-07-31T00:00:03Z",
   "classification": "MARKET_INTERPRETATION",
@@ -17,7 +15,7 @@
   "publishedAt": "2026-07-31T00:00:01Z",
   "receivedAt": "2026-07-31T00:00:02Z",
   "relatedEvidenceIds": [],
-  "relation": "CO_MOVES_WITH",
+  "relation": "REPORTED_AS_CAUSE",
   "retracted": false,
   "sanitizedSummary": "합성 aggregate의 관심도와 톤 변화가 같은 기간에 관측되었다.",
   "schemaVersion": "1",

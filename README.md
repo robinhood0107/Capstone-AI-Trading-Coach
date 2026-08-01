@@ -120,8 +120,8 @@ non-regression·stale CAS rollback을 검증해
 기본 `RAG_GRPC_ENABLED=false`는 `RETRIEVAL_ONLY` S4.4 호환 모드다. S4.6은 canonical
 `RagService.Ask`, numeric loopback, consent/rate/idempotency 순서, owner scope·active generation·
 top-5 citation 재검증과 encrypted history E2E를 구현했다. 동일 배포 Python
-fixture process와 Decision/Python Disclosure secret과 분리된 전용 `RAG_GRPC_SHARED_SECRET`이
-준비된 뒤만 true로 활성화한다. 현재
+fixture process와 모든 활성 auth·Decision/Python·brokerage credential에서 분리된 전용
+`RAG_GRPC_SHARED_SECRET`이 준비된 뒤만 true로 활성화한다. 현재
 Gemini·OpenAI·Voyage·account·order 물리 호출은 0이며 live generation은 별도
 승인형 S4.4G 경계다.
 

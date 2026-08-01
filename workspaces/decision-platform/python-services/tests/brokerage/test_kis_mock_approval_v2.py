@@ -187,6 +187,44 @@ def test_v2_reader_rejects_a_symlinked_packet_parent_before_runtime(
         )
 
 
+def test_v2_rejects_a_sealed_scan_with_incomplete_coverage_before_runtime(
+    secure_directory: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    packet_path, _ = _write_v2_packet(secure_directory, pull_request=77)
+    document = json.loads(packet_path.read_text(encoding="utf-8"))
+    coverage_path = Path(document["evidence"]["securityCoveragePath"])
+    coverage_path.write_text(
+        json.dumps({"completeness": "partial", "scanId": "scan-v2-test"}, sort_keys=True),
+        encoding="utf-8",
+    )
+    coverage_sha = hashlib.sha256(coverage_path.read_bytes()).hexdigest()
+    document["evidence"]["securityCoverageSha256"] = coverage_sha
+    manifest_path = Path(document["evidence"]["securityManifestPath"])
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["scan"]["artifacts"][0]["sha256"] = coverage_sha
+    manifest_path.write_text(json.dumps(manifest, sort_keys=True), encoding="utf-8")
+    document["evidence"]["securityManifestSha256"] = hashlib.sha256(
+        manifest_path.read_bytes()
+    ).hexdigest()
+    document["packetSha256"] = _packet_digest(document)
+    packet_path.write_text(json.dumps(document, sort_keys=True) + "\n", encoding="utf-8")
+    packet_path.chmod(0o600)
+    monkeypatch.setattr(probe, "_git_revision", lambda _root, _ref: "a" * 40)
+    monkeypatch.setattr(probe, "_require_clean_repository", lambda _root: None)
+
+    with pytest.raises(probe.KISMockApprovalRejected, match="coverage or findings"):
+        probe.execute_approved_probe(
+            packet_path,
+            now=datetime(2030, 1, 2, 3, 10, tzinfo=UTC),
+            expected_approval_id="approval-s3-online-v2-test",
+            expected_packet_sha256=document["packetSha256"],
+            repository_root=secure_directory,
+            operations_factory=lambda _packet: _FakeOperations(),
+            approval_consumer=_allow_replay,
+        )
+
+
 def test_v2_source_anchor_is_deterministically_bound_to_source_packet_and_nonce() -> None:
     anchor = probe.approval_anchor_for_source("c" * 64, "d" * 64)
 
@@ -330,9 +368,7 @@ def _packet_document(
     profile: str = "FULL",
     recovery_failed_step: str | None = None,
 ) -> dict[str, Any]:
-    report_path = directory / "security-report.md"
-    report_path.write_text("SECURITY_SCAN_COMPLETE\n", encoding="utf-8")
-    report_sha = hashlib.sha256(report_path.read_bytes()).hexdigest()
+    security_evidence = _write_security_scan_evidence(directory, "a" * 40)
     document: dict[str, Any] = {
         "schemaVersion": schema_version,
         "approvalId": "approval-s3-online-v2-test",
@@ -363,8 +399,8 @@ def _packet_document(
             "securityHeadSha": "a" * 40,
             "securityStatus": "SECURITY_SCAN_COMPLETE",
             "securityFindings": 0,
-            "securityReportPath": str(report_path),
-            "securityReportSha256": report_sha,
+            "securityReportPath": str(security_evidence["reportPath"]),
+            "securityReportSha256": security_evidence["reportSha256"],
         },
         "physicalCaps": {"tokenP": 1, "brokerage": 5},
         "redisBaseline": {
@@ -394,6 +430,16 @@ def _packet_document(
     if schema_version == 2:
         document["nonce"] = "d" * 64
         document["repository"]["baseRef"] = "main"
+        document["evidence"].update(
+            {
+                "securityManifestPath": str(security_evidence["manifestPath"]),
+                "securityManifestSha256": security_evidence["manifestSha256"],
+                "securityCoveragePath": str(security_evidence["coveragePath"]),
+                "securityCoverageSha256": security_evidence["coverageSha256"],
+                "securityFindingsPath": str(security_evidence["findingsPath"]),
+                "securityFindingsSha256": security_evidence["findingsSha256"],
+            }
+        )
     if profile == "CANCEL_RECOVERY":
         document["steps"] = ["cancelFull", "executionRead"]
         document["physicalCaps"]["brokerage"] = 2
@@ -404,6 +450,50 @@ def _packet_document(
             "failedStep": recovery_failed_step,
         }
     return document
+
+
+def _write_security_scan_evidence(directory: Path, head_sha: str) -> dict[str, str]:
+    report_path = directory / "security-report.md"
+    coverage_path = directory / "coverage.json"
+    findings_path = directory / "findings.json"
+    manifest_path = directory / "scan-manifest.json"
+    report_path.write_text("SECURITY_SCAN_COMPLETE\n", encoding="utf-8")
+    coverage_path.write_text(
+        json.dumps({"completeness": "complete", "scanId": "scan-v2-test"}, sort_keys=True),
+        encoding="utf-8",
+    )
+    findings_path.write_text(json.dumps({"findings": []}, sort_keys=True), encoding="utf-8")
+    coverage_sha = hashlib.sha256(coverage_path.read_bytes()).hexdigest()
+    findings_sha = hashlib.sha256(findings_path.read_bytes()).hexdigest()
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "scan": {
+                    "artifacts": [
+                        {"path": "coverage.json", "sha256": coverage_sha},
+                        {"path": "findings.json", "sha256": findings_sha},
+                    ],
+                    "coverageRef": "coverage.json",
+                    "findingsRef": "findings.json",
+                    "id": "scan-v2-test",
+                    "status": "completed",
+                    "target": {"kind": "git_revision", "revision": head_sha},
+                }
+            },
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+    return {
+        "reportPath": str(report_path),
+        "reportSha256": hashlib.sha256(report_path.read_bytes()).hexdigest(),
+        "manifestPath": str(manifest_path),
+        "manifestSha256": hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
+        "coveragePath": str(coverage_path),
+        "coverageSha256": coverage_sha,
+        "findingsPath": str(findings_path),
+        "findingsSha256": findings_sha,
+    }
 
 
 def _packet_digest(document: dict[str, Any]) -> str:

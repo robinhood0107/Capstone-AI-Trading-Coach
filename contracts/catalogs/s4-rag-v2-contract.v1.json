@@ -44,9 +44,6 @@
     "mixedEligibilityBehavior": "WHOLE_REQUEST_RETRIEVAL_ONLY",
     "sourceEvidenceRequired": true
   },
-  "historicalOnlyProcessingModes": [
-    "LICENSED_EPHEMERAL_LOCAL"
-  ],
   "historyRetentionDays": 30,
   "installStates": [
     "CORE_READY",
@@ -67,7 +64,7 @@
     "PADDLE_VL",
     "UNLIMITED_GGUF"
   ],
-  "productionOcrBackend": "UNSELECTED_PENDING_BENCHMARK",
+  "productionOcrBackend": "PADDLE_VL",
   "retrieval": {
     "channels": [
       "EXACT",

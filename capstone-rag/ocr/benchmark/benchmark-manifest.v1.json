@@ -1,0 +1,181 @@
+{
+  "benchmarkId": "s4-7d-ocr-finance-v1",
+  "candidates": {
+    "PADDLE_STRUCTURED": {
+      "artifactDescription": "PP-DocLayout-M + PP-StructureV3 lightweight + Korean PP-OCRv5 + PP-OCRv6 small",
+      "modelDirectories": [
+        "PP-DocLayout-M",
+        "PP-OCRv5_mobile_det",
+        "korean_PP-OCRv5_mobile_rec",
+        "PP-OCRv6_small_rec",
+        "PP-LCNet_x1_0_table_cls",
+        "SLANeXt_wired",
+        "SLANet_plus",
+        "RT-DETR-L_wired_table_cell_det",
+        "RT-DETR-L_wireless_table_cell_det",
+        "PP-FormulaNet_plus-S",
+        "PP-LCNet_x1_0_doc_ori",
+        "PP-LCNet_x1_0_textline_ori",
+        "PP-DocBlockLayout"
+      ],
+      "modelSha256": "fd7572e6cdf51bd49131aabbd946d3c38ba9225fb2e2fed1c1e06dbe5b7c24f2",
+      "runtime": "paddleocr==3.7.0;paddlepaddle==3.3.1",
+      "sourceUrl": "https://github.com/PaddlePaddle/PaddleOCR"
+    },
+    "PADDLE_VL": {
+      "artifactDescription": "PP-DocLayoutV3 + PaddleOCR-VL-1.6-0.9B native",
+      "modelDirectories": [
+        "PP-DocLayoutV3",
+        "PaddleOCR-VL-1.6",
+        "PP-OCRv5_mobile_det",
+        "korean_PP-OCRv5_mobile_rec",
+        "PP-OCRv6_small_rec"
+      ],
+      "modelRevision": "66317acc4c9fc17bd154591ce650735cd2855f3e",
+      "modelSha256": "feb45208d1e030eb0df76126bb84419d968ca899995fa0bbc2f42fba219b7136",
+      "runtime": "paddleocr==3.7.0;paddlepaddle==3.3.1",
+      "sourceUrl": "https://huggingface.co/PaddlePaddle/PaddleOCR-VL-1.6"
+    },
+    "UNLIMITED_GGUF": {
+      "artifactDescription": "Unlimited-OCR Q8_0 GGUF + F16 projector",
+      "modelRevision": "0dc781d8a23f52963918ebd5b2d1b9fe61504661",
+      "modelSha256": "5bf3f3ec69934593f81f4877842ac73c304bc436754d7bb8a05eec0f6856890f",
+      "sourceUrl": "https://huggingface.co/sahilchachra/Unlimited-OCR-GGUF"
+    }
+  },
+  "dpi": 300,
+  "intelOpenVinoPaddleVl": {
+    "derivedModelTreeSha256": "c24d2c4cc43864e78a778522206e3e04e7347182f31e34b635d97471278a1c7d",
+    "openvinoVersion": "2026.2.1",
+    "sourceSha256": {
+      "image_processing_paddleocr_vl.py": "9e11ef294ac8d36eedac5fa975ef487c123b07f2c370c55984a0023ae6046a4c",
+      "modeling_paddleocr_vl.py": "26f6bc752a30e8d00a71a056869dca948185811fca8a8c9d0332c18fa3f3ac5e",
+      "ov_paddleocr_vl.py": "b02408445fb9fdd3755794a2e87ce5a16ff54a29a95f27dbe23b1a3f5ee8da4d"
+    },
+    "upstreamCommit": "3403abcc9ffde3a5e7d379e704b111df1052e49e",
+    "upstreamLicense": "Apache-2.0",
+    "upstreamUrl": "https://github.com/openvinotoolkit/openvino_notebooks/tree/3403abcc9ffde3a5e7d379e704b111df1052e49e/notebooks/paddleocr_vl"
+  },
+  "qualityGates": {
+    "englishCerMax": 0.01,
+    "formulaAccuracyMin": 0.95,
+    "hallucinatedCriticalSpansMax": 0,
+    "koreanCerMax": 0.02,
+    "readingOrderKendallTauMin": 0.98,
+    "tableCellF1Min": 0.95
+  },
+  "sources": [
+    {
+      "canonicalUrl": "https://www.bok.or.kr/portal/bbs/P0000593/view.do?depth=201150&menuNo=200068&nttId=11062197&oldMenuNo=201150&pageIndex=1&pageUnit=10&programType=newsData&searchCnd=1",
+      "downloadUrl": "https://www.bok.or.kr/fileSrc/portal/c3e54b8b9f7f41d791cd79161e223009/1/b1d364f8c22e4094967308ad28252d74.pdf",
+      "language": "ko",
+      "localCacheFile": "bok-fsr-2026-06.pdf",
+      "pages": [
+        {
+          "chartDataRegion300Dpi": [1150, 1450, 1935, 2310],
+          "criticalRegion300Dpi": [250, 200, 2000, 2320],
+          "evaluationRegions300Dpi": {
+            "footnotes": [274, 2640, 1943, 2810],
+            "left-narrative": [275, 233, 1066, 542],
+            "left-table": [275, 656, 1065, 1178],
+            "right-chart": [1150, 1348, 1935, 2297],
+            "right-narrative": [1140, 679, 1939, 1253],
+            "right-section": [1142, 253, 1746, 600]
+          },
+          "fixtureId": "bok-fsr-2026-06-p060",
+          "imageFile": "bok-fsr-2026-06-p060.png",
+          "imageSha256": "4fc30628d89324f4e61e889cad37ba2c25a69912ca5badc5e1d3fe8103ce062b",
+          "modalities": [
+            "NARRATIVE",
+            "TABLE",
+            "CHART",
+            "MULTI_COLUMN"
+          ],
+          "nativeTextSha256": "06497125292184ea05a5ce8cd413671e3e787b8469757b6f06f34b6ab1819714",
+          "page": 60,
+          "readingOrder": [
+            "left-narrative",
+            "left-table",
+            "right-section",
+            "right-narrative",
+            "right-chart",
+            "footnotes"
+          ],
+          "tableGoldPdfPoints": [65, 188, 260, 243]
+        }
+      ],
+      "rawSha256": "e64ad11144afded340a5a6fdda6b28f1450b03b222b6f0fa54250ce7663a869c",
+      "sourceId": "bok-financial-stability-report-2026",
+      "title": "금융안정보고서 2026년 6월"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2403.00746v2",
+      "downloadUrl": "https://arxiv.org/pdf/2403.00746v2",
+      "language": "en",
+      "localCacheFile": "arxiv-2403.00746v2.pdf",
+      "pages": [
+        {
+          "criticalRegion300Dpi": [200, 300, 2270, 3220],
+          "evaluationRegions300Dpi": {
+            "formula-coefficients": [760, 360, 1720, 650],
+            "formula-discretization-1": [720, 1650, 1770, 1870],
+            "formula-discretization-2": [700, 2040, 1780, 2260],
+            "formula-energy": [420, 3060, 2010, 3210],
+            "formula-variational": [520, 2750, 1970, 2870],
+            "narrative-1": [224, 646, 2247, 758],
+            "narrative-10": [224, 2952, 2247, 3062],
+            "narrative-2": [223, 903, 2252, 1175],
+            "narrative-3": [223, 1215, 2253, 1484],
+            "narrative-4": [225, 1482, 2252, 1657],
+            "narrative-5": [222, 1882, 2253, 2047],
+            "narrative-6": [221, 2275, 2244, 2333],
+            "narrative-7": [223, 2363, 2253, 2529],
+            "narrative-8": [225, 2555, 2253, 2770],
+            "narrative-9": [225, 2868, 884, 2922]
+          },
+          "fixtureId": "arxiv-2403.00746v2-p004",
+          "imageFile": "arxiv-2403.00746v2-p004.png",
+          "imageSha256": "97d932175c783df98223aa809a2176b5f3d57db8847a52b3c52ac2992028a9fc",
+          "modalities": [
+            "NARRATIVE",
+            "FORMULA",
+            "READING_ORDER"
+          ],
+          "nativeTextSha256": "4a55f9754a18a631047693115a5438dc2d4b2d2ddd49416de03a91b874a962fe",
+          "page": 4,
+          "readingOrder": [
+            "formula-coefficients",
+            "narrative-1",
+            "narrative-2",
+            "narrative-3",
+            "narrative-4",
+            "formula-discretization-1",
+            "narrative-5",
+            "formula-discretization-2",
+            "narrative-6",
+            "narrative-7",
+            "narrative-8",
+            "formula-variational",
+            "narrative-9",
+            "narrative-10",
+            "formula-energy"
+          ]
+        }
+      ],
+      "rawSha256": "0e97c4aa2a411b2ef2e01b65b09f4548eb473e7fad572f2cea67d8df652b9cbe",
+      "sourceArchiveSha256": "7e15ecf2ab32b506ed0334540040b3353e392a7a47f85d025e5088db343ba683",
+      "sourceTexFile": "arxiv-2403.00746v2-source/main.tex",
+      "sourceTexSha256": "dfe661fb22d6c83a6ecb1d0fca04cc65d4111a8a769b9c40ddac9ba05324f25e",
+      "sourceId": "arxiv-2403.00746",
+      "title": "A Deep Gradient Flow Method for Option Pricing"
+    }
+  ],
+  "unlimitedGguf": {
+    "containerImageDigest": "sha256:1d96b6f71f35876beed2de645e27c5f8291a9c461a576a95b4e9cf911bf6ef98",
+    "llamaCppCommit": "ac42acac8e36c520a13fd25b8be05399ebc8a992",
+    "modelFile": "Unlimited-OCR-Q8_0.gguf",
+    "modelFileSha256": "234c36f679a3768f5564e9e02c2c1deacbd5677b9c8558a57133f1813f6dd3b8",
+    "projectorFile": "mmproj-Unlimited-OCR-F16.gguf",
+    "projectorFileSha256": "4f28c295e1fcf67a97488e356f2b4372da4702b77fdfad0fa138b5821325743c"
+  }
+}

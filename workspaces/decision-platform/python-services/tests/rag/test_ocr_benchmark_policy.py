@@ -575,3 +575,39 @@ def test_published_benchmark_summary_selects_only_quality_and_hardware_verified_
     assert "C:\\" not in serialized
     assert "providerBody" not in serialized
     assert "rawText" not in serialized
+
+
+def test_openvino_vl_markdown_projection_preserves_supported_document_ir_blocks() -> None:
+    repository_root = Path(__file__).resolve().parents[5]
+    runner_path = repository_root / "capstone-rag/ocr/benchmark/openvino_vl_candidate_runner.py"
+    spec = importlib.util.spec_from_file_location("s4_7d_openvino_vl_runner", runner_path)
+    assert spec is not None and spec.loader is not None
+    runner = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(runner)
+
+    blocks = runner._markdown_blocks(
+        "# Option valuation\n\n"
+        "- no-arbitrage\n"
+        "- put-call parity\n\n"
+        "| Metric | Value |\n"
+        "| --- | --- |\n"
+        "| Delta | 0.50 |\n\n"
+        "$$C-S+Ke^{-rT}=0$$\n\n"
+        "Risk-neutral evidence."
+    )
+
+    assert [block["blockType"] for block in blocks] == [
+        "HEADING",
+        "LIST",
+        "TABLE",
+        "FORMULA",
+        "PARAGRAPH",
+    ]
+    assert blocks[1]["items"] == ["no-arbitrage", "put-call parity"]
+    assert blocks[2]["cells"] == [
+        [0, 0, "Metric"],
+        [0, 1, "Value"],
+        [1, 0, "Delta"],
+        [1, 1, "0.50"],
+    ]
+    assert blocks[3]["normalizedFormula"] == "C-S+Ke^{-rT}=0"

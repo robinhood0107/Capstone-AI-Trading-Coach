@@ -666,6 +666,57 @@ def test_exhausted_brokerage_cap_rejects_before_shared_limiter_or_provider(
     assert client._budget.counts["brokerage"] == 0  # noqa: SLF001
 
 
+def test_approval_deadline_guard_blocks_transport_handoff_before_reservation(
+    tmp_path: Path,
+) -> None:
+    """packet TTL이 limiter 대기 중 끝나도 transport/brokerage counter를 소비하지 않는다."""
+
+    online = importlib.import_module("app.brokerage.kis_mock_online_client")
+    limiter = RecordingLimiter()
+    sender = NoSendTransport()
+
+    def expired() -> None:
+        raise RuntimeError("approval deadline elapsed")
+
+    client = online.KISMockBrokerageHttpClient(
+        settings=online.KISSettings(
+            kis_mode="mock",
+            kis_offline=True,
+            kis_data_dir=tmp_path,
+            _env_file=None,
+        ),
+        account_number=SecretStr("00000000-01"),
+        transport=httpx.MockTransport(sender),
+        rate_limiter=limiter,  # type: ignore[arg-type]
+        budget=online.KISBrokerageCallBudget(token_p_cap=0, brokerage_cap=1),
+        approval_deadline_guard=expired,
+    )
+    try:
+        with pytest.raises(online.KISMockBrokerageError):
+            client.request(
+                "GET",
+                online.BALANCE_PATH,
+                online.MOCK_BALANCE_TR_ID,
+                params={
+                    "AFHR_FLPR_YN": "N",
+                    "OFL_YN": "",
+                    "INQR_DVSN": "02",
+                    "UNPR_DVSN": "01",
+                    "FUND_STTL_ICLD_YN": "N",
+                    "FNCG_AMT_AUTO_RDPT_YN": "N",
+                    "PRCS_DVSN": "00",
+                    "CTX_AREA_FK100": "",
+                    "CTX_AREA_NK100": "",
+                },
+            )
+    finally:
+        client.close()
+
+    assert limiter.acquire_calls == 0
+    assert sender.calls == 0
+    assert client._budget.counts == {"tokenP": 0, "brokerage": 0}  # noqa: SLF001
+
+
 def test_encrypted_reference_store_never_persists_provider_reference_plaintext() -> None:
     reference = importlib.import_module("app.brokerage.mock_order_reference_store")
     redis_client = fakeredis.FakeRedis()
@@ -784,6 +835,85 @@ def test_recovery_reference_rejects_unanchored_historical_reference() -> None:
 
     with pytest.raises(reference.MockOrderReferenceUnavailable):
         store.get_for_recovery(order_id, account_id, "a" * 64)
+
+
+def test_encrypted_approval_outcome_allows_only_the_exact_failed_recovery_step() -> None:
+    """durable source outcome은 forged cancel recovery와 successful-source recovery를 모두 닫는다."""
+
+    reference = importlib.import_module("app.brokerage.mock_order_reference_store")
+    redis_client = fakeredis.FakeRedis()
+    encryption_key = SecretStr(base64.urlsafe_b64encode(b"0" * 32).decode())
+    store = reference.EncryptedRedisApprovalOutcomeStore(
+        redis_client,
+        encryption_key=encryption_key,
+        ttl_seconds=900,
+    )
+    source = reference.KISMockApprovalOutcome(
+        approval_id="approval-s3-online-source",
+        packet_sha256="a" * 64,
+        nonce="b" * 64,
+        probe_type="FULL",
+        order_id="ord_mock_" + "c" * 32,
+        account_id="acct_" + "d" * 32,
+        reference_anchor="e" * 64,
+        failed_step="executionRead",
+    )
+    store.record(source)
+
+    restored = store.require_recovery(
+        source_approval_id=source.approval_id,
+        source_packet_sha256=source.packet_sha256,
+        source_nonce=source.nonce,
+        expected_failed_step="executionRead",
+        order_id=source.order_id,
+        account_id=source.account_id,
+    )
+    assert restored.reference_anchor == source.reference_anchor
+
+    with pytest.raises(reference.KISMockApprovalOutcomeUnavailable):
+        store.require_recovery(
+            source_approval_id=source.approval_id,
+            source_packet_sha256=source.packet_sha256,
+            source_nonce=source.nonce,
+            expected_failed_step="cancelFull",
+            order_id=source.order_id,
+            account_id=source.account_id,
+        )
+
+    store.claim_recovery(
+        source_approval_id=source.approval_id,
+        source_packet_sha256=source.packet_sha256,
+        source_nonce=source.nonce,
+        recovery_packet_sha256="f" * 64,
+    )
+    with pytest.raises(reference.KISMockApprovalOutcomeUnavailable):
+        store.claim_recovery(
+            source_approval_id=source.approval_id,
+            source_packet_sha256=source.packet_sha256,
+            source_nonce=source.nonce,
+            recovery_packet_sha256="0" * 64,
+        )
+
+    completed = reference.KISMockApprovalOutcome(
+        approval_id="approval-s3-online-complete",
+        packet_sha256="1" * 64,
+        nonce="2" * 64,
+        probe_type="FULL",
+        order_id=source.order_id,
+        account_id=source.account_id,
+        reference_anchor="3" * 64,
+        failed_step=None,
+    )
+    store.record(completed)
+    with pytest.raises(reference.KISMockApprovalOutcomeUnavailable):
+        store.require_recovery(
+            source_approval_id=completed.approval_id,
+            source_packet_sha256=completed.packet_sha256,
+            source_nonce=completed.nonce,
+            expected_failed_step="cancelFull",
+            order_id=completed.order_id,
+            account_id=completed.account_id,
+        )
 
 
 def test_encrypted_reference_store_persists_exchange_division_inside_ciphertext() -> None:

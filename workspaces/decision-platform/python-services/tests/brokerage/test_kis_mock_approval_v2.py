@@ -17,12 +17,40 @@ from app.brokerage import kis_mock_approval_author as author
 from app.brokerage import kis_mock_approval_probe as probe
 
 
+@pytest.fixture(autouse=True)
+def bypass_live_pr_evidence(
+    request: pytest.FixtureRequest,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """일반 v2 packet test는 GitHub 상태 대신 별도 live-evidence 회귀 test만 검증한다."""
+
+    if "live_pr_evidence" not in request.fixturenames:
+        monkeypatch.setattr(
+            probe,
+            "_require_current_v2_pr_evidence",
+            lambda _packet, _repository_root: None,
+            raising=False,
+        )
+    monkeypatch.setattr(
+        probe,
+        "_require_recovery_source_outcome",
+        lambda _packet: None,
+        raising=False,
+    )
+
+
+@pytest.fixture
+def live_pr_evidence() -> None:
+    """live GitHub response parser를 직접 검증하는 test만 autouse bypass를 해제한다."""
+
+
 class _FakeOperations:
     """v2 packet contract test는 provider transport 대신 호출 표면만 기록한다."""
 
     def __init__(self) -> None:
         self.calls: list[str] = []
         self.closed = False
+        self.outcomes: list[str | None] = []
 
     def run(self, operation: str, _packet: probe.ApprovalPacket) -> None:
         self.calls.append(operation)
@@ -32,6 +60,13 @@ class _FakeOperations:
 
     def close(self) -> None:
         self.closed = True
+
+    def record_outcome(
+        self,
+        _packet: probe.ApprovalPacket,
+        failed_step: str | None,
+    ) -> None:
+        self.outcomes.append(failed_step)
 
 
 def _allow_replay(_packet: probe.ApprovalPacket, _now: datetime) -> None:
@@ -165,6 +200,170 @@ def test_cancel_recovery_rejects_new_order_surface_before_redis_or_runtime(
         probe.parse_approval_packet(document)
 
 
+def test_v2_late_failed_ci_blocks_before_single_use_claim_or_runtime(
+    secure_directory: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """author 시점 이후 rerun된 CI가 실패하면 packet TTL 안이어도 provider 표면을 열지 않는다."""
+
+    packet_path, packet_sha = _write_v2_packet(secure_directory, pull_request=77)
+    operations = _FakeOperations()
+    consumed = False
+    monkeypatch.setattr(probe, "_git_revision", lambda _root, _ref: "a" * 40)
+    monkeypatch.setattr(probe, "_require_clean_repository", lambda _root: None)
+
+    def reject_late_ci(
+        _packet: probe.KISMockApprovalPacketV2,
+        _repository_root: Path,
+    ) -> None:
+        raise probe.KISMockApprovalRejected("PR required checks are no longer successful")
+
+    def consume(_packet: probe.ApprovalPacket, _now: datetime) -> None:
+        nonlocal consumed
+        consumed = True
+
+    monkeypatch.setattr(probe, "_require_current_v2_pr_evidence", reject_late_ci)
+
+    with pytest.raises(probe.KISMockApprovalRejected, match="no longer successful"):
+        probe.execute_approved_probe(
+            packet_path,
+            now=datetime(2030, 1, 2, 3, 10, tzinfo=UTC),
+            expected_approval_id="approval-s3-online-v2-test",
+            expected_packet_sha256=packet_sha,
+            repository_root=secure_directory,
+            operations_factory=lambda _packet: operations,
+            approval_consumer=consume,
+        )
+
+    assert consumed is False
+    assert operations.calls == []
+
+
+@pytest.mark.parametrize(
+    ("state", "is_draft", "failed_check"),
+    [("CLOSED", False, None), ("OPEN", True, None), ("OPEN", False, "Python quality gates")],
+)
+def test_v2_live_pr_revalidation_requires_active_green_head(
+    secure_directory: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    live_pr_evidence: None,
+    state: str,
+    is_draft: bool,
+    failed_check: str | None,
+) -> None:
+    """runtime recheck은 author 때의 historical statusCheckRollup을 재사용하지 않는다."""
+
+    packet_path, _ = _write_v2_packet(secure_directory, pull_request=77)
+    raw_packet = json.loads(packet_path.read_text(encoding="utf-8"))
+    packet = probe.parse_approval_packet(raw_packet)
+    assert isinstance(packet, probe.KISMockApprovalPacketV2)
+    checks = [
+        {
+            "name": name,
+            "conclusion": "FAILURE" if name == failed_check else "SUCCESS",
+        }
+        for name in sorted(probe._REQUIRED_CI_CHECKS)
+    ]
+
+    def fake_run(arguments: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        assert arguments[:3] == ["gh", "pr", "view"]
+        return subprocess.CompletedProcess(
+            arguments,
+            0,
+            json.dumps(
+                {
+                    "number": 77,
+                    "state": state,
+                    "isDraft": is_draft,
+                    "headRefName": "feature/integrated-news-rag-cross-market-s5",
+                    "baseRefName": "main",
+                    "headRefOid": "a" * 40,
+                    "statusCheckRollup": checks,
+                }
+            ),
+            "",
+        )
+
+    monkeypatch.setattr(probe.subprocess, "run", fake_run)
+
+    with pytest.raises(probe.KISMockApprovalRejected):
+        probe._require_current_v2_pr_evidence(packet, secure_directory)
+
+
+def test_v2_recovery_rejects_forged_cancel_step_before_claim_or_runtime(
+    secure_directory: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """executionRead 실제 실패를 cancelFull로 바꾼 recovery는 cancel provider call 이전에 닫는다."""
+
+    packet_path, packet_sha = _write_v2_packet(
+        secure_directory,
+        pull_request=77,
+        profile="CANCEL_RECOVERY",
+        recovery_failed_step="cancelFull",
+    )
+    operations = _FakeOperations()
+    consumed = False
+    monkeypatch.setattr(probe, "_git_revision", lambda _root, _ref: "a" * 40)
+    monkeypatch.setattr(probe, "_require_clean_repository", lambda _root: None)
+
+    def reject_forged_recovery(_packet: probe.KISMockApprovalPacketV2) -> None:
+        raise probe.KISMockApprovalRejected("recovery source outcome does not match")
+
+    def consume(_packet: probe.ApprovalPacket, _now: datetime) -> None:
+        nonlocal consumed
+        consumed = True
+
+    monkeypatch.setattr(probe, "_require_recovery_source_outcome", reject_forged_recovery)
+
+    with pytest.raises(probe.KISMockApprovalRejected, match="source outcome"):
+        probe.execute_approved_probe(
+            packet_path,
+            now=datetime(2030, 1, 2, 3, 10, tzinfo=UTC),
+            expected_approval_id="approval-s3-online-v2-test",
+            expected_packet_sha256=packet_sha,
+            repository_root=secure_directory,
+            operations_factory=lambda _packet: operations,
+            approval_consumer=consume,
+        )
+
+    assert consumed is False
+    assert operations.calls == []
+
+
+def test_v2_deadline_blocks_later_step_before_its_provider_reservation(
+    secure_directory: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """limiter 대기 등으로 TTL을 넘기면 다음 operation을 dispatch하지 않는다."""
+
+    packet_path, packet_sha = _write_v2_packet(secure_directory, pull_request=77)
+    operations = _FakeOperations()
+    timestamps = iter(
+        (
+            datetime(2030, 1, 2, 3, 10, tzinfo=UTC),
+            datetime(2030, 1, 2, 4, 0, tzinfo=UTC),
+        )
+    )
+    monkeypatch.setattr(probe, "_git_revision", lambda _root, _ref: "a" * 40)
+    monkeypatch.setattr(probe, "_require_clean_repository", lambda _root: None)
+
+    with pytest.raises(probe.KISMockApprovalRejected, match="not inside its TTL"):
+        probe.execute_approved_probe(
+            packet_path,
+            now=datetime(2030, 1, 2, 3, 10, tzinfo=UTC),
+            expected_approval_id="approval-s3-online-v2-test",
+            expected_packet_sha256=packet_sha,
+            repository_root=secure_directory,
+            operations_factory=lambda _packet: operations,
+            approval_consumer=_allow_replay,
+            clock=lambda: next(timestamps),
+        )
+
+    assert operations.calls == ["balance"]
+    assert operations.counts() == {"tokenP": 0, "brokerage": 1}
+
+
 def test_v2_reader_rejects_a_symlinked_packet_parent_before_runtime(
     secure_directory: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -268,6 +467,8 @@ def test_author_collects_dynamic_pr_branch_head_and_required_checks(
             json.dumps(
                 {
                     "number": 77,
+                    "state": "OPEN",
+                    "isDraft": False,
                     "headRefName": "feature/test-approved-packet",
                     "baseRefName": "main",
                     "headRefOid": "a" * 40,
@@ -302,6 +503,8 @@ def test_author_rejects_dynamic_pr_when_github_head_is_not_local_head(
             json.dumps(
                 {
                     "number": 77,
+                    "state": "OPEN",
+                    "isDraft": False,
                     "headRefName": "feature/test-approved-packet",
                     "baseRefName": "main",
                     "headRefOid": "b" * 40,
@@ -314,6 +517,50 @@ def test_author_rejects_dynamic_pr_when_github_head_is_not_local_head(
     monkeypatch.setattr(author.subprocess, "run", fake_run)
 
     with pytest.raises(author.KISMockApprovalAuthorRejected, match="one final HEAD"):
+        author._collect_current_pr_evidence(secure_directory, pull_request=77)
+
+
+@pytest.mark.parametrize(
+    ("state", "is_draft"),
+    [("CLOSED", False), ("MERGED", False), ("OPEN", True)],
+)
+def test_author_rejects_non_open_or_draft_pull_request(
+    secure_directory: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    state: str,
+    is_draft: bool,
+) -> None:
+    """pre-merge only approval은 closed/merged/draft PR의 stale head를 쓸 수 없다."""
+
+    required_checks = [
+        {"name": name, "conclusion": "SUCCESS"} for name in sorted(probe._REQUIRED_CI_CHECKS)
+    ]
+    monkeypatch.setattr(author, "_require_clean_repository", lambda _root: None)
+    monkeypatch.setattr(author, "_git_revision", lambda _root, _ref: "a" * 40)
+
+    def fake_run(arguments: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        if arguments[:2] == ["git", "symbolic-ref"]:
+            return subprocess.CompletedProcess(arguments, 0, "feature/test-approved-packet\n", "")
+        return subprocess.CompletedProcess(
+            arguments,
+            0,
+            json.dumps(
+                {
+                    "number": 77,
+                    "state": state,
+                    "isDraft": is_draft,
+                    "headRefName": "feature/test-approved-packet",
+                    "baseRefName": "main",
+                    "headRefOid": "a" * 40,
+                    "statusCheckRollup": required_checks,
+                }
+            ),
+            "",
+        )
+
+    monkeypatch.setattr(author.subprocess, "run", fake_run)
+
+    with pytest.raises(author.KISMockApprovalAuthorRejected, match="not active"):
         author._collect_current_pr_evidence(secure_directory, pull_request=77)
 
 

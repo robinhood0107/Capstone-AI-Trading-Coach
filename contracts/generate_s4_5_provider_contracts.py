@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import argparse
-import os
 import sys
-import tempfile
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Final
@@ -18,6 +16,7 @@ from contracts.generate_principle_contracts import (  # noqa: E402
     ContractValidationError,
     canonical_json_bytes,
 )
+from contracts.generated_artifact_io import write_generated_artifact  # noqa: E402
 
 
 ROOT = _SCRIPT_ROOT
@@ -209,21 +208,7 @@ def _check(outputs: Mapping[str, bytes]) -> int:
 
 def _write(outputs: Mapping[str, bytes]) -> int:
     for relative, payload in outputs.items():
-        path = ROOT / relative
-        path.parent.mkdir(parents=True, exist_ok=True)
-        descriptor, temporary_name = tempfile.mkstemp(
-            dir=path.parent, prefix=f".{path.name}.", suffix=".tmp"
-        )
-        try:
-            with os.fdopen(descriptor, "wb") as handle:
-                handle.write(payload)
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.replace(temporary_name, path)
-            os.chmod(path, 0o644)
-        finally:
-            if os.path.exists(temporary_name):
-                os.unlink(temporary_name)
+        write_generated_artifact(ROOT, relative, payload)
     print("S4_5_PROVIDER_CONTROL_CONTRACTS_WRITTEN")
     return 0
 

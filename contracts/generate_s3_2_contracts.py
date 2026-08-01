@@ -2,9 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
-import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +14,7 @@ from contracts.generate_principle_contracts import (  # noqa: E402
     ContractValidationError,
     load_json_bytes_strict,
 )
+from contracts.generated_artifact_io import write_generated_path  # noqa: E402
 
 
 CATALOG_PATH = REPO_ROOT / "contracts/catalogs/s3-2-internal-paper-contract.v1.json"
@@ -474,23 +473,7 @@ def canonical_json_bytes(value: object) -> bytes:
 
 
 def _write_atomic(path: Path, content: bytes) -> None:
-    if path.is_symlink():
-        raise ContractValidationError(
-            f"Refusing to replace symlink: {path.relative_to(REPO_ROOT)}"
-        )
-    path.parent.mkdir(parents=True, exist_ok=True)
-    descriptor, temporary_name = tempfile.mkstemp(
-        prefix=f".{path.name}.", dir=path.parent
-    )
-    temporary = Path(temporary_name)
-    try:
-        with os.fdopen(descriptor, "wb") as stream:
-            stream.write(content)
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.replace(temporary, path)
-    finally:
-        temporary.unlink(missing_ok=True)
+    write_generated_path(REPO_ROOT, path, content)
 
 
 def generate(*, check: bool) -> int:

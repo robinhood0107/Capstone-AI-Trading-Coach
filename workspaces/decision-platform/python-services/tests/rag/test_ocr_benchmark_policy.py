@@ -18,6 +18,7 @@ from app.rag.ocr_benchmark import (
     quality_receipt_projection,
     parse_grounded_ocr_output,
     retain_expected_critical_spans,
+    reading_order_from_grounded_spans,
     select_production_backend,
     validate_benchmark_receipt,
 )
@@ -167,6 +168,22 @@ def test_unlimited_grounding_parser_drops_malformed_boxes_but_keeps_bounded_text
 
     assert parsed.text == "Kept text"
     assert parsed.spans == ()
+
+
+def test_grounded_spans_project_to_page_reading_order_without_duplicate_regions() -> None:
+    spans = (
+        GroundedSpan(label="text", bbox=(100, 100, 400, 200), text="left"),
+        GroundedSpan(label="text", bbox=(600, 100, 900, 200), text="right"),
+        GroundedSpan(label="text", bbox=(620, 120, 880, 180), text="same right"),
+    )
+
+    assert reading_order_from_grounded_spans(
+        spans=spans,
+        image_width=2000,
+        image_height=3000,
+        regions={"left": (100, 100, 900, 900), "right": (1100, 100, 1900, 900)},
+        expected_order=("left", "right"),
+    ) == ("left", "right")
 
 
 @pytest.mark.parametrize(

@@ -260,6 +260,10 @@ approval ID와 SHA-256 외 값은 출력하지 않는다. 현재 사용자가 pa
 tracked/untracked/staged 변경이 없는 clean worktree와 packet account가
 `KIS_MOCK_BOUND_ACCOUNT_ID`에 정확히 결속됐는지도 확인한다. ignored `.env`와
 Git ignore 규칙에 포함된 로컬 전용 파일은 clean 판정에서 제외한다. 이어서
+author와 executor는 모두 해당 PR이 여전히 `OPEN`, non-draft, same HEAD/base이고 required
+checks가 모두 `SUCCESS`인지 recheck한다. PR이 close되거나 check가 재실행 후 실패하면 Redis claim과
+provider handoff 전에 종료한다. TTL도 각 operation과 token/limiter/socket handoff 직전에 다시
+확인하므로 대기 중 만료된 packet은 남은 reservation을 소비하지 않는다. 이어서
 `approvalId`와 packet SHA-256에서 파생한 opaque Redis key를 `SET NX PX`로 claim하며,
 성공·첫 실패·runtime 생성 실패 모두 해당 packet을 재사용할 수 없다. Redis 장애나 기존 claim도
 provider handoff 전에 fail-closed한다.
@@ -276,11 +280,14 @@ body/header/URL/`msg1`/계좌/credential은 출력하지 않는다. diagnostic�
 gold ETF/ETN 분류를 합성하지 않는다. trusted margin/catalog enrichment가 없는 persistent
 online balance projection은 provider 호출 전에 `BALANCE_RISK_FIELDS_UNAVAILABLE`로 닫힌다.
 
-주문 접수 뒤 `cancelFull`에서 실패한 경우에는 source packet SHA/nonce anchor가 encrypted
-`COMMITTED` reference와 일치하는 `CANCEL_RECOVERY` v2 packet으로만 `cancelFull -> executionRead`
-cap `2`를 실행할 수 있다. 신규 주문은 이 profile에 표현되지 않으며 reference가 missing/PENDING/
-unanchored/foreign이면 provider call `0`으로 종료한다. 이미 취소 뒤 `executionRead`만 실패한 경우는
-취소를 반복하지 않고 read 1회 cap `1`만 허용한다.
+주문 접수 뒤 `cancelFull`에서 실패한 경우에는 executor가 source packet ID/SHA/nonce, order identity,
+reference anchor와 **실제 failed step**을 Fernet-encrypted Redis outcome receipt로 `SET NX` 봉인한다.
+`CANCEL_RECOVERY` author와 executor는 이 receipt를 각각 재검증하고 source failure 하나를 recovery
+packet 하나에만 claim한다. 따라서 CLI의 `failedStep`을 위조할 수 없으며, source `cancelFull` 실패만
+`cancelFull -> executionRead` cap `2`를 열고 source `executionRead` 실패는 취소를 재전송하지 않는
+read 1회 cap `1`만 연다. nested recovery도 original encrypted reference anchor를 유지한다. 신규 주문은
+이 profile에 표현되지 않으며 reference/outcome이 missing, PENDING, unanchored, foreign, completed 또는
+already-recovered이면 provider call `0`으로 종료한다.
 
 첫 실패는 남은 호출을 모두 중단한다. 주문 접수 뒤 취소가 실패해도 자동 retry하지 않으며,
 모의투자 포털에서 확인·정리가 필요하면 실패 evidence를 고정한 뒤 새 authorization을 받는다.

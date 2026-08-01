@@ -1,0 +1,96 @@
+syntax = "proto3";
+
+package capstone.decision.v2;
+
+option java_multiple_files = true;
+option java_package = "com.capstone.decision.contract.v2";
+option java_outer_classname = "RagV2Contract";
+
+// RAG v2는 exact-30, OA, owner-private generation 선택을 서버에만 위임한다.
+service RagService {
+  rpc Ask(RagAskRequest) returns (RagAskResponse);
+}
+
+message RagAskRequest {
+  string request_id = 1;
+  string owner_scope_claim = 2;
+  string question = 3;
+  string answer_mode = 4;
+  repeated string related_symbols = 5;
+  repeated string topics = 6;
+  RagConsentContext consent_context = 7;
+}
+
+message RagConsentContext {
+  bool granted = 1;
+  string policy_version = 2;
+}
+
+enum RagResponseStatus {
+  RAG_RESPONSE_STATUS_UNSPECIFIED = 0;
+  RAG_RESPONSE_STATUS_ANSWERED = 1;
+  RAG_RESPONSE_STATUS_RETRIEVAL_ONLY = 2;
+  RAG_RESPONSE_STATUS_RETRIEVAL_FAILURE = 3;
+  RAG_RESPONSE_STATUS_BLOCKED_SENSITIVE = 4;
+  RAG_RESPONSE_STATUS_BLOCKED_ADVICE = 5;
+  RAG_RESPONSE_STATUS_GENERATION_UNAVAILABLE = 6;
+  RAG_RESPONSE_STATUS_CORPUS_NOT_READY = 7;
+}
+
+message RagAskResponse {
+  string request_id = 1;
+  RagResponseStatus status = 2;
+  optional string answer = 3;
+  repeated RagCitation citations = 4;
+  double citation_coverage = 5;
+  bool retrieval_failure = 6;
+  repeated string guardrail_flags = 7;
+  string exact30_generation_id = 8;
+  string oa_generation_id = 9;
+  optional string owner_generation_id = 10;
+  string embedding_profile_id = 11;
+  string failure_code = 12;
+  ProviderPhysicalCounts provider_physical_counts = 13;
+  repeated string authorized_top5_chunk_revision_ids = 14;
+  bool external_provider_candidate = 15;
+  int64 policy_version = 16;
+}
+
+message RagCitation {
+  string citation_id = 1;
+  string source_id = 2;
+  string source_revision_id = 3;
+  string chunk_revision_id = 4;
+  string generation_id = 5;
+
+  oneof citation {
+    PublicWebCitation public_web = 10;
+    LocalDocumentCitation local_document = 11;
+  }
+}
+
+message PublicWebCitation {
+  string title = 1;
+  string canonical_url = 2;
+  DocumentLocator locator = 3;
+}
+
+message LocalDocumentCitation {
+  string document_id = 1;
+  string display_name = 2;
+  DocumentLocator locator = 3;
+}
+
+message DocumentLocator {
+  optional int32 page = 1;
+  optional int32 slide = 2;
+  optional string sheet = 3;
+  optional string section = 4;
+}
+
+message ProviderPhysicalCounts {
+  int32 total = 1;
+  int32 gemini = 2;
+  int32 openai = 3;
+  int32 voyage = 4;
+}

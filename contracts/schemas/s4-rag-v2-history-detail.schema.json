@@ -1,0 +1,204 @@
+{
+  "$id": "contracts/schemas/s4-rag-v2-history-detail.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "answer": {
+      "maxLength": 8192,
+      "minLength": 1,
+      "type": "string"
+    },
+    "answerId": {
+      "pattern": "^rag_[A-Za-z0-9_-]{12,96}$",
+      "type": "string"
+    },
+    "citations": {
+      "items": {
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "canonicalUrl": {
+                "format": "uri",
+                "maxLength": 2048,
+                "pattern": "^https://",
+                "type": "string"
+              },
+              "citationKind": {
+                "const": "PUBLIC_WEB"
+              },
+              "locator": {
+                "additionalProperties": false,
+                "anyOf": [
+                  {
+                    "required": [
+                      "page"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "slide"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "sheet"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "section"
+                    ]
+                  }
+                ],
+                "properties": {
+                  "page": {
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "section": {
+                    "maxLength": 300,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "sheet": {
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "slide": {
+                    "minimum": 1,
+                    "type": "integer"
+                  }
+                },
+                "required": [],
+                "type": "object"
+              },
+              "sourceId": {
+                "pattern": "^src_[a-z0-9][a-z0-9_-]{2,95}$",
+                "type": "string"
+              },
+              "title": {
+                "maxLength": 500,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "citationKind",
+              "sourceId",
+              "title",
+              "canonicalUrl",
+              "locator"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "citationKind": {
+                "const": "LOCAL_DOCUMENT"
+              },
+              "displayName": {
+                "maxLength": 160,
+                "minLength": 1,
+                "pattern": "^[^/\\\\:]+$",
+                "type": "string"
+              },
+              "documentId": {
+                "pattern": "^doc_[a-z0-9][a-z0-9_-]{10,95}$",
+                "type": "string"
+              },
+              "locator": {
+                "additionalProperties": false,
+                "anyOf": [
+                  {
+                    "required": [
+                      "page"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "slide"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "sheet"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "section"
+                    ]
+                  }
+                ],
+                "properties": {
+                  "page": {
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "section": {
+                    "maxLength": 300,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "sheet": {
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "slide": {
+                    "minimum": 1,
+                    "type": "integer"
+                  }
+                },
+                "required": [],
+                "type": "object"
+              }
+            },
+            "required": [
+              "citationKind",
+              "documentId",
+              "displayName",
+              "locator"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "maxItems": 5,
+      "type": "array"
+    },
+    "createdAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "expiresAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "generationStatus": {
+      "enum": [
+        "ANSWERED",
+        "RETRIEVAL_ONLY"
+      ]
+    },
+    "question": {
+      "maxLength": 8192,
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "answerId",
+    "question",
+    "answer",
+    "generationStatus",
+    "citations",
+    "createdAt",
+    "expiresAt"
+  ],
+  "title": "s4-rag-v2-history-detail",
+  "type": "object"
+}

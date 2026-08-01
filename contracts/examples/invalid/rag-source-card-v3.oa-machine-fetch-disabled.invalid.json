@@ -1,0 +1,39 @@
+{
+  "authors": [
+    "Open-access research authors"
+  ],
+  "canonicalUrl": "https://arxiv.org/abs/2403.00746",
+  "contractId": "rag-source-card-v3",
+  "curriculumTrack": "DERIVATIVES_STOCHASTIC_NUMERICS",
+  "downloadUrl": "https://arxiv.org/pdf/2403.00746",
+  "externalLlmAllowed": false,
+  "licenseEvidence": {
+    "accessBasis": "OPEN_ACCESS",
+    "checkedAt": "2026-08-02T00:00:00Z",
+    "evidenceUrl": "https://arxiv.org/abs/2403.00746",
+    "licenseId": "ARXIV_AUTHOR_DISTRIBUTION",
+    "note": "공식 arXiv 원천에서 local build만 허용한다."
+  },
+  "localProcessingAllowed": true,
+  "machineFetchAllowed": false,
+  "mimeType": "application/pdf",
+  "normalizedContentSha256": "2222222222222222222222222222222222222222222222222222222222222222",
+  "parserEvidence": {
+    "ocr": {
+      "backend": "NOT_USED",
+      "backendVersion": null,
+      "modelSha256": null
+    },
+    "parserArtifactSha256": "3333333333333333333333333333333333333333333333333333333333333333",
+    "parserBackend": "capstone-markdown-native",
+    "parserVersion": "1.0.0"
+  },
+  "publishedOn": "2026-08-01",
+  "rawContentSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+  "redistributionAllowed": false,
+  "schemaVersion": 3,
+  "sourceId": "src_arxiv_option_pricing_001",
+  "sourceKind": "OPEN_ACCESS_DOCUMENT",
+  "sourceRevisionId": "srv_arxiv_option_pricing_001",
+  "title": "Open-access option-pricing benchmark paper"
+}

@@ -1,0 +1,38 @@
+{
+  "authors": [
+    "S4.7D Contract Team"
+  ],
+  "canonicalUrl": "https://github.com/robinhood0107/Capstone-AI-Trading-Coach",
+  "contractId": "rag-source-card-v3",
+  "curriculumTrack": "PROJECT_CORE",
+  "externalLlmAllowed": true,
+  "licenseEvidence": {
+    "accessBasis": "PROJECT_AUTHORED",
+    "checkedAt": "2026-08-02T00:00:00Z",
+    "evidenceUrl": "https://github.com/robinhood0107/Capstone-AI-Trading-Coach",
+    "licenseId": "PROJECT_AUTHORED",
+    "note": "프로젝트가 직접 작성한 bounded source card다."
+  },
+  "localProcessingAllowed": false,
+  "machineFetchAllowed": false,
+  "mimeType": "text/markdown",
+  "normalizedContentSha256": "2222222222222222222222222222222222222222222222222222222222222222",
+  "parserEvidence": {
+    "ocr": {
+      "backend": "NOT_USED",
+      "backendVersion": null,
+      "modelSha256": null
+    },
+    "parserArtifactSha256": "3333333333333333333333333333333333333333333333333333333333333333",
+    "parserBackend": "capstone-markdown-native",
+    "parserVersion": "1.0.0"
+  },
+  "publishedOn": "2026-08-01",
+  "rawContentSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+  "redistributionAllowed": true,
+  "schemaVersion": 3,
+  "sourceId": "src_project_exact30_001",
+  "sourceKind": "PROJECT_SOURCE_CARD",
+  "sourceRevisionId": "srv_project_exact30_001",
+  "title": "프로젝트 exact-30 source card"
+}

@@ -1,0 +1,60 @@
+{
+  "$id": "contracts/schemas/s4-rag-v2-corpus-status.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "failureCode": {
+      "oneOf": [
+        {
+          "enum": [
+            "DOWNLOAD_UNAVAILABLE",
+            "SOURCE_DRIFT",
+            "PARSER_FAILED",
+            "OCR_QUALITY_FAILED",
+            "EMBEDDING_FAILED",
+            "DISK_FULL",
+            "ACTIVATION_CONFLICT"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "privateOverlayState": {
+      "enum": [
+        "ABSENT",
+        "BUILDING",
+        "READY",
+        "FAILED"
+      ]
+    },
+    "progressPercent": {
+      "maximum": 100,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "publicCorpusVersion": {
+      "maxLength": 128,
+      "minLength": 1,
+      "type": "string"
+    },
+    "state": {
+      "enum": [
+        "CORE_READY",
+        "BUILDING",
+        "FULL_READY",
+        "FAILED"
+      ]
+    }
+  },
+  "required": [
+    "state",
+    "publicCorpusVersion",
+    "privateOverlayState",
+    "progressPercent",
+    "failureCode"
+  ],
+  "title": "s4-rag-v2-corpus-status",
+  "type": "object"
+}

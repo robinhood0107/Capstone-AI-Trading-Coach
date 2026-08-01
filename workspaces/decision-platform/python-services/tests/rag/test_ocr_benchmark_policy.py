@@ -9,12 +9,14 @@ from app.rag.ocr_benchmark import (
     BenchmarkError,
     CandidateReceipt,
     EvaluationDocument,
+    GroundedSpan,
     LaneReceipt,
     QualityReceipt,
     compute_character_error_rate,
     compute_kendall_tau,
     evaluate_quality,
     quality_receipt_projection,
+    parse_grounded_ocr_output,
     retain_expected_critical_spans,
     select_production_backend,
     validate_benchmark_receipt,
@@ -142,6 +144,29 @@ def test_chart_derived_series_do_not_become_printed_critical_span_hallucinations
         expected=("1,053.1", "0.1%", "0.1%", "119.3"),
         prediction=("1,053.1", "0.1%", "2.37", "999", "0.1%", "0.1%"),
     ) == ("1,053.1", "0.1%", "0.1%")
+
+
+def test_unlimited_grounding_parser_preserves_text_and_normalized_boxes() -> None:
+    parsed = parse_grounded_ocr_output(
+        "<|det|>title [10, 20, 200, 80]<|/det|>Heading\n"
+        "<|ref|>Value 3.5%<|/ref|>"
+        "<|det|>[[40, 100, 900, 180]]<|/det|>"
+    )
+
+    assert parsed.text == "Heading\nValue 3.5%"
+    assert parsed.spans == (
+        GroundedSpan(label="title", bbox=(10, 20, 200, 80), text="Heading"),
+        GroundedSpan(label="text", bbox=(40, 100, 900, 180), text="Value 3.5%"),
+    )
+
+
+def test_unlimited_grounding_parser_drops_malformed_boxes_but_keeps_bounded_text() -> None:
+    parsed = parse_grounded_ocr_output(
+        "<|det|>text [-1, 20, 200, 80]<|/det|>Kept text"
+    )
+
+    assert parsed.text == "Kept text"
+    assert parsed.spans == ()
 
 
 @pytest.mark.parametrize(

@@ -2,6 +2,34 @@
   "$id": "contracts/schemas/market_cause_evidence.v1.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "sourceFamily": {
+            "const": "GDELT_AGGREGATE"
+          }
+        },
+        "required": [
+          "sourceFamily"
+        ]
+      },
+      "then": {
+        "properties": {
+          "classification": {
+            "not": {
+              "const": "CONFIRMED_FACT"
+            }
+          },
+          "relation": {
+            "not": {
+              "const": "REPORTED_AS_CAUSE"
+            }
+          }
+        }
+      }
+    }
+  ],
   "properties": {
     "artifactHash": {
       "pattern": "^[0-9a-f]{64}$",

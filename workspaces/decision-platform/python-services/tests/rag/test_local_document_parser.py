@@ -171,6 +171,29 @@ def test_pdf_uses_native_text_and_ocrs_only_page_without_text_layer(
     assert hashlib.sha256(target.read_bytes()).hexdigest() == before_hash
 
 
+def test_pdf_compressed_object_stream_javascript_is_rejected(
+    posix_tmp_path: Path,
+) -> None:
+    root = posix_tmp_path / "owner"
+    root.mkdir()
+    pdf = fitz.open()
+    page = pdf.new_page()
+    page.insert_text((72, 72), "Apparently safe text")
+    action_xref = pdf.get_new_xref()
+    pdf.update_object(
+        action_xref,
+        "<< /Type /Action /S /JavaScript /JS (app.alert(1)) >>",
+    )
+    pdf.xref_set_key(pdf.pdf_catalog(), "AA", f"<< /WC {action_xref} 0 R >>")
+    payload = pdf.tobytes(garbage=4, deflate=True, use_objstms=1)
+    pdf.close()
+    assert b"/JavaScript" not in payload
+    _write(root, "compressed-active.pdf", payload)
+
+    with pytest.raises(DocumentParseError, match="PDF_ACTIVE_CONTENT_FORBIDDEN"):
+        _parse(_parser(), root, "compressed-active.pdf")
+
+
 def test_docx_pptx_and_xlsx_preserve_native_structure(posix_tmp_path: Path) -> None:
     root = posix_tmp_path / "owner"
     root.mkdir()

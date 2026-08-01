@@ -1,0 +1,21 @@
+{
+  "answer": "검색된 근거의 가정과 한계를 설명합니다.",
+  "answerId": "rag_01EXAMPLEANSWERID",
+  "citationCoverage": 1,
+  "citations": [
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2403.00746",
+      "citationKind": "PUBLIC_WEB",
+      "locator": {
+        "page": 3,
+        "section": "Method"
+      },
+      "sourceId": "src_arxiv_option_pricing_001",
+      "title": "Open-access option-pricing benchmark paper"
+    }
+  ],
+  "generationStatus": "RETRIEVAL_ONLY",
+  "guardrailFlags": [],
+  "requestId": "req_01EXAMPLEREQUESTID",
+  "retrievalFailure": false
+}

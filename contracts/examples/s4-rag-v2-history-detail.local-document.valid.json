@@ -1,0 +1,19 @@
+{
+  "answer": "개인 문서에서 확인된 금융공학 개념을 설명합니다.",
+  "answerId": "rag_01EXAMPLEANSWERID",
+  "citations": [
+    {
+      "citationKind": "LOCAL_DOCUMENT",
+      "displayName": "개인 금융공학 노트.pdf",
+      "documentId": "doc_01ownerprivateexample",
+      "locator": {
+        "page": 4,
+        "section": "위험요인"
+      }
+    }
+  ],
+  "createdAt": "2026-08-02T00:00:00Z",
+  "expiresAt": "2026-09-01T00:00:00Z",
+  "generationStatus": "RETRIEVAL_ONLY",
+  "question": "이 문서의 위험요인을 설명해 주세요."
+}

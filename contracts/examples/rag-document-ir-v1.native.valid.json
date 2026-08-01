@@ -1,0 +1,102 @@
+{
+  "blocks": [
+    {
+      "blockType": "HEADING",
+      "level": 1,
+      "locator": {
+        "page": 1,
+        "section": "모형과 표"
+      },
+      "ocrConfidence": null,
+      "readingOrder": 0,
+      "text": "옵션가격 모형"
+    },
+    {
+      "blockType": "PARAGRAPH",
+      "locator": {
+        "page": 1,
+        "section": "모형과 표"
+      },
+      "ocrConfidence": null,
+      "readingOrder": 1,
+      "text": "가격식의 가정과 한계를 설명한다."
+    },
+    {
+      "blockType": "TABLE",
+      "cells": [
+        {
+          "column": 0,
+          "columnSpan": 1,
+          "row": 0,
+          "rowSpan": 1,
+          "text": "기호"
+        },
+        {
+          "column": 1,
+          "columnSpan": 1,
+          "row": 0,
+          "rowSpan": 1,
+          "text": "의미"
+        }
+      ],
+      "columnCount": 2,
+      "locator": {
+        "page": 1,
+        "section": "모형과 표"
+      },
+      "ocrConfidence": null,
+      "readingOrder": 2,
+      "rowCount": 1
+    },
+    {
+      "blockType": "FORMULA",
+      "locator": {
+        "page": 1,
+        "section": "모형과 표"
+      },
+      "normalizedFormula": "C=S*N(d1)-K*exp(-r*T)*N(d2)",
+      "ocrConfidence": null,
+      "readingOrder": 3,
+      "sourceText": "C = S N(d1) - K e^{-rT} N(d2)"
+    },
+    {
+      "blockType": "CAPTION",
+      "locator": {
+        "page": 1,
+        "section": "모형과 표"
+      },
+      "ocrConfidence": null,
+      "readingOrder": 4,
+      "targetReadingOrder": 2,
+      "text": "표 1. 기호 정의"
+    }
+  ],
+  "contractId": "rag-document-ir-v1",
+  "documentIrVersion": 1,
+  "extractionMode": "NATIVE",
+  "languageTags": [
+    "ko",
+    "en"
+  ],
+  "mimeType": "application/pdf",
+  "normalizedContentSha256": "5555555555555555555555555555555555555555555555555555555555555555",
+  "parserEvidence": {
+    "ocr": {
+      "backend": "NOT_USED",
+      "backendVersion": null,
+      "modelSha256": null
+    },
+    "parserArtifactSha256": "6666666666666666666666666666666666666666666666666666666666666666",
+    "parserBackend": "capstone-pdf-native",
+    "parserVersion": "1.0.0"
+  },
+  "rawContentSha256": "4444444444444444444444444444444444444444444444444444444444444444",
+  "safetyClassification": {
+    "externalLlmEligible": true,
+    "piiDetected": false,
+    "promptInjectionDetected": false,
+    "secretDetected": false
+  },
+  "sourceId": "src_arxiv_option_pricing_001",
+  "sourceRevisionId": "srv_arxiv_option_pricing_001"
+}

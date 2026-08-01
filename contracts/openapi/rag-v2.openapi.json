@@ -1,0 +1,824 @@
+{
+  "components": {
+    "schemas": {
+      "RagV2Answer": {
+        "$id": "contracts/schemas/s4-rag-v2-answer.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "answer": {
+            "oneOf": [
+              {
+                "maxLength": 8192,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "answerId": {
+            "oneOf": [
+              {
+                "pattern": "^rag_[A-Za-z0-9_-]{12,96}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "citationCoverage": {
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          "citations": {
+            "items": {
+              "oneOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "canonicalUrl": {
+                      "format": "uri",
+                      "maxLength": 2048,
+                      "pattern": "^https://",
+                      "type": "string"
+                    },
+                    "citationKind": {
+                      "const": "PUBLIC_WEB"
+                    },
+                    "locator": {
+                      "additionalProperties": false,
+                      "anyOf": [
+                        {
+                          "required": [
+                            "page"
+                          ]
+                        },
+                        {
+                          "required": [
+                            "slide"
+                          ]
+                        },
+                        {
+                          "required": [
+                            "sheet"
+                          ]
+                        },
+                        {
+                          "required": [
+                            "section"
+                          ]
+                        }
+                      ],
+                      "properties": {
+                        "page": {
+                          "minimum": 1,
+                          "type": "integer"
+                        },
+                        "section": {
+                          "maxLength": 300,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "sheet": {
+                          "maxLength": 128,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "slide": {
+                          "minimum": 1,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [],
+                      "type": "object"
+                    },
+                    "sourceId": {
+                      "pattern": "^src_[a-z0-9][a-z0-9_-]{2,95}$",
+                      "type": "string"
+                    },
+                    "title": {
+                      "maxLength": 500,
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "citationKind",
+                    "sourceId",
+                    "title",
+                    "canonicalUrl",
+                    "locator"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "citationKind": {
+                      "const": "LOCAL_DOCUMENT"
+                    },
+                    "displayName": {
+                      "maxLength": 160,
+                      "minLength": 1,
+                      "pattern": "^[^/\\\\:]+$",
+                      "type": "string"
+                    },
+                    "documentId": {
+                      "pattern": "^doc_[a-z0-9][a-z0-9_-]{10,95}$",
+                      "type": "string"
+                    },
+                    "locator": {
+                      "additionalProperties": false,
+                      "anyOf": [
+                        {
+                          "required": [
+                            "page"
+                          ]
+                        },
+                        {
+                          "required": [
+                            "slide"
+                          ]
+                        },
+                        {
+                          "required": [
+                            "sheet"
+                          ]
+                        },
+                        {
+                          "required": [
+                            "section"
+                          ]
+                        }
+                      ],
+                      "properties": {
+                        "page": {
+                          "minimum": 1,
+                          "type": "integer"
+                        },
+                        "section": {
+                          "maxLength": 300,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "sheet": {
+                          "maxLength": 128,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "slide": {
+                          "minimum": 1,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "citationKind",
+                    "documentId",
+                    "displayName",
+                    "locator"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            "maxItems": 5,
+            "type": "array"
+          },
+          "generationStatus": {
+            "enum": [
+              "ANSWERED",
+              "RETRIEVAL_ONLY",
+              "RETRIEVAL_FAILURE",
+              "BLOCKED_SENSITIVE",
+              "BLOCKED_ADVICE",
+              "GENERATION_UNAVAILABLE"
+            ]
+          },
+          "guardrailFlags": {
+            "items": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 20,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "requestId": {
+            "pattern": "^req_[A-Za-z0-9_-]{12,96}$",
+            "type": "string"
+          },
+          "retrievalFailure": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "requestId",
+          "answerId",
+          "generationStatus",
+          "answer",
+          "citationCoverage",
+          "citations",
+          "retrievalFailure",
+          "guardrailFlags"
+        ],
+        "title": "s4-rag-v2-answer",
+        "type": "object"
+      },
+      "RagV2AskRequest": {
+        "$id": "contracts/schemas/s4-rag-v2-ask-request.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "answerMode": {
+            "enum": [
+              "CONCISE",
+              "DETAILED"
+            ]
+          },
+          "question": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "relatedSymbols": {
+            "items": {
+              "pattern": "^[0-9]{6}$",
+              "type": "string"
+            },
+            "maxItems": 5,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "topics": {
+            "items": {
+              "enum": [
+                "API",
+                "DATA",
+                "FINANCIAL_ENGINEERING",
+                "METHODOLOGY",
+                "PRODUCT_RISK",
+                "RISK"
+              ]
+            },
+            "maxItems": 5,
+            "type": "array",
+            "uniqueItems": true
+          }
+        },
+        "required": [
+          "question",
+          "answerMode"
+        ],
+        "title": "S4 RAG public ask request v2",
+        "type": "object"
+      },
+      "RagV2CorpusStatus": {
+        "$id": "contracts/schemas/s4-rag-v2-corpus-status.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "failureCode": {
+            "oneOf": [
+              {
+                "enum": [
+                  "DOWNLOAD_UNAVAILABLE",
+                  "SOURCE_DRIFT",
+                  "PARSER_FAILED",
+                  "OCR_QUALITY_FAILED",
+                  "EMBEDDING_FAILED",
+                  "DISK_FULL",
+                  "ACTIVATION_CONFLICT"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "privateOverlayState": {
+            "enum": [
+              "ABSENT",
+              "BUILDING",
+              "READY",
+              "FAILED"
+            ]
+          },
+          "progressPercent": {
+            "maximum": 100,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "publicCorpusVersion": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "CORE_READY",
+              "BUILDING",
+              "FULL_READY",
+              "FAILED"
+            ]
+          }
+        },
+        "required": [
+          "state",
+          "publicCorpusVersion",
+          "privateOverlayState",
+          "progressPercent",
+          "failureCode"
+        ],
+        "title": "s4-rag-v2-corpus-status",
+        "type": "object"
+      },
+      "RagV2Error": {
+        "$id": "contracts/schemas/s4-rag-v2-error.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "enum": [
+              "CORPUS_NOT_READY",
+              "RAG_VALIDATION_FAILED",
+              "RAG_HISTORY_NOT_FOUND",
+              "RAG_UNAVAILABLE"
+            ]
+          },
+          "message": {
+            "maxLength": 300,
+            "minLength": 1,
+            "type": "string"
+          },
+          "requestId": {
+            "pattern": "^req_[A-Za-z0-9_-]{12,96}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "requestId"
+        ],
+        "title": "s4-rag-v2-error",
+        "type": "object"
+      },
+      "RagV2HistoryDetail": {
+        "$id": "contracts/schemas/s4-rag-v2-history-detail.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "answer": {
+            "maxLength": 8192,
+            "minLength": 1,
+            "type": "string"
+          },
+          "answerId": {
+            "pattern": "^rag_[A-Za-z0-9_-]{12,96}$",
+            "type": "string"
+          },
+          "citations": {
+            "items": {
+              "oneOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "canonicalUrl": {
+                      "format": "uri",
+                      "maxLength": 2048,
+                      "pattern": "^https://",
+                      "type": "string"
+                    },
+                    "citationKind": {
+                      "const": "PUBLIC_WEB"
+                    },
+                    "locator": {
+                      "additionalProperties": false,
+                      "anyOf": [
+                        {
+                          "required": [
+                            "page"
+                          ]
+                        },
+                        {
+                          "required": [
+                            "slide"
+                          ]
+                        },
+                        {
+                          "required": [
+                            "sheet"
+                          ]
+                        },
+                        {
+                          "required": [
+                            "section"
+                          ]
+                        }
+                      ],
+                      "properties": {
+                        "page": {
+                          "minimum": 1,
+                          "type": "integer"
+                        },
+                        "section": {
+                          "maxLength": 300,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "sheet": {
+                          "maxLength": 128,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "slide": {
+                          "minimum": 1,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [],
+                      "type": "object"
+                    },
+                    "sourceId": {
+                      "pattern": "^src_[a-z0-9][a-z0-9_-]{2,95}$",
+                      "type": "string"
+                    },
+                    "title": {
+                      "maxLength": 500,
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "citationKind",
+                    "sourceId",
+                    "title",
+                    "canonicalUrl",
+                    "locator"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "citationKind": {
+                      "const": "LOCAL_DOCUMENT"
+                    },
+                    "displayName": {
+                      "maxLength": 160,
+                      "minLength": 1,
+                      "pattern": "^[^/\\\\:]+$",
+                      "type": "string"
+                    },
+                    "documentId": {
+                      "pattern": "^doc_[a-z0-9][a-z0-9_-]{10,95}$",
+                      "type": "string"
+                    },
+                    "locator": {
+                      "additionalProperties": false,
+                      "anyOf": [
+                        {
+                          "required": [
+                            "page"
+                          ]
+                        },
+                        {
+                          "required": [
+                            "slide"
+                          ]
+                        },
+                        {
+                          "required": [
+                            "sheet"
+                          ]
+                        },
+                        {
+                          "required": [
+                            "section"
+                          ]
+                        }
+                      ],
+                      "properties": {
+                        "page": {
+                          "minimum": 1,
+                          "type": "integer"
+                        },
+                        "section": {
+                          "maxLength": 300,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "sheet": {
+                          "maxLength": 128,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "slide": {
+                          "minimum": 1,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "citationKind",
+                    "documentId",
+                    "displayName",
+                    "locator"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            "maxItems": 5,
+            "type": "array"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "generationStatus": {
+            "enum": [
+              "ANSWERED",
+              "RETRIEVAL_ONLY"
+            ]
+          },
+          "question": {
+            "maxLength": 8192,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "answerId",
+          "question",
+          "answer",
+          "generationStatus",
+          "citations",
+          "createdAt",
+          "expiresAt"
+        ],
+        "title": "s4-rag-v2-history-detail",
+        "type": "object"
+      },
+      "RagV2HistoryPage": {
+        "$id": "contracts/schemas/s4-rag-v2-history-page.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "answerId": {
+                  "pattern": "^rag_[A-Za-z0-9_-]{12,96}$",
+                  "type": "string"
+                },
+                "createdAt": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "expiresAt": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "generationStatus": {
+                  "enum": [
+                    "ANSWERED",
+                    "RETRIEVAL_ONLY",
+                    "RETRIEVAL_FAILURE"
+                  ]
+                }
+              },
+              "required": [
+                "answerId",
+                "createdAt",
+                "expiresAt",
+                "generationStatus"
+              ],
+              "type": "object"
+            },
+            "maxItems": 50,
+            "type": "array"
+          },
+          "nextCursor": {
+            "oneOf": [
+              {
+                "maxLength": 512,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "title": "s4-rag-v2-history-page",
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "bearerAuth": {
+        "bearerFormat": "JWT",
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "title": "Capstone RAG v2 API",
+    "version": "2.0.0-contract"
+  },
+  "openapi": "3.1.1",
+  "paths": {
+    "/api/v2/rag/ask": {
+      "post": {
+        "operationId": "askRagV2",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RagV2AskRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RagV2Answer"
+                }
+              }
+            },
+            "description": "Evidence-bound answer"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RagV2Error"
+                }
+              }
+            },
+            "description": "Stable RAG v2 failure"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RagV2Error"
+                }
+              }
+            },
+            "description": "Stable RAG v2 failure"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Ask the server-selected exact-30, OA, and owner overlay bundle"
+      }
+    },
+    "/api/v2/rag/corpus-status": {
+      "get": {
+        "operationId": "getRagV2CorpusStatus",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RagV2CorpusStatus"
+                }
+              }
+            },
+            "description": "Sanitized corpus readiness"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/rag/history": {
+      "get": {
+        "operationId": "listRagV2History",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RagV2HistoryPage"
+                }
+              }
+            },
+            "description": "Metadata-only owner history page"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/rag/history/{answerId}": {
+      "delete": {
+        "operationId": "deleteRagV2History",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "answerId",
+            "required": true,
+            "schema": {
+              "pattern": "^rag_[A-Za-z0-9_-]{12,96}$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Idempotently deleted"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "get": {
+        "operationId": "getRagV2HistoryDetail",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "answerId",
+            "required": true,
+            "schema": {
+              "pattern": "^rag_[A-Za-z0-9_-]{12,96}$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RagV2HistoryDetail"
+                }
+              }
+            },
+            "description": "Owner-scoped decrypted detail"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RagV2Error"
+                }
+              }
+            },
+            "description": "Stable RAG v2 failure"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    }
+  },
+  "servers": [
+    {
+      "url": "/"
+    }
+  ]
+}

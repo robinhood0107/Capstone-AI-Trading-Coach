@@ -1,0 +1,39 @@
+{
+  "authors": [
+    "Owner-provided author metadata"
+  ],
+  "contractId": "rag-source-card-v3",
+  "curriculumTrack": "OWNER_PRIVATE_UNCLASSIFIED",
+  "externalLlmAllowed": false,
+  "licenseEvidence": {
+    "accessBasis": "OWNER_POSSESSION",
+    "checkedAt": "2026-08-02T00:00:00Z",
+    "evidenceUrl": null,
+    "licenseId": "OWNER_ATTESTED_LOCAL_USE",
+    "note": "원본은 owner 보유 위치에서 read-only로 처리한다."
+  },
+  "localProcessingAllowed": true,
+  "machineFetchAllowed": false,
+  "mimeType": "text/markdown",
+  "normalizedContentSha256": "2222222222222222222222222222222222222222222222222222222222222222",
+  "opaqueLocalDocumentId": "doc_01ownerprivateexample",
+  "parserEvidence": {
+    "ocr": {
+      "backend": "NOT_USED",
+      "backendVersion": null,
+      "modelSha256": null
+    },
+    "parserArtifactSha256": "3333333333333333333333333333333333333333333333333333333333333333",
+    "parserBackend": "capstone-markdown-native",
+    "parserVersion": "1.0.0"
+  },
+  "publishedOn": "2026-08-01",
+  "rawContentSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+  "redistributionAllowed": true,
+  "sanitizedDisplayName": "개인 금융공학 노트.pdf",
+  "schemaVersion": 3,
+  "sourceId": "src_owner_document_001",
+  "sourceKind": "OWNER_LOCAL_DOCUMENT",
+  "sourceRevisionId": "srv_owner_document_001",
+  "title": "개인 금융공학 노트"
+}

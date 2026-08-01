@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import tempfile
 from collections.abc import Iterator
 from pathlib import Path
 from typing import TypedDict
@@ -26,6 +27,14 @@ TEST_BROKERAGE_DB_CAPABILITY_TOKEN = "python-s31-brokerage-capability-test-only"
 TEST_BROKERAGE_DB_CAPABILITY_TOKEN_SHA256 = hashlib.sha256(
     TEST_BROKERAGE_DB_CAPABILITY_TOKEN.encode("utf-8")
 ).hexdigest()
+
+
+@pytest.fixture
+def tmp_path() -> Iterator[Path]:
+    """Windows temp mount의 mode bit 에뮬레이션을 피하고 WSL native /tmp를 제공한다."""
+
+    with tempfile.TemporaryDirectory(prefix="capstone-pytest-", dir="/tmp") as directory:
+        yield Path(directory)
 
 
 class PostgresTestCluster(TypedDict):

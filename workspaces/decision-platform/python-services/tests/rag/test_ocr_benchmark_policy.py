@@ -150,7 +150,7 @@ def test_unapproved_candidate_or_partial_candidate_set_cannot_be_selected() -> N
 
 
 def test_benchmark_manifest_pins_sources_pages_dpi_models_and_runtime_artifacts() -> None:
-    repository_root = Path(__file__).resolve().parents[4]
+    repository_root = Path(__file__).resolve().parents[5]
     manifest = json.loads(
         (repository_root / "capstone-rag/ocr/benchmark/benchmark-manifest.v1.json").read_text(
             encoding="utf-8"
@@ -174,4 +174,3 @@ def test_benchmark_manifest_pins_sources_pages_dpi_models_and_runtime_artifacts(
     assert all(len(value["modelSha256"]) == 64 for value in manifest["candidates"].values())
     assert len(manifest["unlimitedGguf"]["llamaCppCommit"]) == 40
     assert len(manifest["unlimitedGguf"]["containerImageDigest"].removeprefix("sha256:")) == 64
-

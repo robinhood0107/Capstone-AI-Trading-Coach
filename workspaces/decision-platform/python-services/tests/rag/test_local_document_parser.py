@@ -77,7 +77,7 @@ def _parse(parser: LocalDocumentParser, root: Path, name: str) -> dict[str, Any]
 
 
 def _assert_contract(document_ir: dict[str, Any]) -> None:
-    repository_root = Path(__file__).resolve().parents[4]
+    repository_root = Path(__file__).resolve().parents[5]
     schema = json.loads(
         (repository_root / "contracts/schemas/rag-document-ir-v1.schema.json").read_text(
             encoding="utf-8"
@@ -442,4 +442,3 @@ def test_resource_bounds_reject_oversize_file_and_image(posix_tmp_path: Path) ->
     _write(root, "large.png", _png_bytes())
     with pytest.raises(DocumentParseError, match="IMAGE_PIXEL_BOUND_EXCEEDED"):
         _parse(parser, root, "large.png")
-

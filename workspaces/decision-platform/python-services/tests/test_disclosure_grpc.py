@@ -26,6 +26,7 @@ from app.generated import (
 from app.grpc_server import GrpcServerSettings
 
 _SHARED_SECRET = "python-grpc-shared-secret-for-s2-3-tests-0001"
+_RAG_SHARED_SECRET = "rag-grpc-shared-secret-for-s4-6-tests-0001"
 _AUTH_METADATA = (("x-decision-grpc-auth", _SHARED_SECRET),)
 
 
@@ -174,6 +175,14 @@ def test_business_rpc_rejects_missing_shared_secret_before_repository_work() -> 
                 metadata=(("x-decision-grpc-auth", "wrong-secret".ljust(32, "x")),),
             )
         assert wrong.value.code() == grpc.StatusCode.UNAUTHENTICATED
+
+        with pytest.raises(grpc.RpcError) as rag_secret:
+            stub.GetDisclosureEvents(
+                _request(),
+                timeout=0.5,
+                metadata=(("x-decision-grpc-auth", _RAG_SHARED_SECRET),),
+            )
+        assert rag_secret.value.code() == grpc.StatusCode.UNAUTHENTICATED
         assert repository.calls == 0
     finally:
         channel.close()

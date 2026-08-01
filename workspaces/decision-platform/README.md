@@ -248,10 +248,13 @@ owner/order에 결속한 bounded-TTL ciphertext로 Redis에 저장한다. 주문
 4. 전량 취소 `VTTC0013U`
 5. 최근 체결조회 `VTTC0081R`
 
-packet은 최종 local/remote HEAD, PR #55 required CI 성공, 같은 HEAD의 fresh clean security
-report digest, Redis PTTL baseline, symbol/price/date/account/order opaque identity, 물리 cap
-`tokenP=1`/`brokerage=5`, retry 0, artifact 0, 60분 이하 TTL을 결속한다. `/tmp` 아래 owner
-regular file mode `0600`으로만 발급하고, 현재 사용자가 packet의 exact approval ID와 SHA-256을
+history-only `schemaVersion=1`은 PR #55 검증에만 남기며, 새 실행은 `schemaVersion=2`만 사용한다.
+v2는 최종 local/remote/CI/security HEAD, dynamic PR/head branch/required CI, sealed security
+report·manifest·coverage·findings digest, nonce, Redis PTTL baseline, symbol/price/date/account/order
+opaque identity, 물리 cap `tokenP=1`/`brokerage=5`, retry 0, artifact 0, 60분 이하 TTL을 결속한다.
+`kis-mock-brokerage-approval-author`는 clean worktree와 GitHub PR evidence를 직접 확인해 owner
+mode `0700` directory의 dirfd+`O_NOFOLLOW`+`O_EXCL` 새 regular file mode `0600`으로만 발급하고,
+approval ID와 SHA-256 외 값은 출력하지 않는다. 현재 사용자가 packet의 exact approval ID와 SHA-256을
 별도 승인한 뒤 packet 안의 `executionCommand` 그대로 한 번 실행한다. approval latch가
 없거나 다르거나 만료되면 provider handoff 전에 종료한다. packet 검증 뒤에는 runtime 생성 전에
 tracked/untracked/staged 변경이 없는 clean worktree와 packet account가
@@ -272,6 +275,12 @@ body/header/URL/`msg1`/계좌/credential은 출력하지 않는다. diagnostic�
 이 balance 단계는 cash/equity/position source shape만 검증하며 margin requirement나
 gold ETF/ETN 분류를 합성하지 않는다. trusted margin/catalog enrichment가 없는 persistent
 online balance projection은 provider 호출 전에 `BALANCE_RISK_FIELDS_UNAVAILABLE`로 닫힌다.
+
+주문 접수 뒤 `cancelFull`에서 실패한 경우에는 source packet SHA/nonce anchor가 encrypted
+`COMMITTED` reference와 일치하는 `CANCEL_RECOVERY` v2 packet으로만 `cancelFull -> executionRead`
+cap `2`를 실행할 수 있다. 신규 주문은 이 profile에 표현되지 않으며 reference가 missing/PENDING/
+unanchored/foreign이면 provider call `0`으로 종료한다. 이미 취소 뒤 `executionRead`만 실패한 경우는
+취소를 반복하지 않고 read 1회 cap `1`만 허용한다.
 
 첫 실패는 남은 호출을 모두 중단한다. 주문 접수 뒤 취소가 실패해도 자동 retry하지 않으며,
 모의투자 포털에서 확인·정리가 필요하면 실패 evidence를 고정한 뒤 새 authorization을 받는다.

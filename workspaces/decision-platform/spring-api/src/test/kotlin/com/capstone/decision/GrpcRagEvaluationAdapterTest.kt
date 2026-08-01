@@ -10,6 +10,7 @@ import com.capstone.decision.contract.v1.RagAskResponse
 import com.capstone.decision.contract.v1.RagCitation
 import com.capstone.decision.contract.v1.RagResponseStatus
 import com.capstone.decision.contract.v1.RagServiceGrpc
+import com.capstone.decision.infrastructure.grpc.DecisionGrpcProperties
 import com.capstone.decision.infrastructure.grpc.GrpcRagEvaluationAdapter
 import com.capstone.decision.infrastructure.grpc.RagGrpcProperties
 import com.capstone.decision.infrastructure.grpc.RagGrpcProtocolException
@@ -187,6 +188,22 @@ class GrpcRagEvaluationAdapterTest {
         }
     }
 
+    @Test
+    fun `active adapter rejects the Decision grpc secret before opening its channel`() {
+        assertThrows<IllegalArgumentException> {
+            GrpcRagEvaluationAdapter(
+                RagGrpcProperties(
+                    target = "127.0.0.1:50053",
+                    sharedSecret = SHARED_SECRET,
+                ),
+                DecisionGrpcProperties(
+                    target = "127.0.0.1:50051",
+                    sharedSecret = SHARED_SECRET,
+                ),
+            )
+        }
+    }
+
     private fun adapter(
         server: Server,
         deadlineMillis: Long = 15_000,
@@ -196,6 +213,10 @@ class GrpcRagEvaluationAdapterTest {
                 target = "127.0.0.1:${server.port}",
                 sharedSecret = SHARED_SECRET,
                 deadlineMillis = deadlineMillis,
+            ),
+            DecisionGrpcProperties(
+                target = "127.0.0.1:50051",
+                sharedSecret = DECISION_SHARED_SECRET,
             ),
         )
 
@@ -285,6 +306,7 @@ class GrpcRagEvaluationAdapterTest {
 
     private companion object {
         const val SHARED_SECRET = "rag-grpc-shared-secret-for-s4-6-tests-0001"
+        const val DECISION_SHARED_SECRET = "decision-grpc-shared-secret-for-s2-3-tests-0001"
         const val REQUEST_ID = "req_s46_fixture_000000000001"
         const val SCOPE_CLAIM = "rag_scope_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         const val GENERATION_ID = "rag_gen_789b3ba9589ad399373194c0e3c0e76f"

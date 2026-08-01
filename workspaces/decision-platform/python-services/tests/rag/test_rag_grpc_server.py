@@ -7,6 +7,7 @@ from app.rag.rag_grpc_server import RagGrpcServerSettings
 
 _SECRET = "rag-grpc-shared-secret-for-s4-6-tests-0001"
 _PYTHON_SECRET = "python-grpc-shared-secret-for-s2-3-tests-0001"
+_JWT_SECRET = "jwt-signing-secret-for-s0-3-tests-00000001"
 
 
 def test_rag_server_settings_default_to_dedicated_loopback(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -36,6 +37,16 @@ def test_rag_server_rejects_reusing_python_grpc_secret(
 ) -> None:
     monkeypatch.setenv("RAG_GRPC_SHARED_SECRET", _SECRET)
     monkeypatch.setenv("PYTHON_GRPC_SHARED_SECRET", _SECRET)
+
+    with pytest.raises(ValueError, match="must differ"):
+        RagGrpcServerSettings.from_env()
+
+
+def test_rag_server_rejects_reusing_jwt_signing_secret(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("RAG_GRPC_SHARED_SECRET", _SECRET)
+    monkeypatch.setenv("JWT_SECRET", _SECRET)
 
     with pytest.raises(ValueError, match="must differ"):
         RagGrpcServerSettings.from_env()

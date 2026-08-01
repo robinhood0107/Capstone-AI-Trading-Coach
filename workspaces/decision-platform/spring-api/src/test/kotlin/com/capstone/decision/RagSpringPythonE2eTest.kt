@@ -8,6 +8,7 @@ import com.capstone.decision.application.rag.RagGenerationStatus
 import com.capstone.decision.infrastructure.grpc.DecisionGrpcProperties
 import com.capstone.decision.infrastructure.grpc.GrpcRagEvaluationAdapter
 import com.capstone.decision.infrastructure.grpc.RagGrpcProperties
+import com.capstone.decision.infrastructure.security.RagGrpcSecretSeparation
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import java.io.IOException
@@ -31,6 +32,7 @@ class RagSpringPythonE2eTest {
                 GrpcRagEvaluationAdapter(
                     properties,
                     DecisionGrpcProperties(sharedSecret = DECISION_SHARED_SECRET),
+                    RagGrpcSecretSeparation,
                 )
             try {
                 val answered =

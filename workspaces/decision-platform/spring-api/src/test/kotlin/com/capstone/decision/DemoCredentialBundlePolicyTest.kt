@@ -2,6 +2,7 @@ package com.capstone.decision
 
 import com.capstone.decision.infrastructure.brokerage.BrokerageProperties
 import com.capstone.decision.infrastructure.decision.DecisionProperties
+import com.capstone.decision.infrastructure.grpc.BrokerageGrpcProperties
 import com.capstone.decision.infrastructure.grpc.DecisionGrpcProperties
 import com.capstone.decision.infrastructure.grpc.RagGrpcProperties
 import com.capstone.decision.infrastructure.principle.PrincipleProperties
@@ -137,6 +138,9 @@ class DemoCredentialBundlePolicyTest {
                 rateLimitHmacKey = "r".repeat(32),
                 historyCursorHmacKey = "h".repeat(32),
             )
+        val decisionGrpc = DecisionGrpcProperties(sharedSecret = "D".repeat(32))
+        val brokerageGrpc = BrokerageGrpcProperties(enabled = true, sharedSecret = "G".repeat(32))
+        val ragGrpc = RagGrpcProperties(enabled = true, sharedSecret = "W".repeat(32))
 
         assertDoesNotThrow {
             SecurityConfig().authSecretSeparation(
@@ -147,6 +151,9 @@ class DemoCredentialBundlePolicyTest {
                 decision,
                 brokerage,
                 rag,
+                decisionGrpc,
+                brokerageGrpc,
+                ragGrpc,
             )
         }
         assertThrows<IllegalArgumentException> {
@@ -158,7 +165,18 @@ class DemoCredentialBundlePolicyTest {
         properties.separationKey =
             Base64.getUrlEncoder().withoutPadding().encodeToString(jwt.secret.toByteArray())
         assertThrows<IllegalArgumentException> {
-            SecurityConfig().authSecretSeparation(jwt, login, properties, principle, decision, brokerage, rag)
+            SecurityConfig().authSecretSeparation(
+                jwt,
+                login,
+                properties,
+                principle,
+                decision,
+                brokerage,
+                rag,
+                decisionGrpc,
+                brokerageGrpc,
+                ragGrpc,
+            )
         }
 
         properties.separationKey = encodedKey
@@ -173,7 +191,18 @@ class DemoCredentialBundlePolicyTest {
                         .digest(brokerage.databaseCapabilityToken.toByteArray()),
                 )
         assertThrows<IllegalArgumentException> {
-            SecurityConfig().authSecretSeparation(jwt, login, properties, principle, decision, brokerage, rag)
+            SecurityConfig().authSecretSeparation(
+                jwt,
+                login,
+                properties,
+                principle,
+                decision,
+                brokerage,
+                rag,
+                decisionGrpc,
+                brokerageGrpc,
+                ragGrpc,
+            )
         }
 
         brokerage.databaseCapabilityToken = brokerageCapability
@@ -188,19 +217,101 @@ class DemoCredentialBundlePolicyTest {
         properties.separationKey =
             Base64.getUrlEncoder().withoutPadding().encodeToString(login.scopeHmacKey.toByteArray())
         assertThrows<IllegalArgumentException> {
-            SecurityConfig().authSecretSeparation(jwt, login, properties, principle, decision, brokerage, rag)
+            SecurityConfig().authSecretSeparation(
+                jwt,
+                login,
+                properties,
+                principle,
+                decision,
+                brokerage,
+                rag,
+                decisionGrpc,
+                brokerageGrpc,
+                ragGrpc,
+            )
         }
 
         properties.separationKey = encodedKey
         principle.cursorHmacKey = jwt.secret
         assertThrows<IllegalArgumentException> {
-            SecurityConfig().authSecretSeparation(jwt, login, properties, principle, decision, brokerage, rag)
+            SecurityConfig().authSecretSeparation(
+                jwt,
+                login,
+                properties,
+                principle,
+                decision,
+                brokerage,
+                rag,
+                decisionGrpc,
+                brokerageGrpc,
+                ragGrpc,
+            )
         }
 
         principle.cursorHmacKey = "p".repeat(32)
         rag.historyCursorHmacKey = rag.rateLimitHmacKey
         assertThrows<IllegalArgumentException> {
-            SecurityConfig().authSecretSeparation(jwt, login, properties, principle, decision, brokerage, rag)
+            SecurityConfig().authSecretSeparation(
+                jwt,
+                login,
+                properties,
+                principle,
+                decision,
+                brokerage,
+                rag,
+                decisionGrpc,
+                brokerageGrpc,
+                ragGrpc,
+            )
+        }
+
+        rag.historyCursorHmacKey = "h".repeat(32)
+        ragGrpc.sharedSecret = jwt.secret
+        assertThrows<IllegalArgumentException> {
+            SecurityConfig().authSecretSeparation(
+                jwt,
+                login,
+                properties,
+                principle,
+                decision,
+                brokerage,
+                rag,
+                decisionGrpc,
+                brokerageGrpc,
+                ragGrpc,
+            )
+        }
+
+        ragGrpc.sharedSecret = brokerage.databaseCapabilityToken
+        assertThrows<IllegalArgumentException> {
+            SecurityConfig().authSecretSeparation(
+                jwt,
+                login,
+                properties,
+                principle,
+                decision,
+                brokerage,
+                rag,
+                decisionGrpc,
+                brokerageGrpc,
+                ragGrpc,
+            )
+        }
+
+        ragGrpc.sharedSecret = brokerageGrpc.sharedSecret
+        assertThrows<IllegalArgumentException> {
+            SecurityConfig().authSecretSeparation(
+                jwt,
+                login,
+                properties,
+                principle,
+                decision,
+                brokerage,
+                rag,
+                decisionGrpc,
+                brokerageGrpc,
+                ragGrpc,
+            )
         }
     }
 

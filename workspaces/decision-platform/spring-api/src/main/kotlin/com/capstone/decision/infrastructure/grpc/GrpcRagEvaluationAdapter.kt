@@ -12,6 +12,7 @@ import com.capstone.decision.contract.v1.RagConsentContext
 import com.capstone.decision.contract.v1.RagPolicyContext
 import com.capstone.decision.contract.v1.RagResponseStatus
 import com.capstone.decision.contract.v1.RagServiceGrpc
+import com.capstone.decision.infrastructure.security.RagGrpcSecretSeparation
 import io.grpc.ManagedChannel
 import io.grpc.Metadata
 import io.grpc.Status
@@ -37,12 +38,14 @@ class RagGrpcUnavailableException : IllegalStateException("RAG gRPC service is u
 class GrpcRagEvaluationAdapter(
     private val properties: RagGrpcProperties,
     private val decisionGrpcProperties: DecisionGrpcProperties,
+    ragGrpcSecretSeparation: RagGrpcSecretSeparation,
 ) : RagEvaluationPort,
     AutoCloseable {
     private val channel: ManagedChannel
     private val concurrency: Semaphore
 
     init {
+        requireNotNull(ragGrpcSecretSeparation)
         properties.validatePurposeSeparation(decisionGrpcProperties)
         concurrency = Semaphore(properties.concurrencyMax, true)
         channel =

@@ -11,6 +11,13 @@ from app.rag.rag_rpc import S45FixtureRagEngine, create_rag_server
 
 
 _SAFE_SECRET = re.compile(r"^[A-Za-z0-9._~:-]{32,256}$")
+_FORBIDDEN_SHARED_SECRET_ENV_NAMES = (
+    "DECISION_GRPC_SHARED_SECRET",
+    "PYTHON_GRPC_SHARED_SECRET",
+    "JWT_SECRET",
+    "BROKERAGE_DB_CAPABILITY_TOKEN",
+    "BROKERAGE_GRPC_SHARED_SECRET",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,14 +41,11 @@ class RagGrpcServerSettings:
         if reflection == "true":
             raise ValueError("RAG gRPC reflection is disabled by the S4.6 contract")
         secret = os.environ.get("RAG_GRPC_SHARED_SECRET", "").strip()
-        for generic_secret_name in (
-            "DECISION_GRPC_SHARED_SECRET",
-            "PYTHON_GRPC_SHARED_SECRET",
-        ):
+        for generic_secret_name in _FORBIDDEN_SHARED_SECRET_ENV_NAMES:
             generic_secret = os.environ.get(generic_secret_name, "").strip()
             if generic_secret and compare_digest(secret, generic_secret):
                 raise ValueError(
-                    "RAG_GRPC_SHARED_SECRET must differ from Decision/Python gRPC secrets"
+                    "RAG_GRPC_SHARED_SECRET must differ from privileged service secrets"
                 )
         return cls(
             bind_address=os.environ.get(

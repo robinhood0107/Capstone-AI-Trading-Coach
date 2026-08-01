@@ -185,6 +185,7 @@ def _require_secret_shapes(values: dict[str, str]) -> None:
         "POSTGRES_RAG_ADMIN_PASSWORD",
         "POSTGRES_RAG_QUERY_PASSWORD",
         "DECISION_GRPC_SHARED_SECRET",
+        "RAG_GRPC_SHARED_SECRET",
         "REDIS_PASSWORD",
         "JWT_SECRET",
         "LOGIN_SCOPE_HMAC_KEY",
@@ -217,7 +218,7 @@ def _require_secret_shapes(values: dict[str, str]) -> None:
         )
 
     # Decision과 Python disclosure server는 같은 wire secret을 쓰지만, RAG service는
-    # disclosure RPC credential이 될 수 없도록 별도 purpose secret을 사용한다.
+    # 다른 privileged credential과 겹치지 않는 별도 purpose secret을 사용한다.
     grpc_secret_names = (
         "DECISION_GRPC_SHARED_SECRET",
         "RAG_GRPC_SHARED_SECRET",

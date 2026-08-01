@@ -471,7 +471,7 @@ uv run --frozen python contracts/validate.py
 
 ## S4.7D OA140·owner-private RAG v2 계약
 
-> 현재 상태: `S4_7D_CONTRACT=LOCKED / SAFE_PARSER_OCR_RUNTIME=NOT_IMPLEMENTED /
+> 현재 상태: `S4_7D_CONTRACT=LOCKED / SAFE_PARSER_OCR_RUNTIME=IMPLEMENTED_MERGE_CANDIDATE /
 > CORPUS_RUNTIME=NOT_IMPLEMENTED / OA_RELEASE_MANIFEST=DRAFT`.
 > 이 절의 schema·fixture·별도 OpenAPI·proto 잠금은 download, parse, embedding, DB migration,
 > endpoint 활성화 또는 OA 원문 배포가 완료됐다는 증거가 아니다.
@@ -493,10 +493,16 @@ pin한다. 검색은 PostgreSQL/pgvector/pg_trgm과 application RRF `k=60`을 �
 | `proto/rag_v2.proto` | server-selected bundle과 tagged citation을 보존하는 unary `RagService.Ask` v2 |
 
 active processing mode는 `LOCAL_EPHEMERAL_PARSE` 하나다. 파일별 approval ID·nonce·TTL은
-계약에 없다. `LICENSED_EPHEMERAL_LOCAL`은 과거 v1 계약과 날짜가 고정된 감사 기록을
-재현하기 위한 historical-only 값이며 새 runtime 입력으로 허용하지 않는다. local parse
-허용과 외부 LLM 전송은 분리한다. source evidence와 owner corpus-level opt-in 중 하나라도
-불충분하면 요청 전체를 retrieval-only로 처리한다.
+계약에 없다. 과거 파일별 ephemeral approval enum은 날짜가 고정된 계약·감사 기록 재현에만
+남고 새 runtime 입력으로 허용하지 않는다. local parse 허용과 외부 LLM 전송은 분리한다.
+source evidence와 owner corpus-level opt-in 중 하나라도 불충분하면 요청 전체를
+retrieval-only로 처리한다.
+
+OCR 연구 후보 세 개의 고정 금융 fixture 평가 결과 production backend는 `PADDLE_VL` 하나다.
+`PADDLE_STRUCTURED`와 `UNLIMITED_GGUF`는 품질 gate 실패로 research benchmark에만 남는다.
+CPU와 Intel Arc 130V `GPU.0` 실측, 모델·runtime pin과 raw text 없는 선택 영수증은
+`../capstone-rag/ocr/benchmark/receipts/benchmark-summary.v1.json`에 있다. NVIDIA lane은
+현재 장비가 없어 구현·계약 smoke만 유지하고 `NOT_RUN_NO_NVIDIA`로 기록한다.
 
 OA `RELEASED` manifest는 14개 track의 exact 순서를 유지하고 track마다 8~10개, 전체
 112~140개의 canonical work/revision을 요구한다. 각 track에는 공개 교재·강의,
@@ -566,11 +572,12 @@ Git으로 추적하지 않는 로컬 전용 자료수급 레지스트리가
 credential·계좌 데이터는 저장하지 않고, RAG source registry와 기존 30-card corpus/hash는
 변경하지 않는다.
 
-증권사 PDF 기본값은 `MANUAL_LINK_ONLY`다. 별도 권리 확인을 거친
-`LICENSED_EPHEMERAL_LOCAL`에서도 추출 projection은 `투자포인트`, `실적전망`,
-`Valuation`, `목표주가`, `위험요인`, `Disclaimer` 여섯 절과 사용자가 직접 확인한 bounded
-tag만 허용한다. `derivedDataAllowed=false`이면 parser/LLM 파생 결과를 저장·전달하지 않고
-임시 입력과 함께 폐기한다.
+증권사 PDF 기본값은 `MANUAL_LINK_ONLY`다. 사용자가 보유한 파일은
+`LOCAL_EPHEMERAL_PARSE`로 read-only 처리할 수 있지만 자동 다운로드·권리 우회 권한은
+생기지 않는다. 추출 projection은 `투자포인트`, `실적전망`, `Valuation`, `목표주가`,
+`위험요인`, `Disclaimer` 여섯 절과 사용자가 직접 확인한 bounded tag만 허용한다.
+`derivedDataAllowed=false`이면 parser/LLM 파생 결과를 저장·전달하지 않고 임시 입력과 함께
+폐기한다.
 
 계획된 timing 계약은 signed integer milliseconds를 유지한다.
 

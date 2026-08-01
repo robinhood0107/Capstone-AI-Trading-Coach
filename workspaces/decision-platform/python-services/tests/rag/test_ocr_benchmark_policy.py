@@ -373,6 +373,7 @@ def test_candidate_runners_publish_only_through_the_safe_receipt_writer() -> Non
 
         assert "write_benchmark_receipt" in runner
         assert ".write_text(" not in runner
+        assert "os.path.abspath" in runner
 
     unlimited = (
         repository_root / "capstone-rag/ocr/benchmark/unlimited_candidate_runner.py"

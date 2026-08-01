@@ -12,3 +12,6 @@ ba004f1ed0d04370832cc6c2facbf46db1df801c:workspaces/decision-platform/spring-api
 # S5.0 catalog와 변경 기록의 current OpenAPI SHA-256은 공개 계약 bytes의 비밀이 아닌 digest다.
 a92dee4db04f4c916622b526fe00832bd76163e0:contracts/catalogs/s5-0-signal-v2-contract.v1.json:generic-api-key:3
 5761beca894a6447f54bdcba8644f6b66b83dcb5:contracts/changes/20260801-s5-0-signal-v2-contract-lock.md:generic-api-key:47
+
+# S4.7D local parser가 credential 형태를 반드시 격리하는지 확인하는 synthetic fixture다.
+37c0e0a3a4de28c810ef43e0eb3bc148295fb030:workspaces/decision-platform/python-services/tests/rag/test_local_document_parser.py:generic-api-key:404

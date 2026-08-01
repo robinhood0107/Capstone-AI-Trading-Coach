@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.util
 import json
 from pathlib import Path
 
@@ -462,6 +463,18 @@ def test_vl_candidate_pins_auxiliary_printed_chart_ocr() -> None:
     } <= model_directories
     assert "if ocr_line_blocks\n                        else blocks" in evaluator
     assert 'candidate == "PADDLE_STRUCTURED" and ocr_line_blocks' not in evaluator
+
+
+def test_evaluator_treats_native_fraction_order_and_tex_fraction_as_the_same_number() -> None:
+    repository_root = Path(__file__).resolve().parents[5]
+    evaluator_path = repository_root / "capstone-rag/ocr/benchmark/evaluate_candidate.py"
+    spec = importlib.util.spec_from_file_location("s4_7d_ocr_evaluator", evaluator_path)
+    assert spec is not None and spec.loader is not None
+    evaluator = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(evaluator)
+
+    assert evaluator._numeric_spans("h = N1") == ("1",)
+    assert evaluator._numeric_spans(r"h = \\frac{1}{N}") == ("1",)
 
 
 def test_candidate_runners_publish_only_through_the_safe_receipt_writer() -> None:

@@ -356,3 +356,8 @@ def test_candidate_runners_publish_only_through_the_safe_receipt_writer() -> Non
 
         assert "write_benchmark_receipt" in runner
         assert ".write_text(" not in runner
+
+    unlimited = (
+        repository_root / "capstone-rag/ocr/benchmark/unlimited_candidate_runner.py"
+    ).read_text(encoding="utf-8")
+    assert "parse_grounded_ocr_output" in unlimited

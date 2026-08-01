@@ -1,0 +1,48 @@
+{
+  "$id": "contracts/schemas/s4-rag-v2-ask-request.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "answerMode": {
+      "enum": [
+        "CONCISE",
+        "DETAILED"
+      ]
+    },
+    "question": {
+      "maxLength": 1000,
+      "minLength": 1,
+      "type": "string"
+    },
+    "relatedSymbols": {
+      "items": {
+        "pattern": "^[0-9]{6}$",
+        "type": "string"
+      },
+      "maxItems": 5,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "topics": {
+      "items": {
+        "enum": [
+          "API",
+          "DATA",
+          "FINANCIAL_ENGINEERING",
+          "METHODOLOGY",
+          "PRODUCT_RISK",
+          "RISK"
+        ]
+      },
+      "maxItems": 5,
+      "type": "array",
+      "uniqueItems": true
+    }
+  },
+  "required": [
+    "question",
+    "answerMode"
+  ],
+  "title": "S4 RAG public ask request v2",
+  "type": "object"
+}

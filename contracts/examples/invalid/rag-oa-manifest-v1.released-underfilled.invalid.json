@@ -1,0 +1,98 @@
+{
+  "contractId": "rag-oa-manifest-v1",
+  "embeddingsRedistributed": false,
+  "extractedTextRedistributed": false,
+  "manifestId": "oa140_contract_draft_v1",
+  "rawRedistributed": false,
+  "releaseDigest": "8888888888888888888888888888888888888888888888888888888888888888",
+  "releaseStatus": "RELEASED",
+  "signedManifest": true,
+  "sourceCount": 0,
+  "sources": [],
+  "tracks": [
+    {
+      "maximumSources": 10,
+      "minimumSources": 8,
+      "sourceCount": 0,
+      "trackId": "MICRO_GAME_INFO_MARKET_DESIGN"
+    },
+    {
+      "maximumSources": 10,
+      "minimumSources": 8,
+      "sourceCount": 0,
+      "trackId": "MACRO_MONETARY_INTERNATIONAL"
+    },
+    {
+      "maximumSources": 10,
+      "minimumSources": 8,
+      "sourceCount": 0,
+      "trackId": "PROBABILITY_STATISTICS_OPTIMIZATION"
+    },
+    {
+      "maximumSources": 10,
+      "minimumSources": 8,
+      "sourceCount": 0,
+      "trackId": "ECONOMETRICS_CAUSAL_EVENT_STUDY"
+    },
+    {
+      "maximumSources": 10,
+      "minimumSources": 8,
+      "sourceCount": 0,
+      "trackId": "TIME_SERIES_REGIME_VOLATILITY"
+    },
+    {
+      "maximumSources": 10,
+      "minimumSources": 8,
+      "sourceCount": 0,
+      "trackId": "ACCOUNTING_CORPORATE_FINANCE_VALUATION"
+    },
+    {
+      "maximumSources": 10,
+      "minimumSources": 8,
+      "sourceCount": 0,
+      "trackId": "ASSET_PRICING_FACTOR_PORTFOLIO"
+    },
+    {
+      "maximumSources": 10,
+      "minimumSources": 8,
+      "sourceCount": 0,
+      "trackId": "FIXED_INCOME_RATES_CREDIT"
+    },
+    {
+      "maximumSources": 10,
+      "minimumSources": 8,
+      "sourceCount": 0,
+      "trackId": "DERIVATIVES_STOCHASTIC_NUMERICS"
+    },
+    {
+      "maximumSources": 10,
+      "minimumSources": 8,
+      "sourceCount": 0,
+      "trackId": "MARKET_MICROSTRUCTURE_EXECUTION_LIQUIDITY"
+    },
+    {
+      "maximumSources": 10,
+      "minimumSources": 8,
+      "sourceCount": 0,
+      "trackId": "RISK_STRESS_BACKTEST_MODEL_RISK"
+    },
+    {
+      "maximumSources": 10,
+      "minimumSources": 8,
+      "sourceCount": 0,
+      "trackId": "BEHAVIORAL_EFFICIENCY_ANOMALY_CROWDING"
+    },
+    {
+      "maximumSources": 10,
+      "minimumSources": 8,
+      "sourceCount": 0,
+      "trackId": "FINANCIAL_ML_PIT_DATA_PROVENANCE"
+    },
+    {
+      "maximumSources": 10,
+      "minimumSources": 8,
+      "sourceCount": 0,
+      "trackId": "CROSS_MARKET_COMMODITIES_POLICY_KOREA"
+    }
+  ]
+}

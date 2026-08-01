@@ -1,0 +1,113 @@
+{
+  "activeProcessingModes": [
+    "LOCAL_EPHEMERAL_PARSE"
+  ],
+  "api": {
+    "askPath": "/api/v2/rag/ask",
+    "corpusStatusPath": "/api/v2/rag/corpus-status",
+    "historyDetailPath": "/api/v2/rag/history/{answerId}",
+    "historyPath": "/api/v2/rag/history"
+  },
+  "clientSelection": {
+    "corpusAllowed": false,
+    "profileAllowed": false,
+    "sourceTierAllowed": false,
+    "topKAllowed": false
+  },
+  "contractId": "s4-rag-v2-contract.v1",
+  "corpusReadinessStates": [
+    "CORE_READY",
+    "BUILDING",
+    "FULL_READY",
+    "FAILED"
+  ],
+  "curriculumTracks": [
+    "MICRO_GAME_INFO_MARKET_DESIGN",
+    "MACRO_MONETARY_INTERNATIONAL",
+    "PROBABILITY_STATISTICS_OPTIMIZATION",
+    "ECONOMETRICS_CAUSAL_EVENT_STUDY",
+    "TIME_SERIES_REGIME_VOLATILITY",
+    "ACCOUNTING_CORPORATE_FINANCE_VALUATION",
+    "ASSET_PRICING_FACTOR_PORTFOLIO",
+    "FIXED_INCOME_RATES_CREDIT",
+    "DERIVATIVES_STOCHASTIC_NUMERICS",
+    "MARKET_MICROSTRUCTURE_EXECUTION_LIQUIDITY",
+    "RISK_STRESS_BACKTEST_MODEL_RISK",
+    "BEHAVIORAL_EFFICIENCY_ANOMALY_CROWDING",
+    "FINANCIAL_ML_PIT_DATA_PROVENANCE",
+    "CROSS_MARKET_COMMODITIES_POLICY_KOREA"
+  ],
+  "decisionAuthority": "NONE",
+  "documentIrVersion": 1,
+  "externalLlm": {
+    "corpusLevelOwnerOptInRequired": true,
+    "mixedEligibilityBehavior": "WHOLE_REQUEST_RETRIEVAL_ONLY",
+    "sourceEvidenceRequired": true
+  },
+  "historicalOnlyProcessingModes": [
+    "LICENSED_EPHEMERAL_LOCAL"
+  ],
+  "historyRetentionDays": 30,
+  "installStates": [
+    "CORE_READY",
+    "BUILDING",
+    "FULL_READY",
+    "FAILED"
+  ],
+  "oaCorpus": {
+    "maximumSources": 140,
+    "maximumSourcesPerTrack": 10,
+    "minimumQualityScore": 80,
+    "minimumSources": 112,
+    "minimumSourcesPerTrack": 8,
+    "rawRedistributed": false
+  },
+  "ocrResearchCandidates": [
+    "PADDLE_STRUCTURED",
+    "PADDLE_VL",
+    "UNLIMITED_GGUF"
+  ],
+  "productionOcrBackend": "UNSELECTED_PENDING_BENCHMARK",
+  "retrieval": {
+    "channels": [
+      "EXACT",
+      "LEXICAL",
+      "DENSE"
+    ],
+    "rrfK": 60,
+    "serverSelectedTopK": true
+  },
+  "schemaVersion": 1,
+  "serverSelectedBundle": {
+    "atomicPinRequired": true,
+    "components": [
+      "exact30",
+      "oa",
+      "ownerPrivate"
+    ],
+    "exact30AvailableBeforeFullReady": true
+  },
+  "sourceKinds": [
+    "PROJECT_SOURCE_CARD",
+    "OPEN_ACCESS_DOCUMENT",
+    "OWNER_LOCAL_DOCUMENT"
+  ],
+  "supportedMimeTypes": [
+    "application/pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "text/html",
+    "text/markdown",
+    "text/plain",
+    "image/png",
+    "image/jpeg",
+    "image/tiff"
+  ],
+  "v1Compatibility": {
+    "exact30ByteStable": true,
+    "ragProtoByteStable": true,
+    "rootOpenApiByteStable": true,
+    "sourceCardV1V2ByteStable": true
+  }
+}

@@ -9,8 +9,9 @@ from pathlib import Path
 
 import pytest
 
-from app.rag.safe_io import RagSafeIoError, read_approved_regular_file
-from app.rag.safe_io import write_approved_new_file
+from app.rag.safe_io import RagSafeIoError, list_approved_regular_files
+from app.rag.safe_io import read_approved_regular_file
+from app.rag.safe_io import write_approved_generated_file, write_approved_new_file
 
 
 def test_read_approved_regular_file_uses_relative_bounded_regular_files(tmp_path: Path) -> None:
@@ -364,3 +365,59 @@ def test_write_approved_new_file_does_not_delete_target_swapped_after_publish(
                 max_bytes=1024,
             )
         assert target.read_bytes() == b"unrelated replacement"
+
+
+def test_write_approved_generated_file_replaces_only_safe_regular_leaf_and_lists_bytes(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "approved"
+    cards = root / "cards"
+    cards.mkdir(parents=True)
+    target = cards / "card.md"
+    target.write_bytes(b"old card")
+
+    result = write_approved_generated_file(
+        approved_root=root,
+        relative_path="cards/card.md",
+        content=b"new deterministic card\n",
+        max_bytes=1024,
+    )
+
+    assert result.absolute_path == target
+    assert target.read_bytes() == b"new deterministic card\n"
+    assert stat.S_IMODE(target.stat().st_mode) == 0o644
+    assert list_approved_regular_files(
+        approved_root=root,
+        relative_directory="cards",
+        max_entries=4,
+        max_bytes=1024,
+    ) == {"card.md": b"new deterministic card\n"}
+
+
+@pytest.mark.parametrize("unsafe_kind", ("symlink", "directory", "hardlink"))
+def test_write_approved_generated_file_rejects_unsafe_existing_leaf(
+    unsafe_kind: str,
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "approved"
+    cards = root / "cards"
+    cards.mkdir(parents=True)
+    outside = tmp_path / "outside.md"
+    outside.write_bytes(b"outside sentinel")
+    target = cards / "card.md"
+    if unsafe_kind == "symlink":
+        os.symlink(outside, target)
+    elif unsafe_kind == "directory":
+        target.mkdir()
+    else:
+        os.link(outside, target)
+
+    with pytest.raises(RagSafeIoError):
+        write_approved_generated_file(
+            approved_root=root,
+            relative_path="cards/card.md",
+            content=b"replacement must not escape",
+            max_bytes=1024,
+        )
+
+    assert outside.read_bytes() == b"outside sentinel"

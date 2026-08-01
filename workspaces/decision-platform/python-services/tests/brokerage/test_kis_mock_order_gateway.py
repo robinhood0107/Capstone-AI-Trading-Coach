@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import importlib
 from pathlib import Path
 from typing import Any
@@ -711,6 +712,78 @@ def test_encrypted_reference_store_never_persists_provider_reference_plaintext()
     ) + b" ".join(redis_client.mget(list(redis_client.scan_iter())))
     assert provider_order_no.encode() not in persisted
     assert provider_org_no.encode() not in persisted
+
+
+def test_recovery_reference_requires_the_exact_source_approval_anchor() -> None:
+    """v2 recovery는 source FULL packet의 encrypted reference 외에는 cancel transport를 열지 않는다."""
+
+    reference = importlib.import_module("app.brokerage.mock_order_reference_store")
+    redis_client = fakeredis.FakeRedis()
+    store = reference.EncryptedRedisOrderReferenceStore(
+        redis_client,
+        encryption_key=SecretStr(base64.urlsafe_b64encode(b"0" * 32).decode()),
+        ttl_seconds=900,
+    )
+    order_id = "ord_mock_" + "a" * 32
+    account_id = "acct_" + "b" * 32
+    source_anchor = "c" * 64
+    store.prepare(
+        order_id,
+        account_id,
+        reference.MockOrderReferenceIntent(
+            order_division="00",
+            quantity=1,
+            approval_anchor=source_anchor,
+        ),
+    )
+    store.commit(
+        order_id,
+        account_id,
+        reference.MockProviderOrderReference(
+            provider_order_no="synthetic-provider-order",
+            provider_org_no="synthetic-provider-org",
+            order_division="00",
+            quantity=1,
+        ),
+    )
+
+    restored = store.get_for_recovery(order_id, account_id, source_anchor)
+    assert restored is not None
+    assert restored.approval_anchor == source_anchor
+    with pytest.raises(reference.MockOrderReferenceUnavailable):
+        store.get_for_recovery(order_id, account_id, "d" * 64)
+
+
+def test_recovery_reference_rejects_unanchored_historical_reference() -> None:
+    """v1 reference는 recovery packet을 위한 provenance가 없으므로 provider send 전에 닫는다."""
+
+    reference = importlib.import_module("app.brokerage.mock_order_reference_store")
+    redis_client = fakeredis.FakeRedis()
+    store = reference.EncryptedRedisOrderReferenceStore(
+        redis_client,
+        encryption_key=SecretStr(base64.urlsafe_b64encode(b"0" * 32).decode()),
+        ttl_seconds=900,
+    )
+    order_id = "ord_mock_" + "e" * 32
+    account_id = "acct_" + "f" * 32
+    store.prepare(
+        order_id,
+        account_id,
+        reference.MockOrderReferenceIntent(order_division="00", quantity=1),
+    )
+    store.commit(
+        order_id,
+        account_id,
+        reference.MockProviderOrderReference(
+            provider_order_no="synthetic-provider-order",
+            provider_org_no="synthetic-provider-org",
+            order_division="00",
+            quantity=1,
+        ),
+    )
+
+    with pytest.raises(reference.MockOrderReferenceUnavailable):
+        store.get_for_recovery(order_id, account_id, "a" * 64)
 
 
 def test_encrypted_reference_store_persists_exchange_division_inside_ciphertext() -> None:

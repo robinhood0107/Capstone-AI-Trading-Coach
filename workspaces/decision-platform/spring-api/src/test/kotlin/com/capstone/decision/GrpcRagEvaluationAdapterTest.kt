@@ -15,6 +15,7 @@ import com.capstone.decision.infrastructure.grpc.GrpcRagEvaluationAdapter
 import com.capstone.decision.infrastructure.grpc.RagGrpcProperties
 import com.capstone.decision.infrastructure.grpc.RagGrpcProtocolException
 import com.capstone.decision.infrastructure.grpc.RagGrpcUnavailableException
+import com.capstone.decision.infrastructure.security.RagGrpcSecretSeparation
 import io.grpc.Metadata
 import io.grpc.Server
 import io.grpc.ServerCall
@@ -200,6 +201,7 @@ class GrpcRagEvaluationAdapterTest {
                     target = "127.0.0.1:50051",
                     sharedSecret = SHARED_SECRET,
                 ),
+                RagGrpcSecretSeparation,
             )
         }
     }
@@ -218,6 +220,7 @@ class GrpcRagEvaluationAdapterTest {
                 target = "127.0.0.1:50051",
                 sharedSecret = DECISION_SHARED_SECRET,
             ),
+            RagGrpcSecretSeparation,
         )
 
     private fun server(

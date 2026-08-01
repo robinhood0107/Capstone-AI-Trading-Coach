@@ -164,6 +164,8 @@ class RagSpringPythonE2eTest {
             put("RAG_GRPC_BIND_ADDRESS", "127.0.0.1:$port")
             put("RAG_GRPC_ENABLE_REFLECTION", "false")
             put("RAG_GRPC_SHARED_SECRET", SHARED_SECRET)
+            put("DECISION_GRPC_SHARED_SECRET", DECISION_SHARED_SECRET)
+            put("PYTHON_GRPC_SHARED_SECRET", DECISION_SHARED_SECRET)
             put("UV_OFFLINE", "1")
             // fixture process가 실 provider credential을 상속해 향후 accidental egress를 만들지 않게 한다.
             listOf(

@@ -14,13 +14,12 @@ from pydantic import ValidationError
 
 from app.data._shared.source_snapshot_models import SourceSnapshotManifest
 from app.data.ecos.storage import serialize_ecos_snapshot
-from app.data.naver.storage import serialize_naver_snapshot
 
 _DIRECTORY_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
 _FILE_FLAGS = os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC
 _MANIFEST_MAX_BYTES = 256 * 1024
-_SNAPSHOT_MAX_BYTES = {"ecos": 2 * 1024 * 1024, "naver": 4 * 1024 * 1024}
-_RETENTION_DAYS = {"ecos": 365, "naver": 30}
+_SNAPSHOT_MAX_BYTES = {"ecos": 2 * 1024 * 1024}
+_RETENTION_DAYS = {"ecos": 365}
 _DELETE_LIMIT = 1_000
 _YEAR_PATTERN = re.compile(r"[0-9]{4}")
 _MONTH_PATTERN = re.compile(r"(?:0[1-9]|1[0-2])")
@@ -243,12 +242,7 @@ def _manifest_matches_partition(
         or manifest.retention_days != _RETENTION_DAYS[source]
     ):
         return False
-    if source == "ecos":
-        return manifest.provider_profile == "ecos" and manifest.operation == "ecos-macro-collect"
-    return (
-        manifest.provider_profile in {"naver-legacy", "naver-api-hub"}
-        and manifest.operation == "naver-news-metadata-collect"
-    )
+    return manifest.provider_profile == "ecos" and manifest.operation == "ecos-macro-collect"
 
 
 def _snapshot_matches_manifest(snapshot_bytes: bytes, manifest: SourceSnapshotManifest) -> bool:
@@ -256,11 +250,7 @@ def _snapshot_matches_manifest(snapshot_bytes: bytes, manifest: SourceSnapshotMa
         return False
     try:
         payload = json.loads(snapshot_bytes)
-        canonical_bytes = (
-            serialize_ecos_snapshot(payload)
-            if manifest.source == "ecos"
-            else serialize_naver_snapshot(payload)
-        )
+        canonical_bytes = serialize_ecos_snapshot(payload)
     except (json.JSONDecodeError, UnicodeDecodeError, TypeError, ValueError, RecursionError):
         return False
     # hash만 일치하는 임의 JSON이나 의미는 같지만 비정규화된 bytes를 삭제 대상으로 삼지 않는다.

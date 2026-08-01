@@ -9,7 +9,11 @@ import pytest
 from tenacity import wait_none
 
 from app.data.opendart.client import OpenDARTClient
-from app.data.opendart.http_client import OpenDARTHttpClient, TokenBucket
+from app.data.opendart.http_client import (
+    OpenDARTHttpClient,
+    OpenDARTOfflineTransportRequired,
+    TokenBucket,
+)
 from app.data.opendart.parsers import OpenDARTQuotaExceededError, OpenDARTResponseError
 from app.data.opendart.settings import OpenDARTSettings
 
@@ -45,6 +49,30 @@ def test_client_disclosure_list_passes_official_filter_params_without_secret() -
             },
         )
     ]
+
+
+def test_client_default_offline_transport_fails_closed_without_fixture_transport(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    http_transport_factories = 0
+
+    def forbidden_http_transport(*_: object, **__: object) -> httpx.BaseTransport:
+        nonlocal http_transport_factories
+        http_transport_factories += 1
+        raise AssertionError("offline client must not construct httpx.HTTPTransport")
+
+    monkeypatch.setattr(httpx, "HTTPTransport", forbidden_http_transport)
+    client = OpenDARTClient(_settings(tmp_path))
+
+    with pytest.raises(OpenDARTOfflineTransportRequired, match="injected fixture transport"):
+        client.disclosure_list(
+            corp_code="00126380",
+            start=date(2026, 6, 9),
+            end=date(2026, 7, 9),
+        )
+
+    assert http_transport_factories == 0
 
 
 def test_client_major_matter_uses_allowed_endpoint_identity() -> None:

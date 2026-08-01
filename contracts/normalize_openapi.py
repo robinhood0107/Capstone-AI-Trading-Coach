@@ -22,6 +22,7 @@ from contracts.generate_principle_contracts import (
     load_json_bytes_strict,
     validate_catalog_semantics,
 )
+from contracts.generated_artifact_io import write_generated_path
 
 
 REPO_ROOT = _SCRIPT_REPO_ROOT
@@ -475,8 +476,7 @@ def main() -> int:
                 catalog_bytes,
                 amendment=not arguments.implementation,
             )
-            arguments.expected.parent.mkdir(parents=True, exist_ok=True)
-            arguments.expected.write_bytes(normalized)
+            write_generated_path(REPO_ROOT, arguments.expected, normalized)
             print(
                 "WROTE "
                 + arguments.expected.resolve().relative_to(REPO_ROOT).as_posix()

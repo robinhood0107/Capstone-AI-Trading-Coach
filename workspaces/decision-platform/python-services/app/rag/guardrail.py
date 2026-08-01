@@ -169,7 +169,7 @@ _ACCOUNT_OR_HOLDING = re.compile(
         r"\b(?:account\W*(?:number|balance)|holdings?|positions?|orders?|fills?"
         r"|phone\W*number|email\W*address|social\W*security\W*number)\b"
         r"|accountnumber|accountbalance"
-        r"|계좌\W*번호|계좌번호|계좌|잔고|보유\W*(?:종목|수량)?|보유종목"
+        r"|계좌\W*번호|계좌번호|계좌|잔고|보유(?!기간)\W*(?:종목|수량)?|보유종목"
         r"|주문\W*(?:내역|번호)?|체결\W*(?:내역|번호)?"
         r"|전화\W*번호|이메일|주민\W*번호|연락처"
         r"|(?<![\w.+-])[a-z0-9._%+-]{1,64}@[a-z0-9.-]{1,253}\.[a-z]{2,63}(?![\w.-])"

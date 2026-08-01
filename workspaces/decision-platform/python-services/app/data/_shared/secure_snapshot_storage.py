@@ -12,7 +12,7 @@ from typing import cast
 
 _DIRECTORY_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
 _SNAPSHOT_PATH_PATTERN = re.compile(
-    r"(?:ecos|naver)/[0-9]{4}/[0-9]{2}/[0-9]{2}/"
+    r"ecos/[0-9]{4}/[0-9]{2}/[0-9]{2}/"
     r"[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-"
     r"[0-9a-f]{12}/snapshot\.json"
 )

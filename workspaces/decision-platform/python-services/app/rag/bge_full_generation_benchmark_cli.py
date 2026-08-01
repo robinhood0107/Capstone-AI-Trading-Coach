@@ -27,11 +27,13 @@ from app.rag.bge_full_generation import (
     prepare_bge_full_generation,
 )
 from app.rag.bge_runtime import BgeStaticTokenizer, load_bge_onnx_embedder
-from app.rag.source_card_corpus import load_frozen_source_card_corpus
+from app.rag.corpus_profiles import S4_7B_PROFILE_ID, load_source_card_corpus
+from app.rag.external_processing_corpus import S4_7C_PROFILE_ID
 
 _CANDIDATES = (16, 32, 64)
 _CHILD_MARKER = "S4_2B_BATCH_CHILD "
 _MIN_HOST_HEADROOM_BYTES = 4 * 1024 * 1024 * 1024
+_CORPUS_PROFILES = (S4_7B_PROFILE_ID, S4_7C_PROFILE_ID)
 
 
 class _DiscardingRepository:
@@ -61,32 +63,33 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--batch-child", type=int, choices=_CANDIDATES)
+    parser.add_argument(
+        "--corpus-profile",
+        choices=_CORPUS_PROFILES,
+        default=S4_7B_PROFILE_ID,
+    )
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
     try:
         if args.batch_child is not None:
-            report = _run_child(args.batch_child)
+            report = _run_child(args.batch_child, args.corpus_profile)
             print(_CHILD_MARKER + json.dumps(report, sort_keys=True))
             return 0
-        report = _run_parent()
+        report = _run_parent(args.corpus_profile)
         if args.json:
             print(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True))
         else:
-            print(
-                "S4_2B_BATCH_MEMORY_BENCHMARK "
-                + json.dumps(report, sort_keys=True)
-            )
+            print("S4_2B_BATCH_MEMORY_BENCHMARK " + json.dumps(report, sort_keys=True))
         return 0
     except (BgeFullGenerationError, OSError, ValueError, subprocess.SubprocessError) as error:
         print(
-            "S4_2B_BATCH_MEMORY_BENCHMARK_FAILED "
-            + type(error).__name__,
+            "S4_2B_BATCH_MEMORY_BENCHMARK_FAILED " + type(error).__name__,
             file=sys.stderr,
         )
         return 1
 
 
-def _run_parent() -> dict[str, Any]:
+def _run_parent(corpus_profile_id: str) -> dict[str, Any]:
     total_memory_bytes = _total_memory_bytes()
     memory_limit_bytes = min(
         int(total_memory_bytes * 0.70),
@@ -94,7 +97,9 @@ def _run_parent() -> dict[str, Any]:
     )
     if memory_limit_bytes <= 0:
         raise BgeFullGenerationError("BATCH_HOST_MEMORY")
-    child_results = tuple(_run_child_process(candidate) for candidate in _CANDIDATES)
+    child_results = tuple(
+        _run_child_process(candidate, corpus_profile_id) for candidate in _CANDIDATES
+    )
     safe_candidates = [
         result["batchSize"]
         for result in child_results
@@ -112,9 +117,10 @@ def _run_parent() -> dict[str, Any]:
     payload: dict[str, Any] = {
         "schemaVersion": "s4-2b-batch-memory-benchmark/v1",
         "status": "PASS",
-        "corpusManifestSha256": (
-            load_frozen_source_card_corpus().corpus_manifest_sha256
-        ),
+        "corpusProfileId": corpus_profile_id,
+        "corpusManifestSha256": load_source_card_corpus(
+            profile_id=corpus_profile_id
+        ).corpus_manifest_sha256,
         "modelRevision": verify_bge_completion_manifest(
             DEFAULT_MODEL_ROOT,
             manifest_path=DEFAULT_MODEL_MANIFEST,
@@ -125,9 +131,7 @@ def _run_parent() -> dict[str, Any]:
         ).file_manifest_sha256,
         "candidateBatchSizes": list(_CANDIDATES),
         "results": list(child_results),
-        "selectionPolicy": (
-            "LOWEST_SAFE_ONE_PHYSICAL_BATCH_THEN_LARGEST_SAFE"
-        ),
+        "selectionPolicy": ("LOWEST_SAFE_ONE_PHYSICAL_BATCH_THEN_LARGEST_SAFE"),
         "selectedBatchSize": selected,
         "totalMemoryBytes": total_memory_bytes,
         "memoryLimitBytes": memory_limit_bytes,
@@ -141,7 +145,10 @@ def _run_parent() -> dict[str, Any]:
     return payload
 
 
-def _run_child_process(batch_size: int) -> dict[str, int | float]:
+def _run_child_process(
+    batch_size: int,
+    corpus_profile_id: str,
+) -> dict[str, int | float]:
     environment = os.environ.copy()
     environment.update(
         {
@@ -157,6 +164,8 @@ def _run_child_process(batch_size: int) -> dict[str, int | float]:
             "app.rag.bge_full_generation_benchmark_cli",
             "--batch-child",
             str(batch_size),
+            "--corpus-profile",
+            corpus_profile_id,
         ],
         cwd=Path(__file__).resolve().parents[2],
         env=environment,
@@ -165,11 +174,7 @@ def _run_child_process(batch_size: int) -> dict[str, int | float]:
         text=True,
         timeout=600,
     )
-    lines = [
-        line
-        for line in completed.stdout.splitlines()
-        if line.startswith(_CHILD_MARKER)
-    ]
+    lines = [line for line in completed.stdout.splitlines() if line.startswith(_CHILD_MARKER)]
     if len(lines) != 1:
         raise BgeFullGenerationError("BATCH_CHILD_RECEIPT")
     value = json.loads(lines[0][len(_CHILD_MARKER) :])
@@ -188,14 +193,12 @@ def _run_child_process(batch_size: int) -> dict[str, int | float]:
     }
 
 
-def _run_child(batch_size: int) -> dict[str, int | float]:
+def _run_child(batch_size: int, corpus_profile_id: str) -> dict[str, int | float]:
     artifact = verify_bge_completion_manifest(
         DEFAULT_MODEL_ROOT,
         manifest_path=DEFAULT_MODEL_MANIFEST,
     )
-    tokenizer = BgeStaticTokenizer.from_file(
-        DEFAULT_MODEL_ROOT / "onnx/tokenizer.json"
-    )
+    tokenizer = BgeStaticTokenizer.from_file(DEFAULT_MODEL_ROOT / "onnx/tokenizer.json")
     placeholder = BgeBatchBenchmarkReceipt(
         selected_batch_size=batch_size,
         candidates=_CANDIDATES,
@@ -205,7 +208,7 @@ def _run_child(batch_size: int) -> dict[str, int | float]:
         benchmark_sha256="2" * 64,
     )
     plan = prepare_bge_full_generation(
-        corpus=load_frozen_source_card_corpus(),
+        corpus=load_source_card_corpus(profile_id=corpus_profile_id),
         tokenizer=tokenizer,
         artifact=artifact,
         batch_benchmark=placeholder,

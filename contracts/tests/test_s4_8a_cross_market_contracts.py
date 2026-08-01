@@ -92,6 +92,7 @@ class S48aCrossMarketContractTest(unittest.TestCase):
             "fake-zero",
             "future-available-at",
             "gdelt-article-metadata",
+            "gdelt-reported-as-cause",
             "incomplete-available",
             "raw-right-missing",
             "risk-authority-escalation",
@@ -118,6 +119,33 @@ class S48aCrossMarketContractTest(unittest.TestCase):
                 except ContractValidationError as caught:
                     semantic_error = caught
             self.assertTrue(errors or semantic_error, relative_path)
+
+    def test_gdelt_causal_authority_restriction_rejects_each_upgrade(self) -> None:
+        schema = _load("contracts/schemas/market_cause_evidence.v1.schema.json")
+        self.assertIsInstance(schema, dict)
+        validator = Draft202012Validator(schema)
+        valid = _load("contracts/examples/market_cause_evidence.v1.valid.json")
+        self.assertIsInstance(valid, dict)
+        self.assertEqual("GDELT_AGGREGATE", valid["sourceFamily"])
+        self.assertEqual("CO_MOVES_WITH", valid["relation"])
+        self.assertEqual([], list(validator.iter_errors(valid)))
+        validate_semantics("market_cause_evidence.v1", valid)
+
+        for field, forbidden_value in (
+            ("classification", "CONFIRMED_FACT"),
+            ("relation", "REPORTED_AS_CAUSE"),
+        ):
+            candidate = dict(valid)
+            candidate[field] = forbidden_value
+            self.assertTrue(
+                list(validator.iter_errors(candidate)),
+                f"GDELT aggregate {field}={forbidden_value} must fail the schema",
+            )
+            with self.assertRaisesRegex(
+                ContractValidationError,
+                "GDELT aggregate cannot assert a confirmed fact or reported cause",
+            ):
+                validate_semantics("market_cause_evidence.v1", candidate)
 
     def test_kis_exact_18_are_opaque_disabled_and_gdelt_is_separate(self) -> None:
         registry = _load("contracts/examples/market_source_entitlement.v1.valid.json")

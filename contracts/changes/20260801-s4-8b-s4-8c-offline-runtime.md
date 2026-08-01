@@ -25,6 +25,9 @@ RiskEngine 연결, cross-market REST endpoint, live provider, 계좌 또는 주�
 - S4.8C는 사실·보도·해석·가설, contradiction/retraction/supersede를 보존한다. GDELT
   aggregate는 confirmed fact나 reported cause가 될 수 없고 analyst BUY 의견 수준의 방향
   가중치는 exact 0이다.
+- 계약 parity 보완: `market_cause_evidence.v1` schema도 V23과 같게 GDELT aggregate의
+  `CONFIRMED_FACT` 및 `REPORTED_AS_CAUSE`를 거부한다. 정상 synthetic fixture는 비인과
+  `CO_MOVES_WITH`를 사용하고, causal-upgrade 음성 fixture가 회귀를 고정한다.
 - PDF 기본 mode는 `MANUAL_LINK_ONLY`다. 별도 승인된 `LICENSED_EPHEMERAL_LOCAL`도
   owned/no-follow PDF를 bounded 검증한 뒤 원본을 먼저 삭제하고 로컬 parser만 실행한다.
   raw text·quote 저장과 외부 LLM 전송은 0이다.
@@ -42,6 +45,10 @@ only five SECURITY DEFINER append functions and intentionally exposes no snapsho
 Spring port is an owner-scoped bounded reader, while S4.8C preserves contradictory and retracted
 evidence without granting decision authority. PDF processing remains metadata-only by default and
 bounded local-ephemeral under a separate approval.
+
+Contract parity follow-up: the `market_cause_evidence.v1` schema now matches V23 by rejecting
+`CONFIRMED_FACT` and `REPORTED_AS_CAUSE` for a GDELT aggregate. The positive synthetic fixture
+uses noncausal `CO_MOVES_WITH`, and a causal-upgrade negative fixture locks the regression.
 
 ## 저장·권한 불변식 / Persistence and authority invariants
 

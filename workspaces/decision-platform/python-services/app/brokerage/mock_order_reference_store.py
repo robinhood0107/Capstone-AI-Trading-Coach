@@ -19,6 +19,7 @@ _ACCOUNT_ID = re.compile(r"^acct_[0-9a-f]{32}$")
 _PROVIDER_REFERENCE = re.compile(r"^[0-9A-Za-z._:-]{1,64}$")
 _ORDER_DIVISION = re.compile(r"^[0-9]{2}$")
 _EXCHANGE_DIVISION = re.compile(r"^(?:KRX|NXT)$")
+_APPROVAL_ANCHOR = re.compile(r"^[0-9a-f]{64}$")
 _PENDING_FIELDS = {
     "accountId",
     "exchangeDivision",
@@ -27,6 +28,7 @@ _PENDING_FIELDS = {
     "quantity",
     "state",
 }
+_PENDING_ANCHORED_FIELDS = _PENDING_FIELDS | {"approvalAnchor"}
 _COMMITTED_FIELDS = {
     "accountId",
     "exchangeDivision",
@@ -37,6 +39,7 @@ _COMMITTED_FIELDS = {
     "quantity",
     "state",
 }
+_COMMITTED_ANCHORED_FIELDS = _COMMITTED_FIELDS | {"approvalAnchor"}
 _MAX_QUANTITY = 9_223_372_036_854_775_807
 
 
@@ -53,6 +56,7 @@ class MockProviderOrderReference:
     order_division: str
     quantity: int
     exchange_division: Literal["KRX", "NXT"] = "KRX"
+    approval_anchor: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,6 +66,7 @@ class MockOrderReferenceIntent:
     order_division: str
     quantity: int
     exchange_division: Literal["KRX", "NXT"] = "KRX"
+    approval_anchor: str | None = None
 
 
 class MockOrderReferenceStore(Protocol):
@@ -85,6 +90,13 @@ class MockOrderReferenceStore(Protocol):
         self,
         order_id: str,
         account_id: str,
+    ) -> MockProviderOrderReference | None: ...
+
+    def get_for_recovery(
+        self,
+        order_id: str,
+        account_id: str,
+        approval_anchor: str,
     ) -> MockProviderOrderReference | None: ...
 
 
@@ -146,16 +158,17 @@ class EncryptedRedisOrderReferenceStore:
         _validate_identity(order_id, account_id)
         _validate_intent(intent)
         key = self._key(order_id, account_id)
-        encrypted = self._encrypt(
-            {
-                "accountId": account_id,
-                "exchangeDivision": intent.exchange_division,
-                "orderDivision": intent.order_division,
-                "orderId": order_id,
-                "quantity": intent.quantity,
-                "state": "PENDING",
-            }
-        )
+        payload: dict[str, object] = {
+            "accountId": account_id,
+            "exchangeDivision": intent.exchange_division,
+            "orderDivision": intent.order_division,
+            "orderId": order_id,
+            "quantity": intent.quantity,
+            "state": "PENDING",
+        }
+        if intent.approval_anchor is not None:
+            payload["approvalAnchor"] = intent.approval_anchor
+        encrypted = self._encrypt(payload)
         try:
             stored = self._redis.set(
                 key,
@@ -183,26 +196,35 @@ class EncryptedRedisOrderReferenceStore:
         _validate_reference(reference)
         key = self._key(order_id, account_id)
         expected, pending = self._pending_snapshot(key, order_id, account_id)
+        expected_pending_fields = (
+            _PENDING_ANCHORED_FIELDS if "approvalAnchor" in pending else _PENDING_FIELDS
+        )
         if (
             pending.get("state") != "PENDING"
-            or set(pending) != _PENDING_FIELDS
+            or set(pending) != expected_pending_fields
             or pending.get("exchangeDivision") != reference.exchange_division
             or pending.get("orderDivision") != reference.order_division
             or pending.get("quantity") != reference.quantity
         ):
             raise MockOrderReferenceUnavailable("mock order reference is invalid")
-        encrypted = self._encrypt(
-            {
-                "accountId": account_id,
-                "exchangeDivision": reference.exchange_division,
-                "orderDivision": reference.order_division,
-                "orderId": order_id,
-                "providerOrderNo": reference.provider_order_no,
-                "providerOrgNo": reference.provider_org_no,
-                "quantity": reference.quantity,
-                "state": "COMMITTED",
-            }
-        )
+        payload: dict[str, object] = {
+            "accountId": account_id,
+            "exchangeDivision": reference.exchange_division,
+            "orderDivision": reference.order_division,
+            "orderId": order_id,
+            "providerOrderNo": reference.provider_order_no,
+            "providerOrgNo": reference.provider_org_no,
+            "quantity": reference.quantity,
+            "state": "COMMITTED",
+        }
+        if "approvalAnchor" in pending:
+            approval_anchor = pending["approvalAnchor"]
+            if not isinstance(approval_anchor, str) or _APPROVAL_ANCHOR.fullmatch(
+                approval_anchor
+            ) is None:
+                raise MockOrderReferenceUnavailable("mock order reference is invalid")
+            payload["approvalAnchor"] = approval_anchor
+        encrypted = self._encrypt(payload)
         try:
             with self._redis.pipeline() as pipeline:
                 pipeline.watch(key)
@@ -263,7 +285,13 @@ class EncryptedRedisOrderReferenceStore:
         payload = self._read(order_id, account_id)
         if payload is None:
             return None
-        if payload.get("state") != "COMMITTED" or set(payload) != _COMMITTED_FIELDS:
+        expected_fields = (
+            _COMMITTED_ANCHORED_FIELDS if "approvalAnchor" in payload else _COMMITTED_FIELDS
+        )
+        if payload.get("state") != "COMMITTED" or set(payload) != expected_fields:
+            raise MockOrderReferenceUnavailable("mock order reference is invalid")
+        approval_anchor = payload.get("approvalAnchor")
+        if approval_anchor is not None and not isinstance(approval_anchor, str):
             raise MockOrderReferenceUnavailable("mock order reference is invalid")
         reference = MockProviderOrderReference(
             provider_order_no=str(payload["providerOrderNo"]),
@@ -271,11 +299,31 @@ class EncryptedRedisOrderReferenceStore:
             order_division=str(payload["orderDivision"]),
             quantity=payload["quantity"] if type(payload["quantity"]) is int else -1,
             exchange_division=cast(Literal["KRX", "NXT"], str(payload["exchangeDivision"])),
+            approval_anchor=approval_anchor,
         )
         try:
             _validate_reference(reference)
         except ValueError:
             raise MockOrderReferenceUnavailable("mock order reference is invalid") from None
+        return reference
+
+    def get_for_recovery(
+        self,
+        order_id: str,
+        account_id: str,
+        approval_anchor: str,
+    ) -> MockProviderOrderReference | None:
+        """recovery packet은 source packet에 anchor된 COMMITTED reference만 재사용한다."""
+
+        if _APPROVAL_ANCHOR.fullmatch(approval_anchor) is None:
+            raise MockOrderReferenceUnavailable("mock order reference is invalid")
+        reference = self.get(order_id, account_id)
+        if (
+            reference is None
+            or reference.approval_anchor is None
+            or not hmac.compare_digest(reference.approval_anchor, approval_anchor)
+        ):
+            raise MockOrderReferenceUnavailable("mock order reference is unavailable")
         return reference
 
     def state(
@@ -289,8 +337,21 @@ class EncryptedRedisOrderReferenceStore:
         if payload is None:
             return None
         state = payload.get("state")
-        expected_fields = _PENDING_FIELDS if state == "PENDING" else _COMMITTED_FIELDS
+        if state == "PENDING":
+            expected_fields = (
+                _PENDING_ANCHORED_FIELDS if "approvalAnchor" in payload else _PENDING_FIELDS
+            )
+        else:
+            expected_fields = (
+                _COMMITTED_ANCHORED_FIELDS if "approvalAnchor" in payload else _COMMITTED_FIELDS
+            )
         if state not in {"PENDING", "COMMITTED"} or set(payload) != expected_fields:
+            raise MockOrderReferenceUnavailable("mock order reference is invalid")
+        approval_anchor = payload.get("approvalAnchor")
+        if approval_anchor is not None and (
+            not isinstance(approval_anchor, str)
+            or _APPROVAL_ANCHOR.fullmatch(approval_anchor) is None
+        ):
             raise MockOrderReferenceUnavailable("mock order reference is invalid")
         try:
             if state == "PENDING":
@@ -393,6 +454,10 @@ def _validate_reference(reference: MockProviderOrderReference) -> None:
         or _EXCHANGE_DIVISION.fullmatch(reference.exchange_division) is None
         or type(reference.quantity) is not int
         or not 1 <= reference.quantity <= _MAX_QUANTITY
+        or (
+            reference.approval_anchor is not None
+            and _APPROVAL_ANCHOR.fullmatch(reference.approval_anchor) is None
+        )
     ):
         raise ValueError("mock provider order reference is invalid")
 
@@ -403,5 +468,9 @@ def _validate_intent(intent: MockOrderReferenceIntent) -> None:
         or _EXCHANGE_DIVISION.fullmatch(intent.exchange_division) is None
         or type(intent.quantity) is not int
         or not 1 <= intent.quantity <= _MAX_QUANTITY
+        or (
+            intent.approval_anchor is not None
+            and _APPROVAL_ANCHOR.fullmatch(intent.approval_anchor) is None
+        )
     ):
         raise ValueError("mock order reference intent is invalid")

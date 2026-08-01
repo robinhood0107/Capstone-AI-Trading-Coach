@@ -40,6 +40,10 @@ from app.brokerage.kis_mock_online_runtime import (
     KISMockOnlineBalanceReader,
     KISMockProjectionError,
 )
+from app.brokerage.kis_mock_approval_environment import (
+    KISMockApprovalEnvironmentRejected,
+    load_kis_mock_approval_environment,
+)
 from app.brokerage.kis_mock_order_gateway import (
     KISMockOrderGateway,
     MockOrderIntent,
@@ -47,6 +51,9 @@ from app.brokerage.kis_mock_order_gateway import (
 )
 from app.brokerage.mock_order_reference_store import (
     EncryptedRedisOrderReferenceStore,
+    EncryptedRedisApprovalOutcomeStore,
+    KISMockApprovalOutcome,
+    KISMockApprovalOutcomeUnavailable,
 )
 from app.data.kis._credential_transport import KISCredentialError, _build_redis_client
 from app.data.kis.settings import KISSettings
@@ -55,6 +62,7 @@ _REPOSITORY_ROOT = Path(__file__).resolve().parents[5]
 _MAX_PACKET_BYTES = 64 * 1024
 _SHA256 = r"^[0-9a-f]{64}$"
 _GIT_SHA = r"^[0-9a-f]{40}$"
+_NONCE = r"^[0-9a-f]{64}$"
 _APPROVAL_ID = r"^approval-s3-online-[a-z0-9][a-z0-9-]{3,95}$"
 _BRANCH = r"^(?:feature|fix|docs|infra|experiment)/[A-Za-z0-9._/-]{1,120}$"
 _ORDER_ID = r"^ord_mock_[0-9a-f]{32}$"
@@ -124,11 +132,24 @@ class _StrictModel(BaseModel):
 
 
 class RepositoryEvidence(_StrictModel):
+    """v1 history packet은 PR #55만 검증할 수 있게 영구 고정한다."""
+
     root: str
     branch_ref: str = Field(alias="branchRef", pattern=_BRANCH)
     head_sha: str = Field(alias="headSha", pattern=_GIT_SHA)
     remote_head_sha: str = Field(alias="remoteHeadSha", pattern=_GIT_SHA)
     pull_request: StrictInt = Field(alias="pullRequest", ge=55, le=55)
+
+
+class RepositoryEvidenceV2(_StrictModel):
+    """v2 packet은 현재 PR branch와 main base를 exact final HEAD에 결속한다."""
+
+    root: str
+    branch_ref: str = Field(alias="branchRef", pattern=_BRANCH)
+    base_ref: Literal["main"] = Field(alias="baseRef")
+    head_sha: str = Field(alias="headSha", pattern=_GIT_SHA)
+    remote_head_sha: str = Field(alias="remoteHeadSha", pattern=_GIT_SHA)
+    pull_request: StrictInt = Field(alias="pullRequest", ge=1)
 
 
 class RequiredCheck(_StrictModel):
@@ -157,6 +178,17 @@ class ApprovalEvidence(_StrictModel):
         if not _REQUIRED_CI_CHECKS.issubset(names):
             raise ValueError("required CI evidence is incomplete")
         return self
+
+
+class ApprovalEvidenceV2(ApprovalEvidence):
+    """v2는 sealed scan의 manifest/coverage/findings까지 exact packet에 함께 결속한다."""
+
+    security_manifest_path: str = Field(alias="securityManifestPath", min_length=1)
+    security_manifest_sha256: str = Field(alias="securityManifestSha256", pattern=_SHA256)
+    security_coverage_path: str = Field(alias="securityCoveragePath", min_length=1)
+    security_coverage_sha256: str = Field(alias="securityCoverageSha256", pattern=_SHA256)
+    security_findings_path: str = Field(alias="securityFindingsPath", min_length=1)
+    security_findings_sha256: str = Field(alias="securityFindingsSha256", pattern=_SHA256)
 
 
 class PhysicalCaps(_StrictModel):
@@ -208,8 +240,17 @@ class ExecutionWindow(_StrictModel):
         return self
 
 
+class RecoveryOf(_StrictModel):
+    """새 주문을 표현하지 않고 원 FULL packet의 encrypted reference만 재사용한다."""
+
+    source_approval_id: str = Field(alias="sourceApprovalId", pattern=_APPROVAL_ID)
+    source_packet_sha256: str = Field(alias="sourcePacketSha256", pattern=_SHA256)
+    source_nonce: str = Field(alias="sourceNonce", pattern=_NONCE)
+    failed_step: Literal["cancelFull", "executionRead"] = Field(alias="failedStep")
+
+
 class KISMockApprovalPacket(_StrictModel):
-    """KIS_MOCK 5단계 probe 외에는 표현할 수 없는 exact 승인 문서다."""
+    """PR #55 historical verification 전용 v1 exact 승인 문서다."""
 
     schema_version: StrictInt = Field(alias="schemaVersion", ge=1, le=1)
     approval_id: str = Field(alias="approvalId", pattern=_APPROVAL_ID)
@@ -282,10 +323,106 @@ class KISMockApprovalPacket(_StrictModel):
         return self
 
 
+class KISMockApprovalPacketV2(_StrictModel):
+    """현재 PR의 exact evidence와 one-time nonce를 갖는 KIS_MOCK operator packet이다."""
+
+    schema_version: Literal[2] = Field(alias="schemaVersion")
+    approval_id: str = Field(alias="approvalId", pattern=_APPROVAL_ID)
+    nonce: str = Field(pattern=_NONCE)
+    issued_at: datetime = Field(alias="issuedAt")
+    expires_at: datetime = Field(alias="expiresAt")
+    mode: Literal["KIS_MOCK"]
+    kis_live_order_enabled: StrictBool = Field(alias="kisLiveOrderEnabled")
+    retry_count: StrictInt = Field(alias="retryCount", ge=0, le=0)
+    artifact_writes: StrictInt = Field(alias="artifactWrites", ge=0, le=0)
+    provider_calls_before_approval: StrictInt = Field(
+        alias="providerCallsBeforeApproval",
+        ge=0,
+        le=0,
+    )
+    probe_type: Literal["FULL", "BALANCE_DIAGNOSTIC", "CANCEL_RECOVERY"] = Field(
+        default="FULL",
+        alias="probeType",
+    )
+    repository: RepositoryEvidenceV2
+    evidence: ApprovalEvidenceV2
+    physical_caps: PhysicalCaps = Field(alias="physicalCaps")
+    redis_baseline: RedisBaseline = Field(alias="redisBaseline")
+    reference_ttl_seconds: StrictInt = Field(
+        alias="referenceTtlSeconds",
+        ge=60,
+        le=7 * 24 * 60 * 60,
+    )
+    order: ApprovalOrder
+    execution: ExecutionWindow
+    steps: tuple[str, ...]
+    stop_rule: Literal["FIRST_FAILURE_STOPS_REMAINING_CALLS"] = Field(alias="stopRule")
+    execution_command: str = Field(alias="executionCommand", min_length=1, max_length=4096)
+    recovery_of: RecoveryOf | None = Field(default=None, alias="recoveryOf")
+    packet_sha256: str = Field(alias="packetSha256", pattern=_SHA256)
+
+    @field_validator("issued_at", "expires_at")
+    @classmethod
+    def _timestamp_is_utc(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() != UTC.utcoffset(value):
+            raise ValueError("approval timestamps must be UTC")
+        return value
+
+    @model_validator(mode="after")
+    def _cross_field_contract(self) -> "KISMockApprovalPacketV2":
+        if self.kis_live_order_enabled is not False:
+            raise ValueError("KIS_LIVE order must remain disabled")
+        expected_steps: tuple[str, ...]
+        expected_brokerage_cap: int
+        if self.probe_type == "FULL":
+            expected_steps = _CANONICAL_STEPS
+            expected_brokerage_cap = 5
+            if self.recovery_of is not None:
+                raise ValueError("FULL packet must not contain recovery evidence")
+        elif self.probe_type == "BALANCE_DIAGNOSTIC":
+            expected_steps = _BALANCE_DIAGNOSTIC_STEPS
+            expected_brokerage_cap = 1
+            if self.recovery_of is not None:
+                raise ValueError("balance diagnostic must not contain recovery evidence")
+        else:
+            if self.recovery_of is None:
+                raise ValueError("cancel recovery requires source packet evidence")
+            if self.recovery_of.failed_step == "cancelFull":
+                expected_steps = ("cancelFull", "executionRead")
+                expected_brokerage_cap = 2
+            else:
+                # 취소 성공 뒤 execution read만 실패한 경우 취소를 재전송하지 않는다.
+                expected_steps = ("executionRead",)
+                expected_brokerage_cap = 1
+        if (
+            self.steps != expected_steps
+            or self.physical_caps.brokerage != expected_brokerage_cap
+            or self.physical_caps.token_p != 1
+        ):
+            raise ValueError("approval steps and caps must match the probe type")
+        if not self.issued_at < self.expires_at:
+            raise ValueError("approval TTL must be positive")
+        if (self.expires_at - self.issued_at).total_seconds() > 3_600:
+            raise ValueError("approval TTL must not exceed 60 minutes")
+        head = self.repository.head_sha
+        if (
+            self.repository.remote_head_sha != head
+            or self.evidence.ci_head_sha != head
+            or self.evidence.security_head_sha != head
+        ):
+            raise ValueError("approval evidence must bind one final HEAD")
+        if not self.issued_at <= self.redis_baseline.observed_at <= self.expires_at:
+            raise ValueError("Redis baseline must be observed inside approval TTL")
+        return self
+
+
+ApprovalPacket = KISMockApprovalPacket | KISMockApprovalPacketV2
+
+
 class ProbeOperations(Protocol):
     """승인 executor가 호출할 수 있는 유일한 5단계 runtime 표면이다."""
 
-    def run(self, operation: str, packet: KISMockApprovalPacket) -> None: ...
+    def run(self, operation: str, packet: ApprovalPacket) -> None: ...
 
     def counts(self) -> dict[str, int]: ...
 
@@ -306,10 +443,11 @@ def execute_approved_probe(
     expected_approval_id: str | None,
     expected_packet_sha256: str | None,
     repository_root: Path,
-    operations_factory: Callable[[KISMockApprovalPacket], ProbeOperations],
-    approval_consumer: Callable[[KISMockApprovalPacket, datetime], None],
+    operations_factory: Callable[[ApprovalPacket], ProbeOperations],
+    approval_consumer: Callable[[ApprovalPacket, datetime], None],
+    clock: Callable[[], datetime] | None = None,
 ) -> ProbeSummary:
-    """local evidence 검증 뒤 single-use claim을 먼저 잡고 runtime factory를 만든다."""
+    """v2 live evidence와 source outcome을 재검증한 뒤 bounded runtime만 한 번 실행한다."""
     packet = _load_packet(
         packet_path,
         now=now,
@@ -317,6 +455,11 @@ def execute_approved_probe(
         expected_packet_sha256=expected_packet_sha256,
         repository_root=repository_root,
     )
+    resolved_root = repository_root.resolve(strict=True)
+    if isinstance(packet, KISMockApprovalPacketV2):
+        # author 이후 rerun/close된 PR을 claim 이전에 다시 확인해 stale CI를 실행권한으로 쓰지 않는다.
+        _require_current_v2_pr_evidence(packet, resolved_root)
+        _require_recovery_source_outcome(packet)
     approval_consumer(packet, now)
     try:
         operations = operations_factory(packet)
@@ -330,20 +473,56 @@ def execute_approved_probe(
         ) from None
     completed: list[str] = []
     failure: KISMockProbeFailed | None = None
+    deadline_rejection: KISMockApprovalRejected | None = None
+    failed_step_for_outcome: str | None = None
+    record_outcome = (
+        isinstance(packet, KISMockApprovalPacketV2)
+        and packet.probe_type != "BALANCE_DIAGNOSTIC"
+    )
+    outcome_recording_active = False
     try:
+        activation = getattr(operations, "activate", None)
+        if callable(activation):
+            activation(packet)
+        outcome_recording_active = True
         for operation in packet.steps:
             try:
+                _require_packet_inside_ttl(packet, _clock_now(clock, now))
                 operations.run(operation, packet)
+            except KISMockApprovalRejected as exception:
+                deadline_rejection = exception
+                failed_step_for_outcome = operation
+                break
             except Exception as exception:
                 failure = _probe_failure(
                     operation,
                     operations.counts(),
                     exception,
                 )
+                failed_step_for_outcome = operation
                 break
             completed.append(operation)
         counts = operations.counts()
     finally:
+        if record_outcome and outcome_recording_active:
+            outcome_recorder = getattr(operations, "record_outcome", None)
+            if not callable(outcome_recorder):
+                if failure is None and deadline_rejection is None:
+                    failure = KISMockProbeFailed(
+                        "outcomeRecord",
+                        operations.counts(),
+                        reason_code=KISMockFailureReason.RUNTIME_INIT_FAILED.value,
+                    )
+            else:
+                try:
+                    outcome_recorder(packet, failed_step_for_outcome)
+                except Exception as exception:
+                    if failure is None and deadline_rejection is None:
+                        failure = _probe_failure(
+                            "outcomeRecord",
+                            operations.counts(),
+                            exception,
+                        )
         try:
             operations.close()
         except Exception:
@@ -355,11 +534,29 @@ def execute_approved_probe(
                 )
     if failure is not None:
         raise failure from None
+    if deadline_rejection is not None:
+        raise deadline_rejection
     return ProbeSummary(
         approval_id=packet.approval_id,
         completed_steps=tuple(completed),
         physical_reservations=counts,
     )
+
+
+def _clock_now(clock: Callable[[], datetime] | None, initial: datetime) -> datetime:
+    """CLI는 real UTC clock을 주입하고 deterministic tests는 승인 시각을 명시적으로 고정한다."""
+
+    current = clock() if clock is not None else initial
+    if current.tzinfo is None:
+        raise KISMockApprovalRejected("approval clock must be timezone-aware")
+    return current.astimezone(UTC)
+
+
+def _require_packet_inside_ttl(packet: ApprovalPacket, current: datetime) -> None:
+    """각 operation과 transport handoff는 같은 expiry를 넘기면 physical reservation 전에 거부한다."""
+
+    if current < packet.issued_at or current >= packet.expires_at:
+        raise KISMockApprovalRejected("approval packet is not inside its TTL")
 
 
 def _load_packet(
@@ -369,7 +566,7 @@ def _load_packet(
     expected_approval_id: str | None,
     expected_packet_sha256: str | None,
     repository_root: Path,
-) -> KISMockApprovalPacket:
+) -> ApprovalPacket:
     if expected_approval_id is None or expected_packet_sha256 is None:
         raise KISMockApprovalRejected("exact current-user approval latch is missing")
     if now.tzinfo is None:
@@ -392,10 +589,12 @@ def _load_packet(
     computed_digest = hashlib.sha256(_canonical_json(unsigned)).hexdigest()
     if supplied_digest != computed_digest or expected_packet_sha256 != computed_digest:
         raise KISMockApprovalRejected("approval packet digest does not match")
-    try:
-        packet = KISMockApprovalPacket.model_validate(document)
-    except Exception:
-        raise KISMockApprovalRejected("approval packet contract is invalid") from None
+    packet = parse_approval_packet(document)
+    if isinstance(packet, KISMockApprovalPacketV2):
+        secured_packet, secured_bytes = _read_secure_packet_v2(packet_path)
+        if not hmac.compare_digest(secured_bytes, packet_bytes):
+            raise KISMockApprovalRejected("approval packet file boundary is invalid")
+        resolved_packet = secured_packet
     if packet.approval_id != expected_approval_id:
         raise KISMockApprovalRejected("exact current-user approval latch does not match")
     current = now.astimezone(UTC)
@@ -418,19 +617,132 @@ def _load_packet(
     remote_ref = f"refs/remotes/origin/{packet.repository.branch_ref}"
     if _git_revision(resolved_root, remote_ref) != packet.repository.remote_head_sha:
         raise KISMockApprovalRejected("approval remote HEAD does not match")
-    _validate_security_report(packet.evidence)
+    if isinstance(packet, KISMockApprovalPacketV2):
+        _validate_v2_security_evidence(packet.evidence, packet.repository.head_sha)
+    else:
+        _validate_security_report(packet.evidence)
     _require_clean_repository(resolved_root)
     return packet
 
 
-def _consume_exact_approval_once(packet: KISMockApprovalPacket, now: datetime) -> None:
+def _require_current_v2_pr_evidence(
+    packet: KISMockApprovalPacketV2,
+    repository_root: Path,
+) -> None:
+    """provider 실행 직전 GitHub가 여전히 같은 OPEN non-draft PR과 green checks를 가리키는지 확인한다."""
+
+    try:
+        result = subprocess.run(
+            [
+                "gh",
+                "pr",
+                "view",
+                str(packet.repository.pull_request),
+                "--json",
+                "number,state,isDraft,headRefName,baseRefName,headRefOid,statusCheckRollup",
+            ],
+            cwd=repository_root,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        raw: object = json.loads(result.stdout)
+    except (OSError, subprocess.SubprocessError, json.JSONDecodeError):
+        raise KISMockApprovalRejected("PR evidence is unavailable") from None
+    if not isinstance(raw, dict):
+        raise KISMockApprovalRejected("PR evidence is invalid")
+    if (
+        raw.get("number") != packet.repository.pull_request
+        or raw.get("state") != "OPEN"
+        or raw.get("isDraft") is not False
+        or raw.get("headRefName") != packet.repository.branch_ref
+        or raw.get("baseRefName") != packet.repository.base_ref
+        or raw.get("headRefOid") != packet.repository.head_sha
+    ):
+        raise KISMockApprovalRejected("PR evidence is no longer active")
+    rollup = raw.get("statusCheckRollup")
+    if not isinstance(rollup, list):
+        raise KISMockApprovalRejected("PR checks are unavailable")
+    check_by_name: dict[str, str] = {}
+    for item in rollup:
+        if not isinstance(item, dict):
+            continue
+        name = item.get("name")
+        conclusion = item.get("conclusion")
+        if isinstance(name, str) and isinstance(conclusion, str):
+            check_by_name[name] = conclusion
+    if any(check_by_name.get(name) != "SUCCESS" for name in _REQUIRED_CI_CHECKS):
+        raise KISMockApprovalRejected("PR required checks are no longer successful")
+
+
+def _require_recovery_source_outcome(packet: KISMockApprovalPacketV2) -> None:
+    """recovery packet은 CLI failedStep이 아니라 encrypted source executor receipt와 먼저 대조한다."""
+
+    if packet.probe_type != "CANCEL_RECOVERY":
+        return
+    assert packet.recovery_of is not None
+    try:
+        encryption_key = _operator_approval_value("KIS_MOCK_ORDER_REFERENCE_KEY")
+    except KISMockApprovalRejected:
+        raise KISMockApprovalRejected("recovery source outcome is unavailable") from None
+    redis_client: Any | None = None
+    try:
+        redis_client = _build_redis_client()
+        store = EncryptedRedisApprovalOutcomeStore(
+            redis_client,
+            encryption_key=SecretStr(encryption_key),
+            ttl_seconds=packet.reference_ttl_seconds,
+        )
+        store.require_recovery(
+            source_approval_id=packet.recovery_of.source_approval_id,
+            source_packet_sha256=packet.recovery_of.source_packet_sha256,
+            source_nonce=packet.recovery_of.source_nonce,
+            expected_failed_step=packet.recovery_of.failed_step,
+            order_id=packet.order.order_id,
+            account_id=packet.order.account_id,
+        )
+    except (KISMockApprovalOutcomeUnavailable, ValueError):
+        raise KISMockApprovalRejected("recovery source outcome does not match") from None
+    except Exception:
+        raise KISMockApprovalRejected("recovery source outcome is unavailable") from None
+    finally:
+        encryption_key = ""
+        if redis_client is not None:
+            redis_client.close()
+
+
+def parse_approval_packet(document: dict[str, Any]) -> ApprovalPacket:
+    """schemaVersion discriminator로 v1 history packet과 dynamic v2 packet을 분리 검증한다."""
+
+    schema_version = document.get("schemaVersion")
+    try:
+        if schema_version == 1:
+            return KISMockApprovalPacket.model_validate(document)
+        if schema_version == 2:
+            return KISMockApprovalPacketV2.model_validate(document)
+    except Exception:
+        pass
+    raise KISMockApprovalRejected("approval packet contract is invalid")
+
+
+def approval_anchor_for_source(source_packet_sha256: str, source_nonce: str) -> str:
+    """recovery packet이 특정 FULL packet의 encrypted reference만 찾도록 비밀 없는 anchor를 만든다."""
+
+    return hashlib.sha256(f"{source_packet_sha256}\0{source_nonce}".encode()).hexdigest()
+
+
+def _consume_exact_approval_once(packet: ApprovalPacket, now: datetime) -> None:
     """Redis 원자 claim으로 exact packet 재실행을 성공/실패와 무관하게 차단한다."""
     current = now.astimezone(UTC)
     remaining_ms = int((packet.expires_at - current).total_seconds() * 1000)
     if remaining_ms <= 0:
         raise KISMockApprovalRejected("approval packet is not inside its TTL")
     key_material = f"{packet.approval_id}\0{packet.packet_sha256}".encode()
-    redis_key = _APPROVAL_CONSUMED_KEY_PREFIX + hashlib.sha256(key_material).hexdigest()
+    version = "v2" if isinstance(packet, KISMockApprovalPacketV2) else "v1"
+    redis_key = (
+        f"kis:mock:approval-consumed:{version}:" + hashlib.sha256(key_material).hexdigest()
+    )
     redis_client: Any | None = None
     try:
         redis_client = _build_redis_client()
@@ -445,6 +757,8 @@ def _consume_exact_approval_once(packet: KISMockApprovalPacket, now: datetime) -
 
 
 def _read_secure_packet(packet_path: Path) -> tuple[Path, bytes]:
+    """v1 historical packet reader를 유지한다; v2는 뒤의 parent-dirfd verification을 추가로 거친다."""
+
     if not packet_path.is_absolute() or not hasattr(os, "O_NOFOLLOW"):
         raise KISMockApprovalRejected("approval packet file boundary is invalid")
     flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW
@@ -482,6 +796,79 @@ def _read_secure_packet(packet_path: Path) -> tuple[Path, bytes]:
         os.close(descriptor)
 
 
+def _read_secure_packet_v2(packet_path: Path) -> tuple[Path, bytes]:
+    """v2 current operator packet은 parent/leaf 모두 dirfd no-follow boundary로 다시 읽는다."""
+
+    if not packet_path.is_absolute() or not hasattr(os, "O_NOFOLLOW"):
+        raise KISMockApprovalRejected("approval packet file boundary is invalid")
+    parent_descriptor = _open_secure_packet_parent(packet_path.parent)
+    descriptor: int | None = None
+    try:
+        name = packet_path.name
+        if name in {"", ".", ".."} or "/" in name:
+            raise KISMockApprovalRejected("approval packet file boundary is invalid")
+        flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW
+        descriptor = os.open(name, flags, dir_fd=parent_descriptor)
+        packet_stat = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(packet_stat.st_mode)
+            or stat.S_IMODE(packet_stat.st_mode) != 0o600
+            or packet_stat.st_uid != os.getuid()
+            or packet_stat.st_nlink != 1
+            or packet_stat.st_size > _MAX_PACKET_BYTES
+        ):
+            raise KISMockApprovalRejected("approval packet file boundary is invalid")
+        chunks: list[bytes] = []
+        remaining = _MAX_PACKET_BYTES + 1
+        while remaining > 0:
+            chunk = os.read(descriptor, min(remaining, 16 * 1024))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        packet_bytes = b"".join(chunks)
+        if len(packet_bytes) > _MAX_PACKET_BYTES:
+            raise KISMockApprovalRejected("approval packet file boundary is invalid")
+        descriptor_path = Path(os.readlink(f"/proc/self/fd/{descriptor}"))
+        if not descriptor_path.is_absolute() or descriptor_path.name.endswith(" (deleted)"):
+            raise KISMockApprovalRejected("approval packet file boundary is invalid")
+        return descriptor_path, packet_bytes
+    except OSError:
+        raise KISMockApprovalRejected("approval packet file boundary is invalid") from None
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+        os.close(parent_descriptor)
+
+
+def _open_secure_packet_parent(directory: Path) -> int:
+    """packet parent 전체를 no-follow dirfd로 열어 symlink replacement race를 outbound 전에 닫는다."""
+
+    if not directory.is_absolute() or any(part in {"", ".", ".."} for part in directory.parts):
+        raise KISMockApprovalRejected("approval packet file boundary is invalid")
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC | os.O_NOFOLLOW
+    descriptor: int | None = None
+    try:
+        descriptor = os.open("/", flags)
+        for component in directory.parts[1:]:
+            next_descriptor = os.open(component, flags, dir_fd=descriptor)
+            os.close(descriptor)
+            descriptor = next_descriptor
+        directory_stat = os.fstat(descriptor)
+    except OSError:
+        if descriptor is not None:
+            os.close(descriptor)
+        raise KISMockApprovalRejected("approval packet file boundary is invalid") from None
+    if (
+        not stat.S_ISDIR(directory_stat.st_mode)
+        or directory_stat.st_uid != os.getuid()
+        or stat.S_IMODE(directory_stat.st_mode) & 0o077
+    ):
+        os.close(descriptor)
+        raise KISMockApprovalRejected("approval packet file boundary is invalid")
+    return descriptor
+
+
 def _validate_security_report(evidence: ApprovalEvidence) -> None:
     try:
         report_path = Path(evidence.security_report_path).resolve(strict=True)
@@ -493,6 +880,93 @@ def _validate_security_report(evidence: ApprovalEvidence) -> None:
         raise KISMockApprovalRejected("security report evidence is unavailable") from None
     if digest != evidence.security_report_sha256:
         raise KISMockApprovalRejected("security report evidence digest does not match")
+
+
+def _validate_v2_security_evidence(evidence: ApprovalEvidenceV2, head_sha: str) -> None:
+    """sealed scan receipt가 current HEAD·complete coverage·zero findings를 함께 증명할 때만 packet을 연다."""
+
+    _validate_security_report(evidence)
+    manifest_bytes = _read_security_evidence_file(
+        evidence.security_manifest_path,
+        evidence.security_manifest_sha256,
+    )
+    coverage_bytes = _read_security_evidence_file(
+        evidence.security_coverage_path,
+        evidence.security_coverage_sha256,
+    )
+    findings_bytes = _read_security_evidence_file(
+        evidence.security_findings_path,
+        evidence.security_findings_sha256,
+    )
+    try:
+        manifest = json.loads(manifest_bytes, object_pairs_hook=_unique_object)
+        coverage = json.loads(coverage_bytes, object_pairs_hook=_unique_object)
+        findings = json.loads(findings_bytes, object_pairs_hook=_unique_object)
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
+        raise KISMockApprovalRejected("security scan evidence is invalid") from None
+    if not isinstance(manifest, dict) or not isinstance(coverage, dict) or not isinstance(
+        findings, dict
+    ):
+        raise KISMockApprovalRejected("security scan evidence is invalid")
+    scan = manifest.get("scan")
+    if not isinstance(scan, dict):
+        raise KISMockApprovalRejected("security scan evidence is invalid")
+    target = scan.get("target")
+    if (
+        scan.get("status") != "completed"
+        or not isinstance(target, dict)
+        or target.get("kind") != "git_revision"
+        or target.get("revision") != head_sha
+        or scan.get("coverageRef") != Path(evidence.security_coverage_path).name
+        or scan.get("findingsRef") != Path(evidence.security_findings_path).name
+    ):
+        raise KISMockApprovalRejected("security scan evidence does not bind final HEAD")
+    scan_id = scan.get("id")
+    if (
+        not isinstance(scan_id, str)
+        or coverage.get("completeness") != "complete"
+        or coverage.get("scanId") != scan_id
+        or findings.get("findings") != []
+    ):
+        raise KISMockApprovalRejected("security scan coverage or findings are incomplete")
+    artifacts = scan.get("artifacts")
+    if not isinstance(artifacts, list) or not _manifest_artifact_digest_matches(
+        artifacts,
+        Path(evidence.security_coverage_path).name,
+        evidence.security_coverage_sha256,
+    ) or not _manifest_artifact_digest_matches(
+        artifacts,
+        Path(evidence.security_findings_path).name,
+        evidence.security_findings_sha256,
+    ):
+        raise KISMockApprovalRejected("security scan evidence digest does not match")
+
+
+def _read_security_evidence_file(path_text: str, expected_digest: str) -> bytes:
+    try:
+        path = Path(path_text).resolve(strict=True)
+        metadata = path.stat()
+        if not stat.S_ISREG(metadata.st_mode) or metadata.st_size > 4 * 1024 * 1024:
+            raise OSError
+        content = path.read_bytes()
+    except OSError:
+        raise KISMockApprovalRejected("security scan evidence is unavailable") from None
+    if hashlib.sha256(content).hexdigest() != expected_digest:
+        raise KISMockApprovalRejected("security scan evidence digest does not match")
+    return content
+
+
+def _manifest_artifact_digest_matches(
+    artifacts: list[object],
+    expected_path: str,
+    expected_digest: str,
+) -> bool:
+    for artifact in artifacts:
+        if not isinstance(artifact, dict):
+            continue
+        if artifact.get("path") == expected_path and artifact.get("sha256") == expected_digest:
+            return True
+    return False
 
 
 def _git_revision(repository_root: Path, ref: str) -> str:
@@ -542,7 +1016,7 @@ def _require_clean_repository(repository_root: Path) -> None:
 
 def _require_bound_account_id(account_id: str) -> str:
     """승인 packet의 opaque account와 KIS_MOCK credential binding을 runtime 생성 전에 맞춘다."""
-    bound_account_id = os.environ.get("KIS_MOCK_BOUND_ACCOUNT_ID", "").strip()
+    bound_account_id = _operator_approval_value("KIS_MOCK_BOUND_ACCOUNT_ID")
     if re.fullmatch(_ACCOUNT_ID, bound_account_id) is None or not hmac.compare_digest(
         account_id, bound_account_id
     ):
@@ -550,32 +1024,52 @@ def _require_bound_account_id(account_id: str) -> str:
     return bound_account_id
 
 
+def _operator_approval_value(name: str) -> str:
+    """exact probe의 operator-only latch는 ignored root `.env` boundary 밖에서 받지 않는다."""
+
+    try:
+        return load_kis_mock_approval_environment(name)[name]
+    except KISMockApprovalEnvironmentRejected:
+        raise KISMockApprovalRejected("operator approval environment is unavailable") from None
+
+
 class _KISMockProbeOperations:
     """production mock transport, encrypted reference store와 parser를 그대로 실행한다."""
 
-    def __init__(self, packet: KISMockApprovalPacket) -> None:
+    def __init__(self, packet: ApprovalPacket) -> None:
         _require_bound_account_id(packet.order.account_id)
         encryption_key = ""
-        if packet.probe_type == "FULL":
-            encryption_key = os.environ.get(
-                "KIS_MOCK_ORDER_REFERENCE_KEY",
-                "",
-            ).strip()
-            if not encryption_key:
+        if packet.probe_type != "BALANCE_DIAGNOSTIC":
+            try:
+                encryption_key = _operator_approval_value("KIS_MOCK_ORDER_REFERENCE_KEY")
+            except KISMockApprovalRejected:
                 raise KISMockApprovalRejected(
                     "mock reference encryption key is unavailable"
-                )
+                ) from None
         self._budget = KISBrokerageCallBudget(
             token_p_cap=packet.physical_caps.token_p,
             brokerage_cap=packet.physical_caps.brokerage,
         )
         self._reference_redis: Any | None = None
         self._reference_store: EncryptedRedisOrderReferenceStore | None = None
+        self._outcome_store: EncryptedRedisApprovalOutcomeStore | None = None
         self._gateway: KISMockOrderGateway | None = None
         self._execution_reader: KISMockExecutionReader | None = None
+        self._submission_anchor: str | None = None
+        self._recovery_anchor: str | None = None
+        if isinstance(packet, KISMockApprovalPacketV2):
+            if packet.probe_type == "FULL":
+                self._submission_anchor = approval_anchor_for_source(
+                    packet.packet_sha256,
+                    packet.nonce,
+                )
         self._client = KISMockBrokerageHttpClient(
             settings=KISSettings(kis_mode="mock", kis_offline=False),
             budget=self._budget,
+            approval_deadline_guard=lambda: _require_packet_inside_ttl(
+                packet,
+                datetime.now(tz=UTC),
+            ),
         )
         self._balance_reader = KISMockOnlineBalanceReader(self._client)
         if packet.probe_type == "BALANCE_DIAGNOSTIC":
@@ -587,6 +1081,24 @@ class _KISMockProbeOperations:
                 encryption_key=SecretStr(encryption_key),
                 ttl_seconds=packet.reference_ttl_seconds,
             )
+            if isinstance(packet, KISMockApprovalPacketV2):
+                self._outcome_store = EncryptedRedisApprovalOutcomeStore(
+                    self._reference_redis,
+                    encryption_key=SecretStr(encryption_key),
+                    ttl_seconds=packet.reference_ttl_seconds,
+                )
+                if packet.probe_type == "CANCEL_RECOVERY":
+                    assert packet.recovery_of is not None
+                    source_outcome = self._outcome_store.require_recovery(
+                        source_approval_id=packet.recovery_of.source_approval_id,
+                        source_packet_sha256=packet.recovery_of.source_packet_sha256,
+                        source_nonce=packet.recovery_of.source_nonce,
+                        expected_failed_step=packet.recovery_of.failed_step,
+                        order_id=packet.order.order_id,
+                        account_id=packet.order.account_id,
+                    )
+                    # nested recovery도 original FULL reference anchor를 유지해 다른 order reference를 열지 않는다.
+                    self._recovery_anchor = source_outcome.reference_anchor
             self._gateway = KISMockOrderGateway(
                 self._client,
                 mode="mock",
@@ -599,7 +1111,56 @@ class _KISMockProbeOperations:
         finally:
             encryption_key = ""
 
-    def run(self, operation: str, packet: KISMockApprovalPacket) -> None:
+    def activate(self, packet: ApprovalPacket) -> None:
+        """target packet을 claim한 뒤 recovery source를 한 번만 claim하고 provider dispatch를 연다."""
+
+        if not isinstance(packet, KISMockApprovalPacketV2) or packet.probe_type != "CANCEL_RECOVERY":
+            return
+        if self._outcome_store is None or packet.recovery_of is None:
+            raise KISMockApprovalRejected("recovery source outcome is unavailable")
+        try:
+            source_outcome = self._outcome_store.require_recovery(
+                source_approval_id=packet.recovery_of.source_approval_id,
+                source_packet_sha256=packet.recovery_of.source_packet_sha256,
+                source_nonce=packet.recovery_of.source_nonce,
+                expected_failed_step=packet.recovery_of.failed_step,
+                order_id=packet.order.order_id,
+                account_id=packet.order.account_id,
+            )
+            self._outcome_store.claim_recovery(
+                source_approval_id=packet.recovery_of.source_approval_id,
+                source_packet_sha256=packet.recovery_of.source_packet_sha256,
+                source_nonce=packet.recovery_of.source_nonce,
+                recovery_packet_sha256=packet.packet_sha256,
+            )
+        except KISMockApprovalOutcomeUnavailable:
+            raise KISMockApprovalRejected("recovery source outcome does not match") from None
+        self._recovery_anchor = source_outcome.reference_anchor
+
+    def record_outcome(self, packet: ApprovalPacket, failed_step: str | None) -> None:
+        """FULL/recovery 종료를 close 전에 봉인해 다음 recovery가 실제 failure만 참조하게 한다."""
+
+        if not isinstance(packet, KISMockApprovalPacketV2) or packet.probe_type == "BALANCE_DIAGNOSTIC":
+            return
+        if self._outcome_store is None:
+            raise KISMockApprovalRejected("approval source outcome is unavailable")
+        reference_anchor = self._submission_anchor or self._recovery_anchor
+        if reference_anchor is None:
+            raise KISMockApprovalRejected("approval source outcome is unavailable")
+        self._outcome_store.record(
+            KISMockApprovalOutcome(
+                approval_id=packet.approval_id,
+                packet_sha256=packet.packet_sha256,
+                nonce=packet.nonce,
+                probe_type=packet.probe_type,
+                order_id=packet.order.order_id,
+                account_id=packet.order.account_id,
+                reference_anchor=reference_anchor,
+                failed_step=failed_step,
+            )
+        )
+
+    def run(self, operation: str, packet: ApprovalPacket) -> None:
         """canonical operation 이름을 exact packet parameter에만 매핑한다."""
         if operation == "balance":
             balance_response = self._balance_reader.probe_balance_source(
@@ -632,6 +1193,13 @@ class _KISMockProbeOperations:
         if operation == "submitLimitBuy":
             if self._gateway is None:
                 raise ValueError("KIS mock approval operation is not allowed")
+            submit_kwargs: dict[str, str] = {
+                "order_id": packet.order.order_id,
+                "account_id": packet.order.account_id,
+            }
+            submission_anchor = getattr(self, "_submission_anchor", None)
+            if submission_anchor is not None:
+                submit_kwargs["approval_anchor"] = submission_anchor
             order_receipt = self._gateway.submit_cash_order(
                 MockOrderIntent(
                     symbol=packet.order.symbol,
@@ -642,8 +1210,7 @@ class _KISMockProbeOperations:
                     order_division=packet.order.order_division,
                     exchange_division=packet.order.exchange_division,
                 ),
-                order_id=packet.order.order_id,
-                account_id=packet.order.account_id,
+                **submit_kwargs,
             )
             if not order_receipt.accepted:
                 raise KISMockProjectionError(
@@ -654,10 +1221,14 @@ class _KISMockProbeOperations:
         if operation == "cancelFull":
             if self._gateway is None:
                 raise ValueError("KIS mock approval operation is not allowed")
-            cancel_receipt = self._gateway.cancel_cash_order(
-                order_id=packet.order.order_id,
-                account_id=packet.order.account_id,
-            )
+            cancel_kwargs: dict[str, str] = {
+                "order_id": packet.order.order_id,
+                "account_id": packet.order.account_id,
+            }
+            recovery_anchor = getattr(self, "_recovery_anchor", None)
+            if recovery_anchor is not None:
+                cancel_kwargs["approval_anchor"] = recovery_anchor
+            cancel_receipt = self._gateway.cancel_cash_order(**cancel_kwargs)
             if cancel_receipt.status != "CANCELLED":
                 raise KISMockProjectionError(
                     KISMockFailureReason.CANCEL_PROBE_UNCONFIRMED,
@@ -667,10 +1238,18 @@ class _KISMockProbeOperations:
         if operation == "executionRead":
             if self._reference_store is None or self._execution_reader is None:
                 raise ValueError("KIS mock approval operation is not allowed")
-            reference = self._reference_store.get(
-                packet.order.order_id,
-                packet.order.account_id,
-            )
+            recovery_anchor = getattr(self, "_recovery_anchor", None)
+            if recovery_anchor is None:
+                reference = self._reference_store.get(
+                    packet.order.order_id,
+                    packet.order.account_id,
+                )
+            else:
+                reference = self._reference_store.get_for_recovery(
+                    packet.order.order_id,
+                    packet.order.account_id,
+                    recovery_anchor,
+                )
             if reference is None:
                 raise KISMockProjectionError(
                     KISMockFailureReason.EXECUTION_REFERENCE_UNAVAILABLE,
@@ -704,14 +1283,19 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--approval-packet", type=Path, required=True)
     args = parser.parse_args(argv)
     try:
+        expected_approval_id = _operator_approval_value("S3_KIS_MOCK_EXACT_APPROVAL_ID")
+        expected_packet_sha256 = _operator_approval_value(
+            "S3_KIS_MOCK_EXACT_APPROVAL_SHA256"
+        )
         summary = execute_approved_probe(
             args.approval_packet,
             now=datetime.now(tz=UTC),
-            expected_approval_id=os.environ.get("S3_KIS_MOCK_EXACT_APPROVAL_ID"),
-            expected_packet_sha256=os.environ.get("S3_KIS_MOCK_EXACT_APPROVAL_SHA256"),
+            expected_approval_id=expected_approval_id,
+            expected_packet_sha256=expected_packet_sha256,
             repository_root=_REPOSITORY_ROOT,
             operations_factory=_KISMockProbeOperations,
             approval_consumer=_consume_exact_approval_once,
+            clock=lambda: datetime.now(tz=UTC),
         )
     except KISMockApprovalRejected:
         print("S3_KIS_MOCK_APPROVAL_REJECTED", file=sys.stderr)

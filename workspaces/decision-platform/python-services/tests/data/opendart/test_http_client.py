@@ -12,6 +12,7 @@ from app.data.opendart.http_client import (
     OpenDARTCredentialError,
     OpenDARTHttpClient,
     OpenDARTHttpError,
+    OpenDARTOfflineTransportRequired,
     OpenDARTTransportError,
     TokenBucket,
 )
@@ -192,12 +193,16 @@ def test_offline_mode_never_loads_or_attaches_credential(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    attempts = 0
+
     def fail_if_called() -> SecretStr:
         raise AssertionError("offline transport must not load authentication material")
 
     monkeypatch.setattr(_credential_transport, "_read_credential", fail_if_called)
 
     def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
         assert "crtfc_key" not in request.url.params
         return httpx.Response(200, json={"status": "000"})
 
@@ -208,6 +213,39 @@ def test_offline_mode_never_loads_or_attaches_credential(
     )
 
     assert client.get_json("/api/company.json", params={}) == {"status": "000"}
+    assert attempts == 1
+
+
+def test_offline_default_transport_fails_closed_before_http_transport_or_provider_handoff(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    http_transport_factories = 0
+    charged_paths: list[str] = []
+    provider_handoffs = 0
+
+    def forbidden_http_transport(*_: object, **__: object) -> httpx.BaseTransport:
+        nonlocal http_transport_factories
+        http_transport_factories += 1
+        raise AssertionError("offline client must not construct httpx.HTTPTransport")
+
+    def record_handoff() -> None:
+        nonlocal provider_handoffs
+        provider_handoffs += 1
+
+    monkeypatch.setattr(httpx, "HTTPTransport", forbidden_http_transport)
+    client = OpenDARTHttpClient(
+        _settings(tmp_path),
+        before_send=charged_paths.append,
+        on_handoff=record_handoff,
+    )
+
+    with pytest.raises(OpenDARTOfflineTransportRequired, match="injected fixture transport"):
+        client.get_json("/api/company.json", params={})
+
+    assert http_transport_factories == 0
+    assert charged_paths == []
+    assert provider_handoffs == 0
 
 
 def test_http_client_rejects_caller_supplied_authentication_key(tmp_path: Path) -> None:

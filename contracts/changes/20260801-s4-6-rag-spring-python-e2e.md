@@ -27,8 +27,8 @@ gRPC를 반복하지 않는다.
   `SECURITY DEFINER` projection은 owner/session/topic/expiry/active generation을 다시 검증한다.
 - `RAG_GRPC_ENABLED=false`는 기존 S4.4 retrieval-only 호환 모드다. true는 같은
   배포 단위의 Python fixture process와 명시적 `RAG_GRPC_SHARED_SECRET`이 준비된 경우에만
-  허용한다. RAG secret은 Decision/Python Disclosure wire secret과 반드시 달라야 하며 fallback은 없다.
-  따라서 RAG credential로 Disclosure RPC를 인증할 수 없다.
+  허용한다. RAG secret은 모든 활성 auth·Decision/Python·brokerage credential과 반드시 달라야 하며
+  fallback은 없다. 따라서 RAG credential로 Disclosure RPC, JWT, brokerage capability를 재사용할 수 없다.
 - Gemini·OpenAI·Voyage, market provider, account, order physical call은 0이다.
 
 ### 공개 계약 영향
@@ -57,8 +57,9 @@ execute-only security-definer projections. Public REST and OpenAPI fields do not
 Gemini, OpenAI, Voyage, market-provider, account, and order physical calls remain zero.
 
 `RAG_GRPC_ENABLED=true` requires an explicit dedicated `RAG_GRPC_SHARED_SECRET`; it never falls
-back to the Decision/Python Disclosure wire secret. The RAG secret must differ from that secret,
-so a RagService credential cannot authenticate a Disclosure RPC.
+back to the Decision/Python Disclosure wire secret. The RAG secret must differ from every active
+auth, Decision/Python, and brokerage credential, so a RagService credential cannot authenticate a
+Disclosure RPC, sign a JWT, or reuse a brokerage capability.
 
 ## 검증 / Verification
 

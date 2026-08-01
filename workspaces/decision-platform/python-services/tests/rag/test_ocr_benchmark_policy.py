@@ -386,6 +386,26 @@ def test_paddle_runner_bounds_each_region_generation_to_the_official_chart_limit
     assert "max_new_tokens=2048" in runner
 
 
+def test_structured_candidate_reads_printed_chart_values_without_chart_generation() -> None:
+    repository_root = Path(__file__).resolve().parents[5]
+    runner = (
+        repository_root / "capstone-rag/ocr/benchmark/paddle_candidate_runner.py"
+    ).read_text(encoding="utf-8")
+    structured = runner.split("def _structured", 1)[1].split("def _vl", 1)[0]
+    manifest = json.loads(
+        (
+            repository_root / "capstone-rag/ocr/benchmark/benchmark-manifest.v1.json"
+        ).read_text(encoding="utf-8")
+    )
+
+    assert "use_chart_recognition=False" in structured
+    assert "use_chart_recognition=True" not in structured
+    assert (
+        "PP-Chart2Table_safetensors"
+        not in manifest["candidates"]["PADDLE_STRUCTURED"]["modelDirectories"]
+    )
+
+
 def test_candidate_runners_publish_only_through_the_safe_receipt_writer() -> None:
     repository_root = Path(__file__).resolve().parents[5]
     for filename in ("paddle_candidate_runner.py", "unlimited_candidate_runner.py"):

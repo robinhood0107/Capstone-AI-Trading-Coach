@@ -2,9 +2,7 @@ from __future__ import annotations
 
 import argparse
 import copy
-import os
 import sys
-import tempfile
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
@@ -21,6 +19,7 @@ from contracts.generate_principle_contracts import (  # noqa: E402
     canonical_json_bytes,
     load_json_bytes_strict,
 )
+from contracts.generated_artifact_io import write_generated_artifact  # noqa: E402
 
 
 REPO_ROOT = _SCRIPT_REPO_ROOT
@@ -809,23 +808,7 @@ def _check_outputs(outputs: Mapping[str, bytes]) -> int:
 
 def _write_outputs(outputs: Mapping[str, bytes]) -> int:
     for relative_path, payload in outputs.items():
-        path = REPO_ROOT / relative_path
-        path.parent.mkdir(parents=True, exist_ok=True)
-        descriptor, temporary_name = tempfile.mkstemp(
-            dir=path.parent,
-            prefix=f".{path.name}.",
-            suffix=".tmp",
-        )
-        try:
-            with os.fdopen(descriptor, "wb") as handle:
-                handle.write(payload)
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.replace(temporary_name, path)
-            os.chmod(path, 0o644)
-        finally:
-            if os.path.exists(temporary_name):
-                os.unlink(temporary_name)
+        write_generated_artifact(REPO_ROOT, relative_path, payload)
     print("S1_3G_NEWS_CONTRACTS_WRITTEN")
     return 0
 

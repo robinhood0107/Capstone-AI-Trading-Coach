@@ -4,7 +4,6 @@ import argparse
 import copy
 import hashlib
 import json
-import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -16,6 +15,8 @@ _SCRIPT_REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_SCRIPT_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_SCRIPT_REPO_ROOT))
 
+from contracts.generated_artifact_io import write_generated_artifact  # noqa: E402
+from contracts.generated_artifact_io import write_generated_path  # noqa: E402
 from contracts.generate_principle_contracts import (  # noqa: E402
     ContractValidationError,
     canonical_json_bytes,
@@ -430,26 +431,12 @@ def _verify_frozen_existing_files() -> None:
 
 
 def _write_atomic(path: Path, payload: bytes) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    if path.is_symlink():
-        raise ContractValidationError(f"refusing symlink output: {path}")
-    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
-    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
-    try:
-        with os.fdopen(descriptor, "wb") as file:
-            file.write(payload)
-            file.flush()
-            os.fsync(file.fileno())
-        os.replace(temporary, path)
-        os.chmod(path, 0o644)
-    finally:
-        if temporary.exists():
-            temporary.unlink()
+    write_generated_path(ROOT, path, payload)
 
 
 def _write_outputs(outputs: Mapping[str, bytes]) -> None:
     for relative, payload in sorted(outputs.items()):
-        _write_atomic(ROOT / relative, payload)
+        write_generated_artifact(ROOT, relative, payload)
 
 
 def _check_outputs(outputs: Mapping[str, bytes]) -> None:

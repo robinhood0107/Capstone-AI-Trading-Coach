@@ -11,6 +11,11 @@ from typing import Final
 from google.protobuf import descriptor_pb2
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from contracts.generated_artifact_io import write_generated_path  # noqa: E402
+
 PROTO_PATH = REPO_ROOT / "contracts/proto/disclosure_observation.proto"
 PYTHON_GENERATED_DIR = (
     REPO_ROOT / "workspaces/decision-platform/python-services/app/generated"
@@ -163,8 +168,7 @@ def _validate_descriptor(payload: bytes) -> None:
 
 def _write(outputs: dict[Path, bytes]) -> None:
     for path, payload in outputs.items():
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(payload)
+        write_generated_path(REPO_ROOT, path, payload)
         print(f"WROTE {path.relative_to(REPO_ROOT).as_posix()}")
 
 

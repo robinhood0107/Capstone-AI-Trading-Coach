@@ -17,7 +17,7 @@ EXPECTED = {
 
 
 def test_windows_bat_launchers_are_thin_quoted_wrappers_with_exact_command_mapping() -> None:
-    root = Path(__file__).resolve().parents[4] / "capstone-rag/tools/windows"
+    root = Path(__file__).resolve().parents[5] / "capstone-rag/tools/windows"
 
     assert {path.name for path in root.glob("*.bat")} == set(EXPECTED)
     for name, command in EXPECTED.items():
@@ -31,7 +31,7 @@ def test_windows_bat_launchers_are_thin_quoted_wrappers_with_exact_command_mappi
 
 
 def test_windows_powershell_launcher_pins_uv_projects_and_never_silently_falls_back() -> None:
-    root = Path(__file__).resolve().parents[4] / "capstone-rag/tools/windows"
+    root = Path(__file__).resolve().parents[5] / "capstone-rag/tools/windows"
     text = (root / "rag-content.ps1").read_text(encoding="utf-8")
 
     assert "Set-StrictMode -Version Latest" in text
@@ -48,7 +48,7 @@ def test_windows_powershell_launcher_pins_uv_projects_and_never_silently_falls_b
 
 
 def test_ocr_subprojects_have_independent_frozen_locks_and_ignore_venvs() -> None:
-    repository_root = Path(__file__).resolve().parents[4]
+    repository_root = Path(__file__).resolve().parents[5]
     ocr_root = repository_root / "capstone-rag/ocr"
 
     for lane in ("cpu", "intel", "nvidia"):
@@ -59,4 +59,3 @@ def test_ocr_subprojects_have_independent_frozen_locks_and_ignore_venvs() -> Non
     assert "UNLIMITED_GGUF" not in (
         ocr_root / "cpu/pyproject.toml"
     ).read_text(encoding="utf-8")
-

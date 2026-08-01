@@ -1,0 +1,79 @@
+{
+  "activationBenchmarkSha256": "9ca70cc032a4172fbc7a6b3bdd9ef74ce1b61f347721abe03e278e45dd5caffa",
+  "activeGenerationCount": 1,
+  "activePointerAfter": "rag_gen_789b3ba9589ad399373194c0e3c0e76f",
+  "activePointerBefore": "rag_gen_6f2aa814a39d0532d0fa4bbd4e4456d2",
+  "bodyEquivalentCount": 30,
+  "chunkCount": 30,
+  "externalProfileId": "s4_7c_external_v1",
+  "geminiPhysicalCalls": 0,
+  "generationVectorHashNew": "9fd32051b2eccc889b183c8f055eb68fce148e3c651d4106e525947c4653c35d",
+  "generationVectorHashOld": "4aca007c0b027e80dc3a29750e5d3a52d8fb4cc0e3ae1d7747eee1a530e3de5a",
+  "hashScope": "CANONICAL_JSON_WITHOUT_REPORT_SHA256",
+  "licenseConsentReceiptCount": 30,
+  "localBgeOnnxCalls": 242,
+  "networkCalls": 0,
+  "newCorpusManifestSha256": "bdc42bfb735b411156ec2f79626d6fd2cf56662c57d83e2cdb960fb74e7b0e04",
+  "newGenerationId": "rag_gen_789b3ba9589ad399373194c0e3c0e76f",
+  "newGenerationStatus": "ACTIVE",
+  "newRetrieval": {
+    "expectedTop5HitRate": 1.0,
+    "measured": 100,
+    "stagesP95Ms": {
+      "denseSql": 0.9387568000000001,
+      "exactSql": 2.04236425,
+      "lexicalSql": 3.2549517000000003,
+      "normalization": 0.00986925,
+      "queryEmbedding": 191.03813664999998,
+      "rrf": 0.058138099999999984,
+      "total": 195.4770888
+    },
+    "warmP95Ms": 195.4770888,
+    "warmup": 20
+  },
+  "oldCorpusManifestSha256": "7f2b4d72dcbaccf57cbe49a980973b17b4a9bfd85bec4694fd66fd7fd2a9decd",
+  "oldGenerationId": "rag_gen_6f2aa814a39d0532d0fa4bbd4e4456d2",
+  "oldGenerationStatus": "DISABLED",
+  "oldProfileId": "s4_7b_internal_v1",
+  "oldRetrieval": {
+    "expectedTop5HitRate": 1.0,
+    "measured": 100,
+    "stagesP95Ms": {
+      "denseSql": 1.24964375,
+      "exactSql": 2.11244935,
+      "lexicalSql": 3.3504349,
+      "normalization": 0.01001325,
+      "queryEmbedding": 186.77687369999998,
+      "rrf": 0.055566849999999994,
+      "total": 191.80941394999996
+    },
+    "warmP95Ms": 191.80941394999996,
+    "warmup": 20
+  },
+  "openaiPhysicalCalls": 0,
+  "policyVersionAfter": 3,
+  "policyVersionBefore": 2,
+  "providerPhysicalCalls": 0,
+  "querySetSha256": "f707c99e23082af2bdf56ec8c5e412c500a719c8ac9091605849c1c0a3dfbba8",
+  "reportSha256": "7744fb48e9a2a76dd3ed7da00291717d0a093d17d12354749a1101ef0e823a9d",
+  "retrievalNonRegression": true,
+  "revisionCounts": [
+    {
+      "count": 30,
+      "externalProcessingAllowed": false,
+      "registryVersion": "s4-7b-source-card-v2"
+    },
+    {
+      "count": 30,
+      "externalProcessingAllowed": true,
+      "registryVersion": "s4-7c-source-card-v2"
+    }
+  ],
+  "schemaVersion": "s4-7c-external-generation/v1",
+  "scope": "APPEND_ONLY_EXACT_30_LOCAL_BGE_ATOMIC_TRANSITION",
+  "sourceCount": 30,
+  "staleCasRollbackVerified": true,
+  "status": "PASS",
+  "vectorEquivalentCount": 30,
+  "voyagePhysicalCalls": 0
+}

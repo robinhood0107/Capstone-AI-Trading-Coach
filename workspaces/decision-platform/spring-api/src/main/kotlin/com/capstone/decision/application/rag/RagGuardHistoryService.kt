@@ -13,6 +13,7 @@ class RagGuardHistoryService(
     private val rateLimitPort: RagRateLimitPort,
     private val cursorPort: RagHistoryCursorPort,
     private val idempotencyPort: RagIdempotencyPort,
+    private val retrievalScopePort: RagRetrievalScopePort,
     private val policy: RagGuardHistoryPolicy,
     private val clockProvider: ObjectProvider<Clock>,
 ) {
@@ -25,6 +26,8 @@ class RagGuardHistoryService(
         rawIdempotencyKey: String,
         command: RagAskCommand,
     ): RagAnswerProjection {
+        // consent read를 rate/idempotency/gRPC보다 먼저 수행해 비인가 상태의 후속 효과를 만들지 않는다.
+        val consent = persistencePort.effectiveConsent(ownerUserId)
         rateLimitPort.acquire(ownerUserId)
         val idempotency =
             idempotencyPort.identity(
@@ -46,6 +49,7 @@ class RagGuardHistoryService(
                     requestId = requestId,
                     idempotency = idempotency,
                     command = command,
+                    consent = consent,
                 )
             is RagClaimDecision.Replay ->
                 historyProjection(ownerUserId, requestId, claim.answerId)
@@ -145,12 +149,33 @@ class RagGuardHistoryService(
         requestId: String,
         idempotency: RagIdempotencyIdentity,
         command: RagAskCommand,
+        consent: RagEffectiveConsent,
     ): RagAnswerProjection {
         val evaluation =
             try {
+                val scope = retrievalScopePort.issue(ownerUserId, requestId, command.topics)
                 evaluationPort
-                    .evaluate(command)
-                    .also(::requireFixtureBoundary)
+                    .evaluate(
+                        command,
+                        RagEvaluationContext(
+                            requestId = requestId,
+                            ownerScopeClaim = scope.scopeClaimId,
+                            consentGranted = consent.granted,
+                            consentPolicyVersion = consent.policyVersion ?: "NONE",
+                            policyId = scope.policyId,
+                            policyVersion = scope.policyVersion,
+                            activeGenerationId = scope.activeGenerationId,
+                            embeddingProfileId = scope.embeddingProfileId,
+                        ),
+                    ).also(::requireFixtureBoundary)
+                    .also { result ->
+                        retrievalScopePort.requireAuthorized(
+                            ownerUserId = ownerUserId,
+                            sessionId = requestId,
+                            scope = scope,
+                            citations = result.citations,
+                        )
+                    }
             } catch (exception: RuntimeException) {
                 runCatching { persistencePort.failBeforeProvider(ownerUserId, idempotency) }
                 throw RagGuardHistoryUnavailableException(exception)

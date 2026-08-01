@@ -2,10 +2,33 @@ package com.capstone.decision.application.rag
 
 interface RagEvaluationPort {
     /**
-     * S4.4 기본 구현은 local fixture-only이며 provider/network 호출을 만들지 않는다.
-     * S4.6의 Python 연결 전까지 반환된 provider physical count는 항상 0이어야 한다.
+     * Spring이 발급한 opaque owner scope와 active generation을 함께 보내고 Python 결과를 단일 회 평가한다.
      */
-    fun evaluate(command: RagAskCommand): RagEvaluationResult
+    fun evaluate(
+        command: RagAskCommand,
+        context: RagEvaluationContext,
+    ): RagEvaluationResult
+}
+
+interface RagRetrievalScopePort {
+    /**
+     * 인증된 owner와 opaque request session에 대해 짧은 수명의 DB retrieval claim을 발급한다.
+     */
+    fun issue(
+        ownerUserId: String,
+        sessionId: String,
+        topics: List<String>,
+    ): RagRetrievalScope
+
+    /**
+     * Python이 반환한 citation이 발급한 claim의 topic과 현재 active generation에 계속 속하는지 저장 전 재검증한다.
+     */
+    fun requireAuthorized(
+        ownerUserId: String,
+        sessionId: String,
+        scope: RagRetrievalScope,
+        citations: List<RagCitation>,
+    )
 }
 
 interface RagIdempotencyPort {

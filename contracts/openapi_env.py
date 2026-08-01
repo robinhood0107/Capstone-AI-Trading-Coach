@@ -33,6 +33,7 @@ REQUIRED_NAMES: Final[tuple[str, ...]] = (
     "POSTGRES_RAG_ADMIN_PASSWORD",
     "POSTGRES_RAG_QUERY_PASSWORD",
     "DECISION_GRPC_SHARED_SECRET",
+    "RAG_GRPC_SHARED_SECRET",
     "PYTHON_GRPC_SHARED_SECRET",
     "REDIS_PASSWORD",
     "JWT_SECRET",
@@ -184,6 +185,7 @@ def _require_secret_shapes(values: dict[str, str]) -> None:
         "POSTGRES_RAG_ADMIN_PASSWORD",
         "POSTGRES_RAG_QUERY_PASSWORD",
         "DECISION_GRPC_SHARED_SECRET",
+        "RAG_GRPC_SHARED_SECRET",
         "REDIS_PASSWORD",
         "JWT_SECRET",
         "LOGIN_SCOPE_HMAC_KEY",
@@ -215,12 +217,28 @@ def _require_secret_shapes(values: dict[str, str]) -> None:
             "Brokerage database capability token and digest must match."
         )
 
-    # Spring과 Python gRPC fixture는 shared-secret 계약을 검증하기 위해 같은 값을 쓰되,
-    # 그 외 DB/JWT/HMAC secret과는 목적 분리를 유지한다.
-    if _BASE64URL_SECRET.fullmatch(values["PYTHON_GRPC_SHARED_SECRET"]) is None:
-        raise OpenApiEnvironmentError("PYTHON_GRPC_SHARED_SECRET must use a bounded Base64url-safe value.")
-    if values["PYTHON_GRPC_SHARED_SECRET"] != values["DECISION_GRPC_SHARED_SECRET"]:
+    # Decision과 Python disclosure server는 같은 wire secret을 쓰지만, RAG service는
+    # 다른 privileged credential과 겹치지 않는 별도 purpose secret을 사용한다.
+    grpc_secret_names = (
+        "DECISION_GRPC_SHARED_SECRET",
+        "RAG_GRPC_SHARED_SECRET",
+        "PYTHON_GRPC_SHARED_SECRET",
+    )
+    for name in grpc_secret_names:
+        if _BASE64URL_SECRET.fullmatch(values[name]) is None:
+            raise OpenApiEnvironmentError(f"{name} must use a bounded Base64url-safe value.")
+    if not hmac.compare_digest(
+        values["DECISION_GRPC_SHARED_SECRET"],
+        values["PYTHON_GRPC_SHARED_SECRET"],
+    ):
         raise OpenApiEnvironmentError("Decision and Python gRPC fixture secrets must match.")
+    if hmac.compare_digest(
+        values["RAG_GRPC_SHARED_SECRET"],
+        values["DECISION_GRPC_SHARED_SECRET"],
+    ):
+        raise OpenApiEnvironmentError(
+            "RAG gRPC fixture secret must differ from the Decision/Python secret."
+        )
 
     if _BASE64URL_32.fullmatch(values["DEMO_CREDENTIAL_SEPARATION_KEY"]) is None:
         raise OpenApiEnvironmentError(

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import sys
 from pathlib import Path
 from typing import Iterable
@@ -49,11 +48,13 @@ from contracts.generate_s4_8a_cross_market_contracts import (  # noqa: E402
     SCHEMA_IDS as S4_8A_SCHEMA_IDS,
     validate_semantics as validate_s4_8a_semantics,
 )
+from contracts.generate_s5_0_signal_v2_contracts import (  # noqa: E402
+    validate_signal_v2_semantics,
+)
 
 SCHEMA_DIR = REPO_ROOT / "contracts" / "schemas"
 EXAMPLES_DIR = REPO_ROOT / "contracts" / "examples"
 INVALID_EXAMPLES_DIR = EXAMPLES_DIR / "invalid"
-PAIR_EXAMPLES_DIR = EXAMPLES_DIR / "pairs"
 
 S2_EXAMPLE_SCHEMA_PREFIXES = {
     "gdelt_news_tone_observation": "gdelt_news_tone_observation.v1",
@@ -82,6 +83,11 @@ S2_EXAMPLE_SCHEMA_PREFIXES = {
 VERSIONED_EXAMPLE_SCHEMAS = {
     **{schema_id: schema_id for schema_id in S4_8A_SCHEMA_IDS},
     "s2-2-hash-vector.v3": "s2-2-hash-vector.v3",
+}
+
+S4_5_PROVIDER_PACKET_SCHEMAS = {
+    "s4-2c-voyage-approval",
+    "s4-4g-gemini-approval",
 }
 
 
@@ -138,6 +144,9 @@ def validate_example_semantics(
     s2_3_catalog: object,
     s4_rag_catalog: object,
 ) -> None:
+    if schema_name in S4_5_PROVIDER_PACKET_SCHEMAS:
+        # Packet의 zero-paid/store=false/purpose 불변식은 closed JSON Schema가 직접 고정한다.
+        return
     if schema_name == "risk_decision":
         validate_risk_decision_semantics(example, s2_2_catalog)
         return
@@ -184,6 +193,9 @@ def validate_example_semantics(
         if not isinstance(example, dict):
             raise ContractValidationError("S4.8A contract example must be an object.")
         validate_s4_8a_semantics(schema_name, example)
+        return
+    if schema_name == "signal-v2":
+        validate_signal_v2_semantics(example)
         return
     validate_principle_payload_semantics(
         schema_name,
@@ -340,109 +352,6 @@ def validate_invalid_examples(
     return failures
 
 
-def _load_naver_pair(path: Path) -> tuple[object, object]:
-    pair = load_json(path)
-    if not isinstance(pair, dict) or set(pair) != {
-        "snapshotExample",
-        "manifestExample",
-    }:
-        raise ValueError("Naver pair fixture must contain two example references")
-    snapshot_name = pair["snapshotExample"]
-    manifest_name = pair["manifestExample"]
-    if any(
-        not isinstance(name, str)
-        or not name.endswith(".valid.json")
-        or "/" in name
-        or "\\" in name
-        for name in (snapshot_name, manifest_name)
-    ):
-        raise ValueError("Naver pair fixture reference is invalid")
-    snapshot_path = EXAMPLES_DIR / snapshot_name
-    manifest_path = EXAMPLES_DIR / manifest_name
-    if not snapshot_path.is_file() or not manifest_path.is_file():
-        raise ValueError("Naver pair fixture reference is unavailable")
-    return load_json(snapshot_path), load_json(manifest_path)
-
-
-def _naver_pair_query_counts_match(snapshot: object, manifest: object) -> bool:
-    if not isinstance(snapshot, dict) or not isinstance(manifest, dict):
-        return False
-    queries = snapshot.get("queries")
-    count_breakdown = manifest.get("countBreakdown")
-    if not isinstance(queries, list) or not isinstance(count_breakdown, dict):
-        return False
-    query_count = count_breakdown.get("queryCount")
-    return (
-        isinstance(query_count, int)
-        and not isinstance(query_count, bool)
-        and query_count == len(queries)
-    )
-
-
-def validate_naver_pair_examples(
-    validators: dict[str, tuple[Path, Draft202012Validator]],
-) -> int:
-    """JSON Schema 밖의 snapshot/manifest query-count 교차 계약을 fixture pair로 검증한다."""
-    failures = 0
-    pair_examples = [
-        (path, True) for path in sorted(PAIR_EXAMPLES_DIR.glob("*.valid.json"))
-    ]
-    pair_examples.extend(
-        (path, False) for path in sorted(PAIR_EXAMPLES_DIR.glob("*.invalid.json"))
-    )
-    if not pair_examples:
-        print(
-            "FAIL no Naver pair examples found in contracts/examples/pairs",
-            file=sys.stderr,
-        )
-        return 1
-
-    snapshot_validator = validators["naver_news_metadata_snapshot"][1]
-    manifest_validator = validators["source_snapshot_manifest"][1]
-    for example_path, expected_valid in pair_examples:
-        try:
-            snapshot, manifest = _load_naver_pair(example_path)
-        except (
-            OSError,
-            UnicodeDecodeError,
-            json.JSONDecodeError,
-            TypeError,
-            ValueError,
-        ):
-            failures += 1
-            print(
-                f"FAIL invalid Naver pair fixture {relative(example_path)}",
-                file=sys.stderr,
-            )
-            continue
-
-        snapshot_error = first_error(snapshot_validator.iter_errors(snapshot))
-        manifest_error = first_error(manifest_validator.iter_errors(manifest))
-        if snapshot_error is not None or manifest_error is not None:
-            failures += 1
-            print(
-                f"FAIL Naver pair fixture references schema-invalid examples: "
-                f"{relative(example_path)}",
-                file=sys.stderr,
-            )
-            continue
-
-        matches = _naver_pair_query_counts_match(snapshot, manifest)
-        if matches == expected_valid:
-            expectation = "valid" if expected_valid else "invalid"
-            print(f"PASS expected {expectation} Naver pair {relative(example_path)}")
-            continue
-
-        failures += 1
-        expectation = "match" if expected_valid else "mismatch"
-        print(
-            f"FAIL expected Naver pair query-count {expectation}: {relative(example_path)}",
-            file=sys.stderr,
-        )
-
-    return failures
-
-
 def main() -> int:
     principle_catalog = load_catalog(CATALOG_PATH)
     s2_2_catalog = load_s2_2_catalog(S2_2_CATALOG_PATH)
@@ -463,7 +372,6 @@ def main() -> int:
         s2_3_catalog,
         s4_rag_catalog,
     )
-    failures += validate_naver_pair_examples(validators)
     if failures:
         print(f"contracts validation failed: {failures} failure(s)", file=sys.stderr)
         return 1

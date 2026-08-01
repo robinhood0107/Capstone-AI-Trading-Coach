@@ -30,6 +30,19 @@ class OpenDARTTransportError(RuntimeError):
     """request URL과 원본 transport exception을 보존하지 않는 retryable 오류다."""
 
 
+class OpenDARTOfflineTransportRequired(RuntimeError):
+    """offline 모드에서 명시적 fixture transport 없는 HTTP 요청을 fail-closed로 막는다."""
+
+
+class _OfflineDenyTransport(httpx.BaseTransport):
+    """실수로 private httpx client를 직접 써도 offline에서 물리 전송을 만들지 않는 마지막 경계다."""
+
+    def handle_request(self, request: httpx.Request) -> httpx.Response:
+        raise OpenDARTOfflineTransportRequired(
+            "offline OpenDART HTTP requires an injected fixture transport"
+        )
+
+
 class TokenBucket:
     def __init__(
         self,
@@ -138,12 +151,18 @@ class OpenDARTHttpClient:
         before_send: Callable[[str], None] | None,
         on_handoff: Callable[[], None] | None,
     ) -> None:
-        inner_transport = transport or httpx.HTTPTransport(verify=True, retries=0)
+        # OFFLINE은 fixture-only 경계다. 주입이 없으면 기본 HTTPTransport를 만들지 않는다.
+        self._offline_fixture_transport_required = settings.offline and transport is None
+        if self._offline_fixture_transport_required:
+            inner_transport: httpx.BaseTransport = _OfflineDenyTransport()
+        else:
+            inner_transport = transport or httpx.HTTPTransport(verify=True, retries=0)
         self._http = httpx.Client(
             transport=_CredentialTransport(
                 inner_transport,
                 enabled=not settings.offline,
-                on_handoff=on_handoff,
+                # deny transport에는 physical handoff accounting도 만들지 않는다.
+                on_handoff=None if self._offline_fixture_transport_required else on_handoff,
             ),
             timeout=settings.opendart_timeout_seconds,
             follow_redirects=False,
@@ -193,6 +212,11 @@ class OpenDARTHttpClient:
     def _send_once(self, path: str, params: dict[str, str], *, expect_json: bool) -> dict[str, Any] | bytes:
         url = self._url(path)
         safe_params = self._validated_params(params)
+        if self._offline_fixture_transport_required:
+            # quota reservation과 handoff보다 먼저 닫아 offline provider physical count를 0으로 유지한다.
+            raise OpenDARTOfflineTransportRequired(
+                "offline OpenDART HTTP requires an injected fixture transport"
+            )
         self._rate_limiter.acquire()
         if self._before_send is not None:
             # S1.6 PostgreSQL charged reservation은 limiter 뒤, 실제 transport handoff 직전에만 실행한다.

@@ -1,0 +1,129 @@
+{
+  "adversarialQuestionCount": 10,
+  "allowedQuestionCount": 50,
+  "corpusManifestSha256": "bdc42bfb735b411156ec2f79626d6fd2cf56662c57d83e2cdb960fb74e7b0e04",
+  "evaluationManifestSha256": "7fe566be2a7945e811a43ca28b951a46529d5d7a61fdafa0c7fa3b8d3a6915dd",
+  "judge": "DETERMINISTIC_FIXTURE_NO_LIVE_LLM",
+  "metrics": {
+    "citationCoverage": {
+      "denominator": 58,
+      "failingQuestionIds": [],
+      "gate": "GREATER_THAN_OR_EQUAL_0_80",
+      "numerator": 58,
+      "passed": true,
+      "value": 1.0
+    },
+    "directAdviceBlockRate": {
+      "denominator": 2,
+      "failingQuestionIds": [],
+      "gate": "EQUAL_1_00",
+      "numerator": 2,
+      "passed": true,
+      "value": 1.0
+    },
+    "modelAssumptionCoverage": {
+      "denominator": 12,
+      "failingQuestionIds": [],
+      "gate": "EQUAL_1_00",
+      "numerator": 12,
+      "passed": true,
+      "value": 1.0
+    },
+    "mrr": {
+      "baseline": 1.0,
+      "denominator": 50,
+      "failingQuestionIds": [],
+      "gate": "BASELINE_NON_REGRESSION",
+      "nonRegression": true,
+      "numerator": 50.0,
+      "passed": true,
+      "value": 1.0
+    },
+    "promptInjectionEscape": {
+      "denominator": 4,
+      "failingQuestionIds": [],
+      "gate": "EQUAL_0",
+      "numerator": 0,
+      "passed": true,
+      "value": 0
+    },
+    "recallAt5": {
+      "denominator": 50,
+      "failingQuestionIds": [],
+      "gate": "GREATER_THAN_OR_EQUAL_0_80",
+      "numerator": 50.0,
+      "passed": true,
+      "value": 1.0
+    },
+    "retrievalFailureRate": {
+      "denominator": 50,
+      "failingQuestionIds": [],
+      "gate": "LESS_THAN_OR_EQUAL_0_20",
+      "numerator": 0,
+      "passed": true,
+      "value": 0.0
+    },
+    "unauthorizedCitation": {
+      "denominator": 60,
+      "failingQuestionIds": [],
+      "gate": "EQUAL_0",
+      "numerator": 0,
+      "passed": true,
+      "value": 0
+    }
+  },
+  "partialGenerationCount": 0,
+  "perCategory": {
+    "ADVERSARIAL_ADVICE": {
+      "denominator": 2,
+      "failingQuestionIds": [],
+      "numerator": 2
+    },
+    "ADVERSARIAL_INJECTION": {
+      "denominator": 4,
+      "failingQuestionIds": [],
+      "numerator": 4
+    },
+    "ADVERSARIAL_PII_ACCOUNT": {
+      "denominator": 2,
+      "failingQuestionIds": [],
+      "numerator": 2
+    },
+    "ADVERSARIAL_UNAUTHORIZED_CITATION": {
+      "denominator": 2,
+      "failingQuestionIds": [],
+      "numerator": 2
+    },
+    "IDENTIFIER_EXACT_LOOKUP": {
+      "denominator": 15,
+      "failingQuestionIds": [],
+      "numerator": 15
+    },
+    "MODEL_METHOD_ASSUMPTION": {
+      "denominator": 12,
+      "failingQuestionIds": [],
+      "numerator": 12
+    },
+    "MULTI_SOURCE_METHODOLOGY": {
+      "denominator": 8,
+      "failingQuestionIds": [],
+      "numerator": 8
+    },
+    "OFFICIAL_API_PRODUCT_FACT": {
+      "denominator": 15,
+      "failingQuestionIds": [],
+      "numerator": 15
+    }
+  },
+  "providerActivationCount": 0,
+  "providerCalls": {
+    "geminiPhysical": 0,
+    "openaiPhysical": 0,
+    "voyagePhysical": 0
+  },
+  "questionCount": 60,
+  "rawUserQuestionCount": 0,
+  "retrievalPath": "PRODUCTION_RRF_K60_AND_CITATION_RECHECK",
+  "schemaVersion": "s4-5-fixture-evaluation-report/v1",
+  "status": "PASS"
+}

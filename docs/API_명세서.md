@@ -45,6 +45,9 @@
 > `GDELT_S5_FEATURE_ELIGIBLE=FALSE`다. 실제 provider outbound는 별도 승인이 필요하고,
 > 이번 통합 보안 검사는 `SECURITY_SCAN_TIMING=FINAL_CONSOLIDATED_CAMPAIGN`으로 모든
 > offline 구현과 일반 gate 완료 뒤 실행한다.
+> 2026-08-01 현재 strict two-mode parser, network-free fixture collector, no-zero `ABSTAIN`,
+> 0600 append-only publisher와 exact approval packet validator는 구현됐지만 HTTP transport는
+> `NOT_ACTIVATED`다.
 
 ---
 
@@ -1065,22 +1068,24 @@ generation과 제출 직전 generation을 다시 비교한다.
 `GET /api/v1/risk/cross-market`
 
 > 계획 타당성: `PLAN_FEASIBILITY=GO`.
-> 현재 상태: `S4.8A_CONTRACT=LOCKED / ENDPOINT_RUNTIME=NOT_IMPLEMENTED`.
+> 현재 상태: `S4.8A_CONTRACT=LOCKED / S4.8B_C_OFFLINE_RUNTIME=IMPLEMENTED_MERGE_CANDIDATE /
+> ENDPOINT_RUNTIME=NOT_IMPLEMENTED`.
 > 월 데이터 비용 목표는 `0원`, offline fixture와 지연/EOD가 우선이다. 기관용 데이터 제품과
 > 실시간 SOX/VIX feed는 post-P1 선택지이며 P1 완료 조건이 아니다. 새 agent framework·별도
 > cloud·Kafka는 hard dependency가 아니다.
 >
 > 순서 0 `S4.READ` EOF receipt 뒤 S4.8A contract-only gate가 일곱
 > schema·fixture·generator/parity, `s2-2-system-rule-catalog.v2`, contract-change와 v3
-> golden vector를 고정한다. 이 계약은 endpoint, 내부 port, DB projection의 runtime 구현
-> 완료 증거가 아니다. S4.8B/C는 S4.8A의 main 병합과 post-merge CI 확인 뒤에만 시작한다.
+> golden vector를 고정했다. 이 계약 자체는 endpoint, 내부 port, DB projection의 runtime 구현
+> 완료 증거가 아니다. S4.8A main 병합과 post-merge CI 확인 뒤 S4.8B/C offline fixture,
+> V23 evidence store와 Spring snapshot read port를 구현했지만 endpoint와 RiskEngine은 연결하지 않는다.
 > provider/live account/live order physical call은 0이며 P1 권한은 `WARN_ONLY`다.
 > 2026-07-30 계획 확정 변경은 Markdown만 동기화하며 OpenAPI, schema, fixture, catalog,
 > migration, runtime code와 환경설정을 생성하거나 수정하는 구현 세션이 아니다.
 > 조사한 42개는 integration target(39 machine 후보 계열 + 3 manual-link 원천)이지 공개
 > API나 사용 가능한 entitlement 수가 아니다. 로컬 KIS catalog 338개·명시적 모의지원
-> 43개와 이번 disabled adapter 후보 18개도 서로 다른 집계다. 현재 S4.8 활성
-> provider/adapter 수는 0이다. exact 42개 행과 exact 18개 allowlist의 authority는
+> 43개와 이번 disabled adapter 후보 18개도 서로 다른 집계다. 현재 S4.8 활성/live
+> provider adapter 수는 0이고 18개 후보는 offline fixture 행으로만 존재한다. exact 42개 행과 exact 18개 allowlist의 authority는
 > Git으로 추적하지 않는 로컬 전용 자료수급 레지스트리이며
 > 공개 API 명세에는 전체 inventory를 복제하지 않는다.
 
@@ -1238,6 +1243,26 @@ RAG는 v1 핵심 구현이다. 단, RAG 답변은 매수/매도 지시가 아니
 > purpose-separated HMAC과 AES-256-GCM envelope encryption으로 구현한다. 이 단계의
 > Gemini·OpenAI·Voyage physical call은 0이고 허용 질문도 `RETRIEVAL_ONLY`로 닫는다.
 > 실제 Python retrieval/generation E2E는 S4.6, Gemini live는 별도 승인형 S4.4G 범위다.
+>
+> S4.5 구현 기준(2026-08-01): 공개·합성 exact 60 fixture가 production RRF·local
+> guardrail·citation parser를 재사용해 모든 metric gate를 통과했다. Voyage S4.2C와 Gemini
+> S4.4G는 내부 approval packet schema, usage state, mock transport와 fail-closed validator만
+> 구현한다. public ask/answer/history/OpenAPI field 변경은 0이며 fresh provider 승인과 paid
+> ZDR evidence가 없으므로 provider physical call, generation materialization과 activation은 0이다.
+>
+> S4.6 구현 기준(2026-08-01): `capstone.decision.v1.RagService.Ask` unary proto와
+> canonical descriptor를 Python/JVM이 공유한다. Spring은 owner consent 확인 뒤
+> rate limit·idempotency claim을 수행하고, 신규 claim에서만 짧은 수명의 opaque
+> retrieval scope를 발급해 numeric loopback Python RPC를 한 번 호출한다. Python은
+> local privacy/advice/injection guard, S4.5 fixture RRF·citation parser만 실행한다.
+> Spring은 request/generation/profile/policy, authorized top-5 subset, citation identity,
+> provider physical count 0을 다시 검증하고 DB owner/topic/active-generation recheck와
+> encrypted history atomic complete가 모두 성공한 뒤만 public response를 반환한다.
+> gRPC deadline은 15초, Spring read budget은 17초, request/response는 64KiB/256KiB,
+> retry 0, reflection false다. JWT·API key·owner ID·account/order·history ciphertext는 proto에 없다.
+> `RAG_GRPC_ENABLED=false`는 기존 S4.4 retrieval-only compatibility mode이며, true는
+> same-deployment Python process와 명시적 전용 `RAG_GRPC_SHARED_SECRET`이 준비된 경우에만
+> 사용한다. 이 secret은 모든 활성 auth·Decision/Python·brokerage credential과 달라야 하며 fallback은 없다.
 
 ### 7.1 RAG 질문
 
@@ -1390,10 +1415,12 @@ admin bulk API는 없다.
 `action`은 `GRANT | REVOKE`다. actor와 시간은 JWT/server clock에서 생성한다. policy, prompt,
 privacy 경계가 바뀌면 재동의를 요구한다. revoke는 이후 external generation을 막지만 기존
 30일 history를 임의 삭제하지 않는다. 사용자는 7.4 DELETE로 즉시 삭제할 수 있다.
-GRANT event만으로 external generation을 활성화하지 않는다. 현재 frozen 30-card corpus는
-external processing 대상이 아니며, 별도 S4.4G 승인과
-`externalProcessingAllowed=true`인 active·verified·PUBLIC·PROJECT exact chunk가 함께
-확인되기 전에는 outbound가 0이다.
+GRANT event만으로 external generation을 활성화하지 않는다. S4.7C는 기존 S4.7B와 동일한
+project-authored sanitized body exact 30의 새 revision에만 external-processing card gate를
+부여하고 local BGE generation을 원자 전환했다. 이 card gate는 upstream 원문이나 provider
+payload 전송 권한이 아니다. 별도 S4.4G provider/evaluation 승인과
+`externalProcessingAllowed=true`인 active·verified·PUBLIC·PROJECT exact chunk, 그리고 해당
+question의 독립 consent/privacy/advice gate가 함께 확인되기 전에는 outbound가 0이다.
 
 ### 7.6 Admin embedding profile status
 
@@ -1429,12 +1456,17 @@ payload에 가짜 state를 넣거나 이전 `asOf`를 갱신해 새 success view
 
 - `/api/v1/signals/{symbol}`: 기존 계약과 fixture의 legacy read 경계다. 새 S5/S6 artifact를
   이 형식으로 active publication하지 않는다.
-- `/api/v2/signals/{symbol}`: 아래 tagged-union contract가 별도
-  `contracts/changes/` 승인을 통과한 뒤 구현·활성화한다.
-- Signal v2 승인 전 artifact ingest와 internal component 조립까지만 허용하고,
-  RiskDecision/order response 연결은 `NO_GO`다.
+- `/api/v2/signals/{symbol}`: 아래 tagged-union contract는 S5.0에서 잠겼지만 route는 아직
+  current OpenAPI에 없으며 별도 runtime 구현·활성화 승인이 필요하다.
+- S5.0은 deterministic schema/catalog/fixture와 Spring/Python parser parity까지만 소유한다.
+  artifact ingest, RiskDecision/order response 연결은 `NO_GO`다.
 
 ### 8.1 Signal v2 종목 신호 조회
+
+> 현재 상태: `S5_0_CONTRACT=LOCKED / ACTIVE_ENDPOINT=NO_GO /
+> RISK_DECISION_ORDER_WIRING=NO_GO`. `contracts/schemas/signal-v2.schema.json`과 generated
+> positive/negative fixture, Python semantic validator, Spring contract-only parser parity까지
+> 구현했으며 current OpenAPI는 변경하지 않는다.
 
 계획 route:
 
@@ -1497,10 +1529,11 @@ payload에 가짜 state를 넣거나 이전 `asOf`를 갱신해 새 success view
 
 component는 정확히 다음 tagged union을 따른다.
 
-| `status` | 필수 field | 금지 field | 의미 |
+| component/status | 필수 field | 금지 field | 의미 |
 |---|---|---|---|
-| `AVAILABLE` | `producer`, `sourceWorkspace`, `asOf`, `signal`, `confidence` | `reason` | 검증되고 fresh한 모델 evidence |
-| `ABSTAIN` | `producer`, `sourceWorkspace`, `reason` | `signal`, `confidence`, `predictedReturn` | missing, stale, FAIL, drift, 식별 불가 또는 모델 자체의 abstention |
+| predictive `AVAILABLE` | `producer`, `sourceWorkspace`, `asOf`, `signal`, `confidence` | `reason`, `state` | 검증되고 fresh한 예측 evidence |
+| HMM `AVAILABLE` | `producer`, `sourceWorkspace`, `asOf`, `state`, `confidence` | `reason`, `signal`, `predictedReturn` | 검증되고 fresh한 regime evidence |
+| 모든 `ABSTAIN` | `producer`, `sourceWorkspace`, `reason` | `asOf`, `signal`, `confidence`, `predictedReturn`, `state` | missing, stale, FAIL, drift, 식별 불가 또는 모델 자체의 abstention |
 
 `AVAILABLE + signal=HOLD`는 모델이 산출한 정상 neutral prediction이다. `ABSTAIN`과
 RiskEngine `DecisionStatus.HOLD`는 서로 다른 상태이며 변환하지 않는다. stale component는
@@ -1510,7 +1543,7 @@ RiskEngine `DecisionStatus.HOLD`는 서로 다른 상태이며 변환하지 않�
 public response에 artifact path, internal raw score/margin, hash, account/user ID를 넣지 않는다.
 artifact ingest는 approved-root, no-follow, bounded size/row/decompression, exact schema/version/hash/
 producer/provenance, unknown-column 거부를 통과해야 한다. Signal v2 schema와 positive/negative
-fixture가 승인되기 전 이 route를 runtime에 연결하지 않는다.
+fixture는 잠겼지만 artifact ingest와 이 route의 runtime 연결은 별도 후속 session 전까지 금지한다.
 
 ### 8.2 뉴스감성 요약 artifact 조회
 
@@ -2855,17 +2888,19 @@ service MarketDataService {
 
 > **HISTORICAL_SUPERSEDED:** 위 Naver 항목과 아래 Naver 표는 당시 성공 run의 감사 기록이며
 > 신규 실행 권한이 아니다. active provider/runtime/storage는 ADR-038과 S1.3G 계약에서
-> 퇴역했다. ECOS 계약은 계속 active다.
+> 퇴역했다. 2026-08-01에는 Naver runtime/schema/test와 shared manifest/retention branch를
+> 제거하고 승인된 local leaf의 application-visible exact 삭제까지 완료했다. 아래 Naver
+> 명칭·수치·hash는 당시 audit일 뿐 실행 가능한 contract가 아니며 ECOS 계약만 active다.
 
 S1.3 내부 source snapshot 계약은 다음과 같다.
 
 | 항목 | 계약 |
 |---|---|
-| producer | Decision Platform의 `ecos-macro-collect`, `naver-news-metadata-collect`만 provider outbound를 소유한다 |
-| artifact | `ecos_macro_snapshot`, `naver_news_metadata_snapshot`, source-discriminated `source_snapshot_manifest` JSON Schema를 사용한다 |
+| producer | active producer는 Decision Platform의 `ecos-macro-collect`뿐이다. historical `naver-news-metadata-collect`는 제거됐다 |
+| artifact | active contract는 `ecos_macro_snapshot`과 ECOS-only `source_snapshot_manifest`다. historical Naver schema/example은 제거됐다 |
 | publish | ignored `data/source_snapshots/` 아래 snapshot을 먼저 쓰고 SHA-256이 일치하는 `manifest.json`을 마지막 commit marker로 게시한다. file mode는 `0600`, overwrite·symlink·절대/상위경로는 거부한다 |
 | consume | consumer는 manifest만 열거하고 schema·상대경로·date partition·SHA-256을 검증한다. workspace 간 전달은 `contracts/`·`artifacts/` 합의 경계를 사용하며 다른 workspace 구현이나 임의 로컬 경로를 직접 참조하지 않는다 |
-| retention | ECOS 365일, Naver metadata 최대 30일. 삭제 owner는 `decision-platform:source-snapshot-retention`이며 command는 dry-run 기본, `--apply`에서 manifest-first로 최대 1,000개만 지운다 |
+| retention | active retention은 ECOS 365일뿐이다. 삭제 owner는 `decision-platform:source-snapshot-retention`이며 command는 dry-run 기본, `--apply`에서 manifest-first로 최대 1,000개만 지운다. Naver branch는 제거됐다 |
 | 금지 데이터 | provider raw body/header/message, credential/query가 포함된 provider request URL, auth/header, credential·hash, 기사 본문, 로컬 절대경로를 snapshot·manifest·로그에 저장하지 않는다. 정규화된 기사 metadata URL과 고정 provenance URL은 canonical artifact에 허용한다 |
 | Naver query | canonical snapshot은 별도 smoke 포맷 없이 `queries=1..4`를 허용한다. `NAVER_BATCH_SIZE`는 기본 4이고 `1..4`에서만 하향하며 immediate legacy smoke는 1이다. consumer/storage는 snapshot 배열 길이와 manifest `queryCount`가 같은지 교차 검증하고 0·5 또는 count mismatch를 거부한다 |
 | retry | `ECOS_MAX_ATTEMPTS_PER_REQUEST`와 `NAVER_MAX_ATTEMPTS_PER_QUERY`는 각각 `1..2`, 기본 2, smoke 1인 non-secret lower-only 설정이다. ECOS metadata preflight는 설정과 무관하게 hard 1 attempt다. Naver manifest `physicalAttemptCount`는 `2 * queryCount`를 초과할 수 없다 |
@@ -2878,7 +2913,7 @@ S1.3 내부 source snapshot 계약은 다음과 같다.
 | Naver physical attempt | Redis reservation은 non-refundable이지만 `physicalAttemptCount`는 credential·header 구성과 final deadline 검사 후 inner provider transport handoff 직전에만 증가한다. credential/deadline 실패는 Redis `+1`·physical `0`, handoff 후 transport 실패는 physical `1`로 기록하여 두 회계를 분리한다 |
 | online gate | Redis loopback/`NOAUTH`/인증 `PONG`/AOF/256 MiB/`noeviction` 검증 뒤, 현재 HEAD·명령·series·TTL에 묶인 새 packet을 정확히 승인받아 ECOS preflight 4회를 retry 0으로 수행한다. A1(SHA `042aba528f55321fe5d4635588895aaf5c40192ce120dd477c88bfa95ca1ed80`), A2(SHA `8b7bb4a9492d14e79234db27e86a22725f74c8415ae27347fe8c344d2d19fe27`), A3 failure diagnostic(SHA `1b0337ddca53be9b52d9f2d6929b2d173ab8c3cabc233e6fac47dc55c3de192e`)는 실패 evidence다. A3는 physical `2`·Redis `+2`, ordinal `2`, candidate count `4`에서 중단했고 보충 호출은 `0`회다. A4는 SHA `3bb3810728cfb2c3b7ba8006b071295606e24bfc51e0f2b94e15d3840baaa625`, physical `4`·Redis `+4`로 성공했으며 `semantic-3bb3810728cf` 의미 승인 뒤 registry를 활성화했다. approved registry는 `policy-rate`=`한국은행 기준금리`/`연%`, `krw-usd-rate`=`원/미국달러(매매기준율)`/`원`, timestamp `2026-07-15T06:02:19.299552Z`다. 전체 gate·원격 green, KRX universe audit, Naver 내부 사용/최대 30일 보존 승인 후 새 B packet으로 ECOS `D-29..D` key `+2`를 먼저 완전히 성공한 뒤 Naver rank-1 `display=10` key `+1`을 retry 0·`--require-complete`로 실행한다. B ref는 CLI argument가 아닌 HEAD·명령·TTL 결속 운영 evidence이므로 executor가 exact 승인 전 invocation을 금지하고, CLI는 `--online`·exact registry를 기계적으로 검사한다. B는 원자적이며 Naver 실패 시 그 B의 ECOS 성공분도 채택하지 않는다. accepted set은 성공한 A 하나+B 하나의 ECOS `6`+Naver `1`=`7` attempts만 합산하며 A1/A2/A3/실패 B를 포함한 lifetime 호출 주장으로 표현하지 않는다. gate 실패 시 즉시 중단하고 새 승인 없이 재호출하지 않으며 live negative injection은 금지한다 |
 | accepted evidence | B1 `approval-b1-23618d21265d-20260715T072151Z`는 HEAD `23618d21265d`에서 성공했다. KRX source/manifest SHA는 `781852a247f15b86226669a778d3b698756abd2d2515c79efc2af6f229d1d6e6`/`bde825cfe5c25a25960b3f354ef91adb7b0b5110f23c9687e90bd448a938b73f`, as-of는 `2026-07-15`, rank 1은 `005930/삼성전자`다. ECOS snapshot/manifest SHA는 `3f20789967add58531c79ae522b89b94227a7692ab3d4fbace8b8ff5adbb962f`/`be7c4d9637b19045316fb6324bb47f9f23cff5002189510d4656be184679f7d3`, 2 series·50 observations·physical `2`·retention `365`다. Naver snapshot/manifest SHA는 `209ef0bf01ad617e1b6fb65b0d57dd3f66e4e62d46487a2585a8f454b615c688`/`1cc159ffa500b207f422b4fd2618689c216a22778bf2064bc065b815ecad185a`, query `삼성전자` 1건·metadata 10건·physical `1`·retention `30`이다. 두 artifact set은 complete이고 schema/runtime/canonical/hash/mode/sanitization 검증을 통과했으며 retention dry-run은 `scanned=2 eligible=0 deleted=0 skipped=0`이다. B evidence SHA는 `ecb62e114352439994fa799096a916757ba7fba081f08f1d1b78ec35397d85fb`; accepted set은 A4+B1의 ECOS `6`+Naver `1`=`7`이다 |
-| Naver lifecycle | Naver Developer Center `legacy` profile만 현재 활성 상태로 사용하며, 이번 S1.3 immediate legacy 1-query smoke는 해당 collector 계약 검증이다. 날짜 기반 자동 전환은 없다. API Hub는 구현 일정·credential 준비·검증·cutover 계획이 없는 `disabled future option`으로만 기록하며, 검토·준비·검증·전환은 사용자가 별도로 명시적으로 승인한 세션 전에는 수행하지 않는다 |
+| Naver lifecycle | historical audit only. legacy/API Hub profile·credential·collector·CLI는 active tree에서 제거됐고 자동 전환이나 재활성화 경로가 없다 |
 
 #### 13.5.A S1.3K KRX universe internal collector (구현·live 검증·병합 완료)
 
@@ -3277,7 +3312,7 @@ API/adapter/parser/storage 변경 커밋은 기능 단위로 분리한다. 테�
 | 필수 | FinancialEngineeringService |
 | 필수 | Black-Scholes 계산기, Greeks 계산, implied volatility 역산 |
 | 필수 | Auth(login/role), System Health, Kill Switch 상태 조회 |
-| 필수(P1 WARN_ONLY, 현재 `SPEC_ONLY/NOT_IMPLEMENTED/PLANNED`) | Cross-market latest risk 조회, offline fixture/EOD producer, event-study/policy replay |
+| 필수(P1 WARN_ONLY, S4.8B/C offline 구현·S6.6/S6.7/endpoint 미구현) | Cross-market latest risk 조회, offline fixture/EOD producer, event-study/policy replay |
 | 고도화 | Async Job 상태 조회, Stream Metric, Artifact Ingest 상태 조회 |
 | 고도화 | SourceRegistryService 고도화 |
 | 고도화 | 이벤트 push 채널(SSE), RAG 답변 스트리밍, Journal 수정/삭제 |

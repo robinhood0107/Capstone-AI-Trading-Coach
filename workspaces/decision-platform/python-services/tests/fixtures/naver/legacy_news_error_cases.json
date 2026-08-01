@@ -1,9 +1,0 @@
-{
-  "cases": [
-    {"status": 400, "payload": {"errorCode": "SE01", "errorMessage": "synthetic"}, "code": "invalid_query", "retryable": false},
-    {"status": 401, "payload": {"errorCode": "SE99", "errorMessage": "synthetic"}, "code": "authentication_failed", "retryable": false},
-    {"status": 403, "payload": {"errorCode": "SE99", "errorMessage": "synthetic"}, "code": "authentication_failed", "retryable": false},
-    {"status": 429, "payload": {"errorCode": "SE99", "errorMessage": "synthetic"}, "code": "rate_limited", "retryable": false},
-    {"status": 500, "payload": {"errorCode": "SE99", "errorMessage": "synthetic"}, "code": "provider_unavailable", "retryable": true}
-  ]
-}

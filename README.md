@@ -36,20 +36,22 @@ account/broker/order physical call은 모두 0건이다.
 완료된 A4/B1/KRX11 approval packet은 재사용하지 않는다. 이후 실제 provider 호출은 새 HEAD·명령·기준일·호출 예산·TTL에 결속한 별도 승인 뒤에만 실행한다.
 
 S1.3G 뉴스 authority는 2026-07-31부터 Naver active provider/runtime/storage를 퇴역시키고,
-기사 metadata가 없는 GDELT aggregate synthetic fixture 계약으로 전환한다. contract-only wave에서
-runtime 제거는 아직 수행하지 않으며 후속 구현 wave가 tracked code와 exact 승인된 로컬 snapshot을
-제거한다. GDELT provider 호출, RiskDecision/hash/order 권한, S5 feature 주입은 모두 0이다.
+기사 metadata가 없는 GDELT aggregate synthetic fixture 계약으로 전환한다. 2026-08-01 현재
+Naver active runtime/schema/test와 승인된 local leaf 제거, GDELT strict parser·ABSTAIN·append-only
+offline artifact·승인 packet validator 구현까지 완료했다. GDELT HTTP transport는 활성화하지 않았고
+provider 호출, RiskDecision/hash/order 권한, S5 feature 주입은 모두 0이다.
 
 ### 교차시장·애널리스트 오버레이 계획 상태
 
-교차시장 계획 타당성은 `PLAN_FEASIBILITY=GO`이고, 현재 구현 상태는
-`IMPLEMENTATION=SPEC_ONLY / NOT_IMPLEMENTED / PLANNED`다. 월 데이터 비용 목표는 `0원`,
+교차시장 계획 타당성은 `PLAN_FEASIBILITY=GO`다. S4.8A 계약은 잠겼고 S4.8B/C offline
+fixture/scorer/append-only evidence/설명 경계는 이 merge candidate에서 구현됐다. S6.6/S6.7과
+cross-market REST/RiskEngine runtime은 `NOT_IMPLEMENTED / PLANNED`다. 월 데이터 비용 목표는 `0원`,
 offline fixture와 지연/EOD가 우선이다. 기관용 데이터 제품과 실시간 SOX/VIX feed는
 post-P1 선택지이며 완주 조건이 아니다. 새 agent framework·별도 cloud·Kafka hard
 dependency 없이 기존 Spring/Python/PostgreSQL/Redis/gRPC를 재사용한다.
 
-순서 0은 관련 명세를 EOF까지 읽고 receipt를 남기는 read-only `S4.READ`다. 이후 첫 변경은
-S4.8A contract-only PR이며, 이것이 검증·병합되기 전 runtime 구현 PR은 시작하지 않는다.
+순서 0 read-only `S4.READ`와 S4.8A contract-only merge gate는 충족했다. 이 후속 변경은
+provider 없는 S4.8B/C만 구현하며 S6.6/S6.7은 시작하지 않는다.
 S4.8A/B/C·S6.6·S6.7의 P1 최고 권한은 적용 대상 신규 BUY의
 `ALLOW → WARN`이며, 애널리스트·뉴스·RAG·LLM은 RiskDecision과 판단 hash를 바꾸지 않는다.
 기존 Decision/RAG/Signal v1/v2 payload에 추가하는 교차시장 필드는 0이다.
@@ -59,11 +61,15 @@ fixture-first adapter 후보다. exact 42개 행과 exact 18개 allowlist의 aut
 Git으로 추적하지 않는 로컬 전용 자료수급 레지스트리이며,
 공개 문서에는 전체 inventory를 복제하지 않는다.
 
-2026-07-30 계획 확정 변경은 Markdown 명세만 동기화한다. 이 변경 자체로
-Python/Kotlin/SQL, JSON Schema·fixture·catalog, OpenAPI, Gradle, 환경설정 또는 provider
-activation을 구현한 것으로 보지 않는다. 상세 순서는
+2026-07-30 계획 확정 변경은 Markdown-only였고, 후속 S4.8A 계약 PR과 이 S4.8B/C offline
+implementation candidate를 구분한다. provider activation과 RiskEngine/OpenAPI endpoint는
+여전히 포함하지 않는다. 상세 순서는
 [최종 프로젝트 명세서의 S4~P1 실행 순서](docs/최종_프로젝트_명세서.md#171-2026-07-29-s4p1-실행-순서)를
 따른다.
+
+S5.0은 Signal v1/OpenAPI를 변경하지 않는 `AVAILABLE | ABSTAIN` Signal v2 contract lock과
+Python/Spring parity까지만 구현했다. active v2 endpoint, artifact ingest, RiskDecision/order
+wiring은 `NO_GO`다.
 
 ## 워크스페이스 소유권
 
@@ -80,7 +86,7 @@ activation을 구현한 것으로 보지 않는다. 상세 순서는
 ## 시작하기 (decision-platform)
 
 현재 레포는 STAGE 2이며 Decision Platform의 S0 walking skeleton, S1.1 KIS 시장데이터,
-S1.2c OpenDART 분석 데이터, S1.3 ECOS와 퇴역 예정 Naver historical snapshot,
+S1.2c OpenDART 분석 데이터, S1.3 ECOS와 퇴역 완료된 Naver historical audit,
 S1.3G GDELT aggregate contract, S1.3K KRX universe 자동화,
 S1.4 금융공학, S1.5 품질 보고, S1.6 내부 offline calendar/event aggregator, S2.1 Principle
 CRUD, S2.2 offline rule evaluator, S2.3 Decision runtime과 S2.4 Risk/Kill Switch까지 구현되어
@@ -107,9 +113,17 @@ local benchmark와 bounded admin CAS를 통과해 generation
 S4.3은 owner/access 제한 exact·lexical·dense channel과 application RRF를 구현했다.
 S4.4는 local sensitive/advice guard, purpose-separated idempotency, append-only consent,
 owner-scoped AES-256-GCM 30일 history와 metadata-only list를 `FIXTURE_ONLY`로 구현한다.
-허용 질문도 현재 `RETRIEVAL_ONLY`이며 Gemini·OpenAI·Voyage 물리 호출은 0이다. 실제
-Spring↔Python retrieval/generation E2E와 live generation은 각각 후속 S4.6과 별도 승인형
-S4.4G 전까지 활성화하지 않는다.
+S4.7C는 기존 S4.7B bytes를 보존한 채 동일 body exact 30의 새
+`s4_7c_external_v1` revision을 append하고, local BGE vector 30/30 동등성·retrieval
+non-regression·stale CAS rollback을 검증해
+`rag_gen_789b3ba9589ad399373194c0e3c0e76f`를 단일 active generation으로 전환했다.
+기본 `RAG_GRPC_ENABLED=false`는 `RETRIEVAL_ONLY` S4.4 호환 모드다. S4.6은 canonical
+`RagService.Ask`, numeric loopback, consent/rate/idempotency 순서, owner scope·active generation·
+top-5 citation 재검증과 encrypted history E2E를 구현했다. 동일 배포 Python
+fixture process와 모든 활성 auth·Decision/Python·brokerage credential에서 분리된 전용
+`RAG_GRPC_SHARED_SECRET`이 준비된 뒤만 true로 활성화한다. 현재
+Gemini·OpenAI·Voyage·account·order 물리 호출은 0이며 live generation은 별도
+승인형 S4.4G 경계다.
 
 ```bash
 cp .env.example .env

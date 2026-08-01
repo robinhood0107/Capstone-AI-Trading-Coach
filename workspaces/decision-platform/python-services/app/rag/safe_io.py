@@ -3,6 +3,7 @@ from __future__ import annotations
 import errno
 import hashlib
 import os
+import secrets
 import stat
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
@@ -12,6 +13,7 @@ _DIRECTORY_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
 _FILE_FLAGS = os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW | os.O_CLOEXEC
 _WRITE_FLAGS = os.O_WRONLY | os.O_TMPFILE | os.O_CLOEXEC
 _SHARED_WRITE_BITS = stat.S_IWGRP | stat.S_IWOTH
+_GENERATED_FILE_MODE = 0o644
 
 
 class RagSafeIoError(ValueError):
@@ -36,7 +38,7 @@ class SafeReadResult:
 
 @dataclass(frozen=True)
 class SafeWriteResult:
-    """approved-root 안에 no-overwrite로 publish된 새 파일의 bounded receipt."""
+    """approved-root 안에 안전하게 publish된 generated file의 bounded receipt."""
 
     absolute_path: Path
     relative_path: str
@@ -124,6 +126,91 @@ def write_approved_new_file(
     )
 
 
+def write_approved_generated_file(
+    *,
+    approved_root: Path,
+    relative_path: str,
+    content: bytes,
+    max_bytes: int,
+) -> SafeWriteResult:
+    """안전한 기존 regular file만 same-directory atomic replace로 생성 bytes를 갱신한다.
+
+    tracked generator는 output을 반복 생성해야 하지만, expected leaf가 symlink·directory·
+    hard link이면 `Path.write_bytes()`가 외부 inode를 덮을 수 있다. 이 writer는 directory-fd와
+    O_NOFOLLOW로 기존 leaf를 먼저 검증하고, anonymous inode를 같은 directory에서만 replace한다.
+    """
+
+    if max_bytes <= 0 or not isinstance(content, bytes):
+        raise RagSafeIoError("RAG generated write requires bytes and a positive bound.")
+    if len(content) == 0 or len(content) > max_bytes:
+        raise RagSafeIoError("RAG generated write content exceeds its byte bound.")
+    components = _validate_relative_components(relative_path)
+    root = _require_absolute_existing_root(approved_root)
+    root_fd = _open_root(root)
+    try:
+        directory_fd = _open_parent_directory(root_fd, components[:-1])
+    finally:
+        os.close(root_fd)
+    try:
+        _write_generated_leaf(
+            directory_fd,
+            filename=components[-1],
+            content=content,
+        )
+    finally:
+        os.close(directory_fd)
+    return SafeWriteResult(
+        absolute_path=root.joinpath(*components),
+        relative_path=PurePosixPath(*components).as_posix(),
+        content_sha256=hashlib.sha256(content).hexdigest(),
+        bytes_written=len(content),
+    )
+
+
+def list_approved_regular_files(
+    *,
+    approved_root: Path,
+    relative_directory: str,
+    max_entries: int,
+    max_bytes: int,
+) -> dict[str, bytes]:
+    """approved directory의 regular leaf만 descriptor 기준으로 읽어 deterministic map을 만든다.
+
+    generator의 unexpected-artifact guard도 symlink/directory/hard-link를 안전한 파일처럼
+    취급하면 안 된다. 따라서 directory listing 직후 모든 entry를 O_NOFOLLOW reader로 다시
+    검증하며, 숨김 temporary file도 허용하지 않는다.
+    """
+
+    if max_entries <= 0 or max_bytes <= 0:
+        raise RagSafeIoError("RAG safe listing bounds must be positive.")
+    components = _validate_relative_components(relative_directory)
+    root = _require_absolute_existing_root(approved_root)
+    root_fd = _open_root(root)
+    try:
+        directory_fd = _open_parent_directory(root_fd, components)
+    finally:
+        os.close(root_fd)
+    try:
+        try:
+            entries = sorted(os.listdir(directory_fd))
+        except OSError as error:
+            raise RagSafeIoError("RAG safe directory could not be listed.") from error
+        if len(entries) > max_entries:
+            raise RagSafeIoError("RAG safe directory exceeds its entry bound.")
+        result: dict[str, bytes] = {}
+        for entry in entries:
+            _validate_leaf_filename(entry)
+            payload, _metadata = _read_leaf(
+                directory_fd,
+                entry,
+                max_bytes=max_bytes,
+            )
+            result[entry] = payload
+        return result
+    finally:
+        os.close(directory_fd)
+
+
 def _validate_relative_components(value: str) -> tuple[str, ...]:
     if (
         not value
@@ -139,6 +226,12 @@ def _validate_relative_components(value: str) -> tuple[str, ...]:
         raise RagSafeIoError("RAG safe read path must not contain dot segments.")
     path = PurePosixPath(value)
     return tuple(path.parts)
+
+
+def _validate_leaf_filename(value: str) -> None:
+    components = _validate_relative_components(value)
+    if len(components) != 1:
+        raise RagSafeIoError("RAG safe directory entry must be a leaf filename.")
 
 
 def _require_absolute_existing_root(root: Path) -> Path:
@@ -337,3 +430,164 @@ def _write_new_leaf(
     finally:
         if file_fd >= 0:
             os.close(file_fd)
+
+
+def _write_generated_leaf(
+    directory_fd: int,
+    *,
+    filename: str,
+    content: bytes,
+) -> None:
+    """기존 target을 descriptor로 검사한 뒤 같은 directory anonymous inode로만 교체한다."""
+
+    _require_replaceable_generated_leaf(directory_fd, filename)
+    file_fd = -1
+    temporary_name = f".rag-generated-{secrets.token_hex(16)}.tmp"
+    temporary_linked = False
+    published = False
+    created_identity: tuple[int, int] | None = None
+    try:
+        file_fd = os.open(
+            ".",
+            _WRITE_FLAGS,
+            _GENERATED_FILE_MODE,
+            dir_fd=directory_fd,
+        )
+        os.fchmod(file_fd, _GENERATED_FILE_MODE)
+        _write_content(file_fd, content)
+        metadata = os.fstat(file_fd)
+        if (
+            not stat.S_ISREG(metadata.st_mode)
+            or metadata.st_uid != os.geteuid()
+            or metadata.st_nlink != 0
+            or metadata.st_size != len(content)
+            or stat.S_IMODE(metadata.st_mode) != _GENERATED_FILE_MODE
+        ):
+            raise RagSafeIoError("RAG generated write anonymous file metadata drifted.")
+        created_identity = (metadata.st_dev, metadata.st_ino)
+        os.fsync(file_fd)
+        # 열린 fd에서만 link해 temp pathname의 concurrent replacement가 source inode를 바꾸지 못한다.
+        os.link(
+            f"/proc/self/fd/{file_fd}",
+            temporary_name,
+            dst_dir_fd=directory_fd,
+            follow_symlinks=True,
+        )
+        temporary_linked = True
+        os.replace(
+            temporary_name,
+            filename,
+            src_dir_fd=directory_fd,
+            dst_dir_fd=directory_fd,
+        )
+        published = True
+        _verify_published_generated_leaf(
+            directory_fd,
+            filename=filename,
+            expected_identity=created_identity,
+            expected_size=len(content),
+        )
+        os.fsync(directory_fd)
+    except RagSafeIoError:
+        raise
+    except OSError as error:
+        if error.errno in {errno.EEXIST, errno.ELOOP, errno.ENOTDIR, errno.ENOENT}:
+            raise RagSafeIoError("RAG generated write target is not safe.") from None
+        raise RagSafeIoError("RAG generated write failed.") from None
+    finally:
+        if temporary_linked and not published and created_identity is not None:
+            _unlink_generated_temp_if_same(
+                directory_fd,
+                temporary_name=temporary_name,
+                expected_identity=created_identity,
+            )
+        if file_fd >= 0:
+            os.close(file_fd)
+
+
+def _require_replaceable_generated_leaf(directory_fd: int, filename: str) -> None:
+    """absent leaf는 허용하되, existing leaf는 외부 inode로 연결될 수 없게 검증한다."""
+
+    file_fd = -1
+    try:
+        file_fd = os.open(filename, _FILE_FLAGS, dir_fd=directory_fd)
+    except FileNotFoundError:
+        return
+    except OSError as error:
+        if error.errno in {errno.ELOOP, errno.ENOTDIR, errno.ENOENT}:
+            raise RagSafeIoError("RAG generated write target is not safe.") from None
+        raise RagSafeIoError("RAG generated write target could not be opened.") from None
+    try:
+        metadata = os.fstat(file_fd)
+        if not stat.S_ISREG(metadata.st_mode):
+            raise RagSafeIoError("RAG generated write target must be a regular file.")
+        _require_current_owner(metadata)
+        if metadata.st_mode & _SHARED_WRITE_BITS:
+            raise RagSafeIoError(
+                "RAG generated write target must not be group/other writable."
+            )
+        if metadata.st_nlink != 1:
+            raise RagSafeIoError("RAG generated write target must not be a hard link.")
+    finally:
+        if file_fd >= 0:
+            os.close(file_fd)
+
+
+def _write_content(file_fd: int, content: bytes) -> None:
+    offset = 0
+    while offset < len(content):
+        written = os.write(file_fd, content[offset:])
+        if written <= 0:
+            raise RagSafeIoError("RAG safe write did not make forward progress.")
+        offset += written
+
+
+def _verify_published_generated_leaf(
+    directory_fd: int,
+    *,
+    filename: str,
+    expected_identity: tuple[int, int],
+    expected_size: int,
+) -> None:
+    file_fd = -1
+    try:
+        file_fd = os.open(filename, _FILE_FLAGS, dir_fd=directory_fd)
+        metadata = os.fstat(file_fd)
+        if (
+            (metadata.st_dev, metadata.st_ino) != expected_identity
+            or not stat.S_ISREG(metadata.st_mode)
+            or metadata.st_uid != os.geteuid()
+            or metadata.st_nlink != 1
+            or metadata.st_size != expected_size
+            or stat.S_IMODE(metadata.st_mode) != _GENERATED_FILE_MODE
+        ):
+            raise RagSafeIoError("RAG generated write published inode mismatched.")
+    except RagSafeIoError:
+        raise
+    except OSError as error:
+        raise RagSafeIoError("RAG generated write target could not be verified.") from error
+    finally:
+        if file_fd >= 0:
+            os.close(file_fd)
+
+
+def _unlink_generated_temp_if_same(
+    directory_fd: int,
+    *,
+    temporary_name: str,
+    expected_identity: tuple[int, int],
+) -> None:
+    """실패 cleanup은 내가 만든 inode일 때만 수행해 concurrent unrelated file을 삭제하지 않는다."""
+
+    temporary_fd = -1
+    try:
+        temporary_fd = os.open(temporary_name, _FILE_FLAGS, dir_fd=directory_fd)
+        metadata = os.fstat(temporary_fd)
+        if (metadata.st_dev, metadata.st_ino) == expected_identity:
+            os.unlink(temporary_name, dir_fd=directory_fd)
+    except OSError:
+        # cleanup failure는 original write error를 가리지 않고, 이후 safe listing이 stale temp를 막는다.
+        return
+    finally:
+        if temporary_fd >= 0:
+            os.close(temporary_fd)

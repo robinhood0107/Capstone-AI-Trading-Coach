@@ -10,6 +10,7 @@ from pathlib import Path
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+CAPSTONE_RAG_ROOT = Path(__file__).resolve().parent
 PYTHON_SERVICE_ROOT = REPO_ROOT / "workspaces/decision-platform/python-services"
 if str(PYTHON_SERVICE_ROOT) not in sys.path:
     sys.path.insert(0, str(PYTHON_SERVICE_ROOT))
@@ -21,6 +22,15 @@ from app.rag.external_processing_corpus import (  # noqa: E402
 )
 from app.rag.source_card_corpus import load_frozen_source_card_corpus  # noqa: E402
 from app.rag.source_card_v2_contract import validate_source_card_v2_payload  # noqa: E402
+from app.rag.safe_io import (  # noqa: E402
+    list_approved_regular_files,
+    read_approved_regular_file,
+    write_approved_generated_file,
+)
+
+_MAX_CARD_BYTES = 2 * 1024 * 1024
+_MAX_CARD_ENTRIES = 30
+_MAX_MANIFEST_BYTES = 2 * 1024 * 1024
 
 _EXTERNAL_LICENSE_NOTE = (
     "approvalId=AUTH_EXTERNAL_PROCESSING_30_PROJECT_CARDS_20260731. "
@@ -56,24 +66,60 @@ def render_external_cards() -> dict[str, bytes]:
     return rendered
 
 
+def _artifact_relative_path(path: Path) -> str:
+    """external corpus artifact는 owned `capstone-rag` subtree 안에서만 생성한다."""
+
+    try:
+        return path.relative_to(CAPSTONE_RAG_ROOT).as_posix()
+    except ValueError as error:
+        raise ValueError("S4.7C artifact path escapes the approved capstone-rag root.") from error
+
+
+def _list_cards() -> dict[str, bytes]:
+    return list_approved_regular_files(
+        approved_root=CAPSTONE_RAG_ROOT,
+        relative_directory=_artifact_relative_path(S4_7C_SOURCE_CARD_ROOT),
+        max_entries=_MAX_CARD_ENTRIES,
+        max_bytes=_MAX_CARD_BYTES,
+    )
+
+
+def _read_manifest() -> bytes:
+    return read_approved_regular_file(
+        approved_root=CAPSTONE_RAG_ROOT,
+        relative_path=_artifact_relative_path(S4_7C_CORPUS_MANIFEST_PATH),
+        max_bytes=_MAX_MANIFEST_BYTES,
+    ).content
+
+
+def _write_artifact(path: Path, content: bytes, *, max_bytes: int) -> None:
+    write_approved_generated_file(
+        approved_root=CAPSTONE_RAG_ROOT,
+        relative_path=_artifact_relative_path(path),
+        content=content,
+        max_bytes=max_bytes,
+    )
+
+
 def _write() -> dict[str, object]:
     rendered = render_external_cards()
-    S4_7C_SOURCE_CARD_ROOT.mkdir(parents=True, exist_ok=True)
-    existing = {
-        entry.name
-        for entry in S4_7C_SOURCE_CARD_ROOT.iterdir()
-        if not entry.name.startswith(".")
-    }
+    existing = set(_list_cards())
     unexpected = existing - set(rendered)
     if unexpected:
         raise ValueError(f"Refusing unexpected S4.7C artifacts: {sorted(unexpected)}")
     for filename, content in rendered.items():
-        (S4_7C_SOURCE_CARD_ROOT / filename).write_bytes(content)
+        _write_artifact(
+            S4_7C_SOURCE_CARD_ROOT / filename,
+            content,
+            max_bytes=_MAX_CARD_BYTES,
+        )
     manifest = build_external_processing_manifest()
-    S4_7C_CORPUS_MANIFEST_PATH.write_text(
-        json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-        newline="\n",
+    _write_artifact(
+        S4_7C_CORPUS_MANIFEST_PATH,
+        (json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode(
+            "utf-8"
+        ),
+        max_bytes=_MAX_MANIFEST_BYTES,
     )
     return manifest
 
@@ -81,19 +127,15 @@ def _write() -> dict[str, object]:
 def _check() -> dict[str, object]:
     rendered = render_external_cards()
     try:
-        existing = {
-            entry.name: entry.read_bytes()
-            for entry in S4_7C_SOURCE_CARD_ROOT.iterdir()
-            if not entry.name.startswith(".")
-        }
-    except OSError as error:
+        existing = _list_cards()
+    except ValueError as error:
         raise ValueError("Tracked S4.7C card root is missing.") from error
     if existing != rendered:
         raise ValueError("Tracked S4.7C card bytes are stale.")
     expected = build_external_processing_manifest()
     try:
-        tracked = json.loads(S4_7C_CORPUS_MANIFEST_PATH.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        tracked = json.loads(_read_manifest().decode("utf-8"))
+    except (ValueError, UnicodeDecodeError, json.JSONDecodeError) as error:
         raise ValueError("Tracked S4.7C manifest is missing or invalid.") from error
     if tracked != expected:
         raise ValueError("Tracked S4.7C manifest is stale.")

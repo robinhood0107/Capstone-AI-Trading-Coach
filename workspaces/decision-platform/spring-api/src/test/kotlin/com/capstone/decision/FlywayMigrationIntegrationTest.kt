@@ -37,6 +37,10 @@ import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
 import org.testcontainers.postgresql.PostgreSQLContainer
 import org.testcontainers.utility.DockerImageName
+import tools.jackson.databind.json.JsonMapper
+import tools.jackson.databind.node.ObjectNode
+import java.nio.file.Files
+import java.nio.file.Path
 import java.sql.DriverManager
 import java.sql.SQLException
 import java.time.Instant
@@ -280,6 +284,90 @@ class FlywayMigrationIntegrationTest(
             }
             connection.rollback()
         }
+    }
+
+    @Test
+    fun `V23 accepts contract-shaped payloads and blocks unknown keys at every append boundary`() {
+        val mapper = JsonMapper.builder().build()
+        val entitlementDocument = crossMarketFixture(mapper, "market_source_entitlement.v1.valid.json")
+        val entitlement =
+            requireNotNull(entitlementDocument.path("entitlements").get(0)) {
+                "market source entitlement fixture must include one candidate-disabled entry"
+            }.deepCopy() as ObjectNode
+        assertEquals(
+            "INSERTED",
+            callMarketWriterAppend("append_market_source_entitlement", mapper.writeValueAsString(entitlement)),
+        )
+
+        // 관측 fixture의 sourceRef는 foreign key이므로 동일한 계약 형태의 disabled source를 먼저 둔다.
+        val observationSourceEntitlement = entitlement.deepCopy() as ObjectNode
+        observationSourceEntitlement.put("logicalIdentityHash", "4".repeat(64))
+        observationSourceEntitlement.put("sourceId", "KIS_DISABLED_02")
+        assertEquals(
+            "INSERTED",
+            callMarketWriterAppend(
+                "append_market_source_entitlement",
+                mapper.writeValueAsString(observationSourceEntitlement),
+            ),
+        )
+
+        val cause = crossMarketFixture(mapper, "market_cause_evidence.v1.valid.json")
+        // GDELT aggregate는 원인 확정 권한이 없으므로 V23이 허용하는 비인과 관계만 regression control로 쓴다.
+        cause.put("relation", "CO_MOVES_WITH")
+        val canonicalPayloads =
+            listOf(
+                MarketWriterAppendPayload("append_market_source_entitlement", entitlement, "REPLAY"),
+                MarketWriterAppendPayload(
+                    "append_cross_market_exposure_catalog_entry",
+                    crossMarketFixture(mapper, "cross_market_exposure_catalog.v1.valid.json"),
+                    "INSERTED",
+                ),
+                MarketWriterAppendPayload(
+                    "append_cross_market_observation",
+                    crossMarketFixture(mapper, "cross_market_observation.v1.valid.json"),
+                    "INSERTED",
+                ),
+                MarketWriterAppendPayload(
+                    "append_analyst_revision_evidence",
+                    crossMarketFixture(mapper, "analyst_revision_evidence.v1.valid.json"),
+                    "INSERTED",
+                ),
+                MarketWriterAppendPayload("append_market_cause_evidence", cause, "INSERTED"),
+            )
+
+        canonicalPayloads.forEach { candidate ->
+            assertEquals(
+                candidate.expectedResult,
+                callMarketWriterAppend(candidate.functionName, mapper.writeValueAsString(candidate.payload)),
+            )
+            // 기존 denylist에 없는 key도 전체 p_record가 payload_json으로 흐르기 전에 거부해야 한다.
+            assertUnknownCrossMarketPayloadIsRejected(mapper, candidate.functionName, candidate.payload)
+        }
+
+        assertUnknownNestedCrossMarketPayloadIsRejected(
+            mapper,
+            "append_market_source_entitlement",
+            entitlement,
+            "materializationDeclaration",
+        )
+        assertUnknownNestedCrossMarketPayloadIsRejected(
+            mapper,
+            "append_analyst_revision_evidence",
+            canonicalPayloads.single { it.functionName == "append_analyst_revision_evidence" }.payload,
+            "current",
+        )
+        assertObjectAtAllowedScalarIsRejected(
+            mapper,
+            "append_market_cause_evidence",
+            cause,
+            "sanitizedSummary",
+        )
+        assertObjectInsideAllowedArrayIsRejected(
+            mapper,
+            "append_cross_market_exposure_catalog_entry",
+            canonicalPayloads.single { it.functionName == "append_cross_market_exposure_catalog_entry" }.payload,
+            "sourceLineage",
+        )
     }
 
     @Test
@@ -2855,6 +2943,105 @@ class FlywayMigrationIntegrationTest(
             }
         }
     }
+
+    private fun crossMarketFixture(
+        mapper: JsonMapper,
+        fileName: String,
+    ): ObjectNode =
+        mapper
+            .readTree(
+                Files.readString(repositoryRoot().resolve("contracts/examples").resolve(fileName)),
+            ).deepCopy() as ObjectNode
+
+    private fun assertUnknownCrossMarketPayloadIsRejected(
+        mapper: JsonMapper,
+        functionName: String,
+        canonicalPayload: ObjectNode,
+    ) {
+        val poisonedPayload = canonicalPayload.deepCopy() as ObjectNode
+        poisonedPayload.put("untrustedContent", "raw provider article payload")
+
+        val exception =
+            assertThrows<SQLException> {
+                callMarketWriterAppend(functionName, mapper.writeValueAsString(poisonedPayload))
+            }
+        assertEquals("22023", exception.sqlState, "unknown payload key must fail before persistence")
+        assertTrue(exception.message.orEmpty().contains("cross-market fixture payload is not permitted"))
+    }
+
+    private fun assertUnknownNestedCrossMarketPayloadIsRejected(
+        mapper: JsonMapper,
+        functionName: String,
+        canonicalPayload: ObjectNode,
+        nestedField: String,
+    ) {
+        val poisonedPayload = canonicalPayload.deepCopy() as ObjectNode
+        val nestedPayload = poisonedPayload.get(nestedField) as ObjectNode
+        nestedPayload.put("untrustedContent", "raw provider article payload")
+
+        val exception =
+            assertThrows<SQLException> {
+                callMarketWriterAppend(functionName, mapper.writeValueAsString(poisonedPayload))
+            }
+        assertEquals("22023", exception.sqlState, "unknown nested payload key must fail before persistence")
+        assertTrue(exception.message.orEmpty().contains("cross-market fixture payload is not permitted"))
+    }
+
+    private fun assertObjectAtAllowedScalarIsRejected(
+        mapper: JsonMapper,
+        functionName: String,
+        canonicalPayload: ObjectNode,
+        fieldName: String,
+    ) {
+        val poisonedPayload = canonicalPayload.deepCopy() as ObjectNode
+        poisonedPayload.set(
+            fieldName,
+            mapper.createObjectNode().put("untrustedContent", "raw provider article payload"),
+        )
+
+        assertCrossMarketPayloadIsRejected(mapper, functionName, poisonedPayload)
+    }
+
+    private fun assertObjectInsideAllowedArrayIsRejected(
+        mapper: JsonMapper,
+        functionName: String,
+        canonicalPayload: ObjectNode,
+        fieldName: String,
+    ) {
+        val poisonedPayload = canonicalPayload.deepCopy() as ObjectNode
+        val poisonedArray = mapper.createArrayNode()
+        poisonedArray.add(mapper.createObjectNode().put("untrustedContent", "raw provider article payload"))
+        poisonedPayload.set(fieldName, poisonedArray)
+
+        assertCrossMarketPayloadIsRejected(mapper, functionName, poisonedPayload)
+    }
+
+    private fun assertCrossMarketPayloadIsRejected(
+        mapper: JsonMapper,
+        functionName: String,
+        poisonedPayload: ObjectNode,
+    ) {
+        val exception =
+            assertThrows<SQLException> {
+                callMarketWriterAppend(functionName, mapper.writeValueAsString(poisonedPayload))
+            }
+        assertEquals("22023", exception.sqlState, "payload object must fail before persistence")
+        assertTrue(exception.message.orEmpty().contains("cross-market fixture payload is not permitted"))
+    }
+
+    private fun repositoryRoot(): Path {
+        var current = Path.of(System.getProperty("user.dir")).toAbsolutePath()
+        while (!Files.exists(current.resolve("AGENTS.md"))) {
+            current = current.parent ?: error("repository root was not found")
+        }
+        return current
+    }
+
+    private data class MarketWriterAppendPayload(
+        val functionName: String,
+        val payload: ObjectNode,
+        val expectedResult: String,
+    )
 
     private fun functionExists(signature: String): Boolean =
         jdbcTemplate.queryForObject(

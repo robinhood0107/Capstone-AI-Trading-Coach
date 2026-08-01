@@ -202,10 +202,30 @@ def test_paddle_overall_ocr_lines_are_bounded_and_shape_checked() -> None:
         OcrLine(bbox=(20, 90, 210, 150), confidence=0.98, text="증가율 0.1%"),
     )
 
+    assert sanitize_paddle_ocr_lines(
+        {
+            "rec_boxes": [[10.0, 20.0, 200.0, 80.0]],
+            "rec_scores": [0.95],
+            "rec_texts": ["integral float bbox"],
+        }
+    ) == (OcrLine(bbox=(10, 20, 200, 80), confidence=0.95, text="integral float bbox"),)
+
     with pytest.raises(BenchmarkError, match="OCR_RESULT_SHAPE_INVALID"):
         sanitize_paddle_ocr_lines(
             {"rec_boxes": [[10, 20, 200, 80]], "rec_scores": [], "rec_texts": ["x"]}
         )
+    for invalid_box in (
+        [[10.25, 20.0, 200.0, 80.0]],
+        [[float("nan"), 20.0, 200.0, 80.0]],
+    ):
+        with pytest.raises(BenchmarkError, match="OCR_RESULT_SHAPE_INVALID"):
+            sanitize_paddle_ocr_lines(
+                {
+                    "rec_boxes": invalid_box,
+                    "rec_scores": [0.95],
+                    "rec_texts": ["x"],
+                }
+            )
 
 
 @pytest.mark.parametrize(

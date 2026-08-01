@@ -498,3 +498,80 @@ def test_candidate_runners_publish_only_through_the_safe_receipt_writer() -> Non
         repository_root / "capstone-rag/ocr/benchmark/paddle_candidate_runner.py"
     ).read_text(encoding="utf-8")
     assert "sanitize_paddle_ocr_lines" in paddle
+
+
+def test_intel_vl_lane_pins_official_openvino_sources_and_rejects_any_cpu_fallback() -> None:
+    repository_root = Path(__file__).resolve().parents[5]
+    manifest = json.loads(
+        (
+            repository_root / "capstone-rag/ocr/benchmark/benchmark-manifest.v1.json"
+        ).read_text(encoding="utf-8")
+    )
+    evidence = manifest["intelOpenVinoPaddleVl"]
+
+    assert evidence["openvinoVersion"] == "2026.2.1"
+    assert evidence["upstreamCommit"] == "3403abcc9ffde3a5e7d379e704b111df1052e49e"
+    assert evidence["upstreamLicense"] == "Apache-2.0"
+    assert evidence["sourceSha256"] == {
+        "image_processing_paddleocr_vl.py": (
+            "9e11ef294ac8d36eedac5fa975ef487c123b07f2c370c55984a0023ae6046a4c"
+        ),
+        "modeling_paddleocr_vl.py": (
+            "26f6bc752a30e8d00a71a056869dca948185811fca8a8c9d0332c18fa3f3ac5e"
+        ),
+        "ov_paddleocr_vl.py": (
+            "b02408445fb9fdd3755794a2e87ce5a16ff54a29a95f27dbe23b1a3f5ee8da4d"
+        ),
+    }
+
+    runner = (
+        repository_root / "capstone-rag/ocr/benchmark/openvino_vl_candidate_runner.py"
+    ).read_text(encoding="utf-8")
+    assert "EXECUTION_DEVICES" in runner
+    assert "OPENVINO_GPU_SILENT_FALLBACK" in runner
+    assert "HF_HUB_OFFLINE" in runner
+    assert "TRANSFORMERS_OFFLINE" in runner
+    assert "sys.stdin.buffer" in runner
+    assert all(digest in runner for digest in evidence["sourceSha256"].values())
+
+
+def test_published_benchmark_summary_selects_only_quality_and_hardware_verified_vl() -> None:
+    repository_root = Path(__file__).resolve().parents[5]
+    path = repository_root / "capstone-rag/ocr/benchmark/receipts/benchmark-summary.v1.json"
+    summary = json.loads(path.read_text(encoding="utf-8"))
+
+    assert summary["benchmarkId"] == "s4-7d-ocr-finance-v1"
+    assert summary["releaseGate"] == "PASSED"
+    assert summary["selectedBackend"] == "PADDLE_VL"
+    assert set(summary["candidates"]) == {
+        "PADDLE_STRUCTURED",
+        "PADDLE_VL",
+        "UNLIMITED_GGUF",
+    }
+    assert summary["candidates"]["PADDLE_STRUCTURED"]["status"] == "FAILED"
+    assert summary["candidates"]["PADDLE_STRUCTURED"]["failureCode"] == (
+        "OCR_QUALITY_GATE_FAILED"
+    )
+    selected = summary["candidates"]["PADDLE_VL"]
+    assert selected["status"] == "SUCCEEDED"
+    assert selected["quality"] == {
+        "criticalSpanErrors": 0,
+        "englishCer": 0.0,
+        "formulaAccuracy": 1.0,
+        "hallucinatedCriticalSpans": 0,
+        "koreanCer": 0.0,
+        "readingOrderKendallTau": 1.0,
+        "tableCellF1": 1.0,
+    }
+    assert {lane["lane"] for lane in selected["lanes"]} == {"CPU", "INTEL_GPU"}
+    intel = next(lane for lane in selected["lanes"] if lane["lane"] == "INTEL_GPU")
+    assert intel["compileInferVerified"] is True
+    assert intel["silentFallbackDetected"] is False
+    assert set(intel["executionDevices"]) == {"GPU.0"}
+    assert all(lane["normalizedPagesPerMinute"] > 0 for lane in selected["lanes"])
+
+    serialized = path.read_text(encoding="utf-8")
+    assert "/home/" not in serialized
+    assert "C:\\" not in serialized
+    assert "providerBody" not in serialized
+    assert "rawText" not in serialized

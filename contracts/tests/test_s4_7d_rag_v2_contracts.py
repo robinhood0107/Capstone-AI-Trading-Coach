@@ -276,7 +276,7 @@ class S47dRagV2ContractTest(unittest.TestCase):
             set(document["paths"]),
         )
         self.assertEqual(
-            ["get", "delete"],
+            ["delete", "get"],
             sorted(document["paths"]["/api/v2/rag/history/{answerId}"]),
         )
         self.assertEqual(

@@ -150,6 +150,7 @@ class _CredentialTransport(httpx.BaseTransport):
         max_response_bytes: int = _MAX_RESPONSE_BYTES,
         max_json_depth: int = _MAX_JSON_DEPTH,
         sensitive_values: Callable[[], tuple[str, ...]] | None = None,
+        deadline_guard: Callable[[], None] | None = None,
     ) -> None:
         self._inner = inner
         self._mode = settings.mode
@@ -161,6 +162,7 @@ class _CredentialTransport(httpx.BaseTransport):
         self._max_response_bytes = max_response_bytes
         self._max_json_depth = max_json_depth
         self._sensitive_values = sensitive_values
+        self._deadline_guard = deadline_guard
 
     def handle_request(self, request: httpx.Request) -> httpx.Response:
         _ensure_origin(request.url, self._origin)
@@ -189,9 +191,12 @@ class _CredentialTransport(httpx.BaseTransport):
             if self._enabled:
                 if self._token_provider is None:
                     raise KISCredentialError("KIS authentication is unavailable")
+                self._require_before_handoff()
                 token = str(self._token_provider())
                 # token cache/발급 대기가 끝난 뒤 실제 market send 슬롯을 먼저 예약한다.
+                self._require_before_handoff()
                 self._rate_limiter.acquire()
+                self._require_before_handoff()
                 credentials = _read_credentials(self._mode)
                 app_key = credentials.app_key.get_secret_value()
                 app_secret = credentials.app_secret.get_secret_value()
@@ -200,12 +205,14 @@ class _CredentialTransport(httpx.BaseTransport):
                 request.headers["appkey"] = app_key
                 request.headers["appsecret"] = app_secret
             else:
+                self._require_before_handoff()
                 self._rate_limiter.acquire()
                 candidates = additional
             if self._accounting is not None:
                 self._accounting.record_physical_attempt(PhysicalChannel.MARKET_DATA)
                 attempt_recorded = True
             try:
+                self._require_before_handoff()
                 provider_response = self._inner.handle_request(request)
             except KISCallBudgetExceeded:
                 call_budget_exceeded = True
@@ -268,6 +275,12 @@ class _CredentialTransport(httpx.BaseTransport):
     def close(self) -> None:
         self._inner.close()
 
+    def _require_before_handoff(self) -> None:
+        """approval-bound caller가 준 deadline은 limiter 대기 전후와 socket 직전에 다시 확인한다."""
+
+        if self._deadline_guard is not None:
+            self._deadline_guard()
+
 
 class _TokenIssuer:
     """OAuth body credential은 고정 token endpoint request를 만드는 순간에만 평문으로 존재한다."""
@@ -278,6 +291,7 @@ class _TokenIssuer:
         transport: httpx.BaseTransport | None = None,
         rate_limiter: RateLimiter | None = None,
         accounting: CollectionRunRecorder | None = None,
+        deadline_guard: Callable[[], None] | None = None,
     ) -> None:
         if rate_limiter is None:
             # tokenP도 app process마다 local bucket을 만들면 동시 cache miss에서 공식 1/s를 우회한다.
@@ -292,6 +306,7 @@ class _TokenIssuer:
         )
         self._rate_limiter = rate_limiter
         self._accounting = accounting
+        self._deadline_guard = deadline_guard
 
     def issue(self) -> dict[str, Any]:
         credentials: _Credentials | None = None
@@ -308,7 +323,9 @@ class _TokenIssuer:
         attempt_recorded = False
         try:
             # tokenP global 1/s 슬롯을 확보하기 전에는 static credential을 읽거나 body를 만들지 않는다.
+            self._require_before_handoff()
             self._rate_limiter.acquire()
+            self._require_before_handoff()
             credentials = _read_credentials(self._mode)
             app_key = credentials.app_key.get_secret_value()
             app_secret = credentials.app_secret.get_secret_value()
@@ -320,6 +337,7 @@ class _TokenIssuer:
                 }
             )
             try:
+                self._require_before_handoff()
                 if self._accounting is not None:
                     self._accounting.record_physical_attempt(PhysicalChannel.TOKEN_P)
                     attempt_recorded = True
@@ -395,6 +413,12 @@ class _TokenIssuer:
 
     def close(self) -> None:
         self._http.close()
+
+    def _require_before_handoff(self) -> None:
+        """approval-bound tokenP는 limiter wait 뒤에도 expiry를 넘기면 socket 전에 종료한다."""
+
+        if self._deadline_guard is not None:
+            self._deadline_guard()
 
 
 def _ensure_origin(url: httpx.URL, origin: httpx.URL) -> None:

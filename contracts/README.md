@@ -255,8 +255,10 @@ token/cache, shared limiter, provider accounting, socket handoff보다 먼저 �
 재시작 후에도 Redis의 encrypted `PENDING` ciphertext를 CAS 기준으로 `COMMITTED` 전환할 수
 있어야 한다.
 
-online 1회 검증은 최종 HEAD/PR #55 CI/fresh security report/Redis baseline을 결속한 60분 이하
-0600 packet과 별도 current-user approval ID/SHA가 있을 때만
+online 1회 검증의 `schemaVersion=1`은 PR #55 history verification에만 고정한다. 새
+`schemaVersion=2` packet은 최종 HEAD/dynamic PR/head branch/required CI/fresh sealed security
+report·manifest·coverage·findings/Redis baseline/nonce를 함께 결속한 60분 이하 owner-private
+directory의 새 `0600` file과 별도 current-user approval ID/SHA가 있을 때만
 `balance -> buyable -> LIMIT BUY 1주 -> 전량 취소 -> 최근 체결조회`를 cap
 `tokenP=1`, `brokerage=5`, retry/artifact 0으로 실행한다. 이 packet은 gRPC server 상시
 활성화, background polling, S3.3 fill append, KIS_LIVE 계좌·주문 권한을 승인하지 않는다.
@@ -401,6 +403,9 @@ uv run --frozen python contracts/run_openapi_gate.py \
 `FULL` one-shot probe만 위의 고정 5회 상한 안에서 최종 검증으로 실행할 수 있다. 반복 실패
 recovery는 새 exact-approved `BALANCE_DIAGNOSTIC` packet으로 balance 1회,
 `tokenP=1`/`brokerage=1`, retry/artifact 0만 허용하며 성공해도 새 `FULL` 승인이 필요하다.
+주문 접수 뒤 cancel 실패만 source packet SHA/nonce anchor가 보존된 encrypted `COMMITTED`
+reference를 쓰는 `CANCEL_RECOVERY`의 `cancelFull -> executionRead` cap `2`로 정리할 수 있다.
+execution read만 실패한 recovery는 cancel을 재전송하지 않고 read 1회 cap `1`만 허용한다.
 balance source page의 continuation cursor는 `positions_complete=false`인 connectivity evidence로만
 허용하고 authoritative position universe나 risk input으로 게시하지 않는다.
 두 profile의 packet은 `approvalId`와
@@ -408,6 +413,10 @@ canonical SHA-256에 결속한 Redis `SET NX PX` single-use claim을 runtime 생
 성공·첫 실패·runtime 생성 실패 모두 재사용 권한을 남기지 않는다. KIS_MOCK provider response는
 JSON parse/sanitize 전에 1 MiB cap을 적용하고 실패 출력은 allowlisted reason/HTTP status/
 provider code만 허용한다. KIS_LIVE 실계좌 주문은 계속 OFF다.
+
+v1/v2 분리, sealed scan receipt 검증, deterministic author와 cancel-only recovery의 상세는
+[`20260801-s3-online-kis-mock-approval-packet-v2.md`](changes/20260801-s3-online-kis-mock-approval-packet-v2.md)를
+따른다.
 
 ## S4 RAG profile·policy catalog
 

@@ -3279,7 +3279,9 @@ class FlywayMigrationIntegrationTest(
             registry.add("spring.flyway.user", postgres::getUsername)
             registry.add("spring.flyway.password", postgres::getPassword)
             registry.add("app.decision.grpc.shared-secret") { SpringApiIntegrationTestBase.TEST_GRPC_SHARED_SECRET }
-            registry.add("app.rag.grpc.shared-secret") { SpringApiIntegrationTestBase.TEST_GRPC_SHARED_SECRET }
+            registry.add("app.rag.grpc.shared-secret") {
+                SpringApiIntegrationTestBase.TEST_RAG_GRPC_SHARED_SECRET
+            }
         }
 
         @JvmStatic

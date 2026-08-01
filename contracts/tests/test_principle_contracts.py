@@ -235,12 +235,12 @@ class OpenApiEnvironmentParserTest(unittest.TestCase):
             parsed["BROKERAGE_DB_CAPABILITY_TOKEN_SHA256"],
         )
         self.assertEqual(
-            {
-                parsed["DECISION_GRPC_SHARED_SECRET"],
-                parsed["RAG_GRPC_SHARED_SECRET"],
-                parsed["PYTHON_GRPC_SHARED_SECRET"],
-            },
-            {parsed["DECISION_GRPC_SHARED_SECRET"]},
+            parsed["DECISION_GRPC_SHARED_SECRET"],
+            parsed["PYTHON_GRPC_SHARED_SECRET"],
+        )
+        self.assertNotEqual(
+            parsed["RAG_GRPC_SHARED_SECRET"],
+            parsed["DECISION_GRPC_SHARED_SECRET"],
         )
         self.assertTrue(parsed["DEMO_USER_CREDENTIAL_BUNDLE"].startswith("s21-v1:usr_demo_user:"))
         self.assertNotIn("KIS_MODE", parsed)
@@ -260,9 +260,9 @@ class OpenApiEnvironmentParserTest(unittest.TestCase):
                 "JWT_AUDIENCE='unsafe'quote'",
             ),
             "port-mismatch": valid.replace("POSTGRES_PORT='55432'", "POSTGRES_PORT='55433'"),
-            "rag-grpc-mismatch": valid.replace(
-                f"RAG_GRPC_SHARED_SECRET='{'S' * 43}'",
+            "rag-grpc-reused-as-decision": valid.replace(
                 f"RAG_GRPC_SHARED_SECRET='{'D' * 43}'",
+                f"RAG_GRPC_SHARED_SECRET='{'S' * 43}'",
             ),
             "capability-digest-mismatch": valid.replace(
                 f"BROKERAGE_DB_CAPABILITY_TOKEN_SHA256='{hashlib.sha256(('U' * 43).encode()).hexdigest()}'",
@@ -337,7 +337,7 @@ class OpenApiEnvironmentParserTest(unittest.TestCase):
             "POSTGRES_RAG_ADMIN_PASSWORD": "X" * 43,
             "POSTGRES_RAG_QUERY_PASSWORD": "Y" * 43,
             "DECISION_GRPC_SHARED_SECRET": "S" * 43,
-            "RAG_GRPC_SHARED_SECRET": "S" * 43,
+            "RAG_GRPC_SHARED_SECRET": "D" * 43,
             "PYTHON_GRPC_SHARED_SECRET": "S" * 43,
             "REDIS_PASSWORD": "E" * 43,
             "JWT_SECRET": "F" * 43,

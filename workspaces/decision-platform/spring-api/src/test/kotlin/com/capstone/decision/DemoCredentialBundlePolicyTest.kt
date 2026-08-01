@@ -2,6 +2,8 @@ package com.capstone.decision
 
 import com.capstone.decision.infrastructure.brokerage.BrokerageProperties
 import com.capstone.decision.infrastructure.decision.DecisionProperties
+import com.capstone.decision.infrastructure.grpc.DecisionGrpcProperties
+import com.capstone.decision.infrastructure.grpc.RagGrpcProperties
 import com.capstone.decision.infrastructure.principle.PrincipleProperties
 import com.capstone.decision.infrastructure.rag.RagGuardHistoryProperties
 import com.capstone.decision.infrastructure.security.DemoAccounts
@@ -199,6 +201,31 @@ class DemoCredentialBundlePolicyTest {
         rag.historyCursorHmacKey = rag.rateLimitHmacKey
         assertThrows<IllegalArgumentException> {
             SecurityConfig().authSecretSeparation(jwt, login, properties, principle, decision, brokerage, rag)
+        }
+    }
+
+    @Test
+    fun `enabled RAG grpc requires a secret distinct from the Decision grpc secret`() {
+        val decisionGrpc = DecisionGrpcProperties(sharedSecret = "d".repeat(32))
+        val ragGrpc = RagGrpcProperties(enabled = true, sharedSecret = "r".repeat(32))
+
+        assertDoesNotThrow {
+            SecurityConfig().ragGrpcSecretSeparation(decisionGrpc, ragGrpc)
+        }
+
+        ragGrpc.sharedSecret = decisionGrpc.sharedSecret
+        assertThrows<IllegalArgumentException> {
+            SecurityConfig().ragGrpcSecretSeparation(decisionGrpc, ragGrpc)
+        }
+
+        ragGrpc.sharedSecret = ""
+        assertThrows<IllegalArgumentException> {
+            SecurityConfig().ragGrpcSecretSeparation(decisionGrpc, ragGrpc)
+        }
+
+        ragGrpc.enabled = false
+        assertDoesNotThrow {
+            SecurityConfig().ragGrpcSecretSeparation(decisionGrpc, ragGrpc)
         }
     }
 

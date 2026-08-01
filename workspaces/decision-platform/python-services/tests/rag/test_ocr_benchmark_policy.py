@@ -15,6 +15,7 @@ from app.rag.ocr_benchmark import (
     compute_kendall_tau,
     evaluate_quality,
     quality_receipt_projection,
+    retain_expected_critical_spans,
     select_production_backend,
     validate_benchmark_receipt,
 )
@@ -134,6 +135,13 @@ def test_objective_quality_evaluator_detects_missing_and_hallucinated_financial_
     assert receipt.table_cell_f1 == 0
     assert receipt.formula_accuracy < 1
     assert receipt.reading_order_kendall_tau == pytest.approx(1 / 3)
+
+
+def test_chart_derived_series_do_not_become_printed_critical_span_hallucinations() -> None:
+    assert retain_expected_critical_spans(
+        expected=("1,053.1", "0.1%", "0.1%", "119.3"),
+        prediction=("1,053.1", "0.1%", "2.37", "999", "0.1%", "0.1%"),
+    ) == ("1,053.1", "0.1%", "0.1%")
 
 
 @pytest.mark.parametrize(

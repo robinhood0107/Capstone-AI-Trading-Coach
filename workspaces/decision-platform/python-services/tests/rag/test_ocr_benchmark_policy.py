@@ -10,6 +10,7 @@ from app.rag.ocr_benchmark import (
     CandidateReceipt,
     EvaluationDocument,
     GroundedSpan,
+    OcrLine,
     LaneReceipt,
     QualityReceipt,
     compute_character_error_rate,
@@ -19,6 +20,7 @@ from app.rag.ocr_benchmark import (
     parse_grounded_ocr_output,
     retain_expected_critical_spans,
     reading_order_from_grounded_spans,
+    sanitize_paddle_ocr_lines,
     select_production_backend,
     validate_benchmark_receipt,
 )
@@ -184,6 +186,26 @@ def test_grounded_spans_project_to_page_reading_order_without_duplicate_regions(
         regions={"left": (100, 100, 900, 900), "right": (1100, 100, 1900, 900)},
         expected_order=("left", "right"),
     ) == ("left", "right")
+
+
+def test_paddle_overall_ocr_lines_are_bounded_and_shape_checked() -> None:
+    lines = sanitize_paddle_ocr_lines(
+        {
+            "rec_boxes": [[10, 20, 200, 80], [20, 90, 210, 150]],
+            "rec_scores": [0.999, 0.98],
+            "rec_texts": ["총자산 1,053.1조원", "증가율 0.1%"],
+        }
+    )
+
+    assert lines == (
+        OcrLine(bbox=(10, 20, 200, 80), confidence=0.999, text="총자산 1,053.1조원"),
+        OcrLine(bbox=(20, 90, 210, 150), confidence=0.98, text="증가율 0.1%"),
+    )
+
+    with pytest.raises(BenchmarkError, match="OCR_RESULT_SHAPE_INVALID"):
+        sanitize_paddle_ocr_lines(
+            {"rec_boxes": [[10, 20, 200, 80]], "rec_scores": [], "rec_texts": ["x"]}
+        )
 
 
 @pytest.mark.parametrize(

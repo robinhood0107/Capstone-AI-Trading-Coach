@@ -401,3 +401,7 @@ def test_candidate_runners_publish_only_through_the_safe_receipt_writer() -> Non
         repository_root / "capstone-rag/ocr/benchmark/unlimited_candidate_runner.py"
     ).read_text(encoding="utf-8")
     assert "parse_grounded_ocr_output" in unlimited
+    paddle = (
+        repository_root / "capstone-rag/ocr/benchmark/paddle_candidate_runner.py"
+    ).read_text(encoding="utf-8")
+    assert "sanitize_paddle_ocr_lines" in paddle

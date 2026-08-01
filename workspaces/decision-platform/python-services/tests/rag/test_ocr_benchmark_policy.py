@@ -475,6 +475,8 @@ def test_evaluator_treats_native_fraction_order_and_tex_fraction_as_the_same_num
 
     assert evaluator._numeric_spans("h = N1") == ("1",)
     assert evaluator._numeric_spans(r"h = \\frac{1}{N}") == ("1",)
+    assert evaluator._numeric_spans("tₖ−1") == ("-1",)
+    assert evaluator._numeric_spans("t_{k-1}") == ("-1",)
 
 
 def test_candidate_runners_publish_only_through_the_safe_receipt_writer() -> None:

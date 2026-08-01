@@ -100,6 +100,7 @@ class KISMockOrderGateway:
         *,
         order_id: str | None = None,
         account_id: str | None = None,
+        approval_anchor: str | None = None,
     ) -> MockOrderReceipt:
         """모의 현금주문 1회를 provider retry 없이 전송한다.
 
@@ -124,6 +125,7 @@ class KISMockOrderGateway:
                     order_division=order_division,
                     quantity=intent.quantity,
                     exchange_division=exchange_division,
+                    approval_anchor=approval_anchor,
                 ),
             )
         response = self._transport.request(
@@ -188,6 +190,7 @@ class KISMockOrderGateway:
         *,
         order_id: str,
         account_id: str,
+        approval_anchor: str | None = None,
     ) -> MockCancelReceipt:
         """저장된 암호화 reference가 있을 때만 KIS 모의 전량취소를 retry 없이 전송한다."""
         if self._mode != "mock":
@@ -195,7 +198,14 @@ class KISMockOrderGateway:
         if self._reference_store is None:
             # 기존 offline ledger-only 배선은 provider 호출 없이 그대로 유지한다.
             return MockCancelReceipt(status="CANCEL_REQUESTED", tr_id=None)
-        reference = self._reference_store.get(order_id, account_id)
+        if approval_anchor is None:
+            reference = self._reference_store.get(order_id, account_id)
+        else:
+            reference = self._reference_store.get_for_recovery(
+                order_id,
+                account_id,
+                approval_anchor,
+            )
         if reference is None:
             raise MockOrderRejected("KIS mock cancel reference is unavailable.")
         if not self._request_full_cancel(reference):

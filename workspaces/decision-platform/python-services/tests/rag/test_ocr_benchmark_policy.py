@@ -426,6 +426,18 @@ def test_structured_candidate_reads_printed_chart_values_without_chart_generatio
     )
 
 
+def test_vl_candidate_uses_ocr_for_image_blocks_without_chart_generation() -> None:
+    repository_root = Path(__file__).resolve().parents[5]
+    runner = (
+        repository_root / "capstone-rag/ocr/benchmark/paddle_candidate_runner.py"
+    ).read_text(encoding="utf-8")
+    vl = runner.split("def _vl", 1)[1].split("def _run", 1)[0]
+
+    assert "use_chart_recognition=False" in vl
+    assert "use_ocr_for_image_block=True" in vl
+    assert "use_chart_recognition=True" not in vl
+
+
 def test_candidate_runners_publish_only_through_the_safe_receipt_writer() -> None:
     repository_root = Path(__file__).resolve().parents[5]
     for filename in ("paddle_candidate_runner.py", "unlimited_candidate_runner.py"):

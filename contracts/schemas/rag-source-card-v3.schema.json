@@ -1,0 +1,497 @@
+{
+  "$id": "contracts/schemas/rag-source-card-v3.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "externalLlmAllowed": {
+            "const": true
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "localProcessingAllowed": {
+            "const": true
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "sourceKind": {
+            "const": "PROJECT_SOURCE_CARD"
+          }
+        }
+      },
+      "then": {
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "downloadUrl"
+              ]
+            },
+            {
+              "required": [
+                "opaqueLocalDocumentId"
+              ]
+            },
+            {
+              "required": [
+                "sanitizedDisplayName"
+              ]
+            }
+          ]
+        },
+        "properties": {
+          "curriculumTrack": {
+            "const": "PROJECT_CORE"
+          },
+          "licenseEvidence": {
+            "properties": {
+              "accessBasis": {
+                "const": "PROJECT_AUTHORED"
+              }
+            }
+          },
+          "machineFetchAllowed": {
+            "const": false
+          }
+        },
+        "required": [
+          "canonicalUrl"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "sourceKind": {
+            "const": "OPEN_ACCESS_DOCUMENT"
+          }
+        }
+      },
+      "then": {
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "opaqueLocalDocumentId"
+              ]
+            },
+            {
+              "required": [
+                "sanitizedDisplayName"
+              ]
+            }
+          ]
+        },
+        "properties": {
+          "curriculumTrack": {
+            "enum": [
+              "MICRO_GAME_INFO_MARKET_DESIGN",
+              "MACRO_MONETARY_INTERNATIONAL",
+              "PROBABILITY_STATISTICS_OPTIMIZATION",
+              "ECONOMETRICS_CAUSAL_EVENT_STUDY",
+              "TIME_SERIES_REGIME_VOLATILITY",
+              "ACCOUNTING_CORPORATE_FINANCE_VALUATION",
+              "ASSET_PRICING_FACTOR_PORTFOLIO",
+              "FIXED_INCOME_RATES_CREDIT",
+              "DERIVATIVES_STOCHASTIC_NUMERICS",
+              "MARKET_MICROSTRUCTURE_EXECUTION_LIQUIDITY",
+              "RISK_STRESS_BACKTEST_MODEL_RISK",
+              "BEHAVIORAL_EFFICIENCY_ANOMALY_CROWDING",
+              "FINANCIAL_ML_PIT_DATA_PROVENANCE",
+              "CROSS_MARKET_COMMODITIES_POLICY_KOREA"
+            ]
+          },
+          "licenseEvidence": {
+            "properties": {
+              "accessBasis": {
+                "const": "OPEN_ACCESS"
+              }
+            }
+          },
+          "localProcessingAllowed": {
+            "const": true
+          },
+          "machineFetchAllowed": {
+            "const": true
+          }
+        },
+        "required": [
+          "canonicalUrl",
+          "downloadUrl"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "sourceKind": {
+            "const": "OWNER_LOCAL_DOCUMENT"
+          }
+        }
+      },
+      "then": {
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "canonicalUrl"
+              ]
+            },
+            {
+              "required": [
+                "downloadUrl"
+              ]
+            }
+          ]
+        },
+        "properties": {
+          "curriculumTrack": {
+            "enum": [
+              "OWNER_PRIVATE_UNCLASSIFIED",
+              "MICRO_GAME_INFO_MARKET_DESIGN",
+              "MACRO_MONETARY_INTERNATIONAL",
+              "PROBABILITY_STATISTICS_OPTIMIZATION",
+              "ECONOMETRICS_CAUSAL_EVENT_STUDY",
+              "TIME_SERIES_REGIME_VOLATILITY",
+              "ACCOUNTING_CORPORATE_FINANCE_VALUATION",
+              "ASSET_PRICING_FACTOR_PORTFOLIO",
+              "FIXED_INCOME_RATES_CREDIT",
+              "DERIVATIVES_STOCHASTIC_NUMERICS",
+              "MARKET_MICROSTRUCTURE_EXECUTION_LIQUIDITY",
+              "RISK_STRESS_BACKTEST_MODEL_RISK",
+              "BEHAVIORAL_EFFICIENCY_ANOMALY_CROWDING",
+              "FINANCIAL_ML_PIT_DATA_PROVENANCE",
+              "CROSS_MARKET_COMMODITIES_POLICY_KOREA"
+            ]
+          },
+          "licenseEvidence": {
+            "properties": {
+              "accessBasis": {
+                "const": "OWNER_POSSESSION"
+              }
+            }
+          },
+          "machineFetchAllowed": {
+            "const": false
+          },
+          "redistributionAllowed": {
+            "const": false
+          }
+        },
+        "required": [
+          "opaqueLocalDocumentId",
+          "sanitizedDisplayName"
+        ]
+      }
+    }
+  ],
+  "properties": {
+    "authors": {
+      "items": {
+        "maxLength": 300,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 50,
+      "minItems": 1,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "canonicalUrl": {
+      "format": "uri",
+      "maxLength": 2048,
+      "pattern": "^https://",
+      "type": "string"
+    },
+    "contractId": {
+      "const": "rag-source-card-v3"
+    },
+    "curriculumTrack": {
+      "enum": [
+        "PROJECT_CORE",
+        "OWNER_PRIVATE_UNCLASSIFIED",
+        "MICRO_GAME_INFO_MARKET_DESIGN",
+        "MACRO_MONETARY_INTERNATIONAL",
+        "PROBABILITY_STATISTICS_OPTIMIZATION",
+        "ECONOMETRICS_CAUSAL_EVENT_STUDY",
+        "TIME_SERIES_REGIME_VOLATILITY",
+        "ACCOUNTING_CORPORATE_FINANCE_VALUATION",
+        "ASSET_PRICING_FACTOR_PORTFOLIO",
+        "FIXED_INCOME_RATES_CREDIT",
+        "DERIVATIVES_STOCHASTIC_NUMERICS",
+        "MARKET_MICROSTRUCTURE_EXECUTION_LIQUIDITY",
+        "RISK_STRESS_BACKTEST_MODEL_RISK",
+        "BEHAVIORAL_EFFICIENCY_ANOMALY_CROWDING",
+        "FINANCIAL_ML_PIT_DATA_PROVENANCE",
+        "CROSS_MARKET_COMMODITIES_POLICY_KOREA"
+      ]
+    },
+    "downloadUrl": {
+      "format": "uri",
+      "maxLength": 2048,
+      "pattern": "^https://",
+      "type": "string"
+    },
+    "externalLlmAllowed": {
+      "type": "boolean"
+    },
+    "licenseEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "accessBasis": {
+          "enum": [
+            "PROJECT_AUTHORED",
+            "OPEN_ACCESS",
+            "OWNER_POSSESSION"
+          ]
+        },
+        "checkedAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "evidenceUrl": {
+          "oneOf": [
+            {
+              "format": "uri",
+              "maxLength": 2048,
+              "pattern": "^https://",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "licenseId": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        "note": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "accessBasis",
+        "checkedAt",
+        "evidenceUrl",
+        "licenseId",
+        "note"
+      ],
+      "type": "object"
+    },
+    "localProcessingAllowed": {
+      "type": "boolean"
+    },
+    "machineFetchAllowed": {
+      "type": "boolean"
+    },
+    "mimeType": {
+      "enum": [
+        "application/pdf",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "text/html",
+        "text/markdown",
+        "text/plain",
+        "image/png",
+        "image/jpeg",
+        "image/tiff"
+      ]
+    },
+    "normalizedContentSha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "opaqueLocalDocumentId": {
+      "pattern": "^doc_[a-z0-9][a-z0-9_-]{10,95}$",
+      "type": "string"
+    },
+    "parserEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "ocr": {
+          "additionalProperties": false,
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "backend": {
+                    "const": "NOT_USED"
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "backendVersion": {
+                    "type": "null"
+                  },
+                  "modelSha256": {
+                    "type": "null"
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "backend": {
+                    "enum": [
+                      "PADDLE_STRUCTURED",
+                      "PADDLE_VL",
+                      "UNLIMITED_GGUF"
+                    ]
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "backendVersion": {
+                    "type": "string"
+                  },
+                  "modelSha256": {
+                    "pattern": "^[0-9a-f]{64}$",
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          ],
+          "properties": {
+            "backend": {
+              "enum": [
+                "NOT_USED",
+                "PADDLE_STRUCTURED",
+                "PADDLE_VL",
+                "UNLIMITED_GGUF"
+              ]
+            },
+            "backendVersion": {
+              "oneOf": [
+                {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "modelSha256": {
+              "oneOf": [
+                {
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "backend",
+            "backendVersion",
+            "modelSha256"
+          ],
+          "type": "object"
+        },
+        "parserArtifactSha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "parserBackend": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        "parserVersion": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "parserBackend",
+        "parserVersion",
+        "parserArtifactSha256",
+        "ocr"
+      ],
+      "type": "object"
+    },
+    "publishedOn": {
+      "format": "date",
+      "type": "string"
+    },
+    "rawContentSha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "redistributionAllowed": {
+      "type": "boolean"
+    },
+    "sanitizedDisplayName": {
+      "maxLength": 160,
+      "minLength": 1,
+      "pattern": "^[^/\\\\:]+$",
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": 3
+    },
+    "sourceId": {
+      "pattern": "^src_[a-z0-9][a-z0-9_-]{2,95}$",
+      "type": "string"
+    },
+    "sourceKind": {
+      "enum": [
+        "PROJECT_SOURCE_CARD",
+        "OPEN_ACCESS_DOCUMENT",
+        "OWNER_LOCAL_DOCUMENT"
+      ]
+    },
+    "sourceRevisionId": {
+      "pattern": "^srv_[a-z0-9][a-z0-9_-]{2,95}$",
+      "type": "string"
+    },
+    "title": {
+      "maxLength": 500,
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "contractId",
+    "schemaVersion",
+    "sourceKind",
+    "sourceId",
+    "sourceRevisionId",
+    "title",
+    "authors",
+    "publishedOn",
+    "curriculumTrack",
+    "mimeType",
+    "rawContentSha256",
+    "normalizedContentSha256",
+    "licenseEvidence",
+    "machineFetchAllowed",
+    "localProcessingAllowed",
+    "redistributionAllowed",
+    "externalLlmAllowed",
+    "parserEvidence"
+  ],
+  "title": "rag-source-card-v3",
+  "type": "object"
+}

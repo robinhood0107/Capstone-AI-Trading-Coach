@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import os
 import subprocess
 import sys
 import tempfile
@@ -13,6 +12,11 @@ from google.protobuf import descriptor_pb2
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from contracts.generated_artifact_io import write_generated_path  # noqa: E402
+
 PROTO_PATH = REPO_ROOT / "contracts/proto/rag.proto"
 PYTHON_GENERATED_DIR = (
     REPO_ROOT / "workspaces/decision-platform/python-services/app/generated"
@@ -189,20 +193,7 @@ def _validate_descriptor(payload: bytes) -> None:
 
 def _write(outputs: dict[Path, bytes]) -> None:
     for path, payload in outputs.items():
-        path.parent.mkdir(parents=True, exist_ok=True)
-        descriptor, temporary_name = tempfile.mkstemp(
-            dir=path.parent, prefix=f".{path.name}.", suffix=".tmp"
-        )
-        try:
-            with os.fdopen(descriptor, "wb") as handle:
-                handle.write(payload)
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.replace(temporary_name, path)
-            os.chmod(path, 0o644)
-        finally:
-            if os.path.exists(temporary_name):
-                os.unlink(temporary_name)
+        write_generated_path(REPO_ROOT, path, payload)
         print(f"WROTE {path.relative_to(REPO_ROOT).as_posix()}")
 
 

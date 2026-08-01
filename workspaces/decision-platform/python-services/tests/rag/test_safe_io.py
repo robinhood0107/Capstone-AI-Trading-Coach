@@ -368,9 +368,9 @@ def test_write_approved_new_file_does_not_delete_target_swapped_after_publish(
 
 
 def test_write_approved_generated_file_replaces_only_safe_regular_leaf_and_lists_bytes(
-    tmp_path: Path,
+    posix_tmp_path: Path,
 ) -> None:
-    root = tmp_path / "approved"
+    root = posix_tmp_path / "approved"
     cards = root / "cards"
     cards.mkdir(parents=True)
     target = cards / "card.md"
@@ -397,12 +397,12 @@ def test_write_approved_generated_file_replaces_only_safe_regular_leaf_and_lists
 @pytest.mark.parametrize("unsafe_kind", ("symlink", "directory", "hardlink"))
 def test_write_approved_generated_file_rejects_unsafe_existing_leaf(
     unsafe_kind: str,
-    tmp_path: Path,
+    posix_tmp_path: Path,
 ) -> None:
-    root = tmp_path / "approved"
+    root = posix_tmp_path / "approved"
     cards = root / "cards"
     cards.mkdir(parents=True)
-    outside = tmp_path / "outside.md"
+    outside = posix_tmp_path / "outside.md"
     outside.write_bytes(b"outside sentinel")
     target = cards / "card.md"
     if unsafe_kind == "symlink":

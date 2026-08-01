@@ -570,6 +570,59 @@ def test_published_benchmark_summary_selects_only_quality_and_hardware_verified_
     assert set(intel["executionDevices"]) == {"GPU.0"}
     assert all(lane["normalizedPagesPerMinute"] > 0 for lane in selected["lanes"])
 
+    receipts: list[CandidateReceipt] = []
+    for name, value in summary["candidates"].items():
+        if value["status"] == "FAILED":
+            receipts.append(
+                CandidateReceipt(
+                    candidate=name,
+                    candidate_version=value["candidateVersion"],
+                    model_sha256=value["modelSha256"],
+                    quality=None,
+                    lanes=(),
+                    status="FAILED",
+                    failure_code=value["failureCode"],
+                )
+            )
+            continue
+        quality = value["quality"]
+        receipts.append(
+            CandidateReceipt(
+                candidate=name,
+                candidate_version=value["candidateVersion"],
+                model_sha256=value["modelSha256"],
+                quality=QualityReceipt(
+                    korean_cer=quality["koreanCer"],
+                    english_cer=quality["englishCer"],
+                    critical_span_errors=quality["criticalSpanErrors"],
+                    table_cell_f1=quality["tableCellF1"],
+                    formula_accuracy=quality["formulaAccuracy"],
+                    reading_order_kendall_tau=quality["readingOrderKendallTau"],
+                    hallucinated_critical_spans=quality["hallucinatedCriticalSpans"],
+                ),
+                lanes=tuple(
+                    LaneReceipt(
+                        lane=lane["lane"],
+                        executed=lane["executed"],
+                        device_name=lane["deviceName"],
+                        normalized_pages_per_minute=lane["normalizedPagesPerMinute"],
+                        peak_memory_bytes=lane["peakMemoryBytes"],
+                        install_bytes=lane["installBytes"],
+                        artifact_sha256=lane["artifactSha256"],
+                        openvino_device=lane["openvinoDevice"],
+                        openvino_compile_infer_verified=lane["compileInferVerified"],
+                        silent_fallback_detected=lane["silentFallbackDetected"],
+                    )
+                    for lane in value["lanes"]
+                ),
+            )
+        )
+    production = select_production_backend(tuple(receipts))
+    assert production.candidate == summary["selectedBackend"]
+    assert production.normalized_slowest_lane_throughput == pytest.approx(
+        summary["normalizedSlowestLanePagesPerMinute"]
+    )
+
     serialized = path.read_text(encoding="utf-8")
     assert "/home/" not in serialized
     assert "C:\\" not in serialized

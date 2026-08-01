@@ -100,6 +100,7 @@ class S47dRagV2ContractTest(unittest.TestCase):
         self.assertEqual(14, len(self.catalog["curriculumTracks"]))
         self.assertEqual(list(SUPPORTED_MIME_TYPES), self.catalog["supportedMimeTypes"])
         self.assertEqual(list(OCR_CANDIDATES), self.catalog["ocrResearchCandidates"])
+        self.assertEqual("PADDLE_VL", self.catalog["productionOcrBackend"])
         self.assertEqual(["LOCAL_EPHEMERAL_PARSE"], self.catalog["activeProcessingModes"])
         self.assertNotIn("historicalOnlyProcessingModes", self.catalog)
         self.assertEqual(60, self.catalog["retrieval"]["rrfK"])

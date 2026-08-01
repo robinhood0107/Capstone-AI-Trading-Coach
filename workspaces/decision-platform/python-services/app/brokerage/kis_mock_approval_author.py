@@ -21,7 +21,12 @@ from app.brokerage.kis_mock_approval_probe import (
     _validate_v2_security_evidence,
     KISMockApprovalPacketV2,
 )
+from app.brokerage.mock_order_reference_store import (
+    EncryptedRedisApprovalOutcomeStore,
+    KISMockApprovalOutcomeUnavailable,
+)
 from app.data.kis._credential_transport import _build_redis_client, _provider_scope
+from pydantic import SecretStr
 
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[5]
 _MAX_PACKET_BYTES = 64 * 1024
@@ -166,7 +171,7 @@ def _collect_current_pr_evidence(
                 "view",
                 str(pull_request),
                 "--json",
-                "number,headRefName,baseRefName,headRefOid,statusCheckRollup",
+                "number,state,isDraft,headRefName,baseRefName,headRefOid,statusCheckRollup",
             ],
             cwd=repository_root,
             check=True,
@@ -179,6 +184,8 @@ def _collect_current_pr_evidence(
         raise KISMockApprovalAuthorRejected("PR evidence is unavailable") from None
     if not isinstance(raw, dict):
         raise KISMockApprovalAuthorRejected("PR evidence is invalid")
+    if raw.get("state") != "OPEN" or raw.get("isDraft") is not False:
+        raise KISMockApprovalAuthorRejected("PR evidence is not active")
     if (
         raw.get("number") != pull_request
         or raw.get("headRefName") != branch
@@ -205,6 +212,44 @@ def _collect_current_pr_evidence(
         {"name": name, "conclusion": "SUCCESS"} for name in sorted(_REQUIRED_CI_CHECKS)
     ]
     return branch, head, selected_checks
+
+
+def _require_recovery_source_outcome(
+    recovery_of: dict[str, str],
+    *,
+    order_id: str,
+    account_id: str,
+    reference_ttl_seconds: int,
+) -> None:
+    """CANCEL_RECOVERY author는 operator CLI 입력이 아닌 source executor receipt만 신뢰한다."""
+
+    encryption_key = os.environ.get("KIS_MOCK_ORDER_REFERENCE_KEY", "").strip()
+    if not encryption_key:
+        raise KISMockApprovalAuthorRejected("recovery source outcome is unavailable")
+    redis_client: Any | None = None
+    try:
+        redis_client = _build_redis_client()
+        store = EncryptedRedisApprovalOutcomeStore(
+            redis_client,
+            encryption_key=SecretStr(encryption_key),
+            ttl_seconds=reference_ttl_seconds,
+        )
+        store.require_recovery(
+            source_approval_id=recovery_of["sourceApprovalId"],
+            source_packet_sha256=recovery_of["sourcePacketSha256"],
+            source_nonce=recovery_of["sourceNonce"],
+            expected_failed_step=recovery_of["failedStep"],  # type: ignore[arg-type]
+            order_id=order_id,
+            account_id=account_id,
+        )
+    except (KeyError, KISMockApprovalOutcomeUnavailable, ValueError):
+        raise KISMockApprovalAuthorRejected("recovery source outcome is unavailable") from None
+    except Exception:
+        raise KISMockApprovalAuthorRejected("recovery source outcome is unavailable") from None
+    finally:
+        encryption_key = ""
+        if redis_client is not None:
+            redis_client.close()
 
 
 def author_v2_packet(
@@ -244,6 +289,13 @@ def author_v2_packet(
     observation = datetime.now(tz=UTC)
     baseline = _capture_redis_baseline(observation)
     expected_steps, brokerage_cap = _profile_steps_and_cap(probe_type, recovery_of)
+    if probe_type == "CANCEL_RECOVERY" and recovery_of is not None:
+        _require_recovery_source_outcome(
+            recovery_of,
+            order_id=order_id,
+            account_id=account_id,
+            reference_ttl_seconds=reference_ttl_seconds,
+        )
     document: dict[str, object] = {
         "schemaVersion": 2,
         "approvalId": approval_id,

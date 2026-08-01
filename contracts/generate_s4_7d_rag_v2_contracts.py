@@ -249,7 +249,6 @@ def validate_catalog(catalog: Mapping[str, Any]) -> None:
         "supportedMimeTypes": list(SUPPORTED_MIME_TYPES),
         "ocrResearchCandidates": list(OCR_CANDIDATES),
         "activeProcessingModes": ["LOCAL_EPHEMERAL_PARSE"],
-        "historicalOnlyProcessingModes": ["LICENSED_EPHEMERAL_LOCAL"],
     }
     if catalog.get("contractId") != "s4-rag-v2-contract.v1":
         raise ContractValidationError("S4.7D catalog identity drifted")
@@ -258,8 +257,8 @@ def validate_catalog(catalog: Mapping[str, Any]) -> None:
     for key, value in expected.items():
         if catalog.get(key) != value:
             raise ContractValidationError(f"S4.7D catalog {key} drifted")
-    if catalog.get("productionOcrBackend") != "UNSELECTED_PENDING_BENCHMARK":
-        raise ContractValidationError("production OCR backend was selected before benchmark")
+    if catalog.get("productionOcrBackend") != "PADDLE_VL":
+        raise ContractValidationError("production OCR backend selection drifted")
     retrieval = catalog.get("retrieval")
     if not isinstance(retrieval, dict) or retrieval.get("rrfK") != 60:
         raise ContractValidationError("application RRF k=60 drifted")

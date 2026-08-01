@@ -248,15 +248,22 @@ owner/order에 결속한 bounded-TTL ciphertext로 Redis에 저장한다. 주문
 4. 전량 취소 `VTTC0013U`
 5. 최근 체결조회 `VTTC0081R`
 
-packet은 최종 local/remote HEAD, PR #55 required CI 성공, 같은 HEAD의 fresh clean security
-report digest, Redis PTTL baseline, symbol/price/date/account/order opaque identity, 물리 cap
-`tokenP=1`/`brokerage=5`, retry 0, artifact 0, 60분 이하 TTL을 결속한다. `/tmp` 아래 owner
-regular file mode `0600`으로만 발급하고, 현재 사용자가 packet의 exact approval ID와 SHA-256을
+history-only `schemaVersion=1`은 PR #55 검증에만 남기며, 새 실행은 `schemaVersion=2`만 사용한다.
+v2는 최종 local/remote/CI/security HEAD, dynamic PR/head branch/required CI, sealed security
+report·manifest·coverage·findings digest, nonce, Redis PTTL baseline, symbol/price/date/account/order
+opaque identity, 물리 cap `tokenP=1`/`brokerage=5`, retry 0, artifact 0, 60분 이하 TTL을 결속한다.
+`kis-mock-brokerage-approval-author`는 clean worktree와 GitHub PR evidence를 직접 확인해 owner
+mode `0700` directory의 dirfd+`O_NOFOLLOW`+`O_EXCL` 새 regular file mode `0600`으로만 발급하고,
+approval ID와 SHA-256 외 값은 출력하지 않는다. 현재 사용자가 packet의 exact approval ID와 SHA-256을
 별도 승인한 뒤 packet 안의 `executionCommand` 그대로 한 번 실행한다. approval latch가
 없거나 다르거나 만료되면 provider handoff 전에 종료한다. packet 검증 뒤에는 runtime 생성 전에
 tracked/untracked/staged 변경이 없는 clean worktree와 packet account가
 `KIS_MOCK_BOUND_ACCOUNT_ID`에 정확히 결속됐는지도 확인한다. ignored `.env`와
 Git ignore 규칙에 포함된 로컬 전용 파일은 clean 판정에서 제외한다. 이어서
+author와 executor는 모두 해당 PR이 여전히 `OPEN`, non-draft, same HEAD/base이고 required
+checks가 모두 `SUCCESS`인지 recheck한다. PR이 close되거나 check가 재실행 후 실패하면 Redis claim과
+provider handoff 전에 종료한다. TTL도 각 operation과 token/limiter/socket handoff 직전에 다시
+확인하므로 대기 중 만료된 packet은 남은 reservation을 소비하지 않는다. 이어서
 `approvalId`와 packet SHA-256에서 파생한 opaque Redis key를 `SET NX PX`로 claim하며,
 성공·첫 실패·runtime 생성 실패 모두 해당 packet을 재사용할 수 없다. Redis 장애나 기존 claim도
 provider handoff 전에 fail-closed한다.
@@ -272,6 +279,15 @@ body/header/URL/`msg1`/계좌/credential은 출력하지 않는다. diagnostic�
 이 balance 단계는 cash/equity/position source shape만 검증하며 margin requirement나
 gold ETF/ETN 분류를 합성하지 않는다. trusted margin/catalog enrichment가 없는 persistent
 online balance projection은 provider 호출 전에 `BALANCE_RISK_FIELDS_UNAVAILABLE`로 닫힌다.
+
+주문 접수 뒤 `cancelFull`에서 실패한 경우에는 executor가 source packet ID/SHA/nonce, order identity,
+reference anchor와 **실제 failed step**을 Fernet-encrypted Redis outcome receipt로 `SET NX` 봉인한다.
+`CANCEL_RECOVERY` author와 executor는 이 receipt를 각각 재검증하고 source failure 하나를 recovery
+packet 하나에만 claim한다. 따라서 CLI의 `failedStep`을 위조할 수 없으며, source `cancelFull` 실패만
+`cancelFull -> executionRead` cap `2`를 열고 source `executionRead` 실패는 취소를 재전송하지 않는
+read 1회 cap `1`만 연다. nested recovery도 original encrypted reference anchor를 유지한다. 신규 주문은
+이 profile에 표현되지 않으며 reference/outcome이 missing, PENDING, unanchored, foreign, completed 또는
+already-recovered이면 provider call `0`으로 종료한다.
 
 첫 실패는 남은 호출을 모두 중단한다. 주문 접수 뒤 취소가 실패해도 자동 retry하지 않으며,
 모의투자 포털에서 확인·정리가 필요하면 실패 evidence를 고정한 뒤 새 authorization을 받는다.

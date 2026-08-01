@@ -1,3 +1,4 @@
+# S4.7D parser/OCR runtime 의존성의 frozen resolution이다.
 version = 1
 revision = 3
 requires-python = ">=3.12"

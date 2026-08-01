@@ -312,3 +312,14 @@ def test_paddle_runner_bounds_each_region_generation_to_the_official_chart_limit
     ).read_text(encoding="utf-8")
 
     assert "max_new_tokens=2048" in runner
+
+
+def test_candidate_runners_publish_only_through_the_safe_receipt_writer() -> None:
+    repository_root = Path(__file__).resolve().parents[5]
+    for filename in ("paddle_candidate_runner.py", "unlimited_candidate_runner.py"):
+        runner = (repository_root / "capstone-rag/ocr/benchmark" / filename).read_text(
+            encoding="utf-8"
+        )
+
+        assert "write_benchmark_receipt" in runner
+        assert ".write_text(" not in runner

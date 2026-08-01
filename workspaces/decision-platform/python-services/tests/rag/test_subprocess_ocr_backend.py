@@ -29,7 +29,7 @@ def _runner(tmp_path: Path, payload: dict[str, object]) -> Path:
 
 def _configuration(tmp_path: Path, runner: Path) -> SubprocessOcrConfiguration:
     cache = tmp_path / "models"
-    cache.mkdir()
+    cache.mkdir(exist_ok=True)
     return SubprocessOcrConfiguration(
         backend="PADDLE_STRUCTURED",
         backend_version="3.7.0",

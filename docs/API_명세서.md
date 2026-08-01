@@ -1805,11 +1805,14 @@ KIS Mock 중심으로 구현하고, KIS Live는 고급해제/3단계 동의/재�
 > cap을 적용한다. KIS_LIVE 실계좌 주문·정정·취소는 구현·allowlist·enable flag가 없어
 > 계속 OFF다.
 > v2 author는 현재 GitHub PR base/head/required CI와 Redis PTTL을 직접 읽고 mode `0700` private
-> directory에서 dirfd+`O_NOFOLLOW`+`O_EXCL` 방식의 새 `0600` packet만 publish한다. 출력에는
+> directory에서 dirfd+`O_NOFOLLOW`+`O_EXCL` 방식의 새 `0600` packet만 publish한다. author와 executor는
+> 실행 직전에 PR이 `OPEN`, non-draft, same head/base이며 required CI가 모두 `SUCCESS`인지 다시 검증한다.
+> TTL은 operation마다 token/limiter/socket handoff 직전에도 확인해 만료 후 reservation을 막는다. 출력에는
 > approval ID와 packet SHA-256만 허용한다. 주문 접수 뒤 `cancelFull`이 실패하면 새
-> `CANCEL_RECOVERY` packet은 source approval SHA/nonce로 anchor된 `COMMITTED` encrypted reference에
-> 한해 `cancelFull -> executionRead`만 실행하며 신규 주문 surface를 표현할 수 없다. 이미 취소가
-> 성공하고 `executionRead`만 실패한 경우에는 read 1회만 허용한다.
+> `CANCEL_RECOVERY` packet은 source approval ID/SHA/nonce, order identity, anchor 및 executor가 encrypted
+> Redis outcome receipt에 봉인한 actual failed step이 모두 일치할 때만 열리며 source failure 하나는 recovery
+> 하나만 claim한다. source `cancelFull`만 `cancelFull -> executionRead`를 실행하고, 이미 취소가 성공한
+> `executionRead` 실패는 read 1회만 허용한다. 신규 주문 surface를 표현할 수 없다.
 > 모든 online RPC와 exact packet은 credential별 `KIS_MOCK_BOUND_ACCOUNT_ID` 하나에
 > 결속되며 다른 opaque account는 limiter/provider 접근 전에 닫힌다. packet 검증은 ignored
 > local secret를 제외한 clean worktree도 요구한다. reference store는 provider send 전에

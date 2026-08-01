@@ -1261,7 +1261,8 @@ RAG는 v1 핵심 구현이다. 단, RAG 답변은 매수/매도 지시가 아니
 > gRPC deadline은 15초, Spring read budget은 17초, request/response는 64KiB/256KiB,
 > retry 0, reflection false다. JWT·API key·owner ID·account/order·history ciphertext는 proto에 없다.
 > `RAG_GRPC_ENABLED=false`는 기존 S4.4 retrieval-only compatibility mode이며, true는
-> same-deployment Python process와 shared secret이 준비된 경우에만 사용한다.
+> same-deployment Python process와 명시적 전용 `RAG_GRPC_SHARED_SECRET`이 준비된 경우에만
+> 사용한다. 이 secret은 Decision/Python Disclosure shared secret과 달라야 하며 fallback은 없다.
 
 ### 7.1 RAG 질문
 

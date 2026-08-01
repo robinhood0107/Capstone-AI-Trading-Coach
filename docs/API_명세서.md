@@ -1443,6 +1443,77 @@ Admin 전용 read API이며 다음만 반환한다.
 source URL CRUD, materialization 시작, policy pointer 변경을 제공하지 않는다. generation
 materialization과 pointer transition은 별도 승인 packet이 필요한 CLI 경계다.
 
+### 7.7 RAG v2 계약 상태와 공통 경계
+
+> 현재 상태: `S4_7D_CONTRACT=LOCKED / ACTIVE_V2_ENDPOINT=NOT_IMPLEMENTED`.
+> `contracts/openapi/rag-v2.openapi.json`은 v1 canonical OpenAPI bytes를 변경하지 않기 위한
+> 별도 planned contract다. 이 문서의 v2 route를 현재 배포된 endpoint로 해석하지 않는다.
+
+RAG v2는 exact-30, OA, 요청 owner-private generation을 서버가 자동으로 하나의
+bundle로 pin한다. client request에 `corpus`, `profile`, `topK` 또는 이와 동일한
+검색 제어를 추가하면 400 validation error다. pgvector/pg_trgm과 application RRF
+`k=60`을 유지하며 RAG는 Signal, RiskDecision, 주문 의도·hash·feature를 바꾸지
+않는 `decisionAuthority=NONE` 설명 경계다.
+
+### 7.8 RAG v2 질문
+
+`POST /api/v2/rag/ask`
+
+body의 질문·답변 style·종목·topic 의미는 v1과 같다.
+
+```json
+{
+  "answerMode": "DETAILED",
+  "question": "옵션가격 모형의 가정과 한계를 근거와 함께 설명해 주세요.",
+  "relatedSymbols": ["005930"],
+  "topics": ["FINANCIAL_ENGINEERING"]
+}
+```
+
+full bundle이 `FULL_READY`가 아니면 OA나 private 근거를 빼고 답을 만들지 않고
+typed `CORPUS_NOT_READY`를 반환한다. 이때 v1 exact-30 endpoint는 계속 사용할 수 있다.
+성공 citation은 다음 tagged union이다.
+
+- `PUBLIC_WEB`: title, source ID, HTTPS canonical URL, page/section locator
+- `LOCAL_DOCUMENT`: opaque document ID, sanitized display name,
+  page/slide/sheet/section locator
+
+`LOCAL_DOCUMENT`에는 canonical URL과 로컬 절대경로가 없다. source 권리와 owner의
+corpus-level external-LLM opt-in 중 하나라도 불충분하면 일부 chunk만 보내지 않고
+요청 전체를 `RETRIEVAL_ONLY`로 처리한다.
+
+### 7.9 RAG v2 corpus status
+
+`GET /api/v2/rag/corpus-status`
+
+state는 `CORE_READY | BUILDING | FULL_READY | FAILED`다. 응답은 public corpus version,
+private overlay state, 0~100 progress와 stable failure code만 반환한다. 파일명·로컬
+경로·내부 접근 정보·무결성 검증값은 노출하지 않는다.
+
+```json
+{
+  "failureCode": null,
+  "privateOverlayState": "BUILDING",
+  "progressPercent": 42,
+  "publicCorpusVersion": "exact30-v1+oa140-draft-v1",
+  "state": "BUILDING"
+}
+```
+
+### 7.10 RAG v2 history
+
+```http
+GET    /api/v2/rag/history?cursor=...&limit=20
+GET    /api/v2/rag/history/{answerId}
+DELETE /api/v2/rag/history/{answerId}
+```
+
+v2 history는 v1 history bytes를 변경하지 않고 owner-scoped 새 table/DTO로 구현한다.
+목록은 질문·답변 preview를 복호화하지 않는다. 단건 citation은 답변 시점에
+pin된 public/local tagged union을 유지하고 응답·로그에 owner path를 포함하지 않는다.
+삭제는 owner predicate를 포함한 멱등 처리로 history를 제거하며, 개인 문서 자체의
+generation·text·chunk·embedding hard-delete는 BAT의 별도 document deletion 경계가 소유한다.
+
 ---
 
 ## 8. Signal API

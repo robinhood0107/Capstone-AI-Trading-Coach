@@ -469,6 +469,56 @@ uv run --frozen python contracts/validate.py
 상세 결정과 소비자 영향은
 [`20260729-s4-rag-contract-catalog.md`](changes/20260729-s4-rag-contract-catalog.md)를 따른다.
 
+## S4.7D OA140·owner-private RAG v2 계약
+
+> 현재 상태: `S4_7D_CONTRACT=LOCKED / SAFE_PARSER_OCR_RUNTIME=NOT_IMPLEMENTED /
+> CORPUS_RUNTIME=NOT_IMPLEMENTED / OA_RELEASE_MANIFEST=DRAFT`.
+> 이 절의 schema·fixture·별도 OpenAPI·proto 잠금은 download, parse, embedding, DB migration,
+> endpoint 활성화 또는 OA 원문 배포가 완료됐다는 증거가 아니다.
+
+S4.7D는 P1 exact-30과 v1 API를 byte-stable하게 유지하면서, 투자 코치용 공개 OA corpus와
+요청 owner의 개인 문서를 후속 immutable generation으로 결합하는 계약이다. 공개 요청은
+corpus/profile/topK를 선택하지 못하고 서버가 `exact30 + oa + ownerPrivate` bundle을 자동으로
+pin한다. 검색은 PostgreSQL/pgvector/pg_trgm과 application RRF `k=60`을 유지하며 RAG의
+`decisionAuthority`는 항상 `NONE`이다.
+
+| 산출물 | 계약 경계 |
+|---|---|
+| `catalogs/s4-rag-v2-contract.v1.json` | exact 14개 curriculum track, 9개 format family, OCR 연구 후보 3개, server-selected bundle과 active processing mode |
+| `schemas/rag-source-card-v3.schema.json` | `PROJECT_SOURCE_CARD | OPEN_ACCESS_DOCUMENT | OWNER_LOCAL_DOCUMENT` closed union과 provenance·권리 flag |
+| `schemas/rag-document-ir-v1.schema.json` | heading/paragraph/list/table/formula/caption, page/slide/sheet/section locator, reading order와 OCR evidence |
+| `schemas/rag-oa-manifest-v1.schema.json` | DRAFT/RELEASED manifest, track별 8~10개와 전체 112~140개 release gate |
+| `schemas/s4-rag-v2-*.schema.json` | ask/status/history/error와 `PUBLIC_WEB | LOCAL_DOCUMENT` citation union |
+| `openapi/rag-v2.openapi.json` | v1 OpenAPI를 변경하지 않는 v2 planned surface |
+| `proto/rag_v2.proto` | server-selected bundle과 tagged citation을 보존하는 unary `RagService.Ask` v2 |
+
+active processing mode는 `LOCAL_EPHEMERAL_PARSE` 하나다. 파일별 approval ID·nonce·TTL은
+계약에 없다. `LICENSED_EPHEMERAL_LOCAL`은 과거 v1 계약과 날짜가 고정된 감사 기록을
+재현하기 위한 historical-only 값이며 새 runtime 입력으로 허용하지 않는다. local parse
+허용과 외부 LLM 전송은 분리한다. source evidence와 owner corpus-level opt-in 중 하나라도
+불충분하면 요청 전체를 retrieval-only로 처리한다.
+
+OA `RELEASED` manifest는 14개 track의 exact 순서를 유지하고 track마다 8~10개, 전체
+112~140개의 canonical work/revision을 요구한다. 각 track에는 공개 교재·강의,
+원 연구, 현대 review·replication·correction 역할이 모두 있어야 한다. DRAFT manifest는
+source 0개부터 허용하므로 계약 PR에서 검증되지 않은 URL이나 hash를 채우지 않는다.
+
+재현 명령:
+
+```bash
+uv run --frozen python contracts/generate_s4_7d_rag_v2_contracts.py --check
+uv run --project workspaces/decision-platform/python-services --frozen \
+  python contracts/generate_rag_v2_proto.py --check
+uv run --frozen python -m unittest \
+  contracts.tests.test_s4_7d_rag_v2_contracts \
+  contracts.tests.test_generate_rag_v2_proto
+uv run --frozen python contracts/validate.py
+```
+
+상세 결정과 소비자 영향은
+[`20260802-s4-7d-oa140-owner-private-rag-v2.md`](changes/20260802-s4-7d-oa140-owner-private-rag-v2.md)를
+따른다.
+
 ## S4.8 교차시장·애널리스트 계약
 
 > 계획 타당성: `PLAN_FEASIBILITY=GO`.

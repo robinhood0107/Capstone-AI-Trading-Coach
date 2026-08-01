@@ -197,3 +197,18 @@ Gate 1 병합은 PR #28에서 완료됐다. S4.7B contract-only PR은 required c
 통과한 검증 head를 merge commit 방식으로만 병합한다. squash/rebase는 허용하지 않는다.
 이 amendment는 S4.7B source-card corpus freeze를 위한 선행 계약이며 S1.4X candidate
 구현이나 benchmark 실행을 승인하지 않는다.
+
+## S4.7D parser/OCR dependency amendment
+
+S4.7D의 9-format parser와 OCR runtime dependency는
+`bf8472dfcc5f9d883ca83bd461a62f254332b39f`에서 production `pyproject.toml`과
+`uv.lock` 두 파일만으로 다시 승인했다. 이 변경은 S1.4X 수치 kernel·fixture·oracle을
+바꾸지 않으며, 다음 재생성 산출물을 같은 rollback unit으로 취급한다.
+
+- reference lock SHA-256: `d267c084592c14e6ab167e9a9afd370e45f1caf9a0959b7927b0d4a806fc5581`
+- benchmark plan SHA-256: `a92769b47022a3e9972ca170b30221b9dc46ceeaef283e191bb1d7f570e8503f`
+- benchmark plan sidecar file SHA-256: `03a6b9e5b4e856991c2ff4590674885d5596df89109a3fc06e4632f98590c67e`
+- contract manifest SHA-256: `2eaf9bca0a29a8a683f6387be423af581126679928bed3c29f1dd92581a6c080`
+
+이 amendment는 OCR dependency 정합성만 승인하며 S1.4X candidate 구현이나 benchmark
+재실행 권한을 추가하지 않는다.

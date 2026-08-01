@@ -291,3 +291,15 @@ def test_benchmark_manifest_pins_sources_pages_dpi_models_and_runtime_artifacts(
     assert all(len(value["modelSha256"]) == 64 for value in manifest["candidates"].values())
     assert len(manifest["unlimitedGguf"]["llamaCppCommit"]) == 40
     assert len(manifest["unlimitedGguf"]["containerImageDigest"].removeprefix("sha256:")) == 64
+
+
+def test_unlimited_runner_uses_the_pinned_official_deterministic_ocr_prompt() -> None:
+    repository_root = Path(__file__).resolve().parents[5]
+    runner = (
+        repository_root / "capstone-rag/ocr/benchmark/unlimited_candidate_runner.py"
+    ).read_text(encoding="utf-8")
+
+    assert "<|grounding|>Convert the document to markdown." in runner
+    assert "--temp 0" in runner
+    assert "--repeat-penalty 1.05" in runner
+    assert "--dry-multiplier" not in runner

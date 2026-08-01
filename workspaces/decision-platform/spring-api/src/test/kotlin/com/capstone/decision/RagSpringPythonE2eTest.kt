@@ -5,6 +5,7 @@ import com.capstone.decision.application.rag.RagAskCommand
 import com.capstone.decision.application.rag.RagEvaluationContext
 import com.capstone.decision.application.rag.RagEvaluationResult
 import com.capstone.decision.application.rag.RagGenerationStatus
+import com.capstone.decision.infrastructure.grpc.DecisionGrpcProperties
 import com.capstone.decision.infrastructure.grpc.GrpcRagEvaluationAdapter
 import com.capstone.decision.infrastructure.grpc.RagGrpcProperties
 import org.assertj.core.api.Assertions.assertThat
@@ -26,7 +27,11 @@ class RagSpringPythonE2eTest {
     @Test
     fun `real JVM adapter preserves Python fixture success and failure boundaries`() {
         withPythonFixtureServer { properties ->
-            val adapter = GrpcRagEvaluationAdapter(properties)
+            val adapter =
+                GrpcRagEvaluationAdapter(
+                    properties,
+                    DecisionGrpcProperties(sharedSecret = DECISION_SHARED_SECRET),
+                )
             try {
                 val answered =
                     adapter.evaluate(
@@ -259,6 +264,7 @@ class RagSpringPythonE2eTest {
 
     private companion object {
         const val SHARED_SECRET = "rag-grpc-shared-secret-for-s4-6-tests-0001"
+        const val DECISION_SHARED_SECRET = "decision-grpc-shared-secret-for-s2-3-tests-0001"
         const val SCOPE_CLAIM = "rag_scope_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         const val GENERATION_ID = "rag_gen_789b3ba9589ad399373194c0e3c0e76f"
         const val KNOWN_FIXTURE_QUESTION =

@@ -8,15 +8,14 @@ from pathlib import Path
 
 import pytest
 
-import app.cross_market.pdf_boundary as pdf_boundary
 from app.cross_market.pdf_boundary import (
     APPROVED_PDF_SECTIONS,
     BoundedPdfParseResult,
-    EphemeralPdfApproval,
+    LocalPdfRequest,
     ManualAnalystReportLink,
     PdfBoundaryError,
     build_manual_link_projection,
-    process_licensed_ephemeral_pdf,
+    process_local_ephemeral_pdf,
 )
 
 
@@ -84,58 +83,42 @@ def test_manual_link_rejects_ssrf_or_credential_bearing_urls(url: str) -> None:
         )
 
 
-def test_ephemeral_pdf_is_deleted_before_local_parse_and_returns_no_raw_text(tmp_path: Path) -> None:
-    target, approval = _approved_pdf(tmp_path, derived_data_allowed=True)
+def test_owner_pdf_is_read_only_during_local_parse_and_returns_no_raw_text(tmp_path: Path) -> None:
+    target, request = _local_pdf(tmp_path, derived_data_allowed=True)
     parser = _FakeParser(_valid_parse_result(), target)
+    before = (target.stat().st_ino, target.stat().st_mtime_ns, target.read_bytes())
 
-    receipt = process_licensed_ephemeral_pdf(approval, parser)
+    receipt = process_local_ephemeral_pdf(request, parser)
 
-    assert target.exists() is False
+    assert target.exists() is True
     assert parser.calls == 1
-    assert parser.target_existed_during_parse is False
-    assert receipt.input_sha256 == approval.expected_sha256
+    assert parser.target_existed_during_parse is True
+    assert receipt.input_sha256 == request.expected_sha256
+    assert receipt.document_id == request.document_id
+    assert receipt.processing_mode == "LOCAL_EPHEMERAL_PARSE"
     assert receipt.normalized_tags == ("RISK", "VALUATION")
     assert receipt.raw_text_stored is False
     assert receipt.quote_stored is False
     assert receipt.external_llm_calls == 0
     assert receipt.section_names == APPROVED_PDF_SECTIONS
     assert receipt.page_count == 1
+    assert (target.stat().st_ino, target.stat().st_mtime_ns, target.read_bytes()) == before
 
 
 def test_derived_data_false_discards_even_user_confirmed_tags(tmp_path: Path) -> None:
-    target, approval = _approved_pdf(tmp_path, derived_data_allowed=False)
+    target, request = _local_pdf(tmp_path, derived_data_allowed=False)
     parser = _FakeParser(_valid_parse_result(), target)
 
-    receipt = process_licensed_ephemeral_pdf(approval, parser)
+    receipt = process_local_ephemeral_pdf(request, parser)
 
     assert receipt.normalized_tags == ()
     assert receipt.section_names == ()
     assert receipt.page_count is None
     assert receipt.derived_data_stored is False
-    assert len(receipt.deletion_receipt_hash) == 64
-
-
-def test_delete_failure_stops_before_parser_storage_or_outbound(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    target, approval = _approved_pdf(tmp_path, derived_data_allowed=True)
-    parser = _FakeParser(_valid_parse_result(), target)
-
-    def fail_delete(*_args: object, **_kwargs: object) -> None:
-        raise OSError("synthetic delete failure")
-
-    monkeypatch.setattr(pdf_boundary, "_unlink_ephemeral_leaf", fail_delete)
-
-    with pytest.raises(PdfBoundaryError, match="EPHEMERAL_DELETE_FAILED"):
-        process_licensed_ephemeral_pdf(approval, parser)
-
-    assert parser.calls == 0
-    assert target.exists() is True
 
 
 def test_symlink_traversal_and_wrong_mime_are_rejected_before_parser(tmp_path: Path) -> None:
-    target, approval = _approved_pdf(tmp_path, derived_data_allowed=True)
+    target, request = _local_pdf(tmp_path, derived_data_allowed=True)
     parser = _FakeParser(_valid_parse_result(), target)
     outside = tmp_path.parent / f"{tmp_path.name}-outside.pdf"
     outside.write_bytes(b"%PDF-1.7\nfixture")
@@ -143,15 +126,15 @@ def test_symlink_traversal_and_wrong_mime_are_rejected_before_parser(tmp_path: P
     target.symlink_to(outside)
 
     with pytest.raises(PdfBoundaryError):
-        process_licensed_ephemeral_pdf(approval, parser)
+        process_local_ephemeral_pdf(request, parser)
     assert parser.calls == 0
 
     target.unlink()
     target.write_bytes(b"not-a-pdf")
     os.chmod(target, 0o600)
-    bad_approval = _approval_for(target, approval.approved_root, derived_data_allowed=True)
-    with pytest.raises(PdfBoundaryError, match="EPHEMERAL_MIME_INVALID"):
-        process_licensed_ephemeral_pdf(bad_approval, parser)
+    bad_request = _request_for(target, request.approved_root, derived_data_allowed=True)
+    with pytest.raises(PdfBoundaryError, match="LOCAL_PDF_MIME_INVALID"):
+        process_local_ephemeral_pdf(bad_request, parser)
     assert parser.calls == 0
 
 
@@ -179,36 +162,36 @@ def test_parser_output_must_stay_within_section_page_and_decompression_bounds(
     tmp_path: Path,
     result: BoundedPdfParseResult,
 ) -> None:
-    target, approval = _approved_pdf(tmp_path, derived_data_allowed=True)
+    target, request = _local_pdf(tmp_path, derived_data_allowed=True)
     parser = _FakeParser(result, target)
 
-    with pytest.raises(PdfBoundaryError, match="EPHEMERAL_PARSE_BOUNDARY"):
-        process_licensed_ephemeral_pdf(approval, parser)
+    with pytest.raises(PdfBoundaryError, match="LOCAL_PDF_PARSE_BOUNDARY"):
+        process_local_ephemeral_pdf(request, parser)
 
-    assert target.exists() is False
+    assert target.exists() is True
     assert parser.calls == 1
 
 
-def _approved_pdf(
+def _local_pdf(
     root: Path,
     *,
     derived_data_allowed: bool,
-) -> tuple[Path, EphemeralPdfApproval]:
+) -> tuple[Path, LocalPdfRequest]:
     os.chmod(root, 0o700)
-    target = root / "licensed-fixture.pdf"
+    target = root / "owner-fixture.pdf"
     target.write_bytes(b"%PDF-1.7\n1 0 obj << /Type /Page >> endobj\n%%EOF")
     os.chmod(target, 0o600)
-    return target, _approval_for(target, root, derived_data_allowed=derived_data_allowed)
+    return target, _request_for(target, root, derived_data_allowed=derived_data_allowed)
 
 
-def _approval_for(
+def _request_for(
     target: Path,
     root: Path,
     *,
     derived_data_allowed: bool,
-) -> EphemeralPdfApproval:
-    return EphemeralPdfApproval(
-        approval_id="AUTH_LICENSED_EPHEMERAL_LOCAL_FIXTURE_20260731",
+) -> LocalPdfRequest:
+    return LocalPdfRequest(
+        document_id="doc_owner_fixture_001",
         approved_root=root,
         relative_path=target.name,
         expected_sha256=hashlib.sha256(target.read_bytes()).hexdigest(),

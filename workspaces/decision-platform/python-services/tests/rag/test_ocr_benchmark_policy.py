@@ -56,6 +56,18 @@ def _candidate(name: str, cpu: float, intel: float) -> CandidateReceipt:
     )
 
 
+def _failed_candidate(name: str, failure_code: str) -> CandidateReceipt:
+    return CandidateReceipt(
+        candidate=name,
+        candidate_version="pinned-fixture",
+        model_sha256="b" * 64,
+        quality=None,
+        lanes=(),
+        status="FAILED",
+        failure_code=failure_code,
+    )
+
+
 def test_metric_functions_use_deterministic_unicode_and_order_contracts() -> None:
     assert compute_character_error_rate("금리 3.5%", "금리 3.5%") == 0
     assert compute_character_error_rate("abcd", "abxd") == pytest.approx(0.25)
@@ -132,6 +144,49 @@ def test_selection_maximizes_slower_lane_then_breaks_tie_by_memory_and_install_s
 
     assert selected.candidate == "PADDLE_STRUCTURED"
     assert selected.normalized_slowest_lane_throughput == 7
+
+
+def test_failed_research_candidates_are_retained_but_not_considered_for_production() -> None:
+    selected = select_production_backend(
+        (
+            _candidate("PADDLE_STRUCTURED", cpu=7, intel=9),
+            _failed_candidate("PADDLE_VL", "OCR_INTEL_GPU_UNSUPPORTED"),
+            _failed_candidate("UNLIMITED_GGUF", "OCR_QUALITY_GATE_FAILED"),
+        )
+    )
+
+    assert selected.candidate == "PADDLE_STRUCTURED"
+
+
+def test_release_is_blocked_when_every_benchmarked_candidate_fails() -> None:
+    with pytest.raises(BenchmarkError, match="OCR_NO_PRODUCTION_BACKEND"):
+        select_production_backend(
+            tuple(
+                _failed_candidate(name, "OCR_QUALITY_GATE_FAILED")
+                for name in ("PADDLE_STRUCTURED", "PADDLE_VL", "UNLIMITED_GGUF")
+            )
+        )
+
+
+def test_failed_candidate_requires_a_stable_failure_code() -> None:
+    invalid = CandidateReceipt(
+        candidate="PADDLE_STRUCTURED",
+        candidate_version="pinned-fixture",
+        model_sha256="b" * 64,
+        quality=None,
+        lanes=(),
+        status="FAILED",
+        failure_code=None,
+    )
+
+    with pytest.raises(BenchmarkError, match="OCR_FAILED_RECEIPT_INVALID"):
+        select_production_backend(
+            (
+                invalid,
+                _failed_candidate("PADDLE_VL", "OCR_QUALITY_GATE_FAILED"),
+                _failed_candidate("UNLIMITED_GGUF", "OCR_QUALITY_GATE_FAILED"),
+            )
+        )
 
 
 def test_unapproved_candidate_or_partial_candidate_set_cannot_be_selected() -> None:

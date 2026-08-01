@@ -36,13 +36,14 @@ class RagGrpcUnavailableException : IllegalStateException("RAG gRPC service is u
 @ConditionalOnProperty(name = ["app.rag.grpc.enabled"], havingValue = "true")
 class GrpcRagEvaluationAdapter(
     private val properties: RagGrpcProperties,
+    private val decisionGrpcProperties: DecisionGrpcProperties,
 ) : RagEvaluationPort,
     AutoCloseable {
     private val channel: ManagedChannel
     private val concurrency: Semaphore
 
     init {
-        properties.validate()
+        properties.validatePurposeSeparation(decisionGrpcProperties)
         concurrency = Semaphore(properties.concurrencyMax, true)
         channel =
             NettyChannelBuilder

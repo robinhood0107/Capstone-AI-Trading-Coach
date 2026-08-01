@@ -97,7 +97,7 @@ app:
     grpc:
       enabled: ${RAG_GRPC_ENABLED:false}
       target: ${RAG_GRPC_TARGET:127.0.0.1:50053}
-      shared-secret: ${RAG_GRPC_SHARED_SECRET:${DECISION_GRPC_SHARED_SECRET:}}
+      shared-secret: ${RAG_GRPC_SHARED_SECRET:}
       deadline-millis: 15000
       read-timeout-millis: 17000
       request-max-bytes: 65536

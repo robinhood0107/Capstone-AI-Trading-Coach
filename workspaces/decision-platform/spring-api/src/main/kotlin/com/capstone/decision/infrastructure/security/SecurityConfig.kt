@@ -121,6 +121,21 @@ class SecurityConfig {
         }
     }
 
+    /**
+     * RAG gRPC를 켤 때만 dedicated wire secret을 검증해 RAG process credential이 Disclosure RPC에 재사용되지 않게 한다.
+     */
+    @Bean
+    fun ragGrpcSecretSeparation(
+        decisionGrpcProperties: DecisionGrpcProperties,
+        ragGrpcProperties: RagGrpcProperties,
+    ): RagGrpcSecretSeparation {
+        if (!ragGrpcProperties.enabled) {
+            return RagGrpcSecretSeparation
+        }
+        ragGrpcProperties.validatePurposeSeparation(decisionGrpcProperties)
+        return RagGrpcSecretSeparation
+    }
+
     @Bean
     fun s21ActorTrustMigration(properties: DemoCredentialBootstrapProperties): JavaMigration {
         val separationKey = DemoCredentialBundlePolicy.decodeSeparationKey(properties.separationKey)
@@ -237,3 +252,6 @@ class SecurityConfig {
 
 // 이 marker bean은 JWT, login limiter, credential evidence key 분리 검증이 startup에 완료됐음을 나타낸다.
 object AuthSecretSeparation
+
+// 이 marker bean은 enabled RAG gRPC가 Disclosure wire credential과 분리되었음을 나타낸다.
+object RagGrpcSecretSeparation

@@ -4,6 +4,8 @@ import jakarta.validation.constraints.Max
 import jakarta.validation.constraints.Min
 import org.springframework.boot.context.properties.ConfigurationProperties
 import org.springframework.validation.annotation.Validated
+import java.nio.charset.StandardCharsets
+import java.security.MessageDigest
 
 @ConfigurationProperties("app.rag.grpc")
 @Validated
@@ -52,6 +54,24 @@ data class RagGrpcProperties(
         require(responseMaxBytes == 262_144)
         require(concurrencyMax in 1..8)
         require(retryCount == 0)
+    }
+
+    /**
+     * enabled RAG transport가 Decision/Disclosure credential을 재사용하지 않도록 channel 생성 전에 비교한다.
+     */
+    fun validatePurposeSeparation(decisionGrpcProperties: DecisionGrpcProperties) {
+        validate()
+        decisionGrpcProperties.validate()
+        val ragSecret = sharedSecret.toByteArray(StandardCharsets.UTF_8)
+        val decisionSecret = decisionGrpcProperties.sharedSecret.toByteArray(StandardCharsets.UTF_8)
+        try {
+            require(!MessageDigest.isEqual(ragSecret, decisionSecret)) {
+                "RAG gRPC shared secret must be purpose-separated from Decision gRPC."
+            }
+        } finally {
+            ragSecret.fill(0)
+            decisionSecret.fill(0)
+        }
     }
 
     private companion object {

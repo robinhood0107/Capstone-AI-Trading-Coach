@@ -1,0 +1,17 @@
+{
+  "compileInferVerified": true,
+  "deviceName": "Intel(R) Arc(TM) 130V GPU (16GB) (iGPU)",
+  "elapsedSeconds": 2.4633901999914087,
+  "executionDevices": [
+    "GPU.0"
+  ],
+  "generatedAt": "2026-08-01T17:30:29Z",
+  "host": "Windows-11-10.0.26200-SP0",
+  "lane": "INTEL_GPU",
+  "modelKind": "PP_OCRV6_SMALL_RECOGNITION",
+  "modelSha256": "7a10319171913a664e03b9f84bb159dbc1c7c397a2ff7a79d89287df64c64d4b",
+  "openvinoDevice": "GPU",
+  "openvinoVersion": "2026.2.1-21919-ede283a88e3-releases/2026/2",
+  "outputSha256": "48b032ff3b4c9ce258123a5ee154efc2512338178acc1dc3db775ac2b8ef5876",
+  "silentFallbackDetected": false
+}

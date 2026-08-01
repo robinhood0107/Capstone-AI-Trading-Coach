@@ -1784,8 +1784,10 @@ KIS Mock 중심으로 구현하고, KIS Live는 고급해제/3단계 동의/재�
 > `ACCEPTED`로 원자 기록한다. 모호한 결과에는 `PENDING_RECONCILIATION` 기록을 시도하며
 > 이 보조 기록도 실패하면 최초 `SUBMITTED` reservation을 recovery anchor로 유지한다. online
 > balance/buyable도 stored owner/account anchor를 먼저 요구한다. 일반 구현·fixture·OpenAPI·
-> 테스트 provider call은 0이고, 최종 HEAD/PR #55 CI/fresh security report에 결속된 별도
-> exact-approved `FULL` 5단계 KIS_MOCK probe만 cap `tokenP=1`/`brokerage=5`,
+> 테스트 provider call은 0이고, history-only `schemaVersion=1`은 PR #55 검증에만 남긴다.
+> 새 실행은 dynamic PR/head branch와 local/remote/CI/security HEAD, sealed scan
+> report/manifest/coverage/findings digest, nonce, Redis baseline을 같이 결속한
+> `schemaVersion=2` exact-approved `FULL` 5단계 KIS_MOCK probe만 cap `tokenP=1`/`brokerage=5`,
 > retry/artifact 0으로 실행할 수 있다. `FULL` packet은 `orderDivision`과 선택적
 > `exchangeDivision`을 결속하지만, KIS_MOCK 현금 신규주문은 KIS Developers 계약상 `KRX`만
 > provider handoff 전에 허용한다. `exchangeDivision=NXT`는 packet/online transport 검증에서
@@ -1802,6 +1804,15 @@ KIS Mock 중심으로 구현하고, KIS Live는 고급해제/3단계 동의/재�
 > 실패 모두 재사용할 수 없다. KIS_MOCK response는 provider echo scrub/JSON parse 전에 1 MiB
 > cap을 적용한다. KIS_LIVE 실계좌 주문·정정·취소는 구현·allowlist·enable flag가 없어
 > 계속 OFF다.
+> v2 author는 현재 GitHub PR base/head/required CI와 Redis PTTL을 직접 읽고 mode `0700` private
+> directory에서 dirfd+`O_NOFOLLOW`+`O_EXCL` 방식의 새 `0600` packet만 publish한다. author와 executor는
+> 실행 직전에 PR이 `OPEN`, non-draft, same head/base이며 required CI가 모두 `SUCCESS`인지 다시 검증한다.
+> TTL은 operation마다 token/limiter/socket handoff 직전에도 확인해 만료 후 reservation을 막는다. 출력에는
+> approval ID와 packet SHA-256만 허용한다. 주문 접수 뒤 `cancelFull`이 실패하면 새
+> `CANCEL_RECOVERY` packet은 source approval ID/SHA/nonce, order identity, anchor 및 executor가 encrypted
+> Redis outcome receipt에 봉인한 actual failed step이 모두 일치할 때만 열리며 source failure 하나는 recovery
+> 하나만 claim한다. source `cancelFull`만 `cancelFull -> executionRead`를 실행하고, 이미 취소가 성공한
+> `executionRead` 실패는 read 1회만 허용한다. 신규 주문 surface를 표현할 수 없다.
 > 모든 online RPC와 exact packet은 credential별 `KIS_MOCK_BOUND_ACCOUNT_ID` 하나에
 > 결속되며 다른 opaque account는 limiter/provider 접근 전에 닫힌다. packet 검증은 ignored
 > local secret를 제외한 clean worktree도 요구한다. reference store는 provider send 전에

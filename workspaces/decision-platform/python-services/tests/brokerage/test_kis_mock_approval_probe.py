@@ -643,15 +643,28 @@ def test_probe_runtime_requires_packet_account_to_match_bound_mock_account(
         repository_root=secure_tmp_path,
     )
 
-    monkeypatch.delenv("KIS_MOCK_BOUND_ACCOUNT_ID", raising=False)
+    monkeypatch.setattr(
+        probe,
+        "_operator_approval_value",
+        lambda _name: "",
+        raising=False,
+    )
     with pytest.raises(probe.KISMockApprovalRejected, match="bound account"):
         probe._require_bound_account_id(packet.order.account_id)
 
-    monkeypatch.setenv("KIS_MOCK_BOUND_ACCOUNT_ID", "acct_" + "3" * 32)
+    monkeypatch.setattr(
+        probe,
+        "_operator_approval_value",
+        lambda _name: "acct_" + "3" * 32,
+    )
     with pytest.raises(probe.KISMockApprovalRejected, match="bound account"):
         probe._require_bound_account_id(packet.order.account_id)
 
-    monkeypatch.setenv("KIS_MOCK_BOUND_ACCOUNT_ID", packet.order.account_id)
+    monkeypatch.setattr(
+        probe,
+        "_operator_approval_value",
+        lambda _name: packet.order.account_id,
+    )
     assert probe._require_bound_account_id(packet.order.account_id) == packet.order.account_id
 
 
@@ -734,6 +747,15 @@ def test_cli_failure_json_contains_only_bounded_diagnostics(
         )
 
     monkeypatch.setattr(probe, "execute_approved_probe", fail_probe)
+    monkeypatch.setattr(
+        probe,
+        "_operator_approval_value",
+        lambda name: {
+            "S3_KIS_MOCK_EXACT_APPROVAL_ID": "approval-s3-online-test",
+            "S3_KIS_MOCK_EXACT_APPROVAL_SHA256": "a" * 64,
+        }[name],
+        raising=False,
+    )
 
     assert probe.main(["--approval-packet", "/tmp/unused"]) == 1
     output = json.loads(capsys.readouterr().err)

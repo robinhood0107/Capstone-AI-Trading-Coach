@@ -303,3 +303,12 @@ def test_unlimited_runner_uses_the_pinned_official_deterministic_ocr_prompt() ->
     assert "--temp 0" in runner
     assert "--repeat-penalty 1.05" in runner
     assert "--dry-multiplier" not in runner
+
+
+def test_paddle_runner_bounds_each_region_generation_to_the_official_chart_limit() -> None:
+    repository_root = Path(__file__).resolve().parents[5]
+    runner = (
+        repository_root / "capstone-rag/ocr/benchmark/paddle_candidate_runner.py"
+    ).read_text(encoding="utf-8")
+
+    assert "max_new_tokens=2048" in runner

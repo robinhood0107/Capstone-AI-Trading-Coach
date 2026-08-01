@@ -40,6 +40,10 @@ from app.brokerage.kis_mock_online_runtime import (
     KISMockOnlineBalanceReader,
     KISMockProjectionError,
 )
+from app.brokerage.kis_mock_approval_environment import (
+    KISMockApprovalEnvironmentRejected,
+    load_kis_mock_approval_environment,
+)
 from app.brokerage.kis_mock_order_gateway import (
     KISMockOrderGateway,
     MockOrderIntent,
@@ -678,9 +682,10 @@ def _require_recovery_source_outcome(packet: KISMockApprovalPacketV2) -> None:
     if packet.probe_type != "CANCEL_RECOVERY":
         return
     assert packet.recovery_of is not None
-    encryption_key = os.environ.get("KIS_MOCK_ORDER_REFERENCE_KEY", "").strip()
-    if not encryption_key:
-        raise KISMockApprovalRejected("recovery source outcome is unavailable")
+    try:
+        encryption_key = _operator_approval_value("KIS_MOCK_ORDER_REFERENCE_KEY")
+    except KISMockApprovalRejected:
+        raise KISMockApprovalRejected("recovery source outcome is unavailable") from None
     redis_client: Any | None = None
     try:
         redis_client = _build_redis_client()
@@ -1011,12 +1016,21 @@ def _require_clean_repository(repository_root: Path) -> None:
 
 def _require_bound_account_id(account_id: str) -> str:
     """승인 packet의 opaque account와 KIS_MOCK credential binding을 runtime 생성 전에 맞춘다."""
-    bound_account_id = os.environ.get("KIS_MOCK_BOUND_ACCOUNT_ID", "").strip()
+    bound_account_id = _operator_approval_value("KIS_MOCK_BOUND_ACCOUNT_ID")
     if re.fullmatch(_ACCOUNT_ID, bound_account_id) is None or not hmac.compare_digest(
         account_id, bound_account_id
     ):
         raise KISMockApprovalRejected("KIS_MOCK bound account does not match")
     return bound_account_id
+
+
+def _operator_approval_value(name: str) -> str:
+    """exact probe의 operator-only latch는 ignored root `.env` boundary 밖에서 받지 않는다."""
+
+    try:
+        return load_kis_mock_approval_environment(name)[name]
+    except KISMockApprovalEnvironmentRejected:
+        raise KISMockApprovalRejected("operator approval environment is unavailable") from None
 
 
 class _KISMockProbeOperations:
@@ -1026,14 +1040,12 @@ class _KISMockProbeOperations:
         _require_bound_account_id(packet.order.account_id)
         encryption_key = ""
         if packet.probe_type != "BALANCE_DIAGNOSTIC":
-            encryption_key = os.environ.get(
-                "KIS_MOCK_ORDER_REFERENCE_KEY",
-                "",
-            ).strip()
-            if not encryption_key:
+            try:
+                encryption_key = _operator_approval_value("KIS_MOCK_ORDER_REFERENCE_KEY")
+            except KISMockApprovalRejected:
                 raise KISMockApprovalRejected(
                     "mock reference encryption key is unavailable"
-                )
+                ) from None
         self._budget = KISBrokerageCallBudget(
             token_p_cap=packet.physical_caps.token_p,
             brokerage_cap=packet.physical_caps.brokerage,
@@ -1271,11 +1283,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--approval-packet", type=Path, required=True)
     args = parser.parse_args(argv)
     try:
+        expected_approval_id = _operator_approval_value("S3_KIS_MOCK_EXACT_APPROVAL_ID")
+        expected_packet_sha256 = _operator_approval_value(
+            "S3_KIS_MOCK_EXACT_APPROVAL_SHA256"
+        )
         summary = execute_approved_probe(
             args.approval_packet,
             now=datetime.now(tz=UTC),
-            expected_approval_id=os.environ.get("S3_KIS_MOCK_EXACT_APPROVAL_ID"),
-            expected_packet_sha256=os.environ.get("S3_KIS_MOCK_EXACT_APPROVAL_SHA256"),
+            expected_approval_id=expected_approval_id,
+            expected_packet_sha256=expected_packet_sha256,
             repository_root=_REPOSITORY_ROOT,
             operations_factory=_KISMockProbeOperations,
             approval_consumer=_consume_exact_approval_once,

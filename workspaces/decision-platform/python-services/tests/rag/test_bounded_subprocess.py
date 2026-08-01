@@ -50,6 +50,33 @@ def test_bounded_process_returns_only_bounded_stdout_and_minimal_environment(
     assert result.stderr == b""
 
 
+def test_bounded_process_can_receive_private_bytes_only_through_stdin(
+    tmp_path: Path,
+) -> None:
+    result = run_bounded_process(
+        executable=Path(sys.executable),
+        arguments=("-c", "import sys; sys.stdout.buffer.write(sys.stdin.buffer.read()[::-1])"),
+        working_directory=tmp_path,
+        environment={},
+        limits=_limits(max_stdin_bytes=64),
+        stdin=b"owner-private-page",
+    )
+
+    assert result.stdout == b"egap-etavirp-renwo"
+
+
+def test_bounded_process_rejects_stdin_above_the_explicit_limit(tmp_path: Path) -> None:
+    with pytest.raises(BoundedProcessError, match="PARSER_PROCESS_INPUT_BOUND_EXCEEDED"):
+        run_bounded_process(
+            executable=Path(sys.executable),
+            arguments=("-c", "import sys; sys.stdin.buffer.read()"),
+            working_directory=tmp_path,
+            environment={},
+            limits=_limits(max_stdin_bytes=4),
+            stdin=b"12345",
+        )
+
+
 def test_timeout_kills_the_process_tree_and_fails_closed(tmp_path: Path) -> None:
     with pytest.raises(BoundedProcessError, match="PARSER_PROCESS_TIMEOUT"):
         run_bounded_process(

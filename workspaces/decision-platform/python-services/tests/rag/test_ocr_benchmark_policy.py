@@ -208,7 +208,7 @@ def test_paddle_overall_ocr_lines_are_bounded_and_shape_checked() -> None:
                 [10.25, 20.75, 200.1, 80.01],
                 [0.0, 0.0, 1.0, 1.0],
             ],
-            "rec_scores": [0.95, 0.0],
+            "rec_scores": [0.95, 0.999],
             "rec_texts": ["fractional bbox", ""],
         }
     ) == (OcrLine(bbox=(10, 20, 201, 81), confidence=0.95, text="fractional bbox"),)
@@ -226,14 +226,6 @@ def test_paddle_overall_ocr_lines_are_bounded_and_shape_checked() -> None:
                     "rec_texts": ["x"],
                 }
             )
-    with pytest.raises(BenchmarkError, match="OCR_RESULT_SHAPE_INVALID"):
-        sanitize_paddle_ocr_lines(
-            {
-                "rec_boxes": [[10.0, 20.0, 200.0, 80.0]],
-                "rec_scores": [0.95],
-                "rec_texts": [""],
-            }
-        )
 
 
 @pytest.mark.parametrize(

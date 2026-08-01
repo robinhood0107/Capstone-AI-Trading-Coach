@@ -8,10 +8,13 @@ import pytest
 from app.rag.ocr_benchmark import (
     BenchmarkError,
     CandidateReceipt,
+    EvaluationDocument,
     LaneReceipt,
     QualityReceipt,
     compute_character_error_rate,
     compute_kendall_tau,
+    evaluate_quality,
+    quality_receipt_projection,
     select_production_backend,
     validate_benchmark_receipt,
 )
@@ -72,6 +75,65 @@ def test_metric_functions_use_deterministic_unicode_and_order_contracts() -> Non
     assert compute_character_error_rate("금리 3.5%", "금리 3.5%") == 0
     assert compute_character_error_rate("abcd", "abxd") == pytest.approx(0.25)
     assert compute_kendall_tau(("a", "b", "c"), ("a", "c", "b")) == pytest.approx(1 / 3)
+
+
+def test_objective_quality_evaluator_scores_text_cells_formula_order_and_critical_spans() -> None:
+    expected = EvaluationDocument(
+        korean_text="기준금리는 3.50%다",
+        english_text="The option value is 12.5.",
+        table_cells=("평균", "113.0", "중위값", "107.3"),
+        formulas=(r"U^k-U^{k-1}=0",),
+        reading_order=("left-top", "left-table", "right-top"),
+        critical_spans=("3.50%", "12.5", "113.0", "107.3"),
+    )
+
+    receipt = evaluate_quality(expected, expected)
+
+    assert receipt == _quality(
+        korean_cer=0,
+        english_cer=0,
+        table_cell_f1=1,
+        formula_accuracy=1,
+        reading_order_kendall_tau=1,
+    )
+    projection = quality_receipt_projection(receipt)
+    assert set(projection) == {
+        "criticalSpanErrors",
+        "englishCer",
+        "formulaAccuracy",
+        "hallucinatedCriticalSpans",
+        "koreanCer",
+        "readingOrderKendallTau",
+        "tableCellF1",
+    }
+    assert "기준금리" not in json.dumps(projection, ensure_ascii=False)
+
+
+def test_objective_quality_evaluator_detects_missing_and_hallucinated_financial_values() -> None:
+    expected = EvaluationDocument(
+        korean_text="총자산은 1,053.1조원이다",
+        english_text="The rate is -0.25%.",
+        table_cells=("1,053.1", "-0.25%"),
+        formulas=(r"rU^k=0",),
+        reading_order=("a", "b", "c"),
+        critical_spans=("1,053.1", "-0.25%"),
+    )
+    prediction = EvaluationDocument(
+        korean_text="총자산은 1,053.7조원이다",
+        english_text="The rate is 0.25%.",
+        table_cells=("1,053.7", "0.25%"),
+        formulas=(r"rU^j=0",),
+        reading_order=("a", "c", "b"),
+        critical_spans=("1,053.7", "0.25%", "999"),
+    )
+
+    receipt = evaluate_quality(expected, prediction)
+
+    assert receipt.critical_span_errors == 2
+    assert receipt.hallucinated_critical_spans == 3
+    assert receipt.table_cell_f1 == 0
+    assert receipt.formula_accuracy < 1
+    assert receipt.reading_order_kendall_tau == pytest.approx(1 / 3)
 
 
 @pytest.mark.parametrize(

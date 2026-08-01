@@ -1,0 +1,41 @@
+{
+  "blocks": [
+    {
+      "blockType": "PARAGRAPH",
+      "locator": {
+        "page": 2
+      },
+      "ocrConfidence": 0.997,
+      "readingOrder": 0,
+      "text": "금융안정 관련 핵심 숫자와 단위를 보존한다."
+    }
+  ],
+  "contractId": "rag-document-ir-v1",
+  "documentIrVersion": 1,
+  "extractionMode": "OCR",
+  "languageTags": [
+    "ko",
+    "en"
+  ],
+  "mimeType": "application/pdf",
+  "normalizedContentSha256": "5555555555555555555555555555555555555555555555555555555555555555",
+  "parserEvidence": {
+    "ocr": {
+      "backend": "PADDLE_STRUCTURED",
+      "backendVersion": "benchmark-pinned",
+      "modelSha256": "7777777777777777777777777777777777777777777777777777777777777777"
+    },
+    "parserArtifactSha256": "6666666666666666666666666666666666666666666666666666666666666666",
+    "parserBackend": "capstone-pdf-native",
+    "parserVersion": "1.0.0"
+  },
+  "rawContentSha256": "4444444444444444444444444444444444444444444444444444444444444444",
+  "safetyClassification": {
+    "externalLlmEligible": true,
+    "piiDetected": false,
+    "promptInjectionDetected": false,
+    "secretDetected": false
+  },
+  "sourceId": "src_arxiv_option_pricing_001",
+  "sourceRevisionId": "srv_arxiv_option_pricing_001"
+}

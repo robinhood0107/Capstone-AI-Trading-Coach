@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
 import sys
 from collections.abc import Callable
@@ -19,6 +20,12 @@ GENERATOR_PATHS = {
     "s4_7b": REPO_ROOT / "capstone-rag/generate_s4_7b_source_cards.py",
     "s4_7c": REPO_ROOT / "capstone-rag/generate_s4_7c_external_corpus.py",
 }
+
+
+def _json_bytes(value: object) -> bytes:
+    return (json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode(
+        "utf-8"
+    )
 
 
 @dataclass(frozen=True)
@@ -63,9 +70,9 @@ def _configure_generator(
         report = artifact_root / "report.json"
         provider_report = artifact_root / "provider.json"
         expected = {
-            manifest: b'{"manifest":"s4-5"}\n',
-            report: b'{"report":"s4-5"}\n',
-            provider_report: b'{"provider":"offline"}\n',
+            manifest: _json_bytes({"manifest": "s4-5"}),
+            report: _json_bytes({"report": "s4-5"}),
+            provider_report: _json_bytes({"provider": "offline"}),
         }
         monkeypatch.setattr(module, "S4_5_EVAL_MANIFEST_PATH", manifest)
         monkeypatch.setattr(module, "S4_5_REPORT_PATH", report)
@@ -93,18 +100,24 @@ def _configure_generator(
 
     card_root = artifact_root / "cards"
     manifest = artifact_root / "manifest.json"
-    expected = {
-        card_root / "card.md": b"# deterministic card\n",
-        manifest: b'{"manifest":"source-cards"}\n',
-    }
     if generator_id == "s4_7b":
+        generated_manifest = {
+            "financeCards": 1,
+            "officialCards": 0,
+            "upstreamReferenceCardsExcluded": 0,
+            "corpusManifestSha256": "a" * 64,
+        }
+        expected = {
+            card_root / "card.md": b"# deterministic card\n",
+            manifest: _json_bytes(generated_manifest),
+        }
         monkeypatch.setattr(module, "S4_7B_SOURCE_CARD_ROOT", card_root)
         monkeypatch.setattr(module, "S4_7B_CORPUS_MANIFEST_PATH", manifest)
         monkeypatch.setattr(module, "render_cards", lambda: {"card.md": expected[card_root / "card.md"]})
         monkeypatch.setattr(
             module,
             "build_source_card_corpus_manifest",
-            lambda: {"manifest": "source-cards"},
+            lambda: generated_manifest,
         )
         return _GeneratorFixture(
             leaf=card_root / "card.md",
@@ -116,6 +129,14 @@ def _configure_generator(
             argv_module=module,
         )
 
+    generated_manifest = {
+        "externalProcessingCardCount": 1,
+        "corpusManifestSha256": "b" * 64,
+    }
+    expected = {
+        card_root / "card.md": b"# deterministic card\n",
+        manifest: _json_bytes(generated_manifest),
+    }
     monkeypatch.setattr(module, "S4_7C_SOURCE_CARD_ROOT", card_root)
     monkeypatch.setattr(module, "S4_7C_CORPUS_MANIFEST_PATH", manifest)
     monkeypatch.setattr(
@@ -126,7 +147,7 @@ def _configure_generator(
     monkeypatch.setattr(
         module,
         "build_external_processing_manifest",
-        lambda: {"manifest": "source-cards"},
+        lambda: generated_manifest,
     )
     return _GeneratorFixture(
         leaf=card_root / "card.md",
@@ -154,7 +175,8 @@ def test_generators_keep_regular_file_write_and_check_byte_parity(
     )
     fixture.output_parent.mkdir(parents=True)
 
-    monkeypatch.setattr(fixture.argv_module.sys, "argv", ["generator", "--write"])
+    write_args = [] if generator_id == "s4_5" else ["--write"]
+    monkeypatch.setattr(fixture.argv_module.sys, "argv", ["generator", *write_args])
     assert fixture.main() == 0
     for path, expected in fixture.expected.items():
         assert path.read_bytes() == expected

@@ -117,8 +117,9 @@ class S24ContractFirstTest {
         listOf("@Cacheable", "RedisTemplate", "ConcurrentHashMap").forEach { forbidden ->
             assertFalse(source.contains(forbidden), "Kill Switch authority must not depend on $forbidden")
         }
+        val legacyRiskSnapshotIdentifier = Regex("""(?<![A-Za-z0-9_])risk_snapshots(?![A-Za-z0-9_])""")
         assertFalse(
-            riskSources.any { it.contains("risk_snapshots") },
+            riskSources.any(legacyRiskSnapshotIdentifier::containsMatchIn),
             "S2.4 portfolio risk must not read the legacy risk_snapshots table",
         )
         assertEquals(

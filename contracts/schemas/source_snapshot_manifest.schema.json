@@ -1,113 +1,47 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "contracts/schemas/source_snapshot_manifest.schema.json",
-  "title": "Source Snapshot Manifest",
-  "description": "Commit marker and provenance manifest for a sanitized ECOS or Naver source snapshot. The YYYY/MM/DD path partition is derived from asOf.",
-  "oneOf": [
-    {
+  "title": "ECOS Source Snapshot Manifest",
+  "description": "Commit marker and provenance manifest for a sanitized ECOS source snapshot. The YYYY/MM/DD path partition is derived from asOf.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "source", "providerProfile", "operation", "generatedAt", "asOf", "snapshotPath", "snapshotSha256", "recordCount", "countBreakdown", "partial", "coverage", "deferredQueries", "physicalAttemptCount", "quotaPolicyVersion", "provenance", "sanitizationVersion", "retentionDays", "deleteOwner"],
+  "properties": {
+    "schemaVersion": { "type": "integer", "const": 1 },
+    "source": { "type": "string", "const": "ecos" },
+    "providerProfile": { "type": "string", "const": "ecos" },
+    "operation": { "type": "string", "const": "ecos-macro-collect" },
+    "generatedAt": { "type": "string", "format": "date-time", "pattern": "Z$" },
+    "asOf": { "type": "string", "format": "date" },
+    "snapshotPath": { "type": "string", "pattern": "^ecos/[0-9]{4}/[0-9]{2}/[0-9]{2}/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/snapshot\\.json$" },
+    "snapshotSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "recordCount": { "type": "integer", "minimum": 0, "maximum": 800 },
+    "countBreakdown": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["schemaVersion", "source", "providerProfile", "operation", "generatedAt", "asOf", "snapshotPath", "snapshotSha256", "recordCount", "countBreakdown", "partial", "coverage", "deferredQueries", "physicalAttemptCount", "quotaPolicyVersion", "provenance", "sanitizationVersion", "retentionDays", "deleteOwner"],
+      "required": ["seriesCount", "observationCount", "duplicateCount"],
       "properties": {
-        "schemaVersion": { "type": "integer", "const": 1 },
-        "source": { "type": "string", "const": "ecos" },
-        "providerProfile": { "type": "string", "const": "ecos" },
-        "operation": { "type": "string", "const": "ecos-macro-collect" },
-        "generatedAt": { "type": "string", "format": "date-time", "pattern": "Z$" },
-        "asOf": { "type": "string", "format": "date" },
-        "snapshotPath": { "type": "string", "pattern": "^ecos/[0-9]{4}/[0-9]{2}/[0-9]{2}/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/snapshot\\.json$" },
-        "snapshotSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
-        "recordCount": { "type": "integer", "minimum": 0, "maximum": 800 },
-        "countBreakdown": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["seriesCount", "observationCount", "duplicateCount"],
-          "properties": {
-            "seriesCount": { "type": "integer", "const": 2 },
-            "observationCount": { "type": "integer", "minimum": 0, "maximum": 800 },
-            "duplicateCount": { "type": "integer", "minimum": 0, "maximum": 800 }
-          }
-        },
-        "partial": { "type": "boolean" },
-        "coverage": { "type": "string", "enum": ["complete", "partial", "empty"] },
-        "deferredQueries": { "type": "integer", "const": 0 },
-        "physicalAttemptCount": { "type": "integer", "minimum": 0, "maximum": 8 },
-        "quotaPolicyVersion": { "type": "string", "minLength": 1, "maxLength": 120 },
-        "provenance": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["documentationUrl", "policyUrl"],
-          "properties": {
-            "documentationUrl": { "type": "string", "format": "uri", "const": "https://ecos.bok.or.kr/api/#/DevGuide/DevSpeciflcation" },
-            "policyUrl": { "type": "string", "format": "uri", "const": "https://ecos.bok.or.kr/api/#/DevGuide/DevSpeciflcation" }
-          }
-        },
-        "sanitizationVersion": { "type": "string", "minLength": 1, "maxLength": 120 },
-        "retentionDays": { "type": "integer", "const": 365 },
-        "deleteOwner": { "type": "string", "const": "decision-platform:source-snapshot-retention" }
+        "seriesCount": { "type": "integer", "const": 2 },
+        "observationCount": { "type": "integer", "minimum": 0, "maximum": 800 },
+        "duplicateCount": { "type": "integer", "minimum": 0, "maximum": 800 }
       }
     },
-    {
+    "partial": { "type": "boolean" },
+    "coverage": { "type": "string", "enum": ["complete", "partial", "empty"] },
+    "deferredQueries": { "type": "integer", "const": 0 },
+    "physicalAttemptCount": { "type": "integer", "minimum": 0, "maximum": 8 },
+    "quotaPolicyVersion": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "provenance": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["schemaVersion", "source", "providerProfile", "operation", "generatedAt", "asOf", "snapshotPath", "snapshotSha256", "recordCount", "countBreakdown", "partial", "coverage", "deferredQueries", "physicalAttemptCount", "quotaPolicyVersion", "provenance", "sanitizationVersion", "retentionDays", "deleteOwner"],
+      "required": ["documentationUrl", "policyUrl"],
       "properties": {
-        "schemaVersion": { "type": "integer", "const": 1 },
-        "source": { "type": "string", "const": "naver" },
-        "providerProfile": { "type": "string", "enum": ["naver-legacy", "naver-api-hub"] },
-        "operation": { "type": "string", "const": "naver-news-metadata-collect" },
-        "generatedAt": { "type": "string", "format": "date-time", "pattern": "Z$" },
-        "asOf": { "type": "string", "format": "date" },
-        "snapshotPath": { "type": "string", "pattern": "^naver/[0-9]{4}/[0-9]{2}/[0-9]{2}/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/snapshot\\.json$" },
-        "snapshotSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
-        "recordCount": { "type": "integer", "minimum": 0, "maximum": 80 },
-        "countBreakdown": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["queryCount", "acceptedItemCount", "filteredItemCount", "redactedUrlCount"],
-          "properties": {
-            "queryCount": { "type": "integer", "minimum": 1, "maximum": 4 },
-            "acceptedItemCount": { "type": "integer", "minimum": 0, "maximum": 80 },
-            "filteredItemCount": { "type": "integer", "minimum": 0, "maximum": 80 },
-            "redactedUrlCount": { "type": "integer", "minimum": 0, "maximum": 160 }
-          }
-        },
-        "partial": { "type": "boolean" },
-        "coverage": { "type": "string", "enum": ["complete", "partial", "empty"] },
-        "deferredQueries": { "type": "integer", "minimum": 0, "maximum": 4 },
-        "physicalAttemptCount": { "type": "integer", "minimum": 0, "maximum": 8 },
-        "quotaPolicyVersion": { "type": "string", "minLength": 1, "maxLength": 120 },
-        "provenance": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["documentationUrl", "policyUrl"],
-          "properties": {
-            "documentationUrl": { "type": "string", "format": "uri" },
-            "policyUrl": { "type": "string", "format": "uri" }
-          }
-        },
-        "sanitizationVersion": { "type": "string", "minLength": 1, "maxLength": 120 },
-        "retentionDays": { "type": "integer", "const": 30 },
-        "deleteOwner": { "type": "string", "const": "decision-platform:source-snapshot-retention" }
-      },
-      "allOf": [
-        {
-          "if": { "properties": { "countBreakdown": { "properties": { "queryCount": { "const": 1 } }, "required": ["queryCount"] } }, "required": ["countBreakdown"] },
-          "then": { "properties": { "physicalAttemptCount": { "maximum": 2 } } }
-        },
-        {
-          "if": { "properties": { "countBreakdown": { "properties": { "queryCount": { "const": 2 } }, "required": ["queryCount"] } }, "required": ["countBreakdown"] },
-          "then": { "properties": { "physicalAttemptCount": { "maximum": 4 } } }
-        },
-        {
-          "if": { "properties": { "countBreakdown": { "properties": { "queryCount": { "const": 3 } }, "required": ["queryCount"] } }, "required": ["countBreakdown"] },
-          "then": { "properties": { "physicalAttemptCount": { "maximum": 6 } } }
-        },
-        {
-          "if": { "properties": { "countBreakdown": { "properties": { "queryCount": { "const": 4 } }, "required": ["queryCount"] } }, "required": ["countBreakdown"] },
-          "then": { "properties": { "physicalAttemptCount": { "maximum": 8 } } }
-        }
-      ]
-    }
-  ]
+        "documentationUrl": { "type": "string", "format": "uri", "const": "https://ecos.bok.or.kr/api/#/DevGuide/DevSpeciflcation" },
+        "policyUrl": { "type": "string", "format": "uri", "const": "https://ecos.bok.or.kr/api/#/DevGuide/DevSpeciflcation" }
+      }
+    },
+    "sanitizationVersion": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "retentionDays": { "type": "integer", "const": 365 },
+    "deleteOwner": { "type": "string", "const": "decision-platform:source-snapshot-retention" }
+  }
 }

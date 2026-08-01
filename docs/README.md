@@ -15,14 +15,17 @@
   30/30 DB parity와 bounded admin CAS를 통과했고 provider physical call은 0이다.
 - Voyage/Gemini/OpenAI 호출, `/rag/ask`, 암호화 history, retrieval/RRF/evaluator,
   S5 LightGBM은 아직 완료되지 않았다.
-- S4.8A 교차시장 일곱 schema·fixture·catalog v2/v3는 계약 잠금 상태다. S4.8B/C·S6.6/S6.7
-  runtime은 `NOT_IMPLEMENTED / PLANNED`다. 월 데이터 비용 `0원`, offline
+- S4.8A 교차시장 일곱 schema·fixture·catalog v2/v3는 계약 잠금 상태다. S4.8B/C offline
+  fixture/scorer/V23 evidence store/설명 경계는 merge candidate로 구현됐고 S6.6/S6.7,
+  snapshot materialization, REST/RiskEngine runtime은 `NOT_IMPLEMENTED / PLANNED`다. 월 데이터 비용 `0원`, offline
   fixture·지연/EOD 우선이며 기관용/실시간 feed는 P1 완주 조건이 아니다.
 - 순서 0 `S4.READ` receipt 뒤 S4.8A contract-only gate가 일곱 schema, catalog v2,
   contract-change, fixture/golden vector를 고정했다. 이 계약은 코드·DB·API runtime 완료
   증거가 아니며 후속 구현은 S4.8A의 main 병합과 post-merge CI를 먼저 확인해야 한다.
 - 기존 Decision/RAG/Signal v1/v2 payload 추가 필드는 0이고 새 framework·cloud·Kafka hard
   dependency를 만들지 않는다.
+- S5.0 Signal v2 closed union은 계약 잠금과 Python/Spring parity까지 구현했다. Signal v1과
+  current OpenAPI는 unchanged이며 active v2 endpoint와 RiskDecision/order wiring은 `NO_GO`다.
 - provider/live account/live order 호출은 승인 packet 없이는 항상 0이다.
 - S1.3G active 뉴스 authority는 Naver provider/runtime/storage를 퇴역시키고 GDELT의
   aggregate-only synthetic fixture 계약을 사용한다. 기사 metadata 저장, RiskDecision/hash/order
@@ -35,6 +38,9 @@ REST/gRPC 계약은 [API 명세서](API_명세서.md), machine-readable S4 profi
 교차시장 계약은
 [contracts README](../contracts/README.md#s48-교차시장애널리스트-계약)와
 [S4.8A 변경기록](../contracts/changes/20260731-s4-8a-cross-market-contract-lock.md)을 따른다.
+S4.8B/C offline runtime과 S5.0 계약은 각각
+[S4.8B/C 변경기록](../contracts/changes/20260801-s4-8b-s4-8c-offline-runtime.md),
+[S5.0 변경기록](../contracts/changes/20260801-s5-0-signal-v2-contract-lock.md)을 따른다.
 exact 42개 integration target 행과 exact KIS 18개 allowlist는
 Git으로 추적하지 않는 로컬 전용 자료수급 레지스트리가
 authority이며 공개 문서에는 전체 목록을 복제하지 않는다.

@@ -1,0 +1,72 @@
+{
+  "$id": "contracts/schemas/s4-2c-voyage-approval.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "balanceSnapshotSha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "contextSetHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "corpusManifestSha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "generationPlanSha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "paidHardCapUsd": {
+      "const": 0
+    },
+    "physicalBatchCap": {
+      "const": 1
+    },
+    "projectFingerprintSha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "provider": {
+      "const": "VOYAGE"
+    },
+    "purpose": {
+      "enum": [
+        "EVALUATION_ONLY",
+        "SLA_FALLBACK_CANDIDATE"
+      ]
+    },
+    "retryCount": {
+      "const": 0
+    },
+    "schemaVersion": {
+      "const": "s4-2c-voyage-approval/v1"
+    },
+    "state": {
+      "const": "APPROVED"
+    },
+    "zdrOptOutEvidenceSha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "balanceSnapshotSha256",
+    "contextSetHash",
+    "corpusManifestSha256",
+    "generationPlanSha256",
+    "paidHardCapUsd",
+    "physicalBatchCap",
+    "projectFingerprintSha256",
+    "provider",
+    "purpose",
+    "retryCount",
+    "schemaVersion",
+    "state",
+    "zdrOptOutEvidenceSha256"
+  ],
+  "title": "s4-2c-voyage-approval",
+  "type": "object"
+}

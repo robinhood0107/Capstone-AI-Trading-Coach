@@ -37,6 +37,10 @@ import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
 import org.testcontainers.postgresql.PostgreSQLContainer
 import org.testcontainers.utility.DockerImageName
+import tools.jackson.databind.json.JsonMapper
+import tools.jackson.databind.node.ObjectNode
+import java.nio.file.Files
+import java.nio.file.Path
 import java.sql.DriverManager
 import java.sql.SQLException
 import java.time.Instant
@@ -59,9 +63,9 @@ class FlywayMigrationIntegrationTest(
     @Autowired private val riskSnapshotPort: RiskSnapshotPort,
 ) : SpringApiIntegrationTestBase() {
     @Test
-    fun `clean database applies V1 through V20 migrations and creates required objects`() {
+    fun `clean database applies V1 through V23 migrations and creates required objects`() {
         val versions = queryStrings("select version from flyway_schema_history where success order by installed_rank")
-        assertEquals((1..20).map(Int::toString), versions)
+        assertEquals((1..23).map(Int::toString), versions)
 
         val requiredTables =
             listOf(
@@ -140,6 +144,17 @@ class FlywayMigrationIntegrationTest(
                 "current_corporation_registry_projection",
                 "disclosure_event_observation_projection",
                 "disclosure_collection_status_projection",
+                "market_source_entitlements",
+                "cross_market_exposure_catalog_entries",
+                "cross_market_observations",
+                "analyst_revision_evidence",
+                "market_cause_evidence",
+                "cross_market_risk_snapshots",
+                "cross_market_snapshot_evidence_links",
+                "latest_cross_market_observations",
+                "latest_analyst_revision_evidence",
+                "latest_market_cause_evidence",
+                "latest_cross_market_risk_snapshots",
             )
         requiredTables.forEach { tableName ->
             assertTrue(tableExists(tableName), "expected table $tableName to exist")
@@ -154,6 +169,204 @@ class FlywayMigrationIntegrationTest(
         assertFalse(
             indexDefinitionLike("rag_chunk_embeddings", "%ivfflat%"),
             "ivfflat must wait until real embeddings are loaded",
+        )
+    }
+
+    @Test
+    fun `V23 permits hash-stable fixture replay but blocks mutation snapshot writing and cross-owner reads`() {
+        val storageTables =
+            listOf(
+                "market_source_entitlements",
+                "cross_market_exposure_catalog_entries",
+                "cross_market_observations",
+                "analyst_revision_evidence",
+                "market_cause_evidence",
+                "cross_market_risk_snapshots",
+                "cross_market_snapshot_evidence_links",
+            )
+        storageTables.forEach { table ->
+            listOf("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE").forEach { privilege ->
+                assertFalse(hasTablePrivilege("decision_app", table, privilege), "unexpected app $privilege on $table")
+                assertFalse(
+                    hasTablePrivilege("decision_market_writer", table, privilege),
+                    "unexpected writer $privilege on $table",
+                )
+            }
+        }
+        listOf(
+            "append_market_source_entitlement(jsonb)",
+            "append_cross_market_exposure_catalog_entry(jsonb)",
+            "append_cross_market_observation(jsonb)",
+            "append_analyst_revision_evidence(jsonb)",
+            "append_market_cause_evidence(jsonb)",
+        ).forEach { function ->
+            assertTrue(hasFunctionPrivilege("decision_market_writer", function), "missing writer EXECUTE on $function")
+            assertFalse(hasFunctionPrivilege("decision_app", function), "unexpected app EXECUTE on $function")
+        }
+        assertFalse(
+            functionExists("append_cross_market_risk_snapshot(jsonb)"),
+            "S4.8B must not create snapshot materialization authority",
+        )
+        listOf(
+            "latest_cross_market_observations",
+            "latest_analyst_revision_evidence",
+            "latest_market_cause_evidence",
+            "latest_cross_market_risk_snapshots",
+        ).forEach { view ->
+            assertTrue(hasTablePrivilege("decision_app", view, "SELECT"), "missing bounded read on $view")
+        }
+
+        val entitlement =
+            """
+            {
+              "activationStatus":"CANDIDATE_DISABLED",
+              "category":"OVERSEAS_LEAD",
+              "contractExpiry":"2027-07-31T00:00:00Z",
+              "decisionAuthority":"NONE",
+              "derivedDataAllowed":false,
+              "embeddingAllowed":false,
+              "externalLlmAllowed":false,
+              "logicalIdentityHash":"${"a".repeat(64)}",
+              "machineFetchAllowed":false,
+              "providerCallsAllowed":false,
+              "rawStoreAllowed":false,
+              "sourceFamily":"KIS",
+              "sourceId":"KIS_DISABLED_04"
+            }
+            """.trimIndent()
+        assertEquals("INSERTED", callMarketWriterAppend("append_market_source_entitlement", entitlement))
+        assertEquals("REPLAY", callMarketWriterAppend("append_market_source_entitlement", entitlement))
+        val conflicting = entitlement.replace("OVERSEAS_LEAD", "DOMESTIC_AMPLIFICATION")
+        val conflict =
+            assertThrows<SQLException> {
+                callMarketWriterAppend("append_market_source_entitlement", conflicting)
+            }
+        assertEquals("23505", conflict.sqlState)
+        assertRolePermissionDenied(
+            "decision_market_writer",
+            MARKET_WRITER_PASSWORD,
+            "update market_source_entitlements set source_id = source_id",
+        )
+        assertRolePermissionDenied(
+            "decision_market_writer",
+            MARKET_WRITER_PASSWORD,
+            "delete from market_source_entitlements",
+        )
+        assertDecisionAppPermissionDenied("select * from market_source_entitlements")
+
+        jdbcTemplate.update(
+            """
+            insert into cross_market_risk_snapshots (
+              logical_identity_hash, owner_user_id, owner_scope_hash, config_version,
+              availability, evidence_mode, snapshot_available_at, decision_authority,
+              order_authority, validation_status, payload_hash, artifact_hash, payload_json
+            ) values (
+              repeat('1', 64), 'usr_demo_user', repeat('2', 64), 'cross-market-risk-config.v1',
+              'AVAILABLE', 'SYNTHETIC_FIXTURE', '2026-07-31T00:15:00Z',
+              'NEW_BUY_ALLOW_TO_WARN_ONLY', 'NONE', 'UNVALIDATED',
+              repeat('3', 64), repeat('4', 64), '{"sanitized":true}'::jsonb
+            )
+            """.trimIndent(),
+        )
+        DriverManager.getConnection(postgres.jdbcUrl, "decision_app", APP_PASSWORD).use { connection ->
+            connection.autoCommit = false
+            connection.createStatement().use { statement ->
+                statement.execute("select set_config('app.actor_user_id', 'usr_demo_user', true)")
+                statement.executeQuery("select count(*) from latest_cross_market_risk_snapshots").use { result ->
+                    assertTrue(result.next())
+                    assertEquals(1L, result.getLong(1))
+                }
+                statement.execute("select set_config('app.actor_user_id', 'usr_demo_admin', true)")
+                statement.executeQuery("select count(*) from latest_cross_market_risk_snapshots").use { result ->
+                    assertTrue(result.next())
+                    assertEquals(0L, result.getLong(1))
+                }
+            }
+            connection.rollback()
+        }
+    }
+
+    @Test
+    fun `V23 accepts contract-shaped payloads and blocks unknown keys at every append boundary`() {
+        val mapper = JsonMapper.builder().build()
+        val entitlementDocument = crossMarketFixture(mapper, "market_source_entitlement.v1.valid.json")
+        val entitlement =
+            requireNotNull(entitlementDocument.path("entitlements").get(0)) {
+                "market source entitlement fixture must include one candidate-disabled entry"
+            }.deepCopy() as ObjectNode
+        assertEquals(
+            "INSERTED",
+            callMarketWriterAppend("append_market_source_entitlement", mapper.writeValueAsString(entitlement)),
+        )
+
+        // 관측 fixture의 sourceRef는 foreign key이므로 동일한 계약 형태의 disabled source를 먼저 둔다.
+        val observationSourceEntitlement = entitlement.deepCopy() as ObjectNode
+        observationSourceEntitlement.put("logicalIdentityHash", "4".repeat(64))
+        observationSourceEntitlement.put("sourceId", "KIS_DISABLED_02")
+        assertEquals(
+            "INSERTED",
+            callMarketWriterAppend(
+                "append_market_source_entitlement",
+                mapper.writeValueAsString(observationSourceEntitlement),
+            ),
+        )
+
+        val cause = crossMarketFixture(mapper, "market_cause_evidence.v1.valid.json")
+        // GDELT aggregate는 원인 확정 권한이 없으므로 V23이 허용하는 비인과 관계만 regression control로 쓴다.
+        cause.put("relation", "CO_MOVES_WITH")
+        val canonicalPayloads =
+            listOf(
+                MarketWriterAppendPayload("append_market_source_entitlement", entitlement, "REPLAY"),
+                MarketWriterAppendPayload(
+                    "append_cross_market_exposure_catalog_entry",
+                    crossMarketFixture(mapper, "cross_market_exposure_catalog.v1.valid.json"),
+                    "INSERTED",
+                ),
+                MarketWriterAppendPayload(
+                    "append_cross_market_observation",
+                    crossMarketFixture(mapper, "cross_market_observation.v1.valid.json"),
+                    "INSERTED",
+                ),
+                MarketWriterAppendPayload(
+                    "append_analyst_revision_evidence",
+                    crossMarketFixture(mapper, "analyst_revision_evidence.v1.valid.json"),
+                    "INSERTED",
+                ),
+                MarketWriterAppendPayload("append_market_cause_evidence", cause, "INSERTED"),
+            )
+
+        canonicalPayloads.forEach { candidate ->
+            assertEquals(
+                candidate.expectedResult,
+                callMarketWriterAppend(candidate.functionName, mapper.writeValueAsString(candidate.payload)),
+            )
+            // 기존 denylist에 없는 key도 전체 p_record가 payload_json으로 흐르기 전에 거부해야 한다.
+            assertUnknownCrossMarketPayloadIsRejected(mapper, candidate.functionName, candidate.payload)
+        }
+
+        assertUnknownNestedCrossMarketPayloadIsRejected(
+            mapper,
+            "append_market_source_entitlement",
+            entitlement,
+            "materializationDeclaration",
+        )
+        assertUnknownNestedCrossMarketPayloadIsRejected(
+            mapper,
+            "append_analyst_revision_evidence",
+            canonicalPayloads.single { it.functionName == "append_analyst_revision_evidence" }.payload,
+            "current",
+        )
+        assertObjectAtAllowedScalarIsRejected(
+            mapper,
+            "append_market_cause_evidence",
+            cause,
+            "sanitizedSummary",
+        )
+        assertObjectInsideAllowedArrayIsRejected(
+            mapper,
+            "append_cross_market_exposure_catalog_entry",
+            canonicalPayloads.single { it.functionName == "append_cross_market_exposure_catalog_entry" }.payload,
+            "sourceLineage",
         )
     }
 
@@ -2706,6 +2919,137 @@ class FlywayMigrationIntegrationTest(
         return configuration.load()
     }
 
+    private fun callMarketWriterAppend(
+        functionName: String,
+        payload: String,
+    ): String {
+        require(
+            functionName in
+                setOf(
+                    "append_market_source_entitlement",
+                    "append_cross_market_exposure_catalog_entry",
+                    "append_cross_market_observation",
+                    "append_analyst_revision_evidence",
+                    "append_market_cause_evidence",
+                ),
+        )
+        DriverManager.getConnection(postgres.jdbcUrl, "decision_market_writer", MARKET_WRITER_PASSWORD).use { connection ->
+            connection.prepareStatement("select $functionName(?::jsonb)").use { statement ->
+                statement.setString(1, payload)
+                statement.executeQuery().use { result ->
+                    check(result.next())
+                    return result.getString(1)
+                }
+            }
+        }
+    }
+
+    private fun crossMarketFixture(
+        mapper: JsonMapper,
+        fileName: String,
+    ): ObjectNode =
+        mapper
+            .readTree(
+                Files.readString(repositoryRoot().resolve("contracts/examples").resolve(fileName)),
+            ).deepCopy() as ObjectNode
+
+    private fun assertUnknownCrossMarketPayloadIsRejected(
+        mapper: JsonMapper,
+        functionName: String,
+        canonicalPayload: ObjectNode,
+    ) {
+        val poisonedPayload = canonicalPayload.deepCopy() as ObjectNode
+        poisonedPayload.put("untrustedContent", "raw provider article payload")
+
+        val exception =
+            assertThrows<SQLException> {
+                callMarketWriterAppend(functionName, mapper.writeValueAsString(poisonedPayload))
+            }
+        assertEquals("22023", exception.sqlState, "unknown payload key must fail before persistence")
+        assertTrue(exception.message.orEmpty().contains("cross-market fixture payload is not permitted"))
+    }
+
+    private fun assertUnknownNestedCrossMarketPayloadIsRejected(
+        mapper: JsonMapper,
+        functionName: String,
+        canonicalPayload: ObjectNode,
+        nestedField: String,
+    ) {
+        val poisonedPayload = canonicalPayload.deepCopy() as ObjectNode
+        val nestedPayload = poisonedPayload.get(nestedField) as ObjectNode
+        nestedPayload.put("untrustedContent", "raw provider article payload")
+
+        val exception =
+            assertThrows<SQLException> {
+                callMarketWriterAppend(functionName, mapper.writeValueAsString(poisonedPayload))
+            }
+        assertEquals("22023", exception.sqlState, "unknown nested payload key must fail before persistence")
+        assertTrue(exception.message.orEmpty().contains("cross-market fixture payload is not permitted"))
+    }
+
+    private fun assertObjectAtAllowedScalarIsRejected(
+        mapper: JsonMapper,
+        functionName: String,
+        canonicalPayload: ObjectNode,
+        fieldName: String,
+    ) {
+        val poisonedPayload = canonicalPayload.deepCopy() as ObjectNode
+        poisonedPayload.set(
+            fieldName,
+            mapper.createObjectNode().put("untrustedContent", "raw provider article payload"),
+        )
+
+        assertCrossMarketPayloadIsRejected(mapper, functionName, poisonedPayload)
+    }
+
+    private fun assertObjectInsideAllowedArrayIsRejected(
+        mapper: JsonMapper,
+        functionName: String,
+        canonicalPayload: ObjectNode,
+        fieldName: String,
+    ) {
+        val poisonedPayload = canonicalPayload.deepCopy() as ObjectNode
+        val poisonedArray = mapper.createArrayNode()
+        poisonedArray.add(mapper.createObjectNode().put("untrustedContent", "raw provider article payload"))
+        poisonedPayload.set(fieldName, poisonedArray)
+
+        assertCrossMarketPayloadIsRejected(mapper, functionName, poisonedPayload)
+    }
+
+    private fun assertCrossMarketPayloadIsRejected(
+        mapper: JsonMapper,
+        functionName: String,
+        poisonedPayload: ObjectNode,
+    ) {
+        val exception =
+            assertThrows<SQLException> {
+                callMarketWriterAppend(functionName, mapper.writeValueAsString(poisonedPayload))
+            }
+        assertEquals("22023", exception.sqlState, "payload object must fail before persistence")
+        assertTrue(exception.message.orEmpty().contains("cross-market fixture payload is not permitted"))
+    }
+
+    private fun repositoryRoot(): Path {
+        var current = Path.of(System.getProperty("user.dir")).toAbsolutePath()
+        while (!Files.exists(current.resolve("AGENTS.md"))) {
+            current = current.parent ?: error("repository root was not found")
+        }
+        return current
+    }
+
+    private data class MarketWriterAppendPayload(
+        val functionName: String,
+        val payload: ObjectNode,
+        val expectedResult: String,
+    )
+
+    private fun functionExists(signature: String): Boolean =
+        jdbcTemplate.queryForObject(
+            "select to_regprocedure(?) is not null",
+            Boolean::class.java,
+            signature,
+        ) ?: false
+
     private fun tableExists(tableName: String): Boolean =
         jdbcTemplate.queryForObject(
             """
@@ -2935,6 +3279,9 @@ class FlywayMigrationIntegrationTest(
             registry.add("spring.flyway.user", postgres::getUsername)
             registry.add("spring.flyway.password", postgres::getPassword)
             registry.add("app.decision.grpc.shared-secret") { SpringApiIntegrationTestBase.TEST_GRPC_SHARED_SECRET }
+            registry.add("app.rag.grpc.shared-secret") {
+                SpringApiIntegrationTestBase.TEST_RAG_GRPC_SHARED_SECRET
+            }
         }
 
         @JvmStatic

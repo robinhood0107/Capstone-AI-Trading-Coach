@@ -4,7 +4,6 @@ import argparse
 import copy
 import hashlib
 import json
-import os
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
@@ -16,6 +15,8 @@ _SCRIPT_REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_SCRIPT_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_SCRIPT_REPO_ROOT))
 
+from contracts.generated_artifact_io import write_generated_artifact  # noqa: E402
+from contracts.generated_artifact_io import write_generated_path  # noqa: E402
 from contracts.generate_principle_contracts import (  # noqa: E402
     ContractValidationError,
     canonical_json_bytes,
@@ -611,6 +612,21 @@ def _cause_schema() -> dict[str, Any]:
             },
         },
     )
+    # GDELT aggregate는 관측 집계이므로 사실 확정 또는 보도된 인과로 승격할 수 없다.
+    body["allOf"] = [
+        {
+            "if": {
+                "required": ["sourceFamily"],
+                "properties": {"sourceFamily": {"const": "GDELT_AGGREGATE"}},
+            },
+            "then": {
+                "properties": {
+                    "classification": {"not": {"const": "CONFIRMED_FACT"}},
+                    "relation": {"not": {"const": "REPORTED_AS_CAUSE"}},
+                }
+            },
+        }
+    ]
     return _schema_document("market_cause_evidence.v1", body)
 
 
@@ -1102,7 +1118,7 @@ def _cause_fixture() -> dict[str, Any]:
         "publishedAt": "2026-07-31T00:00:01Z",
         "receivedAt": "2026-07-31T00:00:02Z",
         "relatedEvidenceIds": [],
-        "relation": "REPORTED_AS_CAUSE",
+        "relation": "CO_MOVES_WITH",
         "retracted": False,
         "sanitizedSummary": "합성 aggregate의 관심도와 톤 변화가 같은 기간에 관측되었다.",
         "schemaVersion": "1",
@@ -1241,6 +1257,9 @@ def _invalid_fixtures() -> dict[str, dict[str, Any]]:
     article_metadata["articleUrl"] = "https://example.test/article/1"
     article_metadata["articleText"] = "synthetic article text"
 
+    gdelt_reported_as_cause = _cause_fixture()
+    gdelt_reported_as_cause["relation"] = "REPORTED_AS_CAUSE"
+
     return {
         "contracts/examples/invalid/market_source_entitlement.v1.expired-entitlement.invalid.json": expired,
         "contracts/examples/invalid/market_source_entitlement.v1.raw-right-missing.invalid.json": raw_right,
@@ -1253,6 +1272,7 @@ def _invalid_fixtures() -> dict[str, dict[str, Any]]:
         "contracts/examples/invalid/cross_market_observation.v1.incomplete-available.invalid.json": incomplete_available,
         "contracts/examples/invalid/cross_market_risk_snapshot.v1.risk-authority-escalation.invalid.json": escalation,
         "contracts/examples/invalid/market_cause_evidence.v1.gdelt-article-metadata.invalid.json": article_metadata,
+        "contracts/examples/invalid/market_cause_evidence.v1.gdelt-reported-as-cause.invalid.json": gdelt_reported_as_cause,
     }
 
 
@@ -1521,6 +1541,19 @@ def _validate_risk_snapshot(payload: Mapping[str, Any]) -> None:
         raise ContractValidationError("pre-open timing drift.")
 
 
+def _validate_cause(payload: Mapping[str, Any]) -> None:
+    if payload["sourceFamily"] == "GDELT_AGGREGATE" and (
+        payload["classification"] == "CONFIRMED_FACT"
+        or payload["relation"] == "REPORTED_AS_CAUSE"
+    ):
+        raise ContractValidationError(
+            "GDELT aggregate cannot assert a confirmed fact or reported cause."
+        )
+    _validate_chronology(
+        payload, ("occurredAt", "publishedAt", "receivedAt", "availableAt")
+    )
+
+
 def validate_semantics(contract_id: str, payload: Mapping[str, Any]) -> None:
     """입력 contract의 cross-field 시간·권한·집계 불변식을 fail-closed로 검증한다."""
 
@@ -1535,9 +1568,7 @@ def validate_semantics(contract_id: str, payload: Mapping[str, Any]) -> None:
     elif contract_id == "analyst_revision_evidence.v1":
         _validate_chronology(payload, ("publishedAt", "receivedAt", "availableAt"))
     elif contract_id == "market_cause_evidence.v1":
-        _validate_chronology(
-            payload, ("occurredAt", "publishedAt", "receivedAt", "availableAt")
-        )
+        _validate_cause(payload)
     elif contract_id == "cross_market_risk_snapshot.v1":
         _validate_risk_snapshot(payload)
     elif contract_id == "cross_market_policy_evaluation.v1":
@@ -1585,27 +1616,12 @@ OUTPUTS: Final[frozenset[str]] = frozenset(generate_outputs())
 
 
 def _write_atomic(path: Path, payload: bytes) -> None:
-    # 계약 파일을 symlink/partial write로 바꾸지 않도록 sibling exclusive file 뒤 원자 교체한다.
-    path.parent.mkdir(parents=True, exist_ok=True)
-    if path.is_symlink():
-        raise ContractValidationError(f"refusing symlink output: {path}")
-    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
-    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
-    try:
-        with os.fdopen(descriptor, "wb") as file:
-            file.write(payload)
-            file.flush()
-            os.fsync(file.fileno())
-        os.replace(temporary, path)
-        os.chmod(path, 0o644)
-    finally:
-        if temporary.exists():
-            temporary.unlink()
+    write_generated_path(ROOT, path, payload)
 
 
 def _write_outputs(outputs: Mapping[str, bytes]) -> None:
     for relative_path, payload in sorted(outputs.items()):
-        _write_atomic(ROOT / relative_path, payload)
+        write_generated_artifact(ROOT, relative_path, payload)
 
 
 def _check_outputs(outputs: Mapping[str, bytes]) -> None:

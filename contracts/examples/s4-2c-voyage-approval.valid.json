@@ -1,0 +1,15 @@
+{
+  "balanceSnapshotSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "contextSetHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "corpusManifestSha256": "bdc42bfb735b411156ec2f79626d6fd2cf56662c57d83e2cdb960fb74e7b0e04",
+  "generationPlanSha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "paidHardCapUsd": 0,
+  "physicalBatchCap": 1,
+  "projectFingerprintSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "provider": "VOYAGE",
+  "purpose": "EVALUATION_ONLY",
+  "retryCount": 0,
+  "schemaVersion": "s4-2c-voyage-approval/v1",
+  "state": "APPROVED",
+  "zdrOptOutEvidenceSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+}

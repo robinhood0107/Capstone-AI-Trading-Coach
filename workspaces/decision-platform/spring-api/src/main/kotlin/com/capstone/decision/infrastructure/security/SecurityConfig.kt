@@ -6,6 +6,7 @@ import com.capstone.decision.infrastructure.brokerage.PaperBrokerageProperties
 import com.capstone.decision.infrastructure.decision.DecisionProperties
 import com.capstone.decision.infrastructure.grpc.BrokerageGrpcProperties
 import com.capstone.decision.infrastructure.grpc.DecisionGrpcProperties
+import com.capstone.decision.infrastructure.grpc.RagGrpcProperties
 import com.capstone.decision.infrastructure.idempotency.IdempotencyProperties
 import com.capstone.decision.infrastructure.idempotency.IdempotencyService
 import com.capstone.decision.infrastructure.principle.PrincipleProperties
@@ -19,6 +20,7 @@ import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
+import org.springframework.context.annotation.DependsOn
 import org.springframework.http.HttpMethod
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity
 import org.springframework.security.config.annotation.web.builders.HttpSecurity
@@ -52,6 +54,7 @@ import java.security.MessageDigest
     BrokerageGrpcProperties::class,
     DecisionGrpcProperties::class,
     RagGuardHistoryProperties::class,
+    RagGrpcProperties::class,
 )
 class SecurityConfig {
     @Bean
@@ -66,6 +69,9 @@ class SecurityConfig {
         decisionProperties: DecisionProperties,
         brokerageProperties: BrokerageProperties,
         ragProperties: RagGuardHistoryProperties,
+        decisionGrpcProperties: DecisionGrpcProperties,
+        brokerageGrpcProperties: BrokerageGrpcProperties,
+        ragGrpcProperties: RagGrpcProperties,
     ): AuthSecretSeparation {
         jwtProperties.validate()
         loginProperties.validate()
@@ -73,6 +79,13 @@ class SecurityConfig {
         decisionProperties.validate()
         brokerageProperties.validate()
         ragProperties.validate()
+        decisionGrpcProperties.validate()
+        if (brokerageGrpcProperties.enabled) {
+            brokerageGrpcProperties.validate()
+        }
+        if (ragGrpcProperties.enabled) {
+            ragGrpcProperties.validate()
+        }
         val secrets =
             linkedMapOf(
                 "JWT" to jwtProperties.secret.toByteArray(StandardCharsets.UTF_8),
@@ -95,6 +108,13 @@ class SecurityConfig {
                 "RAG history cursor" to
                     ragProperties.historyCursorHmacKey.toByteArray(StandardCharsets.UTF_8),
             )
+        secrets["Decision/Python gRPC"] = decisionGrpcProperties.sharedSecret.toByteArray(StandardCharsets.UTF_8)
+        if (brokerageGrpcProperties.enabled) {
+            secrets["Brokerage gRPC"] = brokerageGrpcProperties.sharedSecret.toByteArray(StandardCharsets.UTF_8)
+        }
+        if (ragGrpcProperties.enabled) {
+            secrets["RAG gRPC"] = ragGrpcProperties.sharedSecret.toByteArray(StandardCharsets.UTF_8)
+        }
         return try {
             val entries = secrets.entries.toList()
             entries.indices.forEach { leftIndex ->
@@ -117,6 +137,22 @@ class SecurityConfig {
         } finally {
             secrets.values.forEach { secret -> secret.fill(0) }
         }
+    }
+
+    /**
+     * RAG gRPC를 켤 때만 dedicated wire secret을 검증해 RAG process credential이 다른 privileged credential에 재사용되지 않게 한다.
+     */
+    @Bean
+    @DependsOn("authSecretSeparation")
+    fun ragGrpcSecretSeparation(
+        decisionGrpcProperties: DecisionGrpcProperties,
+        ragGrpcProperties: RagGrpcProperties,
+    ): RagGrpcSecretSeparation {
+        if (!ragGrpcProperties.enabled) {
+            return RagGrpcSecretSeparation
+        }
+        ragGrpcProperties.validatePurposeSeparation(decisionGrpcProperties)
+        return RagGrpcSecretSeparation
     }
 
     @Bean
@@ -235,3 +271,6 @@ class SecurityConfig {
 
 // 이 marker bean은 JWT, login limiter, credential evidence key 분리 검증이 startup에 완료됐음을 나타낸다.
 object AuthSecretSeparation
+
+// 이 marker bean은 enabled RAG gRPC가 Disclosure wire credential과 분리되었음을 나타낸다.
+object RagGrpcSecretSeparation

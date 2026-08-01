@@ -445,6 +445,11 @@ pinned `ONNX_DATA_ONLY`, `embeddingInputStrategy`를 같은 bytes로 검증한�
 S4.0 catalog, S4.1 registry/API, S4.2A/S4.2B generation, S4.3 authorized retrieval에 이어
 S4.4는 V20 owner claim·consent·encrypted history 경계와 위 closed request/response schema를
 구현한다. 기본 answerer는 `FIXTURE_ONLY`이고 external provider physical call은 0이다.
+S4.5는 `s4-5-evaluation-60.v1.json`의 공개·합성 exact 60과 deterministic report를
+S4.7C corpus에 결속한다. `s4-2c-voyage-approval.schema.json`과
+`s4-4g-gemini-approval.schema.json`은 내부 provider 제어 packet이며 public RAG API 계약이
+아니다. 전자는 zero-paid one-shot plan 목적만, 후자는 preflight/evaluation/production
+activation 목적을 분리해 허용한다. fresh packet이 없으므로 두 outbound executor는 닫혀 있다.
 `bge_then_voyage_on_sla_v1`은 요청별 runtime fallback이 아니라 BGE warm p95 SLA 실패,
 Voyage 평가 통과, 관리자 승인 뒤 default pointer를 한 번 원자 전환하는 정책이다.
 public `POST /api/v1/rag/ask` body는 `question`, `answerMode`, `relatedSymbols`, `topics`만
@@ -455,6 +460,8 @@ generation, materialization/evaluation, active pointer, usage ledger 같은 동�
 
 ```bash
 uv run --frozen python contracts/generate_s4_rag_contracts.py --check
+uv run --frozen python contracts/generate_s4_5_provider_contracts.py --check
+uv run --frozen python capstone-rag/generate_s4_5_evaluation.py --check
 uv run --frozen python -m unittest discover -s contracts/tests -v
 uv run --frozen python contracts/validate.py
 ```
@@ -465,14 +472,16 @@ uv run --frozen python contracts/validate.py
 ## S4.8 교차시장·애널리스트 계약
 
 > 계획 타당성: `PLAN_FEASIBILITY=GO`.
-> 현재 상태: `S4.8A_CONTRACT=LOCKED / S4.8B_C_RUNTIME=NOT_IMPLEMENTED`.
+> 현재 상태: `S4.8A_CONTRACT=LOCKED / S4.8B_C_OFFLINE_RUNTIME=IMPLEMENTED_MERGE_CANDIDATE /
+> S6.6_S6.7=NOT_IMPLEMENTED`.
 > 월 데이터 비용 목표는 `0원`이고 offline fixture·지연/EOD가 먼저다. 기관용 제품과
 > 실시간 SOX/VIX feed는 post-P1 선택지이며 P1 DoD가 아니다. 새 agent framework·별도
 > cloud·Kafka는 hard dependency가 아니다.
 >
 > S4.8A의 machine-readable schema·fixture·catalog와 generator/hash parity는 계약으로
-> 고정됐다. migration, provider activation, OpenAPI/Spring/Python runtime은 아직 구현되지
-> 않았으며 이 계약 잠금을 runtime 완료로 해석하지 않는다.
+> 고정됐다. S4.8B/C merge candidate는 provider 없는 Python fixture/scorer/projection,
+> V23 append-only evidence 저장과 Spring latest snapshot read port를 추가한다. snapshot
+> materialization, provider activation, OpenAPI endpoint, RiskEngine 연결은 아직 구현되지 않았다.
 
 순서 0 `S4.READ`는 관련 공개·private 명세 EOF receipt와 충돌 목록만 남기는 read-only
 preflight다. 첫 변경 PR은 아래 일곱 계약과 fixture/generator/parity만 포함하는
@@ -497,8 +506,8 @@ P1 `WARN_ONLY` RiskEngine 연결을 소유한다. S7.3은 기존 작업을 예�
 소유권이나 provider 권한을 새로 만들지 않는다.
 
 조사 inventory 42개는 사용 가능한 API 수가 아니다. 39개 machine 연동 후보 계열과 3개
-manual-link 원천의 합이며 현재 S4.8 활성 provider와 usable adapter는 0이다. KIS 18개
-endpoint도 disabled fixture-first 후보로만 계획한다. exact 42개 행과 exact 18개 allowlist는
+manual-link 원천의 합이며 현재 S4.8 활성/live provider adapter는 0이다. KIS 18개
+endpoint도 disabled fixture-only 행으로만 materialize한다. exact 42개 행과 exact 18개 allowlist는
 Git으로 추적하지 않는 로컬 전용 자료수급 레지스트리가
 운영 authority이며 공개 계약에는 집계와 불변식만 두고 전체 inventory를 복제하지 않는다.
 공개 fixture의 exact KIS 18 identity는 endpoint 이름을 노출하지 않는 opaque SHA-256이며
@@ -530,7 +539,33 @@ P1 교차시장 권한은 적용 대상 신규 BUY의 `ALLOW → WARN`뿐이다.
 SELL, 기존 보유분 매도, 주문 생성, 수량 축소와 KIS Live는 post-P1 별도 계약·승인 전
 비활성이다. 계약 산출물과 재현 명령은
 [`20260731-s4-8a-cross-market-contract-lock.md`](changes/20260731-s4-8a-cross-market-contract-lock.md)에
-기록하며 SQL·OpenAPI·runtime 구현과 provider 호출은 포함하지 않는다.
+기록한다. 후속 offline runtime·권한·coverage는
+[`20260801-s4-8b-s4-8c-offline-runtime.md`](changes/20260801-s4-8b-s4-8c-offline-runtime.md)를
+따르며 provider/live/account/order 호출은 포함하지 않는다.
+
+## S5.0 Signal v2 contract lock
+
+Signal v1과 current OpenAPI bytes는 그대로 두고 component별 `AVAILABLE | ABSTAIN` closed
+union인 `schemas/signal-v2.schema.json`을 추가한다. `AVAILABLE + HOLD`는 정상 neutral
+prediction이고, stale·producer failure·artifact drift·missing evidence는 signal/confidence/asOf/
+HMM state를 만들지 않는 `ABSTAIN`이다. required component가 하나라도 ABSTAIN이면 composite도
+ABSTAIN이다.
+
+`catalogs/s5-0-signal-v2-contract.v1.json`은 cross-market/analyst/news/cause/RAG/LLM field와
+RiskDecision/order wiring을 금지하고 current Signal v1/OpenAPI hash를 고정한다. Python generator와
+Spring contract-only parser가 같은 positive/negative fixture를 소비한다. active
+`/api/v2/signals/{symbol}` endpoint, artifact ingest, RiskDecision/order wiring과 external call은
+모두 0이다.
+
+```bash
+uv run --frozen python contracts/generate_s5_0_signal_v2_contracts.py --check
+uv run --frozen python -m unittest contracts.tests.test_generate_s5_0_signal_v2_contracts -v
+uv run --frozen python contracts/validate.py
+```
+
+상세 변경과 parity/coverage는
+[`20260801-s5-0-signal-v2-contract-lock.md`](changes/20260801-s5-0-signal-v2-contract-lock.md)를
+따른다.
 
 ## S1.5 KIS 데이터 품질 리포트
 
@@ -562,6 +597,8 @@ pin한다. S1.5는 canonical Parquet이나 bundle을 자동 삭제하지 않는�
 2026-07-31부터 active 뉴스 권한은
 `changes/20260731-s1-3g-naver-retirement-gdelt-aggregate-lock.md`와
 `docs/adr/ADR-038-naver-retirement-gdelt-aggregate.md`를 따른다.
+2026-08-01 offline 구현은
+`changes/20260801-s1-3g-gdelt-offline-producer.md`에 고정한다.
 
 ```text
 NAVER_ACTIVE_PROVIDER_RUNTIME_STORAGE=RETIRED
@@ -583,6 +620,13 @@ article ID·raw query와 raw provider payload 저장을 거부한다. 실제 pro
 후속 작업이며 현재 기본값과 이번 계약 wave의 physical call은 0이다. Naver boundary source card와
 exact-30 RAG corpus는 provider 결과가 아니므로 유지한다.
 
+구현된 `gdelt-aggregate-collect`의 기본 모드는 bundled synthetic fixture다. strict parser는 두
+mode의 timestamp set을 교차 검증하고 4 MiB·512 point·finite/count/norm/window 상한을 적용한다.
+완전한 입력만 `AVAILABLE`이며 empty/partial/malformed/norm-zero는 numeric field 없는
+`ABSTAIN`이다. canonical artifact publication은 0600·append-only·fsync·no-follow 경계이고,
+future online packet은 exact hash/HEAD/query/window/cap/retry 0을 검증해도 HTTP transport가 아직
+`NOT_ACTIVATED`이므로 provider 호출을 만들 수 없다.
+
 ## S1.3 ECOS/Naver 내부 source snapshot — HISTORICAL_SUPERSEDED
 
 아래 내용은 2026-07-16 당시의 감사 가능한 이력이며 신규 실행 권한이 아니다. Naver active
@@ -590,6 +634,11 @@ provider/runtime/storage 권한은 S1.3G에서 퇴역했다. S1.3은 public REST
 당시 Decision Platform이 아래 sanitized JSON을 생성하고,
 Return Engine은 이후 합의된 `contracts/`·`artifacts/` handoff 경계에서 manifest를 검증해 소비한다.
 다른 workspace의 구현 파일이나 Decision Platform의 임의 로컬 경로를 직접 읽는 방식은 계약이 아니다.
+
+> 현재 상태(2026-08-01): Naver collector·credential/CLI·snapshot schema/example/test와
+> shared manifest/retention의 Naver branch를 제거했다. 승인된 local leaf는 exact
+> application-visible 삭제를 완료했고 영수증은 ignored local 영역에만 있다. 아래 Naver
+> 이름·수치·hash는 당시 감사 기록일 뿐 현재 파일이나 실행 명령을 가리키지 않는다.
 
 > 구현 상태(2026-07-16): Naver lower-only batch·strict smoke, JSON Schema, offline 회귀와
 > 승인된 online smoke를 완료하고 PR #16 merge commit
@@ -604,8 +653,8 @@ Return Engine은 이후 합의된 `contracts/`·`artifacts/` handoff 경계에�
 | 계약 | Producer | Consumer | 보존 |
 |---|---|---|---:|
 | `schemas/ecos_macro_snapshot.schema.json` | Decision Platform `ecos-macro-collect` | Return Engine macro feature pipeline | 365일 |
-| `schemas/naver_news_metadata_snapshot.schema.json` | Decision Platform `naver-news-metadata-collect` | Return Engine sentiment pipeline | 최대 30일, Naver 이용조건 gate 필요 |
-| `schemas/source_snapshot_manifest.schema.json` | 두 collector의 secure publisher | handoff consumer·retention command | source snapshot과 동일 |
+| historical `naver_news_metadata_snapshot` | active schema와 producer 제거 완료 | 없음 | active retention 없음 |
+| `schemas/source_snapshot_manifest.schema.json` | ECOS secure publisher | handoff consumer·retention command | ECOS 365일 |
 
 artifact는 ignored root의
 `{source}/YYYY/MM/DD/{uuid-v4}/snapshot.json`과 `manifest.json` 두 파일로 구성한다.
@@ -617,7 +666,8 @@ provenance URL은 허용한다.
 삭제 owner는 `decision-platform:source-snapshot-retention` 하나이며 command는 기본 dry-run,
 명시적 `--apply`에서만 manifest를 먼저 지운다.
 
-Naver canonical snapshot은 운영용과 smoke용 포맷을 나누지 않고 동일한 `schemaVersion: 1`에서
+아래 Naver canonical snapshot 설명은 historical audit다. 해당 schema·producer·설정은
+active tree에서 제거됐다. 당시에는 운영용과 smoke용 포맷을 나누지 않고 동일한 `schemaVersion: 1`에서
 `queries` 길이 `1..4`를 허용한다. producer 설정 `NAVER_BATCH_SIZE`는 기본 4이고 `1..4` 범위에서만
 하향하며 canonical smoke는 1이다. consumer는 정확히 네 query를 가정하지 않고 snapshot의
 `queries` 배열 길이와 manifest `queryCount`를 교차 검증한다. 두 값이 다르거나 0 또는 5 이상이면

@@ -18,6 +18,8 @@ _SCRIPT_REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_SCRIPT_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_SCRIPT_REPO_ROOT))
 
+from contracts.generated_artifact_io import write_generated_artifact  # noqa: E402
+from contracts.generated_artifact_io import write_generated_path  # noqa: E402
 from contracts.openapi_env import parse_openapi_environment
 
 
@@ -1416,9 +1418,7 @@ def _check_outputs(outputs: Mapping[str, bytes]) -> int:
 
 def _write_outputs(outputs: Mapping[str, bytes]) -> None:
     for relative_path, payload in outputs.items():
-        path = REPO_ROOT / relative_path
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(payload)
+        write_generated_artifact(REPO_ROOT, relative_path, payload)
         print(f"WROTE {relative_path}")
 
 
@@ -1426,7 +1426,7 @@ def _format_catalog() -> None:
     raw = CATALOG_PATH.read_bytes()
     catalog = load_json_bytes_strict(raw, source=CATALOG_PATH.as_posix())
     validate_catalog_semantics(catalog)
-    CATALOG_PATH.write_bytes(canonical_json_bytes(catalog))
+    write_generated_path(REPO_ROOT, CATALOG_PATH, canonical_json_bytes(catalog))
     print(f"FORMATTED {CATALOG_PATH.relative_to(REPO_ROOT).as_posix()}")
 
 

@@ -9,3 +9,6 @@ content SHA-256, byte/row/chunk count, 생성 시각, 승인 packet과 provenanc
 - `s4-7b-project-source-cards-30.v1.json`: 금융공학 15개와 공식자료/API 15개를
   합친 exact project corpus membership, per-card canonical hash, access/license
   decision, parser/chunker/tokenizer identity와 ordered-pair corpus hash
+- `s4-7c-project-source-cards-30-external.v1.json`: S4.7B exact membership/body를 유지한
+  새 external-processing profile, 30개 license/consent receipt, old/new hash 관계와
+  raw/reference evidence outbound 0 경계

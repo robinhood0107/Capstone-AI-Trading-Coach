@@ -100,6 +100,39 @@ class InfrastructureSecurityIntegrationTest {
             assertFalse(hasTablePrivilege(connection, "decision_app", "calendar_observations", "SELECT"))
             assertFalse(hasTablePrivilege(connection, "decision_app", "opendart_quota_usage", "SELECT"))
 
+            listOf(
+                "issue_rag_rpc_scope(text,text,jsonb)",
+                "recheck_rag_rpc_citations(text,text,text,text,bigint,text,text,jsonb)",
+            ).forEach { function ->
+                assertTrue(
+                    hasFunctionPrivilege(connection, "decision_app", function),
+                    "bootstrap removed the S4.6 RAG RPC function grant for $function",
+                )
+            }
+            listOf(
+                "latest_cross_market_observations",
+                "latest_analyst_revision_evidence",
+                "latest_market_cause_evidence",
+                "latest_cross_market_risk_snapshots",
+            ).forEach { view ->
+                assertTrue(
+                    hasTablePrivilege(connection, "decision_app", view, "SELECT"),
+                    "bootstrap removed the S4.8 bounded read grant for $view",
+                )
+            }
+            listOf(
+                "append_market_source_entitlement(jsonb)",
+                "append_cross_market_exposure_catalog_entry(jsonb)",
+                "append_cross_market_observation(jsonb)",
+                "append_analyst_revision_evidence(jsonb)",
+                "append_market_cause_evidence(jsonb)",
+            ).forEach { function ->
+                assertTrue(
+                    hasFunctionPrivilege(connection, "decision_market_writer", function),
+                    "bootstrap removed the S4.8 append-only writer grant for $function",
+                )
+            }
+
             assertTrue(hasTablePrivilege(connection, "decision_app", "principle_presets", "SELECT"))
             assertTrue(hasTablePrivilege(connection, "decision_app", "principles", "SELECT"))
             assertTrue(hasTablePrivilege(connection, "decision_app", "principles", "INSERT"))

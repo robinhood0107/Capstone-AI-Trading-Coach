@@ -1,0 +1,79 @@
+{
+  "compatibility": {
+    "currentOpenApiSha256": "94414736f6a1c17b95eafffd53a07a5d33d7a66705890c53dcc971eb5ded3f89",
+    "signalV1ExampleSha256": "691cbb7b7f58ae3dbf411e3ff41d173cfdaf927ab3d6af973812dcdea3d9ae35",
+    "signalV1SchemaSha256": "ae6b2285d1df7ce608778cd59c332332e8c44ce38a861d23d57dc8f0f9b912c2",
+    "signalV1Unchanged": true
+  },
+  "componentUnion": {
+    "ABSTAIN": {
+      "forbidden": [
+        "asOf",
+        "confidence",
+        "predictedReturn",
+        "signal",
+        "state"
+      ],
+      "required": [
+        "producer",
+        "reason",
+        "sourceWorkspace",
+        "status"
+      ]
+    },
+    "AVAILABLE": {
+      "neutralSignal": "HOLD",
+      "predictionFieldsAllowed": [
+        "signal",
+        "confidence",
+        "predictedReturn"
+      ]
+    }
+  },
+  "contractId": "s5-0-signal-v2-contract.v1",
+  "datasetModelIsolation": {
+    "crossMarketReaderCalls": 0,
+    "firstJoinSession": "S6.6",
+    "forbiddenFeaturePrefixes": [
+      "analyst_",
+      "cause_",
+      "cross_market_",
+      "llm_",
+      "news_",
+      "rag_"
+    ],
+    "invariantHashes": [
+      "datasetHash",
+      "modelHash",
+      "signalV2Hash"
+    ],
+    "sampleWeightInjection": 0
+  },
+  "forbiddenUnknownFields": [
+    "analyst",
+    "cause",
+    "crossMarketExposure",
+    "crossMarketFreshness",
+    "crossMarketMode",
+    "crossMarketScore",
+    "llm",
+    "news",
+    "orderAuthority",
+    "rag",
+    "riskDecision"
+  ],
+  "requiredComponents": [
+    "ruleBaseline",
+    "lstm",
+    "lightgbm",
+    "hmmRegime"
+  ],
+  "runtimePublication": {
+    "activeEndpoint": "NO_GO",
+    "externalCalls": 0,
+    "orderWiring": "NO_GO",
+    "riskDecisionWiring": "NO_GO"
+  },
+  "schemaId": "contracts/schemas/signal-v2.schema.json",
+  "status": "CONTRACT_LOCKED_RUNTIME_NOT_PUBLISHED"
+}

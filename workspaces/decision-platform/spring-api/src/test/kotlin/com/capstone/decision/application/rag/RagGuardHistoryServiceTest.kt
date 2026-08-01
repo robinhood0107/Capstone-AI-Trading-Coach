@@ -5,6 +5,7 @@ import io.mockk.just
 import io.mockk.mockk
 import io.mockk.runs
 import io.mockk.verify
+import io.mockk.verifyOrder
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.springframework.beans.factory.ObjectProvider
@@ -18,6 +19,7 @@ class RagGuardHistoryServiceTest {
         val persistence = mockk<RagGuardHistoryPersistencePort>()
         val rateLimit = mockk<RagRateLimitPort>()
         val idempotency = mockk<RagIdempotencyPort>()
+        val scopePort = mockk<RagRetrievalScopePort>()
         val identity =
             RagIdempotencyIdentity(
                 scopeHmac = "a".repeat(64),
@@ -31,10 +33,20 @@ class RagGuardHistoryServiceTest {
                 topics = listOf("RISK"),
             )
         every { rateLimit.acquire("usr_demo_user") } just runs
+        every { persistence.effectiveConsent("usr_demo_user") } returns
+            RagEffectiveConsent(false, null, null)
         every { idempotency.identity("usr_demo_user", "idem-rag-service-0001", command) } returns identity
         every { persistence.claim("usr_demo_user", identity, 120) } returns RagClaimDecision.Claimed
         every { persistence.failBeforeProvider("usr_demo_user", identity) } just runs
-        every { evaluation.evaluate(command) } returns
+        every { scopePort.issue("usr_demo_user", "req_service_boundary", listOf("RISK")) } returns
+            RagRetrievalScope(
+                scopeClaimId = "rag_scope_${"c".repeat(32)}",
+                policyId = "bge_only_v1",
+                policyVersion = 2,
+                activeGenerationId = "rag_gen_${"d".repeat(32)}",
+                embeddingProfileId = "bge_m3_local_1024_v1",
+            )
+        every { evaluation.evaluate(command, any()) } returns
             RagEvaluationResult(
                 generationStatus = RagGenerationStatus.RETRIEVAL_ONLY,
                 answer = null,
@@ -51,6 +63,7 @@ class RagGuardHistoryServiceTest {
                 persistence = persistence,
                 rateLimit = rateLimit,
                 idempotency = idempotency,
+                scopePort = scopePort,
             )
 
         assertThrows<RagGuardHistoryUnavailableException> {
@@ -64,6 +77,56 @@ class RagGuardHistoryServiceTest {
         verify(exactly = 1) {
             persistence.failBeforeProvider("usr_demo_user", identity)
         }
+        verifyOrder {
+            persistence.effectiveConsent("usr_demo_user")
+            rateLimit.acquire("usr_demo_user")
+            idempotency.identity("usr_demo_user", "idem-rag-service-0001", command)
+            persistence.claim("usr_demo_user", identity, 120)
+            scopePort.issue("usr_demo_user", "req_service_boundary", listOf("RISK"))
+            evaluation.evaluate(command, any())
+            persistence.failBeforeProvider("usr_demo_user", identity)
+        }
+        verify(exactly = 0) { scopePort.requireAuthorized(any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `same-owner replay bypasses scope and gRPC`() {
+        val evaluation = mockk<RagEvaluationPort>(relaxed = true)
+        val persistence = mockk<RagGuardHistoryPersistencePort>()
+        val rateLimit = mockk<RagRateLimitPort>()
+        val idempotency = mockk<RagIdempotencyPort>()
+        val scopePort = mockk<RagRetrievalScopePort>(relaxed = true)
+        val crypto = mockk<RagHistoryCryptoPort>()
+        val identity = RagIdempotencyIdentity("a".repeat(64), "b".repeat(64))
+        val answerId = "rag_ans_${"c".repeat(32)}"
+        val command =
+            RagAskCommand(
+                question = "공개 근거를 설명해 주세요",
+                answerMode = RagAnswerMode.CONCISE,
+                relatedSymbols = emptyList(),
+                topics = listOf("RISK"),
+            )
+        val stored = storedHistory(answerId)
+        every { persistence.effectiveConsent("usr_demo_user") } returns RagEffectiveConsent(false, null, null)
+        every { rateLimit.acquire("usr_demo_user") } just runs
+        every { idempotency.identity("usr_demo_user", "idem-rag-replay-0001", command) } returns identity
+        every { persistence.claim("usr_demo_user", identity, 120) } returns RagClaimDecision.Replay(answerId)
+        every { persistence.findHistory("usr_demo_user", answerId) } returns stored
+        every { persistence.findCitations("usr_demo_user", answerId) } returns emptyList()
+        every { crypto.decrypt(stored.identity, stored.encrypted) } returns
+            RagDecryptedHistoryPayload(command.question, "")
+
+        service(
+            evaluation = evaluation,
+            persistence = persistence,
+            crypto = crypto,
+            rateLimit = rateLimit,
+            idempotency = idempotency,
+            scopePort = scopePort,
+        ).ask("usr_demo_user", "req_replay_boundary_0001", "idem-rag-replay-0001", command)
+
+        verify(exactly = 0) { scopePort.issue(any(), any(), any()) }
+        verify(exactly = 0) { evaluation.evaluate(any(), any()) }
     }
 
     @Test
@@ -135,6 +198,7 @@ class RagGuardHistoryServiceTest {
         crypto: RagHistoryCryptoPort = mockk(relaxed = true),
         rateLimit: RagRateLimitPort = mockk(relaxed = true),
         idempotency: RagIdempotencyPort = mockk(relaxed = true),
+        scopePort: RagRetrievalScopePort = mockk(relaxed = true),
     ): RagGuardHistoryService {
         val policy =
             mockk<RagGuardHistoryPolicy> {
@@ -147,8 +211,38 @@ class RagGuardHistoryServiceTest {
             rateLimitPort = rateLimit,
             cursorPort = mockk(relaxed = true),
             idempotencyPort = idempotency,
+            retrievalScopePort = scopePort,
             policy = policy,
             clockProvider = mockk<ObjectProvider<Clock>>(relaxed = true),
+        )
+    }
+
+    private fun storedHistory(answerId: String): RagStoredEncryptedHistory {
+        val identity =
+            RagHistoryIdentity(
+                answerId = answerId,
+                ownerUserId = "usr_demo_user",
+                createdAt = Instant.parse("2026-07-31T00:00:00Z"),
+            )
+        return RagStoredEncryptedHistory(
+            identity = identity,
+            answerMode = RagAnswerMode.CONCISE,
+            generationStatus = RagGenerationStatus.RETRIEVAL_ONLY,
+            citationCoverage = 0.0,
+            retrievalFailure = false,
+            guardrailFlags = listOf("FIXTURE_ONLY"),
+            citationCount = 0,
+            encrypted =
+                RagEncryptedHistoryPayload(
+                    kekVersion = "kek-v1",
+                    wrapNonce = ByteArray(12),
+                    wrappedDek = ByteArray(32),
+                    wrapTag = ByteArray(16),
+                    question = RagEncryptedFieldPayload(ByteArray(12), byteArrayOf(1), ByteArray(16)),
+                    answer = RagEncryptedFieldPayload(ByteArray(12), byteArrayOf(2), ByteArray(16)),
+                ),
+            expiresAt = Instant.parse("2026-08-30T00:00:00Z"),
+            helpful = null,
         )
     }
 }

@@ -32,6 +32,10 @@ from contracts.generate_s4_7d_rag_v2_contracts import (
 ROOT = Path(__file__).resolve().parents[2]
 
 
+def _schema_id(relative_path: str) -> str:
+    return Path(relative_path).name.split(".", maxsplit=1)[0]
+
+
 class S47dRagV2ContractTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
@@ -115,7 +119,7 @@ class S47dRagV2ContractTest(unittest.TestCase):
         for relative_path in sorted(VALID_FIXTURE_PATHS):
             payload = load_json(ROOT / relative_path)
             self.assertIsInstance(payload, dict)
-            schema_id = payload["contractId"]
+            schema_id = _schema_id(relative_path)
             with self.subTest(relative_path=relative_path):
                 self.assertEqual(
                     [], list(self.validators[schema_id].iter_errors(payload))
@@ -149,7 +153,7 @@ class S47dRagV2ContractTest(unittest.TestCase):
         for relative_path in sorted(INVALID_FIXTURE_PATHS):
             payload = load_json(ROOT / relative_path)
             self.assertIsInstance(payload, dict)
-            schema_id = payload["contractId"]
+            schema_id = _schema_id(relative_path)
             schema_errors = list(self.validators[schema_id].iter_errors(payload))
             semantic_error: ContractValidationError | None = None
             if not schema_errors:

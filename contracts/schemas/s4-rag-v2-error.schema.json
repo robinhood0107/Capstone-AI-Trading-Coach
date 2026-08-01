@@ -1,0 +1,31 @@
+{
+  "$id": "contracts/schemas/s4-rag-v2-error.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "code": {
+      "enum": [
+        "CORPUS_NOT_READY",
+        "RAG_VALIDATION_FAILED",
+        "RAG_HISTORY_NOT_FOUND",
+        "RAG_UNAVAILABLE"
+      ]
+    },
+    "message": {
+      "maxLength": 300,
+      "minLength": 1,
+      "type": "string"
+    },
+    "requestId": {
+      "pattern": "^req_[A-Za-z0-9_-]{12,96}$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "code",
+    "message",
+    "requestId"
+  ],
+  "title": "s4-rag-v2-error",
+  "type": "object"
+}

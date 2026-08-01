@@ -242,6 +242,7 @@ def _relative_outputs() -> dict[str, bytes]:
 _PATH_MAPPING_GENERATORS = (
     ("contracts.generate_disclosure_proto", "REPO_ROOT", "_write", _path_outputs),
     ("contracts.generate_rag_proto", "REPO_ROOT", "_write", _path_outputs),
+    ("contracts.generate_rag_v2_proto", "REPO_ROOT", "_write", _path_outputs),
 )
 
 _RELATIVE_MAPPING_GENERATORS = (
@@ -251,6 +252,7 @@ _RELATIVE_MAPPING_GENERATORS = (
     ("contracts.generate_s2_2_contracts", "REPO_ROOT", "_write_outputs", _relative_outputs),
     ("contracts.generate_s2_3_contracts", "REPO_ROOT", "_write_outputs", _relative_outputs),
     ("contracts.generate_s4_rag_contracts", "REPO_ROOT", "_write_outputs", _relative_outputs),
+    ("contracts.generate_s4_7d_rag_v2_contracts", "REPO_ROOT", "_write", _relative_outputs),
     ("contracts.generate_s4_5_provider_contracts", "ROOT", "_write", _relative_outputs),
     ("contracts.generate_s4_8a_cross_market_contracts", "ROOT", "_write_outputs", _relative_outputs),
     ("contracts.generate_s5_0_signal_v2_contracts", "ROOT", "_write_outputs", _relative_outputs),

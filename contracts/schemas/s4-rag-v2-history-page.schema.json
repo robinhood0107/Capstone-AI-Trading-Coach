@@ -1,0 +1,60 @@
+{
+  "$id": "contracts/schemas/s4-rag-v2-history-page.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "items": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "answerId": {
+            "pattern": "^rag_[A-Za-z0-9_-]{12,96}$",
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "generationStatus": {
+            "enum": [
+              "ANSWERED",
+              "RETRIEVAL_ONLY",
+              "RETRIEVAL_FAILURE"
+            ]
+          }
+        },
+        "required": [
+          "answerId",
+          "createdAt",
+          "expiresAt",
+          "generationStatus"
+        ],
+        "type": "object"
+      },
+      "maxItems": 50,
+      "type": "array"
+    },
+    "nextCursor": {
+      "oneOf": [
+        {
+          "maxLength": 512,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "items",
+    "nextCursor"
+  ],
+  "title": "s4-rag-v2-history-page",
+  "type": "object"
+}

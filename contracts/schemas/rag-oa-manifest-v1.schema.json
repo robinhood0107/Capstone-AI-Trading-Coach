@@ -1,0 +1,234 @@
+{
+  "$id": "contracts/schemas/rag-oa-manifest-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "releaseStatus": {
+            "const": "RELEASED"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "releaseDigest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "signedManifest": {
+            "const": true
+          },
+          "sourceCount": {
+            "maximum": 140,
+            "minimum": 112,
+            "type": "integer"
+          },
+          "sources": {
+            "maxItems": 140,
+            "minItems": 112,
+            "type": "array"
+          }
+        }
+      }
+    }
+  ],
+  "properties": {
+    "contractId": {
+      "const": "rag-oa-manifest-v1"
+    },
+    "embeddingsRedistributed": {
+      "const": false
+    },
+    "extractedTextRedistributed": {
+      "const": false
+    },
+    "manifestId": {
+      "pattern": "^oa140_[a-z0-9][a-z0-9_-]{2,95}$",
+      "type": "string"
+    },
+    "rawRedistributed": {
+      "const": false
+    },
+    "releaseDigest": {
+      "oneOf": [
+        {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "releaseStatus": {
+      "enum": [
+        "DRAFT",
+        "RELEASED",
+        "WITHDRAWN"
+      ]
+    },
+    "signedManifest": {
+      "type": "boolean"
+    },
+    "sourceCount": {
+      "maximum": 140,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "sources": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "canonicalUrl": {
+            "format": "uri",
+            "maxLength": 2048,
+            "pattern": "^https://",
+            "type": "string"
+          },
+          "curriculumRoles": {
+            "items": {
+              "enum": [
+                "PUBLIC_TEACHING_MATERIAL",
+                "ORIGINAL_RESEARCH",
+                "MODERN_REVIEW_REPLICATION_CORRECTION"
+              ]
+            },
+            "maxItems": 3,
+            "minItems": 1,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "downloadUrl": {
+            "format": "uri",
+            "maxLength": 2048,
+            "pattern": "^https://",
+            "type": "string"
+          },
+          "fallbackAllowed": {
+            "const": false
+          },
+          "localProcessingAllowed": {
+            "const": true
+          },
+          "machineFetchAllowed": {
+            "const": true
+          },
+          "qualityScore": {
+            "maximum": 100,
+            "minimum": 80,
+            "type": "integer"
+          },
+          "rawContentSha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "sourceId": {
+            "pattern": "^src_[a-z0-9][a-z0-9_-]{2,95}$",
+            "type": "string"
+          },
+          "sourceRevisionId": {
+            "pattern": "^srv_[a-z0-9][a-z0-9_-]{2,95}$",
+            "type": "string"
+          },
+          "trackId": {
+            "enum": [
+              "MICRO_GAME_INFO_MARKET_DESIGN",
+              "MACRO_MONETARY_INTERNATIONAL",
+              "PROBABILITY_STATISTICS_OPTIMIZATION",
+              "ECONOMETRICS_CAUSAL_EVENT_STUDY",
+              "TIME_SERIES_REGIME_VOLATILITY",
+              "ACCOUNTING_CORPORATE_FINANCE_VALUATION",
+              "ASSET_PRICING_FACTOR_PORTFOLIO",
+              "FIXED_INCOME_RATES_CREDIT",
+              "DERIVATIVES_STOCHASTIC_NUMERICS",
+              "MARKET_MICROSTRUCTURE_EXECUTION_LIQUIDITY",
+              "RISK_STRESS_BACKTEST_MODEL_RISK",
+              "BEHAVIORAL_EFFICIENCY_ANOMALY_CROWDING",
+              "FINANCIAL_ML_PIT_DATA_PROVENANCE",
+              "CROSS_MARKET_COMMODITIES_POLICY_KOREA"
+            ]
+          }
+        },
+        "required": [
+          "sourceId",
+          "sourceRevisionId",
+          "trackId",
+          "qualityScore",
+          "curriculumRoles",
+          "canonicalUrl",
+          "downloadUrl",
+          "rawContentSha256",
+          "machineFetchAllowed",
+          "localProcessingAllowed",
+          "fallbackAllowed"
+        ],
+        "type": "object"
+      },
+      "maxItems": 140,
+      "type": "array"
+    },
+    "tracks": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "maximumSources": {
+            "const": 10
+          },
+          "minimumSources": {
+            "const": 8
+          },
+          "sourceCount": {
+            "maximum": 10,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "trackId": {
+            "enum": [
+              "MICRO_GAME_INFO_MARKET_DESIGN",
+              "MACRO_MONETARY_INTERNATIONAL",
+              "PROBABILITY_STATISTICS_OPTIMIZATION",
+              "ECONOMETRICS_CAUSAL_EVENT_STUDY",
+              "TIME_SERIES_REGIME_VOLATILITY",
+              "ACCOUNTING_CORPORATE_FINANCE_VALUATION",
+              "ASSET_PRICING_FACTOR_PORTFOLIO",
+              "FIXED_INCOME_RATES_CREDIT",
+              "DERIVATIVES_STOCHASTIC_NUMERICS",
+              "MARKET_MICROSTRUCTURE_EXECUTION_LIQUIDITY",
+              "RISK_STRESS_BACKTEST_MODEL_RISK",
+              "BEHAVIORAL_EFFICIENCY_ANOMALY_CROWDING",
+              "FINANCIAL_ML_PIT_DATA_PROVENANCE",
+              "CROSS_MARKET_COMMODITIES_POLICY_KOREA"
+            ]
+          }
+        },
+        "required": [
+          "trackId",
+          "minimumSources",
+          "maximumSources",
+          "sourceCount"
+        ],
+        "type": "object"
+      },
+      "maxItems": 14,
+      "minItems": 14,
+      "type": "array"
+    }
+  },
+  "required": [
+    "contractId",
+    "manifestId",
+    "releaseStatus",
+    "releaseDigest",
+    "signedManifest",
+    "sourceCount",
+    "tracks",
+    "sources",
+    "rawRedistributed",
+    "extractedTextRedistributed",
+    "embeddingsRedistributed"
+  ],
+  "title": "rag-oa-manifest-v1",
+  "type": "object"
+}

@@ -1,0 +1,20 @@
+{
+  "answer": "검색된 근거의 가정과 한계를 설명합니다.",
+  "answerId": "rag_01EXAMPLEANSWERID",
+  "citationCoverage": 1,
+  "citations": [
+    {
+      "citationKind": "LOCAL_DOCUMENT",
+      "displayName": "개인 금융공학 노트.pdf",
+      "documentId": "doc_01ownerprivateexample",
+      "locator": {
+        "page": 4,
+        "section": "위험요인"
+      }
+    }
+  ],
+  "generationStatus": "RETRIEVAL_ONLY",
+  "guardrailFlags": [],
+  "requestId": "req_01EXAMPLEREQUESTID",
+  "retrievalFailure": false
+}

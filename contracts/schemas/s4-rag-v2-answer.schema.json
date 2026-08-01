@@ -1,0 +1,232 @@
+{
+  "$id": "contracts/schemas/s4-rag-v2-answer.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "answer": {
+      "oneOf": [
+        {
+          "maxLength": 8192,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "answerId": {
+      "oneOf": [
+        {
+          "pattern": "^rag_[A-Za-z0-9_-]{12,96}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "citationCoverage": {
+      "maximum": 1,
+      "minimum": 0,
+      "type": "number"
+    },
+    "citations": {
+      "items": {
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "canonicalUrl": {
+                "format": "uri",
+                "maxLength": 2048,
+                "pattern": "^https://",
+                "type": "string"
+              },
+              "citationKind": {
+                "const": "PUBLIC_WEB"
+              },
+              "locator": {
+                "additionalProperties": false,
+                "anyOf": [
+                  {
+                    "required": [
+                      "page"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "slide"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "sheet"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "section"
+                    ]
+                  }
+                ],
+                "properties": {
+                  "page": {
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "section": {
+                    "maxLength": 300,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "sheet": {
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "slide": {
+                    "minimum": 1,
+                    "type": "integer"
+                  }
+                },
+                "required": [],
+                "type": "object"
+              },
+              "sourceId": {
+                "pattern": "^src_[a-z0-9][a-z0-9_-]{2,95}$",
+                "type": "string"
+              },
+              "title": {
+                "maxLength": 500,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "citationKind",
+              "sourceId",
+              "title",
+              "canonicalUrl",
+              "locator"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "citationKind": {
+                "const": "LOCAL_DOCUMENT"
+              },
+              "displayName": {
+                "maxLength": 160,
+                "minLength": 1,
+                "pattern": "^[^/\\\\:]+$",
+                "type": "string"
+              },
+              "documentId": {
+                "pattern": "^doc_[a-z0-9][a-z0-9_-]{10,95}$",
+                "type": "string"
+              },
+              "locator": {
+                "additionalProperties": false,
+                "anyOf": [
+                  {
+                    "required": [
+                      "page"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "slide"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "sheet"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "section"
+                    ]
+                  }
+                ],
+                "properties": {
+                  "page": {
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "section": {
+                    "maxLength": 300,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "sheet": {
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "slide": {
+                    "minimum": 1,
+                    "type": "integer"
+                  }
+                },
+                "required": [],
+                "type": "object"
+              }
+            },
+            "required": [
+              "citationKind",
+              "documentId",
+              "displayName",
+              "locator"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "maxItems": 5,
+      "type": "array"
+    },
+    "generationStatus": {
+      "enum": [
+        "ANSWERED",
+        "RETRIEVAL_ONLY",
+        "RETRIEVAL_FAILURE",
+        "BLOCKED_SENSITIVE",
+        "BLOCKED_ADVICE",
+        "GENERATION_UNAVAILABLE"
+      ]
+    },
+    "guardrailFlags": {
+      "items": {
+        "maxLength": 128,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 20,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "requestId": {
+      "pattern": "^req_[A-Za-z0-9_-]{12,96}$",
+      "type": "string"
+    },
+    "retrievalFailure": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "requestId",
+    "answerId",
+    "generationStatus",
+    "answer",
+    "citationCoverage",
+    "citations",
+    "retrievalFailure",
+    "guardrailFlags"
+  ],
+  "title": "s4-rag-v2-answer",
+  "type": "object"
+}

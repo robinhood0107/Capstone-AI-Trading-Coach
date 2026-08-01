@@ -27,7 +27,8 @@ object OpenApiFixtureEnvironmentWriter {
 
         val random = SecureRandom()
         val separationKey = ByteArray(32).also(random::nextBytes)
-        val grpcSharedSecret = randomToken(random, 32)
+        val decisionGrpcSharedSecret = randomToken(random, 32)
+        val ragGrpcSharedSecret = randomToken(random, 32)
         val brokerageDatabaseCapability = randomToken(random, 32)
         val ragSecretDirectory = prepareRagSecretDirectory(output.parent, random)
         val userPassword = randomToken(random, 18).toCharArray()
@@ -53,9 +54,9 @@ object OpenApiFixtureEnvironmentWriter {
                     "POSTGRES_RAG_WRITER_PASSWORD" to randomToken(random, 32),
                     "POSTGRES_RAG_ADMIN_PASSWORD" to randomToken(random, 32),
                     "POSTGRES_RAG_QUERY_PASSWORD" to randomToken(random, 32),
-                    "DECISION_GRPC_SHARED_SECRET" to grpcSharedSecret,
-                    "RAG_GRPC_SHARED_SECRET" to grpcSharedSecret,
-                    "PYTHON_GRPC_SHARED_SECRET" to grpcSharedSecret,
+                    "DECISION_GRPC_SHARED_SECRET" to decisionGrpcSharedSecret,
+                    "RAG_GRPC_SHARED_SECRET" to ragGrpcSharedSecret,
+                    "PYTHON_GRPC_SHARED_SECRET" to decisionGrpcSharedSecret,
                     "REDIS_PASSWORD" to randomToken(random, 32),
                     "JWT_SECRET" to randomToken(random, 32),
                     "JWT_ISSUER" to "s21-openapi-local",

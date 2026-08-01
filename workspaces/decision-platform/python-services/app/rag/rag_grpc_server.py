@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import dataclass
+from hmac import compare_digest
 
 from app.rag.rag_rpc import S45FixtureRagEngine, create_rag_server
 
@@ -33,8 +34,15 @@ class RagGrpcServerSettings:
         if reflection == "true":
             raise ValueError("RAG gRPC reflection is disabled by the S4.6 contract")
         secret = os.environ.get("RAG_GRPC_SHARED_SECRET", "").strip()
-        if not secret:
-            secret = os.environ.get("PYTHON_GRPC_SHARED_SECRET", "").strip()
+        for generic_secret_name in (
+            "DECISION_GRPC_SHARED_SECRET",
+            "PYTHON_GRPC_SHARED_SECRET",
+        ):
+            generic_secret = os.environ.get(generic_secret_name, "").strip()
+            if generic_secret and compare_digest(secret, generic_secret):
+                raise ValueError(
+                    "RAG_GRPC_SHARED_SECRET must differ from Decision/Python gRPC secrets"
+                )
         return cls(
             bind_address=os.environ.get(
                 "RAG_GRPC_BIND_ADDRESS", "127.0.0.1:50053"

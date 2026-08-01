@@ -216,8 +216,8 @@ def _require_secret_shapes(values: dict[str, str]) -> None:
             "Brokerage database capability token and digest must match."
         )
 
-    # Spring의 두 gRPC client와 Python fixture server는 동일 wire secret을 사용하되,
-    # 그 외 DB/JWT/HMAC secret과는 목적 분리를 유지한다.
+    # Decision과 Python disclosure server는 같은 wire secret을 쓰지만, RAG service는
+    # disclosure RPC credential이 될 수 없도록 별도 purpose secret을 사용한다.
     grpc_secret_names = (
         "DECISION_GRPC_SHARED_SECRET",
         "RAG_GRPC_SHARED_SECRET",
@@ -226,8 +226,18 @@ def _require_secret_shapes(values: dict[str, str]) -> None:
     for name in grpc_secret_names:
         if _BASE64URL_SECRET.fullmatch(values[name]) is None:
             raise OpenApiEnvironmentError(f"{name} must use a bounded Base64url-safe value.")
-    if len({values[name] for name in grpc_secret_names}) != 1:
-        raise OpenApiEnvironmentError("Decision, RAG, and Python gRPC fixture secrets must match.")
+    if not hmac.compare_digest(
+        values["DECISION_GRPC_SHARED_SECRET"],
+        values["PYTHON_GRPC_SHARED_SECRET"],
+    ):
+        raise OpenApiEnvironmentError("Decision and Python gRPC fixture secrets must match.")
+    if hmac.compare_digest(
+        values["RAG_GRPC_SHARED_SECRET"],
+        values["DECISION_GRPC_SHARED_SECRET"],
+    ):
+        raise OpenApiEnvironmentError(
+            "RAG gRPC fixture secret must differ from the Decision/Python secret."
+        )
 
     if _BASE64URL_32.fullmatch(values["DEMO_CREDENTIAL_SEPARATION_KEY"]) is None:
         raise OpenApiEnvironmentError(

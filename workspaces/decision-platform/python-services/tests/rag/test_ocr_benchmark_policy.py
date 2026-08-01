@@ -438,6 +438,32 @@ def test_vl_candidate_uses_ocr_for_image_blocks_without_chart_generation() -> No
     assert "use_chart_recognition=True" not in vl
 
 
+def test_vl_candidate_pins_auxiliary_printed_chart_ocr() -> None:
+    repository_root = Path(__file__).resolve().parents[5]
+    runner = (
+        repository_root / "capstone-rag/ocr/benchmark/paddle_candidate_runner.py"
+    ).read_text(encoding="utf-8")
+    evaluator = (
+        repository_root / "capstone-rag/ocr/benchmark/evaluate_candidate.py"
+    ).read_text(encoding="utf-8")
+    manifest = json.loads(
+        (
+            repository_root / "capstone-rag/ocr/benchmark/benchmark-manifest.v1.json"
+        ).read_text(encoding="utf-8")
+    )
+    model_directories = set(manifest["candidates"]["PADDLE_VL"]["modelDirectories"])
+
+    assert "def _auxiliary_ocr" in runner
+    assert "PaddleOCR(" in runner
+    assert {
+        "PP-OCRv5_mobile_det",
+        "korean_PP-OCRv5_mobile_rec",
+        "PP-OCRv6_small_rec",
+    } <= model_directories
+    assert "if ocr_line_blocks\n                        else blocks" in evaluator
+    assert 'candidate == "PADDLE_STRUCTURED" and ocr_line_blocks' not in evaluator
+
+
 def test_candidate_runners_publish_only_through_the_safe_receipt_writer() -> None:
     repository_root = Path(__file__).resolve().parents[5]
     for filename in ("paddle_candidate_runner.py", "unlimited_candidate_runner.py"):

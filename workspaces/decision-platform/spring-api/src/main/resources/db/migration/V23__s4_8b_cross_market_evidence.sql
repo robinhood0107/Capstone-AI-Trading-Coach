@@ -406,8 +406,84 @@ FROM (
 WHERE bounded_rank = 1;
 ALTER VIEW latest_cross_market_risk_snapshots OWNER TO flyway;
 
+-- 계약의 object key profile을 재귀 확인해 허용되지 않은 raw 필드가 append-only payload로 남지 않게 한다.
+CREATE FUNCTION cross_market_fixture_value_is_safe(p_value jsonb)
+RETURNS boolean
+LANGUAGE sql
+IMMUTABLE
+STRICT
+SET search_path = pg_catalog, public, pg_temp
+AS $cross_market_fixture_value_is_safe$
+  WITH RECURSIVE nested_value(value) AS (
+    SELECT p_value
+    UNION ALL
+    SELECT child.value
+    FROM nested_value AS parent
+    CROSS JOIN LATERAL jsonb_array_elements(
+      CASE
+        WHEN jsonb_typeof(parent.value) = 'array' THEN parent.value
+        ELSE '[]'::jsonb
+      END
+    ) AS child(value)
+  )
+  SELECT NOT EXISTS (
+    SELECT 1
+    FROM nested_value
+    WHERE jsonb_typeof(value) = 'object'
+  )
+$cross_market_fixture_value_is_safe$;
+ALTER FUNCTION cross_market_fixture_value_is_safe(jsonb) OWNER TO flyway;
+REVOKE ALL PRIVILEGES ON FUNCTION cross_market_fixture_value_is_safe(jsonb) FROM PUBLIC;
+
+-- profile leaf는 primitive 또는 primitive만 재귀 포함한 array만 허용하고 object는 명시 profile을 요구한다.
+CREATE FUNCTION cross_market_fixture_payload_keys_are_allowed(
+  p_value jsonb,
+  p_key_profile jsonb
+)
+RETURNS boolean
+LANGUAGE plpgsql
+IMMUTABLE
+STRICT
+SET search_path = pg_catalog, public, pg_temp
+AS $cross_market_fixture_payload_keys_are_allowed$
+DECLARE
+  record_key text;
+  nested_profile jsonb;
+BEGIN
+  IF jsonb_typeof(p_value) IS DISTINCT FROM 'object'
+     OR jsonb_typeof(p_key_profile) IS DISTINCT FROM 'object' THEN
+    RETURN false;
+  END IF;
+
+  FOR record_key IN SELECT jsonb_object_keys(p_value)
+  LOOP
+    nested_profile := p_key_profile -> record_key;
+    IF nested_profile IS NULL THEN
+      RETURN false;
+    END IF;
+    IF jsonb_typeof(nested_profile) = 'object'
+       AND NOT public.cross_market_fixture_payload_keys_are_allowed(
+         p_value -> record_key,
+         nested_profile
+       ) THEN
+      RETURN false;
+    END IF;
+    IF jsonb_typeof(nested_profile) <> 'object'
+       AND NOT public.cross_market_fixture_value_is_safe(p_value -> record_key) THEN
+      RETURN false;
+    END IF;
+  END LOOP;
+  RETURN true;
+END
+$cross_market_fixture_payload_keys_are_allowed$;
+ALTER FUNCTION cross_market_fixture_payload_keys_are_allowed(jsonb, jsonb) OWNER TO flyway;
+REVOKE ALL PRIVILEGES ON FUNCTION cross_market_fixture_payload_keys_are_allowed(jsonb, jsonb) FROM PUBLIC;
+
 -- JSON key 검사로 raw provider/article/PDF/account/credential persistence를 함수 진입점에서 막는다.
-CREATE FUNCTION validate_cross_market_fixture_payload(p_record jsonb)
+CREATE FUNCTION validate_cross_market_fixture_payload(
+  p_record jsonb,
+  p_key_profile jsonb
+)
 RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -418,6 +494,7 @@ BEGIN
   IF current_user <> 'flyway'
      OR session_user <> 'decision_market_writer'
      OR jsonb_typeof(p_record) IS DISTINCT FROM 'object'
+     OR NOT public.cross_market_fixture_payload_keys_are_allowed(p_record, p_key_profile)
      OR p_record::text ~* '"(raw_?body|article_?(body|title|url|metadata)|pdf_?(content|text)|account_?(number|id)|access_?token|api_?key|credential|provider_?raw|providerPhysicalCalls|externalLlmCalls)"[[:space:]]*:'
      OR (p_record ? 'decisionAuthority' AND p_record ->> 'decisionAuthority' <> 'NONE') THEN
     RAISE EXCEPTION 'cross-market fixture payload is not permitted'
@@ -425,8 +502,8 @@ BEGIN
   END IF;
 END
 $validate_cross_market_fixture_payload$;
-ALTER FUNCTION validate_cross_market_fixture_payload(jsonb) OWNER TO flyway;
-REVOKE ALL PRIVILEGES ON FUNCTION validate_cross_market_fixture_payload(jsonb) FROM PUBLIC;
+ALTER FUNCTION validate_cross_market_fixture_payload(jsonb, jsonb) OWNER TO flyway;
+REVOKE ALL PRIVILEGES ON FUNCTION validate_cross_market_fixture_payload(jsonb, jsonb) FROM PUBLIC;
 
 CREATE FUNCTION append_market_source_entitlement(p_record jsonb)
 RETURNS text
@@ -438,7 +515,39 @@ AS $append_market_source_entitlement$
 DECLARE
   inserted_count integer;
 BEGIN
-  PERFORM public.validate_cross_market_fixture_payload(p_record);
+  PERFORM public.validate_cross_market_fixture_payload(
+    p_record,
+    jsonb_build_object(
+      'activationStatus', true,
+      'attributionRequired', true,
+      'category', true,
+      'contractExpiry', true,
+      'decisionAuthority', true,
+      'deletionOwner', true,
+      'derivedDataAllowed', true,
+      'embeddingAllowed', true,
+      'endpointIdentityHash', true,
+      'entitlementVersion', true,
+      'externalLlmAllowed', true,
+      'logicalIdentityHash', true,
+      'machineFetchAllowed', true,
+      'materializationDeclaration', jsonb_build_object(
+        'derivedPayloadProduced', true,
+        'embedded', true,
+        'externalLlmProcessed', true,
+        'nonDisplayUsed', true,
+        'rawStored', true
+      ),
+      'nonDisplayAllowed', true,
+      'projectionRetentionMaxDays', true,
+      'providerCallsAllowed', true,
+      'rawRetentionMaxHours', true,
+      'rawStoreAllowed', true,
+      'region', true,
+      'sourceFamily', true,
+      'sourceId', true
+    )
+  );
   IF p_record ->> 'logicalIdentityHash' !~ '^[0-9a-f]{64}$'
      OR p_record ->> 'activationStatus' <> 'CANDIDATE_DISABLED'
      OR (p_record ->> 'providerCallsAllowed')::boolean
@@ -500,7 +609,24 @@ AS $append_cross_market_exposure_catalog_entry$
 DECLARE
   inserted_count integer;
 BEGIN
-  PERFORM public.validate_cross_market_fixture_payload(p_record);
+  PERFORM public.validate_cross_market_fixture_payload(
+    p_record,
+    jsonb_build_object(
+      'artifactHash', true,
+      'availableAt', true,
+      'classification', true,
+      'configVersion', true,
+      'contractId', true,
+      'effectiveAt', true,
+      'inScope', true,
+      'logicalIdentityHash', true,
+      'payloadHash', true,
+      'schemaVersion', true,
+      'sourceLineage', true,
+      'symbol', true,
+      'validationState', true
+    )
+  );
   IF p_record ->> 'contractId' <> 'cross_market_exposure_catalog.v1'
      OR p_record ->> 'schemaVersion' <> '1'
      OR p_record ->> 'logicalIdentityHash' !~ '^[0-9a-f]{64}$'
@@ -542,7 +668,31 @@ AS $append_cross_market_observation$
 DECLARE
   inserted_count integer;
 BEGIN
-  PERFORM public.validate_cross_market_fixture_payload(p_record);
+  PERFORM public.validate_cross_market_fixture_payload(
+    p_record,
+    jsonb_build_object(
+      'abstainReason', true,
+      'artifactHash', true,
+      'availableAt', true,
+      'completeness', true,
+      'contractId', true,
+      'decisionAuthority', true,
+      'evaluatedAt', true,
+      'instrument', true,
+      'logicalIdentityHash', true,
+      'market', true,
+      'observedAt', true,
+      'payloadHash', true,
+      'receivedAt', true,
+      'schemaVersion', true,
+      'sessionDate', true,
+      'sourceRef', true,
+      'status', true,
+      'timeframe', true,
+      'value', true,
+      'valueType', true
+    )
+  );
   IF p_record ->> 'contractId' <> 'cross_market_observation.v1'
      OR p_record ->> 'schemaVersion' <> '1'
      OR p_record ->> 'logicalIdentityHash' !~ '^[0-9a-f]{64}$'
@@ -586,7 +736,51 @@ AS $append_analyst_revision_evidence$
 DECLARE
   inserted_count integer;
 BEGIN
-  PERFORM public.validate_cross_market_fixture_payload(p_record);
+  PERFORM public.validate_cross_market_fixture_payload(
+    p_record,
+    jsonb_build_object(
+      'artifactHash', true,
+      'availableAt', true,
+      'brokerId', true,
+      'buyOpinionWeight', true,
+      'contractId', true,
+      'contributorCount', true,
+      'current', jsonb_build_object(
+        'eps', true,
+        'rating', true,
+        'revenue', true,
+        'targetPrice', true
+      ),
+      'decisionAuthority', true,
+      'dedupeKeyHash', true,
+      'dispersion', true,
+      'estimatePeriod', true,
+      'logicalIdentityHash', true,
+      'originalEvidenceId', true,
+      'payloadHash', true,
+      'previous', jsonb_build_object(
+        'eps', true,
+        'rating', true,
+        'revenue', true,
+        'targetPrice', true
+      ),
+      'publishedAt', true,
+      'rawTextStored', true,
+      'receivedAt', true,
+      'retracted', true,
+      'revision', jsonb_build_object(
+        'epsDelta', true,
+        'ratingChanged', true,
+        'revenueDelta', true,
+        'targetPriceDelta', true
+      ),
+      'schemaVersion', true,
+      'sourceLicense', true,
+      'supersedesEvidenceId', true,
+      'symbol', true,
+      'userConfirmedTags', true
+    )
+  );
   IF p_record ->> 'contractId' <> 'analyst_revision_evidence.v1'
      OR p_record ->> 'schemaVersion' <> '1'
      OR p_record ->> 'logicalIdentityHash' !~ '^[0-9a-f]{64}$'
@@ -632,7 +826,32 @@ AS $append_market_cause_evidence$
 DECLARE
   inserted_count integer;
 BEGIN
-  PERFORM public.validate_cross_market_fixture_payload(p_record);
+  PERFORM public.validate_cross_market_fixture_payload(
+    p_record,
+    jsonb_build_object(
+      'artifactHash', true,
+      'availableAt', true,
+      'classification', true,
+      'contractId', true,
+      'contradictionEvidenceIds', true,
+      'counterargument', true,
+      'decisionAuthority', true,
+      'dedupeKeyHash', true,
+      'logicalIdentityHash', true,
+      'occurredAt', true,
+      'payloadHash', true,
+      'publishedAt', true,
+      'receivedAt', true,
+      'relatedEvidenceIds', true,
+      'relation', true,
+      'retracted', true,
+      'sanitizedSummary', true,
+      'schemaVersion', true,
+      'sourceFamily', true,
+      'sourceLineageHash', true,
+      'supersedesEvidenceId', true
+    )
+  );
   IF p_record ->> 'contractId' <> 'market_cause_evidence.v1'
      OR p_record ->> 'schemaVersion' <> '1'
      OR p_record ->> 'logicalIdentityHash' !~ '^[0-9a-f]{64}$'

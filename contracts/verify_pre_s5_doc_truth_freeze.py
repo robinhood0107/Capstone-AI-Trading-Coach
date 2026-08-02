@@ -73,6 +73,7 @@ REQUIRED_PUBLIC_MARKERS = {
         "PRE_S5_DOC_TRUTH_FREEZE_VERIFIED",
         "S4_7D_RUNTIME=STUB_FAIL_CLOSED",
         "S4_8A=CONTRACT_ONLY",
+        "S4_8_CORE6_V2=CONTRACT_ONLY",
         "S4_8B_C=OFFLINE_ONLY",
     ),
     "docs/최종_프로젝트_명세서.md": (
@@ -90,6 +91,7 @@ REQUIRED_PUBLIC_MARKERS = {
         "S4_7D_RUNTIME=STUB_FAIL_CLOSED",
         "OA112_HISTORICAL",
         "OA140_TARGET",
+        "S4_8_CORE6_V2=CONTRACT_ONLY",
     ),
     "capstone-rag/README.md": (
         "OA112_HISTORICAL",

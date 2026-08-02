@@ -1,0 +1,177 @@
+from __future__ import annotations
+
+import hashlib
+import json
+import subprocess
+import sys
+import unittest
+from pathlib import Path
+
+from jsonschema import Draft202012Validator
+
+from contracts.generate_principle_contracts import ContractValidationError, load_json_bytes_strict
+from contracts.generate_s4_8_core6_v2_contracts import (
+    CORE6_SOURCE_FAMILIES,
+    FROZEN_V1_HASHES,
+    INVALID_FIXTURE_PATHS,
+    OUTPUTS,
+    SCHEMA_PATHS,
+    VALID_FIXTURE_PATHS,
+    generate_outputs,
+    validate_semantics,
+)
+
+
+ROOT = Path(__file__).resolve().parents[2]
+
+
+def _load(relative_path: str) -> object:
+    path = ROOT / relative_path
+    return load_json_bytes_strict(
+        path.read_bytes(), source=path.relative_to(ROOT).as_posix()
+    )
+
+
+class S48Core6ContractTest(unittest.TestCase):
+    def test_generator_is_deterministic_complete_and_checked_in(self) -> None:
+        first = generate_outputs()
+        second = generate_outputs()
+
+        self.assertEqual(first, second)
+        self.assertEqual(OUTPUTS, frozenset(first))
+        self.assertTrue(all(payload.endswith(b"\n") for payload in first.values()))
+
+        completed = subprocess.run(
+            [
+                sys.executable,
+                str(ROOT / "contracts/generate_s4_8_core6_v2_contracts.py"),
+                "--check",
+            ],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(0, completed.returncode, completed.stderr)
+        self.assertIn("S4_8_CORE6_CONTRACT_LOCK_VERIFIED", completed.stdout)
+
+    def test_core_six_registry_is_contract_locked_and_never_active(self) -> None:
+        registry = _load(
+            "contracts/examples/market_source_entitlement.v2.valid.json"
+        )
+        self.assertIsInstance(registry, dict)
+        self.assertEqual("market_source_entitlement.v2", registry["contractId"])
+        entries = registry["entitlements"]
+        self.assertEqual(set(CORE6_SOURCE_FAMILIES), {entry["sourceFamily"] for entry in entries})
+        self.assertEqual(6, len(entries))
+        self.assertEqual(
+            "BLOCKED_NO_CREDENTIAL_OR_APPROVAL",
+            next(entry for entry in entries if entry["sourceFamily"] == "KOFIA")[
+                "activationBlocker"
+            ],
+        )
+        self.assertTrue(
+            all(
+                entry["activationStatus"] in {"CANDIDATE_DISABLED", "BLOCKED"}
+                for entry in entries
+            )
+        )
+        self.assertTrue(all(not entry["providerCallsAllowed"] for entry in entries))
+        self.assertTrue(all(not entry["machineFetchAllowed"] for entry in entries))
+        self.assertTrue(all(not entry["rawStoreAllowed"] for entry in entries))
+        self.assertTrue(all(not entry["embeddingAllowed"] for entry in entries))
+        self.assertTrue(all(not entry["externalLlmAllowed"] for entry in entries))
+        self.assertTrue(all(entry["decisionAuthority"] == "NONE" for entry in entries))
+        self.assertTrue(
+            all(entry["riskSignalOrderAuthority"] == "NONE" for entry in entries)
+        )
+
+    def test_packet_and_receipt_contracts_never_expose_provider_payloads(self) -> None:
+        validators = {
+            schema_id: Draft202012Validator(_load(path.relative_to(ROOT).as_posix()))
+            for schema_id, path in SCHEMA_PATHS.items()
+        }
+        for relative_path in sorted(VALID_FIXTURE_PATHS):
+            payload = _load(relative_path)
+            self.assertIsInstance(payload, dict)
+            schema_id = payload["contractId"]
+            self.assertEqual([], list(validators[schema_id].iter_errors(payload)))
+            validate_semantics(schema_id, payload)
+
+        packet = _load(
+            "contracts/examples/cross_market_provider_probe_approval.v1.template.valid.json"
+        )
+        self.assertIsInstance(packet, dict)
+        self.assertEqual("TEMPLATE", packet["approvalStatus"])
+        self.assertFalse(packet["executionAllowed"])
+        self.assertEqual(0, packet["caps"]["retryCap"])
+        self.assertEqual(0, packet["caps"]["artifactCap"])
+
+        receipt = _load(
+            "contracts/examples/cross_market_provider_probe_receipt.v1.not-executed.valid.json"
+        )
+        self.assertIsInstance(receipt, dict)
+        self.assertEqual("NOT_EXECUTED", receipt["outcome"])
+        self.assertEqual(0, receipt["physicalCalls"])
+        self.assertEqual(0, receipt["rawProviderPayloadsStored"])
+
+        serialized = json.dumps([packet, receipt], ensure_ascii=False)
+        for forbidden in (
+            "authorization",
+            "credential",
+            "providerBody",
+            "rawResponse",
+            "requestQuery",
+        ):
+            self.assertNotIn(forbidden, serialized)
+
+    def test_required_negative_fixtures_fail_closed(self) -> None:
+        self.assertEqual(
+            {
+                "unknown-source",
+                "direct-projection-fanout",
+                "active-without-rights",
+                "raw-storage",
+                "approval-retry",
+                "approval-expiry",
+                "receipt-over-cap",
+                "receipt-raw-storage",
+            },
+            {Path(path).name.split(".")[-3] for path in INVALID_FIXTURE_PATHS},
+        )
+        validators = {
+            schema_id: Draft202012Validator(_load(path.relative_to(ROOT).as_posix()))
+            for schema_id, path in SCHEMA_PATHS.items()
+        }
+        for relative_path in sorted(INVALID_FIXTURE_PATHS):
+            payload = _load(relative_path)
+            self.assertIsInstance(payload, dict)
+            schema_id = payload["contractId"]
+            errors = list(validators[schema_id].iter_errors(payload))
+            semantic_error: ContractValidationError | None = None
+            if not errors:
+                try:
+                    validate_semantics(schema_id, payload)
+                except ContractValidationError as caught:
+                    semantic_error = caught
+            self.assertTrue(errors or semantic_error, relative_path)
+
+    def test_v1_contracts_and_workspace_boundaries_are_byte_stable(self) -> None:
+        for relative_path, expected_hash in FROZEN_V1_HASHES.items():
+            self.assertEqual(
+                expected_hash,
+                hashlib.sha256((ROOT / relative_path).read_bytes()).hexdigest(),
+                relative_path,
+            )
+
+        for workspace in ("return-engine", "experience-dashboard"):
+            files = sorted(
+                path.relative_to(ROOT / "workspaces" / workspace).as_posix()
+                for path in (ROOT / "workspaces" / workspace).rglob("*")
+                if path.is_file() and not path.is_symlink()
+            )
+            self.assertEqual(["README.md"], files)
+
+
+if __name__ == "__main__":
+    unittest.main()

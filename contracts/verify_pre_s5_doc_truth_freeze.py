@@ -11,7 +11,7 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Final, Iterable
+from typing import Callable, Final, Iterable
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -242,6 +242,60 @@ def stat_is_regular(mode: int) -> bool:
     return (mode & 0o170000) == 0o100000
 
 
+def stat_is_directory(mode: int) -> bool:
+    """lstat 결과만으로 directory 여부를 판별해 parent link traversal을 막는다."""
+
+    return (mode & 0o170000) == 0o040000
+
+
+def _safe_path_under_root(
+    root: Path,
+    relative: str | Path,
+    expected_kind: Callable[[int], bool],
+) -> Path | None:
+    """정규화된 repo 상대 경로의 모든 ancestor와 leaf가 no-follow type 검사를 통과해야 읽는다."""
+
+    # lexical normalize는 docs-to-contracts 같은 정상 link를 허용하되 symlink는 resolve하지 않는다.
+    candidate = Path(os.path.normpath(os.fspath(root / relative)))
+    try:
+        components = candidate.relative_to(root).parts
+    except ValueError:
+        return None
+    if not components or any(component in {"", ".", ".."} for component in components):
+        return None
+
+    try:
+        if not stat_is_directory(root.lstat().st_mode):
+            return None
+    except OSError:
+        return None
+
+    current = root
+    for index, component in enumerate(components):
+        current /= component
+        try:
+            mode = current.lstat().st_mode
+        except OSError:
+            return None
+        if index == len(components) - 1:
+            return current if expected_kind(mode) else None
+        if not stat_is_directory(mode):
+            return None
+    return None
+
+
+def safe_regular_file(root: Path, relative: str | Path) -> Path | None:
+    """active SSOT/link target는 repo 경계 안의 non-symlink regular file일 때만 반환한다."""
+
+    return _safe_path_under_root(root, relative, stat_is_regular)
+
+
+def safe_directory(root: Path, relative: str | Path) -> Path | None:
+    """tree digest root는 repo 경계 안의 non-symlink directory일 때만 반환한다."""
+
+    return _safe_path_under_root(root, relative, stat_is_directory)
+
+
 def markdown_anchor_index(text: str) -> set[str]:
     """현재 SSOT의 local anchor link만 검증하는 보수적 GitHub-style slug index다."""
 
@@ -281,18 +335,21 @@ def resolve_local_markdown_target(root: Path, source: Path, destination: str) ->
 def markdown_link_errors(root: Path, relative: str) -> list[str]:
     """active public SSOT의 local file/anchor link만 검사해 historical link drift를 분리한다."""
 
-    source = root / relative
+    source = safe_regular_file(root, relative)
+    if source is None:
+        return [f"{relative}: required active SSOT is missing or unsafe"]
     text = source.read_text(encoding="utf-8")
     errors: list[str] = []
     for destination in re.findall(r"(?<!!)\[[^]]*\]\(([^)]+)\)", text):
         target, anchor = resolve_local_markdown_target(root, source, destination)
         if target is None:
             continue
-        if not target.is_file():
+        safe_target = safe_regular_file(root, target)
+        if safe_target is None:
             errors.append(f"{relative}: missing local Markdown target {destination!r}")
             continue
         if anchor:
-            anchors = markdown_anchor_index(target.read_text(encoding="utf-8"))
+            anchors = markdown_anchor_index(safe_target.read_text(encoding="utf-8"))
             if anchor not in anchors:
                 errors.append(f"{relative}: missing anchor {destination!r}")
     fence_count = len(re.findall(r"(?m)^```[^\n]*$", text))
@@ -304,14 +361,27 @@ def markdown_link_errors(root: Path, relative: str) -> list[str]:
 def tree_digest(root: Path, relative: str) -> str:
     """exact-30 source card bytes와 file names를 함께 묶어 byte-stable 보존을 확인한다."""
 
-    directory = root / relative
+    directory = safe_directory(root, relative)
+    if directory is None:
+        return ""
     material = bytearray()
-    for path in sorted(item for item in directory.rglob("*") if item.is_file()):
-        name = path.relative_to(directory).as_posix().encode("utf-8")
-        material.extend(name)
-        material.extend(b"\0")
-        material.extend(hashlib.sha256(path.read_bytes()).digest())
-        material.extend(b"\n")
+    for current_root, directory_names, filenames in os.walk(directory, followlinks=False):
+        current = Path(current_root)
+        safe_children = [
+            name for name in directory_names if safe_directory(root, current / name) is not None
+        ]
+        if len(safe_children) != len(directory_names):
+            return ""
+        directory_names[:] = sorted(safe_children)
+        for filename in sorted(filenames):
+            path = safe_regular_file(root, current / filename)
+            if path is None:
+                return ""
+            name = path.relative_to(directory).as_posix().encode("utf-8")
+            material.extend(name)
+            material.extend(b"\0")
+            material.extend(hashlib.sha256(path.read_bytes()).digest())
+            material.extend(b"\n")
     return hashlib.sha256(material).hexdigest()
 
 
@@ -335,13 +405,13 @@ def verify_public_truth_freeze(root: Path) -> list[str]:
 
     errors: list[str] = []
     for relative, expected_digest in V1_FROZEN_SHA256.items():
-        path = root / relative
-        actual_digest = hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else None
+        path = safe_regular_file(root, relative)
+        actual_digest = hashlib.sha256(path.read_bytes()).hexdigest() if path else None
         if actual_digest != expected_digest:
             errors.append(f"{relative}: frozen digest mismatch")
     for relative, expected_digest in IMMUTABLE_WORKSPACE_SHA256.items():
-        path = root / relative
-        actual_digest = hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else None
+        path = safe_regular_file(root, relative)
+        actual_digest = hashlib.sha256(path.read_bytes()).hexdigest() if path else None
         if actual_digest != expected_digest:
             errors.append(f"{relative}: out-of-scope workspace changed")
     if tree_digest(root, "capstone-rag/source-cards") != EXACT30_SOURCE_TREE_SHA256:
@@ -350,9 +420,9 @@ def verify_public_truth_freeze(root: Path) -> list[str]:
     if local_reference_error:
         errors.append(local_reference_error)
     for relative, markers in REQUIRED_PUBLIC_MARKERS.items():
-        path = root / relative
-        if not path.is_file():
-            errors.append(f"{relative}: required active SSOT is missing")
+        path = safe_regular_file(root, relative)
+        if path is None:
+            errors.append(f"{relative}: required active SSOT is missing or unsafe")
             continue
         text = path.read_text(encoding="utf-8")
         for marker in markers:
@@ -362,18 +432,20 @@ def verify_public_truth_freeze(root: Path) -> list[str]:
             errors.append(f"{relative}: must be UTF-8 LF with a terminal newline")
         errors.extend(markdown_link_errors(root, relative))
     for relative, markers in FORBIDDEN_PUBLIC_MARKERS.items():
-        path = root / relative
-        if not path.is_file():
+        path = safe_regular_file(root, relative)
+        if path is None:
+            if relative not in REQUIRED_PUBLIC_MARKERS:
+                errors.append(f"{relative}: forbidden marker check requires a regular active SSOT")
             continue
         text = path.read_text(encoding="utf-8")
         for marker in markers:
             if marker in text:
                 errors.append(f"{relative}: forbidden stale marker {marker}")
-    workspace_readme = (root / "workspaces/decision-platform/README.md").read_text(
-        encoding="utf-8"
-    )
-    if "LICENSED_EPHEMERAL_LOCAL" in workspace_readme:
-        errors.append("workspaces/decision-platform/README.md: stale active processing mode")
+    workspace_readme_path = safe_regular_file(root, "workspaces/decision-platform/README.md")
+    if workspace_readme_path is not None:
+        workspace_readme = workspace_readme_path.read_text(encoding="utf-8")
+        if "LICENSED_EPHEMERAL_LOCAL" in workspace_readme:
+            errors.append("workspaces/decision-platform/README.md: stale active processing mode")
     return errors
 
 

@@ -166,6 +166,7 @@ class S48Core6ContractTest(unittest.TestCase):
                 "receipt-raw-storage",
                 "receipt-provider-body",
                 "receipt-success-zero-calls",
+                "receipt-failed-zero-calls",
                 "receipt-projection-provider-call",
                 "authority-escalation",
             },
@@ -187,6 +188,22 @@ class S48Core6ContractTest(unittest.TestCase):
                 except ContractValidationError as caught:
                     semantic_error = caught
             self.assertTrue(errors or semantic_error, relative_path)
+
+    def test_failed_receipt_cannot_hide_a_physical_provider_call(self) -> None:
+        relative_path = (
+            "contracts/examples/invalid/"
+            "cross_market_provider_probe_receipt.v1.receipt-failed-zero-calls.invalid.json"
+        )
+        payload = _load(relative_path)
+        self.assertIsInstance(payload, dict)
+        schema = _load(
+            "contracts/schemas/cross_market_provider_probe_receipt.v1.schema.json"
+        )
+        self.assertIsInstance(schema, dict)
+
+        self.assertNotEqual([], list(Draft202012Validator(schema).iter_errors(payload)))
+        with self.assertRaisesRegex(ContractValidationError, "failed receipt"):
+            validate_semantics(payload["contractId"], payload)
 
     def test_v1_contracts_and_workspace_boundaries_are_byte_stable(self) -> None:
         for relative_path, expected_hash in FROZEN_V1_HASHES.items():
@@ -216,6 +233,17 @@ class S48Core6ContractTest(unittest.TestCase):
         self.assertIn("Return/Experience workspace", change)
         self.assertNotIn("팀원 B", change)
         self.assertNotIn("team member B", change)
+
+    def test_active_status_ledger_keeps_gdelt_decision_owned_and_offline_only(self) -> None:
+        ledger = (ROOT / "docs/README.md").read_text(encoding="utf-8")
+
+        self.assertIn("| S1.3G | `OFFLINE_ONLY` |", ledger)
+        self.assertIn(
+            "Decision Platform existing GDELT offline aggregate producer unchanged", ledger
+        )
+        self.assertIn("HTTP transport/executor/outbound 0", ledger)
+        self.assertNotIn("| S1.3G | `EXTERNAL_OWNER_HANDOFF` |", ledger)
+        self.assertNotIn("GDELT producer는 팀원 B", ledger)
 
 
 if __name__ == "__main__":

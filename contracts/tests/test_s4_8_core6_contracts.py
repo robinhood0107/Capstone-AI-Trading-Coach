@@ -107,6 +107,34 @@ class S48Core6ContractTest(unittest.TestCase):
             ):
                 _check_outputs(outputs, root=temporary_root)
 
+    def test_generated_check_rejects_a_symlinked_public_fixture_parent(self) -> None:
+        # generated check는 leaf뿐 아니라 public fixture directory의 상위 경로도 checkout
+        # 안의 regular directory여야 한다. 그렇지 않으면 local-only packet이 symlink target에 숨는다.
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            external_fixtures = temporary_root / "external-fixtures"
+            outputs = generate_outputs()
+            for relative_path, content in outputs.items():
+                path = temporary_root / relative_path
+                if relative_path.startswith("contracts/examples/"):
+                    path = external_fixtures / Path(relative_path).relative_to(
+                        "contracts/examples"
+                    )
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(content)
+
+            fixture_parent = temporary_root / "contracts"
+            (fixture_parent / "examples").symlink_to(
+                external_fixtures,
+                target_is_directory=True,
+            )
+
+            with self.assertRaisesRegex(
+                ContractValidationError,
+                "generated S4.8 Core 6 artifacts drifted",
+            ):
+                _check_outputs(outputs, root=temporary_root)
+
     def test_core_six_registry_is_contract_locked_and_never_active(self) -> None:
         registry = _load(
             "contracts/examples/market_source_entitlement.v2.valid.json"

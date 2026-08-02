@@ -69,47 +69,84 @@ IMMUTABLE_WORKSPACE_SHA256 = {
 }
 EXACT30_SOURCE_TREE_SHA256 = "1a83d11912df73f3a1136be82499b2a4723bc900af147117f16c1663560a4c6f"
 REQUIRED_PUBLIC_MARKERS = {
+    "AGENTS.md": (
+        "PRE_S5_DOC_TRUTH_FREEZE_ADDENDUM_VERIFIED",
+        "PRE_S5_EXECUTION_OWNER=DECISION_PLATFORM",
+        "PLAN_FEASIBILITY=GO_WITH_EXTERNAL_HARD_GATES",
+        "S4_8A=CONTRACT_LOCKED",
+        "S4_8B_C=IMPLEMENTED_MERGE_CANDIDATE",
+    ),
+    "README.md": (
+        "PRE_S5_DOC_TRUTH_FREEZE_ADDENDUM_VERIFIED",
+        "PRE_S5_EXECUTION_OWNER=DECISION_PLATFORM",
+        "PLAN_FEASIBILITY=GO_WITH_EXTERNAL_HARD_GATES",
+        "S4_8A=CONTRACT_LOCKED",
+        "S4_8B_C=IMPLEMENTED_MERGE_CANDIDATE",
+    ),
     "docs/README.md": (
         "PRE_S5_DOC_TRUTH_FREEZE_VERIFIED",
         "| S1.3G | `OFFLINE_ONLY` |",
         "Decision Platform existing GDELT offline aggregate producer unchanged",
         "HTTP transport/executor/outbound 0",
+        "PRE_S5_RAG_GLOBAL_NEWS_CONTRACT_LOCKED=1",
+        "OA112_ACTIVE_CONTRACT_LOCKED",
+        "S4_7D_OA112_PHYSICAL_ACTIVATION=NOT_MATERIALIZED",
         "S4_7D_RUNTIME=STUB_FAIL_CLOSED",
-        "S4_8A=CONTRACT_ONLY",
+        "PLAN_FEASIBILITY=GO_WITH_EXTERNAL_HARD_GATES",
+        "S4_8A=CONTRACT_LOCKED",
         "S4_8_CORE6_V2=CONTRACT_ONLY",
-        "S4_8B_C=OFFLINE_ONLY",
+        "S4_8B_C=IMPLEMENTED_MERGE_CANDIDATE",
     ),
     "docs/최종_프로젝트_명세서.md": (
         "S4_7D_RUNTIME=STUB_FAIL_CLOSED",
         "voyage-context-4",
         "gemini-3.5-flash",
+        "PRE_S5_RAG_GLOBAL_NEWS_CONTRACT_LOCKED=1",
+        "OA112_ACTIVE_CONTRACT_LOCKED",
         "RAG_DECISION_SIGNAL_ORDER_AUTHORITY=0",
+        "PLAN_FEASIBILITY=GO_WITH_EXTERNAL_HARD_GATES",
+        "S4_8A=CONTRACT_LOCKED",
+        "S4_8B_C=IMPLEMENTED_MERGE_CANDIDATE",
     ),
     "docs/API_명세서.md": (
         "ACTIVE_V2_RUNTIME=STUB_FAIL_CLOSED",
         "EXTERNAL_AI_RAG_V2",
         "EXTERNAL_AI_CONSENT_REQUIRED",
+        "OA112_ACTIVE_CONTRACT_LOCKED",
+        "/api/v2/market-evidence/{symbol}/foreign-news-sentiment",
+        "PLAN_FEASIBILITY=GO_WITH_EXTERNAL_HARD_GATES",
+        "S4_8A=CONTRACT_LOCKED",
+        "S4_8B_C=IMPLEMENTED_MERGE_CANDIDATE",
     ),
     "contracts/README.md": (
         "S4_7D_RUNTIME=STUB_FAIL_CLOSED",
         "OA112_HISTORICAL",
-        "OA140_TARGET",
+        "RAG_AND_GLOBAL_NEWS_CONTRACT_LOCKED",
+        "OA112_ACTIVE_CONTRACT_LOCKED",
+        "PLAN_FEASIBILITY=GO_WITH_EXTERNAL_HARD_GATES",
+        "S4_8A=CONTRACT_LOCKED",
         "S4_8_CORE6_V2=CONTRACT_ONLY",
+        "S4_8B_C=IMPLEMENTED_MERGE_CANDIDATE",
     ),
     "capstone-rag/README.md": (
         "OA112_HISTORICAL",
-        "OA140_TARGET",
+        "OA112_ACTIVE_CONTRACT_LOCKED",
+        "S4_7D_OA112_PHYSICAL_ACTIVATION=NOT_MATERIALIZED",
         "CORPUS_RUNTIME_NOT_INSTALLED",
     ),
     "workspaces/decision-platform/README.md": (
         "LOCAL_EPHEMERAL_PARSE",
-        "S4_8B_C=OFFLINE_ONLY",
+        "PRE_S5_RAG_GLOBAL_NEWS_CONTRACT_LOCKED=1",
+        "PLAN_FEASIBILITY=GO_WITH_EXTERNAL_HARD_GATES",
+        "S4_8A=CONTRACT_LOCKED",
+        "S4_8B_C=IMPLEMENTED_MERGE_CANDIDATE",
     ),
     "docs/RAG_외부_AI_처리_및_개인문서_동의.md": (
         "EXTERNAL_AI_RAG_V2",
         "Voyage AI",
         "Vertex AI Gemini",
         "TARGET_NOT_ACTIVE",
+        "OA112_ACTIVE_CONTRACT_LOCKED",
     ),
 }
 FORBIDDEN_PUBLIC_MARKERS: Final[dict[str, tuple[str, ...]]] = {
@@ -121,6 +158,7 @@ FORBIDDEN_PUBLIC_MARKERS: Final[dict[str, tuple[str, ...]]] = {
 }
 SOLO_OWNERSHIP_PUBLIC_PATHS: Final[tuple[str, ...]] = (
     "AGENTS.md",
+    "README.md",
     "docs/README.md",
     "docs/최종_프로젝트_명세서.md",
     "docs/API_명세서.md",
@@ -141,6 +179,7 @@ SOLO_OWNERSHIP_MARKERS: Final[tuple[str, ...]] = (
     "GDELT_OFFLINE_REFERENCE_ONLY=1",
     "NAVER_ACTIVE_PROVIDER_RUNTIME_STORAGE=RETIRED",
     "RAG_NEWS_ANALYST_DECISION_SIGNAL_ORDER_AUTHORITY=0",
+    "PLAN_FEASIBILITY=GO_WITH_EXTERNAL_HARD_GATES",
 )
 SOLO_OWNERSHIP_ROLE_CATALOG_BEGIN: Final[str] = "<!-- PRE_S5_SOLO_ROLE_CATALOG_BEGIN -->"
 SOLO_OWNERSHIP_ROLE_CATALOG_END: Final[str] = "<!-- PRE_S5_SOLO_ROLE_CATALOG_END -->"
@@ -166,11 +205,43 @@ IMMUTABLE_HISTORY_CLASSIFICATIONS: Final[frozenset[str]] = frozenset(
         "EVIDENCE_ONLY",
     }
 )
+# 이번 addendum이 기존 v1/v2 RAG 계약 또는 exact-30 evidence를 다시 해석하지 못하게
+# base diff에서 명시적으로 고정한다. 신규 addendum 파일은 MDT filter 밖의 A이므로 허용된다.
+IMMUTABLE_PRE_S5_FROZEN_PATHS: Final[frozenset[str]] = frozenset(
+    {
+        "contracts/catalogs/s4-rag-contract.v1.json",
+        "contracts/catalogs/s4-rag-contract.v1.sha256.json",
+        "contracts/catalogs/s4-rag-v2-contract.v1.json",
+        "contracts/catalogs/s4-rag-v2-contract.v1.sha256.json",
+        "contracts/openapi/openapi.json",
+        "contracts/openapi/rag-v2.openapi.json",
+        "contracts/proto/rag.proto",
+        "contracts/proto/rag.descriptor.pb",
+        "contracts/proto/rag.descriptor.sha256",
+        "contracts/proto/rag_v2.descriptor.pb",
+        "contracts/proto/rag_v2.descriptor.sha256",
+        "contracts/proto/rag_v2.proto",
+        "contracts/schemas/news_sentiment_summary.v2.schema.json",
+        "contracts/schemas/rag-source-card-v1.schema.json",
+        "contracts/schemas/rag-source-card-v2.schema.json",
+        "contracts/schemas/s4-rag-answer.schema.json",
+        "contracts/schemas/s4-rag-ask-request.schema.json",
+        "contracts/schemas/s4-rag-history-detail.schema.json",
+        "contracts/schemas/s4-rag-history-page.schema.json",
+    }
+)
 IMMUTABLE_HISTORY_PATH_PREFIXES: Final[tuple[str, ...]] = (
+    "capstone-rag/eval/",
+    "capstone-rag/manifests/",
+    "capstone-rag/ocr/benchmark/receipts/",
     "capstone-rag/reports/",
 )
+# exact-30 card tree는 source count·root tree digest 자체가 계약이므로 신규 sibling/README 변경도 허용하지 않는다.
+IMMUTABLE_EXACT30_SOURCE_CARD_PREFIXES: Final[tuple[str, ...]] = (
+    "capstone-rag/source-cards/",
+)
 TEAMMATE_REFERENCE_PATTERN: Final[re.Pattern[str]] = re.compile(
-    r"(?:팀원(?:\s*[AB])?|\bteam[ _-]?[ab]\b|\bteam\s*member\b|\breturn[ _-]?engine\b|"
+    r"(?:팀원(?:\s*[AB])?|\bteam[ _-]?[ab]\b|\bteammate\b|\bteam\s*mate\b|\bteam\s*member\b|\breturn[ _-]?engine\b|"
     r"\blstm\b|\brule[ _-]?baseline\b|\bbacktest\b|\bexperience[ _-]?dashboard\b)",
     re.IGNORECASE,
 )
@@ -629,7 +700,7 @@ def teammate_workspace_diff_errors(root: Path, base: str) -> list[str]:
 
 
 def immutable_history_diff_errors(root: Path, base: str) -> list[str]:
-    """base에 있던 historical 문서·완료 evidence는 byte 변경·삭제를 막되 새 기록은 허용한다."""
+    """base의 frozen contract·history 변경을 막고 exact-30 source-card tree는 A/M/D/T 모두 고정한다."""
 
     if not _base_commit_is_available(root, base):
         return ["solo ownership base cannot be resolved"]
@@ -640,17 +711,19 @@ def immutable_history_diff_errors(root: Path, base: str) -> list[str]:
             "--no-ext-diff",
             "--no-renames",
             "--name-only",
-            "--diff-filter=MD",
+            "--diff-filter=MDT",
             f"{base}...HEAD",
         ],
     )
     if error:
         return ["immutable historical record diff could not be read"]
+    errors: list[str] = []
     changed_immutable_paths = (
         tuple(
             relative
             for relative in output.splitlines()
-            if relative.startswith(IMMUTABLE_HISTORY_PATH_PREFIXES)
+            if relative in IMMUTABLE_PRE_S5_FROZEN_PATHS
+            or relative.startswith(IMMUTABLE_HISTORY_PATH_PREFIXES)
             or (
                 relative.endswith(".md")
                 and classify_markdown(relative) in IMMUTABLE_HISTORY_CLASSIFICATIONS
@@ -660,8 +733,25 @@ def immutable_history_diff_errors(root: Path, base: str) -> list[str]:
         else ()
     )
     if changed_immutable_paths:
-        return ["immutable historical records changed since base"]
-    return []
+        errors.append("immutable historical records changed since base")
+
+    source_card_output, source_card_error = _git_output(
+        root,
+        [
+            "diff",
+            "--no-ext-diff",
+            "--no-renames",
+            "--name-only",
+            f"{base}...HEAD",
+            "--",
+            *IMMUTABLE_EXACT30_SOURCE_CARD_PREFIXES,
+        ],
+    )
+    if source_card_error:
+        return [*errors, "exact-30 source-card diff could not be read"]
+    if source_card_output.strip():
+        errors.append("exact-30 source-card tree changed since base")
+    return errors
 
 
 def new_teammate_dependency_errors(root: Path, base: str) -> list[str]:
@@ -671,6 +761,8 @@ def new_teammate_dependency_errors(root: Path, base: str) -> list[str]:
     if errors:
         return errors
     for relative, line in additions:
+        if relative in SOLO_OWNERSHIP_PUBLIC_PATHS and line in SOLO_OWNERSHIP_MARKERS:
+            continue
         if relative == "docs/README.md" and line in SOLO_OWNERSHIP_ROLE_CATALOG:
             continue
         if not TEAMMATE_REFERENCE_PATTERN.search(line):

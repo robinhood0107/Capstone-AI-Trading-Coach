@@ -103,7 +103,7 @@ class PreS5RagNewsContractTest(unittest.TestCase):
         self.assertTrue(all(track["sourceCount"] == 8 for track in selection["tracks"]))
 
     def test_v4_source_permissions_require_all_four_for_active_oa(self) -> None:
-        source = _load(ROOT / "contracts/examples/rag-source-card-v4.oa-contract.valid.json")
+        source = _load(ROOT / "contracts/examples/rag-source-card-v4.valid.json")
         validator = self.validators["rag-source-card-v4"]
         self.assertEqual([], list(validator.iter_errors(source)))
         validate_semantics("rag-source-card-v4", source)
@@ -134,11 +134,11 @@ class PreS5RagNewsContractTest(unittest.TestCase):
             ],
             inherited["paths"],
         )
-        ticket = _load(ROOT / "contracts/examples/s4-rag-v2-import-ticket.valid.json")
+        ticket = _load(ROOT / "contracts/examples/s4-rag-v2-import-ticket-v1.valid.json")
         self.assertEqual(
-            [], list(self.validators["s4-rag-v2-import-ticket"].iter_errors(ticket))
+            [], list(self.validators["s4-rag-v2-import-ticket-v1"].iter_errors(ticket))
         )
-        validate_semantics("s4-rag-v2-import-ticket", ticket)
+        validate_semantics("s4-rag-v2-import-ticket-v1", ticket)
         self.assertEqual(300, ticket["ttlSeconds"])
         self.assertTrue(ticket["singleUse"])
         self.assertFalse(ticket["ownerRawCopyAllowed"])
@@ -163,7 +163,7 @@ class PreS5RagNewsContractTest(unittest.TestCase):
 
     def test_foreign_news_response_has_no_decision_or_raw_authority(self) -> None:
         response = _load(
-            ROOT / "contracts/examples/foreign-news-sentiment-v1.abstain.valid.json"
+            ROOT / "contracts/examples/foreign-news-sentiment-v1.valid.json"
         )
         validator = self.validators["foreign-news-sentiment-v1"]
         self.assertEqual([], list(validator.iter_errors(response)))
@@ -193,7 +193,7 @@ class PreS5RagNewsContractTest(unittest.TestCase):
         )
 
     def test_model_selection_rule_has_no_test_shopping_escape_hatch(self) -> None:
-        rule = _load(ROOT / "contracts/examples/foreign-news-model-selection-v1.pending.valid.json")
+        rule = _load(ROOT / "contracts/examples/foreign-news-model-selection-v1.valid.json")
         validator = self.validators["foreign-news-model-selection-v1"]
         self.assertEqual([], list(validator.iter_errors(rule)))
         validate_semantics("foreign-news-model-selection-v1", rule)

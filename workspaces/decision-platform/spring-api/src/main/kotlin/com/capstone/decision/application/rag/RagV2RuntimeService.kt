@@ -1,5 +1,6 @@
 package com.capstone.decision.application.rag
 
+import org.springframework.beans.factory.ObjectProvider
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -11,7 +12,7 @@ import java.time.ZoneOffset
 
 @Service
 class RagV2RuntimeService(
-    private val jdbc: NamedParameterJdbcTemplate,
+    private val jdbcProvider: ObjectProvider<NamedParameterJdbcTemplate>,
     private val cursorPort: RagHistoryCursorPort,
     private val cryptoPort: RagHistoryCryptoPort,
     private val objectMapper: ObjectMapper,
@@ -22,6 +23,7 @@ class RagV2RuntimeService(
      */
     @Transactional(readOnly = true)
     fun corpusStatus(ownerUserId: String): RagV2CorpusStatus {
+        val jdbc = jdbc()
         setActor(ownerUserId)
         return jdbc
             .query(
@@ -75,6 +77,7 @@ class RagV2RuntimeService(
         limit: Int,
     ): RagV2HistoryPage {
         val point = cursor?.let { cursorPort.decode(ownerUserId, it) }
+        val jdbc = jdbc()
         setActor(ownerUserId)
         val rows =
             jdbc.query(
@@ -118,6 +121,7 @@ class RagV2RuntimeService(
         ownerUserId: String,
         answerId: String,
     ): RagV2HistoryDetail {
+        val jdbc = jdbc()
         setActor(ownerUserId)
         return jdbc
             .query(
@@ -137,6 +141,7 @@ class RagV2RuntimeService(
         ownerUserId: String,
         answerId: String,
     ) {
+        val jdbc = jdbc()
         setActor(ownerUserId)
         jdbc.queryForObject(
             "SELECT delete_owned_rag_v2_history(:ownerUserId, :answerId)",
@@ -191,7 +196,7 @@ class RagV2RuntimeService(
             .toList()
 
     private fun setActor(ownerUserId: String) {
-        jdbc.queryForObject(
+        jdbc().queryForObject(
             "SELECT set_config('app.actor_user_id', :ownerUserId, true)",
             mapOf("ownerUserId" to ownerUserId),
             String::class.java,
@@ -199,4 +204,8 @@ class RagV2RuntimeService(
     }
 
     private fun ResultSet.instant(column: String) = getObject(column, OffsetDateTime::class.java).toInstant()
+
+    private fun jdbc(): NamedParameterJdbcTemplate =
+        jdbcProvider.getIfAvailable()
+            ?: throw RagGuardHistoryUnavailableException()
 }

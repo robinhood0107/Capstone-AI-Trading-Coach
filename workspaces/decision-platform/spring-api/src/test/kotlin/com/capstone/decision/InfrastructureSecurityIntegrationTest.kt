@@ -103,10 +103,15 @@ class InfrastructureSecurityIntegrationTest {
             listOf(
                 "issue_rag_rpc_scope(text,text,jsonb)",
                 "recheck_rag_rpc_citations(text,text,text,text,bigint,text,text,jsonb)",
+                "read_rag_v2_corpus_status(text)",
+                "read_rag_v2_history_metadata(text,timestamp with time zone,text,integer)",
+                "read_rag_v2_history_detail(text,text)",
+                "delete_owned_rag_v2_history(text,text)",
+                "delete_owner_rag_v2_document(text,text,text,text)",
             ).forEach { function ->
                 assertTrue(
                     hasFunctionPrivilege(connection, "decision_app", function),
-                    "bootstrap removed the S4.6 RAG RPC function grant for $function",
+                    "bootstrap removed the RAG owner-scoped function grant for $function",
                 )
             }
             listOf(

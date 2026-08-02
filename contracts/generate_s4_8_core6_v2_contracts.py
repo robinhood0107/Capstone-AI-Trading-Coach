@@ -502,6 +502,7 @@ def _probe_receipt_schema() -> dict[str, Any]:
                     "approvedLogicalCap": {"const": 1},
                     "approvedPhysicalCallCap": {"const": 1},
                     "logicalCalls": {"const": 1},
+                    "physicalCalls": {"const": 1},
                     "projectionHash": {"const": None},
                     "providerStatusClass": {
                         "enum": ["HTTP_4XX", "HTTP_5XX", "TRANSPORT"]
@@ -510,7 +511,10 @@ def _probe_receipt_schema() -> dict[str, Any]:
                         "minItems": 1,
                         "maxItems": 1,
                         "items": {
-                            "properties": {"outcome": {"const": "FAIL_CLOSED"}}
+                            "properties": {
+                                "outcome": {"const": "FAIL_CLOSED"},
+                                "physicalCalls": {"const": 1},
+                            }
                         },
                     },
                 }
@@ -774,6 +778,24 @@ def _invalid_fixtures() -> dict[str, dict[str, Any]]:
     receipt_success_zero_calls = copy.deepcopy(receipt)
     receipt_success_zero_calls["outcome"] = "SUCCESS"
 
+    receipt_failed_zero_calls = copy.deepcopy(receipt)
+    receipt_failed_zero_calls.update(
+        {
+            "approvedLogicalCap": 1,
+            "approvedPhysicalCallCap": 1,
+            "logicalCalls": 1,
+            "outcome": "FAILED",
+            "providerStatusClass": "HTTP_4XX",
+            "steps": [
+                {
+                    "outcome": "FAIL_CLOSED",
+                    "physicalCalls": 0,
+                    "step": "DATA_REQUEST",
+                }
+            ],
+        }
+    )
+
     receipt_projection_provider_call = copy.deepcopy(receipt)
     receipt_projection_provider_call.update(
         {
@@ -815,6 +837,7 @@ def _invalid_fixtures() -> dict[str, dict[str, Any]]:
         "contracts/examples/invalid/cross_market_provider_probe_receipt.v1.receipt-raw-storage.invalid.json": receipt_raw_storage,
         "contracts/examples/invalid/cross_market_provider_probe_receipt.v1.receipt-provider-body.invalid.json": receipt_provider_body,
         "contracts/examples/invalid/cross_market_provider_probe_receipt.v1.receipt-success-zero-calls.invalid.json": receipt_success_zero_calls,
+        "contracts/examples/invalid/cross_market_provider_probe_receipt.v1.receipt-failed-zero-calls.invalid.json": receipt_failed_zero_calls,
         "contracts/examples/invalid/cross_market_provider_probe_receipt.v1.receipt-projection-provider-call.invalid.json": receipt_projection_provider_call,
     }
 
@@ -984,10 +1007,12 @@ def _validate_receipt(payload: Mapping[str, Any]) -> None:
             payload["approvedLogicalCap"] != 1
             or payload["approvedPhysicalCallCap"] != 1
             or payload["logicalCalls"] != 1
+            or payload["physicalCalls"] != 1
             or payload["providerStatusClass"] not in {"HTTP_4XX", "HTTP_5XX", "TRANSPORT"}
             or payload["projectionHash"] is not None
             or len(steps) != 1
             or steps[0]["outcome"] != "FAIL_CLOSED"
+            or steps[0]["physicalCalls"] != 1
         ):
             raise ContractValidationError("failed receipt must terminate after one fail-closed step.")
 

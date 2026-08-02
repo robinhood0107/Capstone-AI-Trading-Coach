@@ -65,6 +65,9 @@ jobs:
       - name: Check generated S4.8A cross-market contract artifacts
         run: uv run --frozen python contracts/generate_s4_8a_cross_market_contracts.py --check
 
+      - name: Check generated S4.8 Core 6 v2 contract artifacts
+        run: uv run --frozen python contracts/generate_s4_8_core6_v2_contracts.py --check
+
       - name: Check generated S4.6 RAG proto artifacts
         run: >-
           uv run --project workspaces/decision-platform/python-services --frozen

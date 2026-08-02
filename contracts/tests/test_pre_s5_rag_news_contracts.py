@@ -239,7 +239,7 @@ class PreS5RagNewsContractTest(unittest.TestCase):
         self.assertFalse(voyage["queryUnitFallbackAllowed"])
         self.assertFalse(voyage["partialProfileMixAllowed"])
         self.assertTrue(voyage["orderedPrechunkedDocumentGroupsRequired"])
-        self.assertEqual("FULL_BUNDLE_REBUILD_EVALUATE_CAS", voyage["fallback"])
+        self.assertEqual("FULL_BUNDLE_REBUILD_EVALUATE_CAS", voyage["generationFallback"])
         self.assertEqual("gemini-3.5-flash", vertex["modelId"])
         self.assertEqual(["ADC", "SERVICE_ACCOUNT"], vertex["authentication"])
         self.assertFalse(vertex["developerApiAllowed"])

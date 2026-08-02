@@ -21,7 +21,13 @@ sanitized projection만 재사용한다. KOFIA는 활용 승인과 credential ev
   Signal, Decision, order authority는 모두 `0` 또는 `NONE`이다.
 - checked-in approval fixture는 `fixtureOnly=true`, `TEMPLATE`, logical/physical cap `0`, retry `0`,
   artifact `0`이며 실행할 수 없다.
+- 실행 capacity는 `APPROVED`인 non-fixture packet 하나에만 exact `1/1`로 존재한다. `CONSUMED`와
+  `EXPIRED`는 execution flag와 두 cap을 모두 `0`으로 revoke하며, KOFIA·OpenDART·ECOS는 이 v2
+  entitlement 아래 executable packet이 될 수 없다.
 - receipt fixture는 `NOT_EXECUTED`, empty step ledger, physical call `0`이다.
+- `SUCCESS` receipt는 eligible direct source의 한 번의 `DATA_REQUEST`, logical/physical `1/1`,
+  `HTTP_2XX`, non-null projection hash를 모두 요구한다. `NOT_EXECUTED`가 아닌 projection-only
+  source receipt와 zero-call success는 fail-closed한다.
 - raw body/header/query/sensitive material field 또는 arbitrary query injection은 closed schema가
   거부한다. 실제 packet은 local-only regular 0600 artifact로 별도 runner가 만들어야 하며 이
   contract fixture를 실행 입력으로 사용할 수 없다.
@@ -48,7 +54,13 @@ reuse an already authorized sanitized projection. KOFIA remains
   and RiskEngine, Signal, Decision, and order authority remain `0` or `NONE`.
 - The checked-in approval fixture is `fixtureOnly=true`, `TEMPLATE`, with zero logical/physical caps,
   retry `0`, artifact `0`, and cannot execute.
+- Execution capacity exists only on one non-fixture `APPROVED` packet with exact `1/1` caps. `CONSUMED`
+  and `EXPIRED` revoke both caps and the execution flag; KOFIA, OpenDART, and ECOS cannot become
+  executable packets under this v2 entitlement.
 - The receipt fixture is `NOT_EXECUTED`, has an empty step ledger, and reports zero physical calls.
+- A `SUCCESS` receipt requires one `DATA_REQUEST` from an eligible direct source, logical/physical
+  `1/1`, `HTTP_2XX`, and a non-null projection hash. A projection-only provider receipt or zero-call
+  success fails closed.
 - Closed schemas reject raw body/header/query/sensitive-material fields and arbitrary query injection.
   A real packet must be authored by a later local-only 0600 runner and must never use this fixture as
   executable input.

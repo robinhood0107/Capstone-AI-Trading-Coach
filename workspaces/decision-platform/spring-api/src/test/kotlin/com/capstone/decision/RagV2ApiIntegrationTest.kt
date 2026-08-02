@@ -1,5 +1,7 @@
 package com.capstone.decision
 
+import com.capstone.decision.application.rag.RagHistoryCryptoPort
+import com.capstone.decision.application.rag.RagHistoryIdentity
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
@@ -27,6 +29,9 @@ import org.testcontainers.postgresql.PostgreSQLContainer
 import org.testcontainers.utility.DockerImageName
 import tools.jackson.databind.JsonNode
 import tools.jackson.databind.ObjectMapper
+import java.time.Instant
+import java.time.OffsetDateTime
+import java.time.ZoneOffset
 
 @Testcontainers
 @SpringBootTest(
@@ -37,6 +42,7 @@ import tools.jackson.databind.ObjectMapper
 class RagV2ApiIntegrationTest(
     @Autowired private val webApplicationContext: WebApplicationContext,
     @Autowired private val objectMapper: ObjectMapper,
+    @Autowired private val cryptoPort: RagHistoryCryptoPort,
 ) : SpringApiIntegrationTestBase() {
     private lateinit var mockMvc: MockMvc
     private val ownerJdbc: JdbcTemplate by lazy {
@@ -154,6 +160,7 @@ class RagV2ApiIntegrationTest(
     fun `history surface is owner scoped direct v2 payload and protected tables stay function only`() {
         val token = login("demo-user", userPassword(), "req_rag_v2_login_history")
         val answerId = "rag_historyMissing01"
+        ownerJdbc.update("delete from rag_v2_answer_history where owner_user_id = 'usr_demo_user'")
 
         mockMvc
             .get("/api/v2/rag/history?limit=20") {
@@ -208,6 +215,115 @@ class RagV2ApiIntegrationTest(
                 }
             }
         }
+    }
+
+    @Test
+    fun `history detail returns decrypted owner scoped v2 payload`() {
+        val token = login("demo-user", userPassword(), "req_rag_v2_login_detail")
+        val answerId = "rag_01DETAILDECRYPTID"
+        ownerJdbc.update("delete from rag_v2_answer_history where answer_id = ?", answerId)
+        val createdAt = Instant.parse("2026-08-02T02:50:00Z")
+        val question = "내 문서 기반 RAG는 주문 판단에 영향을 주나요?"
+        val answer = "아니요. RAG v2는 설명과 근거 제공에만 사용됩니다."
+        val encrypted =
+            cryptoPort.encrypt(
+                RagHistoryIdentity(
+                    answerId = answerId,
+                    ownerUserId = "usr_demo_user",
+                    createdAt = createdAt,
+                ),
+                question = question,
+                answer = answer,
+            )
+
+        ownerJdbc.update(
+            """
+            insert into rag_v2_answer_history (
+              answer_id,
+              owner_user_id,
+              request_id,
+              answer_mode,
+              generation_status,
+              citation_coverage,
+              retrieval_failure,
+              guardrail_flags,
+              public_corpus_version,
+              private_overlay_state,
+              kek_version,
+              wrap_nonce,
+              wrapped_dek,
+              wrap_tag,
+              question_nonce,
+              question_ciphertext,
+              question_tag,
+              answer_nonce,
+              answer_ciphertext,
+              answer_tag,
+              citation_count,
+              created_at,
+              expires_at
+            ) values (?, ?, ?, ?, ?, ?, ?, ARRAY[]::text[], ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """.trimIndent(),
+            answerId,
+            "usr_demo_user",
+            "req_rag_v2_detail_seed",
+            "CONCISE",
+            "ANSWERED",
+            1.0,
+            false,
+            "exact30-v1+oa140-draft-v1",
+            "ABSENT",
+            encrypted.kekVersion,
+            encrypted.wrapNonce,
+            encrypted.wrappedDek,
+            encrypted.wrapTag,
+            encrypted.question.nonce,
+            encrypted.question.ciphertext,
+            encrypted.question.tag,
+            encrypted.answer.nonce,
+            encrypted.answer.ciphertext,
+            encrypted.answer.tag,
+            1,
+            OffsetDateTime.ofInstant(createdAt, ZoneOffset.UTC),
+            OffsetDateTime.ofInstant(createdAt.plusSeconds(30L * 24 * 60 * 60), ZoneOffset.UTC),
+        )
+        ownerJdbc.update(
+            """
+            insert into rag_v2_answer_citations (
+              answer_id,
+              owner_user_id,
+              ordinal,
+              citation_kind,
+              source_id,
+              title,
+              canonical_url,
+              locator
+            ) values (?, ?, 1, 'PUBLIC_WEB', ?, ?, ?, ?::jsonb)
+            """.trimIndent(),
+            answerId,
+            "usr_demo_user",
+            "src_s4_7d_contract_001",
+            "S4.7D RAG v2 Contract",
+            "https://example.org/s4-7d-rag-v2",
+            """{"section":"RAG v2"}""",
+        )
+
+        val detail =
+            mockMvc
+                .get("/api/v2/rag/history/$answerId") {
+                    bearer(token)
+                    header("X-Request-Id", "req_rag_v2_history_detail")
+                }.andExpect {
+                    status { isOk() }
+                    jsonPath("$.answerId") { value(answerId) }
+                    jsonPath("$.question") { value(question) }
+                    jsonPath("$.answer") { value(answer) }
+                    jsonPath("$.generationStatus") { value("ANSWERED") }
+                    jsonPath("$.citations[0].citationKind") { value("PUBLIC_WEB") }
+                    jsonPath("$.citations[0].canonicalUrl") { value("https://example.org/s4-7d-rag-v2") }
+                    jsonPath("$.success") { doesNotExist() }
+                }.andReturn()
+        assertSanitized(json(detail))
     }
 
     private fun login(

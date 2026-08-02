@@ -18,6 +18,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Install uv
@@ -86,6 +87,18 @@ jobs:
 
       - name: Verify Pre-S5 document truth freeze
         run: uv run --frozen python contracts/verify_pre_s5_doc_truth_freeze.py --check
+
+      - name: Verify Pre-S5 solo ownership lock
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
+            uv run --frozen python contracts/verify_pre_s5_doc_truth_freeze.py \
+              --solo-ownership-public-check --base "${{ github.event.pull_request.base.sha }}"
+          else
+            uv run --frozen python contracts/verify_pre_s5_doc_truth_freeze.py \
+              --solo-ownership-public-check
+          fi
 
       - name: Validate all contract examples
         run: uv run --frozen python contracts/validate.py

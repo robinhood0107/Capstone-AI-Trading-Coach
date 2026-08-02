@@ -109,10 +109,13 @@ class PreS5DocumentTruthFreezeTest(unittest.TestCase):
             root = Path(temporary_directory)
             base = self._solo_ownership_fixture(root)
             catalog = root / "docs/README.md"
+            prefix, marker, catalog_region = catalog.read_text(encoding="utf-8").partition(
+                "<!-- PRE_S5_SOLO_ROLE_CATALOG_BEGIN -->"
+            )
             catalog.write_text(
-                catalog.read_text(encoding="utf-8").replace(
-                    "TEAMMATE_WORKSPACE_DIFF=0", "TEAMMATE_WORKSPACE_DIFF=1", 1
-                ),
+                prefix
+                + marker
+                + catalog_region.replace("TEAMMATE_WORKSPACE_DIFF=0", "TEAMMATE_WORKSPACE_DIFF=1", 1),
                 encoding="utf-8",
             )
 

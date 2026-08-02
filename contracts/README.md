@@ -469,7 +469,39 @@ uv run --frozen python contracts/validate.py
 상세 결정과 소비자 영향은
 [`20260729-s4-rag-contract-catalog.md`](changes/20260729-s4-rag-contract-catalog.md)를 따른다.
 
-## S4.7D OA140·owner-private RAG v2 계약
+## Pre-S5 active RAG·global-news contract addendum
+
+> 현재 상태: `RAG_AND_GLOBAL_NEWS_CONTRACT_LOCKED / OA112_ACTIVE_CONTRACT_LOCKED /
+> S4_7D_OA112_PHYSICAL_ACTIVATION=NOT_MATERIALIZED / TARGET_NOT_ACTIVE`.
+> 이 addendum은 existing v1 OpenAPI/proto/source-card, exact-30, historical OA112 metadata와
+> `news_sentiment_summary.v2`를 byte-stable하게 보존한다. provider outbound, raw corpus download,
+> materializer, owner import writer와 Optional 3 adapter는 계속 0이다.
+
+`generate_pre_s5_rag_news_contracts.py --check`는 다음 active policy를 deterministic하게 검증한다.
+
+| 산출물 | 현재 lock |
+|---|---|
+| `catalogs/pre-s5-rag-news-contract.v1.json` | logical OA112 14 track × 8, reserve 최대 28, 자동 승격 0, provider/runtime 0 |
+| `schemas/rag-oa112-logical-selection-v1.schema.json` | raw URL/hash를 복제하지 않는 `CONTRACT_LOCKED_NOT_MATERIALIZED` selection |
+| `schemas/rag-oa112-reserve-registry-v1.schema.json` | research-only reserve와 active-generation reference 0 |
+| `schemas/rag-source-card-v4.schema.json` | future OA activation 전 machine fetch/local processing/external embedding/external generation 모두 true 요구 |
+| `schemas/s4-rag-v2-*-v1.schema.json` | external consent/effective status, 5분 single-use import ticket, owner deletion activation/hard-delete, profile policy |
+| `openapi/rag-v2-pre-s5-addendum.openapi.json` | existing ask/status/history bytes를 bind하고 consent/effective-consent/import ticket의 세 route만 더한 addendum; deletion activation/profile policy도 schema로 잠금, route activation은 없음 |
+| `schemas/foreign-news-*.schema.json` | Finnhub personal-local, SEC/Fed official, GDELT offline-reference 설명용 aggregate만 허용 |
+| `openapi/foreign-news-sentiment.v1.openapi.json` | `/api/v2/market-evidence/{symbol}/foreign-news-sentiment` contract-only endpoint |
+| `schemas/s4-8-optional3-*.schema.json` | Finnhub Recommendation/Earnings, Twelve Data, Massive entitlement/template receipt; physical call/retry/raw 0 |
+
+foreign-news response는 `decisionAuthority=NONE`, `allowedUses=[EXPLANATION_ONLY]`,
+`s5FeatureEligible=false`, `riskDecisionHashIncluded=false`, `rawProviderDataStored=false`,
+`articleMetadataStored=false`를 정확히 고정한다. SEC/Fed의 `officialReleaseLocator`는 article metadata가
+아닌 sanitized provenance locator다. GDELT는 existing Decision Platform offline aggregate의
+agreement/conflict reference일 뿐 HTTP transport/executor/outbound implementation은 없다.
+
+Voyage는 `voyage-context-4` 1024차원과 generation-level whole-bundle BGE-M3 fallback/CAS만,
+Vertex는 ADC/service-account `gemini-3.5-flash` 단일 generator·top-5·질문당 1회만 허용한다.
+OpenAI, Gemini Developer API, reranker, verifier, files/batch API와 query-level fallback은 모두 0이다.
+
+## Historical S4.7D OA140·owner-private RAG v2 contract context
 
 > 현재 상태: `S4_7D_CONTRACT=LOCKED / SAFE_PARSER_OCR_RUNTIME=OFFLINE_ONLY /
 > S4_7D_RUNTIME=STUB_FAIL_CLOSED / OA112_HISTORICAL / OA140_TARGET`.
@@ -511,8 +543,9 @@ CPU와 Intel Arc 130V `GPU.0` 실측, 모델·runtime pin과 raw text 없는 선
 
 OA `RELEASED` manifest의 historical release gate는 track마다 8~10개, 전체 112~140개의
 canonical work/revision이다. `OA112_HISTORICAL`은 112개 source의 fixed HTTPS URL과 raw
-SHA-256 metadata만 남긴다. 새 active release는 `OA140_TARGET`, 즉 14 track × 10개와 실제
-source/rights/hash revalidation을 요구한다. 원문·추출 text·embedding은 재배포하지 않는다.
+SHA-256 metadata만 남긴다. historical `OA140_TARGET`은 active policy가 아니며, current logical
+selection과 future physical activation은 위 Pre-S5 addendum을 따른다. 원문·추출 text·embedding은
+재배포하지 않는다.
 `rag-content setup`은 현재 manifest를 검증하고 `BUILDING`으로 들어가지만, 모든 source
 download/parse/embed/eval과 active pointer pin이 끝나기 전에는 `FULL_READY`가 아니다.
 
@@ -534,8 +567,8 @@ uv run --frozen python contracts/validate.py
 
 ## S4.8 교차시장·애널리스트 계약
 
-> 계획 타당성: `PLAN_FEASIBILITY=GO`.
-> 현재 상태: `S4_8A=CONTRACT_ONLY / S4_8_CORE6_V2=CONTRACT_ONLY / S4_8B_C=OFFLINE_ONLY /
+> 계획 타당성: `PLAN_FEASIBILITY=GO_WITH_EXTERNAL_HARD_GATES`.
+> 현재 상태: `S4_8A=CONTRACT_LOCKED / S4_8_CORE6_V2=CONTRACT_ONLY / S4_8B_C=IMPLEMENTED_MERGE_CANDIDATE /
 > S6.6_S6.7=NOT_IMPLEMENTED`.
 > 월 데이터 비용 목표는 `0원`이고 offline fixture·지연/EOD가 먼저다. 기관용 제품과
 > 실시간 SOX/VIX feed는 post-P1 선택지이며 P1 DoD가 아니다. 새 agent framework·별도
@@ -575,7 +608,8 @@ authorized projection만 재사용한다. KOFIA는 `BLOCKED_NO_CREDENTIAL_OR_APP
 실행 capacity는 non-fixture `APPROVED` packet 하나에만 있고 `CONSUMED`/`EXPIRED`는 즉시
 execution flag와 cap을 모두 `0`으로 revoke한다. `SUCCESS` receipt는 eligible direct source의
 정확히 한 번의 `DATA_REQUEST`·`HTTP_2XX`·non-null projection hash를 함께 증명해야 한다.
-GDELT producer, Naver retirement, Optional 3 provider와 v1/V23 경계는 변경하지 않는다.
+GDELT producer, Naver retirement와 v1/V23 경계는 변경하지 않는다. Optional 3는 위 Pre-S5
+addendum의 별도 entitlement/receipt template만 사용하며 Core 6 exact set에 포함하지 않는다.
 
 조사 inventory 42개는 사용 가능한 API 수가 아니다. 39개 machine 연동 후보 계열과 3개
 manual-link 원천의 합이며 현재 S4.8 활성/live provider adapter는 0이다. KIS 18개

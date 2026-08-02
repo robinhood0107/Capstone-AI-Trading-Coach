@@ -61,6 +61,7 @@ GDELT_OUTBOUND_CALLS=0
 GDELT_OFFLINE_REFERENCE_ONLY=1
 NAVER_ACTIVE_PROVIDER_RUNTIME_STORAGE=RETIRED
 RAG_NEWS_ANALYST_DECISION_SIGNAL_ORDER_AUTHORITY=0
+PLAN_FEASIBILITY=GO_WITH_EXTERNAL_HARD_GATES
 ```
 
 Decision Platform은 기존 synthetic/offline GDELT aggregate producer를 소유한다. HTTP transport와
@@ -1102,8 +1103,8 @@ generation과 제출 직전 generation을 다시 비교한다.
 
 `GET /api/v1/risk/cross-market`
 
-> 계획 타당성: `PLAN_FEASIBILITY=GO`.
-> 현재 상태: `S4.8A_CONTRACT=LOCKED / S4_8_CORE6_V2=CONTRACT_ONLY / S4.8B_C_OFFLINE_RUNTIME=IMPLEMENTED_MERGE_CANDIDATE /
+> 계획 타당성: `PLAN_FEASIBILITY=GO_WITH_EXTERNAL_HARD_GATES`.
+> 현재 상태: `S4_8A=CONTRACT_LOCKED / S4_8_CORE6_V2=CONTRACT_ONLY / S4_8B_C=IMPLEMENTED_MERGE_CANDIDATE /
 > ENDPOINT_RUNTIME=NOT_IMPLEMENTED`.
 > 월 데이터 비용 목표는 `0원`, offline fixture와 지연/EOD가 우선이다. 기관용 데이터 제품과
 > 실시간 SOX/VIX feed는 post-P1 선택지이며 P1 완료 조건이 아니다. 새 agent framework·별도
@@ -1491,7 +1492,8 @@ materialization과 pointer transition은 별도 승인 packet이 필요한 CLI �
 
 ### 7.7 RAG v2 계약 상태와 공통 경계
 
-> 현재 상태: `S4_7D_CONTRACT=LOCKED / ACTIVE_V2_RUNTIME=STUB_FAIL_CLOSED`.
+> 현재 상태: `S4_7D_CONTRACT=LOCKED / ACTIVE_V2_RUNTIME=STUB_FAIL_CLOSED /
+> OA112_ACTIVE_CONTRACT_LOCKED / S4_7D_OA112_PHYSICAL_ACTIVATION=NOT_MATERIALIZED`.
 > `contracts/openapi/rag-v2.openapi.json`은 v1 canonical OpenAPI bytes를 변경하지 않기 위한
 > 별도 v2 direct-payload 계약이다. route/history/RLS skeleton은 병합됐지만 OA+owner
 > materializer와 authorized retrieval은 아직 없다. full bundle이 `FULL_READY`가 아니면 질문 API는
@@ -1506,7 +1508,8 @@ bundle로 pin한다. client request에 `corpus`, `profile`, `topK` 또는 이와
 
 #### 7.7.1 Pre-S5 v2 consent/import target (not active)
 
-다음 public surface는 OA140 materializer PR에서 contract/codegen을 먼저 잠근 뒤에만 활성화한다.
+다음 public surface는 logical OA112 materializer implementation에서 contract/codegen을 먼저
+검증한 뒤에만 활성화한다.
 문서에 경로가 적혀도 현재 route availability를 뜻하지 않는다.
 
 ```http
@@ -1564,7 +1567,7 @@ metadata validation은 `CORE_READY`의 전제일 뿐 `FULL_READY` 증거가 아�
   "failureCode": null,
   "privateOverlayState": "BUILDING",
   "progressPercent": 42,
-  "publicCorpusVersion": "exact30-v1+oa140_s4_7d_release_v1",
+  "publicCorpusVersion": "exact30-v1+oa112-logical-pre-s5",
   "state": "BUILDING"
 }
 ```
@@ -1582,6 +1585,32 @@ v2 history는 v1 history bytes를 변경하지 않고 owner-scoped 새 table/DTO
 pin된 public/local tagged union을 유지하고 응답·로그에 owner path를 포함하지 않는다.
 삭제는 owner predicate를 포함한 멱등 처리로 history를 제거하며, 개인 문서 자체의
 generation·text·chunk·embedding hard-delete는 BAT의 별도 document deletion 경계가 소유한다.
+
+### 7.11 Pre-S5 foreign-news explanation-only contract
+
+`GET /api/v2/market-evidence/{symbol}/foreign-news-sentiment`
+
+이 route는 `contracts/openapi/foreign-news-sentiment.v1.openapi.json`의 contract-only surface다.
+root `openapi.json`에 route를 추가하지 않았고, 현재 adapter/provider runtime은 활성화되지 않았다.
+응답은 다음 불변식을 항상 만족한다.
+
+```text
+decisionAuthority=NONE
+allowedUses=[EXPLANATION_ONLY]
+s5FeatureEligible=false
+riskDecisionHashIncluded=false
+rawProviderDataStored=false
+articleMetadataStored=false
+```
+
+lane은 Finnhub personal-local, SEC official, Federal Reserve official, existing GDELT offline
+reference 네 개뿐이다. `officialReleaseLocator`는 SEC/Fed가 보관할 수 있는 sanitized provenance
+locator일 뿐 article metadata가 아니며 Finnhub에는 허용되지 않는다. Finnhub shared/hosted-key mode는 없고,
+GDELT HTTP transport/executor/outbound는
+0이다. headline/summary/body/raw provider data, article title/URL/domain/date, credential, query/header는
+API·DB·log·Vertex input에 넣지 않는다. sentiment benchmark는 ProsusAI FinBERT,
+`yiyanghkust/finbert-tone`, Loughran–McDonald baseline만 validation에서 비교하며, 선택 뒤 test set은
+정확히 한 번만 평가한다. 현재 상태는 `CONTRACT_ONLY`라서 physical call은 0이다.
 
 ---
 

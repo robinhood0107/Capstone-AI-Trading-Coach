@@ -33,9 +33,10 @@ sanitized projection만 재사용한다. KOFIA는 활용 승인과 credential ev
   contract fixture를 실행 입력으로 사용할 수 없다.
 
 이 변경은 provider adapter, migration, V23 table/function, REST/OpenAPI endpoint, snapshot writer,
-RiskEngine wiring, S5 feature, Return/Experience workspace를 변경하지 않는다. GDELT producer는
-팀원 B 소유로 계속 제외하고 Naver runtime을 재활성화하지 않는다. Finnhub/Twelve Data/Massive는
-별도 Optional 3 계약/adapter 단계 전까지 포함하지 않는다.
+RiskEngine wiring, S5 feature, Return/Experience workspace를 변경하지 않는다. 기존 GDELT offline
+aggregate producer는 Decision Platform 소유로 변경 없이 유지하며, 이 변경은 GDELT executor 또는
+outbound implementation을 추가하지 않는다. Naver runtime을 재활성화하지 않으며 Finnhub/Twelve
+Data/Massive는 별도 Optional 3 계약/adapter 단계 전까지 포함하지 않는다.
 
 ## EN: Rationale and scope
 
@@ -66,9 +67,10 @@ reuse an already authorized sanitized projection. KOFIA remains
   executable input.
 
 This change adds no provider adapter, migration, V23 table/function, REST/OpenAPI endpoint, snapshot
-writer, RiskEngine wiring, S5 feature, or Return/Experience workspace change. GDELT production stays
-owned by team member B and Naver remains retired. Finnhub, Twelve Data, and Massive stay outside this
-Core 6 contract until a separate Optional 3 contract/adapter stage.
+writer, RiskEngine wiring, S5 feature, or Return/Experience workspace change. The existing GDELT
+offline aggregate producer remains Decision Platform-owned and unchanged; this change adds no GDELT
+executor or outbound implementation. Naver remains retired. Finnhub, Twelve Data, and Massive stay
+outside this Core 6 contract until a separate Optional 3 contract/adapter stage.
 
 ## 새 계약 / New contracts
 
@@ -93,7 +95,9 @@ S4_8_CORE6_RAW_PROVIDER_PERSISTENCE=0
 S4_8_CORE6_RISK_SIGNAL_ORDER_AUTHORITY=0
 S4_8_CORE6_KOFIA=BLOCKED_NO_CREDENTIAL_OR_APPROVAL
 S4_8_V1_AND_V23_BYTES_UNCHANGED=1
+GDELT_EXISTING_OFFLINE_PRODUCER_UNCHANGED=1
 GDELT_EXECUTOR_ADDED=0
+GDELT_OUTBOUND_IMPLEMENTATION=0
 NAVER_RUNTIME_REACTIVATION=0
 ```
 

@@ -57,11 +57,19 @@ class RagSourceRegistryMigrationIntegrationTest {
                         "rag_answer_citations",
                         "rag_answer_feedback",
                         "rag_provider_usage_ledger",
+                        "rag_v2_public_corpus_state",
+                        "rag_v2_owner_private_generation_pointers",
+                        "rag_v2_owner_documents",
+                        "rag_v2_owner_document_chunks",
+                        "rag_v2_owner_document_embeddings",
+                        "rag_v2_document_deletion_receipts",
+                        "rag_v2_answer_history",
+                        "rag_v2_answer_citations",
                     )
                 assertThat(queryStrings(connection, normalizedTableQuery))
                     .containsAll(expectedTables)
                 assertThat(queryString(connection, "select max(version::integer) from flyway_schema_history where success"))
-                    .isEqualTo("23")
+                    .isEqualTo("24")
 
                 expectedTables.forEach { table ->
                     assertThat(

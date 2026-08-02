@@ -81,6 +81,9 @@ jobs:
       - name: Run contract tooling tests
         run: uv run --frozen python -m unittest discover -s contracts/tests -v
 
+      - name: Verify Pre-S5 document truth freeze
+        run: uv run --frozen python contracts/verify_pre_s5_doc_truth_freeze.py --check
+
       - name: Validate all contract examples
         run: uv run --frozen python contracts/validate.py
 

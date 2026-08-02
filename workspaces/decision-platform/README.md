@@ -27,15 +27,15 @@ KIS outbound는 이 workspace가 단일 owner다. S1.1 client는 실전 18/s har
 ## S4.8→S6.7 교차시장 위험 오버레이
 
 > 계획 타당성: `PLAN_FEASIBILITY=GO`.
-> 구현 상태: `IMPLEMENTATION=SPEC_ONLY / NOT_IMPLEMENTED / PLANNED`.
+> 구현 상태: `S4_8A=CONTRACT_ONLY / S4_8B_C=OFFLINE_ONLY / PROVIDER_ENDPOINT_RISKENGINE=NOT_IMPLEMENTED`.
 > 월 데이터 비용 목표는 `0원`이고 offline fixture·지연/EOD가 먼저다. 기관용 데이터와
 > 실시간 SOX/VIX feed는 post-P1 선택지이고, 새 agent framework·별도 cloud·Kafka는 hard
 > dependency가 아니다.
 >
-> 아래 구조·API·명령은 목표 계약이며,
-> 일곱 schema, `s2-2-system-rule-catalog.v2`, contract-change, fixture/golden vector가
-> contract gate를 통과하기 전에는 구현 또는 실행 가능 상태를 뜻하지 않는다. provider/live
-> account/live order physical call은 0이다.
+> S4.8A는 일곱 schema, `s2-2-system-rule-catalog.v2`, contract-change, fixture/golden vector를
+> 고정한 contract-only 경계다. S4.8B/C는 provider 없는 fixture producer, append-only V23
+> evidence, pure scorer와 latest snapshot read port만 구현했다. provider/live account/live order
+> physical call은 0이며 endpoint와 RiskEngine wiring은 아직 없다.
 
 순서 0 `S4.READ`에서 관련 공개·private 명세를 EOF까지 읽고 receipt·충돌 목록만 남긴다.
 그다음 S4.8A의 일곱 계약, fixture, generator, parity만 담은 contract-only PR을
@@ -61,10 +61,11 @@ P1 기본 mode는 `WARN_ONLY`다. versioned exposure catalog에 명시된 종목
 - 구조화 애널리스트 자료는 같은 증권사의 이전 값 대비 목표가·EPS·매출 revision만 설명에
   사용하고 `BUY` 의견 자체의 가중치는 0이다.
 - 증권사 PDF는 기본 `MANUAL_LINK_ONLY`다. 자동 다운로드·영속 저장·외부 LLM 전송은 하지
-  않는다. 별도 권리 확인을 거친 `LICENSED_EPHEMERAL_LOCAL`도 `투자포인트`, `실적전망`,
-  `Valuation`, `목표주가`, `위험요인`, `Disclaimer` 여섯 절과 사용자가 확인한 bounded tag만
-  projection할 수 있다. `derivedDataAllowed=false`이면 파생 결과도 저장·전달하지 않고
-  임시 입력과 함께 폐기한다.
+  않는다. 사용자가 적법하게 보유한 로컬 파일은 active `LOCAL_EPHEMERAL_PARSE`로 read-only
+  처리할 수 있으나, 이 기술 경계가 이용·재배포 권한을 부여하지는 않는다. projection은
+  `투자포인트`, `실적전망`, `Valuation`, `목표주가`, `위험요인`, `Disclaimer` 여섯 절과 사용자가
+  확인한 bounded tag만 허용한다. `derivedDataAllowed=false`이면 parser/LLM 파생 결과도
+  저장·전달하지 않고 임시 입력과 함께 폐기한다.
 - provider body, PDF·뉴스 원문, credential·계좌 식별자는 DB와 test fixture에 저장하지 않는다.
 - 기존 Decision request/response, RAG ask/history, Signal v1/v2 payload에 추가하는 교차시장
   필드는 0이다. 내부 `CrossMarketDecisionInput(snapshot, exposure)` wrapper와 별도 planned
@@ -77,8 +78,8 @@ P1 기본 mode는 `WARN_ONLY`다. versioned exposure catalog에 명시된 종목
   event-study 결과는 `DATASET_UNAVAILABLE`이다. `evidenceMode=SYNTHETIC_FIXTURE`이면
   `validationStatus=UNVALIDATED`, `performanceClaimAllowed=false`를 강제한다.
 
-S4.8B는 수동/offline EOD materialization, append-only 저장과 I/O 없는 결정적
-`CrossMarketScorer` kernel을 만들 계획이다. S6.6은 scorer output으로 event-study/replay와
+S4.8B는 provider 없는 수동/offline EOD fixture materialization, append-only 저장과 I/O 없는
+결정적 `CrossMarketScorer` kernel을 구현했다. S6.6은 scorer output으로 event-study/replay와
 threshold 동결만 수행하고, S6.7이 snapshot을 materialize해 저장 reader/RiskEngine에 연결한다.
 S7.3은 동일 저장 port의 scheduling만 추가하며 새 provider 호출이나 source ownership을 만들지
 않는다.

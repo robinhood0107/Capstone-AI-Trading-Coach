@@ -234,6 +234,36 @@ class S47dRagV2ContractTest(unittest.TestCase):
         with self.assertRaisesRegex(ContractValidationError, "112..140"):
             validate_semantics("rag-oa-manifest-v1", released)
 
+    def test_tracked_oa112_release_manifest_satisfies_contract_and_self_digest(self) -> None:
+        released = load_json(ROOT / "capstone-rag/manifests/s4-7d-oa140-release.v1.json")
+        validator = self.validators["rag-oa-manifest-v1"]
+
+        self.assertEqual([], list(validator.iter_errors(released)))
+        validate_semantics("rag-oa-manifest-v1", released)
+        self.assertEqual("RELEASED", released["releaseStatus"])
+        self.assertEqual(112, released["sourceCount"])
+        self.assertFalse(released["rawRedistributed"])
+        self.assertFalse(released["extractedTextRedistributed"])
+        self.assertFalse(released["embeddingsRedistributed"])
+        self.assertEqual(
+            {track_id: 8 for track_id in OA_TRACK_IDS},
+            {
+                track["trackId"]: track["sourceCount"]
+                for track in released["tracks"]
+            },
+        )
+        detached = copy.deepcopy(released)
+        detached["releaseDigest"] = None
+        digest = hashlib.sha256(
+            json.dumps(
+                detached,
+                ensure_ascii=False,
+                separators=(",", ":"),
+                sort_keys=True,
+            ).encode("utf-8")
+        ).hexdigest()
+        self.assertEqual(digest, released["releaseDigest"])
+
     def test_v2_request_has_v1_meaning_and_rejects_all_retrieval_controls(self) -> None:
         v1 = load_json(ROOT / "contracts/schemas/s4-rag-ask-request.schema.json")
         v2 = load_json(ROOT / "contracts/schemas/s4-rag-v2-ask-request.schema.json")

@@ -158,6 +158,8 @@ class S48Core6ContractTest(unittest.TestCase):
                 "approval-retry",
                 "approval-expiry",
                 "approval-request-query",
+                "approval-consumed-executable",
+                "approval-expired-executable",
                 "receipt-over-cap",
                 "receipt-raw-storage",
                 "receipt-provider-body",

@@ -6,7 +6,8 @@
     "externalGenerationAllowed"
   ],
   "activationState": "CONTRACT_LOCKED_NOT_MATERIALIZED",
-  "historicalManifestSha256": "a86d8233d1f061fec571201c84963fbdd8c11b47d33f4e91801fe1c911b5c863",
+  "contractId": "rag-oa112-logical-selection-v1",
+  "historicalManifestReference": "S4_7D_OA140_RELEASE_V1_FROZEN",
   "materializationAllowed": false,
   "physicalActivation": "NOT_MATERIALIZED",
   "schemaVersion": 1,

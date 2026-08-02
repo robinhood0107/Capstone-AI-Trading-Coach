@@ -3,6 +3,9 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "properties": {
+    "contractId": {
+      "const": "s4-rag-v2-import-ticket-v1"
+    },
     "expiresAt": {
       "format": "date-time",
       "type": "string"
@@ -35,6 +38,7 @@
     }
   },
   "required": [
+    "contractId",
     "expiresAt",
     "issuedAt",
     "ownerBound",

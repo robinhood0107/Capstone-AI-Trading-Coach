@@ -3,54 +3,483 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "properties": {
+    "contractId": {
+      "const": "foreign-news-lane-entitlement-v1"
+    },
     "lanes": {
-      "items": {
-        "additionalProperties": false,
-        "properties": {
-          "articleMetadataStored": {
-            "const": false
+      "allOf": [
+        {
+          "contains": {
+            "properties": {
+              "laneId": {
+                "const": "FINNHUB_PERSONAL_LOCAL"
+              }
+            },
+            "required": [
+              "laneId"
+            ],
+            "type": "object"
           },
-          "credentialMode": {
-            "enum": [
-              "NONE",
-              "OWNER_PERSONAL_LOCAL_ONLY",
-              "OFFICIAL_ORIGIN_NO_KEY"
-            ]
-          },
-          "laneId": {
-            "enum": [
-              "FINNHUB_PERSONAL_LOCAL",
-              "SEC_OFFICIAL",
-              "FED_OFFICIAL",
-              "GDELT_OFFLINE_REFERENCE"
-            ]
-          },
-          "mode": {
-            "enum": [
-              "CONTRACT_ONLY",
-              "DECISION_PLATFORM_OFFLINE_REFERENCE_ONLY"
-            ]
-          },
-          "providerCallsAllowed": {
-            "const": false
-          },
-          "rawProviderDataStored": {
-            "const": false
-          },
-          "sharedHostedKeyAllowed": {
-            "const": false
-          }
+          "maxContains": 1,
+          "minContains": 1
         },
-        "required": [
-          "articleMetadataStored",
-          "credentialMode",
-          "laneId",
-          "mode",
-          "providerCallsAllowed",
-          "rawProviderDataStored",
-          "sharedHostedKeyAllowed"
-        ],
-        "type": "object"
+        {
+          "contains": {
+            "properties": {
+              "laneId": {
+                "const": "SEC_OFFICIAL"
+              }
+            },
+            "required": [
+              "laneId"
+            ],
+            "type": "object"
+          },
+          "maxContains": 1,
+          "minContains": 1
+        },
+        {
+          "contains": {
+            "properties": {
+              "laneId": {
+                "const": "FED_OFFICIAL"
+              }
+            },
+            "required": [
+              "laneId"
+            ],
+            "type": "object"
+          },
+          "maxContains": 1,
+          "minContains": 1
+        },
+        {
+          "contains": {
+            "properties": {
+              "laneId": {
+                "const": "GDELT_OFFLINE_REFERENCE"
+              }
+            },
+            "required": [
+              "laneId"
+            ],
+            "type": "object"
+          },
+          "maxContains": 1,
+          "minContains": 1
+        }
+      ],
+      "items": {
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "allowedRetainedFields": {
+                "items": false,
+                "maxItems": 1,
+                "minItems": 1,
+                "prefixItems": [
+                  {
+                    "const": "OWNER_LOCAL_DERIVED_AGGREGATE"
+                  }
+                ],
+                "type": "array"
+              },
+              "articleMetadataStored": {
+                "const": false
+              },
+              "attachmentAllowed": {
+                "const": false
+              },
+              "boundedTransientParseOnly": {
+                "const": false
+              },
+              "credentialMode": {
+                "const": "OWNER_PERSONAL_LOCAL_ONLY"
+              },
+              "credentialStored": {
+                "const": false
+              },
+              "derivedCacheDeletionOnExpiryRequired": {
+                "const": true
+              },
+              "endpointAllowance": {
+                "const": "MARKET_AND_COMPANY_NEWS_ONLY"
+              },
+              "externalEntityAllowed": {
+                "const": false
+              },
+              "fixedOriginBinding": {
+                "const": "FINNHUB_FIXED_API_HOST"
+              },
+              "headlineSummaryBodyStored": {
+                "const": false
+              },
+              "laneId": {
+                "const": "FINNHUB_PERSONAL_LOCAL"
+              },
+              "mode": {
+                "const": "CONTRACT_ONLY"
+              },
+              "ownerLocalDerivedOnly": {
+                "const": true
+              },
+              "providerCallsAllowed": {
+                "const": false
+              },
+              "queryOrHeaderStored": {
+                "const": false
+              },
+              "rawForwardedToVertex": {
+                "const": false
+              },
+              "rawProviderDataStored": {
+                "const": false
+              },
+              "redirectAllowed": {
+                "const": false
+              },
+              "sharedHostedKeyAllowed": {
+                "const": false
+              }
+            },
+            "required": [
+              "allowedRetainedFields",
+              "articleMetadataStored",
+              "attachmentAllowed",
+              "boundedTransientParseOnly",
+              "credentialMode",
+              "credentialStored",
+              "derivedCacheDeletionOnExpiryRequired",
+              "endpointAllowance",
+              "externalEntityAllowed",
+              "fixedOriginBinding",
+              "headlineSummaryBodyStored",
+              "laneId",
+              "mode",
+              "ownerLocalDerivedOnly",
+              "providerCallsAllowed",
+              "queryOrHeaderStored",
+              "rawForwardedToVertex",
+              "rawProviderDataStored",
+              "redirectAllowed",
+              "sharedHostedKeyAllowed"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "allowedRetainedFields": {
+                "items": false,
+                "maxItems": 3,
+                "minItems": 3,
+                "prefixItems": [
+                  {
+                    "const": "CONTENT_HASH"
+                  },
+                  {
+                    "const": "DERIVED_AGGREGATE"
+                  },
+                  {
+                    "const": "OFFICIAL_RELEASE_LOCATOR"
+                  }
+                ],
+                "type": "array"
+              },
+              "articleMetadataStored": {
+                "const": false
+              },
+              "attachmentAllowed": {
+                "const": false
+              },
+              "boundedTransientParseOnly": {
+                "const": true
+              },
+              "credentialMode": {
+                "const": "OFFICIAL_ORIGIN_NO_KEY"
+              },
+              "credentialStored": {
+                "const": false
+              },
+              "derivedCacheDeletionOnExpiryRequired": {
+                "const": false
+              },
+              "endpointAllowance": {
+                "const": "OFFICIAL_RELEASES_ONLY"
+              },
+              "externalEntityAllowed": {
+                "const": false
+              },
+              "fixedOriginBinding": {
+                "const": "SEC_GOV_OFFICIAL"
+              },
+              "headlineSummaryBodyStored": {
+                "const": false
+              },
+              "laneId": {
+                "const": "SEC_OFFICIAL"
+              },
+              "mode": {
+                "const": "CONTRACT_ONLY"
+              },
+              "ownerLocalDerivedOnly": {
+                "const": false
+              },
+              "providerCallsAllowed": {
+                "const": false
+              },
+              "queryOrHeaderStored": {
+                "const": false
+              },
+              "rawForwardedToVertex": {
+                "const": false
+              },
+              "rawProviderDataStored": {
+                "const": false
+              },
+              "redirectAllowed": {
+                "const": false
+              },
+              "sharedHostedKeyAllowed": {
+                "const": false
+              }
+            },
+            "required": [
+              "allowedRetainedFields",
+              "articleMetadataStored",
+              "attachmentAllowed",
+              "boundedTransientParseOnly",
+              "credentialMode",
+              "credentialStored",
+              "derivedCacheDeletionOnExpiryRequired",
+              "endpointAllowance",
+              "externalEntityAllowed",
+              "fixedOriginBinding",
+              "headlineSummaryBodyStored",
+              "laneId",
+              "mode",
+              "ownerLocalDerivedOnly",
+              "providerCallsAllowed",
+              "queryOrHeaderStored",
+              "rawForwardedToVertex",
+              "rawProviderDataStored",
+              "redirectAllowed",
+              "sharedHostedKeyAllowed"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "allowedRetainedFields": {
+                "items": false,
+                "maxItems": 3,
+                "minItems": 3,
+                "prefixItems": [
+                  {
+                    "const": "CONTENT_HASH"
+                  },
+                  {
+                    "const": "DERIVED_AGGREGATE"
+                  },
+                  {
+                    "const": "OFFICIAL_RELEASE_LOCATOR"
+                  }
+                ],
+                "type": "array"
+              },
+              "articleMetadataStored": {
+                "const": false
+              },
+              "attachmentAllowed": {
+                "const": false
+              },
+              "boundedTransientParseOnly": {
+                "const": true
+              },
+              "credentialMode": {
+                "const": "OFFICIAL_ORIGIN_NO_KEY"
+              },
+              "credentialStored": {
+                "const": false
+              },
+              "derivedCacheDeletionOnExpiryRequired": {
+                "const": false
+              },
+              "endpointAllowance": {
+                "const": "OFFICIAL_RELEASES_ONLY"
+              },
+              "externalEntityAllowed": {
+                "const": false
+              },
+              "fixedOriginBinding": {
+                "const": "FEDERAL_RESERVE_GOV_OFFICIAL"
+              },
+              "headlineSummaryBodyStored": {
+                "const": false
+              },
+              "laneId": {
+                "const": "FED_OFFICIAL"
+              },
+              "mode": {
+                "const": "CONTRACT_ONLY"
+              },
+              "ownerLocalDerivedOnly": {
+                "const": false
+              },
+              "providerCallsAllowed": {
+                "const": false
+              },
+              "queryOrHeaderStored": {
+                "const": false
+              },
+              "rawForwardedToVertex": {
+                "const": false
+              },
+              "rawProviderDataStored": {
+                "const": false
+              },
+              "redirectAllowed": {
+                "const": false
+              },
+              "sharedHostedKeyAllowed": {
+                "const": false
+              }
+            },
+            "required": [
+              "allowedRetainedFields",
+              "articleMetadataStored",
+              "attachmentAllowed",
+              "boundedTransientParseOnly",
+              "credentialMode",
+              "credentialStored",
+              "derivedCacheDeletionOnExpiryRequired",
+              "endpointAllowance",
+              "externalEntityAllowed",
+              "fixedOriginBinding",
+              "headlineSummaryBodyStored",
+              "laneId",
+              "mode",
+              "ownerLocalDerivedOnly",
+              "providerCallsAllowed",
+              "queryOrHeaderStored",
+              "rawForwardedToVertex",
+              "rawProviderDataStored",
+              "redirectAllowed",
+              "sharedHostedKeyAllowed"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "allowedRetainedFields": {
+                "items": false,
+                "maxItems": 1,
+                "minItems": 1,
+                "prefixItems": [
+                  {
+                    "const": "OFFLINE_AGGREGATE_REFERENCE"
+                  }
+                ],
+                "type": "array"
+              },
+              "articleMetadataStored": {
+                "const": false
+              },
+              "attachmentAllowed": {
+                "const": false
+              },
+              "boundedTransientParseOnly": {
+                "const": false
+              },
+              "credentialMode": {
+                "const": "NONE"
+              },
+              "credentialStored": {
+                "const": false
+              },
+              "derivedCacheDeletionOnExpiryRequired": {
+                "const": false
+              },
+              "endpointAllowance": {
+                "const": "NONE"
+              },
+              "externalEntityAllowed": {
+                "const": false
+              },
+              "fixedOriginBinding": {
+                "const": "NONE"
+              },
+              "gdeltAdapterAdded": {
+                "const": false
+              },
+              "gdeltExecutorAdded": {
+                "const": false
+              },
+              "gdeltOutboundCalls": {
+                "const": 0
+              },
+              "headlineSummaryBodyStored": {
+                "const": false
+              },
+              "laneId": {
+                "const": "GDELT_OFFLINE_REFERENCE"
+              },
+              "mode": {
+                "const": "DECISION_PLATFORM_OFFLINE_REFERENCE_ONLY"
+              },
+              "ownerLocalDerivedOnly": {
+                "const": false
+              },
+              "providerCallsAllowed": {
+                "const": false
+              },
+              "queryOrHeaderStored": {
+                "const": false
+              },
+              "rawForwardedToVertex": {
+                "const": false
+              },
+              "rawProviderDataStored": {
+                "const": false
+              },
+              "redirectAllowed": {
+                "const": false
+              },
+              "sharedHostedKeyAllowed": {
+                "const": false
+              }
+            },
+            "required": [
+              "allowedRetainedFields",
+              "articleMetadataStored",
+              "attachmentAllowed",
+              "boundedTransientParseOnly",
+              "credentialMode",
+              "credentialStored",
+              "derivedCacheDeletionOnExpiryRequired",
+              "endpointAllowance",
+              "externalEntityAllowed",
+              "fixedOriginBinding",
+              "headlineSummaryBodyStored",
+              "laneId",
+              "mode",
+              "ownerLocalDerivedOnly",
+              "providerCallsAllowed",
+              "queryOrHeaderStored",
+              "rawForwardedToVertex",
+              "rawProviderDataStored",
+              "redirectAllowed",
+              "sharedHostedKeyAllowed",
+              "gdeltAdapterAdded",
+              "gdeltExecutorAdded",
+              "gdeltOutboundCalls"
+            ],
+            "type": "object"
+          }
+        ]
       },
       "maxItems": 4,
       "minItems": 4,
@@ -61,6 +490,7 @@
     }
   },
   "required": [
+    "contractId",
     "lanes",
     "schemaVersion"
   ],

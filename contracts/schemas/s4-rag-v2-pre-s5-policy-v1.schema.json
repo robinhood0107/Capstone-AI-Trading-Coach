@@ -10,6 +10,9 @@
         "bge_m3_local_1024_v1"
       ]
     },
+    "contractId": {
+      "const": "s4-rag-v2-pre-s5-policy-v1"
+    },
     "decisionAuthority": {
       "const": "NONE"
     },
@@ -48,6 +51,26 @@
     "vertex": {
       "additionalProperties": false,
       "properties": {
+        "activationEvidenceRequired": {
+          "items": false,
+          "maxItems": 4,
+          "minItems": 4,
+          "prefixItems": [
+            {
+              "const": "CREDENTIAL_FILE_SECURITY"
+            },
+            {
+              "const": "PROJECT_CACHE_STATE"
+            },
+            {
+              "const": "ABUSE_MONITORING_STATE"
+            },
+            {
+              "const": "MODEL_AVAILABILITY"
+            }
+          ],
+          "type": "array"
+        },
         "authentication": {
           "items": false,
           "maxItems": 2,
@@ -62,11 +85,54 @@
           ],
           "type": "array"
         },
+        "boundedJsonCredentialRequired": {
+          "const": true
+        },
+        "contextCacheAllowed": {
+          "const": false
+        },
+        "credentialFileRequirements": {
+          "additionalProperties": false,
+          "properties": {
+            "credentialFileMode": {
+              "const": "0600"
+            },
+            "credentialRootMode": {
+              "const": "0700"
+            },
+            "linkCount": {
+              "const": 1
+            },
+            "ownerMatchRequired": {
+              "const": true
+            },
+            "regularFileRequired": {
+              "const": true
+            }
+          },
+          "required": [
+            "credentialFileMode",
+            "credentialRootMode",
+            "linkCount",
+            "ownerMatchRequired",
+            "regularFileRequired"
+          ],
+          "type": "object"
+        },
         "developerApiAllowed": {
           "const": false
         },
         "fallbackAllowed": {
           "const": false
+        },
+        "fileUploadAllowed": {
+          "const": false
+        },
+        "generationMethod": {
+          "const": "generateContent"
+        },
+        "generationUnavailableStatus": {
+          "const": "GENERATION_UNAVAILABLE"
         },
         "maximumEvidenceCount": {
           "const": 5
@@ -77,24 +143,77 @@
         "modelId": {
           "const": "gemini-3.5-flash"
         },
+        "openAiCallsAllowed": {
+          "const": false
+        },
+        "rawResponseStored": {
+          "const": false
+        },
+        "rerankerAllowed": {
+          "const": false
+        },
+        "retryCount": {
+          "const": 0
+        },
+        "sanitizedUsageLedgerOnly": {
+          "const": true
+        },
+        "searchMapsGroundingAllowed": {
+          "const": false
+        },
+        "sessionResumptionAllowed": {
+          "const": false
+        },
         "toolsFunctionsAllowed": {
+          "const": false
+        },
+        "verifierAllowed": {
           "const": false
         }
       },
       "required": [
+        "activationEvidenceRequired",
         "authentication",
+        "boundedJsonCredentialRequired",
+        "contextCacheAllowed",
+        "credentialFileRequirements",
         "developerApiAllowed",
         "fallbackAllowed",
+        "fileUploadAllowed",
+        "generationMethod",
+        "generationUnavailableStatus",
         "maximumEvidenceCount",
         "maximumGenerateContentCallsPerQuestion",
         "modelId",
-        "toolsFunctionsAllowed"
+        "openAiCallsAllowed",
+        "rawResponseStored",
+        "rerankerAllowed",
+        "retryCount",
+        "sanitizedUsageLedgerOnly",
+        "searchMapsGroundingAllowed",
+        "sessionResumptionAllowed",
+        "toolsFunctionsAllowed",
+        "verifierAllowed"
       ],
       "type": "object"
     },
     "voyage": {
       "additionalProperties": false,
       "properties": {
+        "activationEvidenceRequired": {
+          "items": false,
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "const": "ORGANIZATION_TRAINING_OPT_OUT"
+            },
+            {
+              "const": "PAYMENT_METHOD_PRIVACY_EVIDENCE"
+            }
+          ],
+          "type": "array"
+        },
         "batchApiAllowed": {
           "const": false
         },
@@ -104,11 +223,37 @@
         "filesApiAllowed": {
           "const": false
         },
+        "fullBundleScope": {
+          "items": false,
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "const": "EXACT30"
+            },
+            {
+              "const": "OA112"
+            },
+            {
+              "const": "OWNER_PRIVATE"
+            }
+          ],
+          "type": "array"
+        },
         "generationFallback": {
           "const": "FULL_BUNDLE_REBUILD_EVALUATE_CAS"
         },
         "modelId": {
           "const": "voyage-context-4"
+        },
+        "orderedPrechunkedDocumentGroupsRequired": {
+          "const": true
+        },
+        "outboundCallsAllowed": {
+          "const": false
+        },
+        "partialProfileMixAllowed": {
+          "const": false
         },
         "queryUnitFallbackAllowed": {
           "const": false
@@ -121,11 +266,16 @@
         }
       },
       "required": [
+        "activationEvidenceRequired",
         "batchApiAllowed",
         "dimension",
         "filesApiAllowed",
+        "fullBundleScope",
         "generationFallback",
         "modelId",
+        "outboundCallsAllowed",
+        "orderedPrechunkedDocumentGroupsRequired",
+        "partialProfileMixAllowed",
         "queryUnitFallbackAllowed",
         "retryCount",
         "runtimeEnvironmentVariable"
@@ -134,6 +284,7 @@
     }
   },
   "required": [
+    "contractId",
     "activeEmbeddingProfile",
     "decisionAuthority",
     "generationAuthority",

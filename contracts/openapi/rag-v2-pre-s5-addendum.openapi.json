@@ -10,6 +10,9 @@
             "pattern": "^rce_[A-Za-z0-9_-]{12,96}$",
             "type": "string"
           },
+          "contractId": {
+            "const": "s4-rag-v2-effective-consent-v1"
+          },
           "effective": {
             "type": "boolean"
           },
@@ -33,6 +36,7 @@
           }
         },
         "required": [
+          "contractId",
           "consentEventId",
           "effective",
           "policyDigest",
@@ -57,6 +61,9 @@
           "consentType": {
             "const": "EXTERNAL_AI_RAG_V2"
           },
+          "contractId": {
+            "const": "s4-rag-v2-external-consent-v1"
+          },
           "disclosureDigest": {
             "pattern": "^[0-9a-f]{64}$",
             "type": "string"
@@ -74,6 +81,7 @@
           }
         },
         "required": [
+          "contractId",
           "action",
           "consentType",
           "disclosureDigest",
@@ -89,6 +97,9 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
         "properties": {
+          "contractId": {
+            "const": "s4-rag-v2-import-ticket-v1"
+          },
           "expiresAt": {
             "format": "date-time",
             "type": "string"
@@ -121,6 +132,7 @@
           }
         },
         "required": [
+          "contractId",
           "expiresAt",
           "issuedAt",
           "ownerBound",
@@ -139,6 +151,9 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
         "properties": {
+          "contractId": {
+            "const": "s4-rag-v2-import-ticket-request-v1"
+          },
           "importMode": {
             "const": "LOCAL_EPHEMERAL_PARSE"
           },
@@ -150,6 +165,7 @@
           }
         },
         "required": [
+          "contractId",
           "importMode",
           "schemaVersion",
           "sourceScope"

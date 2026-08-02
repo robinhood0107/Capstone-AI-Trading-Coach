@@ -1,4 +1,5 @@
 {
+  "contractId": "s4-rag-v2-import-ticket-v1",
   "expiresAt": "2026-08-03T00:05:00Z",
   "issuedAt": "2026-08-03T00:00:00Z",
   "ownerBound": true,

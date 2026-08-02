@@ -204,6 +204,19 @@ class S48Core6ContractTest(unittest.TestCase):
             )
             self.assertEqual(["README.md"], files)
 
+    def test_contract_change_keeps_gdelt_as_decision_platform_offline_only(self) -> None:
+        change = (
+            ROOT / "contracts/changes/20260802-s4-8-core6-v2-contract-lock.md"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("Decision Platform", change)
+        self.assertIn("GDELT_EXISTING_OFFLINE_PRODUCER_UNCHANGED=1", change)
+        self.assertIn("GDELT_EXECUTOR_ADDED=0", change)
+        self.assertIn("GDELT_OUTBOUND_IMPLEMENTATION=0", change)
+        self.assertIn("Return/Experience workspace", change)
+        self.assertNotIn("팀원 B", change)
+        self.assertNotIn("team member B", change)
+
 
 if __name__ == "__main__":
     unittest.main()

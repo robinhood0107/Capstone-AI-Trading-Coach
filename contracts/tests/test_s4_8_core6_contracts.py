@@ -4,6 +4,7 @@ import hashlib
 import json
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -17,6 +18,7 @@ from contracts.generate_s4_8_core6_v2_contracts import (
     OUTPUTS,
     SCHEMA_PATHS,
     VALID_FIXTURE_PATHS,
+    _unexpected_core6_artifact_paths,
     generate_outputs,
     validate_semantics,
 )
@@ -54,6 +56,24 @@ class S48Core6ContractTest(unittest.TestCase):
         )
         self.assertEqual(0, completed.returncode, completed.stderr)
         self.assertIn("S4_8_CORE6_CONTRACT_LOCK_VERIFIED", completed.stdout)
+
+    def test_generated_check_rejects_extra_core6_named_artifacts(self) -> None:
+        # 실제 approval packet은 local-only runner 경계 밖에 두어야 한다. public generated
+        # fixture namespace에 추가되면 check가 fail-closed해야 한다.
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            unexpected = (
+                temporary_root
+                / "contracts/examples/"
+                "cross_market_provider_probe_approval.v1.approved.valid.json"
+            )
+            unexpected.parent.mkdir(parents=True)
+            unexpected.write_text("{}", encoding="utf-8")
+
+            self.assertEqual(
+                [unexpected.relative_to(temporary_root).as_posix()],
+                _unexpected_core6_artifact_paths(temporary_root, OUTPUTS),
+            )
 
     def test_core_six_registry_is_contract_locked_and_never_active(self) -> None:
         registry = _load(

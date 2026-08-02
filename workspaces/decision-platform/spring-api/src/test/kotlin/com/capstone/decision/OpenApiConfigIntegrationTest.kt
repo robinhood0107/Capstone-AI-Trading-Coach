@@ -1,6 +1,7 @@
 package com.capstone.decision
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -606,6 +607,35 @@ class OpenApiConfigIntegrationTest(
         assertEquals(
             64,
             validationDetails.at("/properties/violations/maxItems").intValue(),
+        )
+    }
+
+    @Test
+    fun `openapi keeps active RAG v2 routes out of the v1 generated document`() {
+        val document =
+            objectMapper.readTree(
+                mockMvc
+                    .get("/v3/api-docs")
+                    .andExpect {
+                        status { isOk() }
+                    }.andReturn()
+                    .response
+                    .contentAsByteArray,
+            )
+
+        assertFalse(
+            document
+                .at("/paths")
+                .propertyNames()
+                .asSequence()
+                .any { it.startsWith("/api/v2/rag/") },
+        )
+        assertFalse(
+            document
+                .at("/components/schemas")
+                .propertyNames()
+                .asSequence()
+                .any { it.startsWith("RagV2") },
         )
     }
 

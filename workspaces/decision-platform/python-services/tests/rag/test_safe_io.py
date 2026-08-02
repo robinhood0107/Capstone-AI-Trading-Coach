@@ -82,6 +82,51 @@ def test_read_approved_regular_file_rejects_symlink_leaf(posix_tmp_path: Path) -
         read_approved_regular_file(approved_root=root, relative_path="link.md", max_bytes=64)
 
 
+@pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlink support is required")
+def test_approved_root_rejects_intermediate_symlink_component(posix_tmp_path: Path) -> None:
+    real_parent = posix_tmp_path / "real-parent"
+    real_root = real_parent / "approved"
+    cards = real_root / "cards"
+    cards.mkdir(parents=True)
+    sentinel = cards / "card.md"
+    sentinel.write_bytes(b"outside sentinel")
+
+    linked_parent = posix_tmp_path / "linked-parent"
+    os.symlink(real_parent, linked_parent, target_is_directory=True)
+    aliased_root = linked_parent / "approved"
+
+    with pytest.raises(RagSafeIoError):
+        read_approved_regular_file(
+            approved_root=aliased_root,
+            relative_path="cards/card.md",
+            max_bytes=64,
+        )
+    with pytest.raises(RagSafeIoError):
+        list_approved_regular_files(
+            approved_root=aliased_root,
+            relative_directory="cards",
+            max_entries=4,
+            max_bytes=64,
+        )
+    with pytest.raises(RagSafeIoError):
+        write_approved_new_file(
+            approved_root=aliased_root,
+            relative_path="cards/new.md",
+            content=b"must not publish through root alias",
+            max_bytes=128,
+        )
+    with pytest.raises(RagSafeIoError):
+        write_approved_generated_file(
+            approved_root=aliased_root,
+            relative_path="cards/card.md",
+            content=b"must not replace through root alias",
+            max_bytes=128,
+        )
+
+    assert sentinel.read_bytes() == b"outside sentinel"
+    assert not (cards / "new.md").exists()
+
+
 def test_read_approved_regular_file_rejects_directory_leaf(posix_tmp_path: Path) -> None:
     root = posix_tmp_path / "approved"
     (root / "nested").mkdir(parents=True)

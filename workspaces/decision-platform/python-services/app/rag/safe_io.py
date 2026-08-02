@@ -243,18 +243,35 @@ def _require_absolute_existing_root(root: Path) -> Path:
 
 
 def _open_root(root: Path) -> int:
-    root_fd = -1
+    current_fd = -1
     try:
-        root_fd = os.open(root, _DIRECTORY_FLAGS)
-        _require_owned_nonwritable_directory(root_fd)
-        return root_fd
+        # POSIX O_NOFOLLOW는 pathname 전체가 아니라 열고 있는 마지막 component에만
+        # 적용된다. owner-private import의 approved_root는 caller가 제공하는 경계이므로,
+        # 중간 symlink까지 막기 위해 `/`에서 시작해 각 component를 dirfd 기준으로 연다.
+        current_fd = os.open("/", _DIRECTORY_FLAGS)
+        for component in root.parts[1:]:
+            next_fd = -1
+            try:
+                next_fd = os.open(component, _DIRECTORY_FLAGS, dir_fd=current_fd)
+            except OSError as error:
+                if error.errno in {errno.ELOOP, errno.ENOTDIR, errno.ENOENT}:
+                    raise RagSafeIoError(
+                        "RAG approved root is not a safe directory."
+                    ) from None
+                raise RagSafeIoError(
+                    "RAG approved root could not be opened safely."
+                ) from None
+            os.close(current_fd)
+            current_fd = next_fd
+        _require_owned_nonwritable_directory(current_fd)
+        return current_fd
     except RagSafeIoError:
-        if root_fd >= 0:
-            os.close(root_fd)
+        if current_fd >= 0:
+            os.close(current_fd)
         raise
     except OSError as error:
-        if root_fd >= 0:
-            os.close(root_fd)
+        if current_fd >= 0:
+            os.close(current_fd)
         if error.errno in {errno.ELOOP, errno.ENOTDIR, errno.ENOENT}:
             raise RagSafeIoError("RAG approved root is not a safe directory.") from None
         raise RagSafeIoError("RAG approved root could not be opened safely.") from None

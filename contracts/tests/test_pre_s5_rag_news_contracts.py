@@ -188,7 +188,7 @@ class PreS5RagNewsContractTest(unittest.TestCase):
         self.assertEqual(0, optional3["providerCallsAllowed"])
         self.assertEqual(0, optional3["receiptExecutionAllowed"])
         self.assertEqual(
-            ["FINNHUB_RECOMMENDATION_EARNINGS", "TWELVE_DATA", "MASSIVE"],
+            ["FINNHUB_OPTIONAL3", "TWELVE_DATA", "MASSIVE"],
             optional3["providerFamilies"],
         )
 
@@ -201,8 +201,8 @@ class PreS5RagNewsContractTest(unittest.TestCase):
         self.assertEqual("NOT_SELECTED", rule["selectionStatus"])
 
     def test_all_required_invalid_fixtures_fail_closed(self) -> None:
-        self.assertEqual(12, len(INVALID_FIXTURE_PATHS))
-        self.assertEqual(13, len(VALID_FIXTURE_PATHS))
+        self.assertEqual(13, len(INVALID_FIXTURE_PATHS))
+        self.assertEqual(15, len(VALID_FIXTURE_PATHS))
         for relative_path in sorted(INVALID_FIXTURE_PATHS):
             payload = _load(ROOT / relative_path)
             schema_id = Path(relative_path).name.split(".", maxsplit=1)[0]

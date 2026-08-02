@@ -1,0 +1,457 @@
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+from jsonschema import Draft202012Validator
+
+from contracts.generate_principle_contracts import ContractValidationError, load_json_bytes_strict
+from contracts.generate_s4_8_core6_v2_contracts import (
+    CORE6_SOURCE_FAMILIES,
+    FROZEN_V1_HASHES,
+    INVALID_FIXTURE_PATHS,
+    OUTPUTS,
+    SCHEMA_PATHS,
+    VALID_FIXTURE_PATHS,
+    _check_outputs,
+    _unexpected_core6_artifact_paths,
+    generate_outputs,
+    validate_semantics,
+)
+
+
+ROOT = Path(__file__).resolve().parents[2]
+
+
+def _load(relative_path: str) -> object:
+    path = ROOT / relative_path
+    return load_json_bytes_strict(
+        path.read_bytes(), source=path.relative_to(ROOT).as_posix()
+    )
+
+
+class S48Core6ContractTest(unittest.TestCase):
+    def test_generator_is_deterministic_complete_and_checked_in(self) -> None:
+        first = generate_outputs()
+        second = generate_outputs()
+
+        self.assertEqual(first, second)
+        self.assertEqual(OUTPUTS, frozenset(first))
+        self.assertTrue(all(payload.endswith(b"\n") for payload in first.values()))
+
+        completed = subprocess.run(
+            [
+                sys.executable,
+                str(ROOT / "contracts/generate_s4_8_core6_v2_contracts.py"),
+                "--check",
+            ],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(0, completed.returncode, completed.stderr)
+        self.assertIn("S4_8_CORE6_CONTRACT_LOCK_VERIFIED", completed.stdout)
+
+    def test_generated_check_rejects_extra_core6_packets_at_any_fixture_depth(self) -> None:
+        # 실제 approval packet은 local-only runner 경계 밖에 두어야 한다. public generated
+        # fixture tree의 nested/hidden 경로 또는 임의 파일명에 추가돼도 check가 fail-closed해야 한다.
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            outputs = generate_outputs()
+            for relative_path, content in outputs.items():
+                path = temporary_root / relative_path
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(content)
+
+            template = _load(
+                "contracts/examples/cross_market_provider_probe_approval.v1.template.valid.json"
+            )
+            self.assertIsInstance(template, dict)
+            approved_packet = dict(template)
+            approved_packet["approvalStatus"] = "APPROVED"
+            approved_packet["executionAllowed"] = True
+            approved_packet["fixtureOnly"] = False
+            approved_packet["caps"] = {
+                **approved_packet["caps"],
+                "logicalCap": 1,
+                "physicalCallCap": 1,
+            }
+            unexpected_paths = [
+                temporary_root / "contracts/examples/approved-packet.json",
+                temporary_root / "contracts/examples/.local/approved-packet.json",
+                temporary_root
+                / "contracts/examples/local-only/approved-packet.json",
+                temporary_root
+                / "contracts/examples/local-only/approved-packet.local",
+            ]
+            for unexpected in unexpected_paths:
+                unexpected.parent.mkdir(parents=True, exist_ok=True)
+                unexpected.write_text(
+                    json.dumps(approved_packet, sort_keys=True),
+                    encoding="utf-8",
+                )
+
+            self.assertEqual(
+                sorted(path.relative_to(temporary_root).as_posix() for path in unexpected_paths),
+                _unexpected_core6_artifact_paths(temporary_root, outputs),
+            )
+            with self.assertRaisesRegex(
+                ContractValidationError,
+                "unexpected Core 6 generated namespace artifacts",
+            ):
+                _check_outputs(outputs, root=temporary_root)
+
+    def test_generated_check_rejects_extra_core6_packets_at_any_schema_depth(self) -> None:
+        # schema tree도 public generated namespace다. 파일명·확장자·depth·hardlink가 달라도
+        # local-only APPROVED packet을 숨길 수 없고, 무관한 schema는 계속 허용해야 한다.
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            outputs = generate_outputs()
+            for relative_path, content in outputs.items():
+                path = temporary_root / relative_path
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(content)
+
+            unrelated_schema = temporary_root / "contracts/schemas/unrelated.schema.json"
+            unrelated_schema.write_text(
+                json.dumps({"$schema": "https://json-schema.org/draft/2020-12/schema"}),
+                encoding="utf-8",
+            )
+            self.assertEqual(
+                [], _unexpected_core6_artifact_paths(temporary_root, outputs)
+            )
+            _check_outputs(outputs, root=temporary_root)
+
+            template = _load(
+                "contracts/examples/cross_market_provider_probe_approval.v1.template.valid.json"
+            )
+            self.assertIsInstance(template, dict)
+            approved_packet = dict(template)
+            approved_packet["approvalStatus"] = "APPROVED"
+            approved_packet["executionAllowed"] = True
+            approved_packet["fixtureOnly"] = False
+            approved_packet["caps"] = {
+                **approved_packet["caps"],
+                "logicalCap": 1,
+                "physicalCallCap": 1,
+            }
+            unexpected_paths = [
+                temporary_root / "contracts/schemas/opaque-approved.schema.json",
+                temporary_root / "contracts/schemas/.local/approved-packet",
+            ]
+            for unexpected in unexpected_paths:
+                unexpected.parent.mkdir(parents=True, exist_ok=True)
+                unexpected.write_text(
+                    json.dumps(approved_packet, sort_keys=True),
+                    encoding="utf-8",
+                )
+
+            hardlink_source = temporary_root / "approved-packet-source"
+            hardlink_source.write_text(
+                json.dumps(approved_packet, sort_keys=True), encoding="utf-8"
+            )
+            hardlink_path = temporary_root / "contracts/schemas/.cache/approved-hardlink"
+            hardlink_path.parent.mkdir(parents=True, exist_ok=True)
+            os.link(hardlink_source, hardlink_path)
+            unexpected_paths.append(hardlink_path)
+
+            schema_alias = temporary_root / "contracts/schemas/.cache/schema-alias"
+            schema_alias.parent.mkdir(parents=True, exist_ok=True)
+            schema_alias.write_bytes(
+                outputs[
+                    "contracts/schemas/"
+                    "cross_market_provider_probe_approval.v1.schema.json"
+                ]
+            )
+            unexpected_paths.append(schema_alias)
+
+            self.assertEqual(
+                sorted(path.relative_to(temporary_root).as_posix() for path in unexpected_paths),
+                _unexpected_core6_artifact_paths(temporary_root, outputs),
+            )
+            with self.assertRaisesRegex(
+                ContractValidationError,
+                "unexpected Core 6 generated namespace artifacts",
+            ):
+                _check_outputs(outputs, root=temporary_root)
+
+    def test_generated_check_rejects_symlinked_public_schema_paths(self) -> None:
+        # public schema tree의 link는 대상이 무관한 JSON처럼 보여도 local-only 파일을 숨기거나
+        # checkout 밖 bytes를 읽게 할 수 있으므로, Core 6 generated check가 path 자체를 거부해야 한다.
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            outputs = generate_outputs()
+            for relative_path, content in outputs.items():
+                path = temporary_root / relative_path
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(content)
+
+            external_directory = temporary_root / "external-schema"
+            external_directory.mkdir()
+            external_leaf = external_directory / "opaque.json"
+            external_leaf.write_text("{}", encoding="utf-8")
+            linked_leaf = temporary_root / "contracts/schemas/.local/linked-schema"
+            linked_leaf.parent.mkdir(parents=True, exist_ok=True)
+            linked_leaf.symlink_to(external_leaf)
+            linked_directory = temporary_root / "contracts/schemas/.remote"
+            linked_directory.symlink_to(external_directory, target_is_directory=True)
+
+            self.assertEqual(
+                [
+                    "contracts/schemas/.local/linked-schema",
+                    "contracts/schemas/.remote",
+                ],
+                _unexpected_core6_artifact_paths(temporary_root, outputs),
+            )
+            with self.assertRaisesRegex(
+                ContractValidationError,
+                "unexpected Core 6 generated namespace artifacts",
+            ):
+                _check_outputs(outputs, root=temporary_root)
+
+    def test_generated_check_rejects_a_symlinked_public_fixture_parent(self) -> None:
+        # generated check는 leaf뿐 아니라 public fixture directory의 상위 경로도 checkout
+        # 안의 regular directory여야 한다. 그렇지 않으면 local-only packet이 symlink target에 숨는다.
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            external_fixtures = temporary_root / "external-fixtures"
+            outputs = generate_outputs()
+            for relative_path, content in outputs.items():
+                path = temporary_root / relative_path
+                if relative_path.startswith("contracts/examples/"):
+                    path = external_fixtures / Path(relative_path).relative_to(
+                        "contracts/examples"
+                    )
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(content)
+
+            fixture_parent = temporary_root / "contracts"
+            (fixture_parent / "examples").symlink_to(
+                external_fixtures,
+                target_is_directory=True,
+            )
+
+            with self.assertRaisesRegex(
+                ContractValidationError,
+                "generated S4.8 Core 6 artifacts drifted",
+            ):
+                _check_outputs(outputs, root=temporary_root)
+
+    def test_core_six_registry_is_contract_locked_and_never_active(self) -> None:
+        registry = _load(
+            "contracts/examples/market_source_entitlement.v2.valid.json"
+        )
+        self.assertIsInstance(registry, dict)
+        self.assertEqual("market_source_entitlement.v2", registry["contractId"])
+        entries = registry["entitlements"]
+        self.assertEqual(set(CORE6_SOURCE_FAMILIES), {entry["sourceFamily"] for entry in entries})
+        self.assertEqual(6, len(entries))
+        # 공개 fixture는 실제 entitlement 증빙을 운반하지 않는다. 실제 digest는 local-private
+        # registry와 승인 packet에서만 쓰므로, fixture에는 scanner-safe sentinel만 허용한다.
+        self.assertEqual(
+            [f"{index:064x}" for index in range(len(CORE6_SOURCE_FAMILIES))],
+            [entry["accessEvidenceDigest"] for entry in entries],
+        )
+        self.assertEqual(
+            "BLOCKED_NO_CREDENTIAL_OR_APPROVAL",
+            next(entry for entry in entries if entry["sourceFamily"] == "KOFIA")[
+                "activationBlocker"
+            ],
+        )
+        self.assertTrue(
+            all(
+                entry["activationStatus"] in {"CANDIDATE_DISABLED", "BLOCKED"}
+                for entry in entries
+            )
+        )
+        self.assertTrue(all(not entry["providerCallsAllowed"] for entry in entries))
+        self.assertTrue(all(not entry["machineFetchAllowed"] for entry in entries))
+        self.assertTrue(all(not entry["accountCallsAllowed"] for entry in entries))
+        self.assertTrue(all(not entry["orderCallsAllowed"] for entry in entries))
+        self.assertTrue(all(not entry["rawStoreAllowed"] for entry in entries))
+        self.assertTrue(all(not entry["embeddingAllowed"] for entry in entries))
+        self.assertTrue(all(not entry["externalLlmAllowed"] for entry in entries))
+        self.assertTrue(all(entry["decisionAuthority"] == "NONE" for entry in entries))
+        self.assertTrue(
+            all(entry["riskSignalOrderAuthority"] == "NONE" for entry in entries)
+        )
+        self.assertTrue(all(entry["riskEngineAuthority"] == "NONE" for entry in entries))
+        self.assertTrue(all(entry["signalAuthority"] == "NONE" for entry in entries))
+        self.assertTrue(all(entry["orderAuthority"] == "NONE" for entry in entries))
+        self.assertEqual(
+            {"KIS": 18, "SEC_EDGAR": 2, "KRX": 2, "KOFIA": 1},
+            {
+                entry["sourceFamily"]: entry["endpointSetCount"]
+                for entry in entries
+                if entry["sourceFamily"] in {"KIS", "SEC_EDGAR", "KRX", "KOFIA"}
+            },
+        )
+
+    def test_packet_and_receipt_contracts_never_expose_provider_payloads(self) -> None:
+        validators = {
+            schema_id: Draft202012Validator(_load(path.relative_to(ROOT).as_posix()))
+            for schema_id, path in SCHEMA_PATHS.items()
+        }
+        for relative_path in sorted(VALID_FIXTURE_PATHS):
+            payload = _load(relative_path)
+            self.assertIsInstance(payload, dict)
+            schema_id = payload["contractId"]
+            self.assertEqual([], list(validators[schema_id].iter_errors(payload)))
+            validate_semantics(schema_id, payload)
+
+        packet = _load(
+            "contracts/examples/cross_market_provider_probe_approval.v1.template.valid.json"
+        )
+        self.assertIsInstance(packet, dict)
+        self.assertEqual("TEMPLATE", packet["approvalStatus"])
+        self.assertFalse(packet["executionAllowed"])
+        self.assertTrue(packet["fixtureOnly"])
+        self.assertEqual(0, packet["caps"]["retryCap"])
+        self.assertEqual(0, packet["caps"]["artifactCap"])
+
+        receipt = _load(
+            "contracts/examples/cross_market_provider_probe_receipt.v1.not-executed.valid.json"
+        )
+        self.assertIsInstance(receipt, dict)
+        self.assertEqual("NOT_EXECUTED", receipt["outcome"])
+        self.assertEqual(0, receipt["physicalCalls"])
+        self.assertFalse(receipt["rawBodyStored"])
+        self.assertFalse(receipt["rawHeaderStored"])
+        self.assertFalse(receipt["rawQueryStored"])
+        self.assertFalse(receipt["sensitiveMaterialStored"])
+
+        serialized = json.dumps([packet, receipt], ensure_ascii=False)
+        for forbidden in (
+            "authorization",
+            "providerBody",
+            "rawResponse",
+            "requestQuery",
+        ):
+            self.assertNotIn(forbidden, serialized)
+
+    def test_required_negative_fixtures_fail_closed(self) -> None:
+        self.assertEqual(
+            {
+                "unknown-source",
+                "direct-projection-fanout",
+                "kofia-projection-reuse",
+                "active-without-rights",
+                "raw-storage",
+                "endpoint-count",
+                "approval-retry",
+                "approval-expiry",
+                "approval-request-query",
+                "approval-consumed-executable",
+                "approval-expired-executable",
+                "approval-kofia-executable",
+                "approval-endpoint-identity",
+                "receipt-over-cap",
+                "receipt-raw-storage",
+                "receipt-provider-body",
+                "receipt-success-zero-calls",
+                "receipt-failed-zero-calls",
+                "receipt-projection-provider-call",
+                "authority-escalation",
+            },
+            {Path(path).name.split(".")[-3] for path in INVALID_FIXTURE_PATHS},
+        )
+        validators = {
+            schema_id: Draft202012Validator(_load(path.relative_to(ROOT).as_posix()))
+            for schema_id, path in SCHEMA_PATHS.items()
+        }
+        for relative_path in sorted(INVALID_FIXTURE_PATHS):
+            payload = _load(relative_path)
+            self.assertIsInstance(payload, dict)
+            schema_id = payload["contractId"]
+            errors = list(validators[schema_id].iter_errors(payload))
+            semantic_error: ContractValidationError | None = None
+            if not errors:
+                try:
+                    validate_semantics(schema_id, payload)
+                except ContractValidationError as caught:
+                    semantic_error = caught
+            self.assertTrue(errors or semantic_error, relative_path)
+
+    def test_kofia_entitlement_cannot_reuse_an_authorized_projection(self) -> None:
+        relative_path = (
+            "contracts/examples/invalid/"
+            "market_source_entitlement.v2.kofia-projection-reuse.invalid.json"
+        )
+        payload = _load(relative_path)
+        self.assertIsInstance(payload, dict)
+        schema = _load("contracts/schemas/market_source_entitlement.v2.schema.json")
+        self.assertIsInstance(schema, dict)
+
+        self.assertEqual([], list(Draft202012Validator(schema).iter_errors(payload)))
+        with self.assertRaisesRegex(
+            ContractValidationError,
+            "KOFIA must remain credential/approval blocked",
+        ):
+            validate_semantics(payload["contractId"], payload)
+
+    def test_failed_receipt_cannot_hide_a_physical_provider_call(self) -> None:
+        relative_path = (
+            "contracts/examples/invalid/"
+            "cross_market_provider_probe_receipt.v1.receipt-failed-zero-calls.invalid.json"
+        )
+        payload = _load(relative_path)
+        self.assertIsInstance(payload, dict)
+        schema = _load(
+            "contracts/schemas/cross_market_provider_probe_receipt.v1.schema.json"
+        )
+        self.assertIsInstance(schema, dict)
+
+        self.assertNotEqual([], list(Draft202012Validator(schema).iter_errors(payload)))
+        with self.assertRaisesRegex(ContractValidationError, "failed receipt"):
+            validate_semantics(payload["contractId"], payload)
+
+    def test_v1_contracts_and_workspace_boundaries_are_byte_stable(self) -> None:
+        for relative_path, expected_hash in FROZEN_V1_HASHES.items():
+            self.assertEqual(
+                expected_hash,
+                hashlib.sha256((ROOT / relative_path).read_bytes()).hexdigest(),
+                relative_path,
+            )
+
+        for workspace in ("return-engine", "experience-dashboard"):
+            files = sorted(
+                path.relative_to(ROOT / "workspaces" / workspace).as_posix()
+                for path in (ROOT / "workspaces" / workspace).rglob("*")
+                if path.is_file() and not path.is_symlink()
+            )
+            self.assertEqual(["README.md"], files)
+
+    def test_contract_change_keeps_gdelt_as_decision_platform_offline_only(self) -> None:
+        change = (
+            ROOT / "contracts/changes/20260802-s4-8-core6-v2-contract-lock.md"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("Decision Platform", change)
+        self.assertIn("GDELT_EXISTING_OFFLINE_PRODUCER_UNCHANGED=1", change)
+        self.assertIn("GDELT_EXECUTOR_ADDED=0", change)
+        self.assertIn("GDELT_OUTBOUND_IMPLEMENTATION=0", change)
+        self.assertIn("Return/Experience workspace", change)
+        self.assertNotIn("팀원 B", change)
+        self.assertNotIn("team member B", change)
+
+    def test_active_status_ledger_keeps_gdelt_decision_owned_and_offline_only(self) -> None:
+        ledger = (ROOT / "docs/README.md").read_text(encoding="utf-8")
+
+        self.assertIn("| S1.3G | `OFFLINE_ONLY` |", ledger)
+        self.assertIn(
+            "Decision Platform existing GDELT offline aggregate producer unchanged", ledger
+        )
+        self.assertIn("HTTP transport/executor/outbound 0", ledger)
+        self.assertNotIn("| S1.3G | `EXTERNAL_OWNER_HANDOFF` |", ledger)
+        self.assertNotIn("GDELT producer는 팀원 B", ledger)
+
+
+if __name__ == "__main__":
+    unittest.main()

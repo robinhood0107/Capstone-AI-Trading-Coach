@@ -43,7 +43,6 @@ class PreS5DocumentTruthFreezeTest(unittest.TestCase):
                 catalog = "\n".join(SOLO_OWNERSHIP_ROLE_CATALOG)
                 text = (
                     "# Active\n\n"
-                    f"{marker_block}\n\n"
                     "<!-- PRE_S5_SOLO_ROLE_CATALOG_BEGIN -->\n"
                     f"{catalog}\n"
                     "<!-- PRE_S5_SOLO_ROLE_CATALOG_END -->\n"
@@ -139,6 +138,39 @@ class PreS5DocumentTruthFreezeTest(unittest.TestCase):
 
         self.assertIn("docs/API_명세서.md: new teammate dependency was added", errors)
 
+    def test_solo_ownership_lock_rejects_conflicting_authority_assignment(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            base = self._solo_ownership_fixture(root)
+            api = root / "docs/API_명세서.md"
+            api.write_text(
+                api.read_text(encoding="utf-8")
+                + "\nPRE_S5_EXECUTION_OWNER=TEAM_B\n"
+                + "S1_3G=EXTERNAL_OWNER_HANDOFF\n"
+                + "GDELT_OUTBOUND_IMPLEMENTATION=1\n",
+                encoding="utf-8",
+            )
+            self._commit(root, "conflicting authority assignments")
+
+            errors = verify_solo_ownership_lock(root, base)
+
+        self.assertIn(
+            "docs/API_명세서.md: PRE_S5_EXECUTION_OWNER must have exactly one expected authority assignment",
+            errors,
+        )
+        self.assertIn(
+            "docs/API_명세서.md: S1_3G must have exactly one expected authority assignment",
+            errors,
+        )
+        self.assertIn(
+            "docs/API_명세서.md: GDELT_OUTBOUND_IMPLEMENTATION must have exactly one expected authority assignment",
+            errors,
+        )
+        self.assertIn(
+            "docs/API_명세서.md: forbidden stale solo ownership marker EXTERNAL_OWNER_HANDOFF",
+            errors,
+        )
+
     def test_solo_ownership_lock_allows_unrelated_pr_and_live_words(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
@@ -164,6 +196,22 @@ class PreS5DocumentTruthFreezeTest(unittest.TestCase):
 
         self.assertIn("teammate workspace has unexpected tracked paths", errors)
         self.assertIn("teammate workspace changed since base", errors)
+
+    def test_solo_ownership_lock_rejects_immutable_history_changes(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            base = self._solo_ownership_fixture(root)
+            adr = root / "docs/adr/ADR-999-example.md"
+            change = root / "contracts/changes/20260803-example.md"
+            adr.parent.mkdir(parents=True, exist_ok=True)
+            change.parent.mkdir(parents=True, exist_ok=True)
+            adr.write_text("# Historical ADR\n", encoding="utf-8")
+            change.write_text("# Historical contract change\n", encoding="utf-8")
+            self._commit(root, "historical record drift")
+
+            errors = verify_solo_ownership_lock(root, base)
+
+        self.assertIn("immutable historical records changed since base", errors)
 
     def test_solo_ownership_lock_fails_closed_for_an_unknown_base(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

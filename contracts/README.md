@@ -471,11 +471,12 @@ uv run --frozen python contracts/validate.py
 
 ## S4.7D OA140·owner-private RAG v2 계약
 
-> 현재 상태: `S4_7D_CONTRACT=LOCKED / SAFE_PARSER_OCR_RUNTIME=IMPLEMENTED_MERGE_CANDIDATE /
-> CORPUS_RUNTIME=IMPLEMENTED_MERGE_CANDIDATE / OA_RELEASE_MANIFEST=RELEASED_112_SOURCE_CANDIDATE`.
-> 이 절의 schema·fixture·별도 OpenAPI·proto와 OA112 release manifest 잠금은 OA 원문
-> 배포나 전체 parse/embedding/evaluation이 완료됐다는 증거가 아니다. active
-> `/api/v2/rag/**`는 full bundle 미준비 시 typed `CORPUS_NOT_READY`로 fail-closed한다.
+> 현재 상태: `S4_7D_CONTRACT=LOCKED / SAFE_PARSER_OCR_RUNTIME=OFFLINE_ONLY /
+> S4_7D_RUNTIME=STUB_FAIL_CLOSED / OA112_HISTORICAL / OA140_TARGET`.
+> schema·fixture·별도 OpenAPI·proto와 OA112 metadata manifest가 병합됐지만 OA 원문
+> download/parse/embed/evaluation, owner import, derived index writer, bundle activation과 actual
+> retrieval은 없다. `/api/v2/rag/**`는 full bundle 미준비 시 typed `CORPUS_NOT_READY`, 현재
+> skeleton이 그 뒤에 도달해도 `GENERATION_UNAVAILABLE`로 fail-closed한다.
 
 S4.7D는 P1 exact-30과 v1 API를 byte-stable하게 유지하면서, 투자 코치용 공개 OA corpus와
 요청 owner의 개인 문서를 후속 immutable generation으로 결합하는 계약이다. 공개 요청은
@@ -490,9 +491,9 @@ pin한다. 검색은 PostgreSQL/pgvector/pg_trgm과 application RRF `k=60`을 �
 | `schemas/rag-document-ir-v1.schema.json` | heading/paragraph/list/table/formula/caption, page/slide/sheet/section locator, reading order와 OCR evidence |
 | `schemas/rag-oa-manifest-v1.schema.json` | DRAFT/RELEASED manifest, track별 8~10개와 전체 112~140개 release gate |
 | `schemas/s4-rag-v2-*.schema.json` | ask/status/history/error와 `PUBLIC_WEB | LOCAL_DOCUMENT` citation union |
-| `openapi/rag-v2.openapi.json` | v1 OpenAPI를 변경하지 않는 v2 planned surface |
+| `openapi/rag-v2.openapi.json` | v1 OpenAPI를 변경하지 않는 v2 gated surface; materializer/retrieval은 아직 없음 |
 | `proto/rag_v2.proto` | server-selected bundle과 tagged citation을 보존하는 unary `RagService.Ask` v2 |
-| `../capstone-rag/manifests/s4-7d-oa140-release.v1.json` | 14개 track × 8개 = 112개 fixed HTTPS OA source와 raw SHA-256 |
+| `../capstone-rag/manifests/s4-7d-oa140-release.v1.json` | `OA112_HISTORICAL`: 14개 track × 8개 = 112개 fixed HTTPS metadata/source hash; active corpus 아님 |
 | `../capstone-rag/manifests/s4-7d-oa140-curriculum-map.v1.md` | 경제 기초 → 계량·시장 → 금융공학·퀀트 → 통합 검증 학습 경로와 대표 질문 |
 | `../capstone-rag/manifests/s4-7d-oa140-distribution.v1.json` | GitHub Release/Hugging Face metadata-only artifact set과 publication blocker |
 
@@ -508,12 +509,12 @@ CPU와 Intel Arc 130V `GPU.0` 실측, 모델·runtime pin과 raw text 없는 선
 `../capstone-rag/ocr/benchmark/receipts/benchmark-summary.v1.json`에 있다. NVIDIA lane은
 현재 장비가 없어 구현·계약 smoke만 유지하고 `NOT_RUN_NO_NVIDIA`로 기록한다.
 
-OA `RELEASED` manifest는 14개 track의 exact 순서를 유지하고 track마다 8~10개, 전체
-112~140개의 canonical work/revision을 요구한다. 각 track에는 공개 교재·강의,
-원 연구, 현대 review·replication·correction 역할이 모두 있어야 한다. 현재 release candidate는
-112개 source의 fixed HTTPS URL과 raw SHA-256만 추적하며, 원문·추출 text·embedding은
-재배포하지 않는다. `rag-content setup`은 manifest를 검증하고 `BUILDING`으로 들어가지만,
-모든 source download/parse/embed/eval과 active pointer pin이 끝나기 전에는 `FULL_READY`가 아니다.
+OA `RELEASED` manifest의 historical release gate는 track마다 8~10개, 전체 112~140개의
+canonical work/revision이다. `OA112_HISTORICAL`은 112개 source의 fixed HTTPS URL과 raw
+SHA-256 metadata만 남긴다. 새 active release는 `OA140_TARGET`, 즉 14 track × 10개와 실제
+source/rights/hash revalidation을 요구한다. 원문·추출 text·embedding은 재배포하지 않는다.
+`rag-content setup`은 현재 manifest를 검증하고 `BUILDING`으로 들어가지만, 모든 source
+download/parse/embed/eval과 active pointer pin이 끝나기 전에는 `FULL_READY`가 아니다.
 
 재현 명령:
 
@@ -534,14 +535,14 @@ uv run --frozen python contracts/validate.py
 ## S4.8 교차시장·애널리스트 계약
 
 > 계획 타당성: `PLAN_FEASIBILITY=GO`.
-> 현재 상태: `S4.8A_CONTRACT=LOCKED / S4.8B_C_OFFLINE_RUNTIME=IMPLEMENTED_MERGE_CANDIDATE /
+> 현재 상태: `S4_8A=CONTRACT_ONLY / S4_8B_C=OFFLINE_ONLY /
 > S6.6_S6.7=NOT_IMPLEMENTED`.
 > 월 데이터 비용 목표는 `0원`이고 offline fixture·지연/EOD가 먼저다. 기관용 제품과
 > 실시간 SOX/VIX feed는 post-P1 선택지이며 P1 DoD가 아니다. 새 agent framework·별도
 > cloud·Kafka는 hard dependency가 아니다.
 >
 > S4.8A의 machine-readable schema·fixture·catalog와 generator/hash parity는 계약으로
-> 고정됐다. S4.8B/C merge candidate는 provider 없는 Python fixture/scorer/projection,
+> 고정됐다. S4.8B/C offline-only 구현은 provider 없는 Python fixture/scorer/projection,
 > V23 append-only evidence 저장과 Spring latest snapshot read port를 추가한다. snapshot
 > materialization, provider activation, OpenAPI endpoint, RiskEngine 연결은 아직 구현되지 않았다.
 

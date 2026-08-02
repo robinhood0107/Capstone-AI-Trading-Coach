@@ -15,3 +15,8 @@ a92dee4db04f4c916622b526fe00832bd76163e0:contracts/catalogs/s5-0-signal-v2-contr
 
 # S4.7D local parser가 credential 형태를 반드시 격리하는지 확인하는 synthetic fixture다.
 37c0e0a3a4de28c810ef43e0eb3bc148295fb030:workspaces/decision-platform/python-services/tests/rag/test_local_document_parser.py:generic-api-key:404
+
+# Unpublished Pre-S5 catalog history held public immutable-contract integrity digests; these exact scanner fingerprints do not mask arbitrary 64-hex values.
+6f9466bcd9f21ebcc3b81471ee90f5b7558c0a65:contracts/catalogs/pre-s5-rag-news-contract.v1.json:generic-api-key:78
+6f9466bcd9f21ebcc3b81471ee90f5b7558c0a65:contracts/catalogs/pre-s5-rag-news-contract.v1.json:generic-api-key:79
+6f9466bcd9f21ebcc3b81471ee90f5b7558c0a65:contracts/catalogs/pre-s5-rag-news-contract.v1.json:generic-api-key:105

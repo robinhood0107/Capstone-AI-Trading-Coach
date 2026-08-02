@@ -341,6 +341,7 @@ class S48Core6ContractTest(unittest.TestCase):
             {
                 "unknown-source",
                 "direct-projection-fanout",
+                "kofia-projection-reuse",
                 "active-without-rights",
                 "raw-storage",
                 "endpoint-count",
@@ -377,6 +378,23 @@ class S48Core6ContractTest(unittest.TestCase):
                 except ContractValidationError as caught:
                     semantic_error = caught
             self.assertTrue(errors or semantic_error, relative_path)
+
+    def test_kofia_entitlement_cannot_reuse_an_authorized_projection(self) -> None:
+        relative_path = (
+            "contracts/examples/invalid/"
+            "market_source_entitlement.v2.kofia-projection-reuse.invalid.json"
+        )
+        payload = _load(relative_path)
+        self.assertIsInstance(payload, dict)
+        schema = _load("contracts/schemas/market_source_entitlement.v2.schema.json")
+        self.assertIsInstance(schema, dict)
+
+        self.assertEqual([], list(Draft202012Validator(schema).iter_errors(payload)))
+        with self.assertRaisesRegex(
+            ContractValidationError,
+            "KOFIA must remain credential/approval blocked",
+        ):
+            validate_semantics(payload["contractId"], payload)
 
     def test_failed_receipt_cannot_hide_a_physical_provider_call(self) -> None:
         relative_path = (

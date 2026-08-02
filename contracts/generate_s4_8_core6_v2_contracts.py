@@ -723,6 +723,14 @@ def _invalid_fixtures() -> dict[str, dict[str, Any]]:
     )
     projection_entry["ingestionMode"] = "DIRECT_READ_PROBE"
 
+    kofia_projection_reuse = copy.deepcopy(entitlement)
+    kofia_entry = next(
+        entry
+        for entry in kofia_projection_reuse["entitlements"]
+        if entry["sourceFamily"] == "KOFIA"
+    )
+    kofia_entry["ingestionMode"] = "REUSE_AUTHORIZED_PROJECTION"
+
     active_without_rights = copy.deepcopy(entitlement)
     active_without_rights["entitlements"][0]["activationStatus"] = "ACTIVE"
     active_without_rights["entitlements"][0]["providerCallsAllowed"] = True
@@ -827,6 +835,7 @@ def _invalid_fixtures() -> dict[str, dict[str, Any]]:
     return {
         "contracts/examples/invalid/market_source_entitlement.v2.unknown-source.invalid.json": unknown_source,
         "contracts/examples/invalid/market_source_entitlement.v2.direct-projection-fanout.invalid.json": direct_projection_fanout,
+        "contracts/examples/invalid/market_source_entitlement.v2.kofia-projection-reuse.invalid.json": kofia_projection_reuse,
         "contracts/examples/invalid/market_source_entitlement.v2.active-without-rights.invalid.json": active_without_rights,
         "contracts/examples/invalid/market_source_entitlement.v2.raw-storage.invalid.json": raw_storage,
         "contracts/examples/invalid/market_source_entitlement.v2.endpoint-count.invalid.json": endpoint_count,

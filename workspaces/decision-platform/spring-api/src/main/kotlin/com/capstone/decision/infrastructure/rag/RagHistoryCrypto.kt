@@ -208,7 +208,7 @@ class RagHistoryCrypto(
     }
 
     private fun validateIdentity(identity: RagHistoryIdentity) {
-        require(ANSWER_ID.matches(identity.answerId))
+        require(HISTORY_ANSWER_ID.matches(identity.answerId))
         require(OWNER_ID.matches(identity.ownerUserId))
         require(identity.createdAt.toEpochMilli() > 0)
     }
@@ -225,7 +225,7 @@ class RagHistoryCrypto(
         const val TAG_BYTES = 16
         const val TAG_BITS = 128
         const val MAX_FIELD_BYTES = 8_192
-        val ANSWER_ID = Regex("^rag_ans_[0-9a-f]{32}$")
+        val HISTORY_ANSWER_ID = Regex("^rag_[A-Za-z0-9_-]{12,96}$")
         val OWNER_ID = Regex("^[A-Za-z0-9._:-]{1,128}$")
     }
 }

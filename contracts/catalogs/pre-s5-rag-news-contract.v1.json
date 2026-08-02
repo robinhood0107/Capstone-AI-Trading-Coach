@@ -228,13 +228,13 @@
       ],
       "batchApiAllowed": false,
       "dimension": 1024,
-      "fallback": "FULL_BUNDLE_REBUILD_EVALUATE_CAS",
       "filesApiAllowed": false,
       "fullBundleScope": [
         "EXACT30",
         "OA112",
         "OWNER_PRIVATE"
       ],
+      "generationFallback": "FULL_BUNDLE_REBUILD_EVALUATE_CAS",
       "modelId": "voyage-context-4",
       "orderedPrechunkedDocumentGroupsRequired": true,
       "outboundCallsAllowed": false,

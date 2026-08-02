@@ -1,0 +1,35 @@
+{
+  "approvalIdHash": "862b4d2c662aa986cf2c95fb4094efa663c0ca45fd9483839f0f64d0860afbfd",
+  "approvalPayloadHash": "91edd33c855a826a8022b08e2237ed28c0940f7337feb1f76e5dddcea3fb24a3",
+  "approvedLogicalCap": 1,
+  "approvedPhysicalCallCap": 1,
+  "artifactsWritten": 0,
+  "completedAt": "2026-08-02T00:00:00Z",
+  "contractId": "cross_market_provider_probe_receipt.v1",
+  "decisionAuthority": "NONE",
+  "endpointSetIdentityHash": "6a29bac8bbae11865c396fe4c54c2c7abf6d70ecf52a16e2401eb697ddfee271",
+  "headSha": "0000000000000000000000000000000000000000",
+  "logicalCalls": 1,
+  "outcome": "SUCCESS",
+  "physicalCalls": 1,
+  "projectionHash": "fd861a8b809b63f7eaf9c0da301b5902dac8b47dbd4e6eec45952cf89ec3a669",
+  "providerStatusClass": "HTTP_2XX",
+  "rawBodyStored": false,
+  "rawHeaderStored": false,
+  "rawQueryStored": false,
+  "requestPlanDigest": "08f0dbc14320779850131980e9e7f74dd01d477647c6b2008c665a3690be3386",
+  "retries": 0,
+  "riskSignalOrderAuthority": "NONE",
+  "schemaVersion": "1",
+  "sensitiveMaterialStored": false,
+  "sourceFamily": "OPENDART",
+  "sourceId": "S48_CORE6_OPENDART",
+  "startedAt": "2026-08-02T00:00:00Z",
+  "steps": [
+    {
+      "outcome": "SUCCESS",
+      "physicalCalls": 1,
+      "step": "DATA_REQUEST"
+    }
+  ]
+}

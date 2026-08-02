@@ -535,7 +535,7 @@ uv run --frozen python contracts/validate.py
 ## S4.8 교차시장·애널리스트 계약
 
 > 계획 타당성: `PLAN_FEASIBILITY=GO`.
-> 현재 상태: `S4_8A=CONTRACT_ONLY / S4_8B_C=OFFLINE_ONLY /
+> 현재 상태: `S4_8A=CONTRACT_ONLY / S4_8_CORE6_V2=CONTRACT_ONLY / S4_8B_C=OFFLINE_ONLY /
 > S6.6_S6.7=NOT_IMPLEMENTED`.
 > 월 데이터 비용 목표는 `0원`이고 offline fixture·지연/EOD가 먼저다. 기관용 제품과
 > 실시간 SOX/VIX feed는 post-P1 선택지이며 P1 DoD가 아니다. 새 agent framework·별도
@@ -567,6 +567,15 @@ materialization·append-only projection·순수 scorer kernel을 소유한다. S
 event-study/policy replay와 threshold 동결, S6.7은 snapshot materialization·stored reader와
 P1 `WARN_ONLY` RiskEngine 연결을 소유한다. S7.3은 기존 작업을 예약할 뿐 수집·계산·저장
 소유권이나 provider 권한을 새로 만들지 않는다.
+
+S4.8 Core 6 v2는 `KIS`, `OPENDART`, `SEC_EDGAR`, `KRX`, `KOFIA`, `ECOS`의 future
+entitlement, probe approval, sanitized receipt만 별도 계약으로 고정한다. 이는 active adapter나
+live 검증이 아니다. 모든 행은 disabled/blocked, physical call은 0이며 OpenDART/ECOS는 기존
+authorized projection만 재사용한다. KOFIA는 `BLOCKED_NO_CREDENTIAL_OR_APPROVAL`이다.
+실행 capacity는 non-fixture `APPROVED` packet 하나에만 있고 `CONSUMED`/`EXPIRED`는 즉시
+execution flag와 cap을 모두 `0`으로 revoke한다. `SUCCESS` receipt는 eligible direct source의
+정확히 한 번의 `DATA_REQUEST`·`HTTP_2XX`·non-null projection hash를 함께 증명해야 한다.
+GDELT producer, Naver retirement, Optional 3 provider와 v1/V23 경계는 변경하지 않는다.
 
 조사 inventory 42개는 사용 가능한 API 수가 아니다. 39개 machine 연동 후보 계열과 3개
 manual-link 원천의 합이며 현재 S4.8 활성/live provider adapter는 0이다. KIS 18개
@@ -606,6 +615,9 @@ SELL, 기존 보유분 매도, 주문 생성, 수량 축소와 KIS Live는 post-
 기록한다. 후속 offline runtime·권한·coverage는
 [`20260801-s4-8b-s4-8c-offline-runtime.md`](changes/20260801-s4-8b-s4-8c-offline-runtime.md)를
 따르며 provider/live/account/order 호출은 포함하지 않는다.
+Core 6 v2 contract-only boundary는
+[`20260802-s4-8-core6-v2-contract-lock.md`](changes/20260802-s4-8-core6-v2-contract-lock.md)를
+따른다.
 
 ## S5.0 Signal v2 contract lock
 

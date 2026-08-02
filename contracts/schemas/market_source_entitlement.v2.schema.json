@@ -1,0 +1,224 @@
+{
+  "$id": "contracts/schemas/market_source_entitlement.v2.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "artifactHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "contractId": {
+      "const": "market_source_entitlement.v2"
+    },
+    "entitlements": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "accessEvidenceDigest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "accountCallsAllowed": {
+            "const": false
+          },
+          "activationBlocker": {
+            "enum": [
+              "APPROVAL_PACKET_REQUIRED",
+              "BLOCKED_NO_CREDENTIAL_OR_APPROVAL",
+              "REUSE_AUTHORIZED_PROJECTION_ONLY"
+            ]
+          },
+          "activationStatus": {
+            "enum": [
+              "CANDIDATE_DISABLED",
+              "BLOCKED"
+            ]
+          },
+          "attributionRequired": {
+            "type": "boolean"
+          },
+          "contractExpiry": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "decisionAuthority": {
+            "const": "NONE"
+          },
+          "deletionOwner": {
+            "pattern": "^[a-z0-9][a-z0-9:_-]{2,127}$",
+            "type": "string"
+          },
+          "derivedDataAllowed": {
+            "const": true
+          },
+          "embeddingAllowed": {
+            "const": false
+          },
+          "endpointSetCount": {
+            "maximum": 18,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "endpointSetIdentityHash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "entitlementVersion": {
+            "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$",
+            "type": "string"
+          },
+          "externalLlmAllowed": {
+            "const": false
+          },
+          "ingestionMode": {
+            "enum": [
+              "DIRECT_READ_PROBE",
+              "REUSE_AUTHORIZED_PROJECTION"
+            ]
+          },
+          "logicalIdentityHash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "machineFetchAllowed": {
+            "const": false
+          },
+          "nonDisplayAllowed": {
+            "const": true
+          },
+          "orderAuthority": {
+            "const": "NONE"
+          },
+          "orderCallsAllowed": {
+            "const": false
+          },
+          "projectionRetentionMaxDays": {
+            "maximum": 3650,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "providerCallsAllowed": {
+            "const": false
+          },
+          "rawRetentionMaxHours": {
+            "const": 0
+          },
+          "rawStoreAllowed": {
+            "const": false
+          },
+          "region": {
+            "enum": [
+              "KR",
+              "US",
+              "GLOBAL"
+            ]
+          },
+          "riskEngineAuthority": {
+            "const": "NONE"
+          },
+          "riskSignalOrderAuthority": {
+            "const": "NONE"
+          },
+          "signalAuthority": {
+            "const": "NONE"
+          },
+          "sourceFamily": {
+            "enum": [
+              "KIS",
+              "OPENDART",
+              "SEC_EDGAR",
+              "KRX",
+              "KOFIA",
+              "ECOS"
+            ]
+          },
+          "sourceId": {
+            "enum": [
+              "S48_CORE6_KIS",
+              "S48_CORE6_OPENDART",
+              "S48_CORE6_SEC_EDGAR",
+              "S48_CORE6_KRX",
+              "S48_CORE6_KOFIA",
+              "S48_CORE6_ECOS"
+            ]
+          },
+          "termsEvidenceDigest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "accessEvidenceDigest",
+          "accountCallsAllowed",
+          "activationBlocker",
+          "activationStatus",
+          "attributionRequired",
+          "contractExpiry",
+          "decisionAuthority",
+          "deletionOwner",
+          "derivedDataAllowed",
+          "embeddingAllowed",
+          "endpointSetCount",
+          "endpointSetIdentityHash",
+          "entitlementVersion",
+          "externalLlmAllowed",
+          "ingestionMode",
+          "logicalIdentityHash",
+          "machineFetchAllowed",
+          "nonDisplayAllowed",
+          "orderAuthority",
+          "orderCallsAllowed",
+          "projectionRetentionMaxDays",
+          "providerCallsAllowed",
+          "rawRetentionMaxHours",
+          "rawStoreAllowed",
+          "region",
+          "riskEngineAuthority",
+          "riskSignalOrderAuthority",
+          "signalAuthority",
+          "sourceFamily",
+          "sourceId",
+          "termsEvidenceDigest"
+        ],
+        "type": "object"
+      },
+      "maxItems": 6,
+      "minItems": 6,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "evaluatedAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "inventoryAuthority": {
+      "const": "LOCAL_PRIVATE_REGISTRY"
+    },
+    "payloadHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "publicIdentityMode": {
+      "const": "OPAQUE_SHA256_ONLY"
+    },
+    "registryId": {
+      "const": "s4-8-core6-source-entitlements-20260802"
+    },
+    "schemaVersion": {
+      "const": "2"
+    }
+  },
+  "required": [
+    "artifactHash",
+    "contractId",
+    "entitlements",
+    "evaluatedAt",
+    "inventoryAuthority",
+    "payloadHash",
+    "publicIdentityMode",
+    "registryId",
+    "schemaVersion"
+  ],
+  "title": "market_source_entitlement.v2",
+  "type": "object"
+}

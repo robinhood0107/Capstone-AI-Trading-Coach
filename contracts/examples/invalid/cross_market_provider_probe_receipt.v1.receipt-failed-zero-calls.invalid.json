@@ -1,0 +1,35 @@
+{
+  "approvalIdHash": "862b4d2c662aa986cf2c95fb4094efa663c0ca45fd9483839f0f64d0860afbfd",
+  "approvalPayloadHash": "91edd33c855a826a8022b08e2237ed28c0940f7337feb1f76e5dddcea3fb24a3",
+  "approvedLogicalCap": 1,
+  "approvedPhysicalCallCap": 1,
+  "artifactsWritten": 0,
+  "completedAt": "2026-08-02T00:00:00Z",
+  "contractId": "cross_market_provider_probe_receipt.v1",
+  "decisionAuthority": "NONE",
+  "endpointSetIdentityHash": "4c2f3f95a5a9566ecce79ab3567ea09cdee92308bfa837fa7c8969955408c714",
+  "headSha": "0000000000000000000000000000000000000000",
+  "logicalCalls": 1,
+  "outcome": "FAILED",
+  "physicalCalls": 0,
+  "projectionHash": null,
+  "providerStatusClass": "HTTP_4XX",
+  "rawBodyStored": false,
+  "rawHeaderStored": false,
+  "rawQueryStored": false,
+  "requestPlanDigest": "08f0dbc14320779850131980e9e7f74dd01d477647c6b2008c665a3690be3386",
+  "retries": 0,
+  "riskSignalOrderAuthority": "NONE",
+  "schemaVersion": "1",
+  "sensitiveMaterialStored": false,
+  "sourceFamily": "KIS",
+  "sourceId": "S48_CORE6_KIS",
+  "startedAt": "2026-08-02T00:00:00Z",
+  "steps": [
+    {
+      "outcome": "FAIL_CLOSED",
+      "physicalCalls": 0,
+      "step": "DATA_REQUEST"
+    }
+  ]
+}

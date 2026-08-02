@@ -53,6 +53,11 @@ DIRECT_READ_FAMILIES: Final[frozenset[str]] = frozenset(
     {"KIS", "SEC_EDGAR", "KRX", "KOFIA"}
 )
 PROJECTION_ONLY_FAMILIES: Final[frozenset[str]] = frozenset({"OPENDART", "ECOS"})
+# KOFIA는 v2 registry에서 credential/approval evidence가 없어 BLOCKED다. 이 contract는
+# 추후 entitlement amendment 전까지 실행 packet을 만들 수 있는 direct-read family를 좁힌다.
+PROBE_ELIGIBLE_FAMILIES: Final[frozenset[str]] = frozenset(
+    {"KIS", "SEC_EDGAR", "KRX"}
+)
 SCHEMA_IDS: Final[tuple[str, ...]] = (
     "market_source_entitlement.v2",
     "cross_market_provider_probe_approval.v1",
@@ -335,9 +340,7 @@ def _probe_approval_schema() -> dict[str, Any]:
             },
         },
         {
-            "if": {
-                "properties": {"approvalStatus": {"enum": ["APPROVED", "CONSUMED"]}}
-            },
+            "if": {"properties": {"approvalStatus": {"const": "APPROVED"}}},
             "then": {
                 "properties": {
                     "executionAllowed": {"const": True},
@@ -346,6 +349,23 @@ def _probe_approval_schema() -> dict[str, Any]:
                         "properties": {
                             "logicalCap": {"const": 1},
                             "physicalCallCap": {"const": 1},
+                        }
+                    },
+                }
+            },
+        },
+        {
+            "if": {
+                "properties": {"approvalStatus": {"enum": ["CONSUMED", "EXPIRED"]}}
+            },
+            "then": {
+                "properties": {
+                    "executionAllowed": {"const": False},
+                    "fixtureOnly": {"const": False},
+                    "caps": {
+                        "properties": {
+                            "logicalCap": {"const": 0},
+                            "physicalCallCap": {"const": 0},
                         }
                     },
                 }
@@ -450,7 +470,52 @@ def _probe_receipt_schema() -> dict[str, Any]:
                     "steps": {"const": []},
                 }
             },
-        }
+        },
+        {
+            "if": {"properties": {"outcome": {"const": "SUCCESS"}}},
+            "then": {
+                "properties": {
+                    "approvedLogicalCap": {"const": 1},
+                    "approvedPhysicalCallCap": {"const": 1},
+                    "logicalCalls": {"const": 1},
+                    "physicalCalls": {"const": 1},
+                    "projectionHash": _hash_schema(),
+                    "providerStatusClass": {"const": "HTTP_2XX"},
+                    "steps": {
+                        "minItems": 1,
+                        "maxItems": 1,
+                        "items": {
+                            "properties": {
+                                "outcome": {"const": "SUCCESS"},
+                                "physicalCalls": {"const": 1},
+                                "step": {"const": "DATA_REQUEST"},
+                            }
+                        },
+                    },
+                }
+            },
+        },
+        {
+            "if": {"properties": {"outcome": {"const": "FAILED"}}},
+            "then": {
+                "properties": {
+                    "approvedLogicalCap": {"const": 1},
+                    "approvedPhysicalCallCap": {"const": 1},
+                    "logicalCalls": {"const": 1},
+                    "projectionHash": {"const": None},
+                    "providerStatusClass": {
+                        "enum": ["HTTP_4XX", "HTTP_5XX", "TRANSPORT"]
+                    },
+                    "steps": {
+                        "minItems": 1,
+                        "maxItems": 1,
+                        "items": {
+                            "properties": {"outcome": {"const": "FAIL_CLOSED"}}
+                        },
+                    },
+                }
+            },
+        },
     ]
     return _schema_document("cross_market_provider_probe_receipt.v1", body)
 
@@ -465,6 +530,12 @@ def _schemas() -> dict[str, dict[str, Any]]:
 
 def _sha(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _endpoint_set_identity_hash(family: str) -> str:
+    """Public contract에는 endpoint 문자열 대신 source-family 결속 hash만 남긴다."""
+
+    return _sha(f"s4-8-core6:{family}:opaque-endpoint-set-v1")
 
 
 def _source_spec(family: str) -> dict[str, str]:
@@ -496,9 +567,11 @@ def _source_spec(family: str) -> dict[str, str]:
 
 def _entitlement_entry(family: str) -> dict[str, Any]:
     spec = _source_spec(family)
-    endpoint_set_hash = _sha(f"s4-8-core6:{family}:opaque-endpoint-set-v1")
+    endpoint_set_hash = _endpoint_set_identity_hash(family)
     return {
-        "accessEvidenceDigest": _sha(f"s4-8-core6:{family}:access-evidence-v1"),
+        # 이 public fixture는 실제 entitlement 증빙을 포함하지 않는다. 실제 digest는
+        # local-private registry와 실행 직전 approval packet에만 넣어 scanner 노출을 막는다.
+        "accessEvidenceDigest": f"{CORE6_SOURCE_FAMILIES.index(family):064x}",
         "accountCallsAllowed": False,
         "activationBlocker": spec["activationBlocker"],
         "activationStatus": spec["activationStatus"],
@@ -665,6 +738,29 @@ def _invalid_fixtures() -> dict[str, dict[str, Any]]:
     approval_request_query = copy.deepcopy(approval)
     approval_request_query["requestQuery"] = "symbol=005930"
 
+    approved_probe = copy.deepcopy(approval)
+    approved_probe["approvalStatus"] = "APPROVED"
+    approved_probe["executionAllowed"] = True
+    approved_probe["fixtureOnly"] = False
+    approved_probe["caps"]["logicalCap"] = 1
+    approved_probe["caps"]["physicalCallCap"] = 1
+
+    approval_consumed_executable = copy.deepcopy(approved_probe)
+    approval_consumed_executable["approvalStatus"] = "CONSUMED"
+
+    approval_expired_executable = copy.deepcopy(approved_probe)
+    approval_expired_executable["approvalStatus"] = "EXPIRED"
+
+    approval_kofia_executable = copy.deepcopy(approved_probe)
+    approval_kofia_executable["sourceFamily"] = "KOFIA"
+    approval_kofia_executable["sourceId"] = SOURCE_ID_BY_FAMILY["KOFIA"]
+    approval_kofia_executable["endpointSetIdentityHash"] = _endpoint_set_identity_hash(
+        "KOFIA"
+    )
+
+    approval_endpoint_identity = copy.deepcopy(approved_probe)
+    approval_endpoint_identity["endpointSetIdentityHash"] = "0" * 64
+
     receipt = _receipt_fixture()
     receipt_over_cap = copy.deepcopy(receipt)
     receipt_over_cap["physicalCalls"] = 1
@@ -674,6 +770,32 @@ def _invalid_fixtures() -> dict[str, dict[str, Any]]:
 
     receipt_provider_body = copy.deepcopy(receipt)
     receipt_provider_body["providerBody"] = "must-never-be-persisted"
+
+    receipt_success_zero_calls = copy.deepcopy(receipt)
+    receipt_success_zero_calls["outcome"] = "SUCCESS"
+
+    receipt_projection_provider_call = copy.deepcopy(receipt)
+    receipt_projection_provider_call.update(
+        {
+            "approvedLogicalCap": 1,
+            "approvedPhysicalCallCap": 1,
+            "endpointSetIdentityHash": _endpoint_set_identity_hash("OPENDART"),
+            "logicalCalls": 1,
+            "outcome": "SUCCESS",
+            "physicalCalls": 1,
+            "projectionHash": _sha("s4-8-core6:projection-only-receipt-v1"),
+            "providerStatusClass": "HTTP_2XX",
+            "sourceFamily": "OPENDART",
+            "sourceId": SOURCE_ID_BY_FAMILY["OPENDART"],
+            "steps": [
+                {
+                    "outcome": "SUCCESS",
+                    "physicalCalls": 1,
+                    "step": "DATA_REQUEST",
+                }
+            ],
+        }
+    )
 
     return {
         "contracts/examples/invalid/market_source_entitlement.v2.unknown-source.invalid.json": unknown_source,
@@ -685,9 +807,15 @@ def _invalid_fixtures() -> dict[str, dict[str, Any]]:
         "contracts/examples/invalid/cross_market_provider_probe_approval.v1.approval-retry.invalid.json": approval_retry,
         "contracts/examples/invalid/cross_market_provider_probe_approval.v1.approval-expiry.invalid.json": approval_expiry,
         "contracts/examples/invalid/cross_market_provider_probe_approval.v1.approval-request-query.invalid.json": approval_request_query,
+        "contracts/examples/invalid/cross_market_provider_probe_approval.v1.approval-consumed-executable.invalid.json": approval_consumed_executable,
+        "contracts/examples/invalid/cross_market_provider_probe_approval.v1.approval-expired-executable.invalid.json": approval_expired_executable,
+        "contracts/examples/invalid/cross_market_provider_probe_approval.v1.approval-kofia-executable.invalid.json": approval_kofia_executable,
+        "contracts/examples/invalid/cross_market_provider_probe_approval.v1.approval-endpoint-identity.invalid.json": approval_endpoint_identity,
         "contracts/examples/invalid/cross_market_provider_probe_receipt.v1.receipt-over-cap.invalid.json": receipt_over_cap,
         "contracts/examples/invalid/cross_market_provider_probe_receipt.v1.receipt-raw-storage.invalid.json": receipt_raw_storage,
         "contracts/examples/invalid/cross_market_provider_probe_receipt.v1.receipt-provider-body.invalid.json": receipt_provider_body,
+        "contracts/examples/invalid/cross_market_provider_probe_receipt.v1.receipt-success-zero-calls.invalid.json": receipt_success_zero_calls,
+        "contracts/examples/invalid/cross_market_provider_probe_receipt.v1.receipt-projection-provider-call.invalid.json": receipt_projection_provider_call,
     }
 
 
@@ -764,18 +892,39 @@ def _validate_approval(payload: Mapping[str, Any]) -> None:
     family = payload["sourceFamily"]
     if payload["sourceId"] != SOURCE_ID_BY_FAMILY[family]:
         raise ContractValidationError("approval source identity drift.")
+    if payload["endpointSetIdentityHash"] != _endpoint_set_identity_hash(family):
+        raise ContractValidationError("approval endpoint-set identity drift.")
+    if payload["entitlementPayloadHash"] != payload["registryPayloadHash"]:
+        raise ContractValidationError("approval entitlement registry binding drift.")
+    if payload["executionMode"] != _source_spec(family)["ingestionMode"]:
+        raise ContractValidationError("approval execution mode does not match source family.")
     status = payload["approvalStatus"]
     caps = payload["caps"]
     if status == "TEMPLATE":
-        if payload["executionAllowed"] or caps["logicalCap"] or caps["physicalCallCap"]:
+        if (
+            payload["executionAllowed"]
+            or not payload["fixtureOnly"]
+            or caps["logicalCap"]
+            or caps["physicalCallCap"]
+        ):
             raise ContractValidationError("template must not authorize physical calls.")
-    elif status in {"APPROVED", "CONSUMED"}:
+    elif status == "APPROVED":
         if not payload["executionAllowed"]:
             raise ContractValidationError("approved packet must explicitly allow execution.")
         if caps["logicalCap"] != 1 or caps["physicalCallCap"] != 1:
             raise ContractValidationError("approved probe caps must be exactly one.")
-        if family in PROJECTION_ONLY_FAMILIES:
-            raise ContractValidationError("projection-only source cannot receive a direct probe packet.")
+        if payload["fixtureOnly"]:
+            raise ContractValidationError("approved packet cannot be a fixture.")
+        if family not in PROBE_ELIGIBLE_FAMILIES:
+            raise ContractValidationError("source is not eligible for a direct Core 6 probe.")
+    elif status in {"CONSUMED", "EXPIRED"}:
+        if (
+            payload["executionAllowed"]
+            or payload["fixtureOnly"]
+            or caps["logicalCap"]
+            or caps["physicalCallCap"]
+        ):
+            raise ContractValidationError("consumed or expired packet must revoke all execution capacity.")
 
 
 def _validate_receipt(payload: Mapping[str, Any]) -> None:
@@ -783,8 +932,11 @@ def _validate_receipt(payload: Mapping[str, Any]) -> None:
     completed_at = _parse_timestamp(payload["completedAt"], field="completedAt")
     if completed_at < started_at:
         raise ContractValidationError("receipt completion cannot precede start.")
-    if payload["sourceId"] != SOURCE_ID_BY_FAMILY[payload["sourceFamily"]]:
+    family = payload["sourceFamily"]
+    if payload["sourceId"] != SOURCE_ID_BY_FAMILY[family]:
         raise ContractValidationError("receipt source identity drift.")
+    if payload["endpointSetIdentityHash"] != _endpoint_set_identity_hash(family):
+        raise ContractValidationError("receipt endpoint-set identity drift.")
     if payload["logicalCalls"] > payload["approvedLogicalCap"]:
         raise ContractValidationError("logical calls exceed approved cap.")
     if payload["physicalCalls"] > payload["approvedPhysicalCallCap"]:
@@ -804,10 +956,40 @@ def _validate_receipt(payload: Mapping[str, Any]) -> None:
     )
     if first_failure is not None and first_failure != len(steps) - 1:
         raise ContractValidationError("no receipt step may follow the first failure.")
-    if payload["outcome"] == "NOT_EXECUTED" and any(
-        value != 0 for value in (payload["logicalCalls"], payload["physicalCalls"])
-    ):
-        raise ContractValidationError("not-executed receipt cannot report calls.")
+    outcome = payload["outcome"]
+    if outcome == "NOT_EXECUTED":
+        if any(value != 0 for value in (payload["logicalCalls"], payload["physicalCalls"])):
+            raise ContractValidationError("not-executed receipt cannot report calls.")
+        return
+    if family not in PROBE_ELIGIBLE_FAMILIES:
+        raise ContractValidationError("non-executed Core 6 source cannot report a direct probe.")
+    if outcome == "SUCCESS":
+        if (
+            payload["approvedLogicalCap"] != 1
+            or payload["approvedPhysicalCallCap"] != 1
+            or payload["logicalCalls"] != 1
+            or payload["physicalCalls"] != 1
+            or payload["providerStatusClass"] != "HTTP_2XX"
+            or not isinstance(payload["projectionHash"], str)
+        ):
+            raise ContractValidationError("successful receipt must prove exactly one data request.")
+        if len(steps) != 1 or steps[0] != {
+            "outcome": "SUCCESS",
+            "physicalCalls": 1,
+            "step": "DATA_REQUEST",
+        }:
+            raise ContractValidationError("successful receipt must contain one successful data request.")
+    elif outcome == "FAILED":
+        if (
+            payload["approvedLogicalCap"] != 1
+            or payload["approvedPhysicalCallCap"] != 1
+            or payload["logicalCalls"] != 1
+            or payload["providerStatusClass"] not in {"HTTP_4XX", "HTTP_5XX", "TRANSPORT"}
+            or payload["projectionHash"] is not None
+            or len(steps) != 1
+            or steps[0]["outcome"] != "FAIL_CLOSED"
+        ):
+            raise ContractValidationError("failed receipt must terminate after one fail-closed step.")
 
 
 def validate_semantics(contract_id: str, payload: Mapping[str, Any]) -> None:

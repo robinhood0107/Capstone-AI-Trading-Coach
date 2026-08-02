@@ -3,7 +3,7 @@
   "contractId": "market_source_entitlement.v2",
   "entitlements": [
     {
-      "accessEvidenceDigest": "b913ab4231d917a9a28a7213fcf66257f8f8d79ea092356d506daeeaddabf36e",
+      "accessEvidenceDigest": "0000000000000000000000000000000000000000000000000000000000000000",
       "accountCallsAllowed": false,
       "activationBlocker": "APPROVAL_PACKET_REQUIRED",
       "activationStatus": "ACTIVE",
@@ -36,7 +36,7 @@
       "termsEvidenceDigest": "0cd8fcdd153614b0e10204a9dfeeb692a43e9764445ac74dbd7761b4e4deee86"
     },
     {
-      "accessEvidenceDigest": "3651313ea6ae0ee2f1e7af839e0f2a4aa96672a9e15b412cb3d2914f4bd55977",
+      "accessEvidenceDigest": "0000000000000000000000000000000000000000000000000000000000000001",
       "accountCallsAllowed": false,
       "activationBlocker": "REUSE_AUTHORIZED_PROJECTION_ONLY",
       "activationStatus": "CANDIDATE_DISABLED",
@@ -69,7 +69,7 @@
       "termsEvidenceDigest": "57a24ecc6e0a1c9d06fd83423fa9f23ee5bc4612727b9aad980570a3377040ac"
     },
     {
-      "accessEvidenceDigest": "31139997140feb5fb61c0924950da502f0f6c1a347e3cc8e764f0d8d25d1bdfb",
+      "accessEvidenceDigest": "0000000000000000000000000000000000000000000000000000000000000002",
       "accountCallsAllowed": false,
       "activationBlocker": "APPROVAL_PACKET_REQUIRED",
       "activationStatus": "CANDIDATE_DISABLED",
@@ -102,7 +102,7 @@
       "termsEvidenceDigest": "eb7086a388f2dcb07adfd004f4013e06eef8125a6f1fe660651bff9c6494ec4e"
     },
     {
-      "accessEvidenceDigest": "610b231832ed334bf541e4581066f3a0644a5c2750cc62c1d37e2564c4034b26",
+      "accessEvidenceDigest": "0000000000000000000000000000000000000000000000000000000000000003",
       "accountCallsAllowed": false,
       "activationBlocker": "APPROVAL_PACKET_REQUIRED",
       "activationStatus": "CANDIDATE_DISABLED",
@@ -135,7 +135,7 @@
       "termsEvidenceDigest": "b8a622288b227b974be8691f957b41e9f4675b1fb57cf2d14f39764124268d96"
     },
     {
-      "accessEvidenceDigest": "697855056eac950ae6ff755be604015aa20b627ab75369d657921ab72f802ce7",
+      "accessEvidenceDigest": "0000000000000000000000000000000000000000000000000000000000000004",
       "accountCallsAllowed": false,
       "activationBlocker": "BLOCKED_NO_CREDENTIAL_OR_APPROVAL",
       "activationStatus": "BLOCKED",
@@ -168,7 +168,7 @@
       "termsEvidenceDigest": "19deb058a25d56feab8d5c7a26cce5816caf2a3982583e49ab9c5db645973196"
     },
     {
-      "accessEvidenceDigest": "9aef7a439b432717704b6097a29d39e7007ff73b0809392643a30a7ed4e04f3d",
+      "accessEvidenceDigest": "0000000000000000000000000000000000000000000000000000000000000005",
       "accountCallsAllowed": false,
       "activationBlocker": "REUSE_AUTHORIZED_PROJECTION_ONLY",
       "activationStatus": "CANDIDATE_DISABLED",

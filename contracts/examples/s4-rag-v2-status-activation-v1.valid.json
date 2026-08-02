@@ -1,7 +1,17 @@
 {
+  "contractId": "s4-rag-v2-status-activation-v1",
   "documentId": "doc_01contractfixture",
   "generationDisposition": "GENERATION_ACTIVATED_THEN_HARD_DELETED",
+  "hardDeletedArtifactClasses": [
+    "DOCUMENT_IR",
+    "CANONICAL_TEXT",
+    "CHUNK",
+    "VECTOR"
+  ],
+  "ownerDeleteHardDeleteVerified": true,
   "ownerRawCopies": 0,
+  "replacementGenerationActivated": true,
+  "replacementGenerationReceiptId": "rgr_01CONTRACTFIXTURE",
   "schemaVersion": 1,
   "sourceScope": "OWNER_PRIVATE",
   "state": "DELETED"

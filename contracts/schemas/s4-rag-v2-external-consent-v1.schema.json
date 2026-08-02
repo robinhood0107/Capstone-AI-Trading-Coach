@@ -12,6 +12,9 @@
     "consentType": {
       "const": "EXTERNAL_AI_RAG_V2"
     },
+    "contractId": {
+      "const": "s4-rag-v2-external-consent-v1"
+    },
     "disclosureDigest": {
       "pattern": "^[0-9a-f]{64}$",
       "type": "string"
@@ -29,6 +32,7 @@
     }
   },
   "required": [
+    "contractId",
     "action",
     "consentType",
     "disclosureDigest",

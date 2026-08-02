@@ -7,6 +7,9 @@
       "pattern": "^rce_[A-Za-z0-9_-]{12,96}$",
       "type": "string"
     },
+    "contractId": {
+      "const": "s4-rag-v2-effective-consent-v1"
+    },
     "effective": {
       "type": "boolean"
     },
@@ -30,6 +33,7 @@
     }
   },
   "required": [
+    "contractId",
     "consentEventId",
     "effective",
     "policyDigest",

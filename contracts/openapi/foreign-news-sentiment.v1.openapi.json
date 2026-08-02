@@ -5,6 +5,34 @@
         "$id": "contracts/schemas/foreign-news-sentiment-v1.schema.json",
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "AVAILABLE"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "lanes": {
+                  "contains": {
+                    "properties": {
+                      "state": {
+                        "const": "AVAILABLE"
+                      }
+                    },
+                    "required": [
+                      "state"
+                    ],
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          }
+        ],
         "properties": {
           "allowedUses": {
             "items": false,
@@ -24,10 +52,75 @@
             "format": "date-time",
             "type": "string"
           },
+          "contractId": {
+            "const": "foreign-news-sentiment-v1"
+          },
           "decisionAuthority": {
             "const": "NONE"
           },
           "lanes": {
+            "allOf": [
+              {
+                "contains": {
+                  "properties": {
+                    "laneId": {
+                      "const": "FINNHUB_PERSONAL_LOCAL"
+                    }
+                  },
+                  "required": [
+                    "laneId"
+                  ],
+                  "type": "object"
+                },
+                "maxContains": 1,
+                "minContains": 1
+              },
+              {
+                "contains": {
+                  "properties": {
+                    "laneId": {
+                      "const": "SEC_OFFICIAL"
+                    }
+                  },
+                  "required": [
+                    "laneId"
+                  ],
+                  "type": "object"
+                },
+                "maxContains": 1,
+                "minContains": 1
+              },
+              {
+                "contains": {
+                  "properties": {
+                    "laneId": {
+                      "const": "FED_OFFICIAL"
+                    }
+                  },
+                  "required": [
+                    "laneId"
+                  ],
+                  "type": "object"
+                },
+                "maxContains": 1,
+                "minContains": 1
+              },
+              {
+                "contains": {
+                  "properties": {
+                    "laneId": {
+                      "const": "GDELT_OFFLINE_REFERENCE"
+                    }
+                  },
+                  "required": [
+                    "laneId"
+                  ],
+                  "type": "object"
+                },
+                "maxContains": 1,
+                "minContains": 1
+              }
+            ],
             "items": {
               "additionalProperties": false,
               "properties": {
@@ -81,6 +174,7 @@
           }
         },
         "required": [
+          "contractId",
           "allowedUses",
           "articleMetadataStored",
           "asOf",

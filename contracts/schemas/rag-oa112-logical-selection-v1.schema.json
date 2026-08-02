@@ -26,9 +26,11 @@
     "activationState": {
       "const": "CONTRACT_LOCKED_NOT_MATERIALIZED"
     },
-    "historicalManifestSha256": {
-      "pattern": "^[0-9a-f]{64}$",
-      "type": "string"
+    "contractId": {
+      "const": "rag-oa112-logical-selection-v1"
+    },
+    "historicalManifestReference": {
+      "const": "S4_7D_OA140_RELEASE_V1_FROZEN"
     },
     "materializationAllowed": {
       "const": false
@@ -49,6 +51,218 @@
       "const": 8
     },
     "tracks": {
+      "allOf": [
+        {
+          "contains": {
+            "properties": {
+              "trackId": {
+                "const": "MICRO_GAME_INFO_MARKET_DESIGN"
+              }
+            },
+            "required": [
+              "trackId"
+            ],
+            "type": "object"
+          },
+          "maxContains": 1,
+          "minContains": 1
+        },
+        {
+          "contains": {
+            "properties": {
+              "trackId": {
+                "const": "MACRO_MONETARY_INTERNATIONAL"
+              }
+            },
+            "required": [
+              "trackId"
+            ],
+            "type": "object"
+          },
+          "maxContains": 1,
+          "minContains": 1
+        },
+        {
+          "contains": {
+            "properties": {
+              "trackId": {
+                "const": "PROBABILITY_STATISTICS_OPTIMIZATION"
+              }
+            },
+            "required": [
+              "trackId"
+            ],
+            "type": "object"
+          },
+          "maxContains": 1,
+          "minContains": 1
+        },
+        {
+          "contains": {
+            "properties": {
+              "trackId": {
+                "const": "ECONOMETRICS_CAUSAL_EVENT_STUDY"
+              }
+            },
+            "required": [
+              "trackId"
+            ],
+            "type": "object"
+          },
+          "maxContains": 1,
+          "minContains": 1
+        },
+        {
+          "contains": {
+            "properties": {
+              "trackId": {
+                "const": "TIME_SERIES_REGIME_VOLATILITY"
+              }
+            },
+            "required": [
+              "trackId"
+            ],
+            "type": "object"
+          },
+          "maxContains": 1,
+          "minContains": 1
+        },
+        {
+          "contains": {
+            "properties": {
+              "trackId": {
+                "const": "ACCOUNTING_CORPORATE_FINANCE_VALUATION"
+              }
+            },
+            "required": [
+              "trackId"
+            ],
+            "type": "object"
+          },
+          "maxContains": 1,
+          "minContains": 1
+        },
+        {
+          "contains": {
+            "properties": {
+              "trackId": {
+                "const": "ASSET_PRICING_FACTOR_PORTFOLIO"
+              }
+            },
+            "required": [
+              "trackId"
+            ],
+            "type": "object"
+          },
+          "maxContains": 1,
+          "minContains": 1
+        },
+        {
+          "contains": {
+            "properties": {
+              "trackId": {
+                "const": "FIXED_INCOME_RATES_CREDIT"
+              }
+            },
+            "required": [
+              "trackId"
+            ],
+            "type": "object"
+          },
+          "maxContains": 1,
+          "minContains": 1
+        },
+        {
+          "contains": {
+            "properties": {
+              "trackId": {
+                "const": "DERIVATIVES_STOCHASTIC_NUMERICS"
+              }
+            },
+            "required": [
+              "trackId"
+            ],
+            "type": "object"
+          },
+          "maxContains": 1,
+          "minContains": 1
+        },
+        {
+          "contains": {
+            "properties": {
+              "trackId": {
+                "const": "MARKET_MICROSTRUCTURE_EXECUTION_LIQUIDITY"
+              }
+            },
+            "required": [
+              "trackId"
+            ],
+            "type": "object"
+          },
+          "maxContains": 1,
+          "minContains": 1
+        },
+        {
+          "contains": {
+            "properties": {
+              "trackId": {
+                "const": "RISK_STRESS_BACKTEST_MODEL_RISK"
+              }
+            },
+            "required": [
+              "trackId"
+            ],
+            "type": "object"
+          },
+          "maxContains": 1,
+          "minContains": 1
+        },
+        {
+          "contains": {
+            "properties": {
+              "trackId": {
+                "const": "BEHAVIORAL_EFFICIENCY_ANOMALY_CROWDING"
+              }
+            },
+            "required": [
+              "trackId"
+            ],
+            "type": "object"
+          },
+          "maxContains": 1,
+          "minContains": 1
+        },
+        {
+          "contains": {
+            "properties": {
+              "trackId": {
+                "const": "FINANCIAL_ML_PIT_DATA_PROVENANCE"
+              }
+            },
+            "required": [
+              "trackId"
+            ],
+            "type": "object"
+          },
+          "maxContains": 1,
+          "minContains": 1
+        },
+        {
+          "contains": {
+            "properties": {
+              "trackId": {
+                "const": "CROSS_MARKET_COMMODITIES_POLICY_KOREA"
+              }
+            },
+            "required": [
+              "trackId"
+            ],
+            "type": "object"
+          },
+          "maxContains": 1,
+          "minContains": 1
+        }
+      ],
       "items": {
         "additionalProperties": false,
         "properties": {
@@ -86,9 +300,10 @@
     }
   },
   "required": [
+    "contractId",
     "activationRequirements",
     "activationState",
-    "historicalManifestSha256",
+    "historicalManifestReference",
     "materializationAllowed",
     "physicalActivation",
     "schemaVersion",

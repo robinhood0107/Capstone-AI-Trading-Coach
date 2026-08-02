@@ -1,4 +1,5 @@
 {
+  "contractId": "s4-8-optional3-entitlement-v1",
   "entitlements": [
     {
       "activationStatus": "CONTRACT_ONLY",

@@ -5,6 +5,7 @@
   "articleMetadataStored": false,
   "articleTitle": "must never be stored",
   "asOf": "2026-08-03T00:00:00Z",
+  "contractId": "foreign-news-sentiment-v1",
   "decisionAuthority": "NONE",
   "lanes": [
     {

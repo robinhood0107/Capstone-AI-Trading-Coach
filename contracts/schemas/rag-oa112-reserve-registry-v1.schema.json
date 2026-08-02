@@ -9,6 +9,9 @@
     "automaticPromotion": {
       "const": false
     },
+    "contractId": {
+      "const": "rag-oa112-reserve-registry-v1"
+    },
     "maximumReserveSources": {
       "const": 28
     },
@@ -28,6 +31,7 @@
     }
   },
   "required": [
+    "contractId",
     "activeGenerationReferences",
     "automaticPromotion",
     "maximumReserveSources",

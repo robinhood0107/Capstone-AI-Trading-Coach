@@ -1,4 +1,5 @@
 {
+  "contractId": "s4-rag-v2-import-ticket-request-v1",
   "importMode": "LOCAL_EPHEMERAL_PARSE",
   "schemaVersion": 1,
   "sourceScope": "OWNER_PRIVATE"

@@ -10,9 +10,9 @@
   "selectedModel": null,
   "selectionGeneration": 1,
   "selectionId": "fns_01CONTRACTFIXTURE",
-  "selectionStatus": "NOT_SELECTED",
-  "testEvaluationCount": 1,
-  "testOutcome": "NOT_RUN",
+  "selectionStatus": "TEST_EVALUATED",
+  "testEvaluationCount": 0,
+  "testOutcome": "PASSED",
   "testTargetModel": null,
   "validationCompleted": false,
   "validationResults": [

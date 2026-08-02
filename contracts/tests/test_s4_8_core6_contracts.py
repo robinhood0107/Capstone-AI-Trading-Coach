@@ -78,12 +78,25 @@ class S48Core6ContractTest(unittest.TestCase):
         )
         self.assertTrue(all(not entry["providerCallsAllowed"] for entry in entries))
         self.assertTrue(all(not entry["machineFetchAllowed"] for entry in entries))
+        self.assertTrue(all(not entry["accountCallsAllowed"] for entry in entries))
+        self.assertTrue(all(not entry["orderCallsAllowed"] for entry in entries))
         self.assertTrue(all(not entry["rawStoreAllowed"] for entry in entries))
         self.assertTrue(all(not entry["embeddingAllowed"] for entry in entries))
         self.assertTrue(all(not entry["externalLlmAllowed"] for entry in entries))
         self.assertTrue(all(entry["decisionAuthority"] == "NONE" for entry in entries))
         self.assertTrue(
             all(entry["riskSignalOrderAuthority"] == "NONE" for entry in entries)
+        )
+        self.assertTrue(all(entry["riskEngineAuthority"] == "NONE" for entry in entries))
+        self.assertTrue(all(entry["signalAuthority"] == "NONE" for entry in entries))
+        self.assertTrue(all(entry["orderAuthority"] == "NONE" for entry in entries))
+        self.assertEqual(
+            {"KIS": 18, "SEC_EDGAR": 2, "KRX": 2, "KOFIA": 1},
+            {
+                entry["sourceFamily"]: entry["endpointSetCount"]
+                for entry in entries
+                if entry["sourceFamily"] in {"KIS", "SEC_EDGAR", "KRX", "KOFIA"}
+            },
         )
 
     def test_packet_and_receipt_contracts_never_expose_provider_payloads(self) -> None:
@@ -104,6 +117,7 @@ class S48Core6ContractTest(unittest.TestCase):
         self.assertIsInstance(packet, dict)
         self.assertEqual("TEMPLATE", packet["approvalStatus"])
         self.assertFalse(packet["executionAllowed"])
+        self.assertTrue(packet["fixtureOnly"])
         self.assertEqual(0, packet["caps"]["retryCap"])
         self.assertEqual(0, packet["caps"]["artifactCap"])
 
@@ -113,12 +127,14 @@ class S48Core6ContractTest(unittest.TestCase):
         self.assertIsInstance(receipt, dict)
         self.assertEqual("NOT_EXECUTED", receipt["outcome"])
         self.assertEqual(0, receipt["physicalCalls"])
-        self.assertEqual(0, receipt["rawProviderPayloadsStored"])
+        self.assertFalse(receipt["rawBodyStored"])
+        self.assertFalse(receipt["rawHeaderStored"])
+        self.assertFalse(receipt["rawQueryStored"])
+        self.assertFalse(receipt["sensitiveMaterialStored"])
 
         serialized = json.dumps([packet, receipt], ensure_ascii=False)
         for forbidden in (
             "authorization",
-            "credential",
             "providerBody",
             "rawResponse",
             "requestQuery",
@@ -132,10 +148,14 @@ class S48Core6ContractTest(unittest.TestCase):
                 "direct-projection-fanout",
                 "active-without-rights",
                 "raw-storage",
+                "endpoint-count",
                 "approval-retry",
                 "approval-expiry",
+                "approval-request-query",
                 "receipt-over-cap",
                 "receipt-raw-storage",
+                "receipt-provider-body",
+                "authority-escalation",
             },
             {Path(path).name.split(".")[-3] for path in INVALID_FIXTURE_PATHS},
         )

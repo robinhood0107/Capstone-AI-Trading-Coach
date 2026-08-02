@@ -572,6 +572,9 @@ S4.8 Core 6 v2는 `KIS`, `OPENDART`, `SEC_EDGAR`, `KRX`, `KOFIA`, `ECOS`의 futu
 entitlement, probe approval, sanitized receipt만 별도 계약으로 고정한다. 이는 active adapter나
 live 검증이 아니다. 모든 행은 disabled/blocked, physical call은 0이며 OpenDART/ECOS는 기존
 authorized projection만 재사용한다. KOFIA는 `BLOCKED_NO_CREDENTIAL_OR_APPROVAL`이다.
+실행 capacity는 non-fixture `APPROVED` packet 하나에만 있고 `CONSUMED`/`EXPIRED`는 즉시
+execution flag와 cap을 모두 `0`으로 revoke한다. `SUCCESS` receipt는 eligible direct source의
+정확히 한 번의 `DATA_REQUEST`·`HTTP_2XX`·non-null projection hash를 함께 증명해야 한다.
 GDELT producer, Naver retirement, Optional 3 provider와 v1/V23 경계는 변경하지 않는다.
 
 조사 inventory 42개는 사용 가능한 API 수가 아니다. 39개 machine 연동 후보 계열과 3개

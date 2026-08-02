@@ -67,6 +67,7 @@ rag-official-evidence-validate = "app.rag.official_evidence:main"
 rag-bge-artifact-acquire = "app.rag.bge_acquisition:main"
 rag-bge-five-card-poc = "app.rag.bge_poc_cli:main"
 rag-content = "app.rag.content_cli:main"
+rag-oa-release-validate = "app.rag.oa_release_manifest_cli:main"
 
 [build-system]
 requires = ["hatchling"]

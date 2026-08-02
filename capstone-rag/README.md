@@ -110,3 +110,46 @@ parser·Document IR·generation 코드를 호출한다.
 `capstone-rag/runtime/local-corpus`다. 두 위치의 원문·parse·embedding·cache는 Git 배포물이
 아니며, 개발 runtime은 `.gitignore`로 보호된다. OA 원문은 후속 signed manifest가 허용한
 공식 fixed HTTPS source에서 각 사용자가 받는 cache이고 프로젝트 release에 재배포하지 않는다.
+
+## S4.7D OA112 release manifest
+
+`s4-7d-oa140-release.v1.json`은 OA140 프로그램의 첫 공개 release candidate다. 이름은
+OA140 프로그램을 따르지만 현재 source 수는 release 하한인 112개다. 14개 curriculum track마다
+exact 8개 source를 고정했고, 각 source는 fixed HTTPS `canonicalUrl`, `downloadUrl`,
+`rawContentSha256`, track role, `fallbackAllowed=false`만 Git에 남긴다. 원문 PDF/HTML,
+추출 text, Document IR, chunk, embedding, cache는 GitHub Release나 Hugging Face Dataset에
+재배포하지 않는다.
+
+검증 명령은 다음과 같다.
+
+```bash
+uv run --project workspaces/decision-platform/python-services --frozen \
+  python -m app.rag.oa_release_manifest_cli \
+  --manifest capstone-rag/manifests/s4-7d-oa140-release.v1.json
+```
+
+공식 원천의 raw SHA-256을 다시 확인해야 할 때만 네트워크 검증을 명시적으로 실행한다. 이 모드는
+redirect를 금지하고 source 사이를 3초씩 쉬며, receipt에는 URL·byte 수·SHA-256만 남긴다.
+
+```bash
+uv run --project workspaces/decision-platform/python-services --frozen \
+  python -m app.rag.oa_release_manifest_cli \
+  --manifest capstone-rag/manifests/s4-7d-oa140-release.v1.json \
+  --fetch-hashes \
+  --receipt capstone-rag/manifests/s4-7d-oa140-remote-hash-receipt.v1.json
+```
+
+`rag-content status`는 이 manifest가 있으면 `CORE_READY`를 반환한다. `setup-rag-content.bat`과
+`rag-content setup`은 manifest를 다시 검증하고 `OA_RELEASE_MANIFEST_VERIFIED`를 반환한다.
+이 상태는 아직 원문 download/parse/embed/eval이 끝난 `FULL_READY`가 아니라, public OA
+generation을 구축하기 위한 `BUILDING` 시작점이다.
+`FULL_READY`는 runtime cache에서 모든 source hash, parser/OCR receipt, chunk hash, BGE
+embedding, staging evaluation이 통과하고 서버 active pointer가 원자적으로 pin된 뒤에만 가능하다.
+
+배포용 metadata artifact set은
+`manifests/s4-7d-oa140-distribution.v1.json`과
+`manifests/s4-7d-oa140-checksums.sha256`이 고정한다. 현재 repository에는 GitHub Release와
+Hugging Face publication credential이 없으므로 publication status는
+`READY_NOT_PUBLISHED_NO_CREDENTIAL`이다. 실제 게시 단계에서도 OA 원문·추출 text·embedding은
+올리지 않고, release manifest·curriculum map·remote hash receipt·checksums만 동일 digest로
+게시한다.

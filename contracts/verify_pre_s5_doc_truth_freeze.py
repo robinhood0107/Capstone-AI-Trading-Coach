@@ -156,9 +156,13 @@ EXPECTED_TEAMMATE_WORKSPACE_PATHS: Final[frozenset[str]] = frozenset(
         "workspaces/experience-dashboard/README.md",
     }
 )
-SOLO_OWNERSHIP_FORBIDDEN_MARKERS: Final[dict[str, tuple[str, ...]]] = {
-    "docs/API_명세서.md": ("`EXTERNAL_OWNER_HANDOFF`",),
-}
+SOLO_OWNERSHIP_FORBIDDEN_MARKERS: Final[tuple[str, ...]] = (
+    "EXTERNAL_OWNER_HANDOFF",
+)
+IMMUTABLE_HISTORY_DIRECTORIES: Final[tuple[str, ...]] = (
+    "docs/adr",
+    "contracts/changes",
+)
 TEAMMATE_REFERENCE_PATTERN: Final[re.Pattern[str]] = re.compile(
     r"(?:팀원(?:\s*[AB])?|\bteam\s*(?:[ab]|member)\b|\breturn[ _-]engine\b|"
     r"\bexperience[ _-]dashboard\b)",
@@ -501,6 +505,23 @@ def solo_ownership_role_catalog_errors(root: Path) -> list[str]:
     return []
 
 
+def solo_ownership_assignment_errors(relative: str, text: str) -> list[str]:
+    """각 authority key는 문서마다 정확한 값 한 번만 허용해 상충 marker 삽입을 막는다."""
+
+    errors: list[str] = []
+    normalized_lines = tuple(line.strip().strip("`") for line in text.splitlines())
+    for marker in SOLO_OWNERSHIP_MARKERS:
+        if "=" not in marker:
+            if normalized_lines.count(marker) != 1:
+                errors.append(f"{relative}: {marker} must appear exactly once")
+            continue
+        key, _, _ = marker.partition("=")
+        assignments = tuple(line for line in normalized_lines if line.startswith(f"{key}="))
+        if assignments != (marker,):
+            errors.append(f"{relative}: {key} must have exactly one expected authority assignment")
+    return errors
+
+
 def tracked_teammate_workspace_errors(root: Path) -> list[str]:
     """placeholder workspace는 README 두 개만 추적하고 local working-tree drift도 허용하지 않는다."""
 
@@ -591,6 +612,29 @@ def teammate_workspace_diff_errors(root: Path, base: str) -> list[str]:
     return []
 
 
+def immutable_history_diff_errors(root: Path, base: str) -> list[str]:
+    """과거 ADR·contract-change 기록은 active addendum과 달리 base 대비 byte 변경을 허용하지 않는다."""
+
+    if not _base_commit_is_available(root, base):
+        return ["solo ownership base cannot be resolved"]
+    output, error = _git_output(
+        root,
+        [
+            "diff",
+            "--no-ext-diff",
+            "--name-only",
+            f"{base}...HEAD",
+            "--",
+            *IMMUTABLE_HISTORY_DIRECTORIES,
+        ],
+    )
+    if error:
+        return ["immutable historical record diff could not be read"]
+    if output and output.strip():
+        return ["immutable historical records changed since base"]
+    return []
+
+
 def new_teammate_dependency_errors(root: Path, base: str) -> list[str]:
     """새 role/task 의존성만 diff로 차단하고 historical roadmap 본문은 바꾸지 않는다."""
 
@@ -622,7 +666,8 @@ def verify_solo_ownership_lock(root: Path, base: str | None = None) -> list[str]
         for marker in SOLO_OWNERSHIP_MARKERS:
             if marker not in text:
                 errors.append(f"{relative}: missing solo ownership marker {marker}")
-        for marker in SOLO_OWNERSHIP_FORBIDDEN_MARKERS.get(relative, ()):
+        errors.extend(solo_ownership_assignment_errors(relative, text))
+        for marker in SOLO_OWNERSHIP_FORBIDDEN_MARKERS:
             if marker in text:
                 errors.append(f"{relative}: forbidden stale solo ownership marker {marker}")
     errors.extend(solo_ownership_role_catalog_errors(root))
@@ -630,6 +675,7 @@ def verify_solo_ownership_lock(root: Path, base: str | None = None) -> list[str]
     if base is not None:
         errors.extend(new_teammate_dependency_errors(root, base))
         errors.extend(teammate_workspace_diff_errors(root, base))
+        errors.extend(immutable_history_diff_errors(root, base))
     return errors
 
 

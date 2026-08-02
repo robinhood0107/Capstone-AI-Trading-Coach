@@ -1,6 +1,6 @@
 {
   "schemaVersion": "s1.4x-reference-lock-v1",
-  "referenceBaseCommit": "13b7b21a904fc37ce0947d5da2de7d04794e497a",
+  "referenceBaseCommit": "bf8472dfcc5f9d883ca83bd461a62f254332b39f",
   "pythonRuntime": {
     "implementation": "CPython",
     "version": "3.12.13",
@@ -52,12 +52,12 @@
     {
       "role": "production-project-runtime-projection",
       "path": "workspaces/decision-platform/python-services/pyproject.toml",
-      "sha256": "dadb85e7efa8dfca116ca9a82acf1937c2ad4702f6b07e0ea35061ebf2f6b3ec"
+      "sha256": "c3c631684cc5713589bc9a7a9362c1b132c4b133f6d83e566acdccdb25a715af"
     },
     {
       "role": "production-environment-lock",
       "path": "workspaces/decision-platform/python-services/uv.lock",
-      "sha256": "f070b8374880b9d936e3c5e43e05727239f2afba08c9690f978949aa0c785064"
+      "sha256": "8cb06fb15858ba9bec5f94951cb89ece38d2ddfe13292d9a82df78f042393459"
     },
     {
       "role": "research-contract-readme",
@@ -196,7 +196,7 @@
         "uv.lock"
       ],
       "fileCount": 8,
-      "canonicalManifestSha256": "6ab51823eb611a2747f638dba3e1516aabbab6cff33b3596956258bd52f026a6",
+      "canonicalManifestSha256": "571e7274262dccbd079ba820803fffe5790023df8e36ccb3f9bfb09da394320d",
       "files": [
         {
           "path": "app/financial_engineering/__init__.py",
@@ -216,7 +216,7 @@
         },
         {
           "path": "pyproject.toml",
-          "sha256": "dadb85e7efa8dfca116ca9a82acf1937c2ad4702f6b07e0ea35061ebf2f6b3ec"
+          "sha256": "c3c631684cc5713589bc9a7a9362c1b132c4b133f6d83e566acdccdb25a715af"
         },
         {
           "path": "tests/financial_engineering/test_returns.py",
@@ -228,7 +228,7 @@
         },
         {
           "path": "uv.lock",
-          "sha256": "f070b8374880b9d936e3c5e43e05727239f2afba08c9690f978949aa0c785064"
+          "sha256": "8cb06fb15858ba9bec5f94951cb89ece38d2ddfe13292d9a82df78f042393459"
         }
       ]
     },

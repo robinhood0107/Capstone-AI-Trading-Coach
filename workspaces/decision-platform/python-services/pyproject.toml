@@ -1,22 +1,44 @@
+# S4.7D parser/OCR runtime 의존성 변경은 S1.4X reference lock amendment로 추적한다.
 [project]
 name = "decision-platform-services"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
-  "fastapi>=0.111", "uvicorn>=0.30",
-  "grpcio>=1.81.1", "grpcio-health-checking>=1.81.1", "protobuf>=4.25",
-  "pydantic>=2.7", "pydantic-settings>=2.3",
-  "httpx>=0.27", "tenacity>=8.3",
+  "fastapi>=0.111",
+  "uvicorn>=0.30",
+  "grpcio>=1.81.1",
+  "grpcio-health-checking>=1.81.1",
+  "protobuf>=4.25",
+  "pydantic>=2.7",
+  "pydantic-settings>=2.3",
+  "httpx>=0.27",
+  "tenacity>=8.3",
   "cryptography>=45,<47",
-  "PyYAML>=6.0", "defusedxml>=0.7.1,<0.8", "jsonschema[format]==4.26.0",
+  "PyYAML>=6.0",
+  "defusedxml>=0.7.1,<0.8",
+  "jsonschema[format]==4.26.0",
   "numpy==2.5.1",
-  "pandas>=2.2", "pyarrow>=16",
+  "pandas>=2.2",
+  "pyarrow>=16",
   "exchange-calendars==4.13.2",
-  "lightgbm>=4.3", "scikit-learn>=1.5", "hmmlearn>=0.3", "statsmodels>=0.14", "scipy>=1.13",
-  "psycopg[binary]>=3.1", "psycopg_pool>=3.2", "pgvector>=0.2",
-  "redis>=5.0", "confluent-kafka>=2.4",
+  "lightgbm>=4.3",
+  "scikit-learn>=1.5",
+  "hmmlearn>=0.3",
+  "statsmodels>=0.14",
+  "scipy>=1.13",
+  "psycopg[binary]>=3.1",
+  "psycopg_pool>=3.2",
+  "pgvector>=0.2",
+  "redis>=5.0",
+  "confluent-kafka>=2.4",
   # S4.2A BGE ONNX runtime 의존성은 S1.4X reference lock에 함께 고정한다.
-  "onnxruntime==1.28.0", "tokenizers==0.23.1",
+  "onnxruntime==1.28.0",
+  "tokenizers==0.23.1",
+  "pymupdf==1.27.2.2",
+  "python-docx==1.2.0",
+  "python-pptx==1.0.2",
+  "openpyxl==3.1.5",
+  "pillow==12.1.1",
 ]
 
 [project.scripts]
@@ -44,6 +66,7 @@ rag-source-card-validate = "app.rag.source_card:main"
 rag-official-evidence-validate = "app.rag.official_evidence:main"
 rag-bge-artifact-acquire = "app.rag.bge_acquisition:main"
 rag-bge-five-card-poc = "app.rag.bge_poc_cli:main"
+rag-content = "app.rag.content_cli:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -65,6 +88,7 @@ dev = [
   "types-PyYAML>=6.0",
   "types-defusedxml>=0.7",
   "pandas-stubs>=2.2",
+  "types-openpyxl==3.1.5.20260724",
 ]
 
 [tool.ruff]
@@ -90,4 +114,8 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = ["jsonschema", "jsonschema.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["fitz", "fitz.*"]
 ignore_missing_imports = true

@@ -1,0 +1,101 @@
+{
+  "benchmarkId": "s4-7d-ocr-finance-v1",
+  "benchmarkManifestSha256": "f43abfc2eaab0d6f958b8eac3369fc3f2f00c4d95569ae977e527bef3fc39f1a",
+  "candidates": {
+    "PADDLE_STRUCTURED": {
+      "candidateVersion": "paddleocr-3.7.0+paddlepaddle-3.3.1",
+      "failureCode": "OCR_QUALITY_GATE_FAILED",
+      "modelSha256": "fd7572e6cdf51bd49131aabbd946d3c38ba9225fb2e2fed1c1e06dbe5b7c24f2",
+      "observedQuality": {
+        "criticalSpanErrors": 31,
+        "englishCer": 0.17945007235890015,
+        "formulaAccuracy": 0.7654090964825863,
+        "hallucinatedCriticalSpans": 2,
+        "koreanCer": 0.003367003367003367,
+        "readingOrderKendallTau": 1.0,
+        "tableCellF1": 0.0
+      },
+      "resultDigests": {
+        "arxiv-2403.00746v2-p004": "b73b2547e2eed5f0ff7ecebf83086c245a588822a5e5e30a11a7a4c560bddbc8",
+        "bok-fsr-2026-06-p060": "ba0ee264e54f2c139b14310b44731eabbac4cdcb5e0289d1cffdac6d39ef5a09"
+      },
+      "status": "FAILED"
+    },
+    "PADDLE_VL": {
+      "candidateVersion": "paddleocr-vl-1.6+paddleocr-3.7.0+openvino-2026.2.1",
+      "intelDerivedModelTreeSha256": "c24d2c4cc43864e78a778522206e3e04e7347182f31e34b635d97471278a1c7d",
+      "intelResultDigests": {
+        "arxiv-2403.00746v2-p004": "a948c478a7e1e8fbe8cb2f7929b52f108078272e3a694ac9fc87a2f4584455cf",
+        "bok-fsr-2026-06-p060": "c945033300be4afd5fd19643c94129e95ee7d61819429f9d287a44cea375e536"
+      },
+      "lanes": [
+        {
+          "artifactSha256": "e5736d65284a640a88c6e047953d8f7e6168eebda0a2565141071848e2ac3796",
+          "compileInferVerified": false,
+          "deviceName": "Intel Core Ultra 5 228V CPU",
+          "executed": true,
+          "installBytes": 3617600043,
+          "lane": "CPU",
+          "normalizedPagesPerMinute": 0.1263571242204535,
+          "openvinoDevice": null,
+          "peakMemoryBytes": 6051479552,
+          "silentFallbackDetected": false
+        },
+        {
+          "artifactSha256": "4932f4085d362c03ebefddec354b6f6f1b23d62b22e76778a6cea55abf01c566",
+          "compileInferVerified": true,
+          "deviceName": "Intel(R) Arc(TM) 130V GPU (16GB) (iGPU)",
+          "executed": true,
+          "executionDevices": [
+            "GPU.0"
+          ],
+          "installBytes": 5558933241,
+          "lane": "INTEL_GPU",
+          "normalizedPagesPerMinute": 1.780198747856899,
+          "openvinoDevice": "GPU",
+          "peakMemoryBytes": 5030129664,
+          "silentFallbackDetected": false
+        }
+      ],
+      "modelSha256": "feb45208d1e030eb0df76126bb84419d968ca899995fa0bbc2f42fba219b7136",
+      "quality": {
+        "criticalSpanErrors": 0,
+        "englishCer": 0.0,
+        "formulaAccuracy": 1.0,
+        "hallucinatedCriticalSpans": 0,
+        "koreanCer": 0.0,
+        "readingOrderKendallTau": 1.0,
+        "tableCellF1": 1.0
+      },
+      "resultDigests": {
+        "arxiv-2403.00746v2-p004": "82f345fb7d9d49c4c5d019c7503a904c5e1a0b820463d432bcee94c094e70591",
+        "bok-fsr-2026-06-p060": "4d32347d4d49e7557b611ea9805756a4ebc5b6b38286d5f0be888d9ff17cfb34"
+      },
+      "status": "SUCCEEDED"
+    },
+    "UNLIMITED_GGUF": {
+      "candidateVersion": "unlimited-ocr-0dc781d8+llama.cpp-ac42acac",
+      "failureCode": "OCR_QUALITY_GATE_FAILED",
+      "modelSha256": "5bf3f3ec69934593f81f4877842ac73c304bc436754d7bb8a05eec0f6856890f",
+      "observedQuality": {
+        "criticalSpanErrors": 25,
+        "englishCer": 0.36227689339122043,
+        "formulaAccuracy": 0.19399456846210952,
+        "hallucinatedCriticalSpans": 122,
+        "koreanCer": 0.35353535353535354,
+        "readingOrderKendallTau": -1.0,
+        "tableCellF1": 1.0
+      },
+      "resultDigests": {
+        "arxiv-2403.00746v2-p004": "14d9a01cfac4223f2d0827389cafc2b761bb8722bb5b22d4e29f25af7f8cec1c",
+        "bok-fsr-2026-06-p060": "f23ae1f24dc25f560b3b6c06c013339cd6a5be4194c07262861b4b11a67f91cd"
+      },
+      "status": "FAILED"
+    }
+  },
+  "generatedAt": "2026-08-01T19:52:49Z",
+  "normalizedSlowestLanePagesPerMinute": 0.1263571242204535,
+  "nvidiaLane": "NOT_RUN_NO_NVIDIA",
+  "releaseGate": "PASSED",
+  "selectedBackend": "PADDLE_VL"
+}

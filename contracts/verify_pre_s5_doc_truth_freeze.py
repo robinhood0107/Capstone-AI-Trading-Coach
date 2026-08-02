@@ -159,9 +159,12 @@ EXPECTED_TEAMMATE_WORKSPACE_PATHS: Final[frozenset[str]] = frozenset(
 SOLO_OWNERSHIP_FORBIDDEN_MARKERS: Final[tuple[str, ...]] = (
     "EXTERNAL_OWNER_HANDOFF",
 )
-IMMUTABLE_HISTORY_DIRECTORIES: Final[tuple[str, ...]] = (
-    "docs/adr",
-    "contracts/changes",
+IMMUTABLE_HISTORY_CLASSIFICATIONS: Final[frozenset[str]] = frozenset(
+    {
+        "HISTORICAL_SUPERSEDED",
+        "IMMUTABLE_CONTRACT_HISTORY",
+        "EVIDENCE_ONLY",
+    }
 )
 TEAMMATE_REFERENCE_PATTERN: Final[re.Pattern[str]] = re.compile(
     r"(?:팀원(?:\s*[AB])?|\bteam\s*(?:[ab]|member)\b|\breturn[ _-]engine\b|"
@@ -557,8 +560,8 @@ def _base_commit_is_available(root: Path, base: str) -> bool:
     return error is None
 
 
-def added_public_lines_since_base(root: Path, base: str) -> tuple[list[tuple[str, str]], list[str]]:
-    """base...HEAD에 새로 추가된 active-public 행만 추출해 legacy 본문을 재해석하지 않는다."""
+def added_markdown_lines_since_base(root: Path, base: str) -> tuple[list[tuple[str, str]], list[str]]:
+    """base...HEAD에 새로 추가된 Markdown 행을 추출해 신규 역할 의존성 우회를 막는다."""
 
     if not _base_commit_is_available(root, base):
         return [], ["solo ownership base cannot be resolved"]
@@ -570,8 +573,6 @@ def added_public_lines_since_base(root: Path, base: str) -> tuple[list[tuple[str
             "--no-renames",
             "--unified=0",
             f"{base}...HEAD",
-            "--",
-            *ACTIVE_PUBLIC_PATHS,
         ],
     )
     if error:
@@ -583,7 +584,12 @@ def added_public_lines_since_base(root: Path, base: str) -> tuple[list[tuple[str
         if line.startswith("+++ b/"):
             current_relative = line.removeprefix("+++ b/")
             continue
-        if line.startswith("+") and not line.startswith("+++") and current_relative is not None:
+        if (
+            line.startswith("+")
+            and not line.startswith("+++")
+            and current_relative is not None
+            and current_relative.endswith(".md")
+        ):
             additions.append((current_relative, line[1:]))
     return additions, []
 
@@ -613,7 +619,7 @@ def teammate_workspace_diff_errors(root: Path, base: str) -> list[str]:
 
 
 def immutable_history_diff_errors(root: Path, base: str) -> list[str]:
-    """과거 ADR·contract-change 기록은 active addendum과 달리 base 대비 byte 변경을 허용하지 않는다."""
+    """base에 있던 historical Markdown은 byte 변경·삭제를 막되 새 계약 기록은 허용한다."""
 
     if not _base_commit_is_available(root, base):
         return ["solo ownership base cannot be resolved"]
@@ -622,15 +628,25 @@ def immutable_history_diff_errors(root: Path, base: str) -> list[str]:
         [
             "diff",
             "--no-ext-diff",
+            "--no-renames",
             "--name-only",
+            "--diff-filter=MD",
             f"{base}...HEAD",
-            "--",
-            *IMMUTABLE_HISTORY_DIRECTORIES,
         ],
     )
     if error:
         return ["immutable historical record diff could not be read"]
-    if output and output.strip():
+    changed_historical_paths = (
+        tuple(
+            relative
+            for relative in output.splitlines()
+            if relative.endswith(".md")
+            and classify_markdown(relative) in IMMUTABLE_HISTORY_CLASSIFICATIONS
+        )
+        if output
+        else ()
+    )
+    if changed_historical_paths:
         return ["immutable historical records changed since base"]
     return []
 
@@ -638,7 +654,7 @@ def immutable_history_diff_errors(root: Path, base: str) -> list[str]:
 def new_teammate_dependency_errors(root: Path, base: str) -> list[str]:
     """새 role/task 의존성만 diff로 차단하고 historical roadmap 본문은 바꾸지 않는다."""
 
-    additions, errors = added_public_lines_since_base(root, base)
+    additions, errors = added_markdown_lines_since_base(root, base)
     if errors:
         return errors
     for relative, line in additions:

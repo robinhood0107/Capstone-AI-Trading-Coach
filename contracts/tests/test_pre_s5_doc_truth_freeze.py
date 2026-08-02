@@ -228,11 +228,15 @@ class PreS5DocumentTruthFreezeTest(unittest.TestCase):
             root = Path(temporary_directory)
             base = self._solo_ownership_fixture(root)
             historical = root / "docs/s5-team-dependencies.md"
-            historical.write_text("team member B required artifact\n", encoding="utf-8")
+            historical.write_text(
+                "TEAM_B owns a new task\nLSTM output is required for S5 entry\n",
+                encoding="utf-8",
+            )
             self._commit(root, "new teammate dependency")
 
             errors = verify_solo_ownership_lock(root, base)
 
+        self.assertIn("docs/s5-team-dependencies.md: new teammate role was added outside the exact catalog", errors)
         self.assertIn("docs/s5-team-dependencies.md: new teammate dependency was added", errors)
 
     def test_solo_ownership_lock_allows_a_new_decision_only_contract_change(self) -> None:

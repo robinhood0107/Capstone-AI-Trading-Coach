@@ -915,6 +915,16 @@ BEGIN
             )
         TO decision_app;
     END IF;
+    IF to_regprocedure('public.read_rag_v2_corpus_status(text)') IS NOT NULL THEN
+        -- V24 RAG v2는 direct API라도 raw table이 아니라 owner-bound definer 함수만 호출한다.
+        GRANT EXECUTE ON FUNCTION
+            read_rag_v2_corpus_status(text),
+            read_rag_v2_history_metadata(text, timestamptz, text, integer),
+            read_rag_v2_history_detail(text, text),
+            delete_owned_rag_v2_history(text, text),
+            delete_owner_rag_v2_document(text, text, text, text)
+        TO decision_app;
+    END IF;
 END
 $decision_runtime_function_privileges$;
 

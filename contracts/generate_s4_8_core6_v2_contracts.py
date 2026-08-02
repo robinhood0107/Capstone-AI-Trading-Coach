@@ -1047,6 +1047,41 @@ def generate_outputs() -> dict[str, bytes]:
 OUTPUTS: Final[frozenset[str]] = frozenset(generate_outputs())
 
 
+def _unexpected_core6_artifact_paths(
+    root: Path, outputs: Mapping[str, bytes]
+) -> list[str]:
+    """Core 6 generated namespace의 추가 tracked-like artifact를 fail-closed로 찾는다.
+
+    실제 APPROVED packet은 local-only runner가 public fixture directory 밖에서 관리한다.
+    따라서 schema/example namespace에 같은 contract ID의 추가 파일이 있으면 generated check가
+    허용하지 않아야 public fixture가 실행 packet처럼 오인되는 경로를 막을 수 있다.
+    """
+
+    expected_paths = set(outputs)
+    candidate_paths: set[Path] = set()
+    for contract_id in SCHEMA_IDS:
+        candidate_paths.update(
+            path
+            for path in (root / "contracts/schemas").glob(f"{contract_id}*.schema.json")
+            if path.is_file() or path.is_symlink()
+        )
+        for directory in (
+            root / "contracts/examples",
+            root / "contracts/examples/invalid",
+        ):
+            candidate_paths.update(
+                path
+                for path in directory.glob(f"{contract_id}*.json")
+                if path.is_file() or path.is_symlink()
+            )
+
+    return sorted(
+        relative_path
+        for path in candidate_paths
+        if (relative_path := path.relative_to(root).as_posix()) not in expected_paths
+    )
+
+
 def _write_outputs(outputs: Mapping[str, bytes]) -> None:
     for relative_path, payload in sorted(outputs.items()):
         write_generated_artifact(ROOT, relative_path, payload)
@@ -1058,9 +1093,20 @@ def _check_outputs(outputs: Mapping[str, bytes]) -> None:
         path = ROOT / relative_path
         if not path.is_file() or path.is_symlink() or path.read_bytes() != expected:
             mismatches.append(relative_path)
-    if mismatches:
-        joined = "\n".join(f"- {path}" for path in mismatches)
-        raise ContractValidationError(f"generated S4.8 Core 6 artifacts drifted:\n{joined}")
+    unexpected = _unexpected_core6_artifact_paths(ROOT, outputs)
+    if mismatches or unexpected:
+        messages: list[str] = []
+        if mismatches:
+            messages.append(
+                "generated S4.8 Core 6 artifacts drifted:\n"
+                + "\n".join(f"- {path}" for path in mismatches)
+            )
+        if unexpected:
+            messages.append(
+                "unexpected Core 6 generated namespace artifacts:\n"
+                + "\n".join(f"- {path}" for path in unexpected)
+            )
+        raise ContractValidationError("\n".join(messages))
 
 
 def main(argv: list[str] | None = None) -> int:

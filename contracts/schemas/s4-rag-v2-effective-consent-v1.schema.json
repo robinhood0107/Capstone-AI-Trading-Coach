@@ -1,0 +1,42 @@
+{
+  "$id": "contracts/schemas/s4-rag-v2-effective-consent-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "consentEventId": {
+      "pattern": "^rce_[A-Za-z0-9_-]{12,96}$",
+      "type": "string"
+    },
+    "effective": {
+      "type": "boolean"
+    },
+    "policyDigest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "processorSetDigest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "state": {
+      "enum": [
+        "GRANTED",
+        "NOT_GRANTED",
+        "REVOKED"
+      ]
+    }
+  },
+  "required": [
+    "consentEventId",
+    "effective",
+    "policyDigest",
+    "processorSetDigest",
+    "schemaVersion",
+    "state"
+  ],
+  "title": "s4-rag-v2-effective-consent-v1",
+  "type": "object"
+}

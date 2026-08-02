@@ -1,0 +1,18 @@
+{
+  "candidateModels": [
+    "PROSUSAI_FINBERT",
+    "YIYANGHKUST_FINBERT_TONE",
+    "LOUGHRAN_MCDONALD_BASELINE"
+  ],
+  "metrics": {
+    "criticalNegationNumberUnitErrors": 0,
+    "ece": 0,
+    "macroF1": 0,
+    "minimumClassRecall": 0,
+    "neutralF1": 0
+  },
+  "schemaVersion": 1,
+  "selectedModel": null,
+  "selectionStatus": "NOT_SELECTED",
+  "testEvaluationCount": 1
+}

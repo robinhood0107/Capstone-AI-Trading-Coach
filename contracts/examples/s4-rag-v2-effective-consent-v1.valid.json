@@ -1,0 +1,8 @@
+{
+  "consentEventId": "rce_01CONTRACTFIXTURE",
+  "effective": true,
+  "policyDigest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "processorSetDigest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "schemaVersion": 1,
+  "state": "GRANTED"
+}

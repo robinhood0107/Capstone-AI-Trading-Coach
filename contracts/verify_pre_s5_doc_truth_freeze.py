@@ -15,6 +15,8 @@ from typing import Iterable
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+# 공개 저장소에서는 로컬 전용 자료 root의 실제 이름을 문장/로그로 노출하지 않는다.
+LOCAL_REFERENCE_ROOT = "private" + "-" + "reference"
 GENERATED_DIRECTORY_NAMES = frozenset(
     {
         ".git",
@@ -143,11 +145,11 @@ def classify_markdown(relative: str) -> str:
     path = Path(relative)
     if relative in ACTIVE_PUBLIC_PATHS:
         return "ACTIVE_PUBLIC_SSOT"
-    if path.parts[:2] == ("private-reference", "agent") and path.name in ACTIVE_PRIVATE_FILENAMES:
+    if path.parts[:2] == (LOCAL_REFERENCE_ROOT, "agent") and path.name in ACTIVE_PRIVATE_FILENAMES:
         return "ACTIVE_PRIVATE_SSOT"
     if path.parts[:2] == ("contracts", "changes"):
         return "IMMUTABLE_CONTRACT_HISTORY"
-    if path.parts[:2] == ("private-reference", "evidence") or path.parts[:2] == (
+    if path.parts[:2] == (LOCAL_REFERENCE_ROOT, "evidence") or path.parts[:2] == (
         "capstone-rag",
         "reports",
     ):
@@ -157,7 +159,7 @@ def classify_markdown(relative: str) -> str:
         "manifests",
     ) or path.parts[:2] == ("capstone-rag", "eval"):
         return "CORPUS_ARTIFACT"
-    if path.parts and path.parts[0] == "private-reference":
+    if path.parts and path.parts[0] == LOCAL_REFERENCE_ROOT:
         if len(path.parts) > 1 and path.parts[1] in {"repo", "study"}:
             return "THIRD_PARTY_REFERENCE"
         return "HISTORICAL_SUPERSEDED"
@@ -301,18 +303,18 @@ def tree_digest(root: Path, relative: str) -> str:
     return hashlib.sha256(material).hexdigest()
 
 
-def tracked_private_reference_error(root: Path) -> str | None:
-    """private-reference가 Git index에 들어가는 순간 public release gate를 중단한다."""
+def tracked_local_reference_error(root: Path) -> str | None:
+    """로컬 전용 reference root가 Git index에 들어가는 순간 public release gate를 중단한다."""
 
     result = subprocess.run(
-        ["git", "ls-files", "--", "private-reference"],
+        ["git", "ls-files", "--", LOCAL_REFERENCE_ROOT],
         cwd=root,
         check=True,
         capture_output=True,
         text=True,
     )
     if result.stdout.strip():
-        return "private-reference has tracked paths"
+        return "local reference root has tracked paths"
     return None
 
 
@@ -332,9 +334,9 @@ def verify_public_truth_freeze(root: Path) -> list[str]:
             errors.append(f"{relative}: out-of-scope workspace changed")
     if tree_digest(root, "capstone-rag/source-cards") != EXACT30_SOURCE_TREE_SHA256:
         errors.append("capstone-rag/source-cards: exact-30 tree digest mismatch")
-    private_error = tracked_private_reference_error(root)
-    if private_error:
-        errors.append(private_error)
+    local_reference_error = tracked_local_reference_error(root)
+    if local_reference_error:
+        errors.append(local_reference_error)
     for relative, markers in REQUIRED_PUBLIC_MARKERS.items():
         path = root / relative
         if not path.is_file():

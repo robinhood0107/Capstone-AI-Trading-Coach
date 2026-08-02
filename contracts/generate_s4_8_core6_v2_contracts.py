@@ -3,10 +3,12 @@ from __future__ import annotations
 import argparse
 import copy
 import hashlib
+import os
+import stat
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Final, Mapping
+from typing import Any, Collection, Final, Mapping
 
 from jsonschema import Draft202012Validator
 
@@ -1047,17 +1049,29 @@ def generate_outputs() -> dict[str, bytes]:
 OUTPUTS: Final[frozenset[str]] = frozenset(generate_outputs())
 
 
+def _is_core6_fixture_payload(path: Path, root: Path) -> bool:
+    """파일명과 무관하게 public fixture 안의 Core 6 contract payload를 식별한다."""
+
+    try:
+        payload = load_json_bytes_strict(
+            path.read_bytes(), source=path.relative_to(root).as_posix()
+        )
+    except (ContractValidationError, OSError):
+        return False
+    return isinstance(payload, Mapping) and payload.get("contractId") in SCHEMA_IDS
+
+
 def _unexpected_core6_artifact_paths(
-    root: Path, outputs: Mapping[str, bytes]
+    root: Path, expected_output_paths: Collection[str]
 ) -> list[str]:
     """Core 6 generated namespace의 추가 tracked-like artifact를 fail-closed로 찾는다.
 
     실제 APPROVED packet은 local-only runner가 public fixture directory 밖에서 관리한다.
-    따라서 schema/example namespace에 같은 contract ID의 추가 파일이 있으면 generated check가
-    허용하지 않아야 public fixture가 실행 packet처럼 오인되는 경로를 막을 수 있다.
+    따라서 public fixture tree 전체를 재귀적으로 읽어 파일명과 무관한 Core 6 payload까지
+    확인하고, 선언된 generated output 밖의 artifact는 허용하지 않아야 한다.
     """
 
-    expected_paths = set(outputs)
+    expected_paths = set(expected_output_paths)
     candidate_paths: set[Path] = set()
     for contract_id in SCHEMA_IDS:
         candidate_paths.update(
@@ -1065,15 +1079,31 @@ def _unexpected_core6_artifact_paths(
             for path in (root / "contracts/schemas").glob(f"{contract_id}*.schema.json")
             if path.is_file() or path.is_symlink()
         )
-        for directory in (
-            root / "contracts/examples",
-            root / "contracts/examples/invalid",
+
+    fixture_root = root / "contracts/examples"
+    if fixture_root.is_dir() and not fixture_root.is_symlink():
+        for directory, directory_names, file_names in os.walk(
+            fixture_root, followlinks=False
         ):
-            candidate_paths.update(
-                path
-                for path in directory.glob(f"{contract_id}*.json")
-                if path.is_file() or path.is_symlink()
-            )
+            current_directory = Path(directory)
+            for directory_name in tuple(directory_names):
+                child = current_directory / directory_name
+                if stat.S_ISLNK(child.lstat().st_mode):
+                    # public fixture tree의 link directory는 local-only packet을 숨길 수 있어
+                    # 허용하지 않는다. os.walk가 target을 follow하지 않도록 목록에서도 제거한다.
+                    candidate_paths.add(child)
+                    directory_names.remove(directory_name)
+            for file_name in file_names:
+                candidate = current_directory / file_name
+                if candidate.suffix != ".json":
+                    continue
+                if candidate.is_symlink() or _is_core6_fixture_payload(candidate, root):
+                    candidate_paths.add(candidate)
+                elif any(
+                    candidate.name.startswith(f"{contract_id}.")
+                    for contract_id in SCHEMA_IDS
+                ):
+                    candidate_paths.add(candidate)
 
     return sorted(
         relative_path
@@ -1087,13 +1117,13 @@ def _write_outputs(outputs: Mapping[str, bytes]) -> None:
         write_generated_artifact(ROOT, relative_path, payload)
 
 
-def _check_outputs(outputs: Mapping[str, bytes]) -> None:
+def _check_outputs(outputs: Mapping[str, bytes], *, root: Path = ROOT) -> None:
     mismatches: list[str] = []
     for relative_path, expected in sorted(outputs.items()):
-        path = ROOT / relative_path
+        path = root / relative_path
         if not path.is_file() or path.is_symlink() or path.read_bytes() != expected:
             mismatches.append(relative_path)
-    unexpected = _unexpected_core6_artifact_paths(ROOT, outputs)
+    unexpected = _unexpected_core6_artifact_paths(root, outputs)
     if mismatches or unexpected:
         messages: list[str] = []
         if mismatches:

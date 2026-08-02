@@ -69,6 +69,9 @@ SCHEMA_PATHS: Final[dict[str, Path]] = {
     schema_id: ROOT / f"contracts/schemas/{schema_id}.schema.json"
     for schema_id in SCHEMA_IDS
 }
+CORE6_SCHEMA_DOCUMENT_IDS: Final[frozenset[str]] = frozenset(
+    f"contracts/schemas/{schema_id}.schema.json" for schema_id in SCHEMA_IDS
+)
 
 # v1/V23은 이미 배포된 fixture-only 경계다. Core 6 contract는 이를 수정하지 못한다.
 FROZEN_V1_HASHES: Final[dict[str, str]] = {
@@ -1049,8 +1052,8 @@ def generate_outputs() -> dict[str, bytes]:
 OUTPUTS: Final[frozenset[str]] = frozenset(generate_outputs())
 
 
-def _is_core6_fixture_payload(path: Path, root: Path) -> bool:
-    """파일명과 무관하게 public fixture 안의 Core 6 contract payload를 식별한다."""
+def _is_core6_public_artifact_payload(path: Path, root: Path) -> bool:
+    """파일명과 무관하게 public schema/fixture 안의 Core 6 artifact를 식별한다."""
 
     try:
         payload = load_json_bytes_strict(
@@ -1058,7 +1061,70 @@ def _is_core6_fixture_payload(path: Path, root: Path) -> bool:
         )
     except (ContractValidationError, OSError):
         return False
-    return isinstance(payload, Mapping) and payload.get("contractId") in SCHEMA_IDS
+    return isinstance(payload, Mapping) and (
+        payload.get("contractId") in SCHEMA_IDS
+        or payload.get("$id") in CORE6_SCHEMA_DOCUMENT_IDS
+    )
+
+
+def _is_core6_filename_family(path: Path, *, schema_namespace: bool) -> bool:
+    """기존 schema glob과 fixture delimiter 계약을 유지해 Core 6 이름 계열만 식별한다."""
+
+    if schema_namespace:
+        return path.name.endswith(".schema.json") and any(
+            path.name.startswith(contract_id) for contract_id in SCHEMA_IDS
+        )
+    return any(
+        path.name.startswith(f"{contract_id}.") for contract_id in SCHEMA_IDS
+    )
+
+
+def _public_core6_artifact_candidates(
+    namespace_root: Path, root: Path, *, schema_namespace: bool
+) -> set[Path]:
+    """public namespace를 no-follow로 순회해 Core 6 추가 artifact 후보를 반환한다."""
+
+    candidate_paths: set[Path] = set()
+    try:
+        metadata = namespace_root.lstat()
+    except OSError:
+        return candidate_paths
+    if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
+        return {namespace_root}
+
+    for directory, directory_names, file_names in os.walk(
+        namespace_root, followlinks=False
+    ):
+        current_directory = Path(directory)
+        for directory_name in tuple(directory_names):
+            child = current_directory / directory_name
+            try:
+                metadata = child.lstat()
+            except OSError:
+                candidate_paths.add(child)
+                directory_names.remove(directory_name)
+                continue
+            if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
+                # public namespace의 linked/non-directory child는 local-only bytes를 숨길 수 있다.
+                # os.walk가 대상 경로를 읽지 않도록 후보에 남기고 재귀 목록에서는 제거한다.
+                candidate_paths.add(child)
+                directory_names.remove(directory_name)
+
+        for file_name in file_names:
+            candidate = current_directory / file_name
+            try:
+                metadata = candidate.lstat()
+            except OSError:
+                candidate_paths.add(candidate)
+                continue
+            if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
+                candidate_paths.add(candidate)
+                continue
+            if _is_core6_public_artifact_payload(
+                candidate, root
+            ) or _is_core6_filename_family(candidate, schema_namespace=schema_namespace):
+                candidate_paths.add(candidate)
+    return candidate_paths
 
 
 def _unexpected_core6_artifact_paths(
@@ -1072,36 +1138,14 @@ def _unexpected_core6_artifact_paths(
     """
 
     expected_paths = set(expected_output_paths)
-    candidate_paths: set[Path] = set()
-    for contract_id in SCHEMA_IDS:
-        candidate_paths.update(
-            path
-            for path in (root / "contracts/schemas").glob(f"{contract_id}*.schema.json")
-            if path.is_file() or path.is_symlink()
+    candidate_paths = _public_core6_artifact_candidates(
+        root / "contracts/schemas", root, schema_namespace=True
+    )
+    candidate_paths.update(
+        _public_core6_artifact_candidates(
+            root / "contracts/examples", root, schema_namespace=False
         )
-
-    fixture_root = root / "contracts/examples"
-    if fixture_root.is_dir() and not fixture_root.is_symlink():
-        for directory, directory_names, file_names in os.walk(
-            fixture_root, followlinks=False
-        ):
-            current_directory = Path(directory)
-            for directory_name in tuple(directory_names):
-                child = current_directory / directory_name
-                if stat.S_ISLNK(child.lstat().st_mode):
-                    # public fixture tree의 link directory는 local-only packet을 숨길 수 있어
-                    # 허용하지 않는다. os.walk가 target을 follow하지 않도록 목록에서도 제거한다.
-                    candidate_paths.add(child)
-                    directory_names.remove(directory_name)
-            for file_name in file_names:
-                candidate = current_directory / file_name
-                if candidate.is_symlink() or _is_core6_fixture_payload(candidate, root):
-                    candidate_paths.add(candidate)
-                elif any(
-                    candidate.name.startswith(f"{contract_id}.")
-                    for contract_id in SCHEMA_IDS
-                ):
-                    candidate_paths.add(candidate)
+    )
 
     return sorted(
         relative_path

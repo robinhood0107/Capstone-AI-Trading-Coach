@@ -6,8 +6,8 @@
 
 기존 P1 exact-30, source-card v1/v2, RAG v1 OpenAPI/proto와 평가 산출물을 수정하지 않고
 S4.7D 확장을 별도 v3/v2 계약으로 추가한다. 이번 변경의 상태는
-`S4_7D_CONTRACT=LOCKED`이며 parser/OCR, DB migration, active API, OA release corpus는 후속
-PR이다.
+`S4_7D_CONTRACT=LOCKED`이며 최초 contract-only 시점에는 parser/OCR, DB migration, active API,
+OA release corpus가 후속 PR이었다.
 
 catalog, separate OpenAPI, proto와 descriptor의 exact digest는 generated digest artifact와
 deterministic generator가 소유한다. 변경 기록에 같은 값을 수동 복제하지 않는다.
@@ -59,8 +59,9 @@ historical-only 값으로 보존한다. 이 전환은 DRM, 로그인, paywall �
 
 ### 후속 구현 순서
 
-1. 9-format safe parser, OCR benchmark, 단일 production backend와 BAT
-2. next-free migration, immutable bundle, owner RLS, deletion, v2 runtime/history
+1. 9-format safe parser, OCR benchmark, 단일 production backend와 BAT — `IMPLEMENTED_MERGE_CANDIDATE`
+2. next-free migration, immutable bundle, owner RLS, deletion, v2 runtime/history —
+   `IMPLEMENTED_MERGE_CANDIDATE`
 3. 검증된 112~140 source manifest, 콘텐츠 설정, 동일 digest 배포 metadata/tools
 
 ## EN
@@ -69,8 +70,8 @@ historical-only 값으로 보존한다. 이 전환은 DRM, 로그인, paywall �
 
 Add S4.7D as separate v3/v2 contracts without modifying the P1 exact-30 corpus,
 source-card v1/v2, RAG v1 OpenAPI/proto, or evaluation artifacts. This change is
-`S4_7D_CONTRACT=LOCKED`; parser/OCR, persistence, active endpoints, and the OA release corpus
-remain follow-up work.
+`S4_7D_CONTRACT=LOCKED`; at the initial contract-only point, parser/OCR, persistence, active
+endpoints, and the OA release corpus remained follow-up work.
 
 ### Source and Document IR
 
@@ -109,8 +110,10 @@ LLM transmission.
 
 ### Follow-up order
 
-1. Safe parsers for nine format families, OCR benchmark, one production backend, and BAT launchers
-2. The next-free migration, immutable bundles, owner RLS, deletion, and v2 runtime/history
+1. Safe parsers for nine format families, OCR benchmark, one production backend, and BAT launchers —
+   `IMPLEMENTED_MERGE_CANDIDATE`
+2. The next-free migration, immutable bundles, owner RLS, deletion, and v2 runtime/history —
+   `IMPLEMENTED_MERGE_CANDIDATE`
 3. A validated 112-to-140-source manifest, content setup, and same-digest distribution metadata/tools
 
 ## 검증 / Verification

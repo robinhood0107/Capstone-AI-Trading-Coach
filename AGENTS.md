@@ -47,7 +47,7 @@
   event-study/LightGBM BUY policy replay 뒤 S6.7 저장 snapshot reader로만 RiskEngine에
   연결한다. P1 최고 권한은 `WARN_ONLY`이며 analyst/news/RAG/LLM은 RiskDecision과 판단
   hash를 바꾸지 않는다.
-- **교차시장 계획 타당성은 `PLAN_FEASIBILITY=GO`다. S4.8A 일곱 계약은
+- **교차시장 계획 타당성은 `PLAN_FEASIBILITY=GO_WITH_EXTERNAL_HARD_GATES`다. S4.8A 일곱 계약은
   `CONTRACT_LOCKED`, S4.8B/C offline runtime은 `IMPLEMENTED_MERGE_CANDIDATE`,
   S6.6/S6.7은 `NOT_IMPLEMENTED / PLANNED`다.** 월 데이터 비용 목표는
   `0원`이며 offline fixture와 지연/EOD를 먼저 사용한다. Bloomberg·LSEG·FactSet·코스콤과
@@ -88,11 +88,41 @@
   stale/FAIL/drift/missing evidence는 prediction/asOf/HMM state 없는 `ABSTAIN`이다. active
   `/api/v2/signals/{symbol}`, artifact ingest, RiskDecision/order wiring은 후속 승인 전 `NO_GO`다.
 
+## Pre-S5 단독 실행 소유권 잠금
+
+이 절은 현재 Pre-S5 실행 authority다. 아래와 다른 공개 문서의 기존 역할·일정·artifact 계획은
+재현을 위한 `HISTORICAL_SUPERSEDED` 기록으로만 보존하며, 과거 ADR·contract-change·완료 evidence의
+bytes를 변경하지 않는다. 현재 존재하지 않는 기존 workspace output은 `NOT_AVAILABLE/ABSTAIN`으로만
+처리하고 S5 진입 또는 완료의 의존성으로 만들지 않는다.
+
+```text
+PRE_S5_DOC_TRUTH_FREEZE_ADDENDUM_VERIFIED
+PRE_S5_EXECUTION_OWNER=DECISION_PLATFORM
+S1_3G=OFFLINE_ONLY
+NEW_TEAMMATE_IMPLEMENTATION_TASKS=0
+NEW_TEAMMATE_ISSUES_OR_PRS=0
+REQUIRED_TEAMMATE_ARTIFACTS_FOR_S5_ENTRY=0
+TEAMMATE_WORKSPACE_DIFF=0
+GDELT_MODE=DECISION_PLATFORM_OFFLINE_REFERENCE_ONLY
+GDELT_EXISTING_OFFLINE_PRODUCER_UNCHANGED=1
+GDELT_HTTP_TRANSPORT=NOT_ACTIVATED
+GDELT_OUTBOUND_IMPLEMENTATION=0
+GDELT_OUTBOUND_CALLS=0
+GDELT_OFFLINE_REFERENCE_ONLY=1
+NAVER_ACTIVE_PROVIDER_RUNTIME_STORAGE=RETIRED
+RAG_NEWS_ANALYST_DECISION_SIGNAL_ORDER_AUTHORITY=0
+```
+
+Decision Platform은 기존 synthetic/offline GDELT aggregate producer를 계속 소유한다. HTTP
+transport와 executor는 활성화하거나 추가하지 않으며 outbound physical call은 0이다. RAG·news·analyst는
+Decision, Signal, RiskDecision, order, decision hash에 영향을 주지 않는다.
+
 ## 워크스페이스 경계
 
 - `workspaces/decision-platform/`: 박종진(`robinhood0107`) 담당. 이 개인 레포에서 실제 구현할 수 있는 영역이다.
 - `workspaces/return-engine/`: 팀원 B 담당. 현재는 placeholder이며, 이 레포에서는 `README.md` 외 구현 파일을 만들지 않는다.
 - `workspaces/experience-dashboard/`: 팀원 A 담당. 현재는 placeholder이며, 이 레포에서는 `README.md` 외 구현 파일을 만들지 않는다.
+- 위 두 placeholder의 기존 role label은 `HISTORICAL_SUPERSEDED`이며 현재 실행 task, artifact, entry dependency를 만들지 않는다.
 - `contracts/`: workspace 간 계약의 단일 진실 소스다. 변경 시 `contracts/changes/`에 이유와 영향 범위를 남긴다.
 - `artifacts/`: 계약을 만족하는 산출물 교환 폴더다. 원본 코드, 대용량 원시 데이터, 로컬 실행 산출물은 커밋하지 않는다.
 

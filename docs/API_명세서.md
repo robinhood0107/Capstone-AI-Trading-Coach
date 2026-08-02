@@ -31,13 +31,42 @@
 | `OFFLINE_ONLY` | fixture·local/Compose 검증만 통과했으며 provider physical call은 0 |
 | `STUB_FAIL_CLOSED` | 공개 route/CLI가 stable typed error로 닫혀 실제 기능을 가장하지 않음 |
 | `LIVE_VERIFIED` | exact HEAD·승인 packet·물리 호출 영수증까지 완료됨 |
-| `EXTERNAL_OWNER_HANDOFF` | 이 workspace가 provider producer를 소유하지 않고 sanitized consumer만 소유 |
+| `HISTORICAL_SUPERSEDED` | 과거 역할·일정·artifact 계획은 보존하되 현재 실행 또는 S5 entry 의존성이 아님 |
 | `DEFERRED_BY_DESIGN` | 명시적으로 후속 단계에 남긴 범위 |
 
 각 절에 `LIVE_VERIFIED`와 exact packet/receipt가 명시되지 않았다면 외부 성공으로 해석하지 않는다.
 세션 번호는 작업 배정을 뜻할 뿐 API 가용성을 뜻하지 않으며, schema/proto/OpenAPI 변경이 필요한
 기능은 별도의 contract-change 절차가 완료되어야 한다. 구현 상태의 상위 기준은
 `최종_프로젝트_명세서.md`와 `docs/README.md`의 Pre-S5 ledger를 따른다.
+
+### 0.2 Pre-S5 단독 실행 API authority
+
+이 절은 현재 API 운영 해석의 authority다. 아래에 남아 있는 기존 역할·일정·artifact 기술은
+`HISTORICAL_SUPERSEDED` 기록이며, 존재하지 않는 workspace output은 `NOT_AVAILABLE/ABSTAIN`으로만
+처리한다. 이는 S5 entry 또는 완료의 의존성이 아니다.
+
+```text
+PRE_S5_DOC_TRUTH_FREEZE_ADDENDUM_VERIFIED
+PRE_S5_EXECUTION_OWNER=DECISION_PLATFORM
+S1_3G=OFFLINE_ONLY
+NEW_TEAMMATE_IMPLEMENTATION_TASKS=0
+NEW_TEAMMATE_ISSUES_OR_PRS=0
+REQUIRED_TEAMMATE_ARTIFACTS_FOR_S5_ENTRY=0
+TEAMMATE_WORKSPACE_DIFF=0
+GDELT_MODE=DECISION_PLATFORM_OFFLINE_REFERENCE_ONLY
+GDELT_EXISTING_OFFLINE_PRODUCER_UNCHANGED=1
+GDELT_HTTP_TRANSPORT=NOT_ACTIVATED
+GDELT_OUTBOUND_IMPLEMENTATION=0
+GDELT_OUTBOUND_CALLS=0
+GDELT_OFFLINE_REFERENCE_ONLY=1
+NAVER_ACTIVE_PROVIDER_RUNTIME_STORAGE=RETIRED
+RAG_NEWS_ANALYST_DECISION_SIGNAL_ORDER_AUTHORITY=0
+```
+
+Decision Platform은 기존 synthetic/offline GDELT aggregate producer를 소유한다. HTTP transport와
+executor/outbound implementation은 활성화하거나 추가하지 않으며, GDELT aggregate는 설명 전용이다.
+Naver는 retired 상태를 유지하고 RAG·news·analyst는 Decision, Signal, RiskDecision, order, decision
+hash 권한이 0이다.
 
 > 완료 기준점(2026-07-16): S1.3 내부 ECOS/Naver producer는 PR #16 merge commit
 > `6f439155d9f5ec626fc185f29f2e0bd64ca54780`, S1.3K KRX 내부 collector는 PR #17 merge
@@ -1583,7 +1612,7 @@ payload에 가짜 state를 넣거나 이전 `asOf`를 갱신해 새 success view
 
 `GET /api/v2/signals/{symbol}`
 
-응답:
+응답(현재 존재하지 않는 historical producer output은 `ABSTAIN`으로 표현하는 예시):
 
 ```json
 {
@@ -1596,25 +1625,19 @@ payload에 가짜 state를 넣거나 이전 `asOf`를 갱신해 새 success view
       "status": "ABSTAIN",
       "reason": "REQUIRED_COMPONENT_UNAVAILABLE"
     },
-    "modelReportId": "model_report_return_engine_20260623",
+    "modelReportId": "model_report_not_available",
     "components": {
       "ruleBaseline": {
-        "status": "AVAILABLE",
+        "status": "ABSTAIN",
         "producer": "RULE_BASELINE",
         "sourceWorkspace": "return-engine",
-        "asOf": "2026-06-23T15:30:00+09:00",
-        "signal": "HOLD",
-        "confidence": 0.51,
-        "predictedReturn": 0.001
+        "reason": "NOT_AVAILABLE"
       },
       "lstm": {
-        "status": "AVAILABLE",
+        "status": "ABSTAIN",
         "producer": "LSTM",
         "sourceWorkspace": "return-engine",
-        "asOf": "2026-06-23T15:30:00+09:00",
-        "signal": "BUY",
-        "confidence": 0.57,
-        "predictedReturn": 0.008
+        "reason": "NOT_AVAILABLE"
       },
       "lightgbm": {
         "status": "AVAILABLE",

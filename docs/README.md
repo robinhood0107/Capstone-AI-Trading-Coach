@@ -20,7 +20,7 @@
 | S1.1 | `MERGED` | KIS read-only client·quota boundary | 0 | fresh packet 전 live 재검증 금지 |
 | S1.2 | `MERGED` | PR #11 `0685afe2`, #13 `5179f85c` | 0 | OpenDART packet-bound probe는 후속 |
 | S1.3/1.3K | `MERGED` | PR #16 `6f439155`, #17 `814aab37` | 0 | ECOS/KRX historical receipt는 새 HEAD 권한이 아님 |
-| S1.3G | `EXTERNAL_OWNER_HANDOFF` | PR #73 `2a2dc7b5` | 0 | GDELT producer는 팀원 B, Decision은 sanitized artifact consumer만 소유 |
+| S1.3G | `OFFLINE_ONLY` | PR #73 `2a2dc7b5` | 0 | Decision Platform existing GDELT offline aggregate producer unchanged; HTTP transport/executor/outbound 0 |
 | S1.4 | `MERGED` | PR #23 `5b046978` | 0 | deterministic calculation regression |
 | S1.4X | `DEFERRED_BY_DESIGN` | PR #27/#28 isolated research | 0 | production은 post-S8 gate 전 금지 |
 | S1.5 | `MERGED` | PR #32 `2baec015` | 0 | network backfill은 별도 packet |

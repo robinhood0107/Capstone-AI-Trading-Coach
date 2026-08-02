@@ -37,6 +37,10 @@ class ResponseEnvelopeAdvice : ResponseBodyAdvice<Any> {
             // swagger-ui와 actuator 같은 비즈니스 API 밖 응답은 원래 포맷을 보존한다.
             return body
         }
+        if (servletRequest.requestURI.startsWith("/api/v2/rag/")) {
+            // S4.7D RAG v2는 v1 OpenAPI/envelope bytes를 보존하기 위해 별도 direct payload 계약을 쓴다.
+            return body
+        }
         return ApiResponseFactory.success(
             requestId = RequestIds.currentOrCreate(servletRequest),
             data = body,

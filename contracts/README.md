@@ -472,9 +472,10 @@ uv run --frozen python contracts/validate.py
 ## S4.7D OA140·owner-private RAG v2 계약
 
 > 현재 상태: `S4_7D_CONTRACT=LOCKED / SAFE_PARSER_OCR_RUNTIME=IMPLEMENTED_MERGE_CANDIDATE /
-> CORPUS_RUNTIME=NOT_IMPLEMENTED / OA_RELEASE_MANIFEST=DRAFT`.
-> 이 절의 schema·fixture·별도 OpenAPI·proto 잠금은 download, parse, embedding, DB migration,
-> endpoint 활성화 또는 OA 원문 배포가 완료됐다는 증거가 아니다.
+> CORPUS_RUNTIME=IMPLEMENTED_MERGE_CANDIDATE / OA_RELEASE_MANIFEST=DRAFT`.
+> 이 절의 schema·fixture·별도 OpenAPI·proto 잠금은 OA 원문 download, 전체 parse/embedding,
+> 112~140 source release 또는 OA 원문 배포가 완료됐다는 증거가 아니다. active
+> `/api/v2/rag/**`는 full bundle 미준비 시 typed `CORPUS_NOT_READY`로 fail-closed한다.
 
 S4.7D는 P1 exact-30과 v1 API를 byte-stable하게 유지하면서, 투자 코치용 공개 OA corpus와
 요청 owner의 개인 문서를 후속 immutable generation으로 결합하는 계약이다. 공개 요청은

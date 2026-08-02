@@ -90,6 +90,25 @@ class RagHistoryCryptoTest {
         }
     }
 
+    @Test
+    fun `v2 answer identity uses the same authenticated encryption boundary as v1 history`() {
+        val identity =
+            identity().copy(
+                answerId = "rag_01EXAMPLEANSWERID",
+            )
+        val encrypted = crypto.encrypt(identity, "v2 question", "v2 answer")
+
+        val decrypted = crypto.decrypt(identity, encrypted)
+
+        assertEquals("v2 question", decrypted.question)
+        assertEquals("v2 answer", decrypted.answer)
+        assertArrayEquals(
+            "rag-history-v1|rag_01EXAMPLEANSWERID|usr_demo_user|1785456000000|question"
+                .toByteArray(),
+            crypto.aad(identity, "question"),
+        )
+    }
+
     private fun identity(): RagHistoryIdentity =
         RagHistoryIdentity(
             answerId = "rag_ans_${"a".repeat(32)}",

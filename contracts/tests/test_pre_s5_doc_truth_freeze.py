@@ -63,6 +63,7 @@ class PreS5DocumentTruthFreezeTest(unittest.TestCase):
             "docs/adr/ADR-999-existing.md",
             "docs/decision-platform/historical-record.md",
             "contracts/changes/20260801-existing.md",
+            "capstone-rag/reports/completion-receipt.v1.json",
         ):
             path = root / relative
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -206,6 +207,21 @@ class PreS5DocumentTruthFreezeTest(unittest.TestCase):
         self.assertIn("teammate workspace has unexpected tracked paths", errors)
         self.assertIn("teammate workspace changed since base", errors)
 
+    def test_solo_ownership_lock_rejects_ignored_teammate_workspace_implementation(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            base = self._solo_ownership_fixture(root)
+            ignored = root / "workspaces/return-engine/ignored_model.py"
+            (root / ".git/info/exclude").write_text(
+                "workspaces/return-engine/ignored_model.py\n",
+                encoding="utf-8",
+            )
+            ignored.write_text("# out of scope\n", encoding="utf-8")
+
+            errors = verify_solo_ownership_lock(root, base)
+
+        self.assertIn("teammate workspace has working-tree drift", errors)
+
     def test_solo_ownership_lock_rejects_immutable_history_changes(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
@@ -214,6 +230,7 @@ class PreS5DocumentTruthFreezeTest(unittest.TestCase):
                 "docs/adr/ADR-999-existing.md",
                 "docs/decision-platform/historical-record.md",
                 "contracts/changes/20260801-existing.md",
+                "capstone-rag/reports/completion-receipt.v1.json",
             ):
                 path = root / relative
                 path.write_text(path.read_text(encoding="utf-8") + "changed\n", encoding="utf-8")
@@ -238,6 +255,25 @@ class PreS5DocumentTruthFreezeTest(unittest.TestCase):
 
         self.assertIn("docs/s5-team-dependencies.md: new teammate role was added outside the exact catalog", errors)
         self.assertIn("docs/s5-team-dependencies.md: new teammate dependency was added", errors)
+
+    def test_solo_ownership_lock_rejects_camel_case_catalog_role_aliases(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            base = self._solo_ownership_fixture(root)
+            historical = root / "docs/s5-camel-case-dependencies.md"
+            historical.write_text(
+                "ReturnEngine output is required for S5 entry\n"
+                "ExperienceDashboard live blocker\n",
+                encoding="utf-8",
+            )
+            self._commit(root, "camel case teammate dependency")
+
+            errors = verify_solo_ownership_lock(root, base)
+
+        self.assertEqual(
+            2,
+            errors.count("docs/s5-camel-case-dependencies.md: new teammate dependency was added"),
+        )
 
     def test_solo_ownership_lock_allows_a_new_decision_only_contract_change(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

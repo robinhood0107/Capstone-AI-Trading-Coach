@@ -1,0 +1,95 @@
+{
+  "$id": "contracts/schemas/foreign-news-sentiment-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "allowedUses": {
+      "items": false,
+      "maxItems": 1,
+      "minItems": 1,
+      "prefixItems": [
+        {
+          "const": "EXPLANATION_ONLY"
+        }
+      ],
+      "type": "array"
+    },
+    "articleMetadataStored": {
+      "const": false
+    },
+    "asOf": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "decisionAuthority": {
+      "const": "NONE"
+    },
+    "lanes": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "laneId": {
+            "enum": [
+              "FINNHUB_PERSONAL_LOCAL",
+              "SEC_OFFICIAL",
+              "FED_OFFICIAL",
+              "GDELT_OFFLINE_REFERENCE"
+            ]
+          },
+          "state": {
+            "enum": [
+              "AVAILABLE",
+              "ABSTAIN",
+              "NOT_ACTIVATED"
+            ]
+          }
+        },
+        "required": [
+          "laneId",
+          "state"
+        ],
+        "type": "object"
+      },
+      "maxItems": 4,
+      "minItems": 4,
+      "type": "array"
+    },
+    "rawProviderDataStored": {
+      "const": false
+    },
+    "riskDecisionHashIncluded": {
+      "const": false
+    },
+    "s5FeatureEligible": {
+      "const": false
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "status": {
+      "enum": [
+        "AVAILABLE",
+        "ABSTAIN"
+      ]
+    },
+    "symbol": {
+      "pattern": "^[0-9A-Z._:-]{1,20}$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "allowedUses",
+    "articleMetadataStored",
+    "asOf",
+    "decisionAuthority",
+    "lanes",
+    "rawProviderDataStored",
+    "riskDecisionHashIncluded",
+    "s5FeatureEligible",
+    "schemaVersion",
+    "status",
+    "symbol"
+  ],
+  "title": "foreign-news-sentiment-v1",
+  "type": "object"
+}

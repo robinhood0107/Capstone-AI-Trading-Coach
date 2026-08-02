@@ -1,0 +1,47 @@
+{
+  "$id": "contracts/schemas/s4-8-optional3-probe-approval-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "approvalStatus": {
+      "const": "TEMPLATE"
+    },
+    "artifactCap": {
+      "const": 0
+    },
+    "executionAllowed": {
+      "const": false
+    },
+    "logicalCallCap": {
+      "const": 0
+    },
+    "physicalCallCap": {
+      "const": 0
+    },
+    "providerFamily": {
+      "enum": [
+        "FINNHUB_OPTIONAL3",
+        "TWELVE_DATA",
+        "MASSIVE"
+      ]
+    },
+    "retryCount": {
+      "const": 0
+    },
+    "schemaVersion": {
+      "const": 1
+    }
+  },
+  "required": [
+    "approvalStatus",
+    "artifactCap",
+    "executionAllowed",
+    "logicalCallCap",
+    "physicalCallCap",
+    "providerFamily",
+    "retryCount",
+    "schemaVersion"
+  ],
+  "title": "s4-8-optional3-probe-approval-v1",
+  "type": "object"
+}

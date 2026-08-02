@@ -1,0 +1,22 @@
+{
+  "activeOa112Eligible": true,
+  "authors": [
+    "Contract fixture author"
+  ],
+  "canonicalUrl": "https://example.invalid/oa-contract-fixture",
+  "contractId": "rag-source-card-v4",
+  "licenseEvidenceDigest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "mimeType": "application/pdf",
+  "permissions": {
+    "externalEmbeddingAllowed": true,
+    "externalGenerationAllowed": true,
+    "localProcessingAllowed": true,
+    "machineFetchAllowed": true
+  },
+  "rawContentSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "revision": "contract-fixture-r1",
+  "schemaVersion": 4,
+  "sourceId": "src_oa_contract_fixture_001",
+  "sourceKind": "OPEN_ACCESS_DOCUMENT",
+  "title": "Synthetic contract fixture only"
+}

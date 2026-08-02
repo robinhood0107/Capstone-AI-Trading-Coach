@@ -1,0 +1,35 @@
+{
+  "activeEmbeddingProfile": "NONE",
+  "decisionAuthority": "NONE",
+  "generationAuthority": "EXPLANATION_ONLY",
+  "openAiCallsAllowed": false,
+  "retrieval": {
+    "channelTopK": 30,
+    "rrfK": 60,
+    "topK": 5
+  },
+  "runtimeState": "CONTRACT_ONLY",
+  "schemaVersion": 1,
+  "vertex": {
+    "authentication": [
+      "ADC",
+      "SERVICE_ACCOUNT"
+    ],
+    "developerApiAllowed": false,
+    "fallbackAllowed": false,
+    "maximumEvidenceCount": 5,
+    "maximumGenerateContentCallsPerQuestion": 1,
+    "modelId": "gemini-3.5-flash",
+    "toolsFunctionsAllowed": false
+  },
+  "voyage": {
+    "batchApiAllowed": false,
+    "dimension": 1024,
+    "filesApiAllowed": false,
+    "generationFallback": "FULL_BUNDLE_REBUILD_EVALUATE_CAS",
+    "modelId": "voyage-context-4",
+    "queryUnitFallbackAllowed": true,
+    "retryCount": 0,
+    "runtimeEnvironmentVariable": "VOYAGE_API_KEY"
+  }
+}

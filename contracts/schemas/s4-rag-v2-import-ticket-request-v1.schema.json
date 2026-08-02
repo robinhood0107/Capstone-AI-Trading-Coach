@@ -1,0 +1,23 @@
+{
+  "$id": "contracts/schemas/s4-rag-v2-import-ticket-request-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "importMode": {
+      "const": "LOCAL_EPHEMERAL_PARSE"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "sourceScope": {
+      "const": "OWNER_PRIVATE"
+    }
+  },
+  "required": [
+    "importMode",
+    "schemaVersion",
+    "sourceScope"
+  ],
+  "title": "s4-rag-v2-import-ticket-request-v1",
+  "type": "object"
+}

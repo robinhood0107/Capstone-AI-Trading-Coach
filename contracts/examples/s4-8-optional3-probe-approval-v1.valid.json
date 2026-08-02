@@ -1,0 +1,10 @@
+{
+  "approvalStatus": "TEMPLATE",
+  "artifactCap": 0,
+  "executionAllowed": false,
+  "logicalCallCap": 0,
+  "physicalCallCap": 0,
+  "providerFamily": "TWELVE_DATA",
+  "retryCount": 0,
+  "schemaVersion": 1
+}

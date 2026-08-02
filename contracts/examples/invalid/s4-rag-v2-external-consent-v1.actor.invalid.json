@@ -1,0 +1,9 @@
+{
+  "action": "GRANT",
+  "actor": "client-controlled",
+  "consentType": "EXTERNAL_AI_RAG_V2",
+  "disclosureDigest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "policyDigest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "processorSetDigest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "schemaVersion": 1
+}

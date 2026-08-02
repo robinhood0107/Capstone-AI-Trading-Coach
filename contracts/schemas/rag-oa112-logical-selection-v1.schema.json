@@ -1,0 +1,102 @@
+{
+  "$id": "contracts/schemas/rag-oa112-logical-selection-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "activationRequirements": {
+      "items": false,
+      "maxItems": 4,
+      "minItems": 4,
+      "prefixItems": [
+        {
+          "const": "machineFetchAllowed"
+        },
+        {
+          "const": "localProcessingAllowed"
+        },
+        {
+          "const": "externalEmbeddingAllowed"
+        },
+        {
+          "const": "externalGenerationAllowed"
+        }
+      ],
+      "type": "array"
+    },
+    "activationState": {
+      "const": "CONTRACT_LOCKED_NOT_MATERIALIZED"
+    },
+    "historicalManifestSha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "materializationAllowed": {
+      "const": false
+    },
+    "physicalActivation": {
+      "const": "NOT_MATERIALIZED"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "sourceCount": {
+      "const": 112
+    },
+    "sourceMetadataIncluded": {
+      "const": false
+    },
+    "sourcesPerTrack": {
+      "const": 8
+    },
+    "tracks": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "sourceCount": {
+            "const": 8
+          },
+          "trackId": {
+            "enum": [
+              "MICRO_GAME_INFO_MARKET_DESIGN",
+              "MACRO_MONETARY_INTERNATIONAL",
+              "PROBABILITY_STATISTICS_OPTIMIZATION",
+              "ECONOMETRICS_CAUSAL_EVENT_STUDY",
+              "TIME_SERIES_REGIME_VOLATILITY",
+              "ACCOUNTING_CORPORATE_FINANCE_VALUATION",
+              "ASSET_PRICING_FACTOR_PORTFOLIO",
+              "FIXED_INCOME_RATES_CREDIT",
+              "DERIVATIVES_STOCHASTIC_NUMERICS",
+              "MARKET_MICROSTRUCTURE_EXECUTION_LIQUIDITY",
+              "RISK_STRESS_BACKTEST_MODEL_RISK",
+              "BEHAVIORAL_EFFICIENCY_ANOMALY_CROWDING",
+              "FINANCIAL_ML_PIT_DATA_PROVENANCE",
+              "CROSS_MARKET_COMMODITIES_POLICY_KOREA"
+            ]
+          }
+        },
+        "required": [
+          "sourceCount",
+          "trackId"
+        ],
+        "type": "object"
+      },
+      "maxItems": 14,
+      "minItems": 14,
+      "type": "array"
+    }
+  },
+  "required": [
+    "activationRequirements",
+    "activationState",
+    "historicalManifestSha256",
+    "materializationAllowed",
+    "physicalActivation",
+    "schemaVersion",
+    "sourceCount",
+    "sourceMetadataIncluded",
+    "sourcesPerTrack",
+    "tracks"
+  ],
+  "title": "rag-oa112-logical-selection-v1",
+  "type": "object"
+}

@@ -1,0 +1,149 @@
+{
+  "contractId": "pre-s5-rag-news-contract.v1",
+  "decisionPlatformOwner": "DECISION_PLATFORM",
+  "foreignNews": {
+    "endpoint": "/api/v2/market-evidence/{symbol}/foreign-news-sentiment",
+    "lanes": [
+      {
+        "articleMetadataStored": false,
+        "credentialMode": "OWNER_PERSONAL_LOCAL_ONLY",
+        "laneId": "FINNHUB_PERSONAL_LOCAL",
+        "mode": "CONTRACT_ONLY",
+        "providerCallsAllowed": false,
+        "rawProviderDataStored": false,
+        "sharedHostedKeyAllowed": false
+      },
+      {
+        "articleMetadataStored": false,
+        "credentialMode": "OFFICIAL_ORIGIN_NO_KEY",
+        "laneId": "SEC_OFFICIAL",
+        "mode": "CONTRACT_ONLY",
+        "providerCallsAllowed": false,
+        "rawProviderDataStored": false,
+        "sharedHostedKeyAllowed": false
+      },
+      {
+        "articleMetadataStored": false,
+        "credentialMode": "OFFICIAL_ORIGIN_NO_KEY",
+        "laneId": "FED_OFFICIAL",
+        "mode": "CONTRACT_ONLY",
+        "providerCallsAllowed": false,
+        "rawProviderDataStored": false,
+        "sharedHostedKeyAllowed": false
+      },
+      {
+        "articleMetadataStored": false,
+        "credentialMode": "NONE",
+        "laneId": "GDELT_OFFLINE_REFERENCE",
+        "mode": "DECISION_PLATFORM_OFFLINE_REFERENCE_ONLY",
+        "providerCallsAllowed": false,
+        "rawProviderDataStored": false,
+        "sharedHostedKeyAllowed": false
+      }
+    ],
+    "modelSelection": {
+      "candidates": [
+        "PROSUSAI_FINBERT",
+        "YIYANGHKUST_FINBERT_TONE",
+        "LOUGHRAN_MCDONALD_BASELINE"
+      ],
+      "criticalNegationNumberUnitErrorsMaximum": 0,
+      "eceMaximum": 0.1,
+      "macroF1Minimum": 0.8,
+      "minimumClassRecall": 0.75,
+      "neutralF1Minimum": 0.75,
+      "selectionOrder": [
+        "VALIDATION_MACRO_F1_DESC",
+        "ECE_ASC",
+        "CPU_P95_ASC",
+        "FOOTPRINT_ASC"
+      ],
+      "testEvaluationAfterSelectionOnly": true,
+      "testEvaluationMaximumCount": 1
+    },
+    "responseInvariants": {
+      "allowedUses": [
+        "EXPLANATION_ONLY"
+      ],
+      "articleMetadataStored": false,
+      "decisionAuthority": "NONE",
+      "rawProviderDataStored": false,
+      "riskDecisionHashIncluded": false,
+      "s5FeatureEligible": false
+    }
+  },
+  "frozenCompatibility": {
+    "historicalOa112ManifestSha256": "a86d8233d1f061fec571201c84963fbdd8c11b47d33f4e91801fe1c911b5c863",
+    "newsSentimentSummaryV2Sha256": "f96b99bdd4060601fffa55720da00bf25041daf0104d4874da466b26293d9fde",
+    "ragV2OpenApiSha256": "86779ebda12678be2124f0bb0feaf90efa2b31ee6f5b72872399253f53d31e98",
+    "rootOpenApiSha256": "94414736f6a1c17b95eafffd53a07a5d33d7a66705890c53dcc971eb5ded3f89",
+    "v1RagProtoSha256": "d9e4182d5479f27f479187e912d0db02814474dd00306e78b7ef03fb53afc13c"
+  },
+  "oa112": {
+    "physicalActivation": "NOT_MATERIALIZED",
+    "requiredActivationPermissions": [
+      "machineFetchAllowed",
+      "localProcessingAllowed",
+      "externalEmbeddingAllowed",
+      "externalGenerationAllowed"
+    ],
+    "reserveAutomaticPromotion": false,
+    "reserveMaximumSources": 28,
+    "sourceCount": 112,
+    "sourcesPerTrack": 8,
+    "status": "OA112_ACTIVE_CONTRACT_LOCKED",
+    "trackCount": 14
+  },
+  "ragV2": {
+    "inheritedSurface": {
+      "paths": [
+        "/api/v2/rag/ask",
+        "/api/v2/rag/corpus-status",
+        "/api/v2/rag/history",
+        "/api/v2/rag/history/{answerId}"
+      ],
+      "ragV2OpenApiSha256": "86779ebda12678be2124f0bb0feaf90efa2b31ee6f5b72872399253f53d31e98"
+    },
+    "vertex": {
+      "authentication": [
+        "ADC",
+        "SERVICE_ACCOUNT"
+      ],
+      "developerApiAllowed": false,
+      "fallbackAllowed": false,
+      "maximumEvidenceCount": 5,
+      "maximumGenerateContentCallsPerQuestion": 1,
+      "modelId": "gemini-3.5-flash",
+      "toolsFunctionsAllowed": false
+    },
+    "voyage": {
+      "batchApiAllowed": false,
+      "dimension": 1024,
+      "fallback": "FULL_BUNDLE_REBUILD_EVALUATE_CAS",
+      "filesApiAllowed": false,
+      "modelId": "voyage-context-4",
+      "queryUnitFallbackAllowed": false,
+      "retryCount": 0,
+      "runtimeEnvironmentVariable": "VOYAGE_API_KEY"
+    }
+  },
+  "s48Optional3": {
+    "entitlementState": "CONTRACT_ONLY",
+    "providerCallsAllowed": 0,
+    "providerFamilies": [
+      "FINNHUB_OPTIONAL3",
+      "TWELVE_DATA",
+      "MASSIVE"
+    ],
+    "receiptExecutionAllowed": 0,
+    "retryCount": 0
+  },
+  "schemaVersion": 1,
+  "status": "RAG_AND_GLOBAL_NEWS_CONTRACT_LOCKED",
+  "trackedPayloads": {
+    "embeddings": 0,
+    "extractedText": 0,
+    "oaRaw": 0,
+    "ownerRawCopies": 0
+  }
+}

@@ -1,0 +1,69 @@
+{
+  "$id": "contracts/schemas/foreign-news-lane-entitlement-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "lanes": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "articleMetadataStored": {
+            "const": false
+          },
+          "credentialMode": {
+            "enum": [
+              "NONE",
+              "OWNER_PERSONAL_LOCAL_ONLY",
+              "OFFICIAL_ORIGIN_NO_KEY"
+            ]
+          },
+          "laneId": {
+            "enum": [
+              "FINNHUB_PERSONAL_LOCAL",
+              "SEC_OFFICIAL",
+              "FED_OFFICIAL",
+              "GDELT_OFFLINE_REFERENCE"
+            ]
+          },
+          "mode": {
+            "enum": [
+              "CONTRACT_ONLY",
+              "DECISION_PLATFORM_OFFLINE_REFERENCE_ONLY"
+            ]
+          },
+          "providerCallsAllowed": {
+            "const": false
+          },
+          "rawProviderDataStored": {
+            "const": false
+          },
+          "sharedHostedKeyAllowed": {
+            "const": false
+          }
+        },
+        "required": [
+          "articleMetadataStored",
+          "credentialMode",
+          "laneId",
+          "mode",
+          "providerCallsAllowed",
+          "rawProviderDataStored",
+          "sharedHostedKeyAllowed"
+        ],
+        "type": "object"
+      },
+      "maxItems": 4,
+      "minItems": 4,
+      "type": "array"
+    },
+    "schemaVersion": {
+      "const": 1
+    }
+  },
+  "required": [
+    "lanes",
+    "schemaVersion"
+  ],
+  "title": "foreign-news-lane-entitlement-v1",
+  "type": "object"
+}

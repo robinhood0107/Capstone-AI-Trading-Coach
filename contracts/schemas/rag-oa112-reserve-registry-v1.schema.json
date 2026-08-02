@@ -1,0 +1,41 @@
+{
+  "$id": "contracts/schemas/rag-oa112-reserve-registry-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "activeGenerationReferences": {
+      "const": 0
+    },
+    "automaticPromotion": {
+      "const": false
+    },
+    "maximumReserveSources": {
+      "const": 28
+    },
+    "reserveMetadataIncluded": {
+      "const": false
+    },
+    "reserveSourceCount": {
+      "maximum": 28,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "state": {
+      "const": "RESEARCH_ONLY_NON_ACTIVE"
+    }
+  },
+  "required": [
+    "activeGenerationReferences",
+    "automaticPromotion",
+    "maximumReserveSources",
+    "reserveMetadataIncluded",
+    "reserveSourceCount",
+    "schemaVersion",
+    "state"
+  ],
+  "title": "rag-oa112-reserve-registry-v1",
+  "type": "object"
+}

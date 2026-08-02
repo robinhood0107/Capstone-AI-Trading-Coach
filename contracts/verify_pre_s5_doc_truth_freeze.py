@@ -167,13 +167,13 @@ IMMUTABLE_HISTORY_CLASSIFICATIONS: Final[frozenset[str]] = frozenset(
     }
 )
 TEAMMATE_REFERENCE_PATTERN: Final[re.Pattern[str]] = re.compile(
-    r"(?:팀원(?:\s*[AB])?|\bteam\s*(?:[ab]|member)\b|\breturn[ _-]engine\b|"
-    r"\bexperience[ _-]dashboard\b)",
+    r"(?:팀원(?:\s*[AB])?|\bteam[ _-]?[ab]\b|\bteam\s*member\b|\breturn[ _-]engine\b|"
+    r"\blstm\b|\brule[ _-]?baseline\b|\bbacktest\b|\bexperience[ _-]dashboard\b)",
     re.IGNORECASE,
 )
 TEAMMATE_DEPENDENCY_PATTERN: Final[re.Pattern[str]] = re.compile(
     r"(?:구현\s*작업|implementation\s*task|\bissue\b|\bpr\b|마감|\bdeadline\b|"
-    r"\blive\b|\bblocker\b|필수\s*artifact|required\s*artifact)",
+    r"\blive\b|\bblocker\b|필수\s*artifact|required\s*artifact|\bs5\s*entry\b|s5\s*진입)",
     re.IGNORECASE,
 )
 

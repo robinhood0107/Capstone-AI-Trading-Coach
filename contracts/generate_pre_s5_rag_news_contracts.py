@@ -1663,7 +1663,7 @@ def _catalog() -> dict[str, Any]:
                 ],
                 "batchApiAllowed": False,
                 "dimension": 1024,
-                "fallback": "FULL_BUNDLE_REBUILD_EVALUATE_CAS",
+                "generationFallback": "FULL_BUNDLE_REBUILD_EVALUATE_CAS",
                 "filesApiAllowed": False,
                 "fullBundleScope": ["EXACT30", "OA112", "OWNER_PRIVATE"],
                 "modelId": "voyage-context-4",

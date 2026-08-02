@@ -48,6 +48,10 @@ from contracts.generate_s4_8a_cross_market_contracts import (  # noqa: E402
     SCHEMA_IDS as S4_8A_SCHEMA_IDS,
     validate_semantics as validate_s4_8a_semantics,
 )
+from contracts.generate_s4_8_core6_v2_contracts import (  # noqa: E402
+    SCHEMA_IDS as S4_8_CORE6_SCHEMA_IDS,
+    validate_semantics as validate_s4_8_core6_semantics,
+)
 from contracts.generate_s4_7d_rag_v2_contracts import (  # noqa: E402
     SCHEMA_IDS as S4_7D_SCHEMA_IDS,
     validate_semantics as validate_s4_7d_semantics,
@@ -86,6 +90,7 @@ S2_EXAMPLE_SCHEMA_PREFIXES = {
 
 VERSIONED_EXAMPLE_SCHEMAS = {
     **{schema_id: schema_id for schema_id in S4_8A_SCHEMA_IDS},
+    **{schema_id: schema_id for schema_id in S4_8_CORE6_SCHEMA_IDS},
     "s2-2-hash-vector.v3": "s2-2-hash-vector.v3",
 }
 
@@ -197,6 +202,11 @@ def validate_example_semantics(
         if not isinstance(example, dict):
             raise ContractValidationError("S4.8A contract example must be an object.")
         validate_s4_8a_semantics(schema_name, example)
+        return
+    if schema_name in S4_8_CORE6_SCHEMA_IDS:
+        if not isinstance(example, dict):
+            raise ContractValidationError("S4.8 Core 6 contract example must be an object.")
+        validate_s4_8_core6_semantics(schema_name, example)
         return
     if schema_name in S4_7D_SCHEMA_IDS:
         validate_s4_7d_semantics(schema_name, example)

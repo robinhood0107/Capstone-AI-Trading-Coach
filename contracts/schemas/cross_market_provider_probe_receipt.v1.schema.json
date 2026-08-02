@@ -1,0 +1,222 @@
+{
+  "$id": "contracts/schemas/cross_market_provider_probe_receipt.v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "outcome": {
+            "const": "NOT_EXECUTED"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "logicalCalls": {
+            "const": 0
+          },
+          "physicalCalls": {
+            "const": 0
+          },
+          "projectionHash": {
+            "const": null
+          },
+          "providerStatusClass": {
+            "const": "NOT_ATTEMPTED"
+          },
+          "steps": {
+            "const": []
+          }
+        }
+      }
+    }
+  ],
+  "properties": {
+    "approvalIdHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "approvalPayloadHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "approvedLogicalCap": {
+      "maximum": 1,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "approvedPhysicalCallCap": {
+      "maximum": 1,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "artifactsWritten": {
+      "const": 0
+    },
+    "completedAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "contractId": {
+      "const": "cross_market_provider_probe_receipt.v1"
+    },
+    "decisionAuthority": {
+      "const": "NONE"
+    },
+    "endpointSetIdentityHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "headSha": {
+      "pattern": "^[0-9a-f]{40}$",
+      "type": "string"
+    },
+    "logicalCalls": {
+      "maximum": 1,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "outcome": {
+      "enum": [
+        "NOT_EXECUTED",
+        "SUCCESS",
+        "FAILED"
+      ]
+    },
+    "physicalCalls": {
+      "maximum": 1,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "projectionHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "providerStatusClass": {
+      "enum": [
+        "NOT_ATTEMPTED",
+        "HTTP_2XX",
+        "HTTP_4XX",
+        "HTTP_5XX",
+        "TRANSPORT"
+      ]
+    },
+    "rawBodyStored": {
+      "const": false
+    },
+    "rawHeaderStored": {
+      "const": false
+    },
+    "rawQueryStored": {
+      "const": false
+    },
+    "requestPlanDigest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "retries": {
+      "const": 0
+    },
+    "riskSignalOrderAuthority": {
+      "const": "NONE"
+    },
+    "schemaVersion": {
+      "const": "1"
+    },
+    "sensitiveMaterialStored": {
+      "const": false
+    },
+    "sourceFamily": {
+      "enum": [
+        "KIS",
+        "OPENDART",
+        "SEC_EDGAR",
+        "KRX",
+        "KOFIA",
+        "ECOS"
+      ]
+    },
+    "sourceId": {
+      "enum": [
+        "S48_CORE6_KIS",
+        "S48_CORE6_OPENDART",
+        "S48_CORE6_SEC_EDGAR",
+        "S48_CORE6_KRX",
+        "S48_CORE6_KOFIA",
+        "S48_CORE6_ECOS"
+      ]
+    },
+    "startedAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "steps": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "outcome": {
+            "enum": [
+              "SUCCESS",
+              "FAIL_CLOSED"
+            ]
+          },
+          "physicalCalls": {
+            "maximum": 1,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "step": {
+            "enum": [
+              "AUTH_TOKEN",
+              "DATA_REQUEST",
+              "PROJECTION_READ"
+            ]
+          }
+        },
+        "required": [
+          "outcome",
+          "physicalCalls",
+          "step"
+        ],
+        "type": "object"
+      },
+      "maxItems": 2,
+      "type": "array"
+    }
+  },
+  "required": [
+    "approvalIdHash",
+    "approvalPayloadHash",
+    "approvedLogicalCap",
+    "approvedPhysicalCallCap",
+    "artifactsWritten",
+    "completedAt",
+    "contractId",
+    "decisionAuthority",
+    "endpointSetIdentityHash",
+    "headSha",
+    "logicalCalls",
+    "outcome",
+    "physicalCalls",
+    "projectionHash",
+    "providerStatusClass",
+    "rawBodyStored",
+    "rawHeaderStored",
+    "rawQueryStored",
+    "requestPlanDigest",
+    "retries",
+    "riskSignalOrderAuthority",
+    "schemaVersion",
+    "sensitiveMaterialStored",
+    "sourceFamily",
+    "sourceId",
+    "startedAt",
+    "steps"
+  ],
+  "title": "cross_market_provider_probe_receipt.v1",
+  "type": "object"
+}

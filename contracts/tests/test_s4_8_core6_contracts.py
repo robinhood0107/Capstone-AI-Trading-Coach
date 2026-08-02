@@ -87,6 +87,8 @@ class S48Core6ContractTest(unittest.TestCase):
                 temporary_root / "contracts/examples/.local/approved-packet.json",
                 temporary_root
                 / "contracts/examples/local-only/approved-packet.json",
+                temporary_root
+                / "contracts/examples/local-only/approved-packet.local",
             ]
             for unexpected in unexpected_paths:
                 unexpected.parent.mkdir(parents=True, exist_ok=True)

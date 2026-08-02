@@ -33,6 +33,12 @@ jobs:
       - name: Check lockfile
         run: uv lock --check
 
+      - name: Check frozen OCR lane lockfiles
+        run: |
+          for lane in cpu intel nvidia; do
+            uv lock --project "../../../capstone-rag/ocr/${lane}" --check
+          done
+
       - name: Sync frozen environment
         run: uv sync --frozen
 

@@ -1187,11 +1187,12 @@ selector를 받지 않는다. Spring은 provider를 호출하지 않고 저장 p
 `CORROBORATES`, `CONTRADICTS`만 허용한다. 가격의 시간 선행은 `PRECEDES`일 뿐 인과 확정이
 아니다.
 
-증권사 PDF 기본값은 `MANUAL_LINK_ONLY`다. 별도 권리 확인을 거친
-`LICENSED_EPHEMERAL_LOCAL`에서도 parser/LLM projection은 `투자포인트`, `실적전망`,
-`Valuation`, `목표주가`, `위험요인`, `Disclaimer` 여섯 절과 사용자가 직접 확인한 bounded
-tag만 허용한다. `derivedDataAllowed=false`이면 파생 projection을 response·DB·artifact로
-전달하거나 저장하지 않고 임시 입력과 함께 폐기한다.
+증권사 PDF 기본값은 `MANUAL_LINK_ONLY`다. 사용자가 보유한 로컬 파일은
+`LOCAL_EPHEMERAL_PARSE`로 read-only 처리하되, parser/LLM projection은 `투자포인트`,
+`실적전망`, `Valuation`, `목표주가`, `위험요인`, `Disclaimer` 여섯 절과 사용자가 직접
+확인한 bounded tag만 허용한다. 파일별 approval packet은 요구하지 않지만 DRM·login·paywall
+우회와 무단 crawling은 허용하지 않는다. `derivedDataAllowed=false`이면 파생 projection을
+response·DB·artifact로 전달하거나 저장하지 않고 임시 입력과 함께 폐기한다.
 
 내부 경계는 다음 하나다.
 

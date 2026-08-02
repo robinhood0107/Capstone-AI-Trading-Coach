@@ -68,10 +68,12 @@
   provider 권한을 만들지 않는다.
 - 교차시장 구현의 기본 provider/live/account/order 호출은 0이다. 증권사 PDF는
   `MANUAL_LINK_ONLY`가 기본이고 자동 다운로드·영속 저장·외부 LLM 전송을 허용하지 않는다.
-  적법한 권한으로 `LICENSED_EPHEMERAL_LOCAL`을 별도 승인한 경우에도 추출 범위는
-  `투자포인트`, `실적전망`, `Valuation`, `목표주가`, `위험요인`, `Disclaimer` 여섯 절과
-  사용자가 확인한 bounded tag로 제한한다. `derivedDataAllowed=false`이면 parser/LLM의
-  파생 결과도 저장·전달하지 않고 임시 입력과 함께 폐기한다.
+  사용자가 보유한 로컬 파일은 active `LOCAL_EPHEMERAL_PARSE` 경계에서 파일별 packet 없이
+  read-only로 처리할 수 있지만, 이는 원문의 이용·재배포 권리를 자동으로 부여하지 않는다.
+  교차시장 projection은 `투자포인트`, `실적전망`, `Valuation`, `목표주가`, `위험요인`,
+  `Disclaimer` 여섯 절과 사용자가 확인한 bounded tag로 제한한다.
+  `derivedDataAllowed=false`이면 parser/LLM의 파생 결과도 저장·전달하지 않고 임시 입력과
+  함께 폐기한다. DRM·로그인·paywall 우회와 무단 crawling은 계속 금지한다.
   exact 42개 integration target 행과 exact KIS 18개 endpoint allowlist의 운영 authority는
   Git으로 추적하지 않는 로컬 전용 자료수급 레지스트리다. 원 API 문서 위치 evidence는
   별도의 로컬 전용 참고자료이며 integration target 행 자체의 SSOT가 아니다.

@@ -100,11 +100,9 @@ class S47dRagV2ContractTest(unittest.TestCase):
         self.assertEqual(14, len(self.catalog["curriculumTracks"]))
         self.assertEqual(list(SUPPORTED_MIME_TYPES), self.catalog["supportedMimeTypes"])
         self.assertEqual(list(OCR_CANDIDATES), self.catalog["ocrResearchCandidates"])
+        self.assertEqual("PADDLE_VL", self.catalog["productionOcrBackend"])
         self.assertEqual(["LOCAL_EPHEMERAL_PARSE"], self.catalog["activeProcessingModes"])
-        self.assertEqual(
-            ["LICENSED_EPHEMERAL_LOCAL"],
-            self.catalog["historicalOnlyProcessingModes"],
-        )
+        self.assertNotIn("historicalOnlyProcessingModes", self.catalog)
         self.assertEqual(60, self.catalog["retrieval"]["rrfK"])
         self.assertEqual(
             ["exact30", "oa", "ownerPrivate"],
@@ -114,6 +112,20 @@ class S47dRagV2ContractTest(unittest.TestCase):
         self.assertFalse(self.catalog["clientSelection"]["profileAllowed"])
         self.assertFalse(self.catalog["clientSelection"]["topKAllowed"])
         self.assertEqual("NONE", self.catalog["decisionAuthority"])
+
+    def test_superseded_processing_mode_is_absent_from_active_runtime_and_current_docs(self) -> None:
+        active_paths = (
+            ROOT / "AGENTS.md",
+            ROOT / "docs/API_명세서.md",
+            ROOT / "docs/최종_프로젝트_명세서.md",
+            ROOT / "contracts/README.md",
+            ROOT / "contracts/catalogs/s4-rag-v2-contract.v1.json",
+            ROOT / "contracts/generate_s4_7d_rag_v2_contracts.py",
+            ROOT / "workspaces/decision-platform/python-services/app/cross_market/pdf_boundary.py",
+        )
+
+        for path in active_paths:
+            self.assertNotIn("LICENSED_EPHEMERAL_LOCAL", path.read_text(encoding="utf-8"), path)
 
     def test_all_valid_fixtures_pass_schema_and_semantics(self) -> None:
         for relative_path in sorted(VALID_FIXTURE_PATHS):

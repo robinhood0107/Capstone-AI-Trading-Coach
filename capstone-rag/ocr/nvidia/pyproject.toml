@@ -1,0 +1,11 @@
+[project]
+name = "capstone-rag-ocr-nvidia"
+version = "0.1.0"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "httpx==0.28.1",
+  "pillow==12.1.1",
+]
+
+[tool.uv]
+package = false

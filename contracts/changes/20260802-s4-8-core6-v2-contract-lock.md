@@ -21,9 +21,9 @@ sanitized projection만 재사용한다. KOFIA는 활용 승인과 credential ev
   Signal, Decision, order authority는 모두 `0` 또는 `NONE`이다.
 - checked-in approval fixture는 `fixtureOnly=true`, `TEMPLATE`, logical/physical cap `0`, retry `0`,
   artifact `0`이며 실행할 수 없다.
-- generated check는 Core 6 schema/example namespace의 선언되지 않은 추가 파일을 거부한다. 따라서
-  tracked tree에는 execution capacity를 가진 `APPROVED` packet을 둘 수 없고, 실제 packet은
-  public fixture directory 밖 local-only regular `0600` artifact여야 한다.
+- generated check는 public Core 6 schema/example namespace의 선언되지 않은 추가 파일을 거부한다.
+  따라서 tracked public fixture tree에는 execution capacity를 가진 `APPROVED` packet을 둘 수 없고,
+  실제 packet은 public fixture directory 밖 local-only regular `0600` artifact여야 한다.
 - 실행 capacity는 `APPROVED`인 non-fixture packet 하나에만 exact `1/1`로 존재한다. `CONSUMED`와
   `EXPIRED`는 execution flag와 두 cap을 모두 `0`으로 revoke하며, KOFIA·OpenDART·ECOS는 이 v2
   entitlement 아래 executable packet이 될 수 없다.
@@ -61,9 +61,9 @@ reuse an already authorized sanitized projection. KOFIA remains
   and RiskEngine, Signal, Decision, and order authority remain `0` or `NONE`.
 - The checked-in approval fixture is `fixtureOnly=true`, `TEMPLATE`, with zero logical/physical caps,
   retry `0`, artifact `0`, and cannot execute.
-- The generated check rejects undeclared extra files in the Core 6 schema/example namespace. A tracked
-  tree therefore cannot contain an `APPROVED` packet with execution capacity; a real packet must be a
-  local-only regular `0600` artifact outside the public fixture directory.
+- The generated check rejects undeclared extra files in the public Core 6 schema/example namespace. The
+  tracked public fixture tree therefore cannot contain an `APPROVED` packet with execution capacity; a
+  real packet must be a local-only regular `0600` artifact outside the public fixture directory.
 - Execution capacity exists only on one non-fixture `APPROVED` packet with exact `1/1` caps. `CONSUMED`
   and `EXPIRED` revoke both caps and the execution flag; KOFIA, OpenDART, and ECOS cannot become
   executable packets under this v2 entitlement.
@@ -105,7 +105,7 @@ S4_8_CORE6_ACCOUNT_ORDER_CALLS=0
 S4_8_CORE6_RAW_PROVIDER_PERSISTENCE=0
 S4_8_CORE6_RISK_SIGNAL_ORDER_AUTHORITY=0
 S4_8_CORE6_KOFIA=BLOCKED_NO_CREDENTIAL_OR_APPROVAL
-S4_8_CORE6_TRACKED_EXECUTABLE_PACKET_ARTIFACTS=0
+S4_8_CORE6_TRACKED_PUBLIC_FIXTURE_EXECUTABLE_PACKET_ARTIFACTS=0
 S4_8_V1_AND_V23_BYTES_UNCHANGED=1
 GDELT_EXISTING_OFFLINE_PRODUCER_UNCHANGED=1
 GDELT_EXECUTOR_ADDED=0

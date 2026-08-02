@@ -11,7 +11,7 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
+from typing import Final, Iterable
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -71,6 +71,9 @@ EXACT30_SOURCE_TREE_SHA256 = "1a83d11912df73f3a1136be82499b2a4723bc900af147117f1
 REQUIRED_PUBLIC_MARKERS = {
     "docs/README.md": (
         "PRE_S5_DOC_TRUTH_FREEZE_VERIFIED",
+        "| S1.3G | `OFFLINE_ONLY` |",
+        "Decision Platform existing GDELT offline aggregate producer unchanged",
+        "HTTP transport/executor/outbound 0",
         "S4_7D_RUNTIME=STUB_FAIL_CLOSED",
         "S4_8A=CONTRACT_ONLY",
         "S4_8_CORE6_V2=CONTRACT_ONLY",
@@ -107,6 +110,13 @@ REQUIRED_PUBLIC_MARKERS = {
         "Voyage AI",
         "Vertex AI Gemini",
         "TARGET_NOT_ACTIVE",
+    ),
+}
+FORBIDDEN_PUBLIC_MARKERS: Final[dict[str, tuple[str, ...]]] = {
+    "docs/README.md": (
+        "| S1.3G | `EXTERNAL_OWNER_HANDOFF` |",
+        "GDELT producer는 팀원 B",
+        "Decision은 sanitized artifact consumer만 소유",
     ),
 }
 
@@ -351,6 +361,14 @@ def verify_public_truth_freeze(root: Path) -> list[str]:
         if b"\r" in path.read_bytes() or not path.read_bytes().endswith(b"\n"):
             errors.append(f"{relative}: must be UTF-8 LF with a terminal newline")
         errors.extend(markdown_link_errors(root, relative))
+    for relative, markers in FORBIDDEN_PUBLIC_MARKERS.items():
+        path = root / relative
+        if not path.is_file():
+            continue
+        text = path.read_text(encoding="utf-8")
+        for marker in markers:
+            if marker in text:
+                errors.append(f"{relative}: forbidden stale marker {marker}")
     workspace_readme = (root / "workspaces/decision-platform/README.md").read_text(
         encoding="utf-8"
     )

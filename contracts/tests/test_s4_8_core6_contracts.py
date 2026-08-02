@@ -18,6 +18,7 @@ from contracts.generate_s4_8_core6_v2_contracts import (
     OUTPUTS,
     SCHEMA_PATHS,
     VALID_FIXTURE_PATHS,
+    _check_outputs,
     _unexpected_core6_artifact_paths,
     generate_outputs,
     validate_semantics,
@@ -57,23 +58,52 @@ class S48Core6ContractTest(unittest.TestCase):
         self.assertEqual(0, completed.returncode, completed.stderr)
         self.assertIn("S4_8_CORE6_CONTRACT_LOCK_VERIFIED", completed.stdout)
 
-    def test_generated_check_rejects_extra_core6_named_artifacts(self) -> None:
+    def test_generated_check_rejects_extra_core6_packets_at_any_fixture_depth(self) -> None:
         # 실제 approval packet은 local-only runner 경계 밖에 두어야 한다. public generated
-        # fixture namespace에 추가되면 check가 fail-closed해야 한다.
+        # fixture tree의 nested/hidden 경로 또는 임의 파일명에 추가돼도 check가 fail-closed해야 한다.
         with tempfile.TemporaryDirectory() as temporary_directory:
             temporary_root = Path(temporary_directory)
-            unexpected = (
-                temporary_root
-                / "contracts/examples/"
-                "cross_market_provider_probe_approval.v1.approved.valid.json"
+            outputs = generate_outputs()
+            for relative_path, content in outputs.items():
+                path = temporary_root / relative_path
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(content)
+
+            template = _load(
+                "contracts/examples/cross_market_provider_probe_approval.v1.template.valid.json"
             )
-            unexpected.parent.mkdir(parents=True)
-            unexpected.write_text("{}", encoding="utf-8")
+            self.assertIsInstance(template, dict)
+            approved_packet = dict(template)
+            approved_packet["approvalStatus"] = "APPROVED"
+            approved_packet["executionAllowed"] = True
+            approved_packet["fixtureOnly"] = False
+            approved_packet["caps"] = {
+                **approved_packet["caps"],
+                "logicalCap": 1,
+                "physicalCallCap": 1,
+            }
+            unexpected_paths = [
+                temporary_root / "contracts/examples/approved-packet.json",
+                temporary_root / "contracts/examples/.local/approved-packet.json",
+                temporary_root
+                / "contracts/examples/local-only/approved-packet.json",
+            ]
+            for unexpected in unexpected_paths:
+                unexpected.parent.mkdir(parents=True, exist_ok=True)
+                unexpected.write_text(
+                    json.dumps(approved_packet, sort_keys=True),
+                    encoding="utf-8",
+                )
 
             self.assertEqual(
-                [unexpected.relative_to(temporary_root).as_posix()],
-                _unexpected_core6_artifact_paths(temporary_root, OUTPUTS),
+                sorted(path.relative_to(temporary_root).as_posix() for path in unexpected_paths),
+                _unexpected_core6_artifact_paths(temporary_root, outputs),
             )
+            with self.assertRaisesRegex(
+                ContractValidationError,
+                "unexpected Core 6 generated namespace artifacts",
+            ):
+                _check_outputs(outputs, root=temporary_root)
 
     def test_core_six_registry_is_contract_locked_and_never_active(self) -> None:
         registry = _load(

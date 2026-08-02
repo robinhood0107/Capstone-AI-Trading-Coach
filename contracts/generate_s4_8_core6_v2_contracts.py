@@ -911,8 +911,11 @@ def _validate_entitlement(payload: Mapping[str, Any]) -> None:
                 entry["activationStatus"] != "BLOCKED"
                 or entry["activationBlocker"]
                 != "BLOCKED_NO_CREDENTIAL_OR_APPROVAL"
+                or entry["ingestionMode"] != "DIRECT_READ_PROBE"
             ):
-                raise ContractValidationError("KOFIA must remain credential/approval blocked.")
+                raise ContractValidationError(
+                    "KOFIA must remain credential/approval blocked and direct-read only."
+                )
         elif (
             entry["ingestionMode"] != "DIRECT_READ_PROBE"
             or entry["activationBlocker"] != "APPROVAL_PACKET_REQUIRED"

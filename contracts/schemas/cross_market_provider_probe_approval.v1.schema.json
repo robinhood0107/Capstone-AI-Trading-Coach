@@ -36,10 +36,7 @@
       "if": {
         "properties": {
           "approvalStatus": {
-            "enum": [
-              "APPROVED",
-              "CONSUMED"
-            ]
+            "const": "APPROVED"
           }
         }
       },
@@ -57,6 +54,38 @@
           },
           "executionAllowed": {
             "const": true
+          },
+          "fixtureOnly": {
+            "const": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "approvalStatus": {
+            "enum": [
+              "CONSUMED",
+              "EXPIRED"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "caps": {
+            "properties": {
+              "logicalCap": {
+                "const": 0
+              },
+              "physicalCallCap": {
+                "const": 0
+              }
+            }
+          },
+          "executionAllowed": {
+            "const": false
           },
           "fixtureOnly": {
             "const": false

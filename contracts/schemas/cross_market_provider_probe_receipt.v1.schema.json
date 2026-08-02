@@ -30,6 +30,98 @@
           }
         }
       }
+    },
+    {
+      "if": {
+        "properties": {
+          "outcome": {
+            "const": "SUCCESS"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "approvedLogicalCap": {
+            "const": 1
+          },
+          "approvedPhysicalCallCap": {
+            "const": 1
+          },
+          "logicalCalls": {
+            "const": 1
+          },
+          "physicalCalls": {
+            "const": 1
+          },
+          "projectionHash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "providerStatusClass": {
+            "const": "HTTP_2XX"
+          },
+          "steps": {
+            "items": {
+              "properties": {
+                "outcome": {
+                  "const": "SUCCESS"
+                },
+                "physicalCalls": {
+                  "const": 1
+                },
+                "step": {
+                  "const": "DATA_REQUEST"
+                }
+              }
+            },
+            "maxItems": 1,
+            "minItems": 1
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "outcome": {
+            "const": "FAILED"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "approvedLogicalCap": {
+            "const": 1
+          },
+          "approvedPhysicalCallCap": {
+            "const": 1
+          },
+          "logicalCalls": {
+            "const": 1
+          },
+          "projectionHash": {
+            "const": null
+          },
+          "providerStatusClass": {
+            "enum": [
+              "HTTP_4XX",
+              "HTTP_5XX",
+              "TRANSPORT"
+            ]
+          },
+          "steps": {
+            "items": {
+              "properties": {
+                "outcome": {
+                  "const": "FAIL_CLOSED"
+                }
+              }
+            },
+            "maxItems": 1,
+            "minItems": 1
+          }
+        }
+      }
     }
   ],
   "properties": {

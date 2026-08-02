@@ -28,6 +28,9 @@ sanitized projection만 재사용한다. KOFIA는 활용 승인과 credential ev
 - `SUCCESS` receipt는 eligible direct source의 한 번의 `DATA_REQUEST`, logical/physical `1/1`,
   `HTTP_2XX`, non-null projection hash를 모두 요구한다. `NOT_EXECUTED`가 아닌 projection-only
   source receipt와 zero-call success는 fail-closed한다.
+- `FAILED` receipt도 attempted HTTP/transport 결과를 주장하면 logical/physical `1/1`과 하나의
+  `FAIL_CLOSED` step physical call `1`을 함께 기록해야 한다. zero-call failure receipt는
+  fail-closed한다.
 - raw body/header/query/sensitive material field 또는 arbitrary query injection은 closed schema가
   거부한다. 실제 packet은 local-only regular 0600 artifact로 별도 runner가 만들어야 하며 이
   contract fixture를 실행 입력으로 사용할 수 없다.
@@ -62,6 +65,8 @@ reuse an already authorized sanitized projection. KOFIA remains
 - A `SUCCESS` receipt requires one `DATA_REQUEST` from an eligible direct source, logical/physical
   `1/1`, `HTTP_2XX`, and a non-null projection hash. A projection-only provider receipt or zero-call
   success fails closed.
+- A `FAILED` receipt that claims an attempted HTTP/transport result must also record logical/physical
+  `1/1` and one `FAIL_CLOSED` step with one physical call. A zero-call failure receipt fails closed.
 - Closed schemas reject raw body/header/query/sensitive-material fields and arbitrary query injection.
   A real packet must be authored by a later local-only 0600 runner and must never use this fixture as
   executable input.

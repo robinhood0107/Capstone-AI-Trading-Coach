@@ -1497,7 +1497,7 @@ private overlay state, 0~100 progress와 stable failure code만 반환한다. �
   "failureCode": null,
   "privateOverlayState": "BUILDING",
   "progressPercent": 42,
-  "publicCorpusVersion": "exact30-v1+oa140-draft-v1",
+  "publicCorpusVersion": "exact30-v1+oa140_s4_7d_release_v1",
   "state": "BUILDING"
 }
 ```

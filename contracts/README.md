@@ -472,9 +472,9 @@ uv run --frozen python contracts/validate.py
 ## S4.7D OA140·owner-private RAG v2 계약
 
 > 현재 상태: `S4_7D_CONTRACT=LOCKED / SAFE_PARSER_OCR_RUNTIME=IMPLEMENTED_MERGE_CANDIDATE /
-> CORPUS_RUNTIME=IMPLEMENTED_MERGE_CANDIDATE / OA_RELEASE_MANIFEST=DRAFT`.
-> 이 절의 schema·fixture·별도 OpenAPI·proto 잠금은 OA 원문 download, 전체 parse/embedding,
-> 112~140 source release 또는 OA 원문 배포가 완료됐다는 증거가 아니다. active
+> CORPUS_RUNTIME=IMPLEMENTED_MERGE_CANDIDATE / OA_RELEASE_MANIFEST=RELEASED_112_SOURCE_CANDIDATE`.
+> 이 절의 schema·fixture·별도 OpenAPI·proto와 OA112 release manifest 잠금은 OA 원문
+> 배포나 전체 parse/embedding/evaluation이 완료됐다는 증거가 아니다. active
 > `/api/v2/rag/**`는 full bundle 미준비 시 typed `CORPUS_NOT_READY`로 fail-closed한다.
 
 S4.7D는 P1 exact-30과 v1 API를 byte-stable하게 유지하면서, 투자 코치용 공개 OA corpus와
@@ -492,6 +492,9 @@ pin한다. 검색은 PostgreSQL/pgvector/pg_trgm과 application RRF `k=60`을 �
 | `schemas/s4-rag-v2-*.schema.json` | ask/status/history/error와 `PUBLIC_WEB | LOCAL_DOCUMENT` citation union |
 | `openapi/rag-v2.openapi.json` | v1 OpenAPI를 변경하지 않는 v2 planned surface |
 | `proto/rag_v2.proto` | server-selected bundle과 tagged citation을 보존하는 unary `RagService.Ask` v2 |
+| `../capstone-rag/manifests/s4-7d-oa140-release.v1.json` | 14개 track × 8개 = 112개 fixed HTTPS OA source와 raw SHA-256 |
+| `../capstone-rag/manifests/s4-7d-oa140-curriculum-map.v1.md` | 경제 기초 → 계량·시장 → 금융공학·퀀트 → 통합 검증 학습 경로와 대표 질문 |
+| `../capstone-rag/manifests/s4-7d-oa140-distribution.v1.json` | GitHub Release/Hugging Face metadata-only artifact set과 publication blocker |
 
 active processing mode는 `LOCAL_EPHEMERAL_PARSE` 하나다. 파일별 approval ID·nonce·TTL은
 계약에 없다. 과거 파일별 ephemeral approval enum은 날짜가 고정된 계약·감사 기록 재현에만
@@ -507,8 +510,10 @@ CPU와 Intel Arc 130V `GPU.0` 실측, 모델·runtime pin과 raw text 없는 선
 
 OA `RELEASED` manifest는 14개 track의 exact 순서를 유지하고 track마다 8~10개, 전체
 112~140개의 canonical work/revision을 요구한다. 각 track에는 공개 교재·강의,
-원 연구, 현대 review·replication·correction 역할이 모두 있어야 한다. DRAFT manifest는
-source 0개부터 허용하므로 계약 PR에서 검증되지 않은 URL이나 hash를 채우지 않는다.
+원 연구, 현대 review·replication·correction 역할이 모두 있어야 한다. 현재 release candidate는
+112개 source의 fixed HTTPS URL과 raw SHA-256만 추적하며, 원문·추출 text·embedding은
+재배포하지 않는다. `rag-content setup`은 manifest를 검증하고 `BUILDING`으로 들어가지만,
+모든 source download/parse/embed/eval과 active pointer pin이 끝나기 전에는 `FULL_READY`가 아니다.
 
 재현 명령:
 

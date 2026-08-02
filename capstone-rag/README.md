@@ -26,8 +26,11 @@ magic-link, path traversal, 기존 파일 덮어쓰기와 broad recursive delete
 
 S4.7D는 기존 exact-30을 바꾸지 않고 OA corpus와 owner-private 문서를 후속 generation으로
 추가한다. RAG는 출처 검색·설명·인용만 담당하며 Signal, RiskDecision, 주문 feature/hash에는
-연결하지 않는다. 현재 safe parser/OCR 단계는 구현됐고, DB generation·owner RLS·RAG v2
-endpoint와 OA release 설치는 후속 단계가 활성화하기 전까지 fail-closed한다.
+연결하지 않는다. 현재 safe parser/OCR과 v2 DB/RLS/API skeleton은 병합됐지만, OA/owner
+materializer, canonical chunk/embedding writer, active bundle pointer와 actual retrieval은 없다.
+따라서 `S4_7D_RUNTIME=STUB_FAIL_CLOSED`이며 full bundle 전에는 `CORPUS_NOT_READY`, 그 뒤에도
+현 skeleton은 `GENERATION_UNAVAILABLE`로 종료한다. importer/remove/cache-clean command는 실제로
+`CORPUS_RUNTIME_NOT_INSTALLED`를 반환한다.
 
 공식 입력 형식은 다음 아홉 family다.
 
@@ -57,7 +60,7 @@ magic/보안 검사
 → Document IR 정규화
 → secret·PII·prompt-injection 분류
 → chunk/hash
-→ BGE embedding
+→ Voyage contextual embedding 또는 BGE whole-generation fallback
 → staging generation 평가
 → atomic activation
 ```
@@ -111,14 +114,15 @@ parser·Document IR·generation 코드를 호출한다.
 아니며, 개발 runtime은 `.gitignore`로 보호된다. OA 원문은 후속 signed manifest가 허용한
 공식 fixed HTTPS source에서 각 사용자가 받는 cache이고 프로젝트 release에 재배포하지 않는다.
 
-## S4.7D OA112 release manifest
+## S4.7D OA112 historical manifest and OA140 target
 
-`s4-7d-oa140-release.v1.json`은 OA140 프로그램의 첫 공개 release candidate다. 이름은
-OA140 프로그램을 따르지만 현재 source 수는 release 하한인 112개다. 14개 curriculum track마다
-exact 8개 source를 고정했고, 각 source는 fixed HTTPS `canonicalUrl`, `downloadUrl`,
-`rawContentSha256`, track role, `fallbackAllowed=false`만 Git에 남긴다. 원문 PDF/HTML,
-추출 text, Document IR, chunk, embedding, cache는 GitHub Release나 Hugging Face Dataset에
-재배포하지 않는다.
+`s4-7d-oa140-release.v1.json`은 `OA112_HISTORICAL` metadata release다. 이름은 OA140
+프로그램을 따르지만 현재 source 수는 14개 curriculum track × 8개 = 112개다. 이는 source의
+fixed HTTPS `canonicalUrl`, `downloadUrl`, `rawContentSha256`, track role,
+`fallbackAllowed=false`를 Git에 남긴 manifest일 뿐 installed corpus가 아니다. active release
+완료 조건은 14개 track × 10개의 `OA140_TARGET`과 actual raw-hash/rights revalidation이다.
+원문 PDF/HTML, 추출 text, Document IR, chunk, embedding, cache는 GitHub Release나 Hugging
+Face Dataset에 재배포하지 않는다.
 
 검증 명령은 다음과 같다.
 
@@ -142,7 +146,9 @@ uv run --project workspaces/decision-platform/python-services --frozen \
 `rag-content status`는 이 manifest가 있으면 `CORE_READY`를 반환한다. `setup-rag-content.bat`과
 `rag-content setup`은 manifest를 다시 검증하고 `OA_RELEASE_MANIFEST_VERIFIED`를 반환한다.
 이 상태는 아직 원문 download/parse/embed/eval이 끝난 `FULL_READY`가 아니라, public OA
-generation을 구축하기 위한 `BUILDING` 시작점이다.
+generation을 구축하기 위한 `BUILDING` 시작점이다. 현재 setup/import/remove/cache-clean은
+materializer가 설치되지 않아 `CORPUS_RUNTIME_NOT_INSTALLED`로 fail-closed하며 OA112/owner
+derived index가 runtime에 존재한다고 주장하지 않는다.
 `FULL_READY`는 runtime cache에서 모든 source hash, parser/OCR receipt, chunk hash, BGE
 embedding, staging evaluation이 통과하고 서버 active pointer가 원자적으로 pin된 뒤에만 가능하다.
 

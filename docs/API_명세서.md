@@ -26,12 +26,18 @@
 
 | 표기 | 의미 |
 |---|---|
-| `구현 완료` | 코드·계약·자동 테스트 또는 승인된 재현 검증이 함께 완료된 상태 |
-| `계획 계약` | 향후 구현을 위한 문서 계약. 호출 가능한 endpoint/RPC가 아님 |
-| `비활성 설계 계약` | 코드 경로가 생겨도 운영 gate가 기본 OFF이며 명시적 승인 전에는 사용할 수 없음 |
-| `고도화` / `후순위` | v1 필수 구현 완료와 별개인 선택 범위 |
+| `MERGED` | 코드·계약·자동 테스트가 main에 병합됨. 외부 live 성공은 별도 증거가 필요 |
+| `CONTRACT_ONLY` | schema/proto/OpenAPI/fixture만 고정됐고 runtime이 없음 |
+| `OFFLINE_ONLY` | fixture·local/Compose 검증만 통과했으며 provider physical call은 0 |
+| `STUB_FAIL_CLOSED` | 공개 route/CLI가 stable typed error로 닫혀 실제 기능을 가장하지 않음 |
+| `LIVE_VERIFIED` | exact HEAD·승인 packet·물리 호출 영수증까지 완료됨 |
+| `EXTERNAL_OWNER_HANDOFF` | 이 workspace가 provider producer를 소유하지 않고 sanitized consumer만 소유 |
+| `DEFERRED_BY_DESIGN` | 명시적으로 후속 단계에 남긴 범위 |
 
-각 절에 `구현 완료`와 검증 근거가 명시되지 않았다면 기본적으로 `계획 계약`으로 해석한다. 세션 번호는 작업 배정을 뜻할 뿐 API 가용성을 뜻하지 않으며, schema/proto/OpenAPI 변경이 필요한 기능은 별도의 contract-change 절차가 완료되어야 한다. 구현 상태의 상위 기준은 `최종_프로젝트_명세서.md`의 세션·보안 gate 표를 따른다.
+각 절에 `LIVE_VERIFIED`와 exact packet/receipt가 명시되지 않았다면 외부 성공으로 해석하지 않는다.
+세션 번호는 작업 배정을 뜻할 뿐 API 가용성을 뜻하지 않으며, schema/proto/OpenAPI 변경이 필요한
+기능은 별도의 contract-change 절차가 완료되어야 한다. 구현 상태의 상위 기준은
+`최종_프로젝트_명세서.md`와 `docs/README.md`의 Pre-S5 ledger를 따른다.
 
 > 완료 기준점(2026-07-16): S1.3 내부 ECOS/Naver producer는 PR #16 merge commit
 > `6f439155d9f5ec626fc185f29f2e0bd64ca54780`, S1.3K KRX 내부 collector는 PR #17 merge
@@ -1423,6 +1429,12 @@ payload 전송 권한이 아니다. 별도 S4.4G provider/evaluation 승인과
 `externalProcessingAllowed=true`인 active·verified·PUBLIC·PROJECT exact chunk, 그리고 해당
 question의 독립 consent/privacy/advice gate가 함께 확인되기 전에는 outbound가 0이다.
 
+`EXTERNAL_AI_RAG_V1`은 v1 historical/exact-30 compatibility event다. OA140와 owner-private
+overlay의 후속 v2 runtime은 `EXTERNAL_AI_RAG_V2`의 append-only consent를 별도로 사용하며,
+policy 또는 processor digest가 바뀌면 재동의가 필요하다. 이 문서 동결 시점에는 v2 consent
+route 자체가 `TARGET_NOT_ACTIVE`이고, effective consent가 없으면 Voyage/Vertex physical call은
+0이며 typed `EXTERNAL_AI_CONSENT_REQUIRED`로 종료해야 한다.
+
 ### 7.6 Admin embedding profile status
 
 `GET /api/v1/admin/rag/embedding-profiles`
@@ -1446,16 +1458,35 @@ materialization과 pointer transition은 별도 승인 packet이 필요한 CLI �
 
 ### 7.7 RAG v2 계약 상태와 공통 경계
 
-> 현재 상태: `S4_7D_CONTRACT=LOCKED / ACTIVE_V2_ENDPOINT=IMPLEMENTED_MERGE_CANDIDATE`.
+> 현재 상태: `S4_7D_CONTRACT=LOCKED / ACTIVE_V2_RUNTIME=STUB_FAIL_CLOSED`.
 > `contracts/openapi/rag-v2.openapi.json`은 v1 canonical OpenAPI bytes를 변경하지 않기 위한
-> 별도 v2 direct-payload 계약이다. active route는 `/api/v2/rag/**`에 존재하지만, full
-> OA+owner bundle이 `FULL_READY`가 아니면 질문 API는 typed `CORPUS_NOT_READY`만 반환한다.
+> 별도 v2 direct-payload 계약이다. route/history/RLS skeleton은 병합됐지만 OA+owner
+> materializer와 authorized retrieval은 아직 없다. full bundle이 `FULL_READY`가 아니면 질문 API는
+> typed `CORPUS_NOT_READY`를, 현재 skeleton이 그 이후에 도달해도 `GENERATION_UNAVAILABLE`를
+> 반환한다.
 
 RAG v2는 exact-30, OA, 요청 owner-private generation을 서버가 자동으로 하나의
 bundle로 pin한다. client request에 `corpus`, `profile`, `topK` 또는 이와 동일한
 검색 제어를 추가하면 400 validation error다. pgvector/pg_trgm과 application RRF
 `k=60`을 유지하며 RAG는 Signal, RiskDecision, 주문 의도·hash·feature를 바꾸지
 않는 `decisionAuthority=NONE` 설명 경계다.
+
+#### 7.7.1 Pre-S5 v2 consent/import target (not active)
+
+다음 public surface는 OA140 materializer PR에서 contract/codegen을 먼저 잠근 뒤에만 활성화한다.
+문서에 경로가 적혀도 현재 route availability를 뜻하지 않는다.
+
+```http
+POST /api/v2/rag/consents
+GET  /api/v2/rag/consent
+POST /api/v2/rag/import-tickets
+```
+
+consent는 `GRANT | REVOKE`, disclosure/policy digest만 받고 owner와 시각은 JWT/server clock에서
+결정한다. import ticket은 owner·operation·policy version에 결속된 5분 single-use 값이며 raw
+JWT, owner ID, DB credential을 BAT command line에 노출하지 않는다. 이 target의 stable denial
+code는 `EXTERNAL_AI_CONSENT_REQUIRED`이고 `EXTERNAL_AI_RAG_V2` 동의가 없으면 provider 호출은
+0이다.
 
 ### 7.8 RAG v2 질문
 
@@ -1473,7 +1504,9 @@ body의 질문·답변 style·종목·topic 의미는 v1과 같다.
 ```
 
 full bundle이 `FULL_READY`가 아니면 OA나 private 근거를 빼고 답을 만들지 않고
-typed `CORPUS_NOT_READY`를 반환한다. 이때 v1 exact-30 endpoint는 계속 사용할 수 있다.
+typed `CORPUS_NOT_READY`를 반환한다. 현재는 materializer/retrieval writer도 없으므로
+`FULL_READY`를 가정한 답을 만들지 않고 `GENERATION_UNAVAILABLE`로 fail-closed한다. 이때 v1
+exact-30 endpoint는 계속 사용할 수 있다.
 성공 citation은 다음 tagged union이다.
 
 - `PUBLIC_WEB`: title, source ID, HTTPS canonical URL, page/section locator
@@ -1489,8 +1522,9 @@ corpus-level external-LLM opt-in 중 하나라도 불충분하면 일부 chunk�
 `GET /api/v2/rag/corpus-status`
 
 state는 `CORE_READY | BUILDING | FULL_READY | FAILED`다. 응답은 public corpus version,
-private overlay state, 0~100 progress와 stable failure code만 반환한다. 파일명·로컬
-경로·내부 접근 정보·무결성 검증값은 노출하지 않는다.
+private overlay state, 0~100 progress, active embedding profile, target generator와 stable failure
+code만 반환한다. 파일명·로컬 경로·내부 접근 정보·무결성 검증값은 노출하지 않는다. 현재 OA112
+metadata validation은 `CORE_READY`의 전제일 뿐 `FULL_READY` 증거가 아니다.
 
 ```json
 {

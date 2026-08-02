@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -96,6 +97,66 @@ class S48Core6ContractTest(unittest.TestCase):
                     json.dumps(approved_packet, sort_keys=True),
                     encoding="utf-8",
                 )
+
+            self.assertEqual(
+                sorted(path.relative_to(temporary_root).as_posix() for path in unexpected_paths),
+                _unexpected_core6_artifact_paths(temporary_root, outputs),
+            )
+            with self.assertRaisesRegex(
+                ContractValidationError,
+                "unexpected Core 6 generated namespace artifacts",
+            ):
+                _check_outputs(outputs, root=temporary_root)
+
+    def test_generated_check_rejects_extra_core6_packets_at_any_schema_depth(self) -> None:
+        # schema tree도 public generated namespace다. 파일명·확장자·depth·hardlink가 달라도
+        # local-only APPROVED packet을 숨길 수 없고, 무관한 schema는 계속 허용해야 한다.
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            outputs = generate_outputs()
+            for relative_path, content in outputs.items():
+                path = temporary_root / relative_path
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(content)
+
+            template = _load(
+                "contracts/examples/cross_market_provider_probe_approval.v1.template.valid.json"
+            )
+            self.assertIsInstance(template, dict)
+            approved_packet = dict(template)
+            approved_packet["approvalStatus"] = "APPROVED"
+            approved_packet["executionAllowed"] = True
+            approved_packet["fixtureOnly"] = False
+            approved_packet["caps"] = {
+                **approved_packet["caps"],
+                "logicalCap": 1,
+                "physicalCallCap": 1,
+            }
+            unexpected_paths = [
+                temporary_root / "contracts/schemas/opaque-approved.schema.json",
+                temporary_root / "contracts/schemas/.local/approved-packet",
+            ]
+            for unexpected in unexpected_paths:
+                unexpected.parent.mkdir(parents=True, exist_ok=True)
+                unexpected.write_text(
+                    json.dumps(approved_packet, sort_keys=True),
+                    encoding="utf-8",
+                )
+
+            hardlink_source = temporary_root / "approved-packet-source"
+            hardlink_source.write_text(
+                json.dumps(approved_packet, sort_keys=True), encoding="utf-8"
+            )
+            hardlink_path = temporary_root / "contracts/schemas/.cache/approved-hardlink"
+            hardlink_path.parent.mkdir(parents=True, exist_ok=True)
+            os.link(hardlink_source, hardlink_path)
+            unexpected_paths.append(hardlink_path)
+
+            unrelated_schema = temporary_root / "contracts/schemas/unrelated.schema.json"
+            unrelated_schema.write_text(
+                json.dumps({"$schema": "https://json-schema.org/draft/2020-12/schema"}),
+                encoding="utf-8",
+            )
 
             self.assertEqual(
                 sorted(path.relative_to(temporary_root).as_posix() for path in unexpected_paths),

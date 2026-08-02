@@ -9,6 +9,9 @@
     "artifactCap": {
       "const": 0
     },
+    "contractId": {
+      "const": "s4-8-optional3-probe-approval-v1"
+    },
     "executionAllowed": {
       "const": false
     },
@@ -33,6 +36,7 @@
     }
   },
   "required": [
+    "contractId",
     "approvalStatus",
     "artifactCap",
     "executionAllowed",

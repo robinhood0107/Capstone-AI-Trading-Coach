@@ -3,6 +3,9 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "properties": {
+    "contractId": {
+      "const": "s4-8-optional3-probe-receipt-v1"
+    },
     "firstFailureStopsRemainingCalls": {
       "const": true
     },
@@ -30,6 +33,7 @@
     }
   },
   "required": [
+    "contractId",
     "firstFailureStopsRemainingCalls",
     "physicalCallCount",
     "providerFamily",

@@ -2,7 +2,113 @@
   "$id": "contracts/schemas/s4-rag-v2-status-activation-v1.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
+  "allOf": [
+    {
+      "else": {
+        "properties": {
+          "hardDeletedArtifactClasses": {
+            "maxItems": 0
+          },
+          "ownerDeleteHardDeleteVerified": {
+            "const": false
+          },
+          "replacementGenerationActivated": {
+            "const": false
+          },
+          "replacementGenerationReceiptId": {
+            "const": null
+          }
+        }
+      },
+      "if": {
+        "properties": {
+          "state": {
+            "const": "DELETED"
+          }
+        },
+        "required": [
+          "state"
+        ]
+      },
+      "then": {
+        "properties": {
+          "generationDisposition": {
+            "const": "GENERATION_ACTIVATED_THEN_HARD_DELETED"
+          },
+          "hardDeletedArtifactClasses": {
+            "items": {
+              "enum": [
+                "DOCUMENT_IR",
+                "CANONICAL_TEXT",
+                "CHUNK",
+                "VECTOR"
+              ]
+            },
+            "maxItems": 4,
+            "minItems": 4,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "ownerDeleteHardDeleteVerified": {
+            "const": true
+          },
+          "replacementGenerationActivated": {
+            "const": true
+          },
+          "replacementGenerationReceiptId": {
+            "pattern": "^rgr_[A-Za-z0-9_-]{12,96}$",
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "state": {
+            "const": "READY"
+          }
+        },
+        "required": [
+          "state"
+        ]
+      },
+      "then": {
+        "properties": {
+          "generationDisposition": {
+            "const": "GENERATION_ACTIVE"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "state": {
+            "enum": [
+              "QUEUED",
+              "PROCESSING",
+              "FAILED"
+            ]
+          }
+        },
+        "required": [
+          "state"
+        ]
+      },
+      "then": {
+        "properties": {
+          "generationDisposition": {
+            "const": "NOT_ACTIVE"
+          }
+        }
+      }
+    }
+  ],
   "properties": {
+    "contractId": {
+      "const": "s4-rag-v2-status-activation-v1"
+    },
     "documentId": {
       "pattern": "^doc_[a-z0-9][a-z0-9_-]{10,95}$",
       "type": "string"
@@ -10,11 +116,41 @@
     "generationDisposition": {
       "enum": [
         "NOT_ACTIVE",
+        "GENERATION_ACTIVE",
         "GENERATION_ACTIVATED_THEN_HARD_DELETED"
       ]
     },
+    "hardDeletedArtifactClasses": {
+      "items": {
+        "enum": [
+          "DOCUMENT_IR",
+          "CANONICAL_TEXT",
+          "CHUNK",
+          "VECTOR"
+        ]
+      },
+      "maxItems": 4,
+      "type": "array"
+    },
+    "ownerDeleteHardDeleteVerified": {
+      "type": "boolean"
+    },
     "ownerRawCopies": {
       "const": 0
+    },
+    "replacementGenerationActivated": {
+      "type": "boolean"
+    },
+    "replacementGenerationReceiptId": {
+      "oneOf": [
+        {
+          "pattern": "^rgr_[A-Za-z0-9_-]{12,96}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
     },
     "schemaVersion": {
       "const": 1
@@ -33,9 +169,14 @@
     }
   },
   "required": [
+    "contractId",
     "documentId",
     "generationDisposition",
+    "hardDeletedArtifactClasses",
+    "ownerDeleteHardDeleteVerified",
     "ownerRawCopies",
+    "replacementGenerationActivated",
+    "replacementGenerationReceiptId",
     "schemaVersion",
     "sourceScope",
     "state"

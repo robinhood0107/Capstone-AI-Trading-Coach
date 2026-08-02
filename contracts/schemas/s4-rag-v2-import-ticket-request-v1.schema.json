@@ -3,6 +3,9 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "properties": {
+    "contractId": {
+      "const": "s4-rag-v2-import-ticket-request-v1"
+    },
     "importMode": {
       "const": "LOCAL_EPHEMERAL_PARSE"
     },
@@ -14,6 +17,7 @@
     }
   },
   "required": [
+    "contractId",
     "importMode",
     "schemaVersion",
     "sourceScope"

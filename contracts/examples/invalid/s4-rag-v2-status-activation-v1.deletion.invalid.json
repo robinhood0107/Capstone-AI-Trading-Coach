@@ -10,10 +10,9 @@
   ],
   "ownerDeleteHardDeleteVerified": true,
   "ownerRawCopies": 0,
-  "rawPath": "/home/example/private.pdf",
   "replacementGenerationActivated": true,
   "replacementGenerationReceiptId": "rgr_01CONTRACTFIXTURE",
   "schemaVersion": 1,
   "sourceScope": "OWNER_PRIVATE",
-  "state": "DELETED"
+  "state": "READY"
 }

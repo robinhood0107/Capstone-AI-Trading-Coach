@@ -95,7 +95,7 @@
       "gdeltOutboundCalls": 0,
       "headlineSummaryBodyStored": false,
       "laneId": "GDELT_OFFLINE_REFERENCE",
-      "mode": "DECISION_PLATFORM_OFFLINE_REFERENCE_ONLY",
+      "mode": "CONTRACT_ONLY",
       "ownerLocalDerivedOnly": false,
       "providerCallsAllowed": false,
       "queryOrHeaderStored": false,

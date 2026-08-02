@@ -3,7 +3,57 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "properties": {
+    "contractId": {
+      "const": "s4-8-optional3-entitlement-v1"
+    },
     "entitlements": {
+      "allOf": [
+        {
+          "contains": {
+            "properties": {
+              "providerFamily": {
+                "const": "FINNHUB_OPTIONAL3"
+              }
+            },
+            "required": [
+              "providerFamily"
+            ],
+            "type": "object"
+          },
+          "maxContains": 1,
+          "minContains": 1
+        },
+        {
+          "contains": {
+            "properties": {
+              "providerFamily": {
+                "const": "TWELVE_DATA"
+              }
+            },
+            "required": [
+              "providerFamily"
+            ],
+            "type": "object"
+          },
+          "maxContains": 1,
+          "minContains": 1
+        },
+        {
+          "contains": {
+            "properties": {
+              "providerFamily": {
+                "const": "MASSIVE"
+              }
+            },
+            "required": [
+              "providerFamily"
+            ],
+            "type": "object"
+          },
+          "maxContains": 1,
+          "minContains": 1
+        }
+      ],
       "items": {
         "additionalProperties": false,
         "properties": {
@@ -52,6 +102,7 @@
     }
   },
   "required": [
+    "contractId",
     "entitlements",
     "schemaVersion"
   ],

@@ -34,6 +34,28 @@
     }
   ],
   "properties": {
+    "accessEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "accessCheckedAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "accessEvidenceDigest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "verificationState": {
+          "const": "VERIFIED"
+        }
+      },
+      "required": [
+        "accessCheckedAt",
+        "accessEvidenceDigest",
+        "verificationState"
+      ],
+      "type": "object"
+    },
     "activeOa112Eligible": {
       "type": "boolean"
     },
@@ -53,8 +75,34 @@
       "pattern": "^https://",
       "type": "string"
     },
+    "canonicalUrlSha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
     "contractId": {
       "const": "rag-source-card-v4"
+    },
+    "identifier": {
+      "additionalProperties": false,
+      "properties": {
+        "scheme": {
+          "enum": [
+            "DOI",
+            "ISBN",
+            "ARXIV"
+          ]
+        },
+        "value": {
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "scheme",
+        "value"
+      ],
+      "type": "object"
     },
     "licenseEvidenceDigest": {
       "pattern": "^[0-9a-f]{64}$",
@@ -100,6 +148,10 @@
       "minLength": 1,
       "type": "string"
     },
+    "revisionDate": {
+      "format": "date",
+      "type": "string"
+    },
     "schemaVersion": {
       "const": 4
     },
@@ -117,15 +169,19 @@
     }
   },
   "required": [
+    "accessEvidence",
     "activeOa112Eligible",
     "authors",
     "canonicalUrl",
+    "canonicalUrlSha256",
     "contractId",
+    "identifier",
     "licenseEvidenceDigest",
     "mimeType",
     "permissions",
     "rawContentSha256",
     "revision",
+    "revisionDate",
     "schemaVersion",
     "sourceId",
     "sourceKind",

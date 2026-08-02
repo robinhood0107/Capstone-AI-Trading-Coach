@@ -8,7 +8,7 @@
   "authors": [
     "Contract fixture author"
   ],
-  "canonicalUrl": "https://example.invalid/oa-contract-fixture",
+  "canonicalUrl": "https://127.0.0.1/internal.pdf",
   "canonicalUrlSha256": "80ac6d5b5b43cf5598ac55a8b2116d074124f964c730220a1c27f4fbdeab70c1",
   "contractId": "rag-source-card-v4",
   "identifier": {
@@ -19,7 +19,7 @@
   "mimeType": "application/pdf",
   "permissions": {
     "externalEmbeddingAllowed": true,
-    "externalGenerationAllowed": false,
+    "externalGenerationAllowed": true,
     "localProcessingAllowed": true,
     "machineFetchAllowed": true
   },

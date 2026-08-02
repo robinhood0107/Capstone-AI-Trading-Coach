@@ -3,10 +3,13 @@ from __future__ import annotations
 import argparse
 import copy
 import hashlib
+import os
+import re
+import stat
 import sys
 from datetime import datetime
-from pathlib import Path
-from typing import Any, Final, Mapping
+from pathlib import Path, PurePosixPath
+from typing import Any, Collection, Final, Mapping
 
 from jsonschema import Draft202012Validator, FormatChecker
 
@@ -19,6 +22,10 @@ from contracts.generated_artifact_io import write_generated_artifact  # noqa: E4
 from contracts.generate_principle_contracts import (  # noqa: E402
     ContractValidationError,
     canonical_json_bytes,
+    load_json_bytes_strict,
+)
+from contracts.generate_rag_source_card_v2_contracts import (  # noqa: E402
+    _validate_canonical_url,
 )
 
 
@@ -65,6 +72,64 @@ MODEL_CANDIDATES: Final[tuple[str, ...]] = (
     "YIYANGHKUST_FINBERT_TONE",
     "LOUGHRAN_MCDONALD_BASELINE",
 )
+FOREIGN_NEWS_LANE_CONTRACTS: Final[dict[str, dict[str, Any]]] = {
+    "FINNHUB_PERSONAL_LOCAL": {
+        "allowedRetainedFields": ["OWNER_LOCAL_DERIVED_AGGREGATE"],
+        "attachmentAllowed": False,
+        "boundedTransientParseOnly": False,
+        "credentialMode": "OWNER_PERSONAL_LOCAL_ONLY",
+        "derivedCacheDeletionOnExpiryRequired": True,
+        "endpointAllowance": "MARKET_AND_COMPANY_NEWS_ONLY",
+        "externalEntityAllowed": False,
+        "fixedOriginBinding": "FINNHUB_FIXED_API_HOST",
+        "mode": "CONTRACT_ONLY",
+        "ownerLocalDerivedOnly": True,
+    },
+    "SEC_OFFICIAL": {
+        "allowedRetainedFields": [
+            "CONTENT_HASH",
+            "DERIVED_AGGREGATE",
+            "OFFICIAL_RELEASE_LOCATOR",
+        ],
+        "attachmentAllowed": False,
+        "boundedTransientParseOnly": True,
+        "credentialMode": "OFFICIAL_ORIGIN_NO_KEY",
+        "derivedCacheDeletionOnExpiryRequired": False,
+        "endpointAllowance": "OFFICIAL_RELEASES_ONLY",
+        "externalEntityAllowed": False,
+        "fixedOriginBinding": "SEC_GOV_OFFICIAL",
+        "mode": "CONTRACT_ONLY",
+        "ownerLocalDerivedOnly": False,
+    },
+    "FED_OFFICIAL": {
+        "allowedRetainedFields": [
+            "CONTENT_HASH",
+            "DERIVED_AGGREGATE",
+            "OFFICIAL_RELEASE_LOCATOR",
+        ],
+        "attachmentAllowed": False,
+        "boundedTransientParseOnly": True,
+        "credentialMode": "OFFICIAL_ORIGIN_NO_KEY",
+        "derivedCacheDeletionOnExpiryRequired": False,
+        "endpointAllowance": "OFFICIAL_RELEASES_ONLY",
+        "externalEntityAllowed": False,
+        "fixedOriginBinding": "FEDERAL_RESERVE_GOV_OFFICIAL",
+        "mode": "CONTRACT_ONLY",
+        "ownerLocalDerivedOnly": False,
+    },
+    "GDELT_OFFLINE_REFERENCE": {
+        "allowedRetainedFields": ["OFFLINE_AGGREGATE_REFERENCE"],
+        "attachmentAllowed": False,
+        "boundedTransientParseOnly": False,
+        "credentialMode": "NONE",
+        "derivedCacheDeletionOnExpiryRequired": False,
+        "endpointAllowance": "NONE",
+        "externalEntityAllowed": False,
+        "fixedOriginBinding": "NONE",
+        "mode": "DECISION_PLATFORM_OFFLINE_REFERENCE_ONLY",
+        "ownerLocalDerivedOnly": False,
+    },
+}
 
 # 기존 public contract와 historical metadata는 이번 addendum이 reinterpret하지 않는다.
 # Literal을 분할해 generic secret scanner가 integrity digest를 credential처럼 오인하지 않게 한다.
@@ -93,6 +158,12 @@ FROZEN_EXISTING_HASHES: Final[dict[str, str]] = {
     "contracts/proto/rag_v2.proto": (
         "059e953bdecb685871d532b2e5857709" "eb6c8dd613d7e734807379d8ad0db351"
     ),
+    "contracts/proto/rag_v2.descriptor.pb": (
+        "0fee0d5a7f44dab752f750a17697c474" "cfc6992756f0dc00dad6c3779bb413ba"
+    ),
+    "contracts/proto/rag_v2.descriptor.sha256": (
+        "193076c57ed42d28a24e3aa29df064e8" "957a55454774d087f13720a0eeaa2dd6"
+    ),
     "capstone-rag/manifests/s4-7d-oa140-release.v1.json": (
         "a86d8233d1f061fec571201c84963fbd" "d8c11b47d33f4e91801fe1c911b5c863"
     ),
@@ -101,6 +172,9 @@ FROZEN_EXISTING_HASHES: Final[dict[str, str]] = {
     ),
     "capstone-rag/manifests/s4-7d-oa140-distribution.v1.json": (
         "db750f35a3f7c5a4cfc27e3845e1620e" "613fd9e0aa1c9c243f422630ffafd796"
+    ),
+    "capstone-rag/manifests/s4-7d-oa140-checksums.sha256": (
+        "698e455069593816fed05bfce7da74a5" "4a3ffd4579c8eb4931a9fbd3051e1abc"
     ),
 }
 
@@ -125,19 +199,27 @@ SCHEMA_PATHS: Final[dict[str, str]] = {
     schema_id: f"contracts/schemas/{schema_id}.schema.json" for schema_id in SCHEMA_IDS
 }
 VALID_FIXTURE_PATHS: Final[frozenset[str]] = frozenset(
-    f"contracts/examples/{schema_id}.valid.json" for schema_id in SCHEMA_IDS
+    [
+        *(f"contracts/examples/{schema_id}.valid.json" for schema_id in SCHEMA_IDS),
+        "contracts/examples/s4-rag-v2-status-activation-v1.ready.valid.json",
+    ]
 )
 INVALID_FIXTURE_PATHS: Final[frozenset[str]] = frozenset(
     {
         "contracts/examples/invalid/rag-oa112-logical-selection-v1.track-count.invalid.json",
         "contracts/examples/invalid/rag-oa112-reserve-registry-v1.auto-promotion.invalid.json",
         "contracts/examples/invalid/rag-source-card-v4.permission.invalid.json",
+        "contracts/examples/invalid/rag-source-card-v4.url.invalid.json",
         "contracts/examples/invalid/s4-rag-v2-external-consent-v1.actor.invalid.json",
         "contracts/examples/invalid/s4-rag-v2-import-ticket-v1.ttl.invalid.json",
+        "contracts/examples/invalid/s4-rag-v2-status-activation-v1.deletion.invalid.json",
         "contracts/examples/invalid/s4-rag-v2-status-activation-v1.path.invalid.json",
         "contracts/examples/invalid/s4-rag-v2-pre-s5-policy-v1.query-fallback.invalid.json",
+        "contracts/examples/invalid/foreign-news-lane-entitlement-v1.gdelt.invalid.json",
+        "contracts/examples/invalid/foreign-news-sentiment-v1.activation.invalid.json",
         "contracts/examples/invalid/foreign-news-sentiment-v1.decision.invalid.json",
         "contracts/examples/invalid/foreign-news-sentiment-v1.article.invalid.json",
+        "contracts/examples/invalid/foreign-news-model-selection-v1.test-state.invalid.json",
         "contracts/examples/invalid/foreign-news-model-selection-v1.test-shopping.invalid.json",
         "contracts/examples/invalid/s4-8-optional3-entitlement-v1.call.invalid.json",
         "contracts/examples/invalid/s4-8-optional3-probe-approval-v1.execution.invalid.json",
@@ -163,6 +245,19 @@ def _closed(*, required: list[str], properties: dict[str, Any]) -> dict[str, Any
 
 def _schema(schema_id: str, body: Mapping[str, Any]) -> dict[str, Any]:
     value = copy.deepcopy(dict(body))
+    properties = value.get("properties")
+    required = value.get("required")
+    if not isinstance(properties, dict) or not isinstance(required, list):
+        raise ContractValidationError("Pre-S5 schema body must be a closed object.")
+    existing_contract_id = properties.get("contractId")
+    expected_contract_id = {"const": schema_id}
+    if existing_contract_id is not None and existing_contract_id != expected_contract_id:
+        raise ContractValidationError(
+            f"Pre-S5 schema {schema_id} has a conflicting contractId field."
+        )
+    properties["contractId"] = expected_contract_id
+    if "contractId" not in required:
+        required.insert(0, "contractId")
     value["$id"] = f"contracts/schemas/{schema_id}.schema.json"
     value["$schema"] = "https://json-schema.org/draft/2020-12/schema"
     value["title"] = schema_id
@@ -195,6 +290,31 @@ def _exact_string_array(values: tuple[str, ...]) -> dict[str, Any]:
     }
 
 
+def _exact_object_membership(
+    item_schema: Mapping[str, Any], *, discriminator: str, values: tuple[str, ...]
+) -> dict[str, Any]:
+    """ID별 중복·누락을 schema 단계에서 막고 순서는 semantic validator가 고정한다."""
+
+    return {
+        "allOf": [
+            {
+                "contains": {
+                    "properties": {discriminator: {"const": value}},
+                    "required": [discriminator],
+                    "type": "object",
+                },
+                "maxContains": 1,
+                "minContains": 1,
+            }
+            for value in values
+        ],
+        "items": dict(item_schema),
+        "maxItems": len(values),
+        "minItems": len(values),
+        "type": "array",
+    }
+
+
 def _oa_selection_schema() -> dict[str, Any]:
     track = _closed(
         required=["sourceCount", "trackId"],
@@ -209,7 +329,7 @@ def _oa_selection_schema() -> dict[str, Any]:
             required=[
                 "activationRequirements",
                 "activationState",
-                "historicalManifestSha256",
+                "historicalManifestReference",
                 "materializationAllowed",
                 "physicalActivation",
                 "schemaVersion",
@@ -227,19 +347,18 @@ def _oa_selection_schema() -> dict[str, Any]:
                     "type": "array",
                 },
                 "activationState": {"const": "CONTRACT_LOCKED_NOT_MATERIALIZED"},
-                "historicalManifestSha256": _digest(),
+                "historicalManifestReference": {
+                    "const": "S4_7D_OA140_RELEASE_V1_FROZEN"
+                },
                 "materializationAllowed": {"const": False},
                 "physicalActivation": {"const": "NOT_MATERIALIZED"},
                 "schemaVersion": {"const": 1},
                 "sourceCount": {"const": 112},
                 "sourceMetadataIncluded": {"const": False},
                 "sourcesPerTrack": {"const": 8},
-                "tracks": {
-                    "items": track,
-                    "maxItems": 14,
-                    "minItems": 14,
-                    "type": "array",
-                },
+                "tracks": _exact_object_membership(
+                    track, discriminator="trackId", values=TRACK_IDS
+                ),
             },
         ),
     )
@@ -278,21 +397,37 @@ def _source_card_v4_schema() -> dict[str, Any]:
     )
     body = _closed(
         required=[
+            "accessEvidence",
             "activeOa112Eligible",
             "authors",
             "canonicalUrl",
+            "canonicalUrlSha256",
             "contractId",
+            "identifier",
             "licenseEvidenceDigest",
             "mimeType",
             "permissions",
             "rawContentSha256",
             "revision",
+            "revisionDate",
             "schemaVersion",
             "sourceId",
             "sourceKind",
             "title",
         ],
         properties={
+            "accessEvidence": _closed(
+                required=[
+                    "accessCheckedAt",
+                    "accessEvidenceDigest",
+                    "verificationState",
+                ],
+                properties={
+                    "accessCheckedAt": _timestamp(),
+                    "accessEvidenceDigest": _digest(),
+                    "verificationState": {"const": "VERIFIED"},
+                },
+            ),
             "activeOa112Eligible": {"type": "boolean"},
             "authors": {
                 "items": _text(maximum=300),
@@ -302,12 +437,21 @@ def _source_card_v4_schema() -> dict[str, Any]:
                 "uniqueItems": True,
             },
             "canonicalUrl": {"format": "uri", "pattern": "^https://", "type": "string"},
+            "canonicalUrlSha256": _digest(),
             "contractId": {"const": "rag-source-card-v4"},
+            "identifier": _closed(
+                required=["scheme", "value"],
+                properties={
+                    "scheme": {"enum": ["DOI", "ISBN", "ARXIV"]},
+                    "value": _text(maximum=256),
+                },
+            ),
             "licenseEvidenceDigest": _digest(),
             "mimeType": {"enum": ["application/pdf", "text/html", "text/plain"]},
             "permissions": permissions,
             "rawContentSha256": _digest(),
             "revision": _text(maximum=128),
+            "revisionDate": {"format": "date", "type": "string"},
             "schemaVersion": {"const": 4},
             "sourceId": _opaque_id("^src_[a-z0-9][a-z0-9_-]{2,95}$"),
             "sourceKind": {"const": "OPEN_ACCESS_DOCUMENT"},
@@ -424,60 +568,154 @@ def _import_ticket_schema() -> dict[str, Any]:
 
 
 def _status_activation_schema() -> dict[str, Any]:
-    return _schema(
-        "s4-rag-v2-status-activation-v1",
-        _closed(
-            required=[
-                "documentId",
-                "generationDisposition",
-                "ownerRawCopies",
-                "schemaVersion",
-                "sourceScope",
-                "state",
-            ],
-            properties={
-                "documentId": _opaque_id(DOCUMENT_ID_PATTERN),
-                "generationDisposition": {
-                    "enum": [
-                        "NOT_ACTIVE",
-                        "GENERATION_ACTIVATED_THEN_HARD_DELETED",
-                    ]
-                },
-                "ownerRawCopies": {"const": 0},
-                "schemaVersion": {"const": 1},
-                "sourceScope": {"const": "OWNER_PRIVATE"},
-                "state": {
-                    "enum": [
-                        "QUEUED",
-                        "PROCESSING",
-                        "READY",
-                        "FAILED",
-                        "DELETED",
-                    ]
-                },
-            },
-        ),
+    hard_deleted_artifacts = _exact_string_array(
+        ("DOCUMENT_IR", "CANONICAL_TEXT", "CHUNK", "VECTOR")
     )
+    body = _closed(
+        required=[
+            "documentId",
+            "generationDisposition",
+            "hardDeletedArtifactClasses",
+            "ownerDeleteHardDeleteVerified",
+            "ownerRawCopies",
+            "replacementGenerationActivated",
+            "replacementGenerationReceiptId",
+            "schemaVersion",
+            "sourceScope",
+            "state",
+        ],
+        properties={
+            "documentId": _opaque_id(DOCUMENT_ID_PATTERN),
+            "generationDisposition": {
+                "enum": [
+                    "NOT_ACTIVE",
+                    "GENERATION_ACTIVE",
+                    "GENERATION_ACTIVATED_THEN_HARD_DELETED",
+                ]
+            },
+            "hardDeletedArtifactClasses": {
+                "items": {
+                    "enum": ["DOCUMENT_IR", "CANONICAL_TEXT", "CHUNK", "VECTOR"]
+                },
+                "maxItems": 4,
+                "type": "array",
+            },
+            "ownerDeleteHardDeleteVerified": {"type": "boolean"},
+            "ownerRawCopies": {"const": 0},
+            "replacementGenerationActivated": {"type": "boolean"},
+            "replacementGenerationReceiptId": {
+                "oneOf": [
+                    {"pattern": "^rgr_[A-Za-z0-9_-]{12,96}$", "type": "string"},
+                    {"type": "null"},
+                ]
+            },
+            "schemaVersion": {"const": 1},
+            "sourceScope": {"const": "OWNER_PRIVATE"},
+            "state": {
+                "enum": [
+                    "QUEUED",
+                    "PROCESSING",
+                    "READY",
+                    "FAILED",
+                    "DELETED",
+                ]
+            },
+        },
+    )
+    # 삭제 receipt는 실제 owner hard-delete 때만 존재한다. READY 상태가 삭제된
+    # IR/text/chunk/vector를 주장하지 않도록 API shape는 유지하되 빈/false/null로 고정한다.
+    body["allOf"] = [
+        {
+            "if": {"properties": {"state": {"const": "DELETED"}}, "required": ["state"]},
+            "then": {
+                "properties": {
+                    "generationDisposition": {
+                        "const": "GENERATION_ACTIVATED_THEN_HARD_DELETED"
+                    },
+                    "hardDeletedArtifactClasses": hard_deleted_artifacts,
+                    "ownerDeleteHardDeleteVerified": {"const": True},
+                    "replacementGenerationActivated": {"const": True},
+                    "replacementGenerationReceiptId": {
+                        "pattern": "^rgr_[A-Za-z0-9_-]{12,96}$",
+                        "type": "string",
+                    },
+                }
+            },
+            "else": {
+                "properties": {
+                    "hardDeletedArtifactClasses": {"maxItems": 0},
+                    "ownerDeleteHardDeleteVerified": {"const": False},
+                    "replacementGenerationActivated": {"const": False},
+                    "replacementGenerationReceiptId": {"const": None},
+                }
+            },
+        },
+        {
+            "if": {"properties": {"state": {"const": "READY"}}, "required": ["state"]},
+            "then": {
+                "properties": {"generationDisposition": {"const": "GENERATION_ACTIVE"}}
+            },
+        },
+        {
+            "if": {
+                "properties": {
+                    "state": {"enum": ["QUEUED", "PROCESSING", "FAILED"]}
+                },
+                "required": ["state"],
+            },
+            "then": {"properties": {"generationDisposition": {"const": "NOT_ACTIVE"}}},
+        },
+    ]
+    return _schema("s4-rag-v2-status-activation-v1", body)
 
 
 def _rag_policy_schema() -> dict[str, Any]:
     voyage = _closed(
         required=[
+            "activationEvidenceRequired",
             "batchApiAllowed",
             "dimension",
             "filesApiAllowed",
+            "fullBundleScope",
             "generationFallback",
             "modelId",
+            "outboundCallsAllowed",
+            "orderedPrechunkedDocumentGroupsRequired",
+            "partialProfileMixAllowed",
             "queryUnitFallbackAllowed",
             "retryCount",
             "runtimeEnvironmentVariable",
         ],
         properties={
+            "activationEvidenceRequired": {
+                "prefixItems": [
+                    {"const": "ORGANIZATION_TRAINING_OPT_OUT"},
+                    {"const": "PAYMENT_METHOD_PRIVACY_EVIDENCE"},
+                ],
+                "items": False,
+                "maxItems": 2,
+                "minItems": 2,
+                "type": "array",
+            },
             "batchApiAllowed": {"const": False},
             "dimension": {"const": 1024},
             "filesApiAllowed": {"const": False},
+            "fullBundleScope": {
+                "prefixItems": [
+                    {"const": "EXACT30"},
+                    {"const": "OA112"},
+                    {"const": "OWNER_PRIVATE"},
+                ],
+                "items": False,
+                "maxItems": 3,
+                "minItems": 3,
+                "type": "array",
+            },
             "generationFallback": {"const": "FULL_BUNDLE_REBUILD_EVALUATE_CAS"},
             "modelId": {"const": "voyage-context-4"},
+            "outboundCallsAllowed": {"const": False},
+            "orderedPrechunkedDocumentGroupsRequired": {"const": True},
+            "partialProfileMixAllowed": {"const": False},
             "queryUnitFallbackAllowed": {"const": False},
             "retryCount": {"const": 0},
             "runtimeEnvironmentVariable": {"const": "VOYAGE_API_KEY"},
@@ -485,15 +723,42 @@ def _rag_policy_schema() -> dict[str, Any]:
     )
     vertex = _closed(
         required=[
+            "activationEvidenceRequired",
             "authentication",
+            "boundedJsonCredentialRequired",
+            "contextCacheAllowed",
+            "credentialFileRequirements",
             "developerApiAllowed",
             "fallbackAllowed",
+            "fileUploadAllowed",
+            "generationMethod",
+            "generationUnavailableStatus",
             "maximumEvidenceCount",
             "maximumGenerateContentCallsPerQuestion",
             "modelId",
+            "openAiCallsAllowed",
+            "rawResponseStored",
+            "rerankerAllowed",
+            "retryCount",
+            "sanitizedUsageLedgerOnly",
+            "searchMapsGroundingAllowed",
+            "sessionResumptionAllowed",
             "toolsFunctionsAllowed",
+            "verifierAllowed",
         ],
         properties={
+            "activationEvidenceRequired": {
+                "prefixItems": [
+                    {"const": "CREDENTIAL_FILE_SECURITY"},
+                    {"const": "PROJECT_CACHE_STATE"},
+                    {"const": "ABUSE_MONITORING_STATE"},
+                    {"const": "MODEL_AVAILABILITY"},
+                ],
+                "items": False,
+                "maxItems": 4,
+                "minItems": 4,
+                "type": "array",
+            },
             "authentication": {
                 "prefixItems": [{"const": "ADC"}, {"const": "SERVICE_ACCOUNT"}],
                 "items": False,
@@ -501,12 +766,41 @@ def _rag_policy_schema() -> dict[str, Any]:
                 "minItems": 2,
                 "type": "array",
             },
+            "boundedJsonCredentialRequired": {"const": True},
+            "contextCacheAllowed": {"const": False},
+            "credentialFileRequirements": _closed(
+                required=[
+                    "credentialFileMode",
+                    "credentialRootMode",
+                    "linkCount",
+                    "ownerMatchRequired",
+                    "regularFileRequired",
+                ],
+                properties={
+                    "credentialFileMode": {"const": "0600"},
+                    "credentialRootMode": {"const": "0700"},
+                    "linkCount": {"const": 1},
+                    "ownerMatchRequired": {"const": True},
+                    "regularFileRequired": {"const": True},
+                },
+            ),
             "developerApiAllowed": {"const": False},
             "fallbackAllowed": {"const": False},
+            "fileUploadAllowed": {"const": False},
+            "generationMethod": {"const": "generateContent"},
+            "generationUnavailableStatus": {"const": "GENERATION_UNAVAILABLE"},
             "maximumEvidenceCount": {"const": 5},
             "maximumGenerateContentCallsPerQuestion": {"const": 1},
             "modelId": {"const": "gemini-3.5-flash"},
+            "openAiCallsAllowed": {"const": False},
+            "rawResponseStored": {"const": False},
+            "rerankerAllowed": {"const": False},
+            "retryCount": {"const": 0},
+            "sanitizedUsageLedgerOnly": {"const": True},
+            "searchMapsGroundingAllowed": {"const": False},
+            "sessionResumptionAllowed": {"const": False},
             "toolsFunctionsAllowed": {"const": False},
+            "verifierAllowed": {"const": False},
         },
     )
     return _schema(
@@ -552,44 +846,90 @@ def _rag_policy_schema() -> dict[str, Any]:
 
 
 def _foreign_lane_entitlement_schema() -> dict[str, Any]:
-    lane = _closed(
-        required=[
+    def lane_shape(lane_id: str, policy: Mapping[str, Any]) -> dict[str, Any]:
+        required = [
+            "allowedRetainedFields",
             "articleMetadataStored",
+            "attachmentAllowed",
+            "boundedTransientParseOnly",
             "credentialMode",
+            "credentialStored",
+            "derivedCacheDeletionOnExpiryRequired",
+            "endpointAllowance",
+            "externalEntityAllowed",
+            "fixedOriginBinding",
+            "headlineSummaryBodyStored",
             "laneId",
             "mode",
+            "ownerLocalDerivedOnly",
             "providerCallsAllowed",
+            "queryOrHeaderStored",
+            "rawForwardedToVertex",
             "rawProviderDataStored",
+            "redirectAllowed",
             "sharedHostedKeyAllowed",
-        ],
-        properties={
+        ]
+        properties: dict[str, Any] = {
+            "allowedRetainedFields": {
+                "prefixItems": [
+                    {"const": value} for value in policy["allowedRetainedFields"]
+                ],
+                "items": False,
+                "maxItems": len(policy["allowedRetainedFields"]),
+                "minItems": len(policy["allowedRetainedFields"]),
+                "type": "array",
+            },
             "articleMetadataStored": {"const": False},
-            "credentialMode": {
-                "enum": ["NONE", "OWNER_PERSONAL_LOCAL_ONLY", "OFFICIAL_ORIGIN_NO_KEY"]
+            "attachmentAllowed": {"const": policy["attachmentAllowed"]},
+            "boundedTransientParseOnly": {
+                "const": policy["boundedTransientParseOnly"]
             },
-            "laneId": {"enum": list(FOREIGN_NEWS_LANES)},
-            "mode": {
-                "enum": [
-                    "CONTRACT_ONLY",
-                    "DECISION_PLATFORM_OFFLINE_REFERENCE_ONLY",
-                ]
+            "credentialMode": {"const": policy["credentialMode"]},
+            "credentialStored": {"const": False},
+            "derivedCacheDeletionOnExpiryRequired": {
+                "const": policy["derivedCacheDeletionOnExpiryRequired"]
             },
+            "endpointAllowance": {"const": policy["endpointAllowance"]},
+            "externalEntityAllowed": {"const": policy["externalEntityAllowed"]},
+            "fixedOriginBinding": {"const": policy["fixedOriginBinding"]},
+            "headlineSummaryBodyStored": {"const": False},
+            "laneId": {"const": lane_id},
+            "mode": {"const": policy["mode"]},
+            "ownerLocalDerivedOnly": {"const": policy["ownerLocalDerivedOnly"]},
             "providerCallsAllowed": {"const": False},
+            "queryOrHeaderStored": {"const": False},
+            "rawForwardedToVertex": {"const": False},
             "rawProviderDataStored": {"const": False},
+            "redirectAllowed": {"const": False},
             "sharedHostedKeyAllowed": {"const": False},
-        },
-    )
+        }
+        if lane_id == "GDELT_OFFLINE_REFERENCE":
+            required.extend(
+                ["gdeltAdapterAdded", "gdeltExecutorAdded", "gdeltOutboundCalls"]
+            )
+            properties.update(
+                {
+                    "gdeltAdapterAdded": {"const": False},
+                    "gdeltExecutorAdded": {"const": False},
+                    "gdeltOutboundCalls": {"const": 0},
+                }
+            )
+        return _closed(required=required, properties=properties)
+
+    lane = {
+        "oneOf": [
+            lane_shape(lane_id, FOREIGN_NEWS_LANE_CONTRACTS[lane_id])
+            for lane_id in FOREIGN_NEWS_LANES
+        ]
+    }
     return _schema(
         "foreign-news-lane-entitlement-v1",
         _closed(
             required=["lanes", "schemaVersion"],
             properties={
-                "lanes": {
-                    "items": lane,
-                    "maxItems": 4,
-                    "minItems": 4,
-                    "type": "array",
-                },
+                "lanes": _exact_object_membership(
+                    lane, discriminator="laneId", values=FOREIGN_NEWS_LANES
+                ),
                 "schemaVersion": {"const": 1},
             },
         ),
@@ -604,9 +944,7 @@ def _foreign_news_sentiment_schema() -> dict[str, Any]:
             "state": {"enum": ["AVAILABLE", "ABSTAIN", "NOT_ACTIVATED"]},
         },
     )
-    return _schema(
-        "foreign-news-sentiment-v1",
-        _closed(
+    body = _closed(
             required=[
                 "allowedUses",
                 "articleMetadataStored",
@@ -631,12 +969,9 @@ def _foreign_news_sentiment_schema() -> dict[str, Any]:
                 "articleMetadataStored": {"const": False},
                 "asOf": _timestamp(),
                 "decisionAuthority": {"const": "NONE"},
-                "lanes": {
-                    "items": lane,
-                    "maxItems": 4,
-                    "minItems": 4,
-                    "type": "array",
-                },
+                "lanes": _exact_object_membership(
+                    lane, discriminator="laneId", values=FOREIGN_NEWS_LANES
+                ),
                 "rawProviderDataStored": {"const": False},
                 "riskDecisionHashIncluded": {"const": False},
                 "s5FeatureEligible": {"const": False},
@@ -644,39 +979,92 @@ def _foreign_news_sentiment_schema() -> dict[str, Any]:
                 "status": {"enum": ["AVAILABLE", "ABSTAIN"]},
                 "symbol": {"pattern": "^[0-9A-Z._:-]{1,20}$", "type": "string"},
             },
-        ),
-    )
+        )
+    body["allOf"] = [
+        {
+            "if": {"properties": {"status": {"const": "AVAILABLE"}}},
+            "then": {
+                "properties": {
+                    "lanes": {
+                        "contains": {
+                            "properties": {"state": {"const": "AVAILABLE"}},
+                            "required": ["state"],
+                            "type": "object",
+                        }
+                    }
+                }
+            },
+        }
+    ]
+    return _schema("foreign-news-sentiment-v1", body)
 
 
 def _foreign_news_model_selection_schema() -> dict[str, Any]:
+    class_recalls = _closed(
+        required=["NEGATIVE", "NEUTRAL", "POSITIVE"],
+        properties={
+            "NEGATIVE": {"maximum": 1, "minimum": 0, "type": "number"},
+            "NEUTRAL": {"maximum": 1, "minimum": 0, "type": "number"},
+            "POSITIVE": {"maximum": 1, "minimum": 0, "type": "number"},
+        },
+    )
     metrics = _closed(
         required=[
+            "classRecalls",
+            "cpuP95Millis",
             "criticalNegationNumberUnitErrors",
             "ece",
+            "footprintBytes",
             "macroF1",
-            "minimumClassRecall",
             "neutralF1",
         ],
         properties={
+            "classRecalls": class_recalls,
+            "cpuP95Millis": {"minimum": 0, "type": "number"},
             "criticalNegationNumberUnitErrors": {"minimum": 0, "type": "integer"},
             "ece": {"maximum": 1, "minimum": 0, "type": "number"},
+            "footprintBytes": {"minimum": 0, "type": "integer"},
             "macroF1": {"maximum": 1, "minimum": 0, "type": "number"},
-            "minimumClassRecall": {"maximum": 1, "minimum": 0, "type": "number"},
             "neutralF1": {"maximum": 1, "minimum": 0, "type": "number"},
+        },
+    )
+    validation_result = _closed(
+        required=["candidateModel", "metrics"],
+        properties={
+            "candidateModel": {"enum": list(MODEL_CANDIDATES)},
+            "metrics": metrics,
         },
     )
     return _schema(
         "foreign-news-model-selection-v1",
         _closed(
             required=[
+                "abstainReason",
                 "candidateModels",
-                "metrics",
                 "schemaVersion",
+                "selectionGeneration",
+                "selectionId",
                 "selectedModel",
                 "selectionStatus",
                 "testEvaluationCount",
+                "testOutcome",
+                "testTargetModel",
+                "validationCompleted",
+                "validationResults",
             ],
             properties={
+                "abstainReason": {
+                    "oneOf": [
+                        {
+                            "enum": [
+                                "NO_MODEL_MEETS_VALIDATION_GATE",
+                                "TIE_AFTER_FOOTPRINT",
+                                "TEST_FAILED",
+                            ]
+                        },
+                        {"type": "null"},
+                    ]
+                },
                 "candidateModels": {
                     "prefixItems": [{"const": value} for value in MODEL_CANDIDATES],
                     "items": False,
@@ -684,8 +1072,9 @@ def _foreign_news_model_selection_schema() -> dict[str, Any]:
                     "minItems": 3,
                     "type": "array",
                 },
-                "metrics": metrics,
                 "schemaVersion": {"const": 1},
+                "selectionGeneration": {"minimum": 1, "type": "integer"},
+                "selectionId": _opaque_id("^fns_[A-Za-z0-9_-]{12,96}$"),
                 "selectedModel": {
                     "oneOf": [{"enum": list(MODEL_CANDIDATES)}, {"type": "null"}]
                 },
@@ -693,6 +1082,16 @@ def _foreign_news_model_selection_schema() -> dict[str, Any]:
                     "enum": ["NOT_SELECTED", "SELECTED_PENDING_TEST", "TEST_EVALUATED", "ABSTAIN"]
                 },
                 "testEvaluationCount": {"maximum": 1, "minimum": 0, "type": "integer"},
+                "testOutcome": {"enum": ["NOT_RUN", "PASSED", "FAILED"]},
+                "testTargetModel": {
+                    "oneOf": [{"enum": list(MODEL_CANDIDATES)}, {"type": "null"}]
+                },
+                "validationCompleted": {"type": "boolean"},
+                "validationResults": _exact_object_membership(
+                    validation_result,
+                    discriminator="candidateModel",
+                    values=MODEL_CANDIDATES,
+                ),
             },
         ),
     )
@@ -724,12 +1123,11 @@ def _optional3_entitlement_schema() -> dict[str, Any]:
         _closed(
             required=["entitlements", "schemaVersion"],
             properties={
-                "entitlements": {
-                    "items": entry,
-                    "maxItems": 3,
-                    "minItems": 3,
-                    "type": "array",
-                },
+                "entitlements": _exact_object_membership(
+                    entry,
+                    discriminator="providerFamily",
+                    values=OPTIONAL3_PROVIDERS,
+                ),
                 "schemaVersion": {"const": 1},
             },
         ),
@@ -818,9 +1216,7 @@ def _oa_selection_fixture() -> dict[str, Any]:
     return {
         "activationRequirements": list(REQUIRED_OA_PERMISSIONS),
         "activationState": "CONTRACT_LOCKED_NOT_MATERIALIZED",
-        "historicalManifestSha256": FROZEN_EXISTING_HASHES[
-            "capstone-rag/manifests/s4-7d-oa140-release.v1.json"
-        ],
+        "historicalManifestReference": "S4_7D_OA140_RELEASE_V1_FROZEN",
         "materializationAllowed": False,
         "physicalActivation": "NOT_MATERIALIZED",
         "schemaVersion": 1,
@@ -845,15 +1241,25 @@ def _oa_reserve_fixture() -> dict[str, Any]:
 
 def _source_card_v4_fixture() -> dict[str, Any]:
     return {
+        "accessEvidence": {
+            "accessCheckedAt": "2026-08-03T00:00:00Z",
+            "accessEvidenceDigest": _hash("f"),
+            "verificationState": "VERIFIED",
+        },
         "activeOa112Eligible": True,
         "authors": ["Contract fixture author"],
         "canonicalUrl": "https://example.invalid/oa-contract-fixture",
+        "canonicalUrlSha256": hashlib.sha256(
+            b"https://example.invalid/oa-contract-fixture"
+        ).hexdigest(),
         "contractId": "rag-source-card-v4",
+        "identifier": {"scheme": "DOI", "value": "10.0000/contract-fixture"},
         "licenseEvidenceDigest": _hash("b"),
         "mimeType": "application/pdf",
         "permissions": {name: True for name in REQUIRED_OA_PERMISSIONS},
         "rawContentSha256": _hash("a"),
         "revision": "contract-fixture-r1",
+        "revisionDate": "2026-08-03",
         "schemaVersion": 4,
         "sourceId": "src_oa_contract_fixture_001",
         "sourceKind": "OPEN_ACCESS_DOCUMENT",
@@ -910,10 +1316,34 @@ def _status_activation_fixture() -> dict[str, Any]:
     return {
         "documentId": "doc_01contractfixture",
         "generationDisposition": "GENERATION_ACTIVATED_THEN_HARD_DELETED",
+        "hardDeletedArtifactClasses": [
+            "DOCUMENT_IR",
+            "CANONICAL_TEXT",
+            "CHUNK",
+            "VECTOR",
+        ],
+        "ownerDeleteHardDeleteVerified": True,
         "ownerRawCopies": 0,
+        "replacementGenerationActivated": True,
+        "replacementGenerationReceiptId": "rgr_01CONTRACTFIXTURE",
         "schemaVersion": 1,
         "sourceScope": "OWNER_PRIVATE",
         "state": "DELETED",
+    }
+
+
+def _status_activation_ready_fixture() -> dict[str, Any]:
+    return {
+        "documentId": "doc_01contractfixture",
+        "generationDisposition": "GENERATION_ACTIVE",
+        "hardDeletedArtifactClasses": [],
+        "ownerDeleteHardDeleteVerified": False,
+        "ownerRawCopies": 0,
+        "replacementGenerationActivated": False,
+        "replacementGenerationReceiptId": None,
+        "schemaVersion": 1,
+        "sourceScope": "OWNER_PRIVATE",
+        "state": "READY",
     }
 
 
@@ -927,20 +1357,54 @@ def _rag_policy_fixture() -> dict[str, Any]:
         "runtimeState": "CONTRACT_ONLY",
         "schemaVersion": 1,
         "vertex": {
+            "activationEvidenceRequired": [
+                "CREDENTIAL_FILE_SECURITY",
+                "PROJECT_CACHE_STATE",
+                "ABUSE_MONITORING_STATE",
+                "MODEL_AVAILABILITY",
+            ],
             "authentication": ["ADC", "SERVICE_ACCOUNT"],
+            "boundedJsonCredentialRequired": True,
+            "contextCacheAllowed": False,
+            "credentialFileRequirements": {
+                "credentialFileMode": "0600",
+                "credentialRootMode": "0700",
+                "linkCount": 1,
+                "ownerMatchRequired": True,
+                "regularFileRequired": True,
+            },
             "developerApiAllowed": False,
             "fallbackAllowed": False,
+            "fileUploadAllowed": False,
+            "generationMethod": "generateContent",
+            "generationUnavailableStatus": "GENERATION_UNAVAILABLE",
             "maximumEvidenceCount": 5,
             "maximumGenerateContentCallsPerQuestion": 1,
             "modelId": "gemini-3.5-flash",
+            "openAiCallsAllowed": False,
+            "rawResponseStored": False,
+            "rerankerAllowed": False,
+            "retryCount": 0,
+            "sanitizedUsageLedgerOnly": True,
+            "searchMapsGroundingAllowed": False,
+            "sessionResumptionAllowed": False,
             "toolsFunctionsAllowed": False,
+            "verifierAllowed": False,
         },
         "voyage": {
+            "activationEvidenceRequired": [
+                "ORGANIZATION_TRAINING_OPT_OUT",
+                "PAYMENT_METHOD_PRIVACY_EVIDENCE",
+            ],
             "batchApiAllowed": False,
             "dimension": 1024,
             "filesApiAllowed": False,
+            "fullBundleScope": ["EXACT30", "OA112", "OWNER_PRIVATE"],
             "generationFallback": "FULL_BUNDLE_REBUILD_EVALUATE_CAS",
             "modelId": "voyage-context-4",
+            "outboundCallsAllowed": False,
+            "orderedPrechunkedDocumentGroupsRequired": True,
+            "partialProfileMixAllowed": False,
             "queryUnitFallbackAllowed": False,
             "retryCount": 0,
             "runtimeEnvironmentVariable": "VOYAGE_API_KEY",
@@ -949,44 +1413,43 @@ def _rag_policy_fixture() -> dict[str, Any]:
 
 
 def _foreign_lanes() -> list[dict[str, Any]]:
-    return [
-        {
+    lanes: list[dict[str, Any]] = []
+    for lane_id in FOREIGN_NEWS_LANES:
+        policy = FOREIGN_NEWS_LANE_CONTRACTS[lane_id]
+        lane: dict[str, Any] = {
+            "allowedRetainedFields": policy["allowedRetainedFields"],
             "articleMetadataStored": False,
-            "credentialMode": "OWNER_PERSONAL_LOCAL_ONLY",
-            "laneId": "FINNHUB_PERSONAL_LOCAL",
-            "mode": "CONTRACT_ONLY",
+            "attachmentAllowed": policy["attachmentAllowed"],
+            "boundedTransientParseOnly": policy["boundedTransientParseOnly"],
+            "credentialMode": policy["credentialMode"],
+            "credentialStored": False,
+            "derivedCacheDeletionOnExpiryRequired": policy[
+                "derivedCacheDeletionOnExpiryRequired"
+            ],
+            "endpointAllowance": policy["endpointAllowance"],
+            "externalEntityAllowed": policy["externalEntityAllowed"],
+            "fixedOriginBinding": policy["fixedOriginBinding"],
+            "headlineSummaryBodyStored": False,
+            "laneId": lane_id,
+            "mode": policy["mode"],
+            "ownerLocalDerivedOnly": policy["ownerLocalDerivedOnly"],
             "providerCallsAllowed": False,
+            "queryOrHeaderStored": False,
+            "rawForwardedToVertex": False,
             "rawProviderDataStored": False,
+            "redirectAllowed": False,
             "sharedHostedKeyAllowed": False,
-        },
-        {
-            "articleMetadataStored": False,
-            "credentialMode": "OFFICIAL_ORIGIN_NO_KEY",
-            "laneId": "SEC_OFFICIAL",
-            "mode": "CONTRACT_ONLY",
-            "providerCallsAllowed": False,
-            "rawProviderDataStored": False,
-            "sharedHostedKeyAllowed": False,
-        },
-        {
-            "articleMetadataStored": False,
-            "credentialMode": "OFFICIAL_ORIGIN_NO_KEY",
-            "laneId": "FED_OFFICIAL",
-            "mode": "CONTRACT_ONLY",
-            "providerCallsAllowed": False,
-            "rawProviderDataStored": False,
-            "sharedHostedKeyAllowed": False,
-        },
-        {
-            "articleMetadataStored": False,
-            "credentialMode": "NONE",
-            "laneId": "GDELT_OFFLINE_REFERENCE",
-            "mode": "DECISION_PLATFORM_OFFLINE_REFERENCE_ONLY",
-            "providerCallsAllowed": False,
-            "rawProviderDataStored": False,
-            "sharedHostedKeyAllowed": False,
-        },
-    ]
+        }
+        if lane_id == "GDELT_OFFLINE_REFERENCE":
+            lane.update(
+                {
+                    "gdeltAdapterAdded": False,
+                    "gdeltExecutorAdded": False,
+                    "gdeltOutboundCalls": 0,
+                }
+            )
+        lanes.append(lane)
+    return lanes
 
 
 def _foreign_lane_entitlement_fixture() -> dict[str, Any]:
@@ -1013,18 +1476,32 @@ def _foreign_sentiment_fixture() -> dict[str, Any]:
 
 def _model_selection_fixture() -> dict[str, Any]:
     return {
+        "abstainReason": None,
         "candidateModels": list(MODEL_CANDIDATES),
-        "metrics": {
-            "criticalNegationNumberUnitErrors": 0,
-            "ece": 0,
-            "macroF1": 0,
-            "minimumClassRecall": 0,
-            "neutralF1": 0,
-        },
         "schemaVersion": 1,
+        "selectionGeneration": 1,
+        "selectionId": "fns_01CONTRACTFIXTURE",
         "selectedModel": None,
         "selectionStatus": "NOT_SELECTED",
         "testEvaluationCount": 0,
+        "testOutcome": "NOT_RUN",
+        "testTargetModel": None,
+        "validationCompleted": False,
+        "validationResults": [
+            {
+                "candidateModel": candidate,
+                "metrics": {
+                    "classRecalls": {"NEGATIVE": 0, "NEUTRAL": 0, "POSITIVE": 0},
+                    "cpuP95Millis": 0,
+                    "criticalNegationNumberUnitErrors": 0,
+                    "ece": 0,
+                    "footprintBytes": 0,
+                    "macroF1": 0,
+                    "neutralF1": 0,
+                },
+            }
+            for candidate in MODEL_CANDIDATES
+        ],
     }
 
 
@@ -1093,19 +1570,8 @@ def _catalog() -> dict[str, Any]:
         "contractId": "pre-s5-rag-news-contract.v1",
         "decisionPlatformOwner": "DECISION_PLATFORM",
         "frozenCompatibility": {
-            "historicalOa112ManifestSha256": FROZEN_EXISTING_HASHES[
-                "capstone-rag/manifests/s4-7d-oa140-release.v1.json"
-            ],
-            "newsSentimentSummaryV2Sha256": FROZEN_EXISTING_HASHES[
-                "contracts/schemas/news_sentiment_summary.v2.schema.json"
-            ],
-            "ragV2OpenApiSha256": FROZEN_EXISTING_HASHES[
-                "contracts/openapi/rag-v2.openapi.json"
-            ],
-            "rootOpenApiSha256": FROZEN_EXISTING_HASHES[
-                "contracts/openapi/openapi.json"
-            ],
-            "v1RagProtoSha256": FROZEN_EXISTING_HASHES["contracts/proto/rag.proto"],
+            "generatorVerifiedInputs": list(FROZEN_EXISTING_HASHES),
+            "verificationState": "EXACT_BYTES_VERIFIED_BY_GENERATOR",
         },
         "foreignNews": {
             "endpoint": "/api/v2/market-evidence/{symbol}/foreign-news-sentiment",
@@ -1115,7 +1581,7 @@ def _catalog() -> dict[str, Any]:
                 "criticalNegationNumberUnitErrorsMaximum": 0,
                 "eceMaximum": 0.10,
                 "macroF1Minimum": 0.80,
-                "minimumClassRecall": 0.75,
+                "perClassRecallMinimum": 0.75,
                 "neutralF1Minimum": 0.75,
                 "selectionOrder": [
                     "VALIDATION_MACRO_F1_DESC",
@@ -1147,31 +1613,63 @@ def _catalog() -> dict[str, Any]:
         },
         "ragV2": {
             "inheritedSurface": {
+                "legacyBytesBinding": "RAG_V2_OPENAPI_FROZEN",
                 "paths": [
                     "/api/v2/rag/ask",
                     "/api/v2/rag/corpus-status",
                     "/api/v2/rag/history",
                     "/api/v2/rag/history/{answerId}",
                 ],
-                "ragV2OpenApiSha256": FROZEN_EXISTING_HASHES[
-                    "contracts/openapi/rag-v2.openapi.json"
-                ],
             },
             "vertex": {
+                "activationEvidenceRequired": [
+                    "CREDENTIAL_FILE_SECURITY",
+                    "PROJECT_CACHE_STATE",
+                    "ABUSE_MONITORING_STATE",
+                    "MODEL_AVAILABILITY",
+                ],
                 "authentication": ["ADC", "SERVICE_ACCOUNT"],
+                "boundedJsonCredentialRequired": True,
+                "contextCacheAllowed": False,
+                "credentialFileRequirements": {
+                    "credentialFileMode": "0600",
+                    "credentialRootMode": "0700",
+                    "linkCount": 1,
+                    "ownerMatchRequired": True,
+                    "regularFileRequired": True,
+                },
                 "developerApiAllowed": False,
                 "fallbackAllowed": False,
+                "fileUploadAllowed": False,
+                "generationMethod": "generateContent",
+                "generationUnavailableStatus": "GENERATION_UNAVAILABLE",
                 "maximumEvidenceCount": 5,
                 "maximumGenerateContentCallsPerQuestion": 1,
                 "modelId": "gemini-3.5-flash",
+                "openAiCallsAllowed": False,
+                "rawResponseStored": False,
+                "rerankerAllowed": False,
+                "retryCount": 0,
+                "sanitizedUsageLedgerOnly": True,
+                "searchMapsGroundingAllowed": False,
+                "sessionResumptionAllowed": False,
                 "toolsFunctionsAllowed": False,
+                "verifierAllowed": False,
             },
             "voyage": {
+                "activationEvidenceRequired": [
+                    "ORGANIZATION_TRAINING_OPT_OUT",
+                    "PAYMENT_METHOD_PRIVACY_EVIDENCE",
+                ],
                 "batchApiAllowed": False,
                 "dimension": 1024,
                 "fallback": "FULL_BUNDLE_REBUILD_EVALUATE_CAS",
                 "filesApiAllowed": False,
+                "fullBundleScope": ["EXACT30", "OA112", "OWNER_PRIVATE"],
                 "modelId": "voyage-context-4",
+                "outboundCallsAllowed": False,
+                "orderedPrechunkedDocumentGroupsRequired": True,
+                "partialProfileMixAllowed": False,
                 "queryUnitFallbackAllowed": False,
                 "retryCount": 0,
                 "runtimeEnvironmentVariable": "VOYAGE_API_KEY",
@@ -1333,6 +1831,7 @@ def _valid_fixtures() -> dict[str, dict[str, Any]]:
         "contracts/examples/s4-rag-v2-import-ticket-request-v1.valid.json": _import_ticket_request_fixture(),
         "contracts/examples/s4-rag-v2-import-ticket-v1.valid.json": _import_ticket_fixture(),
         "contracts/examples/s4-rag-v2-status-activation-v1.valid.json": _status_activation_fixture(),
+        "contracts/examples/s4-rag-v2-status-activation-v1.ready.valid.json": _status_activation_ready_fixture(),
         "contracts/examples/s4-rag-v2-pre-s5-policy-v1.valid.json": _rag_policy_fixture(),
         "contracts/examples/foreign-news-lane-entitlement-v1.valid.json": _foreign_lane_entitlement_fixture(),
         "contracts/examples/foreign-news-sentiment-v1.valid.json": _foreign_sentiment_fixture(),
@@ -1353,6 +1852,10 @@ def _invalid_fixtures(valid: Mapping[str, dict[str, Any]]) -> dict[str, dict[str
     source = copy.deepcopy(valid["contracts/examples/rag-source-card-v4.valid.json"])
     source["permissions"]["externalGenerationAllowed"] = False
 
+    unsafe_source_url = copy.deepcopy(source)
+    unsafe_source_url["permissions"]["externalGenerationAllowed"] = True
+    unsafe_source_url["canonicalUrl"] = "https://127.0.0.1/internal.pdf"
+
     consent = copy.deepcopy(valid["contracts/examples/s4-rag-v2-external-consent-v1.valid.json"])
     consent["actor"] = "client-controlled"
 
@@ -1362,11 +1865,17 @@ def _invalid_fixtures(valid: Mapping[str, dict[str, Any]]) -> dict[str, dict[str
     status = copy.deepcopy(valid["contracts/examples/s4-rag-v2-status-activation-v1.valid.json"])
     status["rawPath"] = "/home/example/private.pdf"
 
+    status_state = copy.deepcopy(valid["contracts/examples/s4-rag-v2-status-activation-v1.valid.json"])
+    status_state["state"] = "READY"
+
     policy = copy.deepcopy(valid["contracts/examples/s4-rag-v2-pre-s5-policy-v1.valid.json"])
     policy["voyage"]["queryUnitFallbackAllowed"] = True
 
     decision = copy.deepcopy(valid["contracts/examples/foreign-news-sentiment-v1.valid.json"])
     decision["decisionAuthority"] = "RISK"
+
+    unavailable = copy.deepcopy(valid["contracts/examples/foreign-news-sentiment-v1.valid.json"])
+    unavailable["status"] = "AVAILABLE"
 
     article = copy.deepcopy(valid["contracts/examples/foreign-news-sentiment-v1.valid.json"])
     article["articleTitle"] = "must never be stored"
@@ -1375,6 +1884,17 @@ def _invalid_fixtures(valid: Mapping[str, dict[str, Any]]) -> dict[str, dict[str
         valid["contracts/examples/foreign-news-model-selection-v1.valid.json"]
     )
     test_shopping["testEvaluationCount"] = 1
+
+    invalid_test_state = copy.deepcopy(
+        valid["contracts/examples/foreign-news-model-selection-v1.valid.json"]
+    )
+    invalid_test_state["selectionStatus"] = "TEST_EVALUATED"
+    invalid_test_state["testOutcome"] = "PASSED"
+
+    gdelt_lane = copy.deepcopy(
+        valid["contracts/examples/foreign-news-lane-entitlement-v1.valid.json"]
+    )
+    gdelt_lane["lanes"][-1]["mode"] = "CONTRACT_ONLY"
 
     entitlement = copy.deepcopy(valid["contracts/examples/s4-8-optional3-entitlement-v1.valid.json"])
     entitlement["entitlements"][0]["providerCallsAllowed"] = True
@@ -1389,12 +1909,17 @@ def _invalid_fixtures(valid: Mapping[str, dict[str, Any]]) -> dict[str, dict[str
         "contracts/examples/invalid/rag-oa112-logical-selection-v1.track-count.invalid.json": selection,
         "contracts/examples/invalid/rag-oa112-reserve-registry-v1.auto-promotion.invalid.json": reserve,
         "contracts/examples/invalid/rag-source-card-v4.permission.invalid.json": source,
+        "contracts/examples/invalid/rag-source-card-v4.url.invalid.json": unsafe_source_url,
         "contracts/examples/invalid/s4-rag-v2-external-consent-v1.actor.invalid.json": consent,
         "contracts/examples/invalid/s4-rag-v2-import-ticket-v1.ttl.invalid.json": ticket,
         "contracts/examples/invalid/s4-rag-v2-status-activation-v1.path.invalid.json": status,
+        "contracts/examples/invalid/s4-rag-v2-status-activation-v1.deletion.invalid.json": status_state,
         "contracts/examples/invalid/s4-rag-v2-pre-s5-policy-v1.query-fallback.invalid.json": policy,
         "contracts/examples/invalid/foreign-news-sentiment-v1.decision.invalid.json": decision,
+        "contracts/examples/invalid/foreign-news-sentiment-v1.activation.invalid.json": unavailable,
         "contracts/examples/invalid/foreign-news-sentiment-v1.article.invalid.json": article,
+        "contracts/examples/invalid/foreign-news-lane-entitlement-v1.gdelt.invalid.json": gdelt_lane,
+        "contracts/examples/invalid/foreign-news-model-selection-v1.test-state.invalid.json": invalid_test_state,
         "contracts/examples/invalid/foreign-news-model-selection-v1.test-shopping.invalid.json": test_shopping,
         "contracts/examples/invalid/s4-8-optional3-entitlement-v1.call.invalid.json": entitlement,
         "contracts/examples/invalid/s4-8-optional3-probe-approval-v1.execution.invalid.json": approval,
@@ -1442,6 +1967,39 @@ def validate_semantics(schema_id: str, payload: object) -> None:
         return
     if schema_id == "rag-source-card-v4":
         permissions = value.get("permissions")
+        canonical_url = value.get("canonicalUrl")
+        if not isinstance(canonical_url, str):
+            raise ContractValidationError("source card v4 public HTTPS URL is required")
+        try:
+            _validate_canonical_url(canonical_url)
+        except ContractValidationError as error:
+            raise ContractValidationError(
+                "source card v4 public HTTPS URL is unsafe"
+            ) from error
+        expected_url_digest = hashlib.sha256(canonical_url.encode("utf-8")).hexdigest()
+        if value.get("canonicalUrlSha256") != expected_url_digest:
+            raise ContractValidationError("source card v4 canonical URL digest mismatched")
+        identifier = value.get("identifier")
+        if not isinstance(identifier, Mapping):
+            raise ContractValidationError("source card v4 identifier is required")
+        identifier_scheme = identifier.get("scheme")
+        identifier_value = identifier.get("value")
+        identifier_patterns = {
+            "DOI": r"10\.[0-9]{4,9}/[-._;()/:A-Za-z0-9]+",
+            "ISBN": r"(?:[0-9]{9}[0-9X]|[0-9]{13})",
+            "ARXIV": r"(?:[a-z-]+/)?[0-9]{4}\.[0-9]{4,5}(?:v[0-9]+)?",
+        }
+        compact_identifier = (
+            identifier_value.replace("-", "").replace(" ", "")
+            if identifier_scheme == "ISBN" and isinstance(identifier_value, str)
+            else identifier_value
+        )
+        if (
+            identifier_scheme not in identifier_patterns
+            or not isinstance(compact_identifier, str)
+            or re.fullmatch(identifier_patterns[identifier_scheme], compact_identifier) is None
+        ):
+            raise ContractValidationError("source card v4 identifier is invalid")
         if value.get("activeOa112Eligible") and (
             not isinstance(permissions, Mapping)
             or any(permissions.get(name) is not True for name in REQUIRED_OA_PERMISSIONS)
@@ -1460,10 +2018,38 @@ def validate_semantics(schema_id: str, payload: object) -> None:
             raise ContractValidationError("import ticket lifetime must be exactly five minutes")
         return
     if schema_id == "s4-rag-v2-status-activation-v1":
-        if value.get("state") == "DELETED" and value.get("generationDisposition") != (
+        deleted = value.get("state") == "DELETED"
+        ready = value.get("state") == "READY"
+        hard_delete_disposition = value.get("generationDisposition") == (
             "GENERATION_ACTIVATED_THEN_HARD_DELETED"
+        )
+        required_artifacts = ["DOCUMENT_IR", "CANONICAL_TEXT", "CHUNK", "VECTOR"]
+        if deleted != hard_delete_disposition:
+            raise ContractValidationError(
+                "owner hard-delete disposition must match the DELETED state"
+            )
+        if hard_delete_disposition and (
+            value.get("replacementGenerationActivated") is not True
+            or not isinstance(value.get("replacementGenerationReceiptId"), str)
+            or value.get("ownerDeleteHardDeleteVerified") is not True
+            or value.get("hardDeletedArtifactClasses") != required_artifacts
         ):
-            raise ContractValidationError("owner deletion requires activation before hard delete")
+            raise ContractValidationError(
+                "owner hard-delete requires replacement generation activation receipt"
+            )
+        if not hard_delete_disposition and (
+            value.get("replacementGenerationActivated") is not False
+            or value.get("replacementGenerationReceiptId") is not None
+            or value.get("ownerDeleteHardDeleteVerified") is not False
+            or value.get("hardDeletedArtifactClasses") != []
+        ):
+            raise ContractValidationError(
+                "non-deleted owner status cannot claim hard-delete activation"
+            )
+        if ready and value.get("generationDisposition") != "GENERATION_ACTIVE":
+            raise ContractValidationError("READY owner status requires an active generation")
+        if not deleted and not ready and value.get("generationDisposition") != "NOT_ACTIVE":
+            raise ContractValidationError("non-ready owner status cannot claim an active generation")
         return
     if schema_id == "s4-rag-v2-pre-s5-policy-v1":
         voyage = value.get("voyage")
@@ -1483,6 +2069,46 @@ def validate_semantics(schema_id: str, payload: object) -> None:
             lane.get("laneId") for lane in lanes if isinstance(lane, Mapping)
         ) != FOREIGN_NEWS_LANES:
             raise ContractValidationError("foreign-news lane set or order drifted")
+        for lane in lanes:
+            assert isinstance(lane, Mapping)
+            lane_id = lane["laneId"]
+            policy = FOREIGN_NEWS_LANE_CONTRACTS[lane_id]
+            expected: dict[str, Any] = {
+                "allowedRetainedFields": policy["allowedRetainedFields"],
+                "articleMetadataStored": False,
+                "attachmentAllowed": policy["attachmentAllowed"],
+                "boundedTransientParseOnly": policy["boundedTransientParseOnly"],
+                "credentialMode": policy["credentialMode"],
+                "credentialStored": False,
+                "derivedCacheDeletionOnExpiryRequired": policy[
+                    "derivedCacheDeletionOnExpiryRequired"
+                ],
+                "endpointAllowance": policy["endpointAllowance"],
+                "externalEntityAllowed": policy["externalEntityAllowed"],
+                "fixedOriginBinding": policy["fixedOriginBinding"],
+                "headlineSummaryBodyStored": False,
+                "laneId": lane_id,
+                "mode": policy["mode"],
+                "ownerLocalDerivedOnly": policy["ownerLocalDerivedOnly"],
+                "providerCallsAllowed": False,
+                "queryOrHeaderStored": False,
+                "rawForwardedToVertex": False,
+                "rawProviderDataStored": False,
+                "redirectAllowed": False,
+                "sharedHostedKeyAllowed": False,
+            }
+            if lane_id == "GDELT_OFFLINE_REFERENCE":
+                expected.update(
+                    {
+                        "gdeltAdapterAdded": False,
+                        "gdeltExecutorAdded": False,
+                        "gdeltOutboundCalls": 0,
+                    }
+                )
+            if dict(lane) != expected:
+                raise ContractValidationError(
+                    f"foreign-news lane policy drifted for {lane_id}"
+                )
         return
     if schema_id == "foreign-news-sentiment-v1":
         lanes = value.get("lanes")
@@ -1490,28 +2116,142 @@ def validate_semantics(schema_id: str, payload: object) -> None:
             lane.get("laneId") for lane in lanes if isinstance(lane, Mapping)
         ) != FOREIGN_NEWS_LANES:
             raise ContractValidationError("foreign-news response must cover exactly four lanes")
+        if value.get("status") == "AVAILABLE" and not any(
+            lane.get("state") == "AVAILABLE"
+            for lane in lanes
+            if isinstance(lane, Mapping)
+        ):
+            raise ContractValidationError(
+                "AVAILABLE foreign-news response requires an available lane"
+            )
         return
     if schema_id == "foreign-news-model-selection-v1":
         status = value.get("selectionStatus")
         selected = value.get("selectedModel")
         test_count = value.get("testEvaluationCount")
-        metrics = value.get("metrics")
-        if status == "NOT_SELECTED" and (selected is not None or test_count != 0):
-            raise ContractValidationError("model cannot use test data before validation selection")
-        if test_count and status != "TEST_EVALUATED":
-            raise ContractValidationError("test evaluation requires a prior selected model")
-        if status in {"SELECTED_PENDING_TEST", "TEST_EVALUATED"}:
-            if selected not in MODEL_CANDIDATES or not isinstance(metrics, Mapping):
-                raise ContractValidationError("selected model must be a benchmark candidate")
+        test_outcome = value.get("testOutcome")
+        test_target = value.get("testTargetModel")
+        abstain_reason = value.get("abstainReason")
+        completed = value.get("validationCompleted")
+        results = value.get("validationResults")
+        if not isinstance(results, list) or tuple(
+            result.get("candidateModel")
+            for result in results
+            if isinstance(result, Mapping)
+        ) != MODEL_CANDIDATES:
+            raise ContractValidationError("foreign-news validation candidate set or order drifted")
+        if not completed:
             if (
-                metrics.get("macroF1", 0) < 0.80
-                or metrics.get("minimumClassRecall", 0) < 0.75
-                or metrics.get("neutralF1", 0) < 0.75
-                or metrics.get("ece", 1) > 0.10
-                or metrics.get("criticalNegationNumberUnitErrors") != 0
+                status != "NOT_SELECTED"
+                or selected is not None
+                or test_count != 0
+                or test_outcome != "NOT_RUN"
+                or test_target is not None
+                or abstain_reason is not None
             ):
-                raise ContractValidationError("selected foreign-news model misses validation gate")
-        return
+                raise ContractValidationError(
+                    "incomplete validation cannot select or test a foreign-news model"
+                )
+            return
+
+        def passes_validation(result: Mapping[str, Any]) -> bool:
+            metrics = result.get("metrics")
+            if not isinstance(metrics, Mapping):
+                return False
+            recalls = metrics.get("classRecalls")
+            if not isinstance(recalls, Mapping):
+                return False
+            return (
+                metrics.get("macroF1", 0) >= 0.80
+                and all(recalls.get(label, 0) >= 0.75 for label in ("NEGATIVE", "NEUTRAL", "POSITIVE"))
+                and metrics.get("neutralF1", 0) >= 0.75
+                and metrics.get("ece", 1) <= 0.10
+                and metrics.get("criticalNegationNumberUnitErrors") == 0
+            )
+
+        eligible = [
+            result for result in results if isinstance(result, Mapping) and passes_validation(result)
+        ]
+        if not eligible:
+            if (
+                status != "ABSTAIN"
+                or selected is not None
+                or test_count != 0
+                or test_outcome != "NOT_RUN"
+                or test_target is not None
+                or abstain_reason != "NO_MODEL_MEETS_VALIDATION_GATE"
+            ):
+                raise ContractValidationError(
+                    "no validation-qualified model must ABSTAIN without a test call"
+                )
+            return
+
+        def ranking_key(result: Mapping[str, Any]) -> tuple[float, float, float, int]:
+            metrics = result["metrics"]
+            assert isinstance(metrics, Mapping)
+            return (
+                -float(metrics["macroF1"]),
+                float(metrics["ece"]),
+                float(metrics["cpuP95Millis"]),
+                int(metrics["footprintBytes"]),
+            )
+
+        ranked = sorted(eligible, key=ranking_key)
+        best_key = ranking_key(ranked[0])
+        tied = [result for result in ranked if ranking_key(result) == best_key]
+        if len(tied) != 1:
+            if (
+                status != "ABSTAIN"
+                or selected is not None
+                or test_count != 0
+                or test_outcome != "NOT_RUN"
+                or test_target is not None
+                or abstain_reason != "TIE_AFTER_FOOTPRINT"
+            ):
+                raise ContractValidationError(
+                    "validation tie after footprint must ABSTAIN without test shopping"
+                )
+            return
+
+        winner = ranked[0]["candidateModel"]
+        if selected != winner:
+            raise ContractValidationError(
+                "selected foreign-news model must be the deterministic validation winner"
+            )
+        if status == "SELECTED_PENDING_TEST":
+            if (
+                test_count != 0
+                or test_outcome != "NOT_RUN"
+                or test_target is not None
+                or abstain_reason is not None
+            ):
+                raise ContractValidationError(
+                    "pending model selection cannot contain a test evaluation"
+                )
+            return
+        if status == "TEST_EVALUATED":
+            if (
+                test_count != 1
+                or test_outcome != "PASSED"
+                or test_target != winner
+                or abstain_reason is not None
+            ):
+                raise ContractValidationError(
+                    "test evaluation must run exactly once for the selected model"
+                )
+            return
+        if status == "ABSTAIN":
+            if (
+                test_count != 1
+                or test_outcome != "FAILED"
+                or test_target != winner
+                or abstain_reason != "TEST_FAILED"
+            ):
+                raise ContractValidationError(
+                    "failed selected-model test must ABSTAIN without next-candidate shopping"
+                )
+            return
+        raise ContractValidationError("completed validation requires a selection state")
     if schema_id == "s4-8-optional3-entitlement-v1":
         entries = value.get("entitlements")
         if not isinstance(entries, list) or tuple(
@@ -1565,7 +2305,13 @@ def build_artifacts() -> dict[str, dict[str, Any]]:
     schemas = _schemas()
     for schema in schemas.values():
         Draft202012Validator.check_schema(schema)
-    valid = _valid_fixtures()
+    valid = {
+        relative_path: {
+            **payload,
+            "contractId": _fixture_schema_id(relative_path),
+        }
+        for relative_path, payload in _valid_fixtures().items()
+    }
     invalid = _invalid_fixtures(valid)
     if frozenset(valid) != VALID_FIXTURE_PATHS:
         raise ContractValidationError("Pre-S5 valid fixture path set drifted")
@@ -1592,6 +2338,29 @@ def build_artifacts() -> dict[str, dict[str, Any]]:
 
 
 ARTIFACT_PATHS: Final[frozenset[str]] = frozenset(build_artifacts())
+PRE_S5_SCHEMA_DOCUMENT_IDS: Final[frozenset[str]] = frozenset(
+    f"contracts/schemas/{schema_id}.schema.json" for schema_id in SCHEMA_IDS
+)
+PRE_S5_FILENAME_PREFIXES: Final[tuple[str, ...]] = (
+    "foreign-news-",
+    "pre-s5-rag-news-contract",
+    "rag-oa112-",
+    "rag-source-card-v4",
+    "rag-v2-pre-s5-addendum",
+    "s4-8-optional3-",
+    "s4-rag-v2-effective-consent-v1",
+    "s4-rag-v2-external-consent-v1",
+    "s4-rag-v2-import-ticket-request-v1",
+    "s4-rag-v2-import-ticket-v1",
+    "s4-rag-v2-pre-s5-policy-v1",
+    "s4-rag-v2-status-activation-v1",
+)
+PRE_S5_OPENAPI_TITLES: Final[frozenset[str]] = frozenset(
+    {
+        "Capstone RAG v2 Pre-S5 addendum",
+        "Capstone foreign-news explanation-only contract",
+    }
+)
 
 
 def _verify_frozen_existing_files() -> None:
@@ -1623,19 +2392,130 @@ def _write_outputs(outputs: Mapping[str, bytes]) -> None:
         write_generated_artifact(ROOT, relative_path, payload)
 
 
-def _check_outputs(outputs: Mapping[str, bytes]) -> None:
-    drifted = [
-        relative_path
-        for relative_path, expected in sorted(outputs.items())
-        if not (ROOT / relative_path).is_file()
-        or (ROOT / relative_path).is_symlink()
-        or (ROOT / relative_path).read_bytes() != expected
-    ]
-    if drifted:
-        raise ContractValidationError(
-            "generated Pre-S5 RAG/news artifacts drifted:\n"
-            + "\n".join(f"- {relative_path}" for relative_path in drifted)
+def _is_pre_s5_public_artifact_payload(path: Path, root: Path) -> bool:
+    """filename과 무관하게 public namespace 안의 Pre-S5 payload를 식별한다."""
+
+    try:
+        payload = load_json_bytes_strict(
+            path.read_bytes(), source=path.relative_to(root).as_posix()
         )
+    except (ContractValidationError, OSError):
+        return False
+    if not isinstance(payload, Mapping):
+        return False
+    if payload.get("contractId") in {*SCHEMA_IDS, "pre-s5-rag-news-contract.v1"}:
+        return True
+    if payload.get("$id") in PRE_S5_SCHEMA_DOCUMENT_IDS:
+        return True
+    info = payload.get("info")
+    return isinstance(info, Mapping) and info.get("title") in PRE_S5_OPENAPI_TITLES
+
+
+def _is_pre_s5_filename_family(path: Path) -> bool:
+    """declared schema/fixture/OpenAPI name 계열의 숨은 추가 파일도 fail-closed한다."""
+
+    return any(path.name.startswith(prefix) for prefix in PRE_S5_FILENAME_PREFIXES)
+
+
+def _public_pre_s5_artifact_candidates(namespace_root: Path, root: Path) -> set[Path]:
+    """no-follow recursive scan으로 hidden/nested packet과 link를 public tree에서 찾는다."""
+
+    candidates: set[Path] = set()
+    try:
+        metadata = namespace_root.lstat()
+    except OSError:
+        return candidates
+    if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
+        return {namespace_root}
+    for directory, directory_names, file_names in os.walk(namespace_root, followlinks=False):
+        current_directory = Path(directory)
+        for directory_name in tuple(directory_names):
+            child = current_directory / directory_name
+            try:
+                metadata = child.lstat()
+            except OSError:
+                candidates.add(child)
+                directory_names.remove(directory_name)
+                continue
+            if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
+                candidates.add(child)
+                directory_names.remove(directory_name)
+        for file_name in file_names:
+            candidate = current_directory / file_name
+            try:
+                metadata = candidate.lstat()
+            except OSError:
+                candidates.add(candidate)
+                continue
+            if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
+                candidates.add(candidate)
+                continue
+            if _is_pre_s5_filename_family(candidate) or _is_pre_s5_public_artifact_payload(
+                candidate, root
+            ):
+                candidates.add(candidate)
+    return candidates
+
+
+def _unexpected_pre_s5_artifact_paths(
+    root: Path, expected_output_paths: Collection[str]
+) -> list[str]:
+    """Pre-S5 generated namespace 외의 extra artifact와 local-only packet 은닉을 막는다."""
+
+    expected_paths = set(expected_output_paths)
+    candidates: set[Path] = set()
+    for relative_namespace in (
+        "contracts/catalogs",
+        "contracts/examples",
+        "contracts/openapi",
+        "contracts/schemas",
+    ):
+        candidates.update(_public_pre_s5_artifact_candidates(root / relative_namespace, root))
+    return sorted(
+        relative_path
+        for path in candidates
+        if (relative_path := path.relative_to(root).as_posix()) not in expected_paths
+    )
+
+
+def _is_regular_generated_output(root: Path, relative_path: str) -> bool:
+    """expected output은 모든 parent가 link 없는 directory이고 leaf가 단일 regular file여야 한다."""
+
+    try:
+        metadata = root.lstat()
+        if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
+            return False
+        path = root
+        for component in PurePosixPath(relative_path).parts:
+            path = path / component
+            metadata = path.lstat()
+            if stat.S_ISLNK(metadata.st_mode):
+                return False
+        return stat.S_ISREG(metadata.st_mode) and metadata.st_nlink == 1
+    except OSError:
+        return False
+
+
+def _check_outputs(outputs: Mapping[str, bytes], *, root: Path = ROOT) -> None:
+    drifted: list[str] = []
+    for relative_path, expected in sorted(outputs.items()):
+        path = root / relative_path
+        if not _is_regular_generated_output(root, relative_path) or path.read_bytes() != expected:
+            drifted.append(relative_path)
+    unexpected = _unexpected_pre_s5_artifact_paths(root, outputs)
+    if drifted or unexpected:
+        messages: list[str] = []
+        if drifted:
+            messages.append(
+                "generated Pre-S5 RAG/news artifacts drifted:\n"
+                + "\n".join(f"- {path}" for path in drifted)
+            )
+        if unexpected:
+            messages.append(
+                "unexpected Pre-S5 generated namespace artifacts:\n"
+                + "\n".join(f"- {path}" for path in unexpected)
+            )
+        raise ContractValidationError("\n".join(messages))
 
 
 def main(argv: list[str] | None = None) -> int:

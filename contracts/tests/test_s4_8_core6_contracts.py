@@ -64,6 +64,12 @@ class S48Core6ContractTest(unittest.TestCase):
         entries = registry["entitlements"]
         self.assertEqual(set(CORE6_SOURCE_FAMILIES), {entry["sourceFamily"] for entry in entries})
         self.assertEqual(6, len(entries))
+        # 공개 fixture는 실제 entitlement 증빙을 운반하지 않는다. 실제 digest는 local-private
+        # registry와 승인 packet에서만 쓰므로, fixture에는 scanner-safe sentinel만 허용한다.
+        self.assertEqual(
+            [f"{index:064x}" for index in range(len(CORE6_SOURCE_FAMILIES))],
+            [entry["accessEvidenceDigest"] for entry in entries],
+        )
         self.assertEqual(
             "BLOCKED_NO_CREDENTIAL_OR_APPROVAL",
             next(entry for entry in entries if entry["sourceFamily"] == "KOFIA")[

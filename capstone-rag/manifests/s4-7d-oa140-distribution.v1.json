@@ -1,0 +1,40 @@
+{
+  "artifactSetDigest": "768a05e6336221a9e7d4e14f99e7e1c1cae8ad9fdc039211775281c57d7b2414",
+  "artifacts": [
+    {
+      "path": "capstone-rag/manifests/s4-7d-oa140-release.v1.json",
+      "sha256": "a86d8233d1f061fec571201c84963fbdd8c11b47d33f4e91801fe1c911b5c863"
+    },
+    {
+      "path": "capstone-rag/manifests/s4-7d-oa140-curriculum-map.v1.md",
+      "sha256": "26bb65adf854f0118221a3cc0bff8032e9727fefd8284549d084c0e89e0ffe17"
+    },
+    {
+      "path": "capstone-rag/reports/s4-7d-oa140-remote-hash-receipt.v1.json",
+      "sha256": "954d29c06887d30d80ea41d430c3827a31ce41fc994d73e80670f5b23fa622a6"
+    }
+  ],
+  "contractId": "s4-7d-oa140-distribution/v1",
+  "embeddingsRedistributed": false,
+  "extractedTextRedistributed": false,
+  "githubRelease": {
+    "assetPolicy": "METADATA_ONLY_NO_OA_RAW_TEXT_OR_EMBEDDINGS",
+    "plannedAssets": [
+      "s4-7d-oa140-release.v1.json",
+      "s4-7d-oa140-curriculum-map.v1.md",
+      "s4-7d-oa140-remote-hash-receipt.v1.json",
+      "s4-7d-oa140-checksums.sha256"
+    ],
+    "plannedTag": "s4-7d-oa140-v1",
+    "publicationStatus": "READY_NOT_PUBLISHED_NO_CREDENTIAL"
+  },
+  "huggingFaceDataset": {
+    "assetPolicy": "METADATA_ONLY_NO_OA_RAW_TEXT_OR_EMBEDDINGS",
+    "plannedDatasetId": "robinhood0107/capstone-ai-trading-coach-rag-oa140",
+    "publicationStatus": "READY_NOT_PUBLISHED_NO_CREDENTIAL"
+  },
+  "manifestDigest": "71669be61069ce327175c773e588afaaa0cb145f3bba25561722c1b31e9ed502",
+  "manifestId": "oa140_s4_7d_release_v1",
+  "rawRedistributed": false,
+  "sourceCount": 112
+}

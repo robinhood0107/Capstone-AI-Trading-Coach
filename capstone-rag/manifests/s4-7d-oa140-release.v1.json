@@ -1,0 +1,1793 @@
+{
+  "contractId": "rag-oa-manifest-v1",
+  "embeddingsRedistributed": false,
+  "extractedTextRedistributed": false,
+  "manifestId": "oa140_s4_7d_release_v1",
+  "rawRedistributed": false,
+  "releaseDigest": "71669be61069ce327175c773e588afaaa0cb145f3bba25561722c1b31e9ed502",
+  "releaseStatus": "RELEASED",
+  "signedManifest": true,
+  "sourceCount": 112,
+  "sources": [
+    {
+      "canonicalUrl": "https://ocw.mit.edu/courses/14-01-principles-of-microeconomics-fall-2023/",
+      "curriculumRoles": [
+        "PUBLIC_TEACHING_MATERIAL"
+      ],
+      "downloadUrl": "https://ocw.mit.edu/courses/14-01-principles-of-microeconomics-fall-2023/",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 88,
+      "rawContentSha256": "abdb8b1447f1735b208a311e4c19fa2f7f7266b2129a9845fa0469a9f6b4103a",
+      "sourceId": "src_oa_00_ocw_1_micr_game_info_mark",
+      "sourceRevisionId": "srv_oa_00_ocw_1_micr_game_info_mark",
+      "trackId": "MICRO_GAME_INFO_MARKET_DESIGN"
+    },
+    {
+      "canonicalUrl": "https://ocw.mit.edu/courses/14-01-principles-of-microeconomics-fall-2023/lists/lecture-summaries/",
+      "curriculumRoles": [
+        "PUBLIC_TEACHING_MATERIAL",
+        "MODERN_REVIEW_REPLICATION_CORRECTION"
+      ],
+      "downloadUrl": "https://ocw.mit.edu/courses/14-01-principles-of-microeconomics-fall-2023/lists/lecture-summaries/",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 86,
+      "rawContentSha256": "fd30892be2b9bb299b8dac27358e41bd817dd5783a0b88fbe2e23354f74c4d11",
+      "sourceId": "src_oa_00_ocw_2_micr_game_info_mark",
+      "sourceRevisionId": "srv_oa_00_ocw_2_micr_game_info_mark",
+      "trackId": "MICRO_GAME_INFO_MARKET_DESIGN"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.27996v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.27996v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "3190d54a839e992a3d30daf0f393449043124d3da9b704f47fa142866a03e4ab",
+      "sourceId": "src_oa_00_arxiv_1_2607_27996",
+      "sourceRevisionId": "srv_oa_00_arxiv_1_2607_27996",
+      "trackId": "MICRO_GAME_INFO_MARKET_DESIGN"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.27638v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.27638v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "a50555f97c07685eed33ac36c954f5bab4875d6adc8e0eaeb52ebf4f9a6b91a1",
+      "sourceId": "src_oa_00_arxiv_2_2607_27638",
+      "sourceRevisionId": "srv_oa_00_arxiv_2_2607_27638",
+      "trackId": "MICRO_GAME_INFO_MARKET_DESIGN"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.27239v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.27239v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "f757506e0b0a7f6edbcf65a0fd77a161171ca1762e072d136c7a4d1cb09c4586",
+      "sourceId": "src_oa_00_arxiv_3_2607_27239",
+      "sourceRevisionId": "srv_oa_00_arxiv_3_2607_27239",
+      "trackId": "MICRO_GAME_INFO_MARKET_DESIGN"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.27238v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.27238v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "0de19c8d1f773314ef6343deb5774d2d92aa874aa867a1cac9db71848a9aa194",
+      "sourceId": "src_oa_00_arxiv_4_2607_27238",
+      "sourceRevisionId": "srv_oa_00_arxiv_4_2607_27238",
+      "trackId": "MICRO_GAME_INFO_MARKET_DESIGN"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.28023v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.28023v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "ae0c42ddf729a2769ee7b46cd630c9802baf9d80e229bba46db42181ce8fdbfc",
+      "sourceId": "src_oa_00_arxiv_5_2607_28023",
+      "sourceRevisionId": "srv_oa_00_arxiv_5_2607_28023",
+      "trackId": "MICRO_GAME_INFO_MARKET_DESIGN"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.27817v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.27817v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "be5f6aac472a70a334289f11c8341210966523c69d914e78da143cb141c63f59",
+      "sourceId": "src_oa_00_arxiv_6_2607_27817",
+      "sourceRevisionId": "srv_oa_00_arxiv_6_2607_27817",
+      "trackId": "MICRO_GAME_INFO_MARKET_DESIGN"
+    },
+    {
+      "canonicalUrl": "https://ocw.mit.edu/courses/14-02-principles-of-macroeconomics-spring-2023/",
+      "curriculumRoles": [
+        "PUBLIC_TEACHING_MATERIAL"
+      ],
+      "downloadUrl": "https://ocw.mit.edu/courses/14-02-principles-of-macroeconomics-spring-2023/",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 88,
+      "rawContentSha256": "819e810f13992467a60a71b7b62d8675ca6d0cf5a111891f5d31b63b04014234",
+      "sourceId": "src_oa_01_ocw_1_macr_mone_inte",
+      "sourceRevisionId": "srv_oa_01_ocw_1_macr_mone_inte",
+      "trackId": "MACRO_MONETARY_INTERNATIONAL"
+    },
+    {
+      "canonicalUrl": "https://ocw.mit.edu/courses/14-02-principles-of-macroeconomics-spring-2023/resources/1402-sp23-lecture-4-v2_mp4/",
+      "curriculumRoles": [
+        "PUBLIC_TEACHING_MATERIAL",
+        "MODERN_REVIEW_REPLICATION_CORRECTION"
+      ],
+      "downloadUrl": "https://ocw.mit.edu/courses/14-02-principles-of-macroeconomics-spring-2023/resources/1402-sp23-lecture-4-v2_mp4/",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 86,
+      "rawContentSha256": "766e73d83fb5db7f2756a6401dd51a017c9c50963590cc1ec13111038117af4d",
+      "sourceId": "src_oa_01_ocw_2_macr_mone_inte",
+      "sourceRevisionId": "srv_oa_01_ocw_2_macr_mone_inte",
+      "trackId": "MACRO_MONETARY_INTERNATIONAL"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.28378v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.28378v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "5c9e11bd39ae20bdee22919286465832ec6fea8833809975a6dd49a13b8c9b1b",
+      "sourceId": "src_oa_01_arxiv_1_2607_28378",
+      "sourceRevisionId": "srv_oa_01_arxiv_1_2607_28378",
+      "trackId": "MACRO_MONETARY_INTERNATIONAL"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.28371v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.28371v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "ad5ff9822ebebb1374ae99d5e946e5f3fa978e1f7aa6a1a8239f92d36ff6bbc6",
+      "sourceId": "src_oa_01_arxiv_2_2607_28371",
+      "sourceRevisionId": "srv_oa_01_arxiv_2_2607_28371",
+      "trackId": "MACRO_MONETARY_INTERNATIONAL"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.28348v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.28348v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "346220ded3e52dd092a4f2e922de4ff598a01d338a775ebd9915ad558467b2de",
+      "sourceId": "src_oa_01_arxiv_3_2607_28348",
+      "sourceRevisionId": "srv_oa_01_arxiv_3_2607_28348",
+      "trackId": "MACRO_MONETARY_INTERNATIONAL"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.28230v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.28230v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "6ffc9571e930d9eae59d9dd975094853a8df02063f4c4bc22a9f08718a4fb035",
+      "sourceId": "src_oa_01_arxiv_4_2607_28230",
+      "sourceRevisionId": "srv_oa_01_arxiv_4_2607_28230",
+      "trackId": "MACRO_MONETARY_INTERNATIONAL"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.28222v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.28222v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "4660847f58e617eb3cfcad56d346b442167be0322e3e79f9ee33db29e0782aa8",
+      "sourceId": "src_oa_01_arxiv_5_2607_28222",
+      "sourceRevisionId": "srv_oa_01_arxiv_5_2607_28222",
+      "trackId": "MACRO_MONETARY_INTERNATIONAL"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.28133v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.28133v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "3b62cef135d715d3062896378cfbb0bc79449e496c4ab9e55277abff999920c6",
+      "sourceId": "src_oa_01_arxiv_6_2607_28133",
+      "sourceRevisionId": "srv_oa_01_arxiv_6_2607_28133",
+      "trackId": "MACRO_MONETARY_INTERNATIONAL"
+    },
+    {
+      "canonicalUrl": "https://ocw.mit.edu/courses/18-05-introduction-to-probability-and-statistics-spring-2022/",
+      "curriculumRoles": [
+        "PUBLIC_TEACHING_MATERIAL"
+      ],
+      "downloadUrl": "https://ocw.mit.edu/courses/18-05-introduction-to-probability-and-statistics-spring-2022/",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 88,
+      "rawContentSha256": "5fdc29f41fa7d47ac06fcb9b4eba6569b2a1cee9587da9ccb9a5ef70a636d87a",
+      "sourceId": "src_oa_02_ocw_1_prob_stat_opti",
+      "sourceRevisionId": "srv_oa_02_ocw_1_prob_stat_opti",
+      "trackId": "PROBABILITY_STATISTICS_OPTIMIZATION"
+    },
+    {
+      "canonicalUrl": "https://ocw.mit.edu/courses/18-05-introduction-to-probability-and-statistics-spring-2022/resources/lecture-notes/",
+      "curriculumRoles": [
+        "PUBLIC_TEACHING_MATERIAL",
+        "MODERN_REVIEW_REPLICATION_CORRECTION"
+      ],
+      "downloadUrl": "https://ocw.mit.edu/courses/18-05-introduction-to-probability-and-statistics-spring-2022/resources/lecture-notes/",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 86,
+      "rawContentSha256": "f51bd1f446bdb37b003970f40ae312716016e09c04649e3a7117a388ebea8834",
+      "sourceId": "src_oa_02_ocw_2_prob_stat_opti",
+      "sourceRevisionId": "srv_oa_02_ocw_2_prob_stat_opti",
+      "trackId": "PROBABILITY_STATISTICS_OPTIMIZATION"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.28455v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.28455v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "009d50bd4f240fea858ea40ecc2f06a5b810f09c15094375590970955679068a",
+      "sourceId": "src_oa_02_arxiv_1_2607_28455",
+      "sourceRevisionId": "srv_oa_02_arxiv_1_2607_28455",
+      "trackId": "PROBABILITY_STATISTICS_OPTIMIZATION"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.28385v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.28385v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "c45c9a983da86a19149f21ca10f29c36deee56fc3d20de21e0854e420a598a14",
+      "sourceId": "src_oa_02_arxiv_2_2607_28385",
+      "sourceRevisionId": "srv_oa_02_arxiv_2_2607_28385",
+      "trackId": "PROBABILITY_STATISTICS_OPTIMIZATION"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.28322v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.28322v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "daaf5169d89135c95fc6691bdf2ed80146c7c8f228671c309d93de6544bb75e0",
+      "sourceId": "src_oa_02_arxiv_3_2607_28322",
+      "sourceRevisionId": "srv_oa_02_arxiv_3_2607_28322",
+      "trackId": "PROBABILITY_STATISTICS_OPTIMIZATION"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.28289v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.28289v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "981e6312dab766c8ec189f5904f842f5ddfa0380e835520300c800b878380c16",
+      "sourceId": "src_oa_02_arxiv_4_2607_28289",
+      "sourceRevisionId": "srv_oa_02_arxiv_4_2607_28289",
+      "trackId": "PROBABILITY_STATISTICS_OPTIMIZATION"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.28252v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.28252v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "0c6012f2aaa5c94909769d5fb2b0366eea34b50ce46062fe413d2f2f8ba1e9e9",
+      "sourceId": "src_oa_02_arxiv_5_2607_28252",
+      "sourceRevisionId": "srv_oa_02_arxiv_5_2607_28252",
+      "trackId": "PROBABILITY_STATISTICS_OPTIMIZATION"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.28178v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.28178v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "9ded4f617d6401833b38a4395bcb29a45d1899f8e1778281ca7df31dcc87e057",
+      "sourceId": "src_oa_02_arxiv_6_2607_28178",
+      "sourceRevisionId": "srv_oa_02_arxiv_6_2607_28178",
+      "trackId": "PROBABILITY_STATISTICS_OPTIMIZATION"
+    },
+    {
+      "canonicalUrl": "https://ocw.mit.edu/courses/14-32-econometrics-spring-2007/",
+      "curriculumRoles": [
+        "PUBLIC_TEACHING_MATERIAL"
+      ],
+      "downloadUrl": "https://ocw.mit.edu/courses/14-32-econometrics-spring-2007/",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 88,
+      "rawContentSha256": "40e9aade6bfd6c5ca918f04ea3e6dccf350f34bdb2996c6715f3097f84e6c8ff",
+      "sourceId": "src_oa_03_ocw_1_econ_caus_even_stud",
+      "sourceRevisionId": "srv_oa_03_ocw_1_econ_caus_even_stud",
+      "trackId": "ECONOMETRICS_CAUSAL_EVENT_STUDY"
+    },
+    {
+      "canonicalUrl": "https://ocw.mit.edu/courses/14-32-econometrics-spring-2007/pages/syllabus/",
+      "curriculumRoles": [
+        "PUBLIC_TEACHING_MATERIAL",
+        "MODERN_REVIEW_REPLICATION_CORRECTION"
+      ],
+      "downloadUrl": "https://ocw.mit.edu/courses/14-32-econometrics-spring-2007/pages/syllabus/",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 86,
+      "rawContentSha256": "72f736e9c6b39e73f38ec23ca87e5334c0a3f47386639260123fb66c99273e69",
+      "sourceId": "src_oa_03_ocw_2_econ_caus_even_stud",
+      "sourceRevisionId": "srv_oa_03_ocw_2_econ_caus_even_stud",
+      "trackId": "ECONOMETRICS_CAUSAL_EVENT_STUDY"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.28294v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.28294v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "3f1d17f018ab4c940e7e6c0aabcd7ff45cb3c2f9c057efa0c84c3f38118f5616",
+      "sourceId": "src_oa_03_arxiv_1_2607_28294",
+      "sourceRevisionId": "srv_oa_03_arxiv_1_2607_28294",
+      "trackId": "ECONOMETRICS_CAUSAL_EVENT_STUDY"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.28291v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.28291v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "3782f05d6eeab8b5e347d3885ba4653c3998b58c6a70d0e43c638a8be5d79e90",
+      "sourceId": "src_oa_03_arxiv_2_2607_28291",
+      "sourceRevisionId": "srv_oa_03_arxiv_2_2607_28291",
+      "trackId": "ECONOMETRICS_CAUSAL_EVENT_STUDY"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.28131v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.28131v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "8b623b6ccb8b1a0a8269bd223c0aef610e2f3c01cb796ac324a3c039eb49b689",
+      "sourceId": "src_oa_03_arxiv_3_2607_28131",
+      "sourceRevisionId": "srv_oa_03_arxiv_3_2607_28131",
+      "trackId": "ECONOMETRICS_CAUSAL_EVENT_STUDY"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.27505v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.27505v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "f164b3097a97b352d181c746dc653796bc65f6bf21ab1b5b2f2fcad44a8654aa",
+      "sourceId": "src_oa_03_arxiv_4_2607_27505",
+      "sourceRevisionId": "srv_oa_03_arxiv_4_2607_27505",
+      "trackId": "ECONOMETRICS_CAUSAL_EVENT_STUDY"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.27485v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.27485v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "a87297a657f78c168c9852bcd50ff4447cb83a84e214375e63ac4480f91392e8",
+      "sourceId": "src_oa_03_arxiv_5_2607_27485",
+      "sourceRevisionId": "srv_oa_03_arxiv_5_2607_27485",
+      "trackId": "ECONOMETRICS_CAUSAL_EVENT_STUDY"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.26960v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.26960v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "fbe46fd02b79b3b54ced25a41a60021450e8bd8f431d6f8b7b0559ce37d07828",
+      "sourceId": "src_oa_03_arxiv_6_2607_26960",
+      "sourceRevisionId": "srv_oa_03_arxiv_6_2607_26960",
+      "trackId": "ECONOMETRICS_CAUSAL_EVENT_STUDY"
+    },
+    {
+      "canonicalUrl": "https://ocw.mit.edu/courses/14-384-time-series-analysis-fall-2013/",
+      "curriculumRoles": [
+        "PUBLIC_TEACHING_MATERIAL"
+      ],
+      "downloadUrl": "https://ocw.mit.edu/courses/14-384-time-series-analysis-fall-2013/",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 88,
+      "rawContentSha256": "1e4729c056862c92a64e7588369435d496adb2603db3e88ddf8f873b5f8c21b0",
+      "sourceId": "src_oa_04_ocw_1_time_seri_regi_vola",
+      "sourceRevisionId": "srv_oa_04_ocw_1_time_seri_regi_vola",
+      "trackId": "TIME_SERIES_REGIME_VOLATILITY"
+    },
+    {
+      "canonicalUrl": "https://ocw.mit.edu/courses/14-384-time-series-analysis-fall-2013/pages/lecture-notes/",
+      "curriculumRoles": [
+        "PUBLIC_TEACHING_MATERIAL",
+        "MODERN_REVIEW_REPLICATION_CORRECTION"
+      ],
+      "downloadUrl": "https://ocw.mit.edu/courses/14-384-time-series-analysis-fall-2013/pages/lecture-notes/",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 86,
+      "rawContentSha256": "6bd4edd9850437482949bb7bb2e46e5e6256157115b3b1a12499a8959d93dc2c",
+      "sourceId": "src_oa_04_ocw_2_time_seri_regi_vola",
+      "sourceRevisionId": "srv_oa_04_ocw_2_time_seri_regi_vola",
+      "trackId": "TIME_SERIES_REGIME_VOLATILITY"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.28127v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.28127v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "586b000aea0e0518138fa9b693143842b5c7e2dab04636053bd1d9e309f981ac",
+      "sourceId": "src_oa_04_arxiv_1_2607_28127",
+      "sourceRevisionId": "srv_oa_04_arxiv_1_2607_28127",
+      "trackId": "TIME_SERIES_REGIME_VOLATILITY"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.27461v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.27461v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "895147139ff55e25d34968bc3c511ce99cf11406f13172767c3eebaf7fcaa0ef",
+      "sourceId": "src_oa_04_arxiv_2_2607_27461",
+      "sourceRevisionId": "srv_oa_04_arxiv_2_2607_27461",
+      "trackId": "TIME_SERIES_REGIME_VOLATILITY"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.27070v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.27070v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "581bded38719dc978f5e28486306e9416a0836246016bce195d5deffe07a804e",
+      "sourceId": "src_oa_04_arxiv_3_2607_27070",
+      "sourceRevisionId": "srv_oa_04_arxiv_3_2607_27070",
+      "trackId": "TIME_SERIES_REGIME_VOLATILITY"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.26188v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.26188v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "94399d8d9c422a7f6c917643a91352b7b1b5015097030d28ea23f453cd170490",
+      "sourceId": "src_oa_04_arxiv_4_2607_26188",
+      "sourceRevisionId": "srv_oa_04_arxiv_4_2607_26188",
+      "trackId": "TIME_SERIES_REGIME_VOLATILITY"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.27188v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.27188v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "ecbe0ac9ae6768860d7f9f10a6986f86d4e98f9c73fd398e44894a8ac29b42e8",
+      "sourceId": "src_oa_04_arxiv_5_2607_27188",
+      "sourceRevisionId": "srv_oa_04_arxiv_5_2607_27188",
+      "trackId": "TIME_SERIES_REGIME_VOLATILITY"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.27099v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.27099v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "84c49112350ee20ac98891792c3c48e50091465c235818cbc1a515c77f955154",
+      "sourceId": "src_oa_04_arxiv_6_2607_27099",
+      "sourceRevisionId": "srv_oa_04_arxiv_6_2607_27099",
+      "trackId": "TIME_SERIES_REGIME_VOLATILITY"
+    },
+    {
+      "canonicalUrl": "https://ocw.mit.edu/courses/15-414-financial-management-summer-2003/",
+      "curriculumRoles": [
+        "PUBLIC_TEACHING_MATERIAL"
+      ],
+      "downloadUrl": "https://ocw.mit.edu/courses/15-414-financial-management-summer-2003/",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 88,
+      "rawContentSha256": "0564471ac926d5af3b0555801effd708ef2033e227e40f67559e75813d65712e",
+      "sourceId": "src_oa_05_ocw_1_acco_corp_fina_valu",
+      "sourceRevisionId": "srv_oa_05_ocw_1_acco_corp_fina_valu",
+      "trackId": "ACCOUNTING_CORPORATE_FINANCE_VALUATION"
+    },
+    {
+      "canonicalUrl": "https://ocw.mit.edu/courses/15-414-financial-management-summer-2003/pages/lecture-notes/",
+      "curriculumRoles": [
+        "PUBLIC_TEACHING_MATERIAL",
+        "MODERN_REVIEW_REPLICATION_CORRECTION"
+      ],
+      "downloadUrl": "https://ocw.mit.edu/courses/15-414-financial-management-summer-2003/pages/lecture-notes/",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 86,
+      "rawContentSha256": "fe34228a5984f816ebb0dab08198416b4d28f89b00dadf5a4419fdd8a1fe9a80",
+      "sourceId": "src_oa_05_ocw_2_acco_corp_fina_valu",
+      "sourceRevisionId": "srv_oa_05_ocw_2_acco_corp_fina_valu",
+      "trackId": "ACCOUNTING_CORPORATE_FINANCE_VALUATION"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.27859v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.27859v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "4ddb52760f301a1bcb93b93a69cf5dc534aa76a475c1aa820eadd66a0a778c53",
+      "sourceId": "src_oa_05_arxiv_1_2607_27859",
+      "sourceRevisionId": "srv_oa_05_arxiv_1_2607_27859",
+      "trackId": "ACCOUNTING_CORPORATE_FINANCE_VALUATION"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.27569v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.27569v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "719361b48fd604d34df01c906d157bfbf7b62d1957134d3727089e3b97d67af6",
+      "sourceId": "src_oa_05_arxiv_2_2607_27569",
+      "sourceRevisionId": "srv_oa_05_arxiv_2_2607_27569",
+      "trackId": "ACCOUNTING_CORPORATE_FINANCE_VALUATION"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.27544v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.27544v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "a5168a3941936abcf7caca21bd9340b6cbb53e138ca80886e859fc0970372895",
+      "sourceId": "src_oa_05_arxiv_3_2607_27544",
+      "sourceRevisionId": "srv_oa_05_arxiv_3_2607_27544",
+      "trackId": "ACCOUNTING_CORPORATE_FINANCE_VALUATION"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.22459v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.22459v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "ac15948f88b0d882d8b79ebe2765e860921b8b9b9e47fadebde4e5d4a7185f5c",
+      "sourceId": "src_oa_05_arxiv_4_2607_22459",
+      "sourceRevisionId": "srv_oa_05_arxiv_4_2607_22459",
+      "trackId": "ACCOUNTING_CORPORATE_FINANCE_VALUATION"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.22317v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.22317v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "833ba2f995cb8b79fc5cf8b8d2e3010441bab6d7af98b60553ee9b4d22d73c95",
+      "sourceId": "src_oa_05_arxiv_5_2607_22317",
+      "sourceRevisionId": "srv_oa_05_arxiv_5_2607_22317",
+      "trackId": "ACCOUNTING_CORPORATE_FINANCE_VALUATION"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.21826v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.21826v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "2dcc49b3e09c2ea7943c59d1035f100b09dda49f26a4a3a65fa023ee0ce9e29c",
+      "sourceId": "src_oa_05_arxiv_6_2607_21826",
+      "sourceRevisionId": "srv_oa_05_arxiv_6_2607_21826",
+      "trackId": "ACCOUNTING_CORPORATE_FINANCE_VALUATION"
+    },
+    {
+      "canonicalUrl": "https://ocw.mit.edu/courses/15-401-finance-theory-i-fall-2008/",
+      "curriculumRoles": [
+        "PUBLIC_TEACHING_MATERIAL"
+      ],
+      "downloadUrl": "https://ocw.mit.edu/courses/15-401-finance-theory-i-fall-2008/",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 88,
+      "rawContentSha256": "ca4fb7e8c0cd8cab86e51690034ace54fa00b816143301b22c399c0d5c77fd7d",
+      "sourceId": "src_oa_06_ocw_1_asse_pric_fact_port",
+      "sourceRevisionId": "srv_oa_06_ocw_1_asse_pric_fact_port",
+      "trackId": "ASSET_PRICING_FACTOR_PORTFOLIO"
+    },
+    {
+      "canonicalUrl": "https://ocw.mit.edu/courses/15-401-finance-theory-i-fall-2008/resources/lecture-notes/",
+      "curriculumRoles": [
+        "PUBLIC_TEACHING_MATERIAL",
+        "MODERN_REVIEW_REPLICATION_CORRECTION"
+      ],
+      "downloadUrl": "https://ocw.mit.edu/courses/15-401-finance-theory-i-fall-2008/resources/lecture-notes/",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 86,
+      "rawContentSha256": "953bd2410a445994f7b84d7cefd3e07667105fa5496d7bc31e5ee4a3821cdc67",
+      "sourceId": "src_oa_06_ocw_2_asse_pric_fact_port",
+      "sourceRevisionId": "srv_oa_06_ocw_2_asse_pric_fact_port",
+      "trackId": "ASSET_PRICING_FACTOR_PORTFOLIO"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.23068v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.23068v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "ff778189f17cdd4682c7d893a79b2c5f6a28b413edd2b57dbd8fc10702496ad3",
+      "sourceId": "src_oa_06_arxiv_1_2607_23068",
+      "sourceRevisionId": "srv_oa_06_arxiv_1_2607_23068",
+      "trackId": "ASSET_PRICING_FACTOR_PORTFOLIO"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.24114v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.24114v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "1475ce28d5597b5377346379e06175c99d8e01155ea78cfb1a7d7c5dd5a292e6",
+      "sourceId": "src_oa_06_arxiv_2_2607_24114",
+      "sourceRevisionId": "srv_oa_06_arxiv_2_2607_24114",
+      "trackId": "ASSET_PRICING_FACTOR_PORTFOLIO"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.27814v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.27814v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "6d254371b68e14373c3a002d4d85caa1d73a26629eb617e0a7f242363ed7f0d3",
+      "sourceId": "src_oa_06_arxiv_3_2607_27814",
+      "sourceRevisionId": "srv_oa_06_arxiv_3_2607_27814",
+      "trackId": "ASSET_PRICING_FACTOR_PORTFOLIO"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.27649v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.27649v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "1c4c518fd9d6d70ac8ce97c9262c6e3a3674b088a38a115775c28db076820b04",
+      "sourceId": "src_oa_06_arxiv_4_2607_27649",
+      "sourceRevisionId": "srv_oa_06_arxiv_4_2607_27649",
+      "trackId": "ASSET_PRICING_FACTOR_PORTFOLIO"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.27588v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.27588v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "2b97e03a3d2158b3b8db1a8cf14df3f38f89ba2a8a52ba8c23efdd55e9523d60",
+      "sourceId": "src_oa_06_arxiv_5_2607_27588",
+      "sourceRevisionId": "srv_oa_06_arxiv_5_2607_27588",
+      "trackId": "ASSET_PRICING_FACTOR_PORTFOLIO"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.28215v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.28215v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "ef96b455330205c11de72a7ca875290f0302a4504458b8625a47ba8e6263b1ba",
+      "sourceId": "src_oa_06_arxiv_6_2607_28215",
+      "sourceRevisionId": "srv_oa_06_arxiv_6_2607_28215",
+      "trackId": "ASSET_PRICING_FACTOR_PORTFOLIO"
+    },
+    {
+      "canonicalUrl": "https://ocw.mit.edu/courses/15-401-finance-theory-i-fall-2008/pages/video-lectures-and-slides/",
+      "curriculumRoles": [
+        "PUBLIC_TEACHING_MATERIAL"
+      ],
+      "downloadUrl": "https://ocw.mit.edu/courses/15-401-finance-theory-i-fall-2008/pages/video-lectures-and-slides/",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 88,
+      "rawContentSha256": "a73e3da793c486b1ec82d01bc1f03a95731eb9ca10cac22a585d14e0cdee56d5",
+      "sourceId": "src_oa_07_ocw_1_fixe_inco_rate_cred",
+      "sourceRevisionId": "srv_oa_07_ocw_1_fixe_inco_rate_cred",
+      "trackId": "FIXED_INCOME_RATES_CREDIT"
+    },
+    {
+      "canonicalUrl": "https://ocw.mit.edu/courses/18-642-topics-in-mathematics-with-applications-in-finance-fall-2024/resources/18642-lecture-7-version-2_mp4/",
+      "curriculumRoles": [
+        "PUBLIC_TEACHING_MATERIAL",
+        "MODERN_REVIEW_REPLICATION_CORRECTION"
+      ],
+      "downloadUrl": "https://ocw.mit.edu/courses/18-642-topics-in-mathematics-with-applications-in-finance-fall-2024/resources/18642-lecture-7-version-2_mp4/",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 86,
+      "rawContentSha256": "8a68cd3174e426c4b788dffccaf094f25fd03e89845fa7661ccc279dac955cb5",
+      "sourceId": "src_oa_07_ocw_2_fixe_inco_rate_cred",
+      "sourceRevisionId": "srv_oa_07_ocw_2_fixe_inco_rate_cred",
+      "trackId": "FIXED_INCOME_RATES_CREDIT"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.25599v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.25599v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "994103a82c9e33a0d5d49e52495cc8335bbe22a79097bb47b58523ac5ab6f85e",
+      "sourceId": "src_oa_07_arxiv_1_2607_25599",
+      "sourceRevisionId": "srv_oa_07_arxiv_1_2607_25599",
+      "trackId": "FIXED_INCOME_RATES_CREDIT"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.25258v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.25258v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "ab4cd0355a07e5653af3900e5856228e3e73a7a0f574afb5d588003b4115823d",
+      "sourceId": "src_oa_07_arxiv_2_2607_25258",
+      "sourceRevisionId": "srv_oa_07_arxiv_2_2607_25258",
+      "trackId": "FIXED_INCOME_RATES_CREDIT"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.27019v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.27019v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "e1e4cf70fae2bdf868b59c508e37314673f6bc4360668c45c6d05c3e23633937",
+      "sourceId": "src_oa_07_arxiv_3_2607_27019",
+      "sourceRevisionId": "srv_oa_07_arxiv_3_2607_27019",
+      "trackId": "FIXED_INCOME_RATES_CREDIT"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.27039v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.27039v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "87938c1e0d581f0d87464f2a725f132b6f72a8828651e12339f8552d0fcec11b",
+      "sourceId": "src_oa_07_arxiv_4_2607_27039",
+      "sourceRevisionId": "srv_oa_07_arxiv_4_2607_27039",
+      "trackId": "FIXED_INCOME_RATES_CREDIT"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.24973v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.24973v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "b6dd406c6246a8118ba0c46fd97bacb1735b0aea8b5d49e7b37d8a63b39cda06",
+      "sourceId": "src_oa_07_arxiv_5_2607_24973",
+      "sourceRevisionId": "srv_oa_07_arxiv_5_2607_24973",
+      "trackId": "FIXED_INCOME_RATES_CREDIT"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.23161v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.23161v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "d38348dafd576a45e3f6df0af4de4e01fbb4eeb75a675d9b7063f1b125a351f0",
+      "sourceId": "src_oa_07_arxiv_6_2607_23161",
+      "sourceRevisionId": "srv_oa_07_arxiv_6_2607_23161",
+      "trackId": "FIXED_INCOME_RATES_CREDIT"
+    },
+    {
+      "canonicalUrl": "https://ocw.mit.edu/courses/15-450-analytics-of-finance-fall-2010/",
+      "curriculumRoles": [
+        "PUBLIC_TEACHING_MATERIAL"
+      ],
+      "downloadUrl": "https://ocw.mit.edu/courses/15-450-analytics-of-finance-fall-2010/",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 88,
+      "rawContentSha256": "0f2bae7136fa5cb680a46a748e8ecc486706b6a8f8fbc7812ecb8f24bcf9b8e6",
+      "sourceId": "src_oa_08_ocw_1_deri_stoc_nume",
+      "sourceRevisionId": "srv_oa_08_ocw_1_deri_stoc_nume",
+      "trackId": "DERIVATIVES_STOCHASTIC_NUMERICS"
+    },
+    {
+      "canonicalUrl": "https://ocw.mit.edu/courses/15-450-analytics-of-finance-fall-2010/pages/lecture-notes/",
+      "curriculumRoles": [
+        "PUBLIC_TEACHING_MATERIAL",
+        "MODERN_REVIEW_REPLICATION_CORRECTION"
+      ],
+      "downloadUrl": "https://ocw.mit.edu/courses/15-450-analytics-of-finance-fall-2010/pages/lecture-notes/",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 86,
+      "rawContentSha256": "ecd2774cc89d7bc0c8b0853a2d77341170ec6b7f24288ff7ae156b443d511d23",
+      "sourceId": "src_oa_08_ocw_2_deri_stoc_nume",
+      "sourceRevisionId": "srv_oa_08_ocw_2_deri_stoc_nume",
+      "trackId": "DERIVATIVES_STOCHASTIC_NUMERICS"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.27853v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.27853v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "b415da4679827e0fbb48ed10a3b0cf081c59485669e426433d2af35c6192a3c5",
+      "sourceId": "src_oa_08_arxiv_1_2607_27853",
+      "sourceRevisionId": "srv_oa_08_arxiv_1_2607_27853",
+      "trackId": "DERIVATIVES_STOCHASTIC_NUMERICS"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.26792v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.26792v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "0014a885ec00d3ae939d1ac245069dacaf8c1a7afde1627137a7920f8dd3e6c2",
+      "sourceId": "src_oa_08_arxiv_2_2607_26792",
+      "sourceRevisionId": "srv_oa_08_arxiv_2_2607_26792",
+      "trackId": "DERIVATIVES_STOCHASTIC_NUMERICS"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.25353v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.25353v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "d87be46fea532756aebe1157aba25991ae4556ed866b40e2f69c7b5e4a442367",
+      "sourceId": "src_oa_08_arxiv_3_2607_25353",
+      "sourceRevisionId": "srv_oa_08_arxiv_3_2607_25353",
+      "trackId": "DERIVATIVES_STOCHASTIC_NUMERICS"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.25199v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.25199v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "6e86e49b4b90543236e9f42329713f2090235706d97891d68c6a8faeca62a372",
+      "sourceId": "src_oa_08_arxiv_4_2607_25199",
+      "sourceRevisionId": "srv_oa_08_arxiv_4_2607_25199",
+      "trackId": "DERIVATIVES_STOCHASTIC_NUMERICS"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.25162v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.25162v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "603579ded75dfd82ae0db496aa8d34fa0ea68176f538c73b094cc25db292ddda",
+      "sourceId": "src_oa_08_arxiv_5_2607_25162",
+      "sourceRevisionId": "srv_oa_08_arxiv_5_2607_25162",
+      "trackId": "DERIVATIVES_STOCHASTIC_NUMERICS"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.24680v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.24680v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "7d612141b14d92ae26477de889f50f272dc8402d8e70c832cd8c969fdc4af46c",
+      "sourceId": "src_oa_08_arxiv_6_2607_24680",
+      "sourceRevisionId": "srv_oa_08_arxiv_6_2607_24680",
+      "trackId": "DERIVATIVES_STOCHASTIC_NUMERICS"
+    },
+    {
+      "canonicalUrl": "https://ocw.mit.edu/courses/15-s08-fintech-shaping-the-financial-world-spring-2020/pages/class-9-trading-capital-markets/",
+      "curriculumRoles": [
+        "PUBLIC_TEACHING_MATERIAL"
+      ],
+      "downloadUrl": "https://ocw.mit.edu/courses/15-s08-fintech-shaping-the-financial-world-spring-2020/pages/class-9-trading-capital-markets/",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 88,
+      "rawContentSha256": "bc4c7e173dbe8613812f47ecb02feae4c7d5e56718dc5d0f1d22bc4e91fcd622",
+      "sourceId": "src_oa_09_ocw_1_mark_micr_exec_liqu",
+      "sourceRevisionId": "srv_oa_09_ocw_1_mark_micr_exec_liqu",
+      "trackId": "MARKET_MICROSTRUCTURE_EXECUTION_LIQUIDITY"
+    },
+    {
+      "canonicalUrl": "https://ocw.mit.edu/courses/18-s096-topics-in-mathematics-with-applications-in-finance-fall-2013/resources/lecture-1-introduction-financial-terms-and-concepts/",
+      "curriculumRoles": [
+        "PUBLIC_TEACHING_MATERIAL",
+        "MODERN_REVIEW_REPLICATION_CORRECTION"
+      ],
+      "downloadUrl": "https://ocw.mit.edu/courses/18-s096-topics-in-mathematics-with-applications-in-finance-fall-2013/resources/lecture-1-introduction-financial-terms-and-concepts/",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 86,
+      "rawContentSha256": "c148ccc2e014e7c0e8b468d1c0b2325bed741c8e220bd4cf2f465a1515acdd45",
+      "sourceId": "src_oa_09_ocw_2_mark_micr_exec_liqu",
+      "sourceRevisionId": "srv_oa_09_ocw_2_mark_micr_exec_liqu",
+      "trackId": "MARKET_MICROSTRUCTURE_EXECUTION_LIQUIDITY"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.28323v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.28323v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "cf3867209c2d1855902607ffb500fe1052835448b10291fc9067ec01a8394bf0",
+      "sourceId": "src_oa_09_arxiv_1_2607_28323",
+      "sourceRevisionId": "srv_oa_09_arxiv_1_2607_28323",
+      "trackId": "MARKET_MICROSTRUCTURE_EXECUTION_LIQUIDITY"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.28577v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.28577v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "90547ab31057321f218f92f31f85ceaf18c9dfa07d78b8a73a86ef6530283bef",
+      "sourceId": "src_oa_09_arxiv_2_2607_28577",
+      "sourceRevisionId": "srv_oa_09_arxiv_2_2607_28577",
+      "trackId": "MARKET_MICROSTRUCTURE_EXECUTION_LIQUIDITY"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.28410v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.28410v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "9881f6da1096abc890e5ac802bb98df2eb5cc778d2dd8289ebf3f99c22abcf9f",
+      "sourceId": "src_oa_09_arxiv_3_2607_28410",
+      "sourceRevisionId": "srv_oa_09_arxiv_3_2607_28410",
+      "trackId": "MARKET_MICROSTRUCTURE_EXECUTION_LIQUIDITY"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.27063v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.27063v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "bde79eef6d1943dcfe851d225f2e2f35cfba1cb5e57ebf60543b2d48d56ca8f5",
+      "sourceId": "src_oa_09_arxiv_4_2607_27063",
+      "sourceRevisionId": "srv_oa_09_arxiv_4_2607_27063",
+      "trackId": "MARKET_MICROSTRUCTURE_EXECUTION_LIQUIDITY"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.26405v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.26405v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "f518de8f7541e7b170bd370c184a0aede574ef35007bcab7152cfe2424cd76aa",
+      "sourceId": "src_oa_09_arxiv_5_2607_26405",
+      "sourceRevisionId": "srv_oa_09_arxiv_5_2607_26405",
+      "trackId": "MARKET_MICROSTRUCTURE_EXECUTION_LIQUIDITY"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.26245v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.26245v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "4ae328f77d2ff934a81a968a323de416c42a4a52ae70aa172420192ad4654b01",
+      "sourceId": "src_oa_09_arxiv_6_2607_26245",
+      "sourceRevisionId": "srv_oa_09_arxiv_6_2607_26245",
+      "trackId": "MARKET_MICROSTRUCTURE_EXECUTION_LIQUIDITY"
+    },
+    {
+      "canonicalUrl": "https://ocw.mit.edu/courses/15-401-finance-theory-i-fall-2008/resources/part-ii-of-risk-and-return-1/",
+      "curriculumRoles": [
+        "PUBLIC_TEACHING_MATERIAL"
+      ],
+      "downloadUrl": "https://ocw.mit.edu/courses/15-401-finance-theory-i-fall-2008/resources/part-ii-of-risk-and-return-1/",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 88,
+      "rawContentSha256": "ff7f38e1f42d31349888b5ebb4ce6d81cbeea4b489aacfd96fe92f3b11dc4d4f",
+      "sourceId": "src_oa_10_ocw_1_risk_stre_back_mode",
+      "sourceRevisionId": "srv_oa_10_ocw_1_risk_stre_back_mode",
+      "trackId": "RISK_STRESS_BACKTEST_MODEL_RISK"
+    },
+    {
+      "canonicalUrl": "https://ocw.mit.edu/courses/15-450-analytics-of-finance-fall-2010/pages/syllabus/",
+      "curriculumRoles": [
+        "PUBLIC_TEACHING_MATERIAL",
+        "MODERN_REVIEW_REPLICATION_CORRECTION"
+      ],
+      "downloadUrl": "https://ocw.mit.edu/courses/15-450-analytics-of-finance-fall-2010/pages/syllabus/",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 86,
+      "rawContentSha256": "7b98727a9197ef2d900b533b12bf95cb40838fb2d5ac2be02a3cd86a85c76831",
+      "sourceId": "src_oa_10_ocw_2_risk_stre_back_mode",
+      "sourceRevisionId": "srv_oa_10_ocw_2_risk_stre_back_mode",
+      "trackId": "RISK_STRESS_BACKTEST_MODEL_RISK"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.27611v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.27611v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "ff699d574eb3de6616c6977a27466129bc1e1d5e295f07909b36c4306b5c2e1c",
+      "sourceId": "src_oa_10_arxiv_1_2607_27611",
+      "sourceRevisionId": "srv_oa_10_arxiv_1_2607_27611",
+      "trackId": "RISK_STRESS_BACKTEST_MODEL_RISK"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.26859v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.26859v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "3c05b76387f78b37485be3c2880bb64e252ca5c4f036421cbaf62980c9ddfbae",
+      "sourceId": "src_oa_10_arxiv_2_2607_26859",
+      "sourceRevisionId": "srv_oa_10_arxiv_2_2607_26859",
+      "trackId": "RISK_STRESS_BACKTEST_MODEL_RISK"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.24150v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.24150v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "53639d9abec263ad5913651b8faa89080a12969819b75d68b4fa5e7bd56b82f9",
+      "sourceId": "src_oa_10_arxiv_3_2607_24150",
+      "sourceRevisionId": "srv_oa_10_arxiv_3_2607_24150",
+      "trackId": "RISK_STRESS_BACKTEST_MODEL_RISK"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.24410v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.24410v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "d6af39656aff4b05943fab12912001aba49bdf77e9d1611fff6d202986c9d212",
+      "sourceId": "src_oa_10_arxiv_4_2607_24410",
+      "sourceRevisionId": "srv_oa_10_arxiv_4_2607_24410",
+      "trackId": "RISK_STRESS_BACKTEST_MODEL_RISK"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2606.28031v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2606.28031v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "b2ce6294d17ca1db6c0611dc6bb9e862cd2478adbcc763859a656119d1b07ad1",
+      "sourceId": "src_oa_10_arxiv_5_2606_28031",
+      "sourceRevisionId": "srv_oa_10_arxiv_5_2606_28031",
+      "trackId": "RISK_STRESS_BACKTEST_MODEL_RISK"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.21687v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.21687v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "5a41530f89987416d37971fc1ce314f621cfbd89fd0b7f0fe98bfa55b16d7e73",
+      "sourceId": "src_oa_10_arxiv_6_2607_21687",
+      "sourceRevisionId": "srv_oa_10_arxiv_6_2607_21687",
+      "trackId": "RISK_STRESS_BACKTEST_MODEL_RISK"
+    },
+    {
+      "canonicalUrl": "https://ocw.mit.edu/courses/14-13-psychology-and-economics-spring-2020/",
+      "curriculumRoles": [
+        "PUBLIC_TEACHING_MATERIAL"
+      ],
+      "downloadUrl": "https://ocw.mit.edu/courses/14-13-psychology-and-economics-spring-2020/",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 88,
+      "rawContentSha256": "90e5977ada307eae97c2ec83782ccac97baac31f16af006dd96513c48d260ca9",
+      "sourceId": "src_oa_11_ocw_1_beha_effi_anom_crow",
+      "sourceRevisionId": "srv_oa_11_ocw_1_beha_effi_anom_crow",
+      "trackId": "BEHAVIORAL_EFFICIENCY_ANOMALY_CROWDING"
+    },
+    {
+      "canonicalUrl": "https://ocw.mit.edu/courses/14-13-psychology-and-economics-spring-2020/pages/lecture-slides/",
+      "curriculumRoles": [
+        "PUBLIC_TEACHING_MATERIAL",
+        "MODERN_REVIEW_REPLICATION_CORRECTION"
+      ],
+      "downloadUrl": "https://ocw.mit.edu/courses/14-13-psychology-and-economics-spring-2020/pages/lecture-slides/",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 86,
+      "rawContentSha256": "136009a3ee5e3209cb11f27ab59264d366f95c1658ecedf05c94f5468a28ff45",
+      "sourceId": "src_oa_11_ocw_2_beha_effi_anom_crow",
+      "sourceRevisionId": "srv_oa_11_ocw_2_beha_effi_anom_crow",
+      "trackId": "BEHAVIORAL_EFFICIENCY_ANOMALY_CROWDING"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.27584v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.27584v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "83e3e00c93cfb6e9801702ccdb37bb40aa7071ac5d7ae9b87a43611fa9f7ed79",
+      "sourceId": "src_oa_11_arxiv_1_2607_27584",
+      "sourceRevisionId": "srv_oa_11_arxiv_1_2607_27584",
+      "trackId": "BEHAVIORAL_EFFICIENCY_ANOMALY_CROWDING"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.27548v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.27548v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "97fee2210ca93843b77f1f7a622e24329e21f6cca42daf00d2e6156095259c58",
+      "sourceId": "src_oa_11_arxiv_2_2607_27548",
+      "sourceRevisionId": "srv_oa_11_arxiv_2_2607_27548",
+      "trackId": "BEHAVIORAL_EFFICIENCY_ANOMALY_CROWDING"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.27553v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.27553v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "b4f31aa33ad2be8cb00423817bdb9a70304ae5faa76cc2e3b46fda515fbac0a2",
+      "sourceId": "src_oa_11_arxiv_3_2607_27553",
+      "sourceRevisionId": "srv_oa_11_arxiv_3_2607_27553",
+      "trackId": "BEHAVIORAL_EFFICIENCY_ANOMALY_CROWDING"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.26560v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.26560v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "0ecb905c5de8f96a06c1885f14df85601f02f806596f34bd7f1eec124dc0c72e",
+      "sourceId": "src_oa_11_arxiv_4_2607_26560",
+      "sourceRevisionId": "srv_oa_11_arxiv_4_2607_26560",
+      "trackId": "BEHAVIORAL_EFFICIENCY_ANOMALY_CROWDING"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.27142v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.27142v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "783cd21d59687b085944d0036217f169172247574206f1e7162fc44f41e8a41b",
+      "sourceId": "src_oa_11_arxiv_5_2607_27142",
+      "sourceRevisionId": "srv_oa_11_arxiv_5_2607_27142",
+      "trackId": "BEHAVIORAL_EFFICIENCY_ANOMALY_CROWDING"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.26068v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.26068v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "f69f5a2641fd7c7071f3ccfc67357203df6630c526537683b3de973d2265441c",
+      "sourceId": "src_oa_11_arxiv_6_2607_26068",
+      "sourceRevisionId": "srv_oa_11_arxiv_6_2607_26068",
+      "trackId": "BEHAVIORAL_EFFICIENCY_ANOMALY_CROWDING"
+    },
+    {
+      "canonicalUrl": "https://ocw.mit.edu/courses/15-097-prediction-machine-learning-and-statistics-spring-2012/",
+      "curriculumRoles": [
+        "PUBLIC_TEACHING_MATERIAL"
+      ],
+      "downloadUrl": "https://ocw.mit.edu/courses/15-097-prediction-machine-learning-and-statistics-spring-2012/",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 88,
+      "rawContentSha256": "0772f440b5c30d198acba2c0b34732104874a51449c96ed74dcaf27a89ea3d61",
+      "sourceId": "src_oa_12_ocw_1_fina_ml_pit_data",
+      "sourceRevisionId": "srv_oa_12_ocw_1_fina_ml_pit_data",
+      "trackId": "FINANCIAL_ML_PIT_DATA_PROVENANCE"
+    },
+    {
+      "canonicalUrl": "https://ocw.mit.edu/courses/15-097-prediction-machine-learning-and-statistics-spring-2012/resources/lecture-notes/",
+      "curriculumRoles": [
+        "PUBLIC_TEACHING_MATERIAL",
+        "MODERN_REVIEW_REPLICATION_CORRECTION"
+      ],
+      "downloadUrl": "https://ocw.mit.edu/courses/15-097-prediction-machine-learning-and-statistics-spring-2012/resources/lecture-notes/",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 86,
+      "rawContentSha256": "af0c0a8994b25850e01b06fe0830b1556e389c6fff8095a3eb18962cdf10c58d",
+      "sourceId": "src_oa_12_ocw_2_fina_ml_pit_data",
+      "sourceRevisionId": "srv_oa_12_ocw_2_fina_ml_pit_data",
+      "trackId": "FINANCIAL_ML_PIT_DATA_PROVENANCE"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.28567v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.28567v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "cf952a21073ac393c484af621f15f314fc5160c5bba834dd0adadc4c9a019f08",
+      "sourceId": "src_oa_12_arxiv_1_2607_28567",
+      "sourceRevisionId": "srv_oa_12_arxiv_1_2607_28567",
+      "trackId": "FINANCIAL_ML_PIT_DATA_PROVENANCE"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.28248v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.28248v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "ac049a4577a0b76195b04e036fc6f7f152fa898139bbbbea3fc5411707ba7893",
+      "sourceId": "src_oa_12_arxiv_2_2607_28248",
+      "sourceRevisionId": "srv_oa_12_arxiv_2_2607_28248",
+      "trackId": "FINANCIAL_ML_PIT_DATA_PROVENANCE"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.28080v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.28080v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "f05f81462b018467d880c65433fc82ffed7164e3099d088f17ac330dbab66cc4",
+      "sourceId": "src_oa_12_arxiv_3_2607_28080",
+      "sourceRevisionId": "srv_oa_12_arxiv_3_2607_28080",
+      "trackId": "FINANCIAL_ML_PIT_DATA_PROVENANCE"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.27995v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.27995v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "df2b43938d9ae6c9be5053fb3f1441ad5da3fac174d984a75c0dd65f7fda0df8",
+      "sourceId": "src_oa_12_arxiv_4_2607_27995",
+      "sourceRevisionId": "srv_oa_12_arxiv_4_2607_27995",
+      "trackId": "FINANCIAL_ML_PIT_DATA_PROVENANCE"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.27815v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.27815v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "d7777f77533d783a65598373debddfd848847b4c4bd4d3022429fefe141a50bb",
+      "sourceId": "src_oa_12_arxiv_5_2607_27815",
+      "sourceRevisionId": "srv_oa_12_arxiv_5_2607_27815",
+      "trackId": "FINANCIAL_ML_PIT_DATA_PROVENANCE"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.27723v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.27723v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "733ebdfad1d6a25179c23d1f3a2915d52192a600698369ada09ea0948fd89800",
+      "sourceId": "src_oa_12_arxiv_6_2607_27723",
+      "sourceRevisionId": "srv_oa_12_arxiv_6_2607_27723",
+      "trackId": "FINANCIAL_ML_PIT_DATA_PROVENANCE"
+    },
+    {
+      "canonicalUrl": "https://ocw.mit.edu/courses/14-54-international-trade-fall-2016/",
+      "curriculumRoles": [
+        "PUBLIC_TEACHING_MATERIAL"
+      ],
+      "downloadUrl": "https://ocw.mit.edu/courses/14-54-international-trade-fall-2016/",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 88,
+      "rawContentSha256": "0dbf8a2b1683a3f6e9e4cce05e856fc309ea9aa70592fa4208f563efddb65d61",
+      "sourceId": "src_oa_13_ocw_1_cros_mark_comm_poli",
+      "sourceRevisionId": "srv_oa_13_ocw_1_cros_mark_comm_poli",
+      "trackId": "CROSS_MARKET_COMMODITIES_POLICY_KOREA"
+    },
+    {
+      "canonicalUrl": "https://ocw.mit.edu/courses/14-54-international-trade-fall-2016/pages/lecture-slides/",
+      "curriculumRoles": [
+        "PUBLIC_TEACHING_MATERIAL",
+        "MODERN_REVIEW_REPLICATION_CORRECTION"
+      ],
+      "downloadUrl": "https://ocw.mit.edu/courses/14-54-international-trade-fall-2016/pages/lecture-slides/",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 86,
+      "rawContentSha256": "683f6ca2d6acb537fe60e46a9249a17b5f833457644de2cfbb2cdadc362531b0",
+      "sourceId": "src_oa_13_ocw_2_cros_mark_comm_poli",
+      "sourceRevisionId": "srv_oa_13_ocw_2_cros_mark_comm_poli",
+      "trackId": "CROSS_MARKET_COMMODITIES_POLICY_KOREA"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.26109v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.26109v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "8c1adce0a7548b2773ab207145a59a84f2858185e49130c24fb9e1cdfbff568e",
+      "sourceId": "src_oa_13_arxiv_1_2607_26109",
+      "sourceRevisionId": "srv_oa_13_arxiv_1_2607_26109",
+      "trackId": "CROSS_MARKET_COMMODITIES_POLICY_KOREA"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.25472v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.25472v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "0fab75b63832cdee05925401d542ab93af083eb91b48dfda438e1e0d0d611a1c",
+      "sourceId": "src_oa_13_arxiv_2_2607_25472",
+      "sourceRevisionId": "srv_oa_13_arxiv_2_2607_25472",
+      "trackId": "CROSS_MARKET_COMMODITIES_POLICY_KOREA"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.24879v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.24879v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "b36e4adac4e0f6469788953b83b1ee19d1c75b1ea2f21646f3859b3342cdc5c5",
+      "sourceId": "src_oa_13_arxiv_3_2607_24879",
+      "sourceRevisionId": "srv_oa_13_arxiv_3_2607_24879",
+      "trackId": "CROSS_MARKET_COMMODITIES_POLICY_KOREA"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.26034v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.26034v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "6d61225f0fb19aceee707d09dadd8393279465ad81905261bcabe4486bc2f98e",
+      "sourceId": "src_oa_13_arxiv_4_2607_26034",
+      "sourceRevisionId": "srv_oa_13_arxiv_4_2607_26034",
+      "trackId": "CROSS_MARKET_COMMODITIES_POLICY_KOREA"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.24389v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.24389v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "f9dcc6503de9ec91ce5ce5213faba55feea470b54c29661e4440d4d78121912b",
+      "sourceId": "src_oa_13_arxiv_5_2607_24389",
+      "sourceRevisionId": "srv_oa_13_arxiv_5_2607_24389",
+      "trackId": "CROSS_MARKET_COMMODITIES_POLICY_KOREA"
+    },
+    {
+      "canonicalUrl": "https://arxiv.org/abs/2607.24372v1",
+      "curriculumRoles": [
+        "ORIGINAL_RESEARCH"
+      ],
+      "downloadUrl": "https://arxiv.org/pdf/2607.24372v1",
+      "fallbackAllowed": false,
+      "localProcessingAllowed": true,
+      "machineFetchAllowed": true,
+      "qualityScore": 82,
+      "rawContentSha256": "7ffcfce768513e07e39502df5005488697dfa6caa46411138d05992c92987907",
+      "sourceId": "src_oa_13_arxiv_6_2607_24372",
+      "sourceRevisionId": "srv_oa_13_arxiv_6_2607_24372",
+      "trackId": "CROSS_MARKET_COMMODITIES_POLICY_KOREA"
+    }
+  ],
+  "tracks": [
+    {
+      "maximumSources": 10,
+      "minimumSources": 8,
+      "sourceCount": 8,
+      "trackId": "MICRO_GAME_INFO_MARKET_DESIGN"
+    },
+    {
+      "maximumSources": 10,
+      "minimumSources": 8,
+      "sourceCount": 8,
+      "trackId": "MACRO_MONETARY_INTERNATIONAL"
+    },
+    {
+      "maximumSources": 10,
+      "minimumSources": 8,
+      "sourceCount": 8,
+      "trackId": "PROBABILITY_STATISTICS_OPTIMIZATION"
+    },
+    {
+      "maximumSources": 10,
+      "minimumSources": 8,
+      "sourceCount": 8,
+      "trackId": "ECONOMETRICS_CAUSAL_EVENT_STUDY"
+    },
+    {
+      "maximumSources": 10,
+      "minimumSources": 8,
+      "sourceCount": 8,
+      "trackId": "TIME_SERIES_REGIME_VOLATILITY"
+    },
+    {
+      "maximumSources": 10,
+      "minimumSources": 8,
+      "sourceCount": 8,
+      "trackId": "ACCOUNTING_CORPORATE_FINANCE_VALUATION"
+    },
+    {
+      "maximumSources": 10,
+      "minimumSources": 8,
+      "sourceCount": 8,
+      "trackId": "ASSET_PRICING_FACTOR_PORTFOLIO"
+    },
+    {
+      "maximumSources": 10,
+      "minimumSources": 8,
+      "sourceCount": 8,
+      "trackId": "FIXED_INCOME_RATES_CREDIT"
+    },
+    {
+      "maximumSources": 10,
+      "minimumSources": 8,
+      "sourceCount": 8,
+      "trackId": "DERIVATIVES_STOCHASTIC_NUMERICS"
+    },
+    {
+      "maximumSources": 10,
+      "minimumSources": 8,
+      "sourceCount": 8,
+      "trackId": "MARKET_MICROSTRUCTURE_EXECUTION_LIQUIDITY"
+    },
+    {
+      "maximumSources": 10,
+      "minimumSources": 8,
+      "sourceCount": 8,
+      "trackId": "RISK_STRESS_BACKTEST_MODEL_RISK"
+    },
+    {
+      "maximumSources": 10,
+      "minimumSources": 8,
+      "sourceCount": 8,
+      "trackId": "BEHAVIORAL_EFFICIENCY_ANOMALY_CROWDING"
+    },
+    {
+      "maximumSources": 10,
+      "minimumSources": 8,
+      "sourceCount": 8,
+      "trackId": "FINANCIAL_ML_PIT_DATA_PROVENANCE"
+    },
+    {
+      "maximumSources": 10,
+      "minimumSources": 8,
+      "sourceCount": 8,
+      "trackId": "CROSS_MARKET_COMMODITIES_POLICY_KOREA"
+    }
+  ]
+}

@@ -119,6 +119,51 @@ FORBIDDEN_PUBLIC_MARKERS: Final[dict[str, tuple[str, ...]]] = {
         "Decision은 sanitized artifact consumer만 소유",
     ),
 }
+SOLO_OWNERSHIP_PUBLIC_PATHS: Final[tuple[str, ...]] = (
+    "AGENTS.md",
+    "docs/README.md",
+    "docs/최종_프로젝트_명세서.md",
+    "docs/API_명세서.md",
+)
+SOLO_OWNERSHIP_MARKERS: Final[tuple[str, ...]] = (
+    "PRE_S5_EXECUTION_OWNER=DECISION_PLATFORM",
+    "NEW_TEAMMATE_IMPLEMENTATION_TASKS=0",
+    "NEW_TEAMMATE_ISSUES_OR_PRS=0",
+    "REQUIRED_TEAMMATE_ARTIFACTS_FOR_S5_ENTRY=0",
+    "TEAMMATE_WORKSPACE_DIFF=0",
+    "GDELT_MODE=DECISION_PLATFORM_OFFLINE_REFERENCE_ONLY",
+    "GDELT_HTTP_TRANSPORT=NOT_ACTIVATED",
+    "GDELT_OUTBOUND_IMPLEMENTATION=0",
+    "NAVER_ACTIVE_PROVIDER_RUNTIME_STORAGE=RETIRED",
+    "RAG_NEWS_ANALYST_DECISION_SIGNAL_ORDER_AUTHORITY=0",
+)
+SOLO_OWNERSHIP_ROLE_CATALOG_BEGIN: Final[str] = "<!-- PRE_S5_SOLO_ROLE_CATALOG_BEGIN -->"
+SOLO_OWNERSHIP_ROLE_CATALOG_END: Final[str] = "<!-- PRE_S5_SOLO_ROLE_CATALOG_END -->"
+SOLO_OWNERSHIP_ROLE_CATALOG: Final[tuple[str, ...]] = (
+    *SOLO_OWNERSHIP_MARKERS,
+    "HISTORICAL_TEAM_ROLE_CATALOG=TEAM_B:RETURN_ENGINE|LSTM|RULE_BASELINE|BACKTEST;TEAM_A:EXPERIENCE_DASHBOARD",
+    "HISTORICAL_TEAM_ROLE_STATUS=HISTORICAL_SUPERSEDED",
+    "TEAMMATE_ARTIFACT_ABSENCE=NOT_AVAILABLE_OR_ABSTAIN",
+)
+EXPECTED_TEAMMATE_WORKSPACE_PATHS: Final[frozenset[str]] = frozenset(
+    {
+        "workspaces/return-engine/README.md",
+        "workspaces/experience-dashboard/README.md",
+    }
+)
+SOLO_OWNERSHIP_FORBIDDEN_MARKERS: Final[dict[str, tuple[str, ...]]] = {
+    "docs/API_명세서.md": ("`EXTERNAL_OWNER_HANDOFF`",),
+}
+TEAMMATE_REFERENCE_PATTERN: Final[re.Pattern[str]] = re.compile(
+    r"(?:팀원(?:\s*[AB])?|\bteam\s*(?:[ab]|member)\b|\breturn[ _-]engine\b|"
+    r"\bexperience[ _-]dashboard\b)",
+    re.IGNORECASE,
+)
+TEAMMATE_DEPENDENCY_PATTERN: Final[re.Pattern[str]] = re.compile(
+    r"(?:구현\s*작업|implementation\s*task|\bissue\b|\bpr\b|마감|\bdeadline\b|"
+    r"\blive\b|\bblocker\b|필수\s*artifact|required\s*artifact)",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -400,6 +445,189 @@ def tracked_local_reference_error(root: Path) -> str | None:
     return None
 
 
+def _git_output(root: Path, arguments: list[str]) -> tuple[str | None, str | None]:
+    """문서 gate의 Git 관측은 stdout 원문 대신 성공 여부와 필요한 경로만 사용한다."""
+
+    result = subprocess.run(
+        ["git", "-c", "core.quotepath=false", *arguments],
+        cwd=root,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        return None, result.stderr.strip() or "git command failed"
+    return result.stdout, None
+
+
+def _safe_text(root: Path, relative: str) -> tuple[str | None, str | None]:
+    """active 문서는 no-follow regular file일 때만 UTF-8 text로 반환한다."""
+
+    path = safe_regular_file(root, relative)
+    if path is None:
+        return None, f"{relative}: required solo ownership document is missing or unsafe"
+    try:
+        return path.read_text(encoding="utf-8"), None
+    except UnicodeDecodeError:
+        return None, f"{relative}: solo ownership document is not valid UTF-8"
+
+
+def solo_ownership_role_catalog_errors(root: Path) -> list[str]:
+    """docs ledger의 machine-delimited role catalog가 새 협업 범위를 만들지 않는지 검사한다."""
+
+    relative = "docs/README.md"
+    text, error = _safe_text(root, relative)
+    if error:
+        return [error]
+    assert text is not None
+    if text.count(SOLO_OWNERSHIP_ROLE_CATALOG_BEGIN) != 1 or text.count(
+        SOLO_OWNERSHIP_ROLE_CATALOG_END
+    ) != 1:
+        return [f"{relative}: solo ownership role catalog must have exactly one begin/end marker"]
+    begin_index = text.index(SOLO_OWNERSHIP_ROLE_CATALOG_BEGIN) + len(
+        SOLO_OWNERSHIP_ROLE_CATALOG_BEGIN
+    )
+    end_index = text.index(SOLO_OWNERSHIP_ROLE_CATALOG_END)
+    if begin_index > end_index:
+        return [f"{relative}: solo ownership role catalog marker order is invalid"]
+    catalog_lines = tuple(line for line in text[begin_index:end_index].splitlines() if line)
+    if catalog_lines != SOLO_OWNERSHIP_ROLE_CATALOG:
+        return [f"{relative}: solo ownership role catalog differs from the exact catalog"]
+    return []
+
+
+def tracked_teammate_workspace_errors(root: Path) -> list[str]:
+    """placeholder workspace는 README 두 개만 추적하고 local working-tree drift도 허용하지 않는다."""
+
+    errors: list[str] = []
+    workspace_roots = ["workspaces/return-engine", "workspaces/experience-dashboard"]
+    listing, listing_error = _git_output(root, ["ls-files", "-z", "--", *workspace_roots])
+    if listing_error:
+        return ["teammate workspace inventory could not be read"]
+    assert listing is not None
+    tracked_paths = frozenset(path for path in listing.split("\0") if path)
+    if tracked_paths != EXPECTED_TEAMMATE_WORKSPACE_PATHS:
+        errors.append("teammate workspace has unexpected tracked paths")
+    for relative in EXPECTED_TEAMMATE_WORKSPACE_PATHS:
+        if safe_regular_file(root, relative) is None:
+            errors.append(f"{relative}: teammate workspace README is missing or unsafe")
+    status, status_error = _git_output(
+        root,
+        ["status", "--porcelain=v1", "--untracked-files=all", "--", *workspace_roots],
+    )
+    if status_error:
+        errors.append("teammate workspace working-tree state could not be read")
+    elif status and status.strip():
+        errors.append("teammate workspace has working-tree drift")
+    return errors
+
+
+def _base_commit_is_available(root: Path, base: str) -> bool:
+    """PR base가 없는 shallow/invalid checkout에서는 diff 의존성 검사를 fail-closed 한다."""
+
+    if not base.strip():
+        return False
+    _, error = _git_output(root, ["rev-parse", "--verify", f"{base}^{{commit}}"])
+    return error is None
+
+
+def added_public_lines_since_base(root: Path, base: str) -> tuple[list[tuple[str, str]], list[str]]:
+    """base...HEAD에 새로 추가된 active-public 행만 추출해 legacy 본문을 재해석하지 않는다."""
+
+    if not _base_commit_is_available(root, base):
+        return [], ["solo ownership base cannot be resolved"]
+    output, error = _git_output(
+        root,
+        [
+            "diff",
+            "--no-ext-diff",
+            "--no-renames",
+            "--unified=0",
+            f"{base}...HEAD",
+            "--",
+            *ACTIVE_PUBLIC_PATHS,
+        ],
+    )
+    if error:
+        return [], ["solo ownership public diff could not be read"]
+    assert output is not None
+    additions: list[tuple[str, str]] = []
+    current_relative: str | None = None
+    for line in output.splitlines():
+        if line.startswith("+++ b/"):
+            current_relative = line.removeprefix("+++ b/")
+            continue
+        if line.startswith("+") and not line.startswith("+++") and current_relative is not None:
+            additions.append((current_relative, line[1:]))
+    return additions, []
+
+
+def teammate_workspace_diff_errors(root: Path, base: str) -> list[str]:
+    """base 이후 teammate workspace의 README를 포함한 모든 tracked diff를 차단한다."""
+
+    if not _base_commit_is_available(root, base):
+        return ["solo ownership base cannot be resolved"]
+    output, error = _git_output(
+        root,
+        [
+            "diff",
+            "--no-ext-diff",
+            "--name-only",
+            f"{base}...HEAD",
+            "--",
+            "workspaces/return-engine",
+            "workspaces/experience-dashboard",
+        ],
+    )
+    if error:
+        return ["teammate workspace diff could not be read"]
+    if output and output.strip():
+        return ["teammate workspace changed since base"]
+    return []
+
+
+def new_teammate_dependency_errors(root: Path, base: str) -> list[str]:
+    """새 role/task 의존성만 diff로 차단하고 historical roadmap 본문은 바꾸지 않는다."""
+
+    additions, errors = added_public_lines_since_base(root, base)
+    if errors:
+        return errors
+    for relative, line in additions:
+        if relative == "docs/README.md" and line in SOLO_OWNERSHIP_ROLE_CATALOG:
+            continue
+        if not TEAMMATE_REFERENCE_PATTERN.search(line):
+            continue
+        if TEAMMATE_DEPENDENCY_PATTERN.search(line):
+            errors.append(f"{relative}: new teammate dependency was added")
+        else:
+            errors.append(f"{relative}: new teammate role was added outside the exact catalog")
+    return errors
+
+
+def verify_solo_ownership_lock(root: Path, base: str | None = None) -> list[str]:
+    """active Pre-S5 단독 소유 marker, catalog, workspace와 PR diff 경계를 함께 검증한다."""
+
+    errors: list[str] = []
+    for relative in SOLO_OWNERSHIP_PUBLIC_PATHS:
+        text, error = _safe_text(root, relative)
+        if error:
+            errors.append(error)
+            continue
+        assert text is not None
+        for marker in SOLO_OWNERSHIP_MARKERS:
+            if marker not in text:
+                errors.append(f"{relative}: missing solo ownership marker {marker}")
+        for marker in SOLO_OWNERSHIP_FORBIDDEN_MARKERS.get(relative, ()):
+            if marker in text:
+                errors.append(f"{relative}: forbidden stale solo ownership marker {marker}")
+    errors.extend(solo_ownership_role_catalog_errors(root))
+    errors.extend(tracked_teammate_workspace_errors(root))
+    if base is not None:
+        errors.extend(new_teammate_dependency_errors(root, base))
+        errors.extend(teammate_workspace_diff_errors(root, base))
+    return errors
+
+
 def verify_public_truth_freeze(root: Path) -> list[str]:
     """추적 가능한 SSOT와 불변 경계가 Pre-S5 문서 truth freeze를 만족하는지 검사한다."""
 
@@ -474,7 +702,12 @@ def parse_arguments(arguments: Iterable[str]) -> argparse.Namespace:
     parser.add_argument("--root", type=Path, default=REPO_ROOT)
     parser.add_argument("--receipt", type=Path)
     parser.add_argument("--check", action="store_true")
-    return parser.parse_args(arguments)
+    parser.add_argument("--solo-ownership-public-check", action="store_true")
+    parser.add_argument("--base")
+    parsed = parser.parse_args(arguments)
+    if parsed.base is not None and not parsed.solo_ownership_public_check:
+        parser.error("--base requires --solo-ownership-public-check")
+    return parsed
 
 
 def main(arguments: Iterable[str] | None = None) -> int:
@@ -492,6 +725,13 @@ def main(arguments: Iterable[str] | None = None) -> int:
             print("\n".join(f"- {error}" for error in errors), file=sys.stderr)
             return 1
         print("PRE_S5_DOC_TRUTH_FREEZE_VERIFIED")
+    if args.solo_ownership_public_check:
+        errors = verify_solo_ownership_lock(root, args.base)
+        if errors:
+            print("PRE_S5_SOLO_OWNERSHIP_LOCK_FAILED", file=sys.stderr)
+            print("\n".join(f"- {error}" for error in errors), file=sys.stderr)
+            return 1
+        print("PRE_S5_SOLO_OWNERSHIP_LOCK_VERIFIED")
     return 0
 
 

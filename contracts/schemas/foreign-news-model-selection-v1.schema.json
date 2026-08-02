@@ -1,0 +1,101 @@
+{
+  "$id": "contracts/schemas/foreign-news-model-selection-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "candidateModels": {
+      "items": false,
+      "maxItems": 3,
+      "minItems": 3,
+      "prefixItems": [
+        {
+          "const": "PROSUSAI_FINBERT"
+        },
+        {
+          "const": "YIYANGHKUST_FINBERT_TONE"
+        },
+        {
+          "const": "LOUGHRAN_MCDONALD_BASELINE"
+        }
+      ],
+      "type": "array"
+    },
+    "metrics": {
+      "additionalProperties": false,
+      "properties": {
+        "criticalNegationNumberUnitErrors": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "ece": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        "macroF1": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        "minimumClassRecall": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        "neutralF1": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "criticalNegationNumberUnitErrors",
+        "ece",
+        "macroF1",
+        "minimumClassRecall",
+        "neutralF1"
+      ],
+      "type": "object"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "selectedModel": {
+      "oneOf": [
+        {
+          "enum": [
+            "PROSUSAI_FINBERT",
+            "YIYANGHKUST_FINBERT_TONE",
+            "LOUGHRAN_MCDONALD_BASELINE"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "selectionStatus": {
+      "enum": [
+        "NOT_SELECTED",
+        "SELECTED_PENDING_TEST",
+        "TEST_EVALUATED",
+        "ABSTAIN"
+      ]
+    },
+    "testEvaluationCount": {
+      "maximum": 1,
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "candidateModels",
+    "metrics",
+    "schemaVersion",
+    "selectedModel",
+    "selectionStatus",
+    "testEvaluationCount"
+  ],
+  "title": "foreign-news-model-selection-v1",
+  "type": "object"
+}

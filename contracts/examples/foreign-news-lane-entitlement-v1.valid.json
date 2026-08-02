@@ -1,0 +1,41 @@
+{
+  "lanes": [
+    {
+      "articleMetadataStored": false,
+      "credentialMode": "OWNER_PERSONAL_LOCAL_ONLY",
+      "laneId": "FINNHUB_PERSONAL_LOCAL",
+      "mode": "CONTRACT_ONLY",
+      "providerCallsAllowed": false,
+      "rawProviderDataStored": false,
+      "sharedHostedKeyAllowed": false
+    },
+    {
+      "articleMetadataStored": false,
+      "credentialMode": "OFFICIAL_ORIGIN_NO_KEY",
+      "laneId": "SEC_OFFICIAL",
+      "mode": "CONTRACT_ONLY",
+      "providerCallsAllowed": false,
+      "rawProviderDataStored": false,
+      "sharedHostedKeyAllowed": false
+    },
+    {
+      "articleMetadataStored": false,
+      "credentialMode": "OFFICIAL_ORIGIN_NO_KEY",
+      "laneId": "FED_OFFICIAL",
+      "mode": "CONTRACT_ONLY",
+      "providerCallsAllowed": false,
+      "rawProviderDataStored": false,
+      "sharedHostedKeyAllowed": false
+    },
+    {
+      "articleMetadataStored": false,
+      "credentialMode": "NONE",
+      "laneId": "GDELT_OFFLINE_REFERENCE",
+      "mode": "DECISION_PLATFORM_OFFLINE_REFERENCE_ONLY",
+      "providerCallsAllowed": false,
+      "rawProviderDataStored": false,
+      "sharedHostedKeyAllowed": false
+    }
+  ],
+  "schemaVersion": 1
+}

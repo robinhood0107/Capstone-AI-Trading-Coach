@@ -1,0 +1,11 @@
+{
+  "expiresAt": "2026-08-03T00:05:00Z",
+  "issuedAt": "2026-08-03T00:00:00Z",
+  "ownerBound": true,
+  "ownerRawCopyAllowed": false,
+  "schemaVersion": 1,
+  "singleUse": true,
+  "sourceScope": "OWNER_PRIVATE",
+  "ticketId": "rti_01CONTRACTFIXTURE",
+  "ttlSeconds": 301
+}

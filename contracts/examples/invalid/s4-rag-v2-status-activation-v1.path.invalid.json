@@ -1,0 +1,9 @@
+{
+  "documentId": "doc_01contractfixture",
+  "generationDisposition": "GENERATION_ACTIVATED_THEN_HARD_DELETED",
+  "ownerRawCopies": 0,
+  "rawPath": "/home/example/private.pdf",
+  "schemaVersion": 1,
+  "sourceScope": "OWNER_PRIVATE",
+  "state": "DELETED"
+}

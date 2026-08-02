@@ -1,0 +1,45 @@
+{
+  "$id": "contracts/schemas/s4-rag-v2-status-activation-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "documentId": {
+      "pattern": "^doc_[a-z0-9][a-z0-9_-]{10,95}$",
+      "type": "string"
+    },
+    "generationDisposition": {
+      "enum": [
+        "NOT_ACTIVE",
+        "GENERATION_ACTIVATED_THEN_HARD_DELETED"
+      ]
+    },
+    "ownerRawCopies": {
+      "const": 0
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "sourceScope": {
+      "const": "OWNER_PRIVATE"
+    },
+    "state": {
+      "enum": [
+        "QUEUED",
+        "PROCESSING",
+        "READY",
+        "FAILED",
+        "DELETED"
+      ]
+    }
+  },
+  "required": [
+    "documentId",
+    "generationDisposition",
+    "ownerRawCopies",
+    "schemaVersion",
+    "sourceScope",
+    "state"
+  ],
+  "title": "s4-rag-v2-status-activation-v1",
+  "type": "object"
+}

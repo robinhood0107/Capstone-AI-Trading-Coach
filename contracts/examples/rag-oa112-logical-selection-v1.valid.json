@@ -1,0 +1,74 @@
+{
+  "activationRequirements": [
+    "machineFetchAllowed",
+    "localProcessingAllowed",
+    "externalEmbeddingAllowed",
+    "externalGenerationAllowed"
+  ],
+  "activationState": "CONTRACT_LOCKED_NOT_MATERIALIZED",
+  "historicalManifestSha256": "a86d8233d1f061fec571201c84963fbdd8c11b47d33f4e91801fe1c911b5c863",
+  "materializationAllowed": false,
+  "physicalActivation": "NOT_MATERIALIZED",
+  "schemaVersion": 1,
+  "sourceCount": 112,
+  "sourceMetadataIncluded": false,
+  "sourcesPerTrack": 8,
+  "tracks": [
+    {
+      "sourceCount": 8,
+      "trackId": "MICRO_GAME_INFO_MARKET_DESIGN"
+    },
+    {
+      "sourceCount": 8,
+      "trackId": "MACRO_MONETARY_INTERNATIONAL"
+    },
+    {
+      "sourceCount": 8,
+      "trackId": "PROBABILITY_STATISTICS_OPTIMIZATION"
+    },
+    {
+      "sourceCount": 8,
+      "trackId": "ECONOMETRICS_CAUSAL_EVENT_STUDY"
+    },
+    {
+      "sourceCount": 8,
+      "trackId": "TIME_SERIES_REGIME_VOLATILITY"
+    },
+    {
+      "sourceCount": 8,
+      "trackId": "ACCOUNTING_CORPORATE_FINANCE_VALUATION"
+    },
+    {
+      "sourceCount": 8,
+      "trackId": "ASSET_PRICING_FACTOR_PORTFOLIO"
+    },
+    {
+      "sourceCount": 8,
+      "trackId": "FIXED_INCOME_RATES_CREDIT"
+    },
+    {
+      "sourceCount": 8,
+      "trackId": "DERIVATIVES_STOCHASTIC_NUMERICS"
+    },
+    {
+      "sourceCount": 8,
+      "trackId": "MARKET_MICROSTRUCTURE_EXECUTION_LIQUIDITY"
+    },
+    {
+      "sourceCount": 8,
+      "trackId": "RISK_STRESS_BACKTEST_MODEL_RISK"
+    },
+    {
+      "sourceCount": 8,
+      "trackId": "BEHAVIORAL_EFFICIENCY_ANOMALY_CROWDING"
+    },
+    {
+      "sourceCount": 8,
+      "trackId": "FINANCIAL_ML_PIT_DATA_PROVENANCE"
+    },
+    {
+      "sourceCount": 8,
+      "trackId": "CROSS_MARKET_COMMODITIES_POLICY_KOREA"
+    }
+  ]
+}

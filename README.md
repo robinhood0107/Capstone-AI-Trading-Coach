@@ -45,8 +45,11 @@ provider 호출, RiskDecision/hash/order 권한, S5 feature 주입은 모두 0�
 
 ### 교차시장·애널리스트 오버레이 계획 상태
 
-교차시장 계획 타당성은 `PLAN_FEASIBILITY=GO`다. `S4_8A=CONTRACT_ONLY`이고
-`S4_8B_C=OFFLINE_ONLY`: provider 없는 fixture/scorer/append-only evidence/설명 경계만 구현됐다. S6.6/S6.7과
+교차시장 계획 타당성은 `PLAN_FEASIBILITY=GO`다. `S4_8A=CONTRACT_ONLY`,
+`S4_8_CORE6_V2=CONTRACT_ONLY`, `S4_8B_C=OFFLINE_ONLY`다. Core 6 v2는
+KIS/OpenDART/SEC EDGAR/KRX/KOFIA/ECOS의 future entitlement·packet·sanitized receipt만 잠그며
+provider adapter/live call은 0이다. provider 없는 fixture/scorer/append-only evidence/설명 경계만
+구현됐다. S6.6/S6.7과
 cross-market REST/RiskEngine runtime은 `NOT_IMPLEMENTED / PLANNED`다. 월 데이터 비용 목표는 `0원`,
 offline fixture와 지연/EOD가 우선이다. 기관용 데이터 제품과 실시간 SOX/VIX feed는
 post-P1 선택지이며 완주 조건이 아니다. 새 agent framework·별도 cloud·Kafka hard
@@ -198,4 +201,5 @@ S1.6 OpenDART online collector는 `.env.example`의 네 quota 값을 운영 evid
 - [S3.3 체결 이벤트와 대사 계약](contracts/README.md#s33-체결-이벤트와-대사)
 - [S3.3 계약 변경 기록](contracts/changes/20260727-s3-3-fill-events-reconciliation-contract.md)
 - [S4.8 교차시장 계획 계약](contracts/README.md#s48-교차시장애널리스트-계획-계약)
+- [S4.8 Core 6 v2 계약 변경 기록](contracts/changes/20260802-s4-8-core6-v2-contract-lock.md)
 - S1.4X dependency amendment 재현: `workspaces/decision-platform/research/s1-4x-numeric-parity/README.md`

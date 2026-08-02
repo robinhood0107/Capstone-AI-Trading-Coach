@@ -39,6 +39,7 @@
 | S4.7D parser/OCR | `OFFLINE_ONLY` | PR #84 `014ccca1`, #85 `4bcca91e` | 0 | 안전 parser/OCR만 구현, importer/index writer 없음 |
 | S4.7D v2 runtime | `STUB_FAIL_CLOSED` | PR #87 `90ae2e3e`, #88 `028d94a0` | 0 | `S4_7D_RUNTIME=STUB_FAIL_CLOSED`; OA112 metadata만 있고 OA140·owner generation/retrieval은 미구현 |
 | S4.8A | `CONTRACT_ONLY` | PR #75 `c17d51f6` | 0 | `S4_8A=CONTRACT_ONLY`; provider entitlement/adapter는 미활성 |
+| S4.8 Core 6 v2 | `CONTRACT_ONLY` | Issue #91 | 0 | `S4_8_CORE6_V2=CONTRACT_ONLY`; KIS/OpenDART/SEC EDGAR/KRX/KOFIA/ECOS future packet/receipt boundary만, adapter/live 0 |
 | S4.8B/C | `OFFLINE_ONLY` | PR #77 `509d8eee` | 0 | `S4_8B_C=OFFLINE_ONLY`; fixture/scorer/V23/read port만, endpoint/RiskEngine/provider는 미구현 |
 
 Naver runtime은 퇴역했으며 재활성화하지 않는다. GDELT, Voyage, Gemini, OpenAI, account/order
@@ -54,7 +55,8 @@ REST/gRPC 계약은 [API 명세서](API_명세서.md), machine-readable S4 profi
 [contracts README](../contracts/README.md#s4-rag-profilepolicy-catalog)를 따른다.
 교차시장 계약은
 [contracts README](../contracts/README.md#s48-교차시장애널리스트-계약)와
-[S4.8A 변경기록](../contracts/changes/20260731-s4-8a-cross-market-contract-lock.md)을 따른다.
+[S4.8A 변경기록](../contracts/changes/20260731-s4-8a-cross-market-contract-lock.md),
+[Core 6 v2 변경기록](../contracts/changes/20260802-s4-8-core6-v2-contract-lock.md)을 따른다.
 S4.8B/C offline runtime과 S5.0 계약은 각각
 [S4.8B/C 변경기록](../contracts/changes/20260801-s4-8b-s4-8c-offline-runtime.md),
 [S5.0 변경기록](../contracts/changes/20260801-s5-0-signal-v2-contract-lock.md)을 따른다.

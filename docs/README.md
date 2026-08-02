@@ -37,10 +37,11 @@
 | S4.2C/S4.4G | `STUB_FAIL_CLOSED` | PR #77 control plane | 0 | Voyage/Gemini outbound executor는 hard-disabled |
 | S4.5/S4.6 | `OFFLINE_ONLY` | PR #77 fixture evaluation·numeric loopback | 0 | fixture/retrieval-only; provider live 0 |
 | S4.7D parser/OCR | `OFFLINE_ONLY` | PR #84 `014ccca1`, #85 `4bcca91e` | 0 | 안전 parser/OCR만 구현, importer/index writer 없음 |
-| S4.7D v2 runtime | `STUB_FAIL_CLOSED` | PR #87 `90ae2e3e`, #88 `028d94a0` | 0 | `S4_7D_RUNTIME=STUB_FAIL_CLOSED`; OA112 metadata만 있고 OA140·owner generation/retrieval은 미구현 |
-| S4.8A | `CONTRACT_ONLY` | PR #75 `c17d51f6` | 0 | `S4_8A=CONTRACT_ONLY`; provider entitlement/adapter는 미활성 |
+| S4.7D v2 runtime | `STUB_FAIL_CLOSED` | PR #87 `90ae2e3e`, #88 `028d94a0` | 0 | `S4_7D_RUNTIME=STUB_FAIL_CLOSED`; historical OA112 metadata와 logical OA112 policy만 있고 physical corpus·owner generation/retrieval은 미구현 |
+| Pre-S5 RAG/global-news lock | `CONTRACT_ONLY` | Issue #95 addendum | 0 | `OA112_ACTIVE_CONTRACT_LOCKED`, `S4_7D_OA112_PHYSICAL_ACTIVATION=NOT_MATERIALIZED`; foreign-news/Optional 3 adapter와 provider call 0 |
+| S4.8A | `CONTRACT_LOCKED` | PR #75 `c17d51f6` | 0 | `S4_8A=CONTRACT_LOCKED`; provider entitlement/adapter는 미활성 |
 | S4.8 Core 6 v2 | `CONTRACT_ONLY` | PR #92 `d27322cd` | 0 | `S4_8_CORE6_V2=CONTRACT_ONLY`; KIS/OpenDART/SEC EDGAR/KRX/KOFIA/ECOS future packet/receipt boundary만, adapter/live 0 |
-| S4.8B/C | `OFFLINE_ONLY` | PR #77 `509d8eee` | 0 | `S4_8B_C=OFFLINE_ONLY`; fixture/scorer/V23/read port만, endpoint/RiskEngine/provider는 미구현 |
+| S4.8B/C | `IMPLEMENTED_MERGE_CANDIDATE` | PR #77 `509d8eee` | 0 | `S4_8B_C=IMPLEMENTED_MERGE_CANDIDATE`; fixture/scorer/V23/read port만, endpoint/RiskEngine/provider는 미구현 |
 
 Naver runtime은 퇴역했으며 재활성화하지 않는다. GDELT, Voyage, Gemini, OpenAI, account/order
 물리 호출은 새 HEAD의 승인 packet 없이는 0이다. RAG는 설명·근거·citation 경계일 뿐
@@ -68,6 +69,7 @@ GDELT_OUTBOUND_CALLS=0
 GDELT_OFFLINE_REFERENCE_ONLY=1
 NAVER_ACTIVE_PROVIDER_RUNTIME_STORAGE=RETIRED
 RAG_NEWS_ANALYST_DECISION_SIGNAL_ORDER_AUTHORITY=0
+PLAN_FEASIBILITY=GO_WITH_EXTERNAL_HARD_GATES
 HISTORICAL_TEAM_ROLE_CATALOG=TEAM_B:RETURN_ENGINE|LSTM|RULE_BASELINE|BACKTEST;TEAM_A:EXPERIENCE_DASHBOARD
 HISTORICAL_TEAM_ROLE_STATUS=HISTORICAL_SUPERSEDED
 TEAMMATE_ARTIFACT_ABSENCE=NOT_AVAILABLE_OR_ABSTAIN
@@ -76,6 +78,31 @@ TEAMMATE_ARTIFACT_ABSENCE=NOT_AVAILABLE_OR_ABSTAIN
 Decision Platform은 기존 synthetic/offline GDELT aggregate producer를 소유한다. HTTP transport와
 executor/outbound implementation은 추가하지 않으며, Naver는 계속 retired다. RAG·news·analyst는
 Decision, Signal, RiskDecision, order, decision hash 권한이 0이다.
+
+## Pre-S5 RAG·global-news active addendum
+
+`PRE_S5_RAG_GLOBAL_NEWS_CONTRACT_LOCKED=1`
+
+`contracts/catalogs/pre-s5-rag-news-contract.v1.json`이 historical OA140 program을 바꾸지 않는
+현재 addendum이다. active logical selection은 정확히 `OA112_ACTIVE_CONTRACT_LOCKED`(14 track ×
+8 = 112)이며 `S4_7D_OA112_PHYSICAL_ACTIVATION=NOT_MATERIALIZED`다. reserve research는 최대
+28개이고 automatic promotion은 없다. 과거 OA112 metadata manifest, v1 OpenAPI/proto/source-card,
+exact-30와 `news_sentiment_summary.v2`는 byte-stable하다.
+
+RAG v2는 existing ask/status/history bytes를 bind하고 consent/effective-consent, 5분 single-use
+owner-bound import-ticket, owner deletion activation/hard-delete, embedding profile policy를 addendum으로
+잠근다. HTTP surface에 새로 적힌 route는 consent/effective-consent/import ticket의 세 개뿐이다. Voyage는
+`voyage-context-4` 1024차원 full-generation profile이고 query별 fallback/mixed profile은 없으며,
+불가 시 full bundle BGE-M3 rebuild/evaluation/CAS만 허용한다. Vertex는 ADC/service-account의
+`gemini-3.5-flash` 단일 generator target이며 top-5와 질문당 `generateContent` 1회, fallback 0이다.
+둘 다 `TARGET_NOT_ACTIVE`이며 provider physical call은 0이다.
+
+foreign-news는 Finnhub personal-local, SEC official, Federal Reserve official, existing GDELT
+offline-reference lane만 정의한다. 응답은 explanation-only이며 Decision/Signal/Risk/order/hash와
+S5 feature 권한이 0이고 raw provider data/article metadata를 저장하지 않는다. SEC/Fed의
+`officialReleaseLocator`는 article metadata가 아닌 허용된 sanitized provenance locator다. Optional 3
+(Finnhub Recommendation/Earnings, Twelve Data, Massive)는 entitlement/receipt template만 있으며
+실행 packet, adapter, provider call은 0이다.
 
 `PRE_S5_DOC_TRUTH_FREEZE_VERIFIED`는 이 표와 아래 SSOT link가 EOF/lstat receipt, v1/exact-30
 불변 hash, link/anchor/Mermaid 검사, 로컬 전용 reference 자료 비추적 검사까지 통과했음을 뜻한다.
@@ -99,7 +126,8 @@ authority이며 공개 문서에는 전체 목록을 복제하지 않는다.
 |---|---|
 | [최종_프로젝트_명세서.md](최종_프로젝트_명세서.md) | 프로젝트 전체 명세 — 방향, 시스템 구조, 모노레포 설계, 역할분담, 팀별 축소 계획(18.A) |
 | [API_명세서.md](API_명세서.md) | Decision Platform API 전체 명세 — REST/gRPC 계약, 오류 코드, fail-closed 정책 |
-| [RAG_외부_AI_처리_및_개인문서_동의.md](RAG_외부_AI_처리_및_개인문서_동의.md) | OA140·개인 문서의 외부 processor/동의/철회·삭제 경계 — 현재 `TARGET_NOT_ACTIVE` |
+| [RAG_외부_AI_처리_및_개인문서_동의.md](RAG_외부_AI_처리_및_개인문서_동의.md) | logical OA112·개인 문서의 외부 processor/동의/철회·삭제 경계 — 현재 `TARGET_NOT_ACTIVE` |
+| [Pre-S5 RAG/global-news contract](../contracts/catalogs/pre-s5-rag-news-contract.v1.json) | OA112 logical selection, RAG v2 addendum, foreign-news/Optional 3 execution boundary |
 | [S4 RAG profile/policy 결정 기록](../contracts/changes/20260729-s4-rag-contract-catalog.md) | 정확히 두 embedding profile, 세 policy, public model 선택 금지와 negative fixture |
 | [ADR-038](adr/ADR-038-naver-retirement-gdelt-aggregate.md) | Naver active 뉴스 경계 퇴역, GDELT aggregate-only ownership와 ABSTAIN 권한 결정 |
 | [S1.3G 뉴스 계약 잠금](../contracts/changes/20260731-s1-3g-naver-retirement-gdelt-aggregate-lock.md) | GDELT observation/news summary v2, 기사 metadata 저장 0, 판단 권한 없음 |

@@ -166,9 +166,12 @@ IMMUTABLE_HISTORY_CLASSIFICATIONS: Final[frozenset[str]] = frozenset(
         "EVIDENCE_ONLY",
     }
 )
+IMMUTABLE_HISTORY_PATH_PREFIXES: Final[tuple[str, ...]] = (
+    "capstone-rag/reports/",
+)
 TEAMMATE_REFERENCE_PATTERN: Final[re.Pattern[str]] = re.compile(
-    r"(?:팀원(?:\s*[AB])?|\bteam[ _-]?[ab]\b|\bteam\s*member\b|\breturn[ _-]engine\b|"
-    r"\blstm\b|\brule[ _-]?baseline\b|\bbacktest\b|\bexperience[ _-]dashboard\b)",
+    r"(?:팀원(?:\s*[AB])?|\bteam[ _-]?[ab]\b|\bteam\s*member\b|\breturn[ _-]?engine\b|"
+    r"\blstm\b|\brule[ _-]?baseline\b|\bbacktest\b|\bexperience[ _-]?dashboard\b)",
     re.IGNORECASE,
 )
 TEAMMATE_DEPENDENCY_PATTERN: Final[re.Pattern[str]] = re.compile(
@@ -542,7 +545,14 @@ def tracked_teammate_workspace_errors(root: Path) -> list[str]:
             errors.append(f"{relative}: teammate workspace README is missing or unsafe")
     status, status_error = _git_output(
         root,
-        ["status", "--porcelain=v1", "--untracked-files=all", "--", *workspace_roots],
+        [
+            "status",
+            "--porcelain=v1",
+            "--untracked-files=all",
+            "--ignored=matching",
+            "--",
+            *workspace_roots,
+        ],
     )
     if status_error:
         errors.append("teammate workspace working-tree state could not be read")
@@ -619,7 +629,7 @@ def teammate_workspace_diff_errors(root: Path, base: str) -> list[str]:
 
 
 def immutable_history_diff_errors(root: Path, base: str) -> list[str]:
-    """base에 있던 historical Markdown은 byte 변경·삭제를 막되 새 계약 기록은 허용한다."""
+    """base에 있던 historical 문서·완료 evidence는 byte 변경·삭제를 막되 새 기록은 허용한다."""
 
     if not _base_commit_is_available(root, base):
         return ["solo ownership base cannot be resolved"]
@@ -636,17 +646,20 @@ def immutable_history_diff_errors(root: Path, base: str) -> list[str]:
     )
     if error:
         return ["immutable historical record diff could not be read"]
-    changed_historical_paths = (
+    changed_immutable_paths = (
         tuple(
             relative
             for relative in output.splitlines()
-            if relative.endswith(".md")
-            and classify_markdown(relative) in IMMUTABLE_HISTORY_CLASSIFICATIONS
+            if relative.startswith(IMMUTABLE_HISTORY_PATH_PREFIXES)
+            or (
+                relative.endswith(".md")
+                and classify_markdown(relative) in IMMUTABLE_HISTORY_CLASSIFICATIONS
+            )
         )
         if output
         else ()
     )
-    if changed_historical_paths:
+    if changed_immutable_paths:
         return ["immutable historical records changed since base"]
     return []
 

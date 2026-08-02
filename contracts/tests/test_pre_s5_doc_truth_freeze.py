@@ -59,6 +59,15 @@ class PreS5DocumentTruthFreezeTest(unittest.TestCase):
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("# Placeholder\n", encoding="utf-8")
 
+        for relative in (
+            "docs/adr/ADR-999-existing.md",
+            "docs/decision-platform/historical-record.md",
+            "contracts/changes/20260801-existing.md",
+        ):
+            path = root / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("# Historical record\n", encoding="utf-8")
+
         self._commit(root, "fixture base")
         return subprocess.run(
             ["git", "rev-parse", "HEAD"],
@@ -201,17 +210,40 @@ class PreS5DocumentTruthFreezeTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
             base = self._solo_ownership_fixture(root)
-            adr = root / "docs/adr/ADR-999-example.md"
-            change = root / "contracts/changes/20260803-example.md"
-            adr.parent.mkdir(parents=True, exist_ok=True)
-            change.parent.mkdir(parents=True, exist_ok=True)
-            adr.write_text("# Historical ADR\n", encoding="utf-8")
-            change.write_text("# Historical contract change\n", encoding="utf-8")
+            for relative in (
+                "docs/adr/ADR-999-existing.md",
+                "docs/decision-platform/historical-record.md",
+                "contracts/changes/20260801-existing.md",
+            ):
+                path = root / relative
+                path.write_text(path.read_text(encoding="utf-8") + "changed\n", encoding="utf-8")
             self._commit(root, "historical record drift")
 
             errors = verify_solo_ownership_lock(root, base)
 
         self.assertIn("immutable historical records changed since base", errors)
+
+    def test_solo_ownership_lock_rejects_new_historical_teammate_dependency(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            base = self._solo_ownership_fixture(root)
+            historical = root / "docs/s5-team-dependencies.md"
+            historical.write_text("team member B required artifact\n", encoding="utf-8")
+            self._commit(root, "new teammate dependency")
+
+            errors = verify_solo_ownership_lock(root, base)
+
+        self.assertIn("docs/s5-team-dependencies.md: new teammate dependency was added", errors)
+
+    def test_solo_ownership_lock_allows_a_new_decision_only_contract_change(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            base = self._solo_ownership_fixture(root)
+            change = root / "contracts/changes/20260803-decision-only.md"
+            change.write_text("# Decision-only contract change\n", encoding="utf-8")
+            self._commit(root, "new decision-only contract change")
+
+            self.assertEqual([], verify_solo_ownership_lock(root, base))
 
     def test_solo_ownership_lock_fails_closed_for_an_unknown_base(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

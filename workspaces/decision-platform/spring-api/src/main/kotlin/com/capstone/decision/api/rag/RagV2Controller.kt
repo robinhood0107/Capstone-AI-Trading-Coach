@@ -10,6 +10,7 @@ import com.capstone.decision.application.rag.RagV2HistoryPage
 import com.capstone.decision.application.rag.RagV2RuntimeService
 import com.capstone.decision.application.rag.RagValidationException
 import com.capstone.decision.application.security.AppPrincipal
+import io.swagger.v3.oas.annotations.Hidden
 import jakarta.servlet.http.HttpServletRequest
 import org.springframework.dao.DataAccessException
 import org.springframework.http.HttpStatus
@@ -27,6 +28,7 @@ import org.springframework.web.bind.annotation.RestController
 import org.springframework.web.bind.annotation.RestControllerAdvice
 
 @RestController
+@Hidden
 @RequestMapping("/api/v2/rag", produces = [MediaType.APPLICATION_JSON_VALUE])
 class RagV2Controller(
     private val parser: RagRequestParser,

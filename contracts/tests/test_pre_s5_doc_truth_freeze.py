@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -8,8 +9,13 @@ from unittest import mock
 
 import contracts.verify_pre_s5_doc_truth_freeze as truth_freeze
 from contracts.verify_pre_s5_doc_truth_freeze import (
+    SOLO_OWNERSHIP_MARKERS,
+    SOLO_OWNERSHIP_PUBLIC_PATHS,
+    SOLO_OWNERSHIP_ROLE_CATALOG,
     collect_markdown_receipt,
+    classify_markdown,
     verify_public_truth_freeze,
+    verify_solo_ownership_lock,
 )
 
 
@@ -17,6 +23,52 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 class PreS5DocumentTruthFreezeTest(unittest.TestCase):
+    @staticmethod
+    def _commit(root: Path, message: str) -> None:
+        subprocess.run(["git", "add", "."], cwd=root, check=True)
+        subprocess.run(["git", "commit", "-qm", message], cwd=root, check=True)
+
+    def _solo_ownership_fixture(self, root: Path) -> str:
+        """base 대비 public 문서와 teammate workspace의 drift를 검사할 최소 Git fixture다."""
+
+        subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+        subprocess.run(["git", "config", "user.email", "fixture@example.test"], cwd=root, check=True)
+        subprocess.run(["git", "config", "user.name", "Fixture"], cwd=root, check=True)
+
+        for relative in SOLO_OWNERSHIP_PUBLIC_PATHS:
+            path = root / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            marker_block = "\n".join(SOLO_OWNERSHIP_MARKERS)
+            if relative == "docs/README.md":
+                catalog = "\n".join(SOLO_OWNERSHIP_ROLE_CATALOG)
+                text = (
+                    "# Active\n\n"
+                    f"{marker_block}\n\n"
+                    "<!-- PRE_S5_SOLO_ROLE_CATALOG_BEGIN -->\n"
+                    f"{catalog}\n"
+                    "<!-- PRE_S5_SOLO_ROLE_CATALOG_END -->\n"
+                )
+            else:
+                text = f"# Active\n\n{marker_block}\n"
+            path.write_text(text, encoding="utf-8")
+
+        for relative in (
+            "workspaces/return-engine/README.md",
+            "workspaces/experience-dashboard/README.md",
+        ):
+            path = root / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("# Placeholder\n", encoding="utf-8")
+
+        self._commit(root, "fixture base")
+        return subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=root,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+
     def test_receipt_reads_regular_markdown_to_eof_without_following_symlinks(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
@@ -44,6 +96,87 @@ class PreS5DocumentTruthFreezeTest(unittest.TestCase):
     def test_repository_public_ssot_has_the_pre_s5_truth_freeze_markers(self) -> None:
         errors = verify_public_truth_freeze(REPO_ROOT)
         self.assertEqual([], errors)
+
+    def test_solo_ownership_lock_accepts_exact_catalog_and_clean_teammate_workspaces(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            base = self._solo_ownership_fixture(root)
+
+            self.assertEqual([], verify_solo_ownership_lock(root, base))
+
+    def test_solo_ownership_lock_rejects_catalog_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            base = self._solo_ownership_fixture(root)
+            catalog = root / "docs/README.md"
+            catalog.write_text(
+                catalog.read_text(encoding="utf-8").replace(
+                    "TEAMMATE_WORKSPACE_DIFF=0", "TEAMMATE_WORKSPACE_DIFF=1", 1
+                ),
+                encoding="utf-8",
+            )
+
+            errors = verify_solo_ownership_lock(root, base)
+
+        self.assertIn("docs/README.md: solo ownership role catalog differs from the exact catalog", errors)
+
+    def test_solo_ownership_lock_rejects_new_teammate_role_or_dependency(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            base = self._solo_ownership_fixture(root)
+            api = root / "docs/API_명세서.md"
+            api.write_text(
+                api.read_text(encoding="utf-8")
+                + "\n팀원 B의 required artifact, Issue, PR, deadline, live blocker를 새로 만든다.\n",
+                encoding="utf-8",
+            )
+            self._commit(root, "teammate dependency drift")
+
+            errors = verify_solo_ownership_lock(root, base)
+
+        self.assertIn("docs/API_명세서.md: new teammate dependency was added", errors)
+
+    def test_solo_ownership_lock_allows_unrelated_pr_and_live_words(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            base = self._solo_ownership_fixture(root)
+            api = root / "docs/API_명세서.md"
+            api.write_text(
+                api.read_text(encoding="utf-8") + "\n현재 PR의 live gate는 별도 packet을 요구한다.\n",
+                encoding="utf-8",
+            )
+            self._commit(root, "unrelated wording")
+
+            self.assertEqual([], verify_solo_ownership_lock(root, base))
+
+    def test_solo_ownership_lock_rejects_tracked_or_changed_teammate_workspace(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            base = self._solo_ownership_fixture(root)
+            extra = root / "workspaces/return-engine/model.py"
+            extra.write_text("# out of scope\n", encoding="utf-8")
+            self._commit(root, "workspace drift")
+
+            errors = verify_solo_ownership_lock(root, base)
+
+        self.assertIn("teammate workspace has unexpected tracked paths", errors)
+        self.assertIn("teammate workspace changed since base", errors)
+
+    def test_solo_ownership_lock_fails_closed_for_an_unknown_base(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            self._solo_ownership_fixture(root)
+
+            errors = verify_solo_ownership_lock(root, "not-a-commit")
+
+        self.assertIn("solo ownership base cannot be resolved", errors)
+
+    def test_historical_documents_remain_classified_as_historical_superseded(self) -> None:
+        self.assertEqual("HISTORICAL_SUPERSEDED", classify_markdown("docs/adr/ADR-999-example.md"))
+        self.assertEqual(
+            "IMMUTABLE_CONTRACT_HISTORY",
+            classify_markdown("contracts/changes/20260803-example.md"),
+        )
 
     def test_public_truth_freeze_rejects_required_and_linked_symlinks(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

@@ -94,7 +94,7 @@
 재현을 위한 `HISTORICAL_SUPERSEDED` 기록으로만 보존하며, 과거 ADR·contract-change·완료 evidence의
 bytes를 변경하지 않는다. 현재 존재하지 않는 기존 workspace output은 `NOT_AVAILABLE/ABSTAIN`으로만
 처리하고 S5 진입 또는 완료의 의존성으로 만들지 않는다.
-CI는 PR base 대비 `docs/adr/`와 `contracts/changes/`의 byte 변경을 거부한다.
+CI는 PR base에 있던 historical/contract-change/evidence Markdown의 byte 변경·삭제를 거부한다.
 
 ```text
 PRE_S5_DOC_TRUTH_FREEZE_ADDENDUM_VERIFIED

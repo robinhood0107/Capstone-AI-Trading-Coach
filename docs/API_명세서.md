@@ -1074,7 +1074,7 @@ generation과 제출 직전 generation을 다시 비교한다.
 `GET /api/v1/risk/cross-market`
 
 > 계획 타당성: `PLAN_FEASIBILITY=GO`.
-> 현재 상태: `S4.8A_CONTRACT=LOCKED / S4.8B_C_OFFLINE_RUNTIME=IMPLEMENTED_MERGE_CANDIDATE /
+> 현재 상태: `S4.8A_CONTRACT=LOCKED / S4_8_CORE6_V2=CONTRACT_ONLY / S4.8B_C_OFFLINE_RUNTIME=IMPLEMENTED_MERGE_CANDIDATE /
 > ENDPOINT_RUNTIME=NOT_IMPLEMENTED`.
 > 월 데이터 비용 목표는 `0원`, offline fixture와 지연/EOD가 우선이다. 기관용 데이터 제품과
 > 실시간 SOX/VIX feed는 post-P1 선택지이며 P1 완료 조건이 아니다. 새 agent framework·별도
@@ -1086,6 +1086,10 @@ generation과 제출 직전 generation을 다시 비교한다.
 > 완료 증거가 아니다. S4.8A main 병합과 post-merge CI 확인 뒤 S4.8B/C offline fixture,
 > V23 evidence store와 Spring snapshot read port를 구현했지만 endpoint와 RiskEngine은 연결하지 않는다.
 > provider/live account/live order physical call은 0이며 P1 권한은 `WARN_ONLY`다.
+> Core 6 v2 entitlement/probe/receipt은 KIS, OpenDART, SEC EDGAR, KRX, KOFIA, ECOS의 future
+> local-only operator boundary일 뿐이며, 이 GET endpoint·OpenAPI·adapter·provider fan-out을
+> 활성화하지 않는다. OpenDART/ECOS는 sanitized projection-only, KOFIA는
+> `BLOCKED_NO_CREDENTIAL_OR_APPROVAL`, 모든 provider physical call은 0이다.
 > 2026-07-30 계획 확정 변경은 Markdown만 동기화하며 OpenAPI, schema, fixture, catalog,
 > migration, runtime code와 환경설정을 생성하거나 수정하는 구현 세션이 아니다.
 > 조사한 42개는 integration target(39 machine 후보 계열 + 3 manual-link 원천)이지 공개

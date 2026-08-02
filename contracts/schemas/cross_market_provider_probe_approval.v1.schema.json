@@ -1,0 +1,281 @@
+{
+  "$id": "contracts/schemas/cross_market_provider_probe_approval.v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "approvalStatus": {
+            "const": "TEMPLATE"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "caps": {
+            "properties": {
+              "logicalCap": {
+                "const": 0
+              },
+              "physicalCallCap": {
+                "const": 0
+              }
+            }
+          },
+          "executionAllowed": {
+            "const": false
+          },
+          "fixtureOnly": {
+            "const": true
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "approvalStatus": {
+            "const": "APPROVED"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "caps": {
+            "properties": {
+              "logicalCap": {
+                "const": 1
+              },
+              "physicalCallCap": {
+                "const": 1
+              }
+            }
+          },
+          "executionAllowed": {
+            "const": true
+          },
+          "fixtureOnly": {
+            "const": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "approvalStatus": {
+            "enum": [
+              "CONSUMED",
+              "EXPIRED"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "caps": {
+            "properties": {
+              "logicalCap": {
+                "const": 0
+              },
+              "physicalCallCap": {
+                "const": 0
+              }
+            }
+          },
+          "executionAllowed": {
+            "const": false
+          },
+          "fixtureOnly": {
+            "const": false
+          }
+        }
+      }
+    }
+  ],
+  "properties": {
+    "approvalIdHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "approvalPayloadHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "approvalStatus": {
+      "enum": [
+        "TEMPLATE",
+        "APPROVED",
+        "CONSUMED",
+        "EXPIRED"
+      ]
+    },
+    "artifactPersistence": {
+      "const": false
+    },
+    "caps": {
+      "additionalProperties": false,
+      "properties": {
+        "artifactCap": {
+          "const": 0
+        },
+        "logicalCap": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "physicalCallCap": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "retryCap": {
+          "const": 0
+        }
+      },
+      "required": [
+        "artifactCap",
+        "logicalCap",
+        "physicalCallCap",
+        "retryCap"
+      ],
+      "type": "object"
+    },
+    "ciEvidenceDigest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "contractId": {
+      "const": "cross_market_provider_probe_approval.v1"
+    },
+    "coverageDigest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "decisionAuthority": {
+      "const": "NONE"
+    },
+    "endpointSetIdentityHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "entitlementPayloadHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "executionAllowed": {
+      "type": "boolean"
+    },
+    "executionMode": {
+      "enum": [
+        "DIRECT_READ_PROBE",
+        "REUSE_AUTHORIZED_PROJECTION"
+      ]
+    },
+    "expiresAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "findingsDigest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "fixtureOnly": {
+      "type": "boolean"
+    },
+    "headSha": {
+      "pattern": "^[0-9a-f]{40}$",
+      "type": "string"
+    },
+    "issuedAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "nonceHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "persistRaw": {
+      "const": false
+    },
+    "providerCallsBeforeApproval": {
+      "const": 0
+    },
+    "registryPayloadHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "requestPlanDigest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "riskSignalOrderAuthority": {
+      "const": "NONE"
+    },
+    "schemaVersion": {
+      "const": "1"
+    },
+    "securityScanManifestDigest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "sourceFamily": {
+      "enum": [
+        "KIS",
+        "OPENDART",
+        "SEC_EDGAR",
+        "KRX",
+        "KOFIA",
+        "ECOS"
+      ]
+    },
+    "sourceId": {
+      "enum": [
+        "S48_CORE6_KIS",
+        "S48_CORE6_OPENDART",
+        "S48_CORE6_SEC_EDGAR",
+        "S48_CORE6_KRX",
+        "S48_CORE6_KOFIA",
+        "S48_CORE6_ECOS"
+      ]
+    },
+    "treeDigest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "approvalIdHash",
+    "approvalPayloadHash",
+    "approvalStatus",
+    "artifactPersistence",
+    "caps",
+    "ciEvidenceDigest",
+    "contractId",
+    "coverageDigest",
+    "decisionAuthority",
+    "endpointSetIdentityHash",
+    "entitlementPayloadHash",
+    "executionAllowed",
+    "executionMode",
+    "expiresAt",
+    "findingsDigest",
+    "fixtureOnly",
+    "headSha",
+    "issuedAt",
+    "nonceHash",
+    "persistRaw",
+    "providerCallsBeforeApproval",
+    "registryPayloadHash",
+    "requestPlanDigest",
+    "riskSignalOrderAuthority",
+    "schemaVersion",
+    "securityScanManifestDigest",
+    "sourceFamily",
+    "sourceId",
+    "treeDigest"
+  ],
+  "title": "cross_market_provider_probe_approval.v1",
+  "type": "object"
+}

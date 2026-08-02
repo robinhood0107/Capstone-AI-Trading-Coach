@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import tomllib
 from dataclasses import replace
 from pathlib import Path
@@ -22,6 +23,17 @@ from app.rag.bge_artifact import (
 )
 
 _TOKENIZER_SHA256 = "6710678b12670bc442b99edc952c4d996ae309a7020c1fa0096dd245c2faf790"
+_CORE6_HISTORICAL_FIXTURE_SHA256 = frozenset(
+    {
+        "b913ab4231d917a9a28a7213fcf66257f8f8d79ea092356d506daeeaddabf36e",
+        "3651313ea6ae0ee2f1e7af839e0f2a4aa96672a9e15b412cb3d2914f4bd55977",
+        "31139997140feb5fb61c0924950da502f0f6c1a347e3cc8e764f0d8d25d1bdfb",
+        "610b231832ed334bf541e4581066f3a0644a5c2750cc62c1d37e2564c4034b26",
+        "697855056eac950ae6ff755be604015aa20b627ab75369d657921ab72f802ce7",
+        "9aef7a439b432717704b6097a29d39e7007ff73b0809392643a30a7ed4e04f3d",
+    }
+)
+_UNAPPROVED_SECRET_LIKE_SHA256 = "f" * 64
 
 
 def test_runtime_sbom_binds_the_current_production_lockfile() -> None:
@@ -34,14 +46,25 @@ def test_runtime_sbom_binds_the_current_production_lockfile() -> None:
     assert sbom["lockfileSha256"] == hashlib.sha256(lockfile.read_bytes()).hexdigest()
 
 
-def test_public_tokenizer_digest_allowlist_targets_only_the_exact_secret() -> None:
+def test_public_digest_allowlist_keeps_only_the_exact_approved_values() -> None:
     repo_root = Path(__file__).resolve().parents[5]
     with (repo_root / ".gitleaks.toml").open("rb") as config_file:
         config = tomllib.load(config_file)
 
     allowlist = config["allowlist"]
+    expected_digests = _CORE6_HISTORICAL_FIXTURE_SHA256 | {_TOKENIZER_SHA256}
+    expected_regexes = {f"^{digest}$" for digest in expected_digests}
+
+    assert config["extend"]["useDefault"] is True
+    assert set(allowlist) == {"description", "regexes"}
     assert "regexTarget" not in allowlist
-    assert allowlist["regexes"] == [f"^{_TOKENIZER_SHA256}$"]
+    assert set(allowlist["regexes"]) == expected_regexes
+    assert len(allowlist["regexes"]) == len(expected_regexes)
+    assert all(re.fullmatch(r"\^[0-9a-f]{64}\$", pattern) for pattern in allowlist["regexes"])
+    assert all(
+        re.fullmatch(pattern, _UNAPPROVED_SECRET_LIKE_SHA256) is None
+        for pattern in allowlist["regexes"]
+    )
 
 
 def test_approved_bge_packet_is_exactly_pinned_to_ten_files() -> None:

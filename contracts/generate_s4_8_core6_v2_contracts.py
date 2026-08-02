@@ -1095,8 +1095,6 @@ def _unexpected_core6_artifact_paths(
                     directory_names.remove(directory_name)
             for file_name in file_names:
                 candidate = current_directory / file_name
-                if candidate.suffix != ".json":
-                    continue
                 if candidate.is_symlink() or _is_core6_fixture_payload(candidate, root):
                     candidate_paths.add(candidate)
                 elif any(

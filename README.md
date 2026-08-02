@@ -13,8 +13,10 @@ Contracts CI, Kotlin Build, Python CI, S1.4X contract correctness를 수행한�
 ## 현재 구현 상태
 
 STAGE 2에서 S1.6 Market Calendar/Event Aggregator offline 구현, S2.1 Principle CRUD,
-S2.2 offline evaluator, S2.3 Decision runtime, S2.4 Risk/Kill Switch까지 `main`에 병합됐다.
-이 S3.1 변경은 S2.3 Decision과 S2.4 Kill Switch를 소비하는 KIS Mock 주문 제출/조회/취소와
+S2.2 offline evaluator, S2.3 Decision runtime, S2.4 Risk/Kill Switch, S3.1~S3.3와 S4.7D
+계약/parser/OCR/API skeleton까지 `main`에 병합됐다. session별 current implementation/offline/live
+상태는 [Pre-S5 상태 ledger](docs/README.md#현재-검증-상태)가 유일한 공개 요약이다.
+S3.1은 S2.3 Decision과 S2.4 Kill Switch를 소비하는 KIS Mock 주문 제출/조회/취소와
 stored balance/buyable projection을 추가한다. 주문 요청 body는 `decisionId`, exact 8-field
 `orderIntent`, `userAcknowledgement`만 허용하고 account/provider/actor 필드는 인증 principal과
 서버-side HMAC scope에서만 만든다. Decision은 한 번만 소비되며 raw idempotency key, raw account,
@@ -43,8 +45,8 @@ provider 호출, RiskDecision/hash/order 권한, S5 feature 주입은 모두 0�
 
 ### 교차시장·애널리스트 오버레이 계획 상태
 
-교차시장 계획 타당성은 `PLAN_FEASIBILITY=GO`다. S4.8A 계약은 잠겼고 S4.8B/C offline
-fixture/scorer/append-only evidence/설명 경계는 이 merge candidate에서 구현됐다. S6.6/S6.7과
+교차시장 계획 타당성은 `PLAN_FEASIBILITY=GO`다. `S4_8A=CONTRACT_ONLY`이고
+`S4_8B_C=OFFLINE_ONLY`: provider 없는 fixture/scorer/append-only evidence/설명 경계만 구현됐다. S6.6/S6.7과
 cross-market REST/RiskEngine runtime은 `NOT_IMPLEMENTED / PLANNED`다. 월 데이터 비용 목표는 `0원`,
 offline fixture와 지연/EOD가 우선이다. 기관용 데이터 제품과 실시간 SOX/VIX feed는
 post-P1 선택지이며 완주 조건이 아니다. 새 agent framework·별도 cloud·Kafka hard
@@ -61,8 +63,8 @@ fixture-first adapter 후보다. exact 42개 행과 exact 18개 allowlist의 aut
 Git으로 추적하지 않는 로컬 전용 자료수급 레지스트리이며,
 공개 문서에는 전체 inventory를 복제하지 않는다.
 
-2026-07-30 계획 확정 변경은 Markdown-only였고, 후속 S4.8A 계약 PR과 이 S4.8B/C offline
-implementation candidate를 구분한다. provider activation과 RiskEngine/OpenAPI endpoint는
+2026-07-30 계획 확정 변경은 Markdown-only였고, 후속 S4.8A 계약 PR과 병합된 S4.8B/C offline-only
+implementation을 구분한다. provider activation과 RiskEngine/OpenAPI endpoint는
 여전히 포함하지 않는다. 상세 순서는
 [최종 프로젝트 명세서의 S4~P1 실행 순서](docs/최종_프로젝트_명세서.md#171-2026-07-29-s4p1-실행-순서)를
 따른다.
@@ -94,9 +96,10 @@ CRUD, S2.2 offline rule evaluator, S2.3 Decision runtime과 S2.4 Risk/Kill Switc
 `GET /api/v1/brokerage/orders/{orderId}`, `POST /api/v1/brokerage/orders/{orderId}/cancel`,
 `GET /api/v1/brokerage/mock/accounts/{accountId}/balances`,
 `GET /api/v1/brokerage/mock/accounts/{accountId}/buyable`, V11 mock order ledger/RLS/one-use
-constraint와 fixture-first KIS Mock adapter/gRPC boundary를 추가한다. provider를 호출하거나 live
-계좌·실주문을 열지 않으며, LIMIT 주문은 현재 KRX 호가단위 source가 pinned artifact로 검증되기
-전까지 `BROKERAGE_UNAVAILABLE`로 fail-closed한다.
+constraint와 fixture-first KIS Mock adapter/gRPC boundary를 추가했다. provider를 호출하거나 live
+계좌·실주문을 열지 않으며, KIS Mock full physical probe는 next valid window의 새 approval packet
+전까지 `LIVE_VERIFIED`가 아니다. LIMIT 주문은 현재 KRX 호가단위 source가 pinned artifact로
+검증되기 전까지 `BROKERAGE_UNAVAILABLE`로 fail-closed한다.
 로컬 전용 참고자료와 개인 파일 경로는 GitHub에 올리지 않는다.
 
 S4.0/S4.1/S4.7A는 source-card 계약과 정규화 RAG registry, owner-scoped source 조회,
@@ -179,6 +182,8 @@ S1.6 OpenDART online collector는 `.env.example`의 네 quota 값을 운영 evid
 
 - [최종 프로젝트 명세서](docs/최종_프로젝트_명세서.md)
 - [API 명세서](docs/API_명세서.md)
+- [Pre-S5 S0~S4 상태 ledger](docs/README.md#현재-검증-상태)
+- [RAG 외부 AI 처리 및 개인 문서 동의](docs/RAG_외부_AI_처리_및_개인문서_동의.md)
 - S1.6 내부 계약: 최종 명세 11.1.2와 API 명세 12A
 - [S2.2 offline 계약과 재현 명령](contracts/README.md#s22-rule-evaluation-offline-contract-v1)
 - [S2.2 계약 변경 기록](contracts/changes/20260724-s2-2-rule-evaluation-offline-contract.md)

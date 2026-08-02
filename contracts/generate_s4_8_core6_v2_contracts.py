@@ -7,7 +7,7 @@ import os
 import stat
 import sys
 from datetime import UTC, datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Collection, Final, Mapping
 
 from jsonschema import Draft202012Validator
@@ -1115,11 +1115,32 @@ def _write_outputs(outputs: Mapping[str, bytes]) -> None:
         write_generated_artifact(ROOT, relative_path, payload)
 
 
+def _is_regular_generated_output(root: Path, relative_path: str) -> bool:
+    """expected output의 모든 상위 경로가 link 없이 checkout 안에 있는지 확인한다."""
+
+    try:
+        metadata = root.lstat()
+        if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
+            return False
+        path = root
+        for component in PurePosixPath(relative_path).parts:
+            path = path / component
+            metadata = path.lstat()
+            if stat.S_ISLNK(metadata.st_mode):
+                return False
+        return stat.S_ISREG(metadata.st_mode) and metadata.st_nlink == 1
+    except OSError:
+        return False
+
+
 def _check_outputs(outputs: Mapping[str, bytes], *, root: Path = ROOT) -> None:
     mismatches: list[str] = []
     for relative_path, expected in sorted(outputs.items()):
         path = root / relative_path
-        if not path.is_file() or path.is_symlink() or path.read_bytes() != expected:
+        if (
+            not _is_regular_generated_output(root, relative_path)
+            or path.read_bytes() != expected
+        ):
             mismatches.append(relative_path)
     unexpected = _unexpected_core6_artifact_paths(root, outputs)
     if mismatches or unexpected:

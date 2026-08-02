@@ -48,7 +48,7 @@
   연결한다. P1 최고 권한은 `WARN_ONLY`이며 analyst/news/RAG/LLM은 RiskDecision과 판단
   hash를 바꾸지 않는다.
 - **교차시장 계획 타당성은 `PLAN_FEASIBILITY=GO_WITH_EXTERNAL_HARD_GATES`다. S4.8A 일곱 계약은
-  `CONTRACT_LOCKED`, S4.8B/C offline runtime은 `IMPLEMENTED_MERGE_CANDIDATE`,
+  `S4_8A=CONTRACT_LOCKED`, S4.8B/C offline runtime은 `S4_8B_C=IMPLEMENTED_MERGE_CANDIDATE`,
   S6.6/S6.7은 `NOT_IMPLEMENTED / PLANNED`다.** 월 데이터 비용 목표는
   `0원`이며 offline fixture와 지연/EOD를 먼저 사용한다. Bloomberg·LSEG·FactSet·코스콤과
   실시간 SOX/VIX feed는 `ENTERPRISE_ONLY_DISABLED`인 post-P1 선택지로서 P1 완주 조건이
@@ -87,6 +87,17 @@
   `AVAILABLE | ABSTAIN`인 Signal v2 계약만 잠근다. `AVAILABLE + HOLD`는 정상 예측이고,
   stale/FAIL/drift/missing evidence는 prediction/asOf/HMM state 없는 `ABSTAIN`이다. active
   `/api/v2/signals/{symbol}`, artifact ingest, RiskDecision/order wiring은 후속 승인 전 `NO_GO`다.
+- Pre-S5 RAG/global-news addendum은
+  `contracts/catalogs/pre-s5-rag-news-contract.v1.json`이 SSOT다.
+  `OA112_ACTIVE_CONTRACT_LOCKED`는 정확히 14 track × 8의 logical selection일 뿐
+  `S4_7D_OA112_PHYSICAL_ACTIVATION=NOT_MATERIALIZED`다. historical OA112/OA140 artifacts,
+  v1 OpenAPI/proto/source-card, exact-30와 `news_sentiment_summary.v2`는 byte-stable하게 보존한다.
+  reserve는 최대 28이며 자동 승격은 없다. active physical source에는 machine fetch/local processing/
+  external embedding/external generation permission과 actual rights/hash evidence가 모두 필요하다.
+  RAG v2 consent/import, Voyage `voyage-context-4` 1024, Vertex ADC/service-account
+  `gemini-3.5-flash`, foreign-news(Finnhub personal-local/SEC/Fed/GDELT offline reference), Optional 3은
+  contract-only다. provider outbound, raw corpus, raw provider data, article metadata, Decision/Signal/
+  Risk/order/hash/S5 feature authority는 0이며 Core 6 exact set을 넓히지 않는다.
 
 ## Pre-S5 단독 실행 소유권 잠금
 
@@ -112,6 +123,7 @@ GDELT_OUTBOUND_CALLS=0
 GDELT_OFFLINE_REFERENCE_ONLY=1
 NAVER_ACTIVE_PROVIDER_RUNTIME_STORAGE=RETIRED
 RAG_NEWS_ANALYST_DECISION_SIGNAL_ORDER_AUTHORITY=0
+PLAN_FEASIBILITY=GO_WITH_EXTERNAL_HARD_GATES
 ```
 
 Decision Platform은 기존 synthetic/offline GDELT aggregate producer를 계속 소유한다. HTTP

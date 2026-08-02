@@ -126,6 +126,7 @@ SOLO_OWNERSHIP_PUBLIC_PATHS: Final[tuple[str, ...]] = (
     "docs/API_명세서.md",
 )
 SOLO_OWNERSHIP_MARKERS: Final[tuple[str, ...]] = (
+    "PRE_S5_DOC_TRUTH_FREEZE_ADDENDUM_VERIFIED",
     "PRE_S5_EXECUTION_OWNER=DECISION_PLATFORM",
     "NEW_TEAMMATE_IMPLEMENTATION_TASKS=0",
     "NEW_TEAMMATE_ISSUES_OR_PRS=0",
@@ -134,6 +135,8 @@ SOLO_OWNERSHIP_MARKERS: Final[tuple[str, ...]] = (
     "GDELT_MODE=DECISION_PLATFORM_OFFLINE_REFERENCE_ONLY",
     "GDELT_HTTP_TRANSPORT=NOT_ACTIVATED",
     "GDELT_OUTBOUND_IMPLEMENTATION=0",
+    "GDELT_OUTBOUND_CALLS=0",
+    "GDELT_OFFLINE_REFERENCE_ONLY=1",
     "NAVER_ACTIVE_PROVIDER_RUNTIME_STORAGE=RETIRED",
     "RAG_NEWS_ANALYST_DECISION_SIGNAL_ORDER_AUTHORITY=0",
 )
@@ -731,6 +734,7 @@ def main(arguments: Iterable[str] | None = None) -> int:
             print("PRE_S5_SOLO_OWNERSHIP_LOCK_FAILED", file=sys.stderr)
             print("\n".join(f"- {error}" for error in errors), file=sys.stderr)
             return 1
+        print("PRE_S5_DOC_TRUTH_FREEZE_ADDENDUM_VERIFIED")
         print("PRE_S5_SOLO_OWNERSHIP_LOCK_VERIFIED")
     return 0
 

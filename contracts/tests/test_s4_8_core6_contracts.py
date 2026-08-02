@@ -119,6 +119,16 @@ class S48Core6ContractTest(unittest.TestCase):
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_bytes(content)
 
+            unrelated_schema = temporary_root / "contracts/schemas/unrelated.schema.json"
+            unrelated_schema.write_text(
+                json.dumps({"$schema": "https://json-schema.org/draft/2020-12/schema"}),
+                encoding="utf-8",
+            )
+            self.assertEqual(
+                [], _unexpected_core6_artifact_paths(temporary_root, outputs)
+            )
+            _check_outputs(outputs, root=temporary_root)
+
             template = _load(
                 "contracts/examples/cross_market_provider_probe_approval.v1.template.valid.json"
             )
@@ -152,14 +162,52 @@ class S48Core6ContractTest(unittest.TestCase):
             os.link(hardlink_source, hardlink_path)
             unexpected_paths.append(hardlink_path)
 
-            unrelated_schema = temporary_root / "contracts/schemas/unrelated.schema.json"
-            unrelated_schema.write_text(
-                json.dumps({"$schema": "https://json-schema.org/draft/2020-12/schema"}),
-                encoding="utf-8",
+            schema_alias = temporary_root / "contracts/schemas/.cache/schema-alias"
+            schema_alias.parent.mkdir(parents=True, exist_ok=True)
+            schema_alias.write_bytes(
+                outputs[
+                    "contracts/schemas/"
+                    "cross_market_provider_probe_approval.v1.schema.json"
+                ]
             )
+            unexpected_paths.append(schema_alias)
 
             self.assertEqual(
                 sorted(path.relative_to(temporary_root).as_posix() for path in unexpected_paths),
+                _unexpected_core6_artifact_paths(temporary_root, outputs),
+            )
+            with self.assertRaisesRegex(
+                ContractValidationError,
+                "unexpected Core 6 generated namespace artifacts",
+            ):
+                _check_outputs(outputs, root=temporary_root)
+
+    def test_generated_check_rejects_symlinked_public_schema_paths(self) -> None:
+        # public schema tree의 link는 대상이 무관한 JSON처럼 보여도 local-only 파일을 숨기거나
+        # checkout 밖 bytes를 읽게 할 수 있으므로, Core 6 generated check가 path 자체를 거부해야 한다.
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            outputs = generate_outputs()
+            for relative_path, content in outputs.items():
+                path = temporary_root / relative_path
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(content)
+
+            external_directory = temporary_root / "external-schema"
+            external_directory.mkdir()
+            external_leaf = external_directory / "opaque.json"
+            external_leaf.write_text("{}", encoding="utf-8")
+            linked_leaf = temporary_root / "contracts/schemas/.local/linked-schema"
+            linked_leaf.parent.mkdir(parents=True, exist_ok=True)
+            linked_leaf.symlink_to(external_leaf)
+            linked_directory = temporary_root / "contracts/schemas/.remote"
+            linked_directory.symlink_to(external_directory, target_is_directory=True)
+
+            self.assertEqual(
+                [
+                    "contracts/schemas/.local/linked-schema",
+                    "contracts/schemas/.remote",
+                ],
                 _unexpected_core6_artifact_paths(temporary_root, outputs),
             )
             with self.assertRaisesRegex(

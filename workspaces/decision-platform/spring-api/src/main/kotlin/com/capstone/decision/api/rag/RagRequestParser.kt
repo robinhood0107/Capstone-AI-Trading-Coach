@@ -109,6 +109,15 @@ class RagRequestParser {
         return value
     }
 
+    fun parseV2AnswerId(value: String): String {
+        if (!V2_ANSWER_ID.matches(value)) {
+            throw RagValidationException(
+                listOf(RagFieldViolation("/path/answerId", "INVALID_FORMAT")),
+            )
+        }
+        return value
+    }
+
     fun parseFeedback(body: String): Boolean {
         val root = parseObject(body)
         val violations = mutableListOf<RagFieldViolation>()
@@ -310,6 +319,7 @@ class RagRequestParser {
         val HISTORY_QUERY_FIELDS = setOf("cursor", "limit")
         val SYMBOL = Regex("^[0-9]{6}$")
         val ANSWER_ID = Regex("^rag_ans_[0-9a-f]{32}$")
+        val V2_ANSWER_ID = Regex("^rag_[A-Za-z0-9_-]{12,96}$")
         val IDEMPOTENCY_KEY = Regex("^[A-Za-z0-9._~-]{16,128}$")
         val TOPICS =
             setOf(

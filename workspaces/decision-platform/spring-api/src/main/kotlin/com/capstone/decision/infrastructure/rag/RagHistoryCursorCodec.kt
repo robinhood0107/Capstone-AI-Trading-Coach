@@ -85,7 +85,7 @@ class RagHistoryCursorCodec(
 
     private companion object {
         val OWNER = Regex("^[A-Za-z0-9._:-]{1,128}$")
-        val ANSWER_ID = Regex("^rag_ans_[0-9a-f]{32}$")
+        val ANSWER_ID = Regex("^rag_(?:ans_[0-9a-f]{32}|[A-Za-z0-9_-]{12,96})$")
         val SHA256 = Regex("^[0-9a-f]{64}$")
         val CURSOR = Regex("^[A-Za-z0-9_-]{1,512}$")
     }

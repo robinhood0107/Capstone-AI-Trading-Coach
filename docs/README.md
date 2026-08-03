@@ -37,7 +37,7 @@
 | S4.2C/S4.4G | `STUB_FAIL_CLOSED` | PR #77 control plane | 0 | Voyage/Gemini outbound executor는 hard-disabled |
 | S4.5/S4.6 | `OFFLINE_ONLY` | PR #77 fixture evaluation·numeric loopback | 0 | fixture/retrieval-only; provider live 0 |
 | S4.7D parser/OCR | `OFFLINE_ONLY` | PR #84 `014ccca1`, #85 `4bcca91e` | 0 | 안전 parser/OCR만 구현, importer/index writer 없음 |
-| S4.7D v2 runtime | `STUB_FAIL_CLOSED` | PR #87 `90ae2e3e`, #88 `028d94a0` | 0 | `S4_7D_RUNTIME=STUB_FAIL_CLOSED`; historical OA112 metadata와 logical OA112 policy만 있고 physical corpus·owner generation/retrieval은 미구현 |
+| S4.7D v2 runtime | `STUB_FAIL_CLOSED` | PR #87 `90ae2e3e`, #88 `028d94a0`, V25/V26 | 0 | ask/retrieval은 계속 fail-closed; `S4_7D_CONSENT_TICKET_CONTROL_PLANE=OFFLINE_ONLY`는 owner-bound consent/effective read와 hashed 5분 ticket만 수행하며 physical corpus·owner import·retrieval·provider는 미구현 |
 | Pre-S5 RAG/global-news lock | `CONTRACT_ONLY` | Issue #95 addendum | 0 | `OA112_ACTIVE_CONTRACT_LOCKED`, `S4_7D_OA112_PHYSICAL_ACTIVATION=NOT_MATERIALIZED`; foreign-news/Optional 3 adapter와 provider call 0 |
 | S4.8A | `CONTRACT_LOCKED` | PR #75 `c17d51f6` | 0 | `S4_8A=CONTRACT_LOCKED`; provider entitlement/adapter는 미활성 |
 | S4.8 Core 6 v2 | `CONTRACT_ONLY` | PR #92 `d27322cd` | 0 | `S4_8_CORE6_V2=CONTRACT_ONLY`; KIS/OpenDART/SEC EDGAR/KRX/KOFIA/ECOS future packet/receipt boundary만, adapter/live 0 |
@@ -96,6 +96,10 @@ owner-bound import-ticket, owner deletion activation/hard-delete, embedding prof
 불가 시 full bundle BGE-M3 rebuild/evaluation/CAS만 허용한다. Vertex는 ADC/service-account의
 `gemini-3.5-flash` 단일 generator target이며 top-5와 질문당 `generateContent` 1회, fallback 0이다.
 둘 다 `TARGET_NOT_ACTIVE`이며 provider physical call은 0이다.
+
+`S4_7D_CONSENT_TICKET_CONTROL_PLANE=OFFLINE_ONLY`는 세 HTTP route의 owner-bound consent append,
+effective read, 5분 single-use ticket issuance만 local DB에서 수행한다. owner raw document/path, BAT argv,
+importer, materializer, retrieval, provider outbound는 이 control plane으로 활성화되지 않는다.
 
 foreign-news는 Finnhub personal-local, SEC official, Federal Reserve official, existing GDELT
 offline-reference lane만 정의한다. 응답은 explanation-only이며 Decision/Signal/Risk/order/hash와

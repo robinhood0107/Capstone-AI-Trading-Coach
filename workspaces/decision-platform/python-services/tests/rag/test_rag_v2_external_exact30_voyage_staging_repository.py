@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 
 import numpy as np
@@ -63,7 +65,7 @@ def test_external_exact30_voyage_writer_stages_full_component_and_keeps_direct_t
               ),
               public.rag_v2_immutable_locator_is_valid(%s::jsonb),
               public.rag_v2_immutable_public_https_url_is_valid(%s),
-              public.rag_v2_immutable_external_exact30_voyage_source_is_approved(%s, %s, %s, %s)
+              public.rag_v2_immutable_external_exact30_voyage_source_is_approved(%s, %s, %s, %s, %s)
             """,
             (
                 Jsonb(source["documentIr"]),
@@ -74,6 +76,7 @@ def test_external_exact30_voyage_writer_stages_full_component_and_keeps_direct_t
                 source["canonicalHttpsUrl"],
                 source["rawContentSha256"],
                 source["sourceCardSha256"],
+                source["canonicalTextSha256"],
             ),
         ).fetchone() == (True, True, True, True, True)
     repository = PsycopgExternalExact30VoyageStagingRepository(
@@ -147,6 +150,70 @@ def test_external_exact30_voyage_writer_stages_full_component_and_keeps_direct_t
             connection.execute("SELECT * FROM rag_v2_immutable_external_exact30_voyage_component_manifests")
 
 
+def test_external_exact30_voyage_writer_rejects_direct_noncanonical_source_order_before_persisting(
+    isolated_postgres_cluster: dict[str, str],
+) -> None:
+    materialization = _materialization()
+    last_record = materialization.records[-1]
+    payload = build_external_exact30_voyage_staging_payload(
+        last_record,
+        context=materialization.context,
+    )
+
+    with pytest.raises(psycopg.Error, match="canonical source order"):
+        _direct_stage(isolated_postgres_cluster["rag_writer_dsn"], payload)
+
+    with psycopg.connect(isolated_postgres_cluster["admin_dsn"]) as connection:
+        assert connection.execute(
+            "SELECT count(*) FROM rag_v2_immutable_source_revisions"
+        ).fetchone() == (0,)
+
+
+def test_external_exact30_voyage_writer_rejects_duplicate_source_revision_before_persisting(
+    isolated_postgres_cluster: dict[str, str],
+) -> None:
+    materialization = _materialization()
+    first_payload = build_external_exact30_voyage_staging_payload(
+        materialization.records[0],
+        context=materialization.context,
+    )
+    _direct_stage(isolated_postgres_cluster["rag_writer_dsn"], first_payload)
+    duplicate = _with_unapproved_revision_identity(first_payload)
+
+    with pytest.raises(psycopg.Error, match="source identity is invalid|duplicate source"):
+        _direct_stage(isolated_postgres_cluster["rag_writer_dsn"], duplicate)
+
+    with psycopg.connect(isolated_postgres_cluster["admin_dsn"]) as connection:
+        assert connection.execute(
+            "SELECT count(*) FROM rag_v2_immutable_source_revisions"
+        ).fetchone() == (1,)
+
+
+def test_external_exact30_voyage_writer_rejects_canonical_text_poisoning_before_persisting(
+    isolated_postgres_cluster: dict[str, str],
+) -> None:
+    materialization = _materialization()
+    payload = build_external_exact30_voyage_staging_payload(
+        materialization.records[0],
+        context=materialization.context,
+    )
+    poisoned = json.loads(json.dumps(payload))
+    source = poisoned["source"]
+    assert isinstance(source, dict)
+    source["canonicalText"] = "poisoned external card projection"
+    source["canonicalTextSha256"] = hashlib.sha256(
+        source["canonicalText"].encode("utf-8")
+    ).hexdigest()
+
+    with pytest.raises(psycopg.Error, match="source metadata is invalid"):
+        _direct_stage(isolated_postgres_cluster["rag_writer_dsn"], poisoned)
+
+    with psycopg.connect(isolated_postgres_cluster["admin_dsn"]) as connection:
+        assert connection.execute(
+            "SELECT count(*) FROM rag_v2_immutable_source_revisions"
+        ).fetchone() == (0,)
+
+
 def test_external_exact30_voyage_writer_rejects_allowlist_drift_before_persisting(
     isolated_postgres_cluster: dict[str, str],
 ) -> None:
@@ -196,3 +263,39 @@ def _materialization():
         embedder=_FixtureVoyageEmbedder(),
         corpus=load_external_processing_corpus(),
     )
+
+
+def _direct_stage(database_dsn: str, payload: dict[str, object]) -> None:
+    """writer capability를 직접 호출해 repository canonical-order guard를 우회하는 회귀 입력을 만든다."""
+
+    with psycopg.connect(database_dsn, autocommit=False) as connection:
+        with connection.transaction():
+            connection.execute(
+                """
+                SELECT *
+                FROM public.stage_rag_v2_immutable_external_exact30_voyage_document(%s::jsonb)
+                """,
+                (Jsonb(payload),),
+            ).fetchall()
+
+
+def _with_unapproved_revision_identity(payload: dict[str, object]) -> dict[str, object]:
+    """same allowlisted source의 synthetic revision을 만들어 SQL allowlist/identity guard를 검증한다."""
+
+    candidate = json.loads(json.dumps(payload))
+    source = candidate["source"]
+    assert isinstance(source, dict)
+    document_ir = source["documentIr"]
+    assert isinstance(document_ir, dict)
+    source["documentId"] = "doc_external_duplicate_0001"
+    source["sourceRevisionId"] = "srv_external_duplicate_0001"
+    document_ir["sourceRevisionId"] = source["sourceRevisionId"]
+    source["sourceRevisionSha256"] = hashlib.sha256(
+        json.dumps(
+            document_ir,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+    ).hexdigest()
+    return candidate

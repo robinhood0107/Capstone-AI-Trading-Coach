@@ -135,14 +135,15 @@ class InfrastructureSecurityIntegrationTest {
             listOf(
                 "stage_rag_v2_immutable_public_bge_document(jsonb)",
                 "evaluate_rag_v2_immutable_public_bge_component(text,jsonb)",
+                "stage_rag_v2_immutable_external_exact30_voyage_document(jsonb)",
             ).forEach { function ->
                 assertTrue(
                     hasFunctionPrivilege(connection, "decision_rag_writer", function),
-                    "bootstrap removed the public BGE writer capability for $function",
+                    "bootstrap removed the public RAG writer capability for $function",
                 )
                 assertFalse(
                     hasFunctionPrivilege(connection, "decision_app", function),
-                    "public BGE writer capability leaked to the app role for $function",
+                    "public RAG writer capability leaked to the app role for $function",
                 )
             }
             listOf(
@@ -159,6 +160,8 @@ class InfrastructureSecurityIntegrationTest {
                 "rag_v2_immutable_public_component_evaluations",
                 "rag_v2_immutable_public_component_manifests",
                 "rag_v2_immutable_exact30_source_allowlist",
+                "rag_v2_immutable_external_exact30_source_allowlist",
+                "rag_v2_immutable_external_exact30_voyage_component_manifests",
                 "rag_v2_immutable_source_revisions",
                 "rag_v2_immutable_chunks",
                 "rag_v2_immutable_component_generations",

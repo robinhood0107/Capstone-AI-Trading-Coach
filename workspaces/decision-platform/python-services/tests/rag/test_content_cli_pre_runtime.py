@@ -150,10 +150,10 @@ def test_default_setup_uses_tracked_release_manifest_without_private_output(
 @pytest.mark.parametrize(
     ("arguments", "code"),
     [
-        (["import-cpu", "C:/Users/owner/private.pdf"], "CORPUS_RUNTIME_NOT_INSTALLED"),
-        (["import-intel-gpu", "C:/Users/owner/private.pdf"], "CORPUS_RUNTIME_NOT_INSTALLED"),
-        (["import-nvidia-gpu", "C:/Users/owner/private.pdf"], "CORPUS_RUNTIME_NOT_INSTALLED"),
-        (["import-auto", "C:/Users/owner/private.pdf"], "CORPUS_RUNTIME_NOT_INSTALLED"),
+        (["import-cpu", "C:/Users/owner/private.pdf"], "CONTENT_COMMAND_INVALID"),
+        (["import-intel-gpu", "C:/Users/owner/private.pdf"], "CONTENT_COMMAND_INVALID"),
+        (["import-nvidia-gpu", "C:/Users/owner/private.pdf"], "CONTENT_COMMAND_INVALID"),
+        (["import-auto", "C:/Users/owner/private.pdf"], "CONTENT_COMMAND_INVALID"),
         (["remove-document", "doc_owner_fixture_001"], "CORPUS_RUNTIME_NOT_INSTALLED"),
         (["cache-clean"], "CORPUS_RUNTIME_NOT_INSTALLED"),
     ],

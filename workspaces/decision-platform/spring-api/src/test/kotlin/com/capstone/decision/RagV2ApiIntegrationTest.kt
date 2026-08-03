@@ -2,6 +2,7 @@ package com.capstone.decision
 
 import com.capstone.decision.application.rag.RagHistoryCryptoPort
 import com.capstone.decision.application.rag.RagHistoryIdentity
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
@@ -326,6 +327,174 @@ class RagV2ApiIntegrationTest(
         assertSanitized(json(detail))
     }
 
+    @Test
+    fun `v2 external consent is append only owner scoped and returns the effective server state`() {
+        val userToken = login("demo-user", userPassword(), "req_rag_v2_consent_user_login")
+        val adminToken = login("demo-admin", adminPassword(), "req_rag_v2_consent_admin_login")
+
+        mockMvc
+            .get("/api/v2/rag/consent") {
+                bearer(userToken)
+                header("X-Request-Id", "req_rag_v2_consent_missing")
+            }.andExpect {
+                status { isConflict() }
+                jsonPath("$.code") { value("EXTERNAL_AI_CONSENT_REQUIRED") }
+                jsonPath("$.requestId") { value("req_rag_v2_consent_missing") }
+            }
+
+        val grant =
+            """
+            {
+              "contractId":"s4-rag-v2-external-consent-v1",
+              "schemaVersion":1,
+              "consentType":"EXTERNAL_AI_RAG_V2",
+              "action":"GRANT",
+              "disclosureDigest":"${"c".repeat(64)}",
+              "policyDigest":"${"d".repeat(64)}",
+              "processorSetDigest":"${"e".repeat(64)}"
+            }
+            """.trimIndent()
+        mockMvc
+            .post("/api/v2/rag/consents") {
+                bearer(userToken)
+                header("X-Request-Id", "req_rag_v2_consent_grant")
+                contentType = MediaType.APPLICATION_JSON
+                content = grant
+            }.andExpect {
+                status { isNoContent() }
+            }
+
+        val granted =
+            mockMvc
+                .get("/api/v2/rag/consent") {
+                    bearer(userToken)
+                    header("X-Request-Id", "req_rag_v2_consent_granted")
+                }.andExpect {
+                    status { isOk() }
+                    jsonPath("$.contractId") { value("s4-rag-v2-effective-consent-v1") }
+                    jsonPath("$.schemaVersion") { value(1) }
+                    jsonPath("$.consentEventId") { exists() }
+                    jsonPath("$.effective") { value(true) }
+                    jsonPath("$.state") { value("GRANTED") }
+                    jsonPath("$.policyDigest") { value("d".repeat(64)) }
+                    jsonPath("$.processorSetDigest") { value("e".repeat(64)) }
+                    jsonPath("$.success") { doesNotExist() }
+                    jsonPath("$.ownerUserId") { doesNotExist() }
+                }.andReturn()
+        assertControlPlaneSanitized(json(granted))
+
+        mockMvc
+            .get("/api/v2/rag/consent") {
+                bearer(adminToken)
+                header("X-Request-Id", "req_rag_v2_consent_cross_owner")
+            }.andExpect {
+                status { isConflict() }
+                jsonPath("$.code") { value("EXTERNAL_AI_CONSENT_REQUIRED") }
+            }
+
+        val stored =
+            ownerJdbc.queryForMap(
+                """
+                select consent_event_id, public_consent_event_id, policy_digest, processor_set_digest
+                from rag_v2_immutable_consent_events
+                where owner_user_id = 'usr_demo_user'
+                order by created_at desc, consent_event_id desc
+                limit 1
+                """.trimIndent(),
+            )
+        assertTrue(stored["consent_event_id"].toString().startsWith("cns_v2_"))
+        assertTrue(stored["public_consent_event_id"].toString().startsWith("rce_"))
+        assertEquals("d".repeat(64), stored["policy_digest"])
+        assertEquals("e".repeat(64), stored["processor_set_digest"])
+
+        val revoke = grant.replace("\"GRANT\"", "\"REVOKE\"")
+        mockMvc
+            .post("/api/v2/rag/consents") {
+                bearer(userToken)
+                header("X-Request-Id", "req_rag_v2_consent_revoke")
+                contentType = MediaType.APPLICATION_JSON
+                content = revoke
+            }.andExpect {
+                status { isNoContent() }
+            }
+        mockMvc
+            .get("/api/v2/rag/consent") {
+                bearer(userToken)
+                header("X-Request-Id", "req_rag_v2_consent_revoked")
+            }.andExpect {
+                status { isOk() }
+                jsonPath("$.effective") { value(false) }
+                jsonPath("$.state") { value("REVOKED") }
+            }
+    }
+
+    @Test
+    fun `v2 owner import ticket is a five minute raw capability with only a database hash retained`() {
+        val userToken = login("demo-user", userPassword(), "req_rag_v2_ticket_user_login")
+        val ticketRequest =
+            """
+            {
+              "contractId":"s4-rag-v2-import-ticket-request-v1",
+              "schemaVersion":1,
+              "sourceScope":"OWNER_PRIVATE",
+              "importMode":"LOCAL_EPHEMERAL_PARSE"
+            }
+            """.trimIndent()
+
+        val issued =
+            mockMvc
+                .post("/api/v2/rag/import-tickets") {
+                    bearer(userToken)
+                    header("X-Request-Id", "req_rag_v2_ticket_issue")
+                    contentType = MediaType.APPLICATION_JSON
+                    content = ticketRequest
+                }.andExpect {
+                    status { isCreated() }
+                    jsonPath("$.contractId") { value("s4-rag-v2-import-ticket-v1") }
+                    jsonPath("$.schemaVersion") { value(1) }
+                    jsonPath("$.ticketId") { exists() }
+                    jsonPath("$.sourceScope") { value("OWNER_PRIVATE") }
+                    jsonPath("$.ttlSeconds") { value(300) }
+                    jsonPath("$.singleUse") { value(true) }
+                    jsonPath("$.ownerBound") { value(true) }
+                    jsonPath("$.ownerRawCopyAllowed") { value(false) }
+                    jsonPath("$.success") { doesNotExist() }
+                    jsonPath("$.ownerUserId") { doesNotExist() }
+                }.andReturn()
+        val payload = json(issued)
+        val ticketId = payload.at("/ticketId").stringValue()
+        assertTrue(ticketId.startsWith("rti_"))
+        assertControlPlaneSanitized(payload)
+
+        val issuedAt = Instant.parse(payload.at("/issuedAt").stringValue())
+        val expiresAt = Instant.parse(payload.at("/expiresAt").stringValue())
+        assertEquals(300L, expiresAt.epochSecond - issuedAt.epochSecond)
+        val storedTicketHash =
+            ownerJdbc.queryForObject(
+                """
+                select ticket_hash
+                from rag_v2_immutable_import_tickets
+                where owner_user_id = 'usr_demo_user'
+                order by issued_at desc, ticket_hash desc
+                limit 1
+                """.trimIndent(),
+                String::class.java,
+            )
+        assertTrue(storedTicketHash?.matches(Regex("^[0-9a-f]{64}$")) == true)
+        assertFalse(ticketId == storedTicketHash)
+
+        mockMvc
+            .post("/api/v2/rag/import-tickets") {
+                bearer(userToken)
+                header("X-Request-Id", "req_rag_v2_ticket_actor_injection")
+                contentType = MediaType.APPLICATION_JSON
+                content = ticketRequest.dropLast(1) + ",\"ownerUserId\":\"usr_demo_admin\"}"
+            }.andExpect {
+                status { isBadRequest() }
+                jsonPath("$.code") { value("RAG_VALIDATION_FAILED") }
+            }
+    }
+
     private fun login(
         username: String,
         password: String,
@@ -352,6 +521,17 @@ class RagV2ApiIntegrationTest(
         assertFalse(text.contains("sha256", ignoreCase = true))
         assertFalse(text.contains("raw", ignoreCase = true))
         assertFalse(text.contains("path", ignoreCase = true))
+        assertFalse(text.contains("credential", ignoreCase = true))
+        assertTrue(text.length <= 2048)
+    }
+
+    private fun assertControlPlaneSanitized(node: JsonNode) {
+        val text = node.toString()
+        assertFalse(text.contains("/tmp"))
+        assertFalse(text.contains("/home"))
+        assertFalse(text.contains("owner_user_id", ignoreCase = true))
+        assertFalse(text.contains("ownerUserId"))
+        assertFalse(text.contains("ticketHash"))
         assertFalse(text.contains("credential", ignoreCase = true))
         assertTrue(text.length <= 2048)
     }

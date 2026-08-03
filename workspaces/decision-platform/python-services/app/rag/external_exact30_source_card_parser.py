@@ -115,7 +115,9 @@ class ExternalExact30SourceCardDocumentParser:
             "blocks": blocks,
             "contractId": "rag-document-ir-v1",
             "documentIrVersion": 1,
-            "extractionMode": "SOURCE_CARD_CANONICAL",
+            # source-card body는 tracked Markdown의 native text projection이므로 shared Document IR enum을
+            # 넓히지 않고 NATIVE로 표현한다. external-safe permission은 separate corpus metadata가 bind한다.
+            "extractionMode": "NATIVE",
             "languageTags": list(language_tags),
             "mimeType": "text/markdown",
             "normalizedContentSha256": hashlib.sha256(normalized).hexdigest(),

@@ -1463,11 +1463,12 @@ payload 전송 권한이 아니다. 별도 S4.4G provider/evaluation 승인과
 `externalProcessingAllowed=true`인 active·verified·PUBLIC·PROJECT exact chunk, 그리고 해당
 question의 독립 consent/privacy/advice gate가 함께 확인되기 전에는 outbound가 0이다.
 
-`EXTERNAL_AI_RAG_V1`은 v1 historical/exact-30 compatibility event다. OA140와 owner-private
+`EXTERNAL_AI_RAG_V1`은 v1 historical/exact-30 compatibility event다. OA112와 owner-private
 overlay의 후속 v2 runtime은 `EXTERNAL_AI_RAG_V2`의 append-only consent를 별도로 사용하며,
-policy 또는 processor digest가 바뀌면 재동의가 필요하다. 이 문서 동결 시점에는 v2 consent
-route 자체가 `TARGET_NOT_ACTIVE`이고, effective consent가 없으면 Voyage/Vertex physical call은
-0이며 typed `EXTERNAL_AI_CONSENT_REQUIRED`로 종료해야 한다.
+policy 또는 processor digest가 바뀌면 재동의가 필요하다. v2 consent/effective-consent/import-ticket
+control plane은 `OFFLINE_ONLY`로 owner-bound local DB event·effective read·ticket hash issuance만
+수행한다. effective consent가 없으면 Voyage/Vertex physical call은 0이며 typed
+`EXTERNAL_AI_CONSENT_REQUIRED`로 종료해야 한다.
 
 ### 7.6 Admin embedding profile status
 
@@ -1493,6 +1494,7 @@ materialization과 pointer transition은 별도 승인 packet이 필요한 CLI �
 ### 7.7 RAG v2 계약 상태와 공통 경계
 
 > 현재 상태: `S4_7D_CONTRACT=LOCKED / ACTIVE_V2_RUNTIME=STUB_FAIL_CLOSED /
+> S4_7D_CONSENT_TICKET_CONTROL_PLANE=OFFLINE_ONLY /
 > OA112_ACTIVE_CONTRACT_LOCKED / S4_7D_OA112_PHYSICAL_ACTIVATION=NOT_MATERIALIZED`.
 > `contracts/openapi/rag-v2.openapi.json`은 v1 canonical OpenAPI bytes를 변경하지 않기 위한
 > 별도 v2 direct-payload 계약이다. route/history/RLS skeleton은 병합됐지만 OA+owner
@@ -1506,11 +1508,12 @@ bundle로 pin한다. client request에 `corpus`, `profile`, `topK` 또는 이와
 `k=60`을 유지하며 RAG는 Signal, RiskDecision, 주문 의도·hash·feature를 바꾸지
 않는 `decisionAuthority=NONE` 설명 경계다.
 
-#### 7.7.1 Pre-S5 v2 consent/import target (not active)
+#### 7.7.1 Pre-S5 v2 consent/import control plane (offline-only)
 
-다음 public surface는 logical OA112 materializer implementation에서 contract/codegen을 먼저
-검증한 뒤에만 활성화한다.
-문서에 경로가 적혀도 현재 route availability를 뜻하지 않는다.
+다음 public surface는 owner-scoped local DB control plane으로만 활성화한다. OA112 raw source,
+owner document, filesystem path, materializer, retrieval, vector writer, provider transport는 받거나
+실행하지 않는다. 따라서 route availability는 owner import activation 또는 external processing
+approval을 뜻하지 않는다.
 
 ```http
 POST /api/v2/rag/consents
@@ -1519,10 +1522,11 @@ POST /api/v2/rag/import-tickets
 ```
 
 consent는 `GRANT | REVOKE`, disclosure/policy digest만 받고 owner와 시각은 JWT/server clock에서
-결정한다. import ticket은 owner·operation·policy version에 결속된 5분 single-use 값이며 raw
-JWT, owner ID, DB credential을 BAT command line에 노출하지 않는다. 이 target의 stable denial
-code는 `EXTERNAL_AI_CONSENT_REQUIRED`이고 `EXTERNAL_AI_RAG_V2` 동의가 없으면 provider 호출은
-0이다.
+결정한다. effective event가 없으면 `GET /api/v2/rag/consent`는
+`EXTERNAL_AI_CONSENT_REQUIRED`로 fail-closed한다. import ticket은 owner·operation·policy version에
+결속된 5분 single-use capability이며 DB에는 SHA-256 hash만 남긴다. raw JWT, owner ID, DB credential,
+owner raw path는 BAT command line에 노출하지 않는다. 이 control plane은 provider 호출을 만들지 않으며
+`EXTERNAL_AI_RAG_V2` 동의가 있어도 provider outbound는 0이다.
 
 ### 7.8 RAG v2 질문
 

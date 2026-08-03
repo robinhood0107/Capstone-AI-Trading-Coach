@@ -31,6 +31,7 @@ def test_voyage_activation_packet_is_local_only_bound_and_content_free(tmp_path:
     assert activation.origin == "https://api.voyageai.com"
     assert activation.endpoint == "/v1/contextualizedembeddings"
     assert activation.logical_call_cap == activation.physical_call_cap == 1
+    assert activation.input_microusd_per_token == 1
     assert activation.retry_count == 0
     assert activation.raw_artifact_count == 0
     summary = json.dumps(activation.content_free_summary(), ensure_ascii=False, sort_keys=True)
@@ -81,6 +82,8 @@ def test_voyage_activation_packet_rejects_shared_mode_expiry_and_binding_drift(
         ("endpoint", "/v1/files"),
         ("physicalCallCap", 2),
         ("operation", "QUERY_FALLBACK"),
+        ("inputMicrousdPerToken", 0),
+        ("costCapMicrousd", 119_999),
     ),
 )
 def test_voyage_activation_packet_rejects_scope_expansion(
@@ -109,12 +112,13 @@ def _packet(*, now: datetime) -> dict[str, object]:
         "bundleManifestSha256": "e" * 64,
         "byteCap": 4_194_304,
         "ciDigest": "c" * 64,
-        "costCapMicrousd": 100_000,
+        "costCapMicrousd": 200_000,
         "date": "NONE",
         "endpoint": "/v1/contextualizedembeddings",
         "expiresAt": (now + timedelta(minutes=5)).isoformat(timespec="seconds").replace("+00:00", "Z"),
         "headCommit": "a" * 40,
         "issuedAt": now.isoformat(timespec="seconds").replace("+00:00", "Z"),
+        "inputMicrousdPerToken": 1,
         "logicalCallCap": 1,
         "operation": "CONTEXTUALIZED_DOCUMENT_EMBEDDING",
         "operator": "local-operator",
@@ -125,6 +129,7 @@ def _packet(*, now: datetime) -> dict[str, object]:
         "provider": "VOYAGE",
         "query": "FULL_BUNDLE_ORDERED_PRECHUNKED_DOCUMENTS",
         "rawArtifactCount": 0,
+        "rateEvidenceSha256": "1" * 64,
         "retryCount": 0,
         "schemaVersion": "pre-s5-provider-activation/v1",
         "securityDigest": "d" * 64,

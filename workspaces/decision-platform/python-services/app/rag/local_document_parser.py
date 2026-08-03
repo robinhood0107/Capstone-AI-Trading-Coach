@@ -934,6 +934,10 @@ def _validate_block_bounds(blocks: list[dict[str, Any]], limits: ParserLimits) -
     for block in blocks:
         if "text" in block:
             text_characters += len(cast(str, block["text"]))
+        if "sourceText" in block:
+            text_characters += len(cast(str, block["sourceText"]))
+        if "normalizedFormula" in block:
+            text_characters += len(cast(str, block["normalizedFormula"]))
         text_characters += sum(len(cast(str, item)) for item in cast(list[object], block.get("items", [])))
         text_characters += sum(
             len(cast(str, cell["text"]))
@@ -948,6 +952,10 @@ def _classify_safety(blocks: list[dict[str, Any]]) -> dict[str, bool]:
     for block in blocks:
         if isinstance(block.get("text"), str):
             text_parts.append(cast(str, block["text"]))
+        if isinstance(block.get("sourceText"), str):
+            text_parts.append(cast(str, block["sourceText"]))
+        if isinstance(block.get("normalizedFormula"), str):
+            text_parts.append(cast(str, block["normalizedFormula"]))
         text_parts.extend(cast(list[str], block.get("items", [])))
         text_parts.extend(
             cast(str, cell["text"])

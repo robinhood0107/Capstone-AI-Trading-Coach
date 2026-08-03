@@ -40,7 +40,7 @@ VOLATILE
 SET search_path = pg_catalog, public, pg_temp
 AS $record_rag_v2_immutable_consent_v2$
 DECLARE
-  recorded_at timestamptz := clock_timestamp();
+  recorded_at timestamptz;
 BEGIN
   IF current_user <> 'flyway'
      OR session_user <> 'decision_app'
@@ -64,6 +64,7 @@ BEGIN
   PERFORM pg_catalog.pg_advisory_xact_lock(
     pg_catalog.hashtextextended('rag-v2-immutable-consent|' || p_owner_user_id, 0)
   );
+  recorded_at := clock_timestamp();
   INSERT INTO public.rag_v2_immutable_consent_events (
     consent_event_id,
     owner_user_id,

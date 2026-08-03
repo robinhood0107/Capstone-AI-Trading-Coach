@@ -22,6 +22,11 @@ _SOURCE_ID = re.compile(r"^src_[a-z0-9][a-z0-9_-]{2,95}$")
 _SOURCE_REVISION_ID = re.compile(r"^srv_[a-z0-9][a-z0-9_-]{2,95}$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _LOCATOR_KEYS = frozenset(("page", "slide", "sheet", "section"))
+_MAX_DOCUMENT_IR_BLOCKS = 50_000
+_MAX_DOCUMENT_IR_TEXT_CHARACTERS = 10_000_000
+_MAX_LIST_ITEMS = 1_000
+_MAX_TABLE_CELLS = 50_000
+_MAX_RENDERED_TABLE_CELLS = 50_000
 
 
 class DocumentIrMaterializationError(ValueError):
@@ -163,9 +168,13 @@ def materialize_document_ir(
 
 def _validate_request(request: RagV2DocumentMaterializationRequest) -> None:
     if (
-        not _DOCUMENT_ID.fullmatch(request.document_id)
+        not isinstance(request.document_id, str)
+        or not _DOCUMENT_ID.fullmatch(request.document_id)
+        or not isinstance(request.source_scope, str)
         or request.source_scope not in {"EXACT30", "OA112", "OWNER_PRIVATE"}
+        or not isinstance(request.source_id, str)
         or not _SOURCE_ID.fullmatch(request.source_id)
+        or not isinstance(request.source_revision_id, str)
         or not _SOURCE_REVISION_ID.fullmatch(request.source_revision_id)
         or any(
             not isinstance(value, bool)
@@ -183,6 +192,8 @@ def _validate_document_ir(
     document_ir: Mapping[str, object],
     request: RagV2DocumentMaterializationRequest,
 ) -> dict[str, Any]:
+    if not isinstance(document_ir, Mapping):
+        raise DocumentIrMaterializationError("DOCUMENT_IR_INVALID")
     if (
         document_ir.get("contractId") != "rag-document-ir-v1"
         or document_ir.get("documentIrVersion") != 1
@@ -211,13 +222,25 @@ def _validate_document_ir(
         raise DocumentIrMaterializationError("DOCUMENT_IR_SAFETY_INVALID")
 
     blocks = document_ir.get("blocks")
-    if isinstance(blocks, (str, bytes)) or not isinstance(blocks, Sequence) or not blocks:
+    if (
+        isinstance(blocks, (str, bytes))
+        or not isinstance(blocks, Sequence)
+        or not blocks
+        or len(blocks) > _MAX_DOCUMENT_IR_BLOCKS
+    ):
         raise DocumentIrMaterializationError("DOCUMENT_IR_BLOCKS_INVALID")
-    copied_blocks = tuple(_validate_block(cast(Mapping[str, object], block)) for block in blocks)
-    if len(copied_blocks) != len(blocks):
-        raise DocumentIrMaterializationError("DOCUMENT_IR_BLOCKS_INVALID")
+    copied_blocks: list[dict[str, object]] = []
+    text_characters = 0
+    for block in blocks:
+        if not isinstance(block, Mapping):
+            raise DocumentIrMaterializationError("DOCUMENT_IR_BLOCK_INVALID")
+        copied_block = _validate_block(cast(Mapping[str, object], block))
+        text_characters += _block_text_characters(copied_block)
+        if text_characters > _MAX_DOCUMENT_IR_TEXT_CHARACTERS:
+            raise DocumentIrMaterializationError("DOCUMENT_IR_TEXT_BOUND_EXCEEDED")
+        copied_blocks.append(copied_block)
     return {
-        "blocks": copied_blocks,
+        "blocks": tuple(copied_blocks),
         "normalized_content_sha256": normalized_content_sha256,
         "raw_content_sha256": raw_content_sha256,
         "safety": {key: cast(bool, value) for key, value in safety.items()},
@@ -228,14 +251,25 @@ def _validate_block(block: Mapping[str, object]) -> dict[str, object]:
     block_type = block.get("blockType")
     locator = block.get("locator")
     reading_order = block.get("readingOrder")
+    ocr_confidence = block.get("ocrConfidence")
     if (
-        block_type not in {"HEADING", "PARAGRAPH", "LIST", "TABLE", "FORMULA", "CAPTION"}
+        not isinstance(block_type, str)
+        or block_type not in {"HEADING", "PARAGRAPH", "LIST", "TABLE", "FORMULA", "CAPTION"}
         or not isinstance(locator, Mapping)
         or set(locator) - _LOCATOR_KEYS
         or len(locator) != 1
         or not isinstance(reading_order, int)
         or isinstance(reading_order, bool)
         or reading_order < 0
+        or "ocrConfidence" not in block
+        or (
+            ocr_confidence is not None
+            and (
+                not isinstance(ocr_confidence, (int, float))
+                or isinstance(ocr_confidence, bool)
+                or not 0 <= ocr_confidence <= 1
+            )
+        )
     ):
         raise DocumentIrMaterializationError("DOCUMENT_IR_BLOCK_INVALID")
     copied_locator = _copy_locator(locator)
@@ -248,6 +282,15 @@ def _validate_block(block: Mapping[str, object]) -> dict[str, object]:
         copied.update({"level": level, "text": text})
     elif block_type in {"PARAGRAPH", "CAPTION"}:
         copied["text"] = _required_text(block, "text")
+        if block_type == "CAPTION":
+            target_reading_order = block.get("targetReadingOrder")
+            if (
+                not isinstance(target_reading_order, int)
+                or isinstance(target_reading_order, bool)
+                or target_reading_order < 0
+            ):
+                raise DocumentIrMaterializationError("DOCUMENT_IR_BLOCK_INVALID")
+            copied["targetReadingOrder"] = target_reading_order
     elif block_type == "LIST":
         items = block.get("items")
         ordered = block.get("ordered")
@@ -255,6 +298,7 @@ def _validate_block(block: Mapping[str, object]) -> dict[str, object]:
             isinstance(items, (str, bytes))
             or not isinstance(items, Sequence)
             or not items
+            or len(items) > _MAX_LIST_ITEMS
             or not isinstance(ordered, bool)
             or any(not isinstance(item, str) or not item.strip() for item in items)
         ):
@@ -268,6 +312,7 @@ def _validate_block(block: Mapping[str, object]) -> dict[str, object]:
             isinstance(cells, (str, bytes))
             or not isinstance(cells, Sequence)
             or not cells
+            or len(cells) > _MAX_TABLE_CELLS
             or not isinstance(row_count, int)
             or not isinstance(column_count, int)
             or isinstance(row_count, bool)
@@ -276,8 +321,10 @@ def _validate_block(block: Mapping[str, object]) -> dict[str, object]:
             or column_count not in range(1, 257)
         ):
             raise DocumentIrMaterializationError("DOCUMENT_IR_BLOCK_INVALID")
+        if row_count * column_count > _MAX_RENDERED_TABLE_CELLS:
+            raise DocumentIrMaterializationError("DOCUMENT_IR_TABLE_AREA_EXCEEDED")
         copied_cells = tuple(
-            _validate_table_cell(cast(Mapping[str, object], cell), row_count, column_count)
+            _validate_table_cell(cell, row_count, column_count)
             for cell in cells
         )
         copied.update({"cells": copied_cells, "rowCount": row_count, "columnCount": column_count})
@@ -312,10 +359,12 @@ def _required_text(block: Mapping[str, object], key: str) -> str:
 
 
 def _validate_table_cell(
-    cell: Mapping[str, object],
+    cell: object,
     row_count: int,
     column_count: int,
 ) -> tuple[int, int, int, int, str]:
+    if not isinstance(cell, Mapping):
+        raise DocumentIrMaterializationError("DOCUMENT_IR_BLOCK_INVALID")
     row = cell.get("row")
     column = cell.get("column")
     row_span = cell.get("rowSpan")
@@ -339,6 +388,19 @@ def _validate_table_cell(
     ):
         raise DocumentIrMaterializationError("DOCUMENT_IR_BLOCK_INVALID")
     return row, column, row_span, column_span, text.strip()
+
+
+def _block_text_characters(block: Mapping[str, object]) -> int:
+    """safe parser의 text cap과 같은 단위로 local materialization 입력을 제한한다."""
+
+    block_type = cast(str, block["blockType"])
+    if block_type in {"HEADING", "PARAGRAPH", "CAPTION"}:
+        return len(cast(str, block["text"]))
+    if block_type == "LIST":
+        return sum(len(item) for item in cast(tuple[str, ...], block["items"]))
+    if block_type == "TABLE":
+        return sum(len(cell[4]) for cell in cast(tuple[tuple[int, int, int, int, str], ...], block["cells"]))
+    return len(cast(str, block["sourceText"])) + len(cast(str, block["normalizedFormula"]))
 
 
 def _render_document_blocks(blocks: Sequence[Mapping[str, object]]) -> tuple[_RenderedBlock, ...]:

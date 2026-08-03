@@ -4,12 +4,17 @@ import hashlib
 import http.client
 import ipaddress
 import json
+import math
 import os
 import re
 import socket
 import ssl
+import subprocess
 import stat
-from collections.abc import Iterator, Mapping, Sequence
+import sys
+import threading
+import time
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -32,6 +37,9 @@ _MAX_TOTAL_BYTES = 112 * _MAX_SOURCE_BYTES
 _DOWNLOAD_CHUNK_BYTES = 64 * 1024
 _CONNECT_TIMEOUT_SECONDS = 10.0
 _READ_TIMEOUT_SECONDS = 60.0
+_MAX_SOURCE_ELAPSED_SECONDS = 120.0
+_DNS_WORKER_INPUT_MAX_BYTES = 1_024
+_DNS_WORKER_OUTPUT_MAX_BYTES = 4_096
 _HEAD_SHA = re.compile(r"^[0-9a-f]{40}$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _APPROVAL_ID = re.compile(r"^[a-z0-9][a-z0-9_-]{2,127}$")
@@ -69,6 +77,22 @@ _RESUME_STATE_FIELDS = frozenset(
         "sourceRevisionId",
     }
 )
+_DNS_RESOLVER_WORKER = (
+    "import ipaddress,json,socket,sys\n"
+    "raw=sys.stdin.buffer.read(1024)\n"
+    "try:\n"
+    "    if not raw or len(raw)>=1024: raise ValueError\n"
+    "    payload=json.loads(raw.decode('utf-8'))\n"
+    "    if set(payload)!={'hostname'}: raise ValueError\n"
+    "    hostname=payload['hostname']\n"
+    "    if not isinstance(hostname,str) or not 1<=len(hostname)<=253: raise ValueError\n"
+    "    addresses=sorted({str(ipaddress.ip_address(item[4][0])) for item in socket.getaddrinfo(hostname,443,family=socket.AF_UNSPEC,type=socket.SOCK_STREAM,proto=socket.IPPROTO_TCP)})\n"
+    "    output=json.dumps({'addresses':addresses},separators=(',',':'),sort_keys=True).encode('utf-8')\n"
+    "    if not addresses or len(output)>4096: raise ValueError\n"
+    "    sys.stdout.buffer.write(output)\n"
+    "except Exception:\n"
+    "    raise SystemExit(1)\n"
+)
 
 
 class Oa112DownloadError(ValueError):
@@ -81,9 +105,9 @@ class Oa112DownloadError(ValueError):
 
 
 class Oa112DnsResolver(Protocol):
-    """fixed HTTPS hostname의 A/AAAA 결과를 caller-owned resolver에서 받는다."""
+    """fixed HTTPS hostname의 A/AAAA 결과를 남은 source deadline 안에 반환한다."""
 
-    def resolve(self, hostname: str) -> list[str]: ...
+    def resolve(self, hostname: str, *, timeout_seconds: float) -> list[str]: ...
 
 
 class Oa112DownloadResponse(Protocol):
@@ -94,6 +118,8 @@ class Oa112DownloadResponse(Protocol):
 
     @property
     def headers(self) -> Mapping[str, str]: ...
+
+    def set_read_timeout_seconds(self, *, timeout_seconds: float) -> None: ...
 
     def iter_raw(self, *, chunk_size: int) -> Iterator[bytes]: ...
 
@@ -112,6 +138,7 @@ class Oa112HttpsConnection(Protocol):
         *,
         target: str,
         headers: Mapping[str, str],
+        read_timeout_seconds: float,
     ) -> Oa112DownloadResponse: ...
 
 
@@ -125,6 +152,7 @@ class Oa112HttpsTransport(Protocol):
         pinned_ip: str,
         connect_timeout_seconds: float,
         read_timeout_seconds: float,
+        deadline: "_Oa112SourceDeadline",
     ) -> Oa112HttpsConnection: ...
 
 
@@ -243,30 +271,191 @@ class _ResponsePlan:
     total_bytes: int | None
 
 
+def _utc_now() -> datetime:
+    """approval expiry는 local wall clock의 UTC instant로만 비교한다."""
+
+    return datetime.now(UTC)
+
+
+def _monotonic() -> float:
+    """source I/O deadline은 wall-clock 보정 영향을 받지 않는 monotonic clock을 사용한다."""
+
+    return time.monotonic()
+
+
+class _Oa112SourceDeadline:
+    """한 OA source의 DNS부터 body까지를 취소 가능한 절대 deadline으로 묶는다.
+
+    Socket idle timeout만으로는 공격자가 작은 조각을 계속 보내며 connection을 점유할 수 있다.
+    따라서 watchdog은 deadline에 열린 socket을 닫고, DNS worker도 같은 남은 시간을 넘기지 못한다.
+    """
+
+    def __init__(self, *, expires_at: datetime) -> None:
+        approval_remaining = (expires_at - _utc_now()).total_seconds()
+        if not math.isfinite(approval_remaining) or approval_remaining <= 0:
+            raise Oa112DownloadError("OA112_PACKET_EXPIRED")
+        remaining = min(_MAX_SOURCE_ELAPSED_SECONDS, approval_remaining)
+        self._expires_at = expires_at
+        self._monotonic_deadline = _monotonic() + remaining
+        self._approval_is_limiting = approval_remaining <= _MAX_SOURCE_ELAPSED_SECONDS
+        self._lock = threading.RLock()
+        self._cancellers: dict[int, Callable[[], None]] = {}
+        self._next_canceller_id = 0
+        self._closed = False
+        self._timer_expired = False
+        self._timer = threading.Timer(remaining, self._expire)
+        self._timer.daemon = True
+        self._timer.start()
+
+    def __enter__(self) -> "_Oa112SourceDeadline":
+        return self
+
+    def __exit__(self, *args: object) -> None:
+        self.close()
+
+    def close(self) -> None:
+        """정상 종료 시 watchdog callback을 제거해 이후 socket 재사용을 막는다."""
+
+        with self._lock:
+            if self._closed:
+                return
+            self._closed = True
+            self._cancellers.clear()
+        self._timer.cancel()
+
+    def remaining_seconds(self) -> float:
+        """다음 blocking operation에 허용되는 양의 timeout만 반환한다."""
+
+        source_remaining = self._monotonic_deadline - _monotonic()
+        approval_remaining = (self._expires_at - _utc_now()).total_seconds()
+        with self._lock:
+            timer_expired = self._timer_expired
+        if (
+            not math.isfinite(source_remaining)
+            or not math.isfinite(approval_remaining)
+            or approval_remaining <= 0
+            or (timer_expired and self._approval_is_limiting)
+        ):
+            raise Oa112DownloadError("OA112_PACKET_EXPIRED")
+        if source_remaining <= 0 or timer_expired:
+            raise Oa112DownloadError("OA112_DOWNLOAD_TIME_BOUND")
+        return min(source_remaining, approval_remaining)
+
+    def register_canceller(self, canceller: Callable[[], None]) -> Callable[[], None]:
+        """watchdog가 source deadline에 socket을 즉시 깨울 수 있도록 callback을 등록한다."""
+
+        run_now = False
+        with self._lock:
+            if self._closed:
+                raise Oa112DownloadError("OA112_DOWNLOAD_CONNECTION_STATE")
+            if self._timer_expired:
+                run_now = True
+                canceller_id = -1
+            else:
+                canceller_id = self._next_canceller_id
+                self._next_canceller_id += 1
+                self._cancellers[canceller_id] = canceller
+        if run_now:
+            _run_canceller(canceller)
+
+        def unregister() -> None:
+            with self._lock:
+                self._cancellers.pop(canceller_id, None)
+
+        return unregister
+
+    def _expire(self) -> None:
+        with self._lock:
+            if self._closed:
+                return
+            self._timer_expired = True
+            cancellers = tuple(self._cancellers.values())
+        for canceller in cancellers:
+            _run_canceller(canceller)
+
+
+def _run_canceller(canceller: Callable[[], None]) -> None:
+    try:
+        canceller()
+    except OSError:
+        # Deadline cancellation은 best-effort wakeup이고 caller가 typed boundary를 반환한다.
+        return
+
+
 class _SocketOa112DnsResolver:
-    def resolve(self, hostname: str) -> list[str]:
+    """fresh Python worker를 timeout 뒤 kill해 libc DNS가 멈춰도 caller를 점유하지 않는다."""
+
+    def __init__(self, *, worker_command: Sequence[str] | None = None) -> None:
+        command = worker_command or (sys.executable, "-I", "-c", _DNS_RESOLVER_WORKER)
+        if not command or any(not item or "\x00" in item for item in command):
+            raise ValueError("OA112 DNS worker command is invalid")
+        self._worker_command = tuple(command)
+
+    def resolve(self, hostname: str, *, timeout_seconds: float) -> list[str]:
+        if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
+            raise Oa112DownloadError("OA112_DOWNLOAD_TIME_BOUND")
+        payload = json.dumps(
+            {"hostname": hostname}, separators=(",", ":"), sort_keys=True
+        ).encode("utf-8")
+        if not payload or len(payload) >= _DNS_WORKER_INPUT_MAX_BYTES:
+            raise Oa112DownloadError("OA112_DOWNLOAD_DNS")
         try:
-            values = {
-                str(ipaddress.ip_address(result[4][0]))
-                for result in socket.getaddrinfo(
-                    hostname,
-                    443,
-                    family=socket.AF_UNSPEC,
-                    type=socket.SOCK_STREAM,
-                    proto=socket.IPPROTO_TCP,
-                )
-            }
-        except (OSError, ValueError) as error:
+            process = subprocess.Popen(
+                self._worker_command,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                close_fds=True,
+                start_new_session=True,
+            )
+        except OSError as error:
             raise Oa112DownloadError("OA112_DOWNLOAD_DNS") from error
-        return sorted(
-            values,
-            key=lambda value: (ipaddress.ip_address(value).version, ipaddress.ip_address(value).packed),
-        )
+        try:
+            output, _ = process.communicate(input=payload, timeout=timeout_seconds)
+        except subprocess.TimeoutExpired as error:
+            process.kill()
+            process.communicate()
+            raise Oa112DownloadError("OA112_DOWNLOAD_TIME_BOUND") from error
+        except OSError as error:
+            process.kill()
+            process.communicate()
+            raise Oa112DownloadError("OA112_DOWNLOAD_DNS") from error
+        if process.returncode != 0 or not output or len(output) > _DNS_WORKER_OUTPUT_MAX_BYTES:
+            raise Oa112DownloadError("OA112_DOWNLOAD_DNS")
+        try:
+            decoded = json.loads(output.decode("utf-8"))
+            addresses = decoded["addresses"]
+            if (
+                set(decoded) != {"addresses"}
+                or not isinstance(addresses, list)
+                or not 1 <= len(addresses) <= 32
+                or any(not isinstance(value, str) for value in addresses)
+            ):
+                raise ValueError
+            return addresses
+        except (TypeError, ValueError, UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise Oa112DownloadError("OA112_DOWNLOAD_DNS") from error
+
+
+def _abort_socket(connected_socket: socket.socket | ssl.SSLSocket | None) -> None:
+    """watchdog thread가 blocking connect/TLS/header/body read를 즉시 깨우도록 socket을 닫는다."""
+
+    if connected_socket is None:
+        return
+    try:
+        connected_socket.shutdown(socket.SHUT_RDWR)
+    except OSError:
+        pass
+    try:
+        connected_socket.close()
+    except OSError:
+        pass
 
 
 class _StdlibOa112DownloadResponse:
-    def __init__(self, response: http.client.HTTPResponse) -> None:
+    def __init__(self, response: http.client.HTTPResponse, *, connected_socket: ssl.SSLSocket) -> None:
         self._response = response
+        self._socket = connected_socket
         self.status_code = response.status
         headers: dict[str, str] = {}
         for key, value in response.getheaders():
@@ -275,6 +464,11 @@ class _StdlibOa112DownloadResponse:
                 raise Oa112DownloadError("OA112_DOWNLOAD_RESPONSE_HEADER_DUPLICATE")
             headers[normalized] = value.strip()
         self.headers = headers
+
+    def set_read_timeout_seconds(self, *, timeout_seconds: float) -> None:
+        if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
+            raise Oa112DownloadError("OA112_DOWNLOAD_TIME_BOUND")
+        self._socket.settimeout(timeout_seconds)
 
     def iter_raw(self, *, chunk_size: int) -> Iterator[bytes]:
         while True:
@@ -292,36 +486,51 @@ class _StdlibOa112HttpsConnection:
         pinned_ip: str,
         connect_timeout_seconds: float,
         read_timeout_seconds: float,
+        deadline: _Oa112SourceDeadline,
     ) -> None:
-        self._read_timeout_seconds = read_timeout_seconds
-        self._socket: ssl.SSLSocket | None = None
+        self._deadline = deadline
+        self._socket_lock = threading.RLock()
+        self._socket: socket.socket | ssl.SSLSocket | None = None
         self._response: http.client.HTTPResponse | None = None
         self._request_sent = False
+        self._unregister_canceller = self._deadline.register_canceller(self._abort)
         raw_socket: socket.socket | None = None
         try:
+            self._deadline.remaining_seconds()
             parsed_ip = ipaddress.ip_address(pinned_ip)
             family = socket.AF_INET if parsed_ip.version == 4 else socket.AF_INET6
             raw_socket = socket.socket(family, socket.SOCK_STREAM, socket.IPPROTO_TCP)
+            self._bind_socket(raw_socket)
             raw_socket.settimeout(connect_timeout_seconds)
             if parsed_ip.version == 4:
                 raw_socket.connect((pinned_ip, 443))
             else:
                 raw_socket.connect((pinned_ip, 443, 0, 0))
+            self._deadline.remaining_seconds()
             self.peer_ip = str(ipaddress.ip_address(raw_socket.getpeername()[0]))
             if self.peer_ip != str(parsed_ip):
                 raise Oa112DownloadError("OA112_DOWNLOAD_PEER_PIN_MISMATCH")
-            self._socket = ssl.create_default_context().wrap_socket(
+            wrapped_socket = ssl.create_default_context().wrap_socket(
                 raw_socket,
                 server_hostname=hostname,
             )
+            self._bind_socket(wrapped_socket)
             raw_socket = None
+            self._deadline.remaining_seconds()
         except Oa112DownloadError:
+            self._close()
             raise
         except (OSError, ValueError) as error:
+            try:
+                self._deadline.remaining_seconds()
+            except Oa112DownloadError as deadline_error:
+                self._close()
+                raise deadline_error from error
+            self._close()
             raise Oa112DownloadError("OA112_DOWNLOAD_TRANSPORT") from error
         finally:
             if raw_socket is not None:
-                raw_socket.close()
+                _abort_socket(raw_socket)
 
     def __enter__(self) -> Oa112HttpsConnection:
         return self
@@ -329,17 +538,19 @@ class _StdlibOa112HttpsConnection:
     def __exit__(self, *_args: object) -> None:
         if self._response is not None:
             self._response.close()
-        if self._socket is not None:
-            self._socket.close()
+        self._close()
 
     def get(
         self,
         *,
         target: str,
         headers: Mapping[str, str],
+        read_timeout_seconds: float,
     ) -> Oa112DownloadResponse:
         if self._request_sent or self._socket is None:
             raise Oa112DownloadError("OA112_DOWNLOAD_CONNECTION_STATE")
+        if not math.isfinite(read_timeout_seconds) or read_timeout_seconds <= 0:
+            raise Oa112DownloadError("OA112_DOWNLOAD_TIME_BOUND")
         if (
             not target.startswith("/")
             or "\r" in target
@@ -355,13 +566,50 @@ class _StdlibOa112HttpsConnection:
         request.extend(f"{key}: {value}\r\n" for key, value in headers.items())
         request.append("\r\n")
         try:
-            self._socket.sendall("".join(request).encode("ascii", errors="strict"))
-            self._socket.settimeout(self._read_timeout_seconds)
-            self._response = http.client.HTTPResponse(self._socket)
+            self._deadline.remaining_seconds()
+            connected_socket = self._current_ssl_socket()
+            connected_socket.settimeout(read_timeout_seconds)
+            connected_socket.sendall("".join(request).encode("ascii", errors="strict"))
+            self._deadline.remaining_seconds()
+            self._response = http.client.HTTPResponse(connected_socket)
             self._response.begin()
-            return _StdlibOa112DownloadResponse(self._response)
+            self._deadline.remaining_seconds()
+            return _StdlibOa112DownloadResponse(
+                self._response,
+                connected_socket=connected_socket,
+            )
         except (OSError, UnicodeEncodeError, http.client.HTTPException) as error:
+            try:
+                self._deadline.remaining_seconds()
+            except Oa112DownloadError as deadline_error:
+                raise deadline_error from error
             raise Oa112DownloadError("OA112_DOWNLOAD_TRANSPORT") from error
+
+    def _current_ssl_socket(self) -> ssl.SSLSocket:
+        with self._socket_lock:
+            if not isinstance(self._socket, ssl.SSLSocket):
+                raise Oa112DownloadError("OA112_DOWNLOAD_CONNECTION_STATE")
+            return self._socket
+
+    def _abort(self) -> None:
+        with self._socket_lock:
+            connected_socket = self._socket
+        _abort_socket(connected_socket)
+
+    def _bind_socket(self, connected_socket: socket.socket | ssl.SSLSocket) -> None:
+        """watchdog 등록과 socket 생성 사이의 race에서도 새 descriptor를 즉시 닫는다."""
+
+        with self._socket_lock:
+            self._socket = connected_socket
+        try:
+            self._deadline.remaining_seconds()
+        except Oa112DownloadError:
+            _abort_socket(connected_socket)
+            raise
+
+    def _close(self) -> None:
+        self._unregister_canceller()
+        self._abort()
 
 
 class _StdlibOa112HttpsTransport:
@@ -372,12 +620,14 @@ class _StdlibOa112HttpsTransport:
         pinned_ip: str,
         connect_timeout_seconds: float,
         read_timeout_seconds: float,
+        deadline: _Oa112SourceDeadline,
     ) -> Oa112HttpsConnection:
         return _StdlibOa112HttpsConnection(
             hostname=hostname,
             pinned_ip=pinned_ip,
             connect_timeout_seconds=connect_timeout_seconds,
             read_timeout_seconds=read_timeout_seconds,
+            deadline=deadline,
         )
 
 
@@ -404,7 +654,7 @@ def load_oa112_download_packet(
         raise
     except (TypeError, ValueError) as error:
         raise Oa112DownloadError("OA112_PACKET_INVALID") from error
-    check_now = now or datetime.now(UTC)
+    check_now = now or _utc_now()
     if packet.expires_at.tzinfo != UTC or not check_now < packet.expires_at <= check_now + timedelta(hours=1):
         raise Oa112DownloadError("OA112_PACKET_INVALID")
     return packet
@@ -462,7 +712,7 @@ def download_oa112_local_cache(
     """
 
     selected = tuple(entries)
-    check_now = now or datetime.now(UTC)
+    check_now = now or _utc_now()
     if not selected or len(selected) > 112 or _SHA256.fullmatch(registry_digest) is None:
         raise Oa112DownloadError("OA112_DOWNLOAD_INPUT_INVALID")
     if len({entry.source_id for entry in selected}) != len(selected):
@@ -492,22 +742,29 @@ def download_oa112_local_cache(
             active_transport = transport or _StdlibOa112HttpsTransport()
             total_bytes = 0
             for entry in pending:
-                physical_call_count += 1
-                if physical_call_count > packet.physical_call_cap:
+                if physical_call_count >= packet.physical_call_cap:
                     raise Oa112DownloadError(
                         "OA112_PACKET_PHYSICAL_CAP",
-                        physical_call_count=physical_call_count - 1,
+                        physical_call_count=physical_call_count,
                     )
-                receipt = _download_entry(
-                    raw_fd=raw_fd,
-                    staging_fd=staging_fd,
-                    entry=entry,
-                    registry_digest=registry_digest,
-                    maximum_source_bytes=min(packet.maximum_source_bytes, packet.maximum_total_bytes - total_bytes),
-                    maximum_pages=packet.maximum_pages,
-                    resolver=active_resolver,
-                    transport=active_transport,
-                )
+                # packet expiry는 새 request를 만들기 직전에도 다시 확인한다.
+                with _Oa112SourceDeadline(expires_at=packet.expires_at) as deadline:
+                    deadline.remaining_seconds()
+                    physical_call_count += 1
+                    receipt = _download_entry(
+                        raw_fd=raw_fd,
+                        staging_fd=staging_fd,
+                        entry=entry,
+                        registry_digest=registry_digest,
+                        maximum_source_bytes=min(
+                            packet.maximum_source_bytes,
+                            packet.maximum_total_bytes - total_bytes,
+                        ),
+                        maximum_pages=packet.maximum_pages,
+                        resolver=active_resolver,
+                        transport=active_transport,
+                        deadline=deadline,
+                    )
                 total_bytes += receipt.bytes_read
                 if total_bytes > packet.maximum_total_bytes:
                     raise Oa112DownloadError(
@@ -545,7 +802,9 @@ def _download_entry(
     maximum_pages: int,
     resolver: Oa112DnsResolver,
     transport: Oa112HttpsTransport,
+    deadline: _Oa112SourceDeadline,
 ) -> Oa112DownloadedSourceReceipt:
+    deadline.remaining_seconds()
     if maximum_source_bytes <= 0:
         raise Oa112DownloadError("OA112_PACKET_TOTAL_BYTE_CAP")
     part_name = f"{entry.source_id}.part"
@@ -582,12 +841,14 @@ def _download_entry(
             entry.canonical_url,
             resolver=resolver,
             transport=transport,
+            deadline=deadline,
         ) as response:
             plan = _validate_response(
                 response=response,
                 entry=entry,
                 offset=offset,
                 maximum_source_bytes=maximum_source_bytes,
+                deadline=deadline,
             )
             bytes_written = _stream_to_part(
                 response=response,
@@ -596,24 +857,53 @@ def _download_entry(
                 maximum_source_bytes=maximum_source_bytes,
                 declared_bytes=plan.declared_bytes,
                 expected_total_bytes=plan.total_bytes,
+                deadline=deadline,
             )
+        deadline.remaining_seconds()
         os.fsync(part_fd)
     except Oa112DownloadError as error:
         if error.code == "OA112_DOWNLOAD_TRANSPORT":
             try:
-                os.fsync(part_fd)
-                if os.fstat(part_fd).st_size == 0:
-                    _remove_partial(staging_fd=staging_fd, part_name=part_name, state_name=state_name)
-            except OSError:
-                pass
+                deadline.remaining_seconds()
+            except Oa112DownloadError as deadline_error:
+                _retain_nonempty_partial(
+                    part_fd=part_fd,
+                    staging_fd=staging_fd,
+                    part_name=part_name,
+                    state_name=state_name,
+                )
+                raise deadline_error from error
+        if error.code in {
+            "OA112_DOWNLOAD_TRANSPORT",
+            "OA112_DOWNLOAD_TIME_BOUND",
+            "OA112_PACKET_EXPIRED",
+        }:
+            _retain_nonempty_partial(
+                part_fd=part_fd,
+                staging_fd=staging_fd,
+                part_name=part_name,
+                state_name=state_name,
+            )
         else:
             _remove_partial(staging_fd=staging_fd, part_name=part_name, state_name=state_name)
         raise
     except (OSError, TimeoutError, http.client.HTTPException) as error:
         try:
-            os.fsync(part_fd)
-        except OSError:
-            pass
+            deadline.remaining_seconds()
+        except Oa112DownloadError as deadline_error:
+            _retain_nonempty_partial(
+                part_fd=part_fd,
+                staging_fd=staging_fd,
+                part_name=part_name,
+                state_name=state_name,
+            )
+            raise deadline_error from error
+        _retain_nonempty_partial(
+            part_fd=part_fd,
+            staging_fd=staging_fd,
+            part_name=part_name,
+            state_name=state_name,
+        )
         raise Oa112DownloadError("OA112_DOWNLOAD_TRANSPORT") from error
     finally:
         os.close(part_fd)
@@ -659,12 +949,13 @@ def _open_checked_response(
     *,
     resolver: Oa112DnsResolver,
     transport: Oa112HttpsTransport,
+    deadline: _Oa112SourceDeadline,
 ) -> Iterator[Oa112DownloadResponse]:
     parsed = _parse_https_url(url)
     hostname = parsed.hostname
     assert hostname is not None
-    first_addresses = _resolve_public_addresses(hostname, resolver=resolver)
-    second_addresses = _resolve_public_addresses(hostname, resolver=resolver)
+    first_addresses = _resolve_public_addresses(hostname, resolver=resolver, deadline=deadline)
+    second_addresses = _resolve_public_addresses(hostname, resolver=resolver, deadline=deadline)
     if set(first_addresses) != set(second_addresses):
         raise Oa112DownloadError("OA112_DOWNLOAD_DNS_REBINDING")
     target = urlunsplit(("", "", parsed.path, parsed.query, ""))
@@ -676,15 +967,23 @@ def _open_checked_response(
     }
     # _download_entry adds Range/Accept after connection open without allowing a caller origin override.
     try:
+        remaining = deadline.remaining_seconds()
         with transport.connect(
             hostname=hostname,
             pinned_ip=first_addresses[0],
-            connect_timeout_seconds=_CONNECT_TIMEOUT_SECONDS,
-            read_timeout_seconds=_READ_TIMEOUT_SECONDS,
+            connect_timeout_seconds=min(_CONNECT_TIMEOUT_SECONDS, remaining),
+            read_timeout_seconds=min(_READ_TIMEOUT_SECONDS, remaining),
+            deadline=deadline,
         ) as connection:
+            deadline.remaining_seconds()
             _validate_peer(connection.peer_ip, first_addresses)
             # The context carries a checked connection only. The caller must supply its exact header map.
-            response = _DeferredHeaderResponse(connection=connection, target=target, base_headers=headers)
+            response = _DeferredHeaderResponse(
+                connection=connection,
+                target=target,
+                base_headers=headers,
+                deadline=deadline,
+            )
             yield response
     except Oa112DownloadError:
         raise
@@ -701,10 +1000,12 @@ class _DeferredHeaderResponse:
         connection: Oa112HttpsConnection,
         target: str,
         base_headers: Mapping[str, str],
+        deadline: _Oa112SourceDeadline,
     ) -> None:
         self._connection = connection
         self._target = target
         self._base_headers = dict(base_headers)
+        self._deadline = deadline
         self._response: Oa112DownloadResponse | None = None
 
     @property
@@ -725,7 +1026,16 @@ class _DeferredHeaderResponse:
                     raise Oa112DownloadError("OA112_DOWNLOAD_REQUEST_BOUNDARY")
             else:
                 merged[key] = value
-        self._response = self._connection.get(target=self._target, headers=merged)
+        remaining = self._deadline.remaining_seconds()
+        self._response = self._connection.get(
+            target=self._target,
+            headers=merged,
+            read_timeout_seconds=min(_READ_TIMEOUT_SECONDS, remaining),
+        )
+        self._deadline.remaining_seconds()
+
+    def set_read_timeout_seconds(self, *, timeout_seconds: float) -> None:
+        self._ensure_response().set_read_timeout_seconds(timeout_seconds=timeout_seconds)
 
     def iter_raw(self, *, chunk_size: int) -> Iterator[bytes]:
         return self._ensure_response().iter_raw(chunk_size=chunk_size)
@@ -742,6 +1052,7 @@ def _validate_response(
     entry: Oa112RegistryEntry,
     offset: int,
     maximum_source_bytes: int,
+    deadline: _Oa112SourceDeadline,
 ) -> _ResponsePlan:
     if isinstance(response, _DeferredHeaderResponse):
         request_headers = {
@@ -754,8 +1065,10 @@ def _validate_response(
         if offset:
             request_headers["Range"] = f"bytes={offset}-"
         response.bind_headers(request_headers)
+    deadline.remaining_seconds()
     headers = _normalized_headers(response.headers)
     status = response.status_code
+    deadline.remaining_seconds()
     if "location" in headers or status < 200 or status >= 300:
         raise Oa112DownloadError("OA112_DOWNLOAD_REDIRECT_OR_STATUS")
     if headers.get("content-encoding", "identity").lower() != "identity":
@@ -798,10 +1111,21 @@ def _stream_to_part(
     maximum_source_bytes: int,
     declared_bytes: int | None,
     expected_total_bytes: int | None = None,
+    deadline: _Oa112SourceDeadline,
 ) -> int:
     total = initial_bytes
     new_bytes = 0
-    for chunk in response.iter_raw(chunk_size=_DOWNLOAD_CHUNK_BYTES):
+    iterator = response.iter_raw(chunk_size=_DOWNLOAD_CHUNK_BYTES)
+    while True:
+        remaining = deadline.remaining_seconds()
+        response.set_read_timeout_seconds(
+            timeout_seconds=min(_READ_TIMEOUT_SECONDS, remaining)
+        )
+        try:
+            chunk = next(iterator)
+        except StopIteration:
+            break
+        deadline.remaining_seconds()
         if not isinstance(chunk, bytes) or not chunk:
             raise Oa112DownloadError("OA112_DOWNLOAD_BODY_INVALID")
         total += len(chunk)
@@ -989,10 +1313,24 @@ def _hostname(url: str) -> str:
     return parsed.hostname
 
 
-def _resolve_public_addresses(hostname: str, *, resolver: Oa112DnsResolver) -> list[str]:
+def _resolve_public_addresses(
+    hostname: str,
+    *,
+    resolver: Oa112DnsResolver,
+    deadline: _Oa112SourceDeadline,
+) -> list[str]:
     try:
-        addresses = [str(ipaddress.ip_address(value)) for value in resolver.resolve(hostname)]
+        addresses = [
+            str(ipaddress.ip_address(value))
+            for value in resolver.resolve(
+                hostname,
+                timeout_seconds=deadline.remaining_seconds(),
+            )
+        ]
+        deadline.remaining_seconds()
         validate_resolved_addresses(hostname, addresses)
+    except Oa112DownloadError:
+        raise
     except (RagSourceRegistryError, OSError, ValueError) as error:
         raise Oa112DownloadError("OA112_DOWNLOAD_DNS") from error
     return sorted(
@@ -1211,6 +1549,30 @@ def _remove_partial(*, staging_fd: int, part_name: str, state_name: str) -> None
             return
         except OSError:
             return
+
+
+def _retain_nonempty_partial(
+    *,
+    part_fd: int,
+    staging_fd: int,
+    part_name: str,
+    state_name: str,
+) -> None:
+    """새 packet으로 Range resume할 수 있는 durable nonzero partial만 남긴다.
+
+    watchdog가 header 전에 socket을 닫으면 empty part/state 쌍이 남을 수 있다. 그 쌍은 다음
+    invocation을 resume-state-invalid으로 영구 차단하므로, size와 durability를 모두 확인한 뒤에만 보존한다.
+    """
+
+    try:
+        os.fsync(part_fd)
+        metadata = os.fstat(part_fd)
+        _validate_private_regular(metadata)
+        if metadata.st_size > 0:
+            return
+    except (OSError, Oa112DownloadError):
+        pass
+    _remove_partial(staging_fd=staging_fd, part_name=part_name, state_name=state_name)
 
 
 def _raw_filename(entry: Oa112RegistryEntry) -> str:

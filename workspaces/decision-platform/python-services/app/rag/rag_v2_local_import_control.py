@@ -16,8 +16,10 @@ from app.rag.benchmark_receipt_io import (
 from app.rag.owner_file_io import OwnerFileIoError, read_owner_regular_file
 
 _CONTROL_DIRECTORY = "control"
-_CONTROL_FILENAME = "owner-import.json"
-_CONTROL_RELATIVE_PATH = f"{_CONTROL_DIRECTORY}/{_CONTROL_FILENAME}"
+_IMPORT_CONTROL_FILENAME = "owner-import.json"
+_IMPORT_CONTROL_RELATIVE_PATH = f"{_CONTROL_DIRECTORY}/{_IMPORT_CONTROL_FILENAME}"
+_DELETE_CONTROL_FILENAME = "owner-delete.json"
+_DELETE_CONTROL_RELATIVE_PATH = f"{_CONTROL_DIRECTORY}/{_DELETE_CONTROL_FILENAME}"
 _MAX_CONTROL_BYTES = 16 * 1024
 _OWNER_ID = re.compile(r"^usr_[a-z0-9][a-z0-9_-]{2,95}$")
 _TICKET_ID = re.compile(r"^rti_[0-9a-f]{32}$")
@@ -41,10 +43,24 @@ _CONTROL_FIELDS = frozenset(
         "ticketId",
     }
 )
+_DELETE_CONTROL_FIELDS = frozenset(
+    {
+        "contractId",
+        "documentId",
+        "expiresAt",
+        "issuedAt",
+        "ownerUserId",
+        "schemaVersion",
+    }
+)
 
 
 class RagV2LocalImportControlError(ValueError):
     """local import control record가 private filesystem/ticket contract를 위반했음을 나타낸다."""
+
+
+class RagV2LocalDeleteControlError(ValueError):
+    """local delete control record가 owner-private hard-delete 경계를 위반했음을 나타낸다."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,6 +92,29 @@ class RagV2OwnerImportControl:
         }
 
 
+@dataclass(frozen=True, slots=True)
+class RagV2OwnerDeleteControl:
+    """authenticated local UI가 만든 short-lived owner document deletion selector다.
+
+    owner identity와 document identity는 fixed local record에서만 읽는다. CLI argv와 stdout에는
+    이 값을 복사하지 않으며, DB credential은 process environment로만 주입한다.
+    """
+
+    owner_user_id: str
+    document_id: str
+    issued_at: datetime
+    expires_at: datetime
+
+    def content_free_summary(self) -> dict[str, object]:
+        """BAT/CLI status에 노출 가능한 deletion control 상태만 투영한다."""
+
+        return {
+            "code": "OWNER_DELETE_CONTROL_READY",
+            "expiresAt": _format_instant(self.expires_at),
+            "state": "PENDING",
+        }
+
+
 def write_pending_owner_import_control(
     *,
     local_root: Path,
@@ -92,12 +131,12 @@ def write_pending_owner_import_control(
         write_benchmark_receipt(
             approved_root=local_root,
             relative_directory=_CONTROL_DIRECTORY,
-            filename=_CONTROL_FILENAME,
+            filename=_IMPORT_CONTROL_FILENAME,
             payload=payload,
         )
     except BenchmarkReceiptIoError as error:
         raise RagV2LocalImportControlError("LOCAL_IMPORT_CONTROL_BOUNDARY") from error
-    _assert_control_record_boundary(local_root)
+    _assert_control_record_boundary(local_root, filename=_IMPORT_CONTROL_FILENAME)
 
 
 def load_pending_owner_import_control(
@@ -107,16 +146,16 @@ def load_pending_owner_import_control(
 ) -> RagV2OwnerImportControl:
     """fixed local-root control record만 read해 one-time import selector를 반환한다."""
 
-    before = _assert_control_record_boundary(local_root)
+    before = _assert_control_record_boundary(local_root, filename=_IMPORT_CONTROL_FILENAME)
     try:
         raw = read_owner_regular_file(
             approved_root=local_root,
-            relative_path=_CONTROL_RELATIVE_PATH,
+            relative_path=_IMPORT_CONTROL_RELATIVE_PATH,
             max_bytes=_MAX_CONTROL_BYTES,
         ).content
     except OwnerFileIoError as error:
         raise RagV2LocalImportControlError("LOCAL_IMPORT_CONTROL_BOUNDARY") from error
-    after = _assert_control_record_boundary(local_root)
+    after = _assert_control_record_boundary(local_root, filename=_IMPORT_CONTROL_FILENAME)
     if before != after or len(raw) != before.st_size:
         raise RagV2LocalImportControlError("LOCAL_IMPORT_CONTROL_BOUNDARY")
     try:
@@ -127,6 +166,60 @@ def load_pending_owner_import_control(
     current = (now or datetime.now(UTC)).astimezone(UTC)
     if current >= control.expires_at:
         raise RagV2LocalImportControlError("LOCAL_IMPORT_CONTROL_EXPIRED")
+    return control
+
+
+def write_pending_owner_delete_control(
+    *,
+    local_root: Path,
+    control: RagV2OwnerDeleteControl,
+) -> None:
+    """trusted local UI가 owner document deletion selector를 0600 record로 publish한다.
+
+    delete control은 public HTTP route나 CLI argument가 아니다. DB admin DSN, owner raw path,
+    reason text를 record에 저장하지 않아 local record가 capability escalation에 쓰이지 않게 한다.
+    """
+
+    payload = _encode_delete_control(control)
+    try:
+        write_benchmark_receipt(
+            approved_root=local_root,
+            relative_directory=_CONTROL_DIRECTORY,
+            filename=_DELETE_CONTROL_FILENAME,
+            payload=payload,
+        )
+    except BenchmarkReceiptIoError as error:
+        raise RagV2LocalDeleteControlError("LOCAL_DELETE_CONTROL_BOUNDARY") from error
+    _assert_control_record_boundary(local_root, filename=_DELETE_CONTROL_FILENAME)
+
+
+def load_pending_owner_delete_control(
+    *,
+    local_root: Path,
+    now: datetime | None = None,
+) -> RagV2OwnerDeleteControl:
+    """fixed local-root deletion record만 read해 owner-bound hard-delete selector를 반환한다."""
+
+    before = _assert_control_record_boundary(local_root, filename=_DELETE_CONTROL_FILENAME)
+    try:
+        raw = read_owner_regular_file(
+            approved_root=local_root,
+            relative_path=_DELETE_CONTROL_RELATIVE_PATH,
+            max_bytes=_MAX_CONTROL_BYTES,
+        ).content
+    except OwnerFileIoError as error:
+        raise RagV2LocalDeleteControlError("LOCAL_DELETE_CONTROL_BOUNDARY") from error
+    after = _assert_control_record_boundary(local_root, filename=_DELETE_CONTROL_FILENAME)
+    if before != after or len(raw) != before.st_size:
+        raise RagV2LocalDeleteControlError("LOCAL_DELETE_CONTROL_BOUNDARY")
+    try:
+        payload = json.loads(raw.decode("utf-8", errors="strict"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise RagV2LocalDeleteControlError("LOCAL_DELETE_CONTROL_INVALID") from error
+    control = _decode_delete_control(payload)
+    current = (now or datetime.now(UTC)).astimezone(UTC)
+    if current >= control.expires_at:
+        raise RagV2LocalDeleteControlError("LOCAL_DELETE_CONTROL_EXPIRED")
     return control
 
 
@@ -187,6 +280,42 @@ def _decode_control(value: object) -> RagV2OwnerImportControl:
     return control
 
 
+def _encode_delete_control(control: RagV2OwnerDeleteControl) -> bytes:
+    _validate_delete_control(control)
+    payload = {
+        "contractId": "rag-v2-owner-local-delete-control-v1",
+        "documentId": control.document_id,
+        "expiresAt": _format_instant(control.expires_at),
+        "issuedAt": _format_instant(control.issued_at),
+        "ownerUserId": control.owner_user_id,
+        "schemaVersion": 1,
+    }
+    encoded = (json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n").encode(
+        "utf-8"
+    )
+    if not 1 <= len(encoded) <= _MAX_CONTROL_BYTES:
+        raise RagV2LocalDeleteControlError("LOCAL_DELETE_CONTROL_INVALID")
+    return encoded
+
+
+def _decode_delete_control(value: object) -> RagV2OwnerDeleteControl:
+    if not isinstance(value, Mapping) or set(value) != _DELETE_CONTROL_FIELDS:
+        raise RagV2LocalDeleteControlError("LOCAL_DELETE_CONTROL_INVALID")
+    if value.get("contractId") != "rag-v2-owner-local-delete-control-v1" or value.get("schemaVersion") != 1:
+        raise RagV2LocalDeleteControlError("LOCAL_DELETE_CONTROL_INVALID")
+    try:
+        control = RagV2OwnerDeleteControl(
+            owner_user_id=_require_pattern(value.get("ownerUserId"), _OWNER_ID),
+            document_id=_require_pattern(value.get("documentId"), _DOCUMENT_ID),
+            issued_at=_parse_instant(value.get("issuedAt")),
+            expires_at=_parse_instant(value.get("expiresAt")),
+        )
+    except (TypeError, ValueError) as error:
+        raise RagV2LocalDeleteControlError("LOCAL_DELETE_CONTROL_INVALID") from error
+    _validate_delete_control(control)
+    return control
+
+
 def _validate_control(control: RagV2OwnerImportControl) -> None:
     if (
         _OWNER_ID.fullmatch(control.owner_user_id) is None
@@ -206,8 +335,23 @@ def _validate_control(control: RagV2OwnerImportControl) -> None:
         raise RagV2LocalImportControlError("LOCAL_IMPORT_CONTROL_INVALID")
 
 
-def _assert_control_record_boundary(local_root: Path) -> os.stat_result:
-    record = local_root / _CONTROL_DIRECTORY / _CONTROL_FILENAME
+def _validate_delete_control(control: RagV2OwnerDeleteControl) -> None:
+    if (
+        _OWNER_ID.fullmatch(control.owner_user_id) is None
+        or _DOCUMENT_ID.fullmatch(control.document_id) is None
+        or control.issued_at.tzinfo is None
+        or control.expires_at.tzinfo is None
+        or control.expires_at.astimezone(UTC) - control.issued_at.astimezone(UTC) != timedelta(minutes=5)
+    ):
+        raise RagV2LocalDeleteControlError("LOCAL_DELETE_CONTROL_INVALID")
+
+
+def _assert_control_record_boundary(
+    local_root: Path,
+    *,
+    filename: str,
+) -> os.stat_result:
+    record = local_root / _CONTROL_DIRECTORY / filename
     try:
         metadata = record.lstat()
     except OSError as error:

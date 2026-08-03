@@ -18,10 +18,14 @@ class _FixtureTokenizer:
     """모델 payload 없이 Document IR canonicalization을 검증하는 tokenizer다."""
 
     def token_spans(self, text: str) -> tuple[tuple[int, int], ...]:
-        return tuple((match.start(), match.end()) for match in re.finditer(r"\\S+", text))
+        return tuple((match.start(), match.end()) for match in re.finditer(r"\S+", text))
 
 
 TOKENIZER = _FixtureTokenizer()
+
+
+def test_fixture_tokenizer_returns_spans_for_normal_text() -> None:
+    assert TOKENIZER.token_spans("one two") == ((0, 3), (4, 7))
 
 
 def test_document_ir_materializer_is_deterministic_and_excludes_raw_path() -> None:
@@ -40,14 +44,14 @@ def test_document_ir_materializer_is_deterministic_and_excludes_raw_path() -> No
         request=request,
         tokenizer=TOKENIZER,
         min_tokens=4,
-        max_tokens=20,
+        max_tokens=50,
     )
     second = materialize_document_ir(
         document_ir=document_ir,
         request=request,
         tokenizer=TOKENIZER,
         min_tokens=4,
-        max_tokens=20,
+        max_tokens=50,
     )
 
     assert first == second
@@ -162,6 +166,52 @@ def test_document_ir_materializer_requires_matching_identity_and_local_processin
                 external_embedding_allowed=False,
                 external_generation_allowed=False,
             ),
+            tokenizer=TOKENIZER,
+            min_tokens=1,
+            max_tokens=20,
+        )
+
+
+def test_document_ir_materializer_rejects_non_mapping_blocks_and_cells() -> None:
+    malformed_block = _document_ir(blocks=[])
+    malformed_block["blocks"] = [0]
+
+    with pytest.raises(DocumentIrMaterializationError, match="DOCUMENT_IR_BLOCK_INVALID"):
+        materialize_document_ir(
+            document_ir=malformed_block,
+            request=_request(),
+            tokenizer=TOKENIZER,
+            min_tokens=1,
+            max_tokens=20,
+        )
+
+    malformed_cell = _document_ir(blocks=[_table(page=1)])
+    malformed_cell["blocks"][0]["cells"] = [0]
+
+    with pytest.raises(DocumentIrMaterializationError, match="DOCUMENT_IR_BLOCK_INVALID"):
+        materialize_document_ir(
+            document_ir=malformed_cell,
+            request=_request(),
+            tokenizer=TOKENIZER,
+            min_tokens=1,
+            max_tokens=20,
+        )
+
+
+def test_document_ir_materializer_rejects_sparse_table_before_dense_rendering() -> None:
+    sparse_table = _table(page=1)
+    sparse_table.update(
+        {
+            "cells": [{"column": 255, "columnSpan": 1, "row": 200, "rowSpan": 1, "text": "only"}],
+            "columnCount": 256,
+            "rowCount": 201,
+        }
+    )
+
+    with pytest.raises(DocumentIrMaterializationError, match="DOCUMENT_IR_TABLE_AREA_EXCEEDED"):
+        materialize_document_ir(
+            document_ir=_document_ir(blocks=[sparse_table]),
+            request=_request(),
             tokenizer=TOKENIZER,
             min_tokens=1,
             max_tokens=20,

@@ -22,6 +22,7 @@ _SOURCE_ID = re.compile(r"^src_[a-z0-9][a-z0-9_-]{2,95}$")
 _SOURCE_REVISION_ID = re.compile(r"^srv_[a-z0-9][a-z0-9_-]{2,95}$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _LOCATOR_KEYS = frozenset(("page", "slide", "sheet", "section"))
+_LOCATOR_URI = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*://")
 _MAX_DOCUMENT_IR_BLOCKS = 50_000
 _MAX_DOCUMENT_IR_TEXT_CHARACTERS = 10_000_000
 _MAX_LIST_ITEMS = 1_000
@@ -344,7 +345,15 @@ def _copy_locator(locator: Mapping[str, object]) -> dict[str, object]:
         if not isinstance(value, int) or isinstance(value, bool) or value < 1:
             raise DocumentIrMaterializationError("DOCUMENT_IR_BLOCK_INVALID")
     elif key in {"sheet", "section"}:
-        if not isinstance(value, str) or not value or len(value) > (128 if key == "sheet" else 300):
+        if (
+            not isinstance(value, str)
+            or not value
+            or len(value) > (128 if key == "sheet" else 300)
+            or "/" in value
+            or "\\" in value
+            or _LOCATOR_URI.match(value) is not None
+            or any(ord(character) < 32 for character in value)
+        ):
             raise DocumentIrMaterializationError("DOCUMENT_IR_BLOCK_INVALID")
     else:  # pragma: no cover - set validation above keeps this closed.
         raise DocumentIrMaterializationError("DOCUMENT_IR_BLOCK_INVALID")

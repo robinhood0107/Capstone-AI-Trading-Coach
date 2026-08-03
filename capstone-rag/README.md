@@ -94,15 +94,17 @@ NVIDIA 장비가 없어 NVIDIA lane은 unit/contract/container smoke까지만 �
 
 ## Windows BAT 명령
 
-명령은 repository checkout의 `capstone-rag\tools\windows`에서 실행한다. 경로 인수에는 항상
-따옴표를 사용한다.
+명령은 repository checkout의 `capstone-rag\tools\windows`에서 실행한다. owner import는
+경로·owner ID·ticket을 명령행으로 받지 않는다. 인증된 local control plane만 0600의
+`control/owner-import.json`을 만들 수 있고, import BAT는 그 fixed record를 소비할 때만 동작한다.
+수동 BAT 사용자는 원본 경로나 ticket을 추가 인수로 전달해서는 안 된다.
 
 ```bat
 setup-rag-content.bat
-rag-import-auto.bat "C:\path\to\document-or-folder"
-rag-import-cpu.bat "C:\path\to\document-or-folder"
-rag-import-intel-gpu.bat "C:\path\to\document-or-folder"
-rag-import-nvidia-gpu.bat "C:\path\to\document-or-folder"
+rag-import-auto.bat
+rag-import-cpu.bat
+rag-import-intel-gpu.bat
+rag-import-nvidia-gpu.bat
 rag-import-status.bat
 rag-remove-document.bat <opaqueDocumentId>
 rag-cache-clean.bat
@@ -113,6 +115,11 @@ rag-cache-clean.bat
 `GPU`임을 확인해야 성공한다. NVIDIA 하드웨어가 없으면 stable
 `NOT_RUN_NO_NVIDIA`를 반환한다. 각 lane은 독립 `uv.lock`과 venv를 사용하고 공통 application
 parser·Document IR·generation 코드를 호출한다.
+
+`owner-import.json`은 owner-bound 5분 single-use import ticket, approved root 아래의 relative
+path, opaque document/source identifiers만 담는다. import 결과에는 path, owner ID, ticket,
+DB DSN 또는 raw text를 출력하지 않는다. 이 local control record는 OA download, Voyage/Vertex
+activation 또는 provider call의 승인 packet을 대체하지 않는다.
 
 설치본의 기본 root는 `%LOCALAPPDATA%\CapstoneAITradingCoach\rag`, 개발 checkout은
 `capstone-rag/runtime/local-corpus`다. 두 위치의 원문·parse·embedding·cache는 Git 배포물이

@@ -81,6 +81,7 @@ class RagSourceRegistryMigrationIntegrationTest {
                         "rag_v2_immutable_import_tickets",
                         "rag_v2_immutable_activation_receipts",
                         "rag_v2_immutable_deletion_receipts",
+                        "rag_v2_immutable_owner_document_deletion_tombstones",
                     )
                 assertThat(queryStrings(connection, normalizedTableQuery))
                     .containsAll(expectedTables)

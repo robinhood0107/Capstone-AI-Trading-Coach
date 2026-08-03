@@ -37,6 +37,7 @@ class RagV2ImmutableBundleMigrationContractTest {
     @Test
     fun `V25 creates a separate immutable source chunk generation and bundle graph`() {
         listOf(
+            "CREATE TABLE rag_v2_immutable_oa_track_catalog",
             "CREATE TABLE rag_v2_immutable_source_revisions",
             "CREATE TABLE rag_v2_immutable_chunks",
             "CREATE TABLE rag_v2_immutable_component_generations",
@@ -53,6 +54,7 @@ class RagV2ImmutableBundleMigrationContractTest {
             "CREATE TABLE rag_v2_immutable_import_tickets",
             "CREATE TABLE rag_v2_immutable_activation_receipts",
             "CREATE TABLE rag_v2_immutable_deletion_receipts",
+            "CREATE TABLE rag_v2_immutable_owner_document_deletion_tombstones",
         ).forEach { table ->
             assertThat(migration).contains(table)
         }
@@ -60,15 +62,22 @@ class RagV2ImmutableBundleMigrationContractTest {
         assertThat(migration).contains("'bge_m3_local_1024_v1'", "'voyage_context_4_1024_v1'")
         assertThat(migration).contains("machine_fetch_allowed", "local_processing_allowed")
         assertThat(migration).contains("external_embedding_allowed", "external_generation_allowed")
-        assertThat(migration).contains("canonical_text", "canonical_text_sha256", "context_set_hash")
+        assertThat(migration).contains("oa_track_id", "required_active_source_count")
+        assertThat(migration).contains("license_evidence_sha256", "access_evidence_sha256")
+        assertThat(migration).contains("canonical_https_url")
+        assertThat(migration).contains("canonical_text", "canonical_text_sha256", "normalized_document_ir_sha256", "context_set_hash")
+        assertThat(migration).contains("rag_v2_immutable_document_ir_blocks_are_valid")
         assertThat(migration).contains("gin_trgm_ops", "vector(1024)")
         assertThat(migration).contains("COUNT(DISTINCT membership.source_revision_id) <> 112")
+        assertThat(migration).contains("OA112 track distribution is invalid")
+        assertThat(migration).contains("COUNT(*) > 28")
         assertThat(migration).contains("reserve_source = false")
     }
 
     @Test
     fun `V25 keeps owner rows behind RLS and capability functions`() {
         listOf(
+            "rag_v2_immutable_oa_track_catalog",
             "rag_v2_immutable_source_revisions",
             "rag_v2_immutable_chunks",
             "rag_v2_immutable_component_generations",
@@ -80,6 +89,7 @@ class RagV2ImmutableBundleMigrationContractTest {
             "rag_v2_immutable_owner_bundle_pointers",
             "rag_v2_immutable_import_tickets",
             "rag_v2_immutable_deletion_receipts",
+            "rag_v2_immutable_owner_document_deletion_tombstones",
         ).forEach { table ->
             assertThat(migration).contains("ALTER TABLE $table ENABLE ROW LEVEL SECURITY")
             assertThat(migration).contains("ALTER TABLE $table FORCE ROW LEVEL SECURITY")
@@ -98,6 +108,9 @@ class RagV2ImmutableBundleMigrationContractTest {
         }
         assertThat(migration).contains("SECURITY DEFINER")
         assertThat(migration).contains("SET search_path = pg_catalog, public, pg_temp")
+        assertThat(migration).contains("rag-v2-immutable-owner-document|")
+        assertThat(migration).contains("OWNER_DELETED")
+        assertThat(migration).contains("UNMATERIALIZED_RUN", "affected_materialization_run_count")
         assertThat(migration).contains(
             "REVOKE ALL PRIVILEGES ON FUNCTION delete_owner_rag_v2_document(text, text, text, text) FROM decision_app",
         )
@@ -126,7 +139,8 @@ class RagV2ImmutableBundleMigrationContractTest {
         assertThat(deleteEmbedding).isGreaterThan(activation)
         assertThat(deleteChunk).isGreaterThan(activation)
         assertThat(deleteSource).isGreaterThan(activation)
-        assertThat(migration).contains("'rgr_'", "'rti_'", "'rgr_del_'")
+        assertThat(migration).contains("replacement bundle omits a surviving owner document membership")
+        assertThat(migration).contains("rgr_", "rti_", "rgr_del_")
     }
 
     @Test
@@ -138,8 +152,10 @@ class RagV2ImmutableBundleMigrationContractTest {
             "absolute_path",
             "local_path",
             "file_path",
-            "http://",
-            "https://",
+            "pg_read_file",
+            "dblink",
+            "http_get",
+            "http_post",
         )
     }
 
@@ -171,6 +187,5 @@ class RagV2ImmutableBundleMigrationContractTest {
                 ?.toIntOrNull(),
         )
 
-    private fun sha256(bytes: ByteArray): String =
-        HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes))
+    private fun sha256(bytes: ByteArray): String = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes))
 }

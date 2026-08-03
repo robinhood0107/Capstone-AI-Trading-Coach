@@ -1,0 +1,109 @@
+{
+  "contractId": "foreign-news-lane-entitlement-v1",
+  "lanes": [
+    {
+      "allowedRetainedFields": [
+        "OWNER_LOCAL_DERIVED_AGGREGATE"
+      ],
+      "articleMetadataStored": false,
+      "attachmentAllowed": false,
+      "boundedTransientParseOnly": false,
+      "credentialMode": "OWNER_PERSONAL_LOCAL_ONLY",
+      "credentialStored": false,
+      "derivedCacheDeletionOnExpiryRequired": true,
+      "endpointAllowance": "MARKET_AND_COMPANY_NEWS_ONLY",
+      "externalEntityAllowed": false,
+      "fixedOriginBinding": "FINNHUB_FIXED_API_HOST",
+      "headlineSummaryBodyStored": false,
+      "laneId": "FINNHUB_PERSONAL_LOCAL",
+      "mode": "CONTRACT_ONLY",
+      "ownerLocalDerivedOnly": true,
+      "providerCallsAllowed": false,
+      "queryOrHeaderStored": false,
+      "rawForwardedToVertex": false,
+      "rawProviderDataStored": false,
+      "redirectAllowed": false,
+      "sharedHostedKeyAllowed": false
+    },
+    {
+      "allowedRetainedFields": [
+        "CONTENT_HASH",
+        "DERIVED_AGGREGATE",
+        "OFFICIAL_RELEASE_LOCATOR"
+      ],
+      "articleMetadataStored": false,
+      "attachmentAllowed": false,
+      "boundedTransientParseOnly": true,
+      "credentialMode": "OFFICIAL_ORIGIN_NO_KEY",
+      "credentialStored": false,
+      "derivedCacheDeletionOnExpiryRequired": false,
+      "endpointAllowance": "OFFICIAL_RELEASES_ONLY",
+      "externalEntityAllowed": false,
+      "fixedOriginBinding": "SEC_GOV_OFFICIAL",
+      "headlineSummaryBodyStored": false,
+      "laneId": "SEC_OFFICIAL",
+      "mode": "CONTRACT_ONLY",
+      "ownerLocalDerivedOnly": false,
+      "providerCallsAllowed": false,
+      "queryOrHeaderStored": false,
+      "rawForwardedToVertex": false,
+      "rawProviderDataStored": false,
+      "redirectAllowed": false,
+      "sharedHostedKeyAllowed": false
+    },
+    {
+      "allowedRetainedFields": [
+        "CONTENT_HASH",
+        "DERIVED_AGGREGATE",
+        "OFFICIAL_RELEASE_LOCATOR"
+      ],
+      "articleMetadataStored": false,
+      "attachmentAllowed": false,
+      "boundedTransientParseOnly": true,
+      "credentialMode": "OFFICIAL_ORIGIN_NO_KEY",
+      "credentialStored": false,
+      "derivedCacheDeletionOnExpiryRequired": false,
+      "endpointAllowance": "OFFICIAL_RELEASES_ONLY",
+      "externalEntityAllowed": false,
+      "fixedOriginBinding": "FEDERAL_RESERVE_GOV_OFFICIAL",
+      "headlineSummaryBodyStored": false,
+      "laneId": "FED_OFFICIAL",
+      "mode": "CONTRACT_ONLY",
+      "ownerLocalDerivedOnly": false,
+      "providerCallsAllowed": false,
+      "queryOrHeaderStored": false,
+      "rawForwardedToVertex": false,
+      "rawProviderDataStored": false,
+      "redirectAllowed": false,
+      "sharedHostedKeyAllowed": false
+    },
+    {
+      "allowedRetainedFields": [
+        "OFFLINE_AGGREGATE_REFERENCE"
+      ],
+      "articleMetadataStored": false,
+      "attachmentAllowed": false,
+      "boundedTransientParseOnly": false,
+      "credentialMode": "NONE",
+      "credentialStored": false,
+      "derivedCacheDeletionOnExpiryRequired": false,
+      "endpointAllowance": "NONE",
+      "externalEntityAllowed": false,
+      "fixedOriginBinding": "NONE",
+      "gdeltAdapterAdded": false,
+      "gdeltExecutorAdded": false,
+      "gdeltOutboundCalls": 0,
+      "headlineSummaryBodyStored": false,
+      "laneId": "GDELT_OFFLINE_REFERENCE",
+      "mode": "DECISION_PLATFORM_OFFLINE_REFERENCE_ONLY",
+      "ownerLocalDerivedOnly": false,
+      "providerCallsAllowed": false,
+      "queryOrHeaderStored": false,
+      "rawForwardedToVertex": false,
+      "rawProviderDataStored": false,
+      "redirectAllowed": false,
+      "sharedHostedKeyAllowed": false
+    }
+  ],
+  "schemaVersion": 1
+}

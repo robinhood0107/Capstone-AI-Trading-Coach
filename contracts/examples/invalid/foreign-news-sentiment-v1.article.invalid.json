@@ -1,0 +1,34 @@
+{
+  "allowedUses": [
+    "EXPLANATION_ONLY"
+  ],
+  "articleMetadataStored": false,
+  "articleTitle": "must never be stored",
+  "asOf": "2026-08-03T00:00:00Z",
+  "contractId": "foreign-news-sentiment-v1",
+  "decisionAuthority": "NONE",
+  "lanes": [
+    {
+      "laneId": "FINNHUB_PERSONAL_LOCAL",
+      "state": "NOT_ACTIVATED"
+    },
+    {
+      "laneId": "SEC_OFFICIAL",
+      "state": "NOT_ACTIVATED"
+    },
+    {
+      "laneId": "FED_OFFICIAL",
+      "state": "NOT_ACTIVATED"
+    },
+    {
+      "laneId": "GDELT_OFFLINE_REFERENCE",
+      "state": "NOT_ACTIVATED"
+    }
+  ],
+  "rawProviderDataStored": false,
+  "riskDecisionHashIncluded": false,
+  "s5FeatureEligible": false,
+  "schemaVersion": 1,
+  "status": "ABSTAIN",
+  "symbol": "005930"
+}

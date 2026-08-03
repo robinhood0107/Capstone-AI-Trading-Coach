@@ -8,7 +8,11 @@ from pathlib import Path
 from unittest import mock
 
 import contracts.verify_pre_s5_doc_truth_freeze as truth_freeze
+from contracts.generate_pre_s5_rag_news_contracts import FROZEN_EXISTING_HASHES
+from contracts.generate_s4_7d_rag_v2_contracts import FROZEN_V1_HASHES
 from contracts.verify_pre_s5_doc_truth_freeze import (
+    IMMUTABLE_HISTORY_PATH_PREFIXES,
+    IMMUTABLE_PRE_S5_FROZEN_PATHS,
     SOLO_OWNERSHIP_MARKERS,
     SOLO_OWNERSHIP_PUBLIC_PATHS,
     SOLO_OWNERSHIP_ROLE_CATALOG,
@@ -60,10 +64,21 @@ class PreS5DocumentTruthFreezeTest(unittest.TestCase):
             path.write_text("# Placeholder\n", encoding="utf-8")
 
         for relative in (
+            "contracts/catalogs/s4-rag-contract.v1.json",
+            "contracts/openapi/openapi.json",
+            "contracts/proto/rag.descriptor.pb",
+            "contracts/proto/rag_v2.descriptor.pb",
+            "contracts/schemas/s4-rag-answer.schema.json",
             "docs/adr/ADR-999-existing.md",
             "docs/decision-platform/historical-record.md",
             "contracts/changes/20260801-existing.md",
+            "capstone-rag/eval/s4-5-evaluation-60.v1.json",
+            "capstone-rag/manifests/completion-manifest.v1.sha256",
+            "capstone-rag/ocr/benchmark/receipts/benchmark-summary.v1.json",
             "capstone-rag/reports/completion-receipt.v1.json",
+            "capstone-rag/source-cards/README.md",
+            "capstone-rag/source-cards/s4-7b/card-001.v1.json",
+            "capstone-rag/source-cards/s4-7c-external/card-001.v1.json",
         ):
             path = root / relative
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -105,6 +120,35 @@ class PreS5DocumentTruthFreezeTest(unittest.TestCase):
     def test_repository_public_ssot_has_the_pre_s5_truth_freeze_markers(self) -> None:
         errors = verify_public_truth_freeze(REPO_ROOT)
         self.assertEqual([], errors)
+
+    def test_active_rag_global_news_markers_are_part_of_the_public_truth_gate(self) -> None:
+        """OA112 logical-only state와 foreign-news route는 active SSOT에서 함께 검증해야 한다."""
+
+        self.assertIn(
+            "PRE_S5_RAG_GLOBAL_NEWS_CONTRACT_LOCKED=1",
+            truth_freeze.REQUIRED_PUBLIC_MARKERS["docs/README.md"],
+        )
+        self.assertIn(
+            "S4_7D_OA112_PHYSICAL_ACTIVATION=NOT_MATERIALIZED",
+            truth_freeze.REQUIRED_PUBLIC_MARKERS["capstone-rag/README.md"],
+        )
+        self.assertIn(
+            "/api/v2/market-evidence/{symbol}/foreign-news-sentiment",
+            truth_freeze.REQUIRED_PUBLIC_MARKERS["docs/API_명세서.md"],
+        )
+        for relative in (
+            "AGENTS.md",
+            "README.md",
+            "docs/README.md",
+            "docs/최종_프로젝트_명세서.md",
+            "docs/API_명세서.md",
+            "contracts/README.md",
+            "workspaces/decision-platform/README.md",
+        ):
+            self.assertIn(
+                "PLAN_FEASIBILITY=GO_WITH_EXTERNAL_HARD_GATES",
+                truth_freeze.REQUIRED_PUBLIC_MARKERS[relative],
+            )
 
     def test_solo_ownership_lock_accepts_exact_catalog_and_clean_teammate_workspaces(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -227,14 +271,106 @@ class PreS5DocumentTruthFreezeTest(unittest.TestCase):
             root = Path(temporary_directory)
             base = self._solo_ownership_fixture(root)
             for relative in (
+                "contracts/catalogs/s4-rag-contract.v1.json",
+                "contracts/openapi/openapi.json",
+                "contracts/proto/rag.descriptor.pb",
+                "contracts/proto/rag_v2.descriptor.pb",
+                "contracts/schemas/s4-rag-answer.schema.json",
                 "docs/adr/ADR-999-existing.md",
                 "docs/decision-platform/historical-record.md",
                 "contracts/changes/20260801-existing.md",
+                "capstone-rag/eval/s4-5-evaluation-60.v1.json",
+                "capstone-rag/manifests/completion-manifest.v1.sha256",
+                "capstone-rag/ocr/benchmark/receipts/benchmark-summary.v1.json",
                 "capstone-rag/reports/completion-receipt.v1.json",
+                "capstone-rag/source-cards/README.md",
+                "capstone-rag/source-cards/s4-7b/card-001.v1.json",
+                "capstone-rag/source-cards/s4-7c-external/card-001.v1.json",
             ):
                 path = root / relative
                 path.write_text(path.read_text(encoding="utf-8") + "changed\n", encoding="utf-8")
             self._commit(root, "historical record drift")
+
+            errors = verify_solo_ownership_lock(root, base)
+
+        self.assertIn("immutable historical records changed since base", errors)
+        self.assertIn("exact-30 source-card tree changed since base", errors)
+
+    def test_solo_ownership_lock_rejects_added_exact30_source_card(self) -> None:
+        """exact-30 tree digest를 바꾸는 A-only card도 base diff에서 거부한다."""
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            base = self._solo_ownership_fixture(root)
+            added = root / "capstone-rag/source-cards/s4-7b/card-002.v1.json"
+            added.write_text("{\"sourceId\": \"src_added\"}\n", encoding="utf-8")
+            self._commit(root, "exact30 source-card addition")
+
+            errors = verify_solo_ownership_lock(root, base)
+
+        self.assertIn("exact-30 source-card tree changed since base", errors)
+
+    def test_solo_ownership_lock_allows_a_new_historical_manifest_record(self) -> None:
+        """새 addendum manifest는 허용하되 병합 뒤에는 다음 base diff에서 immutable이 된다."""
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            base = self._solo_ownership_fixture(root)
+            created = root / "capstone-rag/manifests/pre-s5-addendum.v1.json"
+            created.write_text("{\"schemaVersion\": 1}\n", encoding="utf-8")
+            self._commit(root, "new historical manifest")
+
+            errors = verify_solo_ownership_lock(root, base)
+
+        self.assertEqual([], errors)
+
+    def test_frozen_contract_set_covers_legacy_v1_v2_companions(self) -> None:
+        self.assertTrue(
+            {
+                "contracts/catalogs/s4-rag-contract.v1.json",
+                "contracts/catalogs/s4-rag-v2-contract.v1.json",
+                "contracts/openapi/openapi.json",
+                "contracts/openapi/rag-v2.openapi.json",
+                "contracts/proto/rag.proto",
+                "contracts/proto/rag.descriptor.pb",
+                "contracts/proto/rag.descriptor.sha256",
+                "contracts/proto/rag_v2.descriptor.pb",
+                "contracts/proto/rag_v2.descriptor.sha256",
+                "contracts/proto/rag_v2.proto",
+                "contracts/schemas/news_sentiment_summary.v2.schema.json",
+                "contracts/schemas/rag-source-card-v1.schema.json",
+                "contracts/schemas/rag-source-card-v2.schema.json",
+                "contracts/schemas/s4-rag-answer.schema.json",
+                "contracts/schemas/s4-rag-ask-request.schema.json",
+                "contracts/schemas/s4-rag-history-detail.schema.json",
+                "contracts/schemas/s4-rag-history-page.schema.json",
+            }.issubset(IMMUTABLE_PRE_S5_FROZEN_PATHS)
+        )
+        for frozen_paths in (FROZEN_V1_HASHES, FROZEN_EXISTING_HASHES):
+            with self.subTest(frozen_paths=frozen_paths):
+                self.assertTrue(
+                    all(
+                        relative in IMMUTABLE_PRE_S5_FROZEN_PATHS
+                        or relative.startswith(IMMUTABLE_HISTORY_PATH_PREFIXES)
+                        for relative in frozen_paths
+                    )
+                )
+
+    def test_solo_ownership_lock_rejects_immutable_history_type_change(self) -> None:
+        """historical path를 symlink로 바꾸는 T diff도 byte-stable 보존 위반이다."""
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            base = self._solo_ownership_fixture(root)
+            historical = root / "contracts/changes/20260801-existing.md"
+            target = root / "outside-history.md"
+            target.write_text("# Outside\n", encoding="utf-8")
+            historical.unlink()
+            try:
+                os.symlink(target, historical)
+            except OSError as error:
+                self.skipTest(f"symlink fixture is unavailable: {error}")
+            self._commit(root, "historical type drift")
 
             errors = verify_solo_ownership_lock(root, base)
 
@@ -255,6 +391,24 @@ class PreS5DocumentTruthFreezeTest(unittest.TestCase):
 
         self.assertIn("docs/s5-team-dependencies.md: new teammate role was added outside the exact catalog", errors)
         self.assertIn("docs/s5-team-dependencies.md: new teammate dependency was added", errors)
+
+    def test_solo_ownership_lock_rejects_contiguous_teammate_alias(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            base = self._solo_ownership_fixture(root)
+            historical = root / "docs/s5-contiguous-teammate-dependency.md"
+            historical.write_text(
+                "teammate B required artifact for S5 entry\n",
+                encoding="utf-8",
+            )
+            self._commit(root, "contiguous teammate dependency")
+
+            errors = verify_solo_ownership_lock(root, base)
+
+        self.assertIn(
+            "docs/s5-contiguous-teammate-dependency.md: new teammate dependency was added",
+            errors,
+        )
 
     def test_solo_ownership_lock_rejects_camel_case_catalog_role_aliases(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

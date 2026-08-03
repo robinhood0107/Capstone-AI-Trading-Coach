@@ -1,0 +1,30 @@
+{
+  "contractId": "s4-8-optional3-entitlement-v1",
+  "entitlements": [
+    {
+      "activationStatus": "CONTRACT_ONLY",
+      "derivedDataStored": false,
+      "providerCallsAllowed": true,
+      "providerFamily": "FINNHUB_OPTIONAL3",
+      "rawProviderDataStored": false,
+      "retryCount": 0
+    },
+    {
+      "activationStatus": "BLOCKED_NO_CREDENTIAL_OR_ENTITLEMENT",
+      "derivedDataStored": false,
+      "providerCallsAllowed": false,
+      "providerFamily": "TWELVE_DATA",
+      "rawProviderDataStored": false,
+      "retryCount": 0
+    },
+    {
+      "activationStatus": "BLOCKED_NO_CREDENTIAL_OR_ENTITLEMENT",
+      "derivedDataStored": false,
+      "providerCallsAllowed": false,
+      "providerFamily": "MASSIVE",
+      "rawProviderDataStored": false,
+      "retryCount": 0
+    }
+  ],
+  "schemaVersion": 1
+}

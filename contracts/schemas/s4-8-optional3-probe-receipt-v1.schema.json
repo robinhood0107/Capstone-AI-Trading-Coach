@@ -1,0 +1,47 @@
+{
+  "$id": "contracts/schemas/s4-8-optional3-probe-receipt-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "contractId": {
+      "const": "s4-8-optional3-probe-receipt-v1"
+    },
+    "firstFailureStopsRemainingCalls": {
+      "const": true
+    },
+    "physicalCallCount": {
+      "const": 0
+    },
+    "providerFamily": {
+      "enum": [
+        "FINNHUB_OPTIONAL3",
+        "TWELVE_DATA",
+        "MASSIVE"
+      ]
+    },
+    "rawProviderDataStored": {
+      "const": false
+    },
+    "retryCount": {
+      "const": 0
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "state": {
+      "const": "NOT_EXECUTED"
+    }
+  },
+  "required": [
+    "contractId",
+    "firstFailureStopsRemainingCalls",
+    "physicalCallCount",
+    "providerFamily",
+    "rawProviderDataStored",
+    "retryCount",
+    "schemaVersion",
+    "state"
+  ],
+  "title": "s4-8-optional3-probe-receipt-v1",
+  "type": "object"
+}

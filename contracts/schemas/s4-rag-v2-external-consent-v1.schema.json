@@ -1,0 +1,45 @@
+{
+  "$id": "contracts/schemas/s4-rag-v2-external-consent-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "enum": [
+        "GRANT",
+        "REVOKE"
+      ]
+    },
+    "consentType": {
+      "const": "EXTERNAL_AI_RAG_V2"
+    },
+    "contractId": {
+      "const": "s4-rag-v2-external-consent-v1"
+    },
+    "disclosureDigest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "policyDigest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "processorSetDigest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": 1
+    }
+  },
+  "required": [
+    "contractId",
+    "action",
+    "consentType",
+    "disclosureDigest",
+    "policyDigest",
+    "processorSetDigest",
+    "schemaVersion"
+  ],
+  "title": "s4-rag-v2-external-consent-v1",
+  "type": "object"
+}

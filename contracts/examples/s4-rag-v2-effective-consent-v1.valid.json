@@ -1,0 +1,9 @@
+{
+  "consentEventId": "rce_01CONTRACTFIXTURE",
+  "contractId": "s4-rag-v2-effective-consent-v1",
+  "effective": true,
+  "policyDigest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "processorSetDigest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "schemaVersion": 1,
+  "state": "GRANTED"
+}

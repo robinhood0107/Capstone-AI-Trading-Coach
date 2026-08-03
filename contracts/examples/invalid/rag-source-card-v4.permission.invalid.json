@@ -1,0 +1,33 @@
+{
+  "accessEvidence": {
+    "accessCheckedAt": "2026-08-03T00:00:00Z",
+    "accessEvidenceDigest": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "verificationState": "VERIFIED"
+  },
+  "activeOa112Eligible": true,
+  "authors": [
+    "Contract fixture author"
+  ],
+  "canonicalUrl": "https://example.invalid/oa-contract-fixture",
+  "canonicalUrlSha256": "80ac6d5b5b43cf5598ac55a8b2116d074124f964c730220a1c27f4fbdeab70c1",
+  "contractId": "rag-source-card-v4",
+  "identifier": {
+    "scheme": "DOI",
+    "value": "10.0000/contract-fixture"
+  },
+  "licenseEvidenceDigest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "mimeType": "application/pdf",
+  "permissions": {
+    "externalEmbeddingAllowed": true,
+    "externalGenerationAllowed": false,
+    "localProcessingAllowed": true,
+    "machineFetchAllowed": true
+  },
+  "rawContentSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "revision": "contract-fixture-r1",
+  "revisionDate": "2026-08-03",
+  "schemaVersion": 4,
+  "sourceId": "src_oa_contract_fixture_001",
+  "sourceKind": "OPEN_ACCESS_DOCUMENT",
+  "title": "Synthetic contract fixture only"
+}

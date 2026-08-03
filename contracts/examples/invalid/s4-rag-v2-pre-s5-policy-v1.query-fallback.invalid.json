@@ -1,0 +1,74 @@
+{
+  "activeEmbeddingProfile": "NONE",
+  "contractId": "s4-rag-v2-pre-s5-policy-v1",
+  "decisionAuthority": "NONE",
+  "generationAuthority": "EXPLANATION_ONLY",
+  "openAiCallsAllowed": false,
+  "retrieval": {
+    "channelTopK": 30,
+    "rrfK": 60,
+    "topK": 5
+  },
+  "runtimeState": "CONTRACT_ONLY",
+  "schemaVersion": 1,
+  "vertex": {
+    "activationEvidenceRequired": [
+      "CREDENTIAL_FILE_SECURITY",
+      "PROJECT_CACHE_STATE",
+      "ABUSE_MONITORING_STATE",
+      "MODEL_AVAILABILITY"
+    ],
+    "authentication": [
+      "ADC",
+      "SERVICE_ACCOUNT"
+    ],
+    "boundedJsonCredentialRequired": true,
+    "contextCacheAllowed": false,
+    "credentialFileRequirements": {
+      "credentialFileMode": "0600",
+      "credentialRootMode": "0700",
+      "linkCount": 1,
+      "ownerMatchRequired": true,
+      "regularFileRequired": true
+    },
+    "developerApiAllowed": false,
+    "fallbackAllowed": false,
+    "fileUploadAllowed": false,
+    "generationMethod": "generateContent",
+    "generationUnavailableStatus": "GENERATION_UNAVAILABLE",
+    "maximumEvidenceCount": 5,
+    "maximumGenerateContentCallsPerQuestion": 1,
+    "modelId": "gemini-3.5-flash",
+    "openAiCallsAllowed": false,
+    "rawResponseStored": false,
+    "rerankerAllowed": false,
+    "retryCount": 0,
+    "sanitizedUsageLedgerOnly": true,
+    "searchMapsGroundingAllowed": false,
+    "sessionResumptionAllowed": false,
+    "toolsFunctionsAllowed": false,
+    "verifierAllowed": false
+  },
+  "voyage": {
+    "activationEvidenceRequired": [
+      "ORGANIZATION_TRAINING_OPT_OUT",
+      "PAYMENT_METHOD_PRIVACY_EVIDENCE"
+    ],
+    "batchApiAllowed": false,
+    "dimension": 1024,
+    "filesApiAllowed": false,
+    "fullBundleScope": [
+      "EXACT30",
+      "OA112",
+      "OWNER_PRIVATE"
+    ],
+    "generationFallback": "FULL_BUNDLE_REBUILD_EVALUATE_CAS",
+    "modelId": "voyage-context-4",
+    "orderedPrechunkedDocumentGroupsRequired": true,
+    "outboundCallsAllowed": false,
+    "partialProfileMixAllowed": false,
+    "queryUnitFallbackAllowed": true,
+    "retryCount": 0,
+    "runtimeEnvironmentVariable": "VOYAGE_API_KEY"
+  }
+}

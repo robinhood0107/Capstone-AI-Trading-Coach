@@ -1,0 +1,266 @@
+{
+  "contractId": "pre-s5-rag-news-contract.v1",
+  "decisionPlatformOwner": "DECISION_PLATFORM",
+  "foreignNews": {
+    "endpoint": "/api/v2/market-evidence/{symbol}/foreign-news-sentiment",
+    "lanes": [
+      {
+        "allowedRetainedFields": [
+          "OWNER_LOCAL_DERIVED_AGGREGATE"
+        ],
+        "articleMetadataStored": false,
+        "attachmentAllowed": false,
+        "boundedTransientParseOnly": false,
+        "credentialMode": "OWNER_PERSONAL_LOCAL_ONLY",
+        "credentialStored": false,
+        "derivedCacheDeletionOnExpiryRequired": true,
+        "endpointAllowance": "MARKET_AND_COMPANY_NEWS_ONLY",
+        "externalEntityAllowed": false,
+        "fixedOriginBinding": "FINNHUB_FIXED_API_HOST",
+        "headlineSummaryBodyStored": false,
+        "laneId": "FINNHUB_PERSONAL_LOCAL",
+        "mode": "CONTRACT_ONLY",
+        "ownerLocalDerivedOnly": true,
+        "providerCallsAllowed": false,
+        "queryOrHeaderStored": false,
+        "rawForwardedToVertex": false,
+        "rawProviderDataStored": false,
+        "redirectAllowed": false,
+        "sharedHostedKeyAllowed": false
+      },
+      {
+        "allowedRetainedFields": [
+          "CONTENT_HASH",
+          "DERIVED_AGGREGATE",
+          "OFFICIAL_RELEASE_LOCATOR"
+        ],
+        "articleMetadataStored": false,
+        "attachmentAllowed": false,
+        "boundedTransientParseOnly": true,
+        "credentialMode": "OFFICIAL_ORIGIN_NO_KEY",
+        "credentialStored": false,
+        "derivedCacheDeletionOnExpiryRequired": false,
+        "endpointAllowance": "OFFICIAL_RELEASES_ONLY",
+        "externalEntityAllowed": false,
+        "fixedOriginBinding": "SEC_GOV_OFFICIAL",
+        "headlineSummaryBodyStored": false,
+        "laneId": "SEC_OFFICIAL",
+        "mode": "CONTRACT_ONLY",
+        "ownerLocalDerivedOnly": false,
+        "providerCallsAllowed": false,
+        "queryOrHeaderStored": false,
+        "rawForwardedToVertex": false,
+        "rawProviderDataStored": false,
+        "redirectAllowed": false,
+        "sharedHostedKeyAllowed": false
+      },
+      {
+        "allowedRetainedFields": [
+          "CONTENT_HASH",
+          "DERIVED_AGGREGATE",
+          "OFFICIAL_RELEASE_LOCATOR"
+        ],
+        "articleMetadataStored": false,
+        "attachmentAllowed": false,
+        "boundedTransientParseOnly": true,
+        "credentialMode": "OFFICIAL_ORIGIN_NO_KEY",
+        "credentialStored": false,
+        "derivedCacheDeletionOnExpiryRequired": false,
+        "endpointAllowance": "OFFICIAL_RELEASES_ONLY",
+        "externalEntityAllowed": false,
+        "fixedOriginBinding": "FEDERAL_RESERVE_GOV_OFFICIAL",
+        "headlineSummaryBodyStored": false,
+        "laneId": "FED_OFFICIAL",
+        "mode": "CONTRACT_ONLY",
+        "ownerLocalDerivedOnly": false,
+        "providerCallsAllowed": false,
+        "queryOrHeaderStored": false,
+        "rawForwardedToVertex": false,
+        "rawProviderDataStored": false,
+        "redirectAllowed": false,
+        "sharedHostedKeyAllowed": false
+      },
+      {
+        "allowedRetainedFields": [
+          "OFFLINE_AGGREGATE_REFERENCE"
+        ],
+        "articleMetadataStored": false,
+        "attachmentAllowed": false,
+        "boundedTransientParseOnly": false,
+        "credentialMode": "NONE",
+        "credentialStored": false,
+        "derivedCacheDeletionOnExpiryRequired": false,
+        "endpointAllowance": "NONE",
+        "externalEntityAllowed": false,
+        "fixedOriginBinding": "NONE",
+        "gdeltAdapterAdded": false,
+        "gdeltExecutorAdded": false,
+        "gdeltOutboundCalls": 0,
+        "headlineSummaryBodyStored": false,
+        "laneId": "GDELT_OFFLINE_REFERENCE",
+        "mode": "DECISION_PLATFORM_OFFLINE_REFERENCE_ONLY",
+        "ownerLocalDerivedOnly": false,
+        "providerCallsAllowed": false,
+        "queryOrHeaderStored": false,
+        "rawForwardedToVertex": false,
+        "rawProviderDataStored": false,
+        "redirectAllowed": false,
+        "sharedHostedKeyAllowed": false
+      }
+    ],
+    "modelSelection": {
+      "candidates": [
+        "PROSUSAI_FINBERT",
+        "YIYANGHKUST_FINBERT_TONE",
+        "LOUGHRAN_MCDONALD_BASELINE"
+      ],
+      "criticalNegationNumberUnitErrorsMaximum": 0,
+      "eceMaximum": 0.1,
+      "macroF1Minimum": 0.8,
+      "neutralF1Minimum": 0.75,
+      "perClassRecallMinimum": 0.75,
+      "selectionOrder": [
+        "VALIDATION_MACRO_F1_DESC",
+        "ECE_ASC",
+        "CPU_P95_ASC",
+        "FOOTPRINT_ASC"
+      ],
+      "testEvaluationAfterSelectionOnly": true,
+      "testEvaluationMaximumCount": 1
+    },
+    "responseInvariants": {
+      "allowedUses": [
+        "EXPLANATION_ONLY"
+      ],
+      "articleMetadataStored": false,
+      "decisionAuthority": "NONE",
+      "rawProviderDataStored": false,
+      "riskDecisionHashIncluded": false,
+      "s5FeatureEligible": false
+    }
+  },
+  "frozenCompatibility": {
+    "generatorVerifiedInputs": [
+      "contracts/openapi/openapi.json",
+      "contracts/proto/rag.proto",
+      "contracts/schemas/rag-source-card-v1.schema.json",
+      "contracts/schemas/rag-source-card-v2.schema.json",
+      "contracts/schemas/news_sentiment_summary.v2.schema.json",
+      "contracts/catalogs/s4-rag-v2-contract.v1.json",
+      "contracts/openapi/rag-v2.openapi.json",
+      "contracts/proto/rag_v2.proto",
+      "contracts/proto/rag_v2.descriptor.pb",
+      "contracts/proto/rag_v2.descriptor.sha256",
+      "capstone-rag/manifests/s4-7d-oa140-release.v1.json",
+      "capstone-rag/manifests/s4-7d-oa140-curriculum-map.v1.md",
+      "capstone-rag/manifests/s4-7d-oa140-distribution.v1.json",
+      "capstone-rag/manifests/s4-7d-oa140-checksums.sha256"
+    ],
+    "verificationState": "EXACT_BYTES_VERIFIED_BY_GENERATOR"
+  },
+  "oa112": {
+    "physicalActivation": "NOT_MATERIALIZED",
+    "requiredActivationPermissions": [
+      "machineFetchAllowed",
+      "localProcessingAllowed",
+      "externalEmbeddingAllowed",
+      "externalGenerationAllowed"
+    ],
+    "reserveAutomaticPromotion": false,
+    "reserveMaximumSources": 28,
+    "sourceCount": 112,
+    "sourcesPerTrack": 8,
+    "status": "OA112_ACTIVE_CONTRACT_LOCKED",
+    "trackCount": 14
+  },
+  "ragV2": {
+    "inheritedSurface": {
+      "legacyBytesBinding": "RAG_V2_OPENAPI_FROZEN",
+      "paths": [
+        "/api/v2/rag/ask",
+        "/api/v2/rag/corpus-status",
+        "/api/v2/rag/history",
+        "/api/v2/rag/history/{answerId}"
+      ]
+    },
+    "vertex": {
+      "activationEvidenceRequired": [
+        "CREDENTIAL_FILE_SECURITY",
+        "PROJECT_CACHE_STATE",
+        "ABUSE_MONITORING_STATE",
+        "MODEL_AVAILABILITY"
+      ],
+      "authentication": [
+        "ADC",
+        "SERVICE_ACCOUNT"
+      ],
+      "boundedJsonCredentialRequired": true,
+      "contextCacheAllowed": false,
+      "credentialFileRequirements": {
+        "credentialFileMode": "0600",
+        "credentialRootMode": "0700",
+        "linkCount": 1,
+        "ownerMatchRequired": true,
+        "regularFileRequired": true
+      },
+      "developerApiAllowed": false,
+      "fallbackAllowed": false,
+      "fileUploadAllowed": false,
+      "generationMethod": "generateContent",
+      "generationUnavailableStatus": "GENERATION_UNAVAILABLE",
+      "maximumEvidenceCount": 5,
+      "maximumGenerateContentCallsPerQuestion": 1,
+      "modelId": "gemini-3.5-flash",
+      "openAiCallsAllowed": false,
+      "rawResponseStored": false,
+      "rerankerAllowed": false,
+      "retryCount": 0,
+      "sanitizedUsageLedgerOnly": true,
+      "searchMapsGroundingAllowed": false,
+      "sessionResumptionAllowed": false,
+      "toolsFunctionsAllowed": false,
+      "verifierAllowed": false
+    },
+    "voyage": {
+      "activationEvidenceRequired": [
+        "ORGANIZATION_TRAINING_OPT_OUT",
+        "PAYMENT_METHOD_PRIVACY_EVIDENCE"
+      ],
+      "batchApiAllowed": false,
+      "dimension": 1024,
+      "filesApiAllowed": false,
+      "fullBundleScope": [
+        "EXACT30",
+        "OA112",
+        "OWNER_PRIVATE"
+      ],
+      "generationFallback": "FULL_BUNDLE_REBUILD_EVALUATE_CAS",
+      "modelId": "voyage-context-4",
+      "orderedPrechunkedDocumentGroupsRequired": true,
+      "outboundCallsAllowed": false,
+      "partialProfileMixAllowed": false,
+      "queryUnitFallbackAllowed": false,
+      "retryCount": 0,
+      "runtimeEnvironmentVariable": "VOYAGE_API_KEY"
+    }
+  },
+  "s48Optional3": {
+    "entitlementState": "CONTRACT_ONLY",
+    "providerCallsAllowed": 0,
+    "providerFamilies": [
+      "FINNHUB_OPTIONAL3",
+      "TWELVE_DATA",
+      "MASSIVE"
+    ],
+    "receiptExecutionAllowed": 0,
+    "retryCount": 0
+  },
+  "schemaVersion": 1,
+  "status": "RAG_AND_GLOBAL_NEWS_CONTRACT_LOCKED",
+  "trackedPayloads": {
+    "embeddings": 0,
+    "extractedText": 0,
+    "oaRaw": 0,
+    "ownerRawCopies": 0
+  }
+}

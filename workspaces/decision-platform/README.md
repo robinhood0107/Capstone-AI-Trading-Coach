@@ -24,10 +24,24 @@ python-services/        # uv 프로젝트 — LightGBM/RAG/금융공학/데이�
 
 KIS outbound는 이 workspace가 단일 owner다. S1.1 client는 실전 18/s hard cap·기본 120ms 간격, 모의 1/s·1,000ms 간격을 같은 opaque credential/appkey scope의 Redis 원자 limiter로 공유한다. `/oauth2/tokenP` physical send는 mock/live 합산 deployment-global 1/s를 보수 적용하고 token cache/singleflight만 mode별로 분리한다. Return Engine과 후속 S1.6/S3 adapter는 별도 limiter를 만들지 않고 이 경계를 재사용한다.
 
+## Pre-S5 RAG·foreign-news contract ownership
+
+`PRE_S5_RAG_GLOBAL_NEWS_CONTRACT_LOCKED=1`이다. 이 workspace만 logical OA112(14 track × 8)
+materialization, owner-private RAG, foreign-news explanation lane과 Optional 3 future runtime의
+implementation owner다. 현재 `S4_7D_OA112_PHYSICAL_ACTIVATION=NOT_MATERIALIZED`이고 raw corpus,
+owner import writer, provider executor, foreign-news adapter와 Optional 3 adapter는 없다.
+
+RAG는 `LOCAL_EPHEMERAL_PARSE` boundary 안에서만 동작하며 Decision/Signal/Risk/order/hash authority는
+0이다. `voyage-context-4` 1024 full-bundle profile과 `gemini-3.5-flash` single generator는
+`TARGET_NOT_ACTIVE`다. foreign-news는 Finnhub personal-local, SEC official, Federal Reserve official,
+existing GDELT offline-reference만 계약으로 정의하며 raw/article metadata와 GDELT outbound는 0이다.
+Optional 3(Finnhub Recommendation/Earnings, Twelve Data, Massive)는 Core 6과 별도 entitlement/receipt
+template만 갖고 physical call/retry/raw storage는 0이다.
+
 ## S4.8→S6.7 교차시장 위험 오버레이
 
-> 계획 타당성: `PLAN_FEASIBILITY=GO`.
-> 구현 상태: `S4_8A=CONTRACT_ONLY / S4_8B_C=OFFLINE_ONLY / PROVIDER_ENDPOINT_RISKENGINE=NOT_IMPLEMENTED`.
+> 계획 타당성: `PLAN_FEASIBILITY=GO_WITH_EXTERNAL_HARD_GATES`.
+> 구현 상태: `S4_8A=CONTRACT_LOCKED / S4_8B_C=IMPLEMENTED_MERGE_CANDIDATE / PROVIDER_ENDPOINT_RISKENGINE=NOT_IMPLEMENTED`.
 > 월 데이터 비용 목표는 `0원`이고 offline fixture·지연/EOD가 먼저다. 기관용 데이터와
 > 실시간 SOX/VIX feed는 post-P1 선택지이고, 새 agent framework·별도 cloud·Kafka는 hard
 > dependency가 아니다.
@@ -388,12 +402,12 @@ uv run --frozen pytest -q tests/data/calendar tests/data/opendart
 
 ## S1.3G active 뉴스 source 경계
 
-Naver provider/runtime/storage 권한은 2026-07-31 계약에서 퇴역했다. tracked runtime 제거와
-승인된 로컬 snapshot의 exact 삭제는 해당 contract-only PR 병합 뒤 후속 구현 wave에서 수행한다.
+Naver provider/runtime/storage 권한은 2026-07-31 계약에서 퇴역했으며 tracked runtime 제거와
+승인된 로컬 snapshot의 exact 삭제는 이미 완료됐다. 아래 historical audit만 보존한다.
 새 active 계약은 기사 metadata를 저장하지 않는 GDELT aggregate synthetic fixture와
 `AVAILABLE | ABSTAIN` semantics만 허용한다. 실제 GDELT outbound, RiskDecision/hash/order 권한,
-S5 feature 주입은 모두 0이다. Decision Platform이 producer 경계를 소유하고 Return Engine은
-별도 합의된 public artifact만 미래에 소비할 수 있다.
+S5 feature 주입은 모두 0이다. Decision Platform이 producer 경계를 소유하며 새 consumer dependency는
+만들지 않는다. 부재한 output은 `NOT_AVAILABLE/ABSTAIN`으로만 처리한다.
 
 ## S1.3 ECOS/Naver snapshot — HISTORICAL_SUPERSEDED
 

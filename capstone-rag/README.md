@@ -32,6 +32,11 @@ materializer, canonical chunk/embedding writer, active bundle pointer와 actual 
 현 skeleton은 `GENERATION_UNAVAILABLE`로 종료한다. importer/remove/cache-clean command는 실제로
 `CORPUS_RUNTIME_NOT_INSTALLED`를 반환한다.
 
+`PRE_S5_RAG_GLOBAL_NEWS_CONTRACT_LOCKED=1`의 current policy는
+`OA112_ACTIVE_CONTRACT_LOCKED`(14 track × 8)와
+`S4_7D_OA112_PHYSICAL_ACTIVATION=NOT_MATERIALIZED`를 함께 뜻한다. 이 README의 historical
+OA112/OA140 metadata 설명은 새 physical corpus, raw cache 또는 active generation의 증거가 아니다.
+
 공식 입력 형식은 다음 아홉 family다.
 
 | family | 확장자/MIME | 기본 처리 |
@@ -67,9 +72,9 @@ magic/보안 검사
 
 개인 원본은 복사하지 않고 사용자가 보유한 위치에서 read-only로 읽는다. 원본 경로는
 Document IR, API, history, log에 넣지 않는다. 동일 raw hash는 parse를, 동일 chunk hash는
-embedding을 재사용한다. active mode는 `LOCAL_EPHEMERAL_PARSE`이며 파일별 approval ID·nonce·
-TTL은 없다. local parse 권한과 외부 LLM 전송 권한은 별개이고, DRM·login·paywall 우회나
-무단 crawling은 지원하지 않는다.
+embedding을 재사용한다. future owner import는 5분 single-use owner-bound ticket을 요구하지만
+ticket은 local parse 또는 provider activation의 충분조건이 아니다. local parse 권한과 외부 LLM
+전송 권한은 별개이고, DRM·login·paywall 우회나 무단 crawling은 지원하지 않는다.
 
 ## Production OCR 선택
 
@@ -114,13 +119,15 @@ parser·Document IR·generation 코드를 호출한다.
 아니며, 개발 runtime은 `.gitignore`로 보호된다. OA 원문은 후속 signed manifest가 허용한
 공식 fixed HTTPS source에서 각 사용자가 받는 cache이고 프로젝트 release에 재배포하지 않는다.
 
-## S4.7D OA112 historical manifest and OA140 target
+## Historical OA112 manifest and active logical OA112 selection
 
 `s4-7d-oa140-release.v1.json`은 `OA112_HISTORICAL` metadata release다. 이름은 OA140
 프로그램을 따르지만 현재 source 수는 14개 curriculum track × 8개 = 112개다. 이는 source의
 fixed HTTPS `canonicalUrl`, `downloadUrl`, `rawContentSha256`, track role,
 `fallbackAllowed=false`를 Git에 남긴 manifest일 뿐 installed corpus가 아니다. active release
-완료 조건은 14개 track × 10개의 `OA140_TARGET`과 actual raw-hash/rights revalidation이다.
+policy는 14개 track × 8개의 `OA112_ACTIVE_CONTRACT_LOCKED`이며 physical activation은
+`S4_7D_OA112_PHYSICAL_ACTIVATION=NOT_MATERIALIZED`다. actual raw-hash/rights revalidation과
+네 activation permission이 모두 통과하기 전에는 active generation으로 사용할 수 없다.
 원문 PDF/HTML, 추출 text, Document IR, chunk, embedding, cache는 GitHub Release나 Hugging
 Face Dataset에 재배포하지 않는다.
 
@@ -143,10 +150,10 @@ uv run --project workspaces/decision-platform/python-services --frozen \
   --receipt capstone-rag/manifests/s4-7d-oa140-remote-hash-receipt.v1.json
 ```
 
-`rag-content status`는 이 manifest가 있으면 `CORE_READY`를 반환한다. `setup-rag-content.bat`과
-`rag-content setup`은 manifest를 다시 검증하고 `OA_RELEASE_MANIFEST_VERIFIED`를 반환한다.
-이 상태는 아직 원문 download/parse/embed/eval이 끝난 `FULL_READY`가 아니라, public OA
-generation을 구축하기 위한 `BUILDING` 시작점이다. 현재 setup/import/remove/cache-clean은
+historical `rag-content status`와 `setup-rag-content.bat`의 manifest validation은 active physical
+OA112 activation 증거가 아니다. 이 상태는 아직 원문 download/parse/embed/eval이 끝난
+`FULL_READY`가 아니라, public OA generation을 구축하기 위한 `BUILDING` 시작점이다. 현재
+setup/import/remove/cache-clean은
 materializer가 설치되지 않아 `CORPUS_RUNTIME_NOT_INSTALLED`로 fail-closed하며 OA112/owner
 derived index가 runtime에 존재한다고 주장하지 않는다.
 `FULL_READY`는 runtime cache에서 모든 source hash, parser/OCR receipt, chunk hash, BGE

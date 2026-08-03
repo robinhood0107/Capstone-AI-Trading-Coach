@@ -54,6 +54,9 @@ jobs:
       - name: Check generated S4.7D RAG v2 contract artifacts
         run: uv run --frozen python contracts/generate_s4_7d_rag_v2_contracts.py --check
 
+      - name: Check generated Pre-S5 RAG and global-news contract artifacts
+        run: uv run --frozen python contracts/generate_pre_s5_rag_news_contracts.py --check
+
       - name: Check generated S4.5 evaluation artifacts
         run: uv run --frozen python capstone-rag/generate_s4_5_evaluation.py --check
 

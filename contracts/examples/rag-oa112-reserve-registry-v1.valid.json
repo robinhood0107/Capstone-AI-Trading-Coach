@@ -1,0 +1,10 @@
+{
+  "activeGenerationReferences": 0,
+  "automaticPromotion": false,
+  "contractId": "rag-oa112-reserve-registry-v1",
+  "maximumReserveSources": 28,
+  "reserveMetadataIncluded": false,
+  "reserveSourceCount": 0,
+  "schemaVersion": 1,
+  "state": "RESEARCH_ONLY_NON_ACTIVE"
+}

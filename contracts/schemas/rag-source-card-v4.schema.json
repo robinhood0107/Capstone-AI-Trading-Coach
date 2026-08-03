@@ -1,0 +1,192 @@
+{
+  "$id": "contracts/schemas/rag-source-card-v4.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "activeOa112Eligible": {
+            "const": true
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "permissions": {
+            "properties": {
+              "externalEmbeddingAllowed": {
+                "const": true
+              },
+              "externalGenerationAllowed": {
+                "const": true
+              },
+              "localProcessingAllowed": {
+                "const": true
+              },
+              "machineFetchAllowed": {
+                "const": true
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "properties": {
+    "accessEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "accessCheckedAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "accessEvidenceDigest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "verificationState": {
+          "const": "VERIFIED"
+        }
+      },
+      "required": [
+        "accessCheckedAt",
+        "accessEvidenceDigest",
+        "verificationState"
+      ],
+      "type": "object"
+    },
+    "activeOa112Eligible": {
+      "type": "boolean"
+    },
+    "authors": {
+      "items": {
+        "maxLength": 300,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 50,
+      "minItems": 1,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "canonicalUrl": {
+      "format": "uri",
+      "pattern": "^https://",
+      "type": "string"
+    },
+    "canonicalUrlSha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "contractId": {
+      "const": "rag-source-card-v4"
+    },
+    "identifier": {
+      "additionalProperties": false,
+      "properties": {
+        "scheme": {
+          "enum": [
+            "DOI",
+            "ISBN",
+            "ARXIV"
+          ]
+        },
+        "value": {
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "scheme",
+        "value"
+      ],
+      "type": "object"
+    },
+    "licenseEvidenceDigest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "mimeType": {
+      "enum": [
+        "application/pdf",
+        "text/html",
+        "text/plain"
+      ]
+    },
+    "permissions": {
+      "additionalProperties": false,
+      "properties": {
+        "externalEmbeddingAllowed": {
+          "type": "boolean"
+        },
+        "externalGenerationAllowed": {
+          "type": "boolean"
+        },
+        "localProcessingAllowed": {
+          "type": "boolean"
+        },
+        "machineFetchAllowed": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "machineFetchAllowed",
+        "localProcessingAllowed",
+        "externalEmbeddingAllowed",
+        "externalGenerationAllowed"
+      ],
+      "type": "object"
+    },
+    "rawContentSha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "revision": {
+      "maxLength": 128,
+      "minLength": 1,
+      "type": "string"
+    },
+    "revisionDate": {
+      "format": "date",
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": 4
+    },
+    "sourceId": {
+      "pattern": "^src_[a-z0-9][a-z0-9_-]{2,95}$",
+      "type": "string"
+    },
+    "sourceKind": {
+      "const": "OPEN_ACCESS_DOCUMENT"
+    },
+    "title": {
+      "maxLength": 500,
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "accessEvidence",
+    "activeOa112Eligible",
+    "authors",
+    "canonicalUrl",
+    "canonicalUrlSha256",
+    "contractId",
+    "identifier",
+    "licenseEvidenceDigest",
+    "mimeType",
+    "permissions",
+    "rawContentSha256",
+    "revision",
+    "revisionDate",
+    "schemaVersion",
+    "sourceId",
+    "sourceKind",
+    "title"
+  ],
+  "title": "rag-source-card-v4",
+  "type": "object"
+}

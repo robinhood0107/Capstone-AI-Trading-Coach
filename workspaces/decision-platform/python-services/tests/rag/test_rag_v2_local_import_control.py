@@ -8,9 +8,13 @@ from pathlib import Path
 import pytest
 
 from app.rag.rag_v2_local_import_control import (
+    RagV2LocalDeleteControlError,
     RagV2LocalImportControlError,
+    RagV2OwnerDeleteControl,
     RagV2OwnerImportControl,
+    load_pending_owner_delete_control,
     load_pending_owner_import_control,
+    write_pending_owner_delete_control,
     write_pending_owner_import_control,
 )
 
@@ -67,6 +71,60 @@ def test_local_import_control_closed_shape_rejects_direct_database_or_path_alias
         load_pending_owner_import_control(
             local_root=tmp_path,
             now=datetime(2026, 8, 3, 0, 1, tzinfo=UTC),
+        )
+
+
+def test_local_delete_control_round_trip_is_private_and_short_lived(tmp_path: Path) -> None:
+    _secure_root(tmp_path)
+    now = datetime(2026, 8, 3, tzinfo=UTC)
+    control = RagV2OwnerDeleteControl(
+        owner_user_id="usr_demo_user",
+        document_id="doc_owner_delete_0001",
+        issued_at=now,
+        expires_at=now + timedelta(minutes=5),
+    )
+
+    write_pending_owner_delete_control(local_root=tmp_path, control=control)
+    loaded = load_pending_owner_delete_control(
+        local_root=tmp_path,
+        now=datetime(2026, 8, 3, 0, 1, tzinfo=UTC),
+    )
+
+    assert loaded == control
+    record = tmp_path / "control" / "owner-delete.json"
+    assert record.stat().st_mode & 0o777 == 0o600
+    summary = json.dumps(loaded.content_free_summary())
+    assert "usr_" not in summary
+    assert "doc_" not in summary
+
+
+def test_local_delete_control_rejects_database_alias_and_expiry(tmp_path: Path) -> None:
+    _secure_root(tmp_path)
+    now = datetime(2026, 8, 3, tzinfo=UTC)
+    control = RagV2OwnerDeleteControl(
+        owner_user_id="usr_demo_user",
+        document_id="doc_owner_delete_0001",
+        issued_at=now,
+        expires_at=now + timedelta(minutes=5),
+    )
+    write_pending_owner_delete_control(local_root=tmp_path, control=control)
+    record = tmp_path / "control" / "owner-delete.json"
+    payload = json.loads(record.read_text(encoding="utf-8"))
+    payload["databaseDsn"] = "postgresql://must-not-be-here"
+    record.write_text(json.dumps(payload), encoding="utf-8")
+    os.chmod(record, 0o600)
+
+    with pytest.raises(RagV2LocalDeleteControlError, match="LOCAL_DELETE_CONTROL_INVALID"):
+        load_pending_owner_delete_control(
+            local_root=tmp_path,
+            now=datetime(2026, 8, 3, 0, 1, tzinfo=UTC),
+        )
+
+    write_pending_owner_delete_control(local_root=tmp_path, control=control)
+    with pytest.raises(RagV2LocalDeleteControlError, match="LOCAL_DELETE_CONTROL_EXPIRED"):
+        load_pending_owner_delete_control(
+            local_root=tmp_path,
+            now=datetime(2026, 8, 3, 0, 6, tzinfo=UTC),
         )
 
 

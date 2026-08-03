@@ -125,7 +125,12 @@ class RagV2EngineResult:
 class RagV2ScopeReader(Protocol):
     """opaque claim과 session만으로 current immutable scope를 재검증한다."""
 
-    def read_scope(self, *, claim_id: str, session_id: str) -> RagV2BundleScope:
+    def read_scope_by_claim(
+        self,
+        *,
+        claim_id: str,
+        session_id: str,
+    ) -> RagV2BundleScope:
         """query-role DB function이 owner/pointer/expiry를 fail-closed하게 확인한다."""
 
 
@@ -176,7 +181,7 @@ class BgeRagV2RetrievalOnlyEngine:
             return _blocked(RagV2RpcStatus.BLOCKED_SENSITIVE, guard.flags)
 
         try:
-            scope = self._scope_reader.read_scope(
+            scope = self._scope_reader.read_scope_by_claim(
                 claim_id=request.owner_scope_claim,
                 session_id=request.request_id,
             )

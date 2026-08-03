@@ -106,7 +106,7 @@ rag-import-cpu.bat
 rag-import-intel-gpu.bat
 rag-import-nvidia-gpu.bat
 rag-import-status.bat
-rag-remove-document.bat <opaqueDocumentId>
+rag-remove-document.bat
 rag-cache-clean.bat
 ```
 
@@ -120,6 +120,12 @@ parser·Document IR·generation 코드를 호출한다.
 path, opaque document/source identifiers만 담는다. import 결과에는 path, owner ID, ticket,
 DB DSN 또는 raw text를 출력하지 않는다. 이 local control record는 OA download, Voyage/Vertex
 activation 또는 provider call의 승인 packet을 대체하지 않는다.
+
+문서 삭제도 명령행 `documentId`를 받지 않는다. 인증된 local control plane은 별도 0600
+`control/owner-delete.json`에 owner-bound 5분 deletion selector만 만들며, BAT는 admin DB
+credential을 environment에서만 읽어 immutable hard-delete function을 실행한다. public base가
+활성화된 문서는 replacement bundle이 준비되지 않으면 `OWNER_DOCUMENT_DELETE_BLOCKED`로
+fail-closed한다.
 
 설치본의 기본 root는 `%LOCALAPPDATA%\CapstoneAITradingCoach\rag`, 개발 checkout은
 `capstone-rag/runtime/local-corpus`다. 두 위치의 원문·parse·embedding·cache는 Git 배포물이

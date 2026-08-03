@@ -1282,6 +1282,124 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
     }
 
     @Test
+    fun `v2 app rechecks gRPC citation identities and persists canonical retrieval only history`() {
+        seedEvaluatedPublicComponents()
+        adminConnection().use { connection ->
+            connection.createStatement().use { statement ->
+                statement.execute(
+                    """
+                    update rag_v2_immutable_source_revisions
+                    set retrieval_topics = array['FINANCIAL_ENGINEERING'],
+                        citation_title = 'Fixture ' || source_id
+                    where source_scope in ('EXACT30', 'OA112')
+                    """.trimIndent(),
+                )
+            }
+        }
+        assertEquals(
+            2L,
+            callLong(
+                "decision_rag_admin",
+                RAG_ADMIN_PASSWORD,
+                """
+                select activate_rag_v2_immutable_public_base(
+                  '$EXACT_GENERATION', '$OA_GENERATION', 1, '$PUBLIC_ACTIVATION_RECEIPT'
+                )
+                """.trimIndent(),
+            ),
+        )
+        val sessionId = "req_v2_history_000000000001"
+        val scopeClaimId = issueRetrievalScope("usr_demo_user", sessionId)
+        val exactChunkId =
+            adminConnection().use { connection ->
+                queryString(
+                    connection,
+                    """
+                    select chunk_id from rag_v2_immutable_chunks
+                    where source_revision_id = 'srv_exact_001'
+                    """.trimIndent(),
+                )
+            }
+        val citationPayload =
+            """
+            jsonb_build_array(
+              jsonb_build_object(
+                'ordinal', 1,
+                'citationId', 'cit_1',
+                'sourceId', 'src_exact_001',
+                'sourceRevisionId', 'srv_exact_001',
+                'chunkRevisionId', '$exactChunkId',
+                'generationId', '$EXACT_GENERATION',
+                'citationKind', 'PUBLIC_WEB'
+              )
+            )
+            """.trimIndent()
+
+        val canonical =
+            callAsAppWithActor(
+                "usr_demo_user",
+                """
+                select canonicalize_rag_v2_immutable_retrieval_citations(
+                  'usr_demo_user', '$sessionId', '$scopeClaimId', $citationPayload
+                )
+                """.trimIndent(),
+            )
+        assertTrue(canonical.contains("https://example.org/exact/1"))
+        assertFalse(canonical.contains("chunk srv_exact_001"))
+        assertFalse(canonical.contains("canonical_text"))
+
+        val persisted =
+            callAsAppWithActor(
+                "usr_demo_user",
+                """
+                select persist_rag_v2_immutable_retrieval_history(
+                  'usr_demo_user', 'rag_v2_history_000000000001', '$sessionId', 'CONCISE',
+                  '$sessionId', '$scopeClaimId', 1.0, array[]::text[], 'kek-v1',
+                  decode(repeat('01', 12), 'hex'), decode(repeat('02', 32), 'hex'), decode(repeat('03', 16), 'hex'),
+                  decode(repeat('04', 12), 'hex'), decode('05', 'hex'), decode(repeat('06', 16), 'hex'),
+                  decode(repeat('07', 12), 'hex'), decode('', 'hex'), decode(repeat('08', 16), 'hex'),
+                  transaction_timestamp(), $citationPayload
+                )
+                """.trimIndent(),
+            )
+        assertEquals(canonical, persisted)
+        adminConnection().use { connection ->
+            assertEquals(
+                "0",
+                queryString(
+                    connection,
+                    """
+                    select octet_length(answer_ciphertext)::text
+                    from rag_v2_answer_history
+                    where answer_id = 'rag_v2_history_000000000001'
+                    """.trimIndent(),
+                ),
+            )
+            assertEquals(
+                "RETRIEVAL_ONLY",
+                queryString(
+                    connection,
+                    """
+                    select generation_status
+                    from rag_v2_answer_history
+                    where answer_id = 'rag_v2_history_000000000001'
+                    """.trimIndent(),
+                ),
+            )
+            assertEquals(
+                "1",
+                queryString(
+                    connection,
+                    """
+                    select count(*)::text from rag_v2_answer_citations
+                    where answer_id = 'rag_v2_history_000000000001'
+                    """.trimIndent(),
+                ),
+            )
+        }
+    }
+
+    @Test
     fun `staged owner document becomes a pinned metadata scoped overlay without direct table grants`() {
         seedEvaluatedPublicComponents()
         assertEquals(

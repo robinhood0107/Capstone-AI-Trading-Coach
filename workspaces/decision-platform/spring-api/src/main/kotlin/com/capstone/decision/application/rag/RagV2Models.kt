@@ -44,4 +44,36 @@ data class RagV2HistoryDetail(
     val expiresAt: Instant,
 )
 
+data class RagV2ExternalConsentCommand(
+    val action: String,
+    val disclosureDigest: String,
+    val policyDigest: String,
+    val processorSetDigest: String,
+)
+
+data class RagV2EffectiveConsent(
+    val contractId: String = "s4-rag-v2-effective-consent-v1",
+    val schemaVersion: Int = 1,
+    val consentEventId: String,
+    val effective: Boolean,
+    val policyDigest: String,
+    val processorSetDigest: String,
+    val state: String,
+)
+
+data class RagV2ImportTicket(
+    val contractId: String = "s4-rag-v2-import-ticket-v1",
+    val schemaVersion: Int = 1,
+    val ticketId: String,
+    val sourceScope: String = "OWNER_PRIVATE",
+    val issuedAt: Instant,
+    val expiresAt: Instant,
+    val ttlSeconds: Int = 300,
+    val singleUse: Boolean = true,
+    val ownerBound: Boolean = true,
+    val ownerRawCopyAllowed: Boolean = false,
+)
+
 class RagV2CorpusNotReadyException : RuntimeException("RAG v2 full corpus bundle is not ready.")
+
+class RagV2ExternalConsentRequiredException : RuntimeException("External AI RAG v2 consent is required.")

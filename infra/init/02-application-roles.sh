@@ -946,6 +946,20 @@ BEGIN
             )
         TO decision_rag_admin;
     END IF;
+    IF to_regprocedure(
+        'public.record_rag_v2_immutable_consent_v2(text,text,text,text,text,text,text)'
+    ) IS NOT NULL
+       AND to_regprocedure(
+           'public.read_rag_v2_immutable_effective_consent(text)'
+       ) IS NOT NULL THEN
+        -- V26 control plane도 raw table 대신 owner-bound immutable consent function만 재부여한다.
+        GRANT EXECUTE ON FUNCTION
+            record_rag_v2_immutable_consent_v2(
+                text, text, text, text, text, text, text
+            ),
+            read_rag_v2_immutable_effective_consent(text)
+        TO decision_app;
+    END IF;
 END
 $decision_runtime_function_privileges$;
 

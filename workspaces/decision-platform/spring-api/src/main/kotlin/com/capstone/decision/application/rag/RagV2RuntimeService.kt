@@ -9,6 +9,7 @@ import tools.jackson.databind.ObjectMapper
 import java.sql.ResultSet
 import java.time.OffsetDateTime
 import java.time.ZoneOffset
+import java.util.UUID
 
 @Service
 class RagV2RuntimeService(
@@ -41,6 +42,110 @@ class RagV2RuntimeService(
                     failureCode = result.getString("failure_code"),
                 )
             }.single()
+    }
+
+    /**
+     * 외부 processor consent는 owner/session binding을 검증하는 definer function으로 append-only 기록한다.
+     * internal DB identity와 client-visible event identity를 분리해 owner ID나 storage receipt를 API에 노출하지 않는다.
+     */
+    @Transactional
+    fun recordExternalConsent(
+        ownerUserId: String,
+        command: RagV2ExternalConsentCommand,
+    ) {
+        val jdbc = jdbc()
+        setActor(ownerUserId)
+        jdbc.queryForObject(
+            """
+            SELECT record_rag_v2_immutable_consent_v2(
+              :ownerUserId,
+              :internalConsentEventId,
+              :publicConsentEventId,
+              :action,
+              :disclosureDigest,
+              :policyDigest,
+              :processorSetDigest
+            )
+            """.trimIndent(),
+            mapOf(
+                "ownerUserId" to ownerUserId,
+                "internalConsentEventId" to id("cns_v2"),
+                "publicConsentEventId" to id("rce"),
+                "action" to command.action,
+                "disclosureDigest" to command.disclosureDigest,
+                "policyDigest" to command.policyDigest,
+                "processorSetDigest" to command.processorSetDigest,
+            ),
+            OffsetDateTime::class.java,
+        )
+    }
+
+    /**
+     * consent가 없으면 fabricated digest 없이 conflict로 fail-closed하며, 다른 owner event는 DB function이 읽지 못하게 한다.
+     */
+    @Transactional(readOnly = true)
+    fun effectiveConsent(ownerUserId: String): RagV2EffectiveConsent {
+        val jdbc = jdbc()
+        setActor(ownerUserId)
+        val stored =
+            jdbc
+                .query(
+                    """
+                    SELECT *
+                    FROM read_rag_v2_immutable_effective_consent(:ownerUserId)
+                    """.trimIndent(),
+                    mapOf("ownerUserId" to ownerUserId),
+                ) { result, _ ->
+                    RagV2StoredEffectiveConsent(
+                        consentEventId = result.getString("consent_event_id"),
+                        action = result.getString("action"),
+                        policyDigest = result.getString("policy_digest"),
+                        processorSetDigest = result.getString("processor_set_digest"),
+                    )
+                }.singleOrNull()
+                ?: throw RagV2ExternalConsentRequiredException()
+        val state =
+            when (stored.action) {
+                "GRANT" -> RagV2ConsentState(effective = true, state = "GRANTED")
+                "REVOKE" -> RagV2ConsentState(effective = false, state = "REVOKED")
+                else -> throw RagGuardHistoryUnavailableException()
+            }
+        return RagV2EffectiveConsent(
+            consentEventId = stored.consentEventId,
+            effective = state.effective,
+            policyDigest = stored.policyDigest,
+            processorSetDigest = stored.processorSetDigest,
+            state = state.state,
+        )
+    }
+
+    /**
+     * raw ticket capability는 caller에게 한 번만 반환하고 persistence에는 V25 function이 만든 hash만 보존한다.
+     */
+    @Transactional
+    fun issueImportTicket(ownerUserId: String): RagV2ImportTicket {
+        val jdbc = jdbc()
+        val ticketId = id("rti")
+        setActor(ownerUserId)
+        val expiresAt =
+            jdbc
+                .queryForObject(
+                    """
+                    SELECT issue_rag_v2_immutable_import_ticket(
+                      :ownerUserId,
+                      :ticketId,
+                      'OWNER_IMPORT',
+                      'RAG_V2_OWNER_DOCUMENT_V1'
+                    )
+                    """.trimIndent(),
+                    mapOf("ownerUserId" to ownerUserId, "ticketId" to ticketId),
+                    OffsetDateTime::class.java,
+                )?.toInstant() ?: throw RagGuardHistoryUnavailableException()
+        return RagV2ImportTicket(
+            ticketId = ticketId,
+            issuedAt = expiresAt.minusSeconds(300),
+            expiresAt = expiresAt,
+        )
     }
 
     /**
@@ -205,7 +310,21 @@ class RagV2RuntimeService(
 
     private fun ResultSet.instant(column: String) = getObject(column, OffsetDateTime::class.java).toInstant()
 
+    private fun id(prefix: String): String = "${prefix}_${UUID.randomUUID().toString().replace("-", "")}"
+
     private fun jdbc(): NamedParameterJdbcTemplate =
         jdbcProvider.getIfAvailable()
             ?: throw RagGuardHistoryUnavailableException()
+
+    private data class RagV2StoredEffectiveConsent(
+        val consentEventId: String,
+        val action: String,
+        val policyDigest: String,
+        val processorSetDigest: String,
+    )
+
+    private data class RagV2ConsentState(
+        val effective: Boolean,
+        val state: String,
+    )
 }

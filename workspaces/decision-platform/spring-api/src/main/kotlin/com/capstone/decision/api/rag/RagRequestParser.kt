@@ -3,6 +3,7 @@ package com.capstone.decision.api.rag
 import com.capstone.decision.application.rag.RagAnswerMode
 import com.capstone.decision.application.rag.RagAskCommand
 import com.capstone.decision.application.rag.RagFieldViolation
+import com.capstone.decision.application.rag.RagV2ExternalConsentCommand
 import com.capstone.decision.application.rag.RagValidationException
 import jakarta.servlet.http.HttpServletRequest
 import org.springframework.stereotype.Component
@@ -155,6 +156,71 @@ class RagRequestParser {
         )
     }
 
+    /**
+     * v2 external processor consent는 exact contract field만 받아 server-owned event identity와 분리한다.
+     */
+    fun parseV2ExternalConsent(body: String): RagV2ExternalConsentCommand {
+        val root = parseObject(body)
+        val violations = mutableListOf<RagFieldViolation>()
+        rejectUnknown(root, V2_EXTERNAL_CONSENT_FIELDS, violations)
+        requireExactString(
+            root = root,
+            field = "contractId",
+            expected = "s4-rag-v2-external-consent-v1",
+            violations = violations,
+        )
+        requireSchemaVersionOne(root, violations)
+        requireExactString(
+            root = root,
+            field = "consentType",
+            expected = "EXTERNAL_AI_RAG_V2",
+            violations = violations,
+        )
+        val action = requiredString(root, "action", violations)
+        if (action != null && action !in setOf("GRANT", "REVOKE")) {
+            violations.add(RagFieldViolation("/action", "INVALID_ENUM"))
+        }
+        val disclosureDigest = requiredHexDigest(root, "disclosureDigest", violations)
+        val policyDigest = requiredHexDigest(root, "policyDigest", violations)
+        val processorSetDigest = requiredHexDigest(root, "processorSetDigest", violations)
+        throwIfInvalid(violations)
+        return RagV2ExternalConsentCommand(
+            action = requireNotNull(action),
+            disclosureDigest = requireNotNull(disclosureDigest),
+            policyDigest = requireNotNull(policyDigest),
+            processorSetDigest = requireNotNull(processorSetDigest),
+        )
+    }
+
+    /**
+     * import ticket request는 local ephemeral parse 단일 mode만 허용하고 owner나 filesystem selector를 받지 않는다.
+     */
+    fun parseV2ImportTicketRequest(body: String) {
+        val root = parseObject(body)
+        val violations = mutableListOf<RagFieldViolation>()
+        rejectUnknown(root, V2_IMPORT_TICKET_FIELDS, violations)
+        requireExactString(
+            root = root,
+            field = "contractId",
+            expected = "s4-rag-v2-import-ticket-request-v1",
+            violations = violations,
+        )
+        requireSchemaVersionOne(root, violations)
+        requireExactString(
+            root = root,
+            field = "sourceScope",
+            expected = "OWNER_PRIVATE",
+            violations = violations,
+        )
+        requireExactString(
+            root = root,
+            field = "importMode",
+            expected = "LOCAL_EPHEMERAL_PARSE",
+            violations = violations,
+        )
+        throwIfInvalid(violations)
+    }
+
     fun parseHistoryQuery(request: HttpServletRequest): RagHistoryQuery {
         val violations =
             request.parameterMap.keys
@@ -250,6 +316,42 @@ class RagRequestParser {
         return node.stringValue()
     }
 
+    private fun requireExactString(
+        root: JsonNode,
+        field: String,
+        expected: String,
+        violations: MutableList<RagFieldViolation>,
+    ) {
+        val value = requiredString(root, field, violations)
+        if (value != null && value != expected) {
+            violations.add(RagFieldViolation("/$field", "INVALID_ENUM"))
+        }
+    }
+
+    private fun requireSchemaVersionOne(
+        root: JsonNode,
+        violations: MutableList<RagFieldViolation>,
+    ) {
+        val schemaVersion = root.get("schemaVersion")
+        if (schemaVersion == null) {
+            violations.add(RagFieldViolation("/schemaVersion", "REQUIRED"))
+        } else if (!schemaVersion.isInt || schemaVersion.intValue() != 1) {
+            violations.add(RagFieldViolation("/schemaVersion", "INVALID_FORMAT"))
+        }
+    }
+
+    private fun requiredHexDigest(
+        root: JsonNode,
+        field: String,
+        violations: MutableList<RagFieldViolation>,
+    ): String? {
+        val value = requiredString(root, field, violations)
+        if (value != null && !HEX_DIGEST.matches(value)) {
+            violations.add(RagFieldViolation("/$field", "INVALID_FORMAT"))
+        }
+        return value
+    }
+
     private fun stringArray(
         root: JsonNode,
         field: String,
@@ -316,7 +418,19 @@ class RagRequestParser {
         const val MAX_QUESTION_BYTES = 8_192
         val ASK_FIELDS = setOf("question", "answerMode", "relatedSymbols", "topics")
         val CONSENT_FIELDS = setOf("consentType", "action", "policyVersion")
+        val V2_EXTERNAL_CONSENT_FIELDS =
+            setOf(
+                "contractId",
+                "schemaVersion",
+                "consentType",
+                "action",
+                "disclosureDigest",
+                "policyDigest",
+                "processorSetDigest",
+            )
+        val V2_IMPORT_TICKET_FIELDS = setOf("contractId", "schemaVersion", "sourceScope", "importMode")
         val HISTORY_QUERY_FIELDS = setOf("cursor", "limit")
+        val HEX_DIGEST = Regex("^[0-9a-f]{64}$")
         val SYMBOL = Regex("^[0-9]{6}$")
         val ANSWER_ID = Regex("^rag_ans_[0-9a-f]{32}$")
         val V2_ANSWER_ID = Regex("^rag_[A-Za-z0-9_-]{12,96}$")

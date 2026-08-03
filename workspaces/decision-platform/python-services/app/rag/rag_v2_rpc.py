@@ -359,7 +359,6 @@ def _citation_from_candidate(
     if candidate.source_scope in {"EXACT30", "OA112"}:
         if (
             candidate.owner_user_id is not None
-            or candidate.document_id is not None
             or candidate.sanitized_display_name is not None
             or not _bounded_text(candidate.title, 1_024)
             or not _safe_public_https_url(candidate.canonical_https_url)

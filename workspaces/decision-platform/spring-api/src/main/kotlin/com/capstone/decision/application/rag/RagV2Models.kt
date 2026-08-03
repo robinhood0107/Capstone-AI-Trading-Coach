@@ -37,7 +37,8 @@ data class RagV2HistoryPage(
 data class RagV2HistoryDetail(
     val answerId: String,
     val question: String,
-    val answer: String,
+    // retrieval-only history encrypts an empty internal payload but must not represent it as an LLM answer.
+    val answer: String?,
     val generationStatus: RagGenerationStatus,
     val citations: List<JsonNode>,
     val createdAt: Instant,

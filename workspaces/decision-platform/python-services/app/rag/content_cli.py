@@ -21,9 +21,15 @@ from app.rag.rag_v2_bge_materializer import (
     materialize_owner_bge_document,
 )
 from app.rag.rag_v2_local_import_control import (
+    RagV2LocalDeleteControlError,
     RagV2LocalImportControlError,
     RagV2OwnerImportControl,
+    load_pending_owner_delete_control,
     load_pending_owner_import_control,
+)
+from app.rag.rag_v2_owner_bge_deletion import (
+    OwnerBgeDeletionError,
+    PsycopgRagV2OwnerBgeDeletionRepository,
 )
 from app.rag.rag_v2_owner_bge_staging import (
     OwnerBgeStagingError,
@@ -59,8 +65,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         if len(arguments) != 1:
             return _failure("CONTENT_COMMAND_INVALID")
         return _import_owner_document()
-    if command == "remove-document" and len(arguments) == 2:
-        return _failure("CORPUS_RUNTIME_NOT_INSTALLED")
+    if command == "remove-document":
+        if len(arguments) != 1:
+            return _failure("CONTENT_COMMAND_INVALID")
+        return _remove_owner_document()
     if command == "cache-clean" and len(arguments) == 1:
         return _failure("CORPUS_RUNTIME_NOT_INSTALLED")
     return _failure("CONTENT_COMMAND_INVALID")
@@ -171,6 +179,40 @@ def _materialize_owner_import(
             embedding_profile_id="bge_m3_local_1024_v1",
         ),
     )
+
+
+def _remove_owner_document() -> int:
+    """one-time local deletion record의 staged owner document만 hard-delete function에 전달한다."""
+
+    try:
+        control = load_pending_owner_delete_control(local_root=_local_root())
+        database_dsn = os.environ.get("CAPSTONE_RAG_ADMIN_DATABASE_DSN", "").strip()
+        if not database_dsn:
+            raise OwnerBgeDeletionError("OWNER_BGE_DELETE_DATABASE_DSN")
+        receipt = PsycopgRagV2OwnerBgeDeletionRepository(database_dsn=database_dsn).delete(
+            owner_user_id=control.owner_user_id,
+            document_id=control.document_id,
+        )
+    except RagV2LocalDeleteControlError:
+        return _failure("LOCAL_DELETE_CONTROL_REQUIRED")
+    except RagV2LocalImportControlError:
+        return _failure("LOCAL_DELETE_CONTROL_REQUIRED")
+    except OwnerBgeDeletionError as error:
+        if str(error) == "OWNER_BGE_DELETE_BLOCKED":
+            return _failure("OWNER_DOCUMENT_DELETE_BLOCKED")
+        return _failure("OWNER_DOCUMENT_DELETE_UNAVAILABLE")
+
+    _emit(
+        {
+            "code": (
+                "OWNER_DOCUMENT_DELETED"
+                if receipt.state == "DELETED"
+                else "OWNER_DOCUMENT_ALREADY_ABSENT"
+            ),
+            "state": receipt.state,
+        }
+    )
+    return 0
 
 
 def _local_root() -> Path:

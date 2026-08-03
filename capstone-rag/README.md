@@ -152,16 +152,10 @@ uv run --project workspaces/decision-platform/python-services --frozen \
   --manifest capstone-rag/manifests/s4-7d-oa140-release.v1.json
 ```
 
-공식 원천의 raw SHA-256을 다시 확인해야 할 때만 네트워크 검증을 명시적으로 실행한다. 이 모드는
-redirect를 금지하고 source 사이를 3초씩 쉬며, receipt에는 URL·byte 수·SHA-256만 남긴다.
-
-```bash
-uv run --project workspaces/decision-platform/python-services --frozen \
-  python -m app.rag.oa_release_manifest_cli \
-  --manifest capstone-rag/manifests/s4-7d-oa140-release.v1.json \
-  --fetch-hashes \
-  --receipt capstone-rag/manifests/s4-7d-oa140-remote-hash-receipt.v1.json
-```
+historical manifest의 `--fetch-hashes` 실행 경로는 `HISTORICAL_SUPERSEDED`로 hard-disable되어
+network request나 receipt write를 만들지 않는다. active OA112의 source별 rights evidence와 exact
+approval packet을 검증하는 별도 downloader만 이후에 physical call을 만들 수 있다. historical
+receipt는 재현용 metadata artifact일 뿐 active activation evidence가 아니다.
 
 historical `rag-content status`와 `setup-rag-content.bat`의 manifest validation은 active physical
 OA112 activation 증거가 아니다. 이 상태는 아직 원문 download/parse/embed/eval이 끝난

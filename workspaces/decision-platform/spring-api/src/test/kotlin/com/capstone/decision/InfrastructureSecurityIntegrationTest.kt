@@ -108,6 +108,8 @@ class InfrastructureSecurityIntegrationTest {
                 "read_rag_v2_history_detail(text,text)",
                 "delete_owned_rag_v2_history(text,text)",
                 "record_rag_v2_immutable_consent(text,text,text,text)",
+                "record_rag_v2_immutable_consent_v2(text,text,text,text,text,text,text)",
+                "read_rag_v2_immutable_effective_consent(text)",
                 "issue_rag_v2_immutable_import_ticket(text,text,text,text)",
             ).forEach { function ->
                 assertTrue(

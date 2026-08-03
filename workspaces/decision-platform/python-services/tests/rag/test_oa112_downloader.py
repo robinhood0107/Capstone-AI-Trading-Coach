@@ -83,6 +83,25 @@ def test_fully_cached_offline_rebuild_needs_no_packet_or_transport(tmp_path: Pat
     assert offline_transport.requests == []
 
 
+def test_missing_cache_requires_packet_before_transport(tmp_path: Path) -> None:
+    cache_root, control_root = _roots(tmp_path)
+    source = _source(b"packet-required body\n")
+    transport = _FixtureTransport([])
+
+    with pytest.raises(Oa112DownloadError, match="OA112_PACKET_REQUIRED"):
+        download_oa112_local_cache(
+            entries=(source,),
+            registry_digest="9" * 64,
+            packet=None,
+            local_cache_root=cache_root,
+            packet_control_root=control_root,
+            resolver=_FixtureResolver(),
+            transport=transport,
+        )
+
+    assert transport.requests == []
+
+
 @pytest.mark.parametrize(
     "response_kind",
     [

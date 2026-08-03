@@ -9,6 +9,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path, PurePosixPath
 from typing import Mapping, cast
 
+from app.rag.authorized_retrieval import ALLOWED_RAG_TOPICS
 from app.rag.benchmark_receipt_io import (
     BenchmarkReceiptIoError,
     write_benchmark_receipt,
@@ -37,7 +38,9 @@ _CONTROL_FIELDS = frozenset(
         "languageTags",
         "ownerUserId",
         "relativePath",
+        "retrievalTopics",
         "schemaVersion",
+        "sanitizedDisplayName",
         "sourceId",
         "sourceRevisionId",
         "ticketId",
@@ -79,6 +82,8 @@ class RagV2OwnerImportControl:
     source_id: str
     source_revision_id: str
     language_tags: tuple[str, ...]
+    sanitized_display_name: str
+    retrieval_topics: tuple[str, ...]
     issued_at: datetime
     expires_at: datetime
 
@@ -227,14 +232,16 @@ def _encode_control(control: RagV2OwnerImportControl) -> bytes:
     _validate_control(control)
     payload = {
         "approvedRoot": str(control.approved_root),
-        "contractId": "rag-v2-owner-local-import-control-v1",
+        "contractId": "rag-v2-owner-local-import-control-v2",
         "documentId": control.document_id,
         "expiresAt": _format_instant(control.expires_at),
         "issuedAt": _format_instant(control.issued_at),
         "languageTags": list(control.language_tags),
         "ownerUserId": control.owner_user_id,
         "relativePath": control.relative_path,
-        "schemaVersion": 1,
+        "retrievalTopics": list(control.retrieval_topics),
+        "schemaVersion": 2,
+        "sanitizedDisplayName": control.sanitized_display_name,
         "sourceId": control.source_id,
         "sourceRevisionId": control.source_revision_id,
         "ticketId": control.import_ticket_id,
@@ -253,12 +260,16 @@ def _decode_control(value: object) -> RagV2OwnerImportControl:
     approved_root = value.get("approvedRoot")
     relative_path = value.get("relativePath")
     language_tags = value.get("languageTags")
+    retrieval_topics = value.get("retrievalTopics")
+    sanitized_display_name = value.get("sanitizedDisplayName")
     if (
-        value.get("contractId") != "rag-v2-owner-local-import-control-v1"
-        or value.get("schemaVersion") != 1
+        value.get("contractId") != "rag-v2-owner-local-import-control-v2"
+        or value.get("schemaVersion") != 2
         or not isinstance(approved_root, str)
         or not isinstance(relative_path, str)
         or not isinstance(language_tags, list)
+        or not isinstance(retrieval_topics, list)
+        or not isinstance(sanitized_display_name, str)
     ):
         raise RagV2LocalImportControlError("LOCAL_IMPORT_CONTROL_INVALID")
     try:
@@ -271,6 +282,8 @@ def _decode_control(value: object) -> RagV2OwnerImportControl:
             source_id=_require_pattern(value.get("sourceId"), _SOURCE_ID),
             source_revision_id=_require_pattern(value.get("sourceRevisionId"), _SOURCE_REVISION_ID),
             language_tags=_validate_language_tags(language_tags),
+            sanitized_display_name=_validate_sanitized_display_name(sanitized_display_name),
+            retrieval_topics=_validate_retrieval_topics(retrieval_topics),
             issued_at=_parse_instant(value.get("issuedAt")),
             expires_at=_parse_instant(value.get("expiresAt")),
         )
@@ -328,6 +341,10 @@ def _validate_control(control: RagV2OwnerImportControl) -> None:
         or not control.approved_root.is_dir()
         or _validate_relative_path(control.relative_path) != control.relative_path
         or _validate_language_tags(list(control.language_tags)) != control.language_tags
+        or _validate_sanitized_display_name(control.sanitized_display_name)
+        != control.sanitized_display_name
+        or _validate_retrieval_topics(list(control.retrieval_topics))
+        != control.retrieval_topics
         or control.issued_at.tzinfo is None
         or control.expires_at.tzinfo is None
         or control.expires_at.astimezone(UTC) - control.issued_at.astimezone(UTC) != timedelta(minutes=5)
@@ -398,6 +415,29 @@ def _validate_language_tags(value: list[object]) -> tuple[str, ...]:
     ):
         raise ValueError("language tags")
     return tuple(cast(str, item) for item in value)
+
+
+def _validate_sanitized_display_name(value: object) -> str:
+    if (
+        not isinstance(value, str)
+        or not 1 <= len(value) <= 160
+        or value != value.strip()
+        or value.startswith((".", "~"))
+        or any(character in value for character in ("/", "\\", ":", "\x00", "\r", "\n"))
+        or any(ord(character) < 32 or ord(character) == 127 for character in value)
+    ):
+        raise ValueError("sanitized display name")
+    return value
+
+
+def _validate_retrieval_topics(value: list[object]) -> tuple[str, ...]:
+    if (
+        not 1 <= len(value) <= len(ALLOWED_RAG_TOPICS)
+        or any(not isinstance(item, str) or item not in ALLOWED_RAG_TOPICS for item in value)
+        or len(set(cast(str, item) for item in value)) != len(value)
+    ):
+        raise ValueError("retrieval topics")
+    return tuple(sorted(cast(str, item) for item in value))
 
 
 def _parse_instant(value: object) -> datetime:

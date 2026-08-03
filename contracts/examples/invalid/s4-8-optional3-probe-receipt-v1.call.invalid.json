@@ -1,0 +1,10 @@
+{
+  "contractId": "s4-8-optional3-probe-receipt-v1",
+  "firstFailureStopsRemainingCalls": true,
+  "physicalCallCount": 1,
+  "providerFamily": "MASSIVE",
+  "rawProviderDataStored": false,
+  "retryCount": 0,
+  "schemaVersion": 1,
+  "state": "NOT_EXECUTED"
+}

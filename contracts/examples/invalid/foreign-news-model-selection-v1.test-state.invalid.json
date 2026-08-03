@@ -1,0 +1,68 @@
+{
+  "abstainReason": null,
+  "candidateModels": [
+    "PROSUSAI_FINBERT",
+    "YIYANGHKUST_FINBERT_TONE",
+    "LOUGHRAN_MCDONALD_BASELINE"
+  ],
+  "contractId": "foreign-news-model-selection-v1",
+  "schemaVersion": 1,
+  "selectedModel": null,
+  "selectionGeneration": 1,
+  "selectionId": "fns_01CONTRACTFIXTURE",
+  "selectionStatus": "TEST_EVALUATED",
+  "testEvaluationCount": 0,
+  "testOutcome": "PASSED",
+  "testTargetModel": null,
+  "validationCompleted": false,
+  "validationResults": [
+    {
+      "candidateModel": "PROSUSAI_FINBERT",
+      "metrics": {
+        "classRecalls": {
+          "NEGATIVE": 0,
+          "NEUTRAL": 0,
+          "POSITIVE": 0
+        },
+        "cpuP95Millis": 0,
+        "criticalNegationNumberUnitErrors": 0,
+        "ece": 0,
+        "footprintBytes": 0,
+        "macroF1": 0,
+        "neutralF1": 0
+      }
+    },
+    {
+      "candidateModel": "YIYANGHKUST_FINBERT_TONE",
+      "metrics": {
+        "classRecalls": {
+          "NEGATIVE": 0,
+          "NEUTRAL": 0,
+          "POSITIVE": 0
+        },
+        "cpuP95Millis": 0,
+        "criticalNegationNumberUnitErrors": 0,
+        "ece": 0,
+        "footprintBytes": 0,
+        "macroF1": 0,
+        "neutralF1": 0
+      }
+    },
+    {
+      "candidateModel": "LOUGHRAN_MCDONALD_BASELINE",
+      "metrics": {
+        "classRecalls": {
+          "NEGATIVE": 0,
+          "NEUTRAL": 0,
+          "POSITIVE": 0
+        },
+        "cpuP95Millis": 0,
+        "criticalNegationNumberUnitErrors": 0,
+        "ece": 0,
+        "footprintBytes": 0,
+        "macroF1": 0,
+        "neutralF1": 0
+      }
+    }
+  ]
+}

@@ -1,0 +1,257 @@
+{
+  "$id": "contracts/schemas/foreign-news-model-selection-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "abstainReason": {
+      "oneOf": [
+        {
+          "enum": [
+            "NO_MODEL_MEETS_VALIDATION_GATE",
+            "TIE_AFTER_FOOTPRINT",
+            "TEST_FAILED"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "candidateModels": {
+      "items": false,
+      "maxItems": 3,
+      "minItems": 3,
+      "prefixItems": [
+        {
+          "const": "PROSUSAI_FINBERT"
+        },
+        {
+          "const": "YIYANGHKUST_FINBERT_TONE"
+        },
+        {
+          "const": "LOUGHRAN_MCDONALD_BASELINE"
+        }
+      ],
+      "type": "array"
+    },
+    "contractId": {
+      "const": "foreign-news-model-selection-v1"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "selectedModel": {
+      "oneOf": [
+        {
+          "enum": [
+            "PROSUSAI_FINBERT",
+            "YIYANGHKUST_FINBERT_TONE",
+            "LOUGHRAN_MCDONALD_BASELINE"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "selectionGeneration": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "selectionId": {
+      "pattern": "^fns_[A-Za-z0-9_-]{12,96}$",
+      "type": "string"
+    },
+    "selectionStatus": {
+      "enum": [
+        "NOT_SELECTED",
+        "SELECTED_PENDING_TEST",
+        "TEST_EVALUATED",
+        "ABSTAIN"
+      ]
+    },
+    "testEvaluationCount": {
+      "maximum": 1,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "testOutcome": {
+      "enum": [
+        "NOT_RUN",
+        "PASSED",
+        "FAILED"
+      ]
+    },
+    "testTargetModel": {
+      "oneOf": [
+        {
+          "enum": [
+            "PROSUSAI_FINBERT",
+            "YIYANGHKUST_FINBERT_TONE",
+            "LOUGHRAN_MCDONALD_BASELINE"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "validationCompleted": {
+      "type": "boolean"
+    },
+    "validationResults": {
+      "allOf": [
+        {
+          "contains": {
+            "properties": {
+              "candidateModel": {
+                "const": "PROSUSAI_FINBERT"
+              }
+            },
+            "required": [
+              "candidateModel"
+            ],
+            "type": "object"
+          },
+          "maxContains": 1,
+          "minContains": 1
+        },
+        {
+          "contains": {
+            "properties": {
+              "candidateModel": {
+                "const": "YIYANGHKUST_FINBERT_TONE"
+              }
+            },
+            "required": [
+              "candidateModel"
+            ],
+            "type": "object"
+          },
+          "maxContains": 1,
+          "minContains": 1
+        },
+        {
+          "contains": {
+            "properties": {
+              "candidateModel": {
+                "const": "LOUGHRAN_MCDONALD_BASELINE"
+              }
+            },
+            "required": [
+              "candidateModel"
+            ],
+            "type": "object"
+          },
+          "maxContains": 1,
+          "minContains": 1
+        }
+      ],
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "candidateModel": {
+            "enum": [
+              "PROSUSAI_FINBERT",
+              "YIYANGHKUST_FINBERT_TONE",
+              "LOUGHRAN_MCDONALD_BASELINE"
+            ]
+          },
+          "metrics": {
+            "additionalProperties": false,
+            "properties": {
+              "classRecalls": {
+                "additionalProperties": false,
+                "properties": {
+                  "NEGATIVE": {
+                    "maximum": 1,
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  "NEUTRAL": {
+                    "maximum": 1,
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  "POSITIVE": {
+                    "maximum": 1,
+                    "minimum": 0,
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "NEGATIVE",
+                  "NEUTRAL",
+                  "POSITIVE"
+                ],
+                "type": "object"
+              },
+              "cpuP95Millis": {
+                "minimum": 0,
+                "type": "number"
+              },
+              "criticalNegationNumberUnitErrors": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "ece": {
+                "maximum": 1,
+                "minimum": 0,
+                "type": "number"
+              },
+              "footprintBytes": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "macroF1": {
+                "maximum": 1,
+                "minimum": 0,
+                "type": "number"
+              },
+              "neutralF1": {
+                "maximum": 1,
+                "minimum": 0,
+                "type": "number"
+              }
+            },
+            "required": [
+              "classRecalls",
+              "cpuP95Millis",
+              "criticalNegationNumberUnitErrors",
+              "ece",
+              "footprintBytes",
+              "macroF1",
+              "neutralF1"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "candidateModel",
+          "metrics"
+        ],
+        "type": "object"
+      },
+      "maxItems": 3,
+      "minItems": 3,
+      "type": "array"
+    }
+  },
+  "required": [
+    "contractId",
+    "abstainReason",
+    "candidateModels",
+    "schemaVersion",
+    "selectionGeneration",
+    "selectionId",
+    "selectedModel",
+    "selectionStatus",
+    "testEvaluationCount",
+    "testOutcome",
+    "testTargetModel",
+    "validationCompleted",
+    "validationResults"
+  ],
+  "title": "foreign-news-model-selection-v1",
+  "type": "object"
+}

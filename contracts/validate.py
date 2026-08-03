@@ -56,6 +56,10 @@ from contracts.generate_s4_7d_rag_v2_contracts import (  # noqa: E402
     SCHEMA_IDS as S4_7D_SCHEMA_IDS,
     validate_semantics as validate_s4_7d_semantics,
 )
+from contracts.generate_pre_s5_rag_news_contracts import (  # noqa: E402
+    SCHEMA_IDS as PRE_S5_RAG_NEWS_SCHEMA_IDS,
+    validate_semantics as validate_pre_s5_rag_news_semantics,
+)
 from contracts.generate_s5_0_signal_v2_contracts import (  # noqa: E402
     validate_signal_v2_semantics,
 )
@@ -91,6 +95,7 @@ S2_EXAMPLE_SCHEMA_PREFIXES = {
 VERSIONED_EXAMPLE_SCHEMAS = {
     **{schema_id: schema_id for schema_id in S4_8A_SCHEMA_IDS},
     **{schema_id: schema_id for schema_id in S4_8_CORE6_SCHEMA_IDS},
+    **{schema_id: schema_id for schema_id in PRE_S5_RAG_NEWS_SCHEMA_IDS},
     "s2-2-hash-vector.v3": "s2-2-hash-vector.v3",
 }
 
@@ -210,6 +215,9 @@ def validate_example_semantics(
         return
     if schema_name in S4_7D_SCHEMA_IDS:
         validate_s4_7d_semantics(schema_name, example)
+        return
+    if schema_name in PRE_S5_RAG_NEWS_SCHEMA_IDS:
+        validate_pre_s5_rag_news_semantics(schema_name, example)
         return
     if schema_name == "signal-v2":
         validate_signal_v2_semantics(example)

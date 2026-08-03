@@ -959,6 +959,14 @@ BEGIN
         TO decision_rag_writer;
     END IF;
     IF to_regprocedure(
+        'public.stage_rag_v2_immutable_external_exact30_voyage_document(jsonb)'
+    ) IS NOT NULL THEN
+        -- V37은 S4.7C external-safe exact-30만 stage하며 Voyage 호출·평가·activation 권한은 주지 않는다.
+        GRANT EXECUTE ON FUNCTION
+            stage_rag_v2_immutable_external_exact30_voyage_document(jsonb)
+        TO decision_rag_writer;
+    END IF;
+    IF to_regprocedure(
         'public.stage_rag_v2_immutable_owner_bge_document_v2(text,text,jsonb)'
     ) IS NOT NULL THEN
         GRANT EXECUTE ON FUNCTION

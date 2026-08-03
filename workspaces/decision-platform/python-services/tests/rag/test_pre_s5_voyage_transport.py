@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import UTC, datetime, timedelta
 
@@ -166,7 +167,7 @@ def _groups() -> tuple[VoyagePreChunkedDocumentGroup, ...]:
                 VoyagePreChunkedChunk(
                     chunk_id="rag_v2_chk_" + "1" * 32,
                     canonical_text="first canonical chunk",
-                    canonical_text_sha256="d" * 64,
+                    canonical_text_sha256=_sha256("first canonical chunk"),
                     embedding_input_hash="e" * 64,
                 ),
             ),
@@ -179,7 +180,7 @@ def _groups() -> tuple[VoyagePreChunkedDocumentGroup, ...]:
                 VoyagePreChunkedChunk(
                     chunk_id="rag_v2_chk_" + "2" * 32,
                     canonical_text="second canonical chunk",
-                    canonical_text_sha256="0" * 64,
+                    canonical_text_sha256=_sha256("second canonical chunk"),
                     embedding_input_hash="a" * 64,
                 ),
             ),
@@ -209,3 +210,7 @@ def _response_for(groups: tuple[VoyagePreChunkedDocumentGroup, ...]) -> PreS5Voy
             separators=(",", ":"),
         ).encode("utf-8"),
     )
+
+
+def _sha256(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()

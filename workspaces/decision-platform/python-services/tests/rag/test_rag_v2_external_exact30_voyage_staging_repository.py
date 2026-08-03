@@ -180,7 +180,7 @@ def test_external_exact30_voyage_writer_rejects_duplicate_source_revision_before
     _direct_stage(isolated_postgres_cluster["rag_writer_dsn"], first_payload)
     duplicate = _with_unapproved_revision_identity(first_payload)
 
-    with pytest.raises(psycopg.Error, match="source identity is invalid|duplicate source"):
+    with pytest.raises(psycopg.Error, match="source metadata is invalid"):
         _direct_stage(isolated_postgres_cluster["rag_writer_dsn"], duplicate)
 
     with psycopg.connect(isolated_postgres_cluster["admin_dsn"]) as connection:

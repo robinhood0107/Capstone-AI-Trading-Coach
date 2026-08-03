@@ -62,6 +62,7 @@ class PublicBgeSourceMetadata:
     citation_title: str
     retrieval_topics: tuple[str, ...]
     canonical_https_url: str
+    source_card_sha256: str | None
     oa_track_id: str | None
     source_card: Mapping[str, object] | None
     license_evidence_sha256: str | None
@@ -241,6 +242,7 @@ def build_public_bge_staging_payload(
     source = {
         "accessEvidenceSha256": metadata.access_evidence_sha256,
         "canonicalHttpsUrl": metadata.canonical_https_url,
+        "sourceCardSha256": metadata.source_card_sha256,
         "canonicalText": canonical_text,
         "canonicalTextSha256": canonical_text_sha256,
         "chunks": chunks,
@@ -275,6 +277,9 @@ def build_public_bge_staging_payload(
         "generationHash": context.generation_hash,
         "manifestHash": context.manifest_hash,
         "materializationRunId": context.materialization_run_id,
+        # DB writer는 이 exact source-id ordered digest list로 persisted membership을 다시 묶는다.
+        # digest만 전달하므로 source text, raw cache path, embedding을 control-plane에 복사하지 않는다.
+        "memberDigests": list(context.member_digests),
         "schemaVersion": 1,
         "source": source,
     }
@@ -383,6 +388,7 @@ def _validate_metadata(
         if (
             metadata.oa_track_id is not None
             or metadata.source_card is not None
+            or not _is_sha256(metadata.source_card_sha256)
             or metadata.license_evidence_sha256 is not None
             or metadata.access_evidence_sha256 is not None
             or metadata.machine_fetch_allowed
@@ -396,6 +402,7 @@ def _validate_metadata(
     if (
         not isinstance(metadata.oa_track_id, str)
         or not metadata.oa_track_id
+        or metadata.source_card_sha256 is not None
         or metadata.source_card is None
         or not _is_sha256(metadata.license_evidence_sha256)
         or not _is_sha256(metadata.access_evidence_sha256)

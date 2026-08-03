@@ -947,6 +947,71 @@ BEGIN
         TO decision_rag_admin;
     END IF;
     IF to_regprocedure(
+        'public.stage_rag_v2_immutable_public_bge_document(jsonb)'
+    ) IS NOT NULL
+       AND to_regprocedure(
+           'public.evaluate_rag_v2_immutable_public_bge_component(text,jsonb)'
+       ) IS NOT NULL THEN
+        -- V36 public corpus writer는 raw table DML 대신 source-stage/evaluation definer pair만 재부여한다.
+        GRANT EXECUTE ON FUNCTION
+            stage_rag_v2_immutable_public_bge_document(jsonb),
+            evaluate_rag_v2_immutable_public_bge_component(text, jsonb)
+        TO decision_rag_writer;
+    END IF;
+    IF to_regprocedure(
+        'public.stage_rag_v2_immutable_owner_bge_document_v2(text,text,jsonb)'
+    ) IS NOT NULL THEN
+        GRANT EXECUTE ON FUNCTION
+            stage_rag_v2_immutable_owner_bge_document_v2(text, text, jsonb)
+        TO decision_rag_writer;
+    END IF;
+    IF to_regprocedure(
+        'public.issue_rag_v2_retrieval_scope(text,text,text[])'
+    ) IS NOT NULL
+       AND to_regprocedure(
+           'public.canonicalize_rag_v2_immutable_retrieval_citations(text,text,text,jsonb)'
+       ) IS NOT NULL
+       AND to_regprocedure(
+           'public.persist_rag_v2_immutable_retrieval_history(text,text,text,text,text,text,double precision,text[],text,bytea,bytea,bytea,bytea,bytea,bytea,bytea,bytea,bytea,timestamp with time zone,jsonb)'
+       ) IS NOT NULL THEN
+        -- 앱은 claim 발급과 content-free encrypted history definer capability만 재획득한다.
+        GRANT EXECUTE ON FUNCTION
+            issue_rag_v2_retrieval_scope(text, text, text[]),
+            canonicalize_rag_v2_immutable_retrieval_citations(text, text, text, jsonb),
+            persist_rag_v2_immutable_retrieval_history(
+                text, text, text, text, text, text, double precision, text[], text,
+                bytea, bytea, bytea, bytea, bytea, bytea, bytea, bytea, bytea,
+                timestamptz, jsonb
+            )
+        TO decision_app;
+    END IF;
+    IF to_regprocedure(
+        'public.read_rag_v2_retrieval_scope(text,text,text)'
+    ) IS NOT NULL
+       AND to_regprocedure(
+           'public.read_rag_v2_retrieval_scope_by_claim(text,text)'
+       ) IS NOT NULL THEN
+        -- query role은 owner/session-scoped projection과 각 channel top-30 함수만 다시 받는다.
+        GRANT EXECUTE ON FUNCTION
+            read_rag_v2_retrieval_scope(text, text, text),
+            read_rag_v2_retrieval_scope_by_claim(text, text),
+            search_authorized_rag_v2_exact(text, text, text, text[], text[]),
+            search_authorized_rag_v2_lexical(text, text, text, text[], text),
+            search_authorized_rag_v2_dense(text, text, text, text[], vector)
+        TO decision_rag_query;
+    END IF;
+    IF to_regprocedure(
+        'public.prepare_rag_v2_immutable_owner_overlay(text,text)'
+    ) IS NOT NULL
+       AND to_regprocedure(
+           'public.replace_and_delete_rag_v2_immutable_owner_document(text,text,text,text,text)'
+       ) IS NOT NULL THEN
+        GRANT EXECUTE ON FUNCTION
+            prepare_rag_v2_immutable_owner_overlay(text, text),
+            replace_and_delete_rag_v2_immutable_owner_document(text, text, text, text, text)
+        TO decision_rag_admin;
+    END IF;
+    IF to_regprocedure(
         'public.record_rag_v2_immutable_consent_v2(text,text,text,text,text,text,text)'
     ) IS NOT NULL
        AND to_regprocedure(

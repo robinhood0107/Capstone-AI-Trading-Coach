@@ -33,6 +33,7 @@ def test_local_import_control_round_trip_is_private_and_argv_free(tmp_path: Path
     record = tmp_path / "control" / "owner-import.json"
     assert record.stat().st_mode & 0o777 == 0o600
     assert "private.pdf" not in json.dumps(loaded.content_free_summary())
+    assert "Owner fixture" not in json.dumps(loaded.content_free_summary())
     assert "rti_" not in json.dumps(loaded.content_free_summary())
     assert "usr_" not in json.dumps(loaded.content_free_summary())
 
@@ -145,6 +146,8 @@ def _control(root: Path) -> RagV2OwnerImportControl:
         source_id="src_owner_control_001",
         source_revision_id="srv_owner_control_001",
         language_tags=("en",),
+        sanitized_display_name="Owner fixture",
+        retrieval_topics=("FINANCIAL_ENGINEERING",),
         issued_at=now,
         expires_at=now + timedelta(minutes=5),
     )

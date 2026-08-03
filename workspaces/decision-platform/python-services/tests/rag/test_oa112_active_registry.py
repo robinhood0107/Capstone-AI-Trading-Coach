@@ -82,6 +82,22 @@ def test_active_registry_requires_a_private_nontracked_secure_input_root(tmp_pat
         load_oa112_active_registry(approved_root=tmp_path, relative_path=path.name)
 
 
+def test_active_registry_rejects_ip_literal_source_origin(tmp_path: Path) -> None:
+    _secure_directory(tmp_path)
+    payload = _registry()
+    source_card = payload["activeSources"][0]["sourceCard"]
+    assert isinstance(source_card, dict)
+    literal_url = "https://[2001:4860:4860::8888]/oa/000.pdf"
+    source_card["canonicalUrl"] = literal_url
+    source_card["canonicalUrlSha256"] = hashlib.sha256(literal_url.encode()).hexdigest()
+    payload["registryDigest"] = canonical_oa112_active_registry_digest(payload)
+    path = tmp_path / "oa112-active-registry.v1.json"
+    _write_registry(path, payload)
+
+    with pytest.raises(Oa112ActiveRegistryError, match="OA112_REGISTRY_INVALID"):
+        load_oa112_active_registry(approved_root=tmp_path, relative_path=path.name)
+
+
 def _registry() -> dict[str, object]:
     active_sources: list[dict[str, object]] = []
     for track_index, track_id in enumerate(OA_TRACK_IDS):

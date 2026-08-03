@@ -49,6 +49,40 @@ def test_downloads_hash_verified_identity_encoded_raw_to_local_cache_without_rec
     assert (cache_root / "oa-raw" / "src_oa_fixture_001.txt").read_bytes() == body
 
 
+def test_fully_cached_offline_rebuild_needs_no_packet_or_transport(tmp_path: Path) -> None:
+    cache_root, control_root = _roots(tmp_path)
+    body = b"cached bounded OA source\n"
+    source = _source(body)
+    first_transport = _FixtureTransport([_Response(200, _headers("text/plain", body), body)])
+
+    download_oa112_local_cache(
+        entries=(source,),
+        registry_digest="0" * 64,
+        packet=_packet(source, registry_digest="0" * 64),
+        local_cache_root=cache_root,
+        packet_control_root=control_root,
+        resolver=_FixtureResolver(),
+        transport=first_transport,
+    )
+
+    offline_transport = _FixtureTransport([])
+    receipt = download_oa112_local_cache(
+        entries=(source,),
+        registry_digest="0" * 64,
+        packet=None,
+        local_cache_root=cache_root,
+        packet_control_root=control_root,
+        resolver=_FixtureResolver(),
+        transport=offline_transport,
+    )
+
+    assert receipt.physical_call_count == 0
+    assert receipt.downloaded_source_count == 0
+    assert receipt.reused_source_count == 1
+    assert receipt.sources[0].state == "REUSED"
+    assert offline_transport.requests == []
+
+
 @pytest.mark.parametrize(
     "response_kind",
     [

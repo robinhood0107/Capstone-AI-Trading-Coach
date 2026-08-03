@@ -1,0 +1,276 @@
+{
+  "components": {
+    "schemas": {
+      "RagV2EffectiveConsent": {
+        "$id": "contracts/schemas/s4-rag-v2-effective-consent-v1.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "consentEventId": {
+            "pattern": "^rce_[A-Za-z0-9_-]{12,96}$",
+            "type": "string"
+          },
+          "contractId": {
+            "const": "s4-rag-v2-effective-consent-v1"
+          },
+          "effective": {
+            "type": "boolean"
+          },
+          "policyDigest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "processorSetDigest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "schemaVersion": {
+            "const": 1
+          },
+          "state": {
+            "enum": [
+              "GRANTED",
+              "NOT_GRANTED",
+              "REVOKED"
+            ]
+          }
+        },
+        "required": [
+          "contractId",
+          "consentEventId",
+          "effective",
+          "policyDigest",
+          "processorSetDigest",
+          "schemaVersion",
+          "state"
+        ],
+        "title": "s4-rag-v2-effective-consent-v1",
+        "type": "object"
+      },
+      "RagV2ExternalConsent": {
+        "$id": "contracts/schemas/s4-rag-v2-external-consent-v1.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "enum": [
+              "GRANT",
+              "REVOKE"
+            ]
+          },
+          "consentType": {
+            "const": "EXTERNAL_AI_RAG_V2"
+          },
+          "contractId": {
+            "const": "s4-rag-v2-external-consent-v1"
+          },
+          "disclosureDigest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "policyDigest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "processorSetDigest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "schemaVersion": {
+            "const": 1
+          }
+        },
+        "required": [
+          "contractId",
+          "action",
+          "consentType",
+          "disclosureDigest",
+          "policyDigest",
+          "processorSetDigest",
+          "schemaVersion"
+        ],
+        "title": "s4-rag-v2-external-consent-v1",
+        "type": "object"
+      },
+      "RagV2ImportTicket": {
+        "$id": "contracts/schemas/s4-rag-v2-import-ticket-v1.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "contractId": {
+            "const": "s4-rag-v2-import-ticket-v1"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "issuedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "ownerBound": {
+            "const": true
+          },
+          "ownerRawCopyAllowed": {
+            "const": false
+          },
+          "schemaVersion": {
+            "const": 1
+          },
+          "singleUse": {
+            "const": true
+          },
+          "sourceScope": {
+            "const": "OWNER_PRIVATE"
+          },
+          "ticketId": {
+            "pattern": "^rti_[A-Za-z0-9_-]{12,96}$",
+            "type": "string"
+          },
+          "ttlSeconds": {
+            "const": 300
+          }
+        },
+        "required": [
+          "contractId",
+          "expiresAt",
+          "issuedAt",
+          "ownerBound",
+          "ownerRawCopyAllowed",
+          "schemaVersion",
+          "singleUse",
+          "sourceScope",
+          "ticketId",
+          "ttlSeconds"
+        ],
+        "title": "s4-rag-v2-import-ticket-v1",
+        "type": "object"
+      },
+      "RagV2ImportTicketRequest": {
+        "$id": "contracts/schemas/s4-rag-v2-import-ticket-request-v1.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "contractId": {
+            "const": "s4-rag-v2-import-ticket-request-v1"
+          },
+          "importMode": {
+            "const": "LOCAL_EPHEMERAL_PARSE"
+          },
+          "schemaVersion": {
+            "const": 1
+          },
+          "sourceScope": {
+            "const": "OWNER_PRIVATE"
+          }
+        },
+        "required": [
+          "contractId",
+          "importMode",
+          "schemaVersion",
+          "sourceScope"
+        ],
+        "title": "s4-rag-v2-import-ticket-request-v1",
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "bearerAuth": {
+        "bearerFormat": "JWT",
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "title": "Capstone RAG v2 Pre-S5 addendum",
+    "version": "1.0.0-contract"
+  },
+  "openapi": "3.1.1",
+  "paths": {
+    "/api/v2/rag/consent": {
+      "get": {
+        "operationId": "getRagV2EffectiveConsent",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RagV2EffectiveConsent"
+                }
+              }
+            },
+            "description": "Owner-scoped effective consent without identity data"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/rag/consents": {
+      "post": {
+        "operationId": "appendRagV2ExternalConsent",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RagV2ExternalConsent"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Append-only server-owned consent event"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/rag/import-tickets": {
+      "post": {
+        "operationId": "issueRagV2ImportTicket",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RagV2ImportTicketRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RagV2ImportTicket"
+                }
+              }
+            },
+            "description": "Five-minute single-use owner-bound local import ticket"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    }
+  },
+  "servers": [
+    {
+      "url": "/"
+    }
+  ]
+}

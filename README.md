@@ -45,8 +45,8 @@ provider 호출, RiskDecision/hash/order 권한, S5 feature 주입은 모두 0�
 
 ### 교차시장·애널리스트 오버레이 계획 상태
 
-교차시장 계획 타당성은 `PLAN_FEASIBILITY=GO`다. `S4_8A=CONTRACT_ONLY`,
-`S4_8_CORE6_V2=CONTRACT_ONLY`, `S4_8B_C=OFFLINE_ONLY`다. Core 6 v2는
+교차시장 계획 타당성은 `PLAN_FEASIBILITY=GO_WITH_EXTERNAL_HARD_GATES`다. `S4_8A=CONTRACT_LOCKED`,
+`S4_8_CORE6_V2=CONTRACT_ONLY`, `S4_8B_C=IMPLEMENTED_MERGE_CANDIDATE`다. Core 6 v2는
 KIS/OpenDART/SEC EDGAR/KRX/KOFIA/ECOS의 future entitlement·packet·sanitized receipt만 잠그며
 provider adapter/live call은 0이다. provider 없는 fixture/scorer/append-only evidence/설명 경계만
 구현됐다. S6.6/S6.7과
@@ -57,8 +57,9 @@ dependency 없이 기존 Spring/Python/PostgreSQL/Redis/gRPC를 재사용한다.
 
 순서 0 read-only `S4.READ`와 S4.8A contract-only merge gate는 충족했다. 이 후속 변경은
 provider 없는 S4.8B/C만 구현하며 S6.6/S6.7은 시작하지 않는다.
-S4.8A/B/C·S6.6·S6.7의 P1 최고 권한은 적용 대상 신규 BUY의
-`ALLOW → WARN`이며, 애널리스트·뉴스·RAG·LLM은 RiskDecision과 판단 hash를 바꾸지 않는다.
+현재 S4.8A/B/C의 Decision/Signal/Risk/order/hash 권한은 0이며, 애널리스트·뉴스·RAG·LLM은
+RiskDecision과 판단 hash를 바꾸지 않는다. S6.6/S6.7의 후속 계획은 `NOT_IMPLEMENTED / PLANNED`이며
+현재 execution task, artifact 또는 S5 entry dependency를 만들지 않는다.
 기존 Decision/RAG/Signal v1/v2 payload에 추가하는 교차시장 필드는 0이다.
 
 42개는 integration target 조사 행 수이지 사용 가능한 API 수가 아니고, KIS 18개도
@@ -76,7 +77,38 @@ S5.0은 Signal v1/OpenAPI를 변경하지 않는 `AVAILABLE | ABSTAIN` Signal v2
 Python/Spring parity까지만 구현했다. active v2 endpoint, artifact ingest, RiskDecision/order
 wiring은 `NO_GO`다.
 
-## 워크스페이스 소유권
+## Pre-S5 단독 실행 소유권 잠금
+
+이 block이 현재 Pre-S5 authority다. 기존 역할·일정·산출물 설명은 `HISTORICAL_SUPERSEDED`로만
+보존하며, 존재하지 않는 output은 `NOT_AVAILABLE/ABSTAIN`으로 처리한다. 새 implementation task,
+Issue, PR, deadline, live blocker 또는 S5 entry dependency는 만들지 않는다.
+
+```text
+PRE_S5_DOC_TRUTH_FREEZE_ADDENDUM_VERIFIED
+PRE_S5_EXECUTION_OWNER=DECISION_PLATFORM
+S1_3G=OFFLINE_ONLY
+NEW_TEAMMATE_IMPLEMENTATION_TASKS=0
+NEW_TEAMMATE_ISSUES_OR_PRS=0
+REQUIRED_TEAMMATE_ARTIFACTS_FOR_S5_ENTRY=0
+TEAMMATE_WORKSPACE_DIFF=0
+GDELT_MODE=DECISION_PLATFORM_OFFLINE_REFERENCE_ONLY
+GDELT_EXISTING_OFFLINE_PRODUCER_UNCHANGED=1
+GDELT_HTTP_TRANSPORT=NOT_ACTIVATED
+GDELT_OUTBOUND_IMPLEMENTATION=0
+GDELT_OUTBOUND_CALLS=0
+GDELT_OFFLINE_REFERENCE_ONLY=1
+NAVER_ACTIVE_PROVIDER_RUNTIME_STORAGE=RETIRED
+RAG_NEWS_ANALYST_DECISION_SIGNAL_ORDER_AUTHORITY=0
+PLAN_FEASIBILITY=GO_WITH_EXTERNAL_HARD_GATES
+```
+
+Decision Platform은 existing synthetic/offline GDELT aggregate producer를 소유한다. HTTP transport와
+executor/outbound activation은 없으며 Naver는 retired 상태를 유지한다.
+
+## 워크스페이스 소유권 — HISTORICAL_SUPERSEDED catalog
+
+아래 표는 기존 workspace label을 보존하는 historical catalog일 뿐, 현재 실행 책임이나 신규 의존성을
+만들지 않는다.
 
 | 경로 | 담당 | 상태 |
 |---|---|---|
@@ -196,10 +228,10 @@ S1.6 OpenDART online collector는 `.env.example`의 네 quota 값을 운영 evid
 - [S2.4 계약 변경 기록](contracts/changes/20260725-s2-4-risk-kill-switch-contract.md)
 - [S3.1 Brokerage Mock 주문 계약](contracts/README.md#s31-brokerage-mock-주문)
 - [S3.1 계약 변경 기록](contracts/changes/20260726-s3-1-brokerage-mock-contract.md)
-- [S3.2 INTERNAL_PAPER 원장 계약](contracts/README.md#s32-internal_paper-체결-원장)
+- [S3.2 INTERNAL_PAPER 원장 계약](contracts/README.md#s32-internalpaper-체결-원장)
 - [S3.2 계약 변경 기록](contracts/changes/20260727-s3-2-internal-paper-ledger-contract.md)
 - [S3.3 체결 이벤트와 대사 계약](contracts/README.md#s33-체결-이벤트와-대사)
 - [S3.3 계약 변경 기록](contracts/changes/20260727-s3-3-fill-events-reconciliation-contract.md)
-- [S4.8 교차시장 계획 계약](contracts/README.md#s48-교차시장애널리스트-계획-계약)
+- [S4.8 교차시장·애널리스트 계약](contracts/README.md#s48-교차시장애널리스트-계약)
 - [S4.8 Core 6 v2 계약 변경 기록](contracts/changes/20260802-s4-8-core6-v2-contract-lock.md)
 - S1.4X dependency amendment 재현: `workspaces/decision-platform/research/s1-4x-numeric-parity/README.md`

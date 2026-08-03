@@ -1,0 +1,11 @@
+{
+  "approvalStatus": "TEMPLATE",
+  "artifactCap": 0,
+  "contractId": "s4-8-optional3-probe-approval-v1",
+  "executionAllowed": true,
+  "logicalCallCap": 0,
+  "physicalCallCap": 0,
+  "providerFamily": "TWELVE_DATA",
+  "retryCount": 0,
+  "schemaVersion": 1
+}

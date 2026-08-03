@@ -20,6 +20,7 @@ from pptx import Presentation
 from app.rag.local_document_parser import (
     DocumentParseError,
     LocalDocumentParser,
+    OcrBackendPort,
     OcrBlock,
     OcrPageResult,
     ParserLimits,
@@ -50,7 +51,29 @@ class _FixtureOcr:
         )
 
 
-def _parser(ocr: _FixtureOcr | None = None) -> LocalDocumentParser:
+@dataclass
+class _FormulaSecretOcr:
+    calls: list[int]
+    backend: str = "PADDLE_STRUCTURED"
+    backend_version: str = "fixture-1"
+    model_sha256: str = _MODEL_HASH
+
+    def parse_page(self, *, png_bytes: bytes, page_number: int) -> OcrPageResult:
+        assert png_bytes.startswith(b"\x89PNG\r\n\x1a\n")
+        self.calls.append(page_number)
+        return OcrPageResult(
+            blocks=(
+                OcrBlock(
+                    block_type="FORMULA",
+                    text="api_key=abcdefghijklmnop",
+                    normalized_formula="api_key=abcdefghijklmnop",
+                    confidence=0.995,
+                ),
+            )
+        )
+
+
+def _parser(ocr: OcrBackendPort | None = None) -> LocalDocumentParser:
     return LocalDocumentParser(
         ocr_backend=ocr,
         limits=ParserLimits(
@@ -441,6 +464,18 @@ def test_secret_is_quarantined_and_pii_or_prompt_injection_is_local_only(
         "promptInjectionDetected": True,
         "secretDetected": False,
     }
+
+
+def test_ocr_formula_secret_is_quarantined_before_document_ir(posix_tmp_path: Path) -> None:
+    root = posix_tmp_path / "owner"
+    root.mkdir()
+    _write(root, "formula.png", _png_bytes())
+    ocr = _FormulaSecretOcr(calls=[])
+
+    with pytest.raises(DocumentParseError, match="DOCUMENT_SECRET_QUARANTINED"):
+        _parse(_parser(ocr), root, "formula.png")
+
+    assert ocr.calls == [1]
 
 
 def test_resource_bounds_reject_oversize_file_and_image(posix_tmp_path: Path) -> None:

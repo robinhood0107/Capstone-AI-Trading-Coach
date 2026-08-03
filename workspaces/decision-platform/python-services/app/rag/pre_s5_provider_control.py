@@ -37,6 +37,7 @@ _PACKET_FIELDS = frozenset(
         "endpoint",
         "expiresAt",
         "headCommit",
+        "inputMicrousdPerToken",
         "issuedAt",
         "logicalCallCap",
         "nonce",
@@ -49,6 +50,7 @@ _PACKET_FIELDS = frozenset(
         "provider",
         "query",
         "rawArtifactCount",
+        "rateEvidenceSha256",
         "retryCount",
         "schemaVersion",
         "securityDigest",
@@ -83,7 +85,9 @@ class PreS5VoyageActivation:
     """
 
     packet_sha256: str
+    nonce_sha256: str
     bundle_manifest_sha256: str
+    rate_evidence_sha256: str
     provider: str
     operation: str
     origin: str
@@ -94,6 +98,7 @@ class PreS5VoyageActivation:
     token_cap: int
     byte_cap: int
     cost_cap_microusd: int
+    input_microusd_per_token: int
     retry_count: int
     raw_artifact_count: int
 
@@ -105,6 +110,7 @@ class PreS5VoyageActivation:
             "code": "PRE_S5_VOYAGE_ACTIVATION_READY",
             "costCapMicrousd": self.cost_cap_microusd,
             "expiresAt": _format_instant(self.expires_at),
+            "inputMicrousdPerToken": self.input_microusd_per_token,
             "logicalCallCap": self.logical_call_cap,
             "operation": self.operation,
             "packetSha256": self.packet_sha256,
@@ -218,6 +224,7 @@ def _validate_voyage_packet(
         "ciDigest",
         "organizationTrainingOptOutEvidenceSha256",
         "paymentMethodPrivacyEvidenceSha256",
+        "rateEvidenceSha256",
         "securityDigest",
     )
     if (
@@ -233,9 +240,16 @@ def _validate_voyage_packet(
     physical_call_cap = _bounded_int(value.get("physicalCallCap"), minimum=1, maximum=1)
     token_cap = _bounded_int(value.get("tokenCap"), minimum=1, maximum=120_000)
     byte_cap = _bounded_int(value.get("byteCap"), minimum=1, maximum=4_194_304)
-    cost_cap_microusd = _bounded_int(value.get("costCapMicrousd"), minimum=0, maximum=1_000_000_000)
+    cost_cap_microusd = _bounded_int(value.get("costCapMicrousd"), minimum=1, maximum=1_000_000_000)
+    input_microusd_per_token = _bounded_int(
+        value.get("inputMicrousdPerToken"),
+        minimum=1,
+        maximum=1_000_000,
+    )
     retry_count = _bounded_int(value.get("retryCount"), minimum=0, maximum=0)
     raw_artifact_count = _bounded_int(value.get("rawArtifactCount"), minimum=0, maximum=0)
+    if token_cap * input_microusd_per_token > cost_cap_microusd:
+        raise PreS5ProviderActivationError("PRE_S5_PROVIDER_PACKET_INVALID")
     canonical_packet = json.dumps(
         value,
         ensure_ascii=False,
@@ -244,7 +258,9 @@ def _validate_voyage_packet(
     ).encode("utf-8")
     return PreS5VoyageActivation(
         packet_sha256=hashlib.sha256(canonical_packet).hexdigest(),
+        nonce_sha256=hashlib.sha256(_text(value["nonce"]).encode("utf-8")).hexdigest(),
         bundle_manifest_sha256=_text(value["bundleManifestSha256"]),
+        rate_evidence_sha256=_text(value["rateEvidenceSha256"]),
         provider="VOYAGE",
         operation="CONTEXTUALIZED_DOCUMENT_EMBEDDING",
         origin="https://api.voyageai.com",
@@ -255,6 +271,7 @@ def _validate_voyage_packet(
         token_cap=token_cap,
         byte_cap=byte_cap,
         cost_cap_microusd=cost_cap_microusd,
+        input_microusd_per_token=input_microusd_per_token,
         retry_count=retry_count,
         raw_artifact_count=raw_artifact_count,
     )

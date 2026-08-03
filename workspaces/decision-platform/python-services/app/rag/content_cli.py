@@ -10,6 +10,7 @@ from typing import Final
 from app.rag.bge_acquisition import DEFAULT_MODEL_ROOT
 from app.rag.bge_runtime import BgeRuntimeError, BgeStaticTokenizer, load_bge_onnx_embedder
 from app.rag.local_document_parser import DocumentParseError, LocalDocumentParser
+from app.rag.rag_v2_local_cache import RagV2LocalCacheError, clean_local_rag_cache
 from app.rag.oa_release_manifest import (
     OaReleaseManifestError,
     load_oa_release_manifest,
@@ -70,7 +71,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _failure("CONTENT_COMMAND_INVALID")
         return _remove_owner_document()
     if command == "cache-clean" and len(arguments) == 1:
-        return _failure("CORPUS_RUNTIME_NOT_INSTALLED")
+        return _clean_local_cache()
     return _failure("CONTENT_COMMAND_INVALID")
 
 
@@ -210,6 +211,23 @@ def _remove_owner_document() -> int:
                 else "OWNER_DOCUMENT_ALREADY_ABSENT"
             ),
             "state": receipt.state,
+        }
+    )
+    return 0
+
+
+def _clean_local_cache() -> int:
+    """fixed local cache set만 삭제하고 control record나 approved owner source는 보존한다."""
+
+    try:
+        receipt = clean_local_rag_cache(local_root=_local_root())
+    except (RagV2LocalImportControlError, RagV2LocalCacheError):
+        return _failure("LOCAL_CACHE_CLEAN_UNAVAILABLE")
+    _emit(
+        {
+            "code": "LOCAL_CACHE_CLEARED",
+            "removedEntries": receipt.removed_entries,
+            "state": "READY",
         }
     )
     return 0

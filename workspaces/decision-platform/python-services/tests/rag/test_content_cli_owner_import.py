@@ -8,7 +8,11 @@ import pytest
 
 from app.rag import content_cli
 from app.rag.rag_v2_local_import_control import RagV2OwnerImportControl
-from app.rag.rag_v2_owner_bge_staging import RagV2OwnerBgeStagingReceipt
+from app.rag.rag_v2_owner_bge_staging import (
+    OwnerBgeStagingMetadata,
+    RagV2OwnerBgeStagingReceipt,
+)
+from app.rag.rag_v2_owner_overlay import RagV2OwnerOverlayReceipt
 
 
 def test_windows_import_wrappers_do_not_forward_raw_arguments_to_powershell_or_python() -> None:
@@ -38,6 +42,7 @@ def test_import_command_uses_local_control_and_never_echoes_private_values(
     control = _control(tmp_path)
     monkeypatch.setenv("CAPSTONE_RAG_LOCAL_ROOT", str(tmp_path))
     monkeypatch.setenv("CAPSTONE_RAG_WRITER_DATABASE_DSN", "postgresql://private-dsn")
+    monkeypatch.setenv("CAPSTONE_RAG_ADMIN_DATABASE_DSN", "postgresql://private-admin-dsn")
     monkeypatch.setattr(content_cli, "load_pending_owner_import_control", lambda **_: control)
     monkeypatch.setattr(content_cli, "_materialize_owner_import", lambda **_: object())
 
@@ -45,7 +50,11 @@ def test_import_command_uses_local_control_and_never_echoes_private_values(
         def __init__(self, *, database_dsn: str) -> None:
             assert database_dsn == "postgresql://private-dsn"
 
-        def stage(self, **_: object) -> RagV2OwnerBgeStagingReceipt:
+        def stage(self, **values: object) -> RagV2OwnerBgeStagingReceipt:
+            metadata = values["metadata"]
+            assert isinstance(metadata, OwnerBgeStagingMetadata)
+            assert metadata.sanitized_display_name == "Owner fixture"
+            assert metadata.retrieval_topics == ("FINANCIAL_ENGINEERING",)
             return RagV2OwnerBgeStagingReceipt(
                 owner_user_id="usr_demo_user",
                 component_generation_id="rgr_11111111111111111111111111111111",
@@ -59,16 +68,32 @@ def test_import_command_uses_local_control_and_never_echoes_private_values(
 
     monkeypatch.setattr(content_cli, "PsycopgRagV2OwnerBgeStagingRepository", _Repository)
 
+    class _OverlayRepository:
+        def __init__(self, *, database_dsn: str) -> None:
+            assert database_dsn == "postgresql://private-admin-dsn"
+
+        def prepare_and_activate(self, **values: object) -> RagV2OwnerOverlayReceipt:
+            assert values == {"owner_user_id": "usr_demo_user"}
+            return RagV2OwnerOverlayReceipt(
+                bundle_id="rgb_22222222222222222222222222222222",
+                component_generation_id="rgr_22222222222222222222222222222222",
+                source_count=1,
+                chunk_count=3,
+                state="READY",
+            )
+
+    monkeypatch.setattr(content_cli, "PsycopgRagV2OwnerOverlayRepository", _OverlayRepository)
+
     assert content_cli.main(["import-cpu"]) == 0
 
     value = json.loads(capsys.readouterr().out)
     assert value == {
+        "bundleId": "rgb_22222222222222222222222222222222",
         "chunkCount": 3,
-        "code": "OWNER_DOCUMENT_STAGED",
-        "componentGenerationId": "rgr_11111111111111111111111111111111",
+        "code": "OWNER_DOCUMENT_READY",
+        "componentGenerationId": "rgr_22222222222222222222222222222222",
         "embeddingProfileId": "bge_m3_local_1024_v1",
-        "materializationRunId": "rgr_run_11111111111111111111111111111111",
-        "state": "STAGED",
+        "state": "READY",
     }
     encoded = json.dumps(value)
     assert "private.pdf" not in encoded
@@ -109,6 +134,8 @@ def _control(root: Path) -> RagV2OwnerImportControl:
         source_id="src_owner_cli_control_001",
         source_revision_id="srv_owner_cli_control_001",
         language_tags=("en",),
+        sanitized_display_name="Owner fixture",
+        retrieval_topics=("FINANCIAL_ENGINEERING",),
         issued_at=now,
         expires_at=now + timedelta(minutes=5),
     )

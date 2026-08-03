@@ -1207,6 +1207,239 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
     }
 
     @Test
+    fun `staged owner document becomes a pinned metadata scoped overlay without direct table grants`() {
+        seedEvaluatedPublicComponents()
+        assertEquals(
+            2L,
+            callLong(
+                "decision_rag_admin",
+                RAG_ADMIN_PASSWORD,
+                """
+                select activate_rag_v2_immutable_public_base(
+                  '$EXACT_GENERATION', '$OA_GENERATION', 1, '$PUBLIC_ACTIVATION_RECEIPT'
+                )
+                """.trimIndent(),
+            ),
+        )
+        seedOwnerImportRun(
+            "usr_demo_user",
+            OWNER_IMPORT_GENERATION,
+            OWNER_IMPORT_RUN,
+            STAGING_DOCUMENT,
+        )
+        seedOwnerStagingDocumentArtifacts()
+        adminConnection().use { connection ->
+            connection.createStatement().use { statement ->
+                statement.execute(
+                    """
+                    update rag_v2_immutable_source_revisions
+                    set retrieval_topics = array['FINANCIAL_ENGINEERING']
+                    where source_revision_id = '$STAGING_SOURCE'
+                    """.trimIndent(),
+                )
+                statement.execute(
+                    """
+                    update rag_v2_immutable_component_generations
+                    set expected_source_count = 1, expected_chunk_count = 1,
+                        actual_source_count = 1, actual_chunk_count = 1
+                    where component_generation_id = '$OWNER_IMPORT_GENERATION'
+                    """.trimIndent(),
+                )
+                statement.execute(
+                    """
+                    update rag_v2_immutable_materialization_runs
+                    set state = 'STAGED'
+                    where materialization_run_id = '$OWNER_IMPORT_RUN'
+                    """.trimIndent(),
+                )
+            }
+        }
+
+        val bundleId =
+            DriverManager.getConnection(postgres.jdbcUrl, "decision_rag_admin", RAG_ADMIN_PASSWORD).use { connection ->
+                callSingleRow(
+                    connection,
+                    """
+                    select bundle_id
+                    from prepare_rag_v2_immutable_owner_overlay('usr_demo_user', null::text)
+                    """.trimIndent(),
+                )
+            }
+        assertTrue(bundleId.startsWith("rgb_"))
+        adminConnection().use { connection ->
+            assertEquals(
+                "EVALUATED",
+                queryString(
+                    connection,
+                    "select state from rag_v2_immutable_bundles where bundle_id = '$bundleId'",
+                ),
+            )
+            assertEquals(
+                "1",
+                queryString(
+                    connection,
+                    """
+                    select count(*)
+                    from rag_v2_immutable_generation_memberships as membership
+                    join rag_v2_immutable_bundles as bundle
+                      on bundle.owner_private_generation_id = membership.component_generation_id
+                    where bundle.bundle_id = '$bundleId'
+                      and membership.source_revision_id = '$STAGING_SOURCE'
+                    """.trimIndent(),
+                ),
+            )
+        }
+        assertEquals(
+            1L,
+            callLong(
+                "decision_rag_admin",
+                RAG_ADMIN_PASSWORD,
+                """
+                select activate_rag_v2_immutable_owner_bundle(
+                  'usr_demo_user', '$bundleId', null, 0,
+                  'rgr_act_12121212121212121212121212121212', 'OWNER_BUNDLE'
+                )
+                """.trimIndent(),
+            ),
+        )
+
+        val scopeClaimId = issueRetrievalScope("usr_demo_user", "rag-v2-owner-overlay-0001")
+        val ownerGenerationId =
+            adminConnection().use { connection ->
+                queryString(
+                    connection,
+                    "select owner_private_generation_id from rag_v2_immutable_bundles where bundle_id = '$bundleId'",
+                )
+            }
+        adminConnection().use { connection ->
+            assertEquals(
+                "ACTIVE",
+                queryString(
+                    connection,
+                    "select state from rag_v2_immutable_component_generations where component_generation_id = '$ownerGenerationId'",
+                ),
+            )
+            assertEquals(
+                "1",
+                queryString(
+                    connection,
+                    """
+                    select count(*)
+                    from rag_v2_immutable_source_revisions
+                    where source_revision_id = '$STAGING_SOURCE'
+                      and retrieval_topics = array['FINANCIAL_ENGINEERING']
+                      and canonical_https_url is null
+                      and citation_title is null
+                    """.trimIndent(),
+                ),
+            )
+        }
+        DriverManager.getConnection(postgres.jdbcUrl, "decision_rag_query", RAG_QUERY_PASSWORD).use { connection ->
+            assertEquals(
+                ownerGenerationId,
+                callSingleRow(
+                    connection,
+                    """
+                    select owner_private_generation_id
+                    from read_rag_v2_retrieval_scope(
+                      '$scopeClaimId', 'usr_demo_user', 'rag-v2-owner-overlay-0001'
+                    )
+                    """.trimIndent(),
+                ),
+            )
+            assertEquals(
+                "src_owner_staging",
+                callSingleRow(
+                    connection,
+                    """
+                    select source_id
+                    from search_authorized_rag_v2_exact(
+                      '$scopeClaimId',
+                      'usr_demo_user',
+                      'rag-v2-owner-overlay-0001',
+                      array['FINANCIAL_ENGINEERING'],
+                      array['src_owner_staging']
+                    )
+                    """.trimIndent(),
+                ),
+            )
+        }
+
+        // active owner document deletion은 source를 먼저 없애지 않는다. V33이 empty replacement
+        // generation을 READY pointer로 전환한 뒤 old staging/overlay graph를 transactionally 지운다.
+        assertTrue(
+            callBoolean(
+                "decision_rag_admin",
+                RAG_ADMIN_PASSWORD,
+                """
+                select replace_and_delete_rag_v2_immutable_owner_document(
+                  'usr_demo_user', '$STAGING_DOCUMENT',
+                  'rgr_act_34343434343434343434343434343434',
+                  'rgr_del_34343434343434343434343434343434', repeat('e', 64)
+                )
+                """.trimIndent(),
+            ),
+        )
+        adminConnection().use { connection ->
+            assertEquals(
+                "2",
+                queryString(
+                    connection,
+                    "select bundle_version::text from rag_v2_immutable_owner_bundle_pointers where owner_user_id = 'usr_demo_user'",
+                ),
+            )
+            assertFalse(
+                queryString(
+                    connection,
+                    "select active_bundle_id from rag_v2_immutable_owner_bundle_pointers where owner_user_id = 'usr_demo_user'",
+                ) == bundleId,
+            )
+            assertEquals(
+                "0",
+                queryString(
+                    connection,
+                    "select count(*) from rag_v2_immutable_source_revisions where document_id = '$STAGING_DOCUMENT'",
+                ),
+            )
+            assertEquals(
+                "0",
+                queryString(
+                    connection,
+                    "select count(*) from rag_v2_immutable_component_generations where component_generation_id = '$ownerGenerationId'",
+                ),
+            )
+            assertEquals(
+                "0",
+                queryString(
+                    connection,
+                    """
+                    select generation.actual_chunk_count::text
+                    from rag_v2_immutable_owner_bundle_pointers as pointer
+                    join rag_v2_immutable_bundles as bundle on bundle.bundle_id = pointer.active_bundle_id
+                    join rag_v2_immutable_component_generations as generation
+                      on generation.component_generation_id = bundle.owner_private_generation_id
+                    where pointer.owner_user_id = 'usr_demo_user'
+                    """.trimIndent(),
+                ),
+            )
+            assertTrue(
+                hasFunctionPrivilege(
+                    connection,
+                    "decision_rag_admin",
+                    "replace_and_delete_rag_v2_immutable_owner_document(text,text,text,text,text)",
+                ),
+            )
+            assertFalse(
+                hasFunctionPrivilege(
+                    connection,
+                    "decision_app",
+                    "replace_and_delete_rag_v2_immutable_owner_document(text,text,text,text,text)",
+                ),
+            )
+        }
+    }
+
+    @Test
     fun compositeOwnerGraphRejectsCrossOwnerChunkAndBundleReferences() {
         seedEvaluatedPublicComponents()
         seedOwnerDeletionFixtures()

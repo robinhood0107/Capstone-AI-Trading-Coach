@@ -809,7 +809,7 @@ def _download_entry(
         raise Oa112DownloadError("OA112_PACKET_TOTAL_BYTE_CAP")
     part_name = f"{entry.source_id}.part"
     state_name = f"{entry.source_id}.resume.json"
-    raw_name = _raw_filename(entry)
+    raw_name = oa112_raw_cache_filename(entry)
     offset = _load_resume_offset(
         staging_fd=staging_fd,
         part_name=part_name,
@@ -1149,7 +1149,7 @@ def _read_verified_cached_raw(
     maximum_source_bytes: int,
     maximum_pages: int,
 ) -> Oa112DownloadedSourceReceipt | None:
-    name = _raw_filename(entry)
+    name = oa112_raw_cache_filename(entry)
     try:
         metadata = os.stat(name, dir_fd=raw_fd, follow_symlinks=False)
     except FileNotFoundError:
@@ -1575,7 +1575,9 @@ def _retain_nonempty_partial(
     _remove_partial(staging_fd=staging_fd, part_name=part_name, state_name=state_name)
 
 
-def _raw_filename(entry: Oa112RegistryEntry) -> str:
+def oa112_raw_cache_filename(entry: Oa112RegistryEntry) -> str:
+    """verified OA raw cache의 fixed leaf name을 반환하고 caller-supplied path를 허용하지 않는다."""
+
     extension = {
         "application/pdf": ".pdf",
         "text/html": ".html",

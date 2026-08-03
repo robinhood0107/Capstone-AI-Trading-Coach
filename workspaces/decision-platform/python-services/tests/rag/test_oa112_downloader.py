@@ -102,6 +102,29 @@ def test_missing_cache_requires_packet_before_transport(tmp_path: Path) -> None:
     assert transport.requests == []
 
 
+def test_unsafe_cache_layout_stops_before_packet_consumption_or_transport(tmp_path: Path) -> None:
+    cache_root, control_root = _roots(tmp_path)
+    unsafe_raw_directory = cache_root / "oa-raw"
+    unsafe_raw_directory.mkdir(mode=0o755)
+    os.chmod(unsafe_raw_directory, 0o755)
+    source = _source(b"unsafe layout body\n")
+    transport = _FixtureTransport([])
+
+    with pytest.raises(Oa112DownloadError, match="OA112_CACHE_UNSAFE"):
+        download_oa112_local_cache(
+            entries=(source,),
+            registry_digest="8" * 64,
+            packet=_packet(source, registry_digest="8" * 64),
+            local_cache_root=cache_root,
+            packet_control_root=control_root,
+            resolver=_FixtureResolver(),
+            transport=transport,
+        )
+
+    assert transport.requests == []
+    assert not (control_root / "oa112-packet-claims").exists()
+
+
 @pytest.mark.parametrize(
     "response_kind",
     [

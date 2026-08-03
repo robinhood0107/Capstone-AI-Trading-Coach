@@ -34,6 +34,7 @@ _DIRECT_READ_TABLES = (
 )
 _REQUIRED_FUNCTIONS = (
     "public.read_rag_v2_retrieval_scope(text,text,text)",
+    "public.read_rag_v2_retrieval_scope_by_claim(text,text)",
     "public.search_authorized_rag_v2_exact(text,text,text,text[],text[])",
     "public.search_authorized_rag_v2_lexical(text,text,text,text[],text)",
     "public.search_authorized_rag_v2_dense(text,text,text,text[],vector)",
@@ -73,11 +74,46 @@ class PsycopgRagV2AuthorizedRetrievalAdapter:
             """,
             (claim_id, owner_user_id, session_id),
         )
+        scope = self._scope_from_rows(rows)
+        if (
+            scope.claim_id != claim_id
+            or scope.owner_user_id != owner_user_id
+            or scope.session_id != session_id
+        ):
+            raise RagV2AuthorizedRetrievalAdapterError("RAG_V2_QUERY_RECEIPT")
+        return scope
+
+    def read_scope_by_claim(
+        self,
+        *,
+        claim_id: str,
+        session_id: str,
+    ) -> RagV2BundleScope:
+        """opaque claim/session만으로 owner-bound scope를 읽어 owner ID wire 전달을 막는다."""
+
+        rows = self._execute(
+            """
+            SELECT *
+            FROM public.read_rag_v2_retrieval_scope_by_claim(%s, %s)
+            """,
+            (claim_id, session_id),
+        )
+        scope = self._scope_from_rows(rows)
+        if scope.claim_id != claim_id or scope.session_id != session_id:
+            raise RagV2AuthorizedRetrievalAdapterError("RAG_V2_QUERY_RECEIPT")
+        return scope
+
+    def _scope_from_rows(
+        self,
+        rows: Sequence[Mapping[str, Any]],
+    ) -> RagV2BundleScope:
+        """definer receipt의 exact shape를 one place에서 검증해 scope swap을 닫는다."""
+
         if len(rows) != 1:
             raise RagV2AuthorizedRetrievalAdapterError("RAG_V2_QUERY_RECEIPT")
         row = rows[0]
         try:
-            scope = RagV2BundleScope(
+            return RagV2BundleScope(
                 claim_id=_required_text(row, "scope_claim_id"),
                 owner_user_id=_required_text(row, "owner_user_id"),
                 session_id=_required_text(row, "session_id"),
@@ -92,13 +128,6 @@ class PsycopgRagV2AuthorizedRetrievalAdapter:
             )
         except (TypeError, ValueError) as error:
             raise RagV2AuthorizedRetrievalAdapterError("RAG_V2_QUERY_RECEIPT") from error
-        if (
-            scope.claim_id != claim_id
-            or scope.owner_user_id != owner_user_id
-            or scope.session_id != session_id
-        ):
-            raise RagV2AuthorizedRetrievalAdapterError("RAG_V2_QUERY_RECEIPT")
-        return scope
 
     def retrieve_exact(
         self,

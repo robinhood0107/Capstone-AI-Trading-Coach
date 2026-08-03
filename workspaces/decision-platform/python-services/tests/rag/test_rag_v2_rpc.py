@@ -37,7 +37,12 @@ class _ScopeReader:
         self.scope = scope
         self.calls = 0
 
-    def read_scope(self, *, claim_id: str, session_id: str) -> RagV2BundleScope:
+    def read_scope_by_claim(
+        self,
+        *,
+        claim_id: str,
+        session_id: str,
+    ) -> RagV2BundleScope:
         self.calls += 1
         assert claim_id == self.scope.claim_id
         assert session_id == self.scope.session_id

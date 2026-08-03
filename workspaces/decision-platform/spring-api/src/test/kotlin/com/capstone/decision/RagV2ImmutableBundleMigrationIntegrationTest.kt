@@ -1207,6 +1207,81 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
     }
 
     @Test
+    fun `v2 query process resolves an opaque scope without an owner id and status follows immutable pointers`() {
+        assertEquals(
+            "CORE_READY",
+            callAsAppWithActor(
+                "usr_demo_user",
+                "select state from read_rag_v2_corpus_status('usr_demo_user')",
+            ),
+        )
+        seedEvaluatedPublicComponents()
+        assertEquals(
+            2L,
+            callLong(
+                "decision_rag_admin",
+                RAG_ADMIN_PASSWORD,
+                """
+                select activate_rag_v2_immutable_public_base(
+                  '$EXACT_GENERATION', '$OA_GENERATION', 1, '$PUBLIC_ACTIVATION_RECEIPT'
+                )
+                """.trimIndent(),
+            ),
+        )
+        assertEquals(
+            "FULL_READY",
+            callAsAppWithActor(
+                "usr_demo_user",
+                "select state from read_rag_v2_corpus_status('usr_demo_user')",
+            ),
+        )
+
+        val scopeClaimId = issueRetrievalScope("usr_demo_user", "rag-v2-session-opaque-0001")
+        DriverManager.getConnection(postgres.jdbcUrl, "decision_rag_query", RAG_QUERY_PASSWORD).use { connection ->
+            assertEquals(
+                "usr_demo_user",
+                callSingleRow(
+                    connection,
+                    """
+                    select owner_user_id
+                    from read_rag_v2_retrieval_scope_by_claim(
+                      '$scopeClaimId', 'rag-v2-session-opaque-0001'
+                    )
+                    """.trimIndent(),
+                ),
+            )
+            assertEquals(
+                EXACT_GENERATION,
+                callSingleRow(
+                    connection,
+                    """
+                    select exact30_generation_id
+                    from read_rag_v2_retrieval_scope_by_claim(
+                      '$scopeClaimId', 'rag-v2-session-opaque-0001'
+                    )
+                    """.trimIndent(),
+                ),
+            )
+        }
+        adminConnection().use { connection ->
+            assertTrue(
+                hasFunctionPrivilege(
+                    connection,
+                    "decision_rag_query",
+                    "read_rag_v2_retrieval_scope_by_claim(text,text)",
+                ),
+            )
+            assertFalse(
+                hasFunctionPrivilege(
+                    connection,
+                    "decision_app",
+                    "read_rag_v2_retrieval_scope_by_claim(text,text)",
+                ),
+            )
+        }
+    }
+
+    @Test
     fun `staged owner document becomes a pinned metadata scoped overlay without direct table grants`() {
         seedEvaluatedPublicComponents()
         assertEquals(
@@ -1513,6 +1588,26 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
             }
         }
     }
+
+    private fun callAsAppWithActor(
+        ownerUserId: String,
+        query: String,
+    ): String =
+        DriverManager.getConnection(postgres.jdbcUrl, "decision_app", APP_PASSWORD).use { connection ->
+            connection.autoCommit = false
+            try {
+                connection.prepareStatement("select set_config('app.actor_user_id', ?, false)").use { statement ->
+                    statement.setString(1, ownerUserId)
+                    statement.execute()
+                }
+                val result = callSingleRow(connection, query)
+                connection.commit()
+                result
+            } catch (error: Throwable) {
+                connection.rollback()
+                throw error
+            }
+        }
 
     private fun issueRetrievalScope(
         ownerUserId: String,

@@ -26,11 +26,11 @@ magic-link, path traversal, 기존 파일 덮어쓰기와 broad recursive delete
 
 S4.7D는 기존 exact-30을 바꾸지 않고 OA corpus와 owner-private 문서를 후속 generation으로
 추가한다. RAG는 출처 검색·설명·인용만 담당하며 Signal, RiskDecision, 주문 feature/hash에는
-연결하지 않는다. 현재 safe parser/OCR과 v2 DB/RLS/API skeleton은 병합됐지만, OA/owner
-materializer, canonical chunk/embedding writer, active bundle pointer와 actual retrieval은 없다.
-따라서 `S4_7D_RUNTIME=STUB_FAIL_CLOSED`이며 full bundle 전에는 `CORPUS_NOT_READY`, 그 뒤에도
-현 skeleton은 `GENERATION_UNAVAILABLE`로 종료한다. importer/remove/cache-clean command는 실제로
-`CORPUS_RUNTIME_NOT_INSTALLED`를 반환한다.
+연결하지 않는다. 현재 safe parser/OCR, v2 DB/RLS/API skeleton, owner-local BGE staging과
+control-record import/delete/cache-clean 경계는 구현됐다. OA112 materializer, public bundle pointer,
+authorized retrieval와 Vertex generation은 아직 활성화되지 않았다. 따라서
+`S4_7D_RUNTIME=PARTIAL_LOCAL_OWNER_STAGING`; full bundle 전 v2 ask는 `CORPUS_NOT_READY`로,
+full bundle 뒤 Vertex live gate가 닫혀 있으면 `GENERATION_UNAVAILABLE`로 fail-closed한다.
 
 `PRE_S5_RAG_GLOBAL_NEWS_CONTRACT_LOCKED=1`의 current policy는
 `OA112_ACTIVE_CONTRACT_LOCKED`(14 track × 8)와
@@ -166,9 +166,10 @@ uv run --project workspaces/decision-platform/python-services --frozen \
 historical `rag-content status`와 `setup-rag-content.bat`의 manifest validation은 active physical
 OA112 activation 증거가 아니다. 이 상태는 아직 원문 download/parse/embed/eval이 끝난
 `FULL_READY`가 아니라, public OA generation을 구축하기 위한 `BUILDING` 시작점이다. 현재
-setup/import/remove/cache-clean은
-materializer가 설치되지 않아 `CORPUS_RUNTIME_NOT_INSTALLED`로 fail-closed하며 OA112/owner
-derived index가 runtime에 존재한다고 주장하지 않는다.
+setup은 historical manifest validation만 수행한다. import는 trusted local control record의
+owner document를 local BGE immutable `STAGED` graph로 만들고, remove는 unreferenced staged
+document만 hard-delete하며, cache-clean은 fixed local cache directory만 비운다. 이 명령들은
+OA112/public bundle activation이나 owner-derived active index를 주장하지 않는다.
 `FULL_READY`는 runtime cache에서 모든 source hash, parser/OCR receipt, chunk hash, BGE
 embedding, staging evaluation이 통과하고 서버 active pointer가 원자적으로 pin된 뒤에만 가능하다.
 

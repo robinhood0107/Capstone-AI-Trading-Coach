@@ -5,6 +5,7 @@ import re
 import numpy as np
 import psycopg
 import pytest
+from psycopg.types.json import Jsonb
 
 from app.rag.external_processing_corpus import load_external_processing_corpus
 from app.rag.rag_v2_external_exact30_voyage_runner import (
@@ -46,6 +47,35 @@ def test_external_exact30_voyage_writer_stages_full_component_and_keeps_direct_t
     isolated_postgres_cluster: dict[str, str],
 ) -> None:
     materialization = _materialization()
+    payload = build_external_exact30_voyage_staging_payload(
+        materialization.records[0],
+        context=materialization.context,
+    )
+    source = payload["source"]
+    assert isinstance(source, dict)
+    with psycopg.connect(isolated_postgres_cluster["admin_dsn"]) as connection:
+        assert connection.execute(
+            """
+            SELECT
+              public.rag_v2_immutable_document_ir_structure_is_valid(%s::jsonb),
+              public.rag_v2_immutable_retrieval_topics_are_valid(
+                ARRAY(SELECT value FROM jsonb_array_elements_text(%s::jsonb))
+              ),
+              public.rag_v2_immutable_locator_is_valid(%s::jsonb),
+              public.rag_v2_immutable_public_https_url_is_valid(%s),
+              public.rag_v2_immutable_external_exact30_voyage_source_is_approved(%s, %s, %s, %s)
+            """,
+            (
+                Jsonb(source["documentIr"]),
+                Jsonb(source["retrievalTopics"]),
+                Jsonb(source["sourceLocator"]),
+                source["canonicalHttpsUrl"],
+                source["sourceId"],
+                source["canonicalHttpsUrl"],
+                source["rawContentSha256"],
+                source["sourceCardSha256"],
+            ),
+        ).fetchone() == (True, True, True, True, True)
     repository = PsycopgExternalExact30VoyageStagingRepository(
         database_dsn=isolated_postgres_cluster["rag_writer_dsn"],
     )
@@ -137,7 +167,7 @@ def test_external_exact30_voyage_writer_rejects_allowlist_drift_before_persistin
                     SELECT *
                     FROM public.stage_rag_v2_immutable_external_exact30_voyage_document(%s::jsonb)
                     """,
-                    (psycopg.types.json.Jsonb(payload),),
+                    (Jsonb(payload),),
                 ).fetchall()
 
     with psycopg.connect(isolated_postgres_cluster["admin_dsn"]) as connection:

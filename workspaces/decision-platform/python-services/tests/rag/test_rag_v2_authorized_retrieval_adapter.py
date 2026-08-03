@@ -88,6 +88,33 @@ def test_adapter_reads_only_query_role_definer_functions_and_maps_tagged_citatio
     assert any("search_authorized_rag_v2_dense" in statement for statement, _ in connection.statements)
 
 
+def test_adapter_resolves_the_opaque_scope_without_putting_owner_id_in_the_python_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    connection = _Connection()
+    monkeypatch.setattr(
+        "app.rag.rag_v2_authorized_retrieval_adapter.psycopg.connect",
+        lambda *_args, **_kwargs: connection,
+    )
+    adapter = PsycopgRagV2AuthorizedRetrievalAdapter(database_dsn="postgresql://query")
+
+    scope = adapter.read_scope_by_claim(
+        claim_id="rvs_" + "a" * 32,
+        session_id="req_v2_retrieval_000000000001",
+    )
+
+    opaque_calls = [
+        parameters
+        for statement, parameters in connection.statements
+        if "read_rag_v2_retrieval_scope_by_claim" in statement
+    ]
+    assert scope.owner_user_id == "usr_demo_owner"
+    assert opaque_calls == [
+        ("rvs_" + "a" * 32, "req_v2_retrieval_000000000001")
+    ]
+    assert all("rag_v2_retrieval_scope_claims" not in statement for statement, _ in connection.statements)
+
+
 def test_adapter_rejects_an_oversized_or_scope_drifting_row(monkeypatch: pytest.MonkeyPatch) -> None:
     connection = _Connection()
     monkeypatch.setattr(

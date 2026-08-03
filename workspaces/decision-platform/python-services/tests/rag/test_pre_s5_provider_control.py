@@ -107,6 +107,7 @@ def test_voyage_key_reader_uses_only_standard_environment_variable() -> None:
 def _packet(*, now: datetime) -> dict[str, object]:
     return {
         "bundleManifestSha256": "e" * 64,
+        "byteCap": 4_194_304,
         "ciDigest": "c" * 64,
         "costCapMicrousd": 100_000,
         "date": "NONE",

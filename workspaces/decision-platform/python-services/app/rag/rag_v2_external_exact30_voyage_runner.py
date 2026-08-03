@@ -253,7 +253,9 @@ def build_external_exact30_public_voyage_component_context(
     if len(selected) != 30 or not _is_sha256(source_card_corpus_manifest_sha256):
         raise RagV2ExternalExact30VoyageRunnerError("VOYAGE_COMPONENT_CONTEXT")
     ordered = tuple(sorted(selected, key=lambda record: record.document.source_id.encode("utf-8")))
-    member_digests = tuple(_member_digest(record) for record in ordered)
+    member_digests = tuple(
+        external_exact30_voyage_source_member_digest(record) for record in ordered
+    )
     source_ids = tuple(record.document.source_id for record in ordered)
     source_revisions = tuple(record.document.source_revision_id for record in ordered)
     document_ids = tuple(record.document.document_id for record in ordered)
@@ -441,7 +443,9 @@ def _source_metadata(card: FrozenSourceCard) -> PublicVoyageSourceMetadata:
     )
 
 
-def _member_digest(record: RagV2VoyageMaterializedPublicDocument) -> str:
+def external_exact30_voyage_source_member_digest(
+    record: RagV2VoyageMaterializedPublicDocument,
+) -> str:
     """provider vector를 제외한 persisted source/chunk/context projection digest를 계산한다."""
 
     document = record.document

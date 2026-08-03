@@ -77,7 +77,7 @@ class RagV2ApiIntegrationTest(
                 }.andExpect {
                     status { isOk() }
                     jsonPath("$.state") { value("CORE_READY") }
-                    jsonPath("$.publicCorpusVersion") { value("exact30-v1+oa140-draft-v1") }
+                    jsonPath("$.publicCorpusVersion") { value("immutable-v2-0") }
                     jsonPath("$.privateOverlayState") { value("ABSENT") }
                     jsonPath("$.progressPercent") { value(0) }
                     jsonPath("$.failureCode") { doesNotExist() }
@@ -88,11 +88,12 @@ class RagV2ApiIntegrationTest(
 
         ownerJdbc.update(
             """
-            insert into rag_v2_owner_private_generation_pointers (
+            insert into rag_v2_immutable_owner_bundle_pointers (
               owner_user_id,
-              private_overlay_state,
-              progress_percent
-            ) values ('usr_demo_user', 'BUILDING', 42)
+              state,
+              active_bundle_id,
+              bundle_version
+            ) values ('usr_demo_user', 'BUILDING', null, 0)
             """.trimIndent(),
         )
 
@@ -105,7 +106,7 @@ class RagV2ApiIntegrationTest(
                     status { isOk() }
                     jsonPath("$.state") { value("BUILDING") }
                     jsonPath("$.privateOverlayState") { value("BUILDING") }
-                    jsonPath("$.progressPercent") { value(42) }
+                    jsonPath("$.progressPercent") { value(50) }
                 }.andReturn()
         assertSanitized(json(building))
     }

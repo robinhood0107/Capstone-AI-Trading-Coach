@@ -167,6 +167,33 @@ def test_v2_retrieval_only_permits_external_generation_when_every_top_five_sourc
     assert outcome.external_generation_permitted is True
 
 
+def test_v2_retrieval_keeps_public_internal_document_identity_out_of_the_citation_projection() -> None:
+    scope = _scope(owner_generation=False)
+    exact = replace(
+        _candidate(1, scope, source_scope="EXACT30"),
+        document_id="doc_public_exact_0001",
+    )
+    oa = replace(
+        _candidate(2, scope, source_scope="OA112"),
+        document_id="doc_public_oa_0000001",
+    )
+
+    outcome = _retrieval(
+        exact=RagV2ChannelResult("exact", (exact,), complete=True),
+        lexical=RagV2ChannelResult("lexical", (oa,), complete=True),
+        dense=RagV2ChannelResult("dense", (exact, oa), complete=True),
+    ).retrieve(
+        scope=scope,
+        payload={"question": "근거 비교", "answerMode": "CONCISE"},
+    )
+
+    assert outcome.failure_code is None
+    assert [item.document_id for item in outcome.evidence] == [
+        "doc_public_exact_0001",
+        "doc_public_oa_0000001",
+    ]
+
+
 def _retrieval(
     *,
     exact: RagV2ChannelResult,

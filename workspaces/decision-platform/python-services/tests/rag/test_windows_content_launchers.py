@@ -25,7 +25,7 @@ def test_windows_bat_launchers_are_thin_quoted_wrappers_with_exact_command_mappi
         assert "@echo off" in text.lower()
         assert '"%~dp0rag-content.ps1"' in text
         assert re.search(rf"-Command\s+{re.escape(command)}(?:\s|$)", text)
-        assert "%*" in text
+        assert "%*" not in text
         assert "curl" not in text.lower()
         assert "token" not in text.lower()
 

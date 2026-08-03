@@ -107,12 +107,67 @@ class InfrastructureSecurityIntegrationTest {
                 "read_rag_v2_history_metadata(text,timestamp with time zone,text,integer)",
                 "read_rag_v2_history_detail(text,text)",
                 "delete_owned_rag_v2_history(text,text)",
-                "delete_owner_rag_v2_document(text,text,text,text)",
+                "record_rag_v2_immutable_consent(text,text,text,text)",
+                "issue_rag_v2_immutable_import_ticket(text,text,text,text)",
             ).forEach { function ->
                 assertTrue(
                     hasFunctionPrivilege(connection, "decision_app", function),
                     "bootstrap removed the RAG owner-scoped function grant for $function",
                 )
+            }
+            assertFalse(
+                hasFunctionPrivilege(
+                    connection,
+                    "decision_app",
+                    "delete_owner_rag_v2_document(text,text,text,text)",
+                ),
+                "V25 must not leave the V24 delete-before-replacement capability callable",
+            )
+            assertTrue(
+                hasFunctionPrivilege(
+                    connection,
+                    "decision_rag_writer",
+                    "consume_rag_v2_immutable_import_ticket(text,text,text,text,text)",
+                ),
+            )
+            listOf(
+                "activate_rag_v2_immutable_public_base(text,text,bigint,text)",
+                "activate_rag_v2_immutable_owner_bundle(text,text,text,bigint,text,text)",
+                "delete_rag_v2_immutable_owner_document(text,text,text,text,bigint,text,text,text)",
+            ).forEach { function ->
+                assertTrue(hasFunctionPrivilege(connection, "decision_rag_admin", function))
+                assertFalse(hasFunctionPrivilege(connection, "decision_app", function))
+            }
+            listOf(
+                "rag_v2_immutable_oa_track_catalog",
+                "rag_v2_immutable_oa_source_cards",
+                "rag_v2_immutable_source_revisions",
+                "rag_v2_immutable_chunks",
+                "rag_v2_immutable_component_generations",
+                "rag_v2_immutable_generation_memberships",
+                "rag_v2_immutable_generation_embeddings",
+                "rag_v2_immutable_embedding_cache",
+                "rag_v2_immutable_materialization_runs",
+                "rag_v2_immutable_source_receipts",
+                "rag_v2_immutable_chunk_receipts",
+                "rag_v2_immutable_embedding_receipts",
+                "rag_v2_immutable_public_bundle_pointers",
+                "rag_v2_immutable_bundles",
+                "rag_v2_immutable_owner_bundle_pointers",
+                "rag_v2_immutable_consent_events",
+                "rag_v2_immutable_import_tickets",
+                "rag_v2_immutable_activation_receipts",
+                "rag_v2_immutable_deletion_receipts",
+                "rag_v2_immutable_owner_document_deletion_tombstones",
+            ).forEach { table ->
+                listOf("decision_app", "decision_rag_writer", "decision_rag_admin", "decision_rag_query").forEach { role ->
+                    listOf("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE").forEach { privilege ->
+                        assertFalse(
+                            hasTablePrivilege(connection, role, table, privilege),
+                            "unexpected V25 immutable RAG $privilege on $table for $role",
+                        )
+                    }
+                }
             }
             listOf(
                 "latest_cross_market_observations",

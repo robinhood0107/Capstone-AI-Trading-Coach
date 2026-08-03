@@ -171,6 +171,7 @@ class FlywayMigrationIntegrationTest(
                 "rag_v2_immutable_import_tickets",
                 "rag_v2_immutable_activation_receipts",
                 "rag_v2_immutable_deletion_receipts",
+                "rag_v2_immutable_owner_document_deletion_tombstones",
             )
         requiredTables.forEach { tableName ->
             assertTrue(tableExists(tableName), "expected table $tableName to exist")

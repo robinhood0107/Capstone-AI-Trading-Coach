@@ -218,6 +218,28 @@ def test_document_ir_materializer_rejects_sparse_table_before_dense_rendering() 
         )
 
 
+@pytest.mark.parametrize(
+    "locator",
+    [
+        {"section": "../private"},
+        {"section": "https://example.invalid/document"},
+        {"sheet": r"C:\owner\document.xlsx"},
+    ],
+)
+def test_document_ir_materializer_rejects_path_shaped_locator(locator: dict[str, str]) -> None:
+    document_ir = _document_ir(blocks=[_paragraph("safe local evidence", page=1)])
+    document_ir["blocks"][0]["locator"] = locator
+
+    with pytest.raises(DocumentIrMaterializationError, match="DOCUMENT_IR_BLOCK_INVALID"):
+        materialize_document_ir(
+            document_ir=document_ir,
+            request=_request(),
+            tokenizer=TOKENIZER,
+            min_tokens=1,
+            max_tokens=20,
+        )
+
+
 def _request() -> RagV2DocumentMaterializationRequest:
     return RagV2DocumentMaterializationRequest(
         document_id="doc_owner_fixture_0001",

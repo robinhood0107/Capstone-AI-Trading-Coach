@@ -81,6 +81,7 @@ class RagV2BgeMaterializedOwnerDocument:
     document: RagV2DocumentMaterialization
     embeddings: tuple[RagV2BgeDocumentEmbedding, ...]
     source_revision_sha256: str
+    document_ir: dict[str, object]
 
     def content_free_receipt(self) -> dict[str, object]:
         """원본 경로·bytes·canonical text·vector를 제외한 reusable receipt만 반환한다."""
@@ -166,6 +167,9 @@ def materialize_owner_bge_document(
         document=document,
         embeddings=embeddings,
         source_revision_sha256=_source_revision_sha256(document_ir),
+        # parser 반환값을 caller가 나중에 mutate해 staged DB graph의 identity가 바뀌지 않게
+        # canonical JSON round-trip으로 독립 snapshot만 넘긴다. 이 값은 local writer에만 전달한다.
+        document_ir=_copy_document_ir(document_ir),
     )
 
 
@@ -199,3 +203,19 @@ def _source_revision_sha256(document_ir: Mapping[str, object]) -> str:
         sort_keys=True,
     ).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def _copy_document_ir(document_ir: Mapping[str, object]) -> dict[str, object]:
+    """path/raw bytes 없는 parser Document IR만 immutable local staging input으로 복제한다."""
+
+    copied = json.loads(
+        json.dumps(
+            document_ir,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+    )
+    if not isinstance(copied, dict):  # pragma: no cover - parser contract가 이미 mapping을 보장한다.
+        raise RagV2BgeMaterializationError("DOCUMENT_IR_COPY_INVALID")
+    return copied

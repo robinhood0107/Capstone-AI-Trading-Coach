@@ -14,6 +14,7 @@ from app.rag.rag_v2_bge_materializer import (
 )
 from app.rag.rag_v2_owner_bge_staging import (
     OwnerBgeStagingError,
+    OwnerBgeStagingMetadata,
     PsycopgRagV2OwnerBgeStagingRepository,
     build_owner_bge_staging_payload,
 )
@@ -52,11 +53,16 @@ def test_owner_staging_payload_excludes_local_path_but_keeps_transient_db_input(
 ) -> None:
     materialized = _materialized(tmp_path)
 
-    payload = build_owner_bge_staging_payload(materialized)
+    payload = build_owner_bge_staging_payload(
+        materialized,
+        metadata=_metadata(),
+    )
 
     encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True)
-    assert payload["schemaVersion"] == 1
+    assert payload["schemaVersion"] == 2
     assert payload["embeddingProfileId"] == "bge_m3_local_1024_v1"
+    assert payload["sanitizedDisplayName"] == "Owner fixture"
+    assert payload["retrievalTopics"] == ["FINANCIAL_ENGINEERING"]
     assert len(payload["chunks"]) == len(payload["embeddings"]) == 1
     assert "private.pdf" not in encoded
     assert str(tmp_path) not in encoded
@@ -80,6 +86,7 @@ def test_ticket_bound_writer_stages_owner_bge_generation_with_no_raw_table_grant
         owner_user_id="usr_demo_user",
         import_ticket_id=ticket_id,
         materialized=_materialized(tmp_path),
+        metadata=_metadata(),
     )
 
     assert receipt.owner_user_id == "usr_demo_user"
@@ -96,6 +103,7 @@ def test_ticket_bound_writer_stages_owner_bge_generation_with_no_raw_table_grant
             owner_user_id="usr_demo_user",
             import_ticket_id=ticket_id,
             materialized=_materialized(tmp_path),
+            metadata=_metadata(),
         )
         == receipt
     )
@@ -132,9 +140,34 @@ def test_ticket_bound_writer_stages_owner_bge_generation_with_no_raw_table_grant
             GROUP BY state
             """
         ).fetchone() == ("CONSUMED", 1)
+        assert connection.execute(
+            """
+            SELECT sanitized_display_name, retrieval_topics
+            FROM rag_v2_immutable_source_revisions
+            WHERE source_revision_id = 'srv_owner_staging_001'
+            """
+        ).fetchone() == ("Owner fixture", ["FINANCIAL_ENGINEERING"])
 
     with psycopg.connect(cluster["rag_writer_dsn"]) as connection:
         assert connection.execute("SELECT current_user").fetchone() == ("decision_rag_writer",)
+        assert connection.execute(
+            """
+            SELECT has_function_privilege(
+              current_user,
+              'public.stage_rag_v2_immutable_owner_bge_document(text,text,jsonb)',
+              'EXECUTE'
+            )
+            """
+        ).fetchone() == (False,)
+        assert connection.execute(
+            """
+            SELECT has_function_privilege(
+              current_user,
+              'public.stage_rag_v2_immutable_owner_bge_document_v2(text,text,jsonb)',
+              'EXECUTE'
+            )
+            """
+        ).fetchone() == (True,)
         with pytest.raises(psycopg.errors.InsufficientPrivilege):
             connection.execute("SELECT * FROM rag_v2_immutable_source_revisions").fetchall()
 
@@ -155,6 +188,7 @@ def test_writer_rejects_other_owner_before_materializing(
             owner_user_id="usr_demo_admin",
             import_ticket_id=ticket_id,
             materialized=_materialized(tmp_path),
+            metadata=_metadata(),
         )
 
     with psycopg.connect(cluster["admin_dsn"]) as connection:
@@ -193,6 +227,22 @@ def _materialized(root: Path):
             embedding_profile_id="bge_m3_local_1024_v1",
         ),
     )
+
+
+def _metadata() -> OwnerBgeStagingMetadata:
+    return OwnerBgeStagingMetadata(
+        sanitized_display_name="Owner fixture",
+        retrieval_topics=("FINANCIAL_ENGINEERING",),
+    )
+
+
+@pytest.mark.parametrize("display_name", ("C:\\owner.pdf", "../owner", "Owner\nfixture"))
+def test_owner_staging_metadata_rejects_path_or_control_aliases(display_name: str) -> None:
+    with pytest.raises(OwnerBgeStagingError, match="OWNER_BGE_STAGE_METADATA"):
+        OwnerBgeStagingMetadata(
+            sanitized_display_name=display_name,
+            retrieval_topics=("FINANCIAL_ENGINEERING",),
+        )
 
 
 def _document_ir() -> dict[str, object]:

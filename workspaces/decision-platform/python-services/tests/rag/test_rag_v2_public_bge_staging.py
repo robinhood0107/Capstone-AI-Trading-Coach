@@ -162,6 +162,7 @@ def _record(
             citation_title=f"OA fixture {index}",
             retrieval_topics=("METHODOLOGY",),
             canonical_https_url=f"https://example.invalid/oa/{index:03d}.txt",
+            source_card_sha256=None,
             oa_track_id=_oa_track(index),
             source_card=_oa_source_card(
                 source_id=source_id,
@@ -182,6 +183,7 @@ def _record(
             citation_title=f"Exact fixture {index}",
             retrieval_topics=("METHODOLOGY",),
             canonical_https_url=f"https://example.invalid/exact/{index:03d}",
+            source_card_sha256=hashlib.sha256(f"exact-card-{index}".encode()).hexdigest(),
             oa_track_id=None,
             source_card=None,
             license_evidence_sha256=None,

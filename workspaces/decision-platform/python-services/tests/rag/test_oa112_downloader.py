@@ -3,10 +3,13 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import socket
+import sys
+import threading
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Iterator, Mapping
+from typing import Iterator, Mapping, Sequence
 
 import fitz
 import pytest
@@ -15,9 +18,11 @@ from app.rag.oa112_active_registry import Oa112RegistryEntry
 from app.rag.oa112_downloader import (
     Oa112DownloadError,
     Oa112DownloadPacket,
+    Oa112DownloadResponse,
     consume_oa112_download_packet,
     download_oa112_local_cache,
 )
+from app.rag import oa112_downloader
 
 
 def test_downloads_hash_verified_identity_encoded_raw_to_local_cache_without_receipt_path(
@@ -258,6 +263,282 @@ def test_pdf_page_bound_is_checked_before_raw_cache_promotion(tmp_path: Path) ->
     assert not (cache_root / "oa-raw" / "src_oa_fixture_001.pdf").exists()
 
 
+def test_packet_expiry_during_first_dribbling_source_stops_later_connection(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """첫 source가 approval expiry를 넘기면 같은 packet의 다음 outbound를 만들지 않는다."""
+
+    cache_root, control_root = _roots(tmp_path)
+    start = datetime(2026, 8, 3, tzinfo=UTC)
+    clock = _MutableUtcClock(start)
+    monkeypatch.setattr(oa112_downloader, "_utc_now", clock.now)
+    first_body = b"first source dribble\n"
+    second_body = b"second source must not connect\n"
+    first_source = _source(first_body, source_id="src_oa_fixture_101")
+    second_source = _source(second_body, source_id="src_oa_fixture_102")
+    packet = _packet_for_sources(
+        (first_source, second_source),
+        registry_digest="a" * 64,
+        expires_at=start + timedelta(seconds=1),
+    )
+    transport = _FixtureTransport(
+        [
+            _ExpiringResponse(
+                200,
+                _headers("text/plain", first_body),
+                first_body,
+                clock=clock,
+                expiry=start + timedelta(seconds=1),
+            ),
+            _Response(200, _headers("text/plain", second_body), second_body),
+        ]
+    )
+
+    with pytest.raises(Oa112DownloadError, match="OA112_PACKET_EXPIRED") as raised:
+        download_oa112_local_cache(
+            entries=(first_source, second_source),
+            registry_digest="a" * 64,
+            packet=packet,
+            local_cache_root=cache_root,
+            packet_control_root=control_root,
+            resolver=_FixtureResolver(),
+            transport=transport,
+            now=start,
+        )
+
+    assert raised.value.physical_call_count == 1
+    assert len(transport.requests) == 1
+    assert not (cache_root / "oa-raw" / "src_oa_fixture_101.txt").exists()
+    assert not (cache_root / "oa-raw" / "src_oa_fixture_102.txt").exists()
+
+
+def test_expired_pending_source_is_not_counted_as_a_physical_attempt(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """packet이 validate 직후 만료돼도 다음 source의 physical count나 connection을 만들지 않는다."""
+
+    cache_root, control_root = _roots(tmp_path)
+    cached_body = b"already cached source\n"
+    pending_body = b"expired pending source\n"
+    cached_source = _source(cached_body, source_id="src_oa_fixture_201")
+    pending_source = _source(pending_body, source_id="src_oa_fixture_202")
+    download_oa112_local_cache(
+        entries=(cached_source,),
+        registry_digest="b" * 64,
+        packet=_packet(cached_source, registry_digest="b" * 64),
+        local_cache_root=cache_root,
+        packet_control_root=control_root,
+        resolver=_FixtureResolver(),
+        transport=_FixtureTransport(
+            [_Response(200, _headers("text/plain", cached_body), cached_body)]
+        ),
+    )
+    start = datetime(2026, 8, 3, tzinfo=UTC)
+    clock = _SequenceUtcClock(
+        values=[start, start + timedelta(seconds=1)]
+    )
+    monkeypatch.setattr(oa112_downloader, "_utc_now", clock.now)
+    transport = _FixtureTransport([])
+
+    with pytest.raises(Oa112DownloadError, match="OA112_PACKET_EXPIRED") as raised:
+        download_oa112_local_cache(
+            entries=(cached_source, pending_source),
+            registry_digest="c" * 64,
+            packet=_packet_for_sources(
+                (cached_source, pending_source),
+                registry_digest="c" * 64,
+                expires_at=start + timedelta(seconds=1),
+            ),
+            local_cache_root=cache_root,
+            packet_control_root=control_root,
+            resolver=_FixtureResolver(),
+            transport=transport,
+        )
+
+    assert raised.value.physical_call_count == 0
+    assert transport.requests == []
+
+
+def test_dns_worker_deadline_kills_hung_resolver_before_transport(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """DNS worker가 멈춰도 source deadline 뒤 connection 단계로 진행하지 않는다."""
+
+    cache_root, control_root = _roots(tmp_path)
+    source = _source(b"DNS deadline body\n")
+    monkeypatch.setattr(oa112_downloader, "_MAX_SOURCE_ELAPSED_SECONDS", 0.02)
+    resolver = oa112_downloader._SocketOa112DnsResolver(
+        worker_command=(sys.executable, "-c", "import time; time.sleep(60)")
+    )
+    transport = _FixtureTransport([])
+
+    with pytest.raises(Oa112DownloadError, match="OA112_DOWNLOAD_TIME_BOUND") as raised:
+        download_oa112_local_cache(
+            entries=(source,),
+            registry_digest="b" * 64,
+            packet=_packet(source, registry_digest="b" * 64),
+            local_cache_root=cache_root,
+            packet_control_root=control_root,
+            resolver=resolver,
+            transport=transport,
+        )
+
+    assert raised.value.physical_call_count == 1
+    assert transport.requests == []
+
+
+def test_watchdog_socket_close_removes_zero_byte_state_and_allows_new_packet_retry(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """watchdog가 header 전 socket을 닫아도 empty staging state가 다음 packet을 막지 않는다."""
+
+    cache_root, control_root = _roots(tmp_path)
+    body = b"retry after watchdog body\n"
+    source = _source(body)
+    monkeypatch.setattr(oa112_downloader, "_MAX_SOURCE_ELAPSED_SECONDS", 0.05)
+    watchdog_transport = _WatchdogSocketTransport()
+
+    with pytest.raises(Oa112DownloadError, match="OA112_DOWNLOAD_TIME_BOUND") as raised:
+        download_oa112_local_cache(
+            entries=(source,),
+            registry_digest="c" * 64,
+            packet=_packet(source, registry_digest="c" * 64),
+            local_cache_root=cache_root,
+            packet_control_root=control_root,
+            resolver=_FixtureResolver(),
+            transport=watchdog_transport,
+        )
+
+    assert raised.value.physical_call_count == 1
+    assert watchdog_transport.connection_count == 1
+    assert not (cache_root / "download-staging" / "src_oa_fixture_001.part").exists()
+    assert not (cache_root / "download-staging" / "src_oa_fixture_001.resume.json").exists()
+
+    retry_transport = _FixtureTransport(
+        [_Response(200, _headers("text/plain", body), body)]
+    )
+    receipt = download_oa112_local_cache(
+        entries=(source,),
+        registry_digest="c" * 64,
+        packet=_packet(
+            source,
+            registry_digest="c" * 64,
+            nonce="nonce-watchdog-retry-0002",
+        ),
+        local_cache_root=cache_root,
+        packet_control_root=control_root,
+        resolver=_FixtureResolver(),
+        transport=retry_transport,
+    )
+
+    assert receipt.sources[0].state == "DOWNLOADED"
+    assert (cache_root / "oa-raw" / "src_oa_fixture_001.txt").read_bytes() == body
+
+
+def test_header_deadline_stops_before_body_stream(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """header dribble는 socket idle timeout을 갱신해도 source deadline을 넘길 수 없다."""
+
+    cache_root, control_root = _roots(tmp_path)
+    body = b"header deadline body\n"
+    source = _source(body)
+    monkeypatch.setattr(oa112_downloader, "_MAX_SOURCE_ELAPSED_SECONDS", 0.02)
+    transport = _DelayedHeaderTransport(
+        [_Response(200, _headers("text/plain", body), body)],
+        wait_seconds=0.05,
+    )
+
+    with pytest.raises(Oa112DownloadError, match="OA112_DOWNLOAD_TIME_BOUND") as raised:
+        download_oa112_local_cache(
+            entries=(source,),
+            registry_digest="c" * 64,
+            packet=_packet(source, registry_digest="c" * 64),
+            local_cache_root=cache_root,
+            packet_control_root=control_root,
+            resolver=_FixtureResolver(),
+            transport=transport,
+        )
+
+    assert raised.value.physical_call_count == 1
+    assert len(transport.requests) == 1
+    assert not (cache_root / "oa-raw" / "src_oa_fixture_001.txt").exists()
+
+
+def test_body_dribble_deadline_keeps_only_resumable_partial_cache(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """body가 idle timeout보다 자주 오더라도 absolute deadline 후 raw promotion을 막는다."""
+
+    cache_root, control_root = _roots(tmp_path)
+    body = b"first bounded chunk second bounded chunk\n"
+    source = _source(body)
+    monkeypatch.setattr(oa112_downloader, "_MAX_SOURCE_ELAPSED_SECONDS", 0.02)
+    transport = _FixtureTransport(
+        [
+            _DribblingResponse(
+                200,
+                _headers("text/plain", body),
+                body,
+                wait_seconds=0.05,
+            )
+        ]
+    )
+
+    with pytest.raises(Oa112DownloadError, match="OA112_DOWNLOAD_TIME_BOUND") as raised:
+        download_oa112_local_cache(
+            entries=(source,),
+            registry_digest="d" * 64,
+            packet=_packet(source, registry_digest="d" * 64),
+            local_cache_root=cache_root,
+            packet_control_root=control_root,
+            resolver=_FixtureResolver(),
+            transport=transport,
+        )
+
+    assert raised.value.physical_call_count == 1
+    assert len(transport.requests) == 1
+    assert (cache_root / "download-staging" / "src_oa_fixture_001.part").exists()
+    assert not (cache_root / "oa-raw" / "src_oa_fixture_001.txt").exists()
+
+    partial_size = len(body) // 2
+    resumed_body = body[partial_size:]
+    resumed_transport = _FixtureTransport(
+        [
+            _Response(
+                206,
+                {
+                    **_headers("text/plain", resumed_body),
+                    "Content-Range": f"bytes {partial_size}-{len(body) - 1}/{len(body)}",
+                },
+                resumed_body,
+            )
+        ]
+    )
+    receipt = download_oa112_local_cache(
+        entries=(source,),
+        registry_digest="d" * 64,
+        packet=_packet(
+            source,
+            registry_digest="d" * 64,
+            nonce="nonce-time-bound-resume-0002",
+        ),
+        local_cache_root=cache_root,
+        packet_control_root=control_root,
+        resolver=_FixtureResolver(),
+        transport=resumed_transport,
+    )
+
+    assert receipt.sources[0].state == "RESUMED"
+    assert (cache_root / "oa-raw" / "src_oa_fixture_001.txt").read_bytes() == body
+
+
 def _roots(tmp_path: Path) -> tuple[Path, Path]:
     cache_root = tmp_path / "cache"
     control_root = tmp_path / "control"
@@ -268,12 +549,17 @@ def _roots(tmp_path: Path) -> tuple[Path, Path]:
     return cache_root, control_root
 
 
-def _source(body: bytes, *, mime_type: str = "text/plain") -> Oa112RegistryEntry:
-    canonical_url = "https://official.example.com/oa/fixture.txt"
+def _source(
+    body: bytes,
+    *,
+    mime_type: str = "text/plain",
+    source_id: str = "src_oa_fixture_001",
+) -> Oa112RegistryEntry:
+    canonical_url = f"https://official.example.com/oa/{source_id}.txt"
     return Oa112RegistryEntry(
-        source_id="src_oa_fixture_001",
-        source_revision_id="srv_oa_fixture_001",
-        document_id="doc_oa_fixture_000000000000000000000001",
+        source_id=source_id,
+        source_revision_id=f"srv_{source_id[4:]}",
+        document_id=f"doc_{source_id[4:]}",
         track_id="MICRO_GAME_INFO_MARKET_DESIGN",
         language_tags=("en",),
         retrieval_topics=("METHODOLOGY",),
@@ -320,6 +606,34 @@ def _packet(
     )
 
 
+def _packet_for_sources(
+    sources: tuple[Oa112RegistryEntry, ...],
+    *,
+    registry_digest: str,
+    expires_at: datetime,
+) -> Oa112DownloadPacket:
+    return Oa112DownloadPacket(
+        approval_id="oa112-download-fixture-101",
+        head_sha="a" * 40,
+        tree_sha256="b" * 64,
+        ci_digest="c" * 64,
+        security_digest="d" * 64,
+        registry_digest=registry_digest,
+        source_ids=tuple(source.source_id for source in sources),
+        logical_call_cap=len(sources),
+        physical_call_cap=len(sources),
+        maximum_source_bytes=1024 * 1024,
+        maximum_total_bytes=1024 * 1024 * len(sources),
+        cost_cap_microusd=0,
+        retry_count=0,
+        tracked_raw_artifact_count=0,
+        operator="local-operator",
+        expires_at=expires_at,
+        nonce="nonce-download-fixture-0101",
+        maximum_pages=500,
+    )
+
+
 def _headers(mime_type: str, body: bytes) -> dict[str, str]:
     return {
         "Content-Encoding": "identity",
@@ -340,8 +654,9 @@ class _Request:
 class _FixtureResolver:
     calls: int = 0
 
-    def resolve(self, hostname: str) -> list[str]:
+    def resolve(self, hostname: str, *, timeout_seconds: float) -> list[str]:
         assert hostname == "official.example.com"
+        assert timeout_seconds > 0
         self.calls += 1
         return ["8.8.8.8"]
 
@@ -364,6 +679,62 @@ class _Response:
             if self.fail_after_chunks == index:
                 raise TimeoutError
 
+    def set_read_timeout_seconds(self, *, timeout_seconds: float) -> None:
+        assert timeout_seconds > 0
+
+
+@dataclass
+class _MutableUtcClock:
+    current: datetime
+
+    def now(self) -> datetime:
+        return self.current
+
+
+@dataclass
+class _SequenceUtcClock:
+    values: list[datetime]
+
+    def now(self) -> datetime:
+        if len(self.values) > 1:
+            return self.values.pop(0)
+        return self.values[0]
+
+
+@dataclass(frozen=True)
+class _ExpiringResponse:
+    status_code: int
+    headers: Mapping[str, str]
+    body: bytes
+    clock: _MutableUtcClock
+    expiry: datetime
+
+    def iter_raw(self, *, chunk_size: int) -> Iterator[bytes]:
+        midpoint = len(self.body) // 2
+        yield self.body[:midpoint]
+        self.clock.current = self.expiry
+        yield self.body[midpoint:]
+
+    def set_read_timeout_seconds(self, *, timeout_seconds: float) -> None:
+        assert timeout_seconds > 0
+
+
+@dataclass(frozen=True)
+class _DribblingResponse:
+    status_code: int
+    headers: Mapping[str, str]
+    body: bytes
+    wait_seconds: float
+
+    def iter_raw(self, *, chunk_size: int) -> Iterator[bytes]:
+        midpoint = len(self.body) // 2
+        yield self.body[:midpoint]
+        threading.Event().wait(self.wait_seconds)
+        yield self.body[midpoint:]
+
+    def set_read_timeout_seconds(self, *, timeout_seconds: float) -> None:
+        assert timeout_seconds > 0
+
 
 class _FixtureConnection:
     peer_ip = "8.8.8.8"
@@ -377,7 +748,15 @@ class _FixtureConnection:
     def __exit__(self, *_args: object) -> None:
         return None
 
-    def get(self, *, target: str, headers: Mapping[str, str]) -> _Response:
+    def get(
+        self,
+        *,
+        target: str,
+        headers: Mapping[str, str],
+        read_timeout_seconds: float | None = None,
+    ) -> Oa112DownloadResponse:
+        if read_timeout_seconds is not None:
+            assert read_timeout_seconds > 0
         self._transport.requests[-1] = _Request(
             hostname=self._transport.requests[-1].hostname,
             pinned_ip=self._transport.requests[-1].pinned_ip,
@@ -389,8 +768,30 @@ class _FixtureConnection:
         return self._transport.responses.pop(0)
 
 
+class _DelayedHeaderConnection(_FixtureConnection):
+    def __init__(self, transport: "_DelayedHeaderTransport", *, wait_seconds: float) -> None:
+        super().__init__(transport)
+        self._wait_seconds = wait_seconds
+
+    def get(
+        self,
+        *,
+        target: str,
+        headers: Mapping[str, str],
+        read_timeout_seconds: float | None = None,
+    ) -> Oa112DownloadResponse:
+        if read_timeout_seconds is not None:
+            assert read_timeout_seconds > 0
+        threading.Event().wait(self._wait_seconds)
+        return super().get(
+            target=target,
+            headers=headers,
+            read_timeout_seconds=read_timeout_seconds,
+        )
+
+
 class _FixtureTransport:
-    def __init__(self, responses: list[_Response]) -> None:
+    def __init__(self, responses: Sequence[Oa112DownloadResponse]) -> None:
         self.responses = list(responses)
         self.requests: list[_Request] = []
 
@@ -401,8 +802,89 @@ class _FixtureTransport:
         pinned_ip: str,
         connect_timeout_seconds: float,
         read_timeout_seconds: float,
+        deadline: object | None = None,
     ) -> _FixtureConnection:
         assert connect_timeout_seconds > 0
         assert read_timeout_seconds > 0
         self.requests.append(_Request(hostname, pinned_ip, "", {}))
         return _FixtureConnection(self)
+
+
+class _DelayedHeaderTransport(_FixtureTransport):
+    def __init__(self, responses: Sequence[Oa112DownloadResponse], *, wait_seconds: float) -> None:
+        super().__init__(responses)
+        self._wait_seconds = wait_seconds
+
+    def connect(
+        self,
+        *,
+        hostname: str,
+        pinned_ip: str,
+        connect_timeout_seconds: float,
+        read_timeout_seconds: float,
+        deadline: object | None = None,
+    ) -> _DelayedHeaderConnection:
+        assert connect_timeout_seconds > 0
+        assert read_timeout_seconds > 0
+        self.requests.append(_Request(hostname, pinned_ip, "", {}))
+        return _DelayedHeaderConnection(self, wait_seconds=self._wait_seconds)
+
+
+class _WatchdogSocketConnection:
+    """deadline callback이 실제 blocking socket을 닫는 downloader 회귀용 transport connection이다."""
+
+    peer_ip = "8.8.8.8"
+
+    def __init__(self, *, deadline: oa112_downloader._Oa112SourceDeadline) -> None:
+        self._client, self._peer = socket.socketpair()
+        self._client.settimeout(0.5)
+        self._unregister = deadline.register_canceller(
+            lambda: oa112_downloader._abort_socket(self._client)
+        )
+
+    def __enter__(self) -> "_WatchdogSocketConnection":
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        self._unregister()
+        oa112_downloader._abort_socket(self._client)
+        oa112_downloader._abort_socket(self._peer)
+
+    def get(
+        self,
+        *,
+        target: str,
+        headers: Mapping[str, str],
+        read_timeout_seconds: float,
+    ) -> Oa112DownloadResponse:
+        assert target.startswith("/")
+        assert headers["Accept-Encoding"] == "identity"
+        assert read_timeout_seconds > 0
+        try:
+            payload = self._client.recv(1)
+        except OSError:
+            raise
+        if payload == b"":
+            raise OSError("watchdog closed header socket")
+        raise AssertionError("watchdog test peer must not send a header byte")
+
+
+class _WatchdogSocketTransport:
+    def __init__(self) -> None:
+        self.connection_count = 0
+
+    def connect(
+        self,
+        *,
+        hostname: str,
+        pinned_ip: str,
+        connect_timeout_seconds: float,
+        read_timeout_seconds: float,
+        deadline: oa112_downloader._Oa112SourceDeadline,
+    ) -> _WatchdogSocketConnection:
+        assert hostname == "official.example.com"
+        assert pinned_ip == "8.8.8.8"
+        assert connect_timeout_seconds > 0
+        assert read_timeout_seconds > 0
+        self.connection_count += 1
+        return _WatchdogSocketConnection(deadline=deadline)

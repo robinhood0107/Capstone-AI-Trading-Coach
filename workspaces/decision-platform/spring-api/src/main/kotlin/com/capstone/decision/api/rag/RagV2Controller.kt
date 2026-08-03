@@ -5,8 +5,11 @@ import com.capstone.decision.application.rag.RagHistoryNotFoundException
 import com.capstone.decision.application.rag.RagV2Answer
 import com.capstone.decision.application.rag.RagV2CorpusNotReadyException
 import com.capstone.decision.application.rag.RagV2CorpusStatus
+import com.capstone.decision.application.rag.RagV2EffectiveConsent
+import com.capstone.decision.application.rag.RagV2ExternalConsentRequiredException
 import com.capstone.decision.application.rag.RagV2HistoryDetail
 import com.capstone.decision.application.rag.RagV2HistoryPage
+import com.capstone.decision.application.rag.RagV2ImportTicket
 import com.capstone.decision.application.rag.RagV2RuntimeService
 import com.capstone.decision.application.rag.RagValidationException
 import com.capstone.decision.application.security.AppPrincipal
@@ -41,6 +44,46 @@ class RagV2Controller(
     ): RagV2CorpusStatus {
         parser.requireNoQuery(request)
         return service.corpusStatus(principal.userId)
+    }
+
+    /**
+     * external processor consent의 effective 상태는 authenticated owner 자신의 immutable event만 해석한다.
+     */
+    @GetMapping("/consent")
+    fun effectiveConsent(
+        @AuthenticationPrincipal principal: AppPrincipal,
+        request: HttpServletRequest,
+    ): RagV2EffectiveConsent {
+        parser.requireNoQuery(request)
+        return service.effectiveConsent(principal.userId)
+    }
+
+    /**
+     * consent event identity는 body가 아니라 서버가 만들며, raw provider 또는 owner document를 받지 않는다.
+     */
+    @PostMapping("/consents", consumes = [MediaType.APPLICATION_JSON_VALUE])
+    fun recordExternalConsent(
+        @AuthenticationPrincipal principal: AppPrincipal,
+        @RequestBody(required = false) body: String?,
+        request: HttpServletRequest,
+    ): ResponseEntity<Void> {
+        parser.requireNoQuery(request)
+        service.recordExternalConsent(principal.userId, parser.parseV2ExternalConsent(body.orEmpty()))
+        return ResponseEntity.noContent().build()
+    }
+
+    /**
+     * 단회 ticket은 owner-local parse capability로만 반환하며 DB에는 SHA-256 hash만 남긴다.
+     */
+    @PostMapping("/import-tickets", consumes = [MediaType.APPLICATION_JSON_VALUE])
+    fun issueImportTicket(
+        @AuthenticationPrincipal principal: AppPrincipal,
+        @RequestBody(required = false) body: String?,
+        request: HttpServletRequest,
+    ): ResponseEntity<RagV2ImportTicket> {
+        parser.requireNoQuery(request)
+        parser.parseV2ImportTicketRequest(body.orEmpty())
+        return ResponseEntity.status(HttpStatus.CREATED).body(service.issueImportTicket(principal.userId))
     }
 
     @PostMapping("/ask", consumes = [MediaType.APPLICATION_JSON_VALUE])
@@ -130,6 +173,15 @@ class RagV2ExceptionHandler {
             status = HttpStatus.CONFLICT,
             code = "CORPUS_NOT_READY",
             message = "RAG v2 full corpus bundle is not ready.",
+        )
+
+    @ExceptionHandler(RagV2ExternalConsentRequiredException::class)
+    fun handleExternalConsentRequired(request: HttpServletRequest): ResponseEntity<RagV2ErrorResponse> =
+        error(
+            request = request,
+            status = HttpStatus.CONFLICT,
+            code = "EXTERNAL_AI_CONSENT_REQUIRED",
+            message = "External AI RAG v2 consent is required.",
         )
 
     @ExceptionHandler(RagHistoryNotFoundException::class)

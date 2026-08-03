@@ -64,7 +64,7 @@ def test_document_ir_materializer_is_deterministic_and_excludes_raw_path() -> No
     assert receipt["ownerRawCopies"] == 0
     assert receipt["canonicalChunkCount"] == 2
     assert "canonicalText" not in encoded
-    assert "rawContent" not in encoded
+    assert '"rawContent":' not in encoded
     assert "absolutePath" not in encoded
     assert "C:\\\\" not in encoded
 

@@ -5,7 +5,7 @@ import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
+from typing import Literal, Protocol
 
 import numpy as np
 from numpy.typing import NDArray
@@ -42,6 +42,20 @@ class OwnerDocumentParser(Protocol):
     ) -> dict[str, object]: ...
 
 
+class ApprovedDocumentParser(Protocol):
+    """owner/OA local cache 공통의 path-free Document IR parser boundary다."""
+
+    def parse_approved_document(
+        self,
+        *,
+        approved_root: Path,
+        relative_path: str,
+        source_id: str,
+        source_revision_id: str,
+        language_tags: tuple[str, ...],
+    ) -> dict[str, object]: ...
+
+
 class BgeDocumentEmbedder(Protocol):
     """pinned local BGE packet만 사용해 ordered document inputs를 embedding하는 boundary다."""
 
@@ -61,6 +75,30 @@ class RagV2OwnerDocumentRequest:
     source_id: str
     source_revision_id: str
     language_tags: tuple[str, ...]
+    embedding_profile_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class RagV2PublicDocumentRequest:
+    """exact-30/OA112 local source의 BGE generation identity다.
+
+    filesystem locator는 parser invocation에만 쓰고 receipt나 DB writer projection에는 넣지 않는다.
+    expected raw hash와 MIME은 registry/source-card contract에서 온 값이라, cache drift는 embed 전에
+    fail-closed한다.
+    """
+
+    approved_root: Path
+    relative_path: str
+    document_id: str
+    source_scope: Literal["EXACT30", "OA112"]
+    source_id: str
+    source_revision_id: str
+    language_tags: tuple[str, ...]
+    expected_raw_content_sha256: str
+    expected_mime_type: str
+    local_processing_allowed: bool
+    external_embedding_allowed: bool
+    external_generation_allowed: bool
     embedding_profile_id: str
 
 
@@ -85,6 +123,30 @@ class RagV2BgeMaterializedOwnerDocument:
 
     def content_free_receipt(self) -> dict[str, object]:
         """원본 경로·bytes·canonical text·vector를 제외한 reusable receipt만 반환한다."""
+
+        receipt = dict(self.document.content_free_receipt())
+        receipt.update(
+            {
+                "embeddingCount": len(self.embeddings),
+                "embeddingInputHashes": [item.embedding_input_hash for item in self.embeddings],
+                "embeddingProfileId": _BGE_PROFILE_ID,
+                "sourceRevisionSha256": self.source_revision_sha256,
+            }
+        )
+        return receipt
+
+
+@dataclass(frozen=True, slots=True)
+class RagV2BgeMaterializedPublicDocument:
+    """public exact-30/OA112 IR/chunk/vector의 transient local staging unit이다."""
+
+    document: RagV2DocumentMaterialization
+    embeddings: tuple[RagV2BgeDocumentEmbedding, ...]
+    source_revision_sha256: str
+    document_ir: dict[str, object]
+
+    def content_free_receipt(self) -> dict[str, object]:
+        """raw path/text/vector 없이 materialization identity와 count만 반환한다."""
 
         receipt = dict(self.document.content_free_receipt())
         receipt.update(
@@ -136,7 +198,11 @@ def materialize_owner_bge_document(
             tokenizer=tokenizer,
         )
         inputs = build_embedding_inputs(
-            _canonical_chunks(document.chunks, request),
+            _canonical_chunks(
+                document.chunks,
+                source_id=request.source_id,
+                source_revision_id=request.source_revision_id,
+            ),
             embedding_profile_id=_BGE_PROFILE_ID,
             tokenizer=tokenizer,
         )
@@ -173,14 +239,109 @@ def materialize_owner_bge_document(
     )
 
 
+def materialize_public_bge_document(
+    *,
+    parser: ApprovedDocumentParser,
+    tokenizer: RagTokenizer,
+    embedder: BgeDocumentEmbedder,
+    request: RagV2PublicDocumentRequest,
+) -> RagV2BgeMaterializedPublicDocument:
+    """approved exact-30/OA112 local source를 parser→canonical chunks→pinned BGE로 materialize한다.
+
+    이 경계는 provider transport를 만들지 않는다. source registry/source-card의 raw hash와 MIME을
+    parser 결과에 다시 bind해 cache drift 또는 filename/MIME spoof를 vector generation 전에 닫는다.
+    """
+
+    if request.embedding_profile_id != _BGE_PROFILE_ID:
+        raise RagV2BgeMaterializationError("BGE_PROFILE_REQUIRED")
+    if request.source_scope not in {"EXACT30", "OA112"}:
+        raise RagV2BgeMaterializationError("PUBLIC_DOCUMENT_SCOPE")
+    if not _is_sha256(request.expected_raw_content_sha256):
+        raise RagV2BgeMaterializationError("PUBLIC_DOCUMENT_RAW_DRIFT")
+    if request.expected_mime_type not in {
+        "application/pdf",
+        "text/html",
+        "text/plain",
+        "text/markdown",
+    }:
+        raise RagV2BgeMaterializationError("PUBLIC_DOCUMENT_MIME_DRIFT")
+    try:
+        document_ir = parser.parse_approved_document(
+            approved_root=request.approved_root,
+            relative_path=request.relative_path,
+            source_id=request.source_id,
+            source_revision_id=request.source_revision_id,
+            language_tags=request.language_tags,
+        )
+        if document_ir.get("rawContentSha256") != request.expected_raw_content_sha256:
+            raise RagV2BgeMaterializationError("PUBLIC_DOCUMENT_RAW_DRIFT")
+        if document_ir.get("mimeType") != request.expected_mime_type:
+            raise RagV2BgeMaterializationError("PUBLIC_DOCUMENT_MIME_DRIFT")
+        document = materialize_document_ir(
+            document_ir=document_ir,
+            request=RagV2DocumentMaterializationRequest(
+                document_id=request.document_id,
+                source_scope=request.source_scope,
+                source_id=request.source_id,
+                source_revision_id=request.source_revision_id,
+                local_processing_allowed=request.local_processing_allowed,
+                external_embedding_allowed=request.external_embedding_allowed,
+                external_generation_allowed=request.external_generation_allowed,
+            ),
+            tokenizer=tokenizer,
+        )
+        inputs = build_embedding_inputs(
+            _canonical_chunks(
+                document.chunks,
+                source_id=request.source_id,
+                source_revision_id=request.source_revision_id,
+            ),
+            embedding_profile_id=_BGE_PROFILE_ID,
+            tokenizer=tokenizer,
+        )
+        vectors = validate_embedding_batch(
+            embedder.embed(tuple(item.text for item in inputs)),
+            expected_rows=len(inputs),
+        )
+    except RagV2BgeMaterializationError:
+        raise
+    except (
+        BgeRuntimeError,
+        DocumentIrMaterializationError,
+        DocumentParseError,
+        RagIngestError,
+    ) as error:
+        raise RagV2BgeMaterializationError(str(error)) from error
+
+    if len(inputs) != len(document.chunks):  # pragma: no cover - closed helper contract.
+        raise RagV2BgeMaterializationError("BGE_INPUT_CHUNK_CARDINALITY")
+    embeddings = tuple(
+        RagV2BgeDocumentEmbedding(
+            chunk_id=chunk.chunk_id,
+            embedding_input_hash=embedding_input.embedding_input_hash,
+            context_set_hash=None,
+            embedding=np.array(vector, dtype=np.float32, copy=True),
+        )
+        for chunk, embedding_input, vector in zip(document.chunks, inputs, vectors, strict=True)
+    )
+    return RagV2BgeMaterializedPublicDocument(
+        document=document,
+        embeddings=embeddings,
+        source_revision_sha256=_source_revision_sha256(document_ir),
+        document_ir=_copy_document_ir(document_ir),
+    )
+
+
 def _canonical_chunks(
     chunks: tuple[RagV2CanonicalDocumentChunk, ...],
-    request: RagV2OwnerDocumentRequest,
+    *,
+    source_id: str,
+    source_revision_id: str,
 ) -> tuple[RagCanonicalChunk, ...]:
     return tuple(
         RagCanonicalChunk(
-            source_id=request.source_id,
-            source_revision_id=request.source_revision_id,
+            source_id=source_id,
+            source_revision_id=source_revision_id,
             chunk_revision_id=chunk.chunk_id,
             sequence=chunk.sequence,
             heading_path=chunk.heading_path,
@@ -191,6 +352,10 @@ def _canonical_chunks(
         )
         for chunk in chunks
     )
+
+
+def _is_sha256(value: object) -> bool:
+    return isinstance(value, str) and len(value) == 64 and all(character in "0123456789abcdef" for character in value)
 
 
 def _source_revision_sha256(document_ir: Mapping[str, object]) -> str:

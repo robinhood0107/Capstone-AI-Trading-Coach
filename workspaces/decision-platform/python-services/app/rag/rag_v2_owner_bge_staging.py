@@ -12,6 +12,7 @@ import numpy as np
 import psycopg
 from psycopg.types.json import Jsonb
 
+from app.rag.authorized_retrieval import ALLOWED_RAG_TOPICS
 from app.rag.rag_v2_bge_materializer import RagV2BgeMaterializedOwnerDocument
 
 _BGE_PROFILE_ID = "bge_m3_local_1024_v1"
@@ -20,7 +21,7 @@ _WRITER_ROLE = "decision_rag_writer"
 _OWNER_ID = re.compile(r"^usr_[a-z0-9][a-z0-9_-]{2,95}$")
 _IMPORT_TICKET_ID = re.compile(r"^rti_[0-9a-f]{32}$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
-_STAGE_FUNCTION = "public.stage_rag_v2_immutable_owner_bge_document(text,text,jsonb)"
+_STAGE_FUNCTION = "public.stage_rag_v2_immutable_owner_bge_document_v2(text,text,jsonb)"
 _WRITER_FORBIDDEN_TABLES = (
     "rag_v2_immutable_oa_track_catalog",
     "rag_v2_immutable_oa_source_cards",
@@ -57,10 +58,42 @@ class RagV2OwnerBgeStagingReceipt:
     chunk_count: int
 
 
+@dataclass(frozen=True, slots=True)
+class OwnerBgeStagingMetadata:
+    """owner-private citation에 필요한 path-free metadata를 local control에서만 받는다.
+
+    표시명은 raw filename이나 path의 alias가 아니라 사용자가 명시적으로 선택한 citation label이다.
+    topic은 query-time authorization에 쓰이므로 source/chunk/vector보다 먼저 closed payload에
+    bind하며, stdout/history에는 이 값을 복사하지 않는다.
+    """
+
+    sanitized_display_name: str
+    retrieval_topics: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        if not _sanitized_display_name_is_valid(self.sanitized_display_name):
+            raise OwnerBgeStagingError("OWNER_BGE_STAGE_METADATA")
+        if (
+            not isinstance(self.retrieval_topics, tuple)
+            or not 1 <= len(self.retrieval_topics) <= len(ALLOWED_RAG_TOPICS)
+            or any(not isinstance(topic, str) for topic in self.retrieval_topics)
+            or not set(self.retrieval_topics) <= ALLOWED_RAG_TOPICS
+            or len(set(self.retrieval_topics)) != len(self.retrieval_topics)
+        ):
+            raise OwnerBgeStagingError("OWNER_BGE_STAGE_METADATA")
+        object.__setattr__(
+            self,
+            "retrieval_topics",
+            tuple(sorted(self.retrieval_topics, key=lambda value: value.encode("utf-8"))),
+        )
+
+
 def build_owner_bge_staging_payload(
     materialized: RagV2BgeMaterializedOwnerDocument,
+    *,
+    metadata: OwnerBgeStagingMetadata,
 ) -> dict[str, object]:
-    """transient local IR/text/vector를 V28 writer에만 전달할 closed payload로 만든다.
+    """transient local IR/text/vector와 citation metadata를 V30 writer에만 전달한다.
 
     approved root, relative path, filename, raw bytes는 payload에 넣지 않는다. 이 payload는 DB
     transaction 직전에만 생성하며 log, receipt, history, command-line으로 직렬화하면 안 된다.
@@ -133,7 +166,9 @@ def build_owner_bge_staging_payload(
         "normalizedDocumentIrSha256": document.normalized_content_sha256,
         "parserVersion": _parser_version(document_ir),
         "rawContentSha256": document.raw_content_sha256,
-        "schemaVersion": 1,
+        "retrievalTopics": list(metadata.retrieval_topics),
+        "sanitizedDisplayName": metadata.sanitized_display_name,
+        "schemaVersion": 2,
         "sourceId": document.source_id,
         "sourceLocator": dict(ordered_chunks[0].locator),
         "sourceRevisionId": document.source_revision_id,
@@ -158,6 +193,7 @@ class PsycopgRagV2OwnerBgeStagingRepository:
         owner_user_id: str,
         import_ticket_id: str,
         materialized: RagV2BgeMaterializedOwnerDocument,
+        metadata: OwnerBgeStagingMetadata,
     ) -> RagV2OwnerBgeStagingReceipt:
         """local-only materialization을 owner ticket에 bind해 immutable STAGED graph로 append한다.
 
@@ -167,7 +203,7 @@ class PsycopgRagV2OwnerBgeStagingRepository:
 
         if not _OWNER_ID.fullmatch(owner_user_id) or not _IMPORT_TICKET_ID.fullmatch(import_ticket_id):
             raise OwnerBgeStagingError("OWNER_BGE_STAGE_ARGUMENT")
-        payload = build_owner_bge_staging_payload(materialized)
+        payload = build_owner_bge_staging_payload(materialized, metadata=metadata)
         try:
             with psycopg.connect(
                 self._database_dsn,
@@ -182,7 +218,7 @@ class PsycopgRagV2OwnerBgeStagingRepository:
                     row = connection.execute(
                         """
                         SELECT component_generation_id, materialization_run_id, state, source_count, chunk_count
-                        FROM public.stage_rag_v2_immutable_owner_bge_document(%s, %s, %s::jsonb)
+                        FROM public.stage_rag_v2_immutable_owner_bge_document_v2(%s, %s, %s::jsonb)
                         """,
                         (owner_user_id, import_ticket_id, Jsonb(payload)),
                     ).fetchone()
@@ -292,6 +328,17 @@ def _assert_payload_is_path_free(payload: Mapping[str, object]) -> None:
     encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
     if any(f'"{key}"' in encoded for key in _PATH_KEYS):
         raise OwnerBgeStagingError("OWNER_BGE_STAGE_PATH_LEAK")
+
+
+def _sanitized_display_name_is_valid(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and 1 <= len(value) <= 160
+        and value == value.strip()
+        and not value.startswith((".", "~"))
+        and not any(character in value for character in ("/", "\\", ":", "\x00", "\r", "\n"))
+        and not any(ord(character) < 32 or ord(character) == 127 for character in value)
+    )
 
 
 def _attest_writer_connection(connection: psycopg.Connection[Any]) -> None:

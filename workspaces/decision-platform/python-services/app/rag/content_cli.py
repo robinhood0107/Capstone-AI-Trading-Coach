@@ -34,7 +34,12 @@ from app.rag.rag_v2_owner_bge_deletion import (
 )
 from app.rag.rag_v2_owner_bge_staging import (
     OwnerBgeStagingError,
+    OwnerBgeStagingMetadata,
     PsycopgRagV2OwnerBgeStagingRepository,
+)
+from app.rag.rag_v2_owner_overlay import (
+    OwnerOverlayError,
+    PsycopgRagV2OwnerOverlayRepository,
 )
 
 
@@ -50,8 +55,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     """Windows BAT가 호출하는 content command를 stable JSON으로 중계한다.
 
     setup은 public OA release manifest의 bounded metadata만 검증한다. owner import는 argv가 아닌
-    fixed local 0600 control record에서 ticket/path/owner identity를 읽어 local BGE staging까지만
-    수행하며, public OA download/activation과 provider transport는 여전히 별도 gate다.
+    fixed local 0600 control record에서 ticket/path/owner identity를 읽어 local BGE staging과
+    immutable owner bundle activation을 수행한다. public OA download와 provider transport는 여전히
+    별도 gate이며, active public BGE base가 없으면 owner bundle도 fail-closed한다.
     """
 
     arguments = tuple(sys.argv[1:] if argv is None else argv)
@@ -124,34 +130,48 @@ def _operator_manifest_path() -> Path | None:
 
 
 def _import_owner_document() -> int:
-    """one-time local control record의 owner document를 BGE/immutable writer에만 전달한다."""
+    """one-time local control record를 BGE writer와 admin-only overlay activation에만 전달한다."""
 
     try:
         control = load_pending_owner_import_control(local_root=_local_root())
-        database_dsn = os.environ.get("CAPSTONE_RAG_WRITER_DATABASE_DSN", "").strip()
-        if not database_dsn:
+        writer_database_dsn = os.environ.get("CAPSTONE_RAG_WRITER_DATABASE_DSN", "").strip()
+        if not writer_database_dsn:
             raise OwnerBgeStagingError("OWNER_BGE_STAGE_DATABASE_DSN")
+        admin_database_dsn = os.environ.get("CAPSTONE_RAG_ADMIN_DATABASE_DSN", "").strip()
+        if not admin_database_dsn:
+            raise OwnerOverlayError("OWNER_OVERLAY_DATABASE_DSN")
         materialized = _materialize_owner_import(control=control)
-        receipt = PsycopgRagV2OwnerBgeStagingRepository(database_dsn=database_dsn).stage(
+        staging_receipt = PsycopgRagV2OwnerBgeStagingRepository(database_dsn=writer_database_dsn).stage(
             owner_user_id=control.owner_user_id,
             import_ticket_id=control.import_ticket_id,
             materialized=materialized,
+            metadata=OwnerBgeStagingMetadata(
+                sanitized_display_name=control.sanitized_display_name,
+                retrieval_topics=control.retrieval_topics,
+            ),
         )
+        overlay_receipt = PsycopgRagV2OwnerOverlayRepository(
+            database_dsn=admin_database_dsn
+        ).prepare_and_activate(owner_user_id=control.owner_user_id)
     except RagV2LocalImportControlError:
         return _failure("LOCAL_IMPORT_CONTROL_REQUIRED")
     except (BgeRuntimeError, DocumentParseError, RagV2BgeMaterializationError):
         return _failure("OWNER_DOCUMENT_MATERIALIZATION_FAILED")
     except OwnerBgeStagingError:
         return _failure("OWNER_DOCUMENT_STAGING_FAILED")
+    except OwnerOverlayError as error:
+        if str(error) in {"OWNER_OVERLAY_NOT_READY", "OWNER_OVERLAY_CONFLICT"}:
+            return _failure("OWNER_DOCUMENT_OVERLAY_PENDING")
+        return _failure("OWNER_DOCUMENT_OVERLAY_UNAVAILABLE")
 
     _emit(
         {
-            "chunkCount": receipt.chunk_count,
-            "code": "OWNER_DOCUMENT_STAGED",
-            "componentGenerationId": receipt.component_generation_id,
-            "embeddingProfileId": receipt.embedding_profile_id,
-            "materializationRunId": receipt.materialization_run_id,
-            "state": receipt.state,
+            "bundleId": overlay_receipt.bundle_id,
+            "chunkCount": overlay_receipt.chunk_count,
+            "code": "OWNER_DOCUMENT_READY",
+            "componentGenerationId": overlay_receipt.component_generation_id,
+            "embeddingProfileId": staging_receipt.embedding_profile_id,
+            "state": overlay_receipt.state,
         }
     )
     return 0

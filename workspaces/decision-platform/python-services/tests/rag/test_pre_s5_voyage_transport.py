@@ -120,6 +120,46 @@ def test_voyage_context4_transport_rejects_cross_group_or_nonunit_response_witho
     assert transport.external_physical_calls == 1
 
 
+def test_voyage_context4_transport_keeps_default_sender_disabled_without_consuming_packet() -> None:
+    transport = PreS5VoyageContext4Transport(
+        activation=_activation(),
+        api_key="test-key",
+        clock=lambda: NOW,
+    )
+
+    with pytest.raises(PreS5VoyageTransportError, match="PRE_S5_VOYAGE_OUTBOUND_DISABLED"):
+        transport.embed_document_groups(groups=_groups())
+
+    assert transport.external_physical_calls == 0
+    assert transport.content_free_summary()["logicalCallsConsumed"] == 0
+
+
+def test_voyage_context4_transport_rejects_nonunit_vector_after_exactly_one_attempt() -> None:
+    malformed = _response_for(_groups())
+    body = json.loads(malformed.body)
+    body["data"][0]["data"][0]["embedding"] = [0.0] * 1024
+    sender = _FixtureSender(
+        response=PreS5VoyageHttpResponse(
+            status=200,
+            headers={},
+            body=json.dumps(body, separators=(",", ":")).encode("utf-8"),
+        )
+    )
+    transport = PreS5VoyageContext4Transport(
+        activation=_activation(),
+        api_key="test-key",
+        sender=sender,
+        clock=lambda: NOW,
+    )
+
+    with pytest.raises(PreS5VoyageTransportError, match="PRE_S5_VOYAGE_RESPONSE_INVALID"):
+        transport.embed_document_groups(groups=_groups())
+    with pytest.raises(PreS5VoyageTransportError, match="PRE_S5_VOYAGE_SINGLE_USE"):
+        transport.embed_document_groups(groups=_groups())
+    assert sender.calls == 1
+    assert transport.external_physical_calls == 1
+
+
 class _FixtureSender:
     """network 없이 fixed response/error 한 번만 내는 transport seam이다."""
 

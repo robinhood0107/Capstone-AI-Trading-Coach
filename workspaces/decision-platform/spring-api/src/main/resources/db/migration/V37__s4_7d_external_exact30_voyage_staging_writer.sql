@@ -7,6 +7,7 @@ CREATE TABLE rag_v2_immutable_external_exact30_source_allowlist (
   canonical_https_url text NOT NULL,
   raw_content_sha256 text NOT NULL,
   source_card_sha256 text NOT NULL,
+  canonical_text_sha256 text NOT NULL,
   CONSTRAINT rag_v2_immutable_external_exact30_allowlist_source_id_check
     CHECK (source_id ~ '^src_[a-z0-9][a-z0-9_-]{2,95}$'),
   CONSTRAINT rag_v2_immutable_external_exact30_allowlist_url_check
@@ -15,6 +16,7 @@ CREATE TABLE rag_v2_immutable_external_exact30_source_allowlist (
     CHECK (
       raw_content_sha256 ~ '^[0-9a-f]{64}$'
       AND source_card_sha256 ~ '^[0-9a-f]{64}$'
+      AND canonical_text_sha256 ~ '^[0-9a-f]{64}$'
     )
 );
 ALTER TABLE rag_v2_immutable_external_exact30_source_allowlist ENABLE ROW LEVEL SECURITY;
@@ -29,38 +31,38 @@ CREATE POLICY rag_v2_immutable_external_exact30_allowlist_flyway_write
 -- The external card hash differs from S4.7B solely because the consent-bearing front matter differs.
 -- The card body remains project-authored/sanitized and is not copied into this allowlist.
 INSERT INTO rag_v2_immutable_external_exact30_source_allowlist (
-  source_id, canonical_https_url, raw_content_sha256, source_card_sha256
+  source_id, canonical_https_url, raw_content_sha256, source_card_sha256, canonical_text_sha256
 ) VALUES
-  ('src_project_backtest_overfitting_001', 'https://doi.org/10.1111/1468-0262.00152', '71fd6c755fee1ad56c9795c98fd8ca86e05eff6b598a3f2dc9bbea2a76b6a288', 'fe1d823dde615713d044af774883376a5281ee141a2e1d0f6d64442892111637'),
-  ('src_project_bsm_continuous_hedge_assumptions_001', 'https://doi.org/10.1086/260062', '26be6bb3d2de4a4bb92d50589849d6e5b737bcef8afae3f01bab3ce078d21e63', 'd8cdd94a70f76cc14f86880f2e0bde1c54ae101f89dbcad818ab1da538478817'),
-  ('src_project_bsm_risk_neutral_001', 'https://doi.org/10.1086/260062', '4458a89a12c2878c354045633e4274b0e76cfb761cc977911764492eb1d77a21', 'e5bd1c4817a26d2745f0cb411e4cef747ac823ba4ea0264fd9f8064fec539be7'),
-  ('src_project_bsm_time_to_expiry_001', 'https://doi.org/10.2307/3003143', '8d85efb1f6b6a9cb03848733f24a2202453118a05c7e91099cc0f686d1257623', '6d817db0f2b2302e9ecb43ae9ec48abe6ab8232e7216903c236b4540abc69a0b'),
-  ('src_project_delta_hedge_residual_cost_001', 'https://doi.org/10.1111/j.1540-6261.1985.tb02383.x', 'ab18d838d14d40851be63becb18e69e1cf60a36b5e0e1632264a514fb2bd71a4', '428d1e46fdc6cc34537fe719bd4f2ad1609c7e5ccf5b0ec85722f98333f9170a'),
-  ('src_project_ecos_pit_availability_001', 'https://ecos.bok.or.kr/api/', '617685e273926fa0b3ffe2d78c8dc98159552c4c509a2d8abbd718d5eea63c53', '50e12c2901bc08b3b9e8d1ca6f8710467dd6be64be71369074ea0cd0cbc37cf6'),
-  ('src_project_expected_payoff_measure_discount_001', 'https://doi.org/10.2307/3003143', 'a355c8886cfc6efbc814af4b9d33ed2c89672f9234680e608882ab78f7e3454d', 'cde096f637c65175bba8053f8ba12cb85691db90d48c697252923cbbb88ea45b'),
-  ('src_project_finance_diffusion_not_ddpm_001', 'https://proceedings.neurips.cc/paper/2020/hash/4c5bcfec8584af0d967f1ab10179ca4b-Abstract.html', 'ed30781af1b381c6c6e949ee738005b9eb1ff37a083a0f3c99daa6d42b14d767', 'fbfb886df3c1dccd42b412fc73b0dd367b4f072f7034d1b101b612f1023f1c3d'),
-  ('src_project_gold_futures_etf_132030_001', 'https://www.samsungfund.com/etf/product/view.do?id=2ETF24', 'fd5cd415deabd1ab24f286dc13a9d7b9a8794e445e623d07e79c138dc2840af5', '7714935fef291b7b2a5ec05cc35a7dea02e2ff7396b7894a2edfc9e6ddfe95b5'),
-  ('src_project_hmm_latent_state_boundary_001', 'https://doi.org/10.1109/5.18626', '282004435071adb3fa0a7c2e08110bb1e7656ae7d850d746f668d6b3e3b3f705', 'b4f785bc82314078036a86284f277d8b643b4a10130c8c0401feb5b4872a247b'),
-  ('src_project_kis_adjusted_price_001', 'https://github.com/koreainvestment/open-trading-api/blob/b093e42ba32d1df5f5ddad7a71cb715cbc800832/examples_llm/domestic_stock/inquire_daily_itemchartprice/inquire_daily_itemchartprice.py', '6fabc47a9437a0bdaa7658f4bbcabb5d3c3be211ef538e47f434b29e985aa09b', '2a0fe14f7ccfdf316d6f346090163963618321ab20466b67259da9e17220216a'),
-  ('src_project_kis_current_price_snapshot_001', 'https://github.com/koreainvestment/open-trading-api/blob/b093e42ba32d1df5f5ddad7a71cb715cbc800832/examples_llm/domestic_stock/inquire_price/inquire_price.py', '55249a9a6109aa90faf0ebe238bd459d7e25e6514b67ec641c8a2ba5a9924f35', '2b97286d3bf2fb192193d6393e6a4da9bdb88d252762c56f38f8dcedf06cc687'),
-  ('src_project_kis_discovery_write_boundary_001', 'https://apiportal.koreainvestment.com/about-open-api', '3137be113762703bbf5632ee8bdc317c182391ed04476a12a5b7b93d481db952', 'b97f68b06290ded7304a96cc9de3b3c339f0baa0e09dc2d323d5037beeac1067'),
-  ('src_project_kis_market_calendar_001', 'https://github.com/koreainvestment/open-trading-api/blob/b093e42ba32d1df5f5ddad7a71cb715cbc800832/examples_llm/domestic_stock/chk_holiday/chk_holiday.py', '23e4ae630d6675c1f7fdb2109c4426bfb1f1b4c226ac35c786c8bd959366c406', '7dfef37c786006419f5572ad088561f3c9c47695282a98b5f13da73a4a071225'),
-  ('src_project_kis_rate_limit_token_001', 'https://apiportal.koreainvestment.com/community/10000000-0000-0011-0000-000000000001/post/d0d1a83f-6f8d-4437-9700-6d26702fd989', '9fc0b4dba613e891c8d5a4d395351d6293496a0b441c9fdcde431bff824c6a74', '3bbf8771e429a0d40c32ecd8eed72a7c9524b62207be6be4bd4602ea2244921e'),
-  ('src_project_krx_etf_etn_structure_001', 'https://open.krx.co.kr/contents/OPN/01/01030100/OPN01030100.jsp', 'e64eb2ab933e28c67c99ec6b09446b4c894225dfb357457ec91335287a5738ff', 'ee3794ca746a5887f5e7912a8f4a33c559e97cfb8803215df5bcdd78d747f272'),
-  ('src_project_krx_etn_risk_indicator_001', 'https://open.krx.co.kr/contents/OPN/01/01030302/OPN01030302.jsp', '1c763d8a6a69bafd0f086fcbb3d1731d6af730bc9e104bb3532f04dbb23d9fc4', '07fe21fdf8e2b499c3c31196b25fd3f174371cc53024ace63360911f668a2ce9'),
-  ('src_project_krx_last_trading_settlement_001', 'https://global.krx.co.kr/contents/GLB/02/0201/0201040202/GLB0201040202.jsp', '74e9806b45dde247b769e5003d2aedef477736b5583a51fc3a8ffb9c9eca9143', '8fef22e0b8d19baa98eb9c8529ca0b8701a383940142b69c09a4086af44aeaf9'),
-  ('src_project_krx_service_coverage_001', 'https://openapi.krx.co.kr/contents/OPP/INFO/service/OPPINFO004.cmd', 'f76330e9446e14b3febde9f72ffdb0162d1a534b528681b2652ce0fdb98a36ff', 'acbf5e61350ba9e41cbbb44a6af2422c100094de94b9b3b98092b0f516f9b3c5'),
-  ('src_project_mean_reversion_stationarity_001', 'https://doi.org/10.1080/01621459.1979.10482531', '08928cda0376bd2428ccaa9e467cb52512c68c35d6dda0bc60ece829165899e5', '165e338e81311c3c9e6421745ad0ae99bf22c5cf6fdb7495508639c36594d71f'),
-  ('src_project_monte_carlo_not_stress_probability_001', 'https://doi.org/10.1016/0304-405X(77)90005-8', '0292a9e7a12f208ecb8e8c5ef6dc7888e66f9244ff0dd42bc5a53fa92d375841', '636669ef076d5fc2661cc8910b93be8c5089ed90eff3be13bf8cc74f365ed44b'),
-  ('src_project_naver_news_discovery_boundary_001', 'https://developers.naver.com/docs/serviceapi/search/news/news.md', '05cf1f4e5ae7e1daf3d7f1b78155bf504cec98a1c9ecbe49825bdec36ef47758', '2372f3fce64caea6d3f67b1d2beacefe0435d50b3ea1c6db63395f1f95b211f5'),
-  ('src_project_notional_not_exposure_001', 'https://data.bis.org/topics/OTC_DER', 'e3065d9e6e4793aa86041a9590d8fb3b32eccaa5d1fd61c47ca474a9c8264720', '6ef73e46ee5c752ea70a278587efb34e387edb2a2574c9bc6a186fff6beb3156'),
-  ('src_project_opendart_corporation_code_001', 'https://opendart.fss.or.kr/guide/detail.do?apiGrpCd=DS001&apiId=2019018', '2e2b953ceb93db04a165478ec5f084e72f69e96be741f3918052fae652dd1186', '39a12056d8c532ec28fec446ee0ce27bd75caea6ef2a61d7d9fc256b646ed554'),
-  ('src_project_opendart_financial_statement_scope_001', 'https://opendart.fss.or.kr/guide/detail.do?apiGrpCd=DS003&apiId=2019016', '10d709ff4c8461f01b85239d11ad5adb3efdfda91b561268c7160ef643dc0ded', '9439b6781ba1c38a98965f1dd7429f21d7375cdbec66535ce81c80c61b727e5a'),
-  ('src_project_opendart_status_quota_001', 'https://opendart.fss.or.kr/guide/detail.do?apiGrpCd=DS005&apiId=2020052', 'f0900ebafae2875d681b7d5dc0c03124ad5202c0cb7be6dc46a13e03017ee7aa', 'f25a5ac8beb4db0c881b04c5363818e8d16214e602e5acb4e55b8de6a0704904'),
-  ('src_project_sharpe_drawdown_partial_metrics_001', 'https://doi.org/10.1111/joes.12520', 'a0eedc605692a151c99c0d9e0cbd4e81d77bf0a6bc14e0e20586bf4b38fa62f4', '9a5d8f18d4e431c8d9f2418a45c88235cc02d23dad7664cc9b1b096f07c37161'),
-  ('src_project_threshold_cvar_not_exact_es_001', 'https://doi.org/10.1111/1468-0300.00091', 'ebb0772e904a94e2b0145425ce7e11764177c3d9e850829d05ec6501c34af7b3', '467cfc786a9eb8e85321921f81e4757c93fea3c1107b408c0cdf3b1ae4cbbad8'),
-  ('src_project_valuation_delta_not_guard_delta_001', 'https://doi.org/10.1086/260062', '2bdb21b397aa564469afdd559e2516ae56fcf3ca7a2f3a83f2e499b050a0eb8f', 'ee125d8cc2710fa99d276b5ee08fabe871e434c0b01cca520b148e6a69cdaae8'),
-  ('src_project_var_es_coherence_001', 'https://doi.org/10.1111/1467-9965.00068', '36cb0539f3ad78ab26143268c394b8cd03805bbec6142419d43709ce602e3206', '1f608e0a780144349bd83e9db211a6526a495f66b044df94b1b7fe5ba12855ca')
+('src_project_backtest_overfitting_001', 'https://doi.org/10.1111/1468-0262.00152', '71fd6c755fee1ad56c9795c98fd8ca86e05eff6b598a3f2dc9bbea2a76b6a288', 'fe1d823dde615713d044af774883376a5281ee141a2e1d0f6d64442892111637', 'f44c738239aea178dc1ca1c2cd666a1e4f1f86ff044320f09168f8bf5678630e'),
+  ('src_project_bsm_continuous_hedge_assumptions_001', 'https://doi.org/10.1086/260062', '26be6bb3d2de4a4bb92d50589849d6e5b737bcef8afae3f01bab3ce078d21e63', 'd8cdd94a70f76cc14f86880f2e0bde1c54ae101f89dbcad818ab1da538478817', '212e3d14edf3379aa5198036f461bf7c7509efcd6f698ce6b7ae1f5d559f8e57'),
+  ('src_project_bsm_risk_neutral_001', 'https://doi.org/10.1086/260062', '4458a89a12c2878c354045633e4274b0e76cfb761cc977911764492eb1d77a21', 'e5bd1c4817a26d2745f0cb411e4cef747ac823ba4ea0264fd9f8064fec539be7', 'fd2fa03b9e9b96a7b447de1ae2c63289f191eceacac135adc1c90396576a2210'),
+  ('src_project_bsm_time_to_expiry_001', 'https://doi.org/10.2307/3003143', '8d85efb1f6b6a9cb03848733f24a2202453118a05c7e91099cc0f686d1257623', '6d817db0f2b2302e9ecb43ae9ec48abe6ab8232e7216903c236b4540abc69a0b', '4ae13e78291c30360787ce92c33e192d25c31e0bead74984f26e4fd51c57a716'),
+  ('src_project_delta_hedge_residual_cost_001', 'https://doi.org/10.1111/j.1540-6261.1985.tb02383.x', 'ab18d838d14d40851be63becb18e69e1cf60a36b5e0e1632264a514fb2bd71a4', '428d1e46fdc6cc34537fe719bd4f2ad1609c7e5ccf5b0ec85722f98333f9170a', '8ab4de19c0d927f025cbda5a006b21e11c2e612cc98f840dfbee337490226fc5'),
+  ('src_project_ecos_pit_availability_001', 'https://ecos.bok.or.kr/api/', '617685e273926fa0b3ffe2d78c8dc98159552c4c509a2d8abbd718d5eea63c53', '50e12c2901bc08b3b9e8d1ca6f8710467dd6be64be71369074ea0cd0cbc37cf6', '534c836a28102c9fa754f5823d6772cb229a791c04756b595f7460dbf8be37ab'),
+  ('src_project_expected_payoff_measure_discount_001', 'https://doi.org/10.2307/3003143', 'a355c8886cfc6efbc814af4b9d33ed2c89672f9234680e608882ab78f7e3454d', 'cde096f637c65175bba8053f8ba12cb85691db90d48c697252923cbbb88ea45b', '9912c77e4a45392c4005c18f034c3efc7d2978afe1c29383729095e213563ead'),
+  ('src_project_finance_diffusion_not_ddpm_001', 'https://proceedings.neurips.cc/paper/2020/hash/4c5bcfec8584af0d967f1ab10179ca4b-Abstract.html', 'ed30781af1b381c6c6e949ee738005b9eb1ff37a083a0f3c99daa6d42b14d767', 'fbfb886df3c1dccd42b412fc73b0dd367b4f072f7034d1b101b612f1023f1c3d', 'e8eaf3d9f58a478f7be3573ff1701d8744943702974ca412134abb93557ef1dd'),
+  ('src_project_gold_futures_etf_132030_001', 'https://www.samsungfund.com/etf/product/view.do?id=2ETF24', 'fd5cd415deabd1ab24f286dc13a9d7b9a8794e445e623d07e79c138dc2840af5', '7714935fef291b7b2a5ec05cc35a7dea02e2ff7396b7894a2edfc9e6ddfe95b5', '8d4f1f3534c7c1dfc0c4213012b51f76bf4d7851fd088353449836e1424991ad'),
+  ('src_project_hmm_latent_state_boundary_001', 'https://doi.org/10.1109/5.18626', '282004435071adb3fa0a7c2e08110bb1e7656ae7d850d746f668d6b3e3b3f705', 'b4f785bc82314078036a86284f277d8b643b4a10130c8c0401feb5b4872a247b', '23cb511559dd2e8a30907d71d5cf9ee7b5cd1d69a26e2a00b2db985fba1ada42'),
+  ('src_project_kis_adjusted_price_001', 'https://github.com/koreainvestment/open-trading-api/blob/b093e42ba32d1df5f5ddad7a71cb715cbc800832/examples_llm/domestic_stock/inquire_daily_itemchartprice/inquire_daily_itemchartprice.py', '6fabc47a9437a0bdaa7658f4bbcabb5d3c3be211ef538e47f434b29e985aa09b', '2a0fe14f7ccfdf316d6f346090163963618321ab20466b67259da9e17220216a', 'af9764e74dea6eec236a272ff7d2175bbeddfe69952f866335f96cd3b32a6daf'),
+  ('src_project_kis_current_price_snapshot_001', 'https://github.com/koreainvestment/open-trading-api/blob/b093e42ba32d1df5f5ddad7a71cb715cbc800832/examples_llm/domestic_stock/inquire_price/inquire_price.py', '55249a9a6109aa90faf0ebe238bd459d7e25e6514b67ec641c8a2ba5a9924f35', '2b97286d3bf2fb192193d6393e6a4da9bdb88d252762c56f38f8dcedf06cc687', '0d94dd496dcb136097b685ec57c4dbb6c2ccfc418820547ca7e0c89be9a74c57'),
+  ('src_project_kis_discovery_write_boundary_001', 'https://apiportal.koreainvestment.com/about-open-api', '3137be113762703bbf5632ee8bdc317c182391ed04476a12a5b7b93d481db952', 'b97f68b06290ded7304a96cc9de3b3c339f0baa0e09dc2d323d5037beeac1067', 'bd987a9de5835938240b97200f4ae14a219fd0085aebfe71264a8d806b79933b'),
+  ('src_project_kis_market_calendar_001', 'https://github.com/koreainvestment/open-trading-api/blob/b093e42ba32d1df5f5ddad7a71cb715cbc800832/examples_llm/domestic_stock/chk_holiday/chk_holiday.py', '23e4ae630d6675c1f7fdb2109c4426bfb1f1b4c226ac35c786c8bd959366c406', '7dfef37c786006419f5572ad088561f3c9c47695282a98b5f13da73a4a071225', '024cfddcf3b5f28f98f5971c5e29a1883438238e6c0be4b4ec8250387343718a'),
+  ('src_project_kis_rate_limit_token_001', 'https://apiportal.koreainvestment.com/community/10000000-0000-0011-0000-000000000001/post/d0d1a83f-6f8d-4437-9700-6d26702fd989', '9fc0b4dba613e891c8d5a4d395351d6293496a0b441c9fdcde431bff824c6a74', '3bbf8771e429a0d40c32ecd8eed72a7c9524b62207be6be4bd4602ea2244921e', '5b6cf53650253e7338e1a8121e8e067d6a95f8d436e0663f1fdbf593e00be582'),
+  ('src_project_krx_etf_etn_structure_001', 'https://open.krx.co.kr/contents/OPN/01/01030100/OPN01030100.jsp', 'e64eb2ab933e28c67c99ec6b09446b4c894225dfb357457ec91335287a5738ff', 'ee3794ca746a5887f5e7912a8f4a33c559e97cfb8803215df5bcdd78d747f272', '18101f21818d859c2f6d9961abc8be34f6ed0c917e48dd07147e981e1149dc2b'),
+  ('src_project_krx_etn_risk_indicator_001', 'https://open.krx.co.kr/contents/OPN/01/01030302/OPN01030302.jsp', '1c763d8a6a69bafd0f086fcbb3d1731d6af730bc9e104bb3532f04dbb23d9fc4', '07fe21fdf8e2b499c3c31196b25fd3f174371cc53024ace63360911f668a2ce9', '1ed84505d945be0f5836ae919c0202cfda123b0b4372a213e6d004495d619139'),
+  ('src_project_krx_last_trading_settlement_001', 'https://global.krx.co.kr/contents/GLB/02/0201/0201040202/GLB0201040202.jsp', '74e9806b45dde247b769e5003d2aedef477736b5583a51fc3a8ffb9c9eca9143', '8fef22e0b8d19baa98eb9c8529ca0b8701a383940142b69c09a4086af44aeaf9', 'b88e1d2fc126f8479bd4cb90c4cb9004880b14ab27b3156740a7048784053486'),
+  ('src_project_krx_service_coverage_001', 'https://openapi.krx.co.kr/contents/OPP/INFO/service/OPPINFO004.cmd', 'f76330e9446e14b3febde9f72ffdb0162d1a534b528681b2652ce0fdb98a36ff', 'acbf5e61350ba9e41cbbb44a6af2422c100094de94b9b3b98092b0f516f9b3c5', '8f9912bb9bd978cc05661f73f1d07975f79f57ba27626f8a1ad601f7433bc6d3'),
+  ('src_project_mean_reversion_stationarity_001', 'https://doi.org/10.1080/01621459.1979.10482531', '08928cda0376bd2428ccaa9e467cb52512c68c35d6dda0bc60ece829165899e5', '165e338e81311c3c9e6421745ad0ae99bf22c5cf6fdb7495508639c36594d71f', '0baa1eca0f9c403a4afafc55d7759a8a3ff4b5324f43d7b15d3aac8358d7cb74'),
+  ('src_project_monte_carlo_not_stress_probability_001', 'https://doi.org/10.1016/0304-405X(77)90005-8', '0292a9e7a12f208ecb8e8c5ef6dc7888e66f9244ff0dd42bc5a53fa92d375841', '636669ef076d5fc2661cc8910b93be8c5089ed90eff3be13bf8cc74f365ed44b', '9cb59a15d3af111b0c5443f7080c9ba606a133c4626c6a54ef7b6167b15351d9'),
+  ('src_project_naver_news_discovery_boundary_001', 'https://developers.naver.com/docs/serviceapi/search/news/news.md', '05cf1f4e5ae7e1daf3d7f1b78155bf504cec98a1c9ecbe49825bdec36ef47758', '2372f3fce64caea6d3f67b1d2beacefe0435d50b3ea1c6db63395f1f95b211f5', '98216149d1a55ab84580594e901b9742262f9a7855fe1577a15bedc705972e38'),
+  ('src_project_notional_not_exposure_001', 'https://data.bis.org/topics/OTC_DER', 'e3065d9e6e4793aa86041a9590d8fb3b32eccaa5d1fd61c47ca474a9c8264720', '6ef73e46ee5c752ea70a278587efb34e387edb2a2574c9bc6a186fff6beb3156', '43416e11720e0932c1f731c11692200488aaf11118d9902e761544552b59ed5b'),
+  ('src_project_opendart_corporation_code_001', 'https://opendart.fss.or.kr/guide/detail.do?apiGrpCd=DS001&apiId=2019018', '2e2b953ceb93db04a165478ec5f084e72f69e96be741f3918052fae652dd1186', '39a12056d8c532ec28fec446ee0ce27bd75caea6ef2a61d7d9fc256b646ed554', '39f5259232a0bbecceea3bfe207efc68640845b4382119273e7f1f8fcaaf74e6'),
+  ('src_project_opendart_financial_statement_scope_001', 'https://opendart.fss.or.kr/guide/detail.do?apiGrpCd=DS003&apiId=2019016', '10d709ff4c8461f01b85239d11ad5adb3efdfda91b561268c7160ef643dc0ded', '9439b6781ba1c38a98965f1dd7429f21d7375cdbec66535ce81c80c61b727e5a', '306f7380c7b5274d25652a21c34aed1e0379e3464327f4da81d84fa5503377ff'),
+  ('src_project_opendart_status_quota_001', 'https://opendart.fss.or.kr/guide/detail.do?apiGrpCd=DS005&apiId=2020052', 'f0900ebafae2875d681b7d5dc0c03124ad5202c0cb7be6dc46a13e03017ee7aa', 'f25a5ac8beb4db0c881b04c5363818e8d16214e602e5acb4e55b8de6a0704904', '5d57c8d584a9960a2454069f622fbd9193ea361980b0c40874c9bdc1433bf3b6'),
+  ('src_project_sharpe_drawdown_partial_metrics_001', 'https://doi.org/10.1111/joes.12520', 'a0eedc605692a151c99c0d9e0cbd4e81d77bf0a6bc14e0e20586bf4b38fa62f4', '9a5d8f18d4e431c8d9f2418a45c88235cc02d23dad7664cc9b1b096f07c37161', 'a233ee7ed8231318138de0dfd7bd76f279211a2e364bac2e154054f8aad44161'),
+  ('src_project_threshold_cvar_not_exact_es_001', 'https://doi.org/10.1111/1468-0300.00091', 'ebb0772e904a94e2b0145425ce7e11764177c3d9e850829d05ec6501c34af7b3', '467cfc786a9eb8e85321921f81e4757c93fea3c1107b408c0cdf3b1ae4cbbad8', 'bb58748ea87ae212e988e0b3876c9683dd3d07dd2cee8302969b5e1ead8419ae'),
+  ('src_project_valuation_delta_not_guard_delta_001', 'https://doi.org/10.1086/260062', '2bdb21b397aa564469afdd559e2516ae56fcf3ca7a2f3a83f2e499b050a0eb8f', 'ee125d8cc2710fa99d276b5ee08fabe871e434c0b01cca520b148e6a69cdaae8', 'ed627373f17a5a38265ed1a8f4bf95698c249b358f1899ef99b76aedd6321106'),
+  ('src_project_var_es_coherence_001', 'https://doi.org/10.1111/1467-9965.00068', '36cb0539f3ad78ab26143268c394b8cd03805bbec6142419d43709ce602e3206', '1f608e0a780144349bd83e9db211a6526a495f66b044df94b1b7fe5ba12855ca', '071cc3eaf661355a821e1eb85289bd88674961fbf4161b72db821fea26c33834')
 ON CONFLICT (source_id) DO NOTHING;
 
 DO $rag_v2_immutable_external_exact30_allowlist_cardinality$
@@ -174,7 +176,8 @@ CREATE FUNCTION rag_v2_immutable_external_exact30_voyage_source_is_approved(
   p_source_id text,
   p_canonical_https_url text,
   p_raw_content_sha256 text,
-  p_source_card_sha256 text
+  p_source_card_sha256 text,
+  p_canonical_text_sha256 text
 )
 RETURNS boolean
 LANGUAGE sql
@@ -190,10 +193,68 @@ AS $rag_v2_immutable_external_exact30_voyage_source_is_approved$
       AND allowed.canonical_https_url = p_canonical_https_url
       AND allowed.raw_content_sha256 = p_raw_content_sha256
       AND allowed.source_card_sha256 = p_source_card_sha256
+      AND allowed.canonical_text_sha256 = p_canonical_text_sha256
   )
 $rag_v2_immutable_external_exact30_voyage_source_is_approved$;
-ALTER FUNCTION rag_v2_immutable_external_exact30_voyage_source_is_approved(text, text, text, text) OWNER TO flyway;
-REVOKE ALL PRIVILEGES ON FUNCTION rag_v2_immutable_external_exact30_voyage_source_is_approved(text, text, text, text) FROM PUBLIC;
+ALTER FUNCTION rag_v2_immutable_external_exact30_voyage_source_is_approved(text, text, text, text, text) OWNER TO flyway;
+REVOKE ALL PRIVILEGES ON FUNCTION rag_v2_immutable_external_exact30_voyage_source_is_approved(text, text, text, text, text) FROM PUBLIC;
+
+CREATE FUNCTION rag_v2_immutable_external_exact30_voyage_source_revision_id(
+  p_source_id text,
+  p_raw_content_sha256 text,
+  p_source_card_sha256 text
+)
+RETURNS text
+LANGUAGE plpgsql
+IMMUTABLE
+STRICT
+SET search_path = pg_catalog, public
+AS $rag_v2_immutable_external_exact30_voyage_source_revision_id$
+BEGIN
+  IF p_source_id !~ '^src_[a-z0-9][a-z0-9_-]{2,95}$'
+     OR p_raw_content_sha256 !~ '^[0-9a-f]{64}$'
+     OR p_source_card_sha256 !~ '^[0-9a-f]{64}$' THEN
+    RAISE EXCEPTION 'immutable RAG v2 external exact-30 Voyage source identity arguments are invalid'
+      USING ERRCODE = '22023';
+  END IF;
+  RETURN 'srv_exact30_external_' || substr(encode(public.digest(
+    convert_to('s4_7c_external_v1', 'UTF8') || decode('00', 'hex') ||
+    convert_to(p_source_id, 'UTF8') || decode('00', 'hex') ||
+    convert_to(p_source_card_sha256, 'UTF8') || decode('00', 'hex') ||
+    convert_to(p_raw_content_sha256, 'UTF8'),
+    'sha256'
+  ), 'hex'), 1, 32);
+END;
+$rag_v2_immutable_external_exact30_voyage_source_revision_id$;
+ALTER FUNCTION rag_v2_immutable_external_exact30_voyage_source_revision_id(text, text, text) OWNER TO flyway;
+REVOKE ALL PRIVILEGES ON FUNCTION rag_v2_immutable_external_exact30_voyage_source_revision_id(text, text, text) FROM PUBLIC;
+
+CREATE FUNCTION rag_v2_immutable_external_exact30_voyage_document_id(
+  p_source_id text,
+  p_source_revision_id text
+)
+RETURNS text
+LANGUAGE plpgsql
+IMMUTABLE
+STRICT
+SET search_path = pg_catalog, public
+AS $rag_v2_immutable_external_exact30_voyage_document_id$
+BEGIN
+  IF p_source_id !~ '^src_[a-z0-9][a-z0-9_-]{2,95}$'
+     OR p_source_revision_id !~ '^srv_exact30_external_[0-9a-f]{32}$' THEN
+    RAISE EXCEPTION 'immutable RAG v2 external exact-30 Voyage document identity arguments are invalid'
+      USING ERRCODE = '22023';
+  END IF;
+  RETURN 'doc_exact30_external_' || substr(encode(public.digest(
+    convert_to('s4_7c_external_v1', 'UTF8') || decode('00', 'hex') ||
+    convert_to(p_source_id, 'UTF8') || decode('00', 'hex') ||
+    convert_to(p_source_revision_id, 'UTF8'),
+    'sha256'
+  ), 'hex'), 1, 32);
+END;
+$rag_v2_immutable_external_exact30_voyage_document_id$;
+ALTER FUNCTION rag_v2_immutable_external_exact30_voyage_document_id(text, text) OWNER TO flyway;
+REVOKE ALL PRIVILEGES ON FUNCTION rag_v2_immutable_external_exact30_voyage_document_id(text, text) FROM PUBLIC;
 
 CREATE FUNCTION rag_v2_immutable_external_exact30_voyage_source_member_digest(
   p_component_generation_id text,
@@ -226,7 +287,8 @@ BEGIN
        source_record.source_id,
        source_record.canonical_https_url,
        source_record.raw_content_sha256,
-       source_record.exact30_source_card_sha256
+       source_record.exact30_source_card_sha256,
+       source_record.canonical_text_sha256
      ) IS NOT TRUE THEN
     RETURN NULL;
   END IF;
@@ -290,6 +352,8 @@ DECLARE
   generation_record public.rag_v2_immutable_component_generations%ROWTYPE;
   manifest_record public.rag_v2_immutable_external_exact30_voyage_component_manifests%ROWTYPE;
   observed_member_digests text[];
+  observed_source_ids text[];
+  expected_source_ids text[];
   observed_source_total integer;
   observed_chunk_total integer;
   expected_manifest_hash text;
@@ -320,9 +384,10 @@ BEGIN
         p_component_generation_id, selected_source.source_revision_id
       ) ORDER BY pg_catalog.convert_to(selected_source.source_id, 'UTF8')
     ),
+    array_agg(selected_source.source_id ORDER BY pg_catalog.convert_to(selected_source.source_id, 'UTF8')),
     count(*)::integer,
     coalesce(sum(selected_source.chunk_count), 0)::integer
-  INTO observed_member_digests, observed_source_total, observed_chunk_total
+  INTO observed_member_digests, observed_source_ids, observed_source_total, observed_chunk_total
   FROM (
     SELECT source.source_revision_id, source.source_id, count(membership.chunk_id)::integer AS chunk_count
     FROM public.rag_v2_immutable_generation_memberships AS membership
@@ -341,14 +406,21 @@ BEGIN
         source.source_id,
         source.canonical_https_url,
         source.raw_content_sha256,
-        source.exact30_source_card_sha256
+        source.exact30_source_card_sha256,
+        source.canonical_text_sha256
       ) IS TRUE
     GROUP BY source.source_revision_id, source.source_id
   ) AS selected_source;
+  SELECT array_agg(allowed.source_id ORDER BY pg_catalog.convert_to(allowed.source_id, 'UTF8'))
+  INTO expected_source_ids
+  FROM public.rag_v2_immutable_external_exact30_source_allowlist AS allowed;
   IF observed_member_digests IS NULL
+     OR observed_source_ids IS NULL
+     OR expected_source_ids IS NULL
      OR array_position(observed_member_digests, NULL) IS NOT NULL
      OR observed_source_total <> generation_record.expected_source_count
      OR observed_chunk_total <> generation_record.expected_chunk_count
+     OR observed_source_ids IS DISTINCT FROM expected_source_ids
      OR observed_member_digests IS DISTINCT FROM manifest_record.member_digests THEN
     RETURN false;
   END IF;
@@ -662,8 +734,18 @@ BEGIN
        payload_source_id,
        payload_canonical_https_url,
        payload_raw_content_sha256,
+       payload_source_card_sha256,
+       payload_canonical_text_sha256
+     ) IS NOT TRUE
+     OR payload_source_revision_id <> public.rag_v2_immutable_external_exact30_voyage_source_revision_id(
+       payload_source_id,
+       payload_raw_content_sha256,
        payload_source_card_sha256
-     ) IS NOT TRUE THEN
+     )
+     OR payload_document_id <> public.rag_v2_immutable_external_exact30_voyage_document_id(
+       payload_source_id,
+       payload_source_revision_id
+     ) THEN
     RAISE EXCEPTION 'immutable RAG v2 external exact-30 Voyage source metadata is invalid'
       USING ERRCODE = '22023';
   END IF;
@@ -719,6 +801,55 @@ BEGIN
      OR expected_manifest_record.generation_hash <> payload_generation_hash THEN
     RAISE EXCEPTION 'immutable RAG v2 external exact-30 Voyage member manifest conflicts'
       USING ERRCODE = '23505';
+  END IF;
+
+  -- Restricted writer를 직접 호출해도 source identity/cardinality/ordinal이 repository의 순서에
+  -- 의존하지 않게 한다. 이전 source가 없는 out-of-order payload와 동일 source의 새 revision은
+  -- source/chunk cache에 쓰기 전에 거부한다.
+  IF EXISTS (
+       SELECT 1
+       FROM public.rag_v2_immutable_generation_memberships AS membership
+       JOIN public.rag_v2_immutable_source_revisions AS staged_source
+         ON staged_source.source_revision_id = membership.source_revision_id
+       WHERE membership.component_generation_id = payload_generation_id
+         AND membership.component_scope = 'EXACT30'
+         AND membership.owner_user_id IS NULL
+         AND staged_source.source_scope = 'EXACT30'
+         AND staged_source.owner_user_id IS NULL
+         AND staged_source.source_id = payload_source_id
+         AND staged_source.source_revision_id <> payload_source_revision_id
+     ) THEN
+    RAISE EXCEPTION 'immutable RAG v2 external exact-30 Voyage duplicate source is invalid'
+      USING ERRCODE = '23514';
+  END IF;
+  IF NOT EXISTS (
+       SELECT 1
+       FROM public.rag_v2_immutable_generation_memberships AS membership
+       WHERE membership.component_generation_id = payload_generation_id
+         AND membership.component_scope = 'EXACT30'
+         AND membership.owner_user_id IS NULL
+         AND membership.source_revision_id = payload_source_revision_id
+     )
+     AND EXISTS (
+       SELECT 1
+       FROM public.rag_v2_immutable_external_exact30_source_allowlist AS required_source
+       WHERE pg_catalog.convert_to(required_source.source_id, 'UTF8')
+             < pg_catalog.convert_to(payload_source_id, 'UTF8')
+         AND NOT EXISTS (
+           SELECT 1
+           FROM public.rag_v2_immutable_generation_memberships AS membership
+           JOIN public.rag_v2_immutable_source_revisions AS staged_source
+             ON staged_source.source_revision_id = membership.source_revision_id
+           WHERE membership.component_generation_id = payload_generation_id
+             AND membership.component_scope = 'EXACT30'
+             AND membership.owner_user_id IS NULL
+             AND staged_source.source_scope = 'EXACT30'
+             AND staged_source.owner_user_id IS NULL
+             AND staged_source.source_id = required_source.source_id
+         )
+     ) THEN
+    RAISE EXCEPTION 'immutable RAG v2 external exact-30 Voyage canonical source order is invalid'
+      USING ERRCODE = '23514';
   END IF;
 
   SELECT run.state INTO existing_run_state

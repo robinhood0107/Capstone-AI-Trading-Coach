@@ -16,6 +16,7 @@ class RagV2RuntimeService(
     private val jdbcProvider: ObjectProvider<NamedParameterJdbcTemplate>,
     private val cursorPort: RagHistoryCursorPort,
     private val cryptoPort: RagHistoryCryptoPort,
+    private val evaluationPort: RagV2EvaluationPort,
     private val objectMapper: ObjectMapper,
 ) {
     /**
@@ -152,7 +153,7 @@ class RagV2RuntimeService(
      * v2는 full bundle이 준비되기 전 OA/private chunk를 빼고 답하지 않는다.
      * client가 corpus/profile/topK를 고르는 표면도 parser 단계에서 닫혀 있다.
      */
-    @Transactional(readOnly = true)
+    @Transactional
     fun ask(
         ownerUserId: String,
         requestId: String,
@@ -163,15 +164,46 @@ class RagV2RuntimeService(
         if (status.state != "FULL_READY") {
             throw RagV2CorpusNotReadyException()
         }
+        val scope = issueRetrievalScope(ownerUserId, requestId, command.topics)
+        val evaluation =
+            evaluationPort.evaluate(
+                command,
+                RagV2EvaluationContext(requestId = requestId, ownerScopeClaim = scope.scopeClaimId),
+            )
+        requireBgeOnlyBoundary(evaluation, scope)
+        if (evaluation.generationStatus != RagGenerationStatus.RETRIEVAL_ONLY) {
+            return RagV2Answer(
+                requestId = requestId,
+                answerId = null,
+                generationStatus = evaluation.generationStatus,
+                answer = null,
+                citationCoverage = evaluation.citationCoverage,
+                citations = emptyList(),
+                retrievalFailure = evaluation.retrievalFailure,
+                guardrailFlags = evaluation.guardrailFlags,
+            )
+        }
+
+        // transaction_timestamp를 AAD와 DB row에 같은 값으로 사용해 ciphertext row transplant를 막는다.
+        val createdAt = databaseNow()
+        val identity = RagHistoryIdentity(id("rag"), ownerUserId, createdAt)
+        val encrypted =
+            cryptoPort.encrypt(
+                identity = identity,
+                question = command.question,
+                // v2 BGE는 answer generator가 아니다. AES-GCM으로 빈 값을 암호화해 history shape만 보존한다.
+                answer = "",
+            )
+        val canonicalCitations = persistRetrievalOnlyHistory(identity, requestId, command, scope, evaluation, encrypted)
         return RagV2Answer(
             requestId = requestId,
-            answerId = null,
-            generationStatus = RagGenerationStatus.GENERATION_UNAVAILABLE,
+            answerId = identity.answerId,
+            generationStatus = RagGenerationStatus.RETRIEVAL_ONLY,
             answer = null,
-            citationCoverage = 0.0,
-            citations = emptyList(),
+            citationCoverage = 1.0,
+            citations = canonicalCitations,
             retrievalFailure = false,
-            guardrailFlags = listOf("GENERATION_UNAVAILABLE"),
+            guardrailFlags = emptyList(),
         )
     }
 
@@ -285,13 +317,187 @@ class RagV2RuntimeService(
         return RagV2HistoryDetail(
             answerId = identity.answerId,
             question = decrypted.question,
-            answer = decrypted.answer,
+            // retrieval-only row는 intentional empty AES-GCM payload이며 LLM answer가 없다는 contract를 유지한다.
+            answer = decrypted.answer.takeIf { getString("generation_status") == RagGenerationStatus.ANSWERED.name },
             generationStatus = RagGenerationStatus.valueOf(getString("generation_status")),
             citations = citations(getString("citations")),
             createdAt = identity.createdAt,
             expiresAt = instant("expires_at"),
         )
     }
+
+    /**
+     * claim은 decision_app만 발급한다. Python에는 owner ID가 아니라 opaque claim만 전달되며 DB가 현재
+     * immutable pointer/profile/topic을 capture한다.
+     */
+    private fun issueRetrievalScope(
+        ownerUserId: String,
+        requestId: String,
+        topics: List<String>,
+    ): RagV2RetrievalScope {
+        val jdbc = jdbc()
+        setActor(ownerUserId)
+        val topicsJson = objectMapper.writeValueAsString(topics)
+        return jdbc
+            .query(
+                """
+                SELECT *
+                FROM issue_rag_v2_retrieval_scope(
+                  :ownerUserId,
+                  :requestId,
+                  ARRAY(SELECT jsonb_array_elements_text(CAST(:topicsJson AS jsonb)))
+                )
+                """.trimIndent(),
+                mapOf(
+                    "ownerUserId" to ownerUserId,
+                    "requestId" to requestId,
+                    "topicsJson" to topicsJson,
+                ),
+            ) { result, _ ->
+                RagV2RetrievalScope(
+                    scopeClaimId = result.getString("scope_claim_id"),
+                    exact30GenerationId = result.getString("exact30_generation_id"),
+                    oa112GenerationId = result.getString("oa112_generation_id"),
+                    ownerGenerationId = result.getString("owner_private_generation_id"),
+                    embeddingProfileId = result.getString("embedding_profile_id"),
+                    policyVersion = result.getLong("policy_version"),
+                )
+            }.singleOrNull()
+            ?: throw RagGuardHistoryUnavailableException()
+    }
+
+    /**
+     * gRPC adapter도 검증하지만 persistence 직전 같은 low-authority invariants를 다시 확인한다.
+     * 특히 v2 path는 Vertex/Voyage/OpenAI 생성 또는 provider fallback을 절대 허용하지 않는다.
+     */
+    private fun requireBgeOnlyBoundary(
+        evaluation: RagV2EvaluationResult,
+        scope: RagV2RetrievalScope,
+    ) {
+        require(evaluation.providerPhysicalAttempts == 0)
+        require(evaluation.geminiPhysicalCalls == 0)
+        require(evaluation.openAiPhysicalCalls == 0)
+        require(evaluation.voyagePhysicalCalls == 0)
+        require(!evaluation.externalProviderCandidate)
+        require(evaluation.citationCoverage in 0.0..1.0)
+        require(evaluation.guardrailFlags.size <= MAX_GUARDRAIL_FLAGS)
+        require(evaluation.guardrailFlags.distinct().size == evaluation.guardrailFlags.size)
+        require(evaluation.guardrailFlags.all(FLAG::matches))
+        require(evaluation.citations.size <= MAX_CITATIONS)
+        when (evaluation.generationStatus) {
+            RagGenerationStatus.RETRIEVAL_ONLY -> {
+                require(evaluation.answer == null)
+                require(evaluation.citations.isNotEmpty())
+                require(evaluation.citationCoverage == 1.0)
+                require(!evaluation.retrievalFailure)
+                require(evaluation.guardrailFlags.isEmpty())
+                require(evaluation.failureCode.isEmpty())
+                require(evaluation.exact30GenerationId == scope.exact30GenerationId)
+                require(evaluation.oa112GenerationId == scope.oa112GenerationId)
+                require(evaluation.ownerGenerationId == scope.ownerGenerationId)
+                require(evaluation.embeddingProfileId == scope.embeddingProfileId)
+                require(evaluation.policyVersion == scope.policyVersion)
+                evaluation.citations.forEachIndexed { index, citation ->
+                    require(citation.citationId == "cit_${index + 1}")
+                    require(CHUNK_ID.matches(citation.chunkRevisionId))
+                    require(citation.generationId in setOf(scope.exact30GenerationId, scope.oa112GenerationId, scope.ownerGenerationId))
+                }
+            }
+            RagGenerationStatus.RETRIEVAL_FAILURE ->
+                require(
+                    evaluation.answer == null &&
+                        evaluation.citations.isEmpty() &&
+                        evaluation.citationCoverage == 0.0 &&
+                        evaluation.retrievalFailure &&
+                        FAILURE_CODE.matches(evaluation.failureCode),
+                )
+            RagGenerationStatus.BLOCKED_SENSITIVE,
+            RagGenerationStatus.BLOCKED_ADVICE,
+            RagGenerationStatus.GENERATION_UNAVAILABLE,
+            ->
+                require(
+                    evaluation.answer == null &&
+                        evaluation.citations.isEmpty() &&
+                        evaluation.citationCoverage == 0.0 &&
+                        !evaluation.retrievalFailure &&
+                        FAILURE_CODE.matches(evaluation.failureCode),
+                )
+            // BGE-only v2 cannot return an LLM-generated answer before the separately gated Vertex path exists.
+            RagGenerationStatus.ANSWERED -> throw RagGuardHistoryUnavailableException()
+        }
+    }
+
+    /**
+     * V35 receives citation identities only, resolves safe title/document metadata itself, and atomically writes
+     * the encrypted row. Canonical raw text, local path, and gRPC display data are never SQL inputs here.
+     */
+    private fun persistRetrievalOnlyHistory(
+        identity: RagHistoryIdentity,
+        requestId: String,
+        command: RagAskCommand,
+        scope: RagV2RetrievalScope,
+        evaluation: RagV2EvaluationResult,
+        encrypted: RagEncryptedHistoryPayload,
+    ): List<JsonNode> {
+        val receipt =
+            objectMapper.writeValueAsString(
+                evaluation.citations.mapIndexed { index, citation ->
+                    linkedMapOf(
+                        "ordinal" to index + 1,
+                        "citationId" to citation.citationId,
+                        "sourceId" to citation.sourceId,
+                        "sourceRevisionId" to citation.sourceRevisionId,
+                        "chunkRevisionId" to citation.chunkRevisionId,
+                        "generationId" to citation.generationId,
+                        "citationKind" to citation.citationKind,
+                    )
+                },
+            )
+        val canonical =
+            jdbc().queryForObject(
+                """
+                SELECT persist_rag_v2_immutable_retrieval_history(
+                  :ownerUserId, :answerId, :requestId, :answerMode, :sessionId, :scopeClaimId,
+                  1.0, ARRAY[]::text[], :kekVersion,
+                  :wrapNonce, :wrappedDek, :wrapTag,
+                  :questionNonce, :questionCiphertext, :questionTag,
+                  :answerNonce, :answerCiphertext, :answerTag,
+                  :createdAt, CAST(:citations AS jsonb)
+                )
+                """.trimIndent(),
+                mapOf(
+                    "ownerUserId" to identity.ownerUserId,
+                    "answerId" to identity.answerId,
+                    "requestId" to requestId,
+                    "answerMode" to command.answerMode.name,
+                    "sessionId" to requestId,
+                    "scopeClaimId" to scope.scopeClaimId,
+                    "kekVersion" to encrypted.kekVersion,
+                    "wrapNonce" to encrypted.wrapNonce,
+                    "wrappedDek" to encrypted.wrappedDek,
+                    "wrapTag" to encrypted.wrapTag,
+                    "questionNonce" to encrypted.question.nonce,
+                    "questionCiphertext" to encrypted.question.ciphertext,
+                    "questionTag" to encrypted.question.tag,
+                    "answerNonce" to encrypted.answer.nonce,
+                    "answerCiphertext" to encrypted.answer.ciphertext,
+                    "answerTag" to encrypted.answer.tag,
+                    "createdAt" to OffsetDateTime.ofInstant(identity.createdAt, ZoneOffset.UTC),
+                    "citations" to receipt,
+                ),
+                String::class.java,
+            ) ?: throw RagGuardHistoryUnavailableException()
+        return citations(canonical)
+    }
+
+    private fun databaseNow(): java.time.Instant =
+        jdbc()
+            .queryForObject(
+                "SELECT transaction_timestamp()",
+                emptyMap<String, Any>(),
+                OffsetDateTime::class.java,
+            )?.toInstant()
+            ?: throw RagGuardHistoryUnavailableException()
 
     private fun citations(value: String): List<JsonNode> =
         objectMapper
@@ -327,4 +533,12 @@ class RagV2RuntimeService(
         val effective: Boolean,
         val state: String,
     )
+
+    private companion object {
+        val FLAG = Regex("^[A-Z0-9_]{1,64}$")
+        val FAILURE_CODE = Regex("^[A-Z0-9_]{1,96}$")
+        val CHUNK_ID = Regex("^rag_v2_chk_[0-9a-f]{32}$")
+        const val MAX_CITATIONS = 5
+        const val MAX_GUARDRAIL_FLAGS = 8
+    }
 }

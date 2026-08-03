@@ -104,6 +104,17 @@ app:
       response-max-bytes: 262144
       concurrency-max: 8
       retry-count: 0
+  rag-v2:
+    # v2는 local BGE retrieval-only process와만 연결한다. Vertex/Voyage 등 외부 provider는 이 transport에 없다.
+    grpc:
+      enabled: ${RAG_V2_GRPC_ENABLED:false}
+      target: ${RAG_V2_GRPC_TARGET:127.0.0.1:50054}
+      shared-secret: ${RAG_V2_GRPC_SHARED_SECRET:}
+      deadline-millis: 15000
+      request-max-bytes: 65536
+      response-max-bytes: 262144
+      concurrency-max: 8
+      retry-count: 0
   brokerage:
     idempotency-scope-hmac-key: ${BROKERAGE_IDEMPOTENCY_SCOPE_HMAC_KEY}
     # DB에는 digest만 migration으로 저장하고 raw capability는 prepared bind로만 전달한다.

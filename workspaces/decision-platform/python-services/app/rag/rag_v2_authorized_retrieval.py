@@ -413,7 +413,12 @@ def _candidate_citation_shape_is_valid(candidate: RagV2RetrievalCandidate) -> bo
             isinstance(candidate.title, str)
             and 1 <= len(candidate.title) <= 1_024
             and _safe_public_https(candidate.canonical_https_url)
-            and candidate.document_id is None
+            # Public source document IDs are internal immutable graph identities. They may be
+            # present in the DB row but are never emitted in PublicWebCitation.
+            and (
+                candidate.document_id is None
+                or _DOCUMENT_ID.fullmatch(candidate.document_id) is not None
+            )
             and candidate.sanitized_display_name is None
         )
     return (

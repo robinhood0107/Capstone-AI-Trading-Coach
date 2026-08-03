@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import json
 import os
 import re
@@ -433,6 +434,12 @@ def _validate_public_https_url(value: str) -> None:
     except ValueError as error:
         raise Oa112ActiveRegistryError("OA112_REGISTRY_INVALID") from error
     hostname = (parsed.hostname or "").lower()
+    try:
+        ipaddress.ip_address(hostname)
+    except ValueError:
+        is_ip_literal = False
+    else:
+        is_ip_literal = True
     if (
         parsed.scheme != "https"
         or not hostname
@@ -445,7 +452,7 @@ def _validate_public_https_url(value: str) -> None:
         or any(segment in {".", ".."} for segment in parsed.path.split("/"))
         or hostname in {"localhost", "0.0.0.0", "::1"}
         or hostname.endswith((".localhost", ".local", ".internal", ".home.arpa"))
-        or re.fullmatch(r"[0-9.]+", hostname) is not None
+        or is_ip_literal
     ):
         raise Oa112ActiveRegistryError("OA112_REGISTRY_INVALID")
 

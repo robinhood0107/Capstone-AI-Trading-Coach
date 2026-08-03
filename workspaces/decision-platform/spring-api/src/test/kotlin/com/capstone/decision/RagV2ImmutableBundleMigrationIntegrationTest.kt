@@ -1079,6 +1079,134 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
     }
 
     @Test
+    fun `v2 retrieval scope pins the active public bundle and query role only receives bounded rows`() {
+        seedEvaluatedPublicComponents()
+        adminConnection().use { connection ->
+            connection.createStatement().use { statement ->
+                statement.execute(
+                    """
+                    update rag_v2_immutable_source_revisions
+                    set retrieval_topics = array['FINANCIAL_ENGINEERING'],
+                        citation_title = 'Fixture ' || source_id
+                    where source_scope in ('EXACT30', 'OA112')
+                    """.trimIndent(),
+                )
+            }
+        }
+        assertEquals(
+            2L,
+            callLong(
+                "decision_rag_admin",
+                RAG_ADMIN_PASSWORD,
+                """
+                select activate_rag_v2_immutable_public_base(
+                  '$EXACT_GENERATION', '$OA_GENERATION', 1, '$PUBLIC_ACTIVATION_RECEIPT'
+                )
+                """.trimIndent(),
+            ),
+        )
+
+        val scopeClaimId = issueRetrievalScope("usr_demo_user", "rag-v2-session-0001")
+        assertEquals("rvs_", scopeClaimId.take(4))
+        DriverManager.getConnection(postgres.jdbcUrl, "decision_rag_query", RAG_QUERY_PASSWORD).use { connection ->
+            assertEquals(
+                EXACT_GENERATION,
+                callSingleRow(
+                    connection,
+                    """
+                    select exact30_generation_id
+                    from read_rag_v2_retrieval_scope(
+                      '$scopeClaimId', 'usr_demo_user', 'rag-v2-session-0001'
+                    )
+                    """.trimIndent(),
+                ),
+            )
+            assertEquals(
+                "src_exact_001",
+                callSingleRow(
+                    connection,
+                    """
+                    select source_id
+                    from search_authorized_rag_v2_exact(
+                      '$scopeClaimId',
+                      'usr_demo_user',
+                      'rag-v2-session-0001',
+                      array['FINANCIAL_ENGINEERING'],
+                      array['src_exact_001']
+                    )
+                    """.trimIndent(),
+                ),
+            )
+            assertEquals(
+                "30",
+                callSingleRow(
+                    connection,
+                    """
+                    select count(*)
+                    from search_authorized_rag_v2_lexical(
+                      '$scopeClaimId',
+                      'usr_demo_user',
+                      'rag-v2-session-0001',
+                      array['FINANCIAL_ENGINEERING'],
+                      'exact fixture'
+                    )
+                    """.trimIndent(),
+                ),
+            )
+            assertEquals(
+                "30",
+                callSingleRow(
+                    connection,
+                    """
+                    select count(*)
+                    from search_authorized_rag_v2_dense(
+                      '$scopeClaimId',
+                      'usr_demo_user',
+                      'rag-v2-session-0001',
+                      array['FINANCIAL_ENGINEERING'],
+                      (array[1::real] || array_fill(0::real, array[1023]))::vector
+                    )
+                    """.trimIndent(),
+                ),
+            )
+        }
+        assertPermissionDenied(
+            "decision_rag_query",
+            RAG_QUERY_PASSWORD,
+            "select * from rag_v2_retrieval_scope_claims",
+        )
+
+        seedRefreshPublicComponents()
+        assertEquals(
+            3L,
+            callLong(
+                "decision_rag_admin",
+                RAG_ADMIN_PASSWORD,
+                """
+                select activate_rag_v2_immutable_public_base(
+                  '$REFRESH_EXACT_GENERATION', '$REFRESH_OA_GENERATION', 2, '$PUBLIC_REFRESH_ACTIVATION_RECEIPT'
+                )
+                """.trimIndent(),
+            ),
+        )
+        val staleScope =
+            assertThrows<SQLException> {
+                DriverManager.getConnection(postgres.jdbcUrl, "decision_rag_query", RAG_QUERY_PASSWORD).use { connection ->
+                    callSingleRow(
+                        connection,
+                        """
+                        select exact30_generation_id
+                        from read_rag_v2_retrieval_scope(
+                          '$scopeClaimId', 'usr_demo_user', 'rag-v2-session-0001'
+                        )
+                        """.trimIndent(),
+                    )
+                }
+            }
+        assertEquals("55000", staleScope.sqlState)
+    }
+
+    @Test
     fun compositeOwnerGraphRejectsCrossOwnerChunkAndBundleReferences() {
         seedEvaluatedPublicComponents()
         seedOwnerDeletionFixtures()
@@ -1152,6 +1280,35 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
             }
         }
     }
+
+    private fun issueRetrievalScope(
+        ownerUserId: String,
+        sessionId: String,
+    ): String =
+        DriverManager.getConnection(postgres.jdbcUrl, "decision_app", APP_PASSWORD).use { connection ->
+            connection.autoCommit = false
+            try {
+                connection.prepareStatement("select set_config('app.actor_user_id', ?, false)").use { statement ->
+                    statement.setString(1, ownerUserId)
+                    statement.execute()
+                }
+                val scopeClaimId =
+                    callSingleRow(
+                        connection,
+                        """
+                        select scope_claim_id
+                        from issue_rag_v2_retrieval_scope(
+                          '$ownerUserId', '$sessionId', array['FINANCIAL_ENGINEERING']
+                        )
+                        """.trimIndent(),
+                    )
+                connection.commit()
+                scopeClaimId
+            } catch (error: Throwable) {
+                connection.rollback()
+                throw error
+            }
+        }
 
     private fun recordConsent(
         ownerUserId: String,
@@ -1988,6 +2145,7 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
         private const val APP_PASSWORD = "app-test"
         private const val RAG_WRITER_PASSWORD = "rag-writer-test"
         private const val RAG_ADMIN_PASSWORD = "rag-admin-test"
+        private const val RAG_QUERY_PASSWORD = "rag-query-test"
         private const val FLYWAY_PASSWORD = "flyway-test"
         private const val EXACT_GENERATION = "rgr_11111111111111111111111111111111"
         private const val OA_GENERATION = "rgr_22222222222222222222222222222222"

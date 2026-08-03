@@ -63,9 +63,9 @@ class FlywayMigrationIntegrationTest(
     @Autowired private val riskSnapshotPort: RiskSnapshotPort,
 ) : SpringApiIntegrationTestBase() {
     @Test
-    fun `clean database applies V1 through V24 migrations and creates required objects`() {
+    fun `clean database applies V1 through V25 migrations and creates required objects`() {
         val versions = queryStrings("select version from flyway_schema_history where success order by installed_rank")
-        assertEquals((1..24).map(Int::toString), versions)
+        assertEquals((1..25).map(Int::toString), versions)
 
         val requiredTables =
             listOf(
@@ -155,6 +155,23 @@ class FlywayMigrationIntegrationTest(
                 "latest_analyst_revision_evidence",
                 "latest_market_cause_evidence",
                 "latest_cross_market_risk_snapshots",
+                "rag_v2_immutable_source_revisions",
+                "rag_v2_immutable_chunks",
+                "rag_v2_immutable_component_generations",
+                "rag_v2_immutable_generation_memberships",
+                "rag_v2_immutable_generation_embeddings",
+                "rag_v2_immutable_embedding_cache",
+                "rag_v2_immutable_materialization_runs",
+                "rag_v2_immutable_source_receipts",
+                "rag_v2_immutable_chunk_receipts",
+                "rag_v2_immutable_embedding_receipts",
+                "rag_v2_immutable_public_bundle_pointers",
+                "rag_v2_immutable_bundles",
+                "rag_v2_immutable_owner_bundle_pointers",
+                "rag_v2_immutable_import_tickets",
+                "rag_v2_immutable_activation_receipts",
+                "rag_v2_immutable_deletion_receipts",
+                "rag_v2_immutable_owner_document_deletion_tombstones",
             )
         requiredTables.forEach { tableName ->
             assertTrue(tableExists(tableName), "expected table $tableName to exist")

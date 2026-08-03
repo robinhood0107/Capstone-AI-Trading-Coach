@@ -65,11 +65,28 @@ class RagSourceRegistryMigrationIntegrationTest {
                         "rag_v2_document_deletion_receipts",
                         "rag_v2_answer_history",
                         "rag_v2_answer_citations",
+                        "rag_v2_immutable_source_revisions",
+                        "rag_v2_immutable_chunks",
+                        "rag_v2_immutable_component_generations",
+                        "rag_v2_immutable_generation_memberships",
+                        "rag_v2_immutable_generation_embeddings",
+                        "rag_v2_immutable_embedding_cache",
+                        "rag_v2_immutable_materialization_runs",
+                        "rag_v2_immutable_source_receipts",
+                        "rag_v2_immutable_chunk_receipts",
+                        "rag_v2_immutable_embedding_receipts",
+                        "rag_v2_immutable_public_bundle_pointers",
+                        "rag_v2_immutable_bundles",
+                        "rag_v2_immutable_owner_bundle_pointers",
+                        "rag_v2_immutable_import_tickets",
+                        "rag_v2_immutable_activation_receipts",
+                        "rag_v2_immutable_deletion_receipts",
+                        "rag_v2_immutable_owner_document_deletion_tombstones",
                     )
                 assertThat(queryStrings(connection, normalizedTableQuery))
                     .containsAll(expectedTables)
                 assertThat(queryString(connection, "select max(version::integer) from flyway_schema_history where success"))
-                    .isEqualTo("24")
+                    .isEqualTo("25")
 
                 expectedTables.forEach { table ->
                     assertThat(

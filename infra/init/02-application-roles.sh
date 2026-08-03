@@ -921,9 +921,30 @@ BEGIN
             read_rag_v2_corpus_status(text),
             read_rag_v2_history_metadata(text, timestamptz, text, integer),
             read_rag_v2_history_detail(text, text),
-            delete_owned_rag_v2_history(text, text),
-            delete_owner_rag_v2_document(text, text, text, text)
+            delete_owned_rag_v2_history(text, text)
         TO decision_app;
+        REVOKE ALL PRIVILEGES ON FUNCTION
+            delete_owner_rag_v2_document(text, text, text, text)
+        FROM decision_app;
+    END IF;
+    IF to_regprocedure(
+        'public.issue_rag_v2_immutable_import_ticket(text,text,text,text)'
+    ) IS NOT NULL THEN
+        -- V25의 owner capability는 raw table grant 없이 app→writer→admin 세 role로 나눈다.
+        GRANT EXECUTE ON FUNCTION
+            record_rag_v2_immutable_consent(text, text, text, text),
+            issue_rag_v2_immutable_import_ticket(text, text, text, text)
+        TO decision_app;
+        GRANT EXECUTE ON FUNCTION
+            consume_rag_v2_immutable_import_ticket(text, text, text, text, text)
+        TO decision_rag_writer;
+        GRANT EXECUTE ON FUNCTION
+            activate_rag_v2_immutable_public_base(text, text, bigint, text),
+            activate_rag_v2_immutable_owner_bundle(text, text, text, bigint, text, text),
+            delete_rag_v2_immutable_owner_document(
+                text, text, text, text, bigint, text, text, text
+            )
+        TO decision_rag_admin;
     END IF;
 END
 $decision_runtime_function_privileges$;

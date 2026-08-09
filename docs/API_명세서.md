@@ -1126,9 +1126,12 @@ generation과 제출 직전 generation을 다시 비교한다.
 > 조사한 42개는 integration target(39 machine 후보 계열 + 3 manual-link 원천)이지 공개
 > API나 사용 가능한 entitlement 수가 아니다. 로컬 KIS catalog 338개·명시적 모의지원
 > 43개와 이번 disabled adapter 후보 18개도 서로 다른 집계다. 현재 S4.8 활성/live
-> provider adapter 수는 0이고 18개 후보는 offline fixture 행으로만 존재한다. current working tree V50은
-> 정확히 9개 Core 6/Optional 3 lane의 typed state와 sanitized append-only projection만 구현하며 entitlement,
-> endpoint 또는 physical call을 만들지 않는다. exact 42개 행과 exact 18개 allowlist의 authority는
+> Core 6 provider adapter 수는 0이고 18개 후보는 offline fixture 행으로만 존재한다. V50은 정확히
+> 9개 Core 6/Optional 3 lane의 typed state와 sanitized append-only projection만 구현한다. Optional 3에는
+> Finnhub Recommendation/Earnings, Twelve Data, Massive의 v2 local one-shot executor가 있지만 canonical
+> short-expiry packet과 exact clean HEAD/tree·CI/security evidence 없이는 physical call 0이며, packet은
+> fixed endpoint one operation/one physical call·retry/raw persistence 0만 허용한다. exact 42개 행과 exact
+> 18개 allowlist의 authority는
 > Git으로 추적하지 않는 로컬 전용 자료수급 레지스트리이며
 > 공개 API 명세에는 전체 inventory를 복제하지 않는다.
 

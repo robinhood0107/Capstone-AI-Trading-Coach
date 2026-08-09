@@ -96,8 +96,12 @@
   external embedding/external generation permission과 actual rights/hash evidence가 모두 필요하다.
   RAG v2 consent/import, Voyage `voyage-context-4` 1024, Vertex ADC/service-account
   `gemini-3.5-flash`, foreign-news(Finnhub personal-local/SEC/Fed/GDELT offline reference), Optional 3은
-  contract-only다. provider outbound, raw corpus, raw provider data, article metadata, Decision/Signal/
-  Risk/order/hash/S5 feature authority는 0이며 Core 6 exact set을 넓히지 않는다.
+  contract-only다. Optional 3만 `s4-8-optional3-probe-*-v2`의 local one-shot executor를 추가로
+  가진다. canonical short-expiry packet, exact clean HEAD/tree, CI/security digest가 모두 없거나
+  drift하면 provider outbound는 0이며, packet도 Finnhub Recommendation/Earnings, Twelve Data time
+  series, Massive previous-day aggregate의 fixed endpoint 한 번만 허용한다. raw corpus, raw provider
+  data, article metadata, Decision/Signal/Risk/order/hash/S5 feature authority는 계속 0이고 Core 6
+  exact set을 넓히지 않는다.
 
 ## Pre-S5 단독 실행 소유권 잠금
 

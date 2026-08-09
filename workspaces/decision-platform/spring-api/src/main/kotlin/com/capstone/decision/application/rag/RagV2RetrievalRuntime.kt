@@ -44,7 +44,8 @@ data class RagV2RetrievedCitation(
 )
 
 /**
- * local BGE retrieval-only result에는 provider attempt가 존재하지 않는다. Vertex answer generation은 별도 gate다.
+ * local BGE result에는 provider attempt가 없고, Voyage profile은 effective consent 아래 query attempt 하나만
+ * 기록할 수 있다. Vertex answer generation은 별도 gate다.
  */
 data class RagV2EvaluationResult(
     val generationStatus: RagGenerationStatus,

@@ -202,9 +202,21 @@ class PreS5RagNewsContractTest(unittest.TestCase):
             {
                 "/api/v2/rag/consents",
                 "/api/v2/rag/consent",
+                "/api/v2/rag/delete-tickets",
                 "/api/v2/rag/import-tickets",
+                "/api/v2/rag/vertex-preparations",
             },
             set(document["paths"]),
+        )
+        vertex_prepare = document["paths"]["/api/v2/rag/vertex-preparations"]["post"]
+        self.assertEqual("prepareRagV2VertexGeneration", vertex_prepare["operationId"])
+        self.assertEqual(
+            "rag-v2.openapi.json#/components/schemas/RagV2AskRequest",
+            vertex_prepare["requestBody"]["content"]["application/json"]["schema"]["$ref"],
+        )
+        self.assertEqual(
+            "#/components/schemas/RagV2VertexPreparation",
+            vertex_prepare["responses"]["201"]["content"]["application/json"]["schema"]["$ref"],
         )
         inherited = _load(ROOT / "contracts/catalogs/pre-s5-rag-news-contract.v1.json")[
             "ragV2"
@@ -227,6 +239,46 @@ class PreS5RagNewsContractTest(unittest.TestCase):
         self.assertTrue(ticket["singleUse"])
         self.assertFalse(ticket["ownerRawCopyAllowed"])
 
+        delete_request = _load(
+            ROOT / "contracts/examples/s4-rag-v2-delete-ticket-request-v1.valid.json"
+        )
+        delete_ticket = _load(
+            ROOT / "contracts/examples/s4-rag-v2-delete-ticket-v1.valid.json"
+        )
+        self.assertEqual(
+            [],
+            list(
+                self.validators["s4-rag-v2-delete-ticket-request-v1"].iter_errors(
+                    delete_request
+                )
+            ),
+        )
+        self.assertEqual(
+            [],
+            list(self.validators["s4-rag-v2-delete-ticket-v1"].iter_errors(delete_ticket)),
+        )
+        validate_semantics("s4-rag-v2-delete-ticket-v1", delete_ticket)
+        self.assertEqual(300, delete_ticket["ttlSeconds"])
+        self.assertTrue(delete_ticket["singleUse"])
+        self.assertTrue(delete_ticket["ownerBound"])
+        self.assertFalse(delete_ticket["ownerRawCopyAllowed"])
+
+        vertex_preparation = _load(
+            ROOT / "contracts/examples/s4-rag-v2-vertex-preparation-v1.valid.json"
+        )
+        self.assertEqual(
+            [],
+            list(
+                self.validators["s4-rag-v2-vertex-preparation-v1"].iter_errors(
+                    vertex_preparation
+                )
+            ),
+        )
+        validate_semantics("s4-rag-v2-vertex-preparation-v1", vertex_preparation)
+        self.assertEqual(120, vertex_preparation["scopeTtlSeconds"])
+        self.assertFalse(vertex_preparation["rawQuestionStored"])
+        self.assertFalse(vertex_preparation["rawEvidenceStored"])
+
     def test_voyage_vertex_and_generation_boundaries_are_contract_only(self) -> None:
         catalog = _load(ROOT / "contracts/catalogs/pre-s5-rag-news-contract.v1.json")
         voyage = catalog["ragV2"]["voyage"]
@@ -240,6 +292,27 @@ class PreS5RagNewsContractTest(unittest.TestCase):
         self.assertFalse(voyage["partialProfileMixAllowed"])
         self.assertTrue(voyage["orderedPrechunkedDocumentGroupsRequired"])
         self.assertEqual("FULL_BUNDLE_REBUILD_EVALUATE_CAS", voyage["generationFallback"])
+        self.assertEqual(
+            {
+                "artifactAutoDownloadAllowed": False,
+                "localArtifactOnly": True,
+                "packetHashBindingRequired": True,
+                "preflightExpectedInputTokenLedgerRequired": True,
+                "providerTokenCountCallAllowed": False,
+                "utf8ByteApproximationAllowed": False,
+            },
+            voyage["officialTokenizer"],
+        )
+        self.assertEqual(
+            {
+                "allowed": True,
+                "orderedGroupCount": 0,
+                "ownerScopeSha256": None,
+                "publicBaseOnly": True,
+                "sourceScope": "OWNER_PRIVATE",
+            },
+            voyage["ownerPrivateSentinel"],
+        )
         self.assertEqual("gemini-3.5-flash", vertex["modelId"])
         self.assertEqual(["ADC", "SERVICE_ACCOUNT"], vertex["authentication"])
         self.assertFalse(vertex["developerApiAllowed"])
@@ -253,6 +326,18 @@ class PreS5RagNewsContractTest(unittest.TestCase):
         self.assertEqual(0, vertex["retryCount"])
         self.assertFalse(vertex["rawResponseStored"])
         self.assertTrue(vertex["sanitizedUsageLedgerOnly"])
+        self.assertEqual(
+            {
+                "headerName": "X-Rag-V2-Vertex-Scope-Claim",
+                "packetOwnerIdentityStored": False,
+                "rawEvidenceStored": False,
+                "rawQuestionStored": False,
+                "sameParsedAskCommandFingerprintBound": True,
+                "sameRequestIdRequired": True,
+                "scopeTtlSeconds": 120,
+            },
+            vertex["preparedScopeControlPlane"],
+        )
 
     def test_foreign_news_response_has_no_decision_or_raw_authority(self) -> None:
         response = _load(
@@ -271,6 +356,12 @@ class PreS5RagNewsContractTest(unittest.TestCase):
         unavailable = copy.deepcopy(response)
         unavailable["status"] = "AVAILABLE"
         self.assertTrue(list(validator.iter_errors(unavailable)))
+
+        contradictory_status = copy.deepcopy(response)
+        contradictory_status["lanes"][0]["state"] = "AVAILABLE"
+        self.assertTrue(list(validator.iter_errors(contradictory_status)))
+        with self.assertRaisesRegex(ContractValidationError, "ABSTAIN"):
+            validate_semantics("foreign-news-sentiment-v1", contradictory_status)
 
     def test_foreign_news_lane_mapping_locks_transport_and_retention_boundaries(self) -> None:
         entitlement = _load(
@@ -439,7 +530,7 @@ class PreS5RagNewsContractTest(unittest.TestCase):
 
     def test_all_required_invalid_fixtures_fail_closed(self) -> None:
         self.assertGreaterEqual(len(INVALID_FIXTURE_PATHS), 16)
-        self.assertEqual(16, len(VALID_FIXTURE_PATHS))
+        self.assertEqual(19, len(VALID_FIXTURE_PATHS))
         for relative_path in sorted(INVALID_FIXTURE_PATHS):
             payload = _load(ROOT / relative_path)
             schema_id = Path(relative_path).name.split(".", maxsplit=1)[0]

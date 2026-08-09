@@ -24,6 +24,17 @@ if (-not (Test-Path -LiteralPath $Uv -PathType Leaf)) {
     throw 'RAG_UV_PINNED_BINARY_MISSING'
 }
 
+# owner identity, ticket, document ID, approved source path는 인증된 local control record만 공급한다.
+# wrapper 인자를 전달하면 이 경계가 노출되므로 command line data를 모두 거부한다.
+if ($RemainingArguments.Count -ne 0) {
+    if ($Command -like 'import-*') {
+        Write-Output '{"code":"IMPORT_ARGUMENTS_FORBIDDEN","state":"FAILED"}'
+    } else {
+        Write-Output '{"code":"CONTENT_COMMAND_INVALID","state":"FAILED"}'
+    }
+    exit 2
+}
+
 $Lane = 'cpu'
 if ($Command -eq 'import-auto') {
     $VideoNames = @(Get-CimInstance Win32_VideoController | ForEach-Object { $_.Name })

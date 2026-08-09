@@ -189,6 +189,30 @@ class LocalDocumentParser:
     ) -> dict[str, Any]:
         """owner가 보유한 regular file을 read-only로 파싱해 v1 Document IR dict를 반환한다."""
 
+        return self.parse_approved_document(
+            approved_root=approved_root,
+            relative_path=relative_path,
+            source_id=source_id,
+            source_revision_id=source_revision_id,
+            language_tags=language_tags,
+        )
+
+    def parse_approved_document(
+        self,
+        *,
+        approved_root: Path,
+        relative_path: str,
+        source_id: str,
+        source_revision_id: str,
+        language_tags: tuple[str, ...],
+    ) -> dict[str, Any]:
+        """approved local regular file을 path-free Document IR로 변환한다.
+
+        owner import와 OA raw cache는 같은 descriptor-safe regular-file reader를 사용한다. 이
+        entrypoint는 source 종류에 관계없이 raw path·bytes를 결과에 넣지 않고, parser/OCR의
+        resource 및 active-content 경계를 동일하게 적용한다.
+        """
+
         _validate_identity(source_id, source_revision_id, language_tags)
         try:
             read_result = read_owner_regular_file(

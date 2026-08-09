@@ -1105,7 +1105,8 @@ generation과 제출 직전 generation을 다시 비교한다.
 `GET /api/v1/risk/cross-market`
 
 > 계획 타당성: `PLAN_FEASIBILITY=GO_WITH_EXTERNAL_HARD_GATES`.
-> 현재 상태: `S4_8A=CONTRACT_LOCKED / S4_8_CORE6_V2=CONTRACT_ONLY / S4_8B_C=IMPLEMENTED_MERGE_CANDIDATE /
+> 현재 상태: `S4_8A=CONTRACT_LOCKED / S4_8_CORE6_V2=CONTRACT_LOCKED /
+> S4_8_CORE6_LOCAL_PROBE_RUNTIME=IMPLEMENTED_DRAFT / S4_8B_C=IMPLEMENTED_MERGE_CANDIDATE /
 > S4_8_CORE6_OPTIONAL3_LOCAL_RUNTIME=IMPLEMENTED_DRAFT(V50) / ENDPOINT_RUNTIME=NOT_IMPLEMENTED`.
 > 월 데이터 비용 목표는 `0원`, offline fixture와 지연/EOD가 우선이다. 기관용 데이터 제품과
 > 실시간 SOX/VIX feed는 post-P1 선택지이며 P1 완료 조건이 아니다. 새 agent framework·별도
@@ -1117,21 +1118,24 @@ generation과 제출 직전 generation을 다시 비교한다.
 > 완료 증거가 아니다. S4.8A main 병합과 post-merge CI 확인 뒤 S4.8B/C offline fixture,
 > V23 evidence store와 Spring snapshot read port를 구현했지만 endpoint와 RiskEngine은 연결하지 않는다.
 > provider/live account/live order physical call은 0이며 P1 권한은 `WARN_ONLY`다.
-> Core 6 v2 entitlement/probe/receipt은 KIS, OpenDART, SEC EDGAR, KRX, KOFIA, ECOS의 future
-> local-only operator boundary일 뿐이며, 이 GET endpoint·OpenAPI·adapter·provider fan-out을
-> 활성화하지 않는다. OpenDART/ECOS는 sanitized projection-only, KOFIA는
-> `BLOCKED_NO_CREDENTIAL_OR_APPROVAL`, 모든 provider physical call은 0이다.
+> Core 6 v2 contract lock 위에는 KIS current-price, SEC EDGAR submissions/companyfacts, KRX
+> KOSPI/KOSDAQ daily의 local-only one-shot executor가 구현돼 있다. canonical short-expiry packet,
+> exact clean HEAD/tree·CI/security evidence, fixed operation, retry 0을 모두 만족하기 전에는 socket을
+> 열지 않으며 KIS cached-token miss는 OAuth token endpoint를 열지 않는다. OpenDART/ECOS는 sanitized
+> projection-only, KOFIA는 `BLOCKED_NO_CREDENTIAL_OR_APPROVAL`이고 이 GET endpoint·OpenAPI·
+> Decision/Signal/Risk/order provider fan-out은 계속 비활성이다. tracked code의 provider physical call은 0이다.
 > 2026-07-30 계획 확정 변경은 Markdown만 동기화하며 OpenAPI, schema, fixture, catalog,
 > migration, runtime code와 환경설정을 생성하거나 수정하는 구현 세션이 아니다.
 > 조사한 42개는 integration target(39 machine 후보 계열 + 3 manual-link 원천)이지 공개
 > API나 사용 가능한 entitlement 수가 아니다. 로컬 KIS catalog 338개·명시적 모의지원
 > 43개와 이번 disabled adapter 후보 18개도 서로 다른 집계다. 현재 S4.8 활성/live
-> Core 6 provider adapter 수는 0이고 18개 후보는 offline fixture 행으로만 존재한다. V50은 정확히
-> 9개 Core 6/Optional 3 lane의 typed state와 sanitized append-only projection만 구현한다. Optional 3에는
-> Finnhub Recommendation/Earnings, Twelve Data, Massive의 v2 local one-shot executor가 있지만 canonical
-> short-expiry packet과 exact clean HEAD/tree·CI/security evidence 없이는 physical call 0이며, packet은
-> fixed endpoint one operation/one physical call·retry/raw persistence 0만 허용한다. exact 42개 행과 exact
-> 18개 allowlist의 authority는
+> Core 6의 active hosted adapter 수는 0이며, local executor는 KIS 1·SEC EDGAR 2·KRX 2 fixed operation만
+> packet-gated로 조립한다. V50은 정확히 9개 Core 6/Optional 3 lane의 typed state와 sanitized append-only
+> projection만 구현하고, Core 6 lane은 selected successful receipt의 complete operation set만 read-only로
+> materialize한다. Optional 3에는 Finnhub Recommendation/Earnings, Twelve Data, Massive의 v2 local one-shot
+> executor가 있지만 canonical short-expiry packet과 exact clean HEAD/tree·CI/security evidence 없이는 physical
+> call 0이며, packet은 fixed endpoint one operation/one physical call·retry/raw persistence 0만 허용한다.
+> exact 42개 행과 exact 18개 allowlist의 authority는
 > Git으로 추적하지 않는 로컬 전용 자료수급 레지스트리이며
 > 공개 API 명세에는 전체 inventory를 복제하지 않는다.
 
@@ -1499,7 +1503,7 @@ materialization과 pointer transition은 별도 승인 packet이 필요한 CLI �
 
 ### 7.7 RAG v2 계약 상태와 공통 경계
 
-> 현재 상태: `S4_7D_CONTRACT=LOCKED / ACTIVE_V2_RUNTIME=IMPLEMENTED_DRAFT(current working tree V25–V51; FULL_READY 미선언) /
+> 현재 상태: `S4_7D_CONTRACT=LOCKED / ACTIVE_V2_RUNTIME=IMPLEMENTED_DRAFT(current working tree V25–V52; FULL_READY 미선언) /
 > S4_7D_CONSENT_TICKET_CONTROL_PLANE=OFFLINE_ONLY /
 > OA112_ACTIVE_CONTRACT_LOCKED / S4_7D_OA112_PHYSICAL_ACTIVATION=NOT_MATERIALIZED`.
 > `contracts/openapi/rag-v2.openapi.json`은 v1 canonical OpenAPI bytes를 변경하지 않기 위한
@@ -1519,6 +1523,12 @@ Voyage public-base generation은 `OWNER_PRIVATE` empty sentinel(`ownerScopeSha25
 ordered group 0)을 허용한다. 이 sentinel은 private retrieval을 의미하지 않으며 private
 canonical text·chunk·embedding을 provider input에 포함하지 않는다. 실제 owner-private component는
 owner-bound consent와 non-empty generation을 계속 요구한다.
+
+Vertex candidate는 `VERTEX_API_KEY` 하나만 읽는 Vertex Express API-key-only route다. fixed origin과
+path는 `https://aiplatform.googleapis.com/v1/publishers/google/models/gemini-3.5-flash:generateContent`이고,
+key query parameter는 direct TLS request target에서만 구성하며 packet·DB·log·URI abstraction에는 남기지
+않는다. ADC/service-account, ambient credential, credential file 및 Gemini Developer API는 v2 runtime에서
+허용하지 않는다.
 
 #### 7.7.1 Pre-S5 v2 consent/ticket/Vertex-preparation control planes (offline-only)
 
@@ -1619,9 +1629,10 @@ generation·text·chunk·embedding hard-delete는 BAT의 별도 document deletio
 
 이 route는 `contracts/openapi/foreign-news-sentiment.v1.openapi.json`의 별도 direct-payload surface다.
 root `openapi.json`에 route를 추가하지 않는다. current working tree V49의 local runtime은
-owner-local sanitized aggregate를 읽거나 materialization 부재 시 `ABSTAIN`을 반환하지만
-adapter/provider runtime은 활성화되지 않았다. 응답은 `contractId=foreign-news-sentiment-v1`과 다음
-불변식을 항상 만족한다.
+owner-local sanitized aggregate를 읽거나 materialization 부재 시 `ABSTAIN`을 반환한다. Finnhub/SEC/Fed
+local one-shot executor와 owner writer materialization bridge는 구현됐지만 selected local model,
+canonical short-expiry packet, fresh clean HEAD/tree·CI/security evidence가 모두 없으면 socket은 0이다.
+응답은 `contractId=foreign-news-sentiment-v1`과 다음 불변식을 항상 만족한다.
 
 ```text
 decisionAuthority=NONE
@@ -1633,7 +1644,11 @@ articleMetadataStored=false
 ```
 
 lane은 Finnhub personal-local, SEC official, Federal Reserve official, existing GDELT offline
-reference 네 개뿐이다. `officialReleaseLocator`는 SEC/Fed가 보관할 수 있는 sanitized provenance
+reference 네 개뿐이다. Finnhub/SEC/Fed one-shot probe는 operation당 physical call cap 1, retry 0이고
+DNS/연결 전 실패 receipt는 `NOT_EXECUTED/0`, 실제 handoff 뒤 outcome만 physical call 1로 기록한다.
+packet claim 전에 DB owner-writer privilege를 preflight한다. 외부 응답은 transient aggregate로만
+분석한 뒤 sanitized owner-local append-only record로 materialize하며 raw/header/query는 저장하지 않는다.
+`officialReleaseLocator`는 SEC/Fed가 보관할 수 있는 sanitized provenance
 locator일 뿐 article metadata가 아니며 Finnhub에는 허용되지 않는다. Finnhub shared/hosted-key mode는 없고,
 GDELT HTTP transport/executor/outbound는
 0이다. headline/summary/body/raw provider data, article title/URL/domain/date, credential, query/header는

@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
@@ -65,6 +66,8 @@ _KRX_SERVICE_BY_OPERATION: Final[dict[str, str]] = {
 class _KisProbeSession(Protocol):
     """KIS cached-token preflight와 one market-data attempt를 분리하는 private runtime session이다."""
 
+    def bind_packet_expiry(self, *, expires_at: datetime) -> None: ...
+
     def preflight(self) -> None: ...
 
     def current_price(self, *, symbol: str) -> CurrentPrice: ...
@@ -76,6 +79,8 @@ class _KisProbeSession(Protocol):
 
 class _KrxProbeSession(Protocol):
     """KRX client lifetime을 one packet에 묶어 Redis quota/client cleanup을 보장한다."""
+
+    def bind_packet_expiry(self, *, expires_at: datetime) -> None: ...
 
     def preflight(self, *, as_of: date) -> None: ...
 
@@ -136,6 +141,7 @@ class Core6KisCurrentPriceBackend(Core6ProbeBackend):
             raise Core6ProbeError("CORE6_PROBE_KIS_OPERATION_INVALID")
         session = self._session_factory()
         try:
+            session.bind_packet_expiry(expires_at=packet.expires_at)
             session.preflight()
         except Core6ProbeError:
             _close_quietly(session)
@@ -200,6 +206,7 @@ class Core6KrxDailyBackend(Core6ProbeBackend):
         as_of = _packet_date(packet)
         session = self._session_factory()
         try:
+            session.bind_packet_expiry(expires_at=packet.expires_at)
             session.preflight(as_of=as_of)
         except Core6ProbeError:
             _close_quietly(session)
@@ -334,16 +341,23 @@ class _ProductionKisProbeSession:
                 PhysicalChannel.TOKEN_P: 0,
             },
         )
+        self._packet_expires_at: datetime | None = None
         self._client = KISHttpClient(
             settings,
             accounting=self._recorder,
             require_cached_token=True,
+            deadline_guard=self._require_packet_current,
         )
         self._market = KISMarketClient(settings, self._client, accounting=self._recorder)
         self._completed = False
 
     def preflight(self) -> None:
         self._client.require_cached_access_token()
+
+    def bind_packet_expiry(self, *, expires_at: datetime) -> None:
+        if expires_at.tzinfo is None or expires_at.utcoffset() is None:
+            raise Core6ProbeError("CORE6_PROBE_PACKET_EXPIRY_INVALID")
+        self._packet_expires_at = expires_at.astimezone(UTC)
 
     def current_price(self, *, symbol: str) -> CurrentPrice:
         try:
@@ -363,11 +377,19 @@ class _ProductionKisProbeSession:
     def close(self) -> None:
         self._client.close()
 
+    def _require_packet_current(self) -> None:
+        """KIS limiter/token cache 뒤에도 exact packet window가 끝나면 socket 전에 종료한다."""
+
+        expires_at = self._packet_expires_at
+        if expires_at is None or datetime.now(UTC) >= expires_at:
+            raise Core6ProbeError("CORE6_PROBE_PACKET_EXPIRED")
+
 
 class _ProductionKrxProbeSession:
     """KRX service probe가 기존 private credential transport와 quota reservation을 그대로 재사용한다."""
 
     def __init__(self) -> None:
+        self._packet_expires_at: datetime | None = None
         self._client = KrxOpenApiClient(
             KrxOpenApiSettings(
                 max_calls_per_run=1,
@@ -380,14 +402,34 @@ class _ProductionKrxProbeSession:
         if not is_xkrx_trading_day(as_of):
             raise Core6ProbeError("CORE6_PROBE_KRX_DATE_INVALID")
 
+    def bind_packet_expiry(self, *, expires_at: datetime) -> None:
+        if expires_at.tzinfo is None or expires_at.utcoffset() is None:
+            raise Core6ProbeError("CORE6_PROBE_PACKET_EXPIRY_INVALID")
+        self._packet_expires_at = expires_at.astimezone(UTC)
+
     def fetch_rows(self, *, as_of: date, service: str) -> tuple[KrxDailyRow, ...]:
-        return self._client.fetch_service_rows(as_of, service=service)
+        return self._client.fetch_service_rows(
+            as_of,
+            service=service,
+            deadline_monotonic=self._packet_deadline_monotonic(),
+        )
 
     def physical_call_count(self) -> int:
         return self._client.physical_attempt_count
 
     def close(self) -> None:
         self._client.close()
+
+    def _packet_deadline_monotonic(self) -> float:
+        """wall-clock packet expiry를 KRX transport가 반복 확인하는 monotonic deadline으로 축소한다."""
+
+        expires_at = self._packet_expires_at
+        if expires_at is None:
+            raise Core6ProbeError("CORE6_PROBE_PACKET_EXPIRY_UNBOUND")
+        remaining = (expires_at - datetime.now(UTC)).total_seconds()
+        if remaining <= 0:
+            raise Core6ProbeError("CORE6_PROBE_PACKET_EXPIRED")
+        return time.monotonic() + remaining
 
 
 class StdlibSecEdgarProbeTransport:

@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import ssl
 import time
+import math
 from collections.abc import Callable, Mapping
 from datetime import date
 from pathlib import Path
@@ -260,6 +261,7 @@ class KrxOpenApiClient:
         as_of: date,
         *,
         service: str,
+        deadline_monotonic: float | None = None,
     ) -> tuple[KrxDailyRow, ...]:
         """승인된 두 KRX 서비스 중 하나만 strict parse하며 publish side effect는 만들지 않는다.
 
@@ -273,6 +275,14 @@ class KrxOpenApiClient:
             raise ValueError("KRX service is not allowed")
         _validate_as_of(as_of)
         deadline = time.monotonic() + self._settings.logical_deadline_seconds
+        if deadline_monotonic is not None:
+            if isinstance(deadline_monotonic, bool) or not isinstance(deadline_monotonic, (int, float)):
+                raise ValueError("KRX deadline must be a finite monotonic timestamp")
+            bounded_deadline = float(deadline_monotonic)
+            if not math.isfinite(bounded_deadline):
+                raise ValueError("KRX deadline must be a finite monotonic timestamp")
+            # Core 6 approval window은 provider client의 static request budget보다 우선해 socket 전에 fail-closed한다.
+            deadline = min(deadline, bounded_deadline)
         return self._fetch_endpoint(
             endpoint,
             as_of=as_of,

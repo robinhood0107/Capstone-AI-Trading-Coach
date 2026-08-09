@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import math
 import re
 import stat
 import zipfile
@@ -72,6 +73,7 @@ _PDF_FORBIDDEN_TOKENS: Final[tuple[bytes, ...]] = (
     b"/OpenAction",
     b"/RichMedia",
 )
+_PDF_OCR_RASTER_SCALE: Final[float] = 300 / 72
 _MACRO_NAMES: Final[tuple[str, ...]] = (
     "vbaproject.bin",
     "vbadata.xml",
@@ -699,12 +701,44 @@ def _native_pdf_blocks(page: fitz.Page, page_number: int) -> list[dict[str, Any]
 
 def _render_pdf_page(page: fitz.Page, *, max_image_pixels: int) -> bytes:
     try:
-        pixmap = page.get_pixmap(matrix=fitz.Matrix(300 / 72, 300 / 72), alpha=False)
+        _validate_pdf_raster_bounds(page, max_image_pixels=max_image_pixels)
+        pixmap = page.get_pixmap(matrix=fitz.Matrix(_PDF_OCR_RASTER_SCALE, _PDF_OCR_RASTER_SCALE), alpha=False)
         if pixmap.width * pixmap.height > max_image_pixels:
             raise DocumentParseError("IMAGE_PIXEL_BOUND_EXCEEDED")
         return cast(bytes, pixmap.tobytes("png"))
+    except DocumentParseError:
+        raise
     except Exception as error:
         raise DocumentParseError("PDF_RENDER_FAILED") from error
+
+
+def _validate_pdf_raster_bounds(page: fitz.Page, *, max_image_pixels: int) -> None:
+    """PDF page geometry를 raster allocation 전에 검사해 OCR worker의 메모리 상한을 보존한다."""
+
+    try:
+        width_points = float(page.rect.width)
+        height_points = float(page.rect.height)
+    except (AttributeError, TypeError, ValueError, OverflowError) as error:
+        raise DocumentParseError("PDF_RENDER_FAILED") from error
+    if (
+        not math.isfinite(width_points)
+        or not math.isfinite(height_points)
+        or width_points <= 0
+        or height_points <= 0
+    ):
+        raise DocumentParseError("PDF_RENDER_FAILED")
+    scaled_width = width_points * _PDF_OCR_RASTER_SCALE
+    scaled_height = height_points * _PDF_OCR_RASTER_SCALE
+    if not math.isfinite(scaled_width) or not math.isfinite(scaled_height):
+        raise DocumentParseError("IMAGE_PIXEL_BOUND_EXCEEDED")
+    width_pixels = math.ceil(scaled_width)
+    height_pixels = math.ceil(scaled_height)
+    if (
+        width_pixels > max_image_pixels
+        or height_pixels > max_image_pixels
+        or height_pixels > max_image_pixels // width_pixels
+    ):
+        raise DocumentParseError("IMAGE_PIXEL_BOUND_EXCEEDED")
 
 
 def _parse_docx(payload: bytes) -> list[dict[str, Any]]:

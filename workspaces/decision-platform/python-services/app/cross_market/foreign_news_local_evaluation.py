@@ -43,6 +43,7 @@ _TFNS_LABEL_MAP: Final[Mapping[str, str]] = {
 _MAX_DATASET_BYTES: Final[int] = 64 * 1024 * 1024
 _MAX_DATASET_ROWS: Final[int] = 20_000
 _MAX_MODEL_FILE_BYTES: Final[int] = 1_024 * 1024 * 1024
+_MAX_VOCABULARY_FILE_BYTES: Final[int] = 8 * 1024 * 1024
 _MAX_TEXT_BYTES: Final[int] = 32 * 1024
 _WORD = re.compile(r"[A-Za-z][A-Za-z'-]*")
 _CRITICAL = re.compile(
@@ -485,15 +486,21 @@ def _load_finbert_candidate(
     root = _regular_directory(model_root, PurePosixPath(directory_name))
     config_path = _regular_file(root, PurePosixPath("config.json"), maximum_bytes=256 * 1024)
     weights_path = _regular_file(root, PurePosixPath("pytorch_model.bin"), maximum_bytes=_MAX_MODEL_FILE_BYTES)
-    tokenizer_path = _regular_file(root, PurePosixPath("vocab.txt"), maximum_bytes=8 * 1024 * 1024)
+    vocabulary_path = _regular_file(
+        root,
+        PurePosixPath("vocab.txt"),
+        maximum_bytes=_MAX_VOCABULARY_FILE_BYTES,
+    )
     config_payload = _load_json_file(config_path, maximum_bytes=256 * 1024)
     labels = _finbert_label_map(candidate_model=candidate_model, config_payload=config_payload)
     classifier = _LocalFinBertClassifier(model_root=root, label_map=labels)
     receipt = ForeignNewsModelArtifactReceipt(
         candidate_model=candidate_model,
         config_sha256=_sha256(_read_regular_bytes(config_path, maximum_bytes=256 * 1024)),
-        footprint_bytes=sum(path.stat().st_size for path in (config_path, weights_path, tokenizer_path)),
-        tokenizer_sha256=_sha256(_read_regular_bytes(tokenizer_path, maximum_bytes=8 * 1024 * 1024)),
+        footprint_bytes=sum(path.stat().st_size for path in (config_path, weights_path, vocabulary_path)),
+        tokenizer_sha256=_sha256(
+            _read_regular_bytes(vocabulary_path, maximum_bytes=_MAX_VOCABULARY_FILE_BYTES)
+        ),
         weights_sha256=_sha256(_read_regular_bytes(weights_path, maximum_bytes=_MAX_MODEL_FILE_BYTES)),
     )
     return classifier, receipt

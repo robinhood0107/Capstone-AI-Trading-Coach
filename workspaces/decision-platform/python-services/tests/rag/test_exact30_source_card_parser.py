@@ -35,6 +35,8 @@ def test_exact30_parser_binds_safe_card_bytes_but_excludes_front_matter_from_ir(
     assert document_ir["sourceRevisionId"] == exact30_source_revision_id(card)
     assert document_ir["rawContentSha256"] == card.content_sha256
     assert document_ir["mimeType"] == "text/markdown"
+    # exact-30 card 본문은 tracked Markdown의 native projection이므로 shared IR enum 밖 값을 만들면 안 된다.
+    assert document_ir["extractionMode"] == "NATIVE"
     assert document_ir["safetyClassification"] == {
         "externalLlmEligible": False,
         "piiDetected": False,

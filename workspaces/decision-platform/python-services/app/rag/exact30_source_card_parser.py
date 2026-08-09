@@ -105,7 +105,9 @@ class Exact30SourceCardDocumentParser:
             "blocks": blocks,
             "contractId": "rag-document-ir-v1",
             "documentIrVersion": 1,
-            "extractionMode": "SOURCE_CARD_CANONICAL",
+            # source-card body는 tracked Markdown의 native text projection이므로 DB가 허용한 shared enum을
+            # 그대로 쓴다. 별도 label은 source/card revision metadata로 이미 immutable하게 bind된다.
+            "extractionMode": "NATIVE",
             "languageTags": list(language_tags),
             "mimeType": "text/markdown",
             "normalizedContentSha256": hashlib.sha256(normalized).hexdigest(),

@@ -108,12 +108,19 @@ class KISHttpClient:
                     max_wait_seconds=float(settings.kis_rate_limit_max_wait_seconds),
                     io_budget_seconds=8.0,
                 )
-                token_issuer = _TokenIssuer(
-                    settings,
-                    rate_limiter=token_limiter,
-                    accounting=accounting,
-                    deadline_guard=deadline_guard,
-                )
+                if deadline_guard is None:
+                    token_issuer = _TokenIssuer(
+                        settings,
+                        rate_limiter=token_limiter,
+                        accounting=accounting,
+                    )
+                else:
+                    token_issuer = _TokenIssuer(
+                        settings,
+                        rate_limiter=token_limiter,
+                        accounting=accounting,
+                        deadline_guard=deadline_guard,
+                    )
                 token_manager = KISTokenManager(
                     mode=settings.mode,
                     offline=False,

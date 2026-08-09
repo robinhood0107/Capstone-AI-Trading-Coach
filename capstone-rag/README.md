@@ -28,8 +28,10 @@ S4.7D는 기존 exact-30을 바꾸지 않고 OA corpus와 owner-private 문서�
 추가한다. RAG는 출처 검색·설명·인용만 담당하며 Signal, RiskDecision, 주문 feature/hash에는
 연결하지 않는다. safe parser/OCR, v2 DB/RLS/API, owner-local BGE staging, public exact-30/OA112
 materializer, immutable public pointer, profile-selected authorized retrieval, Voyage full/query ledger와
-Vertex prepared-scope control plane은 `IMPLEMENTED_DRAFT`다. 단, OA112 rights/cache, local database
-roles, Voyage/Vertex credential·privacy evidence와 one-shot packets가 아직 설치되지 않았으므로
+Vertex prepared-scope control plane은 `IMPLEMENTED_DRAFT`다. OA112는 CC-BY candidate registry를
+first-download quarantine으로 수집해 observed hash를 고정하는 local bootstrap까지 구현됐지만, 아직
+physical packet 실행·active registry·public generation이 없다. local database roles, Voyage/Vertex
+credential·privacy evidence와 one-shot packets도 아직 active runtime evidence가 아니므로
 `S4_7D_RUNTIME=IMPLEMENTED_DRAFT_NOT_ACTIVATED`; full bundle 전 v2 ask는 `CORPUS_NOT_READY`로,
 full bundle 뒤 Vertex live gate가 닫혀 있으면 `GENERATION_UNAVAILABLE`로 fail-closed한다.
 
@@ -155,8 +157,35 @@ uv run --project workspaces/decision-platform/python-services --frozen \
 
 historical manifest의 `--fetch-hashes` 실행 경로는 `HISTORICAL_SUPERSEDED`로 hard-disable되어
 network request나 receipt write를 만들지 않는다. active OA112의 source별 rights evidence와 exact
-approval packet을 검증하는 별도 downloader만 이후에 physical call을 만들 수 있다. historical
+approval packet을 검증하는 별도 downloader만 physical call을 만들 수 있다. historical
 receipt는 재현용 metadata artifact일 뿐 active activation evidence가 아니다.
+
+### OA112 first-download bootstrap
+
+historical 30개 CC-BY source와 local curation이 고른 82개 replacement는 raw hash를 알기 전에는
+active registry가 될 수 없다. `rag-oa112-bootstrap`은 이 최초 수집의 순환 의존을 다음 세 단계로
+분리한다. 모든 control record와 raw cache는 개발 checkout의
+`capstone-rag/runtime/local-corpus/` 아래 0700/0600 local-only 파일이며 Git에 포함되지 않는다.
+
+```text
+prepare-candidates
+→ one-shot download (quarantine only)
+→ activate (all 112 observed hashes + one success receipt)
+```
+
+- `prepare-candidates`는 two local curation receipt에서 정확히 14 track × 8 candidate registry를
+  만들 뿐 network request를 생성하지 않는다.
+- `download`는 current clean HEAD/tree, CI/security digest, fixed HTTPS endpoint digest, source/cost/
+  byte/page cap, retry=0을 모두 가진 `OA112_CANDIDATE_QUARANTINE_DOWNLOAD` packet만 소비한다.
+  redirect, DNS rebinding, MIME/magic/page/byte drift나 첫 실패 뒤에는 remaining request를 만들지
+  않으며 raw는 `oa112-quarantine/`에만 남긴다.
+- `activate`는 one successful full receipt의 ordered 112 observed SHA-256과 quarantine bytes를 다시
+  대조한 뒤에만 `oa-raw/`로 promote하고 local active registry를 exclusive-create한다. 이 단계도
+  parser/OCR, embedding, DB staging, public pointer activation 또는 provider generation을 만들지 않는다.
+
+따라서 `OA112_BOOTSTRAP_CANDIDATES_READY`나 `QUARANTINE_READY`는
+`S4_7D_OA112_PHYSICAL_ACTIVATION=FULL_READY`가 아니다. 마지막 marker는 source parse/chunk/evaluation과
+immutable public bundle activation까지 별도로 통과해야만 주장할 수 있다.
 
 historical `rag-content status`와 `setup-rag-content.bat`의 manifest validation은 active physical
 OA112 activation 증거가 아니다. 이 상태는 아직 원문 download/parse/embed/eval이 끝난

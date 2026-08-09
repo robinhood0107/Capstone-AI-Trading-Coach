@@ -89,6 +89,36 @@ def test_bootstrap_download_checks_current_evidence_before_consuming_packet_or_t
     assert not (control_root / "oa112-packet-claims").exists()
 
 
+def test_bootstrap_download_recovers_complete_quarantine_with_a_zero_call_success_receipt(
+    tmp_path: Path,
+) -> None:
+    cache_root, control_root = _roots(tmp_path)
+    registry = _registry()
+    _write_quarantine(cache_root=cache_root, registry=registry)
+    transport = _FixtureTransport([])
+
+    receipt = download_oa112_bootstrap_quarantine(
+        registry=registry,
+        packet=_packet(registry),
+        execution_binding=_binding(),
+        local_cache_root=cache_root,
+        packet_control_root=control_root,
+        resolver=_FixtureResolver(),
+        transport=transport,
+    )
+
+    assert receipt.attempt_count == receipt.physical_call_count == receipt.quarantined_source_count == 0
+    assert receipt.reused_source_count == 112
+    assert transport.requests == []
+    active = activate_oa112_bootstrap_quarantine(
+        registry=registry,
+        local_cache_root=cache_root,
+        registry_root=control_root,
+        registry_relative_path="oa112-active-registry.v1.json",
+    )
+    assert active.active_source_count == 112
+
+
 def test_bootstrap_activation_requires_all_112_quarantine_files_before_publishing_registry(
     tmp_path: Path,
 ) -> None:

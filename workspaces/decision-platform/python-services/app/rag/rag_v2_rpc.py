@@ -1,8 +1,9 @@
-"""Immutable RAG v2의 local-BGE retrieval-only gRPC 경계다.
+"""Immutable RAG v2의 profile-selected retrieval-only gRPC 경계다.
 
-이 모듈은 외부 embedding/generator transport를 만들지 않는다. Spring이 발급한 opaque
-retrieval claim을 local query role로 재검증하고, public/owner citation metadata만 loopback
-transport로 돌려준다. canonical text, raw document, owner path는 process 밖으로 직렬화하지 않는다.
+Spring이 발급한 opaque retrieval claim을 local query role로 재검증하고, public/owner citation
+metadata만 loopback transport로 돌려준다. BGE는 local-only이고 Voyage query transport는
+hard-gated profile adapter가 명시적으로 주입될 때만 한 번 호출할 수 있으며 generator transport는
+만들지 않는다. canonical text, raw document, owner path는 process 밖으로 직렬화하지 않는다.
 """
 
 from __future__ import annotations
@@ -138,7 +139,7 @@ class RagV2ScopeReader(Protocol):
 
 
 class RagV2RetrievalPort(Protocol):
-    """local BGE query + exact/trigram/vector RRF engine의 최소 port다."""
+    """profile-selected query embedding + exact/trigram/vector RRF engine의 최소 port다."""
 
     def retrieve(
         self,
@@ -162,7 +163,7 @@ class RagV2ExecutionRetrievalPort(RagV2RetrievalPort, Protocol):
 
 
 class RagV2AskEngine(Protocol):
-    """valid loopback request를 external provider 없이 한 번 평가한다."""
+    """valid loopback request를 selected retrieval profile로 한 번 평가한다."""
 
     def ask(self, request: rag_v2_pb2.RagAskRequest) -> RagV2EngineResult:
         """상태와 immutable citation metadata만 반환한다."""

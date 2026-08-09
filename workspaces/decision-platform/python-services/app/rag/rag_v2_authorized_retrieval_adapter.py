@@ -48,8 +48,8 @@ class RagV2AuthorizedRetrievalAdapterError(RuntimeError):
 class PsycopgRagV2AuthorizedRetrievalAdapter:
     """v2 opaque scope와 bounded definer function만 쓰는 PostgreSQL retrieval adapter다.
 
-    입력은 Spring이 발급한 scope와 local BGE query vector뿐이며, 직접 table read, raw
-    artifact 저장, provider/network call을 만들지 않는다. 매 connection에서 role과 grant를
+    입력은 Spring이 발급한 scope와 scope profile에 맞는 query vector뿐이며, 직접 table read,
+    raw artifact 저장, provider/network call을 만들지 않는다. 매 connection에서 role과 grant를
     다시 검증해 잘못된 DSN 또는 과도한 database grant를 capability로 승격하지 않는다.
     """
 

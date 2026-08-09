@@ -27,7 +27,7 @@ import java.time.Duration
 internal class VertexGemini35FlashGenerationAdapter(
     private val properties: RagV2VertexProperties,
     private val activationReader: PreS5VertexActivationReader,
-    private val credentialProvider: PreS5VertexCredentialProvider,
+    private val apiKeyProvider: PreS5VertexApiKeyProvider,
     private val usageLedger: JdbcPreS5VertexUsageLedger,
     private val httpExecutor: PreS5VertexHttpExecutor,
 ) : RagV2VertexGenerationPort {
@@ -59,6 +59,7 @@ internal class VertexGemini35FlashGenerationAdapter(
 
     override fun generate(command: RagV2VertexGenerationCommand): RagV2VertexGenerationResult {
         var lease: PreS5VertexUsageLease? = null
+        var apiKey: ByteArray? = null
         var outcomeRecorded = false
         try {
             val activation = activationReader.read()
@@ -70,24 +71,17 @@ internal class VertexGemini35FlashGenerationAdapter(
             require(command.consent.policyDigest == activation.policySha256)
             require(command.consent.processorSetDigest == activation.processorSetSha256)
             validateEvidence(command)
-            val credential = credentialProvider.prepare(activation)
+            apiKey = apiKeyProvider.acquire()
             val body = requestBody(command, activation)
             try {
                 require(body.size <= activation.inputByteCap)
                 lease = usageLedger.reserve(command, activation)
-                val tokenAttempt = usageLedger.claimTokenAttempt(lease)
-                val token =
-                    credential.issueAccessToken(
-                        tokenAttempt,
-                        Duration.ofMillis(properties.requestTimeoutMillis),
-                        activation.expiresAt,
-                    )
                 val generateContentAttempt = usageLedger.claimGenerateContentAttempt(lease)
                 val response =
                     httpExecutor.execute(
                         PreS5VertexHttpRequest(
-                            endpoint = endpoint(activation.projectId),
-                            bearerToken = token,
+                            endpoint = endpoint(),
+                            apiKey = requireNotNull(apiKey),
                             body = body,
                             timeout = Duration.ofMillis(properties.requestTimeoutMillis),
                             expiresAt = activation.expiresAt,
@@ -118,6 +112,8 @@ internal class VertexGemini35FlashGenerationAdapter(
                 runCatching { usageLedger.markUnknownBilling(lease) }
             }
             return unavailable()
+        } finally {
+            apiKey?.fill(0)
         }
     }
 
@@ -249,10 +245,9 @@ internal class VertexGemini35FlashGenerationAdapter(
         return value?.takeIf { it in 0..maximum } ?: throw PreS5VertexProviderResponseException()
     }
 
-    private fun endpoint(projectId: String): URI =
+    private fun endpoint(): URI =
         URI.create(
-            "https://aiplatform.googleapis.com/v1/projects/$projectId/locations/global/" +
-                "publishers/google/models/gemini-3.5-flash:generateContent",
+            "https://aiplatform.googleapis.com/v1/publishers/google/models/gemini-3.5-flash:generateContent",
         )
 
     private fun sha256(value: String): String {

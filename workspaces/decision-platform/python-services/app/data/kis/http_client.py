@@ -70,6 +70,7 @@ class KISHttpClient:
         retry_delay: Callable[[int], float] | None = None,
         retry_sleeper: Callable[[float], None] = time.sleep,
         accounting: CollectionRunRecorder | None = None,
+        require_cached_token: bool = False,
     ) -> None:
         if not settings.offline and any(
             dependency is not None for dependency in (token_provider, transport, rate_limiter)
@@ -78,6 +79,7 @@ class KISHttpClient:
             raise ValueError("KIS online private dependencies cannot be overridden")
 
         self._token_issuer: _TokenIssuer | None = None
+        self._token_manager: KISTokenManager | None = None
         self._redis_client: Any | None = None
         self._closed = False
         if settings.offline:
@@ -117,6 +119,7 @@ class KISHttpClient:
                     issuer=token_issuer.issue,
                     scope=scope,
                     accounting=accounting,
+                    cache_only=require_cached_token,
                 )
                 token_provider = token_manager.get_access_token
                 inner_transport = httpx.HTTPTransport(verify=True, retries=0)
@@ -130,6 +133,7 @@ class KISHttpClient:
                     redis_client.close()
                 raise
             self._token_issuer = token_issuer
+            self._token_manager = token_manager
             self._redis_client = redis_client
 
         try:
@@ -157,6 +161,17 @@ class KISHttpClient:
         self._retry_delay = retry_delay or _default_retry_delay
         self._retry_sleeper = retry_sleeper
         self._accounting = accounting
+
+    def require_cached_access_token(self) -> None:
+        """Core 6 probe가 OAuth 발급 없이 cached token만으로 one data handoff를 열 수 있는지 확인한다.
+
+        이 method는 token을 반환·저장하지 않고 cache-only manager의 typed result만 사용한다. offline
+        fixture client나 일반 backfill은 이 preflight를 호출하지 않아 기존 token refresh behavior를 유지한다.
+        """
+
+        if self._closed or self._token_manager is None:
+            raise KISCredentialError("KIS cached token is unavailable")
+        self._token_manager.get_access_token()
 
     def request(
         self,

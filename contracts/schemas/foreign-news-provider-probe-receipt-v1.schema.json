@@ -1,0 +1,317 @@
+{
+  "$id": "contracts/schemas/foreign-news-provider-probe-receipt-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "FINNHUB_MARKET_NEWS"
+          }
+        },
+        "required": [
+          "operation"
+        ]
+      },
+      "then": {
+        "properties": {
+          "providerFamily": {
+            "const": "FINNHUB_PERSONAL_LOCAL"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "FINNHUB_COMPANY_NEWS"
+          }
+        },
+        "required": [
+          "operation"
+        ]
+      },
+      "then": {
+        "properties": {
+          "providerFamily": {
+            "const": "FINNHUB_PERSONAL_LOCAL"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "SEC_OFFICIAL_RELEASES"
+          }
+        },
+        "required": [
+          "operation"
+        ]
+      },
+      "then": {
+        "properties": {
+          "providerFamily": {
+            "const": "SEC_OFFICIAL"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "FED_OFFICIAL_RELEASES"
+          }
+        },
+        "required": [
+          "operation"
+        ]
+      },
+      "then": {
+        "properties": {
+          "providerFamily": {
+            "const": "FED_OFFICIAL"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "outcome": {
+            "const": "NOT_EXECUTED"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "laneState": {
+            "const": "ABSTAIN"
+          },
+          "logicalCallCount": {
+            "const": 0
+          },
+          "physicalCallCount": {
+            "const": 0
+          },
+          "projectionHash": {
+            "const": null
+          },
+          "providerStatusClass": {
+            "const": "NOT_ATTEMPTED"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "outcome": {
+            "const": "SUCCESS"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "laneState": {
+            "const": "AVAILABLE"
+          },
+          "logicalCallCount": {
+            "const": 1
+          },
+          "physicalCallCount": {
+            "const": 1
+          },
+          "projectionHash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "providerStatusClass": {
+            "const": "HTTP_2XX"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "outcome": {
+            "const": "FAILED"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "laneState": {
+            "const": "ABSTAIN"
+          },
+          "logicalCallCount": {
+            "const": 1
+          },
+          "physicalCallCount": {
+            "const": 1
+          },
+          "projectionHash": {
+            "const": null
+          },
+          "providerStatusClass": {
+            "enum": [
+              "HTTP_4XX",
+              "HTTP_5XX",
+              "TRANSPORT",
+              "PROTOCOL"
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "properties": {
+    "approvalIdHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "approvalPacketSha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "articleMetadataStored": {
+      "const": false
+    },
+    "completedAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "contractId": {
+      "const": "foreign-news-provider-probe-receipt-v1"
+    },
+    "decisionAuthority": {
+      "const": "NONE"
+    },
+    "firstFailureStopsRemainingCalls": {
+      "const": true
+    },
+    "laneState": {
+      "enum": [
+        "AVAILABLE",
+        "ABSTAIN"
+      ]
+    },
+    "logicalCallCount": {
+      "enum": [
+        0,
+        1
+      ]
+    },
+    "operation": {
+      "enum": [
+        "FINNHUB_MARKET_NEWS",
+        "FINNHUB_COMPANY_NEWS",
+        "SEC_OFFICIAL_RELEASES",
+        "FED_OFFICIAL_RELEASES"
+      ]
+    },
+    "outcome": {
+      "enum": [
+        "NOT_EXECUTED",
+        "SUCCESS",
+        "FAILED"
+      ]
+    },
+    "physicalCallCount": {
+      "enum": [
+        0,
+        1
+      ]
+    },
+    "projectionHash": {
+      "oneOf": [
+        {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "providerFamily": {
+      "enum": [
+        "FINNHUB_PERSONAL_LOCAL",
+        "SEC_OFFICIAL",
+        "FED_OFFICIAL"
+      ]
+    },
+    "providerStatusClass": {
+      "enum": [
+        "NOT_ATTEMPTED",
+        "HTTP_2XX",
+        "HTTP_4XX",
+        "HTTP_5XX",
+        "TRANSPORT",
+        "PROTOCOL"
+      ]
+    },
+    "rawHeaderStored": {
+      "const": false
+    },
+    "rawProviderDataStored": {
+      "const": false
+    },
+    "rawQueryStored": {
+      "const": false
+    },
+    "requestPlanDigest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "retryCount": {
+      "const": 0
+    },
+    "riskSignalOrderAuthority": {
+      "const": "NONE"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "startedAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "state": {
+      "const": "EXECUTED"
+    }
+  },
+  "required": [
+    "approvalIdHash",
+    "approvalPacketSha256",
+    "articleMetadataStored",
+    "completedAt",
+    "contractId",
+    "decisionAuthority",
+    "firstFailureStopsRemainingCalls",
+    "laneState",
+    "logicalCallCount",
+    "operation",
+    "outcome",
+    "physicalCallCount",
+    "projectionHash",
+    "providerFamily",
+    "providerStatusClass",
+    "rawHeaderStored",
+    "rawProviderDataStored",
+    "rawQueryStored",
+    "requestPlanDigest",
+    "retryCount",
+    "riskSignalOrderAuthority",
+    "schemaVersion",
+    "startedAt",
+    "state"
+  ],
+  "title": "foreign-news-provider-probe-receipt-v1",
+  "type": "object"
+}

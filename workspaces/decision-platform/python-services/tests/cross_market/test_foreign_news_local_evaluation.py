@@ -3,7 +3,9 @@ from __future__ import annotations
 import csv
 import json
 from collections.abc import Callable
+from contextlib import nullcontext
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -16,6 +18,7 @@ from app.cross_market.foreign_news_evaluator import (
 )
 from app.cross_market.foreign_news_local_evaluation import (
     ForeignNewsLocalEvaluationInputs,
+    _LocalFinBertClassifier,
     _load_loughran_mcdonald_candidate,
     load_sentivent_gold_split,
     load_tfns_stress_split,
@@ -28,6 +31,7 @@ from app.cross_market.foreign_news_evaluation_cli import (
     _evaluate_once,
     _load_receipt_if_present,
     _write_new_receipt,
+    load_verified_selected_local_candidate,
 )
 
 
@@ -95,6 +99,22 @@ def test_loughran_mcdonald_master_dictionary_uses_nonzero_year_membership(tmp_pa
     assert classifier.predict("gain").label == "POSITIVE"
     assert classifier.predict("flat").label == "NEUTRAL"
     assert receipt.candidate_model == "LOUGHRAN_MCDONALD_BASELINE"
+
+
+def test_finbert_prediction_applies_softmax_once_before_selecting_confidence() -> None:
+    """두 번째 softmax는 label은 같아도 calibration(ECE)을 왜곡하므로 금지한다."""
+
+    classifier = object.__new__(_LocalFinBertClassifier)
+    torch = _SingleSoftmaxTorch()
+    classifier._torch = torch
+    classifier._tokenizer = _Tokenizer()
+    classifier._model = _Model()
+    classifier._label_map = {0: "POSITIVE", 1: "NEGATIVE", 2: "NEUTRAL"}
+
+    prediction = classifier.predict("profit outlook improved")
+
+    assert prediction == ForeignNewsPrediction("NEGATIVE", 0.7)
+    assert torch.softmax_calls == 1
 
 
 def test_local_selection_runs_blind_and_stress_only_for_the_validation_winner() -> None:
@@ -231,6 +251,57 @@ def test_stale_test_reservation_blocks_evaluation_before_any_dataset_is_read(tmp
         _evaluate_once(evaluation_root=evaluation_root)
 
 
+def test_runtime_model_loader_requires_a_passed_selected_only_blind_test(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    evaluation_root = tmp_path / "finbert-eval"
+    evaluation_root.mkdir(mode=0o700)
+    receipts = evaluation_root / "receipts"
+    receipts.mkdir(mode=0o700)
+    receipt_path = receipts / "sentivent-gold-plus-tfns-stress.v1.json"
+    _write_new_receipt(
+        receipt_path,
+        {
+            "contractId": "foreign-news-local-evaluation-receipt-v1",
+            "evaluationInputDigest": "a" * 64,
+            "modelArtifacts": [{}, {}, {}],
+            "result": {
+                "blindTest": {},
+                "selection": {
+                    "selectedModel": "PROSUSAI_FINBERT",
+                    "selectionStatus": "TEST_EVALUATED",
+                    "testEvaluationCount": 1,
+                    "testOutcome": "PASSED",
+                },
+                "tfnsStress": {},
+            },
+            "sentiventBlindTest": {},
+            "sentiventValidation": {"rawSha256": "b" * 64},
+            "tfnsStress": {},
+        },
+    )
+    candidate = ForeignNewsLocalCandidate(
+        candidate_model="PROSUSAI_FINBERT",
+        classifier=_Classifier(candidate_model="PROSUSAI_FINBERT", counters={}, wrong=False),
+        footprint_bytes=1,
+    )
+    monkeypatch.setattr(
+        "app.cross_market.foreign_news_evaluation_cli.build_local_model_candidates",
+        lambda *, evaluation_root: ((candidate,), ()),
+    )
+
+    assert load_verified_selected_local_candidate(evaluation_root=evaluation_root) is candidate
+
+    receipt_path.write_text(
+        receipt_path.read_text(encoding="utf-8").replace('"PASSED"', '"FAILED"'),
+        encoding="utf-8",
+    )
+    receipt_path.chmod(0o600)
+    with pytest.raises(ForeignNewsEvaluationCliError, match="FOREIGN_NEWS_RUNTIME_MODEL_NOT_VERIFIED"):
+        load_verified_selected_local_candidate(evaluation_root=evaluation_root)
+
+
 class _Classifier:
     def __init__(self, *, candidate_model: str, counters: dict[str, int], wrong: bool) -> None:
         self._candidate_model = candidate_model
@@ -243,6 +314,45 @@ class _Classifier:
         if self._wrong:
             expected = "POSITIVE" if expected != "POSITIVE" else "NEGATIVE"
         return ForeignNewsPrediction(expected, 1.0)
+
+
+class _Score:
+    def __init__(self, value: float) -> None:
+        self._value = value
+
+    def item(self) -> float:
+        return self._value
+
+
+class _SingleSoftmaxTorch:
+    def __init__(self) -> None:
+        self.softmax_calls = 0
+
+    def inference_mode(self):  # type: ignore[no-untyped-def]
+        return nullcontext()
+
+    def softmax(self, logits: object, *, dim: int) -> list[list[_Score]]:
+        assert logits == "logits"
+        assert dim == -1
+        self.softmax_calls += 1
+        return [[_Score(0.1), _Score(0.7), _Score(0.2)]]
+
+    def argmax(self, probabilities: list[_Score]) -> _Score:
+        assert len(probabilities) == 3
+        return _Score(1.0)
+
+
+class _Tokenizer:
+    def __call__(self, text: str, **kwargs: object) -> dict[str, object]:
+        assert text == "profit outlook improved"
+        assert kwargs == {"max_length": 512, "padding": False, "return_tensors": "pt", "truncation": True}
+        return {"input_ids": object()}
+
+
+class _Model:
+    def __call__(self, **encoded: object) -> SimpleNamespace:
+        assert set(encoded) == {"input_ids"}
+        return SimpleNamespace(logits="logits")
 
 
 def _examples(*, prefix: str) -> tuple[ForeignNewsEvaluationExample, ...]:

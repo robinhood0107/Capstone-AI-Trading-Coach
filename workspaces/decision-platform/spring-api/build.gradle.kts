@@ -77,7 +77,6 @@ dependencies {
     implementation("io.grpc:grpc-stub")
     implementation("io.grpc:grpc-netty-shaded")
     implementation("com.google.protobuf:protobuf-java:4.35.0")
-    implementation("com.google.auth:google-auth-library-oauth2-http:1.41.0") // Vertex service-account ADC token 발급 전용
     compileOnly("javax.annotation:javax.annotation-api:1.3.2")
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.springframework.security:spring-security-test")

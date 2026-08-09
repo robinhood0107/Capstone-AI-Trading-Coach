@@ -1275,6 +1275,8 @@ def _load_complete_bootstrap_receipt(
             raise Oa112BootstrapError("OA112_BOOTSTRAP_RECEIPT_INVALID")
         try:
             payload = _parse_canonical_json(content)
+            if _required_text(payload, "packetDigest", maximum=64) != name.removesuffix(".json"):
+                raise Oa112BootstrapError("OA112_BOOTSTRAP_RECEIPT_INVALID")
             state = payload.get("state")
             if state == "SUCCEEDED":
                 observed = _validate_complete_bootstrap_receipt_payload(
@@ -1330,10 +1332,11 @@ def _validate_complete_bootstrap_receipt_payload(
     if (
         not isinstance(sources, list)
         or len(sources) != 112
-        or attempts < physical
+        or attempts != physical
         or not 0 <= physical <= 112
         or quarantined < 0
         or reused < 0
+        or quarantined != physical
         or quarantined + reused != 112
     ):
         raise Oa112BootstrapError("OA112_BOOTSTRAP_RECEIPT_INVALID")
@@ -1404,6 +1407,7 @@ def _validate_failed_bootstrap_receipt_payload(
         or len(sources) > 112
         or min(attempts, physical, quarantined, reused) < 0
         or physical > attempts
+        or quarantined > physical
         or quarantined + reused != len(sources)
     ):
         raise Oa112BootstrapError("OA112_BOOTSTRAP_RECEIPT_INVALID")

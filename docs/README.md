@@ -41,10 +41,10 @@
 | S4.7D parser/OCR | `OFFLINE_ONLY` | PR #84 `014ccca1`, #85 `4bcca91e` | 0 | 안전 parser/OCR만 구현, importer/index writer 없음 |
 | S4.7D v2 runtime | `IMPLEMENTED_DRAFT` | PR #87/#88 + current working tree V25–V51 | 0 | local materializer·immutable bundle·profile-selected retrieval·ticket/Vertex preparation과 OA112 first-download quarantine bootstrap 구현은 검증 중; OA112 rights/cache/DB activation 전 `FULL_READY`가 아니며 Voyage/Vertex physical call은 0 |
 | Pre-S5 RAG/global-news lock | `CONTRACT_LOCKED` | Issue #95 addendum + Optional 3 v2 | 0 | `OA112_ACTIVE_CONTRACT_LOCKED`, `S4_7D_OA112_PHYSICAL_ACTIVATION=NOT_MATERIALIZED`; Optional 3 one-shot executor는 packet/evidence 부재 시 outbound 0 |
-| Pre-S5 foreign-news local runtime | `IMPLEMENTED_DRAFT` | current working tree V49 | 0 | sanitized owner-local aggregate/read route만; Finnhub/SEC/Fed adapter와 GDELT HTTP transport/outbound는 없음 |
+| Pre-S5 foreign-news local runtime | `IMPLEMENTED_DRAFT` | current working tree V49 + packet-gated probe bridge | 0 | sanitized owner-local aggregate/read route와 Finnhub/SEC/Fed local one-shot probe/materialization bridge만 구현; selected-model·canonical packet·fresh execution evidence 전 outbound 0, GDELT HTTP transport/outbound 0 |
 | S4.8A | `CONTRACT_LOCKED` | PR #75 `c17d51f6` | 0 | `S4_8A=CONTRACT_LOCKED`; provider entitlement/adapter는 미활성 |
-| S4.8 Core 6 v2 | `CONTRACT_ONLY` | PR #92 `d27322cd` | 0 | `S4_8_CORE6_V2=CONTRACT_ONLY`; KIS/OpenDART/SEC EDGAR/KRX/KOFIA/ECOS future packet/receipt boundary만, adapter/live 0 |
-| S4.8 Core 6 + Optional 3 local runtime | `IMPLEMENTED_DRAFT` | V50 + Optional 3 packet-gated probe | 0 | V50 nine-lane typed projection은 provider 0; Optional 3은 fixed endpoint one-shot executor만 구현했고 fresh packet/evidence 전에는 socket 0 |
+| S4.8 Core 6 v2 | `IMPLEMENTED_DRAFT` | PR #92 contract lock + local probe runtime | 0 | `S4_8_CORE6_V2=CONTRACT_LOCKED / S4_8_CORE6_LOCAL_PROBE_RUNTIME=IMPLEMENTED_DRAFT`; KIS current-price·SEC EDGAR(2)·KRX daily(2)의 fixed local one-shot executor와 content-free receipt bridge가 있으며 fresh packet/evidence 전에는 socket 0; KOFIA blocked, OpenDART/ECOS projection-only |
+| S4.8 Core 6 + Optional 3 local runtime | `IMPLEMENTED_DRAFT` | V50 + Core 6/Optional 3 packet-gated probes | 0 | V50 nine-lane typed projection은 provider 0; selected successful Core 6 receipt complete-set만 read-only로 `AVAILABLE`를 materialize하며 Optional 3도 fresh packet/evidence 전에는 socket 0 |
 | S4.8B/C | `IMPLEMENTED_MERGE_CANDIDATE` | PR #77 `509d8eee` | 0 | `S4_8B_C=IMPLEMENTED_MERGE_CANDIDATE`; fixture/scorer/V23/read port만, endpoint/RiskEngine/provider는 미구현 |
 
 Naver runtime은 퇴역했으며 재활성화하지 않는다. GDELT, Voyage, Gemini, OpenAI, account/order
@@ -100,8 +100,9 @@ route만 추가한다. Voyage는
 `voyage-context-4` 1024차원 full-generation profile이고 query별 fallback/mixed profile은 없으며,
 불가 시 full bundle BGE-M3 rebuild/evaluation/CAS만 허용한다. 전역 public base는
 `OWNER_PRIVATE` empty sentinel(`ownerScopeSha256=null`, ordered group 0)만 사용해 owner 원문을
-Voyage input에 포함하지 않는다. Vertex는 ADC/service-account의
+Voyage input에 포함하지 않는다. Vertex는 `VERTEX_API_KEY`만 읽는 Vertex Express API-key-only
 `gemini-3.5-flash` 단일 generator target이며 top-5와 질문당 `generateContent` 1회, fallback 0이다.
+ADC/service-account, ambient credential, credential file과 Gemini Developer API는 v2 runtime에서 허용하지 않는다.
 둘 다 `TARGET_NOT_ACTIVE`이며 provider physical call은 0이다.
 
 `S4_7D_CONSENT_TICKET_CONTROL_PLANE=OFFLINE_ONLY`는 owner-bound consent append/effective read,
@@ -111,8 +112,11 @@ evidence를 저장하거나 응답에 넣지 않는다. owner raw document/path,
 retrieval, provider outbound는 이 control plane만으로 활성화되지 않는다.
 
 foreign-news는 Finnhub personal-local, SEC official, Federal Reserve official, existing GDELT
-offline-reference lane만 정의한다. current working tree V49는 owner-local sanitized aggregate와
-hidden direct-payload read route를 구현하지만 provider adapter·GDELT HTTP transport·outbound는 없다.
+offline-reference lane만 정의한다. current working tree V49와 local probe bridge는 owner-local
+sanitized aggregate/direct-payload read route 및 Finnhub/SEC/Fed의 one-shot packet-gated executor와
+append-only materialization preflight를 구현한다. selected local model, canonical packet, fresh clean
+HEAD/tree·CI/security evidence가 모두 없으면 executor socket은 0이며 GDELT HTTP transport/executor/outbound는
+계속 없다.
 응답은 explanation-only이며 Decision/Signal/Risk/order/hash와 S5 feature 권한이 0이고 raw provider
 data/article metadata를 저장하지 않는다. SEC/Fed의 `officialReleaseLocator`는 article metadata가 아닌
 허용된 sanitized provenance locator다. current working tree V50은 Core 6과 Optional 3의 정확히
@@ -132,13 +136,15 @@ REST/gRPC 계약은 [API 명세서](API_명세서.md), machine-readable S4 profi
 교차시장 계약은
 [contracts README](../contracts/README.md#s48-교차시장애널리스트-계약)와
 [S4.8A 변경기록](../contracts/changes/20260731-s4-8a-cross-market-contract-lock.md),
-[Core 6 v2 변경기록](../contracts/changes/20260802-s4-8-core6-v2-contract-lock.md)을 따른다.
+[Core 6 v2 변경기록](../contracts/changes/20260802-s4-8-core6-v2-contract-lock.md)과
+[local Core 6 runtime addendum](../contracts/changes/20260810-s4-8-core6-local-probe-runtime.md)을 따른다.
 S4.8B/C offline runtime과 S5.0 계약은 각각
 [S4.8B/C 변경기록](../contracts/changes/20260801-s4-8b-s4-8c-offline-runtime.md),
 [S5.0 변경기록](../contracts/changes/20260801-s5-0-signal-v2-contract-lock.md)을 따른다.
 [foreign-news sanitized runtime 변경기록](../contracts/changes/20260809-pre-s5-foreign-news-sanitized-runtime.md),
+[foreign-news one-shot provider runtime 변경기록](../contracts/changes/20260810-pre-s5-foreign-news-provider-one-shot-runtime.md),
 [S4.8 sanitized projection 변경기록](../contracts/changes/20260809-s4-8-runtime-sanitized-projection.md)은
-current working tree 구현 경계와 physical-call 0 불변식을 기록한다.
+current working tree 구현 경계와 physical-call hard gate를 기록한다.
 exact 42개 integration target 행과 exact KIS 18개 allowlist는
 Git으로 추적하지 않는 로컬 전용 자료수급 레지스트리가
 authority이며 공개 문서에는 전체 목록을 복제하지 않는다.

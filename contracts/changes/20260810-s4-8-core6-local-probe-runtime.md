@@ -44,7 +44,7 @@ Platform Python service.
   requires the complete 1/2/2 KIS/SEC/KRX operation sets before materializing a lane as `AVAILABLE`.
   Runtime materialization itself makes zero provider calls.
 - OpenDART/ECOS remain projection-only; KOFIA remains blocked. GDELT outbound, Naver runtime,
-  teammate workspaces, and Decision/Signal/Risk/order authority remain unchanged.
+  Return/Experience placeholder workspaces, and Decision/Signal/Risk/order authority remain unchanged.
 
 ## 재현 / Reproduction
 

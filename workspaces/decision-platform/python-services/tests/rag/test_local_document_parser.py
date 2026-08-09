@@ -24,6 +24,7 @@ from app.rag.local_document_parser import (
     OcrBlock,
     OcrPageResult,
     ParserLimits,
+    _render_pdf_page,
 )
 
 
@@ -519,3 +520,21 @@ def test_resource_bounds_reject_oversize_file_and_image(posix_tmp_path: Path) ->
     _write(root, "large.png", _png_bytes())
     with pytest.raises(DocumentParseError, match="IMAGE_PIXEL_BOUND_EXCEEDED"):
         _parse(parser, root, "large.png")
+
+
+def test_pdf_raster_checks_page_geometry_before_allocating() -> None:
+    class _OversizedPdfPage:
+        def __init__(self) -> None:
+            self.rect = type("_PdfRect", (), {"width": 100_000_000.0, "height": 100_000_000.0})()
+            self.pixmap_calls = 0
+
+        def get_pixmap(self, **_kwargs: object) -> object:
+            self.pixmap_calls += 1
+            raise AssertionError("raster allocation must not occur for an oversized page")
+
+    page = _OversizedPdfPage()
+
+    with pytest.raises(DocumentParseError, match="IMAGE_PIXEL_BOUND_EXCEEDED"):
+        _render_pdf_page(page, max_image_pixels=100)  # type: ignore[arg-type]
+
+    assert page.pixmap_calls == 0

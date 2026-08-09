@@ -311,6 +311,39 @@ def test_get_market_data_retries_timeout_once_then_succeeds(tmp_path: Path) -> N
     assert quota_reservations == 2
 
 
+def test_http_client_deadline_guard_blocks_before_market_transport(tmp_path: Path) -> None:
+    outbound = 0
+    quota_reservations = 0
+
+    class _RecordingLimiter:
+        def acquire(self) -> None:
+            nonlocal quota_reservations
+            quota_reservations += 1
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal outbound
+        outbound += 1
+        return httpx.Response(200, json={"rt_cd": "0", "output": {"ok": "yes"}})
+
+    def expired_packet_guard() -> None:
+        raise KISCredentialError("approval packet expired")
+
+    client = KISHttpClient(
+        _settings(tmp_path),
+        transport=httpx.MockTransport(handler),
+        rate_limiter=_RecordingLimiter(),
+        deadline_guard=expired_packet_guard,
+    )
+    try:
+        with pytest.raises(KISCredentialError, match="approval packet expired"):
+            client.request("GET", CURRENT_PRICE_PATH, tr_id="FHKST01010100", params={})
+    finally:
+        client.close()
+
+    assert outbound == 0
+    assert quota_reservations == 0
+
+
 def test_online_http_client_rejects_caller_transport_and_limiter_overrides(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="private dependencies"):
         KISHttpClient(

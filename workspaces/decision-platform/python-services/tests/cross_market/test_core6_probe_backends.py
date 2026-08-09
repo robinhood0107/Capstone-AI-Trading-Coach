@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from datetime import UTC, date, datetime, timedelta
 
 import pytest
@@ -17,6 +18,7 @@ from app.cross_market.core6_probe_backends import (
     Core6SecEdgarBackend,
     SecEdgarProbeHttpResponse,
     _ProductionKisProbeSession,
+    _ProductionKrxProbeSession,
     _sec_target,
     StdlibSecEdgarProbeTransport,
     build_core6_backend,
@@ -33,6 +35,7 @@ def test_kis_backend_requires_cached_token_preflight_and_hashes_only_normalized_
     backend.preflight(packet=packet)
     result = backend.execute(packet=packet)
 
+    assert session.packet_expires_at == packet.expires_at
     assert session.events == ["preflight", "current:005930", "close"]
     assert result.outcome == "SUCCESS"
     assert result.provider_status_class == "HTTP_2XX"
@@ -89,6 +92,83 @@ def test_production_kis_session_honors_environment_offline_kill_switch(monkeypat
         _ProductionKisProbeSession()
 
 
+def test_production_kis_session_binds_expiry_to_pre_send_guard(monkeypatch) -> None:
+    clients: list[object] = []
+
+    class _OnlineSettings:
+        offline = False
+
+    class _FakeKisClient:
+        def __init__(self, *_args: object, **kwargs: object) -> None:
+            self.deadline_guard = kwargs["deadline_guard"]
+            clients.append(self)
+
+        def require_cached_access_token(self) -> None:
+            return None
+
+        def close(self) -> None:
+            return None
+
+    class _FakeMarketClient:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            return None
+
+    monkeypatch.setattr(
+        "app.cross_market.core6_probe_backends.KISSettings",
+        lambda **kwargs: _OnlineSettings(),
+    )
+    monkeypatch.setattr("app.cross_market.core6_probe_backends.KISHttpClient", _FakeKisClient)
+    monkeypatch.setattr("app.cross_market.core6_probe_backends.KISMarketClient", _FakeMarketClient)
+    session = _ProductionKisProbeSession()
+    session.bind_packet_expiry(expires_at=datetime.now(UTC) - timedelta(seconds=1))
+
+    with pytest.raises(Core6ProbeError, match="CORE6_PROBE_PACKET_EXPIRED"):
+        clients[0].deadline_guard()  # type: ignore[attr-defined, operator]
+
+
+def test_production_krx_session_caps_transport_deadline_at_packet_expiry(monkeypatch) -> None:
+    clients: list[object] = []
+
+    class _FakeKrxClient:
+        def __init__(self, *_args: object) -> None:
+            self.calls: list[tuple[date, str, float]] = []
+            clients.append(self)
+
+        def fetch_service_rows(
+            self,
+            as_of: date,
+            *,
+            service: str,
+            deadline_monotonic: float,
+        ) -> tuple[KrxDailyRow, ...]:
+            self.calls.append((as_of, service, deadline_monotonic))
+            return ()
+
+        @property
+        def physical_attempt_count(self) -> int:
+            return 0
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr("app.cross_market.core6_probe_backends.KrxOpenApiSettings", lambda **kwargs: object())
+    monkeypatch.setattr("app.cross_market.core6_probe_backends.KrxOpenApiClient", _FakeKrxClient)
+    session = _ProductionKrxProbeSession()
+    expires_at = datetime.now(UTC) + timedelta(seconds=30)
+    session.bind_packet_expiry(expires_at=expires_at)
+    before = time.monotonic()
+    assert session.fetch_rows(as_of=date(2026, 8, 7), service="stk_bydd_trd") == ()
+    after = time.monotonic()
+
+    deadline = clients[0].calls[0][2]  # type: ignore[attr-defined, index]
+    assert before < deadline <= after + 30
+
+    session.bind_packet_expiry(expires_at=datetime.now(UTC) - timedelta(seconds=1))
+    with pytest.raises(Core6ProbeError, match="CORE6_PROBE_PACKET_EXPIRED"):
+        session.fetch_rows(as_of=date(2026, 8, 7), service="stk_bydd_trd")
+    assert len(clients[0].calls) == 1  # type: ignore[attr-defined, arg-type]
+
+
 def test_krx_backend_reuses_fixed_service_and_returns_derived_hash_only() -> None:
     session = _KrxSession()
     backend = Core6KrxDailyBackend(session_factory=lambda: session)
@@ -97,6 +177,7 @@ def test_krx_backend_reuses_fixed_service_and_returns_derived_hash_only() -> Non
     backend.preflight(packet=packet)
     result = backend.execute(packet=packet)
 
+    assert session.packet_expires_at == packet.expires_at
     assert session.events == ["preflight:2026-08-07", "fetch:stk_bydd_trd:2026-08-07", "close"]
     assert result.outcome == "SUCCESS"
     assert result.projection_hash is not None
@@ -230,6 +311,10 @@ class _KisSession:
         self._fail_current = fail_current
         self._fail_physical_call_count = fail_physical_call_count
         self._physical_call_count = physical_call_count
+        self.packet_expires_at: datetime | None = None
+
+    def bind_packet_expiry(self, *, expires_at: datetime) -> None:
+        self.packet_expires_at = expires_at
 
     def preflight(self) -> None:
         self.events.append("preflight")
@@ -262,6 +347,10 @@ class _KisSession:
 class _KrxSession:
     def __init__(self) -> None:
         self.events: list[str] = []
+        self.packet_expires_at: datetime | None = None
+
+    def bind_packet_expiry(self, *, expires_at: datetime) -> None:
+        self.packet_expires_at = expires_at
 
     def preflight(self, *, as_of: date) -> None:
         self.events.append(f"preflight:{as_of.isoformat()}")

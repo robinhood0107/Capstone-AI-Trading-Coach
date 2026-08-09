@@ -68,6 +68,12 @@ OPTIONAL3_PROVIDERS: Final[tuple[str, ...]] = (
     "TWELVE_DATA",
     "MASSIVE",
 )
+OPTIONAL3_OPERATION_FAMILIES: Final[dict[str, str]] = {
+    "FINNHUB_RECOMMENDATION": "FINNHUB_OPTIONAL3",
+    "FINNHUB_EARNINGS": "FINNHUB_OPTIONAL3",
+    "TWELVE_DATA_TIME_SERIES": "TWELVE_DATA",
+    "MASSIVE_PREVIOUS_DAY_AGGREGATE": "MASSIVE",
+}
 MODEL_CANDIDATES: Final[tuple[str, ...]] = (
     "PROSUSAI_FINBERT",
     "YIYANGHKUST_FINBERT_TONE",
@@ -198,6 +204,8 @@ SCHEMA_IDS: Final[tuple[str, ...]] = (
     "s4-8-optional3-entitlement-v1",
     "s4-8-optional3-probe-approval-v1",
     "s4-8-optional3-probe-receipt-v1",
+    "s4-8-optional3-probe-approval-v2",
+    "s4-8-optional3-probe-receipt-v2",
 )
 SCHEMA_PATHS: Final[dict[str, str]] = {
     schema_id: f"contracts/schemas/{schema_id}.schema.json" for schema_id in SCHEMA_IDS
@@ -232,6 +240,8 @@ INVALID_FIXTURE_PATHS: Final[frozenset[str]] = frozenset(
         "contracts/examples/invalid/s4-8-optional3-entitlement-v1.call.invalid.json",
         "contracts/examples/invalid/s4-8-optional3-probe-approval-v1.execution.invalid.json",
         "contracts/examples/invalid/s4-8-optional3-probe-receipt-v1.call.invalid.json",
+        "contracts/examples/invalid/s4-8-optional3-probe-approval-v2.operation.invalid.json",
+        "contracts/examples/invalid/s4-8-optional3-probe-receipt-v2.raw.invalid.json",
     }
 )
 CATALOG_PATH: Final[str] = "contracts/catalogs/pre-s5-rag-news-contract.v1.json"
@@ -1360,6 +1370,165 @@ def _optional3_probe_receipt_schema() -> dict[str, Any]:
     )
 
 
+def _optional3_operation_provider_rules() -> list[dict[str, Any]]:
+    """One-shot packet이 operation과 provider family를 교차시켜 endpoint family를 넓히지 못하게 한다."""
+
+    return [
+        {
+            "if": {
+                "properties": {"operation": {"const": operation}},
+                "required": ["operation"],
+            },
+            "then": {"properties": {"providerFamily": {"const": provider_family}}},
+        }
+        for operation, provider_family in OPTIONAL3_OPERATION_FAMILIES.items()
+    ]
+
+
+def _optional3_probe_approval_v2_schema() -> dict[str, Any]:
+    body = _closed(
+        required=[
+            "approvalIdHash",
+            "approvalStatus",
+            "artifactCap",
+            "ciDigest",
+            "costCapMicrousd",
+            "date",
+            "decisionAuthority",
+            "endpointSetDigest",
+            "executionAllowed",
+            "expiresAt",
+            "headSha",
+            "logicalCallCap",
+            "nonceHash",
+            "operation",
+            "operatorHash",
+            "physicalCallCap",
+            "providerFamily",
+            "rawHeaderStored",
+            "rawProviderDataStored",
+            "rawQueryStored",
+            "requestPlanDigest",
+            "retryCount",
+            "riskSignalOrderAuthority",
+            "schemaVersion",
+            "securityDigest",
+            "symbol",
+            "trackedRawArtifactCount",
+            "treeSha256",
+        ],
+        properties={
+            "approvalIdHash": _digest(),
+            "approvalStatus": {"const": "APPROVED"},
+            "artifactCap": {"const": 0},
+            "ciDigest": _digest(),
+            "costCapMicrousd": {"maximum": 1_000_000, "minimum": 0, "type": "integer"},
+            "date": {"pattern": "^(?:NONE|[0-9]{4}-[0-9]{2}-[0-9]{2})$", "type": "string"},
+            "decisionAuthority": {"const": "NONE"},
+            "endpointSetDigest": _digest(),
+            "executionAllowed": {"const": True},
+            "expiresAt": _timestamp(),
+            "headSha": {"pattern": "^[0-9a-f]{40}$", "type": "string"},
+            "logicalCallCap": {"const": 1},
+            "nonceHash": _digest(),
+            "operation": {"enum": list(OPTIONAL3_OPERATION_FAMILIES)},
+            "operatorHash": _digest(),
+            "physicalCallCap": {"const": 1},
+            "providerFamily": {"enum": list(OPTIONAL3_PROVIDERS)},
+            "rawHeaderStored": {"const": False},
+            "rawProviderDataStored": {"const": False},
+            "rawQueryStored": {"const": False},
+            "requestPlanDigest": _digest(),
+            "retryCount": {"const": 0},
+            "riskSignalOrderAuthority": {"const": "NONE"},
+            "schemaVersion": {"const": 2},
+            "securityDigest": _digest(),
+            "symbol": {"pattern": "^[A-Z][A-Z0-9.:-]{0,19}$", "type": "string"},
+            "trackedRawArtifactCount": {"const": 0},
+            "treeSha256": _digest(),
+        },
+    )
+    body["allOf"] = _optional3_operation_provider_rules()
+    return _schema("s4-8-optional3-probe-approval-v2", body)
+
+
+def _optional3_probe_receipt_v2_schema() -> dict[str, Any]:
+    body = _closed(
+        required=[
+            "approvalIdHash",
+            "approvalPacketSha256",
+            "completedAt",
+            "decisionAuthority",
+            "firstFailureStopsRemainingCalls",
+            "logicalCallCount",
+            "operation",
+            "outcome",
+            "physicalCallCount",
+            "projectionHash",
+            "providerFamily",
+            "providerStatusClass",
+            "rawHeaderStored",
+            "rawProviderDataStored",
+            "rawQueryStored",
+            "requestPlanDigest",
+            "retryCount",
+            "riskSignalOrderAuthority",
+            "schemaVersion",
+            "startedAt",
+            "state",
+        ],
+        properties={
+            "approvalIdHash": _digest(),
+            "approvalPacketSha256": _digest(),
+            "completedAt": _timestamp(),
+            "decisionAuthority": {"const": "NONE"},
+            "firstFailureStopsRemainingCalls": {"const": True},
+            "logicalCallCount": {"const": 1},
+            "operation": {"enum": list(OPTIONAL3_OPERATION_FAMILIES)},
+            "outcome": {"enum": ["SUCCESS", "FAILED"]},
+            "physicalCallCount": {"const": 1},
+            "projectionHash": {"oneOf": [_digest(), {"type": "null"}]},
+            "providerFamily": {"enum": list(OPTIONAL3_PROVIDERS)},
+            "providerStatusClass": {
+                "enum": ["HTTP_2XX", "HTTP_4XX", "HTTP_5XX", "TRANSPORT", "PROTOCOL"]
+            },
+            "rawHeaderStored": {"const": False},
+            "rawProviderDataStored": {"const": False},
+            "rawQueryStored": {"const": False},
+            "requestPlanDigest": _digest(),
+            "retryCount": {"const": 0},
+            "riskSignalOrderAuthority": {"const": "NONE"},
+            "schemaVersion": {"const": 2},
+            "startedAt": _timestamp(),
+            "state": {"const": "EXECUTED"},
+        },
+    )
+    body["allOf"] = [
+        *_optional3_operation_provider_rules(),
+        {
+            "if": {"properties": {"outcome": {"const": "SUCCESS"}}},
+            "then": {
+                "properties": {
+                    "projectionHash": _digest(),
+                    "providerStatusClass": {"const": "HTTP_2XX"},
+                }
+            },
+        },
+        {
+            "if": {"properties": {"outcome": {"const": "FAILED"}}},
+            "then": {
+                "properties": {
+                    "projectionHash": {"const": None},
+                    "providerStatusClass": {
+                        "enum": ["HTTP_4XX", "HTTP_5XX", "TRANSPORT", "PROTOCOL"]
+                    },
+                }
+            },
+        },
+    ]
+    return _schema("s4-8-optional3-probe-receipt-v2", body)
+
+
 def _schemas() -> dict[str, dict[str, Any]]:
     return {
         "rag-oa112-logical-selection-v1": _oa_selection_schema(),
@@ -1380,6 +1549,8 @@ def _schemas() -> dict[str, dict[str, Any]]:
         "s4-8-optional3-entitlement-v1": _optional3_entitlement_schema(),
         "s4-8-optional3-probe-approval-v1": _optional3_probe_approval_schema(),
         "s4-8-optional3-probe-receipt-v1": _optional3_probe_receipt_schema(),
+        "s4-8-optional3-probe-approval-v2": _optional3_probe_approval_v2_schema(),
+        "s4-8-optional3-probe-receipt-v2": _optional3_probe_receipt_v2_schema(),
     }
 
 
@@ -1805,6 +1976,65 @@ def _optional3_receipt_fixture() -> dict[str, Any]:
     }
 
 
+def _optional3_approval_v2_fixture() -> dict[str, Any]:
+    return {
+        "approvalIdHash": _hash("a"),
+        "approvalStatus": "APPROVED",
+        "artifactCap": 0,
+        "ciDigest": _hash("b"),
+        "costCapMicrousd": 10_000,
+        "date": "NONE",
+        "decisionAuthority": "NONE",
+        "endpointSetDigest": _hash("c"),
+        "executionAllowed": True,
+        "expiresAt": "2030-01-02T03:19:00Z",
+        "headSha": "d" * 40,
+        "logicalCallCap": 1,
+        "nonceHash": _hash("e"),
+        "operation": "FINNHUB_RECOMMENDATION",
+        "operatorHash": _hash("f"),
+        "physicalCallCap": 1,
+        "providerFamily": "FINNHUB_OPTIONAL3",
+        "rawHeaderStored": False,
+        "rawProviderDataStored": False,
+        "rawQueryStored": False,
+        "requestPlanDigest": _hash("1"),
+        "retryCount": 0,
+        "riskSignalOrderAuthority": "NONE",
+        "schemaVersion": 2,
+        "securityDigest": _hash("2"),
+        "symbol": "AAPL",
+        "trackedRawArtifactCount": 0,
+        "treeSha256": _hash("3"),
+    }
+
+
+def _optional3_receipt_v2_fixture() -> dict[str, Any]:
+    return {
+        "approvalIdHash": _hash("a"),
+        "approvalPacketSha256": _hash("4"),
+        "completedAt": "2030-01-02T03:05:01Z",
+        "decisionAuthority": "NONE",
+        "firstFailureStopsRemainingCalls": True,
+        "logicalCallCount": 1,
+        "operation": "FINNHUB_RECOMMENDATION",
+        "outcome": "SUCCESS",
+        "physicalCallCount": 1,
+        "projectionHash": _hash("5"),
+        "providerFamily": "FINNHUB_OPTIONAL3",
+        "providerStatusClass": "HTTP_2XX",
+        "rawHeaderStored": False,
+        "rawProviderDataStored": False,
+        "rawQueryStored": False,
+        "requestPlanDigest": _hash("1"),
+        "retryCount": 0,
+        "riskSignalOrderAuthority": "NONE",
+        "schemaVersion": 2,
+        "startedAt": "2030-01-02T03:05:00Z",
+        "state": "EXECUTED",
+    }
+
+
 def _catalog() -> dict[str, Any]:
     """기존 byte-stable artifacts 위에 현재 Pre-S5 정책만 addendum으로 고정한다."""
 
@@ -1950,10 +2180,12 @@ def _catalog() -> dict[str, Any]:
             },
         },
         "s48Optional3": {
-            "entitlementState": "CONTRACT_ONLY",
-            "providerCallsAllowed": 0,
+            "entitlementState": "PACKET_GATED_LOCAL_ONLY",
+            "physicalCallCapPerPacket": 1,
+            "providerCallsAllowed": "ONE_SHOT_PACKET_ONLY",
             "providerFamilies": list(OPTIONAL3_PROVIDERS),
-            "receiptExecutionAllowed": 0,
+            "rawProviderDataStored": False,
+            "receiptExecutionAllowed": "LOCAL_CONTENT_FREE_ONLY",
             "retryCount": 0,
         },
         "schemaVersion": 1,
@@ -2204,6 +2436,8 @@ def _valid_fixtures() -> dict[str, dict[str, Any]]:
         "contracts/examples/s4-8-optional3-entitlement-v1.valid.json": _optional3_entitlement_fixture(),
         "contracts/examples/s4-8-optional3-probe-approval-v1.valid.json": _optional3_approval_fixture(),
         "contracts/examples/s4-8-optional3-probe-receipt-v1.valid.json": _optional3_receipt_fixture(),
+        "contracts/examples/s4-8-optional3-probe-approval-v2.valid.json": _optional3_approval_v2_fixture(),
+        "contracts/examples/s4-8-optional3-probe-receipt-v2.valid.json": _optional3_receipt_v2_fixture(),
     }
 
 
@@ -2288,6 +2522,16 @@ def _invalid_fixtures(valid: Mapping[str, dict[str, Any]]) -> dict[str, dict[str
     receipt = copy.deepcopy(valid["contracts/examples/s4-8-optional3-probe-receipt-v1.valid.json"])
     receipt["physicalCallCount"] = 1
 
+    approval_v2 = copy.deepcopy(
+        valid["contracts/examples/s4-8-optional3-probe-approval-v2.valid.json"]
+    )
+    approval_v2["providerFamily"] = "MASSIVE"
+
+    receipt_v2 = copy.deepcopy(
+        valid["contracts/examples/s4-8-optional3-probe-receipt-v2.valid.json"]
+    )
+    receipt_v2["rawProviderDataStored"] = True
+
     return {
         "contracts/examples/invalid/rag-oa112-logical-selection-v1.track-count.invalid.json": selection,
         "contracts/examples/invalid/rag-oa112-reserve-registry-v1.auto-promotion.invalid.json": reserve,
@@ -2311,6 +2555,8 @@ def _invalid_fixtures(valid: Mapping[str, dict[str, Any]]) -> dict[str, dict[str
         "contracts/examples/invalid/s4-8-optional3-entitlement-v1.call.invalid.json": entitlement,
         "contracts/examples/invalid/s4-8-optional3-probe-approval-v1.execution.invalid.json": approval,
         "contracts/examples/invalid/s4-8-optional3-probe-receipt-v1.call.invalid.json": receipt,
+        "contracts/examples/invalid/s4-8-optional3-probe-approval-v2.operation.invalid.json": approval_v2,
+        "contracts/examples/invalid/s4-8-optional3-probe-receipt-v2.raw.invalid.json": receipt_v2,
     }
 
 
@@ -2687,6 +2933,15 @@ def validate_semantics(schema_id: str, payload: object) -> None:
         "s4-8-optional3-probe-approval-v1",
         "s4-8-optional3-probe-receipt-v1",
     }:
+        return
+    if schema_id in {
+        "s4-8-optional3-probe-approval-v2",
+        "s4-8-optional3-probe-receipt-v2",
+    }:
+        operation = value.get("operation")
+        provider_family = value.get("providerFamily")
+        if OPTIONAL3_OPERATION_FAMILIES.get(operation) != provider_family:
+            raise ContractValidationError("Optional 3 v2 operation/provider binding drifted")
         return
     if schema_id not in SCHEMA_IDS:
         raise ContractValidationError(f"unsupported Pre-S5 schema: {schema_id}")

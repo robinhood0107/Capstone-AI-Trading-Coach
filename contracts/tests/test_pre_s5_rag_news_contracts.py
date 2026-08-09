@@ -176,6 +176,45 @@ class PreS5RagNewsContractTest(unittest.TestCase):
             )
         )
 
+    def test_optional3_v2_is_additive_packet_gated_and_keeps_v1_template_bytes(self) -> None:
+        """Optional 3 live probes may be one-shot only; the historical v1 zero-call templates stay valid."""
+
+        catalog = _load(ROOT / "contracts/catalogs/pre-s5-rag-news-contract.v1.json")
+        optional3 = catalog["s48Optional3"]
+        self.assertEqual("PACKET_GATED_LOCAL_ONLY", optional3["entitlementState"])
+        self.assertEqual("ONE_SHOT_PACKET_ONLY", optional3["providerCallsAllowed"])
+        self.assertEqual(1, optional3["physicalCallCapPerPacket"])
+        self.assertEqual(0, optional3["retryCount"])
+        self.assertFalse(optional3["rawProviderDataStored"])
+
+        legacy = _load(ROOT / "contracts/examples/s4-8-optional3-probe-approval-v1.valid.json")
+        self.assertEqual(
+            [],
+            list(
+                self.validators["s4-8-optional3-probe-approval-v1"].iter_errors(legacy)
+            ),
+        )
+        approval = _load(
+            ROOT / "contracts/examples/s4-8-optional3-probe-approval-v2.valid.json"
+        )
+        receipt = _load(
+            ROOT / "contracts/examples/s4-8-optional3-probe-receipt-v2.valid.json"
+        )
+        self.assertEqual(
+            [],
+            list(
+                self.validators["s4-8-optional3-probe-approval-v2"].iter_errors(approval)
+            ),
+        )
+        self.assertEqual(
+            [],
+            list(
+                self.validators["s4-8-optional3-probe-receipt-v2"].iter_errors(receipt)
+            ),
+        )
+        validate_semantics("s4-8-optional3-probe-approval-v2", approval)
+        validate_semantics("s4-8-optional3-probe-receipt-v2", receipt)
+
     def test_v4_source_permissions_require_all_four_for_active_oa(self) -> None:
         source = _load(ROOT / "contracts/examples/rag-source-card-v4.valid.json")
         validator = self.validators["rag-source-card-v4"]
@@ -385,7 +424,7 @@ class PreS5RagNewsContractTest(unittest.TestCase):
         duplicated_lane["lanes"][-1] = copy.deepcopy(duplicated_lane["lanes"][0])
         self.assertTrue(list(validator.iter_errors(duplicated_lane)))
 
-    def test_global_news_and_optional3_are_non_executable_contract_boundaries(self) -> None:
+    def test_global_news_stays_non_executable_and_optional3_is_packet_gated_only(self) -> None:
         catalog = _load(ROOT / "contracts/catalogs/pre-s5-rag-news-contract.v1.json")
         lanes = catalog["foreignNews"]["lanes"]
         self.assertEqual(
@@ -395,8 +434,10 @@ class PreS5RagNewsContractTest(unittest.TestCase):
         self.assertTrue(all(lane["providerCallsAllowed"] is False for lane in lanes))
         self.assertEqual("DECISION_PLATFORM_OFFLINE_REFERENCE_ONLY", lanes[-1]["mode"])
         optional3 = catalog["s48Optional3"]
-        self.assertEqual(0, optional3["providerCallsAllowed"])
-        self.assertEqual(0, optional3["receiptExecutionAllowed"])
+        self.assertEqual("ONE_SHOT_PACKET_ONLY", optional3["providerCallsAllowed"])
+        self.assertEqual("LOCAL_CONTENT_FREE_ONLY", optional3["receiptExecutionAllowed"])
+        self.assertEqual(1, optional3["physicalCallCapPerPacket"])
+        self.assertFalse(optional3["rawProviderDataStored"])
         self.assertEqual(
             ["FINNHUB_OPTIONAL3", "TWELVE_DATA", "MASSIVE"],
             optional3["providerFamilies"],
@@ -530,7 +571,7 @@ class PreS5RagNewsContractTest(unittest.TestCase):
 
     def test_all_required_invalid_fixtures_fail_closed(self) -> None:
         self.assertGreaterEqual(len(INVALID_FIXTURE_PATHS), 16)
-        self.assertEqual(19, len(VALID_FIXTURE_PATHS))
+        self.assertEqual(21, len(VALID_FIXTURE_PATHS))
         for relative_path in sorted(INVALID_FIXTURE_PATHS):
             payload = _load(ROOT / relative_path)
             schema_id = Path(relative_path).name.split(".", maxsplit=1)[0]

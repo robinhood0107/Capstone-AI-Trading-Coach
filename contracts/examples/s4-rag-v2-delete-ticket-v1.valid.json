@@ -1,0 +1,14 @@
+{
+  "contractId": "s4-rag-v2-delete-ticket-v1",
+  "documentBound": true,
+  "documentId": "doc_01contractfixture",
+  "expiresAt": "2026-08-03T00:05:00Z",
+  "issuedAt": "2026-08-03T00:00:00Z",
+  "ownerBound": true,
+  "ownerRawCopyAllowed": false,
+  "schemaVersion": 1,
+  "singleUse": true,
+  "sourceScope": "OWNER_PRIVATE",
+  "ticketId": "rtd_01CONTRACTFIXTURE",
+  "ttlSeconds": 300
+}

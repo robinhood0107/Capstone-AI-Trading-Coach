@@ -146,6 +146,42 @@
         "openAiCallsAllowed": {
           "const": false
         },
+        "preparedScopeControlPlane": {
+          "additionalProperties": false,
+          "properties": {
+            "headerName": {
+              "const": "X-Rag-V2-Vertex-Scope-Claim"
+            },
+            "packetOwnerIdentityStored": {
+              "const": false
+            },
+            "rawEvidenceStored": {
+              "const": false
+            },
+            "rawQuestionStored": {
+              "const": false
+            },
+            "sameParsedAskCommandFingerprintBound": {
+              "const": true
+            },
+            "sameRequestIdRequired": {
+              "const": true
+            },
+            "scopeTtlSeconds": {
+              "const": 120
+            }
+          },
+          "required": [
+            "headerName",
+            "packetOwnerIdentityStored",
+            "rawEvidenceStored",
+            "rawQuestionStored",
+            "sameParsedAskCommandFingerprintBound",
+            "sameRequestIdRequired",
+            "scopeTtlSeconds"
+          ],
+          "type": "object"
+        },
         "rawResponseStored": {
           "const": false
         },
@@ -186,6 +222,7 @@
         "maximumGenerateContentCallsPerQuestion",
         "modelId",
         "openAiCallsAllowed",
+        "preparedScopeControlPlane",
         "rawResponseStored",
         "rerankerAllowed",
         "retryCount",
@@ -246,11 +283,71 @@
         "modelId": {
           "const": "voyage-context-4"
         },
+        "officialTokenizer": {
+          "additionalProperties": false,
+          "properties": {
+            "artifactAutoDownloadAllowed": {
+              "const": false
+            },
+            "localArtifactOnly": {
+              "const": true
+            },
+            "packetHashBindingRequired": {
+              "const": true
+            },
+            "preflightExpectedInputTokenLedgerRequired": {
+              "const": true
+            },
+            "providerTokenCountCallAllowed": {
+              "const": false
+            },
+            "utf8ByteApproximationAllowed": {
+              "const": false
+            }
+          },
+          "required": [
+            "artifactAutoDownloadAllowed",
+            "localArtifactOnly",
+            "packetHashBindingRequired",
+            "preflightExpectedInputTokenLedgerRequired",
+            "providerTokenCountCallAllowed",
+            "utf8ByteApproximationAllowed"
+          ],
+          "type": "object"
+        },
         "orderedPrechunkedDocumentGroupsRequired": {
           "const": true
         },
         "outboundCallsAllowed": {
           "const": false
+        },
+        "ownerPrivateSentinel": {
+          "additionalProperties": false,
+          "properties": {
+            "allowed": {
+              "const": true
+            },
+            "orderedGroupCount": {
+              "const": 0
+            },
+            "ownerScopeSha256": {
+              "const": null
+            },
+            "publicBaseOnly": {
+              "const": true
+            },
+            "sourceScope": {
+              "const": "OWNER_PRIVATE"
+            }
+          },
+          "required": [
+            "allowed",
+            "orderedGroupCount",
+            "ownerScopeSha256",
+            "publicBaseOnly",
+            "sourceScope"
+          ],
+          "type": "object"
         },
         "partialProfileMixAllowed": {
           "const": false
@@ -273,6 +370,8 @@
         "fullBundleScope",
         "generationFallback",
         "modelId",
+        "officialTokenizer",
+        "ownerPrivateSentinel",
         "outboundCallsAllowed",
         "orderedPrechunkedDocumentGroupsRequired",
         "partialProfileMixAllowed",

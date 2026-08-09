@@ -40,6 +40,15 @@
     "maximumGenerateContentCallsPerQuestion": 1,
     "modelId": "gemini-3.5-flash",
     "openAiCallsAllowed": false,
+    "preparedScopeControlPlane": {
+      "headerName": "X-Rag-V2-Vertex-Scope-Claim",
+      "packetOwnerIdentityStored": false,
+      "rawEvidenceStored": false,
+      "rawQuestionStored": false,
+      "sameParsedAskCommandFingerprintBound": true,
+      "sameRequestIdRequired": true,
+      "scopeTtlSeconds": 120
+    },
     "rawResponseStored": false,
     "rerankerAllowed": false,
     "retryCount": 0,
@@ -64,8 +73,23 @@
     ],
     "generationFallback": "FULL_BUNDLE_REBUILD_EVALUATE_CAS",
     "modelId": "voyage-context-4",
+    "officialTokenizer": {
+      "artifactAutoDownloadAllowed": false,
+      "localArtifactOnly": true,
+      "packetHashBindingRequired": true,
+      "preflightExpectedInputTokenLedgerRequired": true,
+      "providerTokenCountCallAllowed": false,
+      "utf8ByteApproximationAllowed": false
+    },
     "orderedPrechunkedDocumentGroupsRequired": true,
     "outboundCallsAllowed": false,
+    "ownerPrivateSentinel": {
+      "allowed": true,
+      "orderedGroupCount": 0,
+      "ownerScopeSha256": null,
+      "publicBaseOnly": true,
+      "sourceScope": "OWNER_PRIVATE"
+    },
     "partialProfileMixAllowed": false,
     "queryUnitFallbackAllowed": true,
     "retryCount": 0,

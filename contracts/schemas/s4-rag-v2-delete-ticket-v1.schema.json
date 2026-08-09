@@ -1,0 +1,63 @@
+{
+  "$id": "contracts/schemas/s4-rag-v2-delete-ticket-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "contractId": {
+      "const": "s4-rag-v2-delete-ticket-v1"
+    },
+    "documentBound": {
+      "const": true
+    },
+    "documentId": {
+      "pattern": "^doc_[a-z0-9][a-z0-9_-]{10,95}$",
+      "type": "string"
+    },
+    "expiresAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "issuedAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "ownerBound": {
+      "const": true
+    },
+    "ownerRawCopyAllowed": {
+      "const": false
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "singleUse": {
+      "const": true
+    },
+    "sourceScope": {
+      "const": "OWNER_PRIVATE"
+    },
+    "ticketId": {
+      "pattern": "^rtd_[A-Za-z0-9_-]{12,96}$",
+      "type": "string"
+    },
+    "ttlSeconds": {
+      "const": 300
+    }
+  },
+  "required": [
+    "contractId",
+    "documentBound",
+    "documentId",
+    "expiresAt",
+    "issuedAt",
+    "ownerBound",
+    "ownerRawCopyAllowed",
+    "schemaVersion",
+    "singleUse",
+    "sourceScope",
+    "ticketId",
+    "ttlSeconds"
+  ],
+  "title": "s4-rag-v2-delete-ticket-v1",
+  "type": "object"
+}

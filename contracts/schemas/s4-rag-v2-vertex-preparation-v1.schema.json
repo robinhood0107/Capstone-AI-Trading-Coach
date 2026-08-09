@@ -1,0 +1,80 @@
+{
+  "$id": "contracts/schemas/s4-rag-v2-vertex-preparation-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "answerMode": {
+      "enum": [
+        "CONCISE",
+        "DETAILED"
+      ]
+    },
+    "consentEventId": {
+      "pattern": "^rce_[A-Za-z0-9_-]{12,96}$",
+      "type": "string"
+    },
+    "contractId": {
+      "const": "s4-rag-v2-vertex-preparation-v1"
+    },
+    "embeddingProfileId": {
+      "enum": [
+        "bge_m3_local_1024_v1",
+        "voyage_context_4_1024_v1"
+      ]
+    },
+    "expiresAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "policyDigest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "processorSetDigest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "questionFingerprintHmac": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "rawEvidenceStored": {
+      "const": false
+    },
+    "rawQuestionStored": {
+      "const": false
+    },
+    "requestId": {
+      "pattern": "^req_[A-Za-z0-9_-]{12,96}$",
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "scopeClaimId": {
+      "pattern": "^rvs_[0-9a-f]{32}$",
+      "type": "string"
+    },
+    "scopeTtlSeconds": {
+      "const": 120
+    }
+  },
+  "required": [
+    "contractId",
+    "answerMode",
+    "consentEventId",
+    "embeddingProfileId",
+    "expiresAt",
+    "policyDigest",
+    "processorSetDigest",
+    "questionFingerprintHmac",
+    "rawEvidenceStored",
+    "rawQuestionStored",
+    "requestId",
+    "schemaVersion",
+    "scopeClaimId",
+    "scopeTtlSeconds"
+  ],
+  "title": "s4-rag-v2-vertex-preparation-v1",
+  "type": "object"
+}

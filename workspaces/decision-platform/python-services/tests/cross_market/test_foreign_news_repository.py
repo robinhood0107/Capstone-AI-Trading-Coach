@@ -113,6 +113,31 @@ def test_repository_rejects_unknown_append_disposition() -> None:
         repository.append(_record())
 
 
+def test_repository_preflight_attests_only_the_single_append_capability() -> None:
+    connection = _FakeConnection()
+    repository = PostgresForeignNewsSentimentRepository(
+        "postgresql://fixture.invalid/decision",
+        connection_factory=_ConnectionFactory(connection),
+    )
+
+    repository.preflight()
+
+    assert connection.appended_owner is None
+
+
+def test_repository_preflight_rejects_broad_writer_authority() -> None:
+    connection = _FakeConnection(table_privilege_present=True)
+    repository = PostgresForeignNewsSentimentRepository(
+        "postgresql://fixture.invalid/decision",
+        connection_factory=_ConnectionFactory(connection),
+    )
+
+    with pytest.raises(ForeignNewsWriterAuthorityError, match="direct table privilege"):
+        repository.preflight()
+
+    assert connection.appended_owner is None
+
+
 def _record():
     return ForeignNewsSentimentMaterializer().materialize(
         owner_user_id="usr_demo_user",

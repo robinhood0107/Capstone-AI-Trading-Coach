@@ -6,10 +6,12 @@ import pytest
 
 from app.cross_market.s48_runtime import (
     S48AuthorizedProjection,
+    S48DirectProbeProjection,
     S48RuntimeError,
     S48RuntimeInMemoryRepository,
     S48RuntimeMaterializer,
 )
+from app.cross_market.core6_probe import Core6ProbeReceipt, core6_endpoint_set_identity_hash
 
 
 def test_runtime_materializes_exact_nine_fixture_first_lanes_without_provider_calls() -> None:
@@ -107,3 +109,80 @@ def test_runtime_batch_is_atomic_replay_safe_and_rejects_outbound_materializatio
             evaluated_at=datetime(2026, 8, 9, 1, tzinfo=UTC),
             provider_physical_calls=1,
         )
+
+
+def test_complete_core6_receipt_sets_make_only_kis_sec_and_krx_available_without_runtime_outbound() -> None:
+    projections = tuple(
+        S48DirectProbeProjection.from_core6_receipt(_successful_receipt(operation, index))
+        for index, operation in enumerate(
+            (
+                "KIS_CURRENT_PRICE",
+                "SEC_EDGAR_SUBMISSIONS",
+                "SEC_EDGAR_COMPANYFACTS",
+                "KRX_KOSPI_DAILY",
+                "KRX_KOSDAQ_DAILY",
+            )
+        )
+    )
+
+    batch = S48RuntimeMaterializer().materialize(
+        evaluated_at=datetime(2026, 8, 9, 1, tzinfo=UTC),
+        direct_probe_projections=projections,
+    )
+
+    by_family = {item.source_family: item for item in batch.lanes}
+    for family in ("KIS", "SEC_EDGAR", "KRX"):
+        assert by_family[family].status == "AVAILABLE"
+        assert by_family[family].reason == "COMPLETE_DIRECT_PROBE_SET_AVAILABLE"
+        assert by_family[family].projection_hash is not None
+    assert by_family["KOFIA"].status == "BLOCKED"
+    assert batch.provider_physical_calls == 0
+
+
+def test_incomplete_or_duplicate_core6_receipt_proofs_fail_closed() -> None:
+    projection = S48DirectProbeProjection.from_core6_receipt(
+        _successful_receipt("SEC_EDGAR_SUBMISSIONS", 1)
+    )
+
+    batch = S48RuntimeMaterializer().materialize(
+        evaluated_at=datetime(2026, 8, 9, 1, tzinfo=UTC),
+        direct_probe_projections=(projection,),
+    )
+
+    by_family = {item.source_family: item for item in batch.lanes}
+    assert by_family["SEC_EDGAR"].status == "ABSTAIN"
+    assert by_family["SEC_EDGAR"].reason == "DIRECT_PROBE_RECEIPT_SET_INCOMPLETE"
+
+    with pytest.raises(S48RuntimeError, match="S48_RUNTIME_DIRECT_RECEIPT_DUPLICATE"):
+        S48RuntimeMaterializer().materialize(
+            evaluated_at=datetime(2026, 8, 9, 1, tzinfo=UTC),
+            direct_probe_projections=(projection, projection),
+        )
+
+
+def _successful_receipt(operation: str, index: int) -> Core6ProbeReceipt:
+    source_family, source_id = {
+        "KIS_CURRENT_PRICE": ("KIS", "S48_CORE6_KIS"),
+        "SEC_EDGAR_SUBMISSIONS": ("SEC_EDGAR", "S48_CORE6_SEC_EDGAR"),
+        "SEC_EDGAR_COMPANYFACTS": ("SEC_EDGAR", "S48_CORE6_SEC_EDGAR"),
+        "KRX_KOSPI_DAILY": ("KRX", "S48_CORE6_KRX"),
+        "KRX_KOSDAQ_DAILY": ("KRX", "S48_CORE6_KRX"),
+    }[operation]
+    now = datetime(2026, 8, 9, 1, tzinfo=UTC)
+    letter = chr(ord("a") + index)
+    return Core6ProbeReceipt(
+        approval_id_hash=letter * 64,
+        approval_packet_sha256=letter * 64,
+        completed_at=now,
+        endpoint_set_identity_hash=core6_endpoint_set_identity_hash(source_family),
+        logical_call_count=1,
+        operation=operation,
+        outcome="SUCCESS",
+        physical_call_count=1,
+        projection_hash=letter * 64,
+        provider_family=source_family,
+        provider_status_class="HTTP_2XX",
+        request_plan_digest=letter * 64,
+        source_id=source_id,
+        started_at=now,
+    )

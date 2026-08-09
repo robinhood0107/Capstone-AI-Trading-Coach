@@ -73,6 +73,7 @@ rag-public-bge = "app.rag.rag_v2_public_bge_cli:main"
 rag-public-voyage = "app.rag.rag_v2_public_voyage_cli:main"
 rag-v2-grpc = "app.rag.rag_v2_grpc_server:serve"
 s48-runtime = "app.cross_market.s48_runtime_cli:main"
+s48-core6-probe = "app.cross_market.core6_probe_cli:main"
 s48-optional3-probe = "app.cross_market.optional3_probe_cli:main"
 
 [build-system]

@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Final
 
 from app.cross_market.foreign_news import ForeignNewsModelSelectionError, ForeignNewsSelectionRun
-from app.cross_market.foreign_news_evaluator import ForeignNewsEvaluationExample
+from app.cross_market.foreign_news_evaluator import ForeignNewsEvaluationExample, ForeignNewsLocalCandidate
 from app.cross_market.foreign_news_local_evaluation import (
     DEFAULT_FINBERT_EVALUATION_ROOT,
     ForeignNewsDatasetReceipt,
@@ -63,6 +63,52 @@ def main(argv: Sequence[str] | None = None) -> int:
         _emit({"code": "FOREIGN_NEWS_LOCAL_EVALUATION_FAILED", "state": "FAILED"})
         return 2
     return 0
+
+
+def load_verified_selected_local_candidate(
+    *,
+    evaluation_root: Path = DEFAULT_FINBERT_EVALUATION_ROOT,
+) -> ForeignNewsLocalCandidate:
+    """single blind-test를 통과한 local model만 foreign-news runtime analyzer로 연다.
+
+    Validation ABSTAIN, failed test, malformed receipt는 model/dataset download 없이 typed failure로
+    끝낸다. Runtime은 receipt의 aggregate-only proof와 same ignored cache의 local model만 사용한다.
+    """
+
+    root_stat = evaluation_root.lstat()
+    if (
+        not stat.S_ISDIR(root_stat.st_mode)
+        or stat.S_ISLNK(root_stat.st_mode)
+        or stat.S_IMODE(root_stat.st_mode) != 0o700
+    ):
+        raise ForeignNewsEvaluationCliError("FOREIGN_NEWS_RUNTIME_MODEL_NOT_VERIFIED")
+    payload = _load_receipt_if_present(evaluation_root / "receipts" / _RECEIPT_NAME)
+    if payload is None:
+        raise ForeignNewsEvaluationCliError("FOREIGN_NEWS_RUNTIME_MODEL_NOT_VERIFIED")
+    result = payload.get("result")
+    if not isinstance(result, Mapping):
+        raise ForeignNewsEvaluationCliError("FOREIGN_NEWS_RUNTIME_MODEL_NOT_VERIFIED")
+    selection = result.get("selection")
+    if not isinstance(selection, Mapping):
+        raise ForeignNewsEvaluationCliError("FOREIGN_NEWS_RUNTIME_MODEL_NOT_VERIFIED")
+    selected_model = selection.get("selectedModel")
+    if (
+        selection.get("selectionStatus") != "TEST_EVALUATED"
+        or selection.get("testEvaluationCount") != 1
+        or selection.get("testOutcome") != "PASSED"
+        or selected_model
+        not in {
+            "PROSUSAI_FINBERT",
+            "YIYANGHKUST_FINBERT_TONE",
+            "LOUGHRAN_MCDONALD_BASELINE",
+        }
+    ):
+        raise ForeignNewsEvaluationCliError("FOREIGN_NEWS_RUNTIME_MODEL_NOT_VERIFIED")
+    candidates, _ = build_local_model_candidates(evaluation_root=evaluation_root)
+    candidate = next((item for item in candidates if item.candidate_model == selected_model), None)
+    if candidate is None:
+        raise ForeignNewsEvaluationCliError("FOREIGN_NEWS_RUNTIME_MODEL_NOT_VERIFIED")
+    return candidate
 
 
 def _evaluate_once(*, evaluation_root: Path) -> dict[str, object]:

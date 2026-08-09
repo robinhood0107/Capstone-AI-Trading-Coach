@@ -27,14 +27,7 @@ internal data class PreS5VertexUsage(
     val totalTokenCount: Int,
 )
 
-/**
- * packet/nonce와 question HMAC을 append-only lease로 먼저 commit해 process crash 뒤 재호출을 막는다.
- * reservation/attempt/outcome은 provider text·credential·response를 보관하지 않는 sanitized ledger다.
- */
-internal data class PreS5VertexTokenAttempt(
-    val lease: PreS5VertexUsageLease,
-)
-
+/** packet/nonce와 question HMAC을 먼저 commit해 process crash 뒤 API-key 재호출을 막는다. */
 internal data class PreS5VertexGenerateContentAttempt(
     val lease: PreS5VertexUsageLease,
 )
@@ -88,7 +81,8 @@ internal class JdbcPreS5VertexUsageLedger(
                           :answerMode, :consentEventId, :packetSha256, :nonceSha256, :policySha256, :processorSetSha256, :expiresAt,
                           :inputTokenCap, :outputTokenCap, :inputByteCap, :costCapMicrousd,
                           :inputMicrousdPerToken, :outputMicrousdPerToken,
-                          :tokenPhysicalCallCap, :generateContentPhysicalCallCap, CAST(:evidenceManifest AS jsonb)
+                          :tokenPhysicalCallCap, :generateContentPhysicalCallCap, :authenticationMode,
+                          CAST(:evidenceManifest AS jsonb)
                         )
                         """.trimIndent(),
                         mapOf(
@@ -112,6 +106,7 @@ internal class JdbcPreS5VertexUsageLedger(
                             "outputMicrousdPerToken" to activation.outputMicrousdPerToken,
                             "tokenPhysicalCallCap" to activation.tokenPhysicalCallCap,
                             "generateContentPhysicalCallCap" to activation.generateContentPhysicalCallCap,
+                            "authenticationMode" to activation.authenticationMode,
                             "evidenceManifest" to evidenceManifest,
                         ),
                     ) { result, _ ->
@@ -124,16 +119,7 @@ internal class JdbcPreS5VertexUsageLedger(
         }
     }
 
-    /**
-     * OAuth assertion은 DB token-attempt receipt가 먼저 append된 뒤에만 생성한다. actor setting을 새
-     * transaction마다 다시 바인딩해 shared decision_app connection의 cross-owner consume을 막는다.
-     */
-    fun claimTokenAttempt(lease: PreS5VertexUsageLease): PreS5VertexTokenAttempt {
-        claim(lease, "SELECT claim_rag_v2_immutable_vertex_token_attempt(:usageEventId, :ownerUserId)")
-        return PreS5VertexTokenAttempt(lease)
-    }
-
-    /** generateContent도 token lane과 분리한 one-shot receipt가 있어야 provider socket으로 진행한다. */
+    /** API-key mode에서도 generation socket 전에 append-only one-shot receipt가 있어야 한다. */
     fun claimGenerateContentAttempt(lease: PreS5VertexUsageLease): PreS5VertexGenerateContentAttempt {
         claim(lease, "SELECT claim_rag_v2_immutable_vertex_generate_content_attempt(:usageEventId, :ownerUserId)")
         return PreS5VertexGenerateContentAttempt(lease)

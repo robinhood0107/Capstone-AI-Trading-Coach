@@ -39,7 +39,7 @@
 | S4.2C/S4.4G | `STUB_FAIL_CLOSED` | PR #77 control plane | 0 | Voyage/Gemini outbound executor는 hard-disabled |
 | S4.5/S4.6 | `OFFLINE_ONLY` | PR #77 fixture evaluation·numeric loopback | 0 | fixture/retrieval-only; provider live 0 |
 | S4.7D parser/OCR | `OFFLINE_ONLY` | PR #84 `014ccca1`, #85 `4bcca91e` | 0 | 안전 parser/OCR만 구현, importer/index writer 없음 |
-| S4.7D v2 runtime | `IMPLEMENTED_DRAFT` | PR #87/#88 + current working tree V25–V51 | 0 | local materializer·immutable bundle·profile-selected retrieval·ticket/Vertex preparation과 official-tokenizer usage attestation 구현은 검증 중; OA112 rights/cache/DB activation 전 `FULL_READY`가 아니며 Voyage/Vertex physical call은 0 |
+| S4.7D v2 runtime | `IMPLEMENTED_DRAFT` | PR #87/#88 + current working tree V25–V51 | 0 | local materializer·immutable bundle·profile-selected retrieval·ticket/Vertex preparation과 OA112 first-download quarantine bootstrap 구현은 검증 중; OA112 rights/cache/DB activation 전 `FULL_READY`가 아니며 Voyage/Vertex physical call은 0 |
 | Pre-S5 RAG/global-news lock | `CONTRACT_ONLY` | Issue #95 addendum | 0 | `OA112_ACTIVE_CONTRACT_LOCKED`, `S4_7D_OA112_PHYSICAL_ACTIVATION=NOT_MATERIALIZED`; foreign-news/Optional 3 adapter와 provider call 0 |
 | Pre-S5 foreign-news local runtime | `IMPLEMENTED_DRAFT` | current working tree V49 | 0 | sanitized owner-local aggregate/read route만; Finnhub/SEC/Fed adapter와 GDELT HTTP transport/outbound는 없음 |
 | S4.8A | `CONTRACT_LOCKED` | PR #75 `c17d51f6` | 0 | `S4_8A=CONTRACT_LOCKED`; provider entitlement/adapter는 미활성 |

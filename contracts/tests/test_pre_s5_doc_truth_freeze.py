@@ -133,6 +133,14 @@ class PreS5DocumentTruthFreezeTest(unittest.TestCase):
             truth_freeze.REQUIRED_PUBLIC_MARKERS["capstone-rag/README.md"],
         )
         self.assertIn(
+            "| S4.7D v2 runtime | `IMPLEMENTED_DRAFT` |",
+            truth_freeze.REQUIRED_PUBLIC_MARKERS["docs/README.md"],
+        )
+        self.assertIn(
+            "ACTIVE_V2_RUNTIME=IMPLEMENTED_DRAFT",
+            truth_freeze.REQUIRED_PUBLIC_MARKERS["docs/API_명세서.md"],
+        )
+        self.assertIn(
             "/api/v2/market-evidence/{symbol}/foreign-news-sentiment",
             truth_freeze.REQUIRED_PUBLIC_MARKERS["docs/API_명세서.md"],
         )

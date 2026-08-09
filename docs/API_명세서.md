@@ -1639,8 +1639,10 @@ API·DB·log·Vertex input에 넣지 않는다. sentiment benchmark는 ProsusAI 
 정확히 한 번만 평가한다. local evaluator는 이미 적법하게 준비한 ignored local cache의 모델·gold/stress
 dataset만 transient memory에서 읽고, source revision/license/hash와 aggregate metric만 든 0600 local
 receipt를 한 번 생성한다. validation 탈락이면 blind test와 stress input을 읽지 않고 `ABSTAIN`을 유지하며,
-후보를 추가하거나 임계값을 낮춰 재선택하지 않는다. 현재 상태는 `IMPLEMENTED_DRAFT` local sanitized
-runtime이며 physical call은 계속 0이다.
+후보를 추가하거나 임계값을 낮춰 재선택하지 않는다. selected blind test 직전에는 content-free 0600
+reservation을 durable하게 남기므로, test 후 receipt write 전에 process가 중단된 경우 재시도 대신
+`FOREIGN_NEWS_TEST_EVALUATION_RESUME_BLOCKED`으로 fail-closed한다. 현재 상태는 `IMPLEMENTED_DRAFT`
+local sanitized runtime이며 physical call은 계속 0이다.
 
 ---
 

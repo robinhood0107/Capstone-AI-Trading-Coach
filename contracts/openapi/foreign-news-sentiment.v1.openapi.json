@@ -7,6 +7,25 @@
         "additionalProperties": false,
         "allOf": [
           {
+            "else": {
+              "properties": {
+                "lanes": {
+                  "not": {
+                    "contains": {
+                      "properties": {
+                        "state": {
+                          "const": "AVAILABLE"
+                        }
+                      },
+                      "required": [
+                        "state"
+                      ],
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            },
             "if": {
               "properties": {
                 "status": {

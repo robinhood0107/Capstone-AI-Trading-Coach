@@ -68,6 +68,10 @@ rag-bge-artifact-acquire = "app.rag.bge_acquisition:main"
 rag-bge-five-card-poc = "app.rag.bge_poc_cli:main"
 rag-content = "app.rag.content_cli:main"
 rag-oa-release-validate = "app.rag.oa_release_manifest_cli:main"
+rag-public-bge = "app.rag.rag_v2_public_bge_cli:main"
+rag-public-voyage = "app.rag.rag_v2_public_voyage_cli:main"
+rag-v2-grpc = "app.rag.rag_v2_grpc_server:serve"
+s48-runtime = "app.cross_market.s48_runtime_cli:main"
 
 [build-system]
 requires = ["hatchling"]

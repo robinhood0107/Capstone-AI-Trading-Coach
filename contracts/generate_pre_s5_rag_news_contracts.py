@@ -34,6 +34,7 @@ HASH_PATTERN: Final[str] = "^[0-9a-f]{64}$"
 OPAQUE_ID_PATTERN: Final[str] = "^[a-z][a-z0-9_-]{2,95}$"
 DOCUMENT_ID_PATTERN: Final[str] = "^doc_[a-z0-9][a-z0-9_-]{10,95}$"
 TICKET_ID_PATTERN: Final[str] = "^rti_[A-Za-z0-9_-]{12,96}$"
+DELETE_TICKET_ID_PATTERN: Final[str] = "^rtd_[A-Za-z0-9_-]{12,96}$"
 TRACK_IDS: Final[tuple[str, ...]] = (
     "MICRO_GAME_INFO_MARKET_DESIGN",
     "MACRO_MONETARY_INTERNATIONAL",
@@ -186,6 +187,9 @@ SCHEMA_IDS: Final[tuple[str, ...]] = (
     "s4-rag-v2-effective-consent-v1",
     "s4-rag-v2-import-ticket-request-v1",
     "s4-rag-v2-import-ticket-v1",
+    "s4-rag-v2-delete-ticket-request-v1",
+    "s4-rag-v2-delete-ticket-v1",
+    "s4-rag-v2-vertex-preparation-v1",
     "s4-rag-v2-status-activation-v1",
     "s4-rag-v2-pre-s5-policy-v1",
     "foreign-news-lane-entitlement-v1",
@@ -212,11 +216,15 @@ INVALID_FIXTURE_PATHS: Final[frozenset[str]] = frozenset(
         "contracts/examples/invalid/rag-source-card-v4.url.invalid.json",
         "contracts/examples/invalid/s4-rag-v2-external-consent-v1.actor.invalid.json",
         "contracts/examples/invalid/s4-rag-v2-import-ticket-v1.ttl.invalid.json",
+        "contracts/examples/invalid/s4-rag-v2-delete-ticket-v1.ttl.invalid.json",
+        "contracts/examples/invalid/s4-rag-v2-vertex-preparation-v1.raw-question.invalid.json",
         "contracts/examples/invalid/s4-rag-v2-status-activation-v1.deletion.invalid.json",
         "contracts/examples/invalid/s4-rag-v2-status-activation-v1.path.invalid.json",
+        "contracts/examples/invalid/s4-rag-v2-pre-s5-policy-v1.byte-approximation.invalid.json",
         "contracts/examples/invalid/s4-rag-v2-pre-s5-policy-v1.query-fallback.invalid.json",
         "contracts/examples/invalid/foreign-news-lane-entitlement-v1.gdelt.invalid.json",
         "contracts/examples/invalid/foreign-news-sentiment-v1.activation.invalid.json",
+        "contracts/examples/invalid/foreign-news-sentiment-v1.status-lane.invalid.json",
         "contracts/examples/invalid/foreign-news-sentiment-v1.decision.invalid.json",
         "contracts/examples/invalid/foreign-news-sentiment-v1.article.invalid.json",
         "contracts/examples/invalid/foreign-news-model-selection-v1.test-state.invalid.json",
@@ -567,6 +575,100 @@ def _import_ticket_schema() -> dict[str, Any]:
     )
 
 
+def _delete_ticket_request_schema() -> dict[str, Any]:
+    """owner-local delete capability에는 document selector만 받고 actor/path는 server-owned로 둔다."""
+
+    return _schema(
+        "s4-rag-v2-delete-ticket-request-v1",
+        _closed(
+            required=["documentId", "schemaVersion", "sourceScope"],
+            properties={
+                "documentId": _opaque_id(DOCUMENT_ID_PATTERN),
+                "schemaVersion": {"const": 1},
+                "sourceScope": {"const": "OWNER_PRIVATE"},
+            },
+        ),
+    )
+
+
+def _delete_ticket_schema() -> dict[str, Any]:
+    """삭제 ticket은 owner·document bind와 five-minute single-use를 response에도 고정한다."""
+
+    return _schema(
+        "s4-rag-v2-delete-ticket-v1",
+        _closed(
+            required=[
+                "documentBound",
+                "documentId",
+                "expiresAt",
+                "issuedAt",
+                "ownerBound",
+                "ownerRawCopyAllowed",
+                "schemaVersion",
+                "singleUse",
+                "sourceScope",
+                "ticketId",
+                "ttlSeconds",
+            ],
+            properties={
+                "documentBound": {"const": True},
+                "documentId": _opaque_id(DOCUMENT_ID_PATTERN),
+                "expiresAt": _timestamp(),
+                "issuedAt": _timestamp(),
+                "ownerBound": {"const": True},
+                "ownerRawCopyAllowed": {"const": False},
+                "schemaVersion": {"const": 1},
+                "singleUse": {"const": True},
+                "sourceScope": {"const": "OWNER_PRIVATE"},
+                "ticketId": _opaque_id(DELETE_TICKET_ID_PATTERN),
+                "ttlSeconds": {"const": 300},
+            },
+        ),
+    )
+
+
+def _vertex_preparation_schema() -> dict[str, Any]:
+    """Vertex packet preparation은 raw question/evidence 없이 stable two-minute scope만 반환한다."""
+
+    return _schema(
+        "s4-rag-v2-vertex-preparation-v1",
+        _closed(
+            required=[
+                "answerMode",
+                "consentEventId",
+                "embeddingProfileId",
+                "expiresAt",
+                "policyDigest",
+                "processorSetDigest",
+                "questionFingerprintHmac",
+                "rawEvidenceStored",
+                "rawQuestionStored",
+                "requestId",
+                "schemaVersion",
+                "scopeClaimId",
+                "scopeTtlSeconds",
+            ],
+            properties={
+                "answerMode": {"enum": ["CONCISE", "DETAILED"]},
+                "consentEventId": _opaque_id("^rce_[A-Za-z0-9_-]{12,96}$"),
+                "embeddingProfileId": {
+                    "enum": ["bge_m3_local_1024_v1", "voyage_context_4_1024_v1"]
+                },
+                "expiresAt": _timestamp(),
+                "policyDigest": _digest(),
+                "processorSetDigest": _digest(),
+                "questionFingerprintHmac": _digest(),
+                "rawEvidenceStored": {"const": False},
+                "rawQuestionStored": {"const": False},
+                "requestId": _opaque_id("^req_[A-Za-z0-9_-]{12,96}$"),
+                "schemaVersion": {"const": 1},
+                "scopeClaimId": _opaque_id("^rvs_[0-9a-f]{32}$"),
+                "scopeTtlSeconds": {"const": 120},
+            },
+        ),
+    )
+
+
 def _status_activation_schema() -> dict[str, Any]:
     hard_deleted_artifacts = _exact_string_array(
         ("DOCUMENT_IR", "CANONICAL_TEXT", "CHUNK", "VECTOR")
@@ -679,6 +781,8 @@ def _rag_policy_schema() -> dict[str, Any]:
             "fullBundleScope",
             "generationFallback",
             "modelId",
+            "officialTokenizer",
+            "ownerPrivateSentinel",
             "outboundCallsAllowed",
             "orderedPrechunkedDocumentGroupsRequired",
             "partialProfileMixAllowed",
@@ -711,8 +815,42 @@ def _rag_policy_schema() -> dict[str, Any]:
                 "minItems": 3,
                 "type": "array",
             },
+            "ownerPrivateSentinel": _closed(
+                required=[
+                    "allowed",
+                    "orderedGroupCount",
+                    "ownerScopeSha256",
+                    "publicBaseOnly",
+                    "sourceScope",
+                ],
+                properties={
+                    "allowed": {"const": True},
+                    "orderedGroupCount": {"const": 0},
+                    "ownerScopeSha256": {"const": None},
+                    "publicBaseOnly": {"const": True},
+                    "sourceScope": {"const": "OWNER_PRIVATE"},
+                },
+            ),
             "generationFallback": {"const": "FULL_BUNDLE_REBUILD_EVALUATE_CAS"},
             "modelId": {"const": "voyage-context-4"},
+            "officialTokenizer": _closed(
+                required=[
+                    "artifactAutoDownloadAllowed",
+                    "localArtifactOnly",
+                    "packetHashBindingRequired",
+                    "preflightExpectedInputTokenLedgerRequired",
+                    "providerTokenCountCallAllowed",
+                    "utf8ByteApproximationAllowed",
+                ],
+                properties={
+                    "artifactAutoDownloadAllowed": {"const": False},
+                    "localArtifactOnly": {"const": True},
+                    "packetHashBindingRequired": {"const": True},
+                    "preflightExpectedInputTokenLedgerRequired": {"const": True},
+                    "providerTokenCountCallAllowed": {"const": False},
+                    "utf8ByteApproximationAllowed": {"const": False},
+                },
+            ),
             "outboundCallsAllowed": {"const": False},
             "orderedPrechunkedDocumentGroupsRequired": {"const": True},
             "partialProfileMixAllowed": {"const": False},
@@ -737,6 +875,7 @@ def _rag_policy_schema() -> dict[str, Any]:
             "maximumGenerateContentCallsPerQuestion",
             "modelId",
             "openAiCallsAllowed",
+            "preparedScopeControlPlane",
             "rawResponseStored",
             "rerankerAllowed",
             "retryCount",
@@ -793,6 +932,26 @@ def _rag_policy_schema() -> dict[str, Any]:
             "maximumGenerateContentCallsPerQuestion": {"const": 1},
             "modelId": {"const": "gemini-3.5-flash"},
             "openAiCallsAllowed": {"const": False},
+            "preparedScopeControlPlane": _closed(
+                required=[
+                    "headerName",
+                    "packetOwnerIdentityStored",
+                    "rawEvidenceStored",
+                    "rawQuestionStored",
+                    "sameParsedAskCommandFingerprintBound",
+                    "sameRequestIdRequired",
+                    "scopeTtlSeconds",
+                ],
+                properties={
+                    "headerName": {"const": "X-Rag-V2-Vertex-Scope-Claim"},
+                    "packetOwnerIdentityStored": {"const": False},
+                    "rawEvidenceStored": {"const": False},
+                    "rawQuestionStored": {"const": False},
+                    "sameParsedAskCommandFingerprintBound": {"const": True},
+                    "sameRequestIdRequired": {"const": True},
+                    "scopeTtlSeconds": {"const": 120},
+                },
+            ),
             "rawResponseStored": {"const": False},
             "rerankerAllowed": {"const": False},
             "retryCount": {"const": 0},
@@ -990,6 +1149,19 @@ def _foreign_news_sentiment_schema() -> dict[str, Any]:
                             "properties": {"state": {"const": "AVAILABLE"}},
                             "required": ["state"],
                             "type": "object",
+                        }
+                    }
+                }
+            },
+            "else": {
+                "properties": {
+                    "lanes": {
+                        "not": {
+                            "contains": {
+                                "properties": {"state": {"const": "AVAILABLE"}},
+                                "required": ["state"],
+                                "type": "object",
+                            }
                         }
                     }
                 }
@@ -1197,6 +1369,9 @@ def _schemas() -> dict[str, dict[str, Any]]:
         "s4-rag-v2-effective-consent-v1": _effective_consent_schema(),
         "s4-rag-v2-import-ticket-request-v1": _import_ticket_request_schema(),
         "s4-rag-v2-import-ticket-v1": _import_ticket_schema(),
+        "s4-rag-v2-delete-ticket-request-v1": _delete_ticket_request_schema(),
+        "s4-rag-v2-delete-ticket-v1": _delete_ticket_schema(),
+        "s4-rag-v2-vertex-preparation-v1": _vertex_preparation_schema(),
         "s4-rag-v2-status-activation-v1": _status_activation_schema(),
         "s4-rag-v2-pre-s5-policy-v1": _rag_policy_schema(),
         "foreign-news-lane-entitlement-v1": _foreign_lane_entitlement_schema(),
@@ -1312,6 +1487,49 @@ def _import_ticket_fixture() -> dict[str, Any]:
     }
 
 
+def _delete_ticket_request_fixture() -> dict[str, Any]:
+    return {
+        "documentId": "doc_01contractfixture",
+        "schemaVersion": 1,
+        "sourceScope": "OWNER_PRIVATE",
+    }
+
+
+def _delete_ticket_fixture() -> dict[str, Any]:
+    return {
+        "documentBound": True,
+        "documentId": "doc_01contractfixture",
+        "expiresAt": "2026-08-03T00:05:00Z",
+        "issuedAt": "2026-08-03T00:00:00Z",
+        "ownerBound": True,
+        "ownerRawCopyAllowed": False,
+        "schemaVersion": 1,
+        "singleUse": True,
+        "sourceScope": "OWNER_PRIVATE",
+        "ticketId": "rtd_01CONTRACTFIXTURE",
+        "ttlSeconds": 300,
+    }
+
+
+def _vertex_preparation_fixture() -> dict[str, Any]:
+    consent = _effective_consent_fixture()
+    return {
+        "answerMode": "CONCISE",
+        "consentEventId": consent["consentEventId"],
+        "embeddingProfileId": "voyage_context_4_1024_v1",
+        "expiresAt": "2026-08-03T00:02:00Z",
+        "policyDigest": consent["policyDigest"],
+        "processorSetDigest": consent["processorSetDigest"],
+        "questionFingerprintHmac": _hash("a"),
+        "rawEvidenceStored": False,
+        "rawQuestionStored": False,
+        "requestId": "req_vertexcontractfixture001",
+        "schemaVersion": 1,
+        "scopeClaimId": "rvs_0123456789abcdef0123456789abcdef",
+        "scopeTtlSeconds": 120,
+    }
+
+
 def _status_activation_fixture() -> dict[str, Any]:
     return {
         "documentId": "doc_01contractfixture",
@@ -1382,6 +1600,15 @@ def _rag_policy_fixture() -> dict[str, Any]:
             "maximumGenerateContentCallsPerQuestion": 1,
             "modelId": "gemini-3.5-flash",
             "openAiCallsAllowed": False,
+            "preparedScopeControlPlane": {
+                "headerName": "X-Rag-V2-Vertex-Scope-Claim",
+                "packetOwnerIdentityStored": False,
+                "rawEvidenceStored": False,
+                "rawQuestionStored": False,
+                "sameParsedAskCommandFingerprintBound": True,
+                "sameRequestIdRequired": True,
+                "scopeTtlSeconds": 120,
+            },
             "rawResponseStored": False,
             "rerankerAllowed": False,
             "retryCount": 0,
@@ -1400,8 +1627,23 @@ def _rag_policy_fixture() -> dict[str, Any]:
             "dimension": 1024,
             "filesApiAllowed": False,
             "fullBundleScope": ["EXACT30", "OA112", "OWNER_PRIVATE"],
+            "ownerPrivateSentinel": {
+                "allowed": True,
+                "orderedGroupCount": 0,
+                "ownerScopeSha256": None,
+                "publicBaseOnly": True,
+                "sourceScope": "OWNER_PRIVATE",
+            },
             "generationFallback": "FULL_BUNDLE_REBUILD_EVALUATE_CAS",
             "modelId": "voyage-context-4",
+            "officialTokenizer": {
+                "artifactAutoDownloadAllowed": False,
+                "localArtifactOnly": True,
+                "packetHashBindingRequired": True,
+                "preflightExpectedInputTokenLedgerRequired": True,
+                "providerTokenCountCallAllowed": False,
+                "utf8ByteApproximationAllowed": False,
+            },
             "outboundCallsAllowed": False,
             "orderedPrechunkedDocumentGroupsRequired": True,
             "partialProfileMixAllowed": False,
@@ -1612,6 +1854,14 @@ def _catalog() -> dict[str, Any]:
             "trackCount": 14,
         },
         "ragV2": {
+            "ownerDeleteTicket": {
+                "documentBound": True,
+                "ownerBound": True,
+                "ownerRawCopyAllowed": False,
+                "singleUse": True,
+                "sourceScope": "OWNER_PRIVATE",
+                "ttlSeconds": 300,
+            },
             "inheritedSurface": {
                 "legacyBytesBinding": "RAG_V2_OPENAPI_FROZEN",
                 "paths": [
@@ -1647,6 +1897,15 @@ def _catalog() -> dict[str, Any]:
                 "maximumGenerateContentCallsPerQuestion": 1,
                 "modelId": "gemini-3.5-flash",
                 "openAiCallsAllowed": False,
+                "preparedScopeControlPlane": {
+                    "headerName": "X-Rag-V2-Vertex-Scope-Claim",
+                    "packetOwnerIdentityStored": False,
+                    "rawEvidenceStored": False,
+                    "rawQuestionStored": False,
+                    "sameParsedAskCommandFingerprintBound": True,
+                    "sameRequestIdRequired": True,
+                    "scopeTtlSeconds": 120,
+                },
                 "rawResponseStored": False,
                 "rerankerAllowed": False,
                 "retryCount": 0,
@@ -1666,7 +1925,22 @@ def _catalog() -> dict[str, Any]:
                 "generationFallback": "FULL_BUNDLE_REBUILD_EVALUATE_CAS",
                 "filesApiAllowed": False,
                 "fullBundleScope": ["EXACT30", "OA112", "OWNER_PRIVATE"],
+                "ownerPrivateSentinel": {
+                    "allowed": True,
+                    "orderedGroupCount": 0,
+                    "ownerScopeSha256": None,
+                    "publicBaseOnly": True,
+                    "sourceScope": "OWNER_PRIVATE",
+                },
                 "modelId": "voyage-context-4",
+                "officialTokenizer": {
+                    "artifactAutoDownloadAllowed": False,
+                    "localArtifactOnly": True,
+                    "packetHashBindingRequired": True,
+                    "preflightExpectedInputTokenLedgerRequired": True,
+                    "providerTokenCountCallAllowed": False,
+                    "utf8ByteApproximationAllowed": False,
+                },
                 "outboundCallsAllowed": False,
                 "orderedPrechunkedDocumentGroupsRequired": True,
                 "partialProfileMixAllowed": False,
@@ -1703,6 +1977,13 @@ def _rag_openapi(schemas: Mapping[str, dict[str, Any]]) -> dict[str, Any]:
                 "RagV2ImportTicket": schemas["s4-rag-v2-import-ticket-v1"],
                 "RagV2ImportTicketRequest": schemas[
                     "s4-rag-v2-import-ticket-request-v1"
+                ],
+                "RagV2DeleteTicket": schemas["s4-rag-v2-delete-ticket-v1"],
+                "RagV2DeleteTicketRequest": schemas[
+                    "s4-rag-v2-delete-ticket-request-v1"
+                ],
+                "RagV2VertexPreparation": schemas[
+                    "s4-rag-v2-vertex-preparation-v1"
                 ],
             },
             "securitySchemes": {
@@ -1771,6 +2052,87 @@ def _rag_openapi(schemas: Mapping[str, dict[str, Any]]) -> dict[str, Any]:
                     "security": [bearer],
                 }
             },
+            "/api/v2/rag/delete-tickets": {
+                "post": {
+                    "operationId": "issueRagV2DeleteTicket",
+                    "requestBody": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/RagV2DeleteTicketRequest"
+                                }
+                            }
+                        },
+                        "required": True,
+                    },
+                    "responses": {
+                        "201": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {"$ref": "#/components/schemas/RagV2DeleteTicket"}
+                                }
+                            },
+                            "description": "Five-minute single-use owner-and-document-bound local delete ticket",
+                        }
+                    },
+                    "security": [bearer],
+                }
+            },
+            "/api/v2/rag/vertex-preparations": {
+                "post": {
+                    "operationId": "prepareRagV2VertexGeneration",
+                    "parameters": [
+                        {
+                            "description": "Stable request ID reused verbatim for the subsequent Vertex ask.",
+                            "in": "header",
+                            "name": "X-Request-Id",
+                            "required": True,
+                            "schema": {"pattern": "^req_[A-Za-z0-9_-]{12,96}$", "type": "string"},
+                        }
+                    ],
+                    "requestBody": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "rag-v2.openapi.json#/components/schemas/RagV2AskRequest"
+                                }
+                            }
+                        },
+                        "required": True,
+                    },
+                    "responses": {
+                        "201": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {"$ref": "#/components/schemas/RagV2VertexPreparation"}
+                                }
+                            },
+                            "description": "Content-free two-minute scope preparation for one Vertex packet",
+                        },
+                        "409": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "$ref": "rag-v2.openapi.json#/components/schemas/RagV2Error"
+                                    }
+                                }
+                            },
+                            "description": "RAG corpus or consent is not currently usable",
+                        },
+                        "503": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "$ref": "rag-v2.openapi.json#/components/schemas/RagV2Error"
+                                    }
+                                }
+                            },
+                            "description": "Vertex activation is unavailable before any provider call",
+                        },
+                    },
+                    "security": [bearer],
+                }
+            },
         },
         "servers": [{"url": "/"}],
     }
@@ -1830,6 +2192,9 @@ def _valid_fixtures() -> dict[str, dict[str, Any]]:
         "contracts/examples/s4-rag-v2-effective-consent-v1.valid.json": _effective_consent_fixture(),
         "contracts/examples/s4-rag-v2-import-ticket-request-v1.valid.json": _import_ticket_request_fixture(),
         "contracts/examples/s4-rag-v2-import-ticket-v1.valid.json": _import_ticket_fixture(),
+        "contracts/examples/s4-rag-v2-delete-ticket-request-v1.valid.json": _delete_ticket_request_fixture(),
+        "contracts/examples/s4-rag-v2-delete-ticket-v1.valid.json": _delete_ticket_fixture(),
+        "contracts/examples/s4-rag-v2-vertex-preparation-v1.valid.json": _vertex_preparation_fixture(),
         "contracts/examples/s4-rag-v2-status-activation-v1.valid.json": _status_activation_fixture(),
         "contracts/examples/s4-rag-v2-status-activation-v1.ready.valid.json": _status_activation_ready_fixture(),
         "contracts/examples/s4-rag-v2-pre-s5-policy-v1.valid.json": _rag_policy_fixture(),
@@ -1862,6 +2227,14 @@ def _invalid_fixtures(valid: Mapping[str, dict[str, Any]]) -> dict[str, dict[str
     ticket = copy.deepcopy(valid["contracts/examples/s4-rag-v2-import-ticket-v1.valid.json"])
     ticket["ttlSeconds"] = 301
 
+    delete_ticket = copy.deepcopy(valid["contracts/examples/s4-rag-v2-delete-ticket-v1.valid.json"])
+    delete_ticket["ttlSeconds"] = 301
+
+    vertex_preparation = copy.deepcopy(
+        valid["contracts/examples/s4-rag-v2-vertex-preparation-v1.valid.json"]
+    )
+    vertex_preparation["rawQuestionStored"] = True
+
     status = copy.deepcopy(valid["contracts/examples/s4-rag-v2-status-activation-v1.valid.json"])
     status["rawPath"] = "/home/example/private.pdf"
 
@@ -1871,11 +2244,21 @@ def _invalid_fixtures(valid: Mapping[str, dict[str, Any]]) -> dict[str, dict[str
     policy = copy.deepcopy(valid["contracts/examples/s4-rag-v2-pre-s5-policy-v1.valid.json"])
     policy["voyage"]["queryUnitFallbackAllowed"] = True
 
+    tokenizer_policy = copy.deepcopy(
+        valid["contracts/examples/s4-rag-v2-pre-s5-policy-v1.valid.json"]
+    )
+    tokenizer_policy["voyage"]["officialTokenizer"]["utf8ByteApproximationAllowed"] = True
+
     decision = copy.deepcopy(valid["contracts/examples/foreign-news-sentiment-v1.valid.json"])
     decision["decisionAuthority"] = "RISK"
 
     unavailable = copy.deepcopy(valid["contracts/examples/foreign-news-sentiment-v1.valid.json"])
     unavailable["status"] = "AVAILABLE"
+
+    contradictory_status = copy.deepcopy(
+        valid["contracts/examples/foreign-news-sentiment-v1.valid.json"]
+    )
+    contradictory_status["lanes"][0]["state"] = "AVAILABLE"
 
     article = copy.deepcopy(valid["contracts/examples/foreign-news-sentiment-v1.valid.json"])
     article["articleTitle"] = "must never be stored"
@@ -1912,11 +2295,15 @@ def _invalid_fixtures(valid: Mapping[str, dict[str, Any]]) -> dict[str, dict[str
         "contracts/examples/invalid/rag-source-card-v4.url.invalid.json": unsafe_source_url,
         "contracts/examples/invalid/s4-rag-v2-external-consent-v1.actor.invalid.json": consent,
         "contracts/examples/invalid/s4-rag-v2-import-ticket-v1.ttl.invalid.json": ticket,
+        "contracts/examples/invalid/s4-rag-v2-delete-ticket-v1.ttl.invalid.json": delete_ticket,
+        "contracts/examples/invalid/s4-rag-v2-vertex-preparation-v1.raw-question.invalid.json": vertex_preparation,
         "contracts/examples/invalid/s4-rag-v2-status-activation-v1.path.invalid.json": status,
         "contracts/examples/invalid/s4-rag-v2-status-activation-v1.deletion.invalid.json": status_state,
         "contracts/examples/invalid/s4-rag-v2-pre-s5-policy-v1.query-fallback.invalid.json": policy,
+        "contracts/examples/invalid/s4-rag-v2-pre-s5-policy-v1.byte-approximation.invalid.json": tokenizer_policy,
         "contracts/examples/invalid/foreign-news-sentiment-v1.decision.invalid.json": decision,
         "contracts/examples/invalid/foreign-news-sentiment-v1.activation.invalid.json": unavailable,
+        "contracts/examples/invalid/foreign-news-sentiment-v1.status-lane.invalid.json": contradictory_status,
         "contracts/examples/invalid/foreign-news-sentiment-v1.article.invalid.json": article,
         "contracts/examples/invalid/foreign-news-lane-entitlement-v1.gdelt.invalid.json": gdelt_lane,
         "contracts/examples/invalid/foreign-news-model-selection-v1.test-state.invalid.json": invalid_test_state,
@@ -2017,6 +2404,24 @@ def validate_semantics(schema_id: str, payload: object) -> None:
         if (expires_at - issued_at).total_seconds() != 300:
             raise ContractValidationError("import ticket lifetime must be exactly five minutes")
         return
+    if schema_id == "s4-rag-v2-delete-ticket-v1":
+        issued_at = _parse_timestamp(value.get("issuedAt"), field="issuedAt")
+        expires_at = _parse_timestamp(value.get("expiresAt"), field="expiresAt")
+        if (expires_at - issued_at).total_seconds() != 300:
+            raise ContractValidationError("delete ticket lifetime must be exactly five minutes")
+        if value.get("documentBound") is not True:
+            raise ContractValidationError("delete ticket must be document-bound")
+        return
+    if schema_id == "s4-rag-v2-vertex-preparation-v1":
+        if (
+            value.get("scopeTtlSeconds") != 120
+            or value.get("rawQuestionStored") is not False
+            or value.get("rawEvidenceStored") is not False
+        ):
+            raise ContractValidationError(
+                "Vertex preparation must be content-free and bound to a two-minute scope"
+            )
+        return
     if schema_id == "s4-rag-v2-status-activation-v1":
         deleted = value.get("state") == "DELETED"
         ready = value.get("state") == "READY"
@@ -2060,6 +2465,20 @@ def validate_semantics(schema_id: str, payload: object) -> None:
             "FULL_BUNDLE_REBUILD_EVALUATE_CAS"
         ):
             raise ContractValidationError("Voyage fallback must rebuild the full bundle")
+        official_tokenizer = voyage.get("officialTokenizer")
+        if not isinstance(official_tokenizer, Mapping) or any(
+            (
+                official_tokenizer.get("artifactAutoDownloadAllowed"),
+                not official_tokenizer.get("localArtifactOnly"),
+                not official_tokenizer.get("packetHashBindingRequired"),
+                not official_tokenizer.get("preflightExpectedInputTokenLedgerRequired"),
+                official_tokenizer.get("providerTokenCountCallAllowed"),
+                official_tokenizer.get("utf8ByteApproximationAllowed"),
+            )
+        ):
+            raise ContractValidationError(
+                "Voyage must use a packet-bound local official tokenizer without approximation"
+            )
         if vertex.get("maximumGenerateContentCallsPerQuestion") != 1:
             raise ContractValidationError("Vertex may generate at most once per question")
         return
@@ -2116,13 +2535,18 @@ def validate_semantics(schema_id: str, payload: object) -> None:
             lane.get("laneId") for lane in lanes if isinstance(lane, Mapping)
         ) != FOREIGN_NEWS_LANES:
             raise ContractValidationError("foreign-news response must cover exactly four lanes")
-        if value.get("status") == "AVAILABLE" and not any(
+        has_available_lane = any(
             lane.get("state") == "AVAILABLE"
             for lane in lanes
             if isinstance(lane, Mapping)
-        ):
+        )
+        if value.get("status") == "AVAILABLE" and not has_available_lane:
             raise ContractValidationError(
                 "AVAILABLE foreign-news response requires an available lane"
+            )
+        if value.get("status") == "ABSTAIN" and has_available_lane:
+            raise ContractValidationError(
+                "ABSTAIN foreign-news response cannot contain an available lane"
             )
         return
     if schema_id == "foreign-news-model-selection-v1":
@@ -2352,6 +2776,7 @@ PRE_S5_FILENAME_PREFIXES: Final[tuple[str, ...]] = (
     "s4-rag-v2-external-consent-v1",
     "s4-rag-v2-import-ticket-request-v1",
     "s4-rag-v2-import-ticket-v1",
+    "s4-rag-v2-vertex-preparation-v1",
     "s4-rag-v2-pre-s5-policy-v1",
     "s4-rag-v2-status-activation-v1",
 )

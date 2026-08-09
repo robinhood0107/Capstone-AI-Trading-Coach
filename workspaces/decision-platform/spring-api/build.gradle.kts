@@ -77,6 +77,7 @@ dependencies {
     implementation("io.grpc:grpc-stub")
     implementation("io.grpc:grpc-netty-shaded")
     implementation("com.google.protobuf:protobuf-java:4.35.0")
+    implementation("com.google.auth:google-auth-library-oauth2-http:1.41.0") // Vertex service-account ADC token 발급 전용
     compileOnly("javax.annotation:javax.annotation-api:1.3.2")
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.springframework.security:spring-security-test")
@@ -123,6 +124,9 @@ kotlin {
 }
 
 tasks.withType<Test> {
+    // Spring/Testcontainers 통합 suite는 동일 worker에서 context를 누적하므로 기본 512MiB로는
+    // 전체 검증 중 OOM이 난다. 실행 격리나 assertion을 줄이지 않고 CI에서도 재현 가능한 상한만 명시한다.
+    maxHeapSize = "1g"
     useJUnitPlatform()
 }
 

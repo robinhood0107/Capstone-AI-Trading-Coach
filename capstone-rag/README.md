@@ -26,11 +26,12 @@ magic-link, path traversal, 기존 파일 덮어쓰기와 broad recursive delete
 
 S4.7D는 기존 exact-30을 바꾸지 않고 OA corpus와 owner-private 문서를 후속 generation으로
 추가한다. RAG는 출처 검색·설명·인용만 담당하며 Signal, RiskDecision, 주문 feature/hash에는
-연결하지 않는다. 현재 safe parser/OCR과 v2 DB/RLS/API skeleton은 병합됐지만, OA/owner
-materializer, canonical chunk/embedding writer, active bundle pointer와 actual retrieval은 없다.
-따라서 `S4_7D_RUNTIME=STUB_FAIL_CLOSED`이며 full bundle 전에는 `CORPUS_NOT_READY`, 그 뒤에도
-현 skeleton은 `GENERATION_UNAVAILABLE`로 종료한다. importer/remove/cache-clean command는 실제로
-`CORPUS_RUNTIME_NOT_INSTALLED`를 반환한다.
+연결하지 않는다. safe parser/OCR, v2 DB/RLS/API, owner-local BGE staging, public exact-30/OA112
+materializer, immutable public pointer, profile-selected authorized retrieval, Voyage full/query ledger와
+Vertex prepared-scope control plane은 `IMPLEMENTED_DRAFT`다. 단, OA112 rights/cache, local database
+roles, Voyage/Vertex credential·privacy evidence와 one-shot packets가 아직 설치되지 않았으므로
+`S4_7D_RUNTIME=IMPLEMENTED_DRAFT_NOT_ACTIVATED`; full bundle 전 v2 ask는 `CORPUS_NOT_READY`로,
+full bundle 뒤 Vertex live gate가 닫혀 있으면 `GENERATION_UNAVAILABLE`로 fail-closed한다.
 
 `PRE_S5_RAG_GLOBAL_NEWS_CONTRACT_LOCKED=1`의 current policy는
 `OA112_ACTIVE_CONTRACT_LOCKED`(14 track × 8)와
@@ -94,17 +95,19 @@ NVIDIA 장비가 없어 NVIDIA lane은 unit/contract/container smoke까지만 �
 
 ## Windows BAT 명령
 
-명령은 repository checkout의 `capstone-rag\tools\windows`에서 실행한다. 경로 인수에는 항상
-따옴표를 사용한다.
+명령은 repository checkout의 `capstone-rag\tools\windows`에서 실행한다. owner import는
+경로·owner ID·ticket을 명령행으로 받지 않는다. 인증된 local control plane만 0600의
+`control/owner-import.json`을 만들 수 있고, import BAT는 그 fixed record를 소비할 때만 동작한다.
+수동 BAT 사용자는 원본 경로나 ticket을 추가 인수로 전달해서는 안 된다.
 
 ```bat
 setup-rag-content.bat
-rag-import-auto.bat "C:\path\to\document-or-folder"
-rag-import-cpu.bat "C:\path\to\document-or-folder"
-rag-import-intel-gpu.bat "C:\path\to\document-or-folder"
-rag-import-nvidia-gpu.bat "C:\path\to\document-or-folder"
+rag-import-auto.bat
+rag-import-cpu.bat
+rag-import-intel-gpu.bat
+rag-import-nvidia-gpu.bat
 rag-import-status.bat
-rag-remove-document.bat <opaqueDocumentId>
+rag-remove-document.bat
 rag-cache-clean.bat
 ```
 
@@ -113,6 +116,17 @@ rag-cache-clean.bat
 `GPU`임을 확인해야 성공한다. NVIDIA 하드웨어가 없으면 stable
 `NOT_RUN_NO_NVIDIA`를 반환한다. 각 lane은 독립 `uv.lock`과 venv를 사용하고 공통 application
 parser·Document IR·generation 코드를 호출한다.
+
+`owner-import.json`은 owner-bound 5분 single-use import ticket, approved root 아래의 relative
+path, opaque document/source identifiers만 담는다. import 결과에는 path, owner ID, ticket,
+DB DSN 또는 raw text를 출력하지 않는다. 이 local control record는 OA download, Voyage/Vertex
+activation 또는 provider call의 승인 packet을 대체하지 않는다.
+
+문서 삭제도 명령행 `documentId`를 받지 않는다. 인증된 local control plane은 별도 0600
+`control/owner-delete.json`에 owner-bound 5분 deletion selector만 만들며, BAT는 admin DB
+credential을 environment에서만 읽어 immutable hard-delete function을 실행한다. public base가
+활성화된 문서는 replacement bundle이 준비되지 않으면 `OWNER_DOCUMENT_DELETE_BLOCKED`로
+fail-closed한다.
 
 설치본의 기본 root는 `%LOCALAPPDATA%\CapstoneAITradingCoach\rag`, 개발 checkout은
 `capstone-rag/runtime/local-corpus`다. 두 위치의 원문·parse·embedding·cache는 Git 배포물이
@@ -139,23 +153,18 @@ uv run --project workspaces/decision-platform/python-services --frozen \
   --manifest capstone-rag/manifests/s4-7d-oa140-release.v1.json
 ```
 
-공식 원천의 raw SHA-256을 다시 확인해야 할 때만 네트워크 검증을 명시적으로 실행한다. 이 모드는
-redirect를 금지하고 source 사이를 3초씩 쉬며, receipt에는 URL·byte 수·SHA-256만 남긴다.
-
-```bash
-uv run --project workspaces/decision-platform/python-services --frozen \
-  python -m app.rag.oa_release_manifest_cli \
-  --manifest capstone-rag/manifests/s4-7d-oa140-release.v1.json \
-  --fetch-hashes \
-  --receipt capstone-rag/manifests/s4-7d-oa140-remote-hash-receipt.v1.json
-```
+historical manifest의 `--fetch-hashes` 실행 경로는 `HISTORICAL_SUPERSEDED`로 hard-disable되어
+network request나 receipt write를 만들지 않는다. active OA112의 source별 rights evidence와 exact
+approval packet을 검증하는 별도 downloader만 이후에 physical call을 만들 수 있다. historical
+receipt는 재현용 metadata artifact일 뿐 active activation evidence가 아니다.
 
 historical `rag-content status`와 `setup-rag-content.bat`의 manifest validation은 active physical
 OA112 activation 증거가 아니다. 이 상태는 아직 원문 download/parse/embed/eval이 끝난
 `FULL_READY`가 아니라, public OA generation을 구축하기 위한 `BUILDING` 시작점이다. 현재
-setup/import/remove/cache-clean은
-materializer가 설치되지 않아 `CORPUS_RUNTIME_NOT_INSTALLED`로 fail-closed하며 OA112/owner
-derived index가 runtime에 존재한다고 주장하지 않는다.
+setup은 historical manifest validation만 수행한다. import는 trusted local control record의
+owner document를 local BGE immutable `STAGED` graph로 만들고, remove는 unreferenced staged
+document만 hard-delete하며, cache-clean은 fixed local cache directory만 비운다. 이 명령들은
+OA112/public bundle activation이나 owner-derived active index를 주장하지 않는다.
 `FULL_READY`는 runtime cache에서 모든 source hash, parser/OCR receipt, chunk hash, BGE
 embedding, staging evaluation이 통과하고 서버 active pointer가 원자적으로 pin된 뒤에만 가능하다.
 

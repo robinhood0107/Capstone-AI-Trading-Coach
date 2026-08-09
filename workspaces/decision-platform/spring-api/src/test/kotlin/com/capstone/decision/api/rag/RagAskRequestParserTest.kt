@@ -109,6 +109,40 @@ class RagAskRequestParserTest {
     }
 
     @Test
+    fun `Vertex scope header accepts only one opaque preparation scope`() {
+        val valid =
+            MockHttpServletRequest().apply {
+                addHeader("X-Rag-V2-Vertex-Scope-Claim", "rvs_${"a".repeat(32)}")
+            }
+        assertEquals("rvs_${"a".repeat(32)}", parser.parseV2VertexScopeClaim(valid))
+
+        listOf(
+            MockHttpServletRequest().apply {
+                addHeader("X-Rag-V2-Vertex-Scope-Claim", "rvs_${"a".repeat(31)}")
+            },
+            MockHttpServletRequest().apply {
+                addHeader("X-Rag-V2-Vertex-Scope-Claim", "rvs_${"a".repeat(32)}")
+                addHeader("X-Rag-V2-Vertex-Scope-Claim", "rvs_${"b".repeat(32)}")
+            },
+        ).forEach { request ->
+            assertThrows(RagValidationException::class.java) {
+                parser.parseV2VertexScopeClaim(request)
+            }
+        }
+    }
+
+    @Test
+    fun `Vertex preparation and resume require a packet-compatible request ID`() {
+        assertEquals(
+            "req_vertex_packet_0000001",
+            parser.requireV2VertexRequestId("req_vertex_packet_0000001"),
+        )
+        assertThrows(RagValidationException::class.java) {
+            parser.requireV2VertexRequestId("client-request-id")
+        }
+    }
+
+    @Test
     fun `history feedback and consent reject unknown duplicate and out of range input`() {
         listOf(
             """{"helpful":true,"comment":"no"}""",

@@ -146,11 +146,19 @@ class CommonApiContractIntegrationTest(
             .options("/api/v1/system/health") {
                 header("Origin", "http://localhost:3000")
                 header("Access-Control-Request-Method", "GET")
-                header("Access-Control-Request-Headers", "Authorization,Content-Type,X-Request-Id,X-Idempotency-Key")
+                header(
+                    "Access-Control-Request-Headers",
+                    "Authorization,Content-Type,X-Request-Id,X-Idempotency-Key,X-Rag-V2-Vertex-Scope-Claim",
+                )
             }.andExpect {
                 status { isOk() }
                 header { string("Access-Control-Allow-Origin", "http://localhost:3000") }
-                header { string("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Request-Id, X-Idempotency-Key") }
+                header {
+                    string(
+                        "Access-Control-Allow-Headers",
+                        "Authorization, Content-Type, X-Request-Id, X-Idempotency-Key, X-Rag-V2-Vertex-Scope-Claim",
+                    )
+                }
             }
 
         val token = login("demo-user", userPassword())

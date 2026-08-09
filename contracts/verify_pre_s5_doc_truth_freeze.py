@@ -91,14 +91,14 @@ REQUIRED_PUBLIC_MARKERS = {
         "PRE_S5_RAG_GLOBAL_NEWS_CONTRACT_LOCKED=1",
         "OA112_ACTIVE_CONTRACT_LOCKED",
         "S4_7D_OA112_PHYSICAL_ACTIVATION=NOT_MATERIALIZED",
-        "S4_7D_RUNTIME=STUB_FAIL_CLOSED",
+        "| S4.7D v2 runtime | `IMPLEMENTED_DRAFT` |",
         "PLAN_FEASIBILITY=GO_WITH_EXTERNAL_HARD_GATES",
         "S4_8A=CONTRACT_LOCKED",
         "S4_8_CORE6_V2=CONTRACT_ONLY",
         "S4_8B_C=IMPLEMENTED_MERGE_CANDIDATE",
     ),
     "docs/최종_프로젝트_명세서.md": (
-        "S4_7D_RUNTIME=STUB_FAIL_CLOSED",
+        "local-only `IMPLEMENTED_DRAFT` runtime",
         "voyage-context-4",
         "gemini-3.5-flash",
         "PRE_S5_RAG_GLOBAL_NEWS_CONTRACT_LOCKED=1",
@@ -109,7 +109,7 @@ REQUIRED_PUBLIC_MARKERS = {
         "S4_8B_C=IMPLEMENTED_MERGE_CANDIDATE",
     ),
     "docs/API_명세서.md": (
-        "ACTIVE_V2_RUNTIME=STUB_FAIL_CLOSED",
+        "ACTIVE_V2_RUNTIME=IMPLEMENTED_DRAFT",
         "EXTERNAL_AI_RAG_V2",
         "EXTERNAL_AI_CONSENT_REQUIRED",
         "OA112_ACTIVE_CONTRACT_LOCKED",
@@ -119,7 +119,6 @@ REQUIRED_PUBLIC_MARKERS = {
         "S4_8B_C=IMPLEMENTED_MERGE_CANDIDATE",
     ),
     "contracts/README.md": (
-        "S4_7D_RUNTIME=STUB_FAIL_CLOSED",
         "OA112_HISTORICAL",
         "RAG_AND_GLOBAL_NEWS_CONTRACT_LOCKED",
         "OA112_ACTIVE_CONTRACT_LOCKED",
@@ -132,7 +131,7 @@ REQUIRED_PUBLIC_MARKERS = {
         "OA112_HISTORICAL",
         "OA112_ACTIVE_CONTRACT_LOCKED",
         "S4_7D_OA112_PHYSICAL_ACTIVATION=NOT_MATERIALIZED",
-        "CORPUS_RUNTIME_NOT_INSTALLED",
+        "S4_7D_RUNTIME=IMPLEMENTED_DRAFT_NOT_ACTIVATED",
     ),
     "workspaces/decision-platform/README.md": (
         "LOCAL_EPHEMERAL_PARSE",
@@ -154,6 +153,13 @@ FORBIDDEN_PUBLIC_MARKERS: Final[dict[str, tuple[str, ...]]] = {
         "| S1.3G | `EXTERNAL_OWNER_HANDOFF` |",
         "GDELT producer는 팀원 B",
         "Decision은 sanitized artifact consumer만 소유",
+        "S4_7D_RUNTIME=STUB_FAIL_CLOSED",
+    ),
+    "docs/API_명세서.md": (
+        "ACTIVE_V2_RUNTIME=STUB_FAIL_CLOSED",
+    ),
+    "capstone-rag/README.md": (
+        "CORPUS_RUNTIME_NOT_INSTALLED",
     ),
 }
 SOLO_OWNERSHIP_PUBLIC_PATHS: Final[tuple[str, ...]] = (

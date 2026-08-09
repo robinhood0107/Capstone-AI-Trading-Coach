@@ -108,7 +108,10 @@ class InfrastructureSecurityIntegrationTest {
                 "read_rag_v2_history_detail(text,text)",
                 "delete_owned_rag_v2_history(text,text)",
                 "record_rag_v2_immutable_consent(text,text,text,text)",
+                "record_rag_v2_immutable_consent_v2(text,text,text,text,text,text,text)",
+                "read_rag_v2_immutable_effective_consent(text)",
                 "issue_rag_v2_immutable_import_ticket(text,text,text,text)",
+                "issue_rag_v2_immutable_owner_delete_ticket(text,text,text)",
             ).forEach { function ->
                 assertTrue(
                     hasFunctionPrivilege(connection, "decision_app", function),
@@ -131,16 +134,53 @@ class InfrastructureSecurityIntegrationTest {
                 ),
             )
             listOf(
+                "stage_rag_v2_immutable_public_bge_document(jsonb)",
+                "evaluate_rag_v2_immutable_public_bge_component(text,jsonb)",
+                "stage_rag_v2_immutable_external_exact30_voyage_document(jsonb)",
+                "reserve_rag_v2_immutable_voyage_query_usage(text,text,text,text,text,text,text,timestamp with time zone,integer,integer,bigint,bigint)",
+                "claim_rag_v2_immutable_voyage_query_usage_attempt(text)",
+                "commit_rag_v2_immutable_voyage_query_usage(text,integer,bigint)",
+                "mark_rag_v2_immutable_voyage_query_usage_unknown_billing(text)",
+                "reserve_rag_v2_immutable_voyage_usage_with_tokenizer(text,text,text,text,text,text,timestamp with time zone,integer,integer,bigint,bigint)",
+                "commit_rag_v2_immutable_voyage_usage_with_tokenizer(text,integer,integer,bigint)",
+                "reserve_rag_v2_immutable_voyage_query_usage_with_tokenizer(text,text,text,text,text,text,text,text,timestamp with time zone,integer,integer,bigint,bigint)",
+                "commit_rag_v2_immutable_voyage_query_usage_with_tokenizer(text,integer,integer,bigint)",
+            ).forEach { function ->
+                assertTrue(
+                    hasFunctionPrivilege(connection, "decision_rag_writer", function),
+                    "bootstrap removed the public RAG writer capability for $function",
+                )
+                assertFalse(
+                    hasFunctionPrivilege(connection, "decision_app", function),
+                    "public RAG writer capability leaked to the app role for $function",
+                )
+            }
+            listOf(
                 "activate_rag_v2_immutable_public_base(text,text,bigint,text)",
                 "activate_rag_v2_immutable_owner_bundle(text,text,text,bigint,text,text)",
-                "delete_rag_v2_immutable_owner_document(text,text,text,text,bigint,text,text,text)",
+                "delete_rag_v2_immutable_owner_document_with_ticket(text,text,text,text,text,text)",
             ).forEach { function ->
                 assertTrue(hasFunctionPrivilege(connection, "decision_rag_admin", function))
                 assertFalse(hasFunctionPrivilege(connection, "decision_app", function))
             }
             listOf(
+                "delete_rag_v2_immutable_owner_document(text,text,text,text,bigint,text,text,text)",
+                "replace_and_delete_rag_v2_immutable_owner_document(text,text,text,text,text)",
+            ).forEach { function ->
+                assertFalse(hasFunctionPrivilege(connection, "decision_rag_admin", function))
+                assertFalse(hasFunctionPrivilege(connection, "decision_app", function))
+            }
+            listOf(
                 "rag_v2_immutable_oa_track_catalog",
                 "rag_v2_immutable_oa_source_cards",
+                "rag_v2_immutable_public_component_evaluations",
+                "rag_v2_immutable_public_component_manifests",
+                "rag_v2_immutable_exact30_source_allowlist",
+                "rag_v2_immutable_external_exact30_source_allowlist",
+                "rag_v2_immutable_external_exact30_voyage_component_manifests",
+                "rag_v2_immutable_voyage_query_usage_reservations",
+                "rag_v2_immutable_voyage_query_usage_attempts",
+                "rag_v2_immutable_voyage_query_usage_outcomes",
                 "rag_v2_immutable_source_revisions",
                 "rag_v2_immutable_chunks",
                 "rag_v2_immutable_component_generations",
@@ -156,6 +196,7 @@ class InfrastructureSecurityIntegrationTest {
                 "rag_v2_immutable_owner_bundle_pointers",
                 "rag_v2_immutable_consent_events",
                 "rag_v2_immutable_import_tickets",
+                "rag_v2_immutable_owner_delete_tickets",
                 "rag_v2_immutable_activation_receipts",
                 "rag_v2_immutable_deletion_receipts",
                 "rag_v2_immutable_owner_document_deletion_tombstones",

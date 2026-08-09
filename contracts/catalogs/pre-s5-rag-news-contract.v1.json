@@ -277,14 +277,16 @@
     }
   },
   "s48Optional3": {
-    "entitlementState": "CONTRACT_ONLY",
-    "providerCallsAllowed": 0,
+    "entitlementState": "PACKET_GATED_LOCAL_ONLY",
+    "physicalCallCapPerPacket": 1,
+    "providerCallsAllowed": "ONE_SHOT_PACKET_ONLY",
     "providerFamilies": [
       "FINNHUB_OPTIONAL3",
       "TWELVE_DATA",
       "MASSIVE"
     ],
-    "receiptExecutionAllowed": 0,
+    "rawProviderDataStored": false,
+    "receiptExecutionAllowed": "LOCAL_CONTENT_FREE_ONLY",
     "retryCount": 0
   },
   "schemaVersion": 1,

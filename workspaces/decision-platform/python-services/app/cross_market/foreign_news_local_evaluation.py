@@ -60,6 +60,10 @@ class ForeignNewsLocalEvaluationError(ValueError):
     """local-only evaluation input/model/runtime contract가 깨졌음을 나타낸다."""
 
 
+def _no_op_before_blind_test(_: ForeignNewsSelectionRun) -> None:
+    """generic runner는 persistence를 소유하지 않으므로 default에는 durable side effect가 없다."""
+
+
 @dataclass(frozen=True, slots=True)
 class ForeignNewsDatasetReceipt:
     """원문을 포함하지 않는 local dataset revision/license/count receipt다."""
@@ -150,10 +154,15 @@ class ForeignNewsLocalEvaluationInputs:
     validation_examples: Sequence[ForeignNewsEvaluationExample]
     blind_test_loader: Callable[[], Sequence[ForeignNewsEvaluationExample]]
     tfns_stress_loader: Callable[[], Sequence[ForeignNewsEvaluationExample]]
+    before_blind_test: Callable[[ForeignNewsSelectionRun], None] = _no_op_before_blind_test
     harness: ForeignNewsEvaluationHarness = field(default_factory=ForeignNewsEvaluationHarness)
 
     def __post_init__(self) -> None:
-        if not callable(self.blind_test_loader) or not callable(self.tfns_stress_loader):
+        if (
+            not callable(self.blind_test_loader)
+            or not callable(self.tfns_stress_loader)
+            or not callable(self.before_blind_test)
+        ):
             raise ForeignNewsLocalEvaluationError("FOREIGN_NEWS_EVALUATION_LOADER_INVALID")
         if not isinstance(self.harness, ForeignNewsEvaluationHarness):
             raise ForeignNewsLocalEvaluationError("FOREIGN_NEWS_EVALUATION_HARNESS_INVALID")
@@ -320,6 +329,8 @@ def run_local_model_selection(
             selection=selection,
             tfns_stress_metrics=None,
         )
+    # CLI가 durable reservation을 먼저 남겨 crash 뒤 blind test를 재소비하지 않게 한다.
+    inputs.before_blind_test(selection)
     tested = inputs.harness.evaluate_selected_test(
         selection=selection,
         candidates=inputs.candidates,

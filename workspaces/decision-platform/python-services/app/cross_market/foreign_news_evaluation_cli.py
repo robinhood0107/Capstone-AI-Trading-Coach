@@ -17,6 +17,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Final
 
+from app.cross_market.foreign_news import ForeignNewsModelSelectionError, ForeignNewsSelectionRun
 from app.cross_market.foreign_news_evaluator import ForeignNewsEvaluationExample
 from app.cross_market.foreign_news_local_evaluation import (
     DEFAULT_FINBERT_EVALUATION_ROOT,
@@ -36,6 +37,8 @@ from app.cross_market.foreign_news_local_evaluation import (
 _RECEIPT_NAME: Final[str] = "sentivent-gold-plus-tfns-stress.v1.json"
 _LOCK_NAME: Final[str] = ".sentivent-gold-plus-tfns-stress.lock"
 _RECEIPT_CONTRACT_ID: Final[str] = "foreign-news-local-evaluation-receipt-v1"
+_TEST_RESERVATION_NAME: Final[str] = ".sentivent-gold-plus-tfns-stress.test-reservation.v1.json"
+_TEST_RESERVATION_CONTRACT_ID: Final[str] = "foreign-news-local-evaluation-test-reservation-v1"
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 
@@ -52,7 +55,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
     try:
         _emit(_evaluate_once(evaluation_root=DEFAULT_FINBERT_EVALUATION_ROOT))
-    except (ForeignNewsEvaluationCliError, ForeignNewsLocalEvaluationError):
+    except (
+        ForeignNewsEvaluationCliError,
+        ForeignNewsLocalEvaluationError,
+        ForeignNewsModelSelectionError,
+    ):
         _emit({"code": "FOREIGN_NEWS_LOCAL_EVALUATION_FAILED", "state": "FAILED"})
         return 2
     return 0
@@ -61,9 +68,11 @@ def main(argv: Sequence[str] | None = None) -> int:
 def _evaluate_once(*, evaluation_root: Path) -> dict[str, object]:
     receipt_root = _ensure_receipt_root(evaluation_root)
     receipt_path = receipt_root / _RECEIPT_NAME
+    reservation_path = receipt_root / _TEST_RESERVATION_NAME
     existing = _load_receipt_if_present(receipt_path)
     if existing is not None:
         return _summary(existing, code="FOREIGN_NEWS_LOCAL_EVALUATION_REUSED", state="REUSED")
+    _fail_if_test_reservation_exists(reservation_path)
 
     lock_descriptor, lock_identity = _acquire_lock(receipt_root / _LOCK_NAME)
     try:
@@ -71,11 +80,13 @@ def _evaluate_once(*, evaluation_root: Path) -> dict[str, object]:
         existing = _load_receipt_if_present(receipt_path)
         if existing is not None:
             return _summary(existing, code="FOREIGN_NEWS_LOCAL_EVALUATION_REUSED", state="REUSED")
+        _fail_if_test_reservation_exists(reservation_path)
         validation = load_sentivent_gold_split(dataset_root=evaluation_root / "sentivent", split="validation")
         candidates, model_artifacts = build_local_model_candidates(evaluation_root=evaluation_root)
         input_digest = _input_digest(validation.receipt, model_artifacts)
         blind_test: ForeignNewsLoadedExamples | None = None
         tfns_stress: ForeignNewsLoadedExamples | None = None
+        test_reservation_identity: tuple[int, int] | None = None
 
         def load_blind_test() -> Sequence[ForeignNewsEvaluationExample]:
             nonlocal blind_test
@@ -92,11 +103,20 @@ def _evaluate_once(*, evaluation_root: Path) -> dict[str, object]:
             )
             return tfns_stress.examples
 
+        def reserve_selected_test(selection: ForeignNewsSelectionRun) -> None:
+            nonlocal test_reservation_identity
+            test_reservation_identity = _write_test_reservation(
+                reservation_path,
+                evaluation_input_digest=input_digest,
+                selection=selection,
+            )
+
         result = run_local_model_selection(
             inputs=ForeignNewsLocalEvaluationInputs(
                 candidates=candidates,
                 validation_examples=validation.examples,
                 blind_test_loader=load_blind_test,
+                before_blind_test=reserve_selected_test,
                 tfns_stress_loader=load_tfns_stress,
             ),
             selection_id=f"fns_{input_digest[:32]}",
@@ -111,6 +131,8 @@ def _evaluate_once(*, evaluation_root: Path) -> dict[str, object]:
             validation=validation,
         )
         _write_new_receipt(receipt_path, payload)
+        if test_reservation_identity is not None:
+            _remove_test_reservation_if_owned(reservation_path, test_reservation_identity)
         return _summary(payload, code="FOREIGN_NEWS_LOCAL_EVALUATION_COMPLETE", state="COMPLETE")
     finally:
         _release_lock(lock_descriptor, lock_identity, receipt_root / _LOCK_NAME)
@@ -278,6 +300,92 @@ def _write_new_receipt(path: Path, payload: Mapping[str, object]) -> None:
         os.close(descriptor)
 
 
+def _fail_if_test_reservation_exists(path: Path) -> None:
+    """crash 후 test가 소비됐는지 모르면 재실행하지 않고 fail-closed한다."""
+
+    try:
+        metadata = path.lstat()
+    except FileNotFoundError:
+        return
+    if (
+        not stat.S_ISREG(metadata.st_mode)
+        or stat.S_ISLNK(metadata.st_mode)
+        or metadata.st_nlink != 1
+        or stat.S_IMODE(metadata.st_mode) != 0o600
+        or metadata.st_size <= 0
+        or metadata.st_size > 64 * 1024
+    ):
+        raise ForeignNewsEvaluationCliError("FOREIGN_NEWS_TEST_RESERVATION_INVALID")
+    try:
+        payload = json.loads(_read_regular_bytes(path, maximum_bytes=64 * 1024).decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ForeignNewsEvaluationCliError("FOREIGN_NEWS_TEST_RESERVATION_INVALID") from error
+    if not isinstance(payload, Mapping) or not _valid_test_reservation_payload(payload):
+        raise ForeignNewsEvaluationCliError("FOREIGN_NEWS_TEST_RESERVATION_INVALID")
+    raise ForeignNewsEvaluationCliError("FOREIGN_NEWS_TEST_EVALUATION_RESUME_BLOCKED")
+
+
+def _write_test_reservation(
+    path: Path,
+    *,
+    evaluation_input_digest: str,
+    selection: ForeignNewsSelectionRun,
+) -> tuple[int, int]:
+    """blind test 직전에 selected model과 input digest만 durable하게 reserve한다."""
+
+    if (
+        _SHA256.fullmatch(evaluation_input_digest) is None
+        or selection.selection_status != "SELECTED_PENDING_TEST"
+        or selection.selected_model not in {
+            "PROSUSAI_FINBERT",
+            "YIYANGHKUST_FINBERT_TONE",
+            "LOUGHRAN_MCDONALD_BASELINE",
+        }
+        or selection.test_evaluation_count != 0
+    ):
+        raise ForeignNewsEvaluationCliError("FOREIGN_NEWS_TEST_RESERVATION_INVALID")
+    payload: dict[str, object] = {
+        "contractId": _TEST_RESERVATION_CONTRACT_ID,
+        "evaluationInputDigest": evaluation_input_digest,
+        "selectedModel": selection.selected_model,
+        "state": "TEST_RESERVED",
+    }
+    encoded = _canonical(payload) + b"\n"
+    try:
+        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    except FileExistsError as error:
+        raise ForeignNewsEvaluationCliError("FOREIGN_NEWS_TEST_EVALUATION_RESUME_BLOCKED") from error
+    try:
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode) or stat.S_IMODE(metadata.st_mode) != 0o600:
+            raise ForeignNewsEvaluationCliError("FOREIGN_NEWS_TEST_RESERVATION_INVALID")
+        written = 0
+        while written < len(encoded):
+            count = os.write(descriptor, encoded[written:])
+            if count <= 0:
+                raise ForeignNewsEvaluationCliError("FOREIGN_NEWS_TEST_RESERVATION_WRITE_FAILED")
+            written += count
+        os.fsync(descriptor)
+        return metadata.st_dev, metadata.st_ino
+    finally:
+        os.close(descriptor)
+
+
+def _remove_test_reservation_if_owned(path: Path, identity: tuple[int, int]) -> None:
+    """final receipt 후에도 다른 process가 바꾼 reservation은 삭제하지 않는다."""
+
+    try:
+        metadata = path.lstat()
+    except FileNotFoundError:
+        return
+    if (
+        stat.S_ISREG(metadata.st_mode)
+        and not stat.S_ISLNK(metadata.st_mode)
+        and (metadata.st_dev, metadata.st_ino) == identity
+    ):
+        path.unlink()
+
+
 def _valid_receipt_payload(value: Mapping[str, object]) -> bool:
     if set(value) != {
         "contractId",
@@ -318,6 +426,19 @@ def _valid_receipt_payload(value: Mapping[str, object]) -> bool:
     if status != "TEST_EVALUATED" and stress is not None:
         return False
     return isinstance(value.get("sentiventValidation"), Mapping)
+
+
+def _valid_test_reservation_payload(value: Mapping[str, object]) -> bool:
+    digest = value.get("evaluationInputDigest")
+    return (
+        set(value) == {"contractId", "evaluationInputDigest", "selectedModel", "state"}
+        and value.get("contractId") == _TEST_RESERVATION_CONTRACT_ID
+        and isinstance(digest, str)
+        and _SHA256.fullmatch(digest) is not None
+        and value.get("selectedModel")
+        in {"PROSUSAI_FINBERT", "YIYANGHKUST_FINBERT_TONE", "LOUGHRAN_MCDONALD_BASELINE"}
+        and value.get("state") == "TEST_RESERVED"
+    )
 
 
 def _read_regular_bytes(path: Path, *, maximum_bytes: int) -> bytes:

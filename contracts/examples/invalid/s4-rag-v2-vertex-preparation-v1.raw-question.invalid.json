@@ -1,0 +1,16 @@
+{
+  "answerMode": "CONCISE",
+  "consentEventId": "rce_01CONTRACTFIXTURE",
+  "contractId": "s4-rag-v2-vertex-preparation-v1",
+  "embeddingProfileId": "voyage_context_4_1024_v1",
+  "expiresAt": "2026-08-03T00:02:00Z",
+  "policyDigest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "processorSetDigest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "questionFingerprintHmac": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "rawEvidenceStored": false,
+  "rawQuestionStored": true,
+  "requestId": "req_vertexcontractfixture001",
+  "schemaVersion": 1,
+  "scopeClaimId": "rvs_0123456789abcdef0123456789abcdef",
+  "scopeTtlSeconds": 120
+}

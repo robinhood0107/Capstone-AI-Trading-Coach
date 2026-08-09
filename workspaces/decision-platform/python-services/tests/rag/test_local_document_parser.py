@@ -166,6 +166,25 @@ def test_text_formats_parse_to_contract_without_path_or_raw_copy(
     assert after == before
 
 
+def test_approved_document_entrypoint_reuses_the_safe_path_free_parser(posix_tmp_path: Path) -> None:
+    root = posix_tmp_path / "oa-cache"
+    root.mkdir()
+    _write(root, "oa-raw/source.txt", b"Approved local OA evidence.\n")
+
+    result = _parser().parse_approved_document(
+        approved_root=root,
+        relative_path="oa-raw/source.txt",
+        source_id="src_oa_fixture_001",
+        source_revision_id="srv_oa_fixture_001",
+        language_tags=("en",),
+    )
+
+    _assert_contract(result)
+    assert result["sourceId"] == "src_oa_fixture_001"
+    assert result["sourceRevisionId"] == "srv_oa_fixture_001"
+    assert "oa-cache" not in json.dumps(result, ensure_ascii=False, sort_keys=True)
+
+
 def test_pdf_uses_native_text_and_ocrs_only_page_without_text_layer(
     posix_tmp_path: Path,
 ) -> None:

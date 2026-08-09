@@ -1,6 +1,97 @@
 {
   "components": {
     "schemas": {
+      "RagV2DeleteTicket": {
+        "$id": "contracts/schemas/s4-rag-v2-delete-ticket-v1.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "contractId": {
+            "const": "s4-rag-v2-delete-ticket-v1"
+          },
+          "documentBound": {
+            "const": true
+          },
+          "documentId": {
+            "pattern": "^doc_[a-z0-9][a-z0-9_-]{10,95}$",
+            "type": "string"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "issuedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "ownerBound": {
+            "const": true
+          },
+          "ownerRawCopyAllowed": {
+            "const": false
+          },
+          "schemaVersion": {
+            "const": 1
+          },
+          "singleUse": {
+            "const": true
+          },
+          "sourceScope": {
+            "const": "OWNER_PRIVATE"
+          },
+          "ticketId": {
+            "pattern": "^rtd_[A-Za-z0-9_-]{12,96}$",
+            "type": "string"
+          },
+          "ttlSeconds": {
+            "const": 300
+          }
+        },
+        "required": [
+          "contractId",
+          "documentBound",
+          "documentId",
+          "expiresAt",
+          "issuedAt",
+          "ownerBound",
+          "ownerRawCopyAllowed",
+          "schemaVersion",
+          "singleUse",
+          "sourceScope",
+          "ticketId",
+          "ttlSeconds"
+        ],
+        "title": "s4-rag-v2-delete-ticket-v1",
+        "type": "object"
+      },
+      "RagV2DeleteTicketRequest": {
+        "$id": "contracts/schemas/s4-rag-v2-delete-ticket-request-v1.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "contractId": {
+            "const": "s4-rag-v2-delete-ticket-request-v1"
+          },
+          "documentId": {
+            "pattern": "^doc_[a-z0-9][a-z0-9_-]{10,95}$",
+            "type": "string"
+          },
+          "schemaVersion": {
+            "const": 1
+          },
+          "sourceScope": {
+            "const": "OWNER_PRIVATE"
+          }
+        },
+        "required": [
+          "contractId",
+          "documentId",
+          "schemaVersion",
+          "sourceScope"
+        ],
+        "title": "s4-rag-v2-delete-ticket-request-v1",
+        "type": "object"
+      },
       "RagV2EffectiveConsent": {
         "$id": "contracts/schemas/s4-rag-v2-effective-consent-v1.schema.json",
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -172,6 +263,86 @@
         ],
         "title": "s4-rag-v2-import-ticket-request-v1",
         "type": "object"
+      },
+      "RagV2VertexPreparation": {
+        "$id": "contracts/schemas/s4-rag-v2-vertex-preparation-v1.schema.json",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "answerMode": {
+            "enum": [
+              "CONCISE",
+              "DETAILED"
+            ]
+          },
+          "consentEventId": {
+            "pattern": "^rce_[A-Za-z0-9_-]{12,96}$",
+            "type": "string"
+          },
+          "contractId": {
+            "const": "s4-rag-v2-vertex-preparation-v1"
+          },
+          "embeddingProfileId": {
+            "enum": [
+              "bge_m3_local_1024_v1",
+              "voyage_context_4_1024_v1"
+            ]
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "policyDigest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "processorSetDigest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "questionFingerprintHmac": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "rawEvidenceStored": {
+            "const": false
+          },
+          "rawQuestionStored": {
+            "const": false
+          },
+          "requestId": {
+            "pattern": "^req_[A-Za-z0-9_-]{12,96}$",
+            "type": "string"
+          },
+          "schemaVersion": {
+            "const": 1
+          },
+          "scopeClaimId": {
+            "pattern": "^rvs_[0-9a-f]{32}$",
+            "type": "string"
+          },
+          "scopeTtlSeconds": {
+            "const": 120
+          }
+        },
+        "required": [
+          "contractId",
+          "answerMode",
+          "consentEventId",
+          "embeddingProfileId",
+          "expiresAt",
+          "policyDigest",
+          "processorSetDigest",
+          "questionFingerprintHmac",
+          "rawEvidenceStored",
+          "rawQuestionStored",
+          "requestId",
+          "schemaVersion",
+          "scopeClaimId",
+          "scopeTtlSeconds"
+        ],
+        "title": "s4-rag-v2-vertex-preparation-v1",
+        "type": "object"
       }
     },
     "securitySchemes": {
@@ -235,6 +406,38 @@
         ]
       }
     },
+    "/api/v2/rag/delete-tickets": {
+      "post": {
+        "operationId": "issueRagV2DeleteTicket",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RagV2DeleteTicketRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RagV2DeleteTicket"
+                }
+              }
+            },
+            "description": "Five-minute single-use owner-and-document-bound local delete ticket"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/v2/rag/import-tickets": {
       "post": {
         "operationId": "issueRagV2ImportTicket",
@@ -258,6 +461,70 @@
               }
             },
             "description": "Five-minute single-use owner-bound local import ticket"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v2/rag/vertex-preparations": {
+      "post": {
+        "operationId": "prepareRagV2VertexGeneration",
+        "parameters": [
+          {
+            "description": "Stable request ID reused verbatim for the subsequent Vertex ask.",
+            "in": "header",
+            "name": "X-Request-Id",
+            "required": true,
+            "schema": {
+              "pattern": "^req_[A-Za-z0-9_-]{12,96}$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "rag-v2.openapi.json#/components/schemas/RagV2AskRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RagV2VertexPreparation"
+                }
+              }
+            },
+            "description": "Content-free two-minute scope preparation for one Vertex packet"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "rag-v2.openapi.json#/components/schemas/RagV2Error"
+                }
+              }
+            },
+            "description": "RAG corpus or consent is not currently usable"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "rag-v2.openapi.json#/components/schemas/RagV2Error"
+                }
+              }
+            },
+            "description": "Vertex activation is unavailable before any provider call"
           }
         },
         "security": [

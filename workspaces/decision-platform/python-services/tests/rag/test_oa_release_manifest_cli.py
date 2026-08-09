@@ -6,6 +6,7 @@ import tomllib
 from pathlib import Path
 
 from app.rag.oa_release_manifest import OA_TRACK_IDS, canonical_release_digest
+from app.rag import oa_release_manifest_cli
 from app.rag.oa_release_manifest_cli import main
 
 
@@ -90,6 +91,37 @@ def test_operator_entrypoint_is_registered_for_release_validation() -> None:
         pyproject["project"]["scripts"]["rag-oa-release-validate"]
         == "app.rag.oa_release_manifest_cli:main"
     )
+
+
+def test_historical_fetch_mode_is_hard_disabled_before_any_network_or_receipt_write(
+    tmp_path: Path,
+    capsys: object,
+) -> None:
+    manifest_path = tmp_path / "oa-release.json"
+    receipt_path = tmp_path / "historical-receipt.json"
+    _write_manifest(manifest_path)
+
+    assert (
+        main(
+            [
+                "--manifest",
+                str(manifest_path),
+                "--fetch-hashes",
+                "--receipt",
+                str(receipt_path),
+            ]
+        )
+        == 2
+    )
+
+    output = json.loads(capsys.readouterr().out)  # type: ignore[attr-defined]
+    assert output == {
+        "code": "OA_RELEASE_HISTORICAL_FETCH_DISABLED",
+        "fetchHashes": False,
+        "state": "HISTORICAL_SUPERSEDED",
+    }
+    assert hasattr(oa_release_manifest_cli, "_fetch_hash_receipt") is False
+    assert receipt_path.exists() is False
 
 
 def test_tracked_remote_hash_receipt_matches_release_manifest_without_payloads() -> None:

@@ -1,0 +1,172 @@
+from __future__ import annotations
+
+import json
+import re
+from dataclasses import replace
+from pathlib import Path
+
+import numpy as np
+import pytest
+
+from app.rag.rag_v2_bge_materializer import (
+    RagV2BgeMaterializationError,
+    RagV2PublicDocumentRequest,
+    materialize_public_bge_document,
+)
+
+
+class _FixtureTokenizer:
+    def token_spans(self, text: str) -> tuple[tuple[int, int], ...]:
+        return tuple((match.start(), match.end()) for match in re.finditer(r"\S+", text))
+
+    def take_prefix(self, text: str, maximum_tokens: int) -> str:
+        spans = self.token_spans(text)
+        return text[: spans[min(len(spans), maximum_tokens) - 1][1]] if spans else ""
+
+    def take_suffix(self, text: str, maximum_tokens: int) -> str:
+        spans = self.token_spans(text)
+        return text[spans[max(0, len(spans) - maximum_tokens)][0] :] if spans else ""
+
+
+class _FixtureParser:
+    def __init__(self, document_ir: dict[str, object]) -> None:
+        self.document_ir = document_ir
+        self.calls: list[dict[str, object]] = []
+
+    def parse_approved_document(self, **kwargs: object) -> dict[str, object]:
+        self.calls.append(kwargs)
+        return self.document_ir
+
+
+class _FixtureEmbedder:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, ...]] = []
+
+    def embed(self, texts: tuple[str, ...]) -> np.ndarray:
+        self.calls.append(texts)
+        vectors = np.zeros((len(texts), 1024), dtype=np.float32)
+        for index in range(len(texts)):
+            vectors[index, index] = 1.0
+        return vectors
+
+
+def test_oa_public_bge_materialization_binds_cached_raw_identity_and_keeps_receipt_path_free(
+    tmp_path: Path,
+) -> None:
+    parser = _FixtureParser(_document_ir())
+    embedder = _FixtureEmbedder()
+
+    result = materialize_public_bge_document(
+        parser=parser,
+        tokenizer=_FixtureTokenizer(),
+        embedder=embedder,
+        request=_oa_request(tmp_path),
+    )
+
+    assert len(parser.calls) == 1
+    assert parser.calls[0]["relative_path"] == "oa-raw/src_oa_fixture_001.txt"
+    assert result.document.source_scope == "OA112"
+    assert result.document.external_processing_eligible is True
+    assert len(result.document.chunks) == len(result.embeddings) == 1
+    assert result.embeddings[0].context_set_hash is None
+    assert embedder.calls
+    projection = json.dumps(result.content_free_receipt(), ensure_ascii=False, sort_keys=True)
+    assert str(tmp_path) not in projection
+    assert "canonicalText" not in projection
+    assert '"rawContent":' not in projection
+
+
+def test_public_bge_materialization_rejects_raw_or_mime_drift_before_embedding(tmp_path: Path) -> None:
+    raw_drift = dict(_document_ir())
+    raw_drift["rawContentSha256"] = "d" * 64
+    parser = _FixtureParser(raw_drift)
+    embedder = _FixtureEmbedder()
+
+    with pytest.raises(RagV2BgeMaterializationError, match="PUBLIC_DOCUMENT_RAW_DRIFT"):
+        materialize_public_bge_document(
+            parser=parser,
+            tokenizer=_FixtureTokenizer(),
+            embedder=embedder,
+            request=_oa_request(tmp_path),
+        )
+
+    assert len(parser.calls) == 1
+    assert embedder.calls == []
+
+    mime_drift = dict(_document_ir())
+    mime_drift["mimeType"] = "text/html"
+    parser = _FixtureParser(mime_drift)
+    with pytest.raises(RagV2BgeMaterializationError, match="PUBLIC_DOCUMENT_MIME_DRIFT"):
+        materialize_public_bge_document(
+            parser=parser,
+            tokenizer=_FixtureTokenizer(),
+            embedder=_FixtureEmbedder(),
+            request=_oa_request(tmp_path),
+        )
+
+
+def test_public_bge_materialization_rejects_non_bge_profile_before_file_parse(tmp_path: Path) -> None:
+    parser = _FixtureParser(_document_ir())
+
+    with pytest.raises(RagV2BgeMaterializationError, match="BGE_PROFILE_REQUIRED"):
+        materialize_public_bge_document(
+            parser=parser,
+            tokenizer=_FixtureTokenizer(),
+            embedder=_FixtureEmbedder(),
+            request=replace(_oa_request(tmp_path), embedding_profile_id="voyage_context_4_1024_v1"),
+        )
+
+    assert parser.calls == []
+
+
+def _oa_request(root: Path) -> RagV2PublicDocumentRequest:
+    return RagV2PublicDocumentRequest(
+        approved_root=root,
+        relative_path="oa-raw/src_oa_fixture_001.txt",
+        document_id="doc_oa_fixture_0001",
+        source_scope="OA112",
+        source_id="src_oa_fixture_001",
+        source_revision_id="srv_oa_fixture_001",
+        language_tags=("en",),
+        expected_raw_content_sha256="a" * 64,
+        expected_mime_type="text/plain",
+        local_processing_allowed=True,
+        external_embedding_allowed=True,
+        external_generation_allowed=True,
+        embedding_profile_id="bge_m3_local_1024_v1",
+    )
+
+
+def _document_ir() -> dict[str, object]:
+    return {
+        "blocks": [
+            {
+                "blockType": "PARAGRAPH",
+                "locator": {"section": "document"},
+                "ocrConfidence": None,
+                "readingOrder": 1,
+                "text": "Approved public evidence remains in the immutable OA generation only.",
+            }
+        ],
+        "contractId": "rag-document-ir-v1",
+        "documentIrVersion": 1,
+        "extractionMode": "NATIVE",
+        "languageTags": ["en"],
+        "mimeType": "text/plain",
+        "normalizedContentSha256": "b" * 64,
+        "parserEvidence": {
+            "ocr": {"backend": "NOT_USED", "backendVersion": None, "modelSha256": None},
+            "parserArtifactSha256": "c" * 64,
+            "parserBackend": "fixture",
+            "parserVersion": "fixture-v1",
+        },
+        "rawContentSha256": "a" * 64,
+        "safetyClassification": {
+            "externalLlmEligible": True,
+            "piiDetected": False,
+            "promptInjectionDetected": False,
+            "secretDetected": False,
+        },
+        "sourceId": "src_oa_fixture_001",
+        "sourceRevisionId": "srv_oa_fixture_001",
+    }

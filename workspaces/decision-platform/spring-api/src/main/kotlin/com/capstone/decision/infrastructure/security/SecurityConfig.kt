@@ -7,10 +7,12 @@ import com.capstone.decision.infrastructure.decision.DecisionProperties
 import com.capstone.decision.infrastructure.grpc.BrokerageGrpcProperties
 import com.capstone.decision.infrastructure.grpc.DecisionGrpcProperties
 import com.capstone.decision.infrastructure.grpc.RagGrpcProperties
+import com.capstone.decision.infrastructure.grpc.RagV2GrpcProperties
 import com.capstone.decision.infrastructure.idempotency.IdempotencyProperties
 import com.capstone.decision.infrastructure.idempotency.IdempotencyService
 import com.capstone.decision.infrastructure.principle.PrincipleProperties
 import com.capstone.decision.infrastructure.rag.RagGuardHistoryProperties
+import com.capstone.decision.infrastructure.vertex.RagV2VertexProperties
 import com.capstone.decision.infrastructure.web.HttpRequestProperties
 import com.capstone.decision.infrastructure.web.RequestBodyLimitFilter
 import com.capstone.decision.infrastructure.web.RequestIdFilter
@@ -55,6 +57,8 @@ import java.security.MessageDigest
     DecisionGrpcProperties::class,
     RagGuardHistoryProperties::class,
     RagGrpcProperties::class,
+    RagV2GrpcProperties::class,
+    RagV2VertexProperties::class,
 )
 class SecurityConfig {
     @Bean
@@ -72,6 +76,7 @@ class SecurityConfig {
         decisionGrpcProperties: DecisionGrpcProperties,
         brokerageGrpcProperties: BrokerageGrpcProperties,
         ragGrpcProperties: RagGrpcProperties,
+        ragV2GrpcProperties: RagV2GrpcProperties = RagV2GrpcProperties(),
     ): AuthSecretSeparation {
         jwtProperties.validate()
         loginProperties.validate()
@@ -85,6 +90,9 @@ class SecurityConfig {
         }
         if (ragGrpcProperties.enabled) {
             ragGrpcProperties.validate()
+        }
+        if (ragV2GrpcProperties.enabled) {
+            ragV2GrpcProperties.validate()
         }
         val secrets =
             linkedMapOf(
@@ -114,6 +122,9 @@ class SecurityConfig {
         }
         if (ragGrpcProperties.enabled) {
             secrets["RAG gRPC"] = ragGrpcProperties.sharedSecret.toByteArray(StandardCharsets.UTF_8)
+        }
+        if (ragV2GrpcProperties.enabled) {
+            secrets["RAG v2 gRPC"] = ragV2GrpcProperties.sharedSecret.toByteArray(StandardCharsets.UTF_8)
         }
         return try {
             val entries = secrets.entries.toList()
@@ -153,6 +164,24 @@ class SecurityConfig {
         }
         ragGrpcProperties.validatePurposeSeparation(decisionGrpcProperties)
         return RagGrpcSecretSeparation
+    }
+
+    /**
+     * v2 BGE retrieval channel은 legacy RAG wire와도 secret을 분리한다. 활성화하지 않은 기본 상태는
+     * blank environment를 읽지 않고 marker만 제공해 local fixture 구동을 막지 않는다.
+     */
+    @Bean
+    @DependsOn("authSecretSeparation")
+    fun ragV2GrpcSecretSeparation(
+        decisionGrpcProperties: DecisionGrpcProperties,
+        ragGrpcProperties: RagGrpcProperties,
+        ragV2GrpcProperties: RagV2GrpcProperties,
+    ): RagV2GrpcSecretSeparation {
+        if (!ragV2GrpcProperties.enabled) {
+            return RagV2GrpcSecretSeparation
+        }
+        ragV2GrpcProperties.validatePurposeSeparation(decisionGrpcProperties, ragGrpcProperties)
+        return RagV2GrpcSecretSeparation
     }
 
     @Bean
@@ -259,7 +288,14 @@ class SecurityConfig {
             CorsConfiguration().apply {
                 allowedOrigins = listOf("http://localhost:3000")
                 allowedMethods = listOf("GET", "POST", "PUT", "PATCH", "DELETE")
-                allowedHeaders = listOf("Authorization", "Content-Type", "X-Request-Id", "X-Idempotency-Key")
+                allowedHeaders =
+                    listOf(
+                        "Authorization",
+                        "Content-Type",
+                        "X-Request-Id",
+                        "X-Idempotency-Key",
+                        "X-Rag-V2-Vertex-Scope-Claim",
+                    )
                 exposedHeaders = listOf("X-Request-Id")
                 allowCredentials = false
             }
@@ -274,3 +310,6 @@ object AuthSecretSeparation
 
 // 이 marker bean은 enabled RAG gRPC가 Disclosure wire credential과 분리되었음을 나타낸다.
 object RagGrpcSecretSeparation
+
+// 이 marker bean은 enabled v2 BGE loopback credential이 Decision 및 legacy RAG wire와 분리되었음을 나타낸다.
+object RagV2GrpcSecretSeparation

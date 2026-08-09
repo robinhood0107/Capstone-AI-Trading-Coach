@@ -1,0 +1,188 @@
+"""Pre-S5 public Voyage profile의 exactly-one full-bundle orchestration이다.
+
+EXACT30 and OA112 are prepared before a transport is called, then one ordered response is partitioned back into
+the two immutable components. The public base always uses the explicit empty OWNER_PRIVATE sentinel: no owner
+document is silently included in a global profile activation.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Protocol
+
+import numpy as np
+from numpy.typing import NDArray
+
+from app.rag.ingest_pipeline import RagTokenizer
+from app.rag.oa112_active_registry import Oa112ActiveRegistry
+from app.rag.rag_v2_bge_materializer import ApprovedDocumentParser
+from app.rag.rag_v2_external_exact30_voyage_runner import (
+    ExternalExact30PublicVoyageMaterialization,
+    ExternalExact30PublicVoyagePreparation,
+    prepare_external_exact30_public_voyage_component,
+    materialize_prepared_external_exact30_public_voyage_component,
+    validate_voyage_document_vectors,
+)
+from app.rag.rag_v2_oa112_voyage_runner import (
+    Oa112PublicVoyageMaterialization,
+    Oa112PublicVoyagePreparation,
+    materialize_prepared_oa112_public_voyage_component,
+    prepare_oa112_public_voyage_component,
+)
+from app.rag.source_card_corpus import FrozenSourceCardCorpus
+from app.rag.pre_s5_voyage_transport import (
+    PreS5VoyageBundleComponent,
+    PreS5VoyageFullBundle,
+    build_pre_s5_voyage_full_bundle,
+)
+
+
+class RagV2VoyageFullBundleError(ValueError):
+    """public full-bundle preparation, one-shot transport output, or component partition가 drift했다."""
+
+
+class VoyageFullBundleEmbedder(Protocol):
+    """hard-gated one-shot transport만 coordinator에 주입하는 narrow provider seam이다."""
+
+    def embed_full_bundle(self, *, bundle: PreS5VoyageFullBundle) -> NDArray[np.float32]: ...
+
+
+@dataclass(frozen=True, slots=True)
+class PublicBaseVoyagePreparation:
+    """one provider call 전 two public components와 signed input manifest를 묶는다."""
+
+    exact30: ExternalExact30PublicVoyagePreparation
+    oa112: Oa112PublicVoyagePreparation
+    bundle: PreS5VoyageFullBundle
+
+    def content_free_receipt(self) -> dict[str, object]:
+        """canonical text, raw cache path, provider response 없이 packet binding identity만 반환한다."""
+
+        return {
+            "bundleManifestSha256": self.bundle.manifest_sha256,
+            "exact30GroupCount": len(self.exact30.groups),
+            "oa112GroupCount": len(self.oa112.groups),
+            "ownerPrivateSentinel": {
+                "orderedGroupCount": 0,
+                "ownerScopeSha256": None,
+            },
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class PublicBaseVoyageMaterialization:
+    """one successful full-bundle response를 profile-isolated public component records로 partition한다."""
+
+    exact30: ExternalExact30PublicVoyageMaterialization
+    oa112: Oa112PublicVoyageMaterialization
+    bundle_manifest_sha256: str
+
+    def content_free_receipt(self) -> dict[str, object]:
+        """stage/evaluate/CAS caller에 only aggregate generation identities를 전달한다."""
+
+        return {
+            "bundleManifestSha256": self.bundle_manifest_sha256,
+            "exact30": self.exact30.content_free_receipt(),
+            "oa112": self.oa112.content_free_receipt(),
+            "ownerPrivateSentinel": {
+                "orderedGroupCount": 0,
+                "ownerScopeSha256": None,
+            },
+        }
+
+
+def prepare_public_base_voyage_full_bundle(
+    *,
+    tokenizer: RagTokenizer,
+    oa112_registry: Oa112ActiveRegistry,
+    oa112_local_cache_root: Path,
+    oa112_parser: ApprovedDocumentParser | None = None,
+    exact30_corpus: FrozenSourceCardCorpus | None = None,
+) -> PublicBaseVoyagePreparation:
+    """EXACT30+OA112와 empty owner sentinel을 one unmodifiable transport bundle로 prepare한다.
+
+    No provider call occurs here. Any public source preparation failure prevents the bundle from being created, so
+    callers cannot make an exact30-only or OA-only Voyage request using the activation packet.
+    """
+
+    try:
+        exact30 = prepare_external_exact30_public_voyage_component(
+            tokenizer=tokenizer,
+            corpus=exact30_corpus,
+        )
+        oa112 = prepare_oa112_public_voyage_component(
+            tokenizer=tokenizer,
+            registry=oa112_registry,
+            local_cache_root=oa112_local_cache_root,
+            parser=oa112_parser,
+        )
+        bundle = build_pre_s5_voyage_full_bundle(
+            components=(
+                PreS5VoyageBundleComponent(
+                    component_scope="EXACT30",
+                    owner_scope_sha256=None,
+                    groups=exact30.groups,
+                ),
+                PreS5VoyageBundleComponent(
+                    component_scope="OA112",
+                    owner_scope_sha256=None,
+                    groups=oa112.groups,
+                ),
+                PreS5VoyageBundleComponent(
+                    component_scope="OWNER_PRIVATE",
+                    owner_scope_sha256=None,
+                    groups=(),
+                ),
+            )
+        )
+    except Exception as error:
+        if isinstance(error, RagV2VoyageFullBundleError):
+            raise
+        raise RagV2VoyageFullBundleError("VOYAGE_PUBLIC_FULL_BUNDLE_PREPARATION") from error
+    if len(exact30.groups) != 30 or len(oa112.groups) != 112:
+        raise RagV2VoyageFullBundleError("VOYAGE_PUBLIC_FULL_BUNDLE_PREPARATION")
+    return PublicBaseVoyagePreparation(exact30=exact30, oa112=oa112, bundle=bundle)
+
+
+def materialize_public_base_voyage_full_bundle(
+    *,
+    preparation: PublicBaseVoyagePreparation,
+    embedder: VoyageFullBundleEmbedder,
+) -> PublicBaseVoyageMaterialization:
+    """exactly one full-bundle embedding invocation을 two profile-consistent components로 fan back 한다."""
+
+    if (
+        not isinstance(preparation, PublicBaseVoyagePreparation)
+        or len(preparation.exact30.groups) != 30
+        or len(preparation.oa112.groups) != 112
+        or preparation.bundle.components[2].owner_scope_sha256 is not None
+        or preparation.bundle.components[2].groups
+    ):
+        raise RagV2VoyageFullBundleError("VOYAGE_PUBLIC_FULL_BUNDLE_CONTEXT")
+    expected_exact30_rows = sum(len(group.chunks) for group in preparation.exact30.groups)
+    expected_oa112_rows = sum(len(group.chunks) for group in preparation.oa112.groups)
+    if expected_exact30_rows < 30 or expected_oa112_rows < 112:
+        raise RagV2VoyageFullBundleError("VOYAGE_PUBLIC_FULL_BUNDLE_CONTEXT")
+    try:
+        combined = validate_voyage_document_vectors(
+            embedder.embed_full_bundle(bundle=preparation.bundle),
+            expected_rows=expected_exact30_rows + expected_oa112_rows,
+        )
+        exact30 = materialize_prepared_external_exact30_public_voyage_component(
+            preparation=preparation.exact30,
+            vectors=combined[:expected_exact30_rows],
+        )
+        oa112 = materialize_prepared_oa112_public_voyage_component(
+            preparation=preparation.oa112,
+            vectors=combined[expected_exact30_rows:],
+        )
+    except Exception as error:
+        if isinstance(error, RagV2VoyageFullBundleError):
+            raise
+        raise RagV2VoyageFullBundleError("VOYAGE_PUBLIC_FULL_BUNDLE_EMBEDDING") from error
+    return PublicBaseVoyageMaterialization(
+        exact30=exact30,
+        oa112=oa112,
+        bundle_manifest_sha256=preparation.bundle.manifest_sha256,
+    )

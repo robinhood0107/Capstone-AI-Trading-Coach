@@ -8,6 +8,8 @@
 문서 진실 동결이다. `MERGED`는 코드가 병합됐다는 뜻일 뿐 current-HEAD 외부 호출 성공을
 뜻하지 않는다. `OFFLINE_ONLY`는 fixture·local/Compose 검증만, `STUB_FAIL_CLOSED`는
 의도적으로 stable error로 닫힌 공개 표면만, `CONTRACT_ONLY`는 schema/fixture만 뜻한다.
+`IMPLEMENTED_DRAFT`는 current working tree에 코드·migration·자동 검증이 있으나 아직 PR/main
+병합이나 provider activation을 뜻하지 않는다.
 `LIVE_VERIFIED`는 exact HEAD·승인 packet·물리 호출 영수증이 있어야만 사용할 수 있으며 현재
 아래 S0~S4 표에는 없다.
 
@@ -37,10 +39,12 @@
 | S4.2C/S4.4G | `STUB_FAIL_CLOSED` | PR #77 control plane | 0 | Voyage/Gemini outbound executor는 hard-disabled |
 | S4.5/S4.6 | `OFFLINE_ONLY` | PR #77 fixture evaluation·numeric loopback | 0 | fixture/retrieval-only; provider live 0 |
 | S4.7D parser/OCR | `OFFLINE_ONLY` | PR #84 `014ccca1`, #85 `4bcca91e` | 0 | 안전 parser/OCR만 구현, importer/index writer 없음 |
-| S4.7D v2 runtime | `STUB_FAIL_CLOSED` | PR #87 `90ae2e3e`, #88 `028d94a0`, V25/V26 | 0 | ask/retrieval은 계속 fail-closed; `S4_7D_CONSENT_TICKET_CONTROL_PLANE=OFFLINE_ONLY`는 owner-bound consent/effective read와 hashed 5분 ticket만 수행하며 physical corpus·owner import·retrieval·provider는 미구현 |
+| S4.7D v2 runtime | `IMPLEMENTED_DRAFT` | PR #87/#88 + current working tree V25–V51 | 0 | local materializer·immutable bundle·profile-selected retrieval·ticket/Vertex preparation과 official-tokenizer usage attestation 구현은 검증 중; OA112 rights/cache/DB activation 전 `FULL_READY`가 아니며 Voyage/Vertex physical call은 0 |
 | Pre-S5 RAG/global-news lock | `CONTRACT_ONLY` | Issue #95 addendum | 0 | `OA112_ACTIVE_CONTRACT_LOCKED`, `S4_7D_OA112_PHYSICAL_ACTIVATION=NOT_MATERIALIZED`; foreign-news/Optional 3 adapter와 provider call 0 |
+| Pre-S5 foreign-news local runtime | `IMPLEMENTED_DRAFT` | current working tree V49 | 0 | sanitized owner-local aggregate/read route만; Finnhub/SEC/Fed adapter와 GDELT HTTP transport/outbound는 없음 |
 | S4.8A | `CONTRACT_LOCKED` | PR #75 `c17d51f6` | 0 | `S4_8A=CONTRACT_LOCKED`; provider entitlement/adapter는 미활성 |
 | S4.8 Core 6 v2 | `CONTRACT_ONLY` | PR #92 `d27322cd` | 0 | `S4_8_CORE6_V2=CONTRACT_ONLY`; KIS/OpenDART/SEC EDGAR/KRX/KOFIA/ECOS future packet/receipt boundary만, adapter/live 0 |
+| S4.8 Core 6 + Optional 3 local runtime | `IMPLEMENTED_DRAFT` | current working tree V50 | 0 | nine-lane typed status/materialization과 sanitized append-only projection만; entitlement, adapter, provider/live call은 0 |
 | S4.8B/C | `IMPLEMENTED_MERGE_CANDIDATE` | PR #77 `509d8eee` | 0 | `S4_8B_C=IMPLEMENTED_MERGE_CANDIDATE`; fixture/scorer/V23/read port만, endpoint/RiskEngine/provider는 미구현 |
 
 Naver runtime은 퇴역했으며 재활성화하지 않는다. GDELT, Voyage, Gemini, OpenAI, account/order
@@ -90,23 +94,31 @@ Decision, Signal, RiskDecision, order, decision hash 권한이 0이다.
 exact-30와 `news_sentiment_summary.v2`는 byte-stable하다.
 
 RAG v2는 existing ask/status/history bytes를 bind하고 consent/effective-consent, 5분 single-use
-owner-bound import-ticket, owner deletion activation/hard-delete, embedding profile policy를 addendum으로
-잠근다. HTTP surface에 새로 적힌 route는 consent/effective-consent/import ticket의 세 개뿐이다. Voyage는
+owner-bound import/delete ticket, owner deletion activation/hard-delete, embedding profile policy를 addendum으로
+잠근다. HTTP addendum은 consent/effective-consent/import/delete ticket과 Vertex packet preparation의 다섯
+route만 추가한다. Voyage는
 `voyage-context-4` 1024차원 full-generation profile이고 query별 fallback/mixed profile은 없으며,
-불가 시 full bundle BGE-M3 rebuild/evaluation/CAS만 허용한다. Vertex는 ADC/service-account의
+불가 시 full bundle BGE-M3 rebuild/evaluation/CAS만 허용한다. 전역 public base는
+`OWNER_PRIVATE` empty sentinel(`ownerScopeSha256=null`, ordered group 0)만 사용해 owner 원문을
+Voyage input에 포함하지 않는다. Vertex는 ADC/service-account의
 `gemini-3.5-flash` 단일 generator target이며 top-5와 질문당 `generateContent` 1회, fallback 0이다.
 둘 다 `TARGET_NOT_ACTIVE`이며 provider physical call은 0이다.
 
-`S4_7D_CONSENT_TICKET_CONTROL_PLANE=OFFLINE_ONLY`는 세 HTTP route의 owner-bound consent append,
-effective read, 5분 single-use ticket issuance만 local DB에서 수행한다. owner raw document/path, BAT argv,
-importer, materializer, retrieval, provider outbound는 이 control plane으로 활성화되지 않는다.
+`S4_7D_CONSENT_TICKET_CONTROL_PLANE=OFFLINE_ONLY`는 owner-bound consent append/effective read,
+5분 single-use import/delete ticket, content-free Vertex preparation만 local DB에서 수행한다. Vertex
+preparation은 `req_` request ID, 같은 parsed ask command의 HMAC, 2분 opaque scope만 반환하며 owner ID·raw question·raw
+evidence를 저장하거나 응답에 넣지 않는다. owner raw document/path, BAT argv, importer, materializer,
+retrieval, provider outbound는 이 control plane만으로 활성화되지 않는다.
 
 foreign-news는 Finnhub personal-local, SEC official, Federal Reserve official, existing GDELT
-offline-reference lane만 정의한다. 응답은 explanation-only이며 Decision/Signal/Risk/order/hash와
-S5 feature 권한이 0이고 raw provider data/article metadata를 저장하지 않는다. SEC/Fed의
-`officialReleaseLocator`는 article metadata가 아닌 허용된 sanitized provenance locator다. Optional 3
-(Finnhub Recommendation/Earnings, Twelve Data, Massive)는 entitlement/receipt template만 있으며
-실행 packet, adapter, provider call은 0이다.
+offline-reference lane만 정의한다. current working tree V49는 owner-local sanitized aggregate와
+hidden direct-payload read route를 구현하지만 provider adapter·GDELT HTTP transport·outbound는 없다.
+응답은 explanation-only이며 Decision/Signal/Risk/order/hash와 S5 feature 권한이 0이고 raw provider
+data/article metadata를 저장하지 않는다. SEC/Fed의 `officialReleaseLocator`는 article metadata가 아닌
+허용된 sanitized provenance locator다. current working tree V50은 Core 6과 Optional 3의 정확히
+9개 lane을 typed `AVAILABLE | ABSTAIN | BLOCKED` 상태와 sanitized append-only projection으로만
+materialize한다. Optional 3(Finnhub Recommendation/Earnings, Twelve Data, Massive)의 entitlement,
+실행 packet, adapter, provider call은 계속 0이다.
 
 `PRE_S5_DOC_TRUTH_FREEZE_VERIFIED`는 이 표와 아래 SSOT link가 EOF/lstat receipt, v1/exact-30
 불변 hash, link/anchor/Mermaid 검사, 로컬 전용 reference 자료 비추적 검사까지 통과했음을 뜻한다.
@@ -122,6 +134,9 @@ REST/gRPC 계약은 [API 명세서](API_명세서.md), machine-readable S4 profi
 S4.8B/C offline runtime과 S5.0 계약은 각각
 [S4.8B/C 변경기록](../contracts/changes/20260801-s4-8b-s4-8c-offline-runtime.md),
 [S5.0 변경기록](../contracts/changes/20260801-s5-0-signal-v2-contract-lock.md)을 따른다.
+[foreign-news sanitized runtime 변경기록](../contracts/changes/20260809-pre-s5-foreign-news-sanitized-runtime.md),
+[S4.8 sanitized projection 변경기록](../contracts/changes/20260809-s4-8-runtime-sanitized-projection.md)은
+current working tree 구현 경계와 physical-call 0 불변식을 기록한다.
 exact 42개 integration target 행과 exact KIS 18개 allowlist는
 Git으로 추적하지 않는 로컬 전용 자료수급 레지스트리가
 authority이며 공개 문서에는 전체 목록을 복제하지 않는다.

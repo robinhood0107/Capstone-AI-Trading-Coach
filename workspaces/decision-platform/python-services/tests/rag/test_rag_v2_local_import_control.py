@@ -81,6 +81,7 @@ def test_local_delete_control_round_trip_is_private_and_short_lived(tmp_path: Pa
     control = RagV2OwnerDeleteControl(
         owner_user_id="usr_demo_user",
         document_id="doc_owner_delete_0001",
+        delete_ticket_id="rtd_11111111111111111111111111111111",
         issued_at=now,
         expires_at=now + timedelta(minutes=5),
     )
@@ -97,6 +98,7 @@ def test_local_delete_control_round_trip_is_private_and_short_lived(tmp_path: Pa
     summary = json.dumps(loaded.content_free_summary())
     assert "usr_" not in summary
     assert "doc_" not in summary
+    assert "rtd_" not in summary
 
 
 def test_local_delete_control_rejects_database_alias_and_expiry(tmp_path: Path) -> None:
@@ -105,6 +107,7 @@ def test_local_delete_control_rejects_database_alias_and_expiry(tmp_path: Path) 
     control = RagV2OwnerDeleteControl(
         owner_user_id="usr_demo_user",
         document_id="doc_owner_delete_0001",
+        delete_ticket_id="rtd_11111111111111111111111111111111",
         issued_at=now,
         expires_at=now + timedelta(minutes=5),
     )

@@ -24,6 +24,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from app.rag.pre_s5_provider_control import PreS5VoyageActivation
+from app.rag.pre_s5_voyage_tokenizer import PreS5VoyageTokenCounter
 from app.rag.rag_v2_external_exact30_voyage_runner import (
     VoyagePreChunkedChunk,
     VoyagePreChunkedDocumentGroup,
@@ -37,7 +38,10 @@ _VOYAGE_PROFILE: Final = "voyage_context_4_1024_v1"
 _OUTPUT_DIMENSION: Final = 1024
 _TIMEOUT_SECONDS: Final = 20
 _MAX_GROUPS: Final = 512
-_MAX_CHUNKS: Final = 32_000
+# Voyage contextual embeddings accepts at most 16,000 pre-chunked chunks per request.
+# Keep this provider ceiling below the packet's 120K-token ceiling so a syntactically valid
+# local bundle can never become an undocumented oversized outbound request.
+_MAX_CHUNKS: Final = 16_000
 _MAX_CHUNK_UTF8_BYTES: Final = 64 * 1024
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _SOURCE_ID = re.compile(r"^src_[a-z0-9][a-z0-9_-]{2,95}$")
@@ -60,8 +64,10 @@ class PreS5VoyageTransportError(RuntimeError):
 class PreS5VoyageBundleComponent:
     """full profile rebuild에 포함되는 one component의 ordered document groups다.
 
-    owner scope에는 owner ID 원문 대신 SHA-256 projection만 넣는다. component는 local process에서만
-    canonical text를 보유하며 manifest와 ledger에는 identity/hash만 전달한다.
+    owner scope에는 owner ID 원문 대신 SHA-256 projection만 넣는다. public base activation은
+    `OWNER_PRIVATE` empty sentinel(sha256=None, groups=())만 허용하며, 실제 owner component에는
+    non-empty group과 owner projection이 함께 있어야 한다. component는 local process에서만 canonical
+    text를 보유하며 manifest와 ledger에는 identity/hash만 전달한다.
     """
 
     component_scope: _COMPONENT_SCOPE
@@ -71,7 +77,7 @@ class PreS5VoyageBundleComponent:
 
 @dataclass(frozen=True, slots=True)
 class PreS5VoyageFullBundle:
-    """EXACT30·OA112·single owner-private component를 모두 bind한 one-shot input이다."""
+    """EXACT30·OA112와 실제 owner component 또는 public-only empty sentinel을 bind한 input이다."""
 
     components: tuple[PreS5VoyageBundleComponent, ...]
     manifest_sha256: str
@@ -82,7 +88,13 @@ class PreS5VoyageAttemptLease(Protocol):
 
     def claim_attempt(self, *, now: datetime) -> None: ...
 
-    def commit(self, *, total_tokens: int, actual_cost_microusd: int) -> None: ...
+    def commit(
+        self,
+        *,
+        expected_input_tokens: int,
+        total_tokens: int,
+        actual_cost_microusd: int,
+    ) -> None: ...
 
     def mark_unknown_billing(self) -> None: ...
 
@@ -195,6 +207,7 @@ class PreS5VoyageContext4Transport:
         activation: PreS5VoyageActivation,
         api_key: str,
         lease: PreS5VoyageAttemptLease,
+        token_counter: PreS5VoyageTokenCounter,
         sender: PreS5VoyageHttpSender | None = None,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
@@ -205,17 +218,21 @@ class PreS5VoyageContext4Transport:
             or api_key != api_key.strip()
             or any(character in api_key for character in ("\x00", "\r", "\n"))
             or lease is None
+            or token_counter is None
         ):
             raise PreS5VoyageTransportError("PRE_S5_VOYAGE_API_KEY_REQUIRED")
+        _validate_token_counter(token_counter=token_counter, activation=activation)
         self._activation = activation
         self._api_key = api_key
         self._lease = lease
+        self._token_counter = token_counter
         self._sender = sender or OutboundDisabledPreS5VoyageHttpSender()
         self._clock = clock or (lambda: datetime.now(UTC))
         self._lock = threading.Lock()
         self._consumed = False
         self._external_physical_calls = 0
         self._provider_total_tokens: int | None = None
+        self._expected_input_tokens: int | None = None
         self._usage_state = "READY"
 
     @property
@@ -232,6 +249,7 @@ class PreS5VoyageContext4Transport:
             consumed = self._consumed
             physical_calls = self._external_physical_calls
             total_tokens = self._provider_total_tokens
+            expected_input_tokens = self._expected_input_tokens
             usage_state = self._usage_state
         summary: dict[str, object] = {
             "code": "PRE_S5_VOYAGE_ATTEMPT_CONSUMED" if consumed else "PRE_S5_VOYAGE_READY",
@@ -241,7 +259,10 @@ class PreS5VoyageContext4Transport:
             "provider": self._activation.provider,
             "rawArtifactCount": 0,
             "state": usage_state,
+            "tokenizerSha256": self._activation.tokenizer_sha256,
         }
+        if expected_input_tokens is not None:
+            summary["expectedInputTokens"] = expected_input_tokens
         if total_tokens is not None:
             summary["providerTotalTokens"] = total_tokens
         return summary
@@ -263,6 +284,11 @@ class PreS5VoyageContext4Transport:
         if initial_now >= self._activation.expires_at:
             raise PreS5VoyageTransportError("PRE_S5_VOYAGE_ACTIVATION_EXPIRED")
         groups = _validate_full_bundle(bundle=bundle, activation=self._activation)
+        expected_input_tokens = _expected_input_token_count(
+            groups=groups,
+            token_counter=self._token_counter,
+            activation=self._activation,
+        )
         request = _build_request(groups=groups, activation=self._activation, api_key=self._api_key)
         if isinstance(self._sender, OutboundDisabledPreS5VoyageHttpSender):
             raise PreS5VoyageTransportError("PRE_S5_VOYAGE_OUTBOUND_DISABLED")
@@ -290,12 +316,14 @@ class PreS5VoyageContext4Transport:
         if actual_cost_microusd > self._activation.cost_cap_microusd:
             self._raise_after_attempt("PRE_S5_VOYAGE_RESPONSE_INVALID")
         if not self._commit_usage(
+            expected_input_tokens=expected_input_tokens,
             total_tokens=parsed.total_tokens,
             actual_cost_microusd=actual_cost_microusd,
         ):
             self._raise_after_attempt("PRE_S5_VOYAGE_LEDGER_UNAVAILABLE")
         with self._lock:
             self._provider_total_tokens = parsed.total_tokens
+            self._expected_input_tokens = expected_input_tokens
             self._usage_state = "COMMITTED"
         return parsed.vectors
 
@@ -321,12 +349,19 @@ class PreS5VoyageContext4Transport:
             self._external_physical_calls += 1
             self._usage_state = "ATTEMPTED"
 
-    def _commit_usage(self, *, total_tokens: int, actual_cost_microusd: int) -> bool:
+    def _commit_usage(
+        self,
+        *,
+        expected_input_tokens: int,
+        total_tokens: int,
+        actual_cost_microusd: int,
+    ) -> bool:
         """sanitized usage outcome이 append-only ledger에 기록될 때만 vector를 caller에 넘긴다."""
 
         committed = True
         try:
             self._lease.commit(
+                expected_input_tokens=expected_input_tokens,
                 total_tokens=total_tokens,
                 actual_cost_microusd=actual_cost_microusd,
             )
@@ -354,6 +389,7 @@ class _GroupMetrics:
     """canonical input text를 보관하지 않는 local preflight aggregate다."""
 
     total_chunks: int
+    total_tokens: int
     total_utf8_bytes: int
 
 
@@ -395,9 +431,7 @@ def _validate_full_bundle(
     ):
         raise PreS5VoyageTransportError("PRE_S5_VOYAGE_FULL_BUNDLE_INVALID")
     groups = tuple(group for component in components for group in component.groups)
-    metrics = _validate_groups(groups)
-    if metrics.total_utf8_bytes > activation.token_cap:
-        raise PreS5VoyageTransportError("PRE_S5_VOYAGE_REQUEST_INVALID")
+    _validate_groups(groups)
     return groups
 
 
@@ -418,10 +452,20 @@ def _validate_full_bundle_components(
         if expected_scope in _PUBLIC_SCOPE_GROUP_COUNTS:
             if component.owner_scope_sha256 is not None or len(component.groups) != _PUBLIC_SCOPE_GROUP_COUNTS[expected_scope]:
                 raise PreS5VoyageTransportError("PRE_S5_VOYAGE_FULL_BUNDLE_INVALID")
+        elif component.owner_scope_sha256 is None:
+            # 전역 public base는 어떤 owner 원문도 provider input에 넣지 않는다.
+            if component.groups:
+                raise PreS5VoyageTransportError("PRE_S5_VOYAGE_FULL_BUNDLE_INVALID")
         elif not _is_sha256(component.owner_scope_sha256) or not component.groups:
             raise PreS5VoyageTransportError("PRE_S5_VOYAGE_FULL_BUNDLE_INVALID")
-        metrics = _validate_groups(component.groups)
-        del metrics
+        if component.groups:
+            try:
+                metrics = _validate_groups(component.groups)
+            except PreS5VoyageTransportError:
+                # A malformed group is part of the signed full-profile input. Do not leak a
+                # lower-level request marker before a packet/lease exists.
+                raise PreS5VoyageTransportError("PRE_S5_VOYAGE_FULL_BUNDLE_INVALID") from None
+            del metrics
         component_source_ids = tuple(group.source_id for group in component.groups)
         if component_source_ids != tuple(sorted(component_source_ids, key=lambda value: value.encode("utf-8"))):
             raise PreS5VoyageTransportError("PRE_S5_VOYAGE_FULL_BUNDLE_INVALID")
@@ -436,7 +480,10 @@ def _validate_full_bundle_components(
                 chunk_ids.add(chunk.chunk_id)
         selected.append(component)
     all_groups = tuple(group for component in selected for group in component.groups)
-    metrics = _validate_groups(all_groups)
+    try:
+        metrics = _validate_groups(all_groups)
+    except PreS5VoyageTransportError:
+        raise PreS5VoyageTransportError("PRE_S5_VOYAGE_FULL_BUNDLE_INVALID") from None
     if not 1 <= metrics.total_chunks <= _MAX_CHUNKS or len(all_groups) > _MAX_GROUPS:
         raise PreS5VoyageTransportError("PRE_S5_VOYAGE_FULL_BUNDLE_INVALID")
     return tuple(selected)
@@ -460,6 +507,7 @@ def _full_bundle_manifest_sha256(
                                     "chunkId": chunk.chunk_id,
                                     "contextSetHash": group.context_set_hash,
                                     "embeddingInputHash": chunk.embedding_input_hash,
+                                    "tokenCount": chunk.token_count,
                                 }
                                 for chunk in group.chunks
                             ],
@@ -486,6 +534,7 @@ def _build_request(
 ) -> PreS5VoyageHttpRequest:
     """canonical full-bundle order를 보존하면서 byte/token caps를 socket 전 검증한다."""
 
+    _validate_groups(groups)
     inputs = [[chunk.canonical_text for chunk in group.chunks] for group in groups]
     request_failed = False
     try:
@@ -530,6 +579,7 @@ def _validate_activation_shape(activation: object) -> None:
         or not _is_sha256(activation.nonce_sha256)
         or not _is_sha256(activation.bundle_manifest_sha256)
         or not _is_sha256(activation.rate_evidence_sha256)
+        or not _is_sha256(activation.tokenizer_sha256)
         or activation.provider != "VOYAGE"
         or activation.operation != _VOYAGE_OPERATION
         or activation.origin != _VOYAGE_ORIGIN
@@ -562,6 +612,7 @@ def _validate_groups(groups: object) -> _GroupMetrics:
     revision_ids: set[str] = set()
     chunk_ids: set[str] = set()
     total_chunks = 0
+    total_tokens = 0
     total_utf8_bytes = 0
     for group in groups:
         if (
@@ -586,6 +637,8 @@ def _validate_groups(groups: object) -> _GroupMetrics:
                 or "\x00" in chunk.canonical_text
                 or not _is_sha256(chunk.canonical_text_sha256)
                 or not _is_sha256(chunk.embedding_input_hash)
+                or type(chunk.token_count) is not int
+                or not 1 <= chunk.token_count <= 600
                 or hashlib.sha256(chunk.canonical_text.encode("utf-8")).hexdigest()
                 != chunk.canonical_text_sha256
             ):
@@ -595,10 +648,48 @@ def _validate_groups(groups: object) -> _GroupMetrics:
                 raise PreS5VoyageTransportError("PRE_S5_VOYAGE_REQUEST_INVALID")
             chunk_ids.add(chunk.chunk_id)
             total_chunks += 1
+            total_tokens += chunk.token_count
             total_utf8_bytes += encoded_length
     if not 1 <= total_chunks <= _MAX_CHUNKS:
         raise PreS5VoyageTransportError("PRE_S5_VOYAGE_REQUEST_INVALID")
-    return _GroupMetrics(total_chunks=total_chunks, total_utf8_bytes=total_utf8_bytes)
+    return _GroupMetrics(
+        total_chunks=total_chunks,
+        total_tokens=total_tokens,
+        total_utf8_bytes=total_utf8_bytes,
+    )
+
+
+def _validate_token_counter(
+    *,
+    token_counter: object,
+    activation: PreS5VoyageActivation,
+) -> None:
+    """Only the packet-pinned official model tokenizer can authorize an outbound input count."""
+
+    if (
+        not isinstance(token_counter, PreS5VoyageTokenCounter)
+        or token_counter.model != _VOYAGE_MODEL
+        or token_counter.tokenizer_sha256 != activation.tokenizer_sha256
+    ):
+        raise PreS5VoyageTransportError("PRE_S5_VOYAGE_OFFICIAL_TOKENIZER_REQUIRED")
+
+
+def _expected_input_token_count(
+    *,
+    groups: tuple[VoyagePreChunkedDocumentGroup, ...],
+    token_counter: PreS5VoyageTokenCounter,
+    activation: PreS5VoyageActivation,
+) -> int:
+    """BGE chunk metadata가 아닌 official Voyage tokenizer count로 packet cap을 close한다."""
+
+    texts = tuple(chunk.canonical_text for group in groups for chunk in group.chunks)
+    try:
+        expected = token_counter.count_texts(texts=texts, token_cap=activation.token_cap)
+    except Exception:
+        raise PreS5VoyageTransportError("PRE_S5_VOYAGE_OFFICIAL_TOKENIZER_REQUIRED") from None
+    if type(expected) is not int or not 1 <= expected <= activation.token_cap:
+        raise PreS5VoyageTransportError("PRE_S5_VOYAGE_OFFICIAL_TOKENIZER_REQUIRED")
+    return expected
 
 
 def _parse_response(

@@ -11,11 +11,13 @@ from app.generated import rag_v2_pb2, rag_v2_pb2_grpc
 from app.rag.rag_v2_authorized_retrieval import (
     RagV2BundleScope,
     RagV2RetrievalCandidate,
+    RagV2RetrievalExecution,
     RagV2RetrievalFailureCode,
     RagV2RetrievalOutcome,
 )
 from app.rag.rag_v2_rpc import (
     BgeRagV2RetrievalOnlyEngine,
+    ProfileSelectedRagV2RetrievalOnlyEngine,
     RagV2EngineResult,
     RagV2RpcStatus,
     create_rag_v2_server,
@@ -65,6 +67,29 @@ class _Retrieval:
         if self.outcome.evidence:
             assert scope.claim_id == self.outcome.evidence[0].scope_claim_id
         return self.outcome
+
+
+class _ExecutionRetrieval(_Retrieval):
+    def __init__(
+        self,
+        outcome: RagV2RetrievalOutcome,
+        *,
+        voyage_physical_calls: int,
+    ) -> None:
+        super().__init__(outcome)
+        self._voyage_physical_calls = voyage_physical_calls
+
+    def retrieve_with_execution(
+        self,
+        *,
+        scope: RagV2BundleScope,
+        payload: dict[str, object],
+    ) -> RagV2RetrievalExecution:
+        outcome = self.retrieve(scope=scope, payload=payload)
+        return RagV2RetrievalExecution(
+            outcome=outcome,
+            voyage_physical_calls=self._voyage_physical_calls,
+        )
 
 
 def test_bge_v2_engine_returns_retrieval_only_public_and_owner_metadata_without_content() -> None:
@@ -133,6 +158,70 @@ def test_bge_v2_engine_maps_scope_or_retrieval_failure_without_fabricating_citat
     assert result.citations == ()
     assert result.authorized_top5_chunk_revision_ids == ()
     assert result.citation_coverage == 0.0
+
+
+def test_profile_selected_engine_uses_only_the_db_scope_voyage_retrieval_without_bge_fallback() -> None:
+    voyage_scope = _scope(owner_generation=False, profile="voyage_context_4_1024_v1")
+    bge_scope = _scope(owner_generation=False)
+    bge = _Retrieval(_success(_candidate(1, bge_scope, source_scope="EXACT30")))
+    voyage = _Retrieval(
+        _success(
+            _candidate(1, voyage_scope, source_scope="EXACT30"),
+            _candidate(2, voyage_scope, source_scope="OA112"),
+        )
+    )
+    engine = ProfileSelectedRagV2RetrievalOnlyEngine(
+        scope_reader=_ScopeReader(voyage_scope),
+        retrievals={
+            "bge_m3_local_1024_v1": bge,
+            "voyage_context_4_1024_v1": voyage,
+        },
+    )
+
+    result = engine.ask(_request())
+
+    assert result.status is RagV2RpcStatus.RETRIEVAL_ONLY
+    assert result.embedding_profile_id == "voyage_context_4_1024_v1"
+    assert voyage.calls == 1
+    assert bge.calls == 0
+
+
+def test_profile_selected_engine_reports_unavailable_voyage_profile_without_bge_fallback() -> None:
+    voyage_scope = _scope(owner_generation=False, profile="voyage_context_4_1024_v1")
+    bge = _Retrieval(_success(_candidate(1, _scope(owner_generation=False), source_scope="EXACT30")))
+    engine = ProfileSelectedRagV2RetrievalOnlyEngine(
+        scope_reader=_ScopeReader(voyage_scope),
+        retrievals={"bge_m3_local_1024_v1": bge},
+    )
+
+    result = engine.ask(_request())
+
+    assert result.status is RagV2RpcStatus.RETRIEVAL_FAILURE
+    assert result.failure_code == "RAG_QUERY_PROFILE_UNAVAILABLE"
+    assert result.embedding_profile_id == "voyage_context_4_1024_v1"
+    assert bge.calls == 0
+
+
+def test_profile_selected_engine_preserves_one_hard_gated_voyage_query_attempt_in_the_result() -> None:
+    scope = _scope(owner_generation=False, profile="voyage_context_4_1024_v1")
+    voyage = _ExecutionRetrieval(
+        _success(
+            _candidate(1, scope, source_scope="EXACT30"),
+            _candidate(2, scope, source_scope="OA112"),
+        ),
+        voyage_physical_calls=1,
+    )
+    engine = ProfileSelectedRagV2RetrievalOnlyEngine(
+        scope_reader=_ScopeReader(scope),
+        retrievals={"voyage_context_4_1024_v1": voyage},
+    )
+
+    result = engine.ask(_request())
+
+    assert result.status is RagV2RpcStatus.RETRIEVAL_ONLY
+    assert result.provider_physical_total == 1
+    assert result.voyage_physical_calls == 1
+    assert result.gemini_physical_calls == result.openai_physical_calls == 0
 
 
 def test_v2_loopback_transport_serializes_only_safe_citations_and_disables_reflection() -> None:
@@ -238,7 +327,11 @@ def _request(
     )
 
 
-def _scope(*, owner_generation: bool) -> RagV2BundleScope:
+def _scope(
+    *,
+    owner_generation: bool,
+    profile: str = "bge_m3_local_1024_v1",
+) -> RagV2BundleScope:
     return RagV2BundleScope(
         claim_id="rvs_" + "a" * 32,
         owner_user_id="usr_demo_owner",
@@ -246,7 +339,7 @@ def _scope(*, owner_generation: bool) -> RagV2BundleScope:
         exact30_generation_id="rgr_" + "1" * 32,
         oa112_generation_id="rgr_" + "2" * 32,
         owner_private_generation_id=("rgr_" + "3" * 32) if owner_generation else None,
-        embedding_profile_id="bge_m3_local_1024_v1",
+        embedding_profile_id=profile,
         policy_version=1,
         allowed_topics=("FINANCIAL_ENGINEERING", "RISK"),
     )

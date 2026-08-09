@@ -52,6 +52,7 @@ _PACKET_FIELDS = frozenset(
         "approvalId",
         "ciDigest",
         "costCapMicrousd",
+        "date",
         "expiresAt",
         "headSha",
         "logicalCallCap",
@@ -59,12 +60,17 @@ _PACKET_FIELDS = frozenset(
         "maximumSourceBytes",
         "maximumTotalBytes",
         "nonce",
+        "operation",
         "operator",
         "physicalCallCap",
+        "provider",
+        "query",
         "registryDigest",
         "retryCount",
         "securityDigest",
+        "sourceEndpointDigest",
         "sourceIds",
+        "symbol",
         "trackedRawArtifactCount",
         "treeSha256",
     }
@@ -98,10 +104,19 @@ _DNS_RESOLVER_WORKER = (
 class Oa112DownloadError(ValueError):
     """OA raw local cache download가 hard gate 또는 transport 경계를 위반했음을 나타낸다."""
 
-    def __init__(self, code: str, *, physical_call_count: int = 0) -> None:
+    def __init__(
+        self,
+        code: str,
+        *,
+        attempt_count: int = 0,
+        physical_call_count: int = 0,
+        failure_receipt_written: bool = False,
+    ) -> None:
         super().__init__(code)
         self.code = code
+        self.attempt_count = attempt_count
         self.physical_call_count = physical_call_count
+        self.failure_receipt_written = failure_receipt_written
 
 
 class Oa112DnsResolver(Protocol):
@@ -166,7 +181,13 @@ class Oa112DownloadPacket:
     ci_digest: str
     security_digest: str
     registry_digest: str
+    source_endpoint_digest: str
     source_ids: tuple[str, ...]
+    provider: str
+    operation: str
+    query: str
+    symbol: str
+    date: str
     logical_call_cap: int
     physical_call_cap: int
     maximum_source_bytes: int
@@ -184,6 +205,7 @@ class Oa112DownloadPacket:
         *,
         entries: Sequence[Oa112RegistryEntry],
         registry_digest: str,
+        execution_binding: "Oa112DownloadBinding",
         now: datetime,
     ) -> None:
         """packet은 current registry와 exact source order를 모두 보지 못하면 outbound를 열지 않는다."""
@@ -193,6 +215,16 @@ class Oa112DownloadPacket:
             raise Oa112DownloadError("OA112_PACKET_REGISTRY_DRIFT")
         if self.source_ids != source_ids:
             raise Oa112DownloadError("OA112_PACKET_SOURCE_SCOPE_DRIFT")
+        if self.source_endpoint_digest != oa112_source_endpoint_digest(entries):
+            raise Oa112DownloadError("OA112_PACKET_ENDPOINT_SCOPE_DRIFT")
+        execution_binding.validate()
+        if (
+            self.head_sha != execution_binding.head_sha
+            or self.tree_sha256 != execution_binding.tree_sha256
+            or self.ci_digest != execution_binding.ci_digest
+            or self.security_digest != execution_binding.security_digest
+        ):
+            raise Oa112DownloadError("OA112_PACKET_EXECUTION_BINDING")
         if (
             _APPROVAL_ID.fullmatch(self.approval_id) is None
             or _HEAD_SHA.fullmatch(self.head_sha) is None
@@ -203,6 +235,7 @@ class Oa112DownloadPacket:
                     self.ci_digest,
                     self.security_digest,
                     self.registry_digest,
+                    self.source_endpoint_digest,
                 )
             )
             or not self.source_ids
@@ -216,6 +249,11 @@ class Oa112DownloadPacket:
             or self.cost_cap_microusd != 0
             or self.retry_count != 0
             or self.tracked_raw_artifact_count != 0
+            or self.provider != "OA112_OFFICIAL_HTTPS"
+            or self.operation != "OA112_RAW_LOCAL_CACHE_DOWNLOAD"
+            or self.query != "NONE"
+            or self.symbol != "NONE"
+            or self.date != "NONE"
             or _OPERATOR.fullmatch(self.operator) is None
             or _NONCE.fullmatch(self.nonce) is None
             or self.maximum_pages < 1
@@ -225,6 +263,28 @@ class Oa112DownloadPacket:
             or any(not entry.machine_fetch_allowed for entry in entries)
         ):
             raise Oa112DownloadError("OA112_PACKET_INVALID")
+
+
+@dataclass(frozen=True, slots=True)
+class Oa112DownloadBinding:
+    """현재 tracked HEAD/tree와 CI/security evidence를 외부 request 직전에 결속한다."""
+
+    head_sha: str
+    tree_sha256: str
+    ci_digest: str
+    security_digest: str
+
+    def validate(self) -> None:
+        """ambient 값은 packet loader가 신뢰할 수 없으므로 각 형식을 독립적으로 제한한다."""
+
+        if (
+            _HEAD_SHA.fullmatch(self.head_sha) is None
+            or any(
+                _SHA256.fullmatch(value) is None
+                for value in (self.tree_sha256, self.ci_digest, self.security_digest)
+            )
+        ):
+            raise Oa112DownloadError("OA112_EXECUTION_EVIDENCE_INVALID")
 
 
 @dataclass(frozen=True, slots=True)
@@ -242,6 +302,7 @@ class Oa112DownloadedSourceReceipt:
 class Oa112DownloadReceipt:
     """physical count와 content-free source identity만 노출하는 run receipt다."""
 
+    attempt_count: int
     physical_call_count: int
     downloaded_source_count: int
     reused_source_count: int
@@ -249,6 +310,7 @@ class Oa112DownloadReceipt:
 
     def content_free_projection(self) -> dict[str, object]:
         return {
+            "attemptCount": self.attempt_count,
             "downloadedSourceCount": self.downloaded_source_count,
             "physicalCallCount": self.physical_call_count,
             "reusedSourceCount": self.reused_source_count,
@@ -660,6 +722,71 @@ def load_oa112_download_packet(
     return packet
 
 
+def load_oa112_execution_binding(
+    *,
+    approved_root: Path,
+    relative_path: str,
+    repository_root: Path,
+) -> Oa112DownloadBinding:
+    """local evidence와 실제 clean Git HEAD/tree를 결합해 one-shot packet binding을 만든다.
+
+    CI/security digest는 external workflow 결과이므로 local-only evidence file에서만 읽는다. 반면
+    HEAD/tree는 ambient environment를 믿지 않고 execution 직전 Git object에서 다시 계산해 stale
+    packet이 다른 tracked code에 대해 provider socket을 열지 못하게 한다.
+    """
+
+    if not _is_leaf(relative_path):
+        raise Oa112DownloadError("OA112_EXECUTION_EVIDENCE_UNSAFE")
+    content = _read_private_control_file(
+        root=approved_root,
+        name=relative_path,
+        maximum=_MAX_PACKET_BYTES,
+        error_code="OA112_EXECUTION_EVIDENCE_UNSAFE",
+    )
+    try:
+        payload = _parse_canonical_json(content)
+        if set(payload) != {"ciDigest", "headSha", "securityDigest", "treeSha256"}:
+            raise Oa112DownloadError("OA112_EXECUTION_EVIDENCE_INVALID")
+        binding = Oa112DownloadBinding(
+            head_sha=_required_text(payload, "headSha", maximum=40),
+            tree_sha256=_required_text(payload, "treeSha256", maximum=64),
+            ci_digest=_required_text(payload, "ciDigest", maximum=64),
+            security_digest=_required_text(payload, "securityDigest", maximum=64),
+        )
+        binding.validate()
+    except Oa112DownloadError:
+        raise
+    except (TypeError, ValueError) as error:
+        raise Oa112DownloadError("OA112_EXECUTION_EVIDENCE_INVALID") from error
+    actual_head_sha, actual_tree_sha256 = _current_clean_git_identity(repository_root)
+    if binding.head_sha != actual_head_sha or binding.tree_sha256 != actual_tree_sha256:
+        raise Oa112DownloadError("OA112_EXECUTION_EVIDENCE_GIT_DRIFT")
+    return binding
+
+
+def oa112_source_endpoint_digest(entries: Sequence[Oa112RegistryEntry]) -> str:
+    """승인 packet에는 원문 URL 대신 ordered source/origin/endpoint identity digest만 결속한다."""
+
+    try:
+        projection = [
+            {
+                "endpoint": _endpoint_from_https_url(entry.canonical_url),
+                "origin": _origin_from_https_url(entry.canonical_url),
+                "sourceId": entry.source_id,
+            }
+            for entry in entries
+        ]
+    except Oa112DownloadError:
+        raise
+    encoded = json.dumps(
+        projection,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
 def consume_oa112_download_packet(*, packet: Oa112DownloadPacket, control_root: Path) -> None:
     """one-shot packet nonce를 local 0700 control root에서 atomically consume한다."""
 
@@ -692,6 +819,67 @@ def consume_oa112_download_packet(*, packet: Oa112DownloadPacket, control_root: 
         os.close(root_fd)
 
 
+def _write_oa112_run_receipt(
+    *,
+    control_root: Path,
+    packet: Oa112DownloadPacket,
+    registry_digest: str,
+    state: str,
+    code: str,
+    attempt_count: int,
+    physical_call_count: int,
+    downloaded_source_count: int,
+    reused_source_count: int,
+) -> None:
+    """소비된 packet마다 raw URL·body 없이 하나의 durable physical outcome을 남긴다."""
+
+    if (
+        state not in {"FAILED", "SUCCEEDED"}
+        or not code
+        or min(attempt_count, physical_call_count, downloaded_source_count, reused_source_count) < 0
+        or physical_call_count > attempt_count
+        or downloaded_source_count + reused_source_count > len(packet.source_ids)
+    ):
+        raise Oa112DownloadError("OA112_DOWNLOAD_RECEIPT_UNAVAILABLE")
+    root_fd = -1
+    receipts_fd = -1
+    try:
+        root_fd = _open_private_root(control_root, error_code="OA112_DOWNLOAD_RECEIPT_UNAVAILABLE")
+        receipts_fd = _open_or_create_private_directory(root_fd, "oa112-download-receipts")
+        payload = (
+            json.dumps(
+                {
+                    "attemptCount": attempt_count,
+                    "code": code,
+                    "downloadedSourceCount": downloaded_source_count,
+                    "packetDigest": _packet_digest(packet),
+                    "physicalCallCount": physical_call_count,
+                    "registryDigest": registry_digest,
+                    "reusedSourceCount": reused_source_count,
+                    "state": state,
+                },
+                separators=(",", ":"),
+                sort_keys=True,
+            ).encode("utf-8")
+            + b"\n"
+        )
+        _write_new_private_file(
+            receipts_fd,
+            f"{_packet_digest(packet)}.json",
+            payload,
+        )
+        os.fsync(receipts_fd)
+    except Oa112DownloadError:
+        raise
+    except (FileExistsError, OSError) as error:
+        raise Oa112DownloadError("OA112_DOWNLOAD_RECEIPT_UNAVAILABLE") from error
+    finally:
+        if receipts_fd >= 0:
+            os.close(receipts_fd)
+        if root_fd >= 0:
+            os.close(root_fd)
+
+
 def download_oa112_local_cache(
     *,
     entries: Sequence[Oa112RegistryEntry],
@@ -699,6 +887,7 @@ def download_oa112_local_cache(
     packet: Oa112DownloadPacket | None,
     local_cache_root: Path,
     packet_control_root: Path,
+    execution_binding: Oa112DownloadBinding | None = None,
     resolver: Oa112DnsResolver | None = None,
     transport: Oa112HttpsTransport | None = None,
     now: datetime | None = None,
@@ -718,7 +907,10 @@ def download_oa112_local_cache(
     if len({entry.source_id for entry in selected}) != len(selected):
         raise Oa112DownloadError("OA112_DOWNLOAD_INPUT_INVALID")
     root_fd, raw_fd, staging_fd = _open_cache_layout(local_cache_root)
+    attempt_count = 0
     physical_call_count = 0
+    consumed_packet: Oa112DownloadPacket | None = None
+    outcome_receipt_attempted = False
     try:
         receipts: dict[str, Oa112DownloadedSourceReceipt] = {}
         pending: list[Oa112RegistryEntry] = []
@@ -736,8 +928,16 @@ def download_oa112_local_cache(
         if pending:
             if packet is None:
                 raise Oa112DownloadError("OA112_PACKET_REQUIRED")
-            packet.validate(entries=selected, registry_digest=registry_digest, now=check_now)
+            if execution_binding is None:
+                raise Oa112DownloadError("OA112_EXECUTION_EVIDENCE_REQUIRED")
+            packet.validate(
+                entries=selected,
+                registry_digest=registry_digest,
+                execution_binding=execution_binding,
+                now=check_now,
+            )
             consume_oa112_download_packet(packet=packet, control_root=packet_control_root)
+            consumed_packet = packet
             active_resolver = resolver or _SocketOa112DnsResolver()
             active_transport = transport or _StdlibOa112HttpsTransport()
             total_bytes = 0
@@ -745,12 +945,24 @@ def download_oa112_local_cache(
                 if physical_call_count >= packet.physical_call_cap:
                     raise Oa112DownloadError(
                         "OA112_PACKET_PHYSICAL_CAP",
+                        attempt_count=attempt_count,
                         physical_call_count=physical_call_count,
                     )
                 # packet expiry는 새 request를 만들기 직전에도 다시 확인한다.
                 with _Oa112SourceDeadline(expires_at=packet.expires_at) as deadline:
                     deadline.remaining_seconds()
-                    physical_call_count += 1
+                    attempt_count += 1
+
+                    def record_provider_request() -> None:
+                        nonlocal physical_call_count
+                        if physical_call_count >= packet.physical_call_cap:
+                            raise Oa112DownloadError(
+                                "OA112_PACKET_PHYSICAL_CAP",
+                                attempt_count=attempt_count,
+                                physical_call_count=physical_call_count,
+                            )
+                        physical_call_count += 1
+
                     receipt = _download_entry(
                         raw_fd=raw_fd,
                         staging_fd=staging_fd,
@@ -764,28 +976,73 @@ def download_oa112_local_cache(
                         resolver=active_resolver,
                         transport=active_transport,
                         deadline=deadline,
+                        record_provider_request=record_provider_request,
                     )
                 total_bytes += receipt.bytes_read
                 if total_bytes > packet.maximum_total_bytes:
                     raise Oa112DownloadError(
                         "OA112_PACKET_TOTAL_BYTE_CAP",
+                        attempt_count=attempt_count,
                         physical_call_count=physical_call_count,
                     )
                 receipts[entry.source_id] = receipt
         ordered = tuple(receipts[entry.source_id] for entry in selected)
-        return Oa112DownloadReceipt(
+        result = Oa112DownloadReceipt(
+            attempt_count=attempt_count,
             physical_call_count=physical_call_count,
             downloaded_source_count=sum(item.state in {"DOWNLOADED", "RESUMED"} for item in ordered),
             reused_source_count=sum(item.state == "REUSED" for item in ordered),
             sources=ordered,
         )
-    except Oa112DownloadError as error:
-        if error.physical_call_count == 0 and physical_call_count:
-            raise Oa112DownloadError(
-                error.code,
+        if consumed_packet is not None:
+            outcome_receipt_attempted = True
+            _write_oa112_run_receipt(
+                control_root=packet_control_root,
+                packet=consumed_packet,
+                registry_digest=registry_digest,
+                state="SUCCEEDED",
+                code="OA112_LOCAL_CACHE_READY",
+                attempt_count=attempt_count,
                 physical_call_count=physical_call_count,
+                downloaded_source_count=result.downloaded_source_count,
+                reused_source_count=result.reused_source_count,
+            )
+        return result
+    except Oa112DownloadError as error:
+        surfaced_error = error
+        if error.attempt_count != attempt_count or error.physical_call_count != physical_call_count:
+            surfaced_error = Oa112DownloadError(
+                error.code,
+                attempt_count=attempt_count,
+                physical_call_count=physical_call_count,
+            )
+        if consumed_packet is not None and not outcome_receipt_attempted:
+            outcome_receipt_attempted = True
+            try:
+                _write_oa112_run_receipt(
+                    control_root=packet_control_root,
+                    packet=consumed_packet,
+                    registry_digest=registry_digest,
+                    state="FAILED",
+                    code=surfaced_error.code,
+                    attempt_count=attempt_count,
+                    physical_call_count=physical_call_count,
+                    downloaded_source_count=0,
+                    reused_source_count=sum(item.state == "REUSED" for item in receipts.values()),
+                )
+            except Oa112DownloadError as receipt_error:
+                raise Oa112DownloadError(
+                    receipt_error.code,
+                    attempt_count=attempt_count,
+                    physical_call_count=physical_call_count,
+                ) from surfaced_error
+            raise Oa112DownloadError(
+                surfaced_error.code,
+                attempt_count=attempt_count,
+                physical_call_count=physical_call_count,
+                failure_receipt_written=True,
             ) from error
-        raise
+        raise surfaced_error from error
     finally:
         os.close(staging_fd)
         os.close(raw_fd)
@@ -803,6 +1060,7 @@ def _download_entry(
     resolver: Oa112DnsResolver,
     transport: Oa112HttpsTransport,
     deadline: _Oa112SourceDeadline,
+    record_provider_request: Callable[[], None],
 ) -> Oa112DownloadedSourceReceipt:
     deadline.remaining_seconds()
     if maximum_source_bytes <= 0:
@@ -842,6 +1100,7 @@ def _download_entry(
             resolver=resolver,
             transport=transport,
             deadline=deadline,
+            record_provider_request=record_provider_request,
         ) as response:
             plan = _validate_response(
                 response=response,
@@ -950,6 +1209,7 @@ def _open_checked_response(
     resolver: Oa112DnsResolver,
     transport: Oa112HttpsTransport,
     deadline: _Oa112SourceDeadline,
+    record_provider_request: Callable[[], None],
 ) -> Iterator[Oa112DownloadResponse]:
     parsed = _parse_https_url(url)
     hostname = parsed.hostname
@@ -983,6 +1243,7 @@ def _open_checked_response(
                 target=target,
                 base_headers=headers,
                 deadline=deadline,
+                record_provider_request=record_provider_request,
             )
             yield response
     except Oa112DownloadError:
@@ -1001,11 +1262,13 @@ class _DeferredHeaderResponse:
         target: str,
         base_headers: Mapping[str, str],
         deadline: _Oa112SourceDeadline,
+        record_provider_request: Callable[[], None],
     ) -> None:
         self._connection = connection
         self._target = target
         self._base_headers = dict(base_headers)
         self._deadline = deadline
+        self._record_provider_request = record_provider_request
         self._response: Oa112DownloadResponse | None = None
 
     @property
@@ -1027,6 +1290,7 @@ class _DeferredHeaderResponse:
             else:
                 merged[key] = value
         remaining = self._deadline.remaining_seconds()
+        self._record_provider_request()
         self._response = self._connection.get(
             target=self._target,
             headers=merged,
@@ -1307,6 +1571,59 @@ def _parse_https_url(value: str) -> SplitResult:
     return parsed
 
 
+def _origin_from_https_url(value: str) -> str:
+    """origin digest에는 URL의 경로·query를 넣지 않아 source별 endpoint와 분리한다."""
+
+    parsed = _parse_https_url(value)
+    assert parsed.hostname is not None
+    return f"https://{parsed.hostname.lower()}"
+
+
+def _endpoint_from_https_url(value: str) -> str:
+    """approved endpoint는 HTTPS path/query의 exact canonical projection만 사용한다."""
+
+    parsed = _parse_https_url(value)
+    return urlunsplit(("", "", parsed.path, parsed.query, ""))
+
+
+def _current_clean_git_identity(repository_root: Path) -> tuple[str, str]:
+    """실행 checkout이 clean한 current HEAD/tree인지 확인해 stale local evidence를 거부한다."""
+
+    if not repository_root.is_absolute() or ".." in repository_root.parts:
+        raise Oa112DownloadError("OA112_EXECUTION_EVIDENCE_GIT_UNAVAILABLE")
+    commands = (
+        ("status", "--porcelain=v1", "--untracked-files=no"),
+        ("rev-parse", "HEAD"),
+        ("cat-file", "tree", "HEAD^{tree}"),
+    )
+    outputs: list[bytes] = []
+    for command in commands:
+        try:
+            completed = subprocess.run(
+                ("git", "-C", str(repository_root), *command),
+                check=False,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                timeout=5.0,
+            )
+        except (OSError, subprocess.SubprocessError) as error:
+            raise Oa112DownloadError("OA112_EXECUTION_EVIDENCE_GIT_UNAVAILABLE") from error
+        if completed.returncode != 0:
+            raise Oa112DownloadError("OA112_EXECUTION_EVIDENCE_GIT_UNAVAILABLE")
+        outputs.append(completed.stdout)
+    if outputs[0]:
+        raise Oa112DownloadError("OA112_EXECUTION_EVIDENCE_WORKTREE_DIRTY")
+    try:
+        head_sha = outputs[1].decode("ascii", errors="strict").strip()
+    except UnicodeDecodeError as error:
+        raise Oa112DownloadError("OA112_EXECUTION_EVIDENCE_GIT_UNAVAILABLE") from error
+    tree_sha256 = hashlib.sha256(outputs[2]).hexdigest()
+    if _HEAD_SHA.fullmatch(head_sha) is None:
+        raise Oa112DownloadError("OA112_EXECUTION_EVIDENCE_GIT_UNAVAILABLE")
+    return head_sha, tree_sha256
+
+
 def _hostname(url: str) -> str:
     parsed = _parse_https_url(url)
     assert parsed.hostname is not None
@@ -1443,12 +1760,18 @@ def _open_or_create_private_directory(parent_fd: int, name: str) -> int:
         raise
 
 
-def _read_private_control_file(*, root: Path, name: str, maximum: int) -> bytes:
-    root_fd = _open_private_root(root, error_code="OA112_PACKET_UNSAFE")
+def _read_private_control_file(
+    *,
+    root: Path,
+    name: str,
+    maximum: int,
+    error_code: str = "OA112_PACKET_UNSAFE",
+) -> bytes:
+    root_fd = _open_private_root(root, error_code=error_code)
     try:
         return _read_private_file(root_fd, name, maximum=maximum)
     except Oa112DownloadError:
-        raise Oa112DownloadError("OA112_PACKET_UNSAFE") from None
+        raise Oa112DownloadError(error_code) from None
     finally:
         os.close(root_fd)
 
@@ -1605,7 +1928,13 @@ def _packet_from_payload(payload: Mapping[str, object]) -> Oa112DownloadPacket:
         ci_digest=_required_text(payload, "ciDigest", maximum=64),
         security_digest=_required_text(payload, "securityDigest", maximum=64),
         registry_digest=_required_text(payload, "registryDigest", maximum=64),
+        source_endpoint_digest=_required_text(payload, "sourceEndpointDigest", maximum=64),
         source_ids=source_ids,
+        provider=_required_text(payload, "provider", maximum=64),
+        operation=_required_text(payload, "operation", maximum=64),
+        query=_required_text(payload, "query", maximum=64),
+        symbol=_required_text(payload, "symbol", maximum=64),
+        date=_required_text(payload, "date", maximum=64),
         logical_call_cap=_required_int(payload, "logicalCallCap"),
         physical_call_cap=_required_int(payload, "physicalCallCap"),
         maximum_source_bytes=_required_int(payload, "maximumSourceBytes"),
@@ -1625,9 +1954,22 @@ def _packet_digest(packet: Oa112DownloadPacket) -> str:
         json.dumps(
             {
                 "approvalId": packet.approval_id,
+                "ciDigest": packet.ci_digest,
+                "date": packet.date,
                 "headSha": packet.head_sha,
+                "maximumPages": packet.maximum_pages,
+                "maximumSourceBytes": packet.maximum_source_bytes,
+                "maximumTotalBytes": packet.maximum_total_bytes,
+                "nonce": packet.nonce,
+                "operation": packet.operation,
+                "physicalCallCap": packet.physical_call_cap,
+                "provider": packet.provider,
+                "query": packet.query,
                 "registryDigest": packet.registry_digest,
+                "securityDigest": packet.security_digest,
+                "sourceEndpointDigest": packet.source_endpoint_digest,
                 "sourceIds": packet.source_ids,
+                "symbol": packet.symbol,
                 "treeSha256": packet.tree_sha256,
             },
             separators=(",", ":"),

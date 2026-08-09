@@ -34,7 +34,7 @@ _ADMIN_FORBIDDEN_TABLES = (
     "rag_v2_immutable_owner_bundle_pointers",
     "rag_v2_immutable_consent_events",
     "rag_v2_immutable_import_tickets",
-    "rag_v2_immutable_retrieval_scope_claims",
+    "rag_v2_retrieval_scope_claims",
     "rag_v2_immutable_activation_receipts",
     "rag_v2_immutable_deletion_receipts",
     "rag_v2_immutable_owner_document_deletion_tombstones",

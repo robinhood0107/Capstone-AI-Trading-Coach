@@ -24,6 +24,7 @@ _DELETE_CONTROL_RELATIVE_PATH = f"{_CONTROL_DIRECTORY}/{_DELETE_CONTROL_FILENAME
 _MAX_CONTROL_BYTES = 16 * 1024
 _OWNER_ID = re.compile(r"^usr_[a-z0-9][a-z0-9_-]{2,95}$")
 _TICKET_ID = re.compile(r"^rti_[0-9a-f]{32}$")
+_DELETE_TICKET_ID = re.compile(r"^rtd_[0-9a-f]{32}$")
 _DOCUMENT_ID = re.compile(r"^doc_[a-z0-9][a-z0-9_-]{10,95}$")
 _SOURCE_ID = re.compile(r"^src_[a-z0-9][a-z0-9_-]{2,95}$")
 _SOURCE_REVISION_ID = re.compile(r"^srv_[a-z0-9][a-z0-9_-]{2,95}$")
@@ -54,6 +55,7 @@ _DELETE_CONTROL_FIELDS = frozenset(
         "issuedAt",
         "ownerUserId",
         "schemaVersion",
+        "ticketId",
     }
 )
 
@@ -107,6 +109,7 @@ class RagV2OwnerDeleteControl:
 
     owner_user_id: str
     document_id: str
+    delete_ticket_id: str
     issued_at: datetime
     expires_at: datetime
 
@@ -179,7 +182,7 @@ def write_pending_owner_delete_control(
     local_root: Path,
     control: RagV2OwnerDeleteControl,
 ) -> None:
-    """trusted local UI가 owner document deletion selector를 0600 record로 publish한다.
+    """trusted local UI가 server-issued owner delete ticket selector를 0600 record로 publish한다.
 
     delete control은 public HTTP route나 CLI argument가 아니다. DB admin DSN, owner raw path,
     reason text를 record에 저장하지 않아 local record가 capability escalation에 쓰이지 않게 한다.
@@ -296,12 +299,13 @@ def _decode_control(value: object) -> RagV2OwnerImportControl:
 def _encode_delete_control(control: RagV2OwnerDeleteControl) -> bytes:
     _validate_delete_control(control)
     payload = {
-        "contractId": "rag-v2-owner-local-delete-control-v1",
+        "contractId": "rag-v2-owner-local-delete-control-v2",
         "documentId": control.document_id,
         "expiresAt": _format_instant(control.expires_at),
         "issuedAt": _format_instant(control.issued_at),
         "ownerUserId": control.owner_user_id,
-        "schemaVersion": 1,
+        "schemaVersion": 2,
+        "ticketId": control.delete_ticket_id,
     }
     encoded = (json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n").encode(
         "utf-8"
@@ -314,12 +318,13 @@ def _encode_delete_control(control: RagV2OwnerDeleteControl) -> bytes:
 def _decode_delete_control(value: object) -> RagV2OwnerDeleteControl:
     if not isinstance(value, Mapping) or set(value) != _DELETE_CONTROL_FIELDS:
         raise RagV2LocalDeleteControlError("LOCAL_DELETE_CONTROL_INVALID")
-    if value.get("contractId") != "rag-v2-owner-local-delete-control-v1" or value.get("schemaVersion") != 1:
+    if value.get("contractId") != "rag-v2-owner-local-delete-control-v2" or value.get("schemaVersion") != 2:
         raise RagV2LocalDeleteControlError("LOCAL_DELETE_CONTROL_INVALID")
     try:
         control = RagV2OwnerDeleteControl(
             owner_user_id=_require_pattern(value.get("ownerUserId"), _OWNER_ID),
             document_id=_require_pattern(value.get("documentId"), _DOCUMENT_ID),
+            delete_ticket_id=_require_pattern(value.get("ticketId"), _DELETE_TICKET_ID),
             issued_at=_parse_instant(value.get("issuedAt")),
             expires_at=_parse_instant(value.get("expiresAt")),
         )
@@ -356,6 +361,7 @@ def _validate_delete_control(control: RagV2OwnerDeleteControl) -> None:
     if (
         _OWNER_ID.fullmatch(control.owner_user_id) is None
         or _DOCUMENT_ID.fullmatch(control.document_id) is None
+        or _DELETE_TICKET_ID.fullmatch(control.delete_ticket_id) is None
         or control.issued_at.tzinfo is None
         or control.expires_at.tzinfo is None
         or control.expires_at.astimezone(UTC) - control.issued_at.astimezone(UTC) != timedelta(minutes=5)

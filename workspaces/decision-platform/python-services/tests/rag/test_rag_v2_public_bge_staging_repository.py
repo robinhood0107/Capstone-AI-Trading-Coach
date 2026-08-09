@@ -24,6 +24,10 @@ from app.rag.rag_v2_public_bge_staging import (
     build_public_bge_component_context,
     build_public_bge_staging_payload,
 )
+from app.rag.rag_v2_public_bge_activation_repository import (
+    PublicBgeActivationRequest,
+    PsycopgRagV2PublicBgeActivationRepository,
+)
 from app.rag.rag_v2_public_bge_staging_repository import (
     PublicBgeEvaluationEvidence,
     PublicBgeStagingRepositoryError,
@@ -116,6 +120,63 @@ def test_public_writer_stages_exact30_evaluates_and_has_no_raw_table_grant(
         ):
             with pytest.raises(psycopg.errors.InsufficientPrivilege):
                 connection.execute(f"SELECT * FROM {table}").fetchall()
+
+
+def test_evaluated_public_bge_pair_activates_through_admin_definers_only(
+    isolated_postgres_cluster: dict[str, str],
+) -> None:
+    exact_records = tuple(_record("EXACT30", index) for index in range(30))
+    oa_records = tuple(_record("OA112", index) for index in range(112))
+    exact_context = build_public_bge_component_context(exact_records)
+    oa_context = build_public_bge_component_context(oa_records)
+    writer = PsycopgRagV2PublicBgeStagingRepository(
+        database_dsn=isolated_postgres_cluster["rag_writer_dsn"],
+    )
+
+    assert writer.stage_component(records=exact_records, context=exact_context)[-1].state == "STAGED"
+    assert writer.stage_component(records=oa_records, context=oa_context)[-1].state == "STAGED"
+    assert writer.evaluate(
+        context=exact_context,
+        evidence=_evaluation_evidence("activation-exact30"),
+    ).state == "EVALUATED"
+    assert writer.evaluate(
+        context=oa_context,
+        evidence=_evaluation_evidence("activation-oa112"),
+    ).state == "EVALUATED"
+
+    repository = PsycopgRagV2PublicBgeActivationRepository(
+        database_dsn=isolated_postgres_cluster["rag_admin_dsn"],
+    )
+    request = PublicBgeActivationRequest(exact30=exact_context, oa112=oa_context)
+    receipt = repository.activate(request=request)
+
+    assert receipt.state == "ACTIVE"
+    assert receipt.exact30_generation_id == exact_context.component_generation_id
+    assert receipt.oa112_generation_id == oa_context.component_generation_id
+    assert receipt.previous_pointer_version == 1
+    assert receipt.new_pointer_version == 2
+    assert repository.activate(request=request).new_pointer_version == 2
+
+    with psycopg.connect(isolated_postgres_cluster["admin_dsn"]) as connection:
+        assert connection.execute(
+            """
+            SELECT state, exact30_generation_id, oa112_generation_id, embedding_profile_id, pointer_version
+            FROM rag_v2_immutable_public_bundle_pointers
+            WHERE state_id = 'default'
+            """
+        ).fetchone() == (
+            "ACTIVE",
+            exact_context.component_generation_id,
+            oa_context.component_generation_id,
+            "bge_m3_local_1024_v1",
+            2,
+        )
+
+    with psycopg.connect(isolated_postgres_cluster["rag_admin_dsn"], autocommit=True) as connection:
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            connection.execute(
+                "SELECT * FROM rag_v2_immutable_public_bundle_pointers"
+            ).fetchall()
 
 
 def test_public_writer_allows_oa112_card_only_through_definer_rls_policy(

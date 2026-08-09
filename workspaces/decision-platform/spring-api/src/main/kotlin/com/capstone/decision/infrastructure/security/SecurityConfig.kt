@@ -12,6 +12,7 @@ import com.capstone.decision.infrastructure.idempotency.IdempotencyProperties
 import com.capstone.decision.infrastructure.idempotency.IdempotencyService
 import com.capstone.decision.infrastructure.principle.PrincipleProperties
 import com.capstone.decision.infrastructure.rag.RagGuardHistoryProperties
+import com.capstone.decision.infrastructure.vertex.RagV2VertexProperties
 import com.capstone.decision.infrastructure.web.HttpRequestProperties
 import com.capstone.decision.infrastructure.web.RequestBodyLimitFilter
 import com.capstone.decision.infrastructure.web.RequestIdFilter
@@ -57,6 +58,7 @@ import java.security.MessageDigest
     RagGuardHistoryProperties::class,
     RagGrpcProperties::class,
     RagV2GrpcProperties::class,
+    RagV2VertexProperties::class,
 )
 class SecurityConfig {
     @Bean
@@ -286,7 +288,14 @@ class SecurityConfig {
             CorsConfiguration().apply {
                 allowedOrigins = listOf("http://localhost:3000")
                 allowedMethods = listOf("GET", "POST", "PUT", "PATCH", "DELETE")
-                allowedHeaders = listOf("Authorization", "Content-Type", "X-Request-Id", "X-Idempotency-Key")
+                allowedHeaders =
+                    listOf(
+                        "Authorization",
+                        "Content-Type",
+                        "X-Request-Id",
+                        "X-Idempotency-Key",
+                        "X-Rag-V2-Vertex-Scope-Claim",
+                    )
                 exposedHeaders = listOf("X-Request-Id")
                 allowCredentials = false
             }

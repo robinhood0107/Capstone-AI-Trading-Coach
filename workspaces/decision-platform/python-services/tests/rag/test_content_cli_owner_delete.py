@@ -28,6 +28,7 @@ def test_remove_command_uses_local_control_and_never_echoes_private_values(
         def delete(self, **kwargs: object) -> RagV2OwnerBgeDeletionReceipt:
             assert kwargs["owner_user_id"] == control.owner_user_id
             assert kwargs["document_id"] == control.document_id
+            assert kwargs["delete_ticket_id"] == control.delete_ticket_id
             return RagV2OwnerBgeDeletionReceipt(state="DELETED")
 
     monkeypatch.setattr(content_cli, "PsycopgRagV2OwnerBgeDeletionRepository", _Repository)
@@ -58,6 +59,7 @@ def _control() -> RagV2OwnerDeleteControl:
     return RagV2OwnerDeleteControl(
         owner_user_id="usr_demo_user",
         document_id="doc_owner_delete_0001",
+        delete_ticket_id="rtd_11111111111111111111111111111111",
         issued_at=now,
         expires_at=now + timedelta(minutes=5),
     )

@@ -213,6 +213,7 @@ def _remove_owner_document() -> int:
         receipt = PsycopgRagV2OwnerBgeDeletionRepository(database_dsn=database_dsn).delete(
             owner_user_id=control.owner_user_id,
             document_id=control.document_id,
+            delete_ticket_id=control.delete_ticket_id,
         )
     except RagV2LocalDeleteControlError:
         return _failure("LOCAL_DELETE_CONTROL_REQUIRED")

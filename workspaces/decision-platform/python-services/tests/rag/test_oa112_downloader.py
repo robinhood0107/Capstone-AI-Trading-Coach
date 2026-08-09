@@ -6,10 +6,10 @@ import os
 import socket
 import sys
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Iterator, Mapping, Sequence
+from typing import Any, Iterator, Mapping, Sequence
 
 import fitz
 import pytest
@@ -17,12 +17,26 @@ import pytest
 from app.rag.oa112_active_registry import Oa112RegistryEntry
 from app.rag.oa112_downloader import (
     Oa112DownloadError,
+    Oa112DownloadBinding,
     Oa112DownloadPacket,
+    Oa112DownloadReceipt,
     Oa112DownloadResponse,
     consume_oa112_download_packet,
-    download_oa112_local_cache,
+    download_oa112_local_cache as _download_oa112_local_cache,
+    load_oa112_execution_binding,
+    oa112_source_endpoint_digest,
 )
 from app.rag import oa112_downloader
+
+
+def download_oa112_local_cache(**kwargs: Any) -> Oa112DownloadReceipt:
+    """기존 transport fixture는 fixed current execution binding으로만 downloader를 연다."""
+
+    kwargs.setdefault(
+        "execution_binding",
+        _binding() if kwargs.get("packet") is not None else None,
+    )
+    return _download_oa112_local_cache(**kwargs)
 
 
 def test_downloads_hash_verified_identity_encoded_raw_to_local_cache_without_receipt_path(
@@ -43,6 +57,7 @@ def test_downloads_hash_verified_identity_encoded_raw_to_local_cache_without_rec
         transport=transport,
     )
 
+    assert receipt.attempt_count == 1
     assert receipt.physical_call_count == 1
     assert receipt.downloaded_source_count == 1
     assert receipt.reused_source_count == 0
@@ -82,6 +97,7 @@ def test_fully_cached_offline_rebuild_needs_no_packet_or_transport(tmp_path: Pat
     )
 
     assert receipt.physical_call_count == 0
+    assert receipt.attempt_count == 0
     assert receipt.downloaded_source_count == 0
     assert receipt.reused_source_count == 1
     assert receipt.sources[0].state == "REUSED"
@@ -105,6 +121,152 @@ def test_missing_cache_requires_packet_before_transport(tmp_path: Path) -> None:
         )
 
     assert transport.requests == []
+
+
+def test_pending_download_requires_current_execution_binding_before_packet_consumption(
+    tmp_path: Path,
+) -> None:
+    cache_root, control_root = _roots(tmp_path)
+    source = _source(b"execution evidence required\n")
+    transport = _FixtureTransport([])
+
+    with pytest.raises(Oa112DownloadError, match="OA112_EXECUTION_EVIDENCE_REQUIRED"):
+        _download_oa112_local_cache(
+            entries=(source,),
+            registry_digest="9" * 64,
+            packet=_packet(source, registry_digest="9" * 64),
+            execution_binding=None,
+            local_cache_root=cache_root,
+            packet_control_root=control_root,
+            resolver=_FixtureResolver(),
+            transport=transport,
+        )
+
+    assert transport.requests == []
+    assert not (control_root / "oa112-packet-claims").exists()
+
+
+def test_packet_binds_current_evidence_and_approved_source_endpoint_set_before_transport(
+    tmp_path: Path,
+) -> None:
+    cache_root, control_root = _roots(tmp_path)
+    source = _source(b"binding drift\n")
+    transport = _FixtureTransport([])
+
+    with pytest.raises(Oa112DownloadError, match="OA112_PACKET_EXECUTION_BINDING"):
+        _download_oa112_local_cache(
+            entries=(source,),
+            registry_digest="9" * 64,
+            packet=_packet(source, registry_digest="9" * 64),
+            execution_binding=Oa112DownloadBinding(
+                head_sha="e" * 40,
+                tree_sha256="b" * 64,
+                ci_digest="c" * 64,
+                security_digest="d" * 64,
+            ),
+            local_cache_root=cache_root,
+            packet_control_root=control_root,
+            resolver=_FixtureResolver(),
+            transport=transport,
+        )
+    assert transport.requests == []
+
+    with pytest.raises(Oa112DownloadError, match="OA112_PACKET_ENDPOINT_SCOPE_DRIFT"):
+        _download_oa112_local_cache(
+            entries=(source,),
+            registry_digest="9" * 64,
+            packet=_packet_with_endpoint_digest(
+                source,
+                registry_digest="9" * 64,
+                source_endpoint_digest="e" * 64,
+            ),
+            execution_binding=_binding(),
+            local_cache_root=cache_root,
+            packet_control_root=control_root,
+            resolver=_FixtureResolver(),
+            transport=transport,
+        )
+    assert transport.requests == []
+
+
+def test_consumed_packet_writes_content_free_success_and_failure_receipts(tmp_path: Path) -> None:
+    cache_root, control_root = _roots(tmp_path)
+    source = _source(b"receipt evidence\n")
+    failing_transport = _FixtureTransport(
+        [_Response(302, {"Location": "https://elsewhere.example/"}, b"")]
+    )
+
+    with pytest.raises(Oa112DownloadError, match="OA112_DOWNLOAD_REDIRECT_OR_STATUS") as raised:
+        download_oa112_local_cache(
+            entries=(source,),
+            registry_digest="9" * 64,
+            packet=_packet(source, registry_digest="9" * 64),
+            local_cache_root=cache_root,
+            packet_control_root=control_root,
+            resolver=_FixtureResolver(),
+            transport=failing_transport,
+        )
+
+    assert raised.value.attempt_count == raised.value.physical_call_count == 1
+    assert raised.value.failure_receipt_written is True
+    receipt_files = tuple((control_root / "oa112-download-receipts").glob("*.json"))
+    assert len(receipt_files) == 1
+    receipt = json.loads(receipt_files[0].read_text(encoding="utf-8"))
+    assert receipt == {
+        "attemptCount": 1,
+        "code": "OA112_DOWNLOAD_REDIRECT_OR_STATUS",
+        "downloadedSourceCount": 0,
+        "packetDigest": receipt["packetDigest"],
+        "physicalCallCount": 1,
+        "registryDigest": "9" * 64,
+        "reusedSourceCount": 0,
+        "state": "FAILED",
+    }
+    receipt_text = json.dumps(receipt, sort_keys=True)
+    assert source.canonical_url not in receipt_text
+    assert source.raw_content_sha256 not in receipt_text
+
+
+def test_execution_evidence_loader_requires_current_clean_git_identity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "local"
+    root.mkdir(mode=0o700)
+    os.chmod(root, 0o700)
+    evidence = {
+        "ciDigest": "c" * 64,
+        "headSha": "a" * 40,
+        "securityDigest": "d" * 64,
+        "treeSha256": "b" * 64,
+    }
+    path = root / "oa112-execution-evidence.v1.json"
+    path.write_text(json.dumps(evidence, separators=(",", ":")) + "\n", encoding="utf-8")
+    os.chmod(path, 0o600)
+    monkeypatch.setattr(
+        oa112_downloader,
+        "_current_clean_git_identity",
+        lambda _repository_root: ("a" * 40, "b" * 64),
+    )
+
+    binding = load_oa112_execution_binding(
+        approved_root=root,
+        relative_path="oa112-execution-evidence.v1.json",
+        repository_root=tmp_path,
+    )
+
+    assert binding == _binding()
+    monkeypatch.setattr(
+        oa112_downloader,
+        "_current_clean_git_identity",
+        lambda _repository_root: ("e" * 40, "b" * 64),
+    )
+    with pytest.raises(Oa112DownloadError, match="OA112_EXECUTION_EVIDENCE_GIT_DRIFT"):
+        load_oa112_execution_binding(
+            approved_root=root,
+            relative_path="oa112-execution-evidence.v1.json",
+            repository_root=tmp_path,
+        )
 
 
 def test_unsafe_cache_layout_stops_before_packet_consumption_or_transport(tmp_path: Path) -> None:
@@ -307,6 +469,7 @@ def test_packet_expiry_during_first_dribbling_source_stops_later_connection(
             now=start,
         )
 
+    assert raised.value.attempt_count == 1
     assert raised.value.physical_call_count == 1
     assert len(transport.requests) == 1
     assert not (cache_root / "oa-raw" / "src_oa_fixture_101.txt").exists()
@@ -357,6 +520,7 @@ def test_expired_pending_source_is_not_counted_as_a_physical_attempt(
             transport=transport,
         )
 
+    assert raised.value.attempt_count == 0
     assert raised.value.physical_call_count == 0
     assert transport.requests == []
 
@@ -386,7 +550,8 @@ def test_dns_worker_deadline_kills_hung_resolver_before_transport(
             transport=transport,
         )
 
-    assert raised.value.physical_call_count == 1
+    assert raised.value.attempt_count == 1
+    assert raised.value.physical_call_count == 0
     assert transport.requests == []
 
 
@@ -413,6 +578,7 @@ def test_watchdog_socket_close_removes_zero_byte_state_and_allows_new_packet_ret
             transport=watchdog_transport,
         )
 
+    assert raised.value.attempt_count == 1
     assert raised.value.physical_call_count == 1
     assert watchdog_transport.connection_count == 1
     assert not (cache_root / "download-staging" / "src_oa_fixture_001.part").exists()
@@ -465,6 +631,7 @@ def test_header_deadline_stops_before_body_stream(
             transport=transport,
         )
 
+    assert raised.value.attempt_count == 1
     assert raised.value.physical_call_count == 1
     assert len(transport.requests) == 1
     assert not (cache_root / "oa-raw" / "src_oa_fixture_001.txt").exists()
@@ -502,6 +669,7 @@ def test_body_dribble_deadline_keeps_only_resumable_partial_cache(
             transport=transport,
         )
 
+    assert raised.value.attempt_count == 1
     assert raised.value.physical_call_count == 1
     assert len(transport.requests) == 1
     assert (cache_root / "download-staging" / "src_oa_fixture_001.part").exists()
@@ -591,7 +759,13 @@ def _packet(
         ci_digest="c" * 64,
         security_digest="d" * 64,
         registry_digest=registry_digest,
+        source_endpoint_digest=oa112_source_endpoint_digest((source,)),
         source_ids=(source.source_id,),
+        provider="OA112_OFFICIAL_HTTPS",
+        operation="OA112_RAW_LOCAL_CACHE_DOWNLOAD",
+        query="NONE",
+        symbol="NONE",
+        date="NONE",
         logical_call_cap=1,
         physical_call_cap=1,
         maximum_source_bytes=1024 * 1024,
@@ -619,7 +793,13 @@ def _packet_for_sources(
         ci_digest="c" * 64,
         security_digest="d" * 64,
         registry_digest=registry_digest,
+        source_endpoint_digest=oa112_source_endpoint_digest(sources),
         source_ids=tuple(source.source_id for source in sources),
+        provider="OA112_OFFICIAL_HTTPS",
+        operation="OA112_RAW_LOCAL_CACHE_DOWNLOAD",
+        query="NONE",
+        symbol="NONE",
+        date="NONE",
         logical_call_cap=len(sources),
         physical_call_cap=len(sources),
         maximum_source_bytes=1024 * 1024,
@@ -631,6 +811,27 @@ def _packet_for_sources(
         expires_at=expires_at,
         nonce="nonce-download-fixture-0101",
         maximum_pages=500,
+    )
+
+
+def _packet_with_endpoint_digest(
+    source: Oa112RegistryEntry,
+    *,
+    registry_digest: str,
+    source_endpoint_digest: str,
+) -> Oa112DownloadPacket:
+    return replace(
+        _packet(source, registry_digest=registry_digest),
+        source_endpoint_digest=source_endpoint_digest,
+    )
+
+
+def _binding() -> Oa112DownloadBinding:
+    return Oa112DownloadBinding(
+        head_sha="a" * 40,
+        tree_sha256="b" * 64,
+        ci_digest="c" * 64,
+        security_digest="d" * 64,
     )
 
 

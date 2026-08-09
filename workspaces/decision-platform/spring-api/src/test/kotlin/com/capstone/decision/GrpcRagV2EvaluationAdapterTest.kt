@@ -125,6 +125,74 @@ class GrpcRagV2EvaluationAdapterTest {
         }
     }
 
+    @Test
+    fun `v2 adapter accepts the voyage profile only when the loopback receipt remains provider-free`() {
+        val server =
+            server(
+                constantService(
+                    validRetrievalOnlyResponse()
+                        .toBuilder()
+                        .setEmbeddingProfileId("voyage_context_4_1024_v1")
+                        .build(),
+                ),
+            )
+        val adapter = adapter(server)
+        try {
+            val result = adapter.evaluate(command(), context())
+
+            assertThat(result.embeddingProfileId).isEqualTo("voyage_context_4_1024_v1")
+            assertThat(result.providerPhysicalAttempts).isZero()
+            assertThat(result.voyagePhysicalCalls).isZero()
+        } finally {
+            adapter.close()
+            server.shutdownNow().awaitTermination()
+        }
+    }
+
+    @Test
+    fun `v2 adapter forwards effective query consent and accepts one voyage query attempt`() {
+        val captured = AtomicReference<RagAskRequest>()
+        val server =
+            server(
+                object : RagServiceGrpc.RagServiceImplBase() {
+                    override fun ask(
+                        request: RagAskRequest,
+                        responseObserver: StreamObserver<RagAskResponse>,
+                    ) {
+                        captured.set(request)
+                        responseObserver.onNext(
+                            validRetrievalOnlyResponse()
+                                .toBuilder()
+                                .setEmbeddingProfileId("voyage_context_4_1024_v1")
+                                .setProviderPhysicalCounts(
+                                    ProviderPhysicalCounts.newBuilder().setTotal(1).setVoyage(1),
+                                ).build(),
+                        )
+                        responseObserver.onCompleted()
+                    }
+                },
+            )
+        val adapter = adapter(server)
+        try {
+            val result = adapter.evaluate(command(), context(externalQueryConsentGranted = true))
+
+            assertThat(captured.get().consentContext)
+                .isEqualTo(
+                    RagConsentContext
+                        .newBuilder()
+                        .setGranted(true)
+                        .setPolicyVersion("EXTERNAL_AI_RAG_V2")
+                        .build(),
+                )
+            assertThat(result.embeddingProfileId).isEqualTo("voyage_context_4_1024_v1")
+            assertThat(result.providerPhysicalAttempts).isEqualTo(1)
+            assertThat(result.voyagePhysicalCalls).isEqualTo(1)
+        } finally {
+            adapter.close()
+            server.shutdownNow().awaitTermination()
+        }
+    }
+
     private fun adapter(server: Server): GrpcRagV2EvaluationAdapter =
         GrpcRagV2EvaluationAdapter(
             RagV2GrpcProperties(
@@ -171,10 +239,11 @@ class GrpcRagV2EvaluationAdapterTest {
             topics = listOf("FINANCIAL_ENGINEERING", "RISK"),
         )
 
-    private fun context(): RagV2EvaluationContext =
+    private fun context(externalQueryConsentGranted: Boolean = false): RagV2EvaluationContext =
         RagV2EvaluationContext(
             requestId = REQUEST_ID,
             ownerScopeClaim = SCOPE_CLAIM,
+            externalQueryConsentGranted = externalQueryConsentGranted,
         )
 
     private fun validRetrievalOnlyResponse(): RagAskResponse =

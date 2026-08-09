@@ -4,6 +4,7 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import java.nio.file.Files
 import java.nio.file.Path
+import java.security.MessageDigest
 
 // S4.7C external-safe exact-30만 Voyage vector space로 stage하며 S4.7B/V36 graph는 변경하지 않는다.
 class RagExternalExact30VoyageStagingMigrationContractTest {
@@ -55,17 +56,22 @@ class RagExternalExact30VoyageStagingMigrationContractTest {
             "payload_external_embedding_allowed",
             "payload_external_generation_allowed",
             "payload_external_processing_eligible",
-            "canonical_text_sha256 text NOT NULL",
-            "rag_v2_immutable_external_exact30_voyage_source_revision_id(",
-            "rag_v2_immutable_external_exact30_voyage_document_id(",
             "contextSetHash",
             "jsonb_array_length(payload_embedding -> 'embedding') <> 1024",
-            "canonical source order is invalid",
-            "duplicate source is invalid",
-            "observed_source_ids IS DISTINCT FROM expected_source_ids",
             "rag-v2-immutable-external-exact30-voyage-source|",
             "raw artifact=0",
         )
+    }
+
+    @Test
+    fun `historical V37 bytes stay locked while later migrations add hardening`() {
+        val digest =
+            MessageDigest
+                .getInstance("SHA-256")
+                .digest(Files.readAllBytes(migrationPath))
+                .joinToString("") { "%02x".format(it) }
+
+        assertThat(digest).isEqualTo("65d9e77011ccfae2e955bd549f10e977d8ec69c3b61b4746ae53112ebd403432")
     }
 
     private fun resolveMigration(): Path {

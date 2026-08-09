@@ -11,12 +11,21 @@ import java.time.OffsetDateTime
 import java.time.ZoneOffset
 import java.util.UUID
 
+/** internal DB projection for the packet-resumable two-minute Vertex retrieval scope. */
+internal data class RagV2PreparedScope(
+    val scope: RagV2RetrievalScope,
+    val expiresAt: java.time.Instant,
+)
+
 @Service
 class RagV2RuntimeService(
     private val jdbcProvider: ObjectProvider<NamedParameterJdbcTemplate>,
     private val cursorPort: RagHistoryCursorPort,
     private val cryptoPort: RagHistoryCryptoPort,
     private val evaluationPort: RagV2EvaluationPort,
+    private val vertexEvidencePort: RagV2VertexEvidencePort,
+    private val vertexGenerationPort: RagV2VertexGenerationPort,
+    private val vertexQuestionFingerprintPort: RagV2VertexQuestionFingerprintPort,
     private val objectMapper: ObjectMapper,
 ) {
     /**
@@ -150,6 +159,85 @@ class RagV2RuntimeService(
     }
 
     /**
+     * hard-delete ticket은 authenticated owner와 one document를 DB transaction에서 bind한다.
+     * raw ticket은 이 response 한 번에만 존재하고 persistence에는 V44 security-definer가 만든 hash만 남긴다.
+     */
+    @Transactional
+    fun issueDeleteTicket(
+        ownerUserId: String,
+        documentId: String,
+    ): RagV2DeleteTicket {
+        val jdbc = jdbc()
+        val ticketId = id("rtd")
+        setActor(ownerUserId)
+        val expiresAt =
+            jdbc
+                .queryForObject(
+                    """
+                    SELECT issue_rag_v2_immutable_owner_delete_ticket(
+                      :ownerUserId,
+                      :documentId,
+                      :ticketId
+                    )
+                    """.trimIndent(),
+                    mapOf(
+                        "ownerUserId" to ownerUserId,
+                        "documentId" to documentId,
+                        "ticketId" to ticketId,
+                    ),
+                    OffsetDateTime::class.java,
+                )?.toInstant() ?: throw RagGuardHistoryUnavailableException()
+        return RagV2DeleteTicket(
+            ticketId = ticketId,
+            documentId = documentId,
+            issuedAt = expiresAt.minusSeconds(300),
+            expiresAt = expiresAt,
+        )
+    }
+
+    /**
+     * authenticated owner가 same request ID로 실행할 Vertex one-shot packet을 만들기 위한 content-free
+     * preparation이다. raw question/evidence를 persistence에 새로 만들지 않고 existing two-minute scope와
+     * purpose-separated HMAC만 반환하며, enabled generator가 없으면 provider preparation도 열지 않는다.
+     */
+    @Transactional
+    fun prepareVertexGeneration(
+        ownerUserId: String,
+        requestId: String,
+        command: RagAskCommand,
+    ): RagV2VertexPreparation {
+        if (!vertexGenerationPort.isActivationEnabled()) {
+            throw RagV2VertexPreparationUnavailableException()
+        }
+        val status = corpusStatus(ownerUserId)
+        if (status.state != "FULL_READY") {
+            throw RagV2CorpusNotReadyException()
+        }
+        val consent = effectiveConsent(ownerUserId)
+        if (!consent.effective) {
+            throw RagV2ExternalConsentRequiredException()
+        }
+        val scope = issueRetrievalScope(ownerUserId, requestId, command.topics)
+        val preparedScope = readVertexPreparedScope(ownerUserId, requestId, scope.scopeClaimId, command.topics)
+        require(preparedScope.scope == scope)
+        return RagV2VertexPreparation(
+            requestId = requestId,
+            scopeClaimId = scope.scopeClaimId,
+            questionFingerprintHmac =
+                vertexQuestionFingerprintPort.fingerprint(
+                    ownerUserId = ownerUserId,
+                    command = command,
+                ),
+            answerMode = command.answerMode,
+            embeddingProfileId = scope.embeddingProfileId,
+            consentEventId = consent.consentEventId,
+            policyDigest = consent.policyDigest,
+            processorSetDigest = consent.processorSetDigest,
+            expiresAt = preparedScope.expiresAt,
+        )
+    }
+
+    /**
      * v2는 full bundle이 준비되기 전 OA/private chunk를 빼고 답하지 않는다.
      * client가 corpus/profile/topK를 고르는 표면도 parser 단계에서 닫혀 있다.
      */
@@ -158,32 +246,80 @@ class RagV2RuntimeService(
         ownerUserId: String,
         requestId: String,
         command: RagAskCommand,
+        vertexScopeClaimId: String? = null,
     ): RagV2Answer {
         require(command.question.isNotBlank())
         val status = corpusStatus(ownerUserId)
         if (status.state != "FULL_READY") {
             throw RagV2CorpusNotReadyException()
         }
-        val scope = issueRetrievalScope(ownerUserId, requestId, command.topics)
+        val vertexEnabled = vertexGenerationPort.isActivationEnabled()
+        if (vertexEnabled && vertexScopeClaimId == null) {
+            // packet에 맞는 stable scope가 없으면 gRPC/provider socket까지 진행하지 않는다.
+            return vertexUnavailableAnswer(requestId)
+        }
+        if (!vertexEnabled && vertexScopeClaimId != null) {
+            // disabled instance는 prepared scope를 retrieval shortcut으로 재해석하지 않는다.
+            throw RagV2VertexPreparationUnavailableException()
+        }
+        val scope =
+            if (vertexScopeClaimId == null) {
+                issueRetrievalScope(ownerUserId, requestId, command.topics)
+            } else {
+                readVertexPreparedScope(ownerUserId, requestId, vertexScopeClaimId, command.topics).scope
+            }
+        // Voyage profile은 query text를 외부 embedding provider에 보낼 수 있으므로, profile 선택 뒤
+        // gRPC 평가 전에 owner의 current effective consent를 다시 확인한다. BGE path는 이 DB read를 하지 않는다.
+        val externalQueryConsentGranted =
+            if (scope.embeddingProfileId == VOYAGE_PROFILE) {
+                effectiveConsent(ownerUserId)
+                    .takeIf { it.effective }
+                    ?.let { true }
+                    ?: throw RagV2ExternalConsentRequiredException()
+            } else {
+                false
+            }
         val evaluation =
             evaluationPort.evaluate(
                 command,
-                RagV2EvaluationContext(requestId = requestId, ownerScopeClaim = scope.scopeClaimId),
+                RagV2EvaluationContext(
+                    requestId = requestId,
+                    ownerScopeClaim = scope.scopeClaimId,
+                    externalQueryConsentGranted = externalQueryConsentGranted,
+                ),
             )
-        requireBgeOnlyBoundary(evaluation, scope)
+        requireProfileSelectedRetrievalBoundary(
+            evaluation,
+            scope,
+            externalQueryConsentGranted,
+        )
         if (evaluation.generationStatus != RagGenerationStatus.RETRIEVAL_ONLY) {
-            return RagV2Answer(
+            return terminalAnswer(
                 requestId = requestId,
-                answerId = null,
                 generationStatus = evaluation.generationStatus,
-                answer = null,
                 citationCoverage = evaluation.citationCoverage,
-                citations = emptyList(),
                 retrievalFailure = evaluation.retrievalFailure,
                 guardrailFlags = evaluation.guardrailFlags,
             )
         }
+        if (vertexEnabled) {
+            return generateWithVertex(ownerUserId, requestId, command, scope, evaluation)
+        }
 
+        return persistRetrievalOnlyAnswer(ownerUserId, requestId, command, scope, evaluation)
+    }
+
+    /**
+     * disabled Vertex 환경에서도 BGE-only evidence retrieval은 local RAG 기능으로 남는다. 이 경로는 외부 consent,
+     * canonical text, provider transport를 전혀 읽지 않고 empty encrypted answer로 retrieval receipt만 보존한다.
+     */
+    private fun persistRetrievalOnlyAnswer(
+        ownerUserId: String,
+        requestId: String,
+        command: RagAskCommand,
+        scope: RagV2RetrievalScope,
+        evaluation: RagV2EvaluationResult,
+    ): RagV2Answer {
         // transaction_timestamp를 AAD와 DB row에 같은 값으로 사용해 ciphertext row transplant를 막는다.
         val createdAt = databaseNow()
         val identity = RagHistoryIdentity(id("rag"), ownerUserId, createdAt)
@@ -200,6 +336,74 @@ class RagV2RuntimeService(
             answerId = identity.answerId,
             generationStatus = RagGenerationStatus.RETRIEVAL_ONLY,
             answer = null,
+            citationCoverage = 1.0,
+            citations = canonicalCitations,
+            retrievalFailure = false,
+            guardrailFlags = emptyList(),
+        )
+    }
+
+    /**
+     * Vertex route는 current activation·owner consent·external eligibility를 모두 통과할 때만 top-5 text를
+     * transiently 전달한다. 각 provider failure는 raw cause 없이 typed unavailable로 수렴하며 fallback은 없다.
+     */
+    private fun generateWithVertex(
+        ownerUserId: String,
+        requestId: String,
+        command: RagAskCommand,
+        scope: RagV2RetrievalScope,
+        evaluation: RagV2EvaluationResult,
+    ): RagV2Answer {
+        val consent = effectiveConsent(ownerUserId)
+        if (!consent.effective) {
+            throw RagV2ExternalConsentRequiredException()
+        }
+        val evidence =
+            try {
+                vertexEvidencePort.resolve(ownerUserId, requestId, scope, evaluation.citations)
+            } catch (_: RagV2VertexEvidenceUnavailableException) {
+                return vertexUnavailableAnswer(requestId)
+            }
+        val generation =
+            vertexGenerationPort.generate(
+                RagV2VertexGenerationCommand(
+                    ownerUserId = ownerUserId,
+                    requestId = requestId,
+                    question = command.question,
+                    answerMode = command.answerMode,
+                    relatedSymbols = command.relatedSymbols,
+                    topics = command.topics,
+                    scope = scope,
+                    consent = consent,
+                    evidence = evidence,
+                ),
+            )
+        requireVertexGenerationBoundary(generation, evidence)
+        if (generation.generationStatus != RagGenerationStatus.ANSWERED) {
+            return terminalAnswer(
+                requestId = requestId,
+                generationStatus = generation.generationStatus,
+                citationCoverage = 0.0,
+                retrievalFailure = false,
+                guardrailFlags = listOf(generation.failureCode),
+            )
+        }
+
+        val createdAt = databaseNow()
+        val identity = RagHistoryIdentity(id("rag"), ownerUserId, createdAt)
+        val encrypted =
+            cryptoPort.encrypt(
+                identity = identity,
+                question = command.question,
+                answer = requireNotNull(generation.answer),
+            )
+        val citedEvidence = selectedVertexCitations(evaluation.citations, generation.citationIds)
+        val canonicalCitations = persistVertexAnsweredHistory(identity, requestId, command, scope, citedEvidence, encrypted)
+        return RagV2Answer(
+            requestId = requestId,
+            answerId = identity.answerId,
+            generationStatus = RagGenerationStatus.ANSWERED,
+            answer = generation.answer,
             citationCoverage = 1.0,
             citations = canonicalCitations,
             retrievalFailure = false,
@@ -367,18 +571,77 @@ class RagV2RuntimeService(
     }
 
     /**
-     * gRPC adapter도 검증하지만 persistence 직전 같은 low-authority invariants를 다시 확인한다.
-     * 특히 v2 path는 Vertex/Voyage/OpenAI 생성 또는 provider fallback을 절대 허용하지 않는다.
+     * Vertex packet은 request ID와 exact topic set으로 미리 발급된 two-minute claim만 재사용한다.
+     * client-supplied profile/owner selector는 받지 않으며 DB function이 current bundle/owner pointer를 다시
+     * 검증하므로 stale preparation은 gRPC 또는 provider call 전에 닫힌다.
      */
-    private fun requireBgeOnlyBoundary(
+    private fun readVertexPreparedScope(
+        ownerUserId: String,
+        requestId: String,
+        scopeClaimId: String,
+        topics: List<String>,
+    ): RagV2PreparedScope {
+        val jdbc = jdbc()
+        setActor(ownerUserId)
+        val topicsJson = objectMapper.writeValueAsString(topics)
+        return jdbc
+            .query(
+                """
+                SELECT *
+                FROM read_rag_v2_vertex_prepared_scope(
+                  :ownerUserId,
+                  :requestId,
+                  :scopeClaimId,
+                  ARRAY(SELECT jsonb_array_elements_text(CAST(:topicsJson AS jsonb)))
+                )
+                """.trimIndent(),
+                mapOf(
+                    "ownerUserId" to ownerUserId,
+                    "requestId" to requestId,
+                    "scopeClaimId" to scopeClaimId,
+                    "topicsJson" to topicsJson,
+                ),
+            ) { result, _ ->
+                RagV2PreparedScope(
+                    scope =
+                        RagV2RetrievalScope(
+                            scopeClaimId = result.getString("scope_claim_id"),
+                            exact30GenerationId = result.getString("exact30_generation_id"),
+                            oa112GenerationId = result.getString("oa112_generation_id"),
+                            ownerGenerationId = result.getString("owner_private_generation_id"),
+                            embeddingProfileId = result.getString("embedding_profile_id"),
+                            policyVersion = result.getLong("policy_version"),
+                        ),
+                    expiresAt = result.getObject("expires_at", OffsetDateTime::class.java).toInstant(),
+                )
+            }.singleOrNull()
+            ?: throw RagV2VertexPreparationUnavailableException()
+    }
+
+    /**
+     * frozen gRPC adapter도 검증하지만 Spring은 retrieval receipt를 다시 low-authority boundary로 확인한다.
+     * profile은 DB scope가 고른 하나만 허용하며, local fixture/BGE path에는 provider fallback이 절대 섞일 수 없다.
+     */
+    private fun requireProfileSelectedRetrievalBoundary(
         evaluation: RagV2EvaluationResult,
         scope: RagV2RetrievalScope,
+        externalQueryConsentGranted: Boolean,
     ) {
-        require(evaluation.providerPhysicalAttempts == 0)
         require(evaluation.geminiPhysicalCalls == 0)
         require(evaluation.openAiPhysicalCalls == 0)
-        require(evaluation.voyagePhysicalCalls == 0)
         require(!evaluation.externalProviderCandidate)
+        require(
+            when (scope.embeddingProfileId) {
+                BGE_PROFILE ->
+                    evaluation.providerPhysicalAttempts == 0 &&
+                        evaluation.voyagePhysicalCalls == 0
+                VOYAGE_PROFILE ->
+                    evaluation.providerPhysicalAttempts == evaluation.voyagePhysicalCalls &&
+                        evaluation.voyagePhysicalCalls in 0..1 &&
+                        (evaluation.voyagePhysicalCalls == 0 || externalQueryConsentGranted)
+                else -> false
+            },
+        )
         require(evaluation.citationCoverage in 0.0..1.0)
         require(evaluation.guardrailFlags.size <= MAX_GUARDRAIL_FLAGS)
         require(evaluation.guardrailFlags.distinct().size == evaluation.guardrailFlags.size)
@@ -422,10 +685,70 @@ class RagV2RuntimeService(
                         !evaluation.retrievalFailure &&
                         FAILURE_CODE.matches(evaluation.failureCode),
                 )
-            // BGE-only v2 cannot return an LLM-generated answer before the separately gated Vertex path exists.
+            // BGE gRPC response에는 single-generator가 생긴 뒤에도 answer surface가 존재하지 않는다.
             RagGenerationStatus.ANSWERED -> throw RagGuardHistoryUnavailableException()
         }
     }
+
+    /**
+     * Vertex adapter는 strict JSON을 이미 검사하지만 service도 status·citation subset·byte ceiling을 다시 확인한다.
+     * failure code는 provider cause를 담지 않는 typed allowlist만 허용한다.
+     */
+    private fun requireVertexGenerationBoundary(
+        generation: RagV2VertexGenerationResult,
+        evidence: List<RagV2VertexEvidence>,
+    ) {
+        val evidenceCitationIds = evidence.map { it.citationId }.toSet()
+        require(evidence.size in 1..MAX_CITATIONS)
+        when (generation.generationStatus) {
+            RagGenerationStatus.ANSWERED -> {
+                val answer = requireNotNull(generation.answer)
+                require(answer.toByteArray(Charsets.UTF_8).size in 1..8192)
+                require(generation.citationIds.isNotEmpty())
+                require(generation.citationIds.size <= evidence.size)
+                require(generation.citationIds.distinct().size == generation.citationIds.size)
+                require(generation.citationIds.all { it in evidenceCitationIds })
+                require(generation.failureCode.isEmpty())
+            }
+            RagGenerationStatus.GENERATION_UNAVAILABLE,
+            RagGenerationStatus.BLOCKED_SENSITIVE,
+            RagGenerationStatus.BLOCKED_ADVICE,
+            ->
+                require(
+                    generation.answer == null &&
+                        generation.citationIds.isEmpty() &&
+                        FAILURE_CODE.matches(generation.failureCode),
+                )
+            else -> throw RagGuardHistoryUnavailableException()
+        }
+    }
+
+    private fun terminalAnswer(
+        requestId: String,
+        generationStatus: RagGenerationStatus,
+        citationCoverage: Double,
+        retrievalFailure: Boolean,
+        guardrailFlags: List<String>,
+    ): RagV2Answer =
+        RagV2Answer(
+            requestId = requestId,
+            answerId = null,
+            generationStatus = generationStatus,
+            answer = null,
+            citationCoverage = citationCoverage,
+            citations = emptyList(),
+            retrievalFailure = retrievalFailure,
+            guardrailFlags = guardrailFlags,
+        )
+
+    private fun vertexUnavailableAnswer(requestId: String): RagV2Answer =
+        terminalAnswer(
+            requestId = requestId,
+            generationStatus = RagGenerationStatus.GENERATION_UNAVAILABLE,
+            citationCoverage = 0.0,
+            retrievalFailure = false,
+            guardrailFlags = listOf("GENERATION_UNAVAILABLE"),
+        )
 
     /**
      * V35 receives citation identities only, resolves safe title/document metadata itself, and atomically writes
@@ -490,6 +813,83 @@ class RagV2RuntimeService(
         return citations(canonical)
     }
 
+    /**
+     * V39 persists only AES-GCM ciphertext and citation identities. Vertex response body, prompt, usage payload,
+     * credential and canonical evidence text never become SQL function inputs.
+     */
+    private fun persistVertexAnsweredHistory(
+        identity: RagHistoryIdentity,
+        requestId: String,
+        command: RagAskCommand,
+        scope: RagV2RetrievalScope,
+        citedEvidence: List<RagV2RetrievedCitation>,
+        encrypted: RagEncryptedHistoryPayload,
+    ): List<JsonNode> {
+        val receipt =
+            objectMapper.writeValueAsString(
+                citedEvidence.mapIndexed { index, citation ->
+                    linkedMapOf(
+                        "ordinal" to index + 1,
+                        "citationId" to citation.citationId,
+                        "sourceId" to citation.sourceId,
+                        "sourceRevisionId" to citation.sourceRevisionId,
+                        "chunkRevisionId" to citation.chunkRevisionId,
+                        "generationId" to citation.generationId,
+                        "citationKind" to citation.citationKind,
+                    )
+                },
+            )
+        val canonical =
+            jdbc().queryForObject(
+                """
+                SELECT persist_rag_v2_immutable_vertex_history(
+                  :ownerUserId, :answerId, :requestId, :answerMode, :sessionId, :scopeClaimId,
+                  1.0, ARRAY[]::text[], :kekVersion,
+                  :wrapNonce, :wrappedDek, :wrapTag,
+                  :questionNonce, :questionCiphertext, :questionTag,
+                  :answerNonce, :answerCiphertext, :answerTag,
+                  :createdAt, CAST(:citations AS jsonb)
+                )
+                """.trimIndent(),
+                mapOf(
+                    "ownerUserId" to identity.ownerUserId,
+                    "answerId" to identity.answerId,
+                    "requestId" to requestId,
+                    "answerMode" to command.answerMode.name,
+                    "sessionId" to requestId,
+                    "scopeClaimId" to scope.scopeClaimId,
+                    "kekVersion" to encrypted.kekVersion,
+                    "wrapNonce" to encrypted.wrapNonce,
+                    "wrappedDek" to encrypted.wrappedDek,
+                    "wrapTag" to encrypted.wrapTag,
+                    "questionNonce" to encrypted.question.nonce,
+                    "questionCiphertext" to encrypted.question.ciphertext,
+                    "questionTag" to encrypted.question.tag,
+                    "answerNonce" to encrypted.answer.nonce,
+                    "answerCiphertext" to encrypted.answer.ciphertext,
+                    "answerTag" to encrypted.answer.tag,
+                    "createdAt" to OffsetDateTime.ofInstant(identity.createdAt, ZoneOffset.UTC),
+                    "citations" to receipt,
+                ),
+                String::class.java,
+            ) ?: throw RagGuardHistoryUnavailableException()
+        return citations(canonical)
+    }
+
+    /**
+     * model이 실제 문장에 사용한 citation만 history/API로 내보낸다. retrieval top-5 전체를 사용 근거처럼
+     * 확장하면 grounded answer의 citation coverage를 과장할 수 있으므로 generator가 검증한 순서를 보존한다.
+     */
+    private fun selectedVertexCitations(
+        retrieved: List<RagV2RetrievedCitation>,
+        citationIds: List<String>,
+    ): List<RagV2RetrievedCitation> {
+        val byCitationId = retrieved.associateBy { it.citationId }
+        require(byCitationId.size == retrieved.size)
+        require(citationIds.isNotEmpty() && citationIds.distinct().size == citationIds.size)
+        return citationIds.map { citationId -> requireNotNull(byCitationId[citationId]) }
+    }
+
     private fun databaseNow(): java.time.Instant =
         jdbc()
             .queryForObject(
@@ -522,7 +922,11 @@ class RagV2RuntimeService(
         jdbcProvider.getIfAvailable()
             ?: throw RagGuardHistoryUnavailableException()
 
-    private data class RagV2StoredEffectiveConsent(
+    /**
+     * DB definer read의 internal projection이다. API/loopback payload가 아니며 test도 같은 closed
+     * state shape를 통해 revoked/granted query capability를 회귀 검증한다.
+     */
+    internal data class RagV2StoredEffectiveConsent(
         val consentEventId: String,
         val action: String,
         val policyDigest: String,
@@ -537,6 +941,8 @@ class RagV2RuntimeService(
     private companion object {
         val FLAG = Regex("^[A-Z0-9_]{1,64}$")
         val FAILURE_CODE = Regex("^[A-Z0-9_]{1,96}$")
+        const val BGE_PROFILE = "bge_m3_local_1024_v1"
+        const val VOYAGE_PROFILE = "voyage_context_4_1024_v1"
         val CHUNK_ID = Regex("^rag_v2_chk_[0-9a-f]{32}$")
         const val MAX_CITATIONS = 5
         const val MAX_GUARDRAIL_FLAGS = 8

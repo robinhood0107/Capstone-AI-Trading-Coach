@@ -16,6 +16,7 @@ import tools.jackson.databind.json.JsonMapper
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import java.text.Normalizer
+import java.util.Collections
 import java.util.HexFormat
 
 @Component
@@ -219,6 +220,65 @@ class RagRequestParser {
             violations = violations,
         )
         throwIfInvalid(violations)
+    }
+
+    /**
+     * delete ticket request는 authenticated principal 이외의 owner selector나 local path를 받지 않는다.
+     * documentId만 closed JSON shape로 검증해 DB의 owner-and-document-bound capability와 연결한다.
+     */
+    fun parseV2DeleteTicketRequest(body: String): String {
+        val root = parseObject(body)
+        val violations = mutableListOf<RagFieldViolation>()
+        rejectUnknown(root, V2_DELETE_TICKET_FIELDS, violations)
+        requireExactString(
+            root = root,
+            field = "contractId",
+            expected = "s4-rag-v2-delete-ticket-request-v1",
+            violations = violations,
+        )
+        requireSchemaVersionOne(root, violations)
+        requireExactString(
+            root = root,
+            field = "sourceScope",
+            expected = "OWNER_PRIVATE",
+            violations = violations,
+        )
+        val documentId = requiredString(root, "documentId", violations)
+        if (documentId != null && !DOCUMENT_ID.matches(documentId)) {
+            violations.add(RagFieldViolation("/documentId", "INVALID_FORMAT"))
+        }
+        throwIfInvalid(violations)
+        return requireNotNull(documentId)
+    }
+
+    /**
+     * Vertex activation은 body selector가 아니라 preparation에서 발급한 opaque scope header만 재사용한다.
+     * duplicate/invalid header는 same-request DB scope 또는 provider socket을 만들기 전에 reject한다.
+     */
+    fun parseV2VertexScopeClaim(request: HttpServletRequest): String? {
+        val values = Collections.list(request.getHeaders(VERTEX_SCOPE_HEADER))
+        if (values.isEmpty()) {
+            return null
+        }
+        if (values.size != 1 || !VERTEX_SCOPE_CLAIM.matches(values.single())) {
+            throw RagValidationException(
+                listOf(RagFieldViolation("/headers/$VERTEX_SCOPE_HEADER", "INVALID_FORMAT")),
+            )
+        }
+        return values.single()
+    }
+
+    /**
+     * Vertex packet은 preparation과 ask 사이에 immutable scope를 재사용하므로, history/ledger와 같은
+     * `req_` request ID만 허용한다. 일반 RAG retrieval의 request ID surface를 넓히지 않는다.
+     */
+    fun requireV2VertexRequestId(value: String): String {
+        if (!VERTEX_REQUEST_ID.matches(value)) {
+            throw RagValidationException(
+                listOf(RagFieldViolation("/headers/X-Request-Id", "INVALID_FORMAT")),
+            )
+        }
+        return value
     }
 
     fun parseHistoryQuery(request: HttpServletRequest): RagHistoryQuery {
@@ -429,11 +489,16 @@ class RagRequestParser {
                 "processorSetDigest",
             )
         val V2_IMPORT_TICKET_FIELDS = setOf("contractId", "schemaVersion", "sourceScope", "importMode")
+        val V2_DELETE_TICKET_FIELDS = setOf("contractId", "schemaVersion", "sourceScope", "documentId")
+        const val VERTEX_SCOPE_HEADER = "X-Rag-V2-Vertex-Scope-Claim"
         val HISTORY_QUERY_FIELDS = setOf("cursor", "limit")
         val HEX_DIGEST = Regex("^[0-9a-f]{64}$")
         val SYMBOL = Regex("^[0-9]{6}$")
         val ANSWER_ID = Regex("^rag_ans_[0-9a-f]{32}$")
         val V2_ANSWER_ID = Regex("^rag_[A-Za-z0-9_-]{12,96}$")
+        val DOCUMENT_ID = Regex("^doc_[a-z0-9][a-z0-9_-]{10,95}$")
+        val VERTEX_SCOPE_CLAIM = Regex("^rvs_[0-9a-f]{32}$")
+        val VERTEX_REQUEST_ID = Regex("^req_[A-Za-z0-9_-]{12,96}$")
         val IDEMPOTENCY_KEY = Regex("^[A-Za-z0-9._~-]{16,128}$")
         val TOPICS =
             setOf(

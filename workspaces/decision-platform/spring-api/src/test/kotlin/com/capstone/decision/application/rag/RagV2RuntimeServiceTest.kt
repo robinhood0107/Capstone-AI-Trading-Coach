@@ -5,6 +5,7 @@ import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.verify
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.jdbc.core.RowMapper
@@ -161,16 +162,309 @@ class RagV2RuntimeServiceTest {
         }
     }
 
+    @Test
+    fun `scope-selected voyage retrieval requires effective consent and permits one packet-gated query attempt`() {
+        val jdbc = mockk<NamedParameterJdbcTemplate>()
+        val provider = mockk<ObjectProvider<NamedParameterJdbcTemplate>>()
+        val crypto = mockk<RagHistoryCryptoPort>()
+        val evaluation = mockk<RagV2EvaluationPort>()
+        val scope = scope(profile = "voyage_context_4_1024_v1")
+        val command = command()
+        val context = slot<RagV2EvaluationContext>()
+        val createdAt = Instant.parse("2026-08-03T10:30:00Z")
+        val encrypted = encrypted()
+
+        every { provider.getIfAvailable() } returns jdbc
+        every {
+            jdbc.query(
+                match { it.contains("read_rag_v2_corpus_status") },
+                any<Map<String, *>>(),
+                any<RowMapper<RagV2CorpusStatus>>(),
+            )
+        } returns listOf(RagV2CorpusStatus("FULL_READY", "immutable-v2-1", "ABSENT", 100, null))
+        every { jdbc.queryForObject(match { it.contains("set_config") }, any<Map<String, *>>(), String::class.java) } returns ""
+        every {
+            jdbc.query(
+                match { it.contains("issue_rag_v2_retrieval_scope") },
+                any<Map<String, *>>(),
+                any<RowMapper<RagV2RetrievalScope>>(),
+            )
+        } returns listOf(scope)
+        every {
+            jdbc.query(
+                match { it.contains("read_rag_v2_immutable_effective_consent") },
+                any<Map<String, *>>(),
+                any<RowMapper<RagV2RuntimeService.RagV2StoredEffectiveConsent>>(),
+            )
+        } returns
+            listOf(
+                RagV2RuntimeService.RagV2StoredEffectiveConsent(
+                    consentEventId = "rce_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    action = "GRANT",
+                    policyDigest = "a".repeat(64),
+                    processorSetDigest = "b".repeat(64),
+                ),
+            )
+        every { evaluation.evaluate(command, capture(context)) } returns
+            retrievalOnly(scope).copy(
+                providerPhysicalAttempts = 1,
+                voyagePhysicalCalls = 1,
+            )
+        every {
+            jdbc.queryForObject(
+                "SELECT transaction_timestamp()",
+                emptyMap<String, Any>(),
+                OffsetDateTime::class.java,
+            )
+        } returns OffsetDateTime.ofInstant(createdAt, ZoneOffset.UTC)
+        every { crypto.encrypt(any(), command.question, "") } returns encrypted
+        every {
+            jdbc.queryForObject(
+                match { it.contains("persist_rag_v2_immutable_retrieval_history") },
+                any<Map<String, *>>(),
+                String::class.java,
+            )
+        } returns
+            """
+            [{"citationKind":"PUBLIC_WEB","citationId":"cit_1","sourceId":"src_exact_001","title":"Canonical title","canonicalUrl":"https://example.org/canonical","locator":{"section":"Canonical section"}}]
+            """.trimIndent()
+
+        val answer = service(provider, crypto, evaluation).ask("usr_demo_user", REQUEST_ID, command)
+
+        assertThat(answer.generationStatus).isEqualTo(RagGenerationStatus.RETRIEVAL_ONLY)
+        verify(exactly = 1) { evaluation.evaluate(command, any()) }
+        assertThat(context.captured.externalQueryConsentGranted).isTrue()
+    }
+
+    @Test
+    fun `scope-selected voyage retrieval stops before loopback evaluation when effective consent is revoked`() {
+        val jdbc = mockk<NamedParameterJdbcTemplate>()
+        val provider = mockk<ObjectProvider<NamedParameterJdbcTemplate>>()
+        val crypto = mockk<RagHistoryCryptoPort>(relaxed = true)
+        val evaluation = mockk<RagV2EvaluationPort>(relaxed = true)
+        val scope = scope(profile = "voyage_context_4_1024_v1")
+        val command = command()
+
+        every { provider.getIfAvailable() } returns jdbc
+        every {
+            jdbc.query(
+                match { it.contains("read_rag_v2_corpus_status") },
+                any<Map<String, *>>(),
+                any<RowMapper<RagV2CorpusStatus>>(),
+            )
+        } returns listOf(RagV2CorpusStatus("FULL_READY", "immutable-v2-1", "ABSENT", 100, null))
+        every { jdbc.queryForObject(match { it.contains("set_config") }, any<Map<String, *>>(), String::class.java) } returns ""
+        every {
+            jdbc.query(
+                match { it.contains("issue_rag_v2_retrieval_scope") },
+                any<Map<String, *>>(),
+                any<RowMapper<RagV2RetrievalScope>>(),
+            )
+        } returns listOf(scope)
+        every {
+            jdbc.query(
+                match { it.contains("read_rag_v2_immutable_effective_consent") },
+                any<Map<String, *>>(),
+                any<RowMapper<RagV2RuntimeService.RagV2StoredEffectiveConsent>>(),
+            )
+        } returns
+            listOf(
+                RagV2RuntimeService.RagV2StoredEffectiveConsent(
+                    consentEventId = "rce_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                    action = "REVOKE",
+                    policyDigest = "a".repeat(64),
+                    processorSetDigest = "b".repeat(64),
+                ),
+            )
+
+        assertThatThrownBy {
+            service(provider, crypto, evaluation).ask("usr_demo_user", REQUEST_ID, command)
+        }.isInstanceOf(RagV2ExternalConsentRequiredException::class.java)
+
+        verify(exactly = 0) { evaluation.evaluate(any(), any()) }
+        verify(exactly = 0) { crypto.encrypt(any(), any(), any()) }
+    }
+
+    @Test
+    fun `Vertex preparation returns one stable content-free scope and HMAC without evaluation or generation`() {
+        val jdbc = mockk<NamedParameterJdbcTemplate>()
+        val provider = mockk<ObjectProvider<NamedParameterJdbcTemplate>>()
+        val crypto = mockk<RagHistoryCryptoPort>(relaxed = true)
+        val evaluation = mockk<RagV2EvaluationPort>(relaxed = true)
+        val vertexGeneration = mockk<RagV2VertexGenerationPort>()
+        val fingerprint = mockk<RagV2VertexQuestionFingerprintPort>()
+        val scope = scope()
+        val command = command()
+        val expiresAt = Instant.parse("2026-08-03T10:32:00Z")
+
+        every { provider.getIfAvailable() } returns jdbc
+        every { vertexGeneration.isActivationEnabled() } returns true
+        every { fingerprint.fingerprint("usr_demo_user", command) } returns "f".repeat(64)
+        every {
+            jdbc.query(
+                match { it.contains("read_rag_v2_corpus_status") },
+                any<Map<String, *>>(),
+                any<RowMapper<RagV2CorpusStatus>>(),
+            )
+        } returns listOf(RagV2CorpusStatus("FULL_READY", "immutable-v2-1", "ABSENT", 100, null))
+        every { jdbc.queryForObject(match { it.contains("set_config") }, any<Map<String, *>>(), String::class.java) } returns ""
+        every {
+            jdbc.query(
+                match { it.contains("read_rag_v2_immutable_effective_consent") },
+                any<Map<String, *>>(),
+                any<RowMapper<RagV2RuntimeService.RagV2StoredEffectiveConsent>>(),
+            )
+        } returns
+            listOf(
+                RagV2RuntimeService.RagV2StoredEffectiveConsent(
+                    consentEventId = "rce_${"a".repeat(32)}",
+                    action = "GRANT",
+                    policyDigest = "a".repeat(64),
+                    processorSetDigest = "b".repeat(64),
+                ),
+            )
+        every {
+            jdbc.query(
+                match { it.contains("issue_rag_v2_retrieval_scope") },
+                any<Map<String, *>>(),
+                any<RowMapper<RagV2RetrievalScope>>(),
+            )
+        } returns listOf(scope)
+        every {
+            jdbc.query(
+                match { it.contains("read_rag_v2_vertex_prepared_scope") },
+                any<Map<String, *>>(),
+                any<RowMapper<RagV2PreparedScope>>(),
+            )
+        } returns listOf(RagV2PreparedScope(scope, expiresAt))
+
+        val preparation =
+            service(
+                provider = provider,
+                crypto = crypto,
+                evaluation = evaluation,
+                vertexGeneration = vertexGeneration,
+                vertexQuestionFingerprint = fingerprint,
+            ).prepareVertexGeneration("usr_demo_user", REQUEST_ID, command)
+
+        assertThat(preparation.scopeClaimId).isEqualTo(scope.scopeClaimId)
+        assertThat(preparation.questionFingerprintHmac).isEqualTo("f".repeat(64))
+        assertThat(preparation.expiresAt).isEqualTo(expiresAt)
+        assertThat(preparation.scopeTtlSeconds).isEqualTo(120)
+        assertThat(preparation.rawQuestionStored).isFalse()
+        assertThat(preparation.rawEvidenceStored).isFalse()
+        verify(exactly = 0) { evaluation.evaluate(any(), any()) }
+        verify(exactly = 0) { crypto.encrypt(any(), any(), any()) }
+    }
+
+    @Test
+    fun `enabled Vertex resumes the prepared scope rather than issuing a new random scope`() {
+        val jdbc = mockk<NamedParameterJdbcTemplate>()
+        val provider = mockk<ObjectProvider<NamedParameterJdbcTemplate>>()
+        val crypto = mockk<RagHistoryCryptoPort>(relaxed = true)
+        val evaluation = mockk<RagV2EvaluationPort>()
+        val vertexGeneration = mockk<RagV2VertexGenerationPort>()
+        val scope = scope()
+        val command = command()
+
+        every { provider.getIfAvailable() } returns jdbc
+        every { vertexGeneration.isActivationEnabled() } returns true
+        every {
+            jdbc.query(
+                match { it.contains("read_rag_v2_corpus_status") },
+                any<Map<String, *>>(),
+                any<RowMapper<RagV2CorpusStatus>>(),
+            )
+        } returns listOf(RagV2CorpusStatus("FULL_READY", "immutable-v2-1", "ABSENT", 100, null))
+        every { jdbc.queryForObject(match { it.contains("set_config") }, any<Map<String, *>>(), String::class.java) } returns ""
+        every {
+            jdbc.query(
+                match { it.contains("read_rag_v2_vertex_prepared_scope") },
+                any<Map<String, *>>(),
+                any<RowMapper<RagV2PreparedScope>>(),
+            )
+        } returns listOf(RagV2PreparedScope(scope, Instant.parse("2026-08-03T10:32:00Z")))
+        every { evaluation.evaluate(command, any()) } returns unavailableEvaluation()
+
+        val answer =
+            service(
+                provider = provider,
+                crypto = crypto,
+                evaluation = evaluation,
+                vertexGeneration = vertexGeneration,
+            ).ask(
+                ownerUserId = "usr_demo_user",
+                requestId = REQUEST_ID,
+                command = command,
+                vertexScopeClaimId = scope.scopeClaimId,
+            )
+
+        assertThat(answer.generationStatus).isEqualTo(RagGenerationStatus.GENERATION_UNAVAILABLE)
+        verify(exactly = 1) { evaluation.evaluate(command, any()) }
+        verify(exactly = 0) {
+            jdbc.query(
+                match { it.contains("issue_rag_v2_retrieval_scope") },
+                any<Map<String, *>>(),
+                any<RowMapper<RagV2RetrievalScope>>(),
+            )
+        }
+    }
+
+    @Test
+    fun `disabled Vertex rejects a prepared scope without issuing retrieval or calling evaluation`() {
+        val jdbc = mockk<NamedParameterJdbcTemplate>()
+        val provider = mockk<ObjectProvider<NamedParameterJdbcTemplate>>()
+        val crypto = mockk<RagHistoryCryptoPort>(relaxed = true)
+        val evaluation = mockk<RagV2EvaluationPort>(relaxed = true)
+
+        every { provider.getIfAvailable() } returns jdbc
+        every {
+            jdbc.query(
+                match { it.contains("read_rag_v2_corpus_status") },
+                any<Map<String, *>>(),
+                any<RowMapper<RagV2CorpusStatus>>(),
+            )
+        } returns listOf(RagV2CorpusStatus("FULL_READY", "immutable-v2-1", "ABSENT", 100, null))
+        every { jdbc.queryForObject(match { it.contains("set_config") }, any<Map<String, *>>(), String::class.java) } returns ""
+
+        assertThatThrownBy {
+            service(provider, crypto, evaluation).ask(
+                ownerUserId = "usr_demo_user",
+                requestId = REQUEST_ID,
+                command = command(),
+                vertexScopeClaimId = scope().scopeClaimId,
+            )
+        }.isInstanceOf(RagV2VertexPreparationUnavailableException::class.java)
+
+        verify(exactly = 0) {
+            jdbc.query(
+                match { it.contains("issue_rag_v2_retrieval_scope") || it.contains("read_rag_v2_vertex_prepared_scope") },
+                any<Map<String, *>>(),
+                any<RowMapper<RagV2RetrievalScope>>(),
+            )
+        }
+        verify(exactly = 0) { evaluation.evaluate(any(), any()) }
+    }
+
     private fun service(
         provider: ObjectProvider<NamedParameterJdbcTemplate>,
         crypto: RagHistoryCryptoPort,
         evaluation: RagV2EvaluationPort,
+        vertexEvidence: RagV2VertexEvidencePort = mockk(relaxed = true),
+        vertexGeneration: RagV2VertexGenerationPort =
+            mockk {
+                every { isActivationEnabled() } returns false
+            },
+        vertexQuestionFingerprint: RagV2VertexQuestionFingerprintPort = mockk(relaxed = true),
     ): RagV2RuntimeService =
         RagV2RuntimeService(
             jdbcProvider = provider,
             cursorPort = mockk(relaxed = true),
             cryptoPort = crypto,
             evaluationPort = evaluation,
+            vertexEvidencePort = vertexEvidence,
+            vertexGenerationPort = vertexGeneration,
+            vertexQuestionFingerprintPort = vertexQuestionFingerprint,
             objectMapper = JsonMapper.builder().build(),
         )
 
@@ -182,13 +476,13 @@ class RagV2RuntimeServiceTest {
             topics = listOf("FINANCIAL_ENGINEERING"),
         )
 
-    private fun scope(): RagV2RetrievalScope =
+    private fun scope(profile: String = "bge_m3_local_1024_v1"): RagV2RetrievalScope =
         RagV2RetrievalScope(
             scopeClaimId = "rvs_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             exact30GenerationId = EXACT_GENERATION,
             oa112GenerationId = OA_GENERATION,
             ownerGenerationId = null,
-            embeddingProfileId = "bge_m3_local_1024_v1",
+            embeddingProfileId = profile,
             policyVersion = 1,
         )
 
@@ -221,6 +515,24 @@ class RagV2RuntimeServiceTest {
             ownerGenerationId = scope.ownerGenerationId,
             embeddingProfileId = scope.embeddingProfileId,
             policyVersion = scope.policyVersion,
+            providerPhysicalAttempts = 0,
+            externalProviderCandidate = false,
+        )
+
+    private fun unavailableEvaluation(): RagV2EvaluationResult =
+        RagV2EvaluationResult(
+            generationStatus = RagGenerationStatus.GENERATION_UNAVAILABLE,
+            answer = null,
+            citations = emptyList(),
+            citationCoverage = 0.0,
+            retrievalFailure = false,
+            guardrailFlags = listOf("GENERATION_UNAVAILABLE"),
+            failureCode = "GENERATION_UNAVAILABLE",
+            exact30GenerationId = "",
+            oa112GenerationId = "",
+            ownerGenerationId = null,
+            embeddingProfileId = "",
+            policyVersion = 0,
             providerPhysicalAttempts = 0,
             externalProviderCandidate = false,
         )

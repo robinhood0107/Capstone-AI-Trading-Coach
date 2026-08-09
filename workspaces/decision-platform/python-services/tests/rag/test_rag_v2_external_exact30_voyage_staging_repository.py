@@ -65,7 +65,9 @@ def test_external_exact30_voyage_writer_stages_full_component_and_keeps_direct_t
               ),
               public.rag_v2_immutable_locator_is_valid(%s::jsonb),
               public.rag_v2_immutable_public_https_url_is_valid(%s),
-              public.rag_v2_immutable_external_exact30_voyage_source_is_approved(%s, %s, %s, %s, %s)
+              public.rag_v2_immutable_external_exact30_voyage_source_is_approved(%s, %s, %s, %s, %s),
+              public.rag_v2_immutable_external_exact30_voyage_source_revision_id(%s, %s, %s),
+              public.rag_v2_immutable_external_exact30_voyage_document_id(%s, %s)
             """,
             (
                 Jsonb(source["documentIr"]),
@@ -77,8 +79,21 @@ def test_external_exact30_voyage_writer_stages_full_component_and_keeps_direct_t
                 source["rawContentSha256"],
                 source["sourceCardSha256"],
                 source["canonicalTextSha256"],
+                source["sourceId"],
+                source["rawContentSha256"],
+                source["sourceCardSha256"],
+                source["sourceId"],
+                source["sourceRevisionId"],
             ),
-        ).fetchone() == (True, True, True, True, True)
+        ).fetchone() == (
+            True,
+            True,
+            True,
+            True,
+            True,
+            source["sourceRevisionId"],
+            source["documentId"],
+        )
     repository = PsycopgExternalExact30VoyageStagingRepository(
         database_dsn=isolated_postgres_cluster["rag_writer_dsn"],
     )
@@ -180,7 +195,7 @@ def test_external_exact30_voyage_writer_rejects_duplicate_source_revision_before
     _direct_stage(isolated_postgres_cluster["rag_writer_dsn"], first_payload)
     duplicate = _with_unapproved_revision_identity(first_payload)
 
-    with pytest.raises(psycopg.Error, match="source metadata is invalid"):
+    with pytest.raises(psycopg.Error, match="source (metadata|identity) is invalid"):
         _direct_stage(isolated_postgres_cluster["rag_writer_dsn"], duplicate)
 
     with psycopg.connect(isolated_postgres_cluster["admin_dsn"]) as connection:
@@ -205,7 +220,7 @@ def test_external_exact30_voyage_writer_rejects_canonical_text_poisoning_before_
         source["canonicalText"].encode("utf-8")
     ).hexdigest()
 
-    with pytest.raises(psycopg.Error, match="source metadata is invalid"):
+    with pytest.raises(psycopg.Error, match="source (metadata|identity) is invalid"):
         _direct_stage(isolated_postgres_cluster["rag_writer_dsn"], poisoned)
 
     with psycopg.connect(isolated_postgres_cluster["admin_dsn"]) as connection:

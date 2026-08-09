@@ -15,7 +15,7 @@ from concurrent import futures
 from dataclasses import dataclass
 from enum import StrEnum
 from hmac import compare_digest
-from typing import Never, Protocol, cast
+from typing import Mapping, Never, Protocol, cast
 from urllib.parse import urlsplit
 
 import grpc
@@ -27,6 +27,7 @@ from app.rag.rag_v2_authorized_retrieval import (
     RagV2AuthorizedHybridRetrieval,
     RagV2BundleScope,
     RagV2RetrievalCandidate,
+    RagV2RetrievalExecution,
     RagV2RetrievalOutcome,
 )
 
@@ -49,6 +50,8 @@ _TOPICS = frozenset(
     {"API", "DATA", "FINANCIAL_ENGINEERING", "METHODOLOGY", "PRODUCT_RISK", "RISK"}
 )
 _BGE_PROFILE = "bge_m3_local_1024_v1"
+_VOYAGE_PROFILE = "voyage_context_4_1024_v1"
+_RETRIEVAL_PROFILES = frozenset({_BGE_PROFILE, _VOYAGE_PROFILE})
 
 
 class RagV2RpcStatus(StrEnum):
@@ -98,8 +101,8 @@ class RagV2RpcCitation:
 class RagV2EngineResult:
     """v2 loopback response의 bounded internal projection이다.
 
-    provider count는 local BGE retrieval-only mode에서 항상 zero다. `external_provider_candidate`
-    역시 false여야 하며, Vertex/Voyage live flow는 이 transport와 분리된 hard gate다.
+    BGE retrieval has zero provider attempts. A hard-gated Voyage query can report exactly one
+    Voyage attempt for its own request, but never makes a generator/provider fallback candidate.
     """
 
     status: RagV2RpcStatus
@@ -146,6 +149,18 @@ class RagV2RetrievalPort(Protocol):
         """top-5 evidence 외 canonical raw text를 response contract로 승격하지 않는다."""
 
 
+class RagV2ExecutionRetrievalPort(RagV2RetrievalPort, Protocol):
+    """Optional per-request provider receipt surface for a profile-specific retrieval adapter."""
+
+    def retrieve_with_execution(
+        self,
+        *,
+        scope: RagV2BundleScope,
+        payload: dict[str, object],
+    ) -> RagV2RetrievalExecution:
+        """Return the bounded outcome and one possible Voyage query attempt count together."""
+
+
 class RagV2AskEngine(Protocol):
     """valid loopback request를 external provider 없이 한 번 평가한다."""
 
@@ -153,26 +168,36 @@ class RagV2AskEngine(Protocol):
         """상태와 immutable citation metadata만 반환한다."""
 
 
-class BgeRagV2RetrievalOnlyEngine:
-    """BGE-only v2 retrieval을 public response-safe citation으로 축소한다.
+class ProfileSelectedRagV2RetrievalOnlyEngine:
+    """DB scope가 선택한 embedding profile 하나로만 v2 retrieval을 수행한다.
 
-    local guardrail은 scope DB access보다 먼저 실행한다. 이후 DB scope read와 RRF에서 실패하면
-    answer/citation을 만들지 않으며, profile/corpus selection을 request가 고를 수 없다.
+    local guardrail은 scope DB access보다 먼저 실행한다. 그 뒤 current immutable scope를 읽어
+    profile별 retrieval engine을 선택한다. request는 corpus/profile/embedding provider를 고르지
+    못하며, Voyage engine이 준비되지 않아도 BGE fallback을 만들지 않는다.
     """
 
     def __init__(
         self,
         *,
         scope_reader: RagV2ScopeReader,
-        retrieval: RagV2RetrievalPort | RagV2AuthorizedHybridRetrieval,
+        retrievals: Mapping[
+            str,
+            RagV2RetrievalPort | RagV2AuthorizedHybridRetrieval,
+        ],
         guardrail: BoundedFixtureGuardrail | None = None,
     ) -> None:
+        if (
+            not retrievals
+            or not set(retrievals).issubset(_RETRIEVAL_PROFILES)
+            or any(retrieval is None for retrieval in retrievals.values())
+        ):
+            raise ValueError("RAG v2 profile-selected retrieval configuration is invalid")
         self._scope_reader = scope_reader
-        self._retrieval = retrieval
+        self._retrievals = dict(retrievals)
         self._guardrail = guardrail or BoundedFixtureGuardrail()
 
     def ask(self, request: rag_v2_pb2.RagAskRequest) -> RagV2EngineResult:
-        """질문을 local guard→opaque scope→BGE RRF 순서로만 처리한다."""
+        """질문을 local guard→opaque scope→scope-selected RRF 순서로만 처리한다."""
 
         guard = self._guardrail.classify(request.question)
         if guard.decision is GuardrailDecision.BLOCKED_ADVICE:
@@ -190,30 +215,39 @@ class BgeRagV2RetrievalOnlyEngine:
         if (
             scope.claim_id != request.owner_scope_claim
             or scope.session_id != request.request_id
-            or scope.embedding_profile_id != _BGE_PROFILE
+            or scope.embedding_profile_id not in _RETRIEVAL_PROFILES
         ):
             return _retrieval_failure("RAG_RETRIEVAL_SCOPE_CHANGED")
+        retrieval = self._retrievals.get(scope.embedding_profile_id)
+        if retrieval is None:
+            # A Voyage scope must never silently execute a local BGE query embedding.  The current
+            # bundle remains intact and the caller receives a resumable typed terminal state instead.
+            return _retrieval_failure("RAG_QUERY_PROFILE_UNAVAILABLE", scope=scope)
 
         try:
-            outcome = self._retrieval.retrieve(
+            execution = _retrieve_with_execution(
+                retrieval,
                 scope=scope,
                 payload={
                     "question": request.question,
                     "answerMode": request.answer_mode,
                     "relatedSymbols": list(request.related_symbols),
                     "topics": list(request.topics),
+                    "externalQueryConsentGranted": request.consent_context.granted,
                 },
             )
         except (ConnectionError, OSError, RuntimeError, TimeoutError, ValueError):
             return _retrieval_failure(
                 "RAG_RETRIEVAL_CHANNEL_UNAVAILABLE", scope=scope
             )
+        outcome = execution.outcome
         if outcome.failure_code is not None or not outcome.retrieval_permitted:
             return _retrieval_failure(
                 outcome.failure_code.value
                 if outcome.failure_code is not None
                 else "RAG_INSUFFICIENT_EVIDENCE",
                 scope=scope,
+                voyage_physical_calls=execution.voyage_physical_calls,
             )
 
         try:
@@ -222,9 +256,17 @@ class BgeRagV2RetrievalOnlyEngine:
                 for ordinal, candidate in enumerate(outcome.evidence, start=1)
             )
         except (TypeError, ValueError):
-            return _retrieval_failure("RAG_RETRIEVAL_SCOPE_CHANGED", scope=scope)
+            return _retrieval_failure(
+                "RAG_RETRIEVAL_SCOPE_CHANGED",
+                scope=scope,
+                voyage_physical_calls=execution.voyage_physical_calls,
+            )
         if not citations:
-            return _retrieval_failure("RAG_INSUFFICIENT_EVIDENCE", scope=scope)
+            return _retrieval_failure(
+                "RAG_INSUFFICIENT_EVIDENCE",
+                scope=scope,
+                voyage_physical_calls=execution.voyage_physical_calls,
+            )
 
         return RagV2EngineResult(
             status=RagV2RpcStatus.RETRIEVAL_ONLY,
@@ -244,6 +286,29 @@ class BgeRagV2RetrievalOnlyEngine:
             owner_generation_id=scope.owner_private_generation_id,
             embedding_profile_id=scope.embedding_profile_id,
             policy_version=scope.policy_version,
+            provider_physical_total=execution.voyage_physical_calls,
+            voyage_physical_calls=execution.voyage_physical_calls,
+        )
+
+
+class BgeRagV2RetrievalOnlyEngine(ProfileSelectedRagV2RetrievalOnlyEngine):
+    """Existing local-BGE entrypoint with a deliberately single-profile retrieval map.
+
+    Keeping this wrapper preserves the current local-only process contract.  The profile-selected
+    engine is used only where a separately hard-gated Voyage query implementation is injected.
+    """
+
+    def __init__(
+        self,
+        *,
+        scope_reader: RagV2ScopeReader,
+        retrieval: RagV2RetrievalPort | RagV2AuthorizedHybridRetrieval,
+        guardrail: BoundedFixtureGuardrail | None = None,
+    ) -> None:
+        super().__init__(
+            scope_reader=scope_reader,
+            retrievals={_BGE_PROFILE: retrieval},
+            guardrail=guardrail,
         )
 
 
@@ -452,8 +517,9 @@ def _retrieval_failure(
     failure_code: str,
     *,
     scope: RagV2BundleScope | None = None,
+    voyage_physical_calls: int = 0,
 ) -> RagV2EngineResult:
-    """DB/BGE retrieval failure는 provider fallback 없이 typed terminal response가 된다."""
+    """DB/query failure remains terminal; a failed approved Voyage query still records its one attempt."""
 
     return RagV2EngineResult(
         status=RagV2RpcStatus.RETRIEVAL_FAILURE,
@@ -469,6 +535,8 @@ def _retrieval_failure(
         owner_generation_id=scope.owner_private_generation_id if scope else None,
         embedding_profile_id=scope.embedding_profile_id if scope else "",
         policy_version=scope.policy_version if scope else 0,
+        provider_physical_total=voyage_physical_calls,
+        voyage_physical_calls=voyage_physical_calls,
     )
 
 
@@ -528,7 +596,6 @@ def _validate_engine_result(result: RagV2EngineResult) -> None:
             result.voyage_physical_calls,
         )
         < 0
-        or result.provider_physical_total != 0
         or result.external_provider_candidate
         or not math.isfinite(result.citation_coverage)
         or result.citation_coverage < 0.0
@@ -546,6 +613,8 @@ def _validate_engine_result(result: RagV2EngineResult) -> None:
         or (result.failure_code and _FAILURE_CODE.fullmatch(result.failure_code) is None)
     ):
         raise ValueError("RAG v2 engine result envelope is invalid")
+    if not _provider_receipt_is_valid(result):
+        raise ValueError("RAG v2 provider receipt is invalid")
     _validate_bundle_metadata(result)
     top5 = set(result.authorized_top5_chunk_revision_ids)
     for ordinal, citation in enumerate(result.citations, start=1):
@@ -595,7 +664,7 @@ def _validate_bundle_metadata(result: RagV2EngineResult) -> None:
         _GENERATION_ID.fullmatch(result.exact30_generation_id) is None
         or _GENERATION_ID.fullmatch(result.oa112_generation_id) is None
         or result.exact30_generation_id == result.oa112_generation_id
-        or result.embedding_profile_id != _BGE_PROFILE
+        or result.embedding_profile_id not in _RETRIEVAL_PROFILES
         or result.policy_version < 1
         or (
             result.owner_generation_id is not None
@@ -607,6 +676,46 @@ def _validate_bundle_metadata(result: RagV2EngineResult) -> None:
         )
     ):
         raise ValueError("RAG v2 bundle metadata is invalid")
+
+
+def _provider_receipt_is_valid(result: RagV2EngineResult) -> bool:
+    """Only a Voyage-selected scope may report the single packet-gated query physical attempt."""
+
+    if result.embedding_profile_id in {"", _BGE_PROFILE}:
+        return (
+            result.provider_physical_total == 0
+            and result.gemini_physical_calls == 0
+            and result.openai_physical_calls == 0
+            and result.voyage_physical_calls == 0
+        )
+    if result.embedding_profile_id == _VOYAGE_PROFILE:
+        return (
+            result.gemini_physical_calls == 0
+            and result.openai_physical_calls == 0
+            and result.provider_physical_total == result.voyage_physical_calls
+            and result.voyage_physical_calls in {0, 1}
+        )
+    return False
+
+
+def _retrieve_with_execution(
+    retrieval: RagV2RetrievalPort | RagV2AuthorizedHybridRetrieval,
+    *,
+    scope: RagV2BundleScope,
+    payload: dict[str, object],
+) -> RagV2RetrievalExecution:
+    """Prefer a thread-safe per-call execution receipt and retain legacy local retrieval compatibility."""
+
+    execute = getattr(retrieval, "retrieve_with_execution", None)
+    if callable(execute):
+        result = execute(scope=scope, payload=payload)
+        if not isinstance(result, RagV2RetrievalExecution):
+            raise ValueError("RAG v2 retrieval execution receipt is invalid")
+        return result
+    outcome = retrieval.retrieve(scope=scope, payload=payload)
+    if not isinstance(outcome, RagV2RetrievalOutcome):
+        raise ValueError("RAG v2 retrieval outcome is invalid")
+    return RagV2RetrievalExecution(outcome=outcome)
 
 
 def _validate_citation(
@@ -672,7 +781,7 @@ def _to_response(
             voyage=result.voyage_physical_calls,
         ),
         authorized_top5_chunk_revision_ids=result.authorized_top5_chunk_revision_ids,
-        external_provider_candidate=False,
+        external_provider_candidate=result.external_provider_candidate,
         policy_version=result.policy_version,
     )
     if result.owner_generation_id is not None:

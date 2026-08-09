@@ -7,6 +7,11 @@ package com.capstone.decision.application.rag
 data class RagV2EvaluationContext(
     val requestId: String,
     val ownerScopeClaim: String,
+    /**
+     * Voyage query embedding은 owner의 effective external-processing consent가 있을 때만 가능하다.
+     * raw consent event나 owner identity는 loopback wire로 보내지 않고 이 boolean capability만 전달한다.
+     */
+    val externalQueryConsentGranted: Boolean = false,
 )
 
 /**

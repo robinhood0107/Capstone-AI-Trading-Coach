@@ -77,7 +77,7 @@ def materialize_oa112_public_bge_component(
     """
 
     entries = tuple(registry.active_entries)
-    _validate_active_entries(entries)
+    validate_oa112_active_entries(entries)
     if not local_cache_root.is_absolute():
         raise RagV2Oa112BgeRunnerError("OA112_LOCAL_CACHE_ROOT")
     approved_root = local_cache_root / "oa-raw"
@@ -89,9 +89,13 @@ def materialize_oa112_public_bge_component(
                 parser=active_parser,
                 tokenizer=tokenizer,
                 embedder=embedder,
-                request=_document_request(entry, approved_root=approved_root),
+                request=oa112_public_document_request(
+                    entry,
+                    approved_root=approved_root,
+                    embedding_profile_id=_BGE_PROFILE_ID,
+                ),
             )
-            records.append((materialized, _source_metadata(entry)))
+            records.append((materialized, oa112_public_source_metadata(entry)))
         except RagV2BgeMaterializationError as error:
             raise RagV2Oa112BgeRunnerError("OA112_BGE_MATERIALIZATION") from error
 
@@ -109,7 +113,7 @@ def materialize_oa112_public_bge_component(
     )
 
 
-def _validate_active_entries(entries: tuple[Oa112RegistryEntry, ...]) -> None:
+def validate_oa112_active_entries(entries: tuple[Oa112RegistryEntry, ...]) -> None:
     """materialization 전 14×8 membership와 all-four permission을 locally fail-close한다."""
 
     if len(entries) != 112 or len({entry.source_id for entry in entries}) != 112:
@@ -131,12 +135,13 @@ def _validate_active_entries(entries: tuple[Oa112RegistryEntry, ...]) -> None:
         raise RagV2Oa112BgeRunnerError("OA112_RIGHTS_REQUIRED")
 
 
-def _document_request(
+def oa112_public_document_request(
     entry: Oa112RegistryEntry,
     *,
     approved_root: Path,
+    embedding_profile_id: str,
 ) -> RagV2PublicDocumentRequest:
-    """registry entry와 fixed raw-cache leaf만 parser request로 연결한다."""
+    """registry entry와 fixed raw-cache leaf를 requested full-profile input으로 연결한다."""
 
     return RagV2PublicDocumentRequest(
         approved_root=approved_root,
@@ -151,11 +156,11 @@ def _document_request(
         local_processing_allowed=entry.local_processing_allowed,
         external_embedding_allowed=entry.external_embedding_allowed,
         external_generation_allowed=entry.external_generation_allowed,
-        embedding_profile_id=_BGE_PROFILE_ID,
+        embedding_profile_id=embedding_profile_id,
     )
 
 
-def _source_metadata(entry: Oa112RegistryEntry) -> PublicBgeSourceMetadata:
+def oa112_public_source_metadata(entry: Oa112RegistryEntry) -> PublicBgeSourceMetadata:
     """registry's verified OA card and all-four permission proof만 staging metadata로 투영한다."""
 
     return PublicBgeSourceMetadata(

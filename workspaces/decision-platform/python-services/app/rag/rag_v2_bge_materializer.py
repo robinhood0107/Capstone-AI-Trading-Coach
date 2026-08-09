@@ -18,10 +18,17 @@ from app.rag.document_ir_materializer import (
     RagV2DocumentMaterializationRequest,
     materialize_document_ir,
 )
-from app.rag.ingest_pipeline import RagCanonicalChunk, RagIngestError, RagTokenizer, build_embedding_inputs
+from app.rag.ingest_pipeline import (
+    RagCanonicalChunk,
+    RagEmbeddingInput,
+    RagIngestError,
+    RagTokenizer,
+    build_embedding_inputs,
+)
 from app.rag.local_document_parser import DocumentParseError
 
 _BGE_PROFILE_ID = "bge_m3_local_1024_v1"
+_VOYAGE_PROFILE_ID = "voyage_context_4_1024_v1"
 
 
 class RagV2BgeMaterializationError(ValueError):
@@ -80,7 +87,7 @@ class RagV2OwnerDocumentRequest:
 
 @dataclass(frozen=True, slots=True)
 class RagV2PublicDocumentRequest:
-    """exact-30/OA112 local source의 BGE generation identity다.
+    """exact-30/OA112 local source의 profile-bound generation identity다.
 
     filesystem locator는 parser invocation에만 쓰고 receipt나 DB writer projection에는 넣지 않는다.
     expected raw hash와 MIME은 registry/source-card contract에서 온 값이라, cache drift는 embed 전에
@@ -100,6 +107,20 @@ class RagV2PublicDocumentRequest:
     external_embedding_allowed: bool
     external_generation_allowed: bool
     embedding_profile_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class RagV2PreparedPublicDocument:
+    """external embedding 전에도 complete하게 검증된 public Document IR/chunk input이다.
+
+    parser 경로와 raw cache leaf는 이 object에 보관하지 않는다. 반환값은 process-local로만 유지하며,
+    caller는 one-shot profile transport 결과를 결합한 뒤에만 writer transaction으로 넘겨야 한다.
+    """
+
+    document: RagV2DocumentMaterialization
+    embedding_inputs: tuple[RagEmbeddingInput, ...]
+    source_revision_sha256: str
+    document_ir: dict[str, object]
 
 
 @dataclass(frozen=True, slots=True)
@@ -254,6 +275,60 @@ def materialize_public_bge_document(
 
     if request.embedding_profile_id != _BGE_PROFILE_ID:
         raise RagV2BgeMaterializationError("BGE_PROFILE_REQUIRED")
+    prepared = prepare_public_document_for_embedding(
+        parser=parser,
+        tokenizer=tokenizer,
+        request=request,
+    )
+    try:
+        vectors = validate_embedding_batch(
+            embedder.embed(tuple(item.text for item in prepared.embedding_inputs)),
+            expected_rows=len(prepared.embedding_inputs),
+        )
+    except RagV2BgeMaterializationError:
+        raise
+    except BgeRuntimeError as error:
+        raise RagV2BgeMaterializationError(str(error)) from error
+
+    if len(prepared.embedding_inputs) != len(prepared.document.chunks):  # pragma: no cover - closed helper contract.
+        raise RagV2BgeMaterializationError("BGE_INPUT_CHUNK_CARDINALITY")
+    embeddings = tuple(
+        RagV2BgeDocumentEmbedding(
+            chunk_id=chunk.chunk_id,
+            embedding_input_hash=embedding_input.embedding_input_hash,
+            context_set_hash=None,
+            embedding=np.array(vector, dtype=np.float32, copy=True),
+        )
+        for chunk, embedding_input, vector in zip(
+            prepared.document.chunks,
+            prepared.embedding_inputs,
+            vectors,
+            strict=True,
+        )
+    )
+    return RagV2BgeMaterializedPublicDocument(
+        document=prepared.document,
+        embeddings=embeddings,
+        source_revision_sha256=prepared.source_revision_sha256,
+        document_ir=_copy_document_ir(prepared.document_ir),
+    )
+
+
+def prepare_public_document_for_embedding(
+    *,
+    parser: ApprovedDocumentParser,
+    tokenizer: RagTokenizer,
+    request: RagV2PublicDocumentRequest,
+) -> RagV2PreparedPublicDocument:
+    """approved public source를 profile-neutral canonical chunks로 prepare한다.
+
+    BGE와 Voyage는 같은 pinned tokenizer/Document IR을 쓰지만 vector space는 절대 섞지 않는다.
+    따라서 이 helper는 source rights, MIME, raw hash와 input-hash를 provider socket 전 완결하고
+    embedding은 호출하지 않는다.
+    """
+
+    if request.embedding_profile_id not in {_BGE_PROFILE_ID, _VOYAGE_PROFILE_ID}:
+        raise RagV2BgeMaterializationError("PUBLIC_DOCUMENT_PROFILE")
     if request.source_scope not in {"EXACT30", "OA112"}:
         raise RagV2BgeMaterializationError("PUBLIC_DOCUMENT_SCOPE")
     if not _is_sha256(request.expected_raw_content_sha256):
@@ -296,37 +371,18 @@ def materialize_public_bge_document(
                 source_id=request.source_id,
                 source_revision_id=request.source_revision_id,
             ),
-            embedding_profile_id=_BGE_PROFILE_ID,
+            embedding_profile_id=request.embedding_profile_id,
             tokenizer=tokenizer,
-        )
-        vectors = validate_embedding_batch(
-            embedder.embed(tuple(item.text for item in inputs)),
-            expected_rows=len(inputs),
         )
     except RagV2BgeMaterializationError:
         raise
-    except (
-        BgeRuntimeError,
-        DocumentIrMaterializationError,
-        DocumentParseError,
-        RagIngestError,
-    ) as error:
+    except (DocumentIrMaterializationError, DocumentParseError, RagIngestError) as error:
         raise RagV2BgeMaterializationError(str(error)) from error
-
-    if len(inputs) != len(document.chunks):  # pragma: no cover - closed helper contract.
-        raise RagV2BgeMaterializationError("BGE_INPUT_CHUNK_CARDINALITY")
-    embeddings = tuple(
-        RagV2BgeDocumentEmbedding(
-            chunk_id=chunk.chunk_id,
-            embedding_input_hash=embedding_input.embedding_input_hash,
-            context_set_hash=None,
-            embedding=np.array(vector, dtype=np.float32, copy=True),
-        )
-        for chunk, embedding_input, vector in zip(document.chunks, inputs, vectors, strict=True)
-    )
-    return RagV2BgeMaterializedPublicDocument(
+    if len(inputs) != len(document.chunks) or not inputs:
+        raise RagV2BgeMaterializationError("PUBLIC_DOCUMENT_INPUT_CHUNK_CARDINALITY")
+    return RagV2PreparedPublicDocument(
         document=document,
-        embeddings=embeddings,
+        embedding_inputs=inputs,
         source_revision_sha256=_source_revision_sha256(document_ir),
         document_ir=_copy_document_ir(document_ir),
     )

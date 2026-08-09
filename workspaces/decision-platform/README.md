@@ -29,14 +29,17 @@ KIS outbound는 이 workspace가 단일 owner다. S1.1 client는 실전 18/s har
 `PRE_S5_RAG_GLOBAL_NEWS_CONTRACT_LOCKED=1`이다. 이 workspace만 logical OA112(14 track × 8)
 materialization, owner-private RAG, foreign-news explanation lane과 Optional 3 future runtime의
 implementation owner다. 현재 `S4_7D_OA112_PHYSICAL_ACTIVATION=NOT_MATERIALIZED`이고 raw corpus,
-owner import writer, provider executor, foreign-news adapter와 Optional 3 adapter는 없다.
+provider executor, foreign-news adapter와 Optional 3 adapter는 없다. current working tree에는
+local Document IR/materializer·immutable RAG bundle·owner ticket control plane과 profile-selected retrieval의
+`IMPLEMENTED_DRAFT` code가 있으나 OA112 rights/cache/DB activation 및 PR/main 병합을 뜻하지 않는다.
 
 RAG는 `LOCAL_EPHEMERAL_PARSE` boundary 안에서만 동작하며 Decision/Signal/Risk/order/hash authority는
 0이다. `voyage-context-4` 1024 full-bundle profile과 `gemini-3.5-flash` single generator는
 `TARGET_NOT_ACTIVE`다. foreign-news는 Finnhub personal-local, SEC official, Federal Reserve official,
 existing GDELT offline-reference만 계약으로 정의하며 raw/article metadata와 GDELT outbound는 0이다.
-Optional 3(Finnhub Recommendation/Earnings, Twelve Data, Massive)는 Core 6과 별도 entitlement/receipt
-template만 갖고 physical call/retry/raw storage는 0이다.
+current working tree V49는 owner-local sanitized foreign-news aggregate/read route를, V50은 Core 6과
+Optional 3의 정확히 9개 typed state/sanitized projection을 구현한다. 둘 다 provider adapter,
+physical call/retry/raw storage는 0이며 entitlement나 live 사용 가능성을 뜻하지 않는다.
 
 ## S4.8→S6.7 교차시장 위험 오버레이
 

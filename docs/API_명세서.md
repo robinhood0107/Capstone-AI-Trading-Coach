@@ -30,6 +30,7 @@
 | `CONTRACT_ONLY` | schema/proto/OpenAPI/fixture만 고정됐고 runtime이 없음 |
 | `OFFLINE_ONLY` | fixture·local/Compose 검증만 통과했으며 provider physical call은 0 |
 | `STUB_FAIL_CLOSED` | 공개 route/CLI가 stable typed error로 닫혀 실제 기능을 가장하지 않음 |
+| `IMPLEMENTED_DRAFT` | current working tree에 코드·migration·자동 검증이 있으나 PR/main 병합이나 provider activation은 아님 |
 | `LIVE_VERIFIED` | exact HEAD·승인 packet·물리 호출 영수증까지 완료됨 |
 | `HISTORICAL_SUPERSEDED` | 과거 역할·일정·artifact 계획은 보존하되 현재 실행 또는 S5 entry 의존성이 아님 |
 | `DEFERRED_BY_DESIGN` | 명시적으로 후속 단계에 남긴 범위 |
@@ -1105,7 +1106,7 @@ generation과 제출 직전 generation을 다시 비교한다.
 
 > 계획 타당성: `PLAN_FEASIBILITY=GO_WITH_EXTERNAL_HARD_GATES`.
 > 현재 상태: `S4_8A=CONTRACT_LOCKED / S4_8_CORE6_V2=CONTRACT_ONLY / S4_8B_C=IMPLEMENTED_MERGE_CANDIDATE /
-> ENDPOINT_RUNTIME=NOT_IMPLEMENTED`.
+> S4_8_CORE6_OPTIONAL3_LOCAL_RUNTIME=IMPLEMENTED_DRAFT(V50) / ENDPOINT_RUNTIME=NOT_IMPLEMENTED`.
 > 월 데이터 비용 목표는 `0원`, offline fixture와 지연/EOD가 우선이다. 기관용 데이터 제품과
 > 실시간 SOX/VIX feed는 post-P1 선택지이며 P1 완료 조건이 아니다. 새 agent framework·별도
 > cloud·Kafka는 hard dependency가 아니다.
@@ -1125,7 +1126,9 @@ generation과 제출 직전 generation을 다시 비교한다.
 > 조사한 42개는 integration target(39 machine 후보 계열 + 3 manual-link 원천)이지 공개
 > API나 사용 가능한 entitlement 수가 아니다. 로컬 KIS catalog 338개·명시적 모의지원
 > 43개와 이번 disabled adapter 후보 18개도 서로 다른 집계다. 현재 S4.8 활성/live
-> provider adapter 수는 0이고 18개 후보는 offline fixture 행으로만 존재한다. exact 42개 행과 exact 18개 allowlist의 authority는
+> provider adapter 수는 0이고 18개 후보는 offline fixture 행으로만 존재한다. current working tree V50은
+> 정확히 9개 Core 6/Optional 3 lane의 typed state와 sanitized append-only projection만 구현하며 entitlement,
+> endpoint 또는 physical call을 만들지 않는다. exact 42개 행과 exact 18개 allowlist의 authority는
 > Git으로 추적하지 않는 로컬 전용 자료수급 레지스트리이며
 > 공개 API 명세에는 전체 inventory를 복제하지 않는다.
 
@@ -1493,14 +1496,15 @@ materialization과 pointer transition은 별도 승인 packet이 필요한 CLI �
 
 ### 7.7 RAG v2 계약 상태와 공통 경계
 
-> 현재 상태: `S4_7D_CONTRACT=LOCKED / ACTIVE_V2_RUNTIME=STUB_FAIL_CLOSED /
+> 현재 상태: `S4_7D_CONTRACT=LOCKED / ACTIVE_V2_RUNTIME=IMPLEMENTED_DRAFT(current working tree V25–V51; FULL_READY 미선언) /
 > S4_7D_CONSENT_TICKET_CONTROL_PLANE=OFFLINE_ONLY /
 > OA112_ACTIVE_CONTRACT_LOCKED / S4_7D_OA112_PHYSICAL_ACTIVATION=NOT_MATERIALIZED`.
 > `contracts/openapi/rag-v2.openapi.json`은 v1 canonical OpenAPI bytes를 변경하지 않기 위한
-> 별도 v2 direct-payload 계약이다. route/history/RLS skeleton은 병합됐지만 OA+owner
-> materializer와 authorized retrieval은 아직 없다. full bundle이 `FULL_READY`가 아니면 질문 API는
-> typed `CORPUS_NOT_READY`를, 현재 skeleton이 그 이후에 도달해도 `GENERATION_UNAVAILABLE`를
-> 반환한다.
+> 별도 v2 direct-payload 계약이다. current working tree에는 local materializer, immutable generation,
+> profile-selected retrieval, import/delete ticket, Vertex preparation code와 migration이 있으나 OA112
+> rights/local cache/DB activation은 아직 증명되지 않았다. full bundle이 `FULL_READY`가 아니면 질문 API는
+> typed `CORPUS_NOT_READY`를 반환하며 Voyage/Vertex external evidence와 exact packet 전 provider socket은
+> 열리지 않는다.
 
 RAG v2는 exact-30, OA, 요청 owner-private generation을 서버가 자동으로 하나의
 bundle로 pin한다. client request에 `corpus`, `profile`, `topK` 또는 이와 동일한
@@ -1508,7 +1512,12 @@ bundle로 pin한다. client request에 `corpus`, `profile`, `topK` 또는 이와
 `k=60`을 유지하며 RAG는 Signal, RiskDecision, 주문 의도·hash·feature를 바꾸지
 않는 `decisionAuthority=NONE` 설명 경계다.
 
-#### 7.7.1 Pre-S5 v2 consent/import control plane (offline-only)
+Voyage public-base generation은 `OWNER_PRIVATE` empty sentinel(`ownerScopeSha256=null`,
+ordered group 0)을 허용한다. 이 sentinel은 private retrieval을 의미하지 않으며 private
+canonical text·chunk·embedding을 provider input에 포함하지 않는다. 실제 owner-private component는
+owner-bound consent와 non-empty generation을 계속 요구한다.
+
+#### 7.7.1 Pre-S5 v2 consent/ticket/Vertex-preparation control planes (offline-only)
 
 다음 public surface는 owner-scoped local DB control plane으로만 활성화한다. OA112 raw source,
 owner document, filesystem path, materializer, retrieval, vector writer, provider transport는 받거나
@@ -1519,14 +1528,25 @@ approval을 뜻하지 않는다.
 POST /api/v2/rag/consents
 GET  /api/v2/rag/consent
 POST /api/v2/rag/import-tickets
+POST /api/v2/rag/delete-tickets
+POST /api/v2/rag/vertex-preparations
 ```
 
 consent는 `GRANT | REVOKE`, disclosure/policy digest만 받고 owner와 시각은 JWT/server clock에서
 결정한다. effective event가 없으면 `GET /api/v2/rag/consent`는
 `EXTERNAL_AI_CONSENT_REQUIRED`로 fail-closed한다. import ticket은 owner·operation·policy version에
-결속된 5분 single-use capability이며 DB에는 SHA-256 hash만 남긴다. raw JWT, owner ID, DB credential,
-owner raw path는 BAT command line에 노출하지 않는다. 이 control plane은 provider 호출을 만들지 않으며
-`EXTERNAL_AI_RAG_V2` 동의가 있어도 provider outbound는 0이다.
+결속된 5분 single-use capability이고 delete ticket은 owner·document에도 결속되며 DB에는 SHA-256 hash만
+남긴다. raw JWT, owner ID, DB credential, owner raw path는 BAT command line에 노출하지 않는다.
+
+`POST /api/v2/rag/vertex-preparations`는 enabled Vertex target에서만 exact `X-Request-Id: req_...`와
+기존 `/ask`의 동일 parsed command를 받아 current immutable bundle의 2분 scope를 content-free로 반환한다. 응답은
+`scopeClaimId`, question HMAC, consent/policy digest, profile, expiry만 포함하며 owner ID, raw question,
+raw evidence는 저장하거나 반환하지 않는다. operator는 이 receipt와 독립 external evidence를 이용해
+local-only approval packet을 만들고, 뒤의 `/ask`에는 같은 request ID·parsed command와
+`X-Rag-V2-Vertex-Scope-Claim`을 함께 써야 한다. scope 또는 body가 다르거나 만료되면 gRPC/provider socket
+전에 fail-closed한다. enabled target인데 이 header가 없으면 `/ask`는 `GENERATION_UNAVAILABLE`로 종료한다.
+이 control plane은 provider 호출을 만들지 않으며 `EXTERNAL_AI_RAG_V2` 동의만으로 provider outbound가
+활성화되지 않는다.
 
 ### 7.8 RAG v2 질문
 
@@ -1544,9 +1564,9 @@ body의 질문·답변 style·종목·topic 의미는 v1과 같다.
 ```
 
 full bundle이 `FULL_READY`가 아니면 OA나 private 근거를 빼고 답을 만들지 않고
-typed `CORPUS_NOT_READY`를 반환한다. 현재는 materializer/retrieval writer도 없으므로
-`FULL_READY`를 가정한 답을 만들지 않고 `GENERATION_UNAVAILABLE`로 fail-closed한다. 이때 v1
-exact-30 endpoint는 계속 사용할 수 있다.
+typed `CORPUS_NOT_READY`를 반환한다. current working tree의 materializer/retrieval writer는
+`FULL_READY`를 가정하지 않으며 active same-profile bundle과 owner/source scope가 확인되지 않으면
+fail-closed한다. 이때 v1 exact-30 endpoint는 계속 사용할 수 있다.
 성공 citation은 다음 tagged union이다.
 
 - `PUBLIC_WEB`: title, source ID, HTTPS canonical URL, page/section locator
@@ -1594,9 +1614,11 @@ generation·text·chunk·embedding hard-delete는 BAT의 별도 document deletio
 
 `GET /api/v2/market-evidence/{symbol}/foreign-news-sentiment`
 
-이 route는 `contracts/openapi/foreign-news-sentiment.v1.openapi.json`의 contract-only surface다.
-root `openapi.json`에 route를 추가하지 않았고, 현재 adapter/provider runtime은 활성화되지 않았다.
-응답은 다음 불변식을 항상 만족한다.
+이 route는 `contracts/openapi/foreign-news-sentiment.v1.openapi.json`의 별도 direct-payload surface다.
+root `openapi.json`에 route를 추가하지 않는다. current working tree V49의 local runtime은
+owner-local sanitized aggregate를 읽거나 materialization 부재 시 `ABSTAIN`을 반환하지만
+adapter/provider runtime은 활성화되지 않았다. 응답은 `contractId=foreign-news-sentiment-v1`과 다음
+불변식을 항상 만족한다.
 
 ```text
 decisionAuthority=NONE
@@ -1614,7 +1636,8 @@ GDELT HTTP transport/executor/outbound는
 0이다. headline/summary/body/raw provider data, article title/URL/domain/date, credential, query/header는
 API·DB·log·Vertex input에 넣지 않는다. sentiment benchmark는 ProsusAI FinBERT,
 `yiyanghkust/finbert-tone`, Loughran–McDonald baseline만 validation에서 비교하며, 선택 뒤 test set은
-정확히 한 번만 평가한다. 현재 상태는 `CONTRACT_ONLY`라서 physical call은 0이다.
+정확히 한 번만 평가한다. 현재 상태는 `IMPLEMENTED_DRAFT` local sanitized runtime이며 physical call은
+계속 0이다.
 
 ---
 

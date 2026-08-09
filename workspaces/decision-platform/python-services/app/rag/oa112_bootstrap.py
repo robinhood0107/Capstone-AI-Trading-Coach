@@ -524,7 +524,11 @@ def download_oa112_bootstrap_quarantine(
                 pending.append(entry)
             else:
                 receipts[entry.source_id] = cached
-        if pending:
+        completion_receipt_missing = not pending and not _has_complete_bootstrap_success_receipt(
+            registry_root=packet_control_root,
+            registry=registry,
+        )
+        if pending or completion_receipt_missing:
             if packet is None:
                 raise Oa112DownloadError("OA112_PACKET_REQUIRED")
             if execution_binding is None:
@@ -1293,6 +1297,22 @@ def _load_complete_bootstrap_receipt(
     if len(accepted) != 1:
         raise Oa112BootstrapError("OA112_BOOTSTRAP_RECEIPT_REQUIRED")
     return accepted[0]
+
+
+def _has_complete_bootstrap_success_receipt(
+    *,
+    registry_root: Path,
+    registry: Oa112BootstrapCandidateRegistry,
+) -> bool:
+    """raw 재사용만 남은 recovery도 성공 receipt를 빠뜨리지 않도록 확인한다."""
+
+    try:
+        _load_complete_bootstrap_receipt(registry_root=registry_root, registry=registry)
+    except Oa112BootstrapError as error:
+        if str(error) == "OA112_BOOTSTRAP_RECEIPT_REQUIRED":
+            return False
+        raise Oa112DownloadError("OA112_BOOTSTRAP_RECEIPT_INVALID") from error
+    return True
 
 
 def _validate_complete_bootstrap_receipt_payload(

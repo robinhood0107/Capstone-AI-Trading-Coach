@@ -93,9 +93,19 @@ class GrpcRagV2EvaluationAdapter(
             .setAnswerMode(command.answerMode.name)
             .addAllRelatedSymbols(command.relatedSymbols)
             .addAllTopics(command.topics)
-            // BGE local retrieval has no external processor. Vertex consent is checked in its separate live path.
+            // BGE stays local. A Voyage-selected scope gets only this boolean capability; owner and consent
+            // event identities remain in Spring/DB and never cross the loopback transport.
             .setConsentContext(
-                RagConsentContext.newBuilder().setGranted(false).setPolicyVersion("NONE"),
+                RagConsentContext
+                    .newBuilder()
+                    .setGranted(context.externalQueryConsentGranted)
+                    .setPolicyVersion(
+                        if (context.externalQueryConsentGranted) {
+                            "EXTERNAL_AI_RAG_V2"
+                        } else {
+                            "NONE"
+                        },
+                    ),
             ).build()
 
     private fun validateAndMap(
@@ -108,10 +118,7 @@ class GrpcRagV2EvaluationAdapter(
         if (
             response.serializedSize > properties.responseMaxBytes ||
             response.requestId != context.requestId ||
-            counts.total != 0 ||
-            counts.gemini != 0 ||
-            counts.openai != 0 ||
-            counts.voyage != 0 ||
+            !providerReceiptIsValid(response, context) ||
             response.externalProviderCandidate ||
             top5.size > MAX_CITATIONS ||
             top5.distinct().size != top5.size ||
@@ -170,7 +177,7 @@ class GrpcRagV2EvaluationAdapter(
             !GENERATION_ID.matches(response.exact30GenerationId) ||
             !GENERATION_ID.matches(response.oaGenerationId) ||
             response.exact30GenerationId == response.oaGenerationId ||
-            response.embeddingProfileId != BGE_PROFILE ||
+            response.embeddingProfileId !in RETRIEVAL_PROFILES ||
             response.policyVersion < 1 ||
             (
                 response.hasOwnerGenerationId() &&
@@ -189,6 +196,28 @@ class GrpcRagV2EvaluationAdapter(
             response.embeddingProfileId,
             response.policyVersion,
         )
+    }
+
+    /**
+     * The Python engine may report one Voyage attempt only for a Voyage profile and a Spring-issued
+     * effective-consent capability. No generator/OpenAI count can share this retrieval receipt.
+     */
+    private fun providerReceiptIsValid(
+        response: RagAskResponse,
+        context: RagV2EvaluationContext,
+    ): Boolean {
+        val counts = response.providerPhysicalCounts
+        if (counts.gemini != 0 || counts.openai != 0) {
+            return false
+        }
+        return when (response.embeddingProfileId) {
+            "", BGE_PROFILE -> counts.total == 0 && counts.voyage == 0
+            VOYAGE_PROFILE ->
+                counts.total == counts.voyage &&
+                    counts.voyage in 0..1 &&
+                    (counts.voyage == 0 || context.externalQueryConsentGranted)
+            else -> false
+        }
     }
 
     private fun mapCitation(
@@ -389,6 +418,8 @@ class GrpcRagV2EvaluationAdapter(
         val FLAG = Regex("""[A-Z0-9_]{1,64}""")
         val FAILURE_CODE = Regex("""[A-Z0-9_]{1,96}""")
         const val BGE_PROFILE = "bge_m3_local_1024_v1"
+        const val VOYAGE_PROFILE = "voyage_context_4_1024_v1"
+        val RETRIEVAL_PROFILES = setOf(BGE_PROFILE, VOYAGE_PROFILE)
         const val MAX_CITATIONS = 5
         const val MAX_FLAGS = 8
         const val MAX_TITLE_BYTES = 1_024

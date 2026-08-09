@@ -112,6 +112,126 @@ class RagV2ApiIntegrationTest(
     }
 
     @Test
+    fun `foreign news route is authenticated owner scoped and exposes only sanitized lane states`() {
+        val userToken = login("demo-user", userPassword(), "req_foreign_news_user_login")
+        val adminToken = login("demo-admin", adminPassword(), "req_foreign_news_admin_login")
+
+        mockMvc
+            .get("/api/v2/market-evidence/005930/foreign-news-sentiment") {
+                header("X-Request-Id", "req_foreign_news_unauthenticated")
+            }.andExpect {
+                status { isUnauthorized() }
+            }
+
+        val notActivated =
+            mockMvc
+                .get("/api/v2/market-evidence/005930/foreign-news-sentiment") {
+                    bearer(userToken)
+                    header("X-Request-Id", "req_foreign_news_not_activated")
+                }.andExpect {
+                    status { isOk() }
+                    jsonPath("$.status") { value("ABSTAIN") }
+                    jsonPath("$.lanes.length()") { value(4) }
+                    jsonPath("$.lanes[0].laneId") { value("FINNHUB_PERSONAL_LOCAL") }
+                    jsonPath("$.lanes[3].laneId") { value("GDELT_OFFLINE_REFERENCE") }
+                    jsonPath("$.lanes[3].state") { value("NOT_ACTIVATED") }
+                    jsonPath("$.contractId") { value("foreign-news-sentiment-v1") }
+                    jsonPath("$.decisionAuthority") { value("NONE") }
+                    jsonPath("$.allowedUses[0]") { value("EXPLANATION_ONLY") }
+                    jsonPath("$.s5FeatureEligible") { value(false) }
+                    jsonPath("$.riskDecisionHashIncluded") { value(false) }
+                    jsonPath("$.rawProviderDataStored") { value(false) }
+                    jsonPath("$.articleMetadataStored") { value(false) }
+                    jsonPath("$.success") { doesNotExist() }
+                    jsonPath("$.data") { doesNotExist() }
+                }.andReturn()
+        assertForeignNewsSanitized(json(notActivated))
+
+        val lanes =
+            """
+            [
+              {"laneId":"FINNHUB_PERSONAL_LOCAL","state":"NOT_ACTIVATED"},
+              {"laneId":"SEC_OFFICIAL","state":"NOT_ACTIVATED"},
+              {"laneId":"FED_OFFICIAL","state":"NOT_ACTIVATED"},
+              {"laneId":"GDELT_OFFLINE_REFERENCE","state":"AVAILABLE"}
+            ]
+            """.trimIndent()
+        val payload =
+            """
+            {
+              "allowedUses":["EXPLANATION_ONLY"],
+              "articleMetadataStored":false,
+              "asOf":"2026-08-09T01:00:00Z",
+              "contractId":"foreign-news-sentiment-v1",
+              "decisionAuthority":"NONE",
+              "lanes":$lanes,
+              "rawProviderDataStored":false,
+              "riskDecisionHashIncluded":false,
+              "s5FeatureEligible":false,
+              "schemaVersion":1,
+              "status":"AVAILABLE",
+              "symbol":"005930"
+            }
+            """.trimIndent()
+        ownerJdbc.update(
+            """
+            insert into foreign_news_sentiment_aggregates (
+              logical_identity_hash, owner_user_id, symbol, as_of, status, lane_states,
+              payload_hash, artifact_hash, payload_json
+            ) values (?, 'usr_demo_user', '005930', '2026-08-09T01:00:00Z', 'AVAILABLE', ?::jsonb, ?, ?, ?::jsonb)
+            """.trimIndent(),
+            "a".repeat(64),
+            lanes,
+            "b".repeat(64),
+            "c".repeat(64),
+            payload,
+        )
+
+        val available =
+            mockMvc
+                .get("/api/v2/market-evidence/005930/foreign-news-sentiment") {
+                    bearer(userToken)
+                    header("X-Request-Id", "req_foreign_news_available")
+                }.andExpect {
+                    status { isOk() }
+                    jsonPath("$.status") { value("AVAILABLE") }
+                    jsonPath("$.lanes[3].state") { value("AVAILABLE") }
+                    jsonPath("$.contractId") { value("foreign-news-sentiment-v1") }
+                    jsonPath("$.symbol") { value("005930") }
+                }.andReturn()
+        assertForeignNewsSanitized(json(available))
+
+        val crossOwner =
+            mockMvc
+                .get("/api/v2/market-evidence/005930/foreign-news-sentiment") {
+                    bearer(adminToken)
+                    header("X-Request-Id", "req_foreign_news_cross_owner")
+                }.andExpect {
+                    status { isOk() }
+                    jsonPath("$.status") { value("ABSTAIN") }
+                    jsonPath("$.lanes[3].state") { value("NOT_ACTIVATED") }
+                }.andReturn()
+        assertForeignNewsSanitized(json(crossOwner))
+
+        mockMvc
+            .get("/api/v2/market-evidence/aapl/foreign-news-sentiment") {
+                bearer(userToken)
+                header("X-Request-Id", "req_foreign_news_symbol_invalid")
+            }.andExpect {
+                status { isBadRequest() }
+                jsonPath("$.code") { value("FOREIGN_NEWS_VALIDATION_FAILED") }
+            }
+        mockMvc
+            .get("/api/v2/market-evidence/005930/foreign-news-sentiment?provider=finnhub") {
+                bearer(userToken)
+                header("X-Request-Id", "req_foreign_news_query_rejected")
+            }.andExpect {
+                status { isBadRequest() }
+                jsonPath("$.code") { value("FOREIGN_NEWS_VALIDATION_FAILED") }
+            }
+    }
+
+    @Test
     fun `ask rejects client search selectors and fails closed until full bundle is ready`() {
         val token = login("demo-user", userPassword(), "req_rag_v2_login_ask")
 
@@ -496,6 +616,75 @@ class RagV2ApiIntegrationTest(
             }
     }
 
+    @Test
+    fun `v2 owner delete ticket is document bound and retains only a database hash`() {
+        val userToken = login("demo-user", userPassword(), "req_rag_v2_delete_ticket_user_login")
+        val ticketRequest =
+            """
+            {
+              "contractId":"s4-rag-v2-delete-ticket-request-v1",
+              "schemaVersion":1,
+              "sourceScope":"OWNER_PRIVATE",
+              "documentId":"doc_01deletefixture"
+            }
+            """.trimIndent()
+
+        val issued =
+            mockMvc
+                .post("/api/v2/rag/delete-tickets") {
+                    bearer(userToken)
+                    header("X-Request-Id", "req_rag_v2_delete_ticket_issue")
+                    contentType = MediaType.APPLICATION_JSON
+                    content = ticketRequest
+                }.andExpect {
+                    status { isCreated() }
+                    jsonPath("$.contractId") { value("s4-rag-v2-delete-ticket-v1") }
+                    jsonPath("$.schemaVersion") { value(1) }
+                    jsonPath("$.ticketId") { exists() }
+                    jsonPath("$.sourceScope") { value("OWNER_PRIVATE") }
+                    jsonPath("$.documentId") { value("doc_01deletefixture") }
+                    jsonPath("$.ttlSeconds") { value(300) }
+                    jsonPath("$.singleUse") { value(true) }
+                    jsonPath("$.ownerBound") { value(true) }
+                    jsonPath("$.documentBound") { value(true) }
+                    jsonPath("$.ownerRawCopyAllowed") { value(false) }
+                    jsonPath("$.ownerUserId") { doesNotExist() }
+                }.andReturn()
+        val payload = json(issued)
+        val ticketId = payload.at("/ticketId").stringValue()
+        assertTrue(ticketId.matches(Regex("^rtd_[0-9a-f]{32}$")))
+        assertControlPlaneSanitized(payload)
+
+        val issuedAt = Instant.parse(payload.at("/issuedAt").stringValue())
+        val expiresAt = Instant.parse(payload.at("/expiresAt").stringValue())
+        assertEquals(300L, expiresAt.epochSecond - issuedAt.epochSecond)
+        val stored =
+            ownerJdbc.queryForMap(
+                """
+                select ticket_hash, document_id, state
+                from rag_v2_immutable_owner_delete_tickets
+                where owner_user_id = 'usr_demo_user'
+                order by issued_at desc, ticket_hash desc
+                limit 1
+                """.trimIndent(),
+            )
+        assertTrue(stored["ticket_hash"].toString().matches(Regex("^[0-9a-f]{64}$")))
+        assertEquals("doc_01deletefixture", stored["document_id"])
+        assertEquals("ISSUED", stored["state"])
+        assertFalse(ticketId == stored["ticket_hash"])
+
+        mockMvc
+            .post("/api/v2/rag/delete-tickets") {
+                bearer(userToken)
+                header("X-Request-Id", "req_rag_v2_delete_ticket_actor_injection")
+                contentType = MediaType.APPLICATION_JSON
+                content = ticketRequest.dropLast(1) + ",\"ownerUserId\":\"usr_demo_admin\"}"
+            }.andExpect {
+                status { isBadRequest() }
+                jsonPath("$.code") { value("RAG_VALIDATION_FAILED") }
+            }
+    }
+
     private fun login(
         username: String,
         password: String,
@@ -534,6 +723,17 @@ class RagV2ApiIntegrationTest(
         assertFalse(text.contains("ownerUserId"))
         assertFalse(text.contains("ticketHash"))
         assertFalse(text.contains("credential", ignoreCase = true))
+        assertTrue(text.length <= 2048)
+    }
+
+    private fun assertForeignNewsSanitized(node: JsonNode) {
+        val text = node.toString()
+        assertFalse(text.contains("headline", ignoreCase = true))
+        assertFalse(text.contains("contentHash"))
+        assertFalse(text.contains("officialReleaseLocator"))
+        assertFalse(text.contains("credential", ignoreCase = true))
+        assertFalse(text.contains("ownerUserId"))
+        assertFalse(text.contains("query", ignoreCase = true))
         assertTrue(text.length <= 2048)
     }
 

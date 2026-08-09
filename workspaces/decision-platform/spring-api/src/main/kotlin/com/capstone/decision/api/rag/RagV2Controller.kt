@@ -5,12 +5,14 @@ import com.capstone.decision.application.rag.RagHistoryNotFoundException
 import com.capstone.decision.application.rag.RagV2Answer
 import com.capstone.decision.application.rag.RagV2CorpusNotReadyException
 import com.capstone.decision.application.rag.RagV2CorpusStatus
+import com.capstone.decision.application.rag.RagV2DeleteTicket
 import com.capstone.decision.application.rag.RagV2EffectiveConsent
 import com.capstone.decision.application.rag.RagV2ExternalConsentRequiredException
 import com.capstone.decision.application.rag.RagV2HistoryDetail
 import com.capstone.decision.application.rag.RagV2HistoryPage
 import com.capstone.decision.application.rag.RagV2ImportTicket
 import com.capstone.decision.application.rag.RagV2RuntimeService
+import com.capstone.decision.application.rag.RagV2VertexPreparation
 import com.capstone.decision.application.rag.RagValidationException
 import com.capstone.decision.application.security.AppPrincipal
 import io.swagger.v3.oas.annotations.Hidden
@@ -86,6 +88,42 @@ class RagV2Controller(
         return ResponseEntity.status(HttpStatus.CREATED).body(service.issueImportTicket(principal.userId))
     }
 
+    /**
+     * delete capability도 owner principal과 DB-issued five-minute ticket으로만 연결한다.
+     * raw path, delete reason, admin credential 또는 caller-supplied owner ID는 HTTP surface에 없다.
+     */
+    @PostMapping("/delete-tickets", consumes = [MediaType.APPLICATION_JSON_VALUE])
+    fun issueDeleteTicket(
+        @AuthenticationPrincipal principal: AppPrincipal,
+        @RequestBody(required = false) body: String?,
+        request: HttpServletRequest,
+    ): ResponseEntity<RagV2DeleteTicket> {
+        parser.requireNoQuery(request)
+        val documentId = parser.parseV2DeleteTicketRequest(body.orEmpty())
+        return ResponseEntity.status(HttpStatus.CREATED).body(service.issueDeleteTicket(principal.userId, documentId))
+    }
+
+    /**
+     * Vertex physical-call packet은 authenticated owner의 exact ask body와 request ID에서만 prepare한다.
+     * response에는 raw question/evidence를 넣지 않고, caller는 same request ID와 opaque scope header로만 ask를
+     * resume할 수 있다.
+     */
+    @PostMapping("/vertex-preparations", consumes = [MediaType.APPLICATION_JSON_VALUE])
+    fun prepareVertexGeneration(
+        @AuthenticationPrincipal principal: AppPrincipal,
+        @RequestBody(required = false) body: String?,
+        request: HttpServletRequest,
+    ): ResponseEntity<RagV2VertexPreparation> {
+        parser.requireNoQuery(request)
+        val preparation =
+            service.prepareVertexGeneration(
+                ownerUserId = principal.userId,
+                requestId = parser.requireV2VertexRequestId(RequestIds.currentOrCreate(request)),
+                command = parser.parseAsk(body.orEmpty()),
+            )
+        return ResponseEntity.status(HttpStatus.CREATED).body(preparation)
+    }
+
     @PostMapping("/ask", consumes = [MediaType.APPLICATION_JSON_VALUE])
     fun ask(
         @AuthenticationPrincipal principal: AppPrincipal,
@@ -94,10 +132,18 @@ class RagV2Controller(
     ): RagV2Answer {
         parser.requireNoQuery(request)
         val command = parser.parseAsk(body.orEmpty())
+        val vertexScopeClaimId = parser.parseV2VertexScopeClaim(request)
+        val requestId = RequestIds.currentOrCreate(request)
         return service.ask(
             ownerUserId = principal.userId,
-            requestId = RequestIds.currentOrCreate(request),
+            requestId =
+                if (vertexScopeClaimId == null) {
+                    requestId
+                } else {
+                    parser.requireV2VertexRequestId(requestId)
+                },
             command = command,
+            vertexScopeClaimId = vertexScopeClaimId,
         )
     }
 

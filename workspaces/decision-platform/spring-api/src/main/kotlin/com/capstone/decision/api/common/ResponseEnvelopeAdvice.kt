@@ -37,8 +37,11 @@ class ResponseEnvelopeAdvice : ResponseBodyAdvice<Any> {
             // swagger-ui와 actuator 같은 비즈니스 API 밖 응답은 원래 포맷을 보존한다.
             return body
         }
-        if (servletRequest.requestURI.startsWith("/api/v2/rag/")) {
-            // S4.7D RAG v2는 v1 OpenAPI/envelope bytes를 보존하기 위해 별도 direct payload 계약을 쓴다.
+        if (
+            servletRequest.requestURI.startsWith("/api/v2/rag/") ||
+            DIRECT_FOREIGN_NEWS_ROUTE.matches(servletRequest.requestURI)
+        ) {
+            // RAG v2와 foreign-news addendum은 v1 OpenAPI/envelope bytes를 보존하기 위해 별도 direct payload 계약을 쓴다.
             return body
         }
         return ApiResponseFactory.success(
@@ -50,5 +53,9 @@ class ResponseEnvelopeAdvice : ResponseBodyAdvice<Any> {
     private fun currentServletRequest(): HttpServletRequest? {
         val requestAttributes = RequestContextHolder.getRequestAttributes() as? ServletRequestAttributes
         return requestAttributes?.request
+    }
+
+    private companion object {
+        val DIRECT_FOREIGN_NEWS_ROUTE = Regex("^/api/v2/market-evidence/[^/]+/foreign-news-sentiment$")
     }
 }

@@ -32,7 +32,7 @@ def test_voyage_usage_lease_claims_packet_once_and_commits_sanitized_usage(
 
     lease = repository.reserve(activation=activation, bundle=bundle)
     lease.claim_attempt(now=datetime.now(UTC))
-    lease.commit(total_tokens=143, actual_cost_microusd=143)
+    lease.commit(expected_input_tokens=142, total_tokens=143, actual_cost_microusd=143)
 
     with pytest.raises(PreS5VoyageUsageRepositoryError, match="PRE_S5_VOYAGE_LEASE_CLAIM_REJECTED"):
         lease.claim_attempt(now=datetime.now(UTC))
@@ -43,6 +43,7 @@ def test_voyage_usage_lease_claims_packet_once_and_commits_sanitized_usage(
         reservation = connection.execute(
             """
             SELECT packet_sha256, nonce_sha256, bundle_manifest_sha256, rate_evidence_sha256,
+                   official_tokenizer_sha256,
                    provider, operation, token_cap, byte_cap, cost_cap_microusd,
                    input_microusd_per_token
             FROM rag_v2_immutable_voyage_usage_reservations
@@ -53,6 +54,7 @@ def test_voyage_usage_lease_claims_packet_once_and_commits_sanitized_usage(
             activation.nonce_sha256,
             bundle.manifest_sha256,
             activation.rate_evidence_sha256,
+            activation.tokenizer_sha256,
             "VOYAGE",
             "CONTEXTUALIZED_DOCUMENT_EMBEDDING",
             120_000,
@@ -62,10 +64,10 @@ def test_voyage_usage_lease_claims_packet_once_and_commits_sanitized_usage(
         )
         assert connection.execute(
             """
-            SELECT state, provider_total_tokens, actual_cost_microusd
+            SELECT state, expected_input_tokens, provider_total_tokens, actual_cost_microusd
             FROM rag_v2_immutable_voyage_usage_outcomes
             """
-        ).fetchone() == ("COMMITTED", 143, 143)
+        ).fetchone() == ("COMMITTED", 142, 143, 143)
         columns = connection.execute(
             """
             SELECT column_name
@@ -99,7 +101,7 @@ def test_voyage_usage_lease_records_unknown_billing_once_after_claim(
     lease.mark_unknown_billing()
 
     with pytest.raises(PreS5VoyageUsageRepositoryError, match="PRE_S5_VOYAGE_LEASE_COMMIT_REJECTED"):
-        lease.commit(total_tokens=143, actual_cost_microusd=143)
+        lease.commit(expected_input_tokens=142, total_tokens=143, actual_cost_microusd=143)
     with pytest.raises(PreS5VoyageUsageRepositoryError, match="PRE_S5_VOYAGE_LEASE_UNKNOWN_REJECTED"):
         lease.mark_unknown_billing()
 
@@ -112,6 +114,62 @@ def test_voyage_usage_lease_records_unknown_billing_once_after_claim(
             """,
             (alternate.packet_sha256,),
         ).fetchone() == ("UNKNOWN_BILLING", None, None)
+
+
+def test_voyage_usage_definer_rejects_missing_official_tokenizer_and_preflight_count(
+    isolated_postgres_cluster: dict[str, str],
+) -> None:
+    activation, bundle = _activation_and_bundle()
+    expires_at = datetime.now(UTC) + timedelta(minutes=3)
+    with psycopg.connect(isolated_postgres_cluster["rag_writer_dsn"]) as connection:
+        with pytest.raises(psycopg.Error) as missing_tokenizer:
+            connection.execute(
+                """
+                SELECT public.reserve_rag_v2_immutable_voyage_usage_with_tokenizer(
+                  %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                )
+                """,
+                (
+                    "rgr_vou_" + "f" * 32,
+                    "f" * 64,
+                    "e" * 64,
+                    bundle.manifest_sha256,
+                    activation.rate_evidence_sha256,
+                    None,
+                    expires_at,
+                    activation.token_cap,
+                    activation.byte_cap,
+                    activation.cost_cap_microusd,
+                    activation.input_microusd_per_token,
+                ),
+            )
+    assert missing_tokenizer.value.sqlstate == "22023"
+
+    repository = PsycopgPreS5VoyageUsageRepository(
+        database_dsn=isolated_postgres_cluster["rag_writer_dsn"]
+    )
+    lease = repository.reserve(activation=activation, bundle=bundle)
+    lease.claim_attempt(now=datetime.now(UTC))
+    with psycopg.connect(isolated_postgres_cluster["admin_dsn"]) as connection:
+        usage_event_id = connection.execute(
+            "SELECT usage_event_id FROM rag_v2_immutable_voyage_usage_reservations WHERE packet_sha256 = %s",
+            (activation.packet_sha256,),
+        ).fetchone()
+    assert usage_event_id is not None
+
+    with psycopg.connect(isolated_postgres_cluster["rag_writer_dsn"]) as connection:
+        with pytest.raises(psycopg.Error) as missing_preflight_count:
+            connection.execute(
+                "SELECT public.commit_rag_v2_immutable_voyage_usage_with_tokenizer(%s, %s, %s, %s)",
+                (usage_event_id[0], None, 1, 1),
+            )
+    assert missing_preflight_count.value.sqlstate == "22023"
+
+    with psycopg.connect(isolated_postgres_cluster["admin_dsn"]) as connection:
+        assert connection.execute(
+            "SELECT count(*) FROM rag_v2_immutable_voyage_usage_outcomes WHERE usage_event_id = %s",
+            (usage_event_id[0],),
+        ).fetchone() == (0,)
 
 
 def _activation_and_bundle():
@@ -139,6 +197,7 @@ def _activation_and_bundle():
         nonce_sha256="b" * 64,
         bundle_manifest_sha256=bundle.manifest_sha256,
         rate_evidence_sha256="c" * 64,
+        tokenizer_sha256="d" * 64,
         provider="VOYAGE",
         operation="CONTEXTUALIZED_DOCUMENT_EMBEDDING",
         origin="https://api.voyageai.com",
@@ -172,6 +231,7 @@ def _groups(*, prefix: str, count: int) -> tuple[VoyagePreChunkedDocumentGroup, 
                         canonical_text=text,
                         canonical_text_sha256=_sha256(text),
                         embedding_input_hash=_sha256(f"input|{prefix}|{index}"),
+                        token_count=1,
                     ),
                 ),
             )

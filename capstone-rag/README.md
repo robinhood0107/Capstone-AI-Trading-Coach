@@ -26,10 +26,11 @@ magic-link, path traversal, 기존 파일 덮어쓰기와 broad recursive delete
 
 S4.7D는 기존 exact-30을 바꾸지 않고 OA corpus와 owner-private 문서를 후속 generation으로
 추가한다. RAG는 출처 검색·설명·인용만 담당하며 Signal, RiskDecision, 주문 feature/hash에는
-연결하지 않는다. 현재 safe parser/OCR, v2 DB/RLS/API skeleton, owner-local BGE staging과
-control-record import/delete/cache-clean 경계는 구현됐다. OA112 materializer, public bundle pointer,
-authorized retrieval와 Vertex generation은 아직 활성화되지 않았다. 따라서
-`S4_7D_RUNTIME=PARTIAL_LOCAL_OWNER_STAGING`; full bundle 전 v2 ask는 `CORPUS_NOT_READY`로,
+연결하지 않는다. safe parser/OCR, v2 DB/RLS/API, owner-local BGE staging, public exact-30/OA112
+materializer, immutable public pointer, profile-selected authorized retrieval, Voyage full/query ledger와
+Vertex prepared-scope control plane은 `IMPLEMENTED_DRAFT`다. 단, OA112 rights/cache, local database
+roles, Voyage/Vertex credential·privacy evidence와 one-shot packets가 아직 설치되지 않았으므로
+`S4_7D_RUNTIME=IMPLEMENTED_DRAFT_NOT_ACTIVATED`; full bundle 전 v2 ask는 `CORPUS_NOT_READY`로,
 full bundle 뒤 Vertex live gate가 닫혀 있으면 `GENERATION_UNAVAILABLE`로 fail-closed한다.
 
 `PRE_S5_RAG_GLOBAL_NEWS_CONTRACT_LOCKED=1`의 current policy는

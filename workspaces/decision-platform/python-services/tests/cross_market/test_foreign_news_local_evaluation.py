@@ -22,7 +22,10 @@ from app.cross_market.foreign_news_local_evaluation import (
     run_local_model_selection,
 )
 from app.cross_market.foreign_news_evaluation_cli import (
+    _TEST_RESERVATION_CONTRACT_ID,
+    _TEST_RESERVATION_NAME,
     ForeignNewsEvaluationCliError,
+    _evaluate_once,
     _load_receipt_if_present,
     _write_new_receipt,
 )
@@ -106,9 +109,14 @@ def test_local_selection_runs_blind_and_stress_only_for_the_validation_winner() 
     )
     loaded_blind = 0
     loaded_stress = 0
+    execution_order: list[str] = []
+
+    def reserve_selected_test(_: object) -> None:
+        execution_order.append("reserved")
 
     def blind_loader() -> tuple[ForeignNewsEvaluationExample, ...]:
         nonlocal loaded_blind
+        assert execution_order == ["reserved"]
         loaded_blind += 1
         return _examples(prefix="blind")
 
@@ -120,9 +128,10 @@ def test_local_selection_runs_blind_and_stress_only_for_the_validation_winner() 
     result = run_local_model_selection(
         inputs=ForeignNewsLocalEvaluationInputs(
             candidates=candidates,
-            validation_examples=_examples(prefix="validation"),
-            blind_test_loader=blind_loader,
-            tfns_stress_loader=stress_loader,
+                validation_examples=_examples(prefix="validation"),
+                blind_test_loader=blind_loader,
+                before_blind_test=reserve_selected_test,
+                tfns_stress_loader=stress_loader,
             harness=ForeignNewsEvaluationHarness(clock_ns=_clock(step_ns=1_000_000)),
         ),
         selection_id="fns_local_eval_000001",
@@ -134,6 +143,7 @@ def test_local_selection_runs_blind_and_stress_only_for_the_validation_winner() 
     assert result.blind_test_metrics is not None
     assert result.tfns_stress_metrics is not None
     assert loaded_blind == loaded_stress == 1
+    assert execution_order == ["reserved"]
     assert counters == {
         "PROSUSAI_FINBERT": 9,
         "YIYANGHKUST_FINBERT_TONE": 3,
@@ -195,6 +205,30 @@ def test_local_receipt_is_content_free_single_create_and_can_be_reloaded(tmp_pat
     assert "text" not in receipt_path.read_text(encoding="utf-8").casefold()
     with pytest.raises(ForeignNewsEvaluationCliError, match="FOREIGN_NEWS_EVALUATION_RECEIPT_EXISTS"):
         _write_new_receipt(receipt_path, payload)
+
+
+def test_stale_test_reservation_blocks_evaluation_before_any_dataset_is_read(tmp_path: Path) -> None:
+    evaluation_root = tmp_path / "finbert-eval"
+    evaluation_root.mkdir(mode=0o700)
+    receipts = evaluation_root / "receipts"
+    receipts.mkdir(mode=0o700)
+    reservation = receipts / _TEST_RESERVATION_NAME
+    reservation.write_text(
+        json.dumps(
+            {
+                "contractId": _TEST_RESERVATION_CONTRACT_ID,
+                "evaluationInputDigest": "a" * 64,
+                "selectedModel": "PROSUSAI_FINBERT",
+                "state": "TEST_RESERVED",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    reservation.chmod(0o600)
+
+    with pytest.raises(ForeignNewsEvaluationCliError, match="FOREIGN_NEWS_TEST_EVALUATION_RESUME_BLOCKED"):
+        _evaluate_once(evaluation_root=evaluation_root)
 
 
 class _Classifier:

@@ -475,13 +475,14 @@ uv run --frozen python contracts/validate.py
 > S4_7D_OA112_PHYSICAL_ACTIVATION=NOT_MATERIALIZED / TARGET_NOT_ACTIVE`.
 > 이 addendum은 existing v1 OpenAPI/proto/source-card, exact-30, historical OA112 metadata와
 > `news_sentiment_summary.v2`를 byte-stable하게 보존한다. provider outbound, raw corpus download,
-> materializer, owner import writer와 Optional 3 adapter는 계속 0이다.
+> materializer와 owner import writer는 계속 0이다. Optional 3만 v2 local one-shot adapter를 가지며
+> canonical packet과 fresh execution evidence가 없으면 outbound도 0이다.
 
 `generate_pre_s5_rag_news_contracts.py --check`는 다음 active policy를 deterministic하게 검증한다.
 
 | 산출물 | 현재 lock |
 |---|---|
-| `catalogs/pre-s5-rag-news-contract.v1.json` | logical OA112 14 track × 8, reserve 최대 28, 자동 승격 0, provider/runtime 0 |
+| `catalogs/pre-s5-rag-news-contract.v1.json` | logical OA112 14 track × 8, reserve 최대 28, 자동 승격 0, Optional 3는 local one-shot packet-gated only |
 | `schemas/rag-oa112-logical-selection-v1.schema.json` | raw URL/hash를 복제하지 않는 `CONTRACT_LOCKED_NOT_MATERIALIZED` selection |
 | `schemas/rag-oa112-reserve-registry-v1.schema.json` | research-only reserve와 active-generation reference 0 |
 | `schemas/rag-source-card-v4.schema.json` | future OA activation 전 machine fetch/local processing/external embedding/external generation 모두 true 요구 |
@@ -489,7 +490,7 @@ uv run --frozen python contracts/validate.py
 | `openapi/rag-v2-pre-s5-addendum.openapi.json` | existing ask/status/history bytes를 bind하고 consent/effective-consent/import ticket의 세 route만 더한 addendum; deletion activation/profile policy도 schema로 잠금, route activation은 없음 |
 | `schemas/foreign-news-*.schema.json` | Finnhub personal-local, SEC/Fed official, GDELT offline-reference 설명용 aggregate만 허용 |
 | `openapi/foreign-news-sentiment.v1.openapi.json` | `/api/v2/market-evidence/{symbol}/foreign-news-sentiment` contract-only endpoint |
-| `schemas/s4-8-optional3-*.schema.json` | Finnhub Recommendation/Earnings, Twelve Data, Massive entitlement/template receipt; physical call/retry/raw 0 |
+| `schemas/s4-8-optional3-*.schema.json` | v1 zero-call templates를 보존하고, v2는 Finnhub Recommendation/Earnings, Twelve Data, Massive의 local one-shot packet/receipt만 허용; per-packet physical 1, retry/raw 0 |
 
 foreign-news response는 `decisionAuthority=NONE`, `allowedUses=[EXPLANATION_ONLY]`,
 `s5FeatureEligible=false`, `riskDecisionHashIncluded=false`, `rawProviderDataStored=false`,
@@ -608,8 +609,9 @@ authorized projection만 재사용한다. KOFIA는 `BLOCKED_NO_CREDENTIAL_OR_APP
 실행 capacity는 non-fixture `APPROVED` packet 하나에만 있고 `CONSUMED`/`EXPIRED`는 즉시
 execution flag와 cap을 모두 `0`으로 revoke한다. `SUCCESS` receipt는 eligible direct source의
 정확히 한 번의 `DATA_REQUEST`·`HTTP_2XX`·non-null projection hash를 함께 증명해야 한다.
-GDELT producer, Naver retirement와 v1/V23 경계는 변경하지 않는다. Optional 3는 위 Pre-S5
-addendum의 별도 entitlement/receipt template만 사용하며 Core 6 exact set에 포함하지 않는다.
+GDELT producer, Naver retirement와 v1/V23 경계는 변경하지 않는다. Optional 3는 Core 6 exact set에
+포함하지 않으며 v1 template을 보존한 채 별도 v2 local one-shot approval/receipt만 사용한다. packet과
+fresh execution evidence가 없으면 physical call은 0이다.
 
 조사 inventory 42개는 사용 가능한 API 수가 아니다. 39개 machine 연동 후보 계열과 3개
 manual-link 원천의 합이며 현재 S4.8 활성/live provider adapter는 0이다. KIS 18개

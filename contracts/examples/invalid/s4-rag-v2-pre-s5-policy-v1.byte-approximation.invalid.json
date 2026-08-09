@@ -79,7 +79,7 @@
       "packetHashBindingRequired": true,
       "preflightExpectedInputTokenLedgerRequired": true,
       "providerTokenCountCallAllowed": false,
-      "utf8ByteApproximationAllowed": false
+      "utf8ByteApproximationAllowed": true
     },
     "orderedPrechunkedDocumentGroupsRequired": true,
     "outboundCallsAllowed": false,

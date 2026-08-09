@@ -1,0 +1,28 @@
+{
+  "$id": "contracts/schemas/s4-rag-v2-delete-ticket-request-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "contractId": {
+      "const": "s4-rag-v2-delete-ticket-request-v1"
+    },
+    "documentId": {
+      "pattern": "^doc_[a-z0-9][a-z0-9_-]{10,95}$",
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "sourceScope": {
+      "const": "OWNER_PRIVATE"
+    }
+  },
+  "required": [
+    "contractId",
+    "documentId",
+    "schemaVersion",
+    "sourceScope"
+  ],
+  "title": "s4-rag-v2-delete-ticket-request-v1",
+  "type": "object"
+}

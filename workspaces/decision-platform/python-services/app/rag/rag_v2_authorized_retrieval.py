@@ -42,11 +42,53 @@ class RagV2RetrievalFailureCode(StrEnum):
     """RAG v2 generator를 호출하지 않는 typed retrieval terminal 상태다."""
 
     INVALID_QUERY = "RAG_QUERY_INVALID"
+    QUERY_PROFILE_UNAVAILABLE = "RAG_QUERY_PROFILE_UNAVAILABLE"
     QUERY_EMBEDDING_INVALID = "RAG_QUERY_EMBEDDING_INVALID"
     CHANNEL_UNAVAILABLE = "RAG_RETRIEVAL_CHANNEL_UNAVAILABLE"
     CHANNEL_INCOMPLETE = "RAG_RETRIEVAL_CHANNEL_INCOMPLETE"
     SCOPE_CHANGED = "RAG_RETRIEVAL_SCOPE_CHANGED"
     INSUFFICIENT_EVIDENCE = "RAG_INSUFFICIENT_EVIDENCE"
+
+
+class RagV2QueryEmbeddingError(ValueError):
+    """A scope-selected query embedder failed without exposing provider detail.
+
+    The per-request physical count is deliberately carried separately from the public failure code:
+    a failed Voyage call can still consume one approved attempt, while a missing packet or consent
+    must remain a zero-call terminal state.
+    """
+
+    def __init__(
+        self,
+        failure_code: RagV2RetrievalFailureCode,
+        *,
+        voyage_physical_calls: int = 0,
+    ) -> None:
+        if (
+            failure_code
+            not in {
+                RagV2RetrievalFailureCode.QUERY_PROFILE_UNAVAILABLE,
+                RagV2RetrievalFailureCode.QUERY_EMBEDDING_INVALID,
+            }
+            or type(voyage_physical_calls) is not int
+            or voyage_physical_calls not in {0, 1}
+        ):
+            raise ValueError("RAG v2 query embedding failure receipt is invalid.")
+        super().__init__(failure_code.value)
+        self.failure_code = failure_code
+        self.voyage_physical_calls = voyage_physical_calls
+
+
+@dataclass(frozen=True)
+class RagV2QueryEmbeddingReceipt:
+    """One query vector and its bounded, non-content provider-attempt receipt."""
+
+    vector: Sequence[float]
+    voyage_physical_calls: int = 0
+
+    def __post_init__(self) -> None:
+        if type(self.voyage_physical_calls) is not int or self.voyage_physical_calls not in {0, 1}:
+            raise ValueError("RAG v2 query embedding receipt is invalid.")
 
 
 @dataclass(frozen=True)
@@ -151,6 +193,22 @@ class RagV2RetrievalOutcome:
     @property
     def distinct_source_count(self) -> int:
         return len({item.source_id for item in self.evidence})
+
+
+@dataclass(frozen=True)
+class RagV2RetrievalExecution:
+    """Retrieval outcome with the exact Voyage query attempt count for this request only."""
+
+    outcome: RagV2RetrievalOutcome
+    voyage_physical_calls: int = 0
+
+    def __post_init__(self) -> None:
+        if (
+            not isinstance(self.outcome, RagV2RetrievalOutcome)
+            or type(self.voyage_physical_calls) is not int
+            or self.voyage_physical_calls not in {0, 1}
+        ):
+            raise ValueError("RAG v2 retrieval execution receipt is invalid.")
 
 
 class RagV2ExactRetriever(Protocol):
@@ -260,10 +318,25 @@ class RagV2AuthorizedHybridRetrieval:
         scope: RagV2BundleScope,
         payload: Mapping[str, object],
     ) -> RagV2RetrievalOutcome:
-        """untrusted request가 corpus/profile/topK를 바꾸기 전에 validation부터 수행한다."""
+        """Compatibility result surface without discarding the internal provider attempt receipt."""
+
+        return self.retrieve_with_execution(scope=scope, payload=payload).outcome
+
+    def retrieve_with_execution(
+        self,
+        *,
+        scope: RagV2BundleScope,
+        payload: Mapping[str, object],
+    ) -> RagV2RetrievalExecution:
+        """Untrusted input is validated before DB scope/profile selection can cause an external query call."""
 
         try:
-            query = self._query_normalizer.normalize(payload)
+            # `externalQueryConsentGranted` is an authenticated loopback capability, not a public ask
+            # field. Remove only that known internal boolean before applying the frozen public shape.
+            external_query_consent_granted = _external_query_consent(payload)
+            public_payload = dict(payload)
+            public_payload.pop("externalQueryConsentGranted", None)
+            query = self._query_normalizer.normalize(public_payload)
             identifiers = tuple(
                 sorted(
                     set(self._exact_identifier_extractor.extract(query.question))
@@ -274,14 +347,24 @@ class RagV2AuthorizedHybridRetrieval:
             if len(identifiers) > 16:
                 raise QueryValidationError("RAG v2 exact identifier count is invalid.")
         except QueryValidationError:
-            return _failure(RagV2RetrievalFailureCode.INVALID_QUERY)
+            return _execution(RagV2RetrievalFailureCode.INVALID_QUERY)
 
         try:
             if self._query_embedder.embedding_profile_id != scope.embedding_profile_id:
                 raise ValueError("RAG v2 query profile drifted.")
-            vector = _validated_query_vector(self._query_embedder.embed_query(query.question))
+            receipt = self._embed_query(
+                question=query.question,
+                scope=scope,
+                external_query_consent_granted=external_query_consent_granted,
+            )
+            vector = _validated_query_vector(receipt.vector)
+        except RagV2QueryEmbeddingError as error:
+            return _execution(
+                error.failure_code,
+                voyage_physical_calls=error.voyage_physical_calls,
+            )
         except (ArithmeticError, AttributeError, TypeError, ValueError):
-            return _failure(RagV2RetrievalFailureCode.QUERY_EMBEDDING_INVALID)
+            return _execution(RagV2RetrievalFailureCode.QUERY_EMBEDDING_INVALID)
 
         try:
             channels = (
@@ -298,31 +381,70 @@ class RagV2AuthorizedHybridRetrieval:
                 ),
             )
         except (ConnectionError, RuntimeError, TimeoutError):
-            return _failure(RagV2RetrievalFailureCode.CHANNEL_UNAVAILABLE)
+            return _execution(
+                RagV2RetrievalFailureCode.CHANNEL_UNAVAILABLE,
+                voyage_physical_calls=receipt.voyage_physical_calls,
+            )
 
         if not _channels_are_complete(channels):
-            return _failure(RagV2RetrievalFailureCode.CHANNEL_INCOMPLETE)
+            return _execution(
+                RagV2RetrievalFailureCode.CHANNEL_INCOMPLETE,
+                voyage_physical_calls=receipt.voyage_physical_calls,
+            )
         if any(
             not _candidate_in_scope(scope=scope, query=query, candidate=candidate)
             for channel in channels
             for candidate in channel.items
         ):
             # SQL channel의 owner/source filtering이 outer top-5 recheck까지 기다려서는 안 된다.
-            return _failure(RagV2RetrievalFailureCode.SCOPE_CHANGED)
+            return _execution(
+                RagV2RetrievalFailureCode.SCOPE_CHANGED,
+                voyage_physical_calls=receipt.voyage_physical_calls,
+            )
 
         fused = self._rrf_fusion.fuse(channels)[:INTERNAL_FINAL_LIMIT]
         evidence = tuple(item.candidate for item in fused)
         if not _evidence_is_sufficient(evidence=evidence, fusion=fused):
-            return _failure(RagV2RetrievalFailureCode.INSUFFICIENT_EVIDENCE)
-        return RagV2RetrievalOutcome(
-            evidence=evidence,
-            failure_code=None,
-            retrieval_permitted=True,
-            # One unsafe source must withhold the complete generator input; never omit just that
-            # chunk and claim the resulting answer covers the original full bundle request.
-            external_generation_permitted=all(
-                item.external_processing_eligible for item in evidence
+            return _execution(
+                RagV2RetrievalFailureCode.INSUFFICIENT_EVIDENCE,
+                voyage_physical_calls=receipt.voyage_physical_calls,
+            )
+        return RagV2RetrievalExecution(
+            outcome=RagV2RetrievalOutcome(
+                evidence=evidence,
+                failure_code=None,
+                retrieval_permitted=True,
+                # One unsafe source must withhold the complete generator input; never omit just that
+                # chunk and claim the resulting answer covers the original full bundle request.
+                external_generation_permitted=all(
+                    item.external_processing_eligible for item in evidence
+                ),
             ),
+            voyage_physical_calls=receipt.voyage_physical_calls,
+        )
+
+    def _embed_query(
+        self,
+        *,
+        question: str,
+        scope: RagV2BundleScope,
+        external_query_consent_granted: bool,
+    ) -> RagV2QueryEmbeddingReceipt:
+        """Only an explicitly capability-bearing Voyage embedder receives consent and opaque scope identity."""
+
+        contextual = getattr(self._query_embedder, "embed_query_with_receipt", None)
+        if callable(contextual):
+            receipt = contextual(
+                question=question,
+                scope_claim_id=scope.claim_id,
+                external_query_consent_granted=external_query_consent_granted,
+            )
+            if not isinstance(receipt, RagV2QueryEmbeddingReceipt):
+                raise ValueError("RAG v2 contextual query receipt is invalid.")
+            return receipt
+        return RagV2QueryEmbeddingReceipt(
+            vector=self._query_embedder.embed_query(question),
+            voyage_physical_calls=0,
         )
 
 
@@ -494,3 +616,23 @@ def _failure(code: RagV2RetrievalFailureCode) -> RagV2RetrievalOutcome:
         retrieval_permitted=False,
         external_generation_permitted=False,
     )
+
+
+def _execution(
+    code: RagV2RetrievalFailureCode,
+    *,
+    voyage_physical_calls: int = 0,
+) -> RagV2RetrievalExecution:
+    return RagV2RetrievalExecution(
+        outcome=_failure(code),
+        voyage_physical_calls=voyage_physical_calls,
+    )
+
+
+def _external_query_consent(payload: Mapping[str, object]) -> bool:
+    """Missing consent stays false; malformed values cannot be coerced into a provider capability."""
+
+    value = payload.get("externalQueryConsentGranted", False)
+    if type(value) is not bool:
+        raise QueryValidationError("RAG v2 external query consent is invalid.")
+    return value

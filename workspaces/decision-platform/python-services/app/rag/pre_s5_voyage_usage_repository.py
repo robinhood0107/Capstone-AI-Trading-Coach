@@ -26,11 +26,13 @@ _WRITER_ROLE = "decision_rag_writer"
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _USAGE_EVENT_ID = re.compile(r"^rgr_vou_[0-9a-f]{32}$")
 _RESERVE_FUNCTION = (
-    "public.reserve_rag_v2_immutable_voyage_usage("
-    "text,text,text,text,text,timestamptz,integer,integer,bigint,bigint)"
+    "public.reserve_rag_v2_immutable_voyage_usage_with_tokenizer("
+    "text,text,text,text,text,text,timestamptz,integer,integer,bigint,bigint)"
 )
 _CLAIM_FUNCTION = "public.claim_rag_v2_immutable_voyage_usage_attempt(text)"
-_COMMIT_FUNCTION = "public.commit_rag_v2_immutable_voyage_usage(text,integer,bigint)"
+_COMMIT_FUNCTION = (
+    "public.commit_rag_v2_immutable_voyage_usage_with_tokenizer(text,integer,integer,bigint)"
+)
 _UNKNOWN_FUNCTION = "public.mark_rag_v2_immutable_voyage_usage_unknown_billing(text)"
 _WRITER_FORBIDDEN_TABLES = (
     "rag_v2_immutable_voyage_usage_reservations",
@@ -73,8 +75,8 @@ class PsycopgPreS5VoyageUsageRepository:
                     row = connection.execute(
                         """
                         SELECT usage_event_id, expires_at
-                        FROM public.reserve_rag_v2_immutable_voyage_usage(
-                          %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                        FROM public.reserve_rag_v2_immutable_voyage_usage_with_tokenizer(
+                          %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
                         )
                         """,
                         (
@@ -83,6 +85,7 @@ class PsycopgPreS5VoyageUsageRepository:
                             activation.nonce_sha256,
                             activation.bundle_manifest_sha256,
                             activation.rate_evidence_sha256,
+                            activation.tokenizer_sha256,
                             activation.expires_at,
                             activation.token_cap,
                             activation.byte_cap,
@@ -138,19 +141,32 @@ class PsycopgPreS5VoyageUsageLease:
             code="PRE_S5_VOYAGE_LEASE_CLAIM_REJECTED",
         )
 
-    def commit(self, *, total_tokens: int, actual_cost_microusd: int) -> None:
-        """verified response의 numeric usage만 append하고 raw body/vector는 ledger에 넣지 않는다."""
+    def commit(
+        self,
+        *,
+        expected_input_tokens: int,
+        total_tokens: int,
+        actual_cost_microusd: int,
+    ) -> None:
+        """Official preflight count와 provider actual usage만 append하고 raw body/vector는 넣지 않는다."""
 
         if (
-            type(total_tokens) is not int
+            type(expected_input_tokens) is not int
+            or type(total_tokens) is not int
             or type(actual_cost_microusd) is not int
+            or not 1 <= expected_input_tokens <= 120_000
             or not 0 <= total_tokens <= 120_000
             or not 0 <= actual_cost_microusd <= 1_000_000_000
         ):
             raise PreS5VoyageUsageRepositoryError("PRE_S5_VOYAGE_LEASE_COMMIT_REJECTED")
         self._execute_transition(
-            sql="SELECT public.commit_rag_v2_immutable_voyage_usage(%s, %s, %s)",
-            parameters=(self._usage_event_id, total_tokens, actual_cost_microusd),
+            sql="SELECT public.commit_rag_v2_immutable_voyage_usage_with_tokenizer(%s, %s, %s, %s)",
+            parameters=(
+                self._usage_event_id,
+                expected_input_tokens,
+                total_tokens,
+                actual_cost_microusd,
+            ),
             code="PRE_S5_VOYAGE_LEASE_COMMIT_REJECTED",
         )
 
@@ -208,6 +224,7 @@ def _validate_activation_and_bundle(
         or not _is_sha256(activation.packet_sha256)
         or not _is_sha256(activation.nonce_sha256)
         or not _is_sha256(activation.rate_evidence_sha256)
+        or not _is_sha256(activation.tokenizer_sha256)
         or activation.provider != "VOYAGE"
         or activation.operation != "CONTEXTUALIZED_DOCUMENT_EMBEDDING"
         or activation.origin != "https://api.voyageai.com"

@@ -65,6 +65,7 @@ class VoyagePreChunkedChunk:
     canonical_text: str
     canonical_text_sha256: str
     embedding_input_hash: str
+    token_count: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -104,11 +105,15 @@ class PublicVoyageSourceMetadata:
     citation_title: str
     retrieval_topics: tuple[str, ...]
     canonical_https_url: str
-    source_card_sha256: str
+    source_card_sha256: str | None
     machine_fetch_allowed: bool
     local_processing_allowed: bool
     external_embedding_allowed: bool
     external_generation_allowed: bool
+    oa_track_id: str | None = None
+    oa_source_card: dict[str, object] | None = None
+    license_evidence_sha256: str | None = None
+    access_evidence_sha256: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -161,6 +166,25 @@ class ExternalExact30PublicVoyageMaterialization:
         }
 
 
+@dataclass(frozen=True, slots=True)
+class ExternalExact30PublicVoyagePreparation:
+    """Voyage socket 전 full exact-30 input을 확정한 process-local preparation이다.
+
+    This object has canonical text only while the one-shot provider call is in progress. It must not be
+    serialized, logged, or used as a partial component writer input; vectors must first be assigned through
+    `materialize_prepared_external_exact30_public_voyage_component`.
+    """
+
+    prepared_documents: tuple[_PreparedExternalExact30Document, ...]
+    source_card_corpus_manifest_sha256: str
+
+    @property
+    def groups(self) -> tuple[VoyagePreChunkedDocumentGroup, ...]:
+        """canonical source-id order를 그대로 provider full-bundle component로 투영한다."""
+
+        return tuple(item.group for item in self.prepared_documents)
+
+
 def materialize_external_exact30_public_voyage_component(
     *,
     tokenizer: RagTokenizer,
@@ -171,6 +195,37 @@ def materialize_external_exact30_public_voyage_component(
 
     This function makes no provider transport itself. A caller must supply a hard-gated transport that performs
     exactly one bounded full-component call; partial group submission and per-document fallback are rejected.
+    """
+
+    preparation = prepare_external_exact30_public_voyage_component(
+        tokenizer=tokenizer,
+        corpus=corpus,
+    )
+    try:
+        vectors = validate_voyage_document_vectors(
+            embedder.embed_document_groups(groups=preparation.groups),
+            expected_rows=sum(len(group.chunks) for group in preparation.groups),
+        )
+    except Exception as error:
+        if isinstance(error, RagV2ExternalExact30VoyageRunnerError):
+            raise
+        raise RagV2ExternalExact30VoyageRunnerError("VOYAGE_COMPONENT_EMBEDDING") from error
+
+    return materialize_prepared_external_exact30_public_voyage_component(
+        preparation=preparation,
+        vectors=vectors,
+    )
+
+
+def prepare_external_exact30_public_voyage_component(
+    *,
+    tokenizer: RagTokenizer,
+    corpus: FrozenSourceCardCorpus | None = None,
+) -> ExternalExact30PublicVoyagePreparation:
+    """exact-30 source cards를 one-shot full-bundle document group으로 prepare한다.
+
+    This function opens no provider transport and creates no vector. It is the only preparation allowed before
+    the full EXACT30+OA112 Voyage call, preventing legacy component-only embedding from bypassing the packet.
     """
 
     try:
@@ -184,16 +239,39 @@ def materialize_external_exact30_public_voyage_component(
         or len({card.source_id for card in cards}) != 30
     ):
         raise RagV2ExternalExact30VoyageRunnerError("EXTERNAL_EXACT30_SOURCE_CARD_MEMBERSHIP")
-
     parser = ExternalExact30SourceCardDocumentParser(corpus=selected_corpus)
-    provisional: list[_PreparedExternalExact30Document] = []
-    for card in cards:
-        provisional.append(_prepare_document(card=card, parser=parser, tokenizer=tokenizer))
-    groups = tuple(item.group for item in provisional)
+    provisional = tuple(
+        _prepare_document(card=card, parser=parser, tokenizer=tokenizer)
+        for card in cards
+    )
+    if len(provisional) != 30 or tuple(item.group.source_id for item in provisional) != tuple(
+        sorted((item.group.source_id for item in provisional), key=lambda value: value.encode("utf-8"))
+    ):
+        raise RagV2ExternalExact30VoyageRunnerError("EXTERNAL_EXACT30_SOURCE_CARD_MEMBERSHIP")
+    return ExternalExact30PublicVoyagePreparation(
+        prepared_documents=provisional,
+        source_card_corpus_manifest_sha256=selected_corpus.corpus_manifest_sha256,
+    )
+
+
+def materialize_prepared_external_exact30_public_voyage_component(
+    *,
+    preparation: ExternalExact30PublicVoyagePreparation,
+    vectors: object,
+) -> ExternalExact30PublicVoyageMaterialization:
+    """one full bundle response vector를 exact-30 records에 only once assign한다."""
+
+    if (
+        not isinstance(preparation, ExternalExact30PublicVoyagePreparation)
+        or len(preparation.prepared_documents) != 30
+        or not _is_sha256(preparation.source_card_corpus_manifest_sha256)
+    ):
+        raise RagV2ExternalExact30VoyageRunnerError("EXTERNAL_EXACT30_DOCUMENT_MATERIALIZATION")
+    provisional = preparation.prepared_documents
     try:
-        vectors = _validate_voyage_vectors(
-            embedder.embed_document_groups(groups=groups),
-            expected_rows=sum(len(group.chunks) for group in groups),
+        validated_vectors = validate_voyage_document_vectors(
+            vectors,
+            expected_rows=sum(len(item.group.chunks) for item in provisional),
         )
     except Exception as error:
         if isinstance(error, RagV2ExternalExact30VoyageRunnerError):
@@ -205,7 +283,7 @@ def materialize_external_exact30_public_voyage_component(
     for prepared in provisional:
         count = len(prepared.embedding_inputs)
         next_cursor = cursor + count
-        assigned = vectors[cursor:next_cursor]
+        assigned = validated_vectors[cursor:next_cursor]
         if assigned.shape != (count, 1024):  # pragma: no cover - validated before slicing.
             raise RagV2ExternalExact30VoyageRunnerError("VOYAGE_COMPONENT_EMBEDDING")
         embeddings = tuple(
@@ -232,12 +310,12 @@ def materialize_external_exact30_public_voyage_component(
             )
         )
         cursor = next_cursor
-    if cursor != len(vectors):  # pragma: no cover - expected row invariant above closes this path.
+    if cursor != len(validated_vectors):  # pragma: no cover - expected row invariant above closes this path.
         raise RagV2ExternalExact30VoyageRunnerError("VOYAGE_COMPONENT_EMBEDDING")
 
     context = build_external_exact30_public_voyage_component_context(
         records=tuple(records),
-        source_card_corpus_manifest_sha256=selected_corpus.corpus_manifest_sha256,
+        source_card_corpus_manifest_sha256=preparation.source_card_corpus_manifest_sha256,
     )
     return ExternalExact30PublicVoyageMaterialization(records=tuple(records), context=context)
 
@@ -376,6 +454,7 @@ def _prepare_document(
             canonical_text=chunk.canonical_text,
             canonical_text_sha256=chunk.canonical_text_sha256,
             embedding_input_hash=embedding_input.embedding_input_hash,
+            token_count=chunk.token_count,
         )
         for chunk, embedding_input in zip(document.chunks, embedding_inputs, strict=True)
     )
@@ -505,12 +584,16 @@ def external_exact30_voyage_source_member_digest(
     )
 
 
-def _validate_voyage_vectors(
+def validate_voyage_document_vectors(
     vectors: object,
     *,
     expected_rows: int,
 ) -> NDArray[np.float32]:
-    """provider adapter output의 row count/dimension/finite/unit-norm contract를 fail-close한다."""
+    """provider output을 exact row count/1024-d unit vector로 fail-close한다.
+
+    OA112/full-bundle coordinator도 component별 slice 전에 this same profile validator를 사용하며,
+    raw provider response data를 retention하지 않는다.
+    """
 
     if (
         not isinstance(vectors, np.ndarray)

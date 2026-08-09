@@ -967,6 +967,171 @@ BEGIN
         TO decision_rag_writer;
     END IF;
     IF to_regprocedure(
+        'public.reserve_rag_v2_immutable_voyage_usage(text,text,text,text,text,timestamp with time zone,integer,integer,bigint,bigint)'
+    ) IS NOT NULL
+       AND to_regprocedure(
+           'public.claim_rag_v2_immutable_voyage_usage_attempt(text)'
+       ) IS NOT NULL
+       AND to_regprocedure(
+           'public.commit_rag_v2_immutable_voyage_usage(text,integer,bigint)'
+       ) IS NOT NULL
+       AND to_regprocedure(
+           'public.mark_rag_v2_immutable_voyage_usage_unknown_billing(text)'
+       ) IS NOT NULL THEN
+        -- V38 activation ledger도 bootstrap 재적용 뒤 raw table 없이 writer capability만 회복한다.
+        GRANT EXECUTE ON FUNCTION
+            reserve_rag_v2_immutable_voyage_usage(
+                text, text, text, text, text, timestamptz,
+                integer, integer, bigint, bigint
+            ),
+            claim_rag_v2_immutable_voyage_usage_attempt(text),
+            commit_rag_v2_immutable_voyage_usage(text, integer, bigint),
+            mark_rag_v2_immutable_voyage_usage_unknown_billing(text)
+        TO decision_rag_writer;
+    END IF;
+    IF to_regprocedure(
+        'public.read_rag_v2_vertex_generation_evidence(text,text,text,jsonb)'
+    ) IS NOT NULL
+       AND to_regprocedure(
+           'public.persist_rag_v2_immutable_vertex_history(text,text,text,text,text,text,double precision,text[],text,bytea,bytea,bytea,bytea,bytea,bytea,bytea,bytea,bytea,timestamp with time zone,jsonb)'
+       ) IS NOT NULL THEN
+        -- V39의 앱은 sanitized evidence와 암호화 history definer pair만 다시 받는다.
+        GRANT EXECUTE ON FUNCTION
+            read_rag_v2_vertex_generation_evidence(text, text, text, jsonb),
+            persist_rag_v2_immutable_vertex_history(
+                text, text, text, text, text, text, double precision, text[], text,
+                bytea, bytea, bytea, bytea, bytea, bytea, bytea, bytea, bytea,
+                timestamptz, jsonb
+            )
+        TO decision_app;
+    END IF;
+    IF to_regprocedure(
+        'public.reserve_rag_v2_immutable_vertex_usage(text,text,text,text,text,text,text,text,text,text,text,timestamp with time zone,integer,integer,integer,bigint,bigint,bigint,integer,integer,jsonb)'
+    ) IS NOT NULL
+       AND to_regprocedure(
+           'public.claim_rag_v2_immutable_vertex_token_attempt(text,text)'
+       ) IS NOT NULL
+       AND to_regprocedure(
+           'public.claim_rag_v2_immutable_vertex_generate_content_attempt(text,text)'
+       ) IS NOT NULL
+       AND to_regprocedure(
+           'public.commit_rag_v2_immutable_vertex_usage(text,text,integer,integer,integer)'
+       ) IS NOT NULL
+       AND to_regprocedure(
+           'public.mark_rag_v2_immutable_vertex_usage_unknown_billing(text,text)'
+       ) IS NOT NULL THEN
+        -- V42 claim-time evidence 경계는 app의 single-use token/generate ledger 함수만 재부여한다.
+        GRANT EXECUTE ON FUNCTION
+            reserve_rag_v2_immutable_vertex_usage(
+                text, text, text, text, text, text, text, text, text, text, text,
+                timestamptz, integer, integer, integer,
+                bigint, bigint, bigint, integer, integer, jsonb
+            ),
+            claim_rag_v2_immutable_vertex_token_attempt(text, text),
+            claim_rag_v2_immutable_vertex_generate_content_attempt(text, text),
+            commit_rag_v2_immutable_vertex_usage(text, text, integer, integer, integer),
+            mark_rag_v2_immutable_vertex_usage_unknown_billing(text, text)
+        TO decision_app;
+    END IF;
+    IF to_regprocedure(
+        'public.prepare_rag_v2_immutable_public_base_activation(text,text)'
+    ) IS NOT NULL THEN
+        -- V43 public-base pointer 준비는 activation admin에게만 재부여한다.
+        GRANT EXECUTE ON FUNCTION
+            prepare_rag_v2_immutable_public_base_activation(text, text)
+        TO decision_rag_admin;
+    END IF;
+    IF to_regprocedure(
+        'public.issue_rag_v2_immutable_owner_delete_ticket(text,text,text)'
+    ) IS NOT NULL THEN
+        -- V44 ticket 발급은 owner-bound app capability로 유지한다.
+        GRANT EXECUTE ON FUNCTION
+            issue_rag_v2_immutable_owner_delete_ticket(text, text, text)
+        TO decision_app;
+    END IF;
+    IF to_regprocedure(
+        'public.delete_rag_v2_immutable_owner_document_with_ticket(text,text,text,text,text,text)'
+    ) IS NOT NULL THEN
+        -- V44가 V25의 delete-before-replacement admin capability를 ticket boundary로 대체한다.
+        REVOKE ALL PRIVILEGES ON FUNCTION
+            delete_rag_v2_immutable_owner_document(
+                text, text, text, text, bigint, text, text, text
+            ),
+            replace_and_delete_rag_v2_immutable_owner_document(
+                text, text, text, text, text
+            )
+        FROM decision_rag_admin;
+        -- 실제 hard-delete는 ticket 검증을 수행하는 admin capability에만 남긴다.
+        GRANT EXECUTE ON FUNCTION
+            delete_rag_v2_immutable_owner_document_with_ticket(
+                text, text, text, text, text, text
+            )
+        TO decision_rag_admin;
+    END IF;
+    IF to_regprocedure(
+        'public.stage_rag_v2_immutable_public_voyage_document(jsonb)'
+    ) IS NOT NULL
+       AND to_regprocedure(
+           'public.evaluate_rag_v2_immutable_public_voyage_component(text,jsonb)'
+       ) IS NOT NULL THEN
+        -- V45 public Voyage staging/evaluation은 raw table DML 없이 writer pair만 재부여한다.
+        GRANT EXECUTE ON FUNCTION
+            stage_rag_v2_immutable_public_voyage_document(jsonb),
+            evaluate_rag_v2_immutable_public_voyage_component(text, jsonb)
+        TO decision_rag_writer;
+    END IF;
+    IF to_regprocedure(
+        'public.reserve_rag_v2_immutable_voyage_query_usage(text,text,text,text,text,text,text,timestamp with time zone,integer,integer,bigint,bigint)'
+    ) IS NOT NULL
+       AND to_regprocedure(
+           'public.claim_rag_v2_immutable_voyage_query_usage_attempt(text)'
+       ) IS NOT NULL
+       AND to_regprocedure(
+           'public.commit_rag_v2_immutable_voyage_query_usage(text,integer,bigint)'
+       ) IS NOT NULL
+       AND to_regprocedure(
+           'public.mark_rag_v2_immutable_voyage_query_usage_unknown_billing(text)'
+       ) IS NOT NULL THEN
+        -- V46 query usage는 writer가 raw table이 아니라 packet-bound one-shot ledger 함수만 재획득한다.
+        GRANT EXECUTE ON FUNCTION
+            reserve_rag_v2_immutable_voyage_query_usage(
+                text, text, text, text, text, text, text, timestamptz,
+                integer, integer, bigint, bigint
+            ),
+            claim_rag_v2_immutable_voyage_query_usage_attempt(text),
+            commit_rag_v2_immutable_voyage_query_usage(text, integer, bigint),
+            mark_rag_v2_immutable_voyage_query_usage_unknown_billing(text)
+        TO decision_rag_writer;
+    END IF;
+    IF to_regprocedure(
+        'public.reserve_rag_v2_immutable_voyage_usage_with_tokenizer(text,text,text,text,text,text,timestamp with time zone,integer,integer,bigint,bigint)'
+    ) IS NOT NULL
+       AND to_regprocedure(
+           'public.commit_rag_v2_immutable_voyage_usage_with_tokenizer(text,integer,integer,bigint)'
+       ) IS NOT NULL
+       AND to_regprocedure(
+           'public.reserve_rag_v2_immutable_voyage_query_usage_with_tokenizer(text,text,text,text,text,text,text,text,timestamp with time zone,integer,integer,bigint,bigint)'
+       ) IS NOT NULL
+       AND to_regprocedure(
+           'public.commit_rag_v2_immutable_voyage_query_usage_with_tokenizer(text,integer,integer,bigint)'
+       ) IS NOT NULL THEN
+        -- V51은 packet-bound official tokenizer와 expected input token receipt를 갖는 새 capability만 복구한다.
+        GRANT EXECUTE ON FUNCTION
+            reserve_rag_v2_immutable_voyage_usage_with_tokenizer(
+                text, text, text, text, text, text, timestamptz,
+                integer, integer, bigint, bigint
+            ),
+            commit_rag_v2_immutable_voyage_usage_with_tokenizer(text, integer, integer, bigint),
+            reserve_rag_v2_immutable_voyage_query_usage_with_tokenizer(
+                text, text, text, text, text, text, text, text, timestamptz,
+                integer, integer, bigint, bigint
+            ),
+            commit_rag_v2_immutable_voyage_query_usage_with_tokenizer(
+                text, integer, integer, bigint
+            )
+        TO decision_rag_writer;
+    END IF;
+    IF to_regprocedure(
         'public.stage_rag_v2_immutable_owner_bge_document_v2(text,text,jsonb)'
     ) IS NOT NULL THEN
         GRANT EXECUTE ON FUNCTION
@@ -994,6 +1159,14 @@ BEGIN
         TO decision_app;
     END IF;
     IF to_regprocedure(
+        'public.read_rag_v2_vertex_prepared_scope(text,text,text,text[])'
+    ) IS NOT NULL THEN
+        -- V48은 app이 raw scope table 없이 packet-bound two-minute claim만 resume하게 한다.
+        GRANT EXECUTE ON FUNCTION
+            read_rag_v2_vertex_prepared_scope(text, text, text, text[])
+        TO decision_app;
+    END IF;
+    IF to_regprocedure(
         'public.read_rag_v2_retrieval_scope(text,text,text)'
     ) IS NOT NULL
        AND to_regprocedure(
@@ -1010,12 +1183,19 @@ BEGIN
     END IF;
     IF to_regprocedure(
         'public.prepare_rag_v2_immutable_owner_overlay(text,text)'
+    ) IS NOT NULL THEN
+        GRANT EXECUTE ON FUNCTION
+            prepare_rag_v2_immutable_owner_overlay(text, text)
+        TO decision_rag_admin;
+    END IF;
+    IF to_regprocedure(
+        'public.replace_and_delete_rag_v2_immutable_owner_document(text,text,text,text,text)'
     ) IS NOT NULL
        AND to_regprocedure(
-           'public.replace_and_delete_rag_v2_immutable_owner_document(text,text,text,text,text)'
-       ) IS NOT NULL THEN
+           'public.delete_rag_v2_immutable_owner_document_with_ticket(text,text,text,text,text,text)'
+       ) IS NULL THEN
+        -- V44 ticket boundary 이전 schema에서만 replacement와 deletion을 묶는 legacy capability를 유지한다.
         GRANT EXECUTE ON FUNCTION
-            prepare_rag_v2_immutable_owner_overlay(text, text),
             replace_and_delete_rag_v2_immutable_owner_document(text, text, text, text, text)
         TO decision_rag_admin;
     END IF;
@@ -1054,6 +1234,30 @@ BEGIN
             append_analyst_revision_evidence(jsonb),
             append_market_cause_evidence(jsonb)
         TO decision_market_writer;
+    END IF;
+    IF to_regprocedure('public.append_owned_foreign_news_sentiment(text,jsonb)') IS NOT NULL
+       AND to_regprocedure('public.read_owned_foreign_news_sentiment(text,text)') IS NOT NULL THEN
+        -- V49의 외신 runtime은 raw table DML 없이 market writer와 authenticated app을 분리한다.
+        REVOKE ALL PRIVILEGES ON TABLE foreign_news_sentiment_aggregates
+        FROM decision_app, decision_market_writer;
+        GRANT EXECUTE ON FUNCTION
+            append_owned_foreign_news_sentiment(text, jsonb)
+        TO decision_market_writer;
+        GRANT EXECUTE ON FUNCTION
+            read_owned_foreign_news_sentiment(text, text)
+        TO decision_app;
+    END IF;
+    IF to_regprocedure('public.append_s48_runtime_sanitized_projection(jsonb)') IS NOT NULL
+       AND to_regprocedure('public.read_latest_s48_runtime_sanitized_projection(text)') IS NOT NULL THEN
+        -- V50은 nine-lane typed state만 function capability로 노출하고 raw table DML은 금지한다.
+        REVOKE ALL PRIVILEGES ON TABLE s48_runtime_sanitized_projections
+        FROM decision_app, decision_market_writer;
+        GRANT EXECUTE ON FUNCTION
+            append_s48_runtime_sanitized_projection(jsonb)
+        TO decision_market_writer;
+        GRANT EXECUTE ON FUNCTION
+            read_latest_s48_runtime_sanitized_projection(text)
+        TO decision_app;
     END IF;
 END
 $cross_market_runtime_privileges$;

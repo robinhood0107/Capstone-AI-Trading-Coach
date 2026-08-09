@@ -4,14 +4,22 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 from collections.abc import Sequence
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Final
 
 import psycopg
 
-from app.cross_market.s48_runtime import S48RuntimeBatch, S48RuntimeMaterializer
+from app.cross_market.core6_probe import Core6ProbeError, Core6ProbeReceipt
+from app.cross_market.s48_runtime import (
+    S48DirectProbeProjection,
+    S48RuntimeBatch,
+    S48RuntimeError,
+    S48RuntimeMaterializer,
+)
 from app.cross_market.s48_runtime_repository import (
     PostgresS48RuntimeRepository,
     S48RuntimeWriterAuthorityError,
@@ -22,6 +30,8 @@ _OFFLINE_TARGET_ENV: Final[str] = "DECISION_SOURCE_WRITER_OFFLINE_TARGET"
 _ALLOWED_OFFLINE_TARGETS: Final[frozenset[str]] = frozenset(
     {"local", "offline", "test", "testcontainers"}
 )
+_CORE6_CONTROL_ROOT_RELATIVE: Final[Path] = Path("capstone-rag/secrets/core6-probes")
+_CORE6_RECEIPT_FILE = re.compile(r"^receipt-[0-9a-f]{64}\.json$")
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -33,16 +43,23 @@ def main(argv: Sequence[str] | None = None) -> int:
     """
 
     arguments = tuple(sys.argv[1:] if argv is None else argv)
-    if arguments == ("materialize",):
-        _emit(_receipt(_batch(), code="S48_RUNTIME_MATERIALIZED", state="MATERIALIZED"))
+    parsed = _parse_command(arguments)
+    if parsed is None:
+        _emit({"code": "S48_RUNTIME_COMMAND_INVALID", "state": "FAILED"})
+        return 2
+    command, core6_receipt_names = parsed
+    if command == "materialize":
+        try:
+            batch = _batch(core6_receipt_names=core6_receipt_names)
+        except (Core6ProbeError, S48RuntimeError):
+            _emit({"code": "S48_RUNTIME_CORE6_RECEIPT_UNAVAILABLE", "state": "FAILED"})
+            return 2
+        _emit(_receipt(batch, code="S48_RUNTIME_MATERIALIZED", state="MATERIALIZED"))
         return 0
-    if arguments == ("stage",):
-        return _stage()
-    _emit({"code": "S48_RUNTIME_COMMAND_INVALID", "state": "FAILED"})
-    return 2
+    return _stage(core6_receipt_names=core6_receipt_names)
 
 
-def _stage() -> int:
+def _stage(*, core6_receipt_names: tuple[str, ...]) -> int:
     """V50 append function으로 only offline typed state를 replay-safe하게 stage한다."""
 
     if os.environ.get(_OFFLINE_TARGET_ENV, "").strip().lower() not in _ALLOWED_OFFLINE_TARGETS:
@@ -53,7 +70,11 @@ def _stage() -> int:
         _emit({"code": "S48_RUNTIME_WRITER_DATABASE_DSN", "state": "FAILED"})
         return 2
 
-    batch = _batch()
+    try:
+        batch = _batch(core6_receipt_names=core6_receipt_names)
+    except (Core6ProbeError, S48RuntimeError):
+        _emit({"code": "S48_RUNTIME_CORE6_RECEIPT_UNAVAILABLE", "state": "FAILED"})
+        return 2
     try:
         summary = PostgresS48RuntimeRepository(database_dsn=database_dsn).append_batch(batch)
     except (psycopg.Error, S48RuntimeWriterAuthorityError, ValueError):
@@ -65,10 +86,45 @@ def _stage() -> int:
     return 0
 
 
-def _batch() -> S48RuntimeBatch:
-    """Current UTC instant에서 fixed state를 만들어 no-provider runtime invariant를 보존한다."""
+def _batch(*, core6_receipt_names: tuple[str, ...] = ()) -> S48RuntimeBatch:
+    """Selected local Core 6 receipts만 read-only로 재사용하고 runtime 자체는 provider handoff를 만들지 않는다."""
 
-    return S48RuntimeMaterializer().materialize(evaluated_at=_now())
+    control_root = _repository_root() / _CORE6_CONTROL_ROOT_RELATIVE
+    direct_projections = tuple(
+        S48DirectProbeProjection.from_core6_receipt(
+            Core6ProbeReceipt.load_from_control_root(
+                control_root=control_root,
+                relative_path=receipt_name,
+            )
+        )
+        for receipt_name in core6_receipt_names
+    )
+    return S48RuntimeMaterializer().materialize(
+        evaluated_at=_now(),
+        direct_probe_projections=direct_projections,
+    )
+
+
+def _parse_command(arguments: tuple[str, ...]) -> tuple[str, tuple[str, ...]] | None:
+    """Receipt selector는 exact local receipt filename만 받아 argv로 arbitrary path를 열지 않는다."""
+
+    if not arguments or arguments[0] not in {"materialize", "stage"}:
+        return None
+    trailing = arguments[1:]
+    if len(trailing) % 2 != 0:
+        return None
+    names: list[str] = []
+    for flag, name in zip(trailing[0::2], trailing[1::2], strict=True):
+        if flag != "--core6-receipt" or _CORE6_RECEIPT_FILE.fullmatch(name) is None:
+            return None
+        names.append(name)
+    if len(names) > 5 or len(set(names)) != len(names):
+        return None
+    return arguments[0], tuple(names)
+
+
+def _repository_root() -> Path:
+    return Path(__file__).resolve().parents[5]
 
 
 def _now() -> datetime:

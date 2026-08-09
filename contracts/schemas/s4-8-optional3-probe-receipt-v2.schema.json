@@ -1,0 +1,252 @@
+{
+  "$id": "contracts/schemas/s4-8-optional3-probe-receipt-v2.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "FINNHUB_RECOMMENDATION"
+          }
+        },
+        "required": [
+          "operation"
+        ]
+      },
+      "then": {
+        "properties": {
+          "providerFamily": {
+            "const": "FINNHUB_OPTIONAL3"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "FINNHUB_EARNINGS"
+          }
+        },
+        "required": [
+          "operation"
+        ]
+      },
+      "then": {
+        "properties": {
+          "providerFamily": {
+            "const": "FINNHUB_OPTIONAL3"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "TWELVE_DATA_TIME_SERIES"
+          }
+        },
+        "required": [
+          "operation"
+        ]
+      },
+      "then": {
+        "properties": {
+          "providerFamily": {
+            "const": "TWELVE_DATA"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "MASSIVE_PREVIOUS_DAY_AGGREGATE"
+          }
+        },
+        "required": [
+          "operation"
+        ]
+      },
+      "then": {
+        "properties": {
+          "providerFamily": {
+            "const": "MASSIVE"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "outcome": {
+            "const": "SUCCESS"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "projectionHash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "providerStatusClass": {
+            "const": "HTTP_2XX"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "outcome": {
+            "const": "FAILED"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "projectionHash": {
+            "const": null
+          },
+          "providerStatusClass": {
+            "enum": [
+              "HTTP_4XX",
+              "HTTP_5XX",
+              "TRANSPORT",
+              "PROTOCOL"
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "properties": {
+    "approvalIdHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "approvalPacketSha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "completedAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "contractId": {
+      "const": "s4-8-optional3-probe-receipt-v2"
+    },
+    "decisionAuthority": {
+      "const": "NONE"
+    },
+    "firstFailureStopsRemainingCalls": {
+      "const": true
+    },
+    "logicalCallCount": {
+      "const": 1
+    },
+    "operation": {
+      "enum": [
+        "FINNHUB_RECOMMENDATION",
+        "FINNHUB_EARNINGS",
+        "TWELVE_DATA_TIME_SERIES",
+        "MASSIVE_PREVIOUS_DAY_AGGREGATE"
+      ]
+    },
+    "outcome": {
+      "enum": [
+        "SUCCESS",
+        "FAILED"
+      ]
+    },
+    "physicalCallCount": {
+      "const": 1
+    },
+    "projectionHash": {
+      "oneOf": [
+        {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "providerFamily": {
+      "enum": [
+        "FINNHUB_OPTIONAL3",
+        "TWELVE_DATA",
+        "MASSIVE"
+      ]
+    },
+    "providerStatusClass": {
+      "enum": [
+        "HTTP_2XX",
+        "HTTP_4XX",
+        "HTTP_5XX",
+        "TRANSPORT",
+        "PROTOCOL"
+      ]
+    },
+    "rawHeaderStored": {
+      "const": false
+    },
+    "rawProviderDataStored": {
+      "const": false
+    },
+    "rawQueryStored": {
+      "const": false
+    },
+    "requestPlanDigest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "retryCount": {
+      "const": 0
+    },
+    "riskSignalOrderAuthority": {
+      "const": "NONE"
+    },
+    "schemaVersion": {
+      "const": 2
+    },
+    "startedAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "state": {
+      "const": "EXECUTED"
+    }
+  },
+  "required": [
+    "contractId",
+    "approvalIdHash",
+    "approvalPacketSha256",
+    "completedAt",
+    "decisionAuthority",
+    "firstFailureStopsRemainingCalls",
+    "logicalCallCount",
+    "operation",
+    "outcome",
+    "physicalCallCount",
+    "projectionHash",
+    "providerFamily",
+    "providerStatusClass",
+    "rawHeaderStored",
+    "rawProviderDataStored",
+    "rawQueryStored",
+    "requestPlanDigest",
+    "retryCount",
+    "riskSignalOrderAuthority",
+    "schemaVersion",
+    "startedAt",
+    "state"
+  ],
+  "title": "s4-8-optional3-probe-receipt-v2",
+  "type": "object"
+}

@@ -482,8 +482,7 @@ def oa112_bootstrap_quarantine_filename(entry: Oa112BootstrapCandidate) -> str:
 
 def download_oa112_bootstrap_quarantine(
     *,
-    entries: Sequence[Oa112BootstrapCandidate],
-    candidate_registry_digest: str,
+    registry: Oa112BootstrapCandidateRegistry,
     packet: Oa112DownloadPacket | None,
     local_cache_root: Path,
     packet_control_root: Path,
@@ -498,13 +497,12 @@ def download_oa112_bootstrap_quarantine(
     binding을 가진 packet을 atomically consume하며, first failure 뒤 남은 source request를 만들지 않는다.
     """
 
-    selected = tuple(entries)
+    selected = registry.active_entries if isinstance(registry, Oa112BootstrapCandidateRegistry) else ()
     check_now = now or datetime.now(UTC)
     if (
-        not selected
-        or len(selected) > 112
-        or len({entry.source_id for entry in selected}) != len(selected)
-        or _SHA256.fullmatch(candidate_registry_digest) is None
+        len(selected) != 112
+        or len({entry.source_id for entry in selected}) != 112
+        or _SHA256.fullmatch(registry.registry_digest) is None
     ):
         raise Oa112DownloadError("OA112_BOOTSTRAP_DOWNLOAD_INPUT_INVALID")
     root_fd, quarantine_fd, staging_fd = _open_bootstrap_cache_layout(local_cache_root)
@@ -534,7 +532,7 @@ def download_oa112_bootstrap_quarantine(
             _validate_bootstrap_packet(
                 packet=packet,
                 entries=selected,
-                candidate_registry_digest=candidate_registry_digest,
+                candidate_registry_digest=registry.registry_digest,
                 execution_binding=execution_binding,
                 now=check_now,
             )
@@ -599,7 +597,7 @@ def download_oa112_bootstrap_quarantine(
             _write_bootstrap_run_receipt(
                 control_root=packet_control_root,
                 packet=consumed_packet,
-                candidate_registry_digest=candidate_registry_digest,
+                candidate_registry_digest=registry.registry_digest,
                 state="SUCCEEDED",
                 code="OA112_BOOTSTRAP_QUARANTINE_READY",
                 receipt=result,
@@ -626,7 +624,7 @@ def download_oa112_bootstrap_quarantine(
                 _write_bootstrap_run_receipt(
                     control_root=packet_control_root,
                     packet=consumed_packet,
-                    candidate_registry_digest=candidate_registry_digest,
+                    candidate_registry_digest=registry.registry_digest,
                     state="FAILED",
                     code=surfaced.code,
                     receipt=failure,
@@ -675,12 +673,14 @@ def activate_oa112_bootstrap_quarantine(
     raw_fd = -1
     try:
         quarantine_fd = downloader._open_or_create_private_directory(root_fd, "oa112-quarantine")
+        raw_fd = downloader._open_or_create_private_directory(root_fd, "oa-raw")
         observed_from_receipt = _load_complete_bootstrap_receipt(
             registry_root=registry_root,
             registry=registry,
         )
         observed = _validate_complete_bootstrap_quarantine(
             quarantine_fd=quarantine_fd,
+            raw_fd=raw_fd,
             entries=registry.active_entries,
             observed_from_receipt=observed_from_receipt,
         )
@@ -689,7 +689,6 @@ def activate_oa112_bootstrap_quarantine(
             leaf=registry_relative_path,
             error_code="OA112_BOOTSTRAP_ACTIVE_REGISTRY_EXISTS",
         )
-        raw_fd = downloader._open_or_create_private_directory(root_fd, "oa-raw")
         _promote_quarantine_to_raw(
             quarantine_fd=quarantine_fd,
             raw_fd=raw_fd,
@@ -1009,16 +1008,51 @@ def _read_quarantined_raw(
     maximum_source_bytes: int,
     maximum_pages: int,
 ) -> Oa112BootstrapDownloadedSourceReceipt | None:
+    return _read_bootstrap_cached_raw(
+        directory_fd=quarantine_fd,
+        entry=entry,
+        maximum_source_bytes=maximum_source_bytes,
+        maximum_pages=maximum_pages,
+        state="REUSED",
+    )
+
+
+def _read_promoted_raw(
+    *,
+    raw_fd: int,
+    entry: Oa112BootstrapCandidate,
+    maximum_source_bytes: int,
+    maximum_pages: int,
+) -> Oa112BootstrapDownloadedSourceReceipt | None:
+    """crash 뒤 active registry publication 전 `oa-raw`로 이동한 source를 recovery input으로 읽는다."""
+
+    return _read_bootstrap_cached_raw(
+        directory_fd=raw_fd,
+        entry=entry,
+        maximum_source_bytes=maximum_source_bytes,
+        maximum_pages=maximum_pages,
+        state="PROMOTED",
+    )
+
+
+def _read_bootstrap_cached_raw(
+    *,
+    directory_fd: int,
+    entry: Oa112BootstrapCandidate,
+    maximum_source_bytes: int,
+    maximum_pages: int,
+    state: str,
+) -> Oa112BootstrapDownloadedSourceReceipt | None:
     name = oa112_bootstrap_quarantine_filename(entry)
     try:
-        metadata = os.stat(name, dir_fd=quarantine_fd, follow_symlinks=False)
+        metadata = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
     except FileNotFoundError:
         return None
     except OSError as error:
         raise Oa112DownloadError("OA112_BOOTSTRAP_CACHE_UNSAFE") from error
     try:
         downloader._validate_private_regular(metadata)
-        payload = downloader._read_private_file(quarantine_fd, name, maximum=maximum_source_bytes)
+        payload = downloader._read_private_file(directory_fd, name, maximum=maximum_source_bytes)
         downloader._validate_complete_payload(
             payload=payload,
             mime_type=entry.mime_type,
@@ -1031,7 +1065,7 @@ def _read_quarantined_raw(
         source_revision_id=entry.source_revision_id,
         raw_content_sha256=hashlib.sha256(payload).hexdigest(),
         bytes_read=len(payload),
-        state="REUSED",
+        state=state,
     )
 
 
@@ -1241,13 +1275,19 @@ def _load_complete_bootstrap_receipt(
             raise Oa112BootstrapError("OA112_BOOTSTRAP_RECEIPT_INVALID")
         try:
             payload = _parse_canonical_json(content)
-            observed = _validate_complete_bootstrap_receipt_payload(
-                payload=payload,
-                registry=registry,
-            )
+            state = payload.get("state")
+            if state == "SUCCEEDED":
+                observed = _validate_complete_bootstrap_receipt_payload(
+                    payload=payload,
+                    registry=registry,
+                )
+                accepted.append(observed)
+            elif state == "FAILED":
+                _validate_failed_bootstrap_receipt_payload(payload=payload, registry=registry)
+            else:
+                raise Oa112BootstrapError("OA112_BOOTSTRAP_RECEIPT_INVALID")
         except Oa112BootstrapError as error:
             raise Oa112BootstrapError("OA112_BOOTSTRAP_RECEIPT_INVALID") from error
-        accepted.append(observed)
     if len(accepted) != 1:
         raise Oa112BootstrapError("OA112_BOOTSTRAP_RECEIPT_REQUIRED")
     return accepted[0]
@@ -1323,20 +1363,99 @@ def _validate_complete_bootstrap_receipt_payload(
     return observed
 
 
+def _validate_failed_bootstrap_receipt_payload(
+    *,
+    payload: Mapping[str, object],
+    registry: Oa112BootstrapCandidateRegistry,
+) -> None:
+    """이전 failed packet은 audit로 보존하되 later success activation을 영구 차단하지 않는다."""
+
+    _require_exact_keys(
+        payload,
+        frozenset({"candidateRegistryDigest", "code", "packetDigest", "receipt", "state"}),
+    )
+    if (
+        payload.get("state") != "FAILED"
+        or not _required_text(payload, "code", maximum=128)
+        or _SHA256.fullmatch(_required_text(payload, "packetDigest", maximum=64)) is None
+    ):
+        raise Oa112BootstrapError("OA112_BOOTSTRAP_RECEIPT_INVALID")
+    receipt = _required_mapping(payload, "receipt")
+    _require_exact_keys(
+        receipt,
+        frozenset(
+            {
+                "attemptCount",
+                "physicalCallCount",
+                "quarantinedSourceCount",
+                "reusedSourceCount",
+                "sources",
+            }
+        ),
+    )
+    attempts = _required_int(receipt, "attemptCount")
+    physical = _required_int(receipt, "physicalCallCount")
+    quarantined = _required_int(receipt, "quarantinedSourceCount")
+    reused = _required_int(receipt, "reusedSourceCount")
+    sources = receipt.get("sources")
+    if (
+        _SHA256.fullmatch(_required_text(payload, "candidateRegistryDigest", maximum=64)) is None
+        or not isinstance(sources, list)
+        or len(sources) > 112
+        or min(attempts, physical, quarantined, reused) < 0
+        or physical > attempts
+        or quarantined + reused != len(sources)
+    ):
+        raise Oa112BootstrapError("OA112_BOOTSTRAP_RECEIPT_INVALID")
+    if payload.get("candidateRegistryDigest") != registry.registry_digest:
+        return
+    by_source_id = {entry.source_id: entry for entry in registry.active_entries}
+    seen: set[str] = set()
+    for raw in sources:
+        if not isinstance(raw, Mapping):
+            raise Oa112BootstrapError("OA112_BOOTSTRAP_RECEIPT_INVALID")
+        _require_exact_keys(
+            raw,
+            frozenset({"bytesRead", "rawContentSha256", "sourceId", "sourceRevisionId", "state"}),
+        )
+        source_id = _required_text(raw, "sourceId", maximum=128)
+        entry = by_source_id.get(source_id)
+        if (
+            entry is None
+            or source_id in seen
+            or raw.get("sourceRevisionId") != entry.source_revision_id
+            or raw.get("state") not in {"QUARANTINED", "REUSED"}
+            or _required_int(raw, "bytesRead") <= 0
+        ):
+            raise Oa112BootstrapError("OA112_BOOTSTRAP_RECEIPT_INVALID")
+        _required_sha256(raw, "rawContentSha256")
+        seen.add(source_id)
+
+
 def _validate_complete_bootstrap_quarantine(
     *,
     quarantine_fd: int,
+    raw_fd: int,
     entries: tuple[Oa112BootstrapCandidate, ...],
     observed_from_receipt: Mapping[str, str],
 ) -> dict[str, str]:
     observed: dict[str, str] = {}
     for entry in entries:
-        receipt = _read_quarantined_raw(
+        quarantined = _read_quarantined_raw(
             quarantine_fd=quarantine_fd,
             entry=entry,
             maximum_source_bytes=_MAX_SOURCE_BYTES,
             maximum_pages=500,
         )
+        promoted = _read_promoted_raw(
+            raw_fd=raw_fd,
+            entry=entry,
+            maximum_source_bytes=_MAX_SOURCE_BYTES,
+            maximum_pages=500,
+        )
+        if quarantined is not None and promoted is not None:
+            raise Oa112BootstrapError("OA112_BOOTSTRAP_PROMOTION_COLLISION")
+        receipt = promoted or quarantined
         if receipt is None:
             raise Oa112BootstrapError("OA112_BOOTSTRAP_QUARANTINE_INCOMPLETE")
         if observed_from_receipt.get(entry.source_id) != receipt.raw_content_sha256:

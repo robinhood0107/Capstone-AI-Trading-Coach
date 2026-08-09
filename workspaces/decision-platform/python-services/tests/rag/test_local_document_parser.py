@@ -74,7 +74,34 @@ class _FormulaSecretOcr:
         )
 
 
-def _parser(ocr: OcrBackendPort | None = None) -> LocalDocumentParser:
+@dataclass
+class _TableOcr:
+    calls: list[int]
+    backend: str = "PADDLE_STRUCTURED"
+    backend_version: str = "fixture-1"
+    model_sha256: str = _MODEL_HASH
+
+    def parse_page(self, *, png_bytes: bytes, page_number: int) -> OcrPageResult:
+        assert png_bytes.startswith(b"\x89PNG\r\n\x1a\n")
+        self.calls.append(page_number)
+        return OcrPageResult(
+            blocks=(
+                OcrBlock(
+                    block_type="TABLE",
+                    cells=((0, 0, "Metric"),),
+                    column_count=1,
+                    confidence=0.995,
+                    row_count=2,
+                ),
+            )
+        )
+
+
+def _parser(
+    ocr: OcrBackendPort | None = None,
+    *,
+    max_table_cells: int = 50_000,
+) -> LocalDocumentParser:
     return LocalDocumentParser(
         ocr_backend=ocr,
         limits=ParserLimits(
@@ -85,6 +112,7 @@ def _parser(ocr: OcrBackendPort | None = None) -> LocalDocumentParser:
             max_pages=20,
             max_image_pixels=20_000_000,
             max_blocks=2_000,
+            max_table_cells=max_table_cells,
             max_text_characters=2_000_000,
         ),
     )
@@ -287,6 +315,21 @@ def test_docx_pptx_and_xlsx_preserve_native_structure(posix_tmp_path: Path) -> N
     assert any(block["blockType"] == "FORMULA" for block in xlsx_result["blocks"])
 
 
+def test_xlsx_rejects_cumulative_table_area_before_retaining_rows(posix_tmp_path: Path) -> None:
+    root = posix_tmp_path / "owner"
+    root.mkdir()
+    workbook = Workbook()
+    for sheet in (workbook.active, workbook.create_sheet("Second")):
+        sheet.append(["metric", "value"])
+        sheet.append(["return", "0.12"])
+    payload = io.BytesIO()
+    workbook.save(payload)
+    _write(root, "cumulative.xlsx", payload.getvalue())
+
+    with pytest.raises(DocumentParseError, match="DOCUMENT_TABLE_BOUND_EXCEEDED"):
+        _parse(_parser(max_table_cells=4), root, "cumulative.xlsx")
+
+
 @pytest.mark.parametrize(
     ("name", "image_format", "mime"),
     [
@@ -312,6 +355,18 @@ def test_image_family_requires_and_uses_pinned_ocr(
     assert result["mimeType"] == mime
     assert result["extractionMode"] == "OCR"
     assert result["parserEvidence"]["ocr"]["backend"] == "PADDLE_STRUCTURED"
+    assert ocr.calls == [1]
+
+
+def test_ocr_table_area_is_rejected_before_dense_matrix_allocation(posix_tmp_path: Path) -> None:
+    root = posix_tmp_path / "owner"
+    root.mkdir()
+    _write(root, "table.png", _png_bytes())
+    ocr = _TableOcr(calls=[])
+
+    with pytest.raises(DocumentParseError, match="DOCUMENT_TABLE_BOUND_EXCEEDED"):
+        _parse(_parser(ocr, max_table_cells=1), root, "table.png")
+
     assert ocr.calls == [1]
 
 

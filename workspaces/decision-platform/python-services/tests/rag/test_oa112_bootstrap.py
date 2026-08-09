@@ -12,7 +12,6 @@ import pytest
 
 from app.rag.oa112_active_registry import load_oa112_active_registry
 from app.rag.oa112_bootstrap import (
-    Oa112BootstrapCandidate,
     Oa112BootstrapError,
     Oa112BootstrapCandidateRegistry,
     activate_oa112_bootstrap_quarantine,
@@ -35,14 +34,15 @@ def test_bootstrap_download_quarantines_observed_raw_and_records_content_free_re
     tmp_path: Path,
 ) -> None:
     cache_root, control_root = _roots(tmp_path)
-    body = b"bootstrap source body\n"
-    candidate = _candidate(index=1)
+    registry = _registry()
+    candidate = registry.active_entries[0]
+    body = f"{candidate.source_id}\n".encode("utf-8")
+    _write_quarantine(cache_root=cache_root, registry=registry, skip_source_id=candidate.source_id)
     transport = _FixtureTransport([_Response(200, _headers("text/plain", body), body)])
 
     receipt = download_oa112_bootstrap_quarantine(
-        entries=(candidate,),
-        candidate_registry_digest="a" * 64,
-        packet=_packet(candidate, registry_digest="a" * 64),
+        registry=registry,
+        packet=_packet(registry),
         execution_binding=_binding(),
         local_cache_root=cache_root,
         packet_control_root=control_root,
@@ -52,9 +52,9 @@ def test_bootstrap_download_quarantines_observed_raw_and_records_content_free_re
 
     assert receipt.attempt_count == receipt.physical_call_count == 1
     assert receipt.quarantined_source_count == 1
-    assert receipt.reused_source_count == 0
+    assert receipt.reused_source_count == 111
     assert receipt.sources[0].raw_content_sha256 == hashlib.sha256(body).hexdigest()
-    assert (cache_root / "oa112-quarantine" / "src_oa_bootstrap_001.txt").read_bytes() == body
+    assert (cache_root / "oa112-quarantine" / "src_oa_bootstrap_000.txt").read_bytes() == body
     assert not (cache_root / "oa-raw").exists()
     assert transport.requests[0].headers["Accept"] == "text/plain"
     serialized = json.dumps(receipt.content_free_projection(), sort_keys=True)
@@ -66,14 +66,13 @@ def test_bootstrap_download_checks_current_evidence_before_consuming_packet_or_t
     tmp_path: Path,
 ) -> None:
     cache_root, control_root = _roots(tmp_path)
-    candidate = _candidate(index=2)
+    registry = _registry()
     transport = _FixtureTransport([])
 
     with pytest.raises(Oa112DownloadError, match="OA112_PACKET_EXECUTION_BINDING"):
         download_oa112_bootstrap_quarantine(
-            entries=(candidate,),
-            candidate_registry_digest="a" * 64,
-            packet=_packet(candidate, registry_digest="a" * 64),
+            registry=registry,
+            packet=_packet(registry),
             execution_binding=Oa112DownloadBinding(
                 head_sha="e" * 40,
                 tree_sha256="b" * 64,
@@ -146,7 +145,52 @@ def test_bootstrap_activation_keeps_registry_unpublished_when_a_quarantine_sourc
         )
 
     assert not (control_root / "oa112-active-registry.v1.json").exists()
-    assert not (cache_root / "oa-raw").exists()
+    raw = cache_root / "oa-raw"
+    assert not raw.exists() or tuple(raw.iterdir()) == ()
+
+
+def test_bootstrap_activation_ignores_a_prior_failed_receipt_after_a_later_success(
+    tmp_path: Path,
+) -> None:
+    cache_root, control_root = _roots(tmp_path)
+    registry = _registry()
+    _write_quarantine(cache_root=cache_root, registry=registry)
+    _write_complete_receipt(control_root=control_root, registry=registry)
+    _write_failed_receipt(control_root=control_root, registry=registry)
+
+    active = activate_oa112_bootstrap_quarantine(
+        registry=registry,
+        local_cache_root=cache_root,
+        registry_root=control_root,
+        registry_relative_path="oa112-active-registry.v1.json",
+    )
+
+    assert active.active_source_count == 112
+
+
+def test_bootstrap_activation_recovers_after_partial_quarantine_promotion(
+    tmp_path: Path,
+) -> None:
+    cache_root, control_root = _roots(tmp_path)
+    registry = _registry()
+    quarantine = _write_quarantine(cache_root=cache_root, registry=registry)
+    _write_complete_receipt(control_root=control_root, registry=registry)
+    raw = cache_root / "oa-raw"
+    raw.mkdir(mode=0o700)
+    os.chmod(raw, 0o700)
+    first = registry.active_entries[0]
+    name = oa112_bootstrap_quarantine_filename(first)
+    os.rename(quarantine / name, raw / name)
+
+    active = activate_oa112_bootstrap_quarantine(
+        registry=registry,
+        local_cache_root=cache_root,
+        registry_root=control_root,
+        registry_relative_path="oa112-active-registry.v1.json",
+    )
+
+    assert active.active_source_count == 112
+    assert len(tuple(raw.iterdir())) == 112
 
 
 def test_candidate_registry_requires_exact_ordered_14_by_8_and_all_four_permissions() -> None:
@@ -210,10 +254,6 @@ def _registry_payload() -> dict[str, object]:
     return payload
 
 
-def _candidate(*, index: int) -> Oa112BootstrapCandidate:
-    return _registry().active_entries[index]
-
-
 def _candidate_payload(*, index: int, source_id: str, track_id: str) -> dict[str, object]:
     canonical_url = f"https://official.example.com/oa/{source_id}.txt"
     return {
@@ -245,25 +285,25 @@ def _candidate_payload(*, index: int, source_id: str, track_id: str) -> dict[str
     }
 
 
-def _packet(candidate: Oa112BootstrapCandidate, *, registry_digest: str) -> Oa112DownloadPacket:
+def _packet(registry: Oa112BootstrapCandidateRegistry) -> Oa112DownloadPacket:
     return Oa112DownloadPacket(
         approval_id="oa112-bootstrap-fixture-001",
         head_sha="a" * 40,
         tree_sha256="b" * 64,
         ci_digest="c" * 64,
         security_digest="d" * 64,
-        registry_digest=registry_digest,
-        source_endpoint_digest=oa112_bootstrap_source_endpoint_digest((candidate,)),
-        source_ids=(candidate.source_id,),
+        registry_digest=registry.registry_digest,
+        source_endpoint_digest=oa112_bootstrap_source_endpoint_digest(registry.active_entries),
+        source_ids=registry.active_source_ids,
         provider="OA112_OFFICIAL_HTTPS",
         operation="OA112_CANDIDATE_QUARANTINE_DOWNLOAD",
         query="NONE",
         symbol="NONE",
         date="NONE",
-        logical_call_cap=1,
-        physical_call_cap=1,
+        logical_call_cap=112,
+        physical_call_cap=112,
         maximum_source_bytes=1024 * 1024,
-        maximum_total_bytes=1024 * 1024,
+        maximum_total_bytes=1024 * 1024 * 112,
         cost_cap_microusd=0,
         retry_count=0,
         tracked_raw_artifact_count=0,
@@ -289,6 +329,24 @@ def _headers(mime_type: str, body: bytes) -> dict[str, str]:
         "Content-Length": str(len(body)),
         "Content-Type": mime_type,
     }
+
+
+def _write_quarantine(
+    *,
+    cache_root: Path,
+    registry: Oa112BootstrapCandidateRegistry,
+    skip_source_id: str | None = None,
+) -> Path:
+    quarantine = cache_root / "oa112-quarantine"
+    quarantine.mkdir(mode=0o700)
+    os.chmod(quarantine, 0o700)
+    for candidate in registry.active_entries:
+        if candidate.source_id == skip_source_id:
+            continue
+        path = quarantine / oa112_bootstrap_quarantine_filename(candidate)
+        path.write_bytes(f"{candidate.source_id}\n".encode("utf-8"))
+        os.chmod(path, 0o600)
+    return quarantine
 
 
 def _write_complete_receipt(*, control_root: Path, registry: Oa112BootstrapCandidateRegistry) -> None:
@@ -321,6 +379,28 @@ def _write_complete_receipt(*, control_root: Path, registry: Oa112BootstrapCandi
         "state": "SUCCEEDED",
     }
     path = receipts / ("a" * 64 + ".json")
+    path.write_text(
+        json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    os.chmod(path, 0o600)
+
+
+def _write_failed_receipt(*, control_root: Path, registry: Oa112BootstrapCandidateRegistry) -> None:
+    path = control_root / "oa112-bootstrap-receipts" / ("b" * 64 + ".json")
+    payload = {
+        "candidateRegistryDigest": registry.registry_digest,
+        "code": "OA112_DOWNLOAD_MIME",
+        "packetDigest": "b" * 64,
+        "receipt": {
+            "attemptCount": 1,
+            "physicalCallCount": 1,
+            "quarantinedSourceCount": 0,
+            "reusedSourceCount": 0,
+            "sources": [],
+        },
+        "state": "FAILED",
+    }
     path.write_text(
         json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n",
         encoding="utf-8",

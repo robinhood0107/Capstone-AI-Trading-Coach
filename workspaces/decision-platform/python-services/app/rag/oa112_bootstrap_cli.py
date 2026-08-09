@@ -59,17 +59,32 @@ def _prepare_candidates() -> int:
         historical_curation=historical,
         replacement_curation=replacement,
     )
-    content = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8") + b"\n"
-    write_approved_new_file(
-        approved_root=_LOCAL_ROOT,
-        relative_path=_CANDIDATE_REGISTRY,
-        content=content,
-        max_bytes=2_000_000,
-    )
-    registry = oa112_bootstrap.load_oa112_bootstrap_candidate_registry(
-        approved_root=_LOCAL_ROOT,
-        relative_path=_CANDIDATE_REGISTRY,
-    )
+    expected = oa112_bootstrap.validate_oa112_bootstrap_candidate_registry(payload)
+    target = _LOCAL_ROOT / _CANDIDATE_REGISTRY
+    try:
+        target.lstat()
+    except FileNotFoundError:
+        content = (
+            json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8")
+            + b"\n"
+        )
+        write_approved_new_file(
+            approved_root=_LOCAL_ROOT,
+            relative_path=_CANDIDATE_REGISTRY,
+            content=content,
+            max_bytes=2_000_000,
+        )
+        registry = oa112_bootstrap.load_oa112_bootstrap_candidate_registry(
+            approved_root=_LOCAL_ROOT,
+            relative_path=_CANDIDATE_REGISTRY,
+        )
+    else:
+        registry = oa112_bootstrap.load_oa112_bootstrap_candidate_registry(
+            approved_root=_LOCAL_ROOT,
+            relative_path=_CANDIDATE_REGISTRY,
+        )
+        if registry.registry_digest != expected.registry_digest:
+            raise Oa112BootstrapError("OA112_BOOTSTRAP_CANDIDATE_REGISTRY_DRIFT")
     _emit(
         {
             "activeSourceCount": registry.active_source_count,
@@ -96,8 +111,7 @@ def _download() -> int:
         repository_root=REPO_ROOT,
     )
     receipt = oa112_bootstrap.download_oa112_bootstrap_quarantine(
-        entries=registry.active_entries,
-        candidate_registry_digest=registry.registry_digest,
+        registry=registry,
         packet=packet,
         execution_binding=binding,
         local_cache_root=_LOCAL_ROOT,

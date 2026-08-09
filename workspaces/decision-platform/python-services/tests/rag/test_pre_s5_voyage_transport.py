@@ -16,6 +16,7 @@ from app.rag.pre_s5_voyage_transport import (
     PreS5VoyageHttpResponse,
     PreS5VoyageTransportError,
     PreS5VoyageContext4Transport,
+    UrllibPreS5VoyageHttpSender,
     build_pre_s5_voyage_full_bundle,
 )
 from app.rag.rag_v2_external_exact30_voyage_runner import (
@@ -165,6 +166,54 @@ def test_voyage_context4_transport_rejects_expired_subset_or_manifest_drift_befo
     with pytest.raises(PreS5VoyageTransportError, match="PRE_S5_VOYAGE_FULL_BUNDLE_INVALID"):
         fresh.embed_full_bundle(bundle=stale_manifest)
     assert sender.calls == 0
+
+
+def test_voyage_context4_transport_rechecks_expiry_after_claim_before_sender_post() -> None:
+    bundle = _bundle()
+    expires_at = NOW + timedelta(minutes=5)
+    clock = _MutableClock(NOW)
+    lease = _LeaseThatExpiresClock(clock=clock, expires_at=expires_at)
+    sender = _FixtureSender(response=_response_for(bundle))
+    transport = PreS5VoyageContext4Transport(
+        activation=_activation(bundle, expires_at=expires_at),
+        api_key="test-key",
+        lease=lease,
+        token_counter=_FixtureTokenCounter(),
+        sender=sender,
+        clock=clock,
+    )
+
+    with pytest.raises(PreS5VoyageTransportError, match="PRE_S5_VOYAGE_ACTIVATION_EXPIRED"):
+        transport.embed_full_bundle(bundle=bundle)
+
+    assert lease.claim_calls == 1
+    assert lease.unknown_billing_calls == 1
+    assert sender.calls == 0
+    assert transport.external_physical_calls == 0
+
+
+def test_real_voyage_sender_rechecks_packet_expiry_immediately_before_opening_socket() -> None:
+    expired_at = NOW
+    sender = UrllibPreS5VoyageHttpSender(clock=lambda: expired_at)
+    opener = _NeverOpenOpener()
+    sender._opener = opener  # type: ignore[assignment]
+    request = PreS5VoyageHttpRequest(
+        url="https://api.voyageai.com/v1/contextualizedembeddings",
+        headers={
+            "Accept": "application/json",
+            "Authorization": "Bearer test-key",
+            "Content-Type": "application/json",
+        },
+        body=b"{}",
+        timeout_seconds=20,
+        max_response_bytes=1,
+        expires_at=expired_at,
+    )
+
+    with pytest.raises(PreS5VoyageTransportError, match="PRE_S5_VOYAGE_ACTIVATION_EXPIRED"):
+        sender.post(request)
+
+    assert opener.calls == 0
 
 
 def test_voyage_context4_transport_uses_official_token_count_not_utf8_byte_count() -> None:
@@ -414,6 +463,23 @@ class _FixtureSender:
         return self._response
 
 
+class _NeverOpenOpener:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def open(self, *_args: object, **_kwargs: object) -> object:
+        self.calls += 1
+        raise AssertionError("expired packet must not open a socket")
+
+
+class _MutableClock:
+    def __init__(self, value: datetime) -> None:
+        self.value = value
+
+    def __call__(self) -> datetime:
+        return self.value
+
+
 class _FixtureLease:
     """DB lease가 보장해야 할 one-shot/outcome semantics를 offline으로 재현한다."""
 
@@ -441,6 +507,17 @@ class _FixtureLease:
 
     def mark_unknown_billing(self) -> None:
         self.unknown_billing_calls += 1
+
+
+class _LeaseThatExpiresClock(_FixtureLease):
+    def __init__(self, *, clock: _MutableClock, expires_at: datetime) -> None:
+        super().__init__()
+        self._clock = clock
+        self._expires_at = expires_at
+
+    def claim_attempt(self, *, now: datetime) -> None:
+        super().claim_attempt(now=now)
+        self._clock.value = self._expires_at
 
 
 class _FixtureTokenCounter:

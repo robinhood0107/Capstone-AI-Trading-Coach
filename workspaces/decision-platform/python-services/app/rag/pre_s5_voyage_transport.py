@@ -112,6 +112,7 @@ class PreS5VoyageHttpRequest:
     body: bytes
     timeout_seconds: int
     max_response_bytes: int
+    expires_at: datetime
 
 
 @dataclass(frozen=True, slots=True)
@@ -160,16 +161,23 @@ class UrllibPreS5VoyageHttpSender:
     persistence는 제공하지 않으며 caller가 DB lease를 claim한 뒤에만 이 sender에 도달할 수 있다.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, clock: Callable[[], datetime] | None = None) -> None:
         self._opener = urllib.request.build_opener(
             urllib.request.ProxyHandler({}),
             _NoRedirectHandler(),
         )
+        self._clock = clock or (lambda: datetime.now(UTC))
 
     def post(self, request: PreS5VoyageHttpRequest) -> PreS5VoyageHttpResponse:
         """one fixed request를 실행하고 error body 없이 status 또는 bounded body만 반환한다."""
 
         _validate_http_request(request)
+        # lease 직후 caller 재검증과 별개로, socket open 바로 앞에서 packet deadline을 다시 닫는다.
+        now = _require_utc_now(self._clock)
+        expires_at = request.expires_at.astimezone(UTC)
+        if now >= expires_at:
+            raise PreS5VoyageTransportError("PRE_S5_VOYAGE_ACTIVATION_EXPIRED")
+        remaining_seconds = (expires_at - now).total_seconds()
         outbound = urllib.request.Request(
             request.url,
             data=request.body,
@@ -178,7 +186,10 @@ class UrllibPreS5VoyageHttpSender:
         )
         transport_failed = False
         try:
-            with self._opener.open(outbound, timeout=request.timeout_seconds) as stream:
+            with self._opener.open(
+                outbound,
+                timeout=min(float(request.timeout_seconds), remaining_seconds),
+            ) as stream:
                 body = stream.read(request.max_response_bytes + 1)
                 status = stream.getcode()
                 headers = {str(key).lower(): str(value) for key, value in stream.headers.items()}
@@ -237,7 +248,7 @@ class PreS5VoyageContext4Transport:
 
     @property
     def external_physical_calls(self) -> int:
-        """DB lease를 claim한 뒤 real sender로 위임한 provider attempt 수만 반환한다."""
+        """sender seam에 실제 위임한 provider attempt 수만 반환한다."""
 
         with self._lock:
             return self._external_physical_calls
@@ -293,10 +304,16 @@ class PreS5VoyageContext4Transport:
         if isinstance(self._sender, OutboundDisabledPreS5VoyageHttpSender):
             raise PreS5VoyageTransportError("PRE_S5_VOYAGE_OUTBOUND_DISABLED")
         self._claim_before_outbound()
+        self._require_current_activation_after_claim()
+        self._record_sender_handoff()
         sender_failed = False
         response: PreS5VoyageHttpResponse | None = None
         try:
             response = self._sender.post(request)
+        except PreS5VoyageTransportError as error:
+            if str(error) == "PRE_S5_VOYAGE_ACTIVATION_EXPIRED":
+                self._raise_after_attempt("PRE_S5_VOYAGE_ACTIVATION_EXPIRED")
+            sender_failed = True
         except Exception:
             sender_failed = True
         if sender_failed:
@@ -346,6 +363,20 @@ class PreS5VoyageContext4Transport:
             if claim_failed:
                 raise PreS5VoyageTransportError("PRE_S5_VOYAGE_LEDGER_UNAVAILABLE")
             self._consumed = True
+            self._usage_state = "CLAIMED"
+
+    def _require_current_activation_after_claim(self) -> None:
+        """lease wait가 packet expiry를 넘긴 경우 socket 없이 terminal ledger outcome으로 끝낸다."""
+
+        if _require_utc_now(self._clock) >= self._activation.expires_at:
+            self._raise_after_attempt("PRE_S5_VOYAGE_ACTIVATION_EXPIRED")
+
+    def _record_sender_handoff(self) -> None:
+        """packet이 아직 유효할 때만 sender seam 진입을 physical attempt로 센다."""
+
+        with self._lock:
+            if not self._consumed:  # pragma: no cover - callers always claim before handoff.
+                raise PreS5VoyageTransportError("PRE_S5_VOYAGE_SINGLE_USE")
             self._external_physical_calls += 1
             self._usage_state = "ATTEMPTED"
 
@@ -566,6 +597,7 @@ def _build_request(
         body=body,
         timeout_seconds=_TIMEOUT_SECONDS,
         max_response_bytes=activation.byte_cap,
+        expires_at=activation.expires_at,
     )
 
 
@@ -822,6 +854,8 @@ def _validate_http_request(request: object) -> None:
         or request.timeout_seconds != _TIMEOUT_SECONDS
         or type(request.max_response_bytes) is not int
         or not 1 <= request.max_response_bytes <= 4_194_304
+        or not isinstance(request.expires_at, datetime)
+        or request.expires_at.tzinfo is None
         or not isinstance(request.body, bytes)
         or not request.body
         or set(request.headers) != {"Accept", "Authorization", "Content-Type"}

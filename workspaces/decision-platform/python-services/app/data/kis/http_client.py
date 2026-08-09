@@ -71,6 +71,7 @@ class KISHttpClient:
         retry_sleeper: Callable[[float], None] = time.sleep,
         accounting: CollectionRunRecorder | None = None,
         require_cached_token: bool = False,
+        deadline_guard: Callable[[], None] | None = None,
     ) -> None:
         if not settings.offline and any(
             dependency is not None for dependency in (token_provider, transport, rate_limiter)
@@ -111,6 +112,7 @@ class KISHttpClient:
                     settings,
                     rate_limiter=token_limiter,
                     accounting=accounting,
+                    deadline_guard=deadline_guard,
                 )
                 token_manager = KISTokenManager(
                     mode=settings.mode,
@@ -144,6 +146,7 @@ class KISHttpClient:
                     token_provider=token_provider,
                     rate_limiter=request_limiter,
                     accounting=accounting,
+                    deadline_guard=deadline_guard,
                 ),
                 timeout=settings.kis_timeout_seconds,
                 follow_redirects=False,

@@ -118,7 +118,7 @@ class _Response:
 
     def iter_raw(self, *, chunk_size: int):  # type: ignore[no-untyped-def]
         assert chunk_size == 16 * 1024
-        yield b'{"data":[]}'
+        yield b'[]'
 
 
 class _Connection:
@@ -189,7 +189,7 @@ def test_packet_binds_fixed_provider_operation_and_nonsecret_request_plan() -> N
 def test_executor_rejects_drift_before_transport_or_claim_write(tmp_path: Path) -> None:
     control_root = _private_root(tmp_path)
     transport = _RecordingTransport(
-        response=Optional3ProbeHttpResponse(status_code=200, body=b'{"data":[]}'),
+        response=Optional3ProbeHttpResponse(status_code=200, body=b'[]'),
     )
     executor = Optional3ProbeExecutor(
         control_root=control_root,
@@ -213,7 +213,7 @@ def test_executor_uses_one_fixed_finnhub_request_and_keeps_key_body_and_query_ou
 ) -> None:
     control_root = _private_root(tmp_path)
     api_key = "test-secret-value"
-    raw_body = b'{"symbol":"AAPL","data":[{"buy":1,"hold":2,"sell":3}]}'
+    raw_body = b'[{"symbol":"AAPL","buy":1,"hold":2,"sell":3}]'
     transport = _RecordingTransport(
         response=Optional3ProbeHttpResponse(status_code=200, body=raw_body),
     )
@@ -263,6 +263,29 @@ def test_executor_uses_one_fixed_finnhub_request_and_keeps_key_body_and_query_ou
     assert raw_body.decode("utf-8") not in receipt_paths[0].read_text(encoding="utf-8")
 
 
+def test_executor_accepts_the_fixed_finnhub_earnings_array_shape(tmp_path: Path) -> None:
+    control_root = _private_root(tmp_path)
+    transport = _RecordingTransport(
+        response=Optional3ProbeHttpResponse(
+            status_code=200,
+            body=b'[{"actual":1.23,"estimate":1.2,"period":"2026-06-30"}]',
+        ),
+    )
+
+    receipt = Optional3ProbeExecutor(
+        control_root=control_root,
+        transport=transport,
+    ).execute(
+        packet=_packet(operation="FINNHUB_EARNINGS"),
+        binding=_binding(),
+        api_key="test-secret-value",
+        now=_NOW,
+    )
+
+    assert receipt.outcome == "SUCCESS"
+    assert transport.calls[0]["target"] == "/api/v1/stock/earnings?limit=1&symbol=AAPL"
+
+
 def test_stdlib_transport_pins_dns_and_adds_secret_only_at_request_handoff() -> None:
     connection = _Connection()
     transport = StdlibOptional3ProbeTransport()
@@ -278,7 +301,7 @@ def test_stdlib_transport_pins_dns_and_adds_secret_only_at_request_handoff() -> 
         maximum_response_bytes=262_144,
     )
 
-    assert response == Optional3ProbeHttpResponse(status_code=200, body=b'{"data":[]}')
+    assert response == Optional3ProbeHttpResponse(status_code=200, body=b'[]')
     assert connection.captured["target"] == "/api/v1/stock/recommendation?symbol=AAPL&token=test-secret-value"
     assert connection.captured["headers"] == {
         "Accept": "application/json",
@@ -331,7 +354,7 @@ def test_post_request_receipt_failure_reports_the_one_physical_call(
     executor = Optional3ProbeExecutor(
         control_root=_private_root(tmp_path),
         transport=_RecordingTransport(
-            response=Optional3ProbeHttpResponse(status_code=200, body=b'{"data":[]}'),
+            response=Optional3ProbeHttpResponse(status_code=200, body=b'[]'),
         ),
     )
 

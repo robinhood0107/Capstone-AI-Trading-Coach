@@ -40,11 +40,11 @@
 | S4.5/S4.6 | `OFFLINE_ONLY` | PR #77 fixture evaluation·numeric loopback | 0 | fixture/retrieval-only; provider live 0 |
 | S4.7D parser/OCR | `OFFLINE_ONLY` | PR #84 `014ccca1`, #85 `4bcca91e` | 0 | 안전 parser/OCR만 구현, importer/index writer 없음 |
 | S4.7D v2 runtime | `IMPLEMENTED_DRAFT` | PR #87/#88 + current working tree V25–V51 | 0 | local materializer·immutable bundle·profile-selected retrieval·ticket/Vertex preparation과 OA112 first-download quarantine bootstrap 구현은 검증 중; OA112 rights/cache/DB activation 전 `FULL_READY`가 아니며 Voyage/Vertex physical call은 0 |
-| Pre-S5 RAG/global-news lock | `CONTRACT_ONLY` | Issue #95 addendum | 0 | `OA112_ACTIVE_CONTRACT_LOCKED`, `S4_7D_OA112_PHYSICAL_ACTIVATION=NOT_MATERIALIZED`; foreign-news/Optional 3 adapter와 provider call 0 |
+| Pre-S5 RAG/global-news lock | `CONTRACT_LOCKED` | Issue #95 addendum + Optional 3 v2 | 0 | `OA112_ACTIVE_CONTRACT_LOCKED`, `S4_7D_OA112_PHYSICAL_ACTIVATION=NOT_MATERIALIZED`; Optional 3 one-shot executor는 packet/evidence 부재 시 outbound 0 |
 | Pre-S5 foreign-news local runtime | `IMPLEMENTED_DRAFT` | current working tree V49 | 0 | sanitized owner-local aggregate/read route만; Finnhub/SEC/Fed adapter와 GDELT HTTP transport/outbound는 없음 |
 | S4.8A | `CONTRACT_LOCKED` | PR #75 `c17d51f6` | 0 | `S4_8A=CONTRACT_LOCKED`; provider entitlement/adapter는 미활성 |
 | S4.8 Core 6 v2 | `CONTRACT_ONLY` | PR #92 `d27322cd` | 0 | `S4_8_CORE6_V2=CONTRACT_ONLY`; KIS/OpenDART/SEC EDGAR/KRX/KOFIA/ECOS future packet/receipt boundary만, adapter/live 0 |
-| S4.8 Core 6 + Optional 3 local runtime | `IMPLEMENTED_DRAFT` | current working tree V50 | 0 | nine-lane typed status/materialization과 sanitized append-only projection만; entitlement, adapter, provider/live call은 0 |
+| S4.8 Core 6 + Optional 3 local runtime | `IMPLEMENTED_DRAFT` | V50 + Optional 3 packet-gated probe | 0 | V50 nine-lane typed projection은 provider 0; Optional 3은 fixed endpoint one-shot executor만 구현했고 fresh packet/evidence 전에는 socket 0 |
 | S4.8B/C | `IMPLEMENTED_MERGE_CANDIDATE` | PR #77 `509d8eee` | 0 | `S4_8B_C=IMPLEMENTED_MERGE_CANDIDATE`; fixture/scorer/V23/read port만, endpoint/RiskEngine/provider는 미구현 |
 
 Naver runtime은 퇴역했으며 재활성화하지 않는다. GDELT, Voyage, Gemini, OpenAI, account/order
@@ -117,8 +117,10 @@ hidden direct-payload read route를 구현하지만 provider adapter·GDELT HTTP
 data/article metadata를 저장하지 않는다. SEC/Fed의 `officialReleaseLocator`는 article metadata가 아닌
 허용된 sanitized provenance locator다. current working tree V50은 Core 6과 Optional 3의 정확히
 9개 lane을 typed `AVAILABLE | ABSTAIN | BLOCKED` 상태와 sanitized append-only projection으로만
-materialize한다. Optional 3(Finnhub Recommendation/Earnings, Twelve Data, Massive)의 entitlement,
-실행 packet, adapter, provider call은 계속 0이다.
+materialize한다. Optional 3(Finnhub Recommendation/Earnings, Twelve Data, Massive)는 v2 local
+one-shot executor를 갖지만, canonical packet·fresh clean HEAD/tree·CI/security evidence 전에는
+provider call이 0이다. 실행해도 one operation/one physical call/retry 0/raw persistence 0이며
+Core 6, foreign-news, GDELT와 Decision/Signal/Risk/order 권한은 열리지 않는다.
 
 `PRE_S5_DOC_TRUTH_FREEZE_VERIFIED`는 이 표와 아래 SSOT link가 EOF/lstat receipt, v1/exact-30
 불변 hash, link/anchor/Mermaid 검사, 로컬 전용 reference 자료 비추적 검사까지 통과했음을 뜻한다.

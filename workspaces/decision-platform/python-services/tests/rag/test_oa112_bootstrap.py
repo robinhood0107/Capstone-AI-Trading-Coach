@@ -149,6 +149,36 @@ def test_bootstrap_activation_keeps_registry_unpublished_when_a_quarantine_sourc
     assert not raw.exists() or tuple(raw.iterdir()) == ()
 
 
+def test_bootstrap_activation_rejects_success_receipt_without_matching_physical_quarantine_count(
+    tmp_path: Path,
+) -> None:
+    cache_root, control_root = _roots(tmp_path)
+    registry = _registry()
+    _write_quarantine(cache_root=cache_root, registry=registry)
+    _write_complete_receipt(control_root=control_root, registry=registry)
+    receipt_path = control_root / "oa112-bootstrap-receipts" / ("a" * 64 + ".json")
+    payload = json.loads(receipt_path.read_text(encoding="utf-8"))
+    assert isinstance(payload, dict)
+    receipt = payload["receipt"]
+    assert isinstance(receipt, dict)
+    receipt["attemptCount"] = 0
+    receipt["physicalCallCount"] = 0
+    receipt_path.write_text(
+        json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(Oa112BootstrapError, match="OA112_BOOTSTRAP_RECEIPT_INVALID"):
+        activate_oa112_bootstrap_quarantine(
+            registry=registry,
+            local_cache_root=cache_root,
+            registry_root=control_root,
+            registry_relative_path="oa112-active-registry.v1.json",
+        )
+
+    assert not (control_root / "oa112-active-registry.v1.json").exists()
+
+
 def test_bootstrap_activation_ignores_a_prior_failed_receipt_after_a_later_success(
     tmp_path: Path,
 ) -> None:

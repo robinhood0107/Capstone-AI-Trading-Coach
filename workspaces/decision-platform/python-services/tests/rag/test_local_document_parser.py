@@ -395,6 +395,63 @@ def test_oa_pdf_mode_strips_inert_attachment_without_relaxing_owner_default(
     assert any("Approved OA page" in str(block) for block in result["blocks"])
 
 
+def test_oa_pdf_mode_strips_struct_element_associated_file(
+    posix_tmp_path: Path,
+) -> None:
+    root = posix_tmp_path / "owner"
+    root.mkdir()
+    pdf = fitz.open()
+    page = pdf.new_page()
+    page.insert_text((72, 72), "Approved OA formula text remains available.")
+    embedded_xref = pdf.get_new_xref()
+    pdf.update_object(
+        embedded_xref,
+        "<< /Type /EmbeddedFile /Subtype /application#2Fmathml+xml >>",
+    )
+    pdf.update_stream(embedded_xref, b"<math><mi>x</mi></math>")
+    file_spec_xref = pdf.get_new_xref()
+    pdf.update_object(
+        file_spec_xref,
+        (
+            "<< /Type /Filespec /F (formula.xml) /UF (formula.xml) "
+            f"/EF << /F {embedded_xref} 0 R >> >>"
+        ),
+    )
+    structure_root_xref = pdf.get_new_xref()
+    structure_element_xref = pdf.get_new_xref()
+    pdf.update_object(
+        structure_root_xref,
+        f"<< /Type /StructTreeRoot /K [{structure_element_xref} 0 R] >>",
+    )
+    pdf.update_object(
+        structure_element_xref,
+        (
+            "<< /Type /StructElem /S /Formula "
+            f"/P {structure_root_xref} 0 R /AF [{file_spec_xref} 0 R] >>"
+        ),
+    )
+    pdf.xref_set_key(
+        pdf.pdf_catalog(),
+        "StructTreeRoot",
+        f"{structure_root_xref} 0 R",
+    )
+    payload = pdf.tobytes(garbage=4, deflate=True, use_objstms=0)
+    pdf.close()
+    _write(root, "oa-with-associated-formula.pdf", payload)
+
+    with pytest.raises(DocumentParseError, match="PDF_ATTACHMENT_FORBIDDEN"):
+        _parse(_parser(), root, "oa-with-associated-formula.pdf")
+
+    result = _parse(
+        _parser(strip_inert_pdf_attachments=True),
+        root,
+        "oa-with-associated-formula.pdf",
+    )
+
+    assert result["rawContentSha256"] == hashlib.sha256(payload).hexdigest()
+    assert any("Approved OA formula" in str(block) for block in result["blocks"])
+
+
 def test_pdf_compressed_object_stream_javascript_is_rejected(
     posix_tmp_path: Path,
 ) -> None:

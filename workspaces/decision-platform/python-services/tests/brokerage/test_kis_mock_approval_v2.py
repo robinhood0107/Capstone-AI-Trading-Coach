@@ -115,6 +115,28 @@ def test_v2_accepts_dynamic_pr_and_binds_all_final_head_evidence(
     assert summary.physical_reservations == {"tokenP": 0, "brokerage": 5}
 
 
+def test_v2_accepts_merged_main_execution_head_without_weakening_legacy_open_pr_mode(
+    secure_directory: Path,
+) -> None:
+    """Pre-S5 execution packet은 merged main SHA를 쓰되 기존 v2 OPEN_PR bytes도 계속 수용한다."""
+
+    merged = _packet_document(secure_directory, schema_version=2, pull_request=104)
+    merged["repository"].update(
+        {
+            "branchRef": "main",
+            "evidenceMode": "MERGED_MAIN",
+        }
+    )
+    parsed_merged = probe.parse_approval_packet(merged)
+    assert isinstance(parsed_merged, probe.KISMockApprovalPacketV2)
+    assert parsed_merged.repository.evidence_mode == "MERGED_MAIN"
+
+    legacy_open_pr = _packet_document(secure_directory, schema_version=2, pull_request=77)
+    parsed_legacy = probe.parse_approval_packet(legacy_open_pr)
+    assert isinstance(parsed_legacy, probe.KISMockApprovalPacketV2)
+    assert parsed_legacy.repository.evidence_mode == "OPEN_PR"
+
+
 def test_v1_history_stays_hard_locked_when_v2_allows_dynamic_pr(
     secure_directory: Path,
 ) -> None:
@@ -287,6 +309,117 @@ def test_v2_live_pr_revalidation_requires_active_green_head(
     monkeypatch.setattr(probe.subprocess, "run", fake_run)
 
     with pytest.raises(probe.KISMockApprovalRejected):
+        probe._require_current_v2_pr_evidence(packet, secure_directory)
+
+
+def test_v2_merged_main_revalidation_requires_merge_sha_and_post_merge_checks(
+    secure_directory: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    live_pr_evidence: None,
+) -> None:
+    """packet claim 직전에도 merge SHA의 check-runs를 다시 읽어 PR head CI 재사용을 막는다."""
+
+    raw_packet = _packet_document(secure_directory, schema_version=2, pull_request=104)
+    raw_packet["repository"].update(
+        {
+            "branchRef": "main",
+            "evidenceMode": "MERGED_MAIN",
+        }
+    )
+    packet = probe.parse_approval_packet(raw_packet)
+    assert isinstance(packet, probe.KISMockApprovalPacketV2)
+    observed: list[tuple[str, ...]] = []
+
+    def fake_run(arguments: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        observed.append(tuple(arguments))
+        if arguments[:3] == ["gh", "pr", "view"]:
+            return subprocess.CompletedProcess(
+                arguments,
+                0,
+                json.dumps(
+                    {
+                        "number": 104,
+                        "state": "MERGED",
+                        "isDraft": False,
+                        "baseRefName": "main",
+                        "mergeCommit": {"oid": "a" * 40},
+                    }
+                ),
+                "",
+            )
+        assert arguments[:2] == ["gh", "api"]
+        return subprocess.CompletedProcess(
+            arguments,
+            0,
+            json.dumps(
+                {
+                    "check_runs": [
+                        {"name": name, "conclusion": "success", "head_sha": "a" * 40}
+                        for name in sorted(probe._REQUIRED_CI_CHECKS)
+                    ]
+                }
+            ),
+            "",
+        )
+
+    monkeypatch.setattr(probe.subprocess, "run", fake_run)
+
+    probe._require_current_v2_pr_evidence(packet, secure_directory)
+
+    assert any(command[:3] == ("gh", "pr", "view") for command in observed)
+    assert any(command[:2] == ("gh", "api") for command in observed)
+
+
+def test_v2_merged_main_revalidation_rejects_green_checks_from_another_sha(
+    secure_directory: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    live_pr_evidence: None,
+) -> None:
+    """required check 이름이 같아도 head_sha가 EXECUTION_HEAD와 다르면 outbound 전에 거부한다."""
+
+    raw_packet = _packet_document(secure_directory, schema_version=2, pull_request=104)
+    raw_packet["repository"].update(
+        {
+            "branchRef": "main",
+            "evidenceMode": "MERGED_MAIN",
+        }
+    )
+    packet = probe.parse_approval_packet(raw_packet)
+    assert isinstance(packet, probe.KISMockApprovalPacketV2)
+
+    def fake_run(arguments: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        if arguments[:3] == ["gh", "pr", "view"]:
+            return subprocess.CompletedProcess(
+                arguments,
+                0,
+                json.dumps(
+                    {
+                        "number": 104,
+                        "state": "MERGED",
+                        "isDraft": False,
+                        "baseRefName": "main",
+                        "mergeCommit": {"oid": "a" * 40},
+                    }
+                ),
+                "",
+            )
+        return subprocess.CompletedProcess(
+            arguments,
+            0,
+            json.dumps(
+                {
+                    "check_runs": [
+                        {"name": name, "conclusion": "success", "head_sha": "b" * 40}
+                        for name in sorted(probe._REQUIRED_CI_CHECKS)
+                    ]
+                }
+            ),
+            "",
+        )
+
+    monkeypatch.setattr(probe.subprocess, "run", fake_run)
+
+    with pytest.raises(probe.KISMockApprovalRejected, match="post-merge checks"):
         probe._require_current_v2_pr_evidence(packet, secure_directory)
 
 
@@ -562,6 +695,63 @@ def test_author_rejects_non_open_or_draft_pull_request(
 
     with pytest.raises(author.KISMockApprovalAuthorRejected, match="not active"):
         author._collect_current_pr_evidence(secure_directory, pull_request=77)
+
+
+def test_author_collects_merged_main_head_and_post_merge_checks(
+    secure_directory: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """author는 clean local main, origin/main, merged PR SHA와 post-merge check-runs를 한 SHA로 묶는다."""
+
+    monkeypatch.setattr(author, "_require_clean_repository", lambda _root: None)
+    monkeypatch.setattr(author, "_git_revision", lambda _root, _ref: "a" * 40)
+
+    def fake_run(arguments: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        if arguments[:2] == ["git", "symbolic-ref"]:
+            return subprocess.CompletedProcess(arguments, 0, "main\n", "")
+        if arguments[:3] == ["gh", "pr", "view"]:
+            return subprocess.CompletedProcess(
+                arguments,
+                0,
+                json.dumps(
+                    {
+                        "number": 104,
+                        "state": "MERGED",
+                        "isDraft": False,
+                        "baseRefName": "main",
+                        "mergeCommit": {"oid": "a" * 40},
+                    }
+                ),
+                "",
+            )
+        assert arguments[:2] == ["gh", "api"]
+        return subprocess.CompletedProcess(
+            arguments,
+            0,
+            json.dumps(
+                {
+                    "check_runs": [
+                        {"name": name, "conclusion": "success", "head_sha": "a" * 40}
+                        for name in sorted(probe._REQUIRED_CI_CHECKS)
+                    ]
+                }
+            ),
+            "",
+        )
+
+    monkeypatch.setattr(author.subprocess, "run", fake_run)
+
+    branch, head, checks = author._collect_merged_main_evidence(
+        secure_directory,
+        pull_request=104,
+    )
+
+    assert branch == "main"
+    assert head == "a" * 40
+    assert checks == [
+        {"name": name, "conclusion": "SUCCESS"}
+        for name in sorted(probe._REQUIRED_CI_CHECKS)
+    ]
 
 
 @pytest.mark.parametrize("entry_kind", ["symlink", "directory", "hardlink"])

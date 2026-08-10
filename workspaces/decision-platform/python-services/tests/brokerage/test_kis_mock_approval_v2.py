@@ -127,11 +127,13 @@ def test_v2_accepts_merged_main_execution_head_without_weakening_legacy_open_pr_
             "evidenceMode": "MERGED_MAIN",
         }
     )
+    merged["packetSha256"] = _packet_digest(merged)
     parsed_merged = probe.parse_approval_packet(merged)
     assert isinstance(parsed_merged, probe.KISMockApprovalPacketV2)
     assert parsed_merged.repository.evidence_mode == "MERGED_MAIN"
 
     legacy_open_pr = _packet_document(secure_directory, schema_version=2, pull_request=77)
+    legacy_open_pr["packetSha256"] = _packet_digest(legacy_open_pr)
     parsed_legacy = probe.parse_approval_packet(legacy_open_pr)
     assert isinstance(parsed_legacy, probe.KISMockApprovalPacketV2)
     assert parsed_legacy.repository.evidence_mode == "OPEN_PR"
@@ -326,6 +328,7 @@ def test_v2_merged_main_revalidation_requires_merge_sha_and_post_merge_checks(
             "evidenceMode": "MERGED_MAIN",
         }
     )
+    raw_packet["packetSha256"] = _packet_digest(raw_packet)
     packet = probe.parse_approval_packet(raw_packet)
     assert isinstance(packet, probe.KISMockApprovalPacketV2)
     observed: list[tuple[str, ...]] = []
@@ -384,6 +387,7 @@ def test_v2_merged_main_revalidation_rejects_green_checks_from_another_sha(
             "evidenceMode": "MERGED_MAIN",
         }
     )
+    raw_packet["packetSha256"] = _packet_digest(raw_packet)
     packet = probe.parse_approval_packet(raw_packet)
     assert isinstance(packet, probe.KISMockApprovalPacketV2)
 

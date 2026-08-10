@@ -218,6 +218,104 @@ def _collect_current_pr_evidence(
     return branch, head, selected_checks
 
 
+def _collect_merged_main_evidence(
+    repository_root: Path,
+    *,
+    pull_request: int,
+) -> tuple[str, str, list[dict[str, str]]]:
+    """clean origin/main, merged implementation PR와 exact merge SHA post-merge CI를 직접 검증한다."""
+
+    _require_clean_repository(repository_root)
+    head = _git_revision(repository_root, "HEAD")
+    remote_head = _git_revision(repository_root, "refs/remotes/origin/main")
+    try:
+        branch_result = subprocess.run(
+            ["git", "symbolic-ref", "--quiet", "--short", "HEAD"],
+            cwd=repository_root,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        branch = branch_result.stdout.strip()
+        pull_request_result = subprocess.run(
+            [
+                "gh",
+                "pr",
+                "view",
+                str(pull_request),
+                "--json",
+                "number,state,isDraft,baseRefName,mergeCommit",
+            ],
+            cwd=repository_root,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        checks_result = subprocess.run(
+            [
+                "gh",
+                "api",
+                "--method",
+                "GET",
+                f"repos/{{owner}}/{{repo}}/commits/{head}/check-runs",
+                "-f",
+                "filter=latest",
+                "-f",
+                "per_page=100",
+            ],
+            cwd=repository_root,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        pull_request_document: object = json.loads(pull_request_result.stdout)
+        checks_document: object = json.loads(checks_result.stdout)
+    except (OSError, subprocess.SubprocessError, json.JSONDecodeError):
+        raise KISMockApprovalAuthorRejected("merged main evidence is unavailable") from None
+    if branch != "main" or head != remote_head:
+        raise KISMockApprovalAuthorRejected("merged main evidence does not bind origin/main")
+    if not isinstance(pull_request_document, dict):
+        raise KISMockApprovalAuthorRejected("merged main evidence is invalid")
+    merge_commit = pull_request_document.get("mergeCommit")
+    if (
+        pull_request_document.get("number") != pull_request
+        or pull_request_document.get("state") != "MERGED"
+        or pull_request_document.get("isDraft") is not False
+        or pull_request_document.get("baseRefName") != "main"
+        or not isinstance(merge_commit, dict)
+        or merge_commit.get("oid") != head
+    ):
+        raise KISMockApprovalAuthorRejected("merged PR does not bind one final HEAD")
+    successful_names = _successful_post_merge_check_names(checks_document, head=head)
+    if not _REQUIRED_CI_CHECKS.issubset(successful_names):
+        raise KISMockApprovalAuthorRejected("post-merge required checks are incomplete")
+    selected_checks = [
+        {"name": name, "conclusion": "SUCCESS"} for name in sorted(_REQUIRED_CI_CHECKS)
+    ]
+    return branch, head, selected_checks
+
+
+def _successful_post_merge_check_names(document: object, *, head: str) -> frozenset[str]:
+    """GitHub check-runs 중 exact merge SHA에서 성공한 required job 이름만 투영한다."""
+
+    if not isinstance(document, dict):
+        return frozenset()
+    check_runs = document.get("check_runs")
+    if not isinstance(check_runs, list):
+        return frozenset()
+    return frozenset(
+        name
+        for item in check_runs
+        if isinstance(item, dict)
+        and item.get("head_sha") == head
+        and item.get("conclusion") == "success"
+        and isinstance((name := item.get("name")), str)
+    )
+
+
 def _require_recovery_source_outcome(
     recovery_of: dict[str, str],
     *,
@@ -268,6 +366,7 @@ def author_v2_packet(
     issued_at: datetime,
     expires_at: datetime,
     pull_request: int,
+    execution_head_mode: str,
     security_report_path: Path,
     security_manifest_path: Path,
     security_coverage_path: Path,
@@ -285,10 +384,18 @@ def author_v2_packet(
     """author의 mutable inputs를 current GitHub/Redis evidence와 결합해 canonical v2 bytes를 만든다."""
 
     resolved_root = repository_root.resolve(strict=True)
-    branch, head, checks = _collect_current_pr_evidence(
-        resolved_root,
-        pull_request=pull_request,
-    )
+    if execution_head_mode == "OPEN_PR":
+        branch, head, checks = _collect_current_pr_evidence(
+            resolved_root,
+            pull_request=pull_request,
+        )
+    elif execution_head_mode == "MERGED_MAIN":
+        branch, head, checks = _collect_merged_main_evidence(
+            resolved_root,
+            pull_request=pull_request,
+        )
+    else:
+        raise KISMockApprovalAuthorRejected("execution HEAD mode is invalid")
     report, report_sha256 = _security_evidence_file(security_report_path)
     manifest, manifest_sha256 = _security_evidence_file(security_manifest_path)
     coverage, coverage_sha256 = _security_evidence_file(security_coverage_path)
@@ -322,6 +429,7 @@ def author_v2_packet(
             "headSha": head,
             "remoteHeadSha": head,
             "pullRequest": pull_request,
+            "evidenceMode": execution_head_mode,
         },
         "evidence": {
             "ciHeadSha": head,
@@ -441,6 +549,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--issued-at", required=True)
     parser.add_argument("--expires-at", required=True)
     parser.add_argument("--pull-request", type=int, required=True)
+    parser.add_argument(
+        "--execution-head-mode",
+        choices=("OPEN_PR", "MERGED_MAIN"),
+        default="OPEN_PR",
+    )
     parser.add_argument("--security-report", type=Path, required=True)
     parser.add_argument("--security-manifest", type=Path, required=True)
     parser.add_argument("--security-coverage", type=Path, required=True)
@@ -488,6 +601,7 @@ def main(argv: list[str] | None = None) -> int:
             issued_at=_parse_timestamp(args.issued_at),
             expires_at=_parse_timestamp(args.expires_at),
             pull_request=args.pull_request,
+            execution_head_mode=args.execution_head_mode,
             security_report_path=args.security_report,
             security_manifest_path=args.security_manifest,
             security_coverage_path=args.security_coverage,

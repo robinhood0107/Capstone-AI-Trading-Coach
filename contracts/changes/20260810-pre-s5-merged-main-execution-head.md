@@ -13,9 +13,11 @@ PR HEAD만 허용하므로, 이 순서에서는 packet을 안전하게 발급할
 - `schemaVersion=1`과 기존 v2 packet bytes는 변경하지 않는다. v2에서 생략 가능한
   `repository.evidenceMode`의 기본값은 `OPEN_PR`이며 기존 동작을 그대로 유지한다.
 - `evidenceMode=MERGED_MAIN`은 `branchRef=main`, local `HEAD=origin/main`, 지정 PR의
-  `state=MERGED`, `baseRef=main`, `mergeCommit.oid=HEAD`가 모두 일치할 때만 허용한다.
+  `state=MERGED`, `baseRef=main`, `mergeCommit.oid=HEAD`와 GitHub의 현재 `refs/heads/main=HEAD`가
+  모두 일치할 때만 허용한다.
 - author와 executor는 GitHub check-runs API에서 exact merge SHA의 required job 다섯 개가
-  모두 성공했는지 각각 확인한다. 같은 이름의 PR-head check나 다른 SHA의 check는 인정하지 않는다.
+  모두 `github-actions`, `completed/success`인지 각각 확인한다. 같은 이름의 제3자 check,
+  PR-head check나 다른 SHA의 check는 인정하지 않는다.
 - security report/manifest/coverage/findings, Redis baseline, TTL, nonce, exact order, physical cap,
   retry 0, artifact 0, current-user approval latch와 첫 실패 stop rule은 기존 v2 계약을 유지한다.
 - `EXECUTION_HEAD` 뒤 상태 문서만 추가한 `RELEASE_HEAD`는 provider evidence의 SHA를 대신할 수 없다.
@@ -39,9 +41,10 @@ so it could not safely issue a packet in that sequence.
 - Preserve schema v1 and existing v2 packet bytes. The optional v2
   `repository.evidenceMode` defaults to `OPEN_PR`, retaining the existing behavior.
 - `MERGED_MAIN` requires `branchRef=main`, local `HEAD=origin/main`, and a selected merged PR whose
-  main-base merge commit is the exact HEAD.
+  main-base merge commit is the exact HEAD. GitHub's current `refs/heads/main` must also equal HEAD.
 - Both author and executor independently require all five required GitHub check-runs to succeed on the
-  exact merge SHA. A same-named PR-head check or check from another SHA does not count.
+  exact merge SHA as completed `github-actions` jobs. A same-named third-party check, PR-head check,
+  or check from another SHA does not count.
 - Existing sealed security evidence, Redis baseline, TTL, nonce, exact order, physical caps, zero retry,
   zero artifacts, current-user latch, and first-failure stop rules remain unchanged.
 - A later documentation-only `RELEASE_HEAD` cannot replace the provider execution SHA.

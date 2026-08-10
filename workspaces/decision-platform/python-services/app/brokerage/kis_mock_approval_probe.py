@@ -142,14 +142,26 @@ class RepositoryEvidence(_StrictModel):
 
 
 class RepositoryEvidenceV2(_StrictModel):
-    """v2 packet은 현재 PR branch와 main base를 exact final HEAD에 결속한다."""
+    """v2 packet은 open PR 또는 merged main의 exact final HEAD에 결속한다."""
 
     root: str
-    branch_ref: str = Field(alias="branchRef", pattern=_BRANCH)
+    branch_ref: str = Field(alias="branchRef", min_length=1, max_length=128)
     base_ref: Literal["main"] = Field(alias="baseRef")
     head_sha: str = Field(alias="headSha", pattern=_GIT_SHA)
     remote_head_sha: str = Field(alias="remoteHeadSha", pattern=_GIT_SHA)
     pull_request: StrictInt = Field(alias="pullRequest", ge=1)
+    evidence_mode: Literal["OPEN_PR", "MERGED_MAIN"] = Field(
+        default="OPEN_PR",
+        alias="evidenceMode",
+    )
+
+    @model_validator(mode="after")
+    def _branch_matches_evidence_mode(self) -> "RepositoryEvidenceV2":
+        if self.evidence_mode == "MERGED_MAIN" and self.branch_ref != "main":
+            raise ValueError("merged main evidence must bind origin/main")
+        if self.evidence_mode == "OPEN_PR" and re.fullmatch(_BRANCH, self.branch_ref) is None:
+            raise ValueError("open PR evidence must bind a feature branch")
+        return self
 
 
 class RequiredCheck(_StrictModel):
@@ -629,7 +641,11 @@ def _require_current_v2_pr_evidence(
     packet: KISMockApprovalPacketV2,
     repository_root: Path,
 ) -> None:
-    """provider 실행 직전 GitHub가 여전히 같은 OPEN non-draft PR과 green checks를 가리키는지 확인한다."""
+    """provider 실행 직전 packet mode에 맞는 GitHub SHA와 green checks를 다시 확인한다."""
+
+    if packet.repository.evidence_mode == "MERGED_MAIN":
+        _require_current_v2_merged_main_evidence(packet, repository_root)
+        return
 
     try:
         result = subprocess.run(
@@ -674,6 +690,109 @@ def _require_current_v2_pr_evidence(
             check_by_name[name] = conclusion
     if any(check_by_name.get(name) != "SUCCESS" for name in _REQUIRED_CI_CHECKS):
         raise KISMockApprovalRejected("PR required checks are no longer successful")
+
+
+def _require_current_v2_merged_main_evidence(
+    packet: KISMockApprovalPacketV2,
+    repository_root: Path,
+) -> None:
+    """merged implementation PR와 그 merge SHA의 post-merge check-runs를 claim 직전에 재검증한다."""
+
+    head = packet.repository.head_sha
+    try:
+        pull_request_result = subprocess.run(
+            [
+                "gh",
+                "pr",
+                "view",
+                str(packet.repository.pull_request),
+                "--json",
+                "number,state,isDraft,baseRefName,mergeCommit",
+            ],
+            cwd=repository_root,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        main_ref_result = subprocess.run(
+            [
+                "gh",
+                "api",
+                "--method",
+                "GET",
+                "repos/{owner}/{repo}/git/ref/heads/main",
+            ],
+            cwd=repository_root,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        checks_result = subprocess.run(
+            [
+                "gh",
+                "api",
+                "--method",
+                "GET",
+                f"repos/{{owner}}/{{repo}}/commits/{head}/check-runs",
+                "-f",
+                "filter=latest",
+                "-f",
+                "per_page=100",
+            ],
+            cwd=repository_root,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        pull_request: object = json.loads(pull_request_result.stdout)
+        main_ref: object = json.loads(main_ref_result.stdout)
+        checks: object = json.loads(checks_result.stdout)
+    except (OSError, subprocess.SubprocessError, json.JSONDecodeError):
+        raise KISMockApprovalRejected("merged main evidence is unavailable") from None
+    if not isinstance(pull_request, dict):
+        raise KISMockApprovalRejected("merged main evidence is invalid")
+    if not isinstance(main_ref, dict):
+        raise KISMockApprovalRejected("remote main evidence is invalid")
+    main_ref_object = main_ref.get("object")
+    if not isinstance(main_ref_object, dict) or main_ref_object.get("sha") != head:
+        raise KISMockApprovalRejected("remote main no longer matches execution HEAD")
+    merge_commit = pull_request.get("mergeCommit")
+    if (
+        pull_request.get("number") != packet.repository.pull_request
+        or pull_request.get("state") != "MERGED"
+        or pull_request.get("isDraft") is not False
+        or pull_request.get("baseRefName") != "main"
+        or not isinstance(merge_commit, dict)
+        or merge_commit.get("oid") != head
+    ):
+        raise KISMockApprovalRejected("merged main evidence no longer matches")
+    successful_names = _successful_post_merge_check_names(checks, head=head)
+    if not _REQUIRED_CI_CHECKS.issubset(successful_names):
+        raise KISMockApprovalRejected("post-merge checks are incomplete")
+
+
+def _successful_post_merge_check_names(document: object, *, head: str) -> frozenset[str]:
+    """Only successful check-runs whose head_sha is the exact execution SHA count as CI evidence."""
+
+    if not isinstance(document, dict):
+        return frozenset()
+    check_runs = document.get("check_runs")
+    if not isinstance(check_runs, list):
+        return frozenset()
+    return frozenset(
+        name
+        for item in check_runs
+        if isinstance(item, dict)
+        and item.get("head_sha") == head
+        and item.get("status") == "completed"
+        and item.get("conclusion") == "success"
+        and isinstance((app := item.get("app")), dict)
+        and app.get("slug") == "github-actions"
+        and isinstance((name := item.get("name")), str)
+    )
 
 
 def _require_recovery_source_outcome(packet: KISMockApprovalPacketV2) -> None:

@@ -30,9 +30,9 @@ class DocumentParseError(ValueError):
 
 BlockType = Literal["HEADING", "PARAGRAPH", "LIST", "TABLE", "FORMULA", "CAPTION"]
 
-_PARSER_VERSION: Final = "1.0.0"
+_PARSER_VERSION: Final = "1.1.0"
 _PARSER_ARTIFACT_SHA256: Final = hashlib.sha256(
-    b"capstone-s4-7d-safe-local-document-parser-v1"
+    b"capstone-s4-7d-safe-local-document-parser-v1.1"
 ).hexdigest()
 _SOURCE_ID = re.compile(r"^src_[a-z0-9][a-z0-9_-]{2,95}$")
 _REVISION_ID = re.compile(r"^srv_[a-z0-9][a-z0-9_-]{2,95}$")
@@ -64,15 +64,31 @@ _OOXML_MIME_MARKERS: Final[dict[str, bytes]] = {
         b"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"
     ),
 }
-_PDF_FORBIDDEN_TOKENS: Final[tuple[bytes, ...]] = (
-    b"/JavaScript",
-    b"/JS",
-    b"/EmbeddedFile",
-    b"/Filespec",
-    b"/Launch",
-    b"/OpenAction",
-    b"/RichMedia",
+_PDF_ACTION_NAMES: Final[frozenset[str]] = frozenset(
+    {
+        "/GoTo",
+        "/GoToR",
+        "/GoToE",
+        "/Launch",
+        "/Thread",
+        "/URI",
+        "/Sound",
+        "/Movie",
+        "/Hide",
+        "/Named",
+        "/SubmitForm",
+        "/ResetForm",
+        "/ImportData",
+        "/JavaScript",
+        "/SetOCGState",
+        "/Rendition",
+        "/Trans",
+        "/GoTo3DView",
+    }
 )
+_PDF_EXECUTABLE_ACTION_NAMES: Final[frozenset[str]] = frozenset({"/JavaScript", "/Launch"})
+_PDF_SAFE_OPEN_ACTION_NAMES: Final[frozenset[str]] = frozenset({"/GoTo"})
+_PDF_XREF_REFERENCE: Final[re.Pattern[str]] = re.compile(r"^([1-9][0-9]*) 0 R$")
 _PDF_OCR_RASTER_SCALE: Final[float] = 300 / 72
 _MACRO_NAMES: Final[tuple[str, ...]] = (
     "vbaproject.bin",
@@ -213,9 +229,15 @@ class LocalDocumentParser:
         *,
         ocr_backend: OcrBackendPort | None = None,
         limits: ParserLimits | None = None,
+        strip_inert_pdf_attachments: bool = False,
     ) -> None:
+        """기본 owner 경계는 attachment를 거부하고, 승인된 OA 경계만 비실행 attachment를 제거한다."""
+
+        if type(strip_inert_pdf_attachments) is not bool:
+            raise DocumentParseError("PARSER_ATTACHMENT_POLICY_INVALID")
         self._ocr_backend = ocr_backend
         self._limits = limits or ParserLimits()
+        self._strip_inert_pdf_attachments = strip_inert_pdf_attachments
         self._limits.validate()
 
     def parse_owner_document(
@@ -365,20 +387,24 @@ class LocalDocumentParser:
         block_budget: _BlockBudget,
         table_budget: _TableCellBudget,
     ) -> tuple[list[dict[str, Any]], bool]:
-        if any(token in payload for token in _PDF_FORBIDDEN_TOKENS):
-            raise DocumentParseError("PDF_ACTIVE_CONTENT_FORBIDDEN")
+        document = _open_normalized_pdf(payload, self._limits)
         try:
-            document = fitz.open(stream=payload, filetype="pdf")
-        except Exception as error:
-            raise DocumentParseError("PDF_MALFORMED") from error
-        try:
-            if document.needs_pass or document.is_encrypted:
-                raise DocumentParseError("PDF_ENCRYPTED_FORBIDDEN")
-            _inspect_pdf_objects(document, self._limits)
-            if document.embfile_count() > 0:
-                raise DocumentParseError("PDF_ATTACHMENT_FORBIDDEN")
-            if document.page_count < 1 or document.page_count > self._limits.max_pages:
-                raise DocumentParseError("PDF_PAGE_BOUND_EXCEEDED")
+            has_inert_attachments = _inspect_pdf_objects(
+                document,
+                self._limits,
+                allow_inert_attachments=self._strip_inert_pdf_attachments,
+            )
+            if has_inert_attachments:
+                expected_page_count = document.page_count
+                sanitized_payload = _strip_inert_pdf_attachments(document, self._limits)
+                document.close()
+                document = _open_normalized_pdf(sanitized_payload, self._limits)
+                if document.page_count != expected_page_count or _inspect_pdf_objects(
+                    document,
+                    self._limits,
+                    allow_inert_attachments=False,
+                ):
+                    raise DocumentParseError("PDF_ATTACHMENT_SANITIZATION_FAILED")
             output: list[dict[str, Any]] = []
             ocr_used = False
             for page_number, page in enumerate(document, start=1):
@@ -819,24 +845,233 @@ def _parse_html(
     return _renumber(parser.blocks)
 
 
-def _inspect_pdf_objects(document: fitz.Document, limits: ParserLimits) -> None:
-    """압축 object stream까지 펼쳐 active action과 attachment dictionary를 거부한다."""
+def _open_normalized_pdf(payload: bytes, limits: ParserLimits) -> fitz.Document:
+    """reachable object만 메모리에서 재직렬화해 과거 incremental xref를 제거한다."""
+
+    normalized: fitz.Document | None = None
+    try:
+        source = fitz.open(stream=payload, filetype="pdf")
+    except Exception as error:
+        raise DocumentParseError("PDF_MALFORMED") from error
+    try:
+        _validate_pdf_container(source, limits)
+        normalized_payload = _serialize_normalized_pdf(source, limits)
+    finally:
+        source.close()
+    try:
+        normalized = fitz.open(stream=normalized_payload, filetype="pdf")
+        _validate_pdf_container(normalized, limits)
+    except DocumentParseError:
+        if normalized is not None:
+            normalized.close()
+        raise
+    except Exception as error:
+        if normalized is not None:
+            normalized.close()
+        raise DocumentParseError("PDF_MALFORMED") from error
+    return normalized
+
+
+def _validate_pdf_container(document: fitz.Document, limits: ParserLimits) -> None:
+    """정규화 전후에 encryption, page, object 상한을 동일하게 적용한다."""
 
     try:
+        if document.needs_pass or document.is_encrypted:
+            raise DocumentParseError("PDF_ENCRYPTED_FORBIDDEN")
         object_count = document.xref_length()
         if object_count < 1 or object_count > limits.max_archive_entries:
             raise DocumentParseError("PDF_OBJECT_BOUND_EXCEEDED")
-        for xref in range(1, object_count):
-            value = document.xref_object(xref, compressed=False).encode(
-                "utf-8",
-                errors="replace",
-            )
-            if any(token in value for token in _PDF_FORBIDDEN_TOKENS):
-                raise DocumentParseError("PDF_ACTIVE_CONTENT_FORBIDDEN")
+        if document.page_count < 1 or document.page_count > limits.max_pages:
+            raise DocumentParseError("PDF_PAGE_BOUND_EXCEEDED")
     except DocumentParseError:
         raise
     except Exception as error:
         raise DocumentParseError("PDF_MALFORMED") from error
+
+
+def _serialize_normalized_pdf(document: fitz.Document, limits: ParserLimits) -> bytes:
+    """raw cache를 바꾸지 않고 reachable PDF projection만 bounded memory bytes로 만든다."""
+
+    try:
+        payload = cast(
+            bytes,
+            document.tobytes(
+                garbage=4,
+                clean=True,
+                deflate=True,
+                deflate_images=True,
+                deflate_fonts=True,
+            ),
+        )
+    except Exception as error:
+        raise DocumentParseError("PDF_MALFORMED") from error
+    if not payload or len(payload) > limits.max_decompressed_bytes:
+        raise DocumentParseError("PDF_NORMALIZED_BOUND_EXCEEDED")
+    return payload
+
+
+def _inspect_pdf_objects(
+    document: fitz.Document,
+    limits: ParserLimits,
+    *,
+    allow_inert_attachments: bool,
+) -> bool:
+    """구조 key를 검사해 실행 action을 거부하고 inert attachment 존재 여부만 반환한다."""
+
+    _validate_pdf_container(document, limits)
+    try:
+        catalog_xref = document.pdf_catalog()
+        embedded_file_count = document.embfile_count()
+    except Exception as error:
+        raise DocumentParseError("PDF_MALFORMED") from error
+    if _pdf_key(document, catalog_xref, "AA")[0] != "null":
+        raise DocumentParseError("PDF_ACTIVE_CONTENT_FORBIDDEN")
+    if _pdf_key(document, catalog_xref, "AcroForm/XFA")[0] != "null":
+        raise DocumentParseError("PDF_ACTIVE_CONTENT_FORBIDDEN")
+    _validate_pdf_open_action(document, catalog_xref)
+
+    attachment_object_seen = False
+    object_count = document.xref_length()
+    for xref in range(1, object_count):
+        action = _pdf_key(document, xref, "S")
+        nested_action = _pdf_key(document, xref, "A")
+        javascript = _pdf_key(document, xref, "JS")
+        additional_action = _pdf_key(document, xref, "AA")
+        object_type = _pdf_key(document, xref, "Type")
+        subtype = _pdf_key(document, xref, "Subtype")
+        open_action = _pdf_key(document, xref, "OpenAction")
+        xfa = _pdf_key(document, xref, "XFA")
+        embedded_file = _pdf_key(document, xref, "EF")
+        associated_file = _pdf_key(document, xref, "AF")
+        if (
+            (action[0] == "name" and action[1] in _PDF_EXECUTABLE_ACTION_NAMES)
+            or _pdf_nested_action_is_forbidden(document, xref, nested_action)
+            or (
+                action[0] == "name"
+                and action[1] in _PDF_ACTION_NAMES
+                and _pdf_key(document, xref, "Next")[0] != "null"
+            )
+            or javascript[0] != "null"
+            or additional_action[0] != "null"
+            or object_type == ("name", "/RichMedia")
+            or subtype == ("name", "/RichMedia")
+            or (xref != catalog_xref and open_action[0] != "null")
+            or xfa[0] != "null"
+        ):
+            raise DocumentParseError("PDF_ACTIVE_CONTENT_FORBIDDEN")
+        is_file_spec = object_type == ("name", "/Filespec")
+        is_embedded_stream = object_type == ("name", "/EmbeddedFile")
+        is_file_attachment = subtype == ("name", "/FileAttachment")
+        if is_file_spec or is_embedded_stream or is_file_attachment:
+            # 외부 file spec은 inert attachment가 아니므로 OA 경계에서도 허용하지 않는다.
+            if is_file_spec and embedded_file[0] == "null":
+                raise DocumentParseError("PDF_ATTACHMENT_FORBIDDEN")
+            attachment_object_seen = True
+        if associated_file[0] != "null":
+            attachment_object_seen = True
+
+    if _pdf_name_tree_populated(document, catalog_xref, "JavaScript"):
+        raise DocumentParseError("PDF_ACTIVE_CONTENT_FORBIDDEN")
+    if _pdf_name_tree_populated(document, catalog_xref, "EmbeddedFiles"):
+        attachment_object_seen = True
+    has_inert_attachments = embedded_file_count > 0 or attachment_object_seen
+    if has_inert_attachments and not allow_inert_attachments:
+        raise DocumentParseError("PDF_ATTACHMENT_FORBIDDEN")
+    return has_inert_attachments
+
+
+def _pdf_nested_action_is_forbidden(
+    document: fitz.Document,
+    xref: int,
+    action: tuple[str, str],
+) -> bool:
+    """annotation·outline의 direct action과 action chain에서 실행 payload를 닫는다."""
+
+    if action[0] == "name":
+        return action[1] in _PDF_EXECUTABLE_ACTION_NAMES
+    if action[0] != "dict":
+        return False
+    nested_action = _pdf_key(document, xref, "A/S")
+    return (
+        (nested_action[0] == "name" and nested_action[1] in _PDF_EXECUTABLE_ACTION_NAMES)
+        or _pdf_key(document, xref, "A/JS")[0] != "null"
+        # `/Next`는 dictionary 또는 array action chain이라 재귀 우회를 막기 위해 전부 거부한다.
+        or _pdf_key(document, xref, "A/Next")[0] != "null"
+    )
+
+
+def _validate_pdf_open_action(document: fitz.Document, catalog_xref: int) -> None:
+    """initial page 이동만 허용하고 executable open action은 거부한다."""
+
+    kind, value = _pdf_key(document, catalog_xref, "OpenAction")
+    if kind == "null" or kind == "array":
+        return
+    if kind != "xref":
+        raise DocumentParseError("PDF_ACTIVE_CONTENT_FORBIDDEN")
+    match = _PDF_XREF_REFERENCE.fullmatch(value)
+    if match is None:
+        raise DocumentParseError("PDF_ACTIVE_CONTENT_FORBIDDEN")
+    target_xref = int(match.group(1))
+    action = _pdf_key(document, target_xref, "S")
+    destination = _pdf_key(document, target_xref, "D")
+    if (
+        action[0] != "name"
+        or action[1] not in _PDF_SAFE_OPEN_ACTION_NAMES
+        or destination[0] not in {"array", "name", "string", "xref"}
+        or _pdf_key(document, target_xref, "JS")[0] != "null"
+        or _pdf_key(document, target_xref, "AA")[0] != "null"
+    ):
+        raise DocumentParseError("PDF_ACTIVE_CONTENT_FORBIDDEN")
+
+
+def _strip_inert_pdf_attachments(document: fitz.Document, limits: ParserLimits) -> bytes:
+    """OA raw는 보존하고 in-memory projection에서 file payload와 annotation만 제거한다."""
+
+    try:
+        document.scrub(
+            attached_files=True,
+            clean_pages=False,
+            embedded_files=True,
+            hidden_text=False,
+            javascript=True,
+            metadata=False,
+            redactions=False,
+            remove_links=False,
+            reset_fields=False,
+            reset_responses=False,
+            thumbnails=False,
+            xml_metadata=False,
+        )
+        # PDF 2.0 수식 접근성 자료처럼 StructElem의 /AF로 연결된 파일은 scrub 대상이 아니다.
+        # OA projection에서 참조를 먼저 끊어야 garbage=4가 Filespec과 EmbeddedFile을 제거한다.
+        for xref in range(1, document.xref_length()):
+            if _pdf_key(document, xref, "AF")[0] != "null":
+                document.xref_set_key(xref, "AF", "null")
+    except Exception as error:
+        raise DocumentParseError("PDF_ATTACHMENT_SANITIZATION_FAILED") from error
+    return _serialize_normalized_pdf(document, limits)
+
+
+def _pdf_name_tree_populated(document: fitz.Document, catalog_xref: int, name: str) -> bool:
+    """scrub가 남기는 empty `/Names []` dictionary는 active payload로 세지 않는다."""
+
+    kind, _value = _pdf_key(document, catalog_xref, f"Names/{name}")
+    if kind == "null":
+        return False
+    names_kind, names_value = _pdf_key(document, catalog_xref, f"Names/{name}/Names")
+    return names_kind != "array" or names_value != "[]"
+
+
+def _pdf_key(document: fitz.Document, xref: int, key: str) -> tuple[str, str]:
+    """xref key read 실패를 malformed PDF stable code로 닫는다."""
+
+    try:
+        kind, value = document.xref_get_key(xref, key)
+    except Exception as error:
+        raise DocumentParseError("PDF_MALFORMED") from error
+    if not isinstance(kind, str) or not isinstance(value, str):
+        raise DocumentParseError("PDF_MALFORMED")
+    return kind, value
 
 
 def _native_pdf_blocks(

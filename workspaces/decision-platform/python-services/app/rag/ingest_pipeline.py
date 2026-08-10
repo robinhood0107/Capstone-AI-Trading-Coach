@@ -341,17 +341,25 @@ def _split_large_paragraph_block(
         return (block,)
     result: list[RagParsedBlock] = []
     character_cursor = 0
-    for token_start in range(0, len(spans), max_tokens):
-        token_end = min(token_start + max_tokens, len(spans))
-        character_end = spans[token_end - 1][1]
-        if character_end <= character_cursor:
-            continue
-        character_start = max(character_cursor, spans[token_start][0])
-        segment = block.text[character_start:character_end]
-        if not segment:
-            raise RagIngestError("RAG tokenizer produced an empty paragraph span.")
-        if count_tokens(segment, tokenizer=tokenizer) > max_tokens:
-            raise RagIngestError("RAG tokenizer paragraph split exceeded the token bound.")
+    while character_cursor < len(block.text):
+        remaining = block.text[character_cursor:]
+        remaining_spans = _validated_token_spans(remaining, tokenizer=tokenizer)
+        if not remaining_spans:
+            if remaining.strip():
+                raise RagIngestError("RAG tokenizer paragraph spans did not preserve the full text.")
+            character_cursor = len(block.text)
+            break
+        # SentencePiece/BPE는 같은 문자열도 문서 중간과 chunk 선두에서 token 수가 달라질 수 있다.
+        # 새 chunk의 실제 좌측 문맥으로 다시 tokenize한 뒤 우측 경계도 상한 안으로 수렴시킨다.
+        segment_start = character_cursor + remaining_spans[0][0]
+        if block.text[character_cursor:segment_start].strip():
+            raise RagIngestError("RAG tokenizer paragraph spans did not preserve the full text.")
+        candidate = block.text[segment_start:]
+        segment = _bounded_paragraph_prefix(
+            candidate,
+            tokenizer=tokenizer,
+            max_tokens=max_tokens,
+        )
         result.append(
             RagParsedBlock(
                 kind="paragraph",
@@ -360,10 +368,44 @@ def _split_large_paragraph_block(
                 ordinal=block.ordinal,
             )
         )
-        character_cursor = character_end
+        next_cursor = segment_start + len(segment)
+        if next_cursor <= character_cursor:
+            raise RagIngestError("RAG tokenizer produced an empty paragraph span.")
+        character_cursor = next_cursor
     if character_cursor != len(block.text):
         raise RagIngestError("RAG tokenizer paragraph spans did not preserve the full text.")
     return tuple(result)
+
+
+def _bounded_paragraph_prefix(
+    text: str,
+    *,
+    tokenizer: RagTokenizer,
+    max_tokens: int,
+) -> str:
+    """현재 chunk 문맥에서 재검증된 max-token 이하의 가장 긴 안전 prefix를 반환한다."""
+
+    spans = _validated_token_spans(text, tokenizer=tokenizer)
+    if not spans:
+        raise RagIngestError("RAG tokenizer produced an empty paragraph span.")
+    if len(spans) <= max_tokens:
+        return text
+    character_end = spans[max_tokens - 1][1]
+    while character_end > 0:
+        segment = text[:character_end]
+        segment_spans = _validated_token_spans(segment, tokenizer=tokenizer)
+        if segment and len(segment_spans) <= max_tokens:
+            return segment
+        if len(segment_spans) <= max_tokens:
+            break
+        next_end = segment_spans[max_tokens - 1][1]
+        if next_end >= character_end:
+            earlier_ends = tuple(end for _start, end in segment_spans if end < character_end)
+            if not earlier_ends:
+                break
+            next_end = max(earlier_ends)
+        character_end = next_end
+    raise RagIngestError("RAG tokenizer paragraph split exceeded the token bound.")
 
 
 def _make_chunk(

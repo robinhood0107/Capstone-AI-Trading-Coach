@@ -926,6 +926,8 @@ def _inspect_pdf_objects(
         raise DocumentParseError("PDF_MALFORMED") from error
     if _pdf_key(document, catalog_xref, "AA")[0] != "null":
         raise DocumentParseError("PDF_ACTIVE_CONTENT_FORBIDDEN")
+    if _pdf_key(document, catalog_xref, "AcroForm/XFA")[0] != "null":
+        raise DocumentParseError("PDF_ACTIVE_CONTENT_FORBIDDEN")
     _validate_pdf_open_action(document, catalog_xref)
 
     attachment_object_seen = False

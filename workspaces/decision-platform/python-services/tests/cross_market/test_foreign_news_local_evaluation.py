@@ -18,6 +18,7 @@ from app.cross_market.foreign_news_evaluator import (
 )
 from app.cross_market.foreign_news_local_evaluation import (
     ForeignNewsLocalEvaluationInputs,
+    ForeignNewsModelArtifactReceipt,
     _LocalFinBertClassifier,
     _load_loughran_mcdonald_candidate,
     load_sentivent_gold_split,
@@ -260,12 +261,14 @@ def test_runtime_model_loader_requires_a_passed_selected_only_blind_test(
     receipts = evaluation_root / "receipts"
     receipts.mkdir(mode=0o700)
     receipt_path = receipts / "sentivent-gold-plus-tfns-stress.v1.json"
+    artifacts = _model_artifact_receipts()
+    validation_receipt = _validation_receipt()
     _write_new_receipt(
         receipt_path,
         {
             "contractId": "foreign-news-local-evaluation-receipt-v1",
-            "evaluationInputDigest": "a" * 64,
-            "modelArtifacts": [{}, {}, {}],
+            "evaluationInputDigest": _evaluation_input_digest(artifacts, validation_receipt),
+            "modelArtifacts": [artifact.to_payload() for artifact in artifacts],
             "result": {
                 "blindTest": {},
                 "selection": {
@@ -277,7 +280,7 @@ def test_runtime_model_loader_requires_a_passed_selected_only_blind_test(
                 "tfnsStress": {},
             },
             "sentiventBlindTest": {},
-            "sentiventValidation": {"rawSha256": "b" * 64},
+            "sentiventValidation": validation_receipt,
             "tfnsStress": {},
         },
     )
@@ -288,7 +291,7 @@ def test_runtime_model_loader_requires_a_passed_selected_only_blind_test(
     )
     monkeypatch.setattr(
         "app.cross_market.foreign_news_evaluation_cli.build_local_model_candidates",
-        lambda *, evaluation_root: ((candidate,), ()),
+        lambda *, evaluation_root: ((candidate,), artifacts),
     )
 
     assert load_verified_selected_local_candidate(evaluation_root=evaluation_root) is candidate
@@ -298,6 +301,61 @@ def test_runtime_model_loader_requires_a_passed_selected_only_blind_test(
         encoding="utf-8",
     )
     receipt_path.chmod(0o600)
+    with pytest.raises(ForeignNewsEvaluationCliError, match="FOREIGN_NEWS_RUNTIME_MODEL_NOT_VERIFIED"):
+        load_verified_selected_local_candidate(evaluation_root=evaluation_root)
+
+
+def test_runtime_model_loader_rejects_model_artifact_drift_after_passed_receipt(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    evaluation_root = tmp_path / "finbert-eval"
+    evaluation_root.mkdir(mode=0o700)
+    receipts = evaluation_root / "receipts"
+    receipts.mkdir(mode=0o700)
+    artifacts = _model_artifact_receipts()
+    validation_receipt = _validation_receipt()
+    _write_new_receipt(
+        receipts / "sentivent-gold-plus-tfns-stress.v1.json",
+        {
+            "contractId": "foreign-news-local-evaluation-receipt-v1",
+            "evaluationInputDigest": _evaluation_input_digest(artifacts, validation_receipt),
+            "modelArtifacts": [artifact.to_payload() for artifact in artifacts],
+            "result": {
+                "blindTest": {},
+                "selection": {
+                    "selectedModel": "PROSUSAI_FINBERT",
+                    "selectionStatus": "TEST_EVALUATED",
+                    "testEvaluationCount": 1,
+                    "testOutcome": "PASSED",
+                },
+                "tfnsStress": {},
+            },
+            "sentiventBlindTest": {},
+            "sentiventValidation": validation_receipt,
+            "tfnsStress": {},
+        },
+    )
+    candidate = ForeignNewsLocalCandidate(
+        candidate_model="PROSUSAI_FINBERT",
+        classifier=_Classifier(candidate_model="PROSUSAI_FINBERT", counters={}, wrong=False),
+        footprint_bytes=1,
+    )
+    drifted = (
+        ForeignNewsModelArtifactReceipt(
+            candidate_model=artifacts[0].candidate_model,
+            config_sha256=artifacts[0].config_sha256,
+            footprint_bytes=artifacts[0].footprint_bytes,
+            tokenizer_sha256=artifacts[0].tokenizer_sha256,
+            weights_sha256="f" * 64,
+        ),
+        *artifacts[1:],
+    )
+    monkeypatch.setattr(
+        "app.cross_market.foreign_news_evaluation_cli.build_local_model_candidates",
+        lambda *, evaluation_root: ((candidate,), drifted),
+    )
+
     with pytest.raises(ForeignNewsEvaluationCliError, match="FOREIGN_NEWS_RUNTIME_MODEL_NOT_VERIFIED"):
         load_verified_selected_local_candidate(evaluation_root=evaluation_root)
 
@@ -389,3 +447,43 @@ def _clock(*, step_ns: int) -> Callable[[], int]:
         return current
 
     return now
+
+
+def _model_artifact_receipts() -> tuple[ForeignNewsModelArtifactReceipt, ...]:
+    return tuple(
+        ForeignNewsModelArtifactReceipt(
+            candidate_model=candidate,
+            config_sha256=f"{index + 1:x}" * 64,
+            footprint_bytes=index + 1,
+            tokenizer_sha256=f"{index + 4:x}" * 64,
+            weights_sha256=f"{index + 7:x}" * 64,
+        )
+        for index, candidate in enumerate(MODEL_CANDIDATES)
+    )
+
+
+def _validation_receipt() -> dict[str, object]:
+    return {
+        "datasetId": "GillesJacobs/sentivent",
+        "excludedAmbiguousOrUnlabeledCount": 0,
+        "includedExampleCount": 3,
+        "licenseEvidenceSha256": "a" * 64,
+        "rawSha256": "b" * 64,
+        "sourceRevisionSha256": "c" * 64,
+        "split": "validation",
+    }
+
+
+def _evaluation_input_digest(
+    artifacts: tuple[ForeignNewsModelArtifactReceipt, ...],
+    validation_receipt: dict[str, object],
+) -> str:
+    import hashlib
+
+    payload = {
+        "contractId": "foreign-news-local-evaluation-receipt-v1",
+        "modelArtifacts": [artifact.to_payload() for artifact in artifacts],
+        "sentiventValidation": validation_receipt,
+    }
+    canonical = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()

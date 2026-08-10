@@ -76,6 +76,31 @@ def test_oa_public_bge_materialization_binds_cached_raw_identity_and_keeps_recei
     assert '"rawContent":' not in projection
 
 
+def test_public_bge_materialization_batches_more_than_runtime_limit(tmp_path: Path) -> None:
+    document_ir = _document_ir()
+    document_ir["blocks"] = [
+        {
+            "blockType": "PARAGRAPH",
+            "locator": {"page": page_number},
+            "ocrConfidence": None,
+            "readingOrder": page_number,
+            "text": f"Approved public evidence page {page_number}.",
+        }
+        for page_number in range(1, 66)
+    ]
+    embedder = _FixtureEmbedder()
+
+    result = materialize_public_bge_document(
+        parser=_FixtureParser(document_ir),
+        tokenizer=_FixtureTokenizer(),
+        embedder=embedder,
+        request=_oa_request(tmp_path),
+    )
+
+    assert [len(batch) for batch in embedder.calls] == [64, 1]
+    assert len(result.document.chunks) == len(result.embeddings) == 65
+
+
 def test_public_bge_materialization_rejects_raw_or_mime_drift_before_embedding(tmp_path: Path) -> None:
     raw_drift = dict(_document_ir())
     raw_drift["rawContentSha256"] = "d" * 64

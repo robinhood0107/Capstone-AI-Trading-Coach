@@ -351,6 +351,113 @@ def test_pdf_allows_literal_js_text_and_local_goto_open_action(
     assert any("not executable" in str(block) for block in result["blocks"])
 
 
+@pytest.mark.parametrize(
+    "action_dictionary",
+    (
+        "<< /S /JavaScript /JS (app.alert\\(1\\)) >>",
+        "<< /S /Launch /F (calculator.exe) >>",
+    ),
+)
+def test_pdf_rejects_executable_action_nested_in_link_annotation(
+    posix_tmp_path: Path,
+    action_dictionary: str,
+) -> None:
+    root = posix_tmp_path / "owner"
+    root.mkdir()
+    pdf = fitz.open()
+    page = pdf.new_page()
+    page.insert_text((72, 72), "Nested executable link action must not reach extraction.")
+    annotation_xref = pdf.get_new_xref()
+    pdf.update_object(
+        annotation_xref,
+        (
+            "<< /Type /Annot /Subtype /Link /Rect [0 0 10 10] "
+            f"/P {page.xref} 0 R /A {action_dictionary} >>"
+        ),
+    )
+    pdf.xref_set_key(page.xref, "Annots", f"[{annotation_xref} 0 R]")
+    payload = pdf.tobytes(garbage=4, deflate=True, use_objstms=0)
+    pdf.close()
+    _write(root, "nested-executable-action.pdf", payload)
+
+    for parser in (_parser(), _parser(strip_inert_pdf_attachments=True)):
+        with pytest.raises(DocumentParseError, match="PDF_ACTIVE_CONTENT_FORBIDDEN"):
+            _parse(parser, root, "nested-executable-action.pdf")
+
+
+def test_pdf_rejects_chained_action_nested_in_link_annotation(
+    posix_tmp_path: Path,
+) -> None:
+    root = posix_tmp_path / "owner"
+    root.mkdir()
+    pdf = fitz.open()
+    page = pdf.new_page()
+    page.insert_text((72, 72), "Chained executable action must not reach extraction.")
+    annotation_xref = pdf.get_new_xref()
+    pdf.update_object(
+        annotation_xref,
+        (
+            "<< /Type /Annot /Subtype /Link /Rect [0 0 10 10] "
+            f"/P {page.xref} 0 R /A << /S /GoTo /D [{page.xref} 0 R /Fit] "
+            "/Next << /S /JavaScript /JS (app.alert\\(1\\)) >> >> >>"
+        ),
+    )
+    pdf.xref_set_key(page.xref, "Annots", f"[{annotation_xref} 0 R]")
+    payload = pdf.tobytes(garbage=4, deflate=True, use_objstms=0)
+    pdf.close()
+    _write(root, "chained-executable-action.pdf", payload)
+
+    for parser in (_parser(), _parser(strip_inert_pdf_attachments=True)):
+        with pytest.raises(DocumentParseError, match="PDF_ACTIVE_CONTENT_FORBIDDEN"):
+            _parse(parser, root, "chained-executable-action.pdf")
+
+
+def test_pdf_rejects_xfa_form_payload(posix_tmp_path: Path) -> None:
+    root = posix_tmp_path / "owner"
+    root.mkdir()
+    pdf = fitz.open()
+    page = pdf.new_page()
+    page.insert_text((72, 72), "XFA payload must not reach extraction.")
+    xfa_xref = pdf.get_new_xref()
+    pdf.update_object(xfa_xref, "<<>>")
+    pdf.update_stream(xfa_xref, b"<script>app.alert(1)</script>")
+    form_xref = pdf.get_new_xref()
+    pdf.update_object(form_xref, f"<< /XFA {xfa_xref} 0 R >>")
+    pdf.xref_set_key(pdf.pdf_catalog(), "AcroForm", f"{form_xref} 0 R")
+    payload = pdf.tobytes(garbage=4, deflate=True, use_objstms=0)
+    pdf.close()
+    _write(root, "xfa-form.pdf", payload)
+
+    for parser in (_parser(), _parser(strip_inert_pdf_attachments=True)):
+        with pytest.raises(DocumentParseError, match="PDF_ACTIVE_CONTENT_FORBIDDEN"):
+            _parse(parser, root, "xfa-form.pdf")
+
+
+def test_pdf_allows_uri_link_without_following_it(posix_tmp_path: Path) -> None:
+    root = posix_tmp_path / "owner"
+    root.mkdir()
+    pdf = fitz.open()
+    page = pdf.new_page()
+    page.insert_text((72, 72), "Link text remains local and extractable.")
+    annotation_xref = pdf.get_new_xref()
+    pdf.update_object(
+        annotation_xref,
+        (
+            "<< /Type /Annot /Subtype /Link /Rect [0 0 10 10] "
+            f"/P {page.xref} 0 R /A << /S /URI /URI (https://example.invalid/) >> >>"
+        ),
+    )
+    pdf.xref_set_key(page.xref, "Annots", f"[{annotation_xref} 0 R]")
+    payload = pdf.tobytes(garbage=4, deflate=True, use_objstms=0)
+    pdf.close()
+    _write(root, "uri-link.pdf", payload)
+
+    result = _parse(_parser(), root, "uri-link.pdf")
+
+    assert result["rawContentSha256"] == hashlib.sha256(payload).hexdigest()
+    assert any("Link text remains local" in str(block) for block in result["blocks"])
+
+
 def test_pdf_normalizes_unreachable_broken_xref_before_security_inspection(
     posix_tmp_path: Path,
 ) -> None:

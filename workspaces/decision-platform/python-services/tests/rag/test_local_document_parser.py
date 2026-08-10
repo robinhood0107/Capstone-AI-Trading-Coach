@@ -433,6 +433,22 @@ def test_pdf_rejects_xfa_form_payload(posix_tmp_path: Path) -> None:
             _parse(parser, root, "xfa-form.pdf")
 
 
+def test_pdf_rejects_inline_catalog_xfa_form_payload(posix_tmp_path: Path) -> None:
+    root = posix_tmp_path / "owner"
+    root.mkdir()
+    pdf = fitz.open()
+    page = pdf.new_page()
+    page.insert_text((72, 72), "Inline catalog XFA payload must not reach extraction.")
+    pdf.xref_set_key(pdf.pdf_catalog(), "AcroForm", "<< /XFA (inline-active-xfa) >>")
+    payload = pdf.tobytes(garbage=4, deflate=True, use_objstms=0)
+    pdf.close()
+    _write(root, "inline-xfa-form.pdf", payload)
+
+    for parser in (_parser(), _parser(strip_inert_pdf_attachments=True)):
+        with pytest.raises(DocumentParseError, match="PDF_ACTIVE_CONTENT_FORBIDDEN"):
+            _parse(parser, root, "inline-xfa-form.pdf")
+
+
 def test_pdf_allows_uri_link_without_following_it(posix_tmp_path: Path) -> None:
     root = posix_tmp_path / "owner"
     root.mkdir()

@@ -6,6 +6,8 @@ from pathlib import Path
 
 import pytest
 
+import app.cross_market.foreign_news_provider_probe as provider_probe_module
+
 from app.cross_market.foreign_news_provider_probe import (
     ForeignNewsProviderProbeError,
     ForeignNewsProviderProbeExecutionBinding,
@@ -419,6 +421,50 @@ def test_pre_handoff_transport_failure_seals_an_exact_zero_call_receipt(tmp_path
             now=_NOW,
             user_agent="test-contact@example.invalid",
         )
+
+
+def test_pre_handoff_failure_receipt_write_error_preserves_zero_physical_calls(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """provider handoff 전 실패는 local receipt write 실패와 무관하게 physical call 0이다."""
+
+    class _PreHandoffFailureTransport:
+        def get(self, **_: object) -> ForeignNewsProviderProbeHttpResponse:
+            raise ForeignNewsProviderProbeError(
+                "FOREIGN_NEWS_PROBE_TRANSPORT_UNAVAILABLE",
+                physical_call_count=0,
+            )
+
+    original_write = provider_probe_module._write_new_private_file
+    writes = 0
+
+    def fail_receipt_write(*args: object, **kwargs: object) -> None:
+        nonlocal writes
+        writes += 1
+        if writes == 2:
+            raise OSError("synthetic receipt failure")
+        original_write(*args, **kwargs)
+
+    monkeypatch.setattr(provider_probe_module, "_write_new_private_file", fail_receipt_write)
+
+    with pytest.raises(ForeignNewsProviderProbeError) as raised:
+        ForeignNewsProviderProbeExecutor(
+            control_root=_private_root(tmp_path),
+            transport=_PreHandoffFailureTransport(),
+            now_provider=lambda: _NOW + timedelta(seconds=2),
+        ).execute(
+            packet=_packet(),
+            binding=_binding(),
+            api_key="test-secret-value",
+            analyzer=_RecordingAnalyzer(),
+            now=_NOW,
+            user_agent="test-contact@example.invalid",
+        )
+
+    assert raised.value.code == "FOREIGN_NEWS_PROBE_RECEIPT_UNAVAILABLE"
+    assert raised.value.physical_call_count == 0
+    assert writes == 2
 
 
 def test_stdlib_transport_keeps_finnhub_key_in_memory_target_only_and_official_requests_keyless() -> None:

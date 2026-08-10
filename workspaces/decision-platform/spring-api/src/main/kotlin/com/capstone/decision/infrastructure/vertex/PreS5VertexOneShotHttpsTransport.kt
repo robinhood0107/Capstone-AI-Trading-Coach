@@ -11,6 +11,7 @@ import javax.net.ssl.SSLSocketFactory
 
 internal data class PreS5VertexOneShotHttpsRequest(
     val endpoint: URI,
+    val apiKey: ByteArray? = null,
     val headers: List<Pair<String, String>>,
     val body: ByteArray,
     val timeout: Duration,
@@ -114,6 +115,13 @@ internal class PreS5VertexOneShotHttpsTransport(
             require(request.endpoint.port == -1)
             require(request.endpoint.userInfo == null)
             require(request.endpoint.rawQuery == null && request.endpoint.rawFragment == null)
+            require(
+                request.apiKey == null ||
+                    (
+                        request.apiKey.size in MINIMUM_API_KEY_BYTES..MAXIMUM_API_KEY_BYTES &&
+                            request.apiKey.all { byte -> byte.toInt().toChar() in API_KEY_CHARACTERS }
+                    ),
+            )
             require(request.body.size <= MAX_REQUEST_BYTES)
             require(maximumResponseBytes in 0..MAX_RESPONSE_BYTES)
             require(request.timeout in MIN_TIMEOUT..MAX_TIMEOUT)
@@ -128,11 +136,20 @@ internal class PreS5VertexOneShotHttpsTransport(
             require(requestHeaderNames.none { it in RESERVED_REQUEST_HEADERS })
 
             val path = request.endpoint.rawPath?.takeIf { it.isNotEmpty() } ?: "/"
-            val header =
+            val targetPrefix =
+                if (request.apiKey == null) {
+                    "POST $path HTTP/1.1\r\nHost: ".toByteArray(StandardCharsets.US_ASCII)
+                } else {
+                    "POST $path?key=".toByteArray(StandardCharsets.US_ASCII)
+                }
+            val targetSuffix =
+                if (request.apiKey == null) {
+                    ByteArray(0)
+                } else {
+                    " HTTP/1.1\r\nHost: ".toByteArray(StandardCharsets.US_ASCII)
+                }
+            val remainingHeader =
                 buildString {
-                    append("POST ")
-                    append(path)
-                    append(" HTTP/1.1\r\nHost: ")
                     append(request.endpoint.host)
                     append("\r\nConnection: close\r\nContent-Length: ")
                     append(request.body.size)
@@ -145,6 +162,19 @@ internal class PreS5VertexOneShotHttpsTransport(
                     }
                     append("\r\n")
                 }.toByteArray(StandardCharsets.US_ASCII)
+            val apiKeyLength = request.apiKey?.size ?: 0
+            val header = ByteArray(targetPrefix.size + apiKeyLength + targetSuffix.size + remainingHeader.size)
+            var headerOffset = 0
+            targetPrefix.copyInto(header, destinationOffset = headerOffset)
+            headerOffset += targetPrefix.size
+            request.apiKey?.copyInto(header, destinationOffset = headerOffset)
+            headerOffset += apiKeyLength
+            targetSuffix.copyInto(header, destinationOffset = headerOffset)
+            headerOffset += targetSuffix.size
+            remainingHeader.copyInto(header, destinationOffset = headerOffset)
+            targetPrefix.fill(0)
+            targetSuffix.fill(0)
+            remainingHeader.fill(0)
             headerBytes = header
             require(header.size <= MAX_HEADER_BYTES)
             val wire = ByteArray(header.size + request.body.size)
@@ -165,6 +195,7 @@ internal class PreS5VertexOneShotHttpsTransport(
         } finally {
             headerBytes?.fill(0)
             wireBytes?.fill(0)
+            request.apiKey?.fill(0)
         }
     }
 
@@ -306,6 +337,9 @@ internal class PreS5VertexOneShotHttpsTransport(
         val STATUS_LINE = Regex("^HTTP/1\\.1 ([1-5][0-9]{2})(?: .*)?$")
         val CHUNK_SIZE = Regex("^[0-9A-Fa-f]{1,8}$")
         val RESERVED_REQUEST_HEADERS = setOf("host", "connection", "content-length", "transfer-encoding")
+        const val MINIMUM_API_KEY_BYTES = 16
+        const val MAXIMUM_API_KEY_BYTES = 512
+        val API_KEY_CHARACTERS = (('a'..'z') + ('A'..'Z') + ('0'..'9') + listOf('-', '_')).toSet()
     }
 }
 

@@ -64,6 +64,23 @@ class PostgresForeignNewsSentimentRepository:
             raise ForeignNewsWriterAuthorityError("foreign-news append disposition is invalid")
         return disposition
 
+    def preflight(self) -> None:
+        """socket 이전에 writer role의 단일 append capability만 확인한다.
+
+        외부 provider call 뒤 DB 권한 누락이 드러나 packet이 소비되는 일을 줄이기 위한 read-only
+        preflight다. 이 method는 row를 만들거나 provider data를 읽지 않는다.
+        """
+
+        try:
+            with self._connection_factory(
+                self._database_dsn,
+                autocommit=False,
+                connect_timeout=2,
+            ) as connection:
+                _attest_exact_writer_authority(connection)
+        except psycopg.Error as error:
+            raise ForeignNewsWriterAuthorityError("foreign-news writer preflight rejected") from error
+
 
 def _attest_exact_writer_authority(connection: psycopg.Connection[Any]) -> None:
     role = str(_required_scalar(connection.execute("select current_user").fetchone()))

@@ -10,9 +10,14 @@ class RagV2VertexGenerationMigrationContractTest {
     private val scopeLedgerPath by lazy { resolveMigration("s4_7d_vertex_generation_scope_ledger") }
     private val hardeningPath by lazy { resolveMigration("s4_7d_vertex_outbound_authorization_hardening") }
     private val claimRecheckPath by lazy { resolveMigration("s4_7d_vertex_claim_time_evidence_recheck") }
+    private val apiKeyOnlyPath by lazy { resolveMigration("s4_7d_vertex_api_key_only_runtime") }
     private val scopeLedger by lazy { Files.readString(scopeLedgerPath) }
     private val hardening by lazy { Files.readString(hardeningPath) }
     private val claimRecheck by lazy { Files.readString(claimRecheckPath) }
+    private val apiKeyOnly by lazy { Files.readString(apiKeyOnlyPath) }
+    private val bootstrapRoles by lazy {
+        Files.readString(Path.of("../../../infra/init/02-application-roles.sh"))
+    }
 
     @Test
     fun `Vertex migrations use consecutive next free Flyway versions`() {
@@ -20,6 +25,7 @@ class RagV2VertexGenerationMigrationContractTest {
         val scopeVersion = migrationVersion(scopeLedgerPath)
         val hardeningVersion = migrationVersion(hardeningPath)
         val claimRecheckVersion = migrationVersion(claimRecheckPath)
+        val apiKeyOnlyVersion = migrationVersion(apiKeyOnlyPath)
         val beforeScope = migrations.filter { migrationVersion(it) < scopeVersion }.maxOf(::migrationVersion)
 
         assertThat(scopeVersion).isEqualTo(beforeScope + 1)
@@ -29,6 +35,8 @@ class RagV2VertexGenerationMigrationContractTest {
         assertThat(claimRecheckVersion).isEqualTo(42)
         assertThat(migrations.any { migrationVersion(it) == 41 }).isTrue()
         assertThat(claimRecheckVersion).isEqualTo(hardeningVersion + 2)
+        assertThat(apiKeyOnlyVersion).isEqualTo(52)
+        assertThat(apiKeyOnlyVersion).isEqualTo(migrations.maxOf(::migrationVersion))
     }
 
     @Test
@@ -100,6 +108,38 @@ class RagV2VertexGenerationMigrationContractTest {
             "raw_request",
             "provider_payload",
             "GRANT INSERT ON TABLE public.rag_v2_immutable_vertex_usage_reservations TO decision_app",
+        )
+    }
+
+    @Test
+    fun `API-key-only supersession removes OAuth claim authority and keeps one Vertex Express generation attempt`() {
+        assertThat(apiKeyOnly).contains(
+            "VERTEX_EXPRESS_API_KEY",
+            "p_token_physical_call_cap <> 0",
+            "physical_token_call_count = 0",
+            "DROP FUNCTION public.claim_rag_v2_immutable_vertex_token_attempt",
+            "p_authentication_mode text",
+            "assert_rag_v2_immutable_vertex_reservation_is_current(reservation)",
+            "claim_rag_v2_immutable_vertex_generate_content_attempt",
+            "physical_generate_content_call_count = 1",
+        )
+        assertThat(apiKeyOnly).doesNotContain(
+            "raw_api_key",
+            "raw_response",
+            "raw_request",
+            "provider_payload",
+            "GOOGLE_APPLICATION_CREDENTIALS",
+        )
+    }
+
+    @Test
+    fun `bootstrap reapplies only the current API-key Vertex ledger capabilities after a volume restart`() {
+        assertThat(bootstrapRoles).contains(
+            "public.reserve_rag_v2_immutable_vertex_usage(text,text,text,text,text,text,text,text,text,text,text,timestamp with time zone,integer,integer,integer,bigint,bigint,bigint,integer,integer,text,jsonb)",
+            "V52 Vertex Express API-key ledger는 token attempt 없이 generation 1회 capability만 재부여한다.",
+            "claim_rag_v2_immutable_vertex_generate_content_attempt(text, text)",
+            "commit_rag_v2_immutable_vertex_usage(text, text, integer, integer, integer)",
+            "mark_rag_v2_immutable_vertex_usage_unknown_billing(text, text)",
         )
     }
 

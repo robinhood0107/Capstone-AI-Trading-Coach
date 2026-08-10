@@ -145,6 +145,20 @@ class PreS5DocumentTruthFreezeTest(unittest.TestCase):
             truth_freeze.REQUIRED_PUBLIC_MARKERS["docs/API_명세서.md"],
         )
         for relative in (
+            "docs/README.md",
+            "docs/최종_프로젝트_명세서.md",
+            "docs/API_명세서.md",
+            "contracts/README.md",
+        ):
+            self.assertIn(
+                "S4_8_CORE6_V2=CONTRACT_LOCKED",
+                truth_freeze.REQUIRED_PUBLIC_MARKERS[relative],
+            )
+            self.assertIn(
+                "S4_8_CORE6_LOCAL_PROBE_RUNTIME=IMPLEMENTED_DRAFT",
+                truth_freeze.REQUIRED_PUBLIC_MARKERS[relative],
+            )
+        for relative in (
             "AGENTS.md",
             "README.md",
             "docs/README.md",
@@ -157,6 +171,22 @@ class PreS5DocumentTruthFreezeTest(unittest.TestCase):
                 "PLAN_FEASIBILITY=GO_WITH_EXTERNAL_HARD_GATES",
                 truth_freeze.REQUIRED_PUBLIC_MARKERS[relative],
             )
+
+    def test_active_vertex_route_is_api_key_only_in_the_public_truth_gate(self) -> None:
+        for relative in (
+            "AGENTS.md",
+            "docs/README.md",
+            "docs/최종_프로젝트_명세서.md",
+            "docs/API_명세서.md",
+            "contracts/README.md",
+            "docs/RAG_외부_AI_처리_및_개인문서_동의.md",
+        ):
+            self.assertIn("VERTEX_API_KEY", truth_freeze.REQUIRED_PUBLIC_MARKERS[relative])
+
+        self.assertIn(
+            "Vertex candidate는 ADC/service-account",
+            truth_freeze.FORBIDDEN_PUBLIC_MARKERS["docs/API_명세서.md"],
+        )
 
     def test_solo_ownership_lock_accepts_exact_catalog_and_clean_teammate_workspaces(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

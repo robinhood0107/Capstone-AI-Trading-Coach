@@ -474,9 +474,10 @@ uv run --frozen python contracts/validate.py
 > 현재 상태: `RAG_AND_GLOBAL_NEWS_CONTRACT_LOCKED / OA112_ACTIVE_CONTRACT_LOCKED /
 > S4_7D_OA112_PHYSICAL_ACTIVATION=NOT_MATERIALIZED / TARGET_NOT_ACTIVE`.
 > 이 addendum은 existing v1 OpenAPI/proto/source-card, exact-30, historical OA112 metadata와
-> `news_sentiment_summary.v2`를 byte-stable하게 보존한다. provider outbound, raw corpus download,
-> materializer와 owner import writer는 계속 0이다. Optional 3만 v2 local one-shot adapter를 가지며
-> canonical packet과 fresh execution evidence가 없으면 outbound도 0이다.
+> `news_sentiment_summary.v2`를 byte-stable하게 보존한다. raw corpus download와 provider physical call은
+> canonical packet 및 fresh execution evidence 없이는 계속 0이다. local Document IR materializer,
+> immutable bundle/owner-import writer, Optional 3 및 Finnhub/SEC/Fed local one-shot executor는
+> `IMPLEMENTED_DRAFT` 경계에만 있으며 activation 또는 provider entitlement를 뜻하지 않는다.
 
 `generate_pre_s5_rag_news_contracts.py --check`는 다음 active policy를 deterministic하게 검증한다.
 
@@ -488,7 +489,7 @@ uv run --frozen python contracts/validate.py
 | `schemas/rag-source-card-v4.schema.json` | future OA activation 전 machine fetch/local processing/external embedding/external generation 모두 true 요구 |
 | `schemas/s4-rag-v2-*-v1.schema.json` | external consent/effective status, 5분 single-use import ticket, owner deletion activation/hard-delete, profile policy |
 | `openapi/rag-v2-pre-s5-addendum.openapi.json` | existing ask/status/history bytes를 bind하고 consent/effective-consent/import ticket의 세 route만 더한 addendum; deletion activation/profile policy도 schema로 잠금, route activation은 없음 |
-| `schemas/foreign-news-*.schema.json` | Finnhub personal-local, SEC/Fed official, GDELT offline-reference 설명용 aggregate만 허용 |
+| `schemas/foreign-news-*.schema.json` | Finnhub personal-local, SEC/Fed official, GDELT offline-reference explanation-only aggregate 및 Finnhub/SEC/Fed one-shot packet/receipt만 허용 |
 | `openapi/foreign-news-sentiment.v1.openapi.json` | `/api/v2/market-evidence/{symbol}/foreign-news-sentiment` contract-only endpoint |
 | `schemas/s4-8-optional3-*.schema.json` | v1 zero-call templates를 보존하고, v2는 Finnhub Recommendation/Earnings, Twelve Data, Massive의 local one-shot packet/receipt만 허용; per-packet physical 1, retry/raw 0 |
 
@@ -497,9 +498,16 @@ foreign-news response는 `decisionAuthority=NONE`, `allowedUses=[EXPLANATION_ONL
 `articleMetadataStored=false`를 정확히 고정한다. SEC/Fed의 `officialReleaseLocator`는 article metadata가
 아닌 sanitized provenance locator다. GDELT는 existing Decision Platform offline aggregate의
 agreement/conflict reference일 뿐 HTTP transport/executor/outbound implementation은 없다.
+Finnhub/SEC/Fed probe는 selected local model, canonical short-expiry packet, clean HEAD/tree와
+CI/security evidence를 모두 먼저 검증하며 operation당 physical call 1, retry 0, raw/header/query
+cap 1이다. DNS/connection preflight 실패 receipt는 `NOT_EXECUTED/0`이며 actual provider handoff 뒤의
+outcome만 physical call 1이다. raw/header/query persistence는 0이다. packet claim 전 owner writer
+privilege preflight를 수행하고 성공한 transient
+aggregate만 owner-local append-only record로 materialize한다.
 
 Voyage는 `voyage-context-4` 1024차원과 generation-level whole-bundle BGE-M3 fallback/CAS만,
-Vertex는 ADC/service-account `gemini-3.5-flash` 단일 generator·top-5·질문당 1회만 허용한다.
+Vertex는 `VERTEX_API_KEY`의 Vertex Express API-key-only `gemini-3.5-flash` 단일 generator·top-5·질문당
+1회만 허용한다. ADC/service-account, ambient credential, credential file과 Gemini Developer API는 0이다.
 OpenAI, Gemini Developer API, reranker, verifier, files/batch API와 query-level fallback은 모두 0이다.
 
 ## Historical S4.7D OA140·owner-private RAG v2 contract context
@@ -569,7 +577,8 @@ uv run --frozen python contracts/validate.py
 ## S4.8 교차시장·애널리스트 계약
 
 > 계획 타당성: `PLAN_FEASIBILITY=GO_WITH_EXTERNAL_HARD_GATES`.
-> 현재 상태: `S4_8A=CONTRACT_LOCKED / S4_8_CORE6_V2=CONTRACT_ONLY / S4_8B_C=IMPLEMENTED_MERGE_CANDIDATE /
+> 현재 상태: `S4_8A=CONTRACT_LOCKED / S4_8_CORE6_V2=CONTRACT_LOCKED /
+> S4_8_CORE6_LOCAL_PROBE_RUNTIME=IMPLEMENTED_DRAFT / S4_8B_C=IMPLEMENTED_MERGE_CANDIDATE /
 > S6.6_S6.7=NOT_IMPLEMENTED`.
 > 월 데이터 비용 목표는 `0원`이고 offline fixture·지연/EOD가 먼저다. 기관용 제품과
 > 실시간 SOX/VIX feed는 post-P1 선택지이며 P1 DoD가 아니다. 새 agent framework·별도
@@ -602,16 +611,17 @@ event-study/policy replay와 threshold 동결, S6.7은 snapshot materialization�
 P1 `WARN_ONLY` RiskEngine 연결을 소유한다. S7.3은 기존 작업을 예약할 뿐 수집·계산·저장
 소유권이나 provider 권한을 새로 만들지 않는다.
 
-S4.8 Core 6 v2는 `KIS`, `OPENDART`, `SEC_EDGAR`, `KRX`, `KOFIA`, `ECOS`의 future
-entitlement, probe approval, sanitized receipt만 별도 계약으로 고정한다. 이는 active adapter나
-live 검증이 아니다. 모든 행은 disabled/blocked, physical call은 0이며 OpenDART/ECOS는 기존
-authorized projection만 재사용한다. KOFIA는 `BLOCKED_NO_CREDENTIAL_OR_APPROVAL`이다.
-실행 capacity는 non-fixture `APPROVED` packet 하나에만 있고 `CONSUMED`/`EXPIRED`는 즉시
-execution flag와 cap을 모두 `0`으로 revoke한다. `SUCCESS` receipt는 eligible direct source의
-정확히 한 번의 `DATA_REQUEST`·`HTTP_2XX`·non-null projection hash를 함께 증명해야 한다.
-GDELT producer, Naver retirement와 v1/V23 경계는 변경하지 않는다. Optional 3는 Core 6 exact set에
-포함하지 않으며 v1 template을 보존한 채 별도 v2 local one-shot approval/receipt만 사용한다. packet과
-fresh execution evidence가 없으면 physical call은 0이다.
+S4.8 Core 6 v2는 `KIS`, `OPENDART`, `SEC_EDGAR`, `KRX`, `KOFIA`, `ECOS`의 entitlement,
+probe approval, sanitized receipt를 별도 계약으로 고정한다. KIS current-price·SEC EDGAR
+submissions/companyfacts·KRX KOSPI/KOSDAQ daily의 local one-shot executor는 canonical non-fixture
+packet, clean HEAD/tree·CI/security evidence, fixed request plan, retry 0이 모두 일치할 때만 handoff를
+만든다. KIS cached-token miss는 OAuth token issue를 열지 않는다. `SUCCESS` receipt는 eligible direct
+source의 정확히 한 번의 `DATA_REQUEST`·`HTTP_2XX`·non-null projection hash를 함께 증명하고 complete
+required-operation set만 V50 runtime에 read-only로 materialize한다. OpenDART/ECOS는 기존 authorized
+projection만 재사용하고 KOFIA는 `BLOCKED_NO_CREDENTIAL_OR_APPROVAL`이다. GDELT producer, Naver
+retirement와 v1/V23 경계는 변경하지 않는다. Optional 3는 Core 6 exact set에 포함하지 않으며 v1
+template을 보존한 채 별도 v2 local one-shot approval/receipt만 사용한다. packet과 fresh execution
+evidence가 없으면 physical call은 0이다.
 
 조사 inventory 42개는 사용 가능한 API 수가 아니다. 39개 machine 연동 후보 계열과 3개
 manual-link 원천의 합이며 현재 S4.8 활성/live provider adapter는 0이다. KIS 18개
@@ -651,8 +661,9 @@ SELL, 기존 보유분 매도, 주문 생성, 수량 축소와 KIS Live는 post-
 기록한다. 후속 offline runtime·권한·coverage는
 [`20260801-s4-8b-s4-8c-offline-runtime.md`](changes/20260801-s4-8b-s4-8c-offline-runtime.md)를
 따르며 provider/live/account/order 호출은 포함하지 않는다.
-Core 6 v2 contract-only boundary는
-[`20260802-s4-8-core6-v2-contract-lock.md`](changes/20260802-s4-8-core6-v2-contract-lock.md)를
+Core 6 v2 contract lock과 local runtime boundary는
+[`20260802-s4-8-core6-v2-contract-lock.md`](changes/20260802-s4-8-core6-v2-contract-lock.md) 및
+[`20260810-s4-8-core6-local-probe-runtime.md`](changes/20260810-s4-8-core6-local-probe-runtime.md)를
 따른다.
 
 ## S5.0 Signal v2 contract lock

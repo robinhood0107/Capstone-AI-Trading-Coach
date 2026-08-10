@@ -4,6 +4,7 @@ import hashlib
 import io
 import json
 import os
+import re
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -103,7 +104,11 @@ def _parser(
     *,
     max_blocks: int = 2_000,
     max_table_cells: int = 50_000,
+    strip_inert_pdf_attachments: bool = False,
 ) -> LocalDocumentParser:
+    options: dict[str, bool] = {}
+    if strip_inert_pdf_attachments:
+        options["strip_inert_pdf_attachments"] = True
     return LocalDocumentParser(
         ocr_backend=ocr,
         limits=ParserLimits(
@@ -117,6 +122,7 @@ def _parser(
             max_table_cells=max_table_cells,
             max_text_characters=2_000_000,
         ),
+        **options,
     )
 
 
@@ -161,6 +167,26 @@ def _write(root: Path, name: str, payload: bytes) -> Path:
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(payload)
     return target
+
+
+def _pdf_with_unreachable_broken_xref() -> bytes:
+    """접근 불가능한 과거 xref가 남은 증분 PDF fixture를 만든다."""
+
+    pdf = fitz.open()
+    page = pdf.new_page()
+    page.insert_text((72, 72), "Reachable PDF page remains valid.")
+    payload = pdf.tobytes(garbage=4, deflate=False, use_objstms=0)
+    catalog_xref = pdf.pdf_catalog()
+    pdf.close()
+    previous_xref = int(re.findall(rb"startxref\s+(\d+)\s+%%EOF", payload)[-1])
+    broken_xref = 100
+    incremental_offset = len(payload) + 1
+    incremental = (
+        f"\nxref\n{broken_xref} 1\n0000000001 00000 n \n"
+        f"trailer\n<< /Size {broken_xref + 1} /Root {catalog_xref} 0 R "
+        f"/Prev {previous_xref} >>\nstartxref\n{incremental_offset}\n%%EOF\n"
+    ).encode("ascii")
+    return payload + incremental
 
 
 @pytest.mark.parametrize(
@@ -302,6 +328,73 @@ def test_pdf_uses_native_text_and_ocrs_only_page_without_text_layer(
     assert hashlib.sha256(target.read_bytes()).hexdigest() == before_hash
 
 
+def test_pdf_allows_literal_js_text_and_local_goto_open_action(
+    posix_tmp_path: Path,
+) -> None:
+    root = posix_tmp_path / "owner"
+    root.mkdir()
+    pdf = fitz.open()
+    page = pdf.new_page()
+    page.insert_text((72, 72), "Literal /JS text is not executable content.")
+    action_xref = pdf.get_new_xref()
+    pdf.update_object(action_xref, f"<< /S /GoTo /D [{page.xref} 0 R /Fit] >>")
+    pdf.xref_set_key(pdf.pdf_catalog(), "OpenAction", f"{action_xref} 0 R")
+    payload = pdf.tobytes(garbage=4, deflate=False, use_objstms=0)
+    pdf.close()
+    payload += b"% /JS harmless trailing comment\n"
+    assert b"/JS" in payload
+    _write(root, "safe-navigation.pdf", payload)
+
+    result = _parse(_parser(), root, "safe-navigation.pdf")
+
+    assert result["rawContentSha256"] == hashlib.sha256(payload).hexdigest()
+    assert any("not executable" in str(block) for block in result["blocks"])
+
+
+def test_pdf_normalizes_unreachable_broken_xref_before_security_inspection(
+    posix_tmp_path: Path,
+) -> None:
+    root = posix_tmp_path / "owner"
+    root.mkdir()
+    payload = _pdf_with_unreachable_broken_xref()
+    damaged = fitz.open(stream=payload, filetype="pdf")
+    with pytest.raises(RuntimeError):
+        damaged.xref_object(100, compressed=False)
+    damaged.close()
+    _write(root, "incremental.pdf", payload)
+
+    result = _parse(_parser(), root, "incremental.pdf")
+
+    assert result["rawContentSha256"] == hashlib.sha256(payload).hexdigest()
+    assert any("Reachable PDF page" in str(block) for block in result["blocks"])
+
+
+def test_oa_pdf_mode_strips_inert_attachment_without_relaxing_owner_default(
+    posix_tmp_path: Path,
+) -> None:
+    root = posix_tmp_path / "owner"
+    root.mkdir()
+    pdf = fitz.open()
+    page = pdf.new_page()
+    page.insert_text((72, 72), "Approved OA page text remains available.")
+    pdf.embfile_add("supplement.txt", b"inert local supplement")
+    payload = pdf.tobytes(garbage=4, deflate=True)
+    pdf.close()
+    _write(root, "oa-with-supplement.pdf", payload)
+
+    with pytest.raises(DocumentParseError, match="PDF_ATTACHMENT_FORBIDDEN"):
+        _parse(_parser(), root, "oa-with-supplement.pdf")
+
+    result = _parse(
+        _parser(strip_inert_pdf_attachments=True),
+        root,
+        "oa-with-supplement.pdf",
+    )
+
+    assert result["rawContentSha256"] == hashlib.sha256(payload).hexdigest()
+    assert any("Approved OA page" in str(block) for block in result["blocks"])
+
+
 def test_pdf_compressed_object_stream_javascript_is_rejected(
     posix_tmp_path: Path,
 ) -> None:
@@ -321,8 +414,9 @@ def test_pdf_compressed_object_stream_javascript_is_rejected(
     assert b"/JavaScript" not in payload
     _write(root, "compressed-active.pdf", payload)
 
-    with pytest.raises(DocumentParseError, match="PDF_ACTIVE_CONTENT_FORBIDDEN"):
-        _parse(_parser(), root, "compressed-active.pdf")
+    for parser in (_parser(), _parser(strip_inert_pdf_attachments=True)):
+        with pytest.raises(DocumentParseError, match="PDF_ACTIVE_CONTENT_FORBIDDEN"):
+            _parse(parser, root, "compressed-active.pdf")
 
 
 def test_docx_pptx_and_xlsx_preserve_native_structure(posix_tmp_path: Path) -> None:

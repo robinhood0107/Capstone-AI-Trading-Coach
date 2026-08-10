@@ -154,6 +154,19 @@ class _TableCellBudget:
         self.consumed_cells += row_count * column_count
 
 
+@dataclass(slots=True)
+class _BlockBudget:
+    """Document IR block을 만들기 전에 문서 전체 개수 상한을 선점한다."""
+
+    max_blocks: int
+    consumed_blocks: int = 0
+
+    def reserve(self) -> None:
+        if self.consumed_blocks >= self.max_blocks:
+            raise DocumentParseError("DOCUMENT_BLOCK_BOUND_EXCEEDED")
+        self.consumed_blocks += 1
+
+
 @dataclass(frozen=True, slots=True)
 class OcrBlock:
     """OCR backend가 반환하는 경로·provider payload 없는 단일 구조 block이다."""
@@ -259,29 +272,61 @@ class LocalDocumentParser:
                 limits=self._limits,
             )
 
-        # 원본 parser가 큰 행렬을 만들기 전에 문서 전체 table area를 한 번만 예약한다.
+        # 원본 parser가 block/table 객체를 만들기 전에 문서 전체 예산을 한 번만 공유한다.
+        block_budget = _BlockBudget(max_blocks=self._limits.max_blocks)
         table_budget = _TableCellBudget(max_cells=self._limits.max_table_cells)
         blocks: list[dict[str, Any]]
         ocr_used = False
         if mime_type == "application/pdf":
-            blocks, ocr_used = self._parse_pdf(read_result.content, table_budget=table_budget)
+            blocks, ocr_used = self._parse_pdf(
+                read_result.content,
+                block_budget=block_budget,
+                table_budget=table_budget,
+            )
         elif mime_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
             assert archive is not None
-            blocks = _parse_docx(read_result.content, table_budget=table_budget)
+            blocks = _parse_docx(
+                read_result.content,
+                block_budget=block_budget,
+                table_budget=table_budget,
+            )
         elif mime_type == "application/vnd.openxmlformats-officedocument.presentationml.presentation":
             assert archive is not None
-            blocks = _parse_pptx(read_result.content, table_budget=table_budget)
+            blocks = _parse_pptx(
+                read_result.content,
+                block_budget=block_budget,
+                table_budget=table_budget,
+            )
         elif mime_type == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
             assert archive is not None
-            blocks = _parse_xlsx(read_result.content, table_budget=table_budget)
+            blocks = _parse_xlsx(
+                read_result.content,
+                block_budget=block_budget,
+                table_budget=table_budget,
+            )
         elif mime_type == "text/html":
-            blocks = _parse_html(_decode_utf8(read_result.content), table_budget=table_budget)
+            blocks = _parse_html(
+                _decode_utf8(read_result.content),
+                block_budget=block_budget,
+                table_budget=table_budget,
+            )
         elif mime_type == "text/markdown":
-            blocks = _parse_markdown(_decode_utf8(read_result.content), table_budget=table_budget)
+            blocks = _parse_markdown(
+                _decode_utf8(read_result.content),
+                block_budget=block_budget,
+                table_budget=table_budget,
+            )
         elif mime_type == "text/plain":
-            blocks = _parse_plain_text(_decode_utf8(read_result.content))
+            blocks = _parse_plain_text(
+                _decode_utf8(read_result.content),
+                block_budget=block_budget,
+            )
         elif mime_type.startswith("image/"):
-            blocks = self._parse_image(read_result.content, table_budget=table_budget)
+            blocks = self._parse_image(
+                read_result.content,
+                block_budget=block_budget,
+                table_budget=table_budget,
+            )
             ocr_used = True
         else:  # pragma: no cover - closed MIME set is enforced above.
             raise DocumentParseError("DOCUMENT_MIME_UNSUPPORTED")
@@ -317,6 +362,7 @@ class LocalDocumentParser:
         self,
         payload: bytes,
         *,
+        block_budget: _BlockBudget,
         table_budget: _TableCellBudget,
     ) -> tuple[list[dict[str, Any]], bool]:
         if any(token in payload for token in _PDF_FORBIDDEN_TOKENS):
@@ -336,7 +382,11 @@ class LocalDocumentParser:
             output: list[dict[str, Any]] = []
             ocr_used = False
             for page_number, page in enumerate(document, start=1):
-                native_blocks = _native_pdf_blocks(page, page_number)
+                native_blocks = _native_pdf_blocks(
+                    page,
+                    page_number,
+                    block_budget=block_budget,
+                )
                 if native_blocks:
                     output.extend(native_blocks)
                     continue
@@ -345,6 +395,7 @@ class LocalDocumentParser:
                         _render_pdf_page(page, max_image_pixels=self._limits.max_image_pixels),
                         page_number,
                         {"page": page_number},
+                        block_budget=block_budget,
                         table_budget=table_budget,
                     )
                 )
@@ -353,7 +404,13 @@ class LocalDocumentParser:
         finally:
             document.close()
 
-    def _parse_image(self, payload: bytes, *, table_budget: _TableCellBudget) -> list[dict[str, Any]]:
+    def _parse_image(
+        self,
+        payload: bytes,
+        *,
+        block_budget: _BlockBudget,
+        table_budget: _TableCellBudget,
+    ) -> list[dict[str, Any]]:
         try:
             image = Image.open(io.BytesIO(payload))
         except (UnidentifiedImageError, OSError) as error:
@@ -374,6 +431,7 @@ class LocalDocumentParser:
                         converted.getvalue(),
                         page_number,
                         {"page": page_number},
+                        block_budget=block_budget,
                         table_budget=table_budget,
                     )
                 )
@@ -387,6 +445,7 @@ class LocalDocumentParser:
         page_number: int,
         locator: dict[str, object],
         *,
+        block_budget: _BlockBudget,
         table_budget: _TableCellBudget,
     ) -> list[dict[str, Any]]:
         if self._ocr_backend is None:
@@ -404,7 +463,12 @@ class LocalDocumentParser:
         if not isinstance(result, OcrPageResult) or not result.blocks:
             raise DocumentParseError("OCR_EMPTY_RESULT")
         return [
-            _ocr_block_to_ir(block, locator, table_budget=table_budget)
+            _ocr_block_to_ir(
+                block,
+                locator,
+                block_budget=block_budget,
+                table_budget=table_budget,
+            )
             for block in result.blocks
         ]
 
@@ -562,18 +626,30 @@ def _decode_utf8(payload: bytes) -> str:
     return value.replace("\r\n", "\n").replace("\r", "\n")
 
 
-def _parse_plain_text(text: str) -> list[dict[str, Any]]:
-    blocks = [
-        _paragraph({"section": "document"}, paragraph.strip())
-        for paragraph in re.split(r"\n\s*\n", text)
-        if paragraph.strip()
-    ]
+def _parse_plain_text(text: str, *, block_budget: _BlockBudget) -> list[dict[str, Any]]:
+    blocks: list[dict[str, Any]] = []
+    start = 0
+    for boundary in re.finditer(r"\n\s*\n", text):
+        paragraph = text[start : boundary.start()].strip()
+        if paragraph:
+            block_budget.reserve()
+            blocks.append(_paragraph({"section": "document"}, paragraph))
+        start = boundary.end()
+    paragraph = text[start:].strip()
+    if paragraph:
+        block_budget.reserve()
+        blocks.append(_paragraph({"section": "document"}, paragraph))
     if not blocks:
         raise DocumentParseError("DOCUMENT_EMPTY")
     return _renumber(blocks)
 
 
-def _parse_markdown(text: str, *, table_budget: _TableCellBudget) -> list[dict[str, Any]]:
+def _parse_markdown(
+    text: str,
+    *,
+    block_budget: _BlockBudget,
+    table_budget: _TableCellBudget,
+) -> list[dict[str, Any]]:
     output: list[dict[str, Any]] = []
     section = "document"
     paragraph: list[str] = []
@@ -582,16 +658,19 @@ def _parse_markdown(text: str, *, table_budget: _TableCellBudget) -> list[dict[s
 
     def flush_paragraph() -> None:
         if paragraph:
+            block_budget.reserve()
             output.append(_paragraph({"section": section}, "\n".join(paragraph)))
             paragraph.clear()
 
     def flush_list() -> None:
         if list_items:
+            block_budget.reserve()
             output.append(_list_block({"section": section}, tuple(list_items), ordered=False))
             list_items.clear()
 
     def flush_table() -> None:
         if table_lines:
+            block_budget.reserve()
             output.append(
                 _markdown_table(
                     {"section": section},
@@ -609,6 +688,7 @@ def _parse_markdown(text: str, *, table_budget: _TableCellBudget) -> list[dict[s
             flush_list()
             flush_table()
             section = heading.group(2).strip()
+            block_budget.reserve()
             output.append(_heading({"section": section}, section, len(heading.group(1))))
         elif re.match(r"^\s*[-*+]\s+\S", line):
             flush_paragraph()
@@ -635,8 +715,14 @@ def _parse_markdown(text: str, *, table_budget: _TableCellBudget) -> list[dict[s
 
 
 class _SafeHtmlParser(HTMLParser):
-    def __init__(self, *, table_budget: _TableCellBudget) -> None:
+    def __init__(
+        self,
+        *,
+        block_budget: _BlockBudget,
+        table_budget: _TableCellBudget,
+    ) -> None:
         super().__init__(convert_charrefs=True)
+        self._block_budget = block_budget
         self._table_budget = table_budget
         self.blocks: list[dict[str, Any]] = []
         self._tag: str | None = None
@@ -668,8 +754,10 @@ class _SafeHtmlParser(HTMLParser):
         text = " ".join("".join(self._buffer).split())
         if folded.startswith("h") and len(folded) == 2 and folded[1].isdigit() and text:
             self._section = text
+            self._block_budget.reserve()
             self.blocks.append(_heading({"section": text}, text, int(folded[1])))
         elif folded == "p" and text:
+            self._block_budget.reserve()
             self.blocks.append(_paragraph({"section": self._section}, text))
         elif folded == "li" and text:
             self._list_items.append(text)
@@ -679,6 +767,7 @@ class _SafeHtmlParser(HTMLParser):
             self._table_rows.append(self._row)
             self._row = []
         elif folded in {"ul", "ol"} and self._list_items:
+            self._block_budget.reserve()
             self.blocks.append(
                 _list_block(
                     {"section": self._section},
@@ -688,6 +777,7 @@ class _SafeHtmlParser(HTMLParser):
             )
             self._list_items = []
         elif folded == "table" and self._table_rows:
+            self._block_budget.reserve()
             self.blocks.append(
                 _table(
                     {"section": self._section},
@@ -706,12 +796,17 @@ class _SafeHtmlParser(HTMLParser):
             self._buffer.append(data)
 
 
-def _parse_html(text: str, *, table_budget: _TableCellBudget) -> list[dict[str, Any]]:
+def _parse_html(
+    text: str,
+    *,
+    block_budget: _BlockBudget,
+    table_budget: _TableCellBudget,
+) -> list[dict[str, Any]]:
     if re.search(r"<(?:script|iframe|object|embed|link|base)\b", text, re.I) or re.search(
         r"(?:url\s*\(|@import)", text, re.I
     ):
         raise DocumentParseError("HTML_ACTIVE_RESOURCE_FORBIDDEN")
-    parser = _SafeHtmlParser(table_budget=table_budget)
+    parser = _SafeHtmlParser(block_budget=block_budget, table_budget=table_budget)
     try:
         parser.feed(text)
         parser.close()
@@ -744,7 +839,12 @@ def _inspect_pdf_objects(document: fitz.Document, limits: ParserLimits) -> None:
         raise DocumentParseError("PDF_MALFORMED") from error
 
 
-def _native_pdf_blocks(page: fitz.Page, page_number: int) -> list[dict[str, Any]]:
+def _native_pdf_blocks(
+    page: fitz.Page,
+    page_number: int,
+    *,
+    block_budget: _BlockBudget,
+) -> list[dict[str, Any]]:
     output: list[dict[str, Any]] = []
     try:
         native = page.get_text("blocks", sort=True)
@@ -753,6 +853,7 @@ def _native_pdf_blocks(page: fitz.Page, page_number: int) -> list[dict[str, Any]
     for item in native:
         text = " ".join(str(item[4]).split())
         if text:
+            block_budget.reserve()
             output.append(_paragraph({"page": page_number}, text))
     return output
 
@@ -799,7 +900,12 @@ def _validate_pdf_raster_bounds(page: fitz.Page, *, max_image_pixels: int) -> No
         raise DocumentParseError("IMAGE_PIXEL_BOUND_EXCEEDED")
 
 
-def _parse_docx(payload: bytes, *, table_budget: _TableCellBudget) -> list[dict[str, Any]]:
+def _parse_docx(
+    payload: bytes,
+    *,
+    block_budget: _BlockBudget,
+    table_budget: _TableCellBudget,
+) -> list[dict[str, Any]]:
     try:
         document = Document(io.BytesIO(payload))
     except Exception as error:
@@ -814,6 +920,7 @@ def _parse_docx(payload: bytes, *, table_budget: _TableCellBudget) -> list[dict[
                 continue
             style = paragraph.style.name if paragraph.style is not None else ""
             match = re.fullmatch(r"Heading\s+([1-6])", style, re.I)
+            block_budget.reserve()
             if match:
                 section = text
                 output.append(_heading({"section": section}, text, int(match.group(1))))
@@ -822,6 +929,7 @@ def _parse_docx(payload: bytes, *, table_budget: _TableCellBudget) -> list[dict[
             else:
                 output.append(_paragraph({"section": section}, text))
         elif child.tag.endswith("}tbl"):
+            block_budget.reserve()
             table = DocxTable(child, document)
             table_budget.reserve(
                 row_count=len(table.rows),
@@ -841,7 +949,12 @@ def _parse_docx(payload: bytes, *, table_budget: _TableCellBudget) -> list[dict[
     return _renumber(output)
 
 
-def _parse_pptx(payload: bytes, *, table_budget: _TableCellBudget) -> list[dict[str, Any]]:
+def _parse_pptx(
+    payload: bytes,
+    *,
+    block_budget: _BlockBudget,
+    table_budget: _TableCellBudget,
+) -> list[dict[str, Any]]:
     try:
         presentation = Presentation(io.BytesIO(payload))
     except Exception as error:
@@ -851,6 +964,7 @@ def _parse_pptx(payload: bytes, *, table_budget: _TableCellBudget) -> list[dict[
         title_shape = slide.shapes.title
         for shape in slide.shapes:
             if getattr(shape, "has_table", False):
+                block_budget.reserve()
                 table_budget.reserve(
                     row_count=len(shape.table.rows),
                     column_count=len(shape.table.columns),
@@ -873,6 +987,7 @@ def _parse_pptx(payload: bytes, *, table_budget: _TableCellBudget) -> list[dict[
             text = " ".join(shape.text.split())
             if not text:
                 continue
+            block_budget.reserve()
             if shape == title_shape:
                 output.append(_heading({"slide": slide_number}, text, 1))
             else:
@@ -882,7 +997,12 @@ def _parse_pptx(payload: bytes, *, table_budget: _TableCellBudget) -> list[dict[
     return _renumber(output)
 
 
-def _parse_xlsx(payload: bytes, *, table_budget: _TableCellBudget) -> list[dict[str, Any]]:
+def _parse_xlsx(
+    payload: bytes,
+    *,
+    block_budget: _BlockBudget,
+    table_budget: _TableCellBudget,
+) -> list[dict[str, Any]]:
     try:
         workbook = load_workbook(
             io.BytesIO(payload),
@@ -902,17 +1022,22 @@ def _parse_xlsx(payload: bytes, *, table_budget: _TableCellBudget) -> list[dict[
             )
             rows: list[list[str]] = []
             formulas: list[str] = []
+            table_block_reserved = False
             for row in sheet.iter_rows(values_only=True):
                 values: list[str] = []
                 for value in row:
                     if value is None:
                         values.append("")
                     elif isinstance(value, str) and value.startswith("="):
+                        block_budget.reserve()
                         formulas.append(value)
                         values.append(value)
                     else:
                         values.append(str(value))
                 if any(values):
+                    if not table_block_reserved:
+                        block_budget.reserve()
+                        table_block_reserved = True
                     rows.append(values)
             if rows:
                 output.append(
@@ -1061,10 +1186,12 @@ def _ocr_block_to_ir(
     block: OcrBlock,
     locator: dict[str, object],
     *,
+    block_budget: _BlockBudget,
     table_budget: _TableCellBudget,
 ) -> dict[str, Any]:
     if not 0 <= block.confidence <= 1:
         raise DocumentParseError("OCR_CONFIDENCE_INVALID")
+    block_budget.reserve()
     if block.block_type == "HEADING" and block.text:
         return _heading(locator, block.text, block.level or 1, block.confidence)
     if block.block_type == "PARAGRAPH" and block.text:

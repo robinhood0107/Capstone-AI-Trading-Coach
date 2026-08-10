@@ -246,6 +246,36 @@ def test_large_paragraph_splitting_preserves_original_spacing_and_punctuation() 
     assert chunks[1].text == "gamma!  delta?"
 
 
+def test_large_paragraph_retokenizes_each_context_sensitive_chunk_boundary() -> None:
+    class _BoundarySensitiveTokenizer:
+        """문서 중간 token이 chunk 선두가 되면 subword 수가 달라지는 tokenizer fixture다."""
+
+        def token_spans(self, text: str) -> tuple[tuple[int, int], ...]:
+            spans: list[tuple[int, int]] = []
+            for index, match in enumerate(re.finditer(r"\S+", text)):
+                if index == 0 and not text.startswith("root") and len(match.group()) > 1:
+                    midpoint = match.start() + 1
+                    spans.extend(((match.start(), midpoint), (midpoint, match.end())))
+                else:
+                    spans.append((match.start(), match.end()))
+            return tuple(spans)
+
+    original = "root one boundary two three"
+    tokenizer = _BoundarySensitiveTokenizer()
+
+    chunks = build_canonical_chunks(
+        source_id="src_project_boundary_context_001",
+        source_revision_id="src_rev_boundary_context",
+        blocks=parse_markdown_document(f"# 문단\n\n{original}"),
+        tokenizer=tokenizer,
+        min_tokens=1,
+        max_tokens=2,
+    )
+
+    assert " ".join(chunk.text for chunk in chunks) == original
+    assert all(chunk.token_count <= 2 for chunk in chunks)
+
+
 def test_bge_context_uses_independent_seven_point_five_percent_side_budgets() -> None:
     chunks = tuple(
         _chunk(sequence, prefix)

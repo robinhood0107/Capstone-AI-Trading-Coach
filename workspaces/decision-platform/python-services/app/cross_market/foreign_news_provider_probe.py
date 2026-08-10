@@ -694,7 +694,7 @@ class ForeignNewsProviderProbeExecutor:
             except (FileExistsError, OSError, Oa112DownloadError) as error:
                 raise ForeignNewsProviderProbeError(
                     "FOREIGN_NEWS_PROBE_RECEIPT_UNAVAILABLE",
-                    physical_call_count=1,
+                    physical_call_count=receipt.physical_call_count,
                 ) from error
         finally:
             os.close(root_fd)

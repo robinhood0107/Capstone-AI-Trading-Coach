@@ -715,6 +715,20 @@ def _require_current_v2_merged_main_evidence(
             text=True,
             timeout=15,
         )
+        main_ref_result = subprocess.run(
+            [
+                "gh",
+                "api",
+                "--method",
+                "GET",
+                "repos/{owner}/{repo}/git/ref/heads/main",
+            ],
+            cwd=repository_root,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
         checks_result = subprocess.run(
             [
                 "gh",
@@ -734,11 +748,17 @@ def _require_current_v2_merged_main_evidence(
             timeout=15,
         )
         pull_request: object = json.loads(pull_request_result.stdout)
+        main_ref: object = json.loads(main_ref_result.stdout)
         checks: object = json.loads(checks_result.stdout)
     except (OSError, subprocess.SubprocessError, json.JSONDecodeError):
         raise KISMockApprovalRejected("merged main evidence is unavailable") from None
     if not isinstance(pull_request, dict):
         raise KISMockApprovalRejected("merged main evidence is invalid")
+    if not isinstance(main_ref, dict):
+        raise KISMockApprovalRejected("remote main evidence is invalid")
+    main_ref_object = main_ref.get("object")
+    if not isinstance(main_ref_object, dict) or main_ref_object.get("sha") != head:
+        raise KISMockApprovalRejected("remote main no longer matches execution HEAD")
     merge_commit = pull_request.get("mergeCommit")
     if (
         pull_request.get("number") != packet.repository.pull_request
@@ -767,7 +787,10 @@ def _successful_post_merge_check_names(document: object, *, head: str) -> frozen
         for item in check_runs
         if isinstance(item, dict)
         and item.get("head_sha") == head
+        and item.get("status") == "completed"
         and item.get("conclusion") == "success"
+        and isinstance((app := item.get("app")), dict)
+        and app.get("slug") == "github-actions"
         and isinstance((name := item.get("name")), str)
     )
 

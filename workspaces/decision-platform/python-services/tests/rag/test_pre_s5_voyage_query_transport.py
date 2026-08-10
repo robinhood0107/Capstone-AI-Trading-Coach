@@ -49,6 +49,25 @@ class _Lease:
         self.unknown_billing += 1
 
 
+class _MutableClock:
+    def __init__(self, value: datetime) -> None:
+        self.value = value
+
+    def __call__(self) -> datetime:
+        return self.value
+
+
+class _LeaseThatExpiresClock(_Lease):
+    def __init__(self, *, clock: _MutableClock, expires_at: datetime) -> None:
+        super().__init__()
+        self._clock = clock
+        self._expires_at = expires_at
+
+    def claim_attempt(self, *, now: datetime) -> None:
+        super().claim_attempt(now=now)
+        self._clock.value = self._expires_at
+
+
 class _Sender:
     def __init__(self, *, response: PreS5VoyageHttpResponse | None = None) -> None:
         self.requests: list[PreS5VoyageHttpRequest] = []
@@ -150,6 +169,34 @@ def test_voyage_query_transport_marks_unknown_billing_after_one_invalid_provider
     assert lease.commits == []
     assert lease.unknown_billing == 1
     assert len(sender.requests) == 1
+
+
+def test_voyage_query_transport_rechecks_expiry_after_claim_before_sender_post() -> None:
+    expires_at = _NOW + timedelta(minutes=5)
+    clock = _MutableClock(_NOW)
+    lease = _LeaseThatExpiresClock(clock=clock, expires_at=expires_at)
+    sender = _Sender()
+    embedder = PreS5VoyageContext4QueryEmbedder(
+        activation=_activation(expires_at=expires_at),
+        api_key="test-key",
+        lease=lease,
+        token_counter=_FixtureTokenCounter(),
+        sender=sender,
+        clock=clock,
+    )
+
+    with pytest.raises(RagV2QueryEmbeddingError) as error:
+        embedder.embed_query_with_receipt(
+            question=_QUESTION,
+            scope_claim_id=_SCOPE,
+            external_query_consent_granted=True,
+        )
+
+    assert error.value.failure_code is RagV2RetrievalFailureCode.QUERY_EMBEDDING_INVALID
+    assert error.value.voyage_physical_calls == 0
+    assert lease.claims == 1
+    assert lease.unknown_billing == 1
+    assert sender.requests == []
 
 
 def test_voyage_query_transport_rejects_duplicate_provider_json_keys_after_one_attempt() -> None:
@@ -273,7 +320,7 @@ def _embedder(*, lease: _Lease, sender: _Sender) -> PreS5VoyageContext4QueryEmbe
     )
 
 
-def _activation() -> PreS5VoyageQueryActivation:
+def _activation(*, expires_at: datetime | None = None) -> PreS5VoyageQueryActivation:
     return PreS5VoyageQueryActivation(
         packet_sha256="a" * 64,
         nonce_sha256="b" * 64,
@@ -285,7 +332,7 @@ def _activation() -> PreS5VoyageQueryActivation:
         operation="CONTEXTUALIZED_QUERY_EMBEDDING",
         origin="https://api.voyageai.com",
         endpoint="/v1/contextualizedembeddings",
-        expires_at=_NOW + timedelta(minutes=5),
+        expires_at=expires_at or _NOW + timedelta(minutes=5),
         logical_call_cap=1,
         physical_call_cap=1,
         token_cap=8_192,

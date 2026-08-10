@@ -22,7 +22,7 @@ class PreS5VertexActivationReaderTest {
 
         val activation = PreS5VertexActivationReader(fixture.properties, Clock.fixed(now, ZoneOffset.UTC)).read()
 
-        assertThat(activation.projectId).isEqualTo("capstone-rag")
+        assertThat(activation.authenticationMode).isEqualTo("VERTEX_EXPRESS_API_KEY")
         assertThat(activation.packetSha256).matches("[0-9a-f]{64}")
         assertThat(activation.nonceSha256).matches("[0-9a-f]{64}")
         assertThat(activation.toString()).doesNotContain("nonce-for-test")
@@ -37,9 +37,9 @@ class PreS5VertexActivationReaderTest {
         Files.writeString(
             fixture.packet,
             packetJson(now)
-                .replace("\"physicalCallCap\":2", "\"physicalCallCap\":3")
+                .replace("\"physicalCallCap\":1", "\"physicalCallCap\":3")
                 .replace(
-                    "\"POST /v1/projects/{projectId}/locations/global/publishers/google/models/gemini-3.5-flash:generateContent\"",
+                    "\"POST /v1/publishers/google/models/gemini-3.5-flash:generateContent?key={VERTEX_API_KEY}\"",
                     "\"POST /v1/anything\"",
                 ),
         )
@@ -76,8 +76,8 @@ class PreS5VertexActivationReaderTest {
         Files.writeString(
             fixture.packet,
             packetJson(now).replace(
-                "\"projectId\":\"capstone-rag\"",
-                "\"projectId\":\"capstone-rag\",\"ownerUserId\":\"usr_demo_user\"",
+                "\"authenticationMode\":\"VERTEX_EXPRESS_API_KEY\"",
+                "\"authenticationMode\":\"VERTEX_EXPRESS_API_KEY\",\"ownerUserId\":\"usr_demo_user\"",
             ),
         )
         Files.setPosixFilePermissions(fixture.packet, FILE_PERMISSIONS)
@@ -116,26 +116,25 @@ class PreS5VertexActivationReaderTest {
     private fun packetJson(now: Instant): String =
         """
         {
-          "contractId":"pre-s5-vertex-activation/v1",
+          "contractId":"pre-s5-vertex-activation/v2",
           "provider":"VERTEX_AI",
+          "authenticationMode":"VERTEX_EXPRESS_API_KEY",
           "origin":"https://aiplatform.googleapis.com",
-          "endpoint":"POST /v1/projects/{projectId}/locations/global/publishers/google/models/gemini-3.5-flash:generateContent",
-          "authOrigin":"https://oauth2.googleapis.com",
-          "authEndpoint":"POST /token",
-          "projectId":"capstone-rag",
+          "endpoint":"POST /v1/publishers/google/models/gemini-3.5-flash:generateContent?key={VERTEX_API_KEY}",
+          "authOrigin":"https://aiplatform.googleapis.com",
+          "authEndpoint":"QUERY_PARAMETER:key",
           "requestId":"req_vertex_packet_0000001",
           "scopeClaimId":"rvs_${"a".repeat(32)}",
           "questionFingerprintHmac":"${"f".repeat(64)}",
           "answerMode":"CONCISE",
           "consentEventId":"rce_vertex_consent_0001",
-          "location":"global",
           "modelId":"gemini-3.5-flash",
           "headCommit":"${"1".repeat(40)}",
           "treeDigest":"${"2".repeat(64)}",
           "ciDigest":"${"3".repeat(64)}",
           "securityDigest":"${"4".repeat(64)}",
-          "credentialFileSecurityEvidenceSha256":"${"5".repeat(64)}",
-          "projectCacheStateEvidenceSha256":"${"6".repeat(64)}",
+          "apiKeySecurityEvidenceSha256":"${"5".repeat(64)}",
+          "dataGovernanceStateEvidenceSha256":"${"6".repeat(64)}",
           "abuseMonitoringStateEvidenceSha256":"${"7".repeat(64)}",
           "modelAvailabilityEvidenceSha256":"${"8".repeat(64)}",
           "policySha256":"${"a".repeat(64)}",
@@ -143,8 +142,8 @@ class PreS5VertexActivationReaderTest {
           "issuedAt":"${now.minusSeconds(30)}",
           "expiresAt":"${now.plusSeconds(120)}",
           "logicalCallCap":1,
-          "physicalCallCap":2,
-          "tokenPhysicalCallCap":1,
+          "physicalCallCap":1,
+          "tokenPhysicalCallCap":0,
           "generateContentPhysicalCallCap":1,
           "inputTokenCap":13000,
           "outputTokenCap":200,

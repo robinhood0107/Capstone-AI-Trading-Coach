@@ -272,6 +272,12 @@ class PreS5VoyageContext4QueryEmbedder:
                 RagV2RetrievalFailureCode.QUERY_PROFILE_UNAVAILABLE,
                 voyage_physical_calls=self._external_physical_calls,
             ) from None
+        try:
+            self._require_current_activation_after_claim()
+        except PreS5VoyageQueryTransportError:
+            # lease는 이미 one-shot으로 소비됐으므로 provider socket 없이도 terminal outcome을 남긴다.
+            self._mark_unknown_billing()
+        self._record_sender_handoff()
         response: PreS5VoyageHttpResponse | None = None
         try:
             response = self._sender.post(request)
@@ -314,10 +320,23 @@ class PreS5VoyageContext4QueryEmbedder:
             except Exception:
                 raise PreS5VoyageQueryTransportError("PRE_S5_VOYAGE_QUERY_LEASE_UNAVAILABLE") from None
             self._consumed = True
+
+    def _record_sender_handoff(self) -> None:
+        """유효 packet에서 sender seam으로 넘어간 경우에만 physical attempt를 기록한다."""
+
+        with self._lock:
+            if not self._consumed:  # pragma: no cover - callers always claim before handoff.
+                raise PreS5VoyageQueryTransportError("PRE_S5_VOYAGE_QUERY_SINGLE_USE")
             self._external_physical_calls = 1
 
+    def _require_current_activation_after_claim(self) -> None:
+        """DB lock 대기 뒤 packet이 만료됐으면 sender seam에 도달하지 못하게 한다."""
+
+        if _utc_now(self._clock) >= self._activation.expires_at:
+            raise PreS5VoyageQueryTransportError("PRE_S5_VOYAGE_QUERY_EXPIRED")
+
     def _mark_unknown_billing(self) -> None:
-        """Once a sender may have received bytes, leave an immutable unknown-billing ledger outcome before failing."""
+        """소비된 one-shot lease가 정상 commit되지 않으면 immutable terminal outcome을 남긴다."""
 
         try:
             self._lease.mark_unknown_billing()
@@ -328,7 +347,7 @@ class PreS5VoyageContext4QueryEmbedder:
     def _raise_after_attempt(self) -> NoReturn:
         raise RagV2QueryEmbeddingError(
             RagV2RetrievalFailureCode.QUERY_EMBEDDING_INVALID,
-            voyage_physical_calls=1,
+            voyage_physical_calls=self._external_physical_calls,
         )
 
 
@@ -440,6 +459,7 @@ def _build_request(
         body=body,
         timeout_seconds=_TIMEOUT_SECONDS,
         max_response_bytes=activation.byte_cap,
+        expires_at=activation.expires_at,
     )
 
 

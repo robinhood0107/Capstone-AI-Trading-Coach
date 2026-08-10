@@ -57,10 +57,10 @@
           "minItems": 4,
           "prefixItems": [
             {
-              "const": "CREDENTIAL_FILE_SECURITY"
+              "const": "API_KEY_SECURITY"
             },
             {
-              "const": "PROJECT_CACHE_STATE"
+              "const": "DATA_GOVERNANCE_STATE"
             },
             {
               "const": "ABUSE_MONITORING_STATE"
@@ -71,53 +71,34 @@
           ],
           "type": "array"
         },
+        "ambientCredentialAllowed": {
+          "const": false
+        },
+        "apiKeyEnvironmentVariable": {
+          "const": "VERTEX_API_KEY"
+        },
+        "apiKeyOnly": {
+          "const": true
+        },
+        "apiKeyTransport": {
+          "const": "VERTEX_EXPRESS_QUERY_PARAMETER"
+        },
         "authentication": {
           "items": false,
-          "maxItems": 2,
-          "minItems": 2,
+          "maxItems": 1,
+          "minItems": 1,
           "prefixItems": [
             {
-              "const": "ADC"
-            },
-            {
-              "const": "SERVICE_ACCOUNT"
+              "const": "VERTEX_EXPRESS_API_KEY"
             }
           ],
           "type": "array"
         },
-        "boundedJsonCredentialRequired": {
-          "const": true
-        },
         "contextCacheAllowed": {
           "const": false
         },
-        "credentialFileRequirements": {
-          "additionalProperties": false,
-          "properties": {
-            "credentialFileMode": {
-              "const": "0600"
-            },
-            "credentialRootMode": {
-              "const": "0700"
-            },
-            "linkCount": {
-              "const": 1
-            },
-            "ownerMatchRequired": {
-              "const": true
-            },
-            "regularFileRequired": {
-              "const": true
-            }
-          },
-          "required": [
-            "credentialFileMode",
-            "credentialRootMode",
-            "linkCount",
-            "ownerMatchRequired",
-            "regularFileRequired"
-          ],
-          "type": "object"
+        "credentialFileAllowed": {
+          "const": false
         },
         "developerApiAllowed": {
           "const": false
@@ -209,10 +190,13 @@
       },
       "required": [
         "activationEvidenceRequired",
+        "ambientCredentialAllowed",
+        "apiKeyEnvironmentVariable",
+        "apiKeyOnly",
+        "apiKeyTransport",
         "authentication",
-        "boundedJsonCredentialRequired",
         "contextCacheAllowed",
-        "credentialFileRequirements",
+        "credentialFileAllowed",
         "developerApiAllowed",
         "fallbackAllowed",
         "fileUploadAllowed",

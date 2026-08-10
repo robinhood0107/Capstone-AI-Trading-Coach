@@ -94,14 +94,16 @@
   v1 OpenAPI/proto/source-card, exact-30와 `news_sentiment_summary.v2`는 byte-stable하게 보존한다.
   reserve는 최대 28이며 자동 승격은 없다. active physical source에는 machine fetch/local processing/
   external embedding/external generation permission과 actual rights/hash evidence가 모두 필요하다.
-  RAG v2 consent/import, Voyage `voyage-context-4` 1024, Vertex ADC/service-account
-  `gemini-3.5-flash`, foreign-news(Finnhub personal-local/SEC/Fed/GDELT offline reference), Optional 3은
-  contract-only다. Optional 3만 `s4-8-optional3-probe-*-v2`의 local one-shot executor를 추가로
-  가진다. canonical short-expiry packet, exact clean HEAD/tree, CI/security digest가 모두 없거나
-  drift하면 provider outbound는 0이며, packet도 Finnhub Recommendation/Earnings, Twelve Data time
-  series, Massive previous-day aggregate의 fixed endpoint 한 번만 허용한다. raw corpus, raw provider
-  data, article metadata, Decision/Signal/Risk/order/hash/S5 feature authority는 계속 0이고 Core 6
-  exact set을 넓히지 않는다.
+  RAG v2 consent/import, Voyage `voyage-context-4` 1024, `VERTEX_API_KEY` Vertex Express API-key-only
+  `gemini-3.5-flash`, foreign-news(Finnhub personal-local/SEC/Fed/GDELT offline reference)는
+  contract-only다. Optional 3과 Core 6의 KIS current-price·SEC EDGAR submissions/companyfacts·KRX
+  KOSPI/KOSDAQ daily만 local one-shot executor를 가진다. canonical short-expiry packet, exact clean
+  HEAD/tree, CI/security digest가 모두 없거나 drift하면 provider outbound는 0이며, KIS는 cached
+  OAuth token이 없으면 token endpoint를 열지 않고 fail-closed한다. Core 6 availability는 성공한
+  content-free receipt의 complete required-operation set으로만 materialize하며 KOFIA는 계속
+  `BLOCKED_NO_CREDENTIAL_OR_APPROVAL`, OpenDART/ECOS는 authorized projection-only다. raw corpus,
+  raw provider data, article metadata, Decision/Signal/Risk/order/hash/S5 feature authority는 계속
+  0이고 Core 6 exact set을 넓히지 않는다.
 
 ## Pre-S5 단독 실행 소유권 잠금
 

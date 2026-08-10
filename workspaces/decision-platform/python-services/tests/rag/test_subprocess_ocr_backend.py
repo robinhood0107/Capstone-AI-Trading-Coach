@@ -103,6 +103,29 @@ def test_subprocess_backend_rejects_empty_unknown_unbounded_or_path_bearing_outp
         backend.parse_page(png_bytes=b"\x89PNG\r\n\x1a\nfixture", page_number=1)
 
 
+def test_subprocess_backend_rejects_table_shape_that_exceeds_dense_parser_budget(
+    tmp_path: Path,
+) -> None:
+    runner = _runner(
+        tmp_path,
+        {
+            "blocks": [
+                {
+                    "blockType": "TABLE",
+                    "cells": [[0, 0, "Metric"]],
+                    "columnCount": 10_000,
+                    "confidence": 0.98,
+                    "rowCount": 10_000,
+                }
+            ]
+        },
+    )
+    backend = SubprocessOcrBackend(_configuration(tmp_path, runner))
+
+    with pytest.raises(DocumentParseError, match="OCR_RESULT_INVALID"):
+        backend.parse_page(png_bytes=b"\x89PNG\r\n\x1a\nfixture", page_number=1)
+
+
 def test_subprocess_backend_validates_png_page_and_pinned_configuration(tmp_path: Path) -> None:
     runner = _runner(
         tmp_path,

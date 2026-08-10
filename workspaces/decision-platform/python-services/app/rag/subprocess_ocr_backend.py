@@ -22,6 +22,7 @@ from app.rag.local_document_parser import (
 
 _BACKENDS: Final = {"PADDLE_STRUCTURED", "PADDLE_VL", "UNLIMITED_GGUF"}
 _BLOCK_TYPES: Final = {"HEADING", "PARAGRAPH", "LIST", "TABLE", "FORMULA", "CAPTION"}
+_MAX_TABLE_CELLS: Final = 50_000
 _HASH = re.compile(r"^[0-9a-f]{64}$")
 _BLOCK_KEYS: Final = {
     "blockType",
@@ -171,6 +172,14 @@ def _decode_block(value: object) -> OcrBlock:
         maximum=50_000,
     )
     if block_type == "TABLE" and (not cells or row_count is None or column_count is None):
+        raise ValueError("OCR_RESULT_INVALID")
+    # child payload의 declared shape가 parser의 dense matrix 예산을 넘으면 전달 자체를 거부한다.
+    if (
+        block_type == "TABLE"
+        and row_count is not None
+        and column_count is not None
+        and row_count > _MAX_TABLE_CELLS // column_count
+    ):
         raise ValueError("OCR_RESULT_INVALID")
     if block_type == "FORMULA" and normalized_formula is None:
         raise ValueError("OCR_RESULT_INVALID")

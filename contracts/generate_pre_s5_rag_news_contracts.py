@@ -74,6 +74,17 @@ OPTIONAL3_OPERATION_FAMILIES: Final[dict[str, str]] = {
     "TWELVE_DATA_TIME_SERIES": "TWELVE_DATA",
     "MASSIVE_PREVIOUS_DAY_AGGREGATE": "MASSIVE",
 }
+FOREIGN_NEWS_PROVIDER_FAMILIES: Final[tuple[str, ...]] = (
+    "FINNHUB_PERSONAL_LOCAL",
+    "SEC_OFFICIAL",
+    "FED_OFFICIAL",
+)
+FOREIGN_NEWS_PROVIDER_OPERATION_FAMILIES: Final[dict[str, str]] = {
+    "FINNHUB_MARKET_NEWS": "FINNHUB_PERSONAL_LOCAL",
+    "FINNHUB_COMPANY_NEWS": "FINNHUB_PERSONAL_LOCAL",
+    "SEC_OFFICIAL_RELEASES": "SEC_OFFICIAL",
+    "FED_OFFICIAL_RELEASES": "FED_OFFICIAL",
+}
 MODEL_CANDIDATES: Final[tuple[str, ...]] = (
     "PROSUSAI_FINBERT",
     "YIYANGHKUST_FINBERT_TONE",
@@ -201,6 +212,8 @@ SCHEMA_IDS: Final[tuple[str, ...]] = (
     "foreign-news-lane-entitlement-v1",
     "foreign-news-sentiment-v1",
     "foreign-news-model-selection-v1",
+    "foreign-news-provider-probe-approval-v1",
+    "foreign-news-provider-probe-receipt-v1",
     "s4-8-optional3-entitlement-v1",
     "s4-8-optional3-probe-approval-v1",
     "s4-8-optional3-probe-receipt-v1",
@@ -237,6 +250,8 @@ INVALID_FIXTURE_PATHS: Final[frozenset[str]] = frozenset(
         "contracts/examples/invalid/foreign-news-sentiment-v1.article.invalid.json",
         "contracts/examples/invalid/foreign-news-model-selection-v1.test-state.invalid.json",
         "contracts/examples/invalid/foreign-news-model-selection-v1.test-shopping.invalid.json",
+        "contracts/examples/invalid/foreign-news-provider-probe-approval-v1.operation.invalid.json",
+        "contracts/examples/invalid/foreign-news-provider-probe-receipt-v1.raw.invalid.json",
         "contracts/examples/invalid/s4-8-optional3-entitlement-v1.call.invalid.json",
         "contracts/examples/invalid/s4-8-optional3-probe-approval-v1.execution.invalid.json",
         "contracts/examples/invalid/s4-8-optional3-probe-receipt-v1.call.invalid.json",
@@ -872,10 +887,13 @@ def _rag_policy_schema() -> dict[str, Any]:
     vertex = _closed(
         required=[
             "activationEvidenceRequired",
+            "ambientCredentialAllowed",
+            "apiKeyEnvironmentVariable",
+            "apiKeyOnly",
+            "apiKeyTransport",
             "authentication",
-            "boundedJsonCredentialRequired",
             "contextCacheAllowed",
-            "credentialFileRequirements",
+            "credentialFileAllowed",
             "developerApiAllowed",
             "fallbackAllowed",
             "fileUploadAllowed",
@@ -898,8 +916,8 @@ def _rag_policy_schema() -> dict[str, Any]:
         properties={
             "activationEvidenceRequired": {
                 "prefixItems": [
-                    {"const": "CREDENTIAL_FILE_SECURITY"},
-                    {"const": "PROJECT_CACHE_STATE"},
+                    {"const": "API_KEY_SECURITY"},
+                    {"const": "DATA_GOVERNANCE_STATE"},
                     {"const": "ABUSE_MONITORING_STATE"},
                     {"const": "MODEL_AVAILABILITY"},
                 ],
@@ -909,30 +927,18 @@ def _rag_policy_schema() -> dict[str, Any]:
                 "type": "array",
             },
             "authentication": {
-                "prefixItems": [{"const": "ADC"}, {"const": "SERVICE_ACCOUNT"}],
+                "prefixItems": [{"const": "VERTEX_EXPRESS_API_KEY"}],
                 "items": False,
-                "maxItems": 2,
-                "minItems": 2,
+                "maxItems": 1,
+                "minItems": 1,
                 "type": "array",
             },
-            "boundedJsonCredentialRequired": {"const": True},
+            "ambientCredentialAllowed": {"const": False},
+            "apiKeyEnvironmentVariable": {"const": "VERTEX_API_KEY"},
+            "apiKeyOnly": {"const": True},
+            "apiKeyTransport": {"const": "VERTEX_EXPRESS_QUERY_PARAMETER"},
             "contextCacheAllowed": {"const": False},
-            "credentialFileRequirements": _closed(
-                required=[
-                    "credentialFileMode",
-                    "credentialRootMode",
-                    "linkCount",
-                    "ownerMatchRequired",
-                    "regularFileRequired",
-                ],
-                properties={
-                    "credentialFileMode": {"const": "0600"},
-                    "credentialRootMode": {"const": "0700"},
-                    "linkCount": {"const": 1},
-                    "ownerMatchRequired": {"const": True},
-                    "regularFileRequired": {"const": True},
-                },
-            ),
+            "credentialFileAllowed": {"const": False},
             "developerApiAllowed": {"const": False},
             "fallbackAllowed": {"const": False},
             "fileUploadAllowed": {"const": False},
@@ -1279,6 +1285,197 @@ def _foreign_news_model_selection_schema() -> dict[str, Any]:
     )
 
 
+def _foreign_news_provider_operation_family_rules() -> list[dict[str, Any]]:
+    """One-shot foreign-news packet이 fixed operation 밖의 provider family를 열지 못하게 한다."""
+
+    return [
+        {
+            "if": {
+                "properties": {"operation": {"const": operation}},
+                "required": ["operation"],
+            },
+            "then": {"properties": {"providerFamily": {"const": provider_family}}},
+        }
+        for operation, provider_family in FOREIGN_NEWS_PROVIDER_OPERATION_FAMILIES.items()
+    ]
+
+
+def _foreign_news_provider_probe_approval_schema() -> dict[str, Any]:
+    """Local packet의 secret-free execution summary schema다.
+
+    Raw approval id/operator/credential은 local 0700 control root에만 남고, tracked contract에는
+    hash와 hard caps만 남긴다.
+    """
+
+    body = _closed(
+        required=[
+            "approvalIdHash",
+            "approvalStatus",
+            "artifactCap",
+            "ciDigest",
+            "costCapMicrousd",
+            "date",
+            "decisionAuthority",
+            "endpointSetDigest",
+            "executionAllowed",
+            "expiresAt",
+            "headSha",
+            "logicalCallCap",
+            "nonceHash",
+            "operation",
+            "operatorHash",
+            "physicalCallCap",
+            "providerFamily",
+            "rawHeaderStored",
+            "rawProviderDataStored",
+            "rawQueryStored",
+            "requestPlanDigest",
+            "retryCount",
+            "riskSignalOrderAuthority",
+            "schemaVersion",
+            "securityDigest",
+            "symbol",
+            "trackedRawArtifactCount",
+            "treeSha256",
+        ],
+        properties={
+            "approvalIdHash": _digest(),
+            "approvalStatus": {"const": "APPROVED"},
+            "artifactCap": {"const": 0},
+            "ciDigest": _digest(),
+            "costCapMicrousd": {"maximum": 1_000_000, "minimum": 0, "type": "integer"},
+            "date": {"pattern": "^(?:NONE|[0-9]{4}-[0-9]{2}-[0-9]{2})$", "type": "string"},
+            "decisionAuthority": {"const": "NONE"},
+            "endpointSetDigest": _digest(),
+            "executionAllowed": {"const": True},
+            "expiresAt": _timestamp(),
+            "headSha": {"pattern": "^[0-9a-f]{40}$", "type": "string"},
+            "logicalCallCap": {"const": 1},
+            "nonceHash": _digest(),
+            "operation": {"enum": list(FOREIGN_NEWS_PROVIDER_OPERATION_FAMILIES)},
+            "operatorHash": _digest(),
+            "physicalCallCap": {"const": 1},
+            "providerFamily": {"enum": list(FOREIGN_NEWS_PROVIDER_FAMILIES)},
+            "rawHeaderStored": {"const": False},
+            "rawProviderDataStored": {"const": False},
+            "rawQueryStored": {"const": False},
+            "requestPlanDigest": _digest(),
+            "retryCount": {"const": 0},
+            "riskSignalOrderAuthority": {"const": "NONE"},
+            "schemaVersion": {"const": 1},
+            "securityDigest": _digest(),
+            "symbol": {"pattern": "^[0-9A-Z._:-]{1,20}$", "type": "string"},
+            "trackedRawArtifactCount": {"const": 0},
+            "treeSha256": _digest(),
+        },
+    )
+    body["allOf"] = _foreign_news_provider_operation_family_rules()
+    return _schema("foreign-news-provider-probe-approval-v1", body)
+
+
+def _foreign_news_provider_probe_receipt_schema() -> dict[str, Any]:
+    """raw-free receipt가 pre-handoff zero-call과 one physical call의 outcome을 정확히 고정한다."""
+
+    body = _closed(
+        required=[
+            "approvalIdHash",
+            "approvalPacketSha256",
+            "articleMetadataStored",
+            "completedAt",
+            "contractId",
+            "decisionAuthority",
+            "firstFailureStopsRemainingCalls",
+            "laneState",
+            "logicalCallCount",
+            "operation",
+            "outcome",
+            "physicalCallCount",
+            "projectionHash",
+            "providerFamily",
+            "providerStatusClass",
+            "rawHeaderStored",
+            "rawProviderDataStored",
+            "rawQueryStored",
+            "requestPlanDigest",
+            "retryCount",
+            "riskSignalOrderAuthority",
+            "schemaVersion",
+            "startedAt",
+            "state",
+        ],
+        properties={
+            "approvalIdHash": _digest(),
+            "approvalPacketSha256": _digest(),
+            "articleMetadataStored": {"const": False},
+            "completedAt": _timestamp(),
+            "contractId": {"const": "foreign-news-provider-probe-receipt-v1"},
+            "decisionAuthority": {"const": "NONE"},
+            "firstFailureStopsRemainingCalls": {"const": True},
+            "laneState": {"enum": ["AVAILABLE", "ABSTAIN"]},
+            "logicalCallCount": {"enum": [0, 1]},
+            "operation": {"enum": list(FOREIGN_NEWS_PROVIDER_OPERATION_FAMILIES)},
+            "outcome": {"enum": ["NOT_EXECUTED", "SUCCESS", "FAILED"]},
+            "physicalCallCount": {"enum": [0, 1]},
+            "projectionHash": {"oneOf": [_digest(), {"type": "null"}]},
+            "providerFamily": {"enum": list(FOREIGN_NEWS_PROVIDER_FAMILIES)},
+            "providerStatusClass": {
+                "enum": ["NOT_ATTEMPTED", "HTTP_2XX", "HTTP_4XX", "HTTP_5XX", "TRANSPORT", "PROTOCOL"]
+            },
+            "rawHeaderStored": {"const": False},
+            "rawProviderDataStored": {"const": False},
+            "rawQueryStored": {"const": False},
+            "requestPlanDigest": _digest(),
+            "retryCount": {"const": 0},
+            "riskSignalOrderAuthority": {"const": "NONE"},
+            "schemaVersion": {"const": 1},
+            "startedAt": _timestamp(),
+            "state": {"const": "EXECUTED"},
+        },
+    )
+    body["allOf"] = [
+        *_foreign_news_provider_operation_family_rules(),
+        {
+            "if": {"properties": {"outcome": {"const": "NOT_EXECUTED"}}},
+            "then": {
+                "properties": {
+                    "laneState": {"const": "ABSTAIN"},
+                    "logicalCallCount": {"const": 0},
+                    "physicalCallCount": {"const": 0},
+                    "projectionHash": {"const": None},
+                    "providerStatusClass": {"const": "NOT_ATTEMPTED"},
+                }
+            },
+        },
+        {
+            "if": {"properties": {"outcome": {"const": "SUCCESS"}}},
+            "then": {
+                "properties": {
+                    "laneState": {"const": "AVAILABLE"},
+                    "logicalCallCount": {"const": 1},
+                    "physicalCallCount": {"const": 1},
+                    "projectionHash": _digest(),
+                    "providerStatusClass": {"const": "HTTP_2XX"},
+                }
+            },
+        },
+        {
+            "if": {"properties": {"outcome": {"const": "FAILED"}}},
+            "then": {
+                "properties": {
+                    "laneState": {"const": "ABSTAIN"},
+                    "logicalCallCount": {"const": 1},
+                    "physicalCallCount": {"const": 1},
+                    "projectionHash": {"const": None},
+                    "providerStatusClass": {
+                        "enum": ["HTTP_4XX", "HTTP_5XX", "TRANSPORT", "PROTOCOL"]
+                    },
+                }
+            },
+        },
+    ]
+    return _schema("foreign-news-provider-probe-receipt-v1", body)
+
+
 def _optional3_entitlement_schema() -> dict[str, Any]:
     entry = _closed(
         required=[
@@ -1546,6 +1743,8 @@ def _schemas() -> dict[str, dict[str, Any]]:
         "foreign-news-lane-entitlement-v1": _foreign_lane_entitlement_schema(),
         "foreign-news-sentiment-v1": _foreign_news_sentiment_schema(),
         "foreign-news-model-selection-v1": _foreign_news_model_selection_schema(),
+        "foreign-news-provider-probe-approval-v1": _foreign_news_provider_probe_approval_schema(),
+        "foreign-news-provider-probe-receipt-v1": _foreign_news_provider_probe_receipt_schema(),
         "s4-8-optional3-entitlement-v1": _optional3_entitlement_schema(),
         "s4-8-optional3-probe-approval-v1": _optional3_probe_approval_schema(),
         "s4-8-optional3-probe-receipt-v1": _optional3_probe_receipt_schema(),
@@ -1747,21 +1946,18 @@ def _rag_policy_fixture() -> dict[str, Any]:
         "schemaVersion": 1,
         "vertex": {
             "activationEvidenceRequired": [
-                "CREDENTIAL_FILE_SECURITY",
-                "PROJECT_CACHE_STATE",
+                "API_KEY_SECURITY",
+                "DATA_GOVERNANCE_STATE",
                 "ABUSE_MONITORING_STATE",
                 "MODEL_AVAILABILITY",
             ],
-            "authentication": ["ADC", "SERVICE_ACCOUNT"],
-            "boundedJsonCredentialRequired": True,
+            "ambientCredentialAllowed": False,
+            "apiKeyEnvironmentVariable": "VERTEX_API_KEY",
+            "apiKeyOnly": True,
+            "apiKeyTransport": "VERTEX_EXPRESS_QUERY_PARAMETER",
+            "authentication": ["VERTEX_EXPRESS_API_KEY"],
             "contextCacheAllowed": False,
-            "credentialFileRequirements": {
-                "credentialFileMode": "0600",
-                "credentialRootMode": "0700",
-                "linkCount": 1,
-                "ownerMatchRequired": True,
-                "regularFileRequired": True,
-            },
+            "credentialFileAllowed": False,
             "developerApiAllowed": False,
             "fallbackAllowed": False,
             "fileUploadAllowed": False,
@@ -1915,6 +2111,68 @@ def _model_selection_fixture() -> dict[str, Any]:
             }
             for candidate in MODEL_CANDIDATES
         ],
+    }
+
+
+def _foreign_news_provider_probe_approval_fixture() -> dict[str, Any]:
+    return {
+        "approvalIdHash": _hash("a"),
+        "approvalStatus": "APPROVED",
+        "artifactCap": 0,
+        "ciDigest": _hash("b"),
+        "costCapMicrousd": 10_000,
+        "date": "2026-08-03",
+        "decisionAuthority": "NONE",
+        "endpointSetDigest": _hash("c"),
+        "executionAllowed": True,
+        "expiresAt": "2030-01-02T03:19:00Z",
+        "headSha": "d" * 40,
+        "logicalCallCap": 1,
+        "nonceHash": _hash("e"),
+        "operation": "FINNHUB_COMPANY_NEWS",
+        "operatorHash": _hash("f"),
+        "physicalCallCap": 1,
+        "providerFamily": "FINNHUB_PERSONAL_LOCAL",
+        "rawHeaderStored": False,
+        "rawProviderDataStored": False,
+        "rawQueryStored": False,
+        "requestPlanDigest": _hash("1"),
+        "retryCount": 0,
+        "riskSignalOrderAuthority": "NONE",
+        "schemaVersion": 1,
+        "securityDigest": _hash("2"),
+        "symbol": "005930.KS",
+        "trackedRawArtifactCount": 0,
+        "treeSha256": _hash("3"),
+    }
+
+
+def _foreign_news_provider_probe_receipt_fixture() -> dict[str, Any]:
+    return {
+        "approvalIdHash": _hash("a"),
+        "approvalPacketSha256": _hash("4"),
+        "articleMetadataStored": False,
+        "completedAt": "2030-01-02T03:05:01Z",
+        "contractId": "foreign-news-provider-probe-receipt-v1",
+        "decisionAuthority": "NONE",
+        "firstFailureStopsRemainingCalls": True,
+        "laneState": "AVAILABLE",
+        "logicalCallCount": 1,
+        "operation": "FINNHUB_COMPANY_NEWS",
+        "outcome": "SUCCESS",
+        "physicalCallCount": 1,
+        "projectionHash": _hash("5"),
+        "providerFamily": "FINNHUB_PERSONAL_LOCAL",
+        "providerStatusClass": "HTTP_2XX",
+        "rawHeaderStored": False,
+        "rawProviderDataStored": False,
+        "rawQueryStored": False,
+        "requestPlanDigest": _hash("1"),
+        "retryCount": 0,
+        "riskSignalOrderAuthority": "NONE",
+        "schemaVersion": 1,
+        "startedAt": "2030-01-02T03:05:00Z",
+        "state": "EXECUTED",
     }
 
 
@@ -2072,6 +2330,19 @@ def _catalog() -> dict[str, Any]:
                 "riskDecisionHashIncluded": False,
                 "s5FeatureEligible": False,
             },
+            "providerProbeRuntime": {
+                "executionState": "ONE_SHOT_PACKET_GATED_LOCAL_ONLY",
+                "firstFailureStopsRemainingCalls": True,
+                "modelGate": "SELECTED_BLIND_TEST_PASSED_ONLY",
+                "physicalCallCapPerPacket": 1,
+                "providerCallsAllowed": "ONE_SHOT_PACKET_ONLY",
+                "providerFamilies": list(FOREIGN_NEWS_PROVIDER_FAMILIES),
+                "rawHeaderStored": False,
+                "rawProviderDataStored": False,
+                "rawQueryStored": False,
+                "receiptExecutionAllowed": "LOCAL_CONTENT_FREE_ONLY",
+                "retryCount": 0,
+            },
         },
         "oa112": {
             "physicalActivation": "NOT_MATERIALIZED",
@@ -2103,21 +2374,18 @@ def _catalog() -> dict[str, Any]:
             },
             "vertex": {
                 "activationEvidenceRequired": [
-                    "CREDENTIAL_FILE_SECURITY",
-                    "PROJECT_CACHE_STATE",
+                    "API_KEY_SECURITY",
+                    "DATA_GOVERNANCE_STATE",
                     "ABUSE_MONITORING_STATE",
                     "MODEL_AVAILABILITY",
                 ],
-                "authentication": ["ADC", "SERVICE_ACCOUNT"],
-                "boundedJsonCredentialRequired": True,
+                "ambientCredentialAllowed": False,
+                "apiKeyEnvironmentVariable": "VERTEX_API_KEY",
+                "apiKeyOnly": True,
+                "apiKeyTransport": "VERTEX_EXPRESS_QUERY_PARAMETER",
+                "authentication": ["VERTEX_EXPRESS_API_KEY"],
                 "contextCacheAllowed": False,
-                "credentialFileRequirements": {
-                    "credentialFileMode": "0600",
-                    "credentialRootMode": "0700",
-                    "linkCount": 1,
-                    "ownerMatchRequired": True,
-                    "regularFileRequired": True,
-                },
+                "credentialFileAllowed": False,
                 "developerApiAllowed": False,
                 "fallbackAllowed": False,
                 "fileUploadAllowed": False,
@@ -2433,6 +2701,8 @@ def _valid_fixtures() -> dict[str, dict[str, Any]]:
         "contracts/examples/foreign-news-lane-entitlement-v1.valid.json": _foreign_lane_entitlement_fixture(),
         "contracts/examples/foreign-news-sentiment-v1.valid.json": _foreign_sentiment_fixture(),
         "contracts/examples/foreign-news-model-selection-v1.valid.json": _model_selection_fixture(),
+        "contracts/examples/foreign-news-provider-probe-approval-v1.valid.json": _foreign_news_provider_probe_approval_fixture(),
+        "contracts/examples/foreign-news-provider-probe-receipt-v1.valid.json": _foreign_news_provider_probe_receipt_fixture(),
         "contracts/examples/s4-8-optional3-entitlement-v1.valid.json": _optional3_entitlement_fixture(),
         "contracts/examples/s4-8-optional3-probe-approval-v1.valid.json": _optional3_approval_fixture(),
         "contracts/examples/s4-8-optional3-probe-receipt-v1.valid.json": _optional3_receipt_fixture(),
@@ -2513,6 +2783,16 @@ def _invalid_fixtures(valid: Mapping[str, dict[str, Any]]) -> dict[str, dict[str
     )
     gdelt_lane["lanes"][-1]["mode"] = "CONTRACT_ONLY"
 
+    foreign_news_approval = copy.deepcopy(
+        valid["contracts/examples/foreign-news-provider-probe-approval-v1.valid.json"]
+    )
+    foreign_news_approval["providerFamily"] = "SEC_OFFICIAL"
+
+    foreign_news_receipt = copy.deepcopy(
+        valid["contracts/examples/foreign-news-provider-probe-receipt-v1.valid.json"]
+    )
+    foreign_news_receipt["rawProviderDataStored"] = True
+
     entitlement = copy.deepcopy(valid["contracts/examples/s4-8-optional3-entitlement-v1.valid.json"])
     entitlement["entitlements"][0]["providerCallsAllowed"] = True
 
@@ -2552,6 +2832,8 @@ def _invalid_fixtures(valid: Mapping[str, dict[str, Any]]) -> dict[str, dict[str
         "contracts/examples/invalid/foreign-news-lane-entitlement-v1.gdelt.invalid.json": gdelt_lane,
         "contracts/examples/invalid/foreign-news-model-selection-v1.test-state.invalid.json": invalid_test_state,
         "contracts/examples/invalid/foreign-news-model-selection-v1.test-shopping.invalid.json": test_shopping,
+        "contracts/examples/invalid/foreign-news-provider-probe-approval-v1.operation.invalid.json": foreign_news_approval,
+        "contracts/examples/invalid/foreign-news-provider-probe-receipt-v1.raw.invalid.json": foreign_news_receipt,
         "contracts/examples/invalid/s4-8-optional3-entitlement-v1.call.invalid.json": entitlement,
         "contracts/examples/invalid/s4-8-optional3-probe-approval-v1.execution.invalid.json": approval,
         "contracts/examples/invalid/s4-8-optional3-probe-receipt-v1.call.invalid.json": receipt,
@@ -2922,6 +3204,41 @@ def validate_semantics(schema_id: str, payload: object) -> None:
                 )
             return
         raise ContractValidationError("completed validation requires a selection state")
+    if schema_id in {
+        "foreign-news-provider-probe-approval-v1",
+        "foreign-news-provider-probe-receipt-v1",
+    }:
+        operation = value.get("operation")
+        provider_family = value.get("providerFamily")
+        if FOREIGN_NEWS_PROVIDER_OPERATION_FAMILIES.get(operation) != provider_family:
+            raise ContractValidationError("foreign-news provider operation/provider binding drifted")
+        if schema_id == "foreign-news-provider-probe-receipt-v1":
+            outcome = value.get("outcome")
+            if outcome == "SUCCESS" and (
+                value.get("laneState") != "AVAILABLE"
+                or value.get("logicalCallCount") != 1
+                or value.get("physicalCallCount") != 1
+                or value.get("providerStatusClass") != "HTTP_2XX"
+                or not isinstance(value.get("projectionHash"), str)
+            ):
+                raise ContractValidationError("successful foreign-news receipt must be available and hashed")
+            if outcome == "FAILED" and (
+                value.get("laneState") != "ABSTAIN"
+                or value.get("logicalCallCount") != 1
+                or value.get("physicalCallCount") != 1
+                or value.get("providerStatusClass") == "HTTP_2XX"
+                or value.get("projectionHash") is not None
+            ):
+                raise ContractValidationError("failed foreign-news receipt must abstain without projection")
+            if outcome == "NOT_EXECUTED" and (
+                value.get("laneState") != "ABSTAIN"
+                or value.get("logicalCallCount") != 0
+                or value.get("physicalCallCount") != 0
+                or value.get("providerStatusClass") != "NOT_ATTEMPTED"
+                or value.get("projectionHash") is not None
+            ):
+                raise ContractValidationError("pre-handoff foreign-news receipt must report exact zero calls")
+        return
     if schema_id == "s4-8-optional3-entitlement-v1":
         entries = value.get("entitlements")
         if not isinstance(entries, list) or tuple(

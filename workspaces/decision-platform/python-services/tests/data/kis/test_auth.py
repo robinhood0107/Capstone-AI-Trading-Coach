@@ -374,6 +374,29 @@ def test_token_cache_miss_issues_and_stores_with_refresh_skew() -> None:
     assert 86090 <= redis_client.ttl(_token_cache_key("test-scope")) <= 86100
 
 
+def test_cache_only_token_manager_rejects_miss_without_issuing() -> None:
+    issued = 0
+
+    def issuer() -> dict[str, Any]:
+        nonlocal issued
+        issued += 1
+        return {"access_token": "must-not-be-issued", "expires_in": 86400}
+
+    manager = KISTokenManager(
+        mode="mock",
+        offline=False,
+        redis_client=fakeredis.FakeStrictRedis(),
+        issuer=issuer,
+        scope="test-scope",
+        cache_only=True,
+    )
+
+    with pytest.raises(KISTokenCacheError, match="cached token is required"):
+        manager.get_access_token()
+
+    assert issued == 0
+
+
 def test_token_cache_hit_does_not_issue_again() -> None:
     redis_client = fakeredis.FakeStrictRedis()
     now = datetime(2026, 7, 8, 9, 0, tzinfo=UTC)

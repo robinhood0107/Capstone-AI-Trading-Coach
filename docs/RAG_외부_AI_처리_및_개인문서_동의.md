@@ -61,17 +61,18 @@ Google Search/Maps grounding, file upload, context cache, session resumption, UR
 Voyage live activation에는 organization admin의 training opt-out과 payment-method/privacy evidence가
 필요하다. `VOYAGE_API_KEY` 외 runtime 환경변수는 허용하지 않으며 Files/Batch API와 retry는 0이다.
 Voyage가 불가하면 query별 fallback이나 partial profile 혼합 없이 exact-30+OA112+owner bundle 전체를
-BGE-M3로 rebuild·evaluate한 뒤 CAS로만 전환한다. Vertex는 ADC/service-account만 허용하며
-credential file의 owner/regular-file/link-count/ACL 검증, project cache·abuse-monitoring evidence와
-fresh model availability 확인 전에는 활성화하지 않는다.
+BGE-M3로 rebuild·evaluate한 뒤 CAS로만 전환한다. Vertex는 `VERTEX_API_KEY`만 읽는 Vertex Express
+API-key-only target이며 ADC/service-account, ambient credential, credential file과 Gemini Developer API는
+허용하지 않는다. API-key security, data-governance·abuse-monitoring evidence와 fresh model availability
+확인 전에는 활성화하지 않는다.
 
 외부 전송은 source의 `externalEmbeddingAllowed`/`externalGenerationAllowed`와 owner의 effective
 consent를 모두 통과한 evidence에 한정한다. 하나라도 불충분하면 해당 요청 전체를 local
 `RETRIEVAL_ONLY`로 처리하며, owner 자료가 필요하지만 동의가 없으면
 `EXTERNAL_AI_CONSENT_REQUIRED`를 반환하고 provider call은 0이다.
 
-Vertex의 billing/IAM, project cache/grounding/session/abuse-logging 설정과 data-retention evidence,
-Voyage의 paid organization privacy/retention evidence는 실제 activation의 별도 hard gate다. provider의
+Vertex Express API key의 billing, data-governance/grounding/session/abuse-monitoring 설정과 data-retention
+evidence, Voyage의 paid organization privacy/retention evidence는 실제 activation의 별도 hard gate다. provider의
 정책 문구나 이 동의 문서만으로 zero retention 또는 no-training을 보장한다고 주장하지 않는다.
 
 ## 4. 동의, 철회, 삭제

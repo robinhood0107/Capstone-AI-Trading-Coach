@@ -296,6 +296,33 @@ def test_fetch_service_rows_rejects_non_allowlisted_service_before_outbound(
     assert client.physical_attempt_count == 0
 
 
+def test_fetch_service_rows_rejects_expired_bound_deadline_before_outbound(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    outbound = 0
+    monkeypatch.setattr(client_module.time, "monotonic", lambda: 100.0)
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal outbound
+        outbound += 1
+        return httpx.Response(200, json={"OutBlock_1": []})
+
+    client, quota = _client(monkeypatch, httpx.MockTransport(handler))
+    try:
+        with pytest.raises(KrxCredentialError, match="logical_deadline_exceeded"):
+            client.fetch_service_rows(
+                _AS_OF,
+                service="stk_bydd_trd",
+                deadline_monotonic=99.0,
+            )
+    finally:
+        client.close()
+
+    assert outbound == 0
+    assert quota.reservations == []
+    assert client.physical_attempt_count == 0
+
+
 def test_service_probe_profile_uses_120_second_read_and_130_second_deadline(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

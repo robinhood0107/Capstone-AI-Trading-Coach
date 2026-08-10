@@ -74,9 +74,12 @@ class KISTokenManager:
         monotonic: Callable[[], float] = time.monotonic,
         sleeper: Callable[[float], None] = time.sleep,
         accounting: CollectionRunRecorder | None = None,
+        cache_only: bool = False,
     ) -> None:
         if not _OPAQUE_SCOPE_PATTERN.fullmatch(scope):
             raise ValueError("opaque KIS token scope is required")
+        if not isinstance(cache_only, bool):
+            raise ValueError("KIS token cache-only mode must be boolean")
         self._mode = mode
         self._offline = offline
         self._redis = redis_client
@@ -87,6 +90,7 @@ class KISTokenManager:
         self._monotonic = monotonic
         self._sleeper = sleeper
         self._accounting = accounting
+        self._cache_only = cache_only
 
     def get_access_token(self) -> str:
         if self._offline:
@@ -97,6 +101,10 @@ class KISTokenManager:
         if cached is not None:
             self._record_cache_skip()
             return cached
+        if self._cache_only:
+            # Core 6 one-shot packet은 market-data cap 1을 OAuth token issue와 합산하지 않는다.
+            # cache miss는 provider token endpoint를 열지 않고 typed preflight failure로 끝낸다.
+            raise KISTokenCacheError("KIS cached token is required")
         owner = secrets.token_hex(16)
         self._acquire_issue_lock(owner)
         token_response: dict[str, Any] = {}

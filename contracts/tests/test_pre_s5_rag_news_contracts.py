@@ -215,6 +215,57 @@ class PreS5RagNewsContractTest(unittest.TestCase):
         validate_semantics("s4-8-optional3-probe-approval-v2", approval)
         validate_semantics("s4-8-optional3-probe-receipt-v2", receipt)
 
+    def test_foreign_news_provider_probe_is_packet_gated_and_content_free(self) -> None:
+        catalog = _load(ROOT / "contracts/catalogs/pre-s5-rag-news-contract.v1.json")
+        runtime = catalog["foreignNews"]["providerProbeRuntime"]
+        self.assertEqual("ONE_SHOT_PACKET_GATED_LOCAL_ONLY", runtime["executionState"])
+        self.assertEqual("SELECTED_BLIND_TEST_PASSED_ONLY", runtime["modelGate"])
+        self.assertEqual("ONE_SHOT_PACKET_ONLY", runtime["providerCallsAllowed"])
+        self.assertEqual(1, runtime["physicalCallCapPerPacket"])
+        self.assertEqual(0, runtime["retryCount"])
+
+        approval = _load(
+            ROOT / "contracts/examples/foreign-news-provider-probe-approval-v1.valid.json"
+        )
+        receipt = _load(
+            ROOT / "contracts/examples/foreign-news-provider-probe-receipt-v1.valid.json"
+        )
+        self.assertEqual(
+            [],
+            list(self.validators["foreign-news-provider-probe-approval-v1"].iter_errors(approval)),
+        )
+        self.assertEqual(
+            [],
+            list(self.validators["foreign-news-provider-probe-receipt-v1"].iter_errors(receipt)),
+        )
+        validate_semantics("foreign-news-provider-probe-approval-v1", approval)
+        validate_semantics("foreign-news-provider-probe-receipt-v1", receipt)
+        self.assertFalse(receipt["rawProviderDataStored"])
+        self.assertFalse(receipt["articleMetadataStored"])
+        self.assertFalse(receipt["rawQueryStored"])
+        self.assertFalse(receipt["rawHeaderStored"])
+
+        not_executed = copy.deepcopy(receipt)
+        not_executed.update(
+            {
+                "laneState": "ABSTAIN",
+                "logicalCallCount": 0,
+                "outcome": "NOT_EXECUTED",
+                "physicalCallCount": 0,
+                "projectionHash": None,
+                "providerStatusClass": "NOT_ATTEMPTED",
+            }
+        )
+        self.assertEqual(
+            [],
+            list(self.validators["foreign-news-provider-probe-receipt-v1"].iter_errors(not_executed)),
+        )
+        validate_semantics("foreign-news-provider-probe-receipt-v1", not_executed)
+        not_executed["physicalCallCount"] = 1
+        self.assertTrue(
+            list(self.validators["foreign-news-provider-probe-receipt-v1"].iter_errors(not_executed))
+        )
+
     def test_v4_source_permissions_require_all_four_for_active_oa(self) -> None:
         source = _load(ROOT / "contracts/examples/rag-source-card-v4.valid.json")
         validator = self.validators["rag-source-card-v4"]
@@ -353,7 +404,12 @@ class PreS5RagNewsContractTest(unittest.TestCase):
             voyage["ownerPrivateSentinel"],
         )
         self.assertEqual("gemini-3.5-flash", vertex["modelId"])
-        self.assertEqual(["ADC", "SERVICE_ACCOUNT"], vertex["authentication"])
+        self.assertEqual(["VERTEX_EXPRESS_API_KEY"], vertex["authentication"])
+        self.assertTrue(vertex["apiKeyOnly"])
+        self.assertEqual("VERTEX_API_KEY", vertex["apiKeyEnvironmentVariable"])
+        self.assertEqual("VERTEX_EXPRESS_QUERY_PARAMETER", vertex["apiKeyTransport"])
+        self.assertFalse(vertex["ambientCredentialAllowed"])
+        self.assertFalse(vertex["credentialFileAllowed"])
         self.assertFalse(vertex["developerApiAllowed"])
         self.assertEqual(5, vertex["maximumEvidenceCount"])
         self.assertEqual(1, vertex["maximumGenerateContentCallsPerQuestion"])
@@ -424,7 +480,7 @@ class PreS5RagNewsContractTest(unittest.TestCase):
         duplicated_lane["lanes"][-1] = copy.deepcopy(duplicated_lane["lanes"][0])
         self.assertTrue(list(validator.iter_errors(duplicated_lane)))
 
-    def test_global_news_stays_non_executable_and_optional3_is_packet_gated_only(self) -> None:
+    def test_global_news_default_stays_disabled_and_packet_exceptions_are_explicit(self) -> None:
         catalog = _load(ROOT / "contracts/catalogs/pre-s5-rag-news-contract.v1.json")
         lanes = catalog["foreignNews"]["lanes"]
         self.assertEqual(
@@ -433,6 +489,13 @@ class PreS5RagNewsContractTest(unittest.TestCase):
         )
         self.assertTrue(all(lane["providerCallsAllowed"] is False for lane in lanes))
         self.assertEqual("DECISION_PLATFORM_OFFLINE_REFERENCE_ONLY", lanes[-1]["mode"])
+        foreign_news = catalog["foreignNews"]["providerProbeRuntime"]
+        self.assertEqual("ONE_SHOT_PACKET_ONLY", foreign_news["providerCallsAllowed"])
+        self.assertEqual("LOCAL_CONTENT_FREE_ONLY", foreign_news["receiptExecutionAllowed"])
+        self.assertEqual(
+            ["FINNHUB_PERSONAL_LOCAL", "SEC_OFFICIAL", "FED_OFFICIAL"],
+            foreign_news["providerFamilies"],
+        )
         optional3 = catalog["s48Optional3"]
         self.assertEqual("ONE_SHOT_PACKET_ONLY", optional3["providerCallsAllowed"])
         self.assertEqual("LOCAL_CONTENT_FREE_ONLY", optional3["receiptExecutionAllowed"])
@@ -571,7 +634,7 @@ class PreS5RagNewsContractTest(unittest.TestCase):
 
     def test_all_required_invalid_fixtures_fail_closed(self) -> None:
         self.assertGreaterEqual(len(INVALID_FIXTURE_PATHS), 16)
-        self.assertEqual(21, len(VALID_FIXTURE_PATHS))
+        self.assertEqual(23, len(VALID_FIXTURE_PATHS))
         for relative_path in sorted(INVALID_FIXTURE_PATHS):
             payload = _load(ROOT / relative_path)
             schema_id = Path(relative_path).name.split(".", maxsplit=1)[0]

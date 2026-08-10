@@ -128,6 +128,23 @@
       "testEvaluationAfterSelectionOnly": true,
       "testEvaluationMaximumCount": 1
     },
+    "providerProbeRuntime": {
+      "executionState": "ONE_SHOT_PACKET_GATED_LOCAL_ONLY",
+      "firstFailureStopsRemainingCalls": true,
+      "modelGate": "SELECTED_BLIND_TEST_PASSED_ONLY",
+      "physicalCallCapPerPacket": 1,
+      "providerCallsAllowed": "ONE_SHOT_PACKET_ONLY",
+      "providerFamilies": [
+        "FINNHUB_PERSONAL_LOCAL",
+        "SEC_OFFICIAL",
+        "FED_OFFICIAL"
+      ],
+      "rawHeaderStored": false,
+      "rawProviderDataStored": false,
+      "rawQueryStored": false,
+      "receiptExecutionAllowed": "LOCAL_CONTENT_FREE_ONLY",
+      "retryCount": 0
+    },
     "responseInvariants": {
       "allowedUses": [
         "EXPLANATION_ONLY"
@@ -193,24 +210,20 @@
     },
     "vertex": {
       "activationEvidenceRequired": [
-        "CREDENTIAL_FILE_SECURITY",
-        "PROJECT_CACHE_STATE",
+        "API_KEY_SECURITY",
+        "DATA_GOVERNANCE_STATE",
         "ABUSE_MONITORING_STATE",
         "MODEL_AVAILABILITY"
       ],
+      "ambientCredentialAllowed": false,
+      "apiKeyEnvironmentVariable": "VERTEX_API_KEY",
+      "apiKeyOnly": true,
+      "apiKeyTransport": "VERTEX_EXPRESS_QUERY_PARAMETER",
       "authentication": [
-        "ADC",
-        "SERVICE_ACCOUNT"
+        "VERTEX_EXPRESS_API_KEY"
       ],
-      "boundedJsonCredentialRequired": true,
       "contextCacheAllowed": false,
-      "credentialFileRequirements": {
-        "credentialFileMode": "0600",
-        "credentialRootMode": "0700",
-        "linkCount": 1,
-        "ownerMatchRequired": true,
-        "regularFileRequired": true
-      },
+      "credentialFileAllowed": false,
       "developerApiAllowed": false,
       "fallbackAllowed": false,
       "fileUploadAllowed": false,

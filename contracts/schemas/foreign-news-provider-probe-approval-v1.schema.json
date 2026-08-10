@@ -1,0 +1,228 @@
+{
+  "$id": "contracts/schemas/foreign-news-provider-probe-approval-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "FINNHUB_MARKET_NEWS"
+          }
+        },
+        "required": [
+          "operation"
+        ]
+      },
+      "then": {
+        "properties": {
+          "providerFamily": {
+            "const": "FINNHUB_PERSONAL_LOCAL"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "FINNHUB_COMPANY_NEWS"
+          }
+        },
+        "required": [
+          "operation"
+        ]
+      },
+      "then": {
+        "properties": {
+          "providerFamily": {
+            "const": "FINNHUB_PERSONAL_LOCAL"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "SEC_OFFICIAL_RELEASES"
+          }
+        },
+        "required": [
+          "operation"
+        ]
+      },
+      "then": {
+        "properties": {
+          "providerFamily": {
+            "const": "SEC_OFFICIAL"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "FED_OFFICIAL_RELEASES"
+          }
+        },
+        "required": [
+          "operation"
+        ]
+      },
+      "then": {
+        "properties": {
+          "providerFamily": {
+            "const": "FED_OFFICIAL"
+          }
+        }
+      }
+    }
+  ],
+  "properties": {
+    "approvalIdHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "approvalStatus": {
+      "const": "APPROVED"
+    },
+    "artifactCap": {
+      "const": 0
+    },
+    "ciDigest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "contractId": {
+      "const": "foreign-news-provider-probe-approval-v1"
+    },
+    "costCapMicrousd": {
+      "maximum": 1000000,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "date": {
+      "pattern": "^(?:NONE|[0-9]{4}-[0-9]{2}-[0-9]{2})$",
+      "type": "string"
+    },
+    "decisionAuthority": {
+      "const": "NONE"
+    },
+    "endpointSetDigest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "executionAllowed": {
+      "const": true
+    },
+    "expiresAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "headSha": {
+      "pattern": "^[0-9a-f]{40}$",
+      "type": "string"
+    },
+    "logicalCallCap": {
+      "const": 1
+    },
+    "nonceHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "operation": {
+      "enum": [
+        "FINNHUB_MARKET_NEWS",
+        "FINNHUB_COMPANY_NEWS",
+        "SEC_OFFICIAL_RELEASES",
+        "FED_OFFICIAL_RELEASES"
+      ]
+    },
+    "operatorHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "physicalCallCap": {
+      "const": 1
+    },
+    "providerFamily": {
+      "enum": [
+        "FINNHUB_PERSONAL_LOCAL",
+        "SEC_OFFICIAL",
+        "FED_OFFICIAL"
+      ]
+    },
+    "rawHeaderStored": {
+      "const": false
+    },
+    "rawProviderDataStored": {
+      "const": false
+    },
+    "rawQueryStored": {
+      "const": false
+    },
+    "requestPlanDigest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "retryCount": {
+      "const": 0
+    },
+    "riskSignalOrderAuthority": {
+      "const": "NONE"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "securityDigest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "symbol": {
+      "pattern": "^[0-9A-Z._:-]{1,20}$",
+      "type": "string"
+    },
+    "trackedRawArtifactCount": {
+      "const": 0
+    },
+    "treeSha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "contractId",
+    "approvalIdHash",
+    "approvalStatus",
+    "artifactCap",
+    "ciDigest",
+    "costCapMicrousd",
+    "date",
+    "decisionAuthority",
+    "endpointSetDigest",
+    "executionAllowed",
+    "expiresAt",
+    "headSha",
+    "logicalCallCap",
+    "nonceHash",
+    "operation",
+    "operatorHash",
+    "physicalCallCap",
+    "providerFamily",
+    "rawHeaderStored",
+    "rawProviderDataStored",
+    "rawQueryStored",
+    "requestPlanDigest",
+    "retryCount",
+    "riskSignalOrderAuthority",
+    "schemaVersion",
+    "securityDigest",
+    "symbol",
+    "trackedRawArtifactCount",
+    "treeSha256"
+  ],
+  "title": "foreign-news-provider-probe-approval-v1",
+  "type": "object"
+}

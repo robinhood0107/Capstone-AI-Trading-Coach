@@ -9,7 +9,7 @@ import java.time.Instant
 
 internal data class PreS5VertexHttpRequest(
     val endpoint: URI,
-    val bearerToken: String,
+    val apiKey: ByteArray,
     val body: ByteArray,
     val timeout: Duration,
     val expiresAt: Instant,
@@ -26,8 +26,8 @@ internal interface PreS5VertexHttpExecutor {
 }
 
 /**
- * fixed Vertex origin만 호출하는 no-redirect/no-proxy one-shot executor다. response는 bounded byte array로만
- * caller에 전달되고, logging·retry·request/response artifact persistence는 이 transport에 없다.
+ * fixed Vertex Express origin만 호출하는 no-redirect/no-proxy one-shot executor다. API key는 URI나 log가 아닌
+ * direct TLS request target에만 잠시 넣고, response는 bounded byte array로만 caller에 전달한다.
  */
 @Component
 @ConditionalOnProperty(name = ["app.rag-v2.vertex.enabled"], havingValue = "true")
@@ -46,17 +46,18 @@ internal class JdkPreS5VertexHttpExecutor(
             require(request.endpoint.rawQuery == null && request.endpoint.rawFragment == null)
             require(request.endpoint.rawPath.matches(ENDPOINT_PATH))
             require(request.body.isNotEmpty() && request.body.size <= MAX_REQUEST_BYTES)
-            require(request.bearerToken.isNotBlank() && request.bearerToken.length <= MAX_TOKEN_CHARACTERS)
+            require(request.apiKey.size in MINIMUM_API_KEY_BYTES..MAXIMUM_API_KEY_BYTES)
+            require(request.apiKey.all { byte -> byte.toInt().toChar() in API_KEY_CHARACTERS })
             require(request.timeout in MIN_TIMEOUT..MAX_TIMEOUT)
             require(Instant.now(clock).isBefore(request.expiresAt))
             val response =
                 transport.execute(
                     PreS5VertexOneShotHttpsRequest(
                         endpoint = request.endpoint,
+                        apiKey = request.apiKey,
                         headers =
                             listOf(
                                 "Content-Type" to "application/json",
-                                "Authorization" to "Bearer ${request.bearerToken}",
                             ),
                         body = request.body,
                         timeout = request.timeout,
@@ -75,15 +76,18 @@ internal class JdkPreS5VertexHttpExecutor(
         } finally {
             // request body는 API call 뒤 immutable corpus text를 오래 붙잡지 않도록 즉시 비운다.
             request.body.fill(0)
+            request.apiKey.fill(0)
         }
     }
 
     private companion object {
         val ENDPOINT_PATH =
-            Regex("^/v1/projects/[a-z][a-z0-9-]{4,62}/locations/global/publishers/google/models/gemini-3\\.5-flash:generateContent$")
+            Regex("^/v1/publishers/google/models/gemini-3\\.5-flash:generateContent$")
         const val MAX_REQUEST_BYTES = 60_000
         const val MAX_RESPONSE_BYTES = 65_536
-        const val MAX_TOKEN_CHARACTERS = 16_384
+        const val MINIMUM_API_KEY_BYTES = 16
+        const val MAXIMUM_API_KEY_BYTES = 512
+        val API_KEY_CHARACTERS = (('a'..'z') + ('A'..'Z') + ('0'..'9') + listOf('-', '_')).toSet()
         val MIN_TIMEOUT: Duration = Duration.ofSeconds(1)
         val MAX_TIMEOUT: Duration = Duration.ofSeconds(30)
     }

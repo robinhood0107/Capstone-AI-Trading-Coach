@@ -14,6 +14,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Final, Mapping, Sequence
 
+from app.cross_market.core6_probe import Core6ProbeReceipt
+
 
 CORE6_LANES: Final[tuple[tuple[str, str], ...]] = (
     ("KIS", "S48_CORE6_KIS"),
@@ -34,6 +36,11 @@ _DIRECT_READ_FAMILIES: Final[frozenset[str]] = frozenset(
     {"KIS", "SEC_EDGAR", "KRX", "KOFIA", "FINNHUB_OPTIONAL3", "TWELVE_DATA", "MASSIVE"}
 )
 _PROJECTION_ONLY_FAMILIES: Final[frozenset[str]] = frozenset({"OPENDART", "ECOS"})
+_CORE6_RECEIPT_OPERATIONS_BY_FAMILY: Final[dict[str, frozenset[str]]] = {
+    "KIS": frozenset({"KIS_CURRENT_PRICE"}),
+    "SEC_EDGAR": frozenset({"SEC_EDGAR_SUBMISSIONS", "SEC_EDGAR_COMPANYFACTS"}),
+    "KRX": frozenset({"KRX_KOSPI_DAILY", "KRX_KOSDAQ_DAILY"}),
+}
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 
@@ -53,6 +60,44 @@ class S48AuthorizedProjection:
             raise S48RuntimeError("S48_DIRECT_PROJECTION_REUSE_FORBIDDEN")
         if _SHA256.fullmatch(self.projection_hash) is None:
             raise S48RuntimeError("S48_RUNTIME_PROJECTION_HASH_INVALID")
+
+
+@dataclass(frozen=True, slots=True)
+class S48DirectProbeProjection:
+    """Successful Core 6 receipt의 content-free projection proof를 runtime에 전달하는 typed bridge다."""
+
+    source_family: str
+    source_id: str
+    operation: str
+    projection_hash: str
+
+    def __post_init__(self) -> None:
+        required_operations = _CORE6_RECEIPT_OPERATIONS_BY_FAMILY.get(self.source_family)
+        if required_operations is None or self.operation not in required_operations:
+            raise S48RuntimeError("S48_RUNTIME_DIRECT_RECEIPT_OPERATION_INVALID")
+        if _SOURCE_ID_BY_FAMILY.get(self.source_family) != self.source_id:
+            raise S48RuntimeError("S48_RUNTIME_DIRECT_RECEIPT_SOURCE_INVALID")
+        if _SHA256.fullmatch(self.projection_hash) is None:
+            raise S48RuntimeError("S48_RUNTIME_PROJECTION_HASH_INVALID")
+
+    @classmethod
+    def from_core6_receipt(cls, receipt: Core6ProbeReceipt) -> "S48DirectProbeProjection":
+        """Only a completed one-call Core 6 success receipt can make a direct lane available."""
+
+        if (
+            receipt.outcome != "SUCCESS"
+            or receipt.logical_call_count != 1
+            or receipt.physical_call_count != 1
+            or receipt.provider_status_class != "HTTP_2XX"
+            or receipt.projection_hash is None
+        ):
+            raise S48RuntimeError("S48_RUNTIME_DIRECT_RECEIPT_NOT_SUCCESSFUL")
+        return cls(
+            source_family=receipt.provider_family,
+            source_id=receipt.source_id,
+            operation=receipt.operation,
+            projection_hash=receipt.projection_hash,
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,6 +140,24 @@ class S48RuntimeLane:
                 or self.projection_hash is not None
             ):
                 raise S48RuntimeError("S48_RUNTIME_PROJECTION_STATE_INVALID")
+            return
+        if self.source_family in _CORE6_RECEIPT_OPERATIONS_BY_FAMILY:
+            if self.ingestion_mode != "DIRECT_READ_PROBE":
+                raise S48RuntimeError("S48_RUNTIME_DIRECT_READ_BLOCKER_INVALID")
+            if self.status == "AVAILABLE":
+                if (
+                    self.reason != "COMPLETE_DIRECT_PROBE_SET_AVAILABLE"
+                    or self.projection_hash is None
+                ):
+                    raise S48RuntimeError("S48_RUNTIME_DIRECT_RECEIPT_STATE_INVALID")
+                return
+            if (
+                self.status != "ABSTAIN"
+                or self.reason
+                not in {"APPROVAL_PACKET_REQUIRED", "DIRECT_PROBE_RECEIPT_SET_INCOMPLETE"}
+                or self.projection_hash is not None
+            ):
+                raise S48RuntimeError("S48_RUNTIME_DIRECT_RECEIPT_STATE_INVALID")
             return
         if self.source_family == "KOFIA":
             if (
@@ -239,6 +302,7 @@ class S48RuntimeMaterializer:
         *,
         evaluated_at: datetime,
         authorized_projections: Sequence[S48AuthorizedProjection] = (),
+        direct_probe_projections: Sequence[S48DirectProbeProjection] = (),
         provider_physical_calls: int = 0,
         retry_count: int = 0,
     ) -> S48RuntimeBatch:
@@ -249,12 +313,14 @@ class S48RuntimeMaterializer:
         if retry_count != 0:
             raise S48RuntimeError("S48_RUNTIME_RETRY_FORBIDDEN")
         projection_by_family = _projection_map(authorized_projections)
+        direct_projection_by_family = _direct_projection_map(direct_probe_projections)
         lanes = tuple(
             _materialize_lane(
                 source_family=source_family,
                 source_id=source_id,
                 evaluated_at=evaluated_at.astimezone(UTC),
                 authorized_projection=projection_by_family.get(source_family),
+                direct_probe_projections=direct_projection_by_family.get(source_family, {}),
             )
             for source_family, source_id in S48_RUNTIME_LANES
         )
@@ -277,12 +343,27 @@ def _projection_map(
     return result
 
 
+def _direct_projection_map(
+    direct_probe_projections: Sequence[S48DirectProbeProjection],
+) -> Mapping[str, Mapping[str, S48DirectProbeProjection]]:
+    """Different receipt는 operation별로 한 번만 받아 stale/ambiguous proof를 fail-closed한다."""
+
+    result: dict[str, dict[str, S48DirectProbeProjection]] = {}
+    for projection in direct_probe_projections:
+        operations = result.setdefault(projection.source_family, {})
+        if projection.operation in operations:
+            raise S48RuntimeError("S48_RUNTIME_DIRECT_RECEIPT_DUPLICATE")
+        operations[projection.operation] = projection
+    return result
+
+
 def _materialize_lane(
     *,
     source_family: str,
     source_id: str,
     evaluated_at: datetime,
     authorized_projection: S48AuthorizedProjection | None,
+    direct_probe_projections: Mapping[str, S48DirectProbeProjection],
 ) -> S48RuntimeLane:
     if source_family in _PROJECTION_ONLY_FAMILIES:
         if authorized_projection is not None:
@@ -302,6 +383,34 @@ def _materialize_lane(
             ingestion_mode="REUSE_AUTHORIZED_PROJECTION",
             status="ABSTAIN",
             reason="REUSE_AUTHORIZED_PROJECTION_NOT_AVAILABLE",
+            projection_hash=None,
+        )
+    if source_family in _CORE6_RECEIPT_OPERATIONS_BY_FAMILY:
+        required_operations = _CORE6_RECEIPT_OPERATIONS_BY_FAMILY[source_family]
+        if set(direct_probe_projections) == required_operations:
+            return S48RuntimeLane(
+                source_family=source_family,
+                source_id=source_id,
+                evaluated_at=evaluated_at,
+                ingestion_mode="DIRECT_READ_PROBE",
+                status="AVAILABLE",
+                reason="COMPLETE_DIRECT_PROBE_SET_AVAILABLE",
+                projection_hash=_direct_probe_set_hash(
+                    source_family=source_family,
+                    projections=direct_probe_projections,
+                ),
+            )
+        return S48RuntimeLane(
+            source_family=source_family,
+            source_id=source_id,
+            evaluated_at=evaluated_at,
+            ingestion_mode="DIRECT_READ_PROBE",
+            status="ABSTAIN",
+            reason=(
+                "DIRECT_PROBE_RECEIPT_SET_INCOMPLETE"
+                if direct_probe_projections
+                else "APPROVAL_PACKET_REQUIRED"
+            ),
             projection_hash=None,
         )
     if source_family == "KOFIA":
@@ -332,6 +441,29 @@ def _materialize_lane(
         status="ABSTAIN",
         reason="APPROVAL_PACKET_REQUIRED",
         projection_hash=None,
+    )
+
+
+def _direct_probe_set_hash(
+    *,
+    source_family: str,
+    projections: Mapping[str, S48DirectProbeProjection],
+) -> str:
+    """All required receipt hashes를 combine해 individual provider payload 대신 complete-set proof만 남긴다."""
+
+    return _sha256(
+        _canonical(
+            {
+                "operations": [
+                    {
+                        "operation": operation,
+                        "projectionHash": projections[operation].projection_hash,
+                    }
+                    for operation in sorted(projections)
+                ],
+                "sourceFamily": source_family,
+            }
+        )
     )
 
 

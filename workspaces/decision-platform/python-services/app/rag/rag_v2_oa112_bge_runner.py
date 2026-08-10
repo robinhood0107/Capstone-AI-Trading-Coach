@@ -81,7 +81,8 @@ def materialize_oa112_public_bge_component(
     if not local_cache_root.is_absolute():
         raise RagV2Oa112BgeRunnerError("OA112_LOCAL_CACHE_ROOT")
     approved_root = local_cache_root / "oa-raw"
-    active_parser = parser or LocalDocumentParser()
+    # OA raw attachment는 provider에 전달하지 않고 in-memory projection에서만 제거한다.
+    active_parser = parser or LocalDocumentParser(strip_inert_pdf_attachments=True)
     records: list[PublicBgeRecord] = []
     for entry in entries:
         try:

@@ -64,6 +64,28 @@ _OOXML_MIME_MARKERS: Final[dict[str, bytes]] = {
         b"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"
     ),
 }
+_PDF_ACTION_NAMES: Final[frozenset[str]] = frozenset(
+    {
+        "/GoTo",
+        "/GoToR",
+        "/GoToE",
+        "/Launch",
+        "/Thread",
+        "/URI",
+        "/Sound",
+        "/Movie",
+        "/Hide",
+        "/Named",
+        "/SubmitForm",
+        "/ResetForm",
+        "/ImportData",
+        "/JavaScript",
+        "/SetOCGState",
+        "/Rendition",
+        "/Trans",
+        "/GoTo3DView",
+    }
+)
 _PDF_EXECUTABLE_ACTION_NAMES: Final[frozenset[str]] = frozenset({"/JavaScript", "/Launch"})
 _PDF_SAFE_OPEN_ACTION_NAMES: Final[frozenset[str]] = frozenset({"/GoTo"})
 _PDF_XREF_REFERENCE: Final[re.Pattern[str]] = re.compile(r"^([1-9][0-9]*) 0 R$")
@@ -910,20 +932,29 @@ def _inspect_pdf_objects(
     object_count = document.xref_length()
     for xref in range(1, object_count):
         action = _pdf_key(document, xref, "S")
+        nested_action = _pdf_key(document, xref, "A")
         javascript = _pdf_key(document, xref, "JS")
         additional_action = _pdf_key(document, xref, "AA")
         object_type = _pdf_key(document, xref, "Type")
         subtype = _pdf_key(document, xref, "Subtype")
         open_action = _pdf_key(document, xref, "OpenAction")
+        xfa = _pdf_key(document, xref, "XFA")
         embedded_file = _pdf_key(document, xref, "EF")
         associated_file = _pdf_key(document, xref, "AF")
         if (
             (action[0] == "name" and action[1] in _PDF_EXECUTABLE_ACTION_NAMES)
+            or _pdf_nested_action_is_forbidden(document, xref, nested_action)
+            or (
+                action[0] == "name"
+                and action[1] in _PDF_ACTION_NAMES
+                and _pdf_key(document, xref, "Next")[0] != "null"
+            )
             or javascript[0] != "null"
             or additional_action[0] != "null"
             or object_type == ("name", "/RichMedia")
             or subtype == ("name", "/RichMedia")
             or (xref != catalog_xref and open_action[0] != "null")
+            or xfa[0] != "null"
         ):
             raise DocumentParseError("PDF_ACTIVE_CONTENT_FORBIDDEN")
         is_file_spec = object_type == ("name", "/Filespec")
@@ -945,6 +976,26 @@ def _inspect_pdf_objects(
     if has_inert_attachments and not allow_inert_attachments:
         raise DocumentParseError("PDF_ATTACHMENT_FORBIDDEN")
     return has_inert_attachments
+
+
+def _pdf_nested_action_is_forbidden(
+    document: fitz.Document,
+    xref: int,
+    action: tuple[str, str],
+) -> bool:
+    """annotation·outline의 direct action과 action chain에서 실행 payload를 닫는다."""
+
+    if action[0] == "name":
+        return action[1] in _PDF_EXECUTABLE_ACTION_NAMES
+    if action[0] != "dict":
+        return False
+    nested_action = _pdf_key(document, xref, "A/S")
+    return (
+        (nested_action[0] == "name" and nested_action[1] in _PDF_EXECUTABLE_ACTION_NAMES)
+        or _pdf_key(document, xref, "A/JS")[0] != "null"
+        # `/Next`는 dictionary 또는 array action chain이라 재귀 우회를 막기 위해 전부 거부한다.
+        or _pdf_key(document, xref, "A/Next")[0] != "null"
+    )
 
 
 def _validate_pdf_open_action(document: fitz.Document, catalog_xref: int) -> None:

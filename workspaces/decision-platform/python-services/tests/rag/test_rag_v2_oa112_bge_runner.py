@@ -12,6 +12,8 @@ import numpy as np
 import psycopg
 import pytest
 
+import app.rag.local_document_parser as local_document_parser
+import app.rag.rag_v2_oa112_bge_runner as oa112_bge_runner
 from app.rag.external_processing_corpus import load_external_processing_corpus
 from app.rag.oa112_active_registry import Oa112ActiveRegistry, Oa112RegistryEntry
 from app.rag.oa_release_manifest import OA_TRACK_IDS
@@ -167,6 +169,42 @@ def test_oa112_runner_materializes_only_the_full_active_registry_with_local_bge(
     assert "canonicalText" not in serialized
     assert '"embedding":' not in serialized
     assert str(tmp_path) not in serialized
+
+
+def test_oa112_default_parsers_enable_only_inert_pdf_attachment_stripping(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry = _registry()
+    bge_parser = _FixtureApprovedParser(registry.active_entries)
+    voyage_parser = _FixtureApprovedParser(registry.active_entries)
+    bge_options: list[dict[str, object]] = []
+    voyage_options: list[dict[str, object]] = []
+
+    def bge_factory(**options: object) -> _FixtureApprovedParser:
+        bge_options.append(options)
+        return bge_parser
+
+    def voyage_factory(**options: object) -> _FixtureApprovedParser:
+        voyage_options.append(options)
+        return voyage_parser
+
+    monkeypatch.setattr(oa112_bge_runner, "LocalDocumentParser", bge_factory)
+    materialize_oa112_public_bge_component(
+        tokenizer=_FixtureTokenizer(),
+        embedder=_FixtureEmbedder(),
+        registry=registry,
+        local_cache_root=tmp_path,
+    )
+    monkeypatch.setattr(local_document_parser, "LocalDocumentParser", voyage_factory)
+    prepare_oa112_public_voyage_component(
+        tokenizer=_FixtureTokenizer(),
+        registry=registry,
+        local_cache_root=tmp_path,
+    )
+
+    expected = {"strip_inert_pdf_attachments": True}
+    assert bge_options == voyage_options == [expected]
 
 
 def test_oa112_runner_rejects_any_active_source_without_all_four_permissions(

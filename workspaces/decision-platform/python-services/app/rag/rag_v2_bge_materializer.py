@@ -5,7 +5,7 @@ import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, Protocol
+from typing import Final, Literal, Protocol
 
 import numpy as np
 from numpy.typing import NDArray
@@ -29,6 +29,7 @@ from app.rag.local_document_parser import DocumentParseError
 
 _BGE_PROFILE_ID = "bge_m3_local_1024_v1"
 _VOYAGE_PROFILE_ID = "voyage_context_4_1024_v1"
+_BGE_EMBEDDING_BATCH_SIZE: Final = 64
 
 
 class RagV2BgeMaterializationError(ValueError):
@@ -67,6 +68,30 @@ class BgeDocumentEmbedder(Protocol):
     """pinned local BGE packet만 사용해 ordered document inputs를 embedding하는 boundary다."""
 
     def embed(self, texts: tuple[str, ...]) -> NDArray[np.float32]: ...
+
+
+def _embed_bge_texts(
+    *,
+    embedder: BgeDocumentEmbedder,
+    texts: tuple[str, ...],
+) -> NDArray[np.float32]:
+    """runtime의 64-row 상한 안에서 순서를 보존한 complete document vector를 만든다."""
+
+    batches: list[NDArray[np.float32]] = []
+    for start in range(0, len(texts), _BGE_EMBEDDING_BATCH_SIZE):
+        batch_texts = texts[start : start + _BGE_EMBEDDING_BATCH_SIZE]
+        batches.append(
+            validate_embedding_batch(
+                embedder.embed(batch_texts),
+                expected_rows=len(batch_texts),
+            )
+        )
+    if not batches:
+        raise BgeRuntimeError("BGE_INPUT_CHUNK_CARDINALITY")
+    return validate_embedding_batch(
+        np.concatenate(batches, axis=0),
+        expected_rows=len(texts),
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -227,9 +252,9 @@ def materialize_owner_bge_document(
             embedding_profile_id=_BGE_PROFILE_ID,
             tokenizer=tokenizer,
         )
-        vectors = validate_embedding_batch(
-            embedder.embed(tuple(item.text for item in inputs)),
-            expected_rows=len(inputs),
+        vectors = _embed_bge_texts(
+            embedder=embedder,
+            texts=tuple(item.text for item in inputs),
         )
     except (
         BgeRuntimeError,
@@ -281,9 +306,9 @@ def materialize_public_bge_document(
         request=request,
     )
     try:
-        vectors = validate_embedding_batch(
-            embedder.embed(tuple(item.text for item in prepared.embedding_inputs)),
-            expected_rows=len(prepared.embedding_inputs),
+        vectors = _embed_bge_texts(
+            embedder=embedder,
+            texts=tuple(item.text for item in prepared.embedding_inputs),
         )
     except RagV2BgeMaterializationError:
         raise

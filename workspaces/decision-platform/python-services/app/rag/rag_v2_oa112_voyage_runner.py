@@ -133,7 +133,8 @@ def prepare_oa112_public_voyage_component(
     if active_parser is None:
         from app.rag.local_document_parser import LocalDocumentParser
 
-        active_parser = LocalDocumentParser()
+        # BGE와 동일한 OA projection을 사용해 provider별 canonical text drift를 막는다.
+        active_parser = LocalDocumentParser(strip_inert_pdf_attachments=True)
     prepared_documents: list[Oa112PreparedVoyageDocument] = []
     for entry in entries:
         try:

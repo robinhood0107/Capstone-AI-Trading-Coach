@@ -482,7 +482,7 @@ def test_stdlib_transport_keeps_finnhub_key_in_memory_target_only_and_official_r
         target="/api/v1/company-news?from=2026-08-07&symbol=AAPL&to=2026-08-07",
         api_key="test-secret-value",
         user_agent="test-contact@example.invalid",
-        expires_at=_NOW + timedelta(minutes=1),
+        expires_at=datetime.now(UTC) + timedelta(minutes=1),
         timeout_seconds=10.0,
         maximum_response_bytes=262_144,
     )
@@ -510,7 +510,7 @@ def test_stdlib_transport_keeps_finnhub_key_in_memory_target_only_and_official_r
         target="/newsroom/press-releases",
         api_key=None,
         user_agent="test-contact@example.invalid",
-        expires_at=_NOW + timedelta(minutes=1),
+        expires_at=datetime.now(UTC) + timedelta(minutes=1),
         timeout_seconds=10.0,
         maximum_response_bytes=262_144,
     )
@@ -534,7 +534,7 @@ def test_stdlib_transport_accepts_the_contract_korean_symbol_alphabet_for_finnhu
         target="/api/v1/company-news?from=2026-08-07&symbol=005930.KS&to=2026-08-07",
         api_key="test-secret-value",
         user_agent="test-contact@example.invalid",
-        expires_at=_NOW + timedelta(minutes=1),
+        expires_at=datetime.now(UTC) + timedelta(minutes=1),
         timeout_seconds=10.0,
         maximum_response_bytes=262_144,
     )

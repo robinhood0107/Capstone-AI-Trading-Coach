@@ -253,6 +253,20 @@ def _collect_merged_main_evidence(
             text=True,
             timeout=15,
         )
+        main_ref_result = subprocess.run(
+            [
+                "gh",
+                "api",
+                "--method",
+                "GET",
+                "repos/{owner}/{repo}/git/ref/heads/main",
+            ],
+            cwd=repository_root,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
         checks_result = subprocess.run(
             [
                 "gh",
@@ -272,11 +286,17 @@ def _collect_merged_main_evidence(
             timeout=15,
         )
         pull_request_document: object = json.loads(pull_request_result.stdout)
+        main_ref_document: object = json.loads(main_ref_result.stdout)
         checks_document: object = json.loads(checks_result.stdout)
     except (OSError, subprocess.SubprocessError, json.JSONDecodeError):
         raise KISMockApprovalAuthorRejected("merged main evidence is unavailable") from None
     if branch != "main" or head != remote_head:
         raise KISMockApprovalAuthorRejected("merged main evidence does not bind origin/main")
+    if not isinstance(main_ref_document, dict):
+        raise KISMockApprovalAuthorRejected("remote main evidence is invalid")
+    main_ref_object = main_ref_document.get("object")
+    if not isinstance(main_ref_object, dict) or main_ref_object.get("sha") != head:
+        raise KISMockApprovalAuthorRejected("remote main does not bind one final HEAD")
     if not isinstance(pull_request_document, dict):
         raise KISMockApprovalAuthorRejected("merged main evidence is invalid")
     merge_commit = pull_request_document.get("mergeCommit")
@@ -311,7 +331,10 @@ def _successful_post_merge_check_names(document: object, *, head: str) -> frozen
         for item in check_runs
         if isinstance(item, dict)
         and item.get("head_sha") == head
+        and item.get("status") == "completed"
         and item.get("conclusion") == "success"
+        and isinstance((app := item.get("app")), dict)
+        and app.get("slug") == "github-actions"
         and isinstance((name := item.get("name")), str)
     )
 

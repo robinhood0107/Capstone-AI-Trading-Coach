@@ -350,6 +350,13 @@ def test_v2_merged_main_revalidation_requires_merge_sha_and_post_merge_checks(
                 ),
                 "",
             )
+        if arguments[:2] == ["gh", "api"] and arguments[4].endswith("/git/ref/heads/main"):
+            return subprocess.CompletedProcess(
+                arguments,
+                0,
+                json.dumps({"object": {"sha": "a" * 40}}),
+                "",
+            )
         assert arguments[:2] == ["gh", "api"]
         return subprocess.CompletedProcess(
             arguments,
@@ -357,7 +364,13 @@ def test_v2_merged_main_revalidation_requires_merge_sha_and_post_merge_checks(
             json.dumps(
                 {
                     "check_runs": [
-                        {"name": name, "conclusion": "success", "head_sha": "a" * 40}
+                        {
+                            "name": name,
+                            "conclusion": "success",
+                            "status": "completed",
+                            "head_sha": "a" * 40,
+                            "app": {"slug": "github-actions"},
+                        }
                         for name in sorted(probe._REQUIRED_CI_CHECKS)
                     ]
                 }
@@ -407,13 +420,26 @@ def test_v2_merged_main_revalidation_rejects_green_checks_from_another_sha(
                 ),
                 "",
             )
+        if arguments[:2] == ["gh", "api"] and arguments[4].endswith("/git/ref/heads/main"):
+            return subprocess.CompletedProcess(
+                arguments,
+                0,
+                json.dumps({"object": {"sha": "a" * 40}}),
+                "",
+            )
         return subprocess.CompletedProcess(
             arguments,
             0,
             json.dumps(
                 {
                     "check_runs": [
-                        {"name": name, "conclusion": "success", "head_sha": "b" * 40}
+                        {
+                            "name": name,
+                            "conclusion": "success",
+                            "status": "completed",
+                            "head_sha": "b" * 40,
+                            "app": {"slug": "github-actions"},
+                        }
                         for name in sorted(probe._REQUIRED_CI_CHECKS)
                     ]
                 }
@@ -424,6 +450,68 @@ def test_v2_merged_main_revalidation_rejects_green_checks_from_another_sha(
     monkeypatch.setattr(probe.subprocess, "run", fake_run)
 
     with pytest.raises(probe.KISMockApprovalRejected, match="post-merge checks"):
+        probe._require_current_v2_pr_evidence(packet, secure_directory)
+
+
+@pytest.mark.parametrize(
+    ("remote_main_sha", "check_app", "expected_message"),
+    [
+        ("b" * 40, "github-actions", "remote main"),
+        ("a" * 40, "untrusted-check-app", "post-merge checks"),
+    ],
+)
+def test_v2_merged_main_revalidation_rejects_remote_drift_and_spoofed_check_app(
+    secure_directory: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    live_pr_evidence: None,
+    remote_main_sha: str,
+    check_app: str,
+    expected_message: str,
+) -> None:
+    """stale origin/main과 제3자 same-name check는 exact execution authority가 아니다."""
+
+    raw_packet = _packet_document(secure_directory, schema_version=2, pull_request=104)
+    raw_packet["repository"].update(
+        {
+            "branchRef": "main",
+            "evidenceMode": "MERGED_MAIN",
+        }
+    )
+    raw_packet["packetSha256"] = _packet_digest(raw_packet)
+    packet = probe.parse_approval_packet(raw_packet)
+    assert isinstance(packet, probe.KISMockApprovalPacketV2)
+
+    def fake_run(arguments: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        if arguments[:3] == ["gh", "pr", "view"]:
+            payload: object = {
+                "number": 104,
+                "state": "MERGED",
+                "isDraft": False,
+                "baseRefName": "main",
+                "mergeCommit": {"oid": "a" * 40},
+            }
+        elif arguments[:2] == ["gh", "api"] and arguments[4].endswith(
+            "/git/ref/heads/main"
+        ):
+            payload = {"object": {"sha": remote_main_sha}}
+        else:
+            payload = {
+                "check_runs": [
+                    {
+                        "name": name,
+                        "conclusion": "success",
+                        "status": "completed",
+                        "head_sha": "a" * 40,
+                        "app": {"slug": check_app},
+                    }
+                    for name in sorted(probe._REQUIRED_CI_CHECKS)
+                ]
+            }
+        return subprocess.CompletedProcess(arguments, 0, json.dumps(payload), "")
+
+    monkeypatch.setattr(probe.subprocess, "run", fake_run)
+
+    with pytest.raises(probe.KISMockApprovalRejected, match=expected_message):
         probe._require_current_v2_pr_evidence(packet, secure_directory)
 
 
@@ -728,6 +816,13 @@ def test_author_collects_merged_main_head_and_post_merge_checks(
                 ),
                 "",
             )
+        if arguments[:2] == ["gh", "api"] and arguments[4].endswith("/git/ref/heads/main"):
+            return subprocess.CompletedProcess(
+                arguments,
+                0,
+                json.dumps({"object": {"sha": "a" * 40}}),
+                "",
+            )
         assert arguments[:2] == ["gh", "api"]
         return subprocess.CompletedProcess(
             arguments,
@@ -735,7 +830,13 @@ def test_author_collects_merged_main_head_and_post_merge_checks(
             json.dumps(
                 {
                     "check_runs": [
-                        {"name": name, "conclusion": "success", "head_sha": "a" * 40}
+                        {
+                            "name": name,
+                            "conclusion": "success",
+                            "status": "completed",
+                            "head_sha": "a" * 40,
+                            "app": {"slug": "github-actions"},
+                        }
                         for name in sorted(probe._REQUIRED_CI_CHECKS)
                     ]
                 }

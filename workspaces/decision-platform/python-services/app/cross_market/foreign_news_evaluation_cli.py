@@ -104,7 +104,23 @@ def load_verified_selected_local_candidate(
         }
     ):
         raise ForeignNewsEvaluationCliError("FOREIGN_NEWS_RUNTIME_MODEL_NOT_VERIFIED")
-    candidates, _ = build_local_model_candidates(evaluation_root=evaluation_root)
+    candidates, model_artifacts = build_local_model_candidates(evaluation_root=evaluation_root)
+    current_model_artifacts = [artifact.to_payload() for artifact in model_artifacts]
+    expected_input_digest = _sha256(
+        _canonical(
+            {
+                "contractId": _RECEIPT_CONTRACT_ID,
+                "modelArtifacts": current_model_artifacts,
+                "sentiventValidation": payload.get("sentiventValidation"),
+            }
+        )
+    )
+    if (
+        payload.get("modelArtifacts") != current_model_artifacts
+        or payload.get("evaluationInputDigest") != expected_input_digest
+    ):
+        # 합격 뒤 weights/tokenizer/config가 바뀌면 과거 blind-test proof를 현재 runtime에 재사용하지 않는다.
+        raise ForeignNewsEvaluationCliError("FOREIGN_NEWS_RUNTIME_MODEL_NOT_VERIFIED")
     candidate = next((item for item in candidates if item.candidate_model == selected_model), None)
     if candidate is None:
         raise ForeignNewsEvaluationCliError("FOREIGN_NEWS_RUNTIME_MODEL_NOT_VERIFIED")

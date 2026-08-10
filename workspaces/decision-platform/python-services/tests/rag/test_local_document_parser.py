@@ -17,6 +17,7 @@ from openpyxl import Workbook
 from PIL import Image
 from pptx import Presentation
 
+import app.rag.local_document_parser as local_document_parser
 from app.rag.local_document_parser import (
     DocumentParseError,
     LocalDocumentParser,
@@ -100,6 +101,7 @@ class _TableOcr:
 def _parser(
     ocr: OcrBackendPort | None = None,
     *,
+    max_blocks: int = 2_000,
     max_table_cells: int = 50_000,
 ) -> LocalDocumentParser:
     return LocalDocumentParser(
@@ -111,7 +113,7 @@ def _parser(
             max_compression_ratio=40,
             max_pages=20,
             max_image_pixels=20_000_000,
-            max_blocks=2_000,
+            max_blocks=max_blocks,
             max_table_cells=max_table_cells,
             max_text_characters=2_000_000,
         ),
@@ -193,6 +195,64 @@ def test_text_formats_parse_to_contract_without_path_or_raw_copy(
     assert any("Portfolio evidence" in str(block) for block in result["blocks"])
     after = (target.stat().st_ino, target.stat().st_mtime_ns, target.read_bytes())
     assert after == before
+
+
+@pytest.mark.parametrize(
+    ("name", "payload"),
+    [
+        ("blocks.txt", b"alpha\n\nbeta\n\ngamma\n"),
+        ("blocks.md", b"alpha\n\nbeta\n\ngamma\n"),
+        (
+            "blocks.html",
+            b"<!doctype html><html><body><p>alpha</p><p>beta</p><p>gamma</p></body></html>",
+        ),
+    ],
+)
+def test_text_parser_rejects_before_constructing_a_block_beyond_the_budget(
+    posix_tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    name: str,
+    payload: bytes,
+) -> None:
+    root = posix_tmp_path / "owner"
+    root.mkdir()
+    _write(root, name, payload)
+    constructed = 0
+    original_paragraph = local_document_parser._paragraph
+
+    def counting_paragraph(*args: object, **kwargs: object) -> dict[str, Any]:
+        nonlocal constructed
+        constructed += 1
+        return original_paragraph(*args, **kwargs)
+
+    monkeypatch.setattr(local_document_parser, "_paragraph", counting_paragraph)
+
+    with pytest.raises(DocumentParseError, match="DOCUMENT_BLOCK_BOUND_EXCEEDED"):
+        _parse(_parser(max_blocks=2), root, name)
+
+    assert constructed == 2
+
+
+@pytest.mark.parametrize(
+    ("name", "payload"),
+    [
+        ("blocks.txt", b"alpha\n\nbeta\n"),
+        ("blocks.md", b"alpha\n\nbeta\n"),
+        ("blocks.html", b"<!doctype html><html><body><p>alpha</p><p>beta</p></body></html>"),
+    ],
+)
+def test_text_parser_accepts_exactly_the_configured_block_budget(
+    posix_tmp_path: Path,
+    name: str,
+    payload: bytes,
+) -> None:
+    root = posix_tmp_path / "owner"
+    root.mkdir()
+    _write(root, name, payload)
+
+    result = _parse(_parser(max_blocks=2), root, name)
+
+    assert len(result["blocks"]) == 2
 
 
 def test_approved_document_entrypoint_reuses_the_safe_path_free_parser(posix_tmp_path: Path) -> None:

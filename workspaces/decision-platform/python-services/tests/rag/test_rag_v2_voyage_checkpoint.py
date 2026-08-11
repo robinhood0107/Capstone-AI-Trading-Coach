@@ -121,6 +121,32 @@ def test_checkpoint_scan_is_not_blocked_by_private_atomic_write_temp_leaf(tmp_pa
     assert oct(temp_root.stat().st_mode & 0o777) == "0o700"
 
 
+def test_optional_checkpoint_uses_direct_key_without_scanning_unrelated_leaf(tmp_path: Path) -> None:
+    root = _private_root(tmp_path)
+    written = write_public_voyage_checkpoint(
+        local_corpus_root=root,
+        parser_version="1.1.0",
+        tokenizer_version="bge-m3-sentencepiece-v1",
+        prepared=_prepared(),
+        metadata=_metadata(),
+    )
+    unrelated = written.path.parent / ("9" * 64 + ".json")
+    unrelated.write_bytes(b"not-json")
+    unrelated.chmod(0o600)
+
+    loaded = load_optional_public_voyage_checkpoint(
+        local_corpus_root=root,
+        component_scope="OA112",
+        expected_raw_content_sha256=_prepared().document.raw_content_sha256,
+        expected_source_revision_id=_prepared().document.source_revision_id,
+        parser_version="1.1.0",
+        tokenizer_version="bge-m3-sentencepiece-v1",
+    )
+
+    assert loaded is not None
+    assert loaded.checkpoint_key == written.checkpoint_key
+
+
 def test_checkpoint_rejects_tamper_symlink_and_identity_drift(tmp_path: Path) -> None:
     root = _private_root(tmp_path)
     receipt = write_public_voyage_checkpoint(

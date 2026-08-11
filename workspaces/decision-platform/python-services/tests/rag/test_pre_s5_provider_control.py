@@ -71,6 +71,48 @@ def test_voyage_evaluation_batch_packet_binds_ordered_component_manifest_and_one
         )
 
 
+def test_voyage_evaluation_batch_packet_allows_window_a_and_rejects_over_two_hours(
+    tmp_path: Path,
+) -> None:
+    _secure_root(tmp_path)
+    now = datetime(2026, 8, 3, 1, tzinfo=UTC)
+    scope_claim = "rvs_" + "7" * 32
+    queries = tuple((f"q{index:02d}", f"question {index}") for index in range(1, 11))
+    packet = _evaluation_batch_packet(
+        now=now,
+        query_manifest_sha256=_evaluation_manifest_sha256("EXACT30", queries),
+        scope_claim=scope_claim,
+    )
+    packet["expiresAt"] = (now + timedelta(minutes=90)).isoformat().replace("+00:00", "Z")
+    _write_packet(tmp_path, packet, filename="voyage-evaluation-batch-packets/exact30.json")
+
+    activation = load_pre_s5_voyage_evaluation_batch_activation(
+        local_root=tmp_path,
+        binding=_binding(),
+        component_scope="EXACT30",
+        query_id_questions=queries,
+        scope_claim_id=scope_claim,
+        expected_token_count=10,
+        now=now,
+    )
+    assert activation.expires_at == now + timedelta(minutes=90)
+
+    packet["expiresAt"] = (now + timedelta(hours=2, seconds=1)).isoformat().replace(
+        "+00:00", "Z"
+    )
+    _write_packet(tmp_path, packet, filename="voyage-evaluation-batch-packets/exact30.json")
+    with pytest.raises(PreS5ProviderActivationError, match="PRE_S5_PROVIDER_PACKET_INVALID"):
+        load_pre_s5_voyage_evaluation_batch_activation(
+            local_root=tmp_path,
+            binding=_binding(),
+            component_scope="EXACT30",
+            query_id_questions=queries,
+            scope_claim_id=scope_claim,
+            expected_token_count=10,
+            now=now,
+        )
+
+
 def test_voyage_document_batch_packet_binds_exact_plan_member_and_counts(tmp_path: Path) -> None:
     _secure_root(tmp_path)
     now = datetime(2026, 8, 3, 1, tzinfo=UTC)
@@ -114,6 +156,53 @@ def test_voyage_document_batch_packet_binds_exact_plan_member_and_counts(tmp_pat
             batch_ordinal=1,
             batch_count=3,
             token_count=99_999,
+            chunk_count=2_000,
+            group_count=40,
+            estimated_response_bytes=16_000_000,
+            now=now,
+        )
+
+
+def test_voyage_document_batch_packet_allows_window_a_and_rejects_over_two_hours(
+    tmp_path: Path,
+) -> None:
+    _secure_root(tmp_path)
+    now = datetime(2026, 8, 3, 1, tzinfo=UTC)
+    batch_id = "ps5_voyage_doc_0001_0123456789abcdef"
+    packet = _document_batch_packet(now=now, batch_id=batch_id)
+    packet["expiresAt"] = (now + timedelta(minutes=90)).isoformat().replace("+00:00", "Z")
+    _write_packet(tmp_path, packet, filename=f"voyage-document-batch-packets/{batch_id}.json")
+
+    activation = load_pre_s5_voyage_document_batch_activation(
+        local_root=tmp_path,
+        binding=_binding(),
+        batch_plan_sha256="3" * 64,
+        batch_id=batch_id,
+        batch_manifest_sha256="4" * 64,
+        batch_ordinal=1,
+        batch_count=3,
+        token_count=100_000,
+        chunk_count=2_000,
+        group_count=40,
+        estimated_response_bytes=16_000_000,
+        now=now,
+    )
+    assert activation.expires_at == now + timedelta(minutes=90)
+
+    packet["expiresAt"] = (now + timedelta(hours=2, seconds=1)).isoformat().replace(
+        "+00:00", "Z"
+    )
+    _write_packet(tmp_path, packet, filename=f"voyage-document-batch-packets/{batch_id}.json")
+    with pytest.raises(PreS5ProviderActivationError, match="PRE_S5_PROVIDER_PACKET_INVALID"):
+        load_pre_s5_voyage_document_batch_activation(
+            local_root=tmp_path,
+            binding=_binding(),
+            batch_plan_sha256="3" * 64,
+            batch_id=batch_id,
+            batch_manifest_sha256="4" * 64,
+            batch_ordinal=1,
+            batch_count=3,
+            token_count=100_000,
             chunk_count=2_000,
             group_count=40,
             estimated_response_bytes=16_000_000,
@@ -586,5 +675,7 @@ def _write_packet(
     filename: str = "pre-s5-voyage-activation.json",
 ) -> None:
     path = root / "control" / filename
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    os.chmod(path.parent, 0o700)
     path.write_text(json.dumps(packet, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     os.chmod(path, 0o600)

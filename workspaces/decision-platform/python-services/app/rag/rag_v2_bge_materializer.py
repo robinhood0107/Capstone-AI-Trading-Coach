@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Final, Literal, Protocol
 
@@ -24,12 +25,19 @@ from app.rag.ingest_pipeline import (
     RagIngestError,
     RagTokenizer,
     build_embedding_inputs,
+    count_tokens,
 )
 from app.rag.local_document_parser import DocumentParseError
 
 _BGE_PROFILE_ID = "bge_m3_local_1024_v1"
 _VOYAGE_PROFILE_ID = "voyage_context_4_1024_v1"
 _BGE_EMBEDDING_BATCH_SIZE: Final = 64
+_PUBLIC_VOYAGE_SANITIZER_VERSION: Final = "public-pii-v1"
+_PUBLIC_PII_REDACTIONS: Final[tuple[tuple[re.Pattern[str], str], ...]] = (
+    (re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"), "[PUBLIC_EMAIL_REDACTED]"),
+    (re.compile(r"\b01[016789][ -]?\d{3,4}[ -]?\d{4}\b"), "[PUBLIC_PHONE_REDACTED]"),
+    (re.compile(r"\b\d{6}[ -]?[1-4]\d{6}\b"), "[PUBLIC_ID_REDACTED]"),
+)
 
 
 class RagV2BgeMaterializationError(ValueError):
@@ -390,6 +398,17 @@ def prepare_public_document_for_embedding(
             ),
             tokenizer=tokenizer,
         )
+        if request.embedding_profile_id == _VOYAGE_PROFILE_ID:
+            document_ir, document = _sanitize_public_voyage_pii(
+                document_ir=document_ir,
+                document=document,
+                tokenizer=tokenizer,
+                rights_allow_external_processing=(
+                    request.local_processing_allowed
+                    and request.external_embedding_allowed
+                    and request.external_generation_allowed
+                ),
+            )
         inputs = build_embedding_inputs(
             _canonical_chunks(
                 document.chunks,
@@ -411,6 +430,106 @@ def prepare_public_document_for_embedding(
         source_revision_sha256=_source_revision_sha256(document_ir),
         document_ir=_copy_document_ir(document_ir),
     )
+
+
+def _sanitize_public_voyage_pii(
+    *,
+    document_ir: dict[str, object],
+    document: RagV2DocumentMaterialization,
+    tokenizer: RagTokenizer,
+    rights_allow_external_processing: bool,
+) -> tuple[dict[str, object], RagV2DocumentMaterialization]:
+    """공개 Voyage payload의 PII span만 마스킹하고 chunk ID·locator·순서는 유지한다."""
+
+    safety = document_ir.get("safetyClassification")
+    if (
+        document.external_processing_eligible
+        or not rights_allow_external_processing
+        or not isinstance(safety, Mapping)
+    ):
+        return document_ir, document
+    if (
+        safety.get("externalLlmEligible") is not False
+        or safety.get("piiDetected") is not True
+        or safety.get("promptInjectionDetected") is not False
+        or safety.get("secretDetected") is not False
+    ):
+        return document_ir, document
+    sanitized_ir = _copy_document_ir(document_ir)
+    sanitized_blocks, redaction_count = _redact_public_pii_value(sanitized_ir.get("blocks"))
+    if not isinstance(sanitized_blocks, list) or redaction_count <= 0:
+        return document_ir, document
+    sanitized_ir["blocks"] = sanitized_blocks
+    sanitized_ir["normalizedContentSha256"] = hashlib.sha256(
+        json.dumps(
+            sanitized_blocks,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+    ).hexdigest()
+    sanitized_ir["safetyClassification"] = {
+        "externalLlmEligible": True,
+        "piiDetected": False,
+        "promptInjectionDetected": False,
+        "secretDetected": False,
+    }
+    sanitized_ir["externalProcessingSanitization"] = {
+        "redactionCount": redaction_count,
+        "sanitizerVersion": _PUBLIC_VOYAGE_SANITIZER_VERSION,
+    }
+    sanitized_chunks: list[RagV2CanonicalDocumentChunk] = []
+    chunk_redaction_count = 0
+    for chunk in document.chunks:
+        text, count = _redact_public_pii_text(chunk.canonical_text)
+        chunk_redaction_count += count
+        sanitized_chunks.append(
+            replace(
+                chunk,
+                canonical_text=text,
+                canonical_text_sha256=hashlib.sha256(text.encode("utf-8")).hexdigest(),
+                token_count=count_tokens(text, tokenizer=tokenizer),
+            )
+        )
+    if chunk_redaction_count <= 0:
+        return document_ir, document
+    return sanitized_ir, replace(
+        document,
+        normalized_content_sha256=str(sanitized_ir["normalizedContentSha256"]),
+        external_processing_eligible=True,
+        chunks=tuple(sanitized_chunks),
+    )
+
+
+def _redact_public_pii_value(value: object) -> tuple[object, int]:
+    if isinstance(value, str):
+        return _redact_public_pii_text(value)
+    if isinstance(value, list):
+        result: list[object] = []
+        count = 0
+        for item in value:
+            redacted, item_count = _redact_public_pii_value(item)
+            result.append(redacted)
+            count += item_count
+        return result, count
+    if isinstance(value, dict):
+        result_dict: dict[str, object] = {}
+        count = 0
+        for key, item in value.items():
+            redacted, item_count = _redact_public_pii_value(item)
+            result_dict[key] = redacted
+            count += item_count
+        return result_dict, count
+    return value, 0
+
+
+def _redact_public_pii_text(text: str) -> tuple[str, int]:
+    result = text
+    count = 0
+    for pattern, replacement in _PUBLIC_PII_REDACTIONS:
+        result, replaced = pattern.subn(replacement, result)
+        count += replaced
+    return result, count
 
 
 def _canonical_chunks(

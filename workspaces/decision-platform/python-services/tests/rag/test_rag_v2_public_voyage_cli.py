@@ -105,6 +105,37 @@ def test_public_voyage_cli_prepares_content_free_batch_plan_without_provider_con
     }
 
 
+def test_public_voyage_execution_binding_uses_fresh_voyage_evidence_not_historical_oa_download(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Voyage packet은 OA112 다운로드 당시 HEAD가 아니라 새 EXECUTION_HEAD에 결속해야 한다."""
+
+    received: dict[str, object] = {}
+
+    def load_binding(**values: object) -> SimpleNamespace:
+        received.update(values)
+        return SimpleNamespace(
+            head_sha="1" * 40,
+            tree_sha256="2" * 64,
+            ci_digest="3" * 64,
+            security_digest="4" * 64,
+        )
+
+    monkeypatch.setattr(
+        rag_v2_public_voyage_cli,
+        "load_oa112_execution_binding",
+        load_binding,
+    )
+
+    binding = rag_v2_public_voyage_cli._execution_binding(local_root=tmp_path)
+
+    assert received["approved_root"] == tmp_path
+    assert received["relative_path"] == "pre-s5-voyage-execution-evidence.v1.json"
+    assert binding.head_commit == "1" * 40
+    assert binding.tree_object == "2" * 64
+
+
 def test_public_voyage_cli_stages_one_pair_and_emits_only_content_free_ids(
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,

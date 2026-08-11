@@ -70,7 +70,7 @@ def test_voyage_context4_transport_consumes_only_exact_manifest_bound_document_b
         logical_call_cap=1,
         physical_call_cap=1,
         token_cap=110_000,
-        byte_cap=4_194_304,
+        byte_cap=16_777_216,
         cost_cap_microusd=110_000,
         input_microusd_per_token=1,
         retry_count=0,
@@ -85,11 +85,15 @@ def test_voyage_context4_transport_consumes_only_exact_manifest_bound_document_b
         clock=lambda: NOW,
     )
 
-    vectors = transport.embed_document_batch(batch_plan_sha256=plan.plan_sha256, batch=batch)
+    result = transport.embed_document_batch(batch_plan_sha256=plan.plan_sha256, batch=batch)
 
-    assert vectors.shape == (142, 1024)
+    assert result.vectors.shape == (142, 1024)
+    assert result.expected_input_tokens == batch.token_count
+    assert result.provider_total_tokens == batch.token_count
     assert sender.calls == 1
+    assert sender.requests[0].max_response_bytes == 16_777_216
     assert lease.claim_calls == 1
+    assert lease.committed == []
     with pytest.raises(PreS5VoyageTransportError, match="PRE_S5_VOYAGE_SINGLE_USE"):
         transport.embed_document_batch(batch_plan_sha256=plan.plan_sha256, batch=batch)
 

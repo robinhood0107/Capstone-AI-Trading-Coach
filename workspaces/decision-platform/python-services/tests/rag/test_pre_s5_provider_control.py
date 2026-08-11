@@ -95,11 +95,13 @@ def test_voyage_document_batch_packet_binds_exact_plan_member_and_counts(tmp_pat
         token_count=100_000,
         chunk_count=2_000,
         group_count=40,
+        estimated_response_bytes=16_000_000,
         now=now,
     )
 
     assert activation.batch_id == batch_id
     assert activation.expected_token_count == 100_000
+    assert activation.byte_cap == 16_777_216
     assert activation.physical_call_cap == 1
     assert activation.retry_count == 0
     with pytest.raises(PreS5ProviderActivationError, match="PRE_S5_PROVIDER_PACKET_BINDING"):
@@ -114,6 +116,26 @@ def test_voyage_document_batch_packet_binds_exact_plan_member_and_counts(tmp_pat
             token_count=99_999,
             chunk_count=2_000,
             group_count=40,
+            estimated_response_bytes=16_000_000,
+            now=now,
+        )
+
+    under_budget = _document_batch_packet(now=now, batch_id=batch_id)
+    under_budget["byteCap"] = 15_999_999
+    packet_path.write_text(json.dumps(under_budget, separators=(",", ":")), encoding="utf-8")
+    with pytest.raises(PreS5ProviderActivationError, match="PRE_S5_PROVIDER_PACKET_INVALID"):
+        load_pre_s5_voyage_document_batch_activation(
+            local_root=tmp_path,
+            binding=_binding(),
+            batch_plan_sha256="3" * 64,
+            batch_id=batch_id,
+            batch_manifest_sha256="4" * 64,
+            batch_ordinal=1,
+            batch_count=3,
+            token_count=100_000,
+            chunk_count=2_000,
+            group_count=40,
+            estimated_response_bytes=16_000_000,
             now=now,
         )
 
@@ -444,7 +466,7 @@ def _document_batch_packet(*, now: datetime, batch_id: str) -> dict[str, object]
         "batchManifestSha256": "4" * 64,
         "batchOrdinal": 1,
         "batchPlanSha256": "3" * 64,
-        "byteCap": 4_194_304,
+        "byteCap": 16_777_216,
         "chunkCount": 2_000,
         "ciDigest": "c" * 64,
         "costCapMicrousd": 110_000,

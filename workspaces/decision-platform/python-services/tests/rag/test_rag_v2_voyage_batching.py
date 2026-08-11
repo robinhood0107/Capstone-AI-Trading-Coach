@@ -29,6 +29,10 @@ class _TokenCounter:
         return total
 
 
+class _RotatedTokenizerCounter(_TokenCounter):
+    tokenizer_sha256 = "f" * 64
+
+
 def test_public_plan_splits_large_source_contiguously_and_packs_under_headroom() -> None:
     exact30 = tuple(_group("exact", index, (1_000,)) for index in range(30))
     oa112 = tuple(
@@ -55,6 +59,54 @@ def test_public_plan_splits_large_source_contiguously_and_packs_under_headroom()
         oa112[0].chunks[0].chunk_id,
         oa112[0].chunks[1].chunk_id,
     ]
+    assert {segment.group.context_set_hash for segment in split} != {oa112[0].context_set_hash}
+    assert len({segment.group.context_set_hash for segment in split}) == 1
+    assert all(
+        effective.embedding_input_hash != original.embedding_input_hash
+        for segment, original in zip(split, oa112[0].chunks, strict=True)
+        for effective in segment.group.chunks
+    )
+    identities = plan.effective_chunk_identities()
+    assert identities[split[0].group.chunks[0].chunk_id] == (
+        split[0].group.chunks[0].embedding_input_hash,
+        split[0].group.context_set_hash,
+    )
+
+
+def test_public_plan_limits_chunks_by_conservative_response_body_budget() -> None:
+    exact30 = tuple(
+        _group("exact", index, tuple(1 for _ in range(700)) if index == 0 else (1,))
+        for index in range(30)
+    )
+    oa112 = tuple(_group("oa", index, (1,)) for index in range(112))
+
+    plan = build_public_voyage_batch_plan(
+        components=_components(exact30=exact30, oa112=oa112),
+        token_counter=_TokenCounter(),
+    )
+
+    assert len(plan.batches) >= 2
+    assert all(batch.estimated_response_bytes <= 16 * 1024 * 1024 for batch in plan.batches)
+    assert all(batch.chunk_count < 700 for batch in plan.batches)
+
+
+def test_public_plan_preserves_unsplit_context_and_embedding_identity() -> None:
+    exact30 = tuple(_group("exact", index, (1,)) for index in range(30))
+    oa112 = tuple(_group("oa", index, (1,)) for index in range(112))
+
+    plan = build_public_voyage_batch_plan(
+        components=_components(exact30=exact30, oa112=oa112),
+        token_counter=_TokenCounter(),
+    )
+    segment = next(
+        item
+        for batch in plan.batches
+        for item in batch.segments
+        if item.source_id == exact30[0].source_id
+    )
+
+    assert segment.group.context_set_hash == exact30[0].context_set_hash
+    assert segment.group.chunks[0].embedding_input_hash == exact30[0].chunks[0].embedding_input_hash
 
 
 def test_public_plan_is_deterministic_and_content_free() -> None:
@@ -120,6 +172,24 @@ def test_public_plan_hash_changes_when_member_identity_changes() -> None:
     drifted = build_public_voyage_batch_plan(components=tuple(changed), token_counter=_TokenCounter())
 
     assert drifted.plan_sha256 != baseline.plan_sha256
+
+
+def test_public_plan_rotates_every_global_batch_id_with_the_exact_tokenizer_plan() -> None:
+    components = _components(
+        exact30=tuple(_group("exact", index, (60_000,) if index < 2 else (1,)) for index in range(30)),
+        oa112=tuple(_group("oa", index, (1,)) for index in range(112)),
+    )
+    baseline = build_public_voyage_batch_plan(components=components, token_counter=_TokenCounter())
+    rotated = build_public_voyage_batch_plan(
+        components=components,
+        token_counter=_RotatedTokenizerCounter(),
+    )
+
+    assert len(baseline.batches) == len(rotated.batches) == 2
+    assert baseline.plan_sha256 != rotated.plan_sha256
+    assert {batch.batch_id for batch in baseline.batches}.isdisjoint(
+        batch.batch_id for batch in rotated.batches
+    )
 
 
 def test_vector_accumulator_skips_completed_batches_and_restores_canonical_order() -> None:

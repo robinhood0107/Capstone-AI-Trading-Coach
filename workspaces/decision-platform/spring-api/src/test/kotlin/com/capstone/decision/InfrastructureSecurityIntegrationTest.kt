@@ -166,7 +166,10 @@ class InfrastructureSecurityIntegrationTest {
                 "commit_rag_v2_immutable_voyage_usage_with_tokenizer(text,integer,integer,bigint)",
                 "reserve_rag_v2_immutable_voyage_query_usage_with_tokenizer(text,text,text,text,text,text,text,text,timestamp with time zone,integer,integer,bigint,bigint)",
                 "commit_rag_v2_immutable_voyage_query_usage_with_tokenizer(text,integer,integer,bigint)",
-                "stage_rag_v2_immutable_voyage_document_batch(jsonb)",
+                "reserve_rag_v2_immutable_voyage_document_batch_usage(text,text,text,text,text,text,timestamp with time zone,integer,integer,bigint,bigint)",
+                "claim_rag_v2_immutable_voyage_document_batch_attempt(text,text,text,text)",
+                "mark_rag_v2_immutable_voyage_document_batch_unknown_billing(text,text,text)",
+                "commit_and_stage_rag_v2_immutable_voyage_document_batch(jsonb)",
                 "load_rag_v2_immutable_voyage_document_batch_vectors(text)",
                 "record_rag_v2_bge_public_execution_supersession(text,text)",
             ).forEach { function ->

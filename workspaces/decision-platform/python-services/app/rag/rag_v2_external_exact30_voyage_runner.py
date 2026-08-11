@@ -171,7 +171,7 @@ class ExternalExact30PublicVoyagePreparation:
 
     @property
     def groups(self) -> tuple[VoyagePreChunkedDocumentGroup, ...]:
-        """canonical source-id order를 그대로 provider full-bundle component로 투영한다."""
+        """canonical source-id order를 그대로 provider batch-plan component로 투영한다."""
 
         return tuple(item.group for item in self.prepared_documents)
 
@@ -216,7 +216,7 @@ def prepare_external_exact30_public_voyage_component(
     parser_version: str = "1.0.0",
     tokenizer_version: str = "bge-m3-sentencepiece-v1",
 ) -> ExternalExact30PublicVoyagePreparation:
-    """exact-30 source cards를 one-shot full-bundle document group으로 prepare한다.
+    """exact-30 source cards를 resumable batch-plan document group으로 prepare한다.
 
     This function opens no provider transport and creates no vector. It is the only preparation allowed before
     the full EXACT30+OA112 Voyage call, preventing legacy component-only embedding from bypassing the packet.
@@ -292,6 +292,7 @@ def materialize_prepared_external_exact30_public_voyage_component(
     *,
     preparation: ExternalExact30PublicVoyagePreparation,
     vectors: object,
+    effective_chunk_identities: Mapping[str, tuple[str, str]] | None = None,
 ) -> ExternalExact30PublicVoyageMaterialization:
     """one full bundle response vector를 exact-30 records에 only once assign한다."""
 
@@ -323,8 +324,18 @@ def materialize_prepared_external_exact30_public_voyage_component(
         embeddings = tuple(
             RagV2VoyageDocumentEmbedding(
                 chunk_id=chunk.chunk_id,
-                embedding_input_hash=embedding_input.embedding_input_hash,
-                context_set_hash=_required_context_hash(embedding_input.context_set_hash),
+                embedding_input_hash=_effective_embedding_identity(
+                    chunk_id=chunk.chunk_id,
+                    original_input_hash=embedding_input.embedding_input_hash,
+                    original_context_hash=_required_context_hash(embedding_input.context_set_hash),
+                    effective_chunk_identities=effective_chunk_identities,
+                )[0],
+                context_set_hash=_effective_embedding_identity(
+                    chunk_id=chunk.chunk_id,
+                    original_input_hash=embedding_input.embedding_input_hash,
+                    original_context_hash=_required_context_hash(embedding_input.context_set_hash),
+                    effective_chunk_identities=effective_chunk_identities,
+                )[1],
                 embedding=np.array(vector, dtype=np.float32, copy=True),
             )
             for chunk, embedding_input, vector in zip(
@@ -352,6 +363,26 @@ def materialize_prepared_external_exact30_public_voyage_component(
         source_card_corpus_manifest_sha256=preparation.source_card_corpus_manifest_sha256,
     )
     return ExternalExact30PublicVoyageMaterialization(records=tuple(records), context=context)
+
+
+def _effective_embedding_identity(
+    *,
+    chunk_id: str,
+    original_input_hash: str,
+    original_context_hash: str,
+    effective_chunk_identities: Mapping[str, tuple[str, str]] | None,
+) -> tuple[str, str]:
+    """batch segmentation이 바뀐 경우 실제 provider context에 결속된 hash만 materialize한다."""
+
+    selected = (original_input_hash, original_context_hash)
+    if effective_chunk_identities is not None:
+        mapped = effective_chunk_identities.get(chunk_id)
+        if mapped is None:
+            raise RagV2ExternalExact30VoyageRunnerError("VOYAGE_COMPONENT_EMBEDDING")
+        selected = mapped
+    if len(selected) != 2 or not all(_is_sha256(value) for value in selected):
+        raise RagV2ExternalExact30VoyageRunnerError("VOYAGE_COMPONENT_EMBEDDING")
+    return selected
 
 
 def build_external_exact30_public_voyage_component_context(

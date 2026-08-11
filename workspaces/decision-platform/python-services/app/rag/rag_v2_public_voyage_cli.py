@@ -530,6 +530,7 @@ def _stage_public_base_attempt(*, writer_dsn: str) -> _StagedPublicVoyageAttempt
                 token_count=batch.token_count,
                 chunk_count=batch.chunk_count,
                 group_count=batch.group_count,
+                estimated_response_bytes=batch.estimated_response_bytes,
             )
             lease = usage_repository.reserve_document_batch(
                 activation=activation,
@@ -543,7 +544,7 @@ def _stage_public_base_attempt(*, writer_dsn: str) -> _StagedPublicVoyageAttempt
                 token_counter=token_counter,
                 sender=UrllibPreS5VoyageHttpSender(),
             )
-            vectors = transport.embed_document_batch(
+            result = transport.embed_document_batch(
                 batch_plan_sha256=preparation.plan.plan_sha256,
                 batch=batch,
             )
@@ -551,9 +552,10 @@ def _stage_public_base_attempt(*, writer_dsn: str) -> _StagedPublicVoyageAttempt
                 activation=activation,
                 plan=preparation.plan,
                 batch=batch,
-                vectors=vectors,
+                result=result,
+                lease=lease,
             )
-            accumulator.record_success(batch=batch, vectors=vectors)
+            accumulator.record_success(batch=batch, vectors=result.vectors)
         except (
             PreS5ProviderActivationError,
             PreS5VoyageUsageRepositoryError,
@@ -727,11 +729,14 @@ def _load_evaluation_pair(*, local_root: Path, pair: PublicVoyageStagedPair) -> 
 
 
 def _execution_binding(*, local_root: Path) -> PreS5ProviderBinding:
-    """Reuse the OA execution evidence's clean HEAD/tree and CI/security digests for Voyage packets."""
+    """새 Voyage EXECUTION_HEAD의 clean HEAD/tree와 CI/security digest만 읽는다.
+
+    OA112 다운로드 증거는 이미 소비된 과거 실행 경계이므로 재사용하거나 덮어쓰지 않는다.
+    """
 
     binding = load_oa112_execution_binding(
         approved_root=local_root,
-        relative_path="oa112-execution-evidence.v1.json",
+        relative_path="pre-s5-voyage-execution-evidence.v1.json",
         repository_root=_repository_root(),
     )
     return PreS5ProviderBinding(

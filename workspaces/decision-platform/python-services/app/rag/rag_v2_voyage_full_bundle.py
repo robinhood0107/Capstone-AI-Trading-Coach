@@ -1,8 +1,9 @@
-"""Pre-S5 public Voyage profile의 exactly-one full-bundle orchestration이다.
+"""Pre-S5 public Voyage profile의 resumable document-batch orchestration이다.
 
-EXACT30 and OA112 are prepared before a transport is called, then one ordered response is partitioned back into
-the two immutable components. The public base always uses the explicit empty OWNER_PRIVATE sentinel: no owner
-document is silently included in a global profile activation.
+EXACT30 and OA112 are prepared before transport, then the exact manifest-bound response set is partitioned back
+into the two immutable components. The public base always uses the explicit empty OWNER_PRIVATE sentinel: no
+owner document is silently included in a global profile activation. Legacy full-bundle helpers remain internal
+compatibility seams only; the active CLI and contract use the resumable batch plan.
 """
 
 from __future__ import annotations
@@ -188,13 +189,16 @@ def materialize_public_base_voyage_batches(
     if not isinstance(preparation, PublicBaseVoyageBatchPreparation) or not accumulator.complete:
         raise RagV2VoyageFullBundleError("VOYAGE_PUBLIC_BATCH_INCOMPLETE")
     try:
+        effective_identities = preparation.plan.effective_chunk_identities()
         exact30 = materialize_prepared_external_exact30_public_voyage_component(
             preparation=preparation.exact30,
             vectors=accumulator.ordered_vectors(groups=preparation.exact30.groups),
+            effective_chunk_identities=effective_identities,
         )
         oa112 = materialize_prepared_oa112_public_voyage_component(
             preparation=preparation.oa112,
             vectors=accumulator.ordered_vectors(groups=preparation.oa112.groups),
+            effective_chunk_identities=effective_identities,
         )
     except Exception as error:
         raise RagV2VoyageFullBundleError("VOYAGE_PUBLIC_BATCH_MATERIALIZATION") from error

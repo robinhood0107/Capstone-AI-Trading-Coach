@@ -28,6 +28,7 @@ from app.rag.rag_v2_voyage_types import PublicVoyageSourceMetadata
 PublicScope = Literal["EXACT30", "OA112"]
 
 _DERIVED_DIRECTORY = "derived-ir"
+_TEMP_DIRECTORY = ".tmp"
 _SCHEMA_VERSION = "pre-s5-public-voyage-checkpoint/v1"
 _MAX_CHECKPOINT_BYTES = 64 * 1024 * 1024
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
@@ -492,7 +493,8 @@ def _ensure_checkpoint_directories(local_corpus_root: Path, *, scope: PublicScop
     _secure_directory(local_corpus_root)
     derived = local_corpus_root / _DERIVED_DIRECTORY
     scope_root = derived / scope.lower()
-    for path in (derived, scope_root):
+    temp_root = derived / _TEMP_DIRECTORY
+    for path in (derived, temp_root, scope_root):
         try:
             path.mkdir(mode=0o700)
         except FileExistsError:
@@ -518,7 +520,12 @@ def _atomic_write(*, target: Path, encoded: bytes) -> None:
     descriptor = -1
     temporary = ""
     try:
-        descriptor, temporary = tempfile.mkstemp(prefix=".checkpoint-", dir=target.parent)
+        temp_root = target.parent.parent / _TEMP_DIRECTORY
+        _secure_directory(temp_root)
+        descriptor, temporary = tempfile.mkstemp(
+            prefix=f".checkpoint-{target.parent.name}-",
+            dir=temp_root,
+        )
         os.fchmod(descriptor, 0o600)
         view = memoryview(encoded)
         while view:

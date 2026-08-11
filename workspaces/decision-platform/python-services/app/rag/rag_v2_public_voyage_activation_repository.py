@@ -1,8 +1,8 @@
 """Immutable public Voyage base의 admin-only CAS activation adapter다.
 
-EXACT30+OA112 must have been produced by one full contextual-embedding bundle, then separately staged and
-evaluated under the same Voyage profile. This adapter exposes only the existing bounded prepare/CAS functions;
-it cannot read raw corpus rows, choose a pointer version, or activate a mixed profile.
+EXACT30+OA112 must have been produced by the complete exact manifest-bound document batch set, then separately
+staged and evaluated under the same Voyage profile. This adapter exposes only the existing bounded prepare/CAS
+functions; it cannot read raw corpus rows, choose a pointer version, or activate a mixed profile.
 """
 
 from __future__ import annotations
@@ -62,7 +62,7 @@ class PublicVoyageActivationError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class PublicVoyageActivationRequest:
-    """same-profile full-bundle exact-30/OA112 context pair다.
+    """same-profile completed-batch-set exact-30/OA112 context pair다.
 
     The types deliberately distinguish the external exact-30 consent corpus from the OA112 rights registry.
     A caller cannot attach an owner component or choose a different materialization run to this public pointer.

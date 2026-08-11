@@ -10,7 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Final, Literal
 
 import numpy as np
@@ -30,6 +30,14 @@ _TOKEN_CAP: Final = 110_000
 _PROVIDER_TOKEN_CAP: Final = 120_000
 _GROUP_CAP: Final = 1_000
 _CHUNK_CAP: Final = 16_000
+_DOCUMENT_BATCH_MAX_RESPONSE_BYTES: Final = 16 * 1024 * 1024
+# float32 1024개를 JSON number로 돌려받을 때 chunk당 24 KiB를 예약하고 envelope 여유를 둔다.
+# provider ceiling(16K chunks)보다 훨씬 작은 operational cap이라 정상 응답도 bounded reader를 넘지 않는다.
+_RESPONSE_ENVELOPE_HEADROOM_BYTES: Final = 256 * 1024
+_RESPONSE_BYTES_PER_CHUNK: Final = 24 * 1024
+_RESPONSE_CHUNK_CAP: Final = (
+    _DOCUMENT_BATCH_MAX_RESPONSE_BYTES - _RESPONSE_ENVELOPE_HEADROOM_BYTES
+) // _RESPONSE_BYTES_PER_CHUNK
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _SCOPES: Final[tuple[VoyageComponentScope, ...]] = ("EXACT30", "OA112", "OWNER_PRIVATE")
 
@@ -71,6 +79,7 @@ class VoyageDocumentBatch:
     token_count: int
     chunk_count: int
     group_count: int
+    estimated_response_bytes: int
     segments: tuple[VoyageContextSegment, ...]
     batch_manifest_sha256: str
 
@@ -90,6 +99,7 @@ class VoyageDocumentBatch:
             "batchCount": self.batch_count,
             "chunkCount": self.chunk_count,
             "groupCount": self.group_count,
+            "estimatedResponseBytes": self.estimated_response_bytes,
             "tokenCount": self.token_count,
         }
 
@@ -106,6 +116,23 @@ class PublicVoyageBatchPlan:
     token_count: int
     owner_scope_sha256: None
     owner_private_ordered_group_count: Literal[0]
+
+    def effective_chunk_identities(self) -> dict[str, tuple[str, str]]:
+        """실제 provider context segmentation에 결속된 chunk별 input/context hash를 반환한다."""
+
+        identities: dict[str, tuple[str, str]] = {}
+        for batch in self.batches:
+            for segment in batch.segments:
+                for chunk in segment.group.chunks:
+                    if chunk.chunk_id in identities:
+                        raise RagV2VoyageBatchingError("VOYAGE_BATCH_PUBLIC_MEMBERSHIP")
+                    identities[chunk.chunk_id] = (
+                        chunk.embedding_input_hash,
+                        segment.group.context_set_hash,
+                    )
+        if len(identities) != self.chunk_count:
+            raise RagV2VoyageBatchingError("VOYAGE_BATCH_PUBLIC_MEMBERSHIP")
+        return identities
 
     def content_free_receipt(self) -> dict[str, object]:
         """원문·경로·credential 없이 exact approval manifest가 참조할 plan summary를 만든다."""
@@ -229,8 +256,17 @@ def build_public_voyage_batch_plan(
                     component_scope=component.component_scope,
                     group=group,
                     token_counter=token_counter,
+                    tokenizer_sha256=token_counter.tokenizer_sha256,
                 )
             )
+    plan_seed_sha256 = _canonical_hash(
+        {
+            "embeddingProfileId": _PROFILE_ID,
+            "schemaVersion": 1,
+            "segments": [segment.segment_manifest_sha256 for segment in segments],
+            "tokenizerSha256": token_counter.tokenizer_sha256,
+        }
+    )
     provisional: list[list[VoyageContextSegment]] = []
     for segment in segments:
         placed = False
@@ -243,7 +279,12 @@ def build_public_voyage_batch_plan(
             provisional.append([segment])
     batch_count = len(provisional)
     batches = tuple(
-        _build_batch(segments=tuple(items), ordinal=index + 1, count=batch_count)
+        _build_batch(
+            segments=tuple(items),
+            ordinal=index + 1,
+            count=batch_count,
+            plan_seed_sha256=plan_seed_sha256,
+        )
         for index, items in enumerate(provisional)
     )
     source_count = len(exact30.groups) + len(oa112.groups)
@@ -312,6 +353,7 @@ def _segment_group(
     component_scope: VoyageComponentScope,
     group: VoyagePreChunkedDocumentGroup,
     token_counter: PreS5VoyageTokenCounter,
+    tokenizer_sha256: str,
 ) -> tuple[VoyageContextSegment, ...]:
     if component_scope not in {"EXACT30", "OA112"}:
         raise RagV2VoyageBatchingError("VOYAGE_BATCH_PUBLIC_MEMBERSHIP")
@@ -332,7 +374,10 @@ def _segment_group(
     current_tokens = 0
     for item in counted:
         chunk, token_count = item
-        if current and (current_tokens + token_count > _TOKEN_CAP or len(current) >= _CHUNK_CAP):
+        if current and (
+            current_tokens + token_count > _TOKEN_CAP
+            or len(current) >= min(_CHUNK_CAP, _RESPONSE_CHUNK_CAP)
+        ):
             partitions.append(current)
             current = []
             current_tokens = 0
@@ -341,14 +386,55 @@ def _segment_group(
     if current:
         partitions.append(current)
     segment_count = len(partitions)
+    effective_context_set_hash = group.context_set_hash
+    if segment_count > 1:
+        effective_context_set_hash = _canonical_hash(
+            {
+                "embeddingProfileId": _PROFILE_ID,
+                "originalContextSetHash": group.context_set_hash,
+                "partitions": [
+                    [
+                        {
+                            "canonicalTextSha256": chunk.canonical_text_sha256,
+                            "chunkId": chunk.chunk_id,
+                            "originalEmbeddingInputHash": chunk.embedding_input_hash,
+                            "tokenCount": token_count,
+                        }
+                        for chunk, token_count in partition
+                    ]
+                    for partition in partitions
+                ],
+                "schemaVersion": 1,
+                "sourceId": group.source_id,
+                "sourceRevisionId": group.source_revision_id,
+                "tokenizerSha256": tokenizer_sha256,
+            }
+        )
     result: list[VoyageContextSegment] = []
     for index, partition in enumerate(partitions):
-        chunks = tuple(item[0] for item in partition)
+        chunks = tuple(
+            item[0]
+            if segment_count == 1
+            else replace(
+                item[0],
+                embedding_input_hash=_canonical_hash(
+                    {
+                        "chunkId": item[0].chunk_id,
+                        "effectiveContextSetHash": effective_context_set_hash,
+                        "embeddingProfileId": _PROFILE_ID,
+                        "originalEmbeddingInputHash": item[0].embedding_input_hash,
+                        "schemaVersion": 1,
+                        "segmentOrdinal": index + 1,
+                    }
+                ),
+            )
+            for item in partition
+        )
         tokens = sum(item[1] for item in partition)
         segment_group = VoyagePreChunkedDocumentGroup(
             source_id=group.source_id,
             source_revision_id=group.source_revision_id,
-            context_set_hash=group.context_set_hash,
+            context_set_hash=effective_context_set_hash,
             chunks=chunks,
         )
         manifest = _segment_manifest(
@@ -377,6 +463,10 @@ def _fits(existing: list[VoyageContextSegment], candidate: VoyageContextSegment)
     return (
         sum(item.token_count for item in existing) + candidate.token_count <= _TOKEN_CAP
         and sum(len(item.group.chunks) for item in existing) + len(candidate.group.chunks) <= _CHUNK_CAP
+        and _estimated_response_bytes(
+            sum(len(item.group.chunks) for item in existing) + len(candidate.group.chunks)
+        )
+        <= _DOCUMENT_BATCH_MAX_RESPONSE_BYTES
         and len(existing) + 1 <= _GROUP_CAP
         and all(item.source_id != candidate.source_id for item in existing)
     )
@@ -387,11 +477,19 @@ def _build_batch(
     segments: tuple[VoyageContextSegment, ...],
     ordinal: int,
     count: int,
+    plan_seed_sha256: str,
 ) -> VoyageDocumentBatch:
     token_count = sum(item.token_count for item in segments)
     chunk_count = sum(len(item.group.chunks) for item in segments)
     group_count = len(segments)
-    if not (1 <= token_count <= _TOKEN_CAP and 1 <= chunk_count <= _CHUNK_CAP and 1 <= group_count <= _GROUP_CAP):
+    estimated_response_bytes = _estimated_response_bytes(chunk_count)
+    if not (
+        _SHA256.fullmatch(plan_seed_sha256) is not None
+        and 1 <= token_count <= _TOKEN_CAP
+        and 1 <= chunk_count <= min(_CHUNK_CAP, _RESPONSE_CHUNK_CAP)
+        and 1 <= group_count <= _GROUP_CAP
+        and estimated_response_bytes <= _DOCUMENT_BATCH_MAX_RESPONSE_BYTES
+    ):
         raise RagV2VoyageBatchingError("VOYAGE_BATCH_CAP")
     manifest = {
         "batchCount": count,
@@ -399,6 +497,8 @@ def _build_batch(
         "chunkCount": chunk_count,
         "embeddingProfileId": _PROFILE_ID,
         "groupCount": group_count,
+        "estimatedResponseBytes": estimated_response_bytes,
+        "planSeedSha256": plan_seed_sha256,
         "schemaVersion": 1,
         "segments": [
             {
@@ -420,6 +520,7 @@ def _build_batch(
         token_count=token_count,
         chunk_count=chunk_count,
         group_count=group_count,
+        estimated_response_bytes=estimated_response_bytes,
         segments=segments,
         batch_manifest_sha256=manifest_sha256,
     )
@@ -457,3 +558,9 @@ def _canonical_hash(value: object) -> str:
     return hashlib.sha256(
         json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8")
     ).hexdigest()
+
+
+def _estimated_response_bytes(chunk_count: int) -> int:
+    """provider raw body를 저장하지 않으면서 packet byte cap에 필요한 보수적 상한만 계산한다."""
+
+    return _RESPONSE_ENVELOPE_HEADROOM_BYTES + chunk_count * _RESPONSE_BYTES_PER_CHUNK

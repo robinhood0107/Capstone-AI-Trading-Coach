@@ -1,4 +1,4 @@
-"""OA112를 Voyage full-bundle contextual embedding input으로 prepare/materialize한다.
+"""OA112를 Voyage resumable contextual embedding batch input으로 prepare/materialize한다.
 
 This module never opens a provider socket. It closes the 14x8 registry, approved raw-cache IR, and pinned
 tokenizer inputs before a caller combines them with EXACT30 and the explicit empty OWNER_PRIVATE sentinel.
@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
@@ -133,7 +134,7 @@ def prepare_oa112_public_voyage_component(
     tokenizer_version: str = "bge-m3-sentencepiece-v1",
     max_workers: int = 4,
 ) -> Oa112PublicVoyagePreparation:
-    """112 approved OA sources를 one full bundle call 전 canonical Voyage groups로 prepare한다.
+    """112 approved OA sources를 exact batch planning 전 canonical Voyage groups로 prepare한다.
 
     The caller supplies only the packet-bound private raw cache root. A malformed source stops preparation before
     any later source can be handed to a provider transport; this function performs neither embedding nor staging.
@@ -240,6 +241,7 @@ def materialize_prepared_oa112_public_voyage_component(
     *,
     preparation: Oa112PublicVoyagePreparation,
     vectors: object,
+    effective_chunk_identities: Mapping[str, tuple[str, str]] | None = None,
 ) -> Oa112PublicVoyageMaterialization:
     """one full-bundle response의 OA112 vector slice만 assign하고 component context를 만든다."""
 
@@ -268,8 +270,18 @@ def materialize_prepared_oa112_public_voyage_component(
         embeddings = tuple(
             RagV2VoyageDocumentEmbedding(
                 chunk_id=chunk.chunk_id,
-                embedding_input_hash=embedding_input.embedding_input_hash,
-                context_set_hash=_required_context_hash(embedding_input),
+                embedding_input_hash=_effective_embedding_identity(
+                    chunk_id=chunk.chunk_id,
+                    original_input_hash=embedding_input.embedding_input_hash,
+                    original_context_hash=_required_context_hash(embedding_input),
+                    effective_chunk_identities=effective_chunk_identities,
+                )[0],
+                context_set_hash=_effective_embedding_identity(
+                    chunk_id=chunk.chunk_id,
+                    original_input_hash=embedding_input.embedding_input_hash,
+                    original_context_hash=_required_context_hash(embedding_input),
+                    effective_chunk_identities=effective_chunk_identities,
+                )[1],
                 embedding=np.array(vector, dtype=np.float32, copy=True),
             )
             for chunk, embedding_input, vector in zip(
@@ -297,6 +309,26 @@ def materialize_prepared_oa112_public_voyage_component(
         registry_digest=preparation.registry_digest,
     )
     return Oa112PublicVoyageMaterialization(records=tuple(records), context=context)
+
+
+def _effective_embedding_identity(
+    *,
+    chunk_id: str,
+    original_input_hash: str,
+    original_context_hash: str,
+    effective_chunk_identities: Mapping[str, tuple[str, str]] | None,
+) -> tuple[str, str]:
+    """batch segmentation이 바뀐 경우 실제 provider context에 결속된 hash만 materialize한다."""
+
+    selected = (original_input_hash, original_context_hash)
+    if effective_chunk_identities is not None:
+        mapped = effective_chunk_identities.get(chunk_id)
+        if mapped is None:
+            raise RagV2Oa112VoyageRunnerError("OA112_VOYAGE_COMPONENT_EMBEDDING")
+        selected = mapped
+    if len(selected) != 2 or not all(_is_sha256(value) for value in selected):
+        raise RagV2Oa112VoyageRunnerError("OA112_VOYAGE_COMPONENT_EMBEDDING")
+    return selected
 
 
 def build_oa112_public_voyage_component_context(

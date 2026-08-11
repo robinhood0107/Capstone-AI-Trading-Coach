@@ -1162,7 +1162,16 @@ BEGIN
         TO decision_rag_writer;
     END IF;
     IF to_regprocedure(
-        'public.stage_rag_v2_immutable_voyage_document_batch(jsonb)'
+        'public.reserve_rag_v2_immutable_voyage_document_batch_usage(text,text,text,text,text,text,timestamp with time zone,integer,integer,bigint,bigint)'
+    ) IS NOT NULL
+       AND to_regprocedure(
+        'public.claim_rag_v2_immutable_voyage_document_batch_attempt(text,text,text,text)'
+    ) IS NOT NULL
+       AND to_regprocedure(
+        'public.mark_rag_v2_immutable_voyage_document_batch_unknown_billing(text,text,text)'
+    ) IS NOT NULL
+       AND to_regprocedure(
+        'public.commit_and_stage_rag_v2_immutable_voyage_document_batch(jsonb)'
     ) IS NOT NULL
        AND to_regprocedure(
            'public.load_rag_v2_immutable_voyage_document_batch_vectors(text)'
@@ -1170,9 +1179,18 @@ BEGIN
        AND to_regprocedure(
            'public.record_rag_v2_bge_public_execution_supersession(text,text)'
        ) IS NOT NULL THEN
-        -- V54는 raw table grant 없이 batch stage/resume와 terminal BGE marker capability만 복구한다.
+        -- V54는 raw table grant 없이 document-batch usage, stage/resume와 terminal BGE marker만 복구한다.
+        REVOKE ALL PRIVILEGES ON FUNCTION
+            stage_rag_v2_immutable_voyage_document_batch(jsonb)
+        FROM decision_rag_writer;
         GRANT EXECUTE ON FUNCTION
-            stage_rag_v2_immutable_voyage_document_batch(jsonb),
+            reserve_rag_v2_immutable_voyage_document_batch_usage(
+                text, text, text, text, text, text, timestamptz,
+                integer, integer, bigint, bigint
+            ),
+            claim_rag_v2_immutable_voyage_document_batch_attempt(text, text, text, text),
+            mark_rag_v2_immutable_voyage_document_batch_unknown_billing(text, text, text),
+            commit_and_stage_rag_v2_immutable_voyage_document_batch(jsonb),
             load_rag_v2_immutable_voyage_document_batch_vectors(text),
             record_rag_v2_bge_public_execution_supersession(text, text)
         TO decision_rag_writer;

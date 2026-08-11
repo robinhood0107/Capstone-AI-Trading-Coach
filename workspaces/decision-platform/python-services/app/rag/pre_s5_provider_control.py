@@ -36,6 +36,7 @@ _VOYAGE_QUERY_WRITER_DSN_RELATIVE_PATH = (
     f"{_SECRETS_DIRECTORY}/{_VOYAGE_QUERY_WRITER_DSN_FILENAME}"
 )
 _MAX_PACKET_BYTES = 32 * 1024
+_DOCUMENT_BATCH_MAX_BYTE_CAP = 16 * 1024 * 1024
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _GIT_OBJECT = re.compile(r"^[0-9a-f]{40,64}$")
 _NONCE = re.compile(r"^ps5_[a-z0-9][a-z0-9_-]{7,123}$")
@@ -484,6 +485,7 @@ def load_pre_s5_voyage_document_batch_activation(
     token_count: int,
     chunk_count: int,
     group_count: int,
+    estimated_response_bytes: int,
     now: datetime | None = None,
 ) -> PreS5VoyageDocumentBatchActivation:
     """closed batch ID의 0600 packet을 exact plan/member/count와 대조해 one-shot authority로 읽는다."""
@@ -526,6 +528,7 @@ def load_pre_s5_voyage_document_batch_activation(
             "groupCount": group_count,
             "tokenCount": token_count,
         },
+        minimum_byte_cap=estimated_response_bytes,
         now=(now or datetime.now(UTC)).astimezone(UTC),
     )
 
@@ -907,6 +910,7 @@ def _validate_voyage_document_batch_packet(
     *,
     binding: PreS5ProviderBinding,
     expected_batch: dict[str, object],
+    minimum_byte_cap: int,
     now: datetime,
 ) -> PreS5VoyageDocumentBatchActivation:
     """각 packet을 exact batch plan/member/count와 현재 execution evidence에 fail-closed 결속한다."""
@@ -977,7 +981,15 @@ def _validate_voyage_document_batch_packet(
     logical_call_cap = _bounded_int(value.get("logicalCallCap"), minimum=1, maximum=1)
     physical_call_cap = _bounded_int(value.get("physicalCallCap"), minimum=1, maximum=1)
     token_cap = _bounded_int(value.get("tokenCap"), minimum=expected_token_count, maximum=110_000)
-    byte_cap = _bounded_int(value.get("byteCap"), minimum=1, maximum=4_194_304)
+    # 1024차원 float JSON은 수백 chunk만으로 4 MiB를 넘을 수 있다. document batch만
+    # 16 MiB까지 허용하고 query/legacy packet의 기존 상한은 유지한다.
+    if type(minimum_byte_cap) is not int or not 1 <= minimum_byte_cap <= _DOCUMENT_BATCH_MAX_BYTE_CAP:
+        raise PreS5ProviderActivationError("PRE_S5_PROVIDER_PACKET_INVALID")
+    byte_cap = _bounded_int(
+        value.get("byteCap"),
+        minimum=minimum_byte_cap,
+        maximum=_DOCUMENT_BATCH_MAX_BYTE_CAP,
+    )
     cost_cap_microusd = _bounded_int(value.get("costCapMicrousd"), minimum=1, maximum=1_000_000_000)
     input_microusd_per_token = _bounded_int(value.get("inputMicrousdPerToken"), minimum=1, maximum=1_000_000)
     retry_count = _bounded_int(value.get("retryCount"), minimum=0, maximum=0)

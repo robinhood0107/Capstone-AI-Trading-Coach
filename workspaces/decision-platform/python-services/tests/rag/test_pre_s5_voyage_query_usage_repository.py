@@ -186,6 +186,44 @@ def test_voyage_evaluation_batch_uses_one_aggregate_ledger_row_per_component(
         )
 
 
+def test_voyage_evaluation_batch_claim_rejects_reservation_identity_drift(
+    isolated_postgres_cluster: dict[str, str],
+) -> None:
+    activation = _evaluation_batch_activation()
+    repository = PsycopgPreS5VoyageQueryUsageRepository(
+        database_dsn=isolated_postgres_cluster["rag_writer_dsn"]
+    )
+    lease = repository.reserve(activation=activation, evaluation_component_scope="EXACT30")
+
+    with psycopg.connect(isolated_postgres_cluster["rag_writer_dsn"]) as connection:
+        with pytest.raises(psycopg.Error) as mismatch:
+            connection.execute(
+                """
+                SELECT public.claim_rag_v2_immutable_voyage_evaluation_batch_attempt(
+                  %s, %s, %s, %s, %s
+                )
+                """,
+                (
+                    lease.usage_event_id,
+                    "a" * 64,
+                    "OA112",
+                    "b" * 64,
+                    "c" * 64,
+                ),
+            )
+    assert mismatch.value.sqlstate == "55000"
+
+    with psycopg.connect(isolated_postgres_cluster["admin_dsn"]) as connection:
+        assert connection.execute(
+            """
+            SELECT count(*)
+            FROM rag_v2_immutable_voyage_evaluation_batch_attempts
+            WHERE usage_event_id = %s
+            """,
+            (lease.usage_event_id,),
+        ).fetchone() == (0,)
+
+
 def test_voyage_query_usage_definer_rejects_missing_official_tokenizer_and_preflight_count(
     isolated_postgres_cluster: dict[str, str],
 ) -> None:

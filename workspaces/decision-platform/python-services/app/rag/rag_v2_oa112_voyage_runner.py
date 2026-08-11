@@ -1,4 +1,4 @@
-"""OA112를 Voyage full-bundle contextual embedding input으로 prepare/materialize한다.
+"""OA112를 Voyage resumable contextual embedding batch input으로 prepare/materialize한다.
 
 This module never opens a provider socket. It closes the 14x8 registry, approved raw-cache IR, and pinned
 tokenizer inputs before a caller combines them with EXACT30 and the explicit empty OWNER_PRIVATE sentinel.
@@ -8,6 +8,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -24,16 +27,21 @@ from app.rag.rag_v2_bge_materializer import (
     prepare_public_document_for_embedding,
 )
 from app.rag.rag_v2_external_exact30_voyage_runner import (
-    PublicVoyageSourceMetadata,
     RagV2VoyageDocumentEmbedding,
     RagV2VoyageMaterializedPublicDocument,
     VoyagePreChunkedChunk,
     VoyagePreChunkedDocumentGroup,
     validate_voyage_document_vectors,
 )
+from app.rag.rag_v2_voyage_types import PublicVoyageSourceMetadata
 from app.rag.rag_v2_oa112_bge_runner import (
     oa112_public_document_request,
     validate_oa112_active_entries,
+)
+from app.rag.rag_v2_voyage_checkpoint import (
+    RagV2VoyageCheckpointError,
+    load_optional_public_voyage_checkpoint,
+    write_public_voyage_checkpoint,
 )
 
 _VOYAGE_PROFILE_ID = "voyage_context_4_1024_v1"
@@ -53,6 +61,8 @@ class Oa112PreparedVoyageDocument:
     prepared: RagV2PreparedPublicDocument
     group: VoyagePreChunkedDocumentGroup
     metadata: PublicVoyageSourceMetadata
+    checkpoint_reused: bool
+    checkpoint_written: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,6 +72,8 @@ class Oa112PublicVoyagePreparation:
     prepared_documents: tuple[Oa112PreparedVoyageDocument, ...]
     registry_id: str
     registry_digest: str
+    checkpoint_reused_count: int
+    checkpoint_written_count: int
 
     @property
     def groups(self) -> tuple[VoyagePreChunkedDocumentGroup, ...]:
@@ -117,8 +129,12 @@ def prepare_oa112_public_voyage_component(
     registry: Oa112ActiveRegistry,
     local_cache_root: Path,
     parser: ApprovedDocumentParser | None = None,
+    checkpoint_local_corpus_root: Path | None = None,
+    parser_version: str = "1.1.0",
+    tokenizer_version: str = "bge-m3-sentencepiece-v1",
+    max_workers: int = 4,
 ) -> Oa112PublicVoyagePreparation:
-    """112 approved OA sources를 one full bundle call 전 canonical Voyage groups로 prepare한다.
+    """112 approved OA sources를 exact batch planning 전 canonical Voyage groups로 prepare한다.
 
     The caller supplies only the packet-bound private raw cache root. A malformed source stops preparation before
     any later source can be handed to a provider transport; this function performs neither embedding nor staging.
@@ -129,36 +145,82 @@ def prepare_oa112_public_voyage_component(
     if not local_cache_root.is_absolute() or not _is_sha256(registry.registry_digest):
         raise RagV2Oa112VoyageRunnerError("OA112_VOYAGE_PREPARATION_CONTEXT")
     approved_root = local_cache_root / "oa-raw"
-    active_parser = parser
-    if active_parser is None:
-        from app.rag.local_document_parser import LocalDocumentParser
+    if checkpoint_local_corpus_root is not None and (
+        not checkpoint_local_corpus_root.is_absolute() or ".." in checkpoint_local_corpus_root.parts
+    ):
+        raise RagV2Oa112VoyageRunnerError("OA112_VOYAGE_PREPARATION_CONTEXT")
+    if type(max_workers) is not int or not 1 <= max_workers <= 4:
+        raise RagV2Oa112VoyageRunnerError("OA112_VOYAGE_PREPARATION_CONTEXT")
 
-        # BGE와 동일한 OA projection을 사용해 provider별 canonical text drift를 막는다.
-        active_parser = LocalDocumentParser(strip_inert_pdf_attachments=True)
-    prepared_documents: list[Oa112PreparedVoyageDocument] = []
-    for entry in entries:
+    worker_state = threading.local()
+
+    def prepare_entry(entry: Oa112RegistryEntry) -> Oa112PreparedVoyageDocument:
+        expected_metadata = _metadata(entry)
+        checkpoint_reused = False
+        checkpoint_written = False
         try:
-            prepared = prepare_public_document_for_embedding(
-                parser=active_parser,
-                tokenizer=tokenizer,
-                request=oa112_public_document_request(
-                    entry,
-                    approved_root=approved_root,
-                    embedding_profile_id=_VOYAGE_PROFILE_ID,
-                ),
-            )
-        except RagV2BgeMaterializationError as error:
+            checkpoint = None
+            if checkpoint_local_corpus_root is not None:
+                checkpoint = load_optional_public_voyage_checkpoint(
+                    local_corpus_root=checkpoint_local_corpus_root,
+                    component_scope="OA112",
+                    expected_raw_content_sha256=entry.raw_content_sha256,
+                    expected_source_revision_id=entry.source_revision_id,
+                    parser_version=parser_version,
+                    tokenizer_version=tokenizer_version,
+                )
+            if checkpoint is not None:
+                prepared = checkpoint.prepared
+                checkpoint_reused = True
+                if checkpoint.metadata != expected_metadata:
+                    raise RagV2Oa112VoyageRunnerError("OA112_VOYAGE_CHECKPOINT_DRIFT")
+            else:
+                active_parser = parser
+                if active_parser is None:
+                    from app.rag.local_document_parser import LocalDocumentParser
+
+                    # worker별 parser 하나만 만들어 PDF backend의 mutable state를 thread 사이에 공유하지 않는다.
+                    active_parser = getattr(worker_state, "parser", None)
+                    if active_parser is None:
+                        active_parser = LocalDocumentParser(strip_inert_pdf_attachments=True)
+                        worker_state.parser = active_parser
+                prepared = prepare_public_document_for_embedding(
+                    parser=active_parser,
+                    tokenizer=tokenizer,
+                    request=oa112_public_document_request(
+                        entry,
+                        approved_root=approved_root,
+                        embedding_profile_id=_VOYAGE_PROFILE_ID,
+                    ),
+                )
+                if checkpoint_local_corpus_root is not None:
+                    write_public_voyage_checkpoint(
+                        local_corpus_root=checkpoint_local_corpus_root,
+                        parser_version=parser_version,
+                        tokenizer_version=tokenizer_version,
+                        prepared=prepared,
+                        metadata=expected_metadata,
+                    )
+                    checkpoint_written = True
+        except (RagV2BgeMaterializationError, RagV2VoyageCheckpointError) as error:
             raise RagV2Oa112VoyageRunnerError("OA112_VOYAGE_MATERIALIZATION") from error
         group = _group_from_prepared(entry=entry, prepared=prepared)
-        prepared_documents.append(
-            Oa112PreparedVoyageDocument(
-                entry=entry,
-                prepared=prepared,
-                group=group,
-                metadata=_metadata(entry),
-            )
+        return Oa112PreparedVoyageDocument(
+            entry=entry,
+            prepared=prepared,
+            group=group,
+            metadata=expected_metadata,
+            checkpoint_reused=checkpoint_reused,
+            checkpoint_written=checkpoint_written,
         )
-    selected = tuple(prepared_documents)
+
+    # fixture parser는 test double일 수 있으므로 공유하지 않고, production parser만 4 worker로 제한한다.
+    worker_count = max_workers if parser is None else 1
+    if worker_count == 1:
+        selected = tuple(prepare_entry(entry) for entry in entries)
+    else:
+        with ThreadPoolExecutor(max_workers=worker_count, thread_name_prefix="oa112-voyage-ir") as executor:
+            selected = tuple(executor.map(prepare_entry, entries))
     if (
         len(selected) != 112
         or tuple(item.group.source_id for item in selected)
@@ -170,6 +232,8 @@ def prepare_oa112_public_voyage_component(
         prepared_documents=selected,
         registry_id=registry.registry_id,
         registry_digest=registry.registry_digest,
+        checkpoint_reused_count=sum(item.checkpoint_reused for item in selected),
+        checkpoint_written_count=sum(item.checkpoint_written for item in selected),
     )
 
 
@@ -177,6 +241,7 @@ def materialize_prepared_oa112_public_voyage_component(
     *,
     preparation: Oa112PublicVoyagePreparation,
     vectors: object,
+    effective_chunk_identities: Mapping[str, tuple[str, str]] | None = None,
 ) -> Oa112PublicVoyageMaterialization:
     """one full-bundle response의 OA112 vector slice만 assign하고 component context를 만든다."""
 
@@ -205,8 +270,18 @@ def materialize_prepared_oa112_public_voyage_component(
         embeddings = tuple(
             RagV2VoyageDocumentEmbedding(
                 chunk_id=chunk.chunk_id,
-                embedding_input_hash=embedding_input.embedding_input_hash,
-                context_set_hash=_required_context_hash(embedding_input),
+                embedding_input_hash=_effective_embedding_identity(
+                    chunk_id=chunk.chunk_id,
+                    original_input_hash=embedding_input.embedding_input_hash,
+                    original_context_hash=_required_context_hash(embedding_input),
+                    effective_chunk_identities=effective_chunk_identities,
+                )[0],
+                context_set_hash=_effective_embedding_identity(
+                    chunk_id=chunk.chunk_id,
+                    original_input_hash=embedding_input.embedding_input_hash,
+                    original_context_hash=_required_context_hash(embedding_input),
+                    effective_chunk_identities=effective_chunk_identities,
+                )[1],
                 embedding=np.array(vector, dtype=np.float32, copy=True),
             )
             for chunk, embedding_input, vector in zip(
@@ -234,6 +309,26 @@ def materialize_prepared_oa112_public_voyage_component(
         registry_digest=preparation.registry_digest,
     )
     return Oa112PublicVoyageMaterialization(records=tuple(records), context=context)
+
+
+def _effective_embedding_identity(
+    *,
+    chunk_id: str,
+    original_input_hash: str,
+    original_context_hash: str,
+    effective_chunk_identities: Mapping[str, tuple[str, str]] | None,
+) -> tuple[str, str]:
+    """batch segmentation이 바뀐 경우 실제 provider context에 결속된 hash만 materialize한다."""
+
+    selected = (original_input_hash, original_context_hash)
+    if effective_chunk_identities is not None:
+        mapped = effective_chunk_identities.get(chunk_id)
+        if mapped is None:
+            raise RagV2Oa112VoyageRunnerError("OA112_VOYAGE_COMPONENT_EMBEDDING")
+        selected = mapped
+    if len(selected) != 2 or not all(_is_sha256(value) for value in selected):
+        raise RagV2Oa112VoyageRunnerError("OA112_VOYAGE_COMPONENT_EMBEDDING")
+    return selected
 
 
 def build_oa112_public_voyage_component_context(

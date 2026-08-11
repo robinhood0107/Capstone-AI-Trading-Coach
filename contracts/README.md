@@ -505,7 +505,11 @@ outcome만 physical call 1이다. raw/header/query persistence는 0이다. packe
 privilege preflight를 수행하고 성공한 transient
 aggregate만 owner-local append-only record로 materialize한다.
 
-Voyage는 `voyage-context-4` 1024차원과 generation-level whole-bundle BGE-M3 fallback/CAS만,
+Voyage는 `voyage-context-4` 1024차원, official tokenizer 기준 110K token 이하 exact
+manifest-bound resumable document batch, EXACT30/OA112 query batch 각 1회만 허용한다. 성공 batch와
+source checkpoint는 재호출하지 않는다. 이 Window A packet은 최대 2시간 TTL이고 일반 runtime query는
+기존 5분 TTL을 유지한다. 성공 query vector도 V54에 usage와 원자 stage한다. public CPU BGE 재실행은
+`TERMINALLY_SUPERSEDED_NO_FURTHER_BGE_RUN`이다. 모든 batch·평가 통과 뒤에만 CAS할 수 있다.
 Vertex는 `VERTEX_API_KEY`의 Vertex Express API-key-only `gemini-3.5-flash` 단일 generator·top-5·질문당
 1회만 허용한다. ADC/service-account, ambient credential, credential file과 Gemini Developer API는 0이다.
 OpenAI, Gemini Developer API, reranker, verifier, files/batch API와 query-level fallback은 모두 0이다.

@@ -1503,7 +1503,7 @@ materialization과 pointer transition은 별도 승인 packet이 필요한 CLI �
 
 ### 7.7 RAG v2 계약 상태와 공통 경계
 
-> 현재 상태: `S4_7D_CONTRACT=LOCKED / ACTIVE_V2_RUNTIME=IMPLEMENTED_DRAFT(current working tree V25–V52; FULL_READY 미선언) /
+> 현재 상태: `S4_7D_CONTRACT=LOCKED / ACTIVE_V2_RUNTIME=IMPLEMENTED_DRAFT(current working tree V25–V54; FULL_READY 미선언) /
 > S4_7D_CONSENT_TICKET_CONTROL_PLANE=OFFLINE_ONLY /
 > OA112_ACTIVE_CONTRACT_LOCKED / S4_7D_OA112_PHYSICAL_ACTIVATION=NOT_MATERIALIZED`.
 > `contracts/openapi/rag-v2.openapi.json`은 v1 canonical OpenAPI bytes를 변경하지 않기 위한
@@ -1512,6 +1512,13 @@ materialization과 pointer transition은 별도 승인 packet이 필요한 CLI �
 > rights/local cache/DB activation은 아직 증명되지 않았다. full bundle이 `FULL_READY`가 아니면 질문 API는
 > typed `CORPUS_NOT_READY`를 반환하며 Voyage/Vertex external evidence와 exact packet 전 provider socket은
 > 열리지 않는다.
+
+V54는 public EXACT30+OA112 CPU BGE 재실행을
+`TERMINALLY_SUPERSEDED_NO_FURTHER_BGE_RUN`으로 보존하고, official tokenizer 기준 110K token 이하
+exact manifest-bound Voyage document batch의 append-only plan/batch/vector ledger와 재개 reader를 추가한다.
+성공 batch와 142개 source checkpoint는 provider call 0으로 재사용하며 EXACT30/OA112 query 평가는
+logical 10/112개를 singleton group으로 묶은 component batch 각 1회다. 모든 batch·평가가 통과하기 전
+CAS activation은 0이고 기존 ask/history/OpenAPI/proto payload는 변하지 않는다.
 
 RAG v2는 exact-30, OA, 요청 owner-private generation을 서버가 자동으로 하나의
 bundle로 pin한다. client request에 `corpus`, `profile`, `topK` 또는 이와 동일한

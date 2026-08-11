@@ -94,9 +94,14 @@
   v1 OpenAPI/proto/source-card, exact-30와 `news_sentiment_summary.v2`는 byte-stable하게 보존한다.
   reserve는 최대 28이며 자동 승격은 없다. active physical source에는 machine fetch/local processing/
   external embedding/external generation permission과 actual rights/hash evidence가 모두 필요하다.
-  RAG v2 consent/import, Voyage `voyage-context-4` 1024, `VERTEX_API_KEY` Vertex Express API-key-only
-  `gemini-3.5-flash`, foreign-news(Finnhub personal-local/SEC/Fed/GDELT offline reference)는
-  contract-only다. Optional 3과 Core 6의 KIS current-price·SEC EDGAR submissions/companyfacts·KRX
+  public EXACT30+OA112의 CPU BGE 재실행은
+  `TERMINALLY_SUPERSEDED_NO_FURTHER_BGE_RUN`이다. Voyage `voyage-context-4` 1024는 official
+  tokenizer 기준 110K token 이하의 exact manifest-bound resumable document batch와 EXACT30/OA112
+  query batch 각 1회만 허용하며, 성공 batch·source checkpoint를 재호출하지 않는다. 모든 batch와
+  평가가 끝나기 전 CAS activation은 0이다. RAG v2 consent/import와 이 local batch runtime은
+  구현돼 있지만 provider activation은 아니다. `VERTEX_API_KEY` Vertex Express API-key-only
+  `gemini-3.5-flash`와 foreign-news(Finnhub personal-local/SEC/Fed/GDELT offline reference)는
+  계속 hard-gated다. Optional 3과 Core 6의 KIS current-price·SEC EDGAR submissions/companyfacts·KRX
   KOSPI/KOSDAQ daily만 local one-shot executor를 가진다. canonical short-expiry packet, exact clean
   HEAD/tree, CI/security digest가 모두 없거나 drift하면 provider outbound는 0이며, KIS는 cached
   OAuth token이 없으면 token endpoint를 열지 않고 fail-closed한다. Core 6 availability는 성공한

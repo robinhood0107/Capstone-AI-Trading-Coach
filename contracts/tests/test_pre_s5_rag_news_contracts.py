@@ -427,6 +427,15 @@ class PreS5RagNewsContractTest(unittest.TestCase):
         self.assertEqual(
             {
                 "artifactAutoDownloadAllowed": False,
+                "batchAuthoringRequiresInstalledArtifact": True,
+                "bootstrapAcquisitionApprovalRequired": True,
+                "bootstrapEndpoint": (
+                    "/voyageai/voyage-context-4/raw/"
+                    "8ca946072a18e398cd61f2ad0243b56d0350b1db/tokenizer.json"
+                ),
+                "bootstrapMaximumPacketTtlSeconds": 300,
+                "bootstrapPhysicalCallCap": 1,
+                "bootstrapRevision": "8ca946072a18e398cd61f2ad0243b56d0350b1db",
                 "localArtifactOnly": True,
                 "packetHashBindingRequired": True,
                 "preflightExpectedInputTokenLedgerRequired": True,

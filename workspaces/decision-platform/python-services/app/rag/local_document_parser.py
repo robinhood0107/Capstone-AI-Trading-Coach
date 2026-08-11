@@ -353,6 +353,9 @@ class LocalDocumentParser:
         else:  # pragma: no cover - closed MIME set is enforced above.
             raise DocumentParseError("DOCUMENT_MIME_UNSUPPORTED")
 
+        # PostgreSQL jsonb는 U+0000을 표현할 수 없다. PDF/OCR backend가 남긴 NUL glyph는
+        # 원본 hash는 보존한 채 replacement character로 고정해 staging 전체가 중단되지 않게 한다.
+        blocks = cast(list[dict[str, Any]], _replace_nul_codepoints(blocks))
         _validate_block_bounds(blocks, self._limits)
         safety = _classify_safety(blocks)
         if safety["secretDetected"]:
@@ -1469,6 +1472,22 @@ def _renumber(blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
     for index, block in enumerate(blocks):
         block["readingOrder"] = index
     return blocks
+
+
+def _replace_nul_codepoints(value: Any) -> Any:
+    """Document IR value의 DB 비호환 NUL만 U+FFFD로 치환한다."""
+
+    if isinstance(value, str):
+        return value.replace("\x00", "\ufffd")
+    if isinstance(value, list):
+        for index, item in enumerate(value):
+            value[index] = _replace_nul_codepoints(item)
+        return value
+    if isinstance(value, dict):
+        for key, item in value.items():
+            value[key] = _replace_nul_codepoints(item)
+        return value
+    return value
 
 
 def _validate_block_bounds(blocks: list[dict[str, Any]], limits: ParserLimits) -> None:

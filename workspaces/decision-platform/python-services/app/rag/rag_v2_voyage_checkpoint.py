@@ -195,6 +195,14 @@ def load_optional_public_voyage_checkpoint(
         return None
     except OSError as error:
         raise RagV2VoyageCheckpointError("VOYAGE_CHECKPOINT_BOUNDARY") from error
+    _secure_directory(derived)
+    try:
+        scope_root.lstat()
+    except FileNotFoundError:
+        # 다른 component가 derived root를 먼저 만들었어도 현재 scope의 최초 조회는 정상 cache miss다.
+        return None
+    except OSError as error:
+        raise RagV2VoyageCheckpointError("VOYAGE_CHECKPOINT_BOUNDARY") from error
     scope_root = _require_checkpoint_directories(local_corpus_root, scope=component_scope)
     identity = _identity(
         scope=component_scope,

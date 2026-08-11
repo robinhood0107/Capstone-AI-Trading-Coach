@@ -19,11 +19,11 @@ import numpy as np
 from app.rag.authorized_retrieval import ALLOWED_RAG_TOPICS
 from app.rag.oa_release_manifest import OA_TRACK_IDS
 from app.rag.rag_v2_external_exact30_voyage_runner import (
-    PublicVoyageSourceMetadata,
     RagV2PublicVoyageComponentContext,
     RagV2VoyageMaterializedPublicDocument,
     external_exact30_voyage_source_member_digest,
 )
+from app.rag.rag_v2_voyage_types import PublicVoyageSourceMetadata
 from app.rag.rag_v2_oa112_voyage_runner import (
     RagV2Oa112VoyageComponentContext,
     oa112_voyage_source_member_digest,

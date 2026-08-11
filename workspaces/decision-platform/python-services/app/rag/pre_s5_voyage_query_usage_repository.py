@@ -14,7 +14,10 @@ from typing import Any, Literal
 
 import psycopg
 
-from app.rag.pre_s5_provider_control import PreS5VoyageQueryActivation
+from app.rag.pre_s5_provider_control import (
+    PreS5VoyageEvaluationBatchActivation,
+    PreS5VoyageQueryActivation,
+)
 from app.rag.pre_s5_voyage_transport import PreS5VoyageAttemptLease
 
 _WRITER_ROLE = "decision_rag_writer"
@@ -51,7 +54,7 @@ class PsycopgPreS5VoyageQueryUsageRepository:
     def reserve(
         self,
         *,
-        activation: PreS5VoyageQueryActivation,
+        activation: PreS5VoyageQueryActivation | PreS5VoyageEvaluationBatchActivation,
         evaluation_component_scope: Literal["EXACT30", "OA112"] | None = None,
     ) -> PreS5VoyageAttemptLease:
         """Reserve one packet; only a closed public-component label may accompany evaluation traffic.
@@ -64,6 +67,10 @@ class PsycopgPreS5VoyageQueryUsageRepository:
         _validate_activation(activation)
         stored_scope = evaluation_component_scope or "RUNTIME"
         if stored_scope not in {"RUNTIME", "EXACT30", "OA112"}:
+            raise PreS5VoyageQueryUsageRepositoryError("PRE_S5_VOYAGE_QUERY_LEASE_ARGUMENT")
+        if isinstance(activation, PreS5VoyageEvaluationBatchActivation) and (
+            stored_scope != activation.component_scope or stored_scope == "RUNTIME"
+        ):
             raise PreS5VoyageQueryUsageRepositoryError("PRE_S5_VOYAGE_QUERY_LEASE_ARGUMENT")
         usage_event_id = _usage_event_id(activation)
         try:
@@ -216,7 +223,9 @@ class PsycopgPreS5VoyageQueryUsageLease:
 def _validate_activation(activation: object) -> None:
     """Keep a direct repository caller from turning a document packet or broader operation into a query lease."""
 
-    if not isinstance(activation, PreS5VoyageQueryActivation):
+    if not isinstance(
+        activation, (PreS5VoyageQueryActivation, PreS5VoyageEvaluationBatchActivation)
+    ):
         raise PreS5VoyageQueryUsageRepositoryError("PRE_S5_VOYAGE_QUERY_LEASE_ARGUMENT")
     if (
         not _is_sha256(activation.packet_sha256)
@@ -249,7 +258,9 @@ def _validate_activation(activation: object) -> None:
         raise PreS5VoyageQueryUsageRepositoryError("PRE_S5_VOYAGE_QUERY_LEASE_ARGUMENT")
 
 
-def _usage_event_id(activation: PreS5VoyageQueryActivation) -> str:
+def _usage_event_id(
+    activation: PreS5VoyageQueryActivation | PreS5VoyageEvaluationBatchActivation,
+) -> str:
     """The packet/nonce/query/scope hash tuple is deterministic, making replay conflict before an attempt row exists."""
 
     digest = hashlib.sha256(

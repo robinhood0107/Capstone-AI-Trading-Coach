@@ -16,7 +16,7 @@ import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
+from typing import Literal, Protocol, cast
 
 from app.rag.authorized_retrieval import ALLOWED_RAG_TOPICS, EMBEDDING_DIMENSION, ExactIdentifierExtractor, QueryNormalizer
 from app.rag.oa112_active_registry import Oa112ActiveRegistry
@@ -24,7 +24,12 @@ from app.rag.oa_release_manifest import OA_TRACK_IDS
 from app.rag.pre_s5_provider_control import (
     PreS5ProviderActivationError,
     PreS5ProviderBinding,
+    load_pre_s5_voyage_evaluation_batch_activation,
     load_pre_s5_voyage_evaluation_query_activation,
+)
+from app.rag.pre_s5_voyage_evaluation_batch_transport import (
+    PreS5VoyageEvaluationBatchTransport,
+    PreS5VoyageEvaluationBatchTransportError,
 )
 from app.rag.pre_s5_voyage_query_transport import (
     PreS5VoyageContext4QueryEmbedder,
@@ -75,7 +80,7 @@ class PublicVoyagePairEvaluationError(ValueError):
 
 
 class VoyageEvaluationQueryEmbedder(Protocol):
-    """The narrow evaluator seam preserves a one-shot Voyage receipt for every fixture question."""
+    """The evaluator seam preserves an exact zero-or-one physical-call receipt per logical query."""
 
     @property
     def embedding_profile_id(self) -> str:
@@ -109,7 +114,7 @@ class PublicVoyagePairEvaluation:
     def acceptance_passed(self) -> bool:
         """A result is usable only if both component records satisfy V45's exact acceptance gates."""
 
-        return _accepts(self.exact30, expected_calls=10) and _accepts(self.oa112, expected_calls=112)
+        return _accepts(self.exact30, expected_calls=1) and _accepts(self.oa112, expected_calls=1)
 
 
 class PacketGatedPublicVoyageEvaluationQueryEmbedder:
@@ -250,6 +255,156 @@ class PacketGatedPublicVoyageEvaluationQueryEmbedder:
             return
         with self._attempt_lock:
             self._physical_attempts[component_scope] += 1
+
+
+class PacketGatedPublicVoyageEvaluationBatchEmbedder:
+    """첫 component 질문에서 singleton-group batch 한 번을 실행하고 나머지 vector를 reuse한다."""
+
+    def __init__(
+        self,
+        *,
+        local_root: Path,
+        binding: PreS5ProviderBinding,
+        api_key: str,
+        usage_repository: PreS5VoyageQueryUsageReservationPort,
+        exact30_queries: Sequence[PublicBgeEvaluationQuery],
+        oa112_queries: Sequence[PublicBgeEvaluationQuery],
+        tokenizer_sha256: str,
+        sender: PreS5VoyageHttpSender,
+    ) -> None:
+        _validate_queries(exact30_queries=exact30_queries, oa112_queries=oa112_queries)
+        if (
+            not isinstance(local_root, Path)
+            or not local_root.is_absolute()
+            or not isinstance(binding, PreS5ProviderBinding)
+            or not isinstance(api_key, str)
+            or not api_key
+            or usage_repository is None
+            or _SHA256.fullmatch(tokenizer_sha256) is None
+            or sender is None
+        ):
+            raise PublicVoyagePairEvaluationError("PUBLIC_VOYAGE_EVALUATION_RUNTIME")
+        self._local_root = local_root
+        self._binding = binding
+        self._api_key = api_key
+        self._usage_repository = usage_repository
+        self._tokenizer_sha256 = tokenizer_sha256
+        self._sender = sender
+        self._queries = {
+            "EXACT30": tuple((query.query_id, query.question) for query in exact30_queries),
+            "OA112": tuple((query.query_id, query.question) for query in oa112_queries),
+        }
+        self._component_by_question_sha256 = {
+            hashlib.sha256(question.encode("utf-8")).hexdigest(): component_scope
+            for component_scope, queries in self._queries.items()
+            for _, question in queries
+        }
+        if len(self._component_by_question_sha256) != 122:
+            raise PublicVoyagePairEvaluationError("PUBLIC_VOYAGE_EVALUATION_RUNTIME")
+        self._vectors: dict[str, tuple[float, ...]] = {}
+        self._loaded_components: set[str] = set()
+        self._attempt_lock = threading.Lock()
+        self._physical_attempts = {"EXACT30": 0, "OA112": 0}
+
+    @property
+    def embedding_profile_id(self) -> str:
+        return _VOYAGE_PROFILE_ID
+
+    def embed_query_with_receipt(
+        self,
+        *,
+        question: str,
+        scope_claim_id: str,
+        external_query_consent_granted: bool,
+    ) -> RagV2QueryEmbeddingReceipt:
+        """component 첫 lookup만 physical call 1을 보고하고 이후 질문은 staged vector를 reuse한다."""
+
+        if not external_query_consent_granted:
+            raise RagV2QueryEmbeddingError(RagV2RetrievalFailureCode.QUERY_PROFILE_UNAVAILABLE)
+        query_sha256 = hashlib.sha256(question.encode("utf-8")).hexdigest()
+        component_scope = self._component_by_question_sha256.get(query_sha256)
+        if component_scope is None:
+            raise RagV2QueryEmbeddingError(RagV2RetrievalFailureCode.QUERY_PROFILE_UNAVAILABLE)
+        physical_calls = 0
+        with self._attempt_lock:
+            if component_scope not in self._loaded_components:
+                physical_calls = self._load_component(
+                    component_scope=component_scope,
+                    scope_claim_id=scope_claim_id,
+                )
+            vector = self._vectors.get(query_sha256)
+        if vector is None:
+            raise RagV2QueryEmbeddingError(RagV2RetrievalFailureCode.QUERY_EMBEDDING_INVALID)
+        return RagV2QueryEmbeddingReceipt(vector=vector, voyage_physical_calls=physical_calls)
+
+    def embed_query(self, question: str) -> Sequence[float]:
+        del question
+        raise RagV2QueryEmbeddingError(RagV2RetrievalFailureCode.QUERY_PROFILE_UNAVAILABLE)
+
+    def content_free_summary(self) -> dict[str, int | str]:
+        with self._attempt_lock:
+            exact30_attempts = self._physical_attempts["EXACT30"]
+            oa112_attempts = self._physical_attempts["OA112"]
+        return {
+            "code": "PUBLIC_VOYAGE_EVALUATION_BATCH_ATTEMPTS",
+            "exact30QueryPhysicalCallCount": exact30_attempts,
+            "oa112QueryPhysicalCallCount": oa112_attempts,
+            "rawArtifactCount": 0,
+        }
+
+    def _load_component(self, *, component_scope: str, scope_claim_id: str) -> int:
+        """lock 아래 한 번만 packet/lease/provider를 소비해 concurrent partial reload를 차단한다."""
+
+        queries = self._queries[component_scope]
+        try:
+            tokenizer = LocalPreS5VoyageContext4Tokenizer.from_local_root(
+                local_root=self._local_root,
+                expected_sha256=self._tokenizer_sha256,
+            )
+            expected_tokens = tokenizer.count_texts(
+                texts=tuple(question for _, question in queries),
+                token_cap=8_192,
+            )
+            activation = load_pre_s5_voyage_evaluation_batch_activation(
+                local_root=self._local_root,
+                binding=self._binding,
+                component_scope=component_scope,
+                query_id_questions=queries,
+                scope_claim_id=scope_claim_id,
+                expected_token_count=expected_tokens,
+            )
+            lease = self._usage_repository.reserve(
+                activation=activation,
+                evaluation_component_scope=cast(
+                    Literal["EXACT30", "OA112"], component_scope
+                ),
+            )
+            result = PreS5VoyageEvaluationBatchTransport(
+                activation=activation,
+                api_key=self._api_key,
+                lease=lease,
+                token_counter=tokenizer,
+                sender=self._sender,
+            ).embed(query_id_questions=queries)
+        except (
+            PreS5ProviderActivationError,
+            PreS5VoyageTokenizerError,
+            PreS5VoyageEvaluationBatchTransportError,
+            ValueError,
+        ) as error:
+            physical_calls = getattr(error, "voyage_physical_calls", 0)
+            if physical_calls in {0, 1}:
+                self._physical_attempts[component_scope] += physical_calls
+            raise RagV2QueryEmbeddingError(
+                RagV2RetrievalFailureCode.QUERY_EMBEDDING_INVALID,
+                voyage_physical_calls=physical_calls,
+            ) from None
+        if set(result.vectors_by_query_sha256) & set(self._vectors):
+            raise RagV2QueryEmbeddingError(RagV2RetrievalFailureCode.QUERY_EMBEDDING_INVALID)
+        self._vectors.update(result.vectors_by_query_sha256)
+        self._loaded_components.add(component_scope)
+        self._physical_attempts[component_scope] += result.voyage_physical_calls
+        return result.voyage_physical_calls
 
 
 def load_public_voyage_evaluation_inputs(
@@ -427,7 +582,7 @@ def _evaluate_queries(
             },
         )
         durations.append((time.perf_counter_ns() - started) / 1_000_000)
-        if execution.voyage_physical_calls != 1:
+        if execution.voyage_physical_calls not in {0, 1}:
             raise PublicVoyagePairEvaluationError("PUBLIC_VOYAGE_EVALUATION_QUERY_UNAVAILABLE")
         physical_calls += execution.voyage_physical_calls
         if execution.outcome.failure_code is not None:
@@ -437,6 +592,8 @@ def _evaluate_queries(
             hits.add(query.query_id)
             if all(_valid_public_citation(item) for item in evidence):
                 citations.add(query.query_id)
+    if physical_calls != 1:
+        raise PublicVoyagePairEvaluationError("PUBLIC_VOYAGE_EVALUATION_QUERY_UNAVAILABLE")
     return hits, citations, durations, physical_calls
 
 

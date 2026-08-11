@@ -118,6 +118,7 @@ class PreS5VoyageTokenizerAcquisitionReceipt:
 @dataclass(frozen=True, slots=True)
 class _Packet:
     packet_sha256: str
+    claim_sha256: str
     head_commit: str
     tree_object: str
     ci_digest: str
@@ -202,7 +203,7 @@ def acquire_pre_s5_voyage_tokenizer(
     packet = _load_packet(local_root=local_root, binding=binding, now=current)
     artifact_root, model_root, artifact_path, receipt_path = _prepare_destination(local_root)
     del artifact_root
-    _consume_packet_claim(local_root=local_root, packet_sha256=packet.packet_sha256)
+    _consume_packet_claim(local_root=local_root, claim_sha256=packet.claim_sha256)
     active_fetcher = fetcher or _PinnedHuggingFaceFetcher()
     try:
         raw = active_fetcher.fetch(url=_URL, byte_cap=packet.byte_cap)
@@ -291,7 +292,11 @@ def _load_packet(
         raise PreS5VoyageTokenizerAcquisitionError(
             "PRE_S5_VOYAGE_TOKENIZER_PACKET_INVALID"
         ) from None
-    if not isinstance(payload, dict) or set(payload) != _PACKET_FIELDS:
+    if (
+        not isinstance(payload, dict)
+        or set(payload) != _PACKET_FIELDS
+        or packet_file.content != _canonical_json(payload)
+    ):
         raise PreS5VoyageTokenizerAcquisitionError("PRE_S5_VOYAGE_TOKENIZER_PACKET_INVALID")
     issued_at = _parse_instant(payload.get("issuedAt"))
     expires_at = _parse_instant(payload.get("expiresAt"))
@@ -341,6 +346,9 @@ def _load_packet(
         raise PreS5VoyageTokenizerAcquisitionError("PRE_S5_VOYAGE_TOKENIZER_PACKET_BINDING")
     return _Packet(
         packet_sha256=hashlib.sha256(packet_file.content).hexdigest(),
+        claim_sha256=hashlib.sha256(
+            f"voyage-tokenizer-nonce\0{payload['nonce']}".encode("utf-8")
+        ).hexdigest(),
         head_commit=payload["headCommit"],
         tree_object=payload["treeObject"],
         ci_digest=payload["ciDigest"],
@@ -372,10 +380,10 @@ def _prepare_destination(local_root: Path) -> tuple[Path, Path, Path, Path]:
     return artifact_root, model_root, artifact_path, receipt_path
 
 
-def _consume_packet_claim(*, local_root: Path, packet_sha256: str) -> None:
+def _consume_packet_claim(*, local_root: Path, claim_sha256: str) -> None:
     claims = _ensure_directory(local_root / "packet-claims")
     scope = _ensure_directory(claims / "voyage-tokenizer")
-    claim = scope / packet_sha256
+    claim = scope / claim_sha256
     try:
         descriptor = os.open(
             claim,
@@ -414,11 +422,14 @@ def _publish_file(path: Path, content: bytes) -> None:
     finally:
         os.close(descriptor)
     try:
-        os.rename(temporary, path)
+        # hard-link publish는 destination이 경합 중 생겨도 overwrite하지 않는다.
+        os.link(temporary, path, follow_symlinks=False)
         _fsync_directory(path.parent)
     finally:
-        if temporary.exists() and not temporary.is_symlink():
+        try:
             temporary.unlink()
+        except FileNotFoundError:
+            pass
 
 
 def _secure_directory(path: Path) -> None:

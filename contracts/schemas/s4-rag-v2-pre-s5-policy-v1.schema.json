@@ -347,6 +347,24 @@
             "artifactAutoDownloadAllowed": {
               "const": false
             },
+            "batchAuthoringRequiresInstalledArtifact": {
+              "const": true
+            },
+            "bootstrapAcquisitionApprovalRequired": {
+              "const": true
+            },
+            "bootstrapEndpoint": {
+              "const": "/voyageai/voyage-context-4/raw/8ca946072a18e398cd61f2ad0243b56d0350b1db/tokenizer.json"
+            },
+            "bootstrapMaximumPacketTtlSeconds": {
+              "const": 300
+            },
+            "bootstrapPhysicalCallCap": {
+              "const": 1
+            },
+            "bootstrapRevision": {
+              "const": "8ca946072a18e398cd61f2ad0243b56d0350b1db"
+            },
             "localArtifactOnly": {
               "const": true
             },
@@ -365,6 +383,12 @@
           },
           "required": [
             "artifactAutoDownloadAllowed",
+            "batchAuthoringRequiresInstalledArtifact",
+            "bootstrapAcquisitionApprovalRequired",
+            "bootstrapEndpoint",
+            "bootstrapMaximumPacketTtlSeconds",
+            "bootstrapPhysicalCallCap",
+            "bootstrapRevision",
             "localArtifactOnly",
             "packetHashBindingRequired",
             "preflightExpectedInputTokenLedgerRequired",

@@ -907,6 +907,12 @@ def _rag_policy_schema() -> dict[str, Any]:
             "officialTokenizer": _closed(
                 required=[
                     "artifactAutoDownloadAllowed",
+                    "batchAuthoringRequiresInstalledArtifact",
+                    "bootstrapAcquisitionApprovalRequired",
+                    "bootstrapEndpoint",
+                    "bootstrapMaximumPacketTtlSeconds",
+                    "bootstrapPhysicalCallCap",
+                    "bootstrapRevision",
                     "localArtifactOnly",
                     "packetHashBindingRequired",
                     "preflightExpectedInputTokenLedgerRequired",
@@ -915,6 +921,19 @@ def _rag_policy_schema() -> dict[str, Any]:
                 ],
                 properties={
                     "artifactAutoDownloadAllowed": {"const": False},
+                    "batchAuthoringRequiresInstalledArtifact": {"const": True},
+                    "bootstrapAcquisitionApprovalRequired": {"const": True},
+                    "bootstrapEndpoint": {
+                        "const": (
+                            "/voyageai/voyage-context-4/raw/"
+                            "8ca946072a18e398cd61f2ad0243b56d0350b1db/tokenizer.json"
+                        )
+                    },
+                    "bootstrapMaximumPacketTtlSeconds": {"const": 300},
+                    "bootstrapPhysicalCallCap": {"const": 1},
+                    "bootstrapRevision": {
+                        "const": "8ca946072a18e398cd61f2ad0243b56d0350b1db"
+                    },
                     "localArtifactOnly": {"const": True},
                     "packetHashBindingRequired": {"const": True},
                     "preflightExpectedInputTokenLedgerRequired": {"const": True},
@@ -2090,6 +2109,15 @@ def _rag_policy_fixture() -> dict[str, Any]:
             "modelId": "voyage-context-4",
             "officialTokenizer": {
                 "artifactAutoDownloadAllowed": False,
+                "batchAuthoringRequiresInstalledArtifact": True,
+                "bootstrapAcquisitionApprovalRequired": True,
+                "bootstrapEndpoint": (
+                    "/voyageai/voyage-context-4/raw/"
+                    "8ca946072a18e398cd61f2ad0243b56d0350b1db/tokenizer.json"
+                ),
+                "bootstrapMaximumPacketTtlSeconds": 300,
+                "bootstrapPhysicalCallCap": 1,
+                "bootstrapRevision": "8ca946072a18e398cd61f2ad0243b56d0350b1db",
                 "localArtifactOnly": True,
                 "packetHashBindingRequired": True,
                 "preflightExpectedInputTokenLedgerRequired": True,
@@ -2546,6 +2574,15 @@ def _catalog() -> dict[str, Any]:
                 "modelId": "voyage-context-4",
                 "officialTokenizer": {
                     "artifactAutoDownloadAllowed": False,
+                    "batchAuthoringRequiresInstalledArtifact": True,
+                    "bootstrapAcquisitionApprovalRequired": True,
+                    "bootstrapEndpoint": (
+                        "/voyageai/voyage-context-4/raw/"
+                        "8ca946072a18e398cd61f2ad0243b56d0350b1db/tokenizer.json"
+                    ),
+                    "bootstrapMaximumPacketTtlSeconds": 300,
+                    "bootstrapPhysicalCallCap": 1,
+                    "bootstrapRevision": "8ca946072a18e398cd61f2ad0243b56d0350b1db",
                     "localArtifactOnly": True,
                     "packetHashBindingRequired": True,
                     "preflightExpectedInputTokenLedgerRequired": True,
@@ -3157,6 +3194,8 @@ def validate_semantics(schema_id: str, payload: object) -> None:
         if not isinstance(official_tokenizer, Mapping) or any(
             (
                 official_tokenizer.get("artifactAutoDownloadAllowed"),
+                not official_tokenizer.get("batchAuthoringRequiresInstalledArtifact"),
+                not official_tokenizer.get("bootstrapAcquisitionApprovalRequired"),
                 not official_tokenizer.get("localArtifactOnly"),
                 not official_tokenizer.get("packetHashBindingRequired"),
                 not official_tokenizer.get("preflightExpectedInputTokenLedgerRequired"),
@@ -3167,6 +3206,18 @@ def validate_semantics(schema_id: str, payload: object) -> None:
             raise ContractValidationError(
                 "Voyage must use a packet-bound local official tokenizer without approximation"
             )
+        if (
+            official_tokenizer.get("bootstrapEndpoint")
+            != (
+                "/voyageai/voyage-context-4/raw/"
+                "8ca946072a18e398cd61f2ad0243b56d0350b1db/tokenizer.json"
+            )
+            or official_tokenizer.get("bootstrapMaximumPacketTtlSeconds") != 300
+            or official_tokenizer.get("bootstrapPhysicalCallCap") != 1
+            or official_tokenizer.get("bootstrapRevision")
+            != "8ca946072a18e398cd61f2ad0243b56d0350b1db"
+        ):
+            raise ContractValidationError("Voyage tokenizer bootstrap boundary drifted")
         if vertex.get("maximumGenerateContentCallsPerQuestion") != 1:
             raise ContractValidationError("Vertex may generate at most once per question")
         return

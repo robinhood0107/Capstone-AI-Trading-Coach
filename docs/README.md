@@ -98,12 +98,17 @@ owner-bound import/delete ticket, owner deletion activation/hard-delete, embeddi
 잠근다. HTTP addendum은 consent/effective-consent/import/delete ticket과 Vertex packet preparation의 다섯
 route만 추가한다. Voyage는
 `voyage-context-4` 1024차원 full-generation profile이고 query별 fallback/mixed profile은 없으며,
-불가 시 full bundle BGE-M3 rebuild/evaluation/CAS만 허용한다. 전역 public base는
+official tokenizer 기준 110K token 이하 exact manifest-bound resumable document batch와
+EXACT30/OA112 query batch 각 1회만 허용한다. 성공 batch·142개 source checkpoint는 재사용하고
+첫 실패 뒤 남은 provider call은 0이다. CPU BGE public 재실행은
+`TERMINALLY_SUPERSEDED_NO_FURTHER_BGE_RUN`이며 activation 대안이 아니다. 전역 public base는
 `OWNER_PRIVATE` empty sentinel(`ownerScopeSha256=null`, ordered group 0)만 사용해 owner 원문을
 Voyage input에 포함하지 않는다. Vertex는 `VERTEX_API_KEY`만 읽는 Vertex Express API-key-only
 `gemini-3.5-flash` 단일 generator target이며 top-5와 질문당 `generateContent` 1회, fallback 0이다.
 ADC/service-account, ambient credential, credential file과 Gemini Developer API는 v2 runtime에서 허용하지 않는다.
-둘 다 `TARGET_NOT_ACTIVE`이며 provider physical call은 0이다.
+Voyage와 Vertex는 모두 `TARGET_NOT_ACTIVE`이며 provider physical call은 0이다. local DB는 V54에서
+부분 BGE generation을 삭제하지 않고 terminal supersession marker와 Voyage batch/vector ledger를
+보존한다.
 
 `S4_7D_CONSENT_TICKET_CONTROL_PLANE=OFFLINE_ONLY`는 owner-bound consent append/effective read,
 5분 single-use import/delete ticket, content-free Vertex preparation만 local DB에서 수행한다. Vertex
@@ -143,6 +148,7 @@ S4.8B/C offline runtime과 S5.0 계약은 각각
 [S5.0 변경기록](../contracts/changes/20260801-s5-0-signal-v2-contract-lock.md)을 따른다.
 [foreign-news sanitized runtime 변경기록](../contracts/changes/20260809-pre-s5-foreign-news-sanitized-runtime.md),
 [foreign-news one-shot provider runtime 변경기록](../contracts/changes/20260810-pre-s5-foreign-news-provider-one-shot-runtime.md),
+[Voyage resumable batch 변경기록](../contracts/changes/20260812-pre-s5-voyage-resumable-batch-activation.md),
 [S4.8 sanitized projection 변경기록](../contracts/changes/20260809-s4-8-runtime-sanitized-projection.md)은
 current working tree 구현 경계와 physical-call hard gate를 기록한다.
 exact 42개 integration target 행과 exact KIS 18개 allowlist는

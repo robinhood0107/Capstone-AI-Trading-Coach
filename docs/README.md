@@ -99,7 +99,10 @@ owner-bound import/delete ticket, owner deletion activation/hard-delete, embeddi
 route만 추가한다. Voyage는
 `voyage-context-4` 1024차원 full-generation profile이고 query별 fallback/mixed profile은 없으며,
 official tokenizer 기준 110K token 이하 exact manifest-bound resumable document batch와
-EXACT30/OA112 query batch 각 1회만 허용한다. 한 번의 Window A 승인이 완료될 수 있도록 이 packet들은
+EXACT30/OA112 query batch 각 1회만 허용한다. tokenizer가 없으면 먼저 Voyage AI의 Hugging Face
+commit `8ca946072a18e398cd61f2ad0243b56d0350b1db`에 고정된 5분·1회 bootstrap packet으로
+`tokenizer.json`만 취득·검증한다. 이 observed hash 없이는 batch authoring을 시작하지 않는다.
+그 뒤 한 번의 Window A 승인이 완료될 수 있도록 document/evaluation packet들은
 최대 2시간 TTL이며 일반 runtime query의 5분 TTL은 유지한다. 성공 document/query batch·142개 source checkpoint는 재사용하고
 첫 실패 뒤 남은 provider call은 0이다. CPU BGE public 재실행은
 `TERMINALLY_SUPERSEDED_NO_FURTHER_BGE_RUN`이며 activation 대안이 아니다. 전역 public base는

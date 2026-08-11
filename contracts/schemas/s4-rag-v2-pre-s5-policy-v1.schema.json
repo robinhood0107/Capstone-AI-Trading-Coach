@@ -259,14 +259,29 @@
             "maximumGroupsPerRequest": {
               "const": 1000
             },
+            "maximumResponseBytes": {
+              "const": 16777216
+            },
             "operationalInputTokenCap": {
               "const": 110000
+            },
+            "operationalMaximumChunksPerRequest": {
+              "const": 672
+            },
+            "packetByteCapCoversEstimateRequired": {
+              "const": true
             },
             "providerInputTokenCap": {
               "const": 120000
             },
             "requestPacketPhysicalCallCap": {
               "const": 1
+            },
+            "responseEnvelopeHeadroomBytes": {
+              "const": 262144
+            },
+            "responseEstimateBytesPerChunk": {
+              "const": 24576
             },
             "sourceCheckpointReuseRequired": {
               "const": true
@@ -282,9 +297,14 @@
             "completedBatchReuseRequired",
             "maximumChunksPerRequest",
             "maximumGroupsPerRequest",
+            "maximumResponseBytes",
+            "operationalMaximumChunksPerRequest",
             "operationalInputTokenCap",
+            "packetByteCapCoversEstimateRequired",
             "providerInputTokenCap",
             "requestPacketPhysicalCallCap",
+            "responseEnvelopeHeadroomBytes",
+            "responseEstimateBytesPerChunk",
             "sourceCheckpointReuseRequired",
             "stopRemainingBatchesAfterFirstFailure",
             "tokenHeadroom"

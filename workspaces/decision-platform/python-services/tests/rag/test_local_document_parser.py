@@ -223,6 +223,39 @@ def test_text_formats_parse_to_contract_without_path_or_raw_copy(
     assert after == before
 
 
+def test_parser_replaces_nul_codepoints_before_document_ir_jsonb_boundary(
+    posix_tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = posix_tmp_path / "owner"
+    root.mkdir()
+    pdf = fitz.open()
+    pdf.new_page().insert_text((72, 72), "Native PDF evidence")
+    payload = pdf.tobytes(garbage=4, deflate=True)
+    pdf.close()
+    target = _write(root, "nul.pdf", payload)
+
+    def nul_pdf_blocks(
+        _self: LocalDocumentParser,
+        _payload: bytes,
+        *,
+        block_budget: object,
+        table_budget: object,
+    ) -> tuple[list[dict[str, Any]], bool]:
+        del block_budget, table_budget
+        return ([local_document_parser._paragraph({"page": 1}, "Alpha\x00Beta evidence.")], False)
+
+    monkeypatch.setattr(LocalDocumentParser, "_parse_pdf", nul_pdf_blocks)
+
+    result = _parse(_parser(), root, "nul.pdf")
+
+    _assert_contract(result)
+    encoded = json.dumps(result, ensure_ascii=False, sort_keys=True)
+    assert "\\u0000" not in encoded
+    assert "Alpha\ufffdBeta evidence." in encoded
+    assert target.read_bytes() == payload
+
+
 @pytest.mark.parametrize(
     ("name", "payload"),
     [

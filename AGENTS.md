@@ -97,7 +97,10 @@
   public EXACT30+OA112의 CPU BGE 재실행은
   `TERMINALLY_SUPERSEDED_NO_FURTHER_BGE_RUN`이다. Voyage `voyage-context-4` 1024는 official
   tokenizer 기준 110K token 이하의 exact manifest-bound resumable document batch와 EXACT30/OA112
-  query batch 각 1회만 허용한다. Window A packet TTL은 이 두 batch 종류에만 최대 2시간이고 일반
+  query batch 각 1회만 허용한다. local tokenizer가 없으면 fixed Voyage AI Hugging Face commit의
+  `tokenizer.json` 한 파일을 5분·physical cap 1의 exact bootstrap packet으로 먼저 취득하며,
+  observed hash 없이는 batch authoring을 시작하지 않는다. Window A packet TTL은 document/evaluation
+  batch 종류에만 최대 2시간이고 일반
   runtime query의 5분 TTL은 유지한다. 성공 document/query batch·source checkpoint를 재호출하지 않는다. 모든 batch와
   평가가 끝나기 전 CAS activation은 0이다. RAG v2 consent/import와 이 local batch runtime은
   구현돼 있지만 provider activation은 아니다. `VERTEX_API_KEY` Vertex Express API-key-only

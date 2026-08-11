@@ -71,7 +71,8 @@ def test_exact30_evaluation_batch_uses_ten_singleton_groups_in_one_physical_call
     assert result.voyage_physical_calls == 1
     assert len(result.vectors_by_query_sha256) == 10
     assert lease.claims == 1
-    assert lease.commits == [(10, 10, 10)]
+    # 평가 vector와 usage outcome은 caller가 V54에서 한 transaction으로 durable stage한다.
+    assert lease.commits == []
     assert lease.unknown == 0
     assert len(sender.requests) == 1
     body = json.loads(sender.requests[0].body)

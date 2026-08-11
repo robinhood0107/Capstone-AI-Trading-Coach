@@ -18,6 +18,7 @@ from typing import Literal
 import numpy as np
 
 from app.rag.ingest_pipeline import RagEmbeddingInput, RagTokenizer
+from app.rag.local_document_parser import LOCAL_DOCUMENT_PARSER_VERSION
 from app.rag.oa112_active_registry import Oa112ActiveRegistry, Oa112RegistryEntry
 from app.rag.oa_release_manifest import OA_TRACK_IDS
 from app.rag.rag_v2_bge_materializer import (
@@ -130,7 +131,7 @@ def prepare_oa112_public_voyage_component(
     local_cache_root: Path,
     parser: ApprovedDocumentParser | None = None,
     checkpoint_local_corpus_root: Path | None = None,
-    parser_version: str = "1.1.0",
+    parser_version: str = LOCAL_DOCUMENT_PARSER_VERSION,
     tokenizer_version: str = "bge-m3-sentencepiece-v1",
     max_workers: int = 4,
 ) -> Oa112PublicVoyagePreparation:

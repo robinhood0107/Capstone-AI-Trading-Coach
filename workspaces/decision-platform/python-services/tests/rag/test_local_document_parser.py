@@ -256,6 +256,16 @@ def test_parser_replaces_nul_codepoints_before_document_ir_jsonb_boundary(
     assert target.read_bytes() == payload
 
 
+def test_parser_version_invalidates_pre_nul_normalization_checkpoints(posix_tmp_path: Path) -> None:
+    root = posix_tmp_path / "owner"
+    root.mkdir()
+    _write(root, "evidence.txt", b"Public evidence remains deterministic.\n")
+
+    document_ir = _parse(_parser(), root, "evidence.txt")
+
+    assert document_ir["parserEvidence"]["parserVersion"] == "1.2.0"
+
+
 @pytest.mark.parametrize(
     ("name", "payload"),
     [

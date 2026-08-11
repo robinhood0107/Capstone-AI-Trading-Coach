@@ -30,9 +30,10 @@ class DocumentParseError(ValueError):
 
 BlockType = Literal["HEADING", "PARAGRAPH", "LIST", "TABLE", "FORMULA", "CAPTION"]
 
-_PARSER_VERSION: Final = "1.1.0"
+LOCAL_DOCUMENT_PARSER_VERSION: Final = "1.2.0"
+_PARSER_VERSION: Final = LOCAL_DOCUMENT_PARSER_VERSION
 _PARSER_ARTIFACT_SHA256: Final = hashlib.sha256(
-    b"capstone-s4-7d-safe-local-document-parser-v1.1"
+    b"capstone-s4-7d-safe-local-document-parser-v1.2"
 ).hexdigest()
 _SOURCE_ID = re.compile(r"^src_[a-z0-9][a-z0-9_-]{2,95}$")
 _REVISION_ID = re.compile(r"^srv_[a-z0-9][a-z0-9_-]{2,95}$")

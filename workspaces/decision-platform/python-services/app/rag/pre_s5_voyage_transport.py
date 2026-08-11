@@ -23,12 +23,16 @@ from typing import Final, Literal, NoReturn, Protocol
 import numpy as np
 from numpy.typing import NDArray
 
-from app.rag.pre_s5_provider_control import PreS5VoyageActivation
+from app.rag.pre_s5_provider_control import (
+    PreS5VoyageActivation,
+    PreS5VoyageDocumentBatchActivation,
+)
 from app.rag.pre_s5_voyage_tokenizer import PreS5VoyageTokenCounter
 from app.rag.rag_v2_external_exact30_voyage_runner import (
     VoyagePreChunkedChunk,
     VoyagePreChunkedDocumentGroup,
 )
+from app.rag.rag_v2_voyage_batching import VoyageDocumentBatch
 
 _VOYAGE_ORIGIN: Final = "https://api.voyageai.com"
 _VOYAGE_ENDPOINT: Final = "/v1/contextualizedembeddings"
@@ -37,12 +41,13 @@ _VOYAGE_MODEL: Final = "voyage-context-4"
 _VOYAGE_PROFILE: Final = "voyage_context_4_1024_v1"
 _OUTPUT_DIMENSION: Final = 1024
 _TIMEOUT_SECONDS: Final = 20
-_MAX_GROUPS: Final = 512
+_MAX_GROUPS: Final = 1_000
 # Voyage contextual embeddings accepts at most 16,000 pre-chunked chunks per request.
 # Keep this provider ceiling below the packet's 120K-token ceiling so a syntactically valid
 # local bundle can never become an undocumented oversized outbound request.
 _MAX_CHUNKS: Final = 16_000
 _MAX_CHUNK_UTF8_BYTES: Final = 64 * 1024
+_DOCUMENT_BATCH_MAX_RESPONSE_BYTES: Final = 16 * 1024 * 1024
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _SOURCE_ID = re.compile(r"^src_[a-z0-9][a-z0-9_-]{2,95}$")
 _SOURCE_REVISION_ID = re.compile(r"^srv_[a-z0-9][a-z0-9_-]{2,95}$")
@@ -54,6 +59,7 @@ _FULL_BUNDLE_SCOPES: Final[tuple[_COMPONENT_SCOPE, ...]] = (
     "OWNER_PRIVATE",
 )
 _PUBLIC_SCOPE_GROUP_COUNTS: Final[dict[str, int]] = {"EXACT30": 30, "OA112": 112}
+_DocumentActivation = PreS5VoyageActivation | PreS5VoyageDocumentBatchActivation
 
 
 class PreS5VoyageTransportError(RuntimeError):
@@ -81,6 +87,16 @@ class PreS5VoyageFullBundle:
 
     components: tuple[PreS5VoyageBundleComponent, ...]
     manifest_sha256: str
+
+
+@dataclass(frozen=True, slots=True)
+class PreS5VoyageDocumentBatchResult:
+    """raw response를 폐기한 뒤 atomic usage-commit/vector-stage에 넘기는 process-local 결과다."""
+
+    vectors: NDArray[np.float32]
+    expected_input_tokens: int
+    provider_total_tokens: int
+    actual_cost_microusd: int
 
 
 class PreS5VoyageAttemptLease(Protocol):
@@ -215,7 +231,7 @@ class PreS5VoyageContext4Transport:
     def __init__(
         self,
         *,
-        activation: PreS5VoyageActivation,
+        activation: _DocumentActivation,
         api_key: str,
         lease: PreS5VoyageAttemptLease,
         token_counter: PreS5VoyageTokenCounter,
@@ -291,15 +307,56 @@ class PreS5VoyageContext4Transport:
     def embed_full_bundle(self, *, bundle: PreS5VoyageFullBundle) -> NDArray[np.float32]:
         """all three component scopes가 packet manifest와 같을 때만 one call을 수행한다."""
 
+        if not isinstance(self._activation, PreS5VoyageActivation):
+            raise PreS5VoyageTransportError("PRE_S5_VOYAGE_FULL_BUNDLE_REQUIRED")
         initial_now = _require_utc_now(self._clock)
         if initial_now >= self._activation.expires_at:
             raise PreS5VoyageTransportError("PRE_S5_VOYAGE_ACTIVATION_EXPIRED")
         groups = _validate_full_bundle(bundle=bundle, activation=self._activation)
+        result = self._embed_validated_groups(groups)
+        if not isinstance(result, np.ndarray):  # pragma: no cover - activation type closes this branch.
+            raise PreS5VoyageTransportError("PRE_S5_VOYAGE_FULL_BUNDLE_INVALID")
+        return result
+
+    def embed_document_batch(
+        self,
+        *,
+        batch_plan_sha256: str,
+        batch: VoyageDocumentBatch,
+    ) -> PreS5VoyageDocumentBatchResult:
+        """exact plan/member/count에 결속된 batch packet 하나만 physical call 한 번으로 소비한다."""
+
+        if not isinstance(self._activation, PreS5VoyageDocumentBatchActivation):
+            raise PreS5VoyageTransportError("PRE_S5_VOYAGE_DOCUMENT_BATCH_REQUIRED")
+        initial_now = _require_utc_now(self._clock)
+        if initial_now >= self._activation.expires_at:
+            raise PreS5VoyageTransportError("PRE_S5_VOYAGE_ACTIVATION_EXPIRED")
+        groups = _validate_document_batch(
+            batch_plan_sha256=batch_plan_sha256,
+            batch=batch,
+            activation=self._activation,
+        )
+        result = self._embed_validated_groups(groups)
+        if not isinstance(result, PreS5VoyageDocumentBatchResult):  # pragma: no cover
+            raise PreS5VoyageTransportError("PRE_S5_VOYAGE_DOCUMENT_BATCH_INVALID")
+        return result
+
+    def _embed_validated_groups(
+        self,
+        groups: tuple[VoyagePreChunkedDocumentGroup, ...],
+    ) -> NDArray[np.float32] | PreS5VoyageDocumentBatchResult:
+        """manifest validation 뒤 공통 one-shot lease/request/usage 경계를 실행한다."""
+
         expected_input_tokens = _expected_input_token_count(
             groups=groups,
             token_counter=self._token_counter,
             activation=self._activation,
         )
+        if (
+            isinstance(self._activation, PreS5VoyageDocumentBatchActivation)
+            and expected_input_tokens != self._activation.expected_token_count
+        ):
+            raise PreS5VoyageTransportError("PRE_S5_VOYAGE_DOCUMENT_BATCH_INVALID")
         request = _build_request(groups=groups, activation=self._activation, api_key=self._api_key)
         if isinstance(self._sender, OutboundDisabledPreS5VoyageHttpSender):
             raise PreS5VoyageTransportError("PRE_S5_VOYAGE_OUTBOUND_DISABLED")
@@ -332,6 +389,17 @@ class PreS5VoyageContext4Transport:
         actual_cost_microusd = parsed.total_tokens * self._activation.input_microusd_per_token
         if actual_cost_microusd > self._activation.cost_cap_microusd:
             self._raise_after_attempt("PRE_S5_VOYAGE_RESPONSE_INVALID")
+        if isinstance(self._activation, PreS5VoyageDocumentBatchActivation):
+            with self._lock:
+                self._provider_total_tokens = parsed.total_tokens
+                self._expected_input_tokens = expected_input_tokens
+                self._usage_state = "PARSED_PENDING_ATOMIC_STAGE"
+            return PreS5VoyageDocumentBatchResult(
+                vectors=parsed.vectors,
+                expected_input_tokens=expected_input_tokens,
+                provider_total_tokens=parsed.total_tokens,
+                actual_cost_microusd=actual_cost_microusd,
+            )
         if not self._commit_usage(
             expected_input_tokens=expected_input_tokens,
             total_tokens=parsed.total_tokens,
@@ -466,6 +534,39 @@ def _validate_full_bundle(
     return groups
 
 
+def _validate_document_batch(
+    *,
+    batch_plan_sha256: object,
+    batch: object,
+    activation: PreS5VoyageDocumentBatchActivation,
+) -> tuple[VoyagePreChunkedDocumentGroup, ...]:
+    """packet의 exact plan/member/count와 batch의 content-free identity를 socket 전에 다시 비교한다."""
+
+    if (
+        not _is_sha256(batch_plan_sha256)
+        or batch_plan_sha256 != activation.batch_plan_sha256
+        or not isinstance(batch, VoyageDocumentBatch)
+        or batch.batch_id != activation.batch_id
+        or batch.batch_manifest_sha256 != activation.batch_manifest_sha256
+        or batch.batch_ordinal != activation.batch_ordinal
+        or batch.batch_count != activation.batch_count
+        or batch.token_count != activation.expected_token_count
+        or batch.chunk_count != activation.expected_chunk_count
+        or batch.group_count != activation.expected_group_count
+        or activation.byte_cap < batch.estimated_response_bytes
+    ):
+        raise PreS5VoyageTransportError("PRE_S5_VOYAGE_DOCUMENT_BATCH_INVALID")
+    groups = batch.groups
+    metrics = _validate_groups(groups)
+    if (
+        metrics.total_chunks != batch.chunk_count
+        or len(groups) != batch.group_count
+        or batch.token_count > 110_000
+    ):
+        raise PreS5VoyageTransportError("PRE_S5_VOYAGE_DOCUMENT_BATCH_INVALID")
+    return groups
+
+
 def _validate_full_bundle_components(
     components: object,
 ) -> tuple[PreS5VoyageBundleComponent, ...]:
@@ -560,7 +661,7 @@ def _full_bundle_manifest_sha256(
 def _build_request(
     *,
     groups: tuple[VoyagePreChunkedDocumentGroup, ...],
-    activation: PreS5VoyageActivation,
+    activation: _DocumentActivation,
     api_key: str,
 ) -> PreS5VoyageHttpRequest:
     """canonical full-bundle order를 보존하면서 byte/token caps를 socket 전 검증한다."""
@@ -604,12 +705,23 @@ def _build_request(
 def _validate_activation_shape(activation: object) -> None:
     """packet loader 외 direct construction도 fixed provider/cost contract로 다시 close한다."""
 
-    if not isinstance(activation, PreS5VoyageActivation):
+    if not isinstance(activation, (PreS5VoyageActivation, PreS5VoyageDocumentBatchActivation)):
         raise PreS5VoyageTransportError("PRE_S5_VOYAGE_ACTIVATION_INVALID")
+    manifest_is_valid = (
+        _is_sha256(activation.bundle_manifest_sha256)
+        if isinstance(activation, PreS5VoyageActivation)
+        else (
+            _is_sha256(activation.batch_plan_sha256)
+            and _is_sha256(activation.batch_manifest_sha256)
+            and 1 <= activation.expected_token_count <= 110_000
+            and 1 <= activation.expected_chunk_count <= _MAX_CHUNKS
+            and 1 <= activation.expected_group_count <= _MAX_GROUPS
+        )
+    )
     if (
         not _is_sha256(activation.packet_sha256)
         or not _is_sha256(activation.nonce_sha256)
-        or not _is_sha256(activation.bundle_manifest_sha256)
+        or not manifest_is_valid
         or not _is_sha256(activation.rate_evidence_sha256)
         or not _is_sha256(activation.tokenizer_sha256)
         or activation.provider != "VOYAGE"
@@ -621,9 +733,15 @@ def _validate_activation_shape(activation: object) -> None:
         or activation.logical_call_cap != 1
         or activation.physical_call_cap != 1
         or type(activation.token_cap) is not int
-        or not 1 <= activation.token_cap <= 120_000
+        or not 1 <= activation.token_cap <= (
+            110_000 if isinstance(activation, PreS5VoyageDocumentBatchActivation) else 120_000
+        )
         or type(activation.byte_cap) is not int
-        or not 1 <= activation.byte_cap <= 4_194_304
+        or not 1 <= activation.byte_cap <= (
+            _DOCUMENT_BATCH_MAX_RESPONSE_BYTES
+            if isinstance(activation, PreS5VoyageDocumentBatchActivation)
+            else 4_194_304
+        )
         or type(activation.cost_cap_microusd) is not int
         or not 1 <= activation.cost_cap_microusd <= 1_000_000_000
         or type(activation.input_microusd_per_token) is not int
@@ -694,7 +812,7 @@ def _validate_groups(groups: object) -> _GroupMetrics:
 def _validate_token_counter(
     *,
     token_counter: object,
-    activation: PreS5VoyageActivation,
+    activation: _DocumentActivation,
 ) -> None:
     """Only the packet-pinned official model tokenizer can authorize an outbound input count."""
 
@@ -710,7 +828,7 @@ def _expected_input_token_count(
     *,
     groups: tuple[VoyagePreChunkedDocumentGroup, ...],
     token_counter: PreS5VoyageTokenCounter,
-    activation: PreS5VoyageActivation,
+    activation: _DocumentActivation,
 ) -> int:
     """BGE chunk metadata가 아닌 official Voyage tokenizer count로 packet cap을 close한다."""
 
@@ -728,7 +846,7 @@ def _parse_response(
     *,
     response: object,
     groups: tuple[VoyagePreChunkedDocumentGroup, ...],
-    activation: PreS5VoyageActivation,
+    activation: _DocumentActivation,
 ) -> _ParsedVoyageResponse:
     """raw provider response를 retaining하지 않고 exact ordered float32 vectors/usage로 좁힌다."""
 
@@ -853,7 +971,7 @@ def _validate_http_request(request: object) -> None:
         or request.url != f"{_VOYAGE_ORIGIN}{_VOYAGE_ENDPOINT}"
         or request.timeout_seconds != _TIMEOUT_SECONDS
         or type(request.max_response_bytes) is not int
-        or not 1 <= request.max_response_bytes <= 4_194_304
+        or not 1 <= request.max_response_bytes <= _DOCUMENT_BATCH_MAX_RESPONSE_BYTES
         or not isinstance(request.expires_at, datetime)
         or request.expires_at.tzinfo is None
         or not isinstance(request.body, bytes)

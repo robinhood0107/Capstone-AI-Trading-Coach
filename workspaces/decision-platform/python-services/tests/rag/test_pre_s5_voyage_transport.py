@@ -8,7 +8,10 @@ from datetime import UTC, datetime, timedelta
 import numpy as np
 import pytest
 
-from app.rag.pre_s5_provider_control import PreS5VoyageActivation
+from app.rag.pre_s5_provider_control import (
+    PreS5VoyageActivation,
+    PreS5VoyageDocumentBatchActivation,
+)
 from app.rag.pre_s5_voyage_transport import (
     PreS5VoyageBundleComponent,
     PreS5VoyageFullBundle,
@@ -23,9 +26,87 @@ from app.rag.rag_v2_external_exact30_voyage_runner import (
     VoyagePreChunkedChunk,
     VoyagePreChunkedDocumentGroup,
 )
+from app.rag.rag_v2_voyage_batching import VoyagePreparedComponent, build_public_voyage_batch_plan
 
 
 NOW = datetime(2026, 8, 3, 1, tzinfo=UTC)
+
+
+def test_voyage_context4_transport_consumes_only_exact_manifest_bound_document_batch() -> None:
+    public = _public_bundle()
+    plan = build_public_voyage_batch_plan(
+        components=tuple(
+            VoyagePreparedComponent(
+                component_scope=component.component_scope,
+                owner_scope_sha256=component.owner_scope_sha256,
+                groups=component.groups,
+            )
+            for component in public.components
+        ),
+        token_counter=_FixtureTokenCounter(),
+    )
+    assert len(plan.batches) == 1
+    batch = plan.batches[0]
+    sender = _FixtureSender(response=_response_for_groups(batch.groups, total_tokens=batch.token_count))
+    lease = _FixtureLease()
+    activation = PreS5VoyageDocumentBatchActivation(
+        packet_sha256="a" * 64,
+        nonce_sha256="b" * 64,
+        batch_plan_sha256=plan.plan_sha256,
+        batch_id=batch.batch_id,
+        batch_manifest_sha256=batch.batch_manifest_sha256,
+        batch_ordinal=batch.batch_ordinal,
+        batch_count=batch.batch_count,
+        expected_token_count=batch.token_count,
+        expected_chunk_count=batch.chunk_count,
+        expected_group_count=batch.group_count,
+        rate_evidence_sha256="c" * 64,
+        tokenizer_sha256="e" * 64,
+        provider="VOYAGE",
+        operation="CONTEXTUALIZED_DOCUMENT_EMBEDDING",
+        origin="https://api.voyageai.com",
+        endpoint="/v1/contextualizedembeddings",
+        expires_at=NOW + timedelta(minutes=5),
+        logical_call_cap=1,
+        physical_call_cap=1,
+        token_cap=110_000,
+        byte_cap=16_777_216,
+        cost_cap_microusd=110_000,
+        input_microusd_per_token=1,
+        retry_count=0,
+        raw_artifact_count=0,
+    )
+    transport = PreS5VoyageContext4Transport(
+        activation=activation,
+        api_key="test-key",
+        lease=lease,
+        token_counter=_FixtureTokenCounter(),
+        sender=sender,
+        clock=lambda: NOW,
+    )
+
+    result = transport.embed_document_batch(batch_plan_sha256=plan.plan_sha256, batch=batch)
+
+    assert result.vectors.shape == (142, 1024)
+    assert result.expected_input_tokens == batch.token_count
+    assert result.provider_total_tokens == batch.token_count
+    assert sender.calls == 1
+    assert sender.requests[0].max_response_bytes == 16_777_216
+    assert lease.claim_calls == 1
+    assert lease.committed == []
+    with pytest.raises(PreS5VoyageTransportError, match="PRE_S5_VOYAGE_SINGLE_USE"):
+        transport.embed_document_batch(batch_plan_sha256=plan.plan_sha256, batch=batch)
+
+    fresh = PreS5VoyageContext4Transport(
+        activation=activation,
+        api_key="test-key",
+        lease=_FixtureLease(),
+        token_counter=_FixtureTokenCounter(),
+        sender=_FixtureSender(response=_response_for_groups(batch.groups, total_tokens=batch.token_count)),
+        clock=lambda: NOW,
+    )
+    with pytest.raises(PreS5VoyageTransportError, match="PRE_S5_VOYAGE_DOCUMENT_BATCH_INVALID"):
+        fresh.embed_document_batch(batch_plan_sha256="f" * 64, batch=batch)
 
 
 def test_voyage_context4_transport_binds_fixed_one_shot_request_to_full_bundle_lease() -> None:
@@ -654,8 +735,16 @@ def _all_groups(bundle: PreS5VoyageFullBundle) -> tuple[VoyagePreChunkedDocument
 
 
 def _response_for(bundle: PreS5VoyageFullBundle) -> PreS5VoyageHttpResponse:
+    return _response_for_groups(_all_groups(bundle), total_tokens=143)
+
+
+def _response_for_groups(
+    groups: tuple[VoyagePreChunkedDocumentGroup, ...],
+    *,
+    total_tokens: int,
+) -> PreS5VoyageHttpResponse:
     data: list[dict[str, object]] = []
-    for group_index, group in enumerate(_all_groups(bundle)):
+    for group_index, group in enumerate(groups):
         chunks: list[dict[str, object]] = []
         for chunk_index, chunk in enumerate(group.chunks):
             vector = [0.0] * 1024
@@ -670,7 +759,7 @@ def _response_for(bundle: PreS5VoyageFullBundle) -> PreS5VoyageHttpResponse:
                 "chunker_version": "fixture",
                 "data": data,
                 "model": "voyage-context-4",
-                "usage": {"total_tokens": 143},
+                "usage": {"total_tokens": total_tokens},
             },
             separators=(",", ":"),
         ).encode("utf-8"),

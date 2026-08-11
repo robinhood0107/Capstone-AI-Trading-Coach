@@ -10,11 +10,11 @@ import numpy as np
 
 from app.rag.authorized_retrieval import ALLOWED_RAG_TOPICS
 from app.rag.rag_v2_external_exact30_voyage_runner import (
-    PublicVoyageSourceMetadata,
     RagV2PublicVoyageComponentContext,
     RagV2VoyageMaterializedPublicDocument,
     external_exact30_voyage_source_member_digest,
 )
+from app.rag.rag_v2_voyage_types import PublicVoyageSourceMetadata
 
 _VOYAGE_PROFILE_ID = "voyage_context_4_1024_v1"
 _COMPONENT_SCOPE = "EXACT30"

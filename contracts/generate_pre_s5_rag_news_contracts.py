@@ -799,9 +799,12 @@ def _status_activation_schema() -> dict[str, Any]:
 def _rag_policy_schema() -> dict[str, Any]:
     voyage = _closed(
         required=[
+            "activationMode",
             "activationEvidenceRequired",
             "batchApiAllowed",
+            "bgePublicExecution",
             "dimension",
+            "documentBatchLimits",
             "filesApiAllowed",
             "fullBundleScope",
             "generationFallback",
@@ -811,11 +814,13 @@ def _rag_policy_schema() -> dict[str, Any]:
             "outboundCallsAllowed",
             "orderedPrechunkedDocumentGroupsRequired",
             "partialProfileMixAllowed",
+            "queryEvaluationBatches",
             "queryUnitFallbackAllowed",
             "retryCount",
             "runtimeEnvironmentVariable",
         ],
         properties={
+            "activationMode": {"const": "EXACT_MANIFEST_BOUND_RESUMABLE_BATCH_SET"},
             "activationEvidenceRequired": {
                 "prefixItems": [
                     {"const": "ORGANIZATION_TRAINING_OPT_OUT"},
@@ -827,7 +832,46 @@ def _rag_policy_schema() -> dict[str, Any]:
                 "type": "array",
             },
             "batchApiAllowed": {"const": False},
+            "bgePublicExecution": {
+                "const": "TERMINALLY_SUPERSEDED_NO_FURTHER_BGE_RUN"
+            },
             "dimension": {"const": 1024},
+            "documentBatchLimits": _closed(
+                required=[
+                    "completedBatchReuseRequired",
+                    "maximumChunksPerRequest",
+                    "maximumGroupsPerRequest",
+                    "maximumPacketTtlSeconds",
+                    "maximumResponseBytes",
+                    "operationalMaximumChunksPerRequest",
+                    "operationalInputTokenCap",
+                    "packetByteCapCoversEstimateRequired",
+                    "providerInputTokenCap",
+                    "requestPacketPhysicalCallCap",
+                    "responseEnvelopeHeadroomBytes",
+                    "responseEstimateBytesPerChunk",
+                    "sourceCheckpointReuseRequired",
+                    "stopRemainingBatchesAfterFirstFailure",
+                    "tokenHeadroom",
+                ],
+                properties={
+                    "completedBatchReuseRequired": {"const": True},
+                    "maximumChunksPerRequest": {"const": 16000},
+                    "maximumGroupsPerRequest": {"const": 1000},
+                    "maximumPacketTtlSeconds": {"const": 7200},
+                    "maximumResponseBytes": {"const": 16777216},
+                    "operationalMaximumChunksPerRequest": {"const": 672},
+                    "operationalInputTokenCap": {"const": 110000},
+                    "packetByteCapCoversEstimateRequired": {"const": True},
+                    "providerInputTokenCap": {"const": 120000},
+                    "requestPacketPhysicalCallCap": {"const": 1},
+                    "responseEnvelopeHeadroomBytes": {"const": 262144},
+                    "responseEstimateBytesPerChunk": {"const": 24576},
+                    "sourceCheckpointReuseRequired": {"const": True},
+                    "stopRemainingBatchesAfterFirstFailure": {"const": True},
+                    "tokenHeadroom": {"const": 10000},
+                },
+            ),
             "filesApiAllowed": {"const": False},
             "fullBundleScope": {
                 "prefixItems": [
@@ -856,7 +900,9 @@ def _rag_policy_schema() -> dict[str, Any]:
                     "sourceScope": {"const": "OWNER_PRIVATE"},
                 },
             ),
-            "generationFallback": {"const": "FULL_BUNDLE_REBUILD_EVALUATE_CAS"},
+            "generationFallback": {
+                "const": "NO_BGE_FALLBACK_RESUME_VOYAGE_BATCHES_EVALUATE_CAS"
+            },
             "modelId": {"const": "voyage-context-4"},
             "officialTokenizer": _closed(
                 required=[
@@ -879,6 +925,26 @@ def _rag_policy_schema() -> dict[str, Any]:
             "outboundCallsAllowed": {"const": False},
             "orderedPrechunkedDocumentGroupsRequired": {"const": True},
             "partialProfileMixAllowed": {"const": False},
+            "queryEvaluationBatches": _closed(
+                required=[
+                    "componentBatchCount",
+                    "completedBatchReuseRequired",
+                    "durableVectorStageRequired",
+                    "exact30LogicalQueryCount",
+                    "maximumPacketTtlSeconds",
+                    "oa112LogicalQueryCount",
+                    "singletonQueryGroupsRequired",
+                ],
+                properties={
+                    "componentBatchCount": {"const": 2},
+                    "completedBatchReuseRequired": {"const": True},
+                    "durableVectorStageRequired": {"const": True},
+                    "exact30LogicalQueryCount": {"const": 10},
+                    "maximumPacketTtlSeconds": {"const": 7200},
+                    "oa112LogicalQueryCount": {"const": 112},
+                    "singletonQueryGroupsRequired": {"const": True},
+                },
+            ),
             "queryUnitFallbackAllowed": {"const": False},
             "retryCount": {"const": 0},
             "runtimeEnvironmentVariable": {"const": "VOYAGE_API_KEY"},
@@ -1986,12 +2052,31 @@ def _rag_policy_fixture() -> dict[str, Any]:
             "verifierAllowed": False,
         },
         "voyage": {
+            "activationMode": "EXACT_MANIFEST_BOUND_RESUMABLE_BATCH_SET",
             "activationEvidenceRequired": [
                 "ORGANIZATION_TRAINING_OPT_OUT",
                 "PAYMENT_METHOD_PRIVACY_EVIDENCE",
             ],
             "batchApiAllowed": False,
+            "bgePublicExecution": "TERMINALLY_SUPERSEDED_NO_FURTHER_BGE_RUN",
             "dimension": 1024,
+            "documentBatchLimits": {
+                "completedBatchReuseRequired": True,
+                "maximumChunksPerRequest": 16000,
+                "maximumGroupsPerRequest": 1000,
+                "maximumPacketTtlSeconds": 7200,
+                "maximumResponseBytes": 16777216,
+                "operationalMaximumChunksPerRequest": 672,
+                "operationalInputTokenCap": 110000,
+                "packetByteCapCoversEstimateRequired": True,
+                "providerInputTokenCap": 120000,
+                "requestPacketPhysicalCallCap": 1,
+                "responseEnvelopeHeadroomBytes": 262144,
+                "responseEstimateBytesPerChunk": 24576,
+                "sourceCheckpointReuseRequired": True,
+                "stopRemainingBatchesAfterFirstFailure": True,
+                "tokenHeadroom": 10000,
+            },
             "filesApiAllowed": False,
             "fullBundleScope": ["EXACT30", "OA112", "OWNER_PRIVATE"],
             "ownerPrivateSentinel": {
@@ -2001,7 +2086,7 @@ def _rag_policy_fixture() -> dict[str, Any]:
                 "publicBaseOnly": True,
                 "sourceScope": "OWNER_PRIVATE",
             },
-            "generationFallback": "FULL_BUNDLE_REBUILD_EVALUATE_CAS",
+            "generationFallback": "NO_BGE_FALLBACK_RESUME_VOYAGE_BATCHES_EVALUATE_CAS",
             "modelId": "voyage-context-4",
             "officialTokenizer": {
                 "artifactAutoDownloadAllowed": False,
@@ -2014,6 +2099,15 @@ def _rag_policy_fixture() -> dict[str, Any]:
             "outboundCallsAllowed": False,
             "orderedPrechunkedDocumentGroupsRequired": True,
             "partialProfileMixAllowed": False,
+            "queryEvaluationBatches": {
+                "componentBatchCount": 2,
+                "completedBatchReuseRequired": True,
+                "durableVectorStageRequired": True,
+                "exact30LogicalQueryCount": 10,
+                "maximumPacketTtlSeconds": 7200,
+                "oa112LogicalQueryCount": 112,
+                "singletonQueryGroupsRequired": True,
+            },
             "queryUnitFallbackAllowed": False,
             "retryCount": 0,
             "runtimeEnvironmentVariable": "VOYAGE_API_KEY",
@@ -2414,13 +2508,32 @@ def _catalog() -> dict[str, Any]:
                 "verifierAllowed": False,
             },
             "voyage": {
+                "activationMode": "EXACT_MANIFEST_BOUND_RESUMABLE_BATCH_SET",
                 "activationEvidenceRequired": [
                     "ORGANIZATION_TRAINING_OPT_OUT",
                     "PAYMENT_METHOD_PRIVACY_EVIDENCE",
                 ],
                 "batchApiAllowed": False,
+                "bgePublicExecution": "TERMINALLY_SUPERSEDED_NO_FURTHER_BGE_RUN",
                 "dimension": 1024,
-                "generationFallback": "FULL_BUNDLE_REBUILD_EVALUATE_CAS",
+                "documentBatchLimits": {
+                    "completedBatchReuseRequired": True,
+                    "maximumChunksPerRequest": 16000,
+                    "maximumGroupsPerRequest": 1000,
+                    "maximumPacketTtlSeconds": 7200,
+                    "maximumResponseBytes": 16777216,
+                    "operationalMaximumChunksPerRequest": 672,
+                    "operationalInputTokenCap": 110000,
+                    "packetByteCapCoversEstimateRequired": True,
+                    "providerInputTokenCap": 120000,
+                    "requestPacketPhysicalCallCap": 1,
+                    "responseEnvelopeHeadroomBytes": 262144,
+                    "responseEstimateBytesPerChunk": 24576,
+                    "sourceCheckpointReuseRequired": True,
+                    "stopRemainingBatchesAfterFirstFailure": True,
+                    "tokenHeadroom": 10000,
+                },
+                "generationFallback": "NO_BGE_FALLBACK_RESUME_VOYAGE_BATCHES_EVALUATE_CAS",
                 "filesApiAllowed": False,
                 "fullBundleScope": ["EXACT30", "OA112", "OWNER_PRIVATE"],
                 "ownerPrivateSentinel": {
@@ -2442,6 +2555,15 @@ def _catalog() -> dict[str, Any]:
                 "outboundCallsAllowed": False,
                 "orderedPrechunkedDocumentGroupsRequired": True,
                 "partialProfileMixAllowed": False,
+                "queryEvaluationBatches": {
+                    "componentBatchCount": 2,
+                    "completedBatchReuseRequired": True,
+                    "durableVectorStageRequired": True,
+                    "exact30LogicalQueryCount": 10,
+                    "maximumPacketTtlSeconds": 7200,
+                    "oa112LogicalQueryCount": 112,
+                    "singletonQueryGroupsRequired": True,
+                },
                 "queryUnitFallbackAllowed": False,
                 "retryCount": 0,
                 "runtimeEnvironmentVariable": "VOYAGE_API_KEY",
@@ -2989,10 +3111,48 @@ def validate_semantics(schema_id: str, payload: object) -> None:
         vertex = value.get("vertex")
         if not isinstance(voyage, Mapping) or not isinstance(vertex, Mapping):
             raise ContractValidationError("RAG provider policy is required")
-        if voyage.get("queryUnitFallbackAllowed") or voyage.get("generationFallback") != (
-            "FULL_BUNDLE_REBUILD_EVALUATE_CAS"
+        if (
+            voyage.get("queryUnitFallbackAllowed")
+            or voyage.get("generationFallback")
+            != "NO_BGE_FALLBACK_RESUME_VOYAGE_BATCHES_EVALUATE_CAS"
+            or voyage.get("activationMode")
+            != "EXACT_MANIFEST_BOUND_RESUMABLE_BATCH_SET"
+            or voyage.get("bgePublicExecution")
+            != "TERMINALLY_SUPERSEDED_NO_FURTHER_BGE_RUN"
         ):
-            raise ContractValidationError("Voyage fallback must rebuild the full bundle")
+            raise ContractValidationError(
+                "Voyage must resume exact batches without a BGE fallback"
+            )
+        document_limits = voyage.get("documentBatchLimits")
+        if not isinstance(document_limits, Mapping) or document_limits != {
+            "completedBatchReuseRequired": True,
+            "maximumChunksPerRequest": 16000,
+            "maximumGroupsPerRequest": 1000,
+            "maximumPacketTtlSeconds": 7200,
+            "maximumResponseBytes": 16777216,
+            "operationalMaximumChunksPerRequest": 672,
+            "operationalInputTokenCap": 110000,
+            "packetByteCapCoversEstimateRequired": True,
+            "providerInputTokenCap": 120000,
+            "requestPacketPhysicalCallCap": 1,
+            "responseEnvelopeHeadroomBytes": 262144,
+            "responseEstimateBytesPerChunk": 24576,
+            "sourceCheckpointReuseRequired": True,
+            "stopRemainingBatchesAfterFirstFailure": True,
+            "tokenHeadroom": 10000,
+        }:
+            raise ContractValidationError("Voyage document batch limits drifted")
+        query_batches = voyage.get("queryEvaluationBatches")
+        if not isinstance(query_batches, Mapping) or query_batches != {
+            "componentBatchCount": 2,
+            "completedBatchReuseRequired": True,
+            "durableVectorStageRequired": True,
+            "exact30LogicalQueryCount": 10,
+            "maximumPacketTtlSeconds": 7200,
+            "oa112LogicalQueryCount": 112,
+            "singletonQueryGroupsRequired": True,
+        }:
+            raise ContractValidationError("Voyage evaluation batch set drifted")
         official_tokenizer = voyage.get("officialTokenizer")
         if not isinstance(official_tokenizer, Mapping) or any(
             (

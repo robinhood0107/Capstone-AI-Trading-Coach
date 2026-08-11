@@ -83,7 +83,6 @@ def write_public_voyage_checkpoint(
         scope=scope,
         raw_content_sha256=prepared.document.raw_content_sha256,
         source_revision_id=prepared.document.source_revision_id,
-        source_revision_sha256=prepared.source_revision_sha256,
         parser_version=parser_version,
         tokenizer_version=tokenizer_version,
     )
@@ -122,6 +121,7 @@ def write_public_voyage_checkpoint(
         expected_identity=identity,
         checkpoint_key=checkpoint_key,
         reused=reused,
+        expected_source_revision_sha256=prepared.source_revision_sha256,
     )
     return loaded
 
@@ -150,35 +150,21 @@ def load_public_voyage_checkpoint(
     ):
         raise RagV2VoyageCheckpointError("VOYAGE_CHECKPOINT_IDENTITY")
     scope_root = _require_checkpoint_directories(local_corpus_root, scope=component_scope)
-    if expected_source_revision_sha256 is None:
-        candidates = _find_identity_candidate(
-            scope_root=scope_root,
-            component_scope=component_scope,
-            expected_raw_content_sha256=expected_raw_content_sha256,
-            expected_source_revision_id=expected_source_revision_id,
-            parser_version=parser_version,
-            tokenizer_version=tokenizer_version,
-        )
-        if len(candidates) != 1:
-            raise RagV2VoyageCheckpointError("VOYAGE_CHECKPOINT_IDENTITY")
-        target, identity = candidates[0]
-        checkpoint_key = target.stem
-    else:
-        identity = _identity(
-            scope=component_scope,
-            raw_content_sha256=expected_raw_content_sha256,
-            source_revision_id=expected_source_revision_id,
-            source_revision_sha256=expected_source_revision_sha256,
-            parser_version=parser_version,
-            tokenizer_version=tokenizer_version,
-        )
-        checkpoint_key = _canonical_hash(identity)
-        target = scope_root / f"{checkpoint_key}.json"
+    identity = _identity(
+        scope=component_scope,
+        raw_content_sha256=expected_raw_content_sha256,
+        source_revision_id=expected_source_revision_id,
+        parser_version=parser_version,
+        tokenizer_version=tokenizer_version,
+    )
+    checkpoint_key = _canonical_hash(identity)
+    target = scope_root / f"{checkpoint_key}.json"
     return _load_exact(
         path=target,
         expected_identity=identity,
         checkpoint_key=checkpoint_key,
         reused=True,
+        expected_source_revision_sha256=expected_source_revision_sha256,
     )
 
 
@@ -210,65 +196,27 @@ def load_optional_public_voyage_checkpoint(
     except OSError as error:
         raise RagV2VoyageCheckpointError("VOYAGE_CHECKPOINT_BOUNDARY") from error
     scope_root = _require_checkpoint_directories(local_corpus_root, scope=component_scope)
-    candidates = _find_identity_candidate(
-        scope_root=scope_root,
-        component_scope=component_scope,
-        expected_raw_content_sha256=expected_raw_content_sha256,
-        expected_source_revision_id=expected_source_revision_id,
+    identity = _identity(
+        scope=component_scope,
+        raw_content_sha256=expected_raw_content_sha256,
+        source_revision_id=expected_source_revision_id,
         parser_version=parser_version,
         tokenizer_version=tokenizer_version,
     )
-    if not candidates:
+    checkpoint_key = _canonical_hash(identity)
+    target = scope_root / f"{checkpoint_key}.json"
+    try:
+        target.lstat()
+    except FileNotFoundError:
         return None
-    if len(candidates) != 1:
-        raise RagV2VoyageCheckpointError("VOYAGE_CHECKPOINT_IDENTITY")
-    target, identity = candidates[0]
+    except OSError as error:
+        raise RagV2VoyageCheckpointError("VOYAGE_CHECKPOINT_BOUNDARY") from error
     return _load_exact(
         path=target,
         expected_identity=identity,
-        checkpoint_key=target.stem,
+        checkpoint_key=checkpoint_key,
         reused=True,
     )
-
-
-def _find_identity_candidate(
-    *,
-    scope_root: Path,
-    component_scope: PublicScope,
-    expected_raw_content_sha256: str,
-    expected_source_revision_id: str,
-    parser_version: str,
-    tokenizer_version: str,
-) -> list[tuple[Path, dict[str, object]]]:
-    """source revision digest가 caller에 없을 때 bounded directory에서 exact public identity만 찾는다."""
-
-    candidates: list[tuple[Path, dict[str, object]]] = []
-    try:
-        leaves = tuple(scope_root.iterdir())
-    except OSError as error:
-        raise RagV2VoyageCheckpointError("VOYAGE_CHECKPOINT_BOUNDARY") from error
-    if len(leaves) > 1_000:
-        raise RagV2VoyageCheckpointError("VOYAGE_CHECKPOINT_BOUNDARY")
-    for leaf in leaves:
-        if not re.fullmatch(r"[0-9a-f]{64}\.json", leaf.name):
-            raise RagV2VoyageCheckpointError("VOYAGE_CHECKPOINT_BOUNDARY")
-        decoded = _decode_envelope(_read_secure_file(leaf))
-        identity = decoded.get("identity")
-        if not isinstance(identity, dict):
-            raise RagV2VoyageCheckpointError("VOYAGE_CHECKPOINT_IDENTITY")
-        expected_subset = {
-            "componentScope": component_scope,
-            "parserVersion": parser_version,
-            "rawContentSha256": expected_raw_content_sha256,
-            "schemaVersion": 1,
-            "sourceRevisionId": expected_source_revision_id,
-            "tokenizerVersion": tokenizer_version,
-        }
-        if all(identity.get(key) == value for key, value in expected_subset.items()):
-            if _canonical_hash(identity) != leaf.stem:
-                raise RagV2VoyageCheckpointError("VOYAGE_CHECKPOINT_DIGEST")
-            candidates.append((leaf, identity))
-    return candidates
 
 
 def _load_exact(
@@ -277,6 +225,7 @@ def _load_exact(
     expected_identity: dict[str, object],
     checkpoint_key: str,
     reused: bool,
+    expected_source_revision_sha256: str | None = None,
 ) -> PublicVoyageCheckpoint:
     decoded = _decode_envelope(_read_secure_file(path))
     if decoded.get("schemaVersion") != _SCHEMA_VERSION or decoded.get("identity") != expected_identity:
@@ -290,6 +239,11 @@ def _load_exact(
         metadata=metadata,
         parser_version=str(expected_identity["parserVersion"]),
     )
+    if (
+        expected_source_revision_sha256 is not None
+        and prepared.source_revision_sha256 != expected_source_revision_sha256
+    ):
+        raise RagV2VoyageCheckpointError("VOYAGE_CHECKPOINT_IDENTITY")
     return PublicVoyageCheckpoint(
         checkpoint_key=checkpoint_key,
         path=path,
@@ -304,7 +258,6 @@ def _identity(
     scope: PublicScope,
     raw_content_sha256: str,
     source_revision_id: str,
-    source_revision_sha256: str,
     parser_version: str,
     tokenizer_version: str,
 ) -> dict[str, object]:
@@ -314,7 +267,6 @@ def _identity(
         "rawContentSha256": raw_content_sha256,
         "schemaVersion": 1,
         "sourceRevisionId": source_revision_id,
-        "sourceRevisionSha256": source_revision_sha256,
         "tokenizerVersion": tokenizer_version,
     }
 

@@ -24,8 +24,10 @@ from app.rag.oa_release_manifest import OA_TRACK_IDS
 from app.rag.pre_s5_provider_control import (
     PreS5ProviderActivationError,
     PreS5ProviderBinding,
+    PreS5VoyageEvaluationBatchActivation,
     load_pre_s5_voyage_evaluation_batch_activation,
     load_pre_s5_voyage_evaluation_query_activation,
+    pre_s5_voyage_evaluation_batch_manifest_sha256,
 )
 from app.rag.pre_s5_voyage_evaluation_batch_transport import (
     PreS5VoyageEvaluationBatchTransport,
@@ -36,7 +38,7 @@ from app.rag.pre_s5_voyage_query_transport import (
     PreS5VoyageQueryTransportError,
     PreS5VoyageQueryUsageReservationPort,
 )
-from app.rag.pre_s5_voyage_transport import PreS5VoyageHttpSender
+from app.rag.pre_s5_voyage_transport import PreS5VoyageAttemptLease, PreS5VoyageHttpSender
 from app.rag.pre_s5_voyage_tokenizer import (
     LocalPreS5VoyageContext4Tokenizer,
     PreS5VoyageTokenizerError,
@@ -97,6 +99,32 @@ class VoyageEvaluationQueryEmbedder(Protocol):
 
     def embed_query(self, question: str) -> Sequence[float]:
         """Protocol compatibility only; contextual evaluation must use the receipt-bearing method above."""
+
+
+class PreS5VoyageEvaluationBatchRepositoryPort(PreS5VoyageQueryUsageReservationPort, Protocol):
+    """평가 usage lease와 durable component vector stage/resume를 함께 제공한다."""
+
+    def resume_evaluation_batch(
+        self,
+        *,
+        scope_claim_sha256: str,
+        component_scope: Literal["EXACT30", "OA112"],
+        query_manifest_sha256: str,
+        expected_query_sha256s: Sequence[str],
+    ) -> Mapping[str, tuple[float, ...]] | None:
+        """완료된 component vector set 또는 아직 미시작인 None을 반환한다."""
+
+    def stage_evaluation_batch(
+        self,
+        *,
+        activation: PreS5VoyageEvaluationBatchActivation,
+        lease: PreS5VoyageAttemptLease,
+        vectors_by_query_sha256: Mapping[str, Sequence[float]],
+        expected_input_tokens: int,
+        total_tokens: int,
+        actual_cost_microusd: int,
+    ) -> None:
+        """provider usage와 vector set을 한 transaction으로 durable stage한다."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -266,7 +294,7 @@ class PacketGatedPublicVoyageEvaluationBatchEmbedder:
         local_root: Path,
         binding: PreS5ProviderBinding,
         api_key: str,
-        usage_repository: PreS5VoyageQueryUsageReservationPort,
+        usage_repository: PreS5VoyageEvaluationBatchRepositoryPort,
         exact30_queries: Sequence[PublicBgeEvaluationQuery],
         oa112_queries: Sequence[PublicBgeEvaluationQuery],
         tokenizer_sha256: str,
@@ -356,6 +384,32 @@ class PacketGatedPublicVoyageEvaluationBatchEmbedder:
         """lock 아래 한 번만 packet/lease/provider를 소비해 concurrent partial reload를 차단한다."""
 
         queries = self._queries[component_scope]
+        typed_scope = cast(Literal["EXACT30", "OA112"], component_scope)
+        query_manifest_sha256 = pre_s5_voyage_evaluation_batch_manifest_sha256(
+            component_scope=component_scope,
+            query_id_questions=queries,
+            scope_claim_id=scope_claim_id,
+        )
+        scope_claim_sha256 = hashlib.sha256(scope_claim_id.encode("utf-8")).hexdigest()
+        query_sha256s = tuple(
+            hashlib.sha256(question.encode("utf-8")).hexdigest() for _, question in queries
+        )
+        resumed = self._usage_repository.resume_evaluation_batch(
+            scope_claim_sha256=scope_claim_sha256,
+            component_scope=typed_scope,
+            query_manifest_sha256=query_manifest_sha256,
+            expected_query_sha256s=query_sha256s,
+        )
+        if resumed is not None:
+            if set(resumed) & set(self._vectors):
+                raise RagV2QueryEmbeddingError(RagV2RetrievalFailureCode.QUERY_EMBEDDING_INVALID)
+            self._vectors.update(resumed)
+            self._loaded_components.add(component_scope)
+            # receipt는 이번 process 호출 수가 아니라 generation ledger의 exact physical count다.
+            self._physical_attempts[component_scope] += 1
+            return 1
+        physical_calls = 0
+        lease = None
         try:
             tokenizer = LocalPreS5VoyageContext4Tokenizer.from_local_root(
                 local_root=self._local_root,
@@ -386,13 +440,27 @@ class PacketGatedPublicVoyageEvaluationBatchEmbedder:
                 token_counter=tokenizer,
                 sender=self._sender,
             ).embed(query_id_questions=queries)
+            physical_calls = result.voyage_physical_calls
+            self._usage_repository.stage_evaluation_batch(
+                activation=activation,
+                lease=lease,
+                vectors_by_query_sha256=result.vectors_by_query_sha256,
+                expected_input_tokens=result.expected_input_tokens,
+                total_tokens=result.total_tokens,
+                actual_cost_microusd=result.actual_cost_microusd,
+            )
         except (
             PreS5ProviderActivationError,
             PreS5VoyageTokenizerError,
             PreS5VoyageEvaluationBatchTransportError,
             ValueError,
         ) as error:
-            physical_calls = getattr(error, "voyage_physical_calls", 0)
+            physical_calls = max(physical_calls, getattr(error, "voyage_physical_calls", 0))
+            if physical_calls == 1 and lease is not None:
+                try:
+                    lease.mark_unknown_billing()
+                except Exception:
+                    pass
             if physical_calls in {0, 1}:
                 self._physical_attempts[component_scope] += physical_calls
             raise RagV2QueryEmbeddingError(

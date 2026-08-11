@@ -55,13 +55,14 @@ class PreS5VoyageEvaluationBatchUsagePort(Protocol):
 
 @dataclass(frozen=True, slots=True)
 class PreS5VoyageEvaluationBatchResult:
-    """응답 원문을 폐기한 뒤 process 안에서만 사용하는 query vector 집합이다."""
+    """응답 원문을 폐기하고 DB atomic stage에 넘길 vector와 usage projection이다."""
 
     component_scope: str
     query_manifest_sha256: str
     vectors_by_query_sha256: Mapping[str, tuple[float, ...]]
     expected_input_tokens: int
     total_tokens: int
+    actual_cost_microusd: int
     voyage_physical_calls: int = 1
 
 
@@ -151,11 +152,6 @@ class PreS5VoyageEvaluationBatchTransport:
                 raise PreS5VoyageEvaluationBatchTransportError(
                     "PRE_S5_VOYAGE_EVALUATION_BATCH_RESPONSE"
                 )
-            self._lease.commit(
-                expected_input_tokens=expected_tokens,
-                total_tokens=total_tokens,
-                actual_cost_microusd=actual_cost,
-            )
         except Exception:
             self._unknown("PRE_S5_VOYAGE_EVALUATION_BATCH_RESPONSE")
         return PreS5VoyageEvaluationBatchResult(
@@ -167,6 +163,7 @@ class PreS5VoyageEvaluationBatchTransport:
             },
             expected_input_tokens=expected_tokens,
             total_tokens=total_tokens,
+            actual_cost_microusd=actual_cost,
         )
 
     def _claim(self) -> None:

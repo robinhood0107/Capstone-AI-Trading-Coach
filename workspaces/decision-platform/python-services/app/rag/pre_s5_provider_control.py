@@ -640,7 +640,7 @@ def load_pre_s5_voyage_evaluation_batch_activation(
 ) -> PreS5VoyageEvaluationBatchActivation:
     """closed component packet을 ordered query manifest·scope·official token count에 결속한다."""
 
-    query_manifest_sha256 = _evaluation_batch_manifest_sha256(
+    query_manifest_sha256 = pre_s5_voyage_evaluation_batch_manifest_sha256(
         component_scope=component_scope,
         query_id_questions=query_id_questions,
         scope_claim_id=scope_claim_id,
@@ -927,7 +927,7 @@ def _validate_voyage_document_batch_packet(
         raise PreS5ProviderActivationError("PRE_S5_PROVIDER_PACKET_INVALID") from error
     if (
         expires_at <= issued_at
-        or expires_at - issued_at > timedelta(minutes=5)
+        or expires_at - issued_at > timedelta(hours=2)
         or now < issued_at
         or now >= expires_at
     ):
@@ -1175,7 +1175,7 @@ def _validate_voyage_evaluation_batch_packet(
         raise PreS5ProviderActivationError("PRE_S5_PROVIDER_PACKET_INVALID") from error
     if (
         expires_at <= issued_at
-        or expires_at - issued_at > timedelta(minutes=5)
+        or expires_at - issued_at > timedelta(hours=2)
         or now < issued_at
         or now >= expires_at
     ):
@@ -1420,7 +1420,7 @@ def _validate_query_binding_input(*, question: str, scope_claim_id: str) -> None
         raise PreS5ProviderActivationError("PRE_S5_PROVIDER_PACKET_INVALID")
 
 
-def _evaluation_batch_manifest_sha256(
+def pre_s5_voyage_evaluation_batch_manifest_sha256(
     *,
     component_scope: str,
     query_id_questions: Sequence[tuple[str, str]],

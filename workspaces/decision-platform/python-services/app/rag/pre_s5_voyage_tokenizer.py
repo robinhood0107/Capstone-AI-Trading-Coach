@@ -100,19 +100,9 @@ class LocalPreS5VoyageContext4Tokenizer:
         )
         if before != after or len(raw) != before[-1][2]:
             raise PreS5VoyageTokenizerError("PRE_S5_VOYAGE_OFFICIAL_TOKENIZER_BOUNDARY")
-        actual_sha256 = hashlib.sha256(raw).hexdigest()
+        tokenizer, actual_sha256 = validate_pre_s5_voyage_tokenizer_bytes(raw)
         if actual_sha256 != expected_sha256:
             raise PreS5VoyageTokenizerError("PRE_S5_VOYAGE_OFFICIAL_TOKENIZER_SHA256")
-        try:
-            source = raw.decode("utf-8", errors="strict")
-            decoded = json.loads(source)
-            _validate_tokenizer_json_shape(decoded)
-            tokenizer = Tokenizer.from_str(source)
-        except (UnicodeDecodeError, json.JSONDecodeError, ValueError, Exception) as error:
-            # `tokenizers` exposes several Rust-origin exception classes; their detail can include
-            # artifact text, so normalize every parser failure to a typed non-content marker.
-            del error
-            raise PreS5VoyageTokenizerError("PRE_S5_VOYAGE_OFFICIAL_TOKENIZER_INVALID") from None
         return cls(_tokenizer=tokenizer, _tokenizer_sha256=actual_sha256)
 
     @property
@@ -157,6 +147,27 @@ class LocalPreS5VoyageContext4Tokenizer:
         if type(total) is not int or not 1 <= total <= token_cap:
             raise PreS5VoyageTokenizerError("PRE_S5_VOYAGE_OFFICIAL_TOKENIZER_CAP")
         return total
+
+
+def validate_pre_s5_voyage_tokenizer_bytes(raw: bytes) -> tuple[Tokenizer, str]:
+    """취득 직후와 runtime load가 동일한 bounded parser로 exact artifact bytes를 검증한다.
+
+    반환값은 process-local tokenizer와 SHA-256뿐이며 원문이나 vocabulary를 receipt/log에
+    투영하지 않는다. acquisition은 이 검증이 끝난 뒤에만 fixed local leaf를 publish한다.
+    """
+
+    if not isinstance(raw, bytes) or not 1 <= len(raw) <= _MAX_TOKENIZER_BYTES:
+        raise PreS5VoyageTokenizerError("PRE_S5_VOYAGE_OFFICIAL_TOKENIZER_INVALID")
+    try:
+        source = raw.decode("utf-8", errors="strict")
+        decoded = json.loads(source)
+        _validate_tokenizer_json_shape(decoded)
+        tokenizer = Tokenizer.from_str(source)
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError, Exception) as error:
+        # `tokenizers`의 Rust-origin 예외에는 artifact 일부가 포함될 수 있어 detail을 버린다.
+        del error
+        raise PreS5VoyageTokenizerError("PRE_S5_VOYAGE_OFFICIAL_TOKENIZER_INVALID") from None
+    return tokenizer, hashlib.sha256(raw).hexdigest()
 
 
 def _secure_directory(path: Path) -> tuple[int, int, int, int, int]:

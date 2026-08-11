@@ -88,8 +88,14 @@ class _FixtureFullBundleEmbedder:
 
 
 class _FixtureApprovedParser:
-    def __init__(self, entries: tuple[Oa112RegistryEntry, ...]) -> None:
+    def __init__(
+        self,
+        entries: tuple[Oa112RegistryEntry, ...],
+        *,
+        multichunk_source_id: str | None = None,
+    ) -> None:
         self._entries = {entry.source_id: entry for entry in entries}
+        self._multichunk_source_id = multichunk_source_id
         self.calls: list[dict[str, object]] = []
 
     def parse_approved_document(self, **kwargs: object) -> dict[str, object]:
@@ -98,6 +104,9 @@ class _FixtureApprovedParser:
         assert isinstance(source_id, str)
         entry = self._entries[source_id]
         text = f"Approved OA evidence {entry.source_id} stays in its immutable source generation."
+        if source_id == self._multichunk_source_id:
+            # production OA PDF처럼 둘 이상의 canonical chunk를 만들어 DB digest 구분자를 검증한다.
+            text = " ".join(f"evidence-{index:04d}" for index in range(650))
         blocks = [
             {
                 "blockType": "PARAGRAPH",
@@ -365,7 +374,10 @@ def test_public_voyage_writer_stages_and_evaluates_both_public_components(
         tokenizer=_FixtureTokenizer(),
         oa112_registry=registry,
         oa112_local_cache_root=tmp_path,
-        oa112_parser=_FixtureApprovedParser(registry.active_entries),
+        oa112_parser=_FixtureApprovedParser(
+            registry.active_entries,
+            multichunk_source_id=registry.active_entries[0].source_id,
+        ),
         exact30_corpus=load_external_processing_corpus(),
     )
     materialization = materialize_public_base_voyage_full_bundle(

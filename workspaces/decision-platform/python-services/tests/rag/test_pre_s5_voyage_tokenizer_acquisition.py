@@ -131,6 +131,25 @@ def test_acquisition_refuses_reuse_or_existing_destination_before_fetch(posix_tm
     assert len(fetcher.calls) == 1
 
 
+def test_acquisition_rechecks_fetcher_byte_cap_before_parsing(posix_tmp_path: Path) -> None:
+    _write_packet(posix_tmp_path)
+
+    with pytest.raises(
+        PreS5VoyageTokenizerAcquisitionError,
+        match="PRE_S5_VOYAGE_TOKENIZER_DOWNLOAD_SIZE",
+    ):
+        acquire_pre_s5_voyage_tokenizer(
+            local_root=posix_tmp_path,
+            binding=_binding(),
+            fetcher=_UnboundedFetcher(b"x" * (8 * 1024 * 1024 + 1)),
+            now=datetime(2026, 8, 12, 0, 1, tzinfo=UTC),
+        )
+
+    assert not (
+        posix_tmp_path / "artifacts" / "voyage-context-4" / "tokenizer.json"
+    ).exists()
+
+
 @dataclass
 class _FixtureResponse:
     status_code: int
@@ -153,6 +172,15 @@ class _FixtureFetcher:
             raise PreS5VoyageTokenizerAcquisitionError(
                 "PRE_S5_VOYAGE_TOKENIZER_DOWNLOAD_SIZE"
             )
+        return self.payload
+
+
+class _UnboundedFetcher:
+    def __init__(self, payload: bytes) -> None:
+        self.payload = payload
+
+    def fetch(self, *, url: str, byte_cap: int) -> bytes:
+        del url, byte_cap
         return self.payload
 
 

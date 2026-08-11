@@ -34,6 +34,25 @@ def test_optional_checkpoint_rejects_broken_derived_directory_symlink(tmp_path: 
         )
 
 
+def test_optional_checkpoint_returns_none_when_other_scope_created_derived_root(tmp_path: Path) -> None:
+    root = _private_root(tmp_path)
+    derived = root / "derived-ir"
+    derived.mkdir(mode=0o700)
+    (derived / ".tmp").mkdir(mode=0o700)
+    (derived / "exact30").mkdir(mode=0o700)
+
+    loaded = load_optional_public_voyage_checkpoint(
+        local_corpus_root=root,
+        component_scope="OA112",
+        expected_raw_content_sha256=_prepared().document.raw_content_sha256,
+        expected_source_revision_id=_prepared().document.source_revision_id,
+        parser_version="1.1.0",
+        tokenizer_version="bge-m3-sentencepiece-v1",
+    )
+
+    assert loaded is None
+
+
 def test_checkpoint_round_trip_is_0600_profile_neutral_and_reusable(tmp_path: Path) -> None:
     root = _private_root(tmp_path)
     prepared = _prepared()

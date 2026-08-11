@@ -228,6 +228,34 @@ def test_public_writer_allows_oa112_card_only_through_definer_rls_policy(
         ).fetchone() == (0,)
 
 
+def test_public_writer_member_digest_uses_real_double_newline_for_multichunk_oa(
+    isolated_postgres_cluster: dict[str, str],
+) -> None:
+    """실제 OA처럼 다중 청크인 source도 Python과 DB manifest digest가 같아야 한다."""
+
+    records = (_multichunk_record("OA112", 0),) + tuple(
+        _record("OA112", index) for index in range(1, 112)
+    )
+    context = build_public_bge_component_context(records)
+    repository = PsycopgRagV2PublicBgeStagingRepository(
+        database_dsn=isolated_postgres_cluster["rag_writer_dsn"],
+    )
+
+    receipt = repository.stage(record=records[0], context=context)
+
+    assert receipt.state == "STAGING"
+    assert receipt.source_count == 1
+    assert receipt.chunk_count == 2
+    with psycopg.connect(isolated_postgres_cluster["admin_dsn"]) as connection:
+        bge_digest = connection.execute(
+            """
+            SELECT public.rag_v2_immutable_public_bge_source_member_digest(%s, 'OA112')
+            """,
+            (records[0][0].document.source_revision_id,),
+        ).fetchone()[0]
+    assert bge_digest == context.member_digests[0]
+
+
 def test_public_writer_rejects_exact30_frozen_card_digest_drift(
     isolated_postgres_cluster: dict[str, str],
 ) -> None:
@@ -523,6 +551,75 @@ def _record(
             external_generation_allowed=False,
         )
     return materialized, metadata
+
+
+def _multichunk_record(
+    scope: str,
+    index: int,
+) -> tuple[RagV2BgeMaterializedPublicDocument, PublicBgeSourceMetadata]:
+    """단일 청크 fixture의 identity를 유지한 채 실제 LF 경계를 검증할 두 번째 청크를 붙인다."""
+
+    materialized, metadata = _record(scope, index)
+    first_chunk = materialized.document.chunks[0]
+    second_text = f"{scope} second evidence fixture {index}."
+    second_chunk_id = "rag_v2_chk_" + hashlib.sha256(
+        f"{scope}-{index}-second-chunk".encode()
+    ).hexdigest()[:32]
+    second_chunk = RagV2CanonicalDocumentChunk(
+        chunk_id=second_chunk_id,
+        document_id=materialized.document.document_id,
+        sequence=2,
+        heading_path=(),
+        locator={"section": "document-2"},
+        canonical_text=second_text,
+        canonical_text_sha256=hashlib.sha256(second_text.encode()).hexdigest(),
+        token_count=5,
+        contains_table=False,
+    )
+    second_vector = np.zeros(1024, dtype=np.float32)
+    second_vector[(index + 1) % 1024] = 1.0
+    document_ir = json.loads(
+        json.dumps(materialized.document_ir, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+    )
+    assert isinstance(document_ir, dict)
+    blocks = document_ir["blocks"]
+    assert isinstance(blocks, list)
+    blocks.append(
+        {
+            "blockType": "PARAGRAPH",
+            "locator": {"section": "document-2"},
+            "ocrConfidence": None,
+            "readingOrder": 2,
+            "text": second_text,
+        }
+    )
+    normalized_hash = hashlib.sha256(
+        json.dumps(blocks, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode()
+    ).hexdigest()
+    document_ir["normalizedContentSha256"] = normalized_hash
+    document = replace(
+        materialized.document,
+        normalized_content_sha256=normalized_hash,
+        chunks=(first_chunk, second_chunk),
+    )
+    embeddings = materialized.embeddings + (
+        RagV2BgeDocumentEmbedding(
+            chunk_id=second_chunk_id,
+            embedding_input_hash=hashlib.sha256(second_text.encode()).hexdigest(),
+            context_set_hash=None,
+            embedding=second_vector,
+        ),
+    )
+    return (
+        replace(
+            materialized,
+            document=document,
+            embeddings=embeddings,
+            source_revision_sha256=_canonical_hash(document_ir),
+            document_ir=document_ir,
+        ),
+        metadata,
+    )
 
 
 def _exact30_card(index: int) -> dict[str, str]:

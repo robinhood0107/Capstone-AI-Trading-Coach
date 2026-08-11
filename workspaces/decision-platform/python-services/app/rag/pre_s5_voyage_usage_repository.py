@@ -14,13 +14,17 @@ from typing import Any
 
 import psycopg
 
-from app.rag.pre_s5_provider_control import PreS5VoyageActivation
+from app.rag.pre_s5_provider_control import (
+    PreS5VoyageActivation,
+    PreS5VoyageDocumentBatchActivation,
+)
 from app.rag.pre_s5_voyage_transport import (
     PreS5VoyageAttemptLease,
     PreS5VoyageFullBundle,
     PreS5VoyageTransportError,
     build_pre_s5_voyage_full_bundle,
 )
+from app.rag.rag_v2_voyage_batching import PublicVoyageBatchPlan, VoyageDocumentBatch
 
 _WRITER_ROLE = "decision_rag_writer"
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
@@ -99,6 +103,62 @@ class PsycopgPreS5VoyageUsageRepository:
             raise PreS5VoyageUsageRepositoryError(
                 "PRE_S5_VOYAGE_LEASE_RESERVATION_REJECTED"
             ) from None
+        if (
+            row is None
+            or len(row) != 2
+            or row[0] != usage_event_id
+            or not isinstance(row[1], datetime)
+            or row[1].tzinfo is None
+            or row[1].astimezone(UTC) != activation.expires_at.astimezone(UTC)
+        ):
+            raise PreS5VoyageUsageRepositoryError("PRE_S5_VOYAGE_LEASE_RESERVATION_REJECTED")
+        return PsycopgPreS5VoyageUsageLease(
+            database_dsn=self._database_dsn,
+            usage_event_id=usage_event_id,
+            expires_at=activation.expires_at,
+        )
+
+    def reserve_document_batch(
+        self,
+        *,
+        activation: PreS5VoyageDocumentBatchActivation,
+        plan: PublicVoyageBatchPlan,
+        batch: VoyageDocumentBatch,
+    ) -> PreS5VoyageAttemptLease:
+        """exact plan/batch packet 하나를 기존 append-only Voyage usage ledger에 reserve한다."""
+
+        _validate_batch_activation(activation=activation, plan=plan, batch=batch)
+        usage_event_id = _batch_usage_event_id(activation)
+        try:
+            with psycopg.connect(self._database_dsn, autocommit=False, connect_timeout=2) as connection:
+                _attest_writer_connection(connection)
+                with connection.transaction():
+                    _set_transaction_timeouts(connection)
+                    row = connection.execute(
+                        """
+                        SELECT usage_event_id, expires_at
+                        FROM public.reserve_rag_v2_immutable_voyage_usage_with_tokenizer(
+                          %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                        )
+                        """,
+                        (
+                            usage_event_id,
+                            activation.packet_sha256,
+                            activation.nonce_sha256,
+                            activation.batch_manifest_sha256,
+                            activation.rate_evidence_sha256,
+                            activation.tokenizer_sha256,
+                            activation.expires_at,
+                            activation.token_cap,
+                            activation.byte_cap,
+                            activation.cost_cap_microusd,
+                            activation.input_microusd_per_token,
+                        ),
+                    ).fetchone()
+        except PreS5VoyageUsageRepositoryError:
+            raise
+        except psycopg.Error:
+            raise PreS5VoyageUsageRepositoryError("PRE_S5_VOYAGE_LEASE_RESERVATION_REJECTED") from None
         if (
             row is None
             or len(row) != 2
@@ -258,6 +318,56 @@ def _usage_event_id(activation: PreS5VoyageActivation) -> str:
         ).encode("utf-8")
     ).hexdigest()
     return f"rgr_vou_{digest[:32]}"
+
+
+def _batch_usage_event_id(activation: PreS5VoyageDocumentBatchActivation) -> str:
+    """각 batch packet/nonce/manifest를 기존 usage-event namespace의 unique identity로 만든다."""
+
+    digest = hashlib.sha256(
+        (
+            "pre-s5-voyage-document-batch-usage-v1\0"
+            f"{activation.packet_sha256}\0{activation.nonce_sha256}\0"
+            f"{activation.batch_plan_sha256}\0{activation.batch_manifest_sha256}"
+        ).encode("utf-8")
+    ).hexdigest()
+    return f"rgr_vou_{digest[:32]}"
+
+
+def _validate_batch_activation(
+    *,
+    activation: object,
+    plan: object,
+    batch: object,
+) -> None:
+    """usage reservation도 transport와 같은 exact batch membership/cap을 독립적으로 검증한다."""
+
+    if (
+        not isinstance(activation, PreS5VoyageDocumentBatchActivation)
+        or not isinstance(plan, PublicVoyageBatchPlan)
+        or not isinstance(batch, VoyageDocumentBatch)
+        or batch not in plan.batches
+        or activation.batch_plan_sha256 != plan.plan_sha256
+        or activation.batch_id != batch.batch_id
+        or activation.batch_manifest_sha256 != batch.batch_manifest_sha256
+        or activation.batch_ordinal != batch.batch_ordinal
+        or activation.batch_count != batch.batch_count
+        or activation.expected_token_count != batch.token_count
+        or activation.expected_chunk_count != batch.chunk_count
+        or activation.expected_group_count != batch.group_count
+        or activation.tokenizer_sha256 != plan.tokenizer_sha256
+        or not _is_sha256(activation.packet_sha256)
+        or not _is_sha256(activation.nonce_sha256)
+        or not _is_sha256(activation.rate_evidence_sha256)
+        or activation.provider != "VOYAGE"
+        or activation.operation != "CONTEXTUALIZED_DOCUMENT_EMBEDDING"
+        or activation.logical_call_cap != 1
+        or activation.physical_call_cap != 1
+        or not 1 <= activation.token_cap <= 110_000
+        or activation.token_cap < batch.token_count
+        or activation.retry_count != 0
+        or activation.raw_artifact_count != 0
+    ):
+        raise PreS5VoyageUsageRepositoryError("PRE_S5_VOYAGE_LEASE_ARGUMENT")
 
 
 def _set_transaction_timeouts(connection: psycopg.Connection[Any]) -> None:

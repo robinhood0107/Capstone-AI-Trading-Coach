@@ -23,6 +23,7 @@ from typing import Literal, NoReturn, Protocol
 from app.rag.pre_s5_provider_control import (
     PreS5ProviderActivationError,
     PreS5ProviderBinding,
+    PreS5VoyageEvaluationBatchActivation,
     PreS5VoyageQueryActivation,
     load_pre_s5_voyage_query_activation,
 )
@@ -74,7 +75,7 @@ class PreS5VoyageQueryUsageReservationPort(Protocol):
     def reserve(
         self,
         *,
-        activation: PreS5VoyageQueryActivation,
+        activation: PreS5VoyageQueryActivation | PreS5VoyageEvaluationBatchActivation,
         evaluation_component_scope: Literal["EXACT30", "OA112"] | None = None,
     ) -> PreS5VoyageAttemptLease:
         """Return one lease; the optional public-evaluation label contains no owner/question text."""

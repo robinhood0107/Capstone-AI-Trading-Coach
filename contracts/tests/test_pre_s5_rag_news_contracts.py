@@ -381,7 +381,40 @@ class PreS5RagNewsContractTest(unittest.TestCase):
         self.assertFalse(voyage["queryUnitFallbackAllowed"])
         self.assertFalse(voyage["partialProfileMixAllowed"])
         self.assertTrue(voyage["orderedPrechunkedDocumentGroupsRequired"])
-        self.assertEqual("FULL_BUNDLE_REBUILD_EVALUATE_CAS", voyage["generationFallback"])
+        self.assertEqual(
+            "EXACT_MANIFEST_BOUND_RESUMABLE_BATCH_SET", voyage["activationMode"]
+        )
+        self.assertEqual(
+            "TERMINALLY_SUPERSEDED_NO_FURTHER_BGE_RUN",
+            voyage["bgePublicExecution"],
+        )
+        self.assertEqual(
+            "NO_BGE_FALLBACK_RESUME_VOYAGE_BATCHES_EVALUATE_CAS",
+            voyage["generationFallback"],
+        )
+        self.assertEqual(
+            {
+                "completedBatchReuseRequired": True,
+                "maximumChunksPerRequest": 16000,
+                "maximumGroupsPerRequest": 1000,
+                "operationalInputTokenCap": 110000,
+                "providerInputTokenCap": 120000,
+                "requestPacketPhysicalCallCap": 1,
+                "sourceCheckpointReuseRequired": True,
+                "stopRemainingBatchesAfterFirstFailure": True,
+                "tokenHeadroom": 10000,
+            },
+            voyage["documentBatchLimits"],
+        )
+        self.assertEqual(
+            {
+                "componentBatchCount": 2,
+                "exact30LogicalQueryCount": 10,
+                "oa112LogicalQueryCount": 112,
+                "singletonQueryGroupsRequired": True,
+            },
+            voyage["queryEvaluationBatches"],
+        )
         self.assertEqual(
             {
                 "artifactAutoDownloadAllowed": False,

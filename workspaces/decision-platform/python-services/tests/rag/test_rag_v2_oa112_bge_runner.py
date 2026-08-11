@@ -213,7 +213,9 @@ def test_oa112_default_parsers_enable_only_inert_pdf_attachment_stripping(
     )
 
     expected = {"strip_inert_pdf_attachments": True}
-    assert bge_options == voyage_options == [expected]
+    assert bge_options == [expected]
+    assert 1 <= len(voyage_options) <= 4
+    assert all(options == expected for options in voyage_options)
 
 
 def test_oa112_runner_rejects_any_active_source_without_all_four_permissions(
@@ -415,20 +417,20 @@ def test_public_voyage_writer_stages_and_evaluates_both_public_components(
     _seed_voyage_evaluation_query_usage(
         cluster=isolated_postgres_cluster,
         component_scope="EXACT30",
-        count=10,
+        count=1,
         scope_claim_sha256=evaluation_scope_claim_sha256,
     )
     _seed_voyage_evaluation_query_usage(
         cluster=isolated_postgres_cluster,
         component_scope="OA112",
-        count=112,
+        count=1,
         scope_claim_sha256=evaluation_scope_claim_sha256,
     )
     exact_evaluation = repository.evaluate(
         context=materialization.exact30.context,
         evidence=_voyage_evaluation_evidence(
             "exact30",
-            physical_call_count=10,
+            physical_call_count=1,
             evaluation_scope_claim_sha256=evaluation_scope_claim_sha256,
         ),
     )
@@ -436,7 +438,7 @@ def test_public_voyage_writer_stages_and_evaluates_both_public_components(
         context=materialization.oa112.context,
         evidence=_voyage_evaluation_evidence(
             "oa112",
-            physical_call_count=112,
+            physical_call_count=1,
             evaluation_scope_claim_sha256=evaluation_scope_claim_sha256,
         ),
     )

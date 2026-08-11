@@ -138,6 +138,59 @@ CREATE TABLE rag_v2_immutable_voyage_document_batch_attempts (
     )
 );
 
+CREATE TABLE rag_v2_immutable_voyage_evaluation_batch_attempts (
+  scope_claim_sha256 text NOT NULL,
+  component_scope text NOT NULL,
+  query_manifest_sha256 text NOT NULL,
+  usage_event_id text NOT NULL UNIQUE,
+  packet_sha256 text NOT NULL,
+  state text NOT NULL DEFAULT 'CLAIMED',
+  claimed_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
+  terminal_at timestamptz,
+  PRIMARY KEY (scope_claim_sha256, component_scope),
+  CONSTRAINT rag_v2_immutable_voyage_evaluation_batch_attempt_identity_check
+    CHECK (
+      scope_claim_sha256 ~ '^[0-9a-f]{64}$'
+      AND component_scope IN ('EXACT30','OA112')
+      AND query_manifest_sha256 ~ '^[0-9a-f]{64}$'
+      AND usage_event_id ~ '^rgr_vqu_[0-9a-f]{32}$'
+      AND packet_sha256 ~ '^[0-9a-f]{64}$'
+    ),
+  CONSTRAINT rag_v2_immutable_voyage_evaluation_batch_attempt_state_check
+    CHECK (
+      (state = 'CLAIMED' AND terminal_at IS NULL)
+      OR (state IN ('COMMITTED','UNKNOWN_BILLING') AND terminal_at IS NOT NULL)
+    ),
+  CONSTRAINT rag_v2_immutable_voyage_evaluation_batch_attempt_manifest_unique
+    UNIQUE (scope_claim_sha256, component_scope, query_manifest_sha256)
+);
+
+CREATE TABLE rag_v2_immutable_voyage_evaluation_batch_vectors (
+  scope_claim_sha256 text NOT NULL,
+  component_scope text NOT NULL,
+  query_manifest_sha256 text NOT NULL,
+  query_sha256 text NOT NULL,
+  vector_sha256 text NOT NULL,
+  embedding vector(1024) NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
+  PRIMARY KEY (scope_claim_sha256, component_scope, query_sha256),
+  CONSTRAINT rag_v2_immutable_voyage_evaluation_batch_vector_attempt_fkey
+    FOREIGN KEY (scope_claim_sha256, component_scope, query_manifest_sha256)
+    REFERENCES rag_v2_immutable_voyage_evaluation_batch_attempts(
+      scope_claim_sha256, component_scope, query_manifest_sha256
+    ),
+  CONSTRAINT rag_v2_immutable_voyage_evaluation_batch_vector_identity_check
+    CHECK (
+      scope_claim_sha256 ~ '^[0-9a-f]{64}$'
+      AND component_scope IN ('EXACT30','OA112')
+      AND query_manifest_sha256 ~ '^[0-9a-f]{64}$'
+      AND query_sha256 ~ '^[0-9a-f]{64}$'
+      AND vector_sha256 ~ '^[0-9a-f]{64}$'
+      AND vector_dims(embedding) = 1024
+      AND vector_norm(embedding) BETWEEN 0.99999 AND 1.00001
+    )
+);
+
 CREATE TABLE rag_v2_immutable_bge_public_execution_supersessions (
   marker text PRIMARY KEY,
   exact30_component_generation_id text NOT NULL,
@@ -161,6 +214,10 @@ ALTER TABLE rag_v2_immutable_voyage_document_batch_vectors ENABLE ROW LEVEL SECU
 ALTER TABLE rag_v2_immutable_voyage_document_batch_vectors FORCE ROW LEVEL SECURITY;
 ALTER TABLE rag_v2_immutable_voyage_document_batch_attempts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE rag_v2_immutable_voyage_document_batch_attempts FORCE ROW LEVEL SECURITY;
+ALTER TABLE rag_v2_immutable_voyage_evaluation_batch_attempts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE rag_v2_immutable_voyage_evaluation_batch_attempts FORCE ROW LEVEL SECURITY;
+ALTER TABLE rag_v2_immutable_voyage_evaluation_batch_vectors ENABLE ROW LEVEL SECURITY;
+ALTER TABLE rag_v2_immutable_voyage_evaluation_batch_vectors FORCE ROW LEVEL SECURITY;
 ALTER TABLE rag_v2_immutable_bge_public_execution_supersessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE rag_v2_immutable_bge_public_execution_supersessions FORCE ROW LEVEL SECURITY;
 
@@ -210,7 +267,7 @@ BEGIN
      OR p_rate_evidence_sha256 IS NULL OR p_rate_evidence_sha256 !~ '^[0-9a-f]{64}$'
      OR p_official_tokenizer_sha256 IS NULL OR p_official_tokenizer_sha256 !~ '^[0-9a-f]{64}$'
      OR p_expires_at IS NULL OR p_expires_at <= statement_timestamp()
-     OR p_expires_at > statement_timestamp() + interval '5 minutes'
+     OR p_expires_at > statement_timestamp() + interval '2 hours'
      OR p_token_cap IS NULL OR p_token_cap NOT BETWEEN 1 AND 110000
      OR p_byte_cap IS NULL OR p_byte_cap NOT BETWEEN 1 AND 16777216
      OR p_cost_cap_microusd IS NULL OR p_cost_cap_microusd NOT BETWEEN 1 AND 1000000000
@@ -252,6 +309,10 @@ CREATE POLICY rag_v2_immutable_voyage_document_batch_vectors_flyway
   ON rag_v2_immutable_voyage_document_batch_vectors FOR ALL TO flyway USING (true) WITH CHECK (true);
 CREATE POLICY rag_v2_immutable_voyage_document_batch_attempts_flyway
   ON rag_v2_immutable_voyage_document_batch_attempts FOR ALL TO flyway USING (true) WITH CHECK (true);
+CREATE POLICY rag_v2_immutable_voyage_evaluation_batch_attempts_flyway
+  ON rag_v2_immutable_voyage_evaluation_batch_attempts FOR ALL TO flyway USING (true) WITH CHECK (true);
+CREATE POLICY rag_v2_immutable_voyage_evaluation_batch_vectors_flyway
+  ON rag_v2_immutable_voyage_evaluation_batch_vectors FOR ALL TO flyway USING (true) WITH CHECK (true);
 CREATE POLICY rag_v2_immutable_bge_public_execution_supersessions_flyway
   ON rag_v2_immutable_bge_public_execution_supersessions FOR ALL TO flyway USING (true) WITH CHECK (true);
 
@@ -724,6 +785,284 @@ $load_rag_v2_immutable_voyage_document_batch_vectors$;
 ALTER FUNCTION load_rag_v2_immutable_voyage_document_batch_vectors(text) OWNER TO flyway;
 REVOKE ALL PRIVILEGES ON FUNCTION load_rag_v2_immutable_voyage_document_batch_vectors(text) FROM PUBLIC;
 
+-- Window A는 document와 두 evaluation packet을 한 번에 승인하므로 evaluation 전용 reservation만
+-- 최대 2시간을 허용한다. 일반 runtime query의 V51 5분 TTL은 그대로 유지한다.
+CREATE FUNCTION reserve_rag_v2_immutable_voyage_evaluation_batch_usage(
+  p_usage_event_id text,
+  p_packet_sha256 text,
+  p_nonce_sha256 text,
+  p_query_manifest_sha256 text,
+  p_scope_claim_sha256 text,
+  p_rate_evidence_sha256 text,
+  p_official_tokenizer_sha256 text,
+  p_component_scope text,
+  p_expires_at timestamptz,
+  p_token_cap integer,
+  p_byte_cap integer,
+  p_cost_cap_microusd bigint,
+  p_input_microusd_per_token bigint
+)
+RETURNS TABLE (usage_event_id text, expires_at timestamptz)
+LANGUAGE plpgsql
+SECURITY DEFINER
+VOLATILE
+SET search_path = pg_catalog, public, pg_temp
+AS $reserve_rag_v2_immutable_voyage_evaluation_batch_usage$
+BEGIN
+  IF current_user <> 'flyway'
+     OR session_user <> 'decision_rag_writer'
+     OR p_usage_event_id !~ '^rgr_vqu_[0-9a-f]{32}$'
+     OR p_packet_sha256 !~ '^[0-9a-f]{64}$'
+     OR p_nonce_sha256 !~ '^[0-9a-f]{64}$'
+     OR p_query_manifest_sha256 !~ '^[0-9a-f]{64}$'
+     OR p_scope_claim_sha256 !~ '^[0-9a-f]{64}$'
+     OR p_rate_evidence_sha256 !~ '^[0-9a-f]{64}$'
+     OR p_official_tokenizer_sha256 !~ '^[0-9a-f]{64}$'
+     OR p_component_scope NOT IN ('EXACT30','OA112')
+     OR p_expires_at <= statement_timestamp()
+     OR p_expires_at > statement_timestamp() + interval '2 hours'
+     OR p_token_cap NOT BETWEEN 1 AND 8192
+     OR p_byte_cap NOT BETWEEN 1 AND 4194304
+     OR p_cost_cap_microusd NOT BETWEEN 1 AND 1000000000
+     OR p_input_microusd_per_token NOT BETWEEN 1 AND 1000000
+     OR p_token_cap::bigint * p_input_microusd_per_token > p_cost_cap_microusd THEN
+    RAISE EXCEPTION 'immutable Pre-S5 Voyage evaluation batch reservation arguments are invalid'
+      USING ERRCODE = '22023';
+  END IF;
+  PERFORM pg_catalog.pg_advisory_xact_lock(
+    pg_catalog.hashtextextended(
+      'rag-v2-immutable-voyage-evaluation-batch|' || p_scope_claim_sha256 || '|' || p_component_scope,
+      0
+    )
+  );
+  IF EXISTS (
+    SELECT 1 FROM public.rag_v2_immutable_voyage_evaluation_batch_attempts
+    WHERE scope_claim_sha256 = p_scope_claim_sha256 AND component_scope = p_component_scope
+  ) THEN
+    RAISE EXCEPTION 'immutable Pre-S5 Voyage evaluation batch is already terminal'
+      USING ERRCODE = '55000';
+  END IF;
+  INSERT INTO public.rag_v2_immutable_voyage_query_usage_reservations (
+    usage_event_id, packet_sha256, nonce_sha256, query_sha256, scope_claim_sha256,
+    rate_evidence_sha256, official_tokenizer_sha256, evaluation_component_scope, expires_at,
+    token_cap, byte_cap, cost_cap_microusd, input_microusd_per_token
+  ) VALUES (
+    p_usage_event_id, p_packet_sha256, p_nonce_sha256, p_query_manifest_sha256,
+    p_scope_claim_sha256, p_rate_evidence_sha256, p_official_tokenizer_sha256,
+    p_component_scope, p_expires_at, p_token_cap, p_byte_cap, p_cost_cap_microusd,
+    p_input_microusd_per_token
+  );
+  RETURN QUERY SELECT p_usage_event_id, p_expires_at;
+END
+$reserve_rag_v2_immutable_voyage_evaluation_batch_usage$;
+ALTER FUNCTION reserve_rag_v2_immutable_voyage_evaluation_batch_usage(
+  text,text,text,text,text,text,text,text,timestamptz,integer,integer,bigint,bigint
+) OWNER TO flyway;
+REVOKE ALL PRIVILEGES ON FUNCTION reserve_rag_v2_immutable_voyage_evaluation_batch_usage(
+  text,text,text,text,text,text,text,text,timestamptz,integer,integer,bigint,bigint
+) FROM PUBLIC;
+
+CREATE FUNCTION claim_rag_v2_immutable_voyage_evaluation_batch_attempt(
+  p_usage_event_id text,
+  p_scope_claim_sha256 text,
+  p_component_scope text,
+  p_query_manifest_sha256 text,
+  p_packet_sha256 text
+)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+VOLATILE
+SET search_path = pg_catalog, public, pg_temp
+AS $claim_rag_v2_immutable_voyage_evaluation_batch_attempt$
+BEGIN
+  IF current_user <> 'flyway' OR session_user <> 'decision_rag_writer' THEN
+    RAISE EXCEPTION 'Pre-S5 Voyage evaluation claim is forbidden' USING ERRCODE = '42501';
+  END IF;
+  PERFORM public.claim_rag_v2_immutable_voyage_query_usage_attempt(p_usage_event_id);
+  INSERT INTO public.rag_v2_immutable_voyage_evaluation_batch_attempts (
+    scope_claim_sha256, component_scope, query_manifest_sha256, usage_event_id, packet_sha256
+  ) VALUES (
+    p_scope_claim_sha256, p_component_scope, p_query_manifest_sha256, p_usage_event_id, p_packet_sha256
+  );
+END
+$claim_rag_v2_immutable_voyage_evaluation_batch_attempt$;
+ALTER FUNCTION claim_rag_v2_immutable_voyage_evaluation_batch_attempt(text,text,text,text,text)
+  OWNER TO flyway;
+REVOKE ALL PRIVILEGES ON FUNCTION
+  claim_rag_v2_immutable_voyage_evaluation_batch_attempt(text,text,text,text,text) FROM PUBLIC;
+
+CREATE FUNCTION mark_rag_v2_immutable_voyage_evaluation_batch_unknown_billing(
+  p_usage_event_id text,
+  p_scope_claim_sha256 text,
+  p_component_scope text
+)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+VOLATILE
+SET search_path = pg_catalog, public, pg_temp
+AS $mark_rag_v2_immutable_voyage_evaluation_batch_unknown_billing$
+BEGIN
+  IF current_user <> 'flyway' OR session_user <> 'decision_rag_writer' THEN
+    RAISE EXCEPTION 'Pre-S5 Voyage evaluation unknown outcome is forbidden' USING ERRCODE = '42501';
+  END IF;
+  PERFORM public.mark_rag_v2_immutable_voyage_query_usage_unknown_billing(p_usage_event_id);
+  UPDATE public.rag_v2_immutable_voyage_evaluation_batch_attempts
+  SET state = 'UNKNOWN_BILLING', terminal_at = transaction_timestamp()
+  WHERE usage_event_id = p_usage_event_id
+    AND scope_claim_sha256 = p_scope_claim_sha256
+    AND component_scope = p_component_scope
+    AND state = 'CLAIMED';
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Pre-S5 Voyage evaluation unknown outcome conflicts' USING ERRCODE = '55000';
+  END IF;
+END
+$mark_rag_v2_immutable_voyage_evaluation_batch_unknown_billing$;
+ALTER FUNCTION mark_rag_v2_immutable_voyage_evaluation_batch_unknown_billing(text,text,text)
+  OWNER TO flyway;
+REVOKE ALL PRIVILEGES ON FUNCTION
+  mark_rag_v2_immutable_voyage_evaluation_batch_unknown_billing(text,text,text) FROM PUBLIC;
+
+CREATE FUNCTION commit_and_stage_rag_v2_immutable_voyage_evaluation_batch(p_payload jsonb)
+RETURNS TABLE (component_scope text, staged_vector_count integer, batch_reused boolean)
+LANGUAGE plpgsql
+SECURITY DEFINER
+VOLATILE
+SET search_path = pg_catalog, public, pg_temp
+AS $commit_and_stage_rag_v2_immutable_voyage_evaluation_batch$
+DECLARE
+  expected_count integer;
+  vector_item jsonb;
+BEGIN
+  IF current_user <> 'flyway'
+     OR session_user <> 'decision_rag_writer'
+     OR p_payload IS NULL OR jsonb_typeof(p_payload) <> 'object'
+     OR (SELECT count(*) FROM jsonb_object_keys(p_payload)) <> 10
+     OR NOT (p_payload ?& ARRAY[
+       'schemaVersion','scopeClaimSha256','componentScope','queryManifestSha256','usageEventId',
+       'packetSha256','expectedInputTokens','providerTotalTokens','actualCostMicrousd','vectors'
+     ])
+     OR p_payload ->> 'schemaVersion' <> 'pre-s5-voyage-evaluation-batch-stage/v1'
+     OR p_payload ->> 'scopeClaimSha256' !~ '^[0-9a-f]{64}$'
+     OR p_payload ->> 'componentScope' NOT IN ('EXACT30','OA112')
+     OR p_payload ->> 'queryManifestSha256' !~ '^[0-9a-f]{64}$'
+     OR p_payload ->> 'usageEventId' !~ '^rgr_vqu_[0-9a-f]{32}$'
+     OR p_payload ->> 'packetSha256' !~ '^[0-9a-f]{64}$'
+     OR jsonb_typeof(p_payload -> 'vectors') <> 'array' THEN
+    RAISE EXCEPTION 'Pre-S5 Voyage evaluation stage payload is invalid' USING ERRCODE = '22023';
+  END IF;
+  expected_count := CASE p_payload ->> 'componentScope' WHEN 'EXACT30' THEN 10 ELSE 112 END;
+  IF jsonb_array_length(p_payload -> 'vectors') <> expected_count
+     OR (p_payload ->> 'expectedInputTokens')::integer NOT BETWEEN 1 AND 8192
+     OR (p_payload ->> 'providerTotalTokens')::integer NOT BETWEEN 0 AND 8192
+     OR (p_payload ->> 'actualCostMicrousd')::bigint NOT BETWEEN 0 AND 1000000000
+     OR NOT EXISTS (
+       SELECT 1 FROM public.rag_v2_immutable_voyage_evaluation_batch_attempts AS attempt
+       WHERE attempt.scope_claim_sha256 = p_payload ->> 'scopeClaimSha256'
+         AND attempt.component_scope = p_payload ->> 'componentScope'
+         AND attempt.query_manifest_sha256 = p_payload ->> 'queryManifestSha256'
+         AND attempt.usage_event_id = p_payload ->> 'usageEventId'
+         AND attempt.packet_sha256 = p_payload ->> 'packetSha256'
+         AND attempt.state = 'CLAIMED'
+     ) THEN
+    RAISE EXCEPTION 'Pre-S5 Voyage evaluation stage is unavailable' USING ERRCODE = '55000';
+  END IF;
+  PERFORM public.commit_rag_v2_immutable_voyage_query_usage_with_tokenizer(
+    p_payload ->> 'usageEventId',
+    (p_payload ->> 'expectedInputTokens')::integer,
+    (p_payload ->> 'providerTotalTokens')::integer,
+    (p_payload ->> 'actualCostMicrousd')::bigint
+  );
+  FOR vector_item IN SELECT value FROM jsonb_array_elements(p_payload -> 'vectors') LOOP
+    IF (SELECT count(*) FROM jsonb_object_keys(vector_item)) <> 3
+       OR NOT (vector_item ?& ARRAY['querySha256','vectorSha256','embedding'])
+       OR vector_item ->> 'querySha256' !~ '^[0-9a-f]{64}$'
+       OR vector_item ->> 'vectorSha256' !~ '^[0-9a-f]{64}$'
+       OR jsonb_typeof(vector_item -> 'embedding') <> 'array'
+       OR jsonb_array_length(vector_item -> 'embedding') <> 1024 THEN
+      RAISE EXCEPTION 'Pre-S5 Voyage evaluation vector payload is invalid' USING ERRCODE = '22023';
+    END IF;
+    INSERT INTO public.rag_v2_immutable_voyage_evaluation_batch_vectors (
+      scope_claim_sha256, component_scope, query_manifest_sha256, query_sha256,
+      vector_sha256, embedding
+    ) VALUES (
+      p_payload ->> 'scopeClaimSha256', p_payload ->> 'componentScope',
+      p_payload ->> 'queryManifestSha256', vector_item ->> 'querySha256',
+      vector_item ->> 'vectorSha256', (vector_item -> 'embedding')::text::vector
+    );
+  END LOOP;
+  UPDATE public.rag_v2_immutable_voyage_evaluation_batch_attempts
+  SET state = 'COMMITTED', terminal_at = transaction_timestamp()
+  WHERE usage_event_id = p_payload ->> 'usageEventId' AND state = 'CLAIMED';
+  IF NOT FOUND OR (
+    SELECT count(*) FROM public.rag_v2_immutable_voyage_evaluation_batch_vectors AS staged_vector
+    WHERE staged_vector.scope_claim_sha256 = p_payload ->> 'scopeClaimSha256'
+      AND staged_vector.component_scope = p_payload ->> 'componentScope'
+  ) <> expected_count THEN
+    RAISE EXCEPTION 'Pre-S5 Voyage evaluation stage cardinality conflicts' USING ERRCODE = '55000';
+  END IF;
+  RETURN QUERY SELECT p_payload ->> 'componentScope', expected_count, false;
+END
+$commit_and_stage_rag_v2_immutable_voyage_evaluation_batch$;
+ALTER FUNCTION commit_and_stage_rag_v2_immutable_voyage_evaluation_batch(jsonb) OWNER TO flyway;
+REVOKE ALL PRIVILEGES ON FUNCTION
+  commit_and_stage_rag_v2_immutable_voyage_evaluation_batch(jsonb) FROM PUBLIC;
+
+CREATE FUNCTION load_rag_v2_immutable_voyage_evaluation_batch_vectors(
+  p_scope_claim_sha256 text,
+  p_component_scope text,
+  p_query_manifest_sha256 text
+)
+RETURNS TABLE (query_sha256 text, embedding vector(1024))
+LANGUAGE plpgsql
+SECURITY DEFINER
+STABLE
+SET search_path = pg_catalog, public, pg_temp
+AS $load_rag_v2_immutable_voyage_evaluation_batch_vectors$
+DECLARE
+  attempt_state text;
+  expected_count integer;
+BEGIN
+  IF current_user <> 'flyway'
+     OR session_user <> 'decision_rag_writer'
+     OR p_scope_claim_sha256 !~ '^[0-9a-f]{64}$'
+     OR p_component_scope NOT IN ('EXACT30','OA112')
+     OR p_query_manifest_sha256 !~ '^[0-9a-f]{64}$' THEN
+    RAISE EXCEPTION 'Pre-S5 Voyage evaluation resume arguments are invalid' USING ERRCODE = '22023';
+  END IF;
+  SELECT state INTO attempt_state
+  FROM public.rag_v2_immutable_voyage_evaluation_batch_attempts
+  WHERE scope_claim_sha256 = p_scope_claim_sha256 AND component_scope = p_component_scope;
+  IF NOT FOUND THEN
+    RETURN;
+  END IF;
+  IF attempt_state <> 'COMMITTED' OR NOT EXISTS (
+    SELECT 1 FROM public.rag_v2_immutable_voyage_evaluation_batch_attempts
+    WHERE scope_claim_sha256 = p_scope_claim_sha256
+      AND component_scope = p_component_scope
+      AND query_manifest_sha256 = p_query_manifest_sha256
+  ) THEN
+    RAISE EXCEPTION 'Pre-S5 Voyage evaluation batch is terminal or drifted' USING ERRCODE = '55000';
+  END IF;
+  expected_count := CASE p_component_scope WHEN 'EXACT30' THEN 10 ELSE 112 END;
+  IF (SELECT count(*) FROM public.rag_v2_immutable_voyage_evaluation_batch_vectors
+      WHERE scope_claim_sha256 = p_scope_claim_sha256 AND component_scope = p_component_scope)
+     <> expected_count THEN
+    RAISE EXCEPTION 'Pre-S5 Voyage evaluation resume cardinality conflicts' USING ERRCODE = '55000';
+  END IF;
+  RETURN QUERY
+  SELECT vector_row.query_sha256, vector_row.embedding
+  FROM public.rag_v2_immutable_voyage_evaluation_batch_vectors AS vector_row
+  WHERE vector_row.scope_claim_sha256 = p_scope_claim_sha256
+    AND vector_row.component_scope = p_component_scope
+  ORDER BY vector_row.query_sha256;
+END
+$load_rag_v2_immutable_voyage_evaluation_batch_vectors$;
+ALTER FUNCTION load_rag_v2_immutable_voyage_evaluation_batch_vectors(text,text,text) OWNER TO flyway;
+REVOKE ALL PRIVILEGES ON FUNCTION
+  load_rag_v2_immutable_voyage_evaluation_batch_vectors(text,text,text) FROM PUBLIC;
+
 -- 평가 질문의 논리 개수(10+112)는 유지하지만 component별 singleton-group 요청 한 번만 사용한다.
 -- historical V45/V47 migration bytes는 수정하지 않고, expected physical ledger cardinality만 fail-closed
 -- replacement로 좁힌다. exact source text가 drift하면 migration 자체가 중단된다.
@@ -831,6 +1170,15 @@ BEGIN
     TO decision_rag_writer;
     GRANT EXECUTE ON FUNCTION load_rag_v2_immutable_voyage_document_batch_vectors(text)
       TO decision_rag_writer;
+    GRANT EXECUTE ON FUNCTION reserve_rag_v2_immutable_voyage_evaluation_batch_usage(
+      text,text,text,text,text,text,text,text,timestamptz,integer,integer,bigint,bigint
+    ) TO decision_rag_writer;
+    GRANT EXECUTE ON FUNCTION
+      claim_rag_v2_immutable_voyage_evaluation_batch_attempt(text,text,text,text,text),
+      mark_rag_v2_immutable_voyage_evaluation_batch_unknown_billing(text,text,text),
+      commit_and_stage_rag_v2_immutable_voyage_evaluation_batch(jsonb),
+      load_rag_v2_immutable_voyage_evaluation_batch_vectors(text,text,text)
+    TO decision_rag_writer;
     GRANT EXECUTE ON FUNCTION record_rag_v2_bge_public_execution_supersession(text, text)
       TO decision_rag_writer;
   END IF;
@@ -841,4 +1189,6 @@ REVOKE ALL PRIVILEGES ON TABLE rag_v2_immutable_voyage_document_batch_plans FROM
 REVOKE ALL PRIVILEGES ON TABLE rag_v2_immutable_voyage_document_batches FROM PUBLIC;
 REVOKE ALL PRIVILEGES ON TABLE rag_v2_immutable_voyage_document_batch_vectors FROM PUBLIC;
 REVOKE ALL PRIVILEGES ON TABLE rag_v2_immutable_voyage_document_batch_attempts FROM PUBLIC;
+REVOKE ALL PRIVILEGES ON TABLE rag_v2_immutable_voyage_evaluation_batch_attempts FROM PUBLIC;
+REVOKE ALL PRIVILEGES ON TABLE rag_v2_immutable_voyage_evaluation_batch_vectors FROM PUBLIC;
 REVOKE ALL PRIVILEGES ON TABLE rag_v2_immutable_bge_public_execution_supersessions FROM PUBLIC;

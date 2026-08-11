@@ -7,11 +7,15 @@ import java.nio.file.Path
 
 class RagPreS5VoyageBatchMigrationContractTest {
     private val migrationDirectory = Path.of("src/main/resources/db/migration")
-    private val migrationPath = migrationDirectory.resolve("V54__pre_s5_voyage_resumable_document_batches.sql")
-    private val migration by lazy { Files.readString(migrationPath) }
+    private val baseMigrationPath = migrationDirectory.resolve("V54__pre_s5_voyage_resumable_document_batches.sql")
+    private val batchMigrationPath = migrationDirectory.resolve("V55__pre_s5_voyage_batch_forward_repair.sql")
+    private val migrationPath = migrationDirectory.resolve("V56__pre_s5_voyage_evaluation_claim_binding.sql")
+    private val migration by lazy {
+        Files.readString(baseMigrationPath) + Files.readString(batchMigrationPath) + Files.readString(migrationPath)
+    }
 
     @Test
-    fun `Voyage batch ledger uses the dynamic next free Flyway version`() {
+    fun `Voyage batch forward repair uses the dynamic next free Flyway version`() {
         val versions =
             Files.list(migrationDirectory).use { paths ->
                 paths
@@ -21,6 +25,28 @@ class RagPreS5VoyageBatchMigrationContractTest {
             }
         assertThat(migrationVersion(migrationPath)).isEqualTo(versions.max())
         assertThat(versions.count { it == 54 }).isEqualTo(1)
+        assertThat(versions.count { it == 55 }).isEqualTo(1)
+        assertThat(versions.count { it == 56 }).isEqualTo(1)
+    }
+
+    @Test
+    fun `V54 preserves the first applied migration bytes`() {
+        val digest =
+            java.security.MessageDigest
+                .getInstance("SHA-256")
+                .digest(Files.readAllBytes(baseMigrationPath))
+                .joinToString("") { byte -> "%02x".format(byte) }
+        assertThat(digest).isEqualTo("23b439b3bffdaf9fb33afba4aa099902efc7bcfa6b31fdabbe503a490b31a83e")
+    }
+
+    @Test
+    fun `V55 preserves the first applied forward repair bytes`() {
+        val digest =
+            java.security.MessageDigest
+                .getInstance("SHA-256")
+                .digest(Files.readAllBytes(batchMigrationPath))
+                .joinToString("") { byte -> "%02x".format(byte) }
+        assertThat(digest).isEqualTo("259a86d1fdbc4af8e14407cc3eaeed2f7d1971cba0a26b2438d0b6ce60fb29d0")
     }
 
     @Test
@@ -67,6 +93,11 @@ class RagPreS5VoyageBatchMigrationContractTest {
             "distinct_ordinal_count <> complete_count",
             "Pre-S5 Voyage document batch completion conflicts",
             "terminal ambiguous attempt",
+            "evaluation claim conflicts with its reservation",
+            "reservation.scope_claim_sha256 <> p_scope_claim_sha256",
+            "reservation.evaluation_component_scope <> p_component_scope",
+            "reservation.query_sha256 <> p_query_manifest_sha256",
+            "reservation.packet_sha256 <> p_packet_sha256",
         )
         assertThat(migration).doesNotContain(
             "GRANT SELECT ON",

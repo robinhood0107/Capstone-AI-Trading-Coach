@@ -97,7 +97,8 @@
   public EXACT30+OA112의 CPU BGE 재실행은
   `TERMINALLY_SUPERSEDED_NO_FURTHER_BGE_RUN`이다. Voyage `voyage-context-4` 1024는 official
   tokenizer 기준 110K token 이하의 exact manifest-bound resumable document batch와 EXACT30/OA112
-  query batch 각 1회만 허용하며, 성공 batch·source checkpoint를 재호출하지 않는다. 모든 batch와
+  query batch 각 1회만 허용한다. Window A packet TTL은 이 두 batch 종류에만 최대 2시간이고 일반
+  runtime query의 5분 TTL은 유지한다. 성공 document/query batch·source checkpoint를 재호출하지 않는다. 모든 batch와
   평가가 끝나기 전 CAS activation은 0이다. RAG v2 consent/import와 이 local batch runtime은
   구현돼 있지만 provider activation은 아니다. `VERTEX_API_KEY` Vertex Express API-key-only
   `gemini-3.5-flash`와 foreign-news(Finnhub personal-local/SEC/Fed/GDELT offline reference)는

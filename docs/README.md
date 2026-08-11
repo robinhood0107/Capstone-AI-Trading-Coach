@@ -99,7 +99,8 @@ owner-bound import/delete ticket, owner deletion activation/hard-delete, embeddi
 route만 추가한다. Voyage는
 `voyage-context-4` 1024차원 full-generation profile이고 query별 fallback/mixed profile은 없으며,
 official tokenizer 기준 110K token 이하 exact manifest-bound resumable document batch와
-EXACT30/OA112 query batch 각 1회만 허용한다. 성공 batch·142개 source checkpoint는 재사용하고
+EXACT30/OA112 query batch 각 1회만 허용한다. 한 번의 Window A 승인이 완료될 수 있도록 이 packet들은
+최대 2시간 TTL이며 일반 runtime query의 5분 TTL은 유지한다. 성공 document/query batch·142개 source checkpoint는 재사용하고
 첫 실패 뒤 남은 provider call은 0이다. CPU BGE public 재실행은
 `TERMINALLY_SUPERSEDED_NO_FURTHER_BGE_RUN`이며 activation 대안이 아니다. 전역 public base는
 `OWNER_PRIVATE` empty sentinel(`ownerScopeSha256=null`, ordered group 0)만 사용해 owner 원문을
@@ -107,7 +108,7 @@ Voyage input에 포함하지 않는다. Vertex는 `VERTEX_API_KEY`만 읽는 Ver
 `gemini-3.5-flash` 단일 generator target이며 top-5와 질문당 `generateContent` 1회, fallback 0이다.
 ADC/service-account, ambient credential, credential file과 Gemini Developer API는 v2 runtime에서 허용하지 않는다.
 Voyage와 Vertex는 모두 `TARGET_NOT_ACTIVE`이며 provider physical call은 0이다. local DB는 V54에서
-부분 BGE generation을 삭제하지 않고 terminal supersession marker와 Voyage batch/vector ledger를
+부분 BGE generation을 삭제하지 않고 terminal supersession marker와 Voyage document/query batch vector ledger를
 보존한다.
 
 `S4_7D_CONSENT_TICKET_CONTROL_PLANE=OFFLINE_ONLY`는 owner-bound consent append/effective read,

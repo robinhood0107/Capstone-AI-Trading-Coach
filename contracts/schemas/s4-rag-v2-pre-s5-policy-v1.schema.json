@@ -235,11 +235,61 @@
           ],
           "type": "array"
         },
+        "activationMode": {
+          "const": "EXACT_MANIFEST_BOUND_RESUMABLE_BATCH_SET"
+        },
         "batchApiAllowed": {
           "const": false
         },
+        "bgePublicExecution": {
+          "const": "TERMINALLY_SUPERSEDED_NO_FURTHER_BGE_RUN"
+        },
         "dimension": {
           "const": 1024
+        },
+        "documentBatchLimits": {
+          "additionalProperties": false,
+          "properties": {
+            "completedBatchReuseRequired": {
+              "const": true
+            },
+            "maximumChunksPerRequest": {
+              "const": 16000
+            },
+            "maximumGroupsPerRequest": {
+              "const": 1000
+            },
+            "operationalInputTokenCap": {
+              "const": 110000
+            },
+            "providerInputTokenCap": {
+              "const": 120000
+            },
+            "requestPacketPhysicalCallCap": {
+              "const": 1
+            },
+            "sourceCheckpointReuseRequired": {
+              "const": true
+            },
+            "stopRemainingBatchesAfterFirstFailure": {
+              "const": true
+            },
+            "tokenHeadroom": {
+              "const": 10000
+            }
+          },
+          "required": [
+            "completedBatchReuseRequired",
+            "maximumChunksPerRequest",
+            "maximumGroupsPerRequest",
+            "operationalInputTokenCap",
+            "providerInputTokenCap",
+            "requestPacketPhysicalCallCap",
+            "sourceCheckpointReuseRequired",
+            "stopRemainingBatchesAfterFirstFailure",
+            "tokenHeadroom"
+          ],
+          "type": "object"
         },
         "filesApiAllowed": {
           "const": false
@@ -262,7 +312,7 @@
           "type": "array"
         },
         "generationFallback": {
-          "const": "FULL_BUNDLE_REBUILD_EVALUATE_CAS"
+          "const": "NO_BGE_FALLBACK_RESUME_VOYAGE_BATCHES_EVALUATE_CAS"
         },
         "modelId": {
           "const": "voyage-context-4"
@@ -336,6 +386,30 @@
         "partialProfileMixAllowed": {
           "const": false
         },
+        "queryEvaluationBatches": {
+          "additionalProperties": false,
+          "properties": {
+            "componentBatchCount": {
+              "const": 2
+            },
+            "exact30LogicalQueryCount": {
+              "const": 10
+            },
+            "oa112LogicalQueryCount": {
+              "const": 112
+            },
+            "singletonQueryGroupsRequired": {
+              "const": true
+            }
+          },
+          "required": [
+            "componentBatchCount",
+            "exact30LogicalQueryCount",
+            "oa112LogicalQueryCount",
+            "singletonQueryGroupsRequired"
+          ],
+          "type": "object"
+        },
         "queryUnitFallbackAllowed": {
           "const": false
         },
@@ -347,9 +421,12 @@
         }
       },
       "required": [
+        "activationMode",
         "activationEvidenceRequired",
         "batchApiAllowed",
+        "bgePublicExecution",
         "dimension",
+        "documentBatchLimits",
         "filesApiAllowed",
         "fullBundleScope",
         "generationFallback",
@@ -359,6 +436,7 @@
         "outboundCallsAllowed",
         "orderedPrechunkedDocumentGroupsRequired",
         "partialProfileMixAllowed",
+        "queryEvaluationBatches",
         "queryUnitFallbackAllowed",
         "retryCount",
         "runtimeEnvironmentVariable"

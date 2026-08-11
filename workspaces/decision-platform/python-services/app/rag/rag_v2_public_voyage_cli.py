@@ -2,10 +2,10 @@
 
 The provider-opening commands are materialize-stage-public-base and the stricter
 materialize-stage-evaluate-public-base. Both prepare all public documents and the empty
-OWNER_PRIVATE sentinel before reserving one packet-bound document lease; the latter then consumes
-the fixed 10+112 query packets against the same in-process vectors. No failed database write is retried
-against Voyage, and no raw corpus, vector, credential, approval packet, or provider response is persisted
-in a receipt or emitted to stdout.
+OWNER_PRIVATE sentinel before consuming the exact pending document-batch packets; the latter then
+consumes one EXACT30 and one OA112 evaluation-batch packet against the same staged vectors. No failed
+database write is retried against Voyage, and no raw corpus, vector, credential, approval packet, or
+provider response is persisted in a receipt or emitted to stdout.
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ from app.rag.owner_file_io import OwnerFileIoError, read_owner_regular_file
 from app.rag.pre_s5_provider_control import (
     PreS5ProviderActivationError,
     PreS5ProviderBinding,
-    load_pre_s5_voyage_activation,
+    load_pre_s5_voyage_document_batch_activation,
     resolve_voyage_api_key,
 )
 from app.rag.pre_s5_voyage_transport import (
@@ -61,17 +61,22 @@ from app.rag.rag_v2_public_voyage_staging_repository import (
     PsycopgRagV2PublicVoyageStagingRepository,
 )
 from app.rag.rag_v2_public_voyage_evaluator import (
-    PacketGatedPublicVoyageEvaluationQueryEmbedder,
+    PacketGatedPublicVoyageEvaluationBatchEmbedder,
     PublicVoyagePairEvaluationError,
     evaluate_public_voyage_pair,
-    evaluation_query_id_by_sha256,
     load_public_voyage_evaluation_inputs,
 )
+from app.rag.rag_v2_voyage_batch_repository import (
+    PsycopgRagV2VoyageBatchRepository,
+    RagV2VoyageBatchRepositoryError,
+)
+from app.rag.rag_v2_voyage_batching import RagV2VoyageBatchingError
 from app.rag.rag_v2_voyage_full_bundle import (
+    PublicBaseVoyageBatchPreparation,
     PublicBaseVoyageMaterialization,
     RagV2VoyageFullBundleError,
-    materialize_public_base_voyage_full_bundle,
-    prepare_public_base_voyage_full_bundle,
+    materialize_public_base_voyage_batches,
+    prepare_public_base_voyage_batches,
 )
 
 _VOYAGE_PROFILE_ID = "voyage_context_4_1024_v1"
@@ -79,6 +84,8 @@ _STAGING_DIRECTORY = "staging"
 _STAGING_FILENAME = "public-voyage-pair.v1.json"
 _EVALUATION_DIRECTORY = "evaluation"
 _EVALUATION_FILENAME = "public-voyage-pair.v1.json"
+_BATCH_PLAN_DIRECTORY = "batch-plans"
+_BATCH_PLAN_FILENAME = "public-voyage-batches.v1.json"
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _GENERATION_ID = re.compile(r"^rgr_[0-9a-f]{32}$")
 _RUN_ID = re.compile(r"^rgr_run_[0-9a-f]{32}$")
@@ -205,12 +212,57 @@ class _StagedPublicVoyageAttempt:
     registry: Oa112ActiveRegistry
     binding: PreS5ProviderBinding
     api_key: str
+    tokenizer_sha256: str
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     """Run one fixed, argv-secret-free public Voyage operation and emit a content-free JSON receipt."""
 
     arguments = tuple(sys.argv[1:] if argv is None else argv)
+    if arguments == ("prepare-public-base-batches",):
+        try:
+            preparation = _prepare_public_base_batch_plan()
+            receipt = preparation.content_free_receipt()
+            write_benchmark_receipt(
+                approved_root=_local_root(),
+                relative_directory=_BATCH_PLAN_DIRECTORY,
+                filename=_BATCH_PLAN_FILENAME,
+                payload=_canonical_json(
+                    {
+                        **receipt,
+                        "batches": [
+                            batch.content_free_receipt() for batch in preparation.plan.batches
+                        ],
+                        "checkpointExpectedSourceCount": 142,
+                        "providerPhysicalCallCount": 0,
+                        "schemaVersion": 1,
+                        "state": "PREPARED",
+                    }
+                ),
+            )
+        except (
+            BenchmarkReceiptIoError,
+            BgeRuntimeError,
+            Oa112ActiveRegistryError,
+            PreS5VoyageTokenizerError,
+            RagV2VoyageFullBundleError,
+            PublicVoyageCliError,
+            ValueError,
+        ):
+            return _failure("PUBLIC_VOYAGE_BATCH_PREPARATION_FAILED")
+        _emit(
+            {
+                "batchCount": len(preparation.plan.batches),
+                "chunkCount": preparation.plan.chunk_count,
+                "code": "PUBLIC_VOYAGE_BATCH_PLAN_PREPARED",
+                "planSha256": preparation.plan.plan_sha256,
+                "providerPhysicalCallCount": 0,
+                "sourceCount": preparation.plan.source_count,
+                "state": "PREPARED",
+                "tokenCount": preparation.plan.token_count,
+            }
+        )
+        return 0
     if arguments == ("materialize-stage-public-base",):
         writer_dsn = os.environ.get("CAPSTONE_RAG_WRITER_DATABASE_DSN", "").strip()
         if not writer_dsn:
@@ -309,7 +361,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 def _stage_public_base(*, writer_dsn: str) -> PublicVoyageStagedPair:
-    """Prepare all public groups, consume one document packet, then stage both components exactly once.
+    """Prepare all public groups, consume only pending batch packets, then stage both components once.
 
     A writer failure after the provider response is terminal for this invocation.  The command never
     recreates a transport or retries the packet; the operator receives a content-free marker and must
@@ -323,11 +375,11 @@ def _stage_and_evaluate_public_base(
     *,
     writer_dsn: str,
 ) -> tuple[PublicVoyageStagedPair, PublicVoyageEvaluationPair]:
-    """Run the real profile evaluation immediately after its one document call, with no BGE substitution.
+    """Run the real profile evaluation after all document batches complete, with no BGE substitution.
 
     Staging is made durable before query evaluation begins, so a later packet/provider failure never causes
     the document response to be logged or silently retried.  The process holds canonical text and vectors only
-    long enough to execute the exact 10+112 packet-gated RRF suite and then writes content-free evidence.
+    long enough to execute the two component-batched RRF suites and then writes content-free evidence.
     """
 
     attempt = _stage_public_base_attempt(writer_dsn=writer_dsn)
@@ -340,15 +392,14 @@ def _stage_and_evaluate_public_base(
                 exact30_context=attempt.materialization.exact30.context,
             )
         )
-        query_embedder = PacketGatedPublicVoyageEvaluationQueryEmbedder(
+        query_embedder = PacketGatedPublicVoyageEvaluationBatchEmbedder(
             local_root=attempt.local_root,
             binding=attempt.binding,
             api_key=attempt.api_key,
             usage_repository=PsycopgPreS5VoyageQueryUsageRepository(database_dsn=writer_dsn),
-            query_id_by_sha256=evaluation_query_id_by_sha256(
-                exact30_queries=exact30_queries,
-                oa112_queries=oa112_queries,
-            ),
+            exact30_queries=exact30_queries,
+            oa112_queries=oa112_queries,
+            tokenizer_sha256=attempt.tokenizer_sha256,
             sender=UrllibPreS5VoyageHttpSender(),
         )
     except (
@@ -409,36 +460,49 @@ def _stage_and_evaluate_public_base(
     return attempt.pair, pair_evaluation
 
 
+def _prepare_public_base_batch_plan() -> PublicBaseVoyageBatchPreparation:
+    """provider/DB capability 없이 checkpoint 142개와 exact content-free batch set만 준비한다."""
+
+    local_root = _local_root()
+    registry = _load_oa112_registry(local_root)
+    tokenizer = BgeStaticTokenizer.from_file(_bge_packet_root() / "onnx" / "tokenizer.json")
+    token_counter = LocalPreS5VoyageContext4Tokenizer.from_local_root(
+        local_root=local_root,
+        expected_sha256=_voyage_tokenizer_sha256(),
+    )
+    return prepare_public_base_voyage_batches(
+        tokenizer=tokenizer,
+        voyage_token_counter=token_counter,
+        oa112_registry=registry,
+        oa112_local_cache_root=local_root,
+        checkpoint_local_corpus_root=local_root,
+    )
+
+
 def _stage_public_base_attempt(*, writer_dsn: str) -> _StagedPublicVoyageAttempt:
-    """Prepare, consume one document packet, and stage both public components without retaining a resume vector."""
+    """checkpoint를 reuse하고 DB 완료 batch를 건너뛰며 미완료 packet만 순서대로 한 번씩 소비한다."""
 
     try:
         local_root = _local_root()
         registry = _load_oa112_registry(local_root)
         tokenizer = BgeStaticTokenizer.from_file(_bge_packet_root() / "onnx" / "tokenizer.json")
-        preparation = prepare_public_base_voyage_full_bundle(
-            tokenizer=tokenizer,
-            oa112_registry=registry,
-            oa112_local_cache_root=local_root,
-        )
-        binding = _execution_binding(local_root=local_root)
-        activation = load_pre_s5_voyage_activation(local_root=local_root, binding=binding)
+        tokenizer_sha256 = _voyage_tokenizer_sha256()
         token_counter = LocalPreS5VoyageContext4Tokenizer.from_local_root(
             local_root=local_root,
-            expected_sha256=activation.tokenizer_sha256,
+            expected_sha256=tokenizer_sha256,
         )
+        preparation = prepare_public_base_voyage_batches(
+            tokenizer=tokenizer,
+            voyage_token_counter=token_counter,
+            oa112_registry=registry,
+            oa112_local_cache_root=local_root,
+            checkpoint_local_corpus_root=local_root,
+        )
+        binding = _execution_binding(local_root=local_root)
         api_key = resolve_voyage_api_key(os.environ)
-        lease = PsycopgPreS5VoyageUsageRepository(database_dsn=writer_dsn).reserve(
-            activation=activation,
-            bundle=preparation.bundle,
-        )
-        transport = PreS5VoyageContext4Transport(
-            activation=activation,
-            api_key=api_key,
-            lease=lease,
-            token_counter=token_counter,
-            sender=UrllibPreS5VoyageHttpSender(),
-        )
+        usage_repository = PsycopgPreS5VoyageUsageRepository(database_dsn=writer_dsn)
+        batch_repository = PsycopgRagV2VoyageBatchRepository(database_dsn=writer_dsn)
+        accumulator = batch_repository.resume(plan=preparation.plan)
     except (
         BgeRuntimeError,
         Oa112ActiveRegistryError,
@@ -446,24 +510,71 @@ def _stage_public_base_attempt(*, writer_dsn: str) -> _StagedPublicVoyageAttempt
         PreS5ProviderActivationError,
         PreS5VoyageTokenizerError,
         PreS5VoyageUsageRepositoryError,
-        PreS5VoyageTransportError,
+        RagV2VoyageBatchRepositoryError,
+        RagV2VoyageBatchingError,
         RagV2VoyageFullBundleError,
         ValueError,
     ):
         raise PublicVoyageCliError("PUBLIC_VOYAGE_STAGE_PRECONDITION") from None
 
+    for batch in accumulator.pending_batches:
+        try:
+            activation = load_pre_s5_voyage_document_batch_activation(
+                local_root=local_root,
+                binding=binding,
+                batch_plan_sha256=preparation.plan.plan_sha256,
+                batch_id=batch.batch_id,
+                batch_manifest_sha256=batch.batch_manifest_sha256,
+                batch_ordinal=batch.batch_ordinal,
+                batch_count=batch.batch_count,
+                token_count=batch.token_count,
+                chunk_count=batch.chunk_count,
+                group_count=batch.group_count,
+            )
+            lease = usage_repository.reserve_document_batch(
+                activation=activation,
+                plan=preparation.plan,
+                batch=batch,
+            )
+            transport = PreS5VoyageContext4Transport(
+                activation=activation,
+                api_key=api_key,
+                lease=lease,
+                token_counter=token_counter,
+                sender=UrllibPreS5VoyageHttpSender(),
+            )
+            vectors = transport.embed_document_batch(
+                batch_plan_sha256=preparation.plan.plan_sha256,
+                batch=batch,
+            )
+            batch_repository.stage_success(
+                activation=activation,
+                plan=preparation.plan,
+                batch=batch,
+                vectors=vectors,
+            )
+            accumulator.record_success(batch=batch, vectors=vectors)
+        except (
+            PreS5ProviderActivationError,
+            PreS5VoyageUsageRepositoryError,
+            PreS5VoyageTransportError,
+            RagV2VoyageBatchRepositoryError,
+            RagV2VoyageBatchingError,
+        ):
+            raise PublicVoyageCliError(
+                "PUBLIC_VOYAGE_DOCUMENT_BATCH_FAILED",
+                attempt_summary={
+                    "batchCount": len(preparation.plan.batches),
+                    "completedBatchCount": len(accumulator.completed_batch_ids),
+                    "failedBatchId": batch.batch_id,
+                    "rawArtifactCount": 0,
+                },
+            ) from None
     try:
-        materialization = materialize_public_base_voyage_full_bundle(
+        materialization = materialize_public_base_voyage_batches(
             preparation=preparation,
-            embedder=transport,
+            accumulator=accumulator,
         )
-    except RagV2VoyageFullBundleError:
-        raise PublicVoyageCliError(
-            "PUBLIC_VOYAGE_DOCUMENT_EMBEDDING_FAILED",
-            attempt_summary=transport.content_free_summary(),
-        ) from None
-
-    try:
         repository = PsycopgRagV2PublicVoyageStagingRepository(database_dsn=writer_dsn)
         exact30_receipts = repository.stage_component(
             records=materialization.exact30.records,
@@ -478,22 +589,20 @@ def _stage_public_base_attempt(*, writer_dsn: str) -> _StagedPublicVoyageAttempt
             exact30_count=len(exact30_receipts),
             oa112_count=len(oa112_receipts),
         )
-    except PublicVoyageStagingRepositoryError:
+    except (RagV2VoyageFullBundleError, PublicVoyageStagingRepositoryError):
         raise PublicVoyageCliError(
             "PUBLIC_VOYAGE_POSTCALL_STAGING_REQUIRED",
-            attempt_summary=transport.content_free_summary(),
+            attempt_summary={
+                "batchCount": len(preparation.plan.batches),
+                "completedBatchCount": len(accumulator.completed_batch_ids),
+                "rawArtifactCount": 0,
+            },
         ) from None
-    summary = transport.content_free_summary()
-    if summary.get("externalPhysicalCalls") != 1 or summary.get("logicalCallsConsumed") != 1:
-        raise PublicVoyageCliError(
-            "PUBLIC_VOYAGE_DOCUMENT_EMBEDDING_FAILED",
-            attempt_summary=summary,
-        )
     pair = PublicVoyageStagedPair(
-        bundle_manifest_sha256=preparation.bundle.manifest_sha256,
+        bundle_manifest_sha256=preparation.plan.plan_sha256,
         exact30=materialization.exact30.context,
         oa112=materialization.oa112.context,
-        document_embedding_provider_physical_call_count=1,
+        document_embedding_provider_physical_call_count=len(preparation.plan.batches),
     )
     return _StagedPublicVoyageAttempt(
         pair=pair,
@@ -502,6 +611,7 @@ def _stage_public_base_attempt(*, writer_dsn: str) -> _StagedPublicVoyageAttempt
         registry=registry,
         binding=binding,
         api_key=api_key,
+        tokenizer_sha256=tokenizer_sha256,
     )
 
 
@@ -515,7 +625,7 @@ def write_public_voyage_pair_evaluation_receipt(
     """Persist a content-free evaluator result before the independent writer transition.
 
     The query evaluator, not this CLI, supplies the metrics.  This writer freezes the staged component
-    IDs and exact 10/112 one-shot query counts so an old evaluation cannot be applied to a new bundle.
+    IDs and exact 10/112 logical query counts so an old evaluation cannot be applied to a new bundle.
     """
 
     _validate_evaluation_counts(exact30=exact30, oa112=oa112)
@@ -568,7 +678,8 @@ def _load_staged_pair(*, local_root: Path) -> PublicVoyageStagedPair:
         payload.get("schemaVersion") != 1
         or payload.get("state") != "STAGED"
         or payload.get("embeddingProfileId") != _VOYAGE_PROFILE_ID
-        or payload.get("documentEmbeddingProviderPhysicalCallCount") != 1
+        or type(payload.get("documentEmbeddingProviderPhysicalCallCount")) is not int
+        or not 1 <= cast(int, payload.get("documentEmbeddingProviderPhysicalCallCount")) <= 10_000
         or not _is_sha256(payload.get("bundleManifestSha256"))
     ):
         raise PublicVoyageCliError("PUBLIC_VOYAGE_STAGE_RECEIPT_REQUIRED")
@@ -576,7 +687,9 @@ def _load_staged_pair(*, local_root: Path) -> PublicVoyageStagedPair:
         bundle_manifest_sha256=_required_hash(payload.get("bundleManifestSha256")),
         exact30=_parse_exact30_context(payload.get("exact30")),
         oa112=_parse_oa112_context(payload.get("oa112")),
-        document_embedding_provider_physical_call_count=1,
+        document_embedding_provider_physical_call_count=cast(
+            int, payload.get("documentEmbeddingProviderPhysicalCallCount")
+        ),
     )
 
 
@@ -650,6 +763,15 @@ def _bge_packet_root() -> Path:
     return root
 
 
+def _voyage_tokenizer_sha256() -> str:
+    """acquisition evidence가 주입한 non-secret exact digest만 받아 local artifact를 검증한다."""
+
+    value = os.environ.get("CAPSTONE_RAG_VOYAGE_TOKENIZER_SHA256", "").strip()
+    if _SHA256.fullmatch(value) is None:
+        raise PreS5VoyageTokenizerError("PRE_S5_VOYAGE_OFFICIAL_TOKENIZER_SHA256")
+    return value
+
+
 def _local_root() -> Path:
     """Resolve the one local control/cache root without accepting raw paths through command arguments."""
 
@@ -693,7 +815,7 @@ def _validate_evaluation_counts(
 ) -> None:
     """Prevent an evaluator from hiding live query attempts or treating a partial corpus as accepted."""
 
-    if exact30.provider_physical_call_count != 10 or oa112.provider_physical_call_count != 112:
+    if exact30.provider_physical_call_count != 1 or oa112.provider_physical_call_count != 1:
         raise PublicVoyageCliError("PUBLIC_VOYAGE_EVALUATION_RECEIPT")
 
 

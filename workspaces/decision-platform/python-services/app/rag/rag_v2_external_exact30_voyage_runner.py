@@ -39,6 +39,13 @@ from app.rag.ingest_pipeline import (
     RagTokenizer,
     build_embedding_inputs,
 )
+from app.rag.rag_v2_bge_materializer import RagV2PreparedPublicDocument
+from app.rag.rag_v2_voyage_checkpoint import (
+    RagV2VoyageCheckpointError,
+    load_optional_public_voyage_checkpoint,
+    write_public_voyage_checkpoint,
+)
+from app.rag.rag_v2_voyage_types import PublicVoyageSourceMetadata
 from app.rag.source_card_corpus import (
     PUBLIC_TOPICS_BY_SOURCE_ID,
     FrozenSourceCard,
@@ -96,24 +103,6 @@ class RagV2VoyageDocumentEmbedding:
     embedding_input_hash: str
     context_set_hash: str
     embedding: NDArray[np.float32]
-
-
-@dataclass(frozen=True, slots=True)
-class PublicVoyageSourceMetadata:
-    """external-safe exact-30 citation/right projection만 DB staging에 전달하는 metadata다."""
-
-    citation_title: str
-    retrieval_topics: tuple[str, ...]
-    canonical_https_url: str
-    source_card_sha256: str | None
-    machine_fetch_allowed: bool
-    local_processing_allowed: bool
-    external_embedding_allowed: bool
-    external_generation_allowed: bool
-    oa_track_id: str | None = None
-    oa_source_card: dict[str, object] | None = None
-    license_evidence_sha256: str | None = None
-    access_evidence_sha256: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -177,6 +166,8 @@ class ExternalExact30PublicVoyagePreparation:
 
     prepared_documents: tuple[_PreparedExternalExact30Document, ...]
     source_card_corpus_manifest_sha256: str
+    checkpoint_reused_count: int
+    checkpoint_written_count: int
 
     @property
     def groups(self) -> tuple[VoyagePreChunkedDocumentGroup, ...]:
@@ -221,6 +212,9 @@ def prepare_external_exact30_public_voyage_component(
     *,
     tokenizer: RagTokenizer,
     corpus: FrozenSourceCardCorpus | None = None,
+    checkpoint_local_corpus_root: Path | None = None,
+    parser_version: str = "1.0.0",
+    tokenizer_version: str = "bge-m3-sentencepiece-v1",
 ) -> ExternalExact30PublicVoyagePreparation:
     """exact-30 source cards를 one-shot full-bundle document group으로 prepare한다.
 
@@ -240,10 +234,48 @@ def prepare_external_exact30_public_voyage_component(
     ):
         raise RagV2ExternalExact30VoyageRunnerError("EXTERNAL_EXACT30_SOURCE_CARD_MEMBERSHIP")
     parser = ExternalExact30SourceCardDocumentParser(corpus=selected_corpus)
-    provisional = tuple(
-        _prepare_document(card=card, parser=parser, tokenizer=tokenizer)
-        for card in cards
-    )
+    provisional_items: list[_PreparedExternalExact30Document] = []
+    checkpoint_reused_count = 0
+    checkpoint_written_count = 0
+    for card in cards:
+        source_revision_id = external_exact30_source_revision_id(card)
+        metadata = _source_metadata(card)
+        try:
+            checkpoint = None
+            if checkpoint_local_corpus_root is not None:
+                checkpoint = load_optional_public_voyage_checkpoint(
+                    local_corpus_root=checkpoint_local_corpus_root,
+                    component_scope="EXACT30",
+                    expected_raw_content_sha256=card.content_sha256,
+                    expected_source_revision_id=source_revision_id,
+                    parser_version=parser_version,
+                    tokenizer_version=tokenizer_version,
+                )
+            if checkpoint is None:
+                item = _prepare_document(card=card, parser=parser, tokenizer=tokenizer)
+                if checkpoint_local_corpus_root is not None:
+                    write_public_voyage_checkpoint(
+                        local_corpus_root=checkpoint_local_corpus_root,
+                        parser_version=parser_version,
+                        tokenizer_version=tokenizer_version,
+                        prepared=RagV2PreparedPublicDocument(
+                            document=item.document,
+                            embedding_inputs=item.embedding_inputs,
+                            source_revision_sha256=_canonical_hash(item.document_ir),
+                            document_ir=item.document_ir,
+                        ),
+                        metadata=metadata,
+                    )
+                    checkpoint_written_count += 1
+            else:
+                if checkpoint.metadata != metadata:
+                    raise RagV2ExternalExact30VoyageRunnerError("EXTERNAL_EXACT30_CHECKPOINT_DRIFT")
+                item = _prepared_from_checkpoint(card=card, prepared=checkpoint.prepared)
+                checkpoint_reused_count += 1
+        except RagV2VoyageCheckpointError as error:
+            raise RagV2ExternalExact30VoyageRunnerError("EXTERNAL_EXACT30_DOCUMENT_MATERIALIZATION") from error
+        provisional_items.append(item)
+    provisional = tuple(provisional_items)
     if len(provisional) != 30 or tuple(item.group.source_id for item in provisional) != tuple(
         sorted((item.group.source_id for item in provisional), key=lambda value: value.encode("utf-8"))
     ):
@@ -251,6 +283,8 @@ def prepare_external_exact30_public_voyage_component(
     return ExternalExact30PublicVoyagePreparation(
         prepared_documents=provisional,
         source_card_corpus_manifest_sha256=selected_corpus.corpus_manifest_sha256,
+        checkpoint_reused_count=checkpoint_reused_count,
+        checkpoint_written_count=checkpoint_written_count,
     )
 
 
@@ -469,6 +503,51 @@ def _prepare_document(
             context_set_hash=context_hash,
             chunks=chunks,
         ),
+    )
+
+
+def _prepared_from_checkpoint(
+    *,
+    card: FrozenSourceCard,
+    prepared: RagV2PreparedPublicDocument,
+) -> _PreparedExternalExact30Document:
+    """verified profile-neutral checkpoint를 기존 exact-30 transport pairing으로 복원한다."""
+
+    document = prepared.document
+    inputs = prepared.embedding_inputs
+    expected_revision = external_exact30_source_revision_id(card)
+    if (
+        document.source_scope != "EXACT30"
+        or document.source_id != card.source_id
+        or document.source_revision_id != expected_revision
+        or len(document.chunks) != len(inputs)
+        or not inputs
+    ):
+        raise RagV2ExternalExact30VoyageRunnerError("EXTERNAL_EXACT30_CHECKPOINT_DRIFT")
+    context_hash = _required_context_hash(inputs[0].context_set_hash)
+    if any(item.context_set_hash != context_hash for item in inputs):
+        raise RagV2ExternalExact30VoyageRunnerError("EXTERNAL_EXACT30_CHECKPOINT_DRIFT")
+    group = VoyagePreChunkedDocumentGroup(
+        source_id=card.source_id,
+        source_revision_id=expected_revision,
+        context_set_hash=context_hash,
+        chunks=tuple(
+            VoyagePreChunkedChunk(
+                chunk_id=chunk.chunk_id,
+                canonical_text=chunk.canonical_text,
+                canonical_text_sha256=chunk.canonical_text_sha256,
+                embedding_input_hash=embedding_input.embedding_input_hash,
+                token_count=chunk.token_count,
+            )
+            for chunk, embedding_input in zip(document.chunks, inputs, strict=True)
+        ),
+    )
+    return _PreparedExternalExact30Document(
+        card=card,
+        document_ir=prepared.document_ir,
+        document=document,
+        embedding_inputs=inputs,
+        group=group,
     )
 
 

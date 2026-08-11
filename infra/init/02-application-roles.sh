@@ -1162,6 +1162,22 @@ BEGIN
         TO decision_rag_writer;
     END IF;
     IF to_regprocedure(
+        'public.stage_rag_v2_immutable_voyage_document_batch(jsonb)'
+    ) IS NOT NULL
+       AND to_regprocedure(
+           'public.load_rag_v2_immutable_voyage_document_batch_vectors(text)'
+       ) IS NOT NULL
+       AND to_regprocedure(
+           'public.record_rag_v2_bge_public_execution_supersession(text,text)'
+       ) IS NOT NULL THEN
+        -- V54는 raw table grant 없이 batch stage/resume와 terminal BGE marker capability만 복구한다.
+        GRANT EXECUTE ON FUNCTION
+            stage_rag_v2_immutable_voyage_document_batch(jsonb),
+            load_rag_v2_immutable_voyage_document_batch_vectors(text),
+            record_rag_v2_bge_public_execution_supersession(text, text)
+        TO decision_rag_writer;
+    END IF;
+    IF to_regprocedure(
         'public.issue_rag_v2_retrieval_scope(text,text,text[])'
     ) IS NOT NULL
        AND to_regprocedure(

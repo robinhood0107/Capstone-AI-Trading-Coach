@@ -397,6 +397,7 @@ class PreS5RagNewsContractTest(unittest.TestCase):
                 "completedBatchReuseRequired": True,
                 "maximumChunksPerRequest": 16000,
                 "maximumGroupsPerRequest": 1000,
+                "maximumPacketTtlSeconds": 7200,
                 "maximumResponseBytes": 16777216,
                 "operationalMaximumChunksPerRequest": 672,
                 "operationalInputTokenCap": 110000,
@@ -414,7 +415,10 @@ class PreS5RagNewsContractTest(unittest.TestCase):
         self.assertEqual(
             {
                 "componentBatchCount": 2,
+                "completedBatchReuseRequired": True,
+                "durableVectorStageRequired": True,
                 "exact30LogicalQueryCount": 10,
+                "maximumPacketTtlSeconds": 7200,
                 "oa112LogicalQueryCount": 112,
                 "singletonQueryGroupsRequired": True,
             },

@@ -90,6 +90,12 @@
     "modelId": "voyage-context-4",
     "officialTokenizer": {
       "artifactAutoDownloadAllowed": false,
+      "batchAuthoringRequiresInstalledArtifact": true,
+      "bootstrapAcquisitionApprovalRequired": true,
+      "bootstrapEndpoint": "/voyageai/voyage-context-4/raw/8ca946072a18e398cd61f2ad0243b56d0350b1db/tokenizer.json",
+      "bootstrapMaximumPacketTtlSeconds": 300,
+      "bootstrapPhysicalCallCap": 1,
+      "bootstrapRevision": "8ca946072a18e398cd61f2ad0243b56d0350b1db",
       "localArtifactOnly": true,
       "packetHashBindingRequired": true,
       "preflightExpectedInputTokenLedgerRequired": true,

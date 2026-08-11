@@ -1516,6 +1516,9 @@ materialization과 pointer transition은 별도 승인 packet이 필요한 CLI �
 V54는 public EXACT30+OA112 CPU BGE 재실행을
 `TERMINALLY_SUPERSEDED_NO_FURTHER_BGE_RUN`으로 보존하고, official tokenizer 기준 110K token 이하
 exact manifest-bound Voyage document batch의 append-only plan/batch/vector ledger와 재개 reader를 추가한다.
+local tokenizer가 없으면 fixed Voyage AI Hugging Face commit
+`8ca946072a18e398cd61f2ad0243b56d0350b1db`의 `tokenizer.json` 한 파일만 5분·physical cap 1
+bootstrap packet으로 먼저 취득한다. observed SHA-256이 없으면 batch authoring과 provider socket은 0이다.
 성공 batch와 142개 source checkpoint는 provider call 0으로 재사용하며 EXACT30/OA112 query 평가는
 logical 10/112개를 singleton group으로 묶은 component batch 각 1회다. 모든 batch·평가가 통과하기 전
 CAS activation은 0이고 기존 ask/history/OpenAPI/proto payload는 변하지 않는다.

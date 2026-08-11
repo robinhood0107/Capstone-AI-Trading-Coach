@@ -206,6 +206,10 @@ def acquire_pre_s5_voyage_tokenizer(
     active_fetcher = fetcher or _PinnedHuggingFaceFetcher()
     try:
         raw = active_fetcher.fetch(url=_URL, byte_cap=packet.byte_cap)
+        if not isinstance(raw, bytes) or not 1 <= len(raw) <= packet.byte_cap:
+            raise PreS5VoyageTokenizerAcquisitionError(
+                "PRE_S5_VOYAGE_TOKENIZER_DOWNLOAD_SIZE"
+            )
         try:
             _, tokenizer_sha256 = validate_pre_s5_voyage_tokenizer_bytes(raw)
         except PreS5VoyageTokenizerError:

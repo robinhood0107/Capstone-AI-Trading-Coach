@@ -75,11 +75,12 @@ class _FixtureQueryEmbedder:
 
 
 class _FixtureVoyageQueryEmbedder:
-    """Query-only fixture seam: every successful question represents one Voyage physical attempt."""
+    """Component 첫 질문만 Voyage batch physical call을 나타내는 evaluator fixture다."""
 
     def __init__(self, *, fail_on_call: int | None = None) -> None:
         self.calls: list[str] = []
         self._fail_on_call = fail_on_call
+        self._loaded_components: set[str] = set()
 
     @property
     def embedding_profile_id(self) -> str:
@@ -105,9 +106,12 @@ class _FixtureVoyageQueryEmbedder:
             raise ValueError("fixture question")
         index = int(match.group(2))
         coordinate = index if match.group(1) == "exact" else 100 + index
+        component = match.group(1)
+        physical_calls = 0 if component in self._loaded_components else 1
+        self._loaded_components.add(component)
         vector = [0.0] * 1024
         vector[coordinate] = 1.0
-        return RagV2QueryEmbeddingReceipt(vector=tuple(vector), voyage_physical_calls=1)
+        return RagV2QueryEmbeddingReceipt(vector=tuple(vector), voyage_physical_calls=physical_calls)
 
     def embed_query(self, question: str) -> Sequence[float]:
         del question
@@ -214,8 +218,8 @@ def test_public_voyage_pair_evaluator_runs_all_packet_accounted_queries_without_
     )
 
     assert evaluation.acceptance_passed is True
-    assert evaluation.exact30.provider_physical_call_count == 10
-    assert evaluation.oa112.provider_physical_call_count == 112
+    assert evaluation.exact30.provider_physical_call_count == 1
+    assert evaluation.oa112.provider_physical_call_count == 1
     assert len(query_embedder.calls) == 122
     assert evaluation_query_id_by_sha256(
         exact30_queries=exact_queries,
@@ -227,7 +231,7 @@ def test_public_voyage_pair_evaluator_stops_after_one_failed_physical_query_atte
     exact_records = tuple(_voyage_record("EXACT30", index) for index in range(30))
     oa_records = tuple(_voyage_record("OA112", index) for index in range(112))
     registry = _registry()
-    query_embedder = _FixtureVoyageQueryEmbedder(fail_on_call=2)
+    query_embedder = _FixtureVoyageQueryEmbedder(fail_on_call=11)
 
     with pytest.raises(PublicVoyagePairEvaluationError, match="PUBLIC_VOYAGE_EVALUATION_QUERY_FAILED"):
         evaluate_public_voyage_pair(
@@ -250,7 +254,7 @@ def test_public_voyage_pair_evaluator_stops_after_one_failed_physical_query_atte
             query_embedder=query_embedder,
         )
 
-    assert len(query_embedder.calls) == 2
+    assert len(query_embedder.calls) == 11
 
 
 def test_oa112_local_manifest_is_registry_bound_complete_and_cannot_name_gold_source(

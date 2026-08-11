@@ -54,6 +54,57 @@ def test_public_voyage_cli_rejects_unknown_and_unconfigured_commands_before_a_pr
     assert invoked is False
 
 
+def test_public_voyage_cli_prepares_content_free_batch_plan_without_provider_configuration(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    batch = SimpleNamespace(content_free_receipt=lambda: {"batchId": "rvb_" + "1" * 32})
+    plan = SimpleNamespace(
+        batches=(batch,),
+        chunk_count=7_874,
+        plan_sha256="a" * 64,
+        source_count=142,
+        token_count=250_000,
+    )
+    preparation = SimpleNamespace(
+        content_free_receipt=lambda: {
+            "checkpointReusedSourceCount": 142,
+            "checkpointWrittenSourceCount": 0,
+        },
+        plan=plan,
+    )
+    stored: dict[str, object] = {}
+
+    monkeypatch.delenv("VOYAGE_API_KEY", raising=False)
+    monkeypatch.setattr(
+        rag_v2_public_voyage_cli,
+        "_prepare_public_base_batch_plan",
+        lambda: preparation,
+    )
+    monkeypatch.setattr(rag_v2_public_voyage_cli, "_local_root", lambda: Path("/safe/local-root"))
+    monkeypatch.setattr(
+        rag_v2_public_voyage_cli,
+        "write_benchmark_receipt",
+        lambda **values: stored.update(values),
+    )
+
+    assert rag_v2_public_voyage_cli.main(("prepare-public-base-batches",)) == 0
+    assert stored["approved_root"] == Path("/safe/local-root")
+    stored_payload = json.loads(stored["payload"])
+    assert stored_payload["providerPhysicalCallCount"] == 0
+    assert stored_payload["checkpointExpectedSourceCount"] == 142
+    assert json.loads(capsys.readouterr().out) == {
+        "batchCount": 1,
+        "chunkCount": 7_874,
+        "code": "PUBLIC_VOYAGE_BATCH_PLAN_PREPARED",
+        "planSha256": "a" * 64,
+        "providerPhysicalCallCount": 0,
+        "sourceCount": 142,
+        "state": "PREPARED",
+        "tokenCount": 250_000,
+    }
+
+
 def test_public_voyage_cli_stages_one_pair_and_emits_only_content_free_ids(
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
@@ -136,8 +187,8 @@ def test_public_voyage_cli_runs_the_packet_gated_10_plus_112_evaluation_only_aft
         oa112=SimpleNamespace(component_generation_id="rgr_abcdef0123456789abcdef0123456789"),
     )
     evaluation = SimpleNamespace(
-        exact30=SimpleNamespace(provider_physical_call_count=10),
-        oa112=SimpleNamespace(provider_physical_call_count=112),
+        exact30=SimpleNamespace(provider_physical_call_count=1),
+        oa112=SimpleNamespace(provider_physical_call_count=1),
     )
     received: dict[str, object] = {}
 
@@ -155,9 +206,9 @@ def test_public_voyage_cli_runs_the_packet_gated_10_plus_112_evaluation_only_aft
         "documentEmbeddingProviderPhysicalCallCount": 1,
         "embeddingProfileId": "voyage_context_4_1024_v1",
         "exact30GenerationId": "rgr_0123456789abcdef0123456789abcdef",
-        "exact30QueryPhysicalCallCount": 10,
+        "exact30QueryPhysicalCallCount": 1,
         "oa112GenerationId": "rgr_abcdef0123456789abcdef0123456789",
-        "oa112QueryPhysicalCallCount": 112,
+        "oa112QueryPhysicalCallCount": 1,
         "state": "EVALUATED",
     }
 
@@ -174,8 +225,8 @@ def test_public_voyage_cli_evaluates_and_activates_only_the_staged_pair(
         oa112=oa_context,
     )
     evidence = SimpleNamespace(
-        exact30=SimpleNamespace(provider_physical_call_count=10),
-        oa112=SimpleNamespace(provider_physical_call_count=112),
+        exact30=SimpleNamespace(provider_physical_call_count=1),
+        oa112=SimpleNamespace(provider_physical_call_count=1),
     )
     calls: list[tuple[object, object]] = []
 
@@ -203,9 +254,9 @@ def test_public_voyage_cli_evaluates_and_activates_only_the_staged_pair(
         "code": "PUBLIC_VOYAGE_PUBLIC_BASE_EVALUATED",
         "embeddingProfileId": "voyage_context_4_1024_v1",
         "exact30GenerationId": "rgr_0123456789abcdef0123456789abcdef",
-        "exact30QueryPhysicalCallCount": 10,
+        "exact30QueryPhysicalCallCount": 1,
         "oa112GenerationId": "rgr_abcdef0123456789abcdef0123456789",
-        "oa112QueryPhysicalCallCount": 112,
+        "oa112QueryPhysicalCallCount": 1,
         "state": "EVALUATED",
     }
 
@@ -268,18 +319,18 @@ def test_public_voyage_pair_receipts_bind_context_member_hashes_and_exact_query_
             local_root=local_root,
             pair=pair,
             exact30=_evidence(0),
-            oa112=_evidence(112),
+            oa112=_evidence(1),
         )
 
     rag_v2_public_voyage_cli.write_public_voyage_pair_evaluation_receipt(
         local_root=local_root,
         pair=pair,
-        exact30=_evidence(10),
-        oa112=_evidence(112),
+        exact30=_evidence(1),
+        oa112=_evidence(1),
     )
     evaluation = rag_v2_public_voyage_cli._load_evaluation_pair(local_root=local_root, pair=pair)
-    assert evaluation.exact30.provider_physical_call_count == 10
-    assert evaluation.oa112.provider_physical_call_count == 112
+    assert evaluation.exact30.provider_physical_call_count == 1
+    assert evaluation.oa112.provider_physical_call_count == 1
 
 
 def _pair() -> rag_v2_public_voyage_cli.PublicVoyageStagedPair:

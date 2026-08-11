@@ -7,7 +7,10 @@ from datetime import UTC, datetime, timedelta
 import psycopg
 import pytest
 
-from app.rag.pre_s5_provider_control import PreS5VoyageQueryActivation
+from app.rag.pre_s5_provider_control import (
+    PreS5VoyageEvaluationBatchActivation,
+    PreS5VoyageQueryActivation,
+)
 from app.rag.pre_s5_voyage_query_usage_repository import (
     PreS5VoyageQueryUsageRepositoryError,
     PsycopgPreS5VoyageQueryUsageRepository,
@@ -131,6 +134,38 @@ def test_voyage_query_usage_lease_records_unknown_billing_once_after_claim(
         ).fetchone() == ("UNKNOWN_BILLING", None, None)
 
 
+def test_voyage_evaluation_batch_uses_one_aggregate_ledger_row_per_component(
+    isolated_postgres_cluster: dict[str, str],
+) -> None:
+    activation = _evaluation_batch_activation()
+    repository = PsycopgPreS5VoyageQueryUsageRepository(
+        database_dsn=isolated_postgres_cluster["rag_writer_dsn"]
+    )
+
+    with pytest.raises(PreS5VoyageQueryUsageRepositoryError):
+        repository.reserve(activation=activation, evaluation_component_scope="OA112")
+    lease = repository.reserve(activation=activation, evaluation_component_scope="EXACT30")
+    lease.claim_attempt(now=datetime.now(UTC))
+    lease.commit(expected_input_tokens=10, total_tokens=10, actual_cost_microusd=10)
+
+    with psycopg.connect(isolated_postgres_cluster["admin_dsn"]) as connection:
+        assert connection.execute(
+            """
+            SELECT evaluation_component_scope, query_sha256, scope_claim_sha256,
+                   (SELECT count(*) FROM rag_v2_immutable_voyage_query_usage_attempts AS attempt
+                    WHERE attempt.usage_event_id = reservation.usage_event_id)
+            FROM rag_v2_immutable_voyage_query_usage_reservations AS reservation
+            WHERE reservation.packet_sha256 = %s
+            """,
+            (activation.packet_sha256,),
+        ).fetchone() == (
+            "EXACT30",
+            activation.query_manifest_sha256,
+            activation.scope_claim_sha256,
+            1,
+        )
+
+
 def test_voyage_query_usage_definer_rejects_missing_official_tokenizer_and_preflight_count(
     isolated_postgres_cluster: dict[str, str],
 ) -> None:
@@ -209,6 +244,33 @@ def _activation() -> PreS5VoyageQueryActivation:
         token_cap=8_192,
         byte_cap=1_048_576,
         cost_cap_microusd=8_192,
+        input_microusd_per_token=1,
+        retry_count=0,
+        raw_artifact_count=0,
+    )
+
+
+def _evaluation_batch_activation() -> PreS5VoyageEvaluationBatchActivation:
+    return PreS5VoyageEvaluationBatchActivation(
+        packet_sha256="8" * 64,
+        nonce_sha256="9" * 64,
+        component_scope="EXACT30",
+        query_manifest_sha256="7" * 64,
+        scope_claim_sha256="6" * 64,
+        expected_query_count=10,
+        expected_token_count=10,
+        rate_evidence_sha256="5" * 64,
+        tokenizer_sha256="4" * 64,
+        provider="VOYAGE",
+        operation="CONTEXTUALIZED_QUERY_EMBEDDING",
+        origin="https://api.voyageai.com",
+        endpoint="/v1/contextualizedembeddings",
+        expires_at=datetime.now(UTC) + timedelta(minutes=5),
+        logical_call_cap=1,
+        physical_call_cap=1,
+        token_cap=100,
+        byte_cap=1_048_576,
+        cost_cap_microusd=100,
         input_microusd_per_token=1,
         retry_count=0,
         raw_artifact_count=0,

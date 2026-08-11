@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import hashlib
 from dataclasses import replace
 
+import numpy as np
 import pytest
 
 from app.rag.rag_v2_external_exact30_voyage_runner import (
@@ -10,6 +12,7 @@ from app.rag.rag_v2_external_exact30_voyage_runner import (
 )
 from app.rag.rag_v2_voyage_batching import (
     RagV2VoyageBatchingError,
+    VoyageBatchVectorAccumulator,
     VoyagePreparedComponent,
     build_public_voyage_batch_plan,
 )
@@ -28,7 +31,10 @@ class _TokenCounter:
 
 def test_public_plan_splits_large_source_contiguously_and_packs_under_headroom() -> None:
     exact30 = tuple(_group("exact", index, (1_000,)) for index in range(30))
-    oa112 = tuple(_group("oa", index, (60_000, 60_000)) if index == 0 else _group("oa", index, (1_000,)) for index in range(112))
+    oa112 = tuple(
+        _group("oa", index, (60_000, 60_000)) if index == 0 else _group("oa", index, (100,))
+        for index in range(112)
+    )
 
     plan = build_public_voyage_batch_plan(
         components=_components(exact30=exact30, oa112=oa112),
@@ -36,7 +42,7 @@ def test_public_plan_splits_large_source_contiguously_and_packs_under_headroom()
     )
 
     assert plan.source_count == 142
-    assert plan.chunk_count == 254
+    assert plan.chunk_count == 143
     assert plan.owner_private_ordered_group_count == 0
     assert plan.owner_scope_sha256 is None
     assert len(plan.batches) == 2
@@ -116,6 +122,30 @@ def test_public_plan_hash_changes_when_member_identity_changes() -> None:
     assert drifted.plan_sha256 != baseline.plan_sha256
 
 
+def test_vector_accumulator_skips_completed_batches_and_restores_canonical_order() -> None:
+    exact30 = tuple(_group("exact", index, (60_000,) if index < 2 else (1,)) for index in range(30))
+    oa112 = tuple(_group("oa", index, (1,)) for index in range(112))
+    plan = build_public_voyage_batch_plan(
+        components=_components(exact30=exact30, oa112=oa112),
+        token_counter=_TokenCounter(),
+    )
+    assert len(plan.batches) == 2
+    accumulator = VoyageBatchVectorAccumulator(plan=plan)
+    for batch in reversed(plan.batches):
+        vectors = np.zeros((batch.chunk_count, 1024), dtype=np.float32)
+        for index in range(batch.chunk_count):
+            vectors[index, index % 1024] = 1.0
+        accumulator.record_success(batch=batch, vectors=vectors)
+        assert batch.batch_id not in {item.batch_id for item in accumulator.pending_batches}
+
+    assert accumulator.complete is True
+    assert accumulator.completed_batch_ids == tuple(batch.batch_id for batch in plan.batches)
+    ordered = accumulator.ordered_vectors(groups=exact30 + oa112)
+    assert ordered.shape == (142, 1024)
+    with pytest.raises(RagV2VoyageBatchingError, match="VOYAGE_BATCH_RESUME_STATE"):
+        accumulator.record_success(batch=plan.batches[0], vectors=np.zeros((plan.batches[0].chunk_count, 1024), dtype=np.float32))
+
+
 def _components(
     *,
     exact30: tuple[VoyagePreChunkedDocumentGroup, ...],
@@ -137,7 +167,8 @@ def _group(prefix: str, index: int, token_counts: tuple[int, ...]) -> VoyagePreC
         context_set_hash=f"{index + 1:064x}",
         chunks=tuple(
             VoyagePreChunkedChunk(
-                chunk_id=f"rag_v2_chk_{index:016x}{ordinal:016x}",
+                chunk_id="rag_v2_chk_"
+                + hashlib.sha256(f"{prefix}|{index}|{ordinal}".encode()).hexdigest()[:32],
                 canonical_text=f"tokens:{token_count}",
                 canonical_text_sha256=f"{index + ordinal + 2:064x}",
                 embedding_input_hash=f"{index + ordinal + 3:064x}",

@@ -77,6 +77,27 @@ class InfrastructureSecurityIntegrationTest {
 
         DriverManager.getConnection(postgres.jdbcUrl, postgres.username, adminPassword).use { connection ->
             val bootstrappedPrivilegeFingerprint = privilegeFingerprint(connection)
+            connection.createStatement().use { statement ->
+                val thresholdDefinition =
+                    queryScalar(
+                        statement,
+                        "select pg_get_functiondef('public.evaluate_rag_v2_immutable_public_voyage_component_v45_unlinked(text,jsonb)'::regprocedure)",
+                    )
+                val ledgerDefinition =
+                    queryScalar(
+                        statement,
+                        "select pg_get_functiondef('public.evaluate_rag_v2_immutable_public_voyage_component(text,jsonb)'::regprocedure)",
+                    )
+                assertTrue(thresholdDefinition.contains("WHEN 'EXACT30' THEN 1"))
+                assertTrue(thresholdDefinition.contains("WHEN 'OA112' THEN 1"))
+                assertFalse(thresholdDefinition.contains("WHEN 'EXACT30' THEN 10"))
+                assertFalse(thresholdDefinition.contains("WHEN 'OA112' THEN 112"))
+                assertTrue(
+                    ledgerDefinition.contains(
+                        "CASE generation_scope WHEN 'EXACT30' THEN 1 WHEN 'OA112' THEN 1 ELSE -1 END",
+                    ),
+                )
+            }
             assertEquals(
                 emptySet<String>(),
                 migratedPrivilegeFingerprint.toSet() - bootstrappedPrivilegeFingerprint.toSet(),
@@ -145,6 +166,9 @@ class InfrastructureSecurityIntegrationTest {
                 "commit_rag_v2_immutable_voyage_usage_with_tokenizer(text,integer,integer,bigint)",
                 "reserve_rag_v2_immutable_voyage_query_usage_with_tokenizer(text,text,text,text,text,text,text,text,timestamp with time zone,integer,integer,bigint,bigint)",
                 "commit_rag_v2_immutable_voyage_query_usage_with_tokenizer(text,integer,integer,bigint)",
+                "stage_rag_v2_immutable_voyage_document_batch(jsonb)",
+                "load_rag_v2_immutable_voyage_document_batch_vectors(text)",
+                "record_rag_v2_bge_public_execution_supersession(text,text)",
             ).forEach { function ->
                 assertTrue(
                     hasFunctionPrivilege(connection, "decision_rag_writer", function),

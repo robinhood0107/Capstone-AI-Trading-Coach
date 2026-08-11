@@ -85,7 +85,7 @@ def test_acquisition_rejects_head_drift_before_fetch(posix_tmp_path: Path) -> No
 def test_acquisition_consumes_packet_and_leaves_no_partial_artifact_on_invalid_bytes(
     posix_tmp_path: Path,
 ) -> None:
-    packet_sha256 = _write_packet(posix_tmp_path)
+    _write_packet(posix_tmp_path)
 
     with pytest.raises(
         PreS5VoyageTokenizerAcquisitionError,
@@ -99,11 +99,28 @@ def test_acquisition_consumes_packet_and_leaves_no_partial_artifact_on_invalid_b
         )
 
     assert (
-        posix_tmp_path / "packet-claims" / "voyage-tokenizer" / packet_sha256
+        posix_tmp_path
+        / "packet-claims"
+        / "voyage-tokenizer"
+        / hashlib.sha256(
+            b"voyage-tokenizer-nonce\0ps5_tokenizer_fixture_nonce_0001"
+        ).hexdigest()
     ).is_file()
     assert not (
         posix_tmp_path / "artifacts" / "voyage-context-4" / "tokenizer.json"
     ).exists()
+
+    _write_packet(posix_tmp_path, operator="second-operator")
+    with pytest.raises(
+        PreS5VoyageTokenizerAcquisitionError,
+        match="PRE_S5_VOYAGE_TOKENIZER_PACKET_CONSUMED",
+    ):
+        acquire_pre_s5_voyage_tokenizer(
+            local_root=posix_tmp_path,
+            binding=_binding(),
+            fetcher=_FixtureFetcher(_tokenizer_bytes()),
+            now=datetime(2026, 8, 12, 0, 1, tzinfo=UTC),
+        )
 
 
 def test_acquisition_refuses_reuse_or_existing_destination_before_fetch(posix_tmp_path: Path) -> None:
@@ -193,10 +210,10 @@ def _binding() -> PreS5ProviderBinding:
     )
 
 
-def _write_packet(local_root: Path) -> str:
+def _write_packet(local_root: Path, *, operator: str = "local-operator") -> str:
     os.chmod(local_root, 0o700)
     control = local_root / "control"
-    control.mkdir(mode=0o700)
+    control.mkdir(mode=0o700, exist_ok=True)
     issued_at = datetime(2026, 8, 12, 0, 0, tzinfo=UTC)
     payload = {
         "byteCap": 8 * 1024 * 1024,
@@ -214,7 +231,7 @@ def _write_packet(local_root: Path) -> str:
         "model": "voyage-context-4",
         "nonce": "ps5_tokenizer_fixture_nonce_0001",
         "operation": "ACQUIRE_VOYAGE_CONTEXT_4_TOKENIZER",
-        "operator": "local-operator",
+        "operator": operator,
         "origin": "https://huggingface.co",
         "physicalCallCap": 1,
         "provider": "HUGGING_FACE_VOYAGEAI",

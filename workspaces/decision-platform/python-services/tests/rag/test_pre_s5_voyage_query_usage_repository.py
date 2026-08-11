@@ -146,7 +146,27 @@ def test_voyage_evaluation_batch_uses_one_aggregate_ledger_row_per_component(
         repository.reserve(activation=activation, evaluation_component_scope="OA112")
     lease = repository.reserve(activation=activation, evaluation_component_scope="EXACT30")
     lease.claim_attempt(now=datetime.now(UTC))
-    lease.commit(expected_input_tokens=10, total_tokens=10, actual_cost_microusd=10)
+    query_sha256s = tuple(hashlib.sha256(f"question-{index}".encode()).hexdigest() for index in range(10))
+    vector = (1.0,) + (0.0,) * 1023
+    repository.stage_evaluation_batch(
+        activation=activation,
+        lease=lease,
+        vectors_by_query_sha256={query_sha256: vector for query_sha256 in query_sha256s},
+        expected_input_tokens=10,
+        total_tokens=10,
+        actual_cost_microusd=10,
+    )
+
+    resumed = repository.resume_evaluation_batch(
+        scope_claim_sha256=activation.scope_claim_sha256,
+        component_scope="EXACT30",
+        query_manifest_sha256=activation.query_manifest_sha256,
+        expected_query_sha256s=query_sha256s,
+    )
+    assert resumed is not None
+    assert set(resumed) == set(query_sha256s)
+    with pytest.raises(PreS5VoyageQueryUsageRepositoryError):
+        repository.reserve(activation=activation, evaluation_component_scope="EXACT30")
 
     with psycopg.connect(isolated_postgres_cluster["admin_dsn"]) as connection:
         assert connection.execute(

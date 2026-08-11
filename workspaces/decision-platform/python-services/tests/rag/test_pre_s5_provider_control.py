@@ -211,7 +211,11 @@ def test_voyage_document_batch_packet_allows_window_a_and_rejects_over_two_hours
 
     under_budget = _document_batch_packet(now=now, batch_id=batch_id)
     under_budget["byteCap"] = 15_999_999
-    packet_path.write_text(json.dumps(under_budget, separators=(",", ":")), encoding="utf-8")
+    _write_packet(
+        tmp_path,
+        under_budget,
+        filename=f"voyage-document-batch-packets/{batch_id}.json",
+    )
     with pytest.raises(PreS5ProviderActivationError, match="PRE_S5_PROVIDER_PACKET_INVALID"):
         load_pre_s5_voyage_document_batch_activation(
             local_root=tmp_path,

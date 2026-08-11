@@ -19,6 +19,8 @@ from numpy.typing import NDArray
 from psycopg.types.json import Jsonb
 
 from app.rag.pre_s5_provider_control import PreS5VoyageDocumentBatchActivation
+from app.rag.pre_s5_voyage_transport import PreS5VoyageDocumentBatchResult
+from app.rag.pre_s5_voyage_usage_repository import PsycopgPreS5VoyageDocumentBatchUsageLease
 from app.rag.rag_v2_voyage_batching import (
     PublicVoyageBatchPlan,
     VoyageBatchVectorAccumulator,
@@ -27,13 +29,14 @@ from app.rag.rag_v2_voyage_batching import (
 
 _WRITER_ROLE = "decision_rag_writer"
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
-_STAGE_FUNCTION = "public.stage_rag_v2_immutable_voyage_document_batch(jsonb)"
+_STAGE_FUNCTION = "public.commit_and_stage_rag_v2_immutable_voyage_document_batch(jsonb)"
 _LOAD_FUNCTION = "public.load_rag_v2_immutable_voyage_document_batch_vectors(text)"
 _SUPERSEDE_FUNCTION = "public.record_rag_v2_bge_public_execution_supersession(text,text)"
 _FORBIDDEN_TABLES = (
     "rag_v2_immutable_voyage_document_batch_plans",
     "rag_v2_immutable_voyage_document_batches",
     "rag_v2_immutable_voyage_document_batch_vectors",
+    "rag_v2_immutable_voyage_document_batch_attempts",
     "rag_v2_immutable_bge_public_execution_supersessions",
 )
 
@@ -68,7 +71,8 @@ class PsycopgRagV2VoyageBatchRepository:
         activation: PreS5VoyageDocumentBatchActivation,
         plan: PublicVoyageBatchPlan,
         batch: VoyageDocumentBatch,
-        vectors: object,
+        result: PreS5VoyageDocumentBatchResult,
+        lease: PsycopgPreS5VoyageDocumentBatchUsageLease,
     ) -> RagV2VoyageBatchStageReceipt:
         """usage COMMITTED가 존재하는 one batch vector set을 one transaction으로 durable stage한다."""
 
@@ -76,7 +80,8 @@ class PsycopgRagV2VoyageBatchRepository:
             activation=activation,
             plan=plan,
             batch=batch,
-            vectors=vectors,
+            result=result,
+            lease=lease,
         )
         try:
             with psycopg.connect(self._database_dsn, autocommit=False, connect_timeout=2) as connection:
@@ -87,7 +92,7 @@ class PsycopgRagV2VoyageBatchRepository:
                         """
                         SELECT batch_plan_sha256, batch_id, state, batch_reused,
                                completed_batch_count, staged_vector_count
-                        FROM public.stage_rag_v2_immutable_voyage_document_batch(%s::jsonb)
+                        FROM public.commit_and_stage_rag_v2_immutable_voyage_document_batch(%s::jsonb)
                         """,
                         (Jsonb(payload),),
                     ).fetchone()
@@ -166,7 +171,8 @@ def build_voyage_batch_stage_payload(
     activation: PreS5VoyageDocumentBatchActivation,
     plan: PublicVoyageBatchPlan,
     batch: VoyageDocumentBatch,
-    vectors: object,
+    result: PreS5VoyageDocumentBatchResult,
+    lease: PsycopgPreS5VoyageDocumentBatchUsageLease,
 ) -> dict[str, object]:
     """content/vector identity만 V54 closed JSON shape로 만들고 raw text를 제외한다."""
 
@@ -179,9 +185,12 @@ def build_voyage_batch_stage_payload(
         or activation.batch_id != batch.batch_id
         or activation.batch_manifest_sha256 != batch.batch_manifest_sha256
         or activation.packet_sha256 == ""
+        or not isinstance(result, PreS5VoyageDocumentBatchResult)
+        or not isinstance(lease, PsycopgPreS5VoyageDocumentBatchUsageLease)
+        or result.expected_input_tokens != batch.token_count
     ):
         raise RagV2VoyageBatchRepositoryError("VOYAGE_BATCH_STAGE_ARGUMENT")
-    array = _validated_vectors(vectors=vectors, expected_rows=batch.chunk_count)
+    array = _validated_vectors(vectors=result.vectors, expected_rows=batch.chunk_count)
     vector_rows: list[dict[str, object]] = []
     cursor = 0
     for segment in batch.segments:
@@ -214,6 +223,7 @@ def build_voyage_batch_stage_payload(
             "batchManifestSha256": batch.batch_manifest_sha256,
             "batchOrdinal": batch.batch_ordinal,
             "chunkCount": batch.chunk_count,
+            "estimatedResponseBytes": batch.estimated_response_bytes,
             "groupCount": batch.group_count,
             "tokenCount": batch.token_count,
             "vectorSetSha256": vector_set_sha256,
@@ -230,6 +240,12 @@ def build_voyage_batch_stage_payload(
             "tokenCount": plan.token_count,
         },
         "schemaVersion": "pre-s5-voyage-document-batch-stage/v1",
+        "usage": {
+            "actualCostMicrousd": result.actual_cost_microusd,
+            "expectedInputTokens": result.expected_input_tokens,
+            "providerTotalTokens": result.provider_total_tokens,
+            "usageEventId": lease.usage_event_id,
+        },
         "vectors": vector_rows,
     }
 

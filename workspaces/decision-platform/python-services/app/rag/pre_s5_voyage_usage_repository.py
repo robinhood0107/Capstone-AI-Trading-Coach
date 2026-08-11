@@ -29,9 +29,20 @@ from app.rag.rag_v2_voyage_batching import PublicVoyageBatchPlan, VoyageDocument
 _WRITER_ROLE = "decision_rag_writer"
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _USAGE_EVENT_ID = re.compile(r"^rgr_vou_[0-9a-f]{32}$")
+_DOCUMENT_BATCH_MAX_BYTE_CAP = 16 * 1024 * 1024
 _RESERVE_FUNCTION = (
     "public.reserve_rag_v2_immutable_voyage_usage_with_tokenizer("
     "text,text,text,text,text,text,timestamptz,integer,integer,bigint,bigint)"
+)
+_DOCUMENT_BATCH_RESERVE_FUNCTION = (
+    "public.reserve_rag_v2_immutable_voyage_document_batch_usage("
+    "text,text,text,text,text,text,timestamptz,integer,integer,bigint,bigint)"
+)
+_DOCUMENT_BATCH_CLAIM_FUNCTION = (
+    "public.claim_rag_v2_immutable_voyage_document_batch_attempt(text,text,text,text)"
+)
+_DOCUMENT_BATCH_UNKNOWN_FUNCTION = (
+    "public.mark_rag_v2_immutable_voyage_document_batch_unknown_billing(text,text,text)"
 )
 _CLAIM_FUNCTION = "public.claim_rag_v2_immutable_voyage_usage_attempt(text)"
 _COMMIT_FUNCTION = (
@@ -124,7 +135,7 @@ class PsycopgPreS5VoyageUsageRepository:
         activation: PreS5VoyageDocumentBatchActivation,
         plan: PublicVoyageBatchPlan,
         batch: VoyageDocumentBatch,
-    ) -> PreS5VoyageAttemptLease:
+    ) -> PsycopgPreS5VoyageDocumentBatchUsageLease:
         """exact plan/batch packet 하나를 기존 append-only Voyage usage ledger에 reserve한다."""
 
         _validate_batch_activation(activation=activation, plan=plan, batch=batch)
@@ -137,7 +148,7 @@ class PsycopgPreS5VoyageUsageRepository:
                     row = connection.execute(
                         """
                         SELECT usage_event_id, expires_at
-                        FROM public.reserve_rag_v2_immutable_voyage_usage_with_tokenizer(
+                        FROM public.reserve_rag_v2_immutable_voyage_document_batch_usage(
                           %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
                         )
                         """,
@@ -168,10 +179,13 @@ class PsycopgPreS5VoyageUsageRepository:
             or row[1].astimezone(UTC) != activation.expires_at.astimezone(UTC)
         ):
             raise PreS5VoyageUsageRepositoryError("PRE_S5_VOYAGE_LEASE_RESERVATION_REJECTED")
-        return PsycopgPreS5VoyageUsageLease(
+        return PsycopgPreS5VoyageDocumentBatchUsageLease(
             database_dsn=self._database_dsn,
             usage_event_id=usage_event_id,
             expires_at=activation.expires_at,
+            batch_plan_sha256=plan.plan_sha256,
+            batch_id=batch.batch_id,
+            batch_manifest_sha256=batch.batch_manifest_sha256,
         )
 
 
@@ -263,6 +277,85 @@ class PsycopgPreS5VoyageUsageLease:
             failed = True
         if failed:
             raise PreS5VoyageUsageRepositoryError(code)
+
+
+class PsycopgPreS5VoyageDocumentBatchUsageLease(PsycopgPreS5VoyageUsageLease):
+    """같은 plan/batch의 다른 packet과 경쟁할 수 없고 stage 전 단독 commit을 노출하지 않는 lease다."""
+
+    def __init__(
+        self,
+        *,
+        database_dsn: str,
+        usage_event_id: str,
+        expires_at: datetime,
+        batch_plan_sha256: str,
+        batch_id: str,
+        batch_manifest_sha256: str,
+    ) -> None:
+        super().__init__(
+            database_dsn=database_dsn,
+            usage_event_id=usage_event_id,
+            expires_at=expires_at,
+        )
+        if (
+            not _is_sha256(batch_plan_sha256)
+            or not isinstance(batch_id, str)
+            or not batch_id.startswith("ps5_voyage_doc_")
+            or not _is_sha256(batch_manifest_sha256)
+        ):
+            raise PreS5VoyageUsageRepositoryError("PRE_S5_VOYAGE_LEASE_ARGUMENT")
+        self._batch_plan_sha256 = batch_plan_sha256
+        self._batch_id = batch_id
+        self._batch_manifest_sha256 = batch_manifest_sha256
+
+    @property
+    def usage_event_id(self) -> str:
+        """atomic stage payload에만 쓰는 content-free append-only usage identity다."""
+
+        return self._usage_event_id
+
+    def claim_attempt(self, *, now: datetime) -> None:
+        """usage attempt와 plan/batch global attempt를 한 transaction에서 함께 선점한다."""
+
+        if not isinstance(now, datetime) or now.tzinfo is None or now.astimezone(UTC) >= self._expires_at:
+            raise PreS5VoyageUsageRepositoryError("PRE_S5_VOYAGE_LEASE_CLAIM_REJECTED")
+        self._execute_transition(
+            sql=(
+                "SELECT public.claim_rag_v2_immutable_voyage_document_batch_attempt("
+                "%s, %s, %s, %s)"
+            ),
+            parameters=(
+                self._usage_event_id,
+                self._batch_plan_sha256,
+                self._batch_id,
+                self._batch_manifest_sha256,
+            ),
+            code="PRE_S5_VOYAGE_LEASE_CLAIM_REJECTED",
+        )
+
+    def commit(
+        self,
+        *,
+        expected_input_tokens: int,
+        total_tokens: int,
+        actual_cost_microusd: int,
+    ) -> None:
+        """document batch 성공은 vector stage와 분리 commit할 수 없다."""
+
+        del expected_input_tokens, total_tokens, actual_cost_microusd
+        raise PreS5VoyageUsageRepositoryError("PRE_S5_VOYAGE_ATOMIC_STAGE_REQUIRED")
+
+    def mark_unknown_billing(self) -> None:
+        """usage와 plan/batch attempt를 함께 terminal UNKNOWN으로 만든다."""
+
+        self._execute_transition(
+            sql=(
+                "SELECT public.mark_rag_v2_immutable_voyage_document_batch_unknown_billing("
+                "%s, %s, %s)"
+            ),
+            parameters=(self._usage_event_id, self._batch_plan_sha256, self._batch_id),
+            code="PRE_S5_VOYAGE_LEASE_UNKNOWN_REJECTED",
+        )
 
 
 def _validate_activation_and_bundle(
@@ -364,6 +457,15 @@ def _validate_batch_activation(
         or activation.physical_call_cap != 1
         or not 1 <= activation.token_cap <= 110_000
         or activation.token_cap < batch.token_count
+        or type(activation.byte_cap) is not int
+        or not 1 <= activation.byte_cap <= _DOCUMENT_BATCH_MAX_BYTE_CAP
+        or activation.byte_cap < batch.estimated_response_bytes
+        or type(activation.cost_cap_microusd) is not int
+        or not 1 <= activation.cost_cap_microusd <= 1_000_000_000
+        or type(activation.input_microusd_per_token) is not int
+        or not 1 <= activation.input_microusd_per_token <= 1_000_000
+        or activation.token_cap * activation.input_microusd_per_token
+        > activation.cost_cap_microusd
         or activation.retry_count != 0
         or activation.raw_artifact_count != 0
     ):
@@ -391,7 +493,15 @@ def _attest_writer_connection(connection: psycopg.Connection[Any]) -> None:
             ).fetchone()
             if row is not None and row[0] is True:
                 raise PreS5VoyageUsageRepositoryError("PRE_S5_VOYAGE_LEASE_WRITER_PRIVILEGE")
-    for function in (_RESERVE_FUNCTION, _CLAIM_FUNCTION, _COMMIT_FUNCTION, _UNKNOWN_FUNCTION):
+    for function in (
+        _RESERVE_FUNCTION,
+        _DOCUMENT_BATCH_RESERVE_FUNCTION,
+        _DOCUMENT_BATCH_CLAIM_FUNCTION,
+        _DOCUMENT_BATCH_UNKNOWN_FUNCTION,
+        _CLAIM_FUNCTION,
+        _COMMIT_FUNCTION,
+        _UNKNOWN_FUNCTION,
+    ):
         row = connection.execute(
             "SELECT has_function_privilege(current_user, %s, 'EXECUTE')",
             (function,),

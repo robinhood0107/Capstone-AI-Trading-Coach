@@ -259,6 +259,9 @@
             "maximumGroupsPerRequest": {
               "const": 1000
             },
+            "maximumPacketTtlSeconds": {
+              "const": 7200
+            },
             "maximumResponseBytes": {
               "const": 16777216
             },
@@ -297,6 +300,7 @@
             "completedBatchReuseRequired",
             "maximumChunksPerRequest",
             "maximumGroupsPerRequest",
+            "maximumPacketTtlSeconds",
             "maximumResponseBytes",
             "operationalMaximumChunksPerRequest",
             "operationalInputTokenCap",
@@ -409,11 +413,20 @@
         "queryEvaluationBatches": {
           "additionalProperties": false,
           "properties": {
+            "completedBatchReuseRequired": {
+              "const": true
+            },
             "componentBatchCount": {
               "const": 2
             },
+            "durableVectorStageRequired": {
+              "const": true
+            },
             "exact30LogicalQueryCount": {
               "const": 10
+            },
+            "maximumPacketTtlSeconds": {
+              "const": 7200
             },
             "oa112LogicalQueryCount": {
               "const": 112
@@ -424,7 +437,10 @@
           },
           "required": [
             "componentBatchCount",
+            "completedBatchReuseRequired",
+            "durableVectorStageRequired",
             "exact30LogicalQueryCount",
+            "maximumPacketTtlSeconds",
             "oa112LogicalQueryCount",
             "singletonQueryGroupsRequired"
           ],

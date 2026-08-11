@@ -34,7 +34,9 @@ Voyage operator는 전체 corpus를 단일 요청으로 보내려 해 `voyage-co
   다른 packet은 최초 claim 하나만 허용하며, provider handoff 뒤 stage가 확정되지 않은 attempt는
   `UNKNOWN_BILLING` 또는 terminal ambiguous로 남겨 자동 재호출하지 않는다.
 - query 평가는 logical EXACT30 10개와 OA112 112개를 singleton contextual group으로 유지하되 component별
-  physical call을 정확히 1회만 사용한다. Files API와 Batch API는 사용하지 않는다.
+  physical call을 정확히 1회만 사용한다. 성공 query vector와 usage도 같은 V54 transaction에 stage하고
+  재개 시 provider를 다시 호출하지 않는다. 한 번의 Window A 승인을 끝낼 수 있도록 document/evaluation
+  packet만 최대 2시간 TTL이며 일반 runtime query는 기존 5분 TTL이다. Files API와 Batch API는 사용하지 않는다.
 - 모든 document batch와 두 query batch가 완료되고 exact-30 top-5 hit 1.0, track Recall@5 0.8 이상,
   citation coverage 0.8 이상, direct-advice block 1.0, mixed-profile row 0을 만족한 경우에만 CAS한다.
 
@@ -64,7 +66,8 @@ submit the full corpus as one request, which could not satisfy the `voyage-conte
 - The public bundle contains exact 30 EXACT30 sources, 112 OA112 sources, and the empty ordered-group-zero
   `OWNER_PRIVATE` sentinel. No owner content enters the public Voyage input.
 - Per-source 0600 checkpoints under ignored `derived-ir/` bind the raw hash, parser version, tokenizer
-  version, and source revision. At most four workers prepare sources and all 142 completed checkpoints
+  version, and source revision. Their deterministic key supports direct O(1) lookup without scanning other
+  source files. At most four workers prepare sources and all 142 completed checkpoints
   are reusable with zero provider calls.
 - The exact official `voyage-context-4` tokenizer hash is bound to the packet and local artifact. Existing
   chunk, locator, source, and order identities are packed deterministically below 110,000 tokens, leaving
@@ -81,7 +84,10 @@ submit the full corpus as one request, which could not satisfy the `voyage-conte
   claim a plan/batch member; an attempt that crossed provider handoff without a confirmed stage remains
   `UNKNOWN_BILLING` or terminal ambiguous and is never called automatically again.
 - The ten logical EXACT30 and 112 logical OA112 queries remain singleton contextual groups but consume
-  exactly one physical component-batch call each. Files API and Batch API remain disabled.
+  exactly one physical component-batch call each. Successful query vectors and usage are staged atomically
+  and resumed without another provider call. Document/evaluation packets alone allow up to two hours so one
+  Window A approval can finish; ordinary runtime query packets retain their five-minute TTL. Files API and
+  Batch API remain disabled.
 - CAS activation requires every document and query batch plus all retrieval and safety thresholds.
 
 ### Preserved boundary

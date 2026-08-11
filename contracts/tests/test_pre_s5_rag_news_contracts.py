@@ -381,7 +381,49 @@ class PreS5RagNewsContractTest(unittest.TestCase):
         self.assertFalse(voyage["queryUnitFallbackAllowed"])
         self.assertFalse(voyage["partialProfileMixAllowed"])
         self.assertTrue(voyage["orderedPrechunkedDocumentGroupsRequired"])
-        self.assertEqual("FULL_BUNDLE_REBUILD_EVALUATE_CAS", voyage["generationFallback"])
+        self.assertEqual(
+            "EXACT_MANIFEST_BOUND_RESUMABLE_BATCH_SET", voyage["activationMode"]
+        )
+        self.assertEqual(
+            "TERMINALLY_SUPERSEDED_NO_FURTHER_BGE_RUN",
+            voyage["bgePublicExecution"],
+        )
+        self.assertEqual(
+            "NO_BGE_FALLBACK_RESUME_VOYAGE_BATCHES_EVALUATE_CAS",
+            voyage["generationFallback"],
+        )
+        self.assertEqual(
+            {
+                "completedBatchReuseRequired": True,
+                "maximumChunksPerRequest": 16000,
+                "maximumGroupsPerRequest": 1000,
+                "maximumPacketTtlSeconds": 7200,
+                "maximumResponseBytes": 16777216,
+                "operationalMaximumChunksPerRequest": 672,
+                "operationalInputTokenCap": 110000,
+                "packetByteCapCoversEstimateRequired": True,
+                "providerInputTokenCap": 120000,
+                "requestPacketPhysicalCallCap": 1,
+                "responseEnvelopeHeadroomBytes": 262144,
+                "responseEstimateBytesPerChunk": 24576,
+                "sourceCheckpointReuseRequired": True,
+                "stopRemainingBatchesAfterFirstFailure": True,
+                "tokenHeadroom": 10000,
+            },
+            voyage["documentBatchLimits"],
+        )
+        self.assertEqual(
+            {
+                "componentBatchCount": 2,
+                "completedBatchReuseRequired": True,
+                "durableVectorStageRequired": True,
+                "exact30LogicalQueryCount": 10,
+                "maximumPacketTtlSeconds": 7200,
+                "oa112LogicalQueryCount": 112,
+                "singletonQueryGroupsRequired": True,
+            },
+            voyage["queryEvaluationBatches"],
+        )
         self.assertEqual(
             {
                 "artifactAutoDownloadAllowed": False,

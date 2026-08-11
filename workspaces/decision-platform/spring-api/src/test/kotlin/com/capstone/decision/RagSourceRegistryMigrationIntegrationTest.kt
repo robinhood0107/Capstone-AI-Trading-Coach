@@ -86,7 +86,7 @@ class RagSourceRegistryMigrationIntegrationTest {
                 assertThat(queryStrings(connection, normalizedTableQuery))
                     .containsAll(expectedTables)
                 assertThat(queryString(connection, "select max(version::integer) from flyway_schema_history where success"))
-                    .isEqualTo("53")
+                    .isEqualTo("54")
 
                 expectedTables.forEach { table ->
                     assertThat(

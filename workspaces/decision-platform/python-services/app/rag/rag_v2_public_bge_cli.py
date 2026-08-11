@@ -52,6 +52,17 @@ from app.rag.rag_v2_public_bge_evaluator import (
     write_public_bge_pair_evaluation_receipt,
 )
 
+_TERMINALLY_SUPERSEDED_BGE_COMMANDS = frozenset(
+    {
+        "exact30-materialize",
+        "exact30-stage",
+        "activate-public-base",
+        "evaluate-public-base",
+        "oa112-materialize",
+        "oa112-stage",
+    }
+)
+
 
 @dataclass(frozen=True, slots=True)
 class _Exact30StageResult:
@@ -104,14 +115,16 @@ class _Oa112StageResult:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """exact-30 local BGE operator command를 content-free JSON으로만 실행한다.
+    """OA112 download만 유지하고 폐기된 public BGE 실행 경로는 모델 load 전에 종결한다.
 
-    이 CLI는 local model materialization, writer-only staging, evaluated public pair의 admin CAS
-    activation만 수행한다. evaluation metric/raw/vector/DSN argv는 지원하지 않으며 OA112 download와
-    provider transport는 별도 approval packet을 가진 명령으로 유지한다.
+    과거 partial generation과 helper는 evidence 재현을 위해 byte-compatible하게 남지만, operator가
+    materialize/stage/evaluate/activate를 다시 실행할 authority는 없다. OA112 download는 embedding이
+    아니며 기존 exact approval packet 경계를 그대로 유지한다.
     """
 
     arguments = tuple(sys.argv[1:] if argv is None else argv)
+    if len(arguments) == 1 and arguments[0] in _TERMINALLY_SUPERSEDED_BGE_COMMANDS:
+        return _failure("BGE_PUBLIC_EXECUTION_TERMINALLY_SUPERSEDED_NO_FURTHER_BGE_RUN")
     if arguments == ("exact30-materialize",):
         try:
             materialization = _materialize_exact30()

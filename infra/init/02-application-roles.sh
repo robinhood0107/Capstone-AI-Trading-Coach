@@ -1162,6 +1162,65 @@ BEGIN
         TO decision_rag_writer;
     END IF;
     IF to_regprocedure(
+        'public.reserve_rag_v2_immutable_voyage_document_batch_usage(text,text,text,text,text,text,timestamp with time zone,integer,integer,bigint,bigint)'
+    ) IS NOT NULL
+       AND to_regprocedure(
+        'public.claim_rag_v2_immutable_voyage_document_batch_attempt(text,text,text,text)'
+    ) IS NOT NULL
+       AND to_regprocedure(
+        'public.mark_rag_v2_immutable_voyage_document_batch_unknown_billing(text,text,text)'
+    ) IS NOT NULL
+       AND to_regprocedure(
+        'public.commit_and_stage_rag_v2_immutable_voyage_document_batch(jsonb)'
+    ) IS NOT NULL
+       AND to_regprocedure(
+           'public.load_rag_v2_immutable_voyage_document_batch_vectors(text)'
+       ) IS NOT NULL
+       AND to_regprocedure(
+           'public.record_rag_v2_bge_public_execution_supersession(text,text)'
+       ) IS NOT NULL
+       AND to_regprocedure(
+           'public.reserve_rag_v2_immutable_voyage_evaluation_batch_usage(text,text,text,text,text,text,text,text,timestamp with time zone,integer,integer,bigint,bigint)'
+       ) IS NOT NULL
+       AND to_regprocedure(
+           'public.claim_rag_v2_immutable_voyage_evaluation_batch_attempt(text,text,text,text,text)'
+       ) IS NOT NULL
+       AND to_regprocedure(
+           'public.mark_rag_v2_immutable_voyage_evaluation_batch_unknown_billing(text,text,text)'
+       ) IS NOT NULL
+       AND to_regprocedure(
+           'public.commit_and_stage_rag_v2_immutable_voyage_evaluation_batch(jsonb)'
+       ) IS NOT NULL
+       AND to_regprocedure(
+           'public.load_rag_v2_immutable_voyage_evaluation_batch_vectors(text,text,text)'
+       ) IS NOT NULL THEN
+        -- V54는 raw table grant 없이 document/evaluation stage-resume와 terminal BGE marker만 복구한다.
+        REVOKE ALL PRIVILEGES ON FUNCTION
+            stage_rag_v2_immutable_voyage_document_batch(jsonb)
+        FROM decision_rag_writer;
+        GRANT EXECUTE ON FUNCTION
+            reserve_rag_v2_immutable_voyage_document_batch_usage(
+                text, text, text, text, text, text, timestamptz,
+                integer, integer, bigint, bigint
+            ),
+            claim_rag_v2_immutable_voyage_document_batch_attempt(text, text, text, text),
+            mark_rag_v2_immutable_voyage_document_batch_unknown_billing(text, text, text),
+            commit_and_stage_rag_v2_immutable_voyage_document_batch(jsonb),
+            load_rag_v2_immutable_voyage_document_batch_vectors(text),
+            reserve_rag_v2_immutable_voyage_evaluation_batch_usage(
+                text, text, text, text, text, text, text, text, timestamptz,
+                integer, integer, bigint, bigint
+            ),
+            claim_rag_v2_immutable_voyage_evaluation_batch_attempt(
+                text, text, text, text, text
+            ),
+            mark_rag_v2_immutable_voyage_evaluation_batch_unknown_billing(text, text, text),
+            commit_and_stage_rag_v2_immutable_voyage_evaluation_batch(jsonb),
+            load_rag_v2_immutable_voyage_evaluation_batch_vectors(text, text, text),
+            record_rag_v2_bge_public_execution_supersession(text, text)
+        TO decision_rag_writer;
+    END IF;
+    IF to_regprocedure(
         'public.issue_rag_v2_retrieval_scope(text,text,text[])'
     ) IS NOT NULL
        AND to_regprocedure(

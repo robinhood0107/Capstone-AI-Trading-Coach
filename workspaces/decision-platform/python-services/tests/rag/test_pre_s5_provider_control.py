@@ -13,11 +13,224 @@ from app.rag.pre_s5_provider_control import (
     PreS5ProviderBinding,
     load_optional_pre_s5_voyage_query_runtime_configuration,
     load_pre_s5_voyage_activation,
+    load_pre_s5_voyage_document_batch_activation,
+    load_pre_s5_voyage_evaluation_batch_activation,
     load_pre_s5_voyage_evaluation_query_activation,
     load_pre_s5_voyage_query_activation,
     load_pre_s5_voyage_query_writer_database_dsn,
     resolve_voyage_api_key,
 )
+
+
+def test_voyage_evaluation_batch_packet_binds_ordered_component_manifest_and_one_call(
+    tmp_path: Path,
+) -> None:
+    _secure_root(tmp_path)
+    now = datetime(2026, 8, 3, 1, tzinfo=UTC)
+    scope_claim = "rvs_" + "7" * 32
+    queries = tuple((f"q{index:02d}", f"question {index}") for index in range(1, 11))
+    query_manifest_sha256 = _evaluation_manifest_sha256("EXACT30", queries)
+    packet_directory = tmp_path / "control" / "voyage-evaluation-batch-packets"
+    packet_directory.mkdir(mode=0o700)
+    packet_path = packet_directory / "exact30.json"
+    packet_path.write_text(
+        json.dumps(
+            _evaluation_batch_packet(
+                now=now,
+                query_manifest_sha256=query_manifest_sha256,
+                scope_claim=scope_claim,
+            ),
+            separators=(",", ":"),
+        ),
+        encoding="utf-8",
+    )
+    packet_path.chmod(0o600)
+
+    activation = load_pre_s5_voyage_evaluation_batch_activation(
+        local_root=tmp_path,
+        binding=_binding(),
+        component_scope="EXACT30",
+        query_id_questions=queries,
+        scope_claim_id=scope_claim,
+        expected_token_count=10,
+        now=now,
+    )
+
+    assert activation.expected_query_count == 10
+    assert activation.query_manifest_sha256 == query_manifest_sha256
+    assert activation.physical_call_cap == 1
+    with pytest.raises(PreS5ProviderActivationError, match="PRE_S5_PROVIDER_PACKET_BINDING"):
+        load_pre_s5_voyage_evaluation_batch_activation(
+            local_root=tmp_path,
+            binding=_binding(),
+            component_scope="EXACT30",
+            query_id_questions=queries[:-1] + (("q10", "changed question"),),
+            scope_claim_id=scope_claim,
+            expected_token_count=10,
+            now=now,
+        )
+
+
+def test_voyage_evaluation_batch_packet_allows_window_a_and_rejects_over_two_hours(
+    tmp_path: Path,
+) -> None:
+    _secure_root(tmp_path)
+    now = datetime(2026, 8, 3, 1, tzinfo=UTC)
+    scope_claim = "rvs_" + "7" * 32
+    queries = tuple((f"q{index:02d}", f"question {index}") for index in range(1, 11))
+    packet = _evaluation_batch_packet(
+        now=now,
+        query_manifest_sha256=_evaluation_manifest_sha256("EXACT30", queries),
+        scope_claim=scope_claim,
+    )
+    packet["expiresAt"] = (now + timedelta(minutes=90)).isoformat().replace("+00:00", "Z")
+    _write_packet(tmp_path, packet, filename="voyage-evaluation-batch-packets/exact30.json")
+
+    activation = load_pre_s5_voyage_evaluation_batch_activation(
+        local_root=tmp_path,
+        binding=_binding(),
+        component_scope="EXACT30",
+        query_id_questions=queries,
+        scope_claim_id=scope_claim,
+        expected_token_count=10,
+        now=now,
+    )
+    assert activation.expires_at == now + timedelta(minutes=90)
+
+    packet["expiresAt"] = (now + timedelta(hours=2, seconds=1)).isoformat().replace(
+        "+00:00", "Z"
+    )
+    _write_packet(tmp_path, packet, filename="voyage-evaluation-batch-packets/exact30.json")
+    with pytest.raises(PreS5ProviderActivationError, match="PRE_S5_PROVIDER_PACKET_INVALID"):
+        load_pre_s5_voyage_evaluation_batch_activation(
+            local_root=tmp_path,
+            binding=_binding(),
+            component_scope="EXACT30",
+            query_id_questions=queries,
+            scope_claim_id=scope_claim,
+            expected_token_count=10,
+            now=now,
+        )
+
+
+def test_voyage_document_batch_packet_binds_exact_plan_member_and_counts(tmp_path: Path) -> None:
+    _secure_root(tmp_path)
+    now = datetime(2026, 8, 3, 1, tzinfo=UTC)
+    batch_id = "ps5_voyage_doc_0001_0123456789abcdef"
+    packet_directory = tmp_path / "control" / "voyage-document-batch-packets"
+    packet_directory.mkdir(mode=0o700)
+    packet_path = packet_directory / f"{batch_id}.json"
+    packet_path.write_text(
+        json.dumps(_document_batch_packet(now=now, batch_id=batch_id), separators=(",", ":")),
+        encoding="utf-8",
+    )
+    packet_path.chmod(0o600)
+
+    activation = load_pre_s5_voyage_document_batch_activation(
+        local_root=tmp_path,
+        binding=_binding(),
+        batch_plan_sha256="3" * 64,
+        batch_id=batch_id,
+        batch_manifest_sha256="4" * 64,
+        batch_ordinal=1,
+        batch_count=3,
+        token_count=100_000,
+        chunk_count=2_000,
+        group_count=40,
+        estimated_response_bytes=16_000_000,
+        now=now,
+    )
+
+    assert activation.batch_id == batch_id
+    assert activation.expected_token_count == 100_000
+    assert activation.byte_cap == 16_777_216
+    assert activation.physical_call_cap == 1
+    assert activation.retry_count == 0
+    with pytest.raises(PreS5ProviderActivationError, match="PRE_S5_PROVIDER_PACKET_BINDING"):
+        load_pre_s5_voyage_document_batch_activation(
+            local_root=tmp_path,
+            binding=_binding(),
+            batch_plan_sha256="3" * 64,
+            batch_id=batch_id,
+            batch_manifest_sha256="4" * 64,
+            batch_ordinal=1,
+            batch_count=3,
+            token_count=99_999,
+            chunk_count=2_000,
+            group_count=40,
+            estimated_response_bytes=16_000_000,
+            now=now,
+        )
+
+
+def test_voyage_document_batch_packet_allows_window_a_and_rejects_over_two_hours(
+    tmp_path: Path,
+) -> None:
+    _secure_root(tmp_path)
+    now = datetime(2026, 8, 3, 1, tzinfo=UTC)
+    batch_id = "ps5_voyage_doc_0001_0123456789abcdef"
+    packet = _document_batch_packet(now=now, batch_id=batch_id)
+    packet["expiresAt"] = (now + timedelta(minutes=90)).isoformat().replace("+00:00", "Z")
+    _write_packet(tmp_path, packet, filename=f"voyage-document-batch-packets/{batch_id}.json")
+
+    activation = load_pre_s5_voyage_document_batch_activation(
+        local_root=tmp_path,
+        binding=_binding(),
+        batch_plan_sha256="3" * 64,
+        batch_id=batch_id,
+        batch_manifest_sha256="4" * 64,
+        batch_ordinal=1,
+        batch_count=3,
+        token_count=100_000,
+        chunk_count=2_000,
+        group_count=40,
+        estimated_response_bytes=16_000_000,
+        now=now,
+    )
+    assert activation.expires_at == now + timedelta(minutes=90)
+
+    packet["expiresAt"] = (now + timedelta(hours=2, seconds=1)).isoformat().replace(
+        "+00:00", "Z"
+    )
+    _write_packet(tmp_path, packet, filename=f"voyage-document-batch-packets/{batch_id}.json")
+    with pytest.raises(PreS5ProviderActivationError, match="PRE_S5_PROVIDER_PACKET_INVALID"):
+        load_pre_s5_voyage_document_batch_activation(
+            local_root=tmp_path,
+            binding=_binding(),
+            batch_plan_sha256="3" * 64,
+            batch_id=batch_id,
+            batch_manifest_sha256="4" * 64,
+            batch_ordinal=1,
+            batch_count=3,
+            token_count=100_000,
+            chunk_count=2_000,
+            group_count=40,
+            estimated_response_bytes=16_000_000,
+            now=now,
+        )
+
+    under_budget = _document_batch_packet(now=now, batch_id=batch_id)
+    under_budget["byteCap"] = 15_999_999
+    _write_packet(
+        tmp_path,
+        under_budget,
+        filename=f"voyage-document-batch-packets/{batch_id}.json",
+    )
+    with pytest.raises(PreS5ProviderActivationError, match="PRE_S5_PROVIDER_PACKET_INVALID"):
+        load_pre_s5_voyage_document_batch_activation(
+            local_root=tmp_path,
+            binding=_binding(),
+            batch_plan_sha256="3" * 64,
+            batch_id=batch_id,
+            batch_manifest_sha256="4" * 64,
+            batch_ordinal=1,
+            batch_count=3,
+            token_count=100_000,
+            chunk_count=2_000,
+            group_count=40,
+            estimated_response_bytes=16_000_000,
+            now=now,
+        )
 
 
 def test_voyage_activation_packet_is_local_only_bound_and_content_free(tmp_path: Path) -> None:
@@ -339,6 +552,112 @@ def _query_packet(*, now: datetime, question: str, scope_claim: str) -> dict[str
     }
 
 
+def _document_batch_packet(*, now: datetime, batch_id: str) -> dict[str, object]:
+    return {
+        "batchCount": 3,
+        "batchId": batch_id,
+        "batchManifestSha256": "4" * 64,
+        "batchOrdinal": 1,
+        "batchPlanSha256": "3" * 64,
+        "byteCap": 16_777_216,
+        "chunkCount": 2_000,
+        "ciDigest": "c" * 64,
+        "costCapMicrousd": 110_000,
+        "date": "NONE",
+        "endpoint": "/v1/contextualizedembeddings",
+        "expiresAt": (now + timedelta(minutes=5)).isoformat(timespec="seconds").replace("+00:00", "Z"),
+        "groupCount": 40,
+        "headCommit": "a" * 40,
+        "inputMicrousdPerToken": 1,
+        "issuedAt": now.isoformat(timespec="seconds").replace("+00:00", "Z"),
+        "logicalCallCap": 1,
+        "nonce": "ps5_voyage_document_batch_0001",
+        "operation": "CONTEXTUALIZED_DOCUMENT_EMBEDDING",
+        "operator": "local-operator",
+        "organizationTrainingOptOutEvidenceSha256": "f" * 64,
+        "origin": "https://api.voyageai.com",
+        "paymentMethodPrivacyEvidenceSha256": "0" * 64,
+        "physicalCallCap": 1,
+        "provider": "VOYAGE",
+        "query": "MANIFEST_BOUND_ORDERED_PRECHUNKED_DOCUMENT_BATCH",
+        "rawArtifactCount": 0,
+        "rateEvidenceSha256": "1" * 64,
+        "retryCount": 0,
+        "schemaVersion": "pre-s5-voyage-document-batch-activation/v1",
+        "securityDigest": "d" * 64,
+        "state": "APPROVED",
+        "symbol": "NONE",
+        "tokenCap": 110_000,
+        "tokenCount": 100_000,
+        "tokenizerSha256": "2" * 64,
+        "treeObject": "b" * 40,
+    }
+
+
+def _evaluation_manifest_sha256(
+    component_scope: str, queries: tuple[tuple[str, str], ...]
+) -> str:
+    encoded = json.dumps(
+        {
+            "componentScope": component_scope,
+            "queries": [
+                {
+                    "queryId": query_id,
+                    "querySha256": hashlib.sha256(question.encode()).hexdigest(),
+                }
+                for query_id, question in queries
+            ],
+            "schemaVersion": 1,
+        },
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode()
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _evaluation_batch_packet(
+    *, now: datetime, query_manifest_sha256: str, scope_claim: str
+) -> dict[str, object]:
+    return {
+        "byteCap": 4_194_304,
+        "ciDigest": "c" * 64,
+        "componentScope": "EXACT30",
+        "costCapMicrousd": 100,
+        "date": "NONE",
+        "endpoint": "/v1/contextualizedembeddings",
+        "expiresAt": (now + timedelta(minutes=5)).isoformat(timespec="seconds").replace(
+            "+00:00", "Z"
+        ),
+        "headCommit": "a" * 40,
+        "inputMicrousdPerToken": 1,
+        "issuedAt": now.isoformat(timespec="seconds").replace("+00:00", "Z"),
+        "logicalCallCap": 1,
+        "nonce": "ps5_voyage_evaluation_batch_exact30_0001",
+        "operation": "CONTEXTUALIZED_QUERY_EMBEDDING",
+        "operator": "local-operator",
+        "organizationTrainingOptOutEvidenceSha256": "f" * 64,
+        "origin": "https://api.voyageai.com",
+        "paymentMethodPrivacyEvidenceSha256": "0" * 64,
+        "physicalCallCap": 1,
+        "provider": "VOYAGE",
+        "query": "MANIFEST_BOUND_SINGLETON_QUERY_GROUP_BATCH",
+        "queryCount": 10,
+        "queryManifestSha256": query_manifest_sha256,
+        "rawArtifactCount": 0,
+        "rateEvidenceSha256": "1" * 64,
+        "retryCount": 0,
+        "schemaVersion": "pre-s5-voyage-evaluation-batch-activation/v1",
+        "scopeClaimSha256": hashlib.sha256(scope_claim.encode()).hexdigest(),
+        "securityDigest": "d" * 64,
+        "state": "APPROVED",
+        "symbol": "NONE",
+        "tokenCap": 100,
+        "tokenCount": 10,
+        "tokenizerSha256": "2" * 64,
+        "treeObject": "b" * 40,
+    }
+
+
 def _binding() -> PreS5ProviderBinding:
     return PreS5ProviderBinding(
         head_commit="a" * 40,
@@ -360,5 +679,7 @@ def _write_packet(
     filename: str = "pre-s5-voyage-activation.json",
 ) -> None:
     path = root / "control" / filename
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    os.chmod(path.parent, 0o700)
     path.write_text(json.dumps(packet, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     os.chmod(path, 0o600)

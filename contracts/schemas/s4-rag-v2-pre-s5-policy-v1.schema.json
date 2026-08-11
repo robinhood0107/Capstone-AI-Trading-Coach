@@ -235,11 +235,85 @@
           ],
           "type": "array"
         },
+        "activationMode": {
+          "const": "EXACT_MANIFEST_BOUND_RESUMABLE_BATCH_SET"
+        },
         "batchApiAllowed": {
           "const": false
         },
+        "bgePublicExecution": {
+          "const": "TERMINALLY_SUPERSEDED_NO_FURTHER_BGE_RUN"
+        },
         "dimension": {
           "const": 1024
+        },
+        "documentBatchLimits": {
+          "additionalProperties": false,
+          "properties": {
+            "completedBatchReuseRequired": {
+              "const": true
+            },
+            "maximumChunksPerRequest": {
+              "const": 16000
+            },
+            "maximumGroupsPerRequest": {
+              "const": 1000
+            },
+            "maximumPacketTtlSeconds": {
+              "const": 7200
+            },
+            "maximumResponseBytes": {
+              "const": 16777216
+            },
+            "operationalInputTokenCap": {
+              "const": 110000
+            },
+            "operationalMaximumChunksPerRequest": {
+              "const": 672
+            },
+            "packetByteCapCoversEstimateRequired": {
+              "const": true
+            },
+            "providerInputTokenCap": {
+              "const": 120000
+            },
+            "requestPacketPhysicalCallCap": {
+              "const": 1
+            },
+            "responseEnvelopeHeadroomBytes": {
+              "const": 262144
+            },
+            "responseEstimateBytesPerChunk": {
+              "const": 24576
+            },
+            "sourceCheckpointReuseRequired": {
+              "const": true
+            },
+            "stopRemainingBatchesAfterFirstFailure": {
+              "const": true
+            },
+            "tokenHeadroom": {
+              "const": 10000
+            }
+          },
+          "required": [
+            "completedBatchReuseRequired",
+            "maximumChunksPerRequest",
+            "maximumGroupsPerRequest",
+            "maximumPacketTtlSeconds",
+            "maximumResponseBytes",
+            "operationalMaximumChunksPerRequest",
+            "operationalInputTokenCap",
+            "packetByteCapCoversEstimateRequired",
+            "providerInputTokenCap",
+            "requestPacketPhysicalCallCap",
+            "responseEnvelopeHeadroomBytes",
+            "responseEstimateBytesPerChunk",
+            "sourceCheckpointReuseRequired",
+            "stopRemainingBatchesAfterFirstFailure",
+            "tokenHeadroom"
+          ],
+          "type": "object"
         },
         "filesApiAllowed": {
           "const": false
@@ -262,7 +336,7 @@
           "type": "array"
         },
         "generationFallback": {
-          "const": "FULL_BUNDLE_REBUILD_EVALUATE_CAS"
+          "const": "NO_BGE_FALLBACK_RESUME_VOYAGE_BATCHES_EVALUATE_CAS"
         },
         "modelId": {
           "const": "voyage-context-4"
@@ -336,6 +410,42 @@
         "partialProfileMixAllowed": {
           "const": false
         },
+        "queryEvaluationBatches": {
+          "additionalProperties": false,
+          "properties": {
+            "completedBatchReuseRequired": {
+              "const": true
+            },
+            "componentBatchCount": {
+              "const": 2
+            },
+            "durableVectorStageRequired": {
+              "const": true
+            },
+            "exact30LogicalQueryCount": {
+              "const": 10
+            },
+            "maximumPacketTtlSeconds": {
+              "const": 7200
+            },
+            "oa112LogicalQueryCount": {
+              "const": 112
+            },
+            "singletonQueryGroupsRequired": {
+              "const": true
+            }
+          },
+          "required": [
+            "componentBatchCount",
+            "completedBatchReuseRequired",
+            "durableVectorStageRequired",
+            "exact30LogicalQueryCount",
+            "maximumPacketTtlSeconds",
+            "oa112LogicalQueryCount",
+            "singletonQueryGroupsRequired"
+          ],
+          "type": "object"
+        },
         "queryUnitFallbackAllowed": {
           "const": false
         },
@@ -347,9 +457,12 @@
         }
       },
       "required": [
+        "activationMode",
         "activationEvidenceRequired",
         "batchApiAllowed",
+        "bgePublicExecution",
         "dimension",
+        "documentBatchLimits",
         "filesApiAllowed",
         "fullBundleScope",
         "generationFallback",
@@ -359,6 +472,7 @@
         "outboundCallsAllowed",
         "orderedPrechunkedDocumentGroupsRequired",
         "partialProfileMixAllowed",
+        "queryEvaluationBatches",
         "queryUnitFallbackAllowed",
         "retryCount",
         "runtimeEnvironmentVariable"

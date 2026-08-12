@@ -215,6 +215,43 @@ def test_public_voyage_cli_preserves_one_consumed_attempt_when_postcall_staging_
     }
 
 
+def test_public_voyage_document_batch_failure_summary_keeps_only_safe_provider_class() -> None:
+    """실패 batch는 HTTP 숫자나 원문 없이 bounded 상태 분류만 operator에게 돌려줘야 한다."""
+
+    transport = SimpleNamespace(
+        content_free_summary=lambda: {
+            "externalPhysicalCalls": 1,
+            "logicalCallsConsumed": 1,
+            "providerStatusClass": "HTTP_4XX",
+            "rawArtifactCount": 0,
+            "state": "UNKNOWN_BILLING",
+        }
+    )
+    preparation = SimpleNamespace(plan=SimpleNamespace(batches=tuple(range(31))))
+    accumulator = SimpleNamespace(completed_batch_ids=())
+    batch = SimpleNamespace(batch_id="ps5_voyage_doc_0001_0123456789abcdef")
+
+    summary = rag_v2_public_voyage_cli._document_batch_failure_summary(
+        transport=transport,
+        preparation=preparation,
+        accumulator=accumulator,
+        batch=batch,
+    )
+
+    assert summary == {
+        "batchCount": 31,
+        "completedBatchCount": 0,
+        "externalPhysicalCalls": 1,
+        "failedBatchId": "ps5_voyage_doc_0001_0123456789abcdef",
+        "logicalCallsConsumed": 1,
+        "providerStatusClass": "HTTP_4XX",
+        "rawArtifactCount": 0,
+        "state": "UNKNOWN_BILLING",
+    }
+    assert "4XX" in json.dumps(summary, sort_keys=True)
+    assert "429" not in json.dumps(summary, sort_keys=True)
+
+
 def test_public_voyage_cli_runs_the_packet_gated_10_plus_112_evaluation_only_after_stage(
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,

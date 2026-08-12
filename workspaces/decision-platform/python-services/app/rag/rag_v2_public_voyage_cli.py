@@ -657,6 +657,7 @@ def _document_batch_failure_summary(
         "externalPhysicalCalls",
         "logicalCallsConsumed",
         "providerStatusClass",
+        "responseValidationLeaf",
         "state",
     ):
         if field in projection:

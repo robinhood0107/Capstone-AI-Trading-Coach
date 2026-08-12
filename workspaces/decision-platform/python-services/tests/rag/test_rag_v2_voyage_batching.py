@@ -215,7 +215,7 @@ def test_public_plan_rotates_every_global_batch_id_with_the_exact_tokenizer_plan
         token_counter=_RotatedTokenizerCounter(),
     )
 
-    assert len(baseline.batches) == len(rotated.batches) == 3
+    assert len(baseline.batches) == len(rotated.batches) == 4
     assert baseline.plan_sha256 != rotated.plan_sha256
     assert {batch.batch_id for batch in baseline.batches}.isdisjoint(
         batch.batch_id for batch in rotated.batches
@@ -232,7 +232,7 @@ def test_vector_accumulator_skips_completed_batches_and_restores_canonical_order
         components=_components(exact30=exact30, oa112=oa112),
         token_counter=_TokenCounter(),
     )
-    assert len(plan.batches) == 3
+    assert len(plan.batches) == 4
     accumulator = VoyageBatchVectorAccumulator(plan=plan)
     for batch in reversed(plan.batches):
         vectors = np.zeros((batch.chunk_count, 1024), dtype=np.float32)

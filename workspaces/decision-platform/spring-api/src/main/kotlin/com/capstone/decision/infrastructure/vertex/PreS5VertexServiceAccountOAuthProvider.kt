@@ -136,9 +136,11 @@ internal class PreS5VertexServiceAccountOAuthProvider(
             require(response.statusCode in 200..299 && responseBody.size in 1..MAX_TOKEN_RESPONSE_BYTES)
             val root = mapper.readTree(responseBody)
             require(root != null && root.isObject)
-            require(root.properties().map { it.key }.toSet() == TOKEN_RESPONSE_FIELDS)
+            val responseFields = root.properties().map { it.key }.toSet()
+            require(responseFields == TOKEN_RESPONSE_FIELDS || responseFields == TOKEN_RESPONSE_FIELDS_WITH_SCOPE)
             require(root["token_type"]?.stringValue() == "Bearer")
             require(root["expires_in"]?.intValue() in 1..3_600)
+            root["scope"]?.let { require(it.stringValue() == CLOUD_PLATFORM_SCOPE) }
             val token = requireNotNull(root["access_token"]?.stringValue())
             require(token.length in MIN_TOKEN_BYTES..MAX_TOKEN_BYTES && token.all { it.code in 0x21..0x7e })
             return PreS5VertexAccessToken(credential.projectId, token.toByteArray(StandardCharsets.US_ASCII))
@@ -199,6 +201,7 @@ internal class PreS5VertexServiceAccountOAuthProvider(
         const val MIN_TOKEN_BYTES = 16
         const val MAX_TOKEN_BYTES = 8 * 1024
         val TOKEN_RESPONSE_FIELDS = setOf("access_token", "expires_in", "token_type")
+        val TOKEN_RESPONSE_FIELDS_WITH_SCOPE = TOKEN_RESPONSE_FIELDS + "scope"
     }
 }
 

@@ -39,8 +39,9 @@
 | S4.2C/S4.4G | `STUB_FAIL_CLOSED` | PR #77 control plane | 0 | Voyage/Gemini outbound executor는 hard-disabled |
 | S4.5/S4.6 | `OFFLINE_ONLY` | PR #77 fixture evaluation·numeric loopback | 0 | fixture/retrieval-only; provider live 0 |
 | S4.7D parser/OCR | `OFFLINE_ONLY` | PR #84 `014ccca1`, #85 `4bcca91e` | 0 | 안전 parser/OCR만 구현, importer/index writer 없음 |
-| S4.7D v2 runtime | `IMPLEMENTED_DRAFT` | PR #87/#88 + current working tree V25–V51 | 0 | local materializer·immutable bundle·profile-selected retrieval·ticket/Vertex preparation과 OA112 first-download quarantine bootstrap 구현은 검증 중; OA112 rights/cache/DB activation 전 `FULL_READY`가 아니며 Voyage/Vertex physical call은 0 |
+| S4.7D v2 runtime | `IMPLEMENTED_DRAFT` | PR #87/#88 + current working tree V25–V59 | 0 | local materializer·immutable bundle·profile-selected retrieval·ticket/Vertex preparation과 OA112 first-download quarantine bootstrap 구현은 검증 중; OA112 rights/cache/DB activation 전 `FULL_READY`가 아니며 Voyage/Vertex physical call은 0 |
 | Pre-S5 RAG/global-news lock | `CONTRACT_LOCKED` | Issue #95 addendum + Optional 3 v2 | 0 | `OA112_ACTIVE_CONTRACT_LOCKED`, `S4_7D_OA112_PHYSICAL_ACTIVATION=NOT_MATERIALIZED`; Optional 3 one-shot executor는 packet/evidence 부재 시 outbound 0 |
+| Pre-S5 clean restart runtime | `IMPLEMENTED_DRAFT` | current branch above V59 | 0 | public PII-before-chunk, `public-pii-v2-rechunk`, fresh project/ports/root 격리와 KIS_MOCK V3 7-step reconciliation 구현; merge/Window A authoring/provider activation 전 |
 | Pre-S5 foreign-news local runtime | `IMPLEMENTED_DRAFT` | current working tree V49 + packet-gated probe bridge | 0 | sanitized owner-local aggregate/read route와 Finnhub/SEC/Fed local one-shot probe/materialization bridge만 구현; selected-model·canonical packet·fresh execution evidence 전 outbound 0, GDELT HTTP transport/outbound 0 |
 | S4.8A | `CONTRACT_LOCKED` | PR #75 `c17d51f6` | 0 | `S4_8A=CONTRACT_LOCKED`; provider entitlement/adapter는 미활성 |
 | S4.8 Core 6 v2 | `IMPLEMENTED_DRAFT` | PR #92 contract lock + local probe runtime | 0 | `S4_8_CORE6_V2=CONTRACT_LOCKED / S4_8_CORE6_LOCAL_PROBE_RUNTIME=IMPLEMENTED_DRAFT`; KIS current-price·SEC EDGAR(2)·KRX daily(2)의 fixed local one-shot executor와 content-free receipt bridge가 있으며 fresh packet/evidence 전에는 socket 0; KOFIA blocked, OpenDART/ECOS projection-only |
@@ -103,17 +104,28 @@ EXACT30/OA112 query batch 각 1회만 허용한다. tokenizer가 없으면 먼�
 commit `8ca946072a18e398cd61f2ad0243b56d0350b1db`에 고정된 5분·1회 bootstrap packet으로
 `tokenizer.json`만 취득·검증한다. 이 observed hash 없이는 batch authoring을 시작하지 않는다.
 그 뒤 한 번의 Window A 승인이 완료될 수 있도록 document/evaluation packet들은
-최대 2시간 TTL이며 일반 runtime query의 5분 TTL은 유지한다. 성공 document/query batch·142개 source checkpoint는 재사용하고
-첫 실패 뒤 남은 provider call은 0이다. CPU BGE public 재실행은
+최대 2시간 TTL이며 일반 runtime query의 5분 TTL은 유지한다. 현재 clean restart에서는 기존
+namespace의 15개 committed batch·vector·attempt·checkpoint와 이전 manifest를
+`HISTORICAL_SUPERSEDED`로 격리하고 같은 fresh namespace에서 성공한 결과만 재사용한다. public PII는
+Document IR에서 먼저 정규화하고 canonical chunk·ID·hash·token count를 다시 만들어 checkpoint,
+plan, transport, final staging 모두에서 `1..600`을 강제한다. 첫 실패 뒤 남은 provider call은 0이다.
+CPU BGE public 재실행은
 `TERMINALLY_SUPERSEDED_NO_FURTHER_BGE_RUN`이며 activation 대안이 아니다. 전역 public base는
 `OWNER_PRIVATE` empty sentinel(`ownerScopeSha256=null`, ordered group 0)만 사용해 owner 원문을
 Voyage input에 포함하지 않는다. Vertex는 local root 아래 0600 service-account JSON만 읽어 OAuth token을
 1회 교환하고 `VERTEX_MODEL_ID`(기본 `gemini-3.5-flash`)의 packet-bound global publisher model로
 top-5와 질문당 `generateContent` 1회만 실행하며 fallback은 0이다. ambient ADC, API key와 Gemini
 Developer API는 v2 runtime에서 허용하지 않는다.
-Voyage와 Vertex는 모두 `TARGET_NOT_ACTIVE`이며 provider physical call은 0이다. repo latest V57은
+Voyage와 Vertex는 모두 `TARGET_NOT_ACTIVE`이며 provider physical call은 0이다. repo latest V59는
 부분 BGE generation을 삭제하지 않고 terminal supersession marker와 Voyage document/query batch vector ledger를
 보존한다.
+
+fresh namespace는 `capstone-pre-s5-fresh`, PostgreSQL `55432`, Redis `56379`, output root
+`capstone-rag/runtime/pre-s5-fresh/local-corpus`로 고정한다. BGE encoder/embedding inference와
+download는 0이고 기존 local BGE tokenizer만 600-token 경계 계산에 사용한다. Window A acceptance는
+`sources=142`, `chunks=7,871`, `maxTokens=600`, `documentBatches=63`이며 document 63개와
+EXACT30/OA112 evaluation 2개만 묶는다. 이 값이 drift하거나 clean merge SHA·V59 fresh DB·empty-state
+evidence가 없으면 manifest와 provider call은 0이다.
 
 `S4_7D_CONSENT_TICKET_CONTROL_PLANE=OFFLINE_ONLY`는 owner-bound consent append/effective read,
 5분 single-use import/delete ticket, content-free Vertex preparation만 local DB에서 수행한다. Vertex

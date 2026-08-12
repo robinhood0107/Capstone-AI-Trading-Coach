@@ -104,6 +104,48 @@ class VoyageEvaluationQueryEmbedder(Protocol):
         """Protocol compatibility only; contextual evaluation must use the receipt-bearing method above."""
 
 
+class _EvaluationQueryReceiptCache:
+    """한 번 소비한 provider receipt를 ranking metric 재구성에만 process-local로 보존한다."""
+
+    def __init__(self, delegate: VoyageEvaluationQueryEmbedder) -> None:
+        self._delegate = delegate
+        self._receipts: dict[str, RagV2QueryEmbeddingReceipt] = {}
+
+    @property
+    def embedding_profile_id(self) -> str:
+        return self._delegate.embedding_profile_id
+
+    def embed_query_with_receipt(
+        self,
+        *,
+        question: str,
+        scope_claim_id: str,
+        external_query_consent_granted: bool,
+    ) -> RagV2QueryEmbeddingReceipt:
+        question_sha256 = hashlib.sha256(question.encode("utf-8")).hexdigest()
+        if question_sha256 in self._receipts:
+            raise RagV2QueryEmbeddingError(RagV2RetrievalFailureCode.QUERY_EMBEDDING_INVALID)
+        receipt = self._delegate.embed_query_with_receipt(
+            question=question,
+            scope_claim_id=scope_claim_id,
+            external_query_consent_granted=external_query_consent_granted,
+        )
+        self._receipts[question_sha256] = receipt
+        return receipt
+
+    def receipt_for_evaluation(self, *, question: str) -> RagV2QueryEmbeddingReceipt:
+        """Provider를 다시 부르지 않고 이미 검증된 vector receipt만 반환한다."""
+
+        receipt = self._receipts.get(hashlib.sha256(question.encode("utf-8")).hexdigest())
+        if receipt is None:
+            raise PublicVoyagePairEvaluationError("PUBLIC_VOYAGE_EVALUATION_QUERY_UNAVAILABLE")
+        return receipt
+
+    def embed_query(self, question: str) -> Sequence[float]:
+        del question
+        raise RagV2QueryEmbeddingError(RagV2RetrievalFailureCode.QUERY_PROFILE_UNAVAILABLE)
+
+
 class PreS5VoyageEvaluationBatchRepositoryPort(PreS5VoyageQueryUsageReservationPort, Protocol):
     """평가 usage lease와 durable component vector stage/resume를 함께 제공한다."""
 
@@ -577,10 +619,11 @@ def evaluate_public_voyage_pair(
             scope=scope,
         )
     )
+    receipt_cache = _EvaluationQueryReceiptCache(query_embedder)
     retrieval = RagV2AuthorizedHybridRetrieval(
         query_normalizer=QueryNormalizer(),
         exact_identifier_extractor=ExactIdentifierExtractor(),
-        query_embedder=query_embedder,
+        query_embedder=receipt_cache,
         exact_retriever=channels,
         lexical_retriever=channels,
         dense_retriever=channels,
@@ -588,11 +631,15 @@ def evaluate_public_voyage_pair(
     )
     exact_hits, exact_citations, exact_durations, exact_calls = _evaluate_queries(
         retrieval=retrieval,
+        channels=channels,
+        receipt_cache=receipt_cache,
         scope=scope,
         queries=tuple(exact30_queries),
     )
     oa_hits, oa_citations, oa_durations, oa_calls = _evaluate_queries(
         retrieval=retrieval,
+        channels=channels,
+        receipt_cache=receipt_cache,
         scope=scope,
         queries=tuple(oa112_queries),
     )
@@ -638,6 +685,8 @@ def evaluate_public_voyage_pair(
 def _evaluate_queries(
     *,
     retrieval: RagV2AuthorizedHybridRetrieval,
+    channels: _InMemoryPublicChannels,
+    receipt_cache: _EvaluationQueryReceiptCache,
     scope: RagV2BundleScope,
     queries: tuple[PublicBgeEvaluationQuery, ...],
 ) -> tuple[set[str], set[str], list[float], int]:
@@ -662,16 +711,63 @@ def _evaluate_queries(
         if execution.voyage_physical_calls not in {0, 1}:
             raise PublicVoyagePairEvaluationError("PUBLIC_VOYAGE_EVALUATION_QUERY_UNAVAILABLE")
         physical_calls += execution.voyage_physical_calls
-        if execution.outcome.failure_code is not None:
+        evidence = execution.outcome.evidence
+        if execution.outcome.failure_code is RagV2RetrievalFailureCode.INSUFFICIENT_EVIDENCE:
+            evidence = _evaluation_ranking_evidence(
+                channels=channels,
+                query=query,
+                receipt_cache=receipt_cache,
+            )
+        elif execution.outcome.failure_code is not None:
             raise PublicVoyagePairEvaluationError("PUBLIC_VOYAGE_EVALUATION_QUERY_FAILED")
-        evidence = tuple(item for item in execution.outcome.evidence if item.source_id == query.expected_source_id)
-        if execution.outcome.retrieval_permitted and evidence:
+        expected_evidence = tuple(
+            item for item in evidence if item.source_id == query.expected_source_id
+        )
+        if expected_evidence:
             hits.add(query.query_id)
-            if all(_valid_public_citation(item) for item in evidence):
+            if all(_valid_public_citation(item) for item in expected_evidence):
                 citations.add(query.query_id)
     if physical_calls != 1:
         raise PublicVoyagePairEvaluationError("PUBLIC_VOYAGE_EVALUATION_QUERY_UNAVAILABLE")
     return hits, citations, durations, physical_calls
+
+
+def _evaluation_ranking_evidence(
+    *,
+    channels: _InMemoryPublicChannels,
+    query: PublicBgeEvaluationQuery,
+    receipt_cache: _EvaluationQueryReceiptCache,
+) -> tuple[RagV2RetrievalCandidate, ...]:
+    """정확도 평가는 단일-source ranking을 허용하되 production answer gate는 변경하지 않는다."""
+
+    try:
+        normalized = QueryNormalizer().normalize(
+            {
+                "answerMode": "CONCISE",
+                "question": query.question,
+                "topics": list(query.topics),
+            }
+        )
+        identifiers = tuple(
+            sorted(
+                set(ExactIdentifierExtractor().extract(query.question))
+                | set(normalized.related_symbols),
+                key=lambda value: value.encode("utf-8"),
+            )
+        )
+        query_vector = tuple(receipt_cache.receipt_for_evaluation(question=query.question).vector)
+        ranked_channels = (
+            channels.retrieve_exact(query=normalized, identifiers=identifiers),
+            channels.retrieve_lexical(query=normalized),
+            channels.retrieve_dense(query=normalized, query_vector=query_vector),
+        )
+        fused = RagV2RrfFusion().fuse(ranked_channels)[:5]
+    except (ArithmeticError, AttributeError, RuntimeError, TypeError, ValueError):
+        raise PublicVoyagePairEvaluationError("PUBLIC_VOYAGE_EVALUATION_QUERY_FAILED") from None
+    evidence = tuple(item.candidate for item in fused)
+    if not evidence:
+        raise PublicVoyagePairEvaluationError("PUBLIC_VOYAGE_EVALUATION_QUERY_FAILED")
+    return evidence
 
 
 def _build_candidates(

@@ -5,12 +5,13 @@ import org.junit.jupiter.api.Test
 import java.nio.file.Files
 import java.nio.file.Path
 
-class RagPreS5VoyageAccountingCapMigrationContractTest {
+class RagPreS5VoyageUnknownBillingReapprovalMigrationContractTest {
     private val migrationDirectory = Path.of("src/main/resources/db/migration")
-    private val migrationPath = migrationDirectory.resolve("V58__pre_s5_voyage_document_batch_accounting_cap.sql")
+    private val migrationPath =
+        migrationDirectory.resolve("V59__pre_s5_voyage_unknown_billing_reapproval.sql")
 
     @Test
-    fun `V58 is the next migration and aligns document packet accounting with the provider ceiling`() {
+    fun `V59 allows only a fresh approved packet after an unknown billing attempt`() {
         val versions =
             Files.list(migrationDirectory).use { paths ->
                 paths
@@ -18,20 +19,28 @@ class RagPreS5VoyageAccountingCapMigrationContractTest {
                     .map { migrationVersion(it) }
                     .toList()
             }
-        assertThat(migrationVersion(migrationPath)).isEqualTo(58)
-        assertThat(versions.count { it == 58 }).isEqualTo(1)
-        assertThat(versions.max()).isGreaterThanOrEqualTo(58)
+        assertThat(migrationVersion(migrationPath)).isEqualTo(59)
+        assertThat(versions.count { it == 59 }).isEqualTo(1)
+        assertThat(versions.max()).isEqualTo(59)
 
         val migration = Files.readString(migrationPath)
         assertThat(migration).contains(
-            "CREATE OR REPLACE FUNCTION reserve_rag_v2_immutable_voyage_document_batch_usage",
-            "p_token_cap NOT BETWEEN 1 AND 120000",
-            "session_user <> 'decision_rag_writer'",
+            "attempt_ordinal",
+            "state = 'UNKNOWN_BILLING'",
+            "state = 'CLAIMED'",
+            "state = 'COMMITTED'",
+            "packet_sha256 <> p_packet_sha256",
+            "rag_v2_immutable_voyage_document_batch_attempt_active_unique",
+            "rag_v2_immutable_voyage_document_batch_attempt_committed_unique",
+            "pg_advisory_xact_lock",
             "SECURITY DEFINER",
+            "session_user <> 'decision_rag_writer'",
             "REVOKE ALL PRIVILEGES ON FUNCTION",
             "GRANT EXECUTE ON FUNCTION",
         )
         assertThat(migration).doesNotContain(
+            "DELETE FROM public.rag_v2_immutable_voyage_document_batch_attempts",
+            "UPDATE public.rag_v2_immutable_voyage_document_batch_attempts SET packet_sha256",
             "GRANT SELECT ON",
             "raw_provider_response",
             "credential",

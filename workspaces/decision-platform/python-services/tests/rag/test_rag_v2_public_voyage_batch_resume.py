@@ -123,6 +123,7 @@ def test_completed_exact30_evaluation_batch_resumes_without_packet_or_provider(t
     )
     embedder = PacketGatedPublicVoyageEvaluationBatchEmbedder(
         local_root=tmp_path,
+        tokenizer_local_root=tmp_path,
         binding=PreS5ProviderBinding(
             head_commit="a" * 40,
             tree_object="b" * 40,

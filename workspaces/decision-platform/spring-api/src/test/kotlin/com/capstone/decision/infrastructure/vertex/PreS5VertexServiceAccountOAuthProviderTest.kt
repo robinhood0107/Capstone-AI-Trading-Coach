@@ -34,7 +34,7 @@ class PreS5VertexServiceAccountOAuthProviderTest {
             PreS5VertexOAuthTokenResponse(
                 statusCode = 200,
                 body =
-                    """{"access_token":"ya29.test_token_123","expires_in":3600,"token_type":"Bearer"}"""
+                    """{"access_token":"ya29.test_token_123","expires_in":3600,"token_type":"Bearer","scope":"https://www.googleapis.com/auth/cloud-platform"}"""
                         .toByteArray(StandardCharsets.UTF_8),
             )
         }

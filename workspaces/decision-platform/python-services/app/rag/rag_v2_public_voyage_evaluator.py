@@ -70,6 +70,9 @@ from app.rag.rag_v2_public_bge_evaluator import (
     load_exact30_evaluation_queries,
     load_oa112_evaluation_queries,
 )
+from app.rag.rag_v2_public_voyage_evaluation_manifest import (
+    public_voyage_evaluation_input_root,
+)
 from app.rag.rag_v2_public_voyage_staging_repository import PublicVoyageEvaluationEvidence
 
 _VOYAGE_PROFILE_ID = "voyage_context_4_1024_v1"
@@ -484,11 +487,13 @@ def load_public_voyage_evaluation_inputs(
     """Load the same frozen exact/OA query sets while binding them to the current public source identities."""
 
     try:
+        input_root = public_voyage_evaluation_input_root(local_root)
         exact30_queries, exact30_fixture_digest = load_exact30_evaluation_queries(
             source_card_corpus_manifest_sha256=exact30_context.source_card_corpus_manifest_sha256,
+            fixture_path=input_root / "exact30-evaluation-manifest.v1.json",
         )
         oa112_queries, oa112_manifest_digest = load_oa112_evaluation_queries(
-            approved_root=local_root,
+            approved_root=input_root,
             registry=registry,
         )
     except Exception:

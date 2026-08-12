@@ -5,7 +5,6 @@ import json
 import os
 import socket
 import sys
-import threading
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -614,10 +613,13 @@ def test_header_deadline_stops_before_body_stream(
     cache_root, control_root = _roots(tmp_path)
     body = b"header deadline body\n"
     source = _source(body)
-    monkeypatch.setattr(oa112_downloader, "_MAX_SOURCE_ELAPSED_SECONDS", 0.02)
-    transport = _DelayedHeaderTransport(
+    clock = _MutableMonotonicClock(current=100.0)
+    monkeypatch.setattr(oa112_downloader, "_MAX_SOURCE_ELAPSED_SECONDS", 1.0)
+    monkeypatch.setattr(oa112_downloader, "_monotonic", clock.now)
+    transport = _DeadlineHeaderTransport(
         [_Response(200, _headers("text/plain", body), body)],
-        wait_seconds=0.05,
+        clock=clock,
+        advance_seconds=2.0,
     )
 
     with pytest.raises(Oa112DownloadError, match="OA112_DOWNLOAD_TIME_BOUND") as raised:
@@ -646,14 +648,17 @@ def test_body_dribble_deadline_keeps_only_resumable_partial_cache(
     cache_root, control_root = _roots(tmp_path)
     body = b"first bounded chunk second bounded chunk\n"
     source = _source(body)
-    monkeypatch.setattr(oa112_downloader, "_MAX_SOURCE_ELAPSED_SECONDS", 0.02)
+    clock = _MutableMonotonicClock(current=100.0)
+    monkeypatch.setattr(oa112_downloader, "_MAX_SOURCE_ELAPSED_SECONDS", 1.0)
+    monkeypatch.setattr(oa112_downloader, "_monotonic", clock.now)
     transport = _FixtureTransport(
         [
-            _DribblingResponse(
+            _DeadlineDribblingResponse(
                 200,
                 _headers("text/plain", body),
                 body,
-                wait_seconds=0.05,
+                clock=clock,
+                advance_seconds=2.0,
             )
         ]
     )
@@ -902,6 +907,14 @@ class _SequenceUtcClock:
         return self.values[0]
 
 
+@dataclass
+class _MutableMonotonicClock:
+    current: float
+
+    def now(self) -> float:
+        return self.current
+
+
 @dataclass(frozen=True)
 class _ExpiringResponse:
     status_code: int
@@ -921,16 +934,17 @@ class _ExpiringResponse:
 
 
 @dataclass(frozen=True)
-class _DribblingResponse:
+class _DeadlineDribblingResponse:
     status_code: int
     headers: Mapping[str, str]
     body: bytes
-    wait_seconds: float
+    clock: _MutableMonotonicClock
+    advance_seconds: float
 
     def iter_raw(self, *, chunk_size: int) -> Iterator[bytes]:
         midpoint = len(self.body) // 2
         yield self.body[:midpoint]
-        threading.Event().wait(self.wait_seconds)
+        self.clock.current += self.advance_seconds
         yield self.body[midpoint:]
 
     def set_read_timeout_seconds(self, *, timeout_seconds: float) -> None:
@@ -969,10 +983,17 @@ class _FixtureConnection:
         return self._transport.responses.pop(0)
 
 
-class _DelayedHeaderConnection(_FixtureConnection):
-    def __init__(self, transport: "_DelayedHeaderTransport", *, wait_seconds: float) -> None:
+class _DeadlineHeaderConnection(_FixtureConnection):
+    def __init__(
+        self,
+        transport: "_DeadlineHeaderTransport",
+        *,
+        clock: _MutableMonotonicClock,
+        advance_seconds: float,
+    ) -> None:
         super().__init__(transport)
-        self._wait_seconds = wait_seconds
+        self._clock = clock
+        self._advance_seconds = advance_seconds
 
     def get(
         self,
@@ -983,7 +1004,7 @@ class _DelayedHeaderConnection(_FixtureConnection):
     ) -> Oa112DownloadResponse:
         if read_timeout_seconds is not None:
             assert read_timeout_seconds > 0
-        threading.Event().wait(self._wait_seconds)
+        self._clock.current += self._advance_seconds
         return super().get(
             target=target,
             headers=headers,
@@ -1011,10 +1032,17 @@ class _FixtureTransport:
         return _FixtureConnection(self)
 
 
-class _DelayedHeaderTransport(_FixtureTransport):
-    def __init__(self, responses: Sequence[Oa112DownloadResponse], *, wait_seconds: float) -> None:
+class _DeadlineHeaderTransport(_FixtureTransport):
+    def __init__(
+        self,
+        responses: Sequence[Oa112DownloadResponse],
+        *,
+        clock: _MutableMonotonicClock,
+        advance_seconds: float,
+    ) -> None:
         super().__init__(responses)
-        self._wait_seconds = wait_seconds
+        self._clock = clock
+        self._advance_seconds = advance_seconds
 
     def connect(
         self,
@@ -1024,11 +1052,15 @@ class _DelayedHeaderTransport(_FixtureTransport):
         connect_timeout_seconds: float,
         read_timeout_seconds: float,
         deadline: object | None = None,
-    ) -> _DelayedHeaderConnection:
+    ) -> _DeadlineHeaderConnection:
         assert connect_timeout_seconds > 0
         assert read_timeout_seconds > 0
         self.requests.append(_Request(hostname, pinned_ip, "", {}))
-        return _DelayedHeaderConnection(self, wait_seconds=self._wait_seconds)
+        return _DeadlineHeaderConnection(
+            self,
+            clock=self._clock,
+            advance_seconds=self._advance_seconds,
+        )
 
 
 class _WatchdogSocketConnection:

@@ -51,8 +51,10 @@ def test_public_plan_splits_large_source_contiguously_and_packs_under_headroom()
     assert plan.chunk_count == 145
     assert plan.owner_private_ordered_group_count == 0
     assert plan.owner_scope_sha256 is None
-    assert len(plan.batches) == 2
-    assert all(batch.token_count <= 110_000 for batch in plan.batches)
+    assert len(plan.batches) == 3
+    # UNKNOWN_BILLING forward recovery rotates the immutable plan and keeps every new request
+    # materially below the provider ceiling instead of replaying the consumed 110K plan.
+    assert all(batch.token_count <= 60_000 for batch in plan.batches)
     assert all(batch.group_count <= 1_000 for batch in plan.batches)
     assert all(batch.chunk_count <= 16_000 for batch in plan.batches)
     split = [segment for batch in plan.batches for segment in batch.segments if segment.source_id == "src_oa_000"]
@@ -213,7 +215,7 @@ def test_public_plan_rotates_every_global_batch_id_with_the_exact_tokenizer_plan
         token_counter=_RotatedTokenizerCounter(),
     )
 
-    assert len(baseline.batches) == len(rotated.batches) == 2
+    assert len(baseline.batches) == len(rotated.batches) == 3
     assert baseline.plan_sha256 != rotated.plan_sha256
     assert {batch.batch_id for batch in baseline.batches}.isdisjoint(
         batch.batch_id for batch in rotated.batches
@@ -230,7 +232,7 @@ def test_vector_accumulator_skips_completed_batches_and_restores_canonical_order
         components=_components(exact30=exact30, oa112=oa112),
         token_counter=_TokenCounter(),
     )
-    assert len(plan.batches) == 2
+    assert len(plan.batches) == 3
     accumulator = VoyageBatchVectorAccumulator(plan=plan)
     for batch in reversed(plan.batches):
         vectors = np.zeros((batch.chunk_count, 1024), dtype=np.float32)

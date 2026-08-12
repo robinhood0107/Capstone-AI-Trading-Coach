@@ -216,6 +216,27 @@ def test_voyage_context4_transport_marks_first_attempt_consumed_and_never_retrie
     assert lease.unknown_billing_calls == 1
 
 
+def test_voyage_context4_transport_exposes_only_safe_http_status_class_after_rejection() -> None:
+    """Provider 4XX 원문은 폐기하되 다음 exact packet을 고칠 수 있는 상태 분류는 보존한다."""
+
+    bundle = _public_bundle()
+    sender = _FixtureSender(response=PreS5VoyageHttpResponse(status=429, headers={}, body=b""))
+    transport = PreS5VoyageContext4Transport(
+        activation=_activation(bundle),
+        api_key="test-key",
+        lease=_FixtureLease(),
+        token_counter=_FixtureTokenCounter(),
+        sender=sender,
+        clock=lambda: NOW,
+    )
+
+    with pytest.raises(PreS5VoyageTransportError, match="PRE_S5_VOYAGE_RESPONSE_INVALID"):
+        transport.embed_full_bundle(bundle=bundle)
+
+    assert transport.content_free_summary()["providerStatusClass"] == "HTTP_4XX"
+    assert "429" not in json.dumps(transport.content_free_summary(), sort_keys=True)
+
+
 def test_voyage_context4_transport_rejects_expired_subset_or_manifest_drift_before_any_call() -> None:
     bundle = _bundle()
     sender = _FixtureSender(response=_response_for(bundle))

@@ -210,20 +210,18 @@
     },
     "vertex": {
       "activationEvidenceRequired": [
-        "API_KEY_SECURITY",
+        "SERVICE_ACCOUNT_FILE_SECURITY",
         "DATA_GOVERNANCE_STATE",
         "ABUSE_MONITORING_STATE",
         "MODEL_AVAILABILITY"
       ],
       "ambientCredentialAllowed": false,
-      "apiKeyEnvironmentVariable": "VERTEX_API_KEY",
-      "apiKeyOnly": true,
-      "apiKeyTransport": "VERTEX_EXPRESS_QUERY_PARAMETER",
       "authentication": [
-        "VERTEX_EXPRESS_API_KEY"
+        "SERVICE_ACCOUNT_OAUTH"
       ],
       "contextCacheAllowed": false,
-      "credentialFileAllowed": false,
+      "credentialFileAllowed": true,
+      "credentialFilePath": "secrets/pre-s5-vertex-service-account.json",
       "developerApiAllowed": false,
       "fallbackAllowed": false,
       "fileUploadAllowed": false,
@@ -231,7 +229,12 @@
       "generationUnavailableStatus": "GENERATION_UNAVAILABLE",
       "maximumEvidenceCount": 5,
       "maximumGenerateContentCallsPerQuestion": 1,
+      "maximumOAuthTokenCallsPerQuestion": 1,
       "modelId": "gemini-3.5-flash",
+      "modelIdEnvironmentVariable": "VERTEX_MODEL_ID",
+      "modelSelectionPacketBound": true,
+      "oauthScope": "https://www.googleapis.com/auth/cloud-platform",
+      "oauthTokenEndpoint": "https://oauth2.googleapis.com/token",
       "openAiCallsAllowed": false,
       "preparedScopeControlPlane": {
         "headerName": "X-Rag-V2-Vertex-Scope-Claim",
@@ -247,6 +250,7 @@
       "retryCount": 0,
       "sanitizedUsageLedgerOnly": true,
       "searchMapsGroundingAllowed": false,
+      "serviceAccountOnly": true,
       "sessionResumptionAllowed": false,
       "toolsFunctionsAllowed": false,
       "verifierAllowed": false

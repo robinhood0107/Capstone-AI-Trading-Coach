@@ -513,8 +513,9 @@ bootstrap packet으로 먼저 취득하고 observed SHA-256을 고정한다. 이
 authoring할 수 있다. Window A document/evaluation packet은 최대 2시간 TTL이고 일반 runtime query는
 기존 5분 TTL을 유지한다. 성공 query vector도 V54에 usage와 원자 stage한다. public CPU BGE 재실행은
 `TERMINALLY_SUPERSEDED_NO_FURTHER_BGE_RUN`이다. 모든 batch·평가 통과 뒤에만 CAS할 수 있다.
-Vertex는 `VERTEX_API_KEY`의 Vertex Express API-key-only `gemini-3.5-flash` 단일 generator·top-5·질문당
-1회만 허용한다. ADC/service-account, ambient credential, credential file과 Gemini Developer API는 0이다.
+Vertex는 fixed 0600 service-account JSON으로 OAuth token을 1회 교환하고 `VERTEX_MODEL_ID`(기본
+`gemini-3.5-flash`)를 packet에 고정한 global publisher model·top-5·질문당 generation 1회만 허용한다.
+ambient ADC, API key와 Gemini Developer API는 0이다.
 OpenAI, Gemini Developer API, reranker, verifier, files/batch API와 query-level fallback은 모두 0이다.
 
 ## Historical S4.7D OA140·owner-private RAG v2 contract context

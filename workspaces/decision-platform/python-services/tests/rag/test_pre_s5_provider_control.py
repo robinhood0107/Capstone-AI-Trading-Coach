@@ -143,6 +143,9 @@ def test_voyage_document_batch_packet_binds_exact_plan_member_and_counts(tmp_pat
 
     assert activation.batch_id == batch_id
     assert activation.expected_token_count == 100_000
+    # input_type=document prompt tokens are billed by the provider but are not part of the
+    # canonical corpus count, so the approved accounting cap must retain full API headroom.
+    assert activation.token_cap == 120_000
     assert activation.byte_cap == 16_777_216
     assert activation.physical_call_cap == 1
     assert activation.retry_count == 0
@@ -562,7 +565,7 @@ def _document_batch_packet(*, now: datetime, batch_id: str) -> dict[str, object]
         "byteCap": 16_777_216,
         "chunkCount": 2_000,
         "ciDigest": "c" * 64,
-        "costCapMicrousd": 110_000,
+        "costCapMicrousd": 120_000,
         "date": "NONE",
         "endpoint": "/v1/contextualizedembeddings",
         "expiresAt": (now + timedelta(minutes=5)).isoformat(timespec="seconds").replace("+00:00", "Z"),
@@ -587,7 +590,7 @@ def _document_batch_packet(*, now: datetime, batch_id: str) -> dict[str, object]
         "securityDigest": "d" * 64,
         "state": "APPROVED",
         "symbol": "NONE",
-        "tokenCap": 110_000,
+        "tokenCap": 120_000,
         "tokenCount": 100_000,
         "tokenizerSha256": "2" * 64,
         "treeObject": "b" * 40,

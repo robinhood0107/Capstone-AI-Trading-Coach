@@ -11,10 +11,12 @@ class RagV2VertexGenerationMigrationContractTest {
     private val hardeningPath by lazy { resolveMigration("s4_7d_vertex_outbound_authorization_hardening") }
     private val claimRecheckPath by lazy { resolveMigration("s4_7d_vertex_claim_time_evidence_recheck") }
     private val apiKeyOnlyPath by lazy { resolveMigration("s4_7d_vertex_api_key_only_runtime") }
+    private val serviceAccountPath by lazy { resolveMigration("pre_s5_vertex_service_account_oauth_runtime") }
     private val scopeLedger by lazy { Files.readString(scopeLedgerPath) }
     private val hardening by lazy { Files.readString(hardeningPath) }
     private val claimRecheck by lazy { Files.readString(claimRecheckPath) }
     private val apiKeyOnly by lazy { Files.readString(apiKeyOnlyPath) }
+    private val serviceAccount by lazy { Files.readString(serviceAccountPath) }
     private val bootstrapRoles by lazy {
         Files.readString(Path.of("../../../infra/init/02-application-roles.sh"))
     }
@@ -26,6 +28,7 @@ class RagV2VertexGenerationMigrationContractTest {
         val hardeningVersion = migrationVersion(hardeningPath)
         val claimRecheckVersion = migrationVersion(claimRecheckPath)
         val apiKeyOnlyVersion = migrationVersion(apiKeyOnlyPath)
+        val serviceAccountVersion = migrationVersion(serviceAccountPath)
         val beforeScope = migrations.filter { migrationVersion(it) < scopeVersion }.maxOf(::migrationVersion)
 
         assertThat(scopeVersion).isEqualTo(beforeScope + 1)
@@ -36,7 +39,8 @@ class RagV2VertexGenerationMigrationContractTest {
         assertThat(migrations.any { migrationVersion(it) == 41 }).isTrue()
         assertThat(claimRecheckVersion).isEqualTo(hardeningVersion + 2)
         assertThat(apiKeyOnlyVersion).isEqualTo(52)
-        assertThat(migrations.maxOf(::migrationVersion)).isEqualTo(56)
+        assertThat(serviceAccountVersion).isEqualTo(57)
+        assertThat(migrations.maxOf(::migrationVersion)).isEqualTo(57)
     }
 
     @Test
@@ -112,7 +116,7 @@ class RagV2VertexGenerationMigrationContractTest {
     }
 
     @Test
-    fun `API-key-only supersession removes OAuth claim authority and keeps one Vertex Express generation attempt`() {
+    fun `historical API-key-only supersession removed OAuth claim authority and kept one generation attempt`() {
         assertThat(apiKeyOnly).contains(
             "VERTEX_EXPRESS_API_KEY",
             "p_token_physical_call_cap <> 0",
@@ -133,10 +137,31 @@ class RagV2VertexGenerationMigrationContractTest {
     }
 
     @Test
-    fun `bootstrap reapplies only the current API-key Vertex ledger capabilities after a volume restart`() {
+    fun `service-account supersession restores one OAuth token and one generation attempt without raw credential storage`() {
+        assertThat(serviceAccount).contains(
+            "SERVICE_ACCOUNT_OAUTH",
+            "p_token_physical_call_cap <> 1",
+            "physical_token_call_count = 1",
+            "CREATE FUNCTION public.claim_rag_v2_immutable_vertex_token_attempt",
+            "claim_rag_v2_immutable_vertex_generate_content_attempt",
+            "physical_generate_content_call_count = 1",
+            "assert_rag_v2_immutable_vertex_reservation_is_current(reservation)",
+        )
+        assertThat(serviceAccount).doesNotContain(
+            "private_key",
+            "access_token",
+            "raw_response",
+            "raw_request",
+            "provider_payload",
+        )
+    }
+
+    @Test
+    fun `bootstrap reapplies current service-account Vertex ledger capabilities after a volume restart`() {
         assertThat(bootstrapRoles).contains(
             "public.reserve_rag_v2_immutable_vertex_usage(text,text,text,text,text,text,text,text,text,text,text,timestamp with time zone,integer,integer,integer,bigint,bigint,bigint,integer,integer,text,jsonb)",
-            "V52 Vertex Express API-key ledger는 token attempt 없이 generation 1회 capability만 재부여한다.",
+            "V57 service-account OAuth ledger는 token과 generation 각각 1회 capability만 재부여한다.",
+            "claim_rag_v2_immutable_vertex_token_attempt(text, text)",
             "claim_rag_v2_immutable_vertex_generate_content_attempt(text, text)",
             "commit_rag_v2_immutable_vertex_usage(text, text, integer, integer, integer)",
             "mark_rag_v2_immutable_vertex_usage_unknown_billing(text, text)",

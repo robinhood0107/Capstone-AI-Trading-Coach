@@ -260,6 +260,7 @@ class PreS5VoyageContext4Transport:
         self._external_physical_calls = 0
         self._provider_total_tokens: int | None = None
         self._expected_input_tokens: int | None = None
+        self._provider_status_class: str | None = None
         self._usage_state = "READY"
 
     @property
@@ -277,6 +278,7 @@ class PreS5VoyageContext4Transport:
             physical_calls = self._external_physical_calls
             total_tokens = self._provider_total_tokens
             expected_input_tokens = self._expected_input_tokens
+            provider_status_class = self._provider_status_class
             usage_state = self._usage_state
         summary: dict[str, object] = {
             "code": "PRE_S5_VOYAGE_ATTEMPT_CONSUMED" if consumed else "PRE_S5_VOYAGE_READY",
@@ -292,6 +294,8 @@ class PreS5VoyageContext4Transport:
             summary["expectedInputTokens"] = expected_input_tokens
         if total_tokens is not None:
             summary["providerTotalTokens"] = total_tokens
+        if provider_status_class is not None:
+            summary["providerStatusClass"] = provider_status_class
         return summary
 
     def embed_document_groups(
@@ -374,9 +378,12 @@ class PreS5VoyageContext4Transport:
         except Exception:
             sender_failed = True
         if sender_failed:
+            self._set_provider_status_class("TRANSPORT")
             self._raise_after_attempt("PRE_S5_VOYAGE_TRANSPORT_UNAVAILABLE")
         if response is None:  # pragma: no cover - Protocol implementation must return a response.
+            self._set_provider_status_class("TRANSPORT")
             self._raise_after_attempt("PRE_S5_VOYAGE_TRANSPORT_UNAVAILABLE")
+        self._set_provider_status_class(_safe_provider_status_class(response.status))
         parsed: _ParsedVoyageResponse | None = None
         parse_failed = False
         try:
@@ -385,6 +392,8 @@ class PreS5VoyageContext4Transport:
             parse_failed = True
         if parse_failed or parsed is None:
             # raw response parser exception을 active exception context로 보존하지 않고 ledger만 남긴다.
+            if response.status == 200:
+                self._set_provider_status_class("HTTP_2XX_INVALID")
             self._raise_after_attempt("PRE_S5_VOYAGE_RESPONSE_INVALID")
         actual_cost_microusd = parsed.total_tokens * self._activation.input_microusd_per_token
         if actual_cost_microusd > self._activation.cost_cap_microusd:
@@ -411,6 +420,12 @@ class PreS5VoyageContext4Transport:
             self._expected_input_tokens = expected_input_tokens
             self._usage_state = "COMMITTED"
         return parsed.vectors
+
+    def _set_provider_status_class(self, value: str) -> None:
+        """상태 숫자·header·body 없이 운영에 필요한 bounded provider 결과 분류만 보존한다."""
+
+        with self._lock:
+            self._provider_status_class = value
 
     def _claim_before_outbound(self) -> None:
         """expiry recheck와 DB one-shot claim을 sender 직전에 같은 local critical section에서 수행한다."""
@@ -984,6 +999,22 @@ def _validate_http_request(request: object) -> None:
         or len(request.headers["Authorization"]) > 4_103
     ):
         raise PreS5VoyageTransportError("PRE_S5_VOYAGE_REQUEST_INVALID")
+
+
+def _safe_provider_status_class(status: object) -> str:
+    """Provider status 숫자를 receipt에 남기지 않고 안정적인 class로만 축약한다."""
+
+    if type(status) is not int:
+        return "HTTP_OTHER"
+    if 200 <= status <= 299:
+        return "HTTP_2XX"
+    if 300 <= status <= 399:
+        return "HTTP_3XX"
+    if 400 <= status <= 499:
+        return "HTTP_4XX"
+    if 500 <= status <= 599:
+        return "HTTP_5XX"
+    return "HTTP_OTHER"
 
 
 def _unique_json_object(pairs: list[tuple[str, object]]) -> dict[str, object]:

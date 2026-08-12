@@ -110,7 +110,7 @@ def test_batch_repository_initial_resume_is_empty_then_reuses_committed_vectors(
     )
 
 
-def test_document_batch_claim_is_global_per_plan_member_and_ambiguous_attempt_is_terminal(
+def test_document_batch_claim_is_global_and_fresh_packet_can_follow_unknown_billing(
     isolated_postgres_cluster: dict[str, str],
 ) -> None:
     plan = _plan()
@@ -143,8 +143,12 @@ def test_document_batch_claim_is_global_per_plan_member_and_ambiguous_attempt_is
     repository = PsycopgRagV2VoyageBatchRepository(
         database_dsn=isolated_postgres_cluster["rag_writer_dsn"]
     )
-    with pytest.raises(RagV2VoyageBatchRepositoryError, match="VOYAGE_BATCH_RESUME_REJECTED"):
-        repository.resume(plan=plan)
+    resumed = repository.resume(plan=plan)
+    assert resumed.completed_batch_ids == ()
+    assert resumed.pending_batches == (batch,)
+
+    # 과거 UNKNOWN_BILLING은 감사 이력으로 남기되 새 packet의 재승인 실행을 막지 않는다.
+    second.claim_attempt(now=datetime.now(UTC))
 
 
 def test_atomic_stage_failure_rolls_back_usage_outcome_and_vectors(

@@ -2,7 +2,7 @@
 
 이 모듈은 tokenizer count와 content-free manifest만 만들며 socket, credential, DB writer를 소유하지
 않는다. EXACT30·OA112의 기존 chunk/locator/source identity를 바꾸지 않고, provider의 120K ceiling보다
-낮은 110K operational cap을 적용해 각 호출에 10K token headroom을 남긴다.
+낮은 110K request cap과 32K contextual segment cap을 함께 적용한다.
 """
 
 from __future__ import annotations
@@ -27,7 +27,8 @@ VoyageComponentScope = Literal["EXACT30", "OA112", "OWNER_PRIVATE"]
 _PROFILE_ID: Final = "voyage_context_4_1024_v1"
 _MODEL: Final = "voyage-context-4"
 _TOKEN_CAP: Final = 110_000
-_PROVIDER_TOKEN_CAP: Final = 120_000
+# voyage-context-4는 request 전체 120K와 별개로 한 contextual group이 참조하는 window를 32K로 제한한다.
+_CONTEXT_SEGMENT_TOKEN_CAP: Final = 32_000
 _GROUP_CAP: Final = 1_000
 _CHUNK_CAP: Final = 16_000
 _DOCUMENT_BATCH_MAX_RESPONSE_BYTES: Final = 16 * 1024 * 1024
@@ -362,11 +363,11 @@ def _segment_group(
         try:
             token_count = token_counter.count_texts(
                 texts=(chunk.canonical_text,),
-                token_cap=_PROVIDER_TOKEN_CAP,
+                token_cap=_CONTEXT_SEGMENT_TOKEN_CAP,
             )
         except Exception:
             raise RagV2VoyageBatchingError("VOYAGE_BATCH_CHUNK_TOKEN_CAP") from None
-        if token_count > _TOKEN_CAP:
+        if token_count > _CONTEXT_SEGMENT_TOKEN_CAP:
             raise RagV2VoyageBatchingError("VOYAGE_BATCH_CHUNK_TOKEN_CAP")
         counted.append((chunk, token_count))
     partitions: list[list[tuple[VoyagePreChunkedChunk, int]]] = []
@@ -375,7 +376,7 @@ def _segment_group(
     for item in counted:
         chunk, token_count = item
         if current and (
-            current_tokens + token_count > _TOKEN_CAP
+            current_tokens + token_count > _CONTEXT_SEGMENT_TOKEN_CAP
             or len(current) >= min(_CHUNK_CAP, _RESPONSE_CHUNK_CAP)
         ):
             partitions.append(current)
@@ -431,6 +432,8 @@ def _segment_group(
             for item in partition
         )
         tokens = sum(item[1] for item in partition)
+        if not 1 <= tokens <= _CONTEXT_SEGMENT_TOKEN_CAP:
+            raise RagV2VoyageBatchingError("VOYAGE_BATCH_CONTEXT_WINDOW")
         segment_group = VoyagePreChunkedDocumentGroup(
             source_id=group.source_id,
             source_revision_id=group.source_revision_id,

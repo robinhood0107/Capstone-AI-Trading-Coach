@@ -26,6 +26,7 @@ Signal feature, RiskDecision, 주문 의도, 주문 수량, 주문 hash를 바�
 안전 파일 검사
 → native parse 또는 필요한 page만 OCR
 → Document IR·secret/PII/prompt-injection 분류
+→ public corpus PII 정규화
 → canonical chunk·hash
 → embedding generation
 → pgvector + pg_trgm staging 평가
@@ -42,6 +43,13 @@ local generation에만 저장하는 target이다. 로컬 절대경로는 API, hi
 현재는 importer가 설치되지 않아 `CORPUS_RUNTIME_NOT_INSTALLED`로 종료하며, physical OA112 또는
 개인 문서 derived index가 구축되어 있지 않다. 개발 runtime에 존재하는 OCR benchmark 원본/model
 cache는 OA corpus 또는 개인문서 index가 아니다.
+
+현재 clean restart에서 public corpus는 PII 정규화가 끝난 Document IR로 canonical chunk를 다시
+materialize한다. 따라서 치환 때문에 600-token chunk가 602로 늘어나는 상태를 허용하지 않으며
+chunk ID·hash·token count도 정규화된 text에서 다시 계산한다. checkpoint, plan, transport, final
+staging의 token 계약은 모두 `1..600`이다. 기존 local 실행의 batch/vector/attempt/checkpoint는
+삭제하지 않지만 새 namespace에서는 `HISTORICAL_SUPERSEDED`로 격리한다. BGE encoder/embedding
+inference와 download는 수행하지 않고 기존 local tokenizer만 chunk 경계 계산에 사용한다.
 
 ## 3. 외부 processor와 전송
 

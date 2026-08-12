@@ -455,7 +455,9 @@ def _validate_batch_activation(
         or activation.operation != "CONTEXTUALIZED_DOCUMENT_EMBEDDING"
         or activation.logical_call_cap != 1
         or activation.physical_call_cap != 1
-        or not 1 <= activation.token_cap <= 110_000
+        # batch 본문은 110K 이하로 계획하지만 packet capability는 provider가 추가하는
+        # input_type=document accounting까지 포함하므로 공식 요청 상한 120K를 허용한다.
+        or not 1 <= activation.token_cap <= 120_000
         or activation.token_cap < batch.token_count
         or type(activation.byte_cap) is not int
         or not 1 <= activation.byte_cap <= _DOCUMENT_BATCH_MAX_BYTE_CAP

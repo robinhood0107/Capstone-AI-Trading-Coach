@@ -33,6 +33,8 @@ from app.rag.pre_s5_voyage_transport import (
     PreS5VoyageHttpRequest,
     PreS5VoyageHttpResponse,
     PreS5VoyageHttpSender,
+    _contextualized_response_envelope_is_valid,
+    _contextualized_response_item_is_valid,
 )
 from app.rag.pre_s5_voyage_tokenizer import (
     LocalPreS5VoyageContext4Tokenizer,
@@ -521,11 +523,8 @@ def _parse_response(
     except (UnicodeDecodeError, json.JSONDecodeError):
         raise PreS5VoyageQueryTransportError("PRE_S5_VOYAGE_QUERY_RESPONSE_INVALID") from None
     if (
-        not isinstance(decoded, dict)
-        or set(decoded) != {"chunker_version", "data", "model", "usage"}
-        or decoded.get("model") != _VOYAGE_MODEL
-        or not isinstance(decoded.get("chunker_version"), str)
-        or not decoded["chunker_version"]
+        not _contextualized_response_envelope_is_valid(decoded, model=_VOYAGE_MODEL)
+        or not isinstance(decoded, dict)
         or not isinstance(decoded.get("data"), list)
         or len(decoded["data"]) != 1
     ):
@@ -540,13 +539,14 @@ def _parse_response(
     ):
         raise PreS5VoyageQueryTransportError("PRE_S5_VOYAGE_QUERY_RESPONSE_INVALID")
     item = outer["data"][0]
-    if (
-        not isinstance(item, dict)
-        or set(item) != {"embedding", "index", "text"}
-        or item.get("index") != 0
-        or item.get("text") != question
-        or not isinstance(item.get("embedding"), list)
+    if not _contextualized_response_item_is_valid(
+        item,
+        expected_index=0,
+        expected_text=question,
     ):
+        raise PreS5VoyageQueryTransportError("PRE_S5_VOYAGE_QUERY_RESPONSE_INVALID")
+    assert isinstance(item, dict)
+    if not isinstance(item.get("embedding"), list):
         raise PreS5VoyageQueryTransportError("PRE_S5_VOYAGE_QUERY_RESPONSE_INVALID")
     vector = _validated_unit_vector(item["embedding"])
     usage = decoded.get("usage")

@@ -101,7 +101,13 @@
   `tokenizer.json` 한 파일을 5분·physical cap 1의 exact bootstrap packet으로 먼저 취득하며,
   observed hash 없이는 batch authoring을 시작하지 않는다. Window A packet TTL은 document/evaluation
   batch 종류에만 최대 2시간이고 일반
-  runtime query의 5분 TTL은 유지한다. 성공 document/query batch·source checkpoint를 재호출하지 않는다. 모든 batch와
+  runtime query의 5분 TTL은 유지한다. 현재 clean restart에서는 기존 실행 namespace의 15개
+  committed batch·vector·attempt·checkpoint와 manifest를 `HISTORICAL_SUPERSEDED`로 격리하고
+  count/hash/resume에 사용하지 않는다. public PII는 Document IR에서 먼저 정규화한 뒤 canonical
+  chunk·ID·hash·token count를 다시 만들며 profile-neutral token count `1..600`을 checkpoint,
+  plan, transport, final staging 모두에서 강제한다. BGE encoder/embedding inference와 download는
+  0이고 기존 local BGE tokenizer만 이 600-token 경계 계산에 사용할 수 있다. 같은 fresh namespace에서
+  성공한 document/query batch·source checkpoint만 재호출하지 않는다. 모든 batch와
   평가가 끝나기 전 CAS activation은 0이다. RAG v2 consent/import와 이 local batch runtime은
   구현돼 있지만 provider activation은 아니다. Vertex는 local-only 0600 service-account JSON으로 OAuth token을
   한 번 교환하고 `VERTEX_MODEL_ID`(기본 `gemini-3.5-flash`)의 exact packet-bound model을 한 번 호출하며,
@@ -114,6 +120,15 @@
   `BLOCKED_NO_CREDENTIAL_OR_APPROVAL`, OpenDART/ECOS는 authorized projection-only다. raw corpus,
   raw provider data, article metadata, Decision/Signal/Risk/order/hash/S5 feature authority는 계속
   0이고 Core 6 exact set을 넓히지 않는다.
+
+  clean restart의 local namespace는 Compose project `capstone-pre-s5-fresh`, PostgreSQL host port
+  `55432`, Redis host port `56379`, output root `capstone-rag/runtime/pre-s5-fresh/local-corpus`로
+  고정한다. 기존 OA112·EXACT30·tokenizer source root는 read-only이고 output root와 명시적으로
+  분리한다. V1→V59 fresh DB와 empty-state evidence를 확인한 clean merge SHA에서만 Window A를
+  authoring하며 예상 집계 `sources=142`, `chunks=7871`, `maxTokens=600`, `documentBatches=63`이
+  하나라도 다르면 provider call 0으로 `PRE_S5_FRESH_PLAN_DRIFT` 종료한다. Window A에는 document
+  63개와 EXACT30/OA112 evaluation 2개만 포함하고 production query·시장 provider·Vertex·KIS_MOCK은
+  포함하지 않는다.
 
 ## Pre-S5 단독 실행 소유권 잠금
 

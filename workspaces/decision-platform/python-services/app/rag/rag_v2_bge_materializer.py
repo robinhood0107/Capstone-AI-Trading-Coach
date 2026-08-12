@@ -4,7 +4,7 @@ import hashlib
 import json
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Final, Literal, Protocol
 
@@ -25,14 +25,13 @@ from app.rag.ingest_pipeline import (
     RagIngestError,
     RagTokenizer,
     build_embedding_inputs,
-    count_tokens,
 )
 from app.rag.local_document_parser import DocumentParseError
 
 _BGE_PROFILE_ID = "bge_m3_local_1024_v1"
 _VOYAGE_PROFILE_ID = "voyage_context_4_1024_v1"
 _BGE_EMBEDDING_BATCH_SIZE: Final = 64
-_PUBLIC_VOYAGE_SANITIZER_VERSION: Final = "public-pii-v1"
+PUBLIC_VOYAGE_SANITIZER_VERSION: Final = "public-pii-v2-rechunk"
 _PUBLIC_PII_REDACTIONS: Final[tuple[tuple[re.Pattern[str], str], ...]] = (
     (re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"), "[PUBLIC_EMAIL_REDACTED]"),
     (re.compile(r"\b01[016789][ -]?\d{3,4}[ -]?\d{4}\b"), "[PUBLIC_PHONE_REDACTED]"),
@@ -385,6 +384,17 @@ def prepare_public_document_for_embedding(
             raise RagV2BgeMaterializationError("PUBLIC_DOCUMENT_RAW_DRIFT")
         if document_ir.get("mimeType") != request.expected_mime_type:
             raise RagV2BgeMaterializationError("PUBLIC_DOCUMENT_MIME_DRIFT")
+        if request.embedding_profile_id == _VOYAGE_PROFILE_ID:
+            # PII 치환은 canonical identity와 token 경계의 입력이다. 치환 뒤 materialize해야
+            # chunk ID/hash/count가 실제 provider text와 일치하고 600-token 상한도 다시 적용된다.
+            document_ir = _sanitize_public_voyage_ir(
+                document_ir=document_ir,
+                rights_allow_external_processing=(
+                    request.local_processing_allowed
+                    and request.external_embedding_allowed
+                    and request.external_generation_allowed
+                ),
+            )
         document = materialize_document_ir(
             document_ir=document_ir,
             request=RagV2DocumentMaterializationRequest(
@@ -398,17 +408,6 @@ def prepare_public_document_for_embedding(
             ),
             tokenizer=tokenizer,
         )
-        if request.embedding_profile_id == _VOYAGE_PROFILE_ID:
-            document_ir, document = _sanitize_public_voyage_pii(
-                document_ir=document_ir,
-                document=document,
-                tokenizer=tokenizer,
-                rights_allow_external_processing=(
-                    request.local_processing_allowed
-                    and request.external_embedding_allowed
-                    and request.external_generation_allowed
-                ),
-            )
         inputs = build_embedding_inputs(
             _canonical_chunks(
                 document.chunks,
@@ -432,33 +431,31 @@ def prepare_public_document_for_embedding(
     )
 
 
-def _sanitize_public_voyage_pii(
+def _sanitize_public_voyage_ir(
     *,
     document_ir: dict[str, object],
-    document: RagV2DocumentMaterialization,
-    tokenizer: RagTokenizer,
     rights_allow_external_processing: bool,
-) -> tuple[dict[str, object], RagV2DocumentMaterialization]:
-    """공개 Voyage payload의 PII span만 마스킹하고 chunk ID·locator·순서는 유지한다."""
+) -> dict[str, object]:
+    """허용된 공개 Voyage IR의 PII만 치환해 canonical materialization 입력을 만든다.
+
+    prompt injection/secret 또는 source rights 부족은 절대 sanitize로 승격하지 않는다. 반환 IR은
+    이후 표준 materializer가 다시 chunking하므로 table atomicity와 profile-neutral 600 상한을 공유한다.
+    """
 
     safety = document_ir.get("safetyClassification")
-    if (
-        document.external_processing_eligible
-        or not rights_allow_external_processing
-        or not isinstance(safety, Mapping)
-    ):
-        return document_ir, document
+    if not rights_allow_external_processing or not isinstance(safety, Mapping):
+        return document_ir
     if (
         safety.get("externalLlmEligible") is not False
         or safety.get("piiDetected") is not True
         or safety.get("promptInjectionDetected") is not False
         or safety.get("secretDetected") is not False
     ):
-        return document_ir, document
+        return document_ir
     sanitized_ir = _copy_document_ir(document_ir)
     sanitized_blocks, redaction_count = _redact_public_pii_value(sanitized_ir.get("blocks"))
     if not isinstance(sanitized_blocks, list) or redaction_count <= 0:
-        return document_ir, document
+        return document_ir
     sanitized_ir["blocks"] = sanitized_blocks
     sanitized_ir["normalizedContentSha256"] = hashlib.sha256(
         json.dumps(
@@ -476,29 +473,9 @@ def _sanitize_public_voyage_pii(
     }
     sanitized_ir["externalProcessingSanitization"] = {
         "redactionCount": redaction_count,
-        "sanitizerVersion": _PUBLIC_VOYAGE_SANITIZER_VERSION,
+        "sanitizerVersion": PUBLIC_VOYAGE_SANITIZER_VERSION,
     }
-    sanitized_chunks: list[RagV2CanonicalDocumentChunk] = []
-    chunk_redaction_count = 0
-    for chunk in document.chunks:
-        text, count = _redact_public_pii_text(chunk.canonical_text)
-        chunk_redaction_count += count
-        sanitized_chunks.append(
-            replace(
-                chunk,
-                canonical_text=text,
-                canonical_text_sha256=hashlib.sha256(text.encode("utf-8")).hexdigest(),
-                token_count=count_tokens(text, tokenizer=tokenizer),
-            )
-        )
-    if chunk_redaction_count <= 0:
-        return document_ir, document
-    return sanitized_ir, replace(
-        document,
-        normalized_content_sha256=str(sanitized_ir["normalizedContentSha256"]),
-        external_processing_eligible=True,
-        chunks=tuple(sanitized_chunks),
-    )
+    return sanitized_ir
 
 
 def _redact_public_pii_value(value: object) -> tuple[object, int]:

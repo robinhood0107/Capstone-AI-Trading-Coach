@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import math
 import re
 import threading
 import unicodedata
@@ -33,8 +32,8 @@ from app.rag.pre_s5_voyage_transport import (
     PreS5VoyageHttpRequest,
     PreS5VoyageHttpResponse,
     PreS5VoyageHttpSender,
-    _contextualized_response_envelope_is_valid,
-    _contextualized_response_item_is_valid,
+    PreS5VoyageResponseValidationError,
+    _parse_contextualized_response,
 )
 from app.rag.pre_s5_voyage_tokenizer import (
     LocalPreS5VoyageContext4Tokenizer,
@@ -218,6 +217,7 @@ class PreS5VoyageContext4QueryEmbedder:
         self._lock = threading.Lock()
         self._consumed = False
         self._external_physical_calls = 0
+        self._response_validation_leaf: str | None = None
 
     @property
     def embedding_profile_id(self) -> str:
@@ -290,13 +290,14 @@ class PreS5VoyageContext4QueryEmbedder:
                 question=question,
             )
             actual_cost = parsed.total_tokens * self._activation.input_microusd_per_token
-            if actual_cost > self._activation.cost_cap_microusd:
-                raise PreS5VoyageQueryTransportError("PRE_S5_VOYAGE_QUERY_RESPONSE_INVALID")
             self._lease.commit(
                 expected_input_tokens=expected_input_tokens,
                 total_tokens=parsed.total_tokens,
                 actual_cost_microusd=actual_cost,
             )
+        except PreS5VoyageResponseValidationError as error:
+            self._response_validation_leaf = error.response_validation_leaf
+            self._mark_unknown_billing()
         except Exception:
             self._mark_unknown_billing()
         if response is None:  # pragma: no cover - Protocol boundary is exercised by the generic exception path.
@@ -348,10 +349,13 @@ class PreS5VoyageContext4QueryEmbedder:
         self._raise_after_attempt()
 
     def _raise_after_attempt(self) -> NoReturn:
-        raise RagV2QueryEmbeddingError(
+        error = RagV2QueryEmbeddingError(
             RagV2RetrievalFailureCode.QUERY_EMBEDDING_INVALID,
             voyage_physical_calls=self._external_physical_calls,
         )
+        if self._response_validation_leaf is not None:
+            setattr(error, "response_validation_leaf", self._response_validation_leaf)
+        raise error from None
 
 
 def _validate_activation(activation: object) -> None:
@@ -508,79 +512,17 @@ def _parse_response(
 ) -> _ParsedQueryResponse:
     """Parse and immediately discard raw response JSON; exact nested query response cardinality is one-by-one."""
 
-    if (
-        not isinstance(response, PreS5VoyageHttpResponse)
-        or response.status != 200
-        or not isinstance(response.body, bytes)
-        or not 1 <= len(response.body) <= activation.byte_cap
-    ):
-        raise PreS5VoyageQueryTransportError("PRE_S5_VOYAGE_QUERY_RESPONSE_INVALID")
-    try:
-        decoded = json.loads(
-            response.body.decode("utf-8", errors="strict"),
-            object_pairs_hook=_unique_json_object,
-        )
-    except (UnicodeDecodeError, json.JSONDecodeError):
-        raise PreS5VoyageQueryTransportError("PRE_S5_VOYAGE_QUERY_RESPONSE_INVALID") from None
-    if (
-        not _contextualized_response_envelope_is_valid(decoded, model=_VOYAGE_MODEL)
-        or not isinstance(decoded, dict)
-        or not isinstance(decoded.get("data"), list)
-        or len(decoded["data"]) != 1
-    ):
-        raise PreS5VoyageQueryTransportError("PRE_S5_VOYAGE_QUERY_RESPONSE_INVALID")
-    outer = decoded["data"][0]
-    if (
-        not isinstance(outer, dict)
-        or set(outer) != {"data", "index"}
-        or outer.get("index") != 0
-        or not isinstance(outer.get("data"), list)
-        or len(outer["data"]) != 1
-    ):
-        raise PreS5VoyageQueryTransportError("PRE_S5_VOYAGE_QUERY_RESPONSE_INVALID")
-    item = outer["data"][0]
-    if not _contextualized_response_item_is_valid(
-        item,
-        expected_index=0,
-        expected_text=question,
-    ):
-        raise PreS5VoyageQueryTransportError("PRE_S5_VOYAGE_QUERY_RESPONSE_INVALID")
-    assert isinstance(item, dict)
-    if not isinstance(item.get("embedding"), list):
-        raise PreS5VoyageQueryTransportError("PRE_S5_VOYAGE_QUERY_RESPONSE_INVALID")
-    vector = _validated_unit_vector(item["embedding"])
-    usage = decoded.get("usage")
-    total_tokens = usage.get("total_tokens") if isinstance(usage, dict) and set(usage) == {"total_tokens"} else None
-    if type(total_tokens) is not int or not 0 <= total_tokens <= activation.token_cap:
-        raise PreS5VoyageQueryTransportError("PRE_S5_VOYAGE_QUERY_RESPONSE_INVALID")
-    return _ParsedQueryResponse(vector=vector, total_tokens=total_tokens)
-
-
-def _validated_unit_vector(value: object) -> tuple[float, ...]:
-    if not isinstance(value, list) or len(value) != _OUTPUT_DIMENSION:
-        raise PreS5VoyageQueryTransportError("PRE_S5_VOYAGE_QUERY_RESPONSE_INVALID")
-    try:
-        vector = tuple(float(item) for item in value)
-    except (TypeError, ValueError):
-        raise PreS5VoyageQueryTransportError("PRE_S5_VOYAGE_QUERY_RESPONSE_INVALID") from None
-    if (
-        any(isinstance(item, bool) or not isinstance(item, (int, float)) for item in value)
-        or not all(math.isfinite(item) for item in vector)
-        or abs(math.sqrt(math.fsum(item * item for item in vector)) - 1.0) > 0.00001
-    ):
-        raise PreS5VoyageQueryTransportError("PRE_S5_VOYAGE_QUERY_RESPONSE_INVALID")
-    return vector
-
-
-def _unique_json_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
-    """공급자 응답의 duplicate key를 last-write-wins로 허용하지 않는다."""
-
-    result: dict[str, object] = {}
-    for key, value in pairs:
-        if key in result:
-            raise ValueError("duplicate JSON key")
-        result[key] = value
-    return result
+    projection = _parse_contextualized_response(
+        response=response,
+        expected_text_groups=((question,),),
+        model=_VOYAGE_MODEL,
+        token_cap=activation.token_cap,
+        byte_cap=activation.byte_cap,
+        cost_cap_microusd=activation.cost_cap_microusd,
+        input_microusd_per_token=activation.input_microusd_per_token,
+    )
+    vector = tuple(float(value) for value in projection.vectors[0])
+    return _ParsedQueryResponse(vector=vector, total_tokens=projection.total_tokens)
 
 
 def _utc_now(clock: Callable[[], datetime]) -> datetime:

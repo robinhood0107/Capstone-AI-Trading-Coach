@@ -286,6 +286,76 @@ def test_execution_probe_allows_empty_cancelled_order_page_without_publish_snaps
         )
 
 
+def test_final_open_order_reconciliation_uses_exact_order_and_unfilled_filter() -> None:
+    raw_order_no = "synthetic-provider-order"
+    client = FakeClient(
+        {
+            "rt_cd": "0",
+            "ctx_area_fk100": "",
+            "ctx_area_nk100": "",
+            "output1": [],
+        }
+    )
+    reader = KISMockExecutionReader(client)  # type: ignore[arg-type]
+    reference = MockProviderOrderReference(
+        provider_order_no=raw_order_no,
+        provider_org_no="synthetic-provider-org",
+        order_division="00",
+        quantity=1,
+    )
+
+    receipt = reader.require_no_open_order(
+        reference=reference,
+        start=date(2026, 7, 27),
+        end=date(2026, 7, 27),
+        recent=True,
+    )
+
+    assert receipt.rows_seen == 0
+    assert len(receipt.provider_exec_ref_hash) == 64
+    assert raw_order_no not in repr(receipt)
+    assert client.calls[0][3]["CCLD_DVSN"] == "02"
+    assert client.calls[0][3]["ODNO"] == raw_order_no
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {
+            "rt_cd": "0",
+            "ctx_area_fk100": "next",
+            "ctx_area_nk100": "",
+            "output1": [],
+        },
+        {
+            "rt_cd": "0",
+            "ctx_area_fk100": "",
+            "ctx_area_nk100": "",
+            "output1": [{"odno": "synthetic-provider-order"}],
+        },
+    ],
+)
+def test_final_open_order_reconciliation_rejects_continuation_or_residual_order(
+    payload: dict[str, Any],
+) -> None:
+    reader = KISMockExecutionReader(FakeClient(payload))  # type: ignore[arg-type]
+
+    with pytest.raises(KISMockProjectionError) as captured:
+        reader.require_no_open_order(
+            reference=MockProviderOrderReference(
+                provider_order_no="synthetic-provider-order",
+                provider_org_no="synthetic-provider-org",
+                order_division="00",
+                quantity=1,
+            ),
+            start=date(2026, 7, 27),
+            end=date(2026, 7, 27),
+            recent=True,
+        )
+
+    assert captured.value.reason_code == "OPEN_ORDER_RECONCILIATION_FAILED"
+
+
 def test_execution_probe_allows_empty_provider_sentinel_without_publish_snapshot() -> None:
     raw_order_no = "synthetic-provider-order"
     client = FakeClient(

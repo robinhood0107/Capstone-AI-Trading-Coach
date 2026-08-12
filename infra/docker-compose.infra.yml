@@ -31,7 +31,7 @@ services:
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
     command: ["sh", "/usr/local/bin/redis-secure-entrypoint.sh"]
-    ports: ["127.0.0.1:6379:6379"]
+    ports: ["127.0.0.1:${REDIS_HOST_PORT:-6379}:6379"]
     volumes:
       - redisdata:/data
       - ./redis-secure-entrypoint.sh:/usr/local/bin/redis-secure-entrypoint.sh:ro

@@ -13,11 +13,13 @@ from __future__ import annotations
 import json
 import os
 import re
+import stat
 import sys
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, cast
+from urllib.parse import urlsplit
 
 from app.rag.benchmark_receipt_io import BenchmarkReceiptIoError, write_benchmark_receipt
 from app.rag.bge_acquisition import DEFAULT_MODEL_ROOT
@@ -221,6 +223,14 @@ class _StagedPublicVoyageAttempt:
     binding: PreS5ProviderBinding
     api_key: str
     tokenizer_sha256: str
+
+
+@dataclass(frozen=True, slots=True)
+class _PublicVoyageExecutionRoots:
+    """기존 corpus는 read-only source로, 새 실행 산출물은 별도 private root로 고정한다."""
+
+    source: Path
+    output: Path
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -473,28 +483,29 @@ def _stage_and_evaluate_public_base(
 def _prepare_public_base_batch_plan() -> PublicBaseVoyageBatchPreparation:
     """provider/DB capability 없이 checkpoint 142개와 exact content-free batch set만 준비한다."""
 
-    local_root = _local_root()
-    registry = _load_oa112_registry(local_root)
+    roots = _execution_roots()
+    registry = _load_oa112_registry(roots.source)
     tokenizer = BgeStaticTokenizer.from_file(_bge_packet_root() / "onnx" / "tokenizer.json")
     token_counter = LocalPreS5VoyageContext4Tokenizer.from_local_root(
-        local_root=local_root,
+        local_root=roots.source,
         expected_sha256=_voyage_tokenizer_sha256(),
     )
     return prepare_public_base_voyage_batches(
         tokenizer=tokenizer,
         voyage_token_counter=token_counter,
         oa112_registry=registry,
-        oa112_local_cache_root=local_root,
-        checkpoint_local_corpus_root=local_root,
+        oa112_local_cache_root=roots.source,
+        checkpoint_local_corpus_root=roots.output,
     )
 
 
 def _prepare_public_evaluation_inputs(preparation: PublicBaseVoyageBatchPreparation) -> None:
     """Bind the frozen 10 questions and 112 title-based questions to this exact checkpoint plan."""
 
-    registry = _load_oa112_registry(_local_root())
+    roots = _execution_roots()
+    registry = _load_oa112_registry(roots.source)
     prepare_public_voyage_evaluation_manifests(
-        local_root=_local_root(),
+        local_root=roots.output,
         exact30_source_card_corpus_manifest_sha256=(
             preparation.exact30.source_card_corpus_manifest_sha256
         ),
@@ -507,20 +518,22 @@ def _stage_public_base_attempt(*, writer_dsn: str) -> _StagedPublicVoyageAttempt
     """checkpoint를 reuse하고 DB 완료 batch를 건너뛰며 미완료 packet만 순서대로 한 번씩 소비한다."""
 
     try:
-        local_root = _local_root()
-        registry = _load_oa112_registry(local_root)
+        _require_fresh_database_namespace(writer_dsn)
+        roots = _execution_roots()
+        local_root = roots.output
+        registry = _load_oa112_registry(roots.source)
         tokenizer = BgeStaticTokenizer.from_file(_bge_packet_root() / "onnx" / "tokenizer.json")
         tokenizer_sha256 = _voyage_tokenizer_sha256()
         token_counter = LocalPreS5VoyageContext4Tokenizer.from_local_root(
-            local_root=local_root,
+            local_root=roots.source,
             expected_sha256=tokenizer_sha256,
         )
         preparation = prepare_public_base_voyage_batches(
             tokenizer=tokenizer,
             voyage_token_counter=token_counter,
             oa112_registry=registry,
-            oa112_local_cache_root=local_root,
-            checkpoint_local_corpus_root=local_root,
+            oa112_local_cache_root=roots.source,
+            checkpoint_local_corpus_root=roots.output,
         )
         binding = _execution_binding(local_root=local_root)
         api_key = resolve_voyage_api_key(os.environ)
@@ -833,14 +846,85 @@ def _voyage_tokenizer_sha256() -> str:
     return value
 
 
-def _local_root() -> Path:
-    """Resolve the one local control/cache root without accepting raw paths through command arguments."""
+def _source_root() -> Path:
+    """기존 OA112·EXACT30·tokenizer만 읽는 명시적 private source root를 검증한다."""
 
-    value = os.environ.get("CAPSTONE_RAG_LOCAL_ROOT", "").strip()
+    return _private_execution_root(
+        environment_name="CAPSTONE_RAG_SOURCE_ROOT",
+        missing_code="PUBLIC_VOYAGE_SOURCE_ROOT_REQUIRED",
+        boundary_code="PUBLIC_VOYAGE_SOURCE_ROOT_BOUNDARY",
+    )
+
+
+def _output_root() -> Path:
+    """새 checkpoint·packet·receipt만 쓰는 명시적 private output root를 검증한다."""
+
+    return _private_execution_root(
+        environment_name="CAPSTONE_RAG_OUTPUT_ROOT",
+        missing_code="PUBLIC_VOYAGE_OUTPUT_ROOT_REQUIRED",
+        boundary_code="PUBLIC_VOYAGE_OUTPUT_ROOT_BOUNDARY",
+    )
+
+
+def _execution_roots() -> _PublicVoyageExecutionRoots:
+    source = _source_root()
+    output = _output_root()
+    if source == output:
+        raise PublicVoyageCliError("PUBLIC_VOYAGE_ROOTS_MUST_BE_DISTINCT")
+    return _PublicVoyageExecutionRoots(source=source, output=output)
+
+
+def _local_root() -> Path:
+    """기존 내부 helper 이름은 유지하되 legacy CAPSTONE_RAG_LOCAL_ROOT로 fallback하지 않는다."""
+
+    return _output_root()
+
+
+def _private_execution_root(
+    *,
+    environment_name: str,
+    missing_code: str,
+    boundary_code: str,
+) -> Path:
+    value = os.environ.get(environment_name, "").strip()
     root = Path(value)
     if not value or not root.is_absolute() or ".." in root.parts:
-        raise PublicVoyageCliError("PUBLIC_VOYAGE_LOCAL_CONTROL_REQUIRED")
+        raise PublicVoyageCliError(missing_code)
+    try:
+        metadata = root.lstat()
+        resolved = root.resolve(strict=True)
+    except OSError:
+        raise PublicVoyageCliError(boundary_code) from None
+    if (
+        not stat.S_ISDIR(metadata.st_mode)
+        or stat.S_ISLNK(metadata.st_mode)
+        or metadata.st_uid != os.getuid()
+        or stat.S_IMODE(metadata.st_mode) != 0o700
+        or resolved != root
+    ):
+        raise PublicVoyageCliError(boundary_code)
     return root
+
+
+def _require_fresh_database_namespace(database_dsn: str) -> None:
+    """provider/staging DB를 고정 fresh Compose project와 loopback port에만 허용한다."""
+
+    try:
+        parsed = urlsplit(database_dsn)
+        port = parsed.port
+    except ValueError:
+        raise PublicVoyageCliError("PUBLIC_VOYAGE_FRESH_NAMESPACE_REQUIRED") from None
+    if (
+        os.environ.get("CAPSTONE_PRE_S5_COMPOSE_PROJECT", "").strip()
+        != "capstone-pre-s5-fresh"
+        or os.environ.get("POSTGRES_HOST_PORT", "").strip() != "55432"
+        or os.environ.get("REDIS_HOST_PORT", "").strip() != "56379"
+        or parsed.scheme not in {"postgres", "postgresql"}
+        or parsed.hostname != "127.0.0.1"
+        or port != 55432
+        or not parsed.path.removeprefix("/")
+    ):
+        raise PublicVoyageCliError("PUBLIC_VOYAGE_FRESH_NAMESPACE_REQUIRED")
 
 
 def _repository_root() -> Path:

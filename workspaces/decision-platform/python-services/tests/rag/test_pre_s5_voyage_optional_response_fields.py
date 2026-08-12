@@ -14,9 +14,14 @@ from app.rag.pre_s5_provider_control import (
     PreS5VoyageQueryActivation,
 )
 from app.rag.pre_s5_voyage_evaluation_batch_transport import (
+    PreS5VoyageEvaluationBatchTransport,
+    PreS5VoyageEvaluationBatchTransportError,
     _parse_response as parse_evaluation_response,
 )
-from app.rag.pre_s5_voyage_query_transport import _parse_response as parse_query_response
+from app.rag.pre_s5_voyage_query_transport import (
+    PreS5VoyageContext4QueryEmbedder,
+    _parse_response as parse_query_response,
+)
 from app.rag.pre_s5_voyage_transport import (
     PreS5VoyageContext4Transport,
     PreS5VoyageHttpRequest,
@@ -35,6 +40,7 @@ from app.rag.rag_v2_voyage_batching import VoyageContextSegment, VoyageDocumentB
 _NOW = datetime(2026, 8, 12, 10, tzinfo=UTC)
 _QUESTION = "Which assumptions support the reported result?"
 _RAW_MARKER = "provider-private-response-marker"
+_SCOPE_CLAIM = f"rvs_{'a' * 32}"
 _PARSER_NAMES = ("document", "evaluation", "query")
 _LEAF_CASES = (
     ("STATUS", "STATUS"),
@@ -212,6 +218,71 @@ def test_document_attempt_exposes_only_the_leaf_and_stops_after_one_failed_batch
     assert cli_receipt["completedBatchCount"] == 0
 
 
+def test_evaluation_attempt_exposes_the_same_content_free_leaf() -> None:
+    questions = tuple((f"q{index:02d}", f"question {index}") for index in range(1, 11))
+    response = _evaluation_response(
+        tuple(question for _, question in questions),
+        first_returned_text=_RAW_MARKER,
+    )
+    lease = _Lease()
+    transport = PreS5VoyageEvaluationBatchTransport(
+        activation=replace(
+            _evaluation_activation(),
+            expected_query_count=10,
+            expected_token_count=10,
+            token_cap=100,
+            cost_cap_microusd=100,
+        ),
+        api_key="test-key",
+        lease=lease,
+        token_counter=_EvaluationTokenCounter(),
+        sender=_Sender(response),
+        clock=lambda: _NOW,
+    )
+
+    with pytest.raises(PreS5VoyageEvaluationBatchTransportError) as captured:
+        transport.embed(query_id_questions=questions)
+
+    assert captured.value.response_validation_leaf == "CHUNK_TEXT"
+    assert captured.value.voyage_physical_calls == 1
+    assert lease.claims == 1
+    assert lease.unknown_billing == 1
+
+
+def test_query_attempt_exposes_the_same_content_free_leaf() -> None:
+    activation = replace(
+        _query_activation(),
+        scope_claim_sha256=hashlib.sha256(_SCOPE_CLAIM.encode()).hexdigest(),
+    )
+    lease = _Lease()
+    embedder = PreS5VoyageContext4QueryEmbedder(
+        activation=activation,
+        api_key="test-key",
+        lease=lease,
+        token_counter=_QueryTokenCounter(),
+        sender=_Sender(
+            _response(
+                include_chunker_version=False,
+                include_text=True,
+                returned_text=_RAW_MARKER,
+            )
+        ),
+        clock=lambda: _NOW,
+    )
+
+    with pytest.raises(Exception) as captured:
+        embedder.embed_query_with_receipt(
+            question=_QUESTION,
+            scope_claim_id=_SCOPE_CLAIM,
+            external_query_consent_granted=True,
+        )
+
+    assert getattr(captured.value, "response_validation_leaf", None) == "CHUNK_TEXT"
+    assert getattr(captured.value, "voyage_physical_calls", None) == 1
+    assert lease.claims == 1
+    assert lease.unknown_billing == 1
+
+
 def test_validation_leaf_set_is_closed_and_content_free() -> None:
     assert {leaf for _, leaf in _LEAF_CASES} == {
         "STATUS",
@@ -356,6 +427,32 @@ def _response_from_payload(payload: dict[str, object]) -> PreS5VoyageHttpRespons
     )
 
 
+def _evaluation_response(
+    questions: tuple[str, ...],
+    *,
+    first_returned_text: str,
+) -> PreS5VoyageHttpResponse:
+    vector = [1.0] + [0.0] * 1023
+    payload = {
+        "data": [
+            {
+                "data": [
+                    {
+                        "embedding": vector,
+                        "index": 0,
+                        "text": first_returned_text if index == 0 else question,
+                    }
+                ],
+                "index": index,
+            }
+            for index, question in enumerate(questions)
+        ],
+        "model": "voyage-context-4",
+        "usage": {"total_tokens": len(questions)},
+    }
+    return _response_from_payload(payload)
+
+
 def _group() -> VoyagePreChunkedDocumentGroup:
     text_hash = hashlib.sha256(_QUESTION.encode()).hexdigest()
     return VoyagePreChunkedDocumentGroup(
@@ -487,6 +584,26 @@ class _TokenCounter:
     def count_texts(self, *, texts: tuple[str, ...], token_cap: int) -> int:
         assert texts == (_QUESTION,)
         assert token_cap == 120_000
+        return 1
+
+
+class _EvaluationTokenCounter:
+    model = "voyage-context-4"
+    tokenizer_sha256 = "6" * 64
+
+    def count_texts(self, *, texts: tuple[str, ...], token_cap: int) -> int:
+        assert len(texts) == 10
+        assert token_cap == 100
+        return 10
+
+
+class _QueryTokenCounter:
+    model = "voyage-context-4"
+    tokenizer_sha256 = "5" * 64
+
+    def count_texts(self, *, texts: tuple[str, ...], token_cap: int) -> int:
+        assert texts == (_QUESTION,)
+        assert token_cap == 1
         return 1
 
 

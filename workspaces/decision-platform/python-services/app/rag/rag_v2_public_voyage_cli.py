@@ -219,6 +219,7 @@ class _StagedPublicVoyageAttempt:
     pair: PublicVoyageStagedPair
     materialization: PublicBaseVoyageMaterialization
     local_root: Path
+    tokenizer_local_root: Path
     registry: Oa112ActiveRegistry
     binding: PreS5ProviderBinding
     api_key: str
@@ -414,6 +415,7 @@ def _stage_and_evaluate_public_base(
         )
         query_embedder = PacketGatedPublicVoyageEvaluationBatchEmbedder(
             local_root=attempt.local_root,
+            tokenizer_local_root=attempt.tokenizer_local_root,
             binding=attempt.binding,
             api_key=attempt.api_key,
             usage_repository=PsycopgPreS5VoyageQueryUsageRepository(database_dsn=writer_dsn),
@@ -648,6 +650,7 @@ def _stage_public_base_attempt(*, writer_dsn: str) -> _StagedPublicVoyageAttempt
         pair=pair,
         materialization=materialization,
         local_root=local_root,
+        tokenizer_local_root=roots.source,
         registry=registry,
         binding=binding,
         api_key=api_key,

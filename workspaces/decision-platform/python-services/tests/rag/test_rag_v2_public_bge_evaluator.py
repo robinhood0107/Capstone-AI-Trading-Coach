@@ -50,6 +50,7 @@ from app.rag.rag_v2_external_exact30_voyage_runner import (
     build_external_exact30_public_voyage_component_context,
 )
 from app.rag.rag_v2_oa112_voyage_runner import build_oa112_public_voyage_component_context
+from app.rag import rag_v2_public_voyage_evaluator as voyage_evaluator
 from app.rag.rag_v2_public_voyage_evaluator import (
     PublicVoyagePairEvaluationError,
     evaluate_public_voyage_pair,
@@ -228,6 +229,56 @@ def test_public_voyage_pair_evaluator_runs_all_packet_accounted_queries_without_
         exact30_queries=exact_queries,
         oa112_queries=oa_queries,
     )[hashlib.sha256(exact_queries[0].question.encode("utf-8")).hexdigest()] == "q01"
+
+
+def test_public_voyage_evaluation_scores_precise_single_source_ranking_without_weakening_runtime(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Source-targeted 평가에서는 정확한 단일-source ranking을 answer 안전조건과 혼동하지 않는다."""
+
+    original_retrieve_lexical = voyage_evaluator._InMemoryPublicChannels.retrieve_lexical
+
+    def _retrieve_only_best_lexical(
+        channel: object,
+        **kwargs: object,
+    ) -> object:
+        result = original_retrieve_lexical(channel, **kwargs)
+        return replace(result, items=result.items[:1])
+
+    monkeypatch.setattr(
+        voyage_evaluator._InMemoryPublicChannels,
+        "retrieve_lexical",
+        _retrieve_only_best_lexical,
+    )
+    exact_records = tuple(_voyage_record("EXACT30", index) for index in range(30))
+    oa_records = tuple(_voyage_record("OA112", index) for index in range(112))
+    registry = _registry()
+    query_embedder = _FixtureVoyageQueryEmbedder()
+
+    evaluation = evaluate_public_voyage_pair(
+        exact30_records=exact_records,
+        exact30_context=build_external_exact30_public_voyage_component_context(
+            records=exact_records,
+            source_card_corpus_manifest_sha256="b" * 64,
+        ),
+        oa112_records=oa_records,
+        oa112_context=build_oa112_public_voyage_component_context(
+            records=oa_records,
+            registry_id=registry.registry_id,
+            registry_digest=registry.registry_digest,
+        ),
+        oa112_registry_digest=registry.registry_digest,
+        exact30_queries=_exact_queries(),
+        exact30_fixture_digest="c" * 64,
+        oa112_queries=_oa_queries(registry),
+        oa112_manifest_digest="d" * 64,
+        query_embedder=query_embedder,
+    )
+
+    assert evaluation.acceptance_passed is True
+    assert evaluation.exact30.exact_top5_hit_rate == 1.0
+    assert evaluation.oa112.track_recall_at5 == 1.0
+    assert len(query_embedder.calls) == 122
 
 
 def test_public_voyage_pair_evaluator_stops_after_one_failed_physical_query_attempt() -> None:

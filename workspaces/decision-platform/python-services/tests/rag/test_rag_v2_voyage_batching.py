@@ -36,7 +36,9 @@ class _RotatedTokenizerCounter(_TokenCounter):
 def test_public_plan_splits_large_source_contiguously_and_packs_under_headroom() -> None:
     exact30 = tuple(_group("exact", index, (1_000,)) for index in range(30))
     oa112 = tuple(
-        _group("oa", index, (60_000, 60_000)) if index == 0 else _group("oa", index, (100,))
+        _group("oa", index, (16_000, 16_000, 16_000, 16_000))
+        if index == 0
+        else _group("oa", index, (100,))
         for index in range(112)
     )
 
@@ -46,7 +48,7 @@ def test_public_plan_splits_large_source_contiguously_and_packs_under_headroom()
     )
 
     assert plan.source_count == 142
-    assert plan.chunk_count == 143
+    assert plan.chunk_count == 145
     assert plan.owner_private_ordered_group_count == 0
     assert plan.owner_scope_sha256 is None
     assert len(plan.batches) == 2
@@ -56,21 +58,44 @@ def test_public_plan_splits_large_source_contiguously_and_packs_under_headroom()
     split = [segment for batch in plan.batches for segment in batch.segments if segment.source_id == "src_oa_000"]
     assert [(segment.segment_ordinal, segment.segment_count) for segment in split] == [(1, 2), (2, 2)]
     assert [chunk.chunk_id for segment in split for chunk in segment.group.chunks] == [
-        oa112[0].chunks[0].chunk_id,
-        oa112[0].chunks[1].chunk_id,
+        chunk.chunk_id for chunk in oa112[0].chunks
     ]
     assert {segment.group.context_set_hash for segment in split} != {oa112[0].context_set_hash}
     assert len({segment.group.context_set_hash for segment in split}) == 1
     assert all(
         effective.embedding_input_hash != original.embedding_input_hash
-        for segment, original in zip(split, oa112[0].chunks, strict=True)
-        for effective in segment.group.chunks
+        for effective, original in zip(
+            (chunk for segment in split for chunk in segment.group.chunks),
+            oa112[0].chunks,
+            strict=True,
+        )
     )
     identities = plan.effective_chunk_identities()
     assert identities[split[0].group.chunks[0].chunk_id] == (
         split[0].group.chunks[0].embedding_input_hash,
         split[0].group.context_set_hash,
     )
+
+
+def test_public_plan_never_emits_a_context_segment_over_voyage_context4_window() -> None:
+    """120K request 여유와 별개로 각 contextual document group은 32K를 넘지 않는다."""
+
+    exact30 = tuple(
+        _group("exact", index, (20_000, 20_000)) if index == 0 else _group("exact", index, (1,))
+        for index in range(30)
+    )
+    oa112 = tuple(_group("oa", index, (1,)) for index in range(112))
+
+    plan = build_public_voyage_batch_plan(
+        components=_components(exact30=exact30, oa112=oa112),
+        token_counter=_TokenCounter(),
+    )
+    segments = tuple(segment for batch in plan.batches for segment in batch.segments)
+    split = tuple(segment for segment in segments if segment.source_id == "src_exact_000")
+
+    assert tuple(segment.token_count for segment in split) == (20_000, 20_000)
+    assert tuple(segment.segment_ordinal for segment in split) == (1, 2)
+    assert all(segment.token_count <= 32_000 for segment in segments)
 
 
 def test_public_plan_limits_chunks_by_conservative_response_body_budget() -> None:
@@ -145,8 +170,8 @@ def test_public_plan_rejects_nonempty_owner_or_wrong_public_membership() -> None
         build_public_voyage_batch_plan(components=tuple(wrong), token_counter=_TokenCounter())
 
 
-def test_public_plan_rejects_one_chunk_larger_than_110k_without_calling_provider() -> None:
-    exact30 = tuple(_group("exact", index, (110_001,) if index == 0 else (1,)) for index in range(30))
+def test_public_plan_rejects_one_chunk_larger_than_context_window_without_calling_provider() -> None:
+    exact30 = tuple(_group("exact", index, (32_001,) if index == 0 else (1,)) for index in range(30))
     oa112 = tuple(_group("oa", index, (1,)) for index in range(112))
 
     with pytest.raises(RagV2VoyageBatchingError, match="VOYAGE_BATCH_CHUNK_TOKEN_CAP"):
@@ -176,7 +201,10 @@ def test_public_plan_hash_changes_when_member_identity_changes() -> None:
 
 def test_public_plan_rotates_every_global_batch_id_with_the_exact_tokenizer_plan() -> None:
     components = _components(
-        exact30=tuple(_group("exact", index, (60_000,) if index < 2 else (1,)) for index in range(30)),
+        exact30=tuple(
+            _group("exact", index, (30_000, 30_000)) if index < 2 else _group("exact", index, (1,))
+            for index in range(30)
+        ),
         oa112=tuple(_group("oa", index, (1,)) for index in range(112)),
     )
     baseline = build_public_voyage_batch_plan(components=components, token_counter=_TokenCounter())
@@ -193,7 +221,10 @@ def test_public_plan_rotates_every_global_batch_id_with_the_exact_tokenizer_plan
 
 
 def test_vector_accumulator_skips_completed_batches_and_restores_canonical_order() -> None:
-    exact30 = tuple(_group("exact", index, (60_000,) if index < 2 else (1,)) for index in range(30))
+    exact30 = tuple(
+        _group("exact", index, (30_000, 30_000)) if index < 2 else _group("exact", index, (1,))
+        for index in range(30)
+    )
     oa112 = tuple(_group("oa", index, (1,)) for index in range(112))
     plan = build_public_voyage_batch_plan(
         components=_components(exact30=exact30, oa112=oa112),
@@ -211,7 +242,7 @@ def test_vector_accumulator_skips_completed_batches_and_restores_canonical_order
     assert accumulator.complete is True
     assert accumulator.completed_batch_ids == tuple(batch.batch_id for batch in plan.batches)
     ordered = accumulator.ordered_vectors(groups=exact30 + oa112)
-    assert ordered.shape == (142, 1024)
+    assert ordered.shape == (144, 1024)
     with pytest.raises(RagV2VoyageBatchingError, match="VOYAGE_BATCH_RESUME_STATE"):
         accumulator.record_success(batch=plan.batches[0], vectors=np.zeros((plan.batches[0].chunk_count, 1024), dtype=np.float32))
 

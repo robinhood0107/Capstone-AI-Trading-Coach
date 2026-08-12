@@ -295,6 +295,7 @@ class PacketGatedPublicVoyageEvaluationBatchEmbedder:
         self,
         *,
         local_root: Path,
+        tokenizer_local_root: Path,
         binding: PreS5ProviderBinding,
         api_key: str,
         usage_repository: PreS5VoyageEvaluationBatchRepositoryPort,
@@ -307,6 +308,8 @@ class PacketGatedPublicVoyageEvaluationBatchEmbedder:
         if (
             not isinstance(local_root, Path)
             or not local_root.is_absolute()
+            or not isinstance(tokenizer_local_root, Path)
+            or not tokenizer_local_root.is_absolute()
             or not isinstance(binding, PreS5ProviderBinding)
             or not isinstance(api_key, str)
             or not api_key
@@ -316,6 +319,7 @@ class PacketGatedPublicVoyageEvaluationBatchEmbedder:
         ):
             raise PublicVoyagePairEvaluationError("PUBLIC_VOYAGE_EVALUATION_RUNTIME")
         self._local_root = local_root
+        self._tokenizer_local_root = tokenizer_local_root
         self._binding = binding
         self._api_key = api_key
         self._usage_repository = usage_repository
@@ -415,7 +419,7 @@ class PacketGatedPublicVoyageEvaluationBatchEmbedder:
         lease = None
         try:
             tokenizer = LocalPreS5VoyageContext4Tokenizer.from_local_root(
-                local_root=self._local_root,
+                local_root=self._tokenizer_local_root,
                 expected_sha256=self._tokenizer_sha256,
             )
             expected_tokens = tokenizer.count_texts(

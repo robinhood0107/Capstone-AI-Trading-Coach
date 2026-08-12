@@ -72,7 +72,7 @@ REQUIRED_PUBLIC_MARKERS = {
     "AGENTS.md": (
         "PRE_S5_DOC_TRUTH_FREEZE_ADDENDUM_VERIFIED",
         "PRE_S5_EXECUTION_OWNER=DECISION_PLATFORM",
-        "VERTEX_API_KEY",
+        "VERTEX_MODEL_ID",
         "PLAN_FEASIBILITY=GO_WITH_EXTERNAL_HARD_GATES",
         "S4_8A=CONTRACT_LOCKED",
         "S4_8B_C=IMPLEMENTED_MERGE_CANDIDATE",
@@ -98,7 +98,7 @@ REQUIRED_PUBLIC_MARKERS = {
         "S4_8_CORE6_V2=CONTRACT_LOCKED",
         "S4_8_CORE6_LOCAL_PROBE_RUNTIME=IMPLEMENTED_DRAFT",
         "S4_8B_C=IMPLEMENTED_MERGE_CANDIDATE",
-        "VERTEX_API_KEY",
+        "VERTEX_MODEL_ID",
     ),
     "docs/최종_프로젝트_명세서.md": (
         "local-only `IMPLEMENTED_DRAFT` runtime",
@@ -112,7 +112,7 @@ REQUIRED_PUBLIC_MARKERS = {
         "S4_8_CORE6_V2=CONTRACT_LOCKED",
         "S4_8_CORE6_LOCAL_PROBE_RUNTIME=IMPLEMENTED_DRAFT",
         "S4_8B_C=IMPLEMENTED_MERGE_CANDIDATE",
-        "VERTEX_API_KEY",
+        "VERTEX_MODEL_ID",
     ),
     "docs/API_명세서.md": (
         "ACTIVE_V2_RUNTIME=IMPLEMENTED_DRAFT",
@@ -125,7 +125,7 @@ REQUIRED_PUBLIC_MARKERS = {
         "S4_8_CORE6_V2=CONTRACT_LOCKED",
         "S4_8_CORE6_LOCAL_PROBE_RUNTIME=IMPLEMENTED_DRAFT",
         "S4_8B_C=IMPLEMENTED_MERGE_CANDIDATE",
-        "VERTEX_API_KEY",
+        "VERTEX_MODEL_ID",
     ),
     "contracts/README.md": (
         "OA112_HISTORICAL",
@@ -136,7 +136,7 @@ REQUIRED_PUBLIC_MARKERS = {
         "S4_8_CORE6_V2=CONTRACT_LOCKED",
         "S4_8_CORE6_LOCAL_PROBE_RUNTIME=IMPLEMENTED_DRAFT",
         "S4_8B_C=IMPLEMENTED_MERGE_CANDIDATE",
-        "VERTEX_API_KEY",
+        "VERTEX_MODEL_ID",
     ),
     "capstone-rag/README.md": (
         "OA112_HISTORICAL",
@@ -157,32 +157,30 @@ REQUIRED_PUBLIC_MARKERS = {
         "Vertex AI Gemini",
         "TARGET_NOT_ACTIVE",
         "OA112_ACTIVE_CONTRACT_LOCKED",
-        "VERTEX_API_KEY",
+        "VERTEX_MODEL_ID",
     ),
 }
 FORBIDDEN_PUBLIC_MARKERS: Final[dict[str, tuple[str, ...]]] = {
-    "AGENTS.md": (
-        "Vertex ADC/service-account",
-    ),
+    "AGENTS.md": ("VERTEX_API_KEY",),
     "docs/README.md": (
         "| S1.3G | `EXTERNAL_OWNER_HANDOFF` |",
         "GDELT producer는 팀원 B",
         "Decision은 sanitized artifact consumer만 소유",
         "S4_7D_RUNTIME=STUB_FAIL_CLOSED",
-        "Vertex는 ADC/service-account의",
+        "VERTEX_API_KEY",
     ),
     "docs/최종_프로젝트_명세서.md": (
-        "Vertex target은 ADC/service-account",
+        "VERTEX_API_KEY",
     ),
     "docs/API_명세서.md": (
         "ACTIVE_V2_RUNTIME=STUB_FAIL_CLOSED",
-        "Vertex candidate는 ADC/service-account",
+        "VERTEX_API_KEY",
     ),
     "docs/RAG_외부_AI_처리_및_개인문서_동의.md": (
-        "Vertex는 ADC/service-account만 허용",
+        "VERTEX_API_KEY",
     ),
     "contracts/README.md": (
-        "Vertex는 ADC/service-account",
+        "VERTEX_API_KEY",
     ),
     "capstone-rag/README.md": (
         "CORPUS_RUNTIME_NOT_INSTALLED",

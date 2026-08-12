@@ -11,7 +11,7 @@ import subprocess
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, NoReturn
+from typing import Any, Literal, NoReturn
 
 from app.brokerage.kis_mock_approval_probe import (
     _REQUIRED_CI_CHECKS,
@@ -20,6 +20,7 @@ from app.brokerage.kis_mock_approval_probe import (
     _require_clean_repository,
     _validate_v2_security_evidence,
     KISMockApprovalPacketV2,
+    KISMockApprovalPacketV3,
 )
 from app.brokerage.kis_mock_approval_environment import (
     KISMockApprovalEnvironmentRejected,
@@ -403,8 +404,9 @@ def author_v2_packet(
     reference_ttl_seconds: int,
     probe_type: str,
     recovery_of: dict[str, str] | None,
+    packet_schema_version: Literal[2, 3] = 2,
 ) -> tuple[str, str]:
-    """author의 mutable inputs를 current GitHub/Redis evidence와 결합해 canonical v2 bytes를 만든다."""
+    """current GitHub/Redis evidence로 v2 legacy 또는 v3 final packet bytes를 만든다."""
 
     resolved_root = repository_root.resolve(strict=True)
     if execution_head_mode == "OPEN_PR":
@@ -425,7 +427,11 @@ def author_v2_packet(
     findings, findings_sha256 = _security_evidence_file(security_findings_path)
     observation = datetime.now(tz=UTC)
     baseline = _capture_redis_baseline(observation)
-    expected_steps, brokerage_cap = _profile_steps_and_cap(probe_type, recovery_of)
+    expected_steps, brokerage_cap = _profile_steps_and_cap(
+        probe_type,
+        recovery_of,
+        schema_version=packet_schema_version,
+    )
     if probe_type == "CANCEL_RECOVERY" and recovery_of is not None:
         _require_recovery_source_outcome(
             recovery_of,
@@ -434,7 +440,7 @@ def author_v2_packet(
             reference_ttl_seconds=reference_ttl_seconds,
         )
     document: dict[str, object] = {
-        "schemaVersion": 2,
+        "schemaVersion": packet_schema_version,
         "approvalId": approval_id,
         "nonce": nonce,
         "issuedAt": _utc_text(issued_at),
@@ -496,7 +502,7 @@ def author_v2_packet(
     if recovery_of is not None:
         document["recoveryOf"] = recovery_of
     try:
-        packet = KISMockApprovalPacketV2.model_validate(document)
+        packet = _validate_current_packet(document, packet_schema_version)
         _validate_v2_security_evidence(packet.evidence, head)
     except Exception:
         raise KISMockApprovalAuthorRejected("approval packet contract is invalid") from None
@@ -505,7 +511,7 @@ def author_v2_packet(
     packet_sha256 = hashlib.sha256(_canonical_json(unsigned)).hexdigest()
     document["packetSha256"] = packet_sha256
     try:
-        packet = KISMockApprovalPacketV2.model_validate(document)
+        packet = _validate_current_packet(document, packet_schema_version)
         _validate_v2_security_evidence(packet.evidence, head)
     except Exception:
         raise KISMockApprovalAuthorRejected("approval packet contract is invalid") from None
@@ -530,7 +536,21 @@ def _security_evidence_file(path: Path) -> tuple[Path, str]:
 def _profile_steps_and_cap(
     probe_type: str,
     recovery_of: dict[str, str] | None,
+    *,
+    schema_version: Literal[2, 3] = 2,
 ) -> tuple[tuple[str, ...], int]:
+    if schema_version == 3:
+        if probe_type == "FULL" and recovery_of is None:
+            return (
+                "preBalance",
+                "buyable",
+                "submitLimitBuy",
+                "cancelFull",
+                "executionRead",
+                "postBalance",
+                "openOrderReconciliation",
+            ), 7
+        raise KISMockApprovalAuthorRejected("approval packet profile is invalid")
     if probe_type == "FULL" and recovery_of is None:
         return ("balance", "buyable", "submitLimitBuy", "cancelFull", "executionRead"), 5
     if probe_type == "BALANCE_DIAGNOSTIC" and recovery_of is None:
@@ -542,6 +562,15 @@ def _profile_steps_and_cap(
         if failed_step == "executionRead":
             return ("executionRead",), 1
     raise KISMockApprovalAuthorRejected("approval packet profile is invalid")
+
+
+def _validate_current_packet(
+    document: dict[str, object],
+    schema_version: Literal[2, 3],
+) -> KISMockApprovalPacketV2 | KISMockApprovalPacketV3:
+    if schema_version == 3:
+        return KISMockApprovalPacketV3.model_validate(document)
+    return KISMockApprovalPacketV2.model_validate(document)
 
 
 def _utc_text(value: datetime) -> str:
@@ -565,7 +594,7 @@ def _reject_cli() -> NoReturn:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Author one exact KIS_MOCK v2 approval packet")
+    parser = argparse.ArgumentParser(description="Author one exact KIS_MOCK approval packet")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--approval-id", required=True)
     parser.add_argument("--nonce", required=True)
@@ -588,6 +617,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--execution-from", required=True)
     parser.add_argument("--execution-to", required=True)
     parser.add_argument("--reference-ttl-seconds", type=int, default=900)
+    parser.add_argument("--packet-version", type=int, choices=(2, 3), default=2)
     parser.add_argument(
         "--probe-type",
         choices=("FULL", "BALANCE_DIAGNOSTIC", "CANCEL_RECOVERY"),
@@ -638,6 +668,7 @@ def main(argv: list[str] | None = None) -> int:
             reference_ttl_seconds=args.reference_ttl_seconds,
             probe_type=args.probe_type,
             recovery_of=recovery_of,
+            packet_schema_version=args.packet_version,
         )
     except KISMockApprovalAuthorRejected:
         print("S3_KIS_MOCK_APPROVAL_AUTHOR_REJECTED", file=sys.stderr)

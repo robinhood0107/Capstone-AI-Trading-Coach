@@ -57,7 +57,7 @@
           "minItems": 4,
           "prefixItems": [
             {
-              "const": "API_KEY_SECURITY"
+              "const": "SERVICE_ACCOUNT_FILE_SECURITY"
             },
             {
               "const": "DATA_GOVERNANCE_STATE"
@@ -74,22 +74,13 @@
         "ambientCredentialAllowed": {
           "const": false
         },
-        "apiKeyEnvironmentVariable": {
-          "const": "VERTEX_API_KEY"
-        },
-        "apiKeyOnly": {
-          "const": true
-        },
-        "apiKeyTransport": {
-          "const": "VERTEX_EXPRESS_QUERY_PARAMETER"
-        },
         "authentication": {
           "items": false,
           "maxItems": 1,
           "minItems": 1,
           "prefixItems": [
             {
-              "const": "VERTEX_EXPRESS_API_KEY"
+              "const": "SERVICE_ACCOUNT_OAUTH"
             }
           ],
           "type": "array"
@@ -98,7 +89,10 @@
           "const": false
         },
         "credentialFileAllowed": {
-          "const": false
+          "const": true
+        },
+        "credentialFilePath": {
+          "const": "secrets/pre-s5-vertex-service-account.json"
         },
         "developerApiAllowed": {
           "const": false
@@ -121,8 +115,23 @@
         "maximumGenerateContentCallsPerQuestion": {
           "const": 1
         },
+        "maximumOAuthTokenCallsPerQuestion": {
+          "const": 1
+        },
         "modelId": {
           "const": "gemini-3.5-flash"
+        },
+        "modelIdEnvironmentVariable": {
+          "const": "VERTEX_MODEL_ID"
+        },
+        "modelSelectionPacketBound": {
+          "const": true
+        },
+        "oauthScope": {
+          "const": "https://www.googleapis.com/auth/cloud-platform"
+        },
+        "oauthTokenEndpoint": {
+          "const": "https://oauth2.googleapis.com/token"
         },
         "openAiCallsAllowed": {
           "const": false
@@ -178,6 +187,9 @@
         "searchMapsGroundingAllowed": {
           "const": false
         },
+        "serviceAccountOnly": {
+          "const": true
+        },
         "sessionResumptionAllowed": {
           "const": false
         },
@@ -191,12 +203,10 @@
       "required": [
         "activationEvidenceRequired",
         "ambientCredentialAllowed",
-        "apiKeyEnvironmentVariable",
-        "apiKeyOnly",
-        "apiKeyTransport",
         "authentication",
         "contextCacheAllowed",
         "credentialFileAllowed",
+        "credentialFilePath",
         "developerApiAllowed",
         "fallbackAllowed",
         "fileUploadAllowed",
@@ -204,7 +214,12 @@
         "generationUnavailableStatus",
         "maximumEvidenceCount",
         "maximumGenerateContentCallsPerQuestion",
+        "maximumOAuthTokenCallsPerQuestion",
         "modelId",
+        "modelIdEnvironmentVariable",
+        "modelSelectionPacketBound",
+        "oauthScope",
+        "oauthTokenEndpoint",
         "openAiCallsAllowed",
         "preparedScopeControlPlane",
         "rawResponseStored",
@@ -212,6 +227,7 @@
         "retryCount",
         "sanitizedUsageLedgerOnly",
         "searchMapsGroundingAllowed",
+        "serviceAccountOnly",
         "sessionResumptionAllowed",
         "toolsFunctionsAllowed",
         "verifierAllowed"

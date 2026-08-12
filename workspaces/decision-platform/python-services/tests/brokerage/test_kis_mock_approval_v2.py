@@ -139,6 +139,67 @@ def test_v2_accepts_merged_main_execution_head_without_weakening_legacy_open_pr_
     assert parsed_legacy.repository.evidence_mode == "OPEN_PR"
 
 
+def test_v3_full_packet_is_exactly_seven_reconciliation_steps_and_seven_calls(
+    secure_directory: Path,
+) -> None:
+    document = _packet_document(secure_directory, schema_version=3, pull_request=104)
+    document["steps"] = [
+        "preBalance",
+        "buyable",
+        "submitLimitBuy",
+        "cancelFull",
+        "executionRead",
+        "postBalance",
+        "openOrderReconciliation",
+    ]
+    document["physicalCaps"]["brokerage"] = 7
+    document["packetSha256"] = _packet_digest(document)
+
+    packet = probe.parse_approval_packet(document)
+
+    assert isinstance(packet, probe.KISMockApprovalPacketV3)
+    assert packet.schema_version == 3
+    assert packet.steps == tuple(document["steps"])
+    assert packet.physical_caps.token_p == 1
+    assert packet.physical_caps.brokerage == 7
+    assert packet.retry_count == 0
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("steps", ["preBalance", "buyable"]),
+        ("physicalCaps", {"tokenP": 1, "brokerage": 6}),
+        ("probeType", "CANCEL_RECOVERY"),
+    ],
+)
+def test_v3_rejects_any_weakened_final_reconciliation_contract(
+    secure_directory: Path,
+    field: str,
+    value: object,
+) -> None:
+    document = _packet_document(secure_directory, schema_version=3, pull_request=104)
+    document.update(
+        {
+            "steps": [
+                "preBalance",
+                "buyable",
+                "submitLimitBuy",
+                "cancelFull",
+                "executionRead",
+                "postBalance",
+                "openOrderReconciliation",
+            ],
+            "physicalCaps": {"tokenP": 1, "brokerage": 7},
+        }
+    )
+    document[field] = value
+    document["packetSha256"] = _packet_digest(document)
+
+    with pytest.raises(probe.KISMockApprovalRejected, match="contract"):
+        probe.parse_approval_packet(document)
+
+
 def test_v1_history_stays_hard_locked_when_v2_allows_dynamic_pr(
     secure_directory: Path,
 ) -> None:
@@ -969,7 +1030,7 @@ def _packet_document(
             f"--approval-packet {directory / f'{profile.lower()}-approval.json'}"
         ),
     }
-    if schema_version == 2:
+    if schema_version >= 2:
         document["nonce"] = "d" * 64
         document["repository"]["baseRef"] = "main"
         document["evidence"].update(

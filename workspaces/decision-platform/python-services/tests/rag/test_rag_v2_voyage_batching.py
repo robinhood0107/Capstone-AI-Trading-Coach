@@ -183,6 +183,23 @@ def test_public_plan_rejects_one_chunk_larger_than_context_window_without_callin
         )
 
 
+def test_public_plan_rejects_checkpoint_token_count_over_profile_neutral_cap_before_recount() -> None:
+    exact30 = tuple(_group("exact", index, (1,)) for index in range(30))
+    oa112 = list(_group("oa", index, (1,)) for index in range(112))
+    chunks = list(oa112[0].chunks)
+    chunks[0] = replace(chunks[0], token_count=601)
+    oa112[0] = replace(oa112[0], chunks=tuple(chunks))
+
+    with pytest.raises(
+        RagV2VoyageBatchingError,
+        match="VOYAGE_BATCH_PROFILE_NEUTRAL_TOKEN_CAP",
+    ):
+        build_public_voyage_batch_plan(
+            components=_components(exact30=exact30, oa112=tuple(oa112)),
+            token_counter=_TokenCounter(),
+        )
+
+
 def test_public_plan_hash_changes_when_member_identity_changes() -> None:
     components = _components(
         exact30=tuple(_group("exact", index, (1,)) for index in range(30)),

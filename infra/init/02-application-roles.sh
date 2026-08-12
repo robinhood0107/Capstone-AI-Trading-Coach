@@ -1009,6 +1009,9 @@ BEGIN
         'public.reserve_rag_v2_immutable_vertex_usage(text,text,text,text,text,text,text,text,text,text,text,timestamp with time zone,integer,integer,integer,bigint,bigint,bigint,integer,integer,text,jsonb)'
     ) IS NOT NULL
        AND to_regprocedure(
+           'public.claim_rag_v2_immutable_vertex_token_attempt(text,text)'
+       ) IS NOT NULL
+       AND to_regprocedure(
            'public.claim_rag_v2_immutable_vertex_generate_content_attempt(text,text)'
        ) IS NOT NULL
        AND to_regprocedure(
@@ -1017,13 +1020,14 @@ BEGIN
        AND to_regprocedure(
            'public.mark_rag_v2_immutable_vertex_usage_unknown_billing(text,text)'
        ) IS NOT NULL THEN
-        -- V52 Vertex Express API-key ledger는 token attempt 없이 generation 1회 capability만 재부여한다.
+        -- V57 service-account OAuth ledger는 token과 generation 각각 1회 capability만 재부여한다.
         GRANT EXECUTE ON FUNCTION
             reserve_rag_v2_immutable_vertex_usage(
                 text, text, text, text, text, text, text, text, text, text, text,
                 timestamptz, integer, integer, integer,
                 bigint, bigint, bigint, integer, integer, text, jsonb
             ),
+            claim_rag_v2_immutable_vertex_token_attempt(text, text),
             claim_rag_v2_immutable_vertex_generate_content_attempt(text, text),
             commit_rag_v2_immutable_vertex_usage(text, text, integer, integer, integer),
             mark_rag_v2_immutable_vertex_usage_unknown_billing(text, text)
@@ -1043,7 +1047,7 @@ BEGIN
        AND to_regprocedure(
            'public.mark_rag_v2_immutable_vertex_usage_unknown_billing(text,text)'
        ) IS NOT NULL THEN
-        -- V42 이전 volume은 API-key-only V52까지 migrate하기 전 legacy token/generate ledger만 재부여한다.
+        -- V42 이전 volume은 V52/V57까지 migrate하기 전 legacy token/generate ledger만 재부여한다.
         GRANT EXECUTE ON FUNCTION
             reserve_rag_v2_immutable_vertex_usage(
                 text, text, text, text, text, text, text, text, text, text, text,

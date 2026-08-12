@@ -19,15 +19,15 @@ import java.security.MessageDigest
 import java.time.Duration
 
 /**
- * active v2의 유일한 conditional generator다. BGE gRPC와 proto를 건드리지 않고, scope-resolved top-5와
- * exact consent/packet/lease가 모두 닫힌 뒤 `gemini-3.5-flash` global generateContent 한 번만 실행한다.
+ * active v3의 유일한 conditional generator다. BGE gRPC와 proto를 건드리지 않고, scope-resolved top-5와
+ * exact consent/packet/lease가 모두 닫힌 뒤 packet에 고정된 global publisher model을 한 번만 실행한다.
  */
 @Component
 @ConditionalOnProperty(name = ["app.rag-v2.vertex.enabled"], havingValue = "true")
 internal class VertexGemini35FlashGenerationAdapter(
     private val properties: RagV2VertexProperties,
     private val activationReader: PreS5VertexActivationReader,
-    private val apiKeyProvider: PreS5VertexApiKeyProvider,
+    private val oauthProvider: PreS5VertexServiceAccountOAuthProvider,
     private val usageLedger: JdbcPreS5VertexUsageLedger,
     private val httpExecutor: PreS5VertexHttpExecutor,
 ) : RagV2VertexGenerationPort {
@@ -59,7 +59,7 @@ internal class VertexGemini35FlashGenerationAdapter(
 
     override fun generate(command: RagV2VertexGenerationCommand): RagV2VertexGenerationResult {
         var lease: PreS5VertexUsageLease? = null
-        var apiKey: ByteArray? = null
+        var accessToken: ByteArray? = null
         var outcomeRecorded = false
         try {
             val activation = activationReader.read()
@@ -71,17 +71,19 @@ internal class VertexGemini35FlashGenerationAdapter(
             require(command.consent.policyDigest == activation.policySha256)
             require(command.consent.processorSetDigest == activation.processorSetSha256)
             validateEvidence(command)
-            apiKey = apiKeyProvider.acquire()
             val body = requestBody(command, activation)
             try {
                 require(body.size <= activation.inputByteCap)
                 lease = usageLedger.reserve(command, activation)
+                val tokenAttempt = usageLedger.claimTokenAttempt(lease)
+                val token = oauthProvider.acquire(activation, tokenAttempt)
+                accessToken = token.value
                 val generateContentAttempt = usageLedger.claimGenerateContentAttempt(lease)
                 val response =
                     httpExecutor.execute(
                         PreS5VertexHttpRequest(
-                            endpoint = endpoint(),
-                            apiKey = requireNotNull(apiKey),
+                            endpoint = endpoint(token.projectId, activation.modelId),
+                            bearerToken = requireNotNull(accessToken),
                             body = body,
                             timeout = Duration.ofMillis(properties.requestTimeoutMillis),
                             expiresAt = activation.expiresAt,
@@ -113,7 +115,7 @@ internal class VertexGemini35FlashGenerationAdapter(
             }
             return unavailable()
         } finally {
-            apiKey?.fill(0)
+            accessToken?.fill(0)
         }
     }
 
@@ -245,10 +247,16 @@ internal class VertexGemini35FlashGenerationAdapter(
         return value?.takeIf { it in 0..maximum } ?: throw PreS5VertexProviderResponseException()
     }
 
-    private fun endpoint(): URI =
-        URI.create(
-            "https://aiplatform.googleapis.com/v1/publishers/google/models/gemini-3.5-flash:generateContent",
+    private fun endpoint(
+        projectId: String,
+        modelId: String,
+    ): URI {
+        require(PROJECT_ID.matches(projectId))
+        require(RagV2VertexProperties.MODEL_ID.matches(modelId))
+        return URI.create(
+            "https://aiplatform.googleapis.com/v1/projects/$projectId/locations/global/publishers/google/models/$modelId:generateContent",
         )
+    }
 
     private fun sha256(value: String): String {
         val bytes = value.toByteArray(StandardCharsets.UTF_8)
@@ -278,6 +286,7 @@ internal class VertexGemini35FlashGenerationAdapter(
         val CITATION_ID = Regex("^cit_[1-5]$")
         val CHUNK_ID = Regex("^rag_v2_chk_[0-9a-f]{32}$")
         val SHA256 = Regex("^[0-9a-f]{64}$")
+        val PROJECT_ID = Regex("^[a-z][a-z0-9-]{4,62}[a-z0-9]$")
         const val MAX_PROVIDER_RESPONSE_BYTES = 65_536
     }
 }

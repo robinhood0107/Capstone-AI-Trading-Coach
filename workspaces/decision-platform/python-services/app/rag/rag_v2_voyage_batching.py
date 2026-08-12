@@ -2,9 +2,9 @@
 
 이 모듈은 tokenizer count와 content-free manifest만 만들며 socket, credential, DB writer를 소유하지
 않는다. EXACT30·OA112의 기존 chunk/locator/source identity를 바꾸지 않고, provider의 120K ceiling보다
-낮은 60K request cap과 32K contextual segment cap을 함께 적용한다. 60K cap은 한 번
-`UNKNOWN_BILLING`으로 종료된 110K plan과 identity를 분리해 append-only evidence를 보존하면서
-forward recovery를 허용한다.
+낮은 55K request cap과 32K contextual segment cap을 함께 적용한다. 55K cap은 이미
+`UNKNOWN_BILLING`으로 종료된 110K·60K plan과 identity를 분리해 append-only evidence를 보존하면서
+forward recovery를 허용한다. Provider가 추가하는 document prompt의 usage는 별도 120K packet cap으로 닫는다.
 """
 
 from __future__ import annotations
@@ -28,8 +28,8 @@ VoyageComponentScope = Literal["EXACT30", "OA112", "OWNER_PRIVATE"]
 
 _PROFILE_ID: Final = "voyage_context_4_1024_v1"
 _MODEL: Final = "voyage-context-4"
-# 소비된 110K plan을 재사용하지 않고 response/request 크기를 함께 줄이는 forward-only cap이다.
-_TOKEN_CAP: Final = 60_000
+# 소비된 60K plan을 재사용하지 않고 response/request 크기를 함께 줄이는 forward-only cap이다.
+_TOKEN_CAP: Final = 55_000
 # voyage-context-4는 request 전체 120K와 별개로 한 contextual group이 참조하는 window를 32K로 제한한다.
 _CONTEXT_SEGMENT_TOKEN_CAP: Final = 32_000
 _GROUP_CAP: Final = 1_000
@@ -239,7 +239,7 @@ def build_public_voyage_batch_plan(
     components: tuple[VoyagePreparedComponent, ...],
     token_counter: PreS5VoyageTokenCounter,
 ) -> PublicVoyageBatchPlan:
-    """public base를 110K 이하의 deterministic ordered first-fit batch set으로 만든다.
+    """public base를 55K 이하의 deterministic ordered first-fit batch set으로 만든다.
 
     Token count는 official local artifact로 각 canonical chunk를 정확히 계산한다. 이 함수가 성공해도
     outbound authority는 생기지 않으며, 각 returned batch에는 별도의 승인 packet이 필요하다.

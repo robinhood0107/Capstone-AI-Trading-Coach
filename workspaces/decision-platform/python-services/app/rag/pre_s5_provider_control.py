@@ -980,7 +980,9 @@ def _validate_voyage_document_batch_packet(
     expected_group_count = _bounded_int(value.get("groupCount"), minimum=1, maximum=1_000)
     logical_call_cap = _bounded_int(value.get("logicalCallCap"), minimum=1, maximum=1)
     physical_call_cap = _bounded_int(value.get("physicalCallCap"), minimum=1, maximum=1)
-    token_cap = _bounded_int(value.get("tokenCap"), minimum=expected_token_count, maximum=110_000)
+    # input_type=document prompt는 provider 내부에서 추가·과금되므로 canonical corpus count와
+    # 별도로 API 전체 120K accounting ceiling까지 packet이 명시적으로 허용해야 한다.
+    token_cap = _bounded_int(value.get("tokenCap"), minimum=expected_token_count, maximum=120_000)
     # 1024차원 float JSON은 수백 chunk만으로 4 MiB를 넘을 수 있다. document batch만
     # 16 MiB까지 허용하고 query/legacy packet의 기존 상한은 유지한다.
     if type(minimum_byte_cap) is not int or not 1 <= minimum_byte_cap <= _DOCUMENT_BATCH_MAX_BYTE_CAP:

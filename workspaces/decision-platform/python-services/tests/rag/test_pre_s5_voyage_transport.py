@@ -47,7 +47,10 @@ def test_voyage_context4_transport_consumes_only_exact_manifest_bound_document_b
     )
     assert len(plan.batches) == 1
     batch = plan.batches[0]
-    sender = _FixtureSender(response=_response_for_groups(batch.groups, total_tokens=batch.token_count))
+    provider_total_tokens = batch.token_count + len(batch.groups)
+    sender = _FixtureSender(
+        response=_response_for_groups(batch.groups, total_tokens=provider_total_tokens)
+    )
     lease = _FixtureLease()
     activation = PreS5VoyageDocumentBatchActivation(
         packet_sha256="a" * 64,
@@ -69,9 +72,9 @@ def test_voyage_context4_transport_consumes_only_exact_manifest_bound_document_b
         expires_at=NOW + timedelta(minutes=5),
         logical_call_cap=1,
         physical_call_cap=1,
-        token_cap=110_000,
+        token_cap=120_000,
         byte_cap=16_777_216,
-        cost_cap_microusd=110_000,
+        cost_cap_microusd=120_000,
         input_microusd_per_token=1,
         retry_count=0,
         raw_artifact_count=0,
@@ -89,7 +92,7 @@ def test_voyage_context4_transport_consumes_only_exact_manifest_bound_document_b
 
     assert result.vectors.shape == (142, 1024)
     assert result.expected_input_tokens == batch.token_count
-    assert result.provider_total_tokens == batch.token_count
+    assert result.provider_total_tokens == provider_total_tokens
     assert sender.calls == 1
     assert sender.requests[0].max_response_bytes == 16_777_216
     assert lease.claim_calls == 1

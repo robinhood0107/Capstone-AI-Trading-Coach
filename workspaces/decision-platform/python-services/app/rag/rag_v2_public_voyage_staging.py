@@ -338,6 +338,8 @@ def _copy_optional_source_card(value: object) -> dict[str, object] | None:
 
 
 def _assert_path_free(value: object) -> None:
+    """로컬 경로를 운반하는 구조 필드를 거부하되 문서 원문 자체를 경로로 해석하지 않는다."""
+
     if isinstance(value, Mapping):
         if _PATH_KEYS.intersection(value):
             raise RagV2PublicVoyageStagingError("PUBLIC_VOYAGE_PATH_LEAK")
@@ -346,10 +348,6 @@ def _assert_path_free(value: object) -> None:
     elif isinstance(value, list):
         for item in value:
             _assert_path_free(item)
-    elif isinstance(value, str) and (
-        value.startswith(("/", "\\\\", "file:")) or re.match(r"^[A-Za-z]:[\\/]", value)
-    ):
-        raise RagV2PublicVoyageStagingError("PUBLIC_VOYAGE_PATH_LEAK")
 
 
 def _is_unit_vector(value: object) -> bool:

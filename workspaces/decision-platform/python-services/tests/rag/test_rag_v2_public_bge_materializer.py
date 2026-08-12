@@ -29,6 +29,20 @@ class _FixtureTokenizer:
         return text[spans[max(0, len(spans) - maximum_tokens)][0] :] if spans else ""
 
 
+class _PiiGrowthTokenizer(_FixtureTokenizer):
+    """PII placeholder만 세 token으로 세어 600→602 회귀를 재현한다."""
+
+    def token_spans(self, text: str) -> tuple[tuple[int, int], ...]:
+        spans: list[tuple[int, int]] = []
+        for match in re.finditer(r"\S+", text):
+            if match.group() == "[PUBLIC_EMAIL_REDACTED]":
+                start, end = match.span()
+                spans.extend(((start, start + 1), (start + 1, end - 1), (end - 1, end)))
+            else:
+                spans.append(match.span())
+        return tuple(spans)
+
+
 class _FixtureParser:
     def __init__(self, document_ir: dict[str, object]) -> None:
         self.document_ir = document_ir
@@ -145,7 +159,7 @@ def test_public_bge_materialization_rejects_non_bge_profile_before_file_parse(tm
     assert parser.calls == []
 
 
-def test_public_voyage_preparation_redacts_pii_without_changing_chunk_identity(tmp_path: Path) -> None:
+def test_public_voyage_preparation_redacts_pii_and_rebuilds_chunk_identity(tmp_path: Path) -> None:
     document_ir = _document_ir()
     document_ir["blocks"] = [
         {
@@ -163,6 +177,11 @@ def test_public_voyage_preparation_redacts_pii_without_changing_chunk_identity(t
         "secretDetected": False,
     }
     request = replace(_oa_request(tmp_path), embedding_profile_id="voyage_context_4_1024_v1")
+    unsanitized = prepare_public_document_for_embedding(
+        parser=_FixtureParser(document_ir),
+        tokenizer=_FixtureTokenizer(),
+        request=_oa_request(tmp_path),
+    )
 
     prepared = prepare_public_document_for_embedding(
         parser=_FixtureParser(document_ir),
@@ -172,7 +191,8 @@ def test_public_voyage_preparation_redacts_pii_without_changing_chunk_identity(t
 
     assert prepared.document.external_processing_eligible is True
     assert len(prepared.document.chunks) == 1
-    assert prepared.document.chunks[0].chunk_id == "rag_v2_chk_5cdb0722bf0eb4210e797b60ec7a850c"
+    assert prepared.document.chunks[0].chunk_id != unsanitized.document.chunks[0].chunk_id
+    assert prepared.document.chunks[0].canonical_text_sha256 != unsanitized.document.chunks[0].canonical_text_sha256
     assert prepared.document.chunks[0].locator == {"section": "document"}
     assert "author@example.com" not in prepared.document.chunks[0].canonical_text
     assert "[PUBLIC_EMAIL_REDACTED]" in prepared.document.chunks[0].canonical_text
@@ -185,8 +205,85 @@ def test_public_voyage_preparation_redacts_pii_without_changing_chunk_identity(t
     }
     assert prepared.document_ir["externalProcessingSanitization"] == {
         "redactionCount": 1,
-        "sanitizerVersion": "public-pii-v1",
+        "sanitizerVersion": "public-pii-v2-rechunk",
     }
+
+
+def test_public_voyage_pii_growth_is_rechunked_back_under_profile_neutral_600_cap(
+    tmp_path: Path,
+) -> None:
+    document_ir = _document_ir()
+    document_ir["blocks"] = [
+        {
+            "blockType": "PARAGRAPH",
+            "locator": {"section": "document"},
+            "ocrConfidence": None,
+            "readingOrder": 1,
+            "text": "author@example.com " + " ".join(f"token-{index}" for index in range(599)),
+        }
+    ]
+    document_ir["safetyClassification"] = {
+        "externalLlmEligible": False,
+        "piiDetected": True,
+        "promptInjectionDetected": False,
+        "secretDetected": False,
+    }
+
+    prepared = prepare_public_document_for_embedding(
+        parser=_FixtureParser(document_ir),
+        tokenizer=_PiiGrowthTokenizer(),
+        request=replace(_oa_request(tmp_path), embedding_profile_id="voyage_context_4_1024_v1"),
+    )
+
+    assert len(prepared.document.chunks) == 2
+    assert max(chunk.token_count for chunk in prepared.document.chunks) == 600
+    assert all(1 <= chunk.token_count <= 600 for chunk in prepared.document.chunks)
+    assert all("author@example.com" not in chunk.canonical_text for chunk in prepared.document.chunks)
+    assert "[PUBLIC_EMAIL_REDACTED]" in prepared.document.chunks[0].canonical_text
+    assert tuple(item.chunk_revision_id for item in prepared.embedding_inputs) == tuple(
+        chunk.chunk_id for chunk in prepared.document.chunks
+    )
+
+
+def test_public_voyage_rechunk_preserves_atomic_table_rule(tmp_path: Path) -> None:
+    document_ir = _document_ir()
+    document_ir["blocks"] = [
+        {
+            "blockType": "TABLE",
+            "cells": [
+                {"column": 0, "columnSpan": 1, "row": 0, "rowSpan": 1, "text": "Contact"},
+                {
+                    "column": 1,
+                    "columnSpan": 1,
+                    "row": 0,
+                    "rowSpan": 1,
+                    "text": "author@example.com",
+                },
+            ],
+            "columnCount": 2,
+            "locator": {"section": "document"},
+            "ocrConfidence": None,
+            "readingOrder": 1,
+            "rowCount": 1,
+        }
+    ]
+    document_ir["safetyClassification"] = {
+        "externalLlmEligible": False,
+        "piiDetected": True,
+        "promptInjectionDetected": False,
+        "secretDetected": False,
+    }
+
+    prepared = prepare_public_document_for_embedding(
+        parser=_FixtureParser(document_ir),
+        tokenizer=_FixtureTokenizer(),
+        request=replace(_oa_request(tmp_path), embedding_profile_id="voyage_context_4_1024_v1"),
+    )
+
+    assert len(prepared.document.chunks) == 1
+    assert prepared.document.chunks[0].contains_table is True
+    assert prepared.document.chunks[0].locator == {"section": "document"}
+    assert "author@example.com" not in prepared.document.chunks[0].canonical_text
 
 
 def test_public_voyage_preparation_never_sanitizes_prompt_injection_into_eligibility(tmp_path: Path) -> None:

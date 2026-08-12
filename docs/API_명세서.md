@@ -1519,9 +1519,20 @@ exact manifest-bound Voyage document batch의 append-only plan/batch/vector ledg
 local tokenizer가 없으면 fixed Voyage AI Hugging Face commit
 `8ca946072a18e398cd61f2ad0243b56d0350b1db`의 `tokenizer.json` 한 파일만 5분·physical cap 1
 bootstrap packet으로 먼저 취득한다. observed SHA-256이 없으면 batch authoring과 provider socket은 0이다.
-성공 batch와 142개 source checkpoint는 provider call 0으로 재사용하며 EXACT30/OA112 query 평가는
+현재 clean restart는 기존 namespace의 15개 committed batch·vector·attempt·checkpoint와 이전
+manifest를 `HISTORICAL_SUPERSEDED`로 격리하고 새 count/hash/resume 판단에서 제외한다. public PII는
+Document IR에서 정규화한 뒤 canonical chunk·ID·hash·token count를 재생성하며 checkpoint, plan,
+transport, final staging에 profile-neutral `1..600`을 동일하게 강제한다. 같은 fresh namespace에서
+성공한 batch와 142개 source checkpoint만 provider call 0으로 재사용하며 EXACT30/OA112 query 평가는
 logical 10/112개를 singleton group으로 묶은 component batch 각 1회다. 모든 batch·평가가 통과하기 전
 CAS activation은 0이고 기존 ask/history/OpenAPI/proto payload는 변하지 않는다.
+
+이 변경은 local operator/checkpoint 동작만 바꾸며 public HTTP/OpenAPI/proto/PostgreSQL schema는
+변경하지 않는다. fresh namespace는 Compose project `capstone-pre-s5-fresh`, PostgreSQL host port
+`55432`, Redis host port `56379`, output root `capstone-rag/runtime/pre-s5-fresh/local-corpus`, Flyway
+V59로 고정한다. Window A는 acceptance `142 sources / 7,871 chunks / max 600 / 63 document batches`를
+통과한 document 63개와 EXACT30/OA112 evaluation 2개만 포함한다. drift 시
+`PRE_S5_FRESH_PLAN_DRIFT`로 끝내며 production query·시장 provider·Vertex·KIS_MOCK은 포함하지 않는다.
 
 RAG v2는 exact-30, OA, 요청 owner-private generation을 서버가 자동으로 하나의
 bundle로 pin한다. client request에 `corpus`, `profile`, `topK` 또는 이와 동일한
@@ -2061,6 +2072,16 @@ KIS Mock 중심으로 구현하고, KIS Live는 고급해제/3단계 동의/재�
 > 실패 모두 재사용할 수 없다. KIS_MOCK response는 provider echo scrub/JSON parse 전에 1 MiB
 > cap을 적용한다. KIS_LIVE 실계좌 주문·정정·취소는 구현·allowlist·enable flag가 없어
 > 계속 OFF다.
+
+> Pre-S5 final gate는 `schemaVersion=3` exact-approved `FULL` packet만 사용한다. V3는
+> `preBalance -> buyable -> submitLimitBuy -> cancelFull -> executionRead -> postBalance -> openOrderReconciliation`
+> 7단계와 cap `tokenP<=1`/`brokerage=7`, retry 0을 고정한다. `executionRead`는 `CCLD_DVSN=00`,
+> 마지막 조회는 exact order number와 `CCLD_DVSN=02` 미체결 필터를 사용한다. continuation이나
+> 해당 주문이 남거나 pre/post balance digest가 달라지거나 체결·부분체결·취소 미확정이면 typed
+> failure다. 자동 보상 주문·재시도는 없고 KIS_MOCK KRX 1주 지정가 매수만 허용한다. V1/V2는
+> historical/recovery 호환용이며 `KIS_MOCK_FULL_RECONCILIATION_VERIFIED` marker를 열 수 없다.
+> [KIS 공식 주식일별주문체결조회 샘플](https://github.com/koreainvestment/open-trading-api/blob/main/examples_llm/domestic_stock/inquire_daily_ccld/inquire_daily_ccld.py)은
+> `CCLD_DVSN=02`를 미체결로 정의한다.
 > v2 author는 현재 GitHub PR base/head/required CI와 Redis PTTL을 직접 읽고 mode `0700` private
 > directory에서 dirfd+`O_NOFOLLOW`+`O_EXCL` 방식의 새 `0600` packet만 publish한다. author와 executor는
 > 실행 직전에 PR이 `OPEN`, non-draft, same head/base이며 required CI가 모두 `SUCCESS`인지 다시 검증한다.

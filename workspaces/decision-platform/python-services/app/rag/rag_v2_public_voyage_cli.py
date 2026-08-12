@@ -66,6 +66,10 @@ from app.rag.rag_v2_public_voyage_evaluator import (
     evaluate_public_voyage_pair,
     load_public_voyage_evaluation_inputs,
 )
+from app.rag.rag_v2_public_voyage_evaluation_manifest import (
+    PublicVoyageEvaluationManifestError,
+    prepare_public_voyage_evaluation_manifests,
+)
 from app.rag.rag_v2_voyage_batch_repository import (
     PsycopgRagV2VoyageBatchRepository,
     RagV2VoyageBatchRepositoryError,
@@ -222,6 +226,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if arguments == ("prepare-public-base-batches",):
         try:
             preparation = _prepare_public_base_batch_plan()
+            _prepare_public_evaluation_inputs(preparation)
             receipt = preparation.content_free_receipt()
             write_benchmark_receipt(
                 approved_root=_local_root(),
@@ -245,6 +250,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             BgeRuntimeError,
             Oa112ActiveRegistryError,
             PreS5VoyageTokenizerError,
+            PublicVoyageEvaluationManifestError,
             RagV2VoyageFullBundleError,
             PublicVoyageCliError,
             ValueError,
@@ -476,6 +482,20 @@ def _prepare_public_base_batch_plan() -> PublicBaseVoyageBatchPreparation:
         oa112_registry=registry,
         oa112_local_cache_root=local_root,
         checkpoint_local_corpus_root=local_root,
+    )
+
+
+def _prepare_public_evaluation_inputs(preparation: PublicBaseVoyageBatchPreparation) -> None:
+    """Bind the frozen 10 questions and 112 title-based questions to this exact checkpoint plan."""
+
+    registry = _load_oa112_registry(_local_root())
+    prepare_public_voyage_evaluation_manifests(
+        local_root=_local_root(),
+        exact30_source_card_corpus_manifest_sha256=(
+            preparation.exact30.source_card_corpus_manifest_sha256
+        ),
+        exact30_source_ids=tuple(group.source_id for group in preparation.exact30.groups),
+        registry=registry,
     )
 
 

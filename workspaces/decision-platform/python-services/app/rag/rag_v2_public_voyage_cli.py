@@ -74,7 +74,11 @@ from app.rag.rag_v2_voyage_batch_repository import (
     PsycopgRagV2VoyageBatchRepository,
     RagV2VoyageBatchRepositoryError,
 )
-from app.rag.rag_v2_voyage_batching import RagV2VoyageBatchingError
+from app.rag.rag_v2_voyage_batching import (
+    RagV2VoyageBatchingError,
+    VoyageBatchVectorAccumulator,
+    VoyageDocumentBatch,
+)
 from app.rag.rag_v2_voyage_full_bundle import (
     PublicBaseVoyageBatchPreparation,
     PublicBaseVoyageMaterialization,
@@ -538,6 +542,7 @@ def _stage_public_base_attempt(*, writer_dsn: str) -> _StagedPublicVoyageAttempt
         raise PublicVoyageCliError("PUBLIC_VOYAGE_STAGE_PRECONDITION") from None
 
     for batch in accumulator.pending_batches:
+        transport: PreS5VoyageContext4Transport | None = None
         try:
             activation = load_pre_s5_voyage_document_batch_activation(
                 local_root=local_root,
@@ -585,12 +590,12 @@ def _stage_public_base_attempt(*, writer_dsn: str) -> _StagedPublicVoyageAttempt
         ):
             raise PublicVoyageCliError(
                 "PUBLIC_VOYAGE_DOCUMENT_BATCH_FAILED",
-                attempt_summary={
-                    "batchCount": len(preparation.plan.batches),
-                    "completedBatchCount": len(accumulator.completed_batch_ids),
-                    "failedBatchId": batch.batch_id,
-                    "rawArtifactCount": 0,
-                },
+                attempt_summary=_document_batch_failure_summary(
+                    transport=transport,
+                    preparation=preparation,
+                    accumulator=accumulator,
+                    batch=batch,
+                ),
             ) from None
     try:
         materialization = materialize_public_base_voyage_batches(
@@ -635,6 +640,36 @@ def _stage_public_base_attempt(*, writer_dsn: str) -> _StagedPublicVoyageAttempt
         api_key=api_key,
         tokenizer_sha256=tokenizer_sha256,
     )
+
+
+def _document_batch_failure_summary(
+    *,
+    transport: PreS5VoyageContext4Transport | None,
+    preparation: PublicBaseVoyageBatchPreparation,
+    accumulator: VoyageBatchVectorAccumulator,
+    batch: VoyageDocumentBatch,
+) -> dict[str, object]:
+    """Provider 원문과 HTTP 숫자는 버리고 재승인 판단에 필요한 bounded 상태만 보존한다."""
+
+    summary: dict[str, object] = {}
+    projection = transport.content_free_summary() if transport is not None else {}
+    for field in (
+        "externalPhysicalCalls",
+        "logicalCallsConsumed",
+        "providerStatusClass",
+        "state",
+    ):
+        if field in projection:
+            summary[field] = projection[field]
+    summary.update(
+        {
+            "batchCount": len(preparation.plan.batches),
+            "completedBatchCount": len(accumulator.completed_batch_ids),
+            "failedBatchId": batch.batch_id,
+            "rawArtifactCount": 0,
+        }
+    )
+    return summary
 
 
 def write_public_voyage_pair_evaluation_receipt(

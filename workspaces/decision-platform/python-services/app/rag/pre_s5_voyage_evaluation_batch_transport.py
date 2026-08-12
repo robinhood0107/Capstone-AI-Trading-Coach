@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import math
 import threading
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -21,10 +20,10 @@ from app.rag.pre_s5_voyage_transport import (
     OutboundDisabledPreS5VoyageHttpSender,
     PreS5VoyageAttemptLease,
     PreS5VoyageHttpRequest,
-    PreS5VoyageHttpResponse,
     PreS5VoyageHttpSender,
-    _contextualized_response_envelope_is_valid,
-    _contextualized_response_item_is_valid,
+    PreS5VoyageResponseValidationError,
+    PreS5VoyageResponseValidationLeaf,
+    _parse_contextualized_response,
 )
 
 _ORIGIN = "https://api.voyageai.com"
@@ -37,10 +36,19 @@ _TIMEOUT_SECONDS = 20
 class PreS5VoyageEvaluationBatchTransportError(RuntimeError):
     """평가 batch가 provider seam 전 또는 최대 한 번의 시도 뒤 fail-closed 했다."""
 
-    def __init__(self, code: str, *, voyage_physical_calls: int = 0) -> None:
+    def __init__(
+        self,
+        code: str,
+        *,
+        voyage_physical_calls: int = 0,
+        response_validation_leaf: PreS5VoyageResponseValidationLeaf | None = None,
+    ) -> None:
         super().__init__(code)
         self.code = code
         self.voyage_physical_calls = voyage_physical_calls
+        self.response_validation_leaf = (
+            response_validation_leaf.value if response_validation_leaf is not None else None
+        )
 
 
 class PreS5VoyageEvaluationBatchUsagePort(Protocol):
@@ -150,10 +158,11 @@ class PreS5VoyageEvaluationBatchTransport:
                 questions=tuple(question for _, question in queries),
             )
             actual_cost = total_tokens * self._activation.input_microusd_per_token
-            if actual_cost > self._activation.cost_cap_microusd:
-                raise PreS5VoyageEvaluationBatchTransportError(
-                    "PRE_S5_VOYAGE_EVALUATION_BATCH_RESPONSE"
-                )
+        except PreS5VoyageResponseValidationError as error:
+            self._unknown(
+                "PRE_S5_VOYAGE_EVALUATION_BATCH_RESPONSE",
+                response_validation_leaf=error.leaf,
+            )
         except Exception:
             self._unknown("PRE_S5_VOYAGE_EVALUATION_BATCH_RESPONSE")
         return PreS5VoyageEvaluationBatchResult(
@@ -183,7 +192,12 @@ class PreS5VoyageEvaluationBatchTransport:
                 ) from None
             self._consumed = True
 
-    def _unknown(self, code: str) -> NoReturn:
+    def _unknown(
+        self,
+        code: str,
+        *,
+        response_validation_leaf: PreS5VoyageResponseValidationLeaf | None = None,
+    ) -> NoReturn:
         try:
             self._lease.mark_unknown_billing()
         except Exception:
@@ -191,6 +205,7 @@ class PreS5VoyageEvaluationBatchTransport:
         raise PreS5VoyageEvaluationBatchTransportError(
             code,
             voyage_physical_calls=self._physical_calls,
+            response_validation_leaf=response_validation_leaf,
         )
 
 
@@ -278,97 +293,19 @@ def _parse_response(
     activation: PreS5VoyageEvaluationBatchActivation,
     questions: tuple[str, ...],
 ) -> tuple[tuple[tuple[float, ...], ...], int]:
-    if (
-        not isinstance(response, PreS5VoyageHttpResponse)
-        or response.status != 200
-        or not 1 <= len(response.body) <= activation.byte_cap
-    ):
-        raise PreS5VoyageEvaluationBatchTransportError(
-            "PRE_S5_VOYAGE_EVALUATION_BATCH_RESPONSE"
-        )
-    try:
-        decoded = json.loads(
-            response.body.decode("utf-8", errors="strict"),
-            object_pairs_hook=_unique_json_object,
-        )
-    except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
-        raise PreS5VoyageEvaluationBatchTransportError(
-            "PRE_S5_VOYAGE_EVALUATION_BATCH_RESPONSE"
-        ) from None
-    if (
-        not _contextualized_response_envelope_is_valid(decoded, model=_MODEL)
-        or not isinstance(decoded, dict)
-        or not isinstance(decoded.get("data"), list)
-        or len(decoded["data"]) != len(questions)
-    ):
-        raise PreS5VoyageEvaluationBatchTransportError(
-            "PRE_S5_VOYAGE_EVALUATION_BATCH_RESPONSE"
-        )
-    vectors: list[tuple[float, ...]] = []
-    for outer_index, (outer, question) in enumerate(zip(decoded["data"], questions, strict=True)):
-        if (
-            not isinstance(outer, dict)
-            or set(outer) != {"data", "index"}
-            or outer.get("index") != outer_index
-            or not isinstance(outer.get("data"), list)
-            or len(outer["data"]) != 1
-        ):
-            raise PreS5VoyageEvaluationBatchTransportError(
-                "PRE_S5_VOYAGE_EVALUATION_BATCH_RESPONSE"
-            )
-        item = outer["data"][0]
-        if not _contextualized_response_item_is_valid(
-            item,
-            expected_index=0,
-            expected_text=question,
-        ):
-            raise PreS5VoyageEvaluationBatchTransportError(
-                "PRE_S5_VOYAGE_EVALUATION_BATCH_RESPONSE"
-            )
-        assert isinstance(item, dict)
-        vectors.append(_unit_vector(item.get("embedding")))
-    usage = decoded.get("usage")
-    total_tokens = (
-        usage.get("total_tokens")
-        if isinstance(usage, dict) and set(usage) == {"total_tokens"}
-        else None
+    projection = _parse_contextualized_response(
+        response=response,
+        expected_text_groups=tuple((question,) for question in questions),
+        model=_MODEL,
+        token_cap=activation.token_cap,
+        byte_cap=activation.byte_cap,
+        cost_cap_microusd=activation.cost_cap_microusd,
+        input_microusd_per_token=activation.input_microusd_per_token,
     )
-    if type(total_tokens) is not int or not 0 <= total_tokens <= activation.token_cap:
-        raise PreS5VoyageEvaluationBatchTransportError(
-            "PRE_S5_VOYAGE_EVALUATION_BATCH_RESPONSE"
-        )
-    return tuple(vectors), total_tokens
-
-
-def _unit_vector(value: object) -> tuple[float, ...]:
-    if not isinstance(value, list) or len(value) != _DIMENSION:
-        raise PreS5VoyageEvaluationBatchTransportError(
-            "PRE_S5_VOYAGE_EVALUATION_BATCH_RESPONSE"
-        )
-    try:
-        vector = tuple(float(item) for item in value)
-    except (TypeError, ValueError):
-        raise PreS5VoyageEvaluationBatchTransportError(
-            "PRE_S5_VOYAGE_EVALUATION_BATCH_RESPONSE"
-        ) from None
-    if (
-        any(isinstance(item, bool) or not isinstance(item, (int, float)) for item in value)
-        or not all(math.isfinite(item) for item in vector)
-        or abs(math.sqrt(math.fsum(item * item for item in vector)) - 1.0) > 0.00001
-    ):
-        raise PreS5VoyageEvaluationBatchTransportError(
-            "PRE_S5_VOYAGE_EVALUATION_BATCH_RESPONSE"
-        )
-    return vector
-
-
-def _unique_json_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
-    result: dict[str, object] = {}
-    for key, value in pairs:
-        if key in result:
-            raise ValueError("duplicate JSON key")
-        result[key] = value
-    return result
+    return (
+        tuple(tuple(float(value) for value in vector) for vector in projection.vectors),
+        projection.total_tokens,
+    )
 
 
 def _utc_now(clock: Callable[[], datetime]) -> datetime:

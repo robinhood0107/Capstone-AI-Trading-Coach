@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
-from typing import Any, NoReturn
+from typing import Any, Literal, NoReturn
 
 from app.brokerage.kis_mock_online_client import (
     BALANCE_PATH,
@@ -63,6 +64,33 @@ class KISMockBalanceSourceProbe:
     portfolio_equity_krw: int
     positions: tuple[tuple[str, int, int], ...]
     positions_complete: bool
+
+    def reconciliation_digest(self) -> str:
+        """완전한 sanitized balance projection만 pre/post 비교용 digest로 만든다."""
+
+        if not self.positions_complete:
+            raise KISMockProjectionError(
+                KISMockFailureReason.BALANCE_PAGINATION_REQUIRED,
+                "KIS mock balance reconciliation requires a complete page",
+            )
+        payload = {
+            "accountId": self.account_id,
+            "cashKrw": self.cash_krw,
+            "portfolioEquityKrw": self.portfolio_equity_krw,
+            "positions": self.positions,
+            "schemaVersion": 1,
+        }
+        return hashlib.sha256(
+            json.dumps(payload, separators=(",", ":"), sort_keys=True).encode()
+        ).hexdigest()
+
+
+@dataclass(frozen=True, slots=True)
+class KISMockOpenOrderReconciliation:
+    """raw 주문번호 없이 exact 미체결 조회가 비었음을 증명하는 process-local 결과다."""
+
+    provider_exec_ref_hash: str
+    rows_seen: int
 
 
 class KISMockProjectionError(ValueError):
@@ -242,6 +270,95 @@ class KISMockExecutionReader:
             matched=True,
         )
 
+    def verify_cancelled_unfilled(
+        self,
+        *,
+        reference: MockProviderOrderReference,
+        start: date,
+        end: date,
+        recent: bool,
+    ) -> KISMockExecutionSourceProbe:
+        """전체 체결조회에서 exact 주문의 체결·부분체결 또는 미취소 잔량을 거부한다."""
+
+        try:
+            payload = self._request_execution_page(
+                reference=reference,
+                start=start,
+                end=end,
+                recent=recent,
+                ccld_dvsn="00",
+            )
+            rows = _execution_source_probe_rows(payload)
+            matches = [
+                row
+                for row in rows
+                if _execution_order_no(row) == reference.provider_order_no
+            ]
+            if len(matches) > 1:
+                raise ValueError("KIS mock execution order match is not unique")
+            if not matches:
+                return KISMockExecutionSourceProbe(
+                    provider_exec_ref_hash=None,
+                    rows_seen=len(rows),
+                    matched=False,
+                )
+            snapshot = _execution_snapshot_from_rows(matches, reference)
+        except KISMockProjectionError:
+            raise
+        except ValueError:
+            raise KISMockProjectionError(
+                KISMockFailureReason.EXECUTION_RECONCILIATION_FAILED,
+                "KIS mock execution reconciliation is invalid",
+            ) from None
+        if (
+            snapshot.cumulative_quantity != 0
+            or snapshot.leaves_quantity != 0
+            or not snapshot.cancelled
+        ):
+            raise KISMockProjectionError(
+                KISMockFailureReason.EXECUTION_FILL_DETECTED,
+                "KIS mock final probe observed a fill or remaining quantity",
+            )
+        return KISMockExecutionSourceProbe(
+            provider_exec_ref_hash=snapshot.provider_exec_ref_hash,
+            rows_seen=len(rows),
+            matched=True,
+        )
+
+    def require_no_open_order(
+        self,
+        *,
+        reference: MockProviderOrderReference,
+        start: date,
+        end: date,
+        recent: bool,
+    ) -> KISMockOpenOrderReconciliation:
+        """CCLD_DVSN=02와 exact 주문번호로 미체결 잔존·continuation을 모두 거부한다."""
+
+        try:
+            payload = self._request_execution_page(
+                reference=reference,
+                start=start,
+                end=end,
+                recent=recent,
+                ccld_dvsn="02",
+            )
+            rows = _execution_source_probe_rows(payload)
+        except ValueError:
+            raise KISMockProjectionError(
+                KISMockFailureReason.OPEN_ORDER_RECONCILIATION_FAILED,
+                "KIS mock open-order reconciliation is invalid",
+            ) from None
+        if rows:
+            raise KISMockProjectionError(
+                KISMockFailureReason.OPEN_ORDER_RECONCILIATION_FAILED,
+                "KIS mock order remains open after cancellation",
+            )
+        return KISMockOpenOrderReconciliation(
+            provider_exec_ref_hash=_execution_source_probe_hash(reference),
+            rows_seen=0,
+        )
+
     def _request_execution_page(
         self,
         *,
@@ -249,6 +366,7 @@ class KISMockExecutionReader:
         start: date,
         end: date,
         recent: bool,
+        ccld_dvsn: Literal["00", "02"] = "00",
     ) -> dict[str, Any]:
         if start > end or (end - start).days > 31:
             raise ValueError("KIS mock execution window is invalid")
@@ -267,7 +385,7 @@ class KISMockExecutionReader:
                 "SLL_BUY_DVSN_CD": "00",
                 "INQR_DVSN": "00",
                 "PDNO": "",
-                "CCLD_DVSN": "00",
+                "CCLD_DVSN": ccld_dvsn,
                 "ORD_GNO_BRNO": reference.provider_org_no,
                 "ODNO": reference.provider_order_no,
                 "INQR_DVSN_3": "00",

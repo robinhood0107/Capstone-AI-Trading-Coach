@@ -18,6 +18,7 @@ import urllib.request
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from enum import StrEnum
 from typing import Final, Literal, NoReturn, Protocol
 
 import numpy as np
@@ -64,6 +65,36 @@ _DocumentActivation = PreS5VoyageActivation | PreS5VoyageDocumentBatchActivation
 
 class PreS5VoyageTransportError(RuntimeError):
     """Voyage packet, full-bundle, lease, request 또는 response가 fail-closed 했음을 나타낸다."""
+
+
+class PreS5VoyageResponseValidationLeaf(StrEnum):
+    """provider 원문 없이 response validation 실패 위치만 나타내는 닫힌 분류다."""
+
+    STATUS = "STATUS"
+    BODY_SIZE_OR_TYPE = "BODY_SIZE_OR_TYPE"
+    BODY_UTF8_OR_JSON = "BODY_UTF8_OR_JSON"
+    ENVELOPE_REQUIRED_FIELDS = "ENVELOPE_REQUIRED_FIELDS"
+    MODEL = "MODEL"
+    USAGE = "USAGE"
+    GROUP_COUNT = "GROUP_COUNT"
+    GROUP_FIELDS_OR_INDEX = "GROUP_FIELDS_OR_INDEX"
+    CHUNK_COUNT = "CHUNK_COUNT"
+    CHUNK_FIELDS_OR_INDEX = "CHUNK_FIELDS_OR_INDEX"
+    CHUNK_TEXT = "CHUNK_TEXT"
+    VECTOR_DIMENSION = "VECTOR_DIMENSION"
+    VECTOR_NUMBER = "VECTOR_NUMBER"
+    VECTOR_FINITE = "VECTOR_FINITE"
+    VECTOR_NORM = "VECTOR_NORM"
+    COST_CAP = "COST_CAP"
+
+
+class PreS5VoyageResponseValidationError(PreS5VoyageTransportError):
+    """raw body·field value를 보존하지 않고 exact validation leaf만 운반한다."""
+
+    def __init__(self, leaf: PreS5VoyageResponseValidationLeaf) -> None:
+        super().__init__("PRE_S5_VOYAGE_RESPONSE_INVALID")
+        self.leaf = leaf
+        self.response_validation_leaf = leaf.value
 
 
 @dataclass(frozen=True, slots=True)
@@ -261,6 +292,7 @@ class PreS5VoyageContext4Transport:
         self._provider_total_tokens: int | None = None
         self._expected_input_tokens: int | None = None
         self._provider_status_class: str | None = None
+        self._response_validation_leaf: str | None = None
         self._usage_state = "READY"
 
     @property
@@ -279,6 +311,7 @@ class PreS5VoyageContext4Transport:
             total_tokens = self._provider_total_tokens
             expected_input_tokens = self._expected_input_tokens
             provider_status_class = self._provider_status_class
+            response_validation_leaf = self._response_validation_leaf
             usage_state = self._usage_state
         summary: dict[str, object] = {
             "code": "PRE_S5_VOYAGE_ATTEMPT_CONSUMED" if consumed else "PRE_S5_VOYAGE_READY",
@@ -296,6 +329,8 @@ class PreS5VoyageContext4Transport:
             summary["providerTotalTokens"] = total_tokens
         if provider_status_class is not None:
             summary["providerStatusClass"] = provider_status_class
+        if response_validation_leaf is not None:
+            summary["responseValidationLeaf"] = response_validation_leaf
         return summary
 
     def embed_document_groups(
@@ -388,6 +423,9 @@ class PreS5VoyageContext4Transport:
         parse_failed = False
         try:
             parsed = _parse_response(response=response, groups=groups, activation=self._activation)
+        except PreS5VoyageResponseValidationError as error:
+            self._set_response_validation_leaf(error.response_validation_leaf)
+            parse_failed = True
         except PreS5VoyageTransportError:
             parse_failed = True
         if parse_failed or parsed is None:
@@ -396,8 +434,6 @@ class PreS5VoyageContext4Transport:
                 self._set_provider_status_class("HTTP_2XX_INVALID")
             self._raise_after_attempt("PRE_S5_VOYAGE_RESPONSE_INVALID")
         actual_cost_microusd = parsed.total_tokens * self._activation.input_microusd_per_token
-        if actual_cost_microusd > self._activation.cost_cap_microusd:
-            self._raise_after_attempt("PRE_S5_VOYAGE_RESPONSE_INVALID")
         if isinstance(self._activation, PreS5VoyageDocumentBatchActivation):
             with self._lock:
                 self._provider_total_tokens = parsed.total_tokens
@@ -426,6 +462,12 @@ class PreS5VoyageContext4Transport:
 
         with self._lock:
             self._provider_status_class = value
+
+    def _set_response_validation_leaf(self, value: str) -> None:
+        """response 원문 대신 닫힌 parser leaf 하나만 terminal receipt에 보존한다."""
+
+        with self._lock:
+            self._response_validation_leaf = value
 
     def _claim_before_outbound(self) -> None:
         """expiry recheck와 DB one-shot claim을 sender 직전에 같은 local critical section에서 수행한다."""
@@ -861,15 +903,44 @@ def _parse_response(
     groups: tuple[VoyagePreChunkedDocumentGroup, ...],
     activation: _DocumentActivation,
 ) -> _ParsedVoyageResponse:
-    """raw provider response를 retaining하지 않고 exact ordered float32 vectors/usage로 좁힌다."""
+    """세 transport가 공유하는 content-free response projection을 document shape에 적용한다."""
 
-    if (
-        not isinstance(response, PreS5VoyageHttpResponse)
-        or response.status != 200
-        or not isinstance(response.body, bytes)
-        or not 1 <= len(response.body) <= activation.byte_cap
-    ):
-        raise PreS5VoyageTransportError("PRE_S5_VOYAGE_RESPONSE_INVALID")
+    return _parse_contextualized_response(
+        response=response,
+        expected_text_groups=tuple(
+            tuple(chunk.canonical_text for chunk in group.chunks) for group in groups
+        ),
+        model=_VOYAGE_MODEL,
+        token_cap=activation.token_cap,
+        byte_cap=activation.byte_cap,
+        cost_cap_microusd=activation.cost_cap_microusd,
+        input_microusd_per_token=activation.input_microusd_per_token,
+    )
+
+
+def _parse_contextualized_response(
+    *,
+    response: object,
+    expected_text_groups: tuple[tuple[str, ...], ...],
+    model: str,
+    token_cap: int,
+    byte_cap: int,
+    cost_cap_microusd: int,
+    input_microusd_per_token: int,
+) -> _ParsedVoyageResponse:
+    """필수 계약은 strict하게 검증하고 unknown additive field는 retention 없이 무시한다.
+
+    반환 projection에는 ordered float32 vector와 bounded usage만 남는다. 실패는 provider 값이나
+    JSON fragment를 포함하지 않는 닫힌 leaf 하나로만 표현한다.
+    """
+
+    if not isinstance(response, PreS5VoyageHttpResponse) or type(response.status) is not int:
+        _raise_response_validation(PreS5VoyageResponseValidationLeaf.STATUS)
+    if response.status != 200:
+        _raise_response_validation(PreS5VoyageResponseValidationLeaf.STATUS)
+    if not isinstance(response.body, bytes) or not 1 <= len(response.body) <= byte_cap:
+        _raise_response_validation(PreS5VoyageResponseValidationLeaf.BODY_SIZE_OR_TYPE)
+
     decoded: object | None = None
     parse_failed = False
     try:
@@ -880,124 +951,115 @@ def _parse_response(
     except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
         parse_failed = True
     if parse_failed:
-        # Parsing exception이 raw body를 __cause__/__context__로 보존하지 않게 except 밖에서 raise한다.
-        raise PreS5VoyageTransportError("PRE_S5_VOYAGE_RESPONSE_INVALID")
-    if not _contextualized_response_envelope_is_valid(decoded, model=_VOYAGE_MODEL):
-        raise PreS5VoyageTransportError("PRE_S5_VOYAGE_RESPONSE_INVALID")
-    assert isinstance(decoded, dict)
-    total_tokens = _validated_total_tokens(decoded.get("usage"), token_cap=activation.token_cap)
+        # JSON exception이 raw provider bytes를 exception chain에 붙이지 않게 except 밖에서 닫는다.
+        _raise_response_validation(PreS5VoyageResponseValidationLeaf.BODY_UTF8_OR_JSON)
+
+    required_envelope_fields = {"data", "model", "usage"}
+    if not isinstance(decoded, dict) or not required_envelope_fields <= set(decoded):
+        _raise_response_validation(PreS5VoyageResponseValidationLeaf.ENVELOPE_REQUIRED_FIELDS)
+    chunker_version = decoded.get("chunker_version")
+    if "chunker_version" in decoded and not (
+        chunker_version is None
+        or (isinstance(chunker_version, str) and bool(chunker_version))
+    ):
+        _raise_response_validation(PreS5VoyageResponseValidationLeaf.ENVELOPE_REQUIRED_FIELDS)
+    if decoded.get("model") != model:
+        _raise_response_validation(PreS5VoyageResponseValidationLeaf.MODEL)
+
+    usage = decoded.get("usage")
+    total_tokens = usage.get("total_tokens") if isinstance(usage, dict) else None
+    if (
+        not isinstance(usage, dict)
+        or "total_tokens" not in usage
+        or type(total_tokens) is not int
+        or not 0 <= total_tokens <= token_cap
+    ):
+        _raise_response_validation(PreS5VoyageResponseValidationLeaf.USAGE)
+    assert isinstance(total_tokens, int)
+
     group_data = decoded.get("data")
-    if not isinstance(group_data, list) or len(group_data) != len(groups):
-        raise PreS5VoyageTransportError("PRE_S5_VOYAGE_RESPONSE_INVALID")
+    if not isinstance(group_data, list) or len(group_data) != len(expected_text_groups):
+        _raise_response_validation(PreS5VoyageResponseValidationLeaf.GROUP_COUNT)
     vectors: list[NDArray[np.float32]] = []
-    for group_index, (expected_group, received_group) in enumerate(zip(groups, group_data, strict=True)):
+    for group_index, (expected_texts, received_group) in enumerate(
+        zip(expected_text_groups, group_data, strict=True)
+    ):
         if (
             not isinstance(received_group, dict)
-            or set(received_group) != {"data", "index"}
-            or received_group.get("index") != group_index
+            or not {"data", "index"} <= set(received_group)
             or type(received_group.get("index")) is not int
+            or received_group.get("index") != group_index
         ):
-            raise PreS5VoyageTransportError("PRE_S5_VOYAGE_RESPONSE_INVALID")
+            _raise_response_validation(PreS5VoyageResponseValidationLeaf.GROUP_FIELDS_OR_INDEX)
         chunk_data = received_group.get("data")
-        if not isinstance(chunk_data, list) or len(chunk_data) != len(expected_group.chunks):
-            raise PreS5VoyageTransportError("PRE_S5_VOYAGE_RESPONSE_INVALID")
-        for chunk_index, (expected_chunk, received_chunk) in enumerate(
-            zip(expected_group.chunks, chunk_data, strict=True)
+        if not isinstance(chunk_data, list) or len(chunk_data) != len(expected_texts):
+            _raise_response_validation(PreS5VoyageResponseValidationLeaf.CHUNK_COUNT)
+        for chunk_index, (expected_text, received_chunk) in enumerate(
+            zip(expected_texts, chunk_data, strict=True)
         ):
-            if not _contextualized_response_item_is_valid(
-                received_chunk,
-                expected_index=chunk_index,
-                expected_text=expected_chunk.canonical_text,
+            if (
+                not isinstance(received_chunk, dict)
+                or not {"embedding", "index"} <= set(received_chunk)
+                or type(received_chunk.get("index")) is not int
+                or received_chunk.get("index") != chunk_index
             ):
-                raise PreS5VoyageTransportError("PRE_S5_VOYAGE_RESPONSE_INVALID")
-            assert isinstance(received_chunk, dict)
-            vectors.append(_vector_from_response(received_chunk.get("embedding")))
+                _raise_response_validation(
+                    PreS5VoyageResponseValidationLeaf.CHUNK_FIELDS_OR_INDEX
+                )
+            if "text" in received_chunk and (
+                not isinstance(received_chunk.get("text"), str)
+                or received_chunk.get("text") != expected_text
+            ):
+                _raise_response_validation(PreS5VoyageResponseValidationLeaf.CHUNK_TEXT)
+            vectors.append(_response_vector(received_chunk.get("embedding")))
     if not vectors:
-        raise PreS5VoyageTransportError("PRE_S5_VOYAGE_RESPONSE_INVALID")
+        _raise_response_validation(PreS5VoyageResponseValidationLeaf.CHUNK_COUNT)
+    if (
+        type(cost_cap_microusd) is not int
+        or type(input_microusd_per_token) is not int
+        or total_tokens * input_microusd_per_token > cost_cap_microusd
+    ):
+        _raise_response_validation(PreS5VoyageResponseValidationLeaf.COST_CAP)
     return _ParsedVoyageResponse(
         vectors=np.vstack(vectors).astype(np.float32, copy=False),
         total_tokens=total_tokens,
     )
 
 
-def _validated_total_tokens(value: object, *, token_cap: int) -> int:
-    """provider usage가 packet token/cost reservation을 넘지 않게 strict JSON projection으로 닫는다."""
-
-    total_tokens = value.get("total_tokens") if isinstance(value, dict) else None
-    if (
-        not isinstance(value, dict)
-        or set(value) != {"total_tokens"}
-        or type(total_tokens) is not int
-        or not 0 <= total_tokens <= token_cap
-    ):
-        raise PreS5VoyageTransportError("PRE_S5_VOYAGE_RESPONSE_INVALID")
-    return total_tokens
-
-
-def _contextualized_response_envelope_is_valid(value: object, *, model: str) -> bool:
-    """공식 SDK처럼 pre-chunked 응답의 chunker_version 생략 또는 null을 허용한다.
-
-    data/model/usage 외 임의 field는 계속 거부하며, chunker_version이 존재하면 빈 문자열이나
-    다른 타입은 받지 않아 응답 경계를 넓히지 않는다.
-    """
-
-    if not isinstance(value, dict):
-        return False
-    keys = set(value)
-    if keys not in ({"data", "model", "usage"}, {"chunker_version", "data", "model", "usage"}):
-        return False
-    chunker_version = value.get("chunker_version")
-    return value.get("model") == model and (
-        "chunker_version" not in value
-        or chunker_version is None
-        or (isinstance(chunker_version, str) and bool(chunker_version))
-    )
-
-
-def _contextualized_response_item_is_valid(
-    value: object,
-    *,
-    expected_index: int,
-    expected_text: str,
-) -> bool:
-    """pre-chunked chunk text는 optional이지만, 반환되면 요청 text와 정확히 결속한다."""
-
-    if not isinstance(value, dict):
-        return False
-    keys = set(value)
-    if keys not in ({"embedding", "index"}, {"embedding", "index", "text"}):
-        return False
-    return (
-        type(value.get("index")) is int
-        and value.get("index") == expected_index
-        and ("text" not in value or value.get("text") == expected_text)
-    )
-
-
-def _vector_from_response(value: object) -> NDArray[np.float32]:
-    """JSON numeric array 하나를 finite unit-norm 1024-dimension float32 vector로 좁힌다."""
+def _response_vector(value: object) -> NDArray[np.float32]:
+    """JSON numeric array를 dimension·number·finite·norm leaf로 분리해 검증한다."""
 
     if not isinstance(value, list) or len(value) != _OUTPUT_DIMENSION:
-        raise PreS5VoyageTransportError("PRE_S5_VOYAGE_RESPONSE_INVALID")
+        _raise_response_validation(PreS5VoyageResponseValidationLeaf.VECTOR_DIMENSION)
     numbers: list[float] = []
     for item in value:
         if isinstance(item, bool) or not isinstance(item, (int, float)):
-            raise PreS5VoyageTransportError("PRE_S5_VOYAGE_RESPONSE_INVALID")
+            _raise_response_validation(PreS5VoyageResponseValidationLeaf.VECTOR_NUMBER)
+        number: float | None = None
+        conversion_failed = False
         try:
             number = float(item)
-        except (OverflowError, ValueError):
-            raise PreS5VoyageTransportError("PRE_S5_VOYAGE_RESPONSE_INVALID")
+        except (OverflowError, TypeError, ValueError):
+            conversion_failed = True
+        if conversion_failed or number is None:
+            _raise_response_validation(PreS5VoyageResponseValidationLeaf.VECTOR_NUMBER)
         if not math.isfinite(number):
-            raise PreS5VoyageTransportError("PRE_S5_VOYAGE_RESPONSE_INVALID")
+            _raise_response_validation(PreS5VoyageResponseValidationLeaf.VECTOR_FINITE)
         numbers.append(number)
     with np.errstate(over="ignore", invalid="ignore"):
         vector = np.asarray(numbers, dtype=np.float32)
         norm = float(np.linalg.norm(vector))
-    if not bool(np.isfinite(vector).all()) or not math.isfinite(norm) or not math.isclose(
-        norm, 1.0, abs_tol=1e-5, rel_tol=0.0
-    ):
-        raise PreS5VoyageTransportError("PRE_S5_VOYAGE_RESPONSE_INVALID")
+    if not bool(np.isfinite(vector).all()) or not math.isfinite(norm):
+        _raise_response_validation(PreS5VoyageResponseValidationLeaf.VECTOR_FINITE)
+    if not math.isclose(norm, 1.0, abs_tol=1e-5, rel_tol=0.0):
+        _raise_response_validation(PreS5VoyageResponseValidationLeaf.VECTOR_NORM)
     return vector
+
+
+def _raise_response_validation(leaf: PreS5VoyageResponseValidationLeaf) -> NoReturn:
+    """검증 실패가 provider value를 message/cause/context로 운반하지 않게 leaf만 raise한다."""
+
+    raise PreS5VoyageResponseValidationError(leaf)
 
 
 def _require_utc_now(clock: Callable[[], datetime]) -> datetime:

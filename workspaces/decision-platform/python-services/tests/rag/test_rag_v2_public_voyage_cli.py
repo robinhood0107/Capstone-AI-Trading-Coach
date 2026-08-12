@@ -26,6 +26,111 @@ def test_public_voyage_operator_entrypoint_is_registered() -> None:
     )
 
 
+def test_public_voyage_operator_requires_explicit_distinct_private_source_and_output_roots(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = tmp_path / "source"
+    output = tmp_path / "output"
+    source.mkdir(mode=0o700)
+    output.mkdir(mode=0o700)
+    source.chmod(0o700)
+    output.chmod(0o700)
+    monkeypatch.setenv("CAPSTONE_RAG_SOURCE_ROOT", str(source))
+    monkeypatch.setenv("CAPSTONE_RAG_OUTPUT_ROOT", str(output))
+    monkeypatch.setenv("CAPSTONE_RAG_LOCAL_ROOT", str(source))
+
+    assert rag_v2_public_voyage_cli._source_root() == source
+    assert rag_v2_public_voyage_cli._output_root() == output
+
+    monkeypatch.delenv("CAPSTONE_RAG_OUTPUT_ROOT")
+    with pytest.raises(
+        rag_v2_public_voyage_cli.PublicVoyageCliError,
+        match="PUBLIC_VOYAGE_OUTPUT_ROOT_REQUIRED",
+    ):
+        rag_v2_public_voyage_cli._output_root()
+
+    monkeypatch.setenv("CAPSTONE_RAG_OUTPUT_ROOT", str(source))
+    with pytest.raises(
+        rag_v2_public_voyage_cli.PublicVoyageCliError,
+        match="PUBLIC_VOYAGE_ROOTS_MUST_BE_DISTINCT",
+    ):
+        rag_v2_public_voyage_cli._execution_roots()
+
+
+def test_public_voyage_operator_rejects_symlink_or_non_private_output_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = tmp_path / "source"
+    output = tmp_path / "output"
+    source.mkdir(mode=0o700)
+    output.mkdir(mode=0o755)
+    source.chmod(0o700)
+    output.chmod(0o755)
+    monkeypatch.setenv("CAPSTONE_RAG_SOURCE_ROOT", str(source))
+    monkeypatch.setenv("CAPSTONE_RAG_OUTPUT_ROOT", str(output))
+
+    with pytest.raises(
+        rag_v2_public_voyage_cli.PublicVoyageCliError,
+        match="PUBLIC_VOYAGE_OUTPUT_ROOT_BOUNDARY",
+    ):
+        rag_v2_public_voyage_cli._output_root()
+
+    output.chmod(0o700)
+    output.rmdir()
+    output.symlink_to(source, target_is_directory=True)
+    with pytest.raises(
+        rag_v2_public_voyage_cli.PublicVoyageCliError,
+        match="PUBLIC_VOYAGE_OUTPUT_ROOT_BOUNDARY",
+    ):
+        rag_v2_public_voyage_cli._output_root()
+
+
+@pytest.mark.parametrize(
+    "database_dsn",
+    [
+        "postgresql://decision_rag_writer:secret@127.0.0.1:5432/trading",
+        "postgresql://decision_rag_writer:secret@localhost:55432/trading",
+        "postgresql://decision_rag_writer:secret@127.0.0.1:55433/trading",
+    ],
+)
+def test_fresh_voyage_operator_rejects_default_or_non_fresh_database_namespace(
+    database_dsn: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("CAPSTONE_PRE_S5_COMPOSE_PROJECT", "capstone-pre-s5-fresh")
+    monkeypatch.setenv("POSTGRES_HOST_PORT", "55432")
+    monkeypatch.setenv("REDIS_HOST_PORT", "56379")
+
+    with pytest.raises(
+        rag_v2_public_voyage_cli.PublicVoyageCliError,
+        match="PUBLIC_VOYAGE_FRESH_NAMESPACE_REQUIRED",
+    ):
+        rag_v2_public_voyage_cli._require_fresh_database_namespace(database_dsn)
+
+
+def test_fresh_voyage_operator_accepts_only_fixed_project_and_ports(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("CAPSTONE_PRE_S5_COMPOSE_PROJECT", "capstone-pre-s5-fresh")
+    monkeypatch.setenv("POSTGRES_HOST_PORT", "55432")
+    monkeypatch.setenv("REDIS_HOST_PORT", "56379")
+
+    rag_v2_public_voyage_cli._require_fresh_database_namespace(
+        "postgresql://decision_rag_writer:secret@127.0.0.1:55432/trading"
+    )
+
+    monkeypatch.setenv("CAPSTONE_PRE_S5_COMPOSE_PROJECT", "capstone-rag-local")
+    with pytest.raises(
+        rag_v2_public_voyage_cli.PublicVoyageCliError,
+        match="PUBLIC_VOYAGE_FRESH_NAMESPACE_REQUIRED",
+    ):
+        rag_v2_public_voyage_cli._require_fresh_database_namespace(
+            "postgresql://decision_rag_writer:secret@127.0.0.1:55432/trading"
+        )
+
+
 def test_public_voyage_cli_rejects_unknown_and_unconfigured_commands_before_a_provider_call(
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,

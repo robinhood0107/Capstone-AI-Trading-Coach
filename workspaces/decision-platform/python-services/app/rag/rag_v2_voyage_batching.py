@@ -342,6 +342,13 @@ def _validate_public_components(
         raise RagV2VoyageBatchingError("VOYAGE_BATCH_PUBLIC_MEMBERSHIP")
     all_groups = exact30.groups + oa112.groups
     all_chunk_ids = tuple(chunk.chunk_id for group in all_groups for chunk in group.chunks)
+    if any(
+        type(chunk.token_count) is not int or not 1 <= chunk.token_count <= 600
+        for group in all_groups
+        for chunk in group.chunks
+    ):
+        # Provider tokenizer 재계수 전에도 canonical profile-neutral 계약을 먼저 확인한다.
+        raise RagV2VoyageBatchingError("VOYAGE_BATCH_PROFILE_NEUTRAL_TOKEN_CAP")
     if (
         len({group.source_id for group in all_groups}) != 142
         or len({group.source_revision_id for group in all_groups}) != 142

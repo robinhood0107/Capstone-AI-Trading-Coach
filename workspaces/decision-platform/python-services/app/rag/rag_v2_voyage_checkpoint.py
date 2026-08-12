@@ -22,14 +22,17 @@ from app.rag.document_ir_materializer import (
     RagV2DocumentMaterialization,
 )
 from app.rag.ingest_pipeline import RagEmbeddingInput
-from app.rag.rag_v2_bge_materializer import RagV2PreparedPublicDocument
+from app.rag.rag_v2_bge_materializer import (
+    PUBLIC_VOYAGE_SANITIZER_VERSION,
+    RagV2PreparedPublicDocument,
+)
 from app.rag.rag_v2_voyage_types import PublicVoyageSourceMetadata
 
 PublicScope = Literal["EXACT30", "OA112"]
 
 _DERIVED_DIRECTORY = "derived-ir"
 _TEMP_DIRECTORY = ".tmp"
-_SCHEMA_VERSION = "pre-s5-public-voyage-checkpoint/v1"
+_SCHEMA_VERSION = "pre-s5-public-voyage-checkpoint/v2"
 _MAX_CHECKPOINT_BYTES = 64 * 1024 * 1024
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _VERSION = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$")
@@ -273,7 +276,8 @@ def _identity(
         "componentScope": scope,
         "parserVersion": parser_version,
         "rawContentSha256": raw_content_sha256,
-        "schemaVersion": 1,
+        "sanitizerVersion": PUBLIC_VOYAGE_SANITIZER_VERSION,
+        "schemaVersion": 2,
         "sourceRevisionId": source_revision_id,
         "tokenizerVersion": tokenizer_version,
     }
@@ -438,6 +442,8 @@ def _validate_prepared(
     for chunk, embedding_input in zip(document.chunks, prepared.embedding_inputs, strict=True):
         if (
             chunk.document_id != document.document_id
+            or type(chunk.token_count) is not int
+            or not 1 <= chunk.token_count <= 600
             or hashlib.sha256(chunk.canonical_text.encode("utf-8")).hexdigest() != chunk.canonical_text_sha256
             or embedding_input.chunk_revision_id != chunk.chunk_id
             or embedding_input.text != chunk.canonical_text

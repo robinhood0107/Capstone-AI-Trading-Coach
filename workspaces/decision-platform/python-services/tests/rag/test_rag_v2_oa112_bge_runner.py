@@ -14,6 +14,7 @@ import pytest
 
 import app.rag.local_document_parser as local_document_parser
 import app.rag.rag_v2_oa112_bge_runner as oa112_bge_runner
+import app.rag.rag_v2_public_voyage_staging as public_voyage_staging
 from app.rag.external_processing_corpus import load_external_processing_corpus
 from app.rag.oa112_active_registry import Oa112ActiveRegistry, Oa112RegistryEntry
 from app.rag.oa_release_manifest import OA_TRACK_IDS
@@ -29,7 +30,10 @@ from app.rag.rag_v2_voyage_full_bundle import (
     materialize_public_base_voyage_full_bundle,
     prepare_public_base_voyage_full_bundle,
 )
-from app.rag.rag_v2_public_voyage_staging import build_public_voyage_staging_payload
+from app.rag.rag_v2_public_voyage_staging import (
+    RagV2PublicVoyageStagingError,
+    build_public_voyage_staging_payload,
+)
 from app.rag.rag_v2_public_voyage_activation_repository import (
     PublicVoyageActivationRequest,
     PsycopgRagV2PublicVoyageActivationRepository,
@@ -92,9 +96,11 @@ class _FixtureApprovedParser:
         self,
         entries: tuple[Oa112RegistryEntry, ...],
         *,
+        leading_slash_source_id: str | None = None,
         multichunk_source_id: str | None = None,
     ) -> None:
         self._entries = {entry.source_id: entry for entry in entries}
+        self._leading_slash_source_id = leading_slash_source_id
         self._multichunk_source_id = multichunk_source_id
         self.calls: list[dict[str, object]] = []
 
@@ -104,6 +110,8 @@ class _FixtureApprovedParser:
         assert isinstance(source_id, str)
         entry = self._entries[source_id]
         text = f"Approved OA evidence {entry.source_id} stays in its immutable source generation."
+        if source_id == self._leading_slash_source_id:
+            text = "/ is valid canonical document content and is not a local filesystem path."
         if source_id == self._multichunk_source_id:
             # production OA PDF처럼 둘 이상의 canonical chunk를 만들어 DB digest 구분자를 검증한다.
             text = " ".join(f"evidence-{index:04d}" for index in range(650))
@@ -363,6 +371,47 @@ def test_public_voyage_writer_payload_keeps_contextual_hash_and_oa_rights_in_the
     assert all("contextSetHash" in value for value in exact_source["embeddings"])
     assert all("contextSetHash" in value for value in oa_source["embeddings"])
     assert str(tmp_path) not in json.dumps(oa_payload, ensure_ascii=False, sort_keys=True)
+
+
+def test_public_voyage_writer_allows_canonical_content_with_a_leading_slash_but_rejects_path_keys(
+    tmp_path: Path,
+) -> None:
+    registry = _registry()
+    selected_source_id = registry.active_entries[0].source_id
+    preparation = prepare_public_base_voyage_full_bundle(
+        tokenizer=_FixtureTokenizer(),
+        oa112_registry=registry,
+        oa112_local_cache_root=tmp_path,
+        oa112_parser=_FixtureApprovedParser(
+            registry.active_entries,
+            leading_slash_source_id=selected_source_id,
+        ),
+        exact30_corpus=load_external_processing_corpus(),
+    )
+    materialization = materialize_public_base_voyage_full_bundle(
+        preparation=preparation,
+        embedder=_FixtureFullBundleEmbedder(),
+    )
+    selected = next(
+        record
+        for record in materialization.oa112.records
+        if record.document.source_id == selected_source_id
+    )
+
+    payload = build_public_voyage_staging_payload(
+        selected,
+        context=materialization.oa112.context,
+    )
+
+    source = payload["source"]
+    assert isinstance(source, dict)
+    chunks = source["chunks"]
+    assert isinstance(chunks, list)
+    assert chunks[0]["canonicalText"].startswith("/")
+    with pytest.raises(RagV2PublicVoyageStagingError, match="PUBLIC_VOYAGE_PATH_LEAK"):
+        public_voyage_staging._assert_path_free(
+            {"documentIr": {"rawPath": "/private/raw/source.pdf"}}
+        )
 
 
 def test_public_voyage_writer_stages_and_evaluates_both_public_components(

@@ -88,7 +88,7 @@ def test_checkpoint_round_trip_is_0600_profile_neutral_and_reusable(tmp_path: Pa
     decoded = json.loads(payload)
     assert decoded["schemaVersion"] == "pre-s5-public-voyage-checkpoint/v2"
     assert decoded["identity"]["schemaVersion"] == 2
-    assert decoded["identity"]["sanitizerVersion"] == "public-pii-v2-rechunk"
+    assert decoded["identity"]["sanitizerVersion"] == "public-pii-v2-rechunk-v2"
     assert '"vectors"' not in payload
     assert "providerResponse" not in payload
     assert "/" not in json.loads(payload)["identity"]["sourceRevisionId"]
@@ -125,6 +125,44 @@ def test_optional_checkpoint_does_not_reuse_v1_identity_after_sanitizer_rotation
         "parserVersion": "1.1.0",
         "rawContentSha256": prepared.document.raw_content_sha256,
         "schemaVersion": 1,
+        "sourceRevisionId": prepared.document.source_revision_id,
+        "tokenizerVersion": "bge-m3-sentencepiece-v1",
+    }
+    old_key = hashlib.sha256(
+        json.dumps(old_identity, separators=(",", ":"), sort_keys=True).encode()
+    ).hexdigest()
+    derived = root / "derived-ir"
+    derived.mkdir(mode=0o700)
+    (derived / ".tmp").mkdir(mode=0o700)
+    scope = derived / "oa112"
+    scope.mkdir(mode=0o700)
+    old_leaf = scope / f"{old_key}.json"
+    old_leaf.write_text("{}", encoding="utf-8")
+    old_leaf.chmod(0o600)
+
+    loaded = load_optional_public_voyage_checkpoint(
+        local_corpus_root=root,
+        component_scope="OA112",
+        expected_raw_content_sha256=prepared.document.raw_content_sha256,
+        expected_source_revision_id=prepared.document.source_revision_id,
+        parser_version="1.1.0",
+        tokenizer_version="bge-m3-sentencepiece-v1",
+    )
+
+    assert loaded is None
+
+
+def test_optional_checkpoint_does_not_reuse_previous_v2_sanitizer_identity(
+    tmp_path: Path,
+) -> None:
+    root = _private_root(tmp_path)
+    prepared = _prepared()
+    old_identity = {
+        "componentScope": "OA112",
+        "parserVersion": "1.1.0",
+        "rawContentSha256": prepared.document.raw_content_sha256,
+        "sanitizerVersion": "public-pii-v2-rechunk",
+        "schemaVersion": 2,
         "sourceRevisionId": prepared.document.source_revision_id,
         "tokenizerVersion": "bge-m3-sentencepiece-v1",
     }

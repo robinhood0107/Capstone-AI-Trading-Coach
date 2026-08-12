@@ -31,7 +31,7 @@ from app.rag.local_document_parser import DocumentParseError
 _BGE_PROFILE_ID = "bge_m3_local_1024_v1"
 _VOYAGE_PROFILE_ID = "voyage_context_4_1024_v1"
 _BGE_EMBEDDING_BATCH_SIZE: Final = 64
-PUBLIC_VOYAGE_SANITIZER_VERSION: Final = "public-pii-v2-rechunk"
+PUBLIC_VOYAGE_SANITIZER_VERSION: Final = "public-pii-v2-rechunk-v2"
 _PUBLIC_PII_REDACTIONS: Final[tuple[tuple[re.Pattern[str], str], ...]] = (
     (re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"), "[PUBLIC_EMAIL_REDACTED]"),
     (re.compile(r"\b01[016789][ -]?\d{3,4}[ -]?\d{4}\b"), "[PUBLIC_PHONE_REDACTED]"),
@@ -440,6 +440,7 @@ def _sanitize_public_voyage_ir(
 
     prompt injection/secret 또는 source rights 부족은 절대 sanitize로 승격하지 않는다. 반환 IR은
     이후 표준 materializer가 다시 chunking하므로 table atomicity와 profile-neutral 600 상한을 공유한다.
+    sanitizer version은 checkpoint identity에만 결박해 V25의 폐쇄형 Document IR shape를 넓히지 않는다.
     """
 
     safety = document_ir.get("safetyClassification")
@@ -470,10 +471,6 @@ def _sanitize_public_voyage_ir(
         "piiDetected": False,
         "promptInjectionDetected": False,
         "secretDetected": False,
-    }
-    sanitized_ir["externalProcessingSanitization"] = {
-        "redactionCount": redaction_count,
-        "sanitizerVersion": PUBLIC_VOYAGE_SANITIZER_VERSION,
     }
     return sanitized_ir
 

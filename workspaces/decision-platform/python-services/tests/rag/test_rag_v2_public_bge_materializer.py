@@ -203,10 +203,7 @@ def test_public_voyage_preparation_redacts_pii_and_rebuilds_chunk_identity(tmp_p
         "promptInjectionDetected": False,
         "secretDetected": False,
     }
-    assert prepared.document_ir["externalProcessingSanitization"] == {
-        "redactionCount": 1,
-        "sanitizerVersion": "public-pii-v2-rechunk",
-    }
+    assert "externalProcessingSanitization" not in prepared.document_ir
 
 
 def test_public_voyage_pii_growth_is_rechunked_back_under_profile_neutral_600_cap(

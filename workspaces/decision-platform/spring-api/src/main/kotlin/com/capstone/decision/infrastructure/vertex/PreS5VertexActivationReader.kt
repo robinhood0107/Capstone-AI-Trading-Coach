@@ -28,6 +28,8 @@ internal data class PreS5VertexActivation(
     val packetSha256: String,
     val nonceSha256: String,
     val authenticationMode: String,
+    val projectId: String,
+    val modelId: String,
     val requestId: String,
     val scopeClaimId: String,
     val questionFingerprintHmac: String,
@@ -114,14 +116,20 @@ internal class PreS5VertexActivationReader(
             require(issuedAt < expiresAt)
             require(Duration.between(issuedAt, expiresAt) <= Duration.ofMinutes(5))
             require(!now.isBefore(issuedAt) && now.isBefore(expiresAt))
-            require(text(values, "contractId") == "pre-s5-vertex-activation/v2")
+            require(text(values, "contractId") == "pre-s5-vertex-activation/v3")
             require(text(values, "provider") == "VERTEX_AI")
             require(text(values, "authenticationMode") == AUTHENTICATION_MODE)
             require(text(values, "origin") == ORIGIN)
-            require(text(values, "endpoint") == ENDPOINT)
+            val projectId = text(values, "projectId")
+            val modelId = text(values, "modelId")
+            require(PROJECT_ID.matches(projectId))
+            require(MODEL_ID.matches(modelId) && modelId == properties.modelId)
+            require(
+                text(values, "endpoint") ==
+                    "POST /v1/projects/$projectId/locations/global/publishers/google/models/$modelId:generateContent",
+            )
             require(text(values, "authOrigin") == AUTH_ORIGIN)
             require(text(values, "authEndpoint") == AUTH_ENDPOINT)
-            require(text(values, "modelId") == MODEL_ID)
             require(REQUEST_ID.matches(text(values, "requestId")))
             require(SCOPE_CLAIM_ID.matches(text(values, "scopeClaimId")))
             require(text(values, "answerMode") in ANSWER_MODES)
@@ -134,8 +142,8 @@ internal class PreS5VertexActivationReader(
             require(OPERATOR.matches(text(values, "operator")))
             require(NONCE.matches(text(values, "nonce")))
             val logicalCallCap = integer(values, "logicalCallCap", 1, 1)
-            val physicalCallCap = integer(values, "physicalCallCap", 1, 1)
-            val tokenPhysicalCallCap = integer(values, "tokenPhysicalCallCap", 0, 0)
+            val physicalCallCap = integer(values, "physicalCallCap", 2, 2)
+            val tokenPhysicalCallCap = integer(values, "tokenPhysicalCallCap", 1, 1)
             val generateContentPhysicalCallCap = integer(values, "generateContentPhysicalCallCap", 1, 1)
             require(
                 logicalCallCap == 1 &&
@@ -162,6 +170,8 @@ internal class PreS5VertexActivationReader(
                 packetSha256 = packetSha256,
                 nonceSha256 = sha256(text(values, "nonce").toByteArray(Charsets.UTF_8)),
                 authenticationMode = text(values, "authenticationMode"),
+                projectId = projectId,
+                modelId = modelId,
                 requestId = text(values, "requestId"),
                 scopeClaimId = text(values, "scopeClaimId"),
                 questionFingerprintHmac = text(values, "questionFingerprintHmac"),
@@ -300,12 +310,9 @@ internal class PreS5VertexActivationReader(
         const val CONTROL_DIRECTORY = "control"
         val PACKET_FILE: Path = Path.of("pre-s5-vertex-activation.json")
         const val ORIGIN = "https://aiplatform.googleapis.com"
-        const val ENDPOINT =
-            "POST /v1/publishers/google/models/gemini-3.5-flash:generateContent?key={VERTEX_API_KEY}"
-        const val AUTH_ORIGIN = "https://aiplatform.googleapis.com"
-        const val AUTH_ENDPOINT = "QUERY_PARAMETER:key"
-        const val AUTHENTICATION_MODE = "VERTEX_EXPRESS_API_KEY"
-        const val MODEL_ID = "gemini-3.5-flash"
+        const val AUTH_ORIGIN = "https://oauth2.googleapis.com"
+        const val AUTH_ENDPOINT = "POST /token"
+        const val AUTHENTICATION_MODE = "SERVICE_ACCOUNT_OAUTH"
         val PACKET_FIELDS =
             setOf(
                 "contractId",
@@ -315,6 +322,7 @@ internal class PreS5VertexActivationReader(
                 "endpoint",
                 "authOrigin",
                 "authEndpoint",
+                "projectId",
                 "requestId",
                 "scopeClaimId",
                 "questionFingerprintHmac",
@@ -325,7 +333,7 @@ internal class PreS5VertexActivationReader(
                 "treeDigest",
                 "ciDigest",
                 "securityDigest",
-                "apiKeySecurityEvidenceSha256",
+                "serviceAccountSecurityEvidenceSha256",
                 "dataGovernanceStateEvidenceSha256",
                 "abuseMonitoringStateEvidenceSha256",
                 "modelAvailabilityEvidenceSha256",
@@ -353,7 +361,7 @@ internal class PreS5VertexActivationReader(
                 "treeDigest",
                 "ciDigest",
                 "securityDigest",
-                "apiKeySecurityEvidenceSha256",
+                "serviceAccountSecurityEvidenceSha256",
                 "dataGovernanceStateEvidenceSha256",
                 "abuseMonitoringStateEvidenceSha256",
                 "modelAvailabilityEvidenceSha256",
@@ -373,6 +381,8 @@ internal class PreS5VertexActivationReader(
                 PosixFilePermission.OWNER_WRITE,
             )
         val SHA256 = Regex("^[0-9a-f]{64}$")
+        val PROJECT_ID = Regex("^[a-z][a-z0-9-]{4,62}[a-z0-9]$")
+        val MODEL_ID = Regex("^[a-z][a-z0-9.-]{2,127}$")
         val REQUEST_ID = Regex("^req_[A-Za-z0-9_-]{12,96}$")
         val SCOPE_CLAIM_ID = Regex("^rvs_[0-9a-f]{32}$")
         val CONSENT_EVENT_ID = Regex("^rce_[A-Za-z0-9_-]{12,96}$")

@@ -7,13 +7,14 @@ import org.springframework.validation.annotation.Validated
 import java.nio.file.Path
 
 /**
- * Vertex는 explicit local packet이 있을 때만 켜진다. 이 설정은 credential/API key를 보관하지 않으며,
- * current repository/CI/security digest를 packet과 대조할 public binding만 제공한다.
+ * Vertex는 explicit local packet이 있을 때만 켜진다. credential을 보관하지 않으며, 환경에서 선택한
+ * publisher model과 current repository/CI/security digest를 packet과 대조할 public binding만 제공한다.
  */
 @ConfigurationProperties("app.rag-v2.vertex")
 @Validated
 data class RagV2VertexProperties(
     var enabled: Boolean = false,
+    var modelId: String = "gemini-3.5-flash",
     var localRoot: String = "",
     var headCommit: String = "",
     var treeDigest: String = "",
@@ -31,6 +32,7 @@ data class RagV2VertexProperties(
         require(root.isAbsolute && root.normalize() == root) {
             "Vertex activation root must be an absolute normalized local path."
         }
+        require(MODEL_ID.matches(modelId)) { "Vertex publisher model ID is invalid." }
         require(HEAD_COMMIT.matches(headCommit)) { "Vertex activation HEAD binding is invalid." }
         require(SHA256.matches(treeDigest)) { "Vertex activation tree binding is invalid." }
         require(SHA256.matches(ciDigest)) { "Vertex activation CI binding is invalid." }
@@ -41,5 +43,6 @@ data class RagV2VertexProperties(
     companion object {
         val HEAD_COMMIT = Regex("^[0-9a-f]{40,64}$")
         val SHA256 = Regex("^[0-9a-f]{64}$")
+        val MODEL_ID = Regex("^[a-z][a-z0-9.-]{2,127}$")
     }
 }

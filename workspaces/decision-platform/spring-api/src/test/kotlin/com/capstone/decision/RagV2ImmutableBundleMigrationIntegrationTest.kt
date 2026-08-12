@@ -316,7 +316,7 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
     }
 
     @Test
-    fun `Vertex API-key reservation binds current v2 grant owner scope question and one generation attempt`() {
+    fun `Vertex service-account reservation binds current grant owner scope question and two one-shot attempts`() {
         seedEvaluatedPublicComponents()
         prepareVertexPublicEvidence()
         callLong(
@@ -347,8 +347,8 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
             from reserve_rag_v2_immutable_vertex_usage(
               '$usageEventId', 'usr_demo_user', '$requestId', '$scopeClaimId', repeat('d', 64),
               'CONCISE', '$grantEventId', repeat('a', 64), repeat('b', 64), repeat('e', 64), repeat('f', 64),
-              clock_timestamp() + interval '2 minutes', 2000, 100, 1024, 100000, 10, 20, 0, 1,
-              'VERTEX_EXPRESS_API_KEY', $evidenceManifest
+              clock_timestamp() + interval '2 minutes', 2000, 100, 1024, 100000, 10, 20, 1, 1,
+              'SERVICE_ACCOUNT_OAUTH', $evidenceManifest
             )
             """.trimIndent()
         assertEquals(usageEventId, callAsAppWithActor("usr_demo_user", reservation))
@@ -377,6 +377,13 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
             "",
             callAsAppWithActor(
                 "usr_demo_user",
+                "select claim_rag_v2_immutable_vertex_token_attempt('$usageEventId', 'usr_demo_user')",
+            ),
+        )
+        assertEquals(
+            "",
+            callAsAppWithActor(
+                "usr_demo_user",
                 "select claim_rag_v2_immutable_vertex_generate_content_attempt('$usageEventId', 'usr_demo_user')",
             ),
         )
@@ -390,7 +397,7 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
 
         adminConnection().use { connection ->
             assertEquals(
-                "0",
+                "1",
                 queryString(
                     connection,
                     "select physical_token_call_count::text from rag_v2_immutable_vertex_usage_outcomes where usage_event_id = '$usageEventId'",
@@ -405,6 +412,13 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
             )
             assertFalse(hasTablePrivilege(connection, "decision_app", "rag_v2_immutable_vertex_usage_reservations", "SELECT"))
             assertFalse(hasTablePrivilege(connection, "decision_app", "rag_v2_immutable_vertex_usage_token_attempts", "INSERT"))
+            assertTrue(
+                hasFunctionPrivilege(
+                    connection,
+                    "decision_app",
+                    "claim_rag_v2_immutable_vertex_token_attempt(text,text)",
+                ),
+            )
             assertTrue(
                 hasFunctionPrivilege(
                     connection,
@@ -512,7 +526,7 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
     }
 
     @Test
-    fun `Vertex API-key generate claim rejects post reservation revoke scope expiry or public pointer change without an attempt`() {
+    fun `Vertex OAuth token claim rejects post reservation revoke scope expiry or public pointer change without an attempt`() {
         seedEvaluatedPublicComponents()
         prepareVertexPublicEvidence()
         callLong(
@@ -555,7 +569,7 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
             policyDigest = "e".repeat(64),
             processorSetDigest = "f".repeat(64),
         )
-        assertVertexGenerateClaimRejectedWithoutAttempt(revokedUsageEventId)
+        assertVertexTokenClaimRejectedWithoutAttempt(revokedUsageEventId)
 
         val secondGrant = "rce_vertex_toctou_grant_002"
         recordConsentV2(
@@ -589,7 +603,7 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
                 )
             }
         }
-        assertVertexGenerateClaimRejectedWithoutAttempt(expiredUsageEventId)
+        assertVertexTokenClaimRejectedWithoutAttempt(expiredUsageEventId)
 
         val thirdGrant = "rce_vertex_toctou_grant_003"
         recordConsentV2(
@@ -622,11 +636,11 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
             )
             """.trimIndent(),
         )
-        assertVertexGenerateClaimRejectedWithoutAttempt(pointerUsageEventId)
+        assertVertexTokenClaimRejectedWithoutAttempt(pointerUsageEventId)
     }
 
     @Test
-    fun `Vertex generate claim rechecks a revoke after API-key reservation without appending a generation attempt`() {
+    fun `Vertex generate claim rechecks a revoke after OAuth token attempt without appending a generation attempt`() {
         seedEvaluatedPublicComponents()
         prepareVertexPublicEvidence()
         callLong(
@@ -659,6 +673,13 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
             nonceCharacter = 'a',
             evidenceManifest = publicVertexEvidenceManifest(),
         )
+        assertEquals(
+            "",
+            callAsAppWithActor(
+                "usr_demo_user",
+                "select claim_rag_v2_immutable_vertex_token_attempt('$usageEventId', 'usr_demo_user')",
+            ),
+        )
         recordConsentV2(
             ownerUserId = "usr_demo_user",
             internalEventId = "cns_v2_${"6".repeat(32)}",
@@ -677,7 +698,7 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
         assertEquals("55000", rejected.sqlState)
         adminConnection().use { connection ->
             assertEquals(
-                "0",
+                "1",
                 queryString(
                     connection,
                     "select count(*)::text from rag_v2_immutable_vertex_usage_token_attempts where usage_event_id = '$usageEventId'",
@@ -694,7 +715,7 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
     }
 
     @Test
-    fun `Vertex API-key generate claim rejects owner evidence deleted after reservation without an attempt`() {
+    fun `Vertex OAuth token claim rejects owner evidence deleted after reservation without an attempt`() {
         seedEvaluatedPublicComponents()
         prepareVertexPublicEvidence()
         callLong(
@@ -753,7 +774,7 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
                 'b',
             ),
         )
-        assertVertexGenerateClaimRejectedWithoutAttempt(usageEventId)
+        assertVertexTokenClaimRejectedWithoutAttempt(usageEventId)
     }
 
     @Test
@@ -2677,19 +2698,19 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
                   '$usageEventId', 'usr_demo_user', '$requestId', '$scopeClaimId', repeat('d', 64),
                   'CONCISE', '$consentEventId', repeat('$packetCharacter', 64), repeat('$nonceCharacter', 64),
                   repeat('e', 64), repeat('f', 64), clock_timestamp() + interval '2 minutes',
-                  2000, 100, 1024, 100000, 10, 20, 0, 1, 'VERTEX_EXPRESS_API_KEY', $evidenceManifest
+                  2000, 100, 1024, 100000, 10, 20, 1, 1, 'SERVICE_ACCOUNT_OAUTH', $evidenceManifest
                 )
                 """.trimIndent(),
             ),
         )
     }
 
-    private fun assertVertexGenerateClaimRejectedWithoutAttempt(usageEventId: String) {
+    private fun assertVertexTokenClaimRejectedWithoutAttempt(usageEventId: String) {
         val rejected =
             assertThrows<SQLException> {
                 callAsAppWithActor(
                     "usr_demo_user",
-                    "select claim_rag_v2_immutable_vertex_generate_content_attempt('$usageEventId', 'usr_demo_user')",
+                    "select claim_rag_v2_immutable_vertex_token_attempt('$usageEventId', 'usr_demo_user')",
                 )
             }
         assertEquals("55000", rejected.sqlState)
@@ -2698,7 +2719,7 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
                 "0",
                 queryString(
                     connection,
-                    "select count(*)::text from rag_v2_immutable_vertex_usage_generate_content_attempts where usage_event_id = '$usageEventId'",
+                    "select count(*)::text from rag_v2_immutable_vertex_usage_token_attempts where usage_event_id = '$usageEventId'",
                 ),
             )
         }

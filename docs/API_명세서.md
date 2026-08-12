@@ -1534,11 +1534,12 @@ ordered group 0)을 허용한다. 이 sentinel은 private retrieval을 의미하
 canonical text·chunk·embedding을 provider input에 포함하지 않는다. 실제 owner-private component는
 owner-bound consent와 non-empty generation을 계속 요구한다.
 
-Vertex candidate는 `VERTEX_API_KEY` 하나만 읽는 Vertex Express API-key-only route다. fixed origin과
-path는 `https://aiplatform.googleapis.com/v1/publishers/google/models/gemini-3.5-flash:generateContent`이고,
-key query parameter는 direct TLS request target에서만 구성하며 packet·DB·log·URI abstraction에는 남기지
-않는다. ADC/service-account, ambient credential, credential file 및 Gemini Developer API는 v2 runtime에서
-허용하지 않는다.
+Vertex candidate는 local root의 `secrets/pre-s5-vertex-service-account.json`만 읽는 service-account OAuth
+route다. token endpoint는 `https://oauth2.googleapis.com/token`, generation path는
+`https://aiplatform.googleapis.com/v1/projects/{projectId}/locations/global/publishers/google/models/{modelId}:generateContent`다.
+`modelId`는 `VERTEX_MODEL_ID`(기본 `gemini-3.5-flash`)로 선택하지만 project/model/path는 exact packet과
+일치해야 한다. token과 generation은 각각 physical cap 1, retry 0이며 credential/JWT/token/raw response는
+packet·DB·log에 남기지 않는다. ambient ADC, API key와 Gemini Developer API는 허용하지 않는다.
 
 #### 7.7.1 Pre-S5 v2 consent/ticket/Vertex-preparation control planes (offline-only)
 

@@ -15,7 +15,7 @@ class RagPreS5VoyageBatchMigrationContractTest {
     }
 
     @Test
-    fun `Voyage batch forward repair uses the dynamic next free Flyway version`() {
+    fun `Voyage batch forward repair keeps exact V54 through V56 versions after later migrations`() {
         val versions =
             Files.list(migrationDirectory).use { paths ->
                 paths
@@ -23,10 +23,11 @@ class RagPreS5VoyageBatchMigrationContractTest {
                     .map { migrationVersion(it) }
                     .toList()
             }
-        assertThat(migrationVersion(migrationPath)).isEqualTo(versions.max())
+        assertThat(migrationVersion(migrationPath)).isEqualTo(56)
         assertThat(versions.count { it == 54 }).isEqualTo(1)
         assertThat(versions.count { it == 55 }).isEqualTo(1)
         assertThat(versions.count { it == 56 }).isEqualTo(1)
+        assertThat(versions.count { it == 57 }).isEqualTo(1)
     }
 
     @Test

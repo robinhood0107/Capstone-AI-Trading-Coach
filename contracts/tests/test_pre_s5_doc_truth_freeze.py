@@ -172,7 +172,7 @@ class PreS5DocumentTruthFreezeTest(unittest.TestCase):
                 truth_freeze.REQUIRED_PUBLIC_MARKERS[relative],
             )
 
-    def test_active_vertex_route_is_api_key_only_in_the_public_truth_gate(self) -> None:
+    def test_active_vertex_route_is_service_account_oauth_in_the_public_truth_gate(self) -> None:
         for relative in (
             "AGENTS.md",
             "docs/README.md",
@@ -181,10 +181,10 @@ class PreS5DocumentTruthFreezeTest(unittest.TestCase):
             "contracts/README.md",
             "docs/RAG_외부_AI_처리_및_개인문서_동의.md",
         ):
-            self.assertIn("VERTEX_API_KEY", truth_freeze.REQUIRED_PUBLIC_MARKERS[relative])
+            self.assertIn("VERTEX_MODEL_ID", truth_freeze.REQUIRED_PUBLIC_MARKERS[relative])
 
         self.assertIn(
-            "Vertex candidate는 ADC/service-account",
+            "VERTEX_API_KEY",
             truth_freeze.FORBIDDEN_PUBLIC_MARKERS["docs/API_명세서.md"],
         )
 

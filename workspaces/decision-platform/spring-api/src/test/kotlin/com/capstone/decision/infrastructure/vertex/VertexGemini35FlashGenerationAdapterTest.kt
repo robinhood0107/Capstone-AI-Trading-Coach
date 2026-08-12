@@ -21,31 +21,34 @@ class VertexGemini35FlashGenerationAdapterTest {
     @Test
     fun `single generator uses fixed global generateContent without tools retries or raw artifacts`() {
         val activationReader = mockk<PreS5VertexActivationReader>()
-        val apiKeyProvider = mockk<PreS5VertexApiKeyProvider>()
+        val oauthProvider = mockk<PreS5VertexServiceAccountOAuthProvider>()
         val ledger = mockk<JdbcPreS5VertexUsageLedger>(relaxed = true)
         val request = slot<PreS5VertexHttpRequest>()
         val http = mockk<PreS5VertexHttpExecutor>()
         val activation = activation()
         val lease = lease("a")
+        val tokenAttempt = PreS5VertexTokenAttempt(lease)
         val generateContentAttempt = PreS5VertexGenerateContentAttempt(lease)
         var sentBody = ByteArray(0)
         every { activationReader.read() } returns activation
-        every { apiKeyProvider.acquire() } returns "AIzaSyVertexOnlyKey_1234567890".toByteArray(StandardCharsets.US_ASCII)
         every { ledger.reserve(any(), activation) } returns lease
+        every { ledger.claimTokenAttempt(lease) } returns tokenAttempt
+        every { oauthProvider.acquire(activation, tokenAttempt) } returns
+            PreS5VertexAccessToken("project-test-123", "ya29.vertex-token-test".toByteArray(StandardCharsets.US_ASCII))
         every { ledger.claimGenerateContentAttempt(lease) } returns generateContentAttempt
         every { http.execute(capture(request)) } answers {
             sentBody = request.captured.body.copyOf()
             successResponse()
         }
 
-        val result = adapter(activationReader, apiKeyProvider, ledger, http).generate(command())
+        val result = adapter(activationReader, oauthProvider, ledger, http).generate(command())
 
         assertThat(result.generationStatus).isEqualTo(RagGenerationStatus.ANSWERED)
         assertThat(result.answer).isEqualTo("The reference explains the model assumption.")
         assertThat(result.citationIds).containsExactly("cit_1")
         assertThat(request.captured.endpoint.toString())
             .isEqualTo(
-                "https://aiplatform.googleapis.com/v1/publishers/google/models/gemini-3.5-flash:generateContent",
+                "https://aiplatform.googleapis.com/v1/projects/project-test-123/locations/global/publishers/google/models/gemini-3.5-flash:generateContent",
             )
         val body = sentBody.toString(StandardCharsets.UTF_8)
         assertThat(body).contains("generationConfig", "candidateCount", "maxOutputTokens")
@@ -55,24 +58,26 @@ class VertexGemini35FlashGenerationAdapterTest {
         assertThat(payload["generationConfig"].properties().map { it.key })
             .containsExactly("candidateCount", "temperature", "maxOutputTokens")
         verify(exactly = 1) { ledger.reserve(any(), activation) }
+        verify(exactly = 1) { ledger.claimTokenAttempt(lease) }
+        verify(exactly = 1) { oauthProvider.acquire(activation, tokenAttempt) }
         verify(exactly = 1) { ledger.claimGenerateContentAttempt(lease) }
         verify(exactly = 1) { ledger.commit(lease, any()) }
         verify(exactly = 0) { ledger.markUnknownBilling(any()) }
     }
 
     @Test
-    fun `mismatched consent fails before API key or provider attempt is created`() {
+    fun `mismatched consent fails before OAuth or provider attempt is created`() {
         val activationReader = mockk<PreS5VertexActivationReader>()
-        val apiKeyProvider = mockk<PreS5VertexApiKeyProvider>(relaxed = true)
+        val oauthProvider = mockk<PreS5VertexServiceAccountOAuthProvider>(relaxed = true)
         val ledger = mockk<JdbcPreS5VertexUsageLedger>(relaxed = true)
         val http = mockk<PreS5VertexHttpExecutor>(relaxed = true)
         every { activationReader.read() } returns activation()
         val command = command().copy(consent = command().consent.copy(processorSetDigest = "c".repeat(64)))
 
-        val result = adapter(activationReader, apiKeyProvider, ledger, http).generate(command)
+        val result = adapter(activationReader, oauthProvider, ledger, http).generate(command)
 
         assertThat(result.generationStatus).isEqualTo(RagGenerationStatus.GENERATION_UNAVAILABLE)
-        verify(exactly = 0) { apiKeyProvider.acquire() }
+        verify(exactly = 0) { oauthProvider.acquire(any(), any()) }
         verify(exactly = 0) { ledger.reserve(any(), any()) }
         verify(exactly = 0) { http.execute(any()) }
     }
@@ -80,19 +85,22 @@ class VertexGemini35FlashGenerationAdapterTest {
     @Test
     fun `malformed generated JSON records sanitized known usage but never returns or persists an answer`() {
         val activationReader = mockk<PreS5VertexActivationReader>()
-        val apiKeyProvider = mockk<PreS5VertexApiKeyProvider>()
+        val oauthProvider = mockk<PreS5VertexServiceAccountOAuthProvider>()
         val ledger = mockk<JdbcPreS5VertexUsageLedger>(relaxed = true)
         val http = mockk<PreS5VertexHttpExecutor>()
         val activation = activation()
         val lease = lease("b")
+        val tokenAttempt = PreS5VertexTokenAttempt(lease)
         val generateContentAttempt = PreS5VertexGenerateContentAttempt(lease)
         every { activationReader.read() } returns activation
-        every { apiKeyProvider.acquire() } returns "AIzaSyVertexOnlyKey_1234567890".toByteArray(StandardCharsets.US_ASCII)
         every { ledger.reserve(any(), activation) } returns lease
+        every { ledger.claimTokenAttempt(lease) } returns tokenAttempt
+        every { oauthProvider.acquire(activation, tokenAttempt) } returns
+            PreS5VertexAccessToken("project-test-123", "ya29.vertex-token-test".toByteArray(StandardCharsets.US_ASCII))
         every { ledger.claimGenerateContentAttempt(lease) } returns generateContentAttempt
         every { http.execute(any()) } returns successResponse(generatedJson = "{not-json")
 
-        val result = adapter(activationReader, apiKeyProvider, ledger, http).generate(command())
+        val result = adapter(activationReader, oauthProvider, ledger, http).generate(command())
 
         assertThat(result.generationStatus).isEqualTo(RagGenerationStatus.GENERATION_UNAVAILABLE)
         assertThat(result.answer).isNull()
@@ -102,7 +110,7 @@ class VertexGemini35FlashGenerationAdapterTest {
 
     private fun adapter(
         activationReader: PreS5VertexActivationReader,
-        apiKeyProvider: PreS5VertexApiKeyProvider,
+        oauthProvider: PreS5VertexServiceAccountOAuthProvider,
         ledger: JdbcPreS5VertexUsageLedger,
         http: PreS5VertexHttpExecutor,
     ): VertexGemini35FlashGenerationAdapter =
@@ -117,7 +125,7 @@ class VertexGemini35FlashGenerationAdapterTest {
                     securityDigest = "4".repeat(64),
                 ),
             activationReader = activationReader,
-            apiKeyProvider = apiKeyProvider,
+            oauthProvider = oauthProvider,
             usageLedger = ledger,
             httpExecutor = http,
         )
@@ -161,7 +169,9 @@ class VertexGemini35FlashGenerationAdapterTest {
         PreS5VertexActivation(
             packetSha256 = "d".repeat(64),
             nonceSha256 = "e".repeat(64),
-            authenticationMode = "VERTEX_EXPRESS_API_KEY",
+            authenticationMode = "SERVICE_ACCOUNT_OAUTH",
+            projectId = "project-test-123",
+            modelId = "gemini-3.5-flash",
             requestId = "req_vertex_transport_0000001",
             scopeClaimId = "rvs_${"a".repeat(32)}",
             questionFingerprintHmac = "f".repeat(64),
@@ -176,7 +186,7 @@ class VertexGemini35FlashGenerationAdapterTest {
             costCapMicrousd = 200_000,
             inputMicrousdPerToken = 10,
             outputMicrousdPerToken = 20,
-            tokenPhysicalCallCap = 0,
+            tokenPhysicalCallCap = 1,
             generateContentPhysicalCallCap = 1,
         )
 

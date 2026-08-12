@@ -10,7 +10,7 @@ import java.time.Duration
 
 class PreS5VertexOneShotHttpsTransportTest {
     @Test
-    fun `one shot transport writes the API key only in the direct Vertex request target`() {
+    fun `one shot transport writes the OAuth token only in the direct Authorization header`() {
         val channel =
             RecordingChannel(
                 "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nContent-Type: application/json\r\n\r\n{}"
@@ -28,9 +28,9 @@ class PreS5VertexOneShotHttpsTransportTest {
         assertThat(factory.openCount).isEqualTo(1)
         assertThat(channel.writeCount).isEqualTo(1)
         assertThat(channel.written.toString(StandardCharsets.US_ASCII)).contains(
-            "POST /v1/publishers/google/models/gemini-3.5-flash:generateContent?key=AIzaSyVertexOnlyKey_1234567890 HTTP/1.1\r\nHost: aiplatform.googleapis.com\r\nConnection: close\r\nContent-Length: 7\r\n",
+            "POST /v1/projects/project-test-123/locations/global/publishers/google/models/gemini-3.5-flash:generateContent HTTP/1.1\r\nHost: aiplatform.googleapis.com\r\nConnection: close\r\nContent-Length: 7\r\nAuthorization: Bearer ya29.vertex-token-test\r\n",
         )
-        assertThat(channel.written.toString(StandardCharsets.US_ASCII)).doesNotContain("Authorization:")
+        assertThat(channel.written.toString(StandardCharsets.US_ASCII)).doesNotContain("?key=")
         assertThat(channel.closed).isTrue()
     }
 
@@ -50,8 +50,12 @@ class PreS5VertexOneShotHttpsTransportTest {
 
     private fun request(): PreS5VertexOneShotHttpsRequest =
         PreS5VertexOneShotHttpsRequest(
-            endpoint = URI.create("https://aiplatform.googleapis.com/v1/publishers/google/models/gemini-3.5-flash:generateContent"),
-            apiKey = "AIzaSyVertexOnlyKey_1234567890".toByteArray(StandardCharsets.US_ASCII),
+            endpoint =
+                URI.create(
+                    "https://aiplatform.googleapis.com/v1/projects/project-test-123/locations/global/" +
+                        "publishers/google/models/gemini-3.5-flash:generateContent",
+                ),
+            bearerToken = "ya29.vertex-token-test".toByteArray(StandardCharsets.US_ASCII),
             headers = listOf("Content-Type" to "application/json"),
             body = "a=b&c=d".toByteArray(StandardCharsets.US_ASCII),
             timeout = Duration.ofSeconds(1),

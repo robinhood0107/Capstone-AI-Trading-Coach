@@ -882,10 +882,9 @@ def _parse_response(
     if parse_failed:
         # Parsing exception이 raw body를 __cause__/__context__로 보존하지 않게 except 밖에서 raise한다.
         raise PreS5VoyageTransportError("PRE_S5_VOYAGE_RESPONSE_INVALID")
-    if not isinstance(decoded, dict) or set(decoded) != {"chunker_version", "data", "model", "usage"}:
+    if not _contextualized_response_envelope_is_valid(decoded, model=_VOYAGE_MODEL):
         raise PreS5VoyageTransportError("PRE_S5_VOYAGE_RESPONSE_INVALID")
-    if decoded.get("model") != _VOYAGE_MODEL or not isinstance(decoded.get("chunker_version"), str):
-        raise PreS5VoyageTransportError("PRE_S5_VOYAGE_RESPONSE_INVALID")
+    assert isinstance(decoded, dict)
     total_tokens = _validated_total_tokens(decoded.get("usage"), token_cap=activation.token_cap)
     group_data = decoded.get("data")
     if not isinstance(group_data, list) or len(group_data) != len(groups):
@@ -905,14 +904,13 @@ def _parse_response(
         for chunk_index, (expected_chunk, received_chunk) in enumerate(
             zip(expected_group.chunks, chunk_data, strict=True)
         ):
-            if (
-                not isinstance(received_chunk, dict)
-                or set(received_chunk) != {"embedding", "index", "text"}
-                or received_chunk.get("index") != chunk_index
-                or type(received_chunk.get("index")) is not int
-                or received_chunk.get("text") != expected_chunk.canonical_text
+            if not _contextualized_response_item_is_valid(
+                received_chunk,
+                expected_index=chunk_index,
+                expected_text=expected_chunk.canonical_text,
             ):
                 raise PreS5VoyageTransportError("PRE_S5_VOYAGE_RESPONSE_INVALID")
+            assert isinstance(received_chunk, dict)
             vectors.append(_vector_from_response(received_chunk.get("embedding")))
     if not vectors:
         raise PreS5VoyageTransportError("PRE_S5_VOYAGE_RESPONSE_INVALID")
@@ -934,6 +932,46 @@ def _validated_total_tokens(value: object, *, token_cap: int) -> int:
     ):
         raise PreS5VoyageTransportError("PRE_S5_VOYAGE_RESPONSE_INVALID")
     return total_tokens
+
+
+def _contextualized_response_envelope_is_valid(value: object, *, model: str) -> bool:
+    """공식 SDK처럼 pre-chunked 응답의 chunker_version 생략 또는 null을 허용한다.
+
+    data/model/usage 외 임의 field는 계속 거부하며, chunker_version이 존재하면 빈 문자열이나
+    다른 타입은 받지 않아 응답 경계를 넓히지 않는다.
+    """
+
+    if not isinstance(value, dict):
+        return False
+    keys = set(value)
+    if keys not in ({"data", "model", "usage"}, {"chunker_version", "data", "model", "usage"}):
+        return False
+    chunker_version = value.get("chunker_version")
+    return value.get("model") == model and (
+        "chunker_version" not in value
+        or chunker_version is None
+        or (isinstance(chunker_version, str) and bool(chunker_version))
+    )
+
+
+def _contextualized_response_item_is_valid(
+    value: object,
+    *,
+    expected_index: int,
+    expected_text: str,
+) -> bool:
+    """pre-chunked chunk text는 optional이지만, 반환되면 요청 text와 정확히 결속한다."""
+
+    if not isinstance(value, dict):
+        return False
+    keys = set(value)
+    if keys not in ({"embedding", "index"}, {"embedding", "index", "text"}):
+        return False
+    return (
+        type(value.get("index")) is int
+        and value.get("index") == expected_index
+        and ("text" not in value or value.get("text") == expected_text)
+    )
 
 
 def _vector_from_response(value: object) -> NDArray[np.float32]:

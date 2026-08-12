@@ -23,6 +23,8 @@ from app.rag.pre_s5_voyage_transport import (
     PreS5VoyageHttpRequest,
     PreS5VoyageHttpResponse,
     PreS5VoyageHttpSender,
+    _contextualized_response_envelope_is_valid,
+    _contextualized_response_item_is_valid,
 )
 
 _ORIGIN = "https://api.voyageai.com"
@@ -294,9 +296,8 @@ def _parse_response(
             "PRE_S5_VOYAGE_EVALUATION_BATCH_RESPONSE"
         ) from None
     if (
-        not isinstance(decoded, dict)
-        or set(decoded) != {"chunker_version", "data", "model", "usage"}
-        or decoded.get("model") != _MODEL
+        not _contextualized_response_envelope_is_valid(decoded, model=_MODEL)
+        or not isinstance(decoded, dict)
         or not isinstance(decoded.get("data"), list)
         or len(decoded["data"]) != len(questions)
     ):
@@ -316,15 +317,15 @@ def _parse_response(
                 "PRE_S5_VOYAGE_EVALUATION_BATCH_RESPONSE"
             )
         item = outer["data"][0]
-        if (
-            not isinstance(item, dict)
-            or set(item) != {"embedding", "index", "text"}
-            or item.get("index") != 0
-            or item.get("text") != question
+        if not _contextualized_response_item_is_valid(
+            item,
+            expected_index=0,
+            expected_text=question,
         ):
             raise PreS5VoyageEvaluationBatchTransportError(
                 "PRE_S5_VOYAGE_EVALUATION_BATCH_RESPONSE"
             )
+        assert isinstance(item, dict)
         vectors.append(_unit_vector(item.get("embedding")))
     usage = decoded.get("usage")
     total_tokens = (

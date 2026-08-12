@@ -22,7 +22,9 @@ class PreS5VertexActivationReaderTest {
 
         val activation = PreS5VertexActivationReader(fixture.properties, Clock.fixed(now, ZoneOffset.UTC)).read()
 
-        assertThat(activation.authenticationMode).isEqualTo("VERTEX_EXPRESS_API_KEY")
+        assertThat(activation.authenticationMode).isEqualTo("SERVICE_ACCOUNT_OAUTH")
+        assertThat(activation.projectId).isEqualTo("project-test-123")
+        assertThat(activation.modelId).isEqualTo("gemini-3.5-flash")
         assertThat(activation.packetSha256).matches("[0-9a-f]{64}")
         assertThat(activation.nonceSha256).matches("[0-9a-f]{64}")
         assertThat(activation.toString()).doesNotContain("nonce-for-test")
@@ -37,9 +39,9 @@ class PreS5VertexActivationReaderTest {
         Files.writeString(
             fixture.packet,
             packetJson(now)
-                .replace("\"physicalCallCap\":1", "\"physicalCallCap\":3")
+                .replace("\"physicalCallCap\":2", "\"physicalCallCap\":3")
                 .replace(
-                    "\"POST /v1/publishers/google/models/gemini-3.5-flash:generateContent?key={VERTEX_API_KEY}\"",
+                    "\"POST /v1/projects/project-test-123/locations/global/publishers/google/models/gemini-3.5-flash:generateContent\"",
                     "\"POST /v1/anything\"",
                 ),
         )
@@ -76,8 +78,8 @@ class PreS5VertexActivationReaderTest {
         Files.writeString(
             fixture.packet,
             packetJson(now).replace(
-                "\"authenticationMode\":\"VERTEX_EXPRESS_API_KEY\"",
-                "\"authenticationMode\":\"VERTEX_EXPRESS_API_KEY\",\"ownerUserId\":\"usr_demo_user\"",
+                "\"authenticationMode\":\"SERVICE_ACCOUNT_OAUTH\"",
+                "\"authenticationMode\":\"SERVICE_ACCOUNT_OAUTH\",\"ownerUserId\":\"usr_demo_user\"",
             ),
         )
         Files.setPosixFilePermissions(fixture.packet, FILE_PERMISSIONS)
@@ -89,7 +91,27 @@ class PreS5VertexActivationReaderTest {
             .isEqualTo("PRE_S5_VERTEX_PACKET_INVALID")
     }
 
-    private fun fixture(now: Instant): Fixture {
+    @Test
+    fun `configured publisher model is accepted only when the packet endpoint binds the same model`() {
+        val now = Instant.parse("2026-08-03T12:00:00Z")
+        val fixture = fixture(now, modelId = "gemini-2.5-flash", configuredModelId = "gemini-2.5-flash")
+
+        val activation = PreS5VertexActivationReader(fixture.properties, Clock.fixed(now, ZoneOffset.UTC)).read()
+
+        assertThat(activation.modelId).isEqualTo("gemini-2.5-flash")
+        fixture.properties.modelId = "gemini-3.5-flash"
+        assertThatThrownBy {
+            PreS5VertexActivationReader(fixture.properties, Clock.fixed(now, ZoneOffset.UTC)).read()
+        }.isInstanceOf(PreS5VertexActivationException::class.java)
+            .extracting("code")
+            .isEqualTo("PRE_S5_VERTEX_PACKET_INVALID")
+    }
+
+    private fun fixture(
+        now: Instant,
+        modelId: String = "gemini-3.5-flash",
+        configuredModelId: String = modelId,
+    ): Fixture {
         val root = temporaryDirectory.resolve("local-root")
         val control = root.resolve("control")
         Files.createDirectory(root)
@@ -97,13 +119,14 @@ class PreS5VertexActivationReaderTest {
         Files.setPosixFilePermissions(root, DIRECTORY_PERMISSIONS)
         Files.setPosixFilePermissions(control, DIRECTORY_PERMISSIONS)
         val packet = control.resolve("pre-s5-vertex-activation.json")
-        Files.writeString(packet, packetJson(now))
+        Files.writeString(packet, packetJson(now, modelId))
         Files.setPosixFilePermissions(packet, FILE_PERMISSIONS)
         return Fixture(
             packet = packet,
             properties =
                 RagV2VertexProperties(
                     enabled = true,
+                    modelId = configuredModelId,
                     localRoot = root.toString(),
                     headCommit = "1".repeat(40),
                     treeDigest = "2".repeat(64),
@@ -113,27 +136,31 @@ class PreS5VertexActivationReaderTest {
         )
     }
 
-    private fun packetJson(now: Instant): String =
+    private fun packetJson(
+        now: Instant,
+        modelId: String = "gemini-3.5-flash",
+    ): String =
         """
         {
-          "contractId":"pre-s5-vertex-activation/v2",
+          "contractId":"pre-s5-vertex-activation/v3",
           "provider":"VERTEX_AI",
-          "authenticationMode":"VERTEX_EXPRESS_API_KEY",
+          "authenticationMode":"SERVICE_ACCOUNT_OAUTH",
           "origin":"https://aiplatform.googleapis.com",
-          "endpoint":"POST /v1/publishers/google/models/gemini-3.5-flash:generateContent?key={VERTEX_API_KEY}",
-          "authOrigin":"https://aiplatform.googleapis.com",
-          "authEndpoint":"QUERY_PARAMETER:key",
+          "endpoint":"POST /v1/projects/project-test-123/locations/global/publishers/google/models/$modelId:generateContent",
+          "authOrigin":"https://oauth2.googleapis.com",
+          "authEndpoint":"POST /token",
+          "projectId":"project-test-123",
           "requestId":"req_vertex_packet_0000001",
           "scopeClaimId":"rvs_${"a".repeat(32)}",
           "questionFingerprintHmac":"${"f".repeat(64)}",
           "answerMode":"CONCISE",
           "consentEventId":"rce_vertex_consent_0001",
-          "modelId":"gemini-3.5-flash",
+          "modelId":"$modelId",
           "headCommit":"${"1".repeat(40)}",
           "treeDigest":"${"2".repeat(64)}",
           "ciDigest":"${"3".repeat(64)}",
           "securityDigest":"${"4".repeat(64)}",
-          "apiKeySecurityEvidenceSha256":"${"5".repeat(64)}",
+          "serviceAccountSecurityEvidenceSha256":"${"5".repeat(64)}",
           "dataGovernanceStateEvidenceSha256":"${"6".repeat(64)}",
           "abuseMonitoringStateEvidenceSha256":"${"7".repeat(64)}",
           "modelAvailabilityEvidenceSha256":"${"8".repeat(64)}",
@@ -142,8 +169,8 @@ class PreS5VertexActivationReaderTest {
           "issuedAt":"${now.minusSeconds(30)}",
           "expiresAt":"${now.plusSeconds(120)}",
           "logicalCallCap":1,
-          "physicalCallCap":1,
-          "tokenPhysicalCallCap":0,
+          "physicalCallCap":2,
+          "tokenPhysicalCallCap":1,
           "generateContentPhysicalCallCap":1,
           "inputTokenCap":13000,
           "outputTokenCap":200,

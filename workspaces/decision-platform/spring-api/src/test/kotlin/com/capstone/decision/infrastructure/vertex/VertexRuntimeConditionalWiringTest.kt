@@ -13,23 +13,30 @@ class VertexRuntimeConditionalWiringTest {
             .withUserConfiguration(VertexRuntimeConfiguration::class.java)
 
     @Test
-    fun `disabled Vertex excludes API key provider from the retrieval-only process`() {
+    fun `disabled Vertex excludes service-account OAuth providers from the retrieval-only process`() {
         contextRunner.run { context ->
-            assertThat(context.getBeansOfType(PreS5VertexApiKeyProvider::class.java)).isEmpty()
+            assertThat(context.getBeansOfType(PreS5VertexServiceAccountCredentialProvider::class.java)).isEmpty()
+            assertThat(context.getBeansOfType(PreS5VertexServiceAccountOAuthProvider::class.java)).isEmpty()
         }
     }
 
     @Test
-    fun `enabled Vertex injects the API-key-only production constructor`() {
+    fun `enabled Vertex injects the service-account OAuth production boundary`() {
         contextRunner
             .withPropertyValues("app.rag-v2.vertex.enabled=true")
             .run { context ->
-                assertThat(context.getBeansOfType(PreS5VertexApiKeyProvider::class.java)).hasSize(1)
+                assertThat(context.getBeansOfType(PreS5VertexServiceAccountCredentialProvider::class.java)).hasSize(1)
+                assertThat(context.getBeansOfType(PreS5VertexOAuthTokenExecutor::class.java)).hasSize(1)
+                assertThat(context.getBeansOfType(PreS5VertexServiceAccountOAuthProvider::class.java)).hasSize(1)
             }
     }
 
     @TestConfiguration(proxyBeanMethods = false)
     @EnableConfigurationProperties(RagV2VertexProperties::class)
-    @Import(PreS5VertexApiKeyProvider::class)
+    @Import(
+        PreS5VertexServiceAccountCredentialProvider::class,
+        JdkPreS5VertexOAuthTokenExecutor::class,
+        PreS5VertexServiceAccountOAuthProvider::class,
+    )
     internal class VertexRuntimeConfiguration
 }

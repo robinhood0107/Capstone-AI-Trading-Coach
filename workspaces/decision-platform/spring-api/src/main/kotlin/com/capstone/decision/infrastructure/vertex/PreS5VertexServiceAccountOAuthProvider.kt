@@ -1,0 +1,205 @@
+package com.capstone.decision.infrastructure.vertex
+
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
+import org.springframework.stereotype.Component
+import tools.jackson.core.StreamReadConstraints
+import tools.jackson.core.StreamReadFeature
+import tools.jackson.core.json.JsonFactory
+import tools.jackson.databind.json.JsonMapper
+import java.net.URI
+import java.nio.charset.StandardCharsets
+import java.security.Signature
+import java.time.Clock
+import java.time.Duration
+import java.time.Instant
+import java.util.Base64
+
+internal data class PreS5VertexAccessToken(
+    val projectId: String,
+    val value: ByteArray,
+)
+
+internal data class PreS5VertexOAuthTokenRequest(
+    val endpoint: URI,
+    val body: ByteArray,
+    val timeout: Duration,
+    val expiresAt: Instant,
+    val attempt: PreS5VertexTokenAttempt,
+)
+
+internal data class PreS5VertexOAuthTokenResponse(
+    val statusCode: Int,
+    val body: ByteArray,
+)
+
+internal interface PreS5VertexOAuthTokenExecutor {
+    fun execute(request: PreS5VertexOAuthTokenRequest): PreS5VertexOAuthTokenResponse
+}
+
+/** OAuth token endpoint도 direct TLS 한 번만 사용하며 redirect, proxy, retry를 제공하지 않는다. */
+@Component
+@ConditionalOnProperty(name = ["app.rag-v2.vertex.enabled"], havingValue = "true")
+internal class JdkPreS5VertexOAuthTokenExecutor(
+    private val clock: Clock = Clock.systemUTC(),
+    private val transport: PreS5VertexOneShotHttpsTransport = PreS5VertexOneShotHttpsTransport(),
+) : PreS5VertexOAuthTokenExecutor {
+    override fun execute(request: PreS5VertexOAuthTokenRequest): PreS5VertexOAuthTokenResponse {
+        try {
+            require(Instant.now(clock).isBefore(request.expiresAt))
+            require(request.attempt.lease.expiresAt == request.expiresAt)
+            require(request.endpoint == TOKEN_ENDPOINT)
+            require(request.body.size in 1..MAX_TOKEN_REQUEST_BYTES)
+            val response =
+                transport.execute(
+                    PreS5VertexOneShotHttpsRequest(
+                        endpoint = request.endpoint,
+                        headers = listOf("Content-Type" to "application/x-www-form-urlencoded"),
+                        body = request.body,
+                        timeout = request.timeout,
+                    ),
+                    MAX_TOKEN_RESPONSE_BYTES,
+                )
+            return PreS5VertexOAuthTokenResponse(response.statusCode, response.body)
+        } catch (error: PreS5VertexOneShotHttpsTransportException) {
+            throw PreS5VertexOAuthException()
+        } catch (_: Exception) {
+            throw PreS5VertexOAuthException()
+        } finally {
+            request.body.fill(0)
+        }
+    }
+
+    private companion object {
+        val TOKEN_ENDPOINT: URI = URI.create("https://oauth2.googleapis.com/token")
+        const val MAX_TOKEN_REQUEST_BYTES = 16 * 1024
+        const val MAX_TOKEN_RESPONSE_BYTES = 16 * 1024
+    }
+}
+
+/**
+ * service-account key로 cloud-platform scope JWT를 local 서명하고 access token을 정확히 한 번 교환한다.
+ * credential/JWT/token/provider response는 DB·receipt·log에 저장하지 않고 호출자의 byte buffer로만 전달한다.
+ */
+@Component
+@ConditionalOnProperty(name = ["app.rag-v2.vertex.enabled"], havingValue = "true")
+internal class PreS5VertexServiceAccountOAuthProvider(
+    private val credentialProvider: PreS5VertexServiceAccountCredentialProvider,
+    private val executor: PreS5VertexOAuthTokenExecutor,
+    private val clock: Clock = Clock.systemUTC(),
+) {
+    private val mapper =
+        JsonMapper
+            .builder(
+                JsonFactory
+                    .builder()
+                    .streamReadConstraints(
+                        StreamReadConstraints
+                            .builder()
+                            .maxNestingDepth(2)
+                            .maxDocumentLength(MAX_TOKEN_RESPONSE_BYTES.toLong())
+                            .maxTokenCount(16)
+                            .maxStringLength(MAX_TOKEN_BYTES)
+                            .maxNameLength(32)
+                            .build(),
+                    ).enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION)
+                    .build(),
+            ).build()
+
+    fun acquire(
+        activation: PreS5VertexActivation,
+        attempt: PreS5VertexTokenAttempt,
+    ): PreS5VertexAccessToken {
+        var assertion: ByteArray? = null
+        var requestBody: ByteArray? = null
+        var responseBody: ByteArray? = null
+        try {
+            require(activation.authenticationMode == "SERVICE_ACCOUNT_OAUTH")
+            require(activation.tokenPhysicalCallCap == 1 && activation.generateContentPhysicalCallCap == 1)
+            require(attempt.lease.expiresAt == activation.expiresAt)
+            val now = Instant.now(clock)
+            require(now.isBefore(activation.expiresAt))
+            val credential = credentialProvider.acquire()
+            require(credential.projectId == activation.projectId)
+            assertion = signedAssertion(credential, now, activation.expiresAt)
+            requestBody = GRANT_TYPE_PREFIX.toByteArray(StandardCharsets.US_ASCII) + assertion
+            val response =
+                executor.execute(
+                    PreS5VertexOAuthTokenRequest(
+                        endpoint = TOKEN_ENDPOINT,
+                        body = requestBody,
+                        timeout = Duration.ofSeconds(30),
+                        expiresAt = activation.expiresAt,
+                        attempt = attempt,
+                    ),
+                )
+            responseBody = response.body
+            require(response.statusCode in 200..299 && responseBody.size in 1..MAX_TOKEN_RESPONSE_BYTES)
+            val root = mapper.readTree(responseBody)
+            require(root != null && root.isObject)
+            require(root.properties().map { it.key }.toSet() == TOKEN_RESPONSE_FIELDS)
+            require(root["token_type"]?.stringValue() == "Bearer")
+            require(root["expires_in"]?.intValue() in 1..3_600)
+            val token = requireNotNull(root["access_token"]?.stringValue())
+            require(token.length in MIN_TOKEN_BYTES..MAX_TOKEN_BYTES && token.all { it.code in 0x21..0x7e })
+            return PreS5VertexAccessToken(credential.projectId, token.toByteArray(StandardCharsets.US_ASCII))
+        } catch (_: Exception) {
+            throw PreS5VertexOAuthException()
+        } finally {
+            assertion?.fill(0)
+            requestBody?.fill(0)
+            responseBody?.fill(0)
+        }
+    }
+
+    private fun signedAssertion(
+        credential: PreS5VertexServiceAccountCredential,
+        now: Instant,
+        packetExpiresAt: Instant,
+    ): ByteArray {
+        val expiry = minOf(now.plusSeconds(300), packetExpiresAt)
+        require(expiry.isAfter(now))
+        val header = mapper.writeValueAsBytes(mapOf("alg" to "RS256", "kid" to credential.privateKeyId, "typ" to "JWT"))
+        val claims =
+            mapper.writeValueAsBytes(
+                mapOf(
+                    "aud" to TOKEN_ENDPOINT.toString(),
+                    "exp" to expiry.epochSecond,
+                    "iat" to now.epochSecond,
+                    "iss" to credential.clientEmail,
+                    "scope" to CLOUD_PLATFORM_SCOPE,
+                ),
+            )
+        var signingInput: ByteArray? = null
+        var signature: ByteArray? = null
+        try {
+            val encoder = Base64.getUrlEncoder().withoutPadding()
+            val encodedHeader = encoder.encode(header)
+            val encodedClaims = encoder.encode(claims)
+            signingInput = encodedHeader + byteArrayOf('.'.code.toByte()) + encodedClaims
+            signature =
+                Signature.getInstance("SHA256withRSA").run {
+                    initSign(credential.privateKey)
+                    update(signingInput)
+                    sign()
+                }
+            return signingInput + byteArrayOf('.'.code.toByte()) + encoder.encode(signature)
+        } finally {
+            header.fill(0)
+            claims.fill(0)
+            signingInput?.fill(0)
+            signature?.fill(0)
+        }
+    }
+
+    private companion object {
+        val TOKEN_ENDPOINT: URI = URI.create("https://oauth2.googleapis.com/token")
+        const val CLOUD_PLATFORM_SCOPE = "https://www.googleapis.com/auth/cloud-platform"
+        const val GRANT_TYPE_PREFIX = "grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion="
+        const val MAX_TOKEN_RESPONSE_BYTES = 16 * 1024
+        const val MIN_TOKEN_BYTES = 16
+        const val MAX_TOKEN_BYTES = 8 * 1024
+        val TOKEN_RESPONSE_FIELDS = setOf("access_token", "expires_in", "token_type")
+    }
+}
+
+internal class PreS5VertexOAuthException : RuntimeException()

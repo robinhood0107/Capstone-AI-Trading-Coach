@@ -118,6 +118,7 @@ app:
     # Vertex는 explicit packet/rights/consent가 모두 충족될 때만 별도 single-generator로 열린다.
     vertex:
       enabled: ${RAG_V2_VERTEX_ENABLED:false}
+      model-id: ${VERTEX_MODEL_ID:gemini-3.5-flash}
       local-root: ${CAPSTONE_RAG_LOCAL_ROOT:}
       head-commit: ${RAG_V2_VERTEX_HEAD_COMMIT:}
       tree-digest: ${RAG_V2_VERTEX_TREE_DIGEST:}

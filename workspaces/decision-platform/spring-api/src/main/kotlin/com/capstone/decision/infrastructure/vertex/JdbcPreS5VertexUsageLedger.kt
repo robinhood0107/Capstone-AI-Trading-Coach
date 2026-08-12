@@ -27,8 +27,13 @@ internal data class PreS5VertexUsage(
     val totalTokenCount: Int,
 )
 
-/** packet/nonce와 question HMAC을 먼저 commit해 process crash 뒤 API-key 재호출을 막는다. */
+/** packet/nonce와 question HMAC을 먼저 commit해 process crash 뒤 generation 재호출을 막는다. */
 internal data class PreS5VertexGenerateContentAttempt(
+    val lease: PreS5VertexUsageLease,
+)
+
+/** service-account OAuth socket 직전에 append-only token attempt를 고정한다. */
+internal data class PreS5VertexTokenAttempt(
     val lease: PreS5VertexUsageLease,
 )
 
@@ -119,7 +124,12 @@ internal class JdbcPreS5VertexUsageLedger(
         }
     }
 
-    /** API-key mode에서도 generation socket 전에 append-only one-shot receipt가 있어야 한다. */
+    fun claimTokenAttempt(lease: PreS5VertexUsageLease): PreS5VertexTokenAttempt {
+        claim(lease, "SELECT claim_rag_v2_immutable_vertex_token_attempt(:usageEventId, :ownerUserId)")
+        return PreS5VertexTokenAttempt(lease)
+    }
+
+    /** OAuth 성공 뒤 generation socket 전에 별도 append-only one-shot receipt가 있어야 한다. */
     fun claimGenerateContentAttempt(lease: PreS5VertexUsageLease): PreS5VertexGenerateContentAttempt {
         claim(lease, "SELECT claim_rag_v2_immutable_vertex_generate_content_attempt(:usageEventId, :ownerUserId)")
         return PreS5VertexGenerateContentAttempt(lease)

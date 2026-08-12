@@ -55,6 +55,9 @@ from app.rag.rag_v2_public_voyage_evaluator import (
     evaluate_public_voyage_pair,
     evaluation_query_id_by_sha256,
 )
+from app.rag.rag_v2_public_voyage_evaluation_manifest import (
+    prepare_public_voyage_evaluation_manifests,
+)
 from app.rag.source_card_corpus import load_frozen_source_card_corpus
 
 
@@ -286,6 +289,48 @@ def test_oa112_local_manifest_is_registry_bound_complete_and_cannot_name_gold_so
     _write_private_json(local_root / "oa112-evaluation-manifest.v1.json", payload)
     with pytest.raises(PublicBgePairEvaluationError, match="PUBLIC_BGE_EVALUATION_QUERY"):
         load_oa112_evaluation_queries(approved_root=local_root, registry=registry)
+
+
+def test_voyage_evaluation_manifest_preparation_keeps_tracked_exact_fixture_immutable(
+    tmp_path: Path,
+) -> None:
+    local_root = tmp_path / "private"
+    local_root.mkdir(mode=0o700)
+    registry = _registry()
+    tracked_fixture = Path(__file__).resolve().parents[5] / "capstone-rag/eval/s4-2b-30-card-smoke.v1.json"
+    before = tracked_fixture.read_bytes()
+    expected_source_ids = tuple(
+        item["expectedSourceIds"][0] for item in json.loads(before)["queries"]
+    )
+
+    first = prepare_public_voyage_evaluation_manifests(
+        local_root=local_root,
+        exact30_source_card_corpus_manifest_sha256="e" * 64,
+        exact30_source_ids=expected_source_ids + tuple(f"src_extra_{index:02d}" for index in range(20)),
+        registry=registry,
+    )
+    second = prepare_public_voyage_evaluation_manifests(
+        local_root=local_root,
+        exact30_source_card_corpus_manifest_sha256="e" * 64,
+        exact30_source_ids=expected_source_ids + tuple(f"src_extra_{index:02d}" for index in range(20)),
+        registry=registry,
+    )
+
+    assert first == second
+    assert tracked_fixture.read_bytes() == before
+    input_root = local_root / "evaluation-inputs"
+    exact_queries, _ = load_exact30_evaluation_queries(
+        source_card_corpus_manifest_sha256="e" * 64,
+        fixture_path=input_root / "exact30-evaluation-manifest.v1.json",
+    )
+    oa_queries, _ = load_oa112_evaluation_queries(approved_root=input_root, registry=registry)
+    assert len(exact_queries) == 10
+    assert len(oa_queries) == 112
+    assert all(query.expected_source_id not in query.question for query in oa_queries)
+    assert all((input_root / name).stat().st_mode & 0o777 == 0o600 for name in (
+        "exact30-evaluation-manifest.v1.json",
+        "oa112-evaluation-manifest.v1.json",
+    ))
 
 
 def test_exact30_fixture_is_bound_to_the_frozen_source_card_manifest() -> None:

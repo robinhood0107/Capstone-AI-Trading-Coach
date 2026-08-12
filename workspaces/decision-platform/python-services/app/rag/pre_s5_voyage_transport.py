@@ -748,9 +748,7 @@ def _validate_activation_shape(activation: object) -> None:
         or activation.logical_call_cap != 1
         or activation.physical_call_cap != 1
         or type(activation.token_cap) is not int
-        or not 1 <= activation.token_cap <= (
-            110_000 if isinstance(activation, PreS5VoyageDocumentBatchActivation) else 120_000
-        )
+        or not 1 <= activation.token_cap <= 120_000
         or type(activation.byte_cap) is not int
         or not 1 <= activation.byte_cap <= (
             _DOCUMENT_BATCH_MAX_RESPONSE_BYTES

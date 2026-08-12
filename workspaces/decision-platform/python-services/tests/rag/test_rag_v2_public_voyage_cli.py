@@ -74,12 +74,18 @@ def test_public_voyage_cli_prepares_content_free_batch_plan_without_provider_con
         plan=plan,
     )
     stored: dict[str, object] = {}
+    evaluation_inputs: list[object] = []
 
     monkeypatch.delenv("VOYAGE_API_KEY", raising=False)
     monkeypatch.setattr(
         rag_v2_public_voyage_cli,
         "_prepare_public_base_batch_plan",
         lambda: preparation,
+    )
+    monkeypatch.setattr(
+        rag_v2_public_voyage_cli,
+        "_prepare_public_evaluation_inputs",
+        lambda value: evaluation_inputs.append(value),
     )
     monkeypatch.setattr(rag_v2_public_voyage_cli, "_local_root", lambda: Path("/safe/local-root"))
     monkeypatch.setattr(
@@ -90,6 +96,7 @@ def test_public_voyage_cli_prepares_content_free_batch_plan_without_provider_con
 
     assert rag_v2_public_voyage_cli.main(("prepare-public-base-batches",)) == 0
     assert stored["approved_root"] == Path("/safe/local-root")
+    assert evaluation_inputs == [preparation]
     stored_payload = json.loads(stored["payload"])
     assert stored_payload["providerPhysicalCallCount"] == 0
     assert stored_payload["checkpointExpectedSourceCount"] == 142

@@ -103,8 +103,9 @@
   batch 종류에만 최대 2시간이고 일반
   runtime query의 5분 TTL은 유지한다. 성공 document/query batch·source checkpoint를 재호출하지 않는다. 모든 batch와
   평가가 끝나기 전 CAS activation은 0이다. RAG v2 consent/import와 이 local batch runtime은
-  구현돼 있지만 provider activation은 아니다. `VERTEX_API_KEY` Vertex Express API-key-only
-  `gemini-3.5-flash`와 foreign-news(Finnhub personal-local/SEC/Fed/GDELT offline reference)는
+  구현돼 있지만 provider activation은 아니다. Vertex는 local-only 0600 service-account JSON으로 OAuth token을
+  한 번 교환하고 `VERTEX_MODEL_ID`(기본 `gemini-3.5-flash`)의 exact packet-bound model을 한 번 호출하며,
+  foreign-news(Finnhub personal-local/SEC/Fed/GDELT offline reference)는
   계속 hard-gated다. Optional 3과 Core 6의 KIS current-price·SEC EDGAR submissions/companyfacts·KRX
   KOSPI/KOSDAQ daily만 local one-shot executor를 가진다. canonical short-expiry packet, exact clean
   HEAD/tree, CI/security digest가 모두 없거나 drift하면 provider outbound는 0이며, KIS는 cached

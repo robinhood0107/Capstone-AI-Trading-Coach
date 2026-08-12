@@ -107,10 +107,11 @@ commit `8ca946072a18e398cd61f2ad0243b56d0350b1db`에 고정된 5분·1회 bootst
 첫 실패 뒤 남은 provider call은 0이다. CPU BGE public 재실행은
 `TERMINALLY_SUPERSEDED_NO_FURTHER_BGE_RUN`이며 activation 대안이 아니다. 전역 public base는
 `OWNER_PRIVATE` empty sentinel(`ownerScopeSha256=null`, ordered group 0)만 사용해 owner 원문을
-Voyage input에 포함하지 않는다. Vertex는 `VERTEX_API_KEY`만 읽는 Vertex Express API-key-only
-`gemini-3.5-flash` 단일 generator target이며 top-5와 질문당 `generateContent` 1회, fallback 0이다.
-ADC/service-account, ambient credential, credential file과 Gemini Developer API는 v2 runtime에서 허용하지 않는다.
-Voyage와 Vertex는 모두 `TARGET_NOT_ACTIVE`이며 provider physical call은 0이다. local DB는 V54에서
+Voyage input에 포함하지 않는다. Vertex는 local root 아래 0600 service-account JSON만 읽어 OAuth token을
+1회 교환하고 `VERTEX_MODEL_ID`(기본 `gemini-3.5-flash`)의 packet-bound global publisher model로
+top-5와 질문당 `generateContent` 1회만 실행하며 fallback은 0이다. ambient ADC, API key와 Gemini
+Developer API는 v2 runtime에서 허용하지 않는다.
+Voyage와 Vertex는 모두 `TARGET_NOT_ACTIVE`이며 provider physical call은 0이다. repo latest V57은
 부분 BGE generation을 삭제하지 않고 terminal supersession marker와 Voyage document/query batch vector ledger를
 보존한다.
 

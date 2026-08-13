@@ -100,7 +100,7 @@ class RagSourceRegistryMigrationIntegrationTest {
     fun `V61 to V62 base-only owner scope repair is forward only and preserves ACL`() {
         withPreparedDatabase("base_only_owner_scope_upgrade") { jdbcUrl ->
             flyway(jdbcUrl, target = "61").migrate()
-            flyway(jdbcUrl).migrate()
+            flyway(jdbcUrl, target = "62").migrate()
 
             adminConnection(jdbcUrl).use { connection ->
                 assertThat(queryString(connection, "select max(version::integer)::text from flyway_schema_history where success"))
@@ -111,6 +111,31 @@ class RagSourceRegistryMigrationIntegrationTest {
                         "select pg_get_functiondef('public.canonicalize_rag_v2_immutable_retrieval_citations(text,text,text,jsonb)'::regprocedure)",
                     ),
                 ).contains("rag_v2_immutable_empty_owner_scope_is_current")
+                assertThat(
+                    hasPublicFunctionExecute(
+                        connection,
+                        "rag_v2_immutable_empty_owner_scope_is_current(text,bigint,text,text,text)",
+                    ),
+                ).isFalse()
+            }
+        }
+    }
+
+    @Test
+    fun `V62 to V63 empty owner generation scope repair is forward only and preserves ACL`() {
+        withPreparedDatabase("empty_owner_generation_scope_upgrade") { jdbcUrl ->
+            flyway(jdbcUrl, target = "62").migrate()
+            flyway(jdbcUrl).migrate()
+
+            adminConnection(jdbcUrl).use { connection ->
+                assertThat(queryString(connection, "select max(version::integer)::text from flyway_schema_history where success"))
+                    .isEqualTo("63")
+                assertThat(
+                    queryString(
+                        connection,
+                        "select pg_get_functiondef('public.rag_v2_immutable_empty_owner_scope_is_current(text,bigint,text,text,text)'::regprocedure)",
+                    ),
+                ).contains("generation.expected_source_count = 0")
                 assertThat(
                     hasPublicFunctionExecute(
                         connection,
@@ -186,7 +211,7 @@ class RagSourceRegistryMigrationIntegrationTest {
                 assertThat(queryStrings(connection, normalizedTableQuery))
                     .containsAll(expectedTables)
                 assertThat(queryString(connection, "select max(version::integer) from flyway_schema_history where success"))
-                    .isEqualTo("62")
+                    .isEqualTo("63")
 
                 expectedTables.forEach { table ->
                     assertThat(

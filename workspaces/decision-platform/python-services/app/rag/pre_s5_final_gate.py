@@ -730,7 +730,7 @@ def verify_release_ledger(
         "VERTEX_SERVICE_ACCOUNT_OAUTH_GEMINI_3_5_FLASH_ONE_SHOT_VERIFIED": True,
         "VOYAGE_QUERY_USAGE": "COMMITTED",
     }
-    if not isinstance(markers, dict) or markers != required:
+    if not isinstance(markers, dict) or not _json_exact_equal(markers, required):
         raise FinalGateError("PRE_S5_RELEASE_LEDGER_INCOMPLETE")
     return required
 
@@ -808,7 +808,10 @@ def _verify_release_receipt(
 
 def _release_receipt_facts_are_valid(name: str, facts: Mapping[str, object]) -> bool:
     if name == "ownerBgeLocal":
-        return facts == {"documentCount": 1, "providerPhysicalCalls": 0, "residualRows": 0}
+        return _json_exact_equal(
+            facts,
+            {"documentCount": 1, "providerPhysicalCalls": 0, "residualRows": 0},
+        )
     if name == "kisMockV3":
         return (
             set(facts)
@@ -820,9 +823,11 @@ def _release_receipt_facts_are_valid(name: str, facts: Mapping[str, object]) -> 
                 "retryCount",
                 "tokenPhysicalCalls",
             }
+            and type(facts.get("brokeragePhysicalCalls")) is int
             and facts.get("brokeragePhysicalCalls") == 7
-            and facts.get("completedSteps")
-            == [
+            and _json_exact_equal(
+                facts.get("completedSteps"),
+                [
                 "preBalance",
                 "buyable",
                 "submitLimitBuy",
@@ -830,31 +835,62 @@ def _release_receipt_facts_are_valid(name: str, facts: Mapping[str, object]) -> 
                 "executionRead",
                 "postBalance",
                 "openOrderReconciliation",
-            ]
+                ],
+            )
+            and type(facts.get("liveOrderCalls")) is int
             and facts.get("liveOrderCalls") == 0
+            and type(facts.get("openOrderCount")) is int
             and facts.get("openOrderCount") == 0
+            and type(facts.get("retryCount")) is int
             and facts.get("retryCount") == 0
+            and type(facts.get("tokenPhysicalCalls")) is int
             and facts.get("tokenPhysicalCalls") in {0, 1}
         )
     if name == "requiredCi":
-        return facts == {
-            "checks": {
-                "Contracts CI": "SUCCESS",
-                "Kotlin Build": "SUCCESS",
-                "Python CI": "SUCCESS",
-                "Repo Hygiene": "SUCCESS",
-            }
-        }
+        return _json_exact_equal(
+            facts,
+            {
+                "checks": {
+                    "Contracts CI": "SUCCESS",
+                    "Kotlin Build": "SUCCESS",
+                    "Python CI": "SUCCESS",
+                    "Repo Hygiene": "SUCCESS",
+                }
+            },
+        )
     if name == "securityScan":
-        return facts == {"coverage": "complete", "validatedFindings": 0}
+        return _json_exact_equal(facts, {"coverage": "complete", "validatedFindings": 0})
     if name == "trackedAudit":
-        return facts == {
-            "aiAttributionCount": 0,
-            "credentialCount": 0,
-            "placeholderWorkspaceDiffCount": 0,
-            "rawTextVectorCount": 0,
-        }
+        return _json_exact_equal(
+            facts,
+            {
+                "aiAttributionCount": 0,
+                "credentialCount": 0,
+                "placeholderWorkspaceDiffCount": 0,
+                "rawTextVectorCount": 0,
+            },
+        )
     return False
+
+
+def _json_exact_equal(actual: object, expected: object) -> bool:
+    """JSON bool을 integer evidence로 취급하는 Python equality를 명시적으로 차단한다."""
+
+    if type(actual) is not type(expected):
+        return False
+    if isinstance(expected, dict):
+        if not isinstance(actual, dict):
+            return False
+        return set(actual) == set(expected) and all(
+            _json_exact_equal(actual[key], expected[key]) for key in expected
+        )
+    if isinstance(expected, list):
+        if not isinstance(actual, list):
+            return False
+        return len(actual) == len(expected) and all(
+            _json_exact_equal(left, right) for left, right in zip(actual, expected, strict=True)
+        )
+    return actual == expected
 
 
 def _verify_release_database_snapshot(

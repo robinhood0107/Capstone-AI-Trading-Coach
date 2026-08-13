@@ -40,6 +40,7 @@
 | S4.2C/S4.4G | `STUB_FAIL_CLOSED` | PR #77 control plane | 0 | Voyage/Gemini outbound executor는 hard-disabled |
 | S4.5/S4.6 | `OFFLINE_ONLY` | PR #77 fixture evaluation·numeric loopback | 0 | fixture/retrieval-only; provider live 0 |
 | S4.7D parser/OCR | `OFFLINE_ONLY` | PR #84 `014ccca1`, #85 `4bcca91e` | 0 | 안전 parser/OCR만 구현, importer/index writer 없음 |
+| S4.7D v2 runtime | `IMPLEMENTED_DRAFT` | PR #87/#88 + V25–V59 | 0 | `HISTORICAL_SUPERSEDED`; public activation 전 구현 상태를 재현하기 위한 truth-freeze marker |
 | S4.7D v2 public runtime | `LIVE_VERIFIED` | `main=27dac2ca…`, fresh DB V59→V60 preservation receipt | 재호출 0; 보존된 document `63/63`, evaluation `2/2`, production query receipt | `FULL_READY`, active `voyage_context_4_1024_v1`, sources/chunks `142/7,871`; public BGE 재실행 0 |
 | Pre-S5 RAG/global-news lock | `CONTRACT_LOCKED` | Issue #95 addendum + Optional 3 v2 | 0 | `OA112_ACTIVE_CONTRACT_LOCKED`, `S4_7D_OA112_PHYSICAL_ACTIVATION=NOT_MATERIALIZED`; Optional 3 one-shot executor는 packet/evidence 부재 시 outbound 0 |
 | Pre-S5 owner dual-profile runtime | `IMPLEMENTED_DRAFT` | current branch V60 + owner/final local operators | owner provider call 0 | library별 profile 명시 선택, 9-format one-request author/execute, KIS quote/Window B/release validator 구현 및 branch diff security findings 0; synthetic owner Voyage exact manifest 승인 전 |

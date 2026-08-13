@@ -121,6 +121,14 @@
   raw provider data, article metadata, Decision/Signal/Risk/order/hash/S5 feature authority는 계속
   0이고 Core 6 exact set을 넓히지 않는다.
 
+  current public RAG는 fresh namespace에서 `FULL_READY`, active profile
+  `voyage_context_4_1024_v1`, sources/chunks `142/7,871`, document batches `63/63`을 보존하며 다시
+  실행하지 않는다. owner library profile은 사용자가 import-ticket v2에서
+  `voyage_context_4_1024_v1 | bge_m3_local_1024_v1` 중 하나를 반드시 고른다. default·자동 판단·자동
+  fallback은 0이고 profile 변경은 모든 owner 문서 hard-delete 뒤 새 import로만 가능하다. public BGE
+  inference는 계속 0이며 owner BGE만 user-selected local execution으로 허용한다. owner BGE citation이
+  Top-5에 실제 포함되면 Vertex input 전체를 차단하고 `RETRIEVAL_ONLY`로 끝낸다.
+
   clean restart의 local namespace는 Compose project `capstone-pre-s5-fresh`, PostgreSQL host port
   `55432`, Redis host port `56379`, output root `capstone-rag/runtime/pre-s5-fresh/local-corpus`로
   고정한다. 기존 OA112·EXACT30·tokenizer source root는 read-only이고 output root와 명시적으로

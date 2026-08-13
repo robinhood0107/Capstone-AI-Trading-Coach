@@ -70,6 +70,43 @@ executor/outbound implementation은 활성화하거나 추가하지 않으며, G
 Naver는 retired 상태를 유지하고 RAG·news·analyst는 Decision, Signal, RiskDecision, order, decision
 hash 권한이 0이다.
 
+### 0.3 Pre-S5 public activation과 owner profile authority
+
+2026-08-13 current local execution은 fresh DB V60에서 public RAG `FULL_READY`, active profile
+`voyage_context_4_1024_v1`, sources/chunks `142/7,871`, document batch `63/63 COMMITTED`,
+EXACT30/OA112 evaluation `2/2 PASSED`를 보존한다. public Voyage document/evaluation/production query는
+재실행하지 않고 public BGE embedding inference는 계속 0이다.
+
+숨겨진 owner import-ticket control-plane request/response는 v2이며 request의 exact shape는 다음과 같다.
+
+```json
+{
+  "contractId": "s4-rag-v2-import-ticket-request-v2",
+  "schemaVersion": 2,
+  "sourceScope": "OWNER_PRIVATE",
+  "importMode": "LOCAL_EPHEMERAL_PARSE",
+  "embeddingProfileId": "voyage_context_4_1024_v1"
+}
+```
+
+`embeddingProfileId`는 필수이고 `voyage_context_4_1024_v1` 또는
+`bge_m3_local_1024_v1`만 허용한다. 누락·임의값·v1 request는 거부한다. 응답 v2는 선택 profile을
+ticket에 결박한다. server default와 자동 fallback은 없으며 profile 전환은 owner library 전체
+hard-delete 뒤 새 import로만 가능하다. 기존 public v1 OpenAPI/proto와 RAG ask/history/status response
+bytes는 변경하지 않는다.
+
+검색은 exact·lexical·dense 3-channel RRF(`k=60`)를 유지한다. owner Voyage는 public Voyage query
+vector를 재사용하고 owner BGE는 public Voyage query와 별도의 local BGE owner query를 사용한다.
+dense 후보는 profile 내부 rank를 먼저 계산하고 `profile rank → OWNER_PRIVATE → stable ID`로 하나의
+channel을 만든다. Top-5에 owner BGE citation이 있으면 Vertex preparation을 사용하지 않고
+`RETRIEVAL_ONLY`를 영속한다. 응답 `embeddingProfileId`는 계속 public Voyage profile을 뜻한다.
+
+owner Voyage import는 v2 consent·ticket·문서 안전성·exact packet을 provider socket 전에 검증하고,
+한 import를 `55K request / 32K context group / 600-token chunk` 아래 물리 호출 1회·retry 0으로만
+처리한다. 초과는 `OWNER_VOYAGE_IMPORT_TOO_LARGE`, timeout 또는 commit 불확실성은
+`UNKNOWN_BILLING`이며 자동 분할·BGE 전환은 없다. owner BGE import는 pinned local runtime만 사용해
+provider/network call이 0이다.
+
 > 완료 기준점(2026-07-16): S1.3 내부 ECOS/Naver producer는 PR #16 merge commit
 > `6f439155d9f5ec626fc185f29f2e0bd64ca54780`, S1.3K KRX 내부 collector는 PR #17 merge
 > commit `814aab377251d76672566d39c3edb379d132248e`으로 `main`에 병합됐다. 두 트랙은 public

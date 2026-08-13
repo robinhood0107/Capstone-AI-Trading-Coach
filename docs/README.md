@@ -60,6 +60,8 @@ Vertex service-account evidence, KIS_MOCK account evidence가 끝나기 전 `S5_
 owner Voyage, KIS quote, Window B는 각각 표시된 fresh exact manifest 승인이 있어야 하며 release ledger의
 owner delete residual 0, S4.8 exact terminal set, KIS V3·Voyage query·Vertex COMMITTED receipt와 final
 Git/CI/security binding이 모두 일치한 뒤에만 OPEN을 계산한다.
+거래시간 외 사용자 승인형 KIS V3는 동일 7단계를 provider call 0의 결정적 mock으로 검증하며,
+`KIS_MOCK_AFTER_HOURS_RECONCILIATION_VERIFIED`와 physical marker를 분리한다.
 
 Naver runtime은 퇴역했으며 재활성화하지 않는다. GDELT, Voyage, Gemini, OpenAI, account/order
 물리 호출은 새 HEAD의 승인 packet 없이는 0이다. RAG는 설명·근거·citation 경계일 뿐

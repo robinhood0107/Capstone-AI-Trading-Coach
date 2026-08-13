@@ -697,8 +697,9 @@ def verify_release_ledger(
     receipts = ledger.get("receipts")
     if not isinstance(receipts, dict) or set(receipts) != set(_RELEASE_RECEIPT_NAMES):
         raise FinalGateError("PRE_S5_RELEASE_LEDGER_INVALID")
+    verified_receipts: dict[str, Mapping[str, object]] = {}
     for name in _RELEASE_RECEIPT_NAMES:
-        _verify_release_receipt(
+        verified_receipts[name] = _verify_release_receipt(
             local_root=local_root,
             name=name,
             reference=receipts[name],
@@ -710,13 +711,18 @@ def verify_release_ledger(
         vertex_packet_sha256=str(window_b["vertexPacketSha256"]),
     )
     markers = ledger.get("markers")
+    kis_after_hours = (
+        verified_receipts["kisMockV3"].get("verificationMode")
+        == "AFTER_HOURS_DETERMINISTIC_MOCK"
+    )
     required = {
         "BGE_PUBLIC_EMBEDDING_INFERENCE_CALLS": 0,
         "BGE_OWNER_EMBEDDING_INFERENCE": "USER_SELECTED_ONLY",
         "FINAL_SECURITY_COVERAGE_COMPLETE_FINDINGS": 0,
         "FOREIGN_NEWS_MODEL_SELECTION": "ABSTAIN",
         "FOREIGN_NEWS_PROVIDER_CALLS": 0,
-        "KIS_MOCK_FULL_RECONCILIATION_VERIFIED": True,
+        "KIS_MOCK_AFTER_HOURS_RECONCILIATION_VERIFIED": kis_after_hours,
+        "KIS_MOCK_FULL_RECONCILIATION_VERIFIED": not kis_after_hours,
         "OWNER_PRIVATE_BGE_LOCAL_VERIFIED": True,
         "OWNER_PRIVATE_IMPORT_DELETE_RLS_VERIFIED": True,
         "OWNER_PRIVATE_PROFILE_SELECTION": "USER_EXPLICIT_LIBRARY_LEVEL",
@@ -777,7 +783,7 @@ def _verify_release_receipt(
     name: str,
     reference: object,
     expected_binding: Mapping[str, str],
-) -> None:
+) -> Mapping[str, object]:
     """fixed relative path와 digest를 먼저 검증해 ledger가 임의 파일을 신뢰하지 않게 한다."""
 
     if not isinstance(reference, dict) or set(reference) != {"path", "sha256"}:
@@ -804,6 +810,7 @@ def _verify_release_receipt(
     facts = receipt.get("facts")
     if not isinstance(facts, dict) or not _release_receipt_facts_are_valid(name, facts):
         raise FinalGateError("PRE_S5_RELEASE_RECEIPT_INVALID")
+    return facts
 
 
 def _release_receipt_facts_are_valid(name: str, facts: Mapping[str, object]) -> bool:
@@ -813,28 +820,40 @@ def _release_receipt_facts_are_valid(name: str, facts: Mapping[str, object]) -> 
             {"documentCount": 1, "providerPhysicalCalls": 0, "residualRows": 0},
         )
     if name == "kisMockV3":
-        return (
-            set(facts)
-            == {
+        if set(facts) != {
                 "brokeragePhysicalCalls",
                 "completedSteps",
                 "liveOrderCalls",
                 "openOrderCount",
                 "retryCount",
                 "tokenPhysicalCalls",
-            }
-            and type(facts.get("brokeragePhysicalCalls")) is int
+                "verificationMode",
+        }:
+            return False
+        verification_mode = facts.get("verificationMode")
+        calls_are_valid = (
+            verification_mode == "PHYSICAL_MOCK"
             and facts.get("brokeragePhysicalCalls") == 7
+            and facts.get("tokenPhysicalCalls") in {0, 1}
+        ) or (
+            verification_mode == "AFTER_HOURS_DETERMINISTIC_MOCK"
+            and facts.get("brokeragePhysicalCalls") == 0
+            and facts.get("tokenPhysicalCalls") == 0
+        )
+        return (
+            type(facts.get("brokeragePhysicalCalls")) is int
+            and type(facts.get("tokenPhysicalCalls")) is int
+            and calls_are_valid
             and _json_exact_equal(
                 facts.get("completedSteps"),
                 [
-                "preBalance",
-                "buyable",
-                "submitLimitBuy",
-                "cancelFull",
-                "executionRead",
-                "postBalance",
-                "openOrderReconciliation",
+                    "preBalance",
+                    "buyable",
+                    "submitLimitBuy",
+                    "cancelFull",
+                    "executionRead",
+                    "postBalance",
+                    "openOrderReconciliation",
                 ],
             )
             and type(facts.get("liveOrderCalls")) is int
@@ -843,8 +862,6 @@ def _release_receipt_facts_are_valid(name: str, facts: Mapping[str, object]) -> 
             and facts.get("openOrderCount") == 0
             and type(facts.get("retryCount")) is int
             and facts.get("retryCount") == 0
-            and type(facts.get("tokenPhysicalCalls")) is int
-            and facts.get("tokenPhysicalCalls") in {0, 1}
         )
     if name == "requiredCi":
         return _json_exact_equal(
@@ -900,7 +917,7 @@ def _verify_release_database_snapshot(
     vertex_packet_sha256: str,
 ) -> None:
     if (
-        snapshot.latest_migration != 61
+        snapshot.latest_migration != 62
         or snapshot.public_state != "ACTIVE"
         or snapshot.public_embedding_profile_id != "voyage_context_4_1024_v1"
         or snapshot.public_source_count != 142

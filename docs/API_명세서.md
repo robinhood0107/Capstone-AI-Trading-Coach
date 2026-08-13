@@ -107,6 +107,20 @@ owner Voyage import는 v2 consent·ticket·문서 안전성·exact packet을 pro
 `UNKNOWN_BILLING`이며 자동 분할·BGE 전환은 없다. owner BGE import는 pinned local runtime만 사용해
 provider/network call이 0이다.
 
+다음 이름은 public HTTP/gRPC 계약이 아니라 ignored local control-plane CLI다.
+
+- `pre-s5-owner-voyage author|execute`
+- `pre-s5-final-gate author-kis-quote|execute-kis-quote|author-window-b|verify-release`
+
+owner author/execute는 정확히 9개 format의 v2 ticket을 one request에 묶고, manifest·packet·current
+consent·owner profile·token/context cap을 socket 전에 검증한다. KIS quote manifest는 tokenP 최대 1회와
+current-price 1회, retry 0만 허용한다. Window B manifest는 Voyage query, Vertex activation, KIS V3 child
+packet SHA를 결박하며 각 runtime은 parent approval SHA와 자기 child SHA가 다르면 outbound 전에
+`PRE_S5_WINDOW_B_CHILD_BINDING`으로 닫힌다. Vertex credential은
+`capstone-rag/secrets/pre-s5-vertex-service-account.json`의 현재 사용자 소유 0600 regular file/link count 1
+경계와 기존 service-account OAuth만 사용한다. API key·ADC fallback은 없다. 이 control plane은 v1
+OpenAPI/proto 및 ask/history/status response bytes를 변경하지 않는다.
+
 > 완료 기준점(2026-07-16): S1.3 내부 ECOS/Naver producer는 PR #16 merge commit
 > `6f439155d9f5ec626fc185f29f2e0bd64ca54780`, S1.3K KRX 내부 collector는 PR #17 merge
 > commit `814aab377251d76672566d39c3edb379d132248e`으로 `main`에 병합됐다. 두 트랙은 public

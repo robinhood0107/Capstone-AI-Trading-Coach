@@ -113,7 +113,7 @@ provider/network call이 0이다.
 - `pre-s5-final-gate author-kis-quote|execute-kis-quote|author-window-b|verify-release`
 
 `verify-release`는 ignored `pre-s5-release-ledger/v2`의 marker를 단독 신뢰하지 않는다. fixed-path 0600
-owner BGE/KIS V3/required CI/security/tracked-audit receipt digest와 fresh V62 DB의 public·owner·S4.8 및
+owner BGE/KIS V3/required CI/security/tracked-audit receipt digest와 fresh V63 DB의 public·owner·S4.8 및
 Window B Voyage/Vertex `COMMITTED` aggregate를 모두 대조한 뒤에만 `OPEN`을 반환한다.
 
 거래시간 외에는 사용자가 명시 승인한 경우에만 KIS V3의 동일한 7단계를 provider call 0의 결정적

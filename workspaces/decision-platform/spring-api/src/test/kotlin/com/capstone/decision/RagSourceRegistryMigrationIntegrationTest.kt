@@ -68,7 +68,7 @@ class RagSourceRegistryMigrationIntegrationTest {
                     .isEqualTo("60")
             }
 
-            flyway(jdbcUrl).migrate()
+            flyway(jdbcUrl, target = "61").migrate()
 
             adminConnection(jdbcUrl).use { connection ->
                 assertThat(queryString(connection, "select max(version::integer)::text from flyway_schema_history where success"))
@@ -90,6 +90,31 @@ class RagSourceRegistryMigrationIntegrationTest {
                     hasPublicFunctionExecute(
                         connection,
                         "prepare_rag_v2_immutable_owner_overlay(text,text)",
+                    ),
+                ).isFalse()
+            }
+        }
+    }
+
+    @Test
+    fun `V61 to V62 base-only owner scope repair is forward only and preserves ACL`() {
+        withPreparedDatabase("base_only_owner_scope_upgrade") { jdbcUrl ->
+            flyway(jdbcUrl, target = "61").migrate()
+            flyway(jdbcUrl).migrate()
+
+            adminConnection(jdbcUrl).use { connection ->
+                assertThat(queryString(connection, "select max(version::integer)::text from flyway_schema_history where success"))
+                    .isEqualTo("62")
+                assertThat(
+                    queryString(
+                        connection,
+                        "select pg_get_functiondef('public.canonicalize_rag_v2_immutable_retrieval_citations(text,text,text,jsonb)'::regprocedure)",
+                    ),
+                ).contains("rag_v2_immutable_empty_owner_scope_is_current")
+                assertThat(
+                    hasPublicFunctionExecute(
+                        connection,
+                        "rag_v2_immutable_empty_owner_scope_is_current(text,bigint,text,text,text)",
                     ),
                 ).isFalse()
             }
@@ -161,7 +186,7 @@ class RagSourceRegistryMigrationIntegrationTest {
                 assertThat(queryStrings(connection, normalizedTableQuery))
                     .containsAll(expectedTables)
                 assertThat(queryString(connection, "select max(version::integer) from flyway_schema_history where success"))
-                    .isEqualTo("61")
+                    .isEqualTo("62")
 
                 expectedTables.forEach { table ->
                     assertThat(

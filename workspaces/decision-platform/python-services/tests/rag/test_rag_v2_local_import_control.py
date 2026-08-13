@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -30,6 +31,7 @@ def test_local_import_control_round_trip_is_private_and_argv_free(tmp_path: Path
     )
 
     assert loaded == control
+    assert loaded.embedding_profile_id == "voyage_context_4_1024_v1"
     record = tmp_path / "control" / "owner-import.json"
     assert record.stat().st_mode & 0o777 == 0o600
     assert "private.pdf" not in json.dumps(loaded.content_free_summary())
@@ -72,6 +74,17 @@ def test_local_import_control_closed_shape_rejects_direct_database_or_path_alias
         load_pending_owner_import_control(
             local_root=tmp_path,
             now=datetime(2026, 8, 3, 0, 1, tzinfo=UTC),
+        )
+
+
+def test_local_import_control_requires_one_explicit_supported_library_profile(tmp_path: Path) -> None:
+    _secure_root(tmp_path)
+    control = _control(tmp_path)
+
+    with pytest.raises(RagV2LocalImportControlError, match="LOCAL_IMPORT_CONTROL_INVALID"):
+        write_pending_owner_import_control(
+            local_root=tmp_path,
+            control=replace(control, embedding_profile_id="arbitrary_profile"),
         )
 
 
@@ -151,6 +164,7 @@ def _control(root: Path) -> RagV2OwnerImportControl:
         language_tags=("en",),
         sanitized_display_name="Owner fixture",
         retrieval_topics=("FINANCIAL_ENGINEERING",),
+        embedding_profile_id="voyage_context_4_1024_v1",
         issued_at=now,
         expires_at=now + timedelta(minutes=5),
     )

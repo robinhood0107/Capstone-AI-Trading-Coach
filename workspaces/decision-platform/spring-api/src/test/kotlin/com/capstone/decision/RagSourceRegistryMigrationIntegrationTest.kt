@@ -22,6 +22,44 @@ import java.util.concurrent.atomic.AtomicInteger
 @Testcontainers
 class RagSourceRegistryMigrationIntegrationTest {
     @Test
+    fun `V59 to V60 owner dual profile upgrade is forward only and preserves existing immutable tables`() {
+        withPreparedDatabase("owner_dual_profile_upgrade") { jdbcUrl ->
+            flyway(jdbcUrl, target = "59").migrate()
+            adminConnection(jdbcUrl).use { connection ->
+                assertThat(queryString(connection, "select max(version::integer)::text from flyway_schema_history where success"))
+                    .isEqualTo("59")
+                assertThat(
+                    queryString(
+                        connection,
+                        "select count(*)::text from information_schema.columns where table_schema = 'public' and table_name = 'rag_v2_immutable_bundles' and column_name = 'owner_embedding_profile_id'",
+                    ),
+                ).isEqualTo("0")
+            }
+
+            flyway(jdbcUrl).migrate()
+
+            adminConnection(jdbcUrl).use { connection ->
+                assertThat(queryString(connection, "select max(version::integer)::text from flyway_schema_history where success"))
+                    .isEqualTo("60")
+                assertThat(
+                    queryString(
+                        connection,
+                        "select count(*)::text from information_schema.columns where table_schema = 'public' and table_name = 'rag_v2_immutable_bundles' and column_name = 'owner_embedding_profile_id'",
+                    ),
+                ).isEqualTo("1")
+                assertThat(
+                    queryString(
+                        connection,
+                        "select count(*)::text from pg_proc where oid = 'public.issue_rag_v2_immutable_import_ticket_v2(text,text,text,text,text)'::regprocedure",
+                    ),
+                ).isEqualTo("1")
+                assertThat(queryString(connection, "select count(*)::text from rag_v2_immutable_import_tickets"))
+                    .isEqualTo("0")
+            }
+        }
+    }
+
+    @Test
     fun `clean migration creates normalized graph tombstones and exact ACL`() {
         withPreparedDatabase("clean") { jdbcUrl ->
             flyway(jdbcUrl).migrate()
@@ -86,7 +124,7 @@ class RagSourceRegistryMigrationIntegrationTest {
                 assertThat(queryStrings(connection, normalizedTableQuery))
                     .containsAll(expectedTables)
                 assertThat(queryString(connection, "select max(version::integer) from flyway_schema_history where success"))
-                    .isEqualTo("59")
+                    .isEqualTo("60")
 
                 expectedTables.forEach { table ->
                     assertThat(

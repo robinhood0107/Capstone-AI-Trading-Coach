@@ -8,6 +8,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from app.rag import rag_v2_bge_materializer
 from app.rag.rag_v2_bge_materializer import (
     RagV2BgeMaterializationError,
     RagV2OwnerDocumentRequest,
@@ -107,6 +108,50 @@ def test_owner_bge_materialization_rejects_invalid_embedding_shape(tmp_path: Pat
         )
 
 
+def test_owner_voyage_preparation_parses_once_and_stops_before_embedding_transport(tmp_path: Path) -> None:
+    parser = _FixtureParser(_document_ir(external_llm_eligible=True))
+    request = replace(
+        _request(tmp_path),
+        embedding_profile_id="voyage_context_4_1024_v1",
+    )
+
+    prepared = rag_v2_bge_materializer.prepare_owner_document_for_embedding(
+        parser=parser,
+        tokenizer=_FixtureTokenizer(),
+        request=request,
+        external_processing_authorized=True,
+    )
+
+    assert len(parser.calls) == 1
+    assert len(prepared.embedding_inputs) == len(prepared.document.chunks) == 1
+    assert prepared.document.external_processing_eligible is True
+    assert prepared.embedding_inputs[0].embedding_profile_id == "voyage_context_4_1024_v1"
+
+
+def test_owner_voyage_preparation_rejects_secret_or_prompt_injection_before_transport(tmp_path: Path) -> None:
+    unsafe_ir = _document_ir(external_llm_eligible=False)
+    unsafe_ir["safetyClassification"] = {
+        "externalLlmEligible": False,
+        "piiDetected": False,
+        "promptInjectionDetected": False,
+        "secretDetected": True,
+    }
+    parser = _FixtureParser(unsafe_ir)
+
+    with pytest.raises(RagV2BgeMaterializationError, match="OWNER_VOYAGE_DOCUMENT_UNSAFE"):
+        rag_v2_bge_materializer.prepare_owner_document_for_embedding(
+            parser=parser,
+            tokenizer=_FixtureTokenizer(),
+            request=replace(
+                _request(tmp_path),
+                embedding_profile_id="voyage_context_4_1024_v1",
+            ),
+            external_processing_authorized=True,
+        )
+
+    assert len(parser.calls) == 1
+
+
 def _request(root: Path) -> RagV2OwnerDocumentRequest:
     return RagV2OwnerDocumentRequest(
         approved_root=root,
@@ -119,7 +164,7 @@ def _request(root: Path) -> RagV2OwnerDocumentRequest:
     )
 
 
-def _document_ir() -> dict[str, object]:
+def _document_ir(*, external_llm_eligible: bool = False) -> dict[str, object]:
     raw = "a" * 64
     normalized = "b" * 64
     return {
@@ -137,7 +182,7 @@ def _document_ir() -> dict[str, object]:
         "normalizedContentSha256": normalized,
         "rawContentSha256": raw,
         "safetyClassification": {
-            "externalLlmEligible": False,
+            "externalLlmEligible": external_llm_eligible,
             "piiDetected": False,
             "promptInjectionDetected": False,
             "secretDetected": False,

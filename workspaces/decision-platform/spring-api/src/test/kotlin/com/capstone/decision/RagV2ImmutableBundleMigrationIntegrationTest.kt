@@ -741,6 +741,7 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
                 """.trimIndent(),
             ),
         )
+
         val requestId = "req_vertex_owner_delete_01"
         val scopeClaimId = issueRetrievalScope("usr_demo_user", requestId)
         val grantEventId = "rce_vertex_owner_grant_001"
@@ -805,6 +806,16 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
             )
         assertEquals(1L, oldBundleVersion)
 
+        val mismatchedProfile =
+            assertThrows<SQLException> {
+                issueTicketV2(
+                    "usr_demo_user",
+                    "rti_56565656565656565656565656565656",
+                    "voyage_context_4_1024_v1",
+                )
+            }
+        assertEquals("22023", mismatchedProfile.sqlState)
+
         val deleteTicketId = "rtd_52525252525252525252525252525252"
         issueOwnerDeleteTicket("usr_demo_user", TARGET_DOCUMENT, deleteTicketId)
         assertTrue(
@@ -841,6 +852,21 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
                 queryString(
                     connection,
                     "select count(*) from rag_v2_immutable_generation_embeddings where owner_user_id = 'usr_demo_user'",
+                ),
+            )
+            assertEquals(
+                "",
+                queryString(
+                    connection,
+                    """
+                    select coalesce(owner_embedding_profile_id, '')
+                    from rag_v2_immutable_bundles
+                    where bundle_id = (
+                      select active_bundle_id
+                      from rag_v2_immutable_owner_bundle_pointers
+                      where owner_user_id = 'usr_demo_user'
+                    )
+                    """.trimIndent(),
                 ),
             )
             assertEquals(
@@ -908,6 +934,28 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
                 queryString(
                     connection,
                     "select count(*) from rag_v2_immutable_materialization_runs where materialization_run_id = '$DELETE_OWNER_RUN' and component_generation_id is not null",
+                ),
+            )
+        }
+        issueTicketV2(
+            "usr_demo_user",
+            "rti_57575757575757575757575757575757",
+            "voyage_context_4_1024_v1",
+        )
+        adminConnection().use { connection ->
+            assertEquals(
+                "voyage_context_4_1024_v1",
+                queryString(
+                    connection,
+                    """
+                    select embedding_profile_id
+                    from rag_v2_immutable_import_tickets
+                    where owner_user_id = 'usr_demo_user'
+                      and ticket_hash = encode(
+                        digest('rti_57575757575757575757575757575757', 'sha256'),
+                        'hex'
+                      )
+                    """.trimIndent(),
                 ),
             )
         }
@@ -2280,8 +2328,28 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
         assertEquals("INSERTED", appendS48RuntimeProjection(writerRecord))
         assertEquals("REPLAY", appendS48RuntimeProjection(writerRecord))
 
+        val availableRecord =
+            writerRecord
+                .replace("\"artifactHash\":\"${"a".repeat(64)}\"", "\"artifactHash\":\"${"d".repeat(64)}\"")
+                .replace("\"logicalIdentityHash\":\"${"b".repeat(64)}\"", "\"logicalIdentityHash\":\"${"e".repeat(64)}\"")
+                .replace("\"payloadHash\":\"${"c".repeat(64)}\"", "\"payloadHash\":\"${"f".repeat(64)}\"")
+                .replace("\"projectionHash\":null", "\"projectionHash\":\"${"1".repeat(64)}\"")
+                .replace("\"reason\":\"APPROVAL_PACKET_REQUIRED\"", "\"reason\":\"COMPLETE_DIRECT_PROBE_SET_AVAILABLE\"")
+                .replace("\"status\":\"ABSTAIN\"", "\"status\":\"AVAILABLE\"")
+                .replace("2026-08-09T02:00:00Z", "2026-08-09T02:01:00Z")
+        assertEquals("INSERTED", appendS48RuntimeProjection(availableRecord))
+
+        val incompleteRecord =
+            writerRecord
+                .replace("\"artifactHash\":\"${"a".repeat(64)}\"", "\"artifactHash\":\"${"2".repeat(64)}\"")
+                .replace("\"logicalIdentityHash\":\"${"b".repeat(64)}\"", "\"logicalIdentityHash\":\"${"3".repeat(64)}\"")
+                .replace("\"payloadHash\":\"${"c".repeat(64)}\"", "\"payloadHash\":\"${"4".repeat(64)}\"")
+                .replace("\"reason\":\"APPROVAL_PACKET_REQUIRED\"", "\"reason\":\"DIRECT_PROBE_RECEIPT_SET_INCOMPLETE\"")
+                .replace("2026-08-09T02:00:00Z", "2026-08-09T02:02:00Z")
+        assertEquals("INSERTED", appendS48RuntimeProjection(incompleteRecord))
+
         val stored = readS48RuntimeProjection("S48_CORE6_KIS")
-        assertTrue(stored?.contains("APPROVAL_PACKET_REQUIRED") == true)
+        assertTrue(stored?.contains("DIRECT_PROBE_RECEIPT_SET_INCOMPLETE") == true)
         assertFalse(stored?.contains("rawResponse", ignoreCase = true) == true)
         assertFalse(stored?.contains("credential", ignoreCase = true) == true)
         assertFalse(stored?.contains("query", ignoreCase = true) == true)
@@ -2352,6 +2420,22 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
                 throw error
             }
         }
+    }
+
+    private fun issueTicketV2(
+        ownerUserId: String,
+        ticketId: String,
+        embeddingProfileId: String,
+    ) {
+        callAsAppWithActor(
+            ownerUserId,
+            """
+            select issue_rag_v2_immutable_import_ticket_v2(
+              '$ownerUserId', '$ticketId', 'OWNER_IMPORT',
+              'RAG_V2_OWNER_DOCUMENT_V2', '$embeddingProfileId'
+            )
+            """.trimIndent(),
+        )
     }
 
     /** V44 delete ticket은 app role로만 발급하고, test도 raw table insert로 우회하지 않는다. */

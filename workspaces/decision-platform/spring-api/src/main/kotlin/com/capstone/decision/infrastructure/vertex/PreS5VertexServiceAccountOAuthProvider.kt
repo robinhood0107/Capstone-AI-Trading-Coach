@@ -153,10 +153,10 @@ internal class PreS5VertexServiceAccountOAuthProvider(
                     ),
                 )
             responseBody = response.body
-            require(responseBody.size in 1..MAX_TOKEN_RESPONSE_BYTES)
             if (response.statusCode !in 200..299) {
                 throw PreS5VertexOAuthException(oauthFailureLeaf(response.statusCode, responseBody))
             }
+            require(responseBody.size in 1..MAX_TOKEN_RESPONSE_BYTES)
             failureLeaf = PreS5VertexOAuthFailureLeaf.RESPONSE_INVALID
             val root = mapper.readTree(responseBody)
             require(root != null && root.isObject)
@@ -189,6 +189,9 @@ internal class PreS5VertexServiceAccountOAuthProvider(
                 in 500..599 -> PreS5VertexOAuthFailureLeaf.HTTP_5XX
                 else -> PreS5VertexOAuthFailureLeaf.HTTP_OTHER
             }
+        if (body.size !in 1..MAX_TOKEN_RESPONSE_BYTES) {
+            return fallback
+        }
         return runCatching {
             val root = mapper.readTree(body)
             if (root == null || !root.isObject) {

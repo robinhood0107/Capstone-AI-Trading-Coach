@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from dataclasses import replace
@@ -225,6 +226,25 @@ def test_release_ledger_opens_only_with_exact_receipts_and_database_state(tmp_pa
     )
 
     assert markers == _release_markers()
+
+
+def test_release_ledger_rejects_boolean_smuggled_as_numeric_evidence(tmp_path: Path) -> None:
+    ledger = _write_release_receipts_and_ledger(tmp_path)
+    receipt_path = tmp_path / "evidence/ownerBgeLocal.json"
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    receipt["facts"]["documentCount"] = True
+    encoded = json.dumps(receipt, sort_keys=True, separators=(",", ":")).encode()
+    receipt_path.write_bytes(encoded)
+    receipt_path.chmod(0o600)
+    ledger["receipts"]["ownerBgeLocal"]["sha256"] = hashlib.sha256(encoded).hexdigest()
+
+    with pytest.raises(FinalGateError, match="PRE_S5_RELEASE_RECEIPT_INVALID"):
+        verify_release_ledger(
+            local_root=tmp_path,
+            binding=("1" * 40, "2" * 40, "3" * 64, "4" * 64),
+            ledger=ledger,
+            database_snapshot=_release_database_snapshot(),
+        )
 
 
 def _release_binding() -> dict[str, str]:

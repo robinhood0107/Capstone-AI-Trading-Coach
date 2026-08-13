@@ -63,7 +63,7 @@ class VoyagePreparedComponent:
 class VoyageContextSegment:
     """한 source group의 순서를 보존한 contiguous provider context segment다."""
 
-    component_scope: Literal["EXACT30", "OA112"]
+    component_scope: VoyageComponentScope
     source_id: str
     source_revision_id: str
     segment_ordinal: int

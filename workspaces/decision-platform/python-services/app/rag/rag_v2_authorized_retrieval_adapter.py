@@ -33,11 +33,11 @@ _DIRECT_READ_TABLES = (
     "public.rag_v2_retrieval_scope_claims",
 )
 _REQUIRED_FUNCTIONS = (
-    "public.read_rag_v2_retrieval_scope(text,text,text)",
-    "public.read_rag_v2_retrieval_scope_by_claim(text,text)",
+    "public.read_rag_v2_retrieval_scope_v2(text,text,text)",
+    "public.read_rag_v2_retrieval_scope_by_claim_v2(text,text)",
     "public.search_authorized_rag_v2_exact(text,text,text,text[],text[])",
     "public.search_authorized_rag_v2_lexical(text,text,text,text[],text)",
-    "public.search_authorized_rag_v2_dense(text,text,text,text[],vector)",
+    "public.search_authorized_rag_v2_dense_v2(text,text,text,text[],vector,vector)",
 )
 
 
@@ -70,7 +70,7 @@ class PsycopgRagV2AuthorizedRetrievalAdapter:
         rows = self._execute(
             """
             SELECT *
-            FROM public.read_rag_v2_retrieval_scope(%s, %s, %s)
+            FROM public.read_rag_v2_retrieval_scope_v2(%s, %s, %s)
             """,
             (claim_id, owner_user_id, session_id),
         )
@@ -94,7 +94,7 @@ class PsycopgRagV2AuthorizedRetrievalAdapter:
         rows = self._execute(
             """
             SELECT *
-            FROM public.read_rag_v2_retrieval_scope_by_claim(%s, %s)
+            FROM public.read_rag_v2_retrieval_scope_by_claim_v2(%s, %s)
             """,
             (claim_id, session_id),
         )
@@ -123,6 +123,9 @@ class PsycopgRagV2AuthorizedRetrievalAdapter:
                     row, "owner_private_generation_id"
                 ),
                 embedding_profile_id=_required_text(row, "embedding_profile_id"),
+                owner_embedding_profile_id=_optional_text(
+                    row, "owner_embedding_profile_id"
+                ),
                 policy_version=_required_int(row, "policy_version"),
                 allowed_topics=_required_text_array(row, "allowed_topics"),
             )
@@ -201,14 +204,22 @@ class PsycopgRagV2AuthorizedRetrievalAdapter:
         scope: RagV2BundleScope,
         query: NormalizedRetrievalQuery,
         query_vector: tuple[float, ...],
+        owner_query_vector: tuple[float, ...] | None,
     ) -> RagV2ChannelResult:
         """1024차원 unit local vector만 pgvector cosine channel에 전달한다."""
 
         vector = _validated_vector_text(query_vector)
+        owner_vector = (
+            _validated_vector_text(owner_query_vector)
+            if owner_query_vector is not None
+            else None
+        )
         rows = self._execute(
             """
             SELECT *
-            FROM public.search_authorized_rag_v2_dense(%s, %s, %s, %s, %s::vector)
+            FROM public.search_authorized_rag_v2_dense_v2(
+              %s, %s, %s, %s, %s::vector, %s::vector
+            )
             """,
             (
                 scope.claim_id,
@@ -216,6 +227,7 @@ class PsycopgRagV2AuthorizedRetrievalAdapter:
                 scope.session_id,
                 list(_effective_topics(scope, query)),
                 vector,
+                owner_vector,
             ),
         )
         return RagV2ChannelResult(
@@ -377,7 +389,12 @@ def _candidate_receipt_matches(
         or candidate.scope_claim_id != scope.claim_id
         or candidate.session_id != scope.session_id
         or candidate.generation_id != expected_generation_id
-        or candidate.embedding_profile_id != scope.embedding_profile_id
+        or candidate.embedding_profile_id
+        != (
+            scope.owner_embedding_profile_id
+            if candidate.source_scope == "OWNER_PRIVATE"
+            else scope.embedding_profile_id
+        )
         or candidate.policy_version != scope.policy_version
         or not candidate.topics
         or len(set(candidate.topics)) != len(candidate.topics)

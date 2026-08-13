@@ -17,6 +17,14 @@ internal data class RagV2PreparedScope(
     val expiresAt: java.time.Instant,
 )
 
+/** Top-5에 실제 owner BGE citation이 있을 때만 Vertex input 전체를 차단한다. */
+internal fun requiresRetrievalOnlyForOwnerBgeEvidence(
+    scope: RagV2RetrievalScope,
+    citations: List<RagV2RetrievedCitation>,
+): Boolean =
+    scope.ownerEmbeddingProfileId == "bge_m3_local_1024_v1" &&
+        citations.any { it.documentId != null }
+
 @Service
 class RagV2RuntimeService(
     private val jdbcProvider: ObjectProvider<NamedParameterJdbcTemplate>,
@@ -129,11 +137,12 @@ class RagV2RuntimeService(
         )
     }
 
-    /**
-     * raw ticket capability는 caller에게 한 번만 반환하고 persistence에는 V25 function이 만든 hash만 보존한다.
-     */
+    /** raw ticket과 선택 profile을 함께 반환하고 persistence에는 capability hash만 보존한다. */
     @Transactional
-    fun issueImportTicket(ownerUserId: String): RagV2ImportTicket {
+    fun issueImportTicket(
+        ownerUserId: String,
+        embeddingProfileId: String,
+    ): RagV2ImportTicket {
         val jdbc = jdbc()
         val ticketId = id("rti")
         setActor(ownerUserId)
@@ -141,18 +150,24 @@ class RagV2RuntimeService(
             jdbc
                 .queryForObject(
                     """
-                    SELECT issue_rag_v2_immutable_import_ticket(
+                    SELECT issue_rag_v2_immutable_import_ticket_v2(
                       :ownerUserId,
                       :ticketId,
                       'OWNER_IMPORT',
-                      'RAG_V2_OWNER_DOCUMENT_V1'
+                      'RAG_V2_OWNER_DOCUMENT_V2',
+                      :embeddingProfileId
                     )
                     """.trimIndent(),
-                    mapOf("ownerUserId" to ownerUserId, "ticketId" to ticketId),
+                    mapOf(
+                        "ownerUserId" to ownerUserId,
+                        "ticketId" to ticketId,
+                        "embeddingProfileId" to embeddingProfileId,
+                    ),
                     OffsetDateTime::class.java,
                 )?.toInstant() ?: throw RagGuardHistoryUnavailableException()
         return RagV2ImportTicket(
             ticketId = ticketId,
+            embeddingProfileId = embeddingProfileId,
             issuedAt = expiresAt.minusSeconds(300),
             expiresAt = expiresAt,
         )
@@ -303,6 +318,9 @@ class RagV2RuntimeService(
             )
         }
         if (vertexEnabled) {
+            if (requiresRetrievalOnlyForOwnerBgeEvidence(scope, evaluation.citations)) {
+                return persistRetrievalOnlyAnswer(ownerUserId, requestId, command, scope, evaluation)
+            }
             return generateWithVertex(ownerUserId, requestId, command, scope, evaluation)
         }
 
@@ -546,7 +564,7 @@ class RagV2RuntimeService(
             .query(
                 """
                 SELECT *
-                FROM issue_rag_v2_retrieval_scope(
+                FROM issue_rag_v2_retrieval_scope_v2(
                   :ownerUserId,
                   :requestId,
                   ARRAY(SELECT jsonb_array_elements_text(CAST(:topicsJson AS jsonb)))
@@ -565,6 +583,7 @@ class RagV2RuntimeService(
                     ownerGenerationId = result.getString("owner_private_generation_id"),
                     embeddingProfileId = result.getString("embedding_profile_id"),
                     policyVersion = result.getLong("policy_version"),
+                    ownerEmbeddingProfileId = result.getString("owner_embedding_profile_id"),
                 )
             }.singleOrNull()
             ?: throw RagGuardHistoryUnavailableException()
@@ -588,7 +607,7 @@ class RagV2RuntimeService(
             .query(
                 """
                 SELECT *
-                FROM read_rag_v2_vertex_prepared_scope(
+                FROM read_rag_v2_vertex_prepared_scope_v2(
                   :ownerUserId,
                   :requestId,
                   :scopeClaimId,
@@ -611,6 +630,7 @@ class RagV2RuntimeService(
                             ownerGenerationId = result.getString("owner_private_generation_id"),
                             embeddingProfileId = result.getString("embedding_profile_id"),
                             policyVersion = result.getLong("policy_version"),
+                            ownerEmbeddingProfileId = result.getString("owner_embedding_profile_id"),
                         ),
                     expiresAt = result.getObject("expires_at", OffsetDateTime::class.java).toInstant(),
                 )

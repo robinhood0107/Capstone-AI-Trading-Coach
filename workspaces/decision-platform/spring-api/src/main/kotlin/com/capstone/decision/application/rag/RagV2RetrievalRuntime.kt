@@ -24,6 +24,7 @@ data class RagV2RetrievalScope(
     val ownerGenerationId: String?,
     val embeddingProfileId: String,
     val policyVersion: Long,
+    val ownerEmbeddingProfileId: String? = null,
 )
 
 /**

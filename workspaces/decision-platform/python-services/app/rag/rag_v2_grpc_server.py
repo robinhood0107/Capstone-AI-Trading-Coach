@@ -170,13 +170,15 @@ def build_rag_v2_engine(
     """
 
     retrievals: dict[str, RagV2AuthorizedHybridRetrieval] = {}
+    bge_query_embedder: LocalBgeQueryEmbedder | None = None
     if settings.bge_enabled:
         bge_packet_root = settings.bge_packet_root
         if bge_packet_root is None:  # Defensive narrowing after frozen settings validation.
             raise ValueError("CAPSTONE_RAG_BGE_PACKET_ROOT is invalid")
+        bge_query_embedder = LocalBgeQueryEmbedder(load_bge_onnx_embedder(bge_packet_root))
         retrievals["bge_m3_local_1024_v1"] = _retrieval(
             retrieval_adapter=retrieval_adapter,
-            query_embedder=LocalBgeQueryEmbedder(load_bge_onnx_embedder(bge_packet_root)),
+            query_embedder=bge_query_embedder,
         )
     runtime = settings.voyage_query_runtime
     if runtime is not None:
@@ -200,6 +202,7 @@ def build_rag_v2_engine(
                 # its writer lease has been claimed for the specific request.
                 sender=UrllibPreS5VoyageHttpSender(),
             ),
+            owner_query_embedder=bge_query_embedder,
         )
     return ProfileSelectedRagV2RetrievalOnlyEngine(
         scope_reader=scope_reader,
@@ -207,13 +210,19 @@ def build_rag_v2_engine(
     )
 
 
-def _retrieval(*, retrieval_adapter: object, query_embedder: object) -> RagV2AuthorizedHybridRetrieval:
+def _retrieval(
+    *,
+    retrieval_adapter: object,
+    query_embedder: object,
+    owner_query_embedder: object | None = None,
+) -> RagV2AuthorizedHybridRetrieval:
     """All profiles share the SQL authorization/RRF code; only their profile-matched query embedding differs."""
 
     return RagV2AuthorizedHybridRetrieval(
         query_normalizer=QueryNormalizer(),
         exact_identifier_extractor=ExactIdentifierExtractor(),
         query_embedder=query_embedder,  # type: ignore[arg-type]
+        owner_query_embedder=owner_query_embedder,  # type: ignore[arg-type]
         exact_retriever=retrieval_adapter,  # type: ignore[arg-type]
         lexical_retriever=retrieval_adapter,  # type: ignore[arg-type]
         dense_retriever=retrieval_adapter,  # type: ignore[arg-type]

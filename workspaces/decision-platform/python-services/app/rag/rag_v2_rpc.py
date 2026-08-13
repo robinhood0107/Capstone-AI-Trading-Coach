@@ -484,7 +484,12 @@ def _candidate_matches_scope(
         and candidate.generation_id == expected_generation
         and candidate.scope_claim_id == scope.claim_id
         and candidate.session_id == scope.session_id
-        and candidate.embedding_profile_id == scope.embedding_profile_id
+        and candidate.embedding_profile_id
+        == (
+            scope.owner_embedding_profile_id
+            if candidate.source_scope == "OWNER_PRIVATE"
+            else scope.embedding_profile_id
+        )
         and candidate.policy_version == scope.policy_version
         and bool(set(candidate.topics).intersection(scope.allowed_topics))
     )

@@ -94,6 +94,40 @@ class PreS5VertexServiceAccountOAuthProviderTest {
         assertThat(responseBody).containsOnly(0)
     }
 
+    @Test
+    fun `OAuth invalid grant is reduced to one content-free failure leaf and the response is erased`() {
+        val credentialProvider = mockk<PreS5VertexServiceAccountCredentialProvider>()
+        val executor = mockk<PreS5VertexOAuthTokenExecutor>()
+        val keyPair = KeyPairGenerator.getInstance("RSA").apply { initialize(2048) }.generateKeyPair()
+        every { credentialProvider.acquire() } returns
+            PreS5VertexServiceAccountCredential(
+                projectId = "project-test-123",
+                clientEmail = "vertex-test@project-test-123.iam.gserviceaccount.com",
+                privateKeyId = "a".repeat(40),
+                privateKey = keyPair.private,
+            )
+        val responseBody =
+            """{"error":"invalid_grant","error_description":"provider detail must not escape"}"""
+                .toByteArray(StandardCharsets.UTF_8)
+        every { executor.execute(any()) } returns PreS5VertexOAuthTokenResponse(400, responseBody)
+        val now = Instant.parse("2026-08-12T03:00:00Z")
+        val activation = activation(now.plusSeconds(300))
+
+        val failure =
+            runCatching {
+                PreS5VertexServiceAccountOAuthProvider(
+                    credentialProvider,
+                    executor,
+                    Clock.fixed(now, ZoneOffset.UTC),
+                ).acquire(activation, PreS5VertexTokenAttempt(lease(activation.expiresAt)))
+            }.exceptionOrNull()
+
+        assertThat(failure).isInstanceOf(PreS5VertexOAuthException::class.java)
+        assertThat((failure as PreS5VertexOAuthException).failureLeaf)
+            .isEqualTo(PreS5VertexOAuthFailureLeaf.OAUTH_INVALID_GRANT)
+        assertThat(responseBody).containsOnly(0)
+    }
+
     private fun activation(expiresAt: Instant) =
         PreS5VertexActivation(
             packetSha256 = "d".repeat(64),

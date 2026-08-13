@@ -1621,6 +1621,73 @@ $prepare_rag_v2_immutable_owner_overlay$;
 ALTER FUNCTION prepare_rag_v2_immutable_owner_overlay(text, text) OWNER TO flyway;
 REVOKE ALL PRIVILEGES ON FUNCTION prepare_rag_v2_immutable_owner_overlay(text, text) FROM PUBLIC;
 
+-- Python runtime은 complete Core 6 receipt set과 일부 receipt만 확보된 상태를 이미 구분한다.
+-- V60은 provider 권한을 넓히지 않고 V50의 content-free row constraint만 같은 terminal enum에 맞춘다.
+CREATE OR REPLACE FUNCTION s48_runtime_state_is_safe(
+  p_source_family text,
+  p_ingestion_mode text,
+  p_status text,
+  p_reason text,
+  p_projection_hash text
+)
+RETURNS boolean
+LANGUAGE sql
+IMMUTABLE
+SET search_path = pg_catalog, public, pg_temp
+AS $s48_runtime_state_is_safe_v60$
+  SELECT COALESCE(
+    (
+      p_source_family IN ('OPENDART', 'ECOS')
+      AND p_ingestion_mode = 'REUSE_AUTHORIZED_PROJECTION'
+      AND (
+        (
+          p_status = 'AVAILABLE'
+          AND p_reason = 'AUTHORIZED_PROJECTION_AVAILABLE'
+          AND p_projection_hash ~ '^[0-9a-f]{64}$'
+        )
+        OR (
+          p_status = 'ABSTAIN'
+          AND p_reason = 'REUSE_AUTHORIZED_PROJECTION_NOT_AVAILABLE'
+          AND p_projection_hash IS NULL
+        )
+      )
+    )
+    OR (
+      p_source_family IN ('KIS', 'SEC_EDGAR', 'KRX')
+      AND p_ingestion_mode = 'DIRECT_READ_PROBE'
+      AND (
+        (
+          p_status = 'AVAILABLE'
+          AND p_reason = 'COMPLETE_DIRECT_PROBE_SET_AVAILABLE'
+          AND p_projection_hash ~ '^[0-9a-f]{64}$'
+        )
+        OR (
+          p_status = 'ABSTAIN'
+          AND p_reason IN ('APPROVAL_PACKET_REQUIRED', 'DIRECT_PROBE_RECEIPT_SET_INCOMPLETE')
+          AND p_projection_hash IS NULL
+        )
+      )
+    )
+    OR (
+      p_source_family = 'KOFIA'
+      AND p_ingestion_mode = 'DIRECT_READ_PROBE'
+      AND p_status = 'BLOCKED'
+      AND p_reason = 'BLOCKED_NO_CREDENTIAL_OR_APPROVAL'
+      AND p_projection_hash IS NULL
+    )
+    OR (
+      p_source_family IN ('FINNHUB_OPTIONAL3', 'TWELVE_DATA', 'MASSIVE')
+      AND p_ingestion_mode = 'DIRECT_READ_PROBE'
+      AND p_status = 'BLOCKED'
+      AND p_reason = 'BLOCKED_NO_CREDENTIAL_OR_ENTITLEMENT'
+      AND p_projection_hash IS NULL
+    ),
+    false
+  )
+$s48_runtime_state_is_safe_v60$;
+ALTER FUNCTION public.s48_runtime_state_is_safe(text, text, text, text, text) OWNER TO flyway;
+REVOKE ALL PRIVILEGES ON FUNCTION public.s48_runtime_state_is_safe(text, text, text, text, text) FROM PUBLIC;
+
 CREATE FUNCTION issue_rag_v2_retrieval_scope_v2(
   p_owner_user_id text,
   p_session_id text,

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import hmac
 import json
 import os
 import re
@@ -13,7 +14,10 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from urllib.parse import quote, urlsplit
 from uuid import uuid4
+
+import psycopg
 
 from app.data.kis.accounting import (
     CollectionRunRecorder,
@@ -65,6 +69,24 @@ _KIS_QUOTE_RECEIPT_FIELDS = {
     "symbol",
     "tokenPhysicalCalls",
 }
+_RELEASE_RECEIPT_NAMES = (
+    "ownerBgeLocal",
+    "kisMockV3",
+    "requiredCi",
+    "securityScan",
+    "trackedAudit",
+)
+_RELEASE_S48_STATES = (
+    ("S48_CORE6_ECOS", "ABSTAIN"),
+    ("S48_CORE6_KIS", "AVAILABLE"),
+    ("S48_CORE6_KOFIA", "BLOCKED"),
+    ("S48_CORE6_KRX", "ABSTAIN"),
+    ("S48_CORE6_OPENDART", "ABSTAIN"),
+    ("S48_CORE6_SEC_EDGAR", "ABSTAIN"),
+    ("S48_OPTIONAL3_FINNHUB", "BLOCKED"),
+    ("S48_OPTIONAL3_MASSIVE", "BLOCKED"),
+    ("S48_OPTIONAL3_TWELVE_DATA", "BLOCKED"),
+)
 
 
 class FinalGateError(ValueError):
@@ -109,6 +131,30 @@ class KisQuoteReceipt:
     limit_price: int
     token_physical_calls: int
     brokerage_physical_calls: int
+
+
+@dataclass(frozen=True, slots=True)
+class ReleaseDatabaseSnapshot:
+    """release validator가 raw row 없이 비교하는 fresh DB의 content-free aggregate다."""
+
+    latest_migration: int
+    public_state: str
+    public_embedding_profile_id: str
+    public_source_count: int
+    public_chunk_count: int
+    committed_document_batch_count: int
+    public_evaluation_count: int
+    public_evaluation_minimum: float
+    public_evaluation_leak_count: int
+    owner_source_count: int
+    owner_chunk_count: int
+    owner_embedding_count: int
+    owner_profile_lock_count: int
+    owner_voyage_committed_document_count: int
+    owner_voyage_committed_chunk_count: int
+    s48_states: tuple[tuple[str, str], ...]
+    voyage_query_committed_packet_sha256: str | None
+    vertex_committed_packet_sha256: str | None
 
 
 def require_window_b_child(
@@ -584,19 +630,86 @@ def _verify_release(
     local_root: Path,
     binding: tuple[str, str, str, str],
 ) -> int:
-    """ignored release ledger가 exact final marker set을 가진 경우에만 OPEN을 산출한다."""
+    """ignored ledger, physical receipts, fresh DB가 모두 일치할 때만 OPEN을 산출한다."""
 
     ledger_path = local_root / "evidence/pre-s5-release-ledger.v1.json"
     raw = _read_private_json(ledger_path, max_bytes=128 * 1024)
     value = _decode_json(raw, code="PRE_S5_RELEASE_LEDGER_INVALID")
-    if not isinstance(value, dict) or value.get("binding") != {
+    if not isinstance(value, dict):
+        raise FinalGateError("PRE_S5_RELEASE_LEDGER_INVALID")
+    window_b = value.get("windowB")
+    if not isinstance(window_b, dict):
+        raise FinalGateError("PRE_S5_RELEASE_LEDGER_INVALID")
+    voyage_packet = window_b.get("voyageQueryPacketSha256")
+    vertex_packet = window_b.get("vertexPacketSha256")
+    if not isinstance(voyage_packet, str) or not isinstance(vertex_packet, str):
+        raise FinalGateError("PRE_S5_RELEASE_LEDGER_INVALID")
+    snapshot = _load_release_database_snapshot(
+        database_dsn=_release_database_dsn(),
+        voyage_query_packet_sha256=voyage_packet,
+        vertex_packet_sha256=vertex_packet,
+    )
+    markers = verify_release_ledger(
+        local_root=local_root,
+        binding=binding,
+        ledger=value,
+        database_snapshot=snapshot,
+    )
+    _emit({"markers": markers, "state": "OPEN"})
+    return 0
+
+
+def verify_release_ledger(
+    *,
+    local_root: Path,
+    binding: tuple[str, str, str, str],
+    ledger: Mapping[str, object],
+    database_snapshot: ReleaseDatabaseSnapshot,
+) -> dict[str, object]:
+    """self-asserted marker를 실제 receipt hash와 DB aggregate에 결박한다.
+
+    입력은 ignored 0600 JSON과 content-free DB aggregate뿐이며 provider payload, 문서 text,
+    vector, credential은 읽거나 반환하지 않는다.
+    """
+
+    expected_binding = {
         "ciDigest": binding[2],
         "headCommit": binding[0],
         "securityDigest": binding[3],
         "treeObject": binding[1],
-    }:
+    }
+    if set(ledger) != {"binding", "markers", "receipts", "schemaVersion", "windowB"}:
+        raise FinalGateError("PRE_S5_RELEASE_LEDGER_INVALID")
+    if ledger.get("schemaVersion") != "pre-s5-release-ledger/v2":
+        raise FinalGateError("PRE_S5_RELEASE_LEDGER_INVALID")
+    if ledger.get("binding") != expected_binding:
         raise FinalGateError("PRE_S5_RELEASE_LEDGER_BINDING")
-    markers = value.get("markers")
+    window_b = ledger.get("windowB")
+    if not isinstance(window_b, dict) or set(window_b) != {
+        "kisMockPacketSha256",
+        "manifestSha256",
+        "vertexPacketSha256",
+        "voyageQueryPacketSha256",
+    }:
+        raise FinalGateError("PRE_S5_RELEASE_LEDGER_INVALID")
+    if any(not isinstance(value, str) or _SHA256.fullmatch(value) is None for value in window_b.values()):
+        raise FinalGateError("PRE_S5_RELEASE_LEDGER_INVALID")
+    receipts = ledger.get("receipts")
+    if not isinstance(receipts, dict) or set(receipts) != set(_RELEASE_RECEIPT_NAMES):
+        raise FinalGateError("PRE_S5_RELEASE_LEDGER_INVALID")
+    for name in _RELEASE_RECEIPT_NAMES:
+        _verify_release_receipt(
+            local_root=local_root,
+            name=name,
+            reference=receipts[name],
+            expected_binding=expected_binding,
+        )
+    _verify_release_database_snapshot(
+        database_snapshot,
+        voyage_query_packet_sha256=str(window_b["voyageQueryPacketSha256"]),
+        vertex_packet_sha256=str(window_b["vertexPacketSha256"]),
+    )
+    markers = ledger.get("markers")
     required = {
         "BGE_PUBLIC_EMBEDDING_INFERENCE_CALLS": 0,
         "BGE_OWNER_EMBEDDING_INFERENCE": "USER_SELECTED_ONLY",
@@ -617,10 +730,328 @@ def _verify_release(
         "VERTEX_SERVICE_ACCOUNT_OAUTH_GEMINI_3_5_FLASH_ONE_SHOT_VERIFIED": True,
         "VOYAGE_QUERY_USAGE": "COMMITTED",
     }
-    if not isinstance(markers, dict) or any(markers.get(key) != expected for key, expected in required.items()):
+    if not isinstance(markers, dict) or markers != required:
         raise FinalGateError("PRE_S5_RELEASE_LEDGER_INCOMPLETE")
-    _emit({"markers": required, "state": "OPEN"})
-    return 0
+    return required
+
+
+def write_release_evidence_receipt(
+    *,
+    output_path: Path,
+    binding: tuple[str, str, str, str],
+    kind: str,
+    facts: Mapping[str, object],
+) -> str:
+    """완료된 local/provider gate의 allowlisted scalar만 0600 receipt로 봉인한다."""
+
+    if kind not in _RELEASE_RECEIPT_NAMES or not _release_receipt_facts_are_valid(kind, facts):
+        raise FinalGateError("PRE_S5_RELEASE_RECEIPT_INVALID")
+    expected_binding = {
+        "ciDigest": binding[2],
+        "headCommit": binding[0],
+        "securityDigest": binding[3],
+        "treeObject": binding[1],
+    }
+    if (
+        _GIT_OBJECT.fullmatch(binding[0]) is None
+        or _GIT_OBJECT.fullmatch(binding[1]) is None
+        or _SHA256.fullmatch(binding[2]) is None
+        or _SHA256.fullmatch(binding[3]) is None
+    ):
+        raise FinalGateError("PRE_S5_RELEASE_RECEIPT_INVALID")
+    payload: dict[str, object] = {
+        "binding": expected_binding,
+        "facts": dict(facts),
+        "kind": kind,
+        "schemaVersion": "pre-s5-release-evidence-receipt/v1",
+        "state": "VERIFIED",
+    }
+    content = _canonical_json(payload)
+    _write_private_json(output_path, content)
+    return hashlib.sha256(content).hexdigest()
+
+
+def _verify_release_receipt(
+    *,
+    local_root: Path,
+    name: str,
+    reference: object,
+    expected_binding: Mapping[str, str],
+) -> None:
+    """fixed relative path와 digest를 먼저 검증해 ledger가 임의 파일을 신뢰하지 않게 한다."""
+
+    if not isinstance(reference, dict) or set(reference) != {"path", "sha256"}:
+        raise FinalGateError("PRE_S5_RELEASE_RECEIPT_INVALID")
+    expected_path = f"evidence/{name}.json"
+    if reference.get("path") != expected_path:
+        raise FinalGateError("PRE_S5_RELEASE_RECEIPT_INVALID")
+    expected_sha = reference.get("sha256")
+    if not isinstance(expected_sha, str) or _SHA256.fullmatch(expected_sha) is None:
+        raise FinalGateError("PRE_S5_RELEASE_RECEIPT_INVALID")
+    raw = _read_private_json(local_root / expected_path, max_bytes=64 * 1024)
+    if not _constant_time_equal(hashlib.sha256(raw).hexdigest(), expected_sha):
+        raise FinalGateError("PRE_S5_RELEASE_RECEIPT_INVALID")
+    receipt = _decode_json(raw, code="PRE_S5_RELEASE_RECEIPT_INVALID")
+    if (
+        not isinstance(receipt, dict)
+        or set(receipt) != {"binding", "facts", "kind", "schemaVersion", "state"}
+        or receipt.get("binding") != expected_binding
+        or receipt.get("kind") != name
+        or receipt.get("schemaVersion") != "pre-s5-release-evidence-receipt/v1"
+        or receipt.get("state") != "VERIFIED"
+    ):
+        raise FinalGateError("PRE_S5_RELEASE_RECEIPT_INVALID")
+    facts = receipt.get("facts")
+    if not isinstance(facts, dict) or not _release_receipt_facts_are_valid(name, facts):
+        raise FinalGateError("PRE_S5_RELEASE_RECEIPT_INVALID")
+
+
+def _release_receipt_facts_are_valid(name: str, facts: Mapping[str, object]) -> bool:
+    if name == "ownerBgeLocal":
+        return facts == {"documentCount": 1, "providerPhysicalCalls": 0, "residualRows": 0}
+    if name == "kisMockV3":
+        return (
+            set(facts)
+            == {
+                "brokeragePhysicalCalls",
+                "completedSteps",
+                "liveOrderCalls",
+                "openOrderCount",
+                "retryCount",
+                "tokenPhysicalCalls",
+            }
+            and facts.get("brokeragePhysicalCalls") == 7
+            and facts.get("completedSteps")
+            == [
+                "preBalance",
+                "buyable",
+                "submitLimitBuy",
+                "cancelFull",
+                "executionRead",
+                "postBalance",
+                "openOrderReconciliation",
+            ]
+            and facts.get("liveOrderCalls") == 0
+            and facts.get("openOrderCount") == 0
+            and facts.get("retryCount") == 0
+            and facts.get("tokenPhysicalCalls") in {0, 1}
+        )
+    if name == "requiredCi":
+        return facts == {
+            "checks": {
+                "Contracts CI": "SUCCESS",
+                "Kotlin Build": "SUCCESS",
+                "Python CI": "SUCCESS",
+                "Repo Hygiene": "SUCCESS",
+            }
+        }
+    if name == "securityScan":
+        return facts == {"coverage": "complete", "validatedFindings": 0}
+    if name == "trackedAudit":
+        return facts == {
+            "aiAttributionCount": 0,
+            "credentialCount": 0,
+            "placeholderWorkspaceDiffCount": 0,
+            "rawTextVectorCount": 0,
+        }
+    return False
+
+
+def _verify_release_database_snapshot(
+    snapshot: ReleaseDatabaseSnapshot,
+    *,
+    voyage_query_packet_sha256: str,
+    vertex_packet_sha256: str,
+) -> None:
+    if (
+        snapshot.latest_migration != 61
+        or snapshot.public_state != "ACTIVE"
+        or snapshot.public_embedding_profile_id != "voyage_context_4_1024_v1"
+        or snapshot.public_source_count != 142
+        or snapshot.public_chunk_count != 7_871
+        or snapshot.committed_document_batch_count != 63
+        or snapshot.public_evaluation_count != 2
+        or snapshot.public_evaluation_minimum != 1.0
+        or snapshot.public_evaluation_leak_count != 0
+        or snapshot.owner_source_count != 0
+        or snapshot.owner_chunk_count != 0
+        or snapshot.owner_embedding_count != 0
+        or snapshot.owner_profile_lock_count != 0
+        or snapshot.owner_voyage_committed_document_count != 9
+        or snapshot.owner_voyage_committed_chunk_count != 9
+        or snapshot.s48_states != _RELEASE_S48_STATES
+        or snapshot.voyage_query_committed_packet_sha256 != voyage_query_packet_sha256
+        or snapshot.vertex_committed_packet_sha256 != vertex_packet_sha256
+    ):
+        raise FinalGateError("PRE_S5_RELEASE_DATABASE_DRIFT")
+
+
+def _release_database_dsn() -> str:
+    """fresh localhost DB의 operator-only admin DSN을 argv와 receipt 밖에서 조립한다."""
+
+    explicit = os.environ.get("PRE_S5_RELEASE_DATABASE_DSN", "").strip()
+    if explicit:
+        dsn = explicit
+    else:
+        values = {
+            key: os.environ.get(key, "").strip()
+            for key in (
+                "POSTGRES_ADMIN_PASSWORD",
+                "POSTGRES_ADMIN_USER",
+                "POSTGRES_DB",
+                "POSTGRES_HOST",
+                "POSTGRES_HOST_PORT",
+            )
+        }
+        if not all(values.values()):
+            raise FinalGateError("PRE_S5_RELEASE_DATABASE_DSN")
+        dsn = (
+            f"postgresql://{quote(values['POSTGRES_ADMIN_USER'], safe='')}:"
+            f"{quote(values['POSTGRES_ADMIN_PASSWORD'], safe='')}@{values['POSTGRES_HOST']}:"
+            f"{values['POSTGRES_HOST_PORT']}/{quote(values['POSTGRES_DB'], safe='')}"
+        )
+    parsed = urlsplit(dsn)
+    if (
+        parsed.scheme not in {"postgres", "postgresql"}
+        or parsed.hostname != "127.0.0.1"
+        or parsed.port != 55_432
+        or not parsed.username
+        or not parsed.password
+        or not parsed.path.strip("/")
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise FinalGateError("PRE_S5_RELEASE_DATABASE_DSN")
+    return dsn
+
+
+def _load_release_database_snapshot(
+    *,
+    database_dsn: str,
+    voyage_query_packet_sha256: str,
+    vertex_packet_sha256: str,
+) -> ReleaseDatabaseSnapshot:
+    """fresh DB의 allowlisted aggregate만 읽고 row text, vector, credential은 반환하지 않는다."""
+
+    if (
+        _SHA256.fullmatch(voyage_query_packet_sha256) is None
+        or _SHA256.fullmatch(vertex_packet_sha256) is None
+    ):
+        raise FinalGateError("PRE_S5_RELEASE_DATABASE_DRIFT")
+    try:
+        with psycopg.connect(database_dsn, autocommit=False, connect_timeout=2) as connection:
+            with connection.transaction():
+                connection.execute("SET LOCAL statement_timeout = '5000ms'")
+                connection.execute("SET LOCAL lock_timeout = '1000ms'")
+                core = connection.execute(
+                    """
+                    SELECT
+                      (SELECT max(version::integer) FROM public.flyway_schema_history
+                       WHERE success AND version ~ '^[0-9]+$'),
+                      pointer.state,
+                      pointer.embedding_profile_id,
+                      (SELECT count(*) FROM public.rag_v2_immutable_source_revisions
+                       WHERE source_scope IN ('EXACT30', 'OA112')),
+                      (SELECT count(*) FROM public.rag_v2_immutable_chunks
+                       WHERE source_scope IN ('EXACT30', 'OA112')),
+                      (SELECT count(*) FROM public.rag_v2_immutable_voyage_document_batches
+                       WHERE state = 'COMMITTED'),
+                      (SELECT count(*) FROM public.rag_v2_immutable_source_revisions
+                       WHERE source_scope = 'OWNER_PRIVATE'),
+                      (SELECT count(*) FROM public.rag_v2_immutable_chunks
+                       WHERE source_scope = 'OWNER_PRIVATE'),
+                      (SELECT count(*) FROM public.rag_v2_immutable_generation_embeddings
+                       WHERE component_scope = 'OWNER_PRIVATE'),
+                      (SELECT count(*)
+                       FROM public.rag_v2_immutable_owner_bundle_pointers owner_pointer
+                       JOIN public.rag_v2_immutable_bundles owner_bundle
+                         ON owner_bundle.bundle_id = owner_pointer.active_bundle_id
+                       WHERE owner_bundle.owner_embedding_profile_id IS NOT NULL),
+                      (SELECT coalesce(sum(document_count), 0)
+                       FROM public.rag_v2_owner_voyage_import_attempts WHERE state = 'COMMITTED'),
+                      (SELECT coalesce(sum(chunk_count), 0)
+                       FROM public.rag_v2_owner_voyage_import_attempts WHERE state = 'COMMITTED')
+                    FROM public.rag_v2_immutable_public_bundle_pointers pointer
+                    WHERE pointer.state_id = 'default'
+                    """
+                ).fetchone()
+                evaluation = connection.execute(
+                    """
+                    SELECT count(*),
+                           min(least(exact_top5_hit_rate, track_recall_at5, citation_coverage,
+                                     direct_advice_block_rate)),
+                           coalesce(sum(cross_owner_leak_count + mixed_profile_row_count
+                                        + owner_delete_residual_row_count), 0)
+                    FROM public.rag_v2_immutable_public_voyage_component_evaluations evaluation
+                    JOIN public.rag_v2_immutable_public_bundle_pointers pointer
+                      ON evaluation.component_generation_id IN (
+                           pointer.exact30_generation_id, pointer.oa112_generation_id
+                         )
+                    WHERE pointer.state_id = 'default'
+                    """
+                ).fetchone()
+                s48_rows = connection.execute(
+                    """
+                    SELECT source_id, status
+                    FROM (
+                      SELECT DISTINCT ON (source_id) source_id, status
+                      FROM public.s48_runtime_sanitized_projections
+                      ORDER BY source_id, evaluated_at DESC, logical_identity_hash DESC
+                    ) latest
+                    ORDER BY source_id
+                    """
+                ).fetchall()
+                voyage_row = connection.execute(
+                    """
+                    SELECT outcome.packet_sha256
+                    FROM public.rag_v2_immutable_voyage_query_usage_outcomes outcome
+                    JOIN public.rag_v2_immutable_voyage_query_usage_reservations reservation
+                      USING (usage_event_id)
+                    WHERE outcome.state = 'COMMITTED'
+                      AND reservation.evaluation_component_scope = 'RUNTIME'
+                      AND outcome.packet_sha256 = %s
+                    """,
+                    (voyage_query_packet_sha256,),
+                ).fetchone()
+                vertex_row = connection.execute(
+                    """
+                    SELECT packet_sha256
+                    FROM public.rag_v2_immutable_vertex_usage_outcomes
+                    WHERE state = 'COMMITTED' AND packet_sha256 = %s
+                    """,
+                    (vertex_packet_sha256,),
+                ).fetchone()
+    except (psycopg.Error, ValueError, TypeError):
+        raise FinalGateError("PRE_S5_RELEASE_DATABASE_UNAVAILABLE") from None
+    if core is None or len(core) != 12 or evaluation is None or len(evaluation) != 3:
+        raise FinalGateError("PRE_S5_RELEASE_DATABASE_DRIFT")
+    try:
+        return ReleaseDatabaseSnapshot(
+            latest_migration=int(core[0]),
+            public_state=str(core[1]),
+            public_embedding_profile_id=str(core[2]),
+            public_source_count=int(core[3]),
+            public_chunk_count=int(core[4]),
+            committed_document_batch_count=int(core[5]),
+            public_evaluation_count=int(evaluation[0]),
+            public_evaluation_minimum=float(evaluation[1]),
+            public_evaluation_leak_count=int(evaluation[2]),
+            owner_source_count=int(core[6]),
+            owner_chunk_count=int(core[7]),
+            owner_embedding_count=int(core[8]),
+            owner_profile_lock_count=int(core[9]),
+            owner_voyage_committed_document_count=int(core[10]),
+            owner_voyage_committed_chunk_count=int(core[11]),
+            s48_states=tuple((str(row[0]), str(row[1])) for row in s48_rows),
+            voyage_query_committed_packet_sha256=(str(voyage_row[0]) if voyage_row else None),
+            vertex_committed_packet_sha256=(str(vertex_row[0]) if vertex_row else None),
+        )
+    except (IndexError, TypeError, ValueError):
+        raise FinalGateError("PRE_S5_RELEASE_DATABASE_DRIFT") from None
+
+
+def _constant_time_equal(left: str, right: str) -> bool:
+    return hmac.compare_digest(left.encode("ascii"), right.encode("ascii"))
 
 
 def _krx_tick(price: int) -> int:

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import hashlib
 import os
 from dataclasses import replace
 from pathlib import Path
@@ -21,6 +20,7 @@ from app.rag.pre_s5_final_gate import (
     require_window_b_child,
     verify_release_ledger,
     write_kis_quote_receipt,
+    write_release_evidence_receipt,
 )
 
 
@@ -273,7 +273,7 @@ def _release_database_snapshot() -> ReleaseDatabaseSnapshot:
         owner_source_count=0,
         owner_chunk_count=0,
         owner_embedding_count=0,
-        owner_pointer_count=0,
+        owner_profile_lock_count=0,
         owner_voyage_committed_document_count=9,
         owner_voyage_committed_chunk_count=9,
         s48_states=(
@@ -294,7 +294,7 @@ def _release_database_snapshot() -> ReleaseDatabaseSnapshot:
 
 def _write_release_receipts_and_ledger(tmp_path: Path) -> dict[str, object]:
     evidence = tmp_path / "evidence"
-    evidence.mkdir(mode=0o700)
+    evidence.mkdir(mode=0o700, exist_ok=True)
     binding = _release_binding()
     facts_by_name: dict[str, dict[str, object]] = {
         "ownerBgeLocal": {
@@ -337,19 +337,15 @@ def _write_release_receipts_and_ledger(tmp_path: Path) -> dict[str, object]:
     receipts: dict[str, dict[str, str]] = {}
     for name, facts in facts_by_name.items():
         path = evidence / f"{name}.json"
-        payload = {
-            "binding": binding,
-            "facts": facts,
-            "kind": name,
-            "schemaVersion": "pre-s5-release-evidence-receipt/v1",
-            "state": "VERIFIED",
-        }
-        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
-        path.write_bytes(encoded)
-        path.chmod(0o600)
+        receipt_sha256 = write_release_evidence_receipt(
+            output_path=path,
+            binding=("1" * 40, "2" * 40, "3" * 64, "4" * 64),
+            kind=name,
+            facts=facts,
+        )
         receipts[name] = {
             "path": f"evidence/{name}.json",
-            "sha256": hashlib.sha256(encoded).hexdigest(),
+            "sha256": receipt_sha256,
         }
     return {
         "binding": binding,

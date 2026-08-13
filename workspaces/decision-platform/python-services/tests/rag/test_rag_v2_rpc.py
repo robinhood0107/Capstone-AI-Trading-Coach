@@ -186,6 +186,29 @@ def test_profile_selected_engine_uses_only_the_db_scope_voyage_retrieval_without
     assert bge.calls == 0
 
 
+def test_public_voyage_owner_bge_scope_returns_owner_citation_as_retrieval_only() -> None:
+    scope = _scope(
+        owner_generation=True,
+        profile="voyage_context_4_1024_v1",
+        owner_profile="bge_m3_local_1024_v1",
+    )
+    public = _candidate(1, scope, source_scope="EXACT30")
+    owner = _candidate(2, scope, source_scope="OWNER_PRIVATE")
+    voyage = _Retrieval(_success(public, owner))
+    engine = ProfileSelectedRagV2RetrievalOnlyEngine(
+        scope_reader=_ScopeReader(scope),
+        retrievals={"voyage_context_4_1024_v1": voyage},
+    )
+
+    result = engine.ask(_request())
+
+    assert result.status is RagV2RpcStatus.RETRIEVAL_ONLY
+    assert result.embedding_profile_id == "voyage_context_4_1024_v1"
+    assert result.citations[1].local_document is not None
+    assert result.external_provider_candidate is False
+    assert result.provider_physical_total == 0
+
+
 def test_profile_selected_engine_reports_unavailable_voyage_profile_without_bge_fallback() -> None:
     voyage_scope = _scope(owner_generation=False, profile="voyage_context_4_1024_v1")
     bge = _Retrieval(_success(_candidate(1, _scope(owner_generation=False), source_scope="EXACT30")))
@@ -331,6 +354,7 @@ def _scope(
     *,
     owner_generation: bool,
     profile: str = "bge_m3_local_1024_v1",
+    owner_profile: str | None = None,
 ) -> RagV2BundleScope:
     return RagV2BundleScope(
         claim_id="rvs_" + "a" * 32,
@@ -340,6 +364,7 @@ def _scope(
         oa112_generation_id="rgr_" + "2" * 32,
         owner_private_generation_id=("rgr_" + "3" * 32) if owner_generation else None,
         embedding_profile_id=profile,
+        owner_embedding_profile_id=(owner_profile or profile) if owner_generation else None,
         policy_version=1,
         allowed_topics=("FINANCIAL_ENGINEERING", "RISK"),
     )
@@ -389,7 +414,11 @@ def _candidate(
         canonical_https_url=canonical_url,
         chunk_id=f"rag_v2_chk_{digest[:32]}",
         document_id=document_id,
-        embedding_profile_id=scope.embedding_profile_id,
+        embedding_profile_id=(
+            scope.owner_embedding_profile_id
+            if source_scope == "OWNER_PRIVATE"
+            else scope.embedding_profile_id
+        ),
         external_processing_eligible=False,
         generation_id=generation_id,
         heading_path=("Evidence",),

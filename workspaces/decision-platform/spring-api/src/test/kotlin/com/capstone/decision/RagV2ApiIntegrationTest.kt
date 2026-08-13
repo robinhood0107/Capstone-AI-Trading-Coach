@@ -550,15 +550,16 @@ class RagV2ApiIntegrationTest(
     }
 
     @Test
-    fun `v2 owner import ticket is a five minute raw capability with only a database hash retained`() {
+    fun `v2 owner import ticket binds the explicit library embedding profile and retains only a database hash`() {
         val userToken = login("demo-user", userPassword(), "req_rag_v2_ticket_user_login")
         val ticketRequest =
             """
             {
-              "contractId":"s4-rag-v2-import-ticket-request-v1",
-              "schemaVersion":1,
+              "contractId":"s4-rag-v2-import-ticket-request-v2",
+              "schemaVersion":2,
               "sourceScope":"OWNER_PRIVATE",
-              "importMode":"LOCAL_EPHEMERAL_PARSE"
+              "importMode":"LOCAL_EPHEMERAL_PARSE",
+              "embeddingProfileId":"voyage_context_4_1024_v1"
             }
             """.trimIndent()
 
@@ -571,10 +572,11 @@ class RagV2ApiIntegrationTest(
                     content = ticketRequest
                 }.andExpect {
                     status { isCreated() }
-                    jsonPath("$.contractId") { value("s4-rag-v2-import-ticket-v1") }
-                    jsonPath("$.schemaVersion") { value(1) }
+                    jsonPath("$.contractId") { value("s4-rag-v2-import-ticket-v2") }
+                    jsonPath("$.schemaVersion") { value(2) }
                     jsonPath("$.ticketId") { exists() }
                     jsonPath("$.sourceScope") { value("OWNER_PRIVATE") }
+                    jsonPath("$.embeddingProfileId") { value("voyage_context_4_1024_v1") }
                     jsonPath("$.ttlSeconds") { value(300) }
                     jsonPath("$.singleUse") { value(true) }
                     jsonPath("$.ownerBound") { value(true) }
@@ -590,19 +592,19 @@ class RagV2ApiIntegrationTest(
         val issuedAt = Instant.parse(payload.at("/issuedAt").stringValue())
         val expiresAt = Instant.parse(payload.at("/expiresAt").stringValue())
         assertEquals(300L, expiresAt.epochSecond - issuedAt.epochSecond)
-        val storedTicketHash =
-            ownerJdbc.queryForObject(
+        val storedTicket =
+            ownerJdbc.queryForMap(
                 """
-                select ticket_hash
+                select ticket_hash, embedding_profile_id
                 from rag_v2_immutable_import_tickets
                 where owner_user_id = 'usr_demo_user'
                 order by issued_at desc, ticket_hash desc
                 limit 1
                 """.trimIndent(),
-                String::class.java,
             )
-        assertTrue(storedTicketHash?.matches(Regex("^[0-9a-f]{64}$")) == true)
-        assertFalse(ticketId == storedTicketHash)
+        assertTrue(storedTicket["ticket_hash"].toString().matches(Regex("^[0-9a-f]{64}$")))
+        assertEquals("voyage_context_4_1024_v1", storedTicket["embedding_profile_id"])
+        assertFalse(ticketId == storedTicket["ticket_hash"])
 
         mockMvc
             .post("/api/v2/rag/import-tickets") {
@@ -614,6 +616,52 @@ class RagV2ApiIntegrationTest(
                 status { isBadRequest() }
                 jsonPath("$.code") { value("RAG_VALIDATION_FAILED") }
             }
+    }
+
+    @Test
+    fun `v2 owner import ticket rejects missing arbitrary and legacy profiles`() {
+        val userToken = login("demo-user", userPassword(), "req_rag_v2_ticket_profile_login")
+        val invalidBodies =
+            listOf(
+                """
+                {
+                  "contractId":"s4-rag-v2-import-ticket-request-v2",
+                  "schemaVersion":2,
+                  "sourceScope":"OWNER_PRIVATE",
+                  "importMode":"LOCAL_EPHEMERAL_PARSE"
+                }
+                """.trimIndent(),
+                """
+                {
+                  "contractId":"s4-rag-v2-import-ticket-request-v2",
+                  "schemaVersion":2,
+                  "sourceScope":"OWNER_PRIVATE",
+                  "importMode":"LOCAL_EPHEMERAL_PARSE",
+                  "embeddingProfileId":"arbitrary_profile"
+                }
+                """.trimIndent(),
+                """
+                {
+                  "contractId":"s4-rag-v2-import-ticket-request-v1",
+                  "schemaVersion":1,
+                  "sourceScope":"OWNER_PRIVATE",
+                  "importMode":"LOCAL_EPHEMERAL_PARSE"
+                }
+                """.trimIndent(),
+            )
+
+        invalidBodies.forEachIndexed { index, invalidBody ->
+            mockMvc
+                .post("/api/v2/rag/import-tickets") {
+                    bearer(userToken)
+                    header("X-Request-Id", "req_rag_v2_ticket_profile_reject_$index")
+                    contentType = MediaType.APPLICATION_JSON
+                    content = invalidBody
+                }.andExpect {
+                    status { isBadRequest() }
+                    jsonPath("$.code") { value("RAG_VALIDATION_FAILED") }
+                }
+        }
     }
 
     @Test

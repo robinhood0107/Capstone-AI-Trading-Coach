@@ -63,9 +63,9 @@ class FlywayMigrationIntegrationTest(
     @Autowired private val riskSnapshotPort: RiskSnapshotPort,
 ) : SpringApiIntegrationTestBase() {
     @Test
-    fun `clean database applies V1 through V59 migrations and creates required objects`() {
+    fun `clean database applies V1 through V60 migrations and creates required objects`() {
         val versions = queryStrings("select version from flyway_schema_history where success order by installed_rank")
-        assertEquals((1..59).map(Int::toString), versions)
+        assertEquals((1..60).map(Int::toString), versions)
 
         val requiredTables =
             listOf(

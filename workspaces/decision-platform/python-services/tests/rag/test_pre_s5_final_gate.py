@@ -228,6 +228,35 @@ def test_release_ledger_opens_only_with_exact_receipts_and_database_state(tmp_pa
     assert markers == _release_markers()
 
 
+def test_release_ledger_distinguishes_approved_after_hours_kis_mock(tmp_path: Path) -> None:
+    ledger = _write_release_receipts_and_ledger(tmp_path)
+    receipt_path = tmp_path / "evidence/kisMockV3.json"
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    receipt["facts"].update(
+        {
+            "brokeragePhysicalCalls": 0,
+            "tokenPhysicalCalls": 0,
+            "verificationMode": "AFTER_HOURS_DETERMINISTIC_MOCK",
+        }
+    )
+    encoded = json.dumps(receipt, sort_keys=True, separators=(",", ":")).encode()
+    receipt_path.write_bytes(encoded)
+    receipt_path.chmod(0o600)
+    ledger["receipts"]["kisMockV3"]["sha256"] = hashlib.sha256(encoded).hexdigest()
+    ledger["markers"]["KIS_MOCK_AFTER_HOURS_RECONCILIATION_VERIFIED"] = True
+    ledger["markers"]["KIS_MOCK_FULL_RECONCILIATION_VERIFIED"] = False
+
+    markers = verify_release_ledger(
+        local_root=tmp_path,
+        binding=("1" * 40, "2" * 40, "3" * 64, "4" * 64),
+        ledger=ledger,
+        database_snapshot=_release_database_snapshot(),
+    )
+
+    assert markers["KIS_MOCK_AFTER_HOURS_RECONCILIATION_VERIFIED"] is True
+    assert markers["KIS_MOCK_FULL_RECONCILIATION_VERIFIED"] is False
+
+
 def test_release_ledger_rejects_boolean_smuggled_as_numeric_evidence(tmp_path: Path) -> None:
     ledger = _write_release_receipts_and_ledger(tmp_path)
     receipt_path = tmp_path / "evidence/ownerBgeLocal.json"
@@ -263,6 +292,7 @@ def _release_markers() -> dict[str, object]:
         "FINAL_SECURITY_COVERAGE_COMPLETE_FINDINGS": 0,
         "FOREIGN_NEWS_MODEL_SELECTION": "ABSTAIN",
         "FOREIGN_NEWS_PROVIDER_CALLS": 0,
+        "KIS_MOCK_AFTER_HOURS_RECONCILIATION_VERIFIED": False,
         "KIS_MOCK_FULL_RECONCILIATION_VERIFIED": True,
         "OWNER_PRIVATE_BGE_LOCAL_VERIFIED": True,
         "OWNER_PRIVATE_IMPORT_DELETE_RLS_VERIFIED": True,
@@ -281,7 +311,7 @@ def _release_markers() -> dict[str, object]:
 
 def _release_database_snapshot() -> ReleaseDatabaseSnapshot:
     return ReleaseDatabaseSnapshot(
-        latest_migration=61,
+        latest_migration=62,
         public_state="ACTIVE",
         public_embedding_profile_id="voyage_context_4_1024_v1",
         public_source_count=142,
@@ -337,6 +367,7 @@ def _write_release_receipts_and_ledger(tmp_path: Path) -> dict[str, object]:
             "openOrderCount": 0,
             "retryCount": 0,
             "tokenPhysicalCalls": 1,
+            "verificationMode": "PHYSICAL_MOCK",
         },
         "requiredCi": {
             "checks": {

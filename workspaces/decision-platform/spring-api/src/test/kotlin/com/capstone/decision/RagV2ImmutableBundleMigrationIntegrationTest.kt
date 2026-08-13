@@ -1751,6 +1751,86 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
     }
 
     @Test
+    fun `V61 zero-row owner overlay remains a current public-only citation scope`() {
+        seedEvaluatedPublicComponents()
+        adminConnection().use { connection ->
+            connection.createStatement().use { statement ->
+                statement.execute(
+                    """
+                    update rag_v2_immutable_source_revisions
+                    set retrieval_topics = array['FINANCIAL_ENGINEERING'],
+                        citation_title = 'Fixture ' || source_id
+                    where source_scope in ('EXACT30', 'OA112')
+                    """.trimIndent(),
+                )
+            }
+        }
+        assertEquals(
+            2L,
+            callLong(
+                "decision_rag_admin",
+                RAG_ADMIN_PASSWORD,
+                """
+                select activate_rag_v2_immutable_public_base(
+                  '$EXACT_GENERATION', '$OA_GENERATION', 1, '$PUBLIC_ACTIVATION_RECEIPT'
+                )
+                """.trimIndent(),
+            ),
+        )
+        val emptyBundleId =
+            DriverManager.getConnection(postgres.jdbcUrl, "decision_rag_admin", RAG_ADMIN_PASSWORD).use { connection ->
+                callSingleRow(
+                    connection,
+                    "select bundle_id from prepare_rag_v2_immutable_owner_overlay('usr_demo_user', null::text)",
+                )
+            }
+        assertEquals(
+            1L,
+            callLong(
+                "decision_rag_admin",
+                RAG_ADMIN_PASSWORD,
+                """
+                select activate_rag_v2_immutable_owner_bundle(
+                  'usr_demo_user', '$emptyBundleId', null, 0,
+                  'rgr_act_78787878787878787878787878787878', 'OWNER_BUNDLE'
+                )
+                """.trimIndent(),
+            ),
+        )
+
+        val sessionId = "req_v2_empty_overlay_000001"
+        val scopeClaimId = issueRetrievalScope("usr_demo_user", sessionId)
+        val exactChunkId =
+            adminConnection().use { connection ->
+                queryString(
+                    connection,
+                    "select chunk_id from rag_v2_immutable_chunks where source_revision_id = 'srv_exact_001'",
+                )
+            }
+        val canonical =
+            callAsAppWithActor(
+                "usr_demo_user",
+                """
+                select canonicalize_rag_v2_immutable_retrieval_citations(
+                  'usr_demo_user', '$sessionId', '$scopeClaimId',
+                  jsonb_build_array(
+                    jsonb_build_object(
+                      'ordinal', 1,
+                      'citationId', 'cit_1',
+                      'sourceId', 'src_exact_001',
+                      'sourceRevisionId', 'srv_exact_001',
+                      'chunkRevisionId', '$exactChunkId',
+                      'generationId', '$EXACT_GENERATION',
+                      'citationKind', 'PUBLIC_WEB'
+                    )
+                  )
+                )
+                """.trimIndent(),
+            )
+        assertTrue(canonical.contains("https://example.org/exact/1"))
+    }
+
+    @Test
     fun `v2 app rechecks gRPC citation identities and persists canonical retrieval only history`() {
         seedEvaluatedPublicComponents()
         adminConnection().use { connection ->

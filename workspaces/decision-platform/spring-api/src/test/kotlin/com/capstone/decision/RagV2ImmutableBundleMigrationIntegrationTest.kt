@@ -2107,6 +2107,137 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
     }
 
     @Test
+    fun `exact superseded empty owner overlay is re-evaluated for deterministic reuse`() {
+        seedEvaluatedPublicComponents()
+        assertEquals(
+            2L,
+            callLong(
+                "decision_rag_admin",
+                RAG_ADMIN_PASSWORD,
+                """
+                select activate_rag_v2_immutable_public_base(
+                  '$EXACT_GENERATION', '$OA_GENERATION', 1, '$PUBLIC_ACTIVATION_RECEIPT'
+                )
+                """.trimIndent(),
+            ),
+        )
+
+        val emptyBundleId =
+            DriverManager.getConnection(postgres.jdbcUrl, "decision_rag_admin", RAG_ADMIN_PASSWORD).use { connection ->
+                callSingleRow(
+                    connection,
+                    """
+                    select bundle_id
+                    from prepare_rag_v2_immutable_owner_overlay('usr_demo_user', null::text)
+                    """.trimIndent(),
+                )
+            }
+        val emptyGenerationId =
+            adminConnection().use { connection ->
+                queryString(
+                    connection,
+                    "select owner_private_generation_id from rag_v2_immutable_bundles where bundle_id = '$emptyBundleId'",
+                )
+            }
+        val emptyManifestHash =
+            adminConnection().use { connection ->
+                queryString(
+                    connection,
+                    "select manifest_hash from rag_v2_immutable_component_generations where component_generation_id = '$emptyGenerationId'",
+                )
+            }
+        assertEquals(
+            1L,
+            callLong(
+                "decision_rag_admin",
+                RAG_ADMIN_PASSWORD,
+                """
+                select activate_rag_v2_immutable_owner_bundle(
+                  'usr_demo_user', '$emptyBundleId', null, 0,
+                  'rgr_act_89898989898989898989898989898989', 'OWNER_BUNDLE'
+                )
+                """.trimIndent(),
+            ),
+        )
+
+        // 재가져오기 뒤 같은 빈 library identity가 다시 필요해지는 실제 lifecycle을
+        // provider나 문서 fixture 없이 격리하기 위해 이전 active identity만 supersede한다.
+        adminConnection().use { connection ->
+            connection.createStatement().use { statement ->
+                statement.execute(
+                    "update rag_v2_immutable_bundles set state = 'SUPERSEDED' where bundle_id = '$emptyBundleId'",
+                )
+                statement.execute(
+                    "update rag_v2_immutable_component_generations set state = 'SUPERSEDED' where component_generation_id = '$emptyGenerationId'",
+                )
+            }
+        }
+
+        adminConnection().use { connection ->
+            connection.createStatement().use { statement ->
+                statement.execute(
+                    "update rag_v2_immutable_component_generations set manifest_hash = repeat('f', 64) where component_generation_id = '$emptyGenerationId'",
+                )
+            }
+        }
+        val mismatchedReuse =
+            assertThrows<SQLException> {
+                DriverManager.getConnection(postgres.jdbcUrl, "decision_rag_admin", RAG_ADMIN_PASSWORD).use { connection ->
+                    callSingleRow(
+                        connection,
+                        """
+                        select bundle_id
+                        from prepare_rag_v2_immutable_owner_overlay('usr_demo_user', null::text)
+                        """.trimIndent(),
+                    )
+                }
+            }
+        assertEquals("23505", mismatchedReuse.sqlState)
+        adminConnection().use { connection ->
+            assertEquals(
+                "SUPERSEDED",
+                queryString(
+                    connection,
+                    "select state from rag_v2_immutable_component_generations where component_generation_id = '$emptyGenerationId'",
+                ),
+            )
+            connection.createStatement().use { statement ->
+                statement.execute(
+                    "update rag_v2_immutable_component_generations set manifest_hash = '$emptyManifestHash' where component_generation_id = '$emptyGenerationId'",
+                )
+            }
+        }
+
+        val reusedBundleId =
+            DriverManager.getConnection(postgres.jdbcUrl, "decision_rag_admin", RAG_ADMIN_PASSWORD).use { connection ->
+                callSingleRow(
+                    connection,
+                    """
+                    select bundle_id
+                    from prepare_rag_v2_immutable_owner_overlay('usr_demo_user', null::text)
+                    """.trimIndent(),
+                )
+            }
+        assertEquals(emptyBundleId, reusedBundleId)
+        adminConnection().use { connection ->
+            assertEquals(
+                "EVALUATED",
+                queryString(
+                    connection,
+                    "select state from rag_v2_immutable_component_generations where component_generation_id = '$emptyGenerationId'",
+                ),
+            )
+            assertEquals(
+                "EVALUATED",
+                queryString(
+                    connection,
+                    "select state from rag_v2_immutable_bundles where bundle_id = '$emptyBundleId'",
+                ),
+            )
+        }
+    }
+
+    @Test
     fun compositeOwnerGraphRejectsCrossOwnerChunkAndBundleReferences() {
         seedEvaluatedPublicComponents()
         seedOwnerDeletionFixtures()

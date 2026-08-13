@@ -96,32 +96,37 @@ class JdbcPreS5VertexUsageLedgerTest {
                 ),
         )
 
-    private fun activation(expiresAt: Instant, fingerprint: String) =
-        PreS5VertexActivation(
-            packetSha256 = "1".repeat(64),
-            nonceSha256 = "2".repeat(64),
-            authenticationMode = "SERVICE_ACCOUNT_OAUTH",
-            projectId = "project-test-123",
-            modelId = "gemini-3.5-flash",
-            requestId = "req_vertex_1234567890",
-            scopeClaimId = "rvs_${"a".repeat(32)}",
-            questionFingerprintHmac = fingerprint,
-            answerMode = "DETAILED",
-            consentEventId = "rce_vertex_1234567890",
-            policySha256 = "4".repeat(64),
-            processorSetSha256 = "5".repeat(64),
-            expiresAt = expiresAt,
-            inputTokenCap = 60_512,
-            outputTokenCap = 1_000,
-            inputByteCap = 60_000,
-            costCapMicrousd = 131_000,
-            inputMicrousdPerToken = 2,
-            outputMicrousdPerToken = 9,
-            tokenPhysicalCallCap = 1,
-            generateContentPhysicalCallCap = 1,
-        )
+    private fun activation(
+        expiresAt: Instant,
+        fingerprint: String,
+    ) = PreS5VertexActivation(
+        packetSha256 = "1".repeat(64),
+        nonceSha256 = "2".repeat(64),
+        authenticationMode = "SERVICE_ACCOUNT_OAUTH",
+        projectId = "project-test-123",
+        modelId = "gemini-3.5-flash",
+        requestId = "req_vertex_1234567890",
+        scopeClaimId = "rvs_${"a".repeat(32)}",
+        questionFingerprintHmac = fingerprint,
+        answerMode = "DETAILED",
+        consentEventId = "rce_vertex_1234567890",
+        policySha256 = "4".repeat(64),
+        processorSetSha256 = "5".repeat(64),
+        expiresAt = expiresAt,
+        inputTokenCap = 60_512,
+        outputTokenCap = 1_000,
+        inputByteCap = 60_000,
+        costCapMicrousd = 131_000,
+        inputMicrousdPerToken = 2,
+        outputMicrousdPerToken = 9,
+        tokenPhysicalCallCap = 1,
+        generateContentPhysicalCallCap = 1,
+    )
 
-    private fun usageEventId(activation: PreS5VertexActivation, fingerprint: String): String {
+    private fun usageEventId(
+        activation: PreS5VertexActivation,
+        fingerprint: String,
+    ): String {
         val seed =
             listOf(
                 "rag-v2-vertex-usage-event/v1",
@@ -130,13 +135,20 @@ class JdbcPreS5VertexUsageLedgerTest {
                 fingerprint,
             ).joinToString("\u0000").toByteArray(StandardCharsets.UTF_8)
         return "rgr_vgu_" +
-            MessageDigest.getInstance("SHA-256").digest(seed).joinToString("") { "%02x".format(it) }.take(32)
+            MessageDigest
+                .getInstance("SHA-256")
+                .digest(seed)
+                .joinToString("") { "%02x".format(it) }
+                .take(32)
     }
 
     private class TestTransactionManager : AbstractPlatformTransactionManager() {
         override fun doGetTransaction(): Any = Any()
 
-        override fun doBegin(transaction: Any, definition: TransactionDefinition) = Unit
+        override fun doBegin(
+            transaction: Any,
+            definition: TransactionDefinition,
+        ) = Unit
 
         override fun doCommit(status: DefaultTransactionStatus) = Unit
 

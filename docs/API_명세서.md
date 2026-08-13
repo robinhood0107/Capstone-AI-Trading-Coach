@@ -113,8 +113,13 @@ provider/network call이 0이다.
 - `pre-s5-final-gate author-kis-quote|execute-kis-quote|author-window-b|verify-release`
 
 `verify-release`는 ignored `pre-s5-release-ledger/v2`의 marker를 단독 신뢰하지 않는다. fixed-path 0600
-owner BGE/KIS V3/required CI/security/tracked-audit receipt digest와 fresh V61 DB의 public·owner·S4.8 및
+owner BGE/KIS V3/required CI/security/tracked-audit receipt digest와 fresh V62 DB의 public·owner·S4.8 및
 Window B Voyage/Vertex `COMMITTED` aggregate를 모두 대조한 뒤에만 `OPEN`을 반환한다.
+
+거래시간 외에는 사용자가 명시 승인한 경우에만 KIS V3의 동일한 7단계를 provider call 0의 결정적
+mock으로 검증할 수 있다. receipt는 `AFTER_HOURS_DETERMINISTIC_MOCK`을 명시하고
+`KIS_MOCK_AFTER_HOURS_RECONCILIATION_VERIFIED=true`,
+`KIS_MOCK_FULL_RECONCILIATION_VERIFIED=false`를 산출해 물리 주문 검증과 구분한다.
 
 owner author/execute는 정확히 9개 format의 v2 ticket을 one request에 묶고, manifest·packet·current
 consent·owner profile·token/context cap을 socket 전에 검증한다. KIS quote manifest는 tokenP 최대 1회와

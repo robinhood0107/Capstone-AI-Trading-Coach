@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
 from app.rag.pre_s5_final_gate import (
     FinalGateError,
+    ReleaseDatabaseSnapshot,
     WindowBManifest,
     author_kis_quote_manifest,
     author_window_b_manifest,
@@ -16,6 +19,7 @@ from app.rag.pre_s5_final_gate import (
     load_kis_quote_receipt,
     load_window_b_manifest,
     require_window_b_child,
+    verify_release_ledger,
     write_kis_quote_receipt,
 )
 
@@ -170,3 +174,192 @@ def test_final_gate_writer_rejects_symlinked_control_directory(tmp_path: Path) -
             security_digest="4" * 64,
         )
     assert not (outside / "kis-mock-quote-manifest.v1.json").exists()
+
+
+def test_release_ledger_rejects_self_asserted_markers_without_bound_receipts(tmp_path: Path) -> None:
+    ledger = {
+        "binding": _release_binding(),
+        "markers": _release_markers(),
+        "schemaVersion": "pre-s5-release-ledger/v2",
+    }
+
+    with pytest.raises(FinalGateError, match="PRE_S5_RELEASE_LEDGER_INVALID"):
+        verify_release_ledger(
+            local_root=tmp_path,
+            binding=("1" * 40, "2" * 40, "3" * 64, "4" * 64),
+            ledger=ledger,
+            database_snapshot=_release_database_snapshot(),
+        )
+
+
+def test_release_ledger_rejects_receipt_digest_or_database_drift(tmp_path: Path) -> None:
+    ledger = _write_release_receipts_and_ledger(tmp_path)
+    ledger["receipts"]["kisMockV3"]["sha256"] = "f" * 64
+
+    with pytest.raises(FinalGateError, match="PRE_S5_RELEASE_RECEIPT_INVALID"):
+        verify_release_ledger(
+            local_root=tmp_path,
+            binding=("1" * 40, "2" * 40, "3" * 64, "4" * 64),
+            ledger=ledger,
+            database_snapshot=_release_database_snapshot(),
+        )
+
+    ledger = _write_release_receipts_and_ledger(tmp_path)
+    with pytest.raises(FinalGateError, match="PRE_S5_RELEASE_DATABASE_DRIFT"):
+        verify_release_ledger(
+            local_root=tmp_path,
+            binding=("1" * 40, "2" * 40, "3" * 64, "4" * 64),
+            ledger=ledger,
+            database_snapshot=replace(_release_database_snapshot(), public_chunk_count=7_870),
+        )
+
+
+def test_release_ledger_opens_only_with_exact_receipts_and_database_state(tmp_path: Path) -> None:
+    ledger = _write_release_receipts_and_ledger(tmp_path)
+
+    markers = verify_release_ledger(
+        local_root=tmp_path,
+        binding=("1" * 40, "2" * 40, "3" * 64, "4" * 64),
+        ledger=ledger,
+        database_snapshot=_release_database_snapshot(),
+    )
+
+    assert markers == _release_markers()
+
+
+def _release_binding() -> dict[str, str]:
+    return {
+        "ciDigest": "3" * 64,
+        "headCommit": "1" * 40,
+        "securityDigest": "4" * 64,
+        "treeObject": "2" * 40,
+    }
+
+
+def _release_markers() -> dict[str, object]:
+    return {
+        "BGE_OWNER_EMBEDDING_INFERENCE": "USER_SELECTED_ONLY",
+        "BGE_PUBLIC_EMBEDDING_INFERENCE_CALLS": 0,
+        "FINAL_SECURITY_COVERAGE_COMPLETE_FINDINGS": 0,
+        "FOREIGN_NEWS_MODEL_SELECTION": "ABSTAIN",
+        "FOREIGN_NEWS_PROVIDER_CALLS": 0,
+        "KIS_MOCK_FULL_RECONCILIATION_VERIFIED": True,
+        "OWNER_PRIVATE_BGE_LOCAL_VERIFIED": True,
+        "OWNER_PRIVATE_IMPORT_DELETE_RLS_VERIFIED": True,
+        "OWNER_PRIVATE_PROFILE_SELECTION": "USER_EXPLICIT_LIBRARY_LEVEL",
+        "OWNER_PRIVATE_VOYAGE_SYNTHETIC_ONE_SHOT_VERIFIED": True,
+        "PRE_S5_FRESH_EXECUTION_NAMESPACE_VERIFIED": True,
+        "RAG_NEWS_ANALYST_DECISION_SIGNAL_ORDER_AUTHORITY": 0,
+        "RAG_V2_ACTIVE_EMBEDDING_PROFILE": "voyage_context_4_1024_v1",
+        "RAG_V2_CORPUS_STATE": "FULL_READY",
+        "S48_ACCESSIBLE_LANES_TERMINALLY_CLASSIFIED": True,
+        "TRACKED_RAW_EXTRACTED_EMBEDDINGS": 0,
+        "VERTEX_SERVICE_ACCOUNT_OAUTH_GEMINI_3_5_FLASH_ONE_SHOT_VERIFIED": True,
+        "VOYAGE_QUERY_USAGE": "COMMITTED",
+    }
+
+
+def _release_database_snapshot() -> ReleaseDatabaseSnapshot:
+    return ReleaseDatabaseSnapshot(
+        latest_migration=61,
+        public_state="ACTIVE",
+        public_embedding_profile_id="voyage_context_4_1024_v1",
+        public_source_count=142,
+        public_chunk_count=7_871,
+        committed_document_batch_count=63,
+        public_evaluation_count=2,
+        public_evaluation_minimum=1.0,
+        public_evaluation_leak_count=0,
+        owner_source_count=0,
+        owner_chunk_count=0,
+        owner_embedding_count=0,
+        owner_pointer_count=0,
+        owner_voyage_committed_document_count=9,
+        owner_voyage_committed_chunk_count=9,
+        s48_states=(
+            ("S48_CORE6_ECOS", "ABSTAIN"),
+            ("S48_CORE6_KIS", "AVAILABLE"),
+            ("S48_CORE6_KOFIA", "BLOCKED"),
+            ("S48_CORE6_KRX", "ABSTAIN"),
+            ("S48_CORE6_OPENDART", "ABSTAIN"),
+            ("S48_CORE6_SEC_EDGAR", "ABSTAIN"),
+            ("S48_OPTIONAL3_FINNHUB", "BLOCKED"),
+            ("S48_OPTIONAL3_MASSIVE", "BLOCKED"),
+            ("S48_OPTIONAL3_TWELVE_DATA", "BLOCKED"),
+        ),
+        voyage_query_committed_packet_sha256="5" * 64,
+        vertex_committed_packet_sha256="6" * 64,
+    )
+
+
+def _write_release_receipts_and_ledger(tmp_path: Path) -> dict[str, object]:
+    evidence = tmp_path / "evidence"
+    evidence.mkdir(mode=0o700)
+    binding = _release_binding()
+    facts_by_name: dict[str, dict[str, object]] = {
+        "ownerBgeLocal": {
+            "documentCount": 1,
+            "providerPhysicalCalls": 0,
+            "residualRows": 0,
+        },
+        "kisMockV3": {
+            "brokeragePhysicalCalls": 7,
+            "completedSteps": [
+                "preBalance",
+                "buyable",
+                "submitLimitBuy",
+                "cancelFull",
+                "executionRead",
+                "postBalance",
+                "openOrderReconciliation",
+            ],
+            "liveOrderCalls": 0,
+            "openOrderCount": 0,
+            "retryCount": 0,
+            "tokenPhysicalCalls": 1,
+        },
+        "requiredCi": {
+            "checks": {
+                "Contracts CI": "SUCCESS",
+                "Kotlin Build": "SUCCESS",
+                "Python CI": "SUCCESS",
+                "Repo Hygiene": "SUCCESS",
+            }
+        },
+        "securityScan": {"coverage": "complete", "validatedFindings": 0},
+        "trackedAudit": {
+            "aiAttributionCount": 0,
+            "credentialCount": 0,
+            "placeholderWorkspaceDiffCount": 0,
+            "rawTextVectorCount": 0,
+        },
+    }
+    receipts: dict[str, dict[str, str]] = {}
+    for name, facts in facts_by_name.items():
+        path = evidence / f"{name}.json"
+        payload = {
+            "binding": binding,
+            "facts": facts,
+            "kind": name,
+            "schemaVersion": "pre-s5-release-evidence-receipt/v1",
+            "state": "VERIFIED",
+        }
+        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+        path.write_bytes(encoded)
+        path.chmod(0o600)
+        receipts[name] = {
+            "path": f"evidence/{name}.json",
+            "sha256": hashlib.sha256(encoded).hexdigest(),
+        }
+    return {
+        "binding": binding,
+        "markers": _release_markers(),
+        "receipts": receipts,
+        "schemaVersion": "pre-s5-release-ledger/v2",
+        "windowB": {
+            "kisMockPacketSha256": "7" * 64,
+            "manifestSha256": "8" * 64,
+            "vertexPacketSha256": "6" * 64,
+            "voyageQueryPacketSha256": "5" * 64,
+        },
+    }

@@ -72,10 +72,11 @@ hash 권한이 0이다.
 
 ### 0.3 Pre-S5 public activation과 owner profile authority
 
-2026-08-13 current local execution은 fresh DB V60에서 public RAG `FULL_READY`, active profile
+2026-08-14 current local execution은 fresh DB V62에서 public RAG `FULL_READY`, active profile
 `voyage_context_4_1024_v1`, sources/chunks `142/7,871`, document batch `63/63 COMMITTED`,
 EXACT30/OA112 evaluation `2/2 PASSED`를 보존한다. public Voyage document/evaluation/production query는
-재실행하지 않고 public BGE embedding inference는 계속 0이다.
+재실행하지 않고 public BGE embedding inference는 계속 0이다. V63은 release 전 정상 Flyway 경로로
+적용해야 하며, 새 public migration·V64·OpenAPI/proto 변경을 뜻하지 않는다.
 
 숨겨진 owner import-ticket control-plane request/response는 v2이며 request의 exact shape는 다음과 같다.
 
@@ -129,6 +130,12 @@ packet SHA를 결박하며 각 runtime은 parent approval SHA와 자기 child SH
 `capstone-rag/secrets/pre-s5-vertex-service-account.json`의 현재 사용자 소유 0600 regular file/link count 1
 경계와 기존 service-account OAuth만 사용한다. API key·ADC fallback은 없다. 이 control plane은 v1
 OpenAPI/proto 및 ask/history/status response bytes를 변경하지 않는다.
+
+현재 synthetic owner Voyage one-shot은 exact manifest 아래 물리 호출 1회로 9개 format을 stage한 뒤
+same-owner 검색과 전량 hard-delete를 완료했고 source/chunk/vector/profile-lock residual은 0이다. KIS
+current-price receipt와 S4.8 9-lane terminal 분류도 완료됐으며 재호출하지 않는다. 남은 physical gate는
+fresh final-head Window B의 Voyage query 1회와 Vertex service-account OAuth/generateContent 각 1회다.
+거래시간 외 KIS는 위 결정적 mock receipt로 대체하며 실제 tokenP·brokerage·live-order 호출은 0이다.
 
 > 완료 기준점(2026-07-16): S1.3 내부 ECOS/Naver producer는 PR #16 merge commit
 > `6f439155d9f5ec626fc185f29f2e0bd64ca54780`, S1.3K KRX 내부 collector는 PR #17 merge

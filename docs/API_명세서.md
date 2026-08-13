@@ -112,6 +112,10 @@ provider/network call이 0이다.
 - `pre-s5-owner-voyage author|execute`
 - `pre-s5-final-gate author-kis-quote|execute-kis-quote|author-window-b|verify-release`
 
+`verify-release`는 ignored `pre-s5-release-ledger/v2`의 marker를 단독 신뢰하지 않는다. fixed-path 0600
+owner BGE/KIS V3/required CI/security/tracked-audit receipt digest와 fresh V61 DB의 public·owner·S4.8 및
+Window B Voyage/Vertex `COMMITTED` aggregate를 모두 대조한 뒤에만 `OPEN`을 반환한다.
+
 owner author/execute는 정확히 9개 format의 v2 ticket을 one request에 묶고, manifest·packet·current
 consent·owner profile·token/context cap을 socket 전에 검증한다. KIS quote manifest는 tokenP 최대 1회와
 current-price 1회, retry 0만 허용한다. Window B manifest는 Voyage query, Vertex activation, KIS V3 child

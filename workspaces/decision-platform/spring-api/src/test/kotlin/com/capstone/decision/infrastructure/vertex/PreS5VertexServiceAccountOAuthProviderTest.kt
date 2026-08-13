@@ -128,6 +128,36 @@ class PreS5VertexServiceAccountOAuthProviderTest {
         assertThat(responseBody).containsOnly(0)
     }
 
+    @Test
+    fun `OAuth non-success without a body keeps the HTTP failure leaf`() {
+        val credentialProvider = mockk<PreS5VertexServiceAccountCredentialProvider>()
+        val executor = mockk<PreS5VertexOAuthTokenExecutor>()
+        val keyPair = KeyPairGenerator.getInstance("RSA").apply { initialize(2048) }.generateKeyPair()
+        every { credentialProvider.acquire() } returns
+            PreS5VertexServiceAccountCredential(
+                projectId = "project-test-123",
+                clientEmail = "vertex-test@project-test-123.iam.gserviceaccount.com",
+                privateKeyId = "a".repeat(40),
+                privateKey = keyPair.private,
+            )
+        every { executor.execute(any()) } returns PreS5VertexOAuthTokenResponse(400, byteArrayOf())
+        val now = Instant.parse("2026-08-12T03:00:00Z")
+        val activation = activation(now.plusSeconds(300))
+
+        val failure =
+            runCatching {
+                PreS5VertexServiceAccountOAuthProvider(
+                    credentialProvider,
+                    executor,
+                    Clock.fixed(now, ZoneOffset.UTC),
+                ).acquire(activation, PreS5VertexTokenAttempt(lease(activation.expiresAt)))
+            }.exceptionOrNull()
+
+        assertThat(failure).isInstanceOf(PreS5VertexOAuthException::class.java)
+        assertThat((failure as PreS5VertexOAuthException).failureLeaf)
+            .isEqualTo(PreS5VertexOAuthFailureLeaf.HTTP_4XX)
+    }
+
     private fun activation(expiresAt: Instant) =
         PreS5VertexActivation(
             packetSha256 = "d".repeat(64),

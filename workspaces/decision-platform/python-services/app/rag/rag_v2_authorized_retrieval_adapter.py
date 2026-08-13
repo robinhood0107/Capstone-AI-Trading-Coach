@@ -238,7 +238,9 @@ class PsycopgRagV2AuthorizedRetrievalAdapter:
             ) as connection:
                 with connection.transaction():
                     self._attest_query_connection(connection)
-                    connection.execute("SET LOCAL statement_timeout = '1500ms'")
+                    # 7,871개 public vector의 첫 exact cosine scan은 cold cache에서 1.5초를 넘을 수 있다.
+                    # claim/row cap은 그대로 두고 query usage lease와 같은 5초 안에서만 완료를 허용한다.
+                    connection.execute("SET LOCAL statement_timeout = '5s'")
                     connection.execute("SET LOCAL lock_timeout = '250ms'")
                     connection.execute(
                         "SET LOCAL idle_in_transaction_session_timeout = '5s'"

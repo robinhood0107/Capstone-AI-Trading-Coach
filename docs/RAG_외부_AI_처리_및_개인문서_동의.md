@@ -3,6 +3,9 @@
 상태: `EXTERNAL_AI_RAG_V2 / PUBLIC_FULL_READY / OWNER_DUAL_PROFILE_IMPLEMENTED_DRAFT`
 적용 대상: S4.7D logical OA112·owner-private RAG v2의 후속 materializer 및 generator runtime
 
+역사적 truth-freeze marker `TARGET_NOT_ACTIVE`와 `OA112_ACTIVE_CONTRACT_LOCKED`는
+`HISTORICAL_SUPERSEDED` 재현 근거로 보존하며 현재 public activation 상태를 덮어쓰지 않는다.
+
 이 문서는 사용자가 자신의 문서를 RAG 설명 기능에 넣을 때의 처리 경계와 향후 동의 계약을
 설명한다. public Voyage corpus는 fresh namespace에서 `FULL_READY`지만 owner Voyage와 Vertex는
 아직 exact 승인 전이다. 이 문서만으로 새 외부 호출이 시작되지 않는다.

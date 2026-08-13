@@ -14,6 +14,7 @@ import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import java.time.Instant
 import java.time.OffsetDateTime
+import java.time.ZoneOffset
 
 internal data class PreS5VertexUsageLease(
     val usageEventId: String,
@@ -102,7 +103,8 @@ internal class JdbcPreS5VertexUsageLedger(
                             "nonceSha256" to activation.nonceSha256,
                             "policySha256" to activation.policySha256,
                             "processorSetSha256" to activation.processorSetSha256,
-                            "expiresAt" to activation.expiresAt,
+                            // PostgreSQL JDBC는 Instant 직접 bind를 거부하므로 UTC timestamptz 표현으로 고정한다.
+                            "expiresAt" to OffsetDateTime.ofInstant(activation.expiresAt, ZoneOffset.UTC),
                             "inputTokenCap" to activation.inputTokenCap,
                             "outputTokenCap" to activation.outputTokenCap,
                             "inputByteCap" to activation.inputByteCap,

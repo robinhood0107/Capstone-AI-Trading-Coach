@@ -36,6 +36,22 @@ internal interface PreS5VertexOAuthTokenExecutor {
     fun execute(request: PreS5VertexOAuthTokenRequest): PreS5VertexOAuthTokenResponse
 }
 
+/** raw OAuth body나 credential 없이 실패 경계 하나만 운영 로그에 남기는 allowlist다. */
+internal enum class PreS5VertexOAuthFailureLeaf {
+    CREDENTIAL,
+    REQUEST,
+    TRANSPORT,
+    HTTP_4XX,
+    HTTP_5XX,
+    HTTP_OTHER,
+    OAUTH_INVALID_CLIENT,
+    OAUTH_INVALID_GRANT,
+    OAUTH_INVALID_REQUEST,
+    OAUTH_UNAUTHORIZED_CLIENT,
+    OAUTH_UNSUPPORTED_GRANT_TYPE,
+    RESPONSE_INVALID,
+}
+
 /** OAuth token endpoint도 direct TLS 한 번만 사용하며 redirect, proxy, retry를 제공하지 않는다. */
 @Component
 @ConditionalOnProperty(name = ["app.rag-v2.vertex.enabled"], havingValue = "true")
@@ -61,9 +77,9 @@ internal class JdkPreS5VertexOAuthTokenExecutor(
                 )
             return PreS5VertexOAuthTokenResponse(response.statusCode, response.body)
         } catch (error: PreS5VertexOneShotHttpsTransportException) {
-            throw PreS5VertexOAuthException()
+            throw PreS5VertexOAuthException(PreS5VertexOAuthFailureLeaf.TRANSPORT)
         } catch (_: Exception) {
-            throw PreS5VertexOAuthException()
+            throw PreS5VertexOAuthException(PreS5VertexOAuthFailureLeaf.REQUEST)
         } finally {
             request.body.fill(0)
         }
@@ -112,16 +128,20 @@ internal class PreS5VertexServiceAccountOAuthProvider(
         var assertion: ByteArray? = null
         var requestBody: ByteArray? = null
         var responseBody: ByteArray? = null
+        var failureLeaf = PreS5VertexOAuthFailureLeaf.REQUEST
         try {
             require(activation.authenticationMode == "SERVICE_ACCOUNT_OAUTH")
             require(activation.tokenPhysicalCallCap == 1 && activation.generateContentPhysicalCallCap == 1)
             require(attempt.lease.expiresAt == activation.expiresAt)
             val now = Instant.now(clock)
             require(now.isBefore(activation.expiresAt))
+            failureLeaf = PreS5VertexOAuthFailureLeaf.CREDENTIAL
             val credential = credentialProvider.acquire()
             require(credential.projectId == activation.projectId)
+            failureLeaf = PreS5VertexOAuthFailureLeaf.REQUEST
             assertion = signedAssertion(credential, now, activation.expiresAt)
             requestBody = GRANT_TYPE_PREFIX.toByteArray(StandardCharsets.US_ASCII) + assertion
+            failureLeaf = PreS5VertexOAuthFailureLeaf.TRANSPORT
             val response =
                 executor.execute(
                     PreS5VertexOAuthTokenRequest(
@@ -133,7 +153,11 @@ internal class PreS5VertexServiceAccountOAuthProvider(
                     ),
                 )
             responseBody = response.body
-            require(response.statusCode in 200..299 && responseBody.size in 1..MAX_TOKEN_RESPONSE_BYTES)
+            require(responseBody.size in 1..MAX_TOKEN_RESPONSE_BYTES)
+            if (response.statusCode !in 200..299) {
+                throw PreS5VertexOAuthException(oauthFailureLeaf(response.statusCode, responseBody))
+            }
+            failureLeaf = PreS5VertexOAuthFailureLeaf.RESPONSE_INVALID
             val root = mapper.readTree(responseBody)
             require(root != null && root.isObject)
             val responseFields = root.properties().map { it.key }.toSet()
@@ -144,13 +168,41 @@ internal class PreS5VertexServiceAccountOAuthProvider(
             val token = requireNotNull(root["access_token"]?.stringValue())
             require(token.length in MIN_TOKEN_BYTES..MAX_TOKEN_BYTES && token.all { it.code in 0x21..0x7e })
             return PreS5VertexAccessToken(credential.projectId, token.toByteArray(StandardCharsets.US_ASCII))
+        } catch (error: PreS5VertexOAuthException) {
+            throw error
         } catch (_: Exception) {
-            throw PreS5VertexOAuthException()
+            throw PreS5VertexOAuthException(failureLeaf)
         } finally {
             assertion?.fill(0)
             requestBody?.fill(0)
             responseBody?.fill(0)
         }
+    }
+
+    private fun oauthFailureLeaf(
+        statusCode: Int,
+        body: ByteArray,
+    ): PreS5VertexOAuthFailureLeaf {
+        val fallback =
+            when (statusCode) {
+                in 400..499 -> PreS5VertexOAuthFailureLeaf.HTTP_4XX
+                in 500..599 -> PreS5VertexOAuthFailureLeaf.HTTP_5XX
+                else -> PreS5VertexOAuthFailureLeaf.HTTP_OTHER
+            }
+        return runCatching {
+            val root = mapper.readTree(body)
+            if (root == null || !root.isObject) {
+                return@runCatching fallback
+            }
+            when (root["error"]?.takeIf { it.isString }?.stringValue()) {
+                "invalid_client" -> PreS5VertexOAuthFailureLeaf.OAUTH_INVALID_CLIENT
+                "invalid_grant" -> PreS5VertexOAuthFailureLeaf.OAUTH_INVALID_GRANT
+                "invalid_request" -> PreS5VertexOAuthFailureLeaf.OAUTH_INVALID_REQUEST
+                "unauthorized_client" -> PreS5VertexOAuthFailureLeaf.OAUTH_UNAUTHORIZED_CLIENT
+                "unsupported_grant_type" -> PreS5VertexOAuthFailureLeaf.OAUTH_UNSUPPORTED_GRANT_TYPE
+                else -> fallback
+            }
+        }.getOrDefault(fallback)
     }
 
     private fun signedAssertion(
@@ -205,4 +257,6 @@ internal class PreS5VertexServiceAccountOAuthProvider(
     }
 }
 
-internal class PreS5VertexOAuthException : RuntimeException()
+internal class PreS5VertexOAuthException(
+    val failureLeaf: PreS5VertexOAuthFailureLeaf,
+) : RuntimeException()

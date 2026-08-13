@@ -5,6 +5,7 @@ import com.capstone.decision.application.rag.RagV2VertexGenerationCommand
 import com.capstone.decision.application.rag.RagV2VertexGenerationPort
 import com.capstone.decision.application.rag.RagV2VertexGenerationResult
 import com.capstone.decision.application.rag.RagV2VertexResponseValidator
+import org.slf4j.LoggerFactory
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.stereotype.Component
 import tools.jackson.core.JacksonException
@@ -109,7 +110,10 @@ internal class VertexGemini35FlashGenerationAdapter(
             } finally {
                 body.fill(0)
             }
-        } catch (_: Exception) {
+        } catch (error: Exception) {
+            if (error is PreS5VertexOAuthException) {
+                LOGGER.warn("pre_s5_vertex_oauth_failed leaf={}", error.failureLeaf.name)
+            }
             if (lease != null && !outcomeRecorded) {
                 runCatching { usageLedger.markUnknownBilling(lease) }
             }
@@ -281,6 +285,7 @@ internal class VertexGemini35FlashGenerationAdapter(
     )
 
     private companion object {
+        val LOGGER = LoggerFactory.getLogger(VertexGemini35FlashGenerationAdapter::class.java)
         val OWNER_ID = Regex("^usr_[a-z0-9][a-z0-9_-]{2,95}$")
         val REQUEST_ID = Regex("^req_[A-Za-z0-9_-]{12,96}$")
         val CITATION_ID = Regex("^cit_[1-5]$")

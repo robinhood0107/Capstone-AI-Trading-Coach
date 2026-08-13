@@ -63,10 +63,11 @@ data class RagV2EffectiveConsent(
 )
 
 data class RagV2ImportTicket(
-    val contractId: String = "s4-rag-v2-import-ticket-v1",
-    val schemaVersion: Int = 1,
+    val contractId: String = "s4-rag-v2-import-ticket-v2",
+    val schemaVersion: Int = 2,
     val ticketId: String,
     val sourceScope: String = "OWNER_PRIVATE",
+    val embeddingProfileId: String,
     val issuedAt: Instant,
     val expiresAt: Instant,
     val ttlSeconds: Int = 300,

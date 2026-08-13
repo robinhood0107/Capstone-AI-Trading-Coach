@@ -6,14 +6,16 @@ import math
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any, Protocol, cast
 
 import numpy as np
 import psycopg
 from psycopg.types.json import Jsonb
 
 from app.rag.authorized_retrieval import ALLOWED_RAG_TOPICS
+from app.rag.document_ir_materializer import RagV2DocumentMaterialization
 from app.rag.rag_v2_bge_materializer import RagV2BgeMaterializedOwnerDocument
+from app.rag.rag_v2_bge_materializer import RagV2PreparedOwnerDocument
 
 _BGE_PROFILE_ID = "bge_m3_local_1024_v1"
 _TOKENIZER_VERSION = "bge-m3-5617a9f-tokenizer-400-600-v1"
@@ -21,7 +23,7 @@ _WRITER_ROLE = "decision_rag_writer"
 _OWNER_ID = re.compile(r"^usr_[a-z0-9][a-z0-9_-]{2,95}$")
 _IMPORT_TICKET_ID = re.compile(r"^rti_[0-9a-f]{32}$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
-_STAGE_FUNCTION = "public.stage_rag_v2_immutable_owner_bge_document_v2(text,text,jsonb)"
+_STAGE_FUNCTION = "public.stage_rag_v2_immutable_owner_document_v3(text,text,jsonb)"
 _WRITER_FORBIDDEN_TABLES = (
     "rag_v2_immutable_oa_track_catalog",
     "rag_v2_immutable_oa_source_cards",
@@ -38,6 +40,17 @@ _WRITER_FORBIDDEN_TABLES = (
     "rag_v2_immutable_import_tickets",
 )
 _PATH_KEYS = frozenset(("originalPath", "rawPath", "absolutePath", "filePath", "url"))
+
+
+class _OwnerPreparedDocument(Protocol):
+    @property
+    def document(self) -> RagV2DocumentMaterialization: ...
+
+    @property
+    def source_revision_sha256(self) -> str: ...
+
+    @property
+    def document_ir(self) -> dict[str, object]: ...
 
 
 class OwnerBgeStagingError(ValueError):
@@ -168,12 +181,96 @@ def build_owner_bge_staging_payload(
         "rawContentSha256": document.raw_content_sha256,
         "retrievalTopics": list(metadata.retrieval_topics),
         "sanitizedDisplayName": metadata.sanitized_display_name,
-        "schemaVersion": 2,
+        "schemaVersion": 3,
         "sourceId": document.source_id,
         "sourceLocator": dict(ordered_chunks[0].locator),
         "sourceRevisionId": document.source_revision_id,
         "sourceRevisionSha256": materialized.source_revision_sha256,
         "tokenizerVersion": _TOKENIZER_VERSION,
+    }
+    _assert_payload_is_path_free(payload)
+    return payload
+
+
+def build_owner_voyage_staging_payload(
+    prepared: RagV2PreparedOwnerDocument,
+    *,
+    metadata: OwnerBgeStagingMetadata,
+    tokenizer_version: str,
+) -> dict[str, object]:
+    """safe owner Document IR을 vector 없는 one-shot Voyage staging skeleton으로 만든다.
+
+    canonical text는 provider completion transaction까지만 존재한다. caller는 exact response
+    vector를 `embeddings`에 결합해야 하며 이 skeleton 자체를 receipt/log로 저장하면 안 된다.
+    """
+
+    document = prepared.document
+    if (
+        document.source_scope != "OWNER_PRIVATE"
+        or not document.external_processing_eligible
+        or not document.chunks
+        or len(document.chunks) != len(prepared.embedding_inputs)
+        or not _SHA256.fullmatch(prepared.source_revision_sha256)
+        or not isinstance(tokenizer_version, str)
+        or not 1 <= len(tokenizer_version) <= 128
+        or tokenizer_version != tokenizer_version.strip()
+    ):
+        raise OwnerBgeStagingError("OWNER_VOYAGE_STAGE_MATERIALIZATION_INVALID")
+    document_ir = _validated_document_ir(prepared, document_id=document.document_id)
+    ordered_chunks = tuple(sorted(document.chunks, key=lambda item: item.sequence))
+    if tuple(chunk.sequence for chunk in ordered_chunks) != tuple(
+        range(1, len(ordered_chunks) + 1)
+    ):
+        raise OwnerBgeStagingError("OWNER_VOYAGE_STAGE_CHUNK_ORDINAL")
+    inputs_by_chunk = {item.chunk_revision_id: item for item in prepared.embedding_inputs}
+    if len(inputs_by_chunk) != len(prepared.embedding_inputs):
+        raise OwnerBgeStagingError("OWNER_VOYAGE_STAGE_EMBEDDING_IDENTITY")
+
+    chunks: list[dict[str, object]] = []
+    for chunk in ordered_chunks:
+        embedding_input = inputs_by_chunk.get(chunk.chunk_id)
+        if (
+            embedding_input is None
+            or embedding_input.embedding_profile_id != "voyage_context_4_1024_v1"
+            or embedding_input.text != chunk.canonical_text
+            or not _SHA256.fullmatch(embedding_input.embedding_input_hash)
+            or not _SHA256.fullmatch(embedding_input.context_set_hash or "")
+        ):
+            raise OwnerBgeStagingError("OWNER_VOYAGE_STAGE_EMBEDDING_IDENTITY")
+        chunks.append(
+            {
+                "canonicalText": chunk.canonical_text,
+                "canonicalTextSha256": chunk.canonical_text_sha256,
+                "chunkId": chunk.chunk_id,
+                "chunkOrdinal": chunk.sequence,
+                "containsTable": chunk.contains_table,
+                "headingPath": list(chunk.heading_path),
+                "locator": dict(chunk.locator),
+                "tokenCount": chunk.token_count,
+            }
+        )
+
+    canonical_text = "\n\n".join(chunk.canonical_text for chunk in ordered_chunks)
+    payload = {
+        "canonicalText": canonical_text,
+        "canonicalTextSha256": hashlib.sha256(canonical_text.encode("utf-8")).hexdigest(),
+        "chunks": chunks,
+        "documentId": document.document_id,
+        "documentIr": document_ir,
+        "embeddingProfileId": "voyage_context_4_1024_v1",
+        "embeddings": [],
+        "mimeType": _required_document_ir_text(document_ir, "mimeType"),
+        "normalizedDocumentIrSha256": document.normalized_content_sha256,
+        "parserVersion": _parser_version(document_ir),
+        "rawContentSha256": document.raw_content_sha256,
+        "retrievalTopics": list(metadata.retrieval_topics),
+        "sanitizedDisplayName": metadata.sanitized_display_name,
+        "schemaVersion": 3,
+        "sourceId": document.source_id,
+        "sourceLocator": dict(ordered_chunks[0].locator),
+        "sourceRevisionId": document.source_revision_id,
+        "sourceRevisionSha256": prepared.source_revision_sha256,
+        "tokenizerVersion": tokenizer_version,
     }
     _assert_payload_is_path_free(payload)
     return payload
@@ -218,7 +315,7 @@ class PsycopgRagV2OwnerBgeStagingRepository:
                     row = connection.execute(
                         """
                         SELECT component_generation_id, materialization_run_id, state, source_count, chunk_count
-                        FROM public.stage_rag_v2_immutable_owner_bge_document_v2(%s, %s, %s::jsonb)
+                        FROM public.stage_rag_v2_immutable_owner_document_v3(%s, %s, %s::jsonb)
                         """,
                         (owner_user_id, import_ticket_id, Jsonb(payload)),
                     ).fetchone()
@@ -254,7 +351,7 @@ class PsycopgRagV2OwnerBgeStagingRepository:
 
 
 def _validated_document_ir(
-    materialized: RagV2BgeMaterializedOwnerDocument,
+    materialized: _OwnerPreparedDocument,
     *,
     document_id: str,
 ) -> dict[str, object]:

@@ -947,6 +947,47 @@ BEGIN
         TO decision_rag_admin;
     END IF;
     IF to_regprocedure(
+        'public.issue_rag_v2_immutable_import_ticket_v2(text,text,text,text,text)'
+    ) IS NOT NULL
+       AND to_regprocedure(
+           'public.stage_rag_v2_immutable_owner_document_v3(text,text,jsonb)'
+       ) IS NOT NULL THEN
+        -- V60 owner library profile 선택도 bootstrap 후 raw table 권한 없이 복구한다.
+        GRANT EXECUTE ON FUNCTION
+            issue_rag_v2_immutable_import_ticket_v2(text, text, text, text, text)
+        TO decision_app;
+        GRANT EXECUTE ON FUNCTION
+            stage_rag_v2_immutable_owner_document_v3(text, text, jsonb)
+        TO decision_rag_writer;
+        IF to_regprocedure(
+            'public.stage_rag_v2_immutable_owner_bge_document_v2(text,text,jsonb)'
+        ) IS NOT NULL THEN
+            REVOKE ALL PRIVILEGES ON FUNCTION
+                stage_rag_v2_immutable_owner_bge_document_v2(text, text, jsonb)
+            FROM decision_rag_writer;
+        END IF;
+    END IF;
+    IF to_regprocedure(
+        'public.reserve_rag_v2_owner_voyage_import(text,text,text,text,text,text,text[],integer,integer,integer)'
+    ) IS NOT NULL
+       AND to_regprocedure(
+           'public.complete_rag_v2_owner_voyage_import(text,text,text,jsonb,integer,integer,bigint)'
+       ) IS NOT NULL
+       AND to_regprocedure(
+           'public.fail_rag_v2_owner_voyage_import_unknown_billing(text,text,text,text)'
+       ) IS NOT NULL THEN
+        -- owner Voyage는 reserve/atomic completion/terminal failure 함수만 writer에 복구한다.
+        GRANT EXECUTE ON FUNCTION
+            reserve_rag_v2_owner_voyage_import(
+                text, text, text, text, text, text, text[], integer, integer, integer
+            ),
+            complete_rag_v2_owner_voyage_import(
+                text, text, text, jsonb, integer, integer, bigint
+            ),
+            fail_rag_v2_owner_voyage_import_unknown_billing(text, text, text, text)
+        TO decision_rag_writer;
+    END IF;
+    IF to_regprocedure(
         'public.stage_rag_v2_immutable_public_bge_document(jsonb)'
     ) IS NOT NULL
        AND to_regprocedure(
@@ -1160,7 +1201,11 @@ BEGIN
     END IF;
     IF to_regprocedure(
         'public.stage_rag_v2_immutable_owner_bge_document_v2(text,text,jsonb)'
-    ) IS NOT NULL THEN
+    ) IS NOT NULL
+       AND to_regprocedure(
+           'public.stage_rag_v2_immutable_owner_document_v3(text,text,jsonb)'
+       ) IS NULL THEN
+        -- V60 전 schema에서만 BGE 전용 legacy staging capability를 복구한다.
         GRANT EXECUTE ON FUNCTION
             stage_rag_v2_immutable_owner_bge_document_v2(text, text, jsonb)
         TO decision_rag_writer;
@@ -1253,6 +1298,18 @@ BEGIN
         TO decision_app;
     END IF;
     IF to_regprocedure(
+        'public.issue_rag_v2_retrieval_scope_v2(text,text,text[])'
+    ) IS NOT NULL
+       AND to_regprocedure(
+           'public.read_rag_v2_vertex_prepared_scope_v2(text,text,text,text[])'
+       ) IS NOT NULL THEN
+        -- V60 app projection은 owner profile이 결박된 scope와 Vertex precheck만 노출한다.
+        GRANT EXECUTE ON FUNCTION
+            issue_rag_v2_retrieval_scope_v2(text, text, text[]),
+            read_rag_v2_vertex_prepared_scope_v2(text, text, text, text[])
+        TO decision_app;
+    END IF;
+    IF to_regprocedure(
         'public.read_rag_v2_retrieval_scope(text,text,text)'
     ) IS NOT NULL
        AND to_regprocedure(
@@ -1265,6 +1322,22 @@ BEGIN
             search_authorized_rag_v2_exact(text, text, text, text[], text[]),
             search_authorized_rag_v2_lexical(text, text, text, text[], text),
             search_authorized_rag_v2_dense(text, text, text, text[], vector)
+        TO decision_rag_query;
+    END IF;
+    IF to_regprocedure(
+        'public.read_rag_v2_retrieval_scope_v2(text,text,text)'
+    ) IS NOT NULL
+       AND to_regprocedure(
+           'public.read_rag_v2_retrieval_scope_by_claim_v2(text,text)'
+       ) IS NOT NULL
+       AND to_regprocedure(
+           'public.search_authorized_rag_v2_dense_v2(text,text,text,text[],vector,vector)'
+       ) IS NOT NULL THEN
+        -- 서로 다른 vector space는 V60의 profile-local rank projection으로만 query role에 노출한다.
+        GRANT EXECUTE ON FUNCTION
+            read_rag_v2_retrieval_scope_v2(text, text, text),
+            read_rag_v2_retrieval_scope_by_claim_v2(text, text),
+            search_authorized_rag_v2_dense_v2(text, text, text, text[], vector, vector)
         TO decision_rag_query;
     END IF;
     IF to_regprocedure(

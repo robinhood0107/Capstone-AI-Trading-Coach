@@ -36,7 +36,7 @@ class RagSourceRegistryMigrationIntegrationTest {
                 ).isEqualTo("0")
             }
 
-            flyway(jdbcUrl).migrate()
+            flyway(jdbcUrl, target = "60").migrate()
 
             adminConnection(jdbcUrl).use { connection ->
                 assertThat(queryString(connection, "select max(version::integer)::text from flyway_schema_history where success"))
@@ -55,6 +55,43 @@ class RagSourceRegistryMigrationIntegrationTest {
                 ).isEqualTo("1")
                 assertThat(queryString(connection, "select count(*)::text from rag_v2_immutable_import_tickets"))
                     .isEqualTo("0")
+            }
+        }
+    }
+
+    @Test
+    fun `V60 to V61 owner overlay reuse repair is forward only and preserves ACL`() {
+        withPreparedDatabase("owner_overlay_reuse_upgrade") { jdbcUrl ->
+            flyway(jdbcUrl, target = "60").migrate()
+            adminConnection(jdbcUrl).use { connection ->
+                assertThat(queryString(connection, "select max(version::integer)::text from flyway_schema_history where success"))
+                    .isEqualTo("60")
+            }
+
+            flyway(jdbcUrl).migrate()
+
+            adminConnection(jdbcUrl).use { connection ->
+                assertThat(queryString(connection, "select max(version::integer)::text from flyway_schema_history where success"))
+                    .isEqualTo("61")
+                assertThat(
+                    queryString(
+                        connection,
+                        "select pg_get_functiondef('public.prepare_rag_v2_immutable_owner_overlay(text,text)'::regprocedure)",
+                    ),
+                ).contains("existing_generation.state NOT IN ('EVALUATED', 'ACTIVE', 'SUPERSEDED')")
+                assertThat(
+                    hasFunctionPrivilege(
+                        connection,
+                        "decision_rag_admin",
+                        "prepare_rag_v2_immutable_owner_overlay(text,text)",
+                    ),
+                ).isTrue()
+                assertThat(
+                    hasPublicFunctionExecute(
+                        connection,
+                        "prepare_rag_v2_immutable_owner_overlay(text,text)",
+                    ),
+                ).isFalse()
             }
         }
     }
@@ -124,7 +161,7 @@ class RagSourceRegistryMigrationIntegrationTest {
                 assertThat(queryStrings(connection, normalizedTableQuery))
                     .containsAll(expectedTables)
                 assertThat(queryString(connection, "select max(version::integer) from flyway_schema_history where success"))
-                    .isEqualTo("60")
+                    .isEqualTo("61")
 
                 expectedTables.forEach { table ->
                     assertThat(

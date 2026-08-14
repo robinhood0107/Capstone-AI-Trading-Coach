@@ -313,6 +313,18 @@ BEGIN
     'generation.embedding_profile_id = claim_row.embedding_profile_id',
     'generation.embedding_profile_id = claim_row.owner_embedding_profile_id'
   );
+  -- 부분 문자열 치환은 exact_generation/oa_generation도 함께 잡으므로 공개 component 검증은
+  -- 반드시 공개 profile로 복원한다. OWNER_PRIVATE generation만 owner profile을 사용한다.
+  repaired := replace(
+    repaired,
+    'exact_generation.embedding_profile_id = claim_row.owner_embedding_profile_id',
+    'exact_generation.embedding_profile_id = claim_row.embedding_profile_id'
+  );
+  repaired := replace(
+    repaired,
+    'oa_generation.embedding_profile_id = claim_row.owner_embedding_profile_id',
+    'oa_generation.embedding_profile_id = claim_row.embedding_profile_id'
+  );
   repaired := replace(
     repaired,
     'embedding.embedding_profile_id = claim_row.embedding_profile_id',

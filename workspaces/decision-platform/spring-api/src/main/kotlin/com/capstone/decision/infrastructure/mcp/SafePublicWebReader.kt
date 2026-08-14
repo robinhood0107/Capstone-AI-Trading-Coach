@@ -98,8 +98,9 @@ class SafePublicWebReader(
                 .take(MAX_TEXT_CHARS)
         require(text.isNotBlank())
         require(!LOGIN_PAGE.containsMatchIn(raw.first + " " + text.take(2_048)))
-        require(!PROMPT_INJECTION.containsMatchIn(text.take(8_192)))
-        return raw.first.ifBlank { uri.host }.take(MAX_TITLE_CHARS) to text
+        require(!PROMPT_INJECTION.containsMatchIn(text))
+        val title = sanitizePublicWebSearchText(raw.first.ifBlank { uri.host }, MAX_TITLE_CHARS).ifBlank { uri.host }
+        return title to text
     }
 
     private companion object {
@@ -169,9 +170,29 @@ class JdkPublicHostResolver : PublicHostResolver {
                         bytes[1].toInt() and 0xff == 0x01 &&
                         bytes[2].toInt() and 0xff == 0x0d &&
                         bytes[3].toInt() and 0xff == 0xb8
-                !uniqueLocal && !documentation
+                val ipv4Translation =
+                    matchesPrefix(bytes, NAT64_WELL_KNOWN) ||
+                        matchesPrefix(bytes, NAT64_LOCAL_USE) ||
+                        matchesPrefix(bytes, IPV4_MAPPED)
+                val tunnel = matchesPrefix(bytes, TEREDO) || matchesPrefix(bytes, SIX_TO_FOUR)
+                val discardOnly = matchesPrefix(bytes, DISCARD_ONLY)
+                !uniqueLocal && !documentation && !ipv4Translation && !tunnel && !discardOnly
             }
             else -> false
         }
+    }
+
+    private fun matchesPrefix(
+        address: ByteArray,
+        prefix: IntArray,
+    ): Boolean = prefix.indices.all { index -> address[index].toInt() and 0xff == prefix[index] }
+
+    private companion object {
+        val NAT64_WELL_KNOWN = intArrayOf(0x00, 0x64, 0xff, 0x9b, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+        val NAT64_LOCAL_USE = intArrayOf(0x00, 0x64, 0xff, 0x9b, 0x00, 0x01)
+        val IPV4_MAPPED = intArrayOf(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff)
+        val TEREDO = intArrayOf(0x20, 0x01, 0x00, 0x00)
+        val SIX_TO_FOUR = intArrayOf(0x20, 0x02)
+        val DISCARD_ONLY = intArrayOf(0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
     }
 }

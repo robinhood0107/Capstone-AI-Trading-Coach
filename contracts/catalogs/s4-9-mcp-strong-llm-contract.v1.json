@@ -28,6 +28,17 @@
       "capstone_answer_validate",
       "capstone_answer_save"
     ],
+    "toolScopes": {
+      "capstone_rag_search": {
+        "required": ["mcp:rag.public"],
+        "ownerEvidenceRequires": "mcp:rag.owner",
+        "publicOnlyClaimDoesNotReadOwnerOverlay": true
+      },
+      "capstone_web_search": {"required": ["mcp:web.read"]},
+      "capstone_web_read": {"required": ["mcp:web.read"]},
+      "capstone_answer_validate": {"required": ["mcp:answer.validate"]},
+      "capstone_answer_save": {"required": ["mcp:history.write"]}
+    },
     "oauthScopes": [
       "mcp:rag.public",
       "mcp:rag.owner",

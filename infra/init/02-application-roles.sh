@@ -1416,6 +1416,14 @@ BEGIN
             )
         TO decision_app;
     END IF;
+    IF to_regprocedure(
+        'public.issue_s4_9_mcp_retrieval_scope(text,text,text[],boolean)'
+    ) IS NOT NULL THEN
+        -- V67 public-only claim은 OAuth owner scope를 발급 전에 결박하고 raw claim table 권한은 열지 않는다.
+        GRANT EXECUTE ON FUNCTION
+            issue_s4_9_mcp_retrieval_scope(text, text, text[], boolean)
+        TO decision_app;
+    END IF;
 END
 $decision_runtime_function_privileges$;
 

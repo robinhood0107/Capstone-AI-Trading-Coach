@@ -10,6 +10,10 @@ import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.jdbc.core.RowMapper
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
+import org.springframework.transaction.PlatformTransactionManager
+import org.springframework.transaction.TransactionDefinition
+import org.springframework.transaction.TransactionStatus
+import org.springframework.transaction.support.SimpleTransactionStatus
 import tools.jackson.databind.json.JsonMapper
 import java.time.Instant
 import java.time.OffsetDateTime
@@ -28,6 +32,7 @@ class RagV2RuntimeServiceTest {
         val persistedParams = slot<Map<String, *>>()
         val createdAt = Instant.parse("2026-08-03T10:30:00Z")
         val encrypted = encrypted()
+        val transactionManager = TrackingTransactionManager()
 
         every { provider.getIfAvailable() } returns jdbc
         every {
@@ -45,7 +50,10 @@ class RagV2RuntimeServiceTest {
                 any<RowMapper<RagV2RetrievalScope>>(),
             )
         } returns listOf(scope)
-        every { evaluation.evaluate(command, capture(context)) } returns retrievalOnly(scope)
+        every { evaluation.evaluate(command, capture(context)) } answers {
+            assertThat(transactionManager.active).isFalse()
+            retrievalOnly(scope)
+        }
         every {
             jdbc.queryForObject(
                 "SELECT transaction_timestamp()",
@@ -72,7 +80,9 @@ class RagV2RuntimeServiceTest {
             }]
             """.trimIndent()
 
-        val answer = service(provider, crypto, evaluation).ask("usr_demo_user", REQUEST_ID, command)
+        val answer =
+            service(provider, crypto, evaluation, transactionManager = transactionManager)
+                .ask("usr_demo_user", REQUEST_ID, command)
 
         assertThat(context.captured.requestId).isEqualTo(REQUEST_ID)
         assertThat(context.captured.ownerScopeClaim).isEqualTo(scope.scopeClaimId)
@@ -477,6 +487,7 @@ class RagV2RuntimeServiceTest {
                 every { isActivationEnabled() } returns false
             },
         vertexQuestionFingerprint: RagV2VertexQuestionFingerprintPort = mockk(relaxed = true),
+        transactionManager: PlatformTransactionManager = TrackingTransactionManager(),
     ): RagV2RuntimeService =
         RagV2RuntimeService(
             jdbcProvider = provider,
@@ -487,7 +498,27 @@ class RagV2RuntimeServiceTest {
             vertexGenerationPort = vertexGeneration,
             vertexQuestionFingerprintPort = vertexQuestionFingerprint,
             objectMapper = JsonMapper.builder().build(),
+            transactionManager = transactionManager,
         )
+
+    private class TrackingTransactionManager : PlatformTransactionManager {
+        var active = false
+            private set
+
+        override fun getTransaction(definition: TransactionDefinition?): TransactionStatus {
+            check(!active) { "nested transaction is not expected in this service boundary" }
+            active = true
+            return SimpleTransactionStatus()
+        }
+
+        override fun commit(status: TransactionStatus) {
+            active = false
+        }
+
+        override fun rollback(status: TransactionStatus) {
+            active = false
+        }
+    }
 
     private fun command(): RagAskCommand =
         RagAskCommand(

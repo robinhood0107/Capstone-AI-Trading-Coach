@@ -72,10 +72,10 @@ hash 권한이 0이다.
 
 ### 0.3 Pre-S5 public activation과 owner profile authority
 
-2026-08-14 current local execution은 fresh DB V64에서 public RAG `FULL_READY`, active profile
+2026-08-14 current local execution은 fresh DB V65에서 public RAG `FULL_READY`, active profile
 `voyage_context_4_1024_v1`, sources/chunks `142/7,871`, document batch `63/63 COMMITTED`,
 EXACT30/OA112 evaluation `2/2 PASSED`를 보존한다. public Voyage document/evaluation/production query는
-재실행하지 않고 public BGE embedding inference는 계속 0이다. V64는 정상 Flyway 경로로 적용됐고
+재실행하지 않고 public BGE embedding inference는 계속 0이다. V65는 정상 Flyway 경로로 적용됐고
 기존 public aggregate 보존과 `v2=120초 / v3=300초` scope를 provider call 0으로 검증했다. V64는 public
 OpenAPI/proto 변경을 뜻하지 않으며 provider
 preparation scope만 5분으로 발급하고 기존 2분 retrieval issuer를 보존한다.
@@ -120,7 +120,7 @@ provider/network call이 0이다.
 manifest/child packet 구조, TTL, 물리 호출·retry·비용 상한 검증은 그대로 유지한다.
 
 `verify-release`는 ignored `pre-s5-release-ledger/v2`의 marker를 단독 신뢰하지 않는다. fixed-path 0600
-owner BGE/KIS V3/required CI/security/tracked-audit receipt digest와 fresh V64 DB의 public·owner·S4.8 및
+owner BGE/KIS V3/required CI/security/tracked-audit receipt digest와 fresh V65 DB의 public·owner·S4.8 및
 Window B Voyage/Vertex `COMMITTED` aggregate를 모두 대조한 뒤에만 `OPEN`을 반환한다.
 
 거래시간 외에는 사용자가 명시 승인한 경우에만 KIS V3의 동일한 7단계를 provider call 0의 결정적

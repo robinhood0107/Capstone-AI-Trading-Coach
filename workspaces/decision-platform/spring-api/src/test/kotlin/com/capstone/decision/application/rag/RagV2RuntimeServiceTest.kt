@@ -350,9 +350,16 @@ class RagV2RuntimeServiceTest {
         assertThat(preparation.scopeClaimId).isEqualTo(scope.scopeClaimId)
         assertThat(preparation.questionFingerprintHmac).isEqualTo("f".repeat(64))
         assertThat(preparation.expiresAt).isEqualTo(expiresAt)
-        assertThat(preparation.scopeTtlSeconds).isEqualTo(120)
+        assertThat(preparation.scopeTtlSeconds).isEqualTo(300)
         assertThat(preparation.rawQuestionStored).isFalse()
         assertThat(preparation.rawEvidenceStored).isFalse()
+        verify(exactly = 1) {
+            jdbc.query(
+                match { it.contains("issue_rag_v2_retrieval_scope_v3") },
+                any<Map<String, *>>(),
+                any<RowMapper<RagV2RetrievalScope>>(),
+            )
+        }
         verify(exactly = 0) { evaluation.evaluate(any(), any()) }
         verify(exactly = 0) { crypto.encrypt(any(), any(), any()) }
     }

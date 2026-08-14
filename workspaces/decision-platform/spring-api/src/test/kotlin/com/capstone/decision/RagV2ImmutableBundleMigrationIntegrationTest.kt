@@ -741,6 +741,7 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
                 """.trimIndent(),
             ),
         )
+
         val requestId = "req_vertex_owner_delete_01"
         val scopeClaimId = issueRetrievalScope("usr_demo_user", requestId)
         val grantEventId = "rce_vertex_owner_grant_001"
@@ -805,6 +806,16 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
             )
         assertEquals(1L, oldBundleVersion)
 
+        val mismatchedProfile =
+            assertThrows<SQLException> {
+                issueTicketV2(
+                    "usr_demo_user",
+                    "rti_56565656565656565656565656565656",
+                    "voyage_context_4_1024_v1",
+                )
+            }
+        assertEquals("22023", mismatchedProfile.sqlState)
+
         val deleteTicketId = "rtd_52525252525252525252525252525252"
         issueOwnerDeleteTicket("usr_demo_user", TARGET_DOCUMENT, deleteTicketId)
         assertTrue(
@@ -841,6 +852,21 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
                 queryString(
                     connection,
                     "select count(*) from rag_v2_immutable_generation_embeddings where owner_user_id = 'usr_demo_user'",
+                ),
+            )
+            assertEquals(
+                "",
+                queryString(
+                    connection,
+                    """
+                    select coalesce(owner_embedding_profile_id, '')
+                    from rag_v2_immutable_bundles
+                    where bundle_id = (
+                      select active_bundle_id
+                      from rag_v2_immutable_owner_bundle_pointers
+                      where owner_user_id = 'usr_demo_user'
+                    )
+                    """.trimIndent(),
                 ),
             )
             assertEquals(
@@ -908,6 +934,28 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
                 queryString(
                     connection,
                     "select count(*) from rag_v2_immutable_materialization_runs where materialization_run_id = '$DELETE_OWNER_RUN' and component_generation_id is not null",
+                ),
+            )
+        }
+        issueTicketV2(
+            "usr_demo_user",
+            "rti_57575757575757575757575757575757",
+            "voyage_context_4_1024_v1",
+        )
+        adminConnection().use { connection ->
+            assertEquals(
+                "voyage_context_4_1024_v1",
+                queryString(
+                    connection,
+                    """
+                    select embedding_profile_id
+                    from rag_v2_immutable_import_tickets
+                    where owner_user_id = 'usr_demo_user'
+                      and ticket_hash = encode(
+                        digest('rti_57575757575757575757575757575757', 'sha256'),
+                        'hex'
+                      )
+                    """.trimIndent(),
                 ),
             )
         }
@@ -1703,6 +1751,86 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
     }
 
     @Test
+    fun `V61 zero-row owner overlay remains a current public-only citation scope`() {
+        seedEvaluatedPublicComponents()
+        adminConnection().use { connection ->
+            connection.createStatement().use { statement ->
+                statement.execute(
+                    """
+                    update rag_v2_immutable_source_revisions
+                    set retrieval_topics = array['FINANCIAL_ENGINEERING'],
+                        citation_title = 'Fixture ' || source_id
+                    where source_scope in ('EXACT30', 'OA112')
+                    """.trimIndent(),
+                )
+            }
+        }
+        assertEquals(
+            2L,
+            callLong(
+                "decision_rag_admin",
+                RAG_ADMIN_PASSWORD,
+                """
+                select activate_rag_v2_immutable_public_base(
+                  '$EXACT_GENERATION', '$OA_GENERATION', 1, '$PUBLIC_ACTIVATION_RECEIPT'
+                )
+                """.trimIndent(),
+            ),
+        )
+        val emptyBundleId =
+            DriverManager.getConnection(postgres.jdbcUrl, "decision_rag_admin", RAG_ADMIN_PASSWORD).use { connection ->
+                callSingleRow(
+                    connection,
+                    "select bundle_id from prepare_rag_v2_immutable_owner_overlay('usr_demo_user', null::text)",
+                )
+            }
+        assertEquals(
+            1L,
+            callLong(
+                "decision_rag_admin",
+                RAG_ADMIN_PASSWORD,
+                """
+                select activate_rag_v2_immutable_owner_bundle(
+                  'usr_demo_user', '$emptyBundleId', null, 0,
+                  'rgr_act_78787878787878787878787878787878', 'OWNER_BUNDLE'
+                )
+                """.trimIndent(),
+            ),
+        )
+
+        val sessionId = "req_v2_empty_overlay_000001"
+        val scopeClaimId = issueRetrievalScope("usr_demo_user", sessionId)
+        val exactChunkId =
+            adminConnection().use { connection ->
+                queryString(
+                    connection,
+                    "select chunk_id from rag_v2_immutable_chunks where source_revision_id = 'srv_exact_001'",
+                )
+            }
+        val canonical =
+            callAsAppWithActor(
+                "usr_demo_user",
+                """
+                select canonicalize_rag_v2_immutable_retrieval_citations(
+                  'usr_demo_user', '$sessionId', '$scopeClaimId',
+                  jsonb_build_array(
+                    jsonb_build_object(
+                      'ordinal', 1,
+                      'citationId', 'cit_1',
+                      'sourceId', 'src_exact_001',
+                      'sourceRevisionId', 'srv_exact_001',
+                      'chunkRevisionId', '$exactChunkId',
+                      'generationId', '$EXACT_GENERATION',
+                      'citationKind', 'PUBLIC_WEB'
+                    )
+                  )
+                )
+                """.trimIndent(),
+            )
+        assertTrue(canonical.contains("https://example.org/exact/1"))
+    }
+
+    @Test
     fun `v2 app rechecks gRPC citation identities and persists canonical retrieval only history`() {
         seedEvaluatedPublicComponents()
         adminConnection().use { connection ->
@@ -2059,6 +2187,137 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
     }
 
     @Test
+    fun `exact superseded empty owner overlay is re-evaluated for deterministic reuse`() {
+        seedEvaluatedPublicComponents()
+        assertEquals(
+            2L,
+            callLong(
+                "decision_rag_admin",
+                RAG_ADMIN_PASSWORD,
+                """
+                select activate_rag_v2_immutable_public_base(
+                  '$EXACT_GENERATION', '$OA_GENERATION', 1, '$PUBLIC_ACTIVATION_RECEIPT'
+                )
+                """.trimIndent(),
+            ),
+        )
+
+        val emptyBundleId =
+            DriverManager.getConnection(postgres.jdbcUrl, "decision_rag_admin", RAG_ADMIN_PASSWORD).use { connection ->
+                callSingleRow(
+                    connection,
+                    """
+                    select bundle_id
+                    from prepare_rag_v2_immutable_owner_overlay('usr_demo_user', null::text)
+                    """.trimIndent(),
+                )
+            }
+        val emptyGenerationId =
+            adminConnection().use { connection ->
+                queryString(
+                    connection,
+                    "select owner_private_generation_id from rag_v2_immutable_bundles where bundle_id = '$emptyBundleId'",
+                )
+            }
+        val emptyManifestHash =
+            adminConnection().use { connection ->
+                queryString(
+                    connection,
+                    "select manifest_hash from rag_v2_immutable_component_generations where component_generation_id = '$emptyGenerationId'",
+                )
+            }
+        assertEquals(
+            1L,
+            callLong(
+                "decision_rag_admin",
+                RAG_ADMIN_PASSWORD,
+                """
+                select activate_rag_v2_immutable_owner_bundle(
+                  'usr_demo_user', '$emptyBundleId', null, 0,
+                  'rgr_act_89898989898989898989898989898989', 'OWNER_BUNDLE'
+                )
+                """.trimIndent(),
+            ),
+        )
+
+        // 재가져오기 뒤 같은 빈 library identity가 다시 필요해지는 실제 lifecycle을
+        // provider나 문서 fixture 없이 격리하기 위해 이전 active identity만 supersede한다.
+        adminConnection().use { connection ->
+            connection.createStatement().use { statement ->
+                statement.execute(
+                    "update rag_v2_immutable_bundles set state = 'SUPERSEDED' where bundle_id = '$emptyBundleId'",
+                )
+                statement.execute(
+                    "update rag_v2_immutable_component_generations set state = 'SUPERSEDED' where component_generation_id = '$emptyGenerationId'",
+                )
+            }
+        }
+
+        adminConnection().use { connection ->
+            connection.createStatement().use { statement ->
+                statement.execute(
+                    "update rag_v2_immutable_component_generations set manifest_hash = repeat('f', 64) where component_generation_id = '$emptyGenerationId'",
+                )
+            }
+        }
+        val mismatchedReuse =
+            assertThrows<SQLException> {
+                DriverManager.getConnection(postgres.jdbcUrl, "decision_rag_admin", RAG_ADMIN_PASSWORD).use { connection ->
+                    callSingleRow(
+                        connection,
+                        """
+                        select bundle_id
+                        from prepare_rag_v2_immutable_owner_overlay('usr_demo_user', null::text)
+                        """.trimIndent(),
+                    )
+                }
+            }
+        assertEquals("23505", mismatchedReuse.sqlState)
+        adminConnection().use { connection ->
+            assertEquals(
+                "SUPERSEDED",
+                queryString(
+                    connection,
+                    "select state from rag_v2_immutable_component_generations where component_generation_id = '$emptyGenerationId'",
+                ),
+            )
+            connection.createStatement().use { statement ->
+                statement.execute(
+                    "update rag_v2_immutable_component_generations set manifest_hash = '$emptyManifestHash' where component_generation_id = '$emptyGenerationId'",
+                )
+            }
+        }
+
+        val reusedBundleId =
+            DriverManager.getConnection(postgres.jdbcUrl, "decision_rag_admin", RAG_ADMIN_PASSWORD).use { connection ->
+                callSingleRow(
+                    connection,
+                    """
+                    select bundle_id
+                    from prepare_rag_v2_immutable_owner_overlay('usr_demo_user', null::text)
+                    """.trimIndent(),
+                )
+            }
+        assertEquals(emptyBundleId, reusedBundleId)
+        adminConnection().use { connection ->
+            assertEquals(
+                "EVALUATED",
+                queryString(
+                    connection,
+                    "select state from rag_v2_immutable_component_generations where component_generation_id = '$emptyGenerationId'",
+                ),
+            )
+            assertEquals(
+                "EVALUATED",
+                queryString(
+                    connection,
+                    "select state from rag_v2_immutable_bundles where bundle_id = '$emptyBundleId'",
+                ),
+            )
+        }
+    }
+
+    @Test
     fun compositeOwnerGraphRejectsCrossOwnerChunkAndBundleReferences() {
         seedEvaluatedPublicComponents()
         seedOwnerDeletionFixtures()
@@ -2280,8 +2539,28 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
         assertEquals("INSERTED", appendS48RuntimeProjection(writerRecord))
         assertEquals("REPLAY", appendS48RuntimeProjection(writerRecord))
 
+        val availableRecord =
+            writerRecord
+                .replace("\"artifactHash\":\"${"a".repeat(64)}\"", "\"artifactHash\":\"${"d".repeat(64)}\"")
+                .replace("\"logicalIdentityHash\":\"${"b".repeat(64)}\"", "\"logicalIdentityHash\":\"${"e".repeat(64)}\"")
+                .replace("\"payloadHash\":\"${"c".repeat(64)}\"", "\"payloadHash\":\"${"f".repeat(64)}\"")
+                .replace("\"projectionHash\":null", "\"projectionHash\":\"${"1".repeat(64)}\"")
+                .replace("\"reason\":\"APPROVAL_PACKET_REQUIRED\"", "\"reason\":\"COMPLETE_DIRECT_PROBE_SET_AVAILABLE\"")
+                .replace("\"status\":\"ABSTAIN\"", "\"status\":\"AVAILABLE\"")
+                .replace("2026-08-09T02:00:00Z", "2026-08-09T02:01:00Z")
+        assertEquals("INSERTED", appendS48RuntimeProjection(availableRecord))
+
+        val incompleteRecord =
+            writerRecord
+                .replace("\"artifactHash\":\"${"a".repeat(64)}\"", "\"artifactHash\":\"${"2".repeat(64)}\"")
+                .replace("\"logicalIdentityHash\":\"${"b".repeat(64)}\"", "\"logicalIdentityHash\":\"${"3".repeat(64)}\"")
+                .replace("\"payloadHash\":\"${"c".repeat(64)}\"", "\"payloadHash\":\"${"4".repeat(64)}\"")
+                .replace("\"reason\":\"APPROVAL_PACKET_REQUIRED\"", "\"reason\":\"DIRECT_PROBE_RECEIPT_SET_INCOMPLETE\"")
+                .replace("2026-08-09T02:00:00Z", "2026-08-09T02:02:00Z")
+        assertEquals("INSERTED", appendS48RuntimeProjection(incompleteRecord))
+
         val stored = readS48RuntimeProjection("S48_CORE6_KIS")
-        assertTrue(stored?.contains("APPROVAL_PACKET_REQUIRED") == true)
+        assertTrue(stored?.contains("DIRECT_PROBE_RECEIPT_SET_INCOMPLETE") == true)
         assertFalse(stored?.contains("rawResponse", ignoreCase = true) == true)
         assertFalse(stored?.contains("credential", ignoreCase = true) == true)
         assertFalse(stored?.contains("query", ignoreCase = true) == true)
@@ -2352,6 +2631,22 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
                 throw error
             }
         }
+    }
+
+    private fun issueTicketV2(
+        ownerUserId: String,
+        ticketId: String,
+        embeddingProfileId: String,
+    ) {
+        callAsAppWithActor(
+            ownerUserId,
+            """
+            select issue_rag_v2_immutable_import_ticket_v2(
+              '$ownerUserId', '$ticketId', 'OWNER_IMPORT',
+              'RAG_V2_OWNER_DOCUMENT_V2', '$embeddingProfileId'
+            )
+            """.trimIndent(),
+        )
     }
 
     /** V44 delete ticket은 app role로만 발급하고, test도 raw table insert로 우회하지 않는다. */

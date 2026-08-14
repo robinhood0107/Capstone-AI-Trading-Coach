@@ -41,7 +41,7 @@ data class RagV2VertexGenerationCommand(
 
 /**
  * Vertex physical-call packet을 만들기 직전에 authenticated owner에게만 주는 content-free preparation이다.
- * question/evidence/owner identity는 저장하거나 응답에 넣지 않고, 2분 retrieval claim과 HMAC만 packet을
+ * question/evidence/owner identity는 저장하거나 응답에 넣지 않고, 5분 retrieval claim과 HMAC만 packet을
  * stable하게 결속한다.
  */
 data class RagV2VertexPreparation(
@@ -56,7 +56,7 @@ data class RagV2VertexPreparation(
     val policyDigest: String,
     val processorSetDigest: String,
     val expiresAt: Instant,
-    val scopeTtlSeconds: Int = 120,
+    val scopeTtlSeconds: Int = 300,
     val rawQuestionStored: Boolean = false,
     val rawEvidenceStored: Boolean = false,
 )
@@ -105,6 +105,11 @@ interface RagV2VertexEvidencePort {
 data class RagV2VertexValidatedAnswer(
     val answer: String,
     val citationIds: List<String>,
+)
+
+data class RagV2VertexExtractiveCandidate(
+    val text: String,
+    val citationId: String,
 )
 
 /**
@@ -182,6 +187,29 @@ class RagV2VertexResponseValidator {
         } catch (_: IllegalStateException) {
             throw RagV2VertexResponseValidationException()
         }
+    }
+
+    /**
+     * provider가 paraphrase를 생성할 여지를 없애도록 canonical evidence에서 숫자 없는 안전한 완결 문장 하나를
+     * 결정적으로 고른다. 선택 결과는 Vertex response schema의 enum과 로컬 validator 양쪽에 같은 값으로 결박된다.
+     */
+    fun selectDeterministicExtractiveCandidate(evidence: List<RagV2VertexEvidence>): RagV2VertexExtractiveCandidate {
+        require(evidence.size in 1..MAX_EVIDENCE)
+        return evidence
+            .asSequence()
+            .sortedBy { it.ordinal }
+            .flatMap { item ->
+                canonicalSentences(item.canonicalText).asSequence().map { sentence -> item to sentence }
+            }.firstNotNullOfOrNull { (item, sentence) ->
+                sentence
+                    .takeIf {
+                        it.isNotBlank() &&
+                            it.toByteArray(StandardCharsets.UTF_8).size <= MAX_SENTENCE_BYTES &&
+                            !NUMERIC_TOKEN.containsMatchIn(it) &&
+                            !SENSITIVE.containsMatchIn(it) &&
+                            !DIRECT_ADVICE.containsMatchIn(it)
+                    }?.let { RagV2VertexExtractiveCandidate(text = it, citationId = item.citationId) }
+            } ?: throw RagV2VertexResponseValidationException()
     }
 
     private fun validateSentence(

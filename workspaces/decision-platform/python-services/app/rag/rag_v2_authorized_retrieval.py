@@ -108,6 +108,7 @@ class RagV2BundleScope:
     embedding_profile_id: str
     policy_version: int
     allowed_topics: tuple[str, ...]
+    owner_embedding_profile_id: str | None = None
 
     def __post_init__(self) -> None:
         component_ids = (
@@ -123,6 +124,14 @@ class RagV2BundleScope:
             or any(_COMPONENT_GENERATION_ID.fullmatch(value) is None for value in non_null_ids)
             or len(set(non_null_ids)) != len(non_null_ids)
             or self.embedding_profile_id not in _ALLOWED_PROFILES
+            or (
+                self.owner_private_generation_id is None
+                and self.owner_embedding_profile_id is not None
+            )
+            or (
+                self.owner_private_generation_id is not None
+                and self.owner_embedding_profile_id not in _ALLOWED_PROFILES
+            )
             or self.policy_version < 1
             or not 1 <= len(self.allowed_topics) <= len(ALLOWED_RAG_TOPICS)
             or len(set(self.allowed_topics)) != len(self.allowed_topics)
@@ -245,8 +254,9 @@ class RagV2DenseRetriever(Protocol):
         scope: RagV2BundleScope,
         query: NormalizedRetrievalQuery,
         query_vector: tuple[float, ...],
+        owner_query_vector: tuple[float, ...] | None,
     ) -> RagV2ChannelResult:
-        """profile-isolated 1024-d unit vector만 cosine query에 전달한다."""
+        """profile별 unit vector를 별도 rank channel로 전달하고 cosine score를 섞지 않는다."""
 
 
 class RagV2RrfFusion:
@@ -303,10 +313,12 @@ class RagV2AuthorizedHybridRetrieval:
         lexical_retriever: RagV2LexicalRetriever,
         dense_retriever: RagV2DenseRetriever,
         rrf_fusion: RagV2RrfFusion,
+        owner_query_embedder: QueryEmbedder | None = None,
     ) -> None:
         self._query_normalizer = query_normalizer
         self._exact_identifier_extractor = exact_identifier_extractor
         self._query_embedder = query_embedder
+        self._owner_query_embedder = owner_query_embedder
         self._exact_retriever = exact_retriever
         self._lexical_retriever = lexical_retriever
         self._dense_retriever = dense_retriever
@@ -358,6 +370,11 @@ class RagV2AuthorizedHybridRetrieval:
                 external_query_consent_granted=external_query_consent_granted,
             )
             vector = _validated_query_vector(receipt.vector)
+            owner_vector = self._owner_query_vector(
+                question=query.question,
+                scope=scope,
+                public_vector=vector,
+            )
         except RagV2QueryEmbeddingError as error:
             return _execution(
                 error.failure_code,
@@ -378,6 +395,7 @@ class RagV2AuthorizedHybridRetrieval:
                     scope=scope,
                     query=query,
                     query_vector=vector,
+                    owner_query_vector=owner_vector,
                 ),
             )
         except (ConnectionError, RuntimeError, TimeoutError):
@@ -404,7 +422,10 @@ class RagV2AuthorizedHybridRetrieval:
 
         fused = self._rrf_fusion.fuse(channels)[:INTERNAL_FINAL_LIMIT]
         evidence = tuple(item.candidate for item in fused)
-        if not _evidence_is_sufficient(evidence=evidence, fusion=fused):
+        if not _evidence_is_sufficient(
+            evidence=evidence,
+            fusion=fused,
+        ):
             return _execution(
                 RagV2RetrievalFailureCode.INSUFFICIENT_EVIDENCE,
                 voyage_physical_calls=receipt.voyage_physical_calls,
@@ -447,6 +468,32 @@ class RagV2AuthorizedHybridRetrieval:
             voyage_physical_calls=0,
         )
 
+    def _owner_query_vector(
+        self,
+        *,
+        question: str,
+        scope: RagV2BundleScope,
+        public_vector: tuple[float, ...],
+    ) -> tuple[float, ...] | None:
+        """owner generation이 있을 때만 같은 profile vector를 재사용하거나 local vector를 별도 생성한다."""
+
+        if scope.owner_private_generation_id is None:
+            return None
+        owner_profile = scope.owner_embedding_profile_id
+        if owner_profile == scope.embedding_profile_id:
+            return public_vector
+        if (
+            owner_profile is None
+            or self._owner_query_embedder is None
+            or self._owner_query_embedder.embedding_profile_id != owner_profile
+        ):
+            raise RagV2QueryEmbeddingError(
+                RagV2RetrievalFailureCode.QUERY_PROFILE_UNAVAILABLE
+            )
+        return _validated_query_vector(
+            self._owner_query_embedder.embed_query(question)
+        )
+
 
 def _channels_are_complete(channels: tuple[RagV2ChannelResult, ...]) -> bool:
     return all(
@@ -462,11 +509,11 @@ def _evidence_is_sufficient(
     evidence: tuple[RagV2RetrievalCandidate, ...],
     fusion: tuple[RagV2FusedCandidate, ...],
 ) -> bool:
+    # 언어가 다른 일반 질문은 exact/lexical이 정상적으로 비고 dense만 근거를 찾을 수 있다.
+    # 채널 수가 아니라 독립 source 수를 신뢰 경계로 사용해 cross-lingual retrieval을 보존한다.
     if len({item.source_id for item in evidence}) < 2:
         return False
-    if fusion and fusion[0].channel_count < 2 and fusion[0].exact_rank is None:
-        return False
-    return bool(evidence)
+    return bool(fusion)
 
 
 def _candidate_in_scope(
@@ -488,7 +535,12 @@ def _candidate_in_scope(
         or candidate.scope_claim_id != scope.claim_id
         or candidate.session_id != scope.session_id
         or candidate.generation_id != expected_generation_id
-        or candidate.embedding_profile_id != scope.embedding_profile_id
+        or candidate.embedding_profile_id
+        != (
+            scope.owner_embedding_profile_id
+            if candidate.source_scope == "OWNER_PRIVATE"
+            else scope.embedding_profile_id
+        )
         or candidate.policy_version != scope.policy_version
         or not candidate_topics <= ALLOWED_RAG_TOPICS
         or not candidate_topics.intersection(scope.allowed_topics)

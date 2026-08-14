@@ -194,19 +194,20 @@ class RagRequestParser {
     }
 
     /**
-     * import ticket request는 local ephemeral parse 단일 mode만 허용하고 owner나 filesystem selector를 받지 않는다.
+     * import ticket request는 owner가 명시한 library embedding profile만 반환한다.
+     * server default나 fallback을 두지 않아 provider 선택이 ticket 발급 전에 고정된다.
      */
-    fun parseV2ImportTicketRequest(body: String) {
+    fun parseV2ImportTicketRequest(body: String): String {
         val root = parseObject(body)
         val violations = mutableListOf<RagFieldViolation>()
         rejectUnknown(root, V2_IMPORT_TICKET_FIELDS, violations)
         requireExactString(
             root = root,
             field = "contractId",
-            expected = "s4-rag-v2-import-ticket-request-v1",
+            expected = "s4-rag-v2-import-ticket-request-v2",
             violations = violations,
         )
-        requireSchemaVersionOne(root, violations)
+        requireSchemaVersion(root, expected = 2, violations)
         requireExactString(
             root = root,
             field = "sourceScope",
@@ -219,7 +220,12 @@ class RagRequestParser {
             expected = "LOCAL_EPHEMERAL_PARSE",
             violations = violations,
         )
+        val embeddingProfileId = requiredString(root, "embeddingProfileId", violations)
+        if (embeddingProfileId != null && embeddingProfileId !in OWNER_EMBEDDING_PROFILES) {
+            violations.add(RagFieldViolation("/embeddingProfileId", "INVALID_ENUM"))
+        }
         throwIfInvalid(violations)
+        return requireNotNull(embeddingProfileId)
     }
 
     /**
@@ -391,11 +397,17 @@ class RagRequestParser {
     private fun requireSchemaVersionOne(
         root: JsonNode,
         violations: MutableList<RagFieldViolation>,
+    ) = requireSchemaVersion(root, expected = 1, violations)
+
+    private fun requireSchemaVersion(
+        root: JsonNode,
+        expected: Int,
+        violations: MutableList<RagFieldViolation>,
     ) {
         val schemaVersion = root.get("schemaVersion")
         if (schemaVersion == null) {
             violations.add(RagFieldViolation("/schemaVersion", "REQUIRED"))
-        } else if (!schemaVersion.isInt || schemaVersion.intValue() != 1) {
+        } else if (!schemaVersion.isInt || schemaVersion.intValue() != expected) {
             violations.add(RagFieldViolation("/schemaVersion", "INVALID_FORMAT"))
         }
     }
@@ -488,7 +500,9 @@ class RagRequestParser {
                 "policyDigest",
                 "processorSetDigest",
             )
-        val V2_IMPORT_TICKET_FIELDS = setOf("contractId", "schemaVersion", "sourceScope", "importMode")
+        val V2_IMPORT_TICKET_FIELDS =
+            setOf("contractId", "schemaVersion", "sourceScope", "importMode", "embeddingProfileId")
+        val OWNER_EMBEDDING_PROFILES = setOf("bge_m3_local_1024_v1", "voyage_context_4_1024_v1")
         val V2_DELETE_TICKET_FIELDS = setOf("contractId", "schemaVersion", "sourceScope", "documentId")
         const val VERTEX_SCOPE_HEADER = "X-Rag-V2-Vertex-Scope-Claim"
         val HISTORY_QUERY_FIELDS = setOf("cursor", "limit")

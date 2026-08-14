@@ -48,6 +48,47 @@ class PreS5VertexOneShotHttpsTransportTest {
         assertThat(channel.closed).isTrue()
     }
 
+    @Test
+    fun `one shot transport accepts repeated non framing response metadata`() {
+        val channel =
+            RecordingChannel(
+                (
+                    "HTTP/1.1 200 OK\r\n" +
+                        "Vary: Origin\r\n" +
+                        "Vary: X-Origin\r\n" +
+                        "Content-Length: 2\r\n\r\n{}"
+                ).toByteArray(StandardCharsets.US_ASCII),
+            )
+
+        val response =
+            PreS5VertexOneShotHttpsTransport(RecordingFactory(channel)).execute(
+                request(),
+                maximumResponseBytes = 16,
+            )
+
+        assertThat(response.statusCode).isEqualTo(200)
+        assertThat(response.body).isEqualTo("{}".toByteArray(StandardCharsets.US_ASCII))
+    }
+
+    @Test
+    fun `one shot transport rejects repeated content framing headers`() {
+        val channel =
+            RecordingChannel(
+                (
+                    "HTTP/1.1 200 OK\r\n" +
+                        "Content-Length: 2\r\n" +
+                        "Content-Length: 2\r\n\r\n{}"
+                ).toByteArray(StandardCharsets.US_ASCII),
+            )
+
+        assertThatThrownBy {
+            PreS5VertexOneShotHttpsTransport(RecordingFactory(channel)).execute(
+                request(),
+                maximumResponseBytes = 16,
+            )
+        }.isInstanceOf(PreS5VertexOneShotHttpsTransportException::class.java)
+    }
+
     private fun request(): PreS5VertexOneShotHttpsRequest =
         PreS5VertexOneShotHttpsRequest(
             endpoint =

@@ -84,8 +84,10 @@ class RagV2Controller(
         request: HttpServletRequest,
     ): ResponseEntity<RagV2ImportTicket> {
         parser.requireNoQuery(request)
-        parser.parseV2ImportTicketRequest(body.orEmpty())
-        return ResponseEntity.status(HttpStatus.CREATED).body(service.issueImportTicket(principal.userId))
+        val embeddingProfileId = parser.parseV2ImportTicketRequest(body.orEmpty())
+        return ResponseEntity
+            .status(HttpStatus.CREATED)
+            .body(service.issueImportTicket(principal.userId, embeddingProfileId))
     }
 
     /**

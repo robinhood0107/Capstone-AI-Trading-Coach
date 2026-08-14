@@ -1,18 +1,24 @@
 from __future__ import annotations
 
+import hashlib
 import json
+import os
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from app.rag import content_cli
+from app.rag.pre_s5_provider_control import PreS5ProviderBinding
 from app.rag.rag_v2_local_import_control import RagV2OwnerImportControl
 from app.rag.rag_v2_owner_bge_staging import (
     OwnerBgeStagingMetadata,
     RagV2OwnerBgeStagingReceipt,
 )
 from app.rag.rag_v2_owner_overlay import RagV2OwnerOverlayReceipt
+from app.rag.rag_v2_owner_voyage_import import OwnerVoyageImportError
 
 
 def test_windows_import_wrappers_do_not_forward_raw_arguments_to_powershell_or_python() -> None:
@@ -45,6 +51,12 @@ def test_import_command_uses_local_control_and_never_echoes_private_values(
     monkeypatch.setenv("CAPSTONE_RAG_ADMIN_DATABASE_DSN", "postgresql://private-admin-dsn")
     monkeypatch.setattr(content_cli, "load_pending_owner_import_control", lambda **_: control)
     monkeypatch.setattr(content_cli, "_materialize_owner_import", lambda **_: object())
+    monkeypatch.setattr(
+        content_cli,
+        "_execute_owner_voyage_import",
+        lambda **_values: pytest.fail("BGE selection must not call Voyage"),
+        raising=False,
+    )
 
     class _Repository:
         def __init__(self, *, database_dsn: str) -> None:
@@ -103,6 +115,93 @@ def test_import_command_uses_local_control_and_never_echoes_private_values(
     assert "private-dsn" not in encoded
 
 
+def test_voyage_selected_import_never_loads_bge_or_falls_back(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    control = replace(
+        _control(tmp_path),
+        embedding_profile_id="voyage_context_4_1024_v1",
+    )
+    monkeypatch.setenv("CAPSTONE_RAG_LOCAL_ROOT", str(tmp_path))
+    monkeypatch.setenv("CAPSTONE_RAG_WRITER_DATABASE_DSN", "postgresql://private-dsn")
+    monkeypatch.setenv("CAPSTONE_RAG_ADMIN_DATABASE_DSN", "postgresql://private-admin-dsn")
+    monkeypatch.setattr(content_cli, "load_pending_owner_import_control", lambda **_: control)
+    monkeypatch.setattr(
+        content_cli,
+        "load_bge_onnx_embedder",
+        lambda *_args, **_kwargs: pytest.fail("Voyage selection must not load BGE"),
+    )
+
+    def execute_voyage(**values: object) -> tuple[RagV2OwnerBgeStagingReceipt, RagV2OwnerOverlayReceipt]:
+        assert values["control"] == control
+        return (
+            RagV2OwnerBgeStagingReceipt(
+                owner_user_id="usr_demo_user",
+                component_generation_id="rgr_11111111111111111111111111111111",
+                materialization_run_id="rgr_run_11111111111111111111111111111111",
+                component_scope="OWNER_PRIVATE",
+                embedding_profile_id="voyage_context_4_1024_v1",
+                state="STAGED",
+                source_count=1,
+                chunk_count=1,
+            ),
+            RagV2OwnerOverlayReceipt(
+                bundle_id="rgb_22222222222222222222222222222222",
+                component_generation_id="rgr_22222222222222222222222222222222",
+                source_count=1,
+                chunk_count=1,
+                state="READY",
+            ),
+        )
+
+    monkeypatch.setattr(content_cli, "_execute_owner_voyage_import", execute_voyage)
+
+    assert content_cli.main(["import-cpu"]) == 0
+    value = json.loads(capsys.readouterr().out)
+    assert value["embeddingProfileId"] == "voyage_context_4_1024_v1"
+    assert value["state"] == "READY"
+
+
+def test_owner_voyage_manifest_binds_content_free_plan_without_sha_approval_environment(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plan = _owner_voyage_plan()
+    binding = _owner_voyage_binding()
+    manifest = _owner_voyage_manifest(plan=plan, binding=binding)
+    encoded = json.dumps(manifest, separators=(",", ":"), sort_keys=True).encode()
+    _write_owner_voyage_manifest(tmp_path, encoded)
+    monkeypatch.setenv("PRE_S5_OWNER_VOYAGE_SYNTHETIC_MANIFEST_SHA256", "f" * 64)
+
+    observed, decoded = content_cli._load_owner_voyage_manifest(
+        local_root=tmp_path,
+        plan=plan,
+        binding=binding,
+    )
+
+    assert observed == hashlib.sha256(encoded).hexdigest()
+    assert observed != "f" * 64
+    assert decoded == manifest
+    assert "usr_" not in encoded.decode()
+    assert "rti_" not in encoded.decode()
+
+
+def test_owner_voyage_manifest_rejects_non_object_without_leaking_parser_details(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    encoded = b"[]"
+    _write_owner_voyage_manifest(tmp_path, encoded)
+    with pytest.raises(OwnerVoyageImportError, match="OWNER_VOYAGE_MANIFEST_INVALID"):
+        content_cli._load_owner_voyage_manifest(
+            local_root=tmp_path,
+            plan=_owner_voyage_plan(),
+            binding=_owner_voyage_binding(),
+        )
+
+
 @pytest.mark.parametrize(
     "arguments",
     [
@@ -136,6 +235,71 @@ def _control(root: Path) -> RagV2OwnerImportControl:
         language_tags=("en",),
         sanitized_display_name="Owner fixture",
         retrieval_topics=("FINANCIAL_ENGINEERING",),
+        embedding_profile_id="bge_m3_local_1024_v1",
         issued_at=now,
         expires_at=now + timedelta(minutes=5),
     )
+
+
+def _owner_voyage_plan() -> SimpleNamespace:
+    return SimpleNamespace(
+        plan_sha256="a" * 64,
+        owner_scope_sha256="b" * 64,
+        ticket_set_sha256="c" * 64,
+        tokenizer_sha256="d" * 64,
+        items=tuple(object() for _ in range(9)),
+        batch=SimpleNamespace(
+            batch_manifest_sha256="e" * 64,
+            chunk_count=9,
+            token_count=90,
+        ),
+    )
+
+
+def _owner_voyage_binding() -> PreS5ProviderBinding:
+    return PreS5ProviderBinding(
+        head_commit="1" * 40,
+        tree_object="2" * 40,
+        ci_digest="3" * 64,
+        security_digest="4" * 64,
+    )
+
+
+def _owner_voyage_manifest(
+    *,
+    plan: SimpleNamespace,
+    binding: PreS5ProviderBinding,
+) -> dict[str, object]:
+    return {
+        "batchManifestSha256": plan.batch.batch_manifest_sha256,
+        "binding": {
+            "ciDigest": binding.ci_digest,
+            "headCommit": binding.head_commit,
+            "securityDigest": binding.security_digest,
+            "treeObject": binding.tree_object,
+        },
+        "chunkCount": plan.batch.chunk_count,
+        "documentCount": len(plan.items),
+        "embeddingProfileId": "voyage_context_4_1024_v1",
+        "expiresAt": (datetime.now(UTC) + timedelta(hours=1)).isoformat().replace("+00:00", "Z"),
+        "operation": "OWNER_VOYAGE_DOCUMENT_IMPORT",
+        "ownerScopeSha256": plan.owner_scope_sha256,
+        "packetSha256": "f" * 64,
+        "physicalCallCap": 1,
+        "planSha256": plan.plan_sha256,
+        "rawArtifactCount": 0,
+        "retryCount": 0,
+        "schemaVersion": 1,
+        "ticketSetSha256": plan.ticket_set_sha256,
+        "tokenCount": plan.batch.token_count,
+        "tokenizerSha256": plan.tokenizer_sha256,
+    }
+
+
+def _write_owner_voyage_manifest(root: Path, content: bytes) -> None:
+    control = root / "control"
+    control.mkdir(mode=0o700)
+    os.chmod(control, 0o700)
+    path = control / "owner-voyage-manifest.v1.json"
+    path.write_bytes(content)
+    os.chmod(path, 0o600)

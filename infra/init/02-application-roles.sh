@@ -1424,6 +1424,22 @@ BEGIN
             issue_s4_9_mcp_retrieval_scope(text, text, text[], boolean)
         TO decision_app;
     END IF;
+    IF to_regprocedure(
+        'public.authorize_s4_9_runtime_voyage_query(text,text,text)'
+    ) IS NOT NULL THEN
+        -- V68 app은 authenticated owner scope와 질문 hash만 one-shot query 권한으로 결속한다.
+        GRANT EXECUTE ON FUNCTION
+            authorize_s4_9_runtime_voyage_query(text, text, text)
+        TO decision_app;
+    END IF;
+    IF to_regprocedure(
+        'public.reserve_s4_9_runtime_voyage_query_usage(text,text,text)'
+    ) IS NOT NULL THEN
+        -- query writer는 table 권한 없이 V68 authorization을 한 번만 usage ledger로 소비한다.
+        GRANT EXECUTE ON FUNCTION
+            reserve_s4_9_runtime_voyage_query_usage(text, text, text)
+        TO decision_rag_writer;
+    END IF;
 END
 $decision_runtime_function_privileges$;
 

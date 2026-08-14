@@ -30,20 +30,28 @@ class SafePublicWebReader(
     override fun read(rawUrl: String): BoundedWebDocument {
         var uri = validateUri(rawUrl)
         repeat(MAX_REDIRECTS + 1) { redirectCount ->
-            val addresses = resolver.resolvePublic(uri.host)
-            val response = transport.get(uri, addresses.first(), MAX_BODY_BYTES)
+            val addresses = resolvePublic(uri.host)
+            val response =
+                try {
+                    transport.get(uri, addresses.first(), MAX_BODY_BYTES)
+                } catch (error: S49WebReadRejectedException) {
+                    throw error
+                } catch (_: Exception) {
+                    reject("S4_9_WEB_READ_TRANSPORT_REJECTED")
+                }
             val body = response.body
             try {
-                require(body.size in 1..MAX_BODY_BYTES)
-                require(resolver.resolvePublic(uri.host).toSet() == addresses.toSet())
+                ensure(body.size in 1..MAX_BODY_BYTES, "S4_9_WEB_READ_BODY_SIZE_REJECTED")
+                ensure(resolvePublic(uri.host).toSet() == addresses.toSet(), "S4_9_WEB_READ_DNS_DRIFT_REJECTED")
                 if (response.statusCode in 300..399) {
-                    require(redirectCount < MAX_REDIRECTS)
+                    ensure(redirectCount < MAX_REDIRECTS, "S4_9_WEB_READ_REDIRECT_REJECTED")
                     val location =
-                        response.headers["location"]?.singleOrNull() ?: throw IllegalArgumentException("Redirect location missing")
+                        response.headers["location"]?.singleOrNull()
+                            ?: reject("S4_9_WEB_READ_REDIRECT_REJECTED")
                     uri = validateUri(uri.resolve(location).toASCIIString())
                     return@repeat
                 }
-                require(response.statusCode in 200..299)
+                ensure(response.statusCode in 200..299, "S4_9_WEB_READ_HTTP_STATUS_REJECTED")
                 val contentType =
                     response.headers["content-type"]
                         ?.singleOrNull()
@@ -57,17 +65,32 @@ class SafePublicWebReader(
                 body.fill(0)
             }
         }
-        throw IllegalArgumentException("Redirect budget exceeded")
+        reject("S4_9_WEB_READ_REDIRECT_REJECTED")
     }
 
     internal fun validateUri(value: String): URI {
-        require(value.length in 1..2_048)
-        val uri = URI.create(value).normalize()
-        require(uri.scheme == "https" && uri.isAbsolute && uri.host != null)
-        require(uri.rawUserInfo == null && uri.rawFragment == null)
-        require(uri.port in setOf(-1, 443))
-        return uri
+        try {
+            ensure(value.length in 1..2_048, "S4_9_WEB_READ_URL_REJECTED")
+            val uri = URI.create(value).normalize()
+            ensure(uri.scheme == "https" && uri.isAbsolute && uri.host != null, "S4_9_WEB_READ_URL_REJECTED")
+            ensure(uri.rawUserInfo == null && uri.rawFragment == null, "S4_9_WEB_READ_URL_REJECTED")
+            ensure(uri.port in setOf(-1, 443), "S4_9_WEB_READ_URL_REJECTED")
+            return uri
+        } catch (error: S49WebReadRejectedException) {
+            throw error
+        } catch (_: Exception) {
+            reject("S4_9_WEB_READ_URL_REJECTED")
+        }
     }
+
+    private fun resolvePublic(host: String): List<InetAddress> =
+        try {
+            resolver.resolvePublic(host)
+        } catch (error: S49WebReadRejectedException) {
+            throw error
+        } catch (_: Exception) {
+            reject("S4_9_WEB_READ_DNS_REJECTED")
+        }
 
     private fun normalize(
         contentType: String,
@@ -78,7 +101,13 @@ class SafePublicWebReader(
             when (contentType) {
                 "text/html", "application/xhtml+xml" -> {
                     val document = Jsoup.parse(ByteArrayInputStream(body), null, uri.toASCIIString())
-                    document.select("script,style,noscript,iframe,form").remove()
+                    // 로그인 메뉴가 있는 정상 문서를 로그인 페이지로 오인하지 않고 실제 인증 폼만 차단한다.
+                    ensure(
+                        document.select("input[type=password]").isEmpty() &&
+                            !LOGIN_PAGE_TITLE.containsMatchIn(document.title()),
+                        "S4_9_WEB_READ_LOGIN_PAGE_REJECTED",
+                    )
+                    document.select("script,style,noscript,iframe,form,nav,header,footer,aside,[role=navigation]").remove()
                     document.title().take(MAX_TITLE_CHARS) to document.body().text()
                 }
                 "text/plain" -> uri.host to body.toString(Charsets.UTF_8)
@@ -89,23 +118,31 @@ class SafePublicWebReader(
                         (document.documentInformation.title ?: uri.host).take(MAX_TITLE_CHARS) to stripper.getText(document)
                     }
                 }
-                else -> throw IllegalArgumentException("Unsupported MIME type")
+                else -> reject("S4_9_WEB_READ_MIME_REJECTED")
             }
         val text =
             raw.second
                 .replace(WHITESPACE, " ")
                 .trim()
                 .take(MAX_TEXT_CHARS)
-        require(text.isNotBlank())
-        require(!LOGIN_PAGE.containsMatchIn(raw.first + " " + text.take(2_048)))
-        require(!PROMPT_INJECTION.containsMatchIn(text))
+        ensure(text.isNotBlank(), "S4_9_WEB_READ_TEXT_EMPTY")
+        ensure(!PROMPT_INJECTION.containsMatchIn(text), "S4_9_WEB_READ_PROMPT_INJECTION_REJECTED")
         val title = sanitizePublicWebSearchText(raw.first.ifBlank { uri.host }, MAX_TITLE_CHARS).ifBlank { uri.host }
         return title to text
     }
 
+    private fun ensure(
+        condition: Boolean,
+        leaf: String,
+    ) {
+        if (!condition) reject(leaf)
+    }
+
+    private fun reject(leaf: String): Nothing = throw S49WebReadRejectedException(leaf)
+
     private companion object {
         val WHITESPACE = Regex("\\s+")
-        val LOGIN_PAGE = Regex("(sign\\s*in|log\\s*in|password|로그인|비밀번호)", RegexOption.IGNORE_CASE)
+        val LOGIN_PAGE_TITLE = Regex("(sign\\s*in|log\\s*in|login|password|로그인|비밀번호)", RegexOption.IGNORE_CASE)
         val PROMPT_INJECTION =
             Regex(
                 "(ignore|disregard|override|forget).{0,48}(previous|system|developer|instructions?|prompt)|" +
@@ -119,6 +156,11 @@ class SafePublicWebReader(
         const val MAX_PDF_PAGES = 20
     }
 }
+
+/** MCP 오류에는 URL이나 응답 본문 대신 고정된 content-free leaf만 노출한다. */
+class S49WebReadRejectedException(
+    leaf: String,
+) : IllegalArgumentException(leaf)
 
 fun interface PublicHostResolver {
     fun resolvePublic(host: String): List<InetAddress>

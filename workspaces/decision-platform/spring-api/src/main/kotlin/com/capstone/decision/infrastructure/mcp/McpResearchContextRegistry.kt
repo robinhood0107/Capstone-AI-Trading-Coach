@@ -21,6 +21,7 @@ data class McpResearchContext(
     val oauthClientId: String,
     val question: String,
     val answerMode: String,
+    val topics: List<String>,
     val requestId: String,
     val retrievalScope: RagV2RetrievalScope,
     val retrievalCitations: List<RagV2RetrievedCitation>,
@@ -50,6 +51,7 @@ class McpResearchContextRegistry(
         oauthClientId: String,
         question: String,
         answerMode: String,
+        topics: List<String>,
         requestId: String,
         retrievalScope: RagV2RetrievalScope,
         retrievalCitations: List<RagV2RetrievedCitation>,
@@ -63,6 +65,7 @@ class McpResearchContextRegistry(
                 oauthClientId,
                 question,
                 answerMode,
+                topics.toList(),
                 requestId,
                 retrievalScope,
                 retrievalCitations,
@@ -187,7 +190,7 @@ class McpResearchContextRegistry(
             val sourceHash = sha256(context.evidence.joinToString("|") { it.canonicalTextSha256 })
             val payload =
                 "${context.id}|${context.ownerUserId}|${context.oauthClientId}|${sha256(context.question)}|" +
-                    "${context.answerMode}|$sourceHash|${context.expiresAt.epochSecond}"
+                    "${context.answerMode}|${sha256(context.topics.joinToString("\u001f"))}|$sourceHash|${context.expiresAt.epochSecond}"
             val key = properties.receiptHmacKey.toByteArray(StandardCharsets.UTF_8)
             val bytes = payload.toByteArray(StandardCharsets.UTF_8)
             try {

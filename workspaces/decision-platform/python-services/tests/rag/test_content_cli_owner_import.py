@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import json
 import hashlib
+import json
 import os
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
@@ -164,7 +164,7 @@ def test_voyage_selected_import_never_loads_bge_or_falls_back(
     assert value["state"] == "READY"
 
 
-def test_owner_voyage_manifest_binds_exact_content_free_plan_and_approval(
+def test_owner_voyage_manifest_binds_content_free_plan_without_sha_approval_environment(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -173,8 +173,7 @@ def test_owner_voyage_manifest_binds_exact_content_free_plan_and_approval(
     manifest = _owner_voyage_manifest(plan=plan, binding=binding)
     encoded = json.dumps(manifest, separators=(",", ":"), sort_keys=True).encode()
     _write_owner_voyage_manifest(tmp_path, encoded)
-    approval = hashlib.sha256(encoded).hexdigest()
-    monkeypatch.setenv("PRE_S5_OWNER_VOYAGE_SYNTHETIC_MANIFEST_SHA256", approval)
+    monkeypatch.setenv("PRE_S5_OWNER_VOYAGE_SYNTHETIC_MANIFEST_SHA256", "f" * 64)
 
     observed, decoded = content_cli._load_owner_voyage_manifest(
         local_root=tmp_path,
@@ -182,7 +181,8 @@ def test_owner_voyage_manifest_binds_exact_content_free_plan_and_approval(
         binding=binding,
     )
 
-    assert observed == approval
+    assert observed == hashlib.sha256(encoded).hexdigest()
+    assert observed != "f" * 64
     assert decoded == manifest
     assert "usr_" not in encoded.decode()
     assert "rti_" not in encoded.decode()
@@ -194,11 +194,6 @@ def test_owner_voyage_manifest_rejects_non_object_without_leaking_parser_details
 ) -> None:
     encoded = b"[]"
     _write_owner_voyage_manifest(tmp_path, encoded)
-    monkeypatch.setenv(
-        "PRE_S5_OWNER_VOYAGE_SYNTHETIC_MANIFEST_SHA256",
-        hashlib.sha256(encoded).hexdigest(),
-    )
-
     with pytest.raises(OwnerVoyageImportError, match="OWNER_VOYAGE_MANIFEST_INVALID"):
         content_cli._load_owner_voyage_manifest(
             local_root=tmp_path,

@@ -22,6 +22,8 @@ data class RagWebToolProperties(
     var externalResearchMaxReads: Int = 120,
     var externalResearchUserParallelReads: Int = 4,
     var externalResearchGlobalParallelReads: Int = 8,
+    var externalResearchMaxContextsPerCaller: Int = 30,
+    var externalResearchMaxTotalContexts: Int = 1_024,
 ) {
     fun validate() {
         val base = URI.create(searxngBaseUrl)
@@ -42,6 +44,8 @@ data class RagWebToolProperties(
         require(externalResearchMaxSearches in 0..30 && externalResearchMaxReads in 0..120)
         require(externalResearchUserParallelReads in 1..4)
         require(externalResearchGlobalParallelReads in externalResearchUserParallelReads..8)
+        require(externalResearchMaxContextsPerCaller in 1..30)
+        require(externalResearchMaxTotalContexts in externalResearchMaxContextsPerCaller..1_024)
         if (enabled) require(receiptHmacKey.toByteArray(Charsets.UTF_8).size >= 32)
     }
 }

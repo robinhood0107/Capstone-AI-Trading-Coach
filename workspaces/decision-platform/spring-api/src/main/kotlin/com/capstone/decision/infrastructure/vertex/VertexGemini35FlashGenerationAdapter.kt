@@ -62,6 +62,7 @@ internal class VertexGemini35FlashGenerationAdapter(
         var lease: PreS5VertexUsageLease? = null
         var accessToken: ByteArray? = null
         var outcomeRecorded = false
+        var failureLeaf = PreS5VertexGenerationFailureLeaf.ACTIVATION_OR_INPUT
         try {
             val activation = activationReader.read()
             require(command.consent.effective)
@@ -75,11 +76,15 @@ internal class VertexGemini35FlashGenerationAdapter(
             val body = requestBody(command, activation)
             try {
                 require(body.size <= activation.inputByteCap)
+                failureLeaf = PreS5VertexGenerationFailureLeaf.USAGE_RESERVATION
                 lease = usageLedger.reserve(command, activation)
+                failureLeaf = PreS5VertexGenerationFailureLeaf.OAUTH
                 val tokenAttempt = usageLedger.claimTokenAttempt(lease)
                 val token = oauthProvider.acquire(activation, tokenAttempt)
                 accessToken = token.value
+                failureLeaf = PreS5VertexGenerationFailureLeaf.GENERATE_RESERVATION
                 val generateContentAttempt = usageLedger.claimGenerateContentAttempt(lease)
+                failureLeaf = PreS5VertexGenerationFailureLeaf.GENERATE_TRANSPORT
                 val response =
                     httpExecutor.execute(
                         PreS5VertexHttpRequest(
@@ -93,13 +98,24 @@ internal class VertexGemini35FlashGenerationAdapter(
                     )
                 val providerResponse =
                     try {
-                        require(response.statusCode in 200..299)
+                        if (response.statusCode !in 200..299) {
+                            throw PreS5VertexGenerationException(
+                                when (response.statusCode) {
+                                    in 400..499 -> PreS5VertexGenerationFailureLeaf.GENERATE_HTTP_4XX
+                                    in 500..599 -> PreS5VertexGenerationFailureLeaf.GENERATE_HTTP_5XX
+                                    else -> PreS5VertexGenerationFailureLeaf.GENERATE_HTTP_OTHER
+                                },
+                            )
+                        }
+                        failureLeaf = PreS5VertexGenerationFailureLeaf.PROVIDER_ENVELOPE
                         parseProviderResponse(response.body)
                     } finally {
                         response.body.fill(0)
                     }
+                failureLeaf = PreS5VertexGenerationFailureLeaf.USAGE_COMMIT
                 usageLedger.commit(lease, providerResponse.usage)
                 outcomeRecorded = true
+                failureLeaf = PreS5VertexGenerationFailureLeaf.RESPONSE_VALIDATION
                 val validated = responseValidator.validate(providerResponse.generatedJson, command.evidence)
                 return RagV2VertexGenerationResult(
                     generationStatus = RagGenerationStatus.ANSWERED,
@@ -114,6 +130,13 @@ internal class VertexGemini35FlashGenerationAdapter(
             if (error is PreS5VertexOAuthException) {
                 LOGGER.warn("pre_s5_vertex_oauth_failed leaf={}", error.failureLeaf.name)
             }
+            val contentFreeLeaf =
+                when (error) {
+                    is PreS5VertexGenerationException -> error.failureLeaf
+                    is PreS5VertexProviderResponseException -> error.failureLeaf
+                    else -> failureLeaf
+                }
+            LOGGER.warn("pre_s5_vertex_generation_failed leaf={}", contentFreeLeaf.name)
             if (lease != null && !outcomeRecorded) {
                 runCatching { usageLedger.markUnknownBilling(lease) }
             }
@@ -193,12 +216,61 @@ internal class VertexGemini35FlashGenerationAdapter(
                         "candidateCount" to 1,
                         "temperature" to 0,
                         "maxOutputTokens" to activation.outputTokenCap,
+                        "responseMimeType" to "application/json",
+                        "responseSchema" to responseSchema(),
                     ),
             )
         return mapper.writeValueAsBytes(payload)
     }
 
+    private fun responseSchema(): Map<String, Any> =
+        linkedMapOf(
+            "type" to "OBJECT",
+            "properties" to
+                linkedMapOf(
+                    "answer" to linkedMapOf("type" to "STRING"),
+                    "sentences" to
+                        linkedMapOf(
+                            "type" to "ARRAY",
+                            "items" to
+                                linkedMapOf(
+                                    "type" to "OBJECT",
+                                    "properties" to
+                                        linkedMapOf(
+                                            "text" to linkedMapOf("type" to "STRING"),
+                                            "citationIds" to
+                                                linkedMapOf(
+                                                    "type" to "ARRAY",
+                                                    "items" to linkedMapOf("type" to "STRING"),
+                                                ),
+                                            "numericSpans" to
+                                                linkedMapOf(
+                                                    "type" to "ARRAY",
+                                                    "items" to
+                                                        linkedMapOf(
+                                                            "type" to "OBJECT",
+                                                            "properties" to
+                                                                linkedMapOf(
+                                                                    "value" to linkedMapOf("type" to "STRING"),
+                                                                    "citationIds" to
+                                                                        linkedMapOf(
+                                                                            "type" to "ARRAY",
+                                                                            "items" to linkedMapOf("type" to "STRING"),
+                                                                        ),
+                                                                ),
+                                                            "required" to listOf("value", "citationIds"),
+                                                        ),
+                                                ),
+                                        ),
+                                    "required" to listOf("text", "citationIds", "numericSpans"),
+                                ),
+                        ),
+                ),
+            "required" to listOf("answer", "sentences"),
+        )
+
     private fun parseProviderResponse(body: ByteArray): ParsedProviderResponse {
+        var failureLeaf = PreS5VertexGenerationFailureLeaf.PROVIDER_ENVELOPE
         try {
             require(body.size in 1..MAX_PROVIDER_RESPONSE_BYTES)
             val root = mapper.readTree(body)
@@ -210,27 +282,46 @@ internal class VertexGemini35FlashGenerationAdapter(
             val content = candidate.get("content")
             require(content != null && content.isObject && content.get("role")?.stringValue() == "model")
             val parts = content.get("parts")
-            require(parts != null && parts.isArray && parts.size() == 1)
-            val part = parts[0]
-            require(part != null && part.isObject && part.properties().map { it.key }.toSet() == setOf("text"))
-            val generatedJson = part.get("text")?.takeIf { it.isString }?.stringValue()
-            require(generatedJson != null && generatedJson.toByteArray(StandardCharsets.UTF_8).size in 1..16_384)
+            require(parts != null && parts.isArray && parts.size() in 1..8)
+            val generatedTexts =
+                (0 until parts.size())
+                    .map { index ->
+                        val part = parts[index]
+                        require(part != null && part.isObject)
+                        require(part.properties().none { it.key in FORBIDDEN_PART_FIELDS })
+                        part.get("thought")?.let { require(it.isBoolean) }
+                        part.get("thoughtSignature")?.let { signature ->
+                            require(signature.isString)
+                            require(signature.stringValue().toByteArray(StandardCharsets.UTF_8).size in 1..16_384)
+                        }
+                        part
+                            .get("text")
+                            ?.also { require(it.isString) }
+                            ?.stringValue()
+                            .orEmpty()
+                    }.filter { it.isNotEmpty() }
+            require(generatedTexts.size == 1)
+            val generatedJson = generatedTexts.single()
+            require(generatedJson.toByteArray(StandardCharsets.UTF_8).size in 1..16_384)
+            failureLeaf = PreS5VertexGenerationFailureLeaf.PROVIDER_USAGE
             val usage = root.get("usageMetadata")
             require(usage != null && usage.isObject)
             val promptTokens = tokenCount(usage, "promptTokenCount", 120_000)
             val candidateTokens = tokenCount(usage, "candidatesTokenCount", 32_768)
             val totalTokens = tokenCount(usage, "totalTokenCount", 152_768)
-            require(totalTokens == promptTokens + candidateTokens)
+            val toolUsePromptTokens = optionalTokenCount(usage, "toolUsePromptTokenCount", 120_000)
+            val thoughtsTokens = optionalTokenCount(usage, "thoughtsTokenCount", 32_768)
+            require(totalTokens == promptTokens + candidateTokens + toolUsePromptTokens + thoughtsTokens)
             return ParsedProviderResponse(
                 generatedJson = generatedJson,
                 usage = PreS5VertexUsage(promptTokens, candidateTokens, totalTokens),
             )
         } catch (_: JacksonException) {
-            throw PreS5VertexProviderResponseException()
+            throw PreS5VertexProviderResponseException(failureLeaf)
         } catch (_: IllegalArgumentException) {
-            throw PreS5VertexProviderResponseException()
+            throw PreS5VertexProviderResponseException(failureLeaf)
         } catch (_: IllegalStateException) {
-            throw PreS5VertexProviderResponseException()
+            throw PreS5VertexProviderResponseException(failureLeaf)
         } finally {
             body.fill(0)
         }
@@ -241,15 +332,24 @@ internal class VertexGemini35FlashGenerationAdapter(
         field: String,
         maximum: Int,
     ): Int {
-        val node = usage.get(field) ?: throw PreS5VertexProviderResponseException()
+        val node =
+            usage.get(field)
+                ?: throw PreS5VertexProviderResponseException(PreS5VertexGenerationFailureLeaf.PROVIDER_USAGE)
         val value =
             when {
                 node.isInt -> node.intValue()
                 node.isLong -> node.longValue().takeIf { it <= Int.MAX_VALUE }?.toInt()
                 else -> null
             }
-        return value?.takeIf { it in 0..maximum } ?: throw PreS5VertexProviderResponseException()
+        return value?.takeIf { it in 0..maximum }
+            ?: throw PreS5VertexProviderResponseException(PreS5VertexGenerationFailureLeaf.PROVIDER_USAGE)
     }
+
+    private fun optionalTokenCount(
+        usage: JsonNode,
+        field: String,
+        maximum: Int,
+    ): Int = if (usage.has(field)) tokenCount(usage, field, maximum) else 0
 
     private fun endpoint(
         projectId: String,
@@ -292,8 +392,39 @@ internal class VertexGemini35FlashGenerationAdapter(
         val CHUNK_ID = Regex("^rag_v2_chk_[0-9a-f]{32}$")
         val SHA256 = Regex("^[0-9a-f]{64}$")
         val PROJECT_ID = Regex("^[a-z][a-z0-9-]{4,62}[a-z0-9]$")
+        val FORBIDDEN_PART_FIELDS =
+            setOf(
+                "functionCall",
+                "functionResponse",
+                "executableCode",
+                "codeExecutionResult",
+                "fileData",
+                "inlineData",
+                "videoMetadata",
+            )
         const val MAX_PROVIDER_RESPONSE_BYTES = 65_536
     }
 }
 
-class PreS5VertexProviderResponseException : RuntimeException()
+internal enum class PreS5VertexGenerationFailureLeaf {
+    ACTIVATION_OR_INPUT,
+    USAGE_RESERVATION,
+    OAUTH,
+    GENERATE_RESERVATION,
+    GENERATE_TRANSPORT,
+    GENERATE_HTTP_4XX,
+    GENERATE_HTTP_5XX,
+    GENERATE_HTTP_OTHER,
+    PROVIDER_ENVELOPE,
+    PROVIDER_USAGE,
+    USAGE_COMMIT,
+    RESPONSE_VALIDATION,
+}
+
+internal class PreS5VertexGenerationException(
+    val failureLeaf: PreS5VertexGenerationFailureLeaf,
+) : RuntimeException()
+
+internal class PreS5VertexProviderResponseException(
+    internal val failureLeaf: PreS5VertexGenerationFailureLeaf,
+) : RuntimeException()

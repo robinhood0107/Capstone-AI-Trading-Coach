@@ -244,8 +244,8 @@ Capstone MCP를 연결할 때만 별도의 OAuth authorize 화면에서 같은 C
 service-account JSON으로 수행하며 사용자 화면에 노출하지 않는다.
 
 현재 Decision Platform backend에는 Spring의 기본 local authorize/login/consent 화면이 있어 live smoke를
-완주할 수 있다. 제품 브랜딩을 적용한 Experience Dashboard 화면은 이 workspace에 구현돼 있지 않으며
-placeholder workspace를 이 변경에서 확장하지 않는다. 배포 UI가 맡을 일은 기존 로그인 세션을 사용해
+완주할 수 있다. 제품 브랜딩을 적용한 사용자 화면은 이 workspace에 구현돼 있지 않으며 placeholder
+workspace를 이 변경에서 확장하지 않는다. 배포 UI가 맡을 일은 기존 로그인 세션을 사용해
 MCP client 이름, 요청 scope, owner snippet 외부 전달 여부를 표시하고 승인/거부를 Spring OAuth endpoint로
 보내는 것이다. 비밀번호는 운영 secret/bundle과 DB의 salted hash로만 관리하며 코드·문서·argv에 고정하지
 않는다.

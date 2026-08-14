@@ -58,6 +58,8 @@ object OpenApiFixtureEnvironmentWriter {
                     "RAG_GRPC_SHARED_SECRET" to ragGrpcSharedSecret,
                     "PYTHON_GRPC_SHARED_SECRET" to decisionGrpcSharedSecret,
                     "REDIS_PASSWORD" to randomToken(random, 32),
+                    "SEARXNG_SECRET" to randomToken(random, 32),
+                    "MCP_SEARXNG_AUTH_TOKEN" to randomToken(random, 32),
                     "JWT_SECRET" to randomToken(random, 32),
                     "JWT_ISSUER" to "s21-openapi-local",
                     "JWT_AUDIENCE" to "s21-openapi-client",

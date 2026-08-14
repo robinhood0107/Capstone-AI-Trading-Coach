@@ -203,7 +203,7 @@ class RagV2VertexResponseValidator {
     }
 
     private fun validateEvidence(evidence: List<RagV2VertexEvidence>): Map<String, RagV2VertexEvidence> {
-        require(evidence.size in 1..MAX_EVIDENCE)
+        require(evidence.size in 0..MAX_EVIDENCE)
         require(evidence.map { it.ordinal } == (1..evidence.size).toList())
         require(evidence.map { it.citationId }.distinct().size == evidence.size)
         require(

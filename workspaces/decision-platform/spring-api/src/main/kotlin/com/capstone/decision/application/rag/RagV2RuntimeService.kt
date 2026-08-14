@@ -8,6 +8,8 @@ import org.springframework.transaction.annotation.Transactional
 import org.springframework.transaction.support.TransactionTemplate
 import tools.jackson.databind.JsonNode
 import tools.jackson.databind.ObjectMapper
+import java.nio.charset.StandardCharsets
+import java.security.MessageDigest
 import java.sql.ResultSet
 import java.time.OffsetDateTime
 import java.time.ZoneOffset
@@ -304,7 +306,10 @@ class RagV2RuntimeService(
                     if (scope.embeddingProfileId == VOYAGE_PROFILE) {
                         effectiveConsent(ownerUserId)
                             .takeIf { it.effective }
-                            ?.let { true }
+                            ?.let {
+                                authorizeRuntimeVoyageQuery(ownerUserId, scope.scopeClaimId, command.question)
+                                true
+                            }
                             ?: throw RagV2ExternalConsentRequiredException()
                     } else {
                         false
@@ -327,7 +332,10 @@ class RagV2RuntimeService(
             scope,
             externalQueryConsentGranted,
         )
-        if (evaluation.generationStatus != RagGenerationStatus.RETRIEVAL_ONLY) {
+        if (
+            evaluation.generationStatus != RagGenerationStatus.RETRIEVAL_ONLY &&
+            !(vertexEnabled && isInsufficientRetrieval(evaluation))
+        ) {
             return terminalAnswer(
                 requestId = requestId,
                 generationStatus = evaluation.generationStatus,
@@ -360,7 +368,10 @@ class RagV2RuntimeService(
                 val scope = issueMcpRetrievalScope(ownerUserId, requestId, command.topics, includeOwner)
                 val consentGranted =
                     if (scope.embeddingProfileId == VOYAGE_PROFILE) {
-                        effectiveConsent(ownerUserId).effective.also { require(it) }
+                        effectiveConsent(ownerUserId).effective.also {
+                            require(it)
+                            authorizeRuntimeVoyageQuery(ownerUserId, scope.scopeClaimId, command.question)
+                        }
                     } else {
                         false
                     }
@@ -372,7 +383,13 @@ class RagV2RuntimeService(
                 RagV2EvaluationContext(requestId, preparation.scope.scopeClaimId, preparation.externalQueryConsentGranted),
             )
         requireProfileSelectedRetrievalBoundary(evaluation, preparation.scope, preparation.externalQueryConsentGranted)
-        require(evaluation.generationStatus == RagGenerationStatus.RETRIEVAL_ONLY)
+        if (isInsufficientRetrieval(evaluation)) {
+            // 로컬 corpus가 0건이어도 MCP research context를 발급해 bounded web evidence를 추가할 수 있어야 한다.
+            return RagV2SearchEvidenceResult(preparation.scope, emptyList(), emptyList())
+        }
+        if (evaluation.generationStatus != RagGenerationStatus.RETRIEVAL_ONLY) {
+            throw RagV2McpSearchUnavailableException(evaluation.failureCode)
+        }
         val evidence =
             inDatabaseTransaction {
                 vertexEvidencePort.resolve(ownerUserId, requestId, preparation.scope, evaluation.citations)
@@ -385,9 +402,16 @@ class RagV2RuntimeService(
         ownerUserId: String,
         requestId: String,
         scope: RagV2RetrievalScope,
+        topics: List<String>,
         citations: List<RagV2RetrievedCitation>,
         expectedEvidence: List<RagV2VertexEvidence>,
     ) {
+        if (citations.isEmpty()) {
+            require(expectedEvidence.isEmpty())
+            val current = inDatabaseTransaction { readVertexPreparedScope(ownerUserId, requestId, scope.scopeClaimId, topics).scope }
+            require(current == scope)
+            return
+        }
         val current = inDatabaseTransaction { vertexEvidencePort.resolve(ownerUserId, requestId, scope, citations) }
         require(
             current.map { it.citationId to it.canonicalTextSha256 } ==
@@ -452,7 +476,11 @@ class RagV2RuntimeService(
                     }
                     RagV2VertexProviderInput(
                         consent,
-                        vertexEvidencePort.resolve(ownerUserId, requestId, scope, evaluation.citations),
+                        if (evaluation.citations.isEmpty()) {
+                            emptyList()
+                        } else {
+                            vertexEvidencePort.resolve(ownerUserId, requestId, scope, evaluation.citations)
+                        },
                     )
                 }
             } catch (_: RagV2VertexEvidenceUnavailableException) {
@@ -750,6 +778,37 @@ class RagV2RuntimeService(
     }
 
     /**
+     * 인증된 Spring request가 만든 fresh scope와 질문 hash만 one-shot Voyage runtime 권한으로 결속한다.
+     * 질문 원문은 DB에 저장하지 않으며 Python writer는 이 authorization 없이는 usage reservation도 만들 수 없다.
+     */
+    private fun authorizeRuntimeVoyageQuery(
+        ownerUserId: String,
+        scopeClaimId: String,
+        question: String,
+    ) {
+        val jdbc = jdbc()
+        setActor(ownerUserId)
+        val authorizationId =
+            jdbc.queryForObject(
+                """
+                SELECT authorization_id
+                FROM authorize_s4_9_runtime_voyage_query(
+                  :ownerUserId,
+                  :scopeClaimId,
+                  :questionSha256
+                )
+                """.trimIndent(),
+                mapOf(
+                    "ownerUserId" to ownerUserId,
+                    "scopeClaimId" to scopeClaimId,
+                    "questionSha256" to sha256(question),
+                ),
+                String::class.java,
+            )
+        require(authorizationId != null && S49_VOYAGE_QUERY_AUTHORIZATION_ID.matches(authorizationId))
+    }
+
+    /**
      * Vertex packet은 request ID와 exact topic set으로 미리 발급된 five-minute provider claim만 재사용한다.
      * client-supplied profile/owner selector는 받지 않으며 DB function이 current bundle/owner pointer를 다시
      * 검증하므로 stale preparation은 gRPC 또는 provider call 전에 닫힌다.
@@ -879,14 +938,14 @@ class RagV2RuntimeService(
         evidence: List<RagV2VertexEvidence>,
     ) {
         val evidenceCitationIds = evidence.map { it.citationId }.toSet()
-        require(evidence.size in 1..MAX_CITATIONS)
+        require(evidence.size in 0..MAX_CITATIONS)
         when (generation.generationStatus) {
             RagGenerationStatus.ANSWERED -> {
                 val answer = requireNotNull(generation.answer)
                 require(answer.toByteArray(Charsets.UTF_8).size in 1..8192)
                 require(generation.answerBasis in setOf(StrongLlmAnswerBasis.EVIDENCE, StrongLlmAnswerBasis.MODEL_KNOWLEDGE))
                 if (generation.answerBasis == StrongLlmAnswerBasis.EVIDENCE) {
-                    require(generation.citationIds.isNotEmpty() && generation.citationCoverage in 0.8..1.0)
+                    require(evidence.isNotEmpty() && generation.citationIds.isNotEmpty() && generation.citationCoverage in 0.8..1.0)
                 } else {
                     require(generation.citationIds.isEmpty() && generation.citationCoverage == 0.0)
                 }
@@ -1099,6 +1158,13 @@ class RagV2RuntimeService(
         return citationIds.map { citationId -> requireNotNull(byCitationId[citationId]) }
     }
 
+    /** 검색 결과 0건만 Strong LLM의 citation-free 교육 답변 또는 MCP web research로 넘긴다. */
+    private fun isInsufficientRetrieval(evaluation: RagV2EvaluationResult): Boolean =
+        evaluation.generationStatus == RagGenerationStatus.RETRIEVAL_FAILURE &&
+            evaluation.retrievalFailure &&
+            evaluation.failureCode == "RAG_INSUFFICIENT_EVIDENCE" &&
+            evaluation.citations.isEmpty()
+
     private fun databaseNow(): java.time.Instant =
         jdbc()
             .queryForObject(
@@ -1122,6 +1188,12 @@ class RagV2RuntimeService(
             String::class.java,
         )
     }
+
+    private fun sha256(value: String): String =
+        MessageDigest
+            .getInstance("SHA-256")
+            .digest(value.toByteArray(StandardCharsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
 
     /** 외부 provider 호출 사이에는 PostgreSQL transaction을 열어 두지 않는다. */
     private fun <T> inDatabaseTransaction(block: () -> T): T =
@@ -1158,6 +1230,7 @@ class RagV2RuntimeService(
     private companion object {
         val FLAG = Regex("^[A-Z0-9_]{1,64}$")
         val FAILURE_CODE = Regex("^[A-Z0-9_]{1,96}$")
+        val S49_VOYAGE_QUERY_AUTHORIZATION_ID = Regex("^s49_vqa_[0-9a-f]{32}$")
         const val BGE_PROFILE = "bge_m3_local_1024_v1"
         const val VOYAGE_PROFILE = "voyage_context_4_1024_v1"
         val CHUNK_ID = Regex("^rag_v2_chk_[0-9a-f]{32}$")

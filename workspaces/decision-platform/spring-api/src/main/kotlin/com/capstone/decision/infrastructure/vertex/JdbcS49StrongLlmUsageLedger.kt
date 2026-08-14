@@ -87,7 +87,7 @@ internal class JdbcS49StrongLlmUsageLedger(
                 """
                 SELECT public.record_s4_9_strong_llm_usage(
                   ?, ?, ?, 'VERTEX_AI', ?, ?, ?, ?, ?, ?, ?, ?, ?
-                ) IS NULL
+                ) IS NOT NULL
                 """.trimIndent(),
                 Boolean::class.java,
                 usageEventId,

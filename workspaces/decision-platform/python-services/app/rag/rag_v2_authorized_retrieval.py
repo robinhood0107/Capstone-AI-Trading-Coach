@@ -420,7 +420,7 @@ class RagV2AuthorizedHybridRetrieval:
                 voyage_physical_calls=receipt.voyage_physical_calls,
             )
 
-        fused = self._rrf_fusion.fuse(channels)[:INTERNAL_FINAL_LIMIT]
+        fused = _select_final_evidence(self._rrf_fusion.fuse(channels))
         evidence = tuple(item.candidate for item in fused)
         if not _evidence_is_sufficient(
             evidence=evidence,
@@ -504,16 +504,42 @@ def _channels_are_complete(channels: tuple[RagV2ChannelResult, ...]) -> bool:
     )
 
 
+def _select_final_evidence(
+    fused: tuple[RagV2FusedCandidate, ...],
+) -> tuple[RagV2FusedCandidate, ...]:
+    """Top-5 relevance order를 보존하면서 가능한 독립 source 하나를 포함한다.
+
+    한 문서의 인접 chunk가 상위 5개를 독점해도 6~30위에 독립 근거가 있으면 마지막
+    자리만 교체한다. 독립 source 자체가 없으면 기존 insufficiency gate가 그대로 거부한다.
+    """
+
+    selected = list(fused[:INTERNAL_FINAL_LIMIT])
+    if len({item.candidate.source_id for item in selected}) >= 2:
+        return tuple(selected)
+    if not selected:
+        return ()
+    primary_source_id = selected[0].candidate.source_id
+    replacement = next(
+        (
+            item
+            for item in fused[INTERNAL_FINAL_LIMIT:]
+            if item.candidate.source_id != primary_source_id
+        ),
+        None,
+    )
+    if replacement is not None:
+        selected[-1] = replacement
+    return tuple(selected)
+
+
 def _evidence_is_sufficient(
     *,
     evidence: tuple[RagV2RetrievalCandidate, ...],
     fusion: tuple[RagV2FusedCandidate, ...],
 ) -> bool:
-    # 언어가 다른 일반 질문은 exact/lexical이 정상적으로 비고 dense만 근거를 찾을 수 있다.
-    # 채널 수가 아니라 독립 source 수를 신뢰 경계로 사용해 cross-lingual retrieval을 보존한다.
-    if len({item.source_id for item in evidence}) < 2:
-        return False
-    return bool(fusion)
+    # S4.9 Strong LLM은 단일 출처를 warning으로 분류하므로 근거가 실제로 없을 때만 중단한다.
+    # citation/quote 검증과 직접 조언 차단은 그대로 유지해 source 수와 신뢰성 검증을 혼동하지 않는다.
+    return bool(evidence) and bool(fusion)
 
 
 def _candidate_in_scope(

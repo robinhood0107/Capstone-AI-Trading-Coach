@@ -52,7 +52,7 @@ class JdbcS49WebEvidenceMetadataRepository(
                     SELECT public.record_s4_9_web_evidence_metadata(
                       :evidenceId, :ownerUserId, :clientId, :contextId, :url, :title, NULL,
                       :retrievedAt, :contentHash, :expiresAt
-                    ) IS NULL
+                    ) IS NOT NULL
                     """.trimIndent(),
                     mapOf(
                         "evidenceId" to id,

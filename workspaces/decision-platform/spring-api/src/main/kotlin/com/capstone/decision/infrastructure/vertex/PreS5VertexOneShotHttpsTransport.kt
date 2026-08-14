@@ -330,7 +330,9 @@ internal class PreS5VertexOneShotHttpsTransport(
     private companion object {
         const val HTTPS_PORT = 443
         const val MAX_REQUEST_BYTES = 60_000
-        const val MAX_RESPONSE_BYTES = 65_536
+
+        // S4.9 structured-output validator와 동일한 bounded response cap이다.
+        const val MAX_RESPONSE_BYTES = 128_000
         const val MAX_REQUEST_HEADERS = 8
         const val MAX_RESPONSE_HEADERS = 32
         const val MAX_HEADER_BYTES = 16_384

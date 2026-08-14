@@ -310,7 +310,7 @@ def _release_markers() -> dict[str, object]:
 
 def _release_database_snapshot() -> ReleaseDatabaseSnapshot:
     return ReleaseDatabaseSnapshot(
-        latest_migration=64,
+        latest_migration=65,
         public_state="ACTIVE",
         public_embedding_profile_id="voyage_context_4_1024_v1",
         public_source_count=142,

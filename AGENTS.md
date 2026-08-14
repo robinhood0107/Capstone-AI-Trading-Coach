@@ -113,8 +113,9 @@
   한 번 교환하고 `VERTEX_MODEL_ID`(기본 `gemini-3.5-flash`)의 exact packet-bound model을 한 번 호출하며,
   foreign-news(Finnhub personal-local/SEC/Fed/GDELT offline reference)는
   계속 hard-gated다. Optional 3과 Core 6의 KIS current-price·SEC EDGAR submissions/companyfacts·KRX
-  KOSPI/KOSDAQ daily만 local one-shot executor를 가진다. canonical short-expiry packet, exact clean
-  HEAD/tree, CI/security digest가 모두 없거나 drift하면 provider outbound는 0이며, KIS는 cached
+  KOSPI/KOSDAQ daily만 local one-shot executor를 가진다. canonical short-expiry packet은 실행
+  입력의 무결성과 물리 호출 상한을 검증하는 감사 경계로 사용하며, HEAD/tree 또는 CI/security
+  digest가 바뀌어도 사용자가 정한 실행 권한은 승인 범위 동안 유지된다. KIS는 cached
   OAuth token이 없으면 token endpoint를 열지 않고 fail-closed한다. Core 6 availability는 성공한
   content-free receipt의 complete required-operation set으로만 materialize하며 KOFIA는 계속
   `BLOCKED_NO_CREDENTIAL_OR_APPROVAL`, OpenDART/ECOS는 authorized projection-only다. raw corpus,
@@ -144,6 +145,19 @@
 재현을 위한 `HISTORICAL_SUPERSEDED` 기록으로만 보존하며, 과거 ADR·contract-change·완료 evidence의
 bytes를 변경하지 않는다. 현재 존재하지 않는 기존 workspace output은 `NOT_AVAILABLE/ABSTAIN`으로만
 처리하고 S5 진입 또는 완료의 의존성으로 만들지 않는다.
+
+### 외부 실행 승인 정책
+
+- 사용자가 이름이 붙은 phase, window 또는 실행 계획 전체를 승인하면 그 계획에 적힌 provider,
+  operation, 계정 mode, 물리 호출·retry·비용 상한이 승인 범위가 된다. packet별 승인을 다시 묻지 않는다.
+- 사용자가 provider, operation 범위, 계정 mode, 최대 물리 호출 수와 retry/cost 상한을 명시해
+  사전 승인하면 manifest SHA가 생성되기 전의 승인도 유효하다. manifest SHA는 실행 입력의
+  무결성과 감사 추적을 위한 식별자이며, 생성 뒤 SHA 응답을 기다리는 별도 단계는 두지 않는다.
+- 승인된 범위 안에서 packet이나 manifest를 재생성하거나 HEAD/tree·CI·Security evidence가 바뀌어도
+  승인은 유지된다. 에이전트는 최신 입력을 다시 검증하고 실행을 계속한다.
+- provider·endpoint·전송 데이터 범위·계정 또는 주문 mode·최대 물리 호출 수·retry·비용 상한 중
+  하나라도 사용자가 승인한 범위를 넓힐 때만 새 승인을 받는다. credential, fixed origin, PII/secret,
+  quota, raw artifact 금지와 첫 실패 뒤 후속 호출 0 경계는 승인 방식과 무관하게 유지한다.
 CI는 PR base에 있던 historical/contract-change/completion-evidence record의 byte 변경·삭제를 거부한다.
 
 ```text
@@ -273,9 +287,9 @@ Gradle build), `python-ci.yml`(Python 3.12 품질 게이트)이다. 아래 시�
 ### 외부 provider 반복 실패 복구
 
 - 같은 live 단계가 반복 실패하거나 stable code만으로 원인을 좁힐 수 없으면 동일한 end-to-end 명령을 다시 실행하지 않는다. 실패 approval/evidence를 소비 완료로 동결하고, offline 회귀 테스트와 allowlisted typed diagnostic으로 exact failure leaf를 먼저 만든다.
-- 외부 작업을 독립 endpoint로 분해할 수 있고 production transport/parser/quota 경계를 그대로 재사용할 수 있을 때만 단일 endpoint·무게시 probe를 추가한다. 순서는 `계약·실패 leaf 확인 → 최소 수정 → focused/관련 matrix → release 전체 gate 1회 → 새 packet 발급·현재 사용자의 exact 승인 → probe 단계별 실행 → 최종 원자 실행`이다. exact 승인 수신 전 provider 호출은 `0`이다.
+- 외부 작업을 독립 endpoint로 분해할 수 있고 production transport/parser/quota 경계를 그대로 재사용할 수 있을 때만 단일 endpoint·무게시 probe를 추가한다. 순서는 `계약·실패 leaf 확인 → 최소 수정 → focused/관련 matrix → release 전체 gate 1회 → 승인 범위 내 새 packet 발급 → probe 단계별 실행 → 최종 원자 실행`이다. 이미 사전 승인된 범위라면 packet이나 manifest 생성 뒤 별도 SHA 승인 왕복 없이 계속한다.
 - probe는 기본적으로 retry `0`, endpoint별 physical cap `1`, artifact `0`이며 첫 실패 뒤 남은 provider 호출은 `0`이다. probe 성공은 accepted production 결과가 아니고, 최종 명령이 현재 응답 전체를 독립적으로 다시 검증해 성공한 뒤에만 원자 publish한다. probe와 최종 응답 hash 일치를 강제하지 않는다.
-- 외부 provider 성공을 보장한다고 표현하지 않는다. `curl`, 브라우저 sample, 임시 script로 credential·fixed-origin transport·quota·승인 gate를 우회하지 않고 실패 evidence와 성공 acceptance set을 분리한다.
+- 외부 provider 성공을 보장한다고 표현하지 않는다. `curl`, 브라우저 sample, 임시 script로 credential·fixed-origin transport·quota·사용자가 승인한 실행 범위를 우회하지 않고 실패 evidence와 성공 acceptance set을 분리한다.
 
 ## Java/Kotlin/Spring 기준 스택
 

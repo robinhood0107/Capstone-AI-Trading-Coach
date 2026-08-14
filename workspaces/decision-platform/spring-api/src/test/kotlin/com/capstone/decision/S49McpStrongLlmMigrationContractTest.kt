@@ -71,6 +71,9 @@ class S49McpStrongLlmMigrationContractTest {
             "interval '15 minutes'",
             "IF NOT claim_row.owner_scope_authorized",
             "claim_row.owner_embedding_profile_id",
+            "exact_generation.embedding_profile_id = claim_row.owner_embedding_profile_id",
+            "exact_generation.embedding_profile_id = claim_row.embedding_profile_id",
+            "oa_generation.embedding_profile_id = claim_row.embedding_profile_id",
             "REVOKE ALL PRIVILEGES ON TABLE public.rag_v2_retrieval_scope_claims FROM decision_app",
         )
         assertThat(sql).doesNotContain("DROP TABLE", "TRUNCATE TABLE", "DELETE FROM")

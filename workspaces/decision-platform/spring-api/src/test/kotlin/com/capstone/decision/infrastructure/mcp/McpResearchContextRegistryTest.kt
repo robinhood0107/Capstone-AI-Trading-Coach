@@ -19,6 +19,7 @@ class McpResearchContextRegistryTest {
                 oauthClientId = "mcp_demo_client",
                 question = "test",
                 answerMode = "DETAILED",
+                topics = listOf("RISK"),
                 requestId = "req_mcp_context_budget_0001",
                 retrievalScope =
                     RagV2RetrievalScope(
@@ -77,6 +78,7 @@ class McpResearchContextRegistryTest {
                 oauthClientId = "mcp_demo_client",
                 question = "test",
                 answerMode = answerMode,
+                topics = listOf("RISK"),
                 requestId = requestId,
                 retrievalScope =
                     RagV2RetrievalScope(

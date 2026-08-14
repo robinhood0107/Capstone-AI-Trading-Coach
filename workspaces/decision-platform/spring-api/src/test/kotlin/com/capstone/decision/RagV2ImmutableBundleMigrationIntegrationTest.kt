@@ -243,8 +243,171 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
                 ),
             )
         }
+        DriverManager.getConnection(postgres.jdbcUrl, "decision_app", APP_PASSWORD).use { connection ->
+            connection.autoCommit = false
+            try {
+                connection.prepareStatement("select set_config('app.actor_user_id', ?, false)").use { statement ->
+                    statement.setString(1, "usr_demo_user")
+                    statement.execute()
+                }
+                assertEquals(
+                    scopeClaimId,
+                    callSingleRow(
+                        connection,
+                        """
+                        select scope_claim_id
+                        from read_rag_v2_vertex_prepared_scope_v2(
+                          'usr_demo_user', 'req_mcp_public_scope_0001', '$scopeClaimId',
+                          array['FINANCIAL_ENGINEERING']
+                        )
+                        """.trimIndent(),
+                    ),
+                )
+                connection.rollback()
+            } catch (error: Throwable) {
+                connection.rollback()
+                throw error
+            }
+        }
         val ownerDenied = assertThrows<SQLException> { issueMcpRetrievalScope(includeOwner = true) }
         assertEquals("55000", ownerDenied.sqlState)
+    }
+
+    @Test
+    fun `S4 9 runtime Voyage authorization is consent bound one shot and preserves direct table denial`() {
+        val tokenizerSha256 = "c".repeat(64)
+        val questionSha256 = "d".repeat(64)
+        val scopeClaimId = "rvs_${"8".repeat(32)}"
+        recordConsentV2(
+            ownerUserId = "usr_demo_user",
+            internalEventId = "cns_v2_${"9".repeat(32)}",
+            publicEventId = "rce_runtime_voyage_0001",
+            action = "GRANT",
+            policyDigest = "e".repeat(64),
+            processorSetDigest = "f".repeat(64),
+        )
+        adminConnection().use { connection ->
+            connection.createStatement().use { statement ->
+                statement.execute(
+                    """
+                    insert into rag_v2_immutable_component_generations (
+                      component_generation_id, owner_user_id, component_scope, embedding_profile_id,
+                      state, evaluation_status, expected_source_count, expected_chunk_count,
+                      actual_source_count, actual_chunk_count, generation_hash, manifest_hash,
+                      evaluated_at, activated_at
+                    ) values
+                      ('$EXACT_GENERATION', null, 'EXACT30', 'voyage_context_4_1024_v1',
+                       'ACTIVE', 'PASSED', 30, 30, 0, 0, repeat('1', 64), repeat('2', 64),
+                       clock_timestamp(), clock_timestamp()),
+                      ('$OA_GENERATION', null, 'OA112', 'voyage_context_4_1024_v1',
+                       'ACTIVE', 'PASSED', 112, 112, 0, 0, repeat('3', 64), repeat('4', 64),
+                       clock_timestamp(), clock_timestamp())
+                    """.trimIndent(),
+                )
+                statement.execute(
+                    """
+                    insert into rag_v2_retrieval_scope_claims (
+                      scope_claim_id, owner_user_id, session_id, allowed_topics,
+                      exact30_generation_id, oa112_generation_id, owner_private_generation_id,
+                      owner_bundle_id, embedding_profile_id, owner_embedding_profile_id,
+                      public_pointer_version, owner_pointer_version, owner_scope_authorized,
+                      policy_version, created_at, expires_at
+                    ) values (
+                      '$scopeClaimId', 'usr_demo_user', 'req_mcp_public_scope_0001',
+                      array['FINANCIAL_ENGINEERING'], '$EXACT_GENERATION', '$OA_GENERATION', null,
+                      null, 'voyage_context_4_1024_v1', null, 1, 0, false, 1,
+                      clock_timestamp(), clock_timestamp() + interval '15 minutes'
+                    )
+                    """.trimIndent(),
+                )
+                statement.execute(
+                    """
+                    insert into rag_v2_immutable_voyage_document_batch_plans (
+                      batch_plan_sha256, official_tokenizer_sha256, expected_source_count,
+                      expected_chunk_count, expected_token_count, expected_batch_count,
+                      owner_scope_sha256, owner_private_ordered_group_count, state, completed_at
+                    ) values (
+                      repeat('a', 64), '$tokenizerSha256', 142, 142, 142, 1,
+                      null, 0, 'COMPLETE', clock_timestamp()
+                    )
+                    """.trimIndent(),
+                )
+            }
+        }
+        val authorizationId =
+            DriverManager.getConnection(postgres.jdbcUrl, "decision_app", APP_PASSWORD).use { connection ->
+                connection.autoCommit = false
+                try {
+                    connection.prepareStatement("select set_config('app.actor_user_id', ?, false)").use { statement ->
+                        statement.setString(1, "usr_demo_user")
+                        statement.execute()
+                    }
+                    val value =
+                        callSingleRow(
+                            connection,
+                            """
+                            select authorization_id
+                            from authorize_s4_9_runtime_voyage_query(
+                              'usr_demo_user', '$scopeClaimId', '$questionSha256'
+                            )
+                            """.trimIndent(),
+                        )
+                    connection.commit()
+                    value
+                } catch (error: Throwable) {
+                    connection.rollback()
+                    throw error
+                }
+            }
+        assertTrue(authorizationId.matches(Regex("^s49_vqa_[0-9a-f]{32}$")))
+
+        val usageEventId =
+            DriverManager.getConnection(postgres.jdbcUrl, "decision_rag_writer", RAG_WRITER_PASSWORD).use { connection ->
+                callSingleRow(
+                    connection,
+                    """
+                    select usage_event_id
+                    from reserve_s4_9_runtime_voyage_query_usage(
+                      '$scopeClaimId', '$questionSha256', '$tokenizerSha256'
+                    )
+                    """.trimIndent(),
+                )
+            }
+        assertTrue(usageEventId.matches(Regex("^rgr_vqu_[0-9a-f]{32}$")))
+        val replay =
+            assertThrows<SQLException> {
+                DriverManager.getConnection(postgres.jdbcUrl, "decision_rag_writer", RAG_WRITER_PASSWORD).use { connection ->
+                    callSingleRow(
+                        connection,
+                        """
+                        select usage_event_id
+                        from reserve_s4_9_runtime_voyage_query_usage(
+                          '$scopeClaimId', '$questionSha256', '$tokenizerSha256'
+                        )
+                        """.trimIndent(),
+                    )
+                }
+            }
+        assertEquals("55000", replay.sqlState)
+
+        adminConnection().use { connection ->
+            assertFalse(hasTablePrivilege(connection, "decision_app", "s4_9_voyage_query_authorizations", "SELECT"))
+            assertFalse(hasTablePrivilege(connection, "decision_rag_writer", "s4_9_voyage_query_usage_links", "SELECT"))
+            assertTrue(
+                hasFunctionPrivilege(
+                    connection,
+                    "decision_app",
+                    "authorize_s4_9_runtime_voyage_query(text,text,text)",
+                ),
+            )
+            assertTrue(
+                hasFunctionPrivilege(
+                    connection,
+                    "decision_rag_writer",
+                    "reserve_s4_9_runtime_voyage_query_usage(text,text,text)",
+                ),
+            )
+        }
     }
 
     @Test

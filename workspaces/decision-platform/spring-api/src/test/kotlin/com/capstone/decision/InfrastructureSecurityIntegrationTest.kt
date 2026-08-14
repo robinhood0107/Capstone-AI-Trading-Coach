@@ -137,6 +137,7 @@ class InfrastructureSecurityIntegrationTest {
                 "issue_rag_v2_retrieval_scope_v2(text,text,text[])",
                 "issue_rag_v2_retrieval_scope_v3(text,text,text[])",
                 "read_rag_v2_vertex_prepared_scope_v2(text,text,text,text[])",
+                "authorize_s4_9_runtime_voyage_query(text,text,text)",
             ).forEach { function ->
                 assertTrue(
                     hasFunctionPrivilege(connection, "decision_app", function),
@@ -166,6 +167,7 @@ class InfrastructureSecurityIntegrationTest {
                 "claim_rag_v2_immutable_voyage_query_usage_attempt(text)",
                 "commit_rag_v2_immutable_voyage_query_usage(text,integer,bigint)",
                 "mark_rag_v2_immutable_voyage_query_usage_unknown_billing(text)",
+                "reserve_s4_9_runtime_voyage_query_usage(text,text,text)",
                 "reserve_rag_v2_immutable_voyage_usage_with_tokenizer(text,text,text,text,text,text,timestamp with time zone,integer,integer,bigint,bigint)",
                 "commit_rag_v2_immutable_voyage_usage_with_tokenizer(text,integer,integer,bigint)",
                 "reserve_rag_v2_immutable_voyage_query_usage_with_tokenizer(text,text,text,text,text,text,text,text,timestamp with time zone,integer,integer,bigint,bigint)",

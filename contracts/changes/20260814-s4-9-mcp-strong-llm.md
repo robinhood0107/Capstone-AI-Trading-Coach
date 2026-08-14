@@ -12,7 +12,8 @@ Client Registration은 열지 않는다. SearXNG 검색과 bounded HTTPS read는
 Google Search, Naver, browser automation, crawler, Deep Research는 활성화하지 않는다.
 
 RAG/MCP/LLM 결과는 Decision, Signal, LSTM, RiskDecision, order 및 판단 hash에 영향을 주지 않는다.
-V1~V65 migration과 기존 DB row는 보존하고 V66만 forward-only로 추가한다.
+V1~V65 migration과 기존 DB row는 보존한다. V66은 S4.9 저장 경계를 추가하고, 적용 후 발견된
+public-only OAuth scope의 owner overlay 선조회와 15분 context TTL 불일치는 V67 forward repair로만 고친다.
 
 ## EN
 
@@ -27,6 +28,8 @@ binding. Public Dynamic Client Registration is disabled. SearXNG search and boun
 helpers; Google Search, Naver, browser automation, crawling, and Deep Research remain disabled.
 
 RAG, MCP, and LLM outputs have no authority over Decision, Signal, LSTM, RiskDecision, orders, or judgement hashes.
-Migrations V1 through V65 and all existing database rows remain preserved; V66 is forward-only.
+Migrations V1 through V65 and all existing database rows remain preserved. V66 adds the S4.9 persistence
+boundary, while V67 forward-repairs the public-only OAuth scope so it cannot read the owner overlay and aligns
+the database claim with the 15-minute research context.
 
 Refs #82 #74 #89

@@ -163,7 +163,8 @@ fresh final-head Window B의 Voyage query 1회와 Vertex service-account OAuth/g
 
 ### 0.4 S4.9 MCP + Strong LLM internal contract
 
-S4.9 working tree는 next-free V66을 추가하며 기존 public RAG/OpenAPI/proto bytes는 동결한다. 기존
+S4.9 working tree는 V66과 적용 후 security review에서 발견한 public-scope 선조회/TTL 오류의 V67
+forward repair를 추가하며 기존 public RAG/OpenAPI/proto bytes는 동결한다. 기존
 `POST /api/v2/rag/ask`는 내부적으로 Top-5 전체를 provider-neutral `StrongLlmGenerationPort`에 전달한다.
 Vertex adapter는 direct answer 1회 또는 최대 3 tool round 뒤 tools 없는 final structured-output 1회를 수행한다.
 첫 안전 문장 강제 선택, answer enum 고정, citation 1개/문장 1개/numeric 0 강제는 제거한다.
@@ -183,7 +184,7 @@ Streamable HTTP `POST /mcp`는 OAuth bearer token을 요구하고 정확히 다�
 
 | tool | 필수 scope | 결과 |
 |---|---|---|
-| `capstone_rag_search` | `mcp:rag.public`, owner citation 시 `mcp:rag.owner` | owner/client-bound 15분 research context + Top-5 |
+| `capstone_rag_search` | `mcp:rag.public`; owner Top-5 포함은 호출 전 `mcp:rag.owner` | owner/client-bound 15분 research context + Top-5 |
 | `capstone_web_search` | `mcp:web.read` | context-bound SearXNG URL 후보 |
 | `capstone_web_read` | `mcp:web.read` | bounded normalized text + content hash evidence |
 | `capstone_answer_validate` | `mcp:answer.validate` | exact draft validation + 5분 one-use receipt |
@@ -191,6 +192,7 @@ Streamable HTTP `POST /mcp`는 OAuth bearer token을 요구하고 정확히 다�
 
 tool parameter에 `ownerId`는 없고 JWT `sub`, `client_id`, audience, scope, account status/securityVersion에서만
 owner를 결정한다. 외부 LLM이 validate를 호출하지 않은 답변은 Capstone 검증 답변으로 표시·저장하지 않는다.
+`mcp:rag.owner`가 없으면 DB는 owner pointer/bundle/component를 읽지 않는 public-only claim을 발급한다.
 
 OAuth discovery/control surface:
 

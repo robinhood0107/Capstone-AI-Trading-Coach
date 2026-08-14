@@ -212,7 +212,7 @@ class RagV2RuntimeService(
 
     /**
      * authenticated owner가 same request ID로 실행할 Vertex one-shot packet을 만들기 위한 content-free
-     * preparation이다. raw question/evidence를 persistence에 새로 만들지 않고 existing two-minute scope와
+     * preparation이다. raw question/evidence를 persistence에 새로 만들지 않고 provider 전용 five-minute scope와
      * purpose-separated HMAC만 반환하며, enabled generator가 없으면 provider preparation도 열지 않는다.
      */
     @Transactional
@@ -232,7 +232,7 @@ class RagV2RuntimeService(
         if (!consent.effective) {
             throw RagV2ExternalConsentRequiredException()
         }
-        val scope = issueRetrievalScope(ownerUserId, requestId, command.topics)
+        val scope = issueRetrievalScope(ownerUserId, requestId, command.topics, providerPreparation = true)
         val preparedScope = readVertexPreparedScope(ownerUserId, requestId, scope.scopeClaimId, command.topics)
         require(preparedScope.scope == scope)
         return RagV2VertexPreparation(
@@ -556,12 +556,13 @@ class RagV2RuntimeService(
         ownerUserId: String,
         requestId: String,
         topics: List<String>,
+        providerPreparation: Boolean = false,
     ): RagV2RetrievalScope {
         val jdbc = jdbc()
         setActor(ownerUserId)
         val topicsJson = objectMapper.writeValueAsString(topics)
-        return jdbc
-            .query(
+        val issuerSql =
+            if (providerPreparation) {
                 """
                 SELECT *
                 FROM issue_rag_v2_retrieval_scope_v3(
@@ -569,7 +570,20 @@ class RagV2RuntimeService(
                   :requestId,
                   ARRAY(SELECT jsonb_array_elements_text(CAST(:topicsJson AS jsonb)))
                 )
-                """.trimIndent(),
+                """.trimIndent()
+            } else {
+                """
+                SELECT *
+                FROM issue_rag_v2_retrieval_scope_v2(
+                  :ownerUserId,
+                  :requestId,
+                  ARRAY(SELECT jsonb_array_elements_text(CAST(:topicsJson AS jsonb)))
+                )
+                """.trimIndent()
+            }
+        return jdbc
+            .query(
+                issuerSql,
                 mapOf(
                     "ownerUserId" to ownerUserId,
                     "requestId" to requestId,
@@ -590,7 +604,7 @@ class RagV2RuntimeService(
     }
 
     /**
-     * Vertex packet은 request ID와 exact topic set으로 미리 발급된 two-minute claim만 재사용한다.
+     * Vertex packet은 request ID와 exact topic set으로 미리 발급된 five-minute provider claim만 재사용한다.
      * client-supplied profile/owner selector는 받지 않으며 DB function이 current bundle/owner pointer를 다시
      * 검증하므로 stale preparation은 gRPC 또는 provider call 전에 닫힌다.
      */

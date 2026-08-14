@@ -56,7 +56,21 @@ class VertexGemini35FlashGenerationAdapterTest {
         assertThat(payload.properties().map { it.key })
             .containsExactly("contents", "generationConfig")
         assertThat(payload["generationConfig"].properties().map { it.key })
-            .containsExactly("candidateCount", "temperature", "maxOutputTokens")
+            .containsExactly("candidateCount", "temperature", "maxOutputTokens", "responseMimeType", "responseSchema")
+        assertThat(payload["generationConfig"]["responseMimeType"].stringValue()).isEqualTo("application/json")
+        val responseSchema = payload["generationConfig"]["responseSchema"]
+        assertThat(responseSchema["properties"]["answer"]["enum"][0].stringValue())
+            .isEqualTo("The reference explains the model assumption.")
+        assertThat(responseSchema["properties"]["sentences"]["minItems"].intValue()).isEqualTo(1)
+        assertThat(responseSchema["properties"]["sentences"]["maxItems"].intValue()).isEqualTo(1)
+        val sentenceSchema = responseSchema["properties"]["sentences"]["items"]["properties"]
+        assertThat(sentenceSchema["text"]["enum"][0].stringValue())
+            .isEqualTo("The reference explains the model assumption.")
+        assertThat(sentenceSchema["citationIds"]["items"]["enum"][0].stringValue()).isEqualTo("cit_1")
+        assertThat(sentenceSchema["numericSpans"]["maxItems"].intValue()).isZero()
+        val required = payload["generationConfig"]["responseSchema"]["required"]
+        assertThat((0 until required.size()).map { required[it].stringValue() })
+            .containsExactly("answer", "sentences")
         verify(exactly = 1) { ledger.reserve(any(), activation) }
         verify(exactly = 1) { ledger.claimTokenAttempt(lease) }
         verify(exactly = 1) { oauthProvider.acquire(activation, tokenAttempt) }
@@ -105,6 +119,31 @@ class VertexGemini35FlashGenerationAdapterTest {
         assertThat(result.generationStatus).isEqualTo(RagGenerationStatus.GENERATION_UNAVAILABLE)
         assertThat(result.answer).isNull()
         verify(exactly = 1) { ledger.commit(lease, any()) }
+        verify(exactly = 0) { ledger.markUnknownBilling(any()) }
+    }
+
+    @Test
+    fun `Gemini 3 thought signature and hidden thought usage remain content free and valid`() {
+        val activationReader = mockk<PreS5VertexActivationReader>()
+        val oauthProvider = mockk<PreS5VertexServiceAccountOAuthProvider>()
+        val ledger = mockk<JdbcPreS5VertexUsageLedger>(relaxed = true)
+        val http = mockk<PreS5VertexHttpExecutor>()
+        val activation = activation()
+        val lease = lease("c")
+        val tokenAttempt = PreS5VertexTokenAttempt(lease)
+        val generateContentAttempt = PreS5VertexGenerateContentAttempt(lease)
+        every { activationReader.read() } returns activation
+        every { ledger.reserve(any(), activation) } returns lease
+        every { ledger.claimTokenAttempt(lease) } returns tokenAttempt
+        every { oauthProvider.acquire(activation, tokenAttempt) } returns
+            PreS5VertexAccessToken("project-test-123", "ya29.vertex-token-test".toByteArray(StandardCharsets.US_ASCII))
+        every { ledger.claimGenerateContentAttempt(lease) } returns generateContentAttempt
+        every { http.execute(any()) } returns successResponse(includeThoughtMetadata = true)
+
+        val result = adapter(activationReader, oauthProvider, ledger, http).generate(command())
+
+        assertThat(result.generationStatus).isEqualTo(RagGenerationStatus.ANSWERED)
+        verify(exactly = 1) { ledger.commit(lease, match { it.totalTokenCount == 23 }) }
         verify(exactly = 0) { ledger.markUnknownBilling(any()) }
     }
 
@@ -203,15 +242,21 @@ class VertexGemini35FlashGenerationAdapterTest {
             .digest(value.toByteArray(StandardCharsets.UTF_8))
             .joinToString("") { "%02x".format(it) }
 
-    private fun successResponse(generatedJson: String = validGeneratedJson()): PreS5VertexHttpResponse {
+    private fun successResponse(
+        generatedJson: String = validGeneratedJson(),
+        includeThoughtMetadata: Boolean = false,
+    ): PreS5VertexHttpResponse {
         val escaped = generatedJson.replace("\\", "\\\\").replace("\"", "\\\"")
+        val thoughtSignature = if (includeThoughtMetadata) ",\"thoughtSignature\":\"opaque-signature\"" else ""
+        val thoughtUsage = if (includeThoughtMetadata) ",\"thoughtsTokenCount\":5" else ""
+        val totalTokens = if (includeThoughtMetadata) 23 else 18
         return PreS5VertexHttpResponse(
             statusCode = 200,
             body =
                 """
                 {
-                  "candidates":[{"content":{"role":"model","parts":[{"text":"$escaped"}]}}],
-                  "usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":8,"totalTokenCount":18}
+                  "candidates":[{"content":{"role":"model","parts":[{"text":"$escaped"$thoughtSignature}]}}],
+                  "usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":8,"totalTokenCount":$totalTokens$thoughtUsage}
                 }
                 """.trimIndent().toByteArray(StandardCharsets.UTF_8),
         )

@@ -22,6 +22,131 @@ import java.util.concurrent.atomic.AtomicInteger
 @Testcontainers
 class RagSourceRegistryMigrationIntegrationTest {
     @Test
+    fun `V59 to V60 owner dual profile upgrade is forward only and preserves existing immutable tables`() {
+        withPreparedDatabase("owner_dual_profile_upgrade") { jdbcUrl ->
+            flyway(jdbcUrl, target = "59").migrate()
+            adminConnection(jdbcUrl).use { connection ->
+                assertThat(queryString(connection, "select max(version::integer)::text from flyway_schema_history where success"))
+                    .isEqualTo("59")
+                assertThat(
+                    queryString(
+                        connection,
+                        "select count(*)::text from information_schema.columns where table_schema = 'public' and table_name = 'rag_v2_immutable_bundles' and column_name = 'owner_embedding_profile_id'",
+                    ),
+                ).isEqualTo("0")
+            }
+
+            flyway(jdbcUrl, target = "60").migrate()
+
+            adminConnection(jdbcUrl).use { connection ->
+                assertThat(queryString(connection, "select max(version::integer)::text from flyway_schema_history where success"))
+                    .isEqualTo("60")
+                assertThat(
+                    queryString(
+                        connection,
+                        "select count(*)::text from information_schema.columns where table_schema = 'public' and table_name = 'rag_v2_immutable_bundles' and column_name = 'owner_embedding_profile_id'",
+                    ),
+                ).isEqualTo("1")
+                assertThat(
+                    queryString(
+                        connection,
+                        "select count(*)::text from pg_proc where oid = 'public.issue_rag_v2_immutable_import_ticket_v2(text,text,text,text,text)'::regprocedure",
+                    ),
+                ).isEqualTo("1")
+                assertThat(queryString(connection, "select count(*)::text from rag_v2_immutable_import_tickets"))
+                    .isEqualTo("0")
+            }
+        }
+    }
+
+    @Test
+    fun `V60 to V61 owner overlay reuse repair is forward only and preserves ACL`() {
+        withPreparedDatabase("owner_overlay_reuse_upgrade") { jdbcUrl ->
+            flyway(jdbcUrl, target = "60").migrate()
+            adminConnection(jdbcUrl).use { connection ->
+                assertThat(queryString(connection, "select max(version::integer)::text from flyway_schema_history where success"))
+                    .isEqualTo("60")
+            }
+
+            flyway(jdbcUrl, target = "61").migrate()
+
+            adminConnection(jdbcUrl).use { connection ->
+                assertThat(queryString(connection, "select max(version::integer)::text from flyway_schema_history where success"))
+                    .isEqualTo("61")
+                assertThat(
+                    queryString(
+                        connection,
+                        "select pg_get_functiondef('public.prepare_rag_v2_immutable_owner_overlay(text,text)'::regprocedure)",
+                    ),
+                ).contains("existing_generation.state NOT IN ('EVALUATED', 'ACTIVE', 'SUPERSEDED')")
+                assertThat(
+                    hasFunctionPrivilege(
+                        connection,
+                        "decision_rag_admin",
+                        "prepare_rag_v2_immutable_owner_overlay(text,text)",
+                    ),
+                ).isTrue()
+                assertThat(
+                    hasPublicFunctionExecute(
+                        connection,
+                        "prepare_rag_v2_immutable_owner_overlay(text,text)",
+                    ),
+                ).isFalse()
+            }
+        }
+    }
+
+    @Test
+    fun `V61 to V62 base-only owner scope repair is forward only and preserves ACL`() {
+        withPreparedDatabase("base_only_owner_scope_upgrade") { jdbcUrl ->
+            flyway(jdbcUrl, target = "61").migrate()
+            flyway(jdbcUrl, target = "62").migrate()
+
+            adminConnection(jdbcUrl).use { connection ->
+                assertThat(queryString(connection, "select max(version::integer)::text from flyway_schema_history where success"))
+                    .isEqualTo("62")
+                assertThat(
+                    queryString(
+                        connection,
+                        "select pg_get_functiondef('public.canonicalize_rag_v2_immutable_retrieval_citations(text,text,text,jsonb)'::regprocedure)",
+                    ),
+                ).contains("rag_v2_immutable_empty_owner_scope_is_current")
+                assertThat(
+                    hasPublicFunctionExecute(
+                        connection,
+                        "rag_v2_immutable_empty_owner_scope_is_current(text,bigint,text,text,text)",
+                    ),
+                ).isFalse()
+            }
+        }
+    }
+
+    @Test
+    fun `V62 through V65 forward repairs preserve empty owner scope and ACL`() {
+        withPreparedDatabase("empty_owner_generation_scope_upgrade") { jdbcUrl ->
+            flyway(jdbcUrl, target = "62").migrate()
+            flyway(jdbcUrl).migrate()
+
+            adminConnection(jdbcUrl).use { connection ->
+                assertThat(queryString(connection, "select max(version::integer)::text from flyway_schema_history where success"))
+                    .isEqualTo("65")
+                assertThat(
+                    queryString(
+                        connection,
+                        "select pg_get_functiondef('public.rag_v2_immutable_empty_owner_scope_is_current(text,bigint,text,text,text)'::regprocedure)",
+                    ),
+                ).contains("generation.expected_source_count = 0")
+                assertThat(
+                    hasPublicFunctionExecute(
+                        connection,
+                        "rag_v2_immutable_empty_owner_scope_is_current(text,bigint,text,text,text)",
+                    ),
+                ).isFalse()
+            }
+        }
+    }
+
+    @Test
     fun `clean migration creates normalized graph tombstones and exact ACL`() {
         withPreparedDatabase("clean") { jdbcUrl ->
             flyway(jdbcUrl).migrate()
@@ -86,7 +211,7 @@ class RagSourceRegistryMigrationIntegrationTest {
                 assertThat(queryStrings(connection, normalizedTableQuery))
                     .containsAll(expectedTables)
                 assertThat(queryString(connection, "select max(version::integer) from flyway_schema_history where success"))
-                    .isEqualTo("59")
+                    .isEqualTo("65")
 
                 expectedTables.forEach { table ->
                     assertThat(

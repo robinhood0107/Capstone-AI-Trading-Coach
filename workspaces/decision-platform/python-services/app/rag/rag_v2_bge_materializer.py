@@ -156,6 +156,19 @@ class RagV2PreparedPublicDocument:
 
 
 @dataclass(frozen=True, slots=True)
+class RagV2PreparedOwnerDocument:
+    """provider 호출 전 안전성까지 닫힌 owner Document IR/chunk input이다.
+
+    canonical text는 process-local transient 값이며 receipt, history, log로 내보내지 않는다.
+    """
+
+    document: RagV2DocumentMaterialization
+    embedding_inputs: tuple[RagEmbeddingInput, ...]
+    source_revision_sha256: str
+    document_ir: dict[str, object]
+
+
+@dataclass(frozen=True, slots=True)
 class RagV2BgeDocumentEmbedding:
     """DB staging 직전의 bounded local vector row이며 raw file bytes를 보유하지 않는다."""
 
@@ -211,6 +224,76 @@ class RagV2BgeMaterializedPublicDocument:
             }
         )
         return receipt
+
+
+def prepare_owner_document_for_embedding(
+    *,
+    parser: OwnerDocumentParser,
+    tokenizer: RagTokenizer,
+    request: RagV2OwnerDocumentRequest,
+    external_processing_authorized: bool,
+) -> RagV2PreparedOwnerDocument:
+    """owner 문서를 한 번 parse하고 선택 profile의 canonical embedding input을 만든다.
+
+    Voyage 선택은 consent와 parser safety가 모두 true인 경우에만 허용한다. unsafe 문서는
+    provider socket 전에 거부하며 BGE로 자동 전환하지 않는다.
+    """
+
+    if request.embedding_profile_id not in {_BGE_PROFILE_ID, _VOYAGE_PROFILE_ID}:
+        raise RagV2BgeMaterializationError("OWNER_DOCUMENT_PROFILE")
+    try:
+        document_ir = parser.parse_owner_document(
+            approved_root=request.approved_root,
+            relative_path=request.relative_path,
+            source_id=request.source_id,
+            source_revision_id=request.source_revision_id,
+            language_tags=request.language_tags,
+        )
+        voyage_selected = request.embedding_profile_id == _VOYAGE_PROFILE_ID
+        safety = document_ir.get("safetyClassification")
+        if voyage_selected and (
+            not external_processing_authorized
+            or not isinstance(safety, Mapping)
+            or safety.get("externalLlmEligible") is not True
+            or safety.get("piiDetected") is not False
+            or safety.get("promptInjectionDetected") is not False
+            or safety.get("secretDetected") is not False
+        ):
+            raise RagV2BgeMaterializationError("OWNER_VOYAGE_DOCUMENT_UNSAFE")
+        document = materialize_document_ir(
+            document_ir=document_ir,
+            request=RagV2DocumentMaterializationRequest(
+                document_id=request.document_id,
+                source_scope="OWNER_PRIVATE",
+                source_id=request.source_id,
+                source_revision_id=request.source_revision_id,
+                local_processing_allowed=True,
+                external_embedding_allowed=voyage_selected,
+                external_generation_allowed=voyage_selected,
+            ),
+            tokenizer=tokenizer,
+        )
+        inputs = build_embedding_inputs(
+            _canonical_chunks(
+                document.chunks,
+                source_id=request.source_id,
+                source_revision_id=request.source_revision_id,
+            ),
+            embedding_profile_id=request.embedding_profile_id,
+            tokenizer=tokenizer,
+        )
+    except RagV2BgeMaterializationError:
+        raise
+    except (DocumentIrMaterializationError, DocumentParseError, RagIngestError) as error:
+        raise RagV2BgeMaterializationError(str(error)) from error
+    if not inputs or len(inputs) != len(document.chunks):
+        raise RagV2BgeMaterializationError("OWNER_DOCUMENT_INPUT_CHUNK_CARDINALITY")
+    return RagV2PreparedOwnerDocument(
+        document=document,
+        embedding_inputs=inputs,
+        source_revision_sha256=_source_revision_sha256(document_ir),
+        document_ir=_copy_document_ir(document_ir),
+    )
 
 
 def materialize_owner_bge_document(

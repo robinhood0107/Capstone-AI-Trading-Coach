@@ -10,8 +10,9 @@
 의도적으로 stable error로 닫힌 공개 표면만, `CONTRACT_ONLY`는 schema/fixture만 뜻한다.
 `IMPLEMENTED_DRAFT`는 current working tree에 코드·migration·자동 검증이 있으나 아직 PR/main
 병합이나 provider activation을 뜻하지 않는다.
-`LIVE_VERIFIED`는 exact HEAD·승인 packet·물리 호출 영수증이 있어야만 사용할 수 있으며 현재
-아래 S0~S4 표에는 없다.
+`LIVE_VERIFIED`는 bound execution manifest·물리 호출 영수증이 있어야만 사용할 수 있다. 현재 fresh
+namespace에서는 public Voyage RAG와 삭제까지 끝난 synthetic owner Voyage one-shot에만 사용한다.
+Vertex와 KIS_MOCK 물리 주문에는 사용하지 않는다.
 
 | 세션 | 구현 상태 | 병합 근거 | current-HEAD 물리 호출 | 남은 경계/다음 소유 세션 |
 |---|---|---|---:|---|
@@ -39,14 +40,32 @@
 | S4.2C/S4.4G | `STUB_FAIL_CLOSED` | PR #77 control plane | 0 | Voyage/Gemini outbound executor는 hard-disabled |
 | S4.5/S4.6 | `OFFLINE_ONLY` | PR #77 fixture evaluation·numeric loopback | 0 | fixture/retrieval-only; provider live 0 |
 | S4.7D parser/OCR | `OFFLINE_ONLY` | PR #84 `014ccca1`, #85 `4bcca91e` | 0 | 안전 parser/OCR만 구현, importer/index writer 없음 |
-| S4.7D v2 runtime | `IMPLEMENTED_DRAFT` | PR #87/#88 + current working tree V25–V59 | 0 | local materializer·immutable bundle·profile-selected retrieval·ticket/Vertex preparation과 OA112 first-download quarantine bootstrap 구현은 검증 중; OA112 rights/cache/DB activation 전 `FULL_READY`가 아니며 Voyage/Vertex physical call은 0 |
+| S4.7D v2 runtime | `IMPLEMENTED_DRAFT` | PR #87/#88 + V25–V59 | 0 | `HISTORICAL_SUPERSEDED`; public activation 전 구현 상태를 재현하기 위한 truth-freeze marker |
+| S4.7D v2 public runtime | `LIVE_VERIFIED` | `main=27dac2ca…`, fresh DB V59→V65 preservation validation | 재호출 0; 보존된 document `63/63`, evaluation `2/2`, production query receipt | `FULL_READY`, active `voyage_context_4_1024_v1`, sources/chunks `142/7,871`; public BGE 재실행 0; V64 scope `120/300초` 검증 완료 |
 | Pre-S5 RAG/global-news lock | `CONTRACT_LOCKED` | Issue #95 addendum + Optional 3 v2 | 0 | `OA112_ACTIVE_CONTRACT_LOCKED`, `S4_7D_OA112_PHYSICAL_ACTIVATION=NOT_MATERIALIZED`; Optional 3 one-shot executor는 packet/evidence 부재 시 outbound 0 |
-| Pre-S5 clean restart runtime | `IMPLEMENTED_DRAFT` | current branch above V59 | 0 | public PII-before-chunk, `public-pii-v2-rechunk`, fresh project/ports/root 격리와 KIS_MOCK V3 7-step reconciliation 구현; merge/Window A authoring/provider activation 전 |
+| Pre-S5 owner dual-profile runtime | `IMPLEMENTED_DRAFT` | current branch V65 + owner/final local operators | owner Voyage 1회 | library별 profile 명시 선택, synthetic 9-format `9/9` import·검색·전량 hard-delete·residual 0 완료; owner BGE local smoke 완료·final-head receipt 재결박 필요, final Window B/ledger는 미완료 |
 | Pre-S5 foreign-news local runtime | `IMPLEMENTED_DRAFT` | current working tree V49 + packet-gated probe bridge | 0 | sanitized owner-local aggregate/read route와 Finnhub/SEC/Fed local one-shot probe/materialization bridge만 구현; selected-model·canonical packet·fresh execution evidence 전 outbound 0, GDELT HTTP transport/outbound 0 |
 | S4.8A | `CONTRACT_LOCKED` | PR #75 `c17d51f6` | 0 | `S4_8A=CONTRACT_LOCKED`; provider entitlement/adapter는 미활성 |
 | S4.8 Core 6 v2 | `IMPLEMENTED_DRAFT` | PR #92 contract lock + local probe runtime | 0 | `S4_8_CORE6_V2=CONTRACT_LOCKED / S4_8_CORE6_LOCAL_PROBE_RUNTIME=IMPLEMENTED_DRAFT`; KIS current-price·SEC EDGAR(2)·KRX daily(2)의 fixed local one-shot executor와 content-free receipt bridge가 있으며 fresh packet/evidence 전에는 socket 0; KOFIA blocked, OpenDART/ECOS projection-only |
 | S4.8 Core 6 + Optional 3 local runtime | `IMPLEMENTED_DRAFT` | V50 + Core 6/Optional 3 packet-gated probes | 0 | V50 nine-lane typed projection은 provider 0; selected successful Core 6 receipt complete-set만 read-only로 `AVAILABLE`를 materialize하며 Optional 3도 fresh packet/evidence 전에는 socket 0 |
 | S4.8B/C | `IMPLEMENTED_MERGE_CANDIDATE` | PR #77 `509d8eee` | 0 | `S4_8B_C=IMPLEMENTED_MERGE_CANDIDATE`; fixture/scorer/V23/read port만, endpoint/RiskEngine/provider는 미구현 |
+
+V64는 V60의 Core 6 direct-read terminal 분류, V61~V62 provider accounting과 V63 empty owner
+library의 generation scope만 제한적으로 허용한다. Core 6 direct-read lane의 complete receipt set을 `AVAILABLE`, 일부 receipt만 있는 terminal set을
+`ABSTAIN/DIRECT_PROBE_RECEIPT_SET_INCOMPLETE`로 Python runtime과 동일하게 수용한다. 이는 provider
+권한 추가가 아니다. 현재 release terminal set은 KIS `AVAILABLE`, KRX·SEC EDGAR·OpenDART·ECOS
+`ABSTAIN`, KOFIA·Finnhub·Twelve Data·Massive `BLOCKED`다. owner BGE local receipt, final-head
+CI/security, Window B Voyage query·Vertex COMMITTED receipt와 release ledger가 끝나기 전
+`S5_ENTRY_GATE=CLOSED`다.
+
+`pre-s5-owner-voyage`와 `pre-s5-final-gate`는 ignored 0700/0600 control만 읽는 내부 operator다.
+구현·focused gate·branch diff security findings 0은 outbound 승인이나 `S5_ENTRY_GATE=OPEN` 증거가 아니다.
+owner Voyage one-shot과 KIS quote는 완료됐고 재호출하지 않는다. 새 Window B만 fresh exact manifest
+승인이 필요하며 release ledger의
+owner delete residual 0, S4.8 exact terminal set, KIS V3·Voyage query·Vertex COMMITTED receipt와 final
+Git/CI/security binding이 모두 일치한 뒤에만 OPEN을 계산한다.
+거래시간 외 사용자 승인형 KIS V3는 동일 7단계를 provider call 0의 결정적 mock으로 검증하며,
+`KIS_MOCK_AFTER_HOURS_RECONCILIATION_VERIFIED`와 physical marker를 분리한다.
 
 Naver runtime은 퇴역했으며 재활성화하지 않는다. GDELT, Voyage, Gemini, OpenAI, account/order
 물리 호출은 새 HEAD의 승인 packet 없이는 0이다. RAG는 설명·근거·citation 경계일 뿐
@@ -129,7 +148,7 @@ evidence가 없으면 manifest와 provider call은 0이다.
 
 `S4_7D_CONSENT_TICKET_CONTROL_PLANE=OFFLINE_ONLY`는 owner-bound consent append/effective read,
 5분 single-use import/delete ticket, content-free Vertex preparation만 local DB에서 수행한다. Vertex
-preparation은 `req_` request ID, 같은 parsed ask command의 HMAC, 2분 opaque scope만 반환하며 owner ID·raw question·raw
+preparation은 `req_` request ID, 같은 parsed ask command의 HMAC, provider preparation 전용 5분 opaque scope만 반환하며 owner ID·raw question·raw
 evidence를 저장하거나 응답에 넣지 않는다. owner raw document/path, BAT argv, importer, materializer,
 retrieval, provider outbound는 이 control plane만으로 활성화되지 않는다.
 

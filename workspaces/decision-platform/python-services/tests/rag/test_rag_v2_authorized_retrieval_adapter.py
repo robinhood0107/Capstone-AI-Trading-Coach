@@ -76,16 +76,32 @@ def test_adapter_reads_only_query_role_definer_functions_and_maps_tagged_citatio
     )
     exact = adapter.retrieve_exact(scope=scope, query=query, identifiers=("src_v2_fixture_001",))
     lexical = adapter.retrieve_lexical(scope=scope, query=query)
-    dense = adapter.retrieve_dense(scope=scope, query=query, query_vector=(1.0,) + (0.0,) * 1023)
+    dense = adapter.retrieve_dense(
+        scope=scope,
+        query=query,
+        query_vector=(1.0,) + (0.0,) * 1023,
+        owner_query_vector=(0.0, 1.0) + (0.0,) * 1022,
+    )
 
-    assert scope.embedding_profile_id == "bge_m3_local_1024_v1"
+    assert scope.embedding_profile_id == "voyage_context_4_1024_v1"
+    assert scope.owner_embedding_profile_id == "bge_m3_local_1024_v1"
     assert exact.items[0].canonical_https_url == "https://public.example.com/evidence"
     assert lexical.items[0].title == "OA fixture"
     assert dense.items[0].document_id == "doc_owner_document_0001"
     assert dense.items[0].sanitized_display_name == "Owner fixture"
     assert dense.items[0].canonical_https_url is None
     assert all("rag_v2_immutable_source_revisions" not in statement for statement, _ in connection.statements)
-    assert any("search_authorized_rag_v2_dense" in statement for statement, _ in connection.statements)
+    dense_calls = [
+        parameters
+        for statement, parameters in connection.statements
+        if "search_authorized_rag_v2_dense_v2" in statement
+    ]
+    assert len(dense_calls) == 1
+    assert dense_calls[0] is not None
+    assert dense_calls[0][-2:] == (
+        "[1,0" + ",0" * 1022 + "]",
+        "[0,1" + ",0" * 1022 + "]",
+    )
 
 
 def test_adapter_resolves_the_opaque_scope_without_putting_owner_id_in_the_python_call(
@@ -175,7 +191,8 @@ def _scope_row() -> dict[str, object]:
         "exact30_generation_id": "rgr_" + "1" * 32,
         "oa112_generation_id": "rgr_" + "2" * 32,
         "owner_private_generation_id": "rgr_" + "3" * 32,
-        "embedding_profile_id": "bge_m3_local_1024_v1",
+        "embedding_profile_id": "voyage_context_4_1024_v1",
+        "owner_embedding_profile_id": "bge_m3_local_1024_v1",
         "policy_version": 1,
     }
 
@@ -190,7 +207,11 @@ def _candidate_row(*, rank: int, source_scope: str) -> dict[str, object]:
         "canonical_https_url": "https://public.example.com/evidence" if public else None,
         "chunk_id": "rag_v2_chk_" + "c" * 32,
         "document_id": None if public else "doc_owner_document_0001",
-        "embedding_profile_id": "bge_m3_local_1024_v1",
+        "embedding_profile_id": (
+            "bge_m3_local_1024_v1"
+            if source_scope == "OWNER_PRIVATE"
+            else "voyage_context_4_1024_v1"
+        ),
         "external_processing_eligible": public,
         "generation_id": "rgr_" + ({"EXACT30": "1", "OA112": "2", "OWNER_PRIVATE": "3"}[source_scope] * 32),
         "heading_path": ["Evidence"],

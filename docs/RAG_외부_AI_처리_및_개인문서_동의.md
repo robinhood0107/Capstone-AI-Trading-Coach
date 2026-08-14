@@ -1,15 +1,16 @@
 # RAG 외부 AI 처리 및 개인 문서 동의
 
-상태: `EXTERNAL_AI_RAG_V2 / PUBLIC_FULL_READY / OWNER_VOYAGE_ONE_SHOT_VERIFIED / OWNER_DUAL_PROFILE_IMPLEMENTED_DRAFT`
-적용 대상: S4.7D logical OA112·owner-private RAG v2의 후속 materializer 및 generator runtime
+상태: `EXTERNAL_AI_RAG_V2 / PUBLIC_FULL_READY / OWNER_VOYAGE_ONE_SHOT_VERIFIED / S4_9_RECONSENT_REQUIRED`
+적용 대상: S4.9 public/owner RAG embedding, Vertex Strong LLM, 외부 MCP client 전달
 
 역사적 truth-freeze marker `TARGET_NOT_ACTIVE`와 `OA112_ACTIVE_CONTRACT_LOCKED`는
 `HISTORICAL_SUPERSEDED` 재현 근거로 보존하며 현재 public activation 상태를 덮어쓰지 않는다.
 
 이 문서는 사용자가 자신의 문서를 RAG 설명 기능에 넣을 때의 처리 경계와 향후 동의 계약을
 설명한다. public Voyage corpus는 fresh namespace에서 `FULL_READY`이고 synthetic owner Voyage
-9-format one-shot은 import·검색·전량 삭제까지 완료됐다. Vertex는 final Window B exact 승인 전이다.
-이 문서만으로 새 외부 호출이 시작되지 않는다.
+9-format one-shot은 import·검색·전량 삭제까지 완료됐다. S4.9는 processor와 전송 목적을 넓히므로 과거
+disclosure에 대한 GRANT를 재사용하지 않고 갱신된 digest에 대한 재동의를 요구한다. 이 문서만으로 새 외부
+호출이 시작되지 않는다.
 
 ## 1. 역할과 범위
 
@@ -35,7 +36,9 @@ Signal feature, RiskDecision, 주문 의도, 주문 수량, 주문 hash를 바�
 → embedding generation
 → pgvector + pg_trgm staging 평가
 → atomic bundle activation
-→ top-5 evidence만 생성기에 전달
+→ owner scope를 재검증한 top-5 전체를 생성기에 전달
+→ 선택적으로 bounded SearXNG search/public URL read
+→ 문장별 citation·exact quote·숫자 검증
 ```
 
 개인 원본은 사용자가 보유한 위치에서 read-only로 읽으며 import pipeline이 복사하지 않는다.
@@ -64,12 +67,13 @@ inference와 download는 수행하지 않고 기존 local tokenizer만 chunk 경
 | 역할 | processor | 전송 대상 | 호출 제한 |
 |---|---|---|---|
 | 문서·질문 embedding | Voyage AI `voyage-context-4` | ordered canonical chunk group 또는 질문 1개 | generation complete-only, 질문당 최대 1회, retry 0 |
-| 최종 설명 생성 | Google Cloud Vertex AI Gemini `gemini-3.5-flash` | source/owner scope를 재검증한 top-5 evidence와 질문 | 질문당 최대 1회, retry 0 |
+| 최종 설명 생성 | Google Cloud Vertex AI Gemini `gemini-3.5-flash` | 질문, source/owner scope를 재검증한 Top-5 전체, 선택된 bounded web evidence | direct 1회 또는 최대 3 tool round + final 1회, retry 0 |
+| 사용자 선택 외부 LLM | 사용자의 ChatGPT·Claude 등 OAuth MCP client | 사용자가 요청한 public/동의된 owner snippet과 web evidence | client별 scope·15분 research cap, project가 API key/요금 소유하지 않음 |
 
 Voyage는 답을 생성하지 않고 embedding 전용이다. Vertex AI Gemini만 final response를 생성하는
-LLM target이다. OpenAI와 Gemini Developer API는 v2 runtime에서 호출하지 않는다. tool/function,
-Google Search/Maps grounding, file upload, context cache, session resumption, URL fetch, code execution은
-사용하지 않는다.
+LLM target이다. OpenAI와 Gemini Developer API는 프로젝트 runtime에서 호출하지 않는다. Gemini Deep
+Research와 Google Search/Maps grounding, file upload, context cache, code execution은 사용하지 않는다.
+S4.9 function call은 Capstone이 선언한 SearXNG search와 bounded public HTTPS read만 애플리케이션이 실행한다.
 
 Voyage live activation에는 organization admin의 training opt-out과 payment-method/privacy evidence가
 필요하다. `VOYAGE_API_KEY` 외 runtime 환경변수는 허용하지 않으며 Files/Batch API와 retry는 0이다.
@@ -86,6 +90,10 @@ pinned local tokenizer/ONNX만 사용해 network/provider consent/call이 0이�
 PII·secret·prompt-injection·external-processing eligibility와 현재 consent/ticket/exact packet을 모두
 검증하며 한 import당 물리 호출 1회·retry 0이다.
 
+`bge_m3_local_1024_v1` 선택은 embedding 단계만 local이라는 뜻이다. 검색된 개인문서 snippet을 Vertex 또는
+사용자가 연결한 외부 LLM에 전달하는 것은 별도 external generation 처리이며 갱신된 GRANT가 필요하다.
+동의가 없으면 owner snippet 전달은 0이고 public/local retrieval만 반환한다.
+
 외부 전송은 source의 `externalEmbeddingAllowed`/`externalGenerationAllowed`와 owner의 effective
 consent를 모두 통과한 evidence에 한정한다. 하나라도 불충분하면 해당 요청 전체를 local
 `RETRIEVAL_ONLY`로 처리하며, owner 자료가 필요하지만 동의가 없으면
@@ -99,10 +107,11 @@ data-retention evidence, Voyage의 paid organization privacy/retention evidence�
 
 후속 v2 API는 append-only `GRANT | REVOKE` event로 policy version과 disclosure digest를 기록한다.
 owner와 timestamp는 JWT/server clock에서 결정하며 raw document path, credential, provider body는 event에
-포함하지 않는다. processor 집합이나 policy digest가 바뀌면 다시 동의해야 한다.
+포함하지 않는다. processor 집합, MCP 전달 대상 범주 또는 policy/disclosure digest가 바뀌면 다시
+동의해야 한다. 과거 S4.7D GRANT는 S4.9 MCP/Strong LLM processor set을 승인하지 않는다.
 
 - `GRANT`: 외부 처리의 필요조건일 뿐 activation 또는 provider call의 충분조건이 아니다.
-- `REVOKE`: 그 시점 이후 Voyage/Vertex 신규 호출을 즉시 0으로 만든다.
+- `REVOKE`: 그 시점 이후 Voyage/Vertex 및 MCP를 통한 owner snippet 신규 전달을 즉시 0으로 만든다.
 - 철회는 이미 저장된 local derived generation을 자동 삭제하지 않는다. 사용자는 별도 document
   deletion으로 자신의 Document IR·chunk·embedding을 hard-delete할 수 있다.
 - 삭제 receipt에는 document 내용, 원본 경로, provider response를 남기지 않는다.
@@ -123,9 +132,6 @@ active selection은 14 track × 8 = 112의 logical policy만 뜻한다. reserve 
 기존 public v1 OpenAPI/proto와 ask/status/history bytes는 그대로 유지한다. 숨겨진 owner import-ticket
 request/response v2만 필수 `embeddingProfileId`를 추가하며 5분 single-use·owner-bound ticket에 선택
 profile을 결박한다. raw path/JWT/owner ID/DB credential을 API 또는 BAT command line에 노출하지 않는다.
-public RAG는 `FULL_READY`이고 owner dual-profile runtime은 final release 전 단계다. synthetic 9-format
-owner Voyage one-shot과 삭제 검증은 끝났으며 재호출하지 않는다. 다음 외부 gate는 final-head
-Window B의 public Voyage query 1회와 Vertex service-account OAuth/generateContent 각 1회다. 거래시간 외
-KIS deterministic mock은 provider·token·order call 0으로 물리 reconciliation과 구분한다.
-외부 호출은 exact HEAD의 CI·security evidence와 provider별 approval packet, 그리고 사용자의 해당
-packet에 대한 최종 승인 뒤에만 실행한다.
+public RAG는 `FULL_READY`이고 owner dual-profile one-shot/delete 검증은 끝났으며 재호출하지 않는다.
+S4.9 구현은 V66, Strong LLM fixture, OAuth/MCP/SearXNG bounded tool과 갱신 동의 digest를 별도 release gate로
+검증한다. 이 구현은 공용 Voyage corpus 재실행이나 KIS 주문 권한을 만들지 않는다.

@@ -122,14 +122,14 @@ class RagSourceRegistryMigrationIntegrationTest {
     }
 
     @Test
-    fun `V62 to V63 empty owner generation scope repair is forward only and preserves ACL`() {
+    fun `V62 through V64 empty owner generation scope repair is forward only and preserves ACL`() {
         withPreparedDatabase("empty_owner_generation_scope_upgrade") { jdbcUrl ->
             flyway(jdbcUrl, target = "62").migrate()
             flyway(jdbcUrl).migrate()
 
             adminConnection(jdbcUrl).use { connection ->
                 assertThat(queryString(connection, "select max(version::integer)::text from flyway_schema_history where success"))
-                    .isEqualTo("63")
+                    .isEqualTo("64")
                 assertThat(
                     queryString(
                         connection,
@@ -211,7 +211,7 @@ class RagSourceRegistryMigrationIntegrationTest {
                 assertThat(queryStrings(connection, normalizedTableQuery))
                     .containsAll(expectedTables)
                 assertThat(queryString(connection, "select max(version::integer) from flyway_schema_history where success"))
-                    .isEqualTo("63")
+                    .isEqualTo("64")
 
                 expectedTables.forEach { table ->
                     assertThat(

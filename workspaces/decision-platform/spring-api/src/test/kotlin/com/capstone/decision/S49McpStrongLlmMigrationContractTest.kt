@@ -8,9 +8,10 @@ import java.nio.file.Path
 class S49McpStrongLlmMigrationContractTest {
     private val directory = Path.of("src/main/resources/db/migration")
     private val path = directory.resolve("V66__s4_9_mcp_strong_llm_boundary.sql")
+    private val repairPath = directory.resolve("V67__s4_9_mcp_public_scope_forward_repair.sql")
 
     @Test
-    fun `V66 is the single next free S4 9 migration`() {
+    fun `V66 base and V67 public scope repair are forward only`() {
         val versions =
             Files.list(directory).use { paths ->
                 paths
@@ -20,8 +21,9 @@ class S49McpStrongLlmMigrationContractTest {
                     .toList()
             }
 
-        assertThat(versions.max()).isEqualTo(66)
+        assertThat(versions.max()).isEqualTo(67)
         assertThat(versions.count { it == 66 }).isEqualTo(1)
+        assertThat(versions.count { it == 67 }).isEqualTo(1)
     }
 
     @Test
@@ -56,5 +58,21 @@ class S49McpStrongLlmMigrationContractTest {
             "http_post",
             "COPY PROGRAM",
         )
+    }
+
+    @Test
+    fun `V67 binds MCP OAuth owner authority before retrieval and supports fifteen minute contexts`() {
+        val sql = Files.readString(repairPath)
+
+        assertThat(sql).contains(
+            "owner_scope_authorized boolean NOT NULL DEFAULT true",
+            "issue_s4_9_mcp_retrieval_scope",
+            "p_include_owner boolean",
+            "interval '15 minutes'",
+            "IF NOT claim_row.owner_scope_authorized",
+            "claim_row.owner_embedding_profile_id",
+            "REVOKE ALL PRIVILEGES ON TABLE public.rag_v2_retrieval_scope_claims FROM decision_app",
+        )
+        assertThat(sql).doesNotContain("DROP TABLE", "TRUNCATE TABLE", "DELETE FROM")
     }
 }

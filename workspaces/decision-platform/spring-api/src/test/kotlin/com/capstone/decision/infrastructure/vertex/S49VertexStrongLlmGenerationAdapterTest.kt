@@ -74,6 +74,19 @@ class S49VertexStrongLlmGenerationAdapterTest {
     }
 
     @Test
+    fun `transport failure zeroizes copied token and serialized private evidence`() {
+        val transport = ThrowingHttpClient()
+        val ledger = RecordingUsageLedger()
+
+        val result = adapter(transport, ledger).generate(command(evidence("민감하지 않은 synthetic 근거")))
+
+        assertThat(result.generationStatus).isEqualTo(RagGenerationStatus.GENERATION_UNAVAILABLE)
+        assertThat(requireNotNull(transport.token).toList()).containsOnly(0.toByte())
+        assertThat(requireNotNull(transport.body).toList()).containsOnly(0.toByte())
+        assertThat(ledger.unknown).isTrue()
+    }
+
+    @Test
     fun `일반 교육 답변은 citation 없이 model knowledge로 반환한다`() {
         val transport =
             QueueHttpClient(
@@ -109,7 +122,7 @@ class S49VertexStrongLlmGenerationAdapterTest {
     }
 
     private fun adapter(
-        transport: QueueHttpClient,
+        transport: S49VertexHttpClient,
         ledger: RecordingUsageLedger,
         search: PublicWebSearchPort = PublicWebSearchPort { emptyList() },
         read: PublicWebReaderPort = PublicWebReaderPort { throw AssertionError("read not expected") },
@@ -204,6 +217,22 @@ class S49VertexStrongLlmGenerationAdapterTest {
             bearerToken.fill(0)
             body.fill(0)
             return S49VertexHttpResponse(200, queue.removeFirst().copyOf())
+        }
+    }
+
+    private class ThrowingHttpClient : S49VertexHttpClient {
+        var token: ByteArray? = null
+        var body: ByteArray? = null
+
+        override fun generate(
+            endpoint: URI,
+            bearerToken: ByteArray,
+            body: ByteArray,
+            timeout: java.time.Duration,
+        ): S49VertexHttpResponse {
+            token = bearerToken
+            this.body = body
+            throw IllegalStateException("synthetic transport failure")
         }
     }
 

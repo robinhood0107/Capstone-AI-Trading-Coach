@@ -1409,7 +1409,7 @@ def _assert_query_writer_secret_boundary(
 
 
 def _validate_query_binding_input(*, question: str, scope_claim_id: str) -> None:
-    """Question/scope are validated before their hashes can be used as an approval-packet selector."""
+    """Question/scope are validated before their hashes can be used as a packet selector."""
 
     if (
         not isinstance(question, str)

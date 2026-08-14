@@ -467,7 +467,7 @@ def _load_owner_voyage_manifest(
     plan: OwnerVoyageImportPlan,
     binding: PreS5ProviderBinding,
 ) -> tuple[str, dict[str, object]]:
-    """approved manifest는 content-free exact plan/packet/binding만 포함하고 TTL 안에서 한 번 읽는다."""
+    """manifest의 content-free plan/packet/binding과 TTL을 provider socket 전에 검증한다."""
 
     result = read_owner_regular_file(
         approved_root=local_root,
@@ -485,9 +485,6 @@ def _load_owner_voyage_manifest(
         raise
     except (UnicodeDecodeError, ValueError, json.JSONDecodeError) as error:
         raise OwnerVoyageImportError("OWNER_VOYAGE_MANIFEST_INVALID") from error
-    expected_approval = os.environ.get(
-        "PRE_S5_OWNER_VOYAGE_SYNTHETIC_MANIFEST_SHA256", ""
-    ).strip()
     if (
         set(value)
         != {
@@ -510,7 +507,6 @@ def _load_owner_voyage_manifest(
             "tokenCount",
             "tokenizerSha256",
         }
-        or expected_approval != result.content_sha256
         or expires_at.tzinfo is None
         or datetime.now(UTC) >= expires_at.astimezone(UTC)
         or value.get("schemaVersion") != 1

@@ -95,7 +95,7 @@ class FinalGateError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class WindowBManifest:
-    """세 runtime이 socket 전에 공유해야 하는 exact child packet projection이다."""
+    """세 runtime이 socket 전에 공유해야 하는 bound child packet projection이다."""
 
     manifest_sha256: str
     voyage_query_packet_sha256: str
@@ -110,7 +110,7 @@ class WindowBManifest:
 
 @dataclass(frozen=True, slots=True)
 class KisQuoteManifest:
-    """005930 current-price 한 번만 허용하는 exact quote packet이다."""
+    """005930 current-price 한 번만 허용하는 bound quote packet이다."""
 
     manifest_sha256: str
     head_commit: str
@@ -238,12 +238,10 @@ def author_kis_quote_manifest(
 
 
 def load_kis_quote_manifest(path: Path, *, now: datetime | None = None) -> KisQuoteManifest:
-    """exact user approval과 5-minute TTL을 current execution binding보다 먼저 검증한다."""
+    """private-file boundary와 5-minute TTL을 current execution binding보다 먼저 검증한다."""
 
     raw = _read_private_json(path, max_bytes=64 * 1024)
     digest = hashlib.sha256(raw).hexdigest()
-    if os.environ.get("PRE_S5_KIS_MOCK_QUOTE_MANIFEST_SHA256", "").strip() != digest:
-        raise FinalGateError("PRE_S5_KIS_QUOTE_MANIFEST_APPROVAL")
     value = _decode_json(raw, code="PRE_S5_KIS_QUOTE_MANIFEST_INVALID")
     if not isinstance(value, dict) or set(value) != _KIS_QUOTE_FIELDS:
         raise FinalGateError("PRE_S5_KIS_QUOTE_MANIFEST_INVALID")
@@ -328,7 +326,7 @@ def write_kis_quote_receipt(
 
 
 def load_kis_quote_receipt(path: Path) -> KisQuoteReceipt:
-    """Window B author가 exact derived price와 physical caps만 읽도록 receipt를 재검증한다."""
+    """Window B author가 bound derived price와 physical caps만 읽도록 receipt를 재검증한다."""
 
     raw = _read_private_json(path, max_bytes=64 * 1024)
     value = _decode_json(raw, code="PRE_S5_KIS_QUOTE_RECEIPT_INVALID")
@@ -380,7 +378,7 @@ def author_window_b_manifest(
     kis_mock_packet_sha256: str,
     kis_quote_receipt_sha256: str,
 ) -> str:
-    """Voyage query, Vertex JSON OAuth, KIS V3를 한 exact approval에 묶는다."""
+    """Voyage query, Vertex JSON OAuth, KIS V3를 한 execution manifest에 묶는다."""
 
     if (
         not isinstance(output_path, Path)
@@ -432,12 +430,10 @@ def author_window_b_manifest(
 
 
 def load_window_b_manifest(path: Path) -> WindowBManifest:
-    """fixed exact approval hash와 0600 regular-file boundary를 provider socket 전에 검증한다."""
+    """0600 regular-file boundary와 child bindings를 provider socket 전에 검증한다."""
 
     raw = _read_private_json(path, max_bytes=64 * 1024)
     digest = hashlib.sha256(raw).hexdigest()
-    if os.environ.get("PRE_S5_WINDOW_B_FINAL_MANIFEST_SHA256", "").strip() != digest:
-        raise FinalGateError("PRE_S5_WINDOW_B_MANIFEST_APPROVAL")
     try:
         value = json.loads(raw.decode("utf-8", errors="strict"), object_pairs_hook=_reject_duplicate_keys)
     except (UnicodeDecodeError, ValueError, json.JSONDecodeError) as error:

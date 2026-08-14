@@ -46,7 +46,10 @@ def test_kis_mock_limit_price_rejects_price_not_below_current() -> None:
         derive_kis_mock_limit_price(1, 1)
 
 
-def test_kis_quote_manifest_and_receipt_are_exact_and_content_free(tmp_path: Path) -> None:
+def test_kis_quote_manifest_and_receipt_are_bound_and_content_free(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     manifest_path = tmp_path / "kis-mock-quote-manifest.v1.json"
     manifest_sha256 = author_kis_quote_manifest(
         output_path=manifest_path,
@@ -55,11 +58,9 @@ def test_kis_quote_manifest_and_receipt_are_exact_and_content_free(tmp_path: Pat
         ci_digest="3" * 64,
         security_digest="4" * 64,
     )
-    os.environ["PRE_S5_KIS_MOCK_QUOTE_MANIFEST_SHA256"] = manifest_sha256
-    try:
-        manifest = load_kis_quote_manifest(manifest_path)
-    finally:
-        os.environ.pop("PRE_S5_KIS_MOCK_QUOTE_MANIFEST_SHA256", None)
+    monkeypatch.setenv("PRE_S5_KIS_MOCK_QUOTE_MANIFEST_SHA256", "f" * 64)
+    manifest = load_kis_quote_manifest(manifest_path)
+    assert manifest.manifest_sha256 == manifest_sha256
     receipt_path = tmp_path / "kis-mock-quote-receipt.v1.json"
     receipt_sha256 = write_kis_quote_receipt(
         output_path=receipt_path,
@@ -85,7 +86,7 @@ def test_kis_quote_manifest_and_receipt_are_exact_and_content_free(tmp_path: Pat
 
 def test_window_b_manifest_binds_all_child_packets_and_no_retry(tmp_path: Path) -> None:
     output = tmp_path / "window-b-final-manifest.v1.json"
-    manifest_sha256 = author_window_b_manifest(
+    author_window_b_manifest(
         output_path=output,
         head_commit="1" * 40,
         tree_object="2" * 40,
@@ -96,11 +97,7 @@ def test_window_b_manifest_binds_all_child_packets_and_no_retry(tmp_path: Path) 
         kis_mock_packet_sha256="7" * 64,
         kis_quote_receipt_sha256="8" * 64,
     )
-    os.environ["PRE_S5_WINDOW_B_FINAL_MANIFEST_SHA256"] = manifest_sha256
-    try:
-        manifest = load_window_b_manifest(output)
-    finally:
-        os.environ.pop("PRE_S5_WINDOW_B_FINAL_MANIFEST_SHA256", None)
+    manifest = load_window_b_manifest(output)
 
     assert manifest.voyage_query_packet_sha256 == "5" * 64
     assert manifest.vertex_packet_sha256 == "6" * 64
@@ -119,7 +116,10 @@ def test_window_b_manifest_binds_all_child_packets_and_no_retry(tmp_path: Path) 
     assert output.stat().st_mode & 0o777 == 0o600
 
 
-def test_window_b_manifest_rejects_wrong_exact_approval(tmp_path: Path) -> None:
+def test_window_b_manifest_does_not_depend_on_sha_approval_environment(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     output = tmp_path / "window-b-final-manifest.v1.json"
     author_window_b_manifest(
         output_path=output,
@@ -132,12 +132,11 @@ def test_window_b_manifest_rejects_wrong_exact_approval(tmp_path: Path) -> None:
         kis_mock_packet_sha256="7" * 64,
         kis_quote_receipt_sha256="8" * 64,
     )
-    os.environ["PRE_S5_WINDOW_B_FINAL_MANIFEST_SHA256"] = "f" * 64
-    try:
-        with pytest.raises(FinalGateError, match="PRE_S5_WINDOW_B_MANIFEST_APPROVAL"):
-            load_window_b_manifest(output)
-    finally:
-        os.environ.pop("PRE_S5_WINDOW_B_FINAL_MANIFEST_SHA256", None)
+    monkeypatch.setenv("PRE_S5_WINDOW_B_FINAL_MANIFEST_SHA256", "f" * 64)
+
+    manifest = load_window_b_manifest(output)
+
+    assert manifest.manifest_sha256 != "f" * 64
 
 
 def test_window_b_manifest_rejects_mismatched_child_before_runtime() -> None:

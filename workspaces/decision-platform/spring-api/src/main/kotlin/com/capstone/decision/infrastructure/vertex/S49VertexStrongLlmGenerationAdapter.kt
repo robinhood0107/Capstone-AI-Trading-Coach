@@ -171,19 +171,25 @@ internal class S49VertexStrongLlmGenerationAdapter(
                 )
         }
         val body = mapper.writeValueAsBytes(payload)
-        val token = tokenProvider.acquire()
-        val response =
-            httpClient.generate(
-                endpoint(token.projectId),
-                token.value,
-                body,
-                Duration.ofMillis(properties.requestTimeoutMillis),
-            )
+        var token: S49VertexAccessToken? = null
         try {
-            require(response.statusCode in 200..299)
-            return parseResponse(response.body, toolsEnabled)
+            token = tokenProvider.acquire()
+            val response =
+                httpClient.generate(
+                    endpoint(token.projectId),
+                    token.value,
+                    body,
+                    Duration.ofMillis(properties.requestTimeoutMillis),
+                )
+            try {
+                require(response.statusCode in 200..299)
+                return parseResponse(response.body, toolsEnabled)
+            } finally {
+                response.body.fill(0)
+            }
         } finally {
-            response.body.fill(0)
+            token?.value?.fill(0)
+            body.fill(0)
         }
     }
 

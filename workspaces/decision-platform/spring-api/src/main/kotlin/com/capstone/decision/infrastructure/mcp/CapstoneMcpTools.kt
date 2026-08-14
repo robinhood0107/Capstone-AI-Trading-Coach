@@ -82,13 +82,24 @@ class CapstoneMcpTools(
         val caller = caller("mcp:rag.public")
         val answerMode = RagAnswerMode.valueOf(mode)
         require(question.isNotBlank() && question.toByteArray(StandardCharsets.UTF_8).size <= 4_096)
-        require(topics.isNotEmpty() && topics.size <= 8 && topics.all(ALLOWED_TOPICS::contains))
+        require(
+            topics.isNotEmpty() &&
+                topics.size <= ALLOWED_TOPICS.size &&
+                topics.distinct().size == topics.size &&
+                topics.all(ALLOWED_TOPICS::contains),
+        )
+        val includeOwner = hasScope("mcp:rag.owner")
+        if (includeOwner) requireUpdatedConsent(caller.ownerUserId)
         val requestId = "req_mcp_${UUID.randomUUID().toString().replace("-", "")}"
-        val result = ragService.searchEvidence(caller.ownerUserId, requestId, RagAskCommand(question, answerMode, emptyList(), topics))
-        if (result.citations.any { it.citationKind == "LOCAL_DOCUMENT" }) {
-            requireScope("mcp:rag.owner")
-            requireUpdatedConsent(caller.ownerUserId)
-        }
+        val result =
+            ragService.searchEvidence(
+                caller.ownerUserId,
+                requestId,
+                RagAskCommand(question, answerMode, emptyList(), topics),
+                includeOwner,
+            )
+        // retrieval 중 REVOKE/policy rotation이 발생해도 owner evidence를 MCP 응답으로 내보내지 않는다.
+        if (includeOwner) requireUpdatedConsent(caller.ownerUserId)
         val (context, receipt) =
             contexts.create(
                 caller.ownerUserId,
@@ -114,6 +125,7 @@ class CapstoneMcpTools(
         @McpToolParam(description = "CONCISE or DETAILED", required = true) mode: String,
     ): McpWebSearchResponse {
         val caller = caller("mcp:web.read")
+        requirePublicWebQuery(query)
         val context = requireCurrentContext(researchContext, caller)
         val budget = properties.budget(mode)
         contexts.reserveSearch(context, mode, budget.maxSearches)
@@ -162,8 +174,9 @@ class CapstoneMcpTools(
     ): McpAnswerValidationResponse {
         val caller = caller("mcp:answer.validate")
         val context = requireCurrentContext(researchContext, caller)
-        val validated = validator.validate(draft, contexts.evidenceSnapshot(context))
-        val receipt = validationReceipts.issue(caller, context, draft, validated.validationStatus.name)
+        val evidence = contexts.evidenceSnapshot(context)
+        val validated = validator.validate(draft, evidence)
+        val receipt = validationReceipts.issue(caller, context, evidence, draft, validated.validationStatus.name)
         return McpAnswerValidationResponse(validated.validationStatus.name, validated.warnings, receipt.value, receipt.expiresAt)
     }
 
@@ -194,11 +207,11 @@ class CapstoneMcpTools(
         return McpCaller(authentication.name, clientId)
     }
 
-    private fun requireScope(requiredScope: String) {
+    private fun hasScope(requiredScope: String): Boolean {
         val authentication =
             SecurityContextHolder.getContext().authentication as? JwtAuthenticationToken
                 ?: throw IllegalStateException("MCP OAuth authentication required")
-        require(authentication.authorities.any { it.authority == "SCOPE_$requiredScope" })
+        return authentication.authorities.any { it.authority == "SCOPE_$requiredScope" }
     }
 
     private fun requireCurrentContext(
@@ -212,6 +225,7 @@ class CapstoneMcpTools(
     ): McpResearchContext {
         // 공개 근거만 가진 context에는 개인문서 외부 처리 동의를 요구하지 않는다.
         if (context.retrievalCitations.any { it.citationKind == "LOCAL_DOCUMENT" }) {
+            require(hasScope("mcp:rag.owner"))
             requireUpdatedConsent(caller.ownerUserId)
         }
         ragService.requireResearchEvidenceCurrent(
@@ -242,7 +256,15 @@ class CapstoneMcpTools(
         val OWNER_ID = Regex("^usr_[a-z0-9][a-z0-9_-]{2,95}$")
         val MCP_CLIENT_ID = Regex("^mcp_[a-z0-9][a-z0-9._-]{2,95}$")
         val CIMD_CLIENT_ID = Regex("^https://[A-Za-z0-9.-]+/[A-Za-z0-9._~!$&'()*+,;=:@%/-]{1,190}$")
-        val ALLOWED_TOPICS = setOf("RISK", "FINANCIAL_ENGINEERING", "MARKET", "DISCLOSURE", "PORTFOLIO", "BEHAVIOR")
+        val ALLOWED_TOPICS =
+            setOf(
+                "API",
+                "DATA",
+                "FINANCIAL_ENGINEERING",
+                "METHODOLOGY",
+                "PRODUCT_RISK",
+                "RISK",
+            )
     }
 }
 

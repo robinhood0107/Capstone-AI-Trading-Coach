@@ -215,7 +215,7 @@ Google/Naver, browser/crawler/Deep Research는 0이다. URL read는 검색 결�
 redirect DNS, TLS hostname, MIME/byte/page/prompt-injection 경계를 다시 검증한다. mode budget과 15분 external
 research budget은 `docs/S4_9_MCP_Strong_LLM_운영_가이드.md`의 env로 조정하되 absolute cap을 넘지 못한다.
 
-S4.9 result는 Signal/LSTM/Risk/order/hash API 입력이 아니며 이 절은 S5.1 계약을 넓히지 않는다.
+S4.9 result는 downstream 모델·판단·주문·hash API 입력이 아니며 이 절은 S5.1 계약을 넓히지 않는다.
 
 ## 1. 전체 API 경계
 

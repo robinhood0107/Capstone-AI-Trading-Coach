@@ -72,10 +72,10 @@ hash 권한이 0이다.
 
 ### 0.3 Pre-S5 public activation과 owner profile authority
 
-2026-08-14 current main baseline은 DB V65에서 public RAG `FULL_READY`, active profile
+2026-08-15 live-smoke branch의 DB V69는 public RAG `FULL_READY`, active profile
 `voyage_context_4_1024_v1`, sources/chunks `142/7,871`, document batch `63/63 COMMITTED`,
 EXACT30/OA112 evaluation `2/2 PASSED`를 보존한다. public Voyage document/evaluation/production query는
-재실행하지 않고 public BGE embedding inference는 계속 0이다. V65는 정상 Flyway 경로로 적용됐고
+재실행하지 않고 public BGE embedding inference는 계속 0이다. 기존 DB에는 V69까지 정상 Flyway 경로로 적용됐고
 기존 public aggregate 보존과 `v2=120초 / v3=300초` scope를 provider call 0으로 검증했다. V64는 public
 OpenAPI/proto 변경을 뜻하지 않으며 provider
 preparation scope만 5분으로 발급하고 기존 2분 retrieval issuer를 보존한다.
@@ -101,8 +101,10 @@ bytes는 변경하지 않는다.
 검색은 exact·lexical·dense 3-channel RRF(`k=60`)를 유지한다. owner Voyage는 public Voyage query
 vector를 재사용하고 owner BGE는 public Voyage query와 별도의 local BGE owner query를 사용한다.
 dense 후보는 profile 내부 rank를 먼저 계산하고 `profile rank → OWNER_PRIVATE → stable ID`로 하나의
-channel을 만든다. Top-5에 owner BGE citation이 있으면 Vertex preparation을 사용하지 않고
-`RETRIEVAL_ONLY`를 영속한다. 응답 `embeddingProfileId`는 계속 public Voyage profile을 뜻한다.
+channel을 만든다. 과거 Pre-S5의 owner BGE Top-5 일괄 Vertex 차단은 S4.9에서 supersede됐다. 갱신된
+disclosure/policy/processor-set에 대한 effective GRANT가 있을 때만 owner BGE snippet도 Vertex 또는
+외부 MCP client에 전달할 수 있고, GRANT가 없으면 외부 호출 전에 `RETRIEVAL_ONLY`로 닫는다. 응답
+`embeddingProfileId`는 계속 public Voyage profile을 뜻한다.
 
 owner Voyage import는 v2 consent·ticket·문서 안전성·exact packet을 provider socket 전에 검증하고,
 한 import를 `55K request / 32K context group / 600-token chunk` 아래 물리 호출 1회·retry 0으로만
@@ -120,7 +122,7 @@ provider/network call이 0이다.
 manifest/child packet 구조, TTL, 물리 호출·retry·비용 상한 검증은 그대로 유지한다.
 
 `verify-release`는 ignored `pre-s5-release-ledger/v2`의 marker를 단독 신뢰하지 않는다. fixed-path 0600
-owner BGE/KIS V3/required CI/security/tracked-audit receipt digest와 fresh V65 DB의 public·owner·S4.8 및
+owner BGE/KIS V3/required CI/security/tracked-audit receipt digest와 fresh V69 DB의 public·owner·S4.8 및
 Window B Voyage/Vertex `COMMITTED` aggregate를 모두 대조한 뒤에만 `OPEN`을 반환한다.
 
 거래시간 외에는 사용자가 명시 승인한 경우에만 KIS V3의 동일한 7단계를 provider call 0의 결정적
@@ -139,9 +141,10 @@ OpenAPI/proto 및 ask/history/status response bytes를 변경하지 않는다.
 
 현재 synthetic owner Voyage one-shot은 exact manifest 아래 물리 호출 1회로 9개 format을 stage한 뒤
 same-owner 검색과 전량 hard-delete를 완료했고 source/chunk/vector/profile-lock residual은 0이다. KIS
-current-price receipt와 S4.8 9-lane terminal 분류도 완료됐으며 재호출하지 않는다. 남은 physical gate는
-fresh final-head Window B의 Voyage query 1회와 Vertex service-account OAuth/generateContent 각 1회다.
-거래시간 외 KIS는 위 결정적 mock receipt로 대체하며 실제 tokenP·brokerage·live-order 호출은 0이다.
+current-price receipt와 S4.8 9-lane terminal 분류도 완료됐으며 재호출하지 않는다. S4.9 live smoke에서
+Voyage query 1회와 Vertex service-account OAuth/generateContent 각 1회가 성공했고 latest Strong LLM
+usage는 `COMMITTED`다. 거래시간 외 KIS는 위 결정적 mock receipt로 대체하며 실제
+tokenP·brokerage·live-order 호출은 0이다.
 
 > 완료 기준점(2026-07-16): S1.3 내부 ECOS/Naver producer는 PR #16 merge commit
 > `6f439155d9f5ec626fc185f29f2e0bd64ca54780`, S1.3K KRX 내부 collector는 PR #17 merge
@@ -163,8 +166,9 @@ fresh final-head Window B의 Voyage query 1회와 Vertex service-account OAuth/g
 
 ### 0.4 S4.9 MCP + Strong LLM internal contract
 
-S4.9 working tree는 V66과 적용 후 security review에서 발견한 public-scope 선조회/TTL 오류의 V67
-forward repair를 추가하며 기존 public RAG/OpenAPI/proto bytes는 동결한다. 기존
+S4.9는 V66/V67 위에 runtime Voyage query authorization을 분리한 V68과 owner 권한이 없는 public MCP
+context의 empty-evidence scope revalidation을 고친 V69를 forward-only로 추가한다. 기존 row와 public
+RAG/OpenAPI/proto bytes는 동결한다. 기존
 `POST /api/v2/rag/ask`는 내부적으로 Top-5 전체를 provider-neutral `StrongLlmGenerationPort`에 전달한다.
 Vertex adapter는 direct answer 1회 또는 최대 3 tool round 뒤 tools 없는 final structured-output 1회를 수행한다.
 첫 안전 문장 강제 선택, answer enum 고정, citation 1개/문장 1개/numeric 0 강제는 제거한다.
@@ -216,6 +220,35 @@ redirect DNS, TLS hostname, MIME/byte/page/prompt-injection 경계를 다시 검
 research budget은 `docs/S4_9_MCP_Strong_LLM_운영_가이드.md`의 env로 조정하되 absolute cap을 넘지 못한다.
 
 S4.9 result는 downstream 모델·판단·주문·hash API 입력이 아니며 이 절은 S5.1 계약을 넓히지 않는다.
+
+#### 0.4.1 2026-08-15 live verification
+
+- OAuth Authorization Code + PKCE S256의 실제 code/token 교환, exact `/mcp` audience와 subject/client/scope,
+  refresh-token family revoke를 확인했다.
+- MCP `initialize` 뒤 `tools/list`는 위 다섯 도구만 반환했다. public-only `capstone_rag_search`,
+  SearXNG search 1회, 검색 결과의 exact HTTPS URL read 1회와 exact quote 기반 answer validation을
+  실제 호출했다. save는 사용자가 명시하지 않아 0회이고 history row도 0이다.
+- 고정 교육 질문은 local Top-5가 0인 경계에서 citation 없는 `MODEL_KNOWLEDGE_ONLY`로 `ANSWERED`했다.
+  따라서 이 결과를 evidence-backed citation 답변으로 표시하지 않는다. 별도 MCP validation은 web evidence
+  1개 때문에 `VALID_WITH_WARNINGS`였고 위조 citation/quote는 허용하지 않았다.
+- latest usage는 `VERTEX_AI / gemini-3.5-flash / COMMITTED`, prompt/output token 양수다. raw request,
+  raw response, OAuth token과 raw web body는 저장하지 않았다.
+- public aggregate `142 sources / 7,871 chunks / 63 document batches / 2 evaluations`, owner residual 0,
+  S4.8 terminal state는 바뀌지 않았다.
+
+#### 0.4.2 사용자 로그인과 화면 책임
+
+일반 Capstone 화면은 기존 `POST /api/v1/auth/login`으로 API JWT를 발급받는다. 외부 ChatGPT/Claude가
+Capstone MCP를 연결할 때만 별도의 OAuth authorize 화면에서 같은 Capstone 사용자가 로그인하고 scope를
+동의한다. 이는 Google/Vertex 로그인이나 서비스계정 인증 화면이 아니다. Vertex OAuth는 서버가 0600
+service-account JSON으로 수행하며 사용자 화면에 노출하지 않는다.
+
+현재 Decision Platform backend에는 Spring의 기본 local authorize/login/consent 화면이 있어 live smoke를
+완주할 수 있다. 제품 브랜딩을 적용한 Experience Dashboard 화면은 이 workspace에 구현돼 있지 않으며
+placeholder workspace를 이 변경에서 확장하지 않는다. 배포 UI가 맡을 일은 기존 로그인 세션을 사용해
+MCP client 이름, 요청 scope, owner snippet 외부 전달 여부를 표시하고 승인/거부를 Spring OAuth endpoint로
+보내는 것이다. 비밀번호는 운영 secret/bundle과 DB의 salted hash로만 관리하며 코드·문서·argv에 고정하지
+않는다.
 
 ## 1. 전체 API 경계
 

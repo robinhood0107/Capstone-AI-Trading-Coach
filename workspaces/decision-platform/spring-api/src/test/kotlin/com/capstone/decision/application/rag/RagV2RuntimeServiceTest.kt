@@ -100,6 +100,20 @@ class RagV2RuntimeServiceTest {
             .contains("sourceRevisionId")
             .contains("chunkRevisionId")
             .contains("generationId")
+        verify(exactly = 1) {
+            jdbc.query(
+                match { it.contains("issue_rag_v2_retrieval_scope_v2") },
+                any<Map<String, *>>(),
+                any<RowMapper<RagV2RetrievalScope>>(),
+            )
+        }
+        verify(exactly = 0) {
+            jdbc.query(
+                match { it.contains("issue_rag_v2_retrieval_scope_v3") },
+                any<Map<String, *>>(),
+                any<RowMapper<RagV2RetrievalScope>>(),
+            )
+        }
         verify(exactly = 1) { crypto.encrypt(any(), command.question, "") }
     }
 

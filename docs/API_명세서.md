@@ -31,7 +31,7 @@
 | `OFFLINE_ONLY` | fixture·local/Compose 검증만 통과했으며 provider physical call은 0 |
 | `STUB_FAIL_CLOSED` | 공개 route/CLI가 stable typed error로 닫혀 실제 기능을 가장하지 않음 |
 | `IMPLEMENTED_DRAFT` | current working tree에 코드·migration·자동 검증이 있으나 PR/main 병합이나 provider activation은 아님 |
-| `LIVE_VERIFIED` | exact HEAD·승인 packet·물리 호출 영수증까지 완료됨 |
+| `LIVE_VERIFIED` | bound execution manifest·물리 호출 영수증까지 완료됨 |
 | `HISTORICAL_SUPERSEDED` | 과거 역할·일정·artifact 계획은 보존하되 현재 실행 또는 S5 entry 의존성이 아님 |
 | `DEFERRED_BY_DESIGN` | 명시적으로 후속 단계에 남긴 범위 |
 
@@ -114,6 +114,10 @@ provider/network call이 0이다.
 
 - `pre-s5-owner-voyage author|execute`
 - `pre-s5-final-gate author-kis-quote|execute-kis-quote|author-window-b|verify-release`
+
+사용자가 승인한 phase/window 범위는 packet 재생성 뒤에도 유지한다. author는 감사용 manifest SHA를
+출력하지만 execute는 owner Voyage, KIS quote, Window B의 SHA 환경변수를 요구하거나 비교하지 않는다.
+manifest/child packet 구조, TTL, 물리 호출·retry·비용 상한 검증은 그대로 유지한다.
 
 `verify-release`는 ignored `pre-s5-release-ledger/v2`의 marker를 단독 신뢰하지 않는다. fixed-path 0600
 owner BGE/KIS V3/required CI/security/tracked-audit receipt digest와 fresh V64 DB의 public·owner·S4.8 및

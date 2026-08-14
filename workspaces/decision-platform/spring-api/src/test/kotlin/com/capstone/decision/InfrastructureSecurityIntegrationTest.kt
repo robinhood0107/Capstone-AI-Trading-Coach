@@ -132,7 +132,11 @@ class InfrastructureSecurityIntegrationTest {
                 "record_rag_v2_immutable_consent_v2(text,text,text,text,text,text,text)",
                 "read_rag_v2_immutable_effective_consent(text)",
                 "issue_rag_v2_immutable_import_ticket(text,text,text,text)",
+                "issue_rag_v2_immutable_import_ticket_v2(text,text,text,text,text)",
                 "issue_rag_v2_immutable_owner_delete_ticket(text,text,text)",
+                "issue_rag_v2_retrieval_scope_v2(text,text,text[])",
+                "issue_rag_v2_retrieval_scope_v3(text,text,text[])",
+                "read_rag_v2_vertex_prepared_scope_v2(text,text,text,text[])",
             ).forEach { function ->
                 assertTrue(
                     hasFunctionPrivilege(connection, "decision_app", function),
@@ -177,6 +181,10 @@ class InfrastructureSecurityIntegrationTest {
                 "commit_and_stage_rag_v2_immutable_voyage_evaluation_batch(jsonb)",
                 "load_rag_v2_immutable_voyage_evaluation_batch_vectors(text,text,text)",
                 "record_rag_v2_bge_public_execution_supersession(text,text)",
+                "stage_rag_v2_immutable_owner_document_v3(text,text,jsonb)",
+                "reserve_rag_v2_owner_voyage_import(text,text,text,text,text,text,text[],integer,integer,integer)",
+                "complete_rag_v2_owner_voyage_import(text,text,text,jsonb,integer,integer,bigint)",
+                "fail_rag_v2_owner_voyage_import_unknown_billing(text,text,text,text)",
             ).forEach { function ->
                 assertTrue(
                     hasFunctionPrivilege(connection, "decision_rag_writer", function),
@@ -185,6 +193,20 @@ class InfrastructureSecurityIntegrationTest {
                 assertFalse(
                     hasFunctionPrivilege(connection, "decision_app", function),
                     "public RAG writer capability leaked to the app role for $function",
+                )
+            }
+            listOf(
+                "read_rag_v2_retrieval_scope_v2(text,text,text)",
+                "read_rag_v2_retrieval_scope_by_claim_v2(text,text)",
+                "search_authorized_rag_v2_dense_v2(text,text,text,text[],vector,vector)",
+            ).forEach { function ->
+                assertTrue(
+                    hasFunctionPrivilege(connection, "decision_rag_query", function),
+                    "bootstrap removed the owner dual-profile query capability for $function",
+                )
+                assertFalse(
+                    hasFunctionPrivilege(connection, "decision_app", function),
+                    "owner dual-profile query capability leaked to the app role for $function",
                 )
             }
             listOf(

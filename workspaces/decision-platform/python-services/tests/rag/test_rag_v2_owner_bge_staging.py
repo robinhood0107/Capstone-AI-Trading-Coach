@@ -59,7 +59,7 @@ def test_owner_staging_payload_excludes_local_path_but_keeps_transient_db_input(
     )
 
     encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True)
-    assert payload["schemaVersion"] == 2
+    assert payload["schemaVersion"] == 3
     assert payload["embeddingProfileId"] == "bge_m3_local_1024_v1"
     assert payload["sanitizedDisplayName"] == "Owner fixture"
     assert payload["retrievalTopics"] == ["FINANCIAL_ENGINEERING"]
@@ -96,17 +96,14 @@ def test_ticket_bound_writer_stages_owner_bge_generation_with_no_raw_table_grant
     assert receipt.source_count == 1
     assert receipt.chunk_count == 1
 
-    # crash 뒤 동일 one-time ticket/control record를 다시 소비하지 않고 같은 immutable run receipt를
-    # 반환해야 local importer가 source/chunk/vector를 중복 append하지 않는다.
-    assert (
+    # v2 ticket은 one-use이며 동일 control replay는 source/chunk/vector를 append하기 전에 거부한다.
+    with pytest.raises(OwnerBgeStagingError, match="OWNER_BGE_STAGE_REJECTED"):
         repository.stage(
             owner_user_id="usr_demo_user",
             import_ticket_id=ticket_id,
             materialized=_materialized(tmp_path),
             metadata=_metadata(),
         )
-        == receipt
-    )
 
     with psycopg.connect(cluster["admin_dsn"]) as connection:
         assert connection.execute(
@@ -167,6 +164,15 @@ def test_ticket_bound_writer_stages_owner_bge_generation_with_no_raw_table_grant
               'EXECUTE'
             )
             """
+        ).fetchone() == (False,)
+        assert connection.execute(
+            """
+            SELECT has_function_privilege(
+              current_user,
+              'public.stage_rag_v2_immutable_owner_document_v3(text,text,jsonb)',
+              'EXECUTE'
+            )
+            """
         ).fetchone() == (True,)
         with pytest.raises(psycopg.errors.InsufficientPrivilege):
             connection.execute("SELECT * FROM rag_v2_immutable_source_revisions").fetchall()
@@ -206,7 +212,13 @@ def _issue_ticket(database_dsn: str, *, owner_user_id: str, ticket_id: str) -> N
             )
             connection.execute(
                 """
-                SELECT issue_rag_v2_immutable_import_ticket(%s, %s, 'OWNER_IMPORT', 'RAG_V2_OWNER_DOCUMENT_V1')
+                SELECT issue_rag_v2_immutable_import_ticket_v2(
+                  %s,
+                  %s,
+                  'OWNER_IMPORT',
+                  'RAG_V2_OWNER_DOCUMENT_V2',
+                  'bge_m3_local_1024_v1'
+                )
                 """,
                 (owner_user_id, ticket_id),
             ).fetchone()

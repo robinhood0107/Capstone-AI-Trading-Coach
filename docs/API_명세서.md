@@ -31,7 +31,7 @@
 | `OFFLINE_ONLY` | fixture·local/Compose 검증만 통과했으며 provider physical call은 0 |
 | `STUB_FAIL_CLOSED` | 공개 route/CLI가 stable typed error로 닫혀 실제 기능을 가장하지 않음 |
 | `IMPLEMENTED_DRAFT` | current working tree에 코드·migration·자동 검증이 있으나 PR/main 병합이나 provider activation은 아님 |
-| `LIVE_VERIFIED` | exact HEAD·승인 packet·물리 호출 영수증까지 완료됨 |
+| `LIVE_VERIFIED` | bound execution manifest·물리 호출 영수증까지 완료됨 |
 | `HISTORICAL_SUPERSEDED` | 과거 역할·일정·artifact 계획은 보존하되 현재 실행 또는 S5 entry 의존성이 아님 |
 | `DEFERRED_BY_DESIGN` | 명시적으로 후속 단계에 남긴 범위 |
 
@@ -69,6 +69,79 @@ Decision Platform은 기존 synthetic/offline GDELT aggregate producer를 소유
 executor/outbound implementation은 활성화하거나 추가하지 않으며, GDELT aggregate는 설명 전용이다.
 Naver는 retired 상태를 유지하고 RAG·news·analyst는 Decision, Signal, RiskDecision, order, decision
 hash 권한이 0이다.
+
+### 0.3 Pre-S5 public activation과 owner profile authority
+
+2026-08-14 current local execution은 fresh DB V65에서 public RAG `FULL_READY`, active profile
+`voyage_context_4_1024_v1`, sources/chunks `142/7,871`, document batch `63/63 COMMITTED`,
+EXACT30/OA112 evaluation `2/2 PASSED`를 보존한다. public Voyage document/evaluation/production query는
+재실행하지 않고 public BGE embedding inference는 계속 0이다. V65는 정상 Flyway 경로로 적용됐고
+기존 public aggregate 보존과 `v2=120초 / v3=300초` scope를 provider call 0으로 검증했다. V64는 public
+OpenAPI/proto 변경을 뜻하지 않으며 provider
+preparation scope만 5분으로 발급하고 기존 2분 retrieval issuer를 보존한다.
+
+숨겨진 owner import-ticket control-plane request/response는 v2이며 request의 exact shape는 다음과 같다.
+
+```json
+{
+  "contractId": "s4-rag-v2-import-ticket-request-v2",
+  "schemaVersion": 2,
+  "sourceScope": "OWNER_PRIVATE",
+  "importMode": "LOCAL_EPHEMERAL_PARSE",
+  "embeddingProfileId": "voyage_context_4_1024_v1"
+}
+```
+
+`embeddingProfileId`는 필수이고 `voyage_context_4_1024_v1` 또는
+`bge_m3_local_1024_v1`만 허용한다. 누락·임의값·v1 request는 거부한다. 응답 v2는 선택 profile을
+ticket에 결박한다. server default와 자동 fallback은 없으며 profile 전환은 owner library 전체
+hard-delete 뒤 새 import로만 가능하다. 기존 public v1 OpenAPI/proto와 RAG ask/history/status response
+bytes는 변경하지 않는다.
+
+검색은 exact·lexical·dense 3-channel RRF(`k=60`)를 유지한다. owner Voyage는 public Voyage query
+vector를 재사용하고 owner BGE는 public Voyage query와 별도의 local BGE owner query를 사용한다.
+dense 후보는 profile 내부 rank를 먼저 계산하고 `profile rank → OWNER_PRIVATE → stable ID`로 하나의
+channel을 만든다. Top-5에 owner BGE citation이 있으면 Vertex preparation을 사용하지 않고
+`RETRIEVAL_ONLY`를 영속한다. 응답 `embeddingProfileId`는 계속 public Voyage profile을 뜻한다.
+
+owner Voyage import는 v2 consent·ticket·문서 안전성·exact packet을 provider socket 전에 검증하고,
+한 import를 `55K request / 32K context group / 600-token chunk` 아래 물리 호출 1회·retry 0으로만
+처리한다. 초과는 `OWNER_VOYAGE_IMPORT_TOO_LARGE`, timeout 또는 commit 불확실성은
+`UNKNOWN_BILLING`이며 자동 분할·BGE 전환은 없다. owner BGE import는 pinned local runtime만 사용해
+provider/network call이 0이다.
+
+다음 이름은 public HTTP/gRPC 계약이 아니라 ignored local control-plane CLI다.
+
+- `pre-s5-owner-voyage author|execute`
+- `pre-s5-final-gate author-kis-quote|execute-kis-quote|author-window-b|verify-release`
+
+사용자가 승인한 phase/window 범위는 packet 재생성 뒤에도 유지한다. author는 감사용 manifest SHA를
+출력하지만 execute는 owner Voyage, KIS quote, Window B의 SHA 환경변수를 요구하거나 비교하지 않는다.
+manifest/child packet 구조, TTL, 물리 호출·retry·비용 상한 검증은 그대로 유지한다.
+
+`verify-release`는 ignored `pre-s5-release-ledger/v2`의 marker를 단독 신뢰하지 않는다. fixed-path 0600
+owner BGE/KIS V3/required CI/security/tracked-audit receipt digest와 fresh V65 DB의 public·owner·S4.8 및
+Window B Voyage/Vertex `COMMITTED` aggregate를 모두 대조한 뒤에만 `OPEN`을 반환한다.
+
+거래시간 외에는 사용자가 명시 승인한 경우에만 KIS V3의 동일한 7단계를 provider call 0의 결정적
+mock으로 검증할 수 있다. receipt는 `AFTER_HOURS_DETERMINISTIC_MOCK`을 명시하고
+`KIS_MOCK_AFTER_HOURS_RECONCILIATION_VERIFIED=true`,
+`KIS_MOCK_FULL_RECONCILIATION_VERIFIED=false`를 산출해 물리 주문 검증과 구분한다.
+
+owner author/execute는 정확히 9개 format의 v2 ticket을 one request에 묶고, manifest·packet·current
+consent·owner profile·token/context cap을 socket 전에 검증한다. KIS quote manifest는 tokenP 최대 1회와
+current-price 1회, retry 0만 허용한다. Window B manifest는 Voyage query, Vertex activation, KIS V3 child
+packet SHA를 결박하며 각 runtime은 parent approval SHA와 자기 child SHA가 다르면 outbound 전에
+`PRE_S5_WINDOW_B_CHILD_BINDING`으로 닫힌다. Vertex credential은
+`capstone-rag/secrets/pre-s5-vertex-service-account.json`의 현재 사용자 소유 0600 regular file/link count 1
+경계와 기존 service-account OAuth만 사용한다. API key·ADC fallback은 없다. 이 control plane은 v1
+OpenAPI/proto 및 ask/history/status response bytes를 변경하지 않는다.
+
+현재 synthetic owner Voyage one-shot은 exact manifest 아래 물리 호출 1회로 9개 format을 stage한 뒤
+same-owner 검색과 전량 hard-delete를 완료했고 source/chunk/vector/profile-lock residual은 0이다. KIS
+current-price receipt와 S4.8 9-lane terminal 분류도 완료됐으며 재호출하지 않는다. 남은 physical gate는
+fresh final-head Window B의 Voyage query 1회와 Vertex service-account OAuth/generateContent 각 1회다.
+거래시간 외 KIS는 위 결정적 mock receipt로 대체하며 실제 tokenP·brokerage·live-order 호출은 0이다.
 
 > 완료 기준점(2026-07-16): S1.3 내부 ECOS/Naver producer는 PR #16 merge commit
 > `6f439155d9f5ec626fc185f29f2e0bd64ca54780`, S1.3K KRX 내부 collector는 PR #17 merge
@@ -1574,7 +1647,7 @@ consent는 `GRANT | REVOKE`, disclosure/policy digest만 받고 owner와 시각�
 남긴다. raw JWT, owner ID, DB credential, owner raw path는 BAT command line에 노출하지 않는다.
 
 `POST /api/v2/rag/vertex-preparations`는 enabled Vertex target에서만 exact `X-Request-Id: req_...`와
-기존 `/ask`의 동일 parsed command를 받아 current immutable bundle의 2분 scope를 content-free로 반환한다. 응답은
+기존 `/ask`의 동일 parsed command를 받아 current immutable bundle의 provider preparation 전용 5분 scope를 content-free로 반환한다. 응답은
 `scopeClaimId`, question HMAC, consent/policy digest, profile, expiry만 포함하며 owner ID, raw question,
 raw evidence는 저장하거나 반환하지 않는다. operator는 이 receipt와 독립 external evidence를 이용해
 local-only approval packet을 만들고, 뒤의 `/ask`에는 같은 request ID·parsed command와

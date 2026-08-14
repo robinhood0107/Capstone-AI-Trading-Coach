@@ -32,7 +32,7 @@ class PrincipleContractMigrationIntegrationTest(
     @Autowired private val principleRuleJsonCodec: PrincipleRuleJsonCodec,
 ) : SpringApiIntegrationTestBase() {
     @Test
-    fun `clean V1 through V64 migration preserves the exact Principle schema and seed`() {
+    fun `clean V1 through V65 migration preserves the exact Principle schema and seed`() {
         assertEquals(
             (1..64).map(Int::toString),
             jdbcTemplate.query(

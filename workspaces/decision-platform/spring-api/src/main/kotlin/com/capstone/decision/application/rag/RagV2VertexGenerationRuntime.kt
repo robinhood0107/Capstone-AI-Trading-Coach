@@ -12,8 +12,8 @@ import java.text.Normalizer
 import java.time.Instant
 
 /**
- * Vertex에 일시적으로 전달할 top-5 evidence다. canonical text는 provider response·history·usage ledger에
- * 기록하지 않으며, DB SECURITY DEFINER 재검증을 통과한 현재 request 범위에서만 존재한다.
+ * Strong LLM에 일시적으로 전달할 top-5 evidence다. canonical text는 provider response·history·usage ledger에
+ * 기록하지 않으며, 현재 request의 owner-scoped DB 검증이 끝난 메모리에서만 존재한다.
  */
 data class RagV2VertexEvidence(
     val ordinal: Int,
@@ -23,10 +23,7 @@ data class RagV2VertexEvidence(
     val canonicalTextSha256: String,
 )
 
-/**
- * Vertex 경로는 BGE gRPC evaluation 뒤에만 실행된다. owner identity는 usage lease와 DB scope 검증에만 쓰고
- * Vertex HTTP body에는 넣지 않는다.
- */
+/** Strong LLM 입력은 retrieval·동의·owner 경계를 통과한 Top-5 전체이며 Decision/Signal/Risk 입력이 아니다. */
 data class RagV2VertexGenerationCommand(
     val ownerUserId: String,
     val requestId: String,
@@ -39,11 +36,7 @@ data class RagV2VertexGenerationCommand(
     val evidence: List<RagV2VertexEvidence>,
 )
 
-/**
- * Vertex physical-call packet을 만들기 직전에 authenticated owner에게만 주는 content-free preparation이다.
- * question/evidence/owner identity는 저장하거나 응답에 넣지 않고, 5분 retrieval claim과 HMAC만 packet을
- * stable하게 결속한다.
- */
+/** content-free provider preparation; raw question/evidence는 packet이나 DB에 저장하지 않는다. */
 data class RagV2VertexPreparation(
     val contractId: String = "s4-rag-v2-vertex-preparation-v1",
     val schemaVersion: Int = 1,
@@ -61,10 +54,6 @@ data class RagV2VertexPreparation(
     val rawEvidenceStored: Boolean = false,
 )
 
-/**
- * ask HMAC은 packet과 append-only usage ledger가 같은 raw-content-free binding을 쓰게 한다.
- * 질문, 답변 mode, related symbol, topic의 canonical command 전체를 결박하고 digest 원문만 반환한다.
- */
 interface RagV2VertexQuestionFingerprintPort {
     fun fingerprint(
         ownerUserId: String,
@@ -72,27 +61,38 @@ interface RagV2VertexQuestionFingerprintPort {
     ): String
 }
 
-data class RagV2VertexGenerationResult(
+enum class StrongLlmAnswerBasis {
+    EVIDENCE,
+    MODEL_KNOWLEDGE,
+    INSUFFICIENT_EVIDENCE,
+}
+
+enum class StrongLlmValidationStatus {
+    VALID,
+    VALID_WITH_WARNINGS,
+}
+
+data class StrongLlmGenerationResult(
     val generationStatus: RagGenerationStatus,
     val answer: String?,
     val citationIds: List<String>,
     val failureCode: String,
+    val answerBasis: StrongLlmAnswerBasis? = null,
+    val validationStatus: StrongLlmValidationStatus? = null,
+    val warnings: List<String> = emptyList(),
+    val citationCoverage: Double = 0.0,
 )
 
-/**
- * BGE retrieval transport와 독립된 single-generator port다. 구현체는 local activation packet·consent·DB lease를
- * 각각 재검증하고 `generateContent` 외 provider fallback을 만들지 않는다.
- */
-interface RagV2VertexGenerationPort {
+/** Provider-neutral final generator port. 구현체가 Vertex여도 application 계층은 특정 모델 transport를 알지 않는다. */
+interface StrongLlmGenerationPort {
     fun isActivationEnabled(): Boolean
 
-    fun generate(command: RagV2VertexGenerationCommand): RagV2VertexGenerationResult
+    fun generate(command: RagV2VertexGenerationCommand): StrongLlmGenerationResult
 }
 
-/**
- * citation identity를 현재 immutable scope의 canonical text로 재해석하는 DB 경계다. 조회 결과는 external
- * generation 직후 폐기되며 history persistence에는 citation identity만 다시 전달한다.
- */
+typealias RagV2VertexGenerationPort = StrongLlmGenerationPort
+typealias RagV2VertexGenerationResult = StrongLlmGenerationResult
+
 interface RagV2VertexEvidencePort {
     fun resolve(
         ownerUserId: String,
@@ -102,19 +102,20 @@ interface RagV2VertexEvidencePort {
     ): List<RagV2VertexEvidence>
 }
 
-data class RagV2VertexValidatedAnswer(
-    val answer: String,
+data class StrongLlmValidatedAnswer(
+    val basis: StrongLlmAnswerBasis,
+    val answer: String?,
     val citationIds: List<String>,
+    val validationStatus: StrongLlmValidationStatus,
+    val warnings: List<String>,
+    val citationCoverage: Double,
 )
 
-data class RagV2VertexExtractiveCandidate(
-    val text: String,
-    val citationId: String,
-)
+typealias RagV2VertexValidatedAnswer = StrongLlmValidatedAnswer
 
 /**
- * provider 출력은 raw 상태로 신뢰하거나 저장하지 않는다. 모든 문장을 immutable top-5 citation에 결속하고
- * numeric token까지 같은 evidence set으로 재검증해 malformed output을 `GENERATION_UNAVAILABLE`로 닫는다.
+ * 생성 결과를 선택하거나 고치지 않고 provenance만 검증한다. EVIDENCE 문장은 의역할 수 있지만 모든 문장에
+ * canonical evidence의 exact quote가 필요하며, quote·숫자·citation·owner 경계를 하나라도 위반하면 거부한다.
  */
 class RagV2VertexResponseValidator {
     private val mapper =
@@ -125,9 +126,9 @@ class RagV2VertexResponseValidator {
                     .streamReadConstraints(
                         StreamReadConstraints
                             .builder()
-                            .maxNestingDepth(6)
+                            .maxNestingDepth(8)
                             .maxDocumentLength(MAX_RESPONSE_BYTES.toLong())
-                            .maxTokenCount(512)
+                            .maxTokenCount(2_048)
                             .maxNumberLength(32)
                             .maxStringLength(MAX_RESPONSE_BYTES)
                             .maxNameLength(64)
@@ -139,47 +140,59 @@ class RagV2VertexResponseValidator {
     fun validate(
         rawResponseText: String,
         evidence: List<RagV2VertexEvidence>,
-    ): RagV2VertexValidatedAnswer {
+    ): StrongLlmValidatedAnswer {
         try {
-            require(evidence.size in 1..MAX_EVIDENCE)
-            require(evidence.map { it.citationId }.distinct().size == evidence.size)
-            require(evidence.map { it.ordinal } == (1..evidence.size).toList())
-            require(
-                evidence.all {
-                    CITATION_ID.matches(it.citationId) &&
-                        CHUNK_ID.matches(it.chunkRevisionId) &&
-                        SHA256.matches(it.canonicalTextSha256) &&
-                        sha256(it.canonicalText) == it.canonicalTextSha256
-                },
-            )
-            val evidenceByCitationId = evidence.associateBy { it.citationId }
+            val evidenceByCitationId = validateEvidence(evidence)
             val root = mapper.readTree(rawResponseText)
             require(root != null && root.isObject)
             require(root.properties().map { it.key }.toSet() == ROOT_FIELDS)
-            val answer = requireText(root.get("answer"), MAX_ANSWER_BYTES, allowNewline = true)
+            val basis = StrongLlmAnswerBasis.valueOf(requireText(root.get("basis"), 32, false))
+            val answer = nullableText(root.get("answer"), MAX_ANSWER_BYTES, allowNewline = true)
+            val warnings = requireWarnings(root.get("warnings"))
             val sentencesNode = root.get("sentences")
-            require(sentencesNode != null && sentencesNode.isArray && sentencesNode.size() in 1..MAX_SENTENCES)
+            require(sentencesNode != null && sentencesNode.isArray && sentencesNode.size() <= MAX_SENTENCES)
             val sentences =
                 sentencesNode
                     .values()
                     .asSequence()
-                    .map { sentence -> validateSentence(sentence, evidenceByCitationId) }
+                    .map { validateSentence(it, basis, evidenceByCitationId) }
                     .toList()
-            require(answer == sentences.joinToString("\n") { it.text })
-            require(!SENSITIVE.containsMatchIn(answer))
-            require(!DIRECT_ADVICE.containsMatchIn(answer))
-            val citationIds =
-                buildList {
-                    sentences.forEach { sentence ->
-                        sentence.citationIds.forEach { citationId ->
-                            if (citationId !in this) {
-                                add(citationId)
-                            }
-                        }
-                    }
+
+            when (basis) {
+                StrongLlmAnswerBasis.EVIDENCE -> {
+                    require(answer != null && sentences.isNotEmpty())
+                    require(answer == sentences.joinToString("\n") { it.text })
+                    require(sentences.all { it.citationIds.isNotEmpty() && it.evidenceSpanCount > 0 })
                 }
-            require(citationIds.isNotEmpty())
-            return RagV2VertexValidatedAnswer(answer = answer, citationIds = citationIds)
+                StrongLlmAnswerBasis.MODEL_KNOWLEDGE -> {
+                    require(answer != null && sentences.isNotEmpty())
+                    require(warnings.isEmpty())
+                    require(answer == sentences.joinToString("\n") { it.text })
+                    require(sentences.all { it.citationIds.isEmpty() && it.evidenceSpanCount == 0 })
+                    require(sentences.none { NUMERIC_TOKEN.containsMatchIn(it.text) || CURRENT_FACT.containsMatchIn(it.text) })
+                }
+                StrongLlmAnswerBasis.INSUFFICIENT_EVIDENCE -> {
+                    require(answer == null && sentences.isEmpty())
+                }
+            }
+            answer?.let {
+                require(!SENSITIVE.containsMatchIn(it))
+                require(!DIRECT_ADVICE.containsMatchIn(it))
+            }
+            val citationIds =
+                sentences.flatMap { it.citationIds }.fold(mutableListOf<String>()) { all, id ->
+                    if (id !in all) all.add(id)
+                    all
+                }
+            val warningStatus =
+                if (warnings.isEmpty()) StrongLlmValidationStatus.VALID else StrongLlmValidationStatus.VALID_WITH_WARNINGS
+            val coverage =
+                if (basis == StrongLlmAnswerBasis.EVIDENCE) {
+                    sentences.count { it.evidenceSpanCount > 0 }.toDouble() / sentences.size
+                } else {
+                    0.0
+                }
+            return StrongLlmValidatedAnswer(basis, answer, citationIds, warningStatus, warnings, coverage)
         } catch (_: JacksonException) {
             throw RagV2VertexResponseValidationException()
         } catch (_: IllegalArgumentException) {
@@ -189,44 +202,43 @@ class RagV2VertexResponseValidator {
         }
     }
 
-    /**
-     * provider가 paraphrase를 생성할 여지를 없애도록 canonical evidence에서 숫자 없는 안전한 완결 문장 하나를
-     * 결정적으로 고른다. 선택 결과는 Vertex response schema의 enum과 로컬 validator 양쪽에 같은 값으로 결박된다.
-     */
-    fun selectDeterministicExtractiveCandidate(evidence: List<RagV2VertexEvidence>): RagV2VertexExtractiveCandidate {
+    private fun validateEvidence(evidence: List<RagV2VertexEvidence>): Map<String, RagV2VertexEvidence> {
         require(evidence.size in 1..MAX_EVIDENCE)
-        return evidence
-            .asSequence()
-            .sortedBy { it.ordinal }
-            .flatMap { item ->
-                canonicalSentences(item.canonicalText).asSequence().map { sentence -> item to sentence }
-            }.firstNotNullOfOrNull { (item, sentence) ->
-                sentence
-                    .takeIf {
-                        it.isNotBlank() &&
-                            it.toByteArray(StandardCharsets.UTF_8).size <= MAX_SENTENCE_BYTES &&
-                            !NUMERIC_TOKEN.containsMatchIn(it) &&
-                            !SENSITIVE.containsMatchIn(it) &&
-                            !DIRECT_ADVICE.containsMatchIn(it)
-                    }?.let { RagV2VertexExtractiveCandidate(text = it, citationId = item.citationId) }
-            } ?: throw RagV2VertexResponseValidationException()
+        require(evidence.map { it.ordinal } == (1..evidence.size).toList())
+        require(evidence.map { it.citationId }.distinct().size == evidence.size)
+        require(
+            evidence.all {
+                CITATION_ID.matches(it.citationId) &&
+                    CHUNK_ID.matches(it.chunkRevisionId) &&
+                    SHA256.matches(it.canonicalTextSha256) &&
+                    sha256(it.canonicalText) == it.canonicalTextSha256
+            },
+        )
+        return evidence.associateBy { it.citationId }
     }
 
     private fun validateSentence(
         node: JsonNode,
+        basis: StrongLlmAnswerBasis,
         evidenceByCitationId: Map<String, RagV2VertexEvidence>,
     ): ValidatedSentence {
-        require(node.isObject)
-        require(node.properties().map { it.key }.toSet() == SENTENCE_FIELDS)
-        val text = requireText(node.get("text"), MAX_SENTENCE_BYTES, allowNewline = false)
-        val citationIds = requireCitationIds(node.get("citationIds"), evidenceByCitationId.keys)
-        // 생성 모델의 추론을 별도 verifier로 다시 호출하지 않는다. 대신 출력 문장은 인용한 canonical text의
-        // 완결 문장과 정확히 일치해야 하므로, citation ID만 붙인 임의 사실·수치 환각을 fail-closed한다.
-        require(
-            citationIds.any { citationId ->
-                canonicalSentences(evidenceByCitationId.getValue(citationId).canonicalText).contains(normalizeSentence(text))
-            },
-        )
+        require(node.isObject && node.properties().map { it.key }.toSet() == SENTENCE_FIELDS)
+        val text = requireText(node.get("text"), MAX_SENTENCE_BYTES, false)
+        val citationIds =
+            requireCitationIds(
+                node.get("citationIds"),
+                evidenceByCitationId.keys,
+                allowEmpty =
+                    basis != StrongLlmAnswerBasis.EVIDENCE,
+            )
+        val evidenceSpans = node.get("evidenceSpans")
+        require(evidenceSpans != null && evidenceSpans.isArray && evidenceSpans.size() <= MAX_EVIDENCE_SPANS)
+        val validatedSpanTexts =
+            evidenceSpans
+                .values()
+                .asSequence()
+                .map { validateEvidenceSpan(it, citationIds, evidenceByCitationId) }
+                .toList()
         val numericSpans = node.get("numericSpans")
         require(numericSpans != null && numericSpans.isArray && numericSpans.size() <= MAX_NUMERIC_SPANS)
         val expectedNumericTokens = NUMERIC_TOKEN.findAll(text).map { it.value }.toList()
@@ -234,58 +246,68 @@ class RagV2VertexResponseValidator {
             numericSpans
                 .values()
                 .asSequence()
-                .map { span -> validateNumericSpan(span, citationIds, evidenceByCitationId) }
+                .map { validateNumericSpan(it, citationIds, validatedSpanTexts) }
                 .toList()
         require(suppliedNumericTokens == expectedNumericTokens)
-        return ValidatedSentence(text = text, citationIds = citationIds)
+        if (basis != StrongLlmAnswerBasis.EVIDENCE) {
+            require(citationIds.isEmpty() && validatedSpanTexts.isEmpty() && suppliedNumericTokens.isEmpty())
+        }
+        return ValidatedSentence(text, citationIds, validatedSpanTexts.size)
+    }
+
+    private fun validateEvidenceSpan(
+        node: JsonNode,
+        sentenceCitationIds: List<String>,
+        evidenceByCitationId: Map<String, RagV2VertexEvidence>,
+    ): String {
+        require(node.isObject && node.properties().map { it.key }.toSet() == EVIDENCE_SPAN_FIELDS)
+        val citationId = requireText(node.get("citationId"), MAX_CITATION_ID_BYTES, false)
+        require(citationId in sentenceCitationIds)
+        val quote = requireText(node.get("quote"), MAX_EVIDENCE_QUOTE_BYTES, false)
+        require(evidenceByCitationId.getValue(citationId).canonicalText.contains(quote))
+        return quote
     }
 
     private fun validateNumericSpan(
         node: JsonNode,
         sentenceCitationIds: List<String>,
-        evidenceByCitationId: Map<String, RagV2VertexEvidence>,
+        evidenceSpanTexts: List<String>,
     ): String {
-        require(node.isObject)
-        require(node.properties().map { it.key }.toSet() == NUMERIC_SPAN_FIELDS)
-        val value = requireText(node.get("value"), MAX_NUMERIC_TOKEN_BYTES, allowNewline = false)
+        require(node.isObject && node.properties().map { it.key }.toSet() == NUMERIC_SPAN_FIELDS)
+        val value = requireText(node.get("value"), MAX_NUMERIC_TOKEN_BYTES, false)
         require(NUMERIC_TOKEN.matches(value))
-        val citationIds = requireCitationIds(node.get("citationIds"), sentenceCitationIds.toSet())
-        require(
-            citationIds.any { citationId ->
-                NUMERIC_TOKEN.findAll(evidenceByCitationId.getValue(citationId).canonicalText).any { it.value == value }
-            },
-        )
+        requireCitationIds(node.get("citationIds"), sentenceCitationIds.toSet(), allowEmpty = false)
+        require(evidenceSpanTexts.any { quote -> NUMERIC_TOKEN.findAll(quote).any { it.value == value } })
         return value
     }
 
-    private fun canonicalSentences(canonicalText: String): Set<String> =
-        canonicalText
-            .split(SENTENCE_BOUNDARY)
-            .asSequence()
-            .map(::normalizeSentence)
-            .filter { it.isNotEmpty() }
-            .toSet()
-
-    private fun normalizeSentence(value: String): String =
-        Normalizer
-            .normalize(value, Normalizer.Form.NFC)
-            .replace(WHITESPACE, " ")
-            .trim()
+    private fun requireWarnings(node: JsonNode?): List<String> {
+        require(node != null && node.isArray && node.size() <= MAX_WARNINGS)
+        return node.values().asSequence().map { requireText(it, 64, false) }.toList().also {
+            require(it.distinct().size == it.size)
+            require(it.all(ALLOWED_WARNINGS::contains))
+        }
+    }
 
     private fun requireCitationIds(
         node: JsonNode?,
-        allowedCitationIds: Set<String>,
+        allowed: Set<String>,
+        allowEmpty: Boolean,
     ): List<String> {
-        require(node != null && node.isArray && node.size() in 1..MAX_EVIDENCE)
-        val citationIds =
-            node
-                .values()
-                .asSequence()
-                .map { value -> requireText(value, MAX_CITATION_ID_BYTES, allowNewline = false) }
-                .toList()
-        require(citationIds.distinct().size == citationIds.size)
-        require(citationIds.all { it in allowedCitationIds })
-        return citationIds
+        require(node != null && node.isArray && node.size() <= MAX_EVIDENCE)
+        if (!allowEmpty) require(node.size() > 0)
+        return node.values().asSequence().map { requireText(it, MAX_CITATION_ID_BYTES, false) }.toList().also {
+            require(it.distinct().size == it.size && it.all(allowed::contains))
+        }
+    }
+
+    private fun nullableText(
+        node: JsonNode?,
+        maximumBytes: Int,
+        allowNewline: Boolean,
+    ): String? {
+        require(node != null)
+        return if (node.isNull) null else requireText(node, maximumBytes, allowNewline)
     }
 
     private fun requireText(
@@ -295,10 +317,9 @@ class RagV2VertexResponseValidator {
     ): String {
         require(node != null && node.isString)
         val value = node.stringValue()
-        require(value.isNotBlank())
-        require(Normalizer.normalize(value, Normalizer.Form.NFC) == value)
+        require(value.isNotBlank() && Normalizer.normalize(value, Normalizer.Form.NFC) == value)
         require(value.toByteArray(StandardCharsets.UTF_8).size <= maximumBytes)
-        require(value.none { character -> Character.isISOControl(character) && (character != '\n' || !allowNewline) })
+        require(value.none { Character.isISOControl(it) && (it != '\n' || !allowNewline) })
         require(allowNewline || '\n' !in value)
         return value
     }
@@ -315,56 +336,46 @@ class RagV2VertexResponseValidator {
     private data class ValidatedSentence(
         val text: String,
         val citationIds: List<String>,
+        val evidenceSpanCount: Int,
     )
 
     private companion object {
-        val ROOT_FIELDS = setOf("answer", "sentences")
-        val SENTENCE_FIELDS = setOf("text", "citationIds", "numericSpans")
+        val ROOT_FIELDS = setOf("basis", "answer", "sentences", "warnings")
+        val SENTENCE_FIELDS = setOf("text", "citationIds", "evidenceSpans", "numericSpans")
+        val EVIDENCE_SPAN_FIELDS = setOf("citationId", "quote")
         val NUMERIC_SPAN_FIELDS = setOf("value", "citationIds")
+        val ALLOWED_WARNINGS = setOf("SINGLE_SOURCE", "STALE_SOURCE", "CONFLICTING_SOURCES", "LOW_RELEVANCE", "SECONDARY_SOURCE")
         val CITATION_ID = Regex("^cit_[1-5]$")
         val CHUNK_ID = Regex("^rag_v2_chk_[0-9a-f]{32}$")
         val SHA256 = Regex("^[0-9a-f]{64}$")
+
+        // 한국어 조사(예: `5%를`) 앞에서도 단위까지 한 token으로 잡되 영문 식별자 내부 숫자는 거부한다.
         val NUMERIC_TOKEN =
-            Regex("(?<![\\p{L}\\p{N}])[-+]?(?:\\d{1,3}(?:,\\d{3})*|\\d+)(?:\\.\\d+)?(?:%|bp|bps|USD|KRW|원|달러|년|개월|일|주)?(?![\\p{L}\\p{N}])")
-        val SENTENCE_BOUNDARY = Regex("(?<=[.!?。！？])\\s+|\\R+")
-        val WHITESPACE = Regex("\\s+")
+            Regex(
+                "(?<![\\p{L}\\p{N}])[-+]?(?:\\d{1,3}(?:,\\d{3})*|\\d+)(?:\\.\\d+)?(?:%|bp|bps|USD|KRW|원|달러|년|개월|일|주)?(?=$|[^\\p{L}\\p{N}]|[을를이가은는의와과로에])",
+            )
+        val CURRENT_FACT = Regex("(현재|오늘|최근|최신|금일|this\\s+(?:year|month|week)|today|currently|latest|as\\s+of)", RegexOption.IGNORE_CASE)
         val SENSITIVE =
             Regex(
-                "(계좌|잔고|보유종목|보유수량|주문내역|체결내역|연락처|전화번호|이메일|" +
-                    "주민번호|access\\W*token|api\\W*key|client\\W*secret|password|" +
-                    "holdings?|positions?|orders?|fills?|account\\W*(?:number|balance)|" +
-                    "phone\\W*number|email\\W*address|" +
-                    "(?<![\\w.+-])[a-z0-9._%+-]{1,64}@[a-z0-9.-]{1,253}\\.[a-z]{2,63}(?![\\w.-])|" +
-                    "(?<!\\d)01[016789][ -]?\\d{3,4}[ -]?\\d{4}(?!\\d)|" +
-                    "(?<!\\d)\\d{6}[ -]?[1-4]\\d{6}(?!\\d)|" +
-                    "\\bbearer\\W+[a-z0-9._~-]{8,}|\\bsk-[a-z0-9_-]{16,}\\b)",
+                "(계좌\\W*번호|주민\\W*(?:등록)?\\W*번호|access\\W*token|api\\W*key|client\\W*secret|password|account\\W*number|(?<![\\w.+-])[a-z0-9._%+-]{1,64}@[a-z0-9.-]{1,253}\\.[a-z]{2,63}(?![\\w.-])|(?<!\\d)01[016789][ -]?\\d{3,4}[ -]?\\d{4}(?!\\d)|\\bbearer\\W+[a-z0-9._~-]{8,}|\\bsk-[a-z0-9_-]{16,}\\b)",
                 RegexOption.IGNORE_CASE,
             )
         val DIRECT_ADVICE =
             Regex(
-                "((?:내가|나는|저는|제게|내일|지금).{0,24}(?:사야|팔아|매수|매도)|" +
-                    "몇\\W*주.{0,16}(?:사|팔|매수|매도)|" +
-                    "(?:이|그|해당)\\W*(?:종목|주식).{0,40}(?:매수|매도|매입|매각|사다|팔다).{0,20}(?:하세요|하라|해라|해야|추천|권고|좋습니다)|" +
-                    "(?:매수|매도|매입|매각|현금화|비중확대|비중축소).{0,20}(?:하세요|하라|해라|해야|추천|권고|좋습니다)|(?:사|팔)세요|" +
-                    "(?:이|그|해당)\\W*(?:종목|주식|etf|펀드).{0,48}(?:사(?:다|는|야|세요)|팔(?:다|는|아|세요)|" +
-                    "매수|매도|매입|매각|투자|보유|편입|청산|공매도).{0,24}(?:하세요|하라|해라|해야|추천|권고|좋습니다|필요)|" +
-                    "(?:buy|sell|acquire|purchase|dispose|liquidate|invest|hold|allocate|short|long|rebalance|trade)" +
-                    "(?:\\W+(?:in|into|on))?\\W+(?:this|the|now|immediately|shares?|stock|etf|fund|portfolio)|" +
-                    "(?:you|investors?)\\W+(?:should|must|need\\W+to|ought\\W+to|consider|avoid|" +
-                    "are\\W+advised\\W+to)\\W+(?:buy|sell|acquire|purchase|dispose|liquidate|invest|hold|allocate|short|long|trade)|" +
-                    "(?:recommend|recommendation|advise|advisable|consider)\\W*(?:buying|selling|acquiring|purchasing|" +
-                    "disposing|investing|holding|buy|sell|acquire|purchase|dispose|invest|hold)|" +
-                    "(?:go\\W+long|go\\W+short|liquidate|buy|sell)\\W*[!.]?$)",
+                "((?:내가|나는|저는|제게|내일|지금).{0,24}(?:사야|팔아|매수|매도)|몇\\W*주.{0,16}(?:사|팔|매수|매도)|(?:매수|매도|매입|매각|현금화|비중확대|비중축소).{0,20}(?:하세요|하라|해라|해야|추천|권고)|(?:you|investors?)\\W+(?:should|must|need\\W+to|ought\\W+to|consider)\\W+(?:buy|sell|invest|hold|trade)|(?:recommend|advise)\\W*(?:buying|selling|investing|buy|sell|invest))",
                 RegexOption.IGNORE_CASE,
             )
         const val MAX_EVIDENCE = 5
-        const val MAX_RESPONSE_BYTES = 16_384
-        const val MAX_ANSWER_BYTES = 8_192
-        const val MAX_SENTENCE_BYTES = 1_024
+        const val MAX_RESPONSE_BYTES = 32_768
+        const val MAX_ANSWER_BYTES = 12_288
+        const val MAX_SENTENCE_BYTES = 2_048
+        const val MAX_EVIDENCE_QUOTE_BYTES = 2_048
         const val MAX_NUMERIC_TOKEN_BYTES = 64
         const val MAX_CITATION_ID_BYTES = 8
         const val MAX_SENTENCES = 24
+        const val MAX_EVIDENCE_SPANS = 12
         const val MAX_NUMERIC_SPANS = 64
+        const val MAX_WARNINGS = 5
     }
 }
 

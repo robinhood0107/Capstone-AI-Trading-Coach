@@ -1,0 +1,64 @@
+{
+  "contractId": "s4-9-mcp-strong-llm-v1",
+  "mcpProtocolVersion": "2025-11-25",
+  "strongLlm": {
+    "defaultAdapter": "vertex-gemini-3.5-flash",
+    "answerBases": [
+      "EVIDENCE",
+      "MODEL_KNOWLEDGE",
+      "INSUFFICIENT_EVIDENCE"
+    ],
+    "evidenceInput": "FULL_TOP_5",
+    "maximumToolRounds": 3,
+    "serverValidation": [
+      "CITATION",
+      "EXACT_QUOTE",
+      "NUMERIC_SPAN",
+      "OWNER_SCOPE",
+      "DIRECT_ADVICE"
+    ]
+  },
+  "mcp": {
+    "transport": "STREAMABLE_HTTP",
+    "path": "/mcp",
+    "tools": [
+      "capstone_rag_search",
+      "capstone_web_search",
+      "capstone_web_read",
+      "capstone_answer_validate",
+      "capstone_answer_save"
+    ],
+    "oauthScopes": [
+      "mcp:rag.public",
+      "mcp:rag.owner",
+      "mcp:web.read",
+      "mcp:answer.validate",
+      "mcp:history.write"
+    ],
+    "ownerIdToolArgumentAllowed": false,
+    "publicDynamicClientRegistration": false
+  },
+  "web": {
+    "searchBackend": "SEARXNG_INTERNAL",
+    "engines": [
+      "duckduckgo",
+      "brave",
+      "mojeek",
+      "qwant",
+      "wikipedia"
+    ],
+    "googleSearch": false,
+    "naver": false,
+    "browserAutomation": false,
+    "crawler": false,
+    "deepResearch": false
+  },
+  "authority": {
+    "decision": false,
+    "signal": false,
+    "lstm": false,
+    "riskDecision": false,
+    "order": false,
+    "judgementHash": false
+  }
+}

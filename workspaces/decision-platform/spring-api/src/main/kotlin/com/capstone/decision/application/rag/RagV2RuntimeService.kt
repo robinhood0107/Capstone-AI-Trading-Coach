@@ -29,7 +29,10 @@ private data class RagV2VertexProviderInput(
     val evidence: List<RagV2VertexEvidence>,
 )
 
-/** Top-5에 실제 owner BGE citation이 있을 때만 Vertex input 전체를 차단한다. */
+/**
+ * 갱신된 외부 generation 동의가 없는 구형 경로의 호환 검사용 함수다. S4.9 runtime은 effective consent를
+ * 재검증하므로 BGE embedding이라는 이유만으로 owner evidence를 자동 폐기하지 않는다.
+ */
 internal fun requiresRetrievalOnlyForOwnerBgeEvidence(
     scope: RagV2RetrievalScope,
     citations: List<RagV2RetrievedCitation>,
@@ -334,13 +337,61 @@ class RagV2RuntimeService(
             )
         }
         if (vertexEnabled) {
-            if (requiresRetrievalOnlyForOwnerBgeEvidence(scope, evaluation.citations)) {
-                return persistRetrievalOnlyAnswer(ownerUserId, requestId, command, scope, evaluation)
-            }
             return generateWithVertex(ownerUserId, requestId, command, scope, evaluation)
         }
 
         return persistRetrievalOnlyAnswer(ownerUserId, requestId, command, scope, evaluation)
+    }
+
+    /**
+     * MCP search는 답변 생성·history 저장을 수행하지 않고 현재 owner scope의 Top-5와 canonical evidence만 반환한다.
+     * Voyage query가 필요한 profile이면 갱신된 effective consent를 통과한 호출 한 번만 evaluation adapter가 소유한다.
+     */
+    fun searchEvidence(
+        ownerUserId: String,
+        requestId: String,
+        command: RagAskCommand,
+    ): RagV2SearchEvidenceResult {
+        val preparation =
+            inDatabaseTransaction {
+                require(command.question.isNotBlank())
+                if (corpusStatus(ownerUserId).state != "FULL_READY") throw RagV2CorpusNotReadyException()
+                val scope = issueRetrievalScope(ownerUserId, requestId, command.topics)
+                val consentGranted =
+                    if (scope.embeddingProfileId == VOYAGE_PROFILE) {
+                        effectiveConsent(ownerUserId).effective.also { require(it) }
+                    } else {
+                        false
+                    }
+                RagV2AskPreparation(scope, consentGranted)
+            }
+        val evaluation =
+            evaluationPort.evaluate(
+                command,
+                RagV2EvaluationContext(requestId, preparation.scope.scopeClaimId, preparation.externalQueryConsentGranted),
+            )
+        requireProfileSelectedRetrievalBoundary(evaluation, preparation.scope, preparation.externalQueryConsentGranted)
+        require(evaluation.generationStatus == RagGenerationStatus.RETRIEVAL_ONLY)
+        val evidence =
+            inDatabaseTransaction {
+                vertexEvidencePort.resolve(ownerUserId, requestId, preparation.scope, evaluation.citations)
+            }
+        return RagV2SearchEvidenceResult(preparation.scope, evaluation.citations, evidence)
+    }
+
+    /** MCP context를 재사용할 때마다 active scope/owner generation을 다시 resolve해 delete·pointer drift를 즉시 거부한다. */
+    fun requireResearchEvidenceCurrent(
+        ownerUserId: String,
+        requestId: String,
+        scope: RagV2RetrievalScope,
+        citations: List<RagV2RetrievedCitation>,
+        expectedEvidence: List<RagV2VertexEvidence>,
+    ) {
+        val current = inDatabaseTransaction { vertexEvidencePort.resolve(ownerUserId, requestId, scope, citations) }
+        require(
+            current.map { it.citationId to it.canonicalTextSha256 } ==
+                expectedEvidence.map { it.citationId to it.canonicalTextSha256 },
+        )
     }
 
     /**
@@ -429,11 +480,18 @@ class RagV2RuntimeService(
                 generationStatus = generation.generationStatus,
                 citationCoverage = 0.0,
                 retrievalFailure = false,
-                guardrailFlags = listOf(generation.failureCode),
+                guardrailFlags =
+                    listOfNotNull(
+                        generation.failureCode.takeIf { it.isNotBlank() },
+                        "INSUFFICIENT_EVIDENCE".takeIf {
+                            generation.answerBasis == StrongLlmAnswerBasis.INSUFFICIENT_EVIDENCE
+                        },
+                    ),
             )
         }
 
-        val citedEvidence = selectedVertexCitations(evaluation.citations, generation.citationIds)
+        val basis = requireNotNull(generation.answerBasis)
+        val citedEvidence = selectedStrongLlmCitations(evaluation.citations, generation.citationIds, basis)
         return inDatabaseTransaction {
             setActor(ownerUserId)
             val createdAt = databaseNow()
@@ -445,16 +503,32 @@ class RagV2RuntimeService(
                     answer = requireNotNull(generation.answer),
                 )
             val canonicalCitations =
-                persistVertexAnsweredHistory(identity, requestId, command, scope, citedEvidence, encrypted)
+                persistStrongLlmAnsweredHistory(
+                    identity,
+                    requestId,
+                    command,
+                    scope,
+                    basis,
+                    generation.citationCoverage,
+                    generation.warnings,
+                    citedEvidence,
+                    encrypted,
+                )
             RagV2Answer(
                 requestId = requestId,
                 answerId = identity.answerId,
                 generationStatus = RagGenerationStatus.ANSWERED,
                 answer = generation.answer,
-                citationCoverage = 1.0,
+                citationCoverage = generation.citationCoverage,
                 citations = canonicalCitations,
                 retrievalFailure = false,
-                guardrailFlags = emptyList(),
+                guardrailFlags =
+                    buildList {
+                        if (generation.answerBasis == StrongLlmAnswerBasis.MODEL_KNOWLEDGE) {
+                            add("MODEL_KNOWLEDGE_ONLY")
+                        }
+                        addAll(generation.warnings)
+                    },
             )
         }
     }
@@ -768,7 +842,12 @@ class RagV2RuntimeService(
             RagGenerationStatus.ANSWERED -> {
                 val answer = requireNotNull(generation.answer)
                 require(answer.toByteArray(Charsets.UTF_8).size in 1..8192)
-                require(generation.citationIds.isNotEmpty())
+                require(generation.answerBasis in setOf(StrongLlmAnswerBasis.EVIDENCE, StrongLlmAnswerBasis.MODEL_KNOWLEDGE))
+                if (generation.answerBasis == StrongLlmAnswerBasis.EVIDENCE) {
+                    require(generation.citationIds.isNotEmpty() && generation.citationCoverage in 0.8..1.0)
+                } else {
+                    require(generation.citationIds.isEmpty() && generation.citationCoverage == 0.0)
+                }
                 require(generation.citationIds.size <= evidence.size)
                 require(generation.citationIds.distinct().size == generation.citationIds.size)
                 require(generation.citationIds.all { it in evidenceCitationIds })
@@ -782,6 +861,13 @@ class RagV2RuntimeService(
                     generation.answer == null &&
                         generation.citationIds.isEmpty() &&
                         FAILURE_CODE.matches(generation.failureCode),
+                )
+            RagGenerationStatus.RETRIEVAL_ONLY ->
+                require(
+                    generation.answer == null &&
+                        generation.citationIds.isEmpty() &&
+                        generation.failureCode.isEmpty() &&
+                        generation.answerBasis == StrongLlmAnswerBasis.INSUFFICIENT_EVIDENCE,
                 )
             else -> throw RagGuardHistoryUnavailableException()
         }
@@ -878,14 +964,17 @@ class RagV2RuntimeService(
     }
 
     /**
-     * V39 persists only AES-GCM ciphertext and citation identities. Vertex response body, prompt, usage payload,
-     * credential and canonical evidence text never become SQL function inputs.
+     * V66 persists only AES-GCM ciphertext and citation identities. MODEL_KNOWLEDGE has no citation row and is
+     * distinguished by its exact flag; provider response, prompt, usage payload and canonical text remain absent.
      */
-    private fun persistVertexAnsweredHistory(
+    private fun persistStrongLlmAnsweredHistory(
         identity: RagHistoryIdentity,
         requestId: String,
         command: RagAskCommand,
         scope: RagV2RetrievalScope,
+        basis: StrongLlmAnswerBasis,
+        citationCoverage: Double,
+        warnings: List<String>,
         citedEvidence: List<RagV2RetrievedCitation>,
         encrypted: RagEncryptedHistoryPayload,
     ): List<JsonNode> {
@@ -906,9 +995,9 @@ class RagV2RuntimeService(
         val canonical =
             jdbc().queryForObject(
                 """
-                SELECT persist_rag_v2_immutable_vertex_history(
+                SELECT public.persist_s4_9_strong_llm_history(
                   :ownerUserId, :answerId, :requestId, :answerMode, :sessionId, :scopeClaimId,
-                  1.0, ARRAY[]::text[], :kekVersion,
+                  :answerBasis, :citationCoverage, CAST(:guardrailFlags AS text[]), :kekVersion,
                   :wrapNonce, :wrappedDek, :wrapTag,
                   :questionNonce, :questionCiphertext, :questionTag,
                   :answerNonce, :answerCiphertext, :answerTag,
@@ -922,6 +1011,14 @@ class RagV2RuntimeService(
                     "answerMode" to command.answerMode.name,
                     "sessionId" to requestId,
                     "scopeClaimId" to scope.scopeClaimId,
+                    "answerBasis" to basis.name,
+                    "citationCoverage" to citationCoverage,
+                    "guardrailFlags" to
+                        if (basis == StrongLlmAnswerBasis.MODEL_KNOWLEDGE) {
+                            arrayOf("MODEL_KNOWLEDGE_ONLY")
+                        } else {
+                            warnings.toTypedArray()
+                        },
                     "kekVersion" to encrypted.kekVersion,
                     "wrapNonce" to encrypted.wrapNonce,
                     "wrappedDek" to encrypted.wrappedDek,
@@ -944,12 +1041,18 @@ class RagV2RuntimeService(
      * model이 실제 문장에 사용한 citation만 history/API로 내보낸다. retrieval top-5 전체를 사용 근거처럼
      * 확장하면 grounded answer의 citation coverage를 과장할 수 있으므로 generator가 검증한 순서를 보존한다.
      */
-    private fun selectedVertexCitations(
+    private fun selectedStrongLlmCitations(
         retrieved: List<RagV2RetrievedCitation>,
         citationIds: List<String>,
+        basis: StrongLlmAnswerBasis,
     ): List<RagV2RetrievedCitation> {
         val byCitationId = retrieved.associateBy { it.citationId }
         require(byCitationId.size == retrieved.size)
+        if (basis == StrongLlmAnswerBasis.MODEL_KNOWLEDGE) {
+            require(citationIds.isEmpty())
+            return emptyList()
+        }
+        require(basis == StrongLlmAnswerBasis.EVIDENCE)
         require(citationIds.isNotEmpty() && citationIds.distinct().size == citationIds.size)
         return citationIds.map { citationId -> requireNotNull(byCitationId[citationId]) }
     }

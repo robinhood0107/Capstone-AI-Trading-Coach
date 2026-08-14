@@ -41,6 +41,7 @@ repositories {
 dependencyManagement {
     imports {
         mavenBom("io.grpc:grpc-bom:1.81.0")
+        mavenBom("org.springframework.ai:spring-ai-bom:2.0.0")
     }
     dependencies {
         // Boot BOM의 다음 patch 반영 전에도 공개 취약점 수정 버전을 우선한다.
@@ -58,6 +59,11 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-data-jpa")
     implementation("org.springframework.boot:spring-boot-starter-data-redis") // Lettuce
     implementation("org.springframework.boot:spring-boot-starter-security")
+    implementation("org.springframework.security:spring-security-oauth2-authorization-server")
+    implementation("org.springframework.boot:spring-boot-starter-oauth2-resource-server")
+    implementation("org.springframework.ai:spring-ai-starter-mcp-server-webmvc")
+    implementation("org.jsoup:jsoup:1.21.2")
+    implementation("org.apache.pdfbox:pdfbox:3.0.6")
     implementation("org.springframework.boot:spring-boot-starter-actuator")
     implementation("org.springframework.boot:spring-boot-starter-aspectj")
     implementation("org.springframework.boot:spring-boot-starter-kafka")

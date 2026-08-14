@@ -10,7 +10,7 @@
 의도적으로 stable error로 닫힌 공개 표면만, `CONTRACT_ONLY`는 schema/fixture만 뜻한다.
 `IMPLEMENTED_DRAFT`는 current working tree에 코드·migration·자동 검증이 있으나 아직 PR/main
 병합이나 provider activation을 뜻하지 않는다.
-`LIVE_VERIFIED`는 exact HEAD·승인 packet·물리 호출 영수증이 있어야만 사용할 수 있다. 현재 fresh
+`LIVE_VERIFIED`는 bound execution manifest·물리 호출 영수증이 있어야만 사용할 수 있다. 현재 fresh
 namespace에서는 public Voyage RAG와 삭제까지 끝난 synthetic owner Voyage one-shot에만 사용한다.
 Vertex와 KIS_MOCK 물리 주문에는 사용하지 않는다.
 

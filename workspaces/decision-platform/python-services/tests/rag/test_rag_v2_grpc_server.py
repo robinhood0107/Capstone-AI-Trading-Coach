@@ -171,13 +171,24 @@ def test_voyage_only_local_runtime_configuration_creates_no_bge_fallback_and_req
     assert result.voyage_physical_calls == 0
 
 
+@pytest.mark.parametrize(
+    ("question", "dense_only"),
+    [
+        ("공개 근거를 비교해 보여 주세요.", False),
+        (
+            "분산투자에서 자산 간 상관관계가 포트폴리오 위험에 미치는 영향을 근거에 따라 설명해 주세요.",
+            True,
+        ),
+    ],
+)
 def test_voyage_profile_composes_packet_lease_rrf_and_loopback_grpc_without_bge_fallback(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    question: str,
+    dense_only: bool,
 ) -> None:
     """The enabled profile path permits one fake provider send only after the exact packet/lease chain."""
 
-    question = "공개 근거를 비교해 보여 주세요."
     scope = _voyage_scope()
     _write_voyage_query_runtime(tmp_path)
     tokenizer_sha256 = _write_voyage_official_tokenizer(tmp_path)
@@ -204,7 +215,7 @@ def test_voyage_profile_composes_packet_lease_rrf_and_loopback_grpc_without_bge_
     lease = _Lease()
     reservations = _Reservations(lease)
     sender = _Sender(question)
-    adapter = _RetrievalAdapter(scope)
+    adapter = _RetrievalAdapter(scope, dense_only=dense_only)
     monkeypatch.setattr(
         grpc_server_module,
         "PsycopgPreS5VoyageQueryUsageRepository",
@@ -334,16 +345,19 @@ class _Sender:
 
 
 class _RetrievalAdapter:
-    def __init__(self, scope: RagV2BundleScope) -> None:
+    def __init__(self, scope: RagV2BundleScope, *, dense_only: bool = False) -> None:
         self._exact = _candidate(1, scope, source_scope="EXACT30")
         self._oa = _candidate(2, scope, source_scope="OA112")
+        self._dense_only = dense_only
         self.dense_vectors: list[tuple[float, ...]] = []
 
     def retrieve_exact(self, **_: object) -> RagV2ChannelResult:
-        return RagV2ChannelResult(channel="exact", items=(self._exact,), complete=True)
+        items = () if self._dense_only else (self._exact,)
+        return RagV2ChannelResult(channel="exact", items=items, complete=True)
 
     def retrieve_lexical(self, **_: object) -> RagV2ChannelResult:
-        return RagV2ChannelResult(channel="lexical", items=(self._oa,), complete=True)
+        items = () if self._dense_only else (self._oa,)
+        return RagV2ChannelResult(channel="lexical", items=items, complete=True)
 
     def retrieve_dense(self, *, query_vector: tuple[float, ...], **_: object) -> RagV2ChannelResult:
         self.dense_vectors.append(query_vector)

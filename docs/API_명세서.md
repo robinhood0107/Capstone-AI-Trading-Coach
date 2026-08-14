@@ -72,11 +72,13 @@ hash 권한이 0이다.
 
 ### 0.3 Pre-S5 public activation과 owner profile authority
 
-2026-08-14 current local execution은 fresh DB V62에서 public RAG `FULL_READY`, active profile
+2026-08-14 current local execution은 fresh DB V64에서 public RAG `FULL_READY`, active profile
 `voyage_context_4_1024_v1`, sources/chunks `142/7,871`, document batch `63/63 COMMITTED`,
 EXACT30/OA112 evaluation `2/2 PASSED`를 보존한다. public Voyage document/evaluation/production query는
-재실행하지 않고 public BGE embedding inference는 계속 0이다. V63은 release 전 정상 Flyway 경로로
-적용해야 하며, 새 public migration·V64·OpenAPI/proto 변경을 뜻하지 않는다.
+재실행하지 않고 public BGE embedding inference는 계속 0이다. V64는 정상 Flyway 경로로 적용됐고
+기존 public aggregate 보존과 `v2=120초 / v3=300초` scope를 provider call 0으로 검증했다. V64는 public
+OpenAPI/proto 변경을 뜻하지 않으며 exact approval 왕복용 provider
+preparation scope만 5분으로 발급하고 기존 2분 retrieval issuer를 보존한다.
 
 숨겨진 owner import-ticket control-plane request/response는 v2이며 request의 exact shape는 다음과 같다.
 
@@ -114,7 +116,7 @@ provider/network call이 0이다.
 - `pre-s5-final-gate author-kis-quote|execute-kis-quote|author-window-b|verify-release`
 
 `verify-release`는 ignored `pre-s5-release-ledger/v2`의 marker를 단독 신뢰하지 않는다. fixed-path 0600
-owner BGE/KIS V3/required CI/security/tracked-audit receipt digest와 fresh V63 DB의 public·owner·S4.8 및
+owner BGE/KIS V3/required CI/security/tracked-audit receipt digest와 fresh V64 DB의 public·owner·S4.8 및
 Window B Voyage/Vertex `COMMITTED` aggregate를 모두 대조한 뒤에만 `OPEN`을 반환한다.
 
 거래시간 외에는 사용자가 명시 승인한 경우에만 KIS V3의 동일한 7단계를 provider call 0의 결정적
@@ -1641,7 +1643,7 @@ consent는 `GRANT | REVOKE`, disclosure/policy digest만 받고 owner와 시각�
 남긴다. raw JWT, owner ID, DB credential, owner raw path는 BAT command line에 노출하지 않는다.
 
 `POST /api/v2/rag/vertex-preparations`는 enabled Vertex target에서만 exact `X-Request-Id: req_...`와
-기존 `/ask`의 동일 parsed command를 받아 current immutable bundle의 2분 scope를 content-free로 반환한다. 응답은
+기존 `/ask`의 동일 parsed command를 받아 current immutable bundle의 provider preparation 전용 5분 scope를 content-free로 반환한다. 응답은
 `scopeClaimId`, question HMAC, consent/policy digest, profile, expiry만 포함하며 owner ID, raw question,
 raw evidence는 저장하거나 반환하지 않는다. operator는 이 receipt와 독립 external evidence를 이용해
 local-only approval packet을 만들고, 뒤의 `/ask`에는 같은 request ID·parsed command와

@@ -187,6 +187,67 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
     }
 
     @Test
+    fun `S4 9 public MCP scope never reads owner overlay and remains valid for fifteen minutes`() {
+        seedEvaluatedPublicComponents()
+        assertTrue(
+            callLong(
+                "decision_rag_admin",
+                RAG_ADMIN_PASSWORD,
+                """
+                select activate_rag_v2_immutable_public_base(
+                  '$EXACT_GENERATION', '$OA_GENERATION', 1, '$PUBLIC_ACTIVATION_RECEIPT'
+                )
+                """.trimIndent(),
+            ) > 1L,
+        )
+        adminConnection().use { connection ->
+            connection.createStatement().use { statement ->
+                statement.execute(
+                    """
+                    insert into rag_v2_immutable_owner_bundle_pointers (
+                      owner_user_id, state, active_bundle_id, bundle_version
+                    ) values ('usr_demo_user', 'BUILDING', null, 7)
+                    """.trimIndent(),
+                )
+            }
+        }
+
+        val scopeClaimId = issueMcpRetrievalScope(includeOwner = false)
+        adminConnection().use { connection ->
+            assertEquals(
+                "false||0|900",
+                queryString(
+                    connection,
+                    """
+                    select owner_scope_authorized::text || '|' ||
+                           coalesce(owner_private_generation_id, '') || '|' ||
+                           owner_pointer_version::text || '|' ||
+                           extract(epoch from (expires_at - created_at))::bigint::text
+                    from rag_v2_retrieval_scope_claims
+                    where scope_claim_id = '$scopeClaimId'
+                    """.trimIndent(),
+                ),
+            )
+        }
+        DriverManager.getConnection(postgres.jdbcUrl, "decision_rag_query", RAG_QUERY_PASSWORD).use { connection ->
+            assertEquals(
+                scopeClaimId,
+                callSingleRow(
+                    connection,
+                    """
+                    select scope_claim_id
+                    from read_rag_v2_retrieval_scope_v2(
+                      '$scopeClaimId', 'usr_demo_user', 'req_mcp_public_scope_0001'
+                    )
+                    """.trimIndent(),
+                ),
+            )
+        }
+        val ownerDenied = assertThrows<SQLException> { issueMcpRetrievalScope(includeOwner = true) }
+        assertEquals("55000", ownerDenied.sqlState)
+    }
+
+    @Test
     fun `ticket is owner policy bound expires in five minutes and is consumed once`() {
         val ticketId = "rti_11111111111111111111111111111111"
         val secondTicketId = "rti_22222222222222222222222222222222"
@@ -2816,6 +2877,33 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
                         select scope_claim_id
                         from issue_rag_v2_retrieval_scope(
                           '$ownerUserId', '$sessionId', array['FINANCIAL_ENGINEERING']
+                        )
+                        """.trimIndent(),
+                    )
+                connection.commit()
+                scopeClaimId
+            } catch (error: Throwable) {
+                connection.rollback()
+                throw error
+            }
+        }
+
+    private fun issueMcpRetrievalScope(includeOwner: Boolean): String =
+        DriverManager.getConnection(postgres.jdbcUrl, "decision_app", APP_PASSWORD).use { connection ->
+            connection.autoCommit = false
+            try {
+                connection.prepareStatement("select set_config('app.actor_user_id', ?, false)").use { statement ->
+                    statement.setString(1, "usr_demo_user")
+                    statement.execute()
+                }
+                val scopeClaimId =
+                    callSingleRow(
+                        connection,
+                        """
+                        select scope_claim_id
+                        from issue_s4_9_mcp_retrieval_scope(
+                          'usr_demo_user', 'req_mcp_public_scope_0001',
+                          array['FINANCIAL_ENGINEERING'], $includeOwner
                         )
                         """.trimIndent(),
                     )

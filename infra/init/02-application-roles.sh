@@ -1310,6 +1310,14 @@ BEGIN
         TO decision_app;
     END IF;
     IF to_regprocedure(
+        'public.issue_rag_v2_retrieval_scope_v3(text,text,text[])'
+    ) IS NOT NULL THEN
+        -- V64 provider preparation 전용 scope는 5분 TTL issuer만 추가로 노출한다.
+        GRANT EXECUTE ON FUNCTION
+            issue_rag_v2_retrieval_scope_v3(text, text, text[])
+        TO decision_app;
+    END IF;
+    IF to_regprocedure(
         'public.read_rag_v2_retrieval_scope(text,text,text)'
     ) IS NOT NULL
        AND to_regprocedure(

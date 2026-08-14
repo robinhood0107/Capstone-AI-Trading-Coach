@@ -564,7 +564,7 @@ class RagV2RuntimeService(
             .query(
                 """
                 SELECT *
-                FROM issue_rag_v2_retrieval_scope_v2(
+                FROM issue_rag_v2_retrieval_scope_v3(
                   :ownerUserId,
                   :requestId,
                   ARRAY(SELECT jsonb_array_elements_text(CAST(:topicsJson AS jsonb)))

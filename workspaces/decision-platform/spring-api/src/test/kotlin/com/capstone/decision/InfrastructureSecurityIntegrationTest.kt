@@ -135,6 +135,7 @@ class InfrastructureSecurityIntegrationTest {
                 "issue_rag_v2_immutable_import_ticket_v2(text,text,text,text,text)",
                 "issue_rag_v2_immutable_owner_delete_ticket(text,text,text)",
                 "issue_rag_v2_retrieval_scope_v2(text,text,text[])",
+                "issue_rag_v2_retrieval_scope_v3(text,text,text[])",
                 "read_rag_v2_vertex_prepared_scope_v2(text,text,text,text[])",
             ).forEach { function ->
                 assertTrue(

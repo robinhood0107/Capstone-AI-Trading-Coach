@@ -41,7 +41,7 @@ data class RagV2VertexGenerationCommand(
 
 /**
  * Vertex physical-call packet을 만들기 직전에 authenticated owner에게만 주는 content-free preparation이다.
- * question/evidence/owner identity는 저장하거나 응답에 넣지 않고, 2분 retrieval claim과 HMAC만 packet을
+ * question/evidence/owner identity는 저장하거나 응답에 넣지 않고, 5분 retrieval claim과 HMAC만 packet을
  * stable하게 결속한다.
  */
 data class RagV2VertexPreparation(
@@ -56,7 +56,7 @@ data class RagV2VertexPreparation(
     val policyDigest: String,
     val processorSetDigest: String,
     val expiresAt: Instant,
-    val scopeTtlSeconds: Int = 120,
+    val scopeTtlSeconds: Int = 300,
     val rawQuestionStored: Boolean = false,
     val rawEvidenceStored: Boolean = false,
 )

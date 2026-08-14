@@ -122,14 +122,14 @@ class RagSourceRegistryMigrationIntegrationTest {
     }
 
     @Test
-    fun `V62 through V67 forward repairs preserve empty owner scope and ACL`() {
+    fun `V62 through V69 forward repairs preserve empty owner scope and ACL`() {
         withPreparedDatabase("empty_owner_generation_scope_upgrade") { jdbcUrl ->
             flyway(jdbcUrl, target = "62").migrate()
             flyway(jdbcUrl).migrate()
 
             adminConnection(jdbcUrl).use { connection ->
                 assertThat(queryString(connection, "select max(version::integer)::text from flyway_schema_history where success"))
-                    .isEqualTo("67")
+                    .isEqualTo("69")
                 assertThat(
                     queryString(
                         connection,
@@ -157,7 +157,7 @@ class RagSourceRegistryMigrationIntegrationTest {
     }
 
     @Test
-    fun `V65 to V67 adds only S4 9 boundaries and preserves existing rows`() {
+    fun `V65 to V69 adds only S4 9 boundaries and preserves existing rows`() {
         withPreparedDatabase("s49_forward_upgrade") { jdbcUrl ->
             flyway(jdbcUrl, target = "65").migrate()
             adminConnection(jdbcUrl).use { connection ->
@@ -173,7 +173,7 @@ class RagSourceRegistryMigrationIntegrationTest {
 
             adminConnection(jdbcUrl).use { connection ->
                 assertThat(queryString(connection, "select max(version::integer)::text from flyway_schema_history where success"))
-                    .isEqualTo("67")
+                    .isEqualTo("69")
                 assertThat(queryString(connection, "select count(*)::text from users where user_id = 'usr_s49_preserved'"))
                     .isEqualTo("1")
                 assertThat(queryString(connection, "select count(*)::text from public.s4_9_saved_answer_history"))
@@ -196,11 +196,16 @@ class RagSourceRegistryMigrationIntegrationTest {
             }
             appConnection(jdbcUrl).use { connection ->
                 connection.createStatement().use { statement ->
-                    statement.execute(
-                        "select public.sync_s4_9_mcp_oauth_client(" +
-                            "'mcp_s49_test','S4.9 test',repeat('1',64)," +
-                            "array['http://127.0.0.1/callback'],array['mcp:rag.public'],'STATIC_ALLOWLIST')",
-                    )
+                    statement
+                        .executeQuery(
+                            "with sync as materialized (select public.sync_s4_9_mcp_oauth_client(" +
+                                "'mcp_s49_test','S4.9 test',repeat('1',64)," +
+                                "array['http://127.0.0.1/callback'],array['mcp:rag.public'],'STATIC_ALLOWLIST') as ignored) " +
+                                "select count(*) = 1 from sync",
+                        ).use { result ->
+                            assertTrue(result.next())
+                            assertTrue(result.getBoolean(1))
+                        }
                     statement.execute(
                         "select public.upsert_s4_9_mcp_oauth_code_hash(" +
                             "repeat('a',64),'mcp_s49_test','usr_s49_oauth',1,'http://127.0.0.1/callback'," +
@@ -385,7 +390,7 @@ class RagSourceRegistryMigrationIntegrationTest {
                 assertThat(queryStrings(connection, normalizedTableQuery))
                     .containsAll(expectedTables)
                 assertThat(queryString(connection, "select max(version::integer) from flyway_schema_history where success"))
-                    .isEqualTo("67")
+                    .isEqualTo("69")
 
                 expectedTables.forEach { table ->
                     assertThat(

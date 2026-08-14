@@ -9,9 +9,11 @@ class S49McpStrongLlmMigrationContractTest {
     private val directory = Path.of("src/main/resources/db/migration")
     private val path = directory.resolve("V66__s4_9_mcp_strong_llm_boundary.sql")
     private val repairPath = directory.resolve("V67__s4_9_mcp_public_scope_forward_repair.sql")
+    private val runtimeVoyagePath = directory.resolve("V68__s4_9_runtime_voyage_query_authorization.sql")
+    private val emptyContextPath = directory.resolve("V69__s4_9_mcp_empty_research_context_scope_revalidation.sql")
 
     @Test
-    fun `V66 base and V67 public scope repair are forward only`() {
+    fun `V66 through V69 S4 9 migrations are forward only`() {
         val versions =
             Files.list(directory).use { paths ->
                 paths
@@ -21,9 +23,11 @@ class S49McpStrongLlmMigrationContractTest {
                     .toList()
             }
 
-        assertThat(versions.max()).isEqualTo(67)
+        assertThat(versions.max()).isEqualTo(69)
         assertThat(versions.count { it == 66 }).isEqualTo(1)
         assertThat(versions.count { it == 67 }).isEqualTo(1)
+        assertThat(versions.count { it == 68 }).isEqualTo(1)
+        assertThat(versions.count { it == 69 }).isEqualTo(1)
     }
 
     @Test
@@ -77,5 +81,53 @@ class S49McpStrongLlmMigrationContractTest {
             "REVOKE ALL PRIVILEGES ON TABLE public.rag_v2_retrieval_scope_claims FROM decision_app",
         )
         assertThat(sql).doesNotContain("DROP TABLE", "TRUNCATE TABLE", "DELETE FROM")
+    }
+
+    @Test
+    fun `V68 replaces manual release packets with authenticated one shot runtime authorization`() {
+        val sql = Files.readString(runtimeVoyagePath)
+
+        assertThat(sql).contains(
+            "s4_9_voyage_query_authorizations",
+            "s4_9_voyage_query_usage_links",
+            "authorize_s4_9_runtime_voyage_query",
+            "reserve_s4_9_runtime_voyage_query_usage",
+            "session_user <> 'decision_app'",
+            "session_user <> 'decision_rag_writer'",
+            "consent_row.action <> 'GRANT'",
+            "embedding_profile_id = 'voyage_context_4_1024_v1'",
+            "official_tokenizer_sha256",
+            "evaluation_component_scope",
+            "'RUNTIME'",
+            "FORCE ROW LEVEL SECURITY",
+            "SECURITY DEFINER",
+            "REVOKE ALL PRIVILEGES ON TABLE",
+        )
+        assertThat(sql).doesNotContain(
+            "question text",
+            "raw_response",
+            "access_token",
+            "DROP TABLE",
+            "TRUNCATE TABLE",
+            "DELETE FROM",
+            "GRANT SELECT ON",
+        )
+    }
+
+    @Test
+    fun `V69 revalidates empty public MCP context without reading an owner pointer`() {
+        val sql = Files.readString(emptyContextPath)
+
+        assertThat(sql).contains(
+            "CREATE OR REPLACE FUNCTION public.read_rag_v2_vertex_prepared_scope_v2",
+            "IF NOT claim_row.owner_scope_authorized",
+            "claim_row.owner_private_generation_id IS NOT NULL",
+            "claim_row.owner_pointer_version <> 0",
+            "S4.9 MCP public prepared scope is invalid",
+            "pointer.pointer_version = claim_row.public_pointer_version",
+            "GRANT EXECUTE ON FUNCTION public.read_rag_v2_vertex_prepared_scope_v2",
+            "REVOKE ALL PRIVILEGES ON TABLE public.rag_v2_retrieval_scope_claims FROM decision_app",
+        )
+        assertThat(sql).doesNotContain("DROP TABLE", "TRUNCATE TABLE", "DELETE FROM", "GRANT SELECT ON")
     }
 }

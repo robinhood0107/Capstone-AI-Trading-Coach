@@ -38,6 +38,6 @@ class PreS5RetrievalScopeTtlForwardRepairMigrationContractTest {
                     .toList()
             }
 
-        assertThat(versions.takeLast(4)).containsExactly(64, 65, 66, 67)
+        assertThat(versions.filter { it in 64..67 }).containsExactly(64, 65, 66, 67)
     }
 }

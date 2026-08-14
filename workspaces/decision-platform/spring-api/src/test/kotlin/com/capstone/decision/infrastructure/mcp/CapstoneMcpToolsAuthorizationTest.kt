@@ -29,7 +29,7 @@ class CapstoneMcpToolsAuthorizationTest {
         val result = RagV2SearchEvidenceResult(scope(), emptyList(), emptyList())
         every { fixture.ragService.searchEvidence(any(), any(), any(), false) } returns result
         val context = context(result.scope)
-        every { fixture.contexts.create(any(), any(), any(), any(), any(), any(), any(), any()) } returns
+        every { fixture.contexts.create(any(), any(), any(), any(), any(), any(), any(), any(), any()) } returns
             (context to "receipt")
         every { fixture.contexts.evidenceSnapshot(context) } returns emptyList()
 
@@ -114,6 +114,7 @@ class CapstoneMcpToolsAuthorizationTest {
             oauthClientId = "mcp_demo_client",
             question = "question",
             answerMode = "CONCISE",
+            topics = listOf("RISK"),
             requestId = "req_mcp_public_scope_0001",
             retrievalScope = scope,
             retrievalCitations = emptyList(),

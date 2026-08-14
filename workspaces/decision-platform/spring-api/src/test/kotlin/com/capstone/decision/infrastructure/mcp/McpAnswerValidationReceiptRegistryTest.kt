@@ -64,6 +64,7 @@ class McpAnswerValidationReceiptRegistryTest {
             oauthClientId = "mcp_demo_client",
             question = "question",
             answerMode = "CONCISE",
+            topics = listOf("RISK"),
             requestId = "req_mcp_validation_0001",
             retrievalScope =
                 RagV2RetrievalScope(

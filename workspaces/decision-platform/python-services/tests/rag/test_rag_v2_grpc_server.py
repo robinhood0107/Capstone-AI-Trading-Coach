@@ -14,6 +14,7 @@ import pytest
 import app.rag.rag_v2_grpc_server as grpc_server_module
 from app.generated import rag_v2_pb2, rag_v2_pb2_grpc
 from app.rag.pre_s5_provider_control import (
+    PreS5VoyageQueryActivation,
     load_pre_s5_voyage_query_runtime_configuration,
 )
 from app.rag.pre_s5_voyage_transport import PreS5VoyageHttpRequest, PreS5VoyageHttpResponse
@@ -280,6 +281,76 @@ def test_voyage_profile_composes_packet_lease_rrf_and_loopback_grpc_without_bge_
     assert adapter.dense_vectors == [(1.0,) + (0.0,) * 1023]
 
 
+def test_s4_9_runtime_voyage_path_uses_database_authorization_without_manual_packet(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scope = _voyage_scope()
+    question = "분산투자와 상관관계를 근거에 따라 설명해 주세요."
+    _write_voyage_query_runtime(tmp_path)
+    tokenizer_sha256 = _write_voyage_official_tokenizer(tmp_path)
+    writer_secret = tmp_path / "secrets"
+    writer_secret.mkdir(mode=0o700)
+    writer_dsn_path = writer_secret / "rag-v2-voyage-query-writer-dsn"
+    writer_dsn_path.write_text("postgresql://decision_rag_writer@localhost/rag", encoding="utf-8")
+    os.chmod(writer_dsn_path, 0o600)
+    runtime = load_pre_s5_voyage_query_runtime_configuration(local_root=tmp_path)
+    settings = RagV2GrpcServerSettings(
+        bind_address="127.0.0.1:50054",
+        shared_secret=_SECRET,
+        query_database_dsn="postgresql://decision_rag_query@localhost/rag",
+        bge_packet_root=None,
+        bge_enabled=False,
+        voyage_query_runtime=runtime,
+        s4_9_runtime_voyage_enabled=True,
+        s4_9_voyage_tokenizer_sha256=tokenizer_sha256,
+    )
+    lease = _Lease()
+    reservations = _Reservations(lease)
+    sender = _Sender(question)
+    adapter = _RetrievalAdapter(scope, dense_only=True)
+    monkeypatch.setattr(
+        grpc_server_module,
+        "PsycopgPreS5VoyageQueryUsageRepository",
+        lambda *, database_dsn: reservations,
+    )
+    monkeypatch.setattr(grpc_server_module, "UrllibPreS5VoyageHttpSender", lambda: sender)
+
+    engine = build_rag_v2_engine(
+        settings=settings,
+        scope_reader=_ScopeReader(scope),
+        retrieval_adapter=adapter,
+        environment={"VOYAGE_API_KEY": "test-key"},
+    )
+    result = engine.ask(
+        rag_v2_pb2.RagAskRequest(
+            request_id=scope.session_id,
+            owner_scope_claim=scope.claim_id,
+            question=question,
+            answer_mode="CONCISE",
+            topics=["RISK"],
+            consent_context=rag_v2_pb2.RagConsentContext(
+                granted=True,
+                policy_version="EXTERNAL_AI_RAG_V2",
+            ),
+        )
+    )
+
+    assert result.status is RagV2RpcStatus.RETRIEVAL_ONLY
+    assert result.provider_physical_total == 1
+    assert result.voyage_physical_calls == 1
+    assert len(reservations.runtime_requests) == 1
+    assert reservations.runtime_requests[0] == (
+        scope.claim_id,
+        hashlib.sha256(question.encode()).hexdigest(),
+        tokenizer_sha256,
+    )
+    assert not (tmp_path / "control" / "pre-s5-voyage-query-activation.json").exists()
+    assert lease.claims == 1
+    assert len(lease.commits) == 1
+    assert len(sender.requests) == 1
+
+
 @dataclass(frozen=True)
 class _LoopbackSettings:
     bind_address: str = "127.0.0.1:0"
@@ -313,11 +384,44 @@ class _Reservations:
     def __init__(self, lease: _Lease) -> None:
         self._lease = lease
         self.activations: list[object] = []
+        self.runtime_requests: list[tuple[str, str, str]] = []
 
     def reserve(self, *, activation: object, evaluation_component_scope: str | None = None) -> _Lease:
         del evaluation_component_scope
         self.activations.append(activation)
         return self._lease
+
+    def reserve_s4_9_runtime(
+        self,
+        *,
+        scope_claim_id: str,
+        question_sha256: str,
+        tokenizer_sha256: str,
+    ) -> tuple[PreS5VoyageQueryActivation, _Lease]:
+        self.runtime_requests.append((scope_claim_id, question_sha256, tokenizer_sha256))
+        now = datetime.now(UTC)
+        activation = PreS5VoyageQueryActivation(
+            packet_sha256="1" * 64,
+            nonce_sha256="2" * 64,
+            query_sha256=question_sha256,
+            scope_claim_sha256=hashlib.sha256(scope_claim_id.encode()).hexdigest(),
+            rate_evidence_sha256="3" * 64,
+            tokenizer_sha256=tokenizer_sha256,
+            provider="VOYAGE",
+            operation="CONTEXTUALIZED_QUERY_EMBEDDING",
+            origin="https://api.voyageai.com",
+            endpoint="/v1/contextualizedembeddings",
+            expires_at=now + timedelta(minutes=2),
+            logical_call_cap=1,
+            physical_call_cap=1,
+            token_cap=8_192,
+            byte_cap=4_194_304,
+            cost_cap_microusd=8_192,
+            input_microusd_per_token=1,
+            retry_count=0,
+            raw_artifact_count=0,
+        )
+        return activation, self._lease
 
 
 class _Sender:

@@ -71,6 +71,26 @@ class PreS5VertexOneShotHttpsTransportTest {
     }
 
     @Test
+    fun `strong LLM response cap reaches the existing one shot socket`() {
+        val channel =
+            RecordingChannel(
+                "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nContent-Type: application/json\r\n\r\n{}"
+                    .toByteArray(StandardCharsets.US_ASCII),
+            )
+        val factory = RecordingFactory(channel)
+
+        val response =
+            PreS5VertexOneShotHttpsTransport(factory).execute(
+                request(),
+                maximumResponseBytes = 128_000,
+            )
+
+        assertThat(response.statusCode).isEqualTo(200)
+        assertThat(factory.openCount).isEqualTo(1)
+        assertThat(channel.writeCount).isEqualTo(1)
+    }
+
+    @Test
     fun `one shot transport rejects repeated content framing headers`() {
         val channel =
             RecordingChannel(

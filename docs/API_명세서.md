@@ -77,7 +77,7 @@ hash 권한이 0이다.
 EXACT30/OA112 evaluation `2/2 PASSED`를 보존한다. public Voyage document/evaluation/production query는
 재실행하지 않고 public BGE embedding inference는 계속 0이다. V64는 정상 Flyway 경로로 적용됐고
 기존 public aggregate 보존과 `v2=120초 / v3=300초` scope를 provider call 0으로 검증했다. V64는 public
-OpenAPI/proto 변경을 뜻하지 않으며 exact approval 왕복용 provider
+OpenAPI/proto 변경을 뜻하지 않으며 provider
 preparation scope만 5분으로 발급하고 기존 2분 retrieval issuer를 보존한다.
 
 숨겨진 owner import-ticket control-plane request/response는 v2이며 request의 exact shape는 다음과 같다.

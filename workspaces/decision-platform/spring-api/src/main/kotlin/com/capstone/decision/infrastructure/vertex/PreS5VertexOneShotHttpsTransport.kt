@@ -244,8 +244,13 @@ internal class PreS5VertexOneShotHttpsTransport(
             val name = line.substring(0, separator).lowercase()
             val value = line.substring(separator + 1).trim()
             require(HEADER_NAME.matches(name) && value.isNotEmpty() && value.all { it.code in 0x20..0x7e })
-            require(name !in headers)
-            headers[name] = value
+            // Content framing의 중복은 request smuggling 경계라 계속 거부한다. Vary처럼 반복 가능한
+            // bounded metadata는 사용하지 않으므로 첫 값만 보존해 정상 Google 응답을 폐기하지 않는다.
+            if (name in headers) {
+                require(name !in SINGLETON_RESPONSE_HEADERS)
+            } else {
+                headers[name] = value
+            }
         }
         throw PreS5VertexOneShotHttpsTransportException()
     }
@@ -338,6 +343,7 @@ internal class PreS5VertexOneShotHttpsTransport(
         val STATUS_LINE = Regex("^HTTP/1\\.1 ([1-5][0-9]{2})(?: .*)?$")
         val CHUNK_SIZE = Regex("^[0-9A-Fa-f]{1,8}$")
         val RESERVED_REQUEST_HEADERS = setOf("host", "connection", "content-length", "transfer-encoding", "authorization")
+        val SINGLETON_RESPONSE_HEADERS = setOf("content-length", "transfer-encoding")
         const val MINIMUM_BEARER_TOKEN_BYTES = 16
         const val MAXIMUM_BEARER_TOKEN_BYTES = 8 * 1024
     }

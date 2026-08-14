@@ -47,10 +47,8 @@ class RagV2RuntimeService(
     private val vertexGenerationPort: RagV2VertexGenerationPort,
     private val vertexQuestionFingerprintPort: RagV2VertexQuestionFingerprintPort,
     private val objectMapper: ObjectMapper,
-    transactionManager: PlatformTransactionManager,
+    private val transactionManagerProvider: ObjectProvider<PlatformTransactionManager>,
 ) {
-    private val transactionTemplate = TransactionTemplate(transactionManager)
-
     /**
      * owner-private overlay 상태는 DB actor setting과 definer function으로만 읽는다.
      * 원본 파일명, 경로, hash receipt는 status API에 절대 노출하지 않는다.
@@ -982,7 +980,10 @@ class RagV2RuntimeService(
 
     /** 외부 provider 호출 사이에는 PostgreSQL transaction을 열어 두지 않는다. */
     private fun <T> inDatabaseTransaction(block: () -> T): T =
-        transactionTemplate.execute { block() }
+        TransactionTemplate(
+            transactionManagerProvider.getIfAvailable()
+                ?: throw RagGuardHistoryUnavailableException(),
+        ).execute { block() }
             ?: throw RagGuardHistoryUnavailableException()
 
     private fun ResultSet.instant(column: String) = getObject(column, OffsetDateTime::class.java).toInstant()

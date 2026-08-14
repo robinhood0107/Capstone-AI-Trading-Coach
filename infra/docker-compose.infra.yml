@@ -41,6 +41,55 @@ services:
       timeout: 3s
       retries: 10
 
+  searxng:
+    image: ghcr.io/searxng/searxng:2026.7.28-c01178d03@sha256:80622959f0f3512e6623d6bdbcea9f13c8d22c8d9715c498d0ae2be1c8535930
+    profiles: ["s4-9-web"]
+    environment:
+      SEARXNG_BASE_URL: http://searxng:8080/
+      SEARXNG_SECRET: ${SEARXNG_SECRET:?SEARXNG_SECRET is required}
+    volumes:
+      - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
+    expose: ["8080"]
+    ports: ["127.0.0.1:${SEARXNG_HOST_PORT:-58080}:8080"]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/healthz >/dev/null"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  mcp-searxng:
+    image: isokoliuk/mcp-searxng:1.15.0@sha256:a1479fd040f54d977df0d2426924723a4f58742bcf1a037e7e098ff22d0b25dc
+    profiles: ["s4-9-web"]
+    depends_on:
+      searxng:
+        condition: service_healthy
+    environment:
+      SEARXNG_URL: http://searxng:8080
+      SEARXNG_MAX_RESULTS: "10"
+      SEARXNG_DEFAULT_RESPONSE_FORMAT: json
+      SEARXNG_LITE_TOOLS: "true"
+      MCP_HTTP_HOST: 0.0.0.0
+      MCP_HTTP_PORT: "3000"
+      MCP_HTTP_STATELESS: "true"
+      MCP_HTTP_HARDEN: "true"
+      MCP_HTTP_AUTH_TOKEN: ${MCP_SEARXNG_AUTH_TOKEN:?MCP_SEARXNG_AUTH_TOKEN is required}
+      MCP_HTTP_ALLOWED_ORIGINS: http://spring-api:8080,http://127.0.0.1:8080
+      MCP_HTTP_ALLOWED_HOSTS: mcp-searxng,mcp-searxng:3000,127.0.0.1,127.0.0.1:3000
+    expose: ["3000"]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    healthcheck:
+      test: ["CMD-SHELL", "wget --header=\"Authorization: Bearer $${MCP_HTTP_AUTH_TOKEN}\" -qO- http://127.0.0.1:3000/health >/dev/null"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
   kafka:
     image: apache/kafka:3.7.0@sha256:41c20d65b0a2180b9deca056d47540771752e69fe9225d5748dd65a25a9675d7
     profiles: ["kafka"]        # P1(S7.1)부터만 기동

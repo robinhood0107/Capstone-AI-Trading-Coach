@@ -10,9 +10,11 @@ import com.capstone.decision.infrastructure.grpc.RagGrpcProperties
 import com.capstone.decision.infrastructure.grpc.RagV2GrpcProperties
 import com.capstone.decision.infrastructure.idempotency.IdempotencyProperties
 import com.capstone.decision.infrastructure.idempotency.IdempotencyService
+import com.capstone.decision.infrastructure.mcp.RagWebToolProperties
 import com.capstone.decision.infrastructure.principle.PrincipleProperties
 import com.capstone.decision.infrastructure.rag.RagGuardHistoryProperties
 import com.capstone.decision.infrastructure.vertex.RagV2VertexProperties
+import com.capstone.decision.infrastructure.vertex.S49StrongLlmProperties
 import com.capstone.decision.infrastructure.web.HttpRequestProperties
 import com.capstone.decision.infrastructure.web.RequestBodyLimitFilter
 import com.capstone.decision.infrastructure.web.RequestIdFilter
@@ -23,6 +25,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.context.annotation.DependsOn
+import org.springframework.core.annotation.Order
 import org.springframework.http.HttpMethod
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity
 import org.springframework.security.config.annotation.web.builders.HttpSecurity
@@ -59,6 +62,8 @@ import java.security.MessageDigest
     RagGrpcProperties::class,
     RagV2GrpcProperties::class,
     RagV2VertexProperties::class,
+    RagWebToolProperties::class,
+    S49StrongLlmProperties::class,
 )
 class SecurityConfig {
     @Bean
@@ -216,6 +221,7 @@ class SecurityConfig {
     }
 
     @Bean
+    @Order(4)
     fun securityFilterChain(
         http: HttpSecurity,
         jwtService: JwtService,
@@ -267,6 +273,8 @@ class SecurityConfig {
                 authorize
                     // 로그인과 개발 문서 endpoint는 토큰 발급 전에도 접근되어야 한다.
                     .requestMatchers(
+                        "/.well-known/oauth-protected-resource",
+                        "/.well-known/oauth-protected-resource/mcp",
                         "/swagger-ui/**",
                         "/swagger-ui.html",
                         "/v3/api-docs/**",

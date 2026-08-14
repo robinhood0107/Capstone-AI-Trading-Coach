@@ -84,6 +84,7 @@ HTML/text/PDF, body 2 MB, normalized text 60,000자, PDF 20쪽만 허용한다. 
 
 owner ID는 tool argument가 아니라 access token subject에서만 온다. refresh token은 7일 family rotation이며
 revocation 시 해당 family를 폐기한다. access token은 15분이고 account status/securityVersion을 매 요청 확인한다.
+`mcp:rag.owner`가 없는 client는 owner pointer 자체를 읽지 않는 public-only 15분 DB claim만 받는다.
 
 ## 6. 장애와 데이터 경계
 
@@ -98,7 +99,7 @@ revocation 시 해당 family를 폐기한다. access token은 15분이고 accoun
 ## 7. 검증
 
 - focused: Strong LLM direct/search/read/final, validator, OAuth resource/PKCE/rotation/revocation, SSRF/DNS/redirect
-- DB: V1→V66 clean, V65→V66 upgrade, RLS/ACL, one-use receipt/save
+- DB: V1→V67 clean, V66→V67 upgrade, public-only owner isolation, RLS/ACL, one-use receipt/save
 - contract: MCP tools/list fixture, OpenAPI/proto/exact-30 byte parity
 - load: 2/10/50 admission fixture
 - release: 전체 local gate 뒤 Codex Security campaign 정확히 1회

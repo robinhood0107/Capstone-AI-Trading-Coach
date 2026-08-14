@@ -49,7 +49,7 @@ Vertex와 KIS_MOCK 물리 주문에는 사용하지 않는다.
 | S4.8 Core 6 v2 | `IMPLEMENTED_DRAFT` | PR #92 contract lock + local probe runtime | 0 | `S4_8_CORE6_V2=CONTRACT_LOCKED / S4_8_CORE6_LOCAL_PROBE_RUNTIME=IMPLEMENTED_DRAFT`; KIS current-price·SEC EDGAR(2)·KRX daily(2)의 fixed local one-shot executor와 content-free receipt bridge가 있으며 fresh packet/evidence 전에는 socket 0; KOFIA blocked, OpenDART/ECOS projection-only |
 | S4.8 Core 6 + Optional 3 local runtime | `IMPLEMENTED_DRAFT` | V50 + Core 6/Optional 3 packet-gated probes | 0 | V50 nine-lane typed projection은 provider 0; selected successful Core 6 receipt complete-set만 read-only로 `AVAILABLE`를 materialize하며 Optional 3도 fresh packet/evidence 전에는 socket 0 |
 | S4.8B/C | `IMPLEMENTED_MERGE_CANDIDATE` | PR #77 `509d8eee` | 0 | `S4_8B_C=IMPLEMENTED_MERGE_CANDIDATE`; fixture/scorer/V23/read port만, endpoint/RiskEngine/provider는 미구현 |
-| S4.9 MCP + Strong LLM | `IMPLEMENTED_DRAFT` | current branch V66 + contract/fixture | live call 0 | full Top-5 생성, bounded SearXNG search/read, OAuth 2.1 `/mcp` 5 tools, explicit validation/save; final local gate·Security·PR CI 전에는 S5 entry 미개방 |
+| S4.9 MCP + Strong LLM | `IMPLEMENTED_DRAFT` | current branch V67 + contract/fixture | live call 0 | full Top-5 생성, public-only owner isolation, bounded SearXNG search/read, OAuth 2.1 `/mcp` 5 tools, explicit validation/save; final local gate·Security·PR CI 전에는 S5 entry 미개방 |
 
 V64는 V60의 Core 6 direct-read terminal 분류, V61~V62 provider accounting과 V63 empty owner
 library의 generation scope만 제한적으로 허용한다. Core 6 direct-read lane의 complete receipt set을 `AVAILABLE`, 일부 receipt만 있는 terminal set을
@@ -58,7 +58,7 @@ library의 generation scope만 제한적으로 허용한다. Core 6 direct-read 
 `ABSTAIN`, KOFIA·Finnhub·Twelve Data·Massive `BLOCKED`다. owner BGE local receipt, final-head
 CI/security, Window B Voyage query·Vertex COMMITTED receipt와 release ledger가 끝나기 전
 Pre-S5 main baseline은 보존됐지만 S4.9가 S5.1의 새 선행 gate이므로 현재 branch에서는
-`S5_ENTRY_GATE=S4_9_RELEASE_PENDING`이다. V66 clean/upgrade·RLS, Strong LLM/MCP fixture, 전체 local gate,
+`S5_ENTRY_GATE=S4_9_RELEASE_PENDING`이다. V67 clean/upgrade·RLS, Strong LLM/MCP fixture, 전체 local gate,
 최종 Security 1회, PR CI와 merge/post-merge green이 모두 확인된 뒤에만 `OPEN`이다.
 
 `pre-s5-owner-voyage`와 `pre-s5-final-gate`는 ignored 0700/0600 control만 읽는 내부 operator다.

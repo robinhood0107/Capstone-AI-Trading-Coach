@@ -188,6 +188,46 @@ def test_v2_retrieval_requires_complete_bounded_channels_and_two_distinct_source
     assert outcome.evidence == ()
 
 
+def test_v2_retrieval_accepts_disjoint_lexical_and_dense_evidence_from_distinct_sources() -> None:
+    scope = _scope(owner_generation=False)
+    lexical = _candidate(1, scope, source_scope="EXACT30")
+    dense = _candidate(2, scope, source_scope="OA112")
+
+    outcome = _retrieval(
+        exact=RagV2ChannelResult("exact", (), complete=True),
+        lexical=RagV2ChannelResult("lexical", (lexical,), complete=True),
+        dense=RagV2ChannelResult("dense", (dense,), complete=True),
+    ).retrieve(
+        scope=scope,
+        payload={"question": "분산투자 위험 근거", "answerMode": "DETAILED"},
+    )
+
+    assert outcome.failure_code is None
+    assert outcome.retrieval_permitted is True
+    assert {item.source_id for item in outcome.evidence} == {
+        lexical.source_id,
+        dense.source_id,
+    }
+
+
+def test_v2_retrieval_rejects_distinct_sources_from_only_one_channel() -> None:
+    scope = _scope(owner_generation=False)
+    first = _candidate(1, scope, source_scope="EXACT30")
+    second = _candidate(2, scope, source_scope="OA112")
+
+    outcome = _retrieval(
+        exact=RagV2ChannelResult("exact", (), complete=True),
+        lexical=RagV2ChannelResult("lexical", (first, second), complete=True),
+        dense=RagV2ChannelResult("dense", (), complete=True),
+    ).retrieve(
+        scope=scope,
+        payload={"question": "분산투자 위험 근거", "answerMode": "DETAILED"},
+    )
+
+    assert outcome.failure_code is RagV2RetrievalFailureCode.INSUFFICIENT_EVIDENCE
+    assert outcome.evidence == ()
+
+
 def test_v2_retrieval_only_permits_external_generation_when_every_top_five_source_allows_it() -> None:
     scope = _scope(owner_generation=False)
     first = _candidate(1, scope, source_scope="EXACT30", external_processing_eligible=True)

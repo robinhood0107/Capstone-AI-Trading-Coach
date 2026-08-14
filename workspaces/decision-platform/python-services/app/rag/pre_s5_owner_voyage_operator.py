@@ -227,7 +227,7 @@ def author_owner_voyage_manifest(
     token_count: int,
     expires_at: datetime,
 ) -> str:
-    """raw owner identity 없이 exact one-call approval manifest를 0600으로 기록한다."""
+    """raw owner identity 없이 one-call execution manifest를 0600으로 기록한다."""
 
     if (
         not isinstance(output_path, Path)
@@ -256,7 +256,6 @@ def author_owner_voyage_manifest(
     ):
         raise OwnerVoyageOperatorError("OWNER_VOYAGE_MANIFEST_INVALID")
     payload: dict[str, object] = {
-        "approvalScope": "PRE_S5_OWNER_VOYAGE_SYNTHETIC_ONE_SHOT",
         "batchManifestSha256": batch_manifest_sha256,
         "binding": {
             "ciDigest": ci_digest,

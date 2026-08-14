@@ -488,7 +488,6 @@ def _load_owner_voyage_manifest(
     if (
         set(value)
         != {
-            "approvalScope",
             "batchManifestSha256",
             "binding",
             "chunkCount",
@@ -510,7 +509,6 @@ def _load_owner_voyage_manifest(
         or expires_at.tzinfo is None
         or datetime.now(UTC) >= expires_at.astimezone(UTC)
         or value.get("schemaVersion") != 1
-        or value.get("approvalScope") != "PRE_S5_OWNER_VOYAGE_SYNTHETIC_ONE_SHOT"
         or value.get("operation") != "OWNER_VOYAGE_DOCUMENT_IMPORT"
         or value.get("embeddingProfileId") != "voyage_context_4_1024_v1"
         or value.get("planSha256") != plan.plan_sha256

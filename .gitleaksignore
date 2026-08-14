@@ -24,3 +24,6 @@ a92dee4db04f4c916622b526fe00832bd76163e0:contracts/catalogs/s5-0-signal-v2-contr
 6f9466bcd9f21ebcc3b81471ee90f5b7558c0a65:contracts/catalogs/pre-s5-rag-news-contract.v1.json:generic-api-key:78
 6f9466bcd9f21ebcc3b81471ee90f5b7558c0a65:contracts/catalogs/pre-s5-rag-news-contract.v1.json:generic-api-key:79
 6f9466bcd9f21ebcc3b81471ee90f5b7558c0a65:contracts/catalogs/pre-s5-rag-news-contract.v1.json:generic-api-key:105
+
+# S4.9 CI의 Compose substitution용 validation-dummy 값이며 실제 SearXNG secret이 아니다.
+a07a5539659487e15f5d14dedc0c1661dd48b1a0:.github/workflows/repo-hygiene.yml:generic-api-key:73

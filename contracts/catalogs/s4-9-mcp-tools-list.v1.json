@@ -1,0 +1,80 @@
+{
+  "jsonrpc": "2.0",
+  "id": "s4-9-tools-list-fixture",
+  "result": {
+    "tools": [
+      {
+        "name": "capstone_rag_search",
+        "inputSchema": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["question", "mode", "topics"],
+          "properties": {
+            "question": {"type": "string"},
+            "mode": {"type": "string", "enum": ["CONCISE", "DETAILED"]},
+            "topics": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": ["API", "DATA", "FINANCIAL_ENGINEERING", "METHODOLOGY", "PRODUCT_RISK", "RISK"]
+              },
+              "minItems": 1,
+              "maxItems": 6,
+              "uniqueItems": true
+            }
+          }
+        }
+      },
+      {
+        "name": "capstone_web_search",
+        "inputSchema": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["researchContext", "query", "mode"],
+          "properties": {
+            "researchContext": {"type": "string"},
+            "query": {"type": "string"},
+            "mode": {"type": "string", "enum": ["CONCISE", "DETAILED"]}
+          }
+        }
+      },
+      {
+        "name": "capstone_web_read",
+        "inputSchema": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["researchContext", "url", "mode"],
+          "properties": {
+            "researchContext": {"type": "string"},
+            "url": {"type": "string", "format": "uri"},
+            "mode": {"type": "string", "enum": ["CONCISE", "DETAILED"]}
+          }
+        }
+      },
+      {
+        "name": "capstone_answer_validate",
+        "inputSchema": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["researchContext", "draft"],
+          "properties": {
+            "researchContext": {"type": "string"},
+            "draft": {"type": "string"}
+          }
+        }
+      },
+      {
+        "name": "capstone_answer_save",
+        "inputSchema": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["validationReceipt", "draft"],
+          "properties": {
+            "validationReceipt": {"type": "string"},
+            "draft": {"type": "string"}
+          }
+        }
+      }
+    ]
+  }
+}

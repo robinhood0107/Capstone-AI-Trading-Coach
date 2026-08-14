@@ -422,7 +422,11 @@ class RagV2AuthorizedHybridRetrieval:
 
         fused = self._rrf_fusion.fuse(channels)[:INTERNAL_FINAL_LIMIT]
         evidence = tuple(item.candidate for item in fused)
-        if not _evidence_is_sufficient(evidence=evidence, fusion=fused):
+        if not _evidence_is_sufficient(
+            evidence=evidence,
+            fusion=fused,
+            channels=channels,
+        ):
             return _execution(
                 RagV2RetrievalFailureCode.INSUFFICIENT_EVIDENCE,
                 voyage_physical_calls=receipt.voyage_physical_calls,
@@ -505,12 +509,16 @@ def _evidence_is_sufficient(
     *,
     evidence: tuple[RagV2RetrievalCandidate, ...],
     fusion: tuple[RagV2FusedCandidate, ...],
+    channels: tuple[RagV2ChannelResult, ...],
 ) -> bool:
     if len({item.source_id for item in evidence}) < 2:
         return False
-    if fusion and fusion[0].channel_count < 2 and fusion[0].exact_rank is None:
+    # 일반 개념 질문은 exact identifier가 없고 lexical/dense가 서로 다른 유효 chunk를
+    # 반환할 수 있다. 두 독립 채널과 두 출처를 모두 요구하되, 동일 chunk 교집합까지
+    # 필수로 만들어 정상 근거를 버리지는 않는다.
+    if len({channel.channel for channel in channels if channel.items}) < 2:
         return False
-    return bool(evidence)
+    return bool(fusion)
 
 
 def _candidate_in_scope(

@@ -202,7 +202,12 @@ Decision, Signal, RiskDecision, order, decision hash에 영향을 주지 않는�
 - 작업 브랜치 이름은 `feature/*`, `fix/*`, `docs/*`, `infra/*`, `experiment/*`를 사용한다.
 - 커밋 메시지는 `<type>(<session>): 요약` 형식을 권장한다. 예: `chore(S0): repo hygiene 설정`.
 - 커밋은 기능 단위로 작게 분리한다. 한 커밋에는 하나의 의도만 담고, 서로 다른 기능·버그·문서 정리는 같은 커밋에 섞지 않는다.
-- 테스트 코드와 실제 구현 코드는 원칙적으로 별도 커밋으로 분리한다. 권장 순서는 `test(<session>): 실패/회귀 테스트 추가` → `feat|fix(<session>): 구현` → `docs|chore(<session>): 문서/설정 정리`다.
+- RED→GREEN→REFACTOR와 실패 테스트 선작성을 기본·필수 흐름으로 사용하지 않는다. 기본 순서는
+  `계약 확인 → 최소 구현 → 가장 가까운 focused 검증 → 부족한 회귀 테스트 보강 → release 전체 gate 1회`다.
+- 기존 테스트가 변경 동작과 회귀 위험을 충분히 검증하면 중복 테스트를 추가하지 않는다. 새 동작,
+  보안 경계 또는 재발 가능성이 기존 coverage에 없을 때만 최소 테스트를 추가한다.
+- 구현과 그 동작을 검증하는 테스트는 같은 `feat|fix` 커밋에 포함할 수 있다. 별도 test-only 선행
+  커밋은 복잡한 회귀 계약을 독립적으로 고정해야 할 때만 사용한다.
 - Markdown/AGENTS/명세서/규칙 파일 변경은 코드 구현 커밋과 분리한다. 구현과 문서가 같은 세션에서 필요하더라도 리뷰자가 diff를 따로 볼 수 있게 별도 커밋으로 남긴다.
 - 예외는 오타 수정, import 정리, 테스트 fixture 이름 변경처럼 해당 커밋의 코드가 없으면 테스트가 실행조차 되지 않는 기계적 동반 변경뿐이다. 예외를 쓰면 커밋 메시지나 PR 본문에 이유를 적는다.
 - 커밋과 PR에는 Codex·Claude 등 AI 도구의 기여 표시를 절대 남기지 않는다.
@@ -268,7 +273,7 @@ Gradle build), `python-ci.yml`(Python 3.12 품질 게이트)이다. 아래 시�
 ### 외부 provider 반복 실패 복구
 
 - 같은 live 단계가 반복 실패하거나 stable code만으로 원인을 좁힐 수 없으면 동일한 end-to-end 명령을 다시 실행하지 않는다. 실패 approval/evidence를 소비 완료로 동결하고, offline 회귀 테스트와 allowlisted typed diagnostic으로 exact failure leaf를 먼저 만든다.
-- 외부 작업을 독립 endpoint로 분해할 수 있고 production transport/parser/quota 경계를 그대로 재사용할 수 있을 때만 단일 endpoint·무게시 probe를 추가한다. 순서는 `focused test → 최소 수정 → focused/관련 matrix/전체 gate → 새 packet 발급·현재 사용자의 exact 승인 → probe 단계별 실행 → 최종 원자 실행`이다. exact 승인 수신 전 provider 호출은 `0`이다.
+- 외부 작업을 독립 endpoint로 분해할 수 있고 production transport/parser/quota 경계를 그대로 재사용할 수 있을 때만 단일 endpoint·무게시 probe를 추가한다. 순서는 `계약·실패 leaf 확인 → 최소 수정 → focused/관련 matrix → release 전체 gate 1회 → 새 packet 발급·현재 사용자의 exact 승인 → probe 단계별 실행 → 최종 원자 실행`이다. exact 승인 수신 전 provider 호출은 `0`이다.
 - probe는 기본적으로 retry `0`, endpoint별 physical cap `1`, artifact `0`이며 첫 실패 뒤 남은 provider 호출은 `0`이다. probe 성공은 accepted production 결과가 아니고, 최종 명령이 현재 응답 전체를 독립적으로 다시 검증해 성공한 뒤에만 원자 publish한다. probe와 최종 응답 hash 일치를 강제하지 않는다.
 - 외부 provider 성공을 보장한다고 표현하지 않는다. `curl`, 브라우저 sample, 임시 script로 credential·fixed-origin transport·quota·승인 gate를 우회하지 않고 실패 evidence와 성공 acceptance set을 분리한다.
 
@@ -289,5 +294,15 @@ Gradle build), `python-ci.yml`(Python 3.12 품질 게이트)이다. 아래 시�
 - public 함수·class·client method처럼 다른 모듈이 호출하는 경계에는 “입력/출력 계약, 외부 원천, 보안·운영 주의점” 중 해당하는 내용을 1~2문장 docstring 또는 주석으로 남긴다.
 - private helper는 코드가 이미 말하는 “무엇을 하는가”를 반복하지 말고, 계약·보안·운영·테스트 관점에서 “왜 이 방식이어야 하는가”가 있을 때만 주석을 단다. 예: `# 휴장일에는 외부 KIS 호출 자체를 만들지 않아 rate limit과 장애 전파를 동시에 줄인다.`
 - 모듈 경계, 외부 API 호출, secret/token 처리, 파일 저장, 멱등성, fallback, scope guard처럼 나중에 실수하기 쉬운 지점에는 조금 더 자세한 주석을 둔다. 단순 할당·명백한 반복문·테스트 fixture 값에는 주석을 억지로 달지 않는다.
-- 모든 코드 변경에는 그 동작을 검증하는 테스트 코드가 함께 있어야 한다. 테스트 없이 코드를 추가하거나 수정하지 않으며, 외부 API·시각적 확인·수동 smoke처럼 자동화가 어려운 부분도 fixture, mock, 계약 검증, smoke 명령 중 하나로 재현 가능한 검증 근거를 남긴다.
-- 작업을 커밋할 때는 테스트 추가, 실제 구현, 문서/규칙 변경을 가능한 한 각각 별도 커밋으로 남긴다. PR 리뷰에서 “테스트가 무엇을 요구했고 구현이 무엇을 만족했는지”가 커밋 단위로 보여야 한다.
+- 모든 코드 변경에는 동작 검증 근거가 있어야 한다. 기존 테스트가 충분하면 해당 focused 명령과 결과를
+  재사용하고, coverage가 부족할 때만 최소 테스트를 추가한다. 외부 API·시각적 확인·수동 smoke처럼
+  자동화가 어려운 부분도 fixture, mock, 계약 검증, smoke 명령 중 하나로 재현 가능하게 남긴다.
+- 테스트 삭제·skip·기대값 완화로 통과시키거나 migration/RLS/API parity/security gate를 생략하지 않는다.
+  가설 수정마다 전체 pytest·Gradle·CI를 반복하지 않고, 변경 지점의 가장 가까운 검증부터 실행한 뒤
+  동결된 release tree에서 전체 gate를 한 번 수행한다.
+- 변경 유형별 기본 검증은 문서·규칙은 `git diff --check`·링크·hygiene·gitleaks, Python/Kotlin 로직은
+  해당 모듈 focused test와 Ruff/mypy 또는 ktlint, DB migration·ACL은 migration contract와 RLS/security
+  integration, provider transport는 deterministic fixture와 socket 0 preflight, 공개 계약은 generator와
+  OpenAPI/proto byte parity다. release 후보만 전체 local gate와 required CI를 각각 한 번 수행한다.
+- 구현과 관련 테스트는 같은 기능 커밋에 둘 수 있지만 Markdown·AGENTS·명세서·규칙 변경은 코드와
+  분리한다. 리뷰에서는 PR 본문과 검증 evidence로 구현 범위와 통과한 테스트를 명확히 연결한다.

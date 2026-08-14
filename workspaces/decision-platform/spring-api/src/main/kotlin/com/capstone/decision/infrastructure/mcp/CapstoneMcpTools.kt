@@ -100,7 +100,7 @@ class CapstoneMcpTools(
                 result.citations,
                 result.evidence,
             )
-        return McpRagSearchResponse(receipt, context.expiresAt, context.evidence.map(::evidenceItem))
+        return McpRagSearchResponse(receipt, context.expiresAt, contexts.evidenceSnapshot(context).map(::evidenceItem))
     }
 
     @McpTool(
@@ -116,11 +116,10 @@ class CapstoneMcpTools(
         val caller = caller("mcp:web.read")
         val context = requireCurrentContext(researchContext, caller)
         val budget = properties.budget(mode)
-        require(context.searchCount < budget.maxSearches)
+        contexts.reserveSearch(context, mode, budget.maxSearches)
         admission.acquireSearch(caller)
         val results = searchClient.search(query)
-        context.searchCount += 1
-        context.searchableUrls.addAll(results.map { it.url })
+        contexts.addSearchableUrls(context, results.map { it.url })
         return McpWebSearchResponse(contexts.refreshedReceipt(context), results)
     }
 
@@ -137,7 +136,7 @@ class CapstoneMcpTools(
         val caller = caller("mcp:web.read")
         val context = requireCurrentContext(researchContext, caller)
         val budget = properties.budget(mode)
-        require(context.readCount < budget.maxReads && url in context.searchableUrls)
+        contexts.reserveRead(context, mode, budget.maxReads, url)
         val document = admission.withRead(caller) { webReader.read(url) }
         val hash = sha256(document.text)
         webEvidenceMetadata.record(
@@ -148,20 +147,7 @@ class CapstoneMcpTools(
             document.title,
             hash,
         )
-        val ordinal = minOf(context.evidence.size + 1, 5)
-        val evidence =
-            RagV2VertexEvidence(
-                ordinal = ordinal,
-                citationId = "cit_$ordinal",
-                chunkRevisionId = "rag_v2_chk_${hash.take(32)}",
-                canonicalText = document.text,
-                canonicalTextSha256 = hash,
-            )
-        // 공개 응답 citation cap은 5이므로 web evidence가 추가되면 retrieval tail만 교체한다.
-        if (context.evidence.size == 5) context.evidence.removeAt(4)
-        context.evidence.add(evidence.copy(ordinal = context.evidence.size + 1, citationId = "cit_${context.evidence.size + 1}"))
-        context.readCount += 1
-        val stored = context.evidence.last()
+        val stored = contexts.appendWebEvidence(context, document.text, hash)
         return McpWebReadResponse(contexts.refreshedReceipt(context), evidenceItem(stored), document.canonicalUrl, document.title)
     }
 
@@ -176,7 +162,7 @@ class CapstoneMcpTools(
     ): McpAnswerValidationResponse {
         val caller = caller("mcp:answer.validate")
         val context = requireCurrentContext(researchContext, caller)
-        val validated = validator.validate(draft, context.evidence)
+        val validated = validator.validate(draft, contexts.evidenceSnapshot(context))
         val receipt = validationReceipts.issue(caller, context, draft, validated.validationStatus.name)
         return McpAnswerValidationResponse(validated.validationStatus.name, validated.warnings, receipt.value, receipt.expiresAt)
     }

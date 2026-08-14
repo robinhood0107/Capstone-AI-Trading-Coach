@@ -167,6 +167,8 @@ app:
       external-research-max-reads: ${RAG_WEB_EXTERNAL_MAX_READS:120}
       external-research-user-parallel-reads: ${RAG_WEB_EXTERNAL_USER_PARALLEL_READS:4}
       external-research-global-parallel-reads: ${RAG_WEB_EXTERNAL_GLOBAL_PARALLEL_READS:8}
+      external-research-max-contexts-per-caller: ${RAG_WEB_EXTERNAL_MAX_CONTEXTS_PER_CALLER:30}
+      external-research-max-total-contexts: ${RAG_WEB_EXTERNAL_MAX_TOTAL_CONTEXTS:1024}
   brokerage:
     idempotency-scope-hmac-key: ${BROKERAGE_IDEMPOTENCY_SCOPE_HMAC_KEY}
     # DB에는 digest만 migration으로 저장하고 raw capability는 prepared bind로만 전달한다.

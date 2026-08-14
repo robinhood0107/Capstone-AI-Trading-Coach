@@ -493,6 +493,12 @@ class PreS5DocumentTruthFreezeTest(unittest.TestCase):
             classify_markdown("contracts/changes/20260803-example.md"),
         )
 
+    def test_s4_9_operations_guide_is_current_public_authority(self) -> None:
+        self.assertEqual(
+            "ACTIVE_PUBLIC_SSOT",
+            classify_markdown("docs/S4_9_MCP_Strong_LLM_운영_가이드.md"),
+        )
+
     def test_public_truth_freeze_rejects_required_and_linked_symlinks(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             temporary_root = Path(temporary_directory)

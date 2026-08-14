@@ -2,6 +2,7 @@ package com.capstone.decision.infrastructure.mcp
 
 import com.capstone.decision.application.rag.RagHistoryCryptoPort
 import com.capstone.decision.application.rag.RagHistoryIdentity
+import com.capstone.decision.application.rag.RagV2VertexEvidence
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.stereotype.Component
@@ -42,42 +43,56 @@ class McpAnswerValidationReceiptRegistry(
     fun issue(
         caller: McpCaller,
         context: McpResearchContext,
+        evidence: List<RagV2VertexEvidence>,
         draft: String,
         status: String,
     ): McpValidationReceipt {
         val id = "s49_val_${UUID.randomUUID().toString().replace("-", "")}"
         val expiresAt = clock.instant().plusSeconds(300)
         val draftHash = sha256(draft)
-        val sourceSetHash = sha256(context.evidence.joinToString("|") { it.canonicalTextSha256 })
+        val sourceSetHash = sha256(evidence.joinToString("|") { it.canonicalTextSha256 })
         val payload =
             "${caller.ownerUserId}|${caller.oauthClientId}|${context.id}|$sourceSetHash|" +
                 "$draftHash|$status|${expiresAt.epochSecond}"
         val receipt = "$id.${hmac(payload)}"
-        TransactionTemplate(transactionManager).executeWithoutResult {
-            setActor(caller.ownerUserId)
+        val entry = Entry(caller, context.id, context.question, sourceSetHash, draftHash, status, expiresAt)
+        synchronized(entries) {
+            pruneExpired()
+            require(entries.size < properties.externalResearchMaxTotalContexts)
             require(
-                jdbc.queryForObject(
-                    """
-                    SELECT public.issue_s4_9_answer_validation_receipt(
-                      :receiptHash, :ownerUserId, :clientId, :contextId, :sourceSetHash,
-                      :draftHash, :status, :expiresAt
-                    ) IS NULL
-                    """.trimIndent(),
-                    mapOf(
-                        "receiptHash" to sha256(receipt),
-                        "ownerUserId" to caller.ownerUserId,
-                        "clientId" to caller.oauthClientId,
-                        "contextId" to context.id,
-                        "sourceSetHash" to sourceSetHash,
-                        "draftHash" to draftHash,
-                        "status" to status,
-                        "expiresAt" to OffsetDateTime.ofInstant(expiresAt, ZoneOffset.UTC),
-                    ),
-                    Boolean::class.java,
-                ) == true,
+                entries.values.count { it.caller == caller } < properties.externalResearchMaxContextsPerCaller,
             )
+            entries[id] = entry
         }
-        entries[id] = Entry(caller, context.id, context.question, sourceSetHash, draftHash, status, expiresAt)
+        try {
+            TransactionTemplate(transactionManager).executeWithoutResult {
+                setActor(caller.ownerUserId)
+                require(
+                    jdbc.queryForObject(
+                        """
+                        SELECT public.issue_s4_9_answer_validation_receipt(
+                          :receiptHash, :ownerUserId, :clientId, :contextId, :sourceSetHash,
+                          :draftHash, :status, :expiresAt
+                        ) IS NULL
+                        """.trimIndent(),
+                        mapOf(
+                            "receiptHash" to sha256(receipt),
+                            "ownerUserId" to caller.ownerUserId,
+                            "clientId" to caller.oauthClientId,
+                            "contextId" to context.id,
+                            "sourceSetHash" to sourceSetHash,
+                            "draftHash" to draftHash,
+                            "status" to status,
+                            "expiresAt" to OffsetDateTime.ofInstant(expiresAt, ZoneOffset.UTC),
+                        ),
+                        Boolean::class.java,
+                    ) == true,
+                )
+            }
+        } catch (error: Exception) {
+            entries.remove(id, entry)
+            throw error
+        }
         return McpValidationReceipt(receipt, expiresAt)
     }
 
@@ -88,7 +103,8 @@ class McpAnswerValidationReceiptRegistry(
     ): String {
         val id = receipt.substringBefore('.')
         val entry = entries[id] ?: throw IllegalArgumentException("Unknown validation receipt")
-        require(entry.caller == caller && entry.expiresAt.isAfter(clock.instant()) && entry.draftSha256 == sha256(draft))
+        requireCurrent(id, entry)
+        require(entry.caller == caller && entry.draftSha256 == sha256(draft))
         val payload =
             "${caller.ownerUserId}|${caller.oauthClientId}|${entry.contextId}|${entry.sourceSetSha256}|" +
                 "${entry.draftSha256}|${entry.status}|${entry.expiresAt.epochSecond}"
@@ -154,8 +170,24 @@ class McpAnswerValidationReceiptRegistry(
     ): String {
         val id = receipt.substringBefore('.')
         val entry = entries[id] ?: throw IllegalArgumentException("Unknown validation receipt")
-        require(entry.caller == caller && entry.expiresAt.isAfter(clock.instant()) && entry.draftSha256 == sha256(draft))
+        requireCurrent(id, entry)
+        require(entry.caller == caller && entry.draftSha256 == sha256(draft))
         return entry.contextId
+    }
+
+    private fun requireCurrent(
+        id: String,
+        entry: Entry,
+    ) {
+        if (!entry.expiresAt.isAfter(clock.instant())) {
+            entries.remove(id, entry)
+            throw IllegalArgumentException("Validation receipt expired")
+        }
+    }
+
+    private fun pruneExpired() {
+        val now = clock.instant()
+        entries.entries.removeIf { !it.value.expiresAt.isAfter(now) }
     }
 
     private fun setActor(ownerUserId: String) {
@@ -168,17 +200,25 @@ class McpAnswerValidationReceiptRegistry(
 
     private fun hmac(value: String): String {
         val key = properties.receiptHmacKey.toByteArray(StandardCharsets.UTF_8)
+        val bytes = value.toByteArray(StandardCharsets.UTF_8)
         return try {
             val mac = Mac.getInstance("HmacSHA256")
             mac.init(SecretKeySpec(key, "HmacSHA256"))
-            HexFormat.of().formatHex(mac.doFinal(value.toByteArray(StandardCharsets.UTF_8)))
+            HexFormat.of().formatHex(mac.doFinal(bytes))
         } finally {
             key.fill(0)
+            bytes.fill(0)
         }
     }
 
-    private fun sha256(value: String): String =
-        HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value.toByteArray(StandardCharsets.UTF_8)))
+    private fun sha256(value: String): String {
+        val bytes = value.toByteArray(StandardCharsets.UTF_8)
+        return try {
+            HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes))
+        } finally {
+            bytes.fill(0)
+        }
+    }
 
     private data class Entry(
         val caller: McpCaller,

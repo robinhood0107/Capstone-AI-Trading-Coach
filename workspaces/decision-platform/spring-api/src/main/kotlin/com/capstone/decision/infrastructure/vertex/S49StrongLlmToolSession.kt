@@ -5,6 +5,7 @@ import com.capstone.decision.infrastructure.mcp.BoundedWebDocument
 import com.capstone.decision.infrastructure.mcp.PublicWebReaderPort
 import com.capstone.decision.infrastructure.mcp.PublicWebSearchPort
 import com.capstone.decision.infrastructure.mcp.RagToolBudget
+import com.capstone.decision.infrastructure.mcp.requirePublicWebQuery
 import tools.jackson.databind.JsonNode
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
@@ -81,7 +82,7 @@ internal class S49StrongLlmToolSession(
         require(args.isObject && args.properties().map { it.key }.toSet() == setOf("query"))
         require(searchCount < budget.maxSearches)
         val query = args["query"]?.stringValue().orEmpty()
-        require(query.isNotBlank() && query.toByteArray(StandardCharsets.UTF_8).size <= 1_024)
+        requirePublicWebQuery(query)
         val results = searchClient.search(query)
         searchableUrls.addAll(results.map { it.url })
         searchCount += 1
@@ -97,8 +98,14 @@ internal class S49StrongLlmToolSession(
 
     private fun read(args: JsonNode): S49ToolExecution = executeReadBatch(listOf(args)).single()
 
-    private fun sha256(value: String): String =
-        MessageDigest.getInstance("SHA-256").digest(value.toByteArray(StandardCharsets.UTF_8)).joinToString("") { "%02x".format(it) }
+    private fun sha256(value: String): String {
+        val bytes = value.toByteArray(StandardCharsets.UTF_8)
+        return try {
+            MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+        } finally {
+            bytes.fill(0)
+        }
+    }
 }
 
 internal fun s49VertexFunctionDeclarations(): List<Map<String, Any>> =

@@ -17,6 +17,10 @@ class McpResearchAdmissionLimiter(
     private val windows = ConcurrentHashMap<String, Window>()
     private val globalReads = Semaphore(properties.externalResearchGlobalParallelReads, true)
 
+    init {
+        properties.validate()
+    }
+
     fun acquireSearch(caller: McpCaller) {
         val window = current(caller)
         synchronized(window) {
@@ -50,10 +54,14 @@ class McpResearchAdmissionLimiter(
     private fun current(caller: McpCaller): Window {
         val now = clock.instant()
         val key = "${caller.ownerUserId}|${caller.oauthClientId}"
-        return windows.compute(key) { _, existing ->
-            existing?.takeIf { now.isBefore(it.startedAt.plusSeconds(properties.externalResearchWindowMinutes * 60L)) }
-                ?: Window(now, Semaphore(properties.externalResearchUserParallelReads, true))
-        }!!
+        synchronized(windows) {
+            windows.entries.removeIf {
+                !now.isBefore(it.value.startedAt.plusSeconds(properties.externalResearchWindowMinutes * 60L))
+            }
+            windows[key]?.let { return it }
+            require(windows.size < properties.externalResearchMaxTotalContexts)
+            return Window(now, Semaphore(properties.externalResearchUserParallelReads, true)).also { windows[key] = it }
+        }
     }
 
     private data class Window(

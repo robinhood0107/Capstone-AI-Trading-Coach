@@ -188,11 +188,24 @@ class McpResearchContextRegistry(
             val payload =
                 "${context.id}|${context.ownerUserId}|${context.oauthClientId}|${sha256(context.question)}|" +
                     "${context.answerMode}|$sourceHash|${context.expiresAt.epochSecond}"
-            val mac = Mac.getInstance("HmacSHA256")
-            mac.init(SecretKeySpec(properties.receiptHmacKey.toByteArray(StandardCharsets.UTF_8), "HmacSHA256"))
-            "${context.id}.${HexFormat.of().formatHex(mac.doFinal(payload.toByteArray(StandardCharsets.UTF_8)))}"
+            val key = properties.receiptHmacKey.toByteArray(StandardCharsets.UTF_8)
+            val bytes = payload.toByteArray(StandardCharsets.UTF_8)
+            try {
+                val mac = Mac.getInstance("HmacSHA256")
+                mac.init(SecretKeySpec(key, "HmacSHA256"))
+                "${context.id}.${HexFormat.of().formatHex(mac.doFinal(bytes))}"
+            } finally {
+                key.fill(0)
+                bytes.fill(0)
+            }
         }
 
-    private fun sha256(value: String): String =
-        HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value.toByteArray(StandardCharsets.UTF_8)))
+    private fun sha256(value: String): String {
+        val bytes = value.toByteArray(StandardCharsets.UTF_8)
+        return try {
+            HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes))
+        } finally {
+            bytes.fill(0)
+        }
+    }
 }

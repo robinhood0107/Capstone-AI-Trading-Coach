@@ -239,6 +239,7 @@ class RagV2VertexResponseValidator {
                 .asSequence()
                 .map { validateEvidenceSpan(it, citationIds, evidenceByCitationId) }
                 .toList()
+        require(validatedSpanTexts.map { it.citationId }.toSet() == citationIds.toSet())
         val numericSpans = node.get("numericSpans")
         require(numericSpans != null && numericSpans.isArray && numericSpans.size() <= MAX_NUMERIC_SPANS)
         val expectedNumericTokens = NUMERIC_TOKEN.findAll(text).map { it.value }.toList()
@@ -259,25 +260,31 @@ class RagV2VertexResponseValidator {
         node: JsonNode,
         sentenceCitationIds: List<String>,
         evidenceByCitationId: Map<String, RagV2VertexEvidence>,
-    ): String {
+    ): ValidatedEvidenceSpan {
         require(node.isObject && node.properties().map { it.key }.toSet() == EVIDENCE_SPAN_FIELDS)
         val citationId = requireText(node.get("citationId"), MAX_CITATION_ID_BYTES, false)
         require(citationId in sentenceCitationIds)
         val quote = requireText(node.get("quote"), MAX_EVIDENCE_QUOTE_BYTES, false)
         require(evidenceByCitationId.getValue(citationId).canonicalText.contains(quote))
-        return quote
+        return ValidatedEvidenceSpan(citationId, quote)
     }
 
     private fun validateNumericSpan(
         node: JsonNode,
         sentenceCitationIds: List<String>,
-        evidenceSpanTexts: List<String>,
+        evidenceSpans: List<ValidatedEvidenceSpan>,
     ): String {
         require(node.isObject && node.properties().map { it.key }.toSet() == NUMERIC_SPAN_FIELDS)
         val value = requireText(node.get("value"), MAX_NUMERIC_TOKEN_BYTES, false)
         require(NUMERIC_TOKEN.matches(value))
-        requireCitationIds(node.get("citationIds"), sentenceCitationIds.toSet(), allowEmpty = false)
-        require(evidenceSpanTexts.any { quote -> NUMERIC_TOKEN.findAll(quote).any { it.value == value } })
+        val numericCitationIds = requireCitationIds(node.get("citationIds"), sentenceCitationIds.toSet(), allowEmpty = false)
+        require(
+            numericCitationIds.all { citationId ->
+                evidenceSpans
+                    .filter { it.citationId == citationId }
+                    .any { span -> NUMERIC_TOKEN.findAll(span.quote).any { it.value == value } }
+            },
+        )
         return value
     }
 
@@ -339,6 +346,11 @@ class RagV2VertexResponseValidator {
         val evidenceSpanCount: Int,
     )
 
+    private data class ValidatedEvidenceSpan(
+        val citationId: String,
+        val quote: String,
+    )
+
     private companion object {
         val ROOT_FIELDS = setOf("basis", "answer", "sentences", "warnings")
         val SENTENCE_FIELDS = setOf("text", "citationIds", "evidenceSpans", "numericSpans")
@@ -367,7 +379,7 @@ class RagV2VertexResponseValidator {
             )
         const val MAX_EVIDENCE = 5
         const val MAX_RESPONSE_BYTES = 32_768
-        const val MAX_ANSWER_BYTES = 12_288
+        const val MAX_ANSWER_BYTES = 8_192
         const val MAX_SENTENCE_BYTES = 2_048
         const val MAX_EVIDENCE_QUOTE_BYTES = 2_048
         const val MAX_NUMERIC_TOKEN_BYTES = 64

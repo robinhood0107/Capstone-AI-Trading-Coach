@@ -12,7 +12,16 @@
           "properties": {
             "question": {"type": "string"},
             "mode": {"type": "string", "enum": ["CONCISE", "DETAILED"]},
-            "topics": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 8}
+            "topics": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": ["API", "DATA", "FINANCIAL_ENGINEERING", "METHODOLOGY", "PRODUCT_RISK", "RISK"]
+              },
+              "minItems": 1,
+              "maxItems": 6,
+              "uniqueItems": true
+            }
           }
         }
       },

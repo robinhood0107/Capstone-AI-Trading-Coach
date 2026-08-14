@@ -351,12 +351,13 @@ class RagV2RuntimeService(
         ownerUserId: String,
         requestId: String,
         command: RagAskCommand,
+        includeOwner: Boolean = true,
     ): RagV2SearchEvidenceResult {
         val preparation =
             inDatabaseTransaction {
                 require(command.question.isNotBlank())
                 if (corpusStatus(ownerUserId).state != "FULL_READY") throw RagV2CorpusNotReadyException()
-                val scope = issueRetrievalScope(ownerUserId, requestId, command.topics)
+                val scope = issueMcpRetrievalScope(ownerUserId, requestId, command.topics, includeOwner)
                 val consentGranted =
                     if (scope.embeddingProfileId == VOYAGE_PROFILE) {
                         effectiveConsent(ownerUserId).effective.also { require(it) }
@@ -692,6 +693,47 @@ class RagV2RuntimeService(
                     "ownerUserId" to ownerUserId,
                     "requestId" to requestId,
                     "topicsJson" to topicsJson,
+                ),
+            ) { result, _ ->
+                RagV2RetrievalScope(
+                    scopeClaimId = result.getString("scope_claim_id"),
+                    exact30GenerationId = result.getString("exact30_generation_id"),
+                    oa112GenerationId = result.getString("oa112_generation_id"),
+                    ownerGenerationId = result.getString("owner_private_generation_id"),
+                    embeddingProfileId = result.getString("embedding_profile_id"),
+                    policyVersion = result.getLong("policy_version"),
+                    ownerEmbeddingProfileId = result.getString("owner_embedding_profile_id"),
+                )
+            }.singleOrNull()
+            ?: throw RagGuardHistoryUnavailableException()
+    }
+
+    /** MCP OAuth owner scope를 DB claim 발급 전에 결박해 public-only 호출이 owner pointer를 읽지 못하게 한다. */
+    private fun issueMcpRetrievalScope(
+        ownerUserId: String,
+        requestId: String,
+        topics: List<String>,
+        includeOwner: Boolean,
+    ): RagV2RetrievalScope {
+        val jdbc = jdbc()
+        setActor(ownerUserId)
+        val topicsJson = objectMapper.writeValueAsString(topics)
+        return jdbc
+            .query(
+                """
+                SELECT *
+                FROM issue_s4_9_mcp_retrieval_scope(
+                  :ownerUserId,
+                  :requestId,
+                  ARRAY(SELECT jsonb_array_elements_text(CAST(:topicsJson AS jsonb))),
+                  :includeOwner
+                )
+                """.trimIndent(),
+                mapOf(
+                    "ownerUserId" to ownerUserId,
+                    "requestId" to requestId,
+                    "topicsJson" to topicsJson,
+                    "includeOwner" to includeOwner,
                 ),
             ) { result, _ ->
                 RagV2RetrievalScope(

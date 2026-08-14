@@ -67,7 +67,7 @@ class SearxngSearchClient(
     }
 
     override fun search(query: String): List<SearxngSearchResult> {
-        require(query.isNotBlank() && query.toByteArray(StandardCharsets.UTF_8).size <= 1_024)
+        requirePublicWebQuery(query)
         val encoded = URLEncoder.encode(query, StandardCharsets.UTF_8)
         val endpoint =
             URI.create(
@@ -93,13 +93,16 @@ class SearxngSearchClient(
                 .take(MAX_RESULTS)
                 .mapNotNull { item ->
                     val title =
-                        item
-                            .get("title")
-                            ?.takeIf { it.isString }
-                            ?.stringValue()
-                            ?.trim()
-                            .orEmpty()
-                    val url =
+                        sanitizePublicWebSearchText(
+                            item
+                                .get("title")
+                                ?.takeIf { it.isString }
+                                ?.stringValue()
+                                ?.trim()
+                                .orEmpty(),
+                            512,
+                        )
+                    val rawUrl =
                         item
                             .get("url")
                             ?.takeIf { it.isString }
@@ -107,16 +110,19 @@ class SearxngSearchClient(
                             ?.trim()
                             .orEmpty()
                     val snippet =
-                        item
-                            .get("content")
-                            ?.takeIf { it.isString }
-                            ?.stringValue()
-                            ?.trim()
-                            .orEmpty()
+                        sanitizePublicWebSearchText(
+                            item
+                                .get("content")
+                                ?.takeIf { it.isString }
+                                ?.stringValue()
+                                ?.trim()
+                                .orEmpty(),
+                            2_000,
+                        )
                     runCatching {
                         require(title.isNotBlank() && title.length <= 512)
-                        require(URI.create(url).scheme == "https")
-                        SearxngSearchResult(title, url, snippet.take(2_000))
+                        val url = normalizePublicWebSearchUrl(rawUrl)
+                        SearxngSearchResult(title, url, snippet)
                     }.getOrNull()
                 }.toList()
         } finally {

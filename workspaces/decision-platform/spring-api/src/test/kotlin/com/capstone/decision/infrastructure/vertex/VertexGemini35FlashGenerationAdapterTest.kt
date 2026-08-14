@@ -58,6 +58,16 @@ class VertexGemini35FlashGenerationAdapterTest {
         assertThat(payload["generationConfig"].properties().map { it.key })
             .containsExactly("candidateCount", "temperature", "maxOutputTokens", "responseMimeType", "responseSchema")
         assertThat(payload["generationConfig"]["responseMimeType"].stringValue()).isEqualTo("application/json")
+        val responseSchema = payload["generationConfig"]["responseSchema"]
+        assertThat(responseSchema["properties"]["answer"]["enum"][0].stringValue())
+            .isEqualTo("The reference explains the model assumption.")
+        assertThat(responseSchema["properties"]["sentences"]["minItems"].intValue()).isEqualTo(1)
+        assertThat(responseSchema["properties"]["sentences"]["maxItems"].intValue()).isEqualTo(1)
+        val sentenceSchema = responseSchema["properties"]["sentences"]["items"]["properties"]
+        assertThat(sentenceSchema["text"]["enum"][0].stringValue())
+            .isEqualTo("The reference explains the model assumption.")
+        assertThat(sentenceSchema["citationIds"]["items"]["enum"][0].stringValue()).isEqualTo("cit_1")
+        assertThat(sentenceSchema["numericSpans"]["maxItems"].intValue()).isZero()
         val required = payload["generationConfig"]["responseSchema"]["required"]
         assertThat((0 until required.size()).map { required[it].stringValue() })
             .containsExactly("answer", "sentences")

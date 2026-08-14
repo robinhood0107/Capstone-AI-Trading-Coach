@@ -107,6 +107,11 @@ data class RagV2VertexValidatedAnswer(
     val citationIds: List<String>,
 )
 
+data class RagV2VertexExtractiveCandidate(
+    val text: String,
+    val citationId: String,
+)
+
 /**
  * provider 출력은 raw 상태로 신뢰하거나 저장하지 않는다. 모든 문장을 immutable top-5 citation에 결속하고
  * numeric token까지 같은 evidence set으로 재검증해 malformed output을 `GENERATION_UNAVAILABLE`로 닫는다.
@@ -182,6 +187,29 @@ class RagV2VertexResponseValidator {
         } catch (_: IllegalStateException) {
             throw RagV2VertexResponseValidationException()
         }
+    }
+
+    /**
+     * provider가 paraphrase를 생성할 여지를 없애도록 canonical evidence에서 숫자 없는 안전한 완결 문장 하나를
+     * 결정적으로 고른다. 선택 결과는 Vertex response schema의 enum과 로컬 validator 양쪽에 같은 값으로 결박된다.
+     */
+    fun selectDeterministicExtractiveCandidate(evidence: List<RagV2VertexEvidence>): RagV2VertexExtractiveCandidate {
+        require(evidence.size in 1..MAX_EVIDENCE)
+        return evidence
+            .asSequence()
+            .sortedBy { it.ordinal }
+            .flatMap { item ->
+                canonicalSentences(item.canonicalText).asSequence().map { sentence -> item to sentence }
+            }.firstNotNullOfOrNull { (item, sentence) ->
+                sentence
+                    .takeIf {
+                        it.isNotBlank() &&
+                            it.toByteArray(StandardCharsets.UTF_8).size <= MAX_SENTENCE_BYTES &&
+                            !NUMERIC_TOKEN.containsMatchIn(it) &&
+                            !SENSITIVE.containsMatchIn(it) &&
+                            !DIRECT_ADVICE.containsMatchIn(it)
+                    }?.let { RagV2VertexExtractiveCandidate(text = it, citationId = item.citationId) }
+            } ?: throw RagV2VertexResponseValidationException()
     }
 
     private fun validateSentence(

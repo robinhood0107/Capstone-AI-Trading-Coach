@@ -122,14 +122,14 @@ class RagSourceRegistryMigrationIntegrationTest {
     }
 
     @Test
-    fun `V62 through V65 forward repairs preserve empty owner scope and ACL`() {
+    fun `V62 through V66 forward repairs preserve empty owner scope and ACL`() {
         withPreparedDatabase("empty_owner_generation_scope_upgrade") { jdbcUrl ->
             flyway(jdbcUrl, target = "62").migrate()
             flyway(jdbcUrl).migrate()
 
             adminConnection(jdbcUrl).use { connection ->
                 assertThat(queryString(connection, "select max(version::integer)::text from flyway_schema_history where success"))
-                    .isEqualTo("65")
+                    .isEqualTo("66")
                 assertThat(
                     queryString(
                         connection,
@@ -142,6 +142,180 @@ class RagSourceRegistryMigrationIntegrationTest {
                         "rag_v2_immutable_empty_owner_scope_is_current(text,bigint,text,text,text)",
                     ),
                 ).isFalse()
+                assertThat(queryString(connection, "select count(*)::text from public.s4_9_mcp_oauth_clients"))
+                    .isEqualTo("0")
+                assertThat(queryString(connection, "select count(*)::text from public.s4_9_strong_llm_usage_ledger"))
+                    .isEqualTo("0")
+                assertThat(
+                    hasPublicFunctionExecute(
+                        connection,
+                        "record_s4_9_strong_llm_usage(text,text,text,text,text,text,text,integer,integer,integer,integer,integer,text)",
+                    ),
+                ).isFalse()
+            }
+        }
+    }
+
+    @Test
+    fun `V65 to V66 adds only empty S4 9 boundaries and preserves existing rows`() {
+        withPreparedDatabase("s49_forward_upgrade") { jdbcUrl ->
+            flyway(jdbcUrl, target = "65").migrate()
+            adminConnection(jdbcUrl).use { connection ->
+                connection.createStatement().use { statement ->
+                    statement.executeUpdate(
+                        "insert into users(user_id, username, password_hash, role, status, security_version) " +
+                            "values ('usr_s49_preserved', 's49_preserved', '\$2b\$12\$aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'USER', 'ACTIVE', 1)",
+                    )
+                }
+            }
+
+            flyway(jdbcUrl).migrate()
+
+            adminConnection(jdbcUrl).use { connection ->
+                assertThat(queryString(connection, "select max(version::integer)::text from flyway_schema_history where success"))
+                    .isEqualTo("66")
+                assertThat(queryString(connection, "select count(*)::text from users where user_id = 'usr_s49_preserved'"))
+                    .isEqualTo("1")
+                assertThat(queryString(connection, "select count(*)::text from public.s4_9_saved_answer_history"))
+                    .isEqualTo("0")
+            }
+        }
+    }
+
+    @Test
+    fun `V66 OAuth hashes rotate revoke and remain hidden from application tables`() {
+        withPreparedDatabase("s49_oauth_hashes") { jdbcUrl ->
+            flyway(jdbcUrl).migrate()
+            adminConnection(jdbcUrl).use { connection ->
+                connection.createStatement().use { statement ->
+                    statement.executeUpdate(
+                        "insert into users(user_id, username, password_hash, role, status, security_version) " +
+                            "values ('usr_s49_oauth', 's49_oauth', '\$2b\$12\$aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'USER', 'ACTIVE', 1)",
+                    )
+                }
+            }
+            appConnection(jdbcUrl).use { connection ->
+                connection.createStatement().use { statement ->
+                    statement.execute(
+                        "select public.sync_s4_9_mcp_oauth_client(" +
+                            "'mcp_s49_test','S4.9 test',repeat('1',64)," +
+                            "array['http://127.0.0.1/callback'],array['mcp:rag.public'],'STATIC_ALLOWLIST')",
+                    )
+                    statement.execute(
+                        "select public.upsert_s4_9_mcp_oauth_code_hash(" +
+                            "repeat('a',64),'mcp_s49_test','usr_s49_oauth',1,'http://127.0.0.1/callback'," +
+                            "'http://127.0.0.1:8080/mcp',array['mcp:rag.public'],repeat('A',43)," +
+                            "transaction_timestamp() + interval '3 minutes')",
+                    )
+                    statement.execute("select public.consume_s4_9_mcp_oauth_code_hash(repeat('a',64))")
+                    statement.execute(
+                        "select public.rotate_s4_9_mcp_refresh_token_hash(" +
+                            "repeat('b',64),'mcp_s49_test','usr_s49_oauth',1,'http://127.0.0.1:8080/mcp'," +
+                            "array['mcp:rag.public'],transaction_timestamp() + interval '6 days')",
+                    )
+                    statement.execute(
+                        "select public.rotate_s4_9_mcp_refresh_token_hash(" +
+                            "repeat('c',64),'mcp_s49_test','usr_s49_oauth',1,'http://127.0.0.1:8080/mcp'," +
+                            "array['mcp:rag.public'],transaction_timestamp() + interval '6 days')",
+                    )
+                    statement.execute("select public.revoke_s4_9_mcp_refresh_token_family(repeat('c',64))")
+                }
+                assertThrows(SQLException::class.java) {
+                    connection.createStatement().use { it.executeQuery("select * from public.s4_9_mcp_oauth_refresh_tokens") }
+                }
+            }
+            adminConnection(jdbcUrl).use { connection ->
+                assertThat(
+                    queryString(
+                        connection,
+                        "select (consumed_at is not null)::text from public.s4_9_mcp_oauth_authorization_codes " +
+                            "where code_sha256 = repeat('a',64)",
+                    ),
+                ).isEqualTo("true")
+                assertThat(
+                    queryString(
+                        connection,
+                        "select count(*)::text from public.s4_9_mcp_oauth_refresh_tokens where rotated_at is not null",
+                    ),
+                ).isEqualTo("1")
+                assertThat(
+                    queryString(
+                        connection,
+                        "select count(*)::text from public.s4_9_mcp_oauth_refresh_tokens where revoked_at is not null",
+                    ),
+                ).isEqualTo("2")
+            }
+        }
+    }
+
+    @Test
+    fun `V66 validation receipt saves encrypted history once and content free ledgers pass RLS`() {
+        withPreparedDatabase("s49_receipt_save") { jdbcUrl ->
+            flyway(jdbcUrl).migrate()
+            adminConnection(jdbcUrl).use { connection ->
+                connection.createStatement().use { statement ->
+                    statement.executeUpdate(
+                        "insert into users(user_id, username, password_hash, role, status, security_version) " +
+                            "values ('usr_s49_save', 's49_save', '\$2b\$12\$aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'USER', 'ACTIVE', 1)",
+                    )
+                }
+            }
+            appConnection(jdbcUrl).use { connection ->
+                connection.autoCommit = false
+                connection.createStatement().use { statement ->
+                    statement.execute(
+                        "select public.sync_s4_9_mcp_oauth_client(" +
+                            "'mcp_s49_save','S4.9 save',repeat('1',64)," +
+                            "array['http://127.0.0.1/callback'],array['mcp:answer.validate','mcp:history.write'],'STATIC_ALLOWLIST')",
+                    )
+                    statement.execute("select set_config('app.actor_user_id','usr_s49_save',true)")
+                    statement.execute(
+                        "select public.issue_s4_9_answer_validation_receipt(" +
+                            "repeat('d',64),'usr_s49_save','mcp_s49_save','s49_ctx_' || repeat('1',32)," +
+                            "repeat('2',64),repeat('3',64),'VALID',transaction_timestamp() + interval '4 minutes')",
+                    )
+                    statement.execute(
+                        "select public.consume_s4_9_validation_and_save_history(" +
+                            "repeat('d',64),'usr_s49_save','mcp_s49_save','rag_s49_answer_0001',repeat('3',64),'kek-v1'," +
+                            "decode(repeat('01',12),'hex'),decode(repeat('02',32),'hex'),decode(repeat('03',16),'hex')," +
+                            "decode(repeat('04',12),'hex'),decode('05','hex'),decode(repeat('06',16),'hex')," +
+                            "decode(repeat('07',12),'hex'),decode('08','hex'),decode(repeat('09',16),'hex'),transaction_timestamp())",
+                    )
+                    statement.execute(
+                        "select public.record_s4_9_web_evidence_metadata(" +
+                            "'s49_web_' || repeat('4',32),'usr_s49_save','mcp_s49_save','s49_ctx_' || repeat('1',32)," +
+                            "'https://example.com/evidence','Evidence',null,transaction_timestamp(),repeat('5',64)," +
+                            "transaction_timestamp() + interval '1 hour')",
+                    )
+                    statement.execute(
+                        "select public.record_s4_9_strong_llm_usage(" +
+                            "'s49_llu_' || repeat('6',32),'usr_s49_save','req_s49_usage_0001','VERTEX_AI','gemini-3.5-flash'," +
+                            "'MODEL_KNOWLEDGE','COMMITTED',0,0,0,10,5,repeat('7',64))",
+                    )
+                }
+                connection.commit()
+
+                connection.createStatement().use { statement ->
+                    statement.execute("select set_config('app.actor_user_id','usr_s49_save',true)")
+                    assertThrows(SQLException::class.java) {
+                        statement.execute(
+                            "select public.consume_s4_9_validation_and_save_history(" +
+                                "repeat('d',64),'usr_s49_save','mcp_s49_save','rag_s49_answer_0002',repeat('3',64),'kek-v1'," +
+                                "decode(repeat('01',12),'hex'),decode(repeat('02',32),'hex'),decode(repeat('03',16),'hex')," +
+                                "decode(repeat('04',12),'hex'),decode('05','hex'),decode(repeat('06',16),'hex')," +
+                                "decode(repeat('07',12),'hex'),decode('08','hex'),decode(repeat('09',16),'hex'),transaction_timestamp())",
+                        )
+                    }
+                }
+                connection.rollback()
+            }
+            adminConnection(jdbcUrl).use { connection ->
+                assertThat(queryString(connection, "select count(*)::text from public.s4_9_saved_answer_history"))
+                    .isEqualTo("1")
+                assertThat(queryString(connection, "select count(*)::text from public.s4_9_web_evidence_metadata"))
+                    .isEqualTo("1")
+                assertThat(queryString(connection, "select count(*)::text from public.s4_9_strong_llm_usage_ledger"))
+                    .isEqualTo("1")
             }
         }
     }
@@ -211,7 +385,7 @@ class RagSourceRegistryMigrationIntegrationTest {
                 assertThat(queryStrings(connection, normalizedTableQuery))
                     .containsAll(expectedTables)
                 assertThat(queryString(connection, "select max(version::integer) from flyway_schema_history where success"))
-                    .isEqualTo("65")
+                    .isEqualTo("66")
 
                 expectedTables.forEach { table ->
                     assertThat(
@@ -1481,6 +1655,8 @@ class RagSourceRegistryMigrationIntegrationTest {
     }
 
     private fun adminConnection(jdbcUrl: String): Connection = DriverManager.getConnection(jdbcUrl, postgres.username, postgres.password)
+
+    private fun appConnection(jdbcUrl: String): Connection = DriverManager.getConnection(jdbcUrl, "decision_app", "app-test")
 
     private fun writerConnection(jdbcUrl: String): Connection =
         DriverManager.getConnection(jdbcUrl, "decision_rag_writer", "rag-writer-test")

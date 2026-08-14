@@ -913,7 +913,7 @@ def _verify_release_database_snapshot(
     vertex_packet_sha256: str,
 ) -> None:
     if (
-        snapshot.latest_migration != 64
+        snapshot.latest_migration != 65
         or snapshot.public_state != "ACTIVE"
         or snapshot.public_embedding_profile_id != "voyage_context_4_1024_v1"
         or snapshot.public_source_count != 142

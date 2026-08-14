@@ -72,7 +72,7 @@ hash 권한이 0이다.
 
 ### 0.3 Pre-S5 public activation과 owner profile authority
 
-2026-08-14 current local execution은 fresh DB V65에서 public RAG `FULL_READY`, active profile
+2026-08-14 current main baseline은 DB V65에서 public RAG `FULL_READY`, active profile
 `voyage_context_4_1024_v1`, sources/chunks `142/7,871`, document batch `63/63 COMMITTED`,
 EXACT30/OA112 evaluation `2/2 PASSED`를 보존한다. public Voyage document/evaluation/production query는
 재실행하지 않고 public BGE embedding inference는 계속 0이다. V65는 정상 Flyway 경로로 적용됐고
@@ -160,6 +160,60 @@ fresh final-head Window B의 Voyage query 1회와 Vertex service-account OAuth/g
 > `NOT_ACTIVATED`다.
 
 ---
+
+### 0.4 S4.9 MCP + Strong LLM internal contract
+
+S4.9 working tree는 next-free V66을 추가하며 기존 public RAG/OpenAPI/proto bytes는 동결한다. 기존
+`POST /api/v2/rag/ask`는 내부적으로 Top-5 전체를 provider-neutral `StrongLlmGenerationPort`에 전달한다.
+Vertex adapter는 direct answer 1회 또는 최대 3 tool round 뒤 tools 없는 final structured-output 1회를 수행한다.
+첫 안전 문장 강제 선택, answer enum 고정, citation 1개/문장 1개/numeric 0 강제는 제거한다.
+
+Strong LLM 내부 결과 의미는 다음과 같다.
+
+| basis | 계약 |
+|---|---|
+| `EVIDENCE` | 생성 문장마다 Top-5/current web evidence citation과 canonical text의 exact quote 필요 |
+| `MODEL_KNOWLEDGE` | timeless 교육 설명만, citation 0, coverage 0, `MODEL_KNOWLEDGE_ONLY` |
+| `INSUFFICIENT_EVIDENCE` | answer/citation 없이 public `RETRIEVAL_ONLY` + flag |
+
+validator는 응답을 고쳐 쓰지 않는다. 위조 citation/quote, quote에 없는 숫자, owner scope 위반, schema 위반,
+직접 매수·매도 조언은 invalid다. 단일/오래된/상충/낮은 관련성/2차 출처는 warning이다.
+
+Streamable HTTP `POST /mcp`는 OAuth bearer token을 요구하고 정확히 다음 다섯 tool만 노출한다.
+
+| tool | 필수 scope | 결과 |
+|---|---|---|
+| `capstone_rag_search` | `mcp:rag.public`, owner citation 시 `mcp:rag.owner` | owner/client-bound 15분 research context + Top-5 |
+| `capstone_web_search` | `mcp:web.read` | context-bound SearXNG URL 후보 |
+| `capstone_web_read` | `mcp:web.read` | bounded normalized text + content hash evidence |
+| `capstone_answer_validate` | `mcp:answer.validate` | exact draft validation + 5분 one-use receipt |
+| `capstone_answer_save` | `mcp:history.write` | 명시 호출 때만 AES-GCM encrypted 30-day history |
+
+tool parameter에 `ownerId`는 없고 JWT `sub`, `client_id`, audience, scope, account status/securityVersion에서만
+owner를 결정한다. 외부 LLM이 validate를 호출하지 않은 답변은 Capstone 검증 답변으로 표시·저장하지 않는다.
+
+OAuth discovery/control surface:
+
+```http
+GET /.well-known/oauth-authorization-server
+GET /.well-known/oauth-protected-resource
+GET /.well-known/oauth-protected-resource/mcp
+GET|POST /oauth2/authorize
+POST /oauth2/token
+POST /oauth2/revoke
+POST /mcp
+```
+
+Authorization Code + PKCE `S256`, exact `resource=<.../mcp>`, access token 15분, rotating refresh token 7일,
+ES256 signing key와 static/CIMD-verified allowlist를 사용한다. signing key/client file은 서로 다른 0600 regular
+single-link file이다. public Dynamic Client Registration endpoint는 열지 않는다.
+
+SearXNG는 내부 Compose profile `s4-9-web`이며 DuckDuckGo/Brave/Mojeek/Qwant/Wikipedia만 allowlist한다.
+Google/Naver, browser/crawler/Deep Research는 0이다. URL read는 검색 결과의 exact HTTPS URL만 받고 public IP,
+redirect DNS, TLS hostname, MIME/byte/page/prompt-injection 경계를 다시 검증한다. mode budget과 15분 external
+research budget은 `docs/S4_9_MCP_Strong_LLM_운영_가이드.md`의 env로 조정하되 absolute cap을 넘지 못한다.
+
+S4.9 result는 Signal/LSTM/Risk/order/hash API 입력이 아니며 이 절은 S5.1 계약을 넓히지 않는다.
 
 ## 1. 전체 API 경계
 

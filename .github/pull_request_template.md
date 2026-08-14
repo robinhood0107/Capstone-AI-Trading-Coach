@@ -44,4 +44,4 @@ EN:
 - [ ] `git status --short --branch`
 - [ ] `git check-ignore -v .env .env.local http-client.private.env.json`
 - [ ] `python3`로 `pyproject.toml` 파싱 확인
-- [ ] Docker 사용 가능 환경에서 합성 `POSTGRES_ADMIN_PASSWORD`/`POSTGRES_APP_PASSWORD`/`POSTGRES_MIGRATION_PASSWORD`/`REDIS_PASSWORD`로 `docker compose -f infra/docker-compose.infra.yml config --quiet`
+- [ ] Docker 사용 가능 환경에서 합성 DB/Redis 및 `SEARXNG_SECRET`/`MCP_SEARXNG_AUTH_TOKEN`으로 `docker compose -f infra/docker-compose.infra.yml config --quiet`

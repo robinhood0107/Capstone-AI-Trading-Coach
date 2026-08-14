@@ -94,7 +94,7 @@ revocation 시 해당 family를 폐기한다. access token은 15분이고 accoun
 - raw web body, raw model response, owner text, OAuth token, credential은 DB/log/history에 저장하지 않는다.
 - web evidence DB에는 URL/title/section/retrievedAt/content hash만 저장한다.
 - history는 validate 후 사용자의 explicit save에만 AES-GCM으로 30일 저장한다.
-- RAG/MCP/LLM은 Signal, LSTM, RiskDecision, order, judgement hash에 영향 0이다.
+- RAG/MCP/LLM은 downstream 모델·판단·주문·judgement hash에 영향 0이다.
 
 ## 7. 검증
 

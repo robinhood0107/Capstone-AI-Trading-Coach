@@ -34,6 +34,22 @@ class McpResearchAdmissionLimiterTest {
         assertThatThrownBy { limiter.acquireSearch(caller) }.isInstanceOf(IllegalArgumentException::class.java)
     }
 
+    @Test
+    fun `active owner client windows cannot exceed the global context cap`() {
+        val limiter =
+            McpResearchAdmissionLimiter(
+                properties().copy(
+                    externalResearchMaxContextsPerCaller = 2,
+                    externalResearchMaxTotalContexts = 2,
+                ),
+            )
+        limiter.acquireSearch(McpCaller("usr_load_1", "mcp_fixture"))
+        limiter.acquireSearch(McpCaller("usr_load_2", "mcp_fixture"))
+
+        assertThatThrownBy { limiter.acquireSearch(McpCaller("usr_load_3", "mcp_fixture")) }
+            .isInstanceOf(IllegalArgumentException::class.java)
+    }
+
     private fun properties() =
         RagWebToolProperties(
             receiptHmacKey = "x".repeat(32),

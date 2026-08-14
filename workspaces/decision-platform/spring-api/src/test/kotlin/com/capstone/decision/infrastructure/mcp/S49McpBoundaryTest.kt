@@ -1,16 +1,34 @@
 package com.capstone.decision.infrastructure.mcp
 
+import com.capstone.decision.infrastructure.rag.RagV2UnavailableVertexGenerationAdapter
 import jakarta.servlet.FilterChain
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 import org.springframework.ai.mcp.annotation.McpTool
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperties
+import org.springframework.core.annotation.AnnotatedElementUtils
 import org.springframework.mock.web.MockHttpServletRequest
 import org.springframework.mock.web.MockHttpServletResponse
 import kotlin.reflect.full.declaredFunctions
 import kotlin.reflect.jvm.javaMethod
 
 class S49McpBoundaryTest {
+    @Test
+    fun `Strong LLM activation excludes the unavailable generation adapter`() {
+        val conditions =
+            AnnotatedElementUtils
+                .findMergedAnnotation(RagV2UnavailableVertexGenerationAdapter::class.java, ConditionalOnProperties::class.java)
+                ?.value
+                ?.toList()
+                .orEmpty()
+
+        assertThat(conditions.map { it.name.toList() to it.havingValue }).contains(
+            listOf("app.rag-v2.vertex.enabled") to "false",
+            listOf("app.s4-9.strong-llm.enabled") to "false",
+        )
+    }
+
     @Test
     fun `MCP surface exposes exactly five provider neutral tools without owner argument`() {
         val methods =

@@ -19,7 +19,7 @@ import java.time.Instant
 
 class VertexGemini35FlashGenerationAdapterTest {
     @Test
-    fun `single generator uses fixed global generateContent without tools retries or raw artifacts`() {
+    fun `single legacy generator accepts grounded structured output without tools retries or raw artifacts`() {
         val activationReader = mockk<PreS5VertexActivationReader>()
         val oauthProvider = mockk<PreS5VertexServiceAccountOAuthProvider>()
         val ledger = mockk<JdbcPreS5VertexUsageLedger>(relaxed = true)
@@ -59,18 +59,15 @@ class VertexGemini35FlashGenerationAdapterTest {
             .containsExactly("candidateCount", "temperature", "maxOutputTokens", "responseMimeType", "responseSchema")
         assertThat(payload["generationConfig"]["responseMimeType"].stringValue()).isEqualTo("application/json")
         val responseSchema = payload["generationConfig"]["responseSchema"]
-        assertThat(responseSchema["properties"]["answer"]["enum"][0].stringValue())
-            .isEqualTo("The reference explains the model assumption.")
-        assertThat(responseSchema["properties"]["sentences"]["minItems"].intValue()).isEqualTo(1)
-        assertThat(responseSchema["properties"]["sentences"]["maxItems"].intValue()).isEqualTo(1)
+        assertThat(responseSchema["properties"]["answer"].get("enum")).isNull()
+        assertThat(responseSchema["properties"]["sentences"]["maxItems"].intValue()).isEqualTo(24)
         val sentenceSchema = responseSchema["properties"]["sentences"]["items"]["properties"]
-        assertThat(sentenceSchema["text"]["enum"][0].stringValue())
-            .isEqualTo("The reference explains the model assumption.")
-        assertThat(sentenceSchema["citationIds"]["items"]["enum"][0].stringValue()).isEqualTo("cit_1")
-        assertThat(sentenceSchema["numericSpans"]["maxItems"].intValue()).isZero()
+        assertThat(sentenceSchema["text"].get("enum")).isNull()
+        assertThat(sentenceSchema["citationIds"]["items"].get("enum")).isNull()
+        assertThat(sentenceSchema["numericSpans"]["maxItems"].intValue()).isEqualTo(64)
         val required = payload["generationConfig"]["responseSchema"]["required"]
         assertThat((0 until required.size()).map { required[it].stringValue() })
-            .containsExactly("answer", "sentences")
+            .containsExactly("basis", "answer", "sentences", "warnings")
         verify(exactly = 1) { ledger.reserve(any(), activation) }
         verify(exactly = 1) { ledger.claimTokenAttempt(lease) }
         verify(exactly = 1) { oauthProvider.acquire(activation, tokenAttempt) }
@@ -264,6 +261,6 @@ class VertexGemini35FlashGenerationAdapterTest {
 
     private fun validGeneratedJson(): String =
         """
-        {"answer":"The reference explains the model assumption.","sentences":[{"text":"The reference explains the model assumption.","citationIds":["cit_1"],"numericSpans":[]}]}
+        {"basis":"EVIDENCE","answer":"The reference explains the model assumption.","sentences":[{"text":"The reference explains the model assumption.","citationIds":["cit_1"],"evidenceSpans":[{"citationId":"cit_1","quote":"The reference explains the model assumption."}],"numericSpans":[]}],"warnings":["SINGLE_SOURCE"]}
         """.trimIndent()
 }

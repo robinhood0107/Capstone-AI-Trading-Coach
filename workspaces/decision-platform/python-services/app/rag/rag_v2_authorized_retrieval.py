@@ -425,7 +425,6 @@ class RagV2AuthorizedHybridRetrieval:
         if not _evidence_is_sufficient(
             evidence=evidence,
             fusion=fused,
-            channels=channels,
         ):
             return _execution(
                 RagV2RetrievalFailureCode.INSUFFICIENT_EVIDENCE,
@@ -509,14 +508,10 @@ def _evidence_is_sufficient(
     *,
     evidence: tuple[RagV2RetrievalCandidate, ...],
     fusion: tuple[RagV2FusedCandidate, ...],
-    channels: tuple[RagV2ChannelResult, ...],
 ) -> bool:
+    # 언어가 다른 일반 질문은 exact/lexical이 정상적으로 비고 dense만 근거를 찾을 수 있다.
+    # 채널 수가 아니라 독립 source 수를 신뢰 경계로 사용해 cross-lingual retrieval을 보존한다.
     if len({item.source_id for item in evidence}) < 2:
-        return False
-    # 일반 개념 질문은 exact identifier가 없고 lexical/dense가 서로 다른 유효 chunk를
-    # 반환할 수 있다. 두 독립 채널과 두 출처를 모두 요구하되, 동일 chunk 교집합까지
-    # 필수로 만들어 정상 근거를 버리지는 않는다.
-    if len({channel.channel for channel in channels if channel.items}) < 2:
         return False
     return bool(fusion)
 

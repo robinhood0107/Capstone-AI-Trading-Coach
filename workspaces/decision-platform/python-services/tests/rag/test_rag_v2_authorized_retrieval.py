@@ -210,15 +210,43 @@ def test_v2_retrieval_accepts_disjoint_lexical_and_dense_evidence_from_distinct_
     }
 
 
-def test_v2_retrieval_rejects_distinct_sources_from_only_one_channel() -> None:
+def test_v2_retrieval_accepts_cross_language_dense_only_evidence_from_distinct_sources() -> None:
     scope = _scope(owner_generation=False)
     first = _candidate(1, scope, source_scope="EXACT30")
     second = _candidate(2, scope, source_scope="OA112")
 
     outcome = _retrieval(
         exact=RagV2ChannelResult("exact", (), complete=True),
-        lexical=RagV2ChannelResult("lexical", (first, second), complete=True),
-        dense=RagV2ChannelResult("dense", (), complete=True),
+        lexical=RagV2ChannelResult("lexical", (), complete=True),
+        dense=RagV2ChannelResult("dense", (first, second), complete=True),
+    ).retrieve(
+        scope=scope,
+        payload={
+            "question": "분산투자에서 자산 간 상관관계가 위험에 미치는 영향",
+            "answerMode": "DETAILED",
+        },
+    )
+
+    assert outcome.failure_code is None
+    assert outcome.retrieval_permitted is True
+    assert {item.source_id for item in outcome.evidence} == {
+        first.source_id,
+        second.source_id,
+    }
+
+
+def test_v2_retrieval_rejects_dense_only_evidence_from_one_source() -> None:
+    scope = _scope(owner_generation=False)
+    first = _candidate(1, scope, source_scope="OA112")
+    same_source = replace(
+        _candidate(2, scope, source_scope="OA112"),
+        source_id=first.source_id,
+    )
+
+    outcome = _retrieval(
+        exact=RagV2ChannelResult("exact", (), complete=True),
+        lexical=RagV2ChannelResult("lexical", (), complete=True),
+        dense=RagV2ChannelResult("dense", (first, same_source), complete=True),
     ).retrieve(
         scope=scope,
         payload={"question": "분산투자 위험 근거", "answerMode": "DETAILED"},

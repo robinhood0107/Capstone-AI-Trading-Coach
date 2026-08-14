@@ -24,7 +24,7 @@ class PreS5VertexThoughtUsageForwardRepairMigrationContractTest {
     }
 
     @Test
-    fun `V65 is the next free forward migration`() {
+    fun `V65 remains the preserved pre S5 forward migration`() {
         val versions =
             Files.list(migrationDirectory).use { paths ->
                 paths
@@ -35,6 +35,6 @@ class PreS5VertexThoughtUsageForwardRepairMigrationContractTest {
                     .toList()
             }
 
-        assertThat(versions.takeLast(3)).containsExactly(63, 64, 65)
+        assertThat(versions.windowed(3)).contains(listOf(63, 64, 65))
     }
 }

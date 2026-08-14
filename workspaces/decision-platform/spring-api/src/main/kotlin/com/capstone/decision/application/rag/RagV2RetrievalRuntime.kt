@@ -77,3 +77,10 @@ interface RagV2EvaluationPort {
         context: RagV2EvaluationContext,
     ): RagV2EvaluationResult
 }
+
+/** MCP/Strong LLM이 history 저장이나 generation 없이 재사용하는 owner-scoped retrieval projection이다. */
+data class RagV2SearchEvidenceResult(
+    val scope: RagV2RetrievalScope,
+    val citations: List<RagV2RetrievedCitation>,
+    val evidence: List<RagV2VertexEvidence>,
+)

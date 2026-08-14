@@ -27,7 +27,7 @@ class PreS5RetrievalScopeTtlForwardRepairMigrationContractTest {
     }
 
     @Test
-    fun `V64 remains immediately before the next forward migration`() {
+    fun `V64 remains in order before the later forward migrations`() {
         val versions =
             Files.list(migrationDirectory).use { paths ->
                 paths
@@ -38,6 +38,6 @@ class PreS5RetrievalScopeTtlForwardRepairMigrationContractTest {
                     .toList()
             }
 
-        assertThat(versions.takeLast(3)).containsExactly(63, 64, 65)
+        assertThat(versions.takeLast(4)).containsExactly(64, 65, 66, 67)
     }
 }

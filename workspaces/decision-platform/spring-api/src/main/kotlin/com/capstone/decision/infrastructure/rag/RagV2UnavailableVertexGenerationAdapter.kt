@@ -17,6 +17,11 @@ import org.springframework.stereotype.Component
     havingValue = "false",
     matchIfMissing = true,
 )
+@ConditionalOnProperty(
+    name = ["app.s4-9.strong-llm.enabled"],
+    havingValue = "false",
+    matchIfMissing = true,
+)
 class RagV2UnavailableVertexGenerationAdapter : RagV2VertexGenerationPort {
     override fun isActivationEnabled(): Boolean = false
 

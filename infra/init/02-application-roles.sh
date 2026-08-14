@@ -1380,6 +1380,50 @@ BEGIN
             read_rag_v2_immutable_effective_consent(text)
         TO decision_app;
     END IF;
+    IF to_regprocedure(
+        'public.record_s4_9_strong_llm_usage(text,text,text,text,text,text,text,integer,integer,integer,integer,integer,text)'
+    ) IS NOT NULL THEN
+        -- bootstrap 재적용 뒤에도 V66 table 직접 권한은 닫고 S4.9 definer capability만 복원한다.
+        GRANT EXECUTE ON FUNCTION
+            record_s4_9_strong_llm_usage(
+                text, text, text, text, text, text, text,
+                integer, integer, integer, integer, integer, text
+            ),
+            record_s4_9_web_evidence_metadata(
+                text, text, text, text, text, text, text, timestamptz, text, timestamptz
+            ),
+            sync_s4_9_mcp_oauth_client(text, text, text, text[], text[], text),
+            upsert_s4_9_mcp_oauth_code_hash(
+                text, text, text, bigint, text, text, text[], text, timestamptz
+            ),
+            consume_s4_9_mcp_oauth_code_hash(text),
+            rotate_s4_9_mcp_refresh_token_hash(
+                text, text, text, bigint, text, text[], timestamptz
+            ),
+            revoke_s4_9_mcp_refresh_token_family(text),
+            issue_s4_9_answer_validation_receipt(
+                text, text, text, text, text, text, text, timestamptz
+            ),
+            consume_s4_9_validation_and_save_history(
+                text, text, text, text, text, text,
+                bytea, bytea, bytea, bytea, bytea, bytea,
+                bytea, bytea, bytea, timestamptz
+            ),
+            persist_s4_9_strong_llm_history(
+                text, text, text, text, text, text, text, double precision, text[], text,
+                bytea, bytea, bytea, bytea, bytea, bytea,
+                bytea, bytea, bytea, timestamptz, jsonb
+            )
+        TO decision_app;
+    END IF;
+    IF to_regprocedure(
+        'public.issue_s4_9_mcp_retrieval_scope(text,text,text[],boolean)'
+    ) IS NOT NULL THEN
+        -- V67 public-only claim은 OAuth owner scope를 발급 전에 결박하고 raw claim table 권한은 열지 않는다.
+        GRANT EXECUTE ON FUNCTION
+            issue_s4_9_mcp_retrieval_scope(text, text, text[], boolean)
+        TO decision_app;
+    END IF;
 END
 $decision_runtime_function_privileges$;
 

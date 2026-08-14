@@ -222,6 +222,17 @@ Decision, Signal, RiskDecision, order, decision hash에 영향을 주지 않는�
   보안 경계 또는 재발 가능성이 기존 coverage에 없을 때만 최소 테스트를 추가한다.
 - 구현과 그 동작을 검증하는 테스트는 같은 `feat|fix` 커밋에 포함할 수 있다. 별도 test-only 선행
   커밋은 복잡한 회귀 계약을 독립적으로 고정해야 할 때만 사용한다.
+- `codex-security:security-diff-scan`, `security-scan`, `deep-security-scan`, threat modeling,
+  finding discovery/validation, attack-path analysis 등 Codex Security 계열 skill과 scan 작업은
+  구현·버그 수정·focused/통합 테스트·정적검사·문서 동기화가 모두 끝난 **최종 동결 tree**에서만
+  실행한다. 구현 도중, 가설 수정마다, 커밋마다 또는 CI 대기 중간에 선행·중복 실행하지 않는다.
+- 한 release candidate HEAD에는 목적에 맞는 Codex Security campaign을 **마지막 gate로 정확히 1회**
+  실행한다. 같은 diff에 diff scan과 full scan을 관성적으로 연속 실행하지 않으며, 이전 HEAD의 scan을
+  current evidence로 재사용하지도 않는다. 최종 scan 뒤 tracked 변경은 `0`이어야 한다.
+- 최종 scan에서 finding이 나오면 release를 중단하고 수정·일반 검증을 먼저 끝낸다. 수정으로 HEAD가
+  바뀐 경우에만 새 최종 동결 HEAD에 대해 campaign 1회를 다시 실행한다. scan 도구/finalizer의
+  일시 오류는 동일 분석을 새 scan으로 중복 생성하지 말고 기존 scan의 공식 resume/recovery 경로로
+  이어서 완료한다.
 - Markdown/AGENTS/명세서/규칙 파일 변경은 코드 구현 커밋과 분리한다. 구현과 문서가 같은 세션에서 필요하더라도 리뷰자가 diff를 따로 볼 수 있게 별도 커밋으로 남긴다.
 - 예외는 오타 수정, import 정리, 테스트 fixture 이름 변경처럼 해당 커밋의 코드가 없으면 테스트가 실행조차 되지 않는 기계적 동반 변경뿐이다. 예외를 쓰면 커밋 메시지나 PR 본문에 이유를 적는다.
 - 커밋과 PR에는 Codex·Claude 등 AI 도구의 기여 표시를 절대 남기지 않는다.

@@ -6,6 +6,7 @@ import com.capstone.decision.application.rag.RagV2RuntimeService
 import com.capstone.decision.application.rag.RagV2VertexEvidence
 import com.capstone.decision.application.rag.RagV2VertexResponseValidator
 import com.capstone.decision.infrastructure.vertex.S49StrongLlmProperties
+import org.slf4j.LoggerFactory
 import org.springframework.ai.mcp.annotation.McpTool
 import org.springframework.ai.mcp.annotation.McpToolParam
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
@@ -106,6 +107,7 @@ class CapstoneMcpTools(
                 caller.oauthClientId,
                 question,
                 mode,
+                topics,
                 requestId,
                 result.scope,
                 result.citations,
@@ -149,7 +151,17 @@ class CapstoneMcpTools(
         val context = requireCurrentContext(researchContext, caller)
         val budget = properties.budget(mode)
         contexts.reserveRead(context, mode, budget.maxReads, url)
-        val document = admission.withRead(caller) { webReader.read(url) }
+        val document =
+            try {
+                admission.withRead(caller) { webReader.read(url) }
+            } catch (error: S49WebReadRejectedException) {
+                logger.warn("s4_9.web_read.rejected leaf={}", error.message)
+                throw error
+            } catch (_: Exception) {
+                val leaf = "S4_9_WEB_READ_UNEXPECTED_REJECTED"
+                logger.warn("s4_9.web_read.rejected leaf={}", leaf)
+                throw S49WebReadRejectedException(leaf)
+            }
         val hash = sha256(document.text)
         webEvidenceMetadata.record(
             caller.ownerUserId,
@@ -232,6 +244,7 @@ class CapstoneMcpTools(
             caller.ownerUserId,
             context.requestId,
             context.retrievalScope,
+            context.topics,
             context.retrievalCitations,
             context.retrievalEvidence,
         )
@@ -253,6 +266,7 @@ class CapstoneMcpTools(
         MessageDigest.getInstance("SHA-256").digest(value.toByteArray(StandardCharsets.UTF_8)).joinToString("") { "%02x".format(it) }
 
     private companion object {
+        val logger = LoggerFactory.getLogger(CapstoneMcpTools::class.java)
         val OWNER_ID = Regex("^usr_[a-z0-9][a-z0-9_-]{2,95}$")
         val MCP_CLIENT_ID = Regex("^mcp_[a-z0-9][a-z0-9._-]{2,95}$")
         val CIMD_CLIENT_ID = Regex("^https://[A-Za-z0-9.-]+/[A-Za-z0-9._~!$&'()*+,;=:@%/-]{1,190}$")

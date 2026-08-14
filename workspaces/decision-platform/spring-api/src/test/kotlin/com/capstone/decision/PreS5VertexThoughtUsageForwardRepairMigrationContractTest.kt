@@ -5,29 +5,26 @@ import org.junit.jupiter.api.Test
 import java.nio.file.Files
 import java.nio.file.Path
 
-class PreS5RetrievalScopeTtlForwardRepairMigrationContractTest {
+class PreS5VertexThoughtUsageForwardRepairMigrationContractTest {
     private val migrationDirectory = Path.of("src/main/resources/db/migration")
-    private val migrationPath =
-        migrationDirectory.resolve("V64__pre_s5_retrieval_scope_ttl_forward_repair.sql")
+    private val migrationPath = migrationDirectory.resolve("V65__pre_s5_vertex_thought_usage_forward_repair.sql")
 
     @Test
-    fun `V64 extends only the v3 provider preparation scope to five minutes`() {
-        assertThat(migrationPath).exists()
+    fun `V65 aligns Gemini thought usage with immutable cost and output caps`() {
         val migration = Files.readString(migrationPath)
 
         assertThat(migration).contains(
-            "DROP CONSTRAINT rag_v2_retrieval_scope_expiry_check",
-            "expires_at = created_at + interval '2 minutes'",
-            "expires_at = created_at + interval '5 minutes'",
-            "CREATE FUNCTION public.issue_rag_v2_retrieval_scope_v3",
-            "UPDATE public.rag_v2_retrieval_scope_claims",
-            "GRANT EXECUTE ON FUNCTION public.issue_rag_v2_retrieval_scope_v3(text, text, text[])",
+            "total_token_count - prompt_token_count - candidate_token_count BETWEEN 0 AND 32768",
+            "p_total_token_count - p_prompt_token_count > reservation.output_token_cap",
+            "(p_total_token_count - p_prompt_token_count)::bigint * reservation.output_microusd_per_token",
+            "REVOKE ALL PRIVILEGES ON FUNCTION public.commit_rag_v2_immutable_vertex_usage",
+            "GRANT EXECUTE ON FUNCTION public.commit_rag_v2_immutable_vertex_usage",
         )
         assertThat(migration).doesNotContain("http_get", "http_post", "COPY PROGRAM")
     }
 
     @Test
-    fun `V64 remains immediately before the next forward migration`() {
+    fun `V65 is the next free forward migration`() {
         val versions =
             Files.list(migrationDirectory).use { paths ->
                 paths

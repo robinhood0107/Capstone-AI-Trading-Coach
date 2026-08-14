@@ -271,7 +271,6 @@ def _owner_voyage_manifest(
     binding: PreS5ProviderBinding,
 ) -> dict[str, object]:
     return {
-        "approvalScope": "PRE_S5_OWNER_VOYAGE_SYNTHETIC_ONE_SHOT",
         "batchManifestSha256": plan.batch.batch_manifest_sha256,
         "binding": {
             "ciDigest": binding.ci_digest,

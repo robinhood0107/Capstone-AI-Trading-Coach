@@ -34,6 +34,10 @@ class S49McpStrongLlmContractTest(unittest.TestCase):
         )
         self.assertFalse(catalog["mcp"]["ownerIdToolArgumentAllowed"])
         self.assertFalse(catalog["mcp"]["publicDynamicClientRegistration"])
+        rag_scope = catalog["mcp"]["toolScopes"]["capstone_rag_search"]
+        self.assertEqual(rag_scope["required"], ["mcp:rag.public"])
+        self.assertEqual(rag_scope["ownerEvidenceRequires"], "mcp:rag.owner")
+        self.assertTrue(rag_scope["publicOnlyClaimDoesNotReadOwnerOverlay"])
 
     def test_s4_9_keeps_web_and_trading_authority_closed(self) -> None:
         catalog = _catalog()
@@ -72,6 +76,15 @@ class S49McpStrongLlmContractTest(unittest.TestCase):
             self.assertFalse(schema["additionalProperties"])
             self.assertNotIn("ownerId", schema["properties"])
             self.assertNotIn("ownerUserId", schema["properties"])
+
+        topics = tools[0]["inputSchema"]["properties"]["topics"]
+        self.assertEqual(topics["minItems"], 1)
+        self.assertEqual(topics["maxItems"], 6)
+        self.assertTrue(topics["uniqueItems"])
+        self.assertEqual(
+            set(topics["items"]["enum"]),
+            {"API", "DATA", "FINANCIAL_ENGINEERING", "METHODOLOGY", "PRODUCT_RISK", "RISK"},
+        )
 
 
 if __name__ == "__main__":

@@ -65,6 +65,7 @@ class RagV2VertexResponseValidatorTest {
         listOf(
             """{"basis":"EVIDENCE","answer":"분산이 항상 0이 됩니다.","sentences":[{"text":"분산이 항상 0이 됩니다.","citationIds":["cit_1"],"evidenceSpans":[{"citationId":"cit_1","quote":"variance always becomes zero"}],"numericSpans":[{"value":"0","citationIds":["cit_1"]}]}],"warnings":[]}""",
             """{"basis":"EVIDENCE","answer":"예시는 연 5%를 사용합니다.","sentences":[{"text":"예시는 연 5%를 사용합니다.","citationIds":["cit_1","cit_3"],"evidenceSpans":[{"citationId":"cit_1","quote":"portfolio variance"}],"numericSpans":[{"value":"5%","citationIds":["cit_3"]}]}],"warnings":[]}""",
+            """{"basis":"EVIDENCE","answer":"공분산 항은 포트폴리오 위험을 구성합니다.","sentences":[{"text":"공분산 항은 포트폴리오 위험을 구성합니다.","citationIds":["cit_1","cit_2"],"evidenceSpans":[{"citationId":"cit_2","quote":"The covariance terms determine how pairs of assets contribute to total portfolio risk."}],"numericSpans":[]}],"warnings":[]}""",
         ).forEach { body ->
             assertThatThrownBy { validator.validate(body, evidence) }
                 .isInstanceOf(RagV2VertexResponseValidationException::class.java)
@@ -122,6 +123,29 @@ class RagV2VertexResponseValidatorTest {
             validator.validate(
                 """{"basis":"EVIDENCE","answer":"지금 이 종목을 매수해야 합니다.","sentences":[{"text":"지금 이 종목을 매수해야 합니다.","citationIds":["cit_1"],"evidenceSpans":[{"citationId":"cit_1","quote":"지금 이 종목을 매수해야 합니다."}],"numericSpans":[]}],"warnings":[]}""",
                 adviceEvidence,
+            )
+        }.isInstanceOf(RagV2VertexResponseValidationException::class.java)
+    }
+
+    @Test
+    fun `validated answer cannot exceed the public service byte boundary`() {
+        val sentence = "근거문장".repeat(160)
+        val longEvidence = listOf(evidence(1, "e", sentence))
+        val sentences =
+            List(5) {
+                """{"text":"$sentence","citationIds":["cit_1"],"evidenceSpans":[{"citationId":"cit_1","quote":"$sentence"}],"numericSpans":[]}"""
+            }
+        val answer = List(5) { sentence }.joinToString("\n")
+
+        assertThat(answer.toByteArray(StandardCharsets.UTF_8).size).isGreaterThan(8_192)
+        val response =
+            """{"basis":"EVIDENCE","answer":"${answer.replace("\n", "\\n")}","sentences":[${
+                sentences.joinToString(",")
+            }],"warnings":[]}"""
+        assertThatThrownBy {
+            validator.validate(
+                response,
+                longEvidence,
             )
         }.isInstanceOf(RagV2VertexResponseValidationException::class.java)
     }

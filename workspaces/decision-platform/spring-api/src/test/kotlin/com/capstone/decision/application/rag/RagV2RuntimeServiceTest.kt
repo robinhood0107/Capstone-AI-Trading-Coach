@@ -488,8 +488,10 @@ class RagV2RuntimeServiceTest {
             },
         vertexQuestionFingerprint: RagV2VertexQuestionFingerprintPort = mockk(relaxed = true),
         transactionManager: PlatformTransactionManager = TrackingTransactionManager(),
-    ): RagV2RuntimeService =
-        RagV2RuntimeService(
+    ): RagV2RuntimeService {
+        val transactionManagerProvider = mockk<ObjectProvider<PlatformTransactionManager>>()
+        every { transactionManagerProvider.getIfAvailable() } returns transactionManager
+        return RagV2RuntimeService(
             jdbcProvider = provider,
             cursorPort = mockk(relaxed = true),
             cryptoPort = crypto,
@@ -498,8 +500,9 @@ class RagV2RuntimeServiceTest {
             vertexGenerationPort = vertexGeneration,
             vertexQuestionFingerprintPort = vertexQuestionFingerprint,
             objectMapper = JsonMapper.builder().build(),
-            transactionManager = transactionManager,
+            transactionManagerProvider = transactionManagerProvider,
         )
+    }
 
     private class TrackingTransactionManager : PlatformTransactionManager {
         var active = false

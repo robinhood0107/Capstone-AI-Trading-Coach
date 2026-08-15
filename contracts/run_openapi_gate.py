@@ -74,14 +74,14 @@ def _explicit_process_environment(values: Mapping[str, str]) -> dict[str, str]:
     return environment
 
 
-def _require_fixture_port_available() -> None:
+def _require_fixture_port_available(port: int = FIXTURE_PORT) -> None:
     probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
         probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 0)
-        probe.bind(("127.0.0.1", FIXTURE_PORT))
+        probe.bind(("127.0.0.1", port))
     except OSError as error:
         raise OpenApiGateError(
-            f"Isolated PostgreSQL host port {FIXTURE_PORT} is already in use."
+            f"Isolated PostgreSQL host port {port} is already in use."
         ) from error
     finally:
         probe.close()
@@ -124,10 +124,15 @@ def _compose_command(project_name: str, *arguments: str) -> list[str]:
     ]
 
 
-def run_gate(env_file: Path, *, write: bool) -> None:
-    values = parse_openapi_environment(env_file)
+def run_gate(env_file: Path, *, write: bool, fixture_port: int = FIXTURE_PORT) -> None:
+    if fixture_port not in range(1024, 65536):
+        raise OpenApiGateError("Isolated PostgreSQL host port is invalid.")
+    values = dict(parse_openapi_environment(env_file))
+    # 기존 compose를 중단하지 않고 충돌 없는 loopback port에서 같은 일회성 fixture를 띄운다.
+    values["POSTGRES_HOST_PORT"] = str(fixture_port)
+    values["POSTGRES_PORT"] = str(fixture_port)
     environment = _explicit_process_environment(values)
-    _require_fixture_port_available()
+    _require_fixture_port_available(fixture_port)
     project_name = f"s21-openapi-{os.getpid()}"
     primary_error: BaseException | None = None
     cleanup_required = False
@@ -200,9 +205,14 @@ def main() -> int:
         action="store_true",
         help="Write the normalized tracked OpenAPI instead of checking drift.",
     )
+    parser.add_argument("--fixture-port", type=int, default=FIXTURE_PORT)
     arguments = parser.parse_args()
     try:
-        run_gate(arguments.env_file, write=arguments.write)
+        run_gate(
+            arguments.env_file,
+            write=arguments.write,
+            fixture_port=arguments.fixture_port,
+        )
     except (OpenApiEnvironmentError, OpenApiGateError, OSError) as error:
         print(f"OpenAPI gate failed: {error}", file=sys.stderr)
         return 1

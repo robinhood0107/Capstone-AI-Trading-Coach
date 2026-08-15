@@ -8,6 +8,8 @@ import kotlin.io.path.readText
 class S49LangGraphGroundingMigrationContractTest {
     private val sql =
         Path.of("src/main/resources/db/migration/V70__s4_9_langchain_grounding_provenance.sql").readText()
+    private val repairSql =
+        Path.of("src/main/resources/db/migration/V71__s4_9_searxng_history_provenance_forward_repair.sql").readText()
 
     @Test
     fun `V70은 기존 migration을 수정하지 않고 Google budget과 provenance를 forward 추가한다`() {
@@ -39,5 +41,23 @@ class S49LangGraphGroundingMigrationContractTest {
         assertThat(sql).contains("GRANT EXECUTE ON FUNCTION public.record_s4_9_grounding_provenance")
         assertThat(sql).contains("GRANT EXECUTE ON FUNCTION public.persist_s4_9_strong_llm_history_v2")
         assertThat(sql).contains("GRANT EXECUTE ON FUNCTION public.record_s4_9_strong_llm_usage_v2")
+    }
+
+    @Test
+    fun `V71은 기존 V70을 보존하고 host 등록 provenance 종류를 history에 정렬한다`() {
+        assertThat(repairSql).contains(
+            "CREATE OR REPLACE FUNCTION public.canonicalize_s4_9_strong_llm_citations_v2",
+            "google_",
+            "searxng_",
+            "user_",
+            "link_",
+            "GOOGLE_GROUNDING",
+            "SEARXNG_RESULT",
+            "USER_ROOT",
+            "DISCOVERED_LINK",
+            "SECURITY DEFINER",
+            "REVOKE ALL PRIVILEGES",
+        )
+        assertThat(repairSql).doesNotContain("DROP TABLE", "TRUNCATE", "DELETE FROM")
     }
 }

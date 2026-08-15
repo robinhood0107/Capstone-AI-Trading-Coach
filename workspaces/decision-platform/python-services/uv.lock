@@ -1,3 +1,4 @@
+# S4.9 narrow reference carrier 준비용 임시 marker다.
 version = 1
 revision = 3
 requires-python = ">=3.12"

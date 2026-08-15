@@ -141,7 +141,7 @@
   사용자 질문의 공개 HTTPS URL, 읽은 문서에서 실제 발견한 링크만 `resultId` provenance graph를 거쳐
   bounded reader가 접근한다. 미등록 model URL, private/link-local 주소, DNS rebinding, credential/cookie는
   계속 차단한다. owner text는 Google discovery에 전달하지 않으며 갱신 동의가 있는 tool-free final call에만
-  포함할 수 있다. RAG/MCP/LLM 결과의 Signal/LSTM/RiskDecision/order/hash authority는 0이다.
+  포함할 수 있다. RAG/MCP/LLM 결과의 Signal/downstream prediction/RiskDecision/order/hash authority는 0이다.
 
   clean restart의 local namespace는 Compose project `capstone-pre-s5-fresh`, PostgreSQL host port
   `55432`, Redis host port `56379`, output root `capstone-rag/runtime/pre-s5-fresh/local-corpus`로

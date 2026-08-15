@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from app.strong_llm.models import Evidence, RunRequest
-from app.strong_llm.prompt import render_discovery_prompt, render_prompt
+from app.strong_llm.prompt import require_google_grounding, render_discovery_prompt, render_prompt
 
 
 def test_owner_text_is_absent_from_google_discovery_prompt() -> None:
@@ -32,3 +32,26 @@ def test_owner_text_is_absent_from_google_discovery_prompt() -> None:
     assert owner_secret not in discovery.system + discovery.user
     assert public_text in discovery.user
     assert owner_secret in final.user
+
+
+def test_google_prompt_requires_search_for_explicit_current_web_request_and_forbids_invented_ids() -> None:
+    request = RunRequest(
+        run_id="s49_run_" + "1" * 32,
+        model_id="gemini-3.5-flash",
+        question="현재 실제 웹 근거를 찾아 주세요.",
+        answer_mode="CONCISE",
+        related_symbols=(),
+        topics=("RISK",),
+        public_evidence=(),
+        owner_evidence=(),
+        google_search_enabled=True,
+        max_tool_rounds=3,
+        current_time="2026-08-15T00:00:00Z",
+        timezone="Asia/Seoul",
+    )
+
+    prompt = require_google_grounding(render_prompt(request, ()))
+
+    assert "must use Google Search" in prompt.system
+    assert "Never invent citationIds" in prompt.system
+    assert "INSUFFICIENT_EVIDENCE" in prompt.system

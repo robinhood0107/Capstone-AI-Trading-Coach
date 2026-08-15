@@ -9,6 +9,7 @@ from typing import Any, cast
 from urllib.parse import urlparse
 
 from google import genai
+from google.genai import types as genai_types
 from google.oauth2 import service_account
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -177,6 +178,10 @@ class LangChainVertexProvider:
             credentials=self._credentials,
             project=self._project,
             location=self._settings.location,
+            http_options=genai_types.HttpOptions(
+                timeout=int(self._settings.timeout_seconds * 1_000),
+                retry_options=genai_types.HttpRetryOptions(attempts=1),
+            ),
         )
         try:
             interaction = client.interactions.create(
@@ -184,7 +189,6 @@ class LangChainVertexProvider:
                 input=user,
                 system_instruction=system,
                 tools=[{"type": "google_search", "search_types": ["web_search"]}],
-                tool_choice="any",
                 response_format={
                     "type": "text",
                     "mime_type": "application/json",
@@ -195,6 +199,7 @@ class LangChainVertexProvider:
                     "thinking_level": self._settings.thinking_level,
                 },
                 store=False,
+                extra_body={"tool_choice": "any"},
                 timeout=self._settings.timeout_seconds,
             )
         finally:

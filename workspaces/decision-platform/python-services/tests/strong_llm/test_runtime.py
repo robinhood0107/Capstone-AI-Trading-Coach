@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from typing import cast
 
 import pytest
+from google.genai import types as genai_types
 from langchain_core.messages import AIMessage, BaseMessage
 
 from app.strong_llm.models import Evidence, RunRequest
@@ -315,10 +316,16 @@ def test_explicit_google_search_uses_stateless_required_interaction(
 
     result = provider.invoke_google(request, include_owner=False)
 
-    assert captured["tool_choice"] == "any"
+    assert captured["extra_body"] == {"tool_choice": "any"}
+    assert "tool_choice" not in {key for key in captured if key != "extra_body"}
     assert captured["store"] is False
     assert captured["tools"] == [{"type": "google_search", "search_types": ["web_search"]}]
-    assert cast(dict[str, object], captured["client"])["vertexai"] is True
+    client_args = cast(dict[str, object], captured["client"])
+    assert client_args["vertexai"] is True
+    http_options = cast(genai_types.HttpOptions, client_args["http_options"])
+    assert http_options.timeout == 50_000
+    assert http_options.retry_options is not None
+    assert http_options.retry_options.attempts == 1
     assert captured["closed"] is True
     assert result["google_query_count"] == 1
     assert result["grounding_roots"][0]["citation_id"] == "cit_1"

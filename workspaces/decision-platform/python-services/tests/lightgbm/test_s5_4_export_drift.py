@@ -18,7 +18,6 @@ from app.lightgbm.export import (
     curated_contribution_report,
     export_signal_artifact,
     gain_importance,
-    signal_semantic_hash,
 )
 from app.lightgbm.metrics import CalibrationMetrics
 from app.lightgbm.training import TrainedBooster
@@ -153,21 +152,6 @@ def test_stale_failure_and_missing_export_abstain_without_fabricated_values() ->
         raw_margins=np.asarray([0.0, 0.0, 0.0]),
     )
     assert nonfinite.payload["reason"] == "UNIDENTIFIABLE_OUTPUT"
-
-
-def test_signal_semantic_hash_ignores_external_snapshot_that_is_not_an_input() -> None:
-    session = date(2026, 8, 14)
-    first = export_signal_artifact(
-        _identity(session),
-        as_of=datetime(2026, 8, 14, 6, 30, tzinfo=UTC),
-        current_completed_session=session,
-        calibrated_probabilities=np.asarray([0.7, 0.2, 0.1]),
-        raw_margins=np.asarray([2.0, 0.0, -1.0]),
-    )
-    external_snapshot_a = {"crossMarketScore": 1}
-    external_snapshot_b = {"crossMarketScore": 99}
-    assert external_snapshot_a != external_snapshot_b
-    assert signal_semantic_hash(first.payload) == signal_semantic_hash(first.payload)
 
 
 def test_drift_counter_immediate_brier_reset_and_unidentifiable_window() -> None:

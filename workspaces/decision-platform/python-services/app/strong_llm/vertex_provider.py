@@ -28,6 +28,7 @@ class VertexProviderSettings:
         service_account_path: Path,
         location: str = "global",
         timeout_seconds: float = 50.0,
+        thinking_level: str = "low",
     ) -> None:
         path = service_account_path
         info = path.lstat()
@@ -39,9 +40,12 @@ class VertexProviderSettings:
             raise ValueError("STRONG_LLM_VERTEX_LOCATION_INVALID")
         if not 10.0 <= timeout_seconds <= 55.0:
             raise ValueError("STRONG_LLM_VERTEX_TIMEOUT_INVALID")
+        if thinking_level not in {"minimal", "low", "medium"}:
+            raise ValueError("STRONG_LLM_VERTEX_THINKING_LEVEL_INVALID")
         self.service_account_path = path
         self.location = location
         self.timeout_seconds = timeout_seconds
+        self.thinking_level = thinking_level
 
     @classmethod
     def from_env(cls) -> "VertexProviderSettings":
@@ -53,7 +57,12 @@ class VertexProviderSettings:
             timeout_seconds = float(raw_timeout)
         except ValueError as error:
             raise ValueError("STRONG_LLM_VERTEX_TIMEOUT_INVALID") from error
-        return cls(service_account_path=path, timeout_seconds=timeout_seconds)
+        thinking_level = os.environ.get("STRONG_LLM_VERTEX_THINKING_LEVEL", "low")
+        return cls(
+            service_account_path=path,
+            timeout_seconds=timeout_seconds,
+            thinking_level=thinking_level,
+        )
 
 
 class LangChainVertexProvider:
@@ -76,6 +85,8 @@ class LangChainVertexProvider:
             # Google grounding은 검색 왕복을 포함하므로 host 60초 deadline 안에서 최대 55초만 기다린다.
             "timeout": settings.timeout_seconds,
             "max_output_tokens": 4096,
+            # Gemini 3 reasoning token도 output cap을 사용하므로 RAG 종합은 low로 bounded한다.
+            "thinking_level": settings.thinking_level,
             "temperature": None,
         }
         base_model = ChatGoogleGenerativeAI(**common)

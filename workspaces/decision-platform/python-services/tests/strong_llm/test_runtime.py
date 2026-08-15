@@ -210,6 +210,7 @@ def test_google_search_and_native_schema_share_the_official_bind_contract(
     assert bind_calls[0]["response_mime_type"] == "application/json"
     assert "tools" not in bind_calls[0]
     assert bind_calls[1]["tools"] == [{"google_search": {}}]
+    assert bind_calls[1]["temperature"] == 0.0
     assert bind_calls[1]["response_mime_type"] == "application/json"
     assert bind_calls[0]["response_schema"] == bind_calls[1]["response_schema"]
 
@@ -260,12 +261,45 @@ def test_explicit_google_search_stays_on_official_langchain_vertex_binding(
     assert invocations == [
         {
             "tools": [{"google_search": {}}],
+            "temperature": 0.0,
             "response_mime_type": "application/json",
             "response_schema": _vertex_response_schema(),
         }
     ]
     assert result["google_query_count"] == 0
     assert json.loads(result["answer_json"])["basis"] == "MODEL_KNOWLEDGE"
+
+
+def test_unbound_provisional_google_citation_closes_as_insufficient_evidence() -> None:
+    answer = {
+        "basis": "EVIDENCE",
+        "answer": "Current SEC release.",
+        "sentences": [
+            {
+                "text": "Current SEC release.",
+                "citationIds": [],
+                "evidenceSpans": [{"citationId": "", "quote": "Current SEC release."}],
+                "numericSpans": [],
+            }
+        ],
+        "warnings": [],
+    }
+
+    normalized = json.loads(
+        _normalize_grounded_answer(
+            json.dumps(answer),
+            [],
+            [],
+            allowed_local_ids=set(),
+        )
+    )
+
+    assert normalized == {
+        "basis": "INSUFFICIENT_EVIDENCE",
+        "answer": None,
+        "sentences": [],
+        "warnings": [],
+    }
 
 
 def test_vertex_schema_uses_only_the_provider_supported_structural_subset() -> None:

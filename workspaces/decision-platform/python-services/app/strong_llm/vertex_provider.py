@@ -65,7 +65,7 @@ class LangChainVertexProvider:
         base_model = ChatGoogleGenerativeAI(**common)
         structured = {
             "response_mime_type": "application/json",
-            "response_schema": StrongLlmAnswer.model_json_schema(),
+            "response_schema": _vertex_response_schema(),
         }
         self._structured = base_model.bind(**structured)
         # Google Search와 native JSON schema의 단일 호출 결합은 LangChain 공식 bind 계약을 따른다.
@@ -141,6 +141,58 @@ class LangChainVertexProvider:
         if not call_id:
             raise ValueError("STRONG_LLM_TOOL_CALL_ID_INVALID")
         return [*messages, message, ToolMessage(content=result_json, tool_call_id=call_id)]
+
+
+def _vertex_response_schema() -> dict[str, object]:
+    """Vertex 지원 subset만 보내고 길이·pattern은 Pydantic과 Kotlin에서 재검증한다."""
+
+    citation_ids: dict[str, object] = {"type": "array", "items": {"type": "string"}}
+    evidence_span: dict[str, object] = {
+        "type": "object",
+        "properties": {"citationId": {"type": "string"}, "quote": {"type": "string"}},
+        "required": ["citationId", "quote"],
+    }
+    numeric_span: dict[str, object] = {
+        "type": "object",
+        "properties": {"value": {"type": "string"}, "citationIds": citation_ids},
+        "required": ["value", "citationIds"],
+    }
+    sentence: dict[str, object] = {
+        "type": "object",
+        "properties": {
+            "text": {"type": "string"},
+            "citationIds": citation_ids,
+            "evidenceSpans": {"type": "array", "items": evidence_span},
+            "numericSpans": {"type": "array", "items": numeric_span},
+        },
+        "required": ["text", "citationIds", "evidenceSpans", "numericSpans"],
+    }
+    return {
+        "type": "object",
+        "properties": {
+            "basis": {
+                "type": "string",
+                "enum": ["EVIDENCE", "MODEL_KNOWLEDGE", "INSUFFICIENT_EVIDENCE"],
+            },
+            "answer": {"type": "string", "nullable": True},
+            "sentences": {"type": "array", "items": sentence},
+            "warnings": {
+                "type": "array",
+                "items": {
+                    "type": "string",
+                    "enum": [
+                        "SINGLE_SOURCE",
+                        "STALE_SOURCE",
+                        "CONFLICTING_SOURCES",
+                        "LOW_RELEVANCE",
+                        "SECONDARY_SOURCE",
+                        "GOOGLE_GROUNDING_ONLY",
+                    ],
+                },
+            },
+        },
+        "required": ["basis", "answer", "sentences", "warnings"],
+    }
 
 
 def _provider_result(message: AIMessage) -> ProviderResult:

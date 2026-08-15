@@ -14,7 +14,7 @@ best-effort 경로로 전환한다. raw query/page/owner text/model request·res
 
 MCP 다섯 tool은 유지한다. 검색 결과는 `resultId/sourceType`을 추가하고 read는 등록된 `resultId`를
 우선한다. 호환 `url`은 현재 provenance graph node와 일치할 때만 허용한다. RAG/MCP/LLM은 Signal,
-LSTM, RiskDecision, 주문 또는 판단 hash 권한을 얻지 않는다.
+시계열 예측 모델, RiskDecision, 주문 또는 판단 hash 권한을 얻지 않는다.
 
 ## EN
 
@@ -31,6 +31,6 @@ DuckDuckGo. Raw queries, pages, owner text, and model requests/responses are not
 
 The five MCP tools remain. Search results add `resultId/sourceType`; reads prefer a registered `resultId`, while
 the compatibility URL is allowed only when it resolves to a current provenance node. RAG/MCP/LLM gain no
-authority over Signal, LSTM, RiskDecision, orders, or judgement hashes.
+authority over Signal, time-series prediction models, RiskDecision, orders, or judgement hashes.
 
 Refs #20 #74 #82 #89

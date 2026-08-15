@@ -2,7 +2,7 @@
   "schemaVersion": "s1.4x-benchmark-plan-v1",
   "planId": "s1.4x-full-same-host-v1",
   "fixtureFreezeIdentity": {
-    "referenceLockSha256": "f125a63bf6da95c02ba24f5b26b813f4c2a5a5d119796c62cbbac4f82ba45f78",
+    "referenceLockSha256": "d267c084592c14e6ab167e9a9afd370e45f1caf9a0959b7927b0d4a806fc5581",
     "canonicalInputsSha256": "367ca5b8589f9c5b16e8c2e5dd2cfe7cc560a7de19559551c487beeefcf62e63",
     "canonicalResultsSha256": "59619337c415757a612bc923b32e2a174018b15dc67b2357b10ccb602fca1b6a"
   },

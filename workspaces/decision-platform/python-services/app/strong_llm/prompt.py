@@ -60,10 +60,12 @@ def require_google_grounding(prompt: StrongLlmPromptSpec) -> StrongLlmPromptSpec
     """Google tool이 붙은 turn에서는 현재 웹 요청과 provider citation ownership을 명시한다."""
 
     policy = (
-        " Google Search is attached. If the user explicitly requests current, as-of-date, actual-web, or URL "
-        "evidence, you must use Google Search. Never invent citationIds for Google web sources; leave their "
+        "MANDATORY SEARCH POLICY: Google Search is attached. If the user explicitly requests current, "
+        "as-of-date, actual-web, or URL evidence, use Google Search before drafting the JSON. Do not answer "
+        "such a request from memory. A response without Google grounding must be INSUFFICIENT_EVIDENCE. "
+        "Never invent citationIds for Google web sources; leave their "
         "citationIds and evidenceSpans empty because the host binds verified grounding metadata after the call. "
         "If neither supplied canonical evidence nor Google grounding supports the answer, return "
         "INSUFFICIENT_EVIDENCE."
     )
-    return StrongLlmPromptSpec(system=prompt.system + policy, user=prompt.user)
+    return StrongLlmPromptSpec(system=policy + " " + prompt.system, user=prompt.user)

@@ -5,9 +5,10 @@ from collections.abc import Iterator
 from typing import NoReturn
 
 import grpc
+import pytest
 
 from app.generated import strong_llm_agent_pb2
-from app.strong_llm.grpc_server import StrongLlmAgentServicer
+from app.strong_llm.grpc_server import StrongLlmAgentServicer, _require_bound_port
 from tests.strong_llm.test_runtime import FakeProvider
 
 
@@ -76,3 +77,10 @@ def test_grpc_stream_opens_provider_only_after_matching_host_permit() -> None:
     assert completed.WhichOneof("payload") == "completed"
     assert completed.completed.vertex_generate_call_count == 1
     assert provider.invocations == [("google", False)]
+
+
+def test_grpc_bind_accepts_the_actual_bound_port_and_rejects_only_zero() -> None:
+    _require_bound_port(50055)
+
+    with pytest.raises(RuntimeError, match="loopback bind failed"):
+        _require_bound_port(0)

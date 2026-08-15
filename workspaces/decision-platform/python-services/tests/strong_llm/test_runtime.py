@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import cast
 
 import pytest
-from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
 
 from app.strong_llm.models import Evidence, RunRequest
 from app.strong_llm.runtime import BoundedStrongLlmGraph, ProviderResult
@@ -370,6 +370,67 @@ def test_fallback_tool_round_keeps_native_structured_output_binding(
     assert bind_calls[-1]["response_mime_type"] == "application/json"
     assert bind_calls[-1]["response_schema"] == _vertex_response_schema()
     assert json.loads(result["answer_json"])["basis"] == "MODEL_KNOWLEDGE"
+
+
+def test_fallback_tool_result_preserves_initial_policy_and_question(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    credential = tmp_path / "service-account.json"
+    credential.write_text("{}", encoding="utf-8")
+    credential.chmod(0o600)
+    tool_message = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "name": "capstone_web_search",
+                "args": {"query": "portfolio diversification"},
+                "id": "call_search_1",
+                "type": "tool_call",
+            }
+        ],
+    )
+
+    class FakeCredentials:
+        project_id = "project-id"
+
+    class FakeModel:
+        def __init__(self, **_kwargs: object) -> None:
+            pass
+
+        def bind(self, **_kwargs: object) -> "FakeModel":
+            return self
+
+        def bind_tools(self, _tools: list[dict[str, object]]) -> "FakeModel":
+            return self
+
+        def invoke(self, _messages: object) -> AIMessage:
+            return tool_message
+
+    monkeypatch.setattr(
+        "app.strong_llm.vertex_provider.service_account.Credentials.from_service_account_file",
+        lambda *_args, **_kwargs: FakeCredentials(),
+    )
+    monkeypatch.setattr("app.strong_llm.vertex_provider.ChatGoogleGenerativeAI", FakeModel)
+    request = _request(google=False)
+    provider = LangChainVertexProvider(
+        request,
+        VertexProviderSettings(service_account_path=credential),
+    )
+
+    first = provider.invoke_fallback(request, [], tools_enabled=True)
+    history = provider.append_tool_result(
+        [],
+        first["message"],
+        dict(first["message"].tool_calls[0]),
+        '{"results":[]}',
+    )
+
+    assert isinstance(history[0], SystemMessage)
+    assert isinstance(history[1], HumanMessage)
+    assert request.question in str(history[1].content)
+    assert history[2] is tool_message
+    assert isinstance(history[3], ToolMessage)
 
 
 def test_fallback_final_accepts_only_host_issued_read_citation(

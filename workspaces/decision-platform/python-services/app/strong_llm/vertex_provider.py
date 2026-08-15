@@ -18,6 +18,10 @@ from app.strong_llm.runtime import ProviderResult
 
 
 _VERTEX_SCOPE = "https://www.googleapis.com/auth/cloud-platform"
+_NUMERIC_TOKEN = re.compile(
+    r"(?<![\w])[-+]?(?:\d{1,3}(?:,\d{3})*|\d+)(?:\.\d+)?"
+    r"(?:%|bp|bps|USD|KRW|원|달러|년|개월|일|주)?(?=$|[^\w]|[을를이가은는의와과로에])"
+)
 
 
 class VertexProviderSettings:
@@ -441,6 +445,7 @@ def _normalize_grounded_answer(
     payload = json.loads(answer_json)
     if not isinstance(payload, dict):
         raise ValueError("STRONG_LLM_PROVIDER_JSON_ROOT_INVALID")
+    _normalize_answer_sentence_contract(payload, prefer_answer=bool(roots and supports))
     allowed = (
         allowed_local_ids
         if allowed_local_ids is not None
@@ -450,7 +455,7 @@ def _normalize_grounded_answer(
         answer = StrongLlmAnswer.model_validate(payload)
         if any(citation_id not in allowed for sentence in answer.sentences for citation_id in sentence.citationIds):
             raise ValueError("STRONG_LLM_PROVIDER_CITATION_UNBOUND")
-        return answer_json
+        return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
     used_local_ids = _valid_provider_citation_ids(payload, allowed)
     valid_ids = {f"cit_{index}" for index in range(1, 6)}
     preassigned = {
@@ -515,24 +520,15 @@ def _normalize_grounded_answer(
                 spans.append({"citationId": mapped_id, "quote": quote})
                 used_google = True
         spans = list({(span["citationId"], span["quote"]): span for span in spans}.values())
-        numeric = [
-            {
-                "value": item.value,
-                "citationIds": list(
-                    dict.fromkeys(
-                        [
-                            *item.citationIds,
-                            *[
-                                span["citationId"]
-                                for span in spans
-                                if item.value in span["quote"]
-                            ],
-                        ]
-                    )
-                ),
-            }
-            for item in sentence.numericSpans
-        ]
+        numeric = []
+        for match in _NUMERIC_TOKEN.finditer(sentence.text):
+            value = match.group(0)
+            citation_ids = list(
+                dict.fromkeys(span["citationId"] for span in spans if value in span["quote"])
+            )
+            if not citation_ids:
+                raise ValueError("STRONG_LLM_PROVIDER_NUMERIC_UNSUPPORTED")
+            numeric.append({"value": value, "citationIds": citation_ids})
         normalized_sentences.append(
             {
                 "text": sentence.text,
@@ -548,6 +544,41 @@ def _normalize_grounded_answer(
     if used_google:
         payload["warnings"] = list(dict.fromkeys([*answer.warnings, "GOOGLE_GROUNDING_ONLY"]))
     return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+
+
+def _normalize_answer_sentence_contract(
+    payload: dict[str, object],
+    *,
+    prefer_answer: bool,
+) -> None:
+    """모델이 중복 필드를 다르게 써도 생성 내용은 유지한 채 Kotlin newline 계약으로 정렬한다."""
+
+    basis = payload.get("basis")
+    answer = payload.get("answer")
+    sentences = payload.get("sentences")
+    if basis == "INSUFFICIENT_EVIDENCE" or not isinstance(answer, str) or not isinstance(sentences, list):
+        return
+    sentence_texts: list[str] = []
+    for item in sentences:
+        if isinstance(item, dict) and isinstance(item.get("text"), str):
+            sentence_texts.append(cast(str, item["text"]))
+    if len(sentence_texts) != len(sentences) or not sentence_texts:
+        return
+    if answer == "\n".join(sentence_texts):
+        return
+    normalized_answer = " ".join(answer.split())
+    if prefer_answer and normalized_answer and len(normalized_answer.encode("utf-8")) <= 2_048:
+        payload["answer"] = normalized_answer
+        payload["sentences"] = [
+            {
+                "text": normalized_answer,
+                "citationIds": [],
+                "evidenceSpans": [],
+                "numericSpans": [],
+            }
+        ]
+        return
+    payload["answer"] = "\n".join(sentence_texts)
 
 
 def _valid_provider_citation_ids(

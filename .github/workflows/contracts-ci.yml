@@ -92,17 +92,17 @@ jobs:
         run: uv run --frozen python -m unittest discover -s contracts/tests -v
 
       - name: Verify Pre-S5 document truth freeze
-        run: uv run --frozen python contracts/verify_pre_s5_doc_truth_freeze.py --check
+        run: uv run --frozen python -m contracts.verify_pre_s5_doc_truth_freeze --check
 
       - name: Verify Pre-S5 solo ownership lock
         shell: bash
         run: |
           set -euo pipefail
           if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
-            uv run --frozen python contracts/verify_pre_s5_doc_truth_freeze.py \
+            uv run --frozen python -m contracts.verify_pre_s5_doc_truth_freeze \
               --solo-ownership-public-check --base "${{ github.event.pull_request.base.sha }}"
           else
-            uv run --frozen python contracts/verify_pre_s5_doc_truth_freeze.py \
+            uv run --frozen python -m contracts.verify_pre_s5_doc_truth_freeze \
               --solo-ownership-public-check
           fi
 

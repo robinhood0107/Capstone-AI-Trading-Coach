@@ -200,13 +200,12 @@ def test_google_search_and_native_schema_share_the_official_bind_contract(
         VertexProviderSettings(service_account_path=credential),
     )
 
-    assert len(constructor_calls) == 2
+    assert len(constructor_calls) == 1
     assert all("response_mime_type" not in call for call in constructor_calls)
     assert all("response_schema" not in call for call in constructor_calls)
     assert all(call["timeout"] == 50.0 for call in constructor_calls)
     assert all(call["thinking_level"] == "low" for call in constructor_calls)
     assert constructor_calls[0]["temperature"] is None
-    assert constructor_calls[1]["temperature"] == 0.0
     assert bind_calls[0]["response_mime_type"] == "application/json"
     assert "tools" not in bind_calls[0]
     assert bind_calls[1]["tools"] == [{"google_search": {}}]

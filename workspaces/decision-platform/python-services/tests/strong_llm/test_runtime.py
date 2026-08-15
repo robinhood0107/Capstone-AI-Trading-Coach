@@ -138,6 +138,25 @@ def test_explicit_service_account_acl_rejects_non_0600(tmp_path: Path) -> None:
         VertexProviderSettings(service_account_path=credential)
 
 
+def test_vertex_timeout_is_bounded_inside_the_host_deadline(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    credential = tmp_path / "service-account.json"
+    credential.write_text("{}", encoding="utf-8")
+    credential.chmod(0o600)
+    monkeypatch.setenv("STRONG_LLM_VERTEX_SERVICE_ACCOUNT_JSON", str(credential))
+
+    assert VertexProviderSettings.from_env().timeout_seconds == 50.0
+    monkeypatch.setenv("STRONG_LLM_VERTEX_TIMEOUT_SECONDS", "55")
+    assert VertexProviderSettings.from_env().timeout_seconds == 55.0
+
+    for invalid in ("not-a-number", "9.9", "55.1", "nan"):
+        monkeypatch.setenv("STRONG_LLM_VERTEX_TIMEOUT_SECONDS", invalid)
+        with pytest.raises(ValueError, match="STRONG_LLM_VERTEX_TIMEOUT_INVALID"):
+            VertexProviderSettings.from_env()
+
+
 def test_google_search_and_native_schema_share_the_official_bind_contract(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -172,6 +191,7 @@ def test_google_search_and_native_schema_share_the_official_bind_contract(
 
     assert "response_mime_type" not in constructor_kwargs
     assert "response_schema" not in constructor_kwargs
+    assert constructor_kwargs["timeout"] == 50.0
     assert bind_calls[0]["response_mime_type"] == "application/json"
     assert "tools" not in bind_calls[0]
     assert bind_calls[1]["tools"] == [{"google_search": {}}]

@@ -21,7 +21,13 @@ _VERTEX_SCOPE = "https://www.googleapis.com/auth/cloud-platform"
 class VertexProviderSettings:
     """서비스계정 JSON은 explicit 0600 regular file만 허용하고 API key·ADC fallback을 만들지 않는다."""
 
-    def __init__(self, *, service_account_path: Path, location: str = "global") -> None:
+    def __init__(
+        self,
+        *,
+        service_account_path: Path,
+        location: str = "global",
+        timeout_seconds: float = 50.0,
+    ) -> None:
         path = service_account_path
         info = path.lstat()
         if not path.is_absolute() or not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
@@ -30,15 +36,23 @@ class VertexProviderSettings:
             raise ValueError("STRONG_LLM_CREDENTIAL_MODE_INVALID")
         if location != "global":
             raise ValueError("STRONG_LLM_VERTEX_LOCATION_INVALID")
+        if not 10.0 <= timeout_seconds <= 55.0:
+            raise ValueError("STRONG_LLM_VERTEX_TIMEOUT_INVALID")
         self.service_account_path = path
         self.location = location
+        self.timeout_seconds = timeout_seconds
 
     @classmethod
     def from_env(cls) -> "VertexProviderSettings":
         if os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY"):
             raise ValueError("STRONG_LLM_API_KEY_FALLBACK_FORBIDDEN")
         path = Path(os.environ.get("STRONG_LLM_VERTEX_SERVICE_ACCOUNT_JSON", ""))
-        return cls(service_account_path=path)
+        raw_timeout = os.environ.get("STRONG_LLM_VERTEX_TIMEOUT_SECONDS", "50")
+        try:
+            timeout_seconds = float(raw_timeout)
+        except ValueError as error:
+            raise ValueError("STRONG_LLM_VERTEX_TIMEOUT_INVALID") from error
+        return cls(service_account_path=path, timeout_seconds=timeout_seconds)
 
 
 class LangChainVertexProvider:
@@ -58,7 +72,8 @@ class LangChainVertexProvider:
             "location": settings.location,
             "credentials": credentials,
             "max_retries": 0,
-            "timeout": 30.0,
+            # Google grounding은 검색 왕복을 포함하므로 host 60초 deadline 안에서 최대 55초만 기다린다.
+            "timeout": settings.timeout_seconds,
             "max_output_tokens": 4096,
             "temperature": None,
         }

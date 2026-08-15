@@ -85,6 +85,9 @@ jobs:
       - name: Check generated S5.0 Signal v2 contract artifacts
         run: uv run --frozen python contracts/generate_s5_0_signal_v2_contracts.py --check
 
+      - name: Check generated S5 Signal runtime transition artifacts
+        run: uv run --frozen python contracts/generate_s5_signal_runtime_contracts.py --check
+
       - name: Run contract tooling tests
         run: uv run --frozen python -m unittest discover -s contracts/tests -v
 

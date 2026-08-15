@@ -1,0 +1,67 @@
+{
+  "candidateSelection": [
+    "meanCalibratedLogLoss",
+    "meanBrier",
+    "meanEce",
+    "gridOrder"
+  ],
+  "classOrder": {
+    "BUY": 2,
+    "HOLD": 1,
+    "SELL": 0
+  },
+  "classWeight": {
+    "cap": 5,
+    "formula": "N/(3*N_c)",
+    "normalizeMean": 1,
+    "scope": "FIT_ONLY"
+  },
+  "contractId": "s5-lightgbm-implementation-lock.v1",
+  "gridOrder": [
+    [
+      15,
+      "NONE"
+    ],
+    [
+      15,
+      "CAPPED_BALANCED"
+    ],
+    [
+      31,
+      "NONE"
+    ],
+    [
+      31,
+      "CAPPED_BALANCED"
+    ]
+  ],
+  "labelBoundary": {
+    "buy": "r > 0.006",
+    "hold": "-0.006 <= r <= 0.006",
+    "sell": "r < -0.006"
+  },
+  "metrics": {
+    "brier": "mean_sum_squared_error_unscaled",
+    "ece": "top_label_10_equal_width",
+    "logarithm": "natural"
+  },
+  "missingActualData": {
+    "productionPointer": 0,
+    "status": "DATASET_UNAVAILABLE"
+  },
+  "objective": {
+    "name": "multiclass",
+    "numClass": 3
+  },
+  "probabilityTieOrder": [
+    "HOLD",
+    "SELL",
+    "BUY"
+  ],
+  "runtime": {
+    "externalCalls": 0,
+    "firstCrossMarketJoin": "S6.6",
+    "orderWiring": 0,
+    "riskDecisionWiring": 0
+  }
+}

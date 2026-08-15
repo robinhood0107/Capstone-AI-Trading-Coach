@@ -215,6 +215,8 @@ jobs:
                 ;;
               b4daf347275761ff2a53e2096a4b6db5317bd5822a3fe7764809e10ea9abb4f4:37e36e458d371432757bb40f81bd7fddc9a136e1760c230b6fd6197967e7e4dc)
                 ;;
+              37e36e458d371432757bb40f81bd7fddc9a136e1760c230b6fd6197967e7e4dc:42bb43b3c4f8c0691263b196085eadde2997c18838aa576daddd128b47571c00)
+                ;;
               *)
                 echo "benchmark contract test transition is not approved" >&2
                 exit 1

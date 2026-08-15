@@ -304,7 +304,7 @@ def test_unbound_provisional_google_citation_closes_as_insufficient_evidence() -
 
 def test_fallback_function_call_does_not_require_intermediate_text() -> None:
     message = AIMessage(
-        content="",
+        content="I will inspect a current public source before answering.",
         tool_calls=[
             {
                 "name": "capstone_web_search",

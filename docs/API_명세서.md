@@ -1905,13 +1905,13 @@ payload에 가짜 state를 넣거나 이전 `asOf`를 갱신해 새 success view
         "status": "ABSTAIN",
         "producer": "RULE_BASELINE",
         "sourceWorkspace": "return-engine",
-        "reason": "NOT_AVAILABLE"
+        "reason": "MISSING_EVIDENCE"
       },
       "lstm": {
         "status": "ABSTAIN",
         "producer": "LSTM",
         "sourceWorkspace": "return-engine",
-        "reason": "NOT_AVAILABLE"
+        "reason": "MISSING_EVIDENCE"
       },
       "lightgbm": {
         "status": "AVAILABLE",

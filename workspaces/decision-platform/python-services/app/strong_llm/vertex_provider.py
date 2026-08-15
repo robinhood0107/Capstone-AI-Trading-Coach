@@ -121,7 +121,10 @@ class LangChainVertexProvider:
                 ),
             ]
             message = self._structured.invoke(messages)
-            result = _provider_result(message)
+            allowed_ids = {
+                item.citation_id for item in request.public_evidence + request.owner_evidence
+            } | {str(item["citation_id"]) for item in self._discovery["grounding_roots"]}
+            result = _provider_result(message, allowed_local_ids=allowed_ids)
             result["answer_json"] = _normalize_grounded_answer(
                 result["answer_json"],
                 self._discovery["grounding_roots"],
@@ -138,7 +141,10 @@ class LangChainVertexProvider:
         message = self._google.invoke(
             [SystemMessage(content=prompt.system), HumanMessage(content=prompt.user)]
         )
-        result = _provider_result(message)
+        result = _provider_result(
+            message,
+            allowed_local_ids={item.citation_id for item in request.public_evidence},
+        )
         if request.owner_evidence:
             self._discovery = result
         return result
@@ -153,7 +159,12 @@ class LangChainVertexProvider:
         prompt = render_prompt(request, request.public_evidence + request.owner_evidence)
         history = messages or [SystemMessage(content=prompt.system), HumanMessage(content=prompt.user)]
         runnable = self._tool_model.bind_tools(_fallback_tools()) if tools_enabled else self._structured
-        return _provider_result(runnable.invoke(history))
+        return _provider_result(
+            runnable.invoke(history),
+            allowed_local_ids={
+                item.citation_id for item in request.public_evidence + request.owner_evidence
+            },
+        )
 
     def tool_calls(self, message: AIMessage) -> list[dict[str, object]]:
         return [dict(call) for call in message.tool_calls]
@@ -223,7 +234,11 @@ def _vertex_response_schema() -> dict[str, object]:
     }
 
 
-def _provider_result(message: AIMessage) -> ProviderResult:
+def _provider_result(
+    message: AIMessage,
+    *,
+    allowed_local_ids: set[str] | None = None,
+) -> ProviderResult:
     text = _canonical_answer_json(_message_text(message))
     grounding = message.response_metadata.get("grounding_metadata") or {}
     if not isinstance(grounding, dict):
@@ -265,7 +280,12 @@ def _provider_result(message: AIMessage) -> ProviderResult:
                 }
             )
     usage: dict[str, Any] = dict(message.usage_metadata or {})
-    normalized = _normalize_grounded_answer(text, roots, supports)
+    normalized = _normalize_grounded_answer(
+        text,
+        roots,
+        supports,
+        allowed_local_ids=allowed_local_ids,
+    )
     return {
         "message": message,
         "answer_json": normalized,
@@ -337,16 +357,25 @@ def _normalize_grounded_answer(
     answer_json: str,
     roots: list[dict[str, object]],
     supports: list[dict[str, object]],
+    *,
+    allowed_local_ids: set[str] | None = None,
 ) -> str:
     """Provider support와 실제 문장 구간이 겹치는 Google 근거만 남는 citation ID에 결속한다."""
 
     payload = json.loads(answer_json)
     if not isinstance(payload, dict):
         raise ValueError("STRONG_LLM_PROVIDER_JSON_ROOT_INVALID")
+    allowed = (
+        allowed_local_ids
+        if allowed_local_ids is not None
+        else {f"cit_{index}" for index in range(1, 6)}
+    )
     if not roots or not supports:
-        StrongLlmAnswer.model_validate(payload)
+        answer = StrongLlmAnswer.model_validate(payload)
+        if any(citation_id not in allowed for sentence in answer.sentences for citation_id in sentence.citationIds):
+            raise ValueError("STRONG_LLM_PROVIDER_CITATION_UNBOUND")
         return answer_json
-    used_local_ids = _valid_provider_citation_ids(payload)
+    used_local_ids = _valid_provider_citation_ids(payload, allowed)
     valid_ids = {f"cit_{index}" for index in range(1, 6)}
     preassigned = {
         _chunk_index(root): str(root.get("citation_id", ""))
@@ -372,7 +401,7 @@ def _normalize_grounded_answer(
     if not root_by_index:
         StrongLlmAnswer.model_validate(payload)
         return answer_json
-    _bind_provider_grounding_citations(payload, supports, root_by_index)
+    _bind_provider_grounding_citations(payload, supports, root_by_index, allowed)
     answer = StrongLlmAnswer.model_validate(payload)
     normalized_sentences = []
     used_google = False
@@ -443,7 +472,10 @@ def _normalize_grounded_answer(
     return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
 
 
-def _valid_provider_citation_ids(payload: dict[str, object]) -> list[str]:
+def _valid_provider_citation_ids(
+    payload: dict[str, object],
+    allowed_local_ids: set[str],
+) -> list[str]:
     valid = re.compile(r"^cit_[1-5]$")
     selected: list[str] = []
     sentences = payload.get("sentences")
@@ -453,7 +485,12 @@ def _valid_provider_citation_ids(payload: dict[str, object]) -> list[str]:
         if not isinstance(sentence, dict) or not isinstance(sentence.get("citationIds"), list):
             continue
         for citation_id in sentence["citationIds"]:
-            if isinstance(citation_id, str) and valid.fullmatch(citation_id) and citation_id not in selected:
+            if (
+                isinstance(citation_id, str)
+                and valid.fullmatch(citation_id)
+                and citation_id in allowed_local_ids
+                and citation_id not in selected
+            ):
                 selected.append(citation_id)
     return selected
 
@@ -462,6 +499,7 @@ def _bind_provider_grounding_citations(
     payload: dict[str, object],
     supports: list[dict[str, object]],
     root_by_index: dict[int, str],
+    allowed_local_ids: set[str],
 ) -> None:
     """모델 label 대신 exact support quote와 provider chunk index로 Google citation을 재결속한다."""
 
@@ -473,7 +511,15 @@ def _bind_provider_grounding_citations(
         if not isinstance(sentence, dict):
             continue
         raw_ids = sentence.get("citationIds")
-        selected_ids = [value for value in raw_ids if isinstance(value, str) and valid.fullmatch(value)] if isinstance(raw_ids, list) else []
+        selected_ids = (
+            [
+                value
+                for value in raw_ids
+                if isinstance(value, str) and valid.fullmatch(value) and value in allowed_local_ids
+            ]
+            if isinstance(raw_ids, list)
+            else []
+        )
         raw_spans = sentence.get("evidenceSpans")
         normalized_spans: list[dict[str, str]] = []
         if isinstance(raw_spans, list):
@@ -484,7 +530,11 @@ def _bind_provider_grounding_citations(
                 citation_id = span.get("citationId")
                 if not isinstance(quote, str) or not quote:
                     continue
-                if isinstance(citation_id, str) and valid.fullmatch(citation_id):
+                if (
+                    isinstance(citation_id, str)
+                    and valid.fullmatch(citation_id)
+                    and citation_id in allowed_local_ids
+                ):
                     normalized_spans.append({"citationId": citation_id, "quote": quote})
                     continue
                 for support in supports:
@@ -508,7 +558,9 @@ def _bind_provider_grounding_citations(
                 numeric["citationIds"] = [
                     value
                     for value in numeric["citationIds"]
-                    if isinstance(value, str) and valid.fullmatch(value)
+                    if isinstance(value, str)
+                    and valid.fullmatch(value)
+                    and value in allowed_local_ids
                 ]
 
 

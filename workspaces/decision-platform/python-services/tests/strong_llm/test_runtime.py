@@ -327,9 +327,9 @@ def test_google_support_rebinds_model_invented_label_only_by_exact_provider_supp
         "sentences": [
             {
                 "text": "Diversification can reduce risk.",
-                "citationIds": ["google_source_1"],
+                "citationIds": ["cit_3"],
                 "evidenceSpans": [
-                    {"citationId": "google_source_1", "quote": "Diversification can reduce risk."}
+                    {"citationId": "cit_3", "quote": "Diversification can reduce risk."}
                 ],
                 "numericSpans": [],
             }
@@ -355,7 +355,14 @@ def test_google_support_rebinds_model_invented_label_only_by_exact_provider_supp
         }
     ]
 
-    normalized = json.loads(_normalize_grounded_answer(json.dumps(answer), roots, supports))
+    normalized = json.loads(
+        _normalize_grounded_answer(
+            json.dumps(answer),
+            roots,
+            supports,
+            allowed_local_ids=set(),
+        )
+    )
 
     assert normalized["sentences"][0]["citationIds"] == ["cit_1"]
     assert normalized["sentences"][0]["evidenceSpans"] == [

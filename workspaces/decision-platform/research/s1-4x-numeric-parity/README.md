@@ -212,18 +212,3 @@ S4.7D의 9-format parser와 OCR runtime dependency는
 
 이 amendment는 OCR dependency 정합성만 승인하며 S1.4X candidate 구현이나 benchmark
 재실행 권한을 추가하지 않는다.
-
-## S4.9 LangGraph dependency amendment
-
-S4.9 Strong LLM runtime의 LangChain/LangGraph dependency는
-`b4e7836932da53dc64b0c273a2228cac1dfd43e8`에서 production `pyproject.toml`과
-`uv.lock` 두 파일만으로 다시 승인했다. carrier의 최종 bytes는 S4.9 runtime 구현이
-사용하는 current dependency bytes와 같고, S1.4X 수치 kernel·fixture·oracle은 바꾸지 않는다.
-
-- reference lock SHA-256: `1dbbdfe27c0e417cb48bc6afbf95f092c6dbd712f1e4b8cf54a3c58467cbe628`
-- benchmark plan SHA-256: `252b3b5639208fe96f83269936b7996799c346c19d28ce53f3ab31b3ad5d9fc5`
-- benchmark plan sidecar file SHA-256: `416bdf886324575538ec10ea6de44ef77bad0fdd0be8875523a61122b1fb4de0`
-- contract manifest SHA-256: `e27752317158f8137a4d29d2012e766ba761926a0c7e8609d1d5494206106d09`
-
-이 amendment는 S4.9 provider orchestration dependency 정합성만 승인하며 S1.4X candidate
-구현이나 benchmark 재실행 권한을 추가하지 않는다.

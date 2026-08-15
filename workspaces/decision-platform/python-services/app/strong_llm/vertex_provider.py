@@ -248,7 +248,7 @@ def _provider_result(
     *,
     allowed_local_ids: set[str] | None = None,
 ) -> ProviderResult:
-    if message.tool_calls and not _message_text(message).strip():
+    if message.tool_calls:
         tool_usage: dict[str, Any] = dict(message.usage_metadata or {})
         return {
             "message": message,

@@ -149,12 +149,22 @@ def test_vertex_timeout_is_bounded_inside_the_host_deadline(
     monkeypatch.setenv("STRONG_LLM_VERTEX_SERVICE_ACCOUNT_JSON", str(credential))
 
     assert VertexProviderSettings.from_env().timeout_seconds == 50.0
+    assert VertexProviderSettings.from_env().thinking_level == "low"
     monkeypatch.setenv("STRONG_LLM_VERTEX_TIMEOUT_SECONDS", "55")
     assert VertexProviderSettings.from_env().timeout_seconds == 55.0
 
     for invalid in ("not-a-number", "9.9", "55.1", "nan"):
         monkeypatch.setenv("STRONG_LLM_VERTEX_TIMEOUT_SECONDS", invalid)
         with pytest.raises(ValueError, match="STRONG_LLM_VERTEX_TIMEOUT_INVALID"):
+            VertexProviderSettings.from_env()
+
+    monkeypatch.setenv("STRONG_LLM_VERTEX_TIMEOUT_SECONDS", "50")
+    for accepted in ("minimal", "low", "medium"):
+        monkeypatch.setenv("STRONG_LLM_VERTEX_THINKING_LEVEL", accepted)
+        assert VertexProviderSettings.from_env().thinking_level == accepted
+    for rejected in ("", "high", "dynamic"):
+        monkeypatch.setenv("STRONG_LLM_VERTEX_THINKING_LEVEL", rejected)
+        with pytest.raises(ValueError, match="STRONG_LLM_VERTEX_THINKING_LEVEL_INVALID"):
             VertexProviderSettings.from_env()
 
 
@@ -193,6 +203,7 @@ def test_google_search_and_native_schema_share_the_official_bind_contract(
     assert "response_mime_type" not in constructor_kwargs
     assert "response_schema" not in constructor_kwargs
     assert constructor_kwargs["timeout"] == 50.0
+    assert constructor_kwargs["thinking_level"] == "low"
     assert bind_calls[0]["response_mime_type"] == "application/json"
     assert "tools" not in bind_calls[0]
     assert bind_calls[1]["tools"] == [{"google_search": {}}]

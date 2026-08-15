@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import cast
 
 import pytest
-from langchain_core.messages import AIMessage, BaseMessage
+from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
 
 from app.strong_llm.models import Evidence, RunRequest
 from app.strong_llm.runtime import BoundedStrongLlmGraph, ProviderResult
@@ -370,6 +370,92 @@ def test_fallback_tool_round_keeps_native_structured_output_binding(
     assert bind_calls[-1]["response_mime_type"] == "application/json"
     assert bind_calls[-1]["response_schema"] == _vertex_response_schema()
     assert json.loads(result["answer_json"])["basis"] == "MODEL_KNOWLEDGE"
+
+
+def test_fallback_final_accepts_only_host_issued_read_citation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    credential = tmp_path / "service-account.json"
+    credential.write_text("{}", encoding="utf-8")
+    credential.chmod(0o600)
+    answer = json.dumps(
+        {
+            "basis": "EVIDENCE",
+            "answer": "분산투자는 위험 집중을 줄일 수 있습니다.",
+            "sentences": [
+                {
+                    "text": "분산투자는 위험 집중을 줄일 수 있습니다.",
+                    "citationIds": ["cit_5"],
+                    "evidenceSpans": [
+                        {"citationId": "cit_5", "quote": "분산투자는 위험 집중을 줄일 수 있습니다."}
+                    ],
+                    "numericSpans": [],
+                }
+            ],
+            "warnings": [],
+        },
+        ensure_ascii=False,
+    )
+
+    class FakeCredentials:
+        project_id = "project-id"
+
+    class FakeModel:
+        def __init__(self, **_kwargs: object) -> None:
+            pass
+
+        def bind(self, **_kwargs: object) -> "FakeModel":
+            return self
+
+        def bind_tools(self, _tools: list[dict[str, object]]) -> "FakeModel":
+            return self
+
+        def invoke(self, _messages: object) -> AIMessage:
+            return AIMessage(content=answer)
+
+    monkeypatch.setattr(
+        "app.strong_llm.vertex_provider.service_account.Credentials.from_service_account_file",
+        lambda *_args, **_kwargs: FakeCredentials(),
+    )
+    monkeypatch.setattr("app.strong_llm.vertex_provider.ChatGoogleGenerativeAI", FakeModel)
+    request = _request(google=False)
+    provider = LangChainVertexProvider(
+        request,
+        VertexProviderSettings(service_account_path=credential),
+    )
+    messages: list[BaseMessage] = [
+        ToolMessage(
+            content=json.dumps(
+                {
+                    "resultId": "searxng_1",
+                    "citationId": "cit_5",
+                    "text": "분산투자는 위험 집중을 줄일 수 있습니다.",
+                },
+                ensure_ascii=False,
+            ),
+            tool_call_id="call_read_1",
+        )
+    ]
+
+    result = provider.invoke_fallback(request, messages, tools_enabled=False)
+
+    assert json.loads(result["answer_json"])["sentences"][0]["citationIds"] == ["cit_5"]
+
+
+def test_insufficient_evidence_empty_answer_is_normalized_to_null() -> None:
+    answer = json.dumps(
+        {
+            "basis": "INSUFFICIENT_EVIDENCE",
+            "answer": "",
+            "sentences": [],
+            "warnings": [],
+        }
+    )
+
+    normalized = json.loads(_normalize_grounded_answer(answer, [], [], allowed_local_ids=set()))
+
+    assert normalized["answer"] is None
 
 
 def test_vertex_schema_uses_only_the_provider_supported_structural_subset() -> None:

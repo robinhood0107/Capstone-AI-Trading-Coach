@@ -101,7 +101,11 @@ class LangChainVertexProvider:
         }
         self._structured = base_model.bind(**structured)
         # Google Search와 native JSON schema의 단일 호출 결합은 LangChain 공식 bind 계약을 따른다.
-        self._google = base_model.bind(tools=[{"google_search": {}}], **structured)
+        self._google = base_model.bind(
+            tools=[{"google_search": {}}],
+            temperature=0.0,
+            **structured,
+        )
         self._tool_model = base_model
         self._request = request
         self._discovery: ProviderResult | None = None
@@ -460,6 +464,16 @@ def _normalize_grounded_answer(
         else {f"cit_{index}" for index in range(1, 6)}
     )
     if not roots or not supports:
+        # Google citation ID는 provider metadata를 받은 뒤 host가 부여한다. 임시/빈 label은
+        # 최종 schema 검증 전에 제거하고, 결속 가능한 근거가 없으면 명시적 부족 상태로 닫는다.
+        _bind_provider_grounding_citations(payload, [], {}, allowed)
+        if payload.get("basis") == "EVIDENCE" and not _has_bound_evidence(payload):
+            payload = {
+                "basis": "INSUFFICIENT_EVIDENCE",
+                "answer": None,
+                "sentences": [],
+                "warnings": [],
+            }
         answer = StrongLlmAnswer.model_validate(payload)
         if any(citation_id not in allowed for sentence in answer.sentences for citation_id in sentence.citationIds):
             raise ValueError("STRONG_LLM_PROVIDER_CITATION_UNBOUND")
@@ -552,6 +566,20 @@ def _normalize_grounded_answer(
     if used_google:
         payload["warnings"] = list(dict.fromkeys([*answer.warnings, "GOOGLE_GROUNDING_ONLY"]))
     return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+
+
+def _has_bound_evidence(payload: dict[str, object]) -> bool:
+    sentences = payload.get("sentences")
+    if not isinstance(sentences, list):
+        return False
+    return any(
+        isinstance(sentence, dict)
+        and isinstance(sentence.get("citationIds"), list)
+        and bool(sentence["citationIds"])
+        and isinstance(sentence.get("evidenceSpans"), list)
+        and bool(sentence["evidenceSpans"])
+        for sentence in sentences
+    )
 
 
 def _normalize_answer_sentence_contract(

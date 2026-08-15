@@ -4,7 +4,7 @@
 
 ## 현재 검증 상태
 
-이 표는 `main=4e3be52c…`와 2026-08-15 S4.9 V69 live-smoke overlay를 기준으로 한 Pre-S5
+이 표는 `main=408ddcd0…`와 2026-08-15 S4.9 V71 live-smoke merge-candidate overlay를 기준으로 한 Pre-S5
 문서 진실 동결이다. `MERGED`는 코드가 병합됐다는 뜻일 뿐 current-HEAD 외부 호출 성공을
 뜻하지 않는다. `OFFLINE_ONLY`는 fixture·local/Compose 검증만, `STUB_FAIL_CLOSED`는
 의도적으로 stable error로 닫힌 공개 표면만, `CONTRACT_ONLY`는 schema/fixture만 뜻한다.
@@ -51,16 +51,16 @@ SearXNG/Vertex smoke에 사용한다. KIS 실제 주문에는 사용하지 않�
 | S4.8 Core 6 v2 | `IMPLEMENTED_DRAFT` | PR #92 contract lock + local probe runtime | 0 | `S4_8_CORE6_V2=CONTRACT_LOCKED / S4_8_CORE6_LOCAL_PROBE_RUNTIME=IMPLEMENTED_DRAFT`; KIS current-price·SEC EDGAR(2)·KRX daily(2)의 fixed local one-shot executor와 content-free receipt bridge가 있으며 fresh packet/evidence 전에는 socket 0; KOFIA blocked, OpenDART/ECOS projection-only |
 | S4.8 Core 6 + Optional 3 local runtime | `IMPLEMENTED_DRAFT` | V50 + Core 6/Optional 3 packet-gated probes | 0 | V50 nine-lane typed projection은 provider 0; selected successful Core 6 receipt complete-set만 read-only로 `AVAILABLE`를 materialize하며 Optional 3도 fresh packet/evidence 전에는 socket 0 |
 | S4.8B/C | `IMPLEMENTED_MERGE_CANDIDATE` | PR #77 `509d8eee` | 0 | `S4_8B_C=IMPLEMENTED_MERGE_CANDIDATE`; fixture/scorer/V23/read port만, endpoint/RiskEngine/provider는 미구현 |
-| S4.9 MCP + Strong LLM | `LIVE_VERIFIED_MERGE_CANDIDATE` | `main=4e3be52c…` + current branch V68/V69 | PKCE 1 flow, SearXNG search/read 각 1, Voyage query 1, Vertex OAuth/generate 각 1 | `/mcp` 5 tools, public-only owner isolation, answer validation, Strong LLM `COMMITTED`; 전체 local gate·최종 Security·PR CI·merge 전에는 S5 entry 미개방 |
-| S4.9 LangGraph + Google grounding | `IMPLEMENTED_LIVE_GROUNDING_PENDING` | V70 release branch | 구현 중 provider call 0 | bounded LangGraph, Google Pacific-month 4,000 soft cap, source/support provenance, DuckDuckGo fallback; live smoke·최종 Security·CI 전에는 S5 entry 미개방 |
+| S4.9 MCP + Strong LLM | `LIVE_VERIFIED_MERGE_CANDIDATE` | `main=408ddcd0…` + current branch V71 | PKCE 1 flow, MCP 5 tools, SearXNG search/read, Vertex Strong LLM | public-only owner isolation, answer validation, current V71 direct answer/history `COMMITTED`; 전체 local gate·최종 Security·PR CI·merge 전에는 S5 entry 미개방 |
+| S4.9 LangGraph + Google grounding | `LIVE_VERIFIED_MERGE_CANDIDATE` | current branch V70/V71 | Google autonomous search와 DDG cap fallback 실제 실행 | bounded LangGraph, Pacific-month 4,000 soft cap, source/support provenance; Google no-support는 `RETRIEVAL_ONLY`, DDG CAPTCHA는 typed fail-closed |
 
 V64는 V60의 Core 6 direct-read terminal 분류, V61~V62 provider accounting과 V63 empty owner
 library의 generation scope만 제한적으로 허용한다. Core 6 direct-read lane의 complete receipt set을 `AVAILABLE`, 일부 receipt만 있는 terminal set을
 `ABSTAIN/DIRECT_PROBE_RECEIPT_SET_INCOMPLETE`로 Python runtime과 동일하게 수용한다. 이는 provider
 권한 추가가 아니다. 현재 release terminal set은 KIS `AVAILABLE`, KRX·SEC EDGAR·OpenDART·ECOS
 `ABSTAIN`, KOFIA·Finnhub·Twelve Data·Massive `BLOCKED`다. Pre-S5 main baseline은 보존됐고 S4.9
-live smoke는 V69 DB에서 성공했다. 현재 branch에서는 코드가 아직 main에 병합되지 않았으므로
-`S5_ENTRY_GATE=S4_9_RELEASE_PENDING`이다. V1→V69 clean/upgrade·RLS, 전체 local gate, 마지막
+live smoke는 V71 DB에서 current LangGraph direct answer까지 성공했다. 현재 branch에서는 코드가 아직 main에 병합되지 않았으므로
+`S5_ENTRY_GATE=S4_9_RELEASE_PENDING`이다. V1→V71 clean/upgrade·RLS, 전체 local gate, 마지막
 Security 1회, PR CI와 merge/post-merge green이 모두 확인된 뒤에만 `OPEN`이다.
 
 2026-08-15 live smoke는 Authorization Code + PKCE S256 발급·교환과 token-family revoke,
@@ -71,6 +71,13 @@ MCP `initialize`/`tools/list` 5개, public RAG search, SearXNG search 1회, exac
 `gemini-3.5-flash`, prompt/output token 양수, `COMMITTED`다. 이는 evidence-backed citation 답변 성공을
 뜻하지 않으며 MCP exact quote 검증 경로는 위 별도 tool smoke로 검증했다. raw token/web body/model
 request/response 저장은 모두 0이고 public `142/7,871/63/2`, owner residual 0은 변하지 않았다.
+
+V70/V71 live overlay에서는 Gemini가 Vertex Google Search를 자율 선택해 실제 query를 만들었고 usage를
+`VERTEX_GOOGLE/COMMITTED`로 정산했다. provider가 source/support를 반환하지 않은 응답은 추정 citation을
+만들지 않고 `RETRIEVAL_ONLY`로 닫았다. Google soft cap 격리에서는 SearXNG가 Investor.gov 결과와 bounded
+read evidence를 만들고 EVIDENCE generation까지 `COMMITTED`했으며, V71은 그 `searxng_<24hex>` provenance를
+history canonicalizer에 forward 결속한다. 후속 DuckDuckGo CAPTCHA/ALL_ENGINES 장애는 우회 없이 typed
+failure로 종료했다.
 
 `pre-s5-owner-voyage`와 `pre-s5-final-gate`는 ignored 0700/0600 control만 읽는 내부 operator다.
 구현·focused gate 또는 live smoke 하나만으로 `S5_ENTRY_GATE=OPEN`을 선언하지 않는다. owner Voyage
@@ -148,9 +155,9 @@ Voyage input에 포함하지 않는다. Vertex는 local root 아래 0600 service
 1회 교환하고 `VERTEX_MODEL_ID`(기본 `gemini-3.5-flash`)의 packet-bound global publisher model로
 top-5와 질문당 `generateContent` 1회만 실행하며 fallback은 0이다. ambient ADC, API key와 Gemini
 Developer API는 v2 runtime에서 허용하지 않는다.
-위 `TARGET_NOT_ACTIVE/provider physical call 0` 문구는 최초 activation 전 역사 상태다. current V69
+위 `TARGET_NOT_ACTIVE/provider physical call 0` 문구는 최초 activation 전 역사 상태다. current V71
 fresh namespace는 public Voyage `FULL_READY`와 S4.9 Vertex Strong LLM의 latest `COMMITTED` usage를
-보존한다. V1~V69 migration과 기존 generation/attempt ledger는 삭제하지 않는다.
+보존한다. V1~V71 migration과 기존 generation/attempt ledger는 삭제하지 않는다.
 
 fresh namespace는 `capstone-pre-s5-fresh`, PostgreSQL `55432`, Redis `56379`, output root
 `capstone-rag/runtime/pre-s5-fresh/local-corpus`로 고정한다. BGE encoder/embedding inference와

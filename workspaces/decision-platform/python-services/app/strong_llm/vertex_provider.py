@@ -320,7 +320,6 @@ def _canonical_answer_json(value: str) -> str:
         raise ValueError(leaf) from error
     if not isinstance(payload, dict):
         raise ValueError("STRONG_LLM_PROVIDER_JSON_ROOT_INVALID")
-    StrongLlmAnswer.model_validate(payload)
     return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
 
 
@@ -340,12 +339,13 @@ def _normalize_grounded_answer(
 ) -> str:
     """Provider support와 실제 문장 구간이 겹치는 Google 근거만 남는 citation ID에 결속한다."""
 
+    payload = json.loads(answer_json)
+    if not isinstance(payload, dict):
+        raise ValueError("STRONG_LLM_PROVIDER_JSON_ROOT_INVALID")
     if not roots or not supports:
+        StrongLlmAnswer.model_validate(payload)
         return answer_json
-    answer = StrongLlmAnswer.model_validate_json(answer_json)
-    used_local_ids = list(
-        dict.fromkeys(citation_id for sentence in answer.sentences for citation_id in sentence.citationIds)
-    )
+    used_local_ids = _valid_provider_citation_ids(payload)
     valid_ids = {f"cit_{index}" for index in range(1, 6)}
     preassigned = {
         _chunk_index(root): str(root.get("citation_id", ""))
@@ -369,7 +369,10 @@ def _normalize_grounded_answer(
         root["citation_id"] = citation_id
         root_by_index[chunk_index] = citation_id
     if not root_by_index:
+        StrongLlmAnswer.model_validate(payload)
         return answer_json
+    _bind_provider_grounding_citations(payload, supports, root_by_index)
+    answer = StrongLlmAnswer.model_validate(payload)
     normalized_sentences = []
     used_google = False
     for sentence in answer.sentences:
@@ -437,6 +440,75 @@ def _normalize_grounded_answer(
     if used_google:
         payload["warnings"] = list(dict.fromkeys([*answer.warnings, "GOOGLE_GROUNDING_ONLY"]))
     return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+
+
+def _valid_provider_citation_ids(payload: dict[str, object]) -> list[str]:
+    valid = re.compile(r"^cit_[1-5]$")
+    selected: list[str] = []
+    sentences = payload.get("sentences")
+    if not isinstance(sentences, list):
+        return selected
+    for sentence in sentences:
+        if not isinstance(sentence, dict) or not isinstance(sentence.get("citationIds"), list):
+            continue
+        for citation_id in sentence["citationIds"]:
+            if isinstance(citation_id, str) and valid.fullmatch(citation_id) and citation_id not in selected:
+                selected.append(citation_id)
+    return selected
+
+
+def _bind_provider_grounding_citations(
+    payload: dict[str, object],
+    supports: list[dict[str, object]],
+    root_by_index: dict[int, str],
+) -> None:
+    """모델 label 대신 exact support quote와 provider chunk index로 Google citation을 재결속한다."""
+
+    valid = re.compile(r"^cit_[1-5]$")
+    sentences = payload.get("sentences")
+    if not isinstance(sentences, list):
+        return
+    for sentence in sentences:
+        if not isinstance(sentence, dict):
+            continue
+        raw_ids = sentence.get("citationIds")
+        selected_ids = [value for value in raw_ids if isinstance(value, str) and valid.fullmatch(value)] if isinstance(raw_ids, list) else []
+        raw_spans = sentence.get("evidenceSpans")
+        normalized_spans: list[dict[str, str]] = []
+        if isinstance(raw_spans, list):
+            for span in raw_spans:
+                if not isinstance(span, dict):
+                    continue
+                quote = span.get("quote")
+                citation_id = span.get("citationId")
+                if not isinstance(quote, str) or not quote:
+                    continue
+                if isinstance(citation_id, str) and valid.fullmatch(citation_id):
+                    normalized_spans.append({"citationId": citation_id, "quote": quote})
+                    continue
+                for support in supports:
+                    if quote != str(support.get("text", "")):
+                        continue
+                    for index in _chunk_indices(support):
+                        mapped = root_by_index.get(index)
+                        if mapped is not None:
+                            normalized_spans.append({"citationId": mapped, "quote": quote})
+                            if mapped not in selected_ids:
+                                selected_ids.append(mapped)
+        sentence["citationIds"] = selected_ids
+        sentence["evidenceSpans"] = list(
+            {(span["citationId"], span["quote"]): span for span in normalized_spans}.values()
+        )
+        numeric_spans = sentence.get("numericSpans")
+        if isinstance(numeric_spans, list):
+            for numeric in numeric_spans:
+                if not isinstance(numeric, dict) or not isinstance(numeric.get("citationIds"), list):
+                    continue
+                numeric["citationIds"] = [
+                    value
+                    for value in numeric["citationIds"]
+                    if isinstance(value, str) and valid.fullmatch(value)
+                ]
 
 
 def _assign_grounding_citation_ids(

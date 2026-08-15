@@ -12,8 +12,6 @@ import com.capstone.decision.infrastructure.mcp.RagWebToolProperties
 import com.capstone.decision.infrastructure.mcp.S49WebEvidenceMetadataPort
 import com.capstone.decision.infrastructure.mcp.budget
 import org.slf4j.LoggerFactory
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
-import org.springframework.stereotype.Component
 import tools.jackson.core.JacksonException
 import tools.jackson.core.StreamReadConstraints
 import tools.jackson.core.StreamReadFeature
@@ -29,8 +27,6 @@ import java.time.Duration
  * Vertex를 provider-neutral Strong LLM port로 연결한다. 모델은 Top-5 전체와 bounded web evidence 중 사용할
  * 근거를 고르지만 tool 실행·citation·숫자·owner·직접 조언 경계는 항상 애플리케이션이 검증한다.
  */
-@Component
-@ConditionalOnProperty(name = ["app.s4-9.strong-llm.enabled"], havingValue = "true")
 internal class S49VertexStrongLlmGenerationAdapter(
     private val properties: S49StrongLlmProperties,
     private val webProperties: RagWebToolProperties,

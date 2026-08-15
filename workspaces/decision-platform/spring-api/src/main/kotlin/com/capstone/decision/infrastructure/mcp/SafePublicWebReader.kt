@@ -15,6 +15,7 @@ data class BoundedWebDocument(
     val title: String,
     val text: String,
     val contentType: String,
+    val discoveredUrls: List<String> = emptyList(),
 )
 
 fun interface PublicWebReaderPort {
@@ -59,8 +60,14 @@ class SafePublicWebReader(
                         .substringBefore(';')
                         .trim()
                         .lowercase()
-                val (title, text) = normalize(contentType, body, uri)
-                return BoundedWebDocument(uri.toASCIIString(), title, text, contentType)
+                val normalized = normalize(contentType, body, uri)
+                return BoundedWebDocument(
+                    uri.toASCIIString(),
+                    normalized.title,
+                    normalized.text,
+                    contentType,
+                    normalized.discoveredUrls,
+                )
             } finally {
                 body.fill(0)
             }
@@ -96,7 +103,8 @@ class SafePublicWebReader(
         contentType: String,
         body: ByteArray,
         uri: URI,
-    ): Pair<String, String> {
+    ): NormalizedWebDocument {
+        var discoveredUrls = emptyList<String>()
         val raw =
             when (contentType) {
                 "text/html", "application/xhtml+xml" -> {
@@ -107,6 +115,17 @@ class SafePublicWebReader(
                             !LOGIN_PAGE_TITLE.containsMatchIn(document.title()),
                         "S4_9_WEB_READ_LOGIN_PAGE_REJECTED",
                     )
+                    // 링크는 내용 제거 전에 추출하되 HTTPS 절대 URL만 제한적으로 provenance 후보로 남긴다.
+                    discoveredUrls =
+                        document
+                            .select("a[href]")
+                            .asSequence()
+                            .map { uri.resolve(it.attr("href")).toASCIIString() }
+                            .filter { it.isNotBlank() }
+                            .mapNotNull(::boundedHttpsUrlOrNull)
+                            .distinct()
+                            .take(MAX_DISCOVERED_LINKS)
+                            .toList()
                     document.select("script,style,noscript,iframe,form,nav,header,footer,aside,[role=navigation]").remove()
                     document.title().take(MAX_TITLE_CHARS) to document.body().text()
                 }
@@ -128,8 +147,16 @@ class SafePublicWebReader(
         ensure(text.isNotBlank(), "S4_9_WEB_READ_TEXT_EMPTY")
         ensure(!PROMPT_INJECTION.containsMatchIn(text), "S4_9_WEB_READ_PROMPT_INJECTION_REJECTED")
         val title = sanitizePublicWebSearchText(raw.first.ifBlank { uri.host }, MAX_TITLE_CHARS).ifBlank { uri.host }
-        return title to text
+        return NormalizedWebDocument(title, text, discoveredUrls)
     }
+
+    private fun boundedHttpsUrlOrNull(value: String): String? =
+        runCatching {
+            val uri = URI.create(value).normalize()
+            require(uri.scheme == "https" && uri.host != null && uri.rawUserInfo == null && uri.rawFragment == null)
+            require(uri.port in setOf(-1, 443) && value.length <= 2_048)
+            uri.toASCIIString()
+        }.getOrNull()
 
     private fun ensure(
         condition: Boolean,
@@ -154,8 +181,15 @@ class SafePublicWebReader(
         const val MAX_TEXT_CHARS = 60_000
         const val MAX_TITLE_CHARS = 256
         const val MAX_PDF_PAGES = 20
+        const val MAX_DISCOVERED_LINKS = 20
     }
 }
+
+private data class NormalizedWebDocument(
+    val title: String,
+    val text: String,
+    val discoveredUrls: List<String>,
+)
 
 /** MCP 오류에는 URL이나 응답 본문 대신 고정된 content-free leaf만 노출한다. */
 class S49WebReadRejectedException(

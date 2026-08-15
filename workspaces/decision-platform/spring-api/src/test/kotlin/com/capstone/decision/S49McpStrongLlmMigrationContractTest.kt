@@ -23,7 +23,8 @@ class S49McpStrongLlmMigrationContractTest {
                     .toList()
             }
 
-        assertThat(versions.max()).isEqualTo(69)
+        assertThat(versions.max()).isEqualTo(70)
+        assertThat(versions.count { it == 70 }).isEqualTo(1)
         assertThat(versions.count { it == 66 }).isEqualTo(1)
         assertThat(versions.count { it == 67 }).isEqualTo(1)
         assertThat(versions.count { it == 68 }).isEqualTo(1)

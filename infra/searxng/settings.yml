@@ -2,10 +2,6 @@ use_default_settings:
   engines:
     keep_only:
       - duckduckgo
-      - brave
-      - mojeek
-      - qwant
-      - wikipedia
 
 general:
   debug: false

@@ -13,6 +13,7 @@ from app.strong_llm.vertex_provider import (
     LangChainVertexProvider,
     VertexProviderSettings,
     _normalize_grounded_answer,
+    _provider_result,
     _vertex_response_schema,
 )
 
@@ -185,6 +186,39 @@ def test_vertex_schema_uses_only_the_provider_supported_structural_subset() -> N
     for unsupported in ("$defs", "$ref", "additionalProperties", "minLength", "maxLength", "pattern"):
         assert unsupported not in serialized
     assert schema["required"] == ["basis", "answer", "sentences", "warnings"]
+
+
+def test_grounding_metadata_accepts_null_optional_segment_offsets() -> None:
+    message = AIMessage(
+        content=_answer(),
+        response_metadata={
+            "grounding_metadata": {
+                "web_search_queries": ["portfolio diversification"],
+                "grounding_chunks": [
+                    {
+                        "web": {
+                            "uri": "https://www.investor.gov/diversification",
+                            "title": "Diversification",
+                            "domain": "investor.gov",
+                        }
+                    }
+                ],
+                "grounding_supports": [
+                    {
+                        "segment": {"start_index": None, "end_index": None, "text": "분산투자"},
+                        "grounding_chunk_indices": [0],
+                    }
+                ],
+            }
+        },
+        usage_metadata={"input_tokens": 10, "output_tokens": 5, "total_tokens": 15},
+    )
+
+    result = _provider_result(message)
+
+    assert result["grounding_supports"] == [
+        {"start_index": 0, "end_index": 0, "text": "분산투자", "chunk_indices": (0,)}
+    ]
 
 
 def test_google_support_uses_an_unused_citation_id_without_discarding_local_evidence() -> None:

@@ -1,5 +1,4 @@
 # S4.7D parser/OCR runtime 의존성 변경은 S1.4X reference lock amendment로 추적한다.
-# S4.9 narrow reference carrier 준비용 임시 marker다.
 [project]
 name = "decision-platform-services"
 version = "0.1.0"

@@ -348,6 +348,64 @@ def test_google_support_segment_may_exactly_contain_the_structured_sentence() ->
     ]
 
 
+def test_google_grounding_rebuilds_mismatched_duplicate_sentence_contract() -> None:
+    answer = {
+        "basis": "EVIDENCE",
+        "answer": "2026년 8월 15일 최신 보도자료입니다.",
+        "sentences": [
+            {
+                "text": "모델이 중복 문장 필드를 다르게 작성했습니다.",
+                "citationIds": [],
+                "evidenceSpans": [],
+                "numericSpans": [],
+            }
+        ],
+        "warnings": [],
+    }
+    roots: list[dict[str, object]] = [
+        {
+            "result_id": "google_1",
+            "title": "SEC press releases",
+            "uri": "https://www.sec.gov/newsroom/press-releases",
+            "domain": "sec.gov",
+            "chunk_index": 0,
+            "citation_id": "",
+        }
+    ]
+    supports: list[dict[str, object]] = [
+        {
+            "start_index": 0,
+            "end_index": 18,
+            "text": "2026년 8월 15일 최신 보도자료",
+            "chunk_indices": (0,),
+        }
+    ]
+
+    normalized = json.loads(
+        _normalize_grounded_answer(
+            json.dumps(answer, ensure_ascii=False),
+            roots,
+            supports,
+            allowed_local_ids=set(),
+        )
+    )
+
+    assert normalized["answer"] == "2026년 8월 15일 최신 보도자료입니다."
+    assert normalized["sentences"] == [
+        {
+            "text": "2026년 8월 15일 최신 보도자료입니다.",
+            "citationIds": ["cit_1"],
+            "evidenceSpans": [
+                {"citationId": "cit_1", "quote": "2026년 8월 15일 최신 보도자료"}
+            ],
+            "numericSpans": [
+                {"value": "2026년", "citationIds": ["cit_1"]},
+                {"value": "15일", "citationIds": ["cit_1"]},
+            ],
+        }
+    ]
+
+
 def test_provider_json_accepts_only_one_object_with_optional_known_fence() -> None:
     expected = json.loads(_answer())
 

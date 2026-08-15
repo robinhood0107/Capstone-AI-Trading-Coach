@@ -32,7 +32,7 @@ data class McpEvidenceItem(
 
 data class McpWebSearchResponse(
     val researchContext: String,
-    val results: List<SearxngSearchResult>,
+    val results: List<RegisteredResearchSource>,
 )
 
 data class McpWebReadResponse(
@@ -40,6 +40,7 @@ data class McpWebReadResponse(
     val evidence: McpEvidenceItem,
     val canonicalUrl: String,
     val title: String,
+    val discoveredLinks: List<RegisteredResearchSource>,
 )
 
 data class McpAnswerValidationResponse(
@@ -60,8 +61,7 @@ data class McpAnswerSaveResponse(
 class CapstoneMcpTools(
     private val ragService: RagV2RuntimeService,
     private val contexts: McpResearchContextRegistry,
-    private val searchClient: SearxngSearchClient,
-    private val webReader: SafePublicWebReader,
+    private val researchTools: ResearchToolFacade,
     private val properties: RagWebToolProperties,
     private val validationReceipts: McpAnswerValidationReceiptRegistry,
     private val strongLlmProperties: S49StrongLlmProperties,
@@ -113,6 +113,8 @@ class CapstoneMcpTools(
                 result.citations,
                 result.evidence,
             )
+        researchTools.openSession(context.id)
+        researchTools.registerUserRoots(context.id, question)
         return McpRagSearchResponse(receipt, context.expiresAt, contexts.evidenceSnapshot(context).map(::evidenceItem))
     }
 
@@ -132,7 +134,8 @@ class CapstoneMcpTools(
         val budget = properties.budget(mode)
         contexts.reserveSearch(context, mode, budget.maxSearches)
         admission.acquireSearch(caller)
-        val results = searchClient.search(query)
+        researchTools.openSession(context.id)
+        val results = researchTools.search(context.id, query)
         contexts.addSearchableUrls(context, results.map { it.url })
         return McpWebSearchResponse(contexts.refreshedReceipt(context), results)
     }
@@ -144,16 +147,18 @@ class CapstoneMcpTools(
     )
     fun webRead(
         @McpToolParam(description = "HMAC-bound research context", required = true) researchContext: String,
-        @McpToolParam(description = "Exact HTTPS URL selected from search results", required = true) url: String,
+        @McpToolParam(description = "Preferred opaque resultId from search or discovered links", required = false) resultId: String?,
+        @McpToolParam(description = "Compatibility URL; it must resolve to a registered source node", required = false) url: String?,
         @McpToolParam(description = "CONCISE or DETAILED", required = true) mode: String,
     ): McpWebReadResponse {
         val caller = caller("mcp:web.read")
         val context = requireCurrentContext(researchContext, caller)
         val budget = properties.budget(mode)
-        contexts.reserveRead(context, mode, budget.maxReads, url)
-        val document =
+        val source = researchTools.resolve(context.id, resultId, url)
+        contexts.reserveRead(context, mode, budget.maxReads, source.url)
+        val registered =
             try {
-                admission.withRead(caller) { webReader.read(url) }
+                admission.withRead(caller) { researchTools.read(context.id, resultId, url) }
             } catch (error: S49WebReadRejectedException) {
                 logger.warn("s4_9.web_read.rejected leaf={}", error.message)
                 throw error
@@ -162,6 +167,7 @@ class CapstoneMcpTools(
                 logger.warn("s4_9.web_read.rejected leaf={}", leaf)
                 throw S49WebReadRejectedException(leaf)
             }
+        val document = registered.document
         val hash = sha256(document.text)
         webEvidenceMetadata.record(
             caller.ownerUserId,
@@ -172,7 +178,13 @@ class CapstoneMcpTools(
             hash,
         )
         val stored = contexts.appendWebEvidence(context, document.text, hash)
-        return McpWebReadResponse(contexts.refreshedReceipt(context), evidenceItem(stored), document.canonicalUrl, document.title)
+        return McpWebReadResponse(
+            contexts.refreshedReceipt(context),
+            evidenceItem(stored),
+            document.canonicalUrl,
+            document.title,
+            registered.discoveredLinks,
+        )
     }
 
     @McpTool(

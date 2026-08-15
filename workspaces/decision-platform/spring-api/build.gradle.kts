@@ -100,9 +100,11 @@ sourceSets {
     main {
         proto {
             srcDir("../../../contracts/proto")
+            srcDir("../../../contracts/internal/proto")
             include("disclosure_observation.proto")
             include("brokerage.proto")
             include("rag.proto")
+            include("strong_llm_agent.proto")
         }
     }
 }

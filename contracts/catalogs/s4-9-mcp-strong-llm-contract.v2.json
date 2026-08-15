@@ -1,0 +1,77 @@
+{
+  "contractId": "s4-9-mcp-strong-llm-v2",
+  "mcpProtocolVersion": "2025-11-25",
+  "strongLlm": {
+    "runtime": "PYTHON_LANGGRAPH_BOUNDED_STATE_GRAPH",
+    "defaultAdapter": "vertex-gemini-3.5-flash",
+    "answerBases": ["EVIDENCE", "MODEL_KNOWLEDGE", "INSUFFICIENT_EVIDENCE"],
+    "evidenceInput": "FULL_TOP_5",
+    "maximumToolRounds": 3,
+    "providerPermitRequired": true,
+    "hiddenRetryCount": 0,
+    "serverValidation": ["CITATION", "EXACT_QUOTE", "NUMERIC_SPAN", "OWNER_SCOPE", "DIRECT_ADVICE"]
+  },
+  "search": {
+    "primary": "VERTEX_GOOGLE_SEARCH_GROUNDING",
+    "fallback": "SEARXNG_DUCKDUCKGO_BEST_EFFORT",
+    "googleGrounding": {
+      "autonomousModelDecision": true,
+      "monthlySoftCap": 4000,
+      "billingPeriodZone": "America/Los_Angeles",
+      "reservePerPrompt": 8,
+      "overageAllowed": false,
+      "automatedRedirectRead": false
+    },
+    "searxng": {
+      "maximumSearches": 3,
+      "maximumReads": 8,
+      "maximumParallelReads": 3
+    }
+  },
+  "provenance": {
+    "sourceTypes": ["GOOGLE_GROUNDING", "SEARXNG_RESULT", "USER_ROOT", "DISCOVERED_LINK"],
+    "readByResultId": true,
+    "maximumDepth": 3,
+    "maximumLinksPerPage": 20,
+    "unregisteredModelUrlAllowed": false,
+    "googleGroundingSupportMetadataIsCitationAuthority": true
+  },
+  "mcp": {
+    "transport": "STREAMABLE_HTTP",
+    "path": "/mcp",
+    "tools": [
+      "capstone_rag_search",
+      "capstone_web_search",
+      "capstone_web_read",
+      "capstone_answer_validate",
+      "capstone_answer_save"
+    ],
+    "webSearchResultAdds": ["resultId", "sourceType"],
+    "webReadPreferredInput": "resultId",
+    "webReadCompatibilityInput": "url",
+    "oauthScopes": [
+      "mcp:rag.public",
+      "mcp:rag.owner",
+      "mcp:web.read",
+      "mcp:answer.validate",
+      "mcp:history.write"
+    ],
+    "ownerIdToolArgumentAllowed": false,
+    "publicDynamicClientRegistration": false
+  },
+  "storage": {
+    "rawQuery": false,
+    "rawWebBody": false,
+    "ownerText": false,
+    "modelRequest": false,
+    "modelResponse": false
+  },
+  "authority": {
+    "decision": false,
+    "signal": false,
+    "lstm": false,
+    "riskDecision": false,
+    "order": false,
+    "judgementHash": false
+  }
+}

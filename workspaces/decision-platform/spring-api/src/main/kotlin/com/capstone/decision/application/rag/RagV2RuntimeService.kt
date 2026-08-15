@@ -520,7 +520,13 @@ class RagV2RuntimeService(
         }
 
         val basis = requireNotNull(generation.answerBasis)
-        val citedEvidence = selectedStrongLlmCitations(evaluation.citations, generation.citationIds, basis)
+        val citedEvidence =
+            selectedStrongLlmCitations(
+                evaluation.citations,
+                generation.webCitations,
+                generation.citationIds,
+                basis,
+            )
         return inDatabaseTransaction {
             setActor(ownerUserId)
             val createdAt = databaseNow()
@@ -937,7 +943,7 @@ class RagV2RuntimeService(
         generation: RagV2VertexGenerationResult,
         evidence: List<RagV2VertexEvidence>,
     ) {
-        val evidenceCitationIds = evidence.map { it.citationId }.toSet()
+        val evidenceCitationIds = evidence.map { it.citationId }.toSet() + generation.webCitations.map { it.citationId }
         require(evidence.size in 0..MAX_CITATIONS)
         when (generation.generationStatus) {
             RagGenerationStatus.ANSWERED -> {
@@ -945,11 +951,15 @@ class RagV2RuntimeService(
                 require(answer.toByteArray(Charsets.UTF_8).size in 1..8192)
                 require(generation.answerBasis in setOf(StrongLlmAnswerBasis.EVIDENCE, StrongLlmAnswerBasis.MODEL_KNOWLEDGE))
                 if (generation.answerBasis == StrongLlmAnswerBasis.EVIDENCE) {
-                    require(evidence.isNotEmpty() && generation.citationIds.isNotEmpty() && generation.citationCoverage in 0.8..1.0)
+                    require(
+                        (evidence.isNotEmpty() || generation.webCitations.isNotEmpty()) &&
+                            generation.citationIds.isNotEmpty() &&
+                            generation.citationCoverage in 0.8..1.0,
+                    )
                 } else {
                     require(generation.citationIds.isEmpty() && generation.citationCoverage == 0.0)
                 }
-                require(generation.citationIds.size <= evidence.size)
+                require(generation.citationIds.size <= MAX_CITATIONS)
                 require(generation.citationIds.distinct().size == generation.citationIds.size)
                 require(generation.citationIds.all { it in evidenceCitationIds })
                 require(generation.failureCode.isEmpty())
@@ -1082,7 +1092,7 @@ class RagV2RuntimeService(
         val receipt =
             objectMapper.writeValueAsString(
                 citedEvidence.mapIndexed { index, citation ->
-                    linkedMapOf(
+                    linkedMapOf<String, Any?>(
                         "ordinal" to index + 1,
                         "citationId" to citation.citationId,
                         "sourceId" to citation.sourceId,
@@ -1090,13 +1100,20 @@ class RagV2RuntimeService(
                         "chunkRevisionId" to citation.chunkRevisionId,
                         "generationId" to citation.generationId,
                         "citationKind" to citation.citationKind,
-                    )
+                    ).apply {
+                        citation.provenanceResultId?.let {
+                            put("provenanceResultId", it)
+                            put("title", citation.title)
+                            put("canonicalUrl", citation.canonicalUrl)
+                            put("locator", citation.locator)
+                        }
+                    }
                 },
             )
         val canonical =
             jdbc().queryForObject(
                 """
-                SELECT public.persist_s4_9_strong_llm_history(
+                SELECT public.persist_s4_9_strong_llm_history_v2(
                   :ownerUserId, :answerId, :requestId, :answerMode, :sessionId, :scopeClaimId,
                   :answerBasis, :citationCoverage, CAST(:guardrailFlags AS text[]), :kekVersion,
                   :wrapNonce, :wrappedDek, :wrapTag,
@@ -1144,18 +1161,44 @@ class RagV2RuntimeService(
      */
     private fun selectedStrongLlmCitations(
         retrieved: List<RagV2RetrievedCitation>,
+        webCitations: List<StrongLlmWebCitation>,
         citationIds: List<String>,
         basis: StrongLlmAnswerBasis,
     ): List<RagV2RetrievedCitation> {
-        val byCitationId = retrieved.associateBy { it.citationId }
-        require(byCitationId.size == retrieved.size)
+        val byCitationId =
+            buildMap {
+                val webIds = webCitations.map { it.citationId }.toSet()
+                retrieved.filterNot { it.citationId in webIds }.forEach { put(it.citationId, it) }
+                webCitations.forEach { web ->
+                    put(
+                        web.citationId,
+                        RagV2RetrievedCitation(
+                            citationId = web.citationId,
+                            sourceId = web.sourceId,
+                            sourceRevisionId = "srv_web_${sha256(web.canonicalUrl).take(24)}",
+                            chunkRevisionId = "rag_v2_chk_${sha256(web.canonicalUrl).take(32)}",
+                            generationId = "rgr_${sha256(web.canonicalUrl).take(32)}",
+                            citationKind = "PUBLIC_WEB",
+                            title = web.title,
+                            canonicalUrl = web.canonicalUrl,
+                            documentId = null,
+                            displayName = null,
+                            locator = mapOf("section" to web.sectionTitle),
+                            provenanceResultId = web.provenanceResultId,
+                        ),
+                    )
+                }
+            }
+        require(byCitationId.size <= MAX_CITATIONS)
         if (basis == StrongLlmAnswerBasis.MODEL_KNOWLEDGE) {
-            require(citationIds.isEmpty())
+            require(citationIds.isEmpty() && webCitations.isEmpty())
             return emptyList()
         }
         require(basis == StrongLlmAnswerBasis.EVIDENCE)
         require(citationIds.isNotEmpty() && citationIds.distinct().size == citationIds.size)
-        return citationIds.map { citationId -> requireNotNull(byCitationId[citationId]) }
+        return citationIds.mapIndexed { index, citationId ->
+            requireNotNull(byCitationId[citationId]).copy(citationId = "cit_${index + 1}")
+        }
     }
 
     /** 검색 결과 0건만 Strong LLM의 citation-free 교육 답변 또는 MCP web research로 넘긴다. */

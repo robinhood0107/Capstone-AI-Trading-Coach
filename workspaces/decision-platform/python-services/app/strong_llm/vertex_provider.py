@@ -12,7 +12,7 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, System
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 from app.strong_llm.models import RunRequest, StrongLlmAnswer
-from app.strong_llm.prompt import render_discovery_prompt, render_prompt
+from app.strong_llm.prompt import require_google_grounding, render_discovery_prompt, render_prompt
 from app.strong_llm.runtime import ProviderResult
 
 
@@ -134,6 +134,7 @@ class LangChainVertexProvider:
             if request.owner_evidence
             else render_prompt(request, request.public_evidence)
         )
+        prompt = require_google_grounding(prompt)
         message = self._google.invoke(
             [SystemMessage(content=prompt.system), HumanMessage(content=prompt.user)]
         )

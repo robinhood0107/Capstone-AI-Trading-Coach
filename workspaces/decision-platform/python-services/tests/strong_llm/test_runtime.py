@@ -14,6 +14,7 @@ from app.strong_llm.vertex_provider import (
     LangChainVertexProvider,
     VertexProviderSettings,
     _canonical_answer_json,
+    _fallback_tools,
     _normalize_grounded_answer,
     _provider_result,
     _vertex_response_schema,
@@ -322,6 +323,53 @@ def test_fallback_function_call_does_not_require_intermediate_text() -> None:
     assert result["prompt_tokens"] == 17
     assert result["output_tokens"] == 5
     assert json.loads(result["answer_json"])["basis"] == "INSUFFICIENT_EVIDENCE"
+
+
+def test_fallback_tool_round_keeps_native_structured_output_binding(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    credential = tmp_path / "service-account.json"
+    credential.write_text("{}", encoding="utf-8")
+    credential.chmod(0o600)
+    bind_calls: list[dict[str, object]] = []
+    tool_calls: list[list[dict[str, object]]] = []
+
+    class FakeCredentials:
+        project_id = "project-id"
+
+    class FakeModel:
+        def __init__(self, **_kwargs: object) -> None:
+            pass
+
+        def bind(self, **kwargs: object) -> "FakeModel":
+            bind_calls.append(kwargs)
+            return self
+
+        def bind_tools(self, tools: list[dict[str, object]]) -> "FakeModel":
+            tool_calls.append(tools)
+            return self
+
+        def invoke(self, _messages: object) -> AIMessage:
+            return AIMessage(content=_answer())
+
+    monkeypatch.setattr(
+        "app.strong_llm.vertex_provider.service_account.Credentials.from_service_account_file",
+        lambda *_args, **_kwargs: FakeCredentials(),
+    )
+    monkeypatch.setattr("app.strong_llm.vertex_provider.ChatGoogleGenerativeAI", FakeModel)
+    request = _request(google=False)
+    provider = LangChainVertexProvider(
+        request,
+        VertexProviderSettings(service_account_path=credential),
+    )
+
+    result = provider.invoke_fallback(request, [], tools_enabled=True)
+
+    assert tool_calls == [_fallback_tools()]
+    assert bind_calls[-1]["response_mime_type"] == "application/json"
+    assert bind_calls[-1]["response_schema"] == _vertex_response_schema()
+    assert json.loads(result["answer_json"])["basis"] == "MODEL_KNOWLEDGE"
 
 
 def test_vertex_schema_uses_only_the_provider_supported_structural_subset() -> None:

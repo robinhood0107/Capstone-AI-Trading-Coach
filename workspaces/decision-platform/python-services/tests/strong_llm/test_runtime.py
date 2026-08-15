@@ -3,11 +3,9 @@ from __future__ import annotations
 import json
 from dataclasses import replace
 from pathlib import Path
-from types import SimpleNamespace
 from typing import cast
 
 import pytest
-from google.genai import types as genai_types
 from langchain_core.messages import AIMessage, BaseMessage
 
 from app.strong_llm.models import Evidence, RunRequest
@@ -18,7 +16,6 @@ from app.strong_llm.vertex_provider import (
     _canonical_answer_json,
     _normalize_grounded_answer,
     _provider_result,
-    _requires_google_search,
     _vertex_response_schema,
 )
 
@@ -217,94 +214,38 @@ def test_google_search_and_native_schema_share_the_official_bind_contract(
     assert bind_calls[0]["response_schema"] == bind_calls[1]["response_schema"]
 
 
-def test_explicit_google_search_uses_stateless_required_interaction(
+def test_explicit_google_search_stays_on_official_langchain_vertex_binding(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     credential = tmp_path / "service-account.json"
     credential.write_text("{}", encoding="utf-8")
     credential.chmod(0o600)
-    captured: dict[str, object] = {}
-    answer = {
-        "basis": "EVIDENCE",
-        "answer": "SEC latest release.",
-        "sentences": [
-            {
-                "text": "SEC latest release.",
-                "citationIds": [],
-                "evidenceSpans": [],
-                "numericSpans": [],
-            }
-        ],
-        "warnings": [],
-    }
-    raw_text = json.dumps(answer)
-    cited_text = "SEC latest release."
-    start = len(raw_text[: raw_text.index(cited_text)].encode("utf-8"))
-    end = start + len(cited_text.encode("utf-8"))
-    interaction = SimpleNamespace(
-        status="completed",
-        output_text=raw_text,
-        steps=[
-            SimpleNamespace(
-                type="google_search_call",
-                arguments=SimpleNamespace(queries=["latest SEC press release"]),
-            ),
-            SimpleNamespace(
-                type="model_output",
-                content=[
-                    SimpleNamespace(
-                        type="text",
-                        text=raw_text,
-                        annotations=[
-                            SimpleNamespace(
-                                type="url_citation",
-                                url="https://www.sec.gov/newsroom/press-releases",
-                                title="SEC press releases",
-                                start_index=start,
-                                end_index=end,
-                            )
-                        ],
-                    )
-                ],
-            ),
-        ],
-        usage=SimpleNamespace(
-            total_input_tokens=20,
-            total_output_tokens=10,
-            grounding_tool_count=[SimpleNamespace(type="google_search", count=1)],
-        ),
-    )
+    invocations: list[dict[str, object]] = []
 
     class FakeCredentials:
         project_id = "project-id"
+
+    class FakeBoundModel:
+        def __init__(self, binding: dict[str, object]) -> None:
+            self.binding = binding
+
+        def invoke(self, _messages: object) -> AIMessage:
+            invocations.append(self.binding)
+            return AIMessage(content=_answer())
 
     class FakeModel:
         def __init__(self, **_kwargs: object) -> None:
             pass
 
-        def bind(self, **_kwargs: object) -> "FakeModel":
-            return self
-
-    class FakeInteractions:
-        def create(self, **kwargs: object) -> object:
-            captured.update(kwargs)
-            return interaction
-
-    class FakeClient:
-        def __init__(self, **kwargs: object) -> None:
-            captured["client"] = kwargs
-            self.interactions = FakeInteractions()
-
-        def close(self) -> None:
-            captured["closed"] = True
+        def bind(self, **kwargs: object) -> FakeBoundModel:
+            return FakeBoundModel(kwargs)
 
     monkeypatch.setattr(
         "app.strong_llm.vertex_provider.service_account.Credentials.from_service_account_file",
         lambda *_args, **_kwargs: FakeCredentials(),
     )
     monkeypatch.setattr("app.strong_llm.vertex_provider.ChatGoogleGenerativeAI", FakeModel)
-    monkeypatch.setattr("app.strong_llm.vertex_provider.genai.Client", FakeClient)
     request = replace(
         _request(google=True),
         question="Google Search로 현재 SEC 보도자료를 확인해 주세요.",
@@ -316,32 +257,15 @@ def test_explicit_google_search_uses_stateless_required_interaction(
 
     result = provider.invoke_google(request, include_owner=False)
 
-    assert captured["extra_body"] == {"tool_choice": "any"}
-    assert "tool_choice" not in {key for key in captured if key != "extra_body"}
-    assert captured["store"] is False
-    assert captured["tools"] == [{"type": "google_search", "search_types": ["web_search"]}]
-    client_args = cast(dict[str, object], captured["client"])
-    assert client_args["vertexai"] is True
-    http_options = cast(genai_types.HttpOptions, client_args["http_options"])
-    assert http_options.timeout == 50_000
-    assert http_options.retry_options is not None
-    assert http_options.retry_options.attempts == 1
-    assert captured["closed"] is True
-    assert result["google_query_count"] == 1
-    assert result["grounding_roots"][0]["citation_id"] == "cit_1"
-    assert json.loads(result["answer_json"])["sentences"][0]["citationIds"] == ["cit_1"]
-
-
-@pytest.mark.parametrize(
-    ("question", "expected"),
-    [
-        ("Google Search로 확인해 주세요.", True),
-        ("구글 검색으로 확인해 주세요.", True),
-        ("일반 교육 질문입니다.", False),
-    ],
-)
-def test_required_google_search_is_only_explicit_user_opt_in(question: str, expected: bool) -> None:
-    assert _requires_google_search(question) is expected
+    assert invocations == [
+        {
+            "tools": [{"google_search": {}}],
+            "response_mime_type": "application/json",
+            "response_schema": _vertex_response_schema(),
+        }
+    ]
+    assert result["google_query_count"] == 0
+    assert json.loads(result["answer_json"])["basis"] == "MODEL_KNOWLEDGE"
 
 
 def test_vertex_schema_uses_only_the_provider_supported_structural_subset() -> None:

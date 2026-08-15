@@ -52,6 +52,7 @@ SearXNG/Vertex smoke에 사용한다. KIS 실제 주문에는 사용하지 않�
 | S4.8 Core 6 + Optional 3 local runtime | `IMPLEMENTED_DRAFT` | V50 + Core 6/Optional 3 packet-gated probes | 0 | V50 nine-lane typed projection은 provider 0; selected successful Core 6 receipt complete-set만 read-only로 `AVAILABLE`를 materialize하며 Optional 3도 fresh packet/evidence 전에는 socket 0 |
 | S4.8B/C | `IMPLEMENTED_MERGE_CANDIDATE` | PR #77 `509d8eee` | 0 | `S4_8B_C=IMPLEMENTED_MERGE_CANDIDATE`; fixture/scorer/V23/read port만, endpoint/RiskEngine/provider는 미구현 |
 | S4.9 MCP + Strong LLM | `LIVE_VERIFIED_MERGE_CANDIDATE` | `main=4e3be52c…` + current branch V68/V69 | PKCE 1 flow, SearXNG search/read 각 1, Voyage query 1, Vertex OAuth/generate 각 1 | `/mcp` 5 tools, public-only owner isolation, answer validation, Strong LLM `COMMITTED`; 전체 local gate·최종 Security·PR CI·merge 전에는 S5 entry 미개방 |
+| S4.9 LangGraph + Google grounding | `IMPLEMENTED_LIVE_GROUNDING_PENDING` | V70 release branch | 구현 중 provider call 0 | bounded LangGraph, Google Pacific-month 4,000 soft cap, source/support provenance, DuckDuckGo fallback; live smoke·최종 Security·CI 전에는 S5 entry 미개방 |
 
 V64는 V60의 Core 6 direct-read terminal 분류, V61~V62 provider accounting과 V63 empty owner
 library의 generation scope만 제한적으로 허용한다. Core 6 direct-read lane의 complete receipt set을 `AVAILABLE`, 일부 receipt만 있는 terminal set을

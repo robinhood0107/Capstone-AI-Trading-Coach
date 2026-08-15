@@ -320,6 +320,49 @@ def test_google_support_uses_an_unused_citation_id_without_discarding_local_evid
     assert normalized["warnings"] == ["GOOGLE_GROUNDING_ONLY"]
 
 
+def test_google_support_rebinds_model_invented_label_only_by_exact_provider_support() -> None:
+    answer = {
+        "basis": "EVIDENCE",
+        "answer": "Diversification can reduce risk.",
+        "sentences": [
+            {
+                "text": "Diversification can reduce risk.",
+                "citationIds": ["google_source_1"],
+                "evidenceSpans": [
+                    {"citationId": "google_source_1", "quote": "Diversification can reduce risk."}
+                ],
+                "numericSpans": [],
+            }
+        ],
+        "warnings": [],
+    }
+    roots: list[dict[str, object]] = [
+        {
+            "result_id": "google_1",
+            "title": "Investor.gov",
+            "uri": "https://www.investor.gov/diversification",
+            "domain": "investor.gov",
+            "chunk_index": 0,
+            "citation_id": "",
+        }
+    ]
+    supports: list[dict[str, object]] = [
+        {
+            "start_index": 0,
+            "end_index": 32,
+            "text": "Diversification can reduce risk.",
+            "chunk_indices": (0,),
+        }
+    ]
+
+    normalized = json.loads(_normalize_grounded_answer(json.dumps(answer), roots, supports))
+
+    assert normalized["sentences"][0]["citationIds"] == ["cit_1"]
+    assert normalized["sentences"][0]["evidenceSpans"] == [
+        {"citationId": "cit_1", "quote": "Diversification can reduce risk."}
+    ]
+
+
 def test_owner_final_accepts_exact_intermediate_support_quote_without_copying_it_into_sentence() -> None:
     answer = {
         "basis": "EVIDENCE",

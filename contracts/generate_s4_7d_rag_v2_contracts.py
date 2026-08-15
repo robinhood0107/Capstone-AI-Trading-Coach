@@ -209,6 +209,14 @@ def canonical_tree_digest(root: Path) -> str:
 def _validate_frozen_v1() -> None:
     for relative_path, expected_hash in FROZEN_V1_HASHES.items():
         path = REPO_ROOT / relative_path
+        if relative_path == "contracts/openapi/openapi.json":
+            transition_catalog = REPO_ROOT / "contracts/catalogs/s5-signal-runtime-transition.v1.json"
+            if transition_catalog.is_file() and not transition_catalog.is_symlink():
+                # S4.7D bytes는 유지하고 승인된 S5 path/component를 뺀 OpenAPI projection만 비교한다.
+                from contracts.verify_s5_signal_runtime_transition import verify_openapi_transition
+
+                verify_openapi_transition(path, transition_catalog)
+                continue
         try:
             actual_hash = hashlib.sha256(path.read_bytes()).hexdigest()
         except OSError as error:

@@ -52,6 +52,8 @@ def test_google_prompt_requires_search_for_explicit_current_web_request_and_forb
 
     prompt = require_google_grounding(render_prompt(request, ()))
 
-    assert "must use Google Search" in prompt.system
+    assert prompt.system.startswith("MANDATORY SEARCH POLICY")
+    assert "use Google Search before drafting the JSON" in prompt.system
+    assert "Do not answer such a request from memory" in prompt.system
     assert "Never invent citationIds" in prompt.system
     assert "INSUFFICIENT_EVIDENCE" in prompt.system

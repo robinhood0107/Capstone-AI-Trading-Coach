@@ -251,8 +251,14 @@ def test_provider_json_accepts_only_one_object_with_optional_known_fence() -> No
     assert json.loads(_canonical_answer_json(f"```{_answer()}```")) == expected
     with pytest.raises(ValueError, match="STRONG_LLM_PROVIDER_TEXT_MISSING"):
         _canonical_answer_json("  ")
-    with pytest.raises(ValueError, match="STRONG_LLM_PROVIDER_JSON_INVALID"):
+    with pytest.raises(ValueError, match="STRONG_LLM_PROVIDER_JSON_SURROUNDED_OBJECT"):
         _canonical_answer_json(f"answer:\n{_answer()}")
+    with pytest.raises(ValueError, match="STRONG_LLM_PROVIDER_JSON_MALFORMED_OBJECT"):
+        _canonical_answer_json("{not-json}")
+    with pytest.raises(ValueError, match="STRONG_LLM_PROVIDER_JSON_STRING_INVALID"):
+        _canonical_answer_json('"unterminated')
+    with pytest.raises(ValueError, match="STRONG_LLM_PROVIDER_NON_JSON_TEXT"):
+        _canonical_answer_json("schema unavailable")
     with pytest.raises(ValueError, match="STRONG_LLM_PROVIDER_JSON_ROOT_INVALID"):
         _canonical_answer_json("[]")
 

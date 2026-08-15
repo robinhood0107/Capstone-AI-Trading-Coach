@@ -294,7 +294,15 @@ def _canonical_answer_json(value: str) -> str:
     try:
         payload = json.loads(candidate)
     except json.JSONDecodeError as error:
-        raise ValueError("STRONG_LLM_PROVIDER_JSON_INVALID") from error
+        if candidate.startswith("{"):
+            leaf = "STRONG_LLM_PROVIDER_JSON_MALFORMED_OBJECT"
+        elif candidate.startswith('"'):
+            leaf = "STRONG_LLM_PROVIDER_JSON_STRING_INVALID"
+        elif "{" in candidate and "}" in candidate:
+            leaf = "STRONG_LLM_PROVIDER_JSON_SURROUNDED_OBJECT"
+        else:
+            leaf = "STRONG_LLM_PROVIDER_NON_JSON_TEXT"
+        raise ValueError(leaf) from error
     if not isinstance(payload, dict):
         raise ValueError("STRONG_LLM_PROVIDER_JSON_ROOT_INVALID")
     StrongLlmAnswer.model_validate(payload)

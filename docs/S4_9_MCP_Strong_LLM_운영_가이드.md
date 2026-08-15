@@ -1,6 +1,6 @@
 # S4.9 MCP + Strong LLM 운영 가이드
 
-상태: `V70_IMPLEMENTED_LIVE_GROUNDING_PENDING` (2026-08-15)
+상태: `V71_LIVE_VERIFIED_MERGE_CANDIDATE` (2026-08-15)
 계약: `contracts/catalogs/s4-9-mcp-strong-llm-contract.v2.json` (v1 역사 보존)
 
 ## 1. 구성
@@ -132,7 +132,7 @@ Spring의 기본 local authorize/login/consent 화면으로 backend E2E는 동�
 ## 7. 검증
 
 - focused: Strong LLM direct/search/read/final, validator, OAuth resource/PKCE/rotation/revocation, SSRF/DNS/redirect
-- DB: V1→V69 clean, V67→V69 upgrade, public-only owner isolation, RLS/ACL, one-use receipt/save
+- DB: V1→V71 clean, V70→V71 upgrade, public-only owner isolation, RLS/ACL, one-use receipt/save
 - contract: MCP tools/list fixture, OpenAPI/proto/exact-30 byte parity
 - load: 2/10/50 admission fixture
 - release: 전체 local gate 뒤 Codex Security campaign 정확히 1회
@@ -146,6 +146,15 @@ Spring의 기본 local authorize/login/consent 화면으로 backend E2E는 동�
 - Strong LLM: `ANSWERED / MODEL_KNOWLEDGE_ONLY`, provider/model `VERTEX_AI/gemini-3.5-flash`, usage `COMMITTED`
 - raw token/web body/model request/model response 저장: 0
 - public corpus `142/7,871/63/2`, owner residual 0: 불변
+
+추가 LangGraph live evidence:
+
+- Gemini가 Vertex Google Search를 자율 선택하고 query count를 `COMMITTED`: 성공
+- provider grounding source/support가 없는 Google 응답을 `RETRIEVAL_ONLY`로 변환: 성공
+- Google soft cap 차단 후 SearXNG 검색·Investor.gov bounded read·EVIDENCE generation: 성공
+- V71 `searxng_<24hex>`/source-type/support-edge history forward repair: focused DB integration 통과
+- DuckDuckGo CAPTCHA/ALL_ENGINES: solver·browser 우회 없이 typed failure
+- V71 tool-free 교육 질문: `ANSWERED / MODEL_KNOWLEDGE_ONLY`, encrypted history·usage `COMMITTED`
 
 고정 질문은 local evidence가 0이라 citation 없는 일반 교육 답변 경로를 사용했다. 따라서 Strong LLM
 결과 자체를 citation coverage 성공으로 표시하지 않는다. citation/quote validator의 실제 성공은 별도

@@ -72,10 +72,10 @@ hash 권한이 0이다.
 
 ### 0.3 Pre-S5 public activation과 owner profile authority
 
-2026-08-15 live-smoke branch의 DB V69는 public RAG `FULL_READY`, active profile
+2026-08-15 live-smoke branch의 DB V71은 public RAG `FULL_READY`, active profile
 `voyage_context_4_1024_v1`, sources/chunks `142/7,871`, document batch `63/63 COMMITTED`,
 EXACT30/OA112 evaluation `2/2 PASSED`를 보존한다. public Voyage document/evaluation/production query는
-재실행하지 않고 public BGE embedding inference는 계속 0이다. 기존 DB에는 V69까지 정상 Flyway 경로로 적용됐고
+재실행하지 않고 public BGE embedding inference는 계속 0이다. 기존 DB에는 V71까지 정상 Flyway 경로로 적용됐고
 기존 public aggregate 보존과 `v2=120초 / v3=300초` scope를 provider call 0으로 검증했다. V64는 public
 OpenAPI/proto 변경을 뜻하지 않으며 provider
 preparation scope만 5분으로 발급하고 기존 2분 retrieval issuer를 보존한다.
@@ -122,7 +122,7 @@ provider/network call이 0이다.
 manifest/child packet 구조, TTL, 물리 호출·retry·비용 상한 검증은 그대로 유지한다.
 
 `verify-release`는 ignored `pre-s5-release-ledger/v2`의 marker를 단독 신뢰하지 않는다. fixed-path 0600
-owner BGE/KIS V3/required CI/security/tracked-audit receipt digest와 fresh V69 DB의 public·owner·S4.8 및
+owner BGE/KIS V3/required CI/security/tracked-audit receipt digest와 fresh V71 DB의 public·owner·S4.8 및
 Window B Voyage/Vertex `COMMITTED` aggregate를 모두 대조한 뒤에만 `OPEN`을 반환한다.
 
 거래시간 외에는 사용자가 명시 승인한 경우에만 KIS V3의 동일한 7단계를 provider call 0의 결정적
@@ -167,7 +167,8 @@ tokenP·brokerage·live-order 호출은 0이다.
 ### 0.4 S4.9 MCP + Strong LLM internal contract
 
 S4.9는 V66/V67 위에 runtime Voyage query authorization을 분리한 V68과 owner 권한이 없는 public MCP
-context의 empty-evidence scope revalidation을 고친 V69를 forward-only로 추가한다. 기존 row와 public
+context의 empty-evidence scope revalidation을 고친 V69, LangGraph/provenance V70, SearXNG history
+provenance forward repair V71을 순서대로 추가한다. 기존 row와 public
 RAG/OpenAPI/proto bytes는 동결한다. 기존
 `POST /api/v2/rag/ask`는 내부적으로 Top-5 전체를 provider-neutral `StrongLlmGenerationPort`에 전달한다.
 active adapter는 별도 internal bidi gRPC로 Python LangGraph를 호출한다. Google 허용 시 Gemini가 Vertex
@@ -226,6 +227,8 @@ research budget은 `docs/S4_9_MCP_Strong_LLM_운영_가이드.md`의 env로 조�
 
 V70은 기존 migration/row를 보존하고 Google budget reservation/settlement, source/support/edge, search attempt,
 generic web citation history와 usage v2를 추가한다. raw query, raw page, owner text, model request/response는 0이다.
+V71은 V70 함수나 기존 row를 삭제하지 않고, host가 기록한 `SEARXNG_RESULT`, `USER_ROOT`,
+`DISCOVERED_LINK` ID를 source type·support edge와 함께 history citation으로 canonicalize한다.
 
 S4.9 result는 downstream 모델·판단·주문·hash API 입력이 아니며 이 절은 S5.1 계약을 넓히지 않는다.
 

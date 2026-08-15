@@ -91,13 +91,15 @@ class LangChainVertexProvider:
             "temperature": None,
         }
         base_model = ChatGoogleGenerativeAI(**common)
+        # Vertex Google Search 공식 운영 권고에 맞춰 grounding turn만 결정적 sampling을 사용한다.
+        google_model = ChatGoogleGenerativeAI(**{**common, "temperature": 0.0})
         structured = {
             "response_mime_type": "application/json",
             "response_schema": _vertex_response_schema(),
         }
         self._structured = base_model.bind(**structured)
         # Google Search와 native JSON schema의 단일 호출 결합은 LangChain 공식 bind 계약을 따른다.
-        self._google = base_model.bind(tools=[{"google_search": {}}], **structured)
+        self._google = google_model.bind(tools=[{"google_search": {}}], **structured)
         self._tool_model = base_model
         self._request = request
         self._discovery: ProviderResult | None = None

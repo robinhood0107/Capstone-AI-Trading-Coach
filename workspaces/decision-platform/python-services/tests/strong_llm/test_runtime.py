@@ -175,7 +175,7 @@ def test_google_search_and_native_schema_share_the_official_bind_contract(
     credential = tmp_path / "service-account.json"
     credential.write_text("{}", encoding="utf-8")
     credential.chmod(0o600)
-    constructor_kwargs: dict[str, object] = {}
+    constructor_calls: list[dict[str, object]] = []
     bind_calls: list[dict[str, object]] = []
 
     class FakeCredentials:
@@ -183,7 +183,7 @@ def test_google_search_and_native_schema_share_the_official_bind_contract(
 
     class FakeModel:
         def __init__(self, **kwargs: object) -> None:
-            constructor_kwargs.update(kwargs)
+            constructor_calls.append(kwargs)
 
         def bind(self, **kwargs: object) -> "FakeModel":
             bind_calls.append(kwargs)
@@ -200,10 +200,13 @@ def test_google_search_and_native_schema_share_the_official_bind_contract(
         VertexProviderSettings(service_account_path=credential),
     )
 
-    assert "response_mime_type" not in constructor_kwargs
-    assert "response_schema" not in constructor_kwargs
-    assert constructor_kwargs["timeout"] == 50.0
-    assert constructor_kwargs["thinking_level"] == "low"
+    assert len(constructor_calls) == 2
+    assert all("response_mime_type" not in call for call in constructor_calls)
+    assert all("response_schema" not in call for call in constructor_calls)
+    assert all(call["timeout"] == 50.0 for call in constructor_calls)
+    assert all(call["thinking_level"] == "low" for call in constructor_calls)
+    assert constructor_calls[0]["temperature"] is None
+    assert constructor_calls[1]["temperature"] == 0.0
     assert bind_calls[0]["response_mime_type"] == "application/json"
     assert "tools" not in bind_calls[0]
     assert bind_calls[1]["tools"] == [{"google_search": {}}]

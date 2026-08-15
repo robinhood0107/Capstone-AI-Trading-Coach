@@ -1,11 +1,11 @@
 package com.capstone.decision
 
+import com.capstone.decision.application.signal.SignalV1Contract
 import com.capstone.decision.application.signal.SignalV2CompositeAbstain
 import com.capstone.decision.application.signal.SignalV2CompositeAvailable
 import com.capstone.decision.application.signal.SignalV2Contract
 import com.capstone.decision.application.signal.SignalV2PredictiveAvailable
 import com.capstone.decision.application.signal.SignalV2RegimeAbstain
-import com.capstone.decision.application.signal.SignalV1Contract
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
@@ -132,13 +132,24 @@ class SignalV2ContractParityTest {
     }
 
     @Test
-    fun `Signal v2 contract lock does not publish an active endpoint`() {
+    fun `Signal v2 runtime transition publishes only the approved symbol route`() {
+        val mapper = JsonMapper.builder().build()
         val openApi =
-            JsonMapper.builder().build().readTree(
+            mapper.readTree(
                 Files.readAllBytes(repositoryRoot.resolve("contracts/openapi/openapi.json")),
             )
+        val transition =
+            mapper.readTree(
+                Files.readAllBytes(
+                    repositoryRoot.resolve("contracts/catalogs/s5-signal-runtime-transition.v1.json"),
+                ),
+            )
+        val path = transition.path("allowedPath").stringValue()
+        val pathItem = openApi.path("paths").path(path)
 
-        assertThat(openApi.path("paths").has("/api/v2/signals/{symbol}")).isFalse()
+        assertThat(path).isEqualTo("/api/v2/signals/{symbol}")
+        assertThat(pathItem.has("get")).isTrue()
+        assertThat(pathItem.size()).isEqualTo(1)
     }
 
     private fun validateFixture(fileName: String) = SignalV2Contract.validate(fixtureBytes(fileName))

@@ -11,7 +11,8 @@
     "SignalV2RuntimeComponentsResponse",
     "SignalV2RuntimeCompositeResponse",
     "SignalV2RuntimeResponse",
-    "SignalV2RuntimeSuccessResponse"
+    "SignalV2RuntimeSuccessResponse",
+    "SignalV2RuntimeErrorResponse"
   ],
   "contractId": "s5-signal-runtime-transition.v1",
   "historicalOpenApiRawSha256": "94414736f6a1c17b95eafffd53a07a5d33d7a66705890c53dcc971eb5ded3f89",

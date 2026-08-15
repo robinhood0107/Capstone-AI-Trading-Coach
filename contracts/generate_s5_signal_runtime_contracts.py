@@ -431,6 +431,7 @@ def _transition_catalog() -> dict[str, Any]:
             "SignalV2RuntimeCompositeResponse",
             "SignalV2RuntimeResponse",
             "SignalV2RuntimeSuccessResponse",
+            "SignalV2RuntimeErrorResponse",
         ],
         "allowedRootTags": ["Signal v2"],
     }

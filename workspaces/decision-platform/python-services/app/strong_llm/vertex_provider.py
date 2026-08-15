@@ -61,13 +61,16 @@ class LangChainVertexProvider:
             "timeout": 30.0,
             "max_output_tokens": 4096,
             "temperature": None,
+        }
+        base_model = ChatGoogleGenerativeAI(**common)
+        structured = {
             "response_mime_type": "application/json",
             "response_schema": StrongLlmAnswer.model_json_schema(),
         }
-        self._structured = ChatGoogleGenerativeAI(**common)
-        self._google = self._structured.bind_tools([{"google_search": {}}])
-        tool_common = {key: value for key, value in common.items() if key not in {"response_mime_type", "response_schema"}}
-        self._tool_model = ChatGoogleGenerativeAI(**tool_common)
+        self._structured = base_model.bind(**structured)
+        # Google Search와 native JSON schema의 단일 호출 결합은 LangChain 공식 bind 계약을 따른다.
+        self._google = base_model.bind(tools=[{"google_search": {}}], **structured)
+        self._tool_model = base_model
         self._request = request
         self._discovery: ProviderResult | None = None
 

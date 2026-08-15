@@ -22,6 +22,10 @@ data class SearxngSearchResult(
     val snippet: String,
 )
 
+class S49SearchUnavailableException(
+    val failureLeaf: String,
+) : RuntimeException(failureLeaf)
+
 fun interface PublicWebSearchPort {
     fun search(query: String): List<SearxngSearchResult>
 }
@@ -83,55 +87,83 @@ class SearxngSearchClient(
         val response = client.send(request, HttpResponse.BodyHandlers.ofByteArray())
         val body = response.body()
         try {
-            require(response.statusCode() in 200..299 && body.size in 1..MAX_RESPONSE_BYTES)
+            when (response.statusCode()) {
+                403 -> throw S49SearchUnavailableException("S4_9_SEARCH_UNAVAILABLE_ACCESS_DENIED")
+                429 -> throw S49SearchUnavailableException("S4_9_SEARCH_UNAVAILABLE_RATE_LIMITED")
+            }
+            if (response.statusCode() !in 200..299 || body.size !in 1..MAX_RESPONSE_BYTES) {
+                throw S49SearchUnavailableException("S4_9_SEARCH_UNAVAILABLE")
+            }
             val root = mapper.readTree(body)
             val results = root?.get("results")
-            require(results != null && results.isArray)
-            return results
-                .values()
-                .asSequence()
-                .take(MAX_RESULTS)
-                .mapNotNull { item ->
-                    val title =
-                        sanitizePublicWebSearchText(
+            if (results == null || !results.isArray) {
+                throw S49SearchUnavailableException("S4_9_SEARCH_UNAVAILABLE")
+            }
+            val normalized =
+                results
+                    .values()
+                    .asSequence()
+                    .take(MAX_RESULTS)
+                    .mapNotNull { item ->
+                        val title =
+                            sanitizePublicWebSearchText(
+                                item
+                                    .get("title")
+                                    ?.takeIf { it.isString }
+                                    ?.stringValue()
+                                    ?.trim()
+                                    .orEmpty(),
+                                512,
+                            )
+                        val rawUrl =
                             item
-                                .get("title")
+                                .get("url")
                                 ?.takeIf { it.isString }
                                 ?.stringValue()
                                 ?.trim()
-                                .orEmpty(),
-                            512,
-                        )
-                    val rawUrl =
-                        item
-                            .get("url")
-                            ?.takeIf { it.isString }
-                            ?.stringValue()
-                            ?.trim()
-                            .orEmpty()
-                    val snippet =
-                        sanitizePublicWebSearchText(
-                            item
-                                .get("content")
-                                ?.takeIf { it.isString }
-                                ?.stringValue()
-                                ?.trim()
-                                .orEmpty(),
-                            2_000,
-                        )
-                    runCatching {
-                        require(title.isNotBlank() && title.length <= 512)
-                        val url = normalizePublicWebSearchUrl(rawUrl)
-                        SearxngSearchResult(title, url, snippet)
-                    }.getOrNull()
-                }.toList()
+                                .orEmpty()
+                        val snippet =
+                            sanitizePublicWebSearchText(
+                                item
+                                    .get("content")
+                                    ?.takeIf { it.isString }
+                                    ?.stringValue()
+                                    ?.trim()
+                                    .orEmpty(),
+                                2_000,
+                            )
+                        runCatching {
+                            require(title.isNotBlank() && title.length <= 512)
+                            val url = normalizePublicWebSearchUrl(rawUrl)
+                            SearxngSearchResult(title, url, snippet)
+                        }.getOrNull()
+                    }.toList()
+            if (normalized.isEmpty()) {
+                val unresponsive =
+                    root
+                        .get("unresponsive_engines")
+                        ?.toString()
+                        .orEmpty()
+                        .lowercase()
+                val leaf =
+                    when {
+                        "captcha" in unresponsive -> "S4_9_SEARCH_UNAVAILABLE_CAPTCHA"
+                        "429" in unresponsive || "rate" in unresponsive -> "S4_9_SEARCH_UNAVAILABLE_RATE_LIMITED"
+                        "403" in unresponsive || "forbidden" in unresponsive -> "S4_9_SEARCH_UNAVAILABLE_ACCESS_DENIED"
+                        unresponsive.isNotBlank() && unresponsive != "[]" -> "S4_9_SEARCH_UNAVAILABLE_ALL_ENGINES"
+                        else -> "S4_9_SEARCH_UNAVAILABLE_NO_RESULTS"
+                    }
+                throw S49SearchUnavailableException(leaf)
+            }
+            return normalized
         } finally {
             body.fill(0)
         }
     }
 
     private companion object {
-        const val ENGINES = "duckduckgo,brave,mojeek,qwant,wikipedia"
+        // CAPTCHA 우회나 다중 scraper 연쇄 호출 없이 공식 SearXNG DuckDuckGo 엔진만 best-effort로 사용한다.
+        const val ENGINES = "duckduckgo"
         const val MAX_RESULTS = 10
         const val MAX_RESPONSE_BYTES = 1_000_000
     }

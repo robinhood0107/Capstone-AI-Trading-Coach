@@ -21,7 +21,17 @@ data class RagV2VertexEvidence(
     val chunkRevisionId: String,
     val canonicalText: String,
     val canonicalTextSha256: String,
+    val supportType: StrongLlmEvidenceSupportType = StrongLlmEvidenceSupportType.CANONICAL_EXACT,
+    val title: String? = null,
+    val canonicalUrl: String? = null,
+    val sectionTitle: String? = null,
+    val ownerPrivate: Boolean = false,
 )
+
+enum class StrongLlmEvidenceSupportType {
+    CANONICAL_EXACT,
+    GOOGLE_GROUNDING,
+}
 
 /** Strong LLM 입력은 retrieval·동의·owner 경계를 통과한 Top-5 전체이며 Decision/Signal/Risk 입력이 아니다. */
 data class RagV2VertexGenerationCommand(
@@ -81,6 +91,16 @@ data class StrongLlmGenerationResult(
     val validationStatus: StrongLlmValidationStatus? = null,
     val warnings: List<String> = emptyList(),
     val citationCoverage: Double = 0.0,
+    val webCitations: List<StrongLlmWebCitation> = emptyList(),
+)
+
+data class StrongLlmWebCitation(
+    val citationId: String,
+    val sourceId: String,
+    val title: String,
+    val sectionTitle: String,
+    val canonicalUrl: String,
+    val provenanceResultId: String,
 )
 
 /** Provider-neutral final generator port. 구현체가 Vertex여도 application 계층은 특정 모델 transport를 알지 않는다. */
@@ -356,7 +376,15 @@ class RagV2VertexResponseValidator {
         val SENTENCE_FIELDS = setOf("text", "citationIds", "evidenceSpans", "numericSpans")
         val EVIDENCE_SPAN_FIELDS = setOf("citationId", "quote")
         val NUMERIC_SPAN_FIELDS = setOf("value", "citationIds")
-        val ALLOWED_WARNINGS = setOf("SINGLE_SOURCE", "STALE_SOURCE", "CONFLICTING_SOURCES", "LOW_RELEVANCE", "SECONDARY_SOURCE")
+        val ALLOWED_WARNINGS =
+            setOf(
+                "SINGLE_SOURCE",
+                "STALE_SOURCE",
+                "CONFLICTING_SOURCES",
+                "LOW_RELEVANCE",
+                "SECONDARY_SOURCE",
+                "GOOGLE_GROUNDING_ONLY",
+            )
         val CITATION_ID = Regex("^cit_[1-5]$")
         val CHUNK_ID = Regex("^rag_v2_chk_[0-9a-f]{32}$")
         val SHA256 = Regex("^[0-9a-f]{64}$")

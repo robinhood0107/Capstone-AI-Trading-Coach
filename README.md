@@ -16,6 +16,8 @@ STAGE 2에서 S1.6 Market Calendar/Event Aggregator offline 구현, S2.1 Princip
 S2.2 offline evaluator, S2.3 Decision runtime, S2.4 Risk/Kill Switch, S3.1~S3.3와 S4.7D
 계약/parser/OCR/API skeleton까지 `main`에 병합됐다. session별 current implementation/offline/live
 상태는 [Pre-S5 상태 ledger](docs/README.md#현재-검증-상태)가 유일한 공개 요약이다.
+S4.9 MCP·LangGraph Strong LLM은 PR #131로 V71까지 병합됐고, live evidence·exact-tree Security·
+merge SHA CI를 확인해 `S4_READY_FOR_S5=TRUE`, `S5_ENTRY_GATE=OPEN` 상태다.
 S3.1은 S2.3 Decision과 S2.4 Kill Switch를 소비하는 KIS Mock 주문 제출/조회/취소와
 stored balance/buyable projection을 추가한다. 주문 요청 body는 `decisionId`, exact 8-field
 `orderIntent`, `userAcknowledgement`만 허용하고 account/provider/actor 필드는 인증 principal과

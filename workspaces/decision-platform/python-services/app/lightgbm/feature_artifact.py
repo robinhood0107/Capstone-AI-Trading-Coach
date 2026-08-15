@@ -30,6 +30,7 @@ from app.lightgbm.pit_calendar import (
     ELIGIBLE_SESSION_COUNT,
     RAW_SESSION_COUNT,
     MonthlyUniverseSchedule,
+    build_pit_session_window,
     derive_monthly_universe_schedule,
 )
 from app.lightgbm.universe import MonthlyUniverse
@@ -131,15 +132,14 @@ class FeatureBundleProvenance:
     def __post_init__(self) -> None:
         if self.dataset_cutoff.tzinfo is None:
             raise LightGbmContractError("feature provenance cutoff must be timezone aware")
+        expected_window = build_pit_session_window(self.dataset_cutoff)
         if (
             self.raw_session_count != RAW_SESSION_COUNT
             or self.eligible_session_count != ELIGIBLE_SESSION_COUNT
-            or not (
-                self.raw_session_start
-                <= self.eligible_session_start
-                <= self.eligible_session_end
-                <= self.raw_session_end
-            )
+            or self.raw_session_start != expected_window.raw_sessions[0]
+            or self.raw_session_end != expected_window.raw_sessions[-1]
+            or self.eligible_session_start != expected_window.eligible_sessions[0]
+            or self.eligible_session_end != expected_window.eligible_sessions[-1]
         ):
             raise LightGbmContractError("feature provenance session window is invalid")
         _require_sha256(self.universe_schedule_sha256, "universe schedule")

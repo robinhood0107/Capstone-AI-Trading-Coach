@@ -221,7 +221,12 @@ def serve(settings: StrongLlmGrpcSettings | None = None, provider_factory: Provi
     health_service = health.HealthServicer()
     health_pb2_grpc.add_HealthServicer_to_server(health_service, server)
     health_service.set("capstone.decision.internal.s49.StrongLlmAgentService", health_pb2.HealthCheckResponse.SERVING)
-    if server.add_insecure_port(effective.bind_address) != 1:
-        raise RuntimeError("Strong LLM gRPC loopback bind failed")
+    _require_bound_port(server.add_insecure_port(effective.bind_address))
     server.start()
     server.wait_for_termination()
+
+
+def _require_bound_port(bound_port: int) -> None:
+    # gRPC는 성공 시 실제 bound port를 반환하며 0만 bind 실패를 뜻한다.
+    if bound_port == 0:
+        raise RuntimeError("Strong LLM gRPC loopback bind failed")

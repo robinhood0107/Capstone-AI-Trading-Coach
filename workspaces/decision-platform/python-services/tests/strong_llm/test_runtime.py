@@ -302,6 +302,28 @@ def test_unbound_provisional_google_citation_closes_as_insufficient_evidence() -
     }
 
 
+def test_fallback_function_call_does_not_require_intermediate_text() -> None:
+    message = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "name": "capstone_web_search",
+                "args": {"query": "next total solar eclipse United States"},
+                "id": "call_1",
+                "type": "tool_call",
+            }
+        ],
+        usage_metadata={"input_tokens": 17, "output_tokens": 5, "total_tokens": 22},
+    )
+
+    result = _provider_result(message, allowed_local_ids=set())
+
+    assert result["message"] is message
+    assert result["prompt_tokens"] == 17
+    assert result["output_tokens"] == 5
+    assert json.loads(result["answer_json"])["basis"] == "INSUFFICIENT_EVIDENCE"
+
+
 def test_vertex_schema_uses_only_the_provider_supported_structural_subset() -> None:
     schema = _vertex_response_schema()
     serialized = json.dumps(schema, sort_keys=True)

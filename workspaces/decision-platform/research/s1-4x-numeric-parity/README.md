@@ -223,7 +223,7 @@ S4.9 Strong LLM runtime의 LangChain/LangGraph dependency는
 - reference lock SHA-256: `1dbbdfe27c0e417cb48bc6afbf95f092c6dbd712f1e4b8cf54a3c58467cbe628`
 - benchmark plan SHA-256: `252b3b5639208fe96f83269936b7996799c346c19d28ce53f3ab31b3ad5d9fc5`
 - benchmark plan sidecar file SHA-256: `416bdf886324575538ec10ea6de44ef77bad0fdd0be8875523a61122b1fb4de0`
-- contract manifest SHA-256: `bb8964eb0f4edda20b196cfbbc0e2a0169a67417f718e60fe6b6052a9ae5309d`
+- contract manifest SHA-256: `e27752317158f8137a4d29d2012e766ba761926a0c7e8609d1d5494206106d09`
 
 이 amendment는 S4.9 provider orchestration dependency 정합성만 승인하며 S1.4X candidate
 구현이나 benchmark 재실행 권한을 추가하지 않는다.

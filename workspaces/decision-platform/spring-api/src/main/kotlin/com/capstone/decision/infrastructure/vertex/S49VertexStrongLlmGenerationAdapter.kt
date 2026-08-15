@@ -12,8 +12,6 @@ import com.capstone.decision.infrastructure.mcp.RagWebToolProperties
 import com.capstone.decision.infrastructure.mcp.S49WebEvidenceMetadataPort
 import com.capstone.decision.infrastructure.mcp.budget
 import org.slf4j.LoggerFactory
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
-import org.springframework.stereotype.Component
 import tools.jackson.core.JacksonException
 import tools.jackson.core.StreamReadConstraints
 import tools.jackson.core.StreamReadFeature
@@ -29,8 +27,6 @@ import java.time.Duration
  * Vertex를 provider-neutral Strong LLM port로 연결한다. 모델은 Top-5 전체와 bounded web evidence 중 사용할
  * 근거를 고르지만 tool 실행·citation·숫자·owner·직접 조언 경계는 항상 애플리케이션이 검증한다.
  */
-@Component
-@ConditionalOnProperty(name = ["app.s4-9.strong-llm.enabled"], havingValue = "true")
 internal class S49VertexStrongLlmGenerationAdapter(
     private val properties: S49StrongLlmProperties,
     private val webProperties: RagWebToolProperties,
@@ -114,9 +110,9 @@ internal class S49VertexStrongLlmGenerationAdapter(
                     )
                 }
 
-                require(toolsEnabled && turn.functionCalls.isNotEmpty())
+                protocolRequire(toolsEnabled && turn.functionCalls.isNotEmpty(), "TOOL_TURN_UNEXPECTED")
                 toolRounds += 1
-                require(toolRounds <= webProperties.maxToolRounds)
+                protocolRequire(toolRounds <= webProperties.maxToolRounds, "TOOL_ROUND_BUDGET")
                 val executions = executeFunctions(command, session, turn.functionCalls)
                 contents += modelFunctionContent(turn.functionCalls)
                 contents += functionResponseContent(turn.functionCalls, executions)
@@ -126,7 +122,7 @@ internal class S49VertexStrongLlmGenerationAdapter(
                 }
             }
         } catch (error: Exception) {
-            LOGGER.warn("s4_9_strong_llm_failed leaf={}", error::class.simpleName)
+            LOGGER.warn("s4_9_strong_llm_failed leaf={}", s49StrongLlmFailureLeaf(error))
             if (providerAttempted && !committed) {
                 runCatching {
                     usageLedger.unknownBilling(
@@ -165,8 +161,9 @@ internal class S49VertexStrongLlmGenerationAdapter(
                 mapOf(
                     "functionCallingConfig" to
                         mapOf(
+                            // AUTO에서는 선언된 두 함수 자체가 allowlist다. Vertex v1은
+                            // allowedFunctionNames를 ANY mode에서만 허용한다.
                             "mode" to "AUTO",
-                            "allowedFunctionNames" to listOf("capstone_web_search", "capstone_web_read"),
                         ),
                 )
         }
@@ -182,7 +179,9 @@ internal class S49VertexStrongLlmGenerationAdapter(
                     Duration.ofMillis(properties.requestTimeoutMillis),
                 )
             try {
-                require(response.statusCode in 200..299)
+                if (response.statusCode !in 200..299) {
+                    throw S49StrongLlmProtocolException("HTTP_STATUS_${response.statusCode / 100}XX")
+                }
                 return parseResponse(response.body, toolsEnabled)
             } finally {
                 response.body.fill(0)
@@ -198,12 +197,12 @@ internal class S49VertexStrongLlmGenerationAdapter(
         session: S49StrongLlmToolSession,
         calls: List<ProviderFunctionCall>,
     ): List<S49ToolExecution> {
-        require(calls.size in 1..webProperties.maxParallelReads)
+        toolProtocolRequire(calls.size in 1..webProperties.maxParallelReads, "TOOL_CALL_CARDINALITY")
         val executions =
             if (calls.all { it.name == "capstone_web_read" }) {
                 session.executeReadBatch(calls.map { it.args })
             } else {
-                require(calls.size == 1)
+                toolProtocolRequire(calls.size == 1, "TOOL_CALL_MIXED_OR_PARALLEL_SEARCH")
                 listOf(session.execute(calls.single().name, calls.single().args))
             }
         calls.zip(executions).filter { it.first.name == "capstone_web_read" }.forEach { (_, execution) ->
@@ -224,47 +223,65 @@ internal class S49VertexStrongLlmGenerationAdapter(
         toolsEnabled: Boolean,
     ): ProviderTurn {
         try {
-            require(body.size in 1..MAX_RESPONSE_BYTES)
-            val root = requireNotNull(mapper.readTree(body)).also { require(it.isObject) }
-            val candidates = root["candidates"]
-            require(candidates != null && candidates.isArray && candidates.size() == 1)
-            val content = candidates[0]?.get("content")
-            require(content != null && content.isObject && content["role"]?.stringValue() == "model")
-            val parts = content["parts"]
-            require(parts != null && parts.isArray && parts.size() in 1..webProperties.maxParallelReads)
+            protocolRequire(body.size in 1..MAX_RESPONSE_BYTES, "RESPONSE_SIZE")
+            val root = mapper.readTree(body) ?: throw S49StrongLlmProtocolException("RESPONSE_JSON")
+            protocolRequire(root.isObject, "RESPONSE_ENVELOPE")
+            val candidates = root["candidates"] ?: throw S49StrongLlmProtocolException("RESPONSE_CANDIDATES")
+            protocolRequire(candidates.isArray && candidates.size() == 1, "RESPONSE_CANDIDATES")
+            val content = candidates[0]?.get("content") ?: throw S49StrongLlmProtocolException("RESPONSE_CONTENT")
+            protocolRequire(content.isObject, "RESPONSE_CONTENT")
+            protocolRequire(content["role"]?.stringValue() == "model", "RESPONSE_ROLE")
+            val parts = content["parts"] ?: throw S49StrongLlmProtocolException("RESPONSE_PART_COUNT")
+            // thought/signature part는 병렬 tool 수와 별도로 추가될 수 있다.
+            protocolRequire(parts.isArray && parts.size() in 1..MAX_RESPONSE_PARTS, "RESPONSE_PART_COUNT")
             val textParts = mutableListOf<String>()
             val calls = mutableListOf<ProviderFunctionCall>()
             parts.values().forEach { part ->
-                require(part.isObject)
-                val allowed = setOf("text", "functionCall", "thought", "thoughtSignature")
-                require(part.properties().all { it.key in allowed })
-                part["thought"]?.let { require(it.isBoolean) }
+                protocolRequire(part.isObject, "RESPONSE_PART_TYPE")
+                // bounded JSON의 무해한 additive metadata는 저장하지 않고 무시한다.
+                val thoughtNode = part["thought"]
+                protocolRequire(thoughtNode == null || thoughtNode.isBoolean, "RESPONSE_THOUGHT")
+                val thought = thoughtNode?.booleanValue() == true
                 val thoughtSignature =
-                    part["thoughtSignature"]?.also { require(it.isString) }?.stringValue()
+                    part["thoughtSignature"]
+                        ?.also {
+                            protocolRequire(it.isString, "RESPONSE_THOUGHT_SIGNATURE")
+                        }?.stringValue()
                 part["text"]?.let { node ->
-                    require(node.isString)
-                    textParts += node.stringValue()
+                    protocolRequire(node.isString, "RESPONSE_TEXT")
+                    // thinking model은 functionCall 앞에 thought text를 함께 반환할 수 있다.
+                    // 내부 thought는 최종 JSON이나 text/function xor 판정에 포함하지 않는다.
+                    if (!thought) {
+                        textParts += node.stringValue()
+                    }
                 }
                 part["functionCall"]?.let { function ->
-                    require(toolsEnabled && function.isObject)
-                    require(function.properties().map { it.key }.toSet() == setOf("name", "args"))
+                    protocolRequire(toolsEnabled && function.isObject, "RESPONSE_FUNCTION_TYPE")
                     val name = function["name"]?.stringValue().orEmpty()
-                    require(name in ALLOWED_TOOLS)
-                    val args = requireNotNull(function["args"]).also { require(it.isObject) }
+                    protocolRequire(name in ALLOWED_TOOLS, "RESPONSE_FUNCTION_NAME")
+                    val args = function["args"] ?: throw S49StrongLlmProtocolException("RESPONSE_FUNCTION_ARGS")
+                    protocolRequire(args.isObject, "RESPONSE_FUNCTION_ARGS")
                     calls += ProviderFunctionCall(name, args, thoughtSignature)
                 }
             }
-            require((textParts.isNotEmpty()) xor calls.isNotEmpty())
-            val usage = requireNotNull(root["usageMetadata"]).also { require(it.isObject) }
+            protocolRequire((textParts.isNotEmpty()) xor calls.isNotEmpty(), "RESPONSE_TEXT_OR_FUNCTION")
+            protocolRequire(textParts.size <= 1, "RESPONSE_TEXT_CARDINALITY")
+            protocolRequire(calls.size <= webProperties.maxParallelReads, "RESPONSE_FUNCTION_CARDINALITY")
+            val usage = root["usageMetadata"] ?: throw S49StrongLlmProtocolException("RESPONSE_USAGE")
+            protocolRequire(usage.isObject, "RESPONSE_USAGE")
             val prompt = tokenCount(usage, "promptTokenCount", 500_000)
             val output = tokenCount(usage, "candidatesTokenCount", 100_000)
             val total = tokenCount(usage, "totalTokenCount", 600_000)
             val tools = optionalTokenCount(usage, "toolUsePromptTokenCount", 500_000)
             val thoughts = optionalTokenCount(usage, "thoughtsTokenCount", 100_000)
-            require(total == prompt + output + tools + thoughts)
+            protocolRequire(total == prompt + output + tools + thoughts, "RESPONSE_USAGE_TOTAL")
             return ProviderTurn(textParts.singleOrNull(), calls, prompt + tools, output + thoughts)
+        } catch (error: S49StrongLlmProtocolException) {
+            throw error
         } catch (_: JacksonException) {
-            throw IllegalArgumentException("Invalid Vertex response")
+            throw S49StrongLlmProtocolException("RESPONSE_JSON")
+        } catch (_: IllegalArgumentException) {
+            throw S49StrongLlmProtocolException("RESPONSE_SHAPE")
         } finally {
             body.fill(0)
         }
@@ -276,8 +293,10 @@ internal class S49VertexStrongLlmGenerationAdapter(
         maximum: Int,
     ): Int {
         val value = node[field]
-        require(value != null && (value.isInt || value.isLong))
-        return value.longValue().also { require(it in 0..maximum.toLong()) }.toInt()
+        protocolRequire(value != null && (value.isInt || value.isLong), "RESPONSE_USAGE_$field")
+        val count = value.longValue()
+        protocolRequire(count in 0..maximum.toLong(), "RESPONSE_USAGE_$field")
+        return count.toInt()
     }
 
     private fun optionalTokenCount(
@@ -311,10 +330,14 @@ internal class S49VertexStrongLlmGenerationAdapter(
     private fun initialPrompt(
         command: RagV2VertexGenerationCommand,
         evidence: List<RagV2VertexEvidence>,
-    ): String =
-        baseInstructions() +
+    ): String {
+        val budget = webProperties.budget(command.answerMode.name)
+        return baseInstructions() +
+            "\nTool budget: at most ${budget.maxSearches} searches, ${budget.maxReads} URL reads, and " +
+            "${budget.maxToolRounds} tool rounds. Never call a tool after its remaining budget reaches zero.\n" +
             "\nAnswer mode: ${command.answerMode.name}\nQuestion:\n${command.question}\n\nEvidence:\n" +
             evidenceText(evidence)
+    }
 
     private fun finalInstruction(evidence: List<RagV2VertexEvidence>): String =
         "Tool budget is closed. Generate the final JSON now using only this current evidence set:\n" + evidenceText(evidence)
@@ -472,6 +495,7 @@ internal class S49VertexStrongLlmGenerationAdapter(
         val PROJECT_ID = Regex("^[a-z][a-z0-9-]{4,62}[a-z0-9]$")
         val ALLOWED_TOOLS = setOf("capstone_web_search", "capstone_web_read")
         const val MAX_RESPONSE_BYTES = 128_000
+        const val MAX_RESPONSE_PARTS = 16
 
         fun strictMapper(): JsonMapper =
             JsonMapper
@@ -490,4 +514,31 @@ internal class S49VertexStrongLlmGenerationAdapter(
                         .build(),
                 ).build()
     }
+}
+
+private fun protocolRequire(
+    condition: Boolean,
+    leaf: String,
+) {
+    if (!condition) {
+        throw S49StrongLlmProtocolException(leaf)
+    }
+}
+
+internal class S49StrongLlmProtocolException(
+    val leaf: String,
+) : IllegalArgumentException(leaf)
+
+internal fun s49StrongLlmFailureLeaf(error: Exception): String =
+    when (error) {
+        is S49StrongLlmProtocolException -> error.leaf
+        is S49StrongLlmToolException -> error.leaf
+        else -> error::class.simpleName.orEmpty().ifBlank { "UNCLASSIFIED" }
+    }
+
+private fun toolProtocolRequire(
+    condition: Boolean,
+    leaf: String,
+) {
+    if (!condition) throw S49StrongLlmToolException(leaf)
 }

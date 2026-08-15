@@ -32,9 +32,9 @@ class PrincipleContractMigrationIntegrationTest(
     @Autowired private val principleRuleJsonCodec: PrincipleRuleJsonCodec,
 ) : SpringApiIntegrationTestBase() {
     @Test
-    fun `clean V1 through V69 migration preserves the exact Principle schema and seed`() {
+    fun `clean V1 through V71 migration preserves the exact Principle schema and seed`() {
         assertEquals(
-            (1..69).map(Int::toString),
+            (1..71).map(Int::toString),
             jdbcTemplate.query(
                 "select version from flyway_schema_history where success order by installed_rank",
             ) { result, _ -> result.getString(1) },

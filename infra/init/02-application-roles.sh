@@ -1440,6 +1440,31 @@ BEGIN
             reserve_s4_9_runtime_voyage_query_usage(text, text, text)
         TO decision_rag_writer;
     END IF;
+    IF to_regprocedure(
+        'public.reserve_s4_9_google_grounding_budget(text,text,text,text,date,integer,integer)'
+    ) IS NOT NULL THEN
+        -- V70도 table 권한 없이 Google budget·provenance·history definer capability만 복원한다.
+        GRANT EXECUTE ON FUNCTION
+            reserve_s4_9_google_grounding_budget(text, text, text, text, date, integer, integer),
+            settle_s4_9_google_grounding_budget(text, text, text, integer),
+            record_s4_9_grounding_provenance(text, text, jsonb, jsonb),
+            record_s4_9_read_provenance(
+                text, text, text, text, text, text, text, text, text, text
+            ),
+            record_s4_9_search_attempt(text, text, text, text, text, integer),
+            canonicalize_s4_9_strong_llm_citations_v2(text, text, text, text, jsonb),
+            persist_s4_9_strong_llm_history_v2(
+                text, text, text, text, text, text, text, double precision, text[], text,
+                bytea, bytea, bytea, bytea, bytea, bytea,
+                bytea, bytea, bytea, timestamptz, jsonb
+            ),
+            record_s4_9_strong_llm_usage_v2(
+                text, text, text, text, text, text,
+                integer, integer, integer, integer, integer, text,
+                integer, integer, text, text, text
+            )
+        TO decision_app;
+    END IF;
 END
 $decision_runtime_function_privileges$;
 

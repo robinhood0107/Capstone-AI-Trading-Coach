@@ -122,14 +122,14 @@ class RagSourceRegistryMigrationIntegrationTest {
     }
 
     @Test
-    fun `V62 through V69 forward repairs preserve empty owner scope and ACL`() {
+    fun `V62 through V71 forward repairs preserve empty owner scope and ACL`() {
         withPreparedDatabase("empty_owner_generation_scope_upgrade") { jdbcUrl ->
             flyway(jdbcUrl, target = "62").migrate()
             flyway(jdbcUrl).migrate()
 
             adminConnection(jdbcUrl).use { connection ->
                 assertThat(queryString(connection, "select max(version::integer)::text from flyway_schema_history where success"))
-                    .isEqualTo("69")
+                    .isEqualTo("71")
                 assertThat(
                     queryString(
                         connection,
@@ -157,7 +157,7 @@ class RagSourceRegistryMigrationIntegrationTest {
     }
 
     @Test
-    fun `V65 to V69 adds only S4 9 boundaries and preserves existing rows`() {
+    fun `V65 to V71 adds only S4 9 boundaries and preserves existing rows`() {
         withPreparedDatabase("s49_forward_upgrade") { jdbcUrl ->
             flyway(jdbcUrl, target = "65").migrate()
             adminConnection(jdbcUrl).use { connection ->
@@ -173,11 +173,250 @@ class RagSourceRegistryMigrationIntegrationTest {
 
             adminConnection(jdbcUrl).use { connection ->
                 assertThat(queryString(connection, "select max(version::integer)::text from flyway_schema_history where success"))
-                    .isEqualTo("69")
+                    .isEqualTo("71")
                 assertThat(queryString(connection, "select count(*)::text from users where user_id = 'usr_s49_preserved'"))
                     .isEqualTo("1")
                 assertThat(queryString(connection, "select count(*)::text from public.s4_9_saved_answer_history"))
                     .isEqualTo("0")
+            }
+        }
+    }
+
+    @Test
+    fun `V69 to V70 preserves Strong LLM usage and adds v2 defaults`() {
+        withPreparedDatabase("s49_v69_v70_upgrade") { jdbcUrl ->
+            flyway(jdbcUrl, target = "69").migrate()
+            adminConnection(jdbcUrl).use { connection ->
+                connection.createStatement().use { statement ->
+                    statement.executeUpdate(
+                        """
+                        insert into public.s4_9_strong_llm_usage_ledger(
+                          usage_event_id,request_id,provider,model_id,answer_basis,outcome,
+                          tool_round_count,search_call_count,read_call_count,prompt_token_count,
+                          output_token_count,evidence_set_sha256
+                        ) values (
+                          's49_llu_${"a".repeat(32)}','req_s49_upgrade_0001','VERTEX','gemini-3.5-flash',
+                          'MODEL_KNOWLEDGE','COMMITTED',0,0,0,11,7,repeat('b',64)
+                        )
+                        """.trimIndent(),
+                    )
+                }
+            }
+
+            flyway(jdbcUrl).migrate()
+
+            adminConnection(jdbcUrl).use { connection ->
+                assertThat(
+                    queryString(
+                        connection,
+                        """
+                        select concat_ws(':', usage_schema_version, vertex_generate_call_count,
+                          google_grounding_query_count, search_backend, evidence_validation_mode)
+                        from public.s4_9_strong_llm_usage_ledger
+                        where request_id = 'req_s49_upgrade_0001'
+                        """.trimIndent(),
+                    ),
+                ).isEqualTo("1:1:0:NONE:CANONICAL_EXACT")
+            }
+        }
+    }
+
+    @Test
+    fun `V70 Google budget settles actual over reserve and conservatively retains unknown usage`() {
+        withPreparedDatabase("s49_google_budget") { jdbcUrl ->
+            flyway(jdbcUrl).migrate()
+            adminConnection(jdbcUrl).use { connection ->
+                connection.createStatement().use { statement ->
+                    statement.executeUpdate(
+                        "insert into users(user_id,username,password_hash,role,status,security_version) " +
+                            "values ('usr_s49_budget','s49_budget','\$2b\$12\$aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa','USER','ACTIVE',1)",
+                    )
+                }
+            }
+            appConnection(jdbcUrl).use { connection ->
+                connection.autoCommit = false
+                connection.createStatement().use { it.execute("select set_config('app.actor_user_id','usr_s49_budget',true)") }
+
+                fun reserve(
+                    id: String,
+                    request: String,
+                    fingerprint: String,
+                    count: Int,
+                    cap: Int,
+                ): Boolean =
+                    connection
+                        .prepareStatement(
+                            "select public.reserve_s4_9_google_grounding_budget(?,?,?,?,date '2026-08-01',?,?)",
+                        ).use { statement ->
+                            statement.setString(1, id)
+                            statement.setString(2, "usr_s49_budget")
+                            statement.setString(3, request)
+                            statement.setString(4, fingerprint)
+                            statement.setInt(5, count)
+                            statement.setInt(6, cap)
+                            statement.executeQuery().use { result ->
+                                assertTrue(result.next())
+                                result.getBoolean(1)
+                            }
+                        }
+
+                fun settle(
+                    id: String,
+                    state: String,
+                    actual: Int?,
+                ) {
+                    connection.prepareStatement("select public.settle_s4_9_google_grounding_budget(?,?,?,?)").use { statement ->
+                        statement.setString(1, "usr_s49_budget")
+                        statement.setString(2, id)
+                        statement.setString(3, state)
+                        if (actual == null) statement.setNull(4, java.sql.Types.INTEGER) else statement.setInt(4, actual)
+                        statement.executeQuery().close()
+                    }
+                }
+
+                val fingerprint = "7".repeat(64)
+                val first = "s49_gbr_${"1".repeat(32)}"
+                val second = "s49_gbr_${"2".repeat(32)}"
+                val third = "s49_gbr_${"3".repeat(32)}"
+                assertTrue(reserve(first, "req_s49_budget_0001", fingerprint, 8, 16))
+                assertTrue(reserve(second, "req_s49_budget_0002", fingerprint, 8, 16))
+                assertFalse(reserve(third, "req_s49_budget_0003", fingerprint, 1, 16))
+                settle(first, "COMMITTED", 12)
+                settle(second, "RELEASED", null)
+                assertTrue(reserve(third, "req_s49_budget_0003", fingerprint, 4, 16))
+                settle(third, "RELEASED", null)
+
+                val unknownFingerprint = "8".repeat(64)
+                val unknown = "s49_gbr_${"4".repeat(32)}"
+                assertTrue(reserve(unknown, "req_s49_budget_unknown", unknownFingerprint, 8, 8))
+                settle(unknown, "UNKNOWN_BILLING", null)
+                assertFalse(
+                    reserve(
+                        "s49_gbr_${"5".repeat(32)}",
+                        "req_s49_budget_blocked",
+                        unknownFingerprint,
+                        1,
+                        8,
+                    ),
+                )
+                connection.rollback()
+            }
+        }
+    }
+
+    @Test
+    fun `V70 persists bounded grounding provenance and usage without granting direct table reads`() {
+        withPreparedDatabase("s49_grounding_provenance") { jdbcUrl ->
+            flyway(jdbcUrl).migrate()
+            adminConnection(jdbcUrl).use { connection ->
+                connection.createStatement().use { statement ->
+                    statement.executeUpdate(
+                        "insert into users(user_id,username,password_hash,role,status,security_version) " +
+                            "values ('usr_s49_ground','s49_ground','\$2b\$12\$aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa','USER','ACTIVE',1)",
+                    )
+                }
+            }
+            appConnection(jdbcUrl).use { connection ->
+                connection.autoCommit = false
+                connection.createStatement().use { statement ->
+                    statement.execute("select set_config('app.actor_user_id','usr_s49_ground',true)")
+                    statement.execute(
+                        """
+                        select public.record_s4_9_grounding_provenance(
+                          'usr_s49_ground','req_s49_grounding_0001',
+                          '[{"sourceNodeId":"s49_src_${"1".repeat(
+                            32,
+                        )}","resultId":"google_1","citationId":"cit_2","title":"Investor.gov","canonicalUrl":"https://www.investor.gov/diversification","domain":"investor.gov","chunkIndex":0}]'::jsonb,
+                          '[{"supportId":"s49_sup_${"2".repeat(
+                            32,
+                        )}","segmentSha256":"${"3".repeat(64)}","startIndex":0,"endIndex":24,"chunkIndices":[0]}]'::jsonb
+                        )
+                        """.trimIndent(),
+                    )
+                    statement.execute(
+                        "select public.record_s4_9_search_attempt(" +
+                            "'s49_sra_${"4".repeat(32)}','usr_s49_ground','req_s49_grounding_0001'," +
+                            "'VERTEX_GOOGLE','COMMITTED',1)",
+                    )
+                    statement.execute(
+                        """
+                        select public.record_s4_9_strong_llm_usage_v2(
+                          's49_llu_${"5".repeat(32)}','usr_s49_ground','req_s49_grounding_0001',
+                          'gemini-3.5-flash','EVIDENCE','COMMITTED',0,1,0,120,48,
+                          '${"6".repeat(64)}',1,1,'VERTEX_GOOGLE','GOOGLE_GROUNDING',null
+                        )
+                        """.trimIndent(),
+                    )
+                }
+                connection.commit()
+            }
+
+            appConnection(jdbcUrl).use { connection ->
+                assertThrows(SQLException::class.java) {
+                    connection.createStatement().use { it.executeQuery("select * from public.s4_9_grounding_source_nodes") }
+                }
+            }
+            adminConnection(jdbcUrl).use { connection ->
+                assertThat(
+                    queryString(
+                        connection,
+                        """
+                        select concat_ws(':',
+                          (select count(*) from public.s4_9_grounding_source_nodes),
+                          (select count(*) from public.s4_9_grounding_support_edges),
+                          (select count(*) from public.s4_9_search_attempts where not raw_query_stored),
+                          (select count(*) from public.s4_9_strong_llm_usage_ledger where usage_schema_version = 2)
+                        )
+                        """.trimIndent(),
+                    ),
+                ).isEqualTo("1:1:1:1")
+            }
+        }
+    }
+
+    @Test
+    fun `V71 canonicalizes host registered SearXNG read provenance`() {
+        withPreparedDatabase("s49_searxng_history_provenance") { jdbcUrl ->
+            flyway(jdbcUrl).migrate()
+            adminConnection(jdbcUrl).use { connection ->
+                connection.createStatement().use { statement ->
+                    statement.executeUpdate(
+                        "insert into users(user_id,username,password_hash,role,status,security_version) " +
+                            "values ('usr_s49_searxng','s49_searxng','\$2b\$12\$aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa','USER','ACTIVE',1)",
+                    )
+                }
+            }
+            appConnection(jdbcUrl).use { connection ->
+                connection.autoCommit = false
+                connection.createStatement().use { statement ->
+                    statement.execute("select set_config('app.actor_user_id','usr_s49_searxng',true)")
+                    statement.execute(
+                        "select public.record_s4_9_read_provenance(" +
+                            "'usr_s49_searxng','req_s49_searxng_0001','s49_src_${"1".repeat(32)}'," +
+                            "'searxng_${"2".repeat(24)}','cit_1','SEARXNG_RESULT','Investor.gov'," +
+                            "'https://www.investor.gov/diversification','www.investor.gov','${"3".repeat(64)}')",
+                    )
+                }
+                val canonical =
+                    queryString(
+                        connection,
+                        """
+                        select public.canonicalize_s4_9_strong_llm_citations_v2(
+                          'usr_s49_searxng','req_s49_searxng_0001','req_s49_searxng_0001','scope_unused',
+                          '[{"ordinal":1,"citationId":"cit_1","sourceId":"src_web_investor_gov","sourceRevisionId":"srv_web_${"4".repeat(
+                            24,
+                        )}","chunkRevisionId":"rag_v2_chk_${"5".repeat(
+                            32,
+                        )}","generationId":"rgr_${"6".repeat(
+                            32,
+                        )}","citationKind":"PUBLIC_WEB","provenanceResultId":"searxng_${"2".repeat(
+                            24,
+                        )}","title":"Investor.gov","canonicalUrl":"https://www.investor.gov/diversification","locator":{"section":"www.investor.gov"}}]'::jsonb
+                        )::text
+                        """.trimIndent(),
+                    )
+                assertThat(canonical).contains("Investor.gov", "src_web_investor_gov", "cit_1")
+                connection.rollback()
             }
         }
     }
@@ -390,7 +629,7 @@ class RagSourceRegistryMigrationIntegrationTest {
                 assertThat(queryStrings(connection, normalizedTableQuery))
                     .containsAll(expectedTables)
                 assertThat(queryString(connection, "select max(version::integer) from flyway_schema_history where success"))
-                    .isEqualTo("69")
+                    .isEqualTo("71")
 
                 expectedTables.forEach { table ->
                     assertThat(

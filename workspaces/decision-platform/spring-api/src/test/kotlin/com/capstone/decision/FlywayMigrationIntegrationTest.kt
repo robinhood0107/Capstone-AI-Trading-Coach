@@ -63,10 +63,10 @@ class FlywayMigrationIntegrationTest(
     @Autowired private val riskSnapshotPort: RiskSnapshotPort,
 ) : SpringApiIntegrationTestBase() {
     @Test
-    fun `clean database applies V1 through V69 migrations and creates required objects`() {
+    fun `clean database applies V1 through V71 migrations and creates required objects`() {
         val versions = queryStrings("select version from flyway_schema_history where success order by installed_rank")
         // V7 is a Java migration and must appear alongside the SQL migrations.
-        assertEquals((1..69).map(Int::toString), versions)
+        assertEquals((1..71).map(Int::toString), versions)
 
         val requiredTables =
             listOf(
@@ -175,6 +175,12 @@ class FlywayMigrationIntegrationTest(
                 "rag_v2_immutable_owner_document_deletion_tombstones",
                 "foreign_news_sentiment_aggregates",
                 "s48_runtime_sanitized_projections",
+                "s4_9_google_grounding_monthly_budget",
+                "s4_9_google_grounding_reservations",
+                "s4_9_grounding_source_nodes",
+                "s4_9_grounding_support_segments",
+                "s4_9_grounding_support_edges",
+                "s4_9_search_attempts",
             )
         requiredTables.forEach { tableName ->
             assertTrue(tableExists(tableName), "expected table $tableName to exist")

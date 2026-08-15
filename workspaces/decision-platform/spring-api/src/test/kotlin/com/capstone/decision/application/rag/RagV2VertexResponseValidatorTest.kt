@@ -73,6 +73,17 @@ class RagV2VertexResponseValidatorTest {
     }
 
     @Test
+    fun `validation failures expose only a stable content free boundary leaf`() {
+        assertThatThrownBy {
+            validator.validate(
+                """{"basis":"EVIDENCE","answer":"근거가 없습니다.","sentences":[{"text":"근거가 없습니다.","citationIds":["cit_1"],"evidenceSpans":[{"citationId":"cit_1","quote":"fabricated quote"}],"numericSpans":[]}],"warnings":[]}""",
+                evidence,
+            )
+        }.isInstanceOf(RagV2VertexResponseValidationException::class.java)
+            .hasMessage("STRONG_LLM_VALIDATION_EVIDENCE_SPAN")
+    }
+
+    @Test
     fun `timeless model knowledge is citation free but current or numeric claims are rejected`() {
         val result =
             validator.validate(

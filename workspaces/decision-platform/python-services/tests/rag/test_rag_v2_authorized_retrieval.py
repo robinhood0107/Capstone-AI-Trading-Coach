@@ -235,7 +235,46 @@ def test_v2_retrieval_accepts_cross_language_dense_only_evidence_from_distinct_s
     }
 
 
-def test_v2_retrieval_rejects_dense_only_evidence_from_one_source() -> None:
+def test_v2_retrieval_replaces_only_fifth_result_when_one_source_monopolizes_top_five() -> None:
+    scope = _scope(owner_generation=False)
+    first = _candidate(1, scope, source_scope="OA112")
+    same_source = tuple(
+        replace(
+            _candidate(index, scope, source_scope="OA112"),
+            source_id=first.source_id,
+        )
+        for index in range(2, 6)
+    )
+    independent = _candidate(6, scope, source_scope="EXACT30")
+
+    outcome = _retrieval(
+        exact=RagV2ChannelResult("exact", (), complete=True),
+        lexical=RagV2ChannelResult("lexical", (), complete=True),
+        dense=RagV2ChannelResult(
+            "dense",
+            (first, *same_source, independent),
+            complete=True,
+        ),
+    ).retrieve(
+        scope=scope,
+        payload={
+            "question": "분산투자에서 자산 간 상관관계가 위험에 미치는 영향",
+            "answerMode": "DETAILED",
+        },
+    )
+
+    assert outcome.failure_code is None
+    assert [item.chunk_id for item in outcome.evidence] == [
+        first.chunk_id,
+        same_source[0].chunk_id,
+        same_source[1].chunk_id,
+        same_source[2].chunk_id,
+        independent.chunk_id,
+    ]
+    assert outcome.distinct_source_count == 2
+
+
+def test_v2_retrieval_allows_one_source_for_strong_llm_warning_classification() -> None:
     scope = _scope(owner_generation=False)
     first = _candidate(1, scope, source_scope="OA112")
     same_source = replace(
@@ -247,6 +286,23 @@ def test_v2_retrieval_rejects_dense_only_evidence_from_one_source() -> None:
         exact=RagV2ChannelResult("exact", (), complete=True),
         lexical=RagV2ChannelResult("lexical", (), complete=True),
         dense=RagV2ChannelResult("dense", (first, same_source), complete=True),
+    ).retrieve(
+        scope=scope,
+        payload={"question": "분산투자 위험 근거", "answerMode": "DETAILED"},
+    )
+
+    assert outcome.failure_code is None
+    assert outcome.retrieval_permitted is True
+    assert outcome.distinct_source_count == 1
+
+
+def test_v2_retrieval_rejects_when_all_channels_have_no_evidence() -> None:
+    scope = _scope(owner_generation=False)
+
+    outcome = _retrieval(
+        exact=RagV2ChannelResult("exact", (), complete=True),
+        lexical=RagV2ChannelResult("lexical", (), complete=True),
+        dense=RagV2ChannelResult("dense", (), complete=True),
     ).retrieve(
         scope=scope,
         payload={"question": "분산투자 위험 근거", "answerMode": "DETAILED"},

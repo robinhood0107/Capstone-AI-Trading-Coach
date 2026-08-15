@@ -229,6 +229,13 @@ class RagV2RuntimeServiceTest {
                     processorSetDigest = "b".repeat(64),
                 ),
             )
+        every {
+            jdbc.queryForObject(
+                match { it.contains("authorize_s4_9_runtime_voyage_query") },
+                any<Map<String, *>>(),
+                String::class.java,
+            )
+        } returns "s49_vqa_${"c".repeat(32)}"
         every { evaluation.evaluate(command, capture(context)) } returns
             retrievalOnly(scope).copy(
                 providerPhysicalAttempts = 1,
@@ -258,6 +265,17 @@ class RagV2RuntimeServiceTest {
         assertThat(answer.generationStatus).isEqualTo(RagGenerationStatus.RETRIEVAL_ONLY)
         verify(exactly = 1) { evaluation.evaluate(command, any()) }
         assertThat(context.captured.externalQueryConsentGranted).isTrue()
+        verify(exactly = 1) {
+            jdbc.queryForObject(
+                match { it.contains("authorize_s4_9_runtime_voyage_query") },
+                match<Map<String, *>> {
+                    it["scopeClaimId"] == scope.scopeClaimId &&
+                        (it["questionSha256"] as? String)?.matches(Regex("^[0-9a-f]{64}$")) == true &&
+                        it["questionSha256"] != command.question
+                },
+                String::class.java,
+            )
+        }
     }
 
     @Test
@@ -307,6 +325,247 @@ class RagV2RuntimeServiceTest {
 
         verify(exactly = 0) { evaluation.evaluate(any(), any()) }
         verify(exactly = 0) { crypto.encrypt(any(), any(), any()) }
+    }
+
+    @Test
+    fun `MCP insufficient retrieval creates an empty research context for bounded web evidence`() {
+        val jdbc = mockk<NamedParameterJdbcTemplate>()
+        val provider = mockk<ObjectProvider<NamedParameterJdbcTemplate>>()
+        val crypto = mockk<RagHistoryCryptoPort>(relaxed = true)
+        val evaluation = mockk<RagV2EvaluationPort>()
+        val vertexEvidence = mockk<RagV2VertexEvidencePort>()
+        val scope = scope()
+        val command = command()
+
+        every { provider.getIfAvailable() } returns jdbc
+        every {
+            jdbc.query(
+                match { it.contains("read_rag_v2_corpus_status") },
+                any<Map<String, *>>(),
+                any<RowMapper<RagV2CorpusStatus>>(),
+            )
+        } returns listOf(RagV2CorpusStatus("FULL_READY", "immutable-v2-1", "ABSENT", 100, null))
+        every { jdbc.queryForObject(match { it.contains("set_config") }, any<Map<String, *>>(), String::class.java) } returns ""
+        every {
+            jdbc.query(
+                match { it.contains("issue_s4_9_mcp_retrieval_scope") },
+                any<Map<String, *>>(),
+                any<RowMapper<RagV2RetrievalScope>>(),
+            )
+        } returns listOf(scope)
+        every { evaluation.evaluate(command, any()) } returns
+            RagV2EvaluationResult(
+                generationStatus = RagGenerationStatus.RETRIEVAL_FAILURE,
+                answer = null,
+                citations = emptyList(),
+                citationCoverage = 0.0,
+                retrievalFailure = true,
+                guardrailFlags = emptyList(),
+                failureCode = "RAG_INSUFFICIENT_EVIDENCE",
+                exact30GenerationId = "",
+                oa112GenerationId = "",
+                ownerGenerationId = null,
+                embeddingProfileId = "",
+                policyVersion = 0,
+                providerPhysicalAttempts = 0,
+                externalProviderCandidate = false,
+            )
+
+        val result =
+            service(provider, crypto, evaluation, vertexEvidence = vertexEvidence).searchEvidence(
+                "usr_demo_user",
+                REQUEST_ID,
+                command,
+                includeOwner = false,
+            )
+
+        assertThat(result.scope).isEqualTo(scope)
+        assertThat(result.citations).isEmpty()
+        assertThat(result.evidence).isEmpty()
+        verify(exactly = 0) { vertexEvidence.resolve(any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `MCP non-empty failure still exposes only the validated content-free leaf`() {
+        val jdbc = mockk<NamedParameterJdbcTemplate>()
+        val provider = mockk<ObjectProvider<NamedParameterJdbcTemplate>>()
+        val crypto = mockk<RagHistoryCryptoPort>(relaxed = true)
+        val evaluation = mockk<RagV2EvaluationPort>()
+        val scope = scope()
+        val command = command()
+
+        every { provider.getIfAvailable() } returns jdbc
+        every {
+            jdbc.query(
+                match { it.contains("read_rag_v2_corpus_status") },
+                any<Map<String, *>>(),
+                any<RowMapper<RagV2CorpusStatus>>(),
+            )
+        } returns listOf(RagV2CorpusStatus("FULL_READY", "immutable-v2-1", "ABSENT", 100, null))
+        every { jdbc.queryForObject(match { it.contains("set_config") }, any<Map<String, *>>(), String::class.java) } returns ""
+        every {
+            jdbc.query(
+                match { it.contains("issue_s4_9_mcp_retrieval_scope") },
+                any<Map<String, *>>(),
+                any<RowMapper<RagV2RetrievalScope>>(),
+            )
+        } returns listOf(scope)
+        every { evaluation.evaluate(command, any()) } returns
+            insufficientEvaluation().copy(failureCode = "RAG_QUERY_PROVIDER_UNAVAILABLE")
+
+        assertThatThrownBy {
+            service(provider, crypto, evaluation).searchEvidence(
+                "usr_demo_user",
+                REQUEST_ID,
+                command,
+                includeOwner = false,
+            )
+        }.isInstanceOf(RagV2McpSearchUnavailableException::class.java)
+            .hasMessage("S4_9_MCP_RAG_SEARCH_RAG_QUERY_PROVIDER_UNAVAILABLE")
+            .message()
+            .doesNotContain(command.question)
+    }
+
+    @Test
+    fun `enabled Strong LLM answers timeless education when retrieval has no evidence`() {
+        val jdbc = mockk<NamedParameterJdbcTemplate>()
+        val provider = mockk<ObjectProvider<NamedParameterJdbcTemplate>>()
+        val crypto = mockk<RagHistoryCryptoPort>()
+        val evaluation = mockk<RagV2EvaluationPort>()
+        val vertexEvidence = mockk<RagV2VertexEvidencePort>()
+        val vertexGeneration = mockk<RagV2VertexGenerationPort>()
+        val generatedCommand = slot<RagV2VertexGenerationCommand>()
+        val scope = scope(profile = "voyage_context_4_1024_v1")
+        val command = command()
+        val createdAt = Instant.parse("2026-08-14T12:00:00Z")
+
+        every { provider.getIfAvailable() } returns jdbc
+        every { vertexGeneration.isActivationEnabled() } returns true
+        every {
+            jdbc.query(
+                match { it.contains("read_rag_v2_corpus_status") },
+                any<Map<String, *>>(),
+                any<RowMapper<RagV2CorpusStatus>>(),
+            )
+        } returns listOf(RagV2CorpusStatus("FULL_READY", "immutable-v2-1", "ABSENT", 100, null))
+        every { jdbc.queryForObject(match { it.contains("set_config") }, any<Map<String, *>>(), String::class.java) } returns ""
+        every {
+            jdbc.query(
+                match { it.contains("read_rag_v2_vertex_prepared_scope") },
+                any<Map<String, *>>(),
+                any<RowMapper<RagV2PreparedScope>>(),
+            )
+        } returns listOf(RagV2PreparedScope(scope, createdAt.plusSeconds(300)))
+        every {
+            jdbc.query(
+                match { it.contains("read_rag_v2_immutable_effective_consent") },
+                any<Map<String, *>>(),
+                any<RowMapper<RagV2RuntimeService.RagV2StoredEffectiveConsent>>(),
+            )
+        } returns
+            listOf(
+                RagV2RuntimeService.RagV2StoredEffectiveConsent(
+                    consentEventId = "rce_${"a".repeat(32)}",
+                    action = "GRANT",
+                    policyDigest = "a".repeat(64),
+                    processorSetDigest = "b".repeat(64),
+                ),
+            )
+        every {
+            jdbc.queryForObject(
+                match { it.contains("authorize_s4_9_runtime_voyage_query") },
+                any<Map<String, *>>(),
+                String::class.java,
+            )
+        } returns "s49_vqa_${"c".repeat(32)}"
+        every { evaluation.evaluate(command, any()) } returns
+            insufficientEvaluation(providerAttempts = 1).copy(voyagePhysicalCalls = 1)
+        every { vertexGeneration.generate(capture(generatedCommand)) } returns
+            RagV2VertexGenerationResult(
+                generationStatus = RagGenerationStatus.ANSWERED,
+                answer = "분산투자는 서로 다른 위험 요인을 함께 구성하는 일반적인 위험 관리 개념입니다.",
+                citationIds = emptyList(),
+                failureCode = "",
+                answerBasis = StrongLlmAnswerBasis.MODEL_KNOWLEDGE,
+                validationStatus = StrongLlmValidationStatus.VALID,
+                citationCoverage = 0.0,
+            )
+        every {
+            jdbc.queryForObject(
+                "SELECT transaction_timestamp()",
+                emptyMap<String, Any>(),
+                OffsetDateTime::class.java,
+            )
+        } returns OffsetDateTime.ofInstant(createdAt, ZoneOffset.UTC)
+        every {
+            crypto.encrypt(any(), command.question, any())
+        } returns
+            encrypted().copy(
+                answer = RagEncryptedFieldPayload(ByteArray(12), byteArrayOf(1), ByteArray(16)),
+            )
+        every {
+            jdbc.queryForObject(
+                match { it.contains("persist_s4_9_strong_llm_history") },
+                any<Map<String, *>>(),
+                String::class.java,
+            )
+        } returns "[]"
+
+        val answer =
+            service(
+                provider,
+                crypto,
+                evaluation,
+                vertexEvidence = vertexEvidence,
+                vertexGeneration = vertexGeneration,
+            ).ask("usr_demo_user", REQUEST_ID, command, scope.scopeClaimId)
+
+        assertThat(answer.generationStatus).isEqualTo(RagGenerationStatus.ANSWERED)
+        assertThat(answer.citations).isEmpty()
+        assertThat(answer.guardrailFlags).containsExactly("MODEL_KNOWLEDGE_ONLY")
+        assertThat(generatedCommand.captured.evidence).isEmpty()
+        verify(exactly = 0) { vertexEvidence.resolve(any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `empty MCP context revalidates the exact DB scope without fabricating evidence`() {
+        val jdbc = mockk<NamedParameterJdbcTemplate>()
+        val provider = mockk<ObjectProvider<NamedParameterJdbcTemplate>>()
+        val vertexEvidence = mockk<RagV2VertexEvidencePort>()
+        val scope = scope(profile = "voyage_context_4_1024_v1")
+
+        every { provider.getIfAvailable() } returns jdbc
+        every { jdbc.queryForObject(match { it.contains("set_config") }, any<Map<String, *>>(), String::class.java) } returns ""
+        every {
+            jdbc.query(
+                match { it.contains("read_rag_v2_vertex_prepared_scope_v2") },
+                any<Map<String, *>>(),
+                any<RowMapper<RagV2PreparedScope>>(),
+            )
+        } returns listOf(RagV2PreparedScope(scope, Instant.parse("2026-08-14T12:05:00Z")))
+
+        service(
+            provider,
+            mockk(relaxed = true),
+            mockk(relaxed = true),
+            vertexEvidence = vertexEvidence,
+        ).requireResearchEvidenceCurrent(
+            ownerUserId = "usr_demo_user",
+            requestId = REQUEST_ID,
+            scope = scope,
+            topics = listOf("FINANCIAL_ENGINEERING"),
+            citations = emptyList(),
+            expectedEvidence = emptyList(),
+        )
+
+        verify(exactly = 1) {
+            jdbc.query(
+                match { it.contains("read_rag_v2_vertex_prepared_scope_v2") },
+                any<Map<String, *>>(),
+                any<RowMapper<RagV2PreparedScope>>(),
+            )
+        }
+        verify(exactly = 0) { vertexEvidence.resolve(any(), any(), any(), any()) }
     }
 
     @Test
@@ -589,6 +848,24 @@ class RagV2RuntimeServiceTest {
             embeddingProfileId = "",
             policyVersion = 0,
             providerPhysicalAttempts = 0,
+            externalProviderCandidate = false,
+        )
+
+    private fun insufficientEvaluation(providerAttempts: Int = 0): RagV2EvaluationResult =
+        RagV2EvaluationResult(
+            generationStatus = RagGenerationStatus.RETRIEVAL_FAILURE,
+            answer = null,
+            citations = emptyList(),
+            citationCoverage = 0.0,
+            retrievalFailure = true,
+            guardrailFlags = emptyList(),
+            failureCode = "RAG_INSUFFICIENT_EVIDENCE",
+            exact30GenerationId = "",
+            oa112GenerationId = "",
+            ownerGenerationId = null,
+            embeddingProfileId = "",
+            policyVersion = 0,
+            providerPhysicalAttempts = providerAttempts,
             externalProviderCandidate = false,
         )
 

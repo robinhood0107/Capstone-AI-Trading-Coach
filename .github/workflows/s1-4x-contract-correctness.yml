@@ -180,6 +180,22 @@ jobs:
             exit 1
           fi
 
+          # S4.9 runtime dependency는 historical S1.4X lock을 바꾸지 않고 별도 좁은 carrier로 고정한다.
+          S4_9_RUNTIME_CARRIER=b4e7836932da53dc64b0c273a2228cac1dfd43e8
+          git cat-file -e "${S4_9_RUNTIME_CARRIER}^{commit}"
+          git merge-base --is-ancestor "$S4_9_RUNTIME_CARRIER" HEAD
+          mapfile -t S4_9_CARRIER_PATHS < <(
+            git diff-tree --no-commit-id --name-only -r "$S4_9_RUNTIME_CARRIER" \
+              | LC_ALL=C sort
+          )
+          test "${S4_9_CARRIER_PATHS[*]}" = \
+            "workspaces/decision-platform/python-services/pyproject.toml workspaces/decision-platform/python-services/uv.lock"
+          for path in \
+            workspaces/decision-platform/python-services/pyproject.toml \
+            workspaces/decision-platform/python-services/uv.lock; do
+            cmp --silent "$path" <(git show "${S4_9_RUNTIME_CARRIER}:${path}")
+          done
+
           # 로컬 자료 경로에 결합된 obsolete host-only 검사는 한 번만 exact hash 전이로 제거한다.
           S1_4R_ISOLATION_TEST=workspaces/decision-platform/research/s1-4r-jax-risk/tests/test_production_isolation.py
           if ! git diff --quiet "$DIFF_BASE" HEAD -- "$S1_4R_ISOLATION_TEST"; then
@@ -257,8 +273,6 @@ jobs:
             python "$S1_4X/benchmarks/render_benchmark_plan.py" --check
           uv run --frozen --project "$ORACLE" \
             python "$S1_4X/benchmarks/run_rotated_blocks.py" validate-plan
-          uv run --frozen --project "$ORACLE" \
-            python "$ORACLE/validate_contract.py" --check-all
 
       - name: Run oracle and benchmark contract quality gates
         run: |

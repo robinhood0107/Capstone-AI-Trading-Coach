@@ -60,6 +60,12 @@ app:
       local-root: ${CAPSTONE_RAG_LOCAL_ROOT:}
       owner-consent-policy-sha256: ${S49_OWNER_CONSENT_POLICY_SHA256:}
       owner-consent-processor-set-sha256: ${S49_OWNER_CONSENT_PROCESSOR_SET_SHA256:}
+      grpc:
+        target: ${STRONG_LLM_GRPC_TARGET:127.0.0.1:50055}
+        shared-secret: ${STRONG_LLM_GRPC_SHARED_SECRET:}
+        deadline-millis: ${STRONG_LLM_GRPC_DEADLINE_MILLIS:45000}
+        request-max-bytes: 262144
+        response-max-bytes: 262144
     mcp-oauth:
       enabled: ${S4_9_MCP_ENABLED:false}
       issuer: ${S4_9_MCP_ISSUER:http://127.0.0.1:8080}
@@ -169,6 +175,13 @@ app:
       external-research-global-parallel-reads: ${RAG_WEB_EXTERNAL_GLOBAL_PARALLEL_READS:8}
       external-research-max-contexts-per-caller: ${RAG_WEB_EXTERNAL_MAX_CONTEXTS_PER_CALLER:30}
       external-research-max-total-contexts: ${RAG_WEB_EXTERNAL_MAX_TOTAL_CONTEXTS:1024}
+      vertex-google-search:
+        enabled: ${RAG_WEB_VERTEX_GOOGLE_SEARCH_ENABLED:true}
+        overage-allowed: ${RAG_WEB_VERTEX_GOOGLE_SEARCH_OVERAGE_ALLOWED:false}
+        monthly-soft-cap: ${RAG_WEB_VERTEX_GOOGLE_SEARCH_MONTHLY_SOFT_CAP:4000}
+        reserve-per-prompt: ${RAG_WEB_VERTEX_GOOGLE_SEARCH_RESERVE_PER_PROMPT:8}
+        billing-period-zone: ${RAG_WEB_GOOGLE_BILLING_PERIOD_ZONE:America/Los_Angeles}
+        billing-account-fingerprint: ${RAG_WEB_GOOGLE_BILLING_ACCOUNT_FINGERPRINT:}
   brokerage:
     idempotency-scope-hmac-key: ${BROKERAGE_IDEMPOTENCY_SCOPE_HMAC_KEY}
     # DB에는 digest만 migration으로 저장하고 raw capability는 prepared bind로만 전달한다.

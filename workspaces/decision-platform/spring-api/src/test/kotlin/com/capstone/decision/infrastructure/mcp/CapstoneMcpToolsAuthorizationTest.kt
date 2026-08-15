@@ -72,8 +72,7 @@ class CapstoneMcpToolsAuthorizationTest {
             CapstoneMcpTools(
                 ragService,
                 contexts,
-                mockk(),
-                mockk(),
+                mockk(relaxed = true),
                 properties,
                 mockk(),
                 strong,

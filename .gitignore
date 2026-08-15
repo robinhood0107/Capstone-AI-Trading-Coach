@@ -116,3 +116,4 @@ artifacts/decision-platform/*
 # --- OS ---
 .DS_Store
 Thumbs.db
+.gstack/

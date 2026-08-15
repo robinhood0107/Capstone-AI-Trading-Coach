@@ -127,8 +127,21 @@
   실행하지 않는다. owner library profile은 사용자가 import-ticket v2에서
   `voyage_context_4_1024_v1 | bge_m3_local_1024_v1` 중 하나를 반드시 고른다. default·자동 판단·자동
   fallback은 0이고 profile 변경은 모든 owner 문서 hard-delete 뒤 새 import로만 가능하다. public BGE
-  inference는 계속 0이며 owner BGE만 user-selected local execution으로 허용한다. owner BGE citation이
-  Top-5에 실제 포함되면 Vertex input 전체를 차단하고 `RETRIEVAL_ONLY`로 끝낸다.
+  inference는 계속 0이며 owner BGE만 user-selected local execution으로 허용한다.
+
+  S4.9 Strong LLM current authority는 `contracts/catalogs/s4-9-mcp-strong-llm-contract.v2.json`이다.
+  Kotlin은 인증·owner 동의·Top-5 retrieval·Google 월별 budget·SearXNG/URL reader·최종 검증·DB
+  ledger를 소유하고, Python LangGraph는 Vertex provider 대화와 bounded tool state만 소유한다.
+  Google Search grounding은 Gemini가 필요 여부와 query를 선택하되 한 prompt당 grounded provider call은
+  최대 1회, Pacific 월 local soft cap은 4,000 query, overage는 0이다. cap 차단 시 내부 SearXNG의
+  DuckDuckGo 단일 engine으로만 best-effort fallback하며 CAPTCHA 우회, FlareSolverr, browser automation,
+  Google/Naver scraping은 추가하지 않는다.
+
+  Google grounding URI는 provider support metadata로 검증하며 서버가 자동 GET하지 않는다. SearXNG 결과,
+  사용자 질문의 공개 HTTPS URL, 읽은 문서에서 실제 발견한 링크만 `resultId` provenance graph를 거쳐
+  bounded reader가 접근한다. 미등록 model URL, private/link-local 주소, DNS rebinding, credential/cookie는
+  계속 차단한다. owner text는 Google discovery에 전달하지 않으며 갱신 동의가 있는 tool-free final call에만
+  포함할 수 있다. RAG/MCP/LLM 결과의 Signal/LSTM/RiskDecision/order/hash authority는 0이다.
 
   clean restart의 local namespace는 Compose project `capstone-pre-s5-fresh`, PostgreSQL host port
   `55432`, Redis host port `56379`, output root `capstone-rag/runtime/pre-s5-fresh/local-corpus`로

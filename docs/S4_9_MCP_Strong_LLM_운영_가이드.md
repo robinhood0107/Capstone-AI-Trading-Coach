@@ -1,17 +1,18 @@
 # S4.9 MCP + Strong LLM 운영 가이드
 
-상태: `LIVE_VERIFIED_MERGE_CANDIDATE` (V69, 2026-08-15)
-계약: `contracts/catalogs/s4-9-mcp-strong-llm-contract.v1.json`
+상태: `V70_IMPLEMENTED_LIVE_GROUNDING_PENDING` (2026-08-15)
+계약: `contracts/catalogs/s4-9-mcp-strong-llm-contract.v2.json` (v1 역사 보존)
 
 ## 1. 구성
 
-- Capstone Spring: `/mcp`, OAuth 2.1 authorization/resource server, Strong LLM validator
-- Vertex AI: fixed service-account OAuth + `gemini-3.5-flash`
+- Capstone Spring: `/mcp`, OAuth 2.1, Google budget, network/provenance, Strong LLM validator
+- Python `strong-llm-grpc`: LangGraph bounded state와 LangChain Gemini message/schema adapter
+- Vertex AI: fixed service-account OAuth + `gemini-3.5-flash` + optional Google Search grounding
 - SearXNG: internal search backend, host loopback 또는 Compose service로만 접근
 - `mcp-searxng`: 내부 호환성 sidecar이며 외부에 직접 publish하지 않는다
 - 외부 ChatGPT/Claude: 자신의 모델/API 비용과 research loop를 소유하고 Capstone OAuth MCP만 호출
 
-Gemini Deep Research, Google Search grounding, Naver, browser automation, crawler와 대상 사이트의
+Gemini Deep Research, Google Maps grounding, Naver, browser automation, crawler와 대상 사이트의
 login/click/JavaScript는 활성화하지 않는다. 아래 OAuth 사용자 로그인은 Capstone 자체 인증 절차로서
 이 금지 대상과 다르다.
 
@@ -61,13 +62,31 @@ RAG_WEB_EXTERNAL_MAX_TOTAL_CONTEXTS=1024
 
 ## 4. SearXNG
 
+### 4.0 검색 우선순위와 Google budget
+
+기본은 `RAG_WEB_VERTEX_GOOGLE_SEARCH_ENABLED=true`이며 Gemini가 질문별 검색 필요성을 결정한다. Pacific
+month local observed+reserved+unknown 합계가 4,000에 도달하면 Google tool은 provider 전에 제거된다.
+prompt당 8은 과금 상한이 아니라 timeout/unknown billing을 위한 보수 예약치이며 정상 응답은
+`webSearchQueries.size`로 정산한다. Google grounding redirect URL은 자동으로 읽지 않는다.
+
+```text
+RAG_WEB_VERTEX_GOOGLE_SEARCH_ENABLED=true
+RAG_WEB_VERTEX_GOOGLE_SEARCH_OVERAGE_ALLOWED=false
+RAG_WEB_VERTEX_GOOGLE_SEARCH_MONTHLY_SOFT_CAP=4000
+RAG_WEB_VERTEX_GOOGLE_SEARCH_RESERVE_PER_PROMPT=8
+RAG_WEB_GOOGLE_BILLING_PERIOD_ZONE=America/Los_Angeles
+```
+
+Google tool이 제거된 요청만 SearXNG DuckDuckGo best-effort 경로를 사용한다. CAPTCHA/rate limit/0-result는
+typed search failure 또는 insufficient로 끝내고 FlareSolverr·browser solver를 추가하지 않는다.
+
 ```bash
 docker compose --profile s4-9-web -f infra/docker-compose.infra.yml up -d searxng mcp-searxng
 ```
 
 필수 secret은 `SEARXNG_SECRET`, `MCP_SEARXNG_AUTH_TOKEN`이다. 이미지와 digest는 compose에 고정한다.
-engine은 DuckDuckGo, Brave, Mojeek, Qwant, Wikipedia만 허용한다. Spring은 JSON search endpoint만 호출하고
-검색 결과의 exact URL만 reader에 전달한다.
+일반 fallback engine은 DuckDuckGo만 사용한다. Spring은 JSON search endpoint만 호출하고 SearXNG result,
+질문에 실제 포함된 public HTTPS URL, 읽은 문서에서 발견한 link를 opaque `resultId`로 reader에 전달한다.
 
 reader는 HTTPS 443, public IP, redirect 최대 3, DNS answer 재검증, pinned-IP TLS hostname 검증,
 HTML/text/PDF, body 2 MB, normalized text 60,000자, PDF 20쪽만 허용한다. cookie/credential/proxy/retry는

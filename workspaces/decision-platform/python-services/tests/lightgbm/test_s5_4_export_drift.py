@@ -222,6 +222,14 @@ def test_drift_counter_immediate_brier_reset_and_unidentifiable_window() -> None
         present_classes=frozenset({0, 1}),
     )
     assert insufficient.abstain_reason == "UNIDENTIFIABLE_OUTPUT"
+    nonfinite = evaluate_weekly_drift(
+        DriftState(1),
+        baseline=baseline,
+        current=CalibrationMetrics(brier=np.nan, log_loss=0.3, ece=0.05),
+        mature_sessions=63,
+        present_classes=frozenset({0, 1, 2}),
+    )
+    assert nonfinite == DriftState(1, "UNIDENTIFIABLE_OUTPUT")
 
 
 def test_reason_precedence_is_locked() -> None:

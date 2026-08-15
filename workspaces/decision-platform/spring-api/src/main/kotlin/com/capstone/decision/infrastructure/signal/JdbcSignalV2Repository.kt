@@ -44,7 +44,12 @@ class JdbcSignalV2Repository(
                         """
                         SELECT max(session_date)
                         FROM trading_sessions
-                        WHERE exchange_mic = 'XKRX' AND is_open AND close_at <= clock_timestamp()
+                        WHERE exchange_mic = 'XKRX'
+                          AND is_open
+                          AND close_at <= (
+                            ((clock_timestamp() AT TIME ZONE 'Asia/Seoul')::date + time '08:10')
+                            AT TIME ZONE 'Asia/Seoul'
+                          )
                         """.trimIndent(),
                         emptyMap<String, Any>(),
                         LocalDate::class.java,

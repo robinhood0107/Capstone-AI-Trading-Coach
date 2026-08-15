@@ -44,12 +44,12 @@ def classify_forward_return(value: float) -> int:
 def build_exact_labels(prices: Sequence[PriceEvidence]) -> tuple[LabelRow, ...]:
     """symbol별 `adjustedOpen[t+6]/adjustedOpen[t+1]-1`을 만들고 boundary missing row를 drop한다."""
 
-    by_symbol: dict[str, list[PriceEvidence]] = {}
+    by_identity: dict[str, list[PriceEvidence]] = {}
     for row in prices:
-        by_symbol.setdefault(row.symbol, []).append(row)
+        by_identity.setdefault(row.instrument_id, []).append(row)
     output: list[LabelRow] = []
-    for symbol, symbol_rows in sorted(by_symbol.items()):
-        ordered = sorted(symbol_rows, key=lambda row: row.session_date)
+    for _, identity_rows in sorted(by_identity.items()):
+        ordered = sorted(identity_rows, key=lambda row: row.session_date)
         if len({row.session_date for row in ordered}) != len(ordered):
             raise LightGbmContractError("label input has duplicate symbol-session rows")
         for index in range(len(ordered) - 6):
@@ -67,7 +67,7 @@ def build_exact_labels(prices: Sequence[PriceEvidence]) -> tuple[LabelRow, ...]:
             forward_return = open_t6 / open_t1 - 1.0
             output.append(
                 LabelRow(
-                    symbol=symbol,
+                    symbol=ordered[index].symbol,
                     session_date=ordered[index].session_date,
                     interval_start=ordered[index + 1].session_date,
                     interval_end=ordered[index + 6].session_date,

@@ -131,6 +131,29 @@ def select_pit_price_vintages(
     return tuple(sorted(selected.values(), key=lambda row: (row.session_date, row.symbol)))
 
 
+def select_pit_market_vintages(
+    rows: Sequence[MarketEvidence],
+    *,
+    cutoff: datetime,
+) -> tuple[MarketEvidence, ...]:
+    """cutoff 이전 각 market-session의 최신 macro/index vintage만 선택한다."""
+
+    selected: dict[tuple[str, date], MarketEvidence] = {}
+    for row in rows:
+        _validate_provenance(row.available_at, row.source_revision, row.source_sha256, cutoff)
+        if row.available_at > cutoff:
+            continue
+        key = (row.market, row.session_date)
+        previous = selected.get(key)
+        if previous is None or (row.available_at, row.source_revision, row.source_sha256) > (
+            previous.available_at,
+            previous.source_revision,
+            previous.source_sha256,
+        ):
+            selected[key] = row
+    return tuple(sorted(selected.values(), key=lambda row: (row.session_date, row.market)))
+
+
 def build_core_feature_rows(
     prices: Sequence[PriceEvidence],
     market_rows: Sequence[MarketEvidence],

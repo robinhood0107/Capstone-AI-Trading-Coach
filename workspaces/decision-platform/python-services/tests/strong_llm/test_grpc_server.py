@@ -6,9 +6,10 @@ from typing import NoReturn
 
 import grpc
 import pytest
+from google.genai.errors import ClientError
 
 from app.generated import strong_llm_agent_pb2
-from app.strong_llm.grpc_server import StrongLlmAgentServicer, _require_bound_port
+from app.strong_llm.grpc_server import StrongLlmAgentServicer, _failure_leaf, _require_bound_port
 from tests.strong_llm.test_runtime import FakeProvider
 
 
@@ -84,3 +85,17 @@ def test_grpc_bind_accepts_the_actual_bound_port_and_rejects_only_zero() -> None
 
     with pytest.raises(RuntimeError, match="loopback bind failed"):
         _require_bound_port(0)
+
+
+def test_provider_failure_leaf_keeps_only_http_code_and_status() -> None:
+    provider_error = ClientError(
+        400,
+        {"error": {"status": "INVALID_ARGUMENT", "message": "sensitive provider detail"}},
+    )
+    wrapped = RuntimeError("provider call failed")
+    wrapped.__cause__ = provider_error
+
+    leaf = _failure_leaf(wrapped)
+
+    assert leaf == "STRONG_LLM_VERTEX_HTTP_400_INVALID_ARGUMENT"
+    assert "sensitive" not in leaf

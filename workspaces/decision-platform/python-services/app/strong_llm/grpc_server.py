@@ -11,6 +11,7 @@ from hmac import compare_digest
 from typing import Callable, cast
 
 import grpc
+from google.genai.errors import APIError
 from grpc_health.v1 import health, health_pb2, health_pb2_grpc
 
 from app.generated import strong_llm_agent_pb2, strong_llm_agent_pb2_grpc
@@ -200,6 +201,13 @@ def _next_host(inbound: queue.Queue[object], run_id: str) -> strong_llm_agent_pb
 
 
 def _failure_leaf(error: Exception) -> str:
+    cause: BaseException | None = error
+    while cause is not None:
+        if isinstance(cause, APIError):
+            status = re.sub(r"[^A-Z0-9]+", "_", str(cause.status).upper()).strip("_")
+            suffix = status if status else "UNKNOWN"
+            return f"STRONG_LLM_VERTEX_HTTP_{cause.code}_{suffix}"[:96]
+        cause = cause.__cause__
     text = str(error)
     return text if re.fullmatch(r"[A-Z0-9_]{3,96}", text) else type(error).__name__.upper()
 

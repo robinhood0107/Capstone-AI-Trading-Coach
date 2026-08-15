@@ -9,7 +9,11 @@ from langchain_core.messages import AIMessage, BaseMessage
 
 from app.strong_llm.models import Evidence, RunRequest
 from app.strong_llm.runtime import BoundedStrongLlmGraph, ProviderResult
-from app.strong_llm.vertex_provider import VertexProviderSettings, _normalize_grounded_answer
+from app.strong_llm.vertex_provider import (
+    LangChainVertexProvider,
+    VertexProviderSettings,
+    _normalize_grounded_answer,
+)
 
 
 def _answer() -> str:
@@ -130,6 +134,47 @@ def test_explicit_service_account_acl_rejects_non_0600(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="STRONG_LLM_CREDENTIAL_MODE_INVALID"):
         VertexProviderSettings(service_account_path=credential)
+
+
+def test_google_search_and_native_schema_share_the_official_bind_contract(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    credential = tmp_path / "service-account.json"
+    credential.write_text("{}", encoding="utf-8")
+    credential.chmod(0o600)
+    constructor_kwargs: dict[str, object] = {}
+    bind_calls: list[dict[str, object]] = []
+
+    class FakeCredentials:
+        project_id = "project-id"
+
+    class FakeModel:
+        def __init__(self, **kwargs: object) -> None:
+            constructor_kwargs.update(kwargs)
+
+        def bind(self, **kwargs: object) -> "FakeModel":
+            bind_calls.append(kwargs)
+            return self
+
+    monkeypatch.setattr(
+        "app.strong_llm.vertex_provider.service_account.Credentials.from_service_account_file",
+        lambda *_args, **_kwargs: FakeCredentials(),
+    )
+    monkeypatch.setattr("app.strong_llm.vertex_provider.ChatGoogleGenerativeAI", FakeModel)
+
+    LangChainVertexProvider(
+        _request(google=True),
+        VertexProviderSettings(service_account_path=credential),
+    )
+
+    assert "response_mime_type" not in constructor_kwargs
+    assert "response_schema" not in constructor_kwargs
+    assert bind_calls[0]["response_mime_type"] == "application/json"
+    assert "tools" not in bind_calls[0]
+    assert bind_calls[1]["tools"] == [{"google_search": {}}]
+    assert bind_calls[1]["response_mime_type"] == "application/json"
+    assert bind_calls[0]["response_schema"] == bind_calls[1]["response_schema"]
 
 
 def test_google_support_uses_an_unused_citation_id_without_discarding_local_evidence() -> None:

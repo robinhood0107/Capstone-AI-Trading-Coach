@@ -146,6 +146,12 @@ jobs:
                 "workspaces/decision-platform/python-services/uv.lock"
               )
               ;;
+            b4e7836932da53dc64b0c273a2228cac1dfd43e8)
+              EXPECTED_PATHS=(
+                "workspaces/decision-platform/python-services/pyproject.toml"
+                "workspaces/decision-platform/python-services/uv.lock"
+              )
+              ;;
             bf965d00c98e63127ebc385164e71c30402ce6fc)
               EXPECTED_PATHS=(
                 "workspaces/decision-platform/python-services/pyproject.toml"

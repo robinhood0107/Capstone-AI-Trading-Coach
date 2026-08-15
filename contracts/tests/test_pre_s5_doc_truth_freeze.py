@@ -230,6 +230,19 @@ class PreS5DocumentTruthFreezeTest(unittest.TestCase):
 
         self.assertIn("docs/API_명세서.md: new teammate dependency was added", errors)
 
+    def test_solo_ownership_lock_allows_exact_s5_component_names_without_new_roles(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            base = self._solo_ownership_fixture(root)
+            change = root / "contracts/changes/20260815-s5-signal-runtime-transition.md"
+            change.write_text(
+                "- required component는 `ruleBaseline`, `lstm`, `lightgbm`, `hmmRegime` 정확히 네 개다.\n",
+                encoding="utf-8",
+            )
+            self._commit(root, "approved component vocabulary")
+
+            self.assertEqual([], verify_solo_ownership_lock(root, base))
+
     def test_solo_ownership_lock_rejects_conflicting_authority_assignment(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
@@ -333,6 +346,23 @@ class PreS5DocumentTruthFreezeTest(unittest.TestCase):
 
         self.assertIn("immutable historical records changed since base", errors)
         self.assertIn("exact-30 source-card tree changed since base", errors)
+
+    def test_solo_ownership_lock_allows_verified_s5_openapi_projection(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            base = self._solo_ownership_fixture(root)
+            openapi = root / "contracts/openapi/openapi.json"
+            openapi.write_text("{\"openapi\":\"3.1.0\"}\n", encoding="utf-8")
+            catalog = root / "contracts/catalogs/s5-signal-runtime-transition.v1.json"
+            catalog.write_text("{}\n", encoding="utf-8")
+            self._commit(root, "verified S5 OpenAPI transition")
+
+            with mock.patch(
+                "contracts.verify_s5_signal_runtime_transition.verify_openapi_transition"
+            ):
+                errors = verify_solo_ownership_lock(root, base)
+
+        self.assertNotIn("immutable historical records changed since base", errors)
 
     def test_solo_ownership_lock_rejects_added_exact30_source_card(self) -> None:
         """exact-30 tree digest를 바꾸는 A-only card도 base diff에서 거부한다."""

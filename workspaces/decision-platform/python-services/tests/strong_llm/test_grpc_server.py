@@ -7,8 +7,10 @@ from typing import NoReturn
 import grpc
 import pytest
 from google.genai.errors import ClientError
+from pydantic import ValidationError
 
 from app.generated import strong_llm_agent_pb2
+from app.strong_llm.models import StrongLlmAnswer
 from app.strong_llm.grpc_server import StrongLlmAgentServicer, _failure_leaf, _require_bound_port
 from tests.strong_llm.test_runtime import FakeProvider
 
@@ -99,3 +101,15 @@ def test_provider_failure_leaf_keeps_only_http_code_and_status() -> None:
 
     assert leaf == "STRONG_LLM_VERTEX_HTTP_400_INVALID_ARGUMENT"
     assert "sensitive" not in leaf
+
+
+def test_schema_failure_leaf_keeps_only_type_and_field_path() -> None:
+    with pytest.raises(ValidationError) as captured:
+        StrongLlmAnswer.model_validate(
+            {"basis": "EVIDENCE", "answer": "answer", "sentences": [], "warnings": [], "secret": "never-log"}
+        )
+
+    leaf = _failure_leaf(captured.value)
+
+    assert leaf == "STRONG_LLM_SCHEMA_EXTRA_FORBIDDEN_SECRET"
+    assert "never" not in leaf

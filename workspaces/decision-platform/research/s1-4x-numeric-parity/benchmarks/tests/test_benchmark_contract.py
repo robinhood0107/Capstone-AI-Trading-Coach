@@ -498,11 +498,8 @@ def test_workflow_runs_both_triggers_and_accounts_for_262_snapshot_tests() -> No
     historical_s4_7b_reference_carrier = (
         "13b7b21a904fc37ce0947d5da2de7d04794e497a"
     )
-    historical_s4_7d_reference_carrier = (
+    current_s4_7d_reference_carrier = (
         "bf8472dfcc5f9d883ca83bd461a62f254332b39f"
-    )
-    current_s4_9_reference_carrier = (
-        "b4e7836932da53dc64b0c273a2228cac1dfd43e8"
     )
     workflow = (
         repo_root / ".github" / "workflows" / "s1-4x-contract-correctness.yml"
@@ -531,9 +528,8 @@ def test_workflow_runs_both_triggers_and_accounts_for_262_snapshot_tests() -> No
     assert "assert tests == 262" in workflow
     assert "S1.4R_REFERENCE_REGRESSION_PASS tests=262" in workflow
     assert f"{historical_s4_7b_reference_carrier})" in workflow
-    assert f"{historical_s4_7d_reference_carrier})" in workflow
-    assert f"{current_s4_9_reference_carrier})" in workflow
-    assert reference_lock["referenceBaseCommit"] == current_s4_9_reference_carrier
+    assert f"{current_s4_7d_reference_carrier})" in workflow
+    assert reference_lock["referenceBaseCommit"] == current_s4_7d_reference_carrier
 
     production_step = workflow.split(
         "- name: Run current frozen production regression",

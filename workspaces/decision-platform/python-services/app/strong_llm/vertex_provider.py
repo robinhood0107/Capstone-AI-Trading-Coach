@@ -107,6 +107,7 @@ class LangChainVertexProvider:
             **structured,
         )
         self._tool_model = base_model
+        self._structured_options = structured
         self._request = request
         self._discovery: ProviderResult | None = None
 
@@ -167,7 +168,11 @@ class LangChainVertexProvider:
     ) -> ProviderResult:
         prompt = render_prompt(request, request.public_evidence + request.owner_evidence)
         history = messages or [SystemMessage(content=prompt.system), HumanMessage(content=prompt.user)]
-        runnable = self._tool_model.bind_tools(_fallback_tools()) if tools_enabled else self._structured
+        runnable = (
+            self._tool_model.bind_tools(_fallback_tools()).bind(**self._structured_options)
+            if tools_enabled
+            else self._structured
+        )
         return _provider_result(
             runnable.invoke(history),
             allowed_local_ids={

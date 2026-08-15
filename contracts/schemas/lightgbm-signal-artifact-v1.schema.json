@@ -1,0 +1,274 @@
+{
+  "$id": "contracts/schemas/lightgbm-signal-artifact-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "allOf": [
+    {
+      "else": {
+        "properties": {
+          "provenanceClass": {
+            "const": "PRODUCTION"
+          }
+        }
+      },
+      "if": {
+        "properties": {
+          "fixture": {
+            "const": true
+          }
+        },
+        "required": [
+          "fixture"
+        ]
+      },
+      "then": {
+        "properties": {
+          "provenanceClass": {
+            "const": "FAKE_CONTRACT"
+          }
+        }
+      }
+    }
+  ],
+  "description": "Closed internal evaluation artifact. modelScore is intentionally excluded.",
+  "oneOf": [
+    {
+      "additionalProperties": false,
+      "properties": {
+        "artifactVersion": {
+          "const": "lightgbm-signal-artifact-v1"
+        },
+        "asOf": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        "datasetSha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "evaluationId": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        "featureSummary": {
+          "items": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 32,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "fixture": {
+          "type": "boolean"
+        },
+        "modelReportId": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        "modelSha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "modelVersion": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        "payloadSha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "predictedReturn": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "producer": {
+          "const": "LIGHTGBM"
+        },
+        "provenanceClass": {
+          "enum": [
+            "PRODUCTION",
+            "FAKE_CONTRACT"
+          ]
+        },
+        "provenanceSha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "reportSha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "schemaVersion": {
+          "const": "signal-v2-runtime-v1"
+        },
+        "sessionDate": {
+          "format": "date",
+          "type": "string"
+        },
+        "signal": {
+          "enum": [
+            "BUY",
+            "HOLD",
+            "SELL"
+          ]
+        },
+        "sourceWorkspace": {
+          "const": "decision-platform"
+        },
+        "status": {
+          "const": "AVAILABLE"
+        },
+        "symbol": {
+          "pattern": "^[0-9A-Z._:-]{1,20}$",
+          "type": "string"
+        },
+        "timeframe": {
+          "const": "1d"
+        }
+      },
+      "required": [
+        "artifactVersion",
+        "schemaVersion",
+        "producer",
+        "sourceWorkspace",
+        "symbol",
+        "sessionDate",
+        "evaluationId",
+        "timeframe",
+        "modelVersion",
+        "modelReportId",
+        "fixture",
+        "provenanceClass",
+        "datasetSha256",
+        "modelSha256",
+        "reportSha256",
+        "payloadSha256",
+        "provenanceSha256",
+        "status",
+        "asOf",
+        "signal",
+        "confidence"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "artifactVersion": {
+          "const": "lightgbm-signal-artifact-v1"
+        },
+        "datasetSha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "evaluationId": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        "fixture": {
+          "type": "boolean"
+        },
+        "modelReportId": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        "modelSha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "modelVersion": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        "payloadSha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "producer": {
+          "const": "LIGHTGBM"
+        },
+        "provenanceClass": {
+          "enum": [
+            "PRODUCTION",
+            "FAKE_CONTRACT"
+          ]
+        },
+        "provenanceSha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "reason": {
+          "enum": [
+            "ARTIFACT_DRIFT",
+            "STALE_EVIDENCE",
+            "CALIBRATION_FAILED",
+            "UNIDENTIFIABLE_OUTPUT",
+            "MISSING_EVIDENCE",
+            "PRODUCER_FAILED"
+          ]
+        },
+        "reportSha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "schemaVersion": {
+          "const": "signal-v2-runtime-v1"
+        },
+        "sessionDate": {
+          "format": "date",
+          "type": "string"
+        },
+        "sourceWorkspace": {
+          "const": "decision-platform"
+        },
+        "status": {
+          "const": "ABSTAIN"
+        },
+        "symbol": {
+          "pattern": "^[0-9A-Z._:-]{1,20}$",
+          "type": "string"
+        },
+        "timeframe": {
+          "const": "1d"
+        }
+      },
+      "required": [
+        "artifactVersion",
+        "schemaVersion",
+        "producer",
+        "sourceWorkspace",
+        "symbol",
+        "sessionDate",
+        "evaluationId",
+        "timeframe",
+        "modelVersion",
+        "modelReportId",
+        "fixture",
+        "provenanceClass",
+        "datasetSha256",
+        "modelSha256",
+        "reportSha256",
+        "payloadSha256",
+        "provenanceSha256",
+        "status",
+        "reason"
+      ],
+      "type": "object"
+    }
+  ],
+  "title": "LightGBM Signal internal artifact v1"
+}

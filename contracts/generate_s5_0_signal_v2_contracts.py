@@ -425,6 +425,14 @@ def _verify_frozen_existing_files() -> None:
         path = ROOT / relative
         if not path.is_file() or path.is_symlink():
             raise ContractValidationError(f"frozen Signal/OpenAPI input is unavailable: {relative}")
+        if relative == "contracts/openapi/openapi.json":
+            transition_catalog = ROOT / "contracts/catalogs/s5-signal-runtime-transition.v1.json"
+            if transition_catalog.is_file() and not transition_catalog.is_symlink():
+                # S5.5 route 게시 뒤에도 historical projection 전체를 검증하고 v1 검증은 유지한다.
+                from contracts.verify_s5_signal_runtime_transition import verify_openapi_transition
+
+                verify_openapi_transition(path, transition_catalog)
+                continue
         actual = hashlib.sha256(path.read_bytes()).hexdigest()
         if actual != expected:
             raise ContractValidationError(f"frozen Signal/OpenAPI input drifted: {relative}")

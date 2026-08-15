@@ -12,6 +12,7 @@ from app.strong_llm.runtime import BoundedStrongLlmGraph, ProviderResult
 from app.strong_llm.vertex_provider import (
     LangChainVertexProvider,
     VertexProviderSettings,
+    _canonical_answer_json,
     _normalize_grounded_answer,
     _provider_result,
     _vertex_response_schema,
@@ -239,6 +240,19 @@ def test_grounding_metadata_accepts_null_optional_segment_offsets() -> None:
     assert result["grounding_supports"] == [
         {"start_index": 0, "end_index": 0, "text": "분산투자", "chunk_indices": (0,)}
     ]
+
+
+def test_provider_json_accepts_only_one_object_with_optional_known_fence() -> None:
+    expected = json.loads(_answer())
+
+    assert json.loads(_canonical_answer_json(_answer())) == expected
+    assert json.loads(_canonical_answer_json(f"```json\n{_answer()}\n```")) == expected
+    with pytest.raises(ValueError, match="STRONG_LLM_PROVIDER_TEXT_MISSING"):
+        _canonical_answer_json("  ")
+    with pytest.raises(ValueError, match="STRONG_LLM_PROVIDER_JSON_INVALID"):
+        _canonical_answer_json(f"answer:\n{_answer()}")
+    with pytest.raises(ValueError, match="STRONG_LLM_PROVIDER_JSON_ROOT_INVALID"):
+        _canonical_answer_json("[]")
 
 
 def test_google_support_uses_an_unused_citation_id_without_discarding_local_evidence() -> None:

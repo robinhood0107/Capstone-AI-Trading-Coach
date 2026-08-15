@@ -110,6 +110,7 @@ class LangChainVertexProvider:
         self._structured_options = structured
         self._request = request
         self._discovery: ProviderResult | None = None
+        self._fallback_start_messages: list[BaseMessage] = []
 
     def invoke_google(self, request: RunRequest, *, include_owner: bool) -> ProviderResult:
         if include_owner:
@@ -167,7 +168,16 @@ class LangChainVertexProvider:
         tools_enabled: bool,
     ) -> ProviderResult:
         prompt = render_prompt(request, request.public_evidence + request.owner_evidence)
-        history = messages or [SystemMessage(content=prompt.system), HumanMessage(content=prompt.user)]
+        if messages:
+            history = messages
+        else:
+            # 첫 turn의 정책과 질문도 LangGraph state의 일부다. tool call 뒤 이를 버리면
+            # 모델이 검색 결과만 보고 원래 질문을 잃으므로 exact message 객체를 보존한다.
+            self._fallback_start_messages = [
+                SystemMessage(content=prompt.system),
+                HumanMessage(content=prompt.user),
+            ]
+            history = self._fallback_start_messages
         runnable = (
             self._tool_model.bind_tools(_fallback_tools()).bind(**self._structured_options)
             if tools_enabled
@@ -197,7 +207,10 @@ class LangChainVertexProvider:
         call_id = str(call.get("id", ""))
         if not call_id:
             raise ValueError("STRONG_LLM_TOOL_CALL_ID_INVALID")
-        return [*messages, message, ToolMessage(content=result_json, tool_call_id=call_id)]
+        prefix = messages or self._fallback_start_messages
+        if not prefix:
+            raise ValueError("STRONG_LLM_TOOL_HISTORY_INVALID")
+        return [*prefix, message, ToolMessage(content=result_json, tool_call_id=call_id)]
 
 
 def _vertex_response_schema() -> dict[str, object]:

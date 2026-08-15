@@ -478,6 +478,12 @@ def test_feature_bundle_rejects_manifest_trust_and_shape_mutations(tmp_path: Pat
     optional_provenance["optionalFeatureGroups"] = ["news"]
     documents.append((canonical_json_bytes(optional), "optional"))
 
+    wrong_window = _read_manifest(manifest)
+    window_provenance = wrong_window["provenance"]
+    assert isinstance(window_provenance, dict)
+    window_provenance["rawSessionStart"] = "2022-04-04"
+    documents.append((canonical_json_bytes(wrong_window), "session window"))
+
     for index, (mutated, message) in enumerate(documents):
         case_root = tmp_path / f"manifest-case-{index}"
         case_root.mkdir()

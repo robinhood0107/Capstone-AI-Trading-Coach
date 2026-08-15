@@ -173,11 +173,15 @@ class LangChainVertexProvider:
             if tools_enabled
             else self._structured
         )
+        # Kotlin host가 발급해 ToolMessage에 넣은 citationId만 새 web evidence로 신뢰한다.
+        # 모델이 임의로 만든 ID는 기존 local allowlist와 이 집합 어디에도 없어 최종 검증 전에 제거된다.
+        host_tool_citation_ids = _tool_result_citation_ids(history)
         return _provider_result(
             runnable.invoke(history),
             allowed_local_ids={
                 item.citation_id for item in request.public_evidence + request.owner_evidence
-            },
+            }
+            | host_tool_citation_ids,
         )
 
     def tool_calls(self, message: AIMessage) -> list[dict[str, object]]:
@@ -617,7 +621,12 @@ def _normalize_answer_sentence_contract(
     basis = payload.get("basis")
     answer = payload.get("answer")
     sentences = payload.get("sentences")
-    if basis == "INSUFFICIENT_EVIDENCE" or not isinstance(answer, str) or not isinstance(sentences, list):
+    if basis == "INSUFFICIENT_EVIDENCE":
+        # Vertex JSON Schema의 nullable string이 빈 문자열을 반환해도 Kotlin의 null-only 계약으로 닫는다.
+        payload["answer"] = None
+        payload["sentences"] = []
+        return
+    if not isinstance(answer, str) or not isinstance(sentences, list):
         return
     sentence_texts: list[str] = []
     for item in sentences:
@@ -640,6 +649,25 @@ def _normalize_answer_sentence_contract(
         ]
         return
     payload["answer"] = "\n".join(sentence_texts)
+
+
+def _tool_result_citation_ids(messages: list[BaseMessage]) -> set[str]:
+    """Host tool result의 bounded JSON에서만 citation ID를 받아 provider label과 분리한다."""
+
+    citation_ids: set[str] = set()
+    for message in messages:
+        if not isinstance(message, ToolMessage) or not isinstance(message.content, str):
+            continue
+        try:
+            payload = json.loads(message.content)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(payload, dict):
+            continue
+        citation_id = payload.get("citationId")
+        if isinstance(citation_id, str) and re.fullmatch(r"cit_[1-5]", citation_id):
+            citation_ids.add(citation_id)
+    return citation_ids
 
 
 def _valid_provider_citation_ids(

@@ -92,10 +92,7 @@ internal class GrpcStrongLlmGenerationAdapter(
         var outboundSequence = 1L
         var inboundSequence = 0L
         var providerAttempted = false
-        var vertexCallsPlanned = 0
-        var searchCalls = 0
-        var readCalls = 0
-        var toolRounds = 0
+        val hostBudget = StrongLlmHostBudget()
         var completed: Completed? = null
         val readEvidence = mutableListOf<RagV2VertexEvidence>()
         val readWebCitations = mutableListOf<StrongLlmWebCitation>()
@@ -126,9 +123,8 @@ internal class GrpcStrongLlmGenerationAdapter(
                 require(event.runId == runId && event.sequence == ++inboundSequence)
                 when (event.payloadCase) {
                     AgentEvent.PayloadCase.PROVIDER_CALL_PLANNED -> {
+                        hostBudget.permitProvider(event.providerCallPlanned.phase)
                         providerAttempted = true
-                        vertexCallsPlanned += 1
-                        if (event.providerCallPlanned.phase == "SEARXNG_TOOL") toolRounds += 1
                         requestObserver.onNext(
                             hostEvent(
                                 runId,
@@ -143,7 +139,7 @@ internal class GrpcStrongLlmGenerationAdapter(
                         )
                     }
                     AgentEvent.PayloadCase.WEB_SEARCH -> {
-                        searchCalls += 1
+                        val searchCalls = hostBudget.permitSearch()
                         val results =
                             try {
                                 researchTools.search(runId, event.webSearch.query)
@@ -181,8 +177,10 @@ internal class GrpcStrongLlmGenerationAdapter(
                         )
                     }
                     AgentEvent.PayloadCase.WEB_READ -> {
-                        readCalls += 1
+                        val readCalls = hostBudget.permitRead()
                         val result = researchTools.read(runId, event.webRead.resultId, null)
+                        // 공개 계약의 citation 최대 5개를 유지하려고 웹 근거가 낮은 rank의 local slot부터 대체한다.
+                        // 아래 validationEvidence 결합이 같은 ID의 local 원문을 제거하므로 exact quote는 웹 원문 하나에만 결속된다.
                         val citationId = "cit_${6 - readCalls}".takeIf { readCalls <= 5 }
                         citationId?.let { id ->
                             val textHash = sha256(result.document.text)
@@ -252,6 +250,7 @@ internal class GrpcStrongLlmGenerationAdapter(
             }
             requestObserver.onCompleted()
             val result = requireNotNull(completed)
+            hostBudget.verifyCompleted(result.vertexGenerateCallCount, result.searchBackend)
             registerGrounding(runId, result.groundingRootsList)
             if (result.groundingRootsCount > 0) {
                 groundingProvenance.record(
@@ -285,9 +284,9 @@ internal class GrpcStrongLlmGenerationAdapter(
                 S49StrongLlmUsageV2(
                     result.promptTokenCount,
                     result.outputTokenCount,
-                    toolRounds.coerceAtMost(3),
-                    searchCalls,
-                    readCalls,
+                    hostBudget.toolRounds,
+                    hostBudget.searchCalls,
+                    hostBudget.readCalls,
                     result.vertexGenerateCallCount,
                     result.googleGroundingQueryCount,
                     result.searchBackend,
@@ -342,10 +341,10 @@ internal class GrpcStrongLlmGenerationAdapter(
                 S49StrongLlmUsageV2(
                     0,
                     0,
-                    toolRounds.coerceAtMost(3),
-                    searchCalls,
-                    readCalls,
-                    vertexCallsPlanned.coerceAtMost(4),
+                    hostBudget.toolRounds,
+                    hostBudget.searchCalls,
+                    hostBudget.readCalls,
+                    hostBudget.providerCalls,
                     0,
                     "NONE",
                     "NONE",
@@ -518,5 +517,95 @@ internal class GrpcStrongLlmGenerationAdapter(
         val AUTH_KEY: Metadata.Key<String> = Metadata.Key.of("x-decision-strong-llm-grpc-auth", Metadata.ASCII_STRING_MARSHALLER)
         val FAILURE_LEAF = Regex("^[A-Z0-9_]{3,96}$")
         val LOGGER = LoggerFactory.getLogger(GrpcStrongLlmGenerationAdapter::class.java)
+    }
+}
+
+/** Python process가 오동작해도 Kotlin host가 provider와 web 물리 호출 상한을 permit 전에 강제한다. */
+internal class StrongLlmHostBudget {
+    var providerCalls: Int = 0
+        private set
+    var toolRounds: Int = 0
+        private set
+    var searchCalls: Int = 0
+        private set
+    var readCalls: Int = 0
+        private set
+
+    private var route: Route? = null
+    private var finalPlanned = false
+
+    fun permitProvider(phase: String) {
+        ensure(!finalPlanned, "STRONG_LLM_HOST_PROVIDER_AFTER_FINAL")
+        ensure(providerCalls < MAX_PROVIDER_CALLS, "STRONG_LLM_HOST_PROVIDER_BUDGET_EXHAUSTED")
+        when (phase) {
+            "GOOGLE_DISCOVERY" -> {
+                ensure(route == null && providerCalls == 0, "STRONG_LLM_HOST_PROVIDER_PHASE_INVALID")
+                route = Route.GOOGLE
+            }
+            "OWNER_FINAL" -> {
+                ensure(route == Route.GOOGLE && providerCalls == 1, "STRONG_LLM_HOST_PROVIDER_PHASE_INVALID")
+                finalPlanned = true
+            }
+            "SEARXNG_TOOL" -> {
+                ensure(route in setOf(null, Route.SEARXNG), "STRONG_LLM_HOST_PROVIDER_PHASE_INVALID")
+                ensure(toolRounds < MAX_TOOL_ROUNDS, "STRONG_LLM_HOST_TOOL_ROUND_BUDGET_EXHAUSTED")
+                route = Route.SEARXNG
+                toolRounds += 1
+            }
+            "FINAL" -> {
+                ensure(route in setOf(null, Route.SEARXNG), "STRONG_LLM_HOST_PROVIDER_PHASE_INVALID")
+                route = Route.SEARXNG
+                finalPlanned = true
+            }
+            else -> fail("STRONG_LLM_HOST_PROVIDER_PHASE_INVALID")
+        }
+        providerCalls += 1
+    }
+
+    fun permitSearch(): Int {
+        ensure(route == Route.SEARXNG, "STRONG_LLM_HOST_TOOL_ROUTE_INVALID")
+        ensure(searchCalls < MAX_SEARCH_CALLS, "STRONG_LLM_HOST_SEARCH_BUDGET_EXHAUSTED")
+        searchCalls += 1
+        return searchCalls
+    }
+
+    fun permitRead(): Int {
+        ensure(route == Route.SEARXNG, "STRONG_LLM_HOST_TOOL_ROUTE_INVALID")
+        ensure(readCalls < MAX_READ_CALLS, "STRONG_LLM_HOST_READ_BUDGET_EXHAUSTED")
+        readCalls += 1
+        return readCalls
+    }
+
+    fun verifyCompleted(
+        reportedProviderCalls: Int,
+        searchBackend: String,
+    ) {
+        ensure(reportedProviderCalls == providerCalls, "STRONG_LLM_HOST_PROVIDER_COUNT_MISMATCH")
+        when (route) {
+            Route.GOOGLE -> ensure(searchBackend in setOf("NONE", "VERTEX_GOOGLE"), "STRONG_LLM_HOST_SEARCH_BACKEND_MISMATCH")
+            Route.SEARXNG -> ensure(searchBackend == "SEARXNG", "STRONG_LLM_HOST_SEARCH_BACKEND_MISMATCH")
+            null -> fail("STRONG_LLM_HOST_PROVIDER_PHASE_INVALID")
+        }
+    }
+
+    private fun ensure(
+        condition: Boolean,
+        leaf: String,
+    ) {
+        if (!condition) fail(leaf)
+    }
+
+    private fun fail(leaf: String): Nothing = throw IllegalStateException(leaf)
+
+    private enum class Route {
+        GOOGLE,
+        SEARXNG,
+    }
+
+    private companion object {
+        const val MAX_PROVIDER_CALLS = 4
+        const val MAX_TOOL_ROUNDS = 3
+        const val MAX_SEARCH_CALLS = 3
+        const val MAX_READ_CALLS = 8
     }
 }

@@ -247,6 +247,8 @@ def test_provider_json_accepts_only_one_object_with_optional_known_fence() -> No
 
     assert json.loads(_canonical_answer_json(_answer())) == expected
     assert json.loads(_canonical_answer_json(f"```json\n{_answer()}\n```")) == expected
+    assert json.loads(_canonical_answer_json(f"```JSON\r\n{_answer()}\r\n```")) == expected
+    assert json.loads(_canonical_answer_json(f"```{_answer()}```")) == expected
     with pytest.raises(ValueError, match="STRONG_LLM_PROVIDER_TEXT_MISSING"):
         _canonical_answer_json("  ")
     with pytest.raises(ValueError, match="STRONG_LLM_PROVIDER_JSON_INVALID"):

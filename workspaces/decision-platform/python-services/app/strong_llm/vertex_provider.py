@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import stat
 from pathlib import Path
 from typing import Any, cast
@@ -285,10 +286,9 @@ def _canonical_answer_json(value: str) -> str:
     """Native schema 본문만 canonicalize하고 설명문·복수 JSON·비객체 root는 허용하지 않는다."""
 
     candidate = value.strip()
-    if candidate.startswith("```json\n") and candidate.endswith("```"):
-        candidate = candidate[8:-3].strip()
-    elif candidate.startswith("```\n") and candidate.endswith("```"):
-        candidate = candidate[4:-3].strip()
+    fenced = re.fullmatch(r"```(?:json)?\s*(\{.*\})\s*```", candidate, flags=re.IGNORECASE | re.DOTALL)
+    if fenced is not None:
+        candidate = fenced.group(1).strip()
     if not candidate:
         raise ValueError("STRONG_LLM_PROVIDER_TEXT_MISSING")
     try:

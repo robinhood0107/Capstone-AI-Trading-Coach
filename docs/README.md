@@ -205,6 +205,9 @@ S4.8B/C offline runtime과 S5.0 계약은 각각
 [S5 runtime transition 변경기록](../contracts/changes/20260815-s5-signal-runtime-transition.md)은
 historical bytes를 유지한 S5.1~S5.5 fixture-first 구현, exact symbol-only GET, real dataset/model/pointer
 부재와 RiskDecision/order `NO_GO`를 고정한다.
+[S5.1 PIT/artifact hardening 변경기록](../contracts/changes/20260816-s5-1-pit-artifact-hardening.md)은
+calendar-derived monthly schedule, 외부 manifest digest trust anchor와 실제 LightGBM cross-market
+0-call/hash 격리 회귀를 고정한다.
 [foreign-news sanitized runtime 변경기록](../contracts/changes/20260809-pre-s5-foreign-news-sanitized-runtime.md),
 [foreign-news one-shot provider runtime 변경기록](../contracts/changes/20260810-pre-s5-foreign-news-provider-one-shot-runtime.md),
 [Voyage resumable batch 변경기록](../contracts/changes/20260812-pre-s5-voyage-resumable-batch-activation.md),

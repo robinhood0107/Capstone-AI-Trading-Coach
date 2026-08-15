@@ -295,7 +295,11 @@ def _canonical_answer_json(value: str) -> str:
         payload = json.loads(candidate)
     except json.JSONDecodeError as error:
         if candidate.startswith("{"):
-            leaf = "STRONG_LLM_PROVIDER_JSON_MALFORMED_OBJECT"
+            leaf = (
+                "STRONG_LLM_PROVIDER_JSON_TRUNCATED"
+                if not candidate.endswith("}") or error.pos >= max(0, len(candidate) - 4)
+                else "STRONG_LLM_PROVIDER_JSON_SYNTAX_INVALID"
+            )
         elif candidate.startswith('"'):
             leaf = "STRONG_LLM_PROVIDER_JSON_STRING_INVALID"
         elif "{" in candidate and "}" in candidate:

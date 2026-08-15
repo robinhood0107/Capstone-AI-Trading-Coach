@@ -253,8 +253,10 @@ def test_provider_json_accepts_only_one_object_with_optional_known_fence() -> No
         _canonical_answer_json("  ")
     with pytest.raises(ValueError, match="STRONG_LLM_PROVIDER_JSON_SURROUNDED_OBJECT"):
         _canonical_answer_json(f"answer:\n{_answer()}")
-    with pytest.raises(ValueError, match="STRONG_LLM_PROVIDER_JSON_MALFORMED_OBJECT"):
+    with pytest.raises(ValueError, match="STRONG_LLM_PROVIDER_JSON_SYNTAX_INVALID"):
         _canonical_answer_json("{not-json}")
+    with pytest.raises(ValueError, match="STRONG_LLM_PROVIDER_JSON_TRUNCATED"):
+        _canonical_answer_json('{"basis":"EVIDENCE"')
     with pytest.raises(ValueError, match="STRONG_LLM_PROVIDER_JSON_STRING_INVALID"):
         _canonical_answer_json('"unterminated')
     with pytest.raises(ValueError, match="STRONG_LLM_PROVIDER_NON_JSON_TEXT"):

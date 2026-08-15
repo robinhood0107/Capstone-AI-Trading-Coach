@@ -13,6 +13,7 @@ from app.lightgbm.errors import DatasetUnavailable, LightGbmContractError
 from app.lightgbm.feature_artifact import (
     feature_table_from_rows,
     logical_dataset_hash,
+    logical_training_dataset_hash,
     optional_group_is_eligible,
     read_feature_artifact,
     require_source_rows,
@@ -24,6 +25,7 @@ from app.lightgbm.features import (
     PriceEvidence,
     build_core_feature_rows,
     reject_forbidden_columns,
+    select_pit_market_vintages,
     select_pit_price_vintages,
 )
 from app.lightgbm.pit_calendar import build_pit_session_window
@@ -73,7 +75,7 @@ def _universe_observations() -> tuple[list[UniverseObservation], tuple[date, ...
                     security_type="COMMON_STOCK",
                     common_share=True,
                     listed=True,
-                    available_at="2026-06-20T06:30:00Z",
+                    available_at=datetime(2026, 6, 20, 6, 30, tzinfo=UTC),
                     source_revision="r1",
                     source_sha256="a" * 64,
                 )
@@ -91,7 +93,7 @@ def _universe_observations() -> tuple[list[UniverseObservation], tuple[date, ...
                     security_type=security_type,
                     common_share=False,
                     listed=True,
-                    available_at="2026-06-20T06:30:00Z",
+                    available_at=datetime(2026, 6, 20, 6, 30, tzinfo=UTC),
                     source_revision="r1",
                     source_sha256="b" * 64,
                 )
@@ -106,6 +108,7 @@ def test_month_end_top30_tie_order_fixed_etf_and_no_etn() -> None:
         selection_session=sessions[-1],
         trailing_sessions=sessions,
         effective_month="2026-07",
+        cutoff=datetime(2026, 6, 20, 8, tzinfo=UTC),
     )
 
     assert len(universe.symbols) == 31
@@ -188,7 +191,7 @@ def test_feature_golden_constant_series_and_cross_market_zero_calls() -> None:
 
 
 def test_pit_vintage_mutation_after_cutoff_does_not_rewrite_history() -> None:
-    prices, _, cutoff = _feature_evidence()
+    prices, market, cutoff = _feature_evidence()
     original = prices[0]
     future = PriceEvidence(
         **{
@@ -201,6 +204,55 @@ def test_pit_vintage_mutation_after_cutoff_does_not_rewrite_history() -> None:
     )
     selected = select_pit_price_vintages([original, future], cutoff=cutoff)
     assert selected == (original,)
+
+    market_original = market[0]
+    market_future = MarketEvidence(
+        **{
+            **market_original.__dict__,
+            "base_rate": 99.0,
+            "available_at": cutoff + timedelta(seconds=1),
+            "source_revision": "r2",
+            "source_sha256": "d" * 64,
+        }
+    )
+    assert select_pit_market_vintages([market_original, market_future], cutoff=cutoff) == (
+        market_original,
+    )
+
+
+def test_universe_ignores_future_revision_and_requires_exact_thirty() -> None:
+    rows, sessions = _universe_observations()
+    cutoff = datetime(2026, 6, 20, 8, tzinfo=UTC)
+    target = next(row for row in rows if row.symbol == "000001" and row.session_date == sessions[-1])
+    rows.append(
+        UniverseObservation(
+            **{
+                **target.__dict__,
+                "market_cap": 0.0,
+                "available_at": cutoff + timedelta(seconds=1),
+                "source_revision": "r2",
+                "source_sha256": "f" * 64,
+            }
+        )
+    )
+    universe = select_monthly_universe(
+        rows,
+        selection_session=sessions[-1],
+        trailing_sessions=sessions,
+        effective_month="2026-07",
+        cutoff=cutoff,
+    )
+    assert universe.symbols[0] == "000001"
+
+    reduced = [row for row in rows if row.symbol not in {"000030", "000031", "000032"}]
+    with pytest.raises(DatasetUnavailable, match="top-30"):
+        select_monthly_universe(
+            reduced,
+            selection_session=sessions[-1],
+            trailing_sessions=sessions,
+            effective_month="2026-07",
+            cutoff=cutoff,
+        )
 
 
 def test_forbidden_columns_fail_before_projection() -> None:
@@ -232,6 +284,20 @@ def test_parquet_profile_safe_read_hash_and_unknown_column(tmp_path: Path) -> No
         approved_feature_columns=CORE_FEATURE_COLUMNS,
     )
     assert artifact.logical_dataset_hash == logical_dataset_hash(table)
+    labels = [index % 3 for index in range(table.num_rows)]
+    training_hash = logical_training_dataset_hash(table, labels)
+    changed_labels = labels.copy()
+    changed_labels[-1] = (changed_labels[-1] + 1) % 3
+    assert training_hash != logical_training_dataset_hash(table, changed_labels)
+
+    nullable = table.set_column(
+        2,
+        table.schema.field(2),
+        pa.array([None, *table.column(2).to_pylist()[1:]], type=pa.float32()),
+    )
+    assert logical_dataset_hash(nullable) != logical_dataset_hash(table)
+    with pytest.raises(LightGbmContractError, match="class bytes"):
+        logical_training_dataset_hash(table, [0] * (table.num_rows - 1))
 
     bad = table.append_column(
         "cross_market_score", pa.array([0.0] * table.num_rows, type=pa.float32())

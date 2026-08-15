@@ -11,6 +11,7 @@ import numpy as np
 from sklearn.metrics import confusion_matrix, f1_score  # type: ignore[import-untyped]
 
 from app.data._shared.canonical_json import canonical_json_bytes
+from app.lightgbm.calibration import OvrPlattCalibrator, fit_ovr_platt
 from app.lightgbm.errors import LightGbmContractError
 from app.lightgbm.metrics import CalibrationMetrics, calibration_metrics, tie_aware_argmax
 from app.lightgbm.walk_forward import UntouchedTestLoader
@@ -73,6 +74,59 @@ class CandidateEvaluation:
             float(np.mean([fold.calibrated.ece for fold in self.folds])),
             self.candidate.grid_index,
         )
+
+
+@dataclass(frozen=True)
+class FoldArrays:
+    """한 primary/final split의 fit·early·calibration·evaluation numeric blocks."""
+
+    x_fit: np.ndarray
+    y_fit: np.ndarray
+    x_early: np.ndarray
+    y_early: np.ndarray
+    x_calibration: np.ndarray
+    y_calibration: np.ndarray
+    x_evaluation: np.ndarray
+    y_evaluation: np.ndarray
+
+
+@dataclass(frozen=True)
+class FinalFitArrays:
+    """untouched test를 담을 수 없는 final fit·early·calibration 전용 blocks."""
+
+    x_fit: np.ndarray
+    y_fit: np.ndarray
+    x_early: np.ndarray
+    y_early: np.ndarray
+    x_calibration: np.ndarray
+    y_calibration: np.ndarray
+
+
+@dataclass(frozen=True)
+class CalibratedFoldRun:
+    """candidate/fold의 재현 model, 독립 calibrator와 gate 결과."""
+
+    model: TrainedBooster
+    calibrator: OvrPlattCalibrator
+    evaluation: FoldEvaluation
+
+
+@dataclass(frozen=True)
+class CandidateRun:
+    """exact grid candidate 하나의 세 primary fold 실행 결과."""
+
+    evaluation: CandidateEvaluation
+    folds: tuple[CalibratedFoldRun, CalibratedFoldRun, CalibratedFoldRun]
+
+
+@dataclass(frozen=True)
+class FinalCandidateRun:
+    """선택 후에만 열린 untouched test의 final model/calibrator/metric receipt."""
+
+    candidate: Candidate
+    model: TrainedBooster
+    calibrator: OvrPlattCalibrator
+    evaluation: FoldEvaluation
 
 
 def exact_grid() -> tuple[Candidate, ...]:
@@ -194,6 +248,102 @@ def raw_margins(model: TrainedBooster, features: np.ndarray) -> np.ndarray:
     return margins
 
 
+def calibrated_probabilities(
+    model: TrainedBooster,
+    calibrator: OvrPlattCalibrator,
+    features: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """같은 best iteration의 raw probability와 calibrated probability를 함께 반환한다."""
+
+    raw = np.asarray(
+        model.booster.predict(
+            features,
+            num_iteration=model.best_iteration,
+            num_threads=model.num_threads,
+        ),
+        dtype=np.float64,
+    )
+    if (
+        raw.ndim != 2
+        or raw.shape[1] != 3
+        or not np.isfinite(raw).all()
+        or (raw < 0).any()
+        or not np.allclose(raw.sum(axis=1), 1.0, rtol=0.0, atol=1e-12)
+    ):
+        raise LightGbmContractError("LightGBM raw probability output is invalid")
+    return raw, calibrator.transform(raw_margins(model, features))
+
+
+def run_exact_four_grid(
+    folds: Sequence[FoldArrays],
+) -> tuple[CandidateRun, CandidateRun, CandidateRun, CandidateRun]:
+    """세 primary fold 전체에서 exact 네 candidate를 한 번씩 평가하고 추가 grid는 만들지 않는다."""
+
+    if len(folds) != 3:
+        raise LightGbmContractError("exact grid requires three primary folds")
+    for fold in folds:
+        _require_all_classes(fold.y_fit, "fit")
+        _require_all_classes(fold.y_calibration, "calibration")
+    runs: list[CandidateRun] = []
+    for candidate in exact_grid():
+        fold_runs: list[CalibratedFoldRun] = []
+        for fold in folds:
+            model = fit_lightgbm_reproducible(
+                fold.x_fit,
+                fold.y_fit,
+                fold.x_early,
+                fold.y_early,
+                candidate,
+            )
+            calibrator = fit_ovr_platt(raw_margins(model, fold.x_calibration), fold.y_calibration)
+            raw, calibrated = calibrated_probabilities(model, calibrator, fold.x_evaluation)
+            evaluation = evaluate_calibration_gate(fold.y_evaluation, raw, calibrated)
+            fold_runs.append(CalibratedFoldRun(model, calibrator, evaluation))
+        evaluations = tuple(item.evaluation for item in fold_runs)
+        runs.append(
+            CandidateRun(
+                CandidateEvaluation(candidate, (evaluations[0], evaluations[1], evaluations[2])),
+                (fold_runs[0], fold_runs[1], fold_runs[2]),
+            )
+        )
+    return (runs[0], runs[1], runs[2], runs[3])
+
+
+def run_final_candidate(
+    candidate_runs: Sequence[CandidateRun],
+    final_blocks: FinalFitArrays,
+    untouched_test: UntouchedTestLoader[tuple[np.ndarray, np.ndarray]],
+) -> FinalCandidateRun | None:
+    """no-pass면 test를 열지 않고, 선택 후보만 final early/calibration 뒤 test를 정확히 한 번 평가한다."""
+
+    if tuple(item.evaluation.candidate for item in candidate_runs) != exact_grid():
+        raise LightGbmContractError("final candidate runs drifted from exact four-grid")
+    selected = select_candidate([item.evaluation for item in candidate_runs])
+    if selected is None:
+        return None
+    _require_all_classes(final_blocks.y_fit, "final fit")
+    _require_all_classes(final_blocks.y_calibration, "final calibration")
+    model = fit_lightgbm_reproducible(
+        final_blocks.x_fit,
+        final_blocks.y_fit,
+        final_blocks.x_early,
+        final_blocks.y_early,
+        selected.candidate,
+    )
+    calibrator = fit_ovr_platt(
+        raw_margins(model, final_blocks.x_calibration),
+        final_blocks.y_calibration,
+    )
+    x_test, y_test = untouched_test.read(phase="FINAL_REPORT")
+    raw, calibrated = calibrated_probabilities(model, calibrator, x_test)
+    return FinalCandidateRun(
+        selected.candidate,
+        model,
+        calibrator,
+        evaluate_calibration_gate(y_test, raw, calibrated),
+    )
+
+
 def evaluate_calibration_gate(
     y_true: np.ndarray,
     raw_probabilities: np.ndarray,
@@ -263,6 +413,9 @@ def research_cost_report(
             predicted == 2, returns - cost, np.where(predicted == 0, -returns - cost, 0.0)
         )
         sensitivity[str(basis_points)] = float(edges.mean())
+    always_hold_probabilities = np.zeros_like(probabilities, dtype=np.float64)
+    always_hold_probabilities[:, 1] = 1.0
+    prior_probabilities = np.tile(prior, (len(labels), 1))
     return {
         "directionalEdgeOnly": True,
         "costSensitivityBps": sensitivity,
@@ -274,9 +427,43 @@ def research_cost_report(
             f1_score(labels, predicted, labels=[0, 1, 2], average="macro", zero_division=0)
         ),
         "confusionMatrix": confusion_matrix(labels, predicted, labels=[0, 1, 2]).tolist(),
-        "alwaysHold": {"meanEdge": 0.0},
-        "trainOnlyPrior": {"probabilities": prior.tolist()},
+        "alwaysHold": _baseline_report(labels, always_hold_probabilities, returns),
+        "trainOnlyPrior": {
+            "probabilities": prior.tolist(),
+            **_baseline_report(labels, prior_probabilities, returns),
+        },
         "fakeArtifactsIncluded": False,
+    }
+
+
+def _baseline_report(
+    labels: np.ndarray,
+    probabilities: np.ndarray,
+    returns: np.ndarray,
+) -> dict[str, object]:
+    """selection과 무관한 baseline도 같은 metric/cost 정의로 비교 가능하게 만든다."""
+
+    predicted = tie_aware_argmax(probabilities)
+    metrics = calibration_metrics(labels, probabilities)
+    sensitivity: dict[str, float] = {}
+    for basis_points in (25, 30, 35):
+        cost = basis_points / 10_000.0
+        edges = np.where(
+            predicted == 2,
+            returns - cost,
+            np.where(predicted == 0, -returns - cost, 0.0),
+        )
+        sensitivity[str(basis_points)] = float(edges.mean())
+    return {
+        "costSensitivityBps": sensitivity,
+        "meanEdge35Bps": sensitivity["35"],
+        "logLoss": metrics.log_loss,
+        "brier": metrics.brier,
+        "ece": metrics.ece,
+        "macroF1": float(
+            f1_score(labels, predicted, labels=[0, 1, 2], average="macro", zero_division=0)
+        ),
+        "confusionMatrix": confusion_matrix(labels, predicted, labels=[0, 1, 2]).tolist(),
     }
 
 
@@ -302,3 +489,9 @@ def model_manifest_bytes(
 def _validate_candidate(candidate: Candidate) -> None:
     if candidate not in exact_grid():
         raise LightGbmContractError("LightGBM candidate is outside exact four-grid")
+
+
+def _require_all_classes(labels: np.ndarray, block: str) -> None:
+    values = np.asarray(labels, dtype=np.int64)
+    if values.ndim != 1 or set(values.tolist()) != {0, 1, 2}:
+        raise LightGbmContractError(f"UNIDENTIFIABLE_OUTPUT: {block} class is missing")

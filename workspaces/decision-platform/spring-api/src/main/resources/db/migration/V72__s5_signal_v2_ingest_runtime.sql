@@ -193,6 +193,8 @@ BEGIN
     RAISE EXCEPTION 'Signal v2 payload digest mismatch' USING ERRCODE = '22023';
   END IF;
 
+  -- 같은 logical identity의 concurrent replay/conflict를 한 transaction 순서로 직렬화한다.
+  PERFORM pg_advisory_xact_lock(hashtextextended(computed_identity, 0));
   SELECT stored.payload_sha256 INTO existing_payload
   FROM public.ingested_signals AS stored
   WHERE stored.logical_identity_sha256 = computed_identity

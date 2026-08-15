@@ -370,6 +370,14 @@ def _content_block_grounding(
     return roots, supports, list(dict.fromkeys(queries))
 
 
+def _exact_text_containment(left: str, right: str) -> bool:
+    """Provider가 구조화 JSON의 넓은 구간을 support로 반환해도 exact 포함 관계만 신뢰한다."""
+
+    left_value = left.strip()
+    right_value = right.strip()
+    return bool(left_value and right_value and (left_value in right_value or right_value in left_value))
+
+
 def _message_text(message: AIMessage) -> str:
     if isinstance(message.content, str):
         return message.content
@@ -477,8 +485,7 @@ def _normalize_grounded_answer(
         supporting = [
             support
             for support in supports
-            if str(support["text"]).strip()
-            and str(support["text"]).strip() in sentence.text
+            if _exact_text_containment(sentence.text, str(support["text"]))
             and any(int(index) in root_by_index for index in _chunk_indices(support))
         ]
         spans = [span.model_dump() for span in sentence.evidenceSpans]
@@ -489,7 +496,8 @@ def _normalize_grounded_answer(
                 if mapped_id is None:
                     continue
                 if any(
-                    span["citationId"] == mapped_id and span["quote"] == str(support["text"])
+                    span["citationId"] == mapped_id
+                    and _exact_text_containment(span["quote"], str(support["text"]))
                     for span in spans
                 ):
                     used_google = True
@@ -502,7 +510,9 @@ def _normalize_grounded_answer(
                     continue
                 if mapped_id not in selected_ids:
                     selected_ids.append(mapped_id)
-                spans.append({"citationId": mapped_id, "quote": str(support["text"])})
+                support_text = str(support["text"]).strip()
+                quote = sentence.text if sentence.text in support_text else support_text
+                spans.append({"citationId": mapped_id, "quote": quote})
                 used_google = True
         spans = list({(span["citationId"], span["quote"]): span for span in spans}.values())
         numeric = [
@@ -606,7 +616,7 @@ def _bind_provider_grounding_citations(
                     normalized_spans.append({"citationId": citation_id, "quote": quote})
                     continue
                 for support in supports:
-                    if quote != str(support.get("text", "")):
+                    if not _exact_text_containment(quote, str(support.get("text", ""))):
                         continue
                     for index in _chunk_indices(support):
                         mapped = root_by_index.get(index)

@@ -10,11 +10,15 @@ import com.capstone.decision.application.rag.StrongLlmAnswerBasis
 import com.capstone.decision.infrastructure.mcp.BoundedWebDocument
 import com.capstone.decision.infrastructure.mcp.PublicWebReaderPort
 import com.capstone.decision.infrastructure.mcp.PublicWebSearchPort
+import com.capstone.decision.infrastructure.mcp.RagToolBudget
 import com.capstone.decision.infrastructure.mcp.RagWebToolProperties
 import com.capstone.decision.infrastructure.mcp.S49WebEvidenceMetadataPort
+import com.capstone.decision.infrastructure.mcp.S49WebReadRejectedException
 import com.capstone.decision.infrastructure.mcp.SearxngSearchResult
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
+import tools.jackson.databind.json.JsonMapper
 import java.net.URI
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
@@ -34,6 +38,80 @@ class S49VertexStrongLlmGenerationAdapterTest {
         assertThat(result.answer).isEqualTo("분산 효과는 공분산과 관련됩니다.")
         assertThat(ledger.committed?.toolRounds).isZero()
         assertThat(transport.calls).isEqualTo(1)
+    }
+
+    @Test
+    fun `Vertex AUTO tool config는 ANY 전용 allowed function names를 보내지 않는다`() {
+        val transport = QueueHttpClient(providerText(answerJson("분산 효과는 공분산과 관련됩니다.", "cit_1", "공분산과 관련")))
+        val result = adapter(transport, RecordingUsageLedger()).generate(command(evidence("분산 효과는 공분산과 관련됩니다.")))
+
+        assertThat(result.generationStatus).isEqualTo(RagGenerationStatus.ANSWERED)
+        assertThat(transport.requestBodies).hasSize(1)
+        assertThat(transport.requestBodies.single()).contains("\"mode\":\"AUTO\"")
+        assertThat(transport.requestBodies.single()).doesNotContain("allowedFunctionNames")
+        assertThat(transport.requestBodies.single()).contains("capstone_web_search", "capstone_web_read")
+        assertThat(transport.requestBodies.single()).contains("Tool budget: at most 2 searches, 6 URL reads, and 3 tool rounds")
+    }
+
+    @Test
+    fun `thought text와 function call이 같이 오면 thought를 폐기하고 tool을 실행한다`() {
+        val response =
+            providerPart(
+                "\"text\":\"내부 사고\",\"thought\":true," +
+                    "\"functionCall\":{\"name\":\"capstone_web_search\",\"args\":{\"query\":\"portfolio covariance\"}}," +
+                    "\"providerMetadata\":{\"ignored\":true}",
+            )
+        val transport =
+            QueueHttpClient(
+                response,
+                providerText(answerJson("기존 근거를 사용한 설명입니다.", "cit_1", "기존 근거")),
+            )
+        val adapter =
+            adapter(
+                transport,
+                RecordingUsageLedger(),
+                search = PublicWebSearchPort { listOf(SearxngSearchResult("Research", "https://example.com/research", "summary")) },
+            )
+
+        val result = adapter.generate(command(evidence("기존 근거")))
+
+        assertThat(result.generationStatus).isEqualTo(RagGenerationStatus.ANSWERED)
+        assertThat(transport.calls).isEqualTo(2)
+    }
+
+    @Test
+    fun `HTTP과 parser 실패는 content free leaf로 구분한다`() {
+        assertThat(s49StrongLlmFailureLeaf(S49StrongLlmProtocolException("HTTP_STATUS_4XX")))
+            .isEqualTo("HTTP_STATUS_4XX")
+        assertThat(s49StrongLlmFailureLeaf(S49StrongLlmProtocolException("RESPONSE_SHAPE")))
+            .isEqualTo("RESPONSE_SHAPE")
+    }
+
+    @Test
+    fun `검색 예산 소진과 web reader 거부는 정확한 tool leaf로 구분한다`() {
+        val mapper = JsonMapper.builder().build()
+        val url = "https://example.com/research"
+        val session =
+            S49StrongLlmToolSession(
+                emptyList(),
+                RagToolBudget(maxSearches = 1, maxReads = 1, maxToolRounds = 3, maxParallelReads = 1),
+                PublicWebSearchPort { listOf(SearxngSearchResult("Research", url, "summary")) },
+                PublicWebReaderPort { throw S49WebReadRejectedException("S4_9_WEB_READ_HTTP_STATUS_REJECTED") },
+            )
+        val searchArgs = requireNotNull(mapper.readTree("""{"query":"portfolio covariance"}"""))
+        val readArgs = requireNotNull(mapper.readTree("""{"url":"$url"}"""))
+
+        val first = session.execute("capstone_web_search", searchArgs)
+
+        assertThat(first.response).containsEntry("remainingSearches", 0)
+        assertThatThrownBy { session.execute("capstone_web_search", searchArgs) }
+            .isInstanceOf(S49StrongLlmToolException::class.java)
+            .extracting("leaf")
+            .isEqualTo("TOOL_SEARCH_BUDGET")
+        assertThatThrownBy { session.execute("capstone_web_read", readArgs) }
+            .isInstanceOf(S49StrongLlmToolException::class.java)
+            .extracting("leaf")
+            .isEqualTo("S4_9_WEB_READ_HTTP_STATUS_REJECTED")
     }
 
     @Test
@@ -225,6 +303,7 @@ class S49VertexStrongLlmGenerationAdapterTest {
     ) : S49VertexHttpClient {
         private val queue = ArrayDeque(responses.toList())
         var calls = 0
+        val requestBodies = mutableListOf<String>()
 
         override fun generate(
             endpoint: URI,
@@ -233,6 +312,7 @@ class S49VertexStrongLlmGenerationAdapterTest {
             timeout: java.time.Duration,
         ): S49VertexHttpResponse {
             calls += 1
+            requestBodies += body.toString(StandardCharsets.UTF_8)
             bearerToken.fill(0)
             body.fill(0)
             return S49VertexHttpResponse(200, queue.removeFirst().copyOf())

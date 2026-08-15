@@ -316,7 +316,7 @@ class RagV2ImmutableBundleMigrationIntegrationTest {
                       '$scopeClaimId', 'usr_demo_user', 'req_mcp_public_scope_0001',
                       array['FINANCIAL_ENGINEERING'], '$EXACT_GENERATION', '$OA_GENERATION', null,
                       null, 'voyage_context_4_1024_v1', null, 1, 0, false, 1,
-                      clock_timestamp(), clock_timestamp() + interval '15 minutes'
+                      statement_timestamp(), statement_timestamp() + interval '15 minutes'
                     )
                     """.trimIndent(),
                 )

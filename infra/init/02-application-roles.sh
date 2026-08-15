@@ -804,6 +804,21 @@ BEGIN
             read_owned_order_fills(jsonb, text)
         TO decision_app;
     END IF;
+    IF to_regprocedure(
+        'public.ingest_signal_v2_exact(text,text,text,text,date,timestamp with time zone,text,text,text,text,numeric,numeric,text,text,text,text,text,text,boolean,text,text)'
+    ) IS NOT NULL
+       AND to_regprocedure('public.activate_signal_v2_production_pointer(text)') IS NOT NULL
+       AND to_regprocedure('public.read_production_signal_v2(text)') IS NOT NULL THEN
+        -- V72 Signal v2는 raw table 권한 없이 검증된 exact DML·pointer·production projection만 복원한다.
+        GRANT EXECUTE ON FUNCTION
+            ingest_signal_v2_exact(
+                text, text, text, text, date, timestamptz, text, text, text, text,
+                numeric, numeric, text, text, text, text, text, text, boolean, text, text
+            ),
+            activate_signal_v2_production_pointer(text),
+            read_production_signal_v2(text)
+        TO decision_app;
+    END IF;
     IF to_regprocedure('public.record_mock_order_provider_outcome(jsonb,text)') IS NOT NULL THEN
         GRANT EXECUTE ON FUNCTION
             record_mock_order_provider_outcome(jsonb, text)

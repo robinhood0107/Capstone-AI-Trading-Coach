@@ -283,6 +283,14 @@ TEAMMATE_DEPENDENCY_PATTERN: Final[re.Pattern[str]] = re.compile(
     r"\blive\b|\bblocker\b|필수\s*artifact|required\s*artifact|\bs5\s*entry\b|s5\s*진입)",
     re.IGNORECASE,
 )
+APPROVED_NON_ROLE_COMPONENT_LINES: Final[frozenset[tuple[str, str]]] = frozenset(
+    {
+        (
+            "contracts/changes/20260815-s5-signal-runtime-transition.md",
+            "- required component는 `ruleBaseline`, `lstm`, `lightgbm`, `hmmRegime` 정확히 네 개다.",
+        )
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -765,6 +773,22 @@ def immutable_history_diff_errors(root: Path, base: str) -> list[str]:
         if output
         else ()
     )
+    if "contracts/openapi/openapi.json" in changed_immutable_paths:
+        transition_catalog = root / "contracts/catalogs/s5-signal-runtime-transition.v1.json"
+        openapi = root / "contracts/openapi/openapi.json"
+        try:
+            # S5 transition verifier가 historical projection 보존을 증명할 때만 frozen raw byte 변경을 허용한다.
+            from contracts.verify_s5_signal_runtime_transition import verify_openapi_transition
+
+            verify_openapi_transition(openapi, transition_catalog)
+        except (ContractValidationError, OSError):
+            pass
+        else:
+            changed_immutable_paths = tuple(
+                relative
+                for relative in changed_immutable_paths
+                if relative != "contracts/openapi/openapi.json"
+            )
     if changed_immutable_paths:
         errors.append("immutable historical records changed since base")
 
@@ -797,6 +821,8 @@ def new_teammate_dependency_errors(root: Path, base: str) -> list[str]:
         if relative in SOLO_OWNERSHIP_PUBLIC_PATHS and line in SOLO_OWNERSHIP_MARKERS:
             continue
         if relative == "docs/README.md" and line in SOLO_OWNERSHIP_ROLE_CATALOG:
+            continue
+        if (relative, line) in APPROVED_NON_ROLE_COMPONENT_LINES:
             continue
         if not TEAMMATE_REFERENCE_PATTERN.search(line):
             continue

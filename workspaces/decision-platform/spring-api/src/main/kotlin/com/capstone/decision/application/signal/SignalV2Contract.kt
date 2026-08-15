@@ -79,6 +79,16 @@ data class ValidatedSignalV2(
     val components: SignalV2Components,
 )
 
+/** all-ABSTAIN을 표현할 수 있는 versioned runtime 값이며 evidence가 없으면 asOf가 없다. */
+data class ValidatedSignalV2Runtime(
+    val symbol: String,
+    val asOf: Instant?,
+    val timeframe: String,
+    val modelReportId: String?,
+    val composite: SignalV2Composite,
+    val components: SignalV2Components,
+)
+
 object SignalV2Contract {
     private val strictMapper =
         JsonMapper
@@ -115,6 +125,26 @@ object SignalV2Contract {
             throw IllegalArgumentException("Signal v2 validation failed.", error)
         } catch (error: Exception) {
             throw IllegalArgumentException("Signal v2 validation failed.", error)
+        }
+    }
+
+    /**
+     * S5.5 조회용 runtime v1 payload를 검증한다. 모든 component가 ABSTAIN이면 root 시각과 report ID를
+     * 요구하지 않으며, 하나라도 AVAILABLE이면 최신 evidence 시각을 정확히 요구한다.
+     */
+    fun validateRuntime(payload: ByteArray): ValidatedSignalV2Runtime {
+        try {
+            require(payload.isNotEmpty() && payload.size <= MAX_PAYLOAD_BYTES) {
+                "Signal v2 runtime payload size is invalid."
+            }
+            return parseRuntimeRoot(strictMapper.readTree(payload))
+        } catch (error: IllegalArgumentException) {
+            if (error.message?.contains("Signal v2") == true) {
+                throw error
+            }
+            throw IllegalArgumentException("Signal v2 runtime validation failed.", error)
+        } catch (error: Exception) {
+            throw IllegalArgumentException("Signal v2 runtime validation failed.", error)
         }
     }
 
@@ -156,6 +186,31 @@ object SignalV2Contract {
         validateCompositeAvailability(components, composite)
         validateLatestAsOf(components, asOf)
         return ValidatedSignalV2(symbol, asOf, timeframe, composite, components)
+    }
+
+    private fun parseRuntimeRoot(root: JsonNode): ValidatedSignalV2Runtime {
+        exactFields(root, RUNTIME_ROOT_REQUIRED, RUNTIME_ROOT_ALLOWED, "runtime root")
+        val symbol = requiredText(root, "symbol")
+        require(SYMBOL_PATTERN.matches(symbol)) { "Signal v2 runtime symbol is invalid." }
+        val timeframe = requiredText(root, "timeframe")
+        require(timeframe == "1d") { "Signal v2 runtime timeframe is invalid." }
+        val asOf = optionalInstant(root, "asOf")
+        val modelReportId = optionalBoundedTextValue(root, "modelReportId")
+        validateTextArray(root.path("warnings"), maximum = 10, field = "runtime warnings")
+
+        val componentNode = root.path("components")
+        exactFields(componentNode, COMPONENT_FIELDS, COMPONENT_FIELDS, "runtime components")
+        val components =
+            SignalV2Components(
+                ruleBaseline = parsePredictive(componentNode.path("ruleBaseline"), "RULE_BASELINE", "return-engine"),
+                lstm = parsePredictive(componentNode.path("lstm"), "LSTM", "return-engine"),
+                lightgbm = parsePredictive(componentNode.path("lightgbm"), "LIGHTGBM", "decision-platform"),
+                hmmRegime = parseRegime(componentNode.path("hmmRegime")),
+            )
+        val composite = parseComposite(root.path("composite"))
+        validateCompositeAvailability(components, composite)
+        validateRuntimeLatestAsOf(components, asOf, modelReportId)
+        return ValidatedSignalV2Runtime(symbol, asOf, timeframe, modelReportId, composite, components)
     }
 
     private fun parsePredictive(
@@ -278,6 +333,29 @@ object SignalV2Contract {
         }
     }
 
+    private fun validateRuntimeLatestAsOf(
+        components: SignalV2Components,
+        topAsOf: Instant?,
+        modelReportId: String?,
+    ) {
+        val availableTimes =
+            listOfNotNull(
+                (components.ruleBaseline as? SignalV2PredictiveAvailable)?.asOf,
+                (components.lstm as? SignalV2PredictiveAvailable)?.asOf,
+                (components.lightgbm as? SignalV2PredictiveAvailable)?.asOf,
+                (components.hmmRegime as? SignalV2RegimeAvailable)?.asOf,
+            )
+        if (availableTimes.isEmpty()) {
+            require(topAsOf == null && modelReportId == null) {
+                "Signal v2 all-ABSTAIN runtime must omit asOf and modelReportId."
+            }
+        } else {
+            require(topAsOf == availableTimes.max()) {
+                "Signal v2 runtime asOf must equal the latest AVAILABLE component."
+            }
+        }
+    }
+
     private fun validateProducer(
         node: JsonNode,
         producer: String,
@@ -305,6 +383,23 @@ object SignalV2Contract {
             require(value.length <= 128) { "Signal v2 $field exceeds its bound." }
         }
     }
+
+    private fun optionalBoundedTextValue(
+        node: JsonNode,
+        field: String,
+    ): String? {
+        if (!node.has(field)) {
+            return null
+        }
+        val value = requiredText(node, field)
+        require(value.length <= 128) { "Signal v2 $field exceeds its bound." }
+        return value
+    }
+
+    private fun optionalInstant(
+        node: JsonNode,
+        field: String,
+    ): Instant? = if (node.has(field)) requiredInstant(node, field) else null
 
     private fun requiredAbstainReason(node: JsonNode): String {
         val reason = requiredText(node, "reason")
@@ -425,6 +520,8 @@ object SignalV2Contract {
         setOf("NORMAL", "SIDEWAYS", "HIGH_VOLATILITY", "RISK_OFF", "RISK_ON")
     private val ROOT_REQUIRED = setOf("symbol", "asOf", "timeframe", "composite", "components", "warnings")
     private val ROOT_ALLOWED = ROOT_REQUIRED + "modelReportId"
+    private val RUNTIME_ROOT_REQUIRED = setOf("symbol", "timeframe", "composite", "components", "warnings")
+    private val RUNTIME_ROOT_ALLOWED = RUNTIME_ROOT_REQUIRED + setOf("asOf", "modelReportId")
     private val COMPONENT_FIELDS = setOf("ruleBaseline", "lstm", "lightgbm", "hmmRegime")
     private val PREDICTIVE_AVAILABLE_REQUIRED =
         setOf("status", "producer", "sourceWorkspace", "asOf", "signal", "confidence")

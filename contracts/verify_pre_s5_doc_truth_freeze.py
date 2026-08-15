@@ -13,6 +13,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Final, Iterable
 
+from contracts.generate_principle_contracts import ContractValidationError
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 # 공개 저장소에서는 로컬 전용 자료 root의 실제 이름을 문장/로그로 노출하지 않는다.
@@ -837,6 +839,17 @@ def verify_public_truth_freeze(root: Path) -> list[str]:
     errors: list[str] = []
     for relative, expected_digest in V1_FROZEN_SHA256.items():
         path = safe_regular_file(root, relative)
+        if relative == "contracts/openapi/openapi.json" and path is not None:
+            transition_catalog = root / "contracts/catalogs/s5-signal-runtime-transition.v1.json"
+            if transition_catalog.is_file() and not transition_catalog.is_symlink():
+                try:
+                    # historical OpenAPI 자체가 아니라 승인된 S5 추가분을 제거한 projection을 동결한다.
+                    from contracts.verify_s5_signal_runtime_transition import verify_openapi_transition
+
+                    verify_openapi_transition(path, transition_catalog)
+                except (ContractValidationError, OSError) as error:
+                    errors.append(f"{relative}: {error}")
+                continue
         actual_digest = hashlib.sha256(path.read_bytes()).hexdigest() if path else None
         if actual_digest != expected_digest:
             errors.append(f"{relative}: frozen digest mismatch")

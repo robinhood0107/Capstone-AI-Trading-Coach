@@ -1,0 +1,43 @@
+{
+  "asOf": "2026-08-14T06:30:00Z",
+  "components": {
+    "hmmRegime": {
+      "producer": "HMM",
+      "reason": "MISSING_EVIDENCE",
+      "sourceWorkspace": "decision-platform",
+      "status": "ABSTAIN"
+    },
+    "lightgbm": {
+      "asOf": "2026-08-14T06:30:00Z",
+      "confidence": 0,
+      "modelReportId": "mrp-fixture-runtime-v1",
+      "modelVersion": "lgbm-v1-fixture",
+      "producer": "LIGHTGBM",
+      "signal": "HOLD",
+      "sourceWorkspace": "decision-platform",
+      "status": "AVAILABLE"
+    },
+    "lstm": {
+      "producer": "LSTM",
+      "reason": "MISSING_EVIDENCE",
+      "sourceWorkspace": "return-engine",
+      "status": "ABSTAIN"
+    },
+    "ruleBaseline": {
+      "producer": "RULE_BASELINE",
+      "reason": "MISSING_EVIDENCE",
+      "sourceWorkspace": "return-engine",
+      "status": "ABSTAIN"
+    }
+  },
+  "composite": {
+    "reason": "REQUIRED_COMPONENT_UNAVAILABLE",
+    "status": "ABSTAIN"
+  },
+  "modelReportId": "mrp-fixture-runtime-v1",
+  "symbol": "005930",
+  "timeframe": "1d",
+  "warnings": [
+    "No verified component evidence is available."
+  ]
+}

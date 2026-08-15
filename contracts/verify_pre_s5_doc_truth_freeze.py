@@ -37,6 +37,7 @@ ACTIVE_PUBLIC_PATHS = frozenset(
         "README.md",
         "docs/README.md",
         "docs/RAG_외부_AI_처리_및_개인문서_동의.md",
+        "docs/S4_9_MCP_Strong_LLM_운영_가이드.md",
         "docs/API_명세서.md",
         "docs/최종_프로젝트_명세서.md",
         "contracts/README.md",

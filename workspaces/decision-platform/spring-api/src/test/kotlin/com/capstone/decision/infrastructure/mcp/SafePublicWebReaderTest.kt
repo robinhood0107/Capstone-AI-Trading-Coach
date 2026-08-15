@@ -67,6 +67,51 @@ class SafePublicWebReaderTest {
     }
 
     @Test
+    fun `ordinary article with login navigation is not misclassified as a login page`() {
+        val reader =
+            SafePublicWebReader(
+                fixedResolver(),
+                responseTransport(
+                    "<html><head><title>Portfolio education</title></head>" +
+                        "<body><header><nav>Log in</nav></header><main>Diversification can reduce concentration risk.</main></body></html>",
+                ),
+            )
+
+        assertThat(reader.read("https://example.com/evidence").text)
+            .isEqualTo("Diversification can reduce concentration risk.")
+    }
+
+    @Test
+    fun `actual login form is rejected with a content free leaf`() {
+        val reader =
+            SafePublicWebReader(
+                fixedResolver(),
+                responseTransport(
+                    "<html><head><title>Account</title></head><body><form><input type=password></form></body></html>",
+                ),
+            )
+
+        assertThatThrownBy { reader.read("https://example.com/evidence") }
+            .isInstanceOf(S49WebReadRejectedException::class.java)
+            .hasMessage("S4_9_WEB_READ_LOGIN_PAGE_REJECTED")
+    }
+
+    @Test
+    fun `unsupported response exposes only a typed MIME leaf`() {
+        val reader =
+            SafePublicWebReader(
+                fixedResolver(),
+                PublicHttpsTransport { _, _, _ ->
+                    PublicHttpsResponse(200, mapOf("content-type" to listOf("application/octet-stream")), byteArrayOf(1))
+                },
+            )
+
+        assertThatThrownBy { reader.read("https://example.com/evidence") }
+            .isInstanceOf(S49WebReadRejectedException::class.java)
+            .hasMessage("S4_9_WEB_READ_MIME_REJECTED")
+    }
+
+    @Test
     fun `untrusted page title is replaced before metadata or model exposure`() {
         val reader =
             SafePublicWebReader(

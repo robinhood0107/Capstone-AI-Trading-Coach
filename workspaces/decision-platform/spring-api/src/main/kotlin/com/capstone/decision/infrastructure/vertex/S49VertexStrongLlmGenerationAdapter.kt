@@ -288,7 +288,7 @@ internal class S49VertexStrongLlmGenerationAdapter(
 
     private fun validateEvidence(command: RagV2VertexGenerationCommand): List<RagV2VertexEvidence> {
         require(command.ownerUserId.matches(OWNER_ID) && command.requestId.matches(REQUEST_ID))
-        require(command.evidence.size in 1..5)
+        require(command.evidence.size in 0..5)
         require(command.evidence.map { it.ordinal } == (1..command.evidence.size).toList())
         require(
             command.evidence

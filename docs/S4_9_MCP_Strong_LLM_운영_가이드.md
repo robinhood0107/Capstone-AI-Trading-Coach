@@ -1,6 +1,6 @@
 # S4.9 MCP + Strong LLM 운영 가이드
 
-상태: `IMPLEMENTED_DRAFT`
+상태: `LIVE_VERIFIED_MERGE_CANDIDATE` (V69, 2026-08-15)
 계약: `contracts/catalogs/s4-9-mcp-strong-llm-contract.v1.json`
 
 ## 1. 구성
@@ -11,8 +11,9 @@
 - `mcp-searxng`: 내부 호환성 sidecar이며 외부에 직접 publish하지 않는다
 - 외부 ChatGPT/Claude: 자신의 모델/API 비용과 research loop를 소유하고 Capstone OAuth MCP만 호출
 
-Gemini Deep Research, Google Search grounding, Naver, browser automation, crawler, login/click/JavaScript는
-활성화하지 않는다.
+Gemini Deep Research, Google Search grounding, Naver, browser automation, crawler와 대상 사이트의
+login/click/JavaScript는 활성화하지 않는다. 아래 OAuth 사용자 로그인은 Capstone 자체 인증 절차로서
+이 금지 대상과 다르다.
 
 ## 2. 기동 전 local-only 파일
 
@@ -86,6 +87,19 @@ owner ID는 tool argument가 아니라 access token subject에서만 온다. ref
 revocation 시 해당 family를 폐기한다. access token은 15분이고 account status/securityVersion을 매 요청 확인한다.
 `mcp:rag.owner`가 없는 client는 owner pointer 자체를 읽지 않는 public-only 15분 DB claim만 받는다.
 
+### 5.1 어떤 로그인인가
+
+- 앱 사용자는 기존 `POST /api/v1/auth/login`으로 Capstone API JWT를 받는다.
+- 외부 MCP client 연결은 같은 Capstone 계정으로 `/oauth2/authorize`에서 로그인하고 요청 scope를
+  승인한다. Google 계정 로그인이나 Vertex service-account 인증이 아니다.
+- Vertex OAuth는 서버가 local 0600 service-account JSON으로 처리하며 UI와 사용자 비밀번호를 사용하지 않는다.
+- local live smoke는 기존 `demo-user`의 DB identity를 사용하되 무작위 임시 비밀번호를 메모리에서만
+  설정하고 종료 시 원래 BCrypt hash를 복원했다. 평문 비밀번호를 파일·로그·argv에 저장하지 않았다.
+
+Spring의 기본 local authorize/login/consent 화면으로 backend E2E는 동작한다. 제품용 Experience UI는
+현재 이 Decision Platform workspace의 구현물이 아니다. 기존 제품 UI에 통합할 때는 client 표시명,
+요청 scope, owner snippet 외부 전달 여부, 승인/거부를 보여 주고 Spring OAuth endpoint를 호출해야 한다.
+
 ## 6. 장애와 데이터 경계
 
 - SearXNG/read 실패: tool result를 답처럼 저장하지 않고 남은 근거로 final 또는 insufficient를 선택한다.
@@ -99,7 +113,21 @@ revocation 시 해당 family를 폐기한다. access token은 15분이고 accoun
 ## 7. 검증
 
 - focused: Strong LLM direct/search/read/final, validator, OAuth resource/PKCE/rotation/revocation, SSRF/DNS/redirect
-- DB: V1→V67 clean, V66→V67 upgrade, public-only owner isolation, RLS/ACL, one-use receipt/save
+- DB: V1→V69 clean, V67→V69 upgrade, public-only owner isolation, RLS/ACL, one-use receipt/save
 - contract: MCP tools/list fixture, OpenAPI/proto/exact-30 byte parity
 - load: 2/10/50 admission fixture
 - release: 전체 local gate 뒤 Codex Security campaign 정확히 1회
+
+### 7.1 2026-08-15 live-smoke receipt
+
+- OAuth PKCE actual code/token exchange와 token-family revoke: 성공
+- MCP `initialize`, `tools/list=5`, public RAG search: 성공
+- SearXNG search 1회, exact HTTPS URL read 1회: 성공
+- answer validation: `VALID_WITH_WARNINGS` (단일 web 출처), answer save/history: `0/0`
+- Strong LLM: `ANSWERED / MODEL_KNOWLEDGE_ONLY`, provider/model `VERTEX_AI/gemini-3.5-flash`, usage `COMMITTED`
+- raw token/web body/model request/model response 저장: 0
+- public corpus `142/7,871/63/2`, owner residual 0: 불변
+
+고정 질문은 local evidence가 0이라 citation 없는 일반 교육 답변 경로를 사용했다. 따라서 Strong LLM
+결과 자체를 citation coverage 성공으로 표시하지 않는다. citation/quote validator의 실제 성공은 별도
+MCP web-evidence draft에서 확인했다.

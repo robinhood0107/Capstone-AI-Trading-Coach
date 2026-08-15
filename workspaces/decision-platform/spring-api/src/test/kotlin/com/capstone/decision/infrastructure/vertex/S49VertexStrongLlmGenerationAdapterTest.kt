@@ -105,6 +105,25 @@ class S49VertexStrongLlmGenerationAdapterTest {
     }
 
     @Test
+    fun `검색 근거가 없어도 일반 교육 질문은 model knowledge로 생성한다`() {
+        val transport =
+            QueueHttpClient(
+                providerText(
+                    """{"basis":"MODEL_KNOWLEDGE","answer":"분산투자는 서로 다른 위험 요인을 함께 구성하는 개념입니다.","sentences":[{"text":"분산투자는 서로 다른 위험 요인을 함께 구성하는 개념입니다.","citationIds":[],"evidenceSpans":[],"numericSpans":[]}],"warnings":[]}""",
+                ),
+            )
+        val ledger = RecordingUsageLedger()
+
+        val result = adapter(transport, ledger).generate(command())
+
+        assertThat(result.generationStatus).isEqualTo(RagGenerationStatus.ANSWERED)
+        assertThat(result.answerBasis).isEqualTo(StrongLlmAnswerBasis.MODEL_KNOWLEDGE)
+        assertThat(result.citationIds).isEmpty()
+        assertThat(ledger.committed).isNotNull()
+        assertThat(transport.calls).isEqualTo(1)
+    }
+
+    @Test
     fun `근거 부족 응답은 재생성 없이 retrieval only로 종료한다`() {
         val transport =
             QueueHttpClient(

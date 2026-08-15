@@ -95,6 +95,26 @@ class RagV2VertexResponseValidatorTest {
     }
 
     @Test
+    fun `timeless model knowledge is valid when retrieval supplied no evidence`() {
+        val result =
+            validator.validate(
+                """{"basis":"MODEL_KNOWLEDGE","answer":"분산투자는 서로 다른 위험 요인을 함께 구성하는 일반적인 위험 관리 개념입니다.","sentences":[{"text":"분산투자는 서로 다른 위험 요인을 함께 구성하는 일반적인 위험 관리 개념입니다.","citationIds":[],"evidenceSpans":[],"numericSpans":[]}],"warnings":[]}""",
+                emptyList(),
+            )
+
+        assertThat(result.basis).isEqualTo(StrongLlmAnswerBasis.MODEL_KNOWLEDGE)
+        assertThat(result.citationIds).isEmpty()
+        assertThat(result.citationCoverage).isZero()
+
+        assertThatThrownBy {
+            validator.validate(
+                """{"basis":"EVIDENCE","answer":"근거가 있습니다.","sentences":[{"text":"근거가 있습니다.","citationIds":["cit_1"],"evidenceSpans":[{"citationId":"cit_1","quote":"근거"}],"numericSpans":[]}],"warnings":[]}""",
+                emptyList(),
+            )
+        }.isInstanceOf(RagV2VertexResponseValidationException::class.java)
+    }
+
+    @Test
     fun `general portfolio terminology is not mistaken for a credential or direct advice`() {
         val result =
             validator.validate(

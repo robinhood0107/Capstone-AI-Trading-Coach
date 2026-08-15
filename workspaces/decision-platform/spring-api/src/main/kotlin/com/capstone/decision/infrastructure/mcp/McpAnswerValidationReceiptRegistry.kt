@@ -73,7 +73,7 @@ class McpAnswerValidationReceiptRegistry(
                         SELECT public.issue_s4_9_answer_validation_receipt(
                           :receiptHash, :ownerUserId, :clientId, :contextId, :sourceSetHash,
                           :draftHash, :status, :expiresAt
-                        ) IS NULL
+                        ) IS NOT NULL
                         """.trimIndent(),
                         mapOf(
                             "receiptHash" to sha256(receipt),
@@ -124,7 +124,7 @@ class McpAnswerValidationReceiptRegistry(
                           :kekVersion, :wrapNonce, :wrappedDek, :wrapTag,
                           :questionNonce, :questionCiphertext, :questionTag,
                           :answerNonce, :answerCiphertext, :answerTag, :createdAt
-                        ) IS NULL
+                        ) IS NOT NULL
                         """.trimIndent(),
                         mapOf(
                             "receiptHash" to sha256(receipt),

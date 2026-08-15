@@ -38,6 +38,7 @@ _COMMIT_FUNCTION = (
     "public.commit_rag_v2_immutable_voyage_query_usage_with_tokenizer(text,integer,integer,bigint)"
 )
 _UNKNOWN_FUNCTION = "public.mark_rag_v2_immutable_voyage_query_usage_unknown_billing(text)"
+_S49_RUNTIME_RESERVE_FUNCTION = "public.reserve_s4_9_runtime_voyage_query_usage(text,text,text)"
 _EVALUATION_RESERVE_FUNCTION = (
     "public.reserve_rag_v2_immutable_voyage_evaluation_batch_usage("
     "text,text,text,text,text,text,text,text,timestamptz,integer,integer,bigint,bigint)"
@@ -60,6 +61,8 @@ _WRITER_FORBIDDEN_TABLES = (
     "rag_v2_immutable_voyage_query_usage_outcomes",
     "rag_v2_immutable_voyage_evaluation_batch_attempts",
     "rag_v2_immutable_voyage_evaluation_batch_vectors",
+    "s4_9_voyage_query_authorizations",
+    "s4_9_voyage_query_usage_links",
 )
 
 
@@ -74,6 +77,88 @@ class PsycopgPreS5VoyageQueryUsageRepository:
         if not isinstance(database_dsn, str) or not 1 <= len(database_dsn) <= 4_096:
             raise PreS5VoyageQueryUsageRepositoryError("PRE_S5_VOYAGE_QUERY_LEASE_DATABASE_DSN")
         self._database_dsn = database_dsn
+
+    def reserve_s4_9_runtime(
+        self,
+        *,
+        scope_claim_id: str,
+        question_sha256: str,
+        tokenizer_sha256: str,
+    ) -> tuple[PreS5VoyageQueryActivation, "PsycopgPreS5VoyageQueryUsageLease"]:
+        """Consume one Spring-issued S4.9 authorization and bind it to the immutable V46 ledger.
+
+        The DB receives only the opaque scope and question hash. It generates the one-shot packet/nonce
+        projections itself after rechecking the active Voyage plan and never grants the writer direct table access.
+        """
+
+        if (
+            not isinstance(scope_claim_id, str)
+            or re.fullmatch(r"rvs_[0-9a-f]{32}", scope_claim_id) is None
+            or not _is_sha256(question_sha256)
+            or not _is_sha256(tokenizer_sha256)
+        ):
+            raise PreS5VoyageQueryUsageRepositoryError("S4_9_VOYAGE_QUERY_LEASE_ARGUMENT")
+        try:
+            with psycopg.connect(
+                self._database_dsn,
+                autocommit=False,
+                connect_timeout=2,
+            ) as connection:
+                _attest_writer_connection(connection)
+                with connection.transaction():
+                    _set_transaction_timeouts(connection)
+                    row = connection.execute(
+                        """
+                        SELECT usage_event_id, packet_sha256, nonce_sha256, rate_evidence_sha256,
+                               expires_at, token_cap, byte_cap, cost_cap_microusd,
+                               input_microusd_per_token
+                        FROM public.reserve_s4_9_runtime_voyage_query_usage(%s, %s, %s)
+                        """,
+                        (scope_claim_id, question_sha256, tokenizer_sha256),
+                    ).fetchone()
+        except PreS5VoyageQueryUsageRepositoryError:
+            raise
+        except psycopg.Error:
+            raise PreS5VoyageQueryUsageRepositoryError(
+                "S4_9_VOYAGE_QUERY_LEASE_RESERVATION_REJECTED"
+            ) from None
+        if (
+            row is None
+            or len(row) != 9
+            or _USAGE_EVENT_ID.fullmatch(str(row[0])) is None
+            or not all(_is_sha256(row[index]) for index in (1, 2, 3))
+            or not isinstance(row[4], datetime)
+            or row[4].tzinfo is None
+            or any(type(row[index]) is not int for index in range(5, 9))
+        ):
+            raise PreS5VoyageQueryUsageRepositoryError("S4_9_VOYAGE_QUERY_LEASE_RECEIPT")
+        activation = PreS5VoyageQueryActivation(
+            packet_sha256=str(row[1]),
+            nonce_sha256=str(row[2]),
+            query_sha256=question_sha256,
+            scope_claim_sha256=hashlib.sha256(scope_claim_id.encode("utf-8")).hexdigest(),
+            rate_evidence_sha256=str(row[3]),
+            tokenizer_sha256=tokenizer_sha256,
+            provider="VOYAGE",
+            operation="CONTEXTUALIZED_QUERY_EMBEDDING",
+            origin="https://api.voyageai.com",
+            endpoint="/v1/contextualizedembeddings",
+            expires_at=row[4].astimezone(UTC),
+            logical_call_cap=1,
+            physical_call_cap=1,
+            token_cap=row[5],
+            byte_cap=row[6],
+            cost_cap_microusd=row[7],
+            input_microusd_per_token=row[8],
+            retry_count=0,
+            raw_artifact_count=0,
+        )
+        _validate_activation(activation)
+        return activation, PsycopgPreS5VoyageQueryUsageLease(
+            database_dsn=self._database_dsn,
+            usage_event_id=str(row[0]),
+            expires_at=activation.expires_at,
+        )
 
     def reserve(
         self,
@@ -540,6 +625,7 @@ def _attest_writer_connection(connection: psycopg.Connection[Any]) -> None:
         _CLAIM_FUNCTION,
         _COMMIT_FUNCTION,
         _UNKNOWN_FUNCTION,
+        _S49_RUNTIME_RESERVE_FUNCTION,
         _EVALUATION_RESERVE_FUNCTION,
         _EVALUATION_CLAIM_FUNCTION,
         _EVALUATION_UNKNOWN_FUNCTION,

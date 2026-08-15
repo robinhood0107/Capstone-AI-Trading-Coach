@@ -82,6 +82,19 @@ class PreS5VoyageQueryUsageReservationPort(Protocol):
         """Return one lease; the optional public-evaluation label contains no owner/question text."""
 
 
+class S49RuntimeVoyageQueryUsageReservationPort(Protocol):
+    """Consume a Spring-issued runtime authorization without exposing question text to the DB."""
+
+    def reserve_s4_9_runtime(
+        self,
+        *,
+        scope_claim_id: str,
+        question_sha256: str,
+        tokenizer_sha256: str,
+    ) -> tuple[PreS5VoyageQueryActivation, PreS5VoyageAttemptLease]:
+        """Return the DB-generated one-shot activation and its immutable usage lease."""
+
+
 class PacketGatedPreS5VoyageContext4QueryEmbedder:
     """Create a fresh one-shot Voyage query embedder only after the current request's local packet validates.
 
@@ -165,6 +178,102 @@ class PacketGatedPreS5VoyageContext4QueryEmbedder:
             )
         except (
             PreS5ProviderActivationError,
+            PreS5VoyageTokenizerError,
+            PreS5VoyageQueryTransportError,
+            ValueError,
+        ):
+            raise RagV2QueryEmbeddingError(
+                RagV2RetrievalFailureCode.QUERY_PROFILE_UNAVAILABLE
+            ) from None
+        return request_embedder.embed_query_with_receipt(
+            question=question,
+            scope_claim_id=scope_claim_id,
+            external_query_consent_granted=True,
+        )
+
+
+class S49RuntimeAuthorizedVoyageContext4QueryEmbedder:
+    """Use only a fresh DB authorization created by an authenticated Spring request.
+
+    This normal application path deliberately does not read the historical Pre-S5 approval packet.
+    It preserves the same official tokenizer, fixed origin, one physical call, retry-zero, bounded
+    response parser, and immutable usage commit used by the release-verification transport.
+    """
+
+    def __init__(
+        self,
+        *,
+        local_root: Path,
+        tokenizer_sha256: str,
+        api_key: str,
+        usage_repository: S49RuntimeVoyageQueryUsageReservationPort,
+        sender: PreS5VoyageHttpSender | None = None,
+        clock: Callable[[], datetime] | None = None,
+    ) -> None:
+        if (
+            not isinstance(local_root, Path)
+            or not local_root.is_absolute()
+            or not _is_sha256(tokenizer_sha256)
+            or not isinstance(api_key, str)
+            or not 1 <= len(api_key) <= 4_096
+            or api_key != api_key.strip()
+            or any(character in api_key for character in ("\x00", "\r", "\n"))
+            or usage_repository is None
+        ):
+            raise PreS5VoyageQueryTransportError("S4_9_VOYAGE_QUERY_RUNTIME_CONFIGURATION")
+        try:
+            self._token_counter = LocalPreS5VoyageContext4Tokenizer.from_local_root(
+                local_root=local_root,
+                expected_sha256=tokenizer_sha256,
+            )
+        except PreS5VoyageTokenizerError:
+            raise PreS5VoyageQueryTransportError(
+                "S4_9_VOYAGE_QUERY_RUNTIME_CONFIGURATION"
+            ) from None
+        self._api_key = api_key
+        self._usage_repository = usage_repository
+        self._sender = sender or OutboundDisabledPreS5VoyageHttpSender()
+        self._clock = clock or (lambda: datetime.now(UTC))
+
+    @property
+    def embedding_profile_id(self) -> str:
+        """The runtime authorization can serve only the active Voyage 1024 profile."""
+
+        return _VOYAGE_PROFILE
+
+    def embed_query_with_receipt(
+        self,
+        *,
+        question: str,
+        scope_claim_id: str,
+        external_query_consent_granted: bool,
+    ) -> RagV2QueryEmbeddingReceipt:
+        """Reserve once from the DB authorization, then reuse the hardened one-shot transport."""
+
+        try:
+            _validate_query_inputs(
+                question=question,
+                scope_claim_id=scope_claim_id,
+                external_query_consent_granted=external_query_consent_granted,
+            )
+            if not external_query_consent_granted:
+                raise PreS5VoyageQueryTransportError("S4_9_VOYAGE_QUERY_CONSENT_REQUIRED")
+            # Local tokenizer failures must happen before the one-use DB authorization is consumed.
+            self._token_counter.count_texts(texts=(question,), token_cap=8_192)
+            activation, lease = self._usage_repository.reserve_s4_9_runtime(
+                scope_claim_id=scope_claim_id,
+                question_sha256=hashlib.sha256(question.encode("utf-8")).hexdigest(),
+                tokenizer_sha256=self._token_counter.tokenizer_sha256,
+            )
+            request_embedder = PreS5VoyageContext4QueryEmbedder(
+                activation=activation,
+                api_key=self._api_key,
+                lease=lease,
+                token_counter=self._token_counter,
+                sender=self._sender,
+                clock=self._clock,
+            )
+        except (
             PreS5VoyageTokenizerError,
             PreS5VoyageQueryTransportError,
             ValueError,

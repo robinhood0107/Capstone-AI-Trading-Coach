@@ -133,5 +133,7 @@ active selection은 14 track × 8 = 112의 logical policy만 뜻한다. reserve 
 request/response v2만 필수 `embeddingProfileId`를 추가하며 5분 single-use·owner-bound ticket에 선택
 profile을 결박한다. raw path/JWT/owner ID/DB credential을 API 또는 BAT command line에 노출하지 않는다.
 public RAG는 `FULL_READY`이고 owner dual-profile one-shot/delete 검증은 끝났으며 재호출하지 않는다.
-S4.9 구현은 V66, Strong LLM fixture, OAuth/MCP/SearXNG bounded tool과 갱신 동의 digest를 별도 release gate로
-검증한다. 이 구현은 공용 Voyage corpus 재실행이나 KIS 주문 권한을 만들지 않는다.
+S4.9는 V66~V69, Strong LLM fixture, OAuth/MCP/SearXNG bounded tool과 갱신 동의 digest를 별도 release
+gate로 검증한다. 2026-08-15 public-only live smoke는 owner scope 없이 PKCE, MCP search/read/validate와
+Vertex Strong LLM을 확인했으므로 개인문서 재동의를 대신하지 않는다. 이 구현은 공용 Voyage corpus
+재실행이나 KIS 주문 권한을 만들지 않는다.

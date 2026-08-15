@@ -28,6 +28,7 @@ from app.rag.pre_s5_provider_control import (
 )
 from app.rag.pre_s5_voyage_query_transport import (
     PacketGatedPreS5VoyageContext4QueryEmbedder,
+    S49RuntimeAuthorizedVoyageContext4QueryEmbedder,
 )
 from app.rag.pre_s5_voyage_query_usage_repository import (
     PsycopgPreS5VoyageQueryUsageRepository,
@@ -43,6 +44,7 @@ from app.rag.rag_v2_rpc import (
 
 
 _SAFE_SECRET = re.compile(r"^[A-Za-z0-9._~:-]{32,256}$")
+_SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _FORBIDDEN_SHARED_SECRET_ENV_NAMES = (
     "DECISION_GRPC_SHARED_SECRET",
     "RAG_GRPC_SHARED_SECRET",
@@ -63,6 +65,8 @@ class RagV2GrpcServerSettings:
     bge_packet_root: Path | None = None
     bge_enabled: bool = True
     voyage_query_runtime: PreS5VoyageQueryRuntimeConfiguration | None = None
+    s4_9_runtime_voyage_enabled: bool = False
+    s4_9_voyage_tokenizer_sha256: str | None = None
 
     def __post_init__(self) -> None:
         if not _is_numeric_loopback(self.bind_address):
@@ -89,6 +93,14 @@ class RagV2GrpcServerSettings:
                 raise ValueError("RAG v2 local profile settings drifted")
         if not self.bge_enabled and self.voyage_query_runtime is None:
             raise ValueError("RAG v2 requires one retrieval profile")
+        if self.s4_9_runtime_voyage_enabled and (
+            self.voyage_query_runtime is None
+            or not isinstance(self.s4_9_voyage_tokenizer_sha256, str)
+            or _SHA256.fullmatch(self.s4_9_voyage_tokenizer_sha256) is None
+        ):
+            raise ValueError("S4.9 runtime Voyage query configuration is invalid")
+        if not self.s4_9_runtime_voyage_enabled and self.s4_9_voyage_tokenizer_sha256 is not None:
+            raise ValueError("S4.9 runtime Voyage tokenizer requires explicit enablement")
 
     @classmethod
     def from_env(cls) -> "RagV2GrpcServerSettings":
@@ -119,6 +131,11 @@ class RagV2GrpcServerSettings:
         except PreS5ProviderActivationError as error:
             raise ValueError("RAG v2 Voyage query runtime control is invalid") from error
         bge_packet_root_text = os.environ.get("CAPSTONE_RAG_BGE_PACKET_ROOT", "").strip()
+        runtime_voyage_text = os.environ.get("S4_9_RUNTIME_VOYAGE_QUERY_ENABLED", "false").strip().lower()
+        if runtime_voyage_text not in {"true", "false"}:
+            raise ValueError("S4_9_RUNTIME_VOYAGE_QUERY_ENABLED must be true or false")
+        runtime_voyage_enabled = runtime_voyage_text == "true"
+        runtime_tokenizer_sha256 = os.environ.get("S4_9_VOYAGE_TOKENIZER_SHA256", "").strip() or None
         return cls(
             bind_address=os.environ.get(
                 "RAG_V2_GRPC_BIND_ADDRESS", "127.0.0.1:50054"
@@ -128,6 +145,8 @@ class RagV2GrpcServerSettings:
             bge_packet_root=Path(bge_packet_root_text) if bge_packet_root_text else None,
             bge_enabled=(voyage_query_runtime.bge_enabled if voyage_query_runtime is not None else True),
             voyage_query_runtime=voyage_query_runtime,
+            s4_9_runtime_voyage_enabled=runtime_voyage_enabled,
+            s4_9_voyage_tokenizer_sha256=runtime_tokenizer_sha256,
         )
 
 
@@ -189,19 +208,34 @@ def build_rag_v2_engine(
             )
         except PreS5ProviderActivationError as error:
             raise ValueError("RAG v2 Voyage query credentials are unavailable") from error
-        retrievals["voyage_context_4_1024_v1"] = _retrieval(
-            retrieval_adapter=retrieval_adapter,
-            query_embedder=PacketGatedPreS5VoyageContext4QueryEmbedder(
+        usage_repository = PsycopgPreS5VoyageQueryUsageRepository(
+            database_dsn=writer_dsn,
+        )
+        query_embedder: object
+        if settings.s4_9_runtime_voyage_enabled:
+            tokenizer_sha256 = settings.s4_9_voyage_tokenizer_sha256
+            if tokenizer_sha256 is None:  # Settings validation narrows this branch.
+                raise ValueError("S4.9 runtime Voyage tokenizer is unavailable")
+            query_embedder = S49RuntimeAuthorizedVoyageContext4QueryEmbedder(
+                local_root=runtime.local_root,
+                tokenizer_sha256=tokenizer_sha256,
+                api_key=voyage_key,
+                usage_repository=usage_repository,
+                sender=UrllibPreS5VoyageHttpSender(),
+            )
+        else:
+            query_embedder = PacketGatedPreS5VoyageContext4QueryEmbedder(
                 local_root=runtime.local_root,
                 binding=runtime.binding,
                 api_key=voyage_key,
-                usage_repository=PsycopgPreS5VoyageQueryUsageRepository(
-                    database_dsn=writer_dsn,
-                ),
-                # The sender creates no socket until a current one-shot packet has been validated and
-                # its writer lease has been claimed for the specific request.
+                usage_repository=usage_repository,
                 sender=UrllibPreS5VoyageHttpSender(),
-            ),
+            )
+        retrievals["voyage_context_4_1024_v1"] = _retrieval(
+            retrieval_adapter=retrieval_adapter,
+            # Both paths keep the fixed-origin sender behind a one-use DB lease; S4.9 replaces only
+            # the historical manual release packet with an authenticated runtime authorization.
+            query_embedder=query_embedder,
             owner_query_embedder=bge_query_embedder,
         )
     return ProfileSelectedRagV2RetrievalOnlyEngine(

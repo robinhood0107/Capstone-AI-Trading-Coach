@@ -718,6 +718,9 @@ uv run --frozen python contracts/validate.py
 
 결정과 hard stop은
 [`20260815-s5-signal-runtime-transition.md`](changes/20260815-s5-signal-runtime-transition.md)를 따른다.
+S5.1의 calendar-derived monthly schedule, external manifest digest trust anchor, closed PIT
+provenance와 실제 LightGBM cross-market 0-call/hash 회귀는
+[`20260816-s5-1-pit-artifact-hardening.md`](changes/20260816-s5-1-pit-artifact-hardening.md)를 따른다.
 
 ## S1.5 KIS 데이터 품질 리포트
 

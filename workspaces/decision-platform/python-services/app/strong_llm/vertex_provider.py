@@ -248,6 +248,26 @@ def _provider_result(
     *,
     allowed_local_ids: set[str] | None = None,
 ) -> ProviderResult:
+    if message.tool_calls and not _message_text(message).strip():
+        tool_usage: dict[str, Any] = dict(message.usage_metadata or {})
+        return {
+            "message": message,
+            "answer_json": json.dumps(
+                {
+                    "basis": "INSUFFICIENT_EVIDENCE",
+                    "answer": None,
+                    "sentences": [],
+                    "warnings": [],
+                },
+                separators=(",", ":"),
+            ),
+            "prompt_tokens": int(tool_usage.get("input_tokens", 0)),
+            "output_tokens": int(tool_usage.get("output_tokens", 0)),
+            "google_queries": [],
+            "google_query_count": 0,
+            "grounding_roots": [],
+            "grounding_supports": [],
+        }
     text = _canonical_answer_json(_message_text(message))
     grounding = message.response_metadata.get("grounding_metadata") or {}
     if not isinstance(grounding, dict):

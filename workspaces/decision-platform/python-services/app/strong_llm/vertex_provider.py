@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, cast
 from urllib.parse import urlparse
 
+from google import genai
 from google.oauth2 import service_account
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -104,6 +105,9 @@ class LangChainVertexProvider:
         self._google = base_model.bind(tools=[{"google_search": {}}], **structured)
         self._tool_model = base_model
         self._request = request
+        self._credentials = credentials
+        self._project = project
+        self._settings = settings
         self._discovery: ProviderResult | None = None
 
     def invoke_google(self, request: RunRequest, *, include_owner: bool) -> ProviderResult:
@@ -143,6 +147,11 @@ class LangChainVertexProvider:
             else render_prompt(request, request.public_evidence)
         )
         prompt = require_google_grounding(prompt)
+        if _requires_google_search(request.question):
+            result = self._invoke_required_google(prompt, request)
+            if request.owner_evidence:
+                self._discovery = result
+            return result
         message = self._google.invoke(
             [SystemMessage(content=prompt.system), HumanMessage(content=prompt.user)]
         )
@@ -153,6 +162,47 @@ class LangChainVertexProvider:
         if request.owner_evidence:
             self._discovery = result
         return result
+
+    def _invoke_required_google(
+        self,
+        prompt: object,
+        request: RunRequest,
+    ) -> ProviderResult:
+        """사용자가 명시한 검색 요청만 Interactions `any`로 강제하고 server-side 저장은 끈다."""
+
+        system = cast(str, getattr(prompt, "system"))
+        user = cast(str, getattr(prompt, "user"))
+        client = genai.Client(
+            vertexai=True,
+            credentials=self._credentials,
+            project=self._project,
+            location=self._settings.location,
+        )
+        try:
+            interaction = client.interactions.create(
+                model=request.model_id,
+                input=user,
+                system_instruction=system,
+                tools=[{"type": "google_search", "search_types": ["web_search"]}],
+                tool_choice="any",
+                response_format={
+                    "type": "text",
+                    "mime_type": "application/json",
+                    "schema": _vertex_response_schema(),
+                },
+                generation_config={
+                    "max_output_tokens": 4096,
+                    "thinking_level": self._settings.thinking_level,
+                },
+                store=False,
+                timeout=self._settings.timeout_seconds,
+            )
+        finally:
+            client.close()
+        return _interaction_provider_result(
+            interaction,
+            allowed_local_ids={item.citation_id for item in request.public_evidence},
+        )
 
     def invoke_fallback(
         self,
@@ -306,9 +356,131 @@ def _provider_result(
                 + content_queries
             )
         ),
+        "google_query_count": len(
+            list(
+                dict.fromkeys(
+                    [str(value) for value in grounding.get("web_search_queries") or []]
+                    + content_queries
+                )
+            )
+        ),
         "grounding_roots": roots,
         "grounding_supports": supports,
     }
+
+
+def _requires_google_search(question: str) -> bool:
+    normalized = " ".join(question.casefold().split())
+    return "google search" in normalized or "구글 검색" in normalized
+
+
+def _interaction_provider_result(
+    interaction: object,
+    *,
+    allowed_local_ids: set[str],
+) -> ProviderResult:
+    """Interactions response에서 URL citation과 query count만 content-free projection한다."""
+
+    if getattr(interaction, "status", None) != "completed":
+        raise ValueError("STRONG_LLM_INTERACTION_NOT_COMPLETED")
+    raw_text = getattr(interaction, "output_text", None)
+    if not isinstance(raw_text, str):
+        raise ValueError("STRONG_LLM_INTERACTION_TEXT_MISSING")
+    text = _canonical_answer_json(raw_text)
+    roots: list[dict[str, object]] = []
+    supports: list[dict[str, object]] = []
+    queries: list[str] = []
+    root_index_by_url: dict[str, int] = {}
+    for step in getattr(interaction, "steps", None) or []:
+        if getattr(step, "type", None) == "google_search_call":
+            arguments = getattr(step, "arguments", None)
+            raw_queries = getattr(arguments, "queries", None)
+            if isinstance(raw_queries, list):
+                queries.extend(value for value in raw_queries if isinstance(value, str))
+            continue
+        if getattr(step, "type", None) != "model_output":
+            continue
+        for content in getattr(step, "content", None) or []:
+            if getattr(content, "type", None) != "text":
+                continue
+            content_text = getattr(content, "text", None)
+            if not isinstance(content_text, str):
+                continue
+            for annotation in getattr(content, "annotations", None) or []:
+                if getattr(annotation, "type", None) != "url_citation":
+                    continue
+                url = getattr(annotation, "url", None)
+                if not isinstance(url, str) or not url.startswith("https://"):
+                    continue
+                parsed = urlparse(url)
+                if not parsed.hostname:
+                    continue
+                index = root_index_by_url.get(url)
+                if index is None:
+                    index = len(roots)
+                    if index >= 5:
+                        continue
+                    root_index_by_url[url] = index
+                    title = getattr(annotation, "title", None)
+                    roots.append(
+                        {
+                            "result_id": f"google_{index + 1}",
+                            "title": title[:500] if isinstance(title, str) and title.strip() else parsed.hostname,
+                            "uri": url[:2048],
+                            "domain": parsed.hostname[:253],
+                            "chunk_index": index,
+                            "citation_id": "",
+                        }
+                    )
+                start = _metadata_index(getattr(annotation, "start_index", None))
+                end = _metadata_index(getattr(annotation, "end_index", None))
+                support_text = _utf8_slice(content_text, start, end)
+                if support_text:
+                    supports.append(
+                        {
+                            "start_index": start,
+                            "end_index": end,
+                            "text": support_text[:2048],
+                            "chunk_indices": (index,),
+                        }
+                    )
+    usage = getattr(interaction, "usage", None)
+    prompt_tokens = getattr(usage, "total_input_tokens", 0)
+    output_tokens = getattr(usage, "total_output_tokens", 0)
+    grounding_count = 0
+    for item in getattr(usage, "grounding_tool_count", None) or []:
+        if getattr(item, "type", None) == "google_search":
+            count = getattr(item, "count", 0)
+            if isinstance(count, int) and count > 0:
+                grounding_count += count
+    normalized = _normalize_grounded_answer(
+        text,
+        roots,
+        supports,
+        allowed_local_ids=allowed_local_ids,
+    )
+    return {
+        "message": AIMessage(content=raw_text),
+        "answer_json": normalized,
+        "prompt_tokens": prompt_tokens if isinstance(prompt_tokens, int) else 0,
+        "output_tokens": output_tokens if isinstance(output_tokens, int) else 0,
+        "google_queries": list(dict.fromkeys(queries)),
+        "google_query_count": max(len(set(queries)), grounding_count),
+        "grounding_roots": roots,
+        "grounding_supports": supports,
+    }
+
+
+def _utf8_slice(value: str, start: int, end: int) -> str:
+    if start < 0 or end <= start:
+        return ""
+    encoded = value.encode("utf-8")
+    if end > len(encoded):
+        return ""
+    try:
+        return encoded[start:end].decode("utf-8").strip()
+    except UnicodeDecodeError:
+        return ""
 
 
 def _metadata_index(value: object) -> int:

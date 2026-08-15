@@ -16,6 +16,7 @@ class ProviderResult(TypedDict):
     prompt_tokens: int
     output_tokens: int
     google_queries: list[str]
+    google_query_count: NotRequired[int]
     grounding_roots: list[dict[str, object]]
     grounding_supports: list[dict[str, object]]
 
@@ -108,7 +109,11 @@ class BoundedStrongLlmGraph:
             "result": _run_result(
                 result,
                 vertex_calls=call_count,
-                backend="VERTEX_GOOGLE" if discovered["google_queries"] else "NONE",
+                backend=(
+                    "VERTEX_GOOGLE"
+                    if discovered.get("google_query_count", len(discovered["google_queries"])) > 0
+                    else "NONE"
+                ),
                 grounding_source=discovered,
             )
         }
@@ -184,7 +189,7 @@ def _run_result(
         prompt_token_count=result["prompt_tokens"],
         output_token_count=result["output_tokens"],
         vertex_generate_call_count=vertex_calls,
-        google_grounding_query_count=len(source["google_queries"]),
+        google_grounding_query_count=source.get("google_query_count", len(source["google_queries"])),
         search_backend=backend,
         evidence_validation_mode="GOOGLE_GROUNDING" if roots else "CANONICAL_EXACT",
         grounding_roots=roots,

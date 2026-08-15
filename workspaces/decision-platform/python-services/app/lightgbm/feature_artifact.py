@@ -8,7 +8,7 @@ import hashlib
 from io import BytesIO
 from pathlib import Path
 import struct
-from typing import Iterable, Mapping, Sequence
+from typing import Any, Iterable, Mapping, Sequence
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -182,27 +182,60 @@ def validate_feature_table(table: pa.Table, *, approved_feature_columns: Sequenc
 
 
 def logical_dataset_hash(table: pa.Table) -> str:
-    """ordered logical values를 platform-independent bytes로 streaming SHA-256한다."""
+    """label join 전 feature table의 packed-validity logical hash를 계산한다."""
 
     digest = hashlib.sha256()
-    digest.update(b"s5-logical-dataset-v1\x00")
+    digest.update(b"s5-logical-feature-table-v1\x00")
+    _update_logical_schema_and_values(digest, table)
+    return digest.hexdigest()
+
+
+def logical_training_dataset_hash(table: pa.Table, labels: Sequence[int]) -> str:
+    """ordered feature bytes와 exact class label byte를 함께 묶은 model-input hash를 계산한다."""
+
+    label_values = tuple(labels)
+    if len(label_values) != table.num_rows or any(
+        isinstance(value, bool) or value not in (0, 1, 2) for value in label_values
+    ):
+        raise LightGbmContractError("training dataset labels must use exact class bytes 0, 1, 2")
+    digest = hashlib.sha256()
+    digest.update(b"s5-logical-training-dataset-v1\x00")
+    _update_logical_schema_and_values(digest, table)
+    digest.update(bytes(label_values))
+    return digest.hexdigest()
+
+
+def _update_logical_schema_and_values(digest: Any, table: pa.Table) -> None:
+    """schema, key, packed validity, little-endian float32 순서를 두 hash profile이 공유한다."""
+
     for field in table.schema:
         digest.update(field.name.encode("utf-8"))
         digest.update(b"\x00")
         digest.update(str(field.type).encode("ascii"))
         digest.update(b"\x01" if field.nullable else b"\x00")
+    rows = table.to_pylist()
     epoch = date(1970, 1, 1)
-    for row in table.to_pylist():
+    for row in rows:
         symbol = row["symbol"].encode("utf-8")
         digest.update(struct.pack("<I", len(symbol)))
         digest.update(symbol)
         digest.update(struct.pack("<i", (row["sessionDate"] - epoch).days))
-        for field in table.column_names[2:]:
+
+    feature_names = table.column_names[2:]
+    validity = bytearray((len(rows) * len(feature_names) + 7) // 8)
+    for row_index, row in enumerate(rows):
+        for feature_index, field in enumerate(feature_names):
+            if row[field] is not None:
+                bit_index = row_index * len(feature_names) + feature_index
+                validity[bit_index // 8] |= 1 << (bit_index % 8)
+    digest.update(struct.pack("<I", len(validity)))
+    digest.update(validity)
+
+    for row in rows:
+        for field in feature_names:
             value = row[field]
-            digest.update(b"\x00" if value is None else b"\x01")
             if value is not None:
                 digest.update(struct.pack("<f", float(value)))
-    return digest.hexdigest()
 
 
 def build_feature_manifest(artifact: FeatureArtifact, *, provenance: Mapping[str, object]) -> bytes:

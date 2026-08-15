@@ -166,6 +166,13 @@ def generate_fake_contract_bundle() -> dict[str, bytes]:
 
 def signal_row_payload_sha256(row: dict[str, object]) -> str:
     """DB exact DML에 전달할 canonical row payload digest를 계산한다."""
+
+    return hashlib.sha256(signal_row_payload_bytes(row)).hexdigest()
+
+
+def signal_row_payload_bytes(row: dict[str, object]) -> bytes:
+    """DB가 다시 hash할 exact canonical UTF-8 payload text를 만든다."""
+
     payload = {
         "contractVersion": "signal-v2-runtime-v1",
         **{
@@ -189,7 +196,7 @@ def signal_row_payload_sha256(row: dict[str, object]) -> str:
             )
         },
     }
-    return hashlib.sha256(canonical_json_bytes(_normalize_temporal(payload))).hexdigest()
+    return canonical_json_bytes(_normalize_temporal(payload))
 
 
 def signal_row_provenance_sha256(row: dict[str, object]) -> str:

@@ -5,6 +5,7 @@ import hashlib
 import numpy as np
 import pytest
 
+import app.lightgbm.training as training_module
 from app.lightgbm.calibration import fit_ovr_platt
 from app.lightgbm.errors import LightGbmContractError
 from app.lightgbm.metrics import (
@@ -15,7 +16,10 @@ from app.lightgbm.metrics import (
     top_label_ece,
 )
 from app.lightgbm.training import (
+    Candidate,
     CandidateEvaluation,
+    FinalFitArrays,
+    FoldArrays,
     FoldEvaluation,
     capped_balanced_weights,
     exact_grid,
@@ -23,7 +27,10 @@ from app.lightgbm.training import (
     model_manifest_bytes,
     open_final_test_after_selection,
     raw_margins,
+    research_cost_report,
     resolve_deterministic_fit,
+    run_exact_four_grid,
+    run_final_candidate,
     select_candidate,
 )
 from app.lightgbm.walk_forward import UntouchedTestLoader
@@ -137,6 +144,72 @@ def test_candidate_selection_uses_all_folds_and_no_pass_skips_final_test() -> No
     assert select_candidate(evaluations) == evaluations[3]
 
 
+def test_exact_grid_orchestrator_runs_twelve_folds_and_final_test_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[int, str]] = []
+    dummy_model = training_module.TrainedBooster(object(), b"model", "a" * 64, 1, 1)  # type: ignore[arg-type]
+
+    def fake_fit(
+        x_fit: np.ndarray,
+        y_fit: np.ndarray,
+        x_early: np.ndarray,
+        y_early: np.ndarray,
+        candidate: Candidate,
+    ) -> training_module.TrainedBooster:
+        del x_fit, y_fit, x_early, y_early
+        calls.append((candidate.num_leaves, candidate.class_weight))
+        return dummy_model
+
+    class _Calibrator:
+        pass
+
+    def fake_probabilities(
+        model: object,
+        calibrator: object,
+        features: np.ndarray,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        del model, calibrator
+        labels = np.arange(len(features)) % 3
+        probabilities = np.eye(3, dtype=np.float64)[labels]
+        return probabilities, probabilities
+
+    monkeypatch.setattr(training_module, "fit_lightgbm_reproducible", fake_fit)
+    monkeypatch.setattr(training_module, "raw_margins", lambda model, features: np.zeros((len(features), 3)))
+    monkeypatch.setattr(training_module, "fit_ovr_platt", lambda margins, labels: _Calibrator())
+    monkeypatch.setattr(training_module, "calibrated_probabilities", fake_probabilities)
+
+    def fold() -> FoldArrays:
+        labels = np.tile(np.asarray([0, 1, 2]), 2)
+        features = np.zeros((len(labels), 2), dtype=np.float32)
+        return FoldArrays(features, labels, features, labels, features, labels, features, labels)
+
+    runs = run_exact_four_grid([fold(), fold(), fold()])
+    assert len(runs) == 4
+    assert calls == [
+        pair
+        for pair in [
+            (15, "NONE"),
+            (15, "CAPPED_BALANCED"),
+            (31, "NONE"),
+            (31, "CAPPED_BALANCED"),
+        ]
+        for _ in range(3)
+    ]
+
+    labels = np.tile(np.asarray([0, 1, 2]), 2)
+    features = np.zeros((len(labels), 2), dtype=np.float32)
+    loader = UntouchedTestLoader((features, labels))
+    final = run_final_candidate(
+        runs,
+        FinalFitArrays(features, labels, features, labels, features, labels),
+        loader,
+    )
+    assert final is not None
+    assert final.candidate == exact_grid()[0]
+    assert loader.access_count == 1
+
+
 def test_actual_lightgbm_text_and_manifest_hash_repeat() -> None:
     random = np.random.default_rng(20260729)
     x_fit = random.normal(size=(300, 6)).astype(np.float32)
@@ -153,3 +226,20 @@ def test_actual_lightgbm_text_and_manifest_hash_repeat() -> None:
     assert model_manifest_bytes(model, candidate, calibrator_sha) == model_manifest_bytes(
         model, candidate, calibrator_sha
     )
+
+
+def test_cost_report_compares_full_always_hold_and_train_prior_baselines() -> None:
+    labels = np.asarray([0, 1, 2, 0, 1, 2], dtype=np.int64)
+    probabilities = np.eye(3, dtype=np.float64)[labels]
+    report = research_cost_report(
+        labels,
+        probabilities,
+        np.asarray([-0.01, 0.0, 0.01, -0.02, 0.0, 0.02]),
+        np.asarray([2, 2, 2]),
+    )
+    for baseline in (report["alwaysHold"], report["trainOnlyPrior"]):
+        assert isinstance(baseline, dict)
+        assert set(("logLoss", "brier", "ece", "macroF1", "confusionMatrix")) <= set(
+            baseline
+        )
+        assert set(baseline["costSensitivityBps"]) == {"25", "30", "35"}

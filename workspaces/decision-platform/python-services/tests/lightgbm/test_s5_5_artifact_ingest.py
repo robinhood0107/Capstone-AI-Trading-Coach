@@ -3,7 +3,9 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+from typing import Any
 
+import psycopg
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
@@ -17,6 +19,7 @@ from app.lightgbm.fake_artifacts import (
     signal_row_payload_sha256,
     signal_row_provenance_sha256,
 )
+from app.lightgbm.signal_ingest_repository import validate_and_ingest_signal_bundle
 
 
 def _write_bundle(root: Path, bundle: dict[str, bytes]) -> None:
@@ -240,3 +243,81 @@ def test_nested_type_other_than_bounded_feature_summary_is_rejected(tmp_path: Pa
     _rebind_manifest(tmp_path, "signals.parquet")
     with pytest.raises(LightGbmContractError, match="schema, type"):
         validate_signal_bundle(approved_root=tmp_path)
+
+
+class _FakeCursor:
+    def __init__(self, row: tuple[object, ...] | None) -> None:
+        self._row = row
+
+    def fetchone(self) -> tuple[object, ...] | None:
+        return self._row
+
+
+class _FakeConnection:
+    def __init__(self, *, fail_at_ingest: int | None = None) -> None:
+        self.fail_at_ingest = fail_at_ingest
+        self.ingest_parameters: list[tuple[object, ...]] = []
+        self.committed = False
+        self.rolled_back = False
+
+    def __enter__(self) -> _FakeConnection:
+        return self
+
+    def __exit__(self, error_type: object, error: object, traceback: object) -> None:
+        self.committed = error_type is None
+        self.rolled_back = error_type is not None
+
+    def execute(
+        self,
+        sql: str,
+        parameters: tuple[object, ...] | None = None,
+    ) -> _FakeCursor:
+        if "SELECT session_user, current_user" in sql:
+            return _FakeCursor(("decision_app", "decision_app"))
+        if "ingest_signal_v2_exact" in sql:
+            assert parameters is not None
+            self.ingest_parameters.append(parameters)
+            if self.fail_at_ingest == len(self.ingest_parameters):
+                raise psycopg.DatabaseError("typed conflict")
+            return _FakeCursor(("INSERTED", f"sigv2_{len(self.ingest_parameters):024d}"))
+        return _FakeCursor(None)
+
+
+def test_validated_bundle_is_ingested_in_one_exact_transaction(tmp_path: Path) -> None:
+    _write_bundle(tmp_path, generate_fake_contract_bundle())
+    connection = _FakeConnection()
+
+    def factory(*args: object, **kwargs: object) -> Any:
+        assert args == ("postgresql://fixture",)
+        assert kwargs == {"autocommit": False, "connect_timeout": 2}
+        return connection
+
+    outcomes = validate_and_ingest_signal_bundle(
+        approved_root=tmp_path,
+        database_dsn="postgresql://fixture",
+        connection_factory=factory,
+    )
+
+    assert len(outcomes) == 4
+    assert connection.committed and not connection.rolled_back
+    assert len(connection.ingest_parameters) == 4
+    for parameters in connection.ingest_parameters:
+        payload_text = parameters[20]
+        assert isinstance(payload_text, str)
+        assert hashlib.sha256(payload_text.encode()).hexdigest() == parameters[16]
+        assert parameters[18:20] == (True, "FAKE_CONTRACT")
+
+
+def test_exact_ingest_conflict_rolls_back_the_whole_validated_bundle(tmp_path: Path) -> None:
+    _write_bundle(tmp_path, generate_fake_contract_bundle())
+    connection = _FakeConnection(fail_at_ingest=3)
+
+    with pytest.raises(LightGbmContractError, match="transaction failed"):
+        validate_and_ingest_signal_bundle(
+            approved_root=tmp_path,
+            database_dsn="postgresql://fixture",
+            connection_factory=lambda *args, **kwargs: connection,
+        )
+
+    assert connection.rolled_back and not connection.committed
+    assert len(connection.ingest_parameters) == 3

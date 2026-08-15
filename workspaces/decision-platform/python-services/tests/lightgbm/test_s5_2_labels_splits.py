@@ -21,9 +21,14 @@ from app.lightgbm.walk_forward import (
 )
 
 
-def _price(session: date, adjusted_open: float | None) -> PriceEvidence:
+def _price(
+    session: date,
+    adjusted_open: float | None,
+    *,
+    instrument_id: str = "instrument-005930",
+) -> PriceEvidence:
     return PriceEvidence(
-        instrument_id="instrument-005930",
+        instrument_id=instrument_id,
         symbol="005930",
         session_date=session,
         adjusted_open=adjusted_open,
@@ -65,6 +70,18 @@ def test_missing_t1_or_t6_open_drops_row_and_zero_fill_does_not_forward_read() -
         "a": np.float32(0.0),
         "b": np.float32(1.25),
     }
+
+
+def test_label_join_uses_permanent_identity_even_when_symbols_are_reused() -> None:
+    first_sessions = [date(2026, 1, 1) + timedelta(days=index) for index in range(7)]
+    second_sessions = [date(2026, 1, 8) + timedelta(days=index) for index in range(7)]
+    first = [_price(session, 100.0, instrument_id="identity-a") for session in first_sessions]
+    second = [_price(session, 200.0, instrument_id="identity-b") for session in second_sessions]
+
+    labels = build_exact_labels([*first, *second])
+
+    assert len(labels) == 2
+    assert sorted(row.forward_return for row in labels) == [0.0, 0.0]
 
 
 def _split_fixture() -> tuple[tuple[date, ...], tuple[LabelRow, ...]]:

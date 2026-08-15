@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 from typing import Sequence
 
 from app.lightgbm.errors import LightGbmContractError
@@ -61,7 +62,15 @@ def evaluate_weekly_drift(
         previous = DriftState()
     if mature_sessions < 30 or present_classes != frozenset({0, 1, 2}) or current is None:
         return DriftState(previous.consecutive_ece_breaches, "UNIDENTIFIABLE_OUTPUT")
-    if min(baseline.validation_ece, baseline.validation_brier, current.ece, current.brier) < 0:
+    observed = (
+        baseline.validation_ece,
+        baseline.validation_brier,
+        current.ece,
+        current.brier,
+    )
+    if not all(math.isfinite(value) for value in observed):
+        return DriftState(previous.consecutive_ece_breaches, "UNIDENTIFIABLE_OUTPUT")
+    if min(observed) < 0:
         raise LightGbmContractError("drift metrics must be non-negative")
 
     brier_breached = (

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from typing import Iterable
 
 from app.lightgbm.errors import DatasetUnavailable, LightGbmContractError
@@ -27,7 +27,7 @@ class UniverseObservation:
     security_type: str
     common_share: bool
     listed: bool
-    available_at: str
+    available_at: datetime
     source_revision: str
     source_sha256: str
 
@@ -48,16 +48,34 @@ def select_monthly_universe(
     selection_session: date,
     trailing_sessions: tuple[date, ...],
     effective_month: str,
+    cutoff: datetime,
 ) -> MonthlyUniverse:
     """trailing-20 evidence와 selection-date 시총으로 PIT top 30 및 고정 ETF를 선택한다."""
 
     if len(trailing_sessions) != 20 or trailing_sessions[-1] != selection_session:
         raise LightGbmContractError("universe selection requires exact trailing 20 sessions")
+    if cutoff.tzinfo is None:
+        raise LightGbmContractError("universe cutoff must be timezone aware")
     allowed_sessions = set(trailing_sessions)
-    by_identity: dict[str, list[UniverseObservation]] = defaultdict(list)
+    selected_vintages: dict[tuple[str, date], UniverseObservation] = {}
     for observation in observations:
-        if observation.session_date in allowed_sessions:
-            by_identity[observation.instrument_id].append(observation)
+        if observation.session_date not in allowed_sessions:
+            continue
+        _validate_provenance(observation, cutoff)
+        if observation.available_at > cutoff:
+            continue
+        key = (observation.instrument_id, observation.session_date)
+        previous = selected_vintages.get(key)
+        if previous is None or (
+            observation.available_at,
+            observation.source_revision,
+            observation.source_sha256,
+        ) > (previous.available_at, previous.source_revision, previous.source_sha256):
+            selected_vintages[key] = observation
+
+    by_identity: dict[str, list[UniverseObservation]] = defaultdict(list)
+    for observation in selected_vintages.values():
+        by_identity[observation.instrument_id].append(observation)
 
     ranked: list[tuple[float, float, str, str]] = []
     fixed_etf_identity: str | None = None
@@ -67,21 +85,23 @@ def select_monthly_universe(
             continue
         current = selection_rows[0]
         if current.symbol == FIXED_ETF_SYMBOL:
-            if current.listed and current.security_type == "ETF":
+            if len(rows) == 20 and current.listed and current.security_type == "ETF":
                 fixed_etf_identity = identity
             continue
         if not _eligible_common_stock(current):
             continue
+        if len(rows) != 20 or {row.session_date for row in rows} != allowed_sessions:
+            continue
         positive = [row.trading_value for row in rows if row.trading_value > 0]
         if len(positive) < 18 or current.market_cap <= 0:
             continue
-        mean_trading_value = sum(positive) / len(positive)
+        mean_trading_value = sum(row.trading_value for row in rows) / 20.0
         ranked.append((-mean_trading_value, -current.market_cap, current.symbol, identity))
 
     ranked.sort()
     selected = ranked[:30]
-    if not selected:
-        raise DatasetUnavailable("DATASET_UNAVAILABLE: no eligible PIT common-stock universe")
+    if len(selected) != 30:
+        raise DatasetUnavailable("DATASET_UNAVAILABLE: exact PIT top-30 universe is unavailable")
     identities = [row[3] for row in selected]
     symbols = [row[2] for row in selected]
     if fixed_etf_identity is None:
@@ -116,3 +136,14 @@ def _eligible_common_stock(observation: UniverseObservation) -> bool:
         and observation.common_share
         and observation.security_type == "COMMON_STOCK"
     )
+
+
+def _validate_provenance(observation: UniverseObservation, cutoff: datetime) -> None:
+    if observation.available_at.tzinfo is None:
+        raise LightGbmContractError("universe evidence timestamp must be timezone aware")
+    if (
+        not observation.source_revision
+        or len(observation.source_sha256) != 64
+        or any(character not in "0123456789abcdef" for character in observation.source_sha256)
+    ):
+        raise LightGbmContractError("universe evidence provenance is invalid")

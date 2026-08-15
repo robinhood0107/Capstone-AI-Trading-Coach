@@ -298,6 +298,54 @@ def test_langchain_content_block_citation_is_the_grounding_fallback() -> None:
     assert normalized["sentences"][0]["citationIds"] == ["cit_1"]
 
 
+def test_google_support_segment_may_exactly_contain_the_structured_sentence() -> None:
+    answer = {
+        "basis": "EVIDENCE",
+        "answer": "Diversification can reduce risk.",
+        "sentences": [
+            {
+                "text": "Diversification can reduce risk.",
+                "citationIds": [],
+                "evidenceSpans": [],
+                "numericSpans": [],
+            }
+        ],
+        "warnings": [],
+    }
+    roots: list[dict[str, object]] = [
+        {
+            "result_id": "google_1",
+            "title": "Diversification",
+            "uri": "https://www.investor.gov/diversification",
+            "domain": "investor.gov",
+            "chunk_index": 0,
+            "citation_id": "",
+        }
+    ]
+    supports: list[dict[str, object]] = [
+        {
+            "start_index": 0,
+            "end_index": 70,
+            "text": '\"text\":\"Diversification can reduce risk.\",\"citationIds\":[]',
+            "chunk_indices": (0,),
+        }
+    ]
+
+    normalized = json.loads(
+        _normalize_grounded_answer(
+            json.dumps(answer),
+            roots,
+            supports,
+            allowed_local_ids=set(),
+        )
+    )
+
+    assert normalized["sentences"][0]["citationIds"] == ["cit_1"]
+    assert normalized["sentences"][0]["evidenceSpans"] == [
+        {"citationId": "cit_1", "quote": "Diversification can reduce risk."}
+    ]
+
+
 def test_provider_json_accepts_only_one_object_with_optional_known_fence() -> None:
     expected = json.loads(_answer())
 

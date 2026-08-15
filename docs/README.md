@@ -4,7 +4,7 @@
 
 ## 현재 검증 상태
 
-이 표는 `main=408ddcd0…`와 2026-08-15 S4.9 V71 live-smoke merge-candidate overlay를 기준으로 한 Pre-S5
+이 표는 `main=bd859ec3…`와 2026-08-15 S4.9 V71 post-merge release evidence를 기준으로 한 Pre-S5
 문서 진실 동결이다. `MERGED`는 코드가 병합됐다는 뜻일 뿐 current-HEAD 외부 호출 성공을
 뜻하지 않는다. `OFFLINE_ONLY`는 fixture·local/Compose 검증만, `STUB_FAIL_CLOSED`는
 의도적으로 stable error로 닫힌 공개 표면만, `CONTRACT_ONLY`는 schema/fixture만 뜻한다.
@@ -51,17 +51,17 @@ SearXNG/Vertex smoke에 사용한다. KIS 실제 주문에는 사용하지 않�
 | S4.8 Core 6 v2 | `IMPLEMENTED_DRAFT` | PR #92 contract lock + local probe runtime | 0 | `S4_8_CORE6_V2=CONTRACT_LOCKED / S4_8_CORE6_LOCAL_PROBE_RUNTIME=IMPLEMENTED_DRAFT`; KIS current-price·SEC EDGAR(2)·KRX daily(2)의 fixed local one-shot executor와 content-free receipt bridge가 있으며 fresh packet/evidence 전에는 socket 0; KOFIA blocked, OpenDART/ECOS projection-only |
 | S4.8 Core 6 + Optional 3 local runtime | `IMPLEMENTED_DRAFT` | V50 + Core 6/Optional 3 packet-gated probes | 0 | V50 nine-lane typed projection은 provider 0; selected successful Core 6 receipt complete-set만 read-only로 `AVAILABLE`를 materialize하며 Optional 3도 fresh packet/evidence 전에는 socket 0 |
 | S4.8B/C | `IMPLEMENTED_MERGE_CANDIDATE` | PR #77 `509d8eee` | 0 | `S4_8B_C=IMPLEMENTED_MERGE_CANDIDATE`; fixture/scorer/V23/read port만, endpoint/RiskEngine/provider는 미구현 |
-| S4.9 MCP + Strong LLM | `LIVE_VERIFIED_MERGE_CANDIDATE` | `main=408ddcd0…` + current branch V71 | PKCE 1 flow, MCP 5 tools, SearXNG search/read, Vertex Strong LLM | public-only owner isolation, answer validation, current V71 direct answer/history `COMMITTED`; 전체 local gate·최종 Security·PR CI·merge 전에는 S5 entry 미개방 |
-| S4.9 LangGraph + Google grounding | `LIVE_VERIFIED_MERGE_CANDIDATE` | current branch V70/V71 | Google autonomous search와 DDG cap fallback 실제 실행 | bounded LangGraph, Pacific-month 4,000 soft cap, source/support provenance; Google no-support는 `RETRIEVAL_ONLY`, DDG CAPTCHA는 typed fail-closed |
+| S4.9 MCP + Strong LLM | `LIVE_VERIFIED` | PR #131 `bd859ec3`, DB V71 | PKCE 1 flow, MCP 5 tools, SearXNG search/read, Vertex Strong LLM | public-only owner isolation, answer validation, V71 direct answer/history `COMMITTED`; exact-tree Security coverage complete/findings 0과 merge-SHA CI green 확인 |
+| S4.9 LangGraph + Google grounding | `LIVE_VERIFIED` | PR #131 `bd859ec3`, V70/V71 | Google autonomous search와 DDG cap fallback 실제 실행 | bounded LangGraph, Pacific-month 4,000 soft cap, source/support provenance; Google no-support는 `RETRIEVAL_ONLY`, DDG CAPTCHA는 typed fail-closed |
 
 V64는 V60의 Core 6 direct-read terminal 분류, V61~V62 provider accounting과 V63 empty owner
 library의 generation scope만 제한적으로 허용한다. Core 6 direct-read lane의 complete receipt set을 `AVAILABLE`, 일부 receipt만 있는 terminal set을
 `ABSTAIN/DIRECT_PROBE_RECEIPT_SET_INCOMPLETE`로 Python runtime과 동일하게 수용한다. 이는 provider
 권한 추가가 아니다. 현재 release terminal set은 KIS `AVAILABLE`, KRX·SEC EDGAR·OpenDART·ECOS
 `ABSTAIN`, KOFIA·Finnhub·Twelve Data·Massive `BLOCKED`다. Pre-S5 main baseline은 보존됐고 S4.9
-live smoke는 V71 DB에서 current LangGraph direct answer까지 성공했다. 현재 branch에서는 코드가 아직 main에 병합되지 않았으므로
-`S5_ENTRY_GATE=S4_9_RELEASE_PENDING`이다. V1→V71 clean/upgrade·RLS, 전체 local gate, 마지막
-Security 1회, PR CI와 merge/post-merge green이 모두 확인된 뒤에만 `OPEN`이다.
+live smoke는 V71 DB에서 current LangGraph direct answer까지 성공했다. PR #131 병합, V1→V71
+clean/upgrade·RLS, 전체 local gate, exact-tree 최종 Security coverage complete/findings 0과 merge SHA의
+required/post-merge CI green까지 확인됐다. 따라서 `S4_READY_FOR_S5=TRUE`, `S5_ENTRY_GATE=OPEN`이다.
 
 2026-08-15 live smoke는 Authorization Code + PKCE S256 발급·교환과 token-family revoke,
 MCP `initialize`/`tools/list` 5개, public RAG search, SearXNG search 1회, exact HTTPS URL read 1회,

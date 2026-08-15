@@ -1,7 +1,10 @@
 # S4.9 MCP + Strong LLM 운영 가이드
 
-상태: `V71_LIVE_VERIFIED_MERGE_CANDIDATE` (2026-08-15)
+상태: `V71_LIVE_VERIFIED_MERGED` (2026-08-15)
 계약: `contracts/catalogs/s4-9-mcp-strong-llm-contract.v2.json` (v1 역사 보존)
+
+병합 근거: PR #131 merge commit `bd859ec3…`; exact-tree Security coverage complete/findings 0;
+merge SHA required/post-merge CI green. 현재 `S4_READY_FOR_S5=TRUE`, `S5_ENTRY_GATE=OPEN`이다.
 
 ## 1. 구성
 

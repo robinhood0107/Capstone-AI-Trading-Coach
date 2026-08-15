@@ -211,7 +211,7 @@ def _vertex_response_schema() -> dict[str, object]:
 
 
 def _provider_result(message: AIMessage) -> ProviderResult:
-    text = _message_text(message)
+    text = _canonical_answer_json(_message_text(message))
     grounding = message.response_metadata.get("grounding_metadata") or {}
     if not isinstance(grounding, dict):
         grounding = {}
@@ -279,6 +279,26 @@ def _message_text(message: AIMessage) -> str:
         elif isinstance(part, dict) and part.get("type") == "text":
             parts.append(str(part.get("text", "")))
     return "".join(parts)
+
+
+def _canonical_answer_json(value: str) -> str:
+    """Native schema 본문만 canonicalize하고 설명문·복수 JSON·비객체 root는 허용하지 않는다."""
+
+    candidate = value.strip()
+    if candidate.startswith("```json\n") and candidate.endswith("```"):
+        candidate = candidate[8:-3].strip()
+    elif candidate.startswith("```\n") and candidate.endswith("```"):
+        candidate = candidate[4:-3].strip()
+    if not candidate:
+        raise ValueError("STRONG_LLM_PROVIDER_TEXT_MISSING")
+    try:
+        payload = json.loads(candidate)
+    except json.JSONDecodeError as error:
+        raise ValueError("STRONG_LLM_PROVIDER_JSON_INVALID") from error
+    if not isinstance(payload, dict):
+        raise ValueError("STRONG_LLM_PROVIDER_JSON_ROOT_INVALID")
+    StrongLlmAnswer.model_validate(payload)
+    return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
 
 
 def _grounding_evidence(result: ProviderResult) -> str:

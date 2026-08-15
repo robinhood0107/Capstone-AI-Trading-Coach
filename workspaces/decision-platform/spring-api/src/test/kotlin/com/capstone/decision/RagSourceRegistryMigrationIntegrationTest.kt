@@ -122,14 +122,14 @@ class RagSourceRegistryMigrationIntegrationTest {
     }
 
     @Test
-    fun `V62 through V70 forward repairs preserve empty owner scope and ACL`() {
+    fun `V62 through V71 forward repairs preserve empty owner scope and ACL`() {
         withPreparedDatabase("empty_owner_generation_scope_upgrade") { jdbcUrl ->
             flyway(jdbcUrl, target = "62").migrate()
             flyway(jdbcUrl).migrate()
 
             adminConnection(jdbcUrl).use { connection ->
                 assertThat(queryString(connection, "select max(version::integer)::text from flyway_schema_history where success"))
-                    .isEqualTo("70")
+                    .isEqualTo("71")
                 assertThat(
                     queryString(
                         connection,
@@ -157,7 +157,7 @@ class RagSourceRegistryMigrationIntegrationTest {
     }
 
     @Test
-    fun `V65 to V70 adds only S4 9 boundaries and preserves existing rows`() {
+    fun `V65 to V71 adds only S4 9 boundaries and preserves existing rows`() {
         withPreparedDatabase("s49_forward_upgrade") { jdbcUrl ->
             flyway(jdbcUrl, target = "65").migrate()
             adminConnection(jdbcUrl).use { connection ->
@@ -173,7 +173,7 @@ class RagSourceRegistryMigrationIntegrationTest {
 
             adminConnection(jdbcUrl).use { connection ->
                 assertThat(queryString(connection, "select max(version::integer)::text from flyway_schema_history where success"))
-                    .isEqualTo("70")
+                    .isEqualTo("71")
                 assertThat(queryString(connection, "select count(*)::text from users where user_id = 'usr_s49_preserved'"))
                     .isEqualTo("1")
                 assertThat(queryString(connection, "select count(*)::text from public.s4_9_saved_answer_history"))
@@ -370,6 +370,53 @@ class RagSourceRegistryMigrationIntegrationTest {
                         """.trimIndent(),
                     ),
                 ).isEqualTo("1:1:1:1")
+            }
+        }
+    }
+
+    @Test
+    fun `V71 canonicalizes host registered SearXNG read provenance`() {
+        withPreparedDatabase("s49_searxng_history_provenance") { jdbcUrl ->
+            flyway(jdbcUrl).migrate()
+            adminConnection(jdbcUrl).use { connection ->
+                connection.createStatement().use { statement ->
+                    statement.executeUpdate(
+                        "insert into users(user_id,username,password_hash,role,status,security_version) " +
+                            "values ('usr_s49_searxng','s49_searxng','\$2b\$12\$aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa','USER','ACTIVE',1)",
+                    )
+                }
+            }
+            appConnection(jdbcUrl).use { connection ->
+                connection.autoCommit = false
+                connection.createStatement().use { statement ->
+                    statement.execute("select set_config('app.actor_user_id','usr_s49_searxng',true)")
+                    statement.execute(
+                        "select public.record_s4_9_read_provenance(" +
+                            "'usr_s49_searxng','req_s49_searxng_0001','s49_src_${"1".repeat(32)}'," +
+                            "'searxng_${"2".repeat(24)}','cit_1','SEARXNG_RESULT','Investor.gov'," +
+                            "'https://www.investor.gov/diversification','www.investor.gov','${"3".repeat(64)}')",
+                    )
+                }
+                val canonical =
+                    queryString(
+                        connection,
+                        """
+                        select public.canonicalize_s4_9_strong_llm_citations_v2(
+                          'usr_s49_searxng','req_s49_searxng_0001','req_s49_searxng_0001','scope_unused',
+                          '[{"ordinal":1,"citationId":"cit_1","sourceId":"src_web_investor_gov","sourceRevisionId":"srv_web_${"4".repeat(
+                            24,
+                        )}","chunkRevisionId":"rag_v2_chk_${"5".repeat(
+                            32,
+                        )}","generationId":"rgr_${"6".repeat(
+                            32,
+                        )}","citationKind":"PUBLIC_WEB","provenanceResultId":"searxng_${"2".repeat(
+                            24,
+                        )}","title":"Investor.gov","canonicalUrl":"https://www.investor.gov/diversification","locator":{"section":"www.investor.gov"}}]'::jsonb
+                        )::text
+                        """.trimIndent(),
+                    )
+                assertThat(canonical).contains("Investor.gov", "src_web_investor_gov", "cit_1")
+                connection.rollback()
             }
         }
     }
@@ -582,7 +629,7 @@ class RagSourceRegistryMigrationIntegrationTest {
                 assertThat(queryStrings(connection, normalizedTableQuery))
                     .containsAll(expectedTables)
                 assertThat(queryString(connection, "select max(version::integer) from flyway_schema_history where success"))
-                    .isEqualTo("70")
+                    .isEqualTo("71")
 
                 expectedTables.forEach { table ->
                     assertThat(

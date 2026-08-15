@@ -72,7 +72,7 @@ hash 권한이 0이다.
 
 ### 0.3 Pre-S5 public activation과 owner profile authority
 
-2026-08-15 live-smoke branch의 DB V71은 public RAG `FULL_READY`, active profile
+2026-08-15 PR #131 병합 이후 `main=bd859ec3…`의 DB V71은 public RAG `FULL_READY`, active profile
 `voyage_context_4_1024_v1`, sources/chunks `142/7,871`, document batch `63/63 COMMITTED`,
 EXACT30/OA112 evaluation `2/2 PASSED`를 보존한다. public Voyage document/evaluation/production query는
 재실행하지 않고 public BGE embedding inference는 계속 0이다. 기존 DB에는 V71까지 정상 Flyway 경로로 적용됐고

@@ -13,6 +13,7 @@ from typing import Callable, cast
 import grpc
 from google.genai.errors import APIError
 from grpc_health.v1 import health, health_pb2, health_pb2_grpc
+from pydantic import ValidationError
 
 from app.generated import strong_llm_agent_pb2, strong_llm_agent_pb2_grpc
 from app.strong_llm.models import Evidence, RunRequest
@@ -201,6 +202,12 @@ def _next_host(inbound: queue.Queue[object], run_id: str) -> strong_llm_agent_pb
 
 
 def _failure_leaf(error: Exception) -> str:
+    if isinstance(error, ValidationError):
+        first = error.errors(include_url=False, include_context=False, include_input=False)[0]
+        location = "_".join(str(part) for part in first.get("loc", ())) or "ROOT"
+        error_type = str(first.get("type", "INVALID"))
+        detail = re.sub(r"[^A-Z0-9]+", "_", f"{error_type}_{location}".upper()).strip("_")
+        return f"STRONG_LLM_SCHEMA_{detail}"[:96]
     cause: BaseException | None = error
     while cause is not None:
         if isinstance(cause, APIError):

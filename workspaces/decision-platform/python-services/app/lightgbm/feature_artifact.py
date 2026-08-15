@@ -3,30 +3,95 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import UTC, date, datetime
 import hashlib
 from io import BytesIO
 from pathlib import Path
 import struct
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any, ClassVar, Iterable, Mapping, Sequence, cast
 
 import pyarrow as pa
 import pyarrow.parquet as pq
 
+from app.data._shared.bounded_json import (
+    BoundedJsonError,
+    BoundedJsonLimits,
+    parse_bounded_json_bytes,
+)
 from app.data._shared.canonical_json import canonical_json_bytes
 from app.lightgbm.errors import DatasetUnavailable, LightGbmContractError
-from app.lightgbm.features import CORE_FEATURE_COLUMNS, reject_forbidden_columns
+from app.lightgbm.features import (
+    CORE_FEATURE_COLUMNS,
+    MarketEvidence,
+    PriceEvidence,
+    reject_forbidden_columns,
+)
+from app.lightgbm.pit_calendar import (
+    ELIGIBLE_SESSION_COUNT,
+    RAW_SESSION_COUNT,
+    MonthlyUniverseSchedule,
+    derive_monthly_universe_schedule,
+)
+from app.lightgbm.universe import MonthlyUniverse
 from app.rag.safe_io import RagSafeIoError, read_approved_regular_file
 
 
 MAX_PHYSICAL_BYTES = 256 * 1024 * 1024
 MAX_DECODED_BYTES = 256 * 1024 * 1024
+MAX_MANIFEST_BYTES = 1 * 1024 * 1024
 MAX_ROWS = 250_000
 MAX_COLUMNS = 128
 MAX_THRIFT_STRING_BYTES = 1 * 1024 * 1024
 MAX_THRIFT_CONTAINER_ITEMS = 300_000
 ROW_GROUP_SIZE = 65_536
 KEY_COLUMNS = ("symbol", "sessionDate")
+MANIFEST_FILENAME = "manifest.json"
+PARQUET_FILENAME = "features.parquet"
+MANIFEST_VERSION = "s5-feature-bundle-v1"
+SCHEMA_VERSION = "s5-feature-table-v1"
+_MANIFEST_FIELDS = frozenset(
+    {
+        "manifestVersion",
+        "schemaVersion",
+        "parquetFile",
+        "parquetSha256",
+        "logicalDatasetHash",
+        "rowCount",
+        "columnCount",
+        "featureColumns",
+        "provenance",
+    }
+)
+_PROVENANCE_FIELDS = frozenset(
+    {
+        "producer",
+        "sourceWorkspace",
+        "datasetCutoff",
+        "exchangeMic",
+        "calendarName",
+        "calendarVersion",
+        "universePolicyVersion",
+        "featurePolicyVersion",
+        "rawSessionStart",
+        "rawSessionEnd",
+        "rawSessionCount",
+        "eligibleSessionStart",
+        "eligibleSessionEnd",
+        "eligibleSessionCount",
+        "universeScheduleSha256",
+        "pitInputSha256",
+        "optionalFeatureGroups",
+    }
+)
+_MANIFEST_JSON_LIMITS = BoundedJsonLimits(
+    max_bytes=MAX_MANIFEST_BYTES,
+    max_depth=4,
+    max_list_items=MAX_COLUMNS,
+    max_object_keys=32,
+    max_text_codepoints=4_096,
+    max_text_bytes=16_384,
+    max_number_characters=32,
+)
 
 
 @dataclass(frozen=True)
@@ -38,6 +103,80 @@ class FeatureArtifact:
     logical_dataset_hash: str
     physical_bytes: int
     decoded_bytes: int
+
+
+@dataclass(frozen=True)
+class FeatureBundleProvenance:
+    """S5-authoritative PIT input만 묶는 closed feature bundle provenance."""
+
+    dataset_cutoff: datetime
+    raw_session_start: date
+    raw_session_end: date
+    raw_session_count: int
+    eligible_session_start: date
+    eligible_session_end: date
+    eligible_session_count: int
+    universe_schedule_sha256: str
+    pit_input_sha256: str
+
+    producer: ClassVar[str] = "decision-platform"
+    source_workspace: ClassVar[str] = "decision-platform"
+    exchange_mic: ClassVar[str] = "XKRX"
+    calendar_name: ClassVar[str] = "XKRX"
+    calendar_version: ClassVar[str] = "4.13.2"
+    universe_policy_version: ClassVar[str] = "s5-pit-universe-v1"
+    feature_policy_version: ClassVar[str] = "s5-core-features-v1"
+    optional_feature_groups: ClassVar[tuple[str, ...]] = ()
+
+    def __post_init__(self) -> None:
+        if self.dataset_cutoff.tzinfo is None:
+            raise LightGbmContractError("feature provenance cutoff must be timezone aware")
+        if (
+            self.raw_session_count != RAW_SESSION_COUNT
+            or self.eligible_session_count != ELIGIBLE_SESSION_COUNT
+            or not (
+                self.raw_session_start
+                <= self.eligible_session_start
+                <= self.eligible_session_end
+                <= self.raw_session_end
+            )
+        ):
+            raise LightGbmContractError("feature provenance session window is invalid")
+        _require_sha256(self.universe_schedule_sha256, "universe schedule")
+        _require_sha256(self.pit_input_sha256, "PIT input")
+
+    def as_mapping(self) -> dict[str, object]:
+        """manifest exact camelCase provenance projection을 반환한다."""
+
+        return {
+            "producer": self.producer,
+            "sourceWorkspace": self.source_workspace,
+            "datasetCutoff": _canonical_utc(self.dataset_cutoff),
+            "exchangeMic": self.exchange_mic,
+            "calendarName": self.calendar_name,
+            "calendarVersion": self.calendar_version,
+            "universePolicyVersion": self.universe_policy_version,
+            "featurePolicyVersion": self.feature_policy_version,
+            "rawSessionStart": self.raw_session_start.isoformat(),
+            "rawSessionEnd": self.raw_session_end.isoformat(),
+            "rawSessionCount": self.raw_session_count,
+            "eligibleSessionStart": self.eligible_session_start.isoformat(),
+            "eligibleSessionEnd": self.eligible_session_end.isoformat(),
+            "eligibleSessionCount": self.eligible_session_count,
+            "universeScheduleSha256": self.universe_schedule_sha256,
+            "pitInputSha256": self.pit_input_sha256,
+            "optionalFeatureGroups": [],
+        }
+
+
+@dataclass(frozen=True)
+class FeatureBundle:
+    """외부 trust anchor와 manifest/Parquet 검증을 모두 통과한 immutable receipt."""
+
+    artifact: FeatureArtifact
+    manifest_sha256: str
+    manifest_bytes: bytes
+    provenance: FeatureBundleProvenance
 
 
 def feature_table_from_rows(rows: Sequence[Mapping[str, object]]) -> pa.Table:
@@ -83,19 +222,64 @@ def write_feature_parquet(table: pa.Table) -> bytes:
     return payload
 
 
-def read_feature_artifact(
+def read_feature_bundle(
     *,
     approved_root: Path,
-    relative_path: str,
+    expected_manifest_sha256: str,
+) -> FeatureBundle:
+    """고정 manifest와 Parquet을 외부 digest부터 순서대로 검증한다."""
+
+    _require_sha256(expected_manifest_sha256, "feature manifest")
+    try:
+        safe_manifest = read_approved_regular_file(
+            approved_root=approved_root,
+            relative_path=MANIFEST_FILENAME,
+            max_bytes=MAX_MANIFEST_BYTES,
+        )
+    except RagSafeIoError as error:
+        raise LightGbmContractError("feature manifest path or file boundary is invalid") from error
+    if safe_manifest.content_sha256 != expected_manifest_sha256:
+        raise LightGbmContractError("feature manifest SHA-256 does not match trust anchor")
+    manifest = _parse_feature_manifest(safe_manifest.content)
+    row_count = _require_integer(manifest["rowCount"], "rowCount")
+    if row_count == 0:
+        raise DatasetUnavailable("DATASET_UNAVAILABLE: source feature rows are absent")
+    column_count = _require_integer(manifest["columnCount"], "columnCount")
+    if row_count < 0 or row_count > MAX_ROWS or column_count != len(KEY_COLUMNS) + len(
+        CORE_FEATURE_COLUMNS
+    ):
+        raise LightGbmContractError("feature manifest row or column count is invalid")
+    provenance = _parse_feature_provenance(manifest["provenance"])
+    artifact = _read_feature_artifact(
+        approved_root=approved_root,
+        expected_sha256=_require_text(manifest["parquetSha256"], "parquetSha256"),
+    )
+    if (
+        artifact.table.num_rows != row_count
+        or artifact.table.num_columns != column_count
+        or artifact.logical_dataset_hash
+        != _require_text(manifest["logicalDatasetHash"], "logicalDatasetHash")
+    ):
+        raise LightGbmContractError("feature bundle manifest does not match decoded Parquet")
+    return FeatureBundle(
+        artifact=artifact,
+        manifest_sha256=safe_manifest.content_sha256,
+        manifest_bytes=safe_manifest.content,
+        provenance=provenance,
+    )
+
+
+def _read_feature_artifact(
+    *,
+    approved_root: Path,
     expected_sha256: str,
-    approved_feature_columns: Sequence[str],
 ) -> FeatureArtifact:
-    """approved root의 regular Parquet을 projection 전에 bounded metadata/schema부터 검증한다."""
+    """manifest 검증 뒤에만 호출하는 고정-path Parquet reader."""
 
     try:
         safe = read_approved_regular_file(
             approved_root=approved_root,
-            relative_path=relative_path,
+            relative_path=PARQUET_FILENAME,
             max_bytes=MAX_PHYSICAL_BYTES,
         )
     except RagSafeIoError as error:
@@ -120,7 +304,7 @@ def read_feature_artifact(
         raise LightGbmContractError("feature artifact declared decoded size exceeds 256 MiB")
     schema_names = parquet.schema_arrow.names
     reject_forbidden_columns(schema_names)
-    expected_columns = [*KEY_COLUMNS, *approved_feature_columns]
+    expected_columns = [*KEY_COLUMNS, *CORE_FEATURE_COLUMNS]
     if schema_names != expected_columns:
         raise LightGbmContractError("feature artifact contains an unknown or reordered column")
     batches: list[pa.RecordBatch] = []
@@ -136,7 +320,7 @@ def read_feature_artifact(
             raise LightGbmContractError("feature artifact actual decoded bound exceeded")
         batches.append(batch)
     table = pa.Table.from_batches(batches, schema=parquet.schema_arrow)
-    validate_feature_table(table, approved_feature_columns=approved_feature_columns)
+    validate_feature_table(table, approved_feature_columns=CORE_FEATURE_COLUMNS)
     return FeatureArtifact(
         table=table,
         parquet_sha256=safe.content_sha256,
@@ -205,6 +389,116 @@ def logical_training_dataset_hash(table: pa.Table, labels: Sequence[int]) -> str
     return digest.hexdigest()
 
 
+def logical_universe_schedule_sha256(
+    schedules: Sequence[MonthlyUniverseSchedule],
+) -> str:
+    """calendar-derived schedule만 정렬해 feature provenance digest로 묶는다."""
+
+    ordered = sorted(schedules, key=lambda item: item.effective_month)
+    if not ordered or len({item.effective_month for item in ordered}) != len(ordered):
+        raise LightGbmContractError("feature universe schedules must be non-empty and unique")
+    receipts: list[dict[str, object]] = []
+    for schedule in ordered:
+        expected = derive_monthly_universe_schedule(
+            schedule.effective_month,
+            dataset_cutoff=schedule.evidence_cutoff,
+        )
+        if schedule != expected:
+            raise LightGbmContractError("feature universe schedule is not XKRX-derived")
+        receipts.append(
+            {
+                "effectiveMonth": schedule.effective_month,
+                "firstEffectiveSession": schedule.first_effective_session.isoformat(),
+                "evidenceCutoff": _canonical_utc(schedule.evidence_cutoff),
+                "selectionSession": schedule.selection_session.isoformat(),
+                "trailingSessions": [value.isoformat() for value in schedule.trailing_sessions],
+            }
+        )
+    return _canonical_domain_sha256(b"s5-universe-schedule-v1\x00", receipts)
+
+
+def logical_pit_input_sha256(
+    universes: Sequence[MonthlyUniverse],
+    prices: Sequence[PriceEvidence],
+    markets: Sequence[MarketEvidence],
+) -> str:
+    """S5 price/market/macro/universe PIT value와 provenance만 content hash로 묶는다."""
+
+    if not universes or not prices or not markets:
+        raise DatasetUnavailable("DATASET_UNAVAILABLE: PIT input evidence is absent")
+    if len({item.effective_month for item in universes}) != len(universes) or any(
+        not item.instrument_ids
+        or len(item.instrument_ids) != len(item.symbols)
+        or len(set(item.instrument_ids)) != len(item.instrument_ids)
+        for item in universes
+    ):
+        raise LightGbmContractError("PIT universe input is invalid")
+    for price in prices:
+        _validate_pit_receipt(price.available_at, price.source_revision, price.source_sha256)
+    for market in markets:
+        _validate_pit_receipt(market.available_at, market.source_revision, market.source_sha256)
+    universe_receipts = [
+        {
+            "effectiveMonth": item.effective_month,
+            "selectionSession": item.selection_session.isoformat(),
+            "instrumentIds": list(item.instrument_ids),
+            "symbols": list(item.symbols),
+        }
+        for item in sorted(universes, key=lambda value: (value.effective_month, value.symbols))
+    ]
+    price_receipts = [
+        {
+            "instrumentId": item.instrument_id,
+            "symbol": item.symbol,
+            "sessionDate": item.session_date.isoformat(),
+            "adjustedOpen": item.adjusted_open,
+            "adjustedClose": item.adjusted_close,
+            "volume": item.volume,
+            "availableAt": _canonical_evidence_time(item.available_at),
+            "sourceRevision": item.source_revision,
+            "sourceSha256": item.source_sha256,
+        }
+        for item in sorted(
+            prices,
+            key=lambda value: (
+                value.instrument_id,
+                value.session_date,
+                _canonical_evidence_time(value.available_at),
+                value.source_revision,
+                value.source_sha256,
+            ),
+        )
+    ]
+    market_receipts = [
+        {
+            "market": item.market,
+            "sessionDate": item.session_date.isoformat(),
+            "marketAdjustedClose": item.market_adjusted_close,
+            "baseRate": item.base_rate,
+            "usdkrw": item.usdkrw,
+            "availableAt": _canonical_evidence_time(item.available_at),
+            "sourceRevision": item.source_revision,
+            "sourceSha256": item.source_sha256,
+        }
+        for item in sorted(
+            markets,
+            key=lambda value: (
+                value.market,
+                value.session_date,
+                _canonical_evidence_time(value.available_at),
+                value.source_revision,
+                value.source_sha256,
+            ),
+        )
+    ]
+    payload = {
+        "universes": universe_receipts,
+        "prices": price_receipts,
+        "markets": market_receipts,
+    }
+    return _canonical_domain_sha256(b"s5-pit-input-v1\x00", payload)
+
+
 def _update_logical_schema_and_values(digest: Any, table: pa.Table) -> None:
     """schema, key, packed validity, little-endian float32 순서를 두 hash profile이 공유한다."""
 
@@ -238,19 +532,172 @@ def _update_logical_schema_and_values(digest: Any, table: pa.Table) -> None:
                 digest.update(struct.pack("<f", float(value)))
 
 
-def build_feature_manifest(artifact: FeatureArtifact, *, provenance: Mapping[str, object]) -> bytes:
-    """기존 canonical JSON helper로 closed consumer manifest bytes를 만든다."""
+def build_feature_manifest(
+    artifact: FeatureArtifact,
+    *,
+    provenance: FeatureBundleProvenance,
+) -> bytes:
+    """외부 trust anchor가 승인할 closed feature bundle manifest를 만든다."""
 
+    require_source_rows(artifact.table.num_rows)
+    validate_feature_table(artifact.table, approved_feature_columns=CORE_FEATURE_COLUMNS)
+    _require_sha256(artifact.parquet_sha256, "Parquet")
+    _require_sha256(artifact.logical_dataset_hash, "logical dataset")
+    if artifact.logical_dataset_hash != logical_dataset_hash(artifact.table):
+        raise LightGbmContractError("feature artifact logical hash does not match its table")
+    if (
+        artifact.physical_bytes <= 0
+        or artifact.physical_bytes > MAX_PHYSICAL_BYTES
+        or artifact.decoded_bytes < 0
+        or artifact.decoded_bytes > MAX_DECODED_BYTES
+    ):
+        raise LightGbmContractError("feature artifact size receipt is invalid")
     return canonical_json_bytes(
         {
-            "schemaVersion": "s5-feature-table-v1",
+            "manifestVersion": MANIFEST_VERSION,
+            "schemaVersion": SCHEMA_VERSION,
+            "parquetFile": PARQUET_FILENAME,
             "logicalDatasetHash": artifact.logical_dataset_hash,
             "parquetSha256": artifact.parquet_sha256,
             "rowCount": artifact.table.num_rows,
             "columnCount": artifact.table.num_columns,
-            "provenance": dict(provenance),
+            "featureColumns": list(CORE_FEATURE_COLUMNS),
+            "provenance": provenance.as_mapping(),
         }
     )
+
+
+def _parse_feature_manifest(content: bytes) -> dict[str, object]:
+    try:
+        payload = parse_bounded_json_bytes(content, limits=_MANIFEST_JSON_LIMITS)
+    except BoundedJsonError as error:
+        raise LightGbmContractError("feature manifest JSON is invalid") from error
+    if not isinstance(payload, dict):
+        raise LightGbmContractError("feature manifest root must be an object")
+    manifest = cast(dict[str, object], payload)
+    if set(manifest) != _MANIFEST_FIELDS:
+        raise LightGbmContractError("feature manifest contains an unknown or missing field")
+    if canonical_json_bytes(manifest) != content:
+        raise LightGbmContractError("feature manifest must use canonical JSON bytes")
+    if (
+        manifest["manifestVersion"] != MANIFEST_VERSION
+        or manifest["schemaVersion"] != SCHEMA_VERSION
+        or manifest["parquetFile"] != PARQUET_FILENAME
+        or manifest["featureColumns"] != list(CORE_FEATURE_COLUMNS)
+    ):
+        raise LightGbmContractError("feature manifest version or schema is invalid")
+    _require_sha256(_require_text(manifest["parquetSha256"], "parquetSha256"), "Parquet")
+    _require_sha256(
+        _require_text(manifest["logicalDatasetHash"], "logicalDatasetHash"),
+        "logical dataset",
+    )
+    return manifest
+
+
+def _parse_feature_provenance(value: object) -> FeatureBundleProvenance:
+    if not isinstance(value, dict):
+        raise LightGbmContractError("feature provenance must be an object")
+    provenance = cast(dict[str, object], value)
+    if set(provenance) != _PROVENANCE_FIELDS:
+        raise LightGbmContractError("feature provenance contains an unknown or missing field")
+    constants = {
+        "producer": FeatureBundleProvenance.producer,
+        "sourceWorkspace": FeatureBundleProvenance.source_workspace,
+        "exchangeMic": FeatureBundleProvenance.exchange_mic,
+        "calendarName": FeatureBundleProvenance.calendar_name,
+        "calendarVersion": FeatureBundleProvenance.calendar_version,
+        "universePolicyVersion": FeatureBundleProvenance.universe_policy_version,
+        "featurePolicyVersion": FeatureBundleProvenance.feature_policy_version,
+    }
+    if any(provenance[key] != expected for key, expected in constants.items()):
+        raise LightGbmContractError("feature provenance authority is invalid")
+    if provenance["optionalFeatureGroups"] != []:
+        raise LightGbmContractError("feature bundle v1 optional feature groups must be empty")
+    return FeatureBundleProvenance(
+        dataset_cutoff=_parse_canonical_utc(provenance["datasetCutoff"]),
+        raw_session_start=_parse_iso_date(provenance["rawSessionStart"], "rawSessionStart"),
+        raw_session_end=_parse_iso_date(provenance["rawSessionEnd"], "rawSessionEnd"),
+        raw_session_count=_require_integer(provenance["rawSessionCount"], "rawSessionCount"),
+        eligible_session_start=_parse_iso_date(
+            provenance["eligibleSessionStart"], "eligibleSessionStart"
+        ),
+        eligible_session_end=_parse_iso_date(
+            provenance["eligibleSessionEnd"], "eligibleSessionEnd"
+        ),
+        eligible_session_count=_require_integer(
+            provenance["eligibleSessionCount"], "eligibleSessionCount"
+        ),
+        universe_schedule_sha256=_require_text(
+            provenance["universeScheduleSha256"], "universeScheduleSha256"
+        ),
+        pit_input_sha256=_require_text(provenance["pitInputSha256"], "pitInputSha256"),
+    )
+
+
+def _canonical_utc(value: datetime) -> str:
+    return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
+
+
+def _canonical_evidence_time(value: datetime) -> str:
+    if value.tzinfo is None:
+        raise LightGbmContractError("PIT input evidence timestamp must be timezone aware")
+    return _canonical_utc(value)
+
+
+def _validate_pit_receipt(available_at: datetime, revision: str, digest: str) -> None:
+    if not revision:
+        raise LightGbmContractError("PIT input source revision is invalid")
+    _require_sha256(digest, "PIT input source")
+    _canonical_evidence_time(available_at)
+
+
+def _canonical_domain_sha256(domain: bytes, value: object) -> str:
+    try:
+        payload = canonical_json_bytes(value)
+    except (TypeError, ValueError) as error:
+        raise LightGbmContractError("PIT provenance contains an unsupported value") from error
+    return hashlib.sha256(domain + payload).hexdigest()
+
+
+def _parse_canonical_utc(value: object) -> datetime:
+    text = _require_text(value, "datasetCutoff")
+    if not text.endswith("Z"):
+        raise LightGbmContractError("feature provenance cutoff must use canonical UTC")
+    try:
+        parsed = datetime.fromisoformat(text[:-1] + "+00:00")
+    except ValueError:
+        raise LightGbmContractError("feature provenance cutoff is invalid") from None
+    if _canonical_utc(parsed) != text:
+        raise LightGbmContractError("feature provenance cutoff must use canonical UTC")
+    return parsed
+
+
+def _parse_iso_date(value: object, field: str) -> date:
+    text = _require_text(value, field)
+    try:
+        parsed = date.fromisoformat(text)
+    except ValueError:
+        raise LightGbmContractError(f"feature provenance {field} is invalid") from None
+    if parsed.isoformat() != text:
+        raise LightGbmContractError(f"feature provenance {field} is invalid")
+    return parsed
+
+
+def _require_text(value: object, field: str) -> str:
+    if not isinstance(value, str) or not value:
+        raise LightGbmContractError(f"feature manifest {field} must be text")
+    return value
+
+
+def _require_integer(value: object, field: str) -> int:
+    if type(value) is not int:
+        raise LightGbmContractError(f"feature manifest {field} must be an integer")
+    return value
+
+
+def _require_sha256(value: str, field: str) -> None:
+    if len(value) != 64 or any(character not in "0123456789abcdef" for character in value):
+        raise LightGbmContractError(f"feature {field} SHA-256 is invalid")
 
 
 def optional_group_is_eligible(

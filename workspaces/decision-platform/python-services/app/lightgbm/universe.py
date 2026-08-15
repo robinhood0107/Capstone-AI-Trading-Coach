@@ -8,6 +8,7 @@ from datetime import date, datetime
 from typing import Iterable
 
 from app.lightgbm.errors import DatasetUnavailable, LightGbmContractError
+from app.lightgbm.pit_calendar import MonthlyUniverseSchedule, derive_monthly_universe_schedule
 
 
 FIXED_ETF_SYMBOL = "132030"
@@ -45,24 +46,23 @@ class MonthlyUniverse:
 def select_monthly_universe(
     observations: Iterable[UniverseObservation],
     *,
-    selection_session: date,
-    trailing_sessions: tuple[date, ...],
-    effective_month: str,
-    cutoff: datetime,
+    schedule: MonthlyUniverseSchedule,
 ) -> MonthlyUniverse:
     """trailing-20 evidence와 selection-date 시총으로 PIT top 30 및 고정 ETF를 선택한다."""
 
-    if len(trailing_sessions) != 20 or trailing_sessions[-1] != selection_session:
-        raise LightGbmContractError("universe selection requires exact trailing 20 sessions")
-    if cutoff.tzinfo is None:
-        raise LightGbmContractError("universe cutoff must be timezone aware")
-    allowed_sessions = set(trailing_sessions)
+    expected_schedule = derive_monthly_universe_schedule(
+        schedule.effective_month,
+        dataset_cutoff=schedule.evidence_cutoff,
+    )
+    if schedule != expected_schedule:
+        raise LightGbmContractError("universe schedule must be derived from the XKRX calendar")
+    allowed_sessions = set(schedule.trailing_sessions)
     selected_vintages: dict[tuple[str, date], UniverseObservation] = {}
     for observation in observations:
         if observation.session_date not in allowed_sessions:
             continue
-        _validate_provenance(observation, cutoff)
-        if observation.available_at > cutoff:
+        _validate_provenance(observation)
+        if observation.available_at > schedule.evidence_cutoff:
             continue
         key = (observation.instrument_id, observation.session_date)
         previous = selected_vintages.get(key)
@@ -80,7 +80,7 @@ def select_monthly_universe(
     ranked: list[tuple[float, float, str, str]] = []
     fixed_etf_identity: str | None = None
     for identity, rows in by_identity.items():
-        selection_rows = [row for row in rows if row.session_date == selection_session]
+        selection_rows = [row for row in rows if row.session_date == schedule.selection_session]
         if len(selection_rows) != 1:
             continue
         current = selection_rows[0]
@@ -109,8 +109,8 @@ def select_monthly_universe(
     identities.append(fixed_etf_identity)
     symbols.append(FIXED_ETF_SYMBOL)
     return MonthlyUniverse(
-        selection_session=selection_session,
-        effective_month=effective_month,
+        selection_session=schedule.selection_session,
+        effective_month=schedule.effective_month,
         instrument_ids=tuple(identities),
         symbols=tuple(symbols),
     )
@@ -138,7 +138,7 @@ def _eligible_common_stock(observation: UniverseObservation) -> bool:
     )
 
 
-def _validate_provenance(observation: UniverseObservation, cutoff: datetime) -> None:
+def _validate_provenance(observation: UniverseObservation) -> None:
     if observation.available_at.tzinfo is None:
         raise LightGbmContractError("universe evidence timestamp must be timezone aware")
     if (

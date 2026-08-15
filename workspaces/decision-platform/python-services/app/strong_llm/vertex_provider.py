@@ -6,6 +6,7 @@ import re
 import stat
 from pathlib import Path
 from typing import Any, cast
+from urllib.parse import urlparse
 
 from google.oauth2 import service_account
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
@@ -279,6 +280,10 @@ def _provider_result(
                     "chunk_indices": tuple(indices),
                 }
             )
+    content_roots, content_supports, content_queries = _content_block_grounding(message)
+    if (not roots or not supports) and content_roots and content_supports:
+        roots = content_roots
+        supports = content_supports
     usage: dict[str, Any] = dict(message.usage_metadata or {})
     normalized = _normalize_grounded_answer(
         text,
@@ -291,7 +296,12 @@ def _provider_result(
         "answer_json": normalized,
         "prompt_tokens": int(usage.get("input_tokens", 0)),
         "output_tokens": int(usage.get("output_tokens", 0)),
-        "google_queries": [str(value) for value in grounding.get("web_search_queries") or []],
+        "google_queries": list(
+            dict.fromkeys(
+                [str(value) for value in grounding.get("web_search_queries") or []]
+                + content_queries
+            )
+        ),
         "grounding_roots": roots,
         "grounding_supports": supports,
     }
@@ -300,6 +310,64 @@ def _provider_result(
 def _metadata_index(value: object) -> int:
     # Google grounding의 optional offset은 SDK에 따라 null일 수 있으며 support text 결속에는 필수가 아니다.
     return value if isinstance(value, int) and value >= 0 else 0
+
+
+def _content_block_grounding(
+    message: AIMessage,
+) -> tuple[list[dict[str, object]], list[dict[str, object]], list[str]]:
+    """LangChain Gemini 3 표준 citation annotation을 provider-neutral grounding으로 투영한다."""
+
+    roots: list[dict[str, object]] = []
+    supports: list[dict[str, object]] = []
+    queries: list[str] = []
+    root_index_by_url: dict[str, int] = {}
+    for block in message.content_blocks:
+        if not isinstance(block, dict) or block.get("type") != "text":
+            continue
+        annotations = block.get("annotations")
+        if not isinstance(annotations, list):
+            continue
+        for annotation in annotations:
+            if not isinstance(annotation, dict) or annotation.get("type") != "citation":
+                continue
+            url = annotation.get("url")
+            cited_text = annotation.get("cited_text")
+            if not isinstance(url, str) or not url.startswith("https://") or not isinstance(cited_text, str):
+                continue
+            parsed = urlparse(url)
+            if not parsed.hostname or not cited_text.strip():
+                continue
+            if url not in root_index_by_url:
+                index = len(roots)
+                if index >= 5:
+                    continue
+                root_index_by_url[url] = index
+                title = annotation.get("title")
+                roots.append(
+                    {
+                        "result_id": f"google_{index + 1}",
+                        "title": title[:500] if isinstance(title, str) and title.strip() else parsed.hostname,
+                        "uri": url[:2048],
+                        "domain": parsed.hostname[:253],
+                        "chunk_index": index,
+                        "citation_id": "",
+                    }
+                )
+            index = root_index_by_url[url]
+            supports.append(
+                {
+                    "start_index": _metadata_index(annotation.get("start_index")),
+                    "end_index": _metadata_index(annotation.get("end_index")),
+                    "text": cited_text[:2048],
+                    "chunk_indices": (index,),
+                }
+            )
+            extras = annotation.get("extras")
+            metadata = extras.get("google_ai_metadata") if isinstance(extras, dict) else None
+            raw_queries = metadata.get("web_search_queries") if isinstance(metadata, dict) else None
+            if isinstance(raw_queries, list):
+                queries.extend(str(value) for value in raw_queries if isinstance(value, str))
+    return roots, supports, list(dict.fromkeys(queries))
 
 
 def _message_text(message: AIMessage) -> str:

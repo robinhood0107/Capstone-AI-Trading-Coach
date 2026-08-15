@@ -253,6 +253,51 @@ def test_grounding_metadata_accepts_null_optional_segment_offsets() -> None:
     ]
 
 
+def test_langchain_content_block_citation_is_the_grounding_fallback() -> None:
+    answer = {
+        "basis": "EVIDENCE",
+        "answer": "Diversification can reduce risk.",
+        "sentences": [
+            {
+                "text": "Diversification can reduce risk.",
+                "citationIds": ["provider_label"],
+                "evidenceSpans": [
+                    {"citationId": "provider_label", "quote": "Diversification can reduce risk."}
+                ],
+                "numericSpans": [],
+            }
+        ],
+        "warnings": [],
+    }
+    message = AIMessage(
+        content=[
+            {
+                "type": "text",
+                "text": json.dumps(answer),
+                "annotations": [
+                    {
+                        "type": "citation",
+                        "url": "https://www.investor.gov/diversification",
+                        "title": "Diversification",
+                        "start_index": 0,
+                        "end_index": 32,
+                        "cited_text": "Diversification can reduce risk.",
+                        "extras": {"google_ai_metadata": {"web_search_queries": ["Investor.gov diversification"]}},
+                    }
+                ],
+            }
+        ],
+        usage_metadata={"input_tokens": 10, "output_tokens": 5, "total_tokens": 15},
+    )
+
+    result = _provider_result(message, allowed_local_ids=set())
+    normalized = json.loads(result["answer_json"])
+
+    assert result["google_queries"] == ["Investor.gov diversification"]
+    assert result["grounding_roots"][0]["uri"] == "https://www.investor.gov/diversification"
+    assert normalized["sentences"][0]["citationIds"] == ["cit_1"]
+
+
 def test_provider_json_accepts_only_one_object_with_optional_known_fence() -> None:
     expected = json.loads(_answer())
 

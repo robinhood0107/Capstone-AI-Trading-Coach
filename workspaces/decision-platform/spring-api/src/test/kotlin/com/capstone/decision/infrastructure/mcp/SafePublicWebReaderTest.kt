@@ -67,6 +67,28 @@ class SafePublicWebReaderTest {
     }
 
     @Test
+    fun `safe HTML exposes only bounded public HTTPS links as provenance candidates`() {
+        val reader =
+            SafePublicWebReader(
+                fixedResolver(),
+                responseTransport(
+                    """
+                    <html><body>
+                      <a href="https://www.investor.gov/diversification">Public</a>
+                      <a href="http://example.com/insecure">Insecure</a>
+                      <a href="https://user:pass@example.com/private">Credential</a>
+                      Safe article.
+                    </body></html>
+                    """.trimIndent(),
+                ),
+            )
+
+        val result = reader.read("https://example.com/evidence")
+
+        assertThat(result.discoveredUrls).containsExactly("https://www.investor.gov/diversification")
+    }
+
+    @Test
     fun `ordinary article with login navigation is not misclassified as a login page`() {
         val reader =
             SafePublicWebReader(

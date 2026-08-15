@@ -8,12 +8,14 @@ import com.capstone.decision.infrastructure.grpc.BrokerageGrpcProperties
 import com.capstone.decision.infrastructure.grpc.DecisionGrpcProperties
 import com.capstone.decision.infrastructure.grpc.RagGrpcProperties
 import com.capstone.decision.infrastructure.grpc.RagV2GrpcProperties
+import com.capstone.decision.infrastructure.grpc.StrongLlmAgentGrpcProperties
 import com.capstone.decision.infrastructure.idempotency.IdempotencyProperties
 import com.capstone.decision.infrastructure.idempotency.IdempotencyService
 import com.capstone.decision.infrastructure.mcp.RagWebToolProperties
 import com.capstone.decision.infrastructure.principle.PrincipleProperties
 import com.capstone.decision.infrastructure.rag.RagGuardHistoryProperties
 import com.capstone.decision.infrastructure.vertex.RagV2VertexProperties
+import com.capstone.decision.infrastructure.vertex.S49GoogleGroundingProperties
 import com.capstone.decision.infrastructure.vertex.S49StrongLlmProperties
 import com.capstone.decision.infrastructure.web.HttpRequestProperties
 import com.capstone.decision.infrastructure.web.RequestBodyLimitFilter
@@ -64,6 +66,8 @@ import java.security.MessageDigest
     RagV2VertexProperties::class,
     RagWebToolProperties::class,
     S49StrongLlmProperties::class,
+    S49GoogleGroundingProperties::class,
+    StrongLlmAgentGrpcProperties::class,
 )
 class SecurityConfig {
     @Bean

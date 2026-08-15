@@ -5,10 +5,12 @@ import com.capstone.decision.infrastructure.mcp.BoundedWebDocument
 import com.capstone.decision.infrastructure.mcp.PublicWebReaderPort
 import com.capstone.decision.infrastructure.mcp.PublicWebSearchPort
 import com.capstone.decision.infrastructure.mcp.RagToolBudget
+import com.capstone.decision.infrastructure.mcp.S49WebReadRejectedException
 import com.capstone.decision.infrastructure.mcp.requirePublicWebQuery
 import tools.jackson.databind.JsonNode
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
+import java.util.concurrent.ExecutionException
 import java.util.concurrent.Executors
 
 internal data class S49ToolExecution(
@@ -37,20 +39,39 @@ internal class S49StrongLlmToolSession(
         when (name) {
             "capstone_web_search" -> search(args)
             "capstone_web_read" -> read(args)
-            else -> throw IllegalArgumentException("Unsupported Strong LLM tool")
+            else -> throw S49StrongLlmToolException("TOOL_NAME")
         }
 
     fun executeReadBatch(arguments: List<JsonNode>): List<S49ToolExecution> {
-        require(arguments.isNotEmpty() && arguments.size <= budget.maxParallelReads)
-        require(readCount + arguments.size <= budget.maxReads)
+        toolRequire(arguments.isNotEmpty() && arguments.size <= budget.maxParallelReads, "TOOL_READ_CARDINALITY")
+        toolRequire(readCount + arguments.size <= budget.maxReads, "TOOL_READ_BUDGET")
         val urls =
             arguments.map { args ->
-                require(args.isObject && args.properties().map { it.key }.toSet() == setOf("url"))
-                args["url"]?.stringValue().orEmpty().also { require(it in searchableUrls) }
+                toolRequire(args.isObject && args.properties().map { it.key }.toSet() == setOf("url"), "TOOL_READ_ARGS")
+                args["url"]
+                    ?.takeIf { it.isString }
+                    ?.stringValue()
+                    .orEmpty()
+                    .also { toolRequire(it in searchableUrls, "TOOL_READ_URL_NOT_FROM_SEARCH") }
             }
         val documents =
             Executors.newVirtualThreadPerTaskExecutor().use { executor ->
-                urls.map { url -> executor.submit<BoundedWebDocument> { webReader.read(url) } }.map { it.get() }
+                urls
+                    .map { url -> executor.submit<BoundedWebDocument> { webReader.read(url) } }
+                    .map { future ->
+                        try {
+                            future.get()
+                        } catch (error: ExecutionException) {
+                            val cause = error.cause
+                            if (cause is S49WebReadRejectedException) {
+                                val leaf = cause.message.orEmpty()
+                                throw S49StrongLlmToolException(
+                                    leaf.takeIf(TOOL_LEAF::matches) ?: "TOOL_READ_REJECTED",
+                                )
+                            }
+                            throw S49StrongLlmToolException("TOOL_READ_TRANSPORT")
+                        }
+                    }
             }
         val retained = evidence.take((5 - documents.size).coerceAtLeast(0)).toMutableList()
         val responses =
@@ -73,23 +94,44 @@ internal class S49StrongLlmToolSession(
         evidence.clear()
         evidence.addAll(retained)
         readCount += documents.size
-        return responses.map { it.copy(updatedEvidence = evidence()) }
+        return responses.map { execution ->
+            execution.copy(
+                response =
+                    execution.response +
+                        mapOf(
+                            "remainingSearches" to (budget.maxSearches - searchCount),
+                            "remainingReads" to (budget.maxReads - readCount),
+                        ),
+                updatedEvidence = evidence(),
+            )
+        }
     }
 
     fun evidence(): List<RagV2VertexEvidence> = evidence.toList()
 
     private fun search(args: JsonNode): S49ToolExecution {
-        require(args.isObject && args.properties().map { it.key }.toSet() == setOf("query"))
-        require(searchCount < budget.maxSearches)
-        val query = args["query"]?.stringValue().orEmpty()
-        requirePublicWebQuery(query)
-        val results = searchClient.search(query)
+        toolRequire(args.isObject && args.properties().map { it.key }.toSet() == setOf("query"), "TOOL_SEARCH_ARGS")
+        toolRequire(searchCount < budget.maxSearches, "TOOL_SEARCH_BUDGET")
+        val query = args["query"]?.takeIf { it.isString }?.stringValue().orEmpty()
+        try {
+            requirePublicWebQuery(query)
+        } catch (_: IllegalArgumentException) {
+            throw S49StrongLlmToolException("TOOL_SEARCH_QUERY")
+        }
+        val results =
+            try {
+                searchClient.search(query)
+            } catch (_: Exception) {
+                throw S49StrongLlmToolException("TOOL_SEARCH_TRANSPORT")
+            }
         searchableUrls.addAll(results.map { it.url })
         searchCount += 1
         return S49ToolExecution(
             mapOf(
                 "results" to
                     results.map { mapOf("title" to it.title, "url" to it.url, "snippet" to it.snippet) },
+                "remainingSearches" to (budget.maxSearches - searchCount),
+                "remainingReads" to (budget.maxReads - readCount),
                 "untrustedData" to true,
             ),
             evidence(),
@@ -106,6 +148,21 @@ internal class S49StrongLlmToolSession(
             bytes.fill(0)
         }
     }
+
+    private companion object {
+        val TOOL_LEAF = Regex("^S4_9_WEB_READ_[A-Z_]+$")
+    }
+}
+
+internal class S49StrongLlmToolException(
+    val leaf: String,
+) : IllegalArgumentException(leaf)
+
+private fun toolRequire(
+    condition: Boolean,
+    leaf: String,
+) {
+    if (!condition) throw S49StrongLlmToolException(leaf)
 }
 
 internal fun s49VertexFunctionDeclarations(): List<Map<String, Any>> =

@@ -82,7 +82,10 @@ class JdbcRagV2VertexEvidenceRepository(
                 },
             )
             require(evidence.sumOf { it.canonicalText.toByteArray(StandardCharsets.UTF_8).size } <= 60_000)
-            return evidence
+            val citationById = citations.associateBy { it.citationId }
+            return evidence.map { item ->
+                item.copy(ownerPrivate = citationById.getValue(item.citationId).citationKind == "LOCAL_DOCUMENT")
+            }
         } catch (_: Exception) {
             // canonical text나 owner document metadata를 exception cause로 보존하지 않는다.
             throw RagV2VertexEvidenceUnavailableException()

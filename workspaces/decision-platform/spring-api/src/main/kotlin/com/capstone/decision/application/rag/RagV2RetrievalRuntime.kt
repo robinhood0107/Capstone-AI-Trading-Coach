@@ -42,6 +42,7 @@ data class RagV2RetrievedCitation(
     val documentId: String?,
     val displayName: String?,
     val locator: Map<String, Any>,
+    val provenanceResultId: String? = null,
 )
 
 /**

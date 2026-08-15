@@ -21,7 +21,17 @@ data class RagV2VertexEvidence(
     val chunkRevisionId: String,
     val canonicalText: String,
     val canonicalTextSha256: String,
+    val supportType: StrongLlmEvidenceSupportType = StrongLlmEvidenceSupportType.CANONICAL_EXACT,
+    val title: String? = null,
+    val canonicalUrl: String? = null,
+    val sectionTitle: String? = null,
+    val ownerPrivate: Boolean = false,
 )
+
+enum class StrongLlmEvidenceSupportType {
+    CANONICAL_EXACT,
+    GOOGLE_GROUNDING,
+}
 
 /** Strong LLM 입력은 retrieval·동의·owner 경계를 통과한 Top-5 전체이며 Decision/Signal/Risk 입력이 아니다. */
 data class RagV2VertexGenerationCommand(
@@ -81,6 +91,16 @@ data class StrongLlmGenerationResult(
     val validationStatus: StrongLlmValidationStatus? = null,
     val warnings: List<String> = emptyList(),
     val citationCoverage: Double = 0.0,
+    val webCitations: List<StrongLlmWebCitation> = emptyList(),
+)
+
+data class StrongLlmWebCitation(
+    val citationId: String,
+    val sourceId: String,
+    val title: String,
+    val sectionTitle: String,
+    val canonicalUrl: String,
+    val provenanceResultId: String,
 )
 
 /** Provider-neutral final generator port. 구현체가 Vertex여도 application 계층은 특정 모델 transport를 알지 않는다. */
@@ -142,42 +162,56 @@ class RagV2VertexResponseValidator {
         evidence: List<RagV2VertexEvidence>,
     ): StrongLlmValidatedAnswer {
         try {
-            val evidenceByCitationId = validateEvidence(evidence)
-            val root = mapper.readTree(rawResponseText)
-            require(root != null && root.isObject)
-            require(root.properties().map { it.key }.toSet() == ROOT_FIELDS)
-            val basis = StrongLlmAnswerBasis.valueOf(requireText(root.get("basis"), 32, false))
-            val answer = nullableText(root.get("answer"), MAX_ANSWER_BYTES, allowNewline = true)
-            val warnings = requireWarnings(root.get("warnings"))
+            val evidenceByCitationId = boundary("STRONG_LLM_VALIDATION_EVIDENCE") { validateEvidence(evidence) }
+            val root = boundary("STRONG_LLM_VALIDATION_JSON") { mapper.readTree(rawResponseText) }
+            boundary("STRONG_LLM_VALIDATION_ROOT") { require(root != null && root.isObject) }
+            boundary("STRONG_LLM_VALIDATION_ROOT_FIELDS") {
+                require(root.properties().map { it.key }.toSet() == ROOT_FIELDS)
+            }
+            val basis =
+                boundary("STRONG_LLM_VALIDATION_BASIS") {
+                    StrongLlmAnswerBasis.valueOf(requireText(root.get("basis"), 32, false))
+                }
+            val answer = boundary("STRONG_LLM_VALIDATION_ANSWER") { nullableText(root.get("answer"), MAX_ANSWER_BYTES, true) }
+            val warnings = boundary("STRONG_LLM_VALIDATION_WARNINGS") { requireWarnings(root.get("warnings")) }
             val sentencesNode = root.get("sentences")
-            require(sentencesNode != null && sentencesNode.isArray && sentencesNode.size() <= MAX_SENTENCES)
+            boundary("STRONG_LLM_VALIDATION_SENTENCES") {
+                require(sentencesNode != null && sentencesNode.isArray && sentencesNode.size() <= MAX_SENTENCES)
+            }
             val sentences =
                 sentencesNode
                     .values()
                     .asSequence()
-                    .map { validateSentence(it, basis, evidenceByCitationId) }
-                    .toList()
+                    .mapIndexed { index, node ->
+                        boundary("STRONG_LLM_VALIDATION_SENTENCE_${index + 1}") {
+                            validateSentence(node, basis, evidenceByCitationId)
+                        }
+                    }.toList()
 
-            when (basis) {
-                StrongLlmAnswerBasis.EVIDENCE -> {
-                    require(answer != null && sentences.isNotEmpty())
-                    require(answer == sentences.joinToString("\n") { it.text })
-                    require(sentences.all { it.citationIds.isNotEmpty() && it.evidenceSpanCount > 0 })
-                }
-                StrongLlmAnswerBasis.MODEL_KNOWLEDGE -> {
-                    require(answer != null && sentences.isNotEmpty())
-                    require(warnings.isEmpty())
-                    require(answer == sentences.joinToString("\n") { it.text })
-                    require(sentences.all { it.citationIds.isEmpty() && it.evidenceSpanCount == 0 })
-                    require(sentences.none { NUMERIC_TOKEN.containsMatchIn(it.text) || CURRENT_FACT.containsMatchIn(it.text) })
-                }
-                StrongLlmAnswerBasis.INSUFFICIENT_EVIDENCE -> {
-                    require(answer == null && sentences.isEmpty())
+            boundary("STRONG_LLM_VALIDATION_BASIS_CONTRACT") {
+                when (basis) {
+                    StrongLlmAnswerBasis.EVIDENCE -> {
+                        require(answer != null && sentences.isNotEmpty())
+                        require(answer == sentences.joinToString("\n") { it.text })
+                        require(sentences.all { it.citationIds.isNotEmpty() && it.evidenceSpanCount > 0 })
+                    }
+                    StrongLlmAnswerBasis.MODEL_KNOWLEDGE -> {
+                        require(answer != null && sentences.isNotEmpty())
+                        require(warnings.isEmpty())
+                        require(answer == sentences.joinToString("\n") { it.text })
+                        require(sentences.all { it.citationIds.isEmpty() && it.evidenceSpanCount == 0 })
+                        require(sentences.none { NUMERIC_TOKEN.containsMatchIn(it.text) || CURRENT_FACT.containsMatchIn(it.text) })
+                    }
+                    StrongLlmAnswerBasis.INSUFFICIENT_EVIDENCE -> {
+                        require(answer == null && sentences.isEmpty())
+                    }
                 }
             }
-            answer?.let {
-                require(!SENSITIVE.containsMatchIn(it))
-                require(!DIRECT_ADVICE.containsMatchIn(it))
+            boundary("STRONG_LLM_VALIDATION_SAFETY") {
+                answer?.let {
+                    require(!SENSITIVE.containsMatchIn(it))
+                    require(!DIRECT_ADVICE.containsMatchIn(it))
+                }
             }
             val citationIds =
                 sentences.flatMap { it.citationIds }.fold(mutableListOf<String>()) { all, id ->
@@ -193,12 +227,14 @@ class RagV2VertexResponseValidator {
                     0.0
                 }
             return StrongLlmValidatedAnswer(basis, answer, citationIds, warningStatus, warnings, coverage)
+        } catch (error: RagV2VertexResponseValidationException) {
+            throw error
         } catch (_: JacksonException) {
-            throw RagV2VertexResponseValidationException()
+            throw RagV2VertexResponseValidationException("STRONG_LLM_VALIDATION_JSON")
         } catch (_: IllegalArgumentException) {
-            throw RagV2VertexResponseValidationException()
+            throw RagV2VertexResponseValidationException("STRONG_LLM_VALIDATION_UNKNOWN")
         } catch (_: IllegalStateException) {
-            throw RagV2VertexResponseValidationException()
+            throw RagV2VertexResponseValidationException("STRONG_LLM_VALIDATION_UNKNOWN")
         }
     }
 
@@ -222,39 +258,72 @@ class RagV2VertexResponseValidator {
         basis: StrongLlmAnswerBasis,
         evidenceByCitationId: Map<String, RagV2VertexEvidence>,
     ): ValidatedSentence {
-        require(node.isObject && node.properties().map { it.key }.toSet() == SENTENCE_FIELDS)
-        val text = requireText(node.get("text"), MAX_SENTENCE_BYTES, false)
+        boundary("STRONG_LLM_VALIDATION_SENTENCE_FIELDS") {
+            require(node.isObject && node.properties().map { it.key }.toSet() == SENTENCE_FIELDS)
+        }
+        val text = boundary("STRONG_LLM_VALIDATION_SENTENCE_TEXT") { requireText(node.get("text"), MAX_SENTENCE_BYTES, false) }
         val citationIds =
-            requireCitationIds(
-                node.get("citationIds"),
-                evidenceByCitationId.keys,
-                allowEmpty =
-                    basis != StrongLlmAnswerBasis.EVIDENCE,
-            )
+            boundary("STRONG_LLM_VALIDATION_SENTENCE_CITATIONS") {
+                requireCitationIds(
+                    node.get("citationIds"),
+                    evidenceByCitationId.keys,
+                    allowEmpty = basis != StrongLlmAnswerBasis.EVIDENCE,
+                )
+            }
         val evidenceSpans = node.get("evidenceSpans")
-        require(evidenceSpans != null && evidenceSpans.isArray && evidenceSpans.size() <= MAX_EVIDENCE_SPANS)
+        boundary("STRONG_LLM_VALIDATION_EVIDENCE_SPANS") {
+            require(evidenceSpans != null && evidenceSpans.isArray && evidenceSpans.size() <= MAX_EVIDENCE_SPANS)
+        }
         val validatedSpanTexts =
             evidenceSpans
                 .values()
                 .asSequence()
-                .map { validateEvidenceSpan(it, citationIds, evidenceByCitationId) }
-                .toList()
-        require(validatedSpanTexts.map { it.citationId }.toSet() == citationIds.toSet())
+                .map { span ->
+                    boundary("STRONG_LLM_VALIDATION_EVIDENCE_SPAN") {
+                        validateEvidenceSpan(span, citationIds, evidenceByCitationId)
+                    }
+                }.toList()
+        boundary("STRONG_LLM_VALIDATION_EVIDENCE_BINDING") {
+            require(validatedSpanTexts.map { it.citationId }.toSet() == citationIds.toSet())
+        }
         val numericSpans = node.get("numericSpans")
-        require(numericSpans != null && numericSpans.isArray && numericSpans.size() <= MAX_NUMERIC_SPANS)
+        boundary("STRONG_LLM_VALIDATION_NUMERIC_SPANS") {
+            require(numericSpans != null && numericSpans.isArray && numericSpans.size() <= MAX_NUMERIC_SPANS)
+        }
         val expectedNumericTokens = NUMERIC_TOKEN.findAll(text).map { it.value }.toList()
         val suppliedNumericTokens =
             numericSpans
                 .values()
                 .asSequence()
-                .map { validateNumericSpan(it, citationIds, validatedSpanTexts) }
-                .toList()
-        require(suppliedNumericTokens == expectedNumericTokens)
-        if (basis != StrongLlmAnswerBasis.EVIDENCE) {
-            require(citationIds.isEmpty() && validatedSpanTexts.isEmpty() && suppliedNumericTokens.isEmpty())
+                .map { numeric ->
+                    boundary("STRONG_LLM_VALIDATION_NUMERIC_SPAN") {
+                        validateNumericSpan(numeric, citationIds, validatedSpanTexts)
+                    }
+                }.toList()
+        boundary("STRONG_LLM_VALIDATION_NUMERIC_BINDING") {
+            require(suppliedNumericTokens == expectedNumericTokens)
+            if (basis != StrongLlmAnswerBasis.EVIDENCE) {
+                require(citationIds.isEmpty() && validatedSpanTexts.isEmpty() && suppliedNumericTokens.isEmpty())
+            }
         }
         return ValidatedSentence(text, citationIds, validatedSpanTexts.size)
     }
+
+    private inline fun <T> boundary(
+        leaf: String,
+        block: () -> T,
+    ): T =
+        try {
+            block()
+        } catch (error: RagV2VertexResponseValidationException) {
+            throw error
+        } catch (_: JacksonException) {
+            throw RagV2VertexResponseValidationException(leaf)
+        } catch (_: IllegalArgumentException) {
+            throw RagV2VertexResponseValidationException(leaf)
+        } catch (_: IllegalStateException) {
+            throw RagV2VertexResponseValidationException(leaf)
+        }
 
     private fun validateEvidenceSpan(
         node: JsonNode,
@@ -356,7 +425,15 @@ class RagV2VertexResponseValidator {
         val SENTENCE_FIELDS = setOf("text", "citationIds", "evidenceSpans", "numericSpans")
         val EVIDENCE_SPAN_FIELDS = setOf("citationId", "quote")
         val NUMERIC_SPAN_FIELDS = setOf("value", "citationIds")
-        val ALLOWED_WARNINGS = setOf("SINGLE_SOURCE", "STALE_SOURCE", "CONFLICTING_SOURCES", "LOW_RELEVANCE", "SECONDARY_SOURCE")
+        val ALLOWED_WARNINGS =
+            setOf(
+                "SINGLE_SOURCE",
+                "STALE_SOURCE",
+                "CONFLICTING_SOURCES",
+                "LOW_RELEVANCE",
+                "SECONDARY_SOURCE",
+                "GOOGLE_GROUNDING_ONLY",
+            )
         val CITATION_ID = Regex("^cit_[1-5]$")
         val CHUNK_ID = Regex("^rag_v2_chk_[0-9a-f]{32}$")
         val SHA256 = Regex("^[0-9a-f]{64}$")
@@ -391,7 +468,9 @@ class RagV2VertexResponseValidator {
     }
 }
 
-class RagV2VertexResponseValidationException : RuntimeException()
+class RagV2VertexResponseValidationException(
+    leaf: String = "STRONG_LLM_VALIDATION_UNKNOWN",
+) : RuntimeException(leaf)
 
 class RagV2VertexEvidenceUnavailableException : RuntimeException()
 

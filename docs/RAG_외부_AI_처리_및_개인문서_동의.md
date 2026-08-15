@@ -72,8 +72,11 @@ inference와 download는 수행하지 않고 기존 local tokenizer만 chunk 경
 
 Voyage는 답을 생성하지 않고 embedding 전용이다. Vertex AI Gemini만 final response를 생성하는
 LLM target이다. OpenAI와 Gemini Developer API는 프로젝트 runtime에서 호출하지 않는다. Gemini Deep
-Research와 Google Search/Maps grounding, file upload, context cache, code execution은 사용하지 않는다.
-S4.9 function call은 Capstone이 선언한 SearXNG search와 bounded public HTTPS read만 애플리케이션이 실행한다.
+Gemini Deep Research, Google Maps grounding, file upload, context cache, code execution은 사용하지 않는다.
+공개 질문에는 Vertex Google Search grounding을 연결할 수 있으며 Gemini가 검색 여부와 query를 선택한다.
+Google discovery에는 owner snippet을 절대 넣지 않고 provider source/support metadata만 citation으로 사용한다.
+owner snippet은 Google tool을 제거한 final generation에 current S4.9 GRANT가 있을 때만 전달한다.
+SearXNG fallback function call은 등록된 result ID의 bounded public HTTPS read만 애플리케이션이 실행한다.
 
 Voyage live activation에는 organization admin의 training opt-out과 payment-method/privacy evidence가
 필요하다. `VOYAGE_API_KEY` 외 runtime 환경변수는 허용하지 않으며 Files/Batch API와 retry는 0이다.

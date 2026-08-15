@@ -230,8 +230,8 @@ def _provider_result(message: AIMessage) -> ProviderResult:
         if support_text and isinstance(indices, list) and all(isinstance(value, int) for value in indices):
             supports.append(
                 {
-                    "start_index": int(segment.get("start_index", 0)),
-                    "end_index": int(segment.get("end_index", 0)),
+                    "start_index": _metadata_index(segment.get("start_index")),
+                    "end_index": _metadata_index(segment.get("end_index")),
                     "text": support_text[:2048],
                     "chunk_indices": tuple(indices),
                 }
@@ -247,6 +247,11 @@ def _provider_result(message: AIMessage) -> ProviderResult:
         "grounding_roots": roots,
         "grounding_supports": supports,
     }
+
+
+def _metadata_index(value: object) -> int:
+    # Google grounding의 optional offset은 SDK에 따라 null일 수 있으며 support text 결속에는 필수가 아니다.
+    return value if isinstance(value, int) and value >= 0 else 0
 
 
 def _message_text(message: AIMessage) -> str:

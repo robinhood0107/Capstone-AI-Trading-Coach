@@ -119,3 +119,11 @@ fixture-first repository-local 구현과 symbol-only read route까지 승인한�
 취득, provider/live account/order 호출, real AVAILABLE artifact 생산, production pointer 활성화,
 RiskDecision/order 연결, S6.6 join은 승인하지 않는다. evidence가 없으면 200 all-ABSTAIN이며,
 DB 상태 자체를 판정할 수 없을 때만 typed 503을 반환한다.
+
+## Repository-local 구현 receipt
+
+S5.1~S5.5는 fixture-first merge candidate로 구현됐다. exact calendar/PIT/feature/label/split,
+four-grid/Platt/metrics/export/drift, deterministic fake bundle, bounded safe ingest, V72 exact DML과
+symbol-only read route가 focused parity를 통과한다. 실제 source row를 취득하지 않았으므로
+`DATASET_UNAVAILABLE`, real model `AVAILABLE=false`, production pointer 0이다. 이 receipt는 fake를
+성과 증거로 승격하거나 RiskDecision/order/S6.6/provider 권한을 열지 않는다.

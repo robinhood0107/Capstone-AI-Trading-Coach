@@ -170,7 +170,10 @@ S4.9는 V66/V67 위에 runtime Voyage query authorization을 분리한 V68과 ow
 context의 empty-evidence scope revalidation을 고친 V69를 forward-only로 추가한다. 기존 row와 public
 RAG/OpenAPI/proto bytes는 동결한다. 기존
 `POST /api/v2/rag/ask`는 내부적으로 Top-5 전체를 provider-neutral `StrongLlmGenerationPort`에 전달한다.
-Vertex adapter는 direct answer 1회 또는 최대 3 tool round 뒤 tools 없는 final structured-output 1회를 수행한다.
+active adapter는 별도 internal bidi gRPC로 Python LangGraph를 호출한다. Google 허용 시 Gemini가 Vertex
+Google Search grounding을 사용할지 자율 결정하고 native JSON schema 답변과 grounding support를 같은
+응답에서 반환한다. Google local soft cap 도달 시에만 최대 3 tool round 뒤 tools 없는 SearXNG final
+structured-output을 수행한다.
 첫 안전 문장 강제 선택, answer enum 고정, citation 1개/문장 1개/numeric 0 강제는 제거한다.
 
 Strong LLM 내부 결과 의미는 다음과 같다.
@@ -189,8 +192,8 @@ Streamable HTTP `POST /mcp`는 OAuth bearer token을 요구하고 정확히 다�
 | tool | 필수 scope | 결과 |
 |---|---|---|
 | `capstone_rag_search` | `mcp:rag.public`; owner Top-5 포함은 호출 전 `mcp:rag.owner` | owner/client-bound 15분 research context + Top-5 |
-| `capstone_web_search` | `mcp:web.read` | context-bound SearXNG URL 후보 |
-| `capstone_web_read` | `mcp:web.read` | bounded normalized text + content hash evidence |
+| `capstone_web_search` | `mcp:web.read` | context-bound SearXNG 후보와 opaque `resultId/sourceType` |
+| `capstone_web_read` | `mcp:web.read` | registered `resultId`의 bounded normalized text + discovered links |
 | `capstone_answer_validate` | `mcp:answer.validate` | exact draft validation + 5분 one-use receipt |
 | `capstone_answer_save` | `mcp:history.write` | 명시 호출 때만 AES-GCM encrypted 30-day history |
 
@@ -214,10 +217,15 @@ Authorization Code + PKCE `S256`, exact `resource=<.../mcp>`, access token 15분
 ES256 signing key와 static/CIMD-verified allowlist를 사용한다. signing key/client file은 서로 다른 0600 regular
 single-link file이다. public Dynamic Client Registration endpoint는 열지 않는다.
 
-SearXNG는 내부 Compose profile `s4-9-web`이며 DuckDuckGo/Brave/Mojeek/Qwant/Wikipedia만 allowlist한다.
-Google/Naver, browser/crawler/Deep Research는 0이다. URL read는 검색 결과의 exact HTTPS URL만 받고 public IP,
+Vertex Google grounding은 provider source/support metadata만 citation으로 등록하고 redirect URI 자동 GET은
+0이다. Pacific month local soft cap은 4,000 query이며 8 query 보수 예약 후 실제 `webSearchQueries` 수로
+정산한다. SearXNG DuckDuckGo는 cap 도달 시 best-effort fallback이다. Naver, browser/crawler/Deep Research는
+0이다. URL read는 SearXNG result, 질문의 public HTTPS user root, 이미 읽은 페이지의 discovered link만 받고 public IP,
 redirect DNS, TLS hostname, MIME/byte/page/prompt-injection 경계를 다시 검증한다. mode budget과 15분 external
 research budget은 `docs/S4_9_MCP_Strong_LLM_운영_가이드.md`의 env로 조정하되 absolute cap을 넘지 못한다.
+
+V70은 기존 migration/row를 보존하고 Google budget reservation/settlement, source/support/edge, search attempt,
+generic web citation history와 usage v2를 추가한다. raw query, raw page, owner text, model request/response는 0이다.
 
 S4.9 result는 downstream 모델·판단·주문·hash API 입력이 아니며 이 절은 S5.1 계약을 넓히지 않는다.
 

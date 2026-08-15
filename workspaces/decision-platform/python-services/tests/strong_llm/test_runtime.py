@@ -13,6 +13,7 @@ from app.strong_llm.vertex_provider import (
     LangChainVertexProvider,
     VertexProviderSettings,
     _normalize_grounded_answer,
+    _vertex_response_schema,
 )
 
 
@@ -175,6 +176,15 @@ def test_google_search_and_native_schema_share_the_official_bind_contract(
     assert bind_calls[1]["tools"] == [{"google_search": {}}]
     assert bind_calls[1]["response_mime_type"] == "application/json"
     assert bind_calls[0]["response_schema"] == bind_calls[1]["response_schema"]
+
+
+def test_vertex_schema_uses_only_the_provider_supported_structural_subset() -> None:
+    schema = _vertex_response_schema()
+    serialized = json.dumps(schema, sort_keys=True)
+
+    for unsupported in ("$defs", "$ref", "additionalProperties", "minLength", "maxLength", "pattern"):
+        assert unsupported not in serialized
+    assert schema["required"] == ["basis", "answer", "sentences", "warnings"]
 
 
 def test_google_support_uses_an_unused_citation_id_without_discarding_local_evidence() -> None:

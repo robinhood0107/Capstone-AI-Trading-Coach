@@ -46,7 +46,7 @@ internal class HashingMcpOAuthAuthorizationService(
                     SELECT public.upsert_s4_9_mcp_oauth_code_hash(
                       :codeHash, :clientId, :ownerUserId, :securityVersion,
                       :redirectUri, :resourceUri, CAST(:scopes AS text[]), :challenge, :expiresAt
-                    ) IS NULL
+                    ) IS NOT NULL
                     """.trimIndent(),
                     mapOf(
                         "codeHash" to sha256(code.tokenValue),
@@ -65,49 +65,58 @@ internal class HashingMcpOAuthAuthorizationService(
             if (codeState.isInvalidated) {
                 require(
                     jdbc.queryForObject(
-                        "SELECT public.consume_s4_9_mcp_oauth_code_hash(:codeHash) IS NULL",
+                        "SELECT public.consume_s4_9_mcp_oauth_code_hash(:codeHash) IS NOT NULL",
                         mapOf("codeHash" to sha256(code.tokenValue)),
                         Boolean::class.java,
                     ) == true,
                 )
             }
         }
-        authorization.getToken(OAuth2RefreshToken::class.java)?.token?.let { refresh ->
-            require(
-                jdbc.queryForObject(
-                    """
-                    SELECT public.rotate_s4_9_mcp_refresh_token_hash(
-                      :tokenHash, :clientId, :ownerUserId, :securityVersion,
-                      :resourceUri, CAST(:scopes AS text[]), :expiresAt
-                    ) IS NULL
-                    """.trimIndent(),
-                    mapOf(
-                        "tokenHash" to sha256(refresh.tokenValue),
-                        "clientId" to client.clientId,
-                        "ownerUserId" to actor.userId,
-                        "securityVersion" to actor.securityVersion,
-                        "resourceUri" to properties.resourceUri,
-                        "scopes" to authorization.authorizedScopes.toTypedArray(),
-                        "expiresAt" to OffsetDateTime.ofInstant(requireNotNull(refresh.expiresAt), ZoneOffset.UTC),
-                    ),
-                    Boolean::class.java,
-                ) == true,
-            )
+        authorization.getToken(OAuth2RefreshToken::class.java)?.let { refreshState ->
+            val refresh = refreshState.token
+            if (refreshState.isInvalidated) {
+                revokeRefreshFamily(refresh)
+            } else {
+                require(
+                    jdbc.queryForObject(
+                        """
+                        SELECT public.rotate_s4_9_mcp_refresh_token_hash(
+                          :tokenHash, :clientId, :ownerUserId, :securityVersion,
+                          :resourceUri, CAST(:scopes AS text[]), :expiresAt
+                        ) IS NOT NULL
+                        """.trimIndent(),
+                        mapOf(
+                            "tokenHash" to sha256(refresh.tokenValue),
+                            "clientId" to client.clientId,
+                            "ownerUserId" to actor.userId,
+                            "securityVersion" to actor.securityVersion,
+                            "resourceUri" to properties.resourceUri,
+                            "scopes" to authorization.authorizedScopes.toTypedArray(),
+                            "expiresAt" to OffsetDateTime.ofInstant(requireNotNull(refresh.expiresAt), ZoneOffset.UTC),
+                        ),
+                        Boolean::class.java,
+                    ) == true,
+                )
+            }
         }
         delegate.save(authorization)
     }
 
     override fun remove(authorization: OAuth2Authorization) {
         authorization.getToken(OAuth2RefreshToken::class.java)?.token?.let { refresh ->
-            require(
-                jdbc.queryForObject(
-                    "SELECT public.revoke_s4_9_mcp_refresh_token_family(:tokenHash) IS NULL",
-                    mapOf("tokenHash" to sha256(refresh.tokenValue)),
-                    Boolean::class.java,
-                ) == true,
-            )
+            revokeRefreshFamily(refresh)
         }
         delegate.remove(authorization)
+    }
+
+    private fun revokeRefreshFamily(refresh: OAuth2RefreshToken) {
+        require(
+            jdbc.queryForObject(
+                "SELECT public.revoke_s4_9_mcp_refresh_token_family(:tokenHash) IS NOT NULL",
+                mapOf("tokenHash" to sha256(refresh.tokenValue)),
+                Boolean::class.java,
+            ) == true,
+        )
     }
 
     override fun findById(id: String): OAuth2Authorization? = delegate.findById(id)

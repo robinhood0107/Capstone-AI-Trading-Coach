@@ -65,11 +65,11 @@ class PinnedPublicHttpsTransport(
             } finally {
                 request.fill(0)
             }
-            return readResponse(BufferedInputStream(tls.inputStream), maximumBodyBytes)
+            return parseResponse(BufferedInputStream(tls.inputStream), maximumBodyBytes)
         }
     }
 
-    private fun readResponse(
+    internal fun parseResponse(
         input: BufferedInputStream,
         maximumBodyBytes: Int,
     ): PublicHttpsResponse {
@@ -84,7 +84,8 @@ class PinnedPublicHttpsTransport(
         val headers = linkedMapOf<String, MutableList<String>>()
         var headerBytes = statusLine.length + 2
         repeat(64) {
-            val line = readLine(input, 8_192)
+            // CSP 같은 안전한 비핵심 헤더는 길 수 있으므로 전체 32 KiB 상한 안에서 한 줄 16 KiB까지 허용한다.
+            val line = readLine(input, MAX_HEADER_LINE_BYTES)
             headerBytes += line.length + 2
             require(headerBytes <= 32_768)
             if (line.isEmpty()) {
@@ -107,10 +108,11 @@ class PinnedPublicHttpsTransport(
             }
             require(!line.startsWith(' ') && !line.startsWith('\t'))
             val separator = line.indexOf(':')
-            require(separator in 1..<line.lastIndex)
+            require(separator >= 1)
             val name = line.substring(0, separator).lowercase()
             val value = line.substring(separator + 1).trim()
-            require(HEADER_NAME.matches(name) && value.isNotEmpty() && value.all { it.code in 0x20..0x7e })
+            // RFC field-value는 빈 값도 허용한다. 필요한 framing/MIME 헤더는 소비 지점에서 별도로 엄격 검증한다.
+            require(HEADER_NAME.matches(name) && value.all { it.code in 0x20..0x7e })
             headers.getOrPut(name) { mutableListOf() }.add(value)
         }
         throw IllegalArgumentException("Too many headers")
@@ -187,5 +189,6 @@ class PinnedPublicHttpsTransport(
     private companion object {
         val STATUS = Regex("^HTTP/1\\.[01] ([1-5][0-9]{2})(?: .*)?$")
         val HEADER_NAME = Regex("^[a-z0-9!#$%&'*+.^_`|~-]{1,128}$")
+        const val MAX_HEADER_LINE_BYTES = 16_384
     }
 }

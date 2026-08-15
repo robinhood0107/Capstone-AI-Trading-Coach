@@ -24,6 +24,7 @@ import org.springframework.security.oauth2.core.ClientAuthenticationMethod
 import org.springframework.security.oauth2.core.OAuth2Error
 import org.springframework.security.oauth2.core.OAuth2TokenValidator
 import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult
+import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm
 import org.springframework.security.oauth2.jwt.Jwt
 import org.springframework.security.oauth2.jwt.JwtDecoder
 import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationService
@@ -36,10 +37,10 @@ import org.springframework.security.oauth2.server.authorization.settings.ClientS
 import org.springframework.security.oauth2.server.authorization.settings.TokenSettings
 import org.springframework.security.oauth2.server.authorization.token.JwtEncodingContext
 import org.springframework.security.oauth2.server.authorization.token.OAuth2TokenCustomizer
-import org.springframework.security.oauth2.server.authorization.web.OAuth2AuthorizationEndpointFilter
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter
 import org.springframework.security.web.SecurityFilterChain
 import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint
+import org.springframework.security.web.context.SecurityContextHolderFilter
 import org.springframework.security.web.util.matcher.MediaTypeRequestMatcher
 import tools.jackson.databind.json.JsonMapper
 import java.nio.file.Files
@@ -67,7 +68,9 @@ class McpOAuthSecurityConfig {
                     LoginUrlAuthenticationEntryPoint("/login"),
                     MediaTypeRequestMatcher(MediaType.TEXT_HTML),
                 )
-            }.addFilterBefore(McpResourceIndicatorFilter(properties.resourceUri), OAuth2AuthorizationEndpointFilter::class.java)
+                // Authorization Server endpoint filters are configurer-owned and have no global HttpSecurity order.
+                // Anchor after the registered context filter so the resource check still runs before OAuth processing.
+            }.addFilterAfter(McpResourceIndicatorFilter(properties.resourceUri), SecurityContextHolderFilter::class.java)
         return http.build()
     }
 
@@ -168,10 +171,13 @@ class McpOAuthSecurityConfig {
                     require(
                         jdbc.queryForObject(
                             """
-                            SELECT public.sync_s4_9_mcp_oauth_client(
-                              :clientId, :clientName, :metadataHash,
-                              CAST(:redirectUris AS text[]), CAST(:scopes AS text[]), :kind
-                            ) IS NULL
+                            WITH sync AS MATERIALIZED (
+                              SELECT public.sync_s4_9_mcp_oauth_client(
+                                :clientId, :clientName, :metadataHash,
+                                CAST(:redirectUris AS text[]), CAST(:scopes AS text[]), :kind
+                              ) AS ignored
+                            )
+                            SELECT count(*) = 1 FROM sync
                             """.trimIndent(),
                             mapOf(
                                 "clientId" to clientId,
@@ -197,6 +203,7 @@ class McpOAuthSecurityConfig {
                                 .accessTokenTimeToLive(Duration.ofMinutes(15))
                                 .refreshTokenTimeToLive(Duration.ofDays(7))
                                 .reuseRefreshTokens(false)
+                                .idTokenSignatureAlgorithm(SignatureAlgorithm.ES256)
                                 .build(),
                         ).build()
                 }.toList(),
@@ -235,6 +242,8 @@ class McpOAuthSecurityConfig {
         properties: McpOAuthProperties,
     ): OAuth2TokenCustomizer<JwtEncodingContext> =
         OAuth2TokenCustomizer { context ->
+            // Authorization Server access token 기본값 RS256이 P-256 JWK와 어긋나지 않도록 서명 알고리즘을 고정한다.
+            context.jwsHeader.algorithm(SignatureAlgorithm.ES256)
             if (context.tokenType == OAuth2TokenType.ACCESS_TOKEN) {
                 val principal = requireNotNull(context.getPrincipal<org.springframework.security.core.Authentication>())
                 val row = users.findDemoCredentials().single { it.username == principal.name && it.status == "ACTIVE" }

@@ -98,3 +98,8 @@ data class RagV2DeleteTicket(
 class RagV2CorpusNotReadyException : RuntimeException("RAG v2 full corpus bundle is not ready.")
 
 class RagV2ExternalConsentRequiredException : RuntimeException("External AI RAG v2 consent is required.")
+
+/** MCP에는 질문·본문 없이 이미 검증된 retrieval failure code만 노출한다. */
+class RagV2McpSearchUnavailableException(
+    failureCode: String,
+) : RuntimeException("S4_9_MCP_RAG_SEARCH_$failureCode")

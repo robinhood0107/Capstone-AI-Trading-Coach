@@ -18,7 +18,11 @@ from pydantic import Field, SecretStr, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.data._shared.redis_quota import QuotaWaitError
-from app.data.krx.catalog import ENABLED_UNIVERSE_ENDPOINTS, KRX_OPEN_API_ORIGIN
+from app.data.krx.catalog import (
+    ENABLED_UNIVERSE_ENDPOINTS,
+    KRX_OPEN_API_ORIGIN,
+    S5_PRODUCTION_ENDPOINTS,
+)
 from app.data.krx.errors import KrxSafeResponseMetadata
 
 
@@ -36,7 +40,9 @@ _CANONICAL_CLIENT_HEADER_ITEMS = (
     ("Connection", "keep-alive"),
     ("User-Agent", "capstone-ai-trading-coach-s1.3"),
 )
-_ALLOWED_PATHS = frozenset(endpoint.path for endpoint in ENABLED_UNIVERSE_ENDPOINTS)
+_ALLOWED_PATHS = frozenset(endpoint.path for endpoint in ENABLED_UNIVERSE_ENDPOINTS) | frozenset(
+    endpoint.path for endpoint in S5_PRODUCTION_ENDPOINTS.values()
+)
 _DEPENDENCY_HTTP_LOGGER_NAMES = (
     "httpx",
     "httpcore.connection",

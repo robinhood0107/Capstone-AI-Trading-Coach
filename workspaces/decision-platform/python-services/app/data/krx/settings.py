@@ -108,3 +108,14 @@ class KrxOpenApiSettings(BaseSettings):
     def origin(self) -> str:
         """AUTH_KEY 전송 대상을 runtime override가 불가능한 공식 HTTPS origin으로 고정한다."""
         return KRX_OPEN_API_ORIGIN
+
+
+class KrxS5ProductionSettings(KrxOpenApiSettings):
+    """S5.6 one-shot packet에서만 exact cumulative KRX cap을 여는 설정이다."""
+
+    max_calls_per_run: int = Field(
+        default=4_441,
+        ge=1,
+        le=4_441,
+        validation_alias="S5_KRX_MAX_CALLS_PER_RUN",
+    )

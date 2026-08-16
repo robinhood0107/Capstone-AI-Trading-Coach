@@ -1,0 +1,32 @@
+{
+  "chunks": [
+    {
+      "bytes": 4096,
+      "contentSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+      "operationId": "FHKST03010100",
+      "queryKey": "005930:20260401:20260814:0",
+      "receipt": {
+        "availabilityBasis": "PROJECT_FIXED_LAG",
+        "observationDate": "2026-08-14",
+        "operationId": "FHKST03010100",
+        "policyEffectiveAt": "2026-08-17T23:10:00Z",
+        "requestSha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "retrievedAt": "2026-08-16T00:00:00Z",
+        "revisionBasis": "CONTENT_SNAPSHOT",
+        "snapshotSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "sourceId": "KIS",
+        "temporalPolicyVersion": "s5-temporal-policy-v2",
+        "temporalQuality": "RECONSTRUCTED_FIXED_LAG"
+      },
+      "rowCount": 100,
+      "sourceId": "KIS"
+    }
+  ],
+  "createdAt": "2026-08-16T00:00:00Z",
+  "datasetCutoff": "2026-08-14T23:10:00Z",
+  "futureCollectionMode": "AS_COLLECTED",
+  "historicalMode": "HISTORICAL_REPLAY_RECONSTRUCTED",
+  "manifestVersion": "s5-pit-source-bundle-v1",
+  "strictProviderPITClaim": false,
+  "temporalPolicyVersion": "s5-temporal-policy-v2"
+}

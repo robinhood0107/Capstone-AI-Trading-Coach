@@ -37,3 +37,21 @@ def quota_policy(*, max_calls_per_run: int | None = None) -> RedisQuotaPolicy:
 def quota_key() -> str:
     """credential·URL이 없는 KRX OPEN API deployment Redis scope를 반환한다."""
     return _KRX_QUOTA_KEY
+
+
+def s5_quota_policy(*, max_calls_per_run: int) -> RedisQuotaPolicy:
+    """S5.6 approved one-shot cap을 기존 9,000/day와 250ms no-burst 아래에서 연다."""
+
+    if (
+        isinstance(max_calls_per_run, bool)
+        or not isinstance(max_calls_per_run, int)
+        or not 1 <= max_calls_per_run <= 4_441
+    ):
+        raise ValueError("S5 KRX quota run cap is invalid")
+    return RedisQuotaPolicy(
+        version="s5.6-krx-openapi-quota-v1",
+        windows=_KRX_QUOTA_POLICY.windows,
+        min_interval_ms=_KRX_QUOTA_POLICY.min_interval_ms,
+        cooldown_seconds=_KRX_QUOTA_POLICY.cooldown_seconds,
+        max_calls_per_run=max_calls_per_run,
+    )

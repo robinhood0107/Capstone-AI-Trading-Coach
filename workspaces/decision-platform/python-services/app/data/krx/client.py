@@ -35,7 +35,9 @@ from app.data.krx.catalog import (
     ENABLED_UNIVERSE_ENDPOINTS_BY_SERVICE,
     KRX_OPEN_API_FIRST_AVAILABLE_DATE,
     KrxEndpoint,
+    S5_PRODUCTION_ENDPOINTS,
 )
+from app.data.krx.production_parsers import parse_s5_production_response
 from app.data.krx.errors import (
     KrxError,
     KrxParseError,
@@ -43,8 +45,9 @@ from app.data.krx.errors import (
     KrxValidationDiagnostic,
 )
 from app.data.krx.parsers import KrxDailyRow, parse_daily_response
-from app.data.krx.quota import quota_key, quota_policy
-from app.data.krx.settings import KrxOpenApiSettings
+from app.data.krx.quota import quota_key, quota_policy, s5_quota_policy
+from app.data.krx.settings import KrxOpenApiSettings, KrxS5ProductionSettings
+from app.lightgbm.errors import DatasetUnavailable, LightGbmContractError
 
 
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[6]
@@ -156,7 +159,11 @@ class KrxOpenApiClient:
                 RedisQuotaReservation(
                     redis_client,
                     key=quota_key(),
-                    policy=quota_policy(max_calls_per_run=settings.max_calls_per_run),
+                    policy=(
+                        s5_quota_policy(max_calls_per_run=settings.max_calls_per_run)
+                        if isinstance(settings, KrxS5ProductionSettings)
+                        else quota_policy(max_calls_per_run=settings.max_calls_per_run)
+                    ),
                 ),
             )
             inner = httpx.HTTPTransport(
@@ -232,7 +239,7 @@ class KrxOpenApiClient:
             max_bytes=settings.response_max_bytes,
             max_depth=settings.json_max_depth,
             max_list_items=settings.json_max_rows,
-            max_object_keys=16,
+            max_object_keys=24,
             max_text_codepoints=1_024,
             max_text_bytes=4_096,
             max_number_characters=64,
@@ -289,6 +296,52 @@ class KrxOpenApiClient:
             deadline=deadline,
             request_ordinal=1,
         )
+
+    def fetch_s5_production_rows(
+        self,
+        as_of: date,
+        *,
+        service: str,
+    ) -> tuple[dict[str, str], ...]:
+        """S5.6 exact seven-service allowlist를 raw-free closed projection으로 조회한다."""
+
+        endpoint = S5_PRODUCTION_ENDPOINTS.get(service)
+        if endpoint is None:
+            raise ValueError("KRX S5 production service is not allowed")
+        _validate_as_of(as_of)
+        deadline = time.monotonic() + self._settings.logical_deadline_seconds
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise KrxCredentialError("logical_deadline_exceeded")
+        with _suppress_dependency_http_logs():
+            response = self._http.request(
+                "GET",
+                f"{self._settings.origin}{endpoint.path}",
+                params={endpoint.request_parameter: as_of.strftime("%Y%m%d")},
+                timeout=httpx.Timeout(
+                    connect=min(self._settings.connect_timeout_seconds, remaining),
+                    read=min(self._settings.read_timeout_seconds, remaining),
+                    write=min(self._settings.write_timeout_seconds, remaining),
+                    pool=min(self._settings.pool_timeout_seconds, remaining),
+                ),
+                extensions={_LOGICAL_DEADLINE_EXTENSION: deadline},
+            )
+        status = response.status_code
+        if status != 200:
+            response.close()
+            raise KrxHttpError("http_status", status_code=status)
+        try:
+            payload = parse_bounded_json_response(response, limits=self._limits)
+        except BoundedJsonError:
+            raise KrxHttpError("parse_invalid_response", status_code=status) from None
+        if not isinstance(payload, Mapping):
+            raise KrxHttpError("parse_invalid_response", status_code=status)
+        try:
+            return parse_s5_production_response(
+                cast(Mapping[str, object], payload), service=service, requested_date=as_of
+            )
+        except (DatasetUnavailable, LightGbmContractError):
+            raise KrxHttpError("parse_invalid_response", status_code=status) from None
 
     def _fetch_endpoint(
         self,

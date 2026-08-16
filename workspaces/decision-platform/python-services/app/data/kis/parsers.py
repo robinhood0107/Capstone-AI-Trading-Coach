@@ -39,6 +39,10 @@ class DailyBar:
     close: int
     volume: int
     turnover: int = 0
+    flng_cls_code: str = ""
+    prtt_rate: Decimal = Decimal("0")
+    mod_yn: str = "N"
+    revl_issu_reas: str = ""
 
 
 @dataclass(frozen=True)
@@ -86,6 +90,10 @@ def parse_daily_bars(response: dict[str, Any], symbol: str) -> list[DailyBar]:
                 close=_to_required_int(row.get("stck_clpr")),
                 volume=_to_required_int(row.get("acml_vol")),
                 turnover=_to_int(row.get("acml_tr_pbmn")),
+                flng_cls_code=_to_bounded_code(row.get("flng_cls_code")),
+                prtt_rate=_to_decimal(row.get("prtt_rate")),
+                mod_yn=_to_modification_flag(row.get("mod_yn")),
+                revl_issu_reas=_to_bounded_text(row.get("revl_issu_reas")),
             )
         )
     return parsed
@@ -159,3 +167,24 @@ def _to_required_date(value: Any) -> date:
         return datetime.strptime(str(value), "%Y%m%d").date()
     except (TypeError, ValueError):
         raise KISResponseError("REQUIRED_FIELD_INVALID") from None
+
+
+def _to_bounded_code(value: Any) -> str:
+    text = "" if value in (None, "") else str(value).strip()
+    if len(text) > 32 or any(ord(character) < 32 for character in text):
+        raise KISResponseError("ADJUSTMENT_FIELD_INVALID")
+    return text
+
+
+def _to_bounded_text(value: Any) -> str:
+    text = "" if value in (None, "") else str(value).strip()
+    if len(text) > 256 or any(ord(character) < 32 for character in text):
+        raise KISResponseError("ADJUSTMENT_FIELD_INVALID")
+    return text
+
+
+def _to_modification_flag(value: Any) -> str:
+    text = "N" if value in (None, "") else str(value).strip().upper()
+    if text not in {"Y", "N"}:
+        raise KISResponseError("ADJUSTMENT_FIELD_INVALID")
+    return text

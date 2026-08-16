@@ -1,0 +1,257 @@
+{
+  "$id": "contracts/schemas/s5-pit-source-bundle-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "chunks": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "bytes": {
+            "maximum": 17179869184,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "contentSha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "operationId": {
+            "maxLength": 80,
+            "minLength": 1,
+            "type": "string"
+          },
+          "queryKey": {
+            "maxLength": 256,
+            "minLength": 1,
+            "type": "string"
+          },
+          "receipt": {
+            "additionalProperties": false,
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "availabilityBasis": {
+                      "const": "PROVIDER_FIELD"
+                    }
+                  }
+                },
+                "then": {
+                  "required": [
+                    "providerAvailableAt"
+                  ]
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "availabilityBasis": {
+                      "enum": [
+                        "PROVIDER_AS_OF_SCHEDULE",
+                        "PROJECT_FIXED_LAG"
+                      ]
+                    }
+                  }
+                },
+                "then": {
+                  "required": [
+                    "policyEffectiveAt"
+                  ]
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "availabilityBasis": {
+                      "const": "RETRIEVAL_ONLY"
+                    }
+                  }
+                },
+                "then": {
+                  "not": {
+                    "anyOf": [
+                      {
+                        "required": [
+                          "providerAvailableAt"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "policyEffectiveAt"
+                        ]
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "else": {
+                  "not": {
+                    "required": [
+                      "providerRevision"
+                    ]
+                  }
+                },
+                "if": {
+                  "properties": {
+                    "revisionBasis": {
+                      "const": "PROVIDER_REVISION"
+                    }
+                  }
+                },
+                "then": {
+                  "required": [
+                    "providerRevision"
+                  ]
+                }
+              }
+            ],
+            "properties": {
+              "availabilityBasis": {
+                "enum": [
+                  "PROVIDER_FIELD",
+                  "PROVIDER_AS_OF_SCHEDULE",
+                  "PROJECT_FIXED_LAG",
+                  "RETRIEVAL_ONLY"
+                ]
+              },
+              "observationDate": {
+                "format": "date",
+                "type": "string"
+              },
+              "operationId": {
+                "maxLength": 80,
+                "minLength": 1,
+                "type": "string"
+              },
+              "policyEffectiveAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "providerAvailableAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "providerRevision": {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              "requestSha256": {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              "retrievedAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "revisionBasis": {
+                "enum": [
+                  "PROVIDER_REVISION",
+                  "CONTENT_SNAPSHOT",
+                  "NONE"
+                ]
+              },
+              "snapshotSha256": {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              "sourceId": {
+                "enum": [
+                  "KIS",
+                  "KRX",
+                  "ECOS"
+                ]
+              },
+              "temporalPolicyVersion": {
+                "const": "s5-temporal-policy-v2"
+              },
+              "temporalQuality": {
+                "enum": [
+                  "PROVIDER_VINTAGE",
+                  "PROVIDER_AS_OF_NO_VINTAGE",
+                  "RECONSTRUCTED_FIXED_LAG",
+                  "COLLECTION_ONLY"
+                ]
+              }
+            },
+            "required": [
+              "sourceId",
+              "operationId",
+              "observationDate",
+              "retrievedAt",
+              "availabilityBasis",
+              "revisionBasis",
+              "requestSha256",
+              "snapshotSha256",
+              "temporalPolicyVersion",
+              "temporalQuality"
+            ],
+            "type": "object"
+          },
+          "rowCount": {
+            "maximum": 10000000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "sourceId": {
+            "enum": [
+              "KIS",
+              "KRX",
+              "ECOS"
+            ]
+          }
+        },
+        "required": [
+          "sourceId",
+          "operationId",
+          "queryKey",
+          "contentSha256",
+          "rowCount",
+          "bytes",
+          "receipt"
+        ],
+        "type": "object"
+      },
+      "maxItems": 6446,
+      "minItems": 1,
+      "type": "array"
+    },
+    "createdAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "datasetCutoff": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "futureCollectionMode": {
+      "const": "AS_COLLECTED"
+    },
+    "historicalMode": {
+      "const": "HISTORICAL_REPLAY_RECONSTRUCTED"
+    },
+    "manifestVersion": {
+      "const": "s5-pit-source-bundle-v1"
+    },
+    "strictProviderPITClaim": {
+      "const": false
+    },
+    "temporalPolicyVersion": {
+      "const": "s5-temporal-policy-v2"
+    }
+  },
+  "required": [
+    "manifestVersion",
+    "historicalMode",
+    "futureCollectionMode",
+    "strictProviderPITClaim",
+    "temporalPolicyVersion",
+    "createdAt",
+    "datasetCutoff",
+    "chunks"
+  ],
+  "title": "S5 PIT source bundle v1",
+  "type": "object"
+}

@@ -1,0 +1,30 @@
+{
+  "bootstrap": {
+    "accountBalanceOrderCalls": 0,
+    "costMax": 0,
+    "ecosMaxGet": 24,
+    "kisMaxGet": 1980,
+    "kisTokenMax": 1,
+    "krxMaxGet": 4441,
+    "order": [
+      "KRX",
+      "KIS",
+      "ECOS"
+    ],
+    "retry": 0,
+    "totalMaxPhysicalCalls": 6446
+  },
+  "contractId": "s5-production-materialization-lock.v1",
+  "futureCollectionMode": "AS_COLLECTED",
+  "historicalMode": "HISTORICAL_REPLAY_RECONSTRUCTED",
+  "productionEligibility": "DUAL_SENSITIVITY_PASS_REQUIRED",
+  "runtime": {
+    "automaticModelActivation": 0,
+    "automaticRetrain": 0,
+    "firstCrossMarketJoin": "S6.6",
+    "orderWiring": 0,
+    "riskDecisionWiring": 0
+  },
+  "strictProviderPITClaim": false,
+  "temporalQuality": "RECONSTRUCTED_FIXED_LAG"
+}

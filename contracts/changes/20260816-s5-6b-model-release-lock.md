@@ -91,16 +91,16 @@ batch cannot be republished; only an exact manifest-bound recovery is a no-op re
 Manual rollback requires the previous `ACCEPTED` release and a newly generated fresh
 31-row batch for the current XKRX session. It never re-exposes that release's old batch.
 
-`decision_app`, `decision_signal_writer`, `decision_signal_scheduler`, and
-`decision_signal_admin` receive no direct table DML. FORCE RLS remains enabled and only
-fixed-search-path, exact-session-user SECURITY DEFINER functions expose each role's
-minimum capability. Drift appends `SUSPENDED/ARTIFACT_DRIFT` and the public LightGBM
-component becomes ABSTAIN without exposing the old signal.
+The application, writer, scheduler, and admin database principals receive no direct table
+DML. FORCE RLS remains enabled and only fixed-search-path, exact-session-user SECURITY
+DEFINER functions expose each principal's minimum capability. Drift appends
+`SUSPENDED/ARTIFACT_DRIFT` and the public LightGBM component becomes ABSTAIN without
+exposing the old signal.
 
 ## Public and downstream boundary
 
 The existing `GET /api/v2/signals/{symbol}` wire schema is unchanged. A fresh active
 LightGBM release/batch may make only that component AVAILABLE; missing evidence,
-membership mismatch, stale batch or drift remains typed ABSTAIN. HMM, LSTM and Rule are
-not fabricated, so the composite may remain `REQUIRED_COMPONENT_UNAVAILABLE`.
+membership mismatch, stale batch or drift remains typed ABSTAIN. Other required
+components are not fabricated, so the composite may remain `REQUIRED_COMPONENT_UNAVAILABLE`.
 Cross-market first joins at S6.6 and RiskDecision or order integration remains forbidden.

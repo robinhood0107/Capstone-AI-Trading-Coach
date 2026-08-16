@@ -35,6 +35,7 @@ from app.lightgbm.bootstrap_journal import (
     validate_resume_packet,
 )
 from app.lightgbm.bootstrap_packet import author_bootstrap_packet, validate_bootstrap_packet
+from app.lightgbm import bootstrap_packet_cli
 from app.lightgbm.feature_artifact import (
     FeatureArtifact,
     FeatureBundleProvenance,
@@ -631,6 +632,24 @@ def test_bootstrap_packet_has_exact_1072_1007_51_and_6446_caps() -> None:
     assert (settings.max_calls_per_run, settings.max_attempts_per_request) == (24, 1)
     with pytest.raises(LightGbmContractError, match="label maturity"):
         author_bootstrap_packet(cutoff=cutoff - timedelta(seconds=1))
+
+
+def test_bootstrap_packet_cli_reports_unavailable_without_traceback(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    root = tmp_path / "s5-source"
+    root.mkdir(mode=0o700)
+    monkeypatch.setenv("S5_SOURCE_ROOT", str(root))
+
+    def unavailable(*, cutoff: datetime) -> None:
+        raise LightGbmContractError("bootstrap cutoff precedes the latest label maturity clock")
+
+    monkeypatch.setattr(bootstrap_packet_cli, "author_bootstrap_packet", unavailable)
+
+    assert bootstrap_packet_cli.main() == 1
+    assert capsys.readouterr().out == "S5_BOOTSTRAP_PACKET=DATASET_UNAVAILABLE\n"
 
 
 def test_production_universe_uses_temporal_receipts_and_exact_31() -> None:

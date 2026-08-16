@@ -421,6 +421,34 @@ def test_token_cache_hit_does_not_issue_again() -> None:
     assert calls == 1
 
 
+def test_token_manager_can_freeze_after_first_issue_and_reject_later_refresh() -> None:
+    redis_client = fakeredis.FakeStrictRedis()
+    current = datetime(2026, 7, 8, 9, 0, tzinfo=UTC)
+    calls = 0
+
+    def issuer() -> dict[str, Any]:
+        nonlocal calls
+        calls += 1
+        return {"access_token": f"token-{calls}", "expires_in": 600}
+
+    manager = KISTokenManager(
+        mode="live",
+        offline=False,
+        redis_client=redis_client,
+        issuer=issuer,
+        scope="s5-bootstrap",
+        now=lambda: current,
+    )
+    assert manager.get_access_token() == "token-1"
+    manager.require_cached_token_only()
+    current = current + timedelta(minutes=6)
+
+    with pytest.raises(KISTokenCacheError, match="cached token is required"):
+        manager.get_access_token()
+
+    assert calls == 1
+
+
 def test_token_refreshes_when_expiring_within_five_minutes() -> None:
     redis_client = fakeredis.FakeStrictRedis()
     current = datetime(2026, 7, 8, 9, 0, tzinfo=UTC)

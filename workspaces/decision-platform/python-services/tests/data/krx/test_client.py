@@ -96,6 +96,18 @@ def test_test_factory_accepts_only_mock_transport() -> None:
         )
 
 
+def test_s5_production_method_requires_dedicated_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise AssertionError(f"S5 endpoint must remain closed: {request.url.path}")
+
+    client, _ = _client(monkeypatch, httpx.MockTransport(handler))
+
+    with pytest.raises(ValueError, match="production settings"):
+        client.fetch_s5_production_rows(_AS_OF, service="stk_bydd_trd")
+
+
 def test_two_endpoints_share_one_logical_deadline(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

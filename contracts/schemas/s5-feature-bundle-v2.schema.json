@@ -1,0 +1,167 @@
+{
+  "$id": "contracts/schemas/s5-feature-bundle-v2.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "columnCount": {
+      "const": 19
+    },
+    "featureColumns": {
+      "const": [
+        "momentum_5",
+        "momentum_20",
+        "momentum_60",
+        "close_sma20_ratio",
+        "close_sma60_ratio",
+        "rsi14_wilder",
+        "macd_signal_spread_ratio",
+        "volatility20",
+        "log_volume_z20",
+        "market_return_5",
+        "market_return_20",
+        "relative_strength_5",
+        "relative_strength_20",
+        "base_rate_level",
+        "base_rate_change_20",
+        "usdkrw_return_5",
+        "usdkrw_return_20"
+      ]
+    },
+    "logicalDatasetHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "manifestVersion": {
+      "const": "s5-feature-bundle-v2"
+    },
+    "parquetFile": {
+      "const": "features.parquet"
+    },
+    "parquetSha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "provenance": {
+      "additionalProperties": false,
+      "properties": {
+        "calendarName": {
+          "const": "XKRX"
+        },
+        "calendarVersion": {
+          "const": "4.13.2"
+        },
+        "datasetCutoff": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "eligibleSessionCount": {
+          "const": 1007
+        },
+        "eligibleSessionEnd": {
+          "format": "date",
+          "type": "string"
+        },
+        "eligibleSessionStart": {
+          "format": "date",
+          "type": "string"
+        },
+        "exchangeMic": {
+          "const": "XKRX"
+        },
+        "featurePolicyVersion": {
+          "const": "s5-core-features-v1"
+        },
+        "optionalFeatureGroups": {
+          "const": []
+        },
+        "pitInputSha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "producer": {
+          "const": "decision-platform"
+        },
+        "rawSessionCount": {
+          "const": 1072
+        },
+        "rawSessionEnd": {
+          "format": "date",
+          "type": "string"
+        },
+        "rawSessionStart": {
+          "format": "date",
+          "type": "string"
+        },
+        "sourceBundleSetSha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "sourcePolicySetSha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "sourceWorkspace": {
+          "const": "decision-platform"
+        },
+        "temporalPolicyVersion": {
+          "const": "s5-temporal-policy-v2"
+        },
+        "temporalQuality": {
+          "const": "RECONSTRUCTED_FIXED_LAG"
+        },
+        "universePolicyVersion": {
+          "const": "top30-plus-132030-v1"
+        },
+        "universeScheduleSha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "producer",
+        "sourceWorkspace",
+        "datasetCutoff",
+        "exchangeMic",
+        "calendarName",
+        "calendarVersion",
+        "universePolicyVersion",
+        "featurePolicyVersion",
+        "rawSessionStart",
+        "rawSessionEnd",
+        "rawSessionCount",
+        "eligibleSessionStart",
+        "eligibleSessionEnd",
+        "eligibleSessionCount",
+        "temporalPolicyVersion",
+        "temporalQuality",
+        "sourceBundleSetSha256",
+        "sourcePolicySetSha256",
+        "universeScheduleSha256",
+        "pitInputSha256",
+        "optionalFeatureGroups"
+      ],
+      "type": "object"
+    },
+    "rowCount": {
+      "maximum": 250000,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "schemaVersion": {
+      "const": "s5-feature-table-v1"
+    }
+  },
+  "required": [
+    "manifestVersion",
+    "schemaVersion",
+    "parquetFile",
+    "parquetSha256",
+    "logicalDatasetHash",
+    "rowCount",
+    "columnCount",
+    "featureColumns",
+    "provenance"
+  ],
+  "title": "S5 production feature bundle v2",
+  "type": "object"
+}

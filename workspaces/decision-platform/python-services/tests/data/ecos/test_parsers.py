@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from copy import deepcopy
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -106,6 +107,24 @@ def test_parser_rejects_identity_mismatch_and_row_count_over_bound() -> None:
     oversized = _fixture("statistic_search_success.json")
     with pytest.raises(ECOSParseError, match="row limit"):
         _parse(oversized, max_rows=2)
+
+
+def test_statistic_search_allows_the_s5_exact_400_row_page_bound() -> None:
+    start = date(2025, 1, 1)
+    rows = [
+        {
+            "STAT_CODE": "722Y001",
+            "ITEM_CODE1": "0101000",
+            "TIME": (start + timedelta(days=index)).strftime("%Y%m%d"),
+            "DATA_VALUE": "2.5",
+        }
+        for index in range(250)
+    ]
+    page = _parse(
+        {"StatisticSearch": {"list_total_count": len(rows), "row": rows}},
+        max_rows=400,
+    )
+    assert len(page.observations) == 250
 
 
 def test_exact_duplicates_collapse_but_conflicting_duplicates_fail_closed() -> None:

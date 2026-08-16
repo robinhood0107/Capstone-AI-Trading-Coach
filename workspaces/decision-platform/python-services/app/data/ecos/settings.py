@@ -98,3 +98,20 @@ class ECOSSettings(BaseSettings):
     def origin(self) -> str:
         """credential 전송 대상을 배포 설정으로 바꿀 수 없는 공식 HTTPS origin으로 고정한다."""
         return ECOS_ORIGIN
+
+
+class ECOSS5ProductionSettings(ECOSSettings):
+    """S5.6 one-shot 두 series chunk set에만 24-call 상한과 retry 0을 적용한다."""
+
+    max_calls_per_run: int = Field(
+        default=24,
+        ge=1,
+        le=24,
+        validation_alias="S5_ECOS_MAX_CALLS_PER_RUN",
+    )
+    max_attempts_per_request: int = Field(
+        default=1,
+        ge=1,
+        le=1,
+        validation_alias="S5_ECOS_MAX_ATTEMPTS_PER_REQUEST",
+    )

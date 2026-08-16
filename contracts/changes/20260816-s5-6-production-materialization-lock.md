@@ -63,9 +63,14 @@ The source manifest is bounded at 16 MiB because it must bind up to 6,446 indivi
 physical-call receipts; KRX/KIS/ECOS decoded row and byte caps are rechecked from both
 Parquet footer metadata and actual batches. Each handoff writes a fsynced intent before
 the call and a terminal receipt afterward. A completed query is never called again.
+Each sealed KRX/KIS/ECOS projection is additionally capped at 5,000/100/400 rows, and
+manifest `createdAt` must equal the latest bound receipt `retrievedAt`. Every receipt's
+effective clock must be no later than the manifest dataset cutoff. The bootstrap packet
+itself is rejected unless the latest raw session's `t+6` label is mature by that cutoff.
 An unresolved failure may be retried once only through a canonical resume packet bound
 to the original bootstrap packet, failed query digest, consumed count and remaining cap;
 an intent without a terminal receipt is ambiguous and cannot be retried automatically.
+After that one failed resume, a third packet cannot be authored.
 Credentials, authorization headers, account identifiers, and raw provider responses are
 never persisted, logged, or committed.
 

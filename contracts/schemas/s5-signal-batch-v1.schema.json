@@ -1,0 +1,86 @@
+{
+  "$id": "contracts/schemas/s5-signal-batch-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "asOf": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "batchPurpose": {
+      "enum": [
+        "DAILY",
+        "ROLLBACK"
+      ]
+    },
+    "batchVersion": {
+      "const": "s5-signal-batch-v1"
+    },
+    "fixture": {
+      "const": false
+    },
+    "membersSha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "membershipSha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "modelReleaseId": {
+      "pattern": "^lgr-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "parquetFile": {
+      "const": "signals.parquet"
+    },
+    "parquetSha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "provenanceClass": {
+      "const": "PRODUCTION"
+    },
+    "rowCount": {
+      "const": 31
+    },
+    "semanticSha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "sessionDate": {
+      "format": "date",
+      "type": "string"
+    },
+    "signalBatchId": {
+      "pattern": "^sgb-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "timeframe": {
+      "const": "1d"
+    },
+    "universeReleaseId": {
+      "pattern": "^sur-[0-9a-f]{12}$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "batchVersion",
+    "batchPurpose",
+    "signalBatchId",
+    "modelReleaseId",
+    "universeReleaseId",
+    "membershipSha256",
+    "sessionDate",
+    "asOf",
+    "timeframe",
+    "rowCount",
+    "membersSha256",
+    "parquetFile",
+    "parquetSha256",
+    "fixture",
+    "provenanceClass",
+    "semanticSha256"
+  ],
+  "type": "object"
+}

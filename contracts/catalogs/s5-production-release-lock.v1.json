@@ -1,0 +1,52 @@
+{
+  "activation": "MANUAL_EXPECTED_CURRENT_CAS",
+  "automaticModelActivation": 0,
+  "automaticRetrain": 0,
+  "contractId": "s5-production-release-lock.v1",
+  "dailyRefresh": {
+    "failedQueryResumeMax": 1,
+    "localFinalizationProviderCalls": 0,
+    "maxPhysicalCalls": 41,
+    "missedSessionResume": "EXPLICIT_NEXT_XKRX_SESSION_ONLY",
+    "packetVersion": "s5-daily-refresh-packet-v1",
+    "resumeDoesNotIncreaseCaps": true,
+    "retry": 0,
+    "singleSessionOnly": true,
+    "stateVersion": "s5-daily-inference-state-v1"
+  },
+  "membership": {
+    "exactRows": 31,
+    "policy": "top30-plus-132030-v1"
+  },
+  "modelReleaseFiles": [
+    "release.json",
+    "model.txt",
+    "calibrator.json",
+    "report.json",
+    "gain-importance.json",
+    "contribution-report.json",
+    "qualification.json"
+  ],
+  "orderWiring": 0,
+  "riskDecisionWiring": 0,
+  "rollback": {
+    "batchPurpose": "ROLLBACK",
+    "freshCurrentSessionBatchRequired": true,
+    "oldBatchReuseAllowed": false
+  },
+  "sessionClock": {
+    "asOfPolicy": "NEXT_COMPLETED_XKRX_SESSION_08_10_ASIA_SEOUL",
+    "calendar": "XKRX",
+    "calendarDatePlusOneAllowed": false,
+    "calendarVersion": "4.13.2",
+    "regression": {
+      "asOf": "2026-08-17T23:10:00Z",
+      "nextSession": "2026-08-18",
+      "sessionDate": "2026-08-14"
+    }
+  },
+  "signalBatchFiles": [
+    "batch.json",
+    "signals.parquet"
+  ]
+}

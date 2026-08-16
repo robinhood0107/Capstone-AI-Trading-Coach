@@ -1,0 +1,132 @@
+{
+  "$id": "contracts/schemas/s5-model-release-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "calendarName": {
+      "const": "XKRX"
+    },
+    "calendarVersion": {
+      "const": "4.13.2"
+    },
+    "codeHead": {
+      "pattern": "^[0-9a-f]{40}$",
+      "type": "string"
+    },
+    "codeTree": {
+      "pattern": "^[0-9a-f]{40}$",
+      "type": "string"
+    },
+    "featureManifestSha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "files": {
+      "additionalProperties": false,
+      "properties": {
+        "calibrator.json": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "contribution-report.json": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "gain-importance.json": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "model.txt": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "qualification.json": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "report.json": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "model.txt",
+        "calibrator.json",
+        "report.json",
+        "gain-importance.json",
+        "contribution-report.json",
+        "qualification.json"
+      ],
+      "type": "object"
+    },
+    "fixture": {
+      "const": false
+    },
+    "modelReleaseId": {
+      "pattern": "^lgr-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "modelReportId": {
+      "pattern": "^mrp-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "modelVersion": {
+      "pattern": "^lgbm-v1-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "provenanceClass": {
+      "const": "PRODUCTION"
+    },
+    "releaseVersion": {
+      "const": "s5-model-release-v1"
+    },
+    "semanticSha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "sourceBundleSetSha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "sourcePolicySetSha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "status": {
+      "const": "QUALIFIED"
+    },
+    "temporalQuality": {
+      "const": "RECONSTRUCTED_FIXED_LAG"
+    },
+    "trainingDatasetSha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "uvLockSha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "releaseVersion",
+    "modelReleaseId",
+    "modelVersion",
+    "modelReportId",
+    "featureManifestSha256",
+    "sourceBundleSetSha256",
+    "sourcePolicySetSha256",
+    "trainingDatasetSha256",
+    "codeHead",
+    "codeTree",
+    "uvLockSha256",
+    "calendarName",
+    "calendarVersion",
+    "temporalQuality",
+    "fixture",
+    "provenanceClass",
+    "status",
+    "files",
+    "semanticSha256"
+  ],
+  "type": "object"
+}

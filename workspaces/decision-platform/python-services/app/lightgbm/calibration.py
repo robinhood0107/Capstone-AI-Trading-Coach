@@ -131,6 +131,69 @@ def fit_ovr_platt(margins: np.ndarray, y_true: np.ndarray) -> OvrPlattCalibrator
     return OvrPlattCalibrator((parameters[0], parameters[1], parameters[2]))
 
 
+def calibrator_from_mapping(value: object) -> OvrPlattCalibrator:
+    """검증된 canonical JSON mapping을 arbitrary object deserialization 없이 calibrator로 복원한다."""
+
+    if not isinstance(value, dict) or set(value) != {
+        "calibratorVersion",
+        "classOrder",
+        "classes",
+        "optimizer",
+    }:
+        raise LightGbmContractError("calibrator mapping field set is invalid")
+    if value["calibratorVersion"] != "ovr-platt-v1" or value["classOrder"] != [
+        "SELL",
+        "HOLD",
+        "BUY",
+    ]:
+        raise LightGbmContractError("calibrator mapping version or class order is invalid")
+    optimizer = value["optimizer"]
+    if optimizer != {
+        "method": "L-BFGS-B",
+        "regularization": 0,
+        "maxIter": 1000,
+        "ftol": 1e-12,
+        "gtol": 1e-8,
+    }:
+        raise LightGbmContractError("calibrator optimizer contract is invalid")
+    raw_classes = value["classes"]
+    if not isinstance(raw_classes, list) or len(raw_classes) != 3:
+        raise LightGbmContractError("calibrator class count is invalid")
+    result: list[PlattClassParameters] = []
+    for expected_index, item in enumerate(raw_classes):
+        if not isinstance(item, dict) or set(item) != {
+            "classIndex",
+            "a",
+            "b",
+            "positives",
+            "negatives",
+        }:
+            raise LightGbmContractError("calibrator class field set is invalid")
+        if item["classIndex"] != expected_index:
+            raise LightGbmContractError("calibrator class index is invalid")
+        a, b = item["a"], item["b"]
+        positives, negatives = item["positives"], item["negatives"]
+        if (
+            not isinstance(a, (int, float))
+            or isinstance(a, bool)
+            or not isinstance(b, (int, float))
+            or isinstance(b, bool)
+            or not math.isfinite(float(a))
+            or not math.isfinite(float(b))
+            or not isinstance(positives, int)
+            or isinstance(positives, bool)
+            or not isinstance(negatives, int)
+            or isinstance(negatives, bool)
+            or positives <= 0
+            or negatives <= 0
+        ):
+            raise LightGbmContractError("calibrator class numeric value is invalid")
+        result.append(
+            PlattClassParameters(expected_index, float(a), float(b), positives, negatives)
+        )
+    return OvrPlattCalibrator((result[0], result[1], result[2]))
+
+
 def _margins(value: np.ndarray) -> np.ndarray:
     array = np.asarray(value, dtype=np.float64)
     if (

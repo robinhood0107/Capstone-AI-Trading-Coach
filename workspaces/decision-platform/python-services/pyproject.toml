@@ -86,6 +86,10 @@ s48-core6-probe = "app.cross_market.core6_probe_cli:main"
 s48-optional3-probe = "app.cross_market.optional3_probe_cli:main"
 s5-production-bootstrap-author = "app.lightgbm.bootstrap_packet_cli:main"
 s5-production-bootstrap = "app.lightgbm.bootstrap_execute_cli:main"
+s5-production-stage = "app.lightgbm.production_stage_cli:main"
+s5-daily-packet = "app.lightgbm.daily_packet_cli:main"
+s5-daily-refresh = "app.lightgbm.daily_execute_cli:main"
+s5-rollback-batch = "app.lightgbm.rollback_batch_cli:main"
 
 [build-system]
 requires = ["hatchling"]

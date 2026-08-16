@@ -64,6 +64,14 @@ def latest_completed_session(cutoff: datetime) -> date:
     return cast(date, candidate.date())
 
 
+def previous_xkrx_session(session_date: date) -> date:
+    """주말·휴일을 건너뛴 직전 XKRX session을 sensitivity alignment에 제공한다."""
+
+    calendar = _calendar()
+    session = calendar.date_to_session(pd.Timestamp(session_date), direction="none")
+    return cast(date, calendar.previous_session(session).date())
+
+
 def derive_monthly_universe_schedule(
     effective_month: str,
     *,

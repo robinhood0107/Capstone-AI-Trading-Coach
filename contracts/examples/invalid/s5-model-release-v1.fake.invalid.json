@@ -1,0 +1,28 @@
+{
+  "calendarName": "XKRX",
+  "calendarVersion": "4.13.2",
+  "codeHead": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "codeTree": "ffffffffffffffffffffffffffffffffffffffff",
+  "featureManifestSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "files": {
+    "calibrator.json": "2222222222222222222222222222222222222222222222222222222222222222",
+    "contribution-report.json": "2222222222222222222222222222222222222222222222222222222222222222",
+    "gain-importance.json": "2222222222222222222222222222222222222222222222222222222222222222",
+    "model.txt": "2222222222222222222222222222222222222222222222222222222222222222",
+    "qualification.json": "2222222222222222222222222222222222222222222222222222222222222222",
+    "report.json": "2222222222222222222222222222222222222222222222222222222222222222"
+  },
+  "fixture": true,
+  "modelReleaseId": "lgr-111111111111",
+  "modelReportId": "mrp-333333333333",
+  "modelVersion": "lgbm-v1-222222222222",
+  "provenanceClass": "PRODUCTION",
+  "releaseVersion": "s5-model-release-v1",
+  "semanticSha256": "3333333333333333333333333333333333333333333333333333333333333333",
+  "sourceBundleSetSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "sourcePolicySetSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "status": "QUALIFIED",
+  "temporalQuality": "RECONSTRUCTED_FIXED_LAG",
+  "trainingDatasetSha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "uvLockSha256": "1111111111111111111111111111111111111111111111111111111111111111"
+}

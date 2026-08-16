@@ -1870,68 +1870,62 @@ payload에 가짜 state를 넣거나 이전 `asOf`를 갱신해 새 success view
 
 - `/api/v1/signals/{symbol}`: 기존 계약과 fixture의 legacy read 경계다. 새 S5/S6 artifact를
   이 형식으로 active publication하지 않는다.
-- `/api/v2/signals/{symbol}`: 아래 tagged-union contract는 S5.0에서 잠겼지만 route는 아직
-  current OpenAPI에 없으며 별도 runtime 구현·활성화 승인이 필요하다.
-- S5.0은 deterministic schema/catalog/fixture와 Spring/Python parser parity까지만 소유한다.
-  artifact ingest, RiskDecision/order response 연결은 `NO_GO`다.
+- `/api/v2/signals/{symbol}`: S5 runtime transition이 허용한 유일한 새 path다. 인증된 GET과
+  server-defined symbol path만 받고 query/artifact/user/account 식별자는 받지 않는다.
+- S5.0 historical bytes는 유지한다. S5.5는 safe artifact ingest와 production-only DB reader를
+  소유하지만 RiskDecision/order response 연결은 `NO_GO`다.
 
 ### 8.1 Signal v2 종목 신호 조회
 
-> 현재 상태: `S5_0_CONTRACT=LOCKED / ACTIVE_ENDPOINT=NO_GO /
-> RISK_DECISION_ORDER_WIRING=NO_GO`. `contracts/schemas/signal-v2.schema.json`과 generated
-> positive/negative fixture, Python semantic validator, Spring contract-only parser parity까지
-> 구현했으며 current OpenAPI는 변경하지 않는다.
-
-계획 route:
+> 현재 상태: `S5_0_AMENDMENT=VERIFIED / S5_5_SYMBOL_ROUTE=IMPLEMENTED_MERGE_CANDIDATE /
+> PRODUCTION_POINTER=0 / RISK_DECISION_ORDER_WIRING=NO_GO`. historical Signal v1/v2 bytes를
+> 유지하고 preserved projection 검증 아래 runtime v1 schema와 exact GET path만 추가했다.
 
 `GET /api/v2/signals/{symbol}`
 
-응답(현재 존재하지 않는 historical producer output은 `ABSTAIN`으로 표현하는 예시):
+현재처럼 검증된 production evidence가 하나도 없을 때의 응답:
 
 ```json
 {
   "success": true,
+  "requestId": "req-signal-example",
   "data": {
     "symbol": "005930",
-    "asOf": "2026-06-23T15:30:00+09:00",
     "timeframe": "1d",
     "composite": {
       "status": "ABSTAIN",
       "reason": "REQUIRED_COMPONENT_UNAVAILABLE"
     },
-    "modelReportId": "model_report_not_available",
     "components": {
       "ruleBaseline": {
         "status": "ABSTAIN",
         "producer": "RULE_BASELINE",
         "sourceWorkspace": "return-engine",
-        "reason": "NOT_AVAILABLE"
+        "reason": "MISSING_EVIDENCE"
       },
       "lstm": {
         "status": "ABSTAIN",
         "producer": "LSTM",
         "sourceWorkspace": "return-engine",
-        "reason": "NOT_AVAILABLE"
+        "reason": "MISSING_EVIDENCE"
       },
       "lightgbm": {
-        "status": "AVAILABLE",
+        "status": "ABSTAIN",
         "producer": "LIGHTGBM",
         "sourceWorkspace": "decision-platform",
-        "asOf": "2026-06-23T15:30:00+09:00",
-        "signal": "HOLD",
-        "confidence": 0.66,
-        "predictedReturn": 0.003
+        "reason": "MISSING_EVIDENCE"
       },
       "hmmRegime": {
         "status": "ABSTAIN",
         "producer": "HMM",
         "sourceWorkspace": "decision-platform",
-        "reason": "POSTERIOR_BELOW_THRESHOLD",
-        "warnings": ["HMM evidence was excluded from the composite."]
+        "reason": "MISSING_EVIDENCE"
       }
     },
-    "warnings": ["One or more required components are unavailable."]
-  }
+    "warnings": ["No verified Signal component evidence is available."]
+  },
+  "warnings": [],
+  "error": null
 }
 ```
 
@@ -1951,7 +1945,9 @@ RiskEngine `DecisionStatus.HOLD`는 서로 다른 상태이며 변환하지 않�
 public response에 artifact path, internal raw score/margin, hash, account/user ID를 넣지 않는다.
 artifact ingest는 approved-root, no-follow, bounded size/row/decompression, exact schema/version/hash/
 producer/provenance, unknown-column 거부를 통과해야 한다. Signal v2 schema와 positive/negative
-fixture는 잠겼지만 artifact ingest와 이 route의 runtime 연결은 별도 후속 session 전까지 금지한다.
+fixture는 잠겼고 runtime reader는 `fixture=false`, `PRODUCTION`, 검증 완료 production pointer만
+읽는다. 현재 pointer는 0이므로 all-ABSTAIN이 정상 응답이다. DB 자체가 불가하면 payload를 꾸미지
+않고 typed 503을 반환한다. 응답은 `Cache-Control: no-store`다.
 
 ### 8.2 뉴스감성 요약 artifact 조회
 

@@ -1,0 +1,21 @@
+{
+  "artifactVersion": "lightgbm-signal-artifact-v1",
+  "datasetSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+  "evaluationId": "eval-fixture-005930-20260814",
+  "fixture": true,
+  "modelReportId": "mrp-fixture-runtime-v1",
+  "modelSha256": "2222222222222222222222222222222222222222222222222222222222222222",
+  "modelVersion": "lgbm-v1-fixture",
+  "payloadSha256": "4444444444444444444444444444444444444444444444444444444444444444",
+  "producer": "LIGHTGBM",
+  "provenanceClass": "FAKE_CONTRACT",
+  "provenanceSha256": "5555555555555555555555555555555555555555555555555555555555555555",
+  "reason": "MISSING_EVIDENCE",
+  "reportSha256": "3333333333333333333333333333333333333333333333333333333333333333",
+  "schemaVersion": "signal-v2-runtime-v1",
+  "sessionDate": "2026-08-14",
+  "sourceWorkspace": "decision-platform",
+  "status": "ABSTAIN",
+  "symbol": "005930",
+  "timeframe": "1d"
+}

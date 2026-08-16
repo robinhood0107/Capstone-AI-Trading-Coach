@@ -3594,6 +3594,14 @@ def _verify_frozen_existing_files() -> None:
             raise ContractValidationError(
                 f"frozen Pre-S5 input is unavailable: {relative_path}"
             )
+        if relative_path == "contracts/openapi/openapi.json":
+            transition_catalog = ROOT / "contracts/catalogs/s5-signal-runtime-transition.v1.json"
+            if transition_catalog.is_file() and not transition_catalog.is_symlink():
+                # S5.5 승인분을 제거한 projection이 historical OpenAPI와 같은지 계속 검증한다.
+                from contracts.verify_s5_signal_runtime_transition import verify_openapi_transition
+
+                verify_openapi_transition(path, transition_catalog)
+                continue
         actual_hash = hashlib.sha256(path.read_bytes()).hexdigest()
         if actual_hash != expected_hash:
             raise ContractValidationError(

@@ -1,0 +1,50 @@
+{
+  "asOf": "2026-07-31T00:00:00Z",
+  "components": {
+    "hmmRegime": {
+      "asOf": "2026-07-31T00:00:00Z",
+      "confidence": 0.72,
+      "producer": "HMM",
+      "sourceWorkspace": "decision-platform",
+      "state": "SIDEWAYS",
+      "status": "AVAILABLE"
+    },
+    "lightgbm": {
+      "asOf": "2026-07-31T00:00:00Z",
+      "confidence": 0.66,
+      "predictedReturn": 0.003,
+      "producer": "LIGHTGBM",
+      "signal": "HOLD",
+      "sourceWorkspace": "decision-platform",
+      "status": "AVAILABLE"
+    },
+    "lstm": {
+      "asOf": "2026-07-31T00:00:00Z",
+      "confidence": 0.57,
+      "predictedReturn": 0.008,
+      "producer": "LSTM",
+      "signal": "BUY",
+      "sourceWorkspace": "return-engine",
+      "status": "AVAILABLE"
+    },
+    "ruleBaseline": {
+      "asOf": "2026-07-31T00:00:00Z",
+      "confidence": 0.51,
+      "predictedReturn": 0.001,
+      "producer": "RULE_BASELINE",
+      "signal": "HOLD",
+      "sourceWorkspace": "return-engine",
+      "status": "AVAILABLE"
+    }
+  },
+  "composite": {
+    "confidence": 0.62,
+    "signal": "HOLD",
+    "status": "AVAILABLE"
+  },
+  "modelReportId": "model_report_fixture_20260731",
+  "news": {},
+  "symbol": "005930",
+  "timeframe": "1d",
+  "warnings": []
+}

@@ -27,6 +27,7 @@ from contracts.generate_s4_7d_rag_v2_contracts import (
     load_json,
     validate_semantics,
 )
+from contracts.verify_s5_signal_runtime_transition import verify_openapi_transition
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -72,6 +73,12 @@ class S47dRagV2ContractTest(unittest.TestCase):
     def test_v1_and_exact_30_bytes_are_frozen(self) -> None:
         for relative_path, expected_hash in FROZEN_V1_HASHES.items():
             with self.subTest(relative_path=relative_path):
+                if relative_path == "contracts/openapi/openapi.json":
+                    verify_openapi_transition(
+                        ROOT / relative_path,
+                        ROOT / "contracts/catalogs/s5-signal-runtime-transition.v1.json",
+                    )
+                    continue
                 self.assertEqual(
                     expected_hash,
                     hashlib.sha256((ROOT / relative_path).read_bytes()).hexdigest(),

@@ -305,6 +305,8 @@ class KrxOpenApiClient:
     ) -> tuple[dict[str, str], ...]:
         """S5.6 exact seven-service allowlist를 raw-free closed projection으로 조회한다."""
 
+        if not isinstance(self._settings, KrxS5ProductionSettings):
+            raise ValueError("KRX S5 production settings are required")
         endpoint = S5_PRODUCTION_ENDPOINTS.get(service)
         if endpoint is None:
             raise ValueError("KRX S5 production service is not allowed")

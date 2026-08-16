@@ -9,6 +9,7 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 import hashlib
 from io import BytesIO
+import math
 import os
 from pathlib import Path
 import stat
@@ -49,9 +50,10 @@ from app.lightgbm.production_policy import (
     classify_krx_security,
     require_standard_stock_identity,
 )
+from app.lightgbm.private_root import require_private_regular_file
 from app.lightgbm.source_bundle import (
     MAX_MANIFEST_BYTES,
-    SOURCE_BYTE_CAPS,
+    SOURCE_CHUNK_BYTE_CAPS,
     SOURCE_MANIFEST_FILENAME,
     SourceBundle,
     SourceChunkReceipt,
@@ -108,6 +110,8 @@ class KisBootstrapProvider(Protocol):
 
     def prepare_access_token(self) -> None: ...
 
+    def require_cached_token_only(self) -> None: ...
+
     def fetch_page(
         self, *, symbol: str, start: date, end: date
     ) -> tuple[DailyBar, ...]: ...
@@ -130,7 +134,7 @@ class BootstrapAcquisition:
     prices: tuple[ProductionPriceEvidence, ...]
     indices: tuple[IndexEvidence, ...]
     macro: tuple[MacroObservation, ...]
-    listing_market_by_identity: Mapping[str, str]
+    listing_market_by_membership: Mapping[tuple[str, str], str]
     physical_calls: int
 
 
@@ -160,11 +164,10 @@ def execute_bootstrap_acquisition(
     ledger = BootstrapLedger(packet.budget)
     ledger.receipts.extend(journal.consumed_receipts)
     chunks: list[SourceChunkReceipt] = []
-    krx_rows: dict[tuple[str, date], tuple[dict[str, str], ...]] = {}
-    krx_receipts: dict[tuple[str, date], TemporalReceipt] = {}
+    krx_chunks: dict[tuple[str, date], SourceChunkReceipt] = {}
     for session in packet.window.raw_sessions:
         for service in _DAILY_KRX_SERVICES:
-            rows, receipt = _fetch_and_seal_krx(
+            _rows, receipt = _fetch_and_seal_krx(
                 ledger=ledger,
                 source_root=source_root,
                 provider=krx,
@@ -173,15 +176,14 @@ def execute_bootstrap_acquisition(
                 clock=clock,
                 journal=journal,
             )
-            krx_rows[(service, session)] = rows
-            krx_receipts[(service, session)] = receipt.temporal
+            krx_chunks[(service, session)] = receipt
             chunks.append(receipt)
     for schedule in packet.schedules:
         for service in _MONTHLY_KRX_SERVICES:
             key = (service, schedule.selection_session)
-            if key in krx_rows:
+            if key in krx_chunks:
                 continue
-            rows, receipt = _fetch_and_seal_krx(
+            _rows, receipt = _fetch_and_seal_krx(
                 ledger=ledger,
                 source_root=source_root,
                 provider=krx,
@@ -190,15 +192,14 @@ def execute_bootstrap_acquisition(
                 clock=clock,
                 journal=journal,
             )
-            krx_rows[key] = rows
-            krx_receipts[key] = receipt.temporal
+            krx_chunks[key] = receipt
             chunks.append(receipt)
     ledger.advance(BootstrapPhase.KRX)
 
-    universes, listing_market_by_identity = _derive_universes(
+    universes, listing_market_by_membership = _derive_universes(
         packet=packet,
-        rows=krx_rows,
-        receipts=krx_receipts,
+        source_root=source_root,
+        chunks=krx_chunks,
     )
     identities = validate_horizon_union(universes)
     symbol_by_identity = {
@@ -210,7 +211,9 @@ def execute_bootstrap_acquisition(
         raise DatasetUnavailable("DATASET_UNAVAILABLE: universe identity mapping is incomplete")
 
     token_query_hash = _query_sha256({"operation": "oauth2/tokenP", "mode": "live"})
-    if not journal.token_completed(token_query_hash):
+    if journal.token_completed(token_query_hash):
+        kis.require_cached_token_only()
+    else:
         _journaled_call(
             ledger=ledger,
             journal=journal,
@@ -253,9 +256,12 @@ def execute_bootstrap_acquisition(
         chunks.extend(series_chunks)
     ledger.advance(BootstrapPhase.ECOS)
 
-    indices = _build_index_evidence(packet, krx_rows, krx_receipts)
+    indices = _build_index_evidence(packet, source_root, krx_chunks)
+    # Resume 시 wall clock 변화가 이미 봉인된 manifest를 충돌시키지 않게 retrieval receipt로 결정한다.
     manifest = build_source_manifest(
-        created_at=_clock_utc(clock), dataset_cutoff=_packet_cutoff(packet), chunks=chunks
+        created_at=max(chunk.temporal.retrieved_at for chunk in chunks),
+        dataset_cutoff=_packet_cutoff(packet),
+        chunks=chunks,
     )
     _write_private_new_file(
         approved_root=source_root,
@@ -273,7 +279,7 @@ def execute_bootstrap_acquisition(
         prices=tuple(sorted(prices, key=lambda item: (item.session_date, item.symbol))),
         indices=indices,
         macro=tuple(sorted(macro, key=lambda item: (item.series_id, item.observation_date))),
-        listing_market_by_identity=dict(sorted(listing_market_by_identity.items())),
+        listing_market_by_membership=dict(sorted(listing_market_by_membership.items())),
         physical_calls=len(ledger.receipts),
     )
 
@@ -296,15 +302,25 @@ def materialize_production_feature_bundle(
         prices_by_identity[price.instrument_id].append(price)
     rows: list[Mapping[str, object]] = []
     eligible = set(packet.window.eligible_sessions)
+    last_feature_session = packet.window.eligible_sessions[-1]
+    feature_sessions = tuple(
+        session for session in packet.window.raw_sessions if session <= last_feature_session
+    )
     for identity in sorted(prices_by_identity):
-        market = acquisition.listing_market_by_identity.get(identity)
-        if market is None:
-            raise DatasetUnavailable("DATASET_UNAVAILABLE: listing market evidence is missing")
+        market_by_session = _listing_market_schedule(
+            identity=identity,
+            sessions=feature_sessions,
+            listing_market_by_membership=acquisition.listing_market_by_membership,
+        )
         feature_rows = build_production_core_feature_rows(
-            prices_by_identity[identity],
+            tuple(
+                price
+                for price in prices_by_identity[identity]
+                if price.session_date <= last_feature_session
+            ),
             acquisition.indices,
             acquisition.macro,
-            listing_market=market,
+            listing_market_by_session=market_by_session,
             cutoff=_packet_cutoff(packet),
         )
         for row in feature_rows:
@@ -661,10 +677,20 @@ def _fetch_ecos_series(
             day = datetime.strptime(observation.time, "%Y%m%d").date()
             if day in rows:
                 raise LightGbmContractError("SOURCE_SNAPSHOT_CONFLICT")
+            try:
+                macro_value = Decimal(observation.value)
+            except Exception:
+                raise DatasetUnavailable(
+                    "DATASET_UNAVAILABLE: ECOS numeric field is invalid"
+                ) from None
+            if not macro_value.is_finite() or (
+                series.series_id == "krw-usd-rate" and macro_value <= 0
+            ):
+                raise DatasetUnavailable("DATASET_UNAVAILABLE: ECOS numeric field is invalid")
             rows[day] = MacroObservation(
                 series_id=series.series_id,
                 observation_date=day,
-                value=float(Decimal(observation.value)),
+                value=float(macro_value),
                 receipt=_temporal_receipt(
                     source="ECOS",
                     operation=str(query["operation"]),
@@ -683,25 +709,43 @@ def _fetch_ecos_series(
 def _derive_universes(
     *,
     packet: BootstrapPacket,
-    rows: Mapping[tuple[str, date], tuple[dict[str, str], ...]],
-    receipts: Mapping[tuple[str, date], TemporalReceipt],
-) -> tuple[tuple[MonthlyUniverse, ...], dict[str, str]]:
+    source_root: Path,
+    chunks: Mapping[tuple[str, date], SourceChunkReceipt],
+) -> tuple[tuple[MonthlyUniverse, ...], dict[tuple[str, str], str]]:
     output: list[MonthlyUniverse] = []
-    markets: dict[str, str] = {}
+    markets: dict[tuple[str, str], str] = {}
     for schedule in packet.schedules:
-        base_rows = {
-            row["ISU_SRT_CD"]: (row, service)
-            for service in ("stk_isu_base_info", "ksq_isu_base_info")
-            for row in rows[(service, schedule.selection_session)]
-        }
+        base_rows: dict[str, tuple[dict[str, str], str, str]] = {}
+        for service, market in (
+                ("stk_isu_base_info", "KOSPI"),
+                ("ksq_isu_base_info", "KOSDAQ"),
+        ):
+            for row in _load_string_rows(
+                source_root, chunks[(service, schedule.selection_session)]
+            ):
+                symbol = row["ISU_SRT_CD"]
+                if symbol in base_rows:
+                    raise DatasetUnavailable(
+                        "SOURCE_SNAPSHOT_CONFLICT: monthly short code is ambiguous"
+                    )
+                base_rows[symbol] = (row, service, market)
+        for identity_row, _identity_service, market in base_rows.values():
+            identity = require_standard_stock_identity(identity_row["ISU_CD"])
+            key = (identity, schedule.effective_month)
+            prior_market = markets.get(key)
+            if prior_market is not None and prior_market != market:
+                raise DatasetUnavailable(
+                    "SOURCE_SNAPSHOT_CONFLICT: monthly listing market is ambiguous"
+                )
+            markets[key] = market
         observations: list[ProductionUniverseObservation] = []
         for day in schedule.trailing_sessions:
             for service, market in (("stk_bydd_trd", "KOSPI"), ("ksq_bydd_trd", "KOSDAQ")):
-                for trading in rows[(service, day)]:
+                for trading in _load_string_rows(source_root, chunks[(service, day)]):
                     base = base_rows.get(trading["ISU_CD"])
                     if base is None:
                         continue
-                    identity_row, identity_service = base
+                    identity_row, identity_service, _identity_market = base
                     identity = require_standard_stock_identity(identity_row["ISU_CD"])
                     classification = classify_krx_security(
                         security_group=identity_row["SECUGRP_NM"],
@@ -709,7 +753,6 @@ def _derive_universes(
                         official_name=identity_row["ISU_NM"],
                         source_service=identity_service,
                     )
-                    markets[identity] = market
                     observations.append(
                         ProductionUniverseObservation(
                             instrument_id=identity,
@@ -721,18 +764,22 @@ def _derive_universes(
                             security_type=classification.value,
                             common_share=classification is SecurityClassification.COMMON_STOCK,
                             listed=True,
-                            trading_receipt=receipts[(service, day)],
-                            identity_receipt=receipts[(identity_service, schedule.selection_session)],
+                            trading_receipt=chunks[(service, day)].temporal,
+                            identity_receipt=chunks[
+                                (identity_service, schedule.selection_session)
+                            ].temporal,
                         )
                     )
         etf_rows = [
             row
-            for row in rows[("etf_bydd_trd", schedule.selection_session)]
+            for row in _load_string_rows(
+                source_root, chunks[("etf_bydd_trd", schedule.selection_session)]
+            )
             if row["ISU_CD"] == FIXED_ETF_SYMBOL
         ]
         if len(etf_rows) != 1:
             raise DatasetUnavailable("DATASET_UNAVAILABLE: fixed ETF evidence is missing")
-        etf_receipt = receipts[("etf_bydd_trd", schedule.selection_session)]
+        etf_receipt = chunks[("etf_bydd_trd", schedule.selection_session)].temporal
         observations.append(
             ProductionUniverseObservation(
                 instrument_id="XKRX:ETF:132030",
@@ -748,15 +795,59 @@ def _derive_universes(
                 identity_receipt=etf_receipt,
             )
         )
-        markets["XKRX:ETF:132030"] = "KOSPI"
-        output.append(select_production_monthly_universe(observations, schedule=schedule))
+        universe = select_production_monthly_universe(observations, schedule=schedule)
+        selection_market = {
+            row.instrument_id: row.market
+            for row in observations
+            if row.session_date == schedule.selection_session
+        }
+        for identity in universe.instrument_ids:
+            selected_market = selection_market.get(identity)
+            if selected_market not in {"KOSPI", "KOSDAQ"}:
+                raise DatasetUnavailable("DATASET_UNAVAILABLE: monthly listing market is missing")
+            key = (identity, universe.effective_month)
+            if key in markets and markets[key] != selected_market:
+                raise DatasetUnavailable(
+                    "SOURCE_SNAPSHOT_CONFLICT: selected listing market is ambiguous"
+                )
+            markets[key] = selected_market
+        output.append(universe)
     return tuple(output), markets
+
+
+def _listing_market_schedule(
+    *,
+    identity: str,
+    sessions: Sequence[date],
+    listing_market_by_membership: Mapping[tuple[str, str], str],
+) -> dict[date, str]:
+    """월별 base-info market을 row clock에 투영하며 warm-up 이전만 보수적으로 고정한다."""
+
+    known = sorted(
+        (month, market)
+        for (instrument_id, month), market in listing_market_by_membership.items()
+        if instrument_id == identity
+    )
+    if not known:
+        raise DatasetUnavailable("DATASET_UNAVAILABLE: listing market evidence is missing")
+    earliest_month, earliest_market = known[0]
+    output: dict[date, str] = {}
+    for session in sessions:
+        month = f"{session.year:04d}-{session.month:02d}"
+        market = listing_market_by_membership.get((identity, month))
+        if market is None and month < earliest_month:
+            # 59-session warm-up은 첫 selection schedule보다 앞서므로 최초 base-info만 사용한다.
+            market = earliest_market
+        if market not in {"KOSPI", "KOSDAQ"}:
+            raise DatasetUnavailable("DATASET_UNAVAILABLE: monthly listing market is missing")
+        output[session] = market
+    return output
 
 
 def _build_index_evidence(
     packet: BootstrapPacket,
-    rows: Mapping[tuple[str, date], tuple[dict[str, str], ...]],
-    receipts: Mapping[tuple[str, date], TemporalReceipt],
+    source_root: Path,
+    chunks: Mapping[tuple[str, date], SourceChunkReceipt],
 ) -> tuple[IndexEvidence, ...]:
     output: list[IndexEvidence] = []
     for day in packet.window.raw_sessions:
@@ -764,7 +855,12 @@ def _build_index_evidence(
             ("kospi_dd_trd", "KOSPI", {"코스피", "KOSPI"}),
             ("kosdaq_dd_trd", "KOSDAQ", {"코스닥", "KOSDAQ"}),
         ):
-            candidates = [row for row in rows[(service, day)] if row["IDX_NM"].strip() in names]
+            chunk = chunks[(service, day)]
+            candidates = [
+                row
+                for row in _load_string_rows(source_root, chunk)
+                if row["IDX_NM"].strip() in names
+            ]
             if len(candidates) != 1:
                 raise DatasetUnavailable("DATASET_UNAVAILABLE: exact market index is missing")
             output.append(
@@ -772,7 +868,7 @@ def _build_index_evidence(
                     session_date=day,
                     market=market,
                     adjusted_close=_positive_number(candidates[0]["CLSPRC_IDX"]),
-                    receipt=receipts[(service, day)],
+                    receipt=chunk.temporal,
                 )
             )
     return tuple(output)
@@ -804,7 +900,7 @@ def _seal_projection(
         approved_root=source_root,
         relative_path=receipt.relative_path,
         content=payload,
-        max_bytes=SOURCE_BYTE_CAPS[source],
+        max_bytes=SOURCE_CHUNK_BYTE_CAPS[source],
     )
     return receipt
 
@@ -924,10 +1020,15 @@ def _load_projection_table(source_root: Path, chunk: SourceChunkReceipt) -> pa.T
         safe = read_approved_regular_file(
             approved_root=source_root,
             relative_path=chunk.relative_path,
-            max_bytes=SOURCE_BYTE_CAPS[chunk.source_id],
+            max_bytes=SOURCE_CHUNK_BYTE_CAPS[chunk.source_id],
         )
         if safe.content_sha256 != chunk.content_sha256:
             raise LightGbmContractError("bootstrap reused projection digest mismatch")
+        require_private_regular_file(
+            safe.absolute_path,
+            expected_device=safe.device,
+            expected_inode=safe.inode,
+        )
         return pq.read_table(BytesIO(safe.content), use_threads=False)  # type: ignore[no-untyped-call]
     except RagSafeIoError as error:
         raise LightGbmContractError("bootstrap reused projection path is invalid") from error
@@ -1040,10 +1141,10 @@ def _prepare_private_bundle_root(
             if chunks
             else {"features.parquet", "manifest.json"}
         )
-        required = "chunks" if chunks else "features.parquet"
-        if entries and (not resume or not entries.issubset(allowed) or required not in entries):
+        if entries and (not resume or not entries.issubset(allowed)):
             raise LightGbmContractError("production bundle root must be empty")
-        root.chmod(0o700)
+        if stat.S_IMODE(metadata.st_mode) != 0o700:
+            raise LightGbmContractError("production bundle root must be owner-private")
     else:
         parent = root.parent
         parent_metadata = parent.lstat()
@@ -1166,6 +1267,6 @@ def _positive_number(value: str, *, allow_zero: bool = False) -> float:
         parsed = float(value.replace(",", ""))
     except ValueError:
         raise DatasetUnavailable("DATASET_UNAVAILABLE: provider numeric field is invalid") from None
-    if not (parsed >= 0 if allow_zero else parsed > 0):
+    if not math.isfinite(parsed) or not (parsed >= 0 if allow_zero else parsed > 0):
         raise DatasetUnavailable("DATASET_UNAVAILABLE: provider numeric field is invalid")
     return parsed

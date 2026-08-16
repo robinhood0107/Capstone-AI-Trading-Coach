@@ -25,6 +25,25 @@ ROOT = _REPO_ROOT
 SOURCE_SCHEMA = "contracts/schemas/s5-pit-source-bundle-v1.schema.json"
 FEATURE_SCHEMA = "contracts/schemas/s5-feature-bundle-v2.schema.json"
 CATALOG = "contracts/catalogs/s5-production-materialization-lock.v1.json"
+FEATURE_COLUMNS: Final[tuple[str, ...]] = (
+    "momentum_5",
+    "momentum_20",
+    "momentum_60",
+    "close_sma20_ratio",
+    "close_sma60_ratio",
+    "rsi14_wilder",
+    "macd_signal_spread_ratio",
+    "volatility20",
+    "log_volume_z20",
+    "market_return_5",
+    "market_return_20",
+    "relative_strength_5",
+    "relative_strength_20",
+    "base_rate_level",
+    "base_rate_change_20",
+    "usdkrw_return_5",
+    "usdkrw_return_20",
+)
 
 
 def _closed(required: list[str], properties: dict[str, Any]) -> dict[str, Any]:
@@ -94,7 +113,10 @@ def _temporal_receipt() -> dict[str, Any]:
     receipt["allOf"] = [
         {
             "if": {"properties": {"availabilityBasis": {"const": "PROVIDER_FIELD"}}},
-            "then": {"required": ["providerAvailableAt"]},
+            "then": {
+                "required": ["providerAvailableAt"],
+                "not": {"required": ["policyEffectiveAt"]},
+            },
         },
         {
             "if": {
@@ -104,7 +126,10 @@ def _temporal_receipt() -> dict[str, Any]:
                     }
                 }
             },
-            "then": {"required": ["policyEffectiveAt"]},
+            "then": {
+                "required": ["policyEffectiveAt"],
+                "not": {"required": ["providerAvailableAt"]},
+            },
         },
         {
             "if": {"properties": {"availabilityBasis": {"const": "RETRIEVAL_ONLY"}}},
@@ -122,11 +147,51 @@ def _temporal_receipt() -> dict[str, Any]:
             "then": {"required": ["providerRevision"]},
             "else": {"not": {"required": ["providerRevision"]}},
         },
+        *[
+            {
+                "if": {"properties": {"temporalQuality": {"const": quality}}},
+                "then": {"properties": {"availabilityBasis": {"const": basis}}},
+            }
+            for quality, basis in (
+                ("PROVIDER_VINTAGE", "PROVIDER_FIELD"),
+                ("PROVIDER_AS_OF_NO_VINTAGE", "PROVIDER_AS_OF_SCHEDULE"),
+                ("RECONSTRUCTED_FIXED_LAG", "PROJECT_FIXED_LAG"),
+                ("COLLECTION_ONLY", "RETRIEVAL_ONLY"),
+            )
+        ],
     ]
     return receipt
 
 
 def _source_schema() -> dict[str, Any]:
+    def provider_branch(
+        source: str,
+        operation: str,
+        *,
+        row_max: int,
+        byte_max: int,
+        availability_basis: str,
+        temporal_quality: str,
+    ) -> dict[str, Any]:
+        operation_schema = {"const": operation}
+        return {
+            "properties": {
+                "sourceId": {"const": source},
+                "operationId": operation_schema,
+                "rowCount": {"type": "integer", "minimum": 1, "maximum": row_max},
+                "bytes": {"type": "integer", "minimum": 1, "maximum": byte_max},
+                "receipt": {
+                    "properties": {
+                        "sourceId": {"const": source},
+                        "operationId": operation_schema,
+                        "availabilityBasis": {"const": availability_basis},
+                        "revisionBasis": {"const": "CONTENT_SNAPSHOT"},
+                        "temporalQuality": {"const": temporal_quality},
+                    }
+                },
+            }
+        }
+
     chunk = _closed(
         ["sourceId", "operationId", "queryKey", "contentSha256", "rowCount", "bytes", "receipt"],
         {
@@ -140,36 +205,49 @@ def _source_schema() -> dict[str, Any]:
         },
     )
     chunk["oneOf"] = [
-        {
-            "properties": {
-                "sourceId": {"const": "KRX"},
-                "operationId": {
-                    "enum": [
-                        "stk_bydd_trd",
-                        "ksq_bydd_trd",
-                        "kospi_dd_trd",
-                        "kosdaq_dd_trd",
-                        "stk_isu_base_info",
-                        "ksq_isu_base_info",
-                        "etf_bydd_trd",
-                    ]
-                },
-            }
-        },
-        {
-            "properties": {
-                "sourceId": {"const": "KIS"},
-                "operationId": {"const": "FHKST03010100"},
-            }
-        },
-        {
-            "properties": {
-                "sourceId": {"const": "ECOS"},
-                "operationId": {
-                    "enum": ["722Y001/0101000/D", "731Y001/0000001/D"]
-                },
-            }
-        },
+        *[
+            provider_branch(
+                "KRX",
+                operation,
+                row_max=5_000,
+                byte_max=4 * 1024**2,
+                availability_basis="PROVIDER_AS_OF_SCHEDULE",
+                temporal_quality="PROVIDER_AS_OF_NO_VINTAGE",
+            )
+            for operation in (
+                "stk_bydd_trd",
+                "ksq_bydd_trd",
+                "kospi_dd_trd",
+                "kosdaq_dd_trd",
+                "stk_isu_base_info",
+                "ksq_isu_base_info",
+                "etf_bydd_trd",
+            )
+        ],
+        provider_branch(
+            "KIS",
+            "FHKST03010100",
+            row_max=100,
+            byte_max=10 * 1024**2,
+            availability_basis="PROJECT_FIXED_LAG",
+            temporal_quality="RECONSTRUCTED_FIXED_LAG",
+        ),
+        provider_branch(
+            "ECOS",
+            "722Y001/0101000/D",
+            row_max=400,
+            byte_max=1 * 1024**2,
+            availability_basis="PROJECT_FIXED_LAG",
+            temporal_quality="RECONSTRUCTED_FIXED_LAG",
+        ),
+        provider_branch(
+            "ECOS",
+            "731Y001/0000001/D",
+            row_max=400,
+            byte_max=1 * 1024**2,
+            availability_basis="PROJECT_FIXED_LAG",
+            temporal_quality="RECONSTRUCTED_FIXED_LAG",
+        ),
     ]
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -279,11 +357,7 @@ def _feature_schema() -> dict[str, Any]:
                 "rowCount": {"type": "integer", "minimum": 1, "maximum": 250_000},
                 "columnCount": {"const": 19},
                 "featureColumns": {
-                    "type": "array",
-                    "minItems": 17,
-                    "maxItems": 17,
-                    "uniqueItems": True,
-                    "items": {"type": "string", "minLength": 1, "maxLength": 80},
+                    "const": list(FEATURE_COLUMNS),
                 },
                 "provenance": provenance,
             },
@@ -338,7 +412,7 @@ def _source_fixture() -> dict[str, Any]:
         "strictProviderPITClaim": False,
         "temporalPolicyVersion": "s5-temporal-policy-v2",
         "createdAt": "2026-08-16T00:00:00Z",
-        "datasetCutoff": "2026-08-14T23:10:00Z",
+        "datasetCutoff": "2026-08-17T23:10:00Z",
         "chunks": [
             {
                 "sourceId": "KIS",
@@ -369,13 +443,6 @@ def _feature_fixture() -> dict[str, Any]:
     from contracts.generate_s5_signal_runtime_contracts import _policy_catalog  # noqa: PLC0415
 
     del _policy_catalog  # import asserts the historical generator remains importable
-    feature_columns = [
-        "momentum_5", "momentum_20", "momentum_60", "close_sma20_ratio",
-        "close_sma60_ratio", "rsi14_wilder", "macd_signal_spread_ratio",
-        "volatility20", "log_volume_z20", "market_return_5", "market_return_20",
-        "relative_strength_5", "relative_strength_20", "base_rate_level",
-        "base_rate_change_20", "usdkrw_return_5", "usdkrw_return_20",
-    ]
     return {
         "manifestVersion": "s5-feature-bundle-v2",
         "schemaVersion": "s5-feature-table-v1",
@@ -384,11 +451,11 @@ def _feature_fixture() -> dict[str, Any]:
         "logicalDatasetHash": "4" * 64,
         "rowCount": 1007,
         "columnCount": 19,
-        "featureColumns": feature_columns,
+        "featureColumns": list(FEATURE_COLUMNS),
         "provenance": {
             "producer": "decision-platform",
             "sourceWorkspace": "decision-platform",
-            "datasetCutoff": "2026-08-14T23:10:00Z",
+            "datasetCutoff": "2026-08-17T23:10:00Z",
             "exchangeMic": "XKRX",
             "calendarName": "XKRX",
             "calendarVersion": "4.13.2",
@@ -419,8 +486,21 @@ def build_artifacts() -> dict[str, dict[str, Any]]:
     source_operation = copy.deepcopy(source)
     source_operation["chunks"][0]["operationId"] = "account-balance"
     source_operation["chunks"][0]["receipt"]["operationId"] = "account-balance"
+    source_receipt_mismatch = copy.deepcopy(source)
+    source_receipt_mismatch["chunks"][0]["receipt"]["sourceId"] = "ECOS"
+    source_receipt_policy = copy.deepcopy(source)
+    source_receipt_policy["chunks"][0]["receipt"].update(
+        {
+            "availabilityBasis": "PROVIDER_AS_OF_SCHEDULE",
+            "temporalQuality": "PROVIDER_AS_OF_NO_VINTAGE",
+        }
+    )
+    source_availability_clocks = copy.deepcopy(source)
+    source_availability_clocks["chunks"][0]["receipt"]["providerAvailableAt"] = (
+        "2026-08-16T00:00:00Z"
+    )
     feature_unknown = copy.deepcopy(feature)
-    feature_unknown["crossMarketScore"] = 1
+    feature_unknown["featureColumns"][0] = "cross_market_score"
     artifacts = {
         CATALOG: _catalog(),
         SOURCE_SCHEMA: _source_schema(),
@@ -429,6 +509,9 @@ def build_artifacts() -> dict[str, dict[str, Any]]:
         "contracts/examples/s5-feature-bundle-v2.valid.json": feature,
         "contracts/examples/invalid/s5-pit-source-bundle-v1.unknown-field.invalid.json": source_unknown,
         "contracts/examples/invalid/s5-pit-source-bundle-v1.operation.invalid.json": source_operation,
+        "contracts/examples/invalid/s5-pit-source-bundle-v1.receipt-source.invalid.json": source_receipt_mismatch,
+        "contracts/examples/invalid/s5-pit-source-bundle-v1.receipt-policy.invalid.json": source_receipt_policy,
+        "contracts/examples/invalid/s5-pit-source-bundle-v1.availability-clocks.invalid.json": source_availability_clocks,
         "contracts/examples/invalid/s5-feature-bundle-v2.cross-market.invalid.json": feature_unknown,
     }
     Draft202012Validator.check_schema(artifacts[SOURCE_SCHEMA])

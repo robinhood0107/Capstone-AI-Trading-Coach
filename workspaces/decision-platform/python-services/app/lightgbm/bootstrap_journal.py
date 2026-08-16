@@ -13,6 +13,7 @@ from typing import Mapping, cast
 from app.data._shared.canonical_json import canonical_json_bytes
 from app.lightgbm.bootstrap_control import BootstrapCallReceipt
 from app.lightgbm.errors import LightGbmContractError
+from app.lightgbm.production_policy import ECOS_OPERATIONS, KIS_OPERATION, KRX_OPERATIONS
 from app.lightgbm.source_bundle import SourceChunkReceipt, parse_source_chunk_receipt
 
 
@@ -39,13 +40,14 @@ class ResumePacket:
     content: bytes
     sha256: str
     bootstrap_packet_sha256: str
-    failed_query_sha256: str
+    failed_query_sha256: str | None
 
 
 class BootstrapJournal:
     """한 run root의 intent/terminal event를 fsync append하고 재개 상태를 검증한다."""
 
     def __init__(self, root: Path) -> None:
+        self._root = root
         self._path = root / JOURNAL_FILENAME
         self._attempts = _read_attempts(self._path) if self._path.exists() else ()
 
@@ -157,6 +159,14 @@ class BootstrapJournal:
             os.fsync(descriptor)
         finally:
             os.close(descriptor)
+        directory_descriptor = os.open(
+            self._root,
+            os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
+        )
+        try:
+            os.fsync(directory_descriptor)
+        finally:
+            os.close(directory_descriptor)
         if not allow_incomplete:
             self._attempts = _read_attempts(self._path)
 
@@ -164,28 +174,39 @@ class BootstrapJournal:
 def build_resume_packet(
     *, bootstrap_packet_sha256: str, journal: BootstrapJournal, total_cap: int
 ) -> ResumePacket:
-    """정확히 한 unresolved failure와 remaining cumulative budget만 결속한다."""
+    """실패 chunk 재시도 또는 provider 재호출 없는 local finalization만 결속한다."""
 
     failed = journal.failed_attempt
     consumed = len(journal.consumed_receipts)
-    if failed is None or consumed >= total_cap:
-        raise LightGbmContractError("bootstrap failure has no bounded resume authority")
+    if consumed == 0 or consumed > total_cap:
+        raise LightGbmContractError("bootstrap journal has no bounded resume authority")
+    if failed is not None and sum(
+        attempt.query_sha256 == failed.query_sha256 for attempt in journal._attempts
+    ) != 1:
+        raise LightGbmContractError("bootstrap failed query resume authority is exhausted")
     payload = {
         "resumePacketVersion": RESUME_PACKET_VERSION,
         "bootstrapPacketSha256": bootstrap_packet_sha256,
-        "failedQuerySha256": failed.query_sha256,
-        "provider": failed.provider,
-        "operationId": failed.operation_id,
+        "resumeMode": "FAILED_QUERY" if failed is not None else "LOCAL_FINALIZATION",
         "consumedPhysicalCalls": consumed,
         "remainingPhysicalCalls": total_cap - consumed,
-        "retryOrdinal": 1,
+        **(
+            {
+                "failedQuerySha256": failed.query_sha256,
+                "provider": failed.provider,
+                "operationId": failed.operation_id,
+                "retryOrdinal": 1,
+            }
+            if failed is not None
+            else {}
+        ),
     }
     content = canonical_json_bytes(payload)
     return ResumePacket(
         content=content,
         sha256=hashlib.sha256(content).hexdigest(),
         bootstrap_packet_sha256=bootstrap_packet_sha256,
-        failed_query_sha256=failed.query_sha256,
+        failed_query_sha256=failed.query_sha256 if failed is not None else None,
     )
 
 
@@ -267,11 +288,27 @@ def _read_attempts(path: Path) -> tuple[JournalAttempt, ...]:
         chunk = parse_source_chunk_receipt(chunk_value) if chunk_value is not None else None
         if terminal["state"] == "FAILED" and chunk is not None:
             raise LightGbmContractError("failed bootstrap attempt cannot bind a chunk")
+        provider = _text(intent["provider"])
+        operation_id = _text(intent["operationId"])
+        allowed_operations = {
+            "KRX": frozenset(KRX_OPERATIONS),
+            "KIS": frozenset({KIS_OPERATION, "oauth2/tokenP"}),
+            "ECOS": frozenset(ECOS_OPERATIONS),
+        }
+        if provider not in allowed_operations or operation_id not in allowed_operations[provider]:
+            raise LightGbmContractError("bootstrap progress operation is not allowlisted")
+        token_event = provider == "KIS" and operation_id == "oauth2/tokenP"
+        if terminal["state"] == "SUCCEEDED" and (chunk is None) != token_event:
+            raise LightGbmContractError("bootstrap progress receipt shape is invalid")
+        if chunk is not None and (
+            chunk.source_id != provider or chunk.operation_id != operation_id
+        ):
+            raise LightGbmContractError("bootstrap progress chunk binding is invalid")
         attempts.append(
             JournalAttempt(
                 ordinal=ordinal,
-                provider=_text(intent["provider"]),
-                operation_id=_text(intent["operationId"]),
+                provider=provider,
+                operation_id=operation_id,
                 query_sha256=_sha(intent["querySha256"]),
                 state=_text(terminal["state"]),
                 chunk=chunk,

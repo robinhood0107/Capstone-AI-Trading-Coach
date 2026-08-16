@@ -33,18 +33,45 @@ class S56ProductionContractTest(unittest.TestCase):
             )
             valid = self.artifacts[f"contracts/examples/{name}.valid.json"]
             self.assertEqual([], list(validator.iter_errors(valid)))
-            invalid_path = next(
-                path for path in self.artifacts if path.startswith(
-                    f"contracts/examples/invalid/{name}."
-                )
+            invalid_paths = sorted(
+                path
+                for path in self.artifacts
+                if path.startswith(f"contracts/examples/invalid/{name}.")
             )
-            self.assertTrue(list(validator.iter_errors(self.artifacts[invalid_path])))
+            self.assertTrue(invalid_paths)
+            for invalid_path in invalid_paths:
+                with self.subTest(invalid_path=invalid_path):
+                    self.assertTrue(list(validator.iter_errors(self.artifacts[invalid_path])))
+
+    def test_source_receipt_provider_is_bound_to_chunk_provider(self) -> None:
+        payload = copy.deepcopy(
+            self.artifacts["contracts/examples/s5-pit-source-bundle-v1.valid.json"]
+        )
+        payload["chunks"][0]["receipt"]["sourceId"] = "ECOS"
+        validator = Draft202012Validator(self.artifacts[SOURCE_SCHEMA])
+        self.assertTrue(list(validator.iter_errors(payload)))
+
+    def test_feature_column_order_and_names_are_exact(self) -> None:
+        payload = copy.deepcopy(
+            self.artifacts["contracts/examples/s5-feature-bundle-v2.valid.json"]
+        )
+        payload["featureColumns"][0] = "cross_market_score"
+        validator = Draft202012Validator(self.artifacts[FEATURE_SCHEMA])
+        self.assertTrue(list(validator.iter_errors(payload)))
 
     def test_temporal_receipt_does_not_accept_fabricated_provider_revision(self) -> None:
         payload = copy.deepcopy(
             self.artifacts["contracts/examples/s5-pit-source-bundle-v1.valid.json"]
         )
         payload["chunks"][0]["receipt"]["providerRevision"] = "sha-is-not-a-revision"
+        validator = Draft202012Validator(self.artifacts[SOURCE_SCHEMA])
+        self.assertTrue(list(validator.iter_errors(payload)))
+
+    def test_temporal_receipt_clocks_are_mutually_exclusive(self) -> None:
+        payload = copy.deepcopy(
+            self.artifacts["contracts/examples/s5-pit-source-bundle-v1.valid.json"]
+        )
+        payload["chunks"][0]["receipt"]["providerAvailableAt"] = "2026-08-16T00:00:00Z"
         validator = Draft202012Validator(self.artifacts[SOURCE_SCHEMA])
         self.assertTrue(list(validator.iter_errors(payload)))
 
@@ -55,6 +82,15 @@ class S56ProductionContractTest(unittest.TestCase):
         payload["chunks"][0]["operationId"] = "account-balance"
         payload["chunks"][0]["receipt"]["operationId"] = "account-balance"
         validator = Draft202012Validator(self.artifacts[SOURCE_SCHEMA])
+        self.assertTrue(list(validator.iter_errors(payload)))
+
+        payload = copy.deepcopy(
+            self.artifacts["contracts/examples/s5-pit-source-bundle-v1.valid.json"]
+        )
+        payload["chunks"][0]["sourceId"] = "KRX"
+        payload["chunks"][0]["operationId"] = "stk_bydd_trd"
+        payload["chunks"][0]["receipt"]["sourceId"] = "KRX"
+        payload["chunks"][0]["receipt"]["operationId"] = "kospi_dd_trd"
         self.assertTrue(list(validator.iter_errors(payload)))
 
     def test_policy_caps_and_no_go_boundaries_are_exact(self) -> None:

@@ -7,15 +7,25 @@
       "const": 19
     },
     "featureColumns": {
-      "items": {
-        "maxLength": 80,
-        "minLength": 1,
-        "type": "string"
-      },
-      "maxItems": 17,
-      "minItems": 17,
-      "type": "array",
-      "uniqueItems": true
+      "const": [
+        "momentum_5",
+        "momentum_20",
+        "momentum_60",
+        "close_sma20_ratio",
+        "close_sma60_ratio",
+        "rsi14_wilder",
+        "macd_signal_spread_ratio",
+        "volatility20",
+        "log_volume_z20",
+        "market_return_5",
+        "market_return_20",
+        "relative_strength_5",
+        "relative_strength_20",
+        "base_rate_level",
+        "base_rate_change_20",
+        "usdkrw_return_5",
+        "usdkrw_return_20"
+      ]
     },
     "logicalDatasetHash": {
       "pattern": "^[0-9a-f]{64}$",

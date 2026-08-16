@@ -27,6 +27,7 @@ from app.lightgbm.production_policy import (
     BootstrapBudget,
     author_bootstrap_budget,
 )
+from app.lightgbm.temporal import label_as_of
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,6 +47,10 @@ def author_bootstrap_packet(*, cutoff: datetime) -> BootstrapPacket:
     if cutoff.tzinfo is None:
         raise LightGbmContractError("bootstrap cutoff must be timezone aware")
     window = build_pit_session_window(cutoff)
+    if label_as_of(window.raw_sessions[-1]) > cutoff:
+        raise LightGbmContractError(
+            "bootstrap cutoff precedes the latest label maturity clock"
+        )
     months = _months_between(window.eligible_sessions[0], window.raw_sessions[-1])
     schedules = tuple(
         derive_monthly_universe_schedule(month, dataset_cutoff=cutoff) for month in months

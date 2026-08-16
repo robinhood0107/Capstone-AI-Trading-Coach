@@ -7,6 +7,8 @@ import os
 from pathlib import Path
 
 from app.lightgbm.bootstrap_packet import author_bootstrap_packet
+from app.lightgbm.errors import LightGbmContractError
+from app.lightgbm.private_root import require_private_root
 from app.rag.safe_io import RagSafeIoError, write_approved_new_file
 
 
@@ -21,6 +23,7 @@ def main() -> int:
     packet = author_bootstrap_packet(cutoff=datetime.now(UTC))
     filename = f"bootstrap-{packet.sha256}.json"
     try:
+        require_private_root(root)
         result = write_approved_new_file(
             approved_root=root,
             relative_path=filename,
@@ -28,7 +31,7 @@ def main() -> int:
             max_bytes=1 * 1024 * 1024,
         )
         os.chmod(result.absolute_path, 0o600, follow_symlinks=False)
-    except (OSError, RagSafeIoError):
+    except (OSError, RagSafeIoError, LightGbmContractError):
         print("S5_BOOTSTRAP_PACKET=PUBLISH_FAILED")
         return 1
     print(f"S5_BOOTSTRAP_PACKET=AUTHORED sha256={packet.sha256}")

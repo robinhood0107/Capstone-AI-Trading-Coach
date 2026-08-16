@@ -96,6 +96,14 @@ class TemporalReceipt:
             self.availability_basis is not AvailabilityBasis.PROVIDER_AS_OF_SCHEDULE
         ):
             raise LightGbmContractError("KRX as-of quality requires provider schedule")
+        if self.temporal_quality is TemporalQuality.PROVIDER_VINTAGE and (
+            self.availability_basis is not AvailabilityBasis.PROVIDER_FIELD
+        ):
+            raise LightGbmContractError("provider-vintage quality requires provider availability")
+        if self.temporal_quality is TemporalQuality.COLLECTION_ONLY and (
+            self.availability_basis is not AvailabilityBasis.RETRIEVAL_ONLY
+        ):
+            raise LightGbmContractError("collection-only quality requires retrieval-only evidence")
 
     @property
     def effective_at(self) -> datetime | None:

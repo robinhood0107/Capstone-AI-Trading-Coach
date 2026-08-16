@@ -3,12 +3,12 @@
     {
       "bytes": 4096,
       "contentSha256": "1111111111111111111111111111111111111111111111111111111111111111",
-      "operationId": "account-balance",
+      "operationId": "FHKST03010100",
       "queryKey": "005930:20260401:20260814:0",
       "receipt": {
-        "availabilityBasis": "PROJECT_FIXED_LAG",
+        "availabilityBasis": "PROVIDER_AS_OF_SCHEDULE",
         "observationDate": "2026-08-14",
-        "operationId": "account-balance",
+        "operationId": "FHKST03010100",
         "policyEffectiveAt": "2026-08-17T23:10:00Z",
         "requestSha256": "2222222222222222222222222222222222222222222222222222222222222222",
         "retrievedAt": "2026-08-16T00:00:00Z",
@@ -16,7 +16,7 @@
         "snapshotSha256": "1111111111111111111111111111111111111111111111111111111111111111",
         "sourceId": "KIS",
         "temporalPolicyVersion": "s5-temporal-policy-v2",
-        "temporalQuality": "RECONSTRUCTED_FIXED_LAG"
+        "temporalQuality": "PROVIDER_AS_OF_NO_VINTAGE"
       },
       "rowCount": 100,
       "sourceId": "KIS"

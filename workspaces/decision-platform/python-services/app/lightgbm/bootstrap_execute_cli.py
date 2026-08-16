@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-import stat
 
 from app.data.ecos.http_client import ECOSHttpClient
 from app.data.ecos.series_registry import CANDIDATE_SERIES
@@ -26,6 +25,7 @@ from app.lightgbm.bootstrap_live import (
 )
 from app.lightgbm.bootstrap_packet import validate_bootstrap_packet
 from app.lightgbm.errors import LightGbmContractError
+from app.lightgbm.private_root import acquire_run_lock, release_run_lock, require_private_root
 from app.rag.safe_io import (
     RagSafeIoError,
     read_approved_regular_file,
@@ -43,8 +43,9 @@ def main() -> int:
         print("S5_BOOTSTRAP=AUTHORITY_UNAVAILABLE")
         return 2
     root = Path(root_value)
+    run_lock = -1
     try:
-        _require_private_root(root)
+        require_private_root(root)
         packet_file = read_approved_regular_file(
             approved_root=root,
             relative_path=f"bootstrap-{packet_sha256}.json",
@@ -54,6 +55,9 @@ def main() -> int:
             packet_file.content, expected_sha256=packet_sha256
         )
         run_root = root / f"run-{packet_sha256}"
+        if not resume_sha256:
+            run_root.mkdir(mode=0o700)
+        run_lock = acquire_run_lock(run_root)
         if resume_sha256:
             resume_file = read_approved_regular_file(
                 approved_root=root,
@@ -67,11 +71,11 @@ def main() -> int:
                 journal=BootstrapJournal(run_root / "source"),
                 total_cap=packet.budget.total,
             )
-        else:
-            run_root.mkdir(mode=0o700)
         source_root = run_root / "source"
         feature_root = run_root / "feature"
     except (OSError, RagSafeIoError, LightGbmContractError):
+        if run_lock >= 0:
+            release_run_lock(run_lock)
         print("S5_BOOTSTRAP=PACKET_OR_ROOT_INVALID")
         return 2
 
@@ -118,7 +122,12 @@ def main() -> int:
         for client in (ecos_client, kis_client, krx_client):
             close = getattr(client, "close", None)
             if callable(close):
-                close()
+                try:
+                    close()
+                except Exception:
+                    # cleanup 오류가 이미 봉인된 실행 결과나 다른 client close를 가리지 않게 한다.
+                    pass
+        release_run_lock(run_lock)
     print(
         "S5_BOOTSTRAP=VERIFIED "
         f"sourceManifestSha256={result.acquisition.source_bundle.manifest_sha256} "
@@ -126,25 +135,5 @@ def main() -> int:
         f"physicalCalls={result.acquisition.physical_calls}"
     )
     return 0
-
-
-def _require_private_root(root: Path) -> None:
-    if not root.is_absolute():
-        raise LightGbmContractError("S5 source root must be absolute")
-    current = Path(root.anchor)
-    for component in root.parts[1:]:
-        current /= component
-        if stat.S_ISLNK(current.lstat().st_mode):
-            raise LightGbmContractError("S5 source root contains a symlink")
-    metadata = root.lstat()
-    if (
-        not stat.S_ISDIR(metadata.st_mode)
-        or stat.S_ISLNK(metadata.st_mode)
-        or metadata.st_uid != os.geteuid()
-        or metadata.st_mode & (stat.S_IWGRP | stat.S_IWOTH)
-    ):
-        raise LightGbmContractError("S5 source root is not private")
-
-
 if __name__ == "__main__":
     raise SystemExit(main())

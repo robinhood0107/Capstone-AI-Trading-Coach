@@ -45,10 +45,11 @@ from app.data.ecos.quota import (
     ECOSQuota,
     apply_ecos_application_cooldown,
     build_ecos_quota_reservation,
+    build_s5_ecos_quota_reservation,
     _build_redis_client,
 )
 from app.data.ecos.series_registry import ECOSSeries
-from app.data.ecos.settings import ECOSSettings
+from app.data.ecos.settings import ECOSSettings, ECOSS5ProductionSettings
 
 _ResultT = TypeVar("_ResultT")
 _TLS_ENVIRONMENT_OVERRIDES = ("SSL_CERT_FILE", "SSL_CERT_DIR", "SSLKEYLOGFILE")
@@ -102,9 +103,16 @@ class ECOSHttpClient:
         redis_client = _build_redis_client()
         inner: httpx.BaseTransport | None = None
         try:
-            reservation = build_ecos_quota_reservation(
-                redis_client,
-                max_calls_per_run=settings.max_calls_per_run,
+            reservation = (
+                build_s5_ecos_quota_reservation(
+                    redis_client,
+                    max_calls_per_run=settings.max_calls_per_run,
+                )
+                if isinstance(settings, ECOSS5ProductionSettings)
+                else build_ecos_quota_reservation(
+                    redis_client,
+                    max_calls_per_run=settings.max_calls_per_run,
+                )
             )
             inner = httpx.HTTPTransport(verify=_build_tls_context(), retries=0)
             self._initialize(

@@ -63,7 +63,7 @@ def build_ecos_quota_policy(*, max_calls_per_run: int = 8) -> RedisQuotaPolicy:
 
     299/30분 hard window는 독립 경계 검증에 남기며 더 엄격한 운영 window가 runtime을 지배한다.
     """
-    if max_calls_per_run < 1 or max_calls_per_run > 24:
+    if max_calls_per_run < 1 or max_calls_per_run > 8:
         raise ValueError("ECOS max calls per run is out of bounds")
     return RedisQuotaPolicy(
         version=ECOS_QUOTA_POLICY_VERSION,
@@ -84,6 +84,28 @@ def build_ecos_quota_reservation(
         cast(RedisEvalLike, redis_client),
         key=ECOS_QUOTA_KEY,
         policy=build_ecos_quota_policy(max_calls_per_run=max_calls_per_run),
+    )
+
+
+def build_s5_ecos_quota_reservation(
+    redis_client: object,
+    *,
+    max_calls_per_run: int,
+) -> RedisQuotaReservation:
+    """S5.6 dedicated settings에서만 24-call one-shot reservation을 만든다."""
+
+    if max_calls_per_run < 1 or max_calls_per_run > 24:
+        raise ValueError("S5 ECOS max calls per run is out of bounds")
+    return RedisQuotaReservation(
+        cast(RedisEvalLike, redis_client),
+        key=ECOS_QUOTA_KEY,
+        policy=RedisQuotaPolicy(
+            version=f"{ECOS_QUOTA_POLICY_VERSION}-s5-6",
+            windows=(ECOS_OPERATIONAL_WINDOW,),
+            min_interval_ms=0,
+            cooldown_seconds=1_800,
+            max_calls_per_run=max_calls_per_run,
+        ),
     )
 
 

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 import hashlib
 from io import BytesIO
@@ -55,6 +55,7 @@ from app.lightgbm.features import (
 )
 from app.lightgbm.labels import build_production_exact_labels
 from app.lightgbm.pit_calendar import PitSessionWindow, build_pit_session_window
+from app.lightgbm.private_root import acquire_run_lock, release_run_lock, require_private_root
 from app.lightgbm.production_policy import (
     BootstrapBudget,
     SecurityClassification,
@@ -70,6 +71,7 @@ from app.lightgbm.source_bundle import (
     SourceBundle,
     SourceChunkReceipt,
     build_source_manifest,
+    parse_source_chunk_receipt,
     read_source_bundle,
 )
 from app.lightgbm.temporal import (
@@ -221,6 +223,37 @@ def test_kis_adjustment_fields_are_preserved_and_closed() -> None:
         parse_daily_bars(payload, "005930")
 
 
+def test_production_root_requires_exact_0700_and_rejects_symlink(tmp_path: Path) -> None:
+    private = tmp_path / "private"
+    private.mkdir(mode=0o700)
+    require_private_root(private)
+
+    private.chmod(0o750)
+    with pytest.raises(LightGbmContractError, match="0700"):
+        require_private_root(private)
+
+    target = tmp_path / "target"
+    target.mkdir(mode=0o700)
+    alias = tmp_path / "alias"
+    alias.symlink_to(target, target_is_directory=True)
+    with pytest.raises(LightGbmContractError, match="symlink"):
+        require_private_root(alias)
+
+
+def test_bootstrap_run_lock_allows_only_one_active_process(tmp_path: Path) -> None:
+    run_root = tmp_path / "run"
+    run_root.mkdir(mode=0o700)
+    first = acquire_run_lock(run_root)
+    try:
+        with pytest.raises(LightGbmContractError, match="already active"):
+            acquire_run_lock(run_root)
+    finally:
+        release_run_lock(first)
+
+    second = acquire_run_lock(run_root)
+    release_run_lock(second)
+
+
 def test_corporate_action_and_macro_sensitivity_gates() -> None:
     assert corporate_action_sensitivity_pass([0.01] * 1000, [0.01] * 1000, [0.02] * 1000, [0.02] * 1000)
     changed = [0.01] * 998 + [0.02, 0.02]
@@ -298,6 +331,8 @@ def test_feature_bundle_v2_is_required_for_production(tmp_path: Path) -> None:
     manifest = build_production_feature_manifest(artifact, provenance=production)
     (tmp_path / "features.parquet").write_bytes(parquet)
     (tmp_path / "manifest.json").write_bytes(manifest)
+    (tmp_path / "features.parquet").chmod(0o600)
+    (tmp_path / "manifest.json").chmod(0o600)
     bundle = read_production_feature_bundle(
         approved_root=tmp_path,
         expected_manifest_sha256=hashlib.sha256(manifest).hexdigest(),
@@ -348,12 +383,14 @@ def test_source_bundle_uses_manifest_trust_anchor_and_digest_derived_path(tmp_pa
     )
     (tmp_path / "chunks").mkdir(mode=0o700)
     (tmp_path / chunk.relative_path).write_bytes(content)
+    (tmp_path / chunk.relative_path).chmod(0o600)
     manifest = build_source_manifest(
         created_at=datetime(2026, 8, 16, tzinfo=UTC),
         dataset_cutoff=datetime(2026, 8, 18, tzinfo=UTC),
         chunks=[chunk],
     )
     (tmp_path / "manifest.json").write_bytes(manifest)
+    (tmp_path / "manifest.json").chmod(0o600)
     bundle = read_source_bundle(
         approved_root=tmp_path,
         expected_manifest_sha256=hashlib.sha256(manifest).hexdigest(),
@@ -362,6 +399,46 @@ def test_source_bundle_uses_manifest_trust_anchor_and_digest_derived_path(tmp_pa
 
     with pytest.raises(LightGbmContractError, match="trust anchor"):
         read_source_bundle(approved_root=tmp_path, expected_manifest_sha256="0" * 64)
+
+    with pytest.raises(LightGbmContractError, match="physical byte cap"):
+        build_source_manifest(
+            created_at=datetime(2026, 8, 16, tzinfo=UTC),
+            dataset_cutoff=datetime(2026, 8, 18, tzinfo=UTC),
+            chunks=[replace(chunk, byte_count=10 * 1024**2 + 1)],
+        )
+
+    with pytest.raises(LightGbmContractError, match="row cap"):
+        build_source_manifest(
+            created_at=datetime(2026, 8, 16, tzinfo=UTC),
+            dataset_cutoff=datetime(2026, 8, 18, tzinfo=UTC),
+            chunks=[replace(chunk, row_count=101)],
+        )
+
+    with pytest.raises(LightGbmContractError, match="latest receipt"):
+        build_source_manifest(
+            created_at=datetime(2026, 8, 16, 0, 0, 1, tzinfo=UTC),
+            dataset_cutoff=datetime(2026, 8, 18, tzinfo=UTC),
+            chunks=[chunk],
+        )
+
+    with pytest.raises(LightGbmContractError, match="after dataset cutoff"):
+        build_source_manifest(
+            created_at=datetime(2026, 8, 16, tzinfo=UTC),
+            dataset_cutoff=next_session_evidence_clock(receipt.observation_date)
+            - timedelta(seconds=1),
+            chunks=[chunk],
+        )
+
+    wrong_policy = replace(
+        chunk,
+        temporal=replace(
+            chunk.temporal,
+            availability_basis=AvailabilityBasis.PROVIDER_AS_OF_SCHEDULE,
+            temporal_quality=TemporalQuality.PROVIDER_AS_OF_NO_VINTAGE,
+        ),
+    )
+    with pytest.raises(LightGbmContractError, match="provider policy"):
+        parse_source_chunk_receipt(wrong_policy.as_dict())
 
 
 def test_bootstrap_failure_stops_remaining_calls_and_resume_targets_failed_chunk() -> None:
@@ -395,6 +472,29 @@ def test_bootstrap_failure_stops_remaining_calls_and_resume_targets_failed_chunk
     ) == "resumed"
     ledger.advance(BootstrapPhase.KRX)
     assert ledger.phase is BootstrapPhase.KIS
+
+
+def test_failed_token_call_consumes_the_only_token_budget() -> None:
+    ledger = BootstrapLedger(
+        BootstrapBudget(krx_get=0, kis_get=1, kis_token=1, ecos_get=0)
+    )
+    ledger.advance(BootstrapPhase.KRX)
+    query = "c" * 64
+    with pytest.raises(RuntimeError):
+        ledger.physical_call(
+            provider="KIS",
+            operation_id="oauth2/tokenP",
+            query_key_sha256=query,
+            call=lambda: (_ for _ in ()).throw(RuntimeError("token failed")),
+        )
+    ledger.resume_failed(query_key_sha256=query)
+    with pytest.raises(LightGbmContractError, match="budget exhausted"):
+        ledger.physical_call(
+            provider="KIS",
+            operation_id="oauth2/tokenP",
+            query_key_sha256=query,
+            call=lambda: None,
+        )
 
 
 def test_durable_journal_authors_one_bounded_resume_packet(tmp_path: Path) -> None:
@@ -436,10 +536,42 @@ def test_durable_journal_authors_one_bounded_resume_packet(tmp_path: Path) -> No
         success=False,
         chunk=None,
     )
+    with pytest.raises(LightGbmContractError, match="authority is exhausted"):
+        build_resume_packet(
+            bootstrap_packet_sha256="2" * 64,
+            journal=BootstrapJournal(root),
+            total_cap=10,
+        )
     with pytest.raises(LightGbmContractError, match="resume attempt"):
         BootstrapJournal(root).begin(
             provider="KRX", operation_id="stk_bydd_trd", query_sha256="1" * 64
         )
+
+
+def test_durable_journal_allows_provider_free_local_finalization_resume(tmp_path: Path) -> None:
+    root = tmp_path / "source"
+    root.mkdir(mode=0o700)
+    journal = BootstrapJournal(root)
+    ordinal = journal.begin(
+        provider="KIS", operation_id="oauth2/tokenP", query_sha256="3" * 64
+    )
+    journal.finish(
+        ordinal=ordinal,
+        provider="KIS",
+        operation_id="oauth2/tokenP",
+        query_sha256="3" * 64,
+        success=True,
+        chunk=None,
+    )
+
+    packet = build_resume_packet(
+        bootstrap_packet_sha256="4" * 64,
+        journal=BootstrapJournal(root),
+        total_cap=10,
+    )
+
+    assert packet.failed_query_sha256 is None
+    assert b'"resumeMode":"LOCAL_FINALIZATION"' in packet.content
 
 
 def test_durable_journal_rejects_ambiguous_handoff(tmp_path: Path) -> None:
@@ -484,7 +616,8 @@ def test_krx_production_base_info_is_closed_and_requires_standard_identity() -> 
 
 
 def test_bootstrap_packet_has_exact_1072_1007_51_and_6446_caps() -> None:
-    packet = author_bootstrap_packet(cutoff=datetime(2026, 8, 16, 8, 10, tzinfo=UTC))
+    cutoff = datetime(2026, 8, 17, 23, 10, tzinfo=UTC)
+    packet = author_bootstrap_packet(cutoff=cutoff)
     assert len(packet.window.raw_sessions) == 1_072
     assert len(packet.window.eligible_sessions) == 1_007
     assert len(packet.schedules) == 51
@@ -496,10 +629,12 @@ def test_bootstrap_packet_has_exact_1072_1007_51_and_6446_caps() -> None:
         validate_bootstrap_packet(packet.content, expected_sha256="0" * 64)
     settings = ECOSS5ProductionSettings()
     assert (settings.max_calls_per_run, settings.max_attempts_per_request) == (24, 1)
+    with pytest.raises(LightGbmContractError, match="label maturity"):
+        author_bootstrap_packet(cutoff=cutoff - timedelta(seconds=1))
 
 
 def test_production_universe_uses_temporal_receipts_and_exact_31() -> None:
-    packet = author_bootstrap_packet(cutoff=datetime(2026, 8, 16, 8, 10, tzinfo=UTC))
+    packet = author_bootstrap_packet(cutoff=datetime(2026, 8, 17, 23, 10, tzinfo=UTC))
     schedule = packet.schedules[-1]
     rows: list[ProductionUniverseObservation] = []
     for symbol_index in range(31):
@@ -555,7 +690,7 @@ def test_production_universe_uses_temporal_receipts_and_exact_31() -> None:
 
 
 def test_production_feature_and_label_use_row_specific_clocks() -> None:
-    packet = author_bootstrap_packet(cutoff=datetime(2026, 8, 16, 8, 10, tzinfo=UTC))
+    packet = author_bootstrap_packet(cutoff=datetime(2026, 8, 17, 23, 10, tzinfo=UTC))
     sessions = packet.window.raw_sessions[:66]
     cutoff = datetime(2026, 8, 16, tzinfo=UTC)
 
@@ -628,6 +763,15 @@ def test_production_feature_and_label_use_row_specific_clocks() -> None:
     )
     assert len(rows) == 7
     assert len(build_production_exact_labels(prices, dataset_cutoff=cutoff)) == 60
+    before_last_maturity = label_as_of(sessions[-1]) - timedelta(seconds=1)
+    assert (
+        len(
+            build_production_exact_labels(
+                prices, dataset_cutoff=before_last_maturity
+            )
+        )
+        == 59
+    )
 
     leaked = list(prices)
     leaked[10] = replace(
@@ -640,6 +784,13 @@ def test_production_feature_and_label_use_row_specific_clocks() -> None:
     with pytest.raises(DatasetUnavailable, match="row clock"):
         build_production_core_feature_rows(
             leaked, indices, macro, listing_market="KOSPI", cutoff=cutoff
+        )
+
+    invalid_adjustment = list(prices)
+    invalid_adjustment[10] = replace(invalid_adjustment[10], prtt_rate=float("nan"))
+    with pytest.raises(DatasetUnavailable, match="production price evidence"):
+        build_production_core_feature_rows(
+            invalid_adjustment, indices, macro, listing_market="KOSPI", cutoff=cutoff
         )
 
 
@@ -722,6 +873,9 @@ def test_bootstrap_executor_orders_providers_and_seals_private_manifest(tmp_path
         def prepare_access_token(self) -> None:
             calls.append("KIS:token")
 
+        def require_cached_token_only(self) -> None:
+            return None
+
         def fetch_page(
             self, *, symbol: str, start: date, end: date
         ) -> tuple[DailyBar, ...]:
@@ -783,7 +937,7 @@ def test_bootstrap_executor_orders_providers_and_seals_private_manifest(tmp_path
         kis=Kis(),
         ecos=Ecos(),
         ecos_series=CANDIDATE_SERIES,
-        clock=lambda: datetime(2026, 8, 19, tzinfo=UTC),
+        clock=lambda: datetime(2026, 8, 20, tzinfo=UTC),
         resume=True,
     )
     assert tuple(calls) == completed_calls
@@ -791,7 +945,8 @@ def test_bootstrap_executor_orders_providers_and_seals_private_manifest(tmp_path
 
 
 def test_materializer_publishes_feature_bundle_v2_from_verified_source(tmp_path: Path) -> None:
-    packet = author_bootstrap_packet(cutoff=datetime(2026, 8, 19, 0, 0, tzinfo=UTC))
+    # 최신 raw session label tail이 성숙한 첫 08:10 clock에서 production packet을 연다.
+    packet = author_bootstrap_packet(cutoff=datetime(2026, 8, 17, 23, 10, tzinfo=UTC))
     identity = "KR7005930003"
 
     def receipt(source: str, operation: str, day: date, ordinal: int) -> TemporalReceipt:
@@ -882,7 +1037,9 @@ def test_materializer_publishes_feature_bundle_v2_from_verified_source(tmp_path:
         prices=prices,
         indices=indices,
         macro=macro,
-        listing_market_by_identity={identity: "KOSPI"},
+        listing_market_by_membership={
+            (identity, schedule.effective_month): "KOSPI" for schedule in packet.schedules
+        },
         physical_calls=0,
     )
     bundle = materialize_production_feature_bundle(

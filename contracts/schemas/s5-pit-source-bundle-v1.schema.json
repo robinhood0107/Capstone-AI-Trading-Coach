@@ -9,16 +9,37 @@
         "oneOf": [
           {
             "properties": {
+              "bytes": {
+                "maximum": 4194304,
+                "minimum": 1,
+                "type": "integer"
+              },
               "operationId": {
-                "enum": [
-                  "stk_bydd_trd",
-                  "ksq_bydd_trd",
-                  "kospi_dd_trd",
-                  "kosdaq_dd_trd",
-                  "stk_isu_base_info",
-                  "ksq_isu_base_info",
-                  "etf_bydd_trd"
-                ]
+                "const": "stk_bydd_trd"
+              },
+              "receipt": {
+                "properties": {
+                  "availabilityBasis": {
+                    "const": "PROVIDER_AS_OF_SCHEDULE"
+                  },
+                  "operationId": {
+                    "const": "stk_bydd_trd"
+                  },
+                  "revisionBasis": {
+                    "const": "CONTENT_SNAPSHOT"
+                  },
+                  "sourceId": {
+                    "const": "KRX"
+                  },
+                  "temporalQuality": {
+                    "const": "PROVIDER_AS_OF_NO_VINTAGE"
+                  }
+                }
+              },
+              "rowCount": {
+                "maximum": 5000,
+                "minimum": 1,
+                "type": "integer"
               },
               "sourceId": {
                 "const": "KRX"
@@ -27,8 +48,271 @@
           },
           {
             "properties": {
+              "bytes": {
+                "maximum": 4194304,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "operationId": {
+                "const": "ksq_bydd_trd"
+              },
+              "receipt": {
+                "properties": {
+                  "availabilityBasis": {
+                    "const": "PROVIDER_AS_OF_SCHEDULE"
+                  },
+                  "operationId": {
+                    "const": "ksq_bydd_trd"
+                  },
+                  "revisionBasis": {
+                    "const": "CONTENT_SNAPSHOT"
+                  },
+                  "sourceId": {
+                    "const": "KRX"
+                  },
+                  "temporalQuality": {
+                    "const": "PROVIDER_AS_OF_NO_VINTAGE"
+                  }
+                }
+              },
+              "rowCount": {
+                "maximum": 5000,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "sourceId": {
+                "const": "KRX"
+              }
+            }
+          },
+          {
+            "properties": {
+              "bytes": {
+                "maximum": 4194304,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "operationId": {
+                "const": "kospi_dd_trd"
+              },
+              "receipt": {
+                "properties": {
+                  "availabilityBasis": {
+                    "const": "PROVIDER_AS_OF_SCHEDULE"
+                  },
+                  "operationId": {
+                    "const": "kospi_dd_trd"
+                  },
+                  "revisionBasis": {
+                    "const": "CONTENT_SNAPSHOT"
+                  },
+                  "sourceId": {
+                    "const": "KRX"
+                  },
+                  "temporalQuality": {
+                    "const": "PROVIDER_AS_OF_NO_VINTAGE"
+                  }
+                }
+              },
+              "rowCount": {
+                "maximum": 5000,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "sourceId": {
+                "const": "KRX"
+              }
+            }
+          },
+          {
+            "properties": {
+              "bytes": {
+                "maximum": 4194304,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "operationId": {
+                "const": "kosdaq_dd_trd"
+              },
+              "receipt": {
+                "properties": {
+                  "availabilityBasis": {
+                    "const": "PROVIDER_AS_OF_SCHEDULE"
+                  },
+                  "operationId": {
+                    "const": "kosdaq_dd_trd"
+                  },
+                  "revisionBasis": {
+                    "const": "CONTENT_SNAPSHOT"
+                  },
+                  "sourceId": {
+                    "const": "KRX"
+                  },
+                  "temporalQuality": {
+                    "const": "PROVIDER_AS_OF_NO_VINTAGE"
+                  }
+                }
+              },
+              "rowCount": {
+                "maximum": 5000,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "sourceId": {
+                "const": "KRX"
+              }
+            }
+          },
+          {
+            "properties": {
+              "bytes": {
+                "maximum": 4194304,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "operationId": {
+                "const": "stk_isu_base_info"
+              },
+              "receipt": {
+                "properties": {
+                  "availabilityBasis": {
+                    "const": "PROVIDER_AS_OF_SCHEDULE"
+                  },
+                  "operationId": {
+                    "const": "stk_isu_base_info"
+                  },
+                  "revisionBasis": {
+                    "const": "CONTENT_SNAPSHOT"
+                  },
+                  "sourceId": {
+                    "const": "KRX"
+                  },
+                  "temporalQuality": {
+                    "const": "PROVIDER_AS_OF_NO_VINTAGE"
+                  }
+                }
+              },
+              "rowCount": {
+                "maximum": 5000,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "sourceId": {
+                "const": "KRX"
+              }
+            }
+          },
+          {
+            "properties": {
+              "bytes": {
+                "maximum": 4194304,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "operationId": {
+                "const": "ksq_isu_base_info"
+              },
+              "receipt": {
+                "properties": {
+                  "availabilityBasis": {
+                    "const": "PROVIDER_AS_OF_SCHEDULE"
+                  },
+                  "operationId": {
+                    "const": "ksq_isu_base_info"
+                  },
+                  "revisionBasis": {
+                    "const": "CONTENT_SNAPSHOT"
+                  },
+                  "sourceId": {
+                    "const": "KRX"
+                  },
+                  "temporalQuality": {
+                    "const": "PROVIDER_AS_OF_NO_VINTAGE"
+                  }
+                }
+              },
+              "rowCount": {
+                "maximum": 5000,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "sourceId": {
+                "const": "KRX"
+              }
+            }
+          },
+          {
+            "properties": {
+              "bytes": {
+                "maximum": 4194304,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "operationId": {
+                "const": "etf_bydd_trd"
+              },
+              "receipt": {
+                "properties": {
+                  "availabilityBasis": {
+                    "const": "PROVIDER_AS_OF_SCHEDULE"
+                  },
+                  "operationId": {
+                    "const": "etf_bydd_trd"
+                  },
+                  "revisionBasis": {
+                    "const": "CONTENT_SNAPSHOT"
+                  },
+                  "sourceId": {
+                    "const": "KRX"
+                  },
+                  "temporalQuality": {
+                    "const": "PROVIDER_AS_OF_NO_VINTAGE"
+                  }
+                }
+              },
+              "rowCount": {
+                "maximum": 5000,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "sourceId": {
+                "const": "KRX"
+              }
+            }
+          },
+          {
+            "properties": {
+              "bytes": {
+                "maximum": 10485760,
+                "minimum": 1,
+                "type": "integer"
+              },
               "operationId": {
                 "const": "FHKST03010100"
+              },
+              "receipt": {
+                "properties": {
+                  "availabilityBasis": {
+                    "const": "PROJECT_FIXED_LAG"
+                  },
+                  "operationId": {
+                    "const": "FHKST03010100"
+                  },
+                  "revisionBasis": {
+                    "const": "CONTENT_SNAPSHOT"
+                  },
+                  "sourceId": {
+                    "const": "KIS"
+                  },
+                  "temporalQuality": {
+                    "const": "RECONSTRUCTED_FIXED_LAG"
+                  }
+                }
+              },
+              "rowCount": {
+                "maximum": 100,
+                "minimum": 1,
+                "type": "integer"
               },
               "sourceId": {
                 "const": "KIS"
@@ -37,11 +321,76 @@
           },
           {
             "properties": {
+              "bytes": {
+                "maximum": 1048576,
+                "minimum": 1,
+                "type": "integer"
+              },
               "operationId": {
-                "enum": [
-                  "722Y001/0101000/D",
-                  "731Y001/0000001/D"
-                ]
+                "const": "722Y001/0101000/D"
+              },
+              "receipt": {
+                "properties": {
+                  "availabilityBasis": {
+                    "const": "PROJECT_FIXED_LAG"
+                  },
+                  "operationId": {
+                    "const": "722Y001/0101000/D"
+                  },
+                  "revisionBasis": {
+                    "const": "CONTENT_SNAPSHOT"
+                  },
+                  "sourceId": {
+                    "const": "ECOS"
+                  },
+                  "temporalQuality": {
+                    "const": "RECONSTRUCTED_FIXED_LAG"
+                  }
+                }
+              },
+              "rowCount": {
+                "maximum": 400,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "sourceId": {
+                "const": "ECOS"
+              }
+            }
+          },
+          {
+            "properties": {
+              "bytes": {
+                "maximum": 1048576,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "operationId": {
+                "const": "731Y001/0000001/D"
+              },
+              "receipt": {
+                "properties": {
+                  "availabilityBasis": {
+                    "const": "PROJECT_FIXED_LAG"
+                  },
+                  "operationId": {
+                    "const": "731Y001/0000001/D"
+                  },
+                  "revisionBasis": {
+                    "const": "CONTENT_SNAPSHOT"
+                  },
+                  "sourceId": {
+                    "const": "ECOS"
+                  },
+                  "temporalQuality": {
+                    "const": "RECONSTRUCTED_FIXED_LAG"
+                  }
+                }
+              },
+              "rowCount": {
+                "maximum": 400,
+                "minimum": 1,
+                "type": "integer"
               },
               "sourceId": {
                 "const": "ECOS"
@@ -81,6 +430,11 @@
                   }
                 },
                 "then": {
+                  "not": {
+                    "required": [
+                      "policyEffectiveAt"
+                    ]
+                  },
                   "required": [
                     "providerAvailableAt"
                   ]
@@ -98,6 +452,11 @@
                   }
                 },
                 "then": {
+                  "not": {
+                    "required": [
+                      "providerAvailableAt"
+                    ]
+                  },
                   "required": [
                     "policyEffectiveAt"
                   ]
@@ -147,6 +506,70 @@
                   "required": [
                     "providerRevision"
                   ]
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "temporalQuality": {
+                      "const": "PROVIDER_VINTAGE"
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "availabilityBasis": {
+                      "const": "PROVIDER_FIELD"
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "temporalQuality": {
+                      "const": "PROVIDER_AS_OF_NO_VINTAGE"
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "availabilityBasis": {
+                      "const": "PROVIDER_AS_OF_SCHEDULE"
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "temporalQuality": {
+                      "const": "RECONSTRUCTED_FIXED_LAG"
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "availabilityBasis": {
+                      "const": "PROJECT_FIXED_LAG"
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "temporalQuality": {
+                      "const": "COLLECTION_ONLY"
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "availabilityBasis": {
+                      "const": "RETRIEVAL_ONLY"
+                    }
+                  }
                 }
               }
             ],

@@ -33,6 +33,7 @@ from app.lightgbm.pit_calendar import (
     build_pit_session_window,
     derive_monthly_universe_schedule,
 )
+from app.lightgbm.private_root import require_private_regular_file, require_private_root
 from app.lightgbm.universe import MonthlyUniverse
 from app.rag.safe_io import RagSafeIoError, read_approved_regular_file
 
@@ -326,6 +327,7 @@ def read_production_feature_bundle(
     """v1 fixture reader와 분리해 feature bundle v2만 production input으로 연다."""
 
     _require_sha256(expected_manifest_sha256, "feature manifest")
+    require_private_root(approved_root)
     try:
         safe_manifest = read_approved_regular_file(
             approved_root=approved_root,
@@ -336,12 +338,18 @@ def read_production_feature_bundle(
         raise LightGbmContractError("feature manifest path or file boundary is invalid") from error
     if safe_manifest.content_sha256 != expected_manifest_sha256:
         raise LightGbmContractError("feature manifest SHA-256 does not match trust anchor")
+    require_private_regular_file(
+        safe_manifest.absolute_path,
+        expected_device=safe_manifest.device,
+        expected_inode=safe_manifest.inode,
+    )
     manifest = _parse_feature_manifest_v2(safe_manifest.content)
     row_count = _require_integer(manifest["rowCount"], "rowCount")
     require_source_rows(row_count)
     artifact = _read_feature_artifact(
         approved_root=approved_root,
         expected_sha256=_require_text(manifest["parquetSha256"], "parquetSha256"),
+        require_private=True,
     )
     if (
         artifact.table.num_rows != row_count
@@ -362,6 +370,7 @@ def _read_feature_artifact(
     *,
     approved_root: Path,
     expected_sha256: str,
+    require_private: bool = False,
 ) -> FeatureArtifact:
     """manifest 검증 뒤에만 호출하는 고정-path Parquet reader."""
 
@@ -375,6 +384,12 @@ def _read_feature_artifact(
         raise LightGbmContractError("feature artifact path or file boundary is invalid") from error
     if safe.content_sha256 != expected_sha256:
         raise LightGbmContractError("feature artifact SHA-256 does not match manifest")
+    if require_private:
+        require_private_regular_file(
+            safe.absolute_path,
+            expected_device=safe.device,
+            expected_inode=safe.inode,
+        )
     parquet = pq.ParquetFile(  # type: ignore[no-untyped-call]
         BytesIO(safe.content),
         thrift_string_size_limit=MAX_THRIFT_STRING_BYTES,

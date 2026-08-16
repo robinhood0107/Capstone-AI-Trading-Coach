@@ -54,12 +54,21 @@ class BootstrapLedger:
             raise LightGbmContractError("bootstrap provider order is invalid")
         if len(self.receipts) >= self.budget.total:
             raise LightGbmContractError("bootstrap cumulative physical budget exhausted")
-        provider_limit = {
-            "KRX": self.budget.krx_get,
-            "KIS": self.budget.kis_get + self.budget.kis_token,
-            "ECOS": self.budget.ecos_get,
-        }[provider]
-        if sum(receipt.provider == provider for receipt in self.receipts) >= provider_limit:
+        if provider == "KIS":
+            token_call = operation_id == "oauth2/tokenP"
+            provider_limit = self.budget.kis_token if token_call else self.budget.kis_get
+            provider_count = sum(
+                receipt.provider == provider
+                and (receipt.operation_id == "oauth2/tokenP") is token_call
+                for receipt in self.receipts
+            )
+        else:
+            provider_limit = {
+                "KRX": self.budget.krx_get,
+                "ECOS": self.budget.ecos_get,
+            }[provider]
+            provider_count = sum(receipt.provider == provider for receipt in self.receipts)
+        if provider_count >= provider_limit:
             raise LightGbmContractError("bootstrap provider physical budget exhausted")
         ordinal = len(self.receipts) + 1
         try:

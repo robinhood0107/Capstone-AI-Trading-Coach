@@ -14,7 +14,12 @@ from typing import Sequence
 import numpy as np
 
 from app.lightgbm.errors import DatasetUnavailable, LightGbmContractError
-from app.lightgbm.metrics import multiclass_brier, top_label_ece
+from app.lightgbm.metrics import (
+    multiclass_brier,
+    natural_log_loss,
+    tie_aware_argmax,
+    top_label_ece,
+)
 
 
 KRX_OPERATIONS = (
@@ -149,15 +154,15 @@ def macro_timing_sensitivity_pass(
     ):
         raise LightGbmContractError("macro sensitivity probability shape is invalid")
     labels_array = np.asarray(labels, dtype=np.int64)
-    primary_class = np.argmax(primary_probabilities, axis=1)
-    delayed_class = np.argmax(delayed_probabilities, axis=1)
+    primary_class = tie_aware_argmax(primary_probabilities)
+    delayed_class = tie_aware_argmax(delayed_probabilities)
     disagreement = float(np.mean(primary_class != delayed_class))
     primary_ece = top_label_ece(labels_array, primary_probabilities)
     delayed_ece = top_label_ece(labels_array, delayed_probabilities)
     primary_brier = multiclass_brier(labels_array, primary_probabilities)
     delayed_brier = multiclass_brier(labels_array, delayed_probabilities)
-    primary_loss = _log_loss(primary_probabilities, labels_array)
-    delayed_loss = _log_loss(delayed_probabilities, labels_array)
+    primary_loss = natural_log_loss(labels_array, primary_probabilities)
+    delayed_loss = natural_log_loss(labels_array, delayed_probabilities)
     return (
         disagreement <= 0.10
         and delayed_ece - primary_ece <= 0.02
@@ -174,7 +179,11 @@ def align_macro_observations(
 ) -> tuple[tuple[float, float], ...]:
     """기준금리는 last-known level, USDKRW는 exact session만 허용한다."""
 
-    if not sessions or sessions != sorted(sessions) or len(set(sessions)) != len(sessions):
+    if (
+        not sessions
+        or tuple(sessions) != tuple(sorted(sessions))
+        or len(set(sessions)) != len(sessions)
+    ):
         raise LightGbmContractError("macro session schedule is invalid")
     seed_dates = [day for day in base_rate_observations if day <= sessions[0]]
     if not seed_dates:
@@ -191,7 +200,7 @@ def align_macro_observations(
         if current_rate is None or fx is None:
             raise DatasetUnavailable("DATASET_UNAVAILABLE: exact macro observation is missing")
         pair = (float(current_rate), float(fx))
-        if not all(math.isfinite(value) and value > 0 for value in pair):
+        if not all(math.isfinite(value) for value in pair) or pair[1] <= 0:
             raise DatasetUnavailable("DATASET_UNAVAILABLE: macro observation is invalid")
         output.append(pair)
     return tuple(output)
@@ -205,8 +214,3 @@ def _difference_rate(left: Sequence[float], right: Sequence[float]) -> float:
     if not np.isfinite(left_values).all() or not np.isfinite(right_values).all():
         raise DatasetUnavailable("DATASET_UNAVAILABLE: sensitivity evidence is non-finite")
     return float(np.mean(np.abs(left_values - right_values) > 0.0005))
-
-
-def _log_loss(probabilities: np.ndarray, labels: np.ndarray) -> float:
-    selected = probabilities[np.arange(len(labels)), labels]
-    return float(-np.log(np.clip(selected, np.finfo(np.float64).eps, 1.0)).mean())

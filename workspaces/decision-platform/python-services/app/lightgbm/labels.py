@@ -104,6 +104,9 @@ def build_production_exact_labels(
             if not all(math.isfinite(value) and value > 0 for value in (open_t1, open_t6)):
                 continue
             maturity_clock = label_as_of(t6.session_date)
+            if maturity_clock > dataset_cutoff:
+                # 비거래일 bootstrap에서는 아직 성숙하지 않은 calendar tail을 label로 꾸미지 않는다.
+                continue
             for receipt in (t1.receipt, t6.receipt):
                 require_receipt_eligible(
                     receipt,

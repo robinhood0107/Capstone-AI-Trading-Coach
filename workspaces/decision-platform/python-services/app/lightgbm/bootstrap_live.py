@@ -32,6 +32,9 @@ class LiveKisBootstrapProvider:
     def prepare_access_token(self) -> None:
         self._client.prepare_access_token()
 
+    def require_cached_token_only(self) -> None:
+        self._client.freeze_access_token_refresh()
+
     def fetch_page(
         self, *, symbol: str, start: date, end: date
     ) -> tuple[DailyBar, ...]:
@@ -48,7 +51,9 @@ class LiveKisBootstrapProvider:
                 "FID_ORG_ADJ_PRC": "0",
             },
         )
-        rows = tuple(parse_daily_bars(response, symbol=symbol))
+        rows = tuple(
+            parse_daily_bars(response, symbol=symbol, require_adjustment_fields=True)
+        )
         if len(rows) > 100:
             raise DatasetUnavailable("KIS_HISTORY_UNAVAILABLE")
         return rows
@@ -70,6 +75,9 @@ class LiveEcosBootstrapProvider:
             page_start=1,
             page_end=400,
         )
-        if page.status != "complete" or page.total_count != len(page.observations):
+        if (
+            page.status != "complete"
+            or page.total_count != len(page.observations) + page.duplicate_count
+        ):
             raise DatasetUnavailable("DATASET_UNAVAILABLE: ECOS page is incomplete")
         return tuple(page.observations)

@@ -194,7 +194,15 @@ class KISHttpClient:
         token = self._token_manager.get_access_token()
         if not token:
             raise KISCredentialError("KIS access token is unavailable")
+        self._token_manager.require_cached_token_only()
         token = ""
+
+    def freeze_access_token_refresh(self) -> None:
+        """완료 journal 재개 시 새 OAuth 발급 없이 기존 cache만 허용한다."""
+
+        if self._closed or self._token_manager is None:
+            raise KISCredentialError("KIS access token is unavailable")
+        self._token_manager.require_cached_token_only()
 
     def request(
         self,

@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date, datetime
 import math
-from typing import Protocol, Sequence
+from typing import Mapping, Protocol, Sequence
 
 import numpy as np
 
@@ -272,7 +272,8 @@ def build_production_core_feature_rows(
     indices: Sequence[IndexEvidence],
     macro: Sequence[MacroObservation],
     *,
-    listing_market: str,
+    listing_market: str | None = None,
+    listing_market_by_session: Mapping[date, str] | None = None,
     cutoff: datetime,
     cross_market_reader: CrossMarketReader | None = None,
 ) -> tuple[CoreFeatureRow, ...]:
@@ -289,10 +290,10 @@ def build_production_core_feature_rows(
         or len({row.session_date for row in ordered}) != len(ordered)
     ):
         raise LightGbmContractError("production price evidence identity or sessions are invalid")
-    index_map = {
-        row.session_date: row for row in indices if row.market == listing_market
-    }
-    if len(index_map) != len([row for row in indices if row.market == listing_market]):
+    if (listing_market is None) == (listing_market_by_session is None):
+        raise LightGbmContractError("exactly one production listing-market source is required")
+    index_map = {(row.market, row.session_date): row for row in indices}
+    if len(index_map) != len(indices):
         raise LightGbmContractError("production index evidence has duplicate sessions")
     rate_rows = sorted(
         (row for row in macro if row.series_id == "policy-rate"),
@@ -309,17 +310,32 @@ def build_production_core_feature_rows(
     for price in ordered:
         row_clock = feature_as_of(price.session_date)
         require_receipt_eligible(price.receipt, row_clock=row_clock, dataset_cutoff=cutoff)
+        has_adjustment = (
+            price.flng_cls_code not in {"", "00"}
+            or price.prtt_rate > 0
+            or bool(price.revl_issu_reas)
+        )
         if (
             not math.isfinite(price.adjusted_close)
             or price.adjusted_close <= 0
             or not math.isfinite(price.volume)
             or price.volume < 0
+            or not math.isfinite(price.prtt_rate)
+            or price.prtt_rate < 0
             or price.mod_yn not in {"Y", "N"}
+            or (price.mod_yn == "Y") != has_adjustment
             or len(price.flng_cls_code) > 32
             or len(price.revl_issu_reas) > 256
         ):
             raise DatasetUnavailable("DATASET_UNAVAILABLE: production price evidence is invalid")
-        index = index_map.get(price.session_date)
+        market = (
+            listing_market
+            if listing_market_by_session is None
+            else listing_market_by_session.get(price.session_date)
+        )
+        if market not in {"KOSPI", "KOSDAQ"}:
+            raise DatasetUnavailable("DATASET_UNAVAILABLE: listing market evidence is missing")
+        index = index_map.get((market, price.session_date))
         fx = fx_map.get(price.session_date)
         while rate_index < len(rate_rows) and (
             rate_rows[rate_index].observation_date <= price.session_date
@@ -340,7 +356,7 @@ def build_production_core_feature_rows(
     usdkrw = np.asarray(fx_values, dtype=np.float64)
     if not all(np.isfinite(value).all() for value in (market_close, base_rate, usdkrw)):
         raise DatasetUnavailable("DATASET_UNAVAILABLE: production market evidence is non-finite")
-    if (market_close <= 0).any() or (base_rate <= 0).any() or (usdkrw <= 0).any():
+    if (market_close <= 0).any() or (usdkrw <= 0).any():
         raise DatasetUnavailable("DATASET_UNAVAILABLE: production market level is invalid")
     return _calculate_core_feature_rows(
         ordered=ordered,

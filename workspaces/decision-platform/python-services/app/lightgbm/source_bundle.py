@@ -19,11 +19,14 @@ from app.data._shared.bounded_json import (
 from app.data._shared.canonical_json import canonical_json_bytes
 from app.data.krx.production_parsers import S5_PRODUCTION_PROJECTION_FIELDS
 from app.lightgbm.errors import DatasetUnavailable, LightGbmContractError
+from app.lightgbm.private_root import require_private_regular_file, require_private_root
 from app.lightgbm.temporal import (
     AvailabilityBasis,
     RevisionBasis,
     TemporalQuality,
     TemporalReceipt,
+    next_session_evidence_clock,
+    next_xkrx_evidence_clock,
     receipt_set_sha256,
 )
 from app.rag.safe_io import RagSafeIoError, read_approved_regular_file
@@ -35,7 +38,11 @@ SOURCE_MANIFEST_VERSION = "s5-pit-source-bundle-v1"
 MAX_MANIFEST_BYTES = 16 * 1024 * 1024
 MAX_CHUNKS = 6_446
 SOURCE_BYTE_CAPS = {"KRX": 16 * 1024**3, "KIS": 2 * 1024**3, "ECOS": 64 * 1024**2}
+# Provider transport 자체의 최대 응답보다 큰 단일 projection은 정상 수집에서 나올 수 없다.
+SOURCE_CHUNK_BYTE_CAPS = {"KRX": 4 * 1024**2, "KIS": 10 * 1024**2, "ECOS": 1024**2}
 SOURCE_ROW_CAPS = {"KRX": 10_000_000, "KIS": 192_960, "ECOS": 10_000}
+# Provider별 단일 응답 계약보다 큰 projection은 aggregate 상한 안이어도 거부한다.
+SOURCE_CHUNK_ROW_CAPS = {"KRX": 5_000, "KIS": 100, "ECOS": 400}
 _SOURCE_OPERATIONS = {
     "KRX": frozenset(S5_PRODUCTION_PROJECTION_FIELDS),
     "KIS": frozenset({"FHKST03010100"}),
@@ -152,6 +159,14 @@ def build_source_manifest(
         raise LightGbmContractError("datasetCutoff must be timezone aware")
     ordered = tuple(sorted(chunks, key=lambda item: (item.source_id, item.operation_id, item.query_key)))
     _validate_chunks(ordered)
+    if created_at != max(chunk.temporal.retrieved_at for chunk in ordered):
+        raise LightGbmContractError("createdAt must equal the latest receipt retrieval time")
+    if any(
+        chunk.temporal.effective_at is None
+        or chunk.temporal.effective_at > dataset_cutoff
+        for chunk in ordered
+    ):
+        raise LightGbmContractError("source receipt is effective after dataset cutoff")
     return canonical_json_bytes(
         {
             "manifestVersion": SOURCE_MANIFEST_VERSION,
@@ -172,6 +187,8 @@ def read_source_bundle(
     """External manifest digest부터 각 content-addressed projection까지 no-follow 검증한다."""
 
     _require_sha256(expected_manifest_sha256, "source manifest")
+    require_private_root(approved_root)
+    require_private_root(approved_root / "chunks")
     try:
         manifest_file = read_approved_regular_file(
             approved_root=approved_root,
@@ -182,12 +199,27 @@ def read_source_bundle(
         raise LightGbmContractError("source manifest file boundary is invalid") from error
     if manifest_file.content_sha256 != expected_manifest_sha256:
         raise LightGbmContractError("source manifest trust anchor mismatch")
+    require_private_regular_file(
+        manifest_file.absolute_path,
+        expected_device=manifest_file.device,
+        expected_inode=manifest_file.inode,
+    )
     payload = _parse_manifest(manifest_file.content)
     chunks_value = payload["chunks"]
     if not isinstance(chunks_value, list) or not chunks_value:
         raise DatasetUnavailable("DATASET_UNAVAILABLE: source bundle has no chunks")
+    dataset_cutoff = _parse_datetime(payload["datasetCutoff"], "datasetCutoff")
+    created_at = _parse_datetime(payload["createdAt"], "createdAt")
     chunks = tuple(_parse_chunk(value) for value in chunks_value)
     _validate_chunks(chunks)
+    if created_at != max(chunk.temporal.retrieved_at for chunk in chunks):
+        raise LightGbmContractError("createdAt must equal the latest receipt retrieval time")
+    if any(
+        chunk.temporal.effective_at is None
+        or chunk.temporal.effective_at > dataset_cutoff
+        for chunk in chunks
+    ):
+        raise LightGbmContractError("source receipt is effective after dataset cutoff")
     source_bytes = {source: 0 for source in SOURCE_BYTE_CAPS}
     source_decoded = {source: 0 for source in SOURCE_BYTE_CAPS}
     source_rows = {source: 0 for source in SOURCE_ROW_CAPS}
@@ -196,12 +228,17 @@ def read_source_bundle(
             safe = read_approved_regular_file(
                 approved_root=approved_root,
                 relative_path=chunk.relative_path,
-                max_bytes=min(chunk.byte_count, SOURCE_BYTE_CAPS[chunk.source_id]),
+                max_bytes=min(chunk.byte_count, SOURCE_CHUNK_BYTE_CAPS[chunk.source_id]),
             )
         except RagSafeIoError as error:
             raise LightGbmContractError("source chunk file boundary is invalid") from error
         if safe.content_sha256 != chunk.content_sha256 or len(safe.content) != chunk.byte_count:
             raise LightGbmContractError("source chunk digest or size mismatch")
+        require_private_regular_file(
+            safe.absolute_path,
+            expected_device=safe.device,
+            expected_inode=safe.inode,
+        )
         decoded_rows, decoded_bytes = _verify_source_parquet(chunk, safe.content)
         if decoded_rows != chunk.row_count:
             raise LightGbmContractError("source chunk declared row count does not match Parquet")
@@ -217,7 +254,7 @@ def read_source_bundle(
     return SourceBundle(
         manifest_sha256=manifest_file.content_sha256,
         manifest_bytes=manifest_file.content,
-        dataset_cutoff=_parse_datetime(payload["datasetCutoff"], "datasetCutoff"),
+        dataset_cutoff=dataset_cutoff,
         chunks=chunks,
         receipt_set_sha256=receipt_set_sha256(chunk.temporal for chunk in chunks),
     )
@@ -255,6 +292,16 @@ def _parse_chunk(value: object) -> SourceChunkReceipt:
     required = _RECEIPT_FIELDS - {"providerAvailableAt", "policyEffectiveAt", "providerRevision"}
     if not required.issubset(receipt_value):
         raise LightGbmContractError("temporal receipt is incomplete")
+    try:
+        availability_basis = AvailabilityBasis(
+            _text(receipt_value["availabilityBasis"], "availabilityBasis")
+        )
+        revision_basis = RevisionBasis(_text(receipt_value["revisionBasis"], "revisionBasis"))
+        temporal_quality = TemporalQuality(
+            _text(receipt_value["temporalQuality"], "temporalQuality")
+        )
+    except ValueError:
+        raise LightGbmContractError("temporal receipt enum is not allowlisted") from None
     receipt = TemporalReceipt(
         source_id=_text(receipt_value["sourceId"], "sourceId"),
         operation_id=_text(receipt_value["operationId"], "operationId"),
@@ -262,14 +309,40 @@ def _parse_chunk(value: object) -> SourceChunkReceipt:
         retrieved_at=_parse_datetime(receipt_value["retrievedAt"], "retrievedAt"),
         provider_available_at=_optional_datetime(receipt_value.get("providerAvailableAt")),
         policy_effective_at=_optional_datetime(receipt_value.get("policyEffectiveAt")),
-        availability_basis=AvailabilityBasis(_text(receipt_value["availabilityBasis"], "availabilityBasis")),
+        availability_basis=availability_basis,
         provider_revision=_optional_text(receipt_value.get("providerRevision")),
-        revision_basis=RevisionBasis(_text(receipt_value["revisionBasis"], "revisionBasis")),
+        revision_basis=revision_basis,
         request_sha256=_text(receipt_value["requestSha256"], "requestSha256"),
         snapshot_sha256=_text(receipt_value["snapshotSha256"], "snapshotSha256"),
         temporal_policy_version=_text(receipt_value["temporalPolicyVersion"], "temporalPolicyVersion"),
-        temporal_quality=TemporalQuality(_text(receipt_value["temporalQuality"], "temporalQuality")),
+        temporal_quality=temporal_quality,
     )
+    expected_temporal = {
+        "KRX": (
+            AvailabilityBasis.PROVIDER_AS_OF_SCHEDULE,
+            TemporalQuality.PROVIDER_AS_OF_NO_VINTAGE,
+        ),
+        "KIS": (
+            AvailabilityBasis.PROJECT_FIXED_LAG,
+            TemporalQuality.RECONSTRUCTED_FIXED_LAG,
+        ),
+        "ECOS": (
+            AvailabilityBasis.PROJECT_FIXED_LAG,
+            TemporalQuality.RECONSTRUCTED_FIXED_LAG,
+        ),
+    }[receipt.source_id]
+    if (
+        (receipt.availability_basis, receipt.temporal_quality) != expected_temporal
+        or receipt.revision_basis is not RevisionBasis.CONTENT_SNAPSHOT
+    ):
+        raise LightGbmContractError("temporal receipt provider policy is invalid")
+    expected_policy_clock = (
+        next_xkrx_evidence_clock(receipt.observation_date)
+        if receipt.source_id == "ECOS"
+        else next_session_evidence_clock(receipt.observation_date)
+    )
+    if receipt.policy_effective_at != expected_policy_clock:
+        raise LightGbmContractError("temporal receipt fixed-lag clock does not match policy")
     chunk = SourceChunkReceipt(
         source_id=_text(value["sourceId"], "sourceId"),
         operation_id=_text(value["operationId"], "operationId"),
@@ -308,6 +381,10 @@ def _validate_chunks(chunks: Sequence[SourceChunkReceipt]) -> None:
         _require_sha256(chunk.content_sha256, "source chunk")
         if chunk.row_count <= 0 or chunk.byte_count <= 0:
             raise DatasetUnavailable("DATASET_UNAVAILABLE: source chunk is empty")
+        if chunk.byte_count > SOURCE_CHUNK_BYTE_CAPS[chunk.source_id]:
+            raise LightGbmContractError("source chunk physical byte cap exceeded")
+        if chunk.row_count > SOURCE_CHUNK_ROW_CAPS[chunk.source_id]:
+            raise LightGbmContractError("source chunk row cap exceeded")
         key = (chunk.source_id, chunk.operation_id, chunk.query_key)
         if key in keys:
             raise LightGbmContractError("source chunk logical key is duplicated")
@@ -327,7 +404,7 @@ def _verify_source_parquet(chunk: SourceChunkReceipt, content: bytes) -> tuple[i
         metadata = parquet.metadata
         expected_fields = _expected_projection_fields(chunk)
         if (
-            metadata.num_rows > SOURCE_ROW_CAPS[chunk.source_id]
+            metadata.num_rows > SOURCE_CHUNK_ROW_CAPS[chunk.source_id]
             or metadata.num_columns != len(expected_fields)
             or set(parquet.schema_arrow.names) != expected_fields
             or parquet.schema_arrow.metadata
@@ -349,7 +426,7 @@ def _verify_source_parquet(chunk: SourceChunkReceipt, content: bytes) -> tuple[i
             rows += batch.num_rows
             decoded += batch.nbytes
             if (
-                rows > SOURCE_ROW_CAPS[chunk.source_id]
+                rows > SOURCE_CHUNK_ROW_CAPS[chunk.source_id]
                 or decoded > SOURCE_BYTE_CAPS[chunk.source_id]
             ):
                 raise LightGbmContractError("source Parquet actual decoded cap exceeded")

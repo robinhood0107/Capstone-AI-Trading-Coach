@@ -63,6 +63,9 @@ from contracts.generate_pre_s5_rag_news_contracts import (  # noqa: E402
 from contracts.generate_s5_0_signal_v2_contracts import (  # noqa: E402
     validate_signal_v2_semantics,
 )
+from contracts.generate_s5_signal_runtime_contracts import (  # noqa: E402
+    validate_runtime_semantics,
+)
 
 SCHEMA_DIR = REPO_ROOT / "contracts" / "schemas"
 EXAMPLES_DIR = REPO_ROOT / "contracts" / "examples"
@@ -221,6 +224,12 @@ def validate_example_semantics(
         return
     if schema_name == "signal-v2":
         validate_signal_v2_semantics(example)
+        return
+    if schema_name == "signal-v2-runtime-v1":
+        validate_runtime_semantics(example)
+        return
+    if schema_name == "lightgbm-signal-artifact-v1":
+        # closed JSON Schema가 AVAILABLE/ABSTAIN 및 fake provenance 결합을 직접 고정한다.
         return
     validate_principle_payload_semantics(
         schema_name,

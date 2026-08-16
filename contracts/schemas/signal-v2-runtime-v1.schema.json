@@ -1,0 +1,577 @@
+{
+  "$id": "contracts/schemas/signal-v2-runtime-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Closed runtime projection that can honestly represent all required components as ABSTAIN.",
+  "properties": {
+    "asOf": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "components": {
+      "additionalProperties": false,
+      "properties": {
+        "hmmRegime": {
+          "oneOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "asOf": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "confidence": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "modelReportId": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "modelVersion": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "producer": {
+                  "const": "HMM"
+                },
+                "sourceWorkspace": {
+                  "const": "decision-platform"
+                },
+                "state": {
+                  "enum": [
+                    "NORMAL",
+                    "SIDEWAYS",
+                    "HIGH_VOLATILITY",
+                    "RISK_OFF",
+                    "RISK_ON"
+                  ]
+                },
+                "status": {
+                  "const": "AVAILABLE"
+                }
+              },
+              "required": [
+                "status",
+                "producer",
+                "sourceWorkspace",
+                "asOf",
+                "state",
+                "confidence"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "modelReportId": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "modelVersion": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "producer": {
+                  "const": "HMM"
+                },
+                "reason": {
+                  "enum": [
+                    "ARTIFACT_DRIFT",
+                    "CALIBRATION_FAILED",
+                    "MISSING_EVIDENCE",
+                    "POSTERIOR_BELOW_THRESHOLD",
+                    "PRODUCER_FAILED",
+                    "STALE_EVIDENCE",
+                    "UNIDENTIFIABLE_OUTPUT"
+                  ]
+                },
+                "sourceWorkspace": {
+                  "const": "decision-platform"
+                },
+                "status": {
+                  "const": "ABSTAIN"
+                },
+                "warnings": {
+                  "items": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "maxItems": 10,
+                  "type": "array",
+                  "uniqueItems": true
+                }
+              },
+              "required": [
+                "status",
+                "producer",
+                "sourceWorkspace",
+                "reason"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "lightgbm": {
+          "oneOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "asOf": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "confidence": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "featureSummary": {
+                  "items": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "maxItems": 32,
+                  "type": "array",
+                  "uniqueItems": true
+                },
+                "modelReportId": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "modelVersion": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "predictedReturn": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "producer": {
+                  "const": "LIGHTGBM"
+                },
+                "signal": {
+                  "enum": [
+                    "BUY",
+                    "HOLD",
+                    "SELL"
+                  ]
+                },
+                "sourceWorkspace": {
+                  "const": "decision-platform"
+                },
+                "status": {
+                  "const": "AVAILABLE"
+                }
+              },
+              "required": [
+                "status",
+                "producer",
+                "sourceWorkspace",
+                "asOf",
+                "signal",
+                "confidence"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "modelReportId": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "modelVersion": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "producer": {
+                  "const": "LIGHTGBM"
+                },
+                "reason": {
+                  "enum": [
+                    "ARTIFACT_DRIFT",
+                    "CALIBRATION_FAILED",
+                    "MISSING_EVIDENCE",
+                    "POSTERIOR_BELOW_THRESHOLD",
+                    "PRODUCER_FAILED",
+                    "STALE_EVIDENCE",
+                    "UNIDENTIFIABLE_OUTPUT"
+                  ]
+                },
+                "sourceWorkspace": {
+                  "const": "decision-platform"
+                },
+                "status": {
+                  "const": "ABSTAIN"
+                },
+                "warnings": {
+                  "items": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "maxItems": 10,
+                  "type": "array",
+                  "uniqueItems": true
+                }
+              },
+              "required": [
+                "status",
+                "producer",
+                "sourceWorkspace",
+                "reason"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "lstm": {
+          "oneOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "asOf": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "confidence": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "featureSummary": {
+                  "items": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "maxItems": 32,
+                  "type": "array",
+                  "uniqueItems": true
+                },
+                "modelReportId": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "modelVersion": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "predictedReturn": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "producer": {
+                  "const": "LSTM"
+                },
+                "signal": {
+                  "enum": [
+                    "BUY",
+                    "HOLD",
+                    "SELL"
+                  ]
+                },
+                "sourceWorkspace": {
+                  "const": "return-engine"
+                },
+                "status": {
+                  "const": "AVAILABLE"
+                }
+              },
+              "required": [
+                "status",
+                "producer",
+                "sourceWorkspace",
+                "asOf",
+                "signal",
+                "confidence"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "modelReportId": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "modelVersion": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "producer": {
+                  "const": "LSTM"
+                },
+                "reason": {
+                  "enum": [
+                    "ARTIFACT_DRIFT",
+                    "CALIBRATION_FAILED",
+                    "MISSING_EVIDENCE",
+                    "POSTERIOR_BELOW_THRESHOLD",
+                    "PRODUCER_FAILED",
+                    "STALE_EVIDENCE",
+                    "UNIDENTIFIABLE_OUTPUT"
+                  ]
+                },
+                "sourceWorkspace": {
+                  "const": "return-engine"
+                },
+                "status": {
+                  "const": "ABSTAIN"
+                },
+                "warnings": {
+                  "items": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "maxItems": 10,
+                  "type": "array",
+                  "uniqueItems": true
+                }
+              },
+              "required": [
+                "status",
+                "producer",
+                "sourceWorkspace",
+                "reason"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "ruleBaseline": {
+          "oneOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "asOf": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "confidence": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "featureSummary": {
+                  "items": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "maxItems": 32,
+                  "type": "array",
+                  "uniqueItems": true
+                },
+                "modelReportId": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "modelVersion": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "predictedReturn": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "producer": {
+                  "const": "RULE_BASELINE"
+                },
+                "signal": {
+                  "enum": [
+                    "BUY",
+                    "HOLD",
+                    "SELL"
+                  ]
+                },
+                "sourceWorkspace": {
+                  "const": "return-engine"
+                },
+                "status": {
+                  "const": "AVAILABLE"
+                }
+              },
+              "required": [
+                "status",
+                "producer",
+                "sourceWorkspace",
+                "asOf",
+                "signal",
+                "confidence"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "modelReportId": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "modelVersion": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "producer": {
+                  "const": "RULE_BASELINE"
+                },
+                "reason": {
+                  "enum": [
+                    "ARTIFACT_DRIFT",
+                    "CALIBRATION_FAILED",
+                    "MISSING_EVIDENCE",
+                    "POSTERIOR_BELOW_THRESHOLD",
+                    "PRODUCER_FAILED",
+                    "STALE_EVIDENCE",
+                    "UNIDENTIFIABLE_OUTPUT"
+                  ]
+                },
+                "sourceWorkspace": {
+                  "const": "return-engine"
+                },
+                "status": {
+                  "const": "ABSTAIN"
+                },
+                "warnings": {
+                  "items": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "maxItems": 10,
+                  "type": "array",
+                  "uniqueItems": true
+                }
+              },
+              "required": [
+                "status",
+                "producer",
+                "sourceWorkspace",
+                "reason"
+              ],
+              "type": "object"
+            }
+          ]
+        }
+      },
+      "required": [
+        "ruleBaseline",
+        "lstm",
+        "lightgbm",
+        "hmmRegime"
+      ],
+      "type": "object"
+    },
+    "composite": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "confidence": {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            "predictedReturn": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "signal": {
+              "enum": [
+                "BUY",
+                "HOLD",
+                "SELL"
+              ]
+            },
+            "status": {
+              "const": "AVAILABLE"
+            }
+          },
+          "required": [
+            "status",
+            "signal",
+            "confidence"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "reason": {
+              "const": "REQUIRED_COMPONENT_UNAVAILABLE"
+            },
+            "status": {
+              "const": "ABSTAIN"
+            }
+          },
+          "required": [
+            "status",
+            "reason"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "modelReportId": {
+      "maxLength": 128,
+      "minLength": 1,
+      "type": "string"
+    },
+    "symbol": {
+      "pattern": "^[0-9A-Z._:-]{1,20}$",
+      "type": "string"
+    },
+    "timeframe": {
+      "const": "1d"
+    },
+    "warnings": {
+      "items": {
+        "maxLength": 256,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 10,
+      "type": "array",
+      "uniqueItems": true
+    }
+  },
+  "required": [
+    "symbol",
+    "timeframe",
+    "composite",
+    "components",
+    "warnings"
+  ],
+  "title": "Signal v2 runtime v1",
+  "type": "object"
+}

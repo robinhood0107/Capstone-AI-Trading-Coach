@@ -13,6 +13,10 @@ ba004f1ed0d04370832cc6c2facbf46db1df801c:workspaces/decision-platform/spring-api
 a92dee4db04f4c916622b526fe00832bd76163e0:contracts/catalogs/s5-0-signal-v2-contract.v1.json:generic-api-key:3
 5761beca894a6447f54bdcba8644f6b66b83dcb5:contracts/changes/20260801-s5-0-signal-v2-contract-lock.md:generic-api-key:47
 
+# S5 runtime transition catalog와 generator도 같은 공개 historical OpenAPI digest를 고정한다.
+9f85c294ec416329cc809005fb64b671f2530446:contracts/catalogs/s5-signal-runtime-transition.v1.json:generic-api-key:17
+9f85c294ec416329cc809005fb64b671f2530446:contracts/generate_s5_signal_runtime_contracts.py:generic-api-key:424
+
 # S4.7D local parser가 credential 형태를 반드시 격리하는지 확인하는 synthetic fixture다.
 37c0e0a3a4de28c810ef43e0eb3bc148295fb030:workspaces/decision-platform/python-services/tests/rag/test_local_document_parser.py:generic-api-key:404
 

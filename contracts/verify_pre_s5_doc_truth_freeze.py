@@ -13,6 +13,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Final, Iterable
 
+from contracts.generate_principle_contracts import ContractValidationError
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 # 공개 저장소에서는 로컬 전용 자료 root의 실제 이름을 문장/로그로 노출하지 않는다.
@@ -280,6 +282,14 @@ TEAMMATE_DEPENDENCY_PATTERN: Final[re.Pattern[str]] = re.compile(
     r"(?:구현\s*작업|implementation\s*task|\bissue\b|\bpr\b|마감|\bdeadline\b|"
     r"\blive\b|\bblocker\b|필수\s*artifact|required\s*artifact|\bs5\s*entry\b|s5\s*진입)",
     re.IGNORECASE,
+)
+APPROVED_NON_ROLE_COMPONENT_LINES: Final[frozenset[tuple[str, str]]] = frozenset(
+    {
+        (
+            "contracts/changes/20260815-s5-signal-runtime-transition.md",
+            "- required component는 `ruleBaseline`, `lstm`, `lightgbm`, `hmmRegime` 정확히 네 개다.",
+        )
+    }
 )
 
 
@@ -763,6 +773,22 @@ def immutable_history_diff_errors(root: Path, base: str) -> list[str]:
         if output
         else ()
     )
+    if "contracts/openapi/openapi.json" in changed_immutable_paths:
+        transition_catalog = root / "contracts/catalogs/s5-signal-runtime-transition.v1.json"
+        openapi = root / "contracts/openapi/openapi.json"
+        try:
+            # S5 transition verifier가 historical projection 보존을 증명할 때만 frozen raw byte 변경을 허용한다.
+            from contracts.verify_s5_signal_runtime_transition import verify_openapi_transition
+
+            verify_openapi_transition(openapi, transition_catalog)
+        except (ContractValidationError, OSError):
+            pass
+        else:
+            changed_immutable_paths = tuple(
+                relative
+                for relative in changed_immutable_paths
+                if relative != "contracts/openapi/openapi.json"
+            )
     if changed_immutable_paths:
         errors.append("immutable historical records changed since base")
 
@@ -795,6 +821,8 @@ def new_teammate_dependency_errors(root: Path, base: str) -> list[str]:
         if relative in SOLO_OWNERSHIP_PUBLIC_PATHS and line in SOLO_OWNERSHIP_MARKERS:
             continue
         if relative == "docs/README.md" and line in SOLO_OWNERSHIP_ROLE_CATALOG:
+            continue
+        if (relative, line) in APPROVED_NON_ROLE_COMPONENT_LINES:
             continue
         if not TEAMMATE_REFERENCE_PATTERN.search(line):
             continue
@@ -837,6 +865,17 @@ def verify_public_truth_freeze(root: Path) -> list[str]:
     errors: list[str] = []
     for relative, expected_digest in V1_FROZEN_SHA256.items():
         path = safe_regular_file(root, relative)
+        if relative == "contracts/openapi/openapi.json" and path is not None:
+            transition_catalog = root / "contracts/catalogs/s5-signal-runtime-transition.v1.json"
+            if transition_catalog.is_file() and not transition_catalog.is_symlink():
+                try:
+                    # historical OpenAPI 자체가 아니라 승인된 S5 추가분을 제거한 projection을 동결한다.
+                    from contracts.verify_s5_signal_runtime_transition import verify_openapi_transition
+
+                    verify_openapi_transition(path, transition_catalog)
+                except (ContractValidationError, OSError) as error:
+                    errors.append(f"{relative}: {error}")
+                continue
         actual_digest = hashlib.sha256(path.read_bytes()).hexdigest() if path else None
         if actual_digest != expected_digest:
             errors.append(f"{relative}: frozen digest mismatch")

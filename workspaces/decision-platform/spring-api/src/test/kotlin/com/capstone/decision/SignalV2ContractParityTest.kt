@@ -1,5 +1,6 @@
 package com.capstone.decision
 
+import com.capstone.decision.application.signal.SignalV1Contract
 import com.capstone.decision.application.signal.SignalV2CompositeAbstain
 import com.capstone.decision.application.signal.SignalV2CompositeAvailable
 import com.capstone.decision.application.signal.SignalV2Contract
@@ -47,12 +48,55 @@ class SignalV2ContractParityTest {
                         .toList()
                 }
 
-        assertThat(invalidFiles).hasSize(4)
+        assertThat(invalidFiles.size).isGreaterThanOrEqualTo(4)
         invalidFiles.forEach { path ->
             assertThatThrownBy { SignalV2Contract.validate(Files.readAllBytes(path)) }
                 .isInstanceOf(IllegalArgumentException::class.java)
                 .hasMessageContaining("Signal v2")
         }
+    }
+
+    @Test
+    fun `Spring parsers reject each generated v1 and v2 adjacent-authority fixture`() {
+        val invalidDirectory = repositoryRoot.resolve("contracts/examples/invalid")
+        val fields =
+            listOf(
+                "cross-market-score",
+                "cross-market-mode",
+                "cross-market-freshness",
+                "cross-market-exposure",
+                "analyst",
+                "news",
+                "cause",
+                "rag",
+                "llm",
+                "risk-decision",
+                "order-authority",
+            )
+        fields.forEach { field ->
+            val v1 = invalidDirectory.resolve("signal.unknown-$field.invalid.json")
+            val v2 = invalidDirectory.resolve("signal-v2.unknown-$field.invalid.json")
+            assertThatThrownBy { SignalV1Contract.validate(Files.readAllBytes(v1)) }
+                .isInstanceOf(IllegalArgumentException::class.java)
+                .hasMessageContaining("Signal v1")
+            assertThatThrownBy { SignalV2Contract.validate(Files.readAllBytes(v2)) }
+                .isInstanceOf(IllegalArgumentException::class.java)
+                .hasMessageContaining("Signal v2")
+        }
+    }
+
+    @Test
+    fun `runtime parser accepts all-abstain partial-abstain and available HOLD`() {
+        val allAbstain = SignalV2Contract.validateRuntime(fixtureBytes("signal-v2-runtime-v1.all-abstain.valid.json"))
+        val partial = SignalV2Contract.validateRuntime(fixtureBytes("signal-v2-runtime-v1.partial-abstain.valid.json"))
+        val available = SignalV2Contract.validateRuntime(fixtureBytes("signal-v2-runtime-v1.available-hold.valid.json"))
+
+        assertThat(allAbstain.asOf).isNull()
+        assertThat(allAbstain.modelReportId).isNull()
+        assertThat(allAbstain.composite).isInstanceOf(SignalV2CompositeAbstain::class.java)
+        assertThat(partial.asOf).isNotNull()
+        assertThat(partial.composite).isInstanceOf(SignalV2CompositeAbstain::class.java)
+        assertThat((available.composite as SignalV2CompositeAvailable).signal.name).isEqualTo("HOLD")
     }
 
     @Test
@@ -88,13 +132,24 @@ class SignalV2ContractParityTest {
     }
 
     @Test
-    fun `Signal v2 contract lock does not publish an active endpoint`() {
+    fun `Signal v2 runtime transition publishes only the approved symbol route`() {
+        val mapper = JsonMapper.builder().build()
         val openApi =
-            JsonMapper.builder().build().readTree(
+            mapper.readTree(
                 Files.readAllBytes(repositoryRoot.resolve("contracts/openapi/openapi.json")),
             )
+        val transition =
+            mapper.readTree(
+                Files.readAllBytes(
+                    repositoryRoot.resolve("contracts/catalogs/s5-signal-runtime-transition.v1.json"),
+                ),
+            )
+        val path = transition.path("allowedPath").stringValue()
+        val pathItem = openApi.path("paths").path(path)
 
-        assertThat(openApi.path("paths").has("/api/v2/signals/{symbol}")).isFalse()
+        assertThat(path).isEqualTo("/api/v2/signals/{symbol}")
+        assertThat(pathItem.has("get")).isTrue()
+        assertThat(pathItem.size()).isEqualTo(1)
     }
 
     private fun validateFixture(fileName: String) = SignalV2Contract.validate(fixtureBytes(fileName))

@@ -11,6 +11,18 @@ spring-api/            # Gradle Kotlin 프로젝트 — Controller/Application/D
 python-services/        # uv 프로젝트 — LightGBM/RAG/금융공학/데이터클라이언트/브로커리지 어댑터
 ```
 
+## S5 LightGBM와 Signal v2 runtime
+
+S5.0 historical contract bytes 위에 runtime transition을 추가하고 S5.1~S5.5를 fixture-first로
+구현했다. Python은 PIT feature/label/split, exact four-grid와 OVR Platt, export/drift, deterministic
+fake artifact와 bounded safe ingest를 소유한다. Spring은 V72 exact replay/conflict DML,
+production-only pointer reader와 인증형 `GET /api/v2/signals/{symbol}`를 소유한다.
+
+현재 승인된 실제 PIT source rows가 없어 `DATASET_UNAVAILABLE`, real AVAILABLE model false,
+production pointer 0이다. fake는 항상 `FAKE_CONTRACT`이고 성능 증거가 아니며 production pointer로
+승격할 수 없다. evidence 없는 public 조회는 root 시각을 만들지 않는 all-ABSTAIN이다.
+RiskDecision/order wiring, provider/data acquisition과 S6.6 이전 cross-market join은 계속 금지한다.
+
 ## 세팅
 
 공개 레포에는 최종 명세/API 계약과 구현 코드만 두고, 로컬 전용 참고자료와 개인 파일 경로는 커밋하지 않는다. 요약:

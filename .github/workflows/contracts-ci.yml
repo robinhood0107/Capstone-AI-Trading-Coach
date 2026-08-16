@@ -85,21 +85,24 @@ jobs:
       - name: Check generated S5.0 Signal v2 contract artifacts
         run: uv run --frozen python contracts/generate_s5_0_signal_v2_contracts.py --check
 
+      - name: Check generated S5 Signal runtime transition artifacts
+        run: uv run --frozen python contracts/generate_s5_signal_runtime_contracts.py --check
+
       - name: Run contract tooling tests
         run: uv run --frozen python -m unittest discover -s contracts/tests -v
 
       - name: Verify Pre-S5 document truth freeze
-        run: uv run --frozen python contracts/verify_pre_s5_doc_truth_freeze.py --check
+        run: uv run --frozen python -m contracts.verify_pre_s5_doc_truth_freeze --check
 
       - name: Verify Pre-S5 solo ownership lock
         shell: bash
         run: |
           set -euo pipefail
           if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
-            uv run --frozen python contracts/verify_pre_s5_doc_truth_freeze.py \
+            uv run --frozen python -m contracts.verify_pre_s5_doc_truth_freeze \
               --solo-ownership-public-check --base "${{ github.event.pull_request.base.sha }}"
           else
-            uv run --frozen python contracts/verify_pre_s5_doc_truth_freeze.py \
+            uv run --frozen python -m contracts.verify_pre_s5_doc_truth_freeze \
               --solo-ownership-public-check
           fi
 

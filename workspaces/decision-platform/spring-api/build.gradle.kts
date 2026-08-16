@@ -166,6 +166,10 @@ tasks.named<ProcessResources>("processResources") {
     from(layout.projectDirectory.file("../../../contracts/schemas/s2-4-risk-portfolio.schema.json")) {
         into("contracts")
     }
+    // S5.5 Signal v2 runtime OpenAPI도 annotation 추론 대신 승인된 closed union schema bytes를 사용한다.
+    from(layout.projectDirectory.file("../../../contracts/schemas/signal-v2-runtime-v1.schema.json")) {
+        into("contracts")
+    }
     // S3.1 Brokerage Mock도 canonical JSON Schema bytes를 OpenAPI component로 직접 노출한다.
     from(layout.projectDirectory.file("../../../contracts/schemas/s3-1-mock-order-request.schema.json")) {
         into("contracts")

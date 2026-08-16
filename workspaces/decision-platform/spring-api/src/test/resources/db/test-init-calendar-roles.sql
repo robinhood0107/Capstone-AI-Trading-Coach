@@ -32,6 +32,15 @@ CREATE ROLE decision_rag_admin
 CREATE ROLE decision_rag_query
     LOGIN PASSWORD 'rag-query-test'
     NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
+CREATE ROLE decision_signal_writer
+    LOGIN PASSWORD 'signal-writer-test'
+    NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
+CREATE ROLE decision_signal_scheduler
+    LOGIN PASSWORD 'signal-scheduler-test'
+    NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
+CREATE ROLE decision_signal_admin
+    LOGIN PASSWORD 'signal-admin-test'
+    NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
 CREATE ROLE flyway
     LOGIN PASSWORD 'flyway-test'
     NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS;
@@ -59,6 +68,15 @@ ALTER ROLE decision_rag_query SET log_parameter_max_length_on_error = 0;
 ALTER ROLE decision_rag_query SET statement_timeout = '1500ms';
 ALTER ROLE decision_rag_query SET lock_timeout = '250ms';
 ALTER ROLE decision_rag_query SET idle_in_transaction_session_timeout = '5s';
+ALTER ROLE decision_signal_writer SET statement_timeout = '60s';
+ALTER ROLE decision_signal_writer SET lock_timeout = '500ms';
+ALTER ROLE decision_signal_writer SET idle_in_transaction_session_timeout = '60s';
+ALTER ROLE decision_signal_scheduler SET statement_timeout = '5s';
+ALTER ROLE decision_signal_scheduler SET lock_timeout = '500ms';
+ALTER ROLE decision_signal_scheduler SET idle_in_transaction_session_timeout = '5s';
+ALTER ROLE decision_signal_admin SET statement_timeout = '5s';
+ALTER ROLE decision_signal_admin SET lock_timeout = '500ms';
+ALTER ROLE decision_signal_admin SET idle_in_transaction_session_timeout = '5s';
 ALTER ROLE flyway SET log_parameter_max_length = 0;
 ALTER ROLE flyway SET log_parameter_max_length_on_error = 0;
 
@@ -74,5 +92,8 @@ GRANT USAGE ON SCHEMA public TO
     decision_rag_writer,
     decision_rag_admin,
     decision_rag_query,
+    decision_signal_writer,
+    decision_signal_scheduler,
+    decision_signal_admin,
     flyway;
 GRANT CREATE ON SCHEMA public TO flyway;

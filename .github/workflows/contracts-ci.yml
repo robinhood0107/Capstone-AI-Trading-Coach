@@ -91,6 +91,9 @@ jobs:
       - name: Check generated S5.6 production materialization artifacts
         run: uv run --frozen python contracts/generate_s5_6_production_contracts.py --check
 
+      - name: Check generated S5.6B model release artifacts
+        run: uv run --frozen python contracts/generate_s5_6b_release_contracts.py
+
       - name: Run contract tooling tests
         run: uv run --frozen python -m unittest discover -s contracts/tests -v
 

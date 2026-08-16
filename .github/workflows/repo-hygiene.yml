@@ -69,6 +69,9 @@ jobs:
           POSTGRES_RAG_WRITER_PASSWORD: validation-dummy-rag-writer
           POSTGRES_RAG_ADMIN_PASSWORD: validation-dummy-rag-admin
           POSTGRES_RAG_QUERY_PASSWORD: validation-dummy-rag-query
+          POSTGRES_SIGNAL_WRITER_PASSWORD: validation-dummy-signal-writer
+          POSTGRES_SIGNAL_SCHEDULER_PASSWORD: validation-dummy-signal-scheduler
+          POSTGRES_SIGNAL_ADMIN_PASSWORD: validation-dummy-signal-admin
           REDIS_PASSWORD: validation-dummy-redis-password-0001
           SEARXNG_SECRET: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
           MCP_SEARXNG_AUTH_TOKEN: BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB

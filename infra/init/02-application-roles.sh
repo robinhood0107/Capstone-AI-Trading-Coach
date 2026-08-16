@@ -14,6 +14,9 @@ set -Eeuo pipefail
 : "${POSTGRES_RAG_WRITER_PASSWORD:?POSTGRES_RAG_WRITER_PASSWORD is required}"
 : "${POSTGRES_RAG_ADMIN_PASSWORD:?POSTGRES_RAG_ADMIN_PASSWORD is required}"
 : "${POSTGRES_RAG_QUERY_PASSWORD:?POSTGRES_RAG_QUERY_PASSWORD is required}"
+: "${POSTGRES_SIGNAL_WRITER_PASSWORD:?POSTGRES_SIGNAL_WRITER_PASSWORD is required}"
+: "${POSTGRES_SIGNAL_SCHEDULER_PASSWORD:?POSTGRES_SIGNAL_SCHEDULER_PASSWORD is required}"
+: "${POSTGRES_SIGNAL_ADMIN_PASSWORD:?POSTGRES_SIGNAL_ADMIN_PASSWORD is required}"
 
 # psql argv나 shell-expanded SQL에 password를 넣지 않고 process environment에서 안전하게 인용한다.
 export PGPASSWORD="${POSTGRES_PASSWORD:-}"
@@ -30,6 +33,9 @@ psql -v ON_ERROR_STOP=1 --no-password --username "$POSTGRES_USER" --dbname "$POS
 \getenv rag_writer_password POSTGRES_RAG_WRITER_PASSWORD
 \getenv rag_admin_password POSTGRES_RAG_ADMIN_PASSWORD
 \getenv rag_query_password POSTGRES_RAG_QUERY_PASSWORD
+\getenv signal_writer_password POSTGRES_SIGNAL_WRITER_PASSWORD
+\getenv signal_scheduler_password POSTGRES_SIGNAL_SCHEDULER_PASSWORD
+\getenv signal_admin_password POSTGRES_SIGNAL_ADMIN_PASSWORD
 
 -- role password DDL 전에 session 전체의 statement·duration·sampling log를 닫는다.
 SET log_statement = 'none';
@@ -232,6 +238,57 @@ ALTER ROLE decision_rag_query SET statement_timeout = '1500ms';
 ALTER ROLE decision_rag_query SET lock_timeout = '250ms';
 ALTER ROLE decision_rag_query SET idle_in_transaction_session_timeout = '5s';
 
+SELECT format(
+    'CREATE ROLE decision_signal_writer LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD %L',
+    :'signal_writer_password'
+)
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'decision_signal_writer')
+\gexec
+SELECT format(
+    'ALTER ROLE decision_signal_writer WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD %L',
+    :'signal_writer_password'
+)
+\gexec
+ALTER ROLE decision_signal_writer SET log_parameter_max_length = 0;
+ALTER ROLE decision_signal_writer SET log_parameter_max_length_on_error = 0;
+ALTER ROLE decision_signal_writer SET statement_timeout = '60s';
+ALTER ROLE decision_signal_writer SET lock_timeout = '500ms';
+ALTER ROLE decision_signal_writer SET idle_in_transaction_session_timeout = '60s';
+
+SELECT format(
+    'CREATE ROLE decision_signal_scheduler LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD %L',
+    :'signal_scheduler_password'
+)
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'decision_signal_scheduler')
+\gexec
+SELECT format(
+    'ALTER ROLE decision_signal_scheduler WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD %L',
+    :'signal_scheduler_password'
+)
+\gexec
+ALTER ROLE decision_signal_scheduler SET log_parameter_max_length = 0;
+ALTER ROLE decision_signal_scheduler SET log_parameter_max_length_on_error = 0;
+ALTER ROLE decision_signal_scheduler SET statement_timeout = '5s';
+ALTER ROLE decision_signal_scheduler SET lock_timeout = '500ms';
+ALTER ROLE decision_signal_scheduler SET idle_in_transaction_session_timeout = '5s';
+
+SELECT format(
+    'CREATE ROLE decision_signal_admin LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD %L',
+    :'signal_admin_password'
+)
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'decision_signal_admin')
+\gexec
+SELECT format(
+    'ALTER ROLE decision_signal_admin WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD %L',
+    :'signal_admin_password'
+)
+\gexec
+ALTER ROLE decision_signal_admin SET log_parameter_max_length = 0;
+ALTER ROLE decision_signal_admin SET log_parameter_max_length_on_error = 0;
+ALTER ROLE decision_signal_admin SET statement_timeout = '5s';
+ALTER ROLE decision_signal_admin SET lock_timeout = '500ms';
+ALTER ROLE decision_signal_admin SET idle_in_transaction_session_timeout = '5s';
+
 REVOKE ALL ON DATABASE :"database_name" FROM PUBLIC;
 GRANT CONNECT ON DATABASE :"database_name" TO
     decision_app,
@@ -244,6 +301,9 @@ GRANT CONNECT ON DATABASE :"database_name" TO
     decision_rag_writer,
     decision_rag_admin,
     decision_rag_query,
+    decision_signal_writer,
+    decision_signal_scheduler,
+    decision_signal_admin,
     flyway;
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 GRANT USAGE ON SCHEMA public TO
@@ -257,6 +317,9 @@ GRANT USAGE ON SCHEMA public TO
     decision_rag_writer,
     decision_rag_admin,
     decision_rag_query,
+    decision_signal_writer,
+    decision_signal_scheduler,
+    decision_signal_admin,
     flyway;
 GRANT CREATE ON SCHEMA public TO flyway;
 
@@ -282,6 +345,12 @@ REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_rag_admin;
 REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_rag_admin;
 REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_rag_query;
 REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_rag_query;
+REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_signal_writer;
+REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_signal_writer;
+REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_signal_scheduler;
+REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_signal_scheduler;
+REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM decision_signal_admin;
+REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM decision_signal_admin;
 ALTER DEFAULT PRIVILEGES FOR ROLE flyway IN SCHEMA public
     REVOKE ALL PRIVILEGES ON TABLES FROM decision_app;
 ALTER DEFAULT PRIVILEGES FOR ROLE flyway IN SCHEMA public
@@ -753,7 +822,8 @@ BEGIN
             'REVOKE ALL PRIVILEGES ON FUNCTION %s FROM ' ||
             'PUBLIC, decision_app, decision_collector, decision_disclosure_reader, ' ||
             'decision_market_writer, decision_portfolio_writer, decision_risk_writer, ' ||
-            'decision_fill_writer, decision_rag_writer, decision_rag_admin, decision_rag_query',
+            'decision_fill_writer, decision_rag_writer, decision_rag_admin, decision_rag_query, ' ||
+            'decision_signal_writer, decision_signal_scheduler, decision_signal_admin',
             routine.signature
         );
     END LOOP;
@@ -1529,6 +1599,32 @@ BEGIN
 END
 $cross_market_runtime_privileges$;
 
+DO $signal_release_runtime_privileges$
+BEGIN
+    IF to_regprocedure(
+        'public.stage_signal_model_release(text,text,text,text,text,text,text,text,text,text,text)'
+    ) IS NOT NULL THEN
+        -- 기존 volume 재적용도 base table을 열지 않고 S5.6B 역할별 definer capability만 복원한다.
+        GRANT EXECUTE ON FUNCTION
+            stage_signal_model_release(text,text,text,text,text,text,text,text,text,text,text),
+            stage_signal_batch(text,text,text,text,text,text,date,timestamptz,text)
+        TO decision_signal_writer;
+        GRANT EXECUTE ON FUNCTION
+            publish_active_signal_batch(text,text,text)
+        TO decision_signal_scheduler;
+        GRANT EXECUTE ON FUNCTION
+            current_s5_signal_batch_clock()
+        TO decision_app;
+        GRANT EXECUTE ON FUNCTION
+            suspend_signal_model_for_drift(text,text)
+        TO decision_signal_scheduler, decision_signal_admin;
+        GRANT EXECUTE ON FUNCTION
+            activate_signal_model_and_batch(text,text,text,text,text,text,text)
+        TO decision_signal_admin;
+    END IF;
+END
+$signal_release_runtime_privileges$;
+
 DO $block$
 BEGIN
     IF to_regclass('public.flyway_schema_history') IS NOT NULL THEN
@@ -1540,6 +1636,9 @@ BEGIN
         REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_rag_writer;
         REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_rag_admin;
         REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_rag_query;
+        REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_signal_writer;
+        REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_signal_scheduler;
+        REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM decision_signal_admin;
     END IF;
 END
 $block$;

@@ -147,11 +147,23 @@ class SignalV2RuntimeService(
         if (row.sourceWorkspace != workspace) {
             throw ApiException(ErrorCode.SIGNAL_UNAVAILABLE)
         }
+        if (row.status == "ABSTAIN") {
+            return if (
+                row.reason in ABSTAIN_REASONS &&
+                row.asOf == null &&
+                row.signal == null &&
+                row.confidence == null &&
+                row.predictedReturn == null &&
+                row.modelVersion == null &&
+                row.modelReportId == null
+            ) {
+                abstain(producer, workspace, requireNotNull(row.reason))
+            } else {
+                abstain(producer, workspace, "UNIDENTIFIABLE_OUTPUT")
+            }
+        }
         if (row.sessionDate != latest) {
             return abstain(producer, workspace, "STALE_EVIDENCE")
-        }
-        if (row.status == "ABSTAIN") {
-            return abstain(producer, workspace, row.reason ?: "PRODUCER_FAILED")
         }
         if (
             row.status != "AVAILABLE" ||

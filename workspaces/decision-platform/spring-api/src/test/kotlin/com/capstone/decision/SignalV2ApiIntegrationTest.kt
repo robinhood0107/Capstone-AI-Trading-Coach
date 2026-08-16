@@ -160,6 +160,38 @@ class SignalV2ApiIntegrationTest(
         )
     }
 
+    @Test
+    fun `drift suspension remains ARTIFACT_DRIFT even when the prior batch session is old`() {
+        fakePort.snapshot =
+            SignalReadSnapshot(
+                listOf(
+                    StoredSignalComponent(
+                        producer = "LIGHTGBM",
+                        sourceWorkspace = "decision-platform",
+                        sessionDate = LocalDate.of(2026, 8, 13),
+                        asOf = null,
+                        status = "ABSTAIN",
+                        reason = "ARTIFACT_DRIFT",
+                        signal = null,
+                        confidence = null,
+                        predictedReturn = null,
+                        modelVersion = null,
+                        modelReportId = null,
+                    ),
+                ),
+                LocalDate.of(2026, 8, 14),
+            )
+
+        mockMvc
+            .get("/api/v2/signals/005930") { header("Authorization", "Bearer ${token()}") }
+            .andExpect {
+                status { isOk() }
+                jsonPath("$.data.components.lightgbm.status") { value("ABSTAIN") }
+                jsonPath("$.data.components.lightgbm.reason") { value("ARTIFACT_DRIFT") }
+                jsonPath("$.data.components.lightgbm.asOf") { doesNotExist() }
+            }
+    }
+
     private fun token(): String {
         val identity = requireNotNull(DemoAccounts.byUsername("demo-user"))
         return jwtService

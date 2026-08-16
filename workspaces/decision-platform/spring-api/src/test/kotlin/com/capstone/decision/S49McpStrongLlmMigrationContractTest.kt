@@ -13,7 +13,7 @@ class S49McpStrongLlmMigrationContractTest {
     private val emptyContextPath = directory.resolve("V69__s4_9_mcp_empty_research_context_scope_revalidation.sql")
 
     @Test
-    fun `V66 through V71 S4 9 migrations remain forward only after V72`() {
+    fun `V66 through V71 S4 9 migrations remain forward only after V73`() {
         val versions =
             Files.list(directory).use { paths ->
                 paths
@@ -23,7 +23,7 @@ class S49McpStrongLlmMigrationContractTest {
                     .toList()
             }
 
-        assertThat(versions.max()).isEqualTo(72)
+        assertThat(versions.max()).isEqualTo(73)
         assertThat(versions.count { it == 72 }).isEqualTo(1)
         assertThat(versions.count { it == 71 }).isEqualTo(1)
         assertThat(versions.count { it == 70 }).isEqualTo(1)

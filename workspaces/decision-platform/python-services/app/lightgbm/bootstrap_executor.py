@@ -38,6 +38,7 @@ from app.lightgbm.feature_artifact import (
     read_production_feature_bundle,
     write_feature_parquet,
 )
+from app.lightgbm.pit_calendar import previous_xkrx_session
 from app.lightgbm.features import (
     IndexEvidence,
     MacroObservation,
@@ -127,7 +128,11 @@ class EcosBootstrapProvider(Protocol):
 
 @dataclass(frozen=True, slots=True)
 class BootstrapAcquisition:
-    """검증된 source bundle과 feature materialization에 필요한 typed evidence."""
+    """검증된 source bundle과 feature materialization에 필요한 typed evidence.
+
+    budgeted_calls는 cache hit 가능성이 있는 OAuth 준비까지 포함한 보수적 승인예산 소비량이며,
+    실제 network physical call 수로 사용하지 않는다.
+    """
 
     source_bundle: SourceBundle
     universes: tuple[MonthlyUniverse, ...]
@@ -135,7 +140,8 @@ class BootstrapAcquisition:
     indices: tuple[IndexEvidence, ...]
     macro: tuple[MacroObservation, ...]
     listing_market_by_membership: Mapping[tuple[str, str], str]
-    physical_calls: int
+    budgeted_calls: int
+    krx_raw_prices: Mapping[tuple[str, date], tuple[float, float]] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -257,6 +263,7 @@ def execute_bootstrap_acquisition(
     ledger.advance(BootstrapPhase.ECOS)
 
     indices = _build_index_evidence(packet, source_root, krx_chunks)
+    krx_raw_prices = _build_krx_raw_prices(packet, source_root, krx_chunks)
     # Resume 시 wall clock 변화가 이미 봉인된 manifest를 충돌시키지 않게 retrieval receipt로 결정한다.
     manifest = build_source_manifest(
         created_at=max(chunk.temporal.retrieved_at for chunk in chunks),
@@ -280,7 +287,8 @@ def execute_bootstrap_acquisition(
         indices=indices,
         macro=tuple(sorted(macro, key=lambda item: (item.series_id, item.observation_date))),
         listing_market_by_membership=dict(sorted(listing_market_by_membership.items())),
-        physical_calls=len(ledger.receipts),
+        budgeted_calls=len(ledger.receipts),
+        krx_raw_prices=krx_raw_prices,
     )
 
 
@@ -294,45 +302,7 @@ def materialize_production_feature_bundle(
     """검증된 source bundle만 받아 monthly membership이 적용된 feature bundle v2를 publish한다."""
 
     _prepare_private_bundle_root(feature_root, chunks=False, resume=resume)
-    memberships = {
-        universe.effective_month: set(universe.instrument_ids) for universe in acquisition.universes
-    }
-    prices_by_identity: dict[str, list[ProductionPriceEvidence]] = defaultdict(list)
-    for price in acquisition.prices:
-        prices_by_identity[price.instrument_id].append(price)
-    rows: list[Mapping[str, object]] = []
-    eligible = set(packet.window.eligible_sessions)
-    last_feature_session = packet.window.eligible_sessions[-1]
-    feature_sessions = tuple(
-        session for session in packet.window.raw_sessions if session <= last_feature_session
-    )
-    for identity in sorted(prices_by_identity):
-        market_by_session = _listing_market_schedule(
-            identity=identity,
-            sessions=feature_sessions,
-            listing_market_by_membership=acquisition.listing_market_by_membership,
-        )
-        feature_rows = build_production_core_feature_rows(
-            tuple(
-                price
-                for price in prices_by_identity[identity]
-                if price.session_date <= last_feature_session
-            ),
-            acquisition.indices,
-            acquisition.macro,
-            listing_market_by_session=market_by_session,
-            cutoff=_packet_cutoff(packet),
-        )
-        for row in feature_rows:
-            if row.session_date not in eligible:
-                continue
-            month = f"{row.session_date.year:04d}-{row.session_date.month:02d}"
-            if identity in memberships.get(month, set()):
-                rows.append(row.as_mapping())
-    if not rows:
-        raise DatasetUnavailable("DATASET_UNAVAILABLE: production feature rows are absent")
-    rows.sort(key=lambda item: (item["sessionDate"], item["symbol"]))
-    table = feature_table_from_rows(rows)
+    table = build_production_feature_table(packet=packet, acquisition=acquisition)
     parquet = write_feature_parquet(table)
     artifact = FeatureArtifact(
         table=table,
@@ -379,6 +349,118 @@ def materialize_production_feature_bundle(
         approved_root=feature_root,
         expected_manifest_sha256=hashlib.sha256(manifest).hexdigest(),
     )
+
+
+def build_production_feature_table(
+    *,
+    packet: BootstrapPacket,
+    acquisition: BootstrapAcquisition,
+    macro_delay_sessions: int = 0,
+) -> pa.Table:
+    """검증된 acquisition에서 primary 또는 +1-session macro sensitivity table을 만든다."""
+
+    if macro_delay_sessions not in {0, 1}:
+        raise LightGbmContractError("macro sensitivity delay must be zero or one session")
+    memberships = {
+        universe.effective_month: set(universe.instrument_ids) for universe in acquisition.universes
+    }
+    prices_by_identity: dict[str, list[ProductionPriceEvidence]] = defaultdict(list)
+    for price in acquisition.prices:
+        prices_by_identity[price.instrument_id].append(price)
+    rows: list[Mapping[str, object]] = []
+    eligible = set(packet.window.eligible_sessions)
+    last_feature_session = packet.window.eligible_sessions[-1]
+    feature_sessions = tuple(
+        session for session in packet.window.raw_sessions if session <= last_feature_session
+    )
+    for identity in sorted(prices_by_identity):
+        market_by_session = _listing_market_schedule(
+            identity=identity,
+            sessions=feature_sessions,
+            listing_market_by_membership=acquisition.listing_market_by_membership,
+        )
+        feature_rows = build_production_core_feature_rows(
+            tuple(
+                price
+                for price in prices_by_identity[identity]
+                if price.session_date <= last_feature_session
+            ),
+            acquisition.indices,
+            acquisition.macro,
+            listing_market_by_session=market_by_session,
+            cutoff=_packet_cutoff(packet),
+            macro_delay_sessions=macro_delay_sessions,
+        )
+        for row in feature_rows:
+            if row.session_date not in eligible:
+                continue
+            month = f"{row.session_date.year:04d}-{row.session_date.month:02d}"
+            if identity in memberships.get(month, set()):
+                rows.append(row.as_mapping())
+    if not rows:
+        raise DatasetUnavailable("DATASET_UNAVAILABLE: production feature rows are absent")
+    rows.sort(key=lambda item: (item["sessionDate"], item["symbol"]))
+    return feature_table_from_rows(rows)
+
+
+def build_current_inference_feature_table(
+    *, packet: BootstrapPacket, acquisition: BootstrapAcquisition
+) -> pa.Table:
+    """label tail과 분리해 latest completed session의 exact current-31 inference rows를 만든다."""
+
+    latest = packet.window.raw_sessions[-1]
+    evidence_day = next_xkrx_evidence_clock(latest).date()
+    effective_month = f"{evidence_day.year:04d}-{evidence_day.month:02d}"
+    candidates = [
+        universe for universe in acquisition.universes if universe.effective_month == effective_month
+    ]
+    if len(candidates) != 1 or len(candidates[0].symbols) != 31:
+        raise DatasetUnavailable("DATASET_UNAVAILABLE: current inference universe is not exact 31")
+    universe = candidates[0]
+    prices_by_identity: dict[str, list[ProductionPriceEvidence]] = defaultdict(list)
+    for price in acquisition.prices:
+        prices_by_identity[price.instrument_id].append(price)
+    rows: list[Mapping[str, object]] = []
+    for identity in universe.instrument_ids:
+        identity_prices = prices_by_identity.get(identity, [])
+        market_by_session = _listing_market_schedule(
+            identity=identity,
+            sessions=packet.window.raw_sessions,
+            listing_market_by_membership=acquisition.listing_market_by_membership,
+        )
+        feature_rows = build_production_core_feature_rows(
+            identity_prices,
+            acquisition.indices,
+            acquisition.macro,
+            listing_market_by_session=market_by_session,
+            cutoff=_packet_cutoff(packet),
+        )
+        current = [row for row in feature_rows if row.session_date == latest]
+        if len(current) != 1:
+            raise DatasetUnavailable("DATASET_UNAVAILABLE: current inference feature is missing")
+        rows.append(current[0].as_mapping())
+    rows.sort(key=lambda row: str(row["symbol"]))
+    table = feature_table_from_rows(rows)
+    if table.num_rows != 31:
+        raise DatasetUnavailable("DATASET_UNAVAILABLE: current inference row count is not 31")
+    return table
+
+
+def load_verified_krx_projection(
+    *, source_root: Path, source_bundle: SourceBundle, service: str, session_date: date
+) -> tuple[tuple[dict[str, str], ...], TemporalReceipt]:
+    """검증된 bootstrap source bundle에서 exact KRX service/session projection만 복원한다."""
+
+    matches = [
+        chunk
+        for chunk in source_bundle.chunks
+        if chunk.source_id == "KRX"
+        and chunk.operation_id == service
+        and chunk.query_key == f"{service}:{session_date.isoformat()}"
+    ]
+    if len(matches) != 1:
+        raise DatasetUnavailable("DATASET_UNAVAILABLE: KRX source projection is missing")
+    return _load_string_rows(source_root, matches[0]), matches[0].temporal
 
 
 def execute_bootstrap_materialization(
@@ -609,7 +691,11 @@ def _fetch_ecos_series(
     clock: Callable[[], datetime],
     journal: BootstrapJournal,
 ) -> tuple[tuple[MacroObservation, ...], tuple[SourceChunkReceipt, ...]]:
-    start = raw_start - timedelta(days=366) if series.series_id == "policy-rate" else raw_start
+    start = (
+        raw_start - timedelta(days=366)
+        if series.series_id == "policy-rate"
+        else previous_xkrx_session(raw_start)
+    )
     rows: dict[date, MacroObservation] = {}
     receipts: list[SourceChunkReceipt] = []
     chunk_start = start
@@ -872,6 +958,31 @@ def _build_index_evidence(
                 )
             )
     return tuple(output)
+
+
+def _build_krx_raw_prices(
+    packet: BootstrapPacket,
+    source_root: Path,
+    chunks: Mapping[tuple[str, date], SourceChunkReceipt],
+) -> dict[tuple[str, date], tuple[float, float]]:
+    """기업행사 sensitivity에 필요한 KRX raw open/close만 closed projection에서 보존한다."""
+
+    output: dict[tuple[str, date], tuple[float, float]] = {}
+    for day in packet.window.raw_sessions:
+        for service in ("stk_bydd_trd", "ksq_bydd_trd"):
+            for row in _load_string_rows(source_root, chunks[(service, day)]):
+                key = (row["ISU_CD"], day)
+                value = (
+                    _positive_number(row["TDD_OPNPRC"]),
+                    _positive_number(row["TDD_CLSPRC"]),
+                )
+                prior = output.get(key)
+                if prior is not None and prior != value:
+                    raise DatasetUnavailable("SOURCE_SNAPSHOT_CONFLICT: KRX raw price is ambiguous")
+                output[key] = value
+    if not output:
+        raise DatasetUnavailable("DATASET_UNAVAILABLE: KRX raw sensitivity prices are absent")
+    return dict(sorted(output.items()))
 
 
 def _seal_projection(

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
-from typing import Generic, Mapping, Sequence, TypeVar
+from typing import Callable, Generic, Mapping, Sequence, TypeVar
 
 from app.lightgbm.errors import LightGbmContractError
 from app.lightgbm.labels import LabelRow
@@ -185,9 +185,16 @@ T = TypeVar("T")
 class UntouchedTestLoader(Generic[T]):
     """tuning 중 접근을 거부하고 final report 단계에서 정확히 한 번만 payload를 연다."""
 
-    def __init__(self, payload: T) -> None:
+    def __init__(self, payload: T, *, factory: Callable[[], T] | None = None) -> None:
         self._payload = payload
+        self._factory = factory
         self._access_count = 0
+
+    @classmethod
+    def deferred(cls, factory: Callable[[], T]) -> UntouchedTestLoader[T]:
+        """선택·reservation 전에는 final projection callback 자체를 호출하지 않는다."""
+
+        return cls(None, factory=factory)  # type: ignore[arg-type]
 
     @property
     def access_count(self) -> int:
@@ -201,4 +208,4 @@ class UntouchedTestLoader(Generic[T]):
         if self._access_count != 0:
             raise LightGbmContractError("untouched final test may be read exactly once")
         self._access_count += 1
-        return self._payload
+        return self._factory() if self._factory is not None else self._payload

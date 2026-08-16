@@ -274,6 +274,9 @@ class S23MarkdownContractDriftTest(unittest.TestCase):
             "POSTGRES_RAG_WRITER_PASSWORD",
             "POSTGRES_RAG_ADMIN_PASSWORD",
             "POSTGRES_RAG_QUERY_PASSWORD",
+            "POSTGRES_SIGNAL_WRITER_PASSWORD",
+            "POSTGRES_SIGNAL_SCHEDULER_PASSWORD",
+            "POSTGRES_SIGNAL_ADMIN_PASSWORD",
         ):
             with self.subTest(variable=variable):
                 self.assertIn(f"{variable}: validation-dummy-", workflow)

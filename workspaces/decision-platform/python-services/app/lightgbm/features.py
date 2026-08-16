@@ -10,6 +10,7 @@ from typing import Mapping, Protocol, Sequence
 import numpy as np
 
 from app.lightgbm.errors import DatasetUnavailable, LightGbmContractError
+from app.lightgbm.pit_calendar import previous_xkrx_session
 from app.lightgbm.temporal import TemporalReceipt, feature_as_of, require_receipt_eligible
 
 
@@ -276,12 +277,15 @@ def build_production_core_feature_rows(
     listing_market_by_session: Mapping[date, str] | None = None,
     cutoff: datetime,
     cross_market_reader: CrossMarketReader | None = None,
+    macro_delay_sessions: int = 0,
 ) -> tuple[CoreFeatureRow, ...]:
     """TemporalReceipt와 row-specific clock을 강제한 production feature projection."""
 
     del cross_market_reader
     if cutoff.tzinfo is None:
         raise LightGbmContractError("production dataset cutoff must be timezone aware")
+    if macro_delay_sessions not in {0, 1}:
+        raise LightGbmContractError("macro timing sensitivity delay must be zero or one session")
     ordered = sorted(prices, key=lambda row: row.session_date)
     if (
         not ordered
@@ -309,6 +313,11 @@ def build_production_core_feature_rows(
     fx_values: list[float] = []
     for price in ordered:
         row_clock = feature_as_of(price.session_date)
+        macro_session = (
+            price.session_date
+            if macro_delay_sessions == 0
+            else previous_xkrx_session(price.session_date)
+        )
         require_receipt_eligible(price.receipt, row_clock=row_clock, dataset_cutoff=cutoff)
         has_adjustment = (
             price.flng_cls_code not in {"", "00"}
@@ -336,9 +345,9 @@ def build_production_core_feature_rows(
         if market not in {"KOSPI", "KOSDAQ"}:
             raise DatasetUnavailable("DATASET_UNAVAILABLE: listing market evidence is missing")
         index = index_map.get((market, price.session_date))
-        fx = fx_map.get(price.session_date)
+        fx = fx_map.get(macro_session)
         while rate_index < len(rate_rows) and (
-            rate_rows[rate_index].observation_date <= price.session_date
+            rate_rows[rate_index].observation_date <= macro_session
         ):
             current_rate = rate_rows[rate_index]
             rate_index += 1

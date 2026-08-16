@@ -212,6 +212,10 @@ calendar-derived monthly schedule, 외부 manifest digest trust anchor와 실제
 reconstructed historical 등급, exact 6,446-call one-shot 상한, KRX→KIS→ECOS fail-stop 순서,
 durable resume receipt와 source/feature bundle v2를 고정한다. 현재 S5.6A data-plane code는
 merge candidate이고 provider 호출·실제 model release·production pointer는 아직 0이다.
+[S5.6B model release 변경기록](../contracts/changes/20260816-s5-6b-model-release-lock.md)은 exact
+four-grid qualification, immutable release/exact-31 batch, V73 역할별 CAS, XKRX 휴일 clock과
+수동 daily refresh의 41-call 상한을 고정한다. repository-local 구현은 실제 provider/qualification
+receipt가 아니므로 실제 model과 pointer는 활성화 전까지 계속 0이다.
 [foreign-news sanitized runtime 변경기록](../contracts/changes/20260809-pre-s5-foreign-news-sanitized-runtime.md),
 [foreign-news one-shot provider runtime 변경기록](../contracts/changes/20260810-pre-s5-foreign-news-provider-one-shot-runtime.md),
 [Voyage resumable batch 변경기록](../contracts/changes/20260812-pre-s5-voyage-resumable-batch-activation.md),

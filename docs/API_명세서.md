@@ -1881,7 +1881,10 @@ payload에 가짜 state를 넣거나 이전 `asOf`를 갱신해 새 success view
 > PRODUCTION_POINTER=0 / RISK_DECISION_ORDER_WIRING=NO_GO`. historical Signal v1/v2 bytes를
 > 유지하고 preserved projection 검증 아래 runtime v1 schema와 exact GET path만 추가했다.
 > S5.6A production source/feature data plane도 merge candidate지만 provider call과 실제 model
-> release/31-row batch activation은 아직 0이다. 따라서 이 wire의 현재 응답 의미는 바뀌지 않는다.
+> release/31-row batch activation은 아직 0이다. S5.6B model release, exact-31 batch, V73
+> release-level CAS와 daily refresh code도 merge candidate이며 실제 qualification/activation
+> receipt 전에는 이 wire의 현재 응답 의미가 바뀌지 않는다. Signal batch `asOf`는 calendar date
+> 산술이 아니라 다음 XKRX session 08:10 KST로만 계산하며 휴일·대체공휴일을 건너뛴다.
 > Source bundle은 provider별 단일 page 행 상한(KRX 5,000/KIS 100/ECOS 400), receipt-derived
 > `createdAt`, dataset-cutoff effective clock 및 latest label maturity를 모두 검증한 뒤에만
 > feature bundle v2 authority가 된다.

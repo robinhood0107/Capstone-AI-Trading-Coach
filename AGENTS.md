@@ -89,6 +89,11 @@
   stale/FAIL/drift/missing evidence는 prediction/asOf/HMM state 없는 `ABSTAIN`이다. 실제 PIT
   dataset과 production model/pointer가 없으면 all-ABSTAIN만 반환한다. RiskDecision/order wiring과
   S6.6 이전 cross-market join은 계속 `NO_GO`다.
+- S5.6 production clock은 pinned XKRX calendar에서만 파생한다. feature/label/daily batch `asOf`,
+  stale 및 DB activation에서 calendar-date `+1 day`나 weekday 가정을 쓰지 않고 주말·휴일·
+  대체공휴일을 건너뛴 다음 XKRX session 08:10 KST를 사용한다. 2026-08-14 다음 session은
+  2026-08-17이 아니라 2026-08-18이라는 회귀를 유지한다. S5.6B의 manual release/batch CAS와
+  daily refresh는 RiskDecision/order 권한이나 자동 retrain/activation 권한을 만들지 않는다.
 - Pre-S5 RAG/global-news addendum은
   `contracts/catalogs/pre-s5-rag-news-contract.v1.json`이 SSOT다.
   `OA112_ACTIVE_CONTRACT_LOCKED`는 정확히 14 track × 8의 logical selection일 뿐

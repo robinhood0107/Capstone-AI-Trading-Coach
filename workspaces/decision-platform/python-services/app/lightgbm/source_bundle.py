@@ -290,6 +290,12 @@ def _parse_chunk(value: object) -> SourceChunkReceipt:
     return chunk
 
 
+def parse_source_chunk_receipt(value: object) -> SourceChunkReceipt:
+    """Durable bootstrap journal이 manifest와 동일한 closed chunk parser를 재사용한다."""
+
+    return _parse_chunk(value)
+
+
 def _validate_chunks(chunks: Sequence[SourceChunkReceipt]) -> None:
     if not chunks or len(chunks) > MAX_CHUNKS:
         raise DatasetUnavailable("DATASET_UNAVAILABLE: source chunk count is invalid")

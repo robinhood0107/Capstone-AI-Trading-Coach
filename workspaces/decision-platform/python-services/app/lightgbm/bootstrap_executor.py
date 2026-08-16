@@ -12,7 +12,7 @@ from io import BytesIO
 import os
 from pathlib import Path
 import stat
-from typing import Protocol
+from typing import Protocol, TypeVar
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -22,6 +22,7 @@ from app.data.ecos.models import ECOSObservation
 from app.data.ecos.series_registry import ECOSSeries
 from app.data.kis.parsers import DailyBar
 from app.lightgbm.bootstrap_control import BootstrapLedger, BootstrapPhase
+from app.lightgbm.bootstrap_journal import BootstrapJournal
 from app.lightgbm.bootstrap_packet import BootstrapPacket
 from app.lightgbm.errors import DatasetUnavailable, LightGbmContractError
 from app.lightgbm.feature_artifact import (
@@ -93,6 +94,7 @@ _SOURCE_POLICY_SET_SHA256 = hashlib.sha256(
         }
     )
 ).hexdigest()
+_CallT = TypeVar("_CallT")
 
 
 class KrxBootstrapProvider(Protocol):
@@ -149,11 +151,14 @@ def execute_bootstrap_acquisition(
     ecos: EcosBootstrapProvider,
     ecos_series: Sequence[ECOSSeries],
     clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+    resume: bool = False,
 ) -> BootstrapAcquisition:
     """KRX→KIS→ECOS 순서와 retry 0을 지키며 allowlisted Parquet만 manifest-last publish한다."""
 
-    _prepare_private_bundle_root(source_root)
+    _prepare_private_bundle_root(source_root, resume=resume)
+    journal = BootstrapJournal(source_root)
     ledger = BootstrapLedger(packet.budget)
+    ledger.receipts.extend(journal.consumed_receipts)
     chunks: list[SourceChunkReceipt] = []
     krx_rows: dict[tuple[str, date], tuple[dict[str, str], ...]] = {}
     krx_receipts: dict[tuple[str, date], TemporalReceipt] = {}
@@ -166,6 +171,7 @@ def execute_bootstrap_acquisition(
                 service=service,
                 session=session,
                 clock=clock,
+                journal=journal,
             )
             krx_rows[(service, session)] = rows
             krx_receipts[(service, session)] = receipt.temporal
@@ -182,6 +188,7 @@ def execute_bootstrap_acquisition(
                 service=service,
                 session=schedule.selection_session,
                 clock=clock,
+                journal=journal,
             )
             krx_rows[key] = rows
             krx_receipts[key] = receipt.temporal
@@ -203,12 +210,16 @@ def execute_bootstrap_acquisition(
         raise DatasetUnavailable("DATASET_UNAVAILABLE: universe identity mapping is incomplete")
 
     token_query_hash = _query_sha256({"operation": "oauth2/tokenP", "mode": "live"})
-    ledger.physical_call(
-        provider="KIS",
-        operation_id="oauth2/tokenP",
-        query_key_sha256=token_query_hash,
-        call=kis.prepare_access_token,
-    )
+    if not journal.token_completed(token_query_hash):
+        _journaled_call(
+            ledger=ledger,
+            journal=journal,
+            provider="KIS",
+            operation="oauth2/tokenP",
+            query_hash=token_query_hash,
+            call=kis.prepare_access_token,
+            finalize=lambda _: None,
+        )
     prices: list[ProductionPriceEvidence] = []
     for identity in identities:
         symbol = symbol_by_identity[identity]
@@ -220,6 +231,7 @@ def execute_bootstrap_acquisition(
             symbol=symbol,
             raw_sessions=packet.window.raw_sessions,
             clock=clock,
+            journal=journal,
         )
         prices.extend(symbol_prices)
         chunks.extend(symbol_chunks)
@@ -235,6 +247,7 @@ def execute_bootstrap_acquisition(
             raw_start=packet.window.raw_sessions[0],
             raw_end=packet.window.raw_sessions[-1],
             clock=clock,
+            journal=journal,
         )
         macro.extend(series_rows)
         chunks.extend(series_chunks)
@@ -270,10 +283,11 @@ def materialize_production_feature_bundle(
     packet: BootstrapPacket,
     acquisition: BootstrapAcquisition,
     feature_root: Path,
+    resume: bool = False,
 ) -> ProductionFeatureBundle:
     """검증된 source bundle만 받아 monthly membership이 적용된 feature bundle v2를 publish한다."""
 
-    _prepare_private_bundle_root(feature_root, chunks=False)
+    _prepare_private_bundle_root(feature_root, chunks=False, resume=resume)
     memberships = {
         universe.effective_month: set(universe.instrument_ids) for universe in acquisition.universes
     }
@@ -361,6 +375,7 @@ def execute_bootstrap_materialization(
     ecos: EcosBootstrapProvider,
     ecos_series: Sequence[ECOSSeries],
     clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+    resume: bool = False,
 ) -> BootstrapMaterialization:
     """Source manifest가 검증된 뒤에만 feature manifest를 기록하는 public S5.6A entrypoint."""
 
@@ -372,9 +387,13 @@ def execute_bootstrap_materialization(
         ecos=ecos,
         ecos_series=ecos_series,
         clock=clock,
+        resume=resume,
     )
     feature_bundle = materialize_production_feature_bundle(
-        packet=packet, acquisition=acquisition, feature_root=feature_root
+        packet=packet,
+        acquisition=acquisition,
+        feature_root=feature_root,
+        resume=resume,
     )
     return BootstrapMaterialization(acquisition=acquisition, feature_bundle=feature_bundle)
 
@@ -387,35 +406,52 @@ def _fetch_and_seal_krx(
     service: str,
     session: date,
     clock: Callable[[], datetime],
+    journal: BootstrapJournal,
 ) -> tuple[tuple[dict[str, str], ...], SourceChunkReceipt]:
     query = {"service": service, "basDd": session.strftime("%Y%m%d")}
     query_hash = _query_sha256(query)
-    rows = ledger.physical_call(
+    existing = journal.completed_chunk(query_hash)
+    if existing is not None:
+        _require_reused_chunk(
+            existing,
+            source="KRX",
+            operation=service,
+            query_key=f"{service}:{session.isoformat()}",
+        )
+        return _load_string_rows(source_root, existing), existing
+
+    def finalize(rows: tuple[dict[str, str], ...]) -> SourceChunkReceipt:
+        if not rows:
+            raise DatasetUnavailable("DATASET_UNAVAILABLE: KRX projection is empty")
+        payload = _string_rows_parquet(rows)
+        temporal = _temporal_receipt(
+            source="KRX",
+            operation=service,
+            observation_date=session,
+            retrieved_at=_clock_utc(clock),
+            request_sha256=query_hash,
+            snapshot_sha256=hashlib.sha256(payload).hexdigest(),
+        )
+        return _seal_projection(
+            source_root=source_root,
+            source="KRX",
+            operation=service,
+            query_key=f"{service}:{session.isoformat()}",
+            rows=len(rows),
+            payload=payload,
+            temporal=temporal,
+        )
+
+    rows, receipt = _journaled_call(
+        ledger=ledger,
+        journal=journal,
         provider="KRX",
-        operation_id=service,
-        query_key_sha256=query_hash,
+        operation=service,
+        query_hash=query_hash,
         call=lambda: provider.fetch(service=service, session_date=session),
+        finalize=finalize,
     )
-    if not rows:
-        raise DatasetUnavailable("DATASET_UNAVAILABLE: KRX projection is empty")
-    payload = _string_rows_parquet(rows)
-    temporal = _temporal_receipt(
-        source="KRX",
-        operation=service,
-        observation_date=session,
-        retrieved_at=_clock_utc(clock),
-        request_sha256=query_hash,
-        snapshot_sha256=hashlib.sha256(payload).hexdigest(),
-    )
-    receipt = _seal_projection(
-        source_root=source_root,
-        source="KRX",
-        operation=service,
-        query_key=f"{service}:{session.isoformat()}",
-        rows=len(rows),
-        payload=payload,
-        temporal=temporal,
-    )
+    assert receipt is not None
     return rows, receipt
 
 
@@ -428,6 +464,7 @@ def _fetch_kis_symbol(
     symbol: str,
     raw_sessions: Sequence[date],
     clock: Callable[[], datetime],
+    journal: BootstrapJournal,
 ) -> tuple[tuple[ProductionPriceEvidence, ...], tuple[SourceChunkReceipt, ...]]:
     start, cursor_end = raw_sessions[0], raw_sessions[-1]
     seen: dict[date, ProductionPriceEvidence] = {}
@@ -444,36 +481,72 @@ def _fetch_kis_symbol(
             "page": page_number,
         }
         query_hash = _query_sha256(query)
-        bars = ledger.physical_call(
-            provider="KIS",
-            operation_id=KIS_OPERATION,
-            query_key_sha256=query_hash,
-            call=lambda: provider.fetch_page(symbol=symbol, start=start, end=cursor_end),
-        )
-        page = tuple(sorted((bar for bar in bars if start <= bar.date <= cursor_end), key=lambda x: x.date))
-        if not page or len(page) > 100 or len({bar.date for bar in page}) != len(page):
-            raise DatasetUnavailable("KIS_HISTORY_UNAVAILABLE")
-        payload = _kis_rows_parquet(page)
-        digest = hashlib.sha256(payload).hexdigest()
-        chunk_temporal = _temporal_receipt(
-            source="KIS",
-            operation=KIS_OPERATION,
-        observation_date=page[-1].date,
-            retrieved_at=_clock_utc(clock),
-            request_sha256=query_hash,
-            snapshot_sha256=digest,
-        )
-        receipts.append(
-            _seal_projection(
-                source_root=source_root,
+        query_key = f"{symbol}:{start.isoformat()}:{cursor_end.isoformat()}:{page_number}"
+        existing = journal.completed_chunk(query_hash)
+        if existing is not None:
+            _require_reused_chunk(
+                existing,
                 source="KIS",
                 operation=KIS_OPERATION,
-                query_key=f"{symbol}:{start.isoformat()}:{cursor_end.isoformat()}:{page_number}",
-                rows=len(page),
-                payload=payload,
-                temporal=chunk_temporal,
+                query_key=query_key,
             )
-        )
+            page = _load_kis_rows(source_root, existing)
+            chunk = existing
+        else:
+
+            def finalize(bars: tuple[DailyBar, ...]) -> SourceChunkReceipt:
+                page_rows = tuple(
+                    sorted(
+                        (bar for bar in bars if start <= bar.date <= cursor_end),
+                        key=lambda value: value.date,
+                    )
+                )
+                if (
+                    not page_rows
+                    or len(page_rows) > 100
+                    or len({bar.date for bar in page_rows}) != len(page_rows)
+                ):
+                    raise DatasetUnavailable("KIS_HISTORY_UNAVAILABLE")
+                payload = _kis_rows_parquet(page_rows)
+                digest = hashlib.sha256(payload).hexdigest()
+                temporal = _temporal_receipt(
+                    source="KIS",
+                    operation=KIS_OPERATION,
+                    observation_date=page_rows[-1].date,
+                    retrieved_at=_clock_utc(clock),
+                    request_sha256=query_hash,
+                    snapshot_sha256=digest,
+                )
+                return _seal_projection(
+                    source_root=source_root,
+                    source="KIS",
+                    operation=KIS_OPERATION,
+                    query_key=query_key,
+                    rows=len(page_rows),
+                    payload=payload,
+                    temporal=temporal,
+                )
+
+            bars, new_chunk = _journaled_call(
+                ledger=ledger,
+                journal=journal,
+                provider="KIS",
+                operation=KIS_OPERATION,
+                query_hash=query_hash,
+                call=lambda: provider.fetch_page(symbol=symbol, start=start, end=cursor_end),
+                finalize=finalize,
+            )
+            assert new_chunk is not None
+            chunk = new_chunk
+            page = tuple(
+                sorted(
+                    (bar for bar in bars if start <= bar.date <= cursor_end),
+                    key=lambda value: value.date,
+                )
+            )
+        payload_digest = chunk.content_sha256
+        chunk_temporal = chunk.temporal
+        receipts.append(chunk)
         for bar in page:
             if bar.date in seen:
                 raise LightGbmContractError("SOURCE_SNAPSHOT_CONFLICT")
@@ -483,7 +556,7 @@ def _fetch_kis_symbol(
                 observation_date=bar.date,
                 retrieved_at=chunk_temporal.retrieved_at,
                 request_sha256=query_hash,
-                snapshot_sha256=digest,
+                snapshot_sha256=payload_digest,
             )
             seen[bar.date] = ProductionPriceEvidence(
                 instrument_id=identity,
@@ -518,6 +591,7 @@ def _fetch_ecos_series(
     raw_start: date,
     raw_end: date,
     clock: Callable[[], datetime],
+    journal: BootstrapJournal,
 ) -> tuple[tuple[MacroObservation, ...], tuple[SourceChunkReceipt, ...]]:
     start = raw_start - timedelta(days=366) if series.series_id == "policy-rate" else raw_start
     rows: dict[date, MacroObservation] = {}
@@ -531,35 +605,58 @@ def _fetch_ecos_series(
             "end": chunk_end.isoformat(),
         }
         query_hash = _query_sha256(query)
-        observations = ledger.physical_call(
-            provider="ECOS",
-            operation_id=str(query["operation"]),
-            query_key_sha256=query_hash,
-            call=lambda: provider.fetch(series=series, start=chunk_start, end=chunk_end),
-        )
-        if not observations:
-            raise DatasetUnavailable("DATASET_UNAVAILABLE: ECOS projection is empty")
-        payload = _ecos_rows_parquet(observations)
-        digest = hashlib.sha256(payload).hexdigest()
-        retrieved = _clock_utc(clock)
-        receipts.append(
-            _seal_projection(
-                source_root=source_root,
+        operation = str(query["operation"])
+        query_key = f"{series.series_id}:{chunk_start.isoformat()}:{chunk_end.isoformat()}"
+        existing = journal.completed_chunk(query_hash)
+        if existing is not None:
+            _require_reused_chunk(
+                existing,
                 source="ECOS",
-                operation=str(query["operation"]),
-                query_key=f"{series.series_id}:{chunk_start.isoformat()}:{chunk_end.isoformat()}",
-                rows=len(observations),
-                payload=payload,
-                temporal=_temporal_receipt(
-                    source="ECOS",
-                    operation=str(query["operation"]),
-                observation_date=datetime.strptime(observations[-1].time, "%Y%m%d").date(),
-                    retrieved_at=retrieved,
-                    request_sha256=query_hash,
-                    snapshot_sha256=digest,
-                ),
+                operation=operation,
+                query_key=query_key,
             )
-        )
+            observations = _load_ecos_rows(source_root, existing)
+            chunk = existing
+        else:
+
+            def finalize(observations: tuple[ECOSObservation, ...]) -> SourceChunkReceipt:
+                if not observations:
+                    raise DatasetUnavailable("DATASET_UNAVAILABLE: ECOS projection is empty")
+                payload = _ecos_rows_parquet(observations)
+                digest = hashlib.sha256(payload).hexdigest()
+                return _seal_projection(
+                    source_root=source_root,
+                    source="ECOS",
+                    operation=operation,
+                    query_key=query_key,
+                    rows=len(observations),
+                    payload=payload,
+                    temporal=_temporal_receipt(
+                        source="ECOS",
+                        operation=operation,
+                        observation_date=datetime.strptime(
+                            observations[-1].time, "%Y%m%d"
+                        ).date(),
+                        retrieved_at=_clock_utc(clock),
+                        request_sha256=query_hash,
+                        snapshot_sha256=digest,
+                    ),
+                )
+
+            observations, new_chunk = _journaled_call(
+                ledger=ledger,
+                journal=journal,
+                provider="ECOS",
+                operation=operation,
+                query_hash=query_hash,
+                call=lambda: provider.fetch(series=series, start=chunk_start, end=chunk_end),
+                finalize=finalize,
+            )
+            assert new_chunk is not None
+            chunk = new_chunk
+        receipts.append(chunk)
+        retrieved = chunk.temporal.retrieved_at
+        digest = chunk.content_sha256
         for observation in observations:
             day = datetime.strptime(observation.time, "%Y%m%d").date()
             if day in rows:
@@ -712,6 +809,130 @@ def _seal_projection(
     return receipt
 
 
+def _journaled_call(
+    *,
+    ledger: BootstrapLedger,
+    journal: BootstrapJournal,
+    provider: str,
+    operation: str,
+    query_hash: str,
+    call: Callable[[], _CallT],
+    finalize: Callable[[_CallT], SourceChunkReceipt | None],
+) -> tuple[_CallT, SourceChunkReceipt | None]:
+    """Intent를 먼저 fsync하고 terminal+chunk가 봉인될 때만 query를 completed로 만든다."""
+
+    ordinal = journal.begin(
+        provider=provider, operation_id=operation, query_sha256=query_hash
+    )
+    try:
+        result = ledger.physical_call(
+            provider=provider,
+            operation_id=operation,
+            query_key_sha256=query_hash,
+            call=call,
+        )
+        chunk = finalize(result)
+    except Exception:
+        journal.finish(
+            ordinal=ordinal,
+            provider=provider,
+            operation_id=operation,
+            query_sha256=query_hash,
+            success=False,
+            chunk=None,
+        )
+        raise
+    journal.finish(
+        ordinal=ordinal,
+        provider=provider,
+        operation_id=operation,
+        query_sha256=query_hash,
+        success=True,
+        chunk=chunk,
+    )
+    return result, chunk
+
+
+def _require_reused_chunk(
+    chunk: SourceChunkReceipt,
+    *,
+    source: str,
+    operation: str,
+    query_key: str,
+) -> None:
+    if (
+        chunk.source_id != source
+        or chunk.operation_id != operation
+        or chunk.query_key != query_key
+    ):
+        raise LightGbmContractError("bootstrap progress chunk binding mismatch")
+
+
+def _load_string_rows(
+    source_root: Path, chunk: SourceChunkReceipt
+) -> tuple[dict[str, str], ...]:
+    table = _load_projection_table(source_root, chunk)
+    rows = table.to_pylist()
+    if any(
+        not isinstance(row, dict)
+        or any(not isinstance(key, str) or not isinstance(value, str) for key, value in row.items())
+        for row in rows
+    ):
+        raise LightGbmContractError("bootstrap reused projection values are invalid")
+    return tuple(dict(row) for row in rows)
+
+
+def _load_kis_rows(source_root: Path, chunk: SourceChunkReceipt) -> tuple[DailyBar, ...]:
+    rows = _load_string_rows(source_root, chunk)
+    try:
+        return tuple(
+            DailyBar(
+                symbol=row["symbol"],
+                date=date.fromisoformat(row["observationDate"]),
+                open=int(row["adjustedOpen"]),
+                high=int(row["adjustedHigh"]),
+                low=int(row["adjustedLow"]),
+                close=int(row["adjustedClose"]),
+                volume=int(row["volume"]),
+                turnover=int(row["turnover"]),
+                flng_cls_code=row["flngClsCode"],
+                prtt_rate=Decimal(row["prttRate"]),
+                mod_yn=row["modYn"],
+                revl_issu_reas=row["revlIssuReas"],
+            )
+            for row in rows
+        )
+    except (KeyError, ValueError, ArithmeticError):
+        raise LightGbmContractError("bootstrap reused KIS projection is invalid") from None
+
+
+def _load_ecos_rows(
+    source_root: Path, chunk: SourceChunkReceipt
+) -> tuple[ECOSObservation, ...]:
+    rows = _load_string_rows(source_root, chunk)
+    try:
+        return tuple(
+            ECOSObservation(time=row["observationDate"], value=row["value"])
+            for row in rows
+        )
+    except (KeyError, ValueError):
+        raise LightGbmContractError("bootstrap reused ECOS projection is invalid") from None
+
+
+def _load_projection_table(source_root: Path, chunk: SourceChunkReceipt) -> pa.Table:
+    try:
+        safe = read_approved_regular_file(
+            approved_root=source_root,
+            relative_path=chunk.relative_path,
+            max_bytes=SOURCE_BYTE_CAPS[chunk.source_id],
+        )
+        if safe.content_sha256 != chunk.content_sha256:
+            raise LightGbmContractError("bootstrap reused projection digest mismatch")
+        return pq.read_table(BytesIO(safe.content), use_threads=False)  # type: ignore[no-untyped-call]
+    except RagSafeIoError as error:
+        raise LightGbmContractError("bootstrap reused projection path is invalid") from error
+
+
 def _temporal_receipt(
     *,
     source: str,
@@ -799,7 +1020,9 @@ def _table_parquet(table: pa.Table) -> bytes:
     return sink.getvalue()
 
 
-def _prepare_private_bundle_root(root: Path, *, chunks: bool = True) -> None:
+def _prepare_private_bundle_root(
+    root: Path, *, chunks: bool = True, resume: bool = False
+) -> None:
     if not root.is_absolute():
         raise LightGbmContractError("production bundle root must be absolute")
     _require_no_symlink_components(root.parent)
@@ -811,7 +1034,14 @@ def _prepare_private_bundle_root(root: Path, *, chunks: bool = True) -> None:
             or metadata.st_uid != os.geteuid()
         ):
             raise LightGbmContractError("production bundle root is not a regular directory")
-        if any(root.iterdir()):
+        entries = {entry.name for entry in root.iterdir()}
+        allowed = (
+            {"chunks", "progress.jsonl", "manifest.json"}
+            if chunks
+            else {"features.parquet", "manifest.json"}
+        )
+        required = "chunks" if chunks else "features.parquet"
+        if entries and (not resume or not entries.issubset(allowed) or required not in entries):
             raise LightGbmContractError("production bundle root must be empty")
         root.chmod(0o700)
     else:
@@ -825,7 +1055,7 @@ def _prepare_private_bundle_root(root: Path, *, chunks: bool = True) -> None:
         ):
             raise LightGbmContractError("production bundle parent is invalid")
         root.mkdir(mode=0o700)
-    if chunks:
+    if chunks and not (root / "chunks").exists():
         (root / "chunks").mkdir(mode=0o700)
 
 

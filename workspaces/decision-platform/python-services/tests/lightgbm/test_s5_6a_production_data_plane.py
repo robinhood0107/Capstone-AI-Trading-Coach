@@ -29,6 +29,11 @@ from app.lightgbm.bootstrap_executor import (
     execute_bootstrap_acquisition,
     materialize_production_feature_bundle,
 )
+from app.lightgbm.bootstrap_journal import (
+    BootstrapJournal,
+    build_resume_packet,
+    validate_resume_packet,
+)
 from app.lightgbm.bootstrap_packet import author_bootstrap_packet, validate_bootstrap_packet
 from app.lightgbm.feature_artifact import (
     FeatureArtifact,
@@ -392,6 +397,61 @@ def test_bootstrap_failure_stops_remaining_calls_and_resume_targets_failed_chunk
     assert ledger.phase is BootstrapPhase.KIS
 
 
+def test_durable_journal_authors_one_bounded_resume_packet(tmp_path: Path) -> None:
+    root = tmp_path / "source"
+    root.mkdir(mode=0o700)
+    journal = BootstrapJournal(root)
+    ordinal = journal.begin(
+        provider="KRX", operation_id="stk_bydd_trd", query_sha256="1" * 64
+    )
+    journal.finish(
+        ordinal=ordinal,
+        provider="KRX",
+        operation_id="stk_bydd_trd",
+        query_sha256="1" * 64,
+        success=False,
+        chunk=None,
+    )
+    packet = build_resume_packet(
+        bootstrap_packet_sha256="2" * 64,
+        journal=BootstrapJournal(root),
+        total_cap=10,
+    )
+    assert validate_resume_packet(
+        packet.content,
+        expected_sha256=packet.sha256,
+        bootstrap_packet_sha256="2" * 64,
+        journal=BootstrapJournal(root),
+        total_cap=10,
+    ) == packet
+    retry = BootstrapJournal(root)
+    second = retry.begin(
+        provider="KRX", operation_id="stk_bydd_trd", query_sha256="1" * 64
+    )
+    retry.finish(
+        ordinal=second,
+        provider="KRX",
+        operation_id="stk_bydd_trd",
+        query_sha256="1" * 64,
+        success=False,
+        chunk=None,
+    )
+    with pytest.raises(LightGbmContractError, match="resume attempt"):
+        BootstrapJournal(root).begin(
+            provider="KRX", operation_id="stk_bydd_trd", query_sha256="1" * 64
+        )
+
+
+def test_durable_journal_rejects_ambiguous_handoff(tmp_path: Path) -> None:
+    root = tmp_path / "source"
+    root.mkdir(mode=0o700)
+    BootstrapJournal(root).begin(
+        provider="KIS", operation_id="FHKST03010100", query_sha256="3" * 64
+    )
+    with pytest.raises(LightGbmContractError, match="ambiguous"):
+        BootstrapJournal(root)
+
+
 def test_krx_production_base_info_is_closed_and_requires_standard_identity() -> None:
     row = {
         "ISU_CD": "KR7005930003",
@@ -715,6 +775,19 @@ def test_bootstrap_executor_orders_providers_and_seals_private_manifest(tmp_path
     assert calls[-3:] == ["ECOS:page", "ECOS:page", "ECOS:page"]
     assert len(result.universes[0].symbols) == 31
     assert stat.S_IMODE(os.stat(source_root / "manifest.json").st_mode) == 0o600
+    completed_calls = tuple(calls)
+    resumed = execute_bootstrap_acquisition(
+        packet=packet,
+        source_root=source_root,
+        krx=Krx(),
+        kis=Kis(),
+        ecos=Ecos(),
+        ecos_series=CANDIDATE_SERIES,
+        clock=lambda: datetime(2026, 8, 19, tzinfo=UTC),
+        resume=True,
+    )
+    assert tuple(calls) == completed_calls
+    assert resumed.source_bundle.manifest_sha256 == result.source_bundle.manifest_sha256
 
 
 def test_materializer_publishes_feature_bundle_v2_from_verified_source(tmp_path: Path) -> None:

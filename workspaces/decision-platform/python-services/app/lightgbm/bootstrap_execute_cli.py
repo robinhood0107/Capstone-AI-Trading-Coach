@@ -14,6 +14,11 @@ from app.data.kis.settings import KISSettings
 from app.data.krx.client import KrxOpenApiClient
 from app.data.krx.settings import KrxS5ProductionSettings
 from app.lightgbm.bootstrap_executor import execute_bootstrap_materialization
+from app.lightgbm.bootstrap_journal import (
+    BootstrapJournal,
+    build_resume_packet,
+    validate_resume_packet,
+)
 from app.lightgbm.bootstrap_live import (
     LiveEcosBootstrapProvider,
     LiveKisBootstrapProvider,
@@ -21,7 +26,11 @@ from app.lightgbm.bootstrap_live import (
 )
 from app.lightgbm.bootstrap_packet import validate_bootstrap_packet
 from app.lightgbm.errors import LightGbmContractError
-from app.rag.safe_io import RagSafeIoError, read_approved_regular_file
+from app.rag.safe_io import (
+    RagSafeIoError,
+    read_approved_regular_file,
+    write_approved_new_file,
+)
 
 
 def main() -> int:
@@ -29,6 +38,7 @@ def main() -> int:
 
     root_value = os.environ.get("S5_SOURCE_ROOT", "")
     packet_sha256 = os.environ.get("S5_BOOTSTRAP_PACKET_SHA256", "")
+    resume_sha256 = os.environ.get("S5_BOOTSTRAP_RESUME_PACKET_SHA256", "")
     if not root_value or not packet_sha256:
         print("S5_BOOTSTRAP=AUTHORITY_UNAVAILABLE")
         return 2
@@ -44,7 +54,21 @@ def main() -> int:
             packet_file.content, expected_sha256=packet_sha256
         )
         run_root = root / f"run-{packet_sha256}"
-        run_root.mkdir(mode=0o700)
+        if resume_sha256:
+            resume_file = read_approved_regular_file(
+                approved_root=root,
+                relative_path=f"resume-{resume_sha256}.json",
+                max_bytes=64 * 1024,
+            )
+            validate_resume_packet(
+                resume_file.content,
+                expected_sha256=resume_sha256,
+                bootstrap_packet_sha256=packet_sha256,
+                journal=BootstrapJournal(run_root / "source"),
+                total_cap=packet.budget.total,
+            )
+        else:
+            run_root.mkdir(mode=0o700)
         source_root = run_root / "source"
         feature_root = run_root / "feature"
     except (OSError, RagSafeIoError, LightGbmContractError):
@@ -68,9 +92,27 @@ def main() -> int:
             kis=LiveKisBootstrapProvider(kis_client),
             ecos=LiveEcosBootstrapProvider(ecos_client),
             ecos_series=CANDIDATE_SERIES,
+            resume=bool(resume_sha256),
         )
     except Exception:
-        print("S5_BOOTSTRAP=DATASET_UNAVAILABLE")
+        try:
+            resume_packet = build_resume_packet(
+                bootstrap_packet_sha256=packet_sha256,
+                journal=BootstrapJournal(source_root),
+                total_cap=packet.budget.total,
+            )
+            write_approved_new_file(
+                approved_root=root,
+                relative_path=f"resume-{resume_packet.sha256}.json",
+                content=resume_packet.content,
+                max_bytes=64 * 1024,
+            )
+            print(
+                "S5_BOOTSTRAP=DATASET_UNAVAILABLE "
+                f"resumePacketSha256={resume_packet.sha256}"
+            )
+        except Exception:
+            print("S5_BOOTSTRAP=DATASET_UNAVAILABLE")
         return 1
     finally:
         for client in (ecos_client, kis_client, krx_client):

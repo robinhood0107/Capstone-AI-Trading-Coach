@@ -3,12 +3,15 @@ from __future__ import annotations
 from contextlib import AbstractContextManager
 from datetime import UTC, date, datetime
 import hashlib
+from io import BytesIO
 import json
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Callable, cast
 
 import numpy as np
+import pyarrow as pa
+import pyarrow.parquet as pq
 import pytest
 
 from app.data._shared.canonical_json import canonical_json_bytes
@@ -438,6 +441,76 @@ def test_signal_batch_clock_skips_xkrx_substitute_holiday(tmp_path: Path) -> Non
         validate_production_signal_batch(
             approved_root=batch_root,
             expected_manifest_sha256=batch_sha,
+        )
+
+
+def test_signal_batch_rejects_decoded_parquet_amplification_before_full_read(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import app.lightgbm.production_release as release_module
+
+    release_root = _private_root(tmp_path / "release")
+    _, manifest = _release(release_root)
+    batch_root = _private_root(tmp_path / "batch")
+    _batch(
+        batch_root,
+        str(manifest["modelReleaseId"]),
+        str(manifest["modelVersion"]),
+        str(manifest["modelReportId"]),
+    )
+    symbols = tuple(sorted([f"{value:06d}" for value in range(1, 30)] + ["005930", "132030"]))
+    large_as_of = "2026-08-18T00:00:00Z" + ("A" * 1_500_000)
+    rows = [
+        {
+            "symbol": symbol,
+            "status": "AVAILABLE",
+            "asOf": large_as_of,
+            "signal": "HOLD",
+            "confidence": 0.5,
+            "modelVersion": str(manifest["modelVersion"]),
+            "modelReportId": str(manifest["modelReportId"]),
+        }
+        for symbol in symbols
+    ]
+    sink = BytesIO()
+    pq.write_table(
+        pa.Table.from_pylist(rows, schema=release_module.SIGNAL_BATCH_SCHEMA),
+        sink,
+        version="2.6",
+        data_page_version="1.0",
+        compression="zstd",
+        compression_level=9,
+        use_dictionary=False,
+        write_statistics=True,
+    )
+    amplified = sink.getvalue()
+    assert 0 < len(amplified) <= release_module.BATCH_MAX_BYTES
+    batch_manifest = json.loads((batch_root / "batch.json").read_bytes())
+    batch_manifest["parquetSha256"] = hashlib.sha256(amplified).hexdigest()
+    _write(batch_root, "signals.parquet", amplified)
+    manifest_bytes = canonical_json_bytes(batch_manifest)
+    _write(batch_root, "batch.json", manifest_bytes)
+
+    original_parquet_file = release_module.pq.ParquetFile
+
+    class _ParquetFile:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            self._delegate = original_parquet_file(*args, **kwargs)
+            self.metadata = self._delegate.metadata
+            self.schema_arrow = self._delegate.schema_arrow
+
+        def read(self, *args: object, **kwargs: object) -> object:
+            raise AssertionError("production signal batch validation must not use full read")
+
+        def iter_batches(self, *args: object, **kwargs: object) -> object:
+            return self._delegate.iter_batches(*args, **kwargs)
+
+    monkeypatch.setattr(release_module.pq, "ParquetFile", _ParquetFile)
+    with pytest.raises(LightGbmContractError, match="declared decoded|actual decoded"):
+        validate_production_signal_batch(
+            approved_root=batch_root,
+            expected_manifest_sha256=hashlib.sha256(manifest_bytes).hexdigest(),
         )
 
 

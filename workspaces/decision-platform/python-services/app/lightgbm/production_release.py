@@ -65,8 +65,22 @@ MODEL_MAX_BYTES = 64 * 1024 * 1024
 JSON_MAX_BYTES = 16 * 1024 * 1024
 SMALL_JSON_MAX_BYTES = 1 * 1024 * 1024
 BATCH_MAX_BYTES = 4 * 1024 * 1024
+BATCH_ROW_COUNT = 31
+BATCH_READ_ROWS = 1
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 IDENTIFIER = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
+SIGNAL_BATCH_SCHEMA = pa.schema(
+    [
+        pa.field("symbol", pa.string(), nullable=False),
+        pa.field("status", pa.string(), nullable=False),
+        pa.field("asOf", pa.string(), nullable=False),
+        pa.field("signal", pa.string(), nullable=False),
+        pa.field("confidence", pa.float64(), nullable=False),
+        pa.field("modelVersion", pa.string(), nullable=False),
+        pa.field("modelReportId", pa.string(), nullable=False),
+    ]
+)
+SIGNAL_BATCH_COLUMNS = SIGNAL_BATCH_SCHEMA.names
 _JSON_LIMITS = BoundedJsonLimits(
     max_bytes=JSON_MAX_BYTES,
     max_depth=10,
@@ -897,20 +911,9 @@ def _metrics(value: object) -> dict[str, float]:
 
 
 def _signal_parquet(rows: Sequence[Mapping[str, object]]) -> bytes:
-    schema = pa.schema(
-        [
-            pa.field("symbol", pa.string(), nullable=False),
-            pa.field("status", pa.string(), nullable=False),
-            pa.field("asOf", pa.string(), nullable=False),
-            pa.field("signal", pa.string(), nullable=False),
-            pa.field("confidence", pa.float64(), nullable=False),
-            pa.field("modelVersion", pa.string(), nullable=False),
-            pa.field("modelReportId", pa.string(), nullable=False),
-        ]
-    )
     sink = BytesIO()
     pq.write_table(  # type: ignore[no-untyped-call]
-        pa.Table.from_pylist(list(rows), schema=schema),
+        pa.Table.from_pylist(list(rows), schema=SIGNAL_BATCH_SCHEMA),
         sink,
         version="2.6",
         data_page_version="1.0",
@@ -927,16 +930,39 @@ def _signal_parquet(rows: Sequence[Mapping[str, object]]) -> bytes:
 
 def _validate_signal_parquet(content: bytes) -> tuple[Mapping[str, object], ...]:
     parquet = pq.ParquetFile(  # type: ignore[no-untyped-call]
-        BytesIO(content), page_checksum_verification=True
+        BytesIO(content),
+        thrift_string_size_limit=SMALL_JSON_MAX_BYTES,
+        thrift_container_size_limit=1_024,
+        page_checksum_verification=True,
     )
-    expected = ["symbol", "status", "asOf", "signal", "confidence", "modelVersion", "modelReportId"]
-    if parquet.schema_arrow.names != expected or parquet.metadata.num_rows != 31:
+    metadata = parquet.metadata
+    if (
+        metadata.num_rows != BATCH_ROW_COUNT
+        or metadata.num_columns != len(SIGNAL_BATCH_COLUMNS)
+        or parquet.schema_arrow != SIGNAL_BATCH_SCHEMA
+    ):
         raise LightGbmContractError("signal batch schema or row count is invalid")
-    table = parquet.read(use_threads=False)  # type: ignore[no-untyped-call]
-    if table.num_rows != 31 or table.nbytes > BATCH_MAX_BYTES:
-        raise LightGbmContractError("signal batch decoded bound is invalid")
-    rows = tuple(table.to_pylist())
-    symbols = tuple(str(row["symbol"]) for row in rows)
+    declared_decoded = sum(
+        metadata.row_group(group).column(column).total_uncompressed_size
+        for group in range(metadata.num_row_groups)
+        for column in range(metadata.num_columns)
+    )
+    if declared_decoded > BATCH_MAX_BYTES:
+        raise LightGbmContractError("signal batch declared decoded bound is invalid")
+    rows: list[Mapping[str, object]] = []
+    decoded = 0
+    for batch in parquet.iter_batches(  # type: ignore[no-untyped-call]
+        batch_size=BATCH_READ_ROWS,
+        use_threads=False,
+    ):
+        decoded += batch.nbytes
+        if decoded > BATCH_MAX_BYTES or len(rows) + batch.num_rows > BATCH_ROW_COUNT:
+            raise LightGbmContractError("signal batch actual decoded bound is invalid")
+        rows.extend(batch.to_pylist())
+    if len(rows) != BATCH_ROW_COUNT:
+        raise LightGbmContractError("signal batch schema or row count is invalid")
+    rows_tuple = tuple(rows)
+    symbols = tuple(str(row["symbol"]) for row in rows_tuple)
     if (
         symbols != tuple(sorted(set(symbols)))
         or "132030" not in symbols
@@ -952,10 +978,10 @@ def _validate_signal_parquet(content: bytes) -> tuple[Mapping[str, object], ...]
         or re.fullmatch(r"mrp-[0-9a-f]{12}", next(iter(model_report_ids))) is None
     ):
         raise LightGbmContractError("signal batch model binding is invalid")
-    for row in rows:
+    for row in rows_tuple:
         confidence = row["confidence"]
         if (
-            set(row) != set(expected)
+            set(row) != set(SIGNAL_BATCH_COLUMNS)
             or row["status"] != "AVAILABLE"
             or row["signal"] not in {"SELL", "HOLD", "BUY"}
             or not isinstance(confidence, float)
@@ -965,7 +991,7 @@ def _validate_signal_parquet(content: bytes) -> tuple[Mapping[str, object], ...]
             or not IDENTIFIER.fullmatch(str(row["modelReportId"]))
         ):
             raise LightGbmContractError("signal batch row violates AVAILABLE union")
-    return rows
+    return rows_tuple
 
 
 def _parse_canonical_object(content: bytes) -> dict[str, object]:

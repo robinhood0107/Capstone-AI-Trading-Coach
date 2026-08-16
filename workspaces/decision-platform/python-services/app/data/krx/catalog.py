@@ -35,6 +35,16 @@ class KrxServicePlan:
     status: KrxServiceStatus
 
 
+@dataclass(frozen=True, slots=True)
+class KrxProductionEndpoint:
+    """S5.6 one-shot에서만 활성인 exact KRX service/path 계약이다."""
+
+    service: str
+    path: str
+    request_parameter: str
+    response_block: str
+
+
 KRX_SERVICE_PLAN: Final[tuple[KrxServicePlan, ...]] = (
     KrxServicePlan("지수", "krx_dd_trd", "LATER"),
     KrxServicePlan("지수", "kospi_dd_trd", "NEXT"),
@@ -91,5 +101,33 @@ ENABLED_UNIVERSE_ENDPOINTS_BY_SERVICE: Final[Mapping[str, KrxEndpoint]] = Mappin
     {
         "stk_bydd_trd": KOSPI_DAILY,
         "ksq_bydd_trd": KOSDAQ_DAILY,
+    }
+)
+
+
+# 기존 S1.3 두 endpoint 집합은 byte/behavior stable하게 두고 S5.6 전용 allowlist를 분리한다.
+S5_PRODUCTION_ENDPOINTS: Final[Mapping[str, KrxProductionEndpoint]] = MappingProxyType(
+    {
+        "stk_bydd_trd": KrxProductionEndpoint(
+            "stk_bydd_trd", "/svc/apis/sto/stk_bydd_trd.json", "basDd", "OutBlock_1"
+        ),
+        "ksq_bydd_trd": KrxProductionEndpoint(
+            "ksq_bydd_trd", "/svc/apis/sto/ksq_bydd_trd.json", "basDd", "OutBlock_1"
+        ),
+        "kospi_dd_trd": KrxProductionEndpoint(
+            "kospi_dd_trd", "/svc/apis/idx/kospi_dd_trd.json", "basDd", "OutBlock_1"
+        ),
+        "kosdaq_dd_trd": KrxProductionEndpoint(
+            "kosdaq_dd_trd", "/svc/apis/idx/kosdaq_dd_trd.json", "basDd", "OutBlock_1"
+        ),
+        "stk_isu_base_info": KrxProductionEndpoint(
+            "stk_isu_base_info", "/svc/apis/sto/stk_isu_base_info.json", "basDd", "OutBlock_1"
+        ),
+        "ksq_isu_base_info": KrxProductionEndpoint(
+            "ksq_isu_base_info", "/svc/apis/sto/ksq_isu_base_info.json", "basDd", "OutBlock_1"
+        ),
+        "etf_bydd_trd": KrxProductionEndpoint(
+            "etf_bydd_trd", "/svc/apis/etp/etf_bydd_trd.json", "basDd", "OutBlock_1"
+        ),
     }
 )

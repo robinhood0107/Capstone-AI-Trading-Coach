@@ -39,6 +39,10 @@ class DailyBar:
     close: int
     volume: int
     turnover: int = 0
+    flng_cls_code: str = ""
+    prtt_rate: Decimal = Decimal("0")
+    mod_yn: str = "N"
+    revl_issu_reas: str = ""
 
 
 @dataclass(frozen=True)
@@ -66,7 +70,11 @@ def parse_current_price(response: dict[str, Any], symbol: str) -> CurrentPrice:
     )
 
 
-def parse_daily_bars(response: dict[str, Any], symbol: str) -> list[DailyBar]:
+def parse_daily_bars(
+    response: dict[str, Any], symbol: str, *, require_adjustment_fields: bool = False
+) -> list[DailyBar]:
+    """기간별시세를 파싱하며 production에서는 기업행사 evidence 네 필드를 필수화한다."""
+
     _ensure_success(response)
     rows = response.get("output2") or []
     if not isinstance(rows, list):
@@ -76,6 +84,29 @@ def parse_daily_bars(response: dict[str, Any], symbol: str) -> list[DailyBar]:
     for row in rows:
         if not isinstance(row, dict):
             raise KISResponseError("RESPONSE_SHAPE_INVALID")
+        if require_adjustment_fields and not {
+            "flng_cls_code",
+            "prtt_rate",
+            "mod_yn",
+            "revl_issu_reas",
+        }.issubset(row):
+            raise KISResponseError("ADJUSTMENT_FIELD_MISSING")
+        if require_adjustment_fields and any(
+            not isinstance(row[field], str)
+            for field in ("flng_cls_code", "prtt_rate", "mod_yn", "revl_issu_reas")
+        ):
+            raise KISResponseError("ADJUSTMENT_FIELD_INVALID")
+        falling_code = _to_falling_code(row.get("flng_cls_code"))
+        adjustment_rate = _to_adjustment_rate(row.get("prtt_rate"))
+        modification_flag = _to_modification_flag(row.get("mod_yn"))
+        revision_reason = _to_bounded_text(row.get("revl_issu_reas"))
+        if require_adjustment_fields:
+            _validate_adjustment_evidence(
+                falling_code=falling_code,
+                adjustment_rate=adjustment_rate,
+                modification_flag=modification_flag,
+                revision_reason=revision_reason,
+            )
         parsed.append(
             DailyBar(
                 symbol=symbol,
@@ -86,6 +117,10 @@ def parse_daily_bars(response: dict[str, Any], symbol: str) -> list[DailyBar]:
                 close=_to_required_int(row.get("stck_clpr")),
                 volume=_to_required_int(row.get("acml_vol")),
                 turnover=_to_int(row.get("acml_tr_pbmn")),
+                flng_cls_code=falling_code,
+                prtt_rate=adjustment_rate,
+                mod_yn=modification_flag,
+                revl_issu_reas=revision_reason,
             )
         )
     return parsed
@@ -152,6 +187,16 @@ def _to_decimal(value: Any) -> Decimal:
     return Decimal(str(value).replace(",", "").strip())
 
 
+def _to_adjustment_rate(value: Any) -> Decimal:
+    try:
+        parsed = _to_decimal(value)
+    except Exception:
+        raise KISResponseError("ADJUSTMENT_FIELD_INVALID") from None
+    if not parsed.is_finite() or parsed < 0:
+        raise KISResponseError("ADJUSTMENT_FIELD_INVALID")
+    return parsed
+
+
 def _to_required_date(value: Any) -> date:
     if value in (None, "") or isinstance(value, bool):
         raise KISResponseError("REQUIRED_FIELD_INVALID")
@@ -159,3 +204,46 @@ def _to_required_date(value: Any) -> date:
         return datetime.strptime(str(value), "%Y%m%d").date()
     except (TypeError, ValueError):
         raise KISResponseError("REQUIRED_FIELD_INVALID") from None
+
+
+def _to_bounded_code(value: Any) -> str:
+    text = "" if value in (None, "") else str(value).strip()
+    if len(text) > 32 or any(ord(character) < 32 for character in text):
+        raise KISResponseError("ADJUSTMENT_FIELD_INVALID")
+    return text
+
+
+def _to_falling_code(value: Any) -> str:
+    # KIS 공식 master의 락구분 코드만 허용하고 미문서 코드는 sensitivity 대상에 넣지 않는다.
+    text = _to_bounded_code(value)
+    if text not in {"", "00", "01", "02", "03", "04", "05", "06", "99"}:
+        raise KISResponseError("ADJUSTMENT_FIELD_INVALID")
+    return text
+
+
+def _to_bounded_text(value: Any) -> str:
+    text = "" if value in (None, "") else str(value).strip()
+    if len(text) > 256 or any(ord(character) < 32 for character in text):
+        raise KISResponseError("ADJUSTMENT_FIELD_INVALID")
+    return text
+
+
+def _to_modification_flag(value: Any) -> str:
+    text = "N" if value in (None, "") else str(value).strip().upper()
+    if text not in {"Y", "N"}:
+        raise KISResponseError("ADJUSTMENT_FIELD_INVALID")
+    return text
+
+
+def _validate_adjustment_evidence(
+    *,
+    falling_code: str,
+    adjustment_rate: Decimal,
+    modification_flag: str,
+    revision_reason: str,
+) -> None:
+    has_adjustment = (
+        falling_code not in {"", "00"} or adjustment_rate > 0 or bool(revision_reason)
+    )
+    if (modification_flag == "Y") != has_adjustment:
+        raise KISResponseError("ADJUSTMENT_FIELD_CONTRADICTORY")

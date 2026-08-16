@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from app.data.ecos.quota import (
     ECOS_HARD_WINDOW,
     ECOS_OPERATIONAL_WINDOW,
@@ -31,6 +33,11 @@ def test_runtime_policy_uses_operational_window_and_eight_call_run_cap() -> None
     assert policy.max_calls_per_run == 8
     assert policy.cooldown_seconds == 1_800
     assert policy.min_interval_ms == 0
+
+
+def test_standard_ecos_quota_does_not_inherit_s5_bulk_cap() -> None:
+    with pytest.raises(ValueError, match="out of bounds"):
+        build_ecos_quota_policy(max_calls_per_run=9)
 
 
 def test_error_602_applies_1800_second_cooldown_without_retry() -> None:

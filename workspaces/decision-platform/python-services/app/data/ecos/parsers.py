@@ -54,7 +54,7 @@ def parse_statistic_search(
     rows_value = envelope.get("row")
     if not isinstance(rows_value, list):
         raise ECOSParseError(_INVALID_RESPONSE)
-    if total_count > max_rows or len(rows_value) > _MAX_METADATA_ROWS:
+    if total_count > max_rows or len(rows_value) > max_rows:
         raise ECOSParseError("ECOS response exceeded row limit")
     if total_count < len(rows_value):
         raise ECOSParseError(_INVALID_RESPONSE)

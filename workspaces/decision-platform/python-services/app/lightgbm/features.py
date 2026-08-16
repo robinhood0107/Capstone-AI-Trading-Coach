@@ -5,11 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date, datetime
 import math
-from typing import Protocol, Sequence
+from typing import Mapping, Protocol, Sequence
 
 import numpy as np
 
 from app.lightgbm.errors import DatasetUnavailable, LightGbmContractError
+from app.lightgbm.temporal import TemporalReceipt, feature_as_of, require_receipt_eligible
 
 
 FORBIDDEN_COLUMN_PREFIXES = (
@@ -76,6 +77,43 @@ class MarketEvidence:
     available_at: datetime
     source_revision: str
     source_sha256: str
+
+
+@dataclass(frozen=True)
+class ProductionPriceEvidence:
+    """KIS adjusted OHLCV와 adjustment metadata를 TemporalReceipt에 결속한다."""
+
+    instrument_id: str
+    symbol: str
+    session_date: date
+    adjusted_open: float | None
+    adjusted_close: float
+    volume: float
+    flng_cls_code: str
+    prtt_rate: float
+    mod_yn: str
+    revl_issu_reas: str
+    receipt: TemporalReceipt
+
+
+@dataclass(frozen=True)
+class IndexEvidence:
+    """KRX listing-market index close의 source-specific receipt."""
+
+    session_date: date
+    market: str
+    adjusted_close: float
+    receipt: TemporalReceipt
+
+
+@dataclass(frozen=True)
+class MacroObservation:
+    """ECOS TIME은 observation_date일 뿐이며 availability는 receipt가 소유한다."""
+
+    series_id: str
+    observation_date: date
+    value: float
+    receipt: TemporalReceipt
 
 
 @dataclass(frozen=True)
@@ -218,6 +256,128 @@ def build_core_feature_rows(
         raise DatasetUnavailable("DATASET_UNAVAILABLE: market or macro evidence is non-finite")
     if (market_close <= 0).any() or (usdkrw <= 0).any():
         raise DatasetUnavailable("DATASET_UNAVAILABLE: market or FX level is invalid")
+
+    return _calculate_core_feature_rows(
+        ordered=ordered,
+        close=close,
+        volume=volume,
+        market_close=market_close,
+        base_rate=base_rate,
+        usdkrw=usdkrw,
+    )
+
+
+def build_production_core_feature_rows(
+    prices: Sequence[ProductionPriceEvidence],
+    indices: Sequence[IndexEvidence],
+    macro: Sequence[MacroObservation],
+    *,
+    listing_market: str | None = None,
+    listing_market_by_session: Mapping[date, str] | None = None,
+    cutoff: datetime,
+    cross_market_reader: CrossMarketReader | None = None,
+) -> tuple[CoreFeatureRow, ...]:
+    """TemporalReceipt와 row-specific clock을 강제한 production feature projection."""
+
+    del cross_market_reader
+    if cutoff.tzinfo is None:
+        raise LightGbmContractError("production dataset cutoff must be timezone aware")
+    ordered = sorted(prices, key=lambda row: row.session_date)
+    if (
+        not ordered
+        or len({row.symbol for row in ordered}) != 1
+        or len({row.instrument_id for row in ordered}) != 1
+        or len({row.session_date for row in ordered}) != len(ordered)
+    ):
+        raise LightGbmContractError("production price evidence identity or sessions are invalid")
+    if (listing_market is None) == (listing_market_by_session is None):
+        raise LightGbmContractError("exactly one production listing-market source is required")
+    index_map = {(row.market, row.session_date): row for row in indices}
+    if len(index_map) != len(indices):
+        raise LightGbmContractError("production index evidence has duplicate sessions")
+    rate_rows = sorted(
+        (row for row in macro if row.series_id == "policy-rate"),
+        key=lambda row: row.observation_date,
+    )
+    fx_map = {row.observation_date: row for row in macro if row.series_id == "krw-usd-rate"}
+    if len(fx_map) != len([row for row in macro if row.series_id == "krw-usd-rate"]):
+        raise LightGbmContractError("production FX evidence has duplicate dates")
+    current_rate: MacroObservation | None = None
+    rate_index = 0
+    market_values: list[float] = []
+    rate_values: list[float] = []
+    fx_values: list[float] = []
+    for price in ordered:
+        row_clock = feature_as_of(price.session_date)
+        require_receipt_eligible(price.receipt, row_clock=row_clock, dataset_cutoff=cutoff)
+        has_adjustment = (
+            price.flng_cls_code not in {"", "00"}
+            or price.prtt_rate > 0
+            or bool(price.revl_issu_reas)
+        )
+        if (
+            not math.isfinite(price.adjusted_close)
+            or price.adjusted_close <= 0
+            or not math.isfinite(price.volume)
+            or price.volume < 0
+            or not math.isfinite(price.prtt_rate)
+            or price.prtt_rate < 0
+            or price.mod_yn not in {"Y", "N"}
+            or (price.mod_yn == "Y") != has_adjustment
+            or len(price.flng_cls_code) > 32
+            or len(price.revl_issu_reas) > 256
+        ):
+            raise DatasetUnavailable("DATASET_UNAVAILABLE: production price evidence is invalid")
+        market = (
+            listing_market
+            if listing_market_by_session is None
+            else listing_market_by_session.get(price.session_date)
+        )
+        if market not in {"KOSPI", "KOSDAQ"}:
+            raise DatasetUnavailable("DATASET_UNAVAILABLE: listing market evidence is missing")
+        index = index_map.get((market, price.session_date))
+        fx = fx_map.get(price.session_date)
+        while rate_index < len(rate_rows) and (
+            rate_rows[rate_index].observation_date <= price.session_date
+        ):
+            current_rate = rate_rows[rate_index]
+            rate_index += 1
+        if index is None or fx is None or current_rate is None:
+            raise DatasetUnavailable("DATASET_UNAVAILABLE: aligned production evidence is missing")
+        for receipt in (index.receipt, fx.receipt, current_rate.receipt):
+            require_receipt_eligible(receipt, row_clock=row_clock, dataset_cutoff=cutoff)
+        market_values.append(index.adjusted_close)
+        rate_values.append(current_rate.value)
+        fx_values.append(fx.value)
+    close = np.asarray([row.adjusted_close for row in ordered], dtype=np.float64)
+    volume = np.asarray([row.volume for row in ordered], dtype=np.float64)
+    market_close = np.asarray(market_values, dtype=np.float64)
+    base_rate = np.asarray(rate_values, dtype=np.float64)
+    usdkrw = np.asarray(fx_values, dtype=np.float64)
+    if not all(np.isfinite(value).all() for value in (market_close, base_rate, usdkrw)):
+        raise DatasetUnavailable("DATASET_UNAVAILABLE: production market evidence is non-finite")
+    if (market_close <= 0).any() or (usdkrw <= 0).any():
+        raise DatasetUnavailable("DATASET_UNAVAILABLE: production market level is invalid")
+    return _calculate_core_feature_rows(
+        ordered=ordered,
+        close=close,
+        volume=volume,
+        market_close=market_close,
+        base_rate=base_rate,
+        usdkrw=usdkrw,
+    )
+
+
+def _calculate_core_feature_rows(
+    *,
+    ordered: Sequence[PriceEvidence] | Sequence[ProductionPriceEvidence],
+    close: np.ndarray,
+    volume: np.ndarray,
+    market_close: np.ndarray,
+    base_rate: np.ndarray,
+    usdkrw: np.ndarray,
+) -> tuple[CoreFeatureRow, ...]:
+    """v1/v2 provenance validation 뒤 공유하는 exact numeric kernel."""
 
     ema12 = _ema(close, 12)
     ema26 = _ema(close, 26)

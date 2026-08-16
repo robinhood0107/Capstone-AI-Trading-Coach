@@ -190,7 +190,7 @@ jobs:
           )
           test "${S4_9_CARRIER_PATHS[*]}" = \
             "workspaces/decision-platform/python-services/pyproject.toml workspaces/decision-platform/python-services/uv.lock"
-          # S5.6A는 dependency를 바꾸지 않고 두 production CLI entrypoint만 추가한다.
+          # S5.6A/B는 dependency를 바꾸지 않고 production materialization CLI entrypoint만 추가한다.
           # historical carrier 이후의 exact path와 content hash를 함께 고정해 수치 환경 drift를 막는다.
           mapfile -t S5_6_RUNTIME_PATHS < <(
             git diff --name-only "$S4_9_RUNTIME_CARRIER" HEAD -- \
@@ -201,7 +201,7 @@ jobs:
           test "${S5_6_RUNTIME_PATHS[*]}" = \
             "workspaces/decision-platform/python-services/pyproject.toml"
           test "$(sha256sum workspaces/decision-platform/python-services/pyproject.toml | cut -d' ' -f1)" = \
-            "dae23dec95fdfa6039d2eb4b54514915637657925c1451136dc8cae9cda2ddb5"
+            "3f3be69cf075e734aba92d326d0e6764bebe1ad5a4ab5314c1d0d21db36dd633"
           test "$(sha256sum workspaces/decision-platform/python-services/uv.lock | cut -d' ' -f1)" = \
             "783ab5d3e5bf9ec1f972c5412b216c75fda92b17aaa57d3317bd8ea4a7677b2a"
 

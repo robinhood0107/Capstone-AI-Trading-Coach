@@ -7,6 +7,8 @@ from datetime import UTC, date, datetime
 import hashlib
 from typing import cast
 
+from exchange_calendars.errors import DateOutOfBounds, RequestedSessionOutOfBounds
+
 from app.data._shared.bounded_json import (
     BoundedJsonError,
     BoundedJsonLimits,
@@ -122,9 +124,14 @@ def latest_publishable_bootstrap_cutoff(*, cutoff: datetime) -> datetime:
 
     if cutoff.tzinfo is None:
         raise LightGbmContractError("bootstrap cutoff must be timezone aware")
-    candidate = latest_completed_session(cutoff)
-    while label_as_of(candidate) > cutoff:
-        candidate = previous_xkrx_session(candidate)
+    try:
+        candidate = latest_completed_session(cutoff)
+        while label_as_of(candidate) > cutoff:
+            candidate = previous_xkrx_session(candidate)
+    except (DateOutOfBounds, RequestedSessionOutOfBounds) as error:
+        raise LightGbmContractError(
+            "bootstrap cutoff is outside pinned XKRX calendar bounds"
+        ) from error
     return label_as_of(candidate)
 
 

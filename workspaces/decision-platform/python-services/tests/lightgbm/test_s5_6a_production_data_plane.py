@@ -638,7 +638,25 @@ def test_bootstrap_packet_has_exact_1072_1007_51_and_6446_caps() -> None:
         author_bootstrap_packet(cutoff=cutoff - timedelta(seconds=1))
 
 
-def test_bootstrap_packet_cli_falls_back_to_latest_publishable_session(
+def test_publishable_bootstrap_cutoff_honors_holiday_chain_and_exact_clock() -> None:
+    before_open = datetime(2026, 8, 17, 23, 9, 59, tzinfo=UTC)
+    at_open = datetime(2026, 8, 17, 23, 10, tzinfo=UTC)
+
+    assert latest_publishable_bootstrap_cutoff(cutoff=before_open) == datetime(
+        2026, 8, 13, 23, 10, tzinfo=UTC
+    )
+    assert latest_publishable_bootstrap_cutoff(cutoff=at_open) == datetime(
+        2026, 8, 17, 23, 10, tzinfo=UTC
+    )
+    with pytest.raises(LightGbmContractError, match="timezone aware"):
+        latest_publishable_bootstrap_cutoff(cutoff=datetime(2026, 8, 17, 23, 10))
+    with pytest.raises(LightGbmContractError, match="calendar bounds"):
+        latest_publishable_bootstrap_cutoff(
+            cutoff=datetime(1990, 1, 1, tzinfo=UTC)
+        )
+
+
+def test_bootstrap_packet_cli_uses_latest_publishable_session(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -667,6 +685,11 @@ def test_bootstrap_packet_cli_falls_back_to_latest_publishable_session(
     assert packet.window.latest_completed == date(2026, 8, 13)
     assert packet.window.raw_sessions[-1] == date(2026, 8, 13)
     assert packet.window.eligible_sessions[-1] == date(2026, 8, 5)
+    regenerated = author_bootstrap_packet(
+        cutoff=latest_publishable_bootstrap_cutoff(cutoff=cutoff)
+    )
+    assert regenerated.content == packet.content
+    assert regenerated.sha256 == packet.sha256
 
 
 def test_bootstrap_packet_cli_reports_unavailable_without_traceback(
@@ -679,9 +702,13 @@ def test_bootstrap_packet_cli_reports_unavailable_without_traceback(
     monkeypatch.setenv("S5_SOURCE_ROOT", str(root))
 
     def unavailable(*, cutoff: datetime) -> None:
-        raise LightGbmContractError("bootstrap cutoff precedes the latest label maturity clock")
+        raise LightGbmContractError("bootstrap cutoff is unavailable")
 
-    monkeypatch.setattr(bootstrap_packet_cli, "author_bootstrap_packet", unavailable)
+    monkeypatch.setattr(
+        bootstrap_packet_cli,
+        "latest_publishable_bootstrap_cutoff",
+        unavailable,
+    )
 
     assert bootstrap_packet_cli.main() == 1
     assert capsys.readouterr().out == "S5_BOOTSTRAP_PACKET=DATASET_UNAVAILABLE\n"

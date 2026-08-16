@@ -73,6 +73,20 @@ class BootstrapJournal:
         unresolved = [attempt for attempt in failures if attempt.query_sha256 not in succeeded]
         return unresolved[-1] if unresolved else None
 
+    @property
+    def attempts(self) -> tuple[JournalAttempt, ...]:
+        """resume packet이 누적 물리 시도와 exact failed query를 결속하도록 불변 snapshot을 준다."""
+
+        return self._attempts
+
+    def query_completed(self, query_sha256: str) -> bool:
+        """결과 row가 0인 일일 기준금리 조회까지 포함해 terminal success 여부를 반환한다."""
+
+        return any(
+            attempt.query_sha256 == query_sha256 and attempt.state == "SUCCEEDED"
+            for attempt in self._attempts
+        )
+
     def completed_chunk(self, query_sha256: str) -> SourceChunkReceipt | None:
         matches = [
             attempt.chunk
@@ -297,8 +311,12 @@ def _read_attempts(path: Path) -> tuple[JournalAttempt, ...]:
         }
         if provider not in allowed_operations or operation_id not in allowed_operations[provider]:
             raise LightGbmContractError("bootstrap progress operation is not allowlisted")
-        token_event = provider == "KIS" and operation_id == "oauth2/tokenP"
-        if terminal["state"] == "SUCCEEDED" and (chunk is None) != token_event:
+        token_without_projection = provider == "KIS" and operation_id == "oauth2/tokenP"
+        empty_daily_policy_rate = provider == "ECOS" and operation_id == "722Y001/0101000/D"
+        if terminal["state"] == "SUCCEEDED" and (
+            (token_without_projection and chunk is not None)
+            or (not token_without_projection and not empty_daily_policy_rate and chunk is None)
+        ):
             raise LightGbmContractError("bootstrap progress receipt shape is invalid")
         if chunk is not None and (
             chunk.source_id != provider or chunk.operation_id != operation_id

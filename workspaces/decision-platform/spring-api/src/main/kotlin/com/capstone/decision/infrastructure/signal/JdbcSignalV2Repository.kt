@@ -42,15 +42,8 @@ class JdbcSignalV2Repository(
                 } else {
                     jdbc.queryForObject(
                         """
-                        SELECT max(session_date)
-                        FROM trading_sessions
-                        WHERE exchange_mic = 'XKRX'
-                          AND is_open
-                          AND has_conflict = false
-                          AND close_at <= (
-                            ((clock_timestamp() AT TIME ZONE 'Asia/Seoul')::date + time '08:10')
-                            AT TIME ZONE 'Asia/Seoul'
-                          )
+                        SELECT session_date
+                        FROM current_s5_signal_batch_clock()
                         """.trimIndent(),
                         emptyMap<String, Any>(),
                         LocalDate::class.java,

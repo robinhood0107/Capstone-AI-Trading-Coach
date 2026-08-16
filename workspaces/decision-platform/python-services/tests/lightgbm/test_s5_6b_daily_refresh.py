@@ -8,20 +8,25 @@ from typing import NoReturn, cast
 import numpy as np
 import pytest
 
-from app.data.ecos.models import ECOSObservation
+from app.data.ecos.http_client import ECOSHttpClient
+from app.data.ecos.models import ECOSObservation, StatisticSearchPage
 from app.data.ecos.series_registry import CANDIDATE_SERIES, ECOSSeries
 from app.data.kis.parsers import DailyBar
-from app.lightgbm import daily_refresh
 from app.lightgbm.calibration import fit_ovr_platt
+from app.lightgbm.bootstrap_journal import BootstrapJournal
+from app.lightgbm.bootstrap_live import LiveEcosDailyProvider
 from app.lightgbm.daily_refresh import (
     DailyInferenceState,
     DailyKrxProjection,
     _daily_krx_operations,
     _write_state,
     author_daily_refresh_packet,
+    build_daily_resume_packet,
     execute_daily_refresh,
     read_daily_state,
     validate_daily_refresh_packet,
+    validate_daily_resume_packet,
+    write_daily_rollback_batch,
 )
 from app.lightgbm.errors import DatasetUnavailable, LightGbmContractError
 from app.lightgbm.features import IndexEvidence, MacroObservation, ProductionPriceEvidence
@@ -43,6 +48,34 @@ from app.lightgbm.universe import MonthlyUniverse
 def _private(path: Path) -> Path:
     path.mkdir(mode=0o700)
     return path
+
+
+class _EcosPageClient:
+    def __init__(self, page: StatisticSearchPage) -> None:
+        self.page = page
+
+    def statistic_search(self, **_: object) -> StatisticSearchPage:
+        return self.page
+
+
+def test_live_daily_ecos_allows_empty_rate_but_binds_requested_date() -> None:
+    policy_rate = next(series for series in CANDIDATE_SERIES if series.series_id == "policy-rate")
+    usdkrw = next(series for series in CANDIDATE_SERIES if series.series_id == "krw-usd-rate")
+    target = date(2026, 8, 14)
+    empty = StatisticSearchPage(status="empty", total_count=0, observations=[])
+    provider = LiveEcosDailyProvider(cast(ECOSHttpClient, _EcosPageClient(empty)))
+    assert provider.fetch(series=policy_rate, start=target, end=target) == ()
+    with pytest.raises(DatasetUnavailable, match="exact daily"):
+        provider.fetch(series=usdkrw, start=target, end=target)
+
+    wrong_day = StatisticSearchPage(
+        status="complete",
+        total_count=1,
+        observations=[ECOSObservation(time="20260813", value="1300")],
+    )
+    provider = LiveEcosDailyProvider(cast(ECOSHttpClient, _EcosPageClient(wrong_day)))
+    with pytest.raises(DatasetUnavailable, match="page is invalid"):
+        provider.fetch(series=usdkrw, start=target, end=target)
 
 
 def _receipt(source: str, operation: str, day: date) -> TemporalReceipt:
@@ -284,8 +317,7 @@ def test_daily_refresh_stops_all_remaining_providers_after_first_failure(tmp_pat
             state=state,
             state_root=state_root,
             run_root=_private(tmp_path / "run"),
-            feature_root=_private(tmp_path / "feature"),
-            release_root=_private(tmp_path / "release"),
+            release=cast(QualifiedProductionRelease, object()),
             krx=krx,
             kis=kis,  # type: ignore[arg-type]
             ecos=ecos,  # type: ignore[arg-type]
@@ -307,6 +339,20 @@ class _SuccessfulKrx:
         if service == "kosdaq_dd_trd":
             return ({"BAS_DD": session_date.strftime("%Y%m%d"), "IDX_NM": "KOSDAQ", "CLSPRC_IDX": "900"},)
         return ({"BAS_DD": session_date.strftime("%Y%m%d"), "ISU_CD": "005930"},)
+
+
+class _FailOnceSuccessfulKrx(_SuccessfulKrx):
+    def __init__(self) -> None:
+        super().__init__()
+        self.failed = False
+
+    def fetch(self, *, service: str, session_date: date) -> tuple[dict[str, str], ...]:
+        self.calls.append(service)
+        if service == "kospi_dd_trd" and not self.failed:
+            self.failed = True
+            raise RuntimeError("masked daily provider failure")
+        self.calls.pop()
+        return super().fetch(service=service, session_date=session_date)
 
 
 class _SuccessfulKis:
@@ -396,7 +442,6 @@ def test_daily_refresh_builds_real_lightgbm_exact_31_batch_with_bounded_calls(
         cutoff=next_xkrx_evidence_clock(target),
     )
     release = _actual_release()
-    monkeypatch.setattr(daily_refresh, "load_qualified_production_release", lambda **_: release)
     krx = _SuccessfulKrx()
     kis = _SuccessfulKis(target)
     ecos = _SuccessfulEcos()
@@ -405,8 +450,7 @@ def test_daily_refresh_builds_real_lightgbm_exact_31_batch_with_bounded_calls(
         state=state,
         state_root=state_root,
         run_root=_private(tmp_path / "run"),
-        feature_root=_private(tmp_path / "feature"),
-        release_root=_private(tmp_path / "release"),
+        release=release,
         krx=krx,
         kis=kis,
         ecos=ecos,
@@ -424,3 +468,84 @@ def test_daily_refresh_builds_real_lightgbm_exact_31_batch_with_bounded_calls(
     assert result.batch.manifest["rowCount"] == 31
     assert result.batch.manifest["sessionDate"] == target.isoformat()
     assert result.state.previous_state_sha256 == state.sha256
+
+
+def test_daily_rollback_uses_latest_state_with_a_separate_prior_release(tmp_path: Path) -> None:
+    state = _state(_private(tmp_path / "daily"))
+    prior_release = _actual_release()
+    rollback_root = _private(tmp_path / "rollback")
+    batch = write_daily_rollback_batch(
+        state=state,
+        release=prior_release,
+        batch_root=rollback_root / "batch",
+    )
+    assert batch.manifest["batchPurpose"] == "ROLLBACK"
+    assert batch.manifest["modelReleaseId"] == prior_release.model_release_id
+    assert batch.manifest["sessionDate"] == state.session_date.isoformat()
+    assert len(batch.rows) == 31
+
+
+def test_daily_failed_query_resume_reuses_successes_and_retries_only_failed_query(
+    tmp_path: Path,
+) -> None:
+    state_root = _private(tmp_path / "daily")
+    state = _state(state_root)
+    target = _calendar().next_session(
+        _calendar().date_to_session(state.session_date.isoformat(), direction="none")
+    ).date()
+    packet = author_daily_refresh_packet(
+        state=state,
+        cutoff=next_xkrx_evidence_clock(target),
+    )
+    run_root = _private(tmp_path / "run")
+    first_krx = _FailOnceSuccessfulKrx()
+    with pytest.raises(RuntimeError, match="masked daily provider failure"):
+        execute_daily_refresh(
+            packet=packet,
+            state=state,
+            state_root=state_root,
+            run_root=run_root,
+            release=_actual_release(),
+            krx=first_krx,
+            kis=_NoKis(),  # type: ignore[arg-type]
+            ecos=_NoEcos(),  # type: ignore[arg-type]
+            ecos_series=CANDIDATE_SERIES,
+        )
+    assert first_krx.calls == ["stk_bydd_trd", "ksq_bydd_trd", "kospi_dd_trd"]
+    journal = BootstrapJournal(run_root / "source")
+    resume = build_daily_resume_packet(packet=packet, state=state, journal=journal)
+    assert validate_daily_resume_packet(
+        resume.content,
+        expected_sha256=resume.sha256,
+        packet=packet,
+        state=state,
+        journal=journal,
+    ) == resume
+
+    resumed_krx = _SuccessfulKrx()
+    kis = _SuccessfulKis(target)
+    ecos = _SuccessfulEcos()
+    result = execute_daily_refresh(
+        packet=packet,
+        state=state,
+        state_root=state_root,
+        run_root=run_root,
+        release=_actual_release(),
+        krx=resumed_krx,
+        kis=kis,
+        ecos=ecos,
+        ecos_series=CANDIDATE_SERIES,
+        resume=resume,
+    )
+    assert resumed_krx.calls == ["kospi_dd_trd", "kosdaq_dd_trd"]
+    assert kis.calls == 31 and ecos.calls == 2
+    assert result.batch.manifest["sessionDate"] == target.isoformat()
+    completed_journal = BootstrapJournal(run_root / "source")
+    assert len(completed_journal.attempts) == 39
+    local_resume = build_daily_resume_packet(
+        packet=packet,
+        state=state,
+        journal=completed_journal,
+    )
+    assert b'"resumeMode":"LOCAL_FINALIZATION"' in local_resume.content
+    assert b'"authorizedAdditionalCalls":0' in local_resume.content

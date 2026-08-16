@@ -16,15 +16,18 @@ from app.data.kis.settings import KISSettings
 from app.data.krx.client import KrxOpenApiClient
 from app.data.krx.settings import KrxS5ProductionSettings
 from app.lightgbm.bootstrap_live import (
-    LiveEcosBootstrapProvider,
+    LiveEcosDailyProvider,
     LiveKisBootstrapProvider,
     LiveKrxBootstrapProvider,
 )
+from app.lightgbm.bootstrap_journal import BootstrapJournal
 from app.lightgbm.daily_refresh import (
     DAILY_PACKET_MAX_BYTES,
+    build_daily_resume_packet,
     execute_daily_refresh,
     read_daily_state,
     validate_daily_refresh_packet,
+    validate_daily_resume_packet,
 )
 from app.lightgbm.private_root import (
     acquire_run_lock,
@@ -36,8 +39,11 @@ from app.lightgbm.production_db import (
     publish_daily_batch,
     stage_release_and_batch,
 )
-from app.lightgbm.production_release import validate_production_model_release
-from app.rag.safe_io import read_approved_regular_file
+from app.lightgbm.production_release import (
+    load_qualified_production_release,
+    validate_production_model_release,
+)
+from app.rag.safe_io import RagSafeIoError, read_approved_regular_file, write_approved_new_file
 
 
 def main() -> int:
@@ -47,6 +53,7 @@ def main() -> int:
     packet_sha = os.environ.get("S5_DAILY_PACKET_SHA256", "")
     state_sha = os.environ.get("S5_DAILY_PREVIOUS_STATE_SHA256", "")
     expected_batch_id = os.environ.get("S5_EXPECTED_SIGNAL_BATCH_ID", "")
+    resume_sha = os.environ.get("S5_DAILY_RESUME_PACKET_SHA256", "")
     writer_dsn = os.environ.get("S5_SIGNAL_WRITER_DSN", "")
     scheduler_dsn = os.environ.get("S5_SIGNAL_SCHEDULER_DSN", "")
     if not all(
@@ -72,13 +79,44 @@ def main() -> int:
             state=state,
         )
         run_root = daily_root / f"run-{packet_sha}"
-        run_root.mkdir(mode=0o700)
+        if run_root.exists():
+            require_private_root(run_root)
+        else:
+            if resume_sha:
+                raise ValueError("daily resume root is absent")
+            run_root.mkdir(mode=0o700)
         lock = acquire_run_lock(run_root)
+        resume = None
+        if resume_sha:
+            source_root = run_root / "source"
+            require_private_root(source_root)
+            resume_file = read_approved_regular_file(
+                approved_root=daily_root,
+                relative_path=f"resume-{resume_sha}.json",
+                max_bytes=DAILY_PACKET_MAX_BYTES,
+            )
+            resume = validate_daily_resume_packet(
+                resume_file.content,
+                expected_sha256=resume_sha,
+                packet=packet,
+                state=state,
+                journal=BootstrapJournal(source_root),
+            )
         bootstrap_root = root / f"run-{state.bootstrap_packet_sha256}"
         feature_root = bootstrap_root / "feature"
         release_root = bootstrap_root / "release"
         require_private_root(feature_root)
         require_private_root(release_root)
+        validated_release = validate_production_model_release(
+            approved_root=release_root,
+            expected_manifest_sha256=state.release_manifest_sha256,
+        )
+        qualified_release = load_qualified_production_release(
+            release_root=release_root,
+            expected_release_manifest_sha256=state.release_manifest_sha256,
+            feature_root=feature_root,
+            expected_feature_manifest_sha256=state.feature_manifest_sha256,
+        )
     except Exception:
         if lock >= 0:
             release_run_lock(lock)
@@ -99,21 +137,17 @@ def main() -> int:
             state=state,
             state_root=daily_root,
             run_root=run_root,
-            feature_root=feature_root,
-            release_root=release_root,
+            release=qualified_release,
             krx=LiveKrxBootstrapProvider(krx_client),
             kis=LiveKisBootstrapProvider(kis_client),
-            ecos=LiveEcosBootstrapProvider(ecos_client),
+            ecos=LiveEcosDailyProvider(ecos_client),
             ecos_series=CANDIDATE_SERIES,
-        )
-        release = validate_production_model_release(
-            approved_root=release_root,
-            expected_manifest_sha256=state.release_manifest_sha256,
+            resume=resume,
         )
         with psycopg.connect(writer_dsn) as writer:
             staged = stage_release_and_batch(
                 cast(Connection, writer),
-                release=release,
+                release=validated_release,
                 batch=result.batch,
             )
         with psycopg.connect(scheduler_dsn) as scheduler:
@@ -121,9 +155,37 @@ def main() -> int:
                 cast(Connection, scheduler),
                 signal_batch_id=str(result.batch.manifest["signalBatchId"]),
                 expected_signal_batch_id=expected_batch_id,
+                batch_manifest_sha256=result.batch.manifest_sha256,
             )
     except Exception:
-        print("S5_DAILY_REFRESH=ABSTAIN")
+        resume_text = ""
+        source_root = run_root / "source"
+        if source_root.exists():
+            try:
+                resume_packet = build_daily_resume_packet(
+                    packet=packet,
+                    state=state,
+                    journal=BootstrapJournal(source_root),
+                )
+                try:
+                    write_approved_new_file(
+                        approved_root=daily_root,
+                        relative_path=f"resume-{resume_packet.sha256}.json",
+                        content=resume_packet.content,
+                        max_bytes=DAILY_PACKET_MAX_BYTES,
+                    )
+                except RagSafeIoError:
+                    existing = read_approved_regular_file(
+                        approved_root=daily_root,
+                        relative_path=f"resume-{resume_packet.sha256}.json",
+                        max_bytes=DAILY_PACKET_MAX_BYTES,
+                    )
+                    if existing.content != resume_packet.content:
+                        raise
+                resume_text = f" resumePacketSha256={resume_packet.sha256}"
+            except Exception:
+                resume_text = " resumePacket=UNAVAILABLE"
+        print(f"S5_DAILY_REFRESH=ABSTAIN{resume_text}")
         return 1
     finally:
         for client in (ecos_client, kis_client, krx_client):

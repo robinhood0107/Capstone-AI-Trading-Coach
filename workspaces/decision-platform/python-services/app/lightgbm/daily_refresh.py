@@ -27,8 +27,20 @@ from app.lightgbm.bootstrap_executor import (
     EcosBootstrapProvider,
     KisBootstrapProvider,
     KrxBootstrapProvider,
+    _clock_utc,
+    _ecos_rows_parquet,
+    _kis_rows_parquet,
+    _load_ecos_rows,
+    _load_kis_rows,
+    _load_string_rows,
+    _query_sha256,
+    _require_reused_chunk,
+    _seal_projection,
+    _string_rows_parquet,
+    _temporal_receipt,
     load_verified_krx_projection,
 )
+from app.lightgbm.bootstrap_journal import BootstrapJournal
 from app.lightgbm.bootstrap_packet import BootstrapPacket
 from app.lightgbm.errors import DatasetUnavailable, LightGbmContractError
 from app.lightgbm.feature_artifact import feature_table_from_rows
@@ -39,6 +51,7 @@ from app.lightgbm.features import (
     build_production_core_feature_rows,
 )
 from app.lightgbm.pit_calendar import _calendar, derive_monthly_universe_schedule
+from app.lightgbm.private_root import require_private_root
 from app.lightgbm.production_policy import (
     ECOS_OPERATIONS,
     KIS_OPERATION,
@@ -48,8 +61,8 @@ from app.lightgbm.production_policy import (
     require_standard_stock_identity,
 )
 from app.lightgbm.production_release import (
+    QualifiedProductionRelease,
     ValidatedSignalBatch,
-    load_qualified_production_release,
     write_production_signal_batch,
 )
 from app.lightgbm.temporal import (
@@ -72,6 +85,7 @@ from app.rag.safe_io import RagSafeIoError, read_approved_regular_file, write_ap
 
 DAILY_STATE_VERSION = "s5-daily-inference-state-v1"
 DAILY_PACKET_VERSION = "s5-daily-refresh-packet-v1"
+DAILY_RESUME_PACKET_VERSION = "s5-daily-refresh-resume-v1"
 DAILY_KRX_MAX = 7
 DAILY_KIS_MAX = 31
 DAILY_KIS_TOKEN_MAX = 1
@@ -107,6 +121,20 @@ _PACKET_FIELDS = frozenset(
         "asOf",
         "operations",
         "limits",
+    }
+)
+_RESUME_FIELDS = frozenset(
+    {
+        "resumePacketVersion",
+        "dailyPacketSha256",
+        "journalSha256",
+        "resumeMode",
+        "consumedPhysicalCalls",
+        "authorizedAdditionalCalls",
+        "cumulativePhysicalCap",
+        "failedQuerySha256",
+        "provider",
+        "operationId",
     }
 )
 _JSON_LIMITS = BoundedJsonLimits(
@@ -175,6 +203,16 @@ class DailyRefreshResult:
     state: DailyInferenceState
     batch: ValidatedSignalBatch
     budgeted_calls: int
+
+
+@dataclass(frozen=True, slots=True)
+class DailyResumePacket:
+    """한 failed query 재시도 또는 provider-free local finalization만 승인한다."""
+
+    content: bytes
+    sha256: str
+    daily_packet_sha256: str
+    failed_query_sha256: str | None
 
 
 def write_initial_daily_state(
@@ -420,42 +458,480 @@ def validate_daily_refresh_packet(
     )
 
 
+def build_daily_resume_packet(
+    *, packet: DailyRefreshPacket, state: DailyInferenceState, journal: BootstrapJournal
+) -> DailyResumePacket:
+    """현재 durable journal 전체를 hash로 결속해 같은 packet의 bounded resume만 만든다."""
+
+    attempts = journal.attempts
+    if not attempts or len(attempts) > DAILY_TOTAL_MAX + 1:
+        raise LightGbmContractError("daily journal has no bounded resume authority")
+    failed = journal.failed_attempt
+    krx_required = len(_daily_krx_operations(state=state, packet=packet))
+    required = {
+        ("KRX", "GET"): krx_required,
+        ("KIS", "TOKEN"): DAILY_KIS_TOKEN_MAX,
+        ("KIS", "GET"): len(state.universe.symbols),
+        ("ECOS", "GET"): DAILY_ECOS_MAX,
+    }
+    required_total = sum(required.values())
+    expected_queries = _daily_required_query_hashes(state=state, packet=packet)
+    successful_queries = {
+        attempt.query_sha256 for attempt in attempts if attempt.state == "SUCCEEDED"
+    }
+    if (
+        any(attempt.query_sha256 not in expected_queries for attempt in attempts)
+        or (failed is None and successful_queries != expected_queries)
+    ):
+        raise LightGbmContractError("daily local finalization journal is incomplete")
+    if failed is not None and sum(
+        attempt.query_sha256 == failed.query_sha256 for attempt in attempts
+    ) != 1:
+        raise LightGbmContractError("daily failed query resume authority is exhausted")
+    journal_projection = [
+        {
+            "ordinal": attempt.ordinal,
+            "provider": attempt.provider,
+            "operationId": attempt.operation_id,
+            "querySha256": attempt.query_sha256,
+            "state": attempt.state,
+            "contentSha256": attempt.chunk.content_sha256 if attempt.chunk is not None else None,
+        }
+        for attempt in attempts
+    ]
+    provider_count = sum(
+        attempt.provider == failed.provider
+        and (
+            failed.provider != "KIS"
+            or (attempt.operation_id == "oauth2/tokenP")
+            == (failed.operation_id == "oauth2/tokenP")
+        )
+        for attempt in attempts
+    ) if failed is not None else 0
+    provider_cap = (
+        {
+            "KRX": DAILY_KRX_MAX,
+            "ECOS": DAILY_ECOS_MAX,
+        }.get(failed.provider)
+        if failed is not None and failed.provider != "KIS"
+        else (
+            DAILY_KIS_TOKEN_MAX
+            if failed is not None and failed.operation_id == "oauth2/tokenP"
+            else DAILY_KIS_MAX
+        )
+    )
+    failed_class = (
+        (
+            failed.provider,
+            "TOKEN" if failed.provider == "KIS" and failed.operation_id == "oauth2/tokenP" else "GET",
+        )
+        if failed is not None
+        else None
+    )
+    if failed is not None and (
+        required_total + 1 > DAILY_TOTAL_MAX
+        or provider_cap is None
+        or required[cast(tuple[str, str], failed_class)] + 1 > provider_cap
+        or provider_count > required[cast(tuple[str, str], failed_class)]
+    ):
+        raise LightGbmContractError("daily failed query has no remaining approved call budget")
+    payload = {
+        "resumePacketVersion": DAILY_RESUME_PACKET_VERSION,
+        "dailyPacketSha256": packet.sha256,
+        "journalSha256": hashlib.sha256(canonical_json_bytes(journal_projection)).hexdigest(),
+        "resumeMode": "FAILED_QUERY" if failed is not None else "LOCAL_FINALIZATION",
+        "consumedPhysicalCalls": len(attempts),
+        "authorizedAdditionalCalls": 1 if failed is not None else 0,
+        "cumulativePhysicalCap": DAILY_TOTAL_MAX,
+        "failedQuerySha256": failed.query_sha256 if failed is not None else None,
+        "provider": failed.provider if failed is not None else None,
+        "operationId": failed.operation_id if failed is not None else None,
+    }
+    content = canonical_json_bytes(payload)
+    return DailyResumePacket(
+        content=content,
+        sha256=hashlib.sha256(content).hexdigest(),
+        daily_packet_sha256=packet.sha256,
+        failed_query_sha256=failed.query_sha256 if failed is not None else None,
+    )
+
+
+def _daily_required_query_hashes(
+    *, state: DailyInferenceState, packet: DailyRefreshPacket
+) -> frozenset[str]:
+    """재시도 횟수와 분리된 exact logical query set으로 local finalization 완결성을 판정한다."""
+
+    target = packet.session_date
+    start = target - timedelta(days=150)
+    queries: list[Mapping[str, object]] = [
+        {"service": service, "basDd": target.strftime("%Y%m%d")}
+        for service in _daily_krx_operations(state=state, packet=packet)
+    ]
+    queries.append({"operation": "oauth2/tokenP", "mode": "live"})
+    queries.extend(
+        {
+            "operation": KIS_OPERATION,
+            "symbol": symbol,
+            "start": start.isoformat(),
+            "end": target.isoformat(),
+            "adjusted": "0",
+        }
+        for symbol in sorted(state.universe.symbols)
+    )
+    queries.extend(
+        {
+            "operation": operation,
+            "start": target.isoformat(),
+            "end": target.isoformat(),
+        }
+        for operation in ECOS_OPERATIONS
+    )
+    expected = frozenset(_query_sha256(query) for query in queries)
+    if len(expected) != len(queries):
+        raise LightGbmContractError("daily logical query identity collision")
+    return expected
+
+
+def validate_daily_resume_packet(
+    content: bytes,
+    *,
+    expected_sha256: str,
+    packet: DailyRefreshPacket,
+    state: DailyInferenceState,
+    journal: BootstrapJournal,
+) -> DailyResumePacket:
+    """외부 digest와 현재 journal에서 resume packet을 재생성해 stale 권한을 거부한다."""
+
+    payload = _parse_mapping(content, _RESUME_FIELDS, "daily resume packet")
+    expected = build_daily_resume_packet(packet=packet, state=state, journal=journal)
+    if (
+        canonical_json_bytes(payload) != content
+        or payload["resumePacketVersion"] != DAILY_RESUME_PACKET_VERSION
+        or expected.sha256 != expected_sha256
+        or expected.content != content
+    ):
+        raise LightGbmContractError("daily resume packet trust anchor mismatch")
+    return expected
+
+
+class _DailyJournalGate:
+    """성공 query는 sealed projection에서 재생하고 실패 query만 한 번 다시 연다."""
+
+    def __init__(
+        self,
+        *,
+        root: Path,
+        journal: BootstrapJournal,
+        resume: DailyResumePacket | None,
+    ) -> None:
+        self.root = root
+        self.journal = journal
+        self.resume = resume
+        self._failed_retried = False
+        self._initial = not journal.attempts
+
+    def call(
+        self,
+        *,
+        provider: str,
+        operation: str,
+        query: Mapping[str, object],
+        query_key: str,
+        call: Callable[[], object],
+        seal: Callable[[object, str], object | None],
+        load: Callable[[object], object],
+        empty_success: bool = False,
+    ) -> object:
+        query_sha = _query_sha256(query)
+        completed = self.journal.completed_chunk(query_sha)
+        if completed is not None:
+            _require_reused_chunk(
+                completed, source=provider, operation=operation, query_key=query_key
+            )
+            return load(completed)
+        if self.journal.query_completed(query_sha):
+            if not empty_success:
+                raise LightGbmContractError("daily completed query is missing its sealed projection")
+            return ()
+
+        failed = self.journal.failed_attempt
+        if not self._initial:
+            if failed is not None and not self._failed_retried:
+                if self.resume is None or self.resume.failed_query_sha256 != query_sha:
+                    raise LightGbmContractError("daily resume target is not the failed query")
+                self._failed_retried = True
+            elif failed is None and not self._failed_retried:
+                raise LightGbmContractError("daily local finalization cannot open a provider")
+        if len(self.journal.attempts) >= DAILY_TOTAL_MAX:
+            raise LightGbmContractError("daily cumulative physical call budget is exhausted")
+        provider_attempts = [
+            attempt
+            for attempt in self.journal.attempts
+            if attempt.provider == provider
+            and (
+                provider != "KIS"
+                or (attempt.operation_id == "oauth2/tokenP")
+                == (operation == "oauth2/tokenP")
+            )
+        ]
+        provider_cap = {
+            "KRX": DAILY_KRX_MAX,
+            "ECOS": DAILY_ECOS_MAX,
+        }.get(provider, DAILY_KIS_TOKEN_MAX if operation == "oauth2/tokenP" else DAILY_KIS_MAX)
+        if len(provider_attempts) >= provider_cap:
+            raise LightGbmContractError("daily provider physical call budget is exhausted")
+        ordinal = self.journal.begin(
+            provider=provider, operation_id=operation, query_sha256=query_sha
+        )
+        try:
+            result = call()
+            chunk = seal(result, query_sha)
+        except Exception:
+            self.journal.finish(
+                ordinal=ordinal,
+                provider=provider,
+                operation_id=operation,
+                query_sha256=query_sha,
+                success=False,
+                chunk=None,
+            )
+            raise
+        self.journal.finish(
+            ordinal=ordinal,
+            provider=provider,
+            operation_id=operation,
+            query_sha256=query_sha,
+            success=True,
+            chunk=chunk,  # type: ignore[arg-type]
+        )
+        return result
+
+
+class _JournaledDailyKrx:
+    def __init__(self, provider: KrxBootstrapProvider, gate: _DailyJournalGate, clock: Callable[[], datetime]):
+        self.provider, self.gate, self.clock = provider, gate, clock
+        self.receipts: dict[tuple[str, date], TemporalReceipt] = {}
+
+    def fetch(self, *, service: str, session_date: date) -> tuple[dict[str, str], ...]:
+        query = {"service": service, "basDd": session_date.strftime("%Y%m%d")}
+        query_key = f"daily:{service}:{session_date.isoformat()}"
+
+        def seal(value: object, query_sha: str) -> object:
+            rows = cast(tuple[dict[str, str], ...], value)
+            if not rows:
+                raise DatasetUnavailable("DATASET_UNAVAILABLE: daily KRX projection is empty")
+            payload = _string_rows_parquet(rows)
+            return _seal_projection(
+                source_root=self.gate.root,
+                source="KRX",
+                operation=service,
+                query_key=query_key,
+                rows=len(rows),
+                payload=payload,
+                temporal=_temporal_receipt(
+                    source="KRX",
+                    operation=service,
+                    observation_date=session_date,
+                    retrieved_at=_clock_utc(self.clock),
+                    request_sha256=query_sha,
+                    snapshot_sha256=hashlib.sha256(payload).hexdigest(),
+                ),
+            )
+
+        result = cast(
+            tuple[dict[str, str], ...],
+            self.gate.call(
+                provider="KRX",
+                operation=service,
+                query=query,
+                query_key=query_key,
+                call=lambda: self.provider.fetch(service=service, session_date=session_date),
+                seal=seal,
+                load=lambda chunk: _load_string_rows(self.gate.root, chunk),  # type: ignore[arg-type]
+            ),
+        )
+        chunk = self.gate.journal.completed_chunk(_query_sha256(query))
+        if chunk is None:
+            raise LightGbmContractError("daily KRX projection receipt is missing")
+        self.receipts[(service, session_date)] = chunk.temporal
+        return result
+
+
+class _JournaledDailyKis:
+    def __init__(self, provider: KisBootstrapProvider, gate: _DailyJournalGate, clock: Callable[[], datetime]):
+        self.provider, self.gate, self.clock = provider, gate, clock
+        self.receipts: dict[str, TemporalReceipt] = {}
+
+    def prepare_access_token(self) -> None:
+        query = {"operation": "oauth2/tokenP", "mode": "live"}
+        self.gate.call(
+            provider="KIS",
+            operation="oauth2/tokenP",
+            query=query,
+            query_key="daily:oauth2/tokenP:live",
+            call=lambda: self.provider.prepare_access_token(),
+            seal=lambda _value, _query_sha: None,
+            load=lambda _chunk: None,
+            empty_success=True,
+        )
+
+    def require_cached_token_only(self) -> None:
+        self.provider.require_cached_token_only()
+
+    def fetch_page(self, *, symbol: str, start: date, end: date) -> tuple[DailyBar, ...]:
+        query = {
+            "operation": KIS_OPERATION,
+            "symbol": symbol,
+            "start": start.isoformat(),
+            "end": end.isoformat(),
+            "adjusted": "0",
+        }
+        query_key = f"daily:{symbol}:{start.isoformat()}:{end.isoformat()}"
+
+        def seal(value: object, query_sha: str) -> object:
+            rows = tuple(sorted(cast(tuple[DailyBar, ...], value), key=lambda row: row.date))
+            if (
+                not rows
+                or len(rows) > 100
+                or len({row.date for row in rows}) != len(rows)
+                or any(not start <= row.date <= end for row in rows)
+            ):
+                raise DatasetUnavailable("KIS_HISTORY_UNAVAILABLE")
+            payload = _kis_rows_parquet(rows)
+            return _seal_projection(
+                source_root=self.gate.root,
+                source="KIS",
+                operation=KIS_OPERATION,
+                query_key=query_key,
+                rows=len(rows),
+                payload=payload,
+                temporal=_temporal_receipt(
+                    source="KIS",
+                    operation=KIS_OPERATION,
+                    observation_date=rows[-1].date,
+                    retrieved_at=_clock_utc(self.clock),
+                    request_sha256=query_sha,
+                    snapshot_sha256=hashlib.sha256(payload).hexdigest(),
+                ),
+            )
+
+        result = cast(
+            tuple[DailyBar, ...],
+            self.gate.call(
+                provider="KIS",
+                operation=KIS_OPERATION,
+                query=query,
+                query_key=query_key,
+                call=lambda: self.provider.fetch_page(symbol=symbol, start=start, end=end),
+                seal=seal,
+                load=lambda chunk: _load_kis_rows(self.gate.root, chunk),  # type: ignore[arg-type]
+            ),
+        )
+        chunk = self.gate.journal.completed_chunk(_query_sha256(query))
+        if chunk is None:
+            raise LightGbmContractError("daily KIS projection receipt is missing")
+        self.receipts[symbol] = chunk.temporal
+        return result
+
+
+class _JournaledDailyEcos:
+    def __init__(self, provider: EcosBootstrapProvider, gate: _DailyJournalGate, clock: Callable[[], datetime]):
+        self.provider, self.gate, self.clock = provider, gate, clock
+        self.receipts: dict[str, TemporalReceipt | None] = {}
+
+    def fetch(self, *, series: ECOSSeries, start: date, end: date) -> tuple[ECOSObservation, ...]:
+        operation = f"{series.stat_code}/{series.item_code1}/{series.cycle}"
+        query = {"operation": operation, "start": start.isoformat(), "end": end.isoformat()}
+        query_key = f"daily:{series.series_id}:{start.isoformat()}:{end.isoformat()}"
+
+        def seal(value: object, query_sha: str) -> object | None:
+            rows = cast(tuple[ECOSObservation, ...], value)
+            if not rows and series.series_id == "policy-rate":
+                return None
+            if not rows:
+                raise DatasetUnavailable("DATASET_UNAVAILABLE: daily ECOS projection is empty")
+            payload = _ecos_rows_parquet(rows)
+            return _seal_projection(
+                source_root=self.gate.root,
+                source="ECOS",
+                operation=operation,
+                query_key=query_key,
+                rows=len(rows),
+                payload=payload,
+                temporal=_temporal_receipt(
+                    source="ECOS",
+                    operation=operation,
+                    observation_date=datetime.strptime(rows[-1].time, "%Y%m%d").date(),
+                    retrieved_at=_clock_utc(self.clock),
+                    request_sha256=query_sha,
+                    snapshot_sha256=hashlib.sha256(payload).hexdigest(),
+                ),
+            )
+
+        result = cast(
+            tuple[ECOSObservation, ...],
+            self.gate.call(
+                provider="ECOS",
+                operation=operation,
+                query=query,
+                query_key=query_key,
+                call=lambda: self.provider.fetch(series=series, start=start, end=end),
+                seal=seal,
+                load=lambda chunk: _load_ecos_rows(self.gate.root, chunk),  # type: ignore[arg-type]
+                empty_success=series.series_id == "policy-rate",
+            ),
+        )
+        chunk = self.gate.journal.completed_chunk(_query_sha256(query))
+        if chunk is None and result:
+            raise LightGbmContractError("daily ECOS projection receipt is missing")
+        self.receipts[series.series_id] = chunk.temporal if chunk is not None else None
+        return result
+
+
 def execute_daily_refresh(
     *,
     packet: DailyRefreshPacket,
     state: DailyInferenceState,
     state_root: Path,
     run_root: Path,
-    feature_root: Path,
-    release_root: Path,
+    release: QualifiedProductionRelease,
     krx: KrxBootstrapProvider,
     kis: KisBootstrapProvider,
     ecos: EcosBootstrapProvider,
     ecos_series: Sequence[ECOSSeries],
+    resume: DailyResumePacket | None = None,
     clock: Callable[[], datetime] = lambda: datetime.now(UTC),
 ) -> DailyRefreshResult:
-    """KRX→universe→KIS→ECOS 순서로 실패 즉시 중단하고 exact-31 batch를 만든다."""
+    """KRX→universe→KIS→ECOS 순서로 실패 즉시 중단하고 sealed query만 재사용한다."""
 
     if packet.previous_state_sha256 != state.sha256:
         raise LightGbmContractError("daily packet does not bind the previous state")
+    source_root = run_root / "source"
+    if source_root.exists():
+        require_private_root(source_root)
+    else:
+        source_root.mkdir(mode=0o700)
+        (source_root / "chunks").mkdir(mode=0o700)
+    chunks_root = source_root / "chunks"
+    require_private_root(chunks_root)
+    journal = BootstrapJournal(source_root)
+    if journal.attempts and resume is None:
+        raise LightGbmContractError("daily run requires a validated resume packet")
+    gate = _DailyJournalGate(root=source_root, journal=journal, resume=resume)
+    journaled_krx = _JournaledDailyKrx(krx, gate, clock)
+    journaled_kis = _JournaledDailyKis(kis, gate, clock)
+    journaled_ecos = _JournaledDailyEcos(ecos, gate, clock)
     budgeted_calls = 0
     target = packet.session_date
     krx_operations = _daily_krx_operations(state=state, packet=packet)
     krx_rows: dict[str, tuple[dict[str, str], ...]] = {}
     krx_receipts: dict[str, TemporalReceipt] = {}
     for service in krx_operations:
-        rows = krx.fetch(service=service, session_date=target)
+        rows = journaled_krx.fetch(service=service, session_date=target)
         budgeted_calls += 1
         if not rows:
             raise DatasetUnavailable("DATASET_UNAVAILABLE: daily KRX projection is empty")
-        receipt = _receipt_for_rows(
-            source="KRX",
-            operation=service,
-            observation_date=target,
-            retrieved_at=_clock(clock),
-            query={"service": service, "basDd": target.strftime("%Y%m%d")},
-            rows=rows,
-        )
+        receipt = journaled_krx.receipts[(service, target)]
         krx_rows[service] = tuple(dict(row) for row in rows)
         krx_receipts[service] = receipt
     history = _advance_krx_history(state.krx_history, target, krx_rows, krx_receipts)
@@ -466,15 +942,15 @@ def execute_daily_refresh(
         krx_rows=krx_rows,
         krx_receipts=krx_receipts,
     )
-    kis.prepare_access_token()
+    journaled_kis.prepare_access_token()
     budgeted_calls += 1
-    kis.require_cached_token_only()
+    journaled_kis.require_cached_token_only()
     sessions_60 = _last_sessions(target, 60)
     prices: list[ProductionPriceEvidence] = []
     identity_by_symbol = dict(zip(universe.symbols, universe.instrument_ids, strict=True))
     start = target - timedelta(days=150)
     for symbol in sorted(universe.symbols):
-        bars = kis.fetch_page(symbol=symbol, start=start, end=target)
+        bars = journaled_kis.fetch_page(symbol=symbol, start=start, end=target)
         budgeted_calls += 1
         prices.extend(
             _daily_price_rows(
@@ -482,7 +958,7 @@ def execute_daily_refresh(
                 symbol=symbol,
                 bars=bars,
                 required_sessions=sessions_60,
-                retrieved_at=_clock(clock),
+                chunk_receipt=journaled_kis.receipts[symbol],
                 start=start,
                 end=target,
             )
@@ -492,14 +968,14 @@ def execute_daily_refresh(
     indices = _advance_indices(state.indices, target, krx_rows, krx_receipts, sessions_60)
     macro = list(state.macro)
     for series in _validated_series(ecos_series):
-        observations = ecos.fetch(series=series, start=target, end=target)
+        observations = journaled_ecos.fetch(series=series, start=target, end=target)
         budgeted_calls += 1
         macro = _advance_macro(
             macro,
             series=series,
             observations=observations,
             target=target,
-            retrieved_at=_clock(clock),
+            chunk_receipt=journaled_ecos.receipts[series.series_id],
         )
     expected_budget = len(krx_operations) + DAILY_KIS_TOKEN_MAX + len(universe.symbols) + len(
         _validated_series(ecos_series)
@@ -508,18 +984,13 @@ def execute_daily_refresh(
         raise LightGbmContractError("daily provider operation budget is invalid")
     macro_tuple = _trim_macro(tuple(macro), sessions_60)
     inference_table = _build_inference_table(
-        packet=packet,
+        session_date=packet.session_date,
+        as_of=packet.as_of,
         universe=universe,
         listing_markets=listing_markets,
         prices=prices_tuple,
         indices=indices,
         macro=macro_tuple,
-    )
-    release = load_qualified_production_release(
-        release_root=release_root,
-        expected_release_manifest_sha256=state.release_manifest_sha256,
-        feature_root=feature_root,
-        expected_feature_manifest_sha256=state.feature_manifest_sha256,
     )
     batch = write_production_signal_batch(
         release=release,
@@ -546,6 +1017,34 @@ def execute_daily_refresh(
         krx_history=history,
     )
     return DailyRefreshResult(state=new_state, batch=batch, budgeted_calls=budgeted_calls)
+
+
+def write_daily_rollback_batch(
+    *,
+    state: DailyInferenceState,
+    release: QualifiedProductionRelease,
+    batch_root: Path,
+) -> ValidatedSignalBatch:
+    """이전 ACCEPTED release의 이미 수집된 current-session state로 provider-free rollback batch를 쓴다."""
+
+    inference_table = _build_inference_table(
+        session_date=state.session_date,
+        as_of=state.as_of,
+        universe=state.universe,
+        listing_markets=state.listing_markets,
+        prices=state.prices,
+        indices=state.indices,
+        macro=state.macro,
+    )
+    return write_production_signal_batch(
+        release=release,
+        inference_universe=state.universe,
+        inference_table=inference_table,
+        session_date=state.session_date,
+        as_of=state.as_of,
+        batch_root=batch_root,
+        batch_purpose="ROLLBACK",
+    )
 
 
 def _daily_krx_operations(
@@ -713,7 +1212,8 @@ def _resolve_daily_universe(
 
 def _build_inference_table(
     *,
-    packet: DailyRefreshPacket,
+    session_date: date,
+    as_of: datetime,
     universe: MonthlyUniverse,
     listing_markets: Mapping[str, str],
     prices: Sequence[ProductionPriceEvidence],
@@ -721,7 +1221,7 @@ def _build_inference_table(
     macro: Sequence[MacroObservation],
 ) -> pa.Table:
     rows: list[dict[str, object]] = []
-    sessions = _last_sessions(packet.session_date, 60)
+    sessions = _last_sessions(session_date, 60)
     for identity in universe.instrument_ids:
         symbol_prices = [row for row in prices if row.instrument_id == identity]
         feature_rows = build_production_core_feature_rows(
@@ -729,9 +1229,9 @@ def _build_inference_table(
             indices,
             macro,
             listing_market_by_session={day: listing_markets[identity] for day in sessions},
-            cutoff=packet.as_of,
+            cutoff=as_of,
         )
-        current = [row for row in feature_rows if row.session_date == packet.session_date]
+        current = [row for row in feature_rows if row.session_date == session_date]
         if len(current) != 1:
             raise DatasetUnavailable("DATASET_UNAVAILABLE: daily feature row is missing")
         rows.append(current[0].as_mapping())
@@ -745,27 +1245,13 @@ def _daily_price_rows(
     symbol: str,
     bars: Sequence[DailyBar],
     required_sessions: Sequence[date],
-    retrieved_at: datetime,
+    chunk_receipt: TemporalReceipt,
     start: date,
     end: date,
 ) -> tuple[ProductionPriceEvidence, ...]:
     by_date = {bar.date: bar for bar in bars}
     if len(by_date) != len(bars) or not set(required_sessions).issubset(by_date):
         raise DatasetUnavailable("KIS_HISTORY_UNAVAILABLE")
-    projection = [
-        {
-            "symbol": bar.symbol,
-            "date": bar.date.isoformat(),
-            "open": bar.open,
-            "close": bar.close,
-            "volume": bar.volume,
-            "flngClsCode": bar.flng_cls_code,
-            "prttRate": format(bar.prtt_rate, "f"),
-            "modYn": bar.mod_yn,
-            "revlIssuReas": bar.revl_issu_reas,
-        }
-        for bar in sorted(bars, key=lambda row: row.date)
-    ]
     query = {
         "operation": KIS_OPERATION,
         "symbol": symbol,
@@ -773,10 +1259,15 @@ def _daily_price_rows(
         "end": end.isoformat(),
         "adjusted": "0",
     }
-    snapshot_sha = hashlib.sha256(canonical_json_bytes(projection)).hexdigest()
-    request_sha = hashlib.sha256(
-        b"s5-provider-query-v1\x00" + canonical_json_bytes(query)
-    ).hexdigest()
+    snapshot_sha = hashlib.sha256(_kis_rows_parquet(tuple(sorted(bars, key=lambda row: row.date)))).hexdigest()
+    request_sha = _query_sha256(query)
+    if (
+        chunk_receipt.source_id != "KIS"
+        or chunk_receipt.operation_id != KIS_OPERATION
+        or chunk_receipt.request_sha256 != request_sha
+        or chunk_receipt.snapshot_sha256 != snapshot_sha
+    ):
+        raise LightGbmContractError("daily KIS receipt binding is invalid")
     output = []
     for session in required_sessions:
         bar = by_date[session]
@@ -784,7 +1275,7 @@ def _daily_price_rows(
             source="KIS",
             operation=KIS_OPERATION,
             observation_date=session,
-            retrieved_at=retrieved_at,
+            retrieved_at=chunk_receipt.retrieved_at,
             request_sha256=request_sha,
             snapshot_sha256=snapshot_sha,
         )
@@ -840,18 +1331,28 @@ def _advance_macro(
     series: ECOSSeries,
     observations: Sequence[ECOSObservation],
     target: date,
-    retrieved_at: datetime,
+    chunk_receipt: TemporalReceipt | None,
 ) -> list[MacroObservation]:
-    projection = [{"time": row.time, "value": row.value} for row in observations]
     request = {
         "operation": f"{series.stat_code}/{series.item_code1}/{series.cycle}",
         "start": target.isoformat(),
         "end": target.isoformat(),
     }
-    snapshot_sha = hashlib.sha256(canonical_json_bytes(projection)).hexdigest()
-    request_sha = hashlib.sha256(
-        b"s5-provider-query-v1\x00" + canonical_json_bytes(request)
-    ).hexdigest()
+    snapshot_sha = hashlib.sha256(_ecos_rows_parquet(observations)).hexdigest() if observations else None
+    request_sha = _query_sha256(request)
+    if observations and (
+        chunk_receipt is None
+        or chunk_receipt.source_id != "ECOS"
+        or chunk_receipt.operation_id != request["operation"]
+        or chunk_receipt.request_sha256 != request_sha
+        or chunk_receipt.snapshot_sha256 != snapshot_sha
+    ):
+        raise LightGbmContractError("daily ECOS receipt binding is invalid")
+    if not observations and chunk_receipt is not None:
+        raise LightGbmContractError("empty daily ECOS result cannot bind a projection receipt")
+    bound_receipt = cast(TemporalReceipt, chunk_receipt) if observations else None
+    if any(datetime.strptime(row.time, "%Y%m%d").date() != target for row in observations):
+        raise DatasetUnavailable("DATASET_UNAVAILABLE: daily ECOS observation date is invalid")
     output = [row for row in prior if row.series_id != series.series_id or row.observation_date != target]
     for observation in observations:
         day = datetime.strptime(observation.time, "%Y%m%d").date()
@@ -867,9 +1368,9 @@ def _advance_macro(
                     source="ECOS",
                     operation=str(request["operation"]),
                     observation_date=day,
-                    retrieved_at=retrieved_at,
+                    retrieved_at=cast(TemporalReceipt, bound_receipt).retrieved_at,
                     request_sha256=request_sha,
-                    snapshot_sha256=snapshot_sha,
+                    snapshot_sha256=cast(str, snapshot_sha),
                 ),
             )
         )
@@ -972,31 +1473,6 @@ def _validated_series(series: Sequence[ECOSSeries]) -> tuple[ECOSSeries, ...]:
     return values
 
 
-def _receipt_for_rows(
-    *,
-    source: str,
-    operation: str,
-    observation_date: date,
-    retrieved_at: datetime,
-    query: Mapping[str, object],
-    rows: Sequence[Mapping[str, str]],
-) -> TemporalReceipt:
-    request_sha = hashlib.sha256(
-        b"s5-provider-query-v1\x00" + canonical_json_bytes(dict(query))
-    ).hexdigest()
-    snapshot_sha = hashlib.sha256(
-        canonical_json_bytes([dict(row) for row in rows])
-    ).hexdigest()
-    return _receipt(
-        source=source,
-        operation=operation,
-        observation_date=observation_date,
-        retrieved_at=retrieved_at,
-        request_sha256=request_sha,
-        snapshot_sha256=snapshot_sha,
-    )
-
-
 def _receipt(
     *,
     source: str,
@@ -1031,13 +1507,6 @@ def _receipt(
             else next_session_evidence_clock(observation_date)
         ),
     )
-
-
-def _clock(clock: Callable[[], datetime]) -> datetime:
-    value = clock()
-    if value.tzinfo is None:
-        raise LightGbmContractError("daily provider clock must be timezone aware")
-    return value.astimezone(UTC)
 
 
 def _number(value: str, *, allow_zero: bool = False) -> float:

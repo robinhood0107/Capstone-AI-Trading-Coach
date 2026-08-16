@@ -13,6 +13,7 @@ from sklearn.metrics import confusion_matrix, f1_score  # type: ignore[import-un
 from app.data._shared.canonical_json import canonical_json_bytes
 from app.lightgbm.calibration import OvrPlattCalibrator, fit_ovr_platt
 from app.lightgbm.errors import LightGbmContractError
+from app.lightgbm.features import CORE_FEATURE_COLUMNS
 from app.lightgbm.metrics import CalibrationMetrics, calibration_metrics, tie_aware_argmax
 from app.lightgbm.walk_forward import UntouchedTestLoader
 
@@ -168,8 +169,25 @@ def fit_lightgbm_reproducible(
         weights = (
             capped_balanced_weights(y_fit) if candidate.class_weight == "CAPPED_BALANCED" else None
         )
-        train_data = lgb.Dataset(x_fit, label=y_fit, weight=weights, free_raw_data=False)
-        early_data = lgb.Dataset(x_early, label=y_early, reference=train_data, free_raw_data=False)
+        feature_names = (
+            list(CORE_FEATURE_COLUMNS)
+            if x_fit.shape[1] == len(CORE_FEATURE_COLUMNS)
+            else [f"Column_{index}" for index in range(x_fit.shape[1])]
+        )
+        train_data = lgb.Dataset(
+            x_fit,
+            label=y_fit,
+            weight=weights,
+            feature_name=feature_names,
+            free_raw_data=False,
+        )
+        early_data = lgb.Dataset(
+            x_early,
+            label=y_early,
+            reference=train_data,
+            feature_name=feature_names,
+            free_raw_data=False,
+        )
         parameters: dict[str, object] = {
             "objective": "multiclass",
             "num_class": 3,

@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 from contextlib import AbstractContextManager
+from datetime import UTC, date, datetime
 import hashlib
+import json
 from pathlib import Path
-from typing import cast
+from types import SimpleNamespace
+from typing import Callable, cast
 
 import numpy as np
 import pytest
@@ -11,6 +14,7 @@ import pytest
 from app.data._shared.canonical_json import canonical_json_bytes
 from app.lightgbm.calibration import fit_ovr_platt
 from app.lightgbm.errors import LightGbmContractError
+from app.lightgbm.features import CORE_FEATURE_COLUMNS
 from app.lightgbm.production_db import Connection, activate_release_and_batch, stage_release_and_batch
 from app.lightgbm.production_release import (
     QUALIFICATION_RECEIPT,
@@ -21,10 +25,79 @@ from app.lightgbm.production_release import (
     _signal_parquet,
     _write_qualification_reservation,
     _write_qualification_seal,
+    qualify_and_write_production_release,
     validate_production_model_release,
     validate_production_signal_batch,
 )
+from app.lightgbm.production_stage_cli import _manual_action
 from app.lightgbm.training import exact_grid, fit_lightgbm_reproducible, raw_margins
+
+
+def test_manual_stage_action_requires_explicit_valid_rollback(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("S5_MANUAL_ACTION", raising=False)
+    monkeypatch.delenv("S5_MANUAL_ACTIVATE", raising=False)
+    assert _manual_action() == "STAGE"
+    monkeypatch.setenv("S5_MANUAL_ACTIVATE", "true")
+    assert _manual_action() == "ACTIVATE"
+    monkeypatch.setenv("S5_MANUAL_ACTION", "ROLLBACK")
+    assert _manual_action() == "ROLLBACK"
+    monkeypatch.setenv("S5_MANUAL_ACTION", "AUTO")
+    with pytest.raises(ValueError, match="manual action"):
+        _manual_action()
+
+
+def test_production_qualification_no_pass_never_projects_final_test(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import app.lightgbm.production_release as release_module
+    import app.lightgbm.training as training_module
+
+    rows = release_module._TrainingRows(
+        keys=(("005930", date(2026, 8, 14)),),
+        features=np.zeros((1, len(CORE_FEATURE_COLUMNS)), dtype=np.float32),
+        labels=np.asarray([1], dtype=np.int64),
+        forward_returns=np.asarray([0.0], dtype=np.float64),
+    )
+    manifest_sha = "a" * 64
+    bundle = SimpleNamespace(
+        manifest_sha256=manifest_sha,
+        provenance=SimpleNamespace(base=SimpleNamespace(dataset_cutoff=datetime(2026, 8, 18, tzinfo=UTC))),
+        artifact=SimpleNamespace(table=object()),
+    )
+    materialization = SimpleNamespace(
+        feature_bundle=SimpleNamespace(manifest_sha256=manifest_sha),
+        acquisition=SimpleNamespace(prices=(), krx_raw_prices={}),
+    )
+    final = SimpleNamespace(
+        fit_sessions=(), early_sessions=(), calibration_sessions=(), evaluation_sessions=()
+    )
+    monkeypatch.setattr(release_module, "read_production_feature_bundle", lambda **_: bundle)
+    monkeypatch.setattr(release_module, "build_production_exact_labels", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(release_module, "_training_rows", lambda *_args: rows)
+    monkeypatch.setattr(
+        release_module,
+        "build_walk_forward_plan",
+        lambda *_args: SimpleNamespace(folds=(), final=final),
+    )
+    monkeypatch.setattr(release_module, "_final_arrays", lambda *_args: object())
+    monkeypatch.setattr(release_module, "build_production_feature_table", lambda **_: object())
+    monkeypatch.setattr(release_module, "_training_rows_from_table", lambda *_args: rows)
+    monkeypatch.setattr(release_module, "_corporate_sensitivity", lambda **_: (set(), True))
+    monkeypatch.setattr(training_module, "run_exact_four_grid", lambda _blocks: [])
+    monkeypatch.setattr(training_module, "select_candidate", lambda _evaluations: None)
+    result = qualify_and_write_production_release(
+        packet=cast(object, SimpleNamespace()),  # type: ignore[arg-type]
+        materialization=cast(object, materialization),  # type: ignore[arg-type]
+        feature_root=_private_root(tmp_path / "feature"),
+        expected_feature_manifest_sha256=manifest_sha,
+        release_root=tmp_path / "release",
+        code_head="b" * 40,
+        code_tree="c" * 40,
+        uv_lock_sha256="d" * 64,
+    )
+    assert result.reason == "CALIBRATION_FAILED"  # type: ignore[union-attr]
+    assert result.final_test_access_count == 0  # type: ignore[union-attr]
 
 
 def _private_root(path: Path) -> Path:
@@ -46,9 +119,69 @@ def _release(root: Path) -> tuple[str, dict[str, object]]:
     y_early = np.tile(np.asarray([0, 1, 2]), 30)
     model = fit_lightgbm_reproducible(x_fit, y_fit, x_early, y_early, exact_grid()[0])
     calibrator = fit_ovr_platt(raw_margins(model, x_early), y_early)
-    report_without_id = {
+    metrics = {"ece": 0.03, "brier": 0.5, "logLoss": 0.7}
+    baseline = {
+        "costSensitivityBps": {"25": 0.0, "30": 0.0, "35": 0.0},
+        "meanEdge35Bps": 0.0,
+        "logLoss": 0.7,
+        "brier": 0.5,
+        "ece": 0.03,
+        "macroF1": 0.5,
+        "confusionMatrix": [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
+    }
+    report_without_id: dict[str, object] = {
         "reportVersion": "s5-production-qualification-v1",
-        "finalTest": {"accessCount": 1, "passed": True},
+        "historicalMode": "HISTORICAL_REPLAY_RECONSTRUCTED",
+        "temporalQuality": "RECONSTRUCTED_FIXED_LAG",
+        "strictProviderPITClaim": False,
+        "selectedCandidate": {"gridIndex": 0, "numLeaves": 15, "classWeight": "NONE"},
+        "primaryEvaluation": [
+            {
+                "gridIndex": grid_index,
+                "folds": [
+                    {
+                        "fold": f"fold-{fold_index}",
+                        "raw": metrics,
+                        "calibrated": metrics,
+                        "passed": True,
+                    }
+                    for fold_index in range(1, 4)
+                ],
+            }
+            for grid_index in range(4)
+        ],
+        "sensitivity": [
+            {
+                "gridIndex": grid_index,
+                "folds": [
+                    {
+                        "fold": f"fold-{fold_index}",
+                        "corporateActionPass": True,
+                        "macroTimingPass": True,
+                        "rowCount": 100,
+                        "macroRowCount": 98,
+                        "eventFreeRowCount": 100,
+                    }
+                    for fold_index in range(1, 4)
+                ],
+            }
+            for grid_index in range(4)
+        ],
+        "corporateActionGlobalPass": True,
+        "finalTest": {
+            "accessCount": 1,
+            "rowCount": 126,
+            "raw": metrics,
+            "calibrated": metrics,
+            "passed": True,
+        },
+        "costReport": {
+            "directionalEdgeOnly": True,
+            **baseline,
+            "alwaysHold": baseline,
+            "trainOnlyPrior": {"probabilities": [1 / 3, 1 / 3, 1 / 3], **baseline},
+            "fakeArtifactsIncluded": False,
+        },
     }
     report_id = f"mrp-{hashlib.sha256(canonical_json_bytes(report_without_id)).hexdigest()[:12]}"
     report = canonical_json_bytes({**report_without_id, "modelReportId": report_id})
@@ -56,8 +189,35 @@ def _release(root: Path) -> tuple[str, dict[str, object]]:
         "model.txt": model.model_text,
         "calibrator.json": calibrator.canonical_bytes(),
         "report.json": report,
-        "gain-importance.json": canonical_json_bytes({"gain": [1.0]}),
-        "contribution-report.json": canonical_json_bytes({"rows": []}),
+        "gain-importance.json": canonical_json_bytes(
+            {
+                "reportVersion": "s5-gain-importance-v1",
+                "featureNames": list(CORE_FEATURE_COLUMNS),
+                "gain": {name: 1.0 for name in CORE_FEATURE_COLUMNS},
+            }
+        ),
+        "contribution-report.json": canonical_json_bytes(
+            {
+                "reportVersion": "s5-pred-contrib-v1",
+                "reportOnly": True,
+                "featureNames": list(CORE_FEATURE_COLUMNS),
+                "rowCount": 1,
+                "rows": [
+                    {
+                        "rowKeyHash": "9" * 64,
+                        "classes": [
+                            {
+                                "classIndex": class_index,
+                                "bias": 0.0,
+                                "contributions": [0.0] * len(CORE_FEATURE_COLUMNS),
+                                "rawMargin": 0.0,
+                            }
+                            for class_index in range(3)
+                        ],
+                    }
+                ],
+            }
+        ),
     }
     bindings = {
         "featureManifestSha256": "a" * 64,
@@ -136,6 +296,7 @@ def _batch(
     ).hexdigest()
     preimage = {
         "batchVersion": "s5-signal-batch-v1",
+        "batchPurpose": "DAILY",
         "modelReleaseId": model_release_id,
         "universeReleaseId": f"sur-{membership[:12]}",
         "membershipSha256": membership,
@@ -143,6 +304,7 @@ def _batch(
         "asOf": as_of,
         "timeframe": "1d",
         "rowCount": 31,
+        "membersSha256": hashlib.sha256(canonical_json_bytes(rows)).hexdigest(),
         "parquetFile": "signals.parquet",
         "parquetSha256": hashlib.sha256(parquet).hexdigest(),
         "fixture": False,
@@ -155,6 +317,34 @@ def _batch(
     _write(root, "signals.parquet", parquet)
     _write(root, "batch.json", manifest)
     return hashlib.sha256(manifest).hexdigest()
+
+
+def _rewrite_report(root: Path, mutate: Callable[[dict[str, object]], None]) -> str:
+    report = json.loads((root / "report.json").read_bytes())
+    report.pop("modelReportId")
+    mutate(report)
+    report_id = f"mrp-{hashlib.sha256(canonical_json_bytes(report)).hexdigest()[:12]}"
+    report["modelReportId"] = report_id
+    _write(root, "report.json", canonical_json_bytes(report))
+    qualification = json.loads((root / "qualification.json").read_bytes())
+    qualification["reportSha256"] = hashlib.sha256((root / "report.json").read_bytes()).hexdigest()
+    _write(root, "qualification.json", canonical_json_bytes(qualification))
+    manifest = json.loads((root / "release.json").read_bytes())
+    manifest["modelReportId"] = report_id
+    manifest["files"]["report.json"] = hashlib.sha256((root / "report.json").read_bytes()).hexdigest()
+    manifest["files"]["qualification.json"] = hashlib.sha256(
+        (root / "qualification.json").read_bytes()
+    ).hexdigest()
+    manifest.pop("modelReleaseId")
+    manifest.pop("semanticSha256")
+    semantic = hashlib.sha256(
+        b"s5-model-release-v1\x00" + canonical_json_bytes(manifest)
+    ).hexdigest()
+    manifest["modelReleaseId"] = f"lgr-{semantic[:12]}"
+    manifest["semanticSha256"] = semantic
+    content = canonical_json_bytes(manifest)
+    _write(root, "release.json", content)
+    return hashlib.sha256(content).hexdigest()
 
 
 def test_production_release_and_batch_are_separate_closed_trust_anchors(tmp_path: Path) -> None:
@@ -194,6 +384,41 @@ def test_release_rejects_digest_mutation_fake_and_symlink(tmp_path: Path) -> Non
     with pytest.raises(LightGbmContractError):
         validate_production_model_release(
             approved_root=other, expected_manifest_sha256=other_digest
+        )
+
+
+def test_release_rejects_self_consistent_but_failed_qualification(tmp_path: Path) -> None:
+    root = _private_root(tmp_path / "release")
+    _release(root)
+
+    def fail_final(report: dict[str, object]) -> None:
+        final_test = cast(dict[str, object], report["finalTest"])
+        final_test["passed"] = False
+
+    digest = _rewrite_report(root, fail_final)
+    with pytest.raises(LightGbmContractError, match="final test qualification"):
+        validate_production_model_release(
+            approved_root=root,
+            expected_manifest_sha256=digest,
+        )
+
+
+def test_release_rejects_a_passing_candidate_that_violates_locked_ranking(tmp_path: Path) -> None:
+    root = _private_root(tmp_path / "release")
+    _release(root)
+
+    def make_second_candidate_better(report: dict[str, object]) -> None:
+        primary = cast(list[dict[str, object]], report["primaryEvaluation"])
+        for fold in cast(list[dict[str, object]], primary[0]["folds"]):
+            cast(dict[str, object], fold["calibrated"])["logLoss"] = 0.71
+        for fold in cast(list[dict[str, object]], primary[1]["folds"]):
+            cast(dict[str, object], fold["calibrated"])["logLoss"] = 0.69
+
+    digest = _rewrite_report(root, make_second_candidate_better)
+    with pytest.raises(LightGbmContractError, match="locked ranking"):
+        validate_production_model_release(
+            approved_root=root,
+            expected_manifest_sha256=digest,
         )
 
 
@@ -244,9 +469,11 @@ class _Cursor(AbstractContextManager["_Cursor"]):
     def __init__(self, rows: list[tuple[object, ...]]) -> None:
         self.rows = rows
         self.queries: list[str] = []
+        self.params: list[tuple[object, ...]] = []
 
     def execute(self, query: str, params: tuple[object, ...]) -> object:
         self.queries.append(query)
+        self.params.append(params)
         return self
 
     def fetchone(self) -> tuple[object, ...] | None:
@@ -309,6 +536,23 @@ def test_db_adapter_calls_only_capability_functions_and_rolls_back_on_missing_re
             signal_batch_id=str(batch.manifest["signalBatchId"]),
             expected_model_release_id=None,
             expected_signal_batch_id=None,
+            release_manifest_sha256=release.manifest_sha256,
+            batch_manifest_sha256=batch.manifest_sha256,
         )
         == 1
     )
+    rollback = _Connection([(2,)])
+    assert (
+        activate_release_and_batch(
+            cast(Connection, rollback),
+            model_release_id=str(manifest["modelReleaseId"]),
+            signal_batch_id=str(batch.manifest["signalBatchId"]),
+            expected_model_release_id="lgr-999999999999",
+            expected_signal_batch_id="sgb-999999999999",
+            release_manifest_sha256=release.manifest_sha256,
+            batch_manifest_sha256=batch.manifest_sha256,
+            rollback=True,
+        )
+        == 2
+    )
+    assert rollback.value.params[0][-1] == "MANUAL_ROLLBACK"

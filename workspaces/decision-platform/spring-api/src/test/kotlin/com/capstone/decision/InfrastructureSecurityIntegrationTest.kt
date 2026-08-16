@@ -610,7 +610,10 @@ class InfrastructureSecurityIntegrationTest {
                             'decision_fill_writer',
                             'decision_rag_writer',
                             'decision_rag_admin',
-                            'decision_rag_query'
+                            'decision_rag_query',
+                            'decision_signal_writer',
+                            'decision_signal_scheduler',
+                            'decision_signal_admin'
                           ])
                         )
                         SELECT fingerprint

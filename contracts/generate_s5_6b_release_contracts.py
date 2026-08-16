@@ -58,6 +58,7 @@ def _schema() -> tuple[dict[str, object], dict[str, object]]:
     }
     batch_properties: dict[str, object] = {
         "batchVersion": {"const": "s5-signal-batch-v1"},
+        "batchPurpose": {"enum": ["DAILY", "ROLLBACK"]},
         "signalBatchId": {"type": "string", "pattern": "^sgb-[0-9a-f]{12}$"},
         "modelReleaseId": {"type": "string", "pattern": "^lgr-[0-9a-f]{12}$"},
         "universeReleaseId": {"type": "string", "pattern": "^sur-[0-9a-f]{12}$"},
@@ -66,6 +67,7 @@ def _schema() -> tuple[dict[str, object], dict[str, object]]:
         "asOf": {"type": "string", "format": "date-time"},
         "timeframe": {"const": "1d"},
         "rowCount": {"const": 31},
+        "membersSha256": {"type": "string", "pattern": SHA},
         "parquetFile": {"const": "signals.parquet"},
         "parquetSha256": {"type": "string", "pattern": SHA},
         "fixture": {"const": False},
@@ -108,6 +110,7 @@ def artifacts() -> dict[str, bytes]:
     }
     batch = {
         "batchVersion": "s5-signal-batch-v1",
+        "batchPurpose": "DAILY",
         "signalBatchId": "sgb-444444444444",
         "modelReleaseId": "lgr-111111111111",
         "universeReleaseId": "sur-555555555555",
@@ -116,6 +119,7 @@ def artifacts() -> dict[str, bytes]:
         "asOf": "2026-08-17T23:10:00Z",
         "timeframe": "1d",
         "rowCount": 31,
+        "membersSha256": "8" * 64,
         "parquetFile": "signals.parquet",
         "parquetSha256": "6" * 64,
         "fixture": False,
@@ -157,6 +161,14 @@ def artifacts() -> dict[str, bytes]:
             "missedSessionResume": "EXPLICIT_NEXT_XKRX_SESSION_ONLY",
             "maxPhysicalCalls": 41,
             "retry": 0,
+            "failedQueryResumeMax": 1,
+            "resumeDoesNotIncreaseCaps": True,
+            "localFinalizationProviderCalls": 0,
+        },
+        "rollback": {
+            "batchPurpose": "ROLLBACK",
+            "freshCurrentSessionBatchRequired": True,
+            "oldBatchReuseAllowed": False,
         },
         "automaticRetrain": 0,
         "automaticModelActivation": 0,

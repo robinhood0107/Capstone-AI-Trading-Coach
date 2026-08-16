@@ -57,6 +57,7 @@ CREATE TABLE public.signal_batches (
   universe_release_id text NOT NULL REFERENCES public.signal_universe_releases(universe_release_id),
   batch_manifest_sha256 text NOT NULL UNIQUE CHECK (batch_manifest_sha256 ~ '^[0-9a-f]{64}$'),
   membership_sha256 text NOT NULL CHECK (membership_sha256 ~ '^[0-9a-f]{64}$'),
+  batch_purpose text NOT NULL CHECK (batch_purpose IN ('DAILY','ROLLBACK')),
   session_date date NOT NULL,
   as_of timestamptz NOT NULL,
   timeframe text NOT NULL CHECK (timeframe = '1d'),
@@ -64,7 +65,8 @@ CREATE TABLE public.signal_batches (
   status text NOT NULL CHECK (status IN ('STAGED','FINALIZED')),
   fixture boolean NOT NULL CHECK (fixture = false),
   provenance_class text NOT NULL CHECK (provenance_class = 'PRODUCTION'),
-  staged_at timestamptz NOT NULL DEFAULT clock_timestamp()
+  staged_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+  UNIQUE (model_release_id, session_date, batch_purpose)
 );
 
 CREATE TABLE public.signal_batch_members (
@@ -131,6 +133,7 @@ $rls$;
 
 CREATE FUNCTION public.stage_signal_model_release(
   p_release_manifest_sha256 text,
+  p_release_manifest_canonical_text text,
   p_model_release_id text,
   p_model_version text,
   p_model_report_id text,
@@ -148,11 +151,42 @@ VOLATILE
 SET search_path = pg_catalog, public, pg_temp
 AS $stage_signal_model_release$
 DECLARE
-  existing_manifest text;
+  release_manifest jsonb;
+  existing_release public.signal_model_releases%ROWTYPE;
   transition_digest text;
 BEGIN
   IF current_user <> 'flyway' OR session_user <> 'decision_signal_writer'
-     OR p_release_manifest_sha256 !~ '^[0-9a-f]{64}$'
+     OR octet_length(p_release_manifest_canonical_text) NOT BETWEEN 2 AND 1048576 THEN
+    RAISE EXCEPTION 'S5 model release arguments are invalid' USING ERRCODE = '22023';
+  END IF;
+  release_manifest := p_release_manifest_canonical_text::jsonb;
+  IF p_release_manifest_sha256 !~ '^[0-9a-f]{64}$'
+     OR encode(digest(convert_to(p_release_manifest_canonical_text, 'UTF8'), 'sha256'), 'hex')
+        <> p_release_manifest_sha256
+     OR jsonb_typeof(release_manifest) <> 'object'
+     OR (SELECT count(*) FROM jsonb_object_keys(release_manifest)) <> 19
+     OR release_manifest - ARRAY[
+          'calendarName','calendarVersion','codeHead','codeTree','featureManifestSha256','files',
+          'fixture','modelReleaseId','modelReportId','modelVersion','provenanceClass',
+          'releaseVersion','semanticSha256','sourceBundleSetSha256','sourcePolicySetSha256',
+          'status','temporalQuality','trainingDatasetSha256','uvLockSha256'
+        ] <> '{}'::jsonb
+     OR release_manifest->>'releaseVersion' IS DISTINCT FROM 's5-model-release-v1'
+     OR release_manifest->>'modelReleaseId' IS DISTINCT FROM p_model_release_id
+     OR release_manifest->>'modelVersion' IS DISTINCT FROM p_model_version
+     OR release_manifest->>'modelReportId' IS DISTINCT FROM p_model_report_id
+     OR release_manifest->>'featureManifestSha256' IS DISTINCT FROM p_feature_manifest_sha256
+     OR release_manifest->>'sourceBundleSetSha256' IS DISTINCT FROM p_source_bundle_set_sha256
+     OR release_manifest->>'trainingDatasetSha256' IS DISTINCT FROM p_training_dataset_sha256
+     OR release_manifest->>'codeHead' IS DISTINCT FROM p_code_head
+     OR release_manifest->>'codeTree' IS DISTINCT FROM p_code_tree
+     OR release_manifest->>'uvLockSha256' IS DISTINCT FROM p_uv_lock_sha256
+     OR release_manifest->>'calendarName' IS DISTINCT FROM 'XKRX'
+     OR release_manifest->>'calendarVersion' IS DISTINCT FROM '4.13.2'
+     OR release_manifest->>'temporalQuality' IS DISTINCT FROM 'RECONSTRUCTED_FIXED_LAG'
+     OR release_manifest->>'status' IS DISTINCT FROM 'QUALIFIED'
+     OR release_manifest->>'provenanceClass' IS DISTINCT FROM 'PRODUCTION'
+     OR release_manifest->'fixture' IS DISTINCT FROM 'false'::jsonb
      OR p_model_release_id !~ '^lgr-[0-9a-f]{12}$'
      OR p_model_version !~ '^lgbm-v1-[0-9a-f]{12}$'
      OR p_model_report_id !~ '^mrp-[0-9a-f]{12}$'
@@ -164,10 +198,24 @@ BEGIN
     RAISE EXCEPTION 'S5 model release arguments are invalid' USING ERRCODE = '22023';
   END IF;
   PERFORM pg_advisory_xact_lock(hashtextextended(p_model_release_id, 0));
-  SELECT release_manifest_sha256 INTO existing_manifest
+  SELECT * INTO existing_release
   FROM public.signal_model_releases WHERE model_release_id = p_model_release_id FOR SHARE;
   IF FOUND THEN
-    IF existing_manifest = p_release_manifest_sha256 THEN RETURN 'REPLAYED'; END IF;
+    IF existing_release.release_manifest_sha256 = p_release_manifest_sha256
+       AND existing_release.model_version = p_model_version
+       AND existing_release.model_report_id = p_model_report_id
+       AND existing_release.feature_manifest_sha256 = p_feature_manifest_sha256
+       AND existing_release.source_bundle_set_sha256 = p_source_bundle_set_sha256
+       AND existing_release.training_dataset_sha256 = p_training_dataset_sha256
+       AND existing_release.code_head = p_code_head
+       AND existing_release.code_tree = p_code_tree
+       AND existing_release.uv_lock_sha256 = p_uv_lock_sha256
+       AND existing_release.temporal_quality = 'RECONSTRUCTED_FIXED_LAG'
+       AND existing_release.qualification_status = 'QUALIFIED'
+       AND existing_release.fixture = false
+       AND existing_release.provenance_class = 'PRODUCTION' THEN
+      RETURN 'REPLAYED';
+    END IF;
     RAISE EXCEPTION 'S5 model release identity conflict' USING ERRCODE = '23505';
   END IF;
   INSERT INTO public.signal_model_releases(
@@ -193,10 +241,11 @@ BEGIN
   RETURN 'INSERTED';
 END
 $stage_signal_model_release$;
-ALTER FUNCTION public.stage_signal_model_release(text,text,text,text,text,text,text,text,text,text) OWNER TO flyway;
+ALTER FUNCTION public.stage_signal_model_release(text,text,text,text,text,text,text,text,text,text,text) OWNER TO flyway;
 
 CREATE FUNCTION public.stage_signal_batch(
   p_batch_manifest_sha256 text,
+  p_batch_manifest_canonical_text text,
   p_signal_batch_id text,
   p_model_release_id text,
   p_universe_release_id text,
@@ -212,9 +261,10 @@ VOLATILE
 SET search_path = pg_catalog, public, pg_temp
 AS $stage_signal_batch$
 DECLARE
+  batch_manifest jsonb;
   members jsonb;
   member jsonb;
-  existing_manifest text;
+  existing_batch public.signal_batches%ROWTYPE;
   identity_digest text;
   payload_text text;
   payload_digest text;
@@ -223,12 +273,42 @@ DECLARE
   computed_membership_sha256 text;
 BEGIN
   IF current_user <> 'flyway' OR session_user <> 'decision_signal_writer'
-     OR p_batch_manifest_sha256 !~ '^[0-9a-f]{64}$'
+     OR octet_length(p_batch_manifest_canonical_text) NOT BETWEEN 2 AND 1048576
+     OR octet_length(p_members_canonical_text) NOT BETWEEN 2 AND 262144 THEN
+    RAISE EXCEPTION 'S5 signal batch arguments are invalid' USING ERRCODE = '22023';
+  END IF;
+  batch_manifest := p_batch_manifest_canonical_text::jsonb;
+  IF p_batch_manifest_sha256 !~ '^[0-9a-f]{64}$'
+     OR encode(digest(convert_to(p_batch_manifest_canonical_text, 'UTF8'), 'sha256'), 'hex')
+        <> p_batch_manifest_sha256
+     OR jsonb_typeof(batch_manifest) <> 'object'
+     OR (SELECT count(*) FROM jsonb_object_keys(batch_manifest)) <> 16
+     OR batch_manifest - ARRAY[
+          'asOf','batchPurpose','batchVersion','fixture','membershipSha256','membersSha256','modelReleaseId',
+          'parquetFile','parquetSha256','provenanceClass','rowCount','semanticSha256',
+          'sessionDate','signalBatchId','timeframe','universeReleaseId'
+        ] <> '{}'::jsonb
+     OR batch_manifest->>'batchVersion' IS DISTINCT FROM 's5-signal-batch-v1'
+     OR batch_manifest->>'batchPurpose' NOT IN ('DAILY','ROLLBACK')
+     OR batch_manifest->>'signalBatchId' IS DISTINCT FROM p_signal_batch_id
+     OR batch_manifest->>'modelReleaseId' IS DISTINCT FROM p_model_release_id
+     OR batch_manifest->>'universeReleaseId' IS DISTINCT FROM p_universe_release_id
+     OR batch_manifest->>'membershipSha256' IS DISTINCT FROM p_membership_sha256
+     OR batch_manifest->>'sessionDate' IS DISTINCT FROM p_session_date::text
+     OR (batch_manifest->>'asOf')::timestamptz IS DISTINCT FROM p_as_of
+     OR batch_manifest->>'timeframe' IS DISTINCT FROM '1d'
+     OR batch_manifest->>'rowCount' IS DISTINCT FROM '31'
+     OR batch_manifest->>'parquetFile' IS DISTINCT FROM 'signals.parquet'
+     OR batch_manifest->>'provenanceClass' IS DISTINCT FROM 'PRODUCTION'
+     OR batch_manifest->'fixture' IS DISTINCT FROM 'false'::jsonb
      OR p_signal_batch_id !~ '^sgb-[0-9a-f]{12}$'
      OR p_model_release_id !~ '^lgr-[0-9a-f]{12}$'
      OR p_universe_release_id !~ '^sur-[0-9a-f]{12}$'
      OR p_membership_sha256 !~ '^[0-9a-f]{64}$'
-     OR p_as_of IS NULL OR octet_length(p_members_canonical_text) NOT BETWEEN 2 AND 262144 THEN
+     OR batch_manifest->>'membersSha256' !~ '^[0-9a-f]{64}$'
+     OR encode(digest(convert_to(p_members_canonical_text, 'UTF8'), 'sha256'), 'hex')
+        <> batch_manifest->>'membersSha256'
+     OR p_as_of IS NULL THEN
     RAISE EXCEPTION 'S5 signal batch arguments are invalid' USING ERRCODE = '22023';
   END IF;
   members := p_members_canonical_text::jsonb;
@@ -242,11 +322,80 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'S5 signal batch model release is unavailable' USING ERRCODE = '22023';
   END IF;
+  -- JSONB 변환이 null/string coercion을 숨기지 않도록 모든 member type과 값을 먼저 닫는다.
+  FOR member IN SELECT value FROM jsonb_array_elements(members) LOOP
+    IF jsonb_typeof(member) <> 'object'
+       OR (SELECT array_agg(key ORDER BY key) FROM jsonb_object_keys(member) key) <>
+          ARRAY['asOf','confidence','modelReportId','modelVersion','signal','status','symbol']
+       OR jsonb_typeof(member->'asOf') <> 'string'
+       OR jsonb_typeof(member->'confidence') <> 'number'
+       OR jsonb_typeof(member->'modelReportId') <> 'string'
+       OR jsonb_typeof(member->'modelVersion') <> 'string'
+       OR jsonb_typeof(member->'signal') <> 'string'
+       OR jsonb_typeof(member->'status') <> 'string'
+       OR jsonb_typeof(member->'symbol') <> 'string'
+       OR member->>'symbol' !~ '^[0-9]{6}$'
+       OR member->>'status' IS DISTINCT FROM 'AVAILABLE'
+       OR member->>'signal' NOT IN ('BUY','HOLD','SELL')
+       OR (member->>'asOf')::timestamptz IS DISTINCT FROM p_as_of
+       OR (member->>'confidence')::numeric < 0 OR (member->>'confidence')::numeric > 1
+       OR NOT EXISTS (
+         SELECT 1 FROM public.signal_model_releases release
+         WHERE release.model_release_id = p_model_release_id
+           AND release.model_version = member->>'modelVersion'
+           AND release.model_report_id = member->>'modelReportId'
+       ) THEN
+      RAISE EXCEPTION 'S5 signal batch member is invalid' USING ERRCODE = '22023';
+    END IF;
+  END LOOP;
+  SELECT count(DISTINCT incoming->>'symbol'),
+    encode(digest(
+      convert_to('s5-inference-universe-v1', 'UTF8') || decode('00', 'hex') ||
+        convert_to(
+          '[' || string_agg(to_jsonb(incoming->>'symbol')::text, ',' ORDER BY incoming->>'symbol') || ']',
+          'UTF8'
+        ),
+      'sha256'), 'hex')
+  INTO member_count, computed_membership_sha256
+  FROM jsonb_array_elements(members) incoming;
+  IF member_count <> 31 OR computed_membership_sha256 <> p_membership_sha256
+     OR p_universe_release_id <> 'sur-' || substr(computed_membership_sha256, 1, 12) THEN
+    RAISE EXCEPTION 'S5 signal batch membership is invalid' USING ERRCODE = '22023';
+  END IF;
   PERFORM pg_advisory_xact_lock(hashtextextended(p_signal_batch_id, 0));
-  SELECT batch_manifest_sha256 INTO existing_manifest
+  SELECT * INTO existing_batch
   FROM public.signal_batches WHERE signal_batch_id = p_signal_batch_id FOR SHARE;
   IF FOUND THEN
-    IF existing_manifest = p_batch_manifest_sha256 THEN RETURN 'REPLAYED'; END IF;
+    IF existing_batch.batch_manifest_sha256 = p_batch_manifest_sha256
+       AND existing_batch.model_release_id = p_model_release_id
+       AND existing_batch.universe_release_id = p_universe_release_id
+       AND existing_batch.membership_sha256 = p_membership_sha256
+       AND existing_batch.batch_purpose = batch_manifest->>'batchPurpose'
+       AND existing_batch.session_date = p_session_date
+       AND existing_batch.as_of = p_as_of
+       AND existing_batch.timeframe = '1d'
+       AND existing_batch.row_count = 31
+       AND existing_batch.status = 'FINALIZED'
+       AND existing_batch.fixture = false
+       AND existing_batch.provenance_class = 'PRODUCTION'
+       AND (SELECT count(*) FROM public.signal_batch_members stored
+            WHERE stored.signal_batch_id = p_signal_batch_id) = 31
+       AND NOT EXISTS (
+         SELECT 1
+         FROM jsonb_array_elements(members) incoming
+         LEFT JOIN public.signal_batch_members stored
+           ON stored.signal_batch_id = p_signal_batch_id
+          AND stored.symbol = incoming->>'symbol'
+         WHERE stored.signal_batch_id IS NULL
+            OR stored.status IS DISTINCT FROM incoming->>'status'
+            OR stored.signal IS DISTINCT FROM incoming->>'signal'
+            OR stored.confidence IS DISTINCT FROM (incoming->>'confidence')::numeric
+            OR stored.as_of IS DISTINCT FROM (incoming->>'asOf')::timestamptz
+            OR stored.model_version IS DISTINCT FROM incoming->>'modelVersion'
+            OR stored.model_report_id IS DISTINCT FROM incoming->>'modelReportId'
+       ) THEN
+      RETURN 'REPLAYED';
+    END IF;
     RAISE EXCEPTION 'S5 signal batch identity conflict' USING ERRCODE = '23505';
   END IF;
   INSERT INTO public.signal_universe_releases(
@@ -262,28 +411,13 @@ BEGIN
   END IF;
   INSERT INTO public.signal_batches(
     signal_batch_id, model_release_id, universe_release_id, batch_manifest_sha256,
-    membership_sha256, session_date, as_of, timeframe, row_count, status, fixture, provenance_class
+    membership_sha256, batch_purpose, session_date, as_of, timeframe, row_count, status, fixture, provenance_class
   ) VALUES (
     p_signal_batch_id, p_model_release_id, p_universe_release_id, p_batch_manifest_sha256,
-    p_membership_sha256, p_session_date, p_as_of, '1d', 31, 'STAGED', false, 'PRODUCTION'
+    p_membership_sha256, batch_manifest->>'batchPurpose', p_session_date, p_as_of,
+    '1d', 31, 'STAGED', false, 'PRODUCTION'
   );
   FOR member IN SELECT value FROM jsonb_array_elements(members) LOOP
-    IF jsonb_typeof(member) <> 'object'
-       OR (SELECT array_agg(key ORDER BY key) FROM jsonb_object_keys(member) key) <>
-          ARRAY['asOf','confidence','modelReportId','modelVersion','signal','status','symbol']
-       OR member->>'symbol' !~ '^[0-9]{6}$'
-       OR member->>'status' <> 'AVAILABLE'
-       OR member->>'signal' NOT IN ('BUY','HOLD','SELL')
-       OR (member->>'asOf')::timestamptz <> p_as_of
-       OR (member->>'confidence')::numeric < 0 OR (member->>'confidence')::numeric > 1
-       OR NOT EXISTS (
-         SELECT 1 FROM public.signal_model_releases release
-         WHERE release.model_release_id = p_model_release_id
-           AND release.model_version = member->>'modelVersion'
-           AND release.model_report_id = member->>'modelReportId'
-       ) THEN
-      RAISE EXCEPTION 'S5 signal batch member is invalid' USING ERRCODE = '22023';
-    END IF;
     payload_text := jsonb_build_object(
       'asOf', member->>'asOf', 'confidence', (member->>'confidence')::numeric,
       'modelReportId', member->>'modelReportId', 'modelVersion', member->>'modelVersion',
@@ -337,17 +471,17 @@ BEGIN
   RETURN 'INSERTED';
 END
 $stage_signal_batch$;
-ALTER FUNCTION public.stage_signal_batch(text,text,text,text,text,date,timestamptz,text) OWNER TO flyway;
+ALTER FUNCTION public.stage_signal_batch(text,text,text,text,text,text,date,timestamptz,text) OWNER TO flyway;
 
 -- 배치가 가리키는 session은 다음 XKRX session 08:10 KST에만 publish 가능하다.
 -- conflict calendar를 조용히 사용하지 않고 row가 없게 만들어 호출자가 fail-closed한다.
-CREATE FUNCTION public.current_s5_signal_batch_clock()
+CREATE FUNCTION public.s5_signal_batch_clock_at(p_now timestamptz)
 RETURNS TABLE(session_date date, as_of timestamptz)
 LANGUAGE sql
 SECURITY DEFINER
 STABLE
 SET search_path = pg_catalog, public, pg_temp
-AS $current_s5_signal_batch_clock$
+AS $s5_signal_batch_clock_at$
   SELECT prior_session.session_date,
     (next_session.session_date + time '08:10') AT TIME ZONE 'Asia/Seoul'
   FROM public.trading_sessions prior_session
@@ -360,14 +494,26 @@ AS $current_s5_signal_batch_clock$
     ORDER BY candidate.session_date
     LIMIT 1
   ) next_session ON true
-  WHERE current_user = 'flyway'
-    AND session_user IN ('decision_signal_admin','decision_signal_scheduler')
-    AND prior_session.exchange_mic = 'XKRX' AND prior_session.is_open
+  WHERE prior_session.exchange_mic = 'XKRX' AND prior_session.is_open
     AND prior_session.has_conflict = false
     AND (next_session.session_date + time '08:10') AT TIME ZONE 'Asia/Seoul'
-      <= statement_timestamp()
+      <= p_now
   ORDER BY prior_session.session_date DESC
   LIMIT 1
+$s5_signal_batch_clock_at$;
+ALTER FUNCTION public.s5_signal_batch_clock_at(timestamptz) OWNER TO flyway;
+
+CREATE FUNCTION public.current_s5_signal_batch_clock()
+RETURNS TABLE(session_date date, as_of timestamptz)
+LANGUAGE sql
+SECURITY DEFINER
+STABLE
+SET search_path = pg_catalog, public, pg_temp
+AS $current_s5_signal_batch_clock$
+  SELECT clock.session_date, clock.as_of
+  FROM public.s5_signal_batch_clock_at(statement_timestamp()) clock
+  WHERE current_user = 'flyway'
+    AND session_user IN ('decision_app','decision_signal_admin','decision_signal_scheduler')
 $current_s5_signal_batch_clock$;
 ALTER FUNCTION public.current_s5_signal_batch_clock() OWNER TO flyway;
 GRANT SELECT ON TABLE public.trading_sessions TO flyway;
@@ -377,6 +523,8 @@ CREATE FUNCTION public.activate_signal_model_and_batch(
   p_signal_batch_id text,
   p_expected_model_release_id text,
   p_expected_signal_batch_id text,
+  p_expected_release_manifest_sha256 text,
+  p_expected_batch_manifest_sha256 text,
   p_reason text
 )
 RETURNS bigint
@@ -388,6 +536,8 @@ AS $activate_signal_model_and_batch$
 DECLARE
   current_model text;
   current_batch text;
+  current_model_generation bigint;
+  current_batch_generation bigint;
   next_generation bigint;
   transition_digest text;
   target_status text;
@@ -395,19 +545,25 @@ DECLARE
   publication_digest text;
 BEGIN
   IF current_user <> 'flyway' OR session_user <> 'decision_signal_admin'
+     OR p_expected_release_manifest_sha256 !~ '^[0-9a-f]{64}$'
+     OR p_expected_batch_manifest_sha256 !~ '^[0-9a-f]{64}$'
      OR p_reason NOT IN ('MANUAL_ACTIVATION','MANUAL_ROLLBACK') THEN
     RAISE EXCEPTION 'S5 activation actor or reason is invalid' USING ERRCODE = '42501';
   END IF;
-  SELECT model_release_id, generation INTO current_model, next_generation
+  PERFORM pg_advisory_xact_lock(hashtextextended('s5-signal-active-pointer-v1', 0));
+  SELECT model_release_id, generation INTO current_model, current_model_generation
   FROM public.active_signal_model_release WHERE singleton FOR UPDATE;
-  SELECT signal_batch_id INTO current_batch FROM public.active_signal_batch WHERE singleton FOR UPDATE;
+  SELECT signal_batch_id, generation INTO current_batch, current_batch_generation
+  FROM public.active_signal_batch WHERE singleton FOR UPDATE;
   IF current_model IS DISTINCT FROM NULLIF(p_expected_model_release_id, '')
      OR current_batch IS DISTINCT FROM NULLIF(p_expected_signal_batch_id, '') THEN
     RAISE EXCEPTION 'S5 active pointer CAS conflict' USING ERRCODE = '40001';
   END IF;
   SELECT lifecycle_status INTO target_status
   FROM public.signal_model_releases
-  WHERE model_release_id = p_model_release_id FOR UPDATE;
+  WHERE model_release_id = p_model_release_id
+    AND release_manifest_sha256 = p_expected_release_manifest_sha256
+  FOR UPDATE;
   IF (p_reason = 'MANUAL_ACTIVATION' AND target_status IS DISTINCT FROM 'STAGED')
      OR (p_reason = 'MANUAL_ROLLBACK' AND target_status IS DISTINCT FROM 'ACCEPTED') THEN
     RAISE EXCEPTION 'S5 activation lifecycle transition is invalid' USING ERRCODE = '22023';
@@ -419,6 +575,9 @@ BEGIN
       ON current_clock.session_date = batch.session_date AND current_clock.as_of = batch.as_of
     WHERE batch.signal_batch_id = p_signal_batch_id
       AND batch.model_release_id = p_model_release_id AND batch.status = 'FINALIZED'
+      AND batch.batch_manifest_sha256 = p_expected_batch_manifest_sha256
+      AND batch.batch_purpose = CASE p_reason
+        WHEN 'MANUAL_ROLLBACK' THEN 'ROLLBACK' ELSE 'DAILY' END
       AND batch.row_count = 31 AND release.qualification_status = 'QUALIFIED'
       AND release.lifecycle_status IN ('STAGED','ACCEPTED')
       AND NOT EXISTS (
@@ -432,7 +591,10 @@ BEGIN
   END IF;
   SELECT batch_manifest_sha256 INTO target_batch_manifest
   FROM public.signal_batches WHERE signal_batch_id = p_signal_batch_id;
-  next_generation := COALESCE(next_generation, 0) + 1;
+  -- daily publish는 batch generation만 전진하므로 두 pointer 중 큰 값에서 다음 세대를 만든다.
+  next_generation := GREATEST(
+    COALESCE(current_model_generation, 0), COALESCE(current_batch_generation, 0)
+  ) + 1;
   UPDATE public.signal_model_releases SET lifecycle_status = 'ACCEPTED'
   WHERE model_release_id = p_model_release_id AND lifecycle_status = 'STAGED';
   transition_digest := encode(digest(convert_to(concat_ws(E'\n',
@@ -466,11 +628,12 @@ BEGIN
   RETURN next_generation;
 END
 $activate_signal_model_and_batch$;
-ALTER FUNCTION public.activate_signal_model_and_batch(text,text,text,text,text) OWNER TO flyway;
+ALTER FUNCTION public.activate_signal_model_and_batch(text,text,text,text,text,text,text) OWNER TO flyway;
 
 CREATE FUNCTION public.publish_active_signal_batch(
   p_signal_batch_id text,
-  p_expected_signal_batch_id text
+  p_expected_signal_batch_id text,
+  p_expected_batch_manifest_sha256 text
 )
 RETURNS bigint
 LANGUAGE plpgsql
@@ -484,14 +647,40 @@ DECLARE
   next_generation bigint;
   publication_digest text;
 BEGIN
-  IF current_user <> 'flyway' OR session_user <> 'decision_signal_scheduler' THEN
+  IF current_user <> 'flyway' OR session_user <> 'decision_signal_scheduler'
+     OR p_expected_batch_manifest_sha256 !~ '^[0-9a-f]{64}$' THEN
     RAISE EXCEPTION 'S5 scheduler actor is invalid' USING ERRCODE = '42501';
   END IF;
-  SELECT model_release_id, generation INTO active_model, next_generation
+  PERFORM pg_advisory_xact_lock(hashtextextended('s5-signal-active-pointer-v1', 0));
+  SELECT model_release_id INTO active_model
   FROM public.active_signal_model_release WHERE singleton FOR SHARE;
-  SELECT signal_batch_id INTO current_batch FROM public.active_signal_batch WHERE singleton FOR UPDATE;
+  SELECT signal_batch_id, generation INTO current_batch, next_generation
+  FROM public.active_signal_batch WHERE singleton FOR UPDATE;
+  -- DB commit 뒤 operator 응답이 끊긴 경우 같은 manifest-bound target은 publication을 늘리지 않고 replay한다.
+  IF current_batch = p_signal_batch_id AND EXISTS (
+    SELECT 1 FROM public.signal_batches batch
+    JOIN public.signal_model_releases release USING (model_release_id)
+    WHERE batch.signal_batch_id = p_signal_batch_id
+      AND batch.model_release_id = active_model
+      AND batch.batch_manifest_sha256 = p_expected_batch_manifest_sha256
+      AND batch.status = 'FINALIZED' AND release.lifecycle_status = 'ACCEPTED'
+      AND EXISTS (
+        SELECT 1 FROM public.signal_batch_publications publication
+        WHERE publication.signal_batch_id = batch.signal_batch_id
+          AND publication.generation = next_generation
+      )
+  ) THEN
+    RETURN next_generation;
+  END IF;
   IF active_model IS NULL OR current_batch IS DISTINCT FROM NULLIF(p_expected_signal_batch_id, '') THEN
     RAISE EXCEPTION 'S5 scheduler pointer CAS conflict' USING ERRCODE = '40001';
+  END IF;
+  -- drift suspension과 publication을 release row lock으로 직렬화한다.
+  PERFORM 1 FROM public.signal_model_releases
+  WHERE model_release_id = active_model AND lifecycle_status = 'ACCEPTED'
+  FOR SHARE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'S5 scheduler model release is not accepted' USING ERRCODE = '22023';
   END IF;
   IF NOT EXISTS (
     SELECT 1 FROM public.signal_batches batch
@@ -500,6 +689,8 @@ BEGIN
       ON current_clock.session_date = batch.session_date AND current_clock.as_of = batch.as_of
     WHERE batch.signal_batch_id = p_signal_batch_id AND batch.model_release_id = active_model
       AND batch.status = 'FINALIZED' AND batch.row_count = 31
+      AND batch.batch_purpose = 'DAILY'
+      AND batch.batch_manifest_sha256 = p_expected_batch_manifest_sha256
       AND release.lifecycle_status = 'ACCEPTED'
       AND NOT EXISTS (
         SELECT 1 FROM public.signal_batch_publications publication
@@ -525,7 +716,7 @@ BEGIN
   RETURN next_generation;
 END
 $publish_active_signal_batch$;
-ALTER FUNCTION public.publish_active_signal_batch(text,text) OWNER TO flyway;
+ALTER FUNCTION public.publish_active_signal_batch(text,text,text) OWNER TO flyway;
 
 CREATE FUNCTION public.suspend_signal_model_for_drift(
   p_model_release_id text,
@@ -544,10 +735,12 @@ BEGIN
      OR p_evidence_sha256 !~ '^[0-9a-f]{64}$' THEN
     RAISE EXCEPTION 'S5 drift suspension actor or evidence is invalid' USING ERRCODE = '42501';
   END IF;
-  IF NOT EXISTS (
-    SELECT 1 FROM public.active_signal_model_release
-    WHERE singleton AND model_release_id = p_model_release_id
-  ) THEN
+  PERFORM pg_advisory_xact_lock(hashtextextended('s5-signal-active-pointer-v1', 0));
+  -- activation/rollback pointer CAS와 drift 대상 판정을 같은 순서로 직렬화한다.
+  PERFORM 1 FROM public.active_signal_model_release
+  WHERE singleton AND model_release_id = p_model_release_id
+  FOR SHARE;
+  IF NOT FOUND THEN
     RAISE EXCEPTION 'S5 drift suspension target is not active' USING ERRCODE = '22023';
   END IF;
   UPDATE public.signal_model_releases SET lifecycle_status = 'SUSPENDED'
@@ -639,21 +832,24 @@ $read_production_signal_v2$;
 ALTER FUNCTION public.read_production_signal_v2(text) OWNER TO flyway;
 
 REVOKE ALL PRIVILEGES ON FUNCTION
+  public.s5_signal_batch_clock_at(timestamptz),
   public.current_s5_signal_batch_clock(),
-  public.stage_signal_model_release(text,text,text,text,text,text,text,text,text,text),
-  public.stage_signal_batch(text,text,text,text,text,date,timestamptz,text),
-  public.activate_signal_model_and_batch(text,text,text,text,text),
-  public.publish_active_signal_batch(text,text),
+  public.stage_signal_model_release(text,text,text,text,text,text,text,text,text,text,text),
+  public.stage_signal_batch(text,text,text,text,text,text,date,timestamptz,text),
+  public.activate_signal_model_and_batch(text,text,text,text,text,text,text),
+  public.publish_active_signal_batch(text,text,text),
   public.suspend_signal_model_for_drift(text,text)
 FROM PUBLIC, decision_app, decision_signal_writer, decision_signal_scheduler, decision_signal_admin;
 
 GRANT EXECUTE ON FUNCTION
-  public.stage_signal_model_release(text,text,text,text,text,text,text,text,text,text),
-  public.stage_signal_batch(text,text,text,text,text,date,timestamptz,text)
+  public.stage_signal_model_release(text,text,text,text,text,text,text,text,text,text,text),
+  public.stage_signal_batch(text,text,text,text,text,text,date,timestamptz,text)
 TO decision_signal_writer;
-GRANT EXECUTE ON FUNCTION public.publish_active_signal_batch(text,text)
+GRANT EXECUTE ON FUNCTION public.current_s5_signal_batch_clock()
+TO decision_app;
+GRANT EXECUTE ON FUNCTION public.publish_active_signal_batch(text,text,text)
 TO decision_signal_scheduler;
 GRANT EXECUTE ON FUNCTION public.suspend_signal_model_for_drift(text,text)
 TO decision_signal_scheduler, decision_signal_admin;
-GRANT EXECUTE ON FUNCTION public.activate_signal_model_and_batch(text,text,text,text,text)
+GRANT EXECUTE ON FUNCTION public.activate_signal_model_and_batch(text,text,text,text,text,text,text)
 TO decision_signal_admin;

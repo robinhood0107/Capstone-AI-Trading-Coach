@@ -33,6 +33,7 @@ from app.lightgbm.private_root import acquire_run_lock, release_run_lock, requir
 from app.lightgbm.production_release import (
     QualificationFailure,
     qualify_and_write_production_release,
+    validate_qualification_bindings,
     write_production_signal_batch,
 )
 from app.lightgbm.temporal import next_xkrx_evidence_clock
@@ -83,6 +84,14 @@ def main() -> int:
             )
         source_root = run_root / "source"
         feature_root = run_root / "feature"
+        code_head = os.environ.get("S5_CODE_HEAD_SHA", "")
+        code_tree = os.environ.get("S5_CODE_TREE_SHA", "")
+        uv_lock_sha256 = os.environ.get("S5_UV_LOCK_SHA256", "")
+        validate_qualification_bindings(
+            code_head=code_head,
+            code_tree=code_tree,
+            uv_lock_sha256=uv_lock_sha256,
+        )
     except (OSError, RagSafeIoError, LightGbmContractError):
         if run_lock >= 0:
             release_run_lock(run_lock)
@@ -108,12 +117,6 @@ def main() -> int:
             ecos_series=CANDIDATE_SERIES,
             resume=bool(resume_sha256),
         )
-        code_head = os.environ.get("S5_CODE_HEAD_SHA", "")
-        code_tree = os.environ.get("S5_CODE_TREE_SHA", "")
-        uv_lock_sha256 = os.environ.get("S5_UV_LOCK_SHA256", "")
-        if not code_head or not code_tree or not uv_lock_sha256:
-            print("S5_BOOTSTRAP=DATASET_UNAVAILABLE qualificationBinding=ABSENT")
-            return 1
         qualification = qualify_and_write_production_release(
             packet=packet,
             materialization=result,

@@ -50,9 +50,10 @@ def stage_release_and_batch(
     try:
         with connection.cursor() as cursor:
             cursor.execute(
-                "SELECT stage_signal_model_release(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                "SELECT stage_signal_model_release(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (
                     release.manifest_sha256,
+                    canonical_json_bytes(dict(manifest)).decode("utf-8"),
                     manifest["modelReleaseId"],
                     manifest["modelVersion"],
                     manifest["modelReportId"],
@@ -66,9 +67,10 @@ def stage_release_and_batch(
             )
             release_row = cursor.fetchone()
             cursor.execute(
-                "SELECT stage_signal_batch(%s,%s,%s,%s,%s,%s,%s,%s)",
+                "SELECT stage_signal_batch(%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (
                     batch.manifest_sha256,
+                    canonical_json_bytes(dict(batch_manifest)).decode("utf-8"),
                     batch_manifest["signalBatchId"],
                     batch_manifest["modelReleaseId"],
                     batch_manifest["universeReleaseId"],
@@ -102,6 +104,8 @@ def activate_release_and_batch(
     signal_batch_id: str,
     expected_model_release_id: str | None,
     expected_signal_batch_id: str | None,
+    release_manifest_sha256: str,
+    batch_manifest_sha256: str,
     rollback: bool = False,
 ) -> int:
     """admin role의 expected-current CAS 하나로 model과 initial/latest batch를 함께 전환한다."""
@@ -110,12 +114,14 @@ def activate_release_and_batch(
     try:
         with connection.cursor() as cursor:
             cursor.execute(
-                "SELECT activate_signal_model_and_batch(%s,%s,%s,%s,%s)",
+                "SELECT activate_signal_model_and_batch(%s,%s,%s,%s,%s,%s,%s)",
                 (
                     model_release_id,
                     signal_batch_id,
                     expected_model_release_id or "",
                     expected_signal_batch_id or "",
+                    release_manifest_sha256,
+                    batch_manifest_sha256,
                     reason,
                 ),
             )
@@ -134,13 +140,14 @@ def publish_daily_batch(
     *,
     signal_batch_id: str,
     expected_signal_batch_id: str,
+    batch_manifest_sha256: str,
 ) -> int:
     """scheduler role은 active model의 complete batch만 CAS publish하며 model pointer는 바꾸지 않는다."""
 
     return _single_generation_call(
         connection,
-        "SELECT publish_active_signal_batch(%s,%s)",
-        (signal_batch_id, expected_signal_batch_id),
+        "SELECT publish_active_signal_batch(%s,%s,%s)",
+        (signal_batch_id, expected_signal_batch_id, batch_manifest_sha256),
     )
 
 

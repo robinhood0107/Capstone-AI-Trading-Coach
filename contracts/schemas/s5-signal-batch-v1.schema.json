@@ -7,11 +7,21 @@
       "format": "date-time",
       "type": "string"
     },
+    "batchPurpose": {
+      "enum": [
+        "DAILY",
+        "ROLLBACK"
+      ]
+    },
     "batchVersion": {
       "const": "s5-signal-batch-v1"
     },
     "fixture": {
       "const": false
+    },
+    "membersSha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
     },
     "membershipSha256": {
       "pattern": "^[0-9a-f]{64}$",
@@ -56,6 +66,7 @@
   },
   "required": [
     "batchVersion",
+    "batchPurpose",
     "signalBatchId",
     "modelReleaseId",
     "universeReleaseId",
@@ -64,6 +75,7 @@
     "asOf",
     "timeframe",
     "rowCount",
+    "membersSha256",
     "parquetFile",
     "parquetSha256",
     "fixture",

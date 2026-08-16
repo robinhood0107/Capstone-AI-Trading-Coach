@@ -6,6 +6,7 @@ from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime
 import hashlib
 from io import BytesIO
+import math
 import os
 from pathlib import Path
 import re
@@ -184,9 +185,15 @@ def qualify_and_write_production_release(
     sessions = tuple(sorted({session for _, session in rows.keys}))
     plan = build_walk_forward_plan(sessions, labels)
     primary_blocks: tuple[Any, ...] = tuple(_fold_arrays(rows, split) for split in plan.folds)
-    final_rows = _rows_for_sessions(rows, plan.final.evaluation_sessions)
     final_blocks = _final_arrays(rows, plan.final)
-    loader = UntouchedTestLoader((final_rows.features, final_rows.labels))
+    projected_final_rows: list[_TrainingRows] = []
+
+    def project_final_test() -> tuple[np.ndarray, np.ndarray]:
+        final_rows = _rows_for_sessions(rows, plan.final.evaluation_sessions)
+        projected_final_rows.append(final_rows)
+        return final_rows.features, final_rows.labels
+
+    loader = UntouchedTestLoader.deferred(project_final_test)
 
     delayed_table = build_production_feature_table(
         packet=packet,
@@ -194,7 +201,6 @@ def qualify_and_write_production_release(
         macro_delay_sessions=1,
     )
     delayed_rows = _training_rows_from_table(delayed_table, labels)
-    _require_same_keys(rows, delayed_rows, "macro sensitivity")
     event_free_keys, corporate_pass = _corporate_sensitivity(
         prices=materialization.acquisition.prices,
         krx_raw_prices=materialization.acquisition.krx_raw_prices,
@@ -212,7 +218,11 @@ def qualify_and_write_production_release(
         candidate_sensitivity: list[dict[str, object]] = []
         for fold_run, split in zip(run.folds, plan.folds, strict=True):
             evaluation_rows = _rows_for_sessions(rows, split.evaluation_sessions)
-            delayed_evaluation = _rows_for_sessions(delayed_rows, split.evaluation_sessions)
+            primary_sensitivity, delayed_evaluation = _intersect_rows(
+                evaluation_rows,
+                delayed_rows,
+                name=f"macro sensitivity {split.name}",
+            )
             event_indices = [
                 index for index, key in enumerate(evaluation_rows.keys) if key in event_free_keys
             ]
@@ -228,7 +238,7 @@ def qualify_and_write_production_release(
                     event_y, event_raw, event_calibrated
                 ).passed
             _, primary_probabilities = calibrated_probabilities(
-                fold_run.model, fold_run.calibrator, evaluation_rows.features
+                fold_run.model, fold_run.calibrator, primary_sensitivity.features
             )
             _, delayed_probabilities = calibrated_probabilities(
                 fold_run.model, fold_run.calibrator, delayed_evaluation.features
@@ -236,7 +246,7 @@ def qualify_and_write_production_release(
             macro_pass = macro_timing_sensitivity_pass(
                 primary_probabilities=primary_probabilities,
                 delayed_probabilities=delayed_probabilities,
-                labels=evaluation_rows.labels.tolist(),
+                labels=primary_sensitivity.labels.tolist(),
                 primary_row_count=len(evaluation_rows.labels),
             )
             passed = fold_run.evaluation.passed and corporate_fold_pass and macro_pass
@@ -248,6 +258,7 @@ def qualify_and_write_production_release(
                     "corporateActionPass": corporate_fold_pass,
                     "macroTimingPass": macro_pass,
                     "rowCount": len(evaluation_rows.labels),
+                    "macroRowCount": len(primary_sensitivity.labels),
                     "eventFreeRowCount": len(event_indices),
                 }
             )
@@ -278,6 +289,9 @@ def qualify_and_write_production_release(
         raise LightGbmContractError("qualification candidate selection drifted")
     if loader.access_count != 1 or not final_run.evaluation.passed:
         return QualificationFailure("CALIBRATION_FAILED", loader.access_count)
+    if len(projected_final_rows) != 1:
+        raise LightGbmContractError("untouched final test projection was not consumed exactly once")
+    final_rows = projected_final_rows[0]
 
     calibrator_bytes = final_run.calibrator.canonical_bytes()
     calibrator_sha = hashlib.sha256(calibrator_bytes).hexdigest()
@@ -313,6 +327,21 @@ def qualify_and_write_production_release(
             "numLeaves": final_run.candidate.num_leaves,
             "classWeight": final_run.candidate.class_weight,
         },
+        "primaryEvaluation": [
+            {
+                "gridIndex": run.evaluation.candidate.grid_index,
+                "folds": [
+                    {
+                        "fold": split.name,
+                        "raw": _metrics(fold.evaluation.raw),
+                        "calibrated": _metrics(fold.evaluation.calibrated),
+                        "passed": fold.evaluation.passed,
+                    }
+                    for fold, split in zip(run.folds, plan.folds, strict=True)
+                ],
+            }
+            for run in candidate_runs
+        ],
         "sensitivity": sensitivity_report,
         "corporateActionGlobalPass": corporate_pass,
         "finalTest": {
@@ -412,15 +441,26 @@ def write_production_signal_batch(
     session_date: date,
     as_of: datetime,
     batch_root: Path,
+    batch_purpose: str = "DAILY",
 ) -> ValidatedSignalBatch:
     """활성 release로 exact 31 membership의 AVAILABLE-only immutable daily batch를 만든다."""
 
     if as_of.tzinfo is None:
         raise LightGbmContractError("signal batch asOf must be timezone aware")
+    if batch_purpose not in {"DAILY", "ROLLBACK"}:
+        raise LightGbmContractError("signal batch purpose is invalid")
     symbols = tuple(sorted(inference_universe.symbols))
     if len(symbols) != 31 or len(set(symbols)) != 31 or "132030" not in symbols:
         raise DatasetUnavailable("DATASET_UNAVAILABLE: inference universe must be exact 31")
     table_rows = inference_table.to_pylist()
+    if (
+        len(table_rows) != 31
+        or any(row.get("sessionDate") != session_date for row in table_rows)
+        or any(str(row.get("symbol")) not in symbols for row in table_rows)
+    ):
+        raise DatasetUnavailable(
+            "DATASET_UNAVAILABLE: inference table must contain exact current 31 rows"
+        )
     feature_by_symbol = {
         str(row["symbol"]): row
         for row in table_rows
@@ -457,6 +497,7 @@ def write_production_signal_batch(
         }
         for index, symbol in enumerate(symbols)
     ]
+    members_sha = hashlib.sha256(canonical_json_bytes(rows)).hexdigest()
     parquet = _signal_parquet(rows)
     membership_sha = hashlib.sha256(
         b"s5-inference-universe-v1\x00" + canonical_json_bytes(list(symbols))
@@ -464,6 +505,7 @@ def write_production_signal_batch(
     universe_release_id = f"sur-{membership_sha[:12]}"
     preimage = {
         "batchVersion": "s5-signal-batch-v1",
+        "batchPurpose": batch_purpose,
         "modelReleaseId": release.model_release_id,
         "universeReleaseId": universe_release_id,
         "membershipSha256": membership_sha,
@@ -471,6 +513,7 @@ def write_production_signal_batch(
         "asOf": as_of_text,
         "timeframe": "1d",
         "rowCount": 31,
+        "membersSha256": members_sha,
         "parquetFile": BATCH_PARQUET,
         "parquetSha256": hashlib.sha256(parquet).hexdigest(),
         "fixture": False,
@@ -550,6 +593,16 @@ def validate_production_model_release(
     return ValidatedProductionRelease(manifest, expected_manifest_sha256, files)
 
 
+def validate_qualification_bindings(
+    *, code_head: str, code_tree: str, uv_lock_sha256: str
+) -> None:
+    """provider handoff 전에 static code/dependency trust anchors의 형식을 닫는다."""
+
+    _require_git_sha(code_head, "code HEAD")
+    _require_git_sha(code_tree, "code tree")
+    _require_sha(uv_lock_sha256, "uv.lock")
+
+
 def load_qualified_production_release(
     *,
     release_root: Path,
@@ -619,14 +672,16 @@ def validate_production_signal_batch(
         raise LightGbmContractError("batch manifest trust anchor mismatch")
     manifest = _parse_canonical_object(manifest_bytes)
     expected = {
-        "batchVersion", "signalBatchId", "modelReleaseId", "universeReleaseId",
+        "batchVersion", "batchPurpose", "signalBatchId", "modelReleaseId", "universeReleaseId",
         "membershipSha256", "sessionDate", "asOf", "timeframe", "rowCount",
-        "parquetFile", "parquetSha256", "fixture", "provenanceClass", "semanticSha256",
+        "membersSha256", "parquetFile", "parquetSha256", "fixture", "provenanceClass",
+        "semanticSha256",
     }
     if set(manifest) != expected:
         raise LightGbmContractError("batch manifest field set is not closed")
     if (
         manifest["batchVersion"] != "s5-signal-batch-v1"
+        or manifest["batchPurpose"] not in {"DAILY", "ROLLBACK"}
         or manifest["timeframe"] != "1d"
         or manifest["rowCount"] != 31
         or manifest["parquetFile"] != BATCH_PARQUET
@@ -652,6 +707,10 @@ def validate_production_signal_batch(
     if any(row["asOf"] != as_of_text for row in rows):
         raise LightGbmContractError("batch rows do not bind the manifest")
     membership = [str(row["symbol"]) for row in rows]
+    if manifest["membersSha256"] != hashlib.sha256(
+        canonical_json_bytes(list(rows))
+    ).hexdigest():
+        raise LightGbmContractError("batch member projection digest mismatch")
     membership_sha = hashlib.sha256(
         b"s5-inference-universe-v1\x00" + canonical_json_bytes(membership)
     ).hexdigest()
@@ -793,9 +852,40 @@ def _has_corporate_action(row: ProductionPriceEvidence) -> bool:
     )
 
 
-def _require_same_keys(left: _TrainingRows, right: _TrainingRows, name: str) -> None:
-    if left.keys != right.keys:
-        raise DatasetUnavailable(f"UNIDENTIFIABLE_OUTPUT: {name} coverage is below 100%")
+def _intersect_rows(
+    primary: _TrainingRows,
+    delayed: _TrainingRows,
+    *,
+    name: str,
+) -> tuple[_TrainingRows, _TrainingRows]:
+    """Primary 순서를 유지한 exact key intersection이 98% 이상일 때만 sensitivity를 연다."""
+
+    delayed_index = {key: index for index, key in enumerate(delayed.keys)}
+    if len(delayed_index) != len(delayed.keys):
+        raise LightGbmContractError(f"{name} contains duplicate delayed keys")
+    primary_indices: list[int] = []
+    delayed_indices: list[int] = []
+    for index, key in enumerate(primary.keys):
+        other = delayed_index.get(key)
+        if other is not None:
+            primary_indices.append(index)
+            delayed_indices.append(other)
+    if not primary.keys or len(primary_indices) < int(np.ceil(len(primary.keys) * 0.98)):
+        raise DatasetUnavailable(f"UNIDENTIFIABLE_OUTPUT: {name} coverage is below 98%")
+
+    def aligned(rows: _TrainingRows, indices: list[int]) -> _TrainingRows:
+        return _TrainingRows(
+            tuple(rows.keys[index] for index in indices),
+            rows.features[indices],
+            rows.labels[indices],
+            rows.forward_returns[indices],
+        )
+
+    left = aligned(primary, primary_indices)
+    right = aligned(delayed, delayed_indices)
+    if left.keys != right.keys or not np.array_equal(left.labels, right.labels):
+        raise LightGbmContractError(f"{name} intersection alignment is invalid")
+    return left, right
 
 
 def _metrics(value: object) -> dict[str, float]:
@@ -847,8 +937,21 @@ def _validate_signal_parquet(content: bytes) -> tuple[Mapping[str, object], ...]
         raise LightGbmContractError("signal batch decoded bound is invalid")
     rows = tuple(table.to_pylist())
     symbols = tuple(str(row["symbol"]) for row in rows)
-    if symbols != tuple(sorted(set(symbols))) or "132030" not in symbols:
+    if (
+        symbols != tuple(sorted(set(symbols)))
+        or "132030" not in symbols
+        or any(re.fullmatch(r"[0-9]{6}", symbol) is None for symbol in symbols)
+    ):
         raise LightGbmContractError("signal batch membership is not sorted unique exact-31")
+    model_versions = {str(row["modelVersion"]) for row in rows}
+    model_report_ids = {str(row["modelReportId"]) for row in rows}
+    if (
+        len(model_versions) != 1
+        or len(model_report_ids) != 1
+        or re.fullmatch(r"lgbm-v1-[0-9a-f]{12}", next(iter(model_versions))) is None
+        or re.fullmatch(r"mrp-[0-9a-f]{12}", next(iter(model_report_ids))) is None
+    ):
+        raise LightGbmContractError("signal batch model binding is invalid")
     for row in rows:
         confidence = row["confidence"]
         if (
@@ -896,6 +999,9 @@ def _validate_release_semantics(
 
     calibrator_from_mapping(_parse_canonical_object(files["calibrator.json"]))
     report = _parse_canonical_object(files["report.json"])
+    selected_grid_index = _validate_qualification_report(report, model_text)
+    _validate_gain_report(_parse_canonical_object(files["gain-importance.json"]))
+    _validate_contribution_report(_parse_canonical_object(files["contribution-report.json"]))
     report_without_id = dict(report)
     model_report_id = report_without_id.pop("modelReportId", None)
     report_semantic = hashlib.sha256(canonical_json_bytes(report_without_id)).hexdigest()
@@ -922,6 +1028,345 @@ def _validate_release_semantics(
         raise LightGbmContractError("production qualification file binding mismatch")
     if qualification.get("finalTestAccessCount") != 1:
         raise LightGbmContractError("production final test was not consumed exactly once")
+    if qualification.get("selectedGridIndex") != selected_grid_index:
+        raise LightGbmContractError("production selected candidate binding mismatch")
+
+
+def _validate_qualification_report(report: Mapping[str, object], model_text: str) -> int:
+    expected = {
+        "reportVersion",
+        "historicalMode",
+        "temporalQuality",
+        "strictProviderPITClaim",
+        "selectedCandidate",
+        "primaryEvaluation",
+        "sensitivity",
+        "corporateActionGlobalPass",
+        "finalTest",
+        "costReport",
+        "modelReportId",
+    }
+    if set(report) != expected or (
+        report["reportVersion"] != "s5-production-qualification-v1"
+        or report["historicalMode"] != "HISTORICAL_REPLAY_RECONSTRUCTED"
+        or report["temporalQuality"] != "RECONSTRUCTED_FIXED_LAG"
+        or report["strictProviderPITClaim"] is not False
+        or report["corporateActionGlobalPass"] is not True
+    ):
+        raise LightGbmContractError("production qualification report authority is invalid")
+    candidate = _mapping_with_keys(
+        report["selectedCandidate"],
+        {"gridIndex", "numLeaves", "classWeight"},
+        "selected candidate",
+    )
+    grid = ((15, "NONE"), (15, "CAPPED_BALANCED"), (31, "NONE"), (31, "CAPPED_BALANCED"))
+    grid_index = candidate["gridIndex"]
+    if (
+        not isinstance(grid_index, int)
+        or isinstance(grid_index, bool)
+        or not 0 <= grid_index < len(grid)
+        or (candidate["numLeaves"], candidate["classWeight"]) != grid[grid_index]
+        or f"[num_leaves: {candidate['numLeaves']}]" not in model_text
+    ):
+        raise LightGbmContractError("production selected candidate is invalid")
+    sensitivity = report["sensitivity"]
+    if not isinstance(sensitivity, list) or len(sensitivity) != 4:
+        raise LightGbmContractError("production sensitivity candidate set is invalid")
+    selected_sensitivity: Mapping[str, object] | None = None
+    sensitivity_pass_by_index: dict[int, bool] = {}
+    for expected_index, raw_candidate in enumerate(sensitivity):
+        item = _mapping_with_keys(raw_candidate, {"gridIndex", "folds"}, "sensitivity candidate")
+        if item["gridIndex"] != expected_index:
+            raise LightGbmContractError("production sensitivity grid order is invalid")
+        folds = item["folds"]
+        if not isinstance(folds, list) or len(folds) != 3:
+            raise LightGbmContractError("production sensitivity fold set is invalid")
+        for fold_index, raw_fold in enumerate(folds, start=1):
+            fold = _mapping_with_keys(
+                raw_fold,
+                {
+                    "fold",
+                    "corporateActionPass",
+                    "macroTimingPass",
+                    "rowCount",
+                    "macroRowCount",
+                    "eventFreeRowCount",
+                },
+                "sensitivity fold",
+            )
+            if fold["fold"] != f"fold-{fold_index}":
+                raise LightGbmContractError("production sensitivity fold order is invalid")
+            row_count = _positive_int(fold["rowCount"], "sensitivity rowCount")
+            macro_count = _positive_int(fold["macroRowCount"], "sensitivity macroRowCount")
+            event_count = _positive_int(
+                fold["eventFreeRowCount"], "sensitivity eventFreeRowCount"
+            )
+            if macro_count > row_count or macro_count < math.ceil(row_count * 0.98):
+                raise LightGbmContractError("production macro sensitivity coverage is invalid")
+            if event_count > row_count:
+                raise LightGbmContractError("production corporate sensitivity coverage is invalid")
+            if not isinstance(fold["corporateActionPass"], bool) or not isinstance(
+                fold["macroTimingPass"], bool
+            ):
+                raise LightGbmContractError("production sensitivity PASS type is invalid")
+        sensitivity_pass_by_index[expected_index] = all(
+            isinstance(fold, dict)
+            and fold.get("corporateActionPass") is True
+            and fold.get("macroTimingPass") is True
+            for fold in folds
+        )
+        if expected_index == grid_index:
+            selected_sensitivity = item
+    assert selected_sensitivity is not None
+    selected_folds = selected_sensitivity["folds"]
+    assert isinstance(selected_folds, list)
+    if any(
+        fold["corporateActionPass"] is not True or fold["macroTimingPass"] is not True
+        for fold in selected_folds
+        if isinstance(fold, dict)
+    ):
+        raise LightGbmContractError("production selected candidate sensitivity did not pass")
+    primary = report["primaryEvaluation"]
+    if not isinstance(primary, list) or len(primary) != 4:
+        raise LightGbmContractError("production primary evaluation candidate set is invalid")
+    selected_primary: Mapping[str, object] | None = None
+    selection_keys: list[tuple[float, float, float, int]] = []
+    for expected_index, raw_candidate in enumerate(primary):
+        item = _mapping_with_keys(raw_candidate, {"gridIndex", "folds"}, "primary candidate")
+        if item["gridIndex"] != expected_index:
+            raise LightGbmContractError("production primary evaluation grid order is invalid")
+        folds = item["folds"]
+        if not isinstance(folds, list) or len(folds) != 3:
+            raise LightGbmContractError("production primary evaluation fold set is invalid")
+        calibrated_values: list[dict[str, float]] = []
+        primary_pass = True
+        for fold_index, raw_fold in enumerate(folds, start=1):
+            fold = _mapping_with_keys(
+                raw_fold,
+                {"fold", "raw", "calibrated", "passed"},
+                "primary evaluation fold",
+            )
+            raw_metrics = _validate_metrics(fold["raw"], "primary raw metrics")
+            calibrated_metrics = _validate_metrics(
+                fold["calibrated"], "primary calibrated metrics"
+            )
+            expected_pass = (
+                calibrated_metrics["ece"] <= 0.05
+                and calibrated_metrics["brier"] <= raw_metrics["brier"] + 0.005
+                and calibrated_metrics["logLoss"] <= raw_metrics["logLoss"] + 0.01
+            )
+            if fold["fold"] != f"fold-{fold_index}" or fold["passed"] is not expected_pass:
+                raise LightGbmContractError("production primary evaluation PASS is invalid")
+            primary_pass = primary_pass and expected_pass
+            calibrated_values.append(calibrated_metrics)
+        if primary_pass and sensitivity_pass_by_index[expected_index]:
+            selection_keys.append(
+                (
+                    sum(value["logLoss"] for value in calibrated_values) / 3,
+                    sum(value["brier"] for value in calibrated_values) / 3,
+                    sum(value["ece"] for value in calibrated_values) / 3,
+                    expected_index,
+                )
+            )
+        if expected_index == grid_index:
+            selected_primary = item
+    assert selected_primary is not None
+    selected_primary_folds = selected_primary["folds"]
+    assert isinstance(selected_primary_folds, list)
+    if any(
+        fold.get("passed") is not True
+        for fold in selected_primary_folds
+        if isinstance(fold, dict)
+    ):
+        raise LightGbmContractError("production selected candidate primary folds did not pass")
+    if not selection_keys or min(selection_keys)[3] != grid_index:
+        raise LightGbmContractError("production selected candidate does not match locked ranking")
+    final_test = _mapping_with_keys(
+        report["finalTest"],
+        {"accessCount", "rowCount", "raw", "calibrated", "passed"},
+        "final test",
+    )
+    if (
+        final_test["accessCount"] != 1
+        or _positive_int(final_test["rowCount"], "final test rowCount") < 1
+        or final_test["passed"] is not True
+    ):
+        raise LightGbmContractError("production final test qualification is invalid")
+    raw = _validate_metrics(final_test["raw"], "final raw metrics")
+    calibrated = _validate_metrics(final_test["calibrated"], "final calibrated metrics")
+    if not (
+        calibrated["ece"] <= 0.05
+        and calibrated["brier"] <= raw["brier"] + 0.005
+        and calibrated["logLoss"] <= raw["logLoss"] + 0.01
+    ):
+        raise LightGbmContractError("production final calibration gate did not pass")
+    _validate_cost_report(report["costReport"])
+    return grid_index
+
+
+def _validate_gain_report(value: Mapping[str, object]) -> None:
+    report = _mapping_with_keys(
+        value, {"reportVersion", "featureNames", "gain"}, "gain importance"
+    )
+    if report["reportVersion"] != "s5-gain-importance-v1" or report[
+        "featureNames"
+    ] != list(CORE_FEATURE_COLUMNS):
+        raise LightGbmContractError("production gain importance contract is invalid")
+    gain = _mapping_with_keys(report["gain"], set(CORE_FEATURE_COLUMNS), "gain map")
+    if any(_finite_number(gain[name], f"gain {name}") < 0 for name in CORE_FEATURE_COLUMNS):
+        raise LightGbmContractError("production gain importance is negative")
+
+
+def _validate_contribution_report(value: Mapping[str, object]) -> None:
+    report = _mapping_with_keys(
+        value,
+        {"reportVersion", "reportOnly", "featureNames", "rowCount", "rows"},
+        "contribution report",
+    )
+    rows = report["rows"]
+    row_count = _positive_int(report["rowCount"], "contribution rowCount")
+    if (
+        report["reportVersion"] != "s5-pred-contrib-v1"
+        or report["reportOnly"] is not True
+        or report["featureNames"] != list(CORE_FEATURE_COLUMNS)
+        or not isinstance(rows, list)
+        or not 1 <= row_count <= 500
+        or len(rows) != row_count
+    ):
+        raise LightGbmContractError("production contribution report contract is invalid")
+    seen: set[str] = set()
+    for raw_row in rows:
+        row = _mapping_with_keys(raw_row, {"rowKeyHash", "classes"}, "contribution row")
+        row_hash = row["rowKeyHash"]
+        classes = row["classes"]
+        if not isinstance(row_hash, str) or not SHA256.fullmatch(row_hash) or row_hash in seen:
+            raise LightGbmContractError("production contribution row identity is invalid")
+        seen.add(row_hash)
+        if not isinstance(classes, list) or len(classes) != 3:
+            raise LightGbmContractError("production contribution class set is invalid")
+        for class_index, raw_class in enumerate(classes):
+            item = _mapping_with_keys(
+                raw_class,
+                {"classIndex", "bias", "contributions", "rawMargin"},
+                "contribution class",
+            )
+            contributions = item["contributions"]
+            if item["classIndex"] != class_index or not isinstance(contributions, list) or len(
+                contributions
+            ) != len(CORE_FEATURE_COLUMNS):
+                raise LightGbmContractError("production contribution class contract is invalid")
+            bias = _finite_number(item["bias"], "contribution bias")
+            margin = _finite_number(item["rawMargin"], "contribution raw margin")
+            values = [_finite_number(number, "contribution value") for number in contributions]
+            if not math.isclose(bias + sum(values), margin, rel_tol=0.0, abs_tol=1e-6):
+                raise LightGbmContractError("production contribution additivity is invalid")
+
+
+def _validate_cost_report(value: object) -> None:
+    report = _mapping_with_keys(
+        value,
+        {
+            "directionalEdgeOnly",
+            "costSensitivityBps",
+            "meanEdge35Bps",
+            "logLoss",
+            "brier",
+            "ece",
+            "macroF1",
+            "confusionMatrix",
+            "alwaysHold",
+            "trainOnlyPrior",
+            "fakeArtifactsIncluded",
+        },
+        "cost report",
+    )
+    if report["directionalEdgeOnly"] is not True or report["fakeArtifactsIncluded"] is not False:
+        raise LightGbmContractError("production cost report authority is invalid")
+    baseline_keys = {
+        "costSensitivityBps",
+        "meanEdge35Bps",
+        "logLoss",
+        "brier",
+        "ece",
+        "macroF1",
+        "confusionMatrix",
+    }
+    _validate_baseline_metrics(
+        {key: report[key] for key in baseline_keys},
+        include_probabilities=False,
+        name="cost report",
+    )
+    _validate_baseline_metrics(report["alwaysHold"], include_probabilities=False, name="always HOLD")
+    _validate_baseline_metrics(
+        report["trainOnlyPrior"], include_probabilities=True, name="train-only prior"
+    )
+
+
+def _validate_baseline_metrics(value: object, *, include_probabilities: bool, name: str) -> None:
+    keys = {
+        "costSensitivityBps",
+        "meanEdge35Bps",
+        "logLoss",
+        "brier",
+        "ece",
+        "macroF1",
+        "confusionMatrix",
+    }
+    if include_probabilities:
+        keys.add("probabilities")
+    report = _mapping_with_keys(value, keys, name)
+    sensitivity = _mapping_with_keys(
+        report["costSensitivityBps"], {"25", "30", "35"}, f"{name} cost sensitivity"
+    )
+    for field in ("25", "30", "35"):
+        _finite_number(sensitivity[field], f"{name} cost {field}")
+    if report["meanEdge35Bps"] != sensitivity["35"]:
+        raise LightGbmContractError(f"{name} mean edge binding is invalid")
+    for field in ("logLoss", "brier", "ece", "macroF1"):
+        _finite_number(report[field], f"{name} {field}")
+    matrix = report["confusionMatrix"]
+    if not isinstance(matrix, list) or len(matrix) != 3 or any(
+        not isinstance(row, list)
+        or len(row) != 3
+        or any(not isinstance(item, int) or isinstance(item, bool) or item < 0 for item in row)
+        for row in matrix
+    ):
+        raise LightGbmContractError(f"{name} confusion matrix is invalid")
+    if include_probabilities:
+        probabilities = report["probabilities"]
+        if not isinstance(probabilities, list) or len(probabilities) != 3:
+            raise LightGbmContractError(f"{name} probabilities are invalid")
+        parsed = [_finite_number(item, f"{name} probability") for item in probabilities]
+        if any(item < 0 for item in parsed) or not math.isclose(
+            sum(parsed), 1.0, rel_tol=0.0, abs_tol=1e-12
+        ):
+            raise LightGbmContractError(f"{name} probabilities are invalid")
+
+
+def _validate_metrics(value: object, name: str) -> dict[str, float]:
+    metrics = _mapping_with_keys(value, {"ece", "brier", "logLoss"}, name)
+    parsed = {field: _finite_number(metrics[field], f"{name} {field}") for field in metrics}
+    if not (0 <= parsed["ece"] <= 1 and 0 <= parsed["brier"] <= 2 and parsed["logLoss"] >= 0):
+        raise LightGbmContractError(f"{name} range is invalid")
+    return parsed
+
+
+def _mapping_with_keys(value: object, keys: set[str], name: str) -> Mapping[str, object]:
+    if not isinstance(value, dict) or set(value) != keys:
+        raise LightGbmContractError(f"production {name} field set is not closed")
+    return value
+
+
+def _positive_int(value: object, name: str) -> int:
+    if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+        raise LightGbmContractError(f"production {name} is invalid")
+    return value
+
+
+def _finite_number(value: object, name: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        raise LightGbmContractError(f"production {name} is invalid")
+    return float(value)
 
 
 def _qualification_key(

@@ -1,7 +1,9 @@
 {
   "asOf": "2026-08-17T23:10:00Z",
+  "batchPurpose": "DAILY",
   "batchVersion": "s5-signal-batch-v1",
   "fixture": false,
+  "membersSha256": "8888888888888888888888888888888888888888888888888888888888888888",
   "membershipSha256": "5555555555555555555555555555555555555555555555555555555555555555",
   "modelReleaseId": "lgr-111111111111",
   "parquetFile": "signals.parquet",

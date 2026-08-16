@@ -9,6 +9,9 @@ class SignalV2MigrationContractTest {
     private val directory = Path.of("src/main/resources/db/migration")
     private val migration = directory.resolve("V72__s5_signal_v2_ingest_runtime.sql")
     private val sql by lazy { Files.readString(migration) }
+    private val releaseSql by lazy {
+        Files.readString(directory.resolve("V73__s5_6_model_release_signal_batch.sql"))
+    }
     private val repository by lazy {
         Files.readString(
             Path.of("src/main/kotlin/com/capstone/decision/infrastructure/signal/JdbcSignalV2Repository.kt"),
@@ -56,10 +59,15 @@ class SignalV2MigrationContractTest {
 
     @Test
     fun `Signal v2 stale lookup uses the locked daily 0810 KST cutoff`() {
-        assertThat(repository).contains(
+        assertThat(releaseSql).contains(
             "AT TIME ZONE 'Asia/Seoul'",
             "time '08:10'",
+            "current_s5_signal_batch_clock",
         )
-        assertThat(repository).doesNotContain("close_at <= clock_timestamp()")
+        assertThat(repository).contains("current_s5_signal_batch_clock")
+        assertThat(repository).doesNotContain(
+            "close_at <= clock_timestamp()",
+            "AT TIME ZONE 'Asia/Seoul'",
+        )
     }
 }

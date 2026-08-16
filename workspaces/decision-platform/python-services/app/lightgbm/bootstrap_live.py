@@ -75,9 +75,53 @@ class LiveEcosBootstrapProvider:
             page_start=1,
             page_end=400,
         )
+        observations = tuple(page.observations)
         if (
             page.status != "complete"
             or page.total_count != len(page.observations) + page.duplicate_count
+            or not observations
+            or any(not _within_range(row, start, end) for row in observations)
         ):
             raise DatasetUnavailable("DATASET_UNAVAILABLE: ECOS page is incomplete")
-        return tuple(page.observations)
+        return observations
+
+
+class LiveEcosDailyProvider:
+    """일일 기준금리 empty는 carry용으로 허용하되 FX와 날짜 경계는 strict하게 유지한다."""
+
+    def __init__(self, client: ECOSHttpClient) -> None:
+        self._client = client
+
+    def fetch(
+        self, *, series: ECOSSeries, start: date, end: date
+    ) -> tuple[ECOSObservation, ...]:
+        if start != end:
+            raise DatasetUnavailable("DATASET_UNAVAILABLE: daily ECOS range is invalid")
+        page = self._client.statistic_search(
+            series=series,
+            start=start,
+            end=end,
+            page_start=1,
+            page_end=400,
+        )
+        observations = tuple(page.observations)
+        if page.total_count != len(observations) + page.duplicate_count or any(
+            not _within_range(row, start, end) for row in observations
+        ):
+            raise DatasetUnavailable("DATASET_UNAVAILABLE: daily ECOS page is invalid")
+        if series.series_id == "policy-rate":
+            if page.status not in {"complete", "empty"} or (
+                page.status == "empty" and (page.total_count != 0 or observations)
+            ):
+                raise DatasetUnavailable("DATASET_UNAVAILABLE: policy-rate page is invalid")
+            return observations
+        if page.status != "complete" or len(observations) != 1:
+            raise DatasetUnavailable("DATASET_UNAVAILABLE: exact daily ECOS value is missing")
+        return observations
+
+
+def _within_range(observation: ECOSObservation, start: date, end: date) -> bool:
+    observed = date.fromisoformat(
+        f"{observation.time[:4]}-{observation.time[4:6]}-{observation.time[6:]}"
+    )
+    return start <= observed <= end

@@ -1880,6 +1880,8 @@ payload에 가짜 state를 넣거나 이전 `asOf`를 갱신해 새 success view
 > 현재 상태: `S5_0_AMENDMENT=VERIFIED / S5_5_SYMBOL_ROUTE=IMPLEMENTED_MERGE_CANDIDATE /
 > PRODUCTION_POINTER=0 / RISK_DECISION_ORDER_WIRING=NO_GO`. historical Signal v1/v2 bytes를
 > 유지하고 preserved projection 검증 아래 runtime v1 schema와 exact GET path만 추가했다.
+> S5.6A production source/feature data plane도 merge candidate지만 provider call과 실제 model
+> release/31-row batch activation은 아직 0이다. 따라서 이 wire의 현재 응답 의미는 바뀌지 않는다.
 
 `GET /api/v2/signals/{symbol}`
 

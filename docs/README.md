@@ -208,6 +208,10 @@ historical bytes를 유지한 S5.1~S5.5 fixture-first 구현, exact symbol-only 
 [S5.1 PIT/artifact hardening 변경기록](../contracts/changes/20260816-s5-1-pit-artifact-hardening.md)은
 calendar-derived monthly schedule, 외부 manifest digest trust anchor와 실제 LightGBM cross-market
 0-call/hash 격리 회귀를 고정한다.
+[S5.6 production materialization 변경기록](../contracts/changes/20260816-s5-6-production-materialization-lock.md)은
+reconstructed historical 등급, exact 6,446-call one-shot 상한, KRX→KIS→ECOS fail-stop 순서,
+durable resume receipt와 source/feature bundle v2를 고정한다. 현재 S5.6A data-plane code는
+merge candidate이고 provider 호출·실제 model release·production pointer는 아직 0이다.
 [foreign-news sanitized runtime 변경기록](../contracts/changes/20260809-pre-s5-foreign-news-sanitized-runtime.md),
 [foreign-news one-shot provider runtime 변경기록](../contracts/changes/20260810-pre-s5-foreign-news-provider-one-shot-runtime.md),
 [Voyage resumable batch 변경기록](../contracts/changes/20260812-pre-s5-voyage-resumable-batch-activation.md),

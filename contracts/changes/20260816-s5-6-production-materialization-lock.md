@@ -59,6 +59,13 @@ shortfall produces `KIS_HISTORY_UNAVAILABLE`; KRX OHLC is not an automatic repla
 
 Only closed projections may be persisted beneath a server-configured approved root.
 Directories are mode `0700`, files are mode `0600`, and manifests are published last.
+The source manifest is bounded at 16 MiB because it must bind up to 6,446 individual
+physical-call receipts; KRX/KIS/ECOS decoded row and byte caps are rechecked from both
+Parquet footer metadata and actual batches. Each handoff writes a fsynced intent before
+the call and a terminal receipt afterward. A completed query is never called again.
+An unresolved failure may be retried once only through a canonical resume packet bound
+to the original bootstrap packet, failed query digest, consumed count and remaining cap;
+an intent without a terminal receipt is ambiguous and cannot be retried automatically.
 Credentials, authorization headers, account identifiers, and raw provider responses are
 never persisted, logged, or committed.
 

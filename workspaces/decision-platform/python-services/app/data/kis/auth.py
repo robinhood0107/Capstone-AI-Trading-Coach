@@ -140,6 +140,15 @@ class KISTokenManager:
             token = ""
             self._release_issue_lock(owner)
 
+    def require_cached_token_only(self) -> None:
+        """승인된 최초 준비 뒤 추가 provider token 발급을 영구 차단한다.
+
+        S5.6 resume를 포함한 이후 data GET은 cache hit만 허용하며, 만료나 cache 유실은
+        새 OAuth 호출이 아니라 typed failure로 종료한다.
+        """
+
+        self._cache_only = True
+
     def _record_cache_skip(self) -> None:
         if self._accounting is not None:
             self._accounting.record_skip(SkipCode.TOKEN_CACHE_HIT)

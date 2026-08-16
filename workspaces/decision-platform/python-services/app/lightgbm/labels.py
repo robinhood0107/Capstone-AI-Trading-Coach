@@ -3,14 +3,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 import math
 from typing import Mapping, Sequence
 
 import numpy as np
 
 from app.lightgbm.errors import LightGbmContractError
-from app.lightgbm.features import PriceEvidence
+from app.lightgbm.features import PriceEvidence, ProductionPriceEvidence
+from app.lightgbm.temporal import label_as_of, require_receipt_eligible
 
 
 LABEL_THRESHOLD = 0.006
@@ -71,6 +72,54 @@ def build_exact_labels(prices: Sequence[PriceEvidence]) -> tuple[LabelRow, ...]:
                     session_date=ordered[index].session_date,
                     interval_start=ordered[index + 1].session_date,
                     interval_end=ordered[index + 6].session_date,
+                    forward_return=forward_return,
+                    label=classify_forward_return(forward_return),
+                )
+            )
+    return tuple(sorted(output, key=lambda row: (row.session_date, row.symbol)))
+
+
+def build_production_exact_labels(
+    prices: Sequence[ProductionPriceEvidence], *, dataset_cutoff: datetime
+) -> tuple[LabelRow, ...]:
+    """t+6 maturity clock과 TemporalReceipt를 강제한 production label builder."""
+
+    if dataset_cutoff.tzinfo is None:
+        raise LightGbmContractError("production label cutoff must be timezone aware")
+    by_identity: dict[str, list[ProductionPriceEvidence]] = {}
+    for row in prices:
+        by_identity.setdefault(row.instrument_id, []).append(row)
+    output: list[LabelRow] = []
+    for identity_rows in by_identity.values():
+        ordered = sorted(identity_rows, key=lambda row: row.session_date)
+        if len({row.session_date for row in ordered}) != len(ordered):
+            raise LightGbmContractError("production label input has duplicate sessions")
+        for index in range(len(ordered) - 6):
+            t1 = ordered[index + 1]
+            t6 = ordered[index + 6]
+            open_t1 = t1.adjusted_open
+            open_t6 = t6.adjusted_open
+            if open_t1 is None or open_t6 is None:
+                continue
+            if not all(math.isfinite(value) and value > 0 for value in (open_t1, open_t6)):
+                continue
+            maturity_clock = label_as_of(t6.session_date)
+            if maturity_clock > dataset_cutoff:
+                # 비거래일 bootstrap에서는 아직 성숙하지 않은 calendar tail을 label로 꾸미지 않는다.
+                continue
+            for receipt in (t1.receipt, t6.receipt):
+                require_receipt_eligible(
+                    receipt,
+                    row_clock=maturity_clock,
+                    dataset_cutoff=dataset_cutoff,
+                )
+            forward_return = open_t6 / open_t1 - 1.0
+            output.append(
+                LabelRow(
+                    symbol=ordered[index].symbol,
+                    session_date=ordered[index].session_date,
+                    interval_start=t1.session_date,
+                    interval_end=t6.session_date,
                     forward_return=forward_return,
                     label=classify_forward_return(forward_return),
                 )

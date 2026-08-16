@@ -9,6 +9,7 @@ from typing import Iterable
 
 from app.lightgbm.errors import DatasetUnavailable, LightGbmContractError
 from app.lightgbm.pit_calendar import MonthlyUniverseSchedule, derive_monthly_universe_schedule
+from app.lightgbm.temporal import TemporalReceipt, require_receipt_eligible
 
 
 FIXED_ETF_SYMBOL = "132030"
@@ -41,6 +42,23 @@ class MonthlyUniverse:
     effective_month: str
     instrument_ids: tuple[str, ...]
     symbols: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class ProductionUniverseObservation:
+    """KRX trading row와 base-info identity receipt를 분리한 monthly PIT observation."""
+
+    instrument_id: str
+    symbol: str
+    session_date: date
+    trading_value: float
+    market_cap: float
+    market: str
+    security_type: str
+    common_share: bool
+    listed: bool
+    trading_receipt: TemporalReceipt
+    identity_receipt: TemporalReceipt
 
 
 def select_monthly_universe(
@@ -113,6 +131,87 @@ def select_monthly_universe(
         effective_month=schedule.effective_month,
         instrument_ids=tuple(identities),
         symbols=tuple(symbols),
+    )
+
+
+def select_production_monthly_universe(
+    observations: Iterable[ProductionUniverseObservation],
+    *,
+    schedule: MonthlyUniverseSchedule,
+) -> MonthlyUniverse:
+    """TemporalReceipt v2로 exact top30+132030을 선택하고 revision hash ordering을 금지한다."""
+
+    expected = derive_monthly_universe_schedule(
+        schedule.effective_month, dataset_cutoff=schedule.evidence_cutoff
+    )
+    if schedule != expected:
+        raise LightGbmContractError("production universe schedule must be XKRX-derived")
+    allowed_sessions = set(schedule.trailing_sessions)
+    selected: dict[tuple[str, date], ProductionUniverseObservation] = {}
+    for observation in observations:
+        if observation.session_date not in allowed_sessions:
+            continue
+        for receipt in (observation.trading_receipt, observation.identity_receipt):
+            require_receipt_eligible(
+                receipt,
+                row_clock=schedule.evidence_cutoff,
+                dataset_cutoff=schedule.evidence_cutoff,
+            )
+        key = (observation.instrument_id, observation.session_date)
+        previous = selected.get(key)
+        if previous is not None:
+            if (
+                previous.trading_receipt.snapshot_sha256
+                != observation.trading_receipt.snapshot_sha256
+                or previous.identity_receipt.snapshot_sha256
+                != observation.identity_receipt.snapshot_sha256
+            ):
+                raise LightGbmContractError("SOURCE_SNAPSHOT_CONFLICT")
+            continue
+        selected[key] = observation
+    by_identity: dict[str, list[ProductionUniverseObservation]] = defaultdict(list)
+    for observation in selected.values():
+        by_identity[observation.instrument_id].append(observation)
+    ranked: list[tuple[float, float, str, str]] = []
+    fixed_etf: str | None = None
+    for identity, rows in by_identity.items():
+        current_rows = [row for row in rows if row.session_date == schedule.selection_session]
+        if len(current_rows) != 1:
+            continue
+        current = current_rows[0]
+        if current.symbol == FIXED_ETF_SYMBOL:
+            if current.security_type == "ETF" and current.listed:
+                fixed_etf = identity
+            continue
+        if not (
+            current.listed
+            and current.market in {"KOSPI", "KOSDAQ"}
+            and current.security_type == "COMMON_STOCK"
+            and current.common_share
+            and len(current.instrument_id) == 12
+        ):
+            continue
+        if len(rows) != 20 or {row.session_date for row in rows} != allowed_sessions:
+            continue
+        if len([row for row in rows if row.trading_value > 0]) < 18 or current.market_cap <= 0:
+            continue
+        ranked.append(
+            (
+                -sum(row.trading_value for row in rows) / 20.0,
+                -current.market_cap,
+                current.symbol,
+                identity,
+            )
+        )
+    ranked.sort()
+    if len(ranked) < 30 or fixed_etf is None:
+        raise DatasetUnavailable("DATASET_UNAVAILABLE: production PIT universe is incomplete")
+    chosen = ranked[:30]
+    return MonthlyUniverse(
+        selection_session=schedule.selection_session,
+        effective_month=schedule.effective_month,
+        instrument_ids=tuple([row[3] for row in chosen] + [fixed_etf]),
+        symbols=tuple([row[2] for row in chosen] + [FIXED_ETF_SYMBOL]),
     )
 
 

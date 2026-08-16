@@ -33,6 +33,7 @@ from app.lightgbm.pit_calendar import (
     build_pit_session_window,
     derive_monthly_universe_schedule,
 )
+from app.lightgbm.private_root import require_private_regular_file, require_private_root
 from app.lightgbm.universe import MonthlyUniverse
 from app.rag.safe_io import RagSafeIoError, read_approved_regular_file
 
@@ -49,6 +50,7 @@ KEY_COLUMNS = ("symbol", "sessionDate")
 MANIFEST_FILENAME = "manifest.json"
 PARQUET_FILENAME = "features.parquet"
 MANIFEST_VERSION = "s5-feature-bundle-v1"
+PRODUCTION_MANIFEST_VERSION = "s5-feature-bundle-v2"
 SCHEMA_VERSION = "s5-feature-table-v1"
 _MANIFEST_FIELDS = frozenset(
     {
@@ -82,6 +84,14 @@ _PROVENANCE_FIELDS = frozenset(
         "universeScheduleSha256",
         "pitInputSha256",
         "optionalFeatureGroups",
+    }
+)
+_PRODUCTION_PROVENANCE_FIELDS = _PROVENANCE_FIELDS | frozenset(
+    {
+        "temporalPolicyVersion",
+        "temporalQuality",
+        "sourceBundleSetSha256",
+        "sourcePolicySetSha256",
     }
 )
 _MANIFEST_JSON_LIMITS = BoundedJsonLimits(
@@ -179,6 +189,48 @@ class FeatureBundle:
     provenance: FeatureBundleProvenance
 
 
+@dataclass(frozen=True)
+class ProductionFeatureBundleProvenance:
+    """Reconstructed source bundle까지 결속하는 production-only provenance v2."""
+
+    base: FeatureBundleProvenance
+    source_bundle_set_sha256: str
+    source_policy_set_sha256: str
+
+    temporal_policy_version: ClassVar[str] = "s5-temporal-policy-v2"
+    temporal_quality: ClassVar[str] = "RECONSTRUCTED_FIXED_LAG"
+    universe_policy_version: ClassVar[str] = "top30-plus-132030-v1"
+
+    def __post_init__(self) -> None:
+        _require_sha256(self.source_bundle_set_sha256, "source bundle set")
+        _require_sha256(self.source_policy_set_sha256, "source policy set")
+
+    def as_mapping(self) -> dict[str, object]:
+        """v1 PIT fields를 보존하면서 production authority fields를 추가한다."""
+
+        value = self.base.as_mapping()
+        value["universePolicyVersion"] = self.universe_policy_version
+        value.update(
+            {
+                "temporalPolicyVersion": self.temporal_policy_version,
+                "temporalQuality": self.temporal_quality,
+                "sourceBundleSetSha256": self.source_bundle_set_sha256,
+                "sourcePolicySetSha256": self.source_policy_set_sha256,
+            }
+        )
+        return value
+
+
+@dataclass(frozen=True)
+class ProductionFeatureBundle:
+    """Feature bundle v2 검증 완료 receipt이며 production trainer만 소비한다."""
+
+    artifact: FeatureArtifact
+    manifest_sha256: str
+    manifest_bytes: bytes
+    provenance: ProductionFeatureBundleProvenance
+
+
 def feature_table_from_rows(rows: Sequence[Mapping[str, object]]) -> pa.Table:
     """mapping rows를 key + nullable float32의 exact ordered schema로 변환한다."""
 
@@ -269,10 +321,56 @@ def read_feature_bundle(
     )
 
 
+def read_production_feature_bundle(
+    *, approved_root: Path, expected_manifest_sha256: str
+) -> ProductionFeatureBundle:
+    """v1 fixture reader와 분리해 feature bundle v2만 production input으로 연다."""
+
+    _require_sha256(expected_manifest_sha256, "feature manifest")
+    require_private_root(approved_root)
+    try:
+        safe_manifest = read_approved_regular_file(
+            approved_root=approved_root,
+            relative_path=MANIFEST_FILENAME,
+            max_bytes=MAX_MANIFEST_BYTES,
+        )
+    except RagSafeIoError as error:
+        raise LightGbmContractError("feature manifest path or file boundary is invalid") from error
+    if safe_manifest.content_sha256 != expected_manifest_sha256:
+        raise LightGbmContractError("feature manifest SHA-256 does not match trust anchor")
+    require_private_regular_file(
+        safe_manifest.absolute_path,
+        expected_device=safe_manifest.device,
+        expected_inode=safe_manifest.inode,
+    )
+    manifest = _parse_feature_manifest_v2(safe_manifest.content)
+    row_count = _require_integer(manifest["rowCount"], "rowCount")
+    require_source_rows(row_count)
+    artifact = _read_feature_artifact(
+        approved_root=approved_root,
+        expected_sha256=_require_text(manifest["parquetSha256"], "parquetSha256"),
+        require_private=True,
+    )
+    if (
+        artifact.table.num_rows != row_count
+        or artifact.table.num_columns != _require_integer(manifest["columnCount"], "columnCount")
+        or artifact.logical_dataset_hash != manifest["logicalDatasetHash"]
+    ):
+        raise LightGbmContractError("production feature manifest does not match Parquet")
+    provenance = _parse_production_feature_provenance(manifest["provenance"])
+    return ProductionFeatureBundle(
+        artifact=artifact,
+        manifest_sha256=safe_manifest.content_sha256,
+        manifest_bytes=safe_manifest.content,
+        provenance=provenance,
+    )
+
+
 def _read_feature_artifact(
     *,
     approved_root: Path,
     expected_sha256: str,
+    require_private: bool = False,
 ) -> FeatureArtifact:
     """manifest 검증 뒤에만 호출하는 고정-path Parquet reader."""
 
@@ -286,6 +384,12 @@ def _read_feature_artifact(
         raise LightGbmContractError("feature artifact path or file boundary is invalid") from error
     if safe.content_sha256 != expected_sha256:
         raise LightGbmContractError("feature artifact SHA-256 does not match manifest")
+    if require_private:
+        require_private_regular_file(
+            safe.absolute_path,
+            expected_device=safe.device,
+            expected_inode=safe.inode,
+        )
     parquet = pq.ParquetFile(  # type: ignore[no-untyped-call]
         BytesIO(safe.content),
         thrift_string_size_limit=MAX_THRIFT_STRING_BYTES,
@@ -567,6 +671,32 @@ def build_feature_manifest(
     )
 
 
+def build_production_feature_manifest(
+    artifact: FeatureArtifact, *, provenance: ProductionFeatureBundleProvenance
+) -> bytes:
+    """동일 feature table logical hash를 유지하며 authority만 v2로 결속한다."""
+
+    require_source_rows(artifact.table.num_rows)
+    validate_feature_table(artifact.table, approved_feature_columns=CORE_FEATURE_COLUMNS)
+    _require_sha256(artifact.parquet_sha256, "Parquet")
+    _require_sha256(artifact.logical_dataset_hash, "logical dataset")
+    if artifact.logical_dataset_hash != logical_dataset_hash(artifact.table):
+        raise LightGbmContractError("production feature logical hash is inconsistent")
+    return canonical_json_bytes(
+        {
+            "manifestVersion": PRODUCTION_MANIFEST_VERSION,
+            "schemaVersion": SCHEMA_VERSION,
+            "parquetFile": PARQUET_FILENAME,
+            "logicalDatasetHash": artifact.logical_dataset_hash,
+            "parquetSha256": artifact.parquet_sha256,
+            "rowCount": artifact.table.num_rows,
+            "columnCount": artifact.table.num_columns,
+            "featureColumns": list(CORE_FEATURE_COLUMNS),
+            "provenance": provenance.as_mapping(),
+        }
+    )
+
+
 def _parse_feature_manifest(content: bytes) -> dict[str, object]:
     try:
         payload = parse_bounded_json_bytes(content, limits=_MANIFEST_JSON_LIMITS)
@@ -590,6 +720,30 @@ def _parse_feature_manifest(content: bytes) -> dict[str, object]:
     _require_sha256(
         _require_text(manifest["logicalDatasetHash"], "logicalDatasetHash"),
         "logical dataset",
+    )
+    return manifest
+
+
+def _parse_feature_manifest_v2(content: bytes) -> dict[str, object]:
+    try:
+        payload = parse_bounded_json_bytes(content, limits=_MANIFEST_JSON_LIMITS)
+    except BoundedJsonError as error:
+        raise LightGbmContractError("production feature manifest JSON is invalid") from error
+    if not isinstance(payload, dict):
+        raise LightGbmContractError("production feature manifest root must be an object")
+    manifest = cast(dict[str, object], payload)
+    if set(manifest) != _MANIFEST_FIELDS or canonical_json_bytes(manifest) != content:
+        raise LightGbmContractError("production feature manifest is not closed canonical JSON")
+    if (
+        manifest["manifestVersion"] != PRODUCTION_MANIFEST_VERSION
+        or manifest["schemaVersion"] != SCHEMA_VERSION
+        or manifest["parquetFile"] != PARQUET_FILENAME
+        or manifest["featureColumns"] != list(CORE_FEATURE_COLUMNS)
+    ):
+        raise LightGbmContractError("production feature manifest version or schema is invalid")
+    _require_sha256(_require_text(manifest["parquetSha256"], "parquetSha256"), "Parquet")
+    _require_sha256(
+        _require_text(manifest["logicalDatasetHash"], "logicalDatasetHash"), "logical dataset"
     )
     return manifest
 
@@ -631,6 +785,41 @@ def _parse_feature_provenance(value: object) -> FeatureBundleProvenance:
             provenance["universeScheduleSha256"], "universeScheduleSha256"
         ),
         pit_input_sha256=_require_text(provenance["pitInputSha256"], "pitInputSha256"),
+    )
+
+
+def _parse_production_feature_provenance(
+    value: object,
+) -> ProductionFeatureBundleProvenance:
+    if not isinstance(value, dict):
+        raise LightGbmContractError("production feature provenance must be an object")
+    provenance = cast(dict[str, object], value)
+    if set(provenance) != _PRODUCTION_PROVENANCE_FIELDS:
+        raise LightGbmContractError("production feature provenance is not closed")
+    if (
+        provenance["temporalPolicyVersion"] != "s5-temporal-policy-v2"
+        or provenance["temporalQuality"] != "RECONSTRUCTED_FIXED_LAG"
+        or provenance["universePolicyVersion"] != "top30-plus-132030-v1"
+        or provenance["optionalFeatureGroups"] != []
+    ):
+        raise LightGbmContractError("production temporal authority is invalid")
+    base_value = dict(provenance)
+    for key in (
+        "temporalPolicyVersion",
+        "temporalQuality",
+        "sourceBundleSetSha256",
+        "sourcePolicySetSha256",
+    ):
+        del base_value[key]
+    base_value["universePolicyVersion"] = FeatureBundleProvenance.universe_policy_version
+    return ProductionFeatureBundleProvenance(
+        base=_parse_feature_provenance(base_value),
+        source_bundle_set_sha256=_require_text(
+            provenance["sourceBundleSetSha256"], "sourceBundleSetSha256"
+        ),
+        source_policy_set_sha256=_require_text(
+            provenance["sourcePolicySetSha256"], "sourcePolicySetSha256"
+        ),
     )
 
 

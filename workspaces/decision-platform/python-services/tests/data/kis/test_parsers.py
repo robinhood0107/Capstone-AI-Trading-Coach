@@ -53,6 +53,75 @@ def test_parse_daily_bars_accepts_empty_output2() -> None:
     assert parse_daily_bars(_load("daily_itemchart_empty_output2.json"), symbol="005930") == []
 
 
+def test_production_daily_bars_require_all_adjustment_evidence() -> None:
+    response = _load("daily_itemchart_005930_page1.json")
+    for row in response["output2"]:
+        row.update(
+            {
+                "flng_cls_code": "00",
+                "prtt_rate": "0",
+                "mod_yn": "N",
+                "revl_issu_reas": "",
+            }
+        )
+    response["output2"][0].pop("flng_cls_code")
+
+    with pytest.raises(KISResponseError, match="ADJUSTMENT_FIELD_MISSING"):
+        parse_daily_bars(response, symbol="005930", require_adjustment_fields=True)
+
+
+def test_daily_bars_reject_unknown_falling_code() -> None:
+    response = _load("daily_itemchart_005930_page1.json")
+    for row in response["output2"]:
+        row.update(
+            {
+                "flng_cls_code": "00",
+                "prtt_rate": "0",
+                "mod_yn": "N",
+                "revl_issu_reas": "",
+            }
+        )
+    response["output2"][0]["flng_cls_code"] = "77"
+
+    with pytest.raises(KISResponseError, match="ADJUSTMENT_FIELD_INVALID"):
+        parse_daily_bars(response, symbol="005930", require_adjustment_fields=True)
+
+
+@pytest.mark.parametrize("invalid_rate", [None, "NaN", "Infinity", "-0.1"])
+def test_production_daily_bars_reject_invalid_adjustment_rate(invalid_rate: object) -> None:
+    response = _load("daily_itemchart_005930_page1.json")
+    for row in response["output2"]:
+        row.update(
+            {
+                "flng_cls_code": "00",
+                "prtt_rate": "0",
+                "mod_yn": "N",
+                "revl_issu_reas": "",
+            }
+        )
+    response["output2"][0]["prtt_rate"] = invalid_rate
+
+    with pytest.raises(KISResponseError, match="ADJUSTMENT_FIELD_INVALID"):
+        parse_daily_bars(response, symbol="005930", require_adjustment_fields=True)
+
+
+def test_production_daily_bars_reject_contradictory_adjustment_evidence() -> None:
+    response = _load("daily_itemchart_005930_page1.json")
+    for row in response["output2"]:
+        row.update(
+            {
+                "flng_cls_code": "00",
+                "prtt_rate": "0",
+                "mod_yn": "N",
+                "revl_issu_reas": "",
+            }
+        )
+    response["output2"][0]["mod_yn"] = "Y"
+
+    with pytest.raises(KISResponseError, match="ADJUSTMENT_FIELD_CONTRADICTORY"):
+        parse_daily_bars(response, symbol="005930", require_adjustment_fields=True)
+
+
 def test_parse_holidays_reads_business_day_flags() -> None:
     rows = parse_holidays(_load("holiday_202607.json"))
 

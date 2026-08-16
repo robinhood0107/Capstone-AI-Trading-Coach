@@ -87,6 +87,28 @@ def build_ecos_quota_reservation(
     )
 
 
+def build_s5_ecos_quota_reservation(
+    redis_client: object,
+    *,
+    max_calls_per_run: int,
+) -> RedisQuotaReservation:
+    """S5.6 dedicated settings에서만 24-call one-shot reservation을 만든다."""
+
+    if max_calls_per_run < 1 or max_calls_per_run > 24:
+        raise ValueError("S5 ECOS max calls per run is out of bounds")
+    return RedisQuotaReservation(
+        cast(RedisEvalLike, redis_client),
+        key=ECOS_QUOTA_KEY,
+        policy=RedisQuotaPolicy(
+            version=f"{ECOS_QUOTA_POLICY_VERSION}-s5-6",
+            windows=(ECOS_OPERATIONAL_WINDOW,),
+            min_interval_ms=0,
+            cooldown_seconds=1_800,
+            max_calls_per_run=max_calls_per_run,
+        ),
+    )
+
+
 def window_allows_next_attempt(*, current_count: int, window: QuotaWindow) -> bool:
     """현재 count 다음 physical attempt가 지정 window limit 안인지 판정한다."""
     if isinstance(current_count, bool) or current_count < 0:

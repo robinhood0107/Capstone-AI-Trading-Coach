@@ -1,0 +1,17 @@
+{
+  "artifactPath": "/tmp/model",
+  "asOf": "2026-08-17T23:10:00Z",
+  "batchVersion": "s5-signal-batch-v1",
+  "fixture": false,
+  "membershipSha256": "5555555555555555555555555555555555555555555555555555555555555555",
+  "modelReleaseId": "lgr-111111111111",
+  "parquetFile": "signals.parquet",
+  "parquetSha256": "6666666666666666666666666666666666666666666666666666666666666666",
+  "provenanceClass": "PRODUCTION",
+  "rowCount": 31,
+  "semanticSha256": "7777777777777777777777777777777777777777777777777777777777777777",
+  "sessionDate": "2026-08-14",
+  "signalBatchId": "sgb-444444444444",
+  "timeframe": "1d",
+  "universeReleaseId": "sur-555555555555"
+}

@@ -831,6 +831,9 @@ class InfrastructureSecurityIntegrationTest {
         private val ragWriterPassword: String = "w" + "g".repeat(24)
         private val ragAdminPassword: String = "a" + "g".repeat(24)
         private val ragQueryPassword: String = "q" + "g".repeat(24)
+        private val signalWriterPassword: String = "w" + "s".repeat(24)
+        private val signalSchedulerPassword: String = "s" + "s".repeat(24)
+        private val signalAdminPassword: String = "a" + "s".repeat(24)
         private val postgresImage =
             DockerImageName
                 .parse(
@@ -855,5 +858,8 @@ class InfrastructureSecurityIntegrationTest {
                 .withEnv("POSTGRES_RAG_WRITER_PASSWORD", ragWriterPassword)
                 .withEnv("POSTGRES_RAG_ADMIN_PASSWORD", ragAdminPassword)
                 .withEnv("POSTGRES_RAG_QUERY_PASSWORD", ragQueryPassword)
+                .withEnv("POSTGRES_SIGNAL_WRITER_PASSWORD", signalWriterPassword)
+                .withEnv("POSTGRES_SIGNAL_SCHEDULER_PASSWORD", signalSchedulerPassword)
+                .withEnv("POSTGRES_SIGNAL_ADMIN_PASSWORD", signalAdminPassword)
     }
 }

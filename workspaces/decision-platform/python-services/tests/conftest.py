@@ -48,6 +48,9 @@ class PostgresTestCluster(TypedDict):
     rag_writer_dsn: str
     rag_admin_dsn: str
     rag_query_dsn: str
+    signal_writer_dsn: str
+    signal_scheduler_dsn: str
+    signal_admin_dsn: str
 
 
 def _start_postgres_cluster() -> Iterator[PostgresTestCluster]:
@@ -85,6 +88,15 @@ def _start_postgres_cluster() -> Iterator[PostgresTestCluster]:
         rag_query_dsn = (
             f"postgresql://decision_rag_query:rag-query-test@{host}:{port}/decision"
         )
+        signal_writer_dsn = (
+            f"postgresql://decision_signal_writer:signal-writer-test@{host}:{port}/decision"
+        )
+        signal_scheduler_dsn = (
+            f"postgresql://decision_signal_scheduler:signal-scheduler-test@{host}:{port}/decision"
+        )
+        signal_admin_dsn = (
+            f"postgresql://decision_signal_admin:signal-admin-test@{host}:{port}/decision"
+        )
 
         with psycopg.connect(admin_dsn, autocommit=True) as connection:
             connection.execute(
@@ -107,6 +119,12 @@ def _start_postgres_cluster() -> Iterator[PostgresTestCluster]:
                     NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD 'rag-admin-test';
                 CREATE ROLE decision_rag_query LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
                     NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD 'rag-query-test';
+                CREATE ROLE decision_signal_writer LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
+                    NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD 'signal-writer-test';
+                CREATE ROLE decision_signal_scheduler LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
+                    NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD 'signal-scheduler-test';
+                CREATE ROLE decision_signal_admin LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
+                    NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD 'signal-admin-test';
                 CREATE ROLE flyway LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
                     NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD 'flyway-test';
                 ALTER ROLE decision_app SET statement_timeout = '2s';
@@ -121,6 +139,15 @@ def _start_postgres_cluster() -> Iterator[PostgresTestCluster]:
                 ALTER ROLE decision_rag_query SET statement_timeout = '1500ms';
                 ALTER ROLE decision_rag_query SET lock_timeout = '250ms';
                 ALTER ROLE decision_rag_query SET idle_in_transaction_session_timeout = '5s';
+                ALTER ROLE decision_signal_writer SET statement_timeout = '60s';
+                ALTER ROLE decision_signal_writer SET lock_timeout = '500ms';
+                ALTER ROLE decision_signal_writer SET idle_in_transaction_session_timeout = '60s';
+                ALTER ROLE decision_signal_scheduler SET statement_timeout = '5s';
+                ALTER ROLE decision_signal_scheduler SET lock_timeout = '500ms';
+                ALTER ROLE decision_signal_scheduler SET idle_in_transaction_session_timeout = '5s';
+                ALTER ROLE decision_signal_admin SET statement_timeout = '5s';
+                ALTER ROLE decision_signal_admin SET lock_timeout = '500ms';
+                ALTER ROLE decision_signal_admin SET idle_in_transaction_session_timeout = '5s';
                 GRANT CONNECT ON DATABASE decision TO
                     decision_app,
                     decision_collector,
@@ -131,6 +158,9 @@ def _start_postgres_cluster() -> Iterator[PostgresTestCluster]:
                     decision_rag_writer,
                     decision_rag_admin,
                     decision_rag_query,
+                    decision_signal_writer,
+                    decision_signal_scheduler,
+                    decision_signal_admin,
                     flyway;
                 REVOKE CREATE ON SCHEMA public FROM PUBLIC;
                 GRANT USAGE ON SCHEMA public TO
@@ -143,6 +173,9 @@ def _start_postgres_cluster() -> Iterator[PostgresTestCluster]:
                     decision_rag_writer,
                     decision_rag_admin,
                     decision_rag_query,
+                    decision_signal_writer,
+                    decision_signal_scheduler,
+                    decision_signal_admin,
                     flyway;
                 GRANT CREATE ON SCHEMA public TO flyway;
                 """
@@ -193,6 +226,9 @@ def _start_postgres_cluster() -> Iterator[PostgresTestCluster]:
             "rag_writer_dsn": rag_writer_dsn,
             "rag_admin_dsn": rag_admin_dsn,
             "rag_query_dsn": rag_query_dsn,
+            "signal_writer_dsn": signal_writer_dsn,
+            "signal_scheduler_dsn": signal_scheduler_dsn,
+            "signal_admin_dsn": signal_admin_dsn,
         }
 
 

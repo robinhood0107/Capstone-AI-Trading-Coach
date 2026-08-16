@@ -64,10 +64,10 @@ class FlywayMigrationIntegrationTest(
     @Autowired private val riskSnapshotPort: RiskSnapshotPort,
 ) : SpringApiIntegrationTestBase() {
     @Test
-    fun `clean database applies V1 through V72 migrations and creates required objects`() {
+    fun `clean database applies V1 through V73 migrations and creates required objects`() {
         val versions = queryStrings("select version from flyway_schema_history where success order by installed_rank")
         // V7 is a Java migration and must appear alongside the SQL migrations.
-        assertEquals((1..72).map(Int::toString), versions)
+        assertEquals((1..73).map(Int::toString), versions)
 
         val requiredTables =
             listOf(
@@ -183,6 +183,14 @@ class FlywayMigrationIntegrationTest(
                 "s4_9_grounding_support_edges",
                 "s4_9_search_attempts",
                 "signal_v2_production_pointers",
+                "signal_universe_releases",
+                "signal_model_releases",
+                "signal_model_release_transitions",
+                "signal_batches",
+                "signal_batch_members",
+                "active_signal_model_release",
+                "active_signal_batch",
+                "signal_batch_publications",
             )
         requiredTables.forEach { tableName ->
             assertTrue(tableExists(tableName), "expected table $tableName to exist")
@@ -308,6 +316,263 @@ class FlywayMigrationIntegrationTest(
             hasFunctionPrivilege(
                 "decision_app",
                 "ingest_signal_v2_exact(text,text,text,text,date,timestamp with time zone,text,text,text,text,numeric,numeric,text,text,text,text,text,text,boolean,text,text)",
+            ),
+        )
+    }
+
+    @Test
+    fun `V73 stages exact release batch activates atomically and suspends LightGBM on drift`() {
+        val releaseId = "lgr-${"1".repeat(12)}"
+        val modelVersion = "lgbm-v1-${"2".repeat(12)}"
+        val reportId = "mrp-${"3".repeat(12)}"
+        val releaseManifest = "a".repeat(64)
+        val kst = java.time.ZoneId.of("Asia/Seoul")
+        // calendar-date 산술 대신 실제 연속 XKRX session fixture를 사용한다.
+        val latestSession = java.time.LocalDate.of(2026, 8, 13)
+        val nextSession = java.time.LocalDate.of(2026, 8, 14)
+        val asOf = nextSession.atTime(8, 10).atZone(kst).toOffsetDateTime()
+        DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { flyway ->
+            flyway
+                .prepareStatement(
+                    """
+                    INSERT INTO trading_sessions(
+                      exchange_mic, session_date, is_open, open_at, close_at, timezone,
+                      reason, chosen_source_id, degraded, fallback_reason, as_of,
+                      confidence_bps, has_conflict, canonical_hash, canonical_rule_version,
+                      confidence_rule_version
+                    ) VALUES (
+                      'XKRX', ?, true, ?, ?, 'Asia/Seoul', NULL, 'S5_6_TEST', false, NULL,
+                      statement_timestamp(), 9900, false, ?, 'S5_6_TEST', 's1.6-confidence-v1'
+                    )
+                    ON CONFLICT (exchange_mic, session_date) DO UPDATE SET
+                      is_open = EXCLUDED.is_open, open_at = EXCLUDED.open_at,
+                      close_at = EXCLUDED.close_at, has_conflict = false
+                    """.trimIndent(),
+                ).use { statement ->
+                    listOf(latestSession, nextSession).forEachIndexed { index, session ->
+                        statement.setObject(1, session)
+                        statement.setObject(2, session.atTime(9, 0).atZone(kst).toOffsetDateTime())
+                        statement.setObject(3, session.atTime(15, 30).atZone(kst).toOffsetDateTime())
+                        statement.setString(4, (if (index == 0) "7" else "8").repeat(64))
+                        statement.executeUpdate()
+                    }
+                }
+        }
+        DriverManager.getConnection(postgres.jdbcUrl, "decision_signal_writer", "signal-writer-test").use { writer ->
+            writer.prepareStatement("SELECT stage_signal_model_release(?,?,?,?,?,?,?,?,?,?)").use { statement ->
+                listOf(
+                    releaseManifest,
+                    releaseId,
+                    modelVersion,
+                    reportId,
+                    "b".repeat(64),
+                    "c".repeat(64),
+                    "d".repeat(64),
+                    "e".repeat(40),
+                    "f".repeat(40),
+                    "1".repeat(64),
+                ).forEachIndexed { index, value -> statement.setString(index + 1, value) }
+                statement.executeQuery().use { result ->
+                    assertTrue(result.next())
+                    assertEquals("INSERTED", result.getString(1))
+                }
+                statement.executeQuery().use { result ->
+                    assertTrue(result.next())
+                    assertEquals("REPLAYED", result.getString(1))
+                }
+            }
+
+            val symbols = ((1..29).map { it.toString().padStart(6, '0') } + "005930" + "132030").sorted()
+            val membershipJson = symbols.joinToString(separator = ",", prefix = "[", postfix = "]") { "\"$it\"" }
+            val membershipDigest =
+                HexFormat.of().formatHex(
+                    MessageDigest
+                        .getInstance("SHA-256")
+                        .digest(
+                            "s5-inference-universe-v1\u0000$membershipJson".toByteArray(),
+                        ),
+                )
+            val universeId = "sur-${membershipDigest.take(12)}"
+            val asOfText = asOf.toInstant().toString()
+            val members =
+                symbols.joinToString(prefix = "[", postfix = "]") { symbol ->
+                    """{"asOf":"$asOfText","confidence":0.5,"modelReportId":"$reportId","modelVersion":"$modelVersion","signal":"HOLD","status":"AVAILABLE","symbol":"$symbol"}"""
+                }
+            val batchId = "sgb-${"4".repeat(12)}"
+            writer.prepareStatement("SELECT stage_signal_batch(?,?,?,?,?,?,?,?)").use { statement ->
+                statement.setString(1, "5".repeat(64))
+                statement.setString(2, batchId)
+                statement.setString(3, releaseId)
+                statement.setString(4, universeId)
+                statement.setString(5, membershipDigest)
+                statement.setObject(6, latestSession)
+                statement.setObject(7, asOf)
+                statement.setString(8, members)
+                statement.executeQuery().use { result ->
+                    assertTrue(result.next())
+                    assertEquals("INSERTED", result.getString(1))
+                }
+            }
+            val nextBatchId = "sgb-${"8".repeat(12)}"
+            writer.prepareStatement("SELECT stage_signal_batch(?,?,?,?,?,?,?,?)").use { statement ->
+                statement.setString(1, "8".repeat(64))
+                statement.setString(2, nextBatchId)
+                statement.setString(3, releaseId)
+                statement.setString(4, universeId)
+                statement.setString(5, membershipDigest)
+                statement.setObject(6, latestSession)
+                statement.setObject(7, asOf)
+                statement.setString(8, members)
+                statement.executeQuery().use { result ->
+                    assertTrue(result.next())
+                    assertEquals("INSERTED", result.getString(1))
+                }
+            }
+            val staleBatchId = "sgb-${"9".repeat(12)}"
+            val staleAsOf = latestSession.atTime(8, 10).atZone(kst).toOffsetDateTime()
+            val staleAsOfText = staleAsOf.toInstant().toString()
+            val staleMembers =
+                symbols.joinToString(prefix = "[", postfix = "]") { symbol ->
+                    """{"asOf":"$staleAsOfText","confidence":0.5,"modelReportId":"$reportId","modelVersion":"$modelVersion","signal":"HOLD","status":"AVAILABLE","symbol":"$symbol"}"""
+                }
+            writer.prepareStatement("SELECT stage_signal_batch(?,?,?,?,?,?,?,?)").use { statement ->
+                statement.setString(1, "9".repeat(64))
+                statement.setString(2, staleBatchId)
+                statement.setString(3, releaseId)
+                statement.setString(4, universeId)
+                statement.setString(5, membershipDigest)
+                statement.setObject(6, latestSession.minusDays(1))
+                statement.setObject(7, staleAsOf)
+                statement.setString(8, staleMembers)
+                statement.executeQuery().use { result ->
+                    assertTrue(result.next())
+                    assertEquals("INSERTED", result.getString(1))
+                }
+            }
+
+            DriverManager.getConnection(postgres.jdbcUrl, "decision_signal_admin", "signal-admin-test").use { admin ->
+                admin.prepareStatement("SELECT activate_signal_model_and_batch(?,?,?,?,?)").use { statement ->
+                    statement.setString(1, releaseId)
+                    statement.setString(2, batchId)
+                    statement.setString(3, "")
+                    statement.setString(4, "")
+                    statement.setString(5, "MANUAL_ACTIVATION")
+                    statement.executeQuery().use { result ->
+                        assertTrue(result.next())
+                        assertEquals(1L, result.getLong(1))
+                    }
+                }
+            }
+
+            DriverManager.getConnection(postgres.jdbcUrl, "decision_app", APP_PASSWORD).use { app ->
+                app.prepareStatement("SELECT status, signal, confidence FROM read_production_signal_v2(?)").use { statement ->
+                    statement.setString(1, "005930")
+                    statement.executeQuery().use { result ->
+                        assertTrue(result.next())
+                        assertEquals("AVAILABLE", result.getString("status"))
+                        assertEquals("HOLD", result.getString("signal"))
+                    }
+                }
+                val direct =
+                    assertThrows<SQLException> {
+                        app.createStatement().use { it.executeQuery("SELECT * FROM signal_model_releases") }
+                    }
+                assertEquals("42501", direct.sqlState)
+            }
+
+            DriverManager
+                .getConnection(
+                    postgres.jdbcUrl,
+                    "decision_signal_scheduler",
+                    "signal-scheduler-test",
+                ).use { scheduler ->
+                    val stalePublish =
+                        assertThrows<SQLException> {
+                            scheduler.prepareStatement("SELECT publish_active_signal_batch(?,?)").use { statement ->
+                                statement.setString(1, staleBatchId)
+                                statement.setString(2, batchId)
+                                statement.executeQuery()
+                            }
+                        }
+                    assertEquals("22023", stalePublish.sqlState)
+                    val reusedPublish =
+                        assertThrows<SQLException> {
+                            scheduler.prepareStatement("SELECT publish_active_signal_batch(?,?)").use { statement ->
+                                statement.setString(1, batchId)
+                                statement.setString(2, batchId)
+                                statement.executeQuery()
+                            }
+                        }
+                    assertEquals("22023", reusedPublish.sqlState)
+                    scheduler.prepareStatement("SELECT suspend_signal_model_for_drift(?,?)").use { statement ->
+                        statement.setString(1, releaseId)
+                        statement.setString(2, "6".repeat(64))
+                        statement.execute()
+                    }
+                    val suspendedPublish =
+                        assertThrows<SQLException> {
+                            scheduler.prepareStatement("SELECT publish_active_signal_batch(?,?)").use { statement ->
+                                statement.setString(1, nextBatchId)
+                                statement.setString(2, batchId)
+                                statement.executeQuery()
+                            }
+                        }
+                    assertEquals("22023", suspendedPublish.sqlState)
+                }
+            DriverManager.getConnection(postgres.jdbcUrl, "decision_app", APP_PASSWORD).use { app ->
+                app.prepareStatement("SELECT status, reason, signal FROM read_production_signal_v2(?)").use { statement ->
+                    statement.setString(1, "005930")
+                    statement.executeQuery().use { result ->
+                        assertTrue(result.next())
+                        assertEquals("ABSTAIN", result.getString("status"))
+                        assertEquals("ARTIFACT_DRIFT", result.getString("reason"))
+                        assertEquals(null, result.getString("signal"))
+                    }
+                }
+            }
+        }
+        listOf(
+            "signal_model_releases",
+            "signal_batches",
+            "signal_batch_members",
+            "active_signal_model_release",
+            "active_signal_batch",
+            "signal_batch_publications",
+        ).forEach { table ->
+            listOf("SELECT", "INSERT", "UPDATE", "DELETE").forEach { privilege ->
+                assertFalse(hasTablePrivilege("decision_signal_writer", table, privilege))
+                assertFalse(hasTablePrivilege("decision_signal_scheduler", table, privilege))
+                assertFalse(hasTablePrivilege("decision_signal_admin", table, privilege))
+            }
+        }
+        assertTrue(
+            hasFunctionPrivilege(
+                "decision_signal_writer",
+                "stage_signal_model_release(text,text,text,text,text,text,text,text,text,text)",
+            ),
+        )
+        assertFalse(
+            hasFunctionPrivilege("decision_signal_writer", "publish_active_signal_batch(text,text)"),
+        )
+        assertTrue(
+            hasFunctionPrivilege("decision_signal_scheduler", "publish_active_signal_batch(text,text)"),
+        )
+        assertFalse(
+            hasFunctionPrivilege(
+                "decision_signal_scheduler",
+                "activate_signal_model_and_batch(text,text,text,text,text)",
+            ),
+        )
+        assertTrue(
+            hasFunctionPrivilege(
+                "decision_signal_admin",
+                "activate_signal_model_and_batch(text,text,text,text,text)",
+            ),
+        )
+        assertFalse(
+            hasFunctionPrivilege(
+                "decision_signal_admin",
+                "stage_signal_model_release(text,text,text,text,text,text,text,text,text,text)",
             ),
         )
     }

@@ -46,6 +46,7 @@ class JdbcSignalV2Repository(
                         FROM trading_sessions
                         WHERE exchange_mic = 'XKRX'
                           AND is_open
+                          AND has_conflict = false
                           AND close_at <= (
                             ((clock_timestamp() AT TIME ZONE 'Asia/Seoul')::date + time '08:10')
                             AT TIME ZONE 'Asia/Seoul'

@@ -915,7 +915,7 @@ def test_bootstrap_executor_orders_providers_and_seals_private_manifest(tmp_path
         ecos_series=CANDIDATE_SERIES,
         clock=lambda: datetime(2026, 8, 19, tzinfo=UTC),
     )
-    assert result.physical_calls == 278
+    assert result.budgeted_calls == 278
     assert calls[:243] == [
         f"KRX:{service}"
         for _ in raw
@@ -1040,7 +1040,7 @@ def test_materializer_publishes_feature_bundle_v2_from_verified_source(tmp_path:
         listing_market_by_membership={
             (identity, schedule.effective_month): "KOSPI" for schedule in packet.schedules
         },
-        physical_calls=0,
+        budgeted_calls=0,
     )
     bundle = materialize_production_feature_bundle(
         packet=packet,

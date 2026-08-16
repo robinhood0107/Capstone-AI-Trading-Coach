@@ -20,7 +20,11 @@ def main() -> int:
         print("S5_BOOTSTRAP_PACKET=SOURCE_ROOT_UNAVAILABLE")
         return 2
     root = Path(root_value)
-    packet = author_bootstrap_packet(cutoff=datetime.now(UTC))
+    try:
+        packet = author_bootstrap_packet(cutoff=datetime.now(UTC))
+    except LightGbmContractError:
+        print("S5_BOOTSTRAP_PACKET=DATASET_UNAVAILABLE")
+        return 1
     filename = f"bootstrap-{packet.sha256}.json"
     try:
         require_private_root(root)

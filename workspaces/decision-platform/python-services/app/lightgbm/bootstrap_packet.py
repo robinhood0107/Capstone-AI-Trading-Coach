@@ -19,6 +19,8 @@ from app.lightgbm.pit_calendar import (
     PitSessionWindow,
     build_pit_session_window,
     derive_monthly_universe_schedule,
+    latest_completed_session,
+    previous_xkrx_session,
 )
 from app.lightgbm.production_policy import (
     ECOS_OPERATIONS,
@@ -109,6 +111,21 @@ def author_bootstrap_packet(*, cutoff: datetime) -> BootstrapPacket:
         schedules=schedules,
         budget=budget,
     )
+
+
+def latest_publishable_bootstrap_cutoff(*, cutoff: datetime) -> datetime:
+    """현재 시각에서 label이 성숙한 최신 XKRX session의 bootstrap cutoff를 반환한다.
+
+    초기 bootstrap은 provider 호출 전 packet 자체가 label maturity를 증명해야 한다. 휴일 뒤에는
+    최신 완료 session이 아직 미성숙할 수 있으므로, 생산 가능한 가장 최근 session의 asOf로 낮춘다.
+    """
+
+    if cutoff.tzinfo is None:
+        raise LightGbmContractError("bootstrap cutoff must be timezone aware")
+    candidate = latest_completed_session(cutoff)
+    while label_as_of(candidate) > cutoff:
+        candidate = previous_xkrx_session(candidate)
+    return label_as_of(candidate)
 
 
 def validate_bootstrap_packet(content: bytes, *, expected_sha256: str) -> BootstrapPacket:

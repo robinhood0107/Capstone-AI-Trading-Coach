@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 import os
 from pathlib import Path
 
-from app.lightgbm.bootstrap_packet import author_bootstrap_packet
+from app.lightgbm.bootstrap_packet import author_bootstrap_packet, latest_publishable_bootstrap_cutoff
 from app.lightgbm.errors import LightGbmContractError
 from app.lightgbm.private_root import require_private_root
 from app.rag.safe_io import RagSafeIoError, write_approved_new_file
@@ -21,7 +21,15 @@ def main() -> int:
         return 2
     root = Path(root_value)
     try:
-        packet = author_bootstrap_packet(cutoff=datetime.now(UTC))
+        now = datetime.now(UTC)
+        try:
+            packet = author_bootstrap_packet(cutoff=now)
+        except LightGbmContractError as error:
+            if "latest label maturity clock" not in str(error):
+                raise
+            packet = author_bootstrap_packet(
+                cutoff=latest_publishable_bootstrap_cutoff(cutoff=now)
+            )
     except LightGbmContractError:
         print("S5_BOOTSTRAP_PACKET=DATASET_UNAVAILABLE")
         return 1

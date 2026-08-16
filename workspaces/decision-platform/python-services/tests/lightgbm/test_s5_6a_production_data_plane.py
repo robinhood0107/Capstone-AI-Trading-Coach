@@ -34,7 +34,11 @@ from app.lightgbm.bootstrap_journal import (
     build_resume_packet,
     validate_resume_packet,
 )
-from app.lightgbm.bootstrap_packet import author_bootstrap_packet, validate_bootstrap_packet
+from app.lightgbm.bootstrap_packet import (
+    author_bootstrap_packet,
+    latest_publishable_bootstrap_cutoff,
+    validate_bootstrap_packet,
+)
 from app.lightgbm import bootstrap_packet_cli
 from app.lightgbm.feature_artifact import (
     FeatureArtifact,
@@ -632,6 +636,37 @@ def test_bootstrap_packet_has_exact_1072_1007_51_and_6446_caps() -> None:
     assert (settings.max_calls_per_run, settings.max_attempts_per_request) == (24, 1)
     with pytest.raises(LightGbmContractError, match="label maturity"):
         author_bootstrap_packet(cutoff=cutoff - timedelta(seconds=1))
+
+
+def test_bootstrap_packet_cli_falls_back_to_latest_publishable_session(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    root = tmp_path / "s5-source"
+    root.mkdir(mode=0o700)
+    monkeypatch.setenv("S5_SOURCE_ROOT", str(root))
+
+    class FixedDatetime:
+        @staticmethod
+        def now(tz: object = None) -> datetime:  # noqa: ANN401
+            return datetime(2026, 8, 17, 3, 0, tzinfo=UTC if tz is not None else None)
+
+    cutoff = datetime(2026, 8, 17, 3, 0, tzinfo=UTC)
+    assert latest_publishable_bootstrap_cutoff(cutoff=cutoff) == datetime(
+        2026, 8, 13, 23, 10, tzinfo=UTC
+    )
+    monkeypatch.setattr(bootstrap_packet_cli, "datetime", FixedDatetime)
+
+    assert bootstrap_packet_cli.main() == 0
+    output = capsys.readouterr().out
+    assert output.startswith("S5_BOOTSTRAP_PACKET=AUTHORED sha256=")
+    packet_sha = output.rsplit("sha256=", 1)[1].strip()
+    packet_path = root / f"bootstrap-{packet_sha}.json"
+    packet = validate_bootstrap_packet(packet_path.read_bytes(), expected_sha256=packet_sha)
+    assert packet.window.latest_completed == date(2026, 8, 13)
+    assert packet.window.raw_sessions[-1] == date(2026, 8, 13)
+    assert packet.window.eligible_sessions[-1] == date(2026, 8, 5)
 
 
 def test_bootstrap_packet_cli_reports_unavailable_without_traceback(

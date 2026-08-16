@@ -183,6 +183,19 @@ class KISHttpClient:
             raise KISCredentialError("KIS cached token is unavailable")
         self._token_manager.get_access_token()
 
+    def prepare_access_token(self) -> None:
+        """S5.6 bootstrap이 data GET 전에 OAuth/cache 단계를 별도 물리 예산으로 예약한다.
+
+        token 문자열은 반환하거나 기록하지 않으며 production private token manager만 호출한다.
+        """
+
+        if self._closed or self._token_manager is None:
+            raise KISCredentialError("KIS access token is unavailable")
+        token = self._token_manager.get_access_token()
+        if not token:
+            raise KISCredentialError("KIS access token is unavailable")
+        token = ""
+
     def request(
         self,
         method: str,

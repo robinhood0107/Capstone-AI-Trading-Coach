@@ -143,6 +143,21 @@ def next_session_evidence_clock(observation_date: date, *, extra_sessions: int =
     return datetime.combine(target.date(), time(8, 10), tzinfo=KST)
 
 
+def next_xkrx_evidence_clock(observation_date: date) -> datetime:
+    """ECOS 같은 비거래일 관측에도 적용할 수 있는 다음 XKRX session 08:10 clock."""
+
+    if type(observation_date) is not date:
+        raise LightGbmContractError("evidence clock input is invalid")
+    calendar = _calendar()
+    candidate = calendar.date_to_session(pd.Timestamp(observation_date), direction="next")
+    try:
+        if candidate.date() == observation_date:
+            candidate = calendar.next_session(candidate)
+    except Exception:
+        raise LightGbmContractError("evidence observation date is invalid") from None
+    return datetime.combine(candidate.date(), time(8, 10), tzinfo=KST)
+
+
 def feature_as_of(session_date: date) -> datetime:
     """Feature row t의 source eligibility clock."""
 

@@ -139,6 +139,38 @@ def _source_schema() -> dict[str, Any]:
             "receipt": _temporal_receipt(),
         },
     )
+    chunk["oneOf"] = [
+        {
+            "properties": {
+                "sourceId": {"const": "KRX"},
+                "operationId": {
+                    "enum": [
+                        "stk_bydd_trd",
+                        "ksq_bydd_trd",
+                        "kospi_dd_trd",
+                        "kosdaq_dd_trd",
+                        "stk_isu_base_info",
+                        "ksq_isu_base_info",
+                        "etf_bydd_trd",
+                    ]
+                },
+            }
+        },
+        {
+            "properties": {
+                "sourceId": {"const": "KIS"},
+                "operationId": {"const": "FHKST03010100"},
+            }
+        },
+        {
+            "properties": {
+                "sourceId": {"const": "ECOS"},
+                "operationId": {
+                    "enum": ["722Y001/0101000/D", "731Y001/0000001/D"]
+                },
+            }
+        },
+    ]
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$id": SOURCE_SCHEMA,
@@ -278,6 +310,16 @@ def _catalog() -> dict[str, Any]:
             "totalMaxPhysicalCalls": 6446,
             "accountBalanceOrderCalls": 0,
         },
+        "sourceBundle": {
+            "manifestMaxBytes": 16 * 1024 * 1024,
+            "maxChunks": 6_446,
+            "krxMaxRows": 10_000_000,
+            "krxMaxBytes": 16 * 1024**3,
+            "kisMaxRows": 192_960,
+            "kisMaxBytes": 2 * 1024**3,
+            "ecosMaxRows": 10_000,
+            "ecosMaxBytes": 64 * 1024**2,
+        },
         "runtime": {
             "riskDecisionWiring": 0,
             "orderWiring": 0,
@@ -374,6 +416,9 @@ def build_artifacts() -> dict[str, dict[str, Any]]:
     feature = _feature_fixture()
     source_unknown = copy.deepcopy(source)
     source_unknown["rawResponse"] = {}
+    source_operation = copy.deepcopy(source)
+    source_operation["chunks"][0]["operationId"] = "account-balance"
+    source_operation["chunks"][0]["receipt"]["operationId"] = "account-balance"
     feature_unknown = copy.deepcopy(feature)
     feature_unknown["crossMarketScore"] = 1
     artifacts = {
@@ -383,6 +428,7 @@ def build_artifacts() -> dict[str, dict[str, Any]]:
         "contracts/examples/s5-pit-source-bundle-v1.valid.json": source,
         "contracts/examples/s5-feature-bundle-v2.valid.json": feature,
         "contracts/examples/invalid/s5-pit-source-bundle-v1.unknown-field.invalid.json": source_unknown,
+        "contracts/examples/invalid/s5-pit-source-bundle-v1.operation.invalid.json": source_operation,
         "contracts/examples/invalid/s5-feature-bundle-v2.cross-market.invalid.json": feature_unknown,
     }
     Draft202012Validator.check_schema(artifacts[SOURCE_SCHEMA])

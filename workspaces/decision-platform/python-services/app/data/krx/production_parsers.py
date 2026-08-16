@@ -10,7 +10,7 @@ from app.data.krx.catalog import S5_PRODUCTION_ENDPOINTS
 from app.lightgbm.errors import DatasetUnavailable, LightGbmContractError
 
 
-_FIELDS: Final[dict[str, frozenset[str]]] = {
+S5_PRODUCTION_PROJECTION_FIELDS: Final[dict[str, frozenset[str]]] = {
     "stk_bydd_trd": frozenset(
         {
             "BAS_DD", "ISU_CD", "ISU_NM", "MKT_NM", "SECT_TP_NM", "TDD_CLSPRC",
@@ -68,7 +68,7 @@ def parse_s5_production_response(
     """공식 field set과 requested date를 전수 확인한 후 string projection만 반환한다."""
 
     endpoint = S5_PRODUCTION_ENDPOINTS.get(service)
-    fields = _FIELDS.get(service)
+    fields = S5_PRODUCTION_PROJECTION_FIELDS.get(service)
     if endpoint is None or fields is None or type(requested_date) is not date:
         raise LightGbmContractError("KRX S5 production service is not allowlisted")
     if set(payload) != {endpoint.response_block}:

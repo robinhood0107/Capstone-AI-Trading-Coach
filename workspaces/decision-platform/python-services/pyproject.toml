@@ -85,6 +85,7 @@ s48-runtime = "app.cross_market.s48_runtime_cli:main"
 s48-core6-probe = "app.cross_market.core6_probe_cli:main"
 s48-optional3-probe = "app.cross_market.optional3_probe_cli:main"
 s5-production-bootstrap-author = "app.lightgbm.bootstrap_packet_cli:main"
+s5-production-bootstrap = "app.lightgbm.bootstrap_execute_cli:main"
 
 [build-system]
 requires = ["hatchling"]

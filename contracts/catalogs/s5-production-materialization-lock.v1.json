@@ -25,6 +25,16 @@
     "orderWiring": 0,
     "riskDecisionWiring": 0
   },
+  "sourceBundle": {
+    "ecosMaxBytes": 67108864,
+    "ecosMaxRows": 10000,
+    "kisMaxBytes": 2147483648,
+    "kisMaxRows": 192960,
+    "krxMaxBytes": 17179869184,
+    "krxMaxRows": 10000000,
+    "manifestMaxBytes": 16777216,
+    "maxChunks": 6446
+  },
   "strictProviderPITClaim": false,
   "temporalQuality": "RECONSTRUCTED_FIXED_LAG"
 }

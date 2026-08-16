@@ -4,16 +4,32 @@ from dataclasses import replace
 from datetime import UTC, date, datetime
 from decimal import Decimal
 import hashlib
+from io import BytesIO
+import os
 from pathlib import Path
+import stat
 
 import numpy as np
+import pyarrow as pa
+import pyarrow.parquet as pq
 import pytest
 
-from app.data.kis.parsers import KISResponseError, parse_daily_bars
-from app.data.krx.production_parsers import parse_s5_production_response
+from app.data.ecos.models import ECOSObservation
+from app.data.ecos.series_registry import CANDIDATE_SERIES
+from app.data.ecos.settings import ECOSS5ProductionSettings
+from app.data.kis.parsers import DailyBar, KISResponseError, parse_daily_bars
+from app.data.krx.production_parsers import (
+    S5_PRODUCTION_PROJECTION_FIELDS,
+    parse_s5_production_response,
+)
 from app.lightgbm.errors import DatasetUnavailable, LightGbmContractError
 from app.lightgbm.bootstrap_control import BootstrapLedger, BootstrapPhase
-from app.lightgbm.bootstrap_packet import author_bootstrap_packet
+from app.lightgbm.bootstrap_executor import (
+    BootstrapAcquisition,
+    execute_bootstrap_acquisition,
+    materialize_production_feature_bundle,
+)
+from app.lightgbm.bootstrap_packet import author_bootstrap_packet, validate_bootstrap_packet
 from app.lightgbm.feature_artifact import (
     FeatureArtifact,
     FeatureBundleProvenance,
@@ -33,7 +49,7 @@ from app.lightgbm.features import (
     build_production_core_feature_rows,
 )
 from app.lightgbm.labels import build_production_exact_labels
-from app.lightgbm.pit_calendar import build_pit_session_window
+from app.lightgbm.pit_calendar import PitSessionWindow, build_pit_session_window
 from app.lightgbm.production_policy import (
     BootstrapBudget,
     SecurityClassification,
@@ -46,6 +62,7 @@ from app.lightgbm.production_policy import (
     require_standard_stock_identity,
 )
 from app.lightgbm.source_bundle import (
+    SourceBundle,
     SourceChunkReceipt,
     build_source_manifest,
     read_source_bundle,
@@ -60,6 +77,11 @@ from app.lightgbm.temporal import (
     label_as_of,
     next_session_evidence_clock,
     require_receipt_eligible,
+)
+from app.lightgbm.universe import (
+    MonthlyUniverse,
+    ProductionUniverseObservation,
+    select_production_monthly_universe,
 )
 
 
@@ -76,6 +98,21 @@ def _receipt(digest: str = "1" * 64) -> TemporalReceipt:
         snapshot_sha256=digest,
         temporal_quality=TemporalQuality.RECONSTRUCTED_FIXED_LAG,
         policy_effective_at=next_session_evidence_clock(observation),
+    )
+
+
+def _krx_receipt(day: date, operation: str, digest: str) -> TemporalReceipt:
+    return TemporalReceipt(
+        source_id="KRX",
+        operation_id=operation,
+        observation_date=day,
+        retrieved_at=datetime(2026, 8, 16, tzinfo=UTC),
+        availability_basis=AvailabilityBasis.PROVIDER_AS_OF_SCHEDULE,
+        revision_basis=RevisionBasis.CONTENT_SNAPSHOT,
+        request_sha256="3" * 64,
+        snapshot_sha256=digest,
+        temporal_quality=TemporalQuality.PROVIDER_AS_OF_NO_VINTAGE,
+        policy_effective_at=next_session_evidence_clock(day),
     )
 
 
@@ -272,7 +309,27 @@ def test_feature_bundle_v2_is_required_for_production(tmp_path: Path) -> None:
 
 
 def test_source_bundle_uses_manifest_trust_anchor_and_digest_derived_path(tmp_path: Path) -> None:
-    content = b"PAR1synthetic-projection-PAR1"
+    fields = (
+        "symbol",
+        "observationDate",
+        "adjustedOpen",
+        "adjustedHigh",
+        "adjustedLow",
+        "adjustedClose",
+        "volume",
+        "turnover",
+        "flngClsCode",
+        "prttRate",
+        "modYn",
+        "revlIssuReas",
+    )
+    table = pa.Table.from_pylist(
+        [{field: "1" for field in fields}],
+        schema=pa.schema([pa.field(field, pa.string(), nullable=False) for field in fields]),
+    )
+    sink = BytesIO()
+    pq.write_table(table, sink, version="2.6", compression="zstd", use_dictionary=False)
+    content = sink.getvalue()
     digest = hashlib.sha256(content).hexdigest()
     receipt = replace(_receipt(digest), snapshot_sha256=digest)
     chunk = SourceChunkReceipt(
@@ -303,7 +360,7 @@ def test_source_bundle_uses_manifest_trust_anchor_and_digest_derived_path(tmp_pa
 
 
 def test_bootstrap_failure_stops_remaining_calls_and_resume_targets_failed_chunk() -> None:
-    ledger = BootstrapLedger(BootstrapBudget(krx_get=2, kis_get=1, kis_token=1, ecos_get=1))
+    ledger = BootstrapLedger(BootstrapBudget(krx_get=3, kis_get=1, kis_token=1, ecos_get=1))
     assert ledger.physical_call(
         provider="KRX",
         operation_id="stk_bydd_trd",
@@ -374,6 +431,67 @@ def test_bootstrap_packet_has_exact_1072_1007_51_and_6446_caps() -> None:
     assert packet.budget.krx_get == 4_441
     assert packet.budget.total == 6_446
     assert b'"strictProviderPITClaim":false' in packet.content
+    assert validate_bootstrap_packet(packet.content, expected_sha256=packet.sha256) == packet
+    with pytest.raises(LightGbmContractError, match="trust anchor"):
+        validate_bootstrap_packet(packet.content, expected_sha256="0" * 64)
+    settings = ECOSS5ProductionSettings()
+    assert (settings.max_calls_per_run, settings.max_attempts_per_request) == (24, 1)
+
+
+def test_production_universe_uses_temporal_receipts_and_exact_31() -> None:
+    packet = author_bootstrap_packet(cutoff=datetime(2026, 8, 16, 8, 10, tzinfo=UTC))
+    schedule = packet.schedules[-1]
+    rows: list[ProductionUniverseObservation] = []
+    for symbol_index in range(31):
+        symbol = f"{symbol_index + 1:06d}"
+        identity = f"KR7{symbol}003"
+        for day_index, day in enumerate(schedule.trailing_sessions):
+            rows.append(
+                ProductionUniverseObservation(
+                    instrument_id=identity,
+                    symbol=symbol,
+                    session_date=day,
+                    trading_value=float(100_000 - symbol_index * 100 + day_index),
+                    market_cap=float(1_000_000 - symbol_index),
+                    market="KOSPI",
+                    security_type="COMMON_STOCK",
+                    common_share=True,
+                    listed=True,
+                    trading_receipt=_krx_receipt(day, "stk_bydd_trd", f"{day_index + 1:064x}"),
+                    identity_receipt=_krx_receipt(
+                        schedule.selection_session,
+                        "stk_isu_base_info",
+                        "a" * 64,
+                    ),
+                )
+            )
+    rows.append(
+        ProductionUniverseObservation(
+            instrument_id="XKRX:ETF:132030",
+            symbol="132030",
+            session_date=schedule.selection_session,
+            trading_value=1.0,
+            market_cap=1.0,
+            market="KOSPI",
+            security_type="ETF",
+            common_share=False,
+            listed=True,
+            trading_receipt=_krx_receipt(
+                schedule.selection_session, "etf_bydd_trd", "b" * 64
+            ),
+            identity_receipt=_krx_receipt(
+                schedule.selection_session, "etf_bydd_trd", "b" * 64
+            ),
+        )
+    )
+    universe = select_production_monthly_universe(rows, schedule=schedule)
+    assert len(universe.symbols) == 31
+    assert universe.symbols[-1] == "132030"
+    assert universe.symbols[:3] == ("000001", "000002", "000003")
+
+    conflict = replace(rows[0], trading_receipt=replace(rows[0].trading_receipt, snapshot_sha256="f" * 64))
+    with pytest.raises(LightGbmContractError, match="SOURCE_SNAPSHOT_CONFLICT"):
+        select_production_monthly_universe([*rows, conflict], schedule=schedule)
 
 
 def test_production_feature_and_label_use_row_specific_clocks() -> None:
@@ -463,3 +581,242 @@ def test_production_feature_and_label_use_row_specific_clocks() -> None:
         build_production_core_feature_rows(
             leaked, indices, macro, listing_market="KOSPI", cutoff=cutoff
         )
+
+
+def test_bootstrap_executor_orders_providers_and_seals_private_manifest(tmp_path: Path) -> None:
+    original = author_bootstrap_packet(cutoff=datetime(2026, 8, 19, 0, 0, tzinfo=UTC))
+    raw = original.window.raw_sessions[-60:]
+    schedule = original.schedules[-1]
+    packet = replace(
+        original,
+        window=PitSessionWindow(
+            cutoff=original.window.cutoff,
+            latest_completed=raw[-1],
+            raw_sessions=raw,
+            eligible_sessions=raw[59:],
+        ),
+        schedules=(schedule,),
+        budget=BootstrapBudget(krx_get=243, kis_get=31, kis_token=1, ecos_get=3),
+    )
+    calls: list[str] = []
+
+    def full(service: str, values: dict[str, str]) -> dict[str, str]:
+        row = {field: "1" for field in S5_PRODUCTION_PROJECTION_FIELDS[service]}
+        row.update(values)
+        return row
+
+    class Krx:
+        def fetch(self, *, service: str, session_date: date) -> tuple[dict[str, str], ...]:
+            del session_date
+            calls.append(f"KRX:{service}")
+            if service in {"stk_bydd_trd", "ksq_bydd_trd"}:
+                offset = 0 if service == "stk_bydd_trd" else 31
+                count = 31 if service == "stk_bydd_trd" else 1
+                return tuple(
+                    full(
+                        service,
+                        {
+                            "ISU_CD": f"{offset + index + 1:06d}",
+                            "ACC_TRDVAL": str(1_000_000 - offset - index),
+                            "MKTCAP": str(10_000_000 - offset - index),
+                        },
+                    )
+                    for index in range(count)
+                )
+            if service in {"kospi_dd_trd", "kosdaq_dd_trd"}:
+                return (
+                    full(
+                        service,
+                        {
+                            "IDX_NM": "코스피" if service == "kospi_dd_trd" else "코스닥",
+                            "CLSPRC_IDX": "2500",
+                        },
+                    ),
+                )
+            if service in {"stk_isu_base_info", "ksq_isu_base_info"}:
+                offset = 0 if service == "stk_isu_base_info" else 31
+                count = 31 if service == "stk_isu_base_info" else 1
+                market = "KOSPI" if service == "stk_isu_base_info" else "KOSDAQ"
+                return tuple(
+                    full(
+                        service,
+                        {
+                            "ISU_CD": f"KR7{offset + index + 1:06d}003",
+                            "ISU_SRT_CD": f"{offset + index + 1:06d}",
+                            "ISU_NM": f"테스트{offset + index + 1}",
+                            "SECUGRP_NM": "주권",
+                            "KIND_STKCERT_TP_NM": "보통주",
+                            "MKT_TP_NM": market,
+                        },
+                    )
+                    for index in range(count)
+                )
+            return (
+                full(
+                    service,
+                    {"ISU_CD": "132030", "ACC_TRDVAL": "1", "MKTCAP": "1"},
+                ),
+            )
+
+    class Kis:
+        def prepare_access_token(self) -> None:
+            calls.append("KIS:token")
+
+        def fetch_page(
+            self, *, symbol: str, start: date, end: date
+        ) -> tuple[DailyBar, ...]:
+            calls.append("KIS:page")
+            return tuple(
+                DailyBar(
+                    symbol=symbol,
+                    date=day,
+                    open=100,
+                    high=101,
+                    low=99,
+                    close=100,
+                    volume=1000,
+                )
+                for day in raw
+                if start <= day <= end
+            )
+
+    class Ecos:
+        def fetch(self, *, series: object, start: date, end: date) -> tuple[ECOSObservation, ...]:
+            calls.append("ECOS:page")
+            series_id = getattr(series, "series_id")
+            days = [day for day in raw if start <= day <= end]
+            if series_id == "policy-rate" and not days:
+                days = [start]
+            return tuple(
+                ECOSObservation(time=day.strftime("%Y%m%d"), value="2.5") for day in days
+            )
+
+    source_root = tmp_path / "source"
+    result = execute_bootstrap_acquisition(
+        packet=packet,
+        source_root=source_root,
+        krx=Krx(),
+        kis=Kis(),
+        ecos=Ecos(),
+        ecos_series=CANDIDATE_SERIES,
+        clock=lambda: datetime(2026, 8, 19, tzinfo=UTC),
+    )
+    assert result.physical_calls == 278
+    assert calls[:243] == [
+        f"KRX:{service}"
+        for _ in raw
+        for service in ("stk_bydd_trd", "ksq_bydd_trd", "kospi_dd_trd", "kosdaq_dd_trd")
+    ] + [
+        "KRX:stk_isu_base_info",
+        "KRX:ksq_isu_base_info",
+        "KRX:etf_bydd_trd",
+    ]
+    assert calls[243] == "KIS:token"
+    assert calls[-3:] == ["ECOS:page", "ECOS:page", "ECOS:page"]
+    assert len(result.universes[0].symbols) == 31
+    assert stat.S_IMODE(os.stat(source_root / "manifest.json").st_mode) == 0o600
+
+
+def test_materializer_publishes_feature_bundle_v2_from_verified_source(tmp_path: Path) -> None:
+    packet = author_bootstrap_packet(cutoff=datetime(2026, 8, 19, 0, 0, tzinfo=UTC))
+    identity = "KR7005930003"
+
+    def receipt(source: str, operation: str, day: date, ordinal: int) -> TemporalReceipt:
+        return TemporalReceipt(
+            source_id=source,
+            operation_id=operation,
+            observation_date=day,
+            retrieved_at=datetime(2026, 8, 19, tzinfo=UTC),
+            availability_basis=(
+                AvailabilityBasis.PROVIDER_AS_OF_SCHEDULE
+                if source == "KRX"
+                else AvailabilityBasis.PROJECT_FIXED_LAG
+            ),
+            revision_basis=RevisionBasis.CONTENT_SNAPSHOT,
+            request_sha256=f"{ordinal + 1:064x}",
+            snapshot_sha256=f"{ordinal + 10_000:064x}",
+            temporal_quality=(
+                TemporalQuality.PROVIDER_AS_OF_NO_VINTAGE
+                if source == "KRX"
+                else TemporalQuality.RECONSTRUCTED_FIXED_LAG
+            ),
+            policy_effective_at=next_session_evidence_clock(day),
+        )
+
+    prices = tuple(
+        ProductionPriceEvidence(
+            instrument_id=identity,
+            symbol="005930",
+            session_date=day,
+            adjusted_open=100.0 + index / 100,
+            adjusted_close=100.0 + index / 100,
+            volume=1000.0 + index,
+            flng_cls_code="",
+            prtt_rate=0.0,
+            mod_yn="N",
+            revl_issu_reas="",
+            receipt=receipt("KIS", "FHKST03010100", day, index),
+        )
+        for index, day in enumerate(packet.window.raw_sessions)
+    )
+    indices = tuple(
+        IndexEvidence(
+            session_date=day,
+            market="KOSPI",
+            adjusted_close=2000.0 + index / 10,
+            receipt=receipt("KRX", "kospi_dd_trd", day, index + 2_000),
+        )
+        for index, day in enumerate(packet.window.raw_sessions)
+    )
+    macro = (
+        MacroObservation(
+            series_id="policy-rate",
+            observation_date=packet.window.raw_sessions[0],
+            value=2.5,
+            receipt=receipt(
+                "ECOS", "722Y001/0101000/D", packet.window.raw_sessions[0], 4_000
+            ),
+        ),
+        *tuple(
+            MacroObservation(
+                series_id="krw-usd-rate",
+                observation_date=day,
+                value=1300.0 + index / 10,
+                receipt=receipt("ECOS", "731Y001/0000001/D", day, index + 5_000),
+            )
+            for index, day in enumerate(packet.window.raw_sessions)
+        ),
+    )
+    universes = tuple(
+        MonthlyUniverse(
+            selection_session=schedule.selection_session,
+            effective_month=schedule.effective_month,
+            instrument_ids=(identity,),
+            symbols=("005930",),
+        )
+        for schedule in packet.schedules
+    )
+    source = SourceBundle(
+        manifest_sha256="a" * 64,
+        manifest_bytes=b"{}",
+        dataset_cutoff=packet.window.cutoff,
+        chunks=(),
+        receipt_set_sha256="b" * 64,
+    )
+    acquisition = BootstrapAcquisition(
+        source_bundle=source,
+        universes=universes,
+        prices=prices,
+        indices=indices,
+        macro=macro,
+        listing_market_by_identity={identity: "KOSPI"},
+        physical_calls=0,
+    )
+    bundle = materialize_production_feature_bundle(
+        packet=packet,
+        acquisition=acquisition,
+        feature_root=tmp_path / "feature",
+    )
+    assert bundle.artifact.table.num_rows == 1_007
+    assert bundle.provenance.temporal_quality == "RECONSTRUCTED_FIXED_LAG"
+    assert stat.S_IMODE(os.stat(tmp_path / "feature" / "manifest.json").st_mode) == 0o600

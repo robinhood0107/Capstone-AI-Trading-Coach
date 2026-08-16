@@ -1,0 +1,108 @@
+"""승인 packet SHA 하나로만 S5.6 one-shot live read-only bootstrap을 실행한다."""
+
+from __future__ import annotations
+
+import os
+from pathlib import Path
+import stat
+
+from app.data.ecos.http_client import ECOSHttpClient
+from app.data.ecos.series_registry import CANDIDATE_SERIES
+from app.data.ecos.settings import ECOSS5ProductionSettings
+from app.data.kis.http_client import KISHttpClient
+from app.data.kis.settings import KISSettings
+from app.data.krx.client import KrxOpenApiClient
+from app.data.krx.settings import KrxS5ProductionSettings
+from app.lightgbm.bootstrap_executor import execute_bootstrap_materialization
+from app.lightgbm.bootstrap_live import (
+    LiveEcosBootstrapProvider,
+    LiveKisBootstrapProvider,
+    LiveKrxBootstrapProvider,
+)
+from app.lightgbm.bootstrap_packet import validate_bootstrap_packet
+from app.lightgbm.errors import LightGbmContractError
+from app.rag.safe_io import RagSafeIoError, read_approved_regular_file
+
+
+def main() -> int:
+    """CLI path 인자는 받지 않고 server root와 승인 digest가 모두 있을 때만 provider를 연다."""
+
+    root_value = os.environ.get("S5_SOURCE_ROOT", "")
+    packet_sha256 = os.environ.get("S5_BOOTSTRAP_PACKET_SHA256", "")
+    if not root_value or not packet_sha256:
+        print("S5_BOOTSTRAP=AUTHORITY_UNAVAILABLE")
+        return 2
+    root = Path(root_value)
+    try:
+        _require_private_root(root)
+        packet_file = read_approved_regular_file(
+            approved_root=root,
+            relative_path=f"bootstrap-{packet_sha256}.json",
+            max_bytes=1 * 1024 * 1024,
+        )
+        packet = validate_bootstrap_packet(
+            packet_file.content, expected_sha256=packet_sha256
+        )
+        run_root = root / f"run-{packet_sha256}"
+        run_root.mkdir(mode=0o700)
+        source_root = run_root / "source"
+        feature_root = run_root / "feature"
+    except (OSError, RagSafeIoError, LightGbmContractError):
+        print("S5_BOOTSTRAP=PACKET_OR_ROOT_INVALID")
+        return 2
+
+    krx_client: KrxOpenApiClient | None = None
+    kis_client: KISHttpClient | None = None
+    ecos_client: ECOSHttpClient | None = None
+    try:
+        krx_client = KrxOpenApiClient(KrxS5ProductionSettings())
+        kis_client = KISHttpClient(
+            KISSettings(kis_mode="live", kis_offline=False, kis_retry_attempts=1)
+        )
+        ecos_client = ECOSHttpClient(ECOSS5ProductionSettings())
+        result = execute_bootstrap_materialization(
+            packet=packet,
+            source_root=source_root,
+            feature_root=feature_root,
+            krx=LiveKrxBootstrapProvider(krx_client),
+            kis=LiveKisBootstrapProvider(kis_client),
+            ecos=LiveEcosBootstrapProvider(ecos_client),
+            ecos_series=CANDIDATE_SERIES,
+        )
+    except Exception:
+        print("S5_BOOTSTRAP=DATASET_UNAVAILABLE")
+        return 1
+    finally:
+        for client in (ecos_client, kis_client, krx_client):
+            close = getattr(client, "close", None)
+            if callable(close):
+                close()
+    print(
+        "S5_BOOTSTRAP=VERIFIED "
+        f"sourceManifestSha256={result.acquisition.source_bundle.manifest_sha256} "
+        f"featureManifestSha256={result.feature_bundle.manifest_sha256} "
+        f"physicalCalls={result.acquisition.physical_calls}"
+    )
+    return 0
+
+
+def _require_private_root(root: Path) -> None:
+    if not root.is_absolute():
+        raise LightGbmContractError("S5 source root must be absolute")
+    current = Path(root.anchor)
+    for component in root.parts[1:]:
+        current /= component
+        if stat.S_ISLNK(current.lstat().st_mode):
+            raise LightGbmContractError("S5 source root contains a symlink")
+    metadata = root.lstat()
+    if (
+        not stat.S_ISDIR(metadata.st_mode)
+        or stat.S_ISLNK(metadata.st_mode)
+        or metadata.st_uid != os.geteuid()
+        or metadata.st_mode & (stat.S_IWGRP | stat.S_IWOTH)
+    ):
+        raise LightGbmContractError("S5 source root is not private")
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

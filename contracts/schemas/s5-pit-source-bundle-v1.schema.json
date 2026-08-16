@@ -6,6 +6,49 @@
     "chunks": {
       "items": {
         "additionalProperties": false,
+        "oneOf": [
+          {
+            "properties": {
+              "operationId": {
+                "enum": [
+                  "stk_bydd_trd",
+                  "ksq_bydd_trd",
+                  "kospi_dd_trd",
+                  "kosdaq_dd_trd",
+                  "stk_isu_base_info",
+                  "ksq_isu_base_info",
+                  "etf_bydd_trd"
+                ]
+              },
+              "sourceId": {
+                "const": "KRX"
+              }
+            }
+          },
+          {
+            "properties": {
+              "operationId": {
+                "const": "FHKST03010100"
+              },
+              "sourceId": {
+                "const": "KIS"
+              }
+            }
+          },
+          {
+            "properties": {
+              "operationId": {
+                "enum": [
+                  "722Y001/0101000/D",
+                  "731Y001/0000001/D"
+                ]
+              },
+              "sourceId": {
+                "const": "ECOS"
+              }
+            }
+          }
+        ],
         "properties": {
           "bytes": {
             "maximum": 17179869184,

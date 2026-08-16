@@ -4,8 +4,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
+from io import BytesIO
 from pathlib import Path
 from typing import Mapping, Sequence, cast
+
+import pyarrow as pa
+import pyarrow.parquet as pq
 
 from app.data._shared.bounded_json import (
     BoundedJsonError,
@@ -13,6 +17,7 @@ from app.data._shared.bounded_json import (
     parse_bounded_json_bytes,
 )
 from app.data._shared.canonical_json import canonical_json_bytes
+from app.data.krx.production_parsers import S5_PRODUCTION_PROJECTION_FIELDS
 from app.lightgbm.errors import DatasetUnavailable, LightGbmContractError
 from app.lightgbm.temporal import (
     AvailabilityBasis,
@@ -26,10 +31,33 @@ from app.rag.safe_io import RagSafeIoError, read_approved_regular_file
 
 SOURCE_MANIFEST_FILENAME = "manifest.json"
 SOURCE_MANIFEST_VERSION = "s5-pit-source-bundle-v1"
-MAX_MANIFEST_BYTES = 1 * 1024 * 1024
+# Exact 6,446 call receipts를 raw-free로 모두 결속하므로 1 MiB로는 정상 bootstrap도 표현할 수 없다.
+MAX_MANIFEST_BYTES = 16 * 1024 * 1024
 MAX_CHUNKS = 6_446
 SOURCE_BYTE_CAPS = {"KRX": 16 * 1024**3, "KIS": 2 * 1024**3, "ECOS": 64 * 1024**2}
 SOURCE_ROW_CAPS = {"KRX": 10_000_000, "KIS": 192_960, "ECOS": 10_000}
+_SOURCE_OPERATIONS = {
+    "KRX": frozenset(S5_PRODUCTION_PROJECTION_FIELDS),
+    "KIS": frozenset({"FHKST03010100"}),
+    "ECOS": frozenset({"722Y001/0101000/D", "731Y001/0000001/D"}),
+}
+_KIS_FIELDS = frozenset(
+    {
+        "symbol",
+        "observationDate",
+        "adjustedOpen",
+        "adjustedHigh",
+        "adjustedLow",
+        "adjustedClose",
+        "volume",
+        "turnover",
+        "flngClsCode",
+        "prttRate",
+        "modYn",
+        "revlIssuReas",
+    }
+)
+_ECOS_FIELDS = frozenset({"observationDate", "value"})
 _MANIFEST_FIELDS = frozenset(
     {
         "manifestVersion",
@@ -161,6 +189,7 @@ def read_source_bundle(
     chunks = tuple(_parse_chunk(value) for value in chunks_value)
     _validate_chunks(chunks)
     source_bytes = {source: 0 for source in SOURCE_BYTE_CAPS}
+    source_decoded = {source: 0 for source in SOURCE_BYTE_CAPS}
     source_rows = {source: 0 for source in SOURCE_ROW_CAPS}
     for chunk in chunks:
         try:
@@ -173,10 +202,15 @@ def read_source_bundle(
             raise LightGbmContractError("source chunk file boundary is invalid") from error
         if safe.content_sha256 != chunk.content_sha256 or len(safe.content) != chunk.byte_count:
             raise LightGbmContractError("source chunk digest or size mismatch")
+        decoded_rows, decoded_bytes = _verify_source_parquet(chunk, safe.content)
+        if decoded_rows != chunk.row_count:
+            raise LightGbmContractError("source chunk declared row count does not match Parquet")
         source_bytes[chunk.source_id] += chunk.byte_count
-        source_rows[chunk.source_id] += chunk.row_count
+        source_decoded[chunk.source_id] += decoded_bytes
+        source_rows[chunk.source_id] += decoded_rows
         if (
             source_bytes[chunk.source_id] > SOURCE_BYTE_CAPS[chunk.source_id]
+            or source_decoded[chunk.source_id] > SOURCE_BYTE_CAPS[chunk.source_id]
             or source_rows[chunk.source_id] > SOURCE_ROW_CAPS[chunk.source_id]
         ):
             raise LightGbmContractError("source bundle decoded row or byte cap exceeded")
@@ -245,6 +279,8 @@ def _parse_chunk(value: object) -> SourceChunkReceipt:
         byte_count=_integer(value["bytes"], "bytes"),
         temporal=receipt,
     )
+    if len(chunk.operation_id) > 80 or len(chunk.query_key) > 256:
+        raise LightGbmContractError("source chunk operation or query key is too long")
     if (
         chunk.source_id != receipt.source_id
         or chunk.operation_id != receipt.operation_id
@@ -261,6 +297,8 @@ def _validate_chunks(chunks: Sequence[SourceChunkReceipt]) -> None:
     for chunk in chunks:
         if chunk.source_id not in SOURCE_BYTE_CAPS:
             raise LightGbmContractError("source chunk provider is not allowlisted")
+        if chunk.operation_id not in _SOURCE_OPERATIONS[chunk.source_id]:
+            raise LightGbmContractError("source chunk operation is not allowlisted")
         _require_sha256(chunk.content_sha256, "source chunk")
         if chunk.row_count <= 0 or chunk.byte_count <= 0:
             raise DatasetUnavailable("DATASET_UNAVAILABLE: source chunk is empty")
@@ -268,6 +306,60 @@ def _validate_chunks(chunks: Sequence[SourceChunkReceipt]) -> None:
         if key in keys:
             raise LightGbmContractError("source chunk logical key is duplicated")
         keys.add(key)
+
+
+def _verify_source_parquet(chunk: SourceChunkReceipt, content: bytes) -> tuple[int, int]:
+    """Footer 선언과 실제 batch를 모두 읽어 nested/unknown/schema/decoded lie를 거부한다."""
+
+    try:
+        parquet = pq.ParquetFile(  # type: ignore[no-untyped-call]
+            BytesIO(content),
+            thrift_string_size_limit=1 * 1024 * 1024,
+            thrift_container_size_limit=10_000_000,
+            page_checksum_verification=True,
+        )
+        metadata = parquet.metadata
+        expected_fields = _expected_projection_fields(chunk)
+        if (
+            metadata.num_rows > SOURCE_ROW_CAPS[chunk.source_id]
+            or metadata.num_columns != len(expected_fields)
+            or set(parquet.schema_arrow.names) != expected_fields
+            or parquet.schema_arrow.metadata
+        ):
+            raise LightGbmContractError("source Parquet footer or schema is invalid")
+        for field in parquet.schema_arrow:
+            if field.type != pa.string() or field.nullable:
+                raise LightGbmContractError("source Parquet fields must be non-null strings")
+        declared_decoded = sum(
+            metadata.row_group(group).column(column).total_uncompressed_size
+            for group in range(metadata.num_row_groups)
+            for column in range(metadata.num_columns)
+        )
+        if declared_decoded > SOURCE_BYTE_CAPS[chunk.source_id]:
+            raise LightGbmContractError("source Parquet declared decoded cap exceeded")
+        rows = 0
+        decoded = 0
+        for batch in parquet.iter_batches(batch_size=8_192, use_threads=False):  # type: ignore[no-untyped-call]
+            rows += batch.num_rows
+            decoded += batch.nbytes
+            if (
+                rows > SOURCE_ROW_CAPS[chunk.source_id]
+                or decoded > SOURCE_BYTE_CAPS[chunk.source_id]
+            ):
+                raise LightGbmContractError("source Parquet actual decoded cap exceeded")
+        return rows, decoded
+    except LightGbmContractError:
+        raise
+    except Exception as error:
+        raise LightGbmContractError("source chunk is not valid bounded Parquet") from error
+
+
+def _expected_projection_fields(chunk: SourceChunkReceipt) -> frozenset[str]:
+    if chunk.source_id == "KRX":
+        return S5_PRODUCTION_PROJECTION_FIELDS[chunk.operation_id]
+    if chunk.source_id == "KIS":
+        return _KIS_FIELDS
+    return _ECOS_FIELDS
 
 
 def _parse_datetime(value: object, field: str) -> datetime:

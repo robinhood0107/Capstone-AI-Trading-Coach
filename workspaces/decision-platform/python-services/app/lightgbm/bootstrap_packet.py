@@ -5,7 +5,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 import hashlib
+from typing import cast
 
+from app.data._shared.bounded_json import (
+    BoundedJsonError,
+    BoundedJsonLimits,
+    parse_bounded_json_bytes,
+)
 from app.data._shared.canonical_json import canonical_json_bytes
 from app.lightgbm.errors import LightGbmContractError
 from app.lightgbm.pit_calendar import (
@@ -98,6 +104,45 @@ def author_bootstrap_packet(*, cutoff: datetime) -> BootstrapPacket:
         schedules=schedules,
         budget=budget,
     )
+
+
+def validate_bootstrap_packet(content: bytes, *, expected_sha256: str) -> BootstrapPacket:
+    """외부 승인 SHA와 canonical packet bytes를 calendar에서 재생성해 전수 검증한다."""
+
+    if (
+        len(expected_sha256) != 64
+        or any(character not in "0123456789abcdef" for character in expected_sha256)
+        or hashlib.sha256(content).hexdigest() != expected_sha256
+    ):
+        raise LightGbmContractError("bootstrap packet trust anchor mismatch")
+    try:
+        value = parse_bounded_json_bytes(
+            content,
+            limits=BoundedJsonLimits(
+                max_bytes=1 * 1024 * 1024,
+                max_depth=6,
+                max_list_items=2_000,
+                max_object_keys=32,
+                max_text_codepoints=8_192,
+                max_text_bytes=32_768,
+                max_number_characters=32,
+            ),
+        )
+    except BoundedJsonError as error:
+        raise LightGbmContractError("bootstrap packet JSON is invalid") from error
+    if not isinstance(value, dict) or canonical_json_bytes(value) != content:
+        raise LightGbmContractError("bootstrap packet must be canonical closed JSON")
+    cutoff_value = cast(dict[str, object], value).get("cutoff")
+    if not isinstance(cutoff_value, str) or not cutoff_value.endswith("Z"):
+        raise LightGbmContractError("bootstrap packet cutoff is invalid")
+    try:
+        cutoff = datetime.fromisoformat(cutoff_value[:-1] + "+00:00")
+    except ValueError:
+        raise LightGbmContractError("bootstrap packet cutoff is invalid") from None
+    regenerated = author_bootstrap_packet(cutoff=cutoff)
+    if regenerated.content != content or regenerated.sha256 != expected_sha256:
+        raise LightGbmContractError("bootstrap packet does not match current calendar policy")
+    return regenerated
 
 
 def _months_between(first: date, last: date) -> tuple[str, ...]:

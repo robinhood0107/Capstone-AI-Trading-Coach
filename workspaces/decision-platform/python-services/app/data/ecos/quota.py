@@ -63,7 +63,7 @@ def build_ecos_quota_policy(*, max_calls_per_run: int = 8) -> RedisQuotaPolicy:
 
     299/30분 hard window는 독립 경계 검증에 남기며 더 엄격한 운영 window가 runtime을 지배한다.
     """
-    if max_calls_per_run < 1 or max_calls_per_run > 8:
+    if max_calls_per_run < 1 or max_calls_per_run > 24:
         raise ValueError("ECOS max calls per run is out of bounds")
     return RedisQuotaPolicy(
         version=ECOS_QUOTA_POLICY_VERSION,

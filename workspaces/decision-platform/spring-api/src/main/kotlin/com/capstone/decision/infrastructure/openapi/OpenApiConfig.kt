@@ -443,6 +443,23 @@ class OpenApiConfig {
         }
 
     @Bean
+    fun signalV2RuntimeSchemas(): OpenApiCustomizer =
+        OpenApiCustomizer { openApi ->
+            openApi.components.addSchemas(
+                SIGNAL_V2_RUNTIME_COMPONENT,
+                contractSchema(SIGNAL_V2_RUNTIME_RESOURCE, SIGNAL_V2_RUNTIME_COMPONENT),
+            )
+            openApi.components.addSchemas(
+                SIGNAL_V2_RUNTIME_ENVELOPE_COMPONENT,
+                successEnvelope(schemaRef(SIGNAL_V2_RUNTIME_COMPONENT)),
+            )
+            openApi.components.addSchemas(
+                SIGNAL_V2_RUNTIME_ERROR_COMPONENT,
+                signalV2RuntimeErrorEnvelope(),
+            )
+        }
+
+    @Bean
     fun brokerageContractSchemas(): OpenApiCustomizer =
         // S3.1 Brokerage Mock 요청/응답도 canonical schema resource를 그대로 component로 노출한다.
         OpenApiCustomizer { openApi ->
@@ -556,6 +573,34 @@ class OpenApiConfig {
                                     "code" to StringSchema()._enum(S24_RISK_ERROR_CODES),
                                     "message" to StringSchema().minLength(1).maxLength(512),
                                     "details" to ObjectSchema().additionalProperties(true),
+                                ),
+                            required = listOf("code", "message", "details"),
+                        ),
+                ),
+            required = listOf("success", "requestId", "data", "warnings", "error"),
+        )
+
+    private fun signalV2RuntimeErrorEnvelope(): Schema<*> =
+        objectSchema(
+            properties =
+                linkedMapOf(
+                    "success" to BooleanSchema()._const(false),
+                    "requestId" to StringSchema().minLength(1).maxLength(128),
+                    "data" to Schema<Any>().types(linkedSetOf("null")),
+                    "warnings" to Schema<Any>().types(linkedSetOf("array"))._const(emptyList<Any>()),
+                    "error" to
+                        objectSchema(
+                            properties =
+                                linkedMapOf(
+                                    "code" to
+                                        StringSchema()._enum(
+                                            listOf("UNAUTHORIZED", "VALIDATION_ERROR", "SIGNAL_UNAVAILABLE"),
+                                        ),
+                                    "message" to StringSchema().minLength(1).maxLength(512),
+                                    "details" to
+                                        objectSchema(
+                                            properties = linkedMapOf("symbol" to StringSchema().maxLength(64)),
+                                        ),
                                 ),
                             required = listOf("code", "message", "details"),
                         ),
@@ -851,6 +896,10 @@ class OpenApiConfig {
         private const val S24_KILL_SWITCH_ENVELOPE_COMPONENT = "S24KillSwitchSuccessResponse"
         private const val S24_PORTFOLIO_RISK_ENVELOPE_COMPONENT = "S24PortfolioRiskSuccessResponse"
         private const val S24_RISK_ERROR_COMPONENT = "S24RiskErrorResponse"
+        private const val SIGNAL_V2_RUNTIME_COMPONENT = "SignalV2RuntimeResponse"
+        private const val SIGNAL_V2_RUNTIME_RESOURCE = "contracts/signal-v2-runtime-v1.schema.json"
+        private const val SIGNAL_V2_RUNTIME_ENVELOPE_COMPONENT = "SignalV2RuntimeSuccessResponse"
+        private const val SIGNAL_V2_RUNTIME_ERROR_COMPONENT = "SignalV2RuntimeErrorResponse"
         private const val S31_MOCK_ORDER_REQUEST_RESOURCE = "contracts/s3-1-mock-order-request.schema.json"
         private const val S31_MOCK_ORDER_RESPONSE_RESOURCE = "contracts/s3-1-mock-order-response.schema.json"
         private const val S31_MOCK_ORDER_DETAIL_RESOURCE = "contracts/s3-1-mock-order-detail.schema.json"

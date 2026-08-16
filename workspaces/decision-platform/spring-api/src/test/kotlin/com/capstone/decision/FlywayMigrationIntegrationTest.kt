@@ -41,6 +41,7 @@ import tools.jackson.databind.json.JsonMapper
 import tools.jackson.databind.node.ObjectNode
 import java.nio.file.Files
 import java.nio.file.Path
+import java.security.MessageDigest
 import java.sql.DriverManager
 import java.sql.SQLException
 import java.time.Instant
@@ -63,10 +64,10 @@ class FlywayMigrationIntegrationTest(
     @Autowired private val riskSnapshotPort: RiskSnapshotPort,
 ) : SpringApiIntegrationTestBase() {
     @Test
-    fun `clean database applies V1 through V71 migrations and creates required objects`() {
+    fun `clean database applies V1 through V72 migrations and creates required objects`() {
         val versions = queryStrings("select version from flyway_schema_history where success order by installed_rank")
         // V7 is a Java migration and must appear alongside the SQL migrations.
-        assertEquals((1..71).map(Int::toString), versions)
+        assertEquals((1..72).map(Int::toString), versions)
 
         val requiredTables =
             listOf(
@@ -181,6 +182,7 @@ class FlywayMigrationIntegrationTest(
                 "s4_9_grounding_support_segments",
                 "s4_9_grounding_support_edges",
                 "s4_9_search_attempts",
+                "signal_v2_production_pointers",
             )
         requiredTables.forEach { tableName ->
             assertTrue(tableExists(tableName), "expected table $tableName to exist")
@@ -195,6 +197,118 @@ class FlywayMigrationIntegrationTest(
         assertFalse(
             indexDefinitionLike("rag_chunk_embeddings", "%ivfflat%"),
             "ivfflat must wait until real embeddings are loaded",
+        )
+    }
+
+    @Test
+    fun `V72 Signal v2 exact ingest replays rejects conflicts rolls back and blocks fake pointer`() {
+        fun payloadDigest(payload: String): String =
+            HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(payload.toByteArray()))
+
+        fun call(
+            connection: java.sql.Connection,
+            evaluationId: String,
+            payload: String,
+        ): Pair<String, String> {
+            connection
+                .prepareStatement(
+                    """
+                    SELECT outcome, signal_id FROM ingest_signal_v2_exact(
+                      ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?
+                    )
+                    """.trimIndent(),
+                ).use { statement ->
+                    statement.setString(1, "signal-v2-runtime-v1")
+                    statement.setString(2, "LIGHTGBM")
+                    statement.setString(3, "decision-platform")
+                    statement.setString(4, "005930")
+                    statement.setObject(5, java.time.LocalDate.of(2026, 8, 14))
+                    statement.setObject(6, null)
+                    statement.setString(7, "1d")
+                    statement.setString(8, "ABSTAIN")
+                    statement.setString(9, "MISSING_EVIDENCE")
+                    statement.setObject(10, null)
+                    statement.setObject(11, null)
+                    statement.setObject(12, null)
+                    statement.setString(13, evaluationId)
+                    statement.setString(14, "lgbm-v1-fixture")
+                    statement.setString(15, "mrp-fixture")
+                    statement.setString(16, "a".repeat(64))
+                    statement.setString(17, payloadDigest(payload))
+                    statement.setString(18, "b".repeat(64))
+                    statement.setBoolean(19, true)
+                    statement.setString(20, "FAKE_CONTRACT")
+                    statement.setString(21, payload)
+                    statement.executeQuery().use { result ->
+                        assertTrue(result.next())
+                        return result.getString("outcome") to result.getString("signal_id")
+                    }
+                }
+        }
+
+        val payload = """{"reason":"MISSING_EVIDENCE","status":"ABSTAIN"}"""
+        DriverManager.getConnection(postgres.jdbcUrl, "decision_app", APP_PASSWORD).use { connection ->
+            connection.autoCommit = false
+            val inserted = call(connection, "eval-v72-replay", payload)
+            val replayed = call(connection, "eval-v72-replay", payload)
+            assertEquals("INSERTED", inserted.first)
+            assertEquals("REPLAYED", replayed.first)
+            assertEquals(inserted.second, replayed.second)
+            connection.commit()
+
+            val identity =
+                jdbcTemplate.queryForObject(
+                    "SELECT logical_identity_sha256 FROM ingested_signals WHERE signal_id = ?",
+                    String::class.java,
+                    inserted.second,
+                )
+            val pointerError =
+                assertThrows<SQLException> {
+                    connection.prepareStatement("SELECT activate_signal_v2_production_pointer(?)").use { statement ->
+                        statement.setString(1, identity)
+                        statement.execute()
+                    }
+                }
+            assertEquals("22023", pointerError.sqlState)
+            connection.rollback()
+
+            connection.autoCommit = false
+            call(connection, "eval-v72-rollback", payload)
+            val conflict =
+                assertThrows<SQLException> {
+                    call(connection, "eval-v72-rollback", """{"reason":"PRODUCER_FAILED","status":"ABSTAIN"}""")
+                }
+            assertEquals("23505", conflict.sqlState)
+            connection.rollback()
+
+            val directRead =
+                assertThrows<SQLException> {
+                    connection.createStatement().use { it.executeQuery("SELECT * FROM ingested_signals") }
+                }
+            assertEquals("42501", directRead.sqlState)
+            connection.rollback()
+        }
+        assertEquals(
+            0,
+            jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM ingested_signals WHERE evaluation_id = 'eval-v72-rollback'",
+                Int::class.java,
+            ),
+        )
+        assertEquals(
+            0,
+            jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM signal_v2_production_pointers",
+                Int::class.java,
+            ),
+        )
+        assertFalse(hasTablePrivilege("decision_app", "ingested_signals", "SELECT"))
+        assertFalse(hasTablePrivilege("decision_app", "ingested_signals", "INSERT"))
+        assertTrue(
+            hasFunctionPrivilege(
+                "decision_app",
+                "ingest_signal_v2_exact(text,text,text,text,date,timestamp with time zone,text,text,text,text,numeric,numeric,text,text,text,text,text,text,boolean,text,text)",
+            ),
         )
     }
 

@@ -125,13 +125,25 @@ class KISMarketClient:
         return collected
 
     def holidays(self, base_date: date) -> list[HolidayRow]:
+        response = self.holiday_response(base_date)
+        if response is None:
+            return []
+        return parse_holidays(response)
+
+    def holiday_response(self, base_date: date) -> dict[str, Any] | None:
+        """CTCA0903R raw 응답을 같은 accounting/mode 경계로 반환한다.
+
+        S1.6 calendar lane은 느슨한 파서 대신 엄격한 `parse_kis_holiday`로 opnd_yn 권위를
+        확정해야 하므로 sanitized dict가 필요하다. mock/offline 경계와 logical 계상은 기존
+        `holidays()`와 동일하게 유지하며, None은 네트워크 없이 skip됐음을 뜻한다.
+        """
         if self.settings.offline:
             self._record_skip(SkipCode.OFFLINE_FIXTURE)
-            return parse_holidays(_load_fixture(f"holiday_{base_date:%Y%m}.json"))
+            return _load_fixture(f"holiday_{base_date:%Y%m}.json")
         if self.settings.mode != "live":
             # chk-holiday는 모의투자 미지원 supporting read라 mock에서는 네트워크 호출 대신 명시적으로 skip한다.
             self._record_skip(SkipCode.MOCK_HOLIDAY_UNSUPPORTED)
-            return []
+            return None
         token = self._start_logical(LogicalOperation.HOLIDAY)
         try:
             response = self.http_client.request(
@@ -140,12 +152,11 @@ class KISMarketClient:
                 tr_id=self.settings.holiday_tr_id,
                 params={"BASS_DT": _format_date(base_date), "CTX_AREA_NK": "", "CTX_AREA_FK": ""},
             )
-            result = parse_holidays(response)
         except Exception as error:
             self._fail_logical(token, error)
             raise
         self._succeed_logical(token)
-        return result
+        return response
 
     def _offline_daily_bars(self, symbol: str, start: date, end: date) -> list[DailyBar]:
         bars: list[DailyBar] = []

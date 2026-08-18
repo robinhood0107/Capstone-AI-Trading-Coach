@@ -134,5 +134,5 @@ divergence blocks remain in the S5 content-addressed dual artifact vault and are
 committed to Git or Git LFS. Provider raw bodies, headers, and request URLs are not
 persisted by any path added here.
 
-Signal v1/v2, OpenAPI, V73, RiskDecision, order, cross-market, HMM, LSTM, and Rule
-contracts are unchanged.
+Signal v1/v2, OpenAPI, V73, RiskDecision, order, cross-market and every other
+composite component contract are unchanged.

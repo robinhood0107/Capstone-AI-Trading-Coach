@@ -89,5 +89,5 @@ Git LFS. A future contract may increase the physical cap, but it must resume fro
 adopted 4,080 chunks and the two consumed-call receipts; it may not delete the lineage and
 recollect the historical prefix.
 
-Signal v1/v2, OpenAPI, V73, RiskDecision, order, cross-market, HMM, LSTM, and Rule
-contracts are unchanged by this recovery.
+Signal v1/v2, OpenAPI, V73, RiskDecision, order, cross-market and every other
+composite component contract are unchanged by this recovery.

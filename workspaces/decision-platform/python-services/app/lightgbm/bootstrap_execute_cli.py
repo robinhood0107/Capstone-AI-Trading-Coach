@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
@@ -10,11 +11,20 @@ from app.data.ecos.series_registry import CANDIDATE_SERIES
 from app.data.ecos.settings import ECOSS5ProductionSettings
 from app.data.kis.http_client import KISHttpClient
 from app.data.kis.settings import KISSettings
-from app.data.krx.client import KrxOpenApiClient
+from app.data.krx.client import KrxOpenApiClient, attest_quota_backend_credentials
+from app.data._shared.redis_quota import QuotaUnavailableError
 from app.data.krx.settings import KrxS5ProductionSettings
 from app.lightgbm.bootstrap_executor import (
+    DIVERGENCE_CANDIDATES_FILENAME,
+    MAX_DIVERGENCE_BLOCK_BYTES,
     build_current_inference_feature_table,
     execute_bootstrap_materialization,
+)
+from app.lightgbm.bootstrap_fresh_authority import (
+    validate_fresh_bootstrap_execution_authority,
+)
+from app.lightgbm.bootstrap_calendar_recovery import (
+    validate_recovery_execution_authority,
 )
 from app.lightgbm.bootstrap_journal import (
     BootstrapJournal,
@@ -27,9 +37,14 @@ from app.lightgbm.bootstrap_live import (
     LiveKrxBootstrapProvider,
 )
 from app.lightgbm.bootstrap_packet import validate_bootstrap_packet
-from app.lightgbm.errors import LightGbmContractError
+from app.lightgbm.errors import CalendarDivergenceSuspected, LightGbmContractError
 from app.lightgbm.daily_refresh import write_initial_daily_state
-from app.lightgbm.private_root import acquire_run_lock, release_run_lock, require_private_root
+from app.lightgbm.private_root import (
+    acquire_bootstrap_root_lock,
+    acquire_run_lock,
+    release_run_lock,
+    require_private_root,
+)
 from app.lightgbm.production_release import (
     QualificationFailure,
     qualify_and_write_production_release,
@@ -54,9 +69,11 @@ def main() -> int:
         print("S5_BOOTSTRAP=AUTHORITY_UNAVAILABLE")
         return 2
     root = Path(root_value)
+    root_lock = -1
     run_lock = -1
     try:
         require_private_root(root)
+        root_lock = acquire_bootstrap_root_lock(root)
         packet_file = read_approved_regular_file(
             approved_root=root,
             relative_path=f"bootstrap-{packet_sha256}.json",
@@ -65,10 +82,30 @@ def main() -> int:
         packet = validate_bootstrap_packet(
             packet_file.content, expected_sha256=packet_sha256
         )
+        if packet.lineage_mode == "FRESH":
+            validate_fresh_bootstrap_execution_authority(
+                approved_root=root,
+                packet=packet,
+            )
         run_root = root / f"run-{packet_sha256}"
-        if not resume_sha256:
+        is_recovery = packet.lineage_mode == "CALENDAR_RECOVERY"
+        if not resume_sha256 and not is_recovery:
             run_root.mkdir(mode=0o700)
         run_lock = acquire_run_lock(run_root)
+        recovery_status = validate_recovery_execution_authority(
+            approved_root=root,
+            packet=packet,
+        )
+        if recovery_status == "CAPACITY_EXHAUSTED":
+            release_run_lock(run_lock)
+            run_lock = -1
+            release_run_lock(root_lock)
+            root_lock = -1
+            print(
+                "S5_BOOTSTRAP=DATASET_UNAVAILABLE "
+                "reason=KRX_CAPACITY_EXHAUSTED providerCalls=0"
+            )
+            return 1
         if resume_sha256:
             resume_file = read_approved_regular_file(
                 approved_root=root,
@@ -92,9 +129,23 @@ def main() -> int:
             code_tree=code_tree,
             uv_lock_sha256=uv_lock_sha256,
         )
+        try:
+            attest_quota_backend_credentials()
+        except QuotaUnavailableError:
+            if run_lock >= 0:
+                release_run_lock(run_lock)
+            if root_lock >= 0:
+                release_run_lock(root_lock)
+            print(
+                "S5_BOOTSTRAP=CREDENTIALS_UNAVAILABLE "
+                "reason=QUOTA_BACKEND_AUTH providerCalls=0"
+            )
+            return 2
     except (OSError, RagSafeIoError, LightGbmContractError):
         if run_lock >= 0:
             release_run_lock(run_lock)
+        if root_lock >= 0:
+            release_run_lock(root_lock)
         print("S5_BOOTSTRAP=PACKET_OR_ROOT_INVALID")
         return 2
 
@@ -115,7 +166,7 @@ def main() -> int:
             kis=LiveKisBootstrapProvider(kis_client),
             ecos=LiveEcosBootstrapProvider(ecos_client),
             ecos_series=CANDIDATE_SERIES,
-            resume=bool(resume_sha256),
+            resume=bool(resume_sha256 or is_recovery),
         )
         qualification = qualify_and_write_production_release(
             packet=packet,
@@ -168,6 +219,25 @@ def main() -> int:
             release_manifest_sha256=qualification.release_manifest_sha256,
             state_root=daily_root,
         )
+    except CalendarDivergenceSuspected:
+        # 같은 query를 다시 열면 승인 호출만 더 태우므로 resume packet을 만들지 않는다.
+        candidates = 0
+        try:
+            block = read_approved_regular_file(
+                approved_root=source_root,
+                relative_path=DIVERGENCE_CANDIDATES_FILENAME,
+                max_bytes=MAX_DIVERGENCE_BLOCK_BYTES,
+            )
+            payload = json.loads(block.content.decode("utf-8"))
+            candidates = len(payload["candidates"])
+        except Exception:
+            candidates = 0
+        print(
+            "S5_BOOTSTRAP=DATASET_UNAVAILABLE "
+            "reason=CALENDAR_DIVERGENCE_SUSPECTED "
+            f"candidates={candidates}"
+        )
+        return 1
     except Exception:
         try:
             resume_packet = build_resume_packet(
@@ -198,6 +268,7 @@ def main() -> int:
                     # cleanup 오류가 이미 봉인된 실행 결과나 다른 client close를 가리지 않게 한다.
                     pass
         release_run_lock(run_lock)
+        release_run_lock(root_lock)
     print(
         "S5_BOOTSTRAP=VERIFIED "
         f"sourceManifestSha256={result.acquisition.source_bundle.manifest_sha256} "
@@ -208,5 +279,7 @@ def main() -> int:
         f"budgetedCalls={result.acquisition.budgeted_calls}"
     )
     return 0
+
+
 if __name__ == "__main__":
     raise SystemExit(main())

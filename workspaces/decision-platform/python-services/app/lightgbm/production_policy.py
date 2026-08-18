@@ -22,6 +22,11 @@ from app.lightgbm.metrics import (
 )
 
 
+APPROVED_KRX_MAX_GET = 4_441
+APPROVED_TOTAL_MAX_PHYSICAL_CALLS = 6_446
+MAX_KRX_SUPERSEDED_ALLOWANCE = 8
+
+
 KRX_OPERATIONS = (
     "stk_bydd_trd",
     "ksq_bydd_trd",
@@ -55,17 +60,29 @@ class BootstrapBudget:
     ecos_get: int
     retry: int = 0
     cost: int = 0
+    krx_superseded_allowance: int = 0
 
     def __post_init__(self) -> None:
-        values = (self.krx_get, self.kis_get, self.kis_token, self.ecos_get, self.retry, self.cost)
+        values = (
+            self.krx_get,
+            self.kis_get,
+            self.kis_token,
+            self.ecos_get,
+            self.retry,
+            self.cost,
+            self.krx_superseded_allowance,
+        )
         if any(isinstance(value, bool) or value < 0 for value in values):
             raise LightGbmContractError("provider budget must use non-negative integers")
+        # Allowance는 recovery receipt가 증명한 superseded consumed call 수만 좁게 복원한다.
+        if self.krx_superseded_allowance > MAX_KRX_SUPERSEDED_ALLOWANCE:
+            raise LightGbmContractError("S5.6 superseded allowance exceeds approved bound")
         if (
-            self.krx_get > 4_441
+            self.krx_get > APPROVED_KRX_MAX_GET + self.krx_superseded_allowance
             or self.kis_get > 1_980
             or self.kis_token > 1
             or self.ecos_get > 24
-            or self.total > 6_446
+            or self.total > APPROVED_TOTAL_MAX_PHYSICAL_CALLS + self.krx_superseded_allowance
             or self.retry != 0
             or self.cost != 0
         ):
@@ -79,13 +96,64 @@ class BootstrapBudget:
 def author_bootstrap_budget(
     *, monthly_schedule_count: int, union_size: int, raw_session_count: int = 1_072
 ) -> BootstrapBudget:
-    """Exact plan dimensions에서 physical upper bound를 author한다."""
+    """Exact plan dimensions에서 physical upper bound를 author한다.
 
+    Fresh 경로는 allowance를 받지 않는다. 새 approved root가 과거 실패분을 근거 없이 더 쓰지
+    못하도록 구조적으로 막는다.
+    """
+
+    return _author_bootstrap_budget(
+        monthly_schedule_count=monthly_schedule_count,
+        union_size=union_size,
+        raw_session_count=raw_session_count,
+        superseded_allowance=0,
+    )
+
+
+def author_recovery_bootstrap_budget(
+    *,
+    monthly_schedule_count: int,
+    union_size: int,
+    raw_session_count: int = 1_072,
+    superseded_allowance: int,
+) -> BootstrapBudget:
+    """Calendar recovery만 증명된 superseded consumed call 수만큼 KRX 상한을 복원한다.
+
+    Allowance는 recovery receipt가 재계산으로 증명한 값이어야 하며, packet bytes와 실행 권위에서
+    다시 교차검증된다. 이 함수만으로는 provider 호출을 열지 않는다.
+    """
+
+    if (
+        isinstance(superseded_allowance, bool)
+        or not 0 <= superseded_allowance <= MAX_KRX_SUPERSEDED_ALLOWANCE
+    ):
+        raise LightGbmContractError("S5.6 superseded allowance is invalid")
+    return _author_bootstrap_budget(
+        monthly_schedule_count=monthly_schedule_count,
+        union_size=union_size,
+        raw_session_count=raw_session_count,
+        superseded_allowance=superseded_allowance,
+    )
+
+
+def _author_bootstrap_budget(
+    *,
+    monthly_schedule_count: int,
+    union_size: int,
+    raw_session_count: int,
+    superseded_allowance: int,
+) -> BootstrapBudget:
     if not 1 <= union_size <= 180 or monthly_schedule_count < 1 or raw_session_count != 1_072:
         raise DatasetUnavailable("DATASET_UNAVAILABLE: bootstrap dimensions are invalid")
     krx_get = raw_session_count * 4 + monthly_schedule_count * 2 + monthly_schedule_count
     kis_get = union_size * math.ceil(raw_session_count / 100)
-    return BootstrapBudget(krx_get=krx_get, kis_get=kis_get, kis_token=1, ecos_get=24)
+    return BootstrapBudget(
+        krx_get=krx_get + superseded_allowance,
+        kis_get=kis_get,
+        kis_token=1,
+        ecos_get=24,
+        krx_superseded_allowance=superseded_allowance,
+    )
 
 
 def is_spac_name(official_name: str) -> bool:

@@ -8,7 +8,7 @@ import json
 import os
 from pathlib import Path
 import stat
-from typing import Mapping, cast
+from typing import Literal, Mapping, Sequence, cast
 
 from app.data._shared.canonical_json import canonical_json_bytes
 from app.lightgbm.bootstrap_control import BootstrapCallReceipt
@@ -20,6 +20,7 @@ from app.lightgbm.source_bundle import SourceChunkReceipt, parse_source_chunk_re
 JOURNAL_FILENAME = "progress.jsonl"
 MAX_JOURNAL_BYTES = 16 * 1024 * 1024
 RESUME_PACKET_VERSION = "s5-production-bootstrap-resume-v1"
+SUPERSEDED_CONSUMED = "SUPERSEDED_CONSUMED"
 _EVENT_FIELDS = frozenset(
     {"eventVersion", "ordinal", "state", "provider", "operationId", "querySha256", "chunk"}
 )
@@ -46,10 +47,20 @@ class ResumePacket:
 class BootstrapJournal:
     """한 run root의 intent/terminal event를 fsync append하고 재개 상태를 검증한다."""
 
-    def __init__(self, root: Path) -> None:
+    def __init__(
+        self,
+        root: Path,
+        *,
+        calendar_policy: Literal["current", "legacy-v1"] = "current",
+    ) -> None:
         self._root = root
         self._path = root / JOURNAL_FILENAME
-        self._attempts = _read_attempts(self._path) if self._path.exists() else ()
+        self._calendar_policy = calendar_policy
+        self._attempts = (
+            _read_attempts(self._path, calendar_policy=calendar_policy)
+            if self._path.exists()
+            else ()
+        )
 
     @property
     def consumed_receipts(self) -> list[BootstrapCallReceipt]:
@@ -182,7 +193,10 @@ class BootstrapJournal:
         finally:
             os.close(directory_descriptor)
         if not allow_incomplete:
-            self._attempts = _read_attempts(self._path)
+            self._attempts = _read_attempts(
+                self._path,
+                calendar_policy=self._calendar_policy,
+            )
 
 
 def build_resume_packet(
@@ -244,7 +258,52 @@ def validate_resume_packet(
     return expected
 
 
-def _read_attempts(path: Path) -> tuple[JournalAttempt, ...]:
+def build_recovery_journal_bytes(
+    *,
+    adopted: Sequence[JournalAttempt],
+    superseded: Sequence[JournalAttempt],
+) -> bytes:
+    """검증된 old-run receipt만 새 calendar run의 누적 physical ledger로 원자 이관한다."""
+
+    events: list[dict[str, object]] = []
+    ordinal = 1
+    tagged_attempts = (
+        *((attempt, True) for attempt in adopted),
+        *((attempt, False) for attempt in superseded),
+    )
+    for attempt, is_adopted in tagged_attempts:
+        if is_adopted and (attempt.state != "SUCCEEDED" or attempt.chunk is None):
+            raise LightGbmContractError("adopted bootstrap attempt is invalid")
+        terminal_state = "SUCCEEDED" if is_adopted else SUPERSEDED_CONSUMED
+        intent = {
+            "eventVersion": "s5-bootstrap-progress-v1",
+            "ordinal": ordinal,
+            "state": "INTENT",
+            "provider": attempt.provider,
+            "operationId": attempt.operation_id,
+            "querySha256": attempt.query_sha256,
+        }
+        terminal = {
+            **intent,
+            "state": terminal_state,
+            **(
+                {"chunk": attempt.chunk.as_dict()}
+                if terminal_state == "SUCCEEDED" and attempt.chunk is not None
+                else {}
+            ),
+        }
+        events.extend((intent, terminal))
+        ordinal += 1
+    if not events:
+        raise LightGbmContractError("calendar recovery journal cannot be empty")
+    return b"".join(
+        canonical_json_bytes(event).removesuffix(b"\n") + b"\n" for event in events
+    )
+
+
+def _read_attempts(
+    path: Path, *, calendar_policy: Literal["current", "legacy-v1"] = "current"
+) -> tuple[JournalAttempt, ...]:
     try:
         descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
     except FileNotFoundError:
@@ -296,11 +355,18 @@ def _read_attempts(path: Path) -> tuple[JournalAttempt, ...]:
         if any(
             terminal[field] != intent[field]
             for field in ("ordinal", "provider", "operationId", "querySha256")
-        ) or terminal["state"] not in {"SUCCEEDED", "FAILED"}:
+        ) or terminal["state"] not in {"SUCCEEDED", "FAILED", SUPERSEDED_CONSUMED}:
             raise LightGbmContractError("bootstrap progress journal terminal is invalid")
         chunk_value = terminal.get("chunk")
-        chunk = parse_source_chunk_receipt(chunk_value) if chunk_value is not None else None
-        if terminal["state"] == "FAILED" and chunk is not None:
+        chunk = (
+            parse_source_chunk_receipt(
+                chunk_value,
+                calendar_policy=calendar_policy,
+            )
+            if chunk_value is not None
+            else None
+        )
+        if terminal["state"] in {"FAILED", SUPERSEDED_CONSUMED} and chunk is not None:
             raise LightGbmContractError("failed bootstrap attempt cannot bind a chunk")
         provider = _text(intent["provider"])
         operation_id = _text(intent["operationId"])
@@ -318,6 +384,8 @@ def _read_attempts(path: Path) -> tuple[JournalAttempt, ...]:
             or (not token_without_projection and not empty_daily_policy_rate and chunk is None)
         ):
             raise LightGbmContractError("bootstrap progress receipt shape is invalid")
+        if terminal["state"] == SUPERSEDED_CONSUMED and provider != "KRX":
+            raise LightGbmContractError("only KRX calls may be calendar-superseded")
         if chunk is not None and (
             chunk.source_id != provider or chunk.operation_id != operation_id
         ):

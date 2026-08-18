@@ -31,7 +31,7 @@ from app.lightgbm.daily_refresh import (
 from app.lightgbm.errors import DatasetUnavailable, LightGbmContractError
 from app.lightgbm.features import IndexEvidence, MacroObservation, ProductionPriceEvidence
 from app.lightgbm.feature_artifact import ProductionFeatureBundle
-from app.lightgbm.pit_calendar import _calendar, derive_monthly_universe_schedule
+from app.lightgbm.pit_calendar import corrected_calendar, derive_monthly_universe_schedule
 from app.lightgbm.temporal import (
     AvailabilityBasis,
     RevisionBasis,
@@ -103,7 +103,7 @@ def _receipt(source: str, operation: str, day: date) -> TemporalReceipt:
 
 
 def _state(root: Path) -> DailyInferenceState:
-    calendar = _calendar()
+    calendar = corrected_calendar()
     last = calendar.date_to_session("2026-08-14", direction="none")
     first = calendar.session_offset(last, -59)
     sessions = tuple(value.date() for value in calendar.sessions_in_range(first, last))
@@ -199,7 +199,7 @@ def test_daily_state_and_packet_are_digest_anchored_and_single_session(tmp_path:
     root = _private(tmp_path / "daily")
     state = _state(root)
     assert read_daily_state(state_root=root, expected_sha256=state.sha256) == state
-    calendar = _calendar()
+    calendar = corrected_calendar()
     next_session = calendar.next_session(
         calendar.date_to_session(state.session_date.isoformat(), direction="none")
     ).date()
@@ -301,8 +301,8 @@ class _NoEcos:
 def test_daily_refresh_stops_all_remaining_providers_after_first_failure(tmp_path: Path) -> None:
     state_root = _private(tmp_path / "daily")
     state = _state(state_root)
-    next_session = _calendar().next_session(
-        _calendar().date_to_session(state.session_date.isoformat(), direction="none")
+    next_session = corrected_calendar().next_session(
+        corrected_calendar().date_to_session(state.session_date.isoformat(), direction="none")
     ).date()
     packet = author_daily_refresh_packet(
         state=state,
@@ -372,7 +372,7 @@ class _SuccessfulKis:
         del start
         assert end == self.target
         self.calls += 1
-        calendar = _calendar()
+        calendar = corrected_calendar()
         last = calendar.date_to_session(self.target.isoformat(), direction="none")
         first = calendar.session_offset(last, -59)
         sessions = tuple(value.date() for value in calendar.sessions_in_range(first, last))
@@ -434,8 +434,8 @@ def test_daily_refresh_builds_real_lightgbm_exact_31_batch_with_bounded_calls(
 ) -> None:
     state_root = _private(tmp_path / "daily")
     state = _state(state_root)
-    target = _calendar().next_session(
-        _calendar().date_to_session(state.session_date.isoformat(), direction="none")
+    target = corrected_calendar().next_session(
+        corrected_calendar().date_to_session(state.session_date.isoformat(), direction="none")
     ).date()
     packet = author_daily_refresh_packet(
         state=state,
@@ -490,8 +490,8 @@ def test_daily_failed_query_resume_reuses_successes_and_retries_only_failed_quer
 ) -> None:
     state_root = _private(tmp_path / "daily")
     state = _state(state_root)
-    target = _calendar().next_session(
-        _calendar().date_to_session(state.session_date.isoformat(), direction="none")
+    target = corrected_calendar().next_session(
+        corrected_calendar().date_to_session(state.session_date.isoformat(), direction="none")
     ).date()
     packet = author_daily_refresh_packet(
         state=state,

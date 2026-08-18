@@ -1877,12 +1877,22 @@ payload에 가짜 state를 넣거나 이전 `asOf`를 갱신해 새 success view
 
 ### 8.1 Signal v2 종목 신호 조회
 
-> 현재 상태: `S5_0_AMENDMENT=VERIFIED / S5_5_SYMBOL_ROUTE=IMPLEMENTED_MERGE_CANDIDATE /
-> PRODUCTION_POINTER=0 / RISK_DECISION_ORDER_WIRING=NO_GO`. historical Signal v1/v2 bytes를
+> 현재 상태: `S5_0_AMENDMENT=VERIFIED / S5_5_SYMBOL_ROUTE=IMPLEMENTED /
+> S5_CALENDAR_RECOVERY=READY_TO_SUPERSEDE / REAL_DATASET=DATASET_UNAVAILABLE /
+> REAL_MODEL_AVAILABLE=FALSE / PRODUCTION_POINTER=0 / RISK_DECISION_ORDER_WIRING=NO_GO`.
+> historical Signal v1/v2 bytes를
 > 유지하고 preserved projection 검증 아래 runtime v1 schema와 exact GET path만 추가했다.
-> S5.6A production source/feature data plane도 merge candidate지만 provider call과 실제 model
-> release/31-row batch activation은 아직 0이다. S5.6B model release, exact-31 batch, V73
-> release-level CAS와 daily refresh code도 merge candidate이며 실제 qualification/activation
+> S5.6A/B production code는 구현됐다. 실제 bootstrap은 KRX 4,082 physical calls 후
+> base calendar가 session으로 취급한 `2026-06-03` KRX request failure에서 멈췄고, 4,080
+> successful chunks를 provider call 0으로 adoption하면서 그중 4개 receipt clock만 재결속했다.
+> 남은 361개를 합친 누적 4,443 calls는 증명된 superseded consumed call 2회에 정확히 대응하는
+> evidence-bound allowance로 승인된다(KRX 4,443 / 총 6,448). allowance는 calendar recovery lineage
+> 전용이며 packet bytes·binding preimage·receipt·adoption journal에서 재계산되므로 sidecar 삭제나
+> 새 root 복사로 넓힐 수 없다. 거래일로 주장된 session의 빈 KRX 일별 projection은
+> `CALENDAR_DIVERGENCE_SUSPECTED`로 분류돼 resume packet 없이 멈추고, 그 후보 session만 실제
+> `CTCA0903R`로 확정한다(최대 32 calls, bootstrap 예산과 분리). KIS token/daily, ECOS,
+> account/balance/order calls와 실제 model release/31-row batch activation은 아직 0이다.
+> S5.6B model release, exact-31 batch, V73 release-level CAS와 daily refresh code는 실제 qualification/activation
 > receipt 전에는 이 wire의 현재 응답 의미가 바뀌지 않는다. Signal batch `asOf`는 calendar date
 > 산술이 아니라 다음 XKRX session 08:10 KST로만 계산하며 휴일·대체공휴일을 건너뛴다.
 > Daily provider 실패는 원 packet과 journal digest에 묶이고 재호출을 포함한 남은 전체 작업이
@@ -3064,6 +3074,8 @@ sources 응답 항목 예시(공개 가능 필드만): `sourceId`, `provider`, `
    `isOpen`이나 그 confidence를 변경하지 않는다. dividend record/pay는 KIS KSD structured
    field, 승인된 OpenDART structured event 순서이고 ex-date를 추론하지 않는다. FRED는 현행
    약관상 서면 허가 또는 대체 licensed source 전 사용하지 않는다.
+   S5 production clock은 이 field authority에서 승인된 correction set을 SHA-256으로 고정해
+   사용하며, calendar recovery 자체는 별도 holiday provider call을 만들지 않는다.
 2. source 선택은 field/capability authority와 tier로 먼저 끝낸다. 독립 upstream-origin group의
    추가 일치는 같은 field/value에 대해서만 confidence를 올리고, 동일 원천 재배포·반복 관측은
    독립으로 세지 않는다.

@@ -59,6 +59,20 @@ class S56ProductionContractTest(unittest.TestCase):
         validator = Draft202012Validator(self.artifacts[FEATURE_SCHEMA])
         self.assertTrue(list(validator.iter_errors(payload)))
 
+    def test_corrected_calendar_feature_fixture_is_separate_and_exact(self) -> None:
+        payload = self.artifacts[
+            "contracts/examples/s5-feature-bundle-v2.corrected-calendar.valid.json"
+        ]
+        validator = Draft202012Validator(
+            self.artifacts[FEATURE_SCHEMA], format_checker=FormatChecker()
+        )
+        self.assertEqual([], list(validator.iter_errors(payload)))
+        provenance = payload["provenance"]
+        self.assertEqual("2022-03-31", provenance["rawSessionStart"])
+        self.assertEqual("2026-08-13", provenance["rawSessionEnd"])
+        self.assertEqual("2022-06-27", provenance["eligibleSessionStart"])
+        self.assertEqual("2026-08-05", provenance["eligibleSessionEnd"])
+
     def test_temporal_receipt_does_not_accept_fabricated_provider_revision(self) -> None:
         payload = copy.deepcopy(
             self.artifacts["contracts/examples/s5-pit-source-bundle-v1.valid.json"]

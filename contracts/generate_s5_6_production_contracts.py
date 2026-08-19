@@ -440,6 +440,23 @@ def _recovery_catalog() -> dict[str, Any]:
                 },
             ],
             "policyVersion": "xkrx-4.13.2-kis-corrections-v1",
+            "supersededCorrectionSets": [
+                {
+                    "correctionSetSha256": (
+                        "82fbb91db94aaae154323be3340648f37afcead3e42ab8b600c1b22699475ad5"
+                    ),
+                    "sessionDates": [],
+                    "usage": "READ_ONLY_RECOVERY_VALIDATION",
+                },
+                {
+                    "correctionSetSha256": (
+                        "30530e6f4ff06ac3ab71a748c910c87cd9233c70382f348e00c387684cdde169"
+                    ),
+                    "sessionDates": ["2026-06-03"],
+                    "usage": "READ_ONLY_RECOVERY_VALIDATION",
+                },
+            ],
+            "supersededGenerationsArePreserved": True,
         },
         "packet": {
             "currentVersion": "s5-production-bootstrap-packet-v2",
@@ -466,6 +483,9 @@ def _recovery_catalog() -> dict[str, Any]:
             "maxSupersededAllowance": 8,
             "logicalQueryCountUnchangedByAllowance": True,
             "physicalAttemptsPerLogicalQuery": 2,
+            "chainableFromSupersededRecoveryPacket": True,
+            "priorPacketMustNotUseCurrentCorrections": True,
+            "priorJournalReadUnderItsOwnGeneration": True,
             "allowanceBindingSurfaces": [
                 "PACKET_BYTES",
                 "RECOVERY_BINDING_PREIMAGE",

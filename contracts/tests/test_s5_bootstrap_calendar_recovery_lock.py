@@ -248,6 +248,8 @@ class S5BootstrapCalendarRecoveryLockTest(unittest.TestCase):
         self.assertTrue(coverage["tradedSessionsMustBeContiguous"])
         # window는 query 신원에 들어간다. 종목별로 좁히면 봉인된 chunk가 도달 불가가 된다.
         self.assertEqual("PACKET_RAW_WINDOW", coverage["pagingWindowSource"])
+        # 역사가 정확히 100의 배수로 끝나면 응답 모양만으로는 "더 없음"을 구분할 수 없다.
+        self.assertTrue(coverage["pagingStopsWhenEvidenceIsSatisfied"])
 
     def test_coverage_divergence_block_names_the_symbol_without_provider_payload(
         self,

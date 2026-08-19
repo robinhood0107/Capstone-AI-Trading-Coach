@@ -49,6 +49,7 @@
     "fixedEtfCoverageRule": "FULL_RAW_WINDOW",
     "kisCoverageAuthority": "COLLECTED_KRX_DAILY_TRADING_EVIDENCE",
     "kisCoverageRule": "EXACT_MATCH_WITH_KRX_TRADING_EVIDENCE",
+    "pagingStopsWhenEvidenceIsSatisfied": true,
     "pagingWindowSource": "PACKET_RAW_WINDOW",
     "providerCallsDuringBlock": 0,
     "tradedSessionsMustBeContiguous": true

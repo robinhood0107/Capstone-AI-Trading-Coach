@@ -514,6 +514,7 @@ def _recovery_catalog() -> dict[str, Any]:
             "fixedEtfCoverageRule": "FULL_RAW_WINDOW",
             "tradedSessionsMustBeContiguous": True,
             "pagingWindowSource": "PACKET_RAW_WINDOW",
+            "pagingStopsWhenEvidenceIsSatisfied": True,
             "blockFile": "kis-coverage-divergence.json",
             "blockVersion": "s5-kis-coverage-divergence-block-v1",
             "blockNamesDivergingSymbol": True,

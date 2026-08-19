@@ -25,6 +25,8 @@ from app.lightgbm.metrics import (
 APPROVED_KRX_MAX_GET = 4_441
 # 51개월 universe의 실측 고유 종목 수다. 180은 겹침 가정이었고 실제 증거는 270이었다.
 APPROVED_HORIZON_UNION_SIZE = 270
+# 이전 승인 차원. 이미 소비한 packet을 read-only로 검증할 때만 쓰며 삭제하지 않는다.
+SUPERSEDED_HORIZON_UNION_SIZES: tuple[int, ...] = (180,)
 APPROVED_KIS_MAX_GET = 2_970
 # 4,441 + 2,970 + 1 + 24 = 7,436. 유도식과 정확히 같은 값만 상한으로 둔다.
 APPROVED_TOTAL_MAX_PHYSICAL_CALLS = 7_436

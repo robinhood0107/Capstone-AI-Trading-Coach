@@ -57,7 +57,6 @@ from app.lightgbm.bootstrap_journal import (
 from app.lightgbm.bootstrap_packet import (
     _author_bootstrap_packet,
     author_bootstrap_packet,
-    author_recovery_bootstrap_packet,
     latest_publishable_bootstrap_cutoff,
     validate_bootstrap_packet,
 )
@@ -2133,18 +2132,16 @@ def test_superseded_generation_packet_is_read_only_for_recovery() -> None:
     )
 
 
-def test_recovery_refuses_a_prior_that_already_uses_the_current_corrections(
-    tmp_path: Path,
-) -> None:
-    """현재 세대 packet은 자기 자신을 supersede할 수 없다."""
+def test_recovery_refuses_a_fresh_packet_as_prior(tmp_path: Path) -> None:
+    """fresh packet은 prior가 될 수 없다.
+
+    prior는 수정 전 historical v1이거나 이미 소비된 recovery packet뿐이다. fresh packet을 prior로
+    받으면 아직 소비되지 않은 예산을 supersede 대상으로 취급하게 된다.
+    """
 
     root = tmp_path / "s5-source"
     root.mkdir(mode=0o700)
-    current = author_recovery_bootstrap_packet(
-        cutoff=datetime(2026, 8, 13, 23, 10, tzinfo=UTC),
-        recovery_binding_sha256="c" * 64,
-        superseded_allowance=1,
-    )
+    current = author_bootstrap_packet(cutoff=datetime(2026, 8, 13, 23, 10, tzinfo=UTC))
     written = write_approved_new_file(
         approved_root=root,
         relative_path=f"bootstrap-{current.sha256}.json",
@@ -2157,11 +2154,27 @@ def test_recovery_refuses_a_prior_that_already_uses_the_current_corrections(
     source_root.mkdir(mode=0o700)
     (source_root / "chunks").mkdir(mode=0o700)
 
-    with pytest.raises(LightGbmContractError, match="already uses the current correction set"):
+    query_hash = provider_query_sha256(
+        {"service": "stk_bydd_trd", "basDd": "20260603"}
+    )
+    journal = BootstrapJournal(source_root)
+    ordinal = journal.begin(
+        provider="KRX", operation_id="stk_bydd_trd", query_sha256=query_hash
+    )
+    journal.finish(
+        ordinal=ordinal,
+        provider="KRX",
+        operation_id="stk_bydd_trd",
+        query_sha256=query_hash,
+        success=False,
+        chunk=None,
+    )
+
+    with pytest.raises(LightGbmContractError, match="prior lineage is invalid"):
         assess_bootstrap_calendar_recovery(
-            approved_root=root,
-            prior_packet_sha256=current.sha256,
+            approved_root=root, prior_packet_sha256=current.sha256
         )
+
 def test_runtime_inputs_derive_execution_target_from_sealed_evidence(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

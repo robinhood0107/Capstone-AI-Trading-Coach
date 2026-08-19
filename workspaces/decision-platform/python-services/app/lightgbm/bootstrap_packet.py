@@ -36,6 +36,7 @@ from app.lightgbm.pit_calendar import (
 )
 from app.lightgbm.production_policy import (
     APPROVED_HORIZON_UNION_SIZE,
+    SUPERSEDED_HORIZON_UNION_SIZES,
     ECOS_OPERATIONS,
     KIS_OPERATION,
     KRX_OPERATIONS,
@@ -106,6 +107,7 @@ def _author_bootstrap_packet(
     recovery_binding_sha256: str | None = None,
     superseded_allowance: int = 0,
     corrections: tuple[date, ...] | None = None,
+    union_size: int | None = None,
 ) -> BootstrapPacket:
     """현재 correction 정책과 historical v1을 같은 closed authoring path로 재생성한다."""
 
@@ -136,6 +138,7 @@ def _author_bootstrap_packet(
     # packet을 read-only로 재생성할 때만 그 packet이 선언한 이전 세대를 넘긴다.
     generation = S5_ADHOC_CLOSED_SESSIONS if corrections is None else corrections
     generation_sha256 = correction_set_sha256(generation)
+    approved_union = APPROVED_HORIZON_UNION_SIZE if union_size is None else union_size
     window = build_pit_session_window_for(cutoff, calendar=calendar)
     if _label_as_of(window.raw_sessions[-1], calendar=calendar) > cutoff:
         raise LightGbmContractError(
@@ -153,14 +156,14 @@ def _author_bootstrap_packet(
     if lineage_mode == "CALENDAR_RECOVERY":
         budget = author_recovery_bootstrap_budget(
             monthly_schedule_count=len(schedules),
-            union_size=APPROVED_HORIZON_UNION_SIZE,
+            union_size=approved_union,
             raw_session_count=len(window.raw_sessions),
             superseded_allowance=superseded_allowance,
         )
     else:
         budget = author_bootstrap_budget(
             monthly_schedule_count=len(schedules),
-            union_size=APPROVED_HORIZON_UNION_SIZE,
+            union_size=approved_union,
             raw_session_count=len(window.raw_sessions),
         )
     payload = {
@@ -317,27 +320,38 @@ def validate_bootstrap_packet(
             value, allow_superseded=allow_superseded_corrections
         )
         if lineage_mode == "FRESH" and recovery_binding is None:
-            regenerated = _author_bootstrap_packet(
-                cutoff=cutoff,
-                calendar=calendar_for_corrections(corrections),
-                packet_version="s5-production-bootstrap-packet-v2",
-                lineage_mode="FRESH",
-                corrections=corrections,
-            )
+            kwargs: dict[str, object] = {"lineage_mode": "FRESH"}
         elif lineage_mode == "CALENDAR_RECOVERY" and isinstance(
             recovery_binding, str
         ):
-            regenerated = _author_bootstrap_packet(
+            kwargs = {
+                "lineage_mode": "CALENDAR_RECOVERY",
+                "recovery_binding_sha256": recovery_binding,
+                "superseded_allowance": _parse_superseded_allowance(value),
+            }
+        else:
+            raise LightGbmContractError("bootstrap recovery lineage is invalid")
+        # 승인 차원이 바뀌어도 이미 봉인된 packet은 자기 정책으로 재생성돼야 한다.
+        unions: tuple[int, ...] = (APPROVED_HORIZON_UNION_SIZE,)
+        if allow_superseded_corrections:
+            unions = (APPROVED_HORIZON_UNION_SIZE, *SUPERSEDED_HORIZON_UNION_SIZES)
+        regenerated = None
+        for candidate_union in unions:
+            attempt = _author_bootstrap_packet(
                 cutoff=cutoff,
                 calendar=calendar_for_corrections(corrections),
                 packet_version="s5-production-bootstrap-packet-v2",
-                lineage_mode="CALENDAR_RECOVERY",
-                recovery_binding_sha256=recovery_binding,
-                superseded_allowance=_parse_superseded_allowance(value),
                 corrections=corrections,
+                union_size=candidate_union,
+                **kwargs,  # type: ignore[arg-type]
             )
-        else:
-            raise LightGbmContractError("bootstrap recovery lineage is invalid")
+            if attempt.content == content:
+                regenerated = attempt
+                break
+        if regenerated is None:
+            raise LightGbmContractError(
+                "bootstrap packet does not match current calendar policy"
+            )
     elif packet_version == "s5-production-bootstrap-packet-v1" and allow_historical_v1:
         # 이미 소비한 packet/run을 안전하게 supersede할 때만 과거 base-calendar bytes를 검증한다.
         regenerated = _author_bootstrap_packet(

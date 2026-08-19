@@ -170,20 +170,19 @@ def assess_bootstrap_calendar_recovery(
         allow_historical_v1=True,
         allow_superseded_corrections=True,
     )
-    # prior는 수정 전 historical v1이거나, 이미 소비된 이전 correction 세대의 recovery packet이다.
-    # 현재 세대에서 author된 packet은 자기 자신을 supersede할 수 없으므로 거부한다.
+    # prior는 수정 전 historical v1이거나 이미 소비된 recovery packet이다. supersede 사유는 달력
+    # correction 또는 승인 상한 변경이며, 두 경우 모두 corrected packet이 prior와 달라야 한다.
     prior_corrections = (
         ()
         if prior.packet_version == "s5-production-bootstrap-packet-v1"
         else corrections_for_sha256(str(prior.calendar_correction_set_sha256))
     )
-    if prior.packet_version == "s5-production-bootstrap-packet-v2":
-        if prior.lineage_mode != "CALENDAR_RECOVERY":
-            raise LightGbmContractError("calendar recovery prior lineage is invalid")
-        if tuple(prior_corrections) == tuple(S5_ADHOC_CLOSED_SESSIONS):
-            raise LightGbmContractError(
-                "calendar recovery prior already uses the current correction set"
-            )
+    if (
+        prior.packet_version == "s5-production-bootstrap-packet-v2"
+        and prior.lineage_mode != "CALENDAR_RECOVERY"
+    ):
+        raise LightGbmContractError("calendar recovery prior lineage is invalid")
+    generation_changed = tuple(prior_corrections) != tuple(S5_ADHOC_CLOSED_SESSIONS)
 
     run_root = approved_root / f"run-{prior_packet_sha256}"
     source_root = run_root / "source"
@@ -210,10 +209,12 @@ def assess_bootstrap_calendar_recovery(
         corrected_by_hash = _unique_by_hash(corrected_queries)
 
         failed = tuple(attempt for attempt in attempts if attempt.state == "FAILED")
-        if not failed or len({attempt.query_sha256 for attempt in failed}) != 1:
+        if len({attempt.query_sha256 for attempt in failed}) > 1:
             raise LightGbmContractError("calendar recovery failed query is not unique")
-        failed_query = old_by_hash.get(failed[0].query_sha256)
-        if (
+        if generation_changed and not failed:
+            raise LightGbmContractError("calendar recovery failed query is not unique")
+        failed_query = old_by_hash.get(failed[0].query_sha256) if failed else None
+        if failed and (
             failed_query is None
             or failed_query.service not in _DAILY_KRX_SERVICES
             or failed_query.session_date not in S5_ADHOC_CLOSED_SESSIONS
@@ -308,9 +309,11 @@ def assess_bootstrap_calendar_recovery(
             "correctionSessions": [
                 day.isoformat() for day in S5_ADHOC_CLOSED_SESSIONS
             ],
-            "failedQuerySha256": failed_query.sha256,
-            "failedOperationId": failed_query.service,
-            "failedSessionDate": failed_query.session_date.isoformat(),
+            "failedQuerySha256": failed_query.sha256 if failed_query else "",
+            "failedOperationId": failed_query.service if failed_query else "",
+            "failedSessionDate": (
+                failed_query.session_date.isoformat() if failed_query else ""
+            ),
             "supersededQueries": [dict(item) for item in superseded_queries],
             "consumedKrxPhysicalCalls": consumed_krx,
             "reusableSuccessfulChunks": len(reusable_attempts),
@@ -468,7 +471,13 @@ def validate_recovery_receipt(
         superseded_queries, key=lambda item: str(item["querySha256"])
     ):
         raise LightGbmContractError("calendar recovery superseded query order is invalid")
-    if str(payload["failedQuerySha256"]) not in seen:
+    failed_digest = str(payload["failedQuerySha256"])
+    failed_operation = str(payload["failedOperationId"])
+    failed_date = str(payload["failedSessionDate"])
+    declared_failure = bool(failed_digest or failed_operation or failed_date)
+    if declared_failure and not (failed_digest and failed_operation and failed_date):
+        raise LightGbmContractError("calendar recovery failed query is partially declared")
+    if declared_failure and failed_digest not in seen:
         raise LightGbmContractError("calendar recovery failed query is not superseded")
     if len(seen) > int(payload["supersededConsumedCalls"]):
         raise LightGbmContractError("calendar recovery superseded query count is invalid")
@@ -480,26 +489,24 @@ def validate_recovery_receipt(
         (payload["status"] == "CAPACITY_EXHAUSTED") != (expected_shortfall > 0)
     ):
         raise LightGbmContractError("calendar recovery status is inconsistent")
-    for field in (
-        "priorPacketSha256",
-        "priorProgressSha256",
-        "failedQuerySha256",
-    ):
+    for field in ("priorPacketSha256", "priorProgressSha256"):
         _sha(str(payload[field]))
-    try:
-        failed_session = date.fromisoformat(str(payload["failedSessionDate"]))
-    except ValueError:
-        raise LightGbmContractError("calendar recovery failed session is invalid") from None
-    failed_operation = payload["failedOperationId"]
-    if (
-        failed_session.isoformat() != payload["failedSessionDate"]
-        or failed_session not in S5_ADHOC_CLOSED_SESSIONS
-        or failed_operation not in _DAILY_KRX_SERVICES
-        or _krx_query(str(failed_operation), failed_session).sha256
-        != payload["failedQuerySha256"]
-        or payload["failedQuerySha256"] in expected_queries
-    ):
-        raise LightGbmContractError("calendar recovery failed query is invalid")
+    if declared_failure:
+        _sha(failed_digest)
+        try:
+            failed_session = date.fromisoformat(failed_date)
+        except ValueError:
+            raise LightGbmContractError(
+                "calendar recovery failed session is invalid"
+            ) from None
+        if (
+            failed_session.isoformat() != failed_date
+            or failed_session not in S5_ADHOC_CLOSED_SESSIONS
+            or failed_operation not in _DAILY_KRX_SERVICES
+            or _krx_query(failed_operation, failed_session).sha256 != failed_digest
+            or failed_digest in expected_queries
+        ):
+            raise LightGbmContractError("calendar recovery failed query is invalid")
     binding_payload = _recovery_binding_payload(
         prior_packet_sha256=str(payload["priorPacketSha256"]),
         prior_progress_sha256=str(payload["priorProgressSha256"]),

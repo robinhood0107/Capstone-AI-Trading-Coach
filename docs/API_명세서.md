@@ -1890,7 +1890,9 @@ payload에 가짜 state를 넣거나 이전 `asOf`를 갱신해 새 success view
 > 전용이며 packet bytes·binding preimage·receipt·adoption journal에서 재계산되므로 sidecar 삭제나
 > 새 root 복사로 넓힐 수 없다. 거래일로 주장된 session의 빈 KRX 일별 projection은
 > `CALENDAR_DIVERGENCE_SUSPECTED`로 분류돼 resume packet 없이 멈추고, 그 후보 session만 실제
-> `CTCA0903R`로 확정한다(최대 32 calls, bootstrap 예산과 분리). KIS token/daily, ECOS,
+> `CTCA0903R`로 확정한다(최대 32 calls, bootstrap 예산과 분리). provider가 오류로 답한 단일
+> session 실패도 같은 유형의 후보 증거로 남기되 계약이 허용한 resume은 막지 않는다. 실제 수집으로
+> 확정된 correction은 `2026-06-03`과 `2026-07-17` 두 개다. KIS token/daily, ECOS,
 > account/balance/order calls와 실제 model release/31-row batch activation은 아직 0이다.
 > S5.6B model release, exact-31 batch, V73 release-level CAS와 daily refresh code는 실제 qualification/activation
 > receipt 전에는 이 wire의 현재 응답 의미가 바뀌지 않는다. Signal batch `asOf`는 calendar date

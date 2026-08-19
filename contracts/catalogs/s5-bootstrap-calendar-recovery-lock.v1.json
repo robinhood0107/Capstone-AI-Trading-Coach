@@ -8,26 +8,44 @@
     "baseCalendar": "XKRX",
     "baseLibrary": "exchange-calendars",
     "baseVersion": "4.13.2",
-    "correctionSetSha256": "30530e6f4ff06ac3ab71a748c910c87cd9233c70382f348e00c387684cdde169",
+    "correctionSetSha256": "20e17fc6bf8b21b2ad8acfc18e8f541535f300471e77f08464cfbfa70c6cdeb9",
     "corrections": [
       {
-        "evidenceClass": "CONTRACT_LOCKED_CALENDAR_CORRECTION",
+        "evidenceClass": "CTCA0903R_CONFIRMED_CALENDAR_CORRECTION",
         "isOpen": false,
         "reason": "2026_LOCAL_ELECTION_MARKET_CLOSURE",
         "sessionDate": "2026-06-03"
+      },
+      {
+        "evidenceClass": "CTCA0903R_CONFIRMED_CALENDAR_CORRECTION",
+        "isOpen": false,
+        "reason": "2026_CONSTITUTION_DAY_MARKET_CLOSURE",
+        "sessionDate": "2026-07-17"
       }
     ],
     "policyVersion": "xkrx-4.13.2-kis-corrections-v1"
   },
   "contractId": "s5-bootstrap-calendar-recovery-lock.v1",
   "divergence": {
+    "blockBytesDependOnPacketAndCandidatesOnly": true,
     "blockFile": "calendar-divergence-candidates.json",
     "blockVersion": "s5-calendar-divergence-block-v1",
-    "detection": "EMPTY_DAILY_PROJECTION_ON_CLAIMED_SESSION",
+    "evidenceClasses": [
+      {
+        "detection": "EMPTY_DAILY_PROJECTION_ON_CLAIMED_SESSION",
+        "evidence": "EMPTY_DAILY_PROJECTION",
+        "resumePacketAuthored": false,
+        "unresolvedBlockStopsResume": true
+      },
+      {
+        "detection": "SINGLE_SESSION_FAILURE_AFTER_HEALTHY_NEIGHBOURS",
+        "evidence": "SINGLE_SESSION_QUERY_FAILURE",
+        "resumePacketAuthored": true,
+        "unresolvedBlockStopsResume": false
+      }
+    ],
     "providerCallsDuringBlock": 0,
-    "result": "CALENDAR_DIVERGENCE_SUSPECTED",
-    "resumePacketAuthored": false,
-    "unresolvedBlockStopsResume": true
+    "result": "CALENDAR_DIVERGENCE_SUSPECTED"
   },
   "downstream": {
     "openApiChange": 0,

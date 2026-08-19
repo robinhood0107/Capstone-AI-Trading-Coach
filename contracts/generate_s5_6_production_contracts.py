@@ -423,15 +423,21 @@ def _recovery_catalog() -> dict[str, Any]:
             "baseLibrary": "exchange-calendars",
             "baseVersion": "4.13.2",
             "correctionSetSha256": (
-                "30530e6f4ff06ac3ab71a748c910c87cd9233c70382f348e00c387684cdde169"
+                "20e17fc6bf8b21b2ad8acfc18e8f541535f300471e77f08464cfbfa70c6cdeb9"
             ),
             "corrections": [
                 {
-                    "evidenceClass": "CONTRACT_LOCKED_CALENDAR_CORRECTION",
+                    "evidenceClass": "CTCA0903R_CONFIRMED_CALENDAR_CORRECTION",
                     "isOpen": False,
                     "reason": "2026_LOCAL_ELECTION_MARKET_CLOSURE",
                     "sessionDate": "2026-06-03",
-                }
+                },
+                {
+                    "evidenceClass": "CTCA0903R_CONFIRMED_CALENDAR_CORRECTION",
+                    "isOpen": False,
+                    "reason": "2026_CONSTITUTION_DAY_MARKET_CLOSURE",
+                    "sessionDate": "2026-07-17",
+                },
             ],
             "policyVersion": "xkrx-4.13.2-kis-corrections-v1",
         },
@@ -470,11 +476,23 @@ def _recovery_catalog() -> dict[str, Any]:
         "divergence": {
             "blockFile": "calendar-divergence-candidates.json",
             "blockVersion": "s5-calendar-divergence-block-v1",
-            "detection": "EMPTY_DAILY_PROJECTION_ON_CLAIMED_SESSION",
             "result": "CALENDAR_DIVERGENCE_SUSPECTED",
-            "resumePacketAuthored": False,
             "providerCallsDuringBlock": 0,
-            "unresolvedBlockStopsResume": True,
+            "blockBytesDependOnPacketAndCandidatesOnly": True,
+            "evidenceClasses": [
+                {
+                    "evidence": "EMPTY_DAILY_PROJECTION",
+                    "detection": "EMPTY_DAILY_PROJECTION_ON_CLAIMED_SESSION",
+                    "resumePacketAuthored": False,
+                    "unresolvedBlockStopsResume": True,
+                },
+                {
+                    "evidence": "SINGLE_SESSION_QUERY_FAILURE",
+                    "detection": "SINGLE_SESSION_FAILURE_AFTER_HEALTHY_NEIGHBOURS",
+                    "resumePacketAuthored": True,
+                    "unresolvedBlockStopsResume": False,
+                },
+            ],
         },
         "holidayAuthority": {
             "transactionId": "CTCA0903R",
@@ -590,9 +608,9 @@ def _corrected_calendar_feature_fixture() -> dict[str, Any]:
     feature["provenance"].update(
         {
             "datasetCutoff": "2026-08-13T23:10:00Z",
-            "rawSessionStart": "2022-03-31",
+            "rawSessionStart": "2022-03-29",
             "rawSessionEnd": "2026-08-13",
-            "eligibleSessionStart": "2022-06-27",
+            "eligibleSessionStart": "2022-06-23",
             "eligibleSessionEnd": "2026-08-05",
             "pitInputSha256": "b" * 64,
         }

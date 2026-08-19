@@ -95,7 +95,8 @@
   가정을 쓰지 않고 주말·휴일·
   대체공휴일을 건너뛴 다음 XKRX session 08:10 KST를 사용한다. 2026-08-14 다음 session은
   2026-08-17이 아니라 2026-08-18이라는 회귀를 유지한다. S5.6B의 manual release/batch CAS와
-  daily refresh는 RiskDecision/order 권한이나 자동 retrain/activation 권한을 만들지 않는다.
+  daily refresh는 RiskDecision/order 권한을 만들지 않는다. 자동 retrain과 release stage는 허용하되
+  자동 activation은 금지한다.
 - S5.6 provider 상한은 fresh 유도식 KRX 4,441 / KIS 기간별시세 2,970 / KIS token 1 / ECOS 24,
   합계 7,436으로 불변이다. KIS 상한은 실제 수집한 KRX 유동성 증거에서 측정한 horizon union 270과
   raw session 1,072에서 유도한다(270 × ceil(1072/100)). 승인 차원에서 유도되는 값은 리터럴로
@@ -110,6 +111,27 @@
   이관된 superseded 소비는 누적 예산에 남지만 새 세대의 재시도 자격을 먹지 않는다. prior packet은
   세대 해시가 아니라 소비 query 다중집합으로 유도한 체인 head이며, supersede는 packet 신원을
   바꿔야 한다.
+- S5 실행은 `s5-tick`이 단계 하나씩 전진시킨다. 단계는 tick이 실제로 멈출 수 있는 경계만
+  둔다(`MATERIALIZING` / `QUALIFYING` / `SERVING` / `NEEDS_HUMAN`). 코드가 지킬 수 없는 구분을
+  상태로 만들지 않는다. 전이는 전진만 허용하며 재검증 주기만 `SERVING`에서 `QUALIFYING`으로
+  돌아간다. 상태 이력은 append-only이고 `NEEDS_HUMAN`은 사람이 되돌리기 전에는 나오지 않는다.
+  tick은 멱등하며 중간 종료가 안전한 것은 progress journal이 query 단위 멱등성을 이미 보장하기
+  때문이다. tick에 별도 resume 로직을 만들지 않는다.
+- tick 종료 코드는 0 진척, 1 무진척, 2 사람 필요다. 무진척은 실패가 아니라 그 주기에 할 일이
+  없었다는 뜻이며, 이를 실패로 보면 watchdog이 계속 울려 곧 무시된다. watchdog은 `NEEDS_HUMAN`과
+  연속 무진척 임계 초과에만 말한다.
+- 실패는 분류가 다음 행동을 정한다. `RETRYABLE_TRANSIENT`는 다음 tick 재시도,
+  `EVIDENCE_GAP`은 그 단위만 제외, `CONTRACT_VIOLATION`과 `BUDGET_EXHAUSTED`는 정지다. 분류를
+  선언하지 않은 예외는 `CONTRACT_VIOLATION`으로 fail-closed 한다. 모르는 실패를 재시도나 제외로
+  넘기면 승인 호출을 태우거나 데이터를 조용히 축소한다. 분류 지식은 예외를 정의한 곳이 선언한다.
+- 증거 결손으로 제외한 단위 비율이 1%를 넘으면 `NEEDS_HUMAN`이다. 증거 있는 제외라도 대규모면
+  조용한 축소다. 진단은 `diagnostics.jsonl` append-only 원장 한 곳에 신원·분류·수치만 남기고
+  provider 응답 조각은 담지 않는다. 기록 실패가 수집 결과를 바꾸지 않는다.
+- `calendar-divergence-candidates.json`은 진단이 아니라 차단 게이트 토큰이므로 원장으로 접지
+  않는다. append-only 원장은 "해소됨"을 표현할 수 없다. 토큰은 삭제 가능한 별도 파일로 두고
+  사건만 원장에 미러링한다.
+- 자동 재학습·qualification·release stage는 허용한다. 자동 pointer activation은 금지이며 활성
+  전환은 계속 수동 CAS다. 서빙 모델은 사람 승인 없이 바뀌지 않는다.
 - 종목별 KIS 커버리지 요구는 수집된 KRX 일별 거래 증거와의 정확한 일치다. 전 종목이 전 구간을
   거래한다고 단정하지 않는다. 상장폐지·신규상장으로 끝이 잘리는 것은 허용하되 중간 결손은
   거부하며(rolling window가 위치 기반이라 의미가 바뀐다), 거래량 0 세션에는 시가가 존재하지

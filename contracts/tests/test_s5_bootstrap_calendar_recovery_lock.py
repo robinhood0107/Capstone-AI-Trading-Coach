@@ -15,6 +15,7 @@ class S5BootstrapCalendarRecoveryLockTest(unittest.TestCase):
 
         self.assertEqual(
             {
+                "autonomy",
                 "calendar",
                 "contractId",
                 "coverage",
@@ -308,6 +309,42 @@ class S5BootstrapCalendarRecoveryLockTest(unittest.TestCase):
         ]
         self.assertEqual(1, len(blocking))
         self.assertTrue(blocking[0]["unresolvedBlockStopsResume"])
+    def test_autonomy_phases_match_where_a_tick_can_actually_stop(self) -> None:
+        """코드가 지킬 수 없는 구분을 상태로 만들면 전이 검증이 자기 모순을 잡는다.
+
+        provider별로 나누고 싶었지만 execute_bootstrap_materialization이 KRX·KIS·ECOS·bundle을
+        한 호출로 수행한다. 실제로 멈출 수 있는 경계만 단계로 둔다.
+        """
+
+        autonomy = json.loads(CATALOG.read_text(encoding="utf-8"))["autonomy"]
+
+        self.assertEqual(
+            ["MATERIALIZING", "QUALIFYING", "SERVING", "NEEDS_HUMAN"],
+            autonomy["phases"],
+        )
+        self.assertTrue(autonomy["forwardOnlyExceptRequalification"])
+        self.assertEqual("SERVING", autonomy["requalificationReentersFrom"])
+        self.assertTrue(autonomy["needsHumanIsTerminalWithoutOperator"])
+        self.assertTrue(autonomy["stateHistoryAppendOnly"])
+        # tick 중간 종료가 안전한 것은 journal이 이미 query 단위 멱등성을 보장하기 때문이다.
+        self.assertTrue(autonomy["tickIsIdempotent"])
+        self.assertTrue(autonomy["tickReliesOnJournalQueryIdempotence"])
+
+    def test_no_progress_is_not_failure_and_activation_stays_manual(self) -> None:
+        """무진척을 실패로 보면 watchdog이 계속 울려 곧 무시된다.
+
+        자동 재학습은 열되 pointer 전환은 사람이 한다. 서빙 모델이 승인 없이 바뀌지 않는다.
+        """
+
+        autonomy = json.loads(CATALOG.read_text(encoding="utf-8"))["autonomy"]
+
+        self.assertEqual(
+            {"progress": 0, "noProgress": 1, "needsHuman": 2}, autonomy["exitCodes"]
+        )
+        self.assertTrue(autonomy["noProgressIsNotFailure"])
+        self.assertTrue(autonomy["automaticRetrain"])
+        self.assertFalse(autonomy["automaticModelActivation"])
+        self.assertTrue(autonomy["activationRemainsManualCas"])
 
 if __name__ == "__main__":
     unittest.main()

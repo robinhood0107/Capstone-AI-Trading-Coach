@@ -1,4 +1,31 @@
 {
+  "autonomy": {
+    "activationRemainsManualCas": true,
+    "automaticModelActivation": false,
+    "automaticRetrain": true,
+    "exitCodes": {
+      "needsHuman": 2,
+      "noProgress": 1,
+      "progress": 0
+    },
+    "forwardOnlyExceptRequalification": true,
+    "needsHumanIsTerminalWithoutOperator": true,
+    "noProgressIsNotFailure": true,
+    "phases": [
+      "MATERIALIZING",
+      "QUALIFYING",
+      "SERVING",
+      "NEEDS_HUMAN"
+    ],
+    "requalificationReentersFrom": "SERVING",
+    "stateFile": "state.json",
+    "stateHistoryAppendOnly": true,
+    "stateHistoryFile": "state-history.jsonl",
+    "stateVersion": "s5-run-state-v1",
+    "tickEntrypoint": "s5-tick",
+    "tickIsIdempotent": true,
+    "tickReliesOnJournalQueryIdempotence": true
+  },
   "calendar": {
     "authorityOrder": [
       "KIS_CTCA0903R_OPND_YN",

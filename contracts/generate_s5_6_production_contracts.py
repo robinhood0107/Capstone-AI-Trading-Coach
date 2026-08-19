@@ -520,6 +520,30 @@ def _recovery_catalog() -> dict[str, Any]:
             "ledgerCarriesProviderPayload": False,
             "providerCallsDuringBlock": 0,
         },
+        "autonomy": {
+            "tickEntrypoint": "s5-tick",
+            "stateFile": "state.json",
+            "stateHistoryFile": "state-history.jsonl",
+            "stateVersion": "s5-run-state-v1",
+            "stateHistoryAppendOnly": True,
+            # tick이 실제로 멈출 수 있는 경계만 단계로 둔다. materialization과 qualification은
+            # 각각 한 호출이라 그 안에서는 멈출 수 없다.
+            "phases": ["MATERIALIZING", "QUALIFYING", "SERVING", "NEEDS_HUMAN"],
+            "forwardOnlyExceptRequalification": True,
+            "requalificationReentersFrom": "SERVING",
+            "needsHumanIsTerminalWithoutOperator": True,
+            "exitCodes": {
+                "progress": 0,
+                "noProgress": 1,
+                "needsHuman": 2,
+            },
+            "noProgressIsNotFailure": True,
+            "tickIsIdempotent": True,
+            "tickReliesOnJournalQueryIdempotence": True,
+            "automaticRetrain": True,
+            "automaticModelActivation": False,
+            "activationRemainsManualCas": True,
+        },
         "diagnostics": {
             "ledgerFile": "diagnostics.jsonl",
             "eventVersion": "s5-diagnostic-event-v1",

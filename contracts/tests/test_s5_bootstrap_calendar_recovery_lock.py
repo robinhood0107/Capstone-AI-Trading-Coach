@@ -188,8 +188,13 @@ class S5BootstrapCalendarRecoveryLockTest(unittest.TestCase):
         recovery = json.loads(CATALOG.read_text(encoding="utf-8"))["recovery"]
 
         self.assertTrue(recovery["chainableFromSupersededRecoveryPacket"])
-        # 현재 세대 packet이 자기 자신을 supersede하면 누적 회계가 끊긴다.
-        self.assertTrue(recovery["priorPacketMustNotUseCurrentCorrections"])
+        # prior는 체인 head다. supersede 사유가 달력 correction이면 세대 해시가 바뀌지만 승인 상한
+        # 변경이면 같은 세대 안에서 갈리므로, 세대 해시가 아니라 체인 관계가 head를 정한다.
+        self.assertTrue(recovery["priorPacketIsChainHead"])
+        # head는 소비 증거를 모두 포함하는 run이다. ordinal은 세대마다 다시 붙어 신원이 아니다.
+        self.assertTrue(recovery["chainHeadDerivedFromConsumedQueryMultiset"])
+        # 같은 packet을 prior로 삼으면 체인이 자기 자신을 가리켜 누적 회계가 끊긴다.
+        self.assertTrue(recovery["supersedeMustChangePacketIdentity"])
         # prior journal은 그 journal이 봉인된 세대의 clock으로만 읽어야 한다.
         self.assertTrue(recovery["priorJournalReadUnderItsOwnGeneration"])
         # 체인에서는 superseded query가 세대마다 누적되므로 실패 query 하나로 표현되지 않는다.
@@ -197,6 +202,28 @@ class S5BootstrapCalendarRecoveryLockTest(unittest.TestCase):
         self.assertTrue(
             recovery["supersededQueryIdentityResolvedAcrossApprovedGenerations"]
         )
+
+    def test_supersede_covers_every_provider_that_can_consume_calls(self) -> None:
+        """KRX만 supersede된다는 가정은 달력 correction 사유에서만 성립했다.
+
+        local finalization 결함이 드러나면 이미 소비한 KIS 호출도 세대와 함께 이관해야 한다.
+        그러지 않으면 소진된 query가 영구히 열리지 않아 packet이 완주 불가가 된다.
+        """
+
+        catalog = json.loads(CATALOG.read_text(encoding="utf-8"))
+        recovery = catalog["recovery"]
+
+        self.assertEqual(["KRX", "KIS"], recovery["supersededProviders"])
+        self.assertEqual(["KRX", "KIS"], recovery["adoptedProvidersCarryingChunks"])
+        # Access token 성공은 값이 보존되지 않아 채택할 수 없다. superseded로만 이관된다.
+        self.assertFalse(recovery["kisTokenSuccessAdoptable"])
+        # 이관된 소비 원장이 새 세대의 재시도 자격을 먹으면 이관 자체가 무의미해진다.
+        self.assertEqual("CURRENT_GENERATION", recovery["perQueryRetryBudgetScope"])
+        # 그래도 누적 예산은 SUPERSEDED_CONSUMED까지 세므로 상한은 그대로 지켜진다.
+        self.assertTrue(recovery["supersededConsumedCallsCountTowardCumulativeBudget"])
+        self.assertEqual(2, recovery["physicalAttemptsPerLogicalQuery"])
+        # KIS 논리 query는 수집된 KRX 증거에서 파생돼 packet만으로 열거할 수 없다.
+        self.assertTrue(recovery["kisLogicalQuerySetDerivedFromCollectedKrxEvidence"])
 
 
 if __name__ == "__main__":

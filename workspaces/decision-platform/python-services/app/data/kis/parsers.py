@@ -187,12 +187,16 @@ def _to_decimal(value: Any) -> Decimal:
     return Decimal(str(value).replace(",", "").strip())
 
 
+# 조정 비율의 부호는 조정 방향이며 음수도 정상이다. 사람이 못 읽을 크기만 거부한다.
+_MAX_ADJUSTMENT_RATE_MAGNITUDE = Decimal("1000")
+
+
 def _to_adjustment_rate(value: Any) -> Decimal:
     try:
         parsed = _to_decimal(value)
     except Exception:
         raise KISResponseError("ADJUSTMENT_FIELD_INVALID") from None
-    if not parsed.is_finite() or parsed < 0:
+    if not parsed.is_finite() or abs(parsed) > _MAX_ADJUSTMENT_RATE_MAGNITUDE:
         raise KISResponseError("ADJUSTMENT_FIELD_INVALID")
     return parsed
 
@@ -248,5 +252,5 @@ def _validate_adjustment_evidence(
     if modification_flag not in {"Y", "N"}:
         raise KISResponseError("ADJUSTMENT_FIELD_INVALID")
     marked = falling_code not in {"", "00"}
-    if (adjustment_rate > 0 or bool(revision_reason)) and not marked:
+    if (adjustment_rate != 0 or bool(revision_reason)) and not marked:
         raise KISResponseError("ADJUSTMENT_FIELD_CONTRADICTORY")

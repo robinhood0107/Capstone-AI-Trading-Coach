@@ -858,10 +858,15 @@ def _corporate_sensitivity(
 
 
 def _has_corporate_action(row: ProductionPriceEvidence) -> bool:
+    """그 날짜의 corporate action 증거만 본다.
+
+    mod_yn은 반환된 가격이 수정주가인지를 나타내며 요청한 조정 모드에서 따라온다. 원주가 요청에서는
+    모든 행이 N이므로 corporate action 판정에 쓰면 아무 것도 걸러내지 못하거나 전부 걸러낸다.
+    """
+
     return (
-        row.mod_yn != "N"
-        or row.flng_cls_code not in {"", "00"}
-        or row.prtt_rate > 0
+        row.flng_cls_code not in {"", "00"}
+        or row.prtt_rate != 0
         or bool(row.revl_issu_reas)
     )
 

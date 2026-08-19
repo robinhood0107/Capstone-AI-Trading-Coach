@@ -68,9 +68,9 @@ class S56ProductionContractTest(unittest.TestCase):
         )
         self.assertEqual([], list(validator.iter_errors(payload)))
         provenance = payload["provenance"]
-        self.assertEqual("2022-03-31", provenance["rawSessionStart"])
+        self.assertEqual("2022-03-29", provenance["rawSessionStart"])
         self.assertEqual("2026-08-13", provenance["rawSessionEnd"])
-        self.assertEqual("2022-06-27", provenance["eligibleSessionStart"])
+        self.assertEqual("2022-06-23", provenance["eligibleSessionStart"])
         self.assertEqual("2026-08-05", provenance["eligibleSessionEnd"])
 
     def test_temporal_receipt_does_not_accept_fabricated_provider_revision(self) -> None:

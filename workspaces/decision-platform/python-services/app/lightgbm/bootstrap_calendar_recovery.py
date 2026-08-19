@@ -718,12 +718,20 @@ def validate_recovery_execution_authority(
         relative_path=JOURNAL_FILENAME,
         max_bytes=MAX_JOURNAL_BYTES,
     )
-    if progress.content_sha256 != lineage["adoptedProgressSha256"]:
+    # journal은 append-only다. 채택 prefix만 대조해 이후 물리 호출 기록을 허용한다.
+    adopted_events = 2 * int(cast(int, lineage["consumedKrxPhysicalCalls"]))
+    lines = progress.content.splitlines(keepends=True)
+    if len(lines) < adopted_events:
+        raise LightGbmContractError("adopted bootstrap progress is truncated")
+    prefix_digest = hashlib.sha256(b"".join(lines[:adopted_events])).hexdigest()
+    if prefix_digest != lineage["adoptedProgressSha256"]:
         raise LightGbmContractError("adopted bootstrap progress digest mismatches lineage")
     journal = BootstrapJournal(source_root)
-    adopted = tuple(item for item in journal.attempts if item.state == "SUCCEEDED")
+    # 채택 구간만 회계 대상이다. 이후 append된 물리 호출은 packet ledger가 따로 센다.
+    adopted_attempts = journal.attempts[: int(cast(int, lineage["consumedKrxPhysicalCalls"]))]
+    adopted = tuple(item for item in adopted_attempts if item.state == "SUCCEEDED")
     superseded = tuple(
-        item for item in journal.attempts if item.state == SUPERSEDED_CONSUMED
+        item for item in adopted_attempts if item.state == SUPERSEDED_CONSUMED
     )
     expected_by_hash = _unique_by_hash(_expected_krx_queries(packet))
     expected_hashes = set(expected_by_hash)
@@ -739,10 +747,10 @@ def validate_recovery_execution_authority(
         for item in cast(list[Mapping[str, str]], receipt["supersededQueries"])
     }
     if (
-        any(item.provider != "KRX" for item in journal.attempts)
+        any(item.provider != "KRX" for item in adopted_attempts)
         or len(adopted) != receipt["reusableSuccessfulChunks"]
         or len(superseded) != receipt["supersededConsumedCalls"]
-        or len(journal.attempts) != receipt["consumedKrxPhysicalCalls"]
+        or len(adopted_attempts) != receipt["consumedKrxPhysicalCalls"]
         or len(adopted) != lineage["adoptedSuccessfulChunks"]
         or len(superseded) != lineage["supersededConsumedCalls"]
         or adopted_hashes.difference(expected_hashes)

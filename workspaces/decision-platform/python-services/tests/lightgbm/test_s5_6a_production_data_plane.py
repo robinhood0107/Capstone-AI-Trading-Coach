@@ -2298,3 +2298,104 @@ def test_recovery_receipt_carries_every_superseded_query_identity(tmp_path: Path
         validate_recovery_receipt(
             canonical_json_bytes(forged), corrected_packet=recovery.corrected_packet
         )
+def test_adopted_prefix_survives_further_provider_records(tmp_path: Path) -> None:
+    """채택 이후 append된 물리 호출 기록이 실행 권위를 깨뜨리지 않아야 한다.
+
+    lineage가 journal 전체 digest를 고정하면 실행이 시작된 run은 영구히 재검증 불가가 되고,
+    계약이 허용한 resume이 막힌다. 채택 prefix만 대조해 불변성과 append를 함께 지킨다.
+    """
+
+    root = tmp_path / "s5-source"
+    root.mkdir(mode=0o700)
+    legacy = _author_bootstrap_packet(
+        cutoff=datetime(2026, 8, 13, 23, 10, tzinfo=UTC),
+        calendar=base_calendar(),
+        packet_version="s5-production-bootstrap-packet-v1",
+    )
+    prior = write_approved_new_file(
+        approved_root=root,
+        relative_path=f"bootstrap-{legacy.sha256}.json",
+        content=legacy.content,
+        max_bytes=1 * 1024 * 1024,
+    )
+    os.chmod(prior.absolute_path, 0o600)
+    prior_source = root / f"run-{legacy.sha256}" / "source"
+    prior_source.parent.mkdir(mode=0o700)
+    prior_source.mkdir(mode=0o700)
+    (prior_source / "chunks").mkdir(mode=0o700)
+
+    failed_hash = provider_query_sha256(
+        {"service": "stk_bydd_trd", "basDd": "20260603"}
+    )
+    journal = BootstrapJournal(prior_source, policy_corrections=())
+    for _ in range(2):
+        ordinal = journal.begin(
+            provider="KRX", operation_id="stk_bydd_trd", query_sha256=failed_hash
+        )
+        journal.finish(
+            ordinal=ordinal,
+            provider="KRX",
+            operation_id="stk_bydd_trd",
+            query_sha256=failed_hash,
+            success=False,
+            chunk=None,
+        )
+
+    recovery = assess_bootstrap_calendar_recovery(
+        approved_root=root, prior_packet_sha256=legacy.sha256
+    )
+    written = write_approved_new_file(
+        approved_root=root,
+        relative_path=f"bootstrap-{recovery.corrected_packet.sha256}.json",
+        content=recovery.corrected_packet.content,
+        max_bytes=1 * 1024 * 1024,
+    )
+    os.chmod(written.absolute_path, 0o600)
+    receipt = write_approved_new_file(
+        approved_root=root,
+        relative_path=(
+            f"calendar-recovery-binding-{recovery.recovery_binding_sha256}.json"
+        ),
+        content=recovery.content,
+        max_bytes=64 * 1024,
+    )
+    os.chmod(receipt.absolute_path, 0o600)
+    materialize_recovery_adoption(approved_root=root, recovery=recovery)
+
+    adopted_source = root / f"run-{recovery.corrected_packet.sha256}" / "source"
+    assert (
+        validate_recovery_execution_authority(
+            approved_root=root, packet=recovery.corrected_packet
+        )
+        == "READY_TO_SUPERSEDE"
+    )
+
+    # 채택 이후 실행이 새 물리 호출을 기록해도 권위는 유지된다.
+    adopted_journal = BootstrapJournal(adopted_source)
+    token_hash = provider_query_sha256({"operation": "oauth2/tokenP"})
+    ordinal = adopted_journal.begin(
+        provider="KIS", operation_id="oauth2/tokenP", query_sha256=token_hash
+    )
+    adopted_journal.finish(
+        ordinal=ordinal,
+        provider="KIS",
+        operation_id="oauth2/tokenP",
+        query_sha256=token_hash,
+        success=True,
+        chunk=None,
+    )
+    assert (
+        validate_recovery_execution_authority(
+            approved_root=root, packet=recovery.corrected_packet
+        )
+        == "READY_TO_SUPERSEDE"
+    )
+
+    # 채택 구간 자체가 훼손되면 여전히 거부한다.
+    raw = (adopted_source / "progress.jsonl").read_bytes().splitlines(keepends=True)
+    tampered = b"".join(raw[1:])
+    (adopted_source / "progress.jsonl").write_bytes(tampered)
+    with pytest.raises(LightGbmContractError):
+        validate_recovery_execution_authority(
+            approved_root=root, packet=recovery.corrected_packet
+        )

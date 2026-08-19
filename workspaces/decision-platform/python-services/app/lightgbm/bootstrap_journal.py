@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+from datetime import date
 from dataclasses import dataclass
 import hashlib
 import json
 import os
 from pathlib import Path
 import stat
-from typing import Literal, Mapping, Sequence, cast
+from typing import Mapping, Sequence, cast
 
 from app.data._shared.canonical_json import canonical_json_bytes
 from app.lightgbm.bootstrap_control import BootstrapCallReceipt
@@ -51,13 +52,13 @@ class BootstrapJournal:
         self,
         root: Path,
         *,
-        calendar_policy: Literal["current", "legacy-v1"] = "current",
+        policy_corrections: tuple[date, ...] | None = None,
     ) -> None:
         self._root = root
         self._path = root / JOURNAL_FILENAME
-        self._calendar_policy = calendar_policy
+        self._policy_corrections = policy_corrections
         self._attempts = (
-            _read_attempts(self._path, calendar_policy=calendar_policy)
+            _read_attempts(self._path, policy_corrections=policy_corrections)
             if self._path.exists()
             else ()
         )
@@ -195,7 +196,7 @@ class BootstrapJournal:
         if not allow_incomplete:
             self._attempts = _read_attempts(
                 self._path,
-                calendar_policy=self._calendar_policy,
+                policy_corrections=self._policy_corrections,
             )
 
 
@@ -302,7 +303,7 @@ def build_recovery_journal_bytes(
 
 
 def _read_attempts(
-    path: Path, *, calendar_policy: Literal["current", "legacy-v1"] = "current"
+    path: Path, *, policy_corrections: tuple[date, ...] | None = None
 ) -> tuple[JournalAttempt, ...]:
     try:
         descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
@@ -361,7 +362,7 @@ def _read_attempts(
         chunk = (
             parse_source_chunk_receipt(
                 chunk_value,
-                calendar_policy=calendar_policy,
+                policy_corrections=policy_corrections,
             )
             if chunk_value is not None
             else None

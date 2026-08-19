@@ -110,6 +110,11 @@
 - 달력 correction set은 packet 해시 결정성을 위해 정적 상수로 유지하되, 후보 session만 실제 KIS
   `CTCA0903R`로 확정해(최대 32 calls, live 전용, bootstrap 예산과 분리) `trading_sessions`에 적재하고
   상수와 대조한다. 관측이 없으면 통과가 아니라 `CALENDAR_AUTHORITY_UNVERIFIED`다.
+- correction 세대는 해시로 식별하고 이전 세대를 삭제하지 않는다. packet은 자신이 author된 세대를
+  bytes에 선언하며, 그 선언이 이전 달력으로 돌아가는 유일한 경로다. production 실행은 언제나 현재
+  세대만 받고, recovery만 read-only로 이전 세대를 연다. recovery는 historical v1뿐 아니라 이전 세대의
+  recovery packet에서도 체인해 이미 수집한 chunk를 재수집하지 않으며, prior journal은 그 journal이
+  봉인된 세대의 clock으로 읽는다. 현재 세대 packet은 자기 자신을 supersede할 수 없다.
 - bootstrap 실행은 provider client 생성 전에 quota backend credential을 확인한다. credential 값은
   출력·저장하지 않으며 실패 시 provider 호출은 0이다.
 - Pre-S5 RAG/global-news addendum은

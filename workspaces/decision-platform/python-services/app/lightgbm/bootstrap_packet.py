@@ -21,9 +21,13 @@ from app.lightgbm.pit_calendar import (
     MonthlyUniverseSchedule,
     PitSessionWindow,
     KST,
+    S5_ADHOC_CLOSED_SESSIONS,
     S5_CALENDAR_CORRECTION_SET_SHA256,
     S5_CALENDAR_POLICY_VERSION,
     base_calendar,
+    calendar_for_corrections,
+    correction_set_sha256,
+    corrections_for_sha256,
     build_pit_session_window_for,
     corrected_calendar,
     derive_monthly_universe_schedule_for,
@@ -88,6 +92,7 @@ def author_recovery_bootstrap_packet(
         lineage_mode="CALENDAR_RECOVERY",
         recovery_binding_sha256=recovery_binding_sha256,
         superseded_allowance=superseded_allowance,
+        corrections=S5_ADHOC_CLOSED_SESSIONS,
     )
 
 
@@ -99,6 +104,7 @@ def _author_bootstrap_packet(
     lineage_mode: str = "HISTORICAL_V1",
     recovery_binding_sha256: str | None = None,
     superseded_allowance: int = 0,
+    corrections: tuple[date, ...] | None = None,
 ) -> BootstrapPacket:
     """현재 correction 정책과 historical v1을 같은 closed authoring path로 재생성한다."""
 
@@ -125,6 +131,10 @@ def _author_bootstrap_packet(
         )
     if cutoff.tzinfo is None:
         raise LightGbmContractError("bootstrap cutoff must be timezone aware")
+    # v2 packet은 author된 correction 세대를 bytes에 선언한다. 현재 세대가 기본이며, 이미 소비한
+    # packet을 read-only로 재생성할 때만 그 packet이 선언한 이전 세대를 넘긴다.
+    generation = S5_ADHOC_CLOSED_SESSIONS if corrections is None else corrections
+    generation_sha256 = correction_set_sha256(generation)
     window = build_pit_session_window_for(cutoff, calendar=calendar)
     if _label_as_of(window.raw_sessions[-1], calendar=calendar) > cutoff:
         raise LightGbmContractError(
@@ -157,7 +167,7 @@ def _author_bootstrap_packet(
         **(
             {
                 "calendarPolicyVersion": S5_CALENDAR_POLICY_VERSION,
-                "calendarCorrectionSetSha256": S5_CALENDAR_CORRECTION_SET_SHA256,
+                "calendarCorrectionSetSha256": generation_sha256,
                 "lineageMode": lineage_mode,
                 **(
                     {"recoveryBindingSha256": recovery_binding_sha256}
@@ -227,7 +237,7 @@ def _author_bootstrap_packet(
             else None
         ),
         calendar_correction_set_sha256=(
-            S5_CALENDAR_CORRECTION_SET_SHA256
+            generation_sha256
             if packet_version == "s5-production-bootstrap-packet-v2"
             else None
         ),
@@ -261,6 +271,7 @@ def validate_bootstrap_packet(
     *,
     expected_sha256: str,
     allow_historical_v1: bool = False,
+    allow_superseded_corrections: bool = False,
 ) -> BootstrapPacket:
     """외부 승인 SHA와 canonical packet bytes를 calendar에서 재생성해 전수 검증한다.
 
@@ -301,15 +312,28 @@ def validate_bootstrap_packet(
     if packet_version == "s5-production-bootstrap-packet-v2":
         lineage_mode = cast(dict[str, object], value).get("lineageMode")
         recovery_binding = cast(dict[str, object], value).get("recoveryBindingSha256")
+        corrections = _parse_correction_generation(
+            value, allow_superseded=allow_superseded_corrections
+        )
         if lineage_mode == "FRESH" and recovery_binding is None:
-            regenerated = author_bootstrap_packet(cutoff=cutoff)
+            regenerated = _author_bootstrap_packet(
+                cutoff=cutoff,
+                calendar=calendar_for_corrections(corrections),
+                packet_version="s5-production-bootstrap-packet-v2",
+                lineage_mode="FRESH",
+                corrections=corrections,
+            )
         elif lineage_mode == "CALENDAR_RECOVERY" and isinstance(
             recovery_binding, str
         ):
-            regenerated = author_recovery_bootstrap_packet(
+            regenerated = _author_bootstrap_packet(
                 cutoff=cutoff,
+                calendar=calendar_for_corrections(corrections),
+                packet_version="s5-production-bootstrap-packet-v2",
+                lineage_mode="CALENDAR_RECOVERY",
                 recovery_binding_sha256=recovery_binding,
                 superseded_allowance=_parse_superseded_allowance(value),
+                corrections=corrections,
             )
         else:
             raise LightGbmContractError("bootstrap recovery lineage is invalid")
@@ -325,6 +349,25 @@ def validate_bootstrap_packet(
     if regenerated.content != content or regenerated.sha256 != expected_sha256:
         raise LightGbmContractError("bootstrap packet does not match current calendar policy")
     return regenerated
+
+
+def _parse_correction_generation(
+    value: Mapping[str, object], *, allow_superseded: bool
+) -> tuple[date, ...]:
+    """packet이 선언한 correction 세대만 인정한다.
+
+    production 실행 경로는 현재 세대만 받는다. 이미 소비한 packet을 recovery가 read-only로
+    검증할 때만 승인된 이전 세대를 연다.
+    """
+
+    digest = value.get("calendarCorrectionSetSha256")
+    if not isinstance(digest, str):
+        raise LightGbmContractError("bootstrap packet correction set is invalid")
+    if digest == S5_CALENDAR_CORRECTION_SET_SHA256:
+        return S5_ADHOC_CLOSED_SESSIONS
+    if not allow_superseded:
+        raise LightGbmContractError("bootstrap packet does not match current calendar policy")
+    return corrections_for_sha256(digest)
 
 
 def _parse_superseded_allowance(value: Mapping[str, object]) -> int:

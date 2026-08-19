@@ -23,7 +23,22 @@
         "sessionDate": "2026-07-17"
       }
     ],
-    "policyVersion": "xkrx-4.13.2-kis-corrections-v1"
+    "policyVersion": "xkrx-4.13.2-kis-corrections-v1",
+    "supersededCorrectionSets": [
+      {
+        "correctionSetSha256": "82fbb91db94aaae154323be3340648f37afcead3e42ab8b600c1b22699475ad5",
+        "sessionDates": [],
+        "usage": "READ_ONLY_RECOVERY_VALIDATION"
+      },
+      {
+        "correctionSetSha256": "30530e6f4ff06ac3ab71a748c910c87cd9233c70382f348e00c387684cdde169",
+        "sessionDates": [
+          "2026-06-03"
+        ],
+        "usage": "READ_ONLY_RECOVERY_VALIDATION"
+      }
+    ],
+    "supersededGenerationsArePreserved": true
   },
   "contractId": "s5-bootstrap-calendar-recovery-lock.v1",
   "divergence": {
@@ -92,10 +107,13 @@
     ],
     "approvedKrxMaxPhysicalGet": 4441,
     "blockBeforeProviderClientWhenCapacityExhausted": true,
+    "chainableFromSupersededRecoveryPacket": true,
     "cumulativeFailedAttemptsConsumeBudget": true,
     "logicalQueryCountUnchangedByAllowance": true,
     "maxSupersededAllowance": 8,
     "physicalAttemptsPerLogicalQuery": 2,
+    "priorJournalReadUnderItsOwnGeneration": true,
+    "priorPacketMustNotUseCurrentCorrections": true,
     "providerCallsDuringAssessment": 0,
     "receiptMissingResult": "PACKET_OR_ROOT_INVALID",
     "successfulChunkRecall": 0,

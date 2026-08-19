@@ -162,6 +162,37 @@ class S5BootstrapCalendarRecoveryLockTest(unittest.TestCase):
         )
         self.assertTrue(authority["packetHashRemainsStatic"])
 
+    def test_superseded_correction_generations_are_preserved(self) -> None:
+        calendar = json.loads(CATALOG.read_text(encoding="utf-8"))["calendar"]
+
+        self.assertTrue(calendar["supersededGenerationsArePreserved"])
+        generations = calendar["supersededCorrectionSets"]
+        # 수정 전 pinned base와 첫 correction 세대를 모두 보존해야 이미 소비한 packet과
+        # journal을 재수집 없이 read-only로 검증할 수 있다.
+        self.assertEqual([[], ["2026-06-03"]], [item["sessionDates"] for item in generations])
+        self.assertTrue(
+            all(item["usage"] == "READ_ONLY_RECOVERY_VALIDATION" for item in generations)
+        )
+
+        current = calendar["correctionSetSha256"]
+        digests = [item["correctionSetSha256"] for item in generations]
+        self.assertEqual(len(set(digests)), len(digests))
+        self.assertNotIn(current, digests)
+
+        # 보존된 세대는 현재 correction 목록의 진부분집합이어야 한다.
+        current_dates = [item["sessionDate"] for item in calendar["corrections"]]
+        for item in generations:
+            self.assertLess(set(item["sessionDates"]), set(current_dates))
+
+    def test_recovery_can_chain_from_a_superseded_generation(self) -> None:
+        recovery = json.loads(CATALOG.read_text(encoding="utf-8"))["recovery"]
+
+        self.assertTrue(recovery["chainableFromSupersededRecoveryPacket"])
+        # 현재 세대 packet이 자기 자신을 supersede하면 누적 회계가 끊긴다.
+        self.assertTrue(recovery["priorPacketMustNotUseCurrentCorrections"])
+        # prior journal은 그 journal이 봉인된 세대의 clock으로만 읽어야 한다.
+        self.assertTrue(recovery["priorJournalReadUnderItsOwnGeneration"])
+
 
 if __name__ == "__main__":
     unittest.main()

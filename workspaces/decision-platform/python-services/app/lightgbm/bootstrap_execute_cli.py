@@ -39,6 +39,11 @@ from app.lightgbm.bootstrap_live import (
 from app.lightgbm.bootstrap_packet import validate_bootstrap_packet
 from app.lightgbm.errors import CalendarDivergenceSuspected, LightGbmContractError
 from app.lightgbm.daily_refresh import write_initial_daily_state
+from app.lightgbm.runtime_inputs import (
+    resolve_bootstrap_packet_sha256,
+    resolve_code_provenance,
+    resolve_repository_root,
+)
 from app.lightgbm.private_root import (
     acquire_bootstrap_root_lock,
     acquire_run_lock,
@@ -63,12 +68,17 @@ def main() -> int:
     """CLI path 인자는 받지 않고 server root와 승인 digest가 모두 있을 때만 provider를 연다."""
 
     root_value = os.environ.get("S5_SOURCE_ROOT", "")
-    packet_sha256 = os.environ.get("S5_BOOTSTRAP_PACKET_SHA256", "")
     resume_sha256 = os.environ.get("S5_BOOTSTRAP_RESUME_PACKET_SHA256", "")
-    if not root_value or not packet_sha256:
+    if not root_value:
         print("S5_BOOTSTRAP=AUTHORITY_UNAVAILABLE")
         return 2
     root = Path(root_value)
+    try:
+        # 실행 대상 packet은 root가 이미 확정했다. 사람이 SHA를 옮겨 적지 않는다.
+        packet_sha256 = resolve_bootstrap_packet_sha256(approved_root=root)
+    except (OSError, LightGbmContractError):
+        print("S5_BOOTSTRAP=AUTHORITY_UNAVAILABLE")
+        return 2
     root_lock = -1
     run_lock = -1
     try:
@@ -121,9 +131,10 @@ def main() -> int:
             )
         source_root = run_root / "source"
         feature_root = run_root / "feature"
-        code_head = os.environ.get("S5_CODE_HEAD_SHA", "")
-        code_tree = os.environ.get("S5_CODE_TREE_SHA", "")
-        uv_lock_sha256 = os.environ.get("S5_UV_LOCK_SHA256", "")
+        # provenance는 실제 저장소 상태에서 유도한다. 명시값이 있으면 유도값과 대조한다.
+        code_head, code_tree, uv_lock_sha256 = resolve_code_provenance(
+            repository_root=resolve_repository_root()
+        )
         validate_qualification_bindings(
             code_head=code_head,
             code_tree=code_tree,

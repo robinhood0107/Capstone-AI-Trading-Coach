@@ -6,13 +6,21 @@ window를 전수 조회하지 않으므로 문서의 보수적 호출 정책을 
 
 필수 환경변수:
   S5_CALENDAR_RECONCILE_DSN       decision_collector role DSN
+
+선택 환경변수:
   S5_CALENDAR_RECONCILE_SESSIONS  콤마로 구분한 ISO 날짜 목록 (최대 32개)
+  S5_SOURCE_ROOT                  bootstrap approved root
+
+session 목록을 주지 않으면 bootstrap이 봉인한 divergence 후보 sidecar에서 직접 읽는다. 사람이
+날짜를 옮겨 적는 단계가 없어야 같은 후보를 잘못 입력하는 경로가 사라진다.
 """
 
 from __future__ import annotations
 
+import json
 import os
 from datetime import UTC, date, datetime
+from pathlib import Path
 from typing import Any
 
 import psycopg
@@ -29,9 +37,10 @@ from app.data.calendar.repository import CalendarRepository
 from app.data.kis.http_client import KISHttpClient
 from app.data.kis.market_client import KISMarketClient
 from app.data.kis.settings import KISSettings
+from app.lightgbm.bootstrap_executor import DIVERGENCE_CANDIDATES_FILENAME
+from app.lightgbm.pit_calendar import PINNED_CALENDAR_VERSION
 
 _REQUIRED_ROLE = "decision_collector"
-_PINNED_CALENDAR_VERSION = "4.13.2"
 
 
 def main() -> int:
@@ -39,14 +48,22 @@ def main() -> int:
 
     dsn = os.environ.get("S5_CALENDAR_RECONCILE_DSN", "")
     raw_sessions = os.environ.get("S5_CALENDAR_RECONCILE_SESSIONS", "")
-    if not dsn or not raw_sessions:
+    source_root = os.environ.get("S5_SOURCE_ROOT", "")
+    if not dsn or not (raw_sessions or source_root):
         print("S5_CALENDAR_RECONCILE=AUTHORITY_UNAVAILABLE reason=INPUT_MISSING kisHolidayCalls=0")
         return 2
     try:
-        sessions = _parse_sessions(raw_sessions)
+        sessions = (
+            _parse_sessions(raw_sessions)
+            if raw_sessions
+            else _divergence_candidate_sessions(Path(source_root))
+        )
     except AdapterValidationError:
         print("S5_CALENDAR_RECONCILE=INVALID reason=SESSION_LIST_INVALID kisHolidayCalls=0")
         return 2
+    if not sessions:
+        print("S5_CALENDAR_RECONCILE=NO_CANDIDATES kisHolidayCalls=0")
+        return 0
 
     try:
         with psycopg.connect(dsn, autocommit=False, connect_timeout=5) as preflight:
@@ -121,6 +138,37 @@ def _parse_sessions(value: str) -> tuple[date, ...]:
     return tuple(unique)
 
 
+def _divergence_candidate_sessions(approved_root: Path) -> tuple[date, ...]:
+    """bootstrap이 봉인한 divergence 후보 sidecar에서 확정 대상 session만 읽는다.
+
+    후보는 이미 content-free로 봉인돼 있으므로 provider raw를 다시 열지 않는다. sidecar가 없으면
+    확정할 후보가 없다는 뜻이며, 값을 지어내지 않는다.
+    """
+
+    if not approved_root.is_dir():
+        raise AdapterValidationError("reconcile source root is unavailable")
+    days: set[date] = set()
+    for run in sorted(approved_root.glob("run-*")):
+        block = run / "source" / DIVERGENCE_CANDIDATES_FILENAME
+        if not block.is_file():
+            continue
+        try:
+            payload = json.loads(block.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as error:
+            raise AdapterValidationError("divergence candidate block is unreadable") from error
+        for candidate in payload.get("candidates", ()):
+            value = candidate.get("sessionDate") if isinstance(candidate, dict) else None
+            if not isinstance(value, str):
+                raise AdapterValidationError("divergence candidate session is invalid")
+            try:
+                days.add(date.fromisoformat(value))
+            except ValueError:
+                raise AdapterValidationError("divergence candidate session is invalid") from None
+    if len(days) > MAX_KIS_HOLIDAY_CALLS:
+        raise AdapterValidationError("divergence candidates exceed the approved call bound")
+    return tuple(sorted(days))
+
+
 def _attest_collector_authority(connection: psycopg.Connection[Any]) -> None:
     role = _scalar(connection.execute("select current_user").fetchone())
     if str(role) != _REQUIRED_ROLE:
@@ -162,7 +210,7 @@ def _base_session(day: date) -> XKRXSession:
         timezone="Asia/Seoul",
         provenance=SourceProvenance(
             library_name="exchange-calendars",
-            library_version=_PINNED_CALENDAR_VERSION,
+            library_version=PINNED_CALENDAR_VERSION,
             calendar_name="XKRX",
         ),
     )

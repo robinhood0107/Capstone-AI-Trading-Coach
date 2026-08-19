@@ -219,8 +219,12 @@ archive 복원, inventory parity 및 provider-call 0 executor replay를 통과�
 recovery receipt가 증명한 superseded consumed call 수만큼만 KRX 상한을 복원하는 evidence-bound
 allowance를 고정한다.
 [2026-08-19 제헌절 달력 교정 기록](../contracts/changes/20260819-s5-constitution-day-calendar-correction.md)은
-실제 수집이 에서 멈춘 뒤 휴장일 권위로 확정한 두 번째 correction과, 단일 session 실패도
-divergence 증거로 남기는 경계를 고정한다. correction set은 과  두 개다. fresh 유도식은 4,441/6,446으로 불변이므로 새 approved root는 더 큰 예산을
+실제 수집이 `2026-07-17`에서 멈춘 뒤 휴장일 권위로 확정한 두 번째 correction과, 단일 session 실패도
+divergence 증거로 남기는 경계를 고정한다. correction set은 `2026-06-03`과 `2026-07-17` 두 개다.
+[2026-08-19 correction 세대 체인 기록](../contracts/changes/20260819-s5-recovery-generation-chaining.md)은
+이전 correction 세대를 해시로 보존해 recovery가 최신 소비 run에서 체인하도록 고정한다. 두 번째
+correction이 왔을 때 이미 수집한 chunk가 버려지고 실제 provider 누계가 승인 상한을 넘을 뻔한 경로를
+닫는다. fresh 유도식은 4,441/6,446으로 불변이므로 새 approved root는 더 큰 예산을
 열 수 없고, allowance는 packet bytes·binding preimage·receipt·adoption journal 네 곳에서 재계산된다.
 같은 기록은 거래일로 주장된 session의 빈 KRX 일별 projection을 `CALENDAR_DIVERGENCE_SUSPECTED`로
 분류해 resume packet 없이 멈추는 경계와, 후보 session만 실제 `CTCA0903R`로 확정하는 최대 32-call

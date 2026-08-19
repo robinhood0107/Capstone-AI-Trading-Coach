@@ -41,6 +41,7 @@ from app.lightgbm.pit_calendar import (
     S5_ADHOC_CLOSED_SESSIONS,
     S5_CALENDAR_CORRECTION_SET_SHA256,
     S5_CALENDAR_POLICY_VERSION,
+    corrections_for_sha256,
 )
 from app.lightgbm.production_policy import MAX_KRX_SUPERSEDED_ALLOWANCE
 from app.lightgbm.private_root import (
@@ -142,6 +143,7 @@ class BootstrapCalendarRecovery:
     prior_progress_sha256: str
     reusable_attempts: tuple[JournalAttempt, ...]
     superseded_attempts: tuple[JournalAttempt, ...]
+    prior_corrections: tuple[date, ...]
 
 
 def assess_bootstrap_calendar_recovery(
@@ -162,9 +164,22 @@ def assess_bootstrap_calendar_recovery(
         prior_file.content,
         expected_sha256=prior_packet_sha256,
         allow_historical_v1=True,
+        allow_superseded_corrections=True,
     )
-    if prior.packet_version != "s5-production-bootstrap-packet-v1":
-        raise LightGbmContractError("calendar recovery requires a historical packet v1")
+    # prior는 수정 전 historical v1이거나, 이미 소비된 이전 correction 세대의 recovery packet이다.
+    # 현재 세대에서 author된 packet은 자기 자신을 supersede할 수 없으므로 거부한다.
+    prior_corrections = (
+        ()
+        if prior.packet_version == "s5-production-bootstrap-packet-v1"
+        else corrections_for_sha256(str(prior.calendar_correction_set_sha256))
+    )
+    if prior.packet_version == "s5-production-bootstrap-packet-v2":
+        if prior.lineage_mode != "CALENDAR_RECOVERY":
+            raise LightGbmContractError("calendar recovery prior lineage is invalid")
+        if tuple(prior_corrections) == tuple(S5_ADHOC_CLOSED_SESSIONS):
+            raise LightGbmContractError(
+                "calendar recovery prior already uses the current correction set"
+            )
 
     run_root = approved_root / f"run-{prior_packet_sha256}"
     source_root = run_root / "source"
@@ -177,7 +192,7 @@ def assess_bootstrap_calendar_recovery(
             relative_path=JOURNAL_FILENAME,
             max_bytes=MAX_JOURNAL_BYTES,
         )
-        journal = BootstrapJournal(source_root, calendar_policy="legacy-v1")
+        journal = BootstrapJournal(source_root, policy_corrections=prior_corrections)
         attempts = journal.attempts
         if not attempts or any(attempt.provider != "KRX" for attempt in attempts):
             raise LightGbmContractError(
@@ -314,6 +329,7 @@ def assess_bootstrap_calendar_recovery(
             prior_progress_sha256=progress.content_sha256,
             reusable_attempts=reusable_attempts,
             superseded_attempts=superseded_attempts,
+            prior_corrections=tuple(prior_corrections),
         )
     finally:
         release_run_lock(run_lock)
@@ -484,7 +500,9 @@ def materialize_recovery_adoption(
         )
         if progress.content_sha256 != recovery.prior_progress_sha256:
             raise LightGbmContractError("prior bootstrap progress changed after assessment")
-        journal = BootstrapJournal(prior_source_root, calendar_policy="legacy-v1")
+        journal = BootstrapJournal(
+            prior_source_root, policy_corrections=recovery.prior_corrections
+        )
         if journal.attempts != (
             *recovery.reusable_attempts,
             *recovery.superseded_attempts,

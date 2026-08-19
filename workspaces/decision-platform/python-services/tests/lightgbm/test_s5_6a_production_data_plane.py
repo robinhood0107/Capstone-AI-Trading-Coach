@@ -57,6 +57,7 @@ from app.lightgbm.bootstrap_journal import (
 from app.lightgbm.bootstrap_packet import (
     _author_bootstrap_packet,
     author_bootstrap_packet,
+    author_recovery_bootstrap_packet,
     latest_publishable_bootstrap_cutoff,
     validate_bootstrap_packet,
 )
@@ -87,6 +88,10 @@ from app.lightgbm.labels import build_production_exact_labels
 from app.lightgbm.pit_calendar import (
     S5_ADHOC_CLOSED_SESSIONS,
     S5_CALENDAR_CORRECTION_SET_SHA256,
+    S5_SUPERSEDED_CORRECTION_SETS,
+    calendar_for_corrections,
+    correction_set_sha256,
+    corrections_for_sha256,
     S5_CALENDAR_POLICY_VERSION,
     PitSessionWindow,
     base_calendar,
@@ -111,6 +116,11 @@ from app.lightgbm.production_policy import (
     is_spac_name,
     macro_timing_sensitivity_pass,
     require_standard_stock_identity,
+)
+from app.lightgbm.runtime_inputs import (
+    resolve_bootstrap_packet_sha256,
+    resolve_code_provenance,
+    resolve_repository_root,
 )
 from app.lightgbm.source_bundle import (
     SourceBundle,
@@ -758,7 +768,7 @@ def test_calendar_recovery_grants_exact_superseded_allowance_and_closes_shortfal
     query_hash = provider_query_sha256(
         {"service": "stk_bydd_trd", "basDd": "20260603"}
     )
-    journal = BootstrapJournal(source_root, calendar_policy="legacy-v1")
+    journal = BootstrapJournal(source_root, policy_corrections=())
     for _ in range(2):
         ordinal = journal.begin(
             provider="KRX",
@@ -853,7 +863,7 @@ def test_legacy_journal_receipt_is_read_only_and_requires_temporal_rebinding() -
     assert (
         parse_source_chunk_receipt(
             receipt.as_dict(),
-            calendar_policy="legacy-v1",
+            policy_corrections=(),
         )
         == receipt
     )
@@ -1005,7 +1015,7 @@ def test_recovery_authority_and_adoption_stop_before_provider_client_creation(
     failed_hash = provider_query_sha256(
         {"service": "stk_bydd_trd", "basDd": "20260603"}
     )
-    journal = BootstrapJournal(source_root, calendar_policy="legacy-v1")
+    journal = BootstrapJournal(source_root, policy_corrections=())
     reusable_ordinal = journal.begin(
         provider="KRX",
         operation_id="stk_bydd_trd",
@@ -1777,7 +1787,7 @@ def test_journal_bounds_superseded_attempts_and_blocks_when_allowance_is_short(
     failed_hash = provider_query_sha256(
         {"service": "stk_bydd_trd", "basDd": "20260603"}
     )
-    journal = BootstrapJournal(source_root, calendar_policy="legacy-v1")
+    journal = BootstrapJournal(source_root, policy_corrections=())
     for _ in range(2):
         ordinal = journal.begin(
             provider="KRX", operation_id="stk_bydd_trd", query_sha256=failed_hash
@@ -2060,3 +2070,144 @@ def test_single_session_query_failure_records_a_divergence_candidate(tmp_path: P
             resume=True,
         )
     assert len(calls) > len(consumed)
+def test_correction_generation_authority_is_closed() -> None:
+    """승인된 correction 세대만 해시로 되돌릴 수 있어야 한다."""
+
+    current = correction_set_sha256(S5_ADHOC_CLOSED_SESSIONS)
+    assert current == S5_CALENDAR_CORRECTION_SET_SHA256
+    assert corrections_for_sha256(current) == S5_ADHOC_CLOSED_SESSIONS
+
+    # 이전 세대는 read-only 검증용으로 보존되며 삭제되지 않는다.
+    assert S5_SUPERSEDED_CORRECTION_SETS[0] == ()
+    for generation in S5_SUPERSEDED_CORRECTION_SETS:
+        digest = correction_set_sha256(generation)
+        assert corrections_for_sha256(digest) == tuple(generation)
+        assert digest != current
+
+    with pytest.raises(LightGbmContractError, match="generation is not approved"):
+        corrections_for_sha256("f" * 64)
+
+    # 세대별 달력은 그 세대의 correction만 닫는다.
+    first = calendar_for_corrections(S5_SUPERSEDED_CORRECTION_SETS[1])
+    assert not first.is_session("2026-06-03")
+    assert first.is_session("2026-07-17")
+    assert not corrected_calendar().is_session("2026-07-17")
+
+
+def test_superseded_generation_packet_is_read_only_for_recovery() -> None:
+    """이전 세대 packet은 production 실행에서 거부되고 recovery 검증에서만 열린다."""
+
+    superseded = _author_bootstrap_packet(
+        cutoff=datetime(2026, 8, 13, 23, 10, tzinfo=UTC),
+        calendar=calendar_for_corrections(S5_SUPERSEDED_CORRECTION_SETS[1]),
+        packet_version="s5-production-bootstrap-packet-v2",
+        lineage_mode="CALENDAR_RECOVERY",
+        recovery_binding_sha256="b" * 64,
+        superseded_allowance=2,
+        corrections=S5_SUPERSEDED_CORRECTION_SETS[1],
+    )
+    assert superseded.calendar_correction_set_sha256 == correction_set_sha256(
+        S5_SUPERSEDED_CORRECTION_SETS[1]
+    )
+    assert superseded.calendar_correction_set_sha256 != S5_CALENDAR_CORRECTION_SET_SHA256
+
+    with pytest.raises(LightGbmContractError, match="current calendar policy"):
+        validate_bootstrap_packet(
+            superseded.content, expected_sha256=superseded.sha256
+        )
+    assert (
+        validate_bootstrap_packet(
+            superseded.content,
+            expected_sha256=superseded.sha256,
+            allow_superseded_corrections=True,
+        )
+        == superseded
+    )
+
+    # 현재 세대 packet은 flag 없이도 그대로 검증된다.
+    current = author_bootstrap_packet(cutoff=datetime(2026, 8, 13, 23, 10, tzinfo=UTC))
+    assert (
+        validate_bootstrap_packet(current.content, expected_sha256=current.sha256)
+        == current
+    )
+
+
+def test_recovery_refuses_a_prior_that_already_uses_the_current_corrections(
+    tmp_path: Path,
+) -> None:
+    """현재 세대 packet은 자기 자신을 supersede할 수 없다."""
+
+    root = tmp_path / "s5-source"
+    root.mkdir(mode=0o700)
+    current = author_recovery_bootstrap_packet(
+        cutoff=datetime(2026, 8, 13, 23, 10, tzinfo=UTC),
+        recovery_binding_sha256="c" * 64,
+        superseded_allowance=1,
+    )
+    written = write_approved_new_file(
+        approved_root=root,
+        relative_path=f"bootstrap-{current.sha256}.json",
+        content=current.content,
+        max_bytes=1 * 1024 * 1024,
+    )
+    os.chmod(written.absolute_path, 0o600)
+    source_root = root / f"run-{current.sha256}" / "source"
+    source_root.parent.mkdir(mode=0o700)
+    source_root.mkdir(mode=0o700)
+    (source_root / "chunks").mkdir(mode=0o700)
+
+    with pytest.raises(LightGbmContractError, match="already uses the current correction set"):
+        assess_bootstrap_calendar_recovery(
+            approved_root=root,
+            prior_packet_sha256=current.sha256,
+        )
+def test_runtime_inputs_derive_execution_target_from_sealed_evidence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """실행 대상 packet과 provenance를 사람이 옮겨 적지 않고 봉인된 증거에서 유도한다."""
+
+    monkeypatch.delenv("S5_BOOTSTRAP_PACKET_SHA256", raising=False)
+    root = tmp_path / "s5-source"
+    root.mkdir(mode=0o700)
+
+    # fresh authority가 있으면 그 packet이 유일한 실행 대상이다.
+    packet = author_bootstrap_packet(cutoff=datetime(2026, 8, 13, 23, 10, tzinfo=UTC))
+    publish_fresh_bootstrap_authority(approved_root=root, packet=packet)
+    assert resolve_bootstrap_packet_sha256(approved_root=root) == packet.sha256
+
+    # 명시값이 있으면 그대로 쓰되 형식은 강제한다.
+    monkeypatch.setenv("S5_BOOTSTRAP_PACKET_SHA256", "a" * 64)
+    assert resolve_bootstrap_packet_sha256(approved_root=root) == "a" * 64
+    monkeypatch.setenv("S5_BOOTSTRAP_PACKET_SHA256", "not-a-digest")
+    with pytest.raises(LightGbmContractError, match="digest is invalid"):
+        resolve_bootstrap_packet_sha256(approved_root=root)
+    monkeypatch.delenv("S5_BOOTSTRAP_PACKET_SHA256", raising=False)
+
+    # 후보가 없는 root에서는 값을 지어내지 않는다.
+    empty = tmp_path / "empty-root"
+    empty.mkdir(mode=0o700)
+    with pytest.raises(LightGbmContractError, match="not unique"):
+        resolve_bootstrap_packet_sha256(approved_root=empty)
+
+
+def test_code_provenance_rejects_values_that_do_not_match_the_repository(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """형식만 맞는 임의 provenance가 release manifest에 봉인되는 경로를 닫는다."""
+
+    for name in ("S5_CODE_HEAD_SHA", "S5_CODE_TREE_SHA", "S5_UV_LOCK_SHA256"):
+        monkeypatch.delenv(name, raising=False)
+    repository_root = resolve_repository_root()
+    head, tree, lock = resolve_code_provenance(repository_root=repository_root)
+    assert len(head) == 40 and len(tree) == 40 and len(lock) == 64
+
+    # 유도값과 같으면 통과한다.
+    monkeypatch.setenv("S5_CODE_HEAD_SHA", head)
+    monkeypatch.setenv("S5_CODE_TREE_SHA", tree)
+    monkeypatch.setenv("S5_UV_LOCK_SHA256", lock)
+    assert resolve_code_provenance(repository_root=repository_root) == (head, tree, lock)
+
+    # 형식은 맞지만 저장소 상태와 다른 값은 거부한다.
+    monkeypatch.setenv("S5_CODE_HEAD_SHA", "0" * 40)
+    with pytest.raises(LightGbmContractError, match="does not match the repository"):
+        resolve_code_provenance(repository_root=repository_root)

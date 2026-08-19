@@ -10,6 +10,7 @@ from app.lightgbm.bootstrap_calendar_recovery import (
     materialize_recovery_adoption,
 )
 from app.lightgbm.errors import LightGbmContractError
+from app.lightgbm.runtime_inputs import resolve_recovery_prior_packet_sha256
 from app.lightgbm.private_root import require_private_root
 from app.rag.safe_io import (
     RagSafeIoError,
@@ -23,10 +24,17 @@ def main() -> int:
 
     root_value = os.environ.get("S5_SOURCE_ROOT", "")
     prior_packet_sha256 = os.environ.get("S5_BOOTSTRAP_PACKET_SHA256", "")
-    if not root_value or not prior_packet_sha256:
+    if not root_value:
         print("S5_CALENDAR_RECOVERY=AUTHORITY_UNAVAILABLE")
         return 2
     root = Path(root_value)
+    if not prior_packet_sha256:
+        try:
+            # prior는 아직 현재 세대로 교정되지 않은 최신 소비 run이다.
+            prior_packet_sha256 = resolve_recovery_prior_packet_sha256(approved_root=root)
+        except (OSError, LightGbmContractError):
+            print("S5_CALENDAR_RECOVERY=AUTHORITY_UNAVAILABLE")
+            return 2
     try:
         require_private_root(root)
         recovery = assess_bootstrap_calendar_recovery(

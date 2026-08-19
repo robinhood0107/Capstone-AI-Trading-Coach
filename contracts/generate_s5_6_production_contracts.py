@@ -484,6 +484,8 @@ def _recovery_catalog() -> dict[str, Any]:
             "logicalQueryCountUnchangedByAllowance": True,
             "physicalAttemptsPerLogicalQuery": 2,
             "chainableFromSupersededRecoveryPacket": True,
+            "receiptCarriesSupersededQuerySet": True,
+            "supersededQueryIdentityResolvedAcrossApprovedGenerations": True,
             "priorPacketMustNotUseCurrentCorrections": True,
             "priorJournalReadUnderItsOwnGeneration": True,
             "allowanceBindingSurfaces": [

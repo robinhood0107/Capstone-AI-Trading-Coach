@@ -192,6 +192,11 @@ class S5BootstrapCalendarRecoveryLockTest(unittest.TestCase):
         self.assertTrue(recovery["priorPacketMustNotUseCurrentCorrections"])
         # prior journal은 그 journal이 봉인된 세대의 clock으로만 읽어야 한다.
         self.assertTrue(recovery["priorJournalReadUnderItsOwnGeneration"])
+        # 체인에서는 superseded query가 세대마다 누적되므로 실패 query 하나로 표현되지 않는다.
+        self.assertTrue(recovery["receiptCarriesSupersededQuerySet"])
+        self.assertTrue(
+            recovery["supersededQueryIdentityResolvedAcrossApprovedGenerations"]
+        )
 
 
 if __name__ == "__main__":

@@ -115,11 +115,13 @@
     "priorJournalReadUnderItsOwnGeneration": true,
     "priorPacketMustNotUseCurrentCorrections": true,
     "providerCallsDuringAssessment": 0,
+    "receiptCarriesSupersededQuerySet": true,
     "receiptMissingResult": "PACKET_OR_ROOT_INVALID",
     "successfulChunkRecall": 0,
     "supersededAllowanceDerivation": "PROVEN_SUPERSEDED_CONSUMED_CALLS",
     "supersededAllowanceEqualsSupersededConsumedCalls": true,
     "supersededAllowanceLineage": "CALENDAR_RECOVERY",
+    "supersededQueryIdentityResolvedAcrossApprovedGenerations": true,
     "temporalReceiptRebindingRequired": true
   }
 }

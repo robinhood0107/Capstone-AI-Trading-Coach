@@ -22,6 +22,8 @@ from app.lightgbm.outcomes import CollectionUnit, OutcomeClass
 
 DIAGNOSTIC_LEDGER_FILENAME = "diagnostics.jsonl"
 DIAGNOSTIC_EVENT_VERSION = "s5-diagnostic-event-v1"
+# 실패가 아닌 보고다. OutcomeClass를 실패 분류로만 유지하기 위해 값을 분리한다.
+COVERAGE_REPORT_OUTCOME = "COVERAGE_REPORT"
 # 한 실행이 남길 수 있는 진단은 승인 호출 수보다 많을 수 없다. 무한 성장을 구조적으로 막는다.
 MAX_DIAGNOSTIC_BYTES = 16 * 1024 * 1024
 
@@ -40,10 +42,27 @@ def record_diagnostic(
     몇 번 발생했는지가 재시도 판단의 근거이기 때문이다.
     """
 
+    _append_event(
+        source_root=source_root,
+        phase=phase,
+        outcome=str(outcome),
+        unit=unit,
+        measured=measured,
+    )
+
+
+def _append_event(
+    *,
+    source_root: Path,
+    phase: str,
+    outcome: str,
+    unit: CollectionUnit | None,
+    measured: Mapping[str, object] | None,
+) -> None:
     event = {
         "eventVersion": DIAGNOSTIC_EVENT_VERSION,
         "phase": phase,
-        "outcome": str(outcome),
+        "outcome": outcome,
         "unit": unit.as_dict() if unit is not None else {},
         "measured": _canonical_measured(measured),
     }
@@ -65,6 +84,20 @@ def record_diagnostic(
     except OSError:
         # 진단을 남기지 못하는 것이 수집 결과를 바꾸지는 않는다.
         return
+
+
+def record_coverage_report(
+    *, source_root: Path, phase: str, measured: Mapping[str, object]
+) -> None:
+    """한 phase의 수집·제외·보류 수를 남긴다. 실패가 아니므로 분류를 쓰지 않는다."""
+
+    _append_event(
+        source_root=source_root,
+        phase=phase,
+        outcome=COVERAGE_REPORT_OUTCOME,
+        unit=None,
+        measured=measured,
+    )
 
 
 def _canonical_measured(measured: Mapping[str, object] | None) -> dict[str, object]:

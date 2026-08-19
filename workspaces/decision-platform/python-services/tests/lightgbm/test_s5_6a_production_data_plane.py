@@ -18,6 +18,7 @@ import pytest
 
 from app.data._shared.canonical_json import canonical_json_bytes
 from app.data.ecos.models import ECOSObservation
+from app.data.ecos.policy import ECOS_MAX_ROWS_PER_REQUEST, build_keyless_service_path
 from app.data.ecos.series_registry import CANDIDATE_SERIES
 from app.data.ecos.settings import ECOSS5ProductionSettings
 from app.data.kis.parsers import DailyBar, KISResponseError, parse_daily_bars
@@ -92,6 +93,7 @@ from app.lightgbm.features import (
 )
 from app.lightgbm.labels import build_production_exact_labels
 from app.lightgbm.pit_calendar import (
+    previous_xkrx_session,
     S5_ADHOC_CLOSED_SESSIONS,
     S5_CALENDAR_CORRECTION_SET_SHA256,
     S5_SUPERSEDED_CORRECTION_SETS,
@@ -1471,7 +1473,7 @@ def test_bootstrap_executor_orders_providers_and_seals_private_manifest(tmp_path
             eligible_sessions=raw[59:],
         ),
         schedules=(schedule,),
-        budget=BootstrapBudget(krx_get=243, kis_get=31, kis_token=1, ecos_get=3),
+        budget=BootstrapBudget(krx_get=243, kis_get=31, kis_token=1, ecos_get=4),
     )
     calls: list[str] = []
 
@@ -1579,7 +1581,7 @@ def test_bootstrap_executor_orders_providers_and_seals_private_manifest(tmp_path
         ecos_series=CANDIDATE_SERIES,
         clock=lambda: datetime(2026, 8, 19, tzinfo=UTC),
     )
-    assert result.budgeted_calls == 278
+    assert result.budgeted_calls == 279
     assert calls[:243] == [
         f"KRX:{service}"
         for _ in raw
@@ -1590,7 +1592,7 @@ def test_bootstrap_executor_orders_providers_and_seals_private_manifest(tmp_path
         "KRX:etf_bydd_trd",
     ]
     assert calls[243] == "KIS:token"
-    assert calls[-3:] == ["ECOS:page", "ECOS:page", "ECOS:page"]
+    assert calls[-4:] == ["ECOS:page"] * 4
     assert len(result.universes[0].symbols) == 31
     assert stat.S_IMODE(os.stat(source_root / "manifest.json").st_mode) == 0o600
     completed_calls = tuple(calls)
@@ -2972,3 +2974,58 @@ def test_paging_stops_when_evidence_is_satisfied_on_a_page_boundary(
     # 두 페이지로 끝나야 한다. 세 번째 요청은 상장 전 구간이라 0행이고 예산만 태운다.
     assert len(receipts) == 2
     assert len(calls) == 2
+def test_ecos_page_range_is_valid_without_a_provider_call() -> None:
+    """provider가 요청하는 page 범위는 네트워크 전에 정책을 통과해야 한다.
+
+    실측: bootstrap/daily provider가 page 1..400을 요청했지만 정책은 요청당 span 200행을
+    강제한다(end - start >= 200 이면 거부). ECOS 첫 호출은 네트워크로 나가기도 전에 분류되지 않은
+    ValueError로 죽었고, 그 예외가 실패 시도로 기록되면서 승인 호출 2건을 태우고서야 원인을 알 수
+    있었다. 범위 유효성은 호출 없이 판정되므로 회귀로 닫는다.
+    """
+
+    arguments = ("722Y001", "D", "20220329", "20221114", "0101000")
+    path = build_keyless_service_path(
+        service="StatisticSearch",
+        start_index=1,
+        end_index=ECOS_MAX_ROWS_PER_REQUEST,
+        arguments=arguments,
+    )
+    assert f"/1/{ECOS_MAX_ROWS_PER_REQUEST}/" in path
+
+    # 상한을 한 행이라도 넘으면 거부된다. 이것이 page 1..400이 죽은 이유다.
+    with pytest.raises(ValueError, match="page is invalid"):
+        build_keyless_service_path(
+            service="StatisticSearch",
+            start_index=1,
+            end_index=ECOS_MAX_ROWS_PER_REQUEST + 1,
+            arguments=arguments,
+        )
+
+
+def test_ecos_chunk_length_cannot_exceed_the_request_row_cap() -> None:
+    """chunk 달력 길이가 행 상한을 넘으면 한 요청이 상한을 넘길 수 있다.
+
+    달력 길이를 상한 이하로 두면 발행 밀도와 무관하게 안전하다. 영업일 기준이라 실제로는 더
+    적지만 그 가정에 의존하지 않는 것이 요점이다. 두 상수가 다시 어긋나면 여기서 걸린다.
+    """
+
+    assert bootstrap_executor._ECOS_CHUNK_DAYS <= ECOS_MAX_ROWS_PER_REQUEST
+
+    # 승인 상한 안에 들어가는 논리 query 수인지도 함께 고정한다.
+    packet = author_bootstrap_packet(cutoff=datetime(2026, 8, 13, 23, 10, tzinfo=UTC))
+    raw_start = packet.window.raw_sessions[0]
+    raw_end = packet.window.raw_sessions[-1]
+    total = 0
+    for series in CANDIDATE_SERIES:
+        start = (
+            raw_start - timedelta(days=366)
+            if series.series_id == "policy-rate"
+            else previous_xkrx_session(raw_start)
+        )
+        cursor = start
+        while cursor <= raw_end:
+            cursor = min(
+                cursor + timedelta(days=bootstrap_executor._ECOS_CHUNK_DAYS - 1), raw_end
+            ) + timedelta(days=1)
+            total += 1
+    assert total <= packet.budget.ecos_get

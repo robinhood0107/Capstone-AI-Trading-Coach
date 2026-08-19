@@ -21,6 +21,7 @@ import pyarrow.parquet as pq
 
 from app.data._shared.canonical_json import canonical_json_bytes
 from app.data.ecos.models import ECOSObservation
+from app.data.ecos.policy import ECOS_MAX_ROWS_PER_REQUEST
 from app.data.ecos.series_registry import ECOSSeries
 from app.data.kis.parsers import DailyBar
 from app.lightgbm.bootstrap_control import BootstrapLedger, BootstrapPhase
@@ -94,6 +95,10 @@ from app.rag.safe_io import (
 
 # 종목 거래 증거를 담는 두 일별 service다. 월별 base-info는 상장 목록이라 권위가 아니다.
 _DAILY_UNIVERSE_SERVICES = ("stk_bydd_trd", "ksq_bydd_trd")
+# chunk 달력 길이를 요청당 행 상한 이하로 두면 발행 밀도와 무관하게 한 요청이 상한 안에 든다.
+# 영업일 기준이라 실제로는 더 적지만, 그 가정에 의존하지 않는 것이 요점이다.
+_ECOS_CHUNK_DAYS = ECOS_MAX_ROWS_PER_REQUEST
+assert _ECOS_CHUNK_DAYS <= ECOS_MAX_ROWS_PER_REQUEST
 COVERAGE_DIVERGENCE_FILENAME = "kis-coverage-divergence.json"
 COVERAGE_BLOCK_VERSION = "s5-kis-coverage-divergence-block-v1"
 DIVERGENCE_CANDIDATES_FILENAME = "calendar-divergence-candidates.json"
@@ -857,7 +862,9 @@ def _fetch_ecos_series(
     receipts: list[SourceChunkReceipt] = []
     chunk_start = start
     while chunk_start <= raw_end:
-        chunk_end = min(chunk_start + timedelta(days=365), raw_end)
+        chunk_end = min(
+            chunk_start + timedelta(days=_ECOS_CHUNK_DAYS - 1), raw_end
+        )
         query = {
             "operation": f"{series.stat_code}/{series.item_code1}/{series.cycle}",
             "start": chunk_start.isoformat(),

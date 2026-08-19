@@ -42,21 +42,42 @@
   },
   "contractId": "s5-bootstrap-calendar-recovery-lock.v1",
   "coverage": {
-    "blockCarriesProviderPayload": false,
-    "blockFile": "kis-coverage-divergence.json",
-    "blockNamesDivergingSymbol": true,
-    "blockVersion": "s5-kis-coverage-divergence-block-v1",
+    "diagnosticLedger": "diagnostics.jsonl",
     "fixedEtfCoverageRule": "FULL_RAW_WINDOW",
     "kisCoverageAuthority": "COLLECTED_KRX_DAILY_TRADING_EVIDENCE",
     "kisCoverageRule": "EXACT_MATCH_WITH_KRX_TRADING_EVIDENCE",
+    "ledgerCarriesProviderPayload": false,
+    "ledgerNamesDivergingSymbol": true,
     "pagingStopsWhenEvidenceIsSatisfied": true,
     "pagingWindowSource": "PACKET_RAW_WINDOW",
     "providerCallsDuringBlock": 0,
     "tradedSessionsMustBeContiguous": true
   },
+  "diagnostics": {
+    "appendOnly": true,
+    "carriesProviderPayload": false,
+    "eventVersion": "s5-diagnostic-event-v1",
+    "ledgerFile": "diagnostics.jsonl",
+    "maxExcludedUnitRatio": 0.01,
+    "outcomeClasses": [
+      "BUDGET_EXHAUSTED",
+      "CONTRACT_VIOLATION",
+      "EVIDENCE_GAP",
+      "RETRYABLE_TRANSIENT"
+    ],
+    "recordingFailureChangesCollectionOutcome": false,
+    "reportKinds": [
+      "CALENDAR_DIVERGENCE_SUSPECTED",
+      "COVERAGE_REPORT",
+      "QUALIFICATION_REPORT"
+    ],
+    "reportKindsAreNotOutcomeClasses": true,
+    "unclassifiedFailureOutcome": "CONTRACT_VIOLATION"
+  },
   "divergence": {
     "blockBytesDependOnPacketAndCandidatesOnly": true,
     "blockFile": "calendar-divergence-candidates.json",
+    "blockIsGateTokenNotLedgerEntry": true,
     "blockVersion": "s5-calendar-divergence-block-v1",
     "evidenceClasses": [
       {
@@ -72,6 +93,7 @@
         "unresolvedBlockStopsResume": false
       }
     ],
+    "mirroredToDiagnosticLedger": true,
     "providerCallsDuringBlock": 0,
     "result": "CALENDAR_DIVERGENCE_SUSPECTED"
   },

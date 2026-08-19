@@ -2674,6 +2674,7 @@ def _kis_symbol_fetch(
     raw_sessions: tuple[date, ...],
     expected_sessions: tuple[date, ...],
     available: tuple[date, ...],
+    on_fetch: object = None,
 ) -> tuple[tuple[ProductionPriceEvidence, ...], tuple[SourceChunkReceipt, ...]]:
     """고정된 응답 집합으로 한 종목의 KIS paging을 돌린다. 네트워크는 없다."""
 
@@ -2692,6 +2693,8 @@ def _kis_symbol_fetch(
         def fetch_page(
             self, *, symbol: str, start: date, end: date
         ) -> tuple[DailyBar, ...]:
+            if on_fetch is not None:
+                on_fetch(start, end)
             window = [day for day in available if start <= day <= end]
             # provider는 최신 100개만 돌려주고 caller가 cursor를 뒤로 옮긴다.
             return tuple(
@@ -2934,3 +2937,38 @@ def test_traded_session_evidence_must_be_contiguous(tmp_path: Path) -> None:
             ),
             symbols=frozenset({"000001"}),
         )
+def test_paging_stops_when_evidence_is_satisfied_on_a_page_boundary(
+    tmp_path: Path,
+) -> None:
+    """종료 판정이 응답 모양에만 의존하면 100의 배수 역사에서 여분 호출을 태운다.
+
+    실측: 419530은 KRX 증거 900 session(2022-12-06 상장)이고 KIS도 900 session을 9페이지로 이미
+    다 받았다(결손 0, 초과 0). 그런데 9페이지가 정확히 100행이라 start 도달도 100행 미만도
+    성립하지 않아 상장 전 구간을 한 번 더 요청했고, 0행 응답이 하드 실패가 되면서 승인 호출 2건을
+    태우고 packet을 완주 불가로 만들었다.
+
+    커버리지 권위는 이미 KRX 거래 증거다. 그 증거를 다 받았으면 더 요청할 것이 없다.
+    """
+
+    packet = author_bootstrap_packet(cutoff=datetime(2026, 8, 19, 0, 0, tzinfo=UTC))
+    raw = packet.window.raw_sessions[-300:]
+    # 역사가 정확히 페이지 경계에서 끝나고 start에는 닿지 않는 신규상장 종목이다.
+    traded = raw[-200:]
+    assert len(traded) % 100 == 0 and traded[0] != raw[0]
+
+    calls: list[tuple[date, date]] = []
+
+    def record(start: date, end: date) -> None:
+        calls.append((start, end))
+
+    prices, receipts = _kis_symbol_fetch(
+        tmp_path=tmp_path / "boundary",
+        raw_sessions=raw,
+        expected_sessions=traded,
+        available=traded,
+        on_fetch=record,
+    )
+    assert tuple(row.session_date for row in prices) == traded
+    # 두 페이지로 끝나야 한다. 세 번째 요청은 상장 전 구간이라 0행이고 예산만 태운다.
+    assert len(receipts) == 2
+    assert len(calls) == 2

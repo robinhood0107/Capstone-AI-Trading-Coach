@@ -712,6 +712,11 @@ def _fetch_kis_symbol(
     receipts: list[SourceChunkReceipt] = []
     page_number = 0
     while cursor_end >= start:
+        # 증거가 말하는 session을 다 받았으면 더 요청할 것이 없다. 역사가 정확히 100의 배수로
+        # 끝나는 종목은 응답 모양만으로는 "더 없음"을 구분할 수 없어 상장 전 구간을 한 번 더
+        # 요청하고, 그 0행 응답이 하드 실패가 되면서 승인 호출을 태운다.
+        if expected.issubset(seen):
+            break
         page_number += 1
         query = {
             "operation": KIS_OPERATION,

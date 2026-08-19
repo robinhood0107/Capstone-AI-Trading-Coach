@@ -10,6 +10,7 @@ S5 CLI들은 packet SHA와 code provenance를 환경변수로 받아왔다. 그 
 
 from __future__ import annotations
 
+from collections import Counter
 import hashlib
 import json
 import os
@@ -37,8 +38,9 @@ UV_LOCK_RELATIVE_PATH = "workspaces/decision-platform/python-services/uv.lock"
 def resolve_bootstrap_packet_sha256(*, approved_root: Path) -> str:
     """approved root가 이미 확정한 실행 대상 packet SHA를 유도한다.
 
-    fresh authority는 root당 정확히 하나의 packet만 선택하므로 모호성이 없다. calendar recovery
-    root에서는 봉인된 recovery binding이 가리키는 corrected packet이 유일한 실행 대상이다.
+    fresh authority는 root당 정확히 하나의 packet만 선택하므로 모호성이 없다. recovery root에서는
+    현재 correction 세대를 선언하고 아직 다른 recovery가 supersede 하지 않은 adopted packet,
+    즉 체인의 head가 유일한 실행 대상이다.
     """
 
     explicit = os.environ.get("S5_BOOTSTRAP_PACKET_SHA256", "").strip()
@@ -49,65 +51,47 @@ def resolve_bootstrap_packet_sha256(*, approved_root: Path) -> str:
     if fresh_bootstrap_authority_exists(approved_root=approved_root):
         return read_fresh_bootstrap_authority(approved_root=approved_root).packet.sha256
 
-    candidates = [
-        digest
-        for digest, corrections in _adopted_packets(approved_root).items()
-        if corrections == S5_CALENDAR_CORRECTION_SET_SHA256
-    ]
-    if len(candidates) != 1:
-        raise LightGbmContractError(
-            "bootstrap packet selection is not unique in the approved root"
-        )
-    return candidates[0]
+    # 상한 변경으로 supersede하면 두 packet이 같은 세대를 선언하므로 세대 해시만으로는 부족하다.
+    superseded = _superseded_priors(approved_root)
+    return _chain_head(
+        approved_root,
+        [
+            digest
+            for digest, corrections in _adopted_packets(approved_root).items()
+            if corrections == S5_CALENDAR_CORRECTION_SET_SHA256
+            and digest not in superseded
+        ],
+    )
 
 
 def resolve_recovery_prior_packet_sha256(*, approved_root: Path) -> str:
     """다음 recovery가 체인해야 할 prior packet을 유도한다.
 
-    prior는 아직 현재 correction 세대로 교정되지 않았고, 다른 recovery가 이미 supersede 하지도
-    않은 소비 run이다. 그런 run이 하나가 아니면 값을 고르지 않고 멈춘다.
+    prior는 다른 recovery가 아직 supersede 하지 않은 소비 run, 즉 체인의 head다. 세대 교체와
+    상한 변경 모두 head에서만 이어져야 하므로 세대 해시로 걸러내지 않는다. head가 하나가 아니면
+    값을 고르지 않고 멈춘다.
     """
 
-    consumed = _consumed_packets(approved_root)
     superseded = _superseded_priors(approved_root)
-    candidates = [
-        digest
-        for digest, corrections in consumed.items()
-        if digest not in superseded and corrections != S5_CALENDAR_CORRECTION_SET_SHA256
-    ]
-    if not candidates:
-        raise LightGbmContractError("calendar recovery prior packet is unavailable")
-    if len(candidates) == 1:
-        return candidates[0]
-
-    # 같은 세대에서 갈라진 run이 여럿이면 소비 증거가 가장 많은 하나만 prior가 될 수 있다.
-    # 더 적게 소비한 형제에서 체인하면 이미 소비한 호출이 누계에서 빠져 상한이 무의미해진다.
-    consumed_sets = {
-        digest: _consumed_query_attempts(approved_root, digest) for digest in candidates
-    }
-    head = max(candidates, key=lambda digest: len(consumed_sets[digest]))
-    if any(
-        digest != head and not consumed_sets[digest].issubset(consumed_sets[head])
-        for digest in candidates
-    ):
-        raise LightGbmContractError(
-            "calendar recovery prior packet is not unique in the approved root"
-        )
-    if any(
-        digest != head and len(consumed_sets[digest]) == len(consumed_sets[head])
-        for digest in candidates
-    ):
-        raise LightGbmContractError(
-            "calendar recovery prior packet is not unique in the approved root"
-        )
-    return head
+    return _chain_head(
+        approved_root,
+        [
+            digest
+            for digest in _consumed_packets(approved_root)
+            if digest not in superseded
+        ],
+    )
 
 
-def _consumed_query_attempts(approved_root: Path, digest: str) -> set[tuple[int, str]]:
-    """journal이 기록한 물리 시도를 (ordinal, query) 신원으로 읽는다. chunk는 열지 않는다."""
+def _consumed_query_attempts(approved_root: Path, digest: str) -> Counter[str]:
+    """journal이 기록한 물리 시도를 논리 query별 횟수로 읽는다. chunk는 열지 않는다.
+
+    Ordinal은 세대마다 다시 붙으므로 신원으로 쓸 수 없다. 소비 증거의 본질은 어떤 query를 몇 번
+    물리 호출했는지이며, 그 다중집합만이 형제 run 사이의 포함관계를 판정할 수 있다.
+    """
 
     journal = approved_root / f"run-{digest}" / "source" / JOURNAL_FILENAME
-    attempts: set[tuple[int, str]] = set()
+    attempts: Counter[str] = Counter()
     try:
         with journal.open(encoding="utf-8") as handle:
             for line in handle:
@@ -120,10 +104,38 @@ def _consumed_query_attempts(approved_root: Path, digest: str) -> set[tuple[int,
                 query = event.get("querySha256")
                 if not isinstance(ordinal, int) or not isinstance(query, str):
                     raise LightGbmContractError("bootstrap progress journal event is invalid")
-                attempts.add((ordinal, query))
+                attempts[query] += 1
     except (OSError, ValueError) as error:
         raise LightGbmContractError("bootstrap progress journal is unreadable") from error
     return attempts
+
+
+def _chain_head(approved_root: Path, candidates: list[str]) -> str:
+    """소비 증거를 모두 포함하는 유일한 run을 체인 head로 고른다.
+
+    더 적게 소비한 형제에서 이어가면 이미 소비한 호출이 누계에서 빠져 상한이 무의미해진다.
+    포함관계가 성립하지 않거나 최대가 유일하지 않으면 값을 고르지 않고 멈춘다.
+    """
+
+    if not candidates:
+        raise LightGbmContractError("bootstrap chain head is unavailable")
+    if len(candidates) == 1:
+        return candidates[0]
+    consumed = {
+        digest: _consumed_query_attempts(approved_root, digest) for digest in candidates
+    }
+    head = max(candidates, key=lambda digest: sum(consumed[digest].values()))
+    total = sum(consumed[head].values())
+    for digest in candidates:
+        if digest == head:
+            continue
+        if sum(consumed[digest].values()) == total or any(
+            count > consumed[head][query] for query, count in consumed[digest].items()
+        ):
+            raise LightGbmContractError(
+                "bootstrap chain head is not unique in the approved root"
+            )
+    return head
 
 
 def _consumed_packets(approved_root: Path) -> dict[str, str | None]:

@@ -508,6 +508,18 @@ def _recovery_catalog() -> dict[str, Any]:
                 "ADOPTION_JOURNAL",
             ],
         },
+        "coverage": {
+            "kisCoverageAuthority": "COLLECTED_KRX_DAILY_TRADING_EVIDENCE",
+            "kisCoverageRule": "EXACT_MATCH_WITH_KRX_TRADING_EVIDENCE",
+            "fixedEtfCoverageRule": "FULL_RAW_WINDOW",
+            "tradedSessionsMustBeContiguous": True,
+            "pagingWindowSource": "PACKET_RAW_WINDOW",
+            "blockFile": "kis-coverage-divergence.json",
+            "blockVersion": "s5-kis-coverage-divergence-block-v1",
+            "blockNamesDivergingSymbol": True,
+            "blockCarriesProviderPayload": False,
+            "providerCallsDuringBlock": 0,
+        },
         "divergence": {
             "blockFile": "calendar-divergence-candidates.json",
             "blockVersion": "s5-calendar-divergence-block-v1",

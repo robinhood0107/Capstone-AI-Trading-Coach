@@ -17,6 +17,7 @@ class S5BootstrapCalendarRecoveryLockTest(unittest.TestCase):
             {
                 "calendar",
                 "contractId",
+                "coverage",
                 "divergence",
                 "downstream",
                 "holidayAuthority",
@@ -225,6 +226,43 @@ class S5BootstrapCalendarRecoveryLockTest(unittest.TestCase):
         # KIS 논리 query는 수집된 KRX 증거에서 파생돼 packet만으로 열거할 수 없다.
         self.assertTrue(recovery["kisLogicalQuerySetDerivedFromCollectedKrxEvidence"])
 
+    def test_kis_coverage_is_bound_to_collected_krx_trading_evidence(self) -> None:
+        """union 종목 전원에게 전수 커버리지를 요구하면 상장폐지 종목에서 충족 불가가 된다.
+
+        실측: 010620은 KRX와 KIS 양쪽에서 정확히 910 session(2022-03-29..2025-12-12)이고 그 뒤
+        거래 증거가 없다. 두 provider가 일치하므로 불일치가 아니라 상장폐지다. 수집된 KRX 일별
+        projection이 커버리지 권위이며, 요구는 그 증거와의 정확한 일치다.
+        """
+
+        coverage = json.loads(CATALOG.read_text(encoding="utf-8"))["coverage"]
+
+        self.assertEqual(
+            "COLLECTED_KRX_DAILY_TRADING_EVIDENCE", coverage["kisCoverageAuthority"]
+        )
+        self.assertEqual(
+            "EXACT_MATCH_WITH_KRX_TRADING_EVIDENCE", coverage["kisCoverageRule"]
+        )
+        # 고정 ETF는 일별 stock projection에 없고 월별 etf_bydd_trd에만 나타난다.
+        self.assertEqual("FULL_RAW_WINDOW", coverage["fixedEtfCoverageRule"])
+        # rolling window는 종목 자기 행에 대한 위치 기반이라 중간 결손이 feature 의미를 바꾼다.
+        self.assertTrue(coverage["tradedSessionsMustBeContiguous"])
+        # window는 query 신원에 들어간다. 종목별로 좁히면 봉인된 chunk가 도달 불가가 된다.
+        self.assertEqual("PACKET_RAW_WINDOW", coverage["pagingWindowSource"])
+
+    def test_coverage_divergence_block_names_the_symbol_without_provider_payload(
+        self,
+    ) -> None:
+        """분류 코드만 남기면 원인을 찾는 데 매번 별도 진단이 필요하다."""
+
+        coverage = json.loads(CATALOG.read_text(encoding="utf-8"))["coverage"]
+
+        self.assertEqual("kis-coverage-divergence.json", coverage["blockFile"])
+        self.assertEqual(
+            "s5-kis-coverage-divergence-block-v1", coverage["blockVersion"]
+        )
+        self.assertTrue(coverage["blockNamesDivergingSymbol"])
+        self.assertFalse(coverage["blockCarriesProviderPayload"])
+        self.assertEqual(0, coverage["providerCallsDuringBlock"])
 
 if __name__ == "__main__":
     unittest.main()

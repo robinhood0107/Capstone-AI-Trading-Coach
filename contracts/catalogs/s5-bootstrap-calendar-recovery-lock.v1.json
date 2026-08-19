@@ -41,6 +41,18 @@
     "supersededGenerationsArePreserved": true
   },
   "contractId": "s5-bootstrap-calendar-recovery-lock.v1",
+  "coverage": {
+    "blockCarriesProviderPayload": false,
+    "blockFile": "kis-coverage-divergence.json",
+    "blockNamesDivergingSymbol": true,
+    "blockVersion": "s5-kis-coverage-divergence-block-v1",
+    "fixedEtfCoverageRule": "FULL_RAW_WINDOW",
+    "kisCoverageAuthority": "COLLECTED_KRX_DAILY_TRADING_EVIDENCE",
+    "kisCoverageRule": "EXACT_MATCH_WITH_KRX_TRADING_EVIDENCE",
+    "pagingWindowSource": "PACKET_RAW_WINDOW",
+    "providerCallsDuringBlock": 0,
+    "tradedSessionsMustBeContiguous": true
+  },
   "divergence": {
     "blockBytesDependOnPacketAndCandidatesOnly": true,
     "blockFile": "calendar-divergence-candidates.json",

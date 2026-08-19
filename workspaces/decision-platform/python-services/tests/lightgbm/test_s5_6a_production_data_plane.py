@@ -85,6 +85,7 @@ from app.lightgbm.features import (
 )
 from app.lightgbm.labels import build_production_exact_labels
 from app.lightgbm.pit_calendar import (
+    S5_ADHOC_CLOSED_SESSIONS,
     S5_CALENDAR_CORRECTION_SET_SHA256,
     S5_CALENDAR_POLICY_VERSION,
     PitSessionWindow,
@@ -688,7 +689,7 @@ def test_bootstrap_packet_has_exact_1072_1007_51_and_6446_caps() -> None:
     assert packet.recovery_binding_sha256 is None
     assert packet.calendar_policy_version == S5_CALENDAR_POLICY_VERSION
     assert packet.calendar_correction_set_sha256 == S5_CALENDAR_CORRECTION_SET_SHA256
-    assert packet.window.raw_sessions[0] == date(2022, 3, 31)
+    assert packet.window.raw_sessions[0] == date(2022, 3, 30)
     assert date(2026, 6, 3) not in packet.window.raw_sessions
     assert b'"strictProviderPITClaim":false' in packet.content
     assert validate_bootstrap_packet(packet.content, expected_sha256=packet.sha256) == packet
@@ -704,14 +705,20 @@ def test_s5_calendar_applies_kis_authority_to_all_feature_and_label_clocks() -> 
     packet = author_bootstrap_packet(cutoff=datetime(2026, 8, 13, 23, 10, tzinfo=UTC))
     payload = json.loads(packet.content)
 
-    assert packet.window.raw_sessions[0] == date(2022, 3, 30)
-    assert date(2026, 6, 3) not in packet.window.raw_sessions
+    assert packet.window.raw_sessions[0] == date(2022, 3, 29)
+    for closed in S5_ADHOC_CLOSED_SESSIONS:
+        assert closed not in packet.window.raw_sessions
     assert payload["calendarPolicyVersion"] == S5_CALENDAR_POLICY_VERSION
     assert payload["calendarCorrectionSetSha256"] == S5_CALENDAR_CORRECTION_SET_SHA256
     assert next_session_evidence_clock(date(2026, 6, 2)) == datetime(
         2026, 6, 4, 8, 10, tzinfo=next_session_evidence_clock(date(2026, 6, 2)).tzinfo
     )
     assert next_xkrx_evidence_clock(date(2026, 6, 3)).date() == date(2026, 6, 4)
+    # 2026-07-17 제헌절도 같은 권위로 닫히므로 직전 session의 다음 증거 시각은 07-20이다.
+    assert next_session_evidence_clock(date(2026, 7, 16)) == datetime(
+        2026, 7, 20, 8, 10, tzinfo=next_session_evidence_clock(date(2026, 7, 16)).tzinfo
+    )
+    assert next_xkrx_evidence_clock(date(2026, 7, 17)).date() == date(2026, 7, 20)
 
     catalog = json.loads(
         (
@@ -1950,3 +1957,106 @@ def test_superseded_generation_residue_never_opens_a_second_fresh_budget(
     assert not any(
         name.startswith("fresh-bootstrap-authority") for name in os.listdir(root)
     )
+def test_corrected_calendar_fixture_matches_the_live_calendar() -> None:
+    """계약 fixture의 session 경계가 실제 correction-set 달력과 어긋나지 않게 고정한다.
+
+    generator는 app.lightgbm을 import할 수 없는 root 환경에서 돌아 경계를 리터럴로 둔다. 그
+    리터럴이 조용히 낡는 것을 막는 유일한 지점이 여기다.
+    """
+
+    fixture = json.loads(
+        (
+            Path(__file__).resolve().parents[5]
+            / "contracts/examples/s5-feature-bundle-v2.corrected-calendar.valid.json"
+        ).read_text(encoding="utf-8")
+    )
+    provenance = fixture["provenance"]
+    cutoff = datetime.fromisoformat(provenance["datasetCutoff"].replace("Z", "+00:00"))
+    window = build_pit_session_window(cutoff)
+
+    assert provenance["rawSessionStart"] == window.raw_sessions[0].isoformat()
+    assert provenance["rawSessionEnd"] == window.raw_sessions[-1].isoformat()
+    assert provenance["rawSessionCount"] == len(window.raw_sessions)
+    assert provenance["eligibleSessionStart"] == window.eligible_sessions[0].isoformat()
+    assert provenance["eligibleSessionEnd"] == window.eligible_sessions[-1].isoformat()
+    assert provenance["eligibleSessionCount"] == len(window.eligible_sessions)
+    for closed in S5_ADHOC_CLOSED_SESSIONS:
+        assert closed not in window.raw_sessions
+def test_single_session_query_failure_records_a_divergence_candidate(tmp_path: Path) -> None:
+    """앞선 session이 정상인데 한 session만 실패하면 후보 증거를 남기고 resume은 허용한다.
+
+    2026-07-17 제헌절은 provider가 빈 projection이 아니라 오류로 응답해 일반 실패로 분류됐고,
+    그 때문에 진단에 KRX 예산이 한 번 더 들었다. 이 회귀가 그 경로를 닫는다.
+    """
+
+    original = author_bootstrap_packet(cutoff=datetime(2026, 8, 13, 23, 10, tzinfo=UTC))
+    raw = original.window.raw_sessions[-4:]
+    packet = replace(
+        original,
+        window=PitSessionWindow(
+            cutoff=original.window.cutoff,
+            latest_completed=raw[-1],
+            raw_sessions=raw,
+            eligible_sessions=raw[-1:],
+        ),
+        schedules=(original.schedules[-1],),
+        budget=BootstrapBudget(krx_get=19, kis_get=31, kis_token=1, ecos_get=3),
+    )
+    blocked_session = raw[2]
+    calls: list[str] = []
+
+    class Krx:
+        def fetch(
+            self, *, service: str, session_date: date
+        ) -> tuple[dict[str, str], ...]:
+            calls.append(f"{service}:{session_date.isoformat()}")
+            if session_date == blocked_session and service == "stk_bydd_trd":
+                raise RuntimeError("provider rejected the request")
+            return (
+                {
+                    field: ("1" if field != "BAS_DD" else session_date.strftime("%Y%m%d"))
+                    for field in S5_PRODUCTION_PROJECTION_FIELDS[service]
+                },
+            )
+
+    class Forbidden:
+        def __getattr__(self, name: str) -> object:
+            raise AssertionError("KRX 이후 provider는 열리지 않아야 한다")
+
+    source_root = tmp_path / "source"
+    with pytest.raises(RuntimeError, match="provider rejected"):
+        execute_bootstrap_acquisition(
+            packet=packet,
+            source_root=source_root,
+            krx=Krx(),
+            kis=Forbidden(),
+            ecos=Forbidden(),
+            ecos_series=CANDIDATE_SERIES,
+            clock=lambda: datetime(2026, 8, 20, tzinfo=UTC),
+        )
+
+    block = json.loads((source_root / DIVERGENCE_CANDIDATES_FILENAME).read_bytes())
+    assert block["candidates"] == [
+        {
+            "evidence": "SINGLE_SESSION_QUERY_FAILURE",
+            "operationId": "stk_bydd_trd",
+            "provider": "KRX",
+            "sessionDate": blocked_session.isoformat(),
+        }
+    ]
+    assert block["providerCallsDuringBlock"] == 0
+
+    # 단일 실패 후보는 진단 증거일 뿐이므로 계약이 허용한 resume을 막지 않는다.
+    consumed = tuple(calls)
+    with pytest.raises(RuntimeError, match="provider rejected"):
+        execute_bootstrap_acquisition(
+            packet=packet,
+            source_root=source_root,
+            krx=Krx(),
+            kis=Forbidden(),
+            ecos=Forbidden(),
+            ecos_series=CANDIDATE_SERIES,
+            clock=lambda: datetime(2026, 8, 20, tzinfo=UTC),
+            resume=True,
+        )
+    assert len(calls) > len(consumed)

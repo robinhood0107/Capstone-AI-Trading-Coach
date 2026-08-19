@@ -35,13 +35,29 @@ class S5BootstrapCalendarRecoveryLockTest(unittest.TestCase):
         self.assertEqual(
             [
                 {
-                    "evidenceClass": "CONTRACT_LOCKED_CALENDAR_CORRECTION",
+                    "evidenceClass": "CTCA0903R_CONFIRMED_CALENDAR_CORRECTION",
                     "isOpen": False,
                     "reason": "2026_LOCAL_ELECTION_MARKET_CLOSURE",
                     "sessionDate": "2026-06-03",
-                }
+                },
+                {
+                    "evidenceClass": "CTCA0903R_CONFIRMED_CALENDAR_CORRECTION",
+                    "isOpen": False,
+                    "reason": "2026_CONSTITUTION_DAY_MARKET_CLOSURE",
+                    "sessionDate": "2026-07-17",
+                },
             ],
             payload["calendar"]["corrections"],
+        )
+        # correction은 오름차순 고유 날짜여야 하며 evidenceClass는 실제 관측 확정만 허용한다.
+        dates = [item["sessionDate"] for item in payload["calendar"]["corrections"]]
+        self.assertEqual(sorted(set(dates)), dates)
+        self.assertTrue(
+            all(
+                item["evidenceClass"] == "CTCA0903R_CONFIRMED_CALENDAR_CORRECTION"
+                and item["isOpen"] is False
+                for item in payload["calendar"]["corrections"]
+            )
         )
 
     def test_recovery_is_fail_closed_and_cannot_expand_downstream_authority(self) -> None:
@@ -106,14 +122,26 @@ class S5BootstrapCalendarRecoveryLockTest(unittest.TestCase):
 
         self.assertEqual("CALENDAR_DIVERGENCE_SUSPECTED", divergence["result"])
         self.assertEqual(
-            "EMPTY_DAILY_PROJECTION_ON_CLAIMED_SESSION", divergence["detection"]
-        )
-        self.assertEqual(
             "calendar-divergence-candidates.json", divergence["blockFile"]
         )
-        self.assertFalse(divergence["resumePacketAuthored"])
         self.assertEqual(0, divergence["providerCallsDuringBlock"])
-        self.assertTrue(divergence["unresolvedBlockStopsResume"])
+        self.assertTrue(divergence["blockBytesDependOnPacketAndCandidatesOnly"])
+
+        by_evidence = {item["evidence"]: item for item in divergence["evidenceClasses"]}
+        self.assertEqual({"EMPTY_DAILY_PROJECTION", "SINGLE_SESSION_QUERY_FAILURE"}, set(by_evidence))
+
+        empty = by_evidence["EMPTY_DAILY_PROJECTION"]
+        self.assertEqual("EMPTY_DAILY_PROJECTION_ON_CLAIMED_SESSION", empty["detection"])
+        self.assertFalse(empty["resumePacketAuthored"])
+        self.assertTrue(empty["unresolvedBlockStopsResume"])
+
+        # 단일 실패는 provider 일시 오류와 구분할 수 없어 계약이 허용한 resume을 막지 않는다.
+        failure = by_evidence["SINGLE_SESSION_QUERY_FAILURE"]
+        self.assertEqual(
+            "SINGLE_SESSION_FAILURE_AFTER_HEALTHY_NEIGHBOURS", failure["detection"]
+        )
+        self.assertTrue(failure["resumePacketAuthored"])
+        self.assertFalse(failure["unresolvedBlockStopsResume"])
 
     def test_holiday_authority_is_candidate_scoped_and_budget_separated(self) -> None:
         authority = json.loads(CATALOG.read_text(encoding="utf-8"))["holidayAuthority"]

@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 import hashlib
+import json
 from io import BytesIO
 import math
 import os
@@ -202,9 +203,24 @@ def execute_bootstrap_acquisition(
                     source_root=source_root,
                     packet=packet,
                     error=error,
-                    consumed_physical_calls=len(ledger.receipts),
+                    evidence="EMPTY_DAILY_PROJECTION",
                 )
                 raise
+            except Exception as error:
+                # 앞선 session들이 정상인데 이 session만 실패하면 달력 결손 후보일 수 있다.
+                # provider 일시 오류와 구분할 수 없으므로 증거만 남기고 원 예외를 그대로 올린다.
+                if krx_chunks:
+                    _publish_divergence_candidates(
+                        source_root=source_root,
+                        packet=packet,
+                        error=CalendarDivergenceSuspected(
+                            "CALENDAR_DIVERGENCE_SUSPECTED: single session query failed",
+                            operation_id=service,
+                            session_date=session.isoformat(),
+                        ),
+                        evidence="SINGLE_SESSION_QUERY_FAILURE",
+                    )
+                raise error
             krx_chunks[(service, session)] = receipt
             chunks.append(receipt)
     for schedule in packet.schedules:
@@ -520,9 +536,26 @@ def execute_bootstrap_materialization(
 
 
 def _require_absent_divergence_block(source_root: Path) -> None:
-    """해소되지 않은 divergence 후보가 남은 run은 provider를 다시 열지 않는다."""
+    """빈 일별 projection 후보가 남은 run은 provider를 다시 열지 않는다.
 
-    if (source_root / DIVERGENCE_CANDIDATES_FILENAME).exists():
+    단일 session 실패 후보는 provider 일시 오류일 수 있어 계약이 허용한 resume을 막지 않는다.
+    그 경우 후보 sidecar는 진단 증거로만 남는다.
+    """
+
+    block = source_root / DIVERGENCE_CANDIDATES_FILENAME
+    if not block.exists():
+        return
+    payload = json.loads(
+        read_approved_regular_file(
+            approved_root=source_root,
+            relative_path=DIVERGENCE_CANDIDATES_FILENAME,
+            max_bytes=MAX_DIVERGENCE_BLOCK_BYTES,
+        ).content.decode("utf-8")
+    )
+    if any(
+        candidate.get("evidence") == "EMPTY_DAILY_PROJECTION"
+        for candidate in payload.get("candidates", ())
+    ):
         raise CalendarDivergenceSuspected(
             "CALENDAR_DIVERGENCE_SUSPECTED: unresolved calendar divergence block is present",
             operation_id="",
@@ -535,7 +568,7 @@ def _publish_divergence_candidates(
     source_root: Path,
     packet: BootstrapPacket,
     error: CalendarDivergenceSuspected,
-    consumed_physical_calls: int,
+    evidence: str = "EMPTY_DAILY_PROJECTION",
 ) -> None:
     """Provider raw 없이 후보 session만 content-free sidecar로 남긴다.
 
@@ -553,10 +586,9 @@ def _publish_divergence_candidates(
                     "provider": "KRX",
                     "operationId": error.operation_id,
                     "sessionDate": error.session_date,
-                    "evidence": "EMPTY_DAILY_PROJECTION",
+                    "evidence": evidence,
                 }
             ],
-            "consumedPhysicalCalls": consumed_physical_calls,
             "providerCallsDuringBlock": 0,
         }
     )

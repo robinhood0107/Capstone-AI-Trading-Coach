@@ -39,7 +39,8 @@ from app.lightgbm.labels import LabelRow, build_production_exact_labels, zero_fi
 from app.lightgbm.private_root import require_private_regular_file, require_private_root
 from app.lightgbm.production_policy import (
     corporate_action_sensitivity_pass,
-    macro_timing_sensitivity_pass,
+    macro_timing_sensitivity_metrics,
+    macro_timing_sensitivity_verdict,
 )
 from app.lightgbm.temporal import next_xkrx_evidence_clock
 from app.lightgbm.universe import MonthlyUniverse
@@ -257,23 +258,33 @@ def qualify_and_write_production_release(
             _, delayed_probabilities = calibrated_probabilities(
                 fold_run.model, fold_run.calibrator, delayed_evaluation.features
             )
-            macro_pass = macro_timing_sensitivity_pass(
+            macro_metrics = macro_timing_sensitivity_metrics(
                 primary_probabilities=primary_probabilities,
                 delayed_probabilities=delayed_probabilities,
                 labels=primary_sensitivity.labels.tolist(),
                 primary_row_count=len(evaluation_rows.labels),
             )
+            macro_pass = macro_timing_sensitivity_verdict(macro_metrics)
             passed = fold_run.evaluation.passed and corporate_fold_pass and macro_pass
             updated_evaluation = replace(fold_run.evaluation, passed=passed)
             updated_folds.append(replace(fold_run, evaluation=updated_evaluation))
             candidate_sensitivity.append(
                 {
                     "fold": split.name,
+                    "basePass": fold_run.evaluation.passed,
                     "corporateActionPass": corporate_fold_pass,
                     "macroTimingPass": macro_pass,
                     "rowCount": len(evaluation_rows.labels),
                     "macroRowCount": len(primary_sensitivity.labels),
                     "eventFreeRowCount": len(event_indices),
+                    "calibratedEce": _rounded(fold_run.evaluation.calibrated.ece),
+                    "calibratedBrier": _rounded(fold_run.evaluation.calibrated.brier),
+                    "calibratedLogLoss": _rounded(fold_run.evaluation.calibrated.log_loss),
+                    "rawBrier": _rounded(fold_run.evaluation.raw.brier),
+                    "rawLogLoss": _rounded(fold_run.evaluation.raw.log_loss),
+                    "macro": {
+                        key: _rounded(value) for key, value in sorted(macro_metrics.items())
+                    },
                 }
             )
         evaluations = tuple(item.evaluation for item in updated_folds)
@@ -292,6 +303,13 @@ def qualify_and_write_production_release(
 
     selected = select_candidate([item.evaluation for item in production_runs])
     if selected is None:
+        # 코드 이름만 남기면 모델 gate 실패와 계산 결함을 구분할 수 없다. 어떤 후보의 어떤 fold가
+        # 어느 조건에서 걸렸는지 측정값과 함께 남긴다.
+        _publish_qualification_diagnostic(
+            parent=release_root.parent,
+            reason="CALIBRATION_FAILED",
+            report=sensitivity_report,
+        )
         return QualificationFailure("CALIBRATION_FAILED", loader.access_count)
     _write_qualification_reservation(
         parent=release_root.parent,
@@ -302,6 +320,30 @@ def qualify_and_write_production_release(
     if final_run is None:
         raise LightGbmContractError("qualification candidate selection drifted")
     if loader.access_count != 1 or not final_run.evaluation.passed:
+        _publish_qualification_diagnostic(
+            parent=release_root.parent,
+            reason="FINAL_TEST_CALIBRATION_FAILED",
+            report=[
+                {
+                    "gridIndex": final_run.candidate.grid_index,
+                    "folds": [
+                        {
+                            "fold": "FINAL",
+                            "basePass": final_run.evaluation.passed,
+                            "calibratedEce": _rounded(final_run.evaluation.calibrated.ece),
+                            "calibratedBrier": _rounded(
+                                final_run.evaluation.calibrated.brier
+                            ),
+                            "calibratedLogLoss": _rounded(
+                                final_run.evaluation.calibrated.log_loss
+                            ),
+                            "rawBrier": _rounded(final_run.evaluation.raw.brier),
+                            "rawLogLoss": _rounded(final_run.evaluation.raw.log_loss),
+                        }
+                    ],
+                }
+            ],
+        )
         return QualificationFailure("CALIBRATION_FAILED", loader.access_count)
     if len(projected_final_rows) != 1:
         raise LightGbmContractError("untouched final test projection was not consumed exactly once")
@@ -808,6 +850,47 @@ def _final_arrays(rows: _TrainingRows, split: object) -> Any:
         calibration.features, calibration.labels,
     )
 
+
+
+QUALIFICATION_DIAGNOSTIC_FILENAME = "qualification-diagnostic.json"
+QUALIFICATION_DIAGNOSTIC_VERSION = "s5-qualification-diagnostic-v1"
+
+
+def _rounded(value: float) -> float:
+    """비교 가능한 자리수로만 남긴다. 실수 표현 차이가 bytes를 흔들지 않게 한다."""
+
+    return round(float(value), 6)
+
+
+def _publish_qualification_diagnostic(
+    *, parent: Path, reason: str, report: Sequence[Mapping[str, object]]
+) -> None:
+    """어떤 gate가 걸렸는지 측정값과 함께 남긴다.
+
+    회계 원장이 아니라 진단 artifact다. 우리 모델의 집계 지표만 담고 provider 응답은 담지 않는다.
+    """
+
+    payload = canonical_json_bytes(
+        {
+            "diagnosticVersion": QUALIFICATION_DIAGNOSTIC_VERSION,
+            "reason": reason,
+            "candidates": [dict(item) for item in report],
+        }
+    )
+    target = parent / QUALIFICATION_DIAGNOSTIC_FILENAME
+    try:
+        if target.exists():
+            os.unlink(target)
+        result = write_approved_new_file(
+            approved_root=parent,
+            relative_path=QUALIFICATION_DIAGNOSTIC_FILENAME,
+            content=payload,
+            max_bytes=1 * 1024 * 1024,
+        )
+        os.chmod(result.absolute_path, 0o600, follow_symlinks=False)
+    except (OSError, RagSafeIoError):
+        # 진단을 남기지 못하는 것이 qualification 결과를 바꾸지는 않는다.
+        return
 
 def _corporate_sensitivity(
     *,

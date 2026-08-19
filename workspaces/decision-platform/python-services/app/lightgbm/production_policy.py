@@ -9,7 +9,7 @@ import re
 import unicodedata
 from datetime import date
 from decimal import Decimal
-from typing import Sequence
+from typing import Mapping, Sequence
 
 import numpy as np
 
@@ -249,14 +249,18 @@ def corporate_action_sensitivity_pass(
     ) <= 0.001
 
 
-def macro_timing_sensitivity_pass(
+def macro_timing_sensitivity_metrics(
     *,
     primary_probabilities: np.ndarray,
     delayed_probabilities: np.ndarray,
     labels: Sequence[int],
     primary_row_count: int,
-) -> bool:
-    """고정 model/calibrator의 +1-session macro timing sensitivity를 검증한다."""
+) -> dict[str, float]:
+    """+1-session macro timing 판정에 쓰이는 지표를 그대로 돌려준다.
+
+    판정만 남기면 네 하위 조건 중 어디서 걸렸는지 알 수 없어 모델 gate 실패와 계산 결함을
+    구분할 수 없다.
+    """
 
     if primary_row_count <= 0 or len(labels) < math.ceil(primary_row_count * 0.98):
         raise DatasetUnavailable("UNIDENTIFIABLE_OUTPUT: macro sensitivity coverage is below 98%")
@@ -267,18 +271,44 @@ def macro_timing_sensitivity_pass(
     labels_array = np.asarray(labels, dtype=np.int64)
     primary_class = tie_aware_argmax(primary_probabilities)
     delayed_class = tie_aware_argmax(delayed_probabilities)
-    disagreement = float(np.mean(primary_class != delayed_class))
-    primary_ece = top_label_ece(labels_array, primary_probabilities)
-    delayed_ece = top_label_ece(labels_array, delayed_probabilities)
-    primary_brier = multiclass_brier(labels_array, primary_probabilities)
-    delayed_brier = multiclass_brier(labels_array, delayed_probabilities)
-    primary_loss = natural_log_loss(labels_array, primary_probabilities)
-    delayed_loss = natural_log_loss(labels_array, delayed_probabilities)
+    return {
+        "disagreement": float(np.mean(primary_class != delayed_class)),
+        "primaryEce": top_label_ece(labels_array, primary_probabilities),
+        "delayedEce": top_label_ece(labels_array, delayed_probabilities),
+        "primaryBrier": multiclass_brier(labels_array, primary_probabilities),
+        "delayedBrier": multiclass_brier(labels_array, delayed_probabilities),
+        "primaryLogLoss": natural_log_loss(labels_array, primary_probabilities),
+        "delayedLogLoss": natural_log_loss(labels_array, delayed_probabilities),
+    }
+
+
+def macro_timing_sensitivity_verdict(metrics: Mapping[str, float]) -> bool:
+    """측정값에서 판정만 파생한다. 임계값은 계약이 고정한 그대로다."""
+
     return (
-        disagreement <= 0.10
-        and delayed_ece - primary_ece <= 0.02
-        and delayed_loss - primary_loss <= 0.02
-        and delayed_brier <= 1.10 * primary_brier
+        metrics["disagreement"] <= 0.10
+        and metrics["delayedEce"] - metrics["primaryEce"] <= 0.02
+        and metrics["delayedLogLoss"] - metrics["primaryLogLoss"] <= 0.02
+        and metrics["delayedBrier"] <= 1.10 * metrics["primaryBrier"]
+    )
+
+
+def macro_timing_sensitivity_pass(
+    *,
+    primary_probabilities: np.ndarray,
+    delayed_probabilities: np.ndarray,
+    labels: Sequence[int],
+    primary_row_count: int,
+) -> bool:
+    """고정 model/calibrator의 +1-session macro timing sensitivity를 검증한다."""
+
+    return macro_timing_sensitivity_verdict(
+        macro_timing_sensitivity_metrics(
+            primary_probabilities=primary_probabilities,
+            delayed_probabilities=delayed_probabilities,
+            labels=labels,
+            primary_row_count=primary_row_count,
+        )
     )
 
 

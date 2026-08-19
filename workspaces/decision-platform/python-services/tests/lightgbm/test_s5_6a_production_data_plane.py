@@ -117,6 +117,11 @@ from app.lightgbm.production_policy import (
     macro_timing_sensitivity_pass,
     require_standard_stock_identity,
 )
+from app.lightgbm.runtime_inputs import (
+    resolve_bootstrap_packet_sha256,
+    resolve_code_provenance,
+    resolve_repository_root,
+)
 from app.lightgbm.source_bundle import (
     SourceBundle,
     SourceChunkReceipt,
@@ -2156,3 +2161,53 @@ def test_recovery_refuses_a_prior_that_already_uses_the_current_corrections(
             approved_root=root,
             prior_packet_sha256=current.sha256,
         )
+def test_runtime_inputs_derive_execution_target_from_sealed_evidence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """실행 대상 packet과 provenance를 사람이 옮겨 적지 않고 봉인된 증거에서 유도한다."""
+
+    monkeypatch.delenv("S5_BOOTSTRAP_PACKET_SHA256", raising=False)
+    root = tmp_path / "s5-source"
+    root.mkdir(mode=0o700)
+
+    # fresh authority가 있으면 그 packet이 유일한 실행 대상이다.
+    packet = author_bootstrap_packet(cutoff=datetime(2026, 8, 13, 23, 10, tzinfo=UTC))
+    publish_fresh_bootstrap_authority(approved_root=root, packet=packet)
+    assert resolve_bootstrap_packet_sha256(approved_root=root) == packet.sha256
+
+    # 명시값이 있으면 그대로 쓰되 형식은 강제한다.
+    monkeypatch.setenv("S5_BOOTSTRAP_PACKET_SHA256", "a" * 64)
+    assert resolve_bootstrap_packet_sha256(approved_root=root) == "a" * 64
+    monkeypatch.setenv("S5_BOOTSTRAP_PACKET_SHA256", "not-a-digest")
+    with pytest.raises(LightGbmContractError, match="digest is invalid"):
+        resolve_bootstrap_packet_sha256(approved_root=root)
+    monkeypatch.delenv("S5_BOOTSTRAP_PACKET_SHA256", raising=False)
+
+    # 후보가 없는 root에서는 값을 지어내지 않는다.
+    empty = tmp_path / "empty-root"
+    empty.mkdir(mode=0o700)
+    with pytest.raises(LightGbmContractError, match="not unique"):
+        resolve_bootstrap_packet_sha256(approved_root=empty)
+
+
+def test_code_provenance_rejects_values_that_do_not_match_the_repository(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """형식만 맞는 임의 provenance가 release manifest에 봉인되는 경로를 닫는다."""
+
+    for name in ("S5_CODE_HEAD_SHA", "S5_CODE_TREE_SHA", "S5_UV_LOCK_SHA256"):
+        monkeypatch.delenv(name, raising=False)
+    repository_root = resolve_repository_root()
+    head, tree, lock = resolve_code_provenance(repository_root=repository_root)
+    assert len(head) == 40 and len(tree) == 40 and len(lock) == 64
+
+    # 유도값과 같으면 통과한다.
+    monkeypatch.setenv("S5_CODE_HEAD_SHA", head)
+    monkeypatch.setenv("S5_CODE_TREE_SHA", tree)
+    monkeypatch.setenv("S5_UV_LOCK_SHA256", lock)
+    assert resolve_code_provenance(repository_root=repository_root) == (head, tree, lock)
+
+    # 형식은 맞지만 저장소 상태와 다른 값은 거부한다.
+    monkeypatch.setenv("S5_CODE_HEAD_SHA", "0" * 40)
+    with pytest.raises(LightGbmContractError, match="does not match the repository"):
+        resolve_code_provenance(repository_root=repository_root)
